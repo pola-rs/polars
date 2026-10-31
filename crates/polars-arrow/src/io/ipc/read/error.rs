@@ -11,27 +11,27 @@ pub enum OutOfSpecKind {
     /// The first 4 bytes of the last 10 bytes is < 0
     NegativeFooterLength,
     /// The footer is an invalid flatbuffer
-    InvalidFlatbufferFooter(arrow_format::ipc::planus::Error),
+    InvalidFlatbufferFooter(polars_arrow_format::ipc::planus::Error),
     /// The file's footer does not contain record batches
     MissingRecordBatches,
     /// The footer's record batches is an invalid flatbuffer
-    InvalidFlatbufferRecordBatches(arrow_format::ipc::planus::Error),
+    InvalidFlatbufferRecordBatches(polars_arrow_format::ipc::planus::Error),
     /// The file's footer does not contain a schema
     MissingSchema,
     /// The footer's schema is an invalid flatbuffer
-    InvalidFlatbufferSchema(arrow_format::ipc::planus::Error),
+    InvalidFlatbufferSchema(polars_arrow_format::ipc::planus::Error),
     /// The file's schema does not contain fields
     MissingFields,
     /// The footer's dictionaries is an invalid flatbuffer
-    InvalidFlatbufferDictionaries(arrow_format::ipc::planus::Error),
+    InvalidFlatbufferDictionaries(polars_arrow_format::ipc::planus::Error),
     /// The block is an invalid flatbuffer
-    InvalidFlatbufferBlock(arrow_format::ipc::planus::Error),
+    InvalidFlatbufferBlock(polars_arrow_format::ipc::planus::Error),
     /// The dictionary message is an invalid flatbuffer
-    InvalidFlatbufferMessage(arrow_format::ipc::planus::Error),
+    InvalidFlatbufferMessage(polars_arrow_format::ipc::planus::Error),
     /// The message does not contain a header
     MissingMessageHeader,
     /// The message's header is an invalid flatbuffer
-    InvalidFlatbufferHeader(arrow_format::ipc::planus::Error),
+    InvalidFlatbufferHeader(polars_arrow_format::ipc::planus::Error),
     /// Relative positions in the file is < 0
     UnexpectedNegativeInteger,
     /// dictionaries can only contain dictionary messages; record batches can only contain records
@@ -39,21 +39,21 @@ pub enum OutOfSpecKind {
     /// RecordBatch messages do not contain buffers
     MissingMessageBuffers,
     /// The message's buffers is an invalid flatbuffer
-    InvalidFlatbufferBuffers(arrow_format::ipc::planus::Error),
+    InvalidFlatbufferBuffers(polars_arrow_format::ipc::planus::Error),
     /// RecordBatch messages does not contain nodes
     MissingMessageNodes,
     /// The message's nodes is an invalid flatbuffer
-    InvalidFlatbufferNodes(arrow_format::ipc::planus::Error),
+    InvalidFlatbufferNodes(polars_arrow_format::ipc::planus::Error),
     /// The message's body length is an invalid flatbuffer
-    InvalidFlatbufferBodyLength(arrow_format::ipc::planus::Error),
+    InvalidFlatbufferBodyLength(polars_arrow_format::ipc::planus::Error),
     /// The message does not contain data
     MissingData,
     /// The message's data is an invalid flatbuffer
-    InvalidFlatbufferData(arrow_format::ipc::planus::Error),
+    InvalidFlatbufferData(polars_arrow_format::ipc::planus::Error),
     /// The version is an invalid flatbuffer
-    InvalidFlatbufferVersion(arrow_format::ipc::planus::Error),
+    InvalidFlatbufferVersion(polars_arrow_format::ipc::planus::Error),
     /// The compression is an invalid flatbuffer
-    InvalidFlatbufferCompression(arrow_format::ipc::planus::Error),
+    InvalidFlatbufferCompression(polars_arrow_format::ipc::planus::Error),
     /// The record contains a number of buffers that does not match the required number by the data type
     ExpectedBuffer,
     /// A buffer's size is smaller than the required for the number of elements
@@ -82,9 +82,9 @@ pub enum OutOfSpecKind {
         number_of_bits: usize,
     },
     /// The dictionary is_delta is an invalid flatbuffer
-    InvalidFlatbufferIsDelta(arrow_format::ipc::planus::Error),
+    InvalidFlatbufferIsDelta(polars_arrow_format::ipc::planus::Error),
     /// The dictionary id is an invalid flatbuffer
-    InvalidFlatbufferId(arrow_format::ipc::planus::Error),
+    InvalidFlatbufferId(polars_arrow_format::ipc::planus::Error),
     /// Invalid dictionary id
     InvalidId {
         /// The requested dictionary id

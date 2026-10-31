@@ -73,6 +73,7 @@ pub trait DslResolverTrait {
         filters_eir: Buffer<ExprIR>,
         existing_resolved_version_key: Option<PlSmallStr>,
         expr_arena: &Arena<AExpr>,
+        resolver_schema: SchemaRef,
         #[cfg(feature = "python")] py_node_resolve_threadpool: Arc<
             polars_utils::python_thread_pool::PyThreadPool,
         >,
@@ -111,6 +112,7 @@ impl DslResolverTrait for DslResolver {
         filters_eir: Buffer<ExprIR>,
         existing_resolved_version_key: Option<PlSmallStr>,
         expr_arena: &Arena<AExpr>,
+        resolver_schema: SchemaRef,
         #[cfg(feature = "python")] py_node_resolve_threadpool: Arc<
             polars_utils::python_thread_pool::PyThreadPool,
         >,
@@ -122,6 +124,7 @@ impl DslResolverTrait for DslResolver {
                 filters_eir,
                 existing_resolved_version_key,
                 expr_arena,
+                resolver_schema,
                 py_node_resolve_threadpool,
             ),
             DslResolverVariant::Rust(()) => unimplemented!(),

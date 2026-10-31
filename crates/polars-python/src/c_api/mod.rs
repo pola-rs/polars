@@ -31,6 +31,8 @@ use crate::expr::PyExpr;
 use crate::expr::datatype::PyDataTypeExpr;
 use crate::expr::selector::PySelector;
 use crate::io::arrow_c_stream::PyArrowCStreamReader;
+#[cfg(feature = "parquet")]
+use crate::io::parquet_encryption::{PyFileDecryptionProperties, PyFileEncryptionProperties};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::lazyframe::PyInProcessQuery;
 use crate::lazyframe::{PyLazyFrame, PyOptFlags};
@@ -188,6 +190,8 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::sum_horizontal))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::cum_sum_horizontal))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::mean_horizontal))
         .unwrap();
 
@@ -242,6 +246,8 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::lit)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::map_expr))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::pipe_with_dtype))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::pearson_corr))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::rolling_corr))
@@ -289,6 +295,27 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     #[cfg(feature = "parquet")]
     m.add_wrapped(wrap_pyfunction!(functions::read_parquet_metadata))
         .unwrap();
+    #[cfg(all(feature = "cloud", feature = "parquet"))]
+    m.add_wrapped(wrap_pyfunction!(
+        crate::io::iceberg_plugin::_iceberg_plugin_scan
+    ))
+    .unwrap();
+    #[cfg(all(feature = "cloud", feature = "parquet"))]
+    m.add_class::<crate::io::iceberg_plugin::metadata_cache::PyIcebergMetadataFileCache>()
+        .unwrap();
+    #[cfg(all(feature = "cloud", feature = "parquet"))]
+    m.add(
+        "_IO_PLUGIN_IDS",
+        crate::io::iceberg_plugin::SUPPORTED_IDS
+            .iter()
+            .map(|id| id.as_str())
+            .collect::<Vec<_>>(),
+    )
+    .unwrap();
+    #[cfg(feature = "parquet")]
+    m.add_class::<PyFileDecryptionProperties>().unwrap();
+    #[cfg(feature = "parquet")]
+    m.add_class::<PyFileEncryptionProperties>().unwrap();
     #[cfg(all(feature = "parquet", feature = "json"))]
     m.add_wrapped(wrap_pyfunction!(
         functions::_bench_parquet_metadata_bincode_size

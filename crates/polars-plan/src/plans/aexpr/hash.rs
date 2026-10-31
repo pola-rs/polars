@@ -102,7 +102,8 @@ impl Hash for AExpr {
             AExpr::StructEval {
                 expr: _,
                 evaluation: _,
-            } => {},
+                variant,
+            } => variant.hash(state),
             AExpr::Slice {
                 input: _,
                 offset: _,

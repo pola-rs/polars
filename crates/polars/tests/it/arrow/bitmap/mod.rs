@@ -4,8 +4,8 @@ mod immutable;
 mod mutable;
 mod utils;
 
-use arrow::array::Splitable;
-use arrow::bitmap::Bitmap;
+use polars_arrow::array::Splitable;
+use polars_arrow::bitmap::Bitmap;
 use proptest::prelude::*;
 
 /// Returns a strategy of an arbitrary sliced [`Bitmap`] of size up to 1000

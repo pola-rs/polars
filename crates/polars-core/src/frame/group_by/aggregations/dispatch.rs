@@ -1,4 +1,4 @@
-use arrow::bitmap::bitmask::BitMask;
+use polars_arrow::bitmap::bitmask::BitMask;
 use polars_compute::unique::{AmortizedUnique, amortized_unique_from_dtype};
 
 use super::*;
@@ -10,6 +10,17 @@ use crate::prelude::row_encode::encode_rows_unordered;
 // out of the amortized hashset bounds its capacity, which avoids the
 // O(capacity) `.clear()` storm of polars#27655.
 const N_UNIQUE_SORT_FALLBACK_THRESHOLD: usize = 16384;
+
+/// Whether the nulls of `s`, if any, are all at its start or all at its end.
+pub(crate) fn nulls_at_one_end(s: &Series) -> bool {
+    let null_count = s.null_count();
+    if null_count == 0 {
+        return true;
+    }
+    let validity = s.rechunk_validity().unwrap();
+    let mask = BitMask::from_bitmap(&validity);
+    mask.leading_zeros() == null_count || mask.trailing_zeros() == null_count
+}
 
 // implemented on the series because we don't need types
 impl Series {
@@ -84,7 +95,8 @@ impl Series {
                 s.take_unchecked(&indices)
             },
         };
-        if groups.is_sorted_by_first_idx() {
+        // Empty groups can add nulls mid-column. Keep the flag only if the nulls are at one end.
+        if groups.is_sorted_by_first_idx() && nulls_at_one_end(&out) {
             out.set_sorted_flag(s.is_sorted_flag())
         }
         s.restore_logical(out)
@@ -141,7 +153,11 @@ impl Series {
         };
         // SAFETY: groups are always in bounds.
         let mut out = s.take_unchecked(&indices);
-        if matches!(groups, GroupsType::Slice { .. }) && !groups.is_overlapping() {
+        // Empty groups can add nulls mid-column. Keep the flag only if the nulls are at one end.
+        if matches!(groups, GroupsType::Slice { .. })
+            && !groups.is_overlapping()
+            && nulls_at_one_end(&out)
+        {
             out.set_sorted_flag(s.is_sorted_flag())
         }
         s.restore_logical(out)
@@ -619,7 +635,8 @@ impl Series {
         };
         // SAFETY: groups are always in bounds.
         let mut out = s.take_unchecked(&indices);
-        if groups.is_monotonic() {
+        // Empty groups can add nulls mid-column. Keep the flag only if the nulls are at one end.
+        if groups.is_monotonic() && nulls_at_one_end(&out) {
             out.set_sorted_flag(s.is_sorted_flag())
         }
         s.restore_logical(out)

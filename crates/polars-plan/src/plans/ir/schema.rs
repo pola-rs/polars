@@ -32,6 +32,7 @@ impl IR {
             Join { .. } => "join",
             Gather { .. } => "gather",
             HStack { .. } => "hstack",
+            Window { .. } => "window",
             Distinct { .. } => "distinct",
             MapFunction { .. } => "map_function",
             Union { .. } => "union",
@@ -46,6 +47,8 @@ impl IR {
             SimpleProjection { .. } => "simple_projection",
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => "merge_sorted",
+            Recursive { .. } => "recursive",
+            WorkingTableScan { .. } => "working_table_scan",
             UnoptimizedDispatch { .. } => "unoptimized_dispatch",
             Resolver { .. } => "resolver",
             Invalid => "invalid",
@@ -57,7 +60,7 @@ impl IR {
         let schema = match self {
             #[cfg(feature = "python")]
             PythonScan { options } => &options.schema,
-            DataFrameScan { schema, .. } => schema,
+            DataFrameScan { schema, .. } | WorkingTableScan { schema, .. } => schema,
             Scan { file_info, .. } => &file_info.schema,
             node => {
                 let input = node.get_input()?;
@@ -95,6 +98,7 @@ impl IR {
             GroupBy { schema, .. } => schema,
             Join { schema, .. } => schema,
             HStack { schema, .. } => schema,
+            Window { schema, .. } => schema,
             Distinct { input, .. }
             | Sink {
                 input,
@@ -114,6 +118,8 @@ impl IR {
             },
             #[cfg(feature = "merge_sorted")]
             MergeSorted { input_left, .. } => return arena.get(*input_left).schema(arena),
+            Recursive { anchor, .. } => return arena.get(*anchor).schema(arena),
+            WorkingTableScan { schema, .. } => schema,
             UnoptimizedDispatch {
                 inputs,
                 arg_map,
@@ -188,6 +194,7 @@ impl IR {
             | GroupBy { schema, .. }
             | Join { schema, .. }
             | HStack { schema, .. }
+            | Window { schema, .. }
             | SimpleProjection {
                 columns: schema, ..
             } => schema.clone(),
@@ -197,6 +204,8 @@ impl IR {
             },
             #[cfg(feature = "merge_sorted")]
             MergeSorted { input_left, .. } => IR::schema_with_cache(*input_left, arena, cache),
+            Recursive { anchor, .. } => IR::schema_with_cache(*anchor, arena, cache),
+            WorkingTableScan { schema, .. } => schema.clone(),
             UnoptimizedDispatch {
                 inputs,
                 arg_map,

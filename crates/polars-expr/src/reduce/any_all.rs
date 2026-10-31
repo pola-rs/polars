@@ -1,5 +1,5 @@
-use arrow::array::BooleanArray;
-use arrow::bitmap::binary_assign_mut;
+use polars_arrow::array::BooleanArray;
+use polars_arrow::bitmap::binary_assign_mut;
 
 use super::*;
 

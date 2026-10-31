@@ -1,12 +1,14 @@
 use std::fmt::Write;
 use std::hash::{Hash, Hasher};
 
+#[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
+use polars_core::chunked_array::temporal::string::infer::{
+    DatetimeInfer, TryFromWithUnit, infer_pattern_single,
+};
+#[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
+use polars_core::chunked_array::temporal::string::patterns::Pattern;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
-#[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
-use polars_time::prelude::string::Pattern;
-#[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
-use polars_time::prelude::string::infer::{DatetimeInfer, TryFromWithUnit, infer_pattern_single};
 use polars_utils::format_pl_smallstr;
 use simd_json::prelude::*;
 use simd_json::{BorrowedValue as Value, KnownKey, StaticNode};
@@ -52,6 +54,32 @@ impl Buffer<'_> {
                         polars_bail!(ComputeError: "cannot parse '{}' ({}) as Boolean", v, v.value_type())
                     },
                 }
+                Ok(())
+            },
+            #[cfg(feature = "dtype-i8")]
+            Int8(buf) => {
+                let v = deserialize_numeric::<Int8Type>(value, value.as_i8(), self.ignore_errors)?;
+                buf.append_option(v);
+                Ok(())
+            },
+            #[cfg(feature = "dtype-i16")]
+            Int16(buf) => {
+                let v =
+                    deserialize_numeric::<Int16Type>(value, value.as_i16(), self.ignore_errors)?;
+                buf.append_option(v);
+                Ok(())
+            },
+            #[cfg(feature = "dtype-u8")]
+            UInt8(buf) => {
+                let v = deserialize_numeric::<UInt8Type>(value, value.as_u8(), self.ignore_errors)?;
+                buf.append_option(v);
+                Ok(())
+            },
+            #[cfg(feature = "dtype-u16")]
+            UInt16(buf) => {
+                let v =
+                    deserialize_numeric::<UInt16Type>(value, value.as_u16(), self.ignore_errors)?;
+                buf.append_option(v);
                 Ok(())
             },
             Int32(buf) => {
@@ -135,7 +163,11 @@ impl Buffer<'_> {
                 builder.append_null();
                 Ok(())
             },
-            _ => panic!("unexpected dtype when deserializing ndjson"),
+            #[allow(unreachable_patterns)]
+            _ => polars_bail!(
+                ComputeError: "unsupported dtype for column '{}' when reading NDJSON",
+                self.name
+            ),
         }
     }
 

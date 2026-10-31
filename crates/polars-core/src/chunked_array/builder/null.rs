@@ -1,4 +1,4 @@
-use arrow::legacy::array::null::MutableNullArray;
+use polars_arrow::legacy::array::null::MutableNullArray;
 
 use super::*;
 use crate::series::implementations::null::NullChunked;

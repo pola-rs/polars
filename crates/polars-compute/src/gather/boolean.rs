@@ -1,5 +1,5 @@
-use arrow::array::{Array, BooleanArray, PrimitiveArray};
-use arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::array::{Array, BooleanArray, PrimitiveArray};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_utils::IdxSize;
 
 use super::bitmap::{take_bitmap_nulls_unchecked, take_bitmap_unchecked};

@@ -1,18 +1,21 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal as D
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLSyntaxError
+from polars.exceptions import InvalidOperationError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
 
 if TYPE_CHECKING:
     from typing import Literal
+
+    from polars._typing import EngineType
 
 
 @pytest.fixture
@@ -121,11 +124,204 @@ def test_group_by_all() -> None:
         {
             "sum_b": [9, 6, 6],
             "sum_c": [231, 165, 66],
-            "sum_bc_over_2": [120.0, 85.5, 36.0],
+            "sum_bc_over_2": [D("120.000000"), D("85.500000"), D("36.000000")],
             "grp": ["xx", "yy", "zz"],
-        }
+        },
+        schema_overrides={"sum_bc_over_2": pl.Decimal(38, 6)},
     )
     assert_frame_equal(expected, res.sort(by="grp"))
+
+
+@pytest.mark.parametrize(
+    "agg", ["CORR(x, y)", "COVAR_POP(x, y)", "QUANTILE_CONT(x, 0.5)"]
+)
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT g, {agg} AS a FROM t GROUP BY ALL ORDER BY g",
+        "SELECT g, {agg} AS a FROM t GROUP BY g ORDER BY {agg}, g",
+    ],
+)
+def test_group_by_aggregates_lowered_to_functions(agg: str, query: str) -> None:
+    # These aggregates lower to plain functions, not to aggregation expressions.
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 2, 2, 2],
+            "x": [3.0, 1.0, 2.0, 5.0, 4.0],
+            "y": [1.0, 2.0, 2.0, 1.0, 3.0],
+        }
+    )
+    assert_sql_matches(
+        {"t": df},
+        query=query.format(agg=agg),
+        compare_with="duckdb",
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        'SELECT g AS "__POLARS_AGGREGATE" FROM t ORDER BY "__POLARS_AGGREGATE"',
+        'SELECT g, SUM(x) AS "__POLARS_AGGREGATE" FROM t GROUP BY g ORDER BY g',
+        'SELECT SUM(x) AS "__POLARS_AGGREGATE", COUNT(*) OVER () AS n FROM t',
+    ],
+)
+def test_alias_named_like_internal_column(query: str) -> None:
+    df = pl.DataFrame({"g": [1, 2, 2], "x": [1, 2, 3]})
+    assert_sql_matches({"t": df}, query=query, compare_with="duckdb")
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT g, SUM(MAX(x)) FROM self GROUP BY g",
+        "SELECT SUM(x) + AVG(COUNT(*)) FROM self",
+        "SELECT g FROM self GROUP BY g HAVING SUM(MAX(x)) > 1",
+        "SELECT g FROM self GROUP BY g ORDER BY SUM(MAX(x))",
+        "SELECT g FROM self WHERE g = 1 GROUP BY g ORDER BY SUM(MAX(x))",
+        "SELECT SUM(x) FROM self ORDER BY SUM(MAX(x))",
+    ],
+)
+def test_nested_aggregates_error(query: str) -> None:
+    df = pl.DataFrame({"g": [1, 2, 2], "x": [1, 2, 3]})
+    with pytest.raises(
+        SQLSyntaxError, match="aggregate function calls cannot be nested"
+    ):
+        df.sql(query)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT g FROM t GROUP BY g HAVING g IS NOT NULL ORDER BY g",
+        "SELECT g, SUM(x) AS sx FROM t GROUP BY g HAVING g > 1 AND SUM(x) > 0",
+        "SELECT g + 1 AS k FROM t GROUP BY k HAVING k > 2",
+        "SELECT g, s FROM t GROUP BY g, s HAVING s LIKE 'b%' OR g IS NULL ORDER BY g",
+        "SELECT g FROM t GROUP BY g HAVING MAX(x) > g + 1",
+    ],
+)
+def test_having_on_group_key(query: str) -> None:
+    df = pl.DataFrame(
+        {"g": [1, 2, 2, None], "s": ["a", "b", "b", "c"], "x": [1, 2, 3, 4]}
+    )
+    assert_sql_matches({"t": df}, query=query, compare_with="duckdb")
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT SUM(x), x FROM self",
+        "SELECT x / SUM(x) FROM self",
+        "SELECT *, COUNT(*) FROM self",
+        "SELECT * EXCLUDE (g), SUM(x) AS s FROM self",
+        "SELECT * EXCLUDE (g) REPLACE (x + SUM(x) AS x) FROM self",
+        "SELECT SUM(x) FROM self HAVING x > 1",
+        "SELECT x + 1 FROM self HAVING SUM(x) > 1",
+        "SELECT x + SUM(x) FROM self HAVING TRUE",
+        "SELECT ABS(x) FROM self HAVING TRUE",
+    ],
+)
+def test_column_outside_aggregate_without_group_by_error(query: str) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3], "g": [1, 1, 2]})
+    with pytest.raises(SQLSyntaxError, match="'x' should participate in the GROUP BY"):
+        df.sql(query)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT g FROM self GROUP BY g HAVING x > 1",
+        "SELECT g FROM self GROUP BY g HAVING g + x > 1",
+        "SELECT g FROM self GROUP BY GROUPING SETS ((g), ()) HAVING x > 1",
+        "SELECT g, SUM(x), x + 1 FROM self GROUP BY g",
+        "SELECT g, x + SUM(x) FROM self GROUP BY g",
+        "SELECT g, ABS(x) FROM self GROUP BY g",
+    ],
+)
+def test_column_outside_aggregate_with_group_by_error(query: str) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3], "g": [1, 1, 2]})
+    with pytest.raises(SQLSyntaxError, match="'x' should participate in the GROUP BY"):
+        df.sql(query)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT SUM(x) AS s FROM self HAVING SUM(x) > 1",
+        "SELECT SUM(x) AS s FROM self HAVING s > 100",
+        "SELECT COUNT(*) AS n FROM self WHERE x > 10 HAVING COUNT(*) = 0",
+        "SELECT 1 AS a FROM self HAVING COUNT(*) > 1",
+        "SELECT 1 AS a FROM self HAVING 1 = 0",
+        "SELECT SUM(x) AS s FROM self HAVING SUM((SELECT 1)) = 3",
+        "SELECT SUM(x) AS s, COUNT(*) OVER () AS w FROM self HAVING SUM(x) > 1",
+        "SELECT SUM(x) AS s FROM self HAVING NULL",
+    ],
+)
+def test_having_without_group_by(query: str) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3], "g": [1, 1, 2]})
+    assert_sql_matches(
+        df, query=query, compare_with="duckdb", engines=["in-memory", "streaming"]
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT g, SUM(x) AS s FROM self GROUP BY g ORDER BY SUM((SELECT 1)), g",
+        "SELECT g, SUM(x) AS s FROM self GROUP BY g ORDER BY MAX(x) + (SELECT 10) DESC",
+        "SELECT g, SUM(x) AS s FROM self GROUP BY GROUPING SETS ((g), ()) ORDER BY SUM((SELECT 1)), g",
+        "SELECT g, SUM(x) AS s FROM self GROUP BY GROUPING SETS ((g), ()) HAVING SUM((SELECT 1)) > 1 ORDER BY g",
+    ],
+)
+def test_subquery_in_aggregate_after_group_by(query: str) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3], "g": [1, 1, 2]})
+    assert_sql_matches(
+        df, query=query, compare_with="duckdb", engines=["in-memory", "streaming"]
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT COUNT(*) AS n FROM self WHERE x > 5 HAVING (SELECT 1) = 1",
+        "SELECT COUNT(*) AS n, (SELECT 1) AS s FROM self WHERE x > 5",
+        "SELECT COUNT(*) AS n, (SELECT 1) + COUNT(*) AS s FROM self WHERE x > 5",
+        "SELECT SUM(x) AS s, SUM((SELECT 1)) OVER () AS w FROM self WHERE x > 5",
+        "SELECT COUNT(*) AS n FROM (SELECT (SELECT 1) AS s FROM self WHERE x > 5)",
+    ],
+)
+def test_subquery_without_input_rows(query: str) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3], "g": [1, 1, 2]})
+    assert_sql_matches(
+        df, query=query, compare_with="duckdb", engines=["in-memory", "streaming"]
+    )
+
+
+def test_aggregate_with_excluded_columns() -> None:
+    df = pl.DataFrame({"g": [1, 1, 2], "x": [3, 1, 2]})
+    assert_sql_matches(
+        df,
+        query="SELECT * EXCLUDE (g, x), SUM(x) AS s FROM self",
+        compare_with="duckdb",
+        expected={"s": [6]},
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT * EXCLUDE (g) REPLACE (SUM(x) AS x) FROM self",
+        "SELECT * EXCLUDE (g) REPLACE (SUM(x) AS x) FROM self ORDER BY x",
+        "SELECT * EXCLUDE (g) REPLACE (SUM(x) + 1 AS x) FROM self WHERE g > 5",
+        "SELECT * REPLACE (MAX(g) AS g, SUM(x) AS x) FROM self",
+        "SELECT * EXCLUDE (g, x), SUM(x) AS s FROM self ORDER BY s",
+        "SELECT * REPLACE (MAX(x) AS x) FROM self GROUP BY g ORDER BY g",
+        "SELECT * REPLACE (x + 1 AS x) FROM self GROUP BY ALL ORDER BY ALL",
+    ],
+)
+def test_replace_with_aggregates(query: str) -> None:
+    df = pl.DataFrame({"g": [1, 1, 2], "x": [3, 1, 2]})
+    assert_sql_matches(df, query=query, compare_with="duckdb")
 
 
 def test_group_by_all_multi() -> None:
@@ -245,7 +441,7 @@ def test_group_by_errors() -> None:
 
     with pytest.raises(
         SQLSyntaxError,
-        match=r"HAVING clause not valid outside of GROUP BY",
+        match=r"'a' should participate in the GROUP BY clause or an aggregate function",
     ):
         df.sql("SELECT a, COUNT(a) AS n FROM self HAVING n > 1")
 
@@ -654,6 +850,35 @@ def test_group_by_computed_key_repeated_27735(query: str) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT ip, ip - 1, ip - 2, COUNT(*) AS c FROM self GROUP BY ip, ip - 1, ip - 2 ORDER BY c DESC, ip",
+        "SELECT ip - 1, ip, COUNT(*) AS c FROM self GROUP BY ip - 1, ip ORDER BY ip",
+        "SELECT ip, ip - 1, COUNT(*) AS c FROM self GROUP BY 1, 2 ORDER BY ip - 1",
+        "SELECT ip, ip - 1 AS m, COUNT(*) AS c FROM self GROUP BY ip, ip - 1 HAVING ip - 1 > 0 ORDER BY ip",
+        "SELECT ip, COUNT(*) AS c FROM self GROUP BY ip, ip ORDER BY ip",
+        "SELECT COUNT(*) AS c FROM self GROUP BY ip, ip - 1 ORDER BY c",
+        "SELECT ip, ip - 1, COUNT(*) AS c FROM self GROUP BY ALL ORDER BY ip",
+        "SELECT (ip * 2) + 1 AS y, COUNT(*) AS c FROM self GROUP BY ip * 2 ORDER BY y",
+        "SELECT ip % 3 AS x, (ip % 2) + 10 AS y FROM self GROUP BY ip % 3, ip % 2 ORDER BY x, y",
+        "SELECT ip % 3 AS x, ip % 2 AS y FROM self GROUP BY ip % 3, ip % 2 ORDER BY ip % 2, x",
+        "SELECT ip % 3 AS x, (ip % 2) * COUNT(*) AS y FROM self GROUP BY ip % 3, ip % 2 ORDER BY x, y",
+        "SELECT ip * 2 AS x, COUNT(*) AS c FROM self GROUP BY ip * 2 HAVING ip * 2 + 1 > 4 ORDER BY x",
+        "SELECT ip * 2 AS x, SUM(COUNT(*)) OVER (PARTITION BY (ip * 2) % 4) AS w FROM self GROUP BY ip * 2 ORDER BY x",
+        "SELECT ip * 2 AS x, COUNT(*) AS c FROM self GROUP BY ROLLUP (ip * 2) ORDER BY ip * 2 NULLS FIRST",
+    ],
+)
+def test_group_by_computed_keys(query: str) -> None:
+    df = pl.DataFrame({"ip": [0, 1, 2, 2, 3, 3, 3, 4]})
+    assert_sql_matches(
+        frames=df,
+        query=query,
+        compare_with="duckdb",
+        check_column_names=False,
+    )
+
+
 def test_group_by_empty_or_scalar_key_exprs_23397() -> None:
     lf = pl.LazyFrame({"a": [0, 1, 2, 3, 4]})
 
@@ -756,6 +981,7 @@ def test_sum_and_total_28434() -> None:
     assert_frame_equal(
         all_null.sql("SELECT SUM(a) AS s, TOTAL(a) AS t FROM self"), expected
     )
+    # a window keeps one row per input row
     assert_frame_equal(
         all_null.sql("""
             SELECT
@@ -763,7 +989,7 @@ def test_sum_and_total_28434() -> None:
               TOTAL(a) OVER () AS t,
             FROM self
         """),
-        expected,
+        pl.concat([expected, expected]),
     )
 
     # all-null group -> (NULL, 0.0); a group with values sums identically for both
@@ -961,3 +1187,481 @@ def test_group_by_relation_alias_key_projected_unqualified() -> None:
         compare_with="duckdb",
         expected={"city": ["c", "d"], "n": [1, 2]},
     )
+
+
+def test_group_by_approx_quantile() -> None:
+    # small groups are exact, so the approximation is checked against known values
+    df = pl.DataFrame(
+        {
+            "g": ["a"] * 5 + ["b"] * 5,
+            "x": [1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 20.0, 30.0, 40.0, 50.0],
+        }
+    )
+    assert_sql_matches(
+        df,
+        query="""
+            SELECT g, APPROX_QUANTILE(x, 0.5) AS q FROM self
+            GROUP BY g ORDER BY g
+        """,
+        compare_with=None,
+        expected={"g": ["a", "b"], "q": [3.0, 30.0]},
+    )
+
+
+def test_group_by_approx_quantile_having() -> None:
+    df = pl.DataFrame(
+        {
+            "g": ["a"] * 5 + ["b"] * 5,
+            "x": [1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 20.0, 30.0, 40.0, 50.0],
+        }
+    )
+    assert_sql_matches(
+        df,
+        query="""
+            SELECT g FROM self
+            GROUP BY g HAVING APPROX_QUANTILE(x, 0.5) > 10 ORDER BY g
+        """,
+        compare_with=None,
+        expected={"g": ["b"]},
+    )
+
+
+@pytest.mark.parametrize("quantile", [0.25, 0.5, 0.75])
+def test_approx_quantile_matches_expr_api(quantile: float) -> None:
+    df = pl.DataFrame({"x": [1000.0, 2000.0, 3000.0, 4000.0, 5000.0, 6000.0]})
+    assert_frame_equal(
+        df.sql(f"SELECT APPROX_QUANTILE(x, {quantile}) AS q FROM self"),
+        df.select(pl.col("x").approx_quantile(quantile).alias("q")),
+    )
+    assert_frame_equal(
+        df.sql(f"SELECT APPROX_QUANTILE(x, {quantile}, 0.01) AS q FROM self"),
+        df.select(pl.col("x").approx_quantile(quantile, error=0.01).alias("q")),
+    )
+
+
+@pytest.mark.parametrize("method", ["auto", "kll", "req_lo", "req_hi", "req_both"])
+def test_approx_quantile_method_arg(method: str) -> None:
+    df = pl.DataFrame({"x": [1.0, 2.0, 3.0, 4.0, 5.0]})
+    assert_frame_equal(
+        df.sql(f"SELECT APPROX_QUANTILE(x, 0.5, 0.01, '{method}') AS q FROM self"),
+        df.select(
+            pl.col("x").approx_quantile(0.5, error=0.01, method=method).alias("q")  # type: ignore[arg-type]
+        ),
+    )
+
+
+@pytest.mark.parametrize("quantile", ["-1", "2", "-0.01", "1.01", "1.5"])
+def test_approx_quantile_out_of_range(quantile: str) -> None:
+    df = pl.DataFrame({"x": [1.0, 2.0, 3.0]})
+    with pytest.raises(
+        SQLSyntaxError, match="APPROX_QUANTILE value must be between 0 and 1"
+    ):
+        df.sql(f"SELECT APPROX_QUANTILE(x, {quantile}) FROM self")
+
+
+@pytest.mark.parametrize("error", ["0.0", "1.0", "2.0", "-0.1", "-1"])
+def test_approx_quantile_bad_error(error: str) -> None:
+    df = pl.DataFrame({"x": [1.0, 2.0, 3.0]})
+    with pytest.raises(InvalidOperationError, match="`error` must be in the range"):
+        df.sql(f"SELECT APPROX_QUANTILE(x, 0.5, {error}) FROM self")
+
+
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [
+        ("x, 0.5", 3.0),
+        ("x, 0.5, 0.01", 3.0),
+        ("x, 0.5, 0.01, 'kll'", 3.0),
+        ("x, 0.99, 0.01, 'req_hi'", 5.0),
+    ],
+)
+def test_approx_quantile_optional_args(args: str, expected: float) -> None:
+    df = pl.DataFrame({"x": [1.0, 2.0, 3.0, 4.0, 5.0]})
+    assert_sql_matches(
+        df,
+        query=f"SELECT APPROX_QUANTILE({args}) AS q FROM self",
+        compare_with=None,
+        expected={"q": [expected]},
+    )
+
+
+@pytest.mark.parametrize(
+    ("query", "exc", "match"),
+    [
+        (
+            "SELECT APPROX_QUANTILE(x, y) FROM self",
+            SQLSyntaxError,
+            "invalid value for APPROX_QUANTILE",
+        ),
+        (
+            "SELECT APPROX_QUANTILE(x) FROM self",
+            SQLSyntaxError,
+            "APPROX_QUANTILE expects 2-4 arguments",
+        ),
+        (
+            "SELECT APPROX_QUANTILE(x, 0.5, 0.01, 'kll', 1) FROM self",
+            SQLSyntaxError,
+            "APPROX_QUANTILE expects 2-4 arguments",
+        ),
+        (
+            "SELECT APPROX_QUANTILE(x, 0.5, 0.01, 'nope') FROM self",
+            InvalidOperationError,
+            "`method` must be one of",
+        ),
+        (
+            "SELECT APPROX_QUANTILE(x, 0.5, y) FROM self",
+            SQLSyntaxError,
+            "invalid error value for APPROX_QUANTILE",
+        ),
+    ],
+)
+def test_approx_quantile_invalid_args(
+    query: str, exc: type[Exception], match: str
+) -> None:
+    df = pl.DataFrame({"x": [1.0, 2.0, 3.0], "y": [0.5, 0.5, 0.5]})
+    with pytest.raises(exc, match=match):
+        df.sql(query)
+
+
+GROUP_BY_ENGINES: list[EngineType] = ["in-memory", "streaming"]
+
+
+def assert_group_by_matches(
+    frame: pl.DataFrame,
+    query: str,
+    expected: pl.DataFrame,
+    *,
+    compare_with_duckdb: bool = True,
+) -> None:
+    """Run `query` on both engines and require the exact `expected` frame."""
+    assert_sql_matches(
+        {"t": frame},
+        query=query,
+        compare_with=None,
+        expected=expected,
+        check_dtypes=True,
+        engines=GROUP_BY_ENGINES,
+    )
+    if compare_with_duckdb:
+        # DuckDB names and types literals differently; only the values matter
+        assert_sql_matches(
+            {"t": frame},
+            query=query,
+            compare_with="duckdb",
+            check_column_names=False,
+        )
+
+
+@pytest.fixture
+def grouped() -> pl.DataFrame:
+    return pl.DataFrame({"a": [0, 0, 1, 2, 2], "b": [1, 2, 3, 4, 5]})
+
+
+def test_group_by_unaliased_constant(grouped: pl.DataFrame) -> None:
+    # https://github.com/pola-rs/polars/issues/29346
+    assert_group_by_matches(
+        grouped,
+        "SELECT 2 FROM t GROUP BY a",
+        pl.DataFrame({"literal": [2, 2, 2]}, schema={"literal": pl.Int32}),
+    )
+    # aliased constants keep working
+    assert_group_by_matches(
+        grouped,
+        "SELECT 2 AS two FROM t GROUP BY a",
+        pl.DataFrame({"two": [2, 2, 2]}, schema={"two": pl.Int32}),
+    )
+
+
+@pytest.mark.parametrize(
+    ("constant", "value", "dtype"),
+    [
+        ("2", 2, pl.Int32),
+        ("2.5", D("2.5"), pl.Decimal(2, 1)),
+        ("TRUE", True, pl.Boolean),
+        ("'x'", "x", pl.String),
+        ("NULL", None, pl.Null),
+        ("1 + 2", 3, pl.Int32),
+        ("ABS(-3)", 3, pl.Int32),
+        ("COALESCE(NULL, 4)", 4, pl.Int32),
+        ("2 BETWEEN 1 AND 3", True, pl.Boolean),
+        ("2 IN (1, 2)", True, pl.Boolean),
+    ],
+)
+def test_group_by_composed_constants(
+    grouped: pl.DataFrame,
+    constant: str,
+    value: object,
+    dtype: pl.DataType,
+) -> None:
+    assert_group_by_matches(
+        grouped,
+        f"SELECT {constant} FROM t GROUP BY a",
+        pl.DataFrame({"literal": [value] * 3}, schema={"literal": dtype}),
+        compare_with_duckdb=False,
+    )
+
+
+def test_group_by_constants_with_keys_and_aggregates(grouped: pl.DataFrame) -> None:
+    assert_group_by_matches(
+        grouped,
+        "SELECT 2, a, 'x', COUNT(*) AS n, 3 FROM t GROUP BY a ORDER BY a",
+        pl.DataFrame(
+            {
+                "literal": [2, 2, 2],
+                "a": [0, 1, 2],
+                "literal:1": ["x", "x", "x"],
+                "n": [2, 1, 2],
+                "literal:2": [3, 3, 3],
+            },
+            schema={
+                "literal": pl.Int32,
+                "a": pl.Int64,
+                "literal:1": pl.String,
+                "n": pl.Int64,
+                "literal:2": pl.Int32,
+            },
+        ),
+    )
+    # ordering by a group key that is not selected
+    assert_group_by_matches(
+        grouped,
+        "SELECT 2, SUM(b) AS s FROM t GROUP BY a ORDER BY a DESC",
+        pl.DataFrame(
+            {"literal": [2, 2, 2], "s": [9, 3, 3]},
+            schema={"literal": pl.Int32, "s": pl.Int64},
+        ),
+    )
+    # computed key
+    assert_group_by_matches(
+        grouped,
+        "SELECT 2, a + 1 AS a1 FROM t GROUP BY a + 1 ORDER BY a1",
+        pl.DataFrame(
+            {"literal": [2, 2, 2], "a1": [1, 2, 3]},
+            schema={"literal": pl.Int32, "a1": pl.Int64},
+        ),
+    )
+
+
+def test_group_by_constant_argument_aggregates(grouped: pl.DataFrame) -> None:
+    # aggregates over constants still run in the group context, also those
+    # that lower to plain functions rather than `Expr::Agg` (COVAR_POP)
+    assert_group_by_matches(
+        grouped,
+        "SELECT a, COVAR_POP(1, 2), AVG(1), MIN(3), 7 FROM t GROUP BY a ORDER BY a",
+        pl.DataFrame(
+            {
+                "a": [0, 1, 2],
+                "literal": [0.0, 0.0, 0.0],
+                "literal:1": [1.0, 1.0, 1.0],
+                "literal:2": [3, 3, 3],
+                "literal:3": [7, 7, 7],
+            },
+            schema={
+                "a": pl.Int64,
+                "literal": pl.Float64,
+                "literal:1": pl.Float64,
+                "literal:2": pl.Int32,
+                "literal:3": pl.Int32,
+            },
+        ),
+    )
+    plan = pl.SQLContext(t=grouped).execute(
+        "SELECT a, COVAR_POP(1, 2) FROM t GROUP BY a"
+    )
+    assert "covariance" in plan.explain(optimized=False).split("AGGREGATE")[1]
+    assert "covariance" not in plan.explain(optimized=False).split("AGGREGATE")[0]
+
+
+def test_group_by_constants_empty_and_having(grouped: pl.DataFrame) -> None:
+    empty = pl.DataFrame({"literal": []}, schema={"literal": pl.Int32})
+    assert_group_by_matches(grouped.clear(), "SELECT 2 FROM t GROUP BY a", empty)
+    assert_group_by_matches(
+        grouped, "SELECT 2 FROM t GROUP BY a HAVING COUNT(*) > 10", empty
+    )
+    assert_group_by_matches(
+        grouped,
+        "SELECT 2 FROM t GROUP BY a HAVING COUNT(*) > 1",
+        pl.DataFrame({"literal": [2, 2]}, schema={"literal": pl.Int32}),
+    )
+
+
+def test_group_by_constant_named_like_key() -> None:
+    frame = pl.DataFrame({"literal": [0, 0, 1]})
+    assert_group_by_matches(
+        frame,
+        "SELECT 2 FROM t GROUP BY literal",
+        pl.DataFrame({"literal": [2, 2]}, schema={"literal": pl.Int32}),
+    )
+    assert_group_by_matches(
+        frame,
+        "SELECT literal, 2 FROM t GROUP BY literal ORDER BY literal",
+        pl.DataFrame(
+            {"literal": [0, 1], "literal:1": [2, 2]},
+            schema={"literal": pl.Int64, "literal:1": pl.Int32},
+        ),
+    )
+    assert_group_by_matches(
+        frame,
+        "SELECT 2, literal FROM t GROUP BY literal ORDER BY 2",
+        pl.DataFrame(
+            {"literal": [2, 2], "literal:1": [0, 1]},
+            schema={"literal": pl.Int32, "literal:1": pl.Int64},
+        ),
+        compare_with_duckdb=False,
+    )
+
+
+def test_group_by_empty_grouping_constant(grouped: pl.DataFrame) -> None:
+    one_row = pl.DataFrame({"literal": [2]}, schema={"literal": pl.Int32})
+    assert_group_by_matches(grouped, "SELECT 2 FROM t GROUP BY ()", one_row)
+    assert_group_by_matches(grouped.clear(), "SELECT 2 FROM t GROUP BY ()", one_row)
+    assert_group_by_matches(
+        grouped,
+        "SELECT 2, COUNT(*) AS n FROM t GROUP BY ()",
+        pl.DataFrame(
+            {"literal": [2], "n": [5]}, schema={"literal": pl.Int32, "n": pl.Int64}
+        ),
+    )
+
+
+def test_having_reads_alias_types() -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 2],
+            "d": [date(2024, 5, 17), date(2024, 6, 2), date(2024, 4, 1)],
+            "s": ["2024-05-17", "2024-06-02", "2024-04-01"],
+        }
+    )
+    for having in [
+        "m + 1 > DATE '2024-05-01'",
+        "m > '2024-05-01'",
+        "DATE_TRUNC('month', m + 1) > DATE '2024-05-01'",
+    ]:
+        out = df.sql(f"SELECT g, MAX(d) AS m FROM self GROUP BY g HAVING {having}")
+        assert out.rows() == [(1, date(2024, 6, 2))]
+
+    out = df.sql(
+        """
+        SELECT g, MAX(s) AS m FROM self GROUP BY g
+        HAVING CAST(m AS DATE) > DATE '2024-05-01'
+        """
+    )
+    assert out.rows() == [(1, "2024-06-02")]
+
+
+def test_having_alias_types_in_comparisons() -> None:
+    t = pl.DataFrame(
+        {"g": [1, 1, 2], "e": ["c", "b", "a"], "s": ["1", "x", "2"]},
+        schema_overrides={"e": pl.Enum(["c", "b", "a"])},
+    )
+    r = pl.DataFrame({"s": ["a", "c"]})
+    ctx = pl.SQLContext(t=t, r=r)
+
+    # Enum order, not string order.
+    out = ctx.execute(
+        """
+        SELECT g, MAX(e) AS m FROM t GROUP BY g
+        HAVING m > ANY(SELECT s FROM r) ORDER BY g
+        """,
+        eager=True,
+    )
+    assert out.rows() == [(1, "b"), (2, "a")]
+
+    out = ctx.execute(
+        "SELECT g, MIN(s) AS m FROM t GROUP BY g HAVING m = 1", eager=True
+    )
+    assert out.rows() == [(1, "1")]
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT g, PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY x) AS p FROM t GROUP BY g",
+        "SELECT g, PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x) AS p FROM t GROUP BY g",
+        "SELECT g, PERCENTILE_CONT(0) WITHIN GROUP (ORDER BY x ASC) AS p FROM t GROUP BY g",
+        "SELECT PERCENTILE_CONT(1) WITHIN GROUP (ORDER BY x NULLS FIRST) AS p FROM t",
+        "SELECT PERCENTILE_DISC(1) WITHIN GROUP (ORDER BY x) AS p FROM t",
+        "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x * 2 + 1) AS p FROM t",
+        "SELECT g, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY 7) AS p FROM t GROUP BY g",
+        "SELECT g, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY n) AS p FROM t GROUP BY g",
+        (
+            "SELECT g, PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY x) "
+            "FILTER (WHERE x > 1) AS p FROM t GROUP BY g"
+        ),
+        "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x) AS p FROM t WHERE FALSE",
+        (
+            "SELECT g, PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x) AS p "
+            "FROM t WHERE FALSE GROUP BY g"
+        ),
+        (
+            "SELECT EXISTS (SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY u.x) "
+            "FROM t AS u WHERE FALSE) AS e FROM t"
+        ),
+    ],
+)
+def test_percentile_within_group(query: str) -> None:
+    t = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 1, 2, 2, 2, 3],
+            "x": [1, 2, 3, 4, 5, None, 1, None],
+            "n": [None, None, None, None, None, None, None, None],
+        },
+        schema_overrides={"n": pl.Int64},
+    )
+    assert_sql_matches(
+        frames={"t": t},
+        query=query,
+        compare_with="duckdb",
+        check_dtypes=False,
+        check_row_order=False,
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_percentile_within_group_over(engine: EngineType) -> None:
+    t = pl.DataFrame({"g": [1, 1, 1, 2, 2], "x": [3, 1, 2, 5, None]})
+    ctx = pl.SQLContext(t=t)
+    res = ctx.execute(
+        "SELECT g, x, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x) "
+        "OVER (PARTITION BY g) AS p, PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x) "
+        "OVER (PARTITION BY g) AS d FROM t"
+    ).collect(engine=engine)
+    expected = ctx.execute(
+        "SELECT g, x, QUANTILE_CONT(x, 0.5) OVER (PARTITION BY g) AS p, "
+        "QUANTILE_DISC(x, 0.5) OVER (PARTITION BY g) AS d FROM t"
+    ).collect(engine=engine)
+    assert_frame_equal(res, expected)
+
+
+@pytest.mark.parametrize(
+    ("clause", "err"),
+    [
+        ("PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x DESC)", "ascending"),
+        ("PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x DESC)", "ascending"),
+        ("PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x, g)", "expects one argument"),
+        ("PERCENTILE_CONT(0.5)", "expects one argument"),
+        ("PERCENTILE_CONT(x, 0.5)", "expects one argument"),
+        ("PERCENTILE_CONT(1.5) WITHIN GROUP (ORDER BY x)", "between 0 and 1"),
+        ("QUANTILE_CONT(x, 0.5) WITHIN GROUP (ORDER BY x)", "WITHIN GROUP"),
+        (
+            "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x) FILTER (WHERE x > 1) "
+            "OVER (PARTITION BY g)",
+            "FILTER",
+        ),
+        (
+            "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x) OVER (ORDER BY g)",
+            "ORDER BY in OVER",
+        ),
+        # The aggregate reads only the outer query.
+        (
+            "EXISTS (SELECT PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY t.x) "
+            "FROM t AS u WHERE FALSE)",
+            "EXISTS",
+        ),
+    ],
+)
+def test_percentile_within_group_errors(clause: str, err: str) -> None:
+    t = pl.DataFrame({"g": [1, 2], "x": [1, 2]})
+    with pytest.raises(Exception, match=err):
+        pl.SQLContext(t=t).execute(f"SELECT {clause} AS p FROM t", eager=True)

@@ -1,5 +1,5 @@
 //! Traits for miscellaneous operations on ChunkedArray
-use arrow::offset::OffsetsBuffer;
+use polars_arrow::offset::OffsetsBuffer;
 use polars_compute::rolling::QuantileMethod;
 
 use crate::prelude::*;
@@ -11,6 +11,7 @@ mod apply;
 #[cfg(feature = "approx_unique")]
 mod approx_n_unique;
 pub mod arity;
+pub mod binning;
 mod bit_repr;
 mod bits;
 #[cfg(feature = "bitwise")]
@@ -46,6 +47,7 @@ pub mod zip;
 
 pub use bit_repr::reinterpret;
 pub use chunkops::_set_check_length;
+pub use explode::explode_with_row_offsets;
 pub use nesting_utils::ChunkNestingUtils;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};

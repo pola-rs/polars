@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek};
 
-use arrow_format::ipc::{BodyCompressionRef, MetadataVersion};
+use polars_arrow_format::ipc::{BodyCompressionRef, MetadataVersion};
 use polars_error::PolarsResult;
 use polars_utils::bool::UnsafeBool;
 

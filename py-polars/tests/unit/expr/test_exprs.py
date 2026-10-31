@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import math
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from itertools import permutations
 from typing import TYPE_CHECKING, Any, cast
 from zoneinfo import ZoneInfo
@@ -15,6 +16,7 @@ from polars.exceptions import (
     ArgumentRemovedError,
     AttributeRemovedError,
     ChronoFormatWarning,
+    ComputeError,
 )
 from polars.expr.string import _validate_format_argument
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -28,6 +30,8 @@ from tests.unit.conftest import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import PolarsDataType
 
 
@@ -130,20 +134,59 @@ def test_unique_stable() -> None:
     assert_series_equal(s.unique(maintain_order=True), expected)
 
 
-def test_entropy() -> None:
-    df = pl.DataFrame(
-        {
-            "group": ["A", "A", "A", "B", "B", "B", "B", "C"],
-            "id": [1, 2, 1, 4, 5, 4, 6, 7],
-        }
-    )
-    result = df.group_by("group", maintain_order=True).agg(
-        pl.col("id").entropy(normalize=True)
-    )
-    expected = pl.DataFrame(
-        {"group": ["A", "B", "C"], "id": [1.0397207708399179, 1.371381017771811, 0.0]}
-    )
-    assert_frame_equal(result, expected)
+@pytest.mark.parametrize(
+    ("dtype_in", "dtype_out"),
+    [
+        (pl.Int32, pl.Float64),
+        (pl.Int64, pl.Float64),
+        (pl.UInt8, pl.Float64),
+        (pl.Float16, pl.Float16),
+        (pl.Float32, pl.Float32),
+        (pl.Float64, pl.Float64),
+        (pl.Decimal(10, 2), pl.Float64),
+    ],
+)
+@pytest.mark.parametrize("normalize", [True, False])
+def test_entropy_dtypes(
+    dtype_in: PolarsDataType, dtype_out: PolarsDataType, normalize: bool
+) -> None:
+    a = pl.Series("a", [1, 3, 9, 4, 10], dtype=dtype_in)
+    lf = pl.LazyFrame([a])
+
+    a_np = a.cast(pl.Float64).to_numpy()
+    if normalize:
+        a_np = a_np / a_np.sum()
+    expected = -np.sum(a_np * np.log(a_np))
+
+    result = lf.select(pl.col("a").entropy(normalize=normalize))
+    assert result.collect_schema() == pl.Schema({"a": dtype_out})
+    assert result.collect_schema() == result.collect().schema
+    rel = 1e-2 if dtype_in == pl.Float16 else 1e-6
+    assert result.collect().item() == pytest.approx(expected, rel=rel)
+
+
+@pytest.mark.parametrize(
+    "s",
+    [
+        pl.Series("a", [date(2020, 1, 1), date(2021, 1, 1)]),
+        pl.Series("a", [datetime(2020, 1, 1), datetime(2021, 1, 1)]),
+        pl.Series("a", [timedelta(days=1), timedelta(days=2)]),
+        pl.Series("a", [time(1, 0), time(2, 0)]),
+        pl.Series("a", ["x", "y"], dtype=pl.Categorical),
+        pl.Series("a", ["x", "y"]),
+    ],
+)
+def test_entropy_invalid_dtype(s: pl.Series) -> None:
+    lf = pl.LazyFrame([s])
+    q = lf.select(pl.col("a").entropy())
+
+    # planner: schema resolution must reject the input dtype
+    with pytest.raises(InvalidOperationError):
+        q.collect_schema()
+
+    # engine: execution must error rather than compute on the physical repr
+    with pytest.raises(InvalidOperationError):
+        q.collect()
 
 
 @pytest.mark.parametrize(
@@ -229,26 +272,64 @@ def test_log(
     ("dtype_in", "dtype_out"),
     [
         (pl.Int32, pl.Float64),
+        (pl.Int64, pl.Float64),
+        (pl.UInt8, pl.Float64),
         (pl.Float16, pl.Float16),
         (pl.Float32, pl.Float32),
         (pl.Float64, pl.Float64),
+        (pl.Decimal(10, 2), pl.Float64),
     ],
 )
 def test_exp_log1p(dtype_in: PolarsDataType, dtype_out: PolarsDataType) -> None:
     a = pl.Series("a", [1, 3, 9, 4, 10], dtype=dtype_in)
     lf = pl.LazyFrame([a])
+    a_np = a.cast(pl.Float64).to_numpy()
 
     # exp
     result = lf.select(pl.col("a").exp())
-    expected = pl.Series("a", np.exp(a.to_numpy())).cast(dtype_out).to_frame()
+    expected = pl.Series("a", np.exp(a_np)).cast(dtype_out).to_frame()
     assert_frame_equal(result.collect(), expected)
     assert result.collect_schema() == expected.schema
 
     # log1p
     result = lf.select(pl.col("a").log1p())
-    expected = pl.Series("a", np.log1p(a.to_numpy())).cast(dtype_out).to_frame()
+    expected = pl.Series("a", np.log1p(a_np)).cast(dtype_out).to_frame()
     assert_frame_equal(result.collect(), expected)
     assert result.collect_schema() == expected.schema
+
+
+@pytest.mark.parametrize(
+    ("dtype_in", "dtype_out"),
+    [
+        (pl.Boolean, pl.Float64),
+        (pl.Int32, pl.Float64),
+        (pl.Int64, pl.Float64),
+        (pl.Decimal(10, 2), pl.Float64),
+        (pl.Float16, pl.Float16),
+        (pl.Float32, pl.Float32),
+        (pl.Float64, pl.Float64),
+    ],
+)
+@pytest.mark.parametrize(
+    ("name", "reference"), [("erf", math.erf), ("erfc", math.erfc)]
+)
+def test_erf_erfc(
+    dtype_in: PolarsDataType,
+    dtype_out: PolarsDataType,
+    name: str,
+    reference: Callable[[float], float],
+) -> None:
+    values = [True, False] if dtype_in == pl.Boolean else [-3, -1, 0, 1, 2, None]
+    a = pl.Series("a", values, dtype=dtype_in)
+    lf = pl.LazyFrame([a])
+
+    result = lf.select(getattr(pl.col("a"), name)())
+    expected = pl.Series(
+        "a", [None if v is None else reference(float(v)) for v in values]
+    ).cast(dtype_out)
+    assert_frame_equal(result.collect(), expected.to_frame())
+    assert result.collect_schema() == expected.to_frame().schema
+    assert_series_equal(getattr(a, name)(), expected)
 
 
 @pytest.mark.parametrize(
@@ -606,7 +687,7 @@ def test_incompatible_lit_dtype() -> None:
         match=r"time zone of dtype \('Asia/Kathmandu'\) differs from time zone of value \(datetime.timezone.utc\)",
     ):
         pl.lit(
-            datetime(2020, 1, 1, tzinfo=timezone.utc),
+            datetime(2020, 1, 1, tzinfo=UTC),
             dtype=pl.Datetime("us", "Asia/Kathmandu"),
         )
 
@@ -619,7 +700,7 @@ def test_lit_dtype_utc() -> None:
         )
     )
     expected = pl.DataFrame(
-        {"literal": [datetime(2019, 12, 31, 18, 15, tzinfo=timezone.utc)]}
+        {"literal": [datetime(2019, 12, 31, 18, 15, tzinfo=UTC)]}
     ).select(pl.col("literal").dt.convert_time_zone("Asia/Kathmandu"))
     assert_frame_equal(result, expected)
 
@@ -905,6 +986,41 @@ def test_reinterpret_errors_13659() -> None:
         match="cannot reinterpret from Int8 to Int16",
     ):
         q.collect_schema()
+
+
+@pytest.mark.parametrize(("precision", "scale"), [(10, 2), (38, 0), (38, 9)])
+def test_reinterpret_int128_decimal(precision: int, scale: int) -> None:
+    bound = 10**precision - 1
+    s = pl.Series("a", [-bound, -1, None, 0, bound], dtype=pl.Int128)
+    dtype = pl.Decimal(precision, scale)
+
+    out = s.to_frame().lazy().select(pl.col.a.reinterpret(dtype=dtype)).collect()
+    assert out.schema == {"a": dtype}
+    assert_series_equal(out["a"].to_physical(), s)
+
+    back = out.lazy().select(pl.col.a.reinterpret(dtype=pl.Int128)).collect()
+    assert_series_equal(back["a"], s)
+
+
+def test_reinterpret_decimal_int128() -> None:
+    s = pl.Series("a", ["1.25", None, "-3.50"]).cast(pl.Decimal(10, 2))
+    out = s.to_frame().lazy().select(pl.col.a.reinterpret(dtype=pl.Int128)).collect()
+    assert_series_equal(out["a"], pl.Series("a", [125, None, -350], dtype=pl.Int128))
+
+
+@pytest.mark.parametrize(
+    ("precision", "value"),
+    [(10, 10**10), (10, -(10**10)), (38, 2**127 - 1), (38, -(2**127))],
+)
+def test_reinterpret_int128_decimal_out_of_range(precision: int, value: int) -> None:
+    q = (
+        pl.Series("a", [0, value, None], dtype=pl.Int128)
+        .to_frame()
+        .lazy()
+        .select(pl.col.a.reinterpret(dtype=pl.Decimal(precision, 0)))
+    )
+    with pytest.raises(ComputeError, match=f"decimal precision {precision} can't fit"):
+        q.collect()
 
 
 def test_append_no_upcast_27345() -> None:

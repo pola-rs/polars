@@ -1,11 +1,5 @@
-#![allow(unsafe_op_in_unsafe_fn)]
 use std::sync::Arc;
 
-use arrow::array::{BinaryArray, BinaryViewArray};
-use arrow::datatypes::ArrowDataType;
-use arrow::ffi::mmap;
-use arrow::offset::{Offsets, OffsetsBuffer};
-use polars_compute::cast::binary_to_binview;
 use polars_dtype::categorical::CategoricalMapping;
 
 const BOOLEAN_TRUE_SENTINEL: u8 = 0x03;
@@ -49,6 +43,11 @@ bitflags::bitflags! {
         ///
         /// This is faster for several encodings
         const NO_ORDER                 = 0x04;
+
+        /// Don't encode nulls: encoding a null panics unless nulls are propagated, and
+        /// fixed-width values, structs and fixed-size lists take no validity byte. Not passed
+        /// on to nested values.
+        const SKIP_NULL_ENCODING       = 0x08;
     }
 }
 
@@ -69,6 +68,10 @@ impl RowEncodingOptions {
 
     pub fn is_ordered(self) -> bool {
         !self.contains(Self::NO_ORDER)
+    }
+
+    pub fn encode_nulls(self) -> bool {
+        !self.contains(Self::SKIP_NULL_ENCODING)
     }
 
     pub fn null_sentinel(self) -> u8 {
@@ -125,109 +128,7 @@ impl RowEncodingOptions {
             RowEncodingOptions::NULLS_LAST,
             self.contains(RowEncodingOptions::DESCENDING),
         );
+        self.remove(RowEncodingOptions::SKIP_NULL_ENCODING);
         self
-    }
-}
-
-#[derive(Default, Clone)]
-pub struct RowsEncoded {
-    pub(crate) values: Vec<u8>,
-    pub(crate) offsets: Vec<usize>,
-}
-
-unsafe fn rows_to_array(buf: Vec<u8>, offsets: Vec<usize>) -> BinaryArray<i64> {
-    let offsets = if size_of::<usize>() == size_of::<i64>() {
-        assert!(
-            (*offsets.last().unwrap() as u64) < i64::MAX as u64,
-            "row encoding output overflowed"
-        );
-
-        // SAFETY: we checked overflow and size
-        bytemuck::cast_vec::<usize, i64>(offsets)
-    } else {
-        offsets.into_iter().map(|v| v as i64).collect()
-    };
-
-    // SAFETY: monotonically increasing
-    let offsets = Offsets::new_unchecked(offsets);
-
-    BinaryArray::new(ArrowDataType::LargeBinary, offsets.into(), buf.into(), None)
-}
-
-impl RowsEncoded {
-    pub(crate) fn new(values: Vec<u8>, offsets: Vec<usize>) -> Self {
-        RowsEncoded { values, offsets }
-    }
-
-    pub fn iter(&self) -> RowsEncodedIter<'_> {
-        let iter = self.offsets[1..].iter();
-        let offset = self.offsets[0];
-        RowsEncodedIter {
-            offset,
-            end: iter,
-            values: &self.values,
-        }
-    }
-
-    /// Borrows the buffers and returns a [`BinaryArray`].
-    ///
-    /// # Safety
-    /// The lifetime of that `BinaryArray` is tied to the lifetime of
-    /// `Self`. The caller must ensure that both stay alive for the same time.
-    pub unsafe fn borrow_array(&self) -> BinaryArray<i64> {
-        let (_, values, _) = unsafe { mmap::slice(&self.values) }.into_inner();
-        let offsets = if size_of::<usize>() == size_of::<i64>() {
-            assert!(
-                (*self.offsets.last().unwrap() as u64) < i64::MAX as u64,
-                "row encoding output overflowed"
-            );
-
-            let offsets = bytemuck::cast_slice::<usize, i64>(self.offsets.as_slice());
-            let (_, offsets, _) = unsafe { mmap::slice(offsets) }.into_inner();
-            offsets
-        } else {
-            self.offsets.iter().map(|&v| v as i64).collect()
-        };
-        let offsets = OffsetsBuffer::new_unchecked(offsets);
-
-        BinaryArray::new(ArrowDataType::LargeBinary, offsets, values, None)
-    }
-
-    /// This conversion is free.
-    pub fn into_array(self) -> BinaryArray<i64> {
-        unsafe { rows_to_array(self.values, self.offsets) }
-    }
-
-    /// This does allocate views.
-    pub fn into_binview(self) -> BinaryViewArray {
-        binary_to_binview(&self.into_array())
-    }
-
-    #[cfg(test)]
-    pub fn get(&self, i: usize) -> &[u8] {
-        let start = self.offsets[i];
-        let end = self.offsets[i + 1];
-        &self.values[start..end]
-    }
-}
-
-pub struct RowsEncodedIter<'a> {
-    offset: usize,
-    end: std::slice::Iter<'a, usize>,
-    values: &'a [u8],
-}
-
-impl<'a> Iterator for RowsEncodedIter<'a> {
-    type Item = &'a [u8];
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let new_offset = *self.end.next()?;
-        let payload = unsafe { self.values.get_unchecked(self.offset..new_offset) };
-        self.offset = new_offset;
-        Some(payload)
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.end.size_hint()
     }
 }

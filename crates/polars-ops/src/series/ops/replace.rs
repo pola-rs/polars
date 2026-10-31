@@ -1,5 +1,6 @@
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
+use polars_defs::join::{JoinArgs, JoinCoalesce, JoinType};
 use polars_error::polars_ensure;
 
 use crate::frame::join::*;

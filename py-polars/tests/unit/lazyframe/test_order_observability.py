@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import functools
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType, RankMethod
 
 
 def test_order_observability() -> None:
@@ -834,3 +837,241 @@ def test_order_project_invalidates_suborder_28831() -> None:
     lf = pl.LazyFrame({"a": [1, 1, 2, 2], "b": [5, 10, 2, 4]})
     out = lf.set_sorted("a", "b").select(pl.col("b").max()).collect().item()
     assert out == 10
+
+
+def test_set_sorted_expr_observes_input_order_29560() -> None:
+    lf = pl.LazyFrame({"a": [2, 0, 1, 2, 1, 0, 0, 2, 1, 0]})
+    q = lf.sort("a").with_columns(pl.col("a").set_sorted()).group_by("a").agg(pl.len())
+
+    assert "SORT" in q.explain()
+    assert_frame_equal(
+        q.collect(engine="streaming").sort("a"),
+        lf.group_by("a").agg(pl.len()).sort("a").collect(),
+    )
+
+
+@pytest.mark.parametrize(
+    ("expr", "is_order_observing"),
+    [
+        (pl.col("x").mean().over("g"), False),
+        (pl.col("x").sum().over("g", order_by="x"), False),
+        ((pl.col("x") - pl.col("x").mean()).over("g"), False),
+        (pl.len().over("g"), False),
+        (pl.col("x").n_unique().over("g", "h"), False),
+        (pl.col("x").rank().over("g"), False),
+        (pl.col("x").rank("min").over("g"), False),
+        (pl.col("x").rank("max").over("g"), False),
+        (pl.col("x").rank("dense").over("g"), False),
+        (pl.col("x").rank("ordinal").over("g"), True),
+        (pl.col("x").rank("random", seed=1).over("g"), True),
+        (pl.col("x").cum_sum().over("g"), True),
+        (pl.col("x").shift().over("g"), True),
+        (pl.col("x").first().over("g"), True),
+        (pl.col("x").sort().over("g"), True),
+        (pl.col("x").sum().over((pl.col("g") == 0).cum_sum()), True),
+        (pl.col("x").sum().over("g", order_by=pl.col("x").cum_sum()), True),
+        (pl.col("x").over("g", mapping_strategy="explode"), True),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_order_insensitive_window(
+    expr: pl.Expr, is_order_observing: bool, engine: EngineType
+) -> None:
+    lf = pl.LazyFrame(
+        {
+            "g": [1, 2, 1, 2, 1, 3],
+            "h": [1, 1, 2, 2, 1, 1],
+            "x": [3, 1, 2, 2, 5, 4],
+        }
+    )
+    q = (
+        lf.unique(maintain_order=True)
+        .with_columns(out=expr)
+        .group_by("g")
+        .agg(pl.col("out").sort())
+        .sort("g")
+    )
+
+    kept = "UNIQUE[maintain_order: true"
+    assert (kept in q.explain(engine=engine)) == is_order_observing
+
+    expected = q.collect(optimizations=pl.QueryOptFlags(check_order_observe=False))
+    assert_frame_equal(q.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize(
+    ("method", "is_order_observing"),
+    [
+        ("average", False),
+        ("min", False),
+        ("max", False),
+        ("dense", False),
+        ("ordinal", True),
+        ("random", True),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_rank_order_observing(
+    method: RankMethod, is_order_observing: bool, engine: EngineType
+) -> None:
+    lf = pl.LazyFrame({"g": [1, 2, 1, 2, 1, 3], "x": [3, 1, 2, 2, 5, 4]})
+    q = (
+        lf.unique(maintain_order=True)
+        .with_columns(r=pl.col("x").rank(method, seed=1))
+        .group_by("g")
+        .agg(pl.col("r").sort())
+        .sort("g")
+    )
+
+    kept = "UNIQUE[maintain_order: true"
+    assert (kept in q.explain(engine=engine)) == is_order_observing
+    assert_frame_equal(q.collect(engine=engine), q.collect(engine="in-memory"))
+
+
+def test_sort_by_drops_scalar_keys() -> None:
+    lf = pl.LazyFrame({"k": [0, 0, 1], "a": [3, 1, 2]})
+    a = pl.col("a")
+
+    for q in [
+        lf.select(a.sort_by(pl.lit(1))),
+        lf.select(a.sort_by(a.max())),
+        lf.select(a.sort_by(a.max()).over("k")),
+        lf.group_by("k").agg(a.sort_by(a.max())),
+    ]:
+        assert ".sort_by(" not in q.explain()
+
+    q = lf.select(a.sort_by(a.max(), "a", descending=[False, True]))
+    plan = q.explain()
+    assert (
+        '.sort_by(by=[col("a")], sort_option=SortMultipleOptions { descending: [true]'
+        in plan
+    )
+    assert q.collect()["a"].to_list() == [3, 2, 1]
+
+    # A dropped key is still type-checked, but no longer evaluated.
+    lf = pl.LazyFrame({"a": [3, 1], "s": ["x", "y"]})
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="arithmetic"):
+        lf.select(a.sort_by(pl.col("s").first() + 1)).collect()
+    q = lf.select(a.sort_by(pl.col("s").first().cast(pl.Int64)))
+    assert sorted(q.collect()["a"]) == [1, 3]
+
+
+def test_top_k_by_drops_scalar_keys() -> None:
+    lf = pl.LazyFrame(
+        {"g": [0, 0, 1, 1, 1], "a": [3, 1, 2, 5, 4], "x": [1, 2, 3, 4, 5]}
+    )
+    a, x = pl.col("a"), pl.col("x")
+
+    # With only scalar keys every row ties, so any `k` rows may be kept.
+    for q in [
+        lf.select(a.top_k_by(pl.lit(1), 2)),
+        lf.select(a.bottom_k_by(a.max(), 2)),
+    ]:
+        assert "top_k_by" not in q.explain()
+        out = q.collect()["a"].to_list()
+        assert len(set(out)) == 2
+        assert set(out) <= {3, 1, 2, 5, 4}
+    q = lf.group_by("g").agg(a.top_k_by([pl.lit(1), a.max()], 2))
+    assert "top_k_by" not in q.explain()
+    out = q.sort("g").collect()["a"].to_list()
+    assert sorted(out[0]) == [1, 3]
+    assert len(set(out[1])) == 2
+    assert set(out[1]) <= {2, 5, 4}
+
+    q = lf.select(a.top_k_by([a.max(), x], 2, reverse=[True, False]))
+    assert 'top_k_by([dyn int: 2, col("x")])' in q.explain()
+    assert sorted(q.collect()["a"]) == [4, 5]
+    q = lf.select(a.bottom_k_by([pl.lit(1), x], 2, reverse=[False, True]))
+    assert sorted(q.collect()["a"]) == [4, 5]
+
+    # `k` is still validated unless it is a valid literal.
+    for k in [
+        pl.lit(None, pl.Int64),
+        pl.lit(-1),
+        pl.lit(pl.Series([], dtype=pl.Int64)),
+    ]:
+        q = lf.select(a.top_k_by(pl.lit(1), k))
+        assert "top_k_by" in q.explain()
+        with pytest.raises(pl.exceptions.PolarsError):
+            q.collect()
+    for k in [pl.lit(2.0), x.max()]:
+        assert "top_k_by" in lf.select(a.top_k_by(pl.lit(1), k)).explain()
+
+
+def test_window_drops_scalar_order_by() -> None:
+    lf = pl.LazyFrame({"g": [0, 0, 1, 1, 1], "a": [3, 1, 2, 5, 4]})
+    a = pl.col("a")
+
+    q = lf.select(a.cum_sum().over("g", order_by=a.max()))
+    assert "order_by" not in q.explain()
+    assert q.collect()["a"].to_list() == [3, 4, 2, 7, 11]
+    q = lf.select(a.cum_sum().over(order_by=pl.lit(1)))
+    assert "order_by" not in q.explain()
+    assert q.collect()["a"].to_list() == [3, 4, 6, 11, 15]
+
+
+def test_sort_drops_scalar_keys() -> None:
+    lf = pl.LazyFrame({"a": [3, 1, 2], "x": [1, 2, 3]})
+    rows = {(3, 1), (1, 2), (2, 3)}
+
+    for q in [lf.sort(pl.lit(1)), lf.sort(pl.col("a").max(), maintain_order=True)]:
+        assert "SORT" not in q.explain()
+        assert set(q.collect().rows()) == rows
+    assert "SORT" not in pl.explain_all([lf.sort(pl.lit(1)), lf.select("a")])
+
+    q = lf.sort(pl.lit(1), "x", descending=[False, True], nulls_last=[False, True])
+    plan = q.explain()
+    assert 'SORT BY [descending: [true], nulls_last: [true]] [col("x")]' in plan
+    assert q.collect()["x"].to_list() == [3, 2, 1]
+
+    q = lf.top_k(2, by=pl.lit(1))
+    assert "SLICE[offset: 0, len: 2]" in q.explain()
+    out = q.collect().rows()
+    assert len(set(out)) == 2
+    assert set(out) <= rows
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.when(pl.col("x") > 1).then(1).otherwise(0),
+        pl.when(pl.col("x") > 1).then(pl.col("y").sort()).otherwise(0),
+        pl.when(pl.col("x") > 2).then(2).when(pl.col("x") > 1).then(1).otherwise(0),
+        pl.when(pl.col("x") > 1).then(1).otherwise(0).cum_sum(),
+        pl.when(pl.col("x").rank().over("g") > 1).then(1).otherwise(0),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_when_then_predicate_order_30299(expr: pl.Expr, engine: EngineType) -> None:
+    lf = pl.LazyFrame(
+        {"g": [1, 2, 1, 2, 1], "x": [5, 1, 4, 2, 3], "y": [50, 10, 40, 20, 30]}
+    ).sort("x")
+    q = lf.select(expr.alias("v"))
+
+    assert "SORT" in q.explain(engine=engine)
+    expected = q.collect(optimizations=pl.QueryOptFlags.none())
+    assert_frame_equal(q.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_when_then_predicate_order_contexts_30299(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 1], "x": [3, 1, 2], "y": [10, 30, 20]}).sort("x")
+    x, y = pl.col("x"), pl.col("y")
+    no_opt = pl.QueryOptFlags.none()
+
+    for q in [
+        lf.with_columns(v=pl.when(y.sort() > 15).then(1).otherwise(0)).unique(),
+        lf.filter(pl.when(y.sort() > 15).then(True).otherwise(None)).unique(),
+        lf.group_by("g").agg(pl.when(x > 1).then(1).otherwise(0)),
+    ]:
+        assert "SORT" in q.explain(engine=engine)
+        assert_frame_equal(
+            q.collect(engine=engine),
+            q.collect(optimizations=no_opt),
+            check_row_order=False,
+        )
+
+    # The order of a sum is not observed, so the sort can still go.
+    q = lf.select(pl.when(x > 1).then(1).otherwise(0).sum())
+    assert "SORT" not in q.explain(engine=engine)
+    assert q.collect(engine=engine).item() == 2

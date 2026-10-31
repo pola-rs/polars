@@ -12,6 +12,16 @@ impl AExpr {
         matches!(self, AExpr::Column(_))
     }
 
+    pub(crate) fn is_or(&self) -> bool {
+        matches!(
+            self,
+            AExpr::BinaryExpr {
+                op: Operator::Or | Operator::LogicalOr,
+                ..
+            }
+        )
+    }
+
     /// Checks whether this expression is elementwise. This only checks the top level expression.
     pub(crate) fn is_elementwise_top_level(&self) -> bool {
         use AExpr::*;
@@ -179,6 +189,24 @@ pub fn is_elementwise(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Arena<
     is_prop(stack, ae, expr_arena, |ae| ae.is_elementwise_top_level())
 }
 
+/// Whether `ae`'s own operation may be applied to its inputs computed elsewhere, e.g. in a
+/// separate projection. `inputs_rev` must be `ae.inputs_rev()`.
+pub fn is_splittable(ae: &AExpr, inputs_rev: &[Node], expr_arena: &Arena<AExpr>) -> bool {
+    match ae {
+        AExpr::Column(_) | AExpr::Element => return false,
+        #[cfg(feature = "dtype-struct")]
+        AExpr::StructEval { .. } => return false,
+        _ => {},
+    }
+
+    // `is_elementwise` reports which sub-expressions may be split off. Where that differs
+    // from `inputs_rev` an input has to stay attached to its parent (the literal
+    // right-hand side of `is_in`, say) and `replace_inputs` could no longer put rebuilt
+    // inputs back in the right places.
+    let mut detachable = UnitVec::new();
+    is_elementwise(&mut detachable, ae, expr_arena) && *detachable == *inputs_rev
+}
+
 pub fn all_elementwise<'a, N>(nodes: &'a [N], expr_arena: &Arena<AExpr>) -> bool
 where
     Node: From<&'a N>,
@@ -191,6 +219,25 @@ where
 /// Recursive variant of `is_elementwise`
 pub fn is_elementwise_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     property_rec(node, expr_arena, is_elementwise)
+}
+
+/// Whether `node` yields one scalar value that does not depend on any input frame: a scalar
+/// literal, or elementwise operations (binary, cast, ternary, elementwise function) over such
+/// values. Columns, the frame length, aggregations, windows, nested evaluations and user
+/// functions are excluded.
+pub fn is_input_independent_scalar_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    property_rec(node, expr_arena, |stack, ae, _| {
+        let independent = match ae {
+            AExpr::Literal(lv) => lv.is_scalar(),
+            AExpr::BinaryExpr { .. } | AExpr::Cast { .. } | AExpr::Ternary { .. } => true,
+            AExpr::Function { options, .. } => options.is_elementwise(),
+            _ => false,
+        };
+        if independent {
+            ae.inputs_rev(stack);
+        }
+        independent
+    })
 }
 
 /// Checks if the top-level expression node is row-separable. If this is the case, then `stack` will
@@ -346,7 +393,7 @@ pub fn can_pre_agg(agg: Node, expr_arena: &Arena<AExpr>, _input_schema: &Schema)
                             agg_e,
                             IRAggExpr::Min { .. }
                                 | IRAggExpr::Max { .. }
-                                | IRAggExpr::Sum(_)
+                                | IRAggExpr::Sum { .. }
                                 | IRAggExpr::Last(_)
                                 | IRAggExpr::First(_)
                                 | IRAggExpr::Count {
@@ -382,8 +429,8 @@ pub fn can_pre_agg(agg: Node, expr_arena: &Arena<AExpr>, _input_schema: &Schema)
 
             #[cfg(feature = "object")]
             {
-                for name in aexpr_to_leaf_names(agg, expr_arena) {
-                    let dtype = _input_schema.get(&name).unwrap();
+                for name in aexpr_to_leaf_names_iter(agg, expr_arena) {
+                    let dtype = _input_schema.get(name).unwrap();
 
                     if let DataType::Object(_) = dtype {
                         return false;
@@ -472,7 +519,7 @@ pub(crate) fn predicate_non_null_column_outputs(
 
                 match op {
                     Eq | NotEq | Lt | LtEq | Gt | GtEq | Plus | Minus | Multiply | RustDivide
-                    | TrueDivide | FloorDivide | Modulus | Xor => true,
+                    | TrueDivide | FloorDivide | TruncDivide | Modulus | Xor => true,
 
                     // These can turn NULLs into true/false. E.g.:
                     // * (L & False) >= False becomes True

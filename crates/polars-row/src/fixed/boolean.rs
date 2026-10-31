@@ -11,11 +11,20 @@
 
 use std::mem::MaybeUninit;
 
-use arrow::array::BooleanArray;
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::BooleanArray;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::ArrowDataType;
 
 use crate::row::RowEncodingOptions;
+
+#[inline(always)]
+fn sentinel(opt_value: Option<bool>, opt: RowEncodingOptions) -> u8 {
+    match opt_value {
+        None => opt.null_sentinel(),
+        Some(false) => opt.bool_false_sentinel(),
+        Some(true) => opt.bool_true_sentinel(),
+    }
+}
 
 pub(crate) unsafe fn encode_bool<I: Iterator<Item = Option<bool>>>(
     buffer: &mut [MaybeUninit<u8>],
@@ -23,18 +32,8 @@ pub(crate) unsafe fn encode_bool<I: Iterator<Item = Option<bool>>>(
     opt: RowEncodingOptions,
     offsets: &mut [usize],
 ) {
-    let null_sentinel = opt.null_sentinel();
-    let true_sentinel = opt.bool_true_sentinel();
-    let false_sentinel = opt.bool_false_sentinel();
-
     for (offset, opt_value) in offsets.iter_mut().zip(input) {
-        let b = match opt_value {
-            None => null_sentinel,
-            Some(false) => false_sentinel,
-            Some(true) => true_sentinel,
-        };
-
-        *buffer.get_unchecked_mut(*offset) = MaybeUninit::new(b);
+        *buffer.get_unchecked_mut(*offset) = MaybeUninit::new(sentinel(opt_value, opt));
         *offset += 1;
     }
 }

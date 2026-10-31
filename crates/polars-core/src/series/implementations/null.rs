@@ -33,7 +33,7 @@ impl NullChunked {
         Self {
             name,
             length: len,
-            chunks: vec![Box::new(arrow::array::NullArray::new(
+            chunks: vec![Box::new(polars_arrow::array::NullArray::new(
                 ArrowDataType::Null,
                 len,
             ))],
@@ -214,8 +214,8 @@ impl SeriesTrait for NullChunked {
     }
 
     fn deposit(&self, validity: &Bitmap) -> Series {
-        assert_eq!(validity.set_bits(), 0);
-        self.clone().into_series()
+        assert_eq!(self.len(), validity.set_bits());
+        NullChunked::new(self.name.clone(), validity.len()).into_series()
     }
 
     fn len(&self) -> usize {

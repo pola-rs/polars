@@ -67,7 +67,7 @@ from polars._utils.expired import (
     removed_parameters,
 )
 from polars._utils.getitem import get_df_item_by_key
-from polars._utils.parse import parse_into_expression
+from polars._utils.parse import parse_into_list_of_expressions_require_selectors
 from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
 from polars._utils.serde import serialize_polars_object
 from polars._utils.unstable import issue_unstable_warning, unstable
@@ -82,7 +82,7 @@ from polars._utils.various import (
     scale_bytes,
     warn_null_comparison,
 )
-from polars._utils.wrap import wrap_expr, wrap_ldf, wrap_s
+from polars._utils.wrap import wrap_ldf, wrap_s
 from polars.config import Config
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.group_by import DynamicGroupBy, GroupBy, RollingGroupBy
@@ -127,7 +127,6 @@ if TYPE_CHECKING:
         Callable,
         Collection,
         Iterator,
-        Mapping,
     )
     from datetime import timedelta
     from io import IOBase
@@ -197,6 +196,7 @@ if TYPE_CHECKING:
     from polars._utils.various import NoDefault
     from polars.config import TableFormatNames
     from polars.io.cloud import CredentialProviderFunction
+    from polars.io.parquet.encryption import ParquetEncryptionProperties
     from polars.io.partition import PartitionBy
     from polars.ml.torch import PolarsDataset
 
@@ -247,6 +247,8 @@ class DataFrame:
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
         this does not yield conclusive results, column orientation is used.
+        A flat sequence of scalar values is treated as one column unless
+        `orient="row"` is specified, in which case it is treated as one row.
     infer_schema_length : int or None
         The maximum number of rows to scan for schema inference. If set to `None`, the
         full data may be scanned *(this can be slow)*. This parameter only applies if
@@ -389,18 +391,22 @@ class DataFrame:
         if height is not None:
             msg = "the `height` parameter of `DataFrame` is considered unstable."
             issue_unstable_warning(msg)
+        if orient is not None and orient not in ("col", "row"):
+            msg = f"orient must be one of {{'col', 'row'}}, got {orient!r}"
+            raise ValueError(msg)
 
         if data is None:
             self._df = dict_to_pydf(
-                {}, schema=schema, schema_overrides=schema_overrides
+                data={},
+                schema=schema,
+                schema_overrides=schema_overrides,
             )
-
             if height is not None and self.width == 0:
                 self._df = PyDataFrame.empty_with_height(height)
 
-        elif isinstance(data, dict):
+        elif isinstance(data, Mapping):
             self._df = dict_to_pydf(
-                data,
+                data=data,
                 schema=schema,
                 schema_overrides=schema_overrides,
                 strict=strict,
@@ -409,7 +415,7 @@ class DataFrame:
 
         elif isinstance(data, (list, tuple, Sequence)):
             self._df = sequence_to_pydf(
-                data,
+                data=data,
                 schema=schema,
                 schema_overrides=schema_overrides,
                 strict=strict,
@@ -420,12 +426,15 @@ class DataFrame:
 
         elif isinstance(data, pl.Series):
             self._df = series_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides, strict=strict
+                data=data,
+                schema=schema,
+                schema_overrides=schema_overrides,
+                strict=strict,
             )
 
         elif _check_for_numpy(data) and isinstance(data, np.ndarray):
             self._df = numpy_to_pydf(
-                data,
+                data=data,
                 schema=schema,
                 schema_overrides=schema_overrides,
                 strict=strict,
@@ -435,17 +444,23 @@ class DataFrame:
 
         elif _check_for_pyarrow(data) and isinstance(data, pa.Table):
             self._df = arrow_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides, strict=strict
+                data=data,
+                schema=schema,
+                schema_overrides=schema_overrides,
+                strict=strict,
             )
 
         elif _check_for_pandas(data) and isinstance(data, pd.DataFrame):
             self._df = pandas_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides, strict=strict
+                data=data,
+                schema=schema,
+                schema_overrides=schema_overrides,
+                strict=strict,
             )
 
         elif _check_for_torch(data) and isinstance(data, torch.Tensor):
             self._df = numpy_to_pydf(
-                data.numpy(force=False),
+                data=data.numpy(force=False),
                 schema=schema,
                 schema_overrides=schema_overrides,
                 strict=strict,
@@ -459,7 +474,7 @@ class DataFrame:
             and isinstance(data, (Generator, Iterable))
         ):
             self._df = iterable_to_pydf(
-                data,
+                data=data,
                 schema=schema,
                 schema_overrides=schema_overrides,
                 strict=strict,
@@ -469,12 +484,15 @@ class DataFrame:
 
         elif isinstance(data, pl.DataFrame):
             self._df = dataframe_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides, strict=strict
+                data=data,
+                schema=schema,
+                schema_overrides=schema_overrides,
+                strict=strict,
             )
 
         elif is_pycapsule(data):
             self._df = pycapsule_to_frame(
-                data,
+                obj=data,
                 schema=schema,
                 schema_overrides=schema_overrides,
             )._df
@@ -1114,26 +1132,19 @@ class DataFrame:
             s = _prepare_other_arg(other, length=self.height)
             other = DataFrame([s.alias(f"n{i}") for i in range(self.width)])
 
-        orig_dtypes = other.dtypes
-        # TODO: Dispatch to a native floordiv
-        other = self._cast_all_from_to(other, INTEGER_DTYPES, Float64)
-        df = self._from_pydf(self._df.div_df(other._df))
+        if not floordiv:
+            other = self._cast_all_from_to(other, INTEGER_DTYPES, Float64)
+            return self._from_pydf(self._df.div_df(other._df))
 
-        df = (
-            df
-            if not floordiv
-            else df.with_columns([s.floor() for s in df if s.dtype.is_float()])
-        )
-        if floordiv:
-            int_casts = [
-                col(column).cast(tp)
-                for i, (column, tp) in enumerate(self.schema.items())
-                if tp.is_integer()
-                and (orig_dtypes[i].is_integer() or orig_dtypes[i] == Null)
-            ]
-            if int_casts:
-                return df.with_columns(int_casts)
-        return df
+        df = self._from_pydf(self._df.floordiv_df(other._df))
+        int_casts = [
+            col(column).cast(tp)
+            for (column, tp), other_tp in zip(
+                self.schema.items(), other.dtypes, strict=False
+            )
+            if tp.is_integer() and (other_tp.is_integer() or other_tp == Null)
+        ]
+        return df.with_columns(int_casts) if int_casts else df
 
     def _cast_all_from_to(
         self, df: DataFrame, from_: frozenset[PolarsDataType], to: PolarsDataType
@@ -1886,6 +1897,39 @@ class DataFrame:
         """
         return self.rows(named=True)
 
+    @overload
+    def to_numpy(
+        self,
+        *,
+        order: IndexOrder = ...,
+        writable: bool = ...,
+        allow_copy: bool = ...,
+        structured: bool = ...,
+        masked: Literal[False] = ...,
+    ) -> np.ndarray[Any, Any]: ...
+
+    @overload
+    def to_numpy(
+        self,
+        *,
+        order: IndexOrder = ...,
+        writable: bool = ...,
+        allow_copy: bool = ...,
+        structured: bool = ...,
+        masked: Literal[True],
+    ) -> np.ma.MaskedArray[Any, Any]: ...
+
+    @overload
+    def to_numpy(
+        self,
+        *,
+        order: IndexOrder = ...,
+        writable: bool = ...,
+        allow_copy: bool = ...,
+        structured: bool = ...,
+        masked: bool,
+    ) -> np.ndarray[Any, Any]: ...
+
     @removed_parameters(
         RemovedParameter(
             name="use_pyarrow",
@@ -1902,6 +1946,7 @@ class DataFrame:
         writable: bool = False,
         allow_copy: bool = True,
         structured: bool = False,
+        masked: bool = False,
     ) -> np.ndarray[Any, Any]:
         """
         Convert this DataFrame to a NumPy ndarray.
@@ -1937,6 +1982,16 @@ class DataFrame:
             returned instead.
 
             .. _structured array: https://numpy.org/doc/stable/user/basics.rec.html
+        masked
+            Return a `numpy.ma.MaskedArray` in which null values are masked. The data
+            keeps the type it would have without nulls, and the values under the mask
+            are unspecified. Nulls inside nested columns are converted as they are
+            without `masked`, except for `Struct` columns when `structured=True`.
+            `writable` and `allow_copy` only apply to the data, not the mask.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Examples
         --------
@@ -2001,7 +2056,22 @@ class DataFrame:
         >>> df.to_numpy(structured=True)
         array([(1, 6.5, 'a'), (2, 7. , 'b'), (3, 8.5, 'c')],
               dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
+
+        Set `masked=True` to represent null values with a mask instead, which preserves
+        the data type.
+
+        >>> df = pl.DataFrame({"a": [1, 2, None], "b": [4, None, 6]})
+        >>> arr = df.to_numpy(masked=True)
+        >>> arr.dtype
+        dtype('int64')
+        >>> arr.mask
+        array([[False, False],
+               [False,  True],
+               [ True, False]])
         """  # noqa: W505
+        if masked:
+            msg = "the `masked` parameter of `DataFrame.to_numpy()` is considered unstable."
+            issue_unstable_warning(msg)
         if structured:
             if not allow_copy and not self.is_empty():
                 msg = "copy not allowed: cannot create structured array without copying data"
@@ -2014,19 +2084,33 @@ class DataFrame:
                     arr = s.struct.unnest().to_numpy(
                         structured=True,
                         allow_copy=True,
+                        masked=masked,
+                    )
+                    if masked and s.has_nulls():
+                        arr[s.is_null().to_numpy()] = np.ma.masked
+                elif masked and s.dtype == String and s.has_nulls():
+                    arr = np.ma.MaskedArray(
+                        s.fill_null("").to_numpy().astype(str),
+                        mask=s.is_null().to_numpy(),
                     )
                 else:
-                    arr = s.to_numpy()
+                    arr = s.to_numpy(masked=masked)
 
                 if s.dtype == String and not s.has_nulls():
                     arr = arr.astype(str, copy=False)
                 arrays.append(arr)
                 struct_dtype.append((s.name, arr.dtype, arr.shape[1:]))
 
-            out = np.empty(self.height, dtype=struct_dtype)
+            out = (np.ma.empty if masked else np.empty)(self.height, dtype=struct_dtype)
             for idx, c in enumerate(self.columns):
                 out[c] = arrays[idx]
             return out
+
+        if masked:
+            data, mask = self._df.to_numpy_masked(
+                order, writable=writable, allow_copy=allow_copy
+            )
+            return np.ma.MaskedArray(data, mask=np.ma.nomask if mask is None else mask)
 
         return self._df.to_numpy(order, writable=writable, allow_copy=allow_copy)
 
@@ -2824,6 +2908,11 @@ class DataFrame:
         --------
         DataFrame.write_ndjson
 
+        Notes
+        -----
+        A :class:`Map` column is written as a JSON object, so its keys must be of type
+        String, Categorical or Enum.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -2915,6 +3004,11 @@ class DataFrame:
             .. warning::
                 This functionality is considered **unstable**. It may be changed at any
                 point without it being considered a breaking change.
+
+        Notes
+        -----
+        A :class:`Map` column is written as a JSON object, so its keys must be of type
+        String, Categorical or Enum.
 
         Examples
         --------
@@ -3811,16 +3905,16 @@ class DataFrame:
             column_widths = _expand_selector_dicts(  # type: ignore[assignment]
                 df_original, column_widths, expand_keys=True, expand_values=False
             )
-        column_widths = _unpack_multi_column_dict(column_widths or {})  # type: ignore[assignment]
+        widths: dict[str, int] = _unpack_multi_column_dict(column_widths or {})
 
         for column in df.columns:
             options = {"hidden": True} if column in hidden else {}
             col_idx = table_start[1] + df.get_column_index(column)
-            if column in column_widths:  # type: ignore[operator]
+            if column in widths:
                 ws.set_column_pixels(
                     col_idx,
                     col_idx,
-                    column_widths[column],  # type: ignore[index]
+                    widths[column],
                     None,
                     options,
                 )
@@ -4119,6 +4213,7 @@ class DataFrame:
         ) = "auto",
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
+        encryption: ParquetEncryptionProperties | None = None,
         mkdir: bool = False,
     ) -> None:
         """
@@ -4222,6 +4317,17 @@ class DataFrame:
             .. warning::
                 This functionality is considered **unstable**. It may be changed at any
                 point without it being considered a breaking change.
+        encryption
+            Properties for writing Parquet files encrypted with Parquet modular
+            encryption. See :class:`ParquetEncryptionProperties`.
+
+            When partitioning, the partition key values are written unencrypted in
+            the file paths. Columns with their own encryption key can't be used as
+            partition keys.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         mkdir: bool
             Recursively create all the directories in the path.
 
@@ -4273,6 +4379,9 @@ class DataFrame:
                 raise ValueError(msg)
             if mkdir:
                 msg = "write_parquet with `use_pyarrow=True` cannot be combined with `mkdir`"
+                raise ValueError(msg)
+            if encryption is not None:
+                msg = "write_parquet with `use_pyarrow=True` cannot be combined with `encryption`"
                 raise ValueError(msg)
 
             tbl = self.to_arrow()
@@ -4343,6 +4452,7 @@ class DataFrame:
             credential_provider=credential_provider,
             metadata=metadata,
             arrow_schema=arrow_schema,
+            encryption=encryption,
             engine=engine,
             mkdir=mkdir,
             optimizations=QueryOptFlags._eager(),
@@ -4728,8 +4838,14 @@ class DataFrame:
             - If 'append', will add new data.
             - If 'overwrite', will replace table with new data.
 
+        Notes
+        -----
+        Columns of required (`NOT NULL`) table fields must not contain nulls.
+        Required fields nested in structs or lists are not supported.
         """
         from pyiceberg.catalog import load_catalog
+
+        from polars.io.iceberg._utils import with_table_nullability
 
         if isinstance(target, str):
             catalog = load_catalog()
@@ -4737,7 +4853,10 @@ class DataFrame:
         else:
             table = target
 
-        data = self.to_arrow(compat_level=CompatLevel.oldest())
+        # Arrow data from Polars is always nullable; required Iceberg fields reject it.
+        data = with_table_nullability(
+            self.to_arrow(compat_level=CompatLevel.oldest()), table.schema()
+        )
 
         if mode == "append":
             table.append(data)
@@ -7879,12 +7998,14 @@ class DataFrame:
         other
             Lazy DataFrame to join with.
         left_on
-            Join column of the left DataFrame.
+            Ordered asof key (column name, expression, or selector) for the left
+            DataFrame.
         right_on
-            Join column of the right DataFrame.
+            Ordered asof key (column name, expression, or selector) for the right
+            DataFrame.
         on
-            Join column of both DataFrames. If set, `left_on` and `right_on` should be
-            None.
+            Ordered asof key (column name, expression, or selector) for both DataFrames.
+            If set, `left_on` and `right_on` should be None.
         by_left
             Join on these columns before doing asof join
         by_right
@@ -7934,8 +8055,7 @@ class DataFrame:
             - *True*: Always coalesce join columns.
             - *False*: Never coalesce join columns.
 
-            Note that joining on any other expressions than `col`
-            will turn off coalescing.
+            Only keys that expand to plain column references support coalescing.
         allow_exact_matches
             Whether exact matches are valid join predicates.
 
@@ -7953,6 +8073,10 @@ class DataFrame:
         --------
         join
         join_where
+
+        Notes
+        -----
+        The asof key must expand to exactly one expression per input.
 
         Examples
         --------
@@ -8226,8 +8350,8 @@ class DataFrame:
         other
             DataFrame to join with.
         on
-            Name(s) of the join columns in both DataFrames. If set, `left_on` and
-            `right_on` should be None. This should not be specified if `how='cross'`.
+            Names, expressions, or selectors used on both DataFrames. If set,
+            `left_on` and `right_on` should be None. Do not use with `how='cross'`.
         how : {'inner', 'left', 'right', 'full', 'semi', 'anti', 'cross'}
             Join strategy.
 
@@ -8255,9 +8379,9 @@ class DataFrame:
                    table. Does not return columns from the right table.
 
         left_on
-            Name(s) of the left join column(s).
+            Join column names, expressions, or selectors of the left DataFrame.
         right_on
-            Name(s) of the right join column(s).
+            Join column names, expressions, or selectors of the right DataFrame.
         suffix
             Suffix to append to columns with a duplicate name.
         validate: {'m:m', 'm:1', '1:m', '1:1'}
@@ -8295,8 +8419,7 @@ class DataFrame:
                  - Never coalesce join columns.
 
             .. note::
-                Joining on any other expressions than `col`
-                will turn off coalescing.
+                Only keys that expand to plain column references support coalescing.
         maintain_order : {'none', 'left', 'right', 'left_right', 'right_left'}
             Which DataFrame row order to preserve, if any.
             Do not rely on any observed ordering without explicitly setting this
@@ -8342,7 +8465,6 @@ class DataFrame:
             .. warning::
                 This functionality is considered **experimental**. It may be removed or
                 changed at any point without it being considered a breaking change.
-
 
         See Also
         --------
@@ -8500,8 +8622,10 @@ class DataFrame:
             (In)Equality condition to join the two tables on.
             When a column name occurs in both tables, the proper suffix must
             be applied in the predicate.
-        how : {'inner', 'left', 'right'}
-            Join strategy.
+        how : {'inner', 'left', 'right', 'full'}
+            Join strategy. `'left'` and `'right'` also keep the rows of that input
+            without a match, and `'full'` keeps them from both inputs. The columns of
+            the other input are null in those rows.
         suffix
             Suffix to append to columns with a duplicate name.
 
@@ -11456,14 +11580,14 @@ class DataFrame:
             ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
-    def n_unique(self, subset: str | Expr | Sequence[str | Expr] | None = None) -> int:
+    def n_unique(self, subset: IntoExpr | Collection[IntoExpr] | None = None) -> int:
         """
         Return the number of unique rows, or the number of unique row-subsets.
 
         Parameters
         ----------
         subset
-            One or more columns/expressions that define what to count;
+            Column name(s), selector(s), or expressions that define what to count;
             omit to return the count of unique rows.
 
         Notes
@@ -11513,29 +11637,12 @@ class DataFrame:
         ... )
         3
         """
-        if subset is None and self.width == 0:
-            # With no columns all rows are identical, so there is a single
-            # distinct row for any non-empty frame.
-            return min(self.height, 1)
-
-        if isinstance(subset, str):
-            expr = F.col(subset)
-        elif isinstance(subset, pl.Expr):
-            expr = subset
-        elif isinstance(subset, Sequence) and len(subset) == 1:
-            expr = wrap_expr(parse_into_expression(subset[0]))
-        else:
-            struct_fields = F.all() if (subset is None) else subset
-            expr = F.struct(struct_fields)
-
-        from polars.lazyframe.opt_flags import QueryOptFlags
-
-        df = (
-            self.lazy()
-            .select(expr.n_unique())
-            ._collect_eager(optimizations=QueryOptFlags._eager())
+        parsed_subset = (
+            None
+            if subset is None
+            else parse_into_list_of_expressions_require_selectors(subset)
         )
-        return 0 if df.is_empty() else df.row(0)[0]
+        return self._df.n_unique(parsed_subset)
 
     def rechunk(self) -> DataFrame:
         """
@@ -11654,7 +11761,6 @@ class DataFrame:
         An example of the supercast rules when applying an arithmetic operation on two
         DataTypes are for instance:
 
-        - Int8 + String = String
         - Float32 + Int64 = Float32
         - Float32 + Float64 = Float64
 
@@ -11699,7 +11805,7 @@ class DataFrame:
         ...         "c": [1.0, 2.0, 3.0],
         ...     }
         ... )
-        >>> df.fold(lambda s1, s2: s1 + s2)
+        >>> df.fold(lambda s1, s2: s1 + s2.cast(pl.String))
         shape: (3,)
         Series: 'a' [str]
         [
@@ -12095,7 +12201,13 @@ class DataFrame:
             data_cols = [k for k in self.schema if k not in key]
             values = self.select(data_cols)
 
-        zipped = zip(keys, values.iter_rows(named=named), strict=True)  # type: ignore[call-overload]
+        if values.width == 0:
+            data_rows: Iterable[Any] = (
+                ({} if named else ()) for _ in range(self.height)
+            )
+        else:
+            data_rows = values.iter_rows(named=named)  # type: ignore[call-overload]
+        zipped = zip(keys, data_rows, strict=True)
 
         # if unique, we expect to write just one entry per key; otherwise, we're
         # returning a list of rows for each key, so append into a defaultdict.
@@ -13378,6 +13490,9 @@ class DataFrame:
         unordered: bool = False,
         descending: list[bool] | None = None,
         nulls_last: list[bool] | None = None,
+        output: Literal["binary_offset", "binary", "optimal"] = "binary_offset",
+        encode_nulls: Sequence[bool] | None = None,
+        propagate_nulls: bool = False,
     ) -> Series:
         """
         Row encode the given DataFrame.
@@ -13396,6 +13511,9 @@ class DataFrame:
                 unordered=unordered,
                 descending=descending,
                 nulls_last=nulls_last,
+                output=output,
+                encode_nulls=encode_nulls,
+                propagate_nulls=propagate_nulls,
             )
         ).to_series()
 

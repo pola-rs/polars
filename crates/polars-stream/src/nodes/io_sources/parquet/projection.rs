@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use arrow::datatypes::ArrowSchema;
+use polars_arrow::datatypes::ArrowSchema;
 use polars_core::prelude::{ArrowField, Column, DataType};
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
@@ -86,7 +86,6 @@ impl ArrowFieldProjection {
         }
     }
 
-    #[expect(unused)]
     pub fn output_dtype(&self) -> Cow<'_, DataType> {
         match self {
             Self::Plain(field) => Cow::Owned(DataType::from_arrow_field(field)),

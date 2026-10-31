@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use rustflags::Flag;
 
 fn main() {
@@ -27,16 +29,30 @@ fn main() {
         }
     }
 
-    let runtime_folder = std::fs::read_dir(".")
-        .unwrap()
-        .filter_map(|entry| entry.ok())
-        .find(|entry| {
-            entry
-                .file_name()
-                .to_string_lossy()
-                .starts_with("_polars_runtime")
+    // The Python source folder sits next to the pyproject.toml. Normally that is
+    // this crate's directory, but when building from an sdist maturin puts the
+    // pyproject.toml (and with it the Python source folder) at the sdist root,
+    // with this crate nested underneath at py-polars/runtime/<name>. So walk up
+    // until we find it.
+    let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    let runtime_folder = manifest_dir
+        .ancestors()
+        .take(4)
+        .find_map(|dir| {
+            std::fs::read_dir(dir)
+                .ok()?
+                .filter_map(|entry| entry.ok())
+                .find(|entry| {
+                    entry
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with("_polars_runtime")
+                        && entry.file_type().is_ok_and(|t| t.is_dir())
+                })
         })
-        .unwrap();
+        .unwrap_or_else(|| {
+            panic!("could not find _polars_runtime* source folder at or above {manifest_dir:?}")
+        });
 
     std::fs::write(
         runtime_folder.path().join("build_feature_flags.py"),

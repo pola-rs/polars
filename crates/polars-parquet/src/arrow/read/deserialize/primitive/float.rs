@@ -1,7 +1,7 @@
-use arrow::array::PrimitiveArray;
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::datatypes::ArrowDataType;
-use arrow::types::NativeType;
+use polars_arrow::array::PrimitiveArray;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::types::NativeType;
 
 use super::super::utils;
 use super::{ClosureDecoderFunction, DecoderFunction, PrimitiveDecoder, UnitDecoderFunction};
@@ -190,7 +190,7 @@ where
     fn extend_decoded(
         &self,
         decoded: &mut Self::DecodedState,
-        additional: &dyn arrow::array::Array,
+        additional: &dyn polars_arrow::array::Array,
         is_optional: bool,
     ) -> ParquetResult<()> {
         let additional = additional

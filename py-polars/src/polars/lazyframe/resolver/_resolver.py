@@ -5,18 +5,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Collection
 
     import pyarrow.compute
 
     import polars as pl
     from polars._typing import SchemaDict
-
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
 
 
 class LazyFrameResolver(abc.ABC):
@@ -57,6 +51,9 @@ class LazyFrameResolver(abc.ABC):
         projection
             Columns to project. If set to `None`, all columns should be projected.
 
+            An empty list means that only the row count is needed. Preserve the
+            height of the result, for example with `lf.drop("*")`.
+
             In the presence of filters, this may not contain all of the column
             names being referenced by filters. These can be found in `filter_columns`.
         limit
@@ -75,7 +72,7 @@ class LazyFrameResolver(abc.ABC):
             re-resolving.
         """
 
-    def cse_eq(self, other: Self) -> bool:  # noqa: ARG002
+    def cse_eq(self, other: object) -> bool:  # noqa: ARG002
         """
         Equality evaluation of `self` with `other` for common subplan elimination.
 
@@ -101,6 +98,12 @@ class FilterExpr:
 
     @property
     def pyarrow_expr(self) -> pyarrow.compute.Expression | None:
+        """
+        The filter expression converted to a pyarrow expression.
+
+        Returns `None` if the expression could not be converted. Raises if the
+        conversion failed with an error.
+        """
         if isinstance(exc := self._pyarrow_expr, Exception):
             raise exc
 

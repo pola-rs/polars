@@ -48,6 +48,7 @@ from polars._utils.convert import (
     time_to_int,
     timedelta_to_int,
 )
+from polars._utils.deprecation import deprecated
 from polars._utils.expired import (
     RemovedParameter,
     RenamedParameter,
@@ -61,6 +62,7 @@ from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
     NO_DEFAULT,
     _is_generator,
+    is_sequence,
     parse_version,
     qualified_type_name,
     require_same_type,
@@ -126,6 +128,7 @@ if TYPE_CHECKING:
     from builtins import set as set_
     from builtins import str as str_
     from collections.abc import Callable, Collection, Generator, Mapping
+    from typing import Self
 
     import jax
 
@@ -155,11 +158,6 @@ if TYPE_CHECKING:
         TemporalLiteral,
     )
     from polars._utils.various import NoDefault
-
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
 
 
 elif BUILDING_SPHINX_DOCS:
@@ -788,8 +786,11 @@ class Series(metaclass=_Meta):
             assert f is not None
             return self._from_pyseries(f(d))
 
-        if isinstance(other, Sequence) and not isinstance(other, str):
+        if is_sequence(other):
             if self.dtype in (List, Array):
+                if _check_for_numpy(other) and isinstance(other, np.ndarray):
+                    msg = f"cannot compare a Series of dtype {self.dtype} to a NumPy array"
+                    raise TypeError(msg)
                 other = [other]
             other = Series("", other)
             if other.dtype == Null:
@@ -1043,18 +1044,24 @@ class Series(metaclass=_Meta):
             other = pl.Series("", [None])
 
         if isinstance(other, Series):
-            return self._from_pyseries(getattr(self._s, op_s)(other._s))
+            if "rhs" in op_ffi:
+                return self._from_pyseries(getattr(other._s, op_s)(self._s))
+            else:
+                return self._from_pyseries(getattr(self._s, op_s)(other._s))
         elif _check_for_numpy(other) and isinstance(other, np.ndarray):
-            return self._from_pyseries(getattr(self._s, op_s)(Series(other)._s))
+            _s = Series(self.name, other)._s
+            if "rhs" in op_ffi:
+                return self._from_pyseries(getattr(_s, op_s)(self._s))
+            else:
+                return self._from_pyseries(getattr(self._s, op_s)(_s))
         elif isinstance(other, timedelta):
             _s = sequence_to_pyseries(self.name, [other])
             if "rhs" in op_ffi:
                 return self._from_pyseries(getattr(_s, op_s)(self._s))
             else:
                 return self._from_pyseries(getattr(self._s, op_s)(_s))
-        elif (
-            isinstance(other, (float, date, datetime, str))
-            and not self.dtype.is_float()
+        elif isinstance(other, str) or (
+            isinstance(other, (float, date, datetime)) and not self.dtype.is_float()
         ):
             _s = sequence_to_pyseries(self.name, [other])
             if "rhs" in op_ffi:
@@ -1155,6 +1162,7 @@ class Series(metaclass=_Meta):
             if (
                 self.dtype.is_float()
                 or self.dtype.is_decimal()
+                or self.dtype == String
                 or isinstance(self.dtype, (List, Array, Duration))
                 or (
                     isinstance(other, Series) and isinstance(other.dtype, (List, Array))
@@ -1249,20 +1257,26 @@ class Series(metaclass=_Meta):
         if self.dtype.is_temporal():
             msg = "first cast to integer before dividing datelike dtypes"
             raise TypeError(msg)
-        if self.dtype.is_float():
-            self.__rfloordiv__(other)
         if isinstance(other, (int, float)) and self.dtype.is_decimal():
             return self.to_frame().select(other / F.col(self.name)).to_series()
 
         if isinstance(other, int):
             other = float(other)
-        return self.cast(Float64).__rfloordiv__(other)
+        if self.dtype != String:
+            self = self.cast(Float64)
+        return self._arithmetic(other, "div", "div_<>_rhs")
 
     def __rfloordiv__(self, other: Any) -> Series:
         if self.dtype.is_temporal():
             msg = "first cast to integer before dividing datelike dtypes"
             raise TypeError(msg)
-        return self._arithmetic(other, "div", "div_<>_rhs")
+        if isinstance(other, Series):
+            return other // self
+        return (
+            self.to_frame()
+            .select_seq((F.lit(other) // F.col(self.name)).alias(self.name))
+            .to_series()
+        )
 
     def __rmul__(self, other: Any) -> Series:
         if self.dtype.is_temporal() and not isinstance(self.dtype, Duration):
@@ -1278,6 +1292,8 @@ class Series(metaclass=_Meta):
         return self.pow(exponent)
 
     def __rpow__(self, other: Any) -> Series:
+        if isinstance(other, Series):
+            return other.pow(self)
         return (
             self.to_frame()
             .select_seq((other ** F.col(self.name)).alias(self.name))
@@ -1902,6 +1918,44 @@ class Series(metaclass=_Meta):
         ]
         """
 
+    def erf(self) -> Series:
+        """
+        Compute the error function, element-wise.
+
+        See `Wikipedia <https://en.wikipedia.org/wiki/Error_function>`__.
+
+        Examples
+        --------
+        >>> s = pl.Series([-1, 0, 1])
+        >>> s.erf()
+        shape: (3,)
+        Series: '' [f64]
+        [
+            -0.842701
+            0.0
+            0.842701
+        ]
+        """
+
+    def erfc(self) -> Series:
+        """
+        Compute the complementary error function, element-wise.
+
+        See `Wikipedia <https://en.wikipedia.org/wiki/Error_function>`__.
+
+        Examples
+        --------
+        >>> s = pl.Series([-1, 0, 1])
+        >>> s.erfc()
+        shape: (3,)
+        Series: '' [f64]
+        [
+            1.842701
+            1.0
+            0.157299
+        ]
+        """
+
     def drop_nulls(self) -> Series:
         """
         Drop all null values.
@@ -2434,7 +2488,7 @@ class Series(metaclass=_Meta):
         """
         return wrap_df(self._s.to_dummies(separator, drop_first, drop_nulls))
 
-    @unstable()
+    @deprecated("`cut` is deprecated; use `bin_intervals` instead")
     def cut(
         self,
         breaks: Sequence[float],
@@ -2446,9 +2500,10 @@ class Series(metaclass=_Meta):
         """
         Bin continuous values into discrete categories.
 
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+        .. deprecated:: 2.0.0
+            Use :meth:`bin_intervals` instead. It requires `labels` (pass
+            `labels=False` for the integer bin index), and takes
+            `right_closed=True` to keep `cut`'s right-closed bins.
 
         Parameters
         ----------
@@ -2472,7 +2527,9 @@ class Series(metaclass=_Meta):
 
         See Also
         --------
-        qcut
+        bin_intervals
+        bin_quantiles
+        bin_ranks
 
         Examples
         --------
@@ -2508,7 +2565,7 @@ class Series(metaclass=_Meta):
         └─────┴────────────┴────────────┘
         """
 
-    @unstable()
+    @deprecated("`qcut` is deprecated; use `bin_quantiles` or `bin_ranks` instead")
     def qcut(
         self,
         quantiles: Sequence[float] | int,
@@ -2521,9 +2578,12 @@ class Series(metaclass=_Meta):
         """
         Bin continuous values into discrete categories based on their quantiles.
 
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+        .. deprecated:: 2.0.0
+            Use :meth:`bin_quantiles`, which places the breakpoints at the
+            quantile values, or :meth:`bin_ranks`, which splits on position in
+            sorted order to give near-equal-sized bins. Both require `labels`
+            (pass `labels=False` for the integer bin index); `bin_quantiles`
+            also takes `right_closed=True` to keep `qcut`'s right-closed bins.
 
         Parameters
         ----------
@@ -2552,7 +2612,9 @@ class Series(metaclass=_Meta):
 
         See Also
         --------
-        cut
+        bin_intervals
+        bin_quantiles
+        bin_ranks
 
         Examples
         --------
@@ -2600,6 +2662,198 @@ class Series(metaclass=_Meta):
         │ 1   ┆ 1.0        ┆ (-1, 1]    │
         │ 2   ┆ inf        ┆ (1, inf]   │
         └─────┴────────────┴────────────┘
+        """
+
+    @unstable()
+    def bin_intervals(
+        self,
+        intervals: Sequence[Any] | Series | int,
+        *,
+        labels: Sequence[str_] | Literal[False],
+        include_intervals: bool = False,
+        right_closed: bool = False,
+    ) -> Series:
+        """
+        Bin values into discrete intervals delimited by breakpoints.
+
+        .. warning::
+            This functionality is considered **experimental**. It may be removed or
+            changed at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        intervals
+            Strictly ascending breakpoints, or a positive integer giving the number of
+            equal-width bins over `[min, max]`. Explicit breakpoints may have any
+            orderable (non-nested) data type; an integer requires numeric input.
+        labels
+            One label per bin, or `False` to return the integer bin index.
+        include_intervals
+            Return a struct with fields `bin`, `left`, and `right`. The first bin's left
+            and last bin's right boundary are null.
+        right_closed
+            Use right-closed `(left, right]` rather than left-closed `[left, right)`
+            bins.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Enum`, or :class:`UInt32` if `labels`
+            is `False`, or :class:`Struct` if `include_intervals` is set.
+
+        Notes
+        -----
+        Explicit breakpoints make this elementwise. An integer derives breakpoints from
+        the data, so bins are computed per group in group and window contexts.
+
+        A derived breakpoint is rounded to a value the input data type can represent, so
+        membership right at a bin edge depends on the data type.
+
+        See Also
+        --------
+        bin_ranks
+        bin_quantiles
+
+        Examples
+        --------
+        >>> s = pl.Series("foo", [-2, -1, 0, 1, 2])
+        >>> s.bin_intervals([-1, 1], labels=["a", "b", "c"])
+        shape: (5,)
+        Series: 'foo' [enum]
+        [
+            "a"
+            "b"
+            "b"
+            "c"
+            "c"
+        ]
+        """
+
+    @unstable()
+    def bin_quantiles(
+        self,
+        quantiles: Sequence[float] | int,
+        *,
+        labels: Sequence[str_] | Literal[False],
+        include_intervals: bool = False,
+        right_closed: bool = False,
+    ) -> Series:
+        """
+        Bin values into discrete intervals delimited by quantiles of the data.
+
+        .. warning::
+            This functionality is considered **experimental**. It may be removed or
+            changed at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        quantiles
+            Non-decreasing quantiles in `[0, 1]`, or a positive integer giving the
+            number of bins. Two equal quantiles delimit an empty bin. Input must be
+            numeric. For quantile `q`, the value of the breakpoint is the sorted value
+            at `floor(q * (len - 1))`.
+        labels
+            One label per bin, or `False` to return the integer bin index.
+        include_intervals
+            Return a struct with fields `bin`, `left`, and `right`. The first bin's left
+            and last bin's right boundary are null.
+        right_closed
+            Use right-closed `(left, right]` rather than left-closed `[left, right)`
+            bins.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Enum`, or :class:`UInt32` if `labels`
+            is `False`, or :class:`Struct` if `include_intervals` is set.
+
+        See Also
+        --------
+        bin_intervals
+        bin_ranks
+
+        Examples
+        --------
+        Unlike :meth:`bin_ranks`, all equal values remain in the same bin, so a bin can
+        be empty. Here the breakpoints are `1`, `1`, and `2`, giving the bins
+        `[-inf, 1)`, `[1, 1)`, `[1, 2)`, and `[2, inf)`. The first is empty because a
+        left-closed bin excludes its right boundary, and the second because the
+        breakpoint `1` repeats.
+
+        >>> s = pl.Series("x", [1, 1, 2, 2])
+        >>> s.bin_quantiles([0.1, 0.25, 0.75], labels=["a", "b", "c", "d"])
+        shape: (4,)
+        Series: 'x' [enum]
+        [
+            "c"
+            "c"
+            "d"
+            "d"
+        ]
+        """
+
+    @unstable()
+    def bin_ranks(
+        self,
+        ranks: Sequence[float] | int,
+        *,
+        labels: Sequence[str_] | Literal[False],
+        include_intervals: bool = False,
+    ) -> Series:
+        """
+        Bin values by their position in sorted order.
+
+        Input must have an orderable data type; nested types (List, Array, and Struct)
+        are not supported.
+
+        .. warning::
+            This functionality is considered **experimental**. It may be removed or
+            changed at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        ranks
+            Non-decreasing cumulative fractions in `[0, 1]`, or a positive integer
+            giving the number of near-equal-sized bins. Two equal fractions delimit an
+            empty bin. For an integer, earlier bins receive any remainder.
+        labels
+            One label per bin, or `False` to return the integer bin index.
+        include_intervals
+            Return a struct with fields `bin`, `left`, and `right`. Boundaries are input
+            values, not ranks; the first bin's left and last bin's right boundary are
+            null.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Enum`, or :class:`UInt32` if `labels`
+            is `False`, or :class:`Struct` if `include_intervals` is set.
+
+        Notes
+        -----
+        Membership is positional, so equal values may be split across adjacent bins in
+        input order. Bins are computed per group in group and window contexts.
+
+        See Also
+        --------
+        bin_intervals
+        bin_quantiles
+
+        Examples
+        --------
+        Unlike :meth:`bin_quantiles`, rank bins may split equal values. Here, the bins
+        contain 25%, 50%, and 25% of the values.
+
+        >>> s = pl.Series("x", [1, 1, 2, 2])
+        >>> s.bin_ranks([0.25, 0.75], labels=["low", "mid", "high"])
+        shape: (4,)
+        Series: 'x' [enum]
+        [
+            "low"
+            "mid"
+            "mid"
+            "high"
+        ]
         """
 
     def rle(self) -> Series:
@@ -4805,6 +5059,33 @@ class Series(metaclass=_Meta):
             )
         ).to_series()
 
+    @overload
+    def to_numpy(
+        self,
+        *,
+        writable: bool = ...,
+        allow_copy: bool = ...,
+        masked: Literal[False] = ...,
+    ) -> np.ndarray[Any, Any]: ...
+
+    @overload
+    def to_numpy(
+        self,
+        *,
+        writable: bool = ...,
+        allow_copy: bool = ...,
+        masked: Literal[True],
+    ) -> np.ma.MaskedArray[Any, Any]: ...
+
+    @overload
+    def to_numpy(
+        self,
+        *,
+        writable: bool = ...,
+        allow_copy: bool = ...,
+        masked: bool,
+    ) -> np.ndarray[Any, Any]: ...
+
     @removed_parameters(
         RemovedParameter(
             name="use_pyarrow",
@@ -4826,6 +5107,7 @@ class Series(metaclass=_Meta):
         *,
         writable: bool = False,
         allow_copy: bool = True,
+        masked: bool = False,
     ) -> np.ndarray[Any, Any]:
         """
         Convert this Series to a NumPy ndarray.
@@ -4847,6 +5129,16 @@ class Series(metaclass=_Meta):
         allow_copy
             Allow memory to be copied to perform the conversion. If set to `False`,
             causes conversions that are not zero-copy to fail.
+        masked
+            Return a `numpy.ma.MaskedArray` in which null values are masked. The data
+            keeps the type it would have without nulls, and the values under the mask
+            are unspecified. Nulls inside nested values are converted as they are
+            without `masked`, except for `Array` and `Struct` values. `writable` and
+            `allow_copy` only apply to the data, not the mask.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Examples
         --------
@@ -4886,7 +5178,26 @@ class Series(metaclass=_Meta):
         >>> s.to_numpy()
         array([[1, 2, 3],
                [4, 5, 6]])
+
+        Set `masked=True` to represent null values with a mask instead, which preserves
+        the data type.
+
+        >>> s = pl.Series([1, 2, None], dtype=pl.UInt16)
+        >>> arr = s.to_numpy(masked=True)
+        >>> arr.dtype
+        dtype('uint16')
+        >>> arr.mask
+        array([False, False,  True])
         """  # noqa: W505
+        if masked:
+            msg = (
+                "the `masked` parameter of `Series.to_numpy()` is considered unstable."
+            )
+            issue_unstable_warning(msg)
+            data, mask = self._s.to_numpy_masked(
+                writable=writable, allow_copy=allow_copy
+            )
+            return np.ma.MaskedArray(data, mask=np.ma.nomask if mask is None else mask)
         return self._s.to_numpy(writable=writable, allow_copy=allow_copy)
 
     @unstable()
@@ -6136,7 +6447,12 @@ class Series(metaclass=_Meta):
             pl_return_dtype = parse_into_dtype(return_dtype)
 
         if not _disable_inefficient_map_warning:
-            warn_on_inefficient_map(function, columns=[self.name], map_target="series")
+            warn_on_inefficient_map(
+                function,
+                columns=[self.name],
+                map_target="series",
+                dtype=self.dtype,
+            )
 
         return self._from_pyseries(
             self._s.map_elements(
@@ -8179,10 +8495,14 @@ class Series(metaclass=_Meta):
         dtype: type[int | float] | PolarsDataType | None = None,
     ) -> Series:
         """
-        Reinterpret the underlying bits as a signed/unsigned integer or float.
+        Reinterpret the underlying bits as a signed/unsigned integer, float or decimal.
 
-        This operation is only allowed for numeric types of the same size.
-        For lower bits numbers, you can safely use the cast operation.
+        This operation is only allowed between numeric types of the same size. To
+        convert between types of different sizes, use :meth:`cast` instead.
+
+        A `Decimal` can also be reinterpreted to and from `Int128`, its unscaled integer
+        representation: `1.23` as `Decimal(5, 2)` becomes `123`. Reinterpreting an
+        `Int128` raises if the value doesn't fit the precision of the target `Decimal`.
 
         Exactly one of `signed` or `dtype` must be specified.
 
@@ -9715,8 +10035,8 @@ class Series(metaclass=_Meta):
 
         Notes
         -----
-        * As long as your data can fit in RAM, it is always more efficient to use the
-          regular :meth:`quantile` function instead.
+        * If the series has fewer than 100 million items, it is generally more efficient
+          to use the regular :meth:`quantile` function instead.
 
         * NaN values are regarded as larger than any finite number (and equal to one
           another). As a result, ``NaN`` values are treated as the largest values when
@@ -9787,6 +10107,8 @@ class Series(metaclass=_Meta):
         unordered: bool = False,
         descending: Sequence[bool] | None = None,
         nulls_last: Sequence[bool] | None = None,
+        output: Literal["binary_offset", "binary", "optimal"] = "binary_offset",
+        encode_nulls: Sequence[bool] | None = None,
     ) -> Series:
         """Decode from the row encoding."""
         return (
@@ -9798,6 +10120,8 @@ class Series(metaclass=_Meta):
                     unordered=unordered,
                     descending=descending,
                     nulls_last=nulls_last,
+                    output=output,
+                    encode_nulls=encode_nulls,
                 )
             )
             .to_series()

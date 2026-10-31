@@ -1,8 +1,9 @@
 use std::fmt;
 
-use arrow::array::Array;
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::Array;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::datatypes::ArrowDataType;
+use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::read::expr::{ParquetColumnExpr, ParquetScalar, SpecializedParquetColumnExpr};
@@ -22,7 +23,17 @@ pub enum SpecializedColumnPredicate {
     EqualOneOf(Box<[Scalar]>),
     StartsWith(Box<[u8]>),
     EndsWith(Box<[u8]>),
-    RegexMatch(regex::bytes::Regex),
+    RegexMatch(Arc<regex::bytes::Regex>),
+    /// A Categorical or Enum column equal to one of these strings.
+    CategoricalEqualOneOf(Box<[PlSmallStr]>),
+}
+
+/// The strings that an `==` or `is_in` predicate on a Categorical or Enum column matches.
+#[cfg(feature = "parquet")]
+#[derive(Clone)]
+enum DictionaryNeedles {
+    One(Box<str>),
+    Many(polars_utils::aliases::PlHashSet<Box<str>>),
 }
 
 #[derive(Clone)]
@@ -32,6 +43,9 @@ pub struct ColumnPredicateExpr {
     source_arrow_dtype: ArrowDataType,
     #[cfg(feature = "parquet")]
     specialized: Option<SpecializedParquetColumnExpr>,
+    /// Lets dictionary values be compared as strings, without adding them to the categories.
+    #[cfg(feature = "parquet")]
+    dictionary_needles: Option<DictionaryNeedles>,
     expr: Arc<dyn PhysicalIoExpr>,
 }
 
@@ -47,7 +61,46 @@ impl ColumnPredicateExpr {
         #[cfg(feature = "parquet")]
         use SpecializedParquetColumnExpr as P;
         #[cfg(feature = "parquet")]
+        let dictionary_needles = if matches!(source_arrow_dtype, ArrowDataType::Dictionary(..))
+            && (dtype.is_categorical() || dtype.is_enum())
+        {
+            let needles: Option<Vec<&str>> = match &specialized {
+                Some(S::Equal(scalar)) => scalar.value().get_str().map(|s| vec![s]),
+                Some(S::EqualOneOf(scalars)) => Some(
+                    scalars
+                        .iter()
+                        .filter_map(|scalar| scalar.value().get_str())
+                        .collect(),
+                ),
+                Some(S::CategoricalEqualOneOf(strings)) => {
+                    Some(strings.iter().map(|s| s.as_str()).collect())
+                },
+                _ => None,
+            };
+            needles.map(|mut needles| {
+                // Values that are not in an Enum are read as null.
+                #[cfg(feature = "dtype-categorical")]
+                if let DataType::Enum(_, mapping) = &dtype {
+                    needles.retain(|s| mapping.get_cat(s).is_some());
+                }
+                match needles.as_slice() {
+                    [needle] => DictionaryNeedles::One((*needle).into()),
+                    _ => DictionaryNeedles::Many(needles.into_iter().map(Box::from).collect()),
+                }
+            })
+        } else {
+            None
+        };
+        // A specialized predicate compares its scalars with the values as the file
+        // stores them, which polars scales for some Arrow types. Dictionary values can
+        // also differ from the column, e.g. an Enum turns unknown values into nulls.
+        #[cfg(feature = "parquet")]
         let specialized = specialized.and_then(|s| {
+            if DataType::arrow_value_scale(&source_arrow_dtype) != 1
+                || matches!(source_arrow_dtype, ArrowDataType::Dictionary(..))
+            {
+                return None;
+            }
             Some(match s {
                 S::Equal(s) => P::Equal(cast_to_parquet_scalar(s)?),
                 S::Between(low, high) => {
@@ -63,40 +116,71 @@ impl ColumnPredicateExpr {
                 S::StartsWith(s) => P::StartsWith(s),
                 S::EndsWith(s) => P::EndsWith(s),
                 S::RegexMatch(s) => P::RegexMatch(s),
+                S::CategoricalEqualOneOf(_) => return None,
             })
         });
 
-        Self {
+        #[allow(unused_mut)]
+        let mut out = Self {
             column_name,
             dtype,
             source_arrow_dtype,
             #[cfg(feature = "parquet")]
             specialized,
+            #[cfg(feature = "parquet")]
+            dictionary_needles,
             expr,
+        };
+        // Values that are not in an Enum are read as null, which this predicate can keep.
+        #[cfg(feature = "parquet")]
+        if out.dictionary_needles.is_some()
+            && out.dtype.is_enum()
+            && out.evaluate_null().unwrap_or(true)
+        {
+            out.dictionary_needles = None;
         }
+        out
     }
 }
 
 #[cfg(feature = "parquet")]
 impl ParquetColumnExpr for ColumnPredicateExpr {
-    fn evaluate_mut(&self, values: &dyn Array, bm: &mut BitmapBuilder) {
+    fn try_evaluate_mut(&self, values: &dyn Array, bm: &mut BitmapBuilder) -> PolarsResult<()> {
         // We should never evaluate nulls with this.
         assert!(values.validity().is_none_or(|v| v.set_bits() == 0));
 
-        // @TODO: Probably these unwraps should be removed.
+        if let Some(needles) = &self.dictionary_needles
+            && let Some(values) = values
+                .as_any()
+                .downcast_ref::<polars_arrow::array::Utf8ViewArray>()
+        {
+            bm.reserve(values.len());
+            match needles {
+                DictionaryNeedles::One(needle) => {
+                    for value in values.values_iter() {
+                        bm.push(value == needle.as_ref());
+                    }
+                },
+                DictionaryNeedles::Many(needles) => {
+                    for value in values.values_iter() {
+                        bm.push(needles.contains(value));
+                    }
+                },
+            }
+            return Ok(());
+        }
+
         let series = predicate_values_to_series(
             self.column_name.clone(),
             values,
             &self.dtype,
             &self.source_arrow_dtype,
-        )
-        .unwrap();
+        )?;
         let column = series.into_column();
         let df = unsafe { DataFrame::new_unchecked(values.len(), vec![column]) };
 
-        // @TODO: Probably these unwraps should be removed.
-        let true_mask = self.expr.evaluate_io(&df).unwrap();
-        let true_mask = true_mask.bool().unwrap();
+        let true_mask = self.expr.evaluate_io(&df)?;
+        let true_mask = true_mask.bool()?;
 
         bm.reserve(true_mask.len());
         for chunk in true_mask.downcast_iter() {
@@ -105,16 +189,22 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
                 Some(v) => bm.extend_from_bitmap(&(chunk.values() & v)),
             }
         }
+        Ok(())
     }
-    fn evaluate_null(&self) -> bool {
+    fn evaluate_null(&self) -> PolarsResult<bool> {
         let column = Column::full_null(self.column_name.clone(), 1, &self.dtype);
         let df = unsafe { DataFrame::new_unchecked(1, vec![column]) };
 
-        // @TODO: Probably these unwraps should be removed.
-        let true_mask = self.expr.evaluate_io(&df).unwrap();
-        let true_mask = true_mask.bool().unwrap();
+        let true_mask = self.expr.evaluate_io(&df)?;
+        let true_mask = true_mask.bool()?;
 
-        true_mask.get(0).unwrap_or(false)
+        Ok(true_mask.get(0).unwrap_or(false))
+    }
+
+    fn can_evaluate_null_slots(&self) -> bool {
+        // Evaluating dictionary values adds them to the categories.
+        self.dictionary_needles.is_some()
+            || !matches!(self.source_arrow_dtype, ArrowDataType::Dictionary(..))
     }
 
     fn as_specialized(&self) -> Option<&SpecializedParquetColumnExpr> {
@@ -129,23 +219,36 @@ fn predicate_values_to_series(
     dtype: &DataType,
     source_arrow_dtype: &ArrowDataType,
 ) -> PolarsResult<Series> {
-    // For example, Arrow seconds will be stored as Polars milliseconds, so we can not just
-    // zero-copy construct the predicate series
-    let timestamp_units_differ = matches!(
-        (source_arrow_dtype, dtype),
-        (
-            ArrowDataType::Timestamp(source_unit, _),
-            DataType::Datetime(target_unit, _),
-        ) if source_unit != &target_unit.to_arrow()
-    );
-
-    if timestamp_units_differ {
+    // Polars stores the values of some Arrow types scaled, e.g. Arrow seconds as
+    // milliseconds, so the predicate series cannot be constructed zero-copy.
+    if DataType::arrow_value_scale(source_arrow_dtype) != 1 {
         let values = polars_compute::cast::cast(
             values,
             source_arrow_dtype,
             polars_compute::cast::CastOptionsImpl::default(),
         )?;
         Series::try_from((name, values))
+    } else if matches!(source_arrow_dtype, ArrowDataType::Dictionary(..)) {
+        // Dictionary columns are evaluated on their string values. Don't insert any of them
+        // if they don't all fit, as the dictionary can hold values no row uses.
+        #[cfg(feature = "dtype-categorical")]
+        if let DataType::Categorical(_, mapping) = dtype
+            && mapping.num_cats_upper_bound() + values.len() > mapping.max_categories()
+        {
+            let values = values
+                .as_any()
+                .downcast_ref::<polars_arrow::array::Utf8ViewArray>()
+                .unwrap();
+            let new_values: polars_utils::aliases::PlHashSet<&str> = values
+                .values_iter()
+                .filter(|v| mapping.get_cat(v).is_none())
+                .collect();
+            polars_ensure!(
+                mapping.num_cats_upper_bound() + new_values.len() <= mapping.max_categories(),
+                ComputeError: "dictionary values do not fit in the categories"
+            );
+        }
+        Series::from_chunk_and_dtype(name, values.to_boxed(), &DataType::String)?.cast(dtype)
     } else {
         Series::from_chunk_and_dtype(name, values.to_boxed(), dtype)
     }
@@ -245,7 +348,7 @@ pub trait SkipBatchPredicate: Send + Sync {
                 None => (
                     Scalar::null(dtype.clone()),
                     Scalar::null(dtype.clone()),
-                    Scalar::null(IDX_DTYPE),
+                    Scalar::null(null_count_dtype(dtype)),
                 ),
                 Some(stat) => (
                     Scalar::new(dtype.clone(), stat.min),
@@ -272,21 +375,59 @@ pub trait SkipBatchPredicate: Send + Sync {
     fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<Bitmap>;
 }
 
-#[derive(Clone)]
-pub struct ColumnPredicates {
-    pub predicates:
-        PlHashMap<PlSmallStr, (Arc<dyn PhysicalIoExpr>, Option<SpecializedColumnPredicate>)>,
-    pub is_sumwise_complete: bool,
+/// Dtype of a column's `<col>_nc` statistic: per field for structs (see
+/// `polars_plan::plans::predicates::null_count_dtype`).
+fn null_count_dtype(dtype: &DataType) -> DataType {
+    match dtype {
+        #[cfg(feature = "dtype-struct")]
+        DataType::Struct(fields) => DataType::Struct(
+            fields
+                .iter()
+                .map(|f| Field::new(f.name().clone(), null_count_dtype(f.dtype())))
+                .collect(),
+        ),
+        _ => IDX_DTYPE,
+    }
 }
 
-// I want to be explicit here.
-#[allow(clippy::derivable_impls)]
-impl Default for ColumnPredicates {
-    fn default() -> Self {
-        Self {
-            predicates: PlHashMap::default(),
-            is_sumwise_complete: false,
-        }
+/// The conjuncts of a row predicate that read one column, conjoined.
+#[derive(Clone)]
+pub struct ColumnPredicate {
+    /// The static conjuncts, conjoined. `None` when the column only has dynamic ones.
+    pub predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    pub specialized: Option<SpecializedColumnPredicate>,
+    /// The conjuncts a producer sets at run time, each on its own.
+    pub dynamic: Vec<DynamicColumnPredicate>,
+}
+
+impl ColumnPredicate {
+    /// Every conjunct, static and dynamic, conjoined.
+    pub fn conjoined(&self) -> Arc<dyn PhysicalIoExpr> {
+        self.predicate
+            .iter()
+            .chain(self.dynamic.iter().map(|d| &d.predicate))
+            .cloned()
+            .reduce(|a, b| Arc::new(AndIoExpr(a, b)))
+            .unwrap()
+    }
+}
+
+/// A conjunct on one column that a producer sets at run time. It keeps every
+/// row until `source` says it filters rows.
+#[derive(Clone)]
+pub struct DynamicColumnPredicate {
+    pub predicate: Arc<dyn PhysicalIoExpr>,
+    pub source: Arc<dyn DynamicPredicateSource>,
+}
+
+/// `a AND b`.
+struct AndIoExpr(Arc<dyn PhysicalIoExpr>, Arc<dyn PhysicalIoExpr>);
+
+impl PhysicalIoExpr for AndIoExpr {
+    fn evaluate_io(&self, df: &DataFrame) -> PolarsResult<Series> {
+        let a = self.0.evaluate_io(df)?;
+        let b = self.1.evaluate_io(df)?;
+        Ok((a.bool()? & b.bool()?).into_series())
     }
 }
 
@@ -328,9 +469,172 @@ impl PhysicalIoExpr for PhysicalExprWithConstCols<Arc<dyn PhysicalIoExpr>> {
     }
 }
 
+/// The row predicate split into the conjuncts that read a single column and the rest.
+#[derive(Clone)]
+pub struct StagedScanIOPredicate {
+    pub column_predicates: Arc<PlIndexMap<PlSmallStr, ColumnPredicate>>,
+    /// The conjuncts that read no or several columns, conjoined.
+    pub rest: Option<Arc<dyn PhysicalIoExpr>>,
+}
+
+impl StagedScanIOPredicate {
+    /// Every conjunct on a constant column becomes part of `rest`.
+    fn with_constant_columns(&self, constants: &[(PlSmallStr, Scalar)]) -> Self {
+        let mut column_predicates = self.column_predicates.as_ref().clone();
+        let mut rest = self.rest.clone();
+        for (c, _) in constants {
+            if let Some(p) = column_predicates.shift_remove(c) {
+                let p = p.conjoined();
+                rest = Some(match rest {
+                    None => p,
+                    Some(rest) => Arc::new(AndIoExpr(rest, p)),
+                });
+            }
+        }
+        Self {
+            column_predicates: Arc::new(column_predicates),
+            rest: rest.map(|rest| {
+                Arc::new(PhysicalExprWithConstCols {
+                    constants: constants.to_vec(),
+                    child: rest,
+                }) as _
+            }),
+        }
+    }
+}
+
+/// What a producer has published for a column: a reader skips the batches whose
+/// statistics fall outside the range. It can change while a file is read.
+#[derive(Clone, Debug)]
+pub enum RuntimeRange {
+    /// Not published yet. Every batch is kept; a later file may see a range.
+    Pending,
+    /// Never published. Every batch is kept.
+    Disabled,
+    /// No value can match. Every batch is skipped.
+    Empty,
+    /// Only values in `lo..=hi` can match, a missing bound does not limit that
+    /// side. Nulls match when `nulls_match`.
+    Range {
+        lo: Option<Scalar>,
+        hi: Option<Scalar>,
+        nulls_match: bool,
+    },
+}
+
+/// The order in which a reader best reads batches for a predicate that keeps
+/// fewer values as its producer sees more.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReadOrder {
+    /// The batches with the lowest minimum first.
+    LowFirst,
+    /// The batches with the highest maximum first.
+    HighFirst,
+}
+
+/// A reader's view of a predicate that a producer sets at run time.
+pub trait DynamicPredicateSource: Send + Sync {
+    fn runtime_range(&self) -> RuntimeRange;
+
+    fn read_order(&self) -> Option<ReadOrder> {
+        None
+    }
+
+    /// Whether the producer has published a predicate that rejects rows.
+    fn filters_rows(&self) -> bool;
+
+    /// Whether a reader may stop evaluating the predicate when it rejects too
+    /// little: it stays as it is once set, and the producer checks every row
+    /// again.
+    fn can_bypass(&self) -> bool;
+}
+
+/// An expression a reader evaluates to a column, rather than to a predicate mask.
+pub trait ColumnIoExpr: Send + Sync {
+    fn evaluate_io(&self, df: &DataFrame) -> PolarsResult<Column>;
+}
+
+/// A column whose batches a reader may skip by a [`RuntimeRange`]. It is never
+/// evaluated per row.
+#[derive(Clone)]
+pub struct RuntimeRangeHint {
+    pub column: PlSmallStr,
+    /// An order-keeping expression of `column` that the range is on. The range is on
+    /// the column itself when `None`.
+    pub order_keeping_expr: Option<Arc<dyn ColumnIoExpr>>,
+    pub source: Arc<dyn DynamicPredicateSource>,
+    /// The value the range is compared with in this file when the column is not
+    /// stored in the file, such as a hive column or a missing column with a default.
+    pub constant: Option<Scalar>,
+}
+
+/// A range bound as `dtype`, or `None` when it does not survive the cast, in
+/// which case it bounds nothing.
+pub fn cast_bound(bound: &Scalar, dtype: &DataType) -> Option<Scalar> {
+    bound
+        .clone()
+        .cast_with_options(dtype, CastOptions::NonStrict)
+        .ok()
+        .filter(|b| !b.is_null())
+}
+
+impl RuntimeRangeHint {
+    /// Whether a file whose column is the constant `value` can hold a match.
+    /// `None` when the range does not settle it.
+    pub fn constant_matches(range: &RuntimeRange, value: &Scalar) -> Option<bool> {
+        match range {
+            RuntimeRange::Pending | RuntimeRange::Disabled => None,
+            RuntimeRange::Empty => Some(false),
+            RuntimeRange::Range {
+                lo,
+                hi,
+                nulls_match,
+            } => {
+                if value.is_null() {
+                    return Some(*nulls_match);
+                }
+                let above_lo = match lo {
+                    Some(lo) => value.value() >= cast_bound(lo, value.dtype())?.value(),
+                    None => true,
+                };
+                let below_hi = match hi {
+                    Some(hi) => value.value() <= cast_bound(hi, value.dtype())?.value(),
+                    None => true,
+                };
+                Some(above_lo && below_hi)
+            },
+        }
+    }
+
+    /// Bind the hints of column `name` to its constant value in a file.
+    pub fn set_constant(hints: &mut [Self], name: &str, value: &Scalar) {
+        for hint in hints.iter_mut().filter(|h| h.column == name) {
+            hint.constant = match &hint.order_keeping_expr {
+                None => Some(value.clone()),
+                Some(expr) => hint.apply_order_keeping_expr(expr.as_ref(), value),
+            };
+        }
+    }
+
+    fn apply_order_keeping_expr(&self, expr: &dyn ColumnIoExpr, value: &Scalar) -> Option<Scalar> {
+        let column = Column::new_scalar(self.column.clone(), value.clone(), 1);
+        let df = DataFrame::new(1, vec![column]).ok()?;
+        let out = expr.evaluate_io(&df).ok()?;
+        let value = out.get(0).ok()?.into_static();
+        Some(Scalar::new(out.dtype().clone(), value))
+    }
+}
+
 #[derive(Clone)]
 pub struct ScanIOPredicate {
     pub predicate: Arc<dyn PhysicalIoExpr>,
+
+    /// `predicate` split for readers that filter while decoding.
+    pub staged: Option<StagedScanIOPredicate>,
+
+    /// Whether `predicate` filters rows at all. False when the scan only has
+    /// runtime ranges to skip batches by.
+    pub filters_rows: bool,
 
     /// Column names that are used in the predicate.
     pub live_columns: Arc<PlIndexSet<PlSmallStr>>,
@@ -338,8 +642,8 @@ pub struct ScanIOPredicate {
     /// A predicate that gets given statistics and evaluates whether a batch can be skipped.
     pub skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
 
-    /// A predicate that gets given statistics and evaluates whether a batch can be skipped.
-    pub column_predicates: Arc<ColumnPredicates>,
+    /// Columns whose batches are skipped by a range published at run time.
+    pub runtime_ranges: Vec<RuntimeRangeHint>,
 
     /// Predicate parts only referring to hive columns.
     pub hive_predicate: Option<Arc<dyn PhysicalIoExpr>>,
@@ -348,6 +652,11 @@ pub struct ScanIOPredicate {
 }
 
 impl ScanIOPredicate {
+    /// Whether the predicate or a range hint reads the column.
+    pub fn reads_column(&self, name: &str) -> bool {
+        self.live_columns.contains(name) || self.runtime_ranges.iter().any(|h| h.column == name)
+    }
+
     pub fn set_external_constant_columns(&mut self, constant_columns: Vec<(PlSmallStr, Scalar)>) {
         if constant_columns.is_empty() {
             return;
@@ -359,18 +668,24 @@ impl ScanIOPredicate {
         }
         self.live_columns = Arc::new(live_columns);
 
+        for (name, value) in constant_columns.iter() {
+            RuntimeRangeHint::set_constant(&mut self.runtime_ranges, name, value);
+        }
+
         if let Some(skip_batch_predicate) = self.skip_batch_predicate.take() {
             let mut sbp_constant_columns = Vec::with_capacity(constant_columns.len() * 3);
             for (c, v) in constant_columns.iter() {
                 sbp_constant_columns.push((format_pl_smallstr!("{c}_min"), v.clone()));
                 sbp_constant_columns.push((format_pl_smallstr!("{c}_max"), v.clone()));
-                let nc = if v.is_null() {
+                let nc_dtype = null_count_dtype(v.dtype());
+                // Struct null counts are per field, and unknown here.
+                let nc = if v.is_null() || nc_dtype != IDX_DTYPE {
                     AnyValue::Null
                 } else {
                     (0 as IdxSize).into()
                 };
                 sbp_constant_columns
-                    .push((format_pl_smallstr!("{c}_nc"), Scalar::new(IDX_DTYPE, nc)));
+                    .push((format_pl_smallstr!("{c}_nc"), Scalar::new(nc_dtype, nc)));
             }
             self.skip_batch_predicate = Some(Arc::new(PhysicalExprWithConstCols {
                 constants: sbp_constant_columns,
@@ -378,11 +693,9 @@ impl ScanIOPredicate {
             }));
         }
 
-        let mut column_predicates = self.column_predicates.as_ref().clone();
-        for (c, _) in constant_columns.iter() {
-            column_predicates.predicates.remove(c);
+        if let Some(staged) = self.staged.as_mut() {
+            *staged = staged.with_constant_columns(&constant_columns);
         }
-        self.column_predicates = Arc::new(column_predicates);
 
         self.predicate = Arc::new(PhysicalExprWithConstCols {
             constants: constant_columns,

@@ -1,8 +1,10 @@
 use std::hash::BuildHasher;
 use std::marker::PhantomData;
 
-use arrow::bitmap::BitmapBuilder;
 use num_traits::Zero;
+use polars_arrow::array::DictionaryKey;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
+use polars_compute::cast::cast_unchecked;
 use polars_utils::hashing::{_boost_hash_combine, folded_multiply};
 
 use crate::chunked_array::cast::CastOptions;
@@ -197,6 +199,103 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
 
         let arr = <T::PolarsPhysical as PolarsDataType>::Array::from_vec(cat_ids)
             .with_validity(validity.into_opt_validity());
+        let phys = ChunkedArray::<T::PolarsPhysical>::with_chunk(name, arr);
+        Ok(unsafe { Self::from_cats_and_dtype_unchecked(phys, dtype) })
+    }
+
+    /// Converts a dictionary array of strings to this CategoricalChunked.
+    ///
+    /// Gives the same result as [`Self::from_str_iter`] over the strings of `arr`. When there
+    /// are at least as many keys as values, each used value is looked up only once.
+    pub fn from_str_dictionary<K: DictionaryKey>(
+        name: PlSmallStr,
+        dtype: DataType,
+        arr: &DictionaryArray<K>,
+    ) -> PolarsResult<Self> {
+        let (DataType::Enum(_, mapping) | DataType::Categorical(_, mapping)) = &dtype else {
+            panic!("from_str_dictionary called on non-categorical type")
+        };
+        assert!(dtype.cat_physical().ok() == Some(T::physical()));
+        let is_enum = dtype.is_enum();
+
+        let values = cast_unchecked(&**arr.values(), &ArrowDataType::Utf8View)?;
+        let values = values.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
+        let keys = arr.keys();
+
+        // Keys from FFI are not validated: negative keys map to null, keys out of bounds panic.
+        let per_row = || {
+            let strings = keys.iter().map(|k| values.get((*k?).try_into().ok()?));
+            Self::from_str_iter(name.clone(), dtype.clone(), strings)
+        };
+
+        // With more dictionary values than rows, a lookup per row is cheaper.
+        if values.len() > keys.len() {
+            return per_row();
+        }
+
+        // Values are looked up in order of first use, so new categories are inserted in the
+        // same order as with a lookup per row.
+        let mut seen = MutableBitmap::from_len_zeroed(values.len());
+        let mut value_cats = vec![T::Native::zero(); values.len()];
+        // Only allocated once a used value maps to null.
+        let mut value_is_valid: Option<MutableBitmap> = None;
+        let mut lookup = |k: usize| -> PolarsResult<()> {
+            let opt_cat = match values.get(k) {
+                Some(s) if is_enum => mapping.get_cat(s).map(T::Native::from_cat),
+                Some(s) => Some(T::Native::from_cat(mapping.insert_cat(s)?)),
+                None => None,
+            };
+            match opt_cat {
+                Some(cat) => value_cats[k] = cat,
+                None => {
+                    value_is_valid
+                        .get_or_insert_with(|| MutableBitmap::from_len_set(values.len()))
+                        .set(k, false);
+                },
+            }
+            Ok(())
+        };
+        for k in keys.iter().flatten() {
+            let Ok(k) = (*k).try_into() else {
+                return per_row();
+            };
+            if k >= values.len() {
+                return per_row();
+            }
+            // SAFETY: k is in bounds.
+            if !unsafe { seen.get_unchecked(k) } {
+                unsafe { seen.set_unchecked(k, true) };
+                lookup(k)?;
+            }
+        }
+
+        // SAFETY: all non-null keys were checked to be in bounds above.
+        let cat_ids: Vec<T::Native> = if keys.null_count() == 0 {
+            keys.values()
+                .iter()
+                .map(|k| unsafe { *value_cats.get_unchecked(k.as_usize()) })
+                .collect_trusted()
+        } else {
+            arr.keys_iter()
+                .map(|k| {
+                    k.map_or(T::Native::zero(), |k| unsafe {
+                        *value_cats.get_unchecked(k)
+                    })
+                })
+                .collect_trusted()
+        };
+        let validity = if let Some(value_is_valid) = value_is_valid {
+            let validity: Bitmap = arr
+                .keys_iter()
+                .map(|k| k.is_some_and(|k| unsafe { value_is_valid.get_unchecked(k) }))
+                .collect_trusted();
+            Some(validity)
+        } else {
+            keys.validity().cloned()
+        };
+
+        let arr =
+            <T::PolarsPhysical as PolarsDataType>::Array::from_vec(cat_ids).with_validity(validity);
         let phys = ChunkedArray::<T::PolarsPhysical>::with_chunk(name, arr);
         Ok(unsafe { Self::from_cats_and_dtype_unchecked(phys, dtype) })
     }

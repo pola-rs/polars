@@ -2,8 +2,9 @@ use polars_async::primitives::distributor_channel::distributor_channel;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::prelude::{AnyValue, Column, DataType, IntoColumn};
 use polars_core::scalar::Scalar;
+use polars_defs::expr::InterpolationMethod;
 use polars_error::PolarsResult;
-use polars_ops::series::{InterpolationMethod, interpolate};
+use polars_ops::series::interpolate;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 

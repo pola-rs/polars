@@ -12,7 +12,40 @@ members = [
   "pyo3-polars/pyo3-polars",
   "pyo3-polars/pyo3-polars-derive",
 ]
-default-members = ["crates/*"]
+default-members = [
+  "crates/polars",
+  "crates/polars-arrow",
+  "crates/polars-async",
+  "crates/polars-buffer",
+  "crates/polars-compute",
+  "crates/polars-config",
+  "crates/polars-core",
+  "crates/polars-defs",
+  "crates/polars-descriptions",
+  "crates/polars-dtype",
+  "crates/polars-dylib",
+  "crates/polars-error",
+  "crates/polars-expr",
+  "crates/polars-ffi",
+  "crates/polars-io",
+  "crates/polars-io-ext-ffi",
+  "crates/polars-json",
+  "crates/polars-lazy",
+  "crates/polars-mem-engine",
+  "crates/polars-observer",
+  "crates/polars-ooc",
+  "crates/polars-ops",
+  "crates/polars-parquet",
+  "crates/polars-plan",
+  "crates/polars-python",
+  "crates/polars-row",
+  "crates/polars-schema",
+  "crates/polars-sql",
+  "crates/polars-stream",
+  "crates/polars-testing",
+  "crates/polars-time",
+  "crates/polars-utils",
+]
 
 [workspace.package]
 version = "0.55.1"
@@ -25,8 +58,9 @@ repository = "https://github.com/pola-rs/polars"
 [workspace.dependencies]
 aho-corasick = "1.1"
 arboard = { version = "3.4.0", default-features = false }
-argminmax = { version = "0.6.3", default-features = false, features = ["float", "half"] }
+argminmax = { version = "0.7.0", default-features = false, features = ["float", "half"] }
 async-channel = { version = "2.3.1" }
+async-ffi = { version = "0.5.1" }
 async-trait = { version = "0.1.59" }
 atoi_simd = "0.18"
 atomic-waker = "1"
@@ -74,7 +108,7 @@ num-bigint = "0.4.6"
 num-derive = "0.4.2"
 num-traits = "0.2"
 numpy = "0.29"
-object_store = { version = "0.14.1", default-features = false, features = ["fs"] }
+object_store = { version = "0.14.2", default-features = false, features = ["fs"] }
 parking_lot = "0.12"
 percent-encoding = "2.3"
 pin-project-lite = "0.2"
@@ -95,10 +129,10 @@ serde = { version = "1.0.188", features = ["derive", "rc"] }
 serde_json = "1"
 serde_stacker = "0.1.12"
 sha2 = "0.11"
-simd-json = { version = "0.17", features = ["known-key", "128bit"] }
+simd-json = { version = "0.18", features = ["known-key", "128bit"] }
 simdutf8 = "0.1.4"
-slotmap = "1"
-sqlparser = { version = "0.62", features = ["visitor"] }
+slotmap = "1.1.1"
+sqlparser = { version = "0.63", features = ["visitor"] }
 stacker = "0.1"
 streaming-iterator = "0.1.9"
 strength_reduce = "0.2"
@@ -112,14 +146,17 @@ uuid = { version = "1.15.1", features = ["v4", "v7"] }
 version_check = "0.9.4"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 zmij = "1.0.0"
-zstd = "0.13"
+zstd = "0.14"
 
 polars = { version = "0.55.1", path = "crates/polars", default-features = false }
+polars-arrow = { version = "0.55.1", path = "crates/polars-arrow", default-features = false }
+polars-arrow-format = { version = "0.2.0" }
 polars-async = { version = "0.55.1", path = "crates/polars-async", default-features = false }
 polars-buffer = { version = "0.55.1", path = "crates/polars-buffer", default-features = false }
 polars-compute = { version = "0.55.1", path = "crates/polars-compute", default-features = false }
 polars-config = { version = "0.55.1", path = "crates/polars-config", default-features = false }
 polars-core = { version = "0.55.1", path = "crates/polars-core", default-features = false }
+polars-defs = { version = "0.55.1", path = "crates/polars-defs", default-features = false }
 polars-descriptions = { version = "0.55.1", path = "crates/polars-descriptions", default-features = false }
 polars-dtype = { version = "0.55.1", path = "crates/polars-dtype", default-features = false }
 polars-dylib = { version = "0.55.1", path = "crates/polars-dylib", default-features = false }
@@ -127,6 +164,7 @@ polars-error = { version = "0.55.1", path = "crates/polars-error", default-featu
 polars-expr = { version = "0.55.1", path = "crates/polars-expr", default-features = false }
 polars-ffi = { version = "0.55.1", path = "crates/polars-ffi", default-features = false }
 polars-io = { version = "0.55.1", path = "crates/polars-io", default-features = false }
+polars-io-ext-ffi = { version = "0.1.0", path = "crates/polars-io-ext-ffi" }
 polars-json = { version = "0.55.1", path = "crates/polars-json", default-features = false }
 polars-lazy = { version = "0.55.1", path = "crates/polars-lazy", default-features = false }
 polars-mem-engine = { version = "0.55.1", path = "crates/polars-mem-engine", default-features = false }
@@ -146,22 +184,6 @@ polars-utils = { version = "0.55.1", path = "crates/polars-utils", default-featu
 pyo3-polars = { version = "0.28.0", path = "pyo3-polars/pyo3-polars" }
 pyo3-polars-derive = { version = "0.22.0", path = "pyo3-polars/pyo3-polars-derive" }
 
-[workspace.dependencies.arrow-format]
-package = "polars-arrow-format"
-version = "0.2.0"
-
-[workspace.dependencies.arrow]
-package = "polars-arrow"
-version = "0.55.1"
-path = "crates/polars-arrow"
-default-features = false
-features = [
-  "compute_aggregate",
-  "compute_arithmetics",
-  "compute_bitwise",
-  "compute_comparison",
-]
-
 [workspace.lints.clippy]
 chunks_exact_to_as_chunks = "allow" # https://github.com/rust-lang/rust-clippy/issues/17359
 collapsible_if = "allow"
@@ -170,13 +192,13 @@ question_mark = "allow" # https://github.com/rust-lang/rust-clippy/issues/17384
 [patch.crates-io]
 # packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd", rev = "e57c7ba11386147e6d2cbad7c88f376aab4bdc86" }
 # simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }
-# `DnsResolver` (https://github.com/apache/arrow-rs-object-store/pull/728) is unreleased,
-# drop this patch once object_store 0.14.2 is out.
-object_store = { git = "https://github.com/apache/arrow-rs-object-store", rev = "b07471e2bc341278f86e30cf80a850d56cbe2c67" }
 color-backtrace = { git = "https://github.com/orlp/color-backtrace", rev = "20f5eea183563bb4cfac9a4d65901d4a1002cde2" }
 
 # https://github.com/tikv/jemallocator/pull/168
 tikv-jemalloc-sys = { git = "https://github.com/pola-rs/jemallocator", rev = "0d683dfb157097e2075d5e0eaf25f71f514a7552" }
+
+# https://github.com/rust-lang/hashbrown/pull/727
+hashbrown = { git = "https://github.com/pola-rs/hashbrown", rev = "d76a6f81abd8f388676aff15068236a8d21c7e1a" }
 
 [profile.dev]
 debug = "line-tables-only"

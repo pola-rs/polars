@@ -1,5 +1,5 @@
-use arrow::bitmap::Bitmap;
-use arrow::offset::OffsetsBuffer;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::offset::OffsetsBuffer;
 use polars_buffer::Buffer;
 
 #[cfg(feature = "object")]

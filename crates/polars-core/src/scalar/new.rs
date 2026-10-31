@@ -85,9 +85,9 @@ impl Scalar {
     #[cfg(feature = "dtype-categorical")]
     pub fn new_enum(
         value: polars_dtype::categorical::CatSize,
-        categories: &arrow::array::Utf8ViewArray,
+        categories: &polars_arrow::array::Utf8ViewArray,
     ) -> PolarsResult<Self> {
-        use arrow::array::Array;
+        use polars_arrow::array::Array;
         use polars_dtype::categorical::FrozenCategories;
 
         assert_eq!(categories.null_count(), 0);

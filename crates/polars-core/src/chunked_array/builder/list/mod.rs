@@ -5,11 +5,11 @@ mod null;
 mod primitive;
 
 pub use anonymous::*;
-use arrow::legacy::array::list::AnonymousBuilder;
-use arrow::legacy::array::null::MutableNullArray;
 pub use binary::*;
 pub use boolean::*;
 pub use null::*;
+use polars_arrow::legacy::array::list::AnonymousBuilder;
+use polars_arrow::legacy::array::null::MutableNullArray;
 pub use primitive::*;
 
 use super::*;

@@ -4,10 +4,10 @@ use std::simd::Select;
 #[cfg(feature = "simd")]
 use std::simd::prelude::*;
 
-use arrow::array::{Array, PrimitiveArray};
-use arrow::bitmap::bitmask::BitMask;
-use arrow::types::NativeType;
 use num_traits::Zero;
+use polars_arrow::array::{Array, PrimitiveArray};
+use polars_arrow::bitmap::bitmask::BitMask;
+use polars_arrow::types::NativeType;
 use polars_utils::float16::pf16;
 
 macro_rules! wrapping_impl {

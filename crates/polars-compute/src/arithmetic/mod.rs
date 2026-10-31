@@ -1,8 +1,8 @@
 use std::any::TypeId;
 
-use arrow::array::{Array, PrimitiveArray};
-use arrow::bitmap::BitmapBuilder;
-use arrow::types::NativeType;
+use polars_arrow::array::{Array, PrimitiveArray};
+use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::types::NativeType;
 
 // Low-level comparison kernel.
 pub trait ArithmeticKernel: Sized + Array {
@@ -149,6 +149,13 @@ impl<T: HasPrimitiveArithmeticKernel> ArithmeticKernel for PrimitiveArray<T> {
     fn true_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> PrimitiveArray<Self::TrueDivT> { T::prim_true_div_scalar_lhs(lhs, rhs) }
 }
 
+/// How an integer division rounds its quotient; the remainder takes the matching sign.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DivRounding {
+    Floor,
+    Trunc,
+}
+
 mod float;
 pub mod pl_num;
 mod signed;
@@ -193,7 +200,7 @@ fn prim_checked_mul_scalar<I: NativeType + CheckedMul + WrappingMul>(
     let validity = validity.freeze();
     let validity = match array.validity() {
         None => validity,
-        Some(arr_validity) => arrow::bitmap::and(&validity, arr_validity),
+        Some(arr_validity) => polars_arrow::bitmap::and(&validity, arr_validity),
     };
 
     PrimitiveArray::<I>::new(I::PRIMITIVE.into(), out.into(), Some(validity))

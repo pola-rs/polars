@@ -1,5 +1,5 @@
-use arrow::array::{BinaryViewArray, BooleanArray, PrimitiveArray, StaticArray, View};
-use arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::array::{BinaryViewArray, BooleanArray, PrimitiveArray, StaticArray, View};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::chunked_array::ops::sort::arg_bottom_k::_arg_bottom_k;
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::*;
@@ -279,7 +279,7 @@ fn top_k_by_impl(
     }
 
     let multithreaded = k >= 10000 && RAYON.current_num_threads() > 1;
-    let mut sort_options = SortMultipleOptions {
+    let sort_options = SortMultipleOptions {
         descending: descending.into_iter().map(|x| !x).collect(),
         nulls_last: vec![true; by.len()],
         multithreaded,
@@ -287,7 +287,7 @@ fn top_k_by_impl(
         limit: None,
     };
 
-    let idx = _arg_bottom_k(k, by, &mut sort_options)?;
+    let idx = _arg_bottom_k(k, by, sort_options)?;
 
     let result = unsafe {
         src.as_materialized_series()

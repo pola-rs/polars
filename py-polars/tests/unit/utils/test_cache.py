@@ -60,6 +60,22 @@ def test_cache_access_updates_order() -> None:
     assert list(cache2.keys()) == ["second", "first"]
 
 
+def test_setitem_existing_key_in_full_cache() -> None:
+    cache = LRUCache[str, int](maxsize=2)
+    cache["a"] = 1
+    cache["b"] = 2
+
+    # updating *existing* keys should never evict other entries
+    cache["b"] = 3
+    assert list(cache.items()) == [("a", 1), ("b", 3)]
+
+    cache["a"] = 4
+    assert list(cache.items()) == [("b", 3), ("a", 4)]
+
+    cache["c"] = 5
+    assert list(cache.items()) == [("a", 4), ("c", 5)]
+
+
 def test_contains() -> None:
     cache = LRUCache[str, float](maxsize=3)
     cache["pi"] = 3.14159

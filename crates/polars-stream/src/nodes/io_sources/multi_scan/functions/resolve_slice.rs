@@ -95,6 +95,7 @@ async fn resolve_negative_slice(
             .min(num_pipelines.saturating_add(4)),
     );
 
+    let metrics = execution_state.task_metrics();
     let mut readers_init_iter = futures::stream::iter((0..config.sources.len()).rev())
         .map(|scan_source_idx| {
             let sources = config.sources.clone();
@@ -107,18 +108,14 @@ async fn resolve_negative_slice(
                 .unwrap()
                 .into_owned()
                 .and_then(|source| {
-                    let mut reader = file_reader_builder.build_file_reader(
+                    file_reader_builder.build_file_reader(
                         source,
                         cloud_options.clone(),
                         scan_source_idx,
-                    );
-
-                    reader.prepare_read()?;
-
-                    Ok(reader)
+                    )
                 });
 
-            AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
+            AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, metrics, async move {
                 let mut reader = reader?;
 
                 if verbose {
@@ -151,7 +148,7 @@ async fn resolve_negative_slice(
 
         let n_rows_deleted = if let Some(row_deletions) = row_deletions {
             let mask = row_deletions.into_external_filter_mask().await?;
-            let n_rows_deleted = mask.num_deleted_rows();
+            let n_rows_deleted = mask.num_deleted_rows(usize::try_from(n_rows).unwrap());
 
             file_row_deletions.insert(scan_source_idx, mask.clone());
 
@@ -233,7 +230,8 @@ async fn resolve_negative_slice(
                 None
             };
 
-            let n_rows_deleted = row_deletions.map_or(0, |x| x.num_deleted_rows());
+            let n_rows_deleted =
+                row_deletions.map_or(0, |x| x.num_deleted_rows(usize::try_from(n_rows).unwrap()));
 
             n_rows_skipped_from_start =
                 n_rows_skipped_from_start.add(RowCounter::new(n_rows, n_rows_deleted));

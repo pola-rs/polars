@@ -1,9 +1,14 @@
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType
 
 
 def test_implode_explode_over_22188() -> None:
@@ -257,3 +262,100 @@ def test_nested_over_row_mapping_28712() -> None:
     result = df.with_columns(pl.col("a").over("g").over("g"))
 
     assert_frame_equal(result, df)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_over_multi_key_order_by_directions(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 1, 2], "b": [1, 1, 2, 2]})
+    row_number = pl.int_range(1, pl.len() + 1)
+    q = lf.select(
+        row_number.over(order_by=["a", "b"]).alias("asc"),
+        row_number.over(order_by=["a", "b"], descending=True).alias("desc"),
+    )
+    expected = pl.DataFrame({"asc": [1, 3, 2, 4], "desc": [4, 2, 3, 1]})
+    assert_frame_equal(q.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("n_rows", [0, 2])
+@pytest.mark.parametrize(
+    ("expr", "expected"),
+    [
+        (pl.lit(1).over(order_by="o"), pl.Series("a", [1, 1], pl.Int32)),
+        (pl.lit(1.5).over("g", order_by="o"), pl.Series("a", [1.5, 1.5])),
+        (
+            pl.lit(1).cum_max().over("g", order_by="o"),
+            pl.Series("a", [1, 1], pl.Int32),
+        ),
+    ],
+)
+def test_over_literal_dtype(
+    engine: EngineType, n_rows: int, expr: pl.Expr, expected: pl.Series
+) -> None:
+    lf = pl.LazyFrame({"g": [1, 1], "o": [2, 1]}).head(n_rows)
+    assert_frame_equal(
+        lf.select(a=expr).collect(engine=engine), expected.head(n_rows).to_frame()
+    )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_over_per_row_with_per_group_scalar(engine: EngineType) -> None:
+    lf = pl.LazyFrame(
+        {"g": [1, 2, 1, 2, 1], "o": [3, 1, 2, 2, 1], "x": [1.0, 4.0, 2.0, None, 6.0]}
+    )
+    x = pl.col.x
+    q = lf.select(
+        sub=(x - x.mean()).over("g"),
+        ordered=(x - x.first()).over("g", order_by="o"),
+        fill_null=x.fill_null(x.mean()).over("g"),
+        join=(x - x.mean()).over("g", mapping_strategy="join"),
+        fill_null_join=x.fill_null(x.mean()).over("g", mapping_strategy="join"),
+        when_join=pl.when(x > x.mean())
+        .then(x)
+        .otherwise(x.mean())
+        .over("g", mapping_strategy="join"),
+    )
+    expected = pl.DataFrame(
+        {
+            "sub": [-2.0, 0.0, -1.0, None, 3.0],
+            "ordered": [-5.0, 0.0, -4.0, None, 0.0],
+            "fill_null": [1.0, 4.0, 2.0, 4.0, 6.0],
+            "join": [[-2.0, -1.0, 3.0], [0.0, None]] * 2 + [[-2.0, -1.0, 3.0]],
+            "fill_null_join": [[1.0, 2.0, 6.0], [4.0, 4.0]] * 2 + [[1.0, 2.0, 6.0]],
+            "when_join": [[3.0, 3.0, 6.0], [4.0, 4.0]] * 2 + [[3.0, 3.0, 6.0]],
+        }
+    )
+    assert_frame_equal(q.collect(engine=engine), expected)
+
+    q = lf.sort("g").select((x - x.mean()).over("g", mapping_strategy="explode"))
+    expected = pl.DataFrame({"x": [-2.0, -1.0, 3.0, 0.0, None]})
+    assert_frame_equal(q.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_over_object_with_per_group_scalar(engine: EngineType) -> None:
+    # Object values can be neither rechunked nor rebuilt into lists from their inner
+    # values, so they keep the per-group loop.
+    df = pl.DataFrame(
+        {
+            "g": [1, 2, 1, 2, 1, 2],
+            "v": pl.Series(["a", "b", None, "d", "e", None], dtype=pl.Object),
+        }
+    )
+    lf = pl.concat([df, df], rechunk=False).lazy()
+    v = pl.col.v
+    lit = pl.lit(pl.Series(["z"], dtype=pl.Object))
+    q = lf.select(
+        shift=v.shift(1).fill_null(v.first()).over("g"),
+        flat=v.fill_null(v.first()).over("g"),
+        lit=pl.coalesce(v, v.first(), lit).over("g"),
+    )
+    out = q.collect(engine=engine)
+    shift = ["a", "b", "a", "b", "a", "d", "e", "b", "a", "b", "a", "d"]
+    assert out["shift"].to_list() == shift
+    assert out["flat"].to_list() == ["a", "b", "a", "d", "e", "b"] * 2
+    assert out["lit"].to_list() == ["a", "b", "a", "d", "e", "b"] * 2
+
+    q = lf.select((lit == v.first()).over("g"))
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="comparison"):
+        q.collect(engine=engine)

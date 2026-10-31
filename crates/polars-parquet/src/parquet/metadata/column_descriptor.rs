@@ -105,6 +105,11 @@ impl ColumnDescriptorRef {
     pub(crate) fn new(descrs: Arc<Vec<ColumnDescriptor>>, idx: usize) -> Self {
         Self { descrs, idx }
     }
+
+    #[inline]
+    pub(crate) fn leaf_index(&self) -> usize {
+        self.idx
+    }
 }
 
 impl Deref for ColumnDescriptorRef {

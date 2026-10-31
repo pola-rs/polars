@@ -32,7 +32,7 @@ mod time;
 use std::any::Any;
 use std::borrow::Cow;
 
-use arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::Bitmap;
 use polars_compute::rolling::QuantileMethod;
 use polars_utils::aliases::PlSeedableRandomStateQuality;
 

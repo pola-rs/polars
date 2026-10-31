@@ -1,5 +1,5 @@
-use arrow::array::Array;
 use polars::prelude::*;
+use polars_arrow::array::Array;
 use polars_core::with_match_physical_numeric_polars_type;
 use pyo3::prelude::*;
 
@@ -31,36 +31,36 @@ impl PySeries {
 
 fn scatter(s: Series, idx: &Series, values: &Series) -> Result<Series, (Series, PolarsError)> {
     let logical_dtype = s.dtype().clone();
-    let converted_values;
-    let values = if logical_dtype.is_categorical() || logical_dtype.is_enum() {
-        if matches!(
+    let is_categorical = logical_dtype.is_categorical() || logical_dtype.is_enum();
+    let valid_values = if is_categorical {
+        matches!(
             values.dtype(),
             DataType::Categorical(_, _) | DataType::Enum(_, _) | DataType::String | DataType::Null
-        ) {
-            converted_values = values.strict_cast(&logical_dtype);
-            match converted_values {
-                Ok(ref values) => values,
-                Err(err) => return Err((s, err)),
-            }
-        } else {
-            return Err((
-                s,
-                polars_err!(InvalidOperation: "invalid values dtype '{}' for scattering into dtype '{}'", values.dtype(), logical_dtype),
-            ));
-        }
+        )
     } else if logical_dtype.is_decimal() {
-        if values.dtype().is_numeric() {
-            converted_values = values.strict_cast(&logical_dtype);
-            match converted_values {
-                Ok(ref values) => values,
-                Err(err) => return Err((s, err)),
-            }
-        } else {
-            return Err((
-                s,
-                polars_err!(InvalidOperation: "invalid values dtype '{}' for scattering into dtype '{}'", values.dtype(), logical_dtype),
-            ));
-        }
+        values.dtype().is_numeric()
+    } else {
+        true
+    };
+    if !valid_values {
+        return Err((
+            s,
+            polars_err!(InvalidOperation: "invalid values dtype '{}' for scattering into dtype '{}'", values.dtype(), logical_dtype),
+        ));
+    }
+
+    let needs_logical_cast = is_categorical
+        || logical_dtype.is_decimal()
+        || (logical_dtype.is_temporal()
+            && values.dtype().is_temporal()
+            && values.dtype() != &logical_dtype);
+    let converted_values;
+    let values = if needs_logical_cast {
+        converted_values = match values.strict_cast(&logical_dtype) {
+            Ok(values) => values,
+            Err(err) => return Err((s, err)),
+        };
+        &converted_values
     } else {
         values
     };

@@ -19,42 +19,12 @@ impl DurationChunked {
         let mut out = self.clone();
         out.set_time_unit(tu);
 
-        use crate::datatypes::time_unit::TimeUnit::*;
-        match (current_unit, tu) {
-            (Nanoseconds, Microseconds) => {
-                let ca = (&self.phys).wrapping_trunc_div_scalar(1_000);
-                out.phys = ca;
-                out
-            },
-            (Nanoseconds, Milliseconds) => {
-                let ca = (&self.phys).wrapping_trunc_div_scalar(1_000_000);
-                out.phys = ca;
-                out
-            },
-            (Microseconds, Nanoseconds) => {
-                let ca = &self.phys * 1_000;
-                out.phys = ca;
-                out
-            },
-            (Microseconds, Milliseconds) => {
-                let ca = (&self.phys).wrapping_trunc_div_scalar(1_000);
-                out.phys = ca;
-                out
-            },
-            (Milliseconds, Nanoseconds) => {
-                let ca = &self.phys * 1_000_000;
-                out.phys = ca;
-                out
-            },
-            (Milliseconds, Microseconds) => {
-                let ca = &self.phys * 1_000;
-                out.phys = ca;
-                out
-            },
-            (Nanoseconds, Nanoseconds)
-            | (Microseconds, Microseconds)
-            | (Milliseconds, Milliseconds) => out,
+        match current_unit.rescale_to(tu) {
+            TimeUnitRescale::Unchanged => {},
+            TimeUnitRescale::Multiply(k) => out.phys = &self.phys * k,
+            TimeUnitRescale::Divide(k) => out.phys = (&self.phys).wrapping_trunc_div_scalar(k),
         }
+        out
     }
 
     /// Change the underlying [`TimeUnit`]. This does not modify the data.
@@ -65,31 +35,13 @@ impl DurationChunked {
     /// Convert from [`Duration`] to String; note that `strftime` format
     /// strings are not supported, only the specifiers 'iso' and 'polars'.
     pub fn to_string(&self, format: &str) -> PolarsResult<StringChunked> {
-        // the duration string functions below can reuse this string buffer
-        let mut s = String::with_capacity(32);
         match format {
-            "iso" | "iso:strict" => {
-                let out: StringChunked =
-                    self.phys
-                        .apply_nonnull_values_generic(DataType::String, |v: i64| {
-                            s.clear();
-                            iso_duration_string(&mut s, v, self.time_unit());
-                            s.clone()
-                        });
-                Ok(out)
-            },
-            "polars" => {
-                let out: StringChunked =
-                    self.phys
-                        .apply_nonnull_values_generic(DataType::String, |v: i64| {
-                            s.clear();
-                            fmt_duration_string(&mut s, v, self.time_unit())
-                                .map_err(|e| polars_err!(ComputeError: "{:?}", e))
-                                .expect("failed to format duration");
-                            s.clone()
-                        });
-                Ok(out)
-            },
+            "iso" | "iso:strict" => Ok(self.phys.apply_into_string_amortized(|v, buf| {
+                iso_duration_string(buf, v, self.time_unit())
+            })),
+            "polars" => Ok(self.phys.apply_into_string_amortized(|v, buf| {
+                fmt_duration_string(buf, v, self.time_unit()).expect("failed to format duration")
+            })),
             _ => {
                 polars_bail!(
                     InvalidOperation: "format {:?} not supported for Duration type (expected one of 'iso' or 'polars')",

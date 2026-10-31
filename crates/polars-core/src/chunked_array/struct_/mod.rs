@@ -3,15 +3,16 @@ mod frame;
 use std::borrow::Cow;
 use std::fmt::Write;
 
-use arrow::array::StructArray;
-use arrow::bitmap::Bitmap;
-use arrow::compute::utils::combine_validities_and;
+use polars_arrow::array::StructArray;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::compute::utils::combine_validities_and;
 use polars_error::{PolarsResult, polars_ensure};
 use polars_utils::aliases::PlHashMap;
 use polars_utils::itertools::Itertools;
 
 use crate::chunked_array::ChunkedArray;
 use crate::chunked_array::cast::CastOptions;
+use crate::chunked_array::flags::StatisticsFlags;
 use crate::chunked_array::ops::row_encode::{_get_rows_encoded_arr, _get_rows_encoded_ca};
 use crate::prelude::*;
 use crate::series::Series;
@@ -357,31 +358,41 @@ impl StructChunked {
             .iter()
             .map(func)
             .collect::<PolarsResult<Vec<_>>>()?;
-        Self::from_series(self.name().clone(), self.len(), fields.iter()).map(|mut ca| {
-            assert_eq!(ca.len(), self.len());
-            if self.null_count > 0 {
-                if ca
-                    .chunk_lengths()
-                    .zip(self.chunk_lengths())
-                    .all(|(l, r)| l == r)
-                {
-                    // SAFETY: only null_count adjusted, recalculated afterwards.
-                    for (new, this) in unsafe { ca.downcast_iter_mut() }.zip(self.downcast_iter()) {
-                        new.set_validity(this.validity().cloned())
-                    }
-                } else {
-                    let mut slf_validity = self.rechunk_validity().unwrap();
-                    // SAFETY: only null_count adjusted, recalculated afterwards.
-                    for new in unsafe { ca.downcast_iter_mut() } {
-                        let this_validity;
-                        (this_validity, slf_validity) = slf_validity.split_at(new.len());
-                        new.set_validity((this_validity.unset_bits() > 0).then_some(this_validity));
-                    }
-                }
-                ca.compute_len();
+        let ca = Self::from_series(self.name().clone(), self.len(), fields.iter())?;
+        assert_eq!(ca.len(), self.len());
+        Ok(ca.with_outer_validity_from(self))
+    }
+
+    /// Copy `other`'s outer validity, without propagating it into the fields.
+    ///
+    /// # Panics
+    /// If `other` has a different length.
+    fn with_outer_validity_from(mut self, other: &Self) -> Self {
+        assert_eq!(self.len(), other.len());
+        if other.null_count == 0 {
+            return self;
+        }
+
+        if self
+            .chunk_lengths()
+            .zip(other.chunk_lengths())
+            .all(|(l, r)| l == r)
+        {
+            // SAFETY: only null_count adjusted, recalculated afterwards.
+            for (new, this) in unsafe { self.downcast_iter_mut() }.zip(other.downcast_iter()) {
+                new.set_validity(this.validity().cloned())
             }
-            ca
-        })
+        } else {
+            let mut other_validity = other.rechunk_validity().unwrap();
+            // SAFETY: only null_count adjusted, recalculated afterwards.
+            for new in unsafe { self.downcast_iter_mut() } {
+                let this_validity;
+                (this_validity, other_validity) = other_validity.split_at(new.len());
+                new.set_validity((this_validity.unset_bits() > 0).then_some(this_validity));
+            }
+        }
+        self.compute_len();
+        self
     }
 
     pub fn get_row_encoded_array(&self, options: SortOptions) -> PolarsResult<BinaryArray<i64>> {
@@ -439,6 +450,7 @@ impl StructChunked {
         }
 
         self.compute_len();
+        self.set_flags(self.get_flags() - StatisticsFlags::HAS_PROPAGATED_NULLS);
         self.propagate_nulls_mut();
     }
 
@@ -462,12 +474,29 @@ impl StructChunked {
             .ok_or_else(|| polars_err!(StructFieldNotFound: "{name}"))
     }
     pub(crate) fn set_outer_validity(&mut self, validity: Option<Bitmap>) {
-        assert_eq!(self.chunks().len(), 1);
+        if let Some(v) = &validity {
+            assert_eq!(self.len(), v.len());
+        }
+
+        let validity = validity.filter(|v| v.unset_bits() > 0);
+
+        // SAFETY: We keep length and dtypes the same.
         unsafe {
-            let arr = self.chunks_mut().iter_mut().next().unwrap();
-            *arr = arr.with_validity(validity);
+            let chunks = self.chunks_mut();
+            if chunks.len() == 1 {
+                chunks[0] = chunks[0].with_validity(validity);
+            } else {
+                let mut offset = 0;
+                for arr in chunks {
+                    let len = arr.len();
+                    *arr =
+                        arr.with_validity(validity.as_ref().map(|v| v.clone().sliced(offset, len)));
+                    offset += len;
+                }
+            }
         }
         self.compute_len();
+        self.set_flags(self.get_flags() - StatisticsFlags::HAS_PROPAGATED_NULLS);
         self.propagate_nulls_mut();
     }
 

@@ -12,14 +12,19 @@
 //!   See <https://github.com/apache/parquet-format/blob/96edf77704b60b6f3ca2232c218c64eff6c874d3/src/main/thrift/parquet.thrift> for spec
 
 use polars_buffer::Buffer;
-use polars_parquet_format::{KeyValue, SchemaElement, SortingColumn};
+use polars_parquet_format::{
+    AesGcmCtrV1, AesGcmV1, ColumnCryptoMetaData, EncryptionAlgorithm, EncryptionWithColumnKey,
+    EncryptionWithFooterKey, FileCryptoMetaData, KeyValue, SchemaElement, SortingColumn,
+};
 
-use super::parquet_thrift::{FieldType, ThriftCompactInputProtocol, ThriftSliceInputProtocol};
+use super::parquet_thrift::{
+    FieldIdentifier, FieldType, ThriftCompactInputProtocol, ThriftSliceInputProtocol,
+};
 use crate::parquet::compression::Compression;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::{
-    ByteRange, ColumnOrderTag, CompactColumnChunk, CompactColumnMetaData, CompactFileMetaData,
-    CompactRowGroup, CompactStatistics,
+    ByteRange, ColumnOrderTag, CompactColumnChunk, CompactColumnCrypto, CompactColumnMetaData,
+    CompactFileMetaData, CompactRowGroup, CompactStatistics,
 };
 
 trait RequireField<T> {
@@ -32,6 +37,14 @@ impl<T> RequireField<T> for Option<T> {
     fn require(self, name: &str) -> ParquetResult<T> {
         self.ok_or_else(|| ParquetError::oos(format!("{name} missing")))
     }
+}
+
+/// Get the value of a boolean struct field, or an error if the field has
+/// another type.
+#[inline]
+fn bool_field(f: &FieldIdentifier, name: &str) -> ParquetResult<bool> {
+    f.bool_val
+        .ok_or_else(|| ParquetError::oos(format!("{name} is not a boolean field")))
 }
 
 /// Decode a Thrift list by reading the prefix and invoking `read_one` for
@@ -85,6 +98,17 @@ pub(crate) fn decode_file_metadata(footer: Buffer<u8>) -> ParquetResult<CompactF
     read_file_metadata(&mut prot, origin_ptr, &footer)
 }
 
+/// Decode the `FileCryptoMetaData` that precedes the footer in files with
+/// an encrypted footer. Also returns the number of bytes consumed.
+pub(crate) fn decode_file_crypto_metadata(
+    buf: &[u8],
+) -> ParquetResult<(FileCryptoMetaData, usize)> {
+    let mut prot = ThriftSliceInputProtocol::new(buf);
+    let crypto_metadata = read_file_crypto_metadata(&mut prot)?;
+    let consumed = buf.len() - prot.as_slice().len();
+    Ok((crypto_metadata, consumed))
+}
+
 /// Decode just `FileMetaData.num_rows` (field 3) for the `RowCounts`
 /// resolve mode. Thrift field ids are ascending, so we can `break` once
 /// field 3 is read and leave the rest of the footer untouched.
@@ -113,8 +137,9 @@ fn read_file_metadata(
     let mut key_value_metadata: Option<Vec<KeyValue>> = None;
     let mut created_by: Option<String> = None;
     let mut column_orders: Option<Vec<ColumnOrderTag>> = None;
+    let mut encryption_algorithm: Option<EncryptionAlgorithm> = None;
+    let mut footer_signing_key_metadata: Option<Vec<u8>> = None;
 
-    // 8/9 (encryption): polars has no encryption support; skip via fallthrough.
     read_struct_fields!(prot, |f| {
         1 => version = Some(prot.read_i32()?),
         2 => schema = Some(read_list(prot, read_schema_element)?),
@@ -123,6 +148,8 @@ fn read_file_metadata(
         5 => key_value_metadata = Some(read_list(prot, read_key_value)?),
         6 => created_by = Some(prot.read_string()?.to_owned()),
         7 => column_orders = Some(read_list(prot, read_column_order)?),
+        8 => encryption_algorithm = Some(read_encryption_algorithm(prot)?),
+        9 => footer_signing_key_metadata = Some(prot.read_bytes_owned()?),
     });
 
     Ok(CompactFileMetaData {
@@ -133,7 +160,71 @@ fn read_file_metadata(
         key_value_metadata,
         created_by,
         column_orders,
+        encryption_algorithm,
+        footer_signing_key_metadata,
         footer_buf: footer.clone(),
+    })
+}
+
+fn read_file_crypto_metadata(
+    prot: &mut ThriftSliceInputProtocol<'_>,
+) -> ParquetResult<FileCryptoMetaData> {
+    let mut encryption_algorithm: Option<EncryptionAlgorithm> = None;
+    let mut key_metadata: Option<Vec<u8>> = None;
+
+    read_struct_fields!(prot, |f| {
+        1 => encryption_algorithm = Some(read_encryption_algorithm(prot)?),
+        2 => key_metadata = Some(prot.read_bytes_owned()?),
+    });
+
+    Ok(FileCryptoMetaData {
+        encryption_algorithm: encryption_algorithm
+            .require("FileCryptoMetaData.encryption_algorithm")?,
+        key_metadata,
+    })
+}
+
+/// Decode an `EncryptionAlgorithm` union. An unknown variant is an error,
+/// as the file can't be decrypted without knowing the algorithm.
+fn read_encryption_algorithm(
+    prot: &mut ThriftSliceInputProtocol<'_>,
+) -> ParquetResult<EncryptionAlgorithm> {
+    let mut ret: Option<EncryptionAlgorithm> = None;
+    read_struct_fields!(prot, |f| {
+        1 => {
+            let v = read_aes_gcm_v1(prot)?;
+            ret.get_or_insert(EncryptionAlgorithm::AESGCMV1(v));
+        },
+        2 => {
+            // AesGcmCtrV1 has the same fields as AesGcmV1.
+            let AesGcmV1 {
+                aad_prefix,
+                aad_file_unique,
+                supply_aad_prefix,
+            } = read_aes_gcm_v1(prot)?;
+            ret.get_or_insert(EncryptionAlgorithm::AESGCMCTRV1(AesGcmCtrV1 {
+                aad_prefix,
+                aad_file_unique,
+                supply_aad_prefix,
+            }));
+        },
+    });
+    ret.ok_or_else(|| ParquetError::oos("EncryptionAlgorithm union has no known variant set"))
+}
+
+fn read_aes_gcm_v1(prot: &mut ThriftSliceInputProtocol<'_>) -> ParquetResult<AesGcmV1> {
+    let mut aad_prefix: Option<Vec<u8>> = None;
+    let mut aad_file_unique: Option<Vec<u8>> = None;
+    let mut supply_aad_prefix: Option<bool> = None;
+    read_struct_fields!(prot, |f| {
+        1 => aad_prefix = Some(prot.read_bytes_owned()?),
+        2 => aad_file_unique = Some(prot.read_bytes_owned()?),
+        3 => supply_aad_prefix = Some(bool_field(&f, "supply_aad_prefix")?),
+    });
+    Ok(AesGcmV1 {
+        aad_prefix,
+        aad_file_unique,
+        supply_aad_prefix,
     })
 }
 
@@ -218,7 +309,8 @@ fn read_row_group(
 
 /// Decode a `ColumnChunk` into a [`CompactColumnChunk`].
 ///
-/// Skip-decode: `file_path`, `file_offset`, encryption fields.
+/// Skip-decode: `file_path`, `file_offset`. `encrypted_column_metadata` is recorded
+/// as a [`ByteRange`] into the footer, and decrypted once a decryptor is available.
 fn read_column_chunk(
     prot: &mut ThriftSliceInputProtocol<'_>,
     origin_ptr: *const u8,
@@ -228,10 +320,11 @@ fn read_column_chunk(
     let mut offset_index_length: Option<i32> = None;
     let mut column_index_offset: Option<i64> = None;
     let mut column_index_length: Option<i32> = None;
+    let mut crypto_metadata: Option<ColumnCryptoMetaData> = None;
+    let mut encrypted_column_metadata: Option<ByteRange> = None;
 
     // Inlined skips at ids 1/2 (file_path, file_offset): no in-tree consumer,
     // hot path runs once per column chunk × 200k chunks on wide fixtures.
-    // 8/9 (encryption_algorithm, encrypted_column_metadata): rare; fall through.
     read_struct_fields!(prot, |f| {
         1 => prot.skip_binary()?,
         2 => prot.skip_vlq()?,
@@ -240,22 +333,94 @@ fn read_column_chunk(
         5 => offset_index_length = Some(prot.read_i32()?),
         6 => column_index_offset = Some(prot.read_i64()?),
         7 => column_index_length = Some(prot.read_i32()?),
+        8 => crypto_metadata = Some(read_column_crypto_metadata(prot)?),
+        9 => {
+            let len = prot.read_vlq()? as u32;
+            let offset = prot.offset_from(origin_ptr);
+            prot.skip_bytes(len as usize)?;
+            encrypted_column_metadata = Some(ByteRange { offset, len });
+        },
     });
 
+    // Encrypted column metadata without crypto metadata is out of spec, and is ignored.
+    let crypto = crypto_metadata.map(|crypto_metadata| {
+        Box::new(CompactColumnCrypto {
+            crypto_metadata,
+            encrypted_column_metadata,
+        })
+    });
+
+    // Columns encrypted with a column key may only have encrypted metadata.
+    let has_encrypted_metadata = crypto
+        .as_ref()
+        .is_some_and(|c| c.encrypted_column_metadata.is_some());
+    if meta_data.is_none() && !has_encrypted_metadata {
+        return Err(ParquetError::oos("ColumnChunk.meta_data missing"));
+    }
+
     Ok(CompactColumnChunk {
-        meta_data: meta_data.require("ColumnChunk.meta_data")?,
+        meta_data,
         offset_index_offset,
         offset_index_length,
         column_index_offset,
         column_index_length,
+        crypto,
+    })
+}
+
+/// Decode a `ColumnMetaData` that starts at `start` within `buf`, such as decrypted
+/// column metadata. Statistics are recorded as [`ByteRange`]s into `buf`.
+pub(crate) fn decode_column_meta_data(
+    buf: &[u8],
+    start: usize,
+) -> ParquetResult<CompactColumnMetaData> {
+    let mut prot = ThriftSliceInputProtocol::new(&buf[start..]);
+    read_column_meta_data(&mut prot, buf.as_ptr())
+}
+
+/// Decode a `ColumnCryptoMetaData` union. An unknown variant is an error, as the
+/// column can't be decrypted without knowing which key to use.
+fn read_column_crypto_metadata(
+    prot: &mut ThriftSliceInputProtocol<'_>,
+) -> ParquetResult<ColumnCryptoMetaData> {
+    let mut ret: Option<ColumnCryptoMetaData> = None;
+    read_struct_fields!(prot, |f| {
+        1 => {
+            read_empty_struct(prot)?;
+            ret.get_or_insert(ColumnCryptoMetaData::ENCRYPTIONWITHFOOTERKEY(
+                EncryptionWithFooterKey {},
+            ));
+        },
+        2 => {
+            let v = read_encryption_with_column_key(prot)?;
+            ret.get_or_insert(ColumnCryptoMetaData::ENCRYPTIONWITHCOLUMNKEY(v));
+        },
+    });
+    ret.ok_or_else(|| ParquetError::oos("ColumnCryptoMetaData union has no known variant set"))
+}
+
+fn read_encryption_with_column_key(
+    prot: &mut ThriftSliceInputProtocol<'_>,
+) -> ParquetResult<EncryptionWithColumnKey> {
+    let mut path_in_schema: Option<Vec<String>> = None;
+    let mut key_metadata: Option<Vec<u8>> = None;
+    read_struct_fields!(prot, |f| {
+        1 => path_in_schema = Some(read_list(prot, |p| Ok(p.read_string()?.to_owned()))?),
+        2 => key_metadata = Some(prot.read_bytes_owned()?),
+    });
+    Ok(EncryptionWithColumnKey {
+        path_in_schema: path_in_schema.require("EncryptionWithColumnKey.path_in_schema")?,
+        key_metadata,
     })
 }
 
 /// Decode a `ColumnMetaData` into a [`CompactColumnMetaData`].
 ///
 /// Skip-decode: `type_`, `encodings`, `path_in_schema`, `key_value_metadata`,
-/// `encoding_stats`, `size_statistics`, `geospatial_statistics`. These have no
-/// in-tree readers. See `metadata/compact.rs` for the audit.
+/// `geospatial_statistics`. These have no in-tree readers. See
+/// `metadata/compact.rs` for the audit. `encoding_stats` is reduced to whether
+/// some data pages fall back from dictionary encoding, and `size_statistics` to
+/// the size of the byte array values.
 fn read_column_meta_data(
     prot: &mut ThriftSliceInputProtocol<'_>,
     origin_ptr: *const u8,
@@ -270,12 +435,14 @@ fn read_column_meta_data(
     let mut statistics: Option<CompactStatistics> = None;
     let mut bloom_filter_offset: Option<i64> = None;
     let mut bloom_filter_length: Option<i32> = None;
+    let mut dictionary_fallback: Option<bool> = None;
+    let mut unencoded_byte_array_data_bytes: Option<i64> = None;
 
     // Inlined skips at ids 1/2/3 (type_, encodings, path_in_schema): universally
     // present, no in-tree consumer; bypass the generic recursive skip.
-    // Ids 8 (key_value_metadata), 13 (encoding_stats), 16 (size_statistics),
-    // 17 (geospatial): fall through to the generic skip arm. Dedicated
-    // skip_simple_struct helpers tried for 13/16/17, no measurable win.
+    // Ids 8 (key_value_metadata), 17 (geospatial): fall through to the generic
+    // skip arm. A dedicated skip_simple_struct helper was tried for 17, no
+    // measurable win.
     read_struct_fields!(prot, |f| {
         1 => prot.skip_vlq()?,
         2 => prot.skip_list_of_varint()?,
@@ -288,8 +455,10 @@ fn read_column_meta_data(
         10 => index_page_offset = Some(prot.read_i64()?),
         11 => dictionary_page_offset = Some(prot.read_i64()?),
         12 => statistics = Some(read_statistics(prot, origin_ptr)?),
+        13 => dictionary_fallback = Some(read_dictionary_fallback(prot)?),
         14 => bloom_filter_offset = Some(prot.read_i64()?),
         15 => bloom_filter_length = Some(prot.read_i32()?),
+        16 => unencoded_byte_array_data_bytes = read_unencoded_byte_array_data_bytes(prot)?,
     });
 
     let codec_i32 = codec.require("ColumnMetaData.codec")?;
@@ -308,7 +477,50 @@ fn read_column_meta_data(
         statistics,
         bloom_filter_offset,
         bloom_filter_length,
+        dictionary_fallback,
+        unencoded_byte_array_data_bytes,
     })
+}
+
+/// Decode a `SizeStatistics` into its `unencoded_byte_array_data_bytes`,
+/// skipping the level histograms.
+fn read_unencoded_byte_array_data_bytes(
+    prot: &mut ThriftSliceInputProtocol<'_>,
+) -> ParquetResult<Option<i64>> {
+    let mut bytes: Option<i64> = None;
+    read_struct_fields!(prot, |f| {
+        1 => bytes = Some(prot.read_i64()?),
+    });
+    Ok(bytes)
+}
+
+/// Decode a list of `PageEncodingStats` into whether some data pages with
+/// rows are not dictionary-encoded. Writers such as Arrow and parquet-mr
+/// switch to plain encoding once the dictionary grows too large.
+fn read_dictionary_fallback(prot: &mut ThriftSliceInputProtocol<'_>) -> ParquetResult<bool> {
+    use polars_parquet_format::{Encoding, PageType};
+
+    let list = prot.read_list_begin()?;
+    let mut fallback = false;
+    for _ in 0..list.size {
+        let mut page_type: Option<i32> = None;
+        let mut encoding: Option<i32> = None;
+        let mut count: Option<i32> = None;
+        read_struct_fields!(prot, |f| {
+            1 => page_type = Some(prot.read_i32()?),
+            2 => encoding = Some(prot.read_i32()?),
+            3 => count = Some(prot.read_i32()?),
+        });
+        let page_type = PageType(page_type.require("PageEncodingStats.page_type")?);
+        let encoding = Encoding(encoding.require("PageEncodingStats.encoding")?);
+        let is_data = matches!(page_type, PageType::DATA_PAGE | PageType::DATA_PAGE_V2);
+        let is_dictionary = matches!(
+            encoding,
+            Encoding::PLAIN_DICTIONARY | Encoding::RLE_DICTIONARY
+        );
+        fallback |= is_data && !is_dictionary && count.require("PageEncodingStats.count")? > 0;
+    }
+    Ok(fallback)
 }
 
 /// Decode a `Statistics` into a [`CompactStatistics`].
@@ -347,8 +559,8 @@ fn read_statistics(
             prot.skip_bytes(len as usize)?;
             min_value = Some(ByteRange { offset, len });
         },
-        7 => is_max_value_exact = Some(f.bool_val.expect("thrift bool field")),
-        8 => is_min_value_exact = Some(f.bool_val.expect("thrift bool field")),
+        7 => is_max_value_exact = Some(bool_field(&f, "is_max_value_exact")?),
+        8 => is_min_value_exact = Some(bool_field(&f, "is_min_value_exact")?),
     });
 
     Ok(CompactStatistics {
@@ -385,8 +597,8 @@ fn read_sorting_column(prot: &mut ThriftSliceInputProtocol<'_>) -> ParquetResult
 
     read_struct_fields!(prot, |f| {
         1 => column_idx = Some(prot.read_i32()?),
-        2 => descending = Some(f.bool_val.expect("thrift bool field")),
-        3 => nulls_first = Some(f.bool_val.expect("thrift bool field")),
+        2 => descending = Some(bool_field(&f, "descending")?),
+        3 => nulls_first = Some(bool_field(&f, "nulls_first")?),
     });
 
     Ok(SortingColumn {
@@ -396,20 +608,34 @@ fn read_sorting_column(prot: &mut ThriftSliceInputProtocol<'_>) -> ParquetResult
     })
 }
 
-/// Decode a `ColumnOrder` union tag. Both variants wrap an empty struct, so
-/// only the union id matters: 1 = `TypeDefinedOrder`, 2 = `IEEE754TotalOrder`.
+/// Decode a `ColumnOrder` union tag. Both known variants wrap an empty struct, so
+/// only the union id matters: 1 = `TypeDefinedOrder`, 2 = `IEEE754TotalOrder`. A
+/// variant this reader does not know is skipped and tagged unsupported, as the
+/// spec asks; a union without any variant is malformed.
 fn read_column_order(prot: &mut ThriftSliceInputProtocol<'_>) -> ParquetResult<ColumnOrderTag> {
     let mut ret: Option<ColumnOrderTag> = None;
-    read_struct_fields!(prot, |f| {
-        1 => {
-            read_empty_struct(prot)?;
-            ret.get_or_insert(ColumnOrderTag::TypeDefined);
-        },
-        2 => {
-            read_empty_struct(prot)?;
-            ret.get_or_insert(ColumnOrderTag::IEEE754TotalOrder);
-        },
-    });
+    let mut last_field_id = 0i16;
+    loop {
+        let f = prot.read_field_begin(last_field_id)?;
+        if f.field_type == FieldType::Stop {
+            break;
+        }
+        match f.id {
+            1 => {
+                read_empty_struct(prot)?;
+                ret.get_or_insert(ColumnOrderTag::TypeDefined);
+            },
+            2 => {
+                read_empty_struct(prot)?;
+                ret.get_or_insert(ColumnOrderTag::IEEE754TotalOrder);
+            },
+            _ => {
+                prot.skip(f.field_type)?;
+                ret.get_or_insert(ColumnOrderTag::Unsupported);
+            },
+        }
+        last_field_id = f.id;
+    }
     ret.ok_or_else(|| ParquetError::oos("ColumnOrder union has no variant set"))
 }
 
@@ -538,7 +764,7 @@ fn read_time_type(
     let mut is_adjusted: Option<bool> = None;
     let mut unit: Option<polars_parquet_format::TimeUnit> = None;
     read_struct_fields!(prot, |f| {
-        1 => is_adjusted = Some(f.bool_val.expect("thrift bool field")),
+        1 => is_adjusted = Some(bool_field(&f, "is_adjusted_to_u_t_c")?),
         2 => unit = Some(read_time_unit(prot)?),
     });
     Ok(TimeType {
@@ -554,7 +780,7 @@ fn read_timestamp_type(
     let mut is_adjusted: Option<bool> = None;
     let mut unit: Option<polars_parquet_format::TimeUnit> = None;
     read_struct_fields!(prot, |f| {
-        1 => is_adjusted = Some(f.bool_val.expect("thrift bool field")),
+        1 => is_adjusted = Some(bool_field(&f, "is_adjusted_to_u_t_c")?),
         2 => unit = Some(read_time_unit(prot)?),
     });
     Ok(TimestampType {
@@ -571,7 +797,7 @@ fn read_int_type(
     let mut is_signed: Option<bool> = None;
     read_struct_fields!(prot, |f| {
         1 => bit_width = Some(prot.read_i8()?),
-        2 => is_signed = Some(f.bool_val.expect("thrift bool field")),
+        2 => is_signed = Some(bool_field(&f, "is_signed")?),
     });
     Ok(IntType {
         bit_width: bit_width.require("IntType.bit_width")?,
@@ -586,6 +812,59 @@ mod tests {
     fn decode_column_order(bytes: &[u8]) -> ParquetResult<ColumnOrderTag> {
         let mut prot = ThriftSliceInputProtocol::new(bytes);
         read_column_order(&mut prot)
+    }
+
+    fn decode_dictionary_fallback(bytes: &[u8]) -> ParquetResult<bool> {
+        let mut prot = ThriftSliceInputProtocol::new(bytes);
+        read_dictionary_fallback(&mut prot)
+    }
+
+    // Each element holds page_type, encoding and count as zigzag-encoded i32 fields.
+    const DICTIONARY_PAGE: [u8; 7] = [0x15, 0x04, 0x15, 0x00, 0x15, 0x02, 0x00];
+    const RLE_DICTIONARY_DATA: [u8; 7] = [0x15, 0x00, 0x15, 0x10, 0x15, 0x06, 0x00];
+    const PLAIN_DATA: [u8; 7] = [0x15, 0x00, 0x15, 0x00, 0x15, 0x04, 0x00];
+
+    fn decode_unencoded_byte_array_data_bytes(bytes: &[u8]) -> ParquetResult<Option<i64>> {
+        let mut prot = ThriftSliceInputProtocol::new(bytes);
+        read_unencoded_byte_array_data_bytes(&mut prot)
+    }
+
+    #[test]
+    fn size_statistics_unencoded_bytes() {
+        // Field 1 (i64 1000, zigzag-encoded), then field 3, a definition level
+        // histogram of [2, 5], which is skipped.
+        let bytes = [0x16, 0xD0, 0x0F, 0x29, 0x26, 0x04, 0x0A, 0x00];
+        assert_eq!(
+            decode_unencoded_byte_array_data_bytes(&bytes).unwrap(),
+            Some(1000)
+        );
+    }
+
+    #[test]
+    fn size_statistics_histograms_only() {
+        let bytes = [0x39, 0x26, 0x04, 0x0A, 0x00];
+        assert_eq!(
+            decode_unencoded_byte_array_data_bytes(&bytes).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn dictionary_data_no_fallback() {
+        let bytes = [&[0x2C][..], &DICTIONARY_PAGE, &RLE_DICTIONARY_DATA].concat();
+        assert!(!decode_dictionary_fallback(&bytes).unwrap());
+    }
+
+    #[test]
+    fn plain_data_fallback() {
+        let bytes = [
+            &[0x3C][..],
+            &DICTIONARY_PAGE,
+            &RLE_DICTIONARY_DATA,
+            &PLAIN_DATA,
+        ]
+        .concat();
+        assert!(decode_dictionary_fallback(&bytes).unwrap());
     }
 
     #[test]
@@ -605,7 +884,63 @@ mod tests {
     }
 
     #[test]
+    fn column_order_unknown_variant_is_unsupported() {
+        // Field id 3 holding an empty struct, then stop.
+        assert_eq!(
+            decode_column_order(&[0x3C, 0x00, 0x00]).unwrap(),
+            ColumnOrderTag::Unsupported
+        );
+    }
+
+    #[test]
     fn column_order_no_variant_is_an_error() {
         assert!(decode_column_order(&[0x00]).is_err());
+    }
+
+    #[test]
+    fn column_order_truncated_is_an_error() {
+        assert!(decode_column_order(&[0x1C]).is_err());
+    }
+
+    #[test]
+    fn aes_gcm_v1_supply_aad_prefix() {
+        // `supply_aad_prefix` (id 3) as a boolean true, then stop.
+        let mut prot = ThriftSliceInputProtocol::new(&[0x31, 0x00]);
+        let algorithm = read_aes_gcm_v1(&mut prot).unwrap();
+        assert_eq!(algorithm.supply_aad_prefix, Some(true));
+    }
+
+    #[test]
+    fn non_boolean_bool_field_is_an_error() {
+        // `supply_aad_prefix` (id 3) encoded as an i32 of 1, then stop.
+        let mut prot = ThriftSliceInputProtocol::new(&[0x35, 0x02, 0x00]);
+        let Err(ParquetError::OutOfSpec(message)) = read_aes_gcm_v1(&mut prot) else {
+            panic!("expected an out of spec error");
+        };
+        assert!(
+            message.contains("supply_aad_prefix is not a boolean field"),
+            "{message}"
+        );
+
+        // `is_signed` (id 2) encoded as an i32 of 1, after `bit_width` (id 1) of 32.
+        let mut prot = ThriftSliceInputProtocol::new(&[0x13, 0x20, 0x15, 0x02, 0x00]);
+        assert!(matches!(
+            read_int_type(&mut prot),
+            Err(ParquetError::OutOfSpec(_))
+        ));
+    }
+
+    #[test]
+    fn legacy_statistics_keep_only_the_null_count() {
+        // Deprecated `max` (id 1) and `min` (id 2) of four bytes each, then
+        // `null_count` (id 3) of 1.
+        let bytes = [
+            0x18, 0x04, 1, 0, 0, 0, 0x18, 0x04, 0, 0, 0, 0, 0x16, 0x02, 0x00,
+        ];
+        let mut prot = ThriftSliceInputProtocol::new(&bytes);
+        let stats = read_statistics(&mut prot, bytes.as_ptr()).unwrap();
+        assert_eq!(stats.null_count, Some(1));
+        assert!(stats.min_value.is_none());
+        assert!(stats.max_value.is_none());
     }
 }

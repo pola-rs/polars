@@ -837,6 +837,93 @@ def test_projection_pushdown_select_len() -> None:
     assert q.collect().item() == 1
 
 
+def test_projection_pushdown_len_keeps_narrow_column_28582() -> None:
+    lf = pl.LazyFrame({"document": ["abc"], "id": [1]})
+    lf = lf.with_columns(pl.col("id").cast(pl.Int64)).select("document", "id")
+    q = pl.concat([lf, lf]).head(1).select(pl.len() != 0)
+
+    plan = q.explain()
+    assert 'PROJECT["id"] 1/2 COLUMNS' in plan
+    assert q.collect().item() is True
+
+
+def test_projection_pushdown_split_select_len_29393() -> None:
+    # An expression that only references its input through `len()` is split into a
+    # `select(len())` plus a residual, so that the `len()` optimizations still apply.
+    # E.g. SQL's `COUNT(*)`, which lowers to `len().cast(Int64)`.
+    lf = pl.LazyFrame({"a": [0, 1, 2]})
+
+    q = lf.select(pl.len().cast(pl.Int64))
+    assert "SELECT [len()]" in q.explain()
+
+    q = lf.select(pl.col("a") + 1).select(pl.len().cast(pl.Int64))
+    assert 'col("a") + 1' not in q.explain()
+    assert_frame_equal(q.collect(), pl.DataFrame({"len": 3}, schema={"len": pl.Int64}))
+
+    q = lf.filter(pl.col("a") < 2).select(pl.len().cast(pl.Int64))
+    assert 'col("a") < 2).sum()' in q.explain()
+    assert_frame_equal(q.collect(), pl.DataFrame({"len": 2}, schema={"len": pl.Int64}))
+
+    q = pl.concat([lf, pl.LazyFrame({"a": [3, 4]})]).select(pl.len().cast(pl.Int64))
+    plan = q.explain()
+    assert plan.index("len()") > plan.index("UNION")
+    assert_frame_equal(q.collect(), pl.DataFrame({"len": 5}, schema={"len": pl.Int64}))
+
+    # `col(a).len()` is a `len()` too, also when there is a residual on top of it.
+    q = lf.select(pl.col("a").len().cast(pl.Int64))
+    plan = q.explain()
+    assert "SELECT [len()]" in plan
+    assert "PROJECT[] 0/1 COLUMNS" in plan
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 3}, schema={"a": pl.Int64}))
+
+    # Multiple expressions, all referencing the input only through `len()`.
+    q = lf.select(pl.len().alias("x"), (pl.len() + 1).cast(pl.Int64).alias("y"))
+    assert "SELECT [len()]" in q.explain()
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {"x": 3, "y": 4}, schema={"x": pl.get_index_type(), "y": pl.Int64}
+        ),
+    )
+
+
+def test_projection_pushdown_split_select_len_not_applied() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3, 4, 5]})
+
+    def n_selects(q: pl.LazyFrame) -> int:
+        return q.explain().count("SELECT [")
+
+    # `len()` in a nested context does not refer to the height of the input frame, so it
+    # must not be rewritten into a reference to a split-off `select(len())`.
+    q = lf.select(pl.len().over(pl.lit(1)).sum())
+    assert n_selects(q) == 1
+    assert q.collect().item() == 25
+
+    q = lf.select(
+        pl.lit(pl.Series("l", [[1, 2, 3]]))
+        .list.eval(pl.element() + pl.len())
+        .explode()
+        .sum()
+    )
+    assert n_selects(q) == 1
+    assert q.collect().item() == 15
+
+    # The output height depends on the height of the input frame, so the residual cannot
+    # be moved onto the 1-row output of a `select(len())`.
+    q = lf.select(pl.len().over(pl.lit(1)))
+    assert n_selects(q) == 1
+    assert q.collect().height == 5
+
+    q = lf.select(pl.int_range(0, pl.len()))
+    assert n_selects(q) == 1
+    assert q.collect().height == 5
+
+    # References the input frame outside of `len()`.
+    q = lf.select(pl.col("a") + pl.len())
+    assert n_selects(q) == 1
+    assert q.collect().to_series().to_list() == [6, 7, 8, 9, 10]
+
+
 def test_projection_pushdown_horizontal_extend_select_len() -> None:
     q = pl.concat(
         [
@@ -928,6 +1015,59 @@ def test_projection_pushdown_union_len_pushdown_28657(
 
     with pytest.raises(InvalidOperationError, match=r"conversion.*failed"):
         q.collect()
+
+
+@pytest.mark.parametrize("union_fn", [pl.concat, pl.union])
+def test_projection_pushdown_sliced_union_len(
+    union_fn: Callable[..., pl.LazyFrame],
+) -> None:
+    empty = pl.LazyFrame({"a": pl.Series([], dtype=pl.Int64)})
+    one = pl.LazyFrame({"a": [1]})
+    assert union_fn([empty, one, one]).head(2).select(pl.len()).collect().item() == 2
+    assert union_fn([empty, one]).select(pl.len() > 0).collect().item()
+
+
+@pytest.mark.parametrize("union_fn", [pl.concat, pl.union])
+@pytest.mark.parametrize("offset", [-7, -3, -1, 0, 1, 2, 3, 5, 7, 100])
+@pytest.mark.parametrize("length", [0, 1, 2, 3, 5, 100, None])
+def test_projection_pushdown_sliced_union_len_offsets(
+    union_fn: Callable[..., pl.LazyFrame],
+    offset: int,
+    length: int | None,
+) -> None:
+    empty = pl.LazyFrame({"a": pl.Series([], dtype=pl.Int64)})
+    two = pl.LazyFrame({"a": [1, 2]})
+    three = pl.LazyFrame({"a": [1, 2, 3]})
+    inputs = [empty, two, empty, three]
+    expected = pl.concat(inputs).collect().slice(offset, length).height
+    q = union_fn(inputs).slice(offset, length).select(pl.len())
+    assert q.collect().item() == expected
+    assert q.collect(engine="in-memory").item() == expected
+
+
+def test_projection_pushdown_sliced_union_len_reads_no_columns_30360(
+    tmp_path: Path,
+) -> None:
+    paths = []
+    for i in range(3):
+        path = tmp_path / f"{i}.parquet"
+        pl.DataFrame({"a": ["x", "y"], "b": ["z", "w"]}).write_parquet(path)
+        paths.append(path)
+
+    q = pl.concat([pl.scan_parquet(p) for p in paths], how="vertical_relaxed")
+    for sliced, expected in [
+        (q.head(1), 1),
+        (q.head(5), 5),
+        (q.slice(5), 1),
+        (q.slice(2, 3), 3),
+        (q.slice(10, 3), 0),
+    ]:
+        sliced_q = sliced.select(pl.len())
+        plan = sliced_q.explain()
+        assert "PROJECT 0/2 COLUMNS" in plan
+        assert "PROJECT 1/2 COLUMNS" not in plan
+        assert sliced_q.collect().item() == expected
+        assert (sliced.select(pl.len() != 0)).collect().item() == (expected != 0)
 
 
 @pytest.mark.parametrize(

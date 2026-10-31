@@ -1,6 +1,6 @@
 use chrono::NaiveTime;
 use polars_compute::decimal::DecimalFmtBuffer;
-use polars_core::utils::arrow::temporal_conversions::date32_to_date;
+use polars_core::utils::polars_arrow::temporal_conversions::date32_to_date;
 use pyo3::BoundObject;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList, PyNone};
@@ -44,13 +44,16 @@ impl<'py> IntoPyObject<'py> for &Wrap<&StructChunked> {
     type Error = PyErr;
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let s = self.0.clone().into_series();
-        let iter = s.iter().map(|av| match av {
-            AnyValue::Struct(_, _, flds) => struct_dict(py, av._iter_struct_av(), flds)
-                .unwrap()
-                .into_any(),
-            AnyValue::Null => PyNone::get(py).into_bound().into_any(),
-            _ => unreachable!(),
-        });
+        let iter = s
+            .iter()
+            .map(|av| match av {
+                AnyValue::Struct(_, _, flds) => {
+                    struct_dict(py, av._iter_struct_av(), flds).map(|d| d.into_any())
+                },
+                AnyValue::Null => Ok(PyNone::get(py).into_bound().into_any()),
+                _ => unreachable!(),
+            })
+            .collect::<PyResult<Vec<_>>>()?;
 
         PyList::new(py, iter)
     }
@@ -80,10 +83,17 @@ impl<'py> IntoPyObject<'py> for &Wrap<&DatetimeChunked> {
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let time_zone = self.0.time_zone().as_ref();
         let time_unit = self.0.time_unit();
-        let iter = self.0.physical().iter().map(|opt_v| {
-            opt_v.map(|v| datetime_to_py_object(py, v, time_unit, time_zone).unwrap())
-        });
-        PyList::new(py, iter)
+        let objects = self
+            .0
+            .physical()
+            .iter()
+            .map(|opt_v| {
+                opt_v
+                    .map(|v| datetime_to_py_object(py, v, time_unit, time_zone))
+                    .transpose()
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+        PyList::new(py, objects)
     }
 }
 
@@ -131,18 +141,23 @@ impl<'py> IntoPyObject<'py> for &Wrap<&DecimalChunked> {
     }
 }
 
-pub(crate) fn decimal_to_pyobject_iter<'py, 'a>(
+pub(crate) fn decimal_to_pyobject_iter<'py>(
     py: Python<'py>,
-    ca: &'a DecimalChunked,
-) -> PyResult<impl ExactSizeIterator<Item = Option<Bound<'py, PyAny>>> + use<'py, 'a>> {
+    ca: &DecimalChunked,
+) -> PyResult<Vec<Option<Bound<'py, PyAny>>>> {
     let utils = pl_utils(py).bind(py);
     let convert = utils.getattr(interned::TO_PY_DECIMAL.get(py))?;
     let py_precision = ca.precision().into_pyobject(py)?;
     let mut buf = DecimalFmtBuffer::new();
-    Ok(ca.physical().iter().map(move |opt_v| {
-        opt_v.map(|v| {
-            let s = buf.format_dec128(v, ca.scale(), false, false);
-            convert.call1((&py_precision, s)).unwrap()
+    ca.physical()
+        .iter()
+        .map(|opt_v| {
+            opt_v
+                .map(|v| {
+                    let s = buf.format_dec128(v, ca.scale(), false, false);
+                    convert.call1((&py_precision, s))
+                })
+                .transpose()
         })
-    }))
+        .collect()
 }

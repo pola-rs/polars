@@ -8,18 +8,15 @@ pub mod statistics;
 
 use std::io::{Read, Seek};
 
-use arrow::types::{NativeType, i256};
+pub(crate) use deserialize::convert_i128;
 pub use deserialize::{
     Filter, InitNested, NestedState, PredicateFilter, column_iter_to_arrays, create_list,
     create_map, init_nested, n_columns,
 };
-#[cfg(feature = "async")]
-use futures::{AsyncRead, AsyncSeek};
+use polars_arrow::types::{NativeType, i256};
 use polars_error::PolarsResult;
 pub use schema::{FileMetadata, infer_schema};
 
-#[cfg(feature = "async")]
-pub use crate::parquet::read::read_metadata_async as _read_metadata_async;
 // re-exports of crate::parquet's relevant APIs
 pub use crate::parquet::{
     FallibleStreamingIterator,
@@ -43,33 +40,11 @@ pub fn read_metadata<R: Read + Seek>(reader: &mut R) -> PolarsResult<FileMetadat
     Ok(_read_metadata(reader)?)
 }
 
-/// Reads parquets' metadata asynchronously.
-#[cfg(feature = "async")]
-pub async fn read_metadata_async<R: AsyncRead + AsyncSeek + Send + Unpin>(
-    reader: &mut R,
-) -> PolarsResult<FileMetadata> {
-    Ok(_read_metadata_async(reader).await?)
-}
-
-fn convert_year_month(value: &[u8]) -> i32 {
-    i32::from_le_bytes(value[..4].try_into().unwrap())
-}
-
-fn convert_days_ms(value: &[u8]) -> arrow::types::days_ms {
-    arrow::types::days_ms(
+fn convert_days_ms(value: &[u8]) -> polars_arrow::types::days_ms {
+    polars_arrow::types::days_ms(
         i32::from_le_bytes(value[4..8].try_into().unwrap()),
         i32::from_le_bytes(value[8..12].try_into().unwrap()),
     )
-}
-
-fn convert_i128(value: &[u8], n: usize) -> i128 {
-    // Copy the fixed-size byte value to the start of a 16 byte stack
-    // allocated buffer, then use an arithmetic right shift to fill in
-    // MSBs, which accounts for leading 1's in negative (two's complement)
-    // values.
-    let mut bytes = [0u8; 16];
-    bytes[..n].copy_from_slice(value);
-    i128::from_be_bytes(bytes) >> (8 * (16 - n))
 }
 
 fn convert_i256(value: &[u8]) -> i256 {

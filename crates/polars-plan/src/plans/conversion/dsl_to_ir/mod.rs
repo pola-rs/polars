@@ -1,14 +1,16 @@
 use std::pin::Pin;
 use std::sync::LazyLock;
 
-use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
 use expr_expansion::rewrite_projections;
 use futures::stream::FuturesUnordered;
-use hive::hive_partitions_from_paths;
+use hive::{HivePartitionsDf, hive_partitions_from_paths};
+use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::config::verbose;
 use polars_core::runtime::ASYNC;
+#[cfg(feature = "dynamic_group_by")]
+use polars_defs::time::group_by::dynamic_boundary_dtype;
 use polars_error::feature_gated;
 use polars_io::ExternalCompression;
 use polars_utils::format_pl_smallstr;
@@ -34,10 +36,14 @@ mod expr_to_ir;
 mod functions;
 mod join;
 mod scans;
+mod sinks;
+mod sql;
 mod utils;
+pub(crate) use expr_expansion::needs_expansion;
 pub use expr_expansion::{expand_expression, is_regex_projection, prepare_projection};
 pub use expr_to_ir::{ExprToIRContext, to_expr_ir};
 use expr_to_ir::{to_expr_ir_materialized_lit, to_expr_irs};
+use sinks::validate_sinks;
 use utils::DslConversionContext;
 
 macro_rules! failed_here {
@@ -70,10 +76,14 @@ pub fn to_alp(
         pushdown_maintain_errors: optimizer::pushdown_maintain_errors(),
         verbose: verbose(),
         seen_caches: Default::default(),
+        recursions: Vec::new(),
     };
 
     match to_alp_impl(lp, &mut ctxt) {
-        Ok(out) => Ok(out),
+        Ok(root) => {
+            validate_sinks(root, ctxt.lp_arena)?;
+            Ok(root)
+        },
         Err(err) => {
             if opt_flags.contains(OptFlags::EAGER) {
                 // If we dispatched to the lazy engine from the eager API, we don't want to resolve
@@ -118,7 +128,7 @@ async fn fetch_metadata(
     use futures::stream::StreamExt;
     #[cfg(feature = "python")]
     let py_scan_resolve_threadpool = Arc::new(LazyLock::new(
-        (|| Arc::new(PyScanResolveThreadPool::new())) as fn() -> _,
+        (|| Arc::new(PyScanResolveThreadPool::new_scan_resolve_thread_pool())) as fn() -> _,
     ));
 
     let mut futures = lp
@@ -682,7 +692,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     schema,
                     apply,
                     maintain_order,
-                    options,
+                    options: Arc::new(GroupbyOptionsIR::from(Arc::unwrap_or_clone(options))),
                 }
             };
 
@@ -712,9 +722,15 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let input = to_alp_impl(owned(input), ctxt).context(failed_here!(gather))?;
             let idxs = to_alp_impl(owned(idxs), ctxt).context(failed_here!(gather))?;
             let idxs_schema = ctxt.lp_arena.get(idxs).schema(ctxt.lp_arena);
-            polars_ensure!(idxs_schema.len() == 1, InvalidOperation: "'gather' indices DataFrame should have a single column");
+            polars_ensure!(
+                idxs_schema.len() == 1,
+                InvalidOperation: "`gather` indices DataFrame should have a single column, got {} columns", idxs_schema.len()
+            );
             let idx_dtype = &idxs_schema.get_at_index(0).unwrap().1;
-            polars_ensure!(idx_dtype.is_integer(), InvalidOperation: "'gather' indices must have integer dtype");
+            polars_ensure!(
+                idx_dtype.is_integer(),
+                InvalidOperation: "`gather` indices must have integer dtype, got `{}`", idx_dtype
+            );
             IR::Gather {
                 input,
                 idxs,
@@ -876,6 +892,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         DslPlan::SQL {
             query,
             relations,
+            catalog_tables,
             cached_stmt,
         } => {
             let resolver = crate::dsl::get_sql_resolver().ok_or_else(|| {
@@ -888,6 +905,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let resolved = resolver.resolve(
                 &query,
                 relations,
+                catalog_tables,
                 cached_stmt.get(),
                 ctxt.lp_arena,
                 ctxt.expr_arena,
@@ -940,7 +958,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let values = values.into_columns(input_schema.as_ref(), &Default::default())?;
 
             polars_ensure!(!on.is_empty(), InvalidOperation: "`pivot` called without `on` columns.");
-            polars_ensure!(on.len() == on_columns.width(), InvalidOperation: "`pivot` expected `on` and `on_columns` to have the same amount of columns.");
+            polars_ensure!(
+                on.len() == on_columns.width(),
+                InvalidOperation: "`pivot` expected `on` and `on_columns` to have the same amount of columns (got {} and {}).",
+                on.len(), on_columns.width()
+            );
             if on.len() > 1 {
                 polars_ensure!(
                     on_columns.columns().iter().zip(on.iter()).all(|(c, o)| o == c.name()),
@@ -1396,6 +1418,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         )
                     })?;
 
+                    let state = Python::attach(|py| py_sink_state.extract(py))?;
+
                     let mut plan: Box<DslPlan> = (reg.from_py.dsl_plan)(out)?.downcast().unwrap();
 
                     let DslPlan::Sink {
@@ -1542,6 +1566,21 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
                             *Arc::make_mut(arrow_schema) = new_schema;
                         }
+
+                        if let FileWriteFormat::Parquet(parquet_options) = &options.file_format
+                            && let Some(encryption_properties) =
+                                &parquet_options.encryption_properties
+                            && let PartitionStrategyIR::Keyed {
+                                keys,
+                                include_keys: _,
+                                keys_pre_grouped: _,
+                            } = &options.partition_strategy
+                        {
+                            validate_encrypted_partition_keys(
+                                &encryption_properties.0,
+                                keys.iter().map(|e| e.output_name().as_str()),
+                            )?;
+                        }
                     }
 
                     ctxt.conversion_optimizer
@@ -1596,6 +1635,42 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 key,
                 maintain_order,
             }
+        },
+        DslPlan::Recursive {
+            anchor,
+            step,
+            id,
+            round_local_caches,
+        } => {
+            let anchor = to_alp_impl(owned(anchor), ctxt).context(failed_here!(recursive))?;
+            let schema = ctxt.lp_arena.get(anchor).schema(ctxt.lp_arena).into_owned();
+
+            ctxt.recursions.push((id, schema.clone()));
+            let step = to_alp_impl(owned(step), ctxt);
+            ctxt.recursions.pop();
+            let step = step.context(failed_here!(recursive))?;
+
+            let step_schema = ctxt.lp_arena.get(step).schema(ctxt.lp_arena);
+            step_schema
+                .ensure_is_exact_match(&schema)
+                .context("recursive step")?;
+
+            IR::Recursive {
+                anchor,
+                step,
+                id,
+                round_local_caches,
+            }
+        },
+        DslPlan::WorkingTable { id, schema } => {
+            // A plan that reads a working table may also be converted on its own, e.g. to get
+            // its schema.
+            if let Some((_, recursion_schema)) = ctxt.recursions.iter().find(|(r, _)| *r == id) {
+                schema
+                    .ensure_is_exact_match(recursion_schema)
+                    .context("working table")?;
+            }
+            IR::WorkingTableScan { id, schema }
         },
         DslPlan::IR {
             node,
@@ -1711,8 +1786,9 @@ fn resolve_group_by(
             pop_keys = true;
             let dtype = input_schema.try_get(name.as_str())?;
             if options.include_boundaries {
-                output_schema.with_column("_lower_boundary".into(), dtype.clone());
-                output_schema.with_column("_upper_boundary".into(), dtype.clone());
+                let bound_dtype = dynamic_boundary_dtype(dtype);
+                output_schema.with_column("_lower_boundary".into(), bound_dtype.clone());
+                output_schema.with_column("_upper_boundary".into(), bound_dtype);
             }
             output_schema.with_column(name.clone(), dtype.clone());
         }
@@ -1821,4 +1897,39 @@ pub(crate) fn maybe_init_projection_excluding_hive(
                     .collect::<Arc<[_]>>()
             }),
     }
+}
+
+/// Rejects column keys for partition key columns, as partition key values are written
+/// unencrypted in the file paths.
+#[cfg(feature = "parquet")]
+fn validate_encrypted_partition_keys<'a>(
+    encryption_properties: &polars_parquet::parquet::encryption::encrypt::FileEncryptionProperties,
+    key_names: impl Iterator<Item = &'a str>,
+) -> PolarsResult<()> {
+    for key_name in key_names {
+        // Column keys are for Parquet column paths, which are nested under the key name
+        // for a struct key.
+        if let Some(column) = encryption_properties
+            .encrypted_column_names()
+            .find(|column| {
+                *column == key_name
+                    || column
+                        .strip_prefix(key_name)
+                        .is_some_and(|rest| rest.starts_with('.'))
+            })
+        {
+            let reason = if column == key_name {
+                "it is a partition key".to_string()
+            } else {
+                format!("it is in partition key '{key_name}'")
+            };
+            polars_bail!(
+                InvalidOperation:
+                "cannot encrypt column '{}' as {}, and partition key values are written \
+                unencrypted in the file paths",
+                column, reason
+            );
+        }
+    }
+    Ok(())
 }

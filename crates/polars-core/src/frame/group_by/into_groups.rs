@@ -1,4 +1,4 @@
-use arrow::legacy::kernels::sort_partition::{
+use polars_arrow::legacy::kernels::sort_partition::{
     create_clean_partitions, partition_to_groups, partition_to_groups_amortized_varsize,
 };
 use polars_error::abort::try_raise_polars_abort;
@@ -6,7 +6,9 @@ use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 
 use super::*;
 use crate::chunked_array::cast::CastOptions;
-use crate::chunked_array::ops::row_encode::_get_rows_encoded_ca_unordered;
+use crate::chunked_array::ops::row_encode::{
+    _get_rows_encoded_ca_unordered, encode_rows_vertical_par_unordered,
+};
 use crate::config::verbose;
 use crate::series::BitRepr;
 use crate::utils::Container;

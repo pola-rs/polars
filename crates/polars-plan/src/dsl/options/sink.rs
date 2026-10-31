@@ -538,21 +538,23 @@ pub enum SinkedPathsCallback {
     Callback(PlanCallback<SinkedPathsCallbackArgs, ()>),
 }
 
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct SinkedPathsCallbackArgs {
     pub path_info_list: Vec<SinkedPathInfo>,
 }
 
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Debug, Default, Hash, PartialEq)]
+#[derive(Clone, Debug, Default)]
 pub struct SinkedPathInfo {
     pub path: PlRefPath,
     pub num_rows: u64,
     pub num_bytes: u64,
+    /// The serialized Parquet footer metadata of the written file.
+    ///
+    /// None for encrypted files, whose plaintext metadata would expose information
+    /// about encrypted columns.
     pub parquet_metadata: Option<Vec<u8>>,
+    /// The partition keys of the file (a height-1 frame), if partitioned.
+    pub partition_keys: Option<Arc<DataFrame>>,
 }
 
 impl SinkedPathsCallback {
@@ -572,11 +574,15 @@ impl SinkedPathsCallback {
 
                         let SinkedPathsCallbackArgs { path_info_list } = args;
 
+                        let convert_registry =
+                            polars_utils::python_convert_registry::get_python_convert_registry();
+
                         for SinkedPathInfo {
                             path,
                             num_rows,
                             num_bytes,
                             parquet_metadata,
+                            partition_keys,
                         } in path_info_list
                         {
                             use pyo3::types::{PyBytes, PyListMethods};
@@ -589,11 +595,16 @@ impl SinkedPathsCallback {
                                 )
                             })?;
 
+                            let partition_keys = partition_keys
+                                .map(|df| convert_registry.to_py.df_to_wrapped_pydf(df.as_ref()))
+                                .transpose()?;
+
                             py_files.append((
                                 path,
                                 num_rows,
                                 num_bytes,
                                 PyBytes::new(py, &parquet_metadata),
+                                partition_keys,
                             ))?;
                         }
 
@@ -626,6 +637,7 @@ impl SinkedPathsCallback {
                     num_rows,
                     num_bytes,
                     parquet_metadata: _,
+                    partition_keys: _,
                 } in path_info_list
                 {
                     use pyo3::types::PyListMethods;

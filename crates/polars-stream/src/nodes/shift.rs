@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 
+use polars_async::executor::TaskMetricAggregator;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::prelude::*;
 use polars_core::schema::Schema;
@@ -149,11 +150,16 @@ impl ShiftState {
 }
 
 impl ShiftNode {
-    pub fn new(output_schema: Arc<Schema>, offset_schema: Arc<Schema>, with_fill: bool) -> Self {
+    pub fn new(
+        output_schema: Arc<Schema>,
+        offset_schema: Arc<Schema>,
+        with_fill: bool,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
+    ) -> Self {
         assert!(offset_schema.len() == 1);
         Self::GatheringParams {
-            offset: InMemorySinkNode::new(offset_schema),
-            fill: with_fill.then(|| InMemorySinkNode::new(output_schema.clone())),
+            offset: InMemorySinkNode::new(offset_schema, task_metrics.clone()),
+            fill: with_fill.then(|| InMemorySinkNode::new(output_schema.clone(), task_metrics)),
             output_schema,
         }
     }
@@ -217,7 +223,10 @@ impl ComputeNode for ShiftNode {
                     frames: VecDeque::new(),
                     fill: fill_frame,
                     seq: MorselSeq::default(),
-                    spill_ctx: MostRecentSpillContext::new("shift".into()),
+                    spill_ctx: MostRecentSpillContext::new(
+                        "shift".into(),
+                        state.task_metrics.clone(),
+                    ),
                 })
             }
         }

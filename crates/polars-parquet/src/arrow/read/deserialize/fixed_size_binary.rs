@@ -1,13 +1,14 @@
-use arrow::array::{FixedSizeBinaryArray, Splitable};
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::datatypes::ArrowDataType;
-use arrow::pushable::Pushable;
-use arrow::types::{
+use bytemuck::Zeroable;
+use polars_arrow::array::{FixedSizeBinaryArray, Splitable};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::pushable::Pushable;
+use polars_arrow::types::{
     AlignedBytes, Bytes1Alignment1, Bytes2Alignment2, Bytes4Alignment4, Bytes8Alignment8,
     Bytes12Alignment4, Bytes16Alignment16, Bytes32Alignment16,
 };
-use bytemuck::Zeroable;
 use polars_buffer::{Buffer, SharedStorage};
+use polars_error::PolarsResult;
 
 use super::Filter;
 use super::dictionary_encoded::append_validity;
@@ -549,7 +550,7 @@ impl Decoder for BinaryDecoder {
         &self,
         _dict: &Self::Dict,
         _predicate: &PredicateFilter,
-    ) -> ParquetResult<Bitmap> {
+    ) -> PolarsResult<Bitmap> {
         // Dispatch to this codepath disabled from crates/polars-stream/src/nodes/io_sources/parquet/init.rs
         //
         // This would panic attempting to create a polars DataType::Binary Series from a
@@ -574,7 +575,7 @@ impl Decoder for BinaryDecoder {
     fn extend_decoded(
         &self,
         decoded: &mut Self::DecodedState,
-        additional: &dyn arrow::array::Array,
+        additional: &dyn polars_arrow::array::Array,
         is_optional: bool,
     ) -> ParquetResult<()> {
         let additional = additional

@@ -1,4 +1,4 @@
-use arrow::types::AlignedBytes;
+use polars_arrow::types::AlignedBytes;
 
 /// A slice of chunks that fit an [`AlignedBytes`] type.
 ///

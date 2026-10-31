@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
-use polars_core::error::{PolarsContext, PolarsResult, polars_bail, polars_ensure};
-use polars_core::prelude::{Column, DataType, IDX_DTYPE, IntoColumn, ListChunked, SortOptions};
-use polars_core::utils::CustomIterTools;
+use polars_arrow::compute::utils::combine_validities_and;
+use polars_core::chunked_array::cast::CastOptions;
+use polars_core::error::{PolarsContext, PolarsResult, polars_bail, polars_ensure, polars_err};
+use polars_core::prelude::{
+    ChunkCast, Column, DataType, IDX_DTYPE, Int64Chunked, IntoColumn, ListChunked, SortOptions,
+};
 use polars_ops::prelude::{ListNameSpaceImpl, slice_broadcast_list};
 use polars_plan::dsl::{ColumnsUdf, ReshapeDimension, SpecialEq};
 use polars_plan::plans::IRListFunction;
@@ -14,7 +17,14 @@ pub fn function_expr_to_udf(func: IRListFunction) -> SpecialEq<Arc<dyn ColumnsUd
     match func {
         Concat => wrap!(concat),
         #[cfg(feature = "is_in")]
-        Contains { nulls_equal } => map_as_slice!(contains, nulls_equal),
+        Contains {
+            nulls_equal,
+            needle_cast,
+        } => wrap!(move |s: &mut [Column]| {
+            super::membership::with_needle_cast(s, 1, 0, needle_cast.as_ref(), |s| {
+                contains(s, nulls_equal)
+            })
+        }),
         #[cfg(feature = "list_drop_nulls")]
         DropNulls => map!(drop_nulls),
         #[cfg(feature = "list_sample")]
@@ -158,78 +168,54 @@ pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Column> {
         return Ok(out.into_column());
     }
 
-    let mut out: ListChunked = match (offset_s.len(), length_s.len()) {
-        (1, 1) => {
-            let offset = offset_s.get(0).unwrap().try_extract::<i64>()?;
-            let slice_len = length_s
-                .get(0)
-                .unwrap()
-                .extract::<usize>()
-                .unwrap_or(usize::MAX);
-            return Ok(list_ca.lst_slice(offset, slice_len).into_column());
-        },
-        (1, length_slice_len) => {
-            check_slice_arg_shape(length_slice_len, list_ca.len(), "length")?;
-            let offset = offset_s.get(0).unwrap().try_extract::<i64>()?;
-            // cast to i64 as it is more likely that it is that dtype
-            // instead of usize/u64 (we never need that max length)
-            let length_ca = length_s.cast(&DataType::Int64)?;
-            let length_ca = length_ca.i64().unwrap();
-
-            list_ca
-                .amortized_iter()
-                .zip(length_ca.iter())
-                .map(|(opt_s, opt_length)| match (opt_s, opt_length) {
-                    (Some(s), Some(length)) => Some(s.as_ref().slice(offset, length as usize)),
-                    _ => None,
-                })
-                .collect_trusted()
-        },
-        (offset_len, 1) => {
-            check_slice_arg_shape(offset_len, list_ca.len(), "offset")?;
-            let length_slice = length_s
-                .get(0)
-                .unwrap()
-                .extract::<usize>()
-                .unwrap_or(usize::MAX);
-            let offset_ca = offset_s.cast(&DataType::Int64)?;
-            let offset_ca = offset_ca.i64().unwrap();
-            list_ca
-                .amortized_iter()
-                .zip(offset_ca.iter())
-                .map(|(opt_s, opt_offset)| match (opt_s, opt_offset) {
-                    (Some(s), Some(offset)) => Some(s.as_ref().slice(offset, length_slice)),
-                    _ => None,
-                })
-                .collect_trusted()
-        },
-        _ => {
-            check_slice_arg_shape(offset_s.len(), list_ca.len(), "offset")?;
-            check_slice_arg_shape(length_s.len(), list_ca.len(), "length")?;
-            let offset_ca = offset_s.cast(&DataType::Int64)?;
-            let offset_ca = offset_ca.i64()?;
-            // cast to i64 as it is more likely that it is that dtype
-            // instead of usize/u64 (we never need that max length)
-            let length_ca = length_s.cast(&DataType::Int64)?;
-            let length_ca = length_ca.i64().unwrap();
-
-            list_ca
-                .amortized_iter()
-                .zip(offset_ca.iter())
-                .zip(length_ca.iter())
-                .map(
-                    |((opt_s, opt_offset), opt_length)| match (opt_s, opt_offset, opt_length) {
-                        (Some(s), Some(offset), Some(length)) => {
-                            Some(s.as_ref().slice(offset, length as usize))
-                        },
-                        _ => None,
-                    },
-                )
-                .collect_trusted()
-        },
+    let offset_ca = slice_arg(offset_s)?;
+    let length_ca = slice_arg(length_s)?;
+    let offset_stride = if offset_ca.len() == 1 {
+        0
+    } else {
+        check_slice_arg_shape(offset_ca.len(), list_ca.len(), "offset")?;
+        1
     };
-    out.rename(s.name().clone());
+    let length_stride = if length_ca.len() == 1 {
+        0
+    } else {
+        check_slice_arg_shape(length_ca.len(), list_ca.len(), "length")?;
+        1
+    };
+
+    // A null offset gives a null list, a null length slices to the end.
+    if offset_stride == 0 && offset_ca.has_nulls() {
+        let out = ListChunked::full_null_with_dtype(
+            s.name().clone(),
+            list_ca.len(),
+            list_ca.inner_dtype(),
+        );
+        return Ok(out.into_column());
+    }
+    // An offset of `i64::MAX` slices to an empty list.
+    let offsets: Vec<i64> = offset_ca.iter().map(|o| o.unwrap_or(i64::MAX)).collect();
+    let lengths: Vec<usize> = length_ca
+        .iter()
+        .map(|l| l.map_or(usize::MAX, |l| l as usize))
+        .collect();
+
+    let mut out = list_ca.lst_slice_var(&offsets, offset_stride, &lengths, length_stride);
+    if let Some(validity) = offset_ca.rechunk_validity() {
+        out.set_validity(combine_validities_and(
+            Some(&validity),
+            out.rechunk_validity().as_ref(),
+        ));
+    }
     Ok(out.into_column())
+}
+
+/// Casts a slice argument to i64, keeping scalars at length one.
+fn slice_arg(c: &Column) -> PolarsResult<Int64Chunked> {
+    let s = match c {
+        Column::Scalar(sc) => sc.as_single_value_series(),
+        Column::Series(_) => c.as_materialized_series().clone(),
+    };
+    Ok(s.cast(&DataType::Int64)?.i64()?.clone())
 }
 
 pub(super) fn concat(s: &mut [Column]) -> PolarsResult<Column> {
@@ -273,8 +259,28 @@ pub(super) fn gather(args: &[Column], null_on_oob: bool) -> PolarsResult<Column>
         // make sure we return a list
         out.reshape_list(&[ReshapeDimension::Infer, ReshapeDimension::new_dimension(1)])
     } else {
-        ca.lst_gather(idx.as_materialized_series(), null_on_oob)
-            .map(Column::from)
+        let idx_ca = idx.list()?;
+        polars_ensure!(
+            idx_ca.inner_dtype().is_integer(),
+            ComputeError: "cannot use dtype `{}` as an index", idx_ca.inner_dtype()
+        );
+        let (len, list_stride, idx_stride) = match (ca.len(), idx_ca.len()) {
+            (a, b) if a == b => (a, 1, 1),
+            (1, b) => (b, 0, 1),
+            (a, 1) => (a, 1, 0),
+            (a, b) => polars_bail!(length_mismatch = "list.gather", a, b),
+        };
+        // Indices outside the `i64` range are out of bounds.
+        let options = if null_on_oob {
+            CastOptions::NonStrict
+        } else {
+            CastOptions::Strict
+        };
+        let idx_ca = idx_ca
+            .cast_with_options(&DataType::List(Box::new(DataType::Int64)), options)
+            .map_err(|_| polars_err!(OutOfBounds: "gather indices are out of bounds"))?;
+        ca.lst_gather_var(list_stride, idx_ca.list()?, idx_stride, len, null_on_oob)
+            .map(IntoColumn::into_column)
     }
 }
 
@@ -358,31 +364,14 @@ pub(super) fn sort(s: &Column, options: SortOptions) -> PolarsResult<Column> {
 #[cfg(feature = "list_sets")]
 pub(super) fn set_operation(
     s: &[Column],
-    set_type: polars_ops::prelude::SetOperation,
+    set_type: polars_defs::expr::SetOperation,
 ) -> PolarsResult<Column> {
     let s0 = &s[0];
     let s1 = &s[1];
 
+    // A single row broadcasts to an empty input.
     if s0.is_empty() || s1.is_empty() {
-        use polars_ops::prelude::SetOperation;
-
-        return match set_type {
-            SetOperation::Intersection => {
-                if s0.is_empty() {
-                    Ok(s0.clone())
-                } else {
-                    Ok(s1.clone().with_name(s0.name().clone()))
-                }
-            },
-            SetOperation::Difference => Ok(s0.clone()),
-            SetOperation::Union | SetOperation::SymmetricDifference => {
-                if s0.is_empty() {
-                    Ok(s1.clone().with_name(s0.name().clone()))
-                } else {
-                    Ok(s0.clone())
-                }
-            },
-        };
+        return Ok(s0.clear());
     }
 
     polars_ops::prelude::list_set_operation(s0.list()?, s1.list()?, set_type)
@@ -400,7 +389,7 @@ pub(super) fn to_array(s: &Column, width: usize) -> PolarsResult<Column> {
     if let DataType::List(inner) = s.dtype() {
         s.cast(&DataType::Array(inner.clone(), width))
     } else {
-        polars_bail!(ComputeError: "expected List dtype")
+        polars_bail!(ComputeError: "expected List dtype, got {}", s.dtype())
     }
 }
 

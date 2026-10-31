@@ -6,14 +6,14 @@ mod scalar;
 #[cfg(all(target_arch = "x86_64", feature = "simd"))]
 mod avx512;
 
-use arrow::array::builder::{ArrayBuilder, ShareStrategy, make_builder};
-use arrow::array::{
+pub use boolean::filter_boolean_kernel;
+use polars_arrow::array::builder::{ArrayBuilder, ShareStrategy, make_builder};
+use polars_arrow::array::{
     Array, BinaryViewArray, BooleanArray, PrimitiveArray, Utf8ViewArray, new_empty_array,
 };
-use arrow::bitmap::Bitmap;
-use arrow::bitmap::utils::SlicesIterator;
-use arrow::with_match_primitive_type_full;
-pub use boolean::filter_boolean_kernel;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::utils::SlicesIterator;
+use polars_arrow::with_match_primitive_type_full;
 
 pub fn filter(array: &dyn Array, mask: &BooleanArray) -> Box<dyn Array> {
     assert_eq!(array.len(), mask.len());
@@ -34,6 +34,7 @@ pub fn filter_with_bitmap(array: &dyn Array, mask: &Bitmap) -> Box<dyn Array> {
     // is very minimal: only a clone of the mask and the array.
     //
     // This also allows dispatching to the fast paths way, way, way more often.
+    let full_len = array.len();
     let mut mask = mask.clone();
     let leading_zeros = mask.take_leading_zeros();
     mask.take_trailing_zeros();
@@ -48,10 +49,17 @@ pub fn filter_with_bitmap(array: &dyn Array, mask: &Bitmap) -> Box<dyn Array> {
         return new_empty_array(array.dtype().clone());
     }
     if false_count == 0 {
-        return array.to_boxed();
+        if mask.len() * 2 >= full_len {
+            return array.to_boxed();
+        }
+        // A short run is copied, so that it doesn't keep the whole array alive. String data
+        // stays shared, as in the other cases.
+        let mut builder = make_builder(array.dtype());
+        builder.subslice_extend(array, 0, array.len(), ShareStrategy::Always);
+        return builder.freeze();
     }
 
-    use arrow::datatypes::PhysicalType::*;
+    use polars_arrow::datatypes::PhysicalType::*;
     match array.dtype().to_physical_type() {
         Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             let array: &PrimitiveArray<$T> = array.as_any().downcast_ref().unwrap();
@@ -87,7 +95,7 @@ pub fn filter_with_bitmap(array: &dyn Array, mask: &Bitmap) -> Box<dyn Array> {
             let (views, validity) = primitive::filter_values_and_validity(views, validity, mask);
             unsafe {
                 BinaryViewArray::new_unchecked_unknown_md(
-                    arrow::datatypes::ArrowDataType::BinaryView,
+                    polars_arrow::datatypes::ArrowDataType::BinaryView,
                     views.into(),
                     array.data_buffers().clone(),
                     validity,

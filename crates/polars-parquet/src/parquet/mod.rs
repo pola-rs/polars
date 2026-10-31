@@ -4,12 +4,15 @@ pub mod error;
 pub mod bloom_filter;
 pub mod compression;
 pub mod encoding;
+pub mod encryption;
 pub(crate) mod handwritten_thrift;
 pub mod metadata;
 pub mod page;
 mod parquet_bridge;
 pub mod read;
 pub mod schema;
+#[cfg(feature = "snappy")]
+pub(crate) mod snappy;
 pub mod statistics;
 pub mod types;
 pub mod write;
@@ -23,6 +26,7 @@ pub use streaming_decompression::{FallibleStreamingIterator, fallible_streaming_
 pub const HEADER_SIZE: u64 = PARQUET_MAGIC.len() as u64;
 pub const FOOTER_SIZE: u64 = 8;
 pub const PARQUET_MAGIC: [u8; 4] = *b"PAR1";
+pub const ENCRYPTED_PARQUET_MAGIC: [u8; 4] = *b"PARE";
 
 /// The number of bytes read at the end of the parquet file on first read.
 pub const DEFAULT_FOOTER_READ_SIZE: u64 = 64 * 1024;

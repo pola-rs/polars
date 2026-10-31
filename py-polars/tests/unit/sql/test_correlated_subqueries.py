@@ -1,9 +1,20 @@
+from __future__ import annotations
+
 import re
+from decimal import Decimal
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from tests.unit.sql import assert_sql_matches
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator, Sequence
+    from pathlib import Path
+
+    from polars._typing import EngineType
+    from tests.conftest import PlMonkeyPatch
 
 
 def _frames() -> dict[str, pl.DataFrame]:
@@ -196,7 +207,7 @@ def _decorrelation_count(ctx: pl.SQLContext[pl.LazyFrame], query: str) -> int:
     pipeline id itself (not a strategy-specific column suffix) is what's counted.
     """
     plan = ctx.execute(query).explain()
-    return len(set(re.findall(r"__POLARS_CORR.*?(POLARS_TMP_\d+)_", plan)))
+    return len(set(re.findall(r"__POLARS_CORR.*?(POLARS_TMP_SQL_\d+)_", plan)))
 
 
 def test_repeated_correlated_subquery_is_decorrelated_once() -> None:
@@ -231,9 +242,10 @@ def test_repeated_correlated_subquery_is_decorrelated_once() -> None:
         )
         # EXISTS and a scalar subquery over the same inner query must not share:
         # one yields a value column, the other a boolean flag
+        rows = "(SELECT w FROM t2 WHERE t2.k = t1.k AND t2.w > 5)"
         assert (
             _decorrelation_count(
-                ctx, f"SELECT k, EXISTS {sub} AS e, {sub} AS s FROM t1"
+                ctx, f"SELECT k, EXISTS {rows} AS e, {rows} AS s FROM t1"
             )
             == 2
         )
@@ -328,4 +340,2230 @@ def test_correlated_subquery_predicate_shared_across_or_branches() -> None:
             ORDER BY i_item_sk
         """,
         compare_with="duckdb",
+    )
+
+
+# --- equality correlation restricted to the outer keys ---------------------------
+
+ENGINES: list[EngineType] = ["in-memory", "streaming"]
+
+
+def _key_frames() -> dict[str, pl.DataFrame]:
+    # Outer keys repeat with different payloads, one is unmatched (2), one is
+    # null. Inner rows repeat within a key (1), hold keys the outer frame lacks
+    # (4, 9), a null key and an all-null value group (5). The inner frame is
+    # over twice the outer one, so the aggregate is restricted to the outer keys.
+    return {
+        "o": pl.DataFrame(
+            {
+                "k": [1, 1, 2, 3, 5, None],
+                "j": ["x", "y", "x", "x", "x", "x"],
+                "p": ["a", "b", "c", "d", "e", "f"],
+                "s": [5, 15, 0, 100, 1, 1],
+            }
+        ),
+        "i": pl.DataFrame(
+            {
+                "k": [1, 1, 1, 3, 4, 5, None, 4, 9, 9, 4, 9],
+                "j": ["x", "x", None, "x", "x", "x", "x", "x", "x", "x", "x", "x"],
+                "v": [10, None, 7, 30, 40, None, 50, 41, 90, 91, 42, 92],
+            },
+            schema={"k": pl.Int32, "j": pl.String, "v": pl.Int64},
+        ),
+    }
+
+
+@pytest.mark.parametrize(
+    ("agg", "expected"),
+    [
+        ("COUNT(*)", [3, 3, 0, 1, 1, 0]),
+        ("COUNT(v)", [2, 2, 0, 1, 0, 0]),
+        ("SUM(v)", [17, 17, None, 30, None, None]),
+        ("MIN(v)", [7, 7, None, 30, None, None]),
+        ("MAX(v)", [10, 10, None, 30, None, None]),
+        ("AVG(v)", [8.5, 8.5, None, 30.0, None, None]),
+        ("0.5 * SUM(v)", [8.5, 8.5, None, 15.0, None, None]),
+        ("SUM(v) FILTER (WHERE v > 8)", [10, 10, None, 30, None, None]),
+        ("MAX(CAST(v AS VARCHAR))", ["7", "7", None, "30", None, None]),
+    ],
+)
+def test_correlated_aggregate_single_key(agg: str, expected: list[Any]) -> None:
+    assert_sql_matches(
+        frames=_key_frames(),
+        query=f"SELECT p, (SELECT {agg} FROM i WHERE i.k = o.k) AS r FROM o ORDER BY p",
+        compare_with="duckdb",
+        expected={"p": list("abcdef"), "r": expected},
+        engines=ENGINES,
+    )
+
+
+def test_correlated_aggregate_result_dtypes() -> None:
+    with pl.SQLContext(frames=_key_frames()) as ctx:
+        schema = ctx.execute(
+            "SELECT p, "
+            "(SELECT COUNT(*) FROM i WHERE i.k = o.k) AS c, "
+            "(SELECT SUM(v) FROM i WHERE i.k = o.k) AS s, "
+            "(SELECT AVG(v) FROM i WHERE i.k = o.k) AS a FROM o"
+        ).collect_schema()
+    assert schema == pl.Schema(
+        {"p": pl.String, "c": pl.Int64, "s": pl.Int64, "a": pl.Float64}
+    )
+
+
+@pytest.mark.parametrize(
+    "correlation",
+    [
+        "i.k = o.k AND i.j = o.j",
+        "o.k = i.k AND o.j = i.j",
+        "i.j = o.j AND i.k = o.k",
+        # the same key pair spelled twice
+        "i.k = o.k AND i.j = o.j AND o.k = i.k",
+    ],
+)
+def test_correlated_aggregate_composite_key(correlation: str) -> None:
+    # a partially null composite key never matches
+    assert_sql_matches(
+        frames=_key_frames(),
+        query=(
+            f"SELECT p, (SELECT SUM(v) FROM i WHERE {correlation}) AS r "
+            "FROM o ORDER BY p"
+        ),
+        compare_with="duckdb",
+        expected={"p": list("abcdef"), "r": [10, None, None, 30, None, None]},
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize(
+    ("outer", "inner", "expected"),
+    [
+        # empty outer
+        ([], [1, 2], []),
+        # empty inner
+        ([1, 2], [], [0, 0]),
+        # disjoint keys
+        ([1, 2], [3, 4], [0, 0]),
+        # both empty
+        ([], [], []),
+    ],
+)
+def test_correlated_aggregate_empty_or_disjoint_inputs(
+    outer: list[int], inner: list[int], expected: list[int]
+) -> None:
+    frames = {
+        "o": pl.DataFrame({"k": outer}, schema={"k": pl.Int64}),
+        "i": pl.DataFrame({"k": inner}, schema={"k": pl.Int64}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="SELECT k, (SELECT COUNT(*) FROM i WHERE i.k = o.k) AS c FROM o ORDER BY k",
+        compare_with="duckdb",
+        expected={"k": outer, "c": expected},
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize(
+    "agg",
+    [
+        "COUNT(*) + 1",
+        "COALESCE(SUM(v), 0)",
+        "COALESCE(MAX(v), -1)",
+        "COUNT(DISTINCT v)",
+        "COUNT(*) FILTER (WHERE v > 8)",
+        "COUNT(*) * 2 + COALESCE(SUM(v), 0)",
+        "CASE WHEN COUNT(*) = 0 THEN 'none' ELSE 'some' END",
+        "SUM(v) + 1",
+    ],
+)
+@pytest.mark.parametrize(
+    "correlation",
+    [
+        "i.k = o.k",
+        # not an equality, so this takes the row-index path
+        "i.k <= o.k AND i.k >= o.k",
+    ],
+)
+def test_correlated_aggregate_expression_over_no_match(
+    agg: str, correlation: str
+) -> None:
+    # An outer row without inner rows gets the projection's value over no rows.
+    assert_sql_matches(
+        frames=_key_frames(),
+        query=(
+            f"SELECT p, (SELECT {agg} FROM i WHERE {correlation}) AS r "
+            "FROM o ORDER BY p"
+        ),
+        compare_with="duckdb",
+        engines=ENGINES,
+    )
+
+
+def test_correlated_aggregate_expression_over_no_match_in_where() -> None:
+    assert_sql_matches(
+        frames=_key_frames(),
+        query=(
+            "SELECT p FROM o "
+            "WHERE (SELECT COALESCE(MAX(v), 0) FROM i WHERE i.k = o.k) = 0 ORDER BY p"
+        ),
+        compare_with="duckdb",
+        expected={"p": ["c", "e", "f"]},
+        engines=ENGINES,
+    )
+
+
+def test_correlated_aggregate_fallible_expression_only_over_outer_rows() -> None:
+    # The cast fails over no rows. That value is only computed for outer rows
+    # without inner rows, so the query fails only when such a row exists.
+    query = (
+        "SELECT k, (SELECT CAST(CASE WHEN COUNT(*) = 0 THEN 'x' ELSE '1' END AS INT) "
+        "FROM i WHERE i.k = o.k) AS r FROM o ORDER BY k"
+    )
+    inner = pl.DataFrame({"k": [1, 1, 2]})
+    assert_sql_matches(
+        frames={"o": pl.DataFrame({"k": [1, 2]}), "i": inner},
+        query=query,
+        compare_with="duckdb",
+        expected={"k": [1, 2], "r": [1, 1]},
+        engines=ENGINES,
+    )
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.SQLContext(o=pl.DataFrame({"k": [1, 3]}), i=inner).execute(query, eager=True)
+
+
+@pytest.mark.parametrize(
+    ("agg", "expected"),
+    [
+        # a matched group whose cast gives NULL keeps it
+        ("TRY_CAST(COUNT(*) AS TINYINT)", [None, 0]),
+        # the 0 is cast like any other count
+        ("CAST(CAST(COUNT(*) AS DECIMAL(10, 2)) AS VARCHAR)", ["128.00", "0.00"]),
+    ],
+)
+def test_correlated_aggregate_cast_count_over_no_match(
+    agg: str, expected: list[Any]
+) -> None:
+    assert_sql_matches(
+        frames={"o": pl.DataFrame({"k": [1, 2]}), "i": pl.DataFrame({"k": [1] * 128})},
+        query=f"SELECT k, (SELECT {agg} FROM i WHERE i.k = o.k) AS r FROM o ORDER BY k",
+        compare_with="duckdb",
+        expected={"k": [1, 2], "r": expected},
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize("agg", ["COUNT(*) OVER ()", "COUNT(*) OVER () + 1"])
+def test_correlated_window_is_not_an_aggregate(agg: str) -> None:
+    # A window gives a value per inner row, so this is not lowered as an
+    # aggregate, which would hide that a key has more than one row.
+    with pytest.raises(pl.exceptions.SQLInterfaceError):
+        pl.SQLContext(
+            o=pl.DataFrame({"k": [1, 2]}), i=pl.DataFrame({"k": [1, 1]})
+        ).execute(
+            f"SELECT k, (SELECT {agg} FROM i WHERE i.k = o.k) AS r FROM o",
+            eager=True,
+        )
+
+
+def test_correlated_aggregate_strict_cast_only_over_matched_rows() -> None:
+    # The inner group no outer row asks for holds a value the aggregate can't
+    # cast; the subquery is never evaluated for that group.
+    frames = {
+        "o": pl.DataFrame({"k": [1, 2]}),
+        "i": pl.DataFrame({"k": [1, 1, 3, 3], "v": ["10", "20", "x", "30"]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query=(
+            "SELECT k, (SELECT SUM(CAST(v AS INT)) FROM i WHERE i.k = o.k) AS r "
+            "FROM o ORDER BY k"
+        ),
+        compare_with=None,
+        expected={"k": [1, 2], "r": [30, None]},
+        engines=ENGINES,
+    )
+
+
+def test_correlated_aggregate_row_dependent_inner_source() -> None:
+    # The inner relation is a lazy plan whose values depend on the rows around
+    # them; restricting it to the outer keys must not change what it holds.
+    inner = pl.LazyFrame({"k": [3, 1, 3, 1, 2], "v": [1, 1, 1, 1, 1]}).with_columns(
+        pl.col("v").cum_sum().alias("v")
+    )
+    frames: dict[str, pl.DataFrame | pl.LazyFrame] = {
+        "o": pl.DataFrame({"k": [1, 3]}),
+        "i": inner,
+    }
+    assert_sql_matches(
+        frames=frames,
+        query=(
+            "SELECT k, (SELECT SUM(v) FROM i WHERE i.k = o.k) AS r FROM o ORDER BY k"
+        ),
+        compare_with="duckdb",
+        expected={"k": [1, 3], "r": [6, 4]},
+        engines=ENGINES,
+    )
+
+
+def test_correlated_aggregate_reused_across_clauses() -> None:
+    # One subquery in WHERE, SELECT and HAVING is lowered once, over one cached
+    # outer input.
+    frames = _key_frames()
+    sub = "(SELECT SUM(v) FROM i WHERE i.k = o.k)"
+    query = (
+        f"SELECT k, {sub} AS a, MAX(s) AS m FROM o WHERE {sub} > 10 "
+        f"GROUP BY k HAVING {sub} < 100 ORDER BY k"
+    )
+    with pl.SQLContext(frames=frames) as ctx:
+        plan = ctx.execute(query).explain(optimized=False)
+    assert _decorrelation_count(ctx, query) == 1
+    assert len(set(re.findall(r"CACHE\[id: ([^\]]+)\]", plan))) == 1
+    assert_sql_matches(
+        frames=frames,
+        query=query,
+        compare_with="duckdb",
+        expected={"k": [1, 3], "a": [17, 30], "m": [15, 100]},
+        engines=ENGINES,
+    )
+
+
+def test_correlated_aggregates_several_over_one_outer() -> None:
+    assert_sql_matches(
+        frames=_key_frames(),
+        query="""
+            SELECT p,
+              (SELECT SUM(v) FROM i WHERE i.k = o.k) AS a,
+              (SELECT MAX(v) FROM i WHERE i.k = o.k) AS b,
+              (SELECT COUNT(*) FROM i WHERE i.j = o.j) AS c,
+              (SELECT COUNT(*) FROM o AS x WHERE x.k = o.k) AS d
+            FROM o ORDER BY p
+        """,
+        compare_with="duckdb",
+        expected={
+            "p": list("abcdef"),
+            "a": [17, 17, None, 30, None, None],
+            "b": [10, 10, None, 30, None, None],
+            "c": [11, 0, 11, 11, 11, 11],
+            "d": [2, 2, 1, 1, 1, 0],
+        },
+        engines=ENGINES,
+    )
+    with pl.SQLContext(frames=_key_frames()) as ctx:
+        out = ctx.execute("SELECT (SELECT SUM(v) FROM i WHERE i.k = o.k) AS a FROM o")
+    assert out.collect_schema().names() == ["a"]
+
+
+@pytest.mark.parametrize(
+    "where",
+    [
+        # the selective conjuncts in either order around the scalar comparison
+        "j = 'x' AND s > (SELECT SUM(v) FROM i WHERE i.k = o.k) AND k IN (SELECT k FROM i WHERE v > 20)",
+        "k IN (SELECT k FROM i WHERE v > 20) AND s > (SELECT SUM(v) FROM i WHERE i.k = o.k) AND j = 'x'",
+        "(j = 'x' AND (k IN (SELECT k FROM i WHERE v > 20))) AND s > (SELECT SUM(v) FROM i WHERE i.k = o.k)",
+        # a disjunction and a negation aren't split
+        "j = 'y' OR s > (SELECT SUM(v) FROM i WHERE i.k = o.k)",
+        "NOT (j = 'x' AND s > (SELECT SUM(v) FROM i WHERE i.k = o.k))",
+        # a conjunct reading the scalar result stays after it
+        "s > (SELECT SUM(v) FROM i WHERE i.k = o.k) AND (SELECT SUM(v) FROM i WHERE i.k = o.k) < 100",
+        "EXISTS (SELECT 1 FROM i WHERE i.k = o.k AND v > 8) AND s > (SELECT MIN(v) FROM i WHERE i.k = o.k)",
+        "k NOT IN (SELECT k FROM i WHERE v > 35) AND s > (SELECT MIN(v) FROM i WHERE i.k = o.k)",
+        "s = (SELECT MAX(s) FROM o) AND s > (SELECT MIN(v) FROM i WHERE i.k = o.k)",
+        "1 = 1 AND s > (SELECT MIN(v) FROM i WHERE i.k = o.k)",
+    ],
+)
+def test_correlated_aggregate_where_conjunct_scheduling(where: str) -> None:
+    assert_sql_matches(
+        frames=_key_frames(),
+        query=f"SELECT p FROM o WHERE {where} ORDER BY p",
+        compare_with="duckdb",
+        engines=ENGINES,
+    )
+
+
+def _assert_restricted_to_outer_keys(plan: str) -> None:
+    (result_col,) = set(re.findall(r"__POLARS_CORR__POLARS_TMP_SQL_\d+_res", plan))
+    lines = plan.splitlines()
+    agg_input = None
+    for idx, line in enumerate(lines):
+        if line.strip().startswith("AGGREGATE") and result_col in lines[idx + 1]:
+            from_line = lines[idx + 2]
+            assert from_line.strip() == "FROM"
+            indent = len(from_line) - len(from_line.lstrip())
+            body = []
+            for below in lines[idx + 3 :]:
+                if below.strip() and len(below) - len(below.lstrip()) < indent:
+                    break
+                body.append(below)
+            agg_input = "\n".join(body)
+            break
+    assert agg_input is not None, plan
+    # the aggregate reads a semi join against the cached outer input...
+    assert agg_input.lstrip().startswith("SEMI JOIN:")
+    cache_ids = re.findall(r"CACHE\[id: ([^\]]+)\]", agg_input)
+    assert len(cache_ids) == 1
+    # ...and that cache is the one the aggregate result is joined back onto
+    assert plan.count(f"CACHE[id: {cache_ids[0]}]") == 2
+
+
+def _tpch_q20_frames() -> dict[str, pl.LazyFrame]:
+    return {
+        "part": pl.LazyFrame(
+            {"p_partkey": [1, 2, 3], "p_name": ["forest a", "b", "forest c"]}
+        ),
+        "partsupp": pl.LazyFrame(
+            {
+                "ps_partkey": [1, 1, 2, 3],
+                "ps_suppkey": [10, 20, 10, 30],
+                "ps_availqty": [100, 1, 100, 100],
+            }
+        ),
+        "lineitem": pl.LazyFrame(
+            {
+                "l_partkey": [1, 1, 2, 3, 3, 2, 2, 3, 1],
+                "l_suppkey": [10, 20, 10, 30, 30, 10, 10, 30, 20],
+                "l_quantity": [10, 10, 1000, 300, 10, 5, 5, 1, 1],
+                "l_shipdate": pl.Series(
+                    [
+                        "1994-06-01",
+                        "1994-06-01",
+                        "1994-06-01",
+                        "1994-06-01",
+                        "1995-06-01",
+                        "1994-07-01",
+                        "1994-08-01",
+                        "1993-01-01",
+                        "1996-01-01",
+                    ]
+                ).str.to_date(),
+            }
+        ),
+        "supplier": pl.LazyFrame(
+            {
+                "s_suppkey": [10, 20, 30],
+                "s_name": ["s10", "s20", "s30"],
+                "s_address": ["a10", "a20", "a30"],
+                "s_nationkey": [1, 1, 2],
+            }
+        ),
+        "nation": pl.LazyFrame({"n_nationkey": [1, 2], "n_name": ["CANADA", "PERU"]}),
+    }
+
+
+TPCH_Q20 = """
+    SELECT s_name, s_address FROM supplier, nation
+    WHERE s_suppkey IN (
+        SELECT ps_suppkey FROM partsupp
+        WHERE ps_partkey IN (SELECT p_partkey FROM part WHERE p_name LIKE 'forest%')
+          AND ps_availqty > (
+            SELECT 0.5 * SUM(l_quantity) FROM lineitem
+            WHERE l_partkey = ps_partkey AND l_suppkey = ps_suppkey
+              AND l_shipdate >= DATE '1994-01-01'
+              AND l_shipdate < DATE '1994-01-01' + INTERVAL '1' YEAR
+          )
+    )
+    AND s_nationkey = n_nationkey AND n_name = 'CANADA'
+    ORDER BY s_name
+"""
+
+
+def test_correlated_aggregate_restricted_by_filtered_outer_plan() -> None:
+    # The lineitem aggregate reads only the part/supplier keys of the forest
+    # parts, without the query being rewritten.
+    with pl.SQLContext(frames=_tpch_q20_frames()) as ctx:
+        lf = ctx.execute(TPCH_Q20)
+    for plan in (
+        lf.explain(optimized=False),
+        lf.explain(),
+        lf.explain(optimizations=pl.QueryOptFlags(join_order=False)),
+    ):
+        _assert_restricted_to_outer_keys(plan)
+    # the forest-parts restriction sits below the cache the aggregate reads
+    plan = lf.explain(optimized=False)
+    cache_line = plan.index("CACHE[id:")
+    assert "p_name" in plan[cache_line:]
+    assert_sql_matches(
+        frames=_tpch_q20_frames(),
+        query=TPCH_Q20,
+        compare_with="duckdb",
+        expected={"s_name": ["s10"], "s_address": ["a10"]},
+        engines=ENGINES,
+    )
+
+
+def test_correlated_aggregate_not_restricted_by_larger_outer() -> None:
+    # The semi join only pays off when the inner frame is well over twice the
+    # outer one; here the outer frame is the larger one.
+    frames = {
+        "o": pl.DataFrame({"k": list(range(10)), "s": list(range(10))}),
+        "i": pl.DataFrame({"k": [1, 2, 3], "v": [10, 20, 30]}),
+    }
+    query = "SELECT k, (SELECT SUM(v) FROM i WHERE i.k = o.k) AS r FROM o ORDER BY k"
+    with pl.SQLContext(frames=frames) as ctx:
+        plan = ctx.execute(query).explain(optimized=False)
+    assert "SEMI JOIN" not in plan
+    assert "CACHE" not in plan
+    assert_sql_matches(
+        frames=frames,
+        query=query,
+        compare_with="duckdb",
+        expected={"k": list(range(10)), "r": [None, 10, 20, 30] + [None] * 6},
+        engines=ENGINES,
+    )
+
+
+def test_correlated_aggregate_inequality_keeps_row_index_path() -> None:
+    with pl.SQLContext(frames=_key_frames()) as ctx:
+        plan = ctx.execute(
+            "SELECT p, (SELECT SUM(v) FROM i WHERE i.k < o.k) AS r FROM o"
+        ).explain(optimized=False)
+    assert "SEMI JOIN" not in plan
+    assert "_idx" in plan
+
+
+def _counting_source(
+    df: pl.DataFrame, on_batch: Callable[[pl.DataFrame], None]
+) -> pl.LazyFrame:
+    from polars.io.plugins import register_io_source
+
+    def source(
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        _n_rows: int | None,
+        _batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        for offset in range(0, df.height, 10_000):
+            batch = df.slice(offset, 10_000)
+            if predicate is not None:
+                batch = batch.filter(predicate)
+            if with_columns is not None:
+                batch = batch.select(with_columns)
+            on_batch(batch)
+            yield batch
+
+    return register_io_source(source, schema=df.schema, is_pure=True)
+
+
+def test_correlated_aggregate_unknown_outer_size_not_restricted(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    # A source without a row count could be arbitrarily large, so the aggregate
+    # is not restricted to its keys: caching it would read it whole before a
+    # LIMIT could stop it.
+    # The join may sample this many rows of the outer before the LIMIT applies.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "1000")
+    outer = pl.DataFrame({"k": range(2_000_000), "s": range(2_000_000)})
+    yielded = 0
+
+    def count(batch: pl.DataFrame) -> None:
+        nonlocal yielded
+        yielded += batch.height
+
+    frames = {
+        "o": _counting_source(outer, count),
+        "i": pl.DataFrame({"k": [0, 1, 2, 3], "v": [10, 20, 30, 40]}),
+    }
+    query = "SELECT k, (SELECT SUM(v) FROM i WHERE i.k = o.k) AS r FROM o LIMIT 1"
+    with pl.SQLContext(frames=frames) as ctx:
+        lf = ctx.execute(query)
+    assert "CACHE" not in lf.explain(optimized=False)
+    yielded = 0
+    assert lf.collect(engine="streaming").height == 1
+    assert 0 < yielded < outer.height
+
+
+def test_correlated_aggregate_outer_read_once(tmp_path: Path) -> None:
+    # Both consumers of the cached outer frame read one evaluation of it: the
+    # outer scan is planned once and every result row is produced once.
+    path = tmp_path / "o.parquet"
+    pl.DataFrame({"k": [1, 2, 3], "s": [5, 50, 500]}).write_parquet(path)
+    frames = {
+        "o": pl.scan_parquet(path),
+        "i": pl.DataFrame({"k": [1, 1, 3, 4, 5, 6, 7], "v": [10, 20, 30, 40, 1, 1, 1]}),
+    }
+    query = (
+        "SELECT k, s FROM o WHERE s > (SELECT SUM(v) FROM i WHERE i.k = o.k) ORDER BY k"
+    )
+    with pl.SQLContext(frames=frames) as ctx:
+        lf = ctx.execute(query)
+    plan = lf.explain()
+    assert plan.count("Parquet SCAN") == 1
+    assert len(set(re.findall(r"CACHE\[id: ([^\]]+)\]", plan))) == 1
+    for engine in ENGINES:
+        # the unmatched key compares against NULL and is dropped
+        assert lf.collect(engine=engine).to_dict(as_series=False) == {
+            "k": [3],
+            "s": [500],
+        }
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_correlated_aggregate_fallible_predicate_stays_after_scalar_filter(
+    reverse: bool,
+) -> None:
+    # The strict cast fails on the row the scalar comparison removes, so it is
+    # not moved ahead of the scalar lowering.
+    frames = {
+        "o": pl.DataFrame({"k": [1, 2], "s": ["10", "bad"]}),
+        "i": pl.DataFrame({"k": [1, 1, 2, 2, 3, 3], "v": [10, 10, -10, -10, 1, 1]}),
+    }
+    predicates = ["CAST(s AS INT) > 0", "(SELECT SUM(v) FROM i WHERE i.k = o.k) > 0"]
+    if reverse:
+        predicates.reverse()
+    assert_sql_matches(
+        frames=frames,
+        query="SELECT k FROM o WHERE " + " AND ".join(predicates) + " ORDER BY k",
+        compare_with=None,
+        expected={"k": [1]},
+        engines=ENGINES,
+    )
+
+
+def test_correlated_aggregate_fallible_membership_key_stays_residual() -> None:
+    frames = {
+        "o": pl.DataFrame({"k": [1, 2], "s": ["10", "bad"]}),
+        "i": pl.DataFrame({"k": [1, 1, 2, 2, 3, 3], "v": [10, 10, -10, -10, 1, 1]}),
+    }
+    query = (
+        "SELECT k FROM o WHERE CAST(s AS INT) IN (SELECT v FROM i) "
+        "AND (SELECT SUM(v) FROM i WHERE i.k = o.k) > 0 ORDER BY k"
+    )
+    with pl.SQLContext(frames=frames) as ctx:
+        plan = ctx.execute(query).explain(optimized=False)
+    # the membership join sits above the scalar lowering's cache
+    assert plan.index("SEMI JOIN") < plan.index("CACHE")
+
+
+@pytest.mark.parametrize(
+    ("condition", "expected"),
+    [
+        ("{sum} = {max}", [2, 3]),
+        ("{sum} IN (SELECT v FROM i)", [2, 3]),
+        ("k + {sum} = (SELECT MAX(v) FROM i)", []),
+        ("CASE WHEN k > 1 THEN {sum} ELSE 0 END = (SELECT MAX(v) FROM i)", [3]),
+    ],
+)
+def test_correlated_aggregate_inside_membership_key(
+    condition: str, expected: list[int]
+) -> None:
+    # A membership key holding a correlated scalar subquery is lowered first.
+    condition = condition.format(
+        sum="(SELECT SUM(v) FROM i WHERE i.k = o.k)",
+        max="(SELECT MAX(v) FROM i WHERE i.k = o.k)",
+    )
+    assert_sql_matches(
+        frames={
+            "o": pl.DataFrame({"k": [1, 2, 3]}),
+            "i": pl.DataFrame({"k": [1, 1, 2, 2, 3, 3], "v": [1, 2, 4, 0, 5, 0]}),
+        },
+        query=f"SELECT k FROM o WHERE {condition} ORDER BY k",
+        compare_with="duckdb",
+        expected={"k": expected},
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize(
+    "membership",
+    [
+        "k IN (SELECT k FROM i WHERE v < s)",
+        "k NOT IN (SELECT k FROM i WHERE v < s)",
+        "s = (SELECT MAX(v) FROM i WHERE v < s)",
+    ],
+)
+@pytest.mark.parametrize("with_scalar", [False, True])
+def test_membership_subquery_correlated_by_unqualified_outer_column(
+    membership: str, with_scalar: bool
+) -> None:
+    # `s` is an outer column; only the decorrelation, not the uncorrelated
+    # rewrite, can resolve it.
+    where = membership
+    if with_scalar:
+        where += " AND (SELECT COUNT(*) FROM i WHERE i.k = o.k) > 0"
+    assert_sql_matches(
+        frames={
+            "o": pl.DataFrame({"k": [1, 2, 3], "s": [15, 5, 100]}),
+            "i": pl.DataFrame({"k": [1, 1, 2, 3, 3, 3], "v": [10, 20, 30, 40, 1, 2]}),
+        },
+        query=f"SELECT k FROM o WHERE {where} ORDER BY k",
+        compare_with="duckdb",
+        engines=ENGINES,
+    )
+
+
+def test_correlated_aggregate_one_outer_column_in_two_key_pairs() -> None:
+    frames = {
+        "o": pl.DataFrame({"k": [1, 2]}),
+        "i": pl.DataFrame(
+            {
+                "a": [1, 1, 1, 2, 2, 9],
+                "b": [1, 2, 1, 2, 1, 9],
+                "v": [10, 20, 30, 40, 50, 60],
+            }
+        ),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query=(
+            "SELECT k, (SELECT SUM(v) FROM i WHERE i.a = o.k AND i.b = o.k) AS s "
+            "FROM o ORDER BY k"
+        ),
+        compare_with="duckdb",
+        expected={"k": [1, 2], "s": [40, 40]},
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize("engine", ENGINES)
+def test_correlated_aggregate_limit_and_empty_results(engine: EngineType) -> None:
+    # A shared outer input must not stall a query that stops early or yields nothing.
+    frames = {
+        "o": pl.DataFrame({"k": list(range(300)), "s": list(range(300))}),
+        "i": pl.DataFrame({"k": list(range(0, 2000, 2)), "v": [1] * 1000}),
+    }
+    with pl.SQLContext(frames=frames) as ctx:
+        limited = ctx.execute(
+            "SELECT k, (SELECT SUM(v) FROM i WHERE i.k = o.k) AS r FROM o ORDER BY k LIMIT 2"
+        ).collect(engine=engine)
+        assert limited.to_dict(as_series=False) == {"k": [0, 1], "r": [1, None]}
+        empty = ctx.execute(
+            "SELECT k FROM o WHERE s < 0 AND s > (SELECT SUM(v) FROM i WHERE i.k = o.k)"
+        ).collect(engine=engine)
+        assert empty.height == 0
+        none_match = ctx.execute(
+            "SELECT k, (SELECT SUM(v) FROM i WHERE i.k = o.k) AS r FROM o WHERE k < 0"
+        ).collect(engine=engine)
+        assert none_match.height == 0
+
+
+def _supply_frames() -> dict[str, pl.LazyFrame]:
+    # part 2 is listed twice, so the outer join pairs each of its supplies with two
+    # part rows
+    return {
+        "part": pl.LazyFrame(
+            {"p_partkey": [1, 2, 2, 3, 4], "p_size": [15, 15, 15, 15, 1]}
+        ),
+        "partsupp": pl.LazyFrame(
+            {
+                "ps_partkey": [1, 1, 2, 2, 2, 3, 3, 4],
+                "ps_suppkey": [10, 20, 10, 20, 30, 20, 30, 10],
+                "ps_supplycost": [5.0, 3.0, 7.0, 7.0, 9.0, 4.0, 1.0, 2.0],
+            }
+        ),
+        "supplier": pl.LazyFrame({"s_suppkey": [10, 20, 30], "s_nationkey": [1, 2, 1]}),
+        "nation": pl.LazyFrame({"n_nationkey": [1, 2], "n_name": ["FRANCE", "PERU"]}),
+    }
+
+
+def _supply_query(subquery: str, op: str, extra: str = "") -> str:
+    return f"""
+        SELECT p_partkey, s_suppkey, ps_supplycost
+        FROM part, partsupp, supplier, nation
+        WHERE p_partkey = ps_partkey AND s_suppkey = ps_suppkey
+          AND p_size = 15 AND s_nationkey = n_nationkey AND n_name = 'FRANCE'
+          AND ps_supplycost {op} ({subquery}) {extra}
+        ORDER BY p_partkey, s_suppkey, ps_supplycost
+    """
+
+
+def _partsupp_scans(query: str) -> int:
+    with pl.SQLContext(frames=_supply_frames()) as ctx:
+        plan = ctx.execute(query).explain()
+    return plan.count('DF ["ps_partkey"')
+
+
+SUPPLY_SUBQUERY = """
+    SELECT {agg}(ps_supplycost) FROM partsupp, supplier, nation
+    WHERE p_partkey = ps_partkey AND s_suppkey = ps_suppkey
+      AND s_nationkey = n_nationkey AND n_name = 'FRANCE'
+"""
+
+
+@pytest.mark.parametrize(
+    ("subquery", "op"),
+    [
+        (SUPPLY_SUBQUERY.format(agg="MIN"), "="),
+        (SUPPLY_SUBQUERY.format(agg="MAX"), "="),
+        (SUPPLY_SUBQUERY.format(agg="2 * MIN"), "<"),
+        # the same joins written with other aliases and qualified columns
+        (
+            """
+            SELECT MIN(ps.ps_supplycost) FROM partsupp ps, supplier AS s, nation n
+            WHERE n.n_name = 'FRANCE' AND s.s_nationkey = n.n_nationkey
+              AND ps.ps_suppkey = s.s_suppkey AND ps.ps_partkey = part.p_partkey
+            """,
+            "=",
+        ),
+    ],
+)
+def test_correlated_aggregate_over_outer_join_tree(subquery: str, op: str) -> None:
+    # The subquery repeats the outer joins of its relations, so its aggregate is
+    # read from the outer join instead of joining its relations a second time.
+    query = _supply_query(subquery, op)
+    assert _partsupp_scans(query) == 1
+    assert_sql_matches(
+        frames=_supply_frames(),
+        query=query,
+        compare_with="duckdb",
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize(
+    ("subquery", "extra"),
+    [
+        # a sum counts the supplies of part 2 twice over the outer join
+        (SUPPLY_SUBQUERY.format(agg="SUM"), ""),
+        # a filter the outer query doesn't apply
+        (SUPPLY_SUBQUERY.format(agg="MIN") + " AND ps_supplycost > 4", ""),
+        # the outer query's nation filter is missing
+        (
+            """
+            SELECT MIN(ps_supplycost) FROM partsupp, supplier, nation
+            WHERE p_partkey = ps_partkey AND s_suppkey = ps_suppkey
+              AND s_nationkey = n_nationkey
+            """,
+            "",
+        ),
+        # the outer query links part to the supplier beyond the correlation
+        (SUPPLY_SUBQUERY.format(agg="MIN"), "AND p_partkey * 10 < s_suppkey"),
+        # correlated with the outer row's partsupp rather than its part
+        (
+            """
+            SELECT MIN(ps2.ps_supplycost) FROM partsupp AS ps2
+            WHERE ps2.ps_partkey = partsupp.ps_partkey
+            """,
+            "",
+        ),
+    ],
+)
+def test_correlated_aggregate_not_over_outer_join_tree(
+    subquery: str, extra: str
+) -> None:
+    query = _supply_query(subquery, "<=", extra)
+    assert _partsupp_scans(query) == 2
+    assert_sql_matches(
+        frames=_supply_frames(),
+        query=query,
+        compare_with="duckdb",
+        engines=ENGINES,
+    )
+
+
+def test_correlated_avg_over_repeated_outer_rows() -> None:
+    # The outer join repeats the row of `i` three times, and the mean of three
+    # 0.1 values is not 0.1, so the average must come from `i` itself.
+    frames = {
+        "o": pl.DataFrame({"ok": [1, 1, 1]}),
+        "i": pl.DataFrame({"ik": [1], "v": [0.1]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="""
+            SELECT ok, v FROM o, i
+            WHERE ok = ik AND v = (SELECT AVG(v) FROM i WHERE ik = ok)
+        """,
+        compare_with="duckdb",
+        expected={"ok": [1, 1, 1], "v": [0.1, 0.1, 0.1]},
+        engines=ENGINES,
+    )
+
+
+def _join_on_frames() -> dict[str, pl.DataFrame]:
+    return {
+        "a": pl.DataFrame({"id": [1, 2, 3, None], "v": [10, 20, 30, 40]}),
+        "b": pl.DataFrame({"id": [1, 2, 3], "w": ["x", "y", "z"]}),
+        # `b_id` 1 has one row, 2 has two rows, 3 has none.
+        "c": pl.DataFrame(
+            {"id": [1, 5, 6, 7], "b_id": [1, 2, 2, None], "name": ["p", "q", "r", "s"]}
+        ),
+        "d": pl.DataFrame({"x": [1, 5, 9], "y": [100, 200, 300]}),
+    }
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT a.id, (SELECT c.id FROM c WHERE c.b_id = a.id AND c.id <> 6) AS x FROM a",
+        "SELECT a.id, (SELECT upper(c.name) FROM c WHERE c.b_id = a.id AND c.id <> 6) AS x FROM a",
+        "SELECT a.id, (SELECT 1 FROM c WHERE c.b_id = a.id AND c.id <> 6) AS x FROM a",
+        "SELECT a.id, (SELECT DISTINCT c.b_id FROM c WHERE c.b_id = a.id) AS x FROM a",
+        "SELECT a.id, (SELECT c.id FROM c WHERE c.b_id < a.id AND c.id = 1) AS x FROM a",
+        "SELECT a.id FROM a WHERE a.v > (SELECT c.id FROM c WHERE c.b_id = a.id AND c.id <> 6)",
+    ],
+)
+def test_correlated_scalar_subquery_without_aggregate(query: str) -> None:
+    assert_sql_matches(
+        frames=_join_on_frames(),
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT a.id, (SELECT c.id FROM c WHERE c.b_id = a.id) AS x FROM a",
+        "SELECT a.id, (SELECT 1 FROM c WHERE c.b_id = a.id) AS x FROM a",
+        "SELECT a.id, (SELECT c.id FROM c WHERE c.b_id < a.id) AS x FROM a",
+        "SELECT a.id FROM a LEFT JOIN b ON b.id = (SELECT c.id FROM c WHERE c.b_id = a.id)",
+    ],
+)
+@pytest.mark.parametrize("engine", ENGINES)
+def test_correlated_scalar_subquery_more_than_one_row(
+    query: str, engine: EngineType
+) -> None:
+    ctx = pl.SQLContext(frames=_join_on_frames())
+    with pytest.raises(pl.exceptions.ComputeError, match="single value"):
+        ctx.execute(query).collect(engine=engine)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # https://github.com/pola-rs/polars/issues/30117
+        "SELECT a.id, b.w FROM a LEFT JOIN b ON b.id = (SELECT c.id FROM c WHERE c.b_id = a.id AND c.id <> 6)",
+        "SELECT a.id, b.w FROM a JOIN b ON b.id = (SELECT COUNT(*) FROM c WHERE c.b_id = a.id)",
+        "SELECT a.id, b.w FROM a RIGHT JOIN b ON b.id = (SELECT c.id FROM c WHERE c.b_id = a.id AND c.id <> 6)",
+        "SELECT a.id, b.w FROM a FULL JOIN b ON b.id = (SELECT c.id FROM c WHERE c.b_id = a.id AND c.id <> 6)",
+        # The subquery reads the right input.
+        "SELECT a.id, b.w FROM a LEFT JOIN b ON a.id = (SELECT MAX(c.id) FROM c WHERE c.b_id = b.id)",
+        # One conjunct is a join key, the other compares with a subquery.
+        "SELECT a.id, b.w FROM a LEFT JOIN b ON a.id = b.id AND b.id <= (SELECT COUNT(*) FROM c WHERE c.b_id = a.id) + 1",
+        # The right input is named in another case.
+        "SELECT a.id, b.w FROM a LEFT JOIN b ON a.id = (SELECT MAX(c.id) FROM c WHERE c.b_id = B.id)",
+        # Parentheses without an alias only group the joins.
+        "SELECT a.id, d.y FROM (a JOIN b ON a.id = b.id) LEFT JOIN d ON d.x = (SELECT c.id FROM c WHERE c.b_id = b.id AND c.id <> 6)",
+        # `b.id` has another name in the joined left input.
+        "SELECT a.id, b.w, d.y FROM a JOIN b ON a.id = b.id LEFT JOIN d ON d.x = (SELECT c.id FROM c WHERE c.b_id = b.id AND c.id <> 6)",
+    ],
+)
+def test_correlated_subquery_in_join_on(query: str) -> None:
+    assert_sql_matches(
+        frames=_join_on_frames(),
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # The `IN` operand reads one input and the subquery the other one.
+        "SELECT a.id, d.y FROM a JOIN d ON d.x IN (SELECT c.id FROM c WHERE c.b_id = a.id)",
+        "SELECT a.id, d.y FROM a LEFT JOIN d ON d.x IN (SELECT c.id FROM c WHERE c.b_id = a.id)",
+        "SELECT a.id, d.y FROM a RIGHT JOIN d ON d.x IN (SELECT c.id FROM c WHERE c.b_id = a.id)",
+        "SELECT a.id, d.y FROM a LEFT JOIN d ON a.id IN (SELECT c.b_id FROM c WHERE c.id = d.x)",
+        "SELECT a.id, d.y FROM a LEFT JOIN d ON d.x + 1 IN (SELECT c.id + 1 FROM c WHERE c.b_id = a.id)",
+        "SELECT a.id, d.y FROM a LEFT JOIN d ON d.y > 100 AND d.x IN (SELECT c.id FROM c WHERE c.b_id = a.id)",
+        "SELECT * FROM a LEFT JOIN d ON d.x IN (SELECT DISTINCT c.id FROM c WHERE c.b_id = a.id)",
+        # `EXISTS` reading both inputs.
+        "SELECT a.id, d.y FROM a LEFT JOIN d ON EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id AND c.id = d.x)",
+        # The subquery reads a relation of the left input that is not its first.
+        "SELECT a.id, b.w, d.y FROM a JOIN b ON a.id = b.id LEFT JOIN d ON d.x IN (SELECT c.id FROM c WHERE c.b_id = b.id)",
+        # The rows of the subquery can't join onto an input that the join keeps.
+        "SELECT a.id, d.x FROM a FULL JOIN d ON d.x IN (SELECT c.id FROM c WHERE c.b_id = a.id)",
+        "SELECT a.id, d.x FROM a LEFT JOIN d ON d.x NOT IN (SELECT c.id FROM c WHERE c.b_id = a.id)",
+        "SELECT a.id, d.x FROM a LEFT JOIN d ON d.x IN (SELECT c.id FROM c WHERE c.b_id > a.id)",
+        # A window over the subquery's rows depends on the outer row.
+        "SELECT a.id, d.x FROM a LEFT JOIN d ON d.x IN (SELECT ROW_NUMBER() OVER (ORDER BY c.id) FROM c WHERE c.b_id = a.id)",
+    ],
+)
+def test_correlated_membership_in_join_on(query: str) -> None:
+    assert_sql_matches(
+        frames=_join_on_frames(),
+        query=query,
+        compare_with="sqlite",
+        check_row_order=False,
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize("join_type", ["JOIN", "LEFT JOIN", "RIGHT JOIN", "FULL JOIN"])
+@pytest.mark.parametrize(
+    "condition",
+    [
+        # The condition reads only the right input.
+        "EXISTS (SELECT 1 FROM c WHERE c.b_id = b.id)",
+        "NOT EXISTS (SELECT 1 FROM c WHERE c.b_id = b.id)",
+        # The condition reads only the left input.
+        "EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id)",
+        "a.id IN (SELECT c.b_id FROM c WHERE c.id > a.id)",
+        "a.v = (SELECT MAX(c.id) * 10 FROM c WHERE c.b_id = a.id)",
+        # Each conjunct reads one input.
+        "EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id) AND EXISTS (SELECT 1 FROM c WHERE c.b_id = b.id)",
+        "b.id = a.id AND EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id)",
+        # The subquery's own `b` is not the joined `b`, so the condition reads only `a`.
+        "a.id = (SELECT MAX(b.b_id) FROM c AS b WHERE b.b_id = a.id)",
+    ],
+)
+@pytest.mark.parametrize("columns", ["a.id, b.w", "b.w"])
+def test_correlated_one_input_condition_in_join_on(
+    join_type: str, condition: str, columns: str
+) -> None:
+    assert_sql_matches(
+        frames=_join_on_frames(),
+        query=f"SELECT {columns} FROM a {join_type} b ON {condition}",
+        compare_with="sqlite",
+        check_row_order=False,
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "a.v = (SELECT c.id * 10 FROM c WHERE c.b_id = a.id)",
+        "a.id = (SELECT b.id FROM c AS b WHERE b.b_id = a.id)",
+    ],
+)
+def test_correlated_one_input_condition_in_join_on_many_rows(condition: str) -> None:
+    # `b_id` 2 has two rows of `c`.
+    ctx = pl.SQLContext(frames=_join_on_frames())
+    with pytest.raises(
+        pl.exceptions.ComputeError, match="expected no or a single value"
+    ):
+        ctx.execute(f"SELECT a.id FROM a JOIN b ON {condition}").collect()
+
+
+@pytest.mark.parametrize("join_type", ["JOIN", "LEFT JOIN", "RIGHT JOIN", "FULL JOIN"])
+@pytest.mark.parametrize(
+    "condition",
+    [
+        # The subquery reads both inputs.
+        "a.id = b.id AND b.id = (SELECT MIN(c.b_id) FROM c WHERE c.b_id = a.id AND c.name > b.w)",
+        "b.id = (SELECT MAX(c.b_id) FROM c WHERE c.b_id <= a.id AND c.name > b.w)",
+        "a.id = b.id AND EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id AND c.id > b.id)",
+        "a.id = b.id AND NOT EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id AND c.id > b.id)",
+        # An unqualified column of the right input.
+        "b.id = (SELECT MIN(c.b_id) FROM c WHERE c.b_id >= a.id AND c.name > w)",
+        # The subquery reads the input that the condition's own columns don't read.
+        "b.id IN (SELECT c.b_id FROM c WHERE c.b_id < a.id + 1)",
+        # The condition's own columns read both inputs.
+        "a.id = b.id AND (a.v > 25 OR b.id = (SELECT MIN(c.b_id) FROM c WHERE c.id > a.id))",
+        # Next to a condition that reads one input.
+        "a.id = b.id AND EXISTS (SELECT 1 FROM c WHERE c.b_id = b.id) AND b.id IN (SELECT c.b_id FROM c WHERE c.id > a.id)",
+        "a.id = b.id AND a.v IN (SELECT c.id * 10 FROM c) AND NOT EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id AND c.id > b.id)",
+        "a.id = b.id AND b.w IN (SELECT c.name FROM c) AND NOT EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id AND c.id > b.id)",
+    ],
+)
+@pytest.mark.parametrize("left", ["a", "a JOIN d ON a.id = d.x"])
+def test_correlated_condition_reading_both_inputs_in_join_on(
+    join_type: str, condition: str, left: str
+) -> None:
+    assert_sql_matches(
+        frames=_join_on_frames(),
+        query=f"SELECT a.id, a.v, b.id AS bid, b.w FROM {left} {join_type} b ON {condition}",
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize("join_type", ["JOIN", "LEFT JOIN"])
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "a.k = b.k AND x IN (SELECT c.y FROM c WHERE c.k = a.k AND c.y > b.x)",
+        "a.k = b.k AND EXISTS (SELECT 1 FROM c WHERE c.k = a.k AND c.y > b.x AND c.y > x)",
+    ],
+)
+def test_correlated_condition_reading_both_inputs_in_join_on_ambiguous(
+    join_type: str, condition: str
+) -> None:
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2], "x": [10, 20]}),
+        "b": pl.DataFrame({"k": [1, 2], "x": [10, 21]}),
+        "c": pl.DataFrame({"k": [1, 2], "y": [15, 25]}),
+    }
+    with pytest.raises(
+        pl.exceptions.SQLInterfaceError, match='ambiguous reference to column "x"'
+    ):
+        pl.SQLContext(frames).execute(
+            f"SELECT a.k FROM a {join_type} b ON {condition}"
+        ).collect()
+
+
+@pytest.mark.parametrize("join_type", ["JOIN", "LEFT JOIN", "RIGHT JOIN", "FULL JOIN"])
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "id IN (SELECT c.b_id FROM c WHERE c.cid <= a.v + d.x)",
+        "EXISTS (SELECT 1 FROM c WHERE c.b_id = id AND c.cid <= d.x + a.v)",
+    ],
+)
+def test_correlated_condition_reading_both_inputs_in_join_on_after_using(
+    join_type: str, condition: str
+) -> None:
+    # `id` is the merged key of the USING join, not ambiguous.
+    assert_sql_matches(
+        frames={
+            "a": pl.DataFrame({"id": [1, 2, 3], "v": [1, 5, 9]}),
+            "b": pl.DataFrame({"id": [1, 2, 3], "w": [1, 2, 3]}),
+            "c": pl.DataFrame({"cid": [1, 5, 6, 7], "b_id": [1, 2, 2, 3]}),
+            "d": pl.DataFrame({"x": [1, 5, 9]}),
+        },
+        query=f"SELECT a.id, d.x FROM a JOIN b USING (id) {join_type} d ON {condition}",
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize(
+    "subquery",
+    [
+        "SELECT a.id FROM c",
+        "WITH z AS (SELECT * FROM c) SELECT a.id FROM z",
+        "SELECT a.id FROM c UNION ALL SELECT a.id FROM c",
+        "SELECT x FROM (SELECT a.id AS x FROM c) AS t",
+    ],
+)
+def test_join_on_subquery_struct_named_like_input_keeps_plan(subquery: str) -> None:
+    # `a.id` is a field of the struct column `a` of `c`, not a column of the joined `a`.
+    ctx = pl.SQLContext(
+        frames={
+            "a": pl.DataFrame({"k": [1, 2]}),
+            "b": pl.DataFrame({"k": [1, 2], "x": [10, 20]}),
+            "c": pl.DataFrame({"a": [{"id": 10}]}),
+        }
+    )
+    plans = [
+        re.sub(
+            r"_POLARS_TMP_SQL_\d+|[0-9a-f]{8}-[0-9a-f-]{27}",
+            "",
+            ctx.execute(
+                f"SELECT {alias}.k, b.x FROM a AS {alias} LEFT JOIN b "
+                f"ON {alias}.k = b.k AND b.x IN ({subquery})"
+            ).explain(),
+        )
+        for alias in ["a", "outer_a"]
+    ]
+    assert plans[0] == plans[1]
+
+
+def test_join_on_subquery_alias_of_input_name_keeps_plan() -> None:
+    # The `b` of the subquery is its own relation, not the joined `b`.
+    ctx = pl.SQLContext(frames=_join_on_frames())
+    plans = [
+        re.sub(
+            r"_POLARS_TMP_SQL_\d+|[0-9a-f]{8}-[0-9a-f-]{27}",
+            "",
+            ctx.execute(
+                f"SELECT a.id FROM a LEFT JOIN b ON a.id = b.id AND a.v IN "
+                f"(SELECT {alias}.id FROM c AS {alias} "
+                f"WHERE EXISTS (SELECT 1 FROM d WHERE d.x = {alias}.id))"
+            ).explain(),
+        )
+        for alias in ["b", "local_b"]
+    ]
+    assert plans[0] == plans[1]
+
+
+def test_correlated_condition_reading_both_inputs_in_join_on_names() -> None:
+    res = pl.SQLContext(frames=_join_on_frames()).execute(
+        "SELECT * FROM a LEFT JOIN b ON a.id = b.id "
+        "AND EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id AND c.id >= b.id) ORDER BY a.v",
+        eager=True,
+    )
+    assert res.columns == ["id", "v", "id:b", "w"]
+    assert res.rows() == [
+        (1, 10, 1, "x"),
+        (2, 20, 2, "y"),
+        (3, 30, None, None),
+        (None, 40, None, None),
+    ]
+
+
+def _first_row_frames() -> dict[str, pl.DataFrame]:
+    return {
+        "a": pl.DataFrame({"id": [1, 2, 3, 4, 5], "k": [1, 2, 3, None, 1]}),
+        "b": pl.DataFrame({"v": [10, 20, 30, None, 40], "w": [1, 2, 3, 4, 5]}),
+        "c": pl.DataFrame(
+            {
+                "k": [1, 1, 1, 2, 2, None, 3],
+                "x": [10, 30, 20, 40, None, 50, 30],
+                "y": [3, None, 1, 2, 5, 1, None],
+            }
+        ),
+    }
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT a.id, (SELECT c.x FROM c WHERE c.k = a.k ORDER BY c.y LIMIT 1) AS r FROM a",
+        "SELECT a.id, (SELECT c.x FROM c WHERE c.k = a.k ORDER BY c.y DESC LIMIT 1) AS r FROM a",
+        "SELECT a.id, (SELECT c.x FROM c WHERE c.k = a.k ORDER BY c.y NULLS FIRST LIMIT 1) AS r FROM a",
+        "SELECT a.id, (SELECT c.x FROM c WHERE c.k = a.k ORDER BY c.y DESC, c.x LIMIT 1) AS r FROM a",
+        "SELECT a.id, (SELECT c.x FROM c WHERE c.k = a.k ORDER BY 1 DESC NULLS LAST LIMIT 1) AS r FROM a",
+        "SELECT a.id, (SELECT c.x AS xx FROM c WHERE c.k = a.k ORDER BY xx LIMIT 1) AS r FROM a",
+        # `y` is the output alias, not the inner column `c.y`.
+        "SELECT a.id, (SELECT c.x AS y FROM c WHERE c.k = a.k ORDER BY (y) LIMIT 1) AS r FROM a",
+        "SELECT a.id, (SELECT c.y FROM c WHERE c.k = a.k ORDER BY c.x * 2 - c.y DESC NULLS LAST LIMIT 1) AS r FROM a",
+        "SELECT a.id, (SELECT c.x FROM c WHERE c.k = a.k ORDER BY c.x FETCH FIRST 1 ROW ONLY) AS r FROM a",
+        "SELECT a.id, (SELECT c.x FROM c WHERE c.k > a.k ORDER BY c.x DESC NULLS LAST LIMIT 1) AS r FROM a",
+        "SELECT a.id, (SELECT DISTINCT c.x FROM c WHERE c.k = a.k ORDER BY c.x DESC NULLS LAST LIMIT 1) AS r FROM a",
+        # An aggregate has one row, which `LIMIT 1` keeps.
+        "SELECT a.id, (SELECT COUNT(*) FROM c WHERE c.k = a.k LIMIT 1) AS r FROM a",
+        "SELECT a.id FROM a WHERE a.id * 10 = (SELECT c.x FROM c WHERE c.k = a.k ORDER BY c.x LIMIT 1)",
+        "SELECT a.id, b.w FROM a LEFT JOIN b ON b.v = (SELECT c.x FROM c WHERE c.k = a.k ORDER BY c.y NULLS FIRST LIMIT 1)",
+    ],
+)
+def test_correlated_scalar_subquery_first_row(query: str) -> None:
+    assert_sql_matches(
+        frames=_first_row_frames(),
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize("engine", ENGINES)
+def test_correlated_scalar_subquery_first_row_unordered(engine: EngineType) -> None:
+    # Without `ORDER BY`, any row of the outer row's group is right.
+    frames = _first_row_frames()
+    query = "SELECT a.id, a.k, (SELECT c.x FROM c WHERE c.k = a.k LIMIT 1) AS r FROM a"
+    res = pl.SQLContext(frames).execute(query).collect(engine=engine)
+    c_rows = frames["c"].select("k", "x").rows()
+    for id, k, r in res.rows():
+        values = [x for ck, x in c_rows if k is not None and ck == k]
+        assert (r in values) if values else r is None, (id, r)
+
+
+def test_correlated_scalar_subquery_ignores_unmatched_groups() -> None:
+    # Key 2 and the NULL key have two rows each, but no outer row asks for them.
+    assert_sql_matches(
+        frames={
+            "a": pl.DataFrame({"id": [1, 3]}),
+            "c": pl.DataFrame({"k": [1, 2, 2, None, None], "v": [10, 20, 30, 1, 2]}),
+        },
+        query="SELECT a.id, (SELECT c.v FROM c WHERE c.k = a.id) AS v FROM a",
+        compare_with="duckdb",
+        check_row_order=False,
+        expected={"id": [1, 3], "v": [10, None]},
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT a.id FROM a WHERE a.id IN (SELECT b.id FROM b WHERE b.id IN (SELECT c.b_id FROM c WHERE c.b_id = a.id))",
+        "SELECT a.id, d.x FROM a JOIN d ON d.x IN (SELECT c.id FROM c WHERE c.b_id IN (SELECT b.id FROM b WHERE b.id = a.id))",
+        "SELECT a.id, d.x FROM a LEFT JOIN d ON EXISTS (SELECT 1 FROM c WHERE c.id = d.x AND c.b_id IN (SELECT b.id FROM b WHERE b.id = a.id))",
+        # An aggregate is taken per value of the correlation key.
+        "SELECT a.id, b.w FROM a LEFT JOIN b ON b.id = (SELECT c.b_id FROM c WHERE c.id = (SELECT MIN(d.x) FROM d WHERE d.x = a.id))",
+        # The innermost subquery also reads the one around it, and counts each row once.
+        "SELECT a.id, (SELECT COUNT(*) FROM c WHERE EXISTS (SELECT 1 FROM b WHERE b.id = c.b_id AND b.id = a.id)) AS n FROM a",
+        "SELECT a.id, (SELECT c.id FROM c WHERE c.b_id IN (SELECT b.id FROM b WHERE b.id = a.id) ORDER BY c.id DESC LIMIT 1) AS x FROM a",
+        "SELECT a.id FROM a WHERE EXISTS (SELECT 1 FROM b WHERE b.id >= (SELECT AVG(c.id) FROM c WHERE c.b_id = a.id))",
+        # The first row of each key.
+        "SELECT a.id, d.y FROM a LEFT JOIN d ON d.x IN (SELECT b.id FROM b WHERE b.id < (SELECT c.id FROM c WHERE c.b_id = a.id ORDER BY c.id DESC LIMIT 1))",
+        "SELECT a.id FROM a WHERE EXISTS (SELECT 1 FROM c WHERE c.id < (SELECT d.x FROM d WHERE d.y / 10 = a.v FETCH FIRST 1 ROW ONLY))",
+        "SELECT a.id FROM a WHERE EXISTS (SELECT 1 FROM c WHERE c.b_id IN (SELECT b.id FROM b WHERE b.id = a.id ORDER BY b.w DESC LIMIT 1))",
+        # Three levels deep.
+        "SELECT a.id FROM a WHERE EXISTS (SELECT 1 FROM b WHERE b.id IN (SELECT c.b_id FROM c WHERE c.id IN (SELECT d.x FROM d WHERE d.x * 10 = a.v)))",
+        # A wildcard in the subquery around it.
+        "SELECT a.id FROM a WHERE EXISTS (SELECT * FROM b WHERE b.id IN (SELECT c.b_id FROM c WHERE c.b_id = a.id))",
+    ],
+)
+def test_correlated_subquery_reading_query_further_out(query: str) -> None:
+    assert_sql_matches(
+        frames=_join_on_frames(),
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # Read a query further out, but are not moved into the query around them.
+        "SELECT a.id FROM a WHERE a.id IN (SELECT b.id FROM b WHERE b.id NOT IN (SELECT c.b_id FROM c WHERE c.b_id = a.id))",
+        "SELECT a.id FROM a WHERE a.id IN (SELECT b.id FROM b WHERE b.id = (SELECT COUNT(*) FROM c WHERE c.b_id = a.id))",
+        "SELECT a.id FROM a WHERE a.id IN (SELECT b.id FROM b WHERE b.id IN (SELECT c.b_id FROM c WHERE c.b_id > a.id))",
+        "SELECT a.id FROM a WHERE a.id IN (SELECT b.id FROM b WHERE b.id < (SELECT c.b_id FROM c WHERE c.b_id = a.id))",
+        # `a.b.id` is a struct field of `a`, not a column of the joined `b`.
+        "SELECT a.id FROM a JOIN b ON a.id < (SELECT c.id FROM c WHERE c.b_id = a.b.id)",
+        # The relations inside an aliased nested join are not resolved by name.
+        "SELECT a.id FROM a JOIN (b JOIN d ON b.id = d.x) AS r ON a.id = (SELECT c.id FROM c WHERE c.b_id = b.id)",
+        "SELECT d.x FROM (a JOIN b ON a.id = b.id) AS r JOIN d ON d.x = (SELECT c.id FROM c WHERE c.b_id = b.id)",
+        "SELECT d.x FROM (a JOIN b ON a.id = b.id) AS r JOIN d ON d.x = (SELECT MIN(c.id) FROM c WHERE c.b_id = b.id AND c.id <= r.id + d.x)",
+        "SELECT d.x FROM (a JOIN b ON a.id = b.id) AS r JOIN d ON b.id = (SELECT MIN(c.b_id) FROM c WHERE c.id <= r.id + d.x)",
+        # A `b` declared deeper does not make the `b` of the subquery around it visible.
+        "SELECT d.x FROM (a JOIN b ON a.id = b.id) AS r JOIN d ON d.x = (SELECT MIN(c.id) FROM c WHERE c.b_id = b.id AND c.id <= r.id + d.x AND EXISTS (SELECT 1 FROM c AS b WHERE b.id > 0))",
+        # Only `LIMIT 1` is supported, with an order read from the inner row.
+        "SELECT a.id, (SELECT c.id FROM c WHERE c.b_id = a.id ORDER BY c.id LIMIT 2) FROM a",
+        "SELECT a.id, (SELECT c.id FROM c WHERE c.b_id = a.id ORDER BY c.id LIMIT 1 OFFSET 1) FROM a",
+        "SELECT a.id, (SELECT c.id FROM c WHERE c.b_id = a.id ORDER BY c.id * a.v LIMIT 1) FROM a",
+        # An aggregate that is unnested gives several rows.
+        "SELECT a.id, (SELECT UNNEST(ARRAY_AGG(c.id)) FROM c WHERE c.b_id = a.id) FROM a",
+        "SELECT a.id, (SELECT UNNEST(ARRAY_AGG(c.id)) FROM c WHERE c.b_id = a.id LIMIT 1) FROM a",
+        # A correlated `ANY` is not supported, also not in parentheses.
+        "SELECT a.id, a.id > ANY (((SELECT c.id FROM c WHERE c.b_id = a.id))) FROM a",
+    ],
+)
+def test_correlated_subquery_unsupported(query: str) -> None:
+    ctx = pl.SQLContext(frames=_join_on_frames())
+    with pytest.raises(pl.exceptions.SQLInterfaceError):
+        ctx.execute(query).collect()
+
+
+def _nested_frames() -> dict[str, pl.DataFrame]:
+    return {
+        "a": pl.DataFrame({"id": [1, 2]}),
+        "b": pl.DataFrame({"v": [10]}),
+        "c": pl.DataFrame(
+            {
+                "k": [1, 1, 2],
+                "v": [10, 20, 5],
+                "p": ["x", "y", "x"],
+                "s": [{"x": 7}, {"x": 8}, {"x": 9}],
+            }
+        ),
+        "d": pl.DataFrame({"k": [1, 2], "v": [10, 20]}),
+        # `a` is a struct column here, named like the relation `a`.
+        "e": pl.DataFrame(
+            {"k": [1, 1, 2], "v": [10, 20, 5], "a": [{"id": 1}, {"id": 1}, {"id": 2}]}
+        ),
+        "f": pl.DataFrame({"a": [{"id": 10}, {"id": 5}]}),
+    }
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # `a.id` is a struct field of `e`, so the innermost subquery isn't correlated.
+        "SELECT a.id, (SELECT COUNT(*) FROM b WHERE b.v IN (SELECT e.v FROM e WHERE a.id = e.k)) AS n FROM a",
+        # The projection of EXISTS is ignored, also the struct field it reads.
+        "SELECT a.id, d.k FROM a JOIN d ON EXISTS (SELECT 1 FROM b WHERE EXISTS (SELECT s.x FROM c WHERE c.k = a.id))",
+        "SELECT a.id FROM a WHERE EXISTS (SELECT 1 FROM b WHERE EXISTS (SELECT a.id FROM c WHERE c.k = a.id ORDER BY a.id LIMIT 1))",
+        # The query around the subquery has a CTE, or no FROM.
+        "SELECT a.id, (WITH t AS (SELECT * FROM d) SELECT COUNT(*) FROM t WHERE EXISTS (SELECT 1 FROM c WHERE c.k = t.k)) AS n FROM a",
+        "SELECT a.id, (SELECT 1 WHERE EXISTS (SELECT 1 FROM c WHERE c.k = a.id AND c.v > 5)) AS x FROM a",
+        # The moved subquery has subqueries of its own.
+        "SELECT a.id, (SELECT COUNT(*) FROM b WHERE b.v IN (SELECT (SELECT MAX(d.v) FROM d WHERE d.k = c.k) FROM c WHERE c.k = a.id)) AS n FROM a",
+        "SELECT a.id, (SELECT COUNT(*) FROM b WHERE b.v IN (SELECT c.v + (SELECT 5) FROM c WHERE c.k = a.id)) AS n FROM a",
+        # `a.id` inside the moved subquery is the struct field of `f`.
+        "SELECT a.id, (SELECT COUNT(*) FROM b WHERE b.v IN (SELECT (SELECT MIN(a.id) FROM (SELECT * FROM f)) FROM c WHERE c.k = a.id)) AS n FROM a",
+        # A count over the rows of `b` that the subquery keeps.
+        "SELECT a.id, (SELECT COUNT(*) FROM b WHERE EXISTS (SELECT 1 FROM c WHERE c.k = a.id AND c.v > 5)) AS n FROM a",
+        "SELECT a.id FROM a WHERE EXISTS (SELECT COUNT(*) FROM b WHERE EXISTS (SELECT 1 FROM c WHERE c.k = a.id AND c.v > 5))",
+    ],
+)
+def test_correlated_subquery_reading_query_further_out_scopes(query: str) -> None:
+    assert_sql_matches(
+        frames=_nested_frames(),
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # A window function in the order would see the rows of every key.
+        "SELECT a.id, (SELECT COUNT(*) FROM b WHERE b.v = (SELECT c.v FROM c WHERE c.k = a.id ORDER BY ROW_NUMBER() OVER (PARTITION BY c.p ORDER BY c.v), c.v LIMIT 1)) AS n FROM a",
+        # An aggregate in the order makes EXISTS see one row.
+        "SELECT a.id, (SELECT COUNT(*) FROM b WHERE EXISTS (SELECT 1 FROM c WHERE c.k = a.id ORDER BY COUNT(*))) AS n FROM a",
+        # The outer column is read in a join of the moved subquery.
+        "SELECT a.id, (SELECT COUNT(*) FROM b WHERE EXISTS (SELECT 1 FROM c JOIN d ON d.k = a.id WHERE c.k = a.id)) AS n FROM a",
+        # The unnamed derived table declares no `a`, and can't read the outer one.
+        "SELECT a.id, (SELECT COUNT(*) FROM b WHERE b.v IN (SELECT (SELECT a.id FROM (SELECT MIN(k) AS k FROM d)) FROM c WHERE c.k = a.id)) AS n FROM a",
+    ],
+)
+def test_correlated_subquery_reading_query_further_out_unsupported(query: str) -> None:
+    ctx = pl.SQLContext(frames=_nested_frames())
+    with pytest.raises(pl.exceptions.SQLInterfaceError):
+        ctx.execute(query).collect()
+
+
+@pytest.mark.parametrize(
+    ("inner", "outer", "moves"),
+    [
+        (pl.Int64, pl.Int64, True),
+        (pl.UInt64, pl.Int64, True),
+        (pl.Int64, pl.UInt64, True),
+        (pl.UInt64, pl.Int128, True),
+        (pl.Int32, pl.Int64, True),
+        (pl.Float32, pl.Float64, True),
+        # The cast merges distinct values of the subquery.
+        (pl.UInt128, pl.Int64, False),
+        (pl.Int64, pl.Float64, False),
+    ],
+)
+def test_correlated_subquery_reading_query_further_out_key_dtypes(
+    inner: pl.DataType, outer: pl.DataType, moves: bool
+) -> None:
+    ctx = pl.SQLContext(
+        a=pl.DataFrame({"id": [1, 2]}, schema={"id": outer}),
+        b=pl.DataFrame({"v": [10]}),
+        c=pl.DataFrame(
+            {"k": [1, 1, 2], "v": [10, 10, 5]}, schema_overrides={"k": inner}
+        ),
+    )
+    query = "SELECT a.id, (SELECT COUNT(*) FROM b WHERE b.v IN (SELECT c.v FROM c WHERE c.k = a.id)) AS n FROM a ORDER BY a.id"
+    if not moves:
+        with pytest.raises(pl.exceptions.SQLInterfaceError):
+            ctx.execute(query).collect()
+        return
+    assert ctx.execute(query).collect()["n"].to_list() == [1, 0]
+
+
+def test_correlated_subquery_reading_query_further_out_lossy_value() -> None:
+    # Both integers equal the float, which `b.v` has once.
+    ctx = pl.SQLContext(
+        a=pl.DataFrame({"id": [1]}),
+        b=pl.DataFrame({"v": [float(2**53)]}),
+        c=pl.DataFrame({"k": [1, 1], "v": [2**53, 2**53 + 1]}),
+    )
+    query = "SELECT a.id, (SELECT COUNT(*) FROM b WHERE b.v IN (SELECT c.v FROM c WHERE c.k = a.id)) AS n FROM a"
+    with pytest.raises(pl.exceptions.SQLInterfaceError):
+        ctx.execute(query).collect()
+
+
+def test_correlated_subquery_reading_query_further_out_lossy_derived_value() -> None:
+    # `b.v` reads the Float64 `d.id`, which both integers of `c.v` equal.
+    ctx = pl.SQLContext(
+        a=pl.DataFrame({"id": [1]}),
+        c=pl.DataFrame({"k": [1, 1], "v": [2**53, 2**53 + 1]}),
+        d=pl.DataFrame({"a": [{"id": 2**53}], "id": [float(2**53)]}),
+    )
+    query = """
+        SELECT a.id, (
+            SELECT COUNT(*) FROM (SELECT (SELECT a.id FROM (SELECT * FROM d)) AS v) AS b
+            WHERE b.v IN (SELECT c.v FROM c WHERE c.k = a.id)
+        ) AS n FROM a
+    """
+    try:
+        res = ctx.execute(query).collect()
+    except pl.exceptions.SQLInterfaceError:
+        return
+    assert res.rows() == [(1, 1)]
+
+
+def test_correlated_subquery_reading_query_further_out_exists_unnest() -> None:
+    # An empty list unnests to no rows, so EXISTS is false for `a.id` 1.
+    ctx = pl.SQLContext(
+        a=pl.DataFrame({"id": [1, 2]}),
+        b=pl.DataFrame({"v": [10]}),
+        c=pl.DataFrame(
+            {"k": [1, 2], "xs": [[], [10]]}, schema_overrides={"xs": pl.List(pl.Int64)}
+        ),
+    )
+    query = """
+        SELECT a.id, (
+            SELECT COUNT(*) FROM b
+            WHERE EXISTS (SELECT UNNEST(c.xs) FROM c WHERE c.k = a.id)
+        ) AS n FROM a ORDER BY a.id
+    """
+    try:
+        res = ctx.execute(query).collect()
+    except pl.exceptions.SQLInterfaceError:
+        return
+    assert res.rows() == [(1, 0), (2, 1)]
+
+
+@pytest.mark.parametrize("projection", ["x.v", "MAX(x.v)"])
+def test_subquery_alias_case_insensitive(projection: str) -> None:
+    # `X` is the subquery's own `x`, so the subquery is not correlated.
+    assert_sql_matches(
+        frames={
+            "a": pl.DataFrame({"id": [1, 2], "k": [1, 2]}),
+            "c": pl.DataFrame({"id": [1, 3], "k": [1, 2], "v": [10, 20]}),
+        },
+        query=f"SELECT a.id, (SELECT {projection} FROM c AS x WHERE x.id = X.k) AS v FROM a",
+        compare_with="duckdb",
+        check_row_order=False,
+        expected={"id": [1, 2], "v": [10, 10]},
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize("projection", ["c.v", "MAX(c.v)"])
+@pytest.mark.parametrize("field", ["s.id", "c.s.id", "a.id", "c.a.id"])
+def test_subquery_struct_field_is_not_correlated(projection: str, field: str) -> None:
+    # `s` and `a` are struct columns of `c`; `a` is also the outer relation.
+    assert_sql_matches(
+        frames={
+            "a": pl.DataFrame({"id": [1, 2]}),
+            "c": pl.DataFrame(
+                {
+                    "id": [1, 3],
+                    "s": [{"id": 1}, {"id": 2}],
+                    "a": [{"id": 1}, {"id": 2}],
+                    "v": [10, 20],
+                }
+            ),
+        },
+        query=f"SELECT a.id, (SELECT {projection} FROM c WHERE {field} = c.id) AS v FROM a",
+        compare_with="duckdb",
+        check_row_order=False,
+        expected={"id": [1, 2], "v": [10, 10]},
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            "SELECT a.id, (SELECT c.v FROM c WHERE c.id = a.id) AS v FROM a",
+            {"id": [1, 2, 3], "v": [10, 20, None]},
+        ),
+        (
+            "SELECT a.id, (SELECT MAX(c.v) FROM c WHERE c.id = a.id) AS v FROM a",
+            {"id": [1, 2, 3], "v": [10, 20, None]},
+        ),
+        (
+            "SELECT id FROM a WHERE EXISTS (SELECT 1 FROM c WHERE c.id = a.id)",
+            {"id": [1, 2]},
+        ),
+        (
+            "SELECT id FROM a WHERE NOT EXISTS (SELECT 1 FROM c WHERE c.id = a.id)",
+            {"id": [3]},
+        ),
+        (
+            "SELECT id FROM a WHERE id IN (SELECT c.id FROM c WHERE c.v > a.id)",
+            {"id": [1, 2]},
+        ),
+    ],
+)
+def test_subquery_non_struct_column_named_like_outer_relation(
+    query: str, expected: dict[str, Sequence[Any]]
+) -> None:
+    # `a` is also an integer column of `c`, so `a.id` can only be the outer column.
+    assert_sql_matches(
+        frames={
+            "a": pl.DataFrame({"id": [1, 2, 3]}),
+            "c": pl.DataFrame({"id": [1, 2], "a": [0, 0], "v": [10, 20]}),
+        },
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+        expected=expected,
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize("projection", ["c.v", "MAX(c.v)"])
+def test_subquery_nested_struct_field_is_not_correlated(projection: str) -> None:
+    # `s.a.id` is a field of the struct column `s`, not the outer `a.id`.
+    assert_sql_matches(
+        frames={
+            "a": pl.DataFrame({"id": [1, 2]}),
+            "c": pl.DataFrame(
+                {
+                    "k": [10, 20],
+                    "v": [1, 2],
+                    "s": [{"a": {"id": 10}}, {"a": {"id": 99}}],
+                }
+            ),
+        },
+        query=f"SELECT a.id, (SELECT {projection} FROM c WHERE s.a.id = c.k) AS v FROM a",
+        compare_with="duckdb",
+        check_row_order=False,
+        expected={"id": [1, 2], "v": [1, 1]},
+        engines=ENGINES,
+    )
+
+
+def _general_frames() -> dict[str, pl.DataFrame]:
+    return {
+        "o": pl.DataFrame(
+            {
+                "id": [1, 2, 3, 4, 5],
+                "k": [1, 2, 3, 3, None],
+                "x": [10, 20, 30, 30, 40],
+                "s": ["ab", "cd", "zz", "zz", None],
+            }
+        ),
+        "i": pl.DataFrame(
+            {
+                "cid": [1, 2, 4, 2, None],
+                "cn": [100, 200, 300, 250, 150],
+                "cs": ["xaby", "cdq", "no", None, "zz"],
+            }
+        ),
+    }
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "i.cid = o.k + 1",
+        "i.cid * 2 = o.k",
+        "i.cid < o.k - 1",
+        "i.cs LIKE '%' || o.s || '%'",
+        "i.cid IN (o.k, 4)",
+        "(i.cid = o.k OR i.cn > 250)",
+        "i.cid = 1 AND o.x > 15",
+        "i.cid = o.k AND o.x > 15",
+        "CASE WHEN o.k > 0 THEN NULL ELSE NULL END",
+    ],
+)
+@pytest.mark.parametrize(
+    ("subquery", "where"),
+    [
+        ("(SELECT MAX(cn) FROM i WHERE {})", "{} > 150"),
+        ("(SELECT COUNT(*) + 1 FROM i WHERE {})", "{} > 1"),
+        ("(SELECT cn FROM i WHERE {} ORDER BY cn DESC LIMIT 1)", "{} > 150"),
+        ("o.x * 10 IN (SELECT cn FROM i WHERE {})", "{}"),
+        ("o.x * 10 NOT IN (SELECT cn FROM i WHERE {})", "{}"),
+        ("EXISTS (SELECT 1 FROM i WHERE {})", "{}"),
+        ("NOT EXISTS (SELECT 1 FROM i WHERE {})", "{}"),
+    ],
+)
+def test_correlated_subquery_general_condition(
+    condition: str, subquery: str, where: str
+) -> None:
+    sub = subquery.format(condition)
+    for query in [
+        f"SELECT id, {sub} AS r FROM o ORDER BY id",
+        f"SELECT id FROM o WHERE {where.format(sub)} ORDER BY id",
+    ]:
+        assert_sql_matches(
+            frames=_general_frames(),
+            query=query,
+            compare_with="duckdb",
+            engines=ENGINES,
+        )
+
+
+@pytest.mark.parametrize("join_type", ["INNER", "LEFT"])
+def test_correlated_subquery_general_condition_join_on(join_type: str) -> None:
+    frames = _general_frames()
+    frames["b"] = pl.DataFrame({"bid": [1, 2, 3], "bn": [100, 200, 300]})
+    assert_sql_matches(
+        frames=frames,
+        query=(
+            f"SELECT o.id, b.bid FROM o {join_type} JOIN b ON b.bn = "
+            "(SELECT MAX(cn) FROM i WHERE i.cs LIKE '%' || o.s || '%') "
+            "ORDER BY o.id, b.bid"
+        ),
+        compare_with="duckdb",
+        expected={"id": [1, 2, 3, 4, 5], "bid": [1, 2, None, None, None]}
+        if join_type == "LEFT"
+        else {"id": [1, 2], "bid": [1, 2]},
+        engines=ENGINES,
+    )
+
+
+def test_correlated_subquery_general_condition_typing() -> None:
+    # The decimal literals take the type of the Float32 column they are compared with.
+    assert_sql_matches(
+        frames={
+            "o": pl.DataFrame({"k": [1, 2]}),
+            "i": pl.DataFrame({"f": [0.1, 0.2]}, schema={"f": pl.Float32}),
+        },
+        query=(
+            "SELECT k, (SELECT COUNT(*) FROM i "
+            "WHERE i.f > CASE WHEN o.k = 1 THEN 0.1 ELSE 0.2 END) AS n FROM o ORDER BY k"
+        ),
+        compare_with="duckdb",
+        expected={"k": [1, 2], "n": [1, 0]},
+        engines=ENGINES,
+    )
+
+
+def test_correlated_subquery_general_condition_joined_outer() -> None:
+    frames = {
+        "a": pl.DataFrame({"id": [1, 2], "k": [1, 2]}),
+        "b": pl.DataFrame({"id": [1, 2], "k": [5, 1]}),
+        "i": pl.DataFrame({"cid": [1, 2, 6], "cn": [10, 20, 30]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query=(
+            "SELECT a.id, (SELECT MAX(cn) FROM i WHERE i.cid = b.k + a.k) AS m "
+            "FROM a JOIN b ON a.id = b.id ORDER BY a.id"
+        ),
+        compare_with="duckdb",
+        expected={"id": [1, 2], "m": [30, None]},
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize(("k", "expected"), [(0, 10), (1, None)])
+def test_correlated_subquery_general_condition_single_row(
+    k: int, expected: int | None
+) -> None:
+    # Only the inner rows an outer row matches must form a single row.
+    frames = {
+        "o": pl.DataFrame({"k": [k, k]}),
+        "i": pl.DataFrame({"cid": [1, 2, 2], "cn": [10, 20, 30]}),
+    }
+    query = "SELECT k, (SELECT cn FROM i WHERE i.cid = o.k + 1) AS n FROM o"
+    if expected is None:
+        with pytest.raises(pl.exceptions.ComputeError, match="single value"):
+            pl.SQLContext(frames).execute(query, eager=True)
+    else:
+        assert_sql_matches(
+            frames=frames,
+            query=query,
+            compare_with="duckdb",
+            expected={"k": [k, k], "n": [expected, expected]},
+            engines=ENGINES,
+        )
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        # A selector would pick its columns after the inner ones are renamed.
+        "COLUMNS('^k$') = o.k + 1",
+        # Not a boolean.
+        "o.k || 'x'",
+    ],
+)
+def test_correlated_subquery_general_condition_rejected(condition: str) -> None:
+    frames = {"o": pl.DataFrame({"k": [1, 2]}), "i": pl.DataFrame({"k": [2, 3]})}
+    with pytest.raises(pl.exceptions.SQLInterfaceError):
+        pl.SQLContext(frames).execute(
+            f"SELECT k, EXISTS (SELECT COUNT(*) FROM i WHERE {condition}) AS n FROM o",
+            eager=True,
+        )
+
+
+@pytest.mark.parametrize("condition", ["cid = o.k", "cid = o.k + 1"])
+def test_correlated_in_subquery_aggregate_rejected(condition: str) -> None:
+    frames = {
+        "o": pl.DataFrame({"k": [0, 1, 2], "xs": [[20, 30], [10], []]}),
+        "i": pl.DataFrame({"cid": [1, 2, 2], "v": [10, 20, 30]}),
+    }
+    with pytest.raises(pl.exceptions.SQLInterfaceError):
+        pl.SQLContext(frames).execute(
+            f"SELECT xs IN (SELECT ARRAY_AGG(v) FROM i WHERE {condition}) FROM o",
+            eager=True,
+        )
+
+
+@pytest.mark.parametrize(
+    "nested",
+    [
+        "i.cn > (SELECT AVG(cn) FROM i)",
+        "i.cn IN (SELECT bn FROM b)",
+        "i.cn NOT IN (SELECT bn FROM b)",
+        "EXISTS (SELECT 1 FROM b WHERE b.bid = i.cid)",
+        "NOT EXISTS (SELECT 1 FROM b WHERE b.bn = i.cn)",
+        "i.cn > 100 AND i.cn IN (SELECT bn FROM b)",
+    ],
+)
+@pytest.mark.parametrize(
+    "condition", ["i.cid = o.k", "i.cid = o.k - 1", "i.cid <= o.k"]
+)
+@pytest.mark.parametrize(
+    ("subquery", "where"),
+    [
+        ("(SELECT MAX(cn) FROM i WHERE {})", "{} > 150"),
+        ("(SELECT COUNT(*) FROM i WHERE {})", "{} > 0"),
+        ("(SELECT cn FROM i WHERE {} ORDER BY cn DESC LIMIT 1)", "{} > 150"),
+        ("o.x * 10 IN (SELECT cn FROM i WHERE {})", "{}"),
+        ("o.x * 10 NOT IN (SELECT cn FROM i WHERE {})", "{}"),
+        ("EXISTS (SELECT 1 FROM i WHERE {})", "{}"),
+        ("NOT EXISTS (SELECT 1 FROM i WHERE {})", "{}"),
+        ("EXISTS (SELECT COUNT(*) FROM i WHERE {})", "{}"),
+    ],
+)
+def test_correlated_subquery_inner_subquery_filter(
+    nested: str, condition: str, subquery: str, where: str
+) -> None:
+    frames = _general_frames()
+    frames["b"] = pl.DataFrame({"bid": [1, 2, None], "bn": [100, 250, None]})
+    sub = subquery.format(f"{condition} AND {nested}")
+    for query in [
+        f"SELECT id, {sub} AS r FROM o ORDER BY id",
+        f"SELECT id FROM o WHERE {where.format(sub)} ORDER BY id",
+    ]:
+        assert_sql_matches(
+            frames=frames,
+            query=query,
+            compare_with="duckdb",
+            engines=ENGINES,
+        )
+
+
+@pytest.mark.parametrize("join_type", ["INNER", "LEFT"])
+def test_correlated_subquery_inner_subquery_filter_join_on(join_type: str) -> None:
+    frames = _general_frames()
+    frames["b"] = pl.DataFrame({"bid": [1, 2, 3]})
+    frames["d"] = pl.DataFrame({"dn": [100, 200, 300]})
+    assert_sql_matches(
+        frames=frames,
+        query=(
+            f"SELECT o.id, b.bid FROM o {join_type} JOIN b ON o.k = b.bid AND EXISTS "
+            "(SELECT 1 FROM i WHERE i.cid = b.bid AND i.cn IN (SELECT dn FROM d)) "
+            "ORDER BY o.id, b.bid"
+        ),
+        compare_with="duckdb",
+        expected={"id": [1, 2, 3, 4, 5], "bid": [1, 2, None, None, None]}
+        if join_type == "LEFT"
+        else {"id": [1, 2], "bid": [1, 2]},
+        engines=ENGINES,
+    )
+
+
+def test_correlated_subquery_inner_subquery_filter_join_tree() -> None:
+    frames = {
+        "a": pl.DataFrame({"k": [1]}),
+        "c": pl.DataFrame({"ck": [1, 1], "x": [1, 100], "v": [1000, 5]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="""
+            SELECT c.x, c.v FROM a, c
+            WHERE c.ck = a.k AND c.v = (
+                SELECT MAX(c.v) FROM c
+                WHERE c.ck = a.k AND c.x > (SELECT AVG(x) FROM c)
+            )
+        """,
+        compare_with="duckdb",
+        expected={"x": [100], "v": [5]},
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # The nested subquery reads the outer `a` through a FROM that declares `a`.
+        """
+        SELECT a.k, (
+            SELECT COUNT(*) FROM c WHERE c.ck = e.ek AND c.x = (
+                SELECT a.k FROM (SELECT MIN(k) AS k FROM d)
+                WHERE EXISTS (SELECT 1 FROM a)
+            )
+        ) AS n
+        FROM a JOIN e ON a.k = e.ek
+        """,
+        """
+        SELECT a.k, (
+            SELECT COUNT(*) FROM c WHERE c.ck = e.ek AND c.x = (
+                SELECT a.k FROM (SELECT MIN(k) AS k FROM d) AS t
+            )
+        ) AS n
+        FROM a JOIN e ON a.k = e.ek
+        """,
+        """
+        SELECT a.k, e.ek FROM a JOIN e ON EXISTS (
+            SELECT 1 FROM c WHERE c.ck = a.k AND c.x > (SELECT AVG(k) FROM a)
+        )
+        """,
+    ],
+)
+def test_correlated_subquery_inner_subquery_filter_reads_outer(query: str) -> None:
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2]}),
+        "c": pl.DataFrame({"ck": [1, 2], "x": [1, 2]}),
+        "d": pl.DataFrame({"k": [1]}),
+        "e": pl.DataFrame({"ek": [1, 2]}),
+    }
+    with pytest.raises(pl.exceptions.SQLInterfaceError):
+        pl.SQLContext(frames).execute(query, eager=True)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # The top group per outer row.
+        """
+        SELECT n.k, (
+            SELECT c.ck FROM c WHERE c.nk = n.k
+            GROUP BY c.ck ORDER BY SUM(c.x) DESC LIMIT 1
+        ) AS top FROM n
+        """,
+        """
+        SELECT n.k, (
+            SELECT COUNT(*) FROM c WHERE c.nk = n.k
+            GROUP BY c.ck ORDER BY SUM(c.x) DESC, c.ck FETCH FIRST 1 ROW ONLY
+        ) AS top FROM n
+        """,
+        """
+        SELECT n.k, (
+            SELECT ck AS key FROM c WHERE c.nk = n.k AND c.x > 0
+            GROUP BY ck ORDER BY key DESC LIMIT 1
+        ) AS top FROM n
+        """,
+        # One group per outer row.
+        """
+        SELECT n.k, (
+            SELECT SUM(c.x) FROM c WHERE c.nk = n.k AND c.ck = n.k GROUP BY c.ck
+        ) AS s FROM n
+        """,
+        # Membership and existence over the groups that pass HAVING.
+        """
+        SELECT n.k FROM n WHERE 1 IN (
+            SELECT c.ck FROM c WHERE c.nk = n.k GROUP BY c.ck HAVING SUM(c.x) > 2
+        )
+        """,
+        """
+        SELECT n.k FROM n WHERE n.k NOT IN (
+            SELECT COUNT(*) FROM c WHERE c.nk = n.k GROUP BY c.ck
+        )
+        """,
+        """
+        SELECT n.k FROM n WHERE EXISTS (
+            SELECT c.ck FROM c WHERE c.nk = n.k GROUP BY c.ck HAVING COUNT(*) > 1
+        )
+        """,
+        # Correlated through a nested IN.
+        """
+        SELECT n.k, (
+            SELECT c.ck FROM c WHERE c.ck IN (SELECT d.ck FROM d WHERE d.nk = n.k)
+            GROUP BY c.ck ORDER BY SUM(c.x) DESC, c.ck LIMIT 1
+        ) AS top FROM n
+        """,
+        # Two correlation keys and DISTINCT.
+        """
+        SELECT n.k, n.j, (
+            SELECT DISTINCT MAX(c.x) FROM c WHERE c.nk = n.k AND c.ck = n.j
+            GROUP BY c.ck
+        ) AS m FROM n
+        """,
+    ],
+)
+def test_correlated_subquery_group_by(query: str) -> None:
+    frames = {
+        "n": pl.DataFrame({"k": [1, 2, 3, None], "j": [1, 3, 2, 1]}),
+        "c": pl.DataFrame(
+            {
+                "nk": [1, 1, 1, 2, 2, 2, 3, None],
+                "ck": [1, 1, 2, 3, 3, 4, 2, 1],
+                "x": [1, 2, 9, 5, 1, 4, None, 7],
+            }
+        ),
+        "d": pl.DataFrame({"nk": [1, 1, 2, 3], "ck": [1, 2, 4, 9]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+        check_dtypes=False,
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # `x` and the struct field `s.x` are different group keys.
+        """
+        SELECT o.b, (
+            SELECT s.x FROM r WHERE r.i = o.b GROUP BY x, s.x ORDER BY s.x LIMIT 1
+        ) AS v FROM o
+        """,
+        # ORDER BY binds a SELECT alias before a column of that name.
+        """
+        SELECT o.b, (
+            SELECT SUM(x) AS g FROM r WHERE r.i = o.b GROUP BY g ORDER BY g DESC LIMIT 1
+        ) AS v FROM o
+        """,
+        # An inner-only nested subquery.
+        """
+        SELECT o.b, (
+            SELECT SUM(x) FROM r
+            WHERE r.i = o.b AND EXISTS (SELECT 1 FROM d WHERE d.g = r.g)
+            GROUP BY g ORDER BY g LIMIT 1
+        ) AS v FROM o
+        """,
+        # The outer key is a column of the second outer relation.
+        """
+        SELECT o.a, p.a AS pa, (
+            SELECT MAX(r.x) FROM r WHERE r.i = p.a GROUP BY r.g ORDER BY r.g LIMIT 1
+        ) AS v FROM o CROSS JOIN p
+        """,
+    ],
+)
+def test_correlated_subquery_group_by_bindings(query: str) -> None:
+    frames = {
+        "o": pl.DataFrame({"a": [1.0, 2.0], "b": [1, 2]}),
+        "p": pl.DataFrame({"a": [1, 2]}),
+        "r": pl.DataFrame(
+            {
+                "i": [1, 1, 2],
+                "g": [1, 2, 2],
+                "x": [25, 20, 7],
+                "s": [{"x": 100}, {"x": 200}, {"x": 50}],
+            }
+        ),
+        "d": pl.DataFrame({"g": [2]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+        check_dtypes=False,
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # More than one group for an outer row.
+        "SELECT n.k, (SELECT SUM(c.x) FROM c WHERE c.nk = n.k GROUP BY c.ck) FROM n",
+        # Correlation other than equalities.
+        "SELECT n.k, (SELECT SUM(c.x) FROM c WHERE c.nk < n.k GROUP BY c.nk) FROM n",
+        # An outer column in HAVING.
+        """
+        SELECT n.k FROM n WHERE 1 IN (
+            SELECT c.ck FROM c WHERE c.nk = n.k GROUP BY c.ck HAVING SUM(c.x) > n.k
+        )
+        """,
+        # A SELECT alias in HAVING.
+        """
+        SELECT n.k FROM n WHERE 1 IN (
+            SELECT c.ck AS s FROM c WHERE c.nk = n.k GROUP BY c.ck HAVING s > 0
+        )
+        """,
+        # A correlation column that is not grouped.
+        "SELECT n.k, (SELECT MAX(c.nk) + c.nk FROM c WHERE c.nk = n.k GROUP BY c.ck) FROM n",
+        # Distinct inner values that equal one outer value.
+        "SELECT n.f, (SELECT c.ck FROM c WHERE c.nk = n.f GROUP BY c.ck LIMIT 1) FROM n",
+        # An operand reading both the subquery and the outer query.
+        """
+        SELECT n.k, (
+            SELECT c.ck FROM c WHERE c.nk = x + n.k GROUP BY c.ck ORDER BY c.ck LIMIT 1
+        ) FROM n
+        """,
+        "SELECT n.k FROM n WHERE 1 IN (SELECT c.ck FROM c WHERE c.nk = x + n.k GROUP BY c.ck)",
+        """
+        SELECT n.k FROM n
+        WHERE EXISTS (SELECT c.ck FROM c WHERE c.nk = x + n.k GROUP BY c.ck)
+        """,
+        # HAVING reads a column that is not grouped, or an alias that is also a column.
+        "SELECT n.k, (SELECT MAX(c.x) FROM c WHERE c.nk = n.k GROUP BY c.ck HAVING c.nk = 1) FROM n",
+        """
+        SELECT n.k, (
+            SELECT SUM(c.x) AS nk FROM c WHERE c.nk = n.k GROUP BY c.ck HAVING nk > 1
+        ) FROM n
+        """,
+    ],
+)
+def test_correlated_subquery_group_by_errors(query: str) -> None:
+    frames = {
+        "n": pl.DataFrame({"k": [1, 2], "f": [1.0, 2.0], "x": [0, 0]}),
+        "c": pl.DataFrame({"nk": [1, 1, 2], "ck": [1, 2, 3], "x": [1, 2, 3]}),
+    }
+    with pytest.raises(pl.exceptions.PolarsError):
+        pl.SQLContext(frames).execute(query, eager=True)
+
+
+@pytest.mark.parametrize("op", ["IN", "NOT IN"])
+def test_correlated_in_subquery_on_its_correlation_key(op: str) -> None:
+    assert_sql_matches(
+        frames={
+            "o": pl.DataFrame({"k": [1, 2, 3, None]}),
+            "l": pl.DataFrame({"k": [1, 1, 3, None]}),
+        },
+        query=f"SELECT k FROM o WHERE k {op} (SELECT l.k FROM l WHERE l.k = o.k)",
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # The first values per outer row in the subquery's order.
+        """
+        SELECT n.k FROM n WHERE n.k IN (
+            SELECT c.ck FROM c WHERE c.nk = n.k ORDER BY c.x DESC LIMIT 1
+        )
+        """,
+        """
+        SELECT n.k FROM n WHERE n.k NOT IN (
+            SELECT c.ck FROM c WHERE c.nk = n.k ORDER BY c.x LIMIT 2 OFFSET 1
+        )
+        """,
+        """
+        SELECT n.k FROM n WHERE n.j IN (
+            SELECT c.ck FROM c WHERE c.nk = n.k
+            ORDER BY c.x DESC NULLS LAST FETCH FIRST 2 ROWS ONLY
+        )
+        """,
+        """
+        SELECT n.k FROM n WHERE n.k IN (
+            SELECT c.ck AS v FROM c WHERE c.nk = n.k ORDER BY v DESC, 1 LIMIT 1
+        )
+        """,
+        "SELECT n.k FROM n WHERE n.k NOT IN (SELECT c.ck FROM c WHERE c.nk = n.k LIMIT 0)",
+        # Values and sort keys are only computed for the matching inner rows.
+        """
+        SELECT n.k FROM n WHERE 3 IN (
+            SELECT CAST(c.s AS INT) FROM c WHERE c.nk < n.k LIMIT 20
+        )
+        """,
+        """
+        SELECT n.k FROM n WHERE n.k IN (
+            SELECT c.ck FROM c WHERE c.nk < n.k ORDER BY CAST(c.s AS INT) DESC LIMIT 1
+        )
+        """,
+        # No more rows than the limit.
+        "SELECT n.k FROM n WHERE n.k IN (SELECT c.ck FROM c WHERE c.nk = n.k LIMIT 5)",
+        # Correlation other than equalities.
+        """
+        SELECT n.k FROM n WHERE n.j IN (
+            SELECT c.ck FROM c WHERE c.nk < n.k ORDER BY c.x DESC, c.ck LIMIT 1
+        )
+        """,
+        # An ORDER BY key of the outer query is the same for all rows of an outer row.
+        """
+        SELECT n.k, (
+            SELECT c.ck FROM c WHERE c.nk = n.k ORDER BY n.j, c.x DESC LIMIT 1
+        ) AS top FROM n
+        """,
+        """
+        SELECT n.k FROM n WHERE n.k IN (
+            SELECT c.ck FROM c WHERE c.nk = n.k ORDER BY j DESC LIMIT 5
+        )
+        """,
+    ],
+)
+def test_correlated_subquery_limit(query: str) -> None:
+    frames = {
+        "n": pl.DataFrame({"k": [1, 2, 3, None], "j": [1, 3, 2, 1]}),
+        "c": pl.DataFrame(
+            {
+                "nk": [1, 1, 1, 2, 2, 2, 3, None],
+                "ck": [1, 3, 2, 3, 2, 4, 2, 1],
+                "x": [1, 2, 9, 5, None, 4, None, 7],
+                "s": ["1", "3", "2", "3", "2", "4", "2", "bad"],
+            }
+        ),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+        check_dtypes=False,
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # A limit of the distinct values.
+        """
+        SELECT n.k FROM n WHERE n.k IN (
+            SELECT DISTINCT c.ck FROM c WHERE c.nk = n.k ORDER BY c.ck LIMIT 1
+        )
+        """,
+        # An ORDER BY key reading both the subquery and the outer query.
+        """
+        SELECT n.k FROM n WHERE n.k IN (
+            SELECT c.ck FROM c WHERE c.nk = n.k ORDER BY c.x + n.k LIMIT 1
+        )
+        """,
+        # A limit that isn't a literal count, or is too large.
+        """
+        SELECT n.k FROM n WHERE n.k IN (
+            SELECT c.ck FROM c WHERE c.nk = n.k LIMIT (SELECT 1)
+        )
+        """,
+        """
+        SELECT n.k FROM n WHERE n.k IN (
+            SELECT c.ck FROM c WHERE c.nk = n.k LIMIT 9223372036854775808
+        )
+        """,
+        # A window over the inner rows.
+        """
+        SELECT n.k FROM n WHERE 2 IN (
+            SELECT ROW_NUMBER() OVER (ORDER BY c.x) FROM c WHERE c.nk = n.k
+            ORDER BY c.x LIMIT 2
+        )
+        """,
+        """
+        SELECT n.k FROM n WHERE 2 IN (
+            SELECT ROW_NUMBER() FROM c WHERE c.nk = n.k ORDER BY c.x LIMIT 20
+        )
+        """,
+        """
+        SELECT n.k FROM n WHERE 3 IN (
+            SELECT c.ck FROM c WHERE c.nk = n.k ORDER BY ROW_NUMBER() % 2, c.x LIMIT 1
+        )
+        """,
+        # A constant, which is not one value per inner row.
+        """
+        SELECT n.k FROM n WHERE 1 IN (
+            SELECT 1 FROM c WHERE c.nk = n.k LIMIT 1 OFFSET 1
+        )
+        """,
+        "SELECT n.k FROM n WHERE 1 IN (SELECT NULL FROM c WHERE c.nk < n.k LIMIT 1)",
+        # ORDER BY keys that read the output, or aren't a column of the outer query.
+        """
+        SELECT n.k, (
+            SELECT c.x FROM c WHERE c.nk = n.k ORDER BY CAST(n.j AS INT), c.x LIMIT 1
+        ) FROM n
+        """,
+        """
+        SELECT n.k, (
+            SELECT c.x AS j FROM c WHERE c.nk = n.k ORDER BY j + 1 DESC LIMIT 1
+        ) FROM n
+        """,
+        """
+        SELECT n.k, (
+            SELECT c.x FROM c WHERE c.nk = n.k ORDER BY RANDOM() + n.k LIMIT 1
+        ) FROM n
+        """,
+        """
+        SELECT n.k, (
+            SELECT c.x FROM c WHERE c.nk = n.k ORDER BY SUM(n.k) LIMIT 1
+        ) FROM n
+        """,
+        """
+        SELECT n.k, (
+            SELECT c.x FROM c WHERE c.nk = n.k ORDER BY COLUMNS('^ck$') + n.k LIMIT 1
+        ) FROM n
+        """,
+    ],
+)
+def test_correlated_subquery_limit_errors(query: str) -> None:
+    frames = {
+        "n": pl.DataFrame({"k": [1, 2], "j": [100, 100]}),
+        "c": pl.DataFrame({"nk": [1, 1, 2], "ck": [1, 2, 3], "x": [1, 2, 3]}),
+    }
+    with pytest.raises(pl.exceptions.PolarsError):
+        pl.SQLContext(frames).execute(query, eager=True)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT b.k, (SELECT a.k FROM a WHERE a.v = b.f) AS x FROM b",
+        "SELECT b.k, (SELECT a.k FROM a WHERE a.v = b.f ORDER BY a.k LIMIT 1) AS x FROM b",
+        "SELECT b.k, (SELECT SUM(a.k) FROM a WHERE a.v = b.f) AS x FROM b",
+    ],
+)
+def test_correlated_decimal_float_keys(query: str) -> None:
+    frames = {
+        "a": pl.DataFrame(
+            {"k": [1, 2, 3], "v": [Decimal("1.50"), Decimal("0"), Decimal("1.5")]},
+            schema={"k": pl.Int32, "v": pl.Decimal(15, 2)},
+        ),
+        "b": pl.DataFrame({"k": [1, 2, 3], "f": [1.5, 3.0, 0.0]}),
+    }
+    if "LIMIT" not in query and "SUM" not in query:
+        frames["a"] = frames["a"].head(2)
+    assert_sql_matches(
+        frames=frames,
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+        check_dtypes=False,
+        engines=["in-memory", "streaming"],
     )

@@ -8,6 +8,7 @@ import uuid
 import zlib
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
+from urllib.parse import quote
 
 import pyarrow as pa
 import pyarrow.compute as pc
@@ -235,6 +236,7 @@ def create_dv_table(
     table_path: str | Path,
     data: pa.Table,
     deleted_rows: list[int],
+    partition: tuple[str, str] | None = None,
 ) -> None:
     """
     Create a Delta table with a deletion vector.
@@ -243,6 +245,9 @@ def create_dv_table(
         table_path: Path to create the Delta table at.
         data: PyArrow table with the initial data.
         deleted_rows: Row indices to mark as deleted.
+        partition: Optional string partition column and value of the single file,
+            written like Spark: a Hive-escaped directory, and a log path that
+            URI-encodes ASCII characters but keeps non-ASCII ones.
     """
     table_path = Path(table_path)
     table_path.mkdir(parents=True)
@@ -252,7 +257,21 @@ def create_dv_table(
 
     # Write parquet file
     parquet_filename = "part-00000-test.snappy.parquet"
+    log_path = parquet_filename
+    partition_values: dict[str, str] = {}
+    schema = data.schema
+    if partition is not None:
+        name, value = partition
+        # Only '%' and ':' of the characters Hive escapes, enough for the tested values.
+        escaped = "".join(f"%{ord(c):02X}" if c in "%:" else c for c in value)
+        parquet_filename = f"{name}={escaped}/{parquet_filename}"
+        log_path = "".join(
+            c if ord(c) > 127 else quote(c, safe="/=") for c in parquet_filename
+        )
+        partition_values = {name: value}
+        schema = schema.append(pa.field(name, pa.string()))
     parquet_path = table_path / parquet_filename
+    parquet_path.parent.mkdir(exist_ok=True)
     pq.write_table(data, parquet_path, compression="snappy")
 
     parquet_size = parquet_path.stat().st_size
@@ -275,16 +294,16 @@ def create_dv_table(
         "metaData": {
             "id": str(uuid.uuid4()),
             "format": {"provider": "parquet", "options": {}},
-            "schemaString": pa_schema_to_delta_schema(data.schema),
-            "partitionColumns": [],
+            "schemaString": pa_schema_to_delta_schema(schema),
+            "partitionColumns": list(partition_values),
             "configuration": {"delta.enableDeletionVectors": "true"},
             "createdTime": 0,
         }
     }
     commit_0_add = {
         "add": {
-            "path": parquet_filename,
-            "partitionValues": {},
+            "path": log_path,
+            "partitionValues": partition_values,
             "size": parquet_size,
             "modificationTime": 0,
             "dataChange": True,
@@ -309,16 +328,16 @@ def create_dv_table(
 
     commit_1_remove = {
         "remove": {
-            "path": parquet_filename,
-            "partitionValues": {},
+            "path": log_path,
+            "partitionValues": partition_values,
             "deletionTimestamp": 1000,
             "dataChange": True,
         }
     }
     commit_1_add = {
         "add": {
-            "path": parquet_filename,
-            "partitionValues": {},
+            "path": log_path,
+            "partitionValues": partition_values,
             "size": parquet_size,
             "modificationTime": 0,
             "dataChange": True,
@@ -575,7 +594,7 @@ def test_scan_delta_dv_single(
     conn.execute("INSTALL delta;")
     conn.execute("LOAD delta;")
 
-    df_duckdb = conn.execute(f"SELECT * FROM delta_scan('{path}')").pl()
+    df_duckdb = conn.sql(f"SELECT * FROM delta_scan('{path}')").pl()
     assert_frame_equal(out, df_duckdb, check_row_order=False)
 
     # Test: py deletion_vectors() API contract
@@ -638,6 +657,70 @@ def test_scan_delta_dv_percent_encoded_path_canary(tmp_path: Path) -> None:
     assert_frame_equal(out, expected)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="uses posix paths")
+@pytest.mark.parametrize(
+    ("table_root", "requested_path", "dv_path"),
+    [
+        # Local file_uris() are decoded below the table root.
+        ("/t/", "/t/k=a b/f.parquet", "file:///t/k=a%20b/f.parquet"),
+        ("/t/", "/t/k=50%25/f.parquet", "file:///t/k=50%2525/f.parquet"),
+        ("/t/", "/t/k=é/f.parquet", "file:///t/k=%C3%A9/f.parquet"),
+        # The root stays encoded in both.
+        ("/t%20x/", "/t%20x/k=a b/f.parquet", "file:///t%20x/k=a%20b/f.parquet"),
+        # Cloud file_uris() are URL paths: spaces and non-ASCII stay escaped, while a
+        # `%` that Hive escaping produced is not escaped again.
+        ("s3://b/t/", "s3://b/t/k=a%20b/f.parquet", "s3://b/t/k=a%20b/f.parquet"),
+        ("s3://b/t/", "s3://b/t/k=50%25/f.parquet", "s3://b/t/k=50%2525/f.parquet"),
+        ("s3://b/t/", "s3://b/t/k=%C3%A9/f.parquet", "lakefs://b/t/k=%C3%A9/f.parquet"),
+        (
+            "s3://b/t/",
+            "s3://b/t/ts=2024-01-02%2003%3A04%3A05/f.parquet",
+            "s3://b/t/ts=2024-01-02%2003%253A04%253A05/f.parquet",
+        ),
+        # `#` and `?` in a file name stay unescaped in cloud file_uris().
+        ("s3://b/t/", "s3://b/t/a#b.parquet", "s3://b/t/a%23b.parquet"),
+        ("s3://b/t/", "s3://b/t/a?b.parquet", "s3://b/t/a%3Fb.parquet"),
+    ],
+)
+def test_scan_delta_dv_extract_dvs_decodes_below_root_30447(
+    table_root: str, requested_path: str, dv_path: str
+) -> None:
+    out = _extract_delta_deletion_vectors(
+        pl.DataFrame({"path": [requested_path]}),
+        pl.DataFrame({"filepath": [dv_path], "selection_vector": [[True, False]]}),
+        table_root=table_root,
+    )
+    assert out["selection_vector"].to_list() == [[True, False]]
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    "value", ["ab", "a b", "50%", "a:b", "a+b", "é", "2024-01-02 03:04:05"]
+)
+@pytest.mark.xdist_group(name="duckdb")
+def test_scan_delta_dv_percent_encoded_partition_30447(
+    value: str, tmp_path: Path
+) -> None:
+    path = tmp_path / "delta_table"
+    df = pl.DataFrame({"a": range(5)})
+    create_dv_table(path, df.to_arrow(), deleted_rows=[1, 3], partition=("k", value))
+
+    out = pl.scan_delta(path).collect()
+    expected = df.filter(~pl.col.a.is_in([1, 3])).with_columns(k=pl.lit(value))
+    assert_frame_equal(out, expected)
+
+    # duckdb cross-check
+    import duckdb
+
+    conn = duckdb.connect()
+    conn.execute("INSTALL delta;")
+    conn.execute("LOAD delta;")
+
+    df_duckdb = conn.sql(f"SELECT * FROM delta_scan('{path}')").pl()
+    assert_frame_equal(out, df_duckdb, check_row_order=False)
+
+
 @pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
@@ -686,7 +769,7 @@ def test_scan_delta_dv_multiple(
     conn.execute("INSTALL delta;")
     conn.execute("LOAD delta;")
 
-    df_duckdb = conn.execute(f"SELECT * FROM delta_scan('{path}')").pl()
+    df_duckdb = conn.sql(f"SELECT * FROM delta_scan('{path}')").pl()
     assert_frame_equal(out, df_duckdb, check_row_order=False)
 
 
@@ -760,9 +843,7 @@ def test_scan_delta_dv_multiple_with_predicate_pushdown(
         conn = duckdb.connect()
         conn.execute("INSTALL delta;")
         conn.execute("LOAD delta;")
-        df_duckdb = (
-            conn.execute(f"SELECT * FROM delta_scan('{path}')").pl().filter(expr)
-        )
+        df_duckdb = conn.sql(f"SELECT * FROM delta_scan('{path}')").pl().filter(expr)
         assert_frame_equal(out, df_duckdb, check_row_order=False)
 
 

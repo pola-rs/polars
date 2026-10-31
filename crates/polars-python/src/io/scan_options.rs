@@ -1,15 +1,17 @@
+use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use polars::prelude::default_values::DefaultFieldValues;
 use polars::prelude::deletion::DeletionFilesList;
 use polars::prelude::{
-    CastColumnsPolicy, CloudScheme, ColumnMapping, ExtraColumnsPolicy, MissingColumnsPolicy,
-    PlSmallStr, Schema, TableStatistics, UnifiedScanArgs,
+    CastColumnsPolicy, CloudScheme, ColumnMapping, ExtraColumnsPolicy, HivePartitions,
+    MissingColumnsPolicy, PlSmallStr, Schema, TableStatistics, UnifiedScanArgs,
 };
 use polars_buffer::Buffer;
 use polars_io::{HiveOptions, RowIndex};
 use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
+use pyo3::exceptions::PyValueError;
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
@@ -41,6 +43,18 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<TableStatistics> {
     }
 }
 
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<HivePartitions> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        let py = ob.py();
+        let attr = ob.getattr(intern!(py, "_df"))?;
+        Ok(Wrap(HivePartitions(Arc::new(
+            PyDataFrame::extract(attr.as_borrowed())?.df.into_inner(),
+        ))))
+    }
+}
+
 impl PyScanOptions<'_> {
     pub fn extract_unified_scan_args(
         &self,
@@ -62,6 +76,7 @@ impl PyScanOptions<'_> {
             hive_partitioning: Option<bool>,
             hive_schema: Option<Wrap<Schema>>,
             try_parse_hive_dates: bool,
+            hive_partitions: Option<Wrap<HivePartitions>>,
             rechunk: bool,
             cache: bool,
             storage_options: OptPyCloudOptions<'a>,
@@ -70,6 +85,7 @@ impl PyScanOptions<'_> {
             table_statistics: Option<Wrap<TableStatistics>>,
             row_count: Option<(u64, u64)>,
             source_sizes: Option<Vec<u64>>,
+            resolve_heavy_sources: Option<u32>,
         }
 
         let Extract {
@@ -87,6 +103,7 @@ impl PyScanOptions<'_> {
             hive_partitioning,
             hive_schema,
             try_parse_hive_dates,
+            hive_partitions,
             rechunk,
             cache,
             storage_options,
@@ -95,6 +112,7 @@ impl PyScanOptions<'_> {
             table_statistics,
             row_count,
             source_sizes,
+            resolve_heavy_sources,
         } = self.0.extract()?;
 
         let cloud_options =
@@ -141,8 +159,16 @@ impl PyScanOptions<'_> {
             include_file_paths: include_file_paths.map(|x| x.0),
             deletion_files,
             table_statistics: table_statistics.map(|x| x.0),
+            hive_partitions: hive_partitions.map(|x| x.0),
             row_count,
             source_sizes: source_sizes.map(Buffer::from),
+            resolve_heavy_sources: resolve_heavy_sources
+                .map(|n| {
+                    NonZeroU32::new(n).ok_or_else(|| {
+                        PyValueError::new_err("_resolve_heavy_sources must be at least 1")
+                    })
+                })
+                .transpose()?,
         };
 
         Ok(unified_scan_args)

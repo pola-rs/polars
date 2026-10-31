@@ -1,5 +1,6 @@
 use polars_buffer::Buffer;
 use polars_error::PolarsResult;
+use polars_io::configs::cloud_footer_read_size;
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
 
 /// Read the metadata bytes of a parquet file, does not decode the bytes. If during metadata fetch
@@ -9,14 +10,26 @@ pub async fn read_parquet_metadata_bytes(
     file_size: Option<usize>,
     verbose: bool,
 ) -> PolarsResult<(Buffer<u8>, Option<Buffer<u8>>)> {
-    use polars_parquet::parquet::PARQUET_MAGIC;
     use polars_parquet::parquet::error::ParquetError;
+    use polars_parquet::parquet::{ENCRYPTED_PARQUET_MAGIC, PARQUET_MAGIC};
 
     const FOOTER_HEADER_SIZE: usize = polars_parquet::parquet::FOOTER_SIZE as usize;
 
-    let file_size = match file_size {
-        Some(file_size) => file_size,
-        None => byte_source.get_size().await?,
+    let prefetch_size = if let DynByteSource::Buffer(_) = byte_source {
+        // Mmapped or in-memory, reads are free.
+        usize::MAX
+    } else {
+        cloud_footer_read_size()
+    };
+
+    let (bytes, file_size) = match file_size {
+        Some(file_size) => {
+            let bytes = byte_source
+                .get_range(file_size.saturating_sub(prefetch_size)..file_size)
+                .await?;
+            (bytes, file_size)
+        },
+        None => byte_source.get_suffix(prefetch_size).await?,
     };
 
     if file_size < FOOTER_HEADER_SIZE {
@@ -26,26 +39,16 @@ pub async fn read_parquet_metadata_bytes(
         .into());
     }
 
-    let estimated_metadata_size = if let DynByteSource::Buffer(_) = byte_source {
-        // Mmapped or in-memory, reads are free.
-        file_size
-    } else {
-        (file_size / 2048).clamp(16_384, 131_072).min(file_size)
-    };
-
-    let bytes = byte_source
-        .get_range((file_size - estimated_metadata_size)..file_size)
-        .await?;
-
     let footer_header_bytes = bytes.clone().sliced((bytes.len() - FOOTER_HEADER_SIZE)..);
 
     let (v, remaining) = footer_header_bytes.as_slice().split_at(4);
     let footer_size = u32::from_le_bytes(v.try_into().unwrap());
 
-    if remaining != PARQUET_MAGIC {
+    if remaining != PARQUET_MAGIC && remaining != ENCRYPTED_PARQUET_MAGIC {
         return Err(ParquetError::OutOfSpec(format!(
-            r#"expected parquet magic bytes "{}" in footer, got "{}" instead"#,
+            r#"expected parquet magic bytes "{}" or "{}" in footer, got "{}" instead"#,
             std::str::from_utf8(&PARQUET_MAGIC).unwrap(),
+            std::str::from_utf8(&ENCRYPTED_PARQUET_MAGIC).unwrap(),
             String::from_utf8_lossy(remaining)
         ))
         .into());
@@ -65,8 +68,8 @@ pub async fn read_parquet_metadata_bytes(
         if verbose {
             eprintln!(
                 "[ParquetFileReader]: Extra {} bytes need to be fetched for metadata \
-                (initial estimate = {}, actual size = {})",
-                footer_size - estimated_metadata_size,
+                (prefetched = {}, actual size = {})",
+                footer_size - bytes.len(),
                 bytes.len(),
                 footer_size,
             );
@@ -87,10 +90,10 @@ pub async fn read_parquet_metadata_bytes(
         if verbose && !matches!(byte_source, DynByteSource::Buffer(_)) {
             eprintln!(
                 "[ParquetFileReader]: Fetched all bytes for metadata on first try \
-                (initial estimate = {}, actual size = {}, excess = {}, total file size = {})",
+                (prefetched = {}, actual size = {}, excess = {}, total file size = {})",
                 bytes.len(),
                 footer_size,
-                estimated_metadata_size - footer_size,
+                bytes.len() - footer_size,
                 file_size,
             );
         }
@@ -101,8 +104,9 @@ pub async fn read_parquet_metadata_bytes(
             Ok((metadata_bytes, Some(bytes)))
         } else {
             debug_assert!(!matches!(byte_source, DynByteSource::Buffer(_)));
-            let metadata_bytes = if bytes.len() - footer_size >= bytes.len() {
-                // Re-allocate to drop the excess bytes
+            // The footer is held for the lifetime of the metadata, so copy it out rather
+            // than pin the whole prefetch for a fraction of its bytes.
+            let metadata_bytes = if bytes.len() >= 2 * footer_size {
                 Buffer::from_vec(metadata_bytes.to_vec())
             } else {
                 metadata_bytes

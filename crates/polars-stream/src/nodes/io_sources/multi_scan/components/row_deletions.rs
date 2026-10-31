@@ -1,11 +1,11 @@
 use std::sync::{Arc, OnceLock};
 
 #[cfg(feature = "python")]
-use arrow::array::ListArray;
-use arrow::array::{Array, BooleanArray};
-use arrow::bitmap::bitmask::BitMask;
-use arrow::bitmap::{Bitmap, MutableBitmap};
-use polars_async::executor::{self, AbortOnDropHandle, TaskPriority};
+use polars_arrow::array::ListArray;
+use polars_arrow::array::{Array, BooleanArray};
+use polars_arrow::bitmap::bitmask::BitMask;
+use polars_arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_async::executor::{self, AbortOnDropHandle, TaskMetricAggregator, TaskPriority};
 use polars_buffer::Buffer;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{BooleanChunked, ChunkAgg, DataType, NamedFrom, PlIndexMap};
@@ -20,7 +20,7 @@ use polars_plan::dsl::deletion::DeletionFilesList;
 #[cfg(feature = "python")]
 use polars_plan::dsl::deletion::DeltaDeletionVectorProvider;
 use polars_plan::dsl::{CastColumnsPolicy, ScanSource, ScanSources};
-use polars_utils::aliases::PlHashMap;
+use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
@@ -43,13 +43,9 @@ pub enum DeletionFilesProvider {
         // Amortized allocations
         reader_builder: ParquetReaderBuilder,
         projected_schema: SchemaRef,
-        #[expect(clippy::type_complexity)]
         deletion_load_tasks: Arc<
             parking_lot::Mutex<
-                PlHashMap<
-                    PlRefPath,
-                    Arc<tokio::sync::OnceCell<PlHashMap<PlRefPath, ExternalFilterMask>>>,
-                >,
+                PlHashMap<PlRefPath, Arc<tokio::sync::OnceCell<PuffinDeletionVectors>>>,
             >,
         >,
     },
@@ -58,6 +54,7 @@ pub enum DeletionFilesProvider {
         provider: DeltaDeletionVectorProvider,
         selected_paths: Buffer<PlRefPath>,
         cache: Arc<tokio::sync::OnceCell<Option<ListArray<i64>>>>,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
     },
 }
 
@@ -82,11 +79,13 @@ impl DeletionFilesProvider {
                         parallel: polars_io::prelude::ParallelStrategy::Auto,
                         low_memory: false,
                         use_statistics: false,
+                        decryption_properties: None,
                     }),
                     pipeline_budget: std::sync::OnceLock::new(),
                     shared_prefetch_wait_group_slot: Default::default(),
                     file_read_context: std::sync::OnceLock::new(),
                     io_metrics: io_metrics.map(OnceLock::from).unwrap_or_default(),
+                    task_metrics: std::sync::OnceLock::new(),
                 };
 
                 reader_builder.set_execution_state(execution_state);
@@ -119,6 +118,7 @@ impl DeletionFilesProvider {
                     provider,
                     selected_paths,
                     cache: Arc::new(tokio::sync::OnceCell::new()),
+                    task_metrics: execution_state.task_metrics.clone(),
                 })
             },
             None => Ok(Self::None),
@@ -149,6 +149,7 @@ impl DeletionFilesProvider {
                 use polars_plan::dsl::{ExtraColumnsPolicy, MissingColumnsPolicy};
 
                 let paths = paths.get(&scan_source_idx)?;
+                let task_metrics = reader_builder.task_metrics.get().map(Arc::as_ref);
 
                 if verbose {
                     let s = if paths.len() == 1 { "" } else { "s" };
@@ -168,7 +169,7 @@ impl DeletionFilesProvider {
                             .enumerate()
                             .map(|(deletion_file_idx, path)| {
                                 let source = ScanSource::Path(path.clone());
-                                let mut reader = reader_builder.build_file_reader(
+                                let reader = reader_builder.build_file_reader(
                                     source,
                                     cloud_options.clone(),
                                     deletion_file_idx,
@@ -186,7 +187,9 @@ impl DeletionFilesProvider {
 
                                 AbortOnDropHandle::new(executor::spawn(
                                     TaskPriority::Low,
+                                    task_metrics,
                                     async move {
+                                        let mut reader = reader?;
                                         reader.initialize().await?;
                                         PolarsResult::Ok(reader)
                                     },
@@ -195,6 +198,7 @@ impl DeletionFilesProvider {
                             .collect::<Vec<_>>();
 
                         let projected_schema = projected_schema.clone();
+                        let read_task_metrics = reader_builder.task_metrics.get().cloned();
 
                         // We choose to load deletion files immediately during the initialization phase -
                         // the main driver loop of the multi file may need to serially `.await` on this
@@ -204,34 +208,38 @@ impl DeletionFilesProvider {
                         // should be fine as the size of the data should not be too big.
 
                         Box::pin(async move {
-                            let handles = file_readers
-                                .into_iter()
-                                .map(|init_fut| {
-                                    use crate::nodes::io_sources::multi_scan::components::projection::Projection;
+                            let mut handles = Vec::with_capacity(file_readers.len());
 
-                                    let begin_read_args = BeginReadArgs {
-                                        projection: Projection::Plain(projected_schema.clone()),
-                                        row_index: None,
-                                        pre_slice: None,
-                                        predicate: None,
-                                        cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
-                                        extra_columns_policy: ExtraColumnsPolicy::Raise,
-                                        missing_columns_policy: MissingColumnsPolicy::Raise,
-                                        num_pipelines,
-                                        disable_morsel_split: false,
-                                        last_morsel_pipelines: 1,
-                                        callbacks: FileReaderCallbacks {
-                                            file_schema_tx: None,
-                                            n_rows_in_file_tx: None,
-                                            row_position_on_end_tx: None,
-                                        },
+                            for init_fut in file_readers {
+                                let mut reader = init_fut.await?;
+
+                                use crate::nodes::io_sources::multi_scan::components::projection::Projection;
+
+                                let begin_read_args = BeginReadArgs {
+                                    projection: Projection::Plain(projected_schema.clone()),
+                                    row_index: None,
+                                    pre_slice: None,
+                                    predicate: None,
+                                    cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
+                                    extra_columns_policy: ExtraColumnsPolicy::Raise,
+                                    missing_columns_policy: MissingColumnsPolicy::Raise,
+                                    num_pipelines,
+                                    disable_morsel_split: false,
+                                    maintain_order: true,
+                                    last_morsel_pipelines: 1,
+                                    callbacks: FileReaderCallbacks {
+                                        file_schema_tx: None,
+                                        n_rows_in_file_tx: None,
+                                        row_position_on_end_tx: None,
+                                    },
                                 };
 
-                                AbortOnDropHandle::new(executor::spawn(
-                                    TaskPriority::Low,
-                                    async move {
-                                        let mut reader = init_fut.await?;
+                                let projected_schema = projected_schema.clone();
 
+                                handles.push(AbortOnDropHandle::new(executor::spawn(
+                                    TaskPriority::Low,
+                                    read_task_metrics.as_deref(),
+                                    async move {
                                         let (mut rx, handle) =
                                             reader.begin_read(begin_read_args)?;
 
@@ -242,6 +250,13 @@ impl DeletionFilesProvider {
                                         }
 
                                         handle.await?;
+
+                                        // An empty file sends no morsels.
+                                        if dfs.is_empty() {
+                                            dfs.push(DataFrame::empty_with_schema(
+                                                &projected_schema,
+                                            ));
+                                        }
 
                                         let df = accumulate_dataframes_vertical_unchecked(dfs);
 
@@ -268,9 +283,8 @@ impl DeletionFilesProvider {
 
                                         PolarsResult::Ok((positions_col, max_idx))
                                     },
-                                ))
-                            })
-                            .collect::<Vec<_>>();
+                                )))
+                            }
 
                             let mut position_columns = Vec::with_capacity(handles.len());
                             let mut filter_mask_len: usize = 0;
@@ -308,13 +322,17 @@ impl DeletionFilesProvider {
                         })
                     },
 
-                    IcebergDeletes::DeletionVector(path) => {
+                    IcebergDeletes::DeletionVector {
+                        path,
+                        content_offset,
+                    } => {
                         use polars_async::ASYNC;
                         use polars_utils::async_utils::tokio_handle_ext;
 
                         let deletion_load_tasks = Arc::clone(deletion_load_tasks);
                         let data_path = data_paths[scan_source_idx].clone();
                         let path = path.clone();
+                        let content_offset = *content_offset;
                         let cloud_options = cloud_options.clone();
                         let io_metrics = reader_builder.io_metrics.get().cloned();
 
@@ -323,8 +341,9 @@ impl DeletionFilesProvider {
                                 let mut tasks = deletion_load_tasks.lock();
                                 Arc::clone(tasks.entry(path.clone()).or_default())
                             };
+                            let dv_path = path.clone();
 
-                            Ok(deletions
+                            deletions
                                 .get_or_try_init(|| async move {
                                     let fetch_bytes_handle =
                                         tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn({
@@ -349,19 +368,19 @@ impl DeletionFilesProvider {
                                     load_iceberg_puffin_deletes(puffin_bytes)
                                 })
                                 .await?
-                                .get(&data_path)
-                                .cloned()
-                                .unwrap_or_default())
+                                .get(&dv_path, &data_path, content_offset)
                         })
                     },
                 };
 
-                let handle =
-                    AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
+                let handle = AbortOnDropHandle::new(executor::spawn(
+                    TaskPriority::Low,
+                    task_metrics,
+                    async move {
                         let mask = deletion_files_init_fut.await?;
 
                         if verbose {
-                            let num_deleted_rows = mask.num_deleted_rows();
+                            let num_deleted_rows = mask.num_deleted_rows(mask.len());
                             let max_index = mask.len().checked_sub(1);
 
                             eprintln!(
@@ -373,7 +392,8 @@ impl DeletionFilesProvider {
                         }
 
                         Ok(mask)
-                    }));
+                    },
+                ));
 
                 Some(RowDeletionsInit::Initializing(handle))
             },
@@ -383,13 +403,16 @@ impl DeletionFilesProvider {
                 provider,
                 selected_paths,
                 cache,
+                task_metrics,
             } => {
                 let cache = cache.clone();
                 let provider = provider.clone();
                 let selected_paths = selected_paths.clone();
 
-                let handle =
-                    AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
+                let handle = AbortOnDropHandle::new(executor::spawn(
+                    TaskPriority::Low,
+                    task_metrics.as_deref(),
+                    async move {
                         let deletion_vectors = cache
                             .get_or_try_init(|| async {
                                 let provider = provider.clone();
@@ -425,7 +448,8 @@ impl DeletionFilesProvider {
                         };
 
                         Ok(ExternalFilterMask::DeltaDeletionVector { mask })
-                    }));
+                    },
+                ));
 
                 Some(RowDeletionsInit::Initializing(handle))
             },
@@ -484,7 +508,7 @@ impl ExternalFilterMask {
             None => PlSmallStr::from_static("None"),
             Some(mask) => {
                 let mask_variant = mask.variant_name();
-                let n = mask.num_deleted_rows();
+                let n = mask.num_deleted_rows(mask.len());
                 let s = if n == 1 { "" } else { "s" };
                 format_pl_smallstr!("{mask_variant}(<{n} deletion{s}>)")
             },
@@ -547,20 +571,17 @@ impl ExternalFilterMask {
         }
     }
 
-    pub fn num_deleted_rows(&self) -> usize {
-        match self {
-            Self::Iceberg { mask } => mask
-                .rechunk()
-                .downcast_get(0)
-                .unwrap()
-                .values()
-                .unset_bits(),
-            Self::DeltaDeletionVector { mask } => mask
-                .rechunk()
-                .downcast_get(0)
-                .unwrap()
-                .values()
-                .unset_bits(),
+    /// Number of deleted rows within the first `num_physical_rows` rows.
+    ///
+    /// Iceberg position deletes can reference positions past the end of the data file, these must
+    /// not be counted as deleted rows.
+    pub fn num_deleted_rows(&self, num_physical_rows: usize) -> usize {
+        let mask = self.get_mask();
+
+        if num_physical_rows >= mask.len() {
+            mask.unset_bits()
+        } else {
+            mask.sliced(0, num_physical_rows).unset_bits()
         }
     }
 
@@ -625,6 +646,10 @@ impl ExternalFilterMask {
             Self::DeltaDeletionVector { mask } => mask.len(),
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 /// Calculates the nth set bit as though `mask` were extended infinitely with trues.
@@ -636,77 +661,152 @@ fn nth_set_bit_extend(mask: &Bitmap, n: usize) -> usize {
     }
 }
 
-fn load_iceberg_puffin_deletes(
-    puffin_bytes: Buffer<u8>,
-) -> PolarsResult<PlHashMap<PlRefPath, ExternalFilterMask>> {
+/// `file://C:/x` → `file:///C:/x`, as data file paths are normalized when the scan is
+/// resolved, so that deletion vectors are found by their referenced data file.
+#[cfg(feature = "python")]
+fn normalize_windows_file_uri(path: &str) -> std::borrow::Cow<'_, str> {
+    match path.strip_prefix("file://") {
+        Some(rest) if matches!(rest.as_bytes(), [d, b':', ..] if d.is_ascii_alphabetic()) => {
+            format!("file:///{rest}").into()
+        },
+        _ => path.into(),
+    }
+}
+
+/// The deletion vectors of a Puffin file.
+pub struct PuffinDeletionVectors {
+    /// `(referenced data file, mask)` by blob offset.
+    by_offset: PlHashMap<u64, (PlRefPath, ExternalFilterMask)>,
+    /// Blob offsets by referenced data file.
+    offsets_by_data_path: PlHashMap<PlRefPath, Vec<u64>>,
+}
+
+impl PuffinDeletionVectors {
+    fn get(
+        &self,
+        dv_path: &PlRefPath,
+        data_path: &PlRefPath,
+        content_offset: Option<u64>,
+    ) -> PolarsResult<ExternalFilterMask> {
+        let offset = match content_offset {
+            Some(offset) => offset,
+            None => match self.offsets_by_data_path.get(data_path).map(Vec::as_slice) {
+                Some(&[offset]) => offset,
+                Some([]) | None => polars_bail!(
+                    ComputeError:
+                    "iceberg: deletion vector file {} has no deletion vector for data file {}",
+                    dv_path, data_path
+                ),
+                Some(_) => polars_bail!(
+                    ComputeError:
+                    "iceberg: deletion vector file {} has several deletion vectors for data \
+                    file {}, and the delete file entry has no content offset",
+                    dv_path, data_path
+                ),
+            },
+        };
+
+        match self.by_offset.get(&offset) {
+            Some((referenced, mask)) if referenced == data_path => Ok(mask.clone()),
+            Some((referenced, _)) => polars_bail!(
+                ComputeError:
+                "iceberg: deletion vector at offset {} of {} is of data file {}, expected {}",
+                offset, dv_path, referenced, data_path
+            ),
+            None => polars_bail!(
+                ComputeError:
+                "iceberg: deletion vector file {} has no deletion vector at offset {}",
+                dv_path, offset
+            ),
+        }
+    }
+}
+
+fn load_iceberg_puffin_deletes(puffin_bytes: Buffer<u8>) -> PolarsResult<PuffinDeletionVectors> {
     #[cfg(feature = "python")]
     {
         use std::sync::LazyLock;
 
-        use arrow::array::UInt64Array;
+        use polars_arrow::array::UInt64Array;
         use polars_error::constants::LENGTH_LIMIT_MSG;
         use polars_error::polars_ensure;
         use polars_utils::index::idxsize_try_from;
         use pyo3::{Py, PyAny, Python};
 
-        let deletions: Vec<(PlRefPath, Series)> = Python::attach(|py| {
+        let deletions: Vec<(u64, PlRefPath, Series)> = Python::attach(|py| {
             use pyo3::pybacked::PyBackedStr;
-            use pyo3::types::PyAnyMethods;
+            use pyo3::types::{PyAnyMethods, PyTuple};
 
             if LazyLock::get(&LOAD_FROM_BYTES_FN).is_none() {
                 py.detach(|| LazyLock::force(&LOAD_FROM_BYTES_FN));
             }
 
-            let dict = LOAD_FROM_BYTES_FN.call1(py, (puffin_bytes.as_slice(),))?;
-            let dict = dict.bind(py);
+            // `[(offset, referenced data file, positions)]`
+            let blobs = LOAD_FROM_BYTES_FN.call1(py, (puffin_bytes.as_slice(),))?;
+            let blobs = blobs.bind(py);
 
-            dict.try_iter()?
-                .zip(dict.call_method0("values")?.try_iter()?)
-                .map(|(k, v)| {
+            blobs
+                .try_iter()?
+                .map(|blob| {
+                    let blob = blob?;
+                    let blob = blob.cast::<PyTuple>()?;
                     Ok((
-                        PlRefPath::new(&*k?.extract::<PyBackedStr>()?),
+                        blob.get_item(0)?.extract::<u64>()?,
+                        PlRefPath::new(&*normalize_windows_file_uri(
+                            &blob.get_item(1)?.extract::<PyBackedStr>()?,
+                        )),
                         *(polars_utils::python_convert_registry::get_python_convert_registry()
                             .from_py
-                            .series)(v?.getattr("_s")?.into())
+                            .series)(
+                            blob.get_item(2)?.getattr("_s")?.into()
+                        )
                         .unwrap()
                         .downcast::<Series>()
                         .unwrap(),
                     ))
                 })
-                .collect::<PolarsResult<Vec<(PlRefPath, Series)>>>()
+                .collect::<PolarsResult<Vec<(u64, PlRefPath, Series)>>>()
         })?;
 
-        return deletions
-            .into_iter()
-            .map(|(data_path, indices)| {
-                let filter_mask_len = indices.max::<u64>()?.map_or(0, |x| x.saturating_add(1));
+        let mut out = PuffinDeletionVectors {
+            by_offset: PlHashMap::with_capacity(deletions.len()),
+            offsets_by_data_path: PlHashMap::with_capacity(deletions.len()),
+        };
 
-                polars_ensure!(
-                    idxsize_try_from(filter_mask_len).is_ok(),
-                    ComputeError: LENGTH_LIMIT_MSG
-                );
+        for (offset, data_path, indices) in deletions {
+            let filter_mask_len = indices.max::<u64>()?.map_or(0, |x| x.saturating_add(1));
 
-                let indices = indices.rechunk();
-                let indices: &UInt64Array = indices.chunks()[0].as_any().downcast_ref().unwrap();
+            polars_ensure!(
+                idxsize_try_from(filter_mask_len).is_ok(),
+                ComputeError: LENGTH_LIMIT_MSG
+            );
 
-                let mut filter_mask = MutableBitmap::from_len_set(filter_mask_len as usize);
+            let indices = indices.rechunk();
+            let indices: &UInt64Array = indices.chunks()[0].as_any().downcast_ref().unwrap();
 
-                for idx in indices.non_null_values_iter() {
-                    let idx = usize::try_from(idx).unwrap();
-                    filter_mask.set(idx, false);
-                }
+            let mut filter_mask = MutableBitmap::from_len_set(filter_mask_len as usize);
 
-                let bitmap = filter_mask.freeze();
+            for idx in indices.non_null_values_iter() {
+                let idx = usize::try_from(idx).unwrap();
+                filter_mask.set(idx, false);
+            }
 
-                // Also trigger the bitcount to reduce blocking later down.
-                bitmap.unset_bits();
+            let bitmap = filter_mask.freeze();
 
-                let mask = BooleanChunked::from_bitmap(PlSmallStr::EMPTY, bitmap);
-                let mask = ExternalFilterMask::Iceberg { mask };
+            // Also trigger the bitcount to reduce blocking later down.
+            bitmap.unset_bits();
 
-                Ok((data_path, mask))
-            })
-            .collect();
+            let mask = BooleanChunked::from_bitmap(PlSmallStr::EMPTY, bitmap);
+            let mask = ExternalFilterMask::Iceberg { mask };
+
+            out.offsets_by_data_path
+                .entry(data_path.clone())
+                .or_default()
+                .push(offset);
+            out.by_offset.insert(offset, (data_path, mask));
+        }
+
+        return Ok(out);
 
         static LOAD_FROM_BYTES_FN: LazyLock<Py<PyAny>> = LazyLock::new(|| {
             Python::attach(|py| {

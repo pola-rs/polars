@@ -5,7 +5,7 @@ use futures::AsyncWrite;
 use polars_parquet_format::thrift::protocol::TCompactOutputProtocol;
 #[cfg(feature = "async")]
 use polars_parquet_format::thrift::protocol::TCompactOutputStreamProtocol;
-use polars_parquet_format::{ColumnChunk, ColumnMetaData, Type};
+use polars_parquet_format::{ColumnChunk, ColumnMetaData, SizeStatistics, Type};
 use polars_utils::aliases::PlHashSet;
 
 use super::DynStreamingIterator;
@@ -16,42 +16,68 @@ use super::statistics::reduce;
 use crate::parquet::FallibleStreamingIterator;
 use crate::parquet::compression::Compression;
 use crate::parquet::encoding::Encoding;
+use crate::parquet::encryption::encrypt::{FileEncryptor, get_column_crypto_metadata};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::ColumnDescriptor;
 use crate::parquet::page::{CompressedPage, PageType};
+use crate::parquet::schema::types::PhysicalType;
 
-pub fn write_column_chunk<W, E>(
+/// The context needed to encrypt a column chunk.
+pub(crate) struct ColumnChunkEncryption<'a> {
+    pub file_encryptor: &'a mut FileEncryptor,
+    pub row_group_idx: usize,
+    pub column_ordinal: usize,
+}
+
+pub(crate) fn write_column_chunk<W, E>(
     writer: &mut W,
     mut offset: u64,
     descriptor: &ColumnDescriptor,
     mut compressed_pages: DynStreamingIterator<'_, CompressedPage, E>,
+    encryption: Option<ColumnChunkEncryption>,
 ) -> ParquetResult<(ColumnChunk, Vec<PageWriteSpec>, u64)>
 where
     W: Write,
     ParquetError: From<E>,
     E: std::error::Error,
 {
+    let crypto_metadata = encryption
+        .as_ref()
+        .and_then(|e| get_column_crypto_metadata(e.file_encryptor.properties(), descriptor));
+    let mut page_encryptor = encryption
+        .map(|e| {
+            e.file_encryptor
+                .page_encryptor(descriptor, e.row_group_idx, e.column_ordinal)
+        })
+        .transpose()?
+        .flatten();
+
     // write every page
 
     let initial = offset;
 
     let mut specs = vec![];
     while let Some(compressed_page) = compressed_pages.next()? {
-        let spec = write_page(writer, offset, compressed_page)?;
+        let spec = write_page(writer, offset, compressed_page, page_encryptor.as_mut())?;
         offset += spec.bytes_written;
         specs.push(spec);
     }
     let mut bytes_written = offset - initial;
 
-    let column_chunk = build_column_chunk(&specs, descriptor)?;
+    let mut column_chunk = build_column_chunk(&specs, descriptor)?;
 
-    // write metadata
-    let mut protocol = TCompactOutputProtocol::new(writer);
-    bytes_written += column_chunk
-        .meta_data
-        .as_ref()
-        .unwrap()
-        .write_to_out_protocol(&mut protocol)? as u64;
+    column_chunk.crypto_metadata = crypto_metadata;
+
+    // write metadata, unless the column is encrypted, in which case the metadata is only
+    // written to the footer.
+    if page_encryptor.is_none() {
+        let mut protocol = TCompactOutputProtocol::new(writer);
+        bytes_written += column_chunk
+            .meta_data
+            .as_ref()
+            .unwrap()
+            .write_to_out_protocol(&mut protocol)? as u64;
+    }
 
     Ok((column_chunk, specs, bytes_written))
 }
@@ -187,7 +213,25 @@ fn build_column_chunk(
     let statistics = reduce(&statistics)?;
     let statistics = statistics.map(|x| x.serialize());
 
-    let (type_, _): (Type, Option<i32>) = descriptor.descriptor.primitive_type.physical_type.into();
+    let physical_type = descriptor.descriptor.primitive_type.physical_type;
+    // Only written when every data page knows the size of its values. The type check keeps a
+    // chunk without data pages from getting a size of 0 when it isn't a byte array.
+    let size_statistics = if physical_type == PhysicalType::ByteArray {
+        specs
+            .iter()
+            .filter(|spec| !is_dict_page(spec))
+            .map(|spec| spec.unencoded_byte_array_data_bytes)
+            .sum::<Option<i64>>()
+            .map(|bytes| SizeStatistics {
+                unencoded_byte_array_data_bytes: Some(bytes),
+                repetition_level_histogram: None,
+                definition_level_histogram: None,
+            })
+    } else {
+        None
+    };
+
+    let (type_, _): (Type, Option<i32>) = physical_type.into();
 
     let metadata = ColumnMetaData {
         type_,
@@ -209,7 +253,7 @@ fn build_column_chunk(
         encoding_stats: None,
         bloom_filter_offset: None,
         bloom_filter_length: None,
-        size_statistics: None,
+        size_statistics,
     };
 
     Ok(ColumnChunk {

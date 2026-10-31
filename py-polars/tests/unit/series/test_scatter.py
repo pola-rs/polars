@@ -1,13 +1,13 @@
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 import numpy as np
 import pytest
 
 import polars as pl
-from polars._typing import PolarsDataType
+from polars._typing import PolarsDataType, TimeUnit
 from polars.exceptions import ComputeError, InvalidOperationError, OutOfBoundsError
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 @pytest.mark.parametrize(
@@ -90,6 +90,43 @@ def test_scatter_datetime() -> None:
     assert_series_equal(result, expected)
 
 
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_scatter_datetime_time_unit_21474(time_unit: TimeUnit) -> None:
+    dtype = pl.Datetime(time_unit)
+    s = pl.Series("dt", [datetime(2024, 5, 26, 19), datetime(2024, 5, 27, 19)], dtype)
+    result = s.scatter(1, datetime(2024, 5, 27, 19, 15))
+    expected = pl.Series(
+        "dt", [datetime(2024, 5, 26, 19), datetime(2024, 5, 27, 19, 15)], dtype
+    )
+    assert_series_equal(result, expected)
+
+    df = pl.DataFrame({"dt": [datetime(2024, 5, 26, 19)]}, schema={"dt": dtype})
+    df[0, "dt"] = datetime(2024, 5, 27, 19, 15)
+    expected_df = pl.DataFrame(
+        {"dt": [datetime(2024, 5, 27, 19, 15)]}, schema={"dt": dtype}
+    )
+    assert_frame_equal(df, expected_df)
+
+
+def test_scatter_temporal_cast_21474() -> None:
+    s = pl.Series([timedelta(1)], dtype=pl.Duration("ms"))
+    expected = pl.Series([timedelta(seconds=1)], dtype=pl.Duration("ms"))
+    assert_series_equal(s.scatter(0, timedelta(seconds=1)), expected)
+
+    s = pl.Series([datetime(2024, 1, 1)], dtype=pl.Datetime("ms"))
+    expected = pl.Series([datetime(2024, 5, 1)], dtype=pl.Datetime("ms"))
+    assert_series_equal(s.scatter(0, date(2024, 5, 1)), expected)
+
+    s = pl.Series([datetime(2024, 1, 1)], dtype=pl.Datetime("us"))
+    expected = pl.Series([datetime(2024, 5, 1, 12)], dtype=pl.Datetime("us"))
+    values = np.array(["2024-05-01T12:00"], dtype="datetime64[ms]")
+    assert_series_equal(s.scatter(0, values), expected)
+
+    with pytest.raises(InvalidOperationError):
+        s.scatter(0, time(12))
+    assert_series_equal(s, expected)
+
+
 def test_scatter_logical_all_null() -> None:
     s = pl.Series("dt", [None, None], dtype=pl.Date)
     result = s.scatter(0, date(2022, 2, 2))
@@ -141,3 +178,21 @@ def test_scatter_decimal_25869() -> None:
 
     with pytest.raises(InvalidOperationError):
         s.scatter(1, "test")
+
+
+def test_scatter_boolean_offset_slice_30105() -> None:
+    # The slice is the only owner of its buffers.
+    s = pl.Series("s", [True, True, False, False]).slice(2)
+    s.scatter(0, False)
+    assert s.to_list() == [False, False]
+
+
+@pytest.mark.parametrize(
+    ("dtype", "value"), [(pl.Int64, 1), (pl.String, "x"), (pl.Boolean, True)]
+)
+def test_scatter_offset_slice_validity_30105(dtype: PolarsDataType, value: Any) -> None:
+    values = [value, value, value, None, value, None, value]
+    s = pl.Series("s", values, dtype=dtype).slice(3)
+    # Position 1 already holds `value`, so nothing should change.
+    s.scatter(1, value)
+    assert s.to_list() == [None, value, None, value]

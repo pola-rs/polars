@@ -1,7 +1,7 @@
-use arrow::array::{Array, ListArray};
-use arrow::datatypes::ArrowDataType;
-use arrow::offset::OffsetsBuffer;
-use arrow::types::Offset;
+use polars_arrow::array::{Array, ListArray};
+use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::offset::OffsetsBuffer;
+use polars_arrow::types::Offset;
 
 /// Rebuild `arr` around replacement `values` for the elements its offsets span.
 ///
@@ -41,9 +41,9 @@ pub fn rebuild_list_shallow<O: Offset>(
 
 #[cfg(test)]
 mod tests {
-    use arrow::array::{PrimitiveArray, Utf8ViewArray};
-    use arrow::bitmap::Bitmap;
-    use arrow::datatypes::Field;
+    use polars_arrow::array::{PrimitiveArray, Utf8ViewArray};
+    use polars_arrow::bitmap::Bitmap;
+    use polars_arrow::datatypes::Field;
     use polars_utils::pl_str::PlSmallStr;
 
     use super::*;

@@ -1,9 +1,9 @@
 use std::ops::{AddAssign, Mul};
 
 use arity::unary_elementwise_values;
-use arrow::array::{Array, BooleanArray};
-use arrow::bitmap::{Bitmap, BitmapBuilder};
 use num_traits::{AsPrimitive, Bounded, One, Zero};
+use polars_arrow::array::{Array, BooleanArray};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{CustomIterTools, NoNull};
@@ -195,6 +195,31 @@ fn cum_min_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> Boole
     BooleanChunked::with_chunk_like(ca, arr.with_validity(ca.rechunk_validity()))
 }
 
+fn cum_min_max_binary<'a>(
+    ca: &'a BinaryChunked,
+    reverse: bool,
+    init: Option<&'a [u8]>,
+    is_max: bool,
+) -> BinaryChunked {
+    let mut state = init;
+    let update = |v: Option<&'a [u8]>| {
+        let v = v?;
+        let keep_state = state.is_some_and(|s| if is_max { s >= v } else { s <= v });
+        if !keep_state {
+            state = Some(v);
+        }
+        state
+    };
+    let out: BinaryChunked = if reverse {
+        let mut values: Vec<_> = ca.iter().rev().map(update).collect();
+        values.reverse();
+        values.into_iter().collect()
+    } else {
+        ca.iter().map(update).collect()
+    };
+    out.with_name(ca.name().clone())
+}
+
 fn cum_sum_numeric<T>(
     ca: &ChunkedArray<T>,
     reverse: bool,
@@ -228,12 +253,13 @@ fn cum_sum_decimal(
     reverse: bool,
     init: Option<i128>,
 ) -> PolarsResult<Int128Chunked> {
-    use polars_compute::decimal::{DEC128_MAX_PREC, dec128_add};
+    use polars_compute::decimal::dec128_add_scaled;
 
     let mut value = init.unwrap_or(0);
     let update = |opt_v| {
         if let Some(v) = opt_v {
-            value = dec128_add(value, v, DEC128_MAX_PREC).ok_or_else(
+            // Same scale, so the mantissas add directly.
+            value = dec128_add_scaled(value, 0, v, 0, 0).ok_or_else(
                 || polars_err!(ComputeError: "overflow in decimal addition in cum_sum"),
             )?;
             Ok(Some(value))
@@ -242,7 +268,13 @@ fn cum_sum_decimal(
         }
     };
     if reverse {
-        ca.iter().rev().map(update).try_collect_ca_trusted_like(ca)
+        // The scan starts at the last row, so its output is in reverse row order.
+        Ok(ca
+            .iter()
+            .rev()
+            .map(update)
+            .try_collect_ca_trusted_like(ca)?
+            .reverse())
     } else {
         ca.iter().map(update).try_collect_ca_trusted_like(ca)
     }
@@ -358,6 +390,16 @@ pub fn cum_min_with_init(
         DataType::Boolean => {
             Ok(cum_min_bool(s.bool()?, reverse, init.extract_bool()).into_series())
         },
+        DataType::String => {
+            let ca = s.str()?.as_binary();
+            let init = init.extract_str().map(str::as_bytes);
+            let out = cum_min_max_binary(&ca, reverse, init, false);
+            Ok(unsafe { out.to_string_unchecked() }.into_series())
+        },
+        DataType::Binary => {
+            let out = cum_min_max_binary(s.binary()?, reverse, init.extract_bytes(), false);
+            Ok(out.into_series())
+        },
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(precision, scale) => {
             let ca = s.decimal().unwrap().physical();
@@ -395,6 +437,16 @@ pub fn cum_max_with_init(
     match s.dtype() {
         DataType::Boolean => {
             Ok(cum_max_bool(s.bool()?, reverse, init.extract_bool()).into_series())
+        },
+        DataType::String => {
+            let ca = s.str()?.as_binary();
+            let init = init.extract_str().map(str::as_bytes);
+            let out = cum_min_max_binary(&ca, reverse, init, true);
+            Ok(unsafe { out.to_string_unchecked() }.into_series())
+        },
+        DataType::Binary => {
+            let out = cum_min_max_binary(s.binary()?, reverse, init.extract_bytes(), true);
+            Ok(out.into_series())
         },
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(precision, scale) => {

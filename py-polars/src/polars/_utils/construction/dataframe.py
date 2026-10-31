@@ -5,7 +5,7 @@ from collections.abc import Generator, Mapping, Sequence
 from datetime import date, datetime, time, timedelta
 from functools import singledispatch
 from itertools import islice, zip_longest
-from operator import itemgetter
+from operator import attrgetter, itemgetter
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -46,6 +46,7 @@ from polars.datatypes import (
     Categorical,
     Duration,
     Enum,
+    Object,
     String,
     Struct,
     Unknown,
@@ -743,8 +744,20 @@ def _sequence_of_elements_to_pydf(
     schema_overrides: SchemaDict | None,
     *,
     strict: bool,
-    **kwargs: Any,  # noqa: ARG001
+    orient: Orientation | None,
+    **kwargs: Any,
 ) -> PyDataFrame:
+    if orient == "row":
+        return _sequence_of_sequence_to_pydf(
+            first_element=data,
+            data=[data],
+            schema=schema,
+            schema_overrides=schema_overrides,
+            strict=strict,
+            orient=orient,
+            **kwargs,
+        )
+
     column_names, schema_overrides = _unpack_schema(
         schema, schema_overrides=schema_overrides, n_expected=1
     )
@@ -810,7 +823,7 @@ def _sequence_of_dataclasses_to_pydf(
     **kwargs: Any,  # noqa: ARG001
 ) -> PyDataFrame:
     """Initialize DataFrame from Python dataclasses."""
-    from dataclasses import asdict, astuple
+    from dataclasses import asdict, astuple, fields
 
     (
         unpack_nested,
@@ -830,7 +843,20 @@ def _sequence_of_dataclasses_to_pydf(
             infer_schema_length=infer_schema_length,
         )
     else:
-        rows = [astuple(dc) for dc in data]
+        names = [f.name for f in fields(first_element)]
+        cls = type(first_element)
+        if (
+            len(names) > 1
+            and all(
+                tp.base_type() not in (Unknown, Object) and not tp.is_nested()
+                for tp in overrides.values()
+            )
+            and all(type(dc) is cls for dc in data)
+        ):
+            # `astuple` deep copies all values, which is not needed for flat types.
+            rows = list(map(attrgetter(*names), data))
+        else:
+            rows = [astuple(dc) for dc in data]
         pydf = PyDataFrame.from_rows(
             rows,  # type: ignore[arg-type]
             schema=overrides or None,
@@ -1017,11 +1043,20 @@ def iterable_to_pydf(
         )._df
 
     def to_frame_chunk(values: list[Any], schema: SchemaDefinition | None) -> DataFrame:
+        first_element = get_first_non_none(values)
+        row_oriented = (
+            isinstance(first_element, (Sequence, Generator))
+            and not isinstance(first_element, str)
+        ) or (
+            _check_for_numpy(first_element)
+            and isinstance(first_element, np.ndarray)
+            and first_element.ndim > 0
+        )
         return pl.DataFrame(
             data=values,
             schema=schema,
             strict=strict,
-            orient="row",
+            orient="row" if row_oriented else None,
             infer_schema_length=infer_schema_length,
             schema_overrides=schema_overrides,
         )

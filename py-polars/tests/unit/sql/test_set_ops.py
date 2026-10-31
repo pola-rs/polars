@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest
 
 import polars as pl
@@ -564,3 +566,30 @@ def test_except_all_with_reserved_internal_column_name() -> None:
     )
     assert res.columns == [name]
     assert sorted(res[name].to_list()) == [1, 2]
+
+
+@pytest.mark.parametrize("op", ["EXCEPT", "INTERSECT", "EXCEPT ALL", "INTERSECT ALL"])
+def test_except_intersect_column_supertypes(op: str) -> None:
+    df = pl.DataFrame(
+        {"k": [1, 2, 2], "v": [Decimal("1.50"), Decimal("0"), Decimal("0")]},
+        schema={"k": pl.Int32, "v": pl.Decimal(15, 2)},
+    )
+    assert_sql_matches(
+        frames={"t": df},
+        query=f"SELECT k, SUM(v) AS s FROM t GROUP BY k {op} SELECT k, 0 FROM t",
+        compare_with="duckdb",
+        check_row_order=False,
+        check_dtypes=False,
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize("op", ["EXCEPT", "INTERSECT", "EXCEPT ALL", "INTERSECT ALL"])
+def test_except_intersect_cast_overflow_raises(op: str) -> None:
+    query = f"""
+        SELECT CAST(99999999999999999999999999999999999999 AS DECIMAL(38,0)) AS x
+        {op}
+        SELECT CAST(NULL AS DECIMAL(38,1))
+    """
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.sql(query, eager=True)

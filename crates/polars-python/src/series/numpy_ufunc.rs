@@ -1,8 +1,8 @@
-use arrow::array::{Array, PrimitiveArray};
 use numpy::{PyArray1, PyArrayMethods};
+use polars_arrow::array::{Array, PrimitiveArray};
 use polars_buffer::{Buffer, SharedStorage};
 use polars_core::prelude::*;
-use polars_core::utils::arrow::types::NativeType;
+use polars_core::utils::polars_arrow::types::NativeType;
 use pyo3::prelude::*;
 use pyo3::types::PyNone;
 

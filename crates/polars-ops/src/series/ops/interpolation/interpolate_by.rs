@@ -1,9 +1,9 @@
 use std::ops::{Add, Div, Mul, Sub};
 
-use arrow::array::PrimitiveArray;
-use arrow::bitmap::MutableBitmap;
 use bytemuck::allocation::zeroed_vec;
 use num_traits::{NumCast, Zero};
+use polars_arrow::array::PrimitiveArray;
+use polars_arrow::bitmap::MutableBitmap;
 use polars_core::prelude::*;
 use polars_utils::slice::SliceAble;
 
@@ -338,7 +338,8 @@ pub fn interpolate_by(s: &Column, by: &Column, by_is_sorted: bool) -> PolarsResu
         _ => {
             polars_bail!(InvalidOperation: "expected series to be Float64, Float32, \
                 Int64, Int32, UInt64, UInt32, and `by` to be Date, Datetime, Int64, Int32, \
-                UInt64, UInt32, Float32 or Float64")
+                UInt64, UInt32, Float32 or Float64 (got series of type {} and `by` of type {})",
+                s.dtype(), by.dtype())
         },
     }
 }

@@ -5,8 +5,8 @@ mod binary;
 ))]
 mod datetime;
 mod functions;
-#[cfg(feature = "is_in")]
-mod is_in;
+#[cfg(any(feature = "is_in", feature = "dtype-map"))]
+mod membership;
 
 use binary::process_binary;
 #[cfg(all(
@@ -16,10 +16,16 @@ use binary::process_binary;
 use datetime::coerce_temporal_dt;
 #[cfg(all(feature = "range", feature = "dtype-datetime"))]
 use datetime::{ensure_datetime, ensure_int, temporal_range_output_type};
+#[cfg(any(feature = "is_in", feature = "dtype-map"))]
+use membership::MembershipForm;
 use polars_core::chunked_array::cast::CastOptions;
-#[cfg(all(
-    feature = "range",
-    any(feature = "dtype-date", feature = "dtype-datetime")
+#[cfg(any(
+    all(
+        feature = "range",
+        any(feature = "dtype-date", feature = "dtype-datetime")
+    ),
+    feature = "is_in",
+    feature = "dtype-map"
 ))]
 use polars_core::utils::try_get_supertype;
 use polars_core::utils::{
@@ -45,7 +51,7 @@ pub(super) use unpack;
 
 /// determine if we use the supertype or not. For instance when we have a column Int64 and we compare with literal UInt32
 /// it would be wasteful to cast the column instead of the literal.
-fn modify_supertype(
+pub(crate) fn modify_supertype(
     mut st: DataType,
     left: &AExpr,
     right: &AExpr,
@@ -140,8 +146,9 @@ impl OptimizationRule for TypeCoercionRule {
                             float_downcast: true,
                             datetime_nanoseconds_downcast: true,
                             datetime_microseconds_downcast: true,
-                            datetime_milliseconds_upcast: true,
-                            datetime_microseconds_upcast: true,
+                            // Increasing the time unit precision can overflow.
+                            datetime_milliseconds_upcast: false,
+                            datetime_microseconds_upcast: false,
                             datetime_convert_timezone: true,
                             null_upcast: true,
                             categorical_to_string: true,
@@ -277,10 +284,30 @@ impl OptimizationRule for TypeCoercionRule {
 
                 let needle_dtype = unpack!(try_get_dtype(expr_arena, needle.node(), schema).ok());
 
+                // Rounding a fractional bound of an integer needle must not change how the
+                // other bound is compared, nor drop a cast of it that can raise.
+                let is_fractional_bound = |bound_dtype: &DataType| {
+                    needle_dtype.is_integer()
+                        && (bound_dtype.is_float() || bound_dtype.is_decimal())
+                };
+                let keeps_other_cmp = |bound_dtype: &DataType, other_dtype: &DataType| {
+                    (bound_dtype.is_float() && other_dtype.is_float())
+                        || (bound_dtype.is_decimal()
+                            && (other_dtype == bound_dtype || *other_dtype == needle_dtype))
+                };
+
                 let (low_ae, low_dtype) =
                     unpack!(get_aexpr_and_type(expr_arena, low.node(), schema));
+                let early_high_dtype = if is_fractional_bound(&low_dtype) {
+                    Some(unpack!(try_get_dtype(expr_arena, high.node(), schema).ok()))
+                } else {
+                    None
+                };
 
                 if low_dtype != needle_dtype
+                    && early_high_dtype
+                        .as_ref()
+                        .is_none_or(|high_dtype| keeps_other_cmp(&low_dtype, high_dtype))
                     && let AExpr::Literal(lv) = low_ae
                 {
                     use crate::plans::type_coercion::binary::BoolValueAlways;
@@ -315,10 +342,15 @@ impl OptimizationRule for TypeCoercionRule {
                     }
                 }
 
-                let (high_ae, high_dtype) =
-                    unpack!(get_aexpr_and_type(expr_arena, high.node(), schema));
+                let high_dtype = match early_high_dtype {
+                    Some(high_dtype) => high_dtype,
+                    None => unpack!(try_get_dtype(expr_arena, high.node(), schema).ok()),
+                };
+                let high_ae = expr_arena.get(high.node());
 
                 if high_dtype != needle_dtype
+                    && (!is_fractional_bound(&high_dtype)
+                        || keeps_other_cmp(&high_dtype, &low_dtype))
                     && let AExpr::Literal(lv) = high_ae
                 {
                     if let LiteralValue::Scalar(lit) = lv.clone().materialize()
@@ -441,106 +473,62 @@ impl OptimizationRule for TypeCoercionRule {
 
                 Some(out)
             },
-            #[cfg(feature = "is_in")]
+            // Map lookup must work without the `is_in` feature.
+            #[cfg(feature = "dtype-map")]
             AExpr::Function {
-                ref function,
-                ref input,
-                options,
-            } if {
-                let mut matches = matches!(
-                    function,
-                    IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. })
-                        | IRFunctionExpr::ListExpr(IRListFunction::Contains { .. })
-                );
-                #[cfg(feature = "dtype-array")]
-                {
-                    matches |= matches!(
+                function:
+                    IRFunctionExpr::MapExpr(
+                        ref func @ (IRMapFunction::Get { .. } | IRMapFunction::ContainsKey { .. }),
+                    ),
+                ..
+            } => {
+                let op = match func {
+                    IRMapFunction::Get { .. } => "map.get",
+                    _ => "map.contains_key",
+                };
+                membership::coerce_is_in(
+                    expr_node,
+                    expr_arena,
+                    schema,
+                    MembershipForm::Contains,
+                    |input, arena| membership::resolve_map_key(input, arena, schema, op),
+                )?
+            },
+            #[cfg(feature = "is_in")]
+            AExpr::Function { ref function, .. }
+                if {
+                    let mut matches = matches!(
                         function,
-                        IRFunctionExpr::ArrayExpr(IRArrayFunction::Contains { .. })
+                        IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. })
+                            | IRFunctionExpr::ListExpr(IRListFunction::Contains { .. })
                     );
-                }
-                matches
-            } =>
+                    #[cfg(feature = "dtype-array")]
+                    {
+                        matches |= matches!(
+                            function,
+                            IRFunctionExpr::ArrayExpr(IRArrayFunction::Contains { .. })
+                        );
+                    }
+                    matches
+                } =>
             {
-                let (op, flat, nested, is_contains) = match function {
+                let (op, form) = match function {
                     IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }) => {
-                        ("is_in", 0, 1, false)
+                        ("is_in", MembershipForm::IsIn)
                     },
                     IRFunctionExpr::ListExpr(IRListFunction::Contains { .. }) => {
-                        ("list.contains", 1, 0, true)
+                        ("list.contains", MembershipForm::Contains)
                     },
                     #[cfg(feature = "dtype-array")]
                     IRFunctionExpr::ArrayExpr(IRArrayFunction::Contains { .. }) => {
-                        ("arr.contains", 1, 0, true)
+                        ("arr.contains", MembershipForm::Contains)
                     },
                     _ => unreachable!(),
                 };
 
-                let Some(result) =
-                    is_in::resolve_is_in(input, expr_arena, schema, is_contains, op, flat, nested)?
-                else {
-                    return Ok(None);
-                };
-
-                let function = function.clone();
-                let mut input = input.to_vec();
-                use self::is_in::IsInTypeCoercionResult;
-                match result {
-                    IsInTypeCoercionResult::SuperType(flat_type, nested_type) => {
-                        let (_, type_left) =
-                            unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
-                        let (_, type_other) =
-                            unpack!(get_aexpr_and_type(expr_arena, input[nested].node(), schema));
-                        cast_expr_ir(
-                            &mut input[flat],
-                            &type_left,
-                            &flat_type,
-                            expr_arena,
-                            CastOptions::NonStrict,
-                        )?;
-                        cast_expr_ir(
-                            &mut input[nested],
-                            &type_other,
-                            &nested_type,
-                            expr_arena,
-                            CastOptions::NonStrict,
-                        )?;
-                    },
-                    IsInTypeCoercionResult::SelfCast { dtype, strict } => {
-                        let (_, type_self) =
-                            unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
-                        let options = if strict {
-                            CastOptions::Strict
-                        } else {
-                            CastOptions::NonStrict
-                        };
-                        cast_expr_ir(&mut input[flat], &type_self, &dtype, expr_arena, options)?;
-                    },
-                    IsInTypeCoercionResult::OtherCast { dtype, strict } => {
-                        let (_, type_other) =
-                            unpack!(get_aexpr_and_type(expr_arena, input[nested].node(), schema));
-                        let options = if strict {
-                            CastOptions::Strict
-                        } else {
-                            CastOptions::NonStrict
-                        };
-                        cast_expr_ir(&mut input[nested], &type_other, &dtype, expr_arena, options)?;
-                    },
-                    IsInTypeCoercionResult::Implode => {
-                        assert!(!is_contains);
-                        let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
-                            input: input[1].node(),
-                            maintain_order: true,
-                        }));
-                        input[1].set_node(other_input);
-                    },
-                }
-
-                Some(AExpr::Function {
-                    function,
-                    input,
-                    options,
-                })
+                membership::coerce_is_in(expr_node, expr_arena, schema, form, |input, arena| {
+                    membership::resolve_is_in(input, arena, schema, form, op)
+                })?
             },
             AExpr::Function {
                 ref function,
@@ -586,6 +574,7 @@ impl OptimizationRule for TypeCoercionRule {
                 })
             },
             // shift and fill should only cast left and fill value to super type.
+            // @3.0: Raise a type error instead of upcasting the input.
             AExpr::Function {
                 function: IRFunctionExpr::ShiftAndFill,
                 ref input,
@@ -653,7 +642,7 @@ impl OptimizationRule for TypeCoercionRule {
             } => {
                 polars_ensure!(
                     (0.0..=1.0).contains(&ewm_options.alpha),
-                    ComputeError: "alpha must be in [0; 1]"
+                    ComputeError: "alpha must be in [0; 1], got {}", ewm_options.alpha
                 );
 
                 let input_expr = match &input.as_slice() {
@@ -775,8 +764,15 @@ impl OptimizationRule for TypeCoercionRule {
                         _ => {},
                     }
 
+                    // A decimal supertype may not hold every value, raise instead of
+                    // producing nulls.
+                    let literal_options = if super_type.leaf_dtype().is_decimal() {
+                        CastOptions::Strict
+                    } else {
+                        CastOptions::NonStrict
+                    };
                     for (e, dtype) in input.iter_mut().zip(dtypes) {
-                        cast_expr_ir(e, &dtype, &super_type, expr_arena, CastOptions::NonStrict)?;
+                        cast_expr_ir(e, &dtype, &super_type, expr_arena, literal_options)?;
                     }
                 }
 
@@ -1071,6 +1067,25 @@ impl OptimizationRule for TypeCoercionRule {
                         InvalidOperation: "`{name}` must be numeric for `int_ranges`, got {dtype}"
                     );
                     Ok(Some(DataType::Int64))
+                },
+            )?,
+            // The estimate casts the quantile to `Float64`, so give a dynamic literal
+            // that dtype rather than leaving it unknown in the plan.
+            #[cfg(feature = "approx_quantile")]
+            AExpr::Function {
+                function: IRFunctionExpr::ApproxQuantileEstimate { .. },
+                ..
+            } => coerce_function_inputs(
+                expr_node,
+                expr_arena,
+                schema,
+                CastOptions::Strict,
+                |i, dtype| {
+                    let is_dyn_number = matches!(
+                        dtype,
+                        DataType::Unknown(UnknownKind::Int(_) | UnknownKind::Float)
+                    );
+                    Ok((i == 1 && is_dyn_number).then_some(DataType::Float64))
                 },
             )?,
             #[cfg(feature = "moment")]
@@ -1388,6 +1403,7 @@ fn try_inline_literal_cast(
     Ok(Some(lv))
 }
 
+/// Cast `e` to `to_dtype`. `options` applies to folding a literal; inserted casts are strict.
 fn cast_expr_ir(
     e: &mut ExprIR,
     from_dtype: &DataType,

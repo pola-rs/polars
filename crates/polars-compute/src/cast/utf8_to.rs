@@ -1,6 +1,6 @@
-use arrow::array::*;
-use arrow::datatypes::ArrowDataType;
-use arrow::offset::Offset;
+use polars_arrow::array::*;
+use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::offset::Offset;
 use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_utils::unitvec;

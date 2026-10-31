@@ -1,4 +1,4 @@
-use arrow::array::BooleanArray;
+use polars_arrow::array::BooleanArray;
 
 use super::*;
 

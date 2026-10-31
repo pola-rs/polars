@@ -17,8 +17,6 @@ if TYPE_CHECKING:
     from polars._typing import UniqueKeepStrategy
     from tests.conftest import PlMonkeyPatch
 
-pytestmark = pytest.mark.xdist_group("streaming")
-
 
 @pytest.mark.write_disk
 @pytest.mark.slow
@@ -134,4 +132,16 @@ def test_sorted_streaming_unique_vs_in_memory_multikey(
         lf.collect(engine="streaming"),
         lf.collect(engine="in-memory"),
         check_row_order=maintain_order,
+    )
+
+
+def test_streaming_is_first_distinct_many_keys() -> None:
+    n = 200_000
+    k = pl.int_range(n, eager=True) * 7919 % 50_000
+    k = k.scatter(range(0, n, 97), None)
+    q = pl.LazyFrame({"k": k, "v": range(n)}).filter(pl.col("k").is_first_distinct())
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
     )

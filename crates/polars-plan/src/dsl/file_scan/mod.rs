@@ -1,4 +1,5 @@
 use std::hash::Hash;
+use std::num::NonZeroU32;
 use std::sync::Mutex;
 
 use deletion::DeletionFilesList;
@@ -8,6 +9,7 @@ use polars_core::utils::get_numeric_upcast_supertype_lossless;
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
 use polars_io::csv::read::CsvReadOptions;
+use polars_io::external_reader::ExternalReaderBuilder;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcScanOptions;
 #[cfg(feature = "parquet")]
@@ -37,6 +39,8 @@ bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct ScanFlags : u32 {
         const SPECIALIZED_PREDICATE_FILTER = 0x01;
+        /// The reader skips whole batches by their statistics.
+        const SKIPS_BATCHES_BY_STATISTICS = 0x02;
     }
 }
 
@@ -81,6 +85,10 @@ pub enum FileScanDsl {
 
     ExpandedPaths {
         name: PlSmallStr,
+    },
+
+    ExternalReaderBuilder {
+        external: ExternalReaderBuilder,
     },
 
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
@@ -192,6 +200,20 @@ impl MetadataPerSource {
             Self::Partial(p) => &p.metadata,
             Self::Full(s) => s,
         }
+    }
+
+    /// Resolved footers and their source indices, in source order.
+    pub fn iter_resolved(&self) -> impl Iterator<Item = (usize, &FileMetadataRef)> {
+        let (indices, metadata): (&[usize], &[FileMetadataRef]) = match self {
+            Self::Unresolved => (&[], &[]),
+            Self::Partial(p) => (&p.indices, &p.metadata),
+            Self::Full(s) => (&[], s),
+        };
+        // `Full` uses each footer's position as its source index.
+        metadata
+            .iter()
+            .enumerate()
+            .map(move |(j, md)| (indices.get(j).copied().unwrap_or(j), md))
     }
 
     /// Re-index to the sources surviving a filter.
@@ -316,7 +338,7 @@ pub enum FileScanIR {
     Ipc {
         options: IpcScanOptions,
         #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
-        metadata: Option<Arc<arrow::io::ipc::read::FileMetadata>>,
+        metadata: Option<Arc<polars_arrow::io::ipc::read::FileMetadata>>,
     },
 
     #[cfg(feature = "python")]
@@ -334,6 +356,10 @@ pub enum FileScanIR {
         name: PlSmallStr,
     },
 
+    ExternalReaderBuilder {
+        external: ExternalReaderBuilder,
+    },
+
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Anonymous {
         options: Arc<AnonymousScanOptions>,
@@ -349,7 +375,13 @@ impl FileScanIR {
             #[cfg(feature = "ipc")]
             Self::Ipc { .. } => ScanFlags::empty(),
             #[cfg(feature = "parquet")]
-            Self::Parquet { .. } => ScanFlags::SPECIALIZED_PREDICATE_FILTER,
+            Self::Parquet { options, .. } => {
+                let mut flags = ScanFlags::SPECIALIZED_PREDICATE_FILTER;
+                if options.use_statistics {
+                    flags |= ScanFlags::SKIPS_BATCHES_BY_STATISTICS;
+                }
+                flags
+            },
             #[cfg(feature = "json")]
             Self::NDJson { .. } => ScanFlags::empty(),
             #[allow(unreachable_patterns)]
@@ -369,6 +401,78 @@ impl FileScanIR {
             Self::NDJson { .. } => false,
             #[allow(unreachable_patterns)]
             _ => false,
+        }
+    }
+
+    /// Whether scans of this type can ever be read as one scan with other scans.
+    pub(crate) fn supports_concat_sources(&self) -> bool {
+        match self {
+            #[cfg(feature = "csv")]
+            Self::Csv { .. } => true,
+            #[cfg(feature = "json")]
+            Self::NDJson { .. } => true,
+            #[cfg(feature = "parquet")]
+            Self::Parquet { .. } => true,
+            #[cfg(feature = "ipc")]
+            Self::Ipc { .. } => true,
+            _ => false,
+        }
+    }
+
+    /// Whether scans of `self` and `other` can be read as one scan over the sources of both.
+    pub(crate) fn can_concat_sources(&self, other: &Self) -> bool {
+        match (self, other) {
+            #[cfg(feature = "csv")]
+            (Self::Csv { options: l }, Self::Csv { options: r }) => l == r,
+            #[cfg(feature = "json")]
+            (Self::NDJson { options: l }, Self::NDJson { options: r }) => l == r,
+            #[cfg(feature = "parquet")]
+            (Self::Parquet { options: l, .. }, Self::Parquet { options: r, .. }) => l == r,
+            #[cfg(feature = "ipc")]
+            (Self::Ipc { options: l, .. }, Self::Ipc { options: r, .. }) => l == r,
+            _ => false,
+        }
+    }
+
+    /// The scan type for the sources of `parts` read one after another. Each part holds a scan
+    /// type and its number of sources. `parts` must not be empty, and all parts must pass
+    /// [`Self::can_concat_sources`].
+    pub(crate) fn concat_sources(parts: &[(&Self, usize)]) -> Self {
+        let (first, _) = parts[0];
+        match first {
+            #[cfg(feature = "parquet")]
+            Self::Parquet { options, .. } => {
+                let mut entries = Vec::new();
+                let mut bytes = Some(Vec::new());
+                let mut n_sources = 0;
+                for (scan_type, len) in parts {
+                    let Self::Parquet {
+                        metadata_per_source,
+                        bytes_per_source,
+                        ..
+                    } = scan_type
+                    else {
+                        unreachable!()
+                    };
+                    entries.extend(
+                        metadata_per_source
+                            .iter_resolved()
+                            .map(|(i, md)| (n_sources + i, md.clone())),
+                    );
+                    bytes = bytes.zip(bytes_per_source.as_ref()).map(|(mut out, b)| {
+                        out.extend_from_slice(b);
+                        out
+                    });
+                    n_sources += len;
+                }
+                Self::Parquet {
+                    options: options.clone(),
+                    metadata_per_source: MetadataPerSource::new(entries, n_sources),
+                    bytes_per_source: bytes.map(Buffer::from),
+                }
+            },
+            // Csv and NDJson have no per-source state, Ipc `metadata` belongs to source 0.
+            _ => first.clone(),
         }
     }
 
@@ -423,6 +527,7 @@ impl FileScanIR {
             #[cfg(feature = "scan_lines")]
             Self::Lines { name: _ } => {},
             Self::ExpandedPaths { name: _ } => {},
+            Self::ExternalReaderBuilder { external: _ } => {},
             Self::Anonymous {
                 options: _,
                 function: _,
@@ -446,7 +551,8 @@ pub enum MissingColumnsPolicy {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct CastColumnsPolicy {
-    /// Allow casting when target dtype is lossless supertype
+    /// Allow casting when target dtype is lossless supertype. This also allows widening
+    /// the precision of decimals with equal scale.
     pub integer_upcast: bool,
 
     /// Allow casting integers to floats.
@@ -525,7 +631,13 @@ pub enum ExtraColumnsPolicy {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum ColumnMapping {
-    Iceberg(IcebergSchemaRef),
+    Iceberg {
+        schema: IcebergSchemaRef,
+        /// Whether the table has a name mapping (`schema.name-mapping.default`), which data
+        /// files without field IDs are read with. Mapped names are only kept for the fields of
+        /// `schema`, so a mapping that only names fields the schema no longer has leaves none.
+        has_name_mapping: bool,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -552,6 +664,28 @@ impl std::ops::Deref for TableStatistics {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+/// Partition values with one row per source. These feed the same machinery as hive
+/// partitions parsed from paths, but need not come from paths, e.g. Delta *must* read
+/// them from its log.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub struct HivePartitions(pub Arc<DataFrame>);
+
+impl PartialEq for HivePartitions {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for HivePartitions {}
+
+impl Hash for HivePartitions {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_usize(Arc::as_ptr(&self.0) as *const () as usize);
     }
 }
 
@@ -588,12 +722,17 @@ pub struct UnifiedScanArgs {
 
     pub deletion_files: Option<DeletionFilesList>,
     pub table_statistics: Option<TableStatistics>,
+    /// Used instead of parsing hive partitions from the source paths.
+    pub hive_partitions: Option<HivePartitions>,
     /// Stores (physical, deleted) row counts of the table if known upfront (e.g. for Iceberg).
     /// This allows for row-count queries to succeed without scanning all files.
     ///
     /// Note, intentionally store u64 instead of IdxSize to avoid erroring if it's unused.
     pub row_count: Option<(u64, u64)>,
     pub source_sizes: Option<Buffer<u64>>,
+    /// For `N` partitions, prioritize footers of sources containing at least `1 / N`
+    /// of the total bytes. Requires known sizes; selects largest first within the budget.
+    pub resolve_heavy_sources: Option<NonZeroU32>,
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -609,6 +748,99 @@ pub struct PredicateFileSkip {
 impl UnifiedScanArgs {
     pub fn has_row_index_or_slice(&self) -> bool {
         self.row_index.is_some() || self.pre_slice.is_some()
+    }
+
+    /// Whether these arguments hold state that only applies to this scan, so the scan can never
+    /// be read as part of a scan over more sources. A row index and a slice restart for every
+    /// scan, and deletion files, table statistics, hive partitions and default values are indexed
+    /// by source.
+    pub(crate) fn has_per_scan_state(&self) -> bool {
+        self.row_index.is_some()
+            || self.pre_slice.is_some()
+            || self.deletion_files.is_some()
+            || self.table_statistics.is_some()
+            || self.hive_partitions.is_some()
+            || self.default_values.is_some()
+    }
+
+    /// Whether scans with `self` and `other` can be read as one scan over the sources of both.
+    pub(crate) fn can_concat_sources(&self, other: &Self) -> bool {
+        !self.has_per_scan_state()
+            && !other.has_per_scan_state()
+            && self.concat_key() == other.concat_key()
+    }
+
+    /// The fields that must be equal for scans to be read as one scan.
+    fn concat_key(&self) -> impl PartialEq + '_ {
+        let Self {
+            schema,
+            cloud_options,
+            hive_options,
+            rechunk: _,
+            cache,
+            glob,
+            expand_paths,
+            hidden_file_prefix,
+            projection,
+            column_mapping,
+            default_values: _,
+            row_index: _,
+            pre_slice: _,
+            cast_columns_policy,
+            missing_columns_policy,
+            extra_columns_policy,
+            include_file_paths,
+            deletion_files: _,
+            table_statistics: _,
+            hive_partitions: _,
+            row_count: _,
+            source_sizes: _,
+            resolve_heavy_sources,
+        } = self;
+        (
+            (
+                schema,
+                cloud_options,
+                hive_options,
+                cache,
+                glob,
+                expand_paths,
+            ),
+            (
+                hidden_file_prefix,
+                projection,
+                column_mapping,
+                cast_columns_policy,
+            ),
+            (
+                missing_columns_policy,
+                extra_columns_policy,
+                include_file_paths,
+                resolve_heavy_sources,
+            ),
+        )
+    }
+
+    /// The arguments for the sources of `parts` read one after another. `parts` must not be
+    /// empty, and all parts must pass [`Self::can_concat_sources`].
+    pub(crate) fn concat_sources(parts: &[&Self]) -> Self {
+        let mut out = parts[0].clone();
+        out.row_count = parts
+            .iter()
+            .map(|args| args.row_count)
+            .try_fold((0, 0), |(physical, deleted), count| {
+                count.map(|(p, d)| (physical + p, deleted + d))
+            });
+        out.source_sizes = parts
+            .iter()
+            .all(|args| args.source_sizes.is_some())
+            .then(|| {
+                parts
+                    .iter()
+                    .flat_map(|args| args.source_sizes.as_deref().unwrap().iter().copied())
+                    .collect()
+            });
+        out
     }
 }
 
@@ -635,8 +867,10 @@ impl Default for UnifiedScanArgs {
             include_file_paths: None,
             deletion_files: None,
             table_statistics: None,
+            hive_partitions: None,
             row_count: None,
             source_sizes: None,
+            resolve_heavy_sources: None,
         }
     }
 }
@@ -647,6 +881,7 @@ mod _file_scan_eq_hash {
     use std::hash::{Hash, Hasher};
     use std::sync::Arc;
 
+    use polars_io::external_reader::ExternalReaderBuilder;
     use polars_utils::pl_str::PlSmallStr;
 
     use super::FileScanIR;
@@ -708,6 +943,10 @@ mod _file_scan_eq_hash {
             name: &'a PlSmallStr,
         },
 
+        ExternalReaderBuilder {
+            external: &'a ExternalReaderBuilder,
+        },
+
         Anonymous {
             options: &'a crate::dsl::AnonymousScanOptions,
             function: usize,
@@ -759,6 +998,10 @@ mod _file_scan_eq_hash {
                 FileScanIR::Lines { name } => FileScanEqHashWrap::Lines { name },
 
                 FileScanIR::ExpandedPaths { name } => FileScanEqHashWrap::ExpandedPaths { name },
+
+                FileScanIR::ExternalReaderBuilder { external } => {
+                    FileScanEqHashWrap::ExternalReaderBuilder { external }
+                },
 
                 FileScanIR::Anonymous { options, function } => FileScanEqHashWrap::Anonymous {
                     options,
@@ -983,6 +1226,22 @@ impl CastColumnsPolicy {
             return match get_numeric_upcast_supertype_lossless(incoming_dtype, target_dtype) {
                 Some(ref v) if v == target_dtype => Ok(true),
                 _ => mismatch_err("incoming dtype cannot safely cast to target dtype"),
+            };
+        }
+
+        // Decimal precision widening with equal scale (allowed Iceberg type promotion).
+        #[cfg(feature = "dtype-decimal")]
+        if let (
+            DataType::Decimal(target_precision, target_scale),
+            DataType::Decimal(incoming_precision, incoming_scale),
+        ) = (target_dtype, incoming_dtype)
+        {
+            return if target_scale != incoming_scale || target_precision < incoming_precision {
+                mismatch_err("incoming dtype cannot safely cast to target dtype")
+            } else if self.integer_upcast {
+                Ok(true)
+            } else {
+                mismatch_err("hint: pass cast_options=pl.ScanCastOptions(integer_cast='upcast')")
             };
         }
 

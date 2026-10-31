@@ -4,13 +4,14 @@ import json
 import time
 from datetime import datetime
 from functools import lru_cache, partial
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import pytest
 
 import polars as pl
 from polars._plr import _expr_nodes, _ir_nodes  # type: ignore[attr-defined]
 from polars._utils.wrap import wrap_df, wrap_expr
+from polars.functions.lazy import _row_encode
 from tests.unit.io.conftest import format_file_uri
 
 if TYPE_CHECKING:
@@ -150,6 +151,108 @@ def test_node_traverse_sink(tmp_path: Path) -> None:
     q.collect(  # pyrefly: ignore[no-matching-overload]
         post_opt_callback=callback  # type: ignore[call-overload]
     )
+
+
+def _collect_join_nodes(query: pl.LazyFrame) -> list[tuple[Any, Any, list[Any]]]:
+    """
+    Return each Join node of the optimized plan with a view of its predicate.
+
+    The third element holds views of the operands of a binary predicate.
+    """
+    results: list[tuple[Any, Any, list[Any]]] = []
+
+    def callback(node_traverser: Any) -> None:
+        current = node_traverser.get_node()
+        node = node_traverser.view_current_node()
+        if isinstance(node, _ir_nodes.Join):
+            predicate = None
+            operands = []
+            if node.predicate is not None:
+                predicate = node_traverser.view_expression(node.predicate.node)
+            if isinstance(predicate, _expr_nodes.BinaryExpr):
+                operands = [
+                    node_traverser.view_expression(predicate.left),
+                    node_traverser.view_expression(predicate.right),
+                ]
+            results.append((node, predicate, operands))
+        for inp in node_traverser.get_inputs():
+            node_traverser.set_node(inp)
+            callback(node_traverser)
+        node_traverser.set_node(current)
+
+    query.collect(  # pyrefly: ignore[no-matching-overload]
+        post_opt_callback=callback  # type: ignore[call-overload]
+    )
+    return results
+
+
+def test_join_visitor_equi_join_has_no_predicate() -> None:
+    left = pl.LazyFrame({"k": [1, 2, 3], "x": ["A", "B", "A"]})
+    right = pl.LazyFrame({"k": [1, 2, 3], "y": ["B", "A", "A"]})
+    [(join, predicate, _)] = _collect_join_nodes(left.join(right, on="k"))
+    assert join.options[0] == "Inner"
+    assert [e.output_name for e in join.left_on] == ["k"]
+    assert [e.output_name for e in join.right_on] == ["k"]
+    assert join.predicate is None
+    assert predicate is None
+
+
+def test_join_visitor_fused_predicate() -> None:
+    left = pl.LazyFrame({"k": [1, 2, 3], "x": ["A", "B", "A"]})
+    right = pl.LazyFrame({"k": [1, 2, 3], "x": ["B", "A", "A"]})
+    q = left.join(right, on="k").filter(pl.col("x") != pl.col("x_right"))
+    [(join, predicate, operands)] = _collect_join_nodes(q)
+    assert join.options[0] == ("Inner", "fused_predicate")
+    assert [e.output_name for e in join.left_on] == ["k"]
+    assert [e.output_name for e in join.right_on] == ["k"]
+    assert isinstance(predicate, _expr_nodes.BinaryExpr)
+    assert predicate.op == _expr_nodes.Operator.NotEq
+    # The predicate is in the join's output namespace, so it sees the suffix.
+    assert [operand.name for operand in operands] == ["x", "x_right"]
+
+
+def test_join_visitor_nested_loop_join() -> None:
+    partsupp = pl.LazyFrame({"ps_suppkey": [1, 2, 3, 4]})
+    supplier = pl.LazyFrame({"s_suppkey": [2, 4]})
+    q = pl.SQLContext(partsupp=partsupp, supplier=supplier).execute(
+        "SELECT * FROM partsupp WHERE ps_suppkey NOT IN (SELECT s_suppkey FROM supplier)"
+    )
+    nested_loop_joins = [
+        (join, predicate)
+        for join, predicate, _ in _collect_join_nodes(q)
+        if join.predicate is not None
+    ]
+    assert len(nested_loop_joins) == 1
+    join, predicate = nested_loop_joins[0]
+    assert join.options[0] == ("Cross", "cross_and_filter")
+    assert join.left_on == []
+    assert join.right_on == []
+    assert isinstance(predicate, _expr_nodes.Ternary)
+
+
+def test_join_visitor_left_nested_loop_join() -> None:
+    left = pl.LazyFrame({"a": [1, 5, 10], "s": ["x", "y", "z"]})
+    right = pl.LazyFrame({"b": [3, 7], "t": ["x", "z"]})
+    q = left.join_where(right, pl.col("s") != pl.col("t"), how="left")
+    [(join, predicate, _)] = _collect_join_nodes(q)
+    assert join.options[0] == ("Left", "cross_and_filter")
+    assert join.left_on == []
+    assert join.right_on == []
+    assert isinstance(predicate, _expr_nodes.BinaryExpr)
+    assert predicate.op == _expr_nodes.Operator.NotEq
+
+
+@pytest.mark.parametrize("how", ["left", "right"])
+def test_join_visitor_outer_inequality_join(how: Literal["left", "right"]) -> None:
+    left = pl.LazyFrame({"a": [1, 5, 10], "s": ["x", "y", "z"]})
+    right = pl.LazyFrame({"b": [3, 7], "t": ["x", "z"]})
+    q = left.join_where(right, pl.col("a") < pl.col("b"), how=how)
+    [(join, predicate, _)] = _collect_join_nodes(q)
+    assert join.options[0] == (how.capitalize(), _expr_nodes.Operator.Lt, None)
+    assert [e.output_name for e in join.left_on] == ["a"]
+    assert [e.output_name for e in join.right_on] == ["b"]
+    assert join.predicate is None
+    assert predicate is None
 
 
 def _collect_rolling_function_data(
@@ -660,6 +763,92 @@ def test_array_to_struct_default_is_exposed() -> None:
     assert fields == [f"field_{i}" for i in range(3)]
 
 
+def _collect_row_encode(query: pl.LazyFrame) -> list[tuple[Any, list[str]]]:
+    """
+    Return function_data and input names of each row_encode.
+
+    This includes the row_encode that over(order_by=[...]) is lowered to.
+    """
+    results: list[tuple[Any, list[str]]] = []
+
+    def callback(node_traverser: Any) -> None:
+        for expr_ir in node_traverser.get_exprs():
+            node = node_traverser.view_expression(expr_ir.node)
+            if isinstance(node, _expr_nodes.Window) and node.order_by is not None:
+                node = node_traverser.view_expression(node.order_by)
+            if isinstance(node, _expr_nodes.Function):
+                name = node.function_data[0]
+                if isinstance(name, str) and name.startswith("row_encode"):
+                    inputs = [
+                        node_traverser.view_expression(i).name for i in node.input
+                    ]
+                    results.append((node.function_data, inputs))
+
+    query.collect(  # pyrefly: ignore[no-matching-overload]
+        post_opt_callback=callback  # type: ignore[call-overload]
+    )
+    return results
+
+
+def test_window_order_by_row_encode_visitor() -> None:
+    """over(order_by=[...]) exposes its row_encode inputs and sort options."""
+    q = pl.LazyFrame({"a": [1, 1, 2], "c": [3, 1, 2], "d": [1, 2, 3]}).select(
+        pl.col("c")
+        .rank(method="ordinal")
+        .over("a", order_by=["c", "d"], descending=True, nulls_last=True)
+    )
+    assert _collect_row_encode(q) == [
+        (
+            (
+                "row_encode_ordered",
+                [True, True],
+                [True, True],
+                "always_binary_offset",
+                None,
+                False,
+            ),
+            ["c", "d"],
+        )
+    ]
+
+
+def test_row_encode_ordered_expr_visitor() -> None:
+    """An ordered row_encode exposes its per-column options and null handling."""
+    q = pl.LazyFrame({"c": [3, 1, 2], "d": [1, 2, 3]}).select(
+        _row_encode(
+            ["c", "d"],
+            descending=[True, False],
+            nulls_last=[False, True],
+            output="binary",
+            encode_nulls=[True, False],
+            propagate_nulls=True,
+        )
+    )
+    assert _collect_row_encode(q) == [
+        (
+            (
+                "row_encode_ordered",
+                [True, False],
+                [False, True],
+                "always_binary",
+                [True, False],
+                True,
+            ),
+            ["c", "d"],
+        )
+    ]
+
+
+def test_row_encode_unordered_expr_visitor() -> None:
+    """An unordered row_encode exposes its output type and null handling."""
+    q = pl.LazyFrame({"c": [3, 1, 2], "d": [1, 2, 3]}).select(
+        _row_encode(["c", "d"], unordered=True, output="binary")
+    )
+    assert _collect_row_encode(q) == [
+        (("row_encode_unordered", "always_binary", None, False), ["c", "d"])
+    ]
+
+
 @pytest.mark.parametrize(
     ("kwargs", "is_elementwise", "changes_length", "expected_is_elementwise"),
     [
@@ -689,6 +878,7 @@ def test_ffi_plugin_expr_visitor(
             cast_to_supertype=False,
             pass_name_to_apply=False,
             changes_length=changes_length,
+            is_deterministic=False,
         )
     )
     visitor = pl.LazyFrame(schema={"x": pl.Float64})._ldf.visit()

@@ -2,6 +2,8 @@ mod canonicalize_maps;
 mod downcast;
 mod extend;
 mod from_physical;
+pub mod int_range;
+mod json_map;
 mod null;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};

@@ -8,6 +8,7 @@ mod function_expr;
 mod hash;
 mod minterm_iter;
 pub(crate) mod or_factoring;
+mod order_keeping;
 pub mod predicates;
 mod scalar;
 mod schema;
@@ -22,11 +23,19 @@ pub use determinism::{
 };
 pub use function_expr::*;
 pub use minterm_iter::MintermIter;
+#[cfg(feature = "round_series")]
+pub(crate) use order_keeping::int_literal;
+pub use order_keeping::{OrderKeeping, order_keeping_column};
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
-pub use scalar::{is_known_length_ae, is_length_preserving_ae, is_scalar_ae};
+#[cfg(feature = "range")]
+pub use scalar::int_range_over_length_ae;
+pub use scalar::{
+    is_known_length_ae, is_length_preserving_ae, is_order_insensitive_ae, is_scalar_ae,
+    is_single_literal_ae,
+};
 use strum_macros::IntoStaticStr;
 pub use traverse::*;
 pub mod projection_height;
@@ -36,6 +45,8 @@ pub use builder::AExprBuilder;
 pub use evaluate::{constant_evaluate, into_column};
 pub use properties::*;
 pub use schema::ToFieldContext;
+#[cfg(feature = "dtype-struct")]
+pub(crate) use schema::get_struct_numeric_dtype;
 
 use crate::constants::LEN;
 use crate::prelude::*;
@@ -46,10 +57,14 @@ pub enum IRAggExpr {
     Min {
         input: Node,
         propagate_nans: bool,
+        /// Return a missing value if there is a missing value.
+        propagate_nulls: bool,
     },
     Max {
         input: Node,
         propagate_nans: bool,
+        /// Return a missing value if there is a missing value.
+        propagate_nulls: bool,
     },
     Median(Node),
     NUnique(Node),
@@ -67,7 +82,11 @@ pub enum IRAggExpr {
         input: Node,
         maintain_order: bool,
     },
-    Sum(Node),
+    Sum {
+        input: Node,
+        /// Return a missing value if there are no non-null values.
+        null_on_empty: bool,
+    },
     Count {
         input: Node,
         include_nulls: bool,
@@ -83,16 +102,22 @@ impl Hash for IRAggExpr {
             Self::Min {
                 input: _,
                 propagate_nans,
+                propagate_nulls,
             }
             | Self::Max {
                 input: _,
                 propagate_nans,
-            } => propagate_nans.hash(state),
+                propagate_nulls,
+            } => (propagate_nans, propagate_nulls).hash(state),
             Self::Std(_, v) | Self::Var(_, v) => v.hash(state),
             Self::Count {
                 input: _,
                 include_nulls,
             } => include_nulls.hash(state),
+            Self::Sum {
+                input: _,
+                null_on_empty,
+            } => null_on_empty.hash(state),
             _ => {},
         }
     }
@@ -105,6 +130,7 @@ impl From<IRAggExpr> for GroupByMethod {
             Min {
                 input: _,
                 propagate_nans,
+                propagate_nulls: _,
             } => {
                 if propagate_nans {
                     GroupByMethod::NanMin
@@ -115,6 +141,7 @@ impl From<IRAggExpr> for GroupByMethod {
             Max {
                 input: _,
                 propagate_nans,
+                propagate_nulls: _,
             } => {
                 if propagate_nans {
                     GroupByMethod::NanMax
@@ -131,7 +158,7 @@ impl From<IRAggExpr> for GroupByMethod {
             Item { allow_empty, .. } => GroupByMethod::Item { allow_empty },
             Mean(_) => GroupByMethod::Mean,
             Implode { maintain_order, .. } => GroupByMethod::Implode { maintain_order },
-            Sum(_) => GroupByMethod::Sum,
+            Sum { null_on_empty, .. } => GroupByMethod::Sum { null_on_empty },
             Count {
                 input: _,
                 include_nulls,
@@ -224,6 +251,7 @@ pub enum AExpr {
     StructEval {
         expr: Node,
         evaluation: Vec<ExprIR>,
+        variant: StructEvalVariant,
     },
     Function {
         /// Function arguments
@@ -284,6 +312,9 @@ impl AExpr {
                 },
                 #[cfg(feature = "replace")]
                 IRFunctionExpr::ReplaceStrict { .. } => true,
+                #[cfg(feature = "dtype-decimal")]
+                IRFunctionExpr::DecimalArith { .. } => true,
+                IRFunctionExpr::TruncArith(_) => true,
                 #[cfg(all(feature = "strings", feature = "temporal"))]
                 IRFunctionExpr::StringExpr(f) => match f {
                     IRStringFunction::Strptime(_, strptime_options) => {

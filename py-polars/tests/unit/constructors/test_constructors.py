@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from collections import OrderedDict, namedtuple
-from datetime import date, datetime, time, timedelta, timezone
+import re
+from collections import OrderedDict, UserDict, namedtuple
+from datetime import UTC, date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
@@ -24,18 +25,11 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.utils.pycapsule_utils import PyCapsuleArrayHolder, PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Callable
+    from typing import Self, assert_type
 
     from polars._typing import PolarsDataType
     from tests.conftest import PlMonkeyPatch
-
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
-
-    from typing_extensions import assert_type
 
 
 # -----------------------------------------------------------------------------------
@@ -465,6 +459,56 @@ def test_dataclasses_initvar_typing() -> None:
 
     # ...but should not load the initvar field into the DataFrame
     assert dataclasses.asdict(abc) == df.rows(named=True)[0]
+
+
+def test_dataclasses_flat_and_nested_fields() -> None:
+    @dataclasses.dataclass
+    class One:
+        x: int
+
+    @dataclasses.dataclass
+    class Flat:
+        x: int
+        y: str | None
+
+    @dataclasses.dataclass
+    class Nested:
+        x: int
+        y: list[int]
+
+    assert pl.DataFrame([One(1), One(2)]).to_dict(as_series=False) == {"x": [1, 2]}
+    assert pl.DataFrame([Flat(1, "a"), Flat(2, None)]).to_dict(as_series=False) == {
+        "x": [1, 2],
+        "y": ["a", None],
+    }
+    assert pl.DataFrame([Nested(1, [1, 2]), Nested(2, [])]).to_dict(
+        as_series=False
+    ) == {"x": [1, 2], "y": [[1, 2], []]}
+
+    @dataclasses.dataclass
+    class Other:
+        z: int
+        w: str | None
+
+    # Rows of other dataclasses are read by position.
+    assert pl.DataFrame([Flat(1, "a"), Other(2, "b")]).to_dict(as_series=False) == {
+        "x": [1, 2],
+        "y": ["a", "b"],
+    }
+
+    @dataclasses.dataclass
+    class Empty:
+        pass
+
+    assert pl.DataFrame([Empty(), Empty()]).shape == (2, 0)
+
+    @dataclasses.dataclass
+    class WithObject:
+        x: int
+        y: object
+
+    df = pl.DataFrame([WithObject(1, One(2))], schema_overrides={"y": pl.Object})
+    assert df.item(0, "y") == [2]
 
 
 @pytest.mark.parametrize(
@@ -936,7 +980,7 @@ def test_init_1d_sequence() -> None:
     df = pl.DataFrame([datetime(2020, 1, 1)], schema={"ts": pl.Datetime("ms")})
     assert df.schema == {"ts": pl.Datetime("ms")}
     df = pl.DataFrame(
-        [datetime(2020, 1, 1, tzinfo=timezone.utc)], schema={"ts": pl.Datetime("ms")}
+        [datetime(2020, 1, 1, tzinfo=UTC)], schema={"ts": pl.Datetime("ms")}
     )
     assert df.schema == {"ts": pl.Datetime("ms", "UTC")}
     df = pl.DataFrame(
@@ -949,6 +993,31 @@ def test_init_1d_sequence() -> None:
         schema={"ts": pl.Datetime("ms")},
     )
     assert df.schema == {"ts": pl.Datetime("ms", "Asia/Kathmandu")}
+
+
+@pytest.mark.parametrize("orient", ["row", "col", None])
+def test_init_1d_sequence_orientation(orient: Literal["row", "col"] | None) -> None:
+    data = ["apple", "red", 12.5, "good"]
+    result = pl.DataFrame(data, orient=orient, strict=False)
+    if orient == "row":
+        expected = pl.DataFrame(
+            {
+                "column_0": ["apple"],
+                "column_1": ["red"],
+                "column_2": [12.5],
+                "column_3": ["good"],
+            }
+        )
+    else:
+        expected = pl.DataFrame({"column_0": ["apple", "red", "12.5", "good"]})
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("orient", ["row", None])
+def test_init_scalar_iterator(orient: Literal["row"] | None) -> None:
+    result = pl.DataFrame(iter(range(1001)), orient=orient)
+    expected = pl.DataFrame({"column_0": range(1001)})
+    assert_frame_equal(result, expected)
 
 
 def test_init_pandas(plmonkeypatch: PlMonkeyPatch) -> None:
@@ -1189,11 +1258,33 @@ def test_from_dicts_missing_columns() -> None:
     expected = pl.DataFrame({"a": [1, None], "b": [None, 2]})
     assert_frame_equal(result, expected)
 
+    # ...and from some of the (non-dict) mappings
+    result = pl.from_dicts([UserDict(d) for d in data])
+    assert_frame_equal(result, expected)
+
     # partial schema with some columns missing; only load the declared keys
     data = [{"a": 1, "b": 2}]
     result = pl.from_dicts(data, schema=["a"])
     expected = pl.DataFrame({"a": [1]})
     assert_frame_equal(result, expected)
+
+
+def test_from_dicts_extra_keys_after_inference_23190() -> None:
+    data = [{"a": 1}] * 3 + [{"a": 10, "b": 20}]
+    for strict in [True, False]:
+        with pytest.raises(
+            pl.exceptions.ComputeError, match='extra key in dict 3: "b"'
+        ):
+            pl.from_dicts(data, infer_schema_length=3, strict=strict)
+
+    assert_frame_equal(
+        pl.from_dicts(data, infer_schema_length=3, schema=["a"]),
+        pl.DataFrame({"a": [1, 1, 1, 10]}),
+    )
+    assert_frame_equal(
+        pl.from_dicts(data, infer_schema_length=None),
+        pl.DataFrame({"a": [1, 1, 1, 10], "b": [None, None, None, 20]}),
+    )
 
 
 def test_from_dicts_schema_columns_do_not_match() -> None:
@@ -1282,6 +1373,78 @@ def test_from_rows_dtype() -> None:
     df = pl.DataFrame([[dc]], schema={"d": pl.Object})
     assert df.schema == {"d": pl.Object}
     assert df.item() == dc
+
+
+@pytest.mark.parametrize(
+    ("rows", "schema", "infer_schema_length", "msg"),
+    [
+        ([(1,), (2, 3)], None, 100, "row at index 1 has length 2 (expected 1)"),
+        ([[1, 2], [3]], None, 100, "row at index 1 has length 1 (expected 2)"),
+        ([(1,)] * 3 + [(2, 3)], None, 2, "row at index 3 has length 2 (expected 1)"),
+        (
+            [(1, 2), (3, 4, 5)],
+            ["a", "b"],
+            100,
+            "row at index 1 has length 3 (expected 2)",
+        ),
+    ],
+)
+def test_from_rows_ragged(
+    rows: list[Any], schema: list[str] | None, infer_schema_length: int, msg: str
+) -> None:
+    # later rows must match the first row's width
+    with pytest.raises(ShapeError, match=re.escape(msg)):
+        pl.DataFrame(
+            rows,
+            orient="row",
+            schema=schema,
+            infer_schema_length=infer_schema_length,
+        )
+    with pytest.raises(ShapeError, match=re.escape(msg)):
+        pl.from_records(
+            rows,
+            orient="row",
+            schema=schema,
+            infer_schema_length=infer_schema_length,
+        )
+
+
+def test_from_rows_owned_values() -> None:
+    # values that own their data (long strings, tz-aware datetimes, binary, structs)
+    dt = datetime(2024, 1, 1, 12, tzinfo=ZoneInfo("Asia/Tokyo"))
+    rows = [
+        ("x" * 30, dt, b"\x00" * 30, {"a": "y" * 30}),
+        (None, None, None, None),
+        ("short", dt, b"b", {"a": "z"}),
+    ]
+    df = pl.DataFrame(rows, schema=["s", "dt", "bin", "st"], orient="row")
+    assert df.schema == {
+        "s": pl.String,
+        "dt": pl.Datetime("us", "Asia/Tokyo"),
+        "bin": pl.Binary,
+        "st": pl.Struct({"a": pl.String}),
+    }
+    assert df.rows() == rows
+
+
+def test_from_rows_nested_across_batches() -> None:
+    rows = [(i, [i, None], {"x": i}, [i, i + 1]) for i in range(3000)]
+    df = pl.DataFrame(
+        rows,
+        schema=["id", "list", "struct", "array"],
+        schema_overrides={"array": pl.Array(pl.Int64, 2)},
+        orient="row",
+        infer_schema_length=1500,
+    )
+    assert df.dtypes == [
+        pl.Int64,
+        pl.List(pl.Int64),
+        pl.Struct({"x": pl.Int64}),
+        pl.Array(pl.Int64, 2),
+    ]
+    assert df.n_chunks("all") == [1, 1, 1, 1]
+    assert df["list"].flags["FAST_EXPLODE"]
+    assert df.rows() == rows
 
 
 def test_from_dicts_schema() -> None:
@@ -1779,6 +1942,45 @@ def test_pycapsule_interface(df: pl.DataFrame) -> None:
     assert df.equals(round_trip_df)
 
 
+class _DictionaryExtensionType(pa.ExtensionType):  # type: ignore[misc]
+    def __init__(self, storage_type: pa.DataType) -> None:
+        super().__init__(storage_type, "test.dictionary")
+
+    def __arrow_ext_serialize__(self) -> bytes:
+        return b""
+
+    @classmethod
+    def __arrow_ext_deserialize__(
+        cls, storage_type: pa.DataType, serialized: bytes
+    ) -> Any:
+        return cls(storage_type)
+
+
+@pytest.mark.parametrize("via_pycapsule", [True, False])
+def test_extension_dictionary_29442(via_pycapsule: bool) -> None:
+    values = ["a", None, "b", "a"]
+    storage = pa.array(values).dictionary_encode()
+    arr = pa.ExtensionArray.from_storage(
+        _DictionaryExtensionType(storage.type), storage
+    )
+    s = pl.Series(PyCapsuleArrayHolder(arr) if via_pycapsule else arr)
+    assert s.to_list() == values
+
+    # The export keeps the dictionary values.
+    out = s.to_arrow()
+    assert pa.types.is_dictionary(out.type)
+    assert out.to_pylist() == values
+
+    # Nested inside a list and a struct.
+    list_arr = pa.ListArray.from_arrays(pa.array([0, 1, 4], pa.int32()), arr)
+    s = pl.Series(PyCapsuleArrayHolder(list_arr) if via_pycapsule else list_arr)
+    assert s.to_list() == [["a"], [None, "b", "a"]]
+
+    struct_arr = pa.StructArray.from_arrays([arr], names=["f"])
+    s = pl.Series(PyCapsuleArrayHolder(struct_arr) if via_pycapsule else struct_arr)
+    assert s.to_list() == [{"f": v} for v in values]
+
+
 @pytest.mark.parametrize(
     "tz",
     [
@@ -1786,7 +1988,7 @@ def test_pycapsule_interface(df: pl.DataFrame) -> None:
         ZoneInfo("Asia/Tokyo"),
         ZoneInfo("Europe/Amsterdam"),
         ZoneInfo("UTC"),
-        timezone.utc,
+        UTC,
     ],
 )
 def test_init_list_of_dicts_with_timezone(tz: Any) -> None:
@@ -1806,7 +2008,7 @@ def test_init_list_of_dicts_with_timezone(tz: Any) -> None:
         ZoneInfo("Asia/Tokyo"),
         ZoneInfo("Europe/Amsterdam"),
         ZoneInfo("UTC"),
-        timezone.utc,
+        UTC,
     ],
 )
 def test_init_list_of_nested_dicts_with_timezone(tz: Any) -> None:

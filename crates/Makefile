@@ -2,6 +2,14 @@
 
 SHELL=bash
 BASE ?= main
+ifeq ($(VENV),)
+VENV := ../.venv
+endif
+ifeq ($(OS),Windows_NT)
+	VENV_BIN=$(VENV)/Scripts
+else
+	VENV_BIN=$(VENV)/bin
+endif
 
 .PHONY: fix
 fix:
@@ -48,6 +56,7 @@ test:  ## Run tests
 	cargo test --all-features \
 		-p polars-compute \
 		-p polars-core \
+		-p polars-defs \
 		-p polars-io \
 		-p polars-lazy \
 		-p polars-ops \
@@ -65,6 +74,7 @@ nextest:  ## Run tests with nextest
 	cargo nextest run --all-features \
 		-p polars-compute \
 		-p polars-core \
+		-p polars-defs \
 		-p polars-io \
 		-p polars-lazy \
 		-p polars-ops \
@@ -96,6 +106,23 @@ bench-save:  ## Run benchmark and save
 bench-cmp:  ## Run benchmark and compare
 	cargo bench --features=random --bench $(BENCH) -- --load-baseline $(FEAT) --baseline $(BASE)
 
+.PHONY: build-polars-iceberg
+build-polars-iceberg:  ## Compile and install the `polars_iceberg` I/O plugin (crates/polars-iceberg) into the venv
+	@if [ ! -f polars-iceberg/Cargo.toml ]; then \
+		echo "Skipping polars_iceberg: crates/polars-iceberg not found. Clone it with e.g." >&2; \
+		echo "  git clone -b main https://github.com/pola-rs/polars-iceberg crates/polars-iceberg" >&2; \
+		echo "or, for a local clone, add a worktree of it:" >&2; \
+		echo "  git -C /path/to/polars-iceberg worktree add $(CURDIR)/polars-iceberg main" >&2; \
+	elif [ -L polars-iceberg ]; then \
+		echo "crates/polars-iceberg must not be a symlink (maturin resolves it to outside the workspace)." >&2; \
+		echo "Replace it with a worktree of your local clone:" >&2; \
+		echo "  rm $(CURDIR)/polars-iceberg && git -C /path/to/polars-iceberg worktree add $(CURDIR)/polars-iceberg main" >&2; \
+		exit 1; \
+	else \
+		unset CONDA_PREFIX \
+		&& $(VENV_BIN)/maturin develop -m polars-iceberg/Cargo.toml --release $(ARGS) --uv; \
+	fi
+
 .PHONY: doctest
 doctest:  ## Check that documentation builds
 	cargo doc --no-deps --all-features -p polars-utils
@@ -122,6 +149,7 @@ publish:  ## Publish Polars crates
 	 -p polars-row \
 	 -p polars-json \
 	 -p polars-core \
+	 -p polars-defs \
 	 -p polars-ffi \
 	 -p polars-ops \
 	 -p polars-testing \
@@ -149,6 +177,7 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-row
 	cargo publish --allow-dirty -p polars-json
 	cargo publish --allow-dirty -p polars-core
+	cargo publish --allow-dirty -p polars-defs
 	cargo publish --allow-dirty -p polars-ffi
 	cargo publish --allow-dirty -p polars-ops
 	cargo publish --allow-dirty -p polars-testing

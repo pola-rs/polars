@@ -2,8 +2,12 @@ use bitflags::bitflags;
 use polars_core::prelude::PlIndexMap;
 use polars_utils::arena::{Arena, Node};
 
-use crate::dsl::EvalVariant;
-use crate::plans::{AExpr, IRAggExpr, IRFunctionExpr, is_length_preserving_ae};
+use crate::dsl::{EvalVariant, WindowMapping};
+use crate::plans::optimizer::repeated_keys::retain_row_encode_keys;
+use crate::plans::{
+    AExpr, IRAggExpr, IRFunctionExpr, is_length_preserving_ae, is_order_insensitive_ae,
+    is_scalar_ae,
+};
 
 bitflags! {
     #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -168,6 +172,11 @@ impl ExprOrderSimplifier<'_> {
             };
         }
 
+        if let Some(new_ae) = drop_scalar_order_keys(current_ae_node, self.expr_arena) {
+            self.expr_arena.replace(current_ae_node, new_ae);
+            return self.rec(current_ae_node, recursion);
+        }
+
         match self.expr_arena.get_mut(current_ae_node) {
             AExpr::Column(_) => O::COLUMN,
 
@@ -212,7 +221,9 @@ impl ExprOrderSimplifier<'_> {
             AExpr::Element => O::INDEPENDENT,
 
             #[cfg(feature = "dtype-struct")]
-            AExpr::StructEval { expr, evaluation } => {
+            AExpr::StructEval {
+                expr, evaluation, ..
+            } => {
                 check_return_cached!();
 
                 let evaluation_len = evaluation.len();
@@ -264,7 +275,7 @@ impl ExprOrderSimplifier<'_> {
             AExpr::BinaryExpr { .. } | AExpr::Ternary { .. } => {
                 check_return_cached!();
 
-                let (nodes, ternary_mask_node) = match self.expr_arena.get(current_ae_node) {
+                let (nodes, predicate) = match self.expr_arena.get(current_ae_node) {
                     AExpr::BinaryExpr { left, op: _, right } => ([*left, *right], None),
                     AExpr::Ternary {
                         predicate,
@@ -276,19 +287,12 @@ impl ExprOrderSimplifier<'_> {
 
                 let mut acc = ExprOrderAcc::default();
 
-                for node in nodes {
+                // The predicate positions the output rows, so its order is observable too.
+                for node in nodes.into_iter().chain(predicate) {
                     acc.add(self.rec(node, RS::NO_DEORDER), node);
                 }
 
                 let mut output_observable = acc.accumulated_orders();
-
-                if let Some(ternary_mask_node) = ternary_mask_node {
-                    acc.add(
-                        self.rec(ternary_mask_node, RS::NO_DEORDER),
-                        ternary_mask_node,
-                    );
-                }
-
                 let mut should_cache = false;
 
                 if acc.saw_mixed_inputs() {
@@ -298,11 +302,6 @@ impl ExprOrderSimplifier<'_> {
                     && recursion.allows_deorder()
                 {
                     output_observable = self.rec(node, RS::ALLOW_DEORDER);
-
-                    if Some(node) == ternary_mask_node {
-                        output_observable = O::empty();
-                    }
-
                     should_cache = true;
                 }
 
@@ -404,14 +403,23 @@ impl ExprOrderSimplifier<'_> {
                 output_observable
             },
 
-            AExpr::Over {
-                function,
-                partition_by,
-                order_by,
-                mapping: _,
-            } => {
+            AExpr::Over { .. } => {
                 check_return_cached!();
 
+                if is_order_insensitive_window(current_ae_node, self.expr_arena) {
+                    cache_output!(O::COLUMN);
+                    return O::COLUMN;
+                }
+
+                let AExpr::Over {
+                    function,
+                    partition_by,
+                    order_by,
+                    mapping: _,
+                } = self.expr_arena.get(current_ae_node)
+                else {
+                    unreachable!()
+                };
                 let function = *function;
                 let partition_by_len = partition_by.len();
                 let order_by = order_by.as_ref().map(|(node, _)| *node);
@@ -545,9 +553,27 @@ impl ExprOrderSimplifier<'_> {
                 observable_in_input
             },
 
+            // Asserts an order on its input, so downstream may rely on that order.
             AExpr::Function {
                 input,
-                function: IRFunctionExpr::MinBy | IRFunctionExpr::MaxBy,
+                function: IRFunctionExpr::SetSortedFlag(_),
+                ..
+            } => {
+                check_return_cached!();
+
+                assert_eq!(input.len(), 1);
+                let node = input[0].node();
+                let observable = self.rec(node, RS::NO_DEORDER);
+                self.internal_observe(observable);
+
+                cache_output!(observable);
+
+                observable
+            },
+
+            AExpr::Function {
+                input,
+                function: IRFunctionExpr::MinBy { .. } | IRFunctionExpr::MaxBy { .. },
                 ..
             } => {
                 check_return_cached!();
@@ -675,7 +701,7 @@ impl ExprOrderSimplifier<'_> {
                     | IRAggExpr::Max { input: node, .. }
                     | IRAggExpr::Mean(node)
                     | IRAggExpr::Median(node)
-                    | IRAggExpr::Sum(node)
+                    | IRAggExpr::Sum { input: node, .. }
                     | IRAggExpr::Item { input: node, .. } => {
                         let node = *node;
                         self.rec(node, RS::ALLOW_DEORDER);
@@ -739,5 +765,140 @@ impl ExprOrderSimplifier<'_> {
                 output_observable
             },
         }
+    }
+}
+
+/// Whether `node` is a `GroupsToRows` window whose result for a row does not depend on the order
+/// of the rows.
+pub(crate) fn is_order_insensitive_window(node: Node, arena: &Arena<AExpr>) -> bool {
+    let AExpr::Over {
+        function,
+        partition_by,
+        order_by,
+        mapping,
+    } = arena.get(node)
+    else {
+        return false;
+    };
+
+    *mapping == WindowMapping::GroupsToRows
+        && is_order_insensitive_ae(*function, arena)
+        && partition_by
+            .iter()
+            .all(|n| is_order_insensitive_ae(*n, arena))
+        && order_by
+            .as_ref()
+            .is_none_or(|(n, _)| is_order_insensitive_ae(*n, arena))
+}
+
+/// Positions of the non-scalar keys, or `None` if no key is scalar. Scalar keys are constant
+/// within the input (or each group), so they don't affect the order.
+pub(super) fn non_scalar_keys(
+    keys: impl ExactSizeIterator<Item = Node>,
+    arena: &Arena<AExpr>,
+) -> Option<Vec<usize>> {
+    let num_keys = keys.len();
+    let kept: Vec<usize> = keys
+        .enumerate()
+        .filter(|&(_, key)| !is_scalar_ae(key, arena))
+        .map(|(i, _)| i)
+        .collect();
+    (kept.len() < num_keys).then_some(kept)
+}
+
+/// The flags of the keys at `positions`.
+pub(super) fn flags_at(flags: &[bool], positions: &[usize]) -> Vec<bool> {
+    positions.iter().map(|&i| flags[i]).collect()
+}
+
+/// Drops the scalar ordering keys of a `sort_by`, `top_k_by` or window.
+fn drop_scalar_order_keys(node: Node, arena: &mut Arena<AExpr>) -> Option<AExpr> {
+    match arena.get(node) {
+        AExpr::SortBy {
+            expr,
+            by,
+            sort_options,
+        } => {
+            let kept = non_scalar_keys(by.iter().copied(), arena)?;
+            if kept.is_empty() {
+                return Some(arena.get(*expr).clone());
+            }
+            let mut sort_options = sort_options.clone();
+            sort_options.descending = flags_at(&sort_options.descending, &kept);
+            sort_options.nulls_last = flags_at(&sort_options.nulls_last, &kept);
+            Some(AExpr::SortBy {
+                expr: *expr,
+                by: kept.iter().map(|&i| by[i]).collect(),
+                sort_options,
+            })
+        },
+        #[cfg(feature = "top_k")]
+        AExpr::Function {
+            input,
+            function: IRFunctionExpr::TopKBy { descending },
+            options,
+        } => {
+            use polars_core::prelude::IdxSize;
+
+            use crate::plans::LiteralValue;
+
+            // The inputs are the value, `k` and the keys.
+            let kept = non_scalar_keys(input[2..].iter().map(|e| e.node()), arena)?;
+            if !kept.is_empty() {
+                let mut input = input.clone();
+                let descending = flags_at(descending, &kept);
+                let keys = kept
+                    .iter()
+                    .map(|&i| input[2 + i].clone())
+                    .collect::<Vec<_>>();
+                input.truncate(2);
+                input.extend(keys);
+                return Some(AExpr::Function {
+                    input,
+                    function: IRFunctionExpr::TopKBy { descending },
+                    options: *options,
+                });
+            }
+
+            // Only a valid `k` may skip the validation of `top_k_by`.
+            let (value, k) = (input[0].node(), input[1].node());
+            let AExpr::Literal(lv) = arena.get(k) else {
+                return None;
+            };
+            lv.extract_usize()
+                .ok()
+                .filter(|&k| IdxSize::try_from(k).is_ok())?;
+            let offset = arena.add(AExpr::Literal(LiteralValue::new_idxsize(0)));
+            Some(AExpr::Slice {
+                input: value,
+                offset,
+                length: k,
+            })
+        },
+        AExpr::Over {
+            function,
+            partition_by,
+            order_by: Some((order_by, options)),
+            mapping,
+        } => {
+            let (function, partition_by, mapping) = (*function, partition_by.clone(), *mapping);
+            let order_by = if is_scalar_ae(*order_by, arena) {
+                None
+            } else {
+                Some(retain_row_encode_keys(
+                    *order_by,
+                    *options,
+                    arena,
+                    |keys, arena| non_scalar_keys(keys.iter().map(|e| e.node()), arena),
+                )?)
+            };
+            Some(AExpr::Over {
+                function,
+                partition_by,
+                order_by,
+                mapping,
+            })
+        },
+        _ => None,
     }
 }

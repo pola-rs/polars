@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from decimal import Decimal as D
+
 import pytest
 
 import polars as pl
@@ -34,8 +36,9 @@ def test_unnest_table_function(array_keyword: str) -> None:
                 {
                     "x": [1, 2, 3, 4],
                     "y": ["ww", "xx", "yy", "zz"],
-                    "z": [23.0, 24.5, 28.0, 27.5],
-                }
+                    "z": [D("23.0"), D("24.5"), D("28.0"), D("27.5")],
+                },
+                schema_overrides={"z": pl.Decimal(3, 1)},
             ),
         )
 
@@ -71,6 +74,29 @@ def test_unnest_table_function_errors() -> None:
             match=r"UNNEST tables do not \(yet\) support WITH OFFSET|ORDINALITY",
         ):
             ctx.execute("SELECT * FROM UNNEST([1, 2, 3]) tbl (colx) WITH OFFSET")
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT u.x FROM UNNEST([1, 2]) AS u(x) CROSS JOIN t",
+        "SELECT u.x, t.a FROM t JOIN UNNEST([5, 6]) AS u(x) ON t.a = u.x",
+        "SELECT a FROM t WHERE EXISTS (SELECT 1 FROM UNNEST([5, 6]) AS u(x) WHERE u.x = t.a)",
+    ],
+)
+def test_unnest_alias_qualifies_columns(query: str) -> None:
+    assert_sql_matches(
+        {"t": pl.DataFrame({"a": [5]})},
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+    )
+
+
+def test_unnest_alias_named_like_table_is_ambiguous() -> None:
+    ctx = pl.SQLContext(t=pl.LazyFrame({"a": [5]}))
+    with pytest.raises(SQLInterfaceError, match='ambiguous reference to table "t"'):
+        ctx.execute("SELECT t.a FROM UNNEST([1, 2]) AS t(a), t", eager=True)
 
 
 def test_unnest_select_expressions() -> None:

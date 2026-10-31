@@ -1,5 +1,5 @@
-use arrow::legacy::error::PolarsResult;
-use polars_core::utils::try_get_supertype;
+use polars_arrow::legacy::error::PolarsResult;
+use polars_core::utils::{SuperTypeFlags, try_get_supertype, try_get_supertype_with_options};
 use polars_utils::arena::Node;
 use polars_utils::format_pl_smallstr;
 use polars_utils::option::OptionTry;
@@ -7,6 +7,8 @@ use polars_utils::option::OptionTry;
 use super::expr_to_ir::ExprToIRContext;
 use super::*;
 use crate::constants::get_literal_name;
+#[cfg(feature = "cutqcut")]
+use crate::dsl::{BinMethod, BinOptions, DslIntervalSpec};
 use crate::dsl::{Expr, FunctionExpr};
 use crate::plans::conversion::dsl_to_ir::expr_to_ir::to_expr_irs;
 use crate::plans::{AExpr, IRFunctionExpr};
@@ -47,7 +49,10 @@ pub(super) fn convert_functions(
                 A::Get(v) => IA::Get(v),
                 A::Join(v) => IA::Join(v),
                 #[cfg(feature = "is_in")]
-                A::Contains { nulls_equal } => IA::Contains { nulls_equal },
+                A::Contains { nulls_equal } => IA::Contains {
+                    nulls_equal,
+                    needle_cast: None,
+                },
                 #[cfg(feature = "array_count")]
                 A::CountMatches => IA::CountMatches,
                 A::Shift => IA::Shift,
@@ -151,6 +156,11 @@ pub(super) fn convert_functions(
             use MapFunction as M;
             I::MapExpr(match map_function {
                 M::Entries => IM::Entries,
+                M::Keys => IM::Keys,
+                M::Values => IM::Values,
+                M::Length => IM::Length,
+                M::ContainsKey => IM::ContainsKey { needle_cast: None },
+                M::Get => IM::Get { needle_cast: None },
             })
         },
         #[cfg(feature = "dtype-extension")]
@@ -174,7 +184,10 @@ pub(super) fn convert_functions(
             I::ListExpr(match list_function {
                 L::Concat => IL::Concat,
                 #[cfg(feature = "is_in")]
-                L::Contains { nulls_equal } => IL::Contains { nulls_equal },
+                L::Contains { nulls_equal } => IL::Contains {
+                    nulls_equal,
+                    needle_cast: None,
+                },
                 #[cfg(feature = "list_drop_nulls")]
                 L::DropNulls => IL::DropNulls,
                 #[cfg(feature = "list_sample")]
@@ -499,7 +512,10 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "is_between")]
                 B::IsBetween { closed } => IB::IsBetween { closed },
                 #[cfg(feature = "is_in")]
-                B::IsIn { nulls_equal } => IB::IsIn { nulls_equal },
+                B::IsIn { nulls_equal } => IB::IsIn {
+                    nulls_equal,
+                    needle_cast: None,
+                },
                 #[cfg(feature = "is_close")]
                 B::IsClose {
                     abs_tol,
@@ -612,6 +628,7 @@ pub(super) fn convert_functions(
         }),
         #[cfg(feature = "row_hash")]
         F::Hash(seed) => I::Hash(seed),
+        F::Mm3Hash => I::Mm3Hash,
         #[cfg(feature = "arg_where")]
         F::ArgWhere => I::ArgWhere,
         #[cfg(feature = "index_of")]
@@ -871,8 +888,12 @@ pub(super) fn convert_functions(
             descending,
             nulls_last,
         },
-        F::MinBy => I::MinBy,
-        F::MaxBy => I::MaxBy,
+        F::MinBy => I::MinBy {
+            order: MinMaxByOrder::SkipNulls,
+        },
+        F::MaxBy => I::MaxBy {
+            order: MinMaxByOrder::SkipNulls,
+        },
         F::Product => I::Product,
         #[cfg(feature = "rank")]
         F::Rank { options, seed } => I::Rank { options, seed },
@@ -889,7 +910,15 @@ pub(super) fn convert_functions(
         #[cfg(feature = "top_k")]
         F::TopK { descending } => I::TopK { descending },
         #[cfg(feature = "top_k")]
-        F::TopKBy { descending } => I::TopKBy { descending },
+        F::TopKBy { descending } => {
+            // The inputs are the values, `k` and then the keys.
+            let options = SortMultipleOptions::default()
+                .with_order_descending_multi(descending)
+                .expand_flags(e.len().saturating_sub(2))?;
+            I::TopKBy {
+                descending: options.descending,
+            }
+        },
         #[cfg(feature = "cum_agg")]
         F::CumCount { reverse } => I::CumCount { reverse },
         #[cfg(feature = "cum_agg")]
@@ -927,25 +956,48 @@ pub(super) fn convert_functions(
                 (polars_compute::approx_quantile::MIN_ERROR..1.0).contains(&error),
                 InvalidOperation: "`error` must be in the range [2^-32, 1) (got: {error})"
             );
-            let quantiles: Option<Vec<f64>> = match ctx.arena.get(e[1].node()) {
-                AExpr::Literal(LiteralValue::Series(s)) => s
-                    .list()
-                    .ok()
-                    .and_then(|ca| ca.get_as_series(0))
-                    .and_then(|s| s.cast(&DataType::Float64).ok())
-                    .and_then(|s| s.f64().ok()?.iter().collect()),
-                AExpr::Literal(lv) => lv
-                    .to_any_value()
-                    .and_then(|av| av.extract())
-                    .map(|q| vec![q]),
+            let quantile = match ctx.arena.get(e[1].node()) {
+                AExpr::Literal(LiteralValue::Series(s)) if s.len() == 1 => s.get(0).ok(),
+                AExpr::Literal(
+                    lv @ (LiteralValue::Scalar(_)
+                    | LiteralValue::Dyn(DynLiteralValue::Int(_) | DynLiteralValue::Float(_))),
+                ) => lv.to_any_value(),
                 _ => None,
+            };
+            let quantiles: Option<Vec<f64>> = match quantile {
+                Some(AnyValue::List(s)) => s
+                    .strict_cast(&DataType::Float64)
+                    .ok()
+                    .and_then(|s| s.iter().map(|v| v.extract()).collect()),
+                Some(av) => av.extract().map(|q| vec![q]),
+                None => None,
             };
             let method = method.resolve(quantiles.as_deref());
             let error = match use_formal_bound {
                 true => error,
                 false => method.empirical_error_to_formal(error),
             };
-            I::ApproxQuantile { method, error }
+
+            let values_dtype = e[0]
+                .dtype(ctx.schema, ctx.arena)?
+                .clone()
+                .materialize_unknown(false)?;
+            let sketch = AExprBuilder::function(
+                vec![e[0].clone()],
+                I::ApproxQuantileSketch {
+                    method,
+                    error,
+                    failure_probability:
+                        polars_compute::approx_quantile::DEFAULT_FAILURE_PROBABILITY,
+                },
+                ctx.arena,
+            );
+            let estimate = AExprBuilder::function(
+                vec![sketch.expr_ir_retain_name(ctx.arena), e[1].clone()],
+                I::ApproxQuantileEstimate { values_dtype },
+                ctx.arena,
+            );
+            return Ok((estimate.node(), e[0].output_name().clone()));
         },
         F::Coalesce => I::Coalesce,
         #[cfg(feature = "diff")]
@@ -967,9 +1019,23 @@ pub(super) fn convert_functions(
         F::Log1p => I::Log1p,
         #[cfg(feature = "log")]
         F::Exp => I::Exp,
+        #[cfg(feature = "log")]
+        F::Erf => I::Erf,
+        #[cfg(feature = "log")]
+        F::Erfc => I::Erfc,
         F::Unique(v) => I::Unique(v),
         #[cfg(feature = "round_series")]
         F::Round { decimals, mode } => I::Round { decimals, mode },
+        #[cfg(feature = "dtype-decimal")]
+        F::DecimalArith { op, scale } => I::DecimalArith { op, scale },
+        F::Sql(function) => {
+            let output_name = e[0].output_name().clone();
+            return Ok((
+                super::sql::lower_sql_function(function, e, ctx)?,
+                output_name,
+            ));
+        },
+        F::TruncArith(op) => I::TruncArith(op),
         #[cfg(feature = "round_series")]
         F::RoundSF { digits } => I::RoundSF { digits },
         #[cfg(feature = "round_series")]
@@ -1038,6 +1104,76 @@ pub(super) fn convert_functions(
             allow_duplicates,
             include_breaks,
         },
+        #[cfg(feature = "cutqcut")]
+        F::Bin(options) => {
+            let input_dtype = e[0].dtype(ctx.schema, ctx.arena)?.clone();
+            let name = options.method.name();
+
+            if options.method.requires_numeric_input() {
+                polars_ensure!(
+                    input_dtype.is_numeric(),
+                    InvalidOperation: "`{}` requires a numeric input, got `{}`", name, input_dtype
+                );
+            } else {
+                polars_ensure!(
+                    input_dtype.is_ord(),
+                    InvalidOperation: "`{}` requires an orderable input, got `{}`", name, input_dtype
+                );
+            }
+
+            let BinOptions {
+                method,
+                labels,
+                include_intervals,
+            } = options;
+            let method = match method {
+                BinMethod::Intervals { spec, right_closed } => IRBinMethod::Intervals {
+                    spec: match spec {
+                        DslIntervalSpec::Count(n_bins) => IntervalSpec::Count(n_bins),
+                        DslIntervalSpec::Breaks(input_breaks) => {
+                            let breaks =
+                                if input_dtype.is_numeric() && input_breaks.dtype().is_numeric() {
+                                    let opts = (SuperTypeFlags::default()
+                                        & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING)
+                                        .into();
+                                    let supertype = try_get_supertype_with_options(
+                                        &input_dtype,
+                                        input_breaks.dtype(),
+                                        opts,
+                                    )?;
+
+                                    if input_dtype != supertype {
+                                        let node = ctx.arena.add(AExpr::Cast {
+                                            expr: e[0].node(),
+                                            dtype: supertype.clone(),
+                                            options: CastOptions::Strict,
+                                        });
+                                        e[0] = ExprIR::new(node, e[0].output_name_inner().clone());
+                                    }
+
+                                    input_breaks.cast(&supertype)?
+                                } else {
+                                    // Take care to not convert Enum to String.
+                                    input_breaks.strict_cast(&input_dtype)?
+                                };
+
+                            IntervalSpec::from_breaks(breaks).context(name)?
+                        },
+                    },
+                    right_closed,
+                },
+                BinMethod::Quantiles { spec, right_closed } => {
+                    IRBinMethod::Quantiles { spec, right_closed }
+                },
+                BinMethod::Ranks { spec } => IRBinMethod::Ranks { spec },
+            };
+
+            I::Bin(IRBinOptions {
+                method,
+                labels,
+                include_intervals,
+            })
+        },
         #[cfg(feature = "rle")]
         F::RLE => I::RLE,
         #[cfg(feature = "rle")]
@@ -1067,11 +1203,13 @@ pub(super) fn convert_functions(
         #[cfg(feature = "ffi_plugin")]
         F::FfiPlugin {
             flags,
+            is_deterministic,
             lib,
             symbol,
             kwargs,
         } => I::FfiPlugin {
             flags,
+            is_deterministic,
             lib,
             symbol,
             kwargs,
@@ -1116,6 +1254,37 @@ pub(super) fn convert_functions(
             returns_scalar,
             return_dtype: return_dtype.try_map(|dtype| dtype.into_datatype(ctx.schema))?,
             include_init,
+        },
+        #[cfg(feature = "dtype-struct")]
+        F::CumSumHorizontal => {
+            let mut dtype = e[0].dtype(ctx.schema, ctx.arena)?.clone();
+            for e in &e[1..] {
+                dtype = try_get_supertype(&dtype, e.dtype(ctx.schema, ctx.arena)?)?;
+            }
+            let mut dtype = dtype.materialize_unknown(false)?;
+            if dtype == DataType::Boolean {
+                dtype = IDX_DTYPE;
+            }
+
+            let mut acc = AExprBuilder::lit_scalar(Scalar::from(0i32), ctx.arena)
+                .cast(dtype.clone(), ctx.arena);
+            let fields = e
+                .iter()
+                .map(|e| {
+                    acc = AExprBuilder::new_from_aexpr(
+                        AExpr::Cast {
+                            expr: acc.plus(e.node(), ctx.arena).node(),
+                            dtype: dtype.clone(),
+                            options: CastOptions::NonStrict,
+                        },
+                        ctx.arena,
+                    );
+                    acc.expr_ir(e.output_name().clone())
+                })
+                .collect();
+            let output_name = e[0].output_name().clone();
+            let out = AExprBuilder::function(fields, I::AsStruct, ctx.arena);
+            return Ok((out.node(), output_name));
         },
 
         F::MaxHorizontal => I::MaxHorizontal,
@@ -1187,6 +1356,12 @@ pub(super) fn convert_functions(
                     target_dtype.numeric_to_unsigned_bit_repr(),
                 ) {
                     (Some(l), Some(r)) if l == r => {},
+                    #[cfg(feature = "dtype-decimal")]
+                    _ if matches!(
+                        (&input_dtype, &target_dtype),
+                        (DataType::Int128, DataType::Decimal(_, _))
+                            | (DataType::Decimal(_, _), DataType::Int128)
+                    ) => {},
                     _ => polars_bail!(
                         InvalidOperation:
                         "cannot reinterpret from {input_dtype:?} to {target_dtype:?}"
@@ -1206,20 +1381,58 @@ pub(super) fn convert_functions(
             I::ExtendConstant
         },
 
-        F::RowEncode(v) => {
-            let dts = e
+        F::RowEncode {
+            mut variant,
+            output,
+            encode_nulls,
+            propagate_nulls,
+        } => {
+            let dtypes = e
                 .iter()
-                .map(|e| Ok(e.dtype(ctx.schema, ctx.arena)?.clone()))
+                .map(|e| {
+                    e.dtype(ctx.schema, ctx.arena)?
+                        .clone()
+                        .materialize_unknown(false)
+                })
                 .collect::<PolarsResult<Vec<_>>>()?;
-            I::RowEncode(dts, v)
+            if let RowEncodingVariant::Ordered {
+                descending,
+                nulls_last,
+                ..
+            } = &mut variant
+            {
+                let options = SortMultipleOptions {
+                    descending: descending.take().unwrap_or(vec![false]),
+                    nulls_last: nulls_last.take().unwrap_or(vec![false]),
+                    ..Default::default()
+                }
+                .expand_flags(e.len())?;
+                *descending = Some(options.descending);
+                *nulls_last = Some(options.nulls_last);
+            }
+            I::RowEncode {
+                dtypes,
+                variant,
+                output,
+                encode_nulls,
+                propagate_nulls,
+            }
         },
         #[cfg(feature = "dtype-struct")]
-        F::RowDecode(fs, v) => I::RowDecode(
-            fs.into_iter()
+        F::RowDecode {
+            fields,
+            variant,
+            output,
+            encode_nulls,
+        } => I::RowDecode {
+            fields: fields
+                .into_iter()
                 .map(|(name, dt_expr)| Ok(Field::new(name, dt_expr.into_datatype(ctx.schema)?)))
                 .collect::<PolarsResult<Vec<_>>>()?,
-            v,
-        ),
+            variant,
+            output,
+            encode_nulls,
+        },
     };
 
     let mut options = ir_function.function_options();

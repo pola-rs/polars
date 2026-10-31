@@ -1,15 +1,10 @@
-use arrow::legacy::time_zone::Tz;
-use chrono::{Datelike, NaiveDateTime, NaiveTime};
+use chrono::{NaiveDateTime, NaiveTime};
+use polars_arrow::legacy::time_zone::Tz;
 use polars_core::chunked_array::temporal::time_to_time64ns;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-
-use crate::prelude::*;
-
-pub fn in_nanoseconds_window(ndt: &NaiveDateTime) -> bool {
-    // ~584 year around 1970
-    !(ndt.year() > 2554 || ndt.year() < 1386)
-}
+use polars_defs::time::duration::Duration;
+use polars_defs::time::group_by::ClosedWindow;
 
 /// Create a [`DatetimeChunked`] from a given `start` and `end` date and a given `interval`.
 pub fn date_range(
@@ -110,11 +105,7 @@ pub(crate) fn datetime_range_i64(
         ComputeError: "`interval` must be positive"
     );
 
-    let duration = match time_unit {
-        TimeUnit::Nanoseconds => interval.duration_ns(),
-        TimeUnit::Microseconds => interval.duration_us(),
-        TimeUnit::Milliseconds => interval.duration_ms(),
-    };
+    let duration = interval.duration(time_unit);
     let time_zone_opt: Option<TimeZone> = match time_zone {
         #[cfg(feature = "timezones")]
         Some(tz) => Some(TimeZone::from_chrono(tz)),
@@ -141,30 +132,25 @@ pub(crate) fn datetime_range_i64(
     }
 
     let size = ((end - start) / duration + 1) as usize;
-    let offset_fn = match time_unit {
-        TimeUnit::Nanoseconds => Duration::add_ns,
-        TimeUnit::Microseconds => Duration::add_us,
-        TimeUnit::Milliseconds => Duration::add_ms,
-    };
     let mut ts = Vec::with_capacity(size);
     let mut i = match closed {
         ClosedWindow::Both | ClosedWindow::Left => 0,
         ClosedWindow::Right | ClosedWindow::None => 1,
     };
-    let mut t = offset_fn(&(interval * i), start, time_zone)?;
+    let mut t = (interval * i).add(time_unit, start, time_zone)?;
     i += 1;
     match closed {
         ClosedWindow::Both | ClosedWindow::Right => {
             while t <= end {
                 ts.push(t);
-                t = offset_fn(&(interval * i), start, time_zone)?;
+                t = (interval * i).add(time_unit, start, time_zone)?;
                 i += 1;
             }
         },
         ClosedWindow::Left | ClosedWindow::None => {
             while t < end {
                 ts.push(t);
-                t = offset_fn(&(interval * i), start, time_zone)?;
+                t = (interval * i).add(time_unit, start, time_zone)?;
                 i += 1;
             }
         },

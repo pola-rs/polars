@@ -4,7 +4,7 @@ use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::*;
 use recursive::recursive;
 
-use crate::dispatch::{function_expr_to_groups_udf, function_expr_to_udf};
+use crate::dispatch::{explode_groups_udf, function_expr_to_groups_udf, function_expr_to_udf};
 use crate::expressions as phys_expr;
 use crate::expressions::*;
 use crate::reduce::GroupedReduction;
@@ -145,6 +145,104 @@ pub fn create_physical_expr(
     }
 }
 
+/// Creates the physical expression of the `over` expression at `expression`.
+pub fn create_window_expr(
+    expression: Node,
+    expr_arena: &mut Arena<AExpr>,
+    schema: &SchemaRef, // Schema of the input.
+    state: &mut ExpressionConversionState,
+) -> PolarsResult<WindowExpr> {
+    let aexpr = expr_arena.get(expression);
+    let AExpr::Over {
+        function,
+        partition_by,
+        order_by,
+        mapping,
+    } = aexpr.clone()
+    else {
+        polars_bail!(InvalidOperation: "expected a window expression")
+    };
+    let output_field = aexpr.to_field(&ToFieldContext::new(expr_arena, schema))?;
+    state.set_window();
+    let phys_function = create_physical_expr_inner(function, expr_arena, schema, state)?;
+
+    let mut order_by_is_elementwise = false;
+    let order_by = order_by
+        .map(|(node, options)| {
+            order_by_is_elementwise |= is_elementwise_rec(node, expr_arena);
+            PolarsResult::Ok((
+                create_physical_expr_inner(node, expr_arena, schema, state)?,
+                options,
+            ))
+        })
+        .transpose()?;
+
+    let expr = node_to_expr(expression, expr_arena);
+
+    // set again as the state can be reset
+    state.set_window();
+    let all_group_by_are_elementwise = partition_by
+        .iter()
+        .all(|n| is_elementwise_rec(*n, expr_arena));
+    let group_by =
+        create_physical_expressions_from_nodes(&partition_by, expr_arena, schema, state)?;
+    let mut apply_columns = aexpr_to_leaf_names(function, expr_arena);
+    if apply_columns.is_empty() {
+        if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Literal(_))) {
+            apply_columns.push(get_literal_name())
+        } else if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Len)) {
+            apply_columns.push(PlSmallStr::from_static("len"))
+        } else if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Element)) {
+            apply_columns.push(PlSmallStr::from_static("element"))
+        } else {
+            let e = node_to_expr(function, expr_arena);
+            polars_bail!(
+                ComputeError:
+                "cannot apply a window function, did not find a root column; \
+                this is likely due to a syntax error in this expression: {:?}", e
+            );
+        }
+    }
+
+    // Check if the branches have an aggregation
+    // when(a > sum)
+    // then (foo)
+    // otherwise(bar - sum)
+    let mut has_arity = false;
+    let mut agg_col = false;
+    for (_, e) in expr_arena.iter(function) {
+        match e {
+            AExpr::Ternary { .. } | AExpr::BinaryExpr { .. } => {
+                has_arity = true;
+            },
+            AExpr::Agg(_) => {
+                agg_col = true;
+            },
+            AExpr::Function { options, .. } | AExpr::AnonymousFunction { options, .. }
+                if options.flags.returns_scalar() =>
+            {
+                agg_col = true;
+            },
+            _ => {},
+        }
+    }
+    let has_different_group_sources = has_arity && agg_col;
+
+    Ok(WindowExpr {
+        group_by,
+        order_by,
+        apply_columns,
+        phys_function,
+        mapping,
+        expr,
+        has_different_group_sources,
+        output_field,
+
+        order_by_is_elementwise,
+        all_group_by_are_elementwise,
+    })
+}
+
 #[recursive]
 fn create_physical_expr_inner(
     expression: Node,
@@ -184,96 +282,9 @@ fn create_physical_expr_inner(
                 output_field,
             }))
         },
-        Over {
-            function,
-            partition_by,
-            order_by,
-            mapping,
-        } => {
-            let output_field = aexpr.to_field(&ToFieldContext::new(expr_arena, schema))?;
-            state.set_window();
-            let phys_function = create_physical_expr_inner(function, expr_arena, schema, state)?;
-
-            let mut order_by_is_elementwise = false;
-            let order_by = order_by
-                .map(|(node, options)| {
-                    order_by_is_elementwise |= is_elementwise_rec(node, expr_arena);
-                    PolarsResult::Ok((
-                        create_physical_expr_inner(node, expr_arena, schema, state)?,
-                        options,
-                    ))
-                })
-                .transpose()?;
-
-            let expr = node_to_expr(expression, expr_arena);
-
-            // set again as the state can be reset
-            state.set_window();
-            let all_group_by_are_elementwise = partition_by
-                .iter()
-                .all(|n| is_elementwise_rec(*n, expr_arena));
-            let group_by =
-                create_physical_expressions_from_nodes(&partition_by, expr_arena, schema, state)?;
-            let mut apply_columns = aexpr_to_leaf_names(function, expr_arena);
-            // sort and then dedup removes consecutive duplicates == all duplicates
-            apply_columns.sort();
-            apply_columns.dedup();
-
-            if apply_columns.is_empty() {
-                if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Literal(_))) {
-                    apply_columns.push(get_literal_name())
-                } else if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Len)) {
-                    apply_columns.push(PlSmallStr::from_static("len"))
-                } else if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Element)) {
-                    apply_columns.push(PlSmallStr::from_static("element"))
-                } else {
-                    let e = node_to_expr(function, expr_arena);
-                    polars_bail!(
-                        ComputeError:
-                        "cannot apply a window function, did not find a root column; \
-                        this is likely due to a syntax error in this expression: {:?}", e
-                    );
-                }
-            }
-
-            // Check if the branches have an aggregation
-            // when(a > sum)
-            // then (foo)
-            // otherwise(bar - sum)
-            let mut has_arity = false;
-            let mut agg_col = false;
-            for (_, e) in expr_arena.iter(function) {
-                match e {
-                    AExpr::Ternary { .. } | AExpr::BinaryExpr { .. } => {
-                        has_arity = true;
-                    },
-                    AExpr::Agg(_) => {
-                        agg_col = true;
-                    },
-                    AExpr::Function { options, .. } | AExpr::AnonymousFunction { options, .. }
-                        if options.flags.returns_scalar() =>
-                    {
-                        agg_col = true;
-                    },
-                    _ => {},
-                }
-            }
-            let has_different_group_sources = has_arity && agg_col;
-
-            Ok(Arc::new(WindowExpr {
-                group_by,
-                order_by,
-                apply_columns,
-                phys_function,
-                mapping,
-                expr,
-                has_different_group_sources,
-                output_field,
-
-                order_by_is_elementwise,
-                all_group_by_are_elementwise,
-            }))
-        },
+        Over { .. } => Ok(Arc::new(create_window_expr(
+            expression, expr_arena, schema, state,
+        )?)),
         Literal(value) => {
             state.local.has_lit = true;
             Ok(Arc::new(LiteralExpr::new(
@@ -380,9 +391,20 @@ fn create_physical_expr_inner(
                 .to_field(&ToFieldContext::new(expr_arena, schema))?;
 
             let groupby = GroupByMethod::from(agg.clone());
+            let propagate_nulls = matches!(
+                agg,
+                IRAggExpr::Min {
+                    propagate_nulls: true,
+                    ..
+                } | IRAggExpr::Max {
+                    propagate_nulls: true,
+                    ..
+                }
+            );
             let agg_type = AggregationType {
                 groupby,
                 allow_threading,
+                propagate_nulls,
             };
 
             Ok(Arc::new(AggregationExpr::new(
@@ -413,6 +435,7 @@ fn create_physical_expr_inner(
             let agg_type = AggregationType {
                 groupby,
                 allow_threading: state.allow_threading,
+                propagate_nulls: false,
             };
 
             Ok(Arc::new(AggregationExpr::new(
@@ -423,18 +446,18 @@ fn create_physical_expr_inner(
         },
         Function {
             input: inputs,
-            function: function @ (IRFunctionExpr::MinBy | IRFunctionExpr::MaxBy),
+            function: function @ (IRFunctionExpr::MinBy { .. } | IRFunctionExpr::MaxBy { .. }),
             options: _,
         } => {
             assert!(inputs.len() == 2);
-            let new_minmax_by = match function {
-                IRFunctionExpr::MinBy => AggMinMaxByExpr::new_min_by,
-                IRFunctionExpr::MaxBy => AggMinMaxByExpr::new_max_by,
-                _ => unreachable!(), // guaranteed by pattern
-            };
             let input = create_physical_expr_inner(inputs[0].node(), expr_arena, schema, state)?;
             let by = create_physical_expr_inner(inputs[1].node(), expr_arena, schema, state)?;
-            return Ok(Arc::new(new_minmax_by(input, by)));
+            let expr = match function {
+                IRFunctionExpr::MinBy { order } => AggMinMaxByExpr::new_min_by(input, by, order),
+                IRFunctionExpr::MaxBy { order } => AggMinMaxByExpr::new_max_by(input, by, order),
+                _ => unreachable!(), // guaranteed by pattern
+            };
+            return Ok(Arc::new(expr));
         },
         Cast {
             expr,
@@ -553,6 +576,7 @@ fn create_physical_expr_inner(
                 output_field,
                 is_scalar,
                 true,
+                false,
             )))
         },
         Eval {
@@ -595,7 +619,11 @@ fn create_physical_expr_inner(
             )))
         },
         #[cfg(feature = "dtype-struct")]
-        StructEval { expr, evaluation } => {
+        StructEval {
+            expr,
+            evaluation,
+            variant,
+        } => {
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let output_field = expr_arena
                 .get(expression)
@@ -619,6 +647,7 @@ fn create_physical_expr_inner(
                 input,
                 evaluation,
                 node_to_expr(expression, expr_arena),
+                variant,
                 output_field,
                 is_scalar,
                 state.allow_threading,
@@ -635,12 +664,13 @@ fn create_physical_expr_inner(
                 .get(expression)
                 .to_field(&ToFieldContext::new(expr_arena, schema))?;
 
+            let udf = function_expr_to_udf(function.clone(), &input, expr_arena);
             let input = create_physical_expressions_from_irs(&input, expr_arena, schema, state)?;
             let is_fallible = expr_arena.get(expression).is_fallible_top_level(expr_arena);
 
             Ok(Arc::new(ApplyExpr::new(
                 input,
-                function_expr_to_udf(function.clone()),
+                udf,
                 function_expr_to_groups_udf(&function),
                 node_to_expr(expression, expr_arena),
                 options,
@@ -649,6 +679,7 @@ fn create_physical_expr_inner(
                 output_field,
                 is_scalar,
                 is_fallible,
+                inputs_are_row_wise(&function),
             )))
         },
 
@@ -680,7 +711,7 @@ fn create_physical_expr_inner(
             Ok(Arc::new(ApplyExpr::new(
                 vec![input],
                 function,
-                None,
+                Some(explode_groups_udf(options)),
                 node_to_expr(expression, expr_arena),
                 FunctionOptions::groupwise(),
                 state.allow_threading,
@@ -688,7 +719,44 @@ fn create_physical_expr_inner(
                 output_field,
                 false,
                 false,
+                false,
             )))
         },
+    }
+}
+
+/// Whether the per-group scalar inputs of `function` can be repeated over their groups
+/// (`ApplyExpr::apply_multiple_scalar_broadcast`). Being elementwise is not enough:
+/// - every output row must depend only on the same row of every input (not `is_in`, `replace`);
+/// - the kernel must give the same values for a unit input as for its repeat (not `pow`);
+/// - a full-length input must cost about as much as a call per group (not `str.contains`).
+///
+/// TODO: formalize as a `FunctionFlags` bit, see also `is_fake_elementwise_function` in
+/// polars-stream.
+fn inputs_are_row_wise(function: &IRFunctionExpr) -> bool {
+    use IRFunctionExpr as F;
+    match function {
+        F::FillNull
+        | F::Coalesce
+        | F::MaxHorizontal
+        | F::MinHorizontal
+        | F::SumHorizontal { .. }
+        | F::MeanHorizontal { .. }
+        | F::TruncArith(_) => true,
+        #[cfg(feature = "round_series")]
+        F::Clip { .. } => true,
+        #[cfg(feature = "trigonometry")]
+        F::Atan2 => true,
+        #[cfg(feature = "log")]
+        F::Log => true,
+        #[cfg(feature = "dtype-decimal")]
+        F::DecimalArith { .. } => true,
+        #[cfg(feature = "is_between")]
+        F::Boolean(IRBooleanFunction::IsBetween { .. }) => true,
+        #[cfg(feature = "is_close")]
+        F::Boolean(IRBooleanFunction::IsClose { .. }) => true,
+        #[cfg(feature = "concat_str")]
+        F::StringExpr(IRStringFunction::ConcatHorizontal { .. }) => true,
+        _ => false,
     }
 }

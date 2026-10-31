@@ -1,14 +1,16 @@
 use std::borrow::Borrow;
 use std::fmt::Write;
 
-use arrow::array::*;
-use arrow::bitmap::BitmapBuilder;
-use arrow::datatypes::{ArrowDataType, IntervalUnit};
-use arrow::offset::{Offset, Offsets};
-use arrow::temporal_conversions;
-use arrow::types::NativeType;
 use num_traits::NumCast;
-use polars_compute::cast::temporal::{utf8_to_naive_date_scalar, utf8_to_naive_time_scalar};
+use polars_arrow::array::*;
+use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::datatypes::{ArrowDataType, IntervalUnit};
+use polars_arrow::offset::{Offset, Offsets};
+use polars_arrow::temporal_conversions;
+use polars_arrow::types::NativeType;
+use polars_compute::cast::temporal::{
+    utf8_to_naive_date_scalar, utf8_to_naive_time_scalar, utf8_to_timestamp_scalar,
+};
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::{f64_to_dec128, i128_to_dec128, str_to_dec128};
 use polars_utils::float16::pf16;
@@ -465,20 +467,11 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
         ArrowDataType::Int128 => {
             fill_array_from::<_, _, PrimitiveArray<i128>>(deserialize_primitive_into, dtype, rows)
         },
-        ArrowDataType::Timestamp(tu, tz) => {
-            let tz_offset = tz
-                .as_ref()
-                .map(|tz| temporal_conversions::parse_offset(tz.as_str()))
-                .transpose()?;
+        ArrowDataType::Timestamp(tu, _) => {
             let mut err_idx = rows.len();
             let iter = rows.iter().enumerate().map(|(i, row)| match row.borrow() {
                 BorrowedValue::Static(StaticNode::I64(v)) => Some(*v),
-                BorrowedValue::String(v) => match &tz_offset {
-                    None => {
-                        polars_compute::cast::temporal::utf8_to_naive_timestamp_scalar(v, "%+", tu)
-                    },
-                    Some(tz) => temporal_conversions::utf8_to_timestamp_scalar(v, "%+", tz, tu),
-                },
+                BorrowedValue::String(v) => utf8_to_timestamp_scalar(v, *tu),
                 BorrowedValue::Static(StaticNode::Null) => None,
                 _ => {
                     err_idx = if err_idx == rows.len() { i } else { err_idx };

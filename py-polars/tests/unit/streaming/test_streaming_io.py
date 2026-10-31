@@ -12,8 +12,6 @@ if TYPE_CHECKING:
 
     from tests.conftest import PlMonkeyPatch
 
-pytestmark = pytest.mark.xdist_group("streaming")
-
 
 @pytest.mark.write_disk
 def test_streaming_parquet_glob_5900(df: pl.DataFrame, tmp_path: Path) -> None:

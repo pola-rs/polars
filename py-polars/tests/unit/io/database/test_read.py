@@ -955,6 +955,49 @@ def test_read_database_mocked(
     assert res.rows() == [(1, "aa"), (2, "bb"), (3, "cc")]
 
 
+@pytest.mark.parametrize(
+    ("driver", "batch_size", "iter_batches"),
+    [
+        ("snowflake", None, False),
+        ("snowflake", 10_000, True),
+        ("databricks", None, False),
+        ("databricks", 25_000, True),
+    ],
+)
+def test_read_database_mocked_schema_overrides(
+    driver: str, batch_size: int | None, iter_batches: bool
+) -> None:
+    # ensure `schema_overrides` is applied for Arrow-native drivers that
+    # route through `_from_arrow` (regression test for GH #29253)
+    arrow = pl.DataFrame({"x": [1, 2, 3], "y": ["aa", "bb", "cc"]}).to_arrow()
+
+    reg = ARROW_DRIVER_REGISTRY.get(driver, [{}])[0]  # type: ignore[var-annotated]
+    exact_batch_size = reg.get("exact_batch_size", False)
+    repeat_batch_calls = reg.get("repeat_batch_calls", False)
+
+    mc = MockConnection(
+        driver,
+        batch_size,
+        test_data=arrow,
+        repeat_batch_calls=repeat_batch_calls,
+        exact_batch_size=exact_batch_size,  # type: ignore[arg-type]
+    )
+    res = pl.read_database(
+        query="SELECT * FROM test_data",
+        connection=mc,
+        iter_batches=iter_batches,
+        batch_size=batch_size,
+        schema_overrides={"x": pl.UInt8},
+    )
+    if iter_batches:
+        assert isinstance(res, GeneratorType)
+        res = pl.concat(res)
+
+    res = cast("pl.DataFrame", res)
+    assert res.schema == pl.Schema({"x": pl.UInt8, "y": pl.String})
+    assert res.rows() == [(1, "aa"), (2, "bb"), (3, "cc")]
+
+
 class MockOracleConnection:
     """Mock `python-oracledb` Connection (Arrow `fetch_df_*` on the connection)."""
 
@@ -1360,3 +1403,57 @@ def test_read_database_uri_pre_execution_query_not_supported_success(
     )
 
     assert cx_mock.read_sql.call_args.kwargs.get("pre_execution_query") is None
+
+
+def test_sync_sqlalchemy_read_does_not_require_asyncio_extra(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # SQLAlchemy 2.1 raises ImportError from `sqlalchemy.ext.asyncio` when greenlet
+    # is absent; synchronous connections must succeed without requiring that import
+    engine = create_sqlite_engine("sqlite://")
+    with engine.connect() as conn, sessionmaker(engine)() as session:
+        monkeypatch.setitem(sys.modules, "sqlalchemy.ext.asyncio", None)
+        for connection in (engine, conn, session):
+            df = pl.read_database("SELECT 1 AS x", connection=connection)
+            assert_frame_equal(df, pl.DataFrame({"x": [1]}))
+
+
+def test_read_database_duckdb_uses_arrow(monkeypatch: pytest.MonkeyPatch) -> None:
+    duckdb = pytest.importorskip("duckdb")
+
+    def no_rows(*args: Any, **kwargs: Any) -> None:
+        msg = "row-wise fallback used"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(ConnectionExecutor, "_from_rows", no_rows)
+
+    query = "SELECT range AS x, range::VARCHAR AS s FROM range(5)"
+    expected = pl.DataFrame(
+        {"x": range(5), "s": [str(i) for i in range(5)]},
+        schema={"x": pl.Int64, "s": pl.String},
+    )
+    with duckdb.connect() as conn:
+        assert_frame_equal(pl.read_database(query, conn), expected)
+        batches = list(pl.read_database(query, conn, iter_batches=True, batch_size=2))
+        assert [len(df) for df in batches] == [2, 2, 1]
+        assert_frame_equal(pl.concat(batches), expected)
+
+        df = pl.read_database(
+            f"SELECT * FROM ({query}) WHERE x >= ?",
+            conn,
+            execute_options={"parameters": [3]},
+        )
+        assert_frame_equal(df, expected.slice(3))
+
+        # the query runs in `read_database`, not when the batches are read
+        conn.execute("CREATE TABLE t AS SELECT 1 AS x")
+        batch_iter = pl.read_database(
+            "SELECT * FROM t", conn, iter_batches=True, batch_size=10
+        )
+        conn.execute("INSERT INTO t VALUES (2)")
+        assert pl.concat(batch_iter)["x"].to_list() == [1]
+
+        with pytest.raises(duckdb.ConversionException):
+            pl.read_database(
+                "SELECT CAST('x' AS INTEGER)", conn, iter_batches=True, batch_size=2
+            )

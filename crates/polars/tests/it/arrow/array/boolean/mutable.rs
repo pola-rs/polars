@@ -1,6 +1,6 @@
-use arrow::array::{MutableArray, MutableBooleanArray, TryExtendFromSelf};
-use arrow::bitmap::MutableBitmap;
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::{MutableArray, MutableBooleanArray, TryExtendFromSelf};
+use polars_arrow::bitmap::MutableBitmap;
+use polars_arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
 #[test]

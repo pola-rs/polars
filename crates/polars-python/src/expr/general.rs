@@ -7,20 +7,27 @@ use polars::series::ops::NullBehavior;
 #[cfg(feature = "approx_quantile")]
 use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
+#[cfg(feature = "cutqcut")]
+use polars_plan::dsl::{BinMethod, BinOptions, DslIntervalSpec, FractionSpec};
 use polars_plan::plans::predicates::aexpr_to_skip_batch_predicate;
+use polars_plan::plans::python::pyarrow::predicate_to_pa;
+#[cfg(feature = "is_in")]
+use polars_plan::plans::{AExpr, ArenaExprIter, IRBooleanFunction, IRFunctionExpr};
 use polars_plan::plans::{
-    AExprSorted, ExprToIRContext, RowEncodingVariant, node_to_expr, to_expr_ir,
+    AExprSorted, ExprToIRContext, IR, RowEncodingOutputType, RowEncodingVariant, node_to_expr,
+    to_expr_ir,
 };
 use polars_utils::arena::Arena;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedStr;
 
 use super::datatype::PyDataTypeExpr;
 use super::selector::PySelector;
-use crate::conversion::{Wrap, parse_fill_null_strategy};
+use crate::conversion::{Wrap, parse_fill_null_strategy, strings_to_pl_smallstr};
 use crate::error::PyPolarsErr;
 use crate::utils::EnterPolarsExt;
-use crate::{PyDataType, PyExpr};
+use crate::{PyDataType, PyExpr, PySeries};
 
 #[pymethods]
 impl PyExpr {
@@ -58,6 +65,9 @@ impl PyExpr {
     }
     fn __floordiv__(&self, rhs: Self) -> PyResult<Self> {
         Ok(dsl::binary_expr(self.inner.clone(), Operator::FloorDivide, rhs.inner).into())
+    }
+    fn trunc_div(&self, rhs: Self) -> PyResult<Self> {
+        Ok(self.inner.clone().trunc_div(rhs.inner).into())
     }
     fn __neg__(&self) -> PyResult<Self> {
         Ok(self.inner.clone().neg().into())
@@ -242,6 +252,151 @@ impl PyExpr {
                 include_breaks,
             )
             .into()
+    }
+
+    #[cfg(feature = "cutqcut")]
+    #[pyo3(signature = (intervals, labels, include_intervals, right_closed))]
+    fn bin_intervals(
+        &self,
+        intervals: PySeries,
+        labels: Option<Vec<PyBackedStr>>,
+        include_intervals: bool,
+        right_closed: bool,
+    ) -> Self {
+        let breaks = intervals.series.into_inner();
+
+        self.inner
+            .clone()
+            .bin(BinOptions {
+                method: BinMethod::Intervals {
+                    spec: DslIntervalSpec::from_breaks(breaks),
+                    right_closed,
+                },
+                labels: labels.map(strings_to_pl_smallstr),
+                include_intervals,
+            })
+            .into()
+    }
+
+    #[cfg(feature = "cutqcut")]
+    #[pyo3(signature = (n_bins, labels, include_intervals, right_closed))]
+    fn bin_intervals_uniform(
+        &self,
+        n_bins: usize,
+        labels: Option<Vec<PyBackedStr>>,
+        include_intervals: bool,
+        right_closed: bool,
+    ) -> PyResult<Self> {
+        Ok(self
+            .inner
+            .clone()
+            .bin(BinOptions {
+                method: BinMethod::Intervals {
+                    spec: DslIntervalSpec::from_count(n_bins)
+                        .context("bin_intervals")
+                        .map_err(PyPolarsErr::from)?,
+                    right_closed,
+                },
+                labels: labels.map(strings_to_pl_smallstr),
+                include_intervals,
+            })
+            .into())
+    }
+
+    #[cfg(feature = "cutqcut")]
+    #[pyo3(signature = (quantiles, labels, include_intervals, right_closed))]
+    fn bin_quantiles(
+        &self,
+        quantiles: Vec<f64>,
+        labels: Option<Vec<PyBackedStr>>,
+        include_intervals: bool,
+        right_closed: bool,
+    ) -> PyResult<Self> {
+        Ok(self
+            .inner
+            .clone()
+            .bin(BinOptions {
+                method: BinMethod::Quantiles {
+                    spec: FractionSpec::from_fractions(quantiles)
+                        .context("bin_quantiles")
+                        .map_err(PyPolarsErr::from)?,
+                    right_closed,
+                },
+                labels: labels.map(strings_to_pl_smallstr),
+                include_intervals,
+            })
+            .into())
+    }
+
+    #[cfg(feature = "cutqcut")]
+    #[pyo3(signature = (n_bins, labels, include_intervals, right_closed))]
+    fn bin_quantiles_uniform(
+        &self,
+        n_bins: usize,
+        labels: Option<Vec<PyBackedStr>>,
+        include_intervals: bool,
+        right_closed: bool,
+    ) -> PyResult<Self> {
+        Ok(self
+            .inner
+            .clone()
+            .bin(BinOptions {
+                method: BinMethod::Quantiles {
+                    spec: FractionSpec::from_count(n_bins)
+                        .context("bin_quantiles")
+                        .map_err(PyPolarsErr::from)?,
+                    right_closed,
+                },
+                labels: labels.map(strings_to_pl_smallstr),
+                include_intervals,
+            })
+            .into())
+    }
+
+    #[cfg(feature = "cutqcut")]
+    #[pyo3(signature = (ranks, labels, include_intervals))]
+    fn bin_ranks(
+        &self,
+        ranks: Vec<f64>,
+        labels: Option<Vec<PyBackedStr>>,
+        include_intervals: bool,
+    ) -> PyResult<Self> {
+        Ok(self
+            .inner
+            .clone()
+            .bin(BinOptions {
+                method: BinMethod::Ranks {
+                    spec: FractionSpec::from_fractions(ranks)
+                        .context("bin_ranks")
+                        .map_err(PyPolarsErr::from)?,
+                },
+                labels: labels.map(strings_to_pl_smallstr),
+                include_intervals,
+            })
+            .into())
+    }
+
+    #[cfg(feature = "cutqcut")]
+    #[pyo3(signature = (n_bins, labels, include_intervals))]
+    fn bin_ranks_uniform(
+        &self,
+        n_bins: usize,
+        labels: Option<Vec<PyBackedStr>>,
+        include_intervals: bool,
+    ) -> PyResult<Self> {
+        Ok(self
+            .inner
+            .clone()
+            .bin(BinOptions {
+                method: BinMethod::Ranks {
+                    spec: FractionSpec::from_count(n_bins)
+                        .context("bin_ranks")
+                        .map_err(PyPolarsErr::from)?,
+                },
+                labels: labels.map(strings_to_pl_smallstr),
+                include_intervals,
+            })
+            .into())
     }
 
     #[cfg(feature = "rle")]
@@ -475,11 +630,9 @@ impl PyExpr {
         } else if let Ok(q) = quantile.extract::<f64>() {
             lit(q)
         } else if let Ok(qs) = quantile.extract::<Vec<f64>>() {
-            let s = Series::new(PlSmallStr::from_static("literal"), qs.as_slice())
-                .implode()
-                .map_err(PyPolarsErr::from)?
-                .into_series();
-            lit(s)
+            let s = Series::new(PlSmallStr::from_static("literal"), qs.as_slice());
+            let dtype = DataType::List(Box::new(DataType::Float64));
+            lit(Scalar::new(dtype, AnyValue::List(s)))
         } else {
             return Err(pyo3::exceptions::PyTypeError::new_err(
                 "`quantile` must be a float, a list of floats, or an expression",
@@ -669,7 +822,7 @@ impl PyExpr {
                 SortOptions {
                     descending: order_by_descending,
                     nulls_last: order_by_nulls_last,
-                    maintain_order: false,
+                    maintain_order: true,
                     ..Default::default()
                 },
             )
@@ -957,11 +1110,22 @@ impl PyExpr {
         self.inner.clone().exp().into()
     }
 
+    fn erf(&self) -> Self {
+        self.inner.clone().erf().into()
+    }
+
+    fn erfc(&self) -> Self {
+        self.inner.clone().erfc().into()
+    }
+
     fn entropy(&self, base: f64, normalize: bool) -> Self {
         self.inner.clone().entropy(base, normalize).into()
     }
     fn hash(&self, seed: u64) -> Self {
         self.inner.clone().hash(seed).into()
+    }
+    fn mm3_hash(&self) -> Self {
+        self.inner.clone().mm3_hash().into()
     }
     fn set_sorted_flag(&self, descending: bool, nulls_last: bool) -> Self {
         let sortedness = AExprSorted::default()
@@ -1027,10 +1191,86 @@ impl PyExpr {
         })
     }
 
+    /// The filter predicate as a PyArrow compute expression string, or `None`
+    /// if (any part of) it cannot be converted.
+    ///
+    /// The predicate is type-coerced as in a Polars filter, so that operands
+    /// Polars casts (e.g. a `Float32` column compared to a `Float64` literal)
+    /// show up as casts, which are not converted.
+    #[pyo3(signature = (schema))]
+    fn to_pyarrow_predicate(
+        &self,
+        py: Python<'_>,
+        schema: Wrap<Schema>,
+    ) -> PyResult<Option<String>> {
+        py.enter_polars(|| {
+            let plan = DataFrame::empty_with_schema(&schema.0)
+                .lazy()
+                .filter(self.inner.clone())
+                .logical_plan
+                .to_alp()?;
+            // The conversion splits a conjunction into stacked filters.
+            let mut predicates = vec![];
+            let mut node = plan.lp_top;
+            while let IR::Filter { input, predicate } = plan.lp_arena.get(node) {
+                predicates.push(predicate.node());
+                node = *input;
+            }
+            polars_ensure!(
+                !predicates.is_empty()
+                    && matches!(plan.lp_arena.get(node), IR::DataFrameScan { .. }),
+                ComputeError: "expected a filter plan"
+            );
+            // The PyArrow `isin` only keeps `nulls_equal` through the haystack's
+            // nulls, but e.g. PyIceberg evaluates membership as null for null
+            // needles.
+            #[cfg(feature = "is_in")]
+            if predicates.iter().any(|&predicate| {
+                plan.expr_arena.iter(predicate).any(|(_, ae)| {
+                    matches!(
+                        ae,
+                        AExpr::Function {
+                            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn {
+                                nulls_equal: true,
+                                ..
+                            }),
+                            ..
+                        }
+                    )
+                })
+            }) {
+                return Ok(None);
+            }
+            // Filters lower in the plan are applied first.
+            let converted = predicates
+                .iter()
+                .rev()
+                .map(|&predicate| predicate_to_pa(predicate, &plan.expr_arena, &schema.0))
+                .collect::<Option<Vec<_>>>();
+            PolarsResult::Ok(converted.map(|parts| {
+                if let [part] = parts.as_slice() {
+                    part.clone()
+                } else {
+                    format!("({})", parts.join(" & "))
+                }
+            }))
+        })
+    }
+
     #[staticmethod]
-    fn row_encode_unordered(exprs: Vec<Self>) -> Self {
+    fn row_encode_unordered(
+        exprs: Vec<Self>,
+        output: Wrap<RowEncodingOutputType>,
+        encode_nulls: Option<Vec<bool>>,
+        propagate_nulls: bool,
+    ) -> Self {
         Expr::n_ary(
-            FunctionExpr::RowEncode(RowEncodingVariant::Unordered),
+            FunctionExpr::RowEncode {
+                variant: RowEncodingVariant::Unordered,
+                output: output.0,
+                encode_nulls,
+                propagate_nulls,
+            },
             exprs.into_iter().map(|e| e.inner.clone()).collect(),
         )
         .into()
@@ -1041,19 +1281,32 @@ impl PyExpr {
         exprs: Vec<Self>,
         descending: Option<Vec<bool>>,
         nulls_last: Option<Vec<bool>>,
+        output: Wrap<RowEncodingOutputType>,
+        encode_nulls: Option<Vec<bool>>,
+        propagate_nulls: bool,
     ) -> Self {
         Expr::n_ary(
-            FunctionExpr::RowEncode(RowEncodingVariant::Ordered {
-                descending,
-                nulls_last,
-                broadcast_nulls: None,
-            }),
+            FunctionExpr::RowEncode {
+                variant: RowEncodingVariant::Ordered {
+                    descending,
+                    nulls_last,
+                },
+                output: output.0,
+                encode_nulls,
+                propagate_nulls,
+            },
             exprs.into_iter().map(|e| e.inner.clone()).collect(),
         )
         .into()
     }
 
-    fn row_decode_unordered(&self, names: Vec<String>, datatypes: Vec<PyDataTypeExpr>) -> Self {
+    fn row_decode_unordered(
+        &self,
+        names: Vec<String>,
+        datatypes: Vec<PyDataTypeExpr>,
+        output: Wrap<RowEncodingOutputType>,
+        encode_nulls: Option<Vec<bool>>,
+    ) -> Self {
         let fields = names
             .into_iter()
             .zip(datatypes)
@@ -1061,10 +1314,12 @@ impl PyExpr {
             .collect();
         self.inner
             .clone()
-            .map_unary(FunctionExpr::RowDecode(
+            .map_unary(FunctionExpr::RowDecode {
                 fields,
-                RowEncodingVariant::Unordered,
-            ))
+                variant: RowEncodingVariant::Unordered,
+                output: output.0,
+                encode_nulls,
+            })
             .into()
     }
 
@@ -1074,6 +1329,8 @@ impl PyExpr {
         datatypes: Vec<PyDataTypeExpr>,
         descending: Option<Vec<bool>>,
         nulls_last: Option<Vec<bool>>,
+        output: Wrap<RowEncodingOutputType>,
+        encode_nulls: Option<Vec<bool>>,
     ) -> Self {
         let fields = names
             .into_iter()
@@ -1082,14 +1339,15 @@ impl PyExpr {
             .collect::<Vec<_>>();
         self.inner
             .clone()
-            .map_unary(FunctionExpr::RowDecode(
+            .map_unary(FunctionExpr::RowDecode {
                 fields,
-                RowEncodingVariant::Ordered {
+                variant: RowEncodingVariant::Ordered {
                     descending,
                     nulls_last,
-                    broadcast_nulls: None,
                 },
-            ))
+                output: output.0,
+                encode_nulls,
+            })
             .into()
     }
 

@@ -7,10 +7,10 @@ import math
 import re
 import zlib
 from collections import OrderedDict
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal as D
 from io import BytesIO
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import zstandard
 from hypothesis import given
@@ -20,7 +20,11 @@ from polars.datatypes.group import FLOAT_DTYPES
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from polars._typing import TimeUnit
+    from tests.conftest import PlMonkeyPatch
+
 import orjson
+import pyarrow as pa
 import pytest
 
 import polars as pl
@@ -101,6 +105,11 @@ def test_write_json_categoricals() -> None:
         '[{"column":"test1"},{"column":"test2"},{"column":"test3"},{"column":"test4"}]'
     )
     assert df.write_json() == expected
+
+
+def test_write_json_sliced_list_of_categoricals() -> None:
+    s = pl.Series("l", [["a", "b"], ["c"], ["d", "e"]], dtype=pl.List(pl.Categorical))
+    assert s[1:].to_frame().write_ndjson() == '{"l":["c"]}\n{"l":["d","e"]}\n'
 
 
 def test_write_json_duration() -> None:
@@ -318,6 +327,172 @@ def test_ndjson_sliced_list_serialization() -> None:
     sliced_df = df[1, :]
     sliced_df.write_ndjson(f)
     assert f.getvalue() == b'{"col1":2,"col2":[6,7,8]}\n'
+
+
+def test_write_ndjson_sliced_list_of_structs_30178() -> None:
+    df = pl.DataFrame(
+        {"a": [[{"x": 1}, None], [None, {"x": 2}], [{"x": 3}]]},
+        schema={"a": pl.List(pl.Struct({"x": pl.Int64}))},
+    )
+    assert df.tail(2).write_ndjson() == '{"a":[null,{"x":2}]}\n{"a":[{"x":3}]}\n'
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype"),
+    [
+        (
+            [[{"x": 1}, None], [None, {"x": 2}], [{"x": 3}], None, [{"x": 4}, None]],
+            pl.List(pl.Struct({"x": pl.Int64})),
+        ),
+        (
+            [[{"x": 1}, {"x": 2}], [{"x": 3}], [], [{"x": 4}, {"x": 5}]],
+            pl.List(pl.Struct({"x": pl.Int64})),
+        ),
+        (
+            [[[1, 2], None], [None, [3, 4]], [[5, 6]], None, [[7, 8], None]],
+            pl.List(pl.Array(pl.Int64, 2)),
+        ),
+        (
+            [
+                [{"y": {"x": 1}}, None],
+                [None, {"y": None}],
+                [{"y": {"x": 3}}],
+                [{"y": {"x": 4}}, None],
+            ],
+            pl.List(pl.Struct({"y": pl.Struct({"x": pl.Int64})})),
+        ),
+        (
+            [
+                [[{"x": 1}, None], None],
+                [None, [None, {"x": 2}]],
+                [[{"x": 3}, None]],
+                [[{"x": 4}, {"x": 5}], None],
+            ],
+            pl.List(pl.Array(pl.Struct({"x": pl.Int64}), 2)),
+        ),
+        (
+            [
+                [{"a": [1, 2]}, None],
+                [None, {"a": None}],
+                [{"a": [3, 4]}],
+                [{"a": [5, 6]}, None],
+            ],
+            pl.List(pl.Struct({"a": pl.Array(pl.Int64, 2)})),
+        ),
+        (
+            [
+                [{"l": [1]}, None],
+                [None, {"l": [2, 3]}],
+                [{"l": None}],
+                [{"l": [4]}, None],
+            ],
+            pl.List(pl.Struct({"l": pl.List(pl.Int64)})),
+        ),
+        (
+            [[[1, 2], None], [None, [3]], [[4], None, []], [[5, 6]], None],
+            pl.List(pl.List(pl.Int64)),
+        ),
+        (
+            [
+                [[{"x": 1}, None]],
+                [None, [None, {"x": 2}]],
+                [[{"x": 3}]],
+                [[{"x": 4}, None]],
+            ],
+            pl.List(pl.List(pl.Struct({"x": pl.Int64}))),
+        ),
+        (
+            [[{"k": 1}, None], [None, {"k": 2, "l": None}], [{"m": 3}], [{"n": 4}]],
+            pl.List(pl.Map(pl.String, pl.Int64)),
+        ),
+        (
+            [{"l": [[1], None]}, None, {"l": [None, [2, 3]]}, {"l": [[4]]}],
+            pl.Struct({"l": pl.List(pl.List(pl.Int64))}),
+        ),
+    ],
+)
+@pytest.mark.parametrize(("offset", "length"), [(1, None), (1, 1), (2, None)])
+def test_write_json_sliced_nested_30178(
+    values: list[Any], dtype: pl.DataType, offset: int, length: int | None
+) -> None:
+    df = pl.DataFrame({"a": values}, schema={"a": dtype}).slice(offset, length)
+    rows = [json.dumps(row, separators=(",", ":")) for row in df.rows(named=True)]
+
+    assert df.write_ndjson() == "".join(f"{row}\n" for row in rows)
+    assert df.write_json() == f"[{','.join(rows)}]"
+    assert df.select(pl.struct("a").struct.json_encode())["a"].to_list() == rows
+
+
+@pytest.mark.parametrize("chunk_lens", [[0, 3, 3], [3, 0, 3], [3, 3, 0], [0, 0, 0]])
+def test_write_json_empty_chunks_30309(chunk_lens: list[int]) -> None:
+    df = pl.concat(
+        [
+            pl.DataFrame({"x": [1, 2, 3], "y": ["a", "b", "c"]}),
+            pl.DataFrame({"x": [4, 5, 6], "y": ["d", "e", "f"]}),
+            pl.DataFrame({"x": [7, 8, 9], "y": ["g", "h", "i"]}),
+        ],
+        rechunk=False,
+    )
+    # A boolean Series mask keeps the chunk layout, including empty chunks.
+    mask = pl.Series([n > 0 for n in chunk_lens for _ in range(3)])
+    out = df.filter(mask)
+    for s in out.iter_columns():
+        assert [len(c) for c in s.get_chunks()] == chunk_lens
+
+    assert out.write_json() == out.rechunk().write_json()
+    assert json.loads(out.write_json()) == out.to_dicts()
+
+
+def test_write_ndjson_sliced_masked_nested_list() -> None:
+    # Null rows that keep non-empty ranges of masked-out values, at both levels.
+    inner = pa.LargeListArray.from_arrays(
+        pa.array([0, 2, 4, 5, 8, 10, 10, 10], pa.int64()),
+        pa.array(range(10), pa.int64()),
+        mask=pa.array([False, True, False, False, False, True, False]),
+    )
+    outer = pa.LargeListArray.from_arrays(
+        pa.array([0, 2, 3, 5, 7, 7], pa.int64()),
+        inner,
+        mask=pa.array([False, True, False, False, True]),
+    )
+    df = pl.from_arrow(pa.table({"a": outer}))
+    assert isinstance(df, pl.DataFrame)
+
+    for offset in range(df.height):
+        for length in range(df.height - offset + 1):
+            sliced = df.slice(offset, length)
+            expected = "".join(
+                f"{json.dumps(row, separators=(',', ':'))}\n"
+                for row in sliced.rows(named=True)
+            )
+            assert sliced.write_ndjson() == expected
+
+
+def test_sink_ndjson_nested_multiple_morsels_30178(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    # Every morsel after the first is a slice, so its lists start at an offset.
+    plmonkeypatch.setenv("POLARS_IDEAL_SINK_MORSEL_SIZE_ROWS", "100")
+    n = 1000
+    df = pl.DataFrame(
+        {
+            "s": [[None, {"x": i}] if i % 3 == 0 else [{"x": i}] for i in range(n)],
+            "a": [[None, [i, i]] if i % 3 == 0 else [[i, i]] for i in range(n)],
+        },
+        schema={
+            "s": pl.List(pl.Struct({"x": pl.Int64})),
+            "a": pl.List(pl.Array(pl.Int64, 2)),
+        },
+    )
+    expected = "".join(
+        f"{json.dumps(row, separators=(',', ':'))}\n" for row in df.rows(named=True)
+    )
+
+    assert df.write_ndjson() == expected
+
+    f = io.BytesIO()
+    df.lazy().sink_ndjson(f)
+    assert f.getvalue().decode() == expected
 
 
 def test_json_deserialize_9687() -> None:
@@ -735,6 +910,67 @@ def test_nested_datetime_ndjson() -> None:
     }
 
 
+DATETIME_CASES_29262 = [
+    ("2020-01-01T12:34:56", datetime(2020, 1, 1, 12, 34, 56)),
+    ("2020-01-01T12:34", datetime(2020, 1, 1, 12, 34)),
+    ("2020-01-01T12:34+05:00", datetime(2020, 1, 1, 7, 34)),
+    ("2020-01-01T12:34+06:00", datetime(2020, 1, 1, 6, 34)),
+    ("2020-01-01T12:34:56-01:00", datetime(2020, 1, 1, 13, 34, 56)),
+    ("2020-01-01T01:00+05:00", datetime(2019, 12, 31, 20, 0)),
+    ("2020-01-01T23:00-05:00", datetime(2020, 1, 2, 4, 0)),
+    ("2020-01-01T12:34:56Z", datetime(2020, 1, 1, 12, 34, 56)),
+    ("2020-01-01 12:34+05:00", datetime(2020, 1, 1, 7, 34)),
+    ("2020-01-01t12:34:56.123456+05:00", datetime(2020, 1, 1, 7, 34, 56, 123456)),
+    ("2020-01-01T12:34:56+05", datetime(2020, 1, 1, 7, 34, 56)),
+    ("2020-01-01T12:34+05:00x", None),
+    ("not a datetime", None),
+    (None, None),
+]
+
+
+@pytest.mark.parametrize("time_zone", [None, "UTC", "Europe/Amsterdam"])
+def test_read_json_datetime_offset_29262(time_zone: str | None) -> None:
+    dtype = pl.Datetime("us", time_zone)
+    data = json.dumps([{"a": s} for s, _ in DATETIME_CASES_29262])
+    result = pl.read_json(io.StringIO(data), schema={"a": dtype})
+    expected_values = [
+        v if v is None or time_zone is None else v.replace(tzinfo=UTC)
+        for _, v in DATETIME_CASES_29262
+    ]
+    expected = pl.DataFrame({"a": pl.Series(expected_values, dtype=dtype)})
+    assert_frame_equal(result, expected)
+
+
+def test_json_decode_datetime_offset_29262() -> None:
+    s = pl.Series([json.dumps({"a": s}) for s, _ in DATETIME_CASES_29262])
+    result = s.str.json_decode(pl.Struct({"a": pl.Datetime("us")}))
+    expected = pl.Series(
+        [{"a": v} for _, v in DATETIME_CASES_29262],
+        dtype=pl.Struct({"a": pl.Datetime("us")}),
+    )
+    assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("time_unit", "expected_values"),
+    [
+        ("ms", [datetime(2020, 1, 1, 7, 34, 56, 123000), datetime(2300, 1, 1)]),
+        ("us", [datetime(2020, 1, 1, 7, 34, 56, 123456), datetime(2300, 1, 1)]),
+        ("ns", [datetime(2020, 1, 1, 7, 34, 56, 123456), None]),
+    ],
+)
+def test_read_json_datetime_time_unit_29262(
+    time_unit: TimeUnit, expected_values: list[datetime | None]
+) -> None:
+    dtype = pl.Datetime(time_unit)
+    data = json.dumps(
+        [{"a": "2020-01-01T12:34:56.123456+05:00"}, {"a": "2300-01-01T00:00"}]
+    )
+    result = pl.read_json(io.StringIO(data), schema={"a": dtype})
+    expected = pl.DataFrame({"a": pl.Series(expected_values, dtype=dtype)})
+    assert_frame_equal(result, expected)
+
+
 def test_ndjson_22229() -> None:
     li = [
         '{ "campaign": {  "id": "123456" }, "metrics": { "conversions": 7}}',
@@ -826,3 +1062,21 @@ def test_ndjson_large_u64_infer_25894() -> None:
         df,
         pl.DataFrame({"id": pl.Series("id", [14933243513335727983], dtype=pl.Int128)}),
     )
+
+
+def test_read_ndjson_small_integers_16167() -> None:
+    data = b'{"a": 1, "b": 300, "c": -1, "d": -300}\n{"a": 255, "b": 65535, "c": 127, "d": null}\n'
+    schema = {"a": pl.UInt8, "b": pl.UInt16, "c": pl.Int8, "d": pl.Int16}
+    df = pl.read_ndjson(io.BytesIO(data), schema=schema)
+    expected = pl.DataFrame(
+        {"a": [1, 255], "b": [300, 65535], "c": [-1, 127], "d": [-300, None]},
+        schema=schema,
+    )
+    assert_frame_equal(df, expected)
+
+    for dtype in schema.values():
+        with pytest.raises(ComputeError, match="cannot parse '100000'"):
+            pl.read_ndjson(io.BytesIO(b'{"a": 100000}\n'), schema={"a": dtype})
+
+    with pytest.raises(ComputeError, match="cannot parse '-1'"):
+        pl.read_ndjson(io.BytesIO(b'{"a": -1}\n'), schema={"a": pl.UInt8})

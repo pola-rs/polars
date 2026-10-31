@@ -1,10 +1,10 @@
 mod basic;
 mod nested;
 
-use arrow::array::{Array, FixedSizeBinaryArray, Float16Array, PrimitiveArray};
-use arrow::types::{NativeType, i256};
 pub use basic::array_to_page;
 pub use nested::array_to_page as nested_array_to_page;
+use polars_arrow::array::{Array, FixedSizeBinaryArray, Float16Array, PrimitiveArray};
+use polars_arrow::types::{NativeType, i256};
 use polars_compute::min_max::MinMaxKernel;
 
 use super::{EncodeNullability, StatisticsOptions};
@@ -60,6 +60,7 @@ pub(super) fn build_statistics_float16(
     primitive_type: PrimitiveType,
     options: &StatisticsOptions,
 ) -> FixedLenStatistics {
+    // Parquet leaves NaN out of the bounds. If all non-null values are NaN, there is no min/max.
     FixedLenStatistics {
         primitive_type,
         null_count: options.null_count.then_some(array.null_count() as i64),
@@ -68,7 +69,8 @@ pub(super) fn build_statistics_float16(
             .max_value
             .then(|| {
                 array
-                    .max_propagate_nan_kernel()
+                    .max_ignore_nan_kernel()
+                    .filter(|x| !x.is_nan())
                     .map(|x| x.norm_max().to_le_bytes().as_ref().to_vec())
             })
             .flatten(),
@@ -76,14 +78,17 @@ pub(super) fn build_statistics_float16(
             .min_value
             .then(|| {
                 array
-                    .min_propagate_nan_kernel()
+                    .min_ignore_nan_kernel()
+                    .filter(|x| !x.is_nan())
                     .map(|x| x.norm_min().to_le_bytes().as_ref().to_vec())
             })
             .flatten(),
     }
 }
 
-pub(super) fn build_statistics_decimal<T>(
+/// Writes the bounds as big-endian bytes, using `T`'s own order. This is only a valid
+/// parquet statistic if the column's declared sort order matches that order.
+pub(super) fn build_statistics_big_endian<T>(
     array: &PrimitiveArray<T>,
     primitive_type: PrimitiveType,
     size: usize,
@@ -119,7 +124,7 @@ where
     }
 }
 
-pub(super) fn build_statistics_decimal256_with_i128(
+pub(super) fn build_statistics_i256_big_endian_low(
     array: &PrimitiveArray<i256>,
     primitive_type: PrimitiveType,
     size: usize,
@@ -152,7 +157,7 @@ pub(super) fn build_statistics_decimal256_with_i128(
     }
 }
 
-pub(super) fn build_statistics_decimal256(
+pub(super) fn build_statistics_i256_big_endian(
     array: &PrimitiveArray<i256>,
     primitive_type: PrimitiveType,
     size: usize,

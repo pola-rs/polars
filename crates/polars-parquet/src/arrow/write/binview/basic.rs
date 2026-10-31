@@ -1,4 +1,4 @@
-use arrow::array::{Array, BinaryViewArray};
+use polars_arrow::array::{Array, BinaryViewArray};
 use polars_compute::min_max::MinMaxKernel;
 use polars_error::PolarsResult;
 
@@ -94,7 +94,7 @@ pub fn array_to_page(
         None
     };
 
-    utils::build_plain_page(
+    let mut page = utils::build_plain_page(
         buffer,
         array.len(),
         array.len(),
@@ -105,8 +105,9 @@ pub fn array_to_page(
         type_,
         options,
         encoding,
-    )
-    .map(Page::Data)
+    )?;
+    page.unencoded_byte_array_data_bytes = Some(array.total_bytes_len() as i64);
+    Ok(Page::Data(page))
 }
 
 pub(crate) fn build_statistics(

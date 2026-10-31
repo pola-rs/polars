@@ -1,5 +1,5 @@
-use arrow::array::{BinaryViewArray, FixedSizeBinaryArray, PrimitiveArray};
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::{BinaryViewArray, FixedSizeBinaryArray, PrimitiveArray};
+use polars_arrow::datatypes::ArrowDataType;
 use polars_buffer::Buffer;
 use polars_core::prelude::{Column, DataType, LargeBinaryArray};
 use polars_core::with_match_physical_integer_type;
@@ -13,7 +13,6 @@ pub enum PreComputedKeys {
 }
 
 impl PreComputedKeys {
-    #[expect(unused)]
     pub fn name(&self) -> &'static str {
         match self {
             Self::Binview(_) => "Binview",

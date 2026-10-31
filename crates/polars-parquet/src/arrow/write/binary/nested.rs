@@ -1,9 +1,9 @@
-use arrow::array::{Array, BinaryArray};
-use arrow::offset::Offset;
+use polars_arrow::array::BinaryArray;
+use polars_arrow::offset::Offset;
 use polars_error::PolarsResult;
 
 use super::super::{WriteOptions, nested, utils};
-use super::basic::{build_statistics, encode_plain};
+use super::basic::{build_statistics, data_bytes, encode_plain};
 use crate::arrow::write::Nested;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::DataPage;
@@ -24,7 +24,7 @@ where
     let encode_options = EncodeNullability::new(is_optional);
 
     let mut buffer = vec![];
-    let (repetition_levels_byte_length, definition_levels_byte_length) =
+    let (repetition_levels_byte_length, definition_levels_byte_length, num_values) =
         nested::write_rep_and_def(options.version, nested, &mut buffer)?;
 
     encode_plain(array, encode_options, &mut buffer);
@@ -34,17 +34,18 @@ where
     } else {
         None
     };
-
-    utils::build_plain_page(
+    let mut page = utils::build_plain_page(
         buffer,
-        nested::num_values(nested),
+        num_values,
         nested[0].len(),
-        array.null_count(),
+        nested::num_nulls(num_values, array),
         repetition_levels_byte_length,
         definition_levels_byte_length,
         statistics,
         type_,
         options,
         Encoding::Plain,
-    )
+    )?;
+    page.unencoded_byte_array_data_bytes = Some(data_bytes(array) as i64);
+    Ok(page)
 }

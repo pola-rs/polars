@@ -1,5 +1,7 @@
 use polars_core::prelude::*;
-use polars_time::{ClosedWindow, Duration, time_range_impl};
+use polars_defs::time::duration::Duration;
+use polars_defs::time::group_by::ClosedWindow;
+use polars_time::time_range_impl;
 
 use super::utils::{
     ensure_items_contain_exactly_one_value, temporal_ranges_impl_broadcast,

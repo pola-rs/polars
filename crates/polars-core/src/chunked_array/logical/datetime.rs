@@ -70,15 +70,13 @@ impl LogicalType for DatetimeChunked {
             #[cfg(feature = "dtype-date")]
             Date => {
                 let cast_to_date = |tu_in_day: i64| {
-                    let mut dt = self
+                    Ok(self
                         .phys
                         .apply_values(|v| v.div_euclid(tu_in_day))
                         .cast_with_options(&Int32, cast_options)
                         .unwrap()
                         .into_date()
-                        .into_series();
-                    dt.set_sorted_flag(self.physical().is_sorted_flag());
-                    Ok(dt)
+                        .into_series())
                 };
                 match self.time_unit() {
                     Nanoseconds => cast_to_date(NS_IN_DAY),
@@ -114,9 +112,10 @@ impl LogicalType for DatetimeChunked {
             },
         };
         out.map(|mut s| {
-            // TODO!; implement the divisions/multipliers above
-            // in a checked manner so that we raise on overflow
-            s.set_sorted_flag(self.physical().is_sorted_flag());
+            // Out-of-range values become null, which may break the order of the nulls.
+            if s.null_count() == self.null_count() {
+                s.set_sorted_flag(self.physical().is_sorted_flag());
+            }
             s
         })
     }

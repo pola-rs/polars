@@ -1,9 +1,9 @@
 use std::hash::Hash;
 
-use arrow::array::BooleanArray;
-use arrow::bitmap::MutableBitmap;
-use arrow::legacy::bit_util::*;
-use arrow::legacy::utils::CustomIterTools;
+use polars_arrow::array::BooleanArray;
+use polars_arrow::bitmap::MutableBitmap;
+use polars_arrow::legacy::bit_util::*;
+use polars_arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_core::series::BitRepr;
 use polars_core::with_match_physical_float_polars_type;
@@ -119,6 +119,7 @@ pub fn is_first_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
             let s = s.cast(&Binary).unwrap();
             return is_first_distinct(&s);
         },
+        BinaryOffset => return is_first_distinct_by_groups(&s),
         dt if dt.is_float() => {
             with_match_physical_float_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
@@ -138,13 +139,9 @@ pub fn is_first_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
         },
         #[cfg(feature = "dtype-struct")]
         Struct(_) => return is_first_distinct_by_groups(&s),
-        List(inner) => {
-            polars_ensure!(
-                !inner.is_nested(),
-                InvalidOperation: "`is_first_distinct` on list type is only allowed if the inner type is not nested."
-            );
-            return is_first_distinct_by_groups(&s);
-        },
+        #[cfg(feature = "dtype-array")]
+        Array(..) => return is_first_distinct_by_groups(&s),
+        List(_) | Null => return is_first_distinct_by_groups(&s),
         dt => polars_bail!(opq = is_first_distinct, dt),
     };
     Ok(out)

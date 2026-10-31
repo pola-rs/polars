@@ -83,7 +83,7 @@ impl fmt::Display for TreeFmtAExpr<'_> {
             },
             AExpr::Eval { .. } => "list.eval",
             #[cfg(feature = "dtype-struct")]
-            AExpr::StructEval { .. } => "struct.with_fields",
+            AExpr::StructEval { variant, .. } => variant.to_name(),
             AExpr::Function { function, .. } => return write!(f, "function: {function}"),
             #[cfg(feature = "dynamic_group_by")]
             AExpr::Rolling { .. } => "rolling",
@@ -363,6 +363,31 @@ impl<'a> TreeFmtNode<'a> {
                         .chain([self.lp_node(None, *input)])
                         .collect(),
                 ),
+                Window {
+                    input,
+                    partition_by,
+                    order_by,
+                    exprs,
+                    maintain_order,
+                    ordered_eval,
+                    ..
+                } => ND(
+                    wh(
+                        h,
+                        &super::format::WindowHeaderDisplay {
+                            partition_by,
+                            order_by: order_by.as_ref(),
+                            maintain_order: *maintain_order,
+                            ordered_eval: *ordered_eval,
+                        }
+                        .to_string(),
+                    ),
+                    exprs
+                        .iter()
+                        .map(|expr| self.expr_node(Some("expression:".to_string()), expr))
+                        .chain([self.lp_node(None, *input)])
+                        .collect(),
+                ),
                 Distinct { input, options } => ND(
                     wh(
                         h,
@@ -437,6 +462,14 @@ impl<'a> TreeFmtNode<'a> {
                         .chain([self.lp_node(Some("RIGHT PLAN:".to_string()), *input_right)])
                         .collect(),
                 ),
+                Recursive { anchor, step, .. } => ND(
+                    wh(h, "RECURSIVE"),
+                    vec![
+                        self.lp_node(Some("ANCHOR:".to_string()), *anchor),
+                        self.lp_node(Some("STEP:".to_string()), *step),
+                    ],
+                ),
+                WorkingTableScan { .. } => ND(wh(h, "WORKING TABLE"), vec![]),
                 UnoptimizedDispatch {
                     inputs,
                     operation,

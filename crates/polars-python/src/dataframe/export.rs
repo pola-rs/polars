@@ -1,6 +1,6 @@
-use arrow::datatypes::IntegerType;
-use arrow::record_batch::RecordBatch;
 use polars::prelude::*;
+use polars_arrow::datatypes::IntegerType;
+use polars_arrow::record_batch::RecordBatch;
 use polars_compute::cast::CastOptionsImpl;
 use polars_utils::itertools::Itertools;
 use pyo3::IntoPyObjectExt;
@@ -141,8 +141,12 @@ impl PyDataFrame {
             false,
         );
 
+        let rbs = py.enter_polars_ok(|| {
+            df.iter_chunks(CompatLevel::oldest(), true)
+                .collect::<Vec<_>>()
+        })?;
         let mut replaced_schema = None;
-        df.iter_chunks(CompatLevel::oldest(), true)
+        rbs.into_iter()
             .map(|rb| {
                 let length = rb.len();
                 let (schema, mut arrays) = rb.into_schema_and_arrays();

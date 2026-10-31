@@ -3,9 +3,9 @@ pub mod version_0;
 
 use std::mem::ManuallyDrop;
 
-use arrow::array::ArrayRef;
-use arrow::ffi;
-use arrow::ffi::{ArrowArray, ArrowSchema};
+use polars_arrow::array::ArrayRef;
+use polars_arrow::ffi;
+use polars_arrow::ffi::{ArrowArray, ArrowSchema};
 use polars_core::error::PolarsResult;
 use polars_core::prelude::Series;
 

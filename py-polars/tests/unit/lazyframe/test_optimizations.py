@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 import datetime as dt
 import io
 import itertools
 import re
+from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
 import pyarrow.dataset as pad
@@ -11,6 +14,12 @@ import polars as pl
 from polars.exceptions import ArgumentRemovedError
 from polars.lazyframe.opt_flags import QueryOptFlags
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from polars._typing import EngineType
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_is_null_followed_by_all() -> None:
@@ -165,6 +174,101 @@ def test_is_not_null_followed_by_sum() -> None:
     assert_frame_equal(expected_df, result_df)
 
 
+def _count_guarded_sum(e: pl.Expr) -> pl.Expr:
+    return pl.when(e.count() > 0).then(e.sum()).otherwise(None)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Int8,
+        pl.Int64,
+        pl.UInt32,
+        pl.Float64,
+        pl.Decimal(10, 2),
+        pl.Boolean,
+        pl.Duration("ms"),
+    ],
+)
+def test_count_guarded_sum(engine: EngineType, dtype: pl.DataType) -> None:
+    v = pl.col("v")
+    lf = pl.LazyFrame(
+        {"g": [1, 1, 2, 2, 3], "v": [1, None, None, None, 0]}
+    ).with_columns(v.cast(dtype))
+
+    for q in [
+        lf.group_by("g").agg(_count_guarded_sum(v)),
+        lf.group_by("g").agg(_count_guarded_sum(v.filter(pl.col("g") == 1))),
+        lf.select(_count_guarded_sum(v).over("g")),
+        lf.select(_count_guarded_sum(v)),
+        lf.filter(pl.col("g") == 2).select(_count_guarded_sum(v)),
+        lf.clear().select(_count_guarded_sum(v)),
+    ]:
+        no_simplify = QueryOptFlags(simplify_expression=False)
+        assert "sum(null_on_empty=true)" in q.explain()
+        assert "null_on_empty" not in q.explain(optimizations=no_simplify)
+        expected = q.collect(optimizations=no_simplify)
+        assert_frame_equal(q.collect(engine=engine), expected, check_row_order=False)
+
+
+def test_count_guarded_sum_not_rewritten() -> None:
+    lf = pl.LazyFrame({"v": [1, None], "w": [1, 2]})
+    v, w = pl.col("v"), pl.col("w")
+    for e in [
+        pl.when(v.count() > 0).then(w.sum()).otherwise(None),
+        pl.when(v.count() > 1).then(v.sum()).otherwise(None),
+        pl.when(v.count() > 0).then(v.sum()).otherwise(0),
+        pl.when(v.len() > 0).then(v.sum()).otherwise(None),
+    ]:
+        assert "null_on_empty" not in lf.select(e).explain()
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("dtype", [pl.Int16, pl.Int64, pl.UInt32])
+def test_sum_of_column_with_literal(engine: EngineType, dtype: pl.DataType) -> None:
+    x = pl.col("x")
+    lf = pl.LazyFrame({"g": [1, 1, 2, 2, 3], "x": [1, None, 3, 4, None]}).with_columns(
+        x.cast(dtype)
+    )
+    exprs = [
+        x.sum(),
+        (x + 5).sum().alias("a"),
+        (x - 1).sum().alias("b"),
+        (7 - x).sum().alias("c"),
+        (x + pl.lit(2, pl.Int64)).sum().alias("d"),
+        (x + 3).count().alias("e"),
+        (x + 1.5).sum().alias("f"),
+    ]
+    no_simplify = QueryOptFlags(simplify_expression=False)
+    assert '(col("x") + 5)' in lf.select(exprs).explain(optimizations=no_simplify)
+    assert '(col("x") + 5)' not in lf.select(exprs).explain()
+
+    for q in [
+        lf.select(exprs),
+        lf.group_by("g").agg(exprs),
+        lf.select(e.over("g") for e in exprs),
+        lf.clear().select(exprs),
+        lf.sql("SELECT SUM(x + 1) AS a, SUM(9 - x) AS b FROM self"),
+        lf.filter(g=3).sql("SELECT SUM(x + 1) AS a, SUM(9 - x) AS b FROM self"),
+    ]:
+        expected = q.collect(optimizations=no_simplify)
+        assert_frame_equal(q.collect(engine=engine), expected, check_row_order=False)
+
+
+def test_sum_of_column_with_literal_that_changes_dtype() -> None:
+    x = pl.col("x")
+    lf = pl.LazyFrame({"x": pl.Series([2**63, 1], dtype=pl.UInt64)})
+    q = lf.select(
+        a=(x + -1).count() + 1,
+        b=(x + -1).sum() + 1,
+        c=(x.cast(pl.Int64, strict=False) + 1).sum(),
+        d=(x + 2**64).count(),
+    )
+    no_simplify = QueryOptFlags(simplify_expression=False)
+    assert_frame_equal(q.collect(), q.collect(optimizations=no_simplify))
+
+
 def test_drop_nulls_followed_by_len() -> None:
     lf = pl.LazyFrame({"group": [0, 0, 0, 1, 2], "val": [6, 0, None, None, 5]})
 
@@ -274,6 +378,48 @@ def test_len_null_count_comparison_optimized(
     assert_frame_equal(
         result_lf.collect(),
         result_lf.collect(optimizations=pl.QueryOptFlags(simplify_expression=False)),
+    )
+
+
+@pytest.mark.parametrize(
+    ("op", "n", "expected_head_len"),
+    [
+        ("__eq__", 2, 3),
+        ("__ne__", 2, 3),
+        ("__lt__", 2, 2),
+        ("__le__", 2, 3),
+        ("__gt__", 2, 3),
+        ("__ge__", 2, 3),
+    ],
+)
+def test_len_cmp_head_insertion(op: str, n: int, expected_head_len: int) -> None:
+    # Filter first so the inserted slice isn't collapsed directly into the
+    # `DataFrameScan` (which would elide the `SLICE` node from the plan entirely).
+    lf = pl.LazyFrame({"a": [1, 2, 3, 4, 5]}).filter(pl.col("a") > 0)
+    expr = getattr(pl.len(), op)(n)
+    result_lf = lf.select(expr.alias("out"))
+
+    plan = result_lf.explain()
+    assert f"SLICE[offset: 0, len: {expected_head_len}]" in plan
+
+    assert_frame_equal(
+        result_lf.collect(),
+        result_lf.collect(optimizations=pl.QueryOptFlags(slice_pushdown=False)),
+    )
+
+
+def test_len_cmp_head_insertion_pushed_into_filter() -> None:
+    lf = pl.LazyFrame({"a": list(range(10))})
+    result_lf = lf.filter(pl.col("a") >= 0).select((pl.len() > 3).alias("out"))
+
+    plan = result_lf.explain()
+    assert "SLICE[offset: 0, len: 4]" in plan
+    # The slice should have been pushed below the filter.
+    assert plan.index("SLICE") < plan.index("FILTER")
+
+    assert_frame_equal(
+        result_lf.collect(),
+        result_lf.collect(optimizations=pl.QueryOptFlags(slice_pushdown=False)),
     )
 
 
@@ -1007,6 +1153,24 @@ def test_slice_pushdown_expr_leaf_ae_without_col_input_27820() -> None:
     assert_frame_equal(out, pl.DataFrame({"a": 1, "s": -1}))
 
 
+@pytest.mark.parametrize(
+    ("expr", "expected"),
+    [
+        (pl.col("a").first().over(pl.lit(1)), [1, 1, 1]),
+        (pl.col("a").last().over(pl.lit(1)), [3, 3, 3]),
+        ((pl.col("a") + 1).last().over(pl.lit(1)), [4, 4, 4]),
+        (pl.col("a").slice(0, 2).sum().over(pl.lit(1)), [3, 3, 3]),
+        ((pl.len() > 1).over(pl.lit(1)), [True, True, True]),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_slice_pushdown_expr_window_keeps_frame_height(
+    expr: pl.Expr, expected: list[Any], engine: EngineType
+) -> None:
+    q = pl.LazyFrame({"a": [1, 2, 3]}).select(expr.alias("out"))
+    assert q.collect(engine=engine).to_series().to_list() == expected
+
+
 def test_slice_pushdown_joins_27199() -> None:
     lhs = pl.LazyFrame({"a": [0, 0]})
     rhs = pl.LazyFrame({"a": [0, 0]})
@@ -1307,6 +1471,31 @@ def test_streaming_engine_fused_filter_drop() -> None:
     assert_frame_equal(q.collect(), pl.DataFrame({"x": 1, "z": "Z"}))
 
 
+def test_streaming_engine_fused_filter_drop_stacked() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": [5, 6, 7], "d": [7, 8, 9]})
+    q = (
+        lf.filter(pl.col("d") > 7)
+        .select("a", "b", "c")
+        .with_columns(pl.col("a").cum_sum())
+        .filter(pl.col("c") > 6)
+        .select("a")
+    )
+
+    phys_plan = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+
+    assert "project 1 / 2: a" in phys_plan
+    assert "project 2 / 3: a, c" in phys_plan
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 5}))
+
+    # Non-elementwise predicate.
+    q = lf.filter(pl.col("b") > pl.col("b").mean()).select("a", "c")
+
+    phys_plan = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+
+    assert "project 2 / 4: a, c" in phys_plan
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 3, "c": 7}))
+
+
 def test_projection_pushdown_select_prune_expr_28729() -> None:
     q = (
         pl.LazyFrame({"x": [0, 1, 2]})
@@ -1334,3 +1523,339 @@ def test_query_opt_flags_collapse_joins_removed() -> None:
 
     with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
         QueryOptFlags().update(collapse_joins=False)  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_literal_select_skips_input(engine: EngineType) -> None:
+    calls = []
+
+    def udf(df: pl.DataFrame) -> pl.DataFrame:
+        calls.append(df.height)
+        return df
+
+    q = (
+        pl.LazyFrame({"a": [1, 2]})
+        .map_batches(udf)
+        .select(pl.lit(1).alias("x"), pl.lit(None).alias("y"), pl.lit("s").alias("z"))
+    )
+    assert q.explain().startswith("DF")
+    assert_frame_equal(
+        q.collect(engine=engine),
+        pl.DataFrame(
+            {"x": 1, "y": None, "z": "s"},
+            schema={"x": pl.Int32, "y": pl.Null, "z": pl.String},
+        ),
+    )
+    assert calls == []
+
+
+def test_repeated_keys_removed() -> None:
+    lf = pl.LazyFrame(
+        {"a": [3, 1, 2, 0, 3], "b": ["x", "y", "z", "w", "x"], "c": [1, 2, 3, 4, 5]}
+    )
+    for q in [
+        lf.sort("a", "b", "a"),
+        lf.top_k(2, by=["a", "b", "a"]),
+        lf.select(pl.col("b").sort_by("a", "b", "a")),
+        lf.select(pl.col("b").top_k_by(["a", "b", "a"], 2)),
+        lf.select(pl.col("c").sum().over("a", "b", "a")),
+    ]:
+        assert 'col("a"), col("b"), col("a")' not in q.explain()
+
+    q = lf.unique(subset=["a", "a"], maintain_order=True)
+    assert 'BY Some(["a"])' in q.explain()
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"a": [3, 1, 2, 0], "b": ["x", "y", "z", "w"], "c": [1, 2, 3, 4]}),
+    )
+
+    q = lf.select(pl.col("c").sum().over("a", "a"))
+    assert 'over([col("a")])' in q.explain()
+    assert_frame_equal(q.collect(), pl.DataFrame({"c": [6, 2, 3, 4, 6]}))
+
+    q = lf.select(
+        pl.col("a").cum_sum().over(order_by=["c", "c"], descending=True),
+    )
+    assert 'order_by: col("c"))' in q.explain()
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [9, 6, 5, 3, 3]}))
+
+    left = lf.sort("a")
+    right = left.rename({"b": "d", "c": "e"})
+    q = left.join_asof(right, on="a", by_left=["b", "b"], by_right=["d", "d"])
+    assert_frame_equal(
+        q.collect(),
+        left.join_asof(right, on="a", by_left="b", by_right="d").collect(),
+    )
+
+
+def test_repeated_keys_removed_before_sort_rewrites() -> None:
+    lf = pl.LazyFrame({"a": [3, 1, None, 2], "b": ["x", "y", "z", "w"]})
+
+    q = pl.LazyFrame({"a": [1, 2, 3]}).set_sorted("a").sort(["a", "a"])
+    assert "SORT" not in q.explain()
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 2, 3]}))
+
+    for agg in ["first", "last"]:
+        q = lf.select(
+            getattr(pl.col("b").sort_by("a", "a", descending=[True, False]), agg)()
+        )
+        assert "row_encode" not in q.explain()
+        assert_frame_equal(
+            q.collect(),
+            lf.select(
+                getattr(pl.col("b").sort_by("a", descending=True), agg)()
+            ).collect(),
+        )
+
+
+def test_scalar_window_order_by_key_removed() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3, 4], "c": [2, None, 1, 3], "g": [1, 1, 2, 2]})
+    q = lf.select(
+        pl.col("a")
+        .cum_sum()
+        .over("g", order_by=[pl.lit(1), "c"], descending=True, nulls_last=True)
+    )
+    assert "row_encode" not in q.explain()
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 3, 7, 4]}))
+
+
+@pytest.mark.parametrize(
+    ("expr", "simplified"),
+    [
+        (pl.col("p") & pl.col("p"), 'col("p")'),
+        (pl.col("p") | pl.col("p"), 'col("p")'),
+        (pl.col("a") & pl.col("a"), 'col("a")'),
+        (pl.col("p") & (pl.col("p") | pl.col("q")), 'col("p")'),
+        ((pl.col("q") & pl.col("p")) | pl.col("p"), 'col("p").alias("q")'),
+        (pl.col("p") == True, 'col("p")'),  # noqa: E712
+        (pl.col("p") != False, 'col("p")'),  # noqa: E712
+        (pl.col("p") == False, 'col("p").not()'),  # noqa: E712
+        (pl.lit(True) != pl.col("p"), 'col("p").not().alias("literal")'),
+        (pl.lit(True) & pl.col("p"), 'col("p").alias("literal")'),
+        (pl.lit(False) | pl.col("p"), 'col("p").alias("literal")'),
+        (
+            pl.when(pl.col("p")).then(True).otherwise(False),
+            'col("p").fill_null([false]).alias("literal")',
+        ),
+        (
+            pl.when(pl.col("p")).then(False).otherwise(True),
+            'col("p").fill_null([false]).not().alias("literal")',
+        ),
+        (pl.when(pl.col("p")).then(pl.col("a")).otherwise(pl.col("a")), 'col("a")'),
+        (pl.when(True).then(pl.col("a")), 'col("a")'),
+        (pl.when(False).then(0).otherwise(pl.col("a")), 'col("a").alias("literal")'),
+    ],
+)
+def test_simplify_boolean_identities(expr: pl.Expr, simplified: str) -> None:
+    lf = pl.LazyFrame(
+        {
+            "p": [True, False, None, True],
+            "q": [None, True, False, False],
+            "a": [1, None, 3, 4],
+        }
+    )
+    q = lf.select(expr)
+    assert f"SELECT [{simplified}]" in q.explain()
+    assert_frame_equal(
+        q.collect(), q.collect(optimizations=QueryOptFlags(simplify_expression=False))
+    )
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        # Replacing these by the scalar operand would change the length.
+        pl.col("p").any() & (pl.col("p").any() | pl.col("q")),
+        pl.lit(True) & (pl.lit(True) | pl.col("q")),
+        pl.lit(False) | (pl.lit(False) & pl.col("q")),
+        pl.when(pl.col("p")).then(pl.col("a").max()).otherwise(pl.col("a").max()),
+        pl.when(pl.col("p")).then(pl.lit(1)).otherwise(pl.lit(1)),
+        # A one-row literal is broadcast to the other operand.
+        pl.lit(1).is_in(pl.Series([[1]]))
+        & (pl.lit(1).is_in(pl.Series([[1]])) | pl.col("p")),
+        pl.when(pl.col("p"))
+        .then(pl.lit(1).is_in(pl.Series([[1]])))
+        .otherwise(pl.lit(1).is_in(pl.Series([[1]]))),
+        # Bitwise `|` on integers gives `null` for a `null` in `b`.
+        pl.col("a") & (pl.col("a") | pl.col("b")),
+        pl.col("a") | (pl.col("a") & pl.col("b")),
+        # Not boolean, so `== true` is not the operand itself.
+        pl.col("a") == True,  # noqa: E712
+    ],
+)
+def test_simplify_boolean_identities_keep_length(expr: pl.Expr) -> None:
+    lf = pl.LazyFrame(
+        {
+            "p": [True, False, None, True],
+            "q": [None, True, False, False],
+            "a": [1, None, 3, 4],
+            "b": [None, 1, None, 2],
+        }
+    )
+    q = lf.select(expr)
+    out = q.collect()
+    assert out.height == 4
+    assert_frame_equal(
+        out, q.collect(optimizations=QueryOptFlags(simplify_expression=False))
+    )
+
+
+def test_simplify_when_then_struct_eval_keeps_length() -> None:
+    # The struct reads `p`, so it is not a scalar. Only the streaming engine
+    # accepts a column field on a scalar struct.
+    p = (
+        pl.struct(pl.lit(True).alias("v"))
+        .struct.with_fields(pl.col("p").alias("v"))
+        .struct.field("v")
+    )
+    q = pl.LazyFrame({"p": [True, False, None]}).select(pl.when(p).then(1).otherwise(1))
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        pl.DataFrame({"literal": [1, 1, 1]}, schema={"literal": pl.Int32}),
+    )
+
+
+def test_simplify_boolean_identities_nondeterministic() -> None:
+    # Two draws of a random expression are not the same value.
+    shuffled = pl.int_range(pl.len()).shuffle()
+    q = pl.LazyFrame({"a": [1, 2, 3]}).select(shuffled | shuffled)
+    assert "|" in q.explain()
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.when(pl.col("a")).then(True).otherwise(False),
+        pl.when(pl.col("a")).then(pl.col("p")).otherwise(pl.col("p")),
+        pl.col("s") & pl.col("s"),
+        pl.col("f") & pl.col("f"),
+        pl.col("p") & (pl.col("p") | pl.col("s")),
+    ],
+)
+def test_simplify_boolean_identities_keep_dtype_errors(expr: pl.Expr) -> None:
+    lf = pl.LazyFrame(
+        {"p": [True, None], "a": [1, 2], "s": ["x", "y"], "f": [1.0, 2.0]}
+    )
+    with pytest.raises(
+        (pl.exceptions.SchemaError, pl.exceptions.InvalidOperationError)
+    ):
+        lf.select(expr).collect()
+
+
+def test_simplify_when_then_bool_literals_in_filter() -> None:
+    lf = pl.LazyFrame({"p": [True, False, None], "a": [1, 2, 3]})
+    q = lf.filter(pl.when(pl.col("p")).then(True).otherwise(False))
+    assert q.explain().startswith('FILTER col("p")')
+    assert_frame_equal(q.collect(), pl.DataFrame({"p": [True], "a": [1]}))
+
+    q = lf.filter(pl.when(pl.col("p")).then(False).otherwise(True))
+    assert_frame_equal(q.collect(), pl.DataFrame({"p": [False, None], "a": [2, 3]}))
+
+
+def test_simplify_unique_len_to_n_unique() -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 1, 2], "a": [1, None, 1, 2]})
+    q = lf.group_by("g", maintain_order=True).agg(
+        pl.col("a").unique().len(), c=pl.col("a").unique().count()
+    )
+    plan = q.explain()
+    assert 'col("a").n_unique()' in plan
+    assert 'col("a").unique().count()' in plan
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {"g": [1, 2], "a": [2, 1], "c": [1, 1]},
+            schema={"g": pl.Int64, "a": pl.get_index_type(), "c": pl.get_index_type()},
+        ),
+    )
+
+    # `n_unique` does not support objects in groups.
+    lf = pl.LazyFrame({"g": [1, 1], "a": pl.Series([1, 1], dtype=pl.Object)})
+    q = lf.group_by("g").agg(pl.col("a").unique().len())
+    assert "n_unique" not in q.explain()
+
+
+_YEAR_OPS = ["__lt__", "__le__", "__gt__", "__ge__", "__eq__", "__ne__"]
+
+
+def _assert_year_filters_match(lf: pl.LazyFrame, year: int) -> None:
+    for op in _YEAR_OPS:
+        for e in [
+            getattr(pl.col("x").dt.year(), op)(year),
+            getattr(pl.lit(year), op)(pl.col("x").dt.year()),
+        ]:
+            q = lf.filter(e)
+            assert_frame_equal(
+                q.collect(),
+                q.collect(optimizations=QueryOptFlags(simplify_expression=False)),
+            )
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [pl.Date, pl.Datetime("ns"), pl.Datetime("us"), pl.Datetime("ms")],
+)
+@pytest.mark.parametrize("year", [1969, 1970, 2020, 2263, 2**31 - 1])
+def test_simplify_year_comparison(dtype: pl.DataType, year: int) -> None:
+    values = [
+        dt.datetime(1969, 12, 31, 23, 59, 59),
+        dt.datetime(1970, 1, 1),
+        dt.datetime(2019, 12, 31, 23, 59, 59, 999000),
+        dt.datetime(2020, 1, 1),
+        dt.datetime(2020, 12, 31, 23, 59, 59, 999000),
+        dt.datetime(2021, 1, 1),
+        None,
+    ]
+    lf = pl.LazyFrame({"x": values}).with_columns(pl.col("x").cast(dtype))
+    _assert_year_filters_match(lf, year)
+    if year == 2020:
+        assert "year" not in lf.filter(pl.col("x").dt.year() == year).explain()
+    # Outside a filter a null year must stay null, so nothing changes.
+    assert "year" in lf.select(pl.col("x").dt.year() == year).explain()
+
+
+@pytest.mark.parametrize("dtype", [pl.Date, pl.Datetime("ms"), pl.Datetime("us")])
+def test_simplify_year_comparison_keeps_null_years(dtype: pl.DataType) -> None:
+    # `dt.year()` is null for values outside the supported dates.
+    bits = 32 if dtype == pl.Date else 64
+    lf = pl.LazyFrame(
+        {"x": [-(2 ** (bits - 1)), 0, 2 ** (bits - 1) - 1]},
+        schema={"x": pl.Int32 if dtype == pl.Date else pl.Int64},
+    ).select(pl.col("x").cast(dtype))
+    _assert_year_filters_match(lf, 2020)
+    lf.filter(pl.col("x").dt.year() >= 2020).explain()
+
+
+def test_simplify_year_comparison_not_equal_reads_input_once() -> None:
+    lf = pl.LazyFrame({"s": ["2019-06-01", "2020-06-01", None]})
+    d = pl.col("s").str.to_date()
+    # `!=` would read the input twice, so only a column is rewritten.
+    q = lf.filter(d.dt.year() != 2020)
+    assert "dt.year()" in q.explain()
+    assert q.collect()["s"].to_list() == ["2019-06-01"]
+    q = lf.filter(d.dt.year() == 2020)
+    assert "dt.year()" not in q.explain()
+    assert q.collect()["s"].to_list() == ["2020-06-01"]
+
+
+def test_simplify_year_comparison_keeps_time_zone() -> None:
+    lf = pl.LazyFrame(
+        {"x": [dt.datetime(2020, 12, 31, 23)]},
+        schema={"x": pl.Datetime("us", "Asia/Kathmandu")},
+    )
+    # The year is taken in local time, which is already 2021 here.
+    q = lf.filter(pl.col("x").dt.year() == 2020)
+    assert "dt.year()" in q.explain()
+    assert q.collect().height == 0
+
+
+def test_simplify_year_comparison_prunes_row_groups(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "a.parquet"
+    dates = pl.date_range(dt.date(2019, 1, 1), dt.date(2021, 12, 31), eager=True)
+    pl.DataFrame({"d": dates}).write_parquet(path, row_group_size=100)
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    out = pl.scan_parquet(path).filter(pl.col("d").dt.year() == 2021).collect()
+    assert out.height == 365
+    assert "reading 4 / 11 row groups" in capfd.readouterr().err

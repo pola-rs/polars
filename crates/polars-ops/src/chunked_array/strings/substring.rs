@@ -1,4 +1,4 @@
-use arrow::array::View;
+use polars_arrow::array::View;
 use polars_core::prelude::arity::{binary_elementwise, ternary_elementwise, unary_elementwise};
 use polars_core::prelude::{ChunkFullNull, Int64Chunked, StringChunked, UInt64Chunked};
 use polars_core::series::IsSorted;

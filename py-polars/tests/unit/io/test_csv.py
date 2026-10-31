@@ -7,7 +7,7 @@ import sys
 import textwrap
 import warnings
 import zlib
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta, timezone
 from decimal import Decimal as D
 from typing import TYPE_CHECKING, Any, TypedDict
 
@@ -1246,16 +1246,16 @@ def test_tz_aware_try_parse_dates(chunk_override: None) -> None:
     expected = pl.DataFrame(
         {
             "a": [
-                datetime(2020, 1, 1, 1, tzinfo=timezone.utc),
-                datetime(2020, 1, 1, 2, tzinfo=timezone.utc),
+                datetime(2020, 1, 1, 1, tzinfo=UTC),
+                datetime(2020, 1, 1, 2, tzinfo=UTC),
             ],
             "b": [
-                datetime(2021, 4, 27, 22, tzinfo=timezone.utc),
-                datetime(2021, 4, 28, 22, tzinfo=timezone.utc),
+                datetime(2021, 4, 27, 22, tzinfo=UTC),
+                datetime(2021, 4, 28, 22, tzinfo=UTC),
             ],
             "c": [
-                datetime(2021, 3, 27, 23, tzinfo=timezone.utc),
-                datetime(2021, 3, 28, 22, tzinfo=timezone.utc),
+                datetime(2021, 3, 27, 23, tzinfo=UTC),
+                datetime(2021, 3, 28, 22, tzinfo=UTC),
             ],
             "d": [2, 3],
         }
@@ -1489,7 +1489,7 @@ def test_datetime_format(chunk_override: None, fmt: str, expected: str) -> None:
         ("%R%z", "dt\n00:00+0000\n"),
     ],
 )
-@pytest.mark.parametrize("tzinfo", [timezone.utc, timezone(timedelta(hours=0))])
+@pytest.mark.parametrize("tzinfo", [UTC, timezone(timedelta(hours=0))])
 def test_datetime_format_tz_aware(
     chunk_override: None, fmt: str, expected: str, tzinfo: timezone
 ) -> None:
@@ -2116,6 +2116,17 @@ def test_read_filelike_object_12404(chunk_override: None) -> None:
     assert_frame_equal(df, expected)
 
 
+def test_write_csv_quote_line_terminator_30181(chunk_override: None) -> None:
+    df = pl.DataFrame({"s": ["x", "a;b", "y"], "a;b": ["p", "q", "r"]})
+    expected = 's,"a;b";x,p;"a;b",q;y,r;'
+
+    assert df.write_csv(line_terminator=";") == expected
+    f = io.BytesIO()
+    df.lazy().sink_csv(f, line_terminator=";")
+    assert f.getvalue().decode() == expected
+    assert_frame_equal(pl.read_csv(expected.encode(), eol_char=";"), df)
+
+
 def test_write_csv_bom(chunk_override: None) -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
     f = io.BytesIO()
@@ -2191,7 +2202,7 @@ def test_read_csv_invalid_schema_overrides(chunk_override: None) -> None:
     )
     f = io.StringIO(csv)
     with pytest.raises(
-        TypeError, match="`schema_overrides` should be of type list or dict"
+        TypeError, match="`schema_overrides` should be a mapping or a sequence"
     ):
         pl.read_csv(f, schema_overrides={pl.Int64, pl.String})  # type: ignore[arg-type]
 
@@ -2491,9 +2502,9 @@ def test_csv_try_parse_dates_leading_zero_8_digits_22167(chunk_override: None) -
     expected = pl.DataFrame(
         {
             "a": [
-                datetime(2025, 4, 6, 18, 56, 42, 617736, tzinfo=timezone.utc),
-                datetime(2025, 4, 6, 18, 57, 42, 777561, tzinfo=timezone.utc),
-                datetime(2025, 4, 6, 18, 58, 44, 569287, tzinfo=timezone.utc),
+                datetime(2025, 4, 6, 18, 56, 42, 617736, tzinfo=UTC),
+                datetime(2025, 4, 6, 18, 57, 42, 777561, tzinfo=UTC),
+                datetime(2025, 4, 6, 18, 58, 44, 569287, tzinfo=UTC),
             ]
         }
     )
@@ -3201,6 +3212,14 @@ def test_read_csv_use_pyarrow_int_columns_27389(tmp_path: Path) -> None:
         pl.read_csv(path, columns=[0], use_pyarrow=True),
         expected,
     )
+
+
+def test_read_csv_use_pyarrow_newlines_in_values_29717() -> None:
+    value = "x" * 600 + "\n" + "y" * 600
+    # Larger than pyarrow's 1 MiB block size.
+    data = ("v\n" + f'"{value}"\n' * 1000).encode()
+    df = pl.read_csv(io.BytesIO(data), use_pyarrow=True)
+    assert_frame_equal(df, pl.DataFrame({"v": [value] * 1000}))
 
 
 def test_read_csv_i64_overflow_infers_i128_27654(chunk_override: None) -> None:

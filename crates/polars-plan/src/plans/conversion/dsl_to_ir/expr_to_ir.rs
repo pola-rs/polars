@@ -2,7 +2,10 @@ use super::functions::convert_functions;
 use super::*;
 use crate::constants::{get_pl_element_name, get_pl_structfields_name};
 use crate::plans::iterator::ArenaExprIter;
-use crate::plans::projection_height::{ExprProjectionHeight, aexpr_projection_height_rec};
+use crate::plans::projection_height::{
+    ExprHeightOptions, ExprProjectionHeight, aexpr_projection_height_rec,
+    aexpr_projection_height_rec_with,
+};
 
 pub fn to_expr_ir(expr: Expr, ctx: &mut ExprToIRContext) -> PolarsResult<ExprIR> {
     let (node, output_name) = to_aexpr_impl(expr, ctx)?;
@@ -228,10 +231,11 @@ pub(super) fn to_aexpr_impl(
             sort_options,
         } => {
             let (expr, output_name) = recurse_arc!(expr)?;
-            let by = by
+            let by: Vec<Node> = by
                 .into_iter()
                 .map(|e| Ok(recurse!(e)?.0))
                 .collect::<PolarsResult<_>>()?;
+            let sort_options = sort_options.expand_flags(by.len())?;
 
             (
                 AExpr::SortBy {
@@ -258,6 +262,7 @@ pub(super) fn to_aexpr_impl(
                         IRAggExpr::Min {
                             input,
                             propagate_nans,
+                            propagate_nulls: false,
                         },
                         output_name,
                     )
@@ -271,6 +276,7 @@ pub(super) fn to_aexpr_impl(
                         IRAggExpr::Max {
                             input,
                             propagate_nans,
+                            propagate_nulls: false,
                         },
                         output_name,
                     )
@@ -335,7 +341,13 @@ pub(super) fn to_aexpr_impl(
                 },
                 AggExpr::Sum(input) => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
-                    (IRAggExpr::Sum(input), output_name)
+                    (
+                        IRAggExpr::Sum {
+                            input,
+                            null_on_empty: false,
+                        },
+                        output_name,
+                    )
                 },
                 AggExpr::Std(input, ddof) => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
@@ -532,12 +544,16 @@ pub(super) fn to_aexpr_impl(
             )
         },
         #[cfg(feature = "dtype-struct")]
-        Expr::StructEval { expr, evaluation } => {
+        Expr::StructEval {
+            expr,
+            evaluation,
+            variant,
+        } => {
             let (expr, output_name) = recurse_arc!(expr)?;
             let expr_dtype = ctx.arena.get(expr).to_dtype(&ctx.to_field_ctx())?;
 
             let DataType::Struct(fields) = &expr_dtype else {
-                polars_bail!(op = "struct.with_fields", expr_dtype);
+                polars_bail!(op = variant.to_name(), expr_dtype);
             };
 
             let struct_schema = Schema::from_iter(fields.iter().cloned());
@@ -556,6 +572,28 @@ pub(super) fn to_aexpr_impl(
                     check_column_names: ctx.check_column_names,
                 };
                 let exprir = to_expr_ir(e, &mut eval_ctx)?;
+
+                // The evaluated fields are zipped back into the input struct, so they must have a
+                // height that can be related to it. `StructField` references are the height of
+                // that struct, scalars broadcast, and ranges are checked at runtime; anything
+                // else (e.g. `explode`, `filter`, `slice`, `unique`) cannot line up.
+                polars_ensure!(
+                    !matches!(
+                        aexpr_projection_height_rec_with(
+                            exprir.node(),
+                            ctx.arena,
+                            &mut Default::default(),
+                            &mut Default::default(),
+                            ExprHeightOptions {
+                                struct_field: ExprProjectionHeight::Column,
+                                structural_unknowns_only: true,
+                            },
+                        ),
+                        ExprProjectionHeight::Unknown
+                    ),
+                    InvalidOperation: "`{}` is not allowed with non-length preserving expressions", variant.to_name()
+                );
+
                 let field_name = exprir.output_name().clone();
                 polars_ensure!(field_names.insert(field_name.clone()),
                     Duplicate: "field with name `{field_name}` has more than one occurrence");
@@ -566,6 +604,7 @@ pub(super) fn to_aexpr_impl(
                 AExpr::StructEval {
                     expr,
                     evaluation: eval_ir,
+                    variant,
                 },
                 output_name,
             )
@@ -590,6 +629,21 @@ pub(super) fn to_aexpr_impl(
             let (expr, name) = to_aexpr_impl(owned(expr), ctx)?;
             let name = function.call(&name)?;
             return Ok((expr, name));
+        },
+        // Normally resolved during expression expansion,
+        // but some paths (e.g. `Expr::to_field`) convert without expanding.
+        Expr::PipeWithDtype { input, callback } => {
+            let mut dtypes = Vec::with_capacity(input.len());
+            for e in input.iter() {
+                let (node, _) = recurse!(e.clone())?;
+                let dtype = ctx
+                    .arena
+                    .get(node)
+                    .to_dtype(&ctx.to_field_ctx())
+                    .context("'pipe_with_dtype' failed to resolve its input dtype")?;
+                dtypes.push(dtype);
+            }
+            return recurse!(callback.call((input, dtypes))?);
         },
         #[cfg(feature = "dtype-struct")]
         Expr::Field(name) => {

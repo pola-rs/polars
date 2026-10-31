@@ -1,10 +1,10 @@
-use arrow::array::Array;
-use polars_row::RowEncodingOptions;
+use polars_arrow::array::Array;
+use polars_row::{RowEncodingOptions, RowEncodingOutput};
 use polars_utils::idx_map::bytes_idx_map::{BytesIndexMap, Entry};
 use polars_utils::itertools::Itertools;
 use polars_utils::vec::PushUnchecked;
 
-use self::row_encode::get_row_encoding_context;
+use self::row_encode::get_row_encoding_layout;
 use super::*;
 use crate::hash_keys::HashKeys;
 
@@ -31,22 +31,22 @@ impl RowEncodedHashGrouper {
         }
     }
 
+    fn group_idx(&self, hash: u64, key: &[u8]) -> Option<IdxSize> {
+        self.idx_map.get_index_of(hash, key)
+    }
+
     fn contains_key(&self, hash: u64, key: &[u8]) -> bool {
-        self.idx_map.contains_key(hash, key)
+        self.group_idx(hash, key).is_some()
     }
 
     fn finalize_keys(&self, key_schema: &Schema, mut key_rows: Vec<&[u8]>) -> DataFrame {
-        let key_dtypes = key_schema
-            .iter()
-            .map(|(_name, dt)| dt.to_physical().to_arrow(CompatLevel::newest()))
-            .collect::<Vec<_>>();
-        let ctxts = key_schema
-            .iter()
-            .map(|(_, dt)| get_row_encoding_context(dt))
-            .collect::<Vec<_>>();
-        let fields = vec![RowEncodingOptions::new_unsorted(); key_dtypes.len()];
-        let key_columns =
-            unsafe { polars_row::decode::decode_rows(&mut key_rows, &fields, &ctxts, &key_dtypes) };
+        let key_dtypes = key_schema.iter_values().cloned().collect::<Vec<_>>();
+        let layout = get_row_encoding_layout(
+            &key_dtypes,
+            &vec![RowEncodingOptions::new_unsorted(); key_dtypes.len()],
+            RowEncodingOutput::AlwaysBinaryOffset,
+        );
+        let key_columns = unsafe { polars_row::decode::decode_rows(&mut key_rows, &layout) };
 
         let cols = key_schema
             .iter()
@@ -109,7 +109,7 @@ impl Grouper for RowEncodedHashGrouper {
     fn get_keys_in_group_order(&self, schema: &Schema) -> DataFrame {
         unsafe {
             let mut key_rows: Vec<&[u8]> = Vec::with_capacity(self.idx_map.len() as usize);
-            for (_, key) in self.idx_map.iter_hash_keys() {
+            for (_, key) in self.idx_map.iter_hash_keys_to_buffer_end() {
                 key_rows.push_unchecked(key);
             }
             self.finalize_keys(schema, key_rows)
@@ -204,6 +204,47 @@ impl Grouper for RowEncodedHashGrouper {
                     let grouper =
                         &*(dyn_grouper as *const dyn Grouper as *const RowEncodedHashGrouper);
                     contains_key.push(grouper.contains_key(*hash, key) != invert);
+                }
+            }
+        }
+    }
+
+    /// # Safety
+    /// All groupers must be a RowEncodedHashGrouper.
+    unsafe fn mark_groups_partitioned_groupers(
+        &self,
+        groupers: &[Box<dyn Grouper>],
+        keys: &HashKeys,
+        partitioner: &HashPartitioner,
+        marks: &mut [MutableBitmap],
+    ) {
+        let HashKeys::RowEncoded(keys) = keys else {
+            unreachable!()
+        };
+        assert!(partitioner.num_partitions() == groupers.len());
+        assert!(marks.len() == groupers.len());
+
+        unsafe {
+            let mut mark = |hash: u64, key: &[u8]| {
+                let p = partitioner.hash_to_partition(hash);
+                let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(p);
+                let grouper = &*(dyn_grouper as *const dyn Grouper as *const RowEncodedHashGrouper);
+                if let Some(group_idx) = grouper.group_idx(hash, key) {
+                    marks
+                        .get_unchecked_mut(p)
+                        .set_unchecked(group_idx as usize, true);
+                }
+            };
+
+            if keys.keys.has_nulls() {
+                for (idx, hash) in keys.hashes.values_iter().enumerate_idx() {
+                    if let Some(key) = keys.keys.get_unchecked(idx as usize) {
+                        mark(*hash, key);
+                    }
+                }
+            } else {
+                for (hash, key) in keys.hashes.values_iter().zip(keys.keys.values_iter()) {
+                    mark(*hash, key);
                 }
             }
         }

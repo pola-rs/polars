@@ -105,6 +105,40 @@ impl View {
         unsafe { Self::new_inline_unchecked(bytes) }
     }
 
+    /// Create an inline view from the first `len` bytes of `block` without branching on `len`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `len > View::MAX_INLINE_SIZE`.
+    #[inline(always)]
+    pub fn new_inline_from_block(block: [u8; 16], len: usize) -> Self {
+        // Masks that keep the first `len` inline bytes and zero the rest.
+        const MASKS: [[u8; 16]; View::MAX_INLINE_SIZE as usize + 1] = {
+            let mut masks = [[0u8; 16]; View::MAX_INLINE_SIZE as usize + 1];
+            let mut len = 0;
+            while len <= View::MAX_INLINE_SIZE as usize {
+                let mut i = 0;
+                while i < len {
+                    masks[len][4 + i] = 0xFF;
+                    i += 1;
+                }
+                len += 1;
+            }
+            masks
+        };
+
+        let mask = MASKS[len];
+        let mut raw = [0u8; 16];
+        raw[4..].copy_from_slice(&block[..12]);
+        for i in 0..16 {
+            raw[i] &= mask[i];
+        }
+        // The length field is little-endian, like the rest of the view.
+        raw[..4].copy_from_slice(&(len as u32).to_le_bytes());
+        // SAFETY: `View` is `repr(C)` with the length first, then 12 inline bytes.
+        unsafe { std::mem::transmute::<[u8; 16], View>(raw) }
+    }
+
     /// Create a new inline view
     ///
     /// # Safety
@@ -212,6 +246,26 @@ impl View {
                 self.get_inlined_slice_unchecked()
             } else {
                 self.get_external_slice_unchecked(buffers)
+            }
+        }
+    }
+
+    /// Hashes the bytes this view refers to. Inline views are canonical, so they are hashed
+    /// directly from their 16 bytes.
+    ///
+    /// # Safety
+    /// Assumes that this view is valid for the given buffers.
+    #[inline]
+    pub unsafe fn hash_with_buffers_unchecked<B: AsRef<[u8]>, S: std::hash::BuildHasher>(
+        &self,
+        buffers: &[B],
+        build_hasher: &S,
+    ) -> u64 {
+        unsafe {
+            if self.length <= Self::MAX_INLINE_SIZE {
+                build_hasher.hash_one(self.as_u128())
+            } else {
+                build_hasher.hash_one(self.get_external_slice_unchecked(buffers))
             }
         }
     }
