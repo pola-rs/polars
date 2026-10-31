@@ -716,19 +716,6 @@ fn try_move(
     let order_aggregates = order_by_exprs
         .iter()
         .any(|ob| has_aggregate(x_ctx, &ob.expr));
-    // The moved table reads the rows of every key at once.
-    if order_by_exprs
-        .iter()
-        .map(|ob| &ob.expr)
-        .chain(&select.selection)
-        .chain(select.projection.iter().filter_map(|item| match item {
-            SelectItem::UnnamedExpr(e) | SelectItem::ExprWithAlias { expr: e, .. } => Some(e),
-            _ => None,
-        }))
-        .any(|e| numbers_rows(x_ctx, e))
-    {
-        return Ok(None);
-    }
     let value = match compare {
         Some(_) => {
             let [SelectItem::UnnamedExpr(value) | SelectItem::ExprWithAlias { expr: value, .. }] =
@@ -777,6 +764,15 @@ fn try_move(
         },
         false => Vec::new(),
     };
+    // The moved table reads the rows of every key at once.
+    if value
+        .into_iter()
+        .chain(&select.selection)
+        .chain(order_by.iter().map(|ob| &ob.expr))
+        .any(|e| numbers_rows(x_ctx, e))
+    {
+        return Ok(None);
+    }
 
     let mut y_ctx = x_ctx.isolated();
     let Some((y_names, _, y_schema)) = y_ctx.resolve_subquery_from(select)? else {
@@ -864,16 +860,14 @@ fn try_move(
         return Ok(None);
     }
     // The moved table computes the value before the filters drop rows, so the value must
-    // neither read other rows nor fail on a row that a filter drops.
-    let unsafe_before_filters = |value: &SQLExpr| {
-        calls_function(value)
-            || visit_expressions(value, |e| match e {
-                SQLExpr::Cast { .. } => ControlFlow::Break(()),
-                _ => ControlFlow::Continue(()),
-            })
-            .is_break()
+    // not be able to fail on a row that a filter drops: it is a column or a literal.
+    let plain = |value: &SQLExpr| {
+        matches!(
+            strip_nested(value),
+            SQLExpr::Identifier(_) | SQLExpr::CompoundIdentifier(_) | SQLExpr::Value(_)
+        )
     };
-    if !filters.is_empty() && value.is_some_and(unsafe_before_filters) {
+    if !filters.is_empty() && value.is_some_and(|value| !plain(value)) {
         return Ok(None);
     }
 

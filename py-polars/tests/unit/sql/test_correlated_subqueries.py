@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
 
 if TYPE_CHECKING:
@@ -1706,6 +1707,7 @@ def test_correlated_subquery_reading_query_further_out_scopes(query: str) -> Non
         # The value would be computed before the filter that reads `a` drops rows.
         "SELECT a.id, EXISTS (SELECT 1 FROM d WHERE d.k IN (SELECT ROW_NUMBER() OVER () FROM c WHERE c.v < a.id)) AS z FROM a",
         "SELECT a.id, EXISTS (SELECT 1 FROM d WHERE d.k IN (SELECT CAST(c.p AS INT) FROM c WHERE c.v < a.id)) AS z FROM a",
+        "SELECT a.id, EXISTS (SELECT 1 FROM d WHERE CAST(d.v AS VARCHAR) IN (SELECT SUBSTRING(c.p FROM 1 FOR c.v - 15) FROM c WHERE c.v < a.id * 10)) AS z FROM a",
         # A row number would count the rows of every key.
         "SELECT a.id, (SELECT COUNT(*) FROM b WHERE b.v = (SELECT ROW_NUMBER() FROM c WHERE c.k = a.id)) AS n FROM a",
         "SELECT a.id, (SELECT COUNT(*) FROM b WHERE b.v = (SELECT c.v FROM c WHERE c.k = a.id ORDER BY ROW_NUMBER() % 2, c.v LIMIT 1)) AS n FROM a",
@@ -1717,6 +1719,17 @@ def test_correlated_subquery_reading_query_further_out_unsupported(query: str) -
     ctx = pl.SQLContext(frames=_nested_frames())
     with pytest.raises(pl.exceptions.SQLInterfaceError):
         ctx.execute(query).collect()
+
+
+def test_correlated_subquery_reading_query_further_out_exists_ignores_projection() -> (
+    None
+):
+    # The projection of EXISTS is not computed, so its row number doesn't stop the move.
+    query = "SELECT a.id, (SELECT COUNT(*) FROM d WHERE EXISTS (SELECT ROW_NUMBER() FROM c WHERE c.k = a.id AND c.v > 5)) AS n FROM a"
+    res = pl.SQLContext(frames=_nested_frames()).execute(query, eager=True)
+    assert_frame_equal(
+        res.sort("id"), pl.DataFrame({"id": [1, 2], "n": [2, 0]}), check_dtypes=False
+    )
 
 
 @pytest.mark.parametrize(
