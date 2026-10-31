@@ -870,6 +870,10 @@ fn try_move(
     if !filters.is_empty() && value.is_some_and(|value| !plain(value)) {
         return Ok(None);
     }
+    // A moved table without columns would have no rows.
+    if value.is_none() && keys.is_empty() && locals.is_empty() {
+        return Ok(None);
+    }
 
     let name = format!("{NESTED_PREFIX}{}", unique_column_name());
     let value_name = format!("{name}_v");

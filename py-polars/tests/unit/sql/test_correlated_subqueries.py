@@ -1711,6 +1711,8 @@ def test_correlated_subquery_reading_query_further_out_scopes(query: str) -> Non
         # A row number would count the rows of every key.
         "SELECT a.id, (SELECT COUNT(*) FROM b WHERE b.v = (SELECT ROW_NUMBER() FROM c WHERE c.k = a.id)) AS n FROM a",
         "SELECT a.id, (SELECT COUNT(*) FROM b WHERE b.v = (SELECT c.v FROM c WHERE c.k = a.id ORDER BY ROW_NUMBER() % 2, c.v LIMIT 1)) AS n FROM a",
+        # The moved subquery would have no columns, and so no rows.
+        "SELECT a.id, EXISTS (SELECT 1 FROM b WHERE EXISTS (SELECT 1 FROM d WHERE a.id > b.v)) AS z FROM a",
         # The dropped ORDER BY of a subquery without FROM must still be checked.
         "SELECT a.id FROM a WHERE EXISTS (SELECT 1 FROM d WHERE d.k = (SELECT a.id ORDER BY CAST('bad' AS INT)))",
     ],
