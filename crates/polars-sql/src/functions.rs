@@ -34,9 +34,10 @@ use sqlparser::tokenizer::Span;
 
 use crate::grouping_sets::MAX_GROUPING_ARGS;
 use crate::sql_expr::{
-    adjust_one_indexed_param, approximate_literal, decimal_literal, decimal_literal_to_f64,
-    interval_to_duration, order_by_sort_options, parse_extract_date_part, parse_sql_array,
-    parse_sql_expr, resolve_expr_dtype, sql_binary, temporal_string_as,
+    adjust_one_indexed_param, approximate_literal, clip_substring_length, decimal_literal,
+    decimal_literal_to_f64, interval_to_duration, order_by_sort_options, parse_extract_date_part,
+    parse_sql_array, parse_sql_expr, resolve_expr_dtype, sql_binary, sql_position,
+    temporal_string_as,
 };
 use crate::sql_visitors::{contains_random, grouping_call_args};
 use crate::window_frames::{MAX_ROW_OFFSET, is_frame_aggregate};
@@ -1615,7 +1616,7 @@ impl SQLFunctionVisitor<'_> {
             // ----
             // String functions
             // ----
-            BitLength => self.visit_unary(|e| e.str().len_bytes() * lit(8)),
+            BitLength => self.visit_unary(|e| e.str().len_bytes().cast(DataType::Int64) * lit(8)),
             Concat => {
                 let args = extract_args(function)?;
                 if args.is_empty() {
@@ -1718,7 +1719,7 @@ impl SQLFunctionVisitor<'_> {
                     },
                 }
             },
-            Length => self.visit_unary(|e| e.str().len_chars()),
+            Length => self.visit_unary(|e| e.str().len_chars().cast(DataType::Int64)),
             Lower => self.visit_unary(|e| e.str().to_lowercase()),
             Normalize => {
                 let args = extract_args(function)?;
@@ -1750,13 +1751,8 @@ impl SQLFunctionVisitor<'_> {
                     },
                 }
             },
-            OctetLength => self.visit_unary(|e| e.str().len_bytes()),
-            StrPos => {
-                // note: SQL is 1-indexed; returns zero if no match found
-                self.visit_binary(|expr, substring| {
-                    (expr.str().find(substring, true) + typed_lit(1u32)).fill_null(typed_lit(0u32))
-                })
-            },
+            OctetLength => self.visit_unary(|e| e.str().len_bytes().cast(DataType::Int64)),
+            StrPos => self.visit_binary(sql_position),
             RegexpLike => {
                 let args = extract_args(function)?;
                 match args.len() {
@@ -1920,11 +1916,11 @@ impl SQLFunctionVisitor<'_> {
                             Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) if n <= 0 => e,
                             Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => e.str().slice(lit(n - 1), lit(LiteralValue::untyped_null())),
                             Expr::Literal(_) => polars_bail!(SQLSyntax: "invalid 'start' for SUBSTR ({})", args[1]),
-                            _ => start.clone() + lit(1),
+                            _ => e.str().slice((start - lit(1)).clip_min(lit(0)), lit(LiteralValue::untyped_null())),
                         })
                     }),
                     3 => self.try_visit_ternary(|e: Expr, start: Expr, length: Expr| {
-                        let length = approximate_literal(length);
+                        let length = clip_substring_length(approximate_literal(length));
                         Ok(match (start.clone(), length.clone()) {
                             (Expr::Literal(lv), _) | (_, Expr::Literal(lv)) if lv.is_null() => lit(lv),
                             (_, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n)))) if n < 0 => {
@@ -3514,8 +3510,8 @@ pub(crate) fn series_expr(
 /// The number of elements of the list `e`; a NULL value has no list type to read.
 fn list_len(e: Expr, schema: Option<&Schema>) -> Expr {
     match resolve_expr_dtype(&e, schema) {
-        Some(DataType::Null) => e.cast(polars_core::prelude::IDX_DTYPE),
-        _ => e.list().len(),
+        Some(DataType::Null) => e.cast(DataType::Int64),
+        _ => e.list().len().cast(DataType::Int64),
     }
 }
 
