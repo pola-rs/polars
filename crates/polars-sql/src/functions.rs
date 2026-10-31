@@ -4,6 +4,7 @@ use polars_core::prelude::{
     AnyValue, DataType, ExplodeOptions, PolarsResult, QuantileMethod, Scalar, Schema, TimeUnit,
     datetime_to_timestamp_us, polars_bail, polars_ensure, polars_err,
 };
+use polars_core::utils::try_get_supertype;
 use polars_defs::expr::UnicodeForm;
 #[cfg(feature = "rank")]
 use polars_defs::expr::{RankMethod, RankOptions};
@@ -35,7 +36,7 @@ use crate::grouping_sets::MAX_GROUPING_ARGS;
 use crate::sql_expr::{
     adjust_one_indexed_param, approximate_literal, decimal_literal, decimal_literal_to_f64,
     interval_to_duration, order_by_sort_options, parse_extract_date_part, parse_sql_array,
-    parse_sql_expr, sql_binary,
+    parse_sql_expr, resolve_expr_dtype, sql_binary, temporal_string_as,
 };
 use crate::sql_visitors::{contains_random, grouping_call_args};
 use crate::window_frames::{MAX_ROW_OFFSET, is_frame_aggregate};
@@ -497,6 +498,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT REPLACE(col1, 'old', 'new') FROM df;
     /// ```
     Replace,
+    /// SQL 'repeat' function.
+    /// Returns the string repeated `n` times.
+    /// ```sql
+    /// SELECT REPEAT(col1, 3) FROM df;
+    /// ```
+    Repeat,
     /// SQL 'reverse' function.
     /// Return the reversed string.
     /// ```sql
@@ -777,11 +784,17 @@ pub(crate) enum PolarsSQLFunctions {
     // Array functions
     // ----
     /// SQL 'array_length' function.
-    /// Returns the length of the array.
+    /// Returns the length of the array (optional: the dimension, which must be 1).
     /// ```sql
     /// SELECT ARRAY_LENGTH(col1) FROM df;
     /// ```
     ArrayLength,
+    /// SQL 'cardinality' function.
+    /// Returns the number of elements in the array.
+    /// ```sql
+    /// SELECT CARDINALITY(col1) FROM df;
+    /// ```
+    Cardinality,
     /// SQL 'array_lower' function.
     /// Returns the minimum value in an array; equivalent to `array_min`.
     /// ```sql
@@ -992,6 +1005,7 @@ impl PolarsSQLFunctions {
             "bit_length",
             "bit_or",
             "bit_xor",
+            "cardinality",
             "cbrt",
             "ceil",
             "ceiling",
@@ -1079,6 +1093,7 @@ impl PolarsSQLFunctions {
             "rank",
             "regexp_like",
             "regexp_replace",
+            "repeat",
             "replace",
             "reverse",
             "right",
@@ -1229,6 +1244,7 @@ impl PolarsSQLFunctions {
             "octet_length" => Self::OctetLength,
             "regexp_like" => Self::RegexpLike,
             "regexp_replace" => Self::RegexpReplace,
+            "repeat" => Self::Repeat,
             "replace" => Self::Replace,
             "reverse" => Self::Reverse,
             "right" => Self::Right,
@@ -1278,6 +1294,7 @@ impl PolarsSQLFunctions {
             "array_dot_product" | "array_inner_product" => Self::ArrayInnerProduct,
             "array_get" => Self::ArrayGet,
             "array_length" => Self::ArrayLength,
+            "cardinality" => Self::Cardinality,
             "array_lower" => Self::ArrayMin,
             "array_mean" => Self::ArrayMean,
             "array_reverse" => Self::ArrayReverse,
@@ -1503,8 +1520,10 @@ impl SQLFunctionVisitor<'_> {
             // ----
             // Conditional functions
             // ----
-            Coalesce => self.visit_variadic(coalesce),
-            Greatest => self.visit_variadic(|exprs: &[Expr]| max_horizontal(exprs).unwrap()),
+            Coalesce => self.visit_temporal_variadic(coalesce),
+            Greatest => {
+                self.visit_temporal_variadic(|exprs: &[Expr]| max_horizontal(exprs).unwrap())
+            },
             If => {
                 let args = extract_args(function)?;
                 match args.len() {
@@ -1520,20 +1539,21 @@ impl SQLFunctionVisitor<'_> {
             IfNull => {
                 let args = extract_args(function)?;
                 match args.len() {
-                    2 => self.visit_variadic(coalesce),
+                    2 => self.visit_temporal_variadic(coalesce),
                     _ => {
                         polars_bail!(SQLSyntax: "IFNULL expects 2 arguments (found {})", args.len())
                     },
                 }
             },
-            Least => self.visit_variadic(|exprs: &[Expr]| min_horizontal(exprs).unwrap()),
+            Least => self.visit_temporal_variadic(|exprs: &[Expr]| min_horizontal(exprs).unwrap()),
             NullIf => {
                 let args = extract_args(function)?;
                 match args.len() {
-                    2 => self.visit_binary(|l: Expr, r: Expr| {
-                        when(l.clone().eq(r))
+                    2 => self.visit_temporal_variadic(|exprs: &[Expr]| {
+                        let [l, r] = exprs else { unreachable!() };
+                        when(l.clone().eq(r.clone()))
                             .then(lit(LiteralValue::untyped_null()))
-                            .otherwise(l)
+                            .otherwise(l.clone())
                     }),
                     _ => {
                         polars_bail!(SQLSyntax: "NULLIF expects 2 arguments (found {})", args.len())
@@ -1776,6 +1796,18 @@ impl SQLFunctionVisitor<'_> {
                     },
                 }
             },
+            Repeat => self.visit_binary(|e: Expr, n: Expr| {
+                let e = e.cast(DataType::String);
+                let n = n.strict_cast(DataType::Int64).clip_min(lit(0));
+                // An empty or null string repeats to itself, so it needs no repetitions.
+                let n = when(e.clone().str().len_bytes().gt(lit(0)))
+                    .then(n.clone())
+                    .otherwise(n.clip_max(lit(0)));
+                let repeated = e.clone().repeat_by(n).list().join(lit(""), false);
+                when(e.is_null())
+                    .then(Expr::Literal(LiteralValue::untyped_null()))
+                    .otherwise(repeated)
+            }),
             Reverse => self.visit_unary(|e| e.str().reverse()),
             Right => self.try_visit_binary(|e, length| {
                 Ok(match length {
@@ -1979,7 +2011,24 @@ impl SQLFunctionVisitor<'_> {
                     e.list().get(idx, true)
                 })
             },
-            ArrayLength => self.visit_unary(|e| e.list().len()),
+            ArrayLength => {
+                let args = extract_args(function)?;
+                let schema = self.active_schema;
+                match args.len() {
+                    1 => self.visit_unary(|e| list_len(e, schema)),
+                    2 => self.try_visit_binary(|e, dimension| match dimension {
+                        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(1))) => {
+                            Ok(list_len(e, schema))
+                        },
+                        _ => polars_bail!(SQLInterface: "ARRAY_LENGTH only supports dimension 1 (found {})", args[1]),
+                    }),
+                    _ => polars_bail!(SQLSyntax: "ARRAY_LENGTH expects 1-2 arguments (found {})", args.len()),
+                }
+            },
+            Cardinality => {
+                let schema = self.active_schema;
+                self.visit_unary(|e| list_len(e, schema))
+            },
             ArrayMax => self.visit_unary(|e| e.list().max()),
             ArrayMean => self.visit_unary(|e| e.list().mean()),
             ArrayMin => self.visit_unary(|e| e.list().min()),
@@ -2591,6 +2640,36 @@ impl SQLFunctionVisitor<'_> {
         &mut self,
         f: impl Fn(&[Expr]) -> PolarsResult<Expr>,
     ) -> PolarsResult<Expr> {
+        let expr_args = self.parse_variadic_args()?;
+        f(&expr_args).and_then(|e| self.apply_window_spec(e))
+    }
+
+    /// [`Self::visit_variadic`] for a function whose arguments share one type: a string
+    /// literal is read as a value of the common temporal type of the other arguments, as
+    /// in `COALESCE(date_col, '2020-01-01')`.
+    fn visit_temporal_variadic(&mut self, f: impl Fn(&[Expr]) -> Expr) -> PolarsResult<Expr> {
+        let mut expr_args = self.parse_variadic_args()?;
+        let is_string_literal =
+            |e: &Expr| matches!(e, Expr::Literal(lv) if lv.extract_str().is_some());
+        if expr_args.iter().any(is_string_literal) {
+            let mut dtypes = expr_args
+                .iter()
+                .filter(|e| !is_string_literal(e))
+                .filter_map(|e| self.ctx.expr_dtype(e, self.active_schema))
+                .filter(|dtype| dtype.is_temporal());
+            let dtype = dtypes.next().and_then(|first| {
+                dtypes.try_fold(first, |acc, dtype| try_get_supertype(&acc, &dtype).ok())
+            });
+            if let Some(dtype) = dtype {
+                for arg in &mut expr_args {
+                    *arg = temporal_string_as(arg, Some(&dtype));
+                }
+            }
+        }
+        self.apply_window_spec(f(&expr_args))
+    }
+
+    fn parse_variadic_args(&mut self) -> PolarsResult<Vec<Expr>> {
         let args = extract_args(self.func)?;
         let mut expr_args = vec![];
         for arg in args {
@@ -2600,7 +2679,7 @@ impl SQLFunctionVisitor<'_> {
                 return self.not_supported_error();
             };
         }
-        f(&expr_args).and_then(|e| self.apply_window_spec(e))
+        Ok(expr_args)
     }
 
     fn try_visit_ternary<Arg: FromSQLExpr>(
@@ -3429,6 +3508,14 @@ pub(crate) fn series_expr(
         [start, stop] => Ok(int_series(parse(start)?, parse(stop)?, lit(1i64))),
         [start, stop, step] => Ok(int_series(parse(start)?, parse(stop)?, parse(step)?)),
         _ => polars_bail!(SQLSyntax: "{} expects 1 to 3 arguments; found {}", fname, args.len()),
+    }
+}
+
+/// The number of elements of the list `e`; a NULL value has no list type to read.
+fn list_len(e: Expr, schema: Option<&Schema>) -> Expr {
+    match resolve_expr_dtype(&e, schema) {
+        Some(DataType::Null) => e.cast(polars_core::prelude::IDX_DTYPE),
+        _ => e.list().len(),
     }
 }
 

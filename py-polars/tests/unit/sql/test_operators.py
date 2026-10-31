@@ -9,6 +9,7 @@ import polars as pl
 import polars.selectors as cs
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
+from tests.unit.sql import assert_sql_matches
 
 
 @pytest.fixture
@@ -649,3 +650,20 @@ def test_unary_ops_8890() -> None:
             "c": [-3, -3],
             "d": [4, 4],
         }
+
+
+@pytest.mark.parametrize("op", ["IS TRUE", "IS NOT TRUE", "IS FALSE", "IS NOT FALSE"])
+def test_is_true_false_on_null(op: str) -> None:
+    assert_sql_matches(
+        frames={
+            "t": pl.DataFrame(
+                {
+                    "x": [True, False, None],
+                    "n": [2, 0, None],
+                    "s": ["true", "false", None],
+                }
+            )
+        },
+        query=f"SELECT x {op} AS r, n {op} AS rn, s {op} AS rs FROM t",
+        compare_with="duckdb",
+    )

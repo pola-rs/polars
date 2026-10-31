@@ -190,10 +190,21 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
         SQLDataType::Dec(info)
         | SQLDataType::Decimal(info)
         | SQLDataType::BigDecimal(info)
-        | SQLDataType::Numeric(info) => match *info {
-            ExactNumberInfo::PrecisionAndScale(p, s) => DataType::Decimal(p as usize, s as usize),
-            ExactNumberInfo::Precision(p) => DataType::Decimal(p as usize, 0),
-            ExactNumberInfo::None => DataType::Decimal(38, 9),
+        | SQLDataType::Numeric(info) => {
+            let (precision, scale) = match *info {
+                ExactNumberInfo::PrecisionAndScale(p, s) => (p, s),
+                ExactNumberInfo::Precision(p) => (p, 0),
+                ExactNumberInfo::None => (38, 9),
+            };
+            polars_ensure!(
+                (1..=38).contains(&precision),
+                SQLSyntax: "invalid DECIMAL precision (expected 1-38, found {})", precision
+            );
+            polars_ensure!(
+                (0..=precision as i64).contains(&scale),
+                SQLSyntax: "invalid DECIMAL scale (expected 0-{}, found {})", precision, scale
+            );
+            DataType::Decimal(precision as usize, scale as usize)
         },
 
         // ---------------------------------

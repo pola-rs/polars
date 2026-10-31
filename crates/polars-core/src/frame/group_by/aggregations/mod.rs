@@ -8,6 +8,7 @@ mod string;
 use std::borrow::Cow;
 
 pub use agg_list::*;
+pub(crate) use dispatch::nulls_at_one_end;
 use num_traits::pow::Pow;
 use num_traits::{Bounded, Float, Num, NumCast, ToPrimitive, Zero};
 use polars_arrow::bitmap::{Bitmap, MutableBitmap};

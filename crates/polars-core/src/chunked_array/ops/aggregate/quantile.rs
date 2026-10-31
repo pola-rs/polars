@@ -48,6 +48,39 @@ pub fn quantile_indices(
     }
 }
 
+/// Extracts the quantiles of the `quantile` expression input, a single quantile or a list of them.
+pub fn extract_quantiles(quantile: &Series) -> PolarsResult<Vec<f64>> {
+    polars_ensure!(!quantile.is_empty(), ComputeError:
+        "the 'quantile' expression input should produce a single quantile or a list of quantiles, \
+        got an empty input"
+    );
+    polars_ensure!(quantile.len() == 1, ComputeError:
+        "polars does not support varying quantiles yet, \
+        make sure the 'quantile' expression input produces a single quantile or a list of quantiles"
+    );
+    let quantiles = match quantile.dtype() {
+        DataType::List(_) => {
+            let inner = quantile.list()?.get_as_series(0).ok_or_else(
+                || polars_err!(ComputeError: "quantile expression contains null values"),
+            )?;
+            polars_ensure!(!inner.has_nulls(), ComputeError: "quantile expression contains null values");
+            inner
+                .cast(&DataType::Float64)?
+                .f64()?
+                .into_no_null_iter()
+                .collect()
+        },
+        _ => vec![quantile.get(0)?.try_extract()?],
+    };
+    for &q in &quantiles {
+        polars_ensure!(
+            (0.0..=1.0).contains(&q),
+            ComputeError: "`quantile` should be between 0.0 and 1.0, got {}", q,
+        );
+    }
+    Ok(quantiles)
+}
+
 /// [`quantile_indices`] as indices into `length` sorted values with the `null_count` nulls first.
 fn quantile_idx(
     quantile: f64,
