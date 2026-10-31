@@ -79,6 +79,15 @@ impl Series {
                     }
                     DataType::Decimal(prec, scale)
                 },
+                #[cfg(feature = "dtype-struct")]
+                DataType::Struct(mut fields) => {
+                    for v in values {
+                        if let DataType::Struct(other) = v.dtype() {
+                            merge_struct_fields(&mut fields, &other);
+                        }
+                    }
+                    DataType::Struct(fields)
+                },
                 dt => dt,
             }
         } else {
@@ -868,6 +877,23 @@ impl PartialEq for FieldsByName<'_> {
 impl std::hash::Hash for FieldsByName<'_> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.0.iter().for_each(|fld| fld.name.hash(state));
+    }
+}
+
+/// Adds the fields of `other` missing from `fields`, in first-seen order.
+#[cfg(feature = "dtype-struct")]
+fn merge_struct_fields(fields: &mut Vec<Field>, other: &[Field]) {
+    for of in other {
+        match fields.iter_mut().find(|f| f.name() == of.name()) {
+            Some(f) => match (&mut f.dtype, &of.dtype) {
+                (DataType::Struct(inner), DataType::Struct(other_inner)) => {
+                    merge_struct_fields(inner, other_inner)
+                },
+                (dt @ DataType::Null, odt) => *dt = odt.clone(),
+                _ => {},
+            },
+            None => fields.push(of.clone()),
+        }
     }
 }
 
