@@ -174,6 +174,7 @@ def test_row_value_in_subquery() -> None:
     }
     for query in [
         "SELECT z FROM a WHERE (x, y) IN (SELECT p, q FROM b) ORDER BY z",
+        "SELECT z FROM a WHERE ((x, y)) IN (SELECT p, q FROM b)",
         "SELECT z FROM a WHERE (y, x) IN (SELECT q, p FROM b WHERE q < 5) AND z > 0",
         "SELECT z FROM a WHERE (x, y) IN (SELECT MAX(p), MIN(q) FROM b GROUP BY g)",
     ]:

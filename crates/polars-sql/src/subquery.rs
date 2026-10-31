@@ -207,7 +207,7 @@ impl SQLContext {
         }
         // A row value `(a, b) IN (SELECT x, y ...)` matches on every column. With
         // NOT IN, a NULL in one column does not make the whole row unknown.
-        let lhs = match lhs {
+        let lhs = match unwrap_nested(lhs) {
             SQLExpr::Tuple(items) if !scalar && !negated => items.as_slice(),
             SQLExpr::Tuple(_) => return Ok(None),
             _ => std::slice::from_ref(lhs),
