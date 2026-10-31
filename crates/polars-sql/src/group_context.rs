@@ -190,6 +190,7 @@ impl GroupContextSplitter<'_> {
                 partition_by,
                 order_by,
                 mapping,
+                may_reorder,
             } => Ok(Expr::Over {
                 function: Arc::new(self.bind_window_input(Arc::unwrap_or_clone(function))?),
                 partition_by: partition_by
@@ -208,6 +209,7 @@ impl GroupContextSplitter<'_> {
                     })
                     .transpose()?,
                 mapping,
+                may_reorder,
             }),
             e if is_marked_aggregate(&e) || self.is_group_value(&e) => {
                 Ok(self.aggregates.get_or_insert_hoisted(e))

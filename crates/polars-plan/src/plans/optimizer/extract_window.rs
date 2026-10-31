@@ -113,10 +113,11 @@ fn extract_from_filter(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Ar
     );
 }
 
-#[derive(PartialEq)]
 struct WindowSpec {
     partition_by: Vec<CanonicalExprId>,
     order_by: Option<(CanonicalExprId, SortOptions)>,
+    /// Whether all windows of the spec may reorder the rows, see [`crate::dsl::Expr::Over`].
+    may_reorder: bool,
 }
 
 struct ExtractedWindow {
@@ -418,6 +419,7 @@ impl Extractor {
             partition_by,
             order_by,
             mapping: WindowMapping::GroupsToRows,
+            may_reorder,
         } = expr_arena.get(node)
         else {
             return None;
@@ -443,17 +445,25 @@ impl Extractor {
             }
         }
 
-        let spec = WindowSpec {
-            partition_by: partition_ids,
-            order_by: order_by
-                .as_ref()
-                .map(|(key, options)| (self.canonical.resolve(*key, expr_arena), *options)),
-        };
+        let order_by = order_by
+            .as_ref()
+            .map(|(key, options)| (self.canonical.resolve(*key, expr_arena), *options));
 
-        Some(match self.specs.iter().position(|s| *s == spec) {
-            Some(idx) => idx,
+        let existing = self
+            .specs
+            .iter()
+            .position(|s| s.partition_by == partition_ids && s.order_by == order_by);
+        Some(match existing {
+            Some(idx) => {
+                self.specs[idx].may_reorder &= *may_reorder;
+                idx
+            },
             None => {
-                self.specs.push(spec);
+                self.specs.push(WindowSpec {
+                    partition_by: partition_ids,
+                    order_by,
+                    may_reorder: *may_reorder,
+                });
                 self.windows.push(Vec::new());
                 self.specs.len() - 1
             },
@@ -751,6 +761,7 @@ fn extract_from_projection(
                         (key, o.window_options)
                     }),
                     mapping: WindowMapping::GroupsToRows,
+                    may_reorder: spec.may_reorder,
                 };
                 ExprIR::new(expr_arena.add(over), OutputName::Alias(p.name))
             })

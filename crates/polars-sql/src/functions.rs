@@ -3143,13 +3143,30 @@ impl SQLFunctionVisitor<'_> {
 
         // Apply window spec; an empty window still has to be told apart from an
         // aggregate (see `GroupScope::mark_whole_frame_windows`).
-        Ok(match (partition_by, order_by) {
+        let expr = match (partition_by, order_by) {
             (None, None) if self.ctx.group_scope.mark_whole_frame_windows => {
                 expr.over([col(self.ctx.whole_frame_partition())])?
             },
             (None, None) => expr,
             (Some(part), None) => expr.over(part)?,
             (part, Some(order)) => expr.over_with_options(part, Some(order), Default::default())?,
+        };
+        // SQL results have no row order, so the window may reorder the rows.
+        Ok(match expr {
+            Expr::Over {
+                function,
+                partition_by,
+                order_by,
+                mapping,
+                may_reorder: _,
+            } => Expr::Over {
+                function,
+                partition_by,
+                order_by,
+                mapping,
+                may_reorder: true,
+            },
+            expr => expr,
         })
     }
 

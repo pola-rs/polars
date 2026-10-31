@@ -2287,6 +2287,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
             partition_by,
             order_by,
             mapping,
+            may_reorder: _,
         } => {
             let function = function.0;
             let partition_by = partition_by.iter().map(|n| n.0).collect();

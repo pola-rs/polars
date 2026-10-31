@@ -67,6 +67,7 @@ impl AExpr {
                 partition_by,
                 order_by,
                 mapping,
+                may_reorder: _,
             } => {
                 for node in partition_by {
                     validate_expr(*node, ctx)?;
@@ -444,6 +445,7 @@ impl AExpr {
                 partition_by: _,
                 order_by: _,
                 mapping: _,
+                may_reorder: _,
             }
             | BinaryExpr { left: expr, .. }
             | Explode { expr, .. }
