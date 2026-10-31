@@ -94,7 +94,7 @@ jobs:
           ref: ${{ inputs.tag }}
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -168,7 +168,7 @@ jobs:
 
       # The wheel is abi3 for Python 3.10+ whichever Python builds it.
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.os == 'windows-11-arm' && env.PYTHON_VERSION_WIN_ARM64 || env.PYTHON_VERSION }}
 
