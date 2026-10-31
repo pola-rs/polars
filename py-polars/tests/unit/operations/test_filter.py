@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import multiprocessing
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -11,6 +12,8 @@ import polars.selectors as cs
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import PolarsDataType
     from tests.conftest import PlMonkeyPatch
 
@@ -417,21 +420,9 @@ def test_filter_wide_frame_single_chunk() -> None:
     assert_frame_equal(out, df.filter(df.get_column("m")))
 
 
-@pytest.mark.parametrize("run", [(10, 13), (0, 3), (999_997, 1_000_000)])
-@pytest.mark.parametrize(
-    "values",
-    [
-        pl.col("i"),
-        pl.when(pl.col("i") % 3 > 0).then(pl.col("i")),
-        pl.col("i") % 2 == 0,
-    ],
-)
-def test_filter_short_run_does_not_keep_input(
-    run: tuple[int, int], values: pl.Expr, plmonkeypatch: PlMonkeyPatch
-) -> None:
+def _check_filter_short_run(run: tuple[int, int], values: pl.Expr) -> None:
     from polars._plr import _estimate_memory_usage
 
-    plmonkeypatch.setenv("POLARS_OOC_DRIFT_THRESHOLD", "0")
     n = 1_000_000
     s = pl.int_range(n, eager=True).to_frame("i").select(values).to_series()
     expected = s.slice(run[0], run[1] - run[0]).to_list()
@@ -444,10 +435,9 @@ def test_filter_short_run_does_not_keep_input(
     assert out.to_list() == expected
 
 
-def test_filter_short_run_shares_string_data(plmonkeypatch: PlMonkeyPatch) -> None:
+def _check_filter_string_data() -> None:
     from polars._plr import _estimate_memory_usage
 
-    plmonkeypatch.setenv("POLARS_OOC_DRIFT_THRESHOLD", "0")
     n = 100_000
     s = pl.Series(["x" * 1024]).gather(pl.zeros(n, pl.UInt32, eager=True))
     mask = pl.int_range(n, eager=True).is_between(10, 10_010, closed="left")
@@ -456,3 +446,31 @@ def test_filter_short_run_shares_string_data(plmonkeypatch: PlMonkeyPatch) -> No
     assert _estimate_memory_usage() - before < 1 << 20
     assert out.len() == 10_000
     assert out[0] == "x" * 1024
+
+
+def _run_filter_memory_test(
+    check: Callable[..., None], args: tuple[object, ...], plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # run these tests in a fresh process (so earlier tests can't impact memory)
+    plmonkeypatch.setenv("POLARS_OOC_DRIFT_THRESHOLD", "0")
+    with multiprocessing.get_context("spawn").Pool(1) as pool:
+        pool.apply_async(check, args).get(timeout=60)
+
+
+@pytest.mark.parametrize("run", [(10, 13), (0, 3), (999_997, 1_000_000)])
+@pytest.mark.parametrize(
+    "values",
+    [
+        pl.col("i"),
+        pl.when(pl.col("i") % 3 > 0).then(pl.col("i")),
+        pl.col("i") % 2 == 0,
+    ],
+)
+def test_filter_short_run_does_not_keep_input(
+    run: tuple[int, int], values: pl.Expr, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    _run_filter_memory_test(_check_filter_short_run, (run, values), plmonkeypatch)
+
+
+def test_filter_short_run_shares_string_data(plmonkeypatch: PlMonkeyPatch) -> None:
+    _run_filter_memory_test(_check_filter_string_data, (), plmonkeypatch)
