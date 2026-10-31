@@ -205,14 +205,31 @@ impl SQLContext {
         {
             return Ok(None);
         }
-        let Some(left_key) = self.try_parse_outer_only_expr(lhs, outer_schema)? else {
-            return Ok(None);
+        // A row value `(a, b) IN (SELECT x, y ...)` matches on every column. With
+        // NOT IN, a NULL in one column does not make the whole row unknown.
+        let lhs = match unwrap_nested(lhs) {
+            SQLExpr::Tuple(items) if !scalar && !negated => items.as_slice(),
+            SQLExpr::Tuple(_) => return Ok(None),
+            _ => std::slice::from_ref(lhs),
         };
+        let mut left_keys = Vec::with_capacity(lhs.len());
+        for e in lhs {
+            let Some(key) = self.try_parse_outer_only_expr(e, outer_schema)? else {
+                return Ok(None);
+            };
+            left_keys.push(key);
+        }
 
         let mut inner_lf = self.execute_isolated(|ctx| ctx.execute_query(subquery))?;
         let inner_schema = self.get_frame_schema(&mut inner_lf)?;
-        polars_ensure!(inner_schema.len() == 1, SQLSyntax: "SQL subquery returns more than one column");
-        let right_key = col(inner_schema.get_at_index(0).unwrap().0.clone());
+        if left_keys.len() == 1 {
+            polars_ensure!(inner_schema.len() == 1, SQLSyntax: "SQL subquery returns more than one column");
+        }
+        polars_ensure!(
+            inner_schema.len() == left_keys.len(),
+            SQLSyntax: "SQL subquery returns {} columns for a row value of {}", inner_schema.len(), left_keys.len()
+        );
+        let right_keys = inner_schema.iter_names().cloned().map(col).collect();
         if scalar {
             inner_lf = inner_lf.select([first().as_expr().item(true)]);
         }
@@ -222,8 +239,8 @@ impl SQLContext {
             inner_lf,
             outer_schema,
             &inner_schema,
-            vec![left_key],
-            vec![right_key],
+            left_keys,
+            right_keys,
             anti,
             // Only `KeepTrue` "NOT IN" needs 3VL correction.
             anti && !scalar && filter_mode == FilterMode::KeepTrue,
