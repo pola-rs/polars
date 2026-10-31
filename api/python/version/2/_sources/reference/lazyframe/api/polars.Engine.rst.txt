@@ -1,0 +1,40 @@
+﻿polars.Engine
+=============
+
+.. currentmodule:: polars
+
+.. autoclass:: Engine
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Engine.__init__
+      ~Engine.collect
+      ~Engine.collect_all
+      ~Engine.collect_all_async
+      ~Engine.collect_async
+      ~Engine.collect_batches
+      ~Engine.execute
+      ~Engine.sink_batches
+      ~Engine.sink_csv
+      ~Engine.sink_ipc
+      ~Engine.sink_ndjson
+      ~Engine.sink_parquet
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~Engine.name
+      ~Engine.plan_engine
+   
+   

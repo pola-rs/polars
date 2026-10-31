@@ -1,0 +1,6 @@
+﻿polars.LazyFrame.fetch
+======================
+
+.. currentmodule:: polars
+
+.. automethod:: LazyFrame.fetch

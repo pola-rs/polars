@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CatalogAlter","CatalogDdl"],"fn":["extract_table_identifiers","register_sql_resolver","sql_expr"],"mod":["function_registry","keywords"],"struct":["CatalogNamespace","CatalogPartitionField","CatalogTable","SQLContext"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CategoricalArrayToArrowConverter","CategoricalKeyRemap"],"struct":["CategoricalToArrowConverter"]};

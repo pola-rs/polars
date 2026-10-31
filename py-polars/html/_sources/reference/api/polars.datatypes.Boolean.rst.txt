@@ -1,0 +1,33 @@
+﻿polars.datatypes.Boolean
+========================
+
+.. currentmodule:: polars.datatypes
+
+.. autoclass:: Boolean
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Boolean.__init__
+      ~Boolean.base_type
+      ~Boolean.is_
+      ~Boolean.is_decimal
+      ~Boolean.is_float
+      ~Boolean.is_integer
+      ~Boolean.is_nested
+      ~Boolean.is_not
+      ~Boolean.is_numeric
+      ~Boolean.is_signed_integer
+      ~Boolean.is_temporal
+      ~Boolean.is_unsigned_integer
+   
+   
+
+   
+   
+   

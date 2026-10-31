@@ -1,0 +1,6 @@
+﻿polars.Series.list.to_struct
+============================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.list.to_struct

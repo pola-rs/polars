@@ -1,0 +1,6 @@
+﻿polars.LazyFrame.execute
+========================
+
+.. currentmodule:: polars
+
+.. automethod:: LazyFrame.execute

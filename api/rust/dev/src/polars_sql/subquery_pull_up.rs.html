@@ -1,0 +1,970 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `crates/polars-sql/src/subquery_pull_up.rs`."><title>subquery_pull_up.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="polars_sql" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (0dfb098f3 2026-08-31)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js" ><script src="../../static.files/storage-41dd4d93.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><h1><div class="sub-heading">polars_sql/</div>subquery_pull_up.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Moves a subquery that reads a relation of a query further out than the query
+<a href=#2 id=2 data-nosnippet>2</a>//! directly around it into the FROM of that query, which then reads the outer
+<a href=#3 id=3 data-nosnippet>3</a>//! relation itself. The decorrelation in `subquery.rs` handles that query. A shape
+<a href=#4 id=4 data-nosnippet>4</a>//! that isn't moved keeps its deeper references.
+<a href=#5 id=5 data-nosnippet>5</a>//!
+<a href=#6 id=6 data-nosnippet>6</a>//! The query `q` below and its subquery `s` read the outer relation `o`:
+<a href=#7 id=7 data-nosnippet>7</a>//!
+<a href=#8 id=8 data-nosnippet>8</a>//! ```sql
+<a href=#9 id=9 data-nosnippet>9</a>//! SELECT .. FROM f WHERE f.x IN (SELECT g.y FROM g WHERE g.c = o.k AND &lt;rest&gt;)
+<a href=#10 id=10 data-nosnippet>10</a>//! ```
+<a href=#11 id=11 data-nosnippet>11</a>//!
+<a href=#12 id=12 data-nosnippet>12</a>//! For a fixed row of `o`, `q` keeps the rows of `f` that have a match in `s`.
+<a href=#13 id=13 data-nosnippet>13</a>//! Those are the rows of `f` joined with the distinct `(g.y, g.c)` pairs of
+<a href=#14 id=14 data-nosnippet>14</a>//! `s` without the outer predicate, where the pair also matches `o.k`:
+<a href=#15 id=15 data-nosnippet>15</a>//!
+<a href=#16 id=16 data-nosnippet>16</a>//! ```sql
+<a href=#17 id=17 data-nosnippet>17</a>//! SELECT .. FROM f, (SELECT DISTINCT g.y AS v, g.c AS k0 FROM g WHERE &lt;rest&gt;) AS n
+<a href=#18 id=18 data-nosnippet>18</a>//! WHERE f.x = n.v AND n.k0 = o.k
+<a href=#19 id=19 data-nosnippet>19</a>//! ```
+<a href=#20 id=20 data-nosnippet>20</a>//!
+<a href=#21 id=21 data-nosnippet>21</a>//! Each row of `f` matches at most one distinct pair, so `q` returns the same rows.
+<a href=#22 id=22 data-nosnippet>22</a>//! The derived table is planned with `strict_relations`, so that it can only read
+<a href=#23 id=23 data-nosnippet>23</a>//! the relations it declares itself.
+<a href=#24 id=24 data-nosnippet>24</a></span><span class="kw">use </span>std::ops::ControlFlow;
+<a href=#25 id=25 data-nosnippet>25</a>
+<a href=#26 id=26 data-nosnippet>26</a><span class="kw">use </span>polars_core::prelude::<span class="kw-2">*</span>;
+<a href=#27 id=27 data-nosnippet>27</a><span class="kw">use </span>polars_core::utils::get_supertype;
+<a href=#28 id=28 data-nosnippet>28</a><span class="kw">use </span>polars_lazy::prelude::<span class="kw-2">*</span>;
+<a href=#29 id=29 data-nosnippet>29</a><span class="kw">use </span>sqlparser::ast::{
+<a href=#30 id=30 data-nosnippet>30</a>    BinaryOperator <span class="kw">as </span>SQLBinaryOperator, Distinct, ExcludeSelectItem, Expr <span class="kw">as </span>SQLExpr, Function,
+<a href=#31 id=31 data-nosnippet>31</a>    FunctionArgumentList, FunctionArguments, GroupByExpr, Ident, ObjectName, OrderByExpr,
+<a href=#32 id=32 data-nosnippet>32</a>    OrderByKind, Query, Select, SelectItem, SetExpr, TableAlias, TableFactor, TableWithJoins,
+<a href=#33 id=33 data-nosnippet>33</a>    UnaryOperator <span class="kw">as </span>SQLUnaryOperator, Value <span class="kw">as </span>SQLValue, Visit, Visitor, VisitorMut, WindowSpec,
+<a href=#34 id=34 data-nosnippet>34</a>    WindowType,
+<a href=#35 id=35 data-nosnippet>35</a>};
+<a href=#36 id=36 data-nosnippet>36</a>
+<a href=#37 id=37 data-nosnippet>37</a><span class="kw">use </span><span class="kw">crate</span>::context::{TableInfo, combine_conditions, flatten_and_conditions};
+<a href=#38 id=38 data-nosnippet>38</a><span class="kw">use </span><span class="kw">crate</span>::functions::PolarsSQLFunctions;
+<a href=#39 id=39 data-nosnippet>39</a><span class="kw">use </span><span class="kw">crate</span>::sql_expr::parse_sql_expr;
+<a href=#40 id=40 data-nosnippet>40</a><span class="kw">use </span><span class="kw">crate</span>::sql_visitors::{
+<a href=#41 id=41 data-nosnippet>41</a>    expr_contains_subquery, expr_has_window_functions, expr_references_any_column, is_subquery_expr,
+<a href=#42 id=42 data-nosnippet>42</a>};
+<a href=#43 id=43 data-nosnippet>43</a><span class="kw">use </span><span class="kw">crate</span>::subquery::{
+<a href=#44 id=44 data-nosnippet>44</a>    eligible_query_block, eligible_subquery_body, exists_aggregates, first_row_limit, strip_nested,
+<a href=#45 id=45 data-nosnippet>45</a>};
+<a href=#46 id=46 data-nosnippet>46</a><span class="kw">use crate</span>::{SQLContext, dyn_visit, unique_column_name};
+<a href=#47 id=47 data-nosnippet>47</a>
+<a href=#48 id=48 data-nosnippet>48</a><span class="doccomment">/// The alias prefix of the derived tables that hold a moved subquery.
+<a href=#49 id=49 data-nosnippet>49</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">const </span>NESTED_PREFIX: <span class="kw-2">&amp;</span>str = <span class="string">"__POLARS_NESTED_"</span>;
+<a href=#50 id=50 data-nosnippet>50</a>
+<a href=#51 id=51 data-nosnippet>51</a><span class="doccomment">/// The columns of the frame a subquery is decorrelated against.
+<a href=#52 id=52 data-nosnippet>52</a></span><span class="attr">#[derive(Clone, Copy)]
+<a href=#53 id=53 data-nosnippet>53</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">enum </span>ScopeColumns&lt;<span class="lifetime">'a</span>&gt; {
+<a href=#54 id=54 data-nosnippet>54</a>    <span class="doccomment">/// A SELECT without FROM, which declares nothing.
+<a href=#55 id=55 data-nosnippet>55</a>    </span><span class="prelude-val">None</span>,
+<a href=#56 id=56 data-nosnippet>56</a>    Frame(<span class="kw-2">&amp;</span><span class="lifetime">'a </span>Schema),
+<a href=#57 id=57 data-nosnippet>57</a>    <span class="doccomment">/// The two inputs of a join, for its ON condition.
+<a href=#58 id=58 data-nosnippet>58</a>    </span>Join(<span class="kw-2">&amp;</span><span class="lifetime">'a </span>TableInfo, <span class="kw-2">&amp;</span><span class="lifetime">'a </span>TableInfo),
+<a href=#59 id=59 data-nosnippet>59</a>}
+<a href=#60 id=60 data-nosnippet>60</a>
+<a href=#61 id=61 data-nosnippet>61</a><span class="doccomment">/// A query that a column of a subquery may read: its context resolves the qualifiers.
+<a href=#62 id=62 data-nosnippet>62</a></span><span class="attr">#[derive(Clone, Copy)]
+<a href=#63 id=63 data-nosnippet>63</a></span><span class="kw">struct </span>Scope&lt;<span class="lifetime">'a</span>&gt; {
+<a href=#64 id=64 data-nosnippet>64</a>    ctx: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>SQLContext,
+<a href=#65 id=65 data-nosnippet>65</a>    columns: ScopeColumns&lt;<span class="lifetime">'a</span>&gt;,
+<a href=#66 id=66 data-nosnippet>66</a>}
+<a href=#67 id=67 data-nosnippet>67</a>
+<a href=#68 id=68 data-nosnippet>68</a><span class="doccomment">/// What a qualified column names in a scope.
+<a href=#69 id=69 data-nosnippet>69</a></span><span class="kw">enum </span>Found {
+<a href=#70 id=70 data-nosnippet>70</a>    Column(DataType),
+<a href=#71 id=71 data-nosnippet>71</a>    <span class="doccomment">/// A field of a struct column.
+<a href=#72 id=72 data-nosnippet>72</a>    </span>Field,
+<a href=#73 id=73 data-nosnippet>73</a>    <span class="doccomment">/// A column the named relation doesn't have.
+<a href=#74 id=74 data-nosnippet>74</a>    </span>Missing,
+<a href=#75 id=75 data-nosnippet>75</a>}
+<a href=#76 id=76 data-nosnippet>76</a>
+<a href=#77 id=77 data-nosnippet>77</a><span class="doccomment">/// The scope a column binds to.
+<a href=#78 id=78 data-nosnippet>78</a></span><span class="kw">enum </span>Binding {
+<a href=#79 id=79 data-nosnippet>79</a>    <span class="doccomment">/// The subquery itself.
+<a href=#80 id=80 data-nosnippet>80</a>    </span>Local,
+<a href=#81 id=81 data-nosnippet>81</a>    <span class="doccomment">/// A query around the subquery, with the dtype of a plain column.
+<a href=#82 id=82 data-nosnippet>82</a>    </span>Foreign {
+<a href=#83 id=83 data-nosnippet>83</a>        depth: usize,
+<a href=#84 id=84 data-nosnippet>84</a>        dtype: <span class="prelude-ty">Option</span>&lt;DataType&gt;,
+<a href=#85 id=85 data-nosnippet>85</a>    },
+<a href=#86 id=86 data-nosnippet>86</a>}
+<a href=#87 id=87 data-nosnippet>87</a>
+<a href=#88 id=88 data-nosnippet>88</a><span class="doccomment">/// A conjunct `inner = foreign` of the subquery: `inner` reads the subquery alone and
+<a href=#89 id=89 data-nosnippet>89</a>/// `foreign` is a column of a query around it.
+<a href=#90 id=90 data-nosnippet>90</a></span><span class="kw">struct </span>CorrelationKey {
+<a href=#91 id=91 data-nosnippet>91</a>    inner: SQLExpr,
+<a href=#92 id=92 data-nosnippet>92</a>    foreign: SQLExpr,
+<a href=#93 id=93 data-nosnippet>93</a>    dtype: DataType,
+<a href=#94 id=94 data-nosnippet>94</a>}
+<a href=#95 id=95 data-nosnippet>95</a>
+<a href=#96 id=96 data-nosnippet>96</a><span class="doccomment">/// A subquery moved into the FROM of the query around it.
+<a href=#97 id=97 data-nosnippet>97</a></span><span class="kw">struct </span>Moved {
+<a href=#98 id=98 data-nosnippet>98</a>    table: TableWithJoins,
+<a href=#99 id=99 data-nosnippet>99</a>    columns: Vec&lt;String&gt;,
+<a href=#100 id=100 data-nosnippet>100</a>    replaced: Vec&lt;SQLExpr&gt;,
+<a href=#101 id=101 data-nosnippet>101</a>}
+<a href=#102 id=102 data-nosnippet>102</a>
+<a href=#103 id=103 data-nosnippet>103</a><span class="doccomment">/// The operand compared with the value of a subquery, how, and whether the subquery is on
+<a href=#104 id=104 data-nosnippet>104</a>/// the left.
+<a href=#105 id=105 data-nosnippet>105</a></span><span class="kw">type </span>Compare&lt;<span class="lifetime">'a</span>&gt; = (<span class="kw-2">&amp;</span><span class="lifetime">'a </span>SQLExpr, SQLBinaryOperator, bool);
+<a href=#106 id=106 data-nosnippet>106</a>
+<a href=#107 id=107 data-nosnippet>107</a><span class="kw">impl </span>SQLContext {
+<a href=#108 id=108 data-nosnippet>108</a>    <span class="doccomment">/// `subquery`, about to be decorrelated against `columns` of this context, with the
+<a href=#109 id=109 data-nosnippet>109</a>    /// subqueries of its WHERE that read this context or further out moved into its FROM.
+<a href=#110 id=110 data-nosnippet>110</a>    /// `None` if nothing moved.
+<a href=#111 id=111 data-nosnippet>111</a>    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>pull_up_nested(
+<a href=#112 id=112 data-nosnippet>112</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#113 id=113 data-nosnippet>113</a>        columns: ScopeColumns&lt;<span class="lifetime">'_</span>&gt;,
+<a href=#114 id=114 data-nosnippet>114</a>        subquery: <span class="kw-2">&amp;</span>Query,
+<a href=#115 id=115 data-nosnippet>115</a>    ) -&gt; <span class="prelude-ty">Option</span>&lt;Query&gt; {
+<a href=#116 id=116 data-nosnippet>116</a>        <span class="comment">// An error while preparing leaves the subquery unchanged.
+<a href=#117 id=117 data-nosnippet>117</a>        </span>prepare(<span class="kw-2">&amp;</span>[Scope { ctx: <span class="self">self</span>, columns }], subquery).unwrap_or(<span class="prelude-val">None</span>)
+<a href=#118 id=118 data-nosnippet>118</a>    }
+<a href=#119 id=119 data-nosnippet>119</a>
+<a href=#120 id=120 data-nosnippet>120</a>    <span class="doccomment">/// `expr` with `pull_up_nested` applied to each of its subqueries, or `None` if nothing
+<a href=#121 id=121 data-nosnippet>121</a>    /// moved.
+<a href=#122 id=122 data-nosnippet>122</a>    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>pull_up_nested_in(
+<a href=#123 id=123 data-nosnippet>123</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#124 id=124 data-nosnippet>124</a>        columns: ScopeColumns&lt;<span class="lifetime">'_</span>&gt;,
+<a href=#125 id=125 data-nosnippet>125</a>        expr: <span class="kw-2">&amp;</span>SQLExpr,
+<a href=#126 id=126 data-nosnippet>126</a>    ) -&gt; <span class="prelude-ty">Option</span>&lt;SQLExpr&gt; {
+<a href=#127 id=127 data-nosnippet>127</a>        <span class="kw">struct </span>Prepare&lt;<span class="lifetime">'a</span>, <span class="lifetime">'b</span>&gt; {
+<a href=#128 id=128 data-nosnippet>128</a>            ctx: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>SQLContext,
+<a href=#129 id=129 data-nosnippet>129</a>            columns: ScopeColumns&lt;<span class="lifetime">'b</span>&gt;,
+<a href=#130 id=130 data-nosnippet>130</a>            query_depth: usize,
+<a href=#131 id=131 data-nosnippet>131</a>            prepared: Vec&lt;<span class="prelude-ty">Option</span>&lt;Query&gt;&gt;,
+<a href=#132 id=132 data-nosnippet>132</a>        }
+<a href=#133 id=133 data-nosnippet>133</a>
+<a href=#134 id=134 data-nosnippet>134</a>        <span class="kw">impl </span>Visitor <span class="kw">for </span>Prepare&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>&gt; {
+<a href=#135 id=135 data-nosnippet>135</a>            <span class="kw">type </span>Break = ();
+<a href=#136 id=136 data-nosnippet>136</a>
+<a href=#137 id=137 data-nosnippet>137</a>            <span class="kw">fn </span>pre_visit_query(<span class="kw-2">&amp;mut </span><span class="self">self</span>, _query: <span class="kw-2">&amp;</span>Query) -&gt; ControlFlow&lt;()&gt; {
+<a href=#138 id=138 data-nosnippet>138</a>                <span class="self">self</span>.query_depth += <span class="number">1</span>;
+<a href=#139 id=139 data-nosnippet>139</a>                ControlFlow::Continue(())
+<a href=#140 id=140 data-nosnippet>140</a>            }
+<a href=#141 id=141 data-nosnippet>141</a>
+<a href=#142 id=142 data-nosnippet>142</a>            <span class="kw">fn </span>post_visit_query(<span class="kw-2">&amp;mut </span><span class="self">self</span>, _query: <span class="kw-2">&amp;</span>Query) -&gt; ControlFlow&lt;()&gt; {
+<a href=#143 id=143 data-nosnippet>143</a>                <span class="self">self</span>.query_depth -= <span class="number">1</span>;
+<a href=#144 id=144 data-nosnippet>144</a>                ControlFlow::Continue(())
+<a href=#145 id=145 data-nosnippet>145</a>            }
+<a href=#146 id=146 data-nosnippet>146</a>
+<a href=#147 id=147 data-nosnippet>147</a>            <span class="kw">fn </span>pre_visit_expr(<span class="kw-2">&amp;mut </span><span class="self">self</span>, expr: <span class="kw-2">&amp;</span>SQLExpr) -&gt; ControlFlow&lt;()&gt; {
+<a href=#148 id=148 data-nosnippet>148</a>                <span class="kw">if </span><span class="self">self</span>.query_depth == <span class="number">0
+<a href=#149 id=149 data-nosnippet>149</a>                    </span>&amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(subquery) = expr_subquery(expr)
+<a href=#150 id=150 data-nosnippet>150</a>                {
+<a href=#151 id=151 data-nosnippet>151</a>                    <span class="kw">let </span>prepared = <span class="self">self</span>.ctx.pull_up_nested(<span class="self">self</span>.columns, subquery);
+<a href=#152 id=152 data-nosnippet>152</a>                    <span class="self">self</span>.prepared.push(prepared);
+<a href=#153 id=153 data-nosnippet>153</a>                }
+<a href=#154 id=154 data-nosnippet>154</a>                ControlFlow::Continue(())
+<a href=#155 id=155 data-nosnippet>155</a>            }
+<a href=#156 id=156 data-nosnippet>156</a>        }
+<a href=#157 id=157 data-nosnippet>157</a>
+<a href=#158 id=158 data-nosnippet>158</a>        <span class="kw">struct </span>Replace {
+<a href=#159 id=159 data-nosnippet>159</a>            query_depth: usize,
+<a href=#160 id=160 data-nosnippet>160</a>            prepared: std::vec::IntoIter&lt;<span class="prelude-ty">Option</span>&lt;Query&gt;&gt;,
+<a href=#161 id=161 data-nosnippet>161</a>        }
+<a href=#162 id=162 data-nosnippet>162</a>
+<a href=#163 id=163 data-nosnippet>163</a>        <span class="kw">impl </span>VisitorMut <span class="kw">for </span>Replace {
+<a href=#164 id=164 data-nosnippet>164</a>            <span class="kw">type </span>Break = ();
+<a href=#165 id=165 data-nosnippet>165</a>
+<a href=#166 id=166 data-nosnippet>166</a>            <span class="kw">fn </span>pre_visit_query(<span class="kw-2">&amp;mut </span><span class="self">self</span>, _query: <span class="kw-2">&amp;mut </span>Query) -&gt; ControlFlow&lt;()&gt; {
+<a href=#167 id=167 data-nosnippet>167</a>                <span class="self">self</span>.query_depth += <span class="number">1</span>;
+<a href=#168 id=168 data-nosnippet>168</a>                ControlFlow::Continue(())
+<a href=#169 id=169 data-nosnippet>169</a>            }
+<a href=#170 id=170 data-nosnippet>170</a>
+<a href=#171 id=171 data-nosnippet>171</a>            <span class="kw">fn </span>post_visit_query(<span class="kw-2">&amp;mut </span><span class="self">self</span>, _query: <span class="kw-2">&amp;mut </span>Query) -&gt; ControlFlow&lt;()&gt; {
+<a href=#172 id=172 data-nosnippet>172</a>                <span class="self">self</span>.query_depth -= <span class="number">1</span>;
+<a href=#173 id=173 data-nosnippet>173</a>                ControlFlow::Continue(())
+<a href=#174 id=174 data-nosnippet>174</a>            }
+<a href=#175 id=175 data-nosnippet>175</a>
+<a href=#176 id=176 data-nosnippet>176</a>            <span class="kw">fn </span>pre_visit_expr(<span class="kw-2">&amp;mut </span><span class="self">self</span>, expr: <span class="kw-2">&amp;mut </span>SQLExpr) -&gt; ControlFlow&lt;()&gt; {
+<a href=#177 id=177 data-nosnippet>177</a>                <span class="kw">if </span><span class="self">self</span>.query_depth == <span class="number">0 </span>&amp;&amp; is_subquery_expr(expr) {
+<a href=#178 id=178 data-nosnippet>178</a>                    <span class="kw">let </span>prepared = <span class="self">self</span>.prepared.next().flatten();
+<a href=#179 id=179 data-nosnippet>179</a>                    <span class="kw">if let </span>(<span class="prelude-val">Some</span>(prepared), <span class="prelude-val">Some</span>(subquery)) = (prepared, expr_subquery_mut(expr)) {
+<a href=#180 id=180 data-nosnippet>180</a>                        <span class="kw-2">*</span>subquery = prepared;
+<a href=#181 id=181 data-nosnippet>181</a>                    }
+<a href=#182 id=182 data-nosnippet>182</a>                }
+<a href=#183 id=183 data-nosnippet>183</a>                ControlFlow::Continue(())
+<a href=#184 id=184 data-nosnippet>184</a>            }
+<a href=#185 id=185 data-nosnippet>185</a>        }
+<a href=#186 id=186 data-nosnippet>186</a>
+<a href=#187 id=187 data-nosnippet>187</a>        <span class="kw">if </span>!expr_contains_subquery(expr) {
+<a href=#188 id=188 data-nosnippet>188</a>            <span class="kw">return </span><span class="prelude-val">None</span>;
+<a href=#189 id=189 data-nosnippet>189</a>        }
+<a href=#190 id=190 data-nosnippet>190</a>        <span class="kw">let </span><span class="kw-2">mut </span>prepare = Prepare {
+<a href=#191 id=191 data-nosnippet>191</a>            ctx: <span class="self">self</span>,
+<a href=#192 id=192 data-nosnippet>192</a>            columns,
+<a href=#193 id=193 data-nosnippet>193</a>            query_depth: <span class="number">0</span>,
+<a href=#194 id=194 data-nosnippet>194</a>            prepared: Vec::new(),
+<a href=#195 id=195 data-nosnippet>195</a>        };
+<a href=#196 id=196 data-nosnippet>196</a>        <span class="kw">let _ </span>= dyn_visit::visit(expr, <span class="kw-2">&amp;mut </span>prepare);
+<a href=#197 id=197 data-nosnippet>197</a>        <span class="kw">if </span>prepare.prepared.iter().all(Option::is_none) {
+<a href=#198 id=198 data-nosnippet>198</a>            <span class="kw">return </span><span class="prelude-val">None</span>;
+<a href=#199 id=199 data-nosnippet>199</a>        }
+<a href=#200 id=200 data-nosnippet>200</a>        <span class="kw">let </span><span class="kw-2">mut </span>expr = expr.clone();
+<a href=#201 id=201 data-nosnippet>201</a>        <span class="kw">let _ </span>= dyn_visit::visit_mut(
+<a href=#202 id=202 data-nosnippet>202</a>            <span class="kw-2">&amp;mut </span>expr,
+<a href=#203 id=203 data-nosnippet>203</a>            <span class="kw-2">&amp;mut </span>Replace {
+<a href=#204 id=204 data-nosnippet>204</a>                query_depth: <span class="number">0</span>,
+<a href=#205 id=205 data-nosnippet>205</a>                prepared: prepare.prepared.into_iter(),
+<a href=#206 id=206 data-nosnippet>206</a>            },
+<a href=#207 id=207 data-nosnippet>207</a>        );
+<a href=#208 id=208 data-nosnippet>208</a>        <span class="prelude-val">Some</span>(expr)
+<a href=#209 id=209 data-nosnippet>209</a>    }
+<a href=#210 id=210 data-nosnippet>210</a>}
+<a href=#211 id=211 data-nosnippet>211</a>
+<a href=#212 id=212 data-nosnippet>212</a><span class="kw">fn </span>expr_subquery(expr: <span class="kw-2">&amp;</span>SQLExpr) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>Query&gt; {
+<a href=#213 id=213 data-nosnippet>213</a>    <span class="kw">match </span>expr {
+<a href=#214 id=214 data-nosnippet>214</a>        SQLExpr::Subquery(subquery)
+<a href=#215 id=215 data-nosnippet>215</a>        | SQLExpr::Exists { subquery, .. }
+<a href=#216 id=216 data-nosnippet>216</a>        | SQLExpr::InSubquery { subquery, .. } =&gt; <span class="prelude-val">Some</span>(subquery),
+<a href=#217 id=217 data-nosnippet>217</a>        <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
+<a href=#218 id=218 data-nosnippet>218</a>    }
+<a href=#219 id=219 data-nosnippet>219</a>}
+<a href=#220 id=220 data-nosnippet>220</a>
+<a href=#221 id=221 data-nosnippet>221</a><span class="kw">fn </span>expr_subquery_mut(expr: <span class="kw-2">&amp;mut </span>SQLExpr) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;mut </span>Query&gt; {
+<a href=#222 id=222 data-nosnippet>222</a>    <span class="kw">match </span>expr {
+<a href=#223 id=223 data-nosnippet>223</a>        SQLExpr::Subquery(subquery)
+<a href=#224 id=224 data-nosnippet>224</a>        | SQLExpr::Exists { subquery, .. }
+<a href=#225 id=225 data-nosnippet>225</a>        | SQLExpr::InSubquery { subquery, .. } =&gt; <span class="prelude-val">Some</span>(subquery),
+<a href=#226 id=226 data-nosnippet>226</a>        <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
+<a href=#227 id=227 data-nosnippet>227</a>    }
+<a href=#228 id=228 data-nosnippet>228</a>}
+<a href=#229 id=229 data-nosnippet>229</a>
+<a href=#230 id=230 data-nosnippet>230</a><span class="doccomment">/// `x` with the subqueries of its WHERE that read one of `scopes` (the queries around
+<a href=#231 id=231 data-nosnippet>231</a>/// `x`, outermost first) moved into its FROM, or `None` if nothing moved. Inner queries
+<a href=#232 id=232 data-nosnippet>232</a>/// are handled first.
+<a href=#233 id=233 data-nosnippet>233</a></span><span class="kw">fn </span>prepare(scopes: <span class="kw-2">&amp;</span>[Scope&lt;<span class="lifetime">'_</span>&gt;], x: <span class="kw-2">&amp;</span>Query) -&gt; PolarsResult&lt;<span class="prelude-ty">Option</span>&lt;Query&gt;&gt; {
+<a href=#234 id=234 data-nosnippet>234</a>    <span class="kw">let </span><span class="prelude-val">Some</span>(select) = eligible_query_block(x) <span class="kw">else </span>{
+<a href=#235 id=235 data-nosnippet>235</a>        <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#236 id=236 data-nosnippet>236</a>    };
+<a href=#237 id=237 data-nosnippet>237</a>    <span class="kw">let </span><span class="prelude-val">Some</span>(selection) = <span class="kw-2">&amp;</span>select.selection <span class="kw">else </span>{
+<a href=#238 id=238 data-nosnippet>238</a>        <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#239 id=239 data-nosnippet>239</a>    };
+<a href=#240 id=240 data-nosnippet>240</a>    <span class="kw">let </span>conjuncts = flatten_and_conditions(selection);
+<a href=#241 id=241 data-nosnippet>241</a>    <span class="kw">if </span>!conjuncts.iter().any(|conj| candidate(conj).is_some()) {
+<a href=#242 id=242 data-nosnippet>242</a>        <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#243 id=243 data-nosnippet>243</a>    }
+<a href=#244 id=244 data-nosnippet>244</a>    <span class="comment">// The added columns are excluded from `SELECT *`, which can't be combined with
+<a href=#245 id=245 data-nosnippet>245</a>    // these.
+<a href=#246 id=246 data-nosnippet>246</a>    </span><span class="kw">if </span>select.projection.iter().any(|item| {
+<a href=#247 id=247 data-nosnippet>247</a>        <span class="macro">matches!</span>(item, SelectItem::Wildcard(options) <span class="kw">if </span>options.opt_except.is_some()
+<a href=#248 id=248 data-nosnippet>248</a>            || options.opt_ilike.is_some()
+<a href=#249 id=249 data-nosnippet>249</a>            || options.opt_replace.is_some()
+<a href=#250 id=250 data-nosnippet>250</a>            || options.opt_rename.is_some())
+<a href=#251 id=251 data-nosnippet>251</a>    }) {
+<a href=#252 id=252 data-nosnippet>252</a>        <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#253 id=253 data-nosnippet>253</a>    }
+<a href=#254 id=254 data-nosnippet>254</a>    <span class="comment">// The FROM of `x` is resolved as it is when `x` is planned. Only what moves into the
+<a href=#255 id=255 data-nosnippet>255</a>    // derived tables is planned strictly, and so is everything that reads it here. A FROM
+<a href=#256 id=256 data-nosnippet>256</a>    // without named relations lets a qualifier name any table outside strict planning.
+<a href=#257 id=257 data-nosnippet>257</a>    </span><span class="kw">let </span><span class="kw-2">mut </span>x_ctx = scopes.last().unwrap().ctx.isolated();
+<a href=#258 id=258 data-nosnippet>258</a>    <span class="kw">let </span>x_frame = <span class="kw">match </span>select.from.is_empty() {
+<a href=#259 id=259 data-nosnippet>259</a>        <span class="bool-val">true </span>=&gt; <span class="prelude-val">None</span>,
+<a href=#260 id=260 data-nosnippet>260</a>        <span class="bool-val">false </span>=&gt; {
+<a href=#261 id=261 data-nosnippet>261</a>            <span class="kw">let </span><span class="prelude-val">Some</span>((names, lf, schema)) = x_ctx.resolve_subquery_from(select)<span class="question-mark">? </span><span class="kw">else </span>{
+<a href=#262 id=262 data-nosnippet>262</a>                <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#263 id=263 data-nosnippet>263</a>            };
+<a href=#264 id=264 data-nosnippet>264</a>            <span class="kw">if </span>names.is_empty() {
+<a href=#265 id=265 data-nosnippet>265</a>                <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#266 id=266 data-nosnippet>266</a>            }
+<a href=#267 id=267 data-nosnippet>267</a>            <span class="prelude-val">Some</span>((lf, schema))
+<a href=#268 id=268 data-nosnippet>268</a>        },
+<a href=#269 id=269 data-nosnippet>269</a>    };
+<a href=#270 id=270 data-nosnippet>270</a>    x_ctx.strict_relations = <span class="bool-val">true</span>;
+<a href=#271 id=271 data-nosnippet>271</a>
+<a href=#272 id=272 data-nosnippet>272</a>    <span class="kw">let </span><span class="kw-2">mut </span>kept = Vec::new();
+<a href=#273 id=273 data-nosnippet>273</a>    <span class="kw">let </span><span class="kw-2">mut </span>moved = Vec::new();
+<a href=#274 id=274 data-nosnippet>274</a>    <span class="kw">for </span>conj <span class="kw">in </span>conjuncts {
+<a href=#275 id=275 data-nosnippet>275</a>        <span class="kw">let </span><span class="prelude-val">Some</span>((compare, y)) = candidate(conj) <span class="kw">else </span>{
+<a href=#276 id=276 data-nosnippet>276</a>            kept.push(conj.clone());
+<a href=#277 id=277 data-nosnippet>277</a>            <span class="kw">continue</span>;
+<a href=#278 id=278 data-nosnippet>278</a>        };
+<a href=#279 id=279 data-nosnippet>279</a>        <span class="kw">let </span>x_frame = x_frame.as_ref().map(|(lf, schema)| (lf, schema.as_ref()));
+<a href=#280 id=280 data-nosnippet>280</a>        <span class="kw">let </span>prepared_y = {
+<a href=#281 id=281 data-nosnippet>281</a>            <span class="kw">let </span><span class="kw-2">mut </span>inner = scopes.to_vec();
+<a href=#282 id=282 data-nosnippet>282</a>            inner.push(Scope {
+<a href=#283 id=283 data-nosnippet>283</a>                ctx: <span class="kw-2">&amp;</span>x_ctx,
+<a href=#284 id=284 data-nosnippet>284</a>                columns: frame_columns(x_frame),
+<a href=#285 id=285 data-nosnippet>285</a>            });
+<a href=#286 id=286 data-nosnippet>286</a>            prepare(<span class="kw-2">&amp;</span>inner, y).unwrap_or(<span class="prelude-val">None</span>)
+<a href=#287 id=287 data-nosnippet>287</a>        };
+<a href=#288 id=288 data-nosnippet>288</a>        <span class="kw">let </span>y = prepared_y.as_ref().unwrap_or(y);
+<a href=#289 id=289 data-nosnippet>289</a>        <span class="kw">match </span>try_move(scopes, <span class="kw-2">&amp;mut </span>x_ctx, x_frame, compare, y).unwrap_or(<span class="prelude-val">None</span>) {
+<a href=#290 id=290 data-nosnippet>290</a>            <span class="prelude-val">Some</span>(m) =&gt; {
+<a href=#291 id=291 data-nosnippet>291</a>                kept.extend(m.replaced);
+<a href=#292 id=292 data-nosnippet>292</a>                moved.push((m.table, m.columns));
+<a href=#293 id=293 data-nosnippet>293</a>            },
+<a href=#294 id=294 data-nosnippet>294</a>            <span class="prelude-val">None </span>=&gt; kept.push(conj.clone()),
+<a href=#295 id=295 data-nosnippet>295</a>        }
+<a href=#296 id=296 data-nosnippet>296</a>    }
+<a href=#297 id=297 data-nosnippet>297</a>    <span class="kw">if </span>moved.is_empty() {
+<a href=#298 id=298 data-nosnippet>298</a>        <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#299 id=299 data-nosnippet>299</a>    }
+<a href=#300 id=300 data-nosnippet>300</a>
+<a href=#301 id=301 data-nosnippet>301</a>    <span class="kw">let </span><span class="kw-2">mut </span>select = select.clone();
+<a href=#302 id=302 data-nosnippet>302</a>    <span class="comment">// The added columns must not show up in `SELECT *`.
+<a href=#303 id=303 data-nosnippet>303</a>    </span><span class="kw">let </span>added: Vec&lt;ObjectName&gt; = moved
+<a href=#304 id=304 data-nosnippet>304</a>        .iter()
+<a href=#305 id=305 data-nosnippet>305</a>        .flat_map(|(<span class="kw">_</span>, columns)| columns)
+<a href=#306 id=306 data-nosnippet>306</a>        .map(|name| ObjectName::from(<span class="macro">vec!</span>[Ident::new(name)]))
+<a href=#307 id=307 data-nosnippet>307</a>        .collect();
+<a href=#308 id=308 data-nosnippet>308</a>    <span class="kw">for </span>item <span class="kw">in </span><span class="kw-2">&amp;mut </span>select.projection {
+<a href=#309 id=309 data-nosnippet>309</a>        <span class="kw">if let </span>SelectItem::Wildcard(options) = item {
+<a href=#310 id=310 data-nosnippet>310</a>            <span class="kw">let </span><span class="kw-2">mut </span>excluded = <span class="kw">match </span>options.opt_exclude.take() {
+<a href=#311 id=311 data-nosnippet>311</a>                <span class="prelude-val">None </span>=&gt; Vec::new(),
+<a href=#312 id=312 data-nosnippet>312</a>                <span class="prelude-val">Some</span>(ExcludeSelectItem::Single(name)) =&gt; <span class="macro">vec!</span>[name],
+<a href=#313 id=313 data-nosnippet>313</a>                <span class="prelude-val">Some</span>(ExcludeSelectItem::Multiple(names)) =&gt; names,
+<a href=#314 id=314 data-nosnippet>314</a>            };
+<a href=#315 id=315 data-nosnippet>315</a>            excluded.extend(added.iter().cloned());
+<a href=#316 id=316 data-nosnippet>316</a>            options.opt_exclude = <span class="prelude-val">Some</span>(ExcludeSelectItem::Multiple(excluded));
+<a href=#317 id=317 data-nosnippet>317</a>        }
+<a href=#318 id=318 data-nosnippet>318</a>    }
+<a href=#319 id=319 data-nosnippet>319</a>    select
+<a href=#320 id=320 data-nosnippet>320</a>        .from
+<a href=#321 id=321 data-nosnippet>321</a>        .extend(moved.into_iter().map(|(table, <span class="kw">_</span>)| table));
+<a href=#322 id=322 data-nosnippet>322</a>    select.selection = combine_conditions(kept, SQLBinaryOperator::And);
+<a href=#323 id=323 data-nosnippet>323</a>    <span class="kw">let </span><span class="kw-2">mut </span>x = x.clone();
+<a href=#324 id=324 data-nosnippet>324</a>    x.body = Box::new(SetExpr::Select(Box::new(select)));
+<a href=#325 id=325 data-nosnippet>325</a>    <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(x))
+<a href=#326 id=326 data-nosnippet>326</a>}
+<a href=#327 id=327 data-nosnippet>327</a>
+<a href=#328 id=328 data-nosnippet>328</a><span class="kw">fn </span>frame_columns&lt;<span class="lifetime">'a</span>&gt;(frame: <span class="prelude-ty">Option</span>&lt;(<span class="kw-2">&amp;</span>LazyFrame, <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Schema)&gt;) -&gt; ScopeColumns&lt;<span class="lifetime">'a</span>&gt; {
+<a href=#329 id=329 data-nosnippet>329</a>    <span class="kw">match </span>frame {
+<a href=#330 id=330 data-nosnippet>330</a>        <span class="prelude-val">Some</span>((<span class="kw">_</span>, schema)) =&gt; ScopeColumns::Frame(schema),
+<a href=#331 id=331 data-nosnippet>331</a>        <span class="prelude-val">None </span>=&gt; ScopeColumns::None,
+<a href=#332 id=332 data-nosnippet>332</a>    }
+<a href=#333 id=333 data-nosnippet>333</a>}
+<a href=#334 id=334 data-nosnippet>334</a>
+<a href=#335 id=335 data-nosnippet>335</a><span class="doccomment">/// The comparison and subquery of a conjunct `lhs IN (y)`, `lhs &lt;op&gt; (y)` or `EXISTS (y)`.
+<a href=#336 id=336 data-nosnippet>336</a></span><span class="kw">fn </span>candidate(conj: <span class="kw-2">&amp;</span>SQLExpr) -&gt; <span class="prelude-ty">Option</span>&lt;(<span class="prelude-ty">Option</span>&lt;Compare&lt;<span class="lifetime">'_</span>&gt;&gt;, <span class="kw-2">&amp;</span>Query)&gt; {
+<a href=#337 id=337 data-nosnippet>337</a>    <span class="kw">use </span>SQLBinaryOperator::<span class="kw-2">*</span>;
+<a href=#338 id=338 data-nosnippet>338</a>    <span class="kw">let </span>(compare, subquery) = <span class="kw">match </span>strip_nested(conj) {
+<a href=#339 id=339 data-nosnippet>339</a>        SQLExpr::InSubquery {
+<a href=#340 id=340 data-nosnippet>340</a>            expr,
+<a href=#341 id=341 data-nosnippet>341</a>            subquery,
+<a href=#342 id=342 data-nosnippet>342</a>            negated: <span class="bool-val">false</span>,
+<a href=#343 id=343 data-nosnippet>343</a>        } =&gt; (<span class="prelude-val">Some</span>((expr.as_ref(), Eq, <span class="bool-val">false</span>)), subquery.as_ref()),
+<a href=#344 id=344 data-nosnippet>344</a>        SQLExpr::Exists {
+<a href=#345 id=345 data-nosnippet>345</a>            subquery,
+<a href=#346 id=346 data-nosnippet>346</a>            negated: <span class="bool-val">false</span>,
+<a href=#347 id=347 data-nosnippet>347</a>        } =&gt; (<span class="prelude-val">None</span>, subquery.as_ref()),
+<a href=#348 id=348 data-nosnippet>348</a>        SQLExpr::BinaryOp {
+<a href=#349 id=349 data-nosnippet>349</a>            left,
+<a href=#350 id=350 data-nosnippet>350</a>            op: op @ (Eq | NotEq | Lt | LtEq | Gt | GtEq),
+<a href=#351 id=351 data-nosnippet>351</a>            right,
+<a href=#352 id=352 data-nosnippet>352</a>        } =&gt; <span class="kw">match </span>(strip_nested(left), strip_nested(right)) {
+<a href=#353 id=353 data-nosnippet>353</a>            (SQLExpr::Subquery(subquery), lhs) =&gt; {
+<a href=#354 id=354 data-nosnippet>354</a>                (<span class="prelude-val">Some</span>((lhs, op.clone(), <span class="bool-val">true</span>)), subquery.as_ref())
+<a href=#355 id=355 data-nosnippet>355</a>            },
+<a href=#356 id=356 data-nosnippet>356</a>            (lhs, SQLExpr::Subquery(subquery)) =&gt; {
+<a href=#357 id=357 data-nosnippet>357</a>                (<span class="prelude-val">Some</span>((lhs, op.clone(), <span class="bool-val">false</span>)), subquery.as_ref())
+<a href=#358 id=358 data-nosnippet>358</a>            },
+<a href=#359 id=359 data-nosnippet>359</a>            <span class="kw">_ </span>=&gt; <span class="kw">return </span><span class="prelude-val">None</span>,
+<a href=#360 id=360 data-nosnippet>360</a>        },
+<a href=#361 id=361 data-nosnippet>361</a>        <span class="kw">_ </span>=&gt; <span class="kw">return </span><span class="prelude-val">None</span>,
+<a href=#362 id=362 data-nosnippet>362</a>    };
+<a href=#363 id=363 data-nosnippet>363</a>    <span class="kw">let </span>lhs = compare.as_ref().map(|(lhs, ..)| <span class="kw-2">*</span>lhs);
+<a href=#364 id=364 data-nosnippet>364</a>    <span class="kw">if </span>lhs.is_some_and(|lhs| expr_contains_subquery(lhs) || <span class="macro">matches!</span>(lhs, SQLExpr::Tuple(<span class="kw">_</span>))) {
+<a href=#365 id=365 data-nosnippet>365</a>        <span class="kw">return </span><span class="prelude-val">None</span>;
+<a href=#366 id=366 data-nosnippet>366</a>    }
+<a href=#367 id=367 data-nosnippet>367</a>    <span class="prelude-val">Some</span>((compare, subquery))
+<a href=#368 id=368 data-nosnippet>368</a>}
+<a href=#369 id=369 data-nosnippet>369</a>
+<a href=#370 id=370 data-nosnippet>370</a><span class="doccomment">/// Move `y`, compared by `compare` (or under EXISTS), into the FROM of `x`, whose context
+<a href=#371 id=371 data-nosnippet>371</a>/// is `x_ctx` and whose frame is `x_frame` (`None` without FROM). `scopes` are the queries
+<a href=#372 id=372 data-nosnippet>372</a>/// around `x`. `None` if `y` reads none of `scopes`, or isn't a shape that moves.
+<a href=#373 id=373 data-nosnippet>373</a></span><span class="kw">fn </span>try_move(
+<a href=#374 id=374 data-nosnippet>374</a>    scopes: <span class="kw-2">&amp;</span>[Scope&lt;<span class="lifetime">'_</span>&gt;],
+<a href=#375 id=375 data-nosnippet>375</a>    x_ctx: <span class="kw-2">&amp;mut </span>SQLContext,
+<a href=#376 id=376 data-nosnippet>376</a>    x_frame: <span class="prelude-ty">Option</span>&lt;(<span class="kw-2">&amp;</span>LazyFrame, <span class="kw-2">&amp;</span>Schema)&gt;,
+<a href=#377 id=377 data-nosnippet>377</a>    compare: <span class="prelude-ty">Option</span>&lt;Compare&lt;<span class="lifetime">'_</span>&gt;&gt;,
+<a href=#378 id=378 data-nosnippet>378</a>    y: <span class="kw-2">&amp;</span>Query,
+<a href=#379 id=379 data-nosnippet>379</a>) -&gt; PolarsResult&lt;<span class="prelude-ty">Option</span>&lt;Moved&gt;&gt; {
+<a href=#380 id=380 data-nosnippet>380</a>    <span class="kw">use </span>SQLBinaryOperator::<span class="kw-2">*</span>;
+<a href=#381 id=381 data-nosnippet>381</a>    <span class="kw">let </span><span class="prelude-val">Some</span>(first_row) = first_row_limit(y) <span class="kw">else </span>{
+<a href=#382 id=382 data-nosnippet>382</a>        <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#383 id=383 data-nosnippet>383</a>    };
+<a href=#384 id=384 data-nosnippet>384</a>    <span class="kw">let </span><span class="prelude-val">Some</span>(select) = eligible_subquery_body(y) <span class="kw">else </span>{
+<a href=#385 id=385 data-nosnippet>385</a>        <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#386 id=386 data-nosnippet>386</a>    };
+<a href=#387 id=387 data-nosnippet>387</a>    <span class="kw">if </span><span class="macro">matches!</span>(select.distinct, <span class="prelude-val">Some</span>(Distinct::On(<span class="kw">_</span>))) || !select.named_window.is_empty() {
+<a href=#388 id=388 data-nosnippet>388</a>        <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#389 id=389 data-nosnippet>389</a>    }
+<a href=#390 id=390 data-nosnippet>390</a>    <span class="kw">let </span>order_by_exprs: <span class="kw-2">&amp;</span>[OrderByExpr] = <span class="kw">match </span>y.order_by.as_ref().map(|o| <span class="kw-2">&amp;</span>o.kind) {
+<a href=#391 id=391 data-nosnippet>391</a>        <span class="prelude-val">None </span>=&gt; <span class="kw-2">&amp;</span>[],
+<a href=#392 id=392 data-nosnippet>392</a>        <span class="prelude-val">Some</span>(OrderByKind::Expressions(exprs)) =&gt; exprs,
+<a href=#393 id=393 data-nosnippet>393</a>        <span class="prelude-val">Some</span>(<span class="kw">_</span>) =&gt; <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>),
+<a href=#394 id=394 data-nosnippet>394</a>    };
+<a href=#395 id=395 data-nosnippet>395</a>    <span class="kw">let </span>order_aggregates = order_by_exprs
+<a href=#396 id=396 data-nosnippet>396</a>        .iter()
+<a href=#397 id=397 data-nosnippet>397</a>        .any(|ob| has_aggregate(x_ctx, <span class="kw-2">&amp;</span>ob.expr));
+<a href=#398 id=398 data-nosnippet>398</a>    <span class="kw">let </span>value = <span class="kw">match </span>compare {
+<a href=#399 id=399 data-nosnippet>399</a>        <span class="prelude-val">Some</span>(<span class="kw">_</span>) =&gt; {
+<a href=#400 id=400 data-nosnippet>400</a>            <span class="kw">let </span>[SelectItem::UnnamedExpr(value) | SelectItem::ExprWithAlias { expr: value, .. }] =
+<a href=#401 id=401 data-nosnippet>401</a>                select.projection.as_slice()
+<a href=#402 id=402 data-nosnippet>402</a>            <span class="kw">else </span>{
+<a href=#403 id=403 data-nosnippet>403</a>                <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#404 id=404 data-nosnippet>404</a>            };
+<a href=#405 id=405 data-nosnippet>405</a>            <span class="kw">if </span>expr_has_window_functions(value) {
+<a href=#406 id=406 data-nosnippet>406</a>                <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#407 id=407 data-nosnippet>407</a>            }
+<a href=#408 id=408 data-nosnippet>408</a>            <span class="prelude-val">Some</span>(value)
+<a href=#409 id=409 data-nosnippet>409</a>        },
+<a href=#410 id=410 data-nosnippet>410</a>        <span class="comment">// An aggregate makes EXISTS return one row whatever the rows are. The projection
+<a href=#411 id=411 data-nosnippet>411</a>        // and the order are otherwise ignored.
+<a href=#412 id=412 data-nosnippet>412</a>        </span><span class="prelude-val">None </span><span class="kw">if </span>order_aggregates
+<a href=#413 id=413 data-nosnippet>413</a>            || select
+<a href=#414 id=414 data-nosnippet>414</a>                .projection
+<a href=#415 id=415 data-nosnippet>415</a>                .iter()
+<a href=#416 id=416 data-nosnippet>416</a>                .any(|item| has_aggregate(x_ctx, item)) =&gt;
+<a href=#417 id=417 data-nosnippet>417</a>        {
+<a href=#418 id=418 data-nosnippet>418</a>            <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#419 id=419 data-nosnippet>419</a>        },
+<a href=#420 id=420 data-nosnippet>420</a>        <span class="prelude-val">None </span>=&gt; <span class="prelude-val">None</span>,
+<a href=#421 id=421 data-nosnippet>421</a>    };
+<a href=#422 id=422 data-nosnippet>422</a>    <span class="comment">// An aggregate is taken per value of the correlation keys. A key with no rows then
+<a href=#423 id=423 data-nosnippet>423</a>    // has no group, which is only the same as a NULL value.
+<a href=#424 id=424 data-nosnippet>424</a>    </span><span class="kw">let </span>aggregates = value.is_some_and(|value| has_aggregate(x_ctx, value));
+<a href=#425 id=425 data-nosnippet>425</a>    <span class="kw">if </span>aggregates &amp;&amp; !null_over_no_rows(x_ctx, value.unwrap()) {
+<a href=#426 id=426 data-nosnippet>426</a>        <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#427 id=427 data-nosnippet>427</a>    }
+<a href=#428 id=428 data-nosnippet>428</a>    <span class="comment">// An aggregate in the order alone also makes the subquery return one row.
+<a href=#429 id=429 data-nosnippet>429</a>    </span><span class="kw">if </span>value.is_some() &amp;&amp; !aggregates &amp;&amp; order_aggregates {
+<a href=#430 id=430 data-nosnippet>430</a>        <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#431 id=431 data-nosnippet>431</a>    }
+<a href=#432 id=432 data-nosnippet>432</a>    <span class="comment">// Without a limit, the distinct values of a key can be several. Only an equality
+<a href=#433 id=433 data-nosnippet>433</a>    // matches each row of the query around it with at most one of them. A limit doesn't
+<a href=#434 id=434 data-nosnippet>434</a>    // change whether EXISTS finds a row, nor how many rows an aggregate returns.
+<a href=#435 id=435 data-nosnippet>435</a>    </span><span class="kw">let </span>first_row = first_row &amp;&amp; value.is_some() &amp;&amp; !aggregates;
+<a href=#436 id=436 data-nosnippet>436</a>    <span class="kw">if </span>compare.as_ref().is_some_and(|(<span class="kw">_</span>, op, <span class="kw">_</span>)| <span class="kw-2">*</span>op != Eq) &amp;&amp; !aggregates &amp;&amp; !first_row {
+<a href=#437 id=437 data-nosnippet>437</a>        <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#438 id=438 data-nosnippet>438</a>    }
+<a href=#439 id=439 data-nosnippet>439</a>    <span class="kw">let </span>order_by = <span class="kw">match </span>first_row {
+<a href=#440 id=440 data-nosnippet>440</a>        <span class="bool-val">true </span>=&gt; <span class="kw">match </span>first_row_order(y, select, order_by_exprs) {
+<a href=#441 id=441 data-nosnippet>441</a>            <span class="prelude-val">Some</span>(order_by) =&gt; order_by,
+<a href=#442 id=442 data-nosnippet>442</a>            <span class="prelude-val">None </span>=&gt; <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>),
+<a href=#443 id=443 data-nosnippet>443</a>        },
+<a href=#444 id=444 data-nosnippet>444</a>        <span class="bool-val">false </span>=&gt; Vec::new(),
+<a href=#445 id=445 data-nosnippet>445</a>    };
+<a href=#446 id=446 data-nosnippet>446</a>
+<a href=#447 id=447 data-nosnippet>447</a>    <span class="kw">let </span><span class="kw-2">mut </span>y_ctx = x_ctx.isolated();
+<a href=#448 id=448 data-nosnippet>448</a>    <span class="kw">let </span><span class="prelude-val">Some</span>((y_names, <span class="kw">_</span>, y_schema)) = y_ctx.resolve_subquery_from(select)<span class="question-mark">? </span><span class="kw">else </span>{
+<a href=#449 id=449 data-nosnippet>449</a>        <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#450 id=450 data-nosnippet>450</a>    };
+<a href=#451 id=451 data-nosnippet>451</a>    <span class="comment">// Dropping the projection of EXISTS must not change its rows, as `UNNEST` does.
+<a href=#452 id=452 data-nosnippet>452</a>    </span><span class="kw">if </span>compare.is_none() &amp;&amp; exists_aggregates(<span class="kw-2">&amp;</span>y_ctx, y, select, <span class="kw-2">&amp;</span>y_names, <span class="kw-2">&amp;</span>y_schema) != <span class="prelude-val">Some</span>(<span class="bool-val">false</span>)
+<a href=#453 id=453 data-nosnippet>453</a>    {
+<a href=#454 id=454 data-nosnippet>454</a>        <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#455 id=455 data-nosnippet>455</a>    }
+<a href=#456 id=456 data-nosnippet>456</a>    <span class="kw">let </span><span class="kw-2">mut </span>kept = Vec::new();
+<a href=#457 id=457 data-nosnippet>457</a>    <span class="kw">let </span><span class="kw-2">mut </span>keys = Vec::new();
+<a href=#458 id=458 data-nosnippet>458</a>    <span class="kw">let </span><span class="kw-2">mut </span>reads_outer = <span class="bool-val">false</span>;
+<a href=#459 id=459 data-nosnippet>459</a>    <span class="kw">if let </span><span class="prelude-val">Some</span>(selection) = <span class="kw-2">&amp;</span>select.selection {
+<a href=#460 id=460 data-nosnippet>460</a>        <span class="comment">// Innermost first: `y`, `x`, then the queries around `x`.
+<a href=#461 id=461 data-nosnippet>461</a>        </span><span class="kw">let </span>chain: Vec&lt;Scope&gt; = [
+<a href=#462 id=462 data-nosnippet>462</a>            Scope {
+<a href=#463 id=463 data-nosnippet>463</a>                ctx: <span class="kw-2">&amp;</span>y_ctx,
+<a href=#464 id=464 data-nosnippet>464</a>                columns: ScopeColumns::Frame(<span class="kw-2">&amp;</span>y_schema),
+<a href=#465 id=465 data-nosnippet>465</a>            },
+<a href=#466 id=466 data-nosnippet>466</a>            Scope {
+<a href=#467 id=467 data-nosnippet>467</a>                ctx: <span class="kw-2">&amp;*</span>x_ctx,
+<a href=#468 id=468 data-nosnippet>468</a>                columns: frame_columns(x_frame),
+<a href=#469 id=469 data-nosnippet>469</a>            },
+<a href=#470 id=470 data-nosnippet>470</a>        ]
+<a href=#471 id=471 data-nosnippet>471</a>        .into_iter()
+<a href=#472 id=472 data-nosnippet>472</a>        .chain(scopes.iter().rev().copied())
+<a href=#473 id=473 data-nosnippet>473</a>        .collect();
+<a href=#474 id=474 data-nosnippet>474</a>        <span class="comment">// A conjunct with a subquery stays: planning the derived table rejects it if it
+<a href=#475 id=475 data-nosnippet>475</a>        // reads anything around `y`.
+<a href=#476 id=476 data-nosnippet>476</a>        </span><span class="kw">for </span>c <span class="kw">in </span>flatten_and_conditions(selection) {
+<a href=#477 id=477 data-nosnippet>477</a>            <span class="kw">if </span>expr_contains_subquery(c) || reads_local_only(<span class="kw-2">&amp;</span>chain, c)<span class="question-mark">? </span>== <span class="prelude-val">Some</span>(<span class="bool-val">true</span>) {
+<a href=#478 id=478 data-nosnippet>478</a>                kept.push(c.clone());
+<a href=#479 id=479 data-nosnippet>479</a>                <span class="kw">continue</span>;
+<a href=#480 id=480 data-nosnippet>480</a>            }
+<a href=#481 id=481 data-nosnippet>481</a>            <span class="kw">let </span><span class="prelude-val">Some</span>((key, depth)) = correlation_key(<span class="kw-2">&amp;</span>chain, c)<span class="question-mark">? </span><span class="kw">else </span>{
+<a href=#482 id=482 data-nosnippet>482</a>                <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#483 id=483 data-nosnippet>483</a>            };
+<a href=#484 id=484 data-nosnippet>484</a>            reads_outer |= depth &gt;= <span class="number">2</span>;
+<a href=#485 id=485 data-nosnippet>485</a>            keys.push(key);
+<a href=#486 id=486 data-nosnippet>486</a>        }
+<a href=#487 id=487 data-nosnippet>487</a>    }
+<a href=#488 id=488 data-nosnippet>488</a>    <span class="kw">if </span>!reads_outer {
+<a href=#489 id=489 data-nosnippet>489</a>        <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#490 id=490 data-nosnippet>490</a>    }
+<a href=#491 id=491 data-nosnippet>491</a>
+<a href=#492 id=492 data-nosnippet>492</a>    <span class="kw">let </span>name = <span class="macro">format!</span>(<span class="string">"{NESTED_PREFIX}{}"</span>, unique_column_name());
+<a href=#493 id=493 data-nosnippet>493</a>    <span class="kw">let </span>value_name = <span class="macro">format!</span>(<span class="string">"{name}_v"</span>);
+<a href=#494 id=494 data-nosnippet>494</a>    <span class="kw">let </span>key_names: Vec&lt;String&gt; = (<span class="number">0</span>..keys.len()).map(|i| <span class="macro">format!</span>(<span class="string">"{name}_k{i}"</span>)).collect();
+<a href=#495 id=495 data-nosnippet>495</a>    <span class="kw">let </span><span class="kw-2">mut </span>pulled = select.clone();
+<a href=#496 id=496 data-nosnippet>496</a>    pulled.projection = value
+<a href=#497 id=497 data-nosnippet>497</a>        .map(|value| (value.clone(), value_name.clone()))
+<a href=#498 id=498 data-nosnippet>498</a>        .into_iter()
+<a href=#499 id=499 data-nosnippet>499</a>        .chain(
+<a href=#500 id=500 data-nosnippet>500</a>            keys.iter()
+<a href=#501 id=501 data-nosnippet>501</a>                .map(|k| k.inner.clone())
+<a href=#502 id=502 data-nosnippet>502</a>                .zip(key_names.iter().cloned()),
+<a href=#503 id=503 data-nosnippet>503</a>        )
+<a href=#504 id=504 data-nosnippet>504</a>        .map(|(expr, alias)| SelectItem::ExprWithAlias {
+<a href=#505 id=505 data-nosnippet>505</a>            expr,
+<a href=#506 id=506 data-nosnippet>506</a>            alias: Ident::new(alias),
+<a href=#507 id=507 data-nosnippet>507</a>        })
+<a href=#508 id=508 data-nosnippet>508</a>        .collect();
+<a href=#509 id=509 data-nosnippet>509</a>    pulled.selection = combine_conditions(kept, And);
+<a href=#510 id=510 data-nosnippet>510</a>    <span class="kw">let </span>partition_by: Vec&lt;SQLExpr&gt; = keys.iter().map(|k| k.inner.clone()).collect();
+<a href=#511 id=511 data-nosnippet>511</a>    <span class="kw">let </span>distinct = !aggregates &amp;&amp; !first_row;
+<a href=#512 id=512 data-nosnippet>512</a>    <span class="kw">if </span>aggregates {
+<a href=#513 id=513 data-nosnippet>513</a>        pulled.group_by = GroupByExpr::Expressions(partition_by, <span class="macro">vec!</span>[]);
+<a href=#514 id=514 data-nosnippet>514</a>    } <span class="kw">else if </span>first_row {
+<a href=#515 id=515 data-nosnippet>515</a>        pulled.distinct = <span class="prelude-val">None</span>;
+<a href=#516 id=516 data-nosnippet>516</a>        pulled.qualify = <span class="prelude-val">Some</span>(SQLExpr::BinaryOp {
+<a href=#517 id=517 data-nosnippet>517</a>            left: Box::new(row_number(partition_by, order_by)),
+<a href=#518 id=518 data-nosnippet>518</a>            op: Eq,
+<a href=#519 id=519 data-nosnippet>519</a>            right: Box::new(SQLExpr::value(SQLValue::Number(<span class="string">"1"</span>.to_string(), <span class="bool-val">false</span>))),
+<a href=#520 id=520 data-nosnippet>520</a>        });
+<a href=#521 id=521 data-nosnippet>521</a>    } <span class="kw">else </span>{
+<a href=#522 id=522 data-nosnippet>522</a>        pulled.distinct = <span class="prelude-val">Some</span>(Distinct::Distinct);
+<a href=#523 id=523 data-nosnippet>523</a>    }
+<a href=#524 id=524 data-nosnippet>524</a>    <span class="kw">let </span><span class="kw-2">mut </span>pulled_query = y.clone();
+<a href=#525 id=525 data-nosnippet>525</a>    pulled_query.body = Box::new(SetExpr::Select(Box::new(pulled)));
+<a href=#526 id=526 data-nosnippet>526</a>    pulled_query.order_by = <span class="prelude-val">None</span>;
+<a href=#527 id=527 data-nosnippet>527</a>    pulled_query.limit_clause = <span class="prelude-val">None</span>;
+<a href=#528 id=528 data-nosnippet>528</a>    pulled_query.fetch = <span class="prelude-val">None</span>;
+<a href=#529 id=529 data-nosnippet>529</a>
+<a href=#530 id=530 data-nosnippet>530</a>    <span class="comment">// Planning the derived table as the FROM will (strict, as `x_ctx` is) shows that it
+<a href=#531 id=531 data-nosnippet>531</a>    // reads only what it declares, and gives the dtypes of its columns.
+<a href=#532 id=532 data-nosnippet>532</a>    </span><span class="kw">let </span><span class="kw-2">mut </span>pulled_ctx = x_ctx.isolated();
+<a href=#533 id=533 data-nosnippet>533</a>    <span class="kw">let </span><span class="kw-2">mut </span>pulled_lf = pulled_ctx.execute_query(<span class="kw-2">&amp;</span>pulled_query)<span class="question-mark">?</span>;
+<a href=#534 id=534 data-nosnippet>534</a>    <span class="kw">let </span>pulled_schema = pulled_ctx.get_frame_schema(<span class="kw-2">&amp;mut </span>pulled_lf)<span class="question-mark">?</span>;
+<a href=#535 id=535 data-nosnippet>535</a>    <span class="comment">// Deduplicating or grouping keeps one row per value that the comparison tells apart
+<a href=#536 id=536 data-nosnippet>536</a>    // only when the comparison doesn't merge values of the derived table.
+<a href=#537 id=537 data-nosnippet>537</a>    </span><span class="kw">for </span>(key, key_name) <span class="kw">in </span>keys.iter().zip(<span class="kw-2">&amp;</span>key_names) {
+<a href=#538 id=538 data-nosnippet>538</a>        <span class="kw">let </span><span class="prelude-val">Some</span>(dtype) = pulled_schema.get(key_name.as_str()) <span class="kw">else </span>{
+<a href=#539 id=539 data-nosnippet>539</a>            <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#540 id=540 data-nosnippet>540</a>        };
+<a href=#541 id=541 data-nosnippet>541</a>        <span class="kw">if </span>!compares_exactly(dtype, <span class="kw-2">&amp;</span>key.dtype) {
+<a href=#542 id=542 data-nosnippet>542</a>            <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#543 id=543 data-nosnippet>543</a>        }
+<a href=#544 id=544 data-nosnippet>544</a>    }
+<a href=#545 id=545 data-nosnippet>545</a>    <span class="kw">if </span>distinct &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>((lhs, ..)) = compare {
+<a href=#546 id=546 data-nosnippet>546</a>        <span class="kw">let </span><span class="prelude-val">Some</span>(value_dtype) = pulled_schema.get(value_name.as_str()) <span class="kw">else </span>{
+<a href=#547 id=547 data-nosnippet>547</a>            <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#548 id=548 data-nosnippet>548</a>        };
+<a href=#549 id=549 data-nosnippet>549</a>        <span class="kw">let </span><span class="prelude-val">Some</span>(lhs_dtype) = local_dtype(scopes, x_ctx, x_frame, lhs)<span class="question-mark">? </span><span class="kw">else </span>{
+<a href=#550 id=550 data-nosnippet>550</a>            <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#551 id=551 data-nosnippet>551</a>        };
+<a href=#552 id=552 data-nosnippet>552</a>        <span class="kw">if </span>!compares_exactly(value_dtype, <span class="kw-2">&amp;</span>lhs_dtype) {
+<a href=#553 id=553 data-nosnippet>553</a>            <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#554 id=554 data-nosnippet>554</a>        }
+<a href=#555 id=555 data-nosnippet>555</a>    }
+<a href=#556 id=556 data-nosnippet>556</a>
+<a href=#557 id=557 data-nosnippet>557</a>    <span class="kw">let </span>table = TableWithJoins {
+<a href=#558 id=558 data-nosnippet>558</a>        relation: TableFactor::Derived {
+<a href=#559 id=559 data-nosnippet>559</a>            lateral: <span class="bool-val">false</span>,
+<a href=#560 id=560 data-nosnippet>560</a>            subquery: Box::new(pulled_query),
+<a href=#561 id=561 data-nosnippet>561</a>            alias: <span class="prelude-val">Some</span>(TableAlias {
+<a href=#562 id=562 data-nosnippet>562</a>                explicit: <span class="bool-val">true</span>,
+<a href=#563 id=563 data-nosnippet>563</a>                name: Ident::new(<span class="kw-2">&amp;</span>name),
+<a href=#564 id=564 data-nosnippet>564</a>                columns: <span class="macro">vec!</span>[],
+<a href=#565 id=565 data-nosnippet>565</a>                at: <span class="prelude-val">None</span>,
+<a href=#566 id=566 data-nosnippet>566</a>            }),
+<a href=#567 id=567 data-nosnippet>567</a>            sample: <span class="prelude-val">None</span>,
+<a href=#568 id=568 data-nosnippet>568</a>        },
+<a href=#569 id=569 data-nosnippet>569</a>        joins: <span class="macro">vec!</span>[],
+<a href=#570 id=570 data-nosnippet>570</a>    };
+<a href=#571 id=571 data-nosnippet>571</a>    <span class="kw">let </span>column =
+<a href=#572 id=572 data-nosnippet>572</a>        |column: <span class="kw-2">&amp;</span>str| SQLExpr::CompoundIdentifier(<span class="macro">vec!</span>[Ident::new(<span class="kw-2">&amp;</span>name), Ident::new(column)]);
+<a href=#573 id=573 data-nosnippet>573</a>    <span class="kw">let </span>binary = |left: SQLExpr, op: SQLBinaryOperator, right: SQLExpr| SQLExpr::BinaryOp {
+<a href=#574 id=574 data-nosnippet>574</a>        left: Box::new(left),
+<a href=#575 id=575 data-nosnippet>575</a>        op,
+<a href=#576 id=576 data-nosnippet>576</a>        right: Box::new(right),
+<a href=#577 id=577 data-nosnippet>577</a>    };
+<a href=#578 id=578 data-nosnippet>578</a>    <span class="kw">let </span>replaced = compare
+<a href=#579 id=579 data-nosnippet>579</a>        .map(|(lhs, op, subquery_left)| <span class="kw">match </span>subquery_left {
+<a href=#580 id=580 data-nosnippet>580</a>            <span class="bool-val">true </span>=&gt; binary(column(<span class="kw-2">&amp;</span>value_name), op, lhs.clone()),
+<a href=#581 id=581 data-nosnippet>581</a>            <span class="bool-val">false </span>=&gt; binary(lhs.clone(), op, column(<span class="kw-2">&amp;</span>value_name)),
+<a href=#582 id=582 data-nosnippet>582</a>        })
+<a href=#583 id=583 data-nosnippet>583</a>        .into_iter()
+<a href=#584 id=584 data-nosnippet>584</a>        .chain(
+<a href=#585 id=585 data-nosnippet>585</a>            keys.into_iter()
+<a href=#586 id=586 data-nosnippet>586</a>                .zip(<span class="kw-2">&amp;</span>key_names)
+<a href=#587 id=587 data-nosnippet>587</a>                .map(|(key, key_name)| binary(column(key_name), Eq, key.foreign)),
+<a href=#588 id=588 data-nosnippet>588</a>        )
+<a href=#589 id=589 data-nosnippet>589</a>        .collect();
+<a href=#590 id=590 data-nosnippet>590</a>    <span class="kw">let </span>columns = value
+<a href=#591 id=591 data-nosnippet>591</a>        .map(|<span class="kw">_</span>| value_name)
+<a href=#592 id=592 data-nosnippet>592</a>        .into_iter()
+<a href=#593 id=593 data-nosnippet>593</a>        .chain(key_names)
+<a href=#594 id=594 data-nosnippet>594</a>        .collect();
+<a href=#595 id=595 data-nosnippet>595</a>    <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(Moved {
+<a href=#596 id=596 data-nosnippet>596</a>        table,
+<a href=#597 id=597 data-nosnippet>597</a>        columns,
+<a href=#598 id=598 data-nosnippet>598</a>        replaced,
+<a href=#599 id=599 data-nosnippet>599</a>    }))
+<a href=#600 id=600 data-nosnippet>600</a>}
+<a href=#601 id=601 data-nosnippet>601</a>
+<a href=#602 id=602 data-nosnippet>602</a><span class="doccomment">/// The `ORDER BY` of a first-row subquery, to order the rows of each key by. `None` for an
+<a href=#603 id=603 data-nosnippet>603</a>/// order that isn't read from the row alone.
+<a href=#604 id=604 data-nosnippet>604</a></span><span class="kw">fn </span>first_row_order(y: <span class="kw-2">&amp;</span>Query, select: <span class="kw-2">&amp;</span>Select, exprs: <span class="kw-2">&amp;</span>[OrderByExpr]) -&gt; <span class="prelude-ty">Option</span>&lt;Vec&lt;OrderByExpr&gt;&gt; {
+<a href=#605 id=605 data-nosnippet>605</a>    <span class="kw">if </span>y.order_by.as_ref().is_some_and(|o| o.interpolate.is_some()) {
+<a href=#606 id=606 data-nosnippet>606</a>        <span class="kw">return </span><span class="prelude-val">None</span>;
+<a href=#607 id=607 data-nosnippet>607</a>    }
+<a href=#608 id=608 data-nosnippet>608</a>    <span class="kw">let </span>alias = <span class="kw">match </span><span class="kw-2">&amp;</span>select.projection[<span class="number">0</span>] {
+<a href=#609 id=609 data-nosnippet>609</a>        SelectItem::ExprWithAlias { alias, .. } =&gt; <span class="prelude-val">Some</span>(alias),
+<a href=#610 id=610 data-nosnippet>610</a>        <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
+<a href=#611 id=611 data-nosnippet>611</a>    };
+<a href=#612 id=612 data-nosnippet>612</a>    <span class="comment">// An order by the output column, by name or by position, isn't kept. A window
+<a href=#613 id=613 data-nosnippet>613</a>    // function would see the rows of the other keys.
+<a href=#614 id=614 data-nosnippet>614</a>    </span><span class="kw">let </span>unsupported = |e: <span class="kw-2">&amp;</span>SQLExpr| <span class="kw">match </span>strip_nested(e) {
+<a href=#615 id=615 data-nosnippet>615</a>        SQLExpr::Identifier(ident) =&gt; alias.is_some_and(|a| a.value == ident.value),
+<a href=#616 id=616 data-nosnippet>616</a>        SQLExpr::Value(<span class="kw">_</span>) =&gt; <span class="bool-val">true</span>,
+<a href=#617 id=617 data-nosnippet>617</a>        e =&gt; expr_has_window_functions(e),
+<a href=#618 id=618 data-nosnippet>618</a>    };
+<a href=#619 id=619 data-nosnippet>619</a>    <span class="kw">if </span>exprs
+<a href=#620 id=620 data-nosnippet>620</a>        .iter()
+<a href=#621 id=621 data-nosnippet>621</a>        .any(|ob| ob.with_fill.is_some() || unsupported(<span class="kw-2">&amp;</span>ob.expr))
+<a href=#622 id=622 data-nosnippet>622</a>    {
+<a href=#623 id=623 data-nosnippet>623</a>        <span class="kw">return </span><span class="prelude-val">None</span>;
+<a href=#624 id=624 data-nosnippet>624</a>    }
+<a href=#625 id=625 data-nosnippet>625</a>    <span class="prelude-val">Some</span>(exprs.to_vec())
+<a href=#626 id=626 data-nosnippet>626</a>}
+<a href=#627 id=627 data-nosnippet>627</a>
+<a href=#628 id=628 data-nosnippet>628</a><span class="doccomment">/// Call `f` on each column that `expr` reads outside of its subqueries.
+<a href=#629 id=629 data-nosnippet>629</a></span><span class="kw">fn </span>visit_columns&lt;E&gt;(expr: <span class="kw-2">&amp;</span>SQLExpr, f: <span class="kw">impl </span>FnMut(<span class="kw-2">&amp;</span>SQLExpr) -&gt; ControlFlow&lt;E&gt;) -&gt; ControlFlow&lt;E&gt; {
+<a href=#630 id=630 data-nosnippet>630</a>    <span class="kw">struct </span>Columns&lt;F&gt; {
+<a href=#631 id=631 data-nosnippet>631</a>        query_depth: usize,
+<a href=#632 id=632 data-nosnippet>632</a>        f: F,
+<a href=#633 id=633 data-nosnippet>633</a>    }
+<a href=#634 id=634 data-nosnippet>634</a>
+<a href=#635 id=635 data-nosnippet>635</a>    <span class="kw">impl</span>&lt;E, F: FnMut(<span class="kw-2">&amp;</span>SQLExpr) -&gt; ControlFlow&lt;E&gt;&gt; Visitor <span class="kw">for </span>Columns&lt;F&gt; {
+<a href=#636 id=636 data-nosnippet>636</a>        <span class="kw">type </span>Break = E;
+<a href=#637 id=637 data-nosnippet>637</a>
+<a href=#638 id=638 data-nosnippet>638</a>        <span class="kw">fn </span>pre_visit_query(<span class="kw-2">&amp;mut </span><span class="self">self</span>, _query: <span class="kw-2">&amp;</span>Query) -&gt; ControlFlow&lt;E&gt; {
+<a href=#639 id=639 data-nosnippet>639</a>            <span class="self">self</span>.query_depth += <span class="number">1</span>;
+<a href=#640 id=640 data-nosnippet>640</a>            ControlFlow::Continue(())
+<a href=#641 id=641 data-nosnippet>641</a>        }
+<a href=#642 id=642 data-nosnippet>642</a>
+<a href=#643 id=643 data-nosnippet>643</a>        <span class="kw">fn </span>post_visit_query(<span class="kw-2">&amp;mut </span><span class="self">self</span>, _query: <span class="kw-2">&amp;</span>Query) -&gt; ControlFlow&lt;E&gt; {
+<a href=#644 id=644 data-nosnippet>644</a>            <span class="self">self</span>.query_depth -= <span class="number">1</span>;
+<a href=#645 id=645 data-nosnippet>645</a>            ControlFlow::Continue(())
+<a href=#646 id=646 data-nosnippet>646</a>        }
+<a href=#647 id=647 data-nosnippet>647</a>
+<a href=#648 id=648 data-nosnippet>648</a>        <span class="kw">fn </span>pre_visit_expr(<span class="kw-2">&amp;mut </span><span class="self">self</span>, expr: <span class="kw-2">&amp;</span>SQLExpr) -&gt; ControlFlow&lt;E&gt; {
+<a href=#649 id=649 data-nosnippet>649</a>            <span class="kw">match </span>expr {
+<a href=#650 id=650 data-nosnippet>650</a>                SQLExpr::Identifier(<span class="kw">_</span>) | SQLExpr::CompoundIdentifier(<span class="kw">_</span>)
+<a href=#651 id=651 data-nosnippet>651</a>                    <span class="kw">if </span><span class="self">self</span>.query_depth == <span class="number">0 </span>=&gt;
+<a href=#652 id=652 data-nosnippet>652</a>                {
+<a href=#653 id=653 data-nosnippet>653</a>                    (<span class="self">self</span>.f)(expr)
+<a href=#654 id=654 data-nosnippet>654</a>                },
+<a href=#655 id=655 data-nosnippet>655</a>                <span class="kw">_ </span>=&gt; ControlFlow::Continue(()),
+<a href=#656 id=656 data-nosnippet>656</a>            }
+<a href=#657 id=657 data-nosnippet>657</a>        }
+<a href=#658 id=658 data-nosnippet>658</a>    }
+<a href=#659 id=659 data-nosnippet>659</a>
+<a href=#660 id=660 data-nosnippet>660</a>    dyn_visit::visit(expr, <span class="kw-2">&amp;mut </span>Columns { query_depth: <span class="number">0</span>, f })
+<a href=#661 id=661 data-nosnippet>661</a>}
+<a href=#662 id=662 data-nosnippet>662</a>
+<a href=#663 id=663 data-nosnippet>663</a><span class="doccomment">/// The scope in `chain` (innermost first) that a column binds to: the first one with a
+<a href=#664 id=664 data-nosnippet>664</a>/// relation the qualifier names, or with a struct column of the qualifier's name. An
+<a href=#665 id=665 data-nosnippet>665</a>/// unqualified column, and one no scope binds, is left to the innermost scope. `None` for
+<a href=#666 id=666 data-nosnippet>666</a>/// a column that its relation doesn't have.
+<a href=#667 id=667 data-nosnippet>667</a></span><span class="kw">fn </span>bind(chain: <span class="kw-2">&amp;</span>[Scope&lt;<span class="lifetime">'_</span>&gt;], column: <span class="kw-2">&amp;</span>SQLExpr) -&gt; PolarsResult&lt;<span class="prelude-ty">Option</span>&lt;Binding&gt;&gt; {
+<a href=#668 id=668 data-nosnippet>668</a>    <span class="kw">let </span>SQLExpr::CompoundIdentifier(parts) = column <span class="kw">else </span>{
+<a href=#669 id=669 data-nosnippet>669</a>        <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(Binding::Local));
+<a href=#670 id=670 data-nosnippet>670</a>    };
+<a href=#671 id=671 data-nosnippet>671</a>    <span class="kw">for </span>(depth, scope) <span class="kw">in </span>chain.iter().enumerate() {
+<a href=#672 id=672 data-nosnippet>672</a>        <span class="kw">let </span><span class="prelude-val">Some</span>(found) = scope.find(parts)<span class="question-mark">? </span><span class="kw">else </span>{
+<a href=#673 id=673 data-nosnippet>673</a>            <span class="kw">continue</span>;
+<a href=#674 id=674 data-nosnippet>674</a>        };
+<a href=#675 id=675 data-nosnippet>675</a>        <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="kw">match </span>(found, depth) {
+<a href=#676 id=676 data-nosnippet>676</a>            (Found::Missing, <span class="kw">_</span>) =&gt; <span class="prelude-val">None</span>,
+<a href=#677 id=677 data-nosnippet>677</a>            (<span class="kw">_</span>, <span class="number">0</span>) =&gt; <span class="prelude-val">Some</span>(Binding::Local),
+<a href=#678 id=678 data-nosnippet>678</a>            (Found::Column(dtype), depth) =&gt; <span class="prelude-val">Some</span>(Binding::Foreign {
+<a href=#679 id=679 data-nosnippet>679</a>                depth,
+<a href=#680 id=680 data-nosnippet>680</a>                dtype: <span class="prelude-val">Some</span>(dtype),
+<a href=#681 id=681 data-nosnippet>681</a>            }),
+<a href=#682 id=682 data-nosnippet>682</a>            (Found::Field, depth) =&gt; <span class="prelude-val">Some</span>(Binding::Foreign { depth, dtype: <span class="prelude-val">None </span>}),
+<a href=#683 id=683 data-nosnippet>683</a>        });
+<a href=#684 id=684 data-nosnippet>684</a>    }
+<a href=#685 id=685 data-nosnippet>685</a>    <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(Binding::Local))
+<a href=#686 id=686 data-nosnippet>686</a>}
+<a href=#687 id=687 data-nosnippet>687</a>
+<a href=#688 id=688 data-nosnippet>688</a><span class="kw">impl </span>Scope&lt;<span class="lifetime">'_</span>&gt; {
+<a href=#689 id=689 data-nosnippet>689</a>    <span class="kw">fn </span>find(<span class="kw-2">&amp;</span><span class="self">self</span>, parts: <span class="kw-2">&amp;</span>[Ident]) -&gt; PolarsResult&lt;<span class="prelude-ty">Option</span>&lt;Found&gt;&gt; {
+<a href=#690 id=690 data-nosnippet>690</a>        <span class="kw">if </span><span class="macro">matches!</span>(<span class="self">self</span>.columns, ScopeColumns::None) {
+<a href=#691 id=691 data-nosnippet>691</a>            <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#692 id=692 data-nosnippet>692</a>        }
+<a href=#693 id=693 data-nosnippet>693</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>((relation, len)) = <span class="self">self</span>.ctx.resolve_qualifier(parts)<span class="question-mark">? </span>{
+<a href=#694 id=694 data-nosnippet>694</a>            <span class="kw">if </span>len + <span class="number">1 </span>!= parts.len() {
+<a href=#695 id=695 data-nosnippet>695</a>                <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(Found::Field));
+<a href=#696 id=696 data-nosnippet>696</a>            }
+<a href=#697 id=697 data-nosnippet>697</a>            <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(
+<a href=#698 id=698 data-nosnippet>698</a>                <span class="kw">match </span><span class="self">self</span>.column_dtype(<span class="kw-2">&amp;</span>relation, <span class="kw-2">&amp;</span>parts[len].value) {
+<a href=#699 id=699 data-nosnippet>699</a>                    <span class="prelude-val">Some</span>(dtype) =&gt; Found::Column(dtype),
+<a href=#700 id=700 data-nosnippet>700</a>                    <span class="prelude-val">None </span>=&gt; Found::Missing,
+<a href=#701 id=701 data-nosnippet>701</a>                },
+<a href=#702 id=702 data-nosnippet>702</a>            ));
+<a href=#703 id=703 data-nosnippet>703</a>        }
+<a href=#704 id=704 data-nosnippet>704</a>        <span class="kw">let </span>is_struct =
+<a href=#705 id=705 data-nosnippet>705</a>            |schema: <span class="kw-2">&amp;</span>Schema| <span class="macro">matches!</span>(schema.get(<span class="kw-2">&amp;</span>parts[<span class="number">0</span>].value), <span class="prelude-val">Some</span>(DataType::Struct(<span class="kw">_</span>)));
+<a href=#706 id=706 data-nosnippet>706</a>        <span class="kw">let </span>has_struct = <span class="kw">match </span><span class="self">self</span>.columns {
+<a href=#707 id=707 data-nosnippet>707</a>            ScopeColumns::None =&gt; <span class="bool-val">false</span>,
+<a href=#708 id=708 data-nosnippet>708</a>            ScopeColumns::Frame(schema) =&gt; is_struct(schema),
+<a href=#709 id=709 data-nosnippet>709</a>            ScopeColumns::Join(left, right) =&gt; is_struct(<span class="kw-2">&amp;</span>left.schema) || is_struct(<span class="kw-2">&amp;</span>right.schema),
+<a href=#710 id=710 data-nosnippet>710</a>        };
+<a href=#711 id=711 data-nosnippet>711</a>        <span class="prelude-val">Ok</span>(has_struct.then_some(Found::Field))
+<a href=#712 id=712 data-nosnippet>712</a>    }
+<a href=#713 id=713 data-nosnippet>713</a>
+<a href=#714 id=714 data-nosnippet>714</a>    <span class="kw">fn </span>column_dtype(<span class="kw-2">&amp;</span><span class="self">self</span>, relation: <span class="kw-2">&amp;</span>str, column: <span class="kw-2">&amp;</span>str) -&gt; <span class="prelude-ty">Option</span>&lt;DataType&gt; {
+<a href=#715 id=715 data-nosnippet>715</a>        <span class="kw">let </span>schema = <span class="kw">match </span><span class="self">self</span>.columns {
+<a href=#716 id=716 data-nosnippet>716</a>            ScopeColumns::None =&gt; <span class="kw">return </span><span class="prelude-val">None</span>,
+<a href=#717 id=717 data-nosnippet>717</a>            ScopeColumns::Frame(schema) =&gt; schema,
+<a href=#718 id=718 data-nosnippet>718</a>            ScopeColumns::Join(left, right) =&gt; {
+<a href=#719 id=719 data-nosnippet>719</a>                <span class="kw">if </span><span class="self">self</span>.ctx.is_right_relation(relation, right) {
+<a href=#720 id=720 data-nosnippet>720</a>                    <span class="kw">return </span>right.schema.get(column).cloned();
+<a href=#721 id=721 data-nosnippet>721</a>                }
+<a href=#722 id=722 data-nosnippet>722</a>                <span class="kw">if </span>!<span class="self">self</span>.ctx.is_joined_relation(relation, left) {
+<a href=#723 id=723 data-nosnippet>723</a>                    <span class="kw">return </span><span class="prelude-val">None</span>;
+<a href=#724 id=724 data-nosnippet>724</a>                }
+<a href=#725 id=725 data-nosnippet>725</a>                <span class="kw-2">&amp;</span>left.schema
+<a href=#726 id=726 data-nosnippet>726</a>            },
+<a href=#727 id=727 data-nosnippet>727</a>        };
+<a href=#728 id=728 data-nosnippet>728</a>        schema
+<a href=#729 id=729 data-nosnippet>729</a>            .get(<span class="kw-2">&amp;</span><span class="self">self</span>.ctx.resolve_name(relation, column))
+<a href=#730 id=730 data-nosnippet>730</a>            .cloned()
+<a href=#731 id=731 data-nosnippet>731</a>    }
+<a href=#732 id=732 data-nosnippet>732</a>}
+<a href=#733 id=733 data-nosnippet>733</a>
+<a href=#734 id=734 data-nosnippet>734</a><span class="doccomment">/// Whether every column `expr` reads binds to the innermost scope of `chain`, or `None`
+<a href=#735 id=735 data-nosnippet>735</a>/// for a column that its relation doesn't have.
+<a href=#736 id=736 data-nosnippet>736</a></span><span class="kw">fn </span>reads_local_only(chain: <span class="kw-2">&amp;</span>[Scope&lt;<span class="lifetime">'_</span>&gt;], expr: <span class="kw-2">&amp;</span>SQLExpr) -&gt; PolarsResult&lt;<span class="prelude-ty">Option</span>&lt;bool&gt;&gt; {
+<a href=#737 id=737 data-nosnippet>737</a>    <span class="kw">let </span><span class="kw-2">mut </span>local = <span class="bool-val">true</span>;
+<a href=#738 id=738 data-nosnippet>738</a>    <span class="kw">let </span>flow = visit_columns(expr, |column| <span class="kw">match </span>bind(chain, column) {
+<a href=#739 id=739 data-nosnippet>739</a>        <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(Binding::Local)) =&gt; ControlFlow::Continue(()),
+<a href=#740 id=740 data-nosnippet>740</a>        <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(Binding::Foreign { .. })) =&gt; {
+<a href=#741 id=741 data-nosnippet>741</a>            local = <span class="bool-val">false</span>;
+<a href=#742 id=742 data-nosnippet>742</a>            ControlFlow::Continue(())
+<a href=#743 id=743 data-nosnippet>743</a>        },
+<a href=#744 id=744 data-nosnippet>744</a>        <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>) =&gt; ControlFlow::Break(<span class="prelude-val">None</span>),
+<a href=#745 id=745 data-nosnippet>745</a>        <span class="prelude-val">Err</span>(e) =&gt; ControlFlow::Break(<span class="prelude-val">Some</span>(e)),
+<a href=#746 id=746 data-nosnippet>746</a>    });
+<a href=#747 id=747 data-nosnippet>747</a>    <span class="kw">match </span>flow {
+<a href=#748 id=748 data-nosnippet>748</a>        ControlFlow::Break(<span class="prelude-val">Some</span>(e)) =&gt; <span class="prelude-val">Err</span>(e),
+<a href=#749 id=749 data-nosnippet>749</a>        ControlFlow::Break(<span class="prelude-val">None</span>) =&gt; <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>),
+<a href=#750 id=750 data-nosnippet>750</a>        ControlFlow::Continue(()) =&gt; <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(local)),
+<a href=#751 id=751 data-nosnippet>751</a>    }
+<a href=#752 id=752 data-nosnippet>752</a>}
+<a href=#753 id=753 data-nosnippet>753</a>
+<a href=#754 id=754 data-nosnippet>754</a><span class="doccomment">/// `conj` as an equality between an expression over the subquery alone and a column of
+<a href=#755 id=755 data-nosnippet>755</a>/// a query around it, with the depth of that query in `chain`.
+<a href=#756 id=756 data-nosnippet>756</a></span><span class="kw">fn </span>correlation_key(
+<a href=#757 id=757 data-nosnippet>757</a>    chain: <span class="kw-2">&amp;</span>[Scope&lt;<span class="lifetime">'_</span>&gt;],
+<a href=#758 id=758 data-nosnippet>758</a>    conj: <span class="kw-2">&amp;</span>SQLExpr,
+<a href=#759 id=759 data-nosnippet>759</a>) -&gt; PolarsResult&lt;<span class="prelude-ty">Option</span>&lt;(CorrelationKey, usize)&gt;&gt; {
+<a href=#760 id=760 data-nosnippet>760</a>    <span class="kw">let </span>SQLExpr::BinaryOp {
+<a href=#761 id=761 data-nosnippet>761</a>        left,
+<a href=#762 id=762 data-nosnippet>762</a>        op: SQLBinaryOperator::Eq,
+<a href=#763 id=763 data-nosnippet>763</a>        right,
+<a href=#764 id=764 data-nosnippet>764</a>    } = strip_nested(conj)
+<a href=#765 id=765 data-nosnippet>765</a>    <span class="kw">else </span>{
+<a href=#766 id=766 data-nosnippet>766</a>        <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#767 id=767 data-nosnippet>767</a>    };
+<a href=#768 id=768 data-nosnippet>768</a>    <span class="kw">for </span>(inner, foreign) <span class="kw">in </span>[(left, right), (right, left)] {
+<a href=#769 id=769 data-nosnippet>769</a>        <span class="kw">let </span>foreign = strip_nested(foreign);
+<a href=#770 id=770 data-nosnippet>770</a>        <span class="kw">if </span>expr_has_window_functions(inner)
+<a href=#771 id=771 data-nosnippet>771</a>            || has_aggregate(chain[<span class="number">0</span>].ctx, inner.as_ref())
+<a href=#772 id=772 data-nosnippet>772</a>            || !expr_references_any_column(inner)
+<a href=#773 id=773 data-nosnippet>773</a>            || reads_local_only(chain, inner)<span class="question-mark">? </span>!= <span class="prelude-val">Some</span>(<span class="bool-val">true</span>)
+<a href=#774 id=774 data-nosnippet>774</a>        {
+<a href=#775 id=775 data-nosnippet>775</a>            <span class="kw">continue</span>;
+<a href=#776 id=776 data-nosnippet>776</a>        }
+<a href=#777 id=777 data-nosnippet>777</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(Binding::Foreign {
+<a href=#778 id=778 data-nosnippet>778</a>            depth,
+<a href=#779 id=779 data-nosnippet>779</a>            dtype: <span class="prelude-val">Some</span>(dtype),
+<a href=#780 id=780 data-nosnippet>780</a>        }) = bind(chain, foreign)<span class="question-mark">?
+<a href=#781 id=781 data-nosnippet>781</a>        </span>{
+<a href=#782 id=782 data-nosnippet>782</a>            <span class="kw">let </span>key = CorrelationKey {
+<a href=#783 id=783 data-nosnippet>783</a>                inner: inner.as_ref().clone(),
+<a href=#784 id=784 data-nosnippet>784</a>                foreign: foreign.clone(),
+<a href=#785 id=785 data-nosnippet>785</a>                dtype,
+<a href=#786 id=786 data-nosnippet>786</a>            };
+<a href=#787 id=787 data-nosnippet>787</a>            <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>((key, depth)));
+<a href=#788 id=788 data-nosnippet>788</a>        }
+<a href=#789 id=789 data-nosnippet>789</a>    }
+<a href=#790 id=790 data-nosnippet>790</a>    <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>)
+<a href=#791 id=791 data-nosnippet>791</a>}
+<a href=#792 id=792 data-nosnippet>792</a>
+<a href=#793 id=793 data-nosnippet>793</a><span class="doccomment">/// The dtype of `expr` over the frame of `x`, or `None` if it reads anything else.
+<a href=#794 id=794 data-nosnippet>794</a></span><span class="kw">fn </span>local_dtype(
+<a href=#795 id=795 data-nosnippet>795</a>    scopes: <span class="kw-2">&amp;</span>[Scope&lt;<span class="lifetime">'_</span>&gt;],
+<a href=#796 id=796 data-nosnippet>796</a>    x_ctx: <span class="kw-2">&amp;mut </span>SQLContext,
+<a href=#797 id=797 data-nosnippet>797</a>    x_frame: <span class="prelude-ty">Option</span>&lt;(<span class="kw-2">&amp;</span>LazyFrame, <span class="kw-2">&amp;</span>Schema)&gt;,
+<a href=#798 id=798 data-nosnippet>798</a>    expr: <span class="kw-2">&amp;</span>SQLExpr,
+<a href=#799 id=799 data-nosnippet>799</a>) -&gt; PolarsResult&lt;<span class="prelude-ty">Option</span>&lt;DataType&gt;&gt; {
+<a href=#800 id=800 data-nosnippet>800</a>    <span class="kw">let </span><span class="prelude-val">Some</span>((lf, schema)) = x_frame <span class="kw">else </span>{
+<a href=#801 id=801 data-nosnippet>801</a>        <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#802 id=802 data-nosnippet>802</a>    };
+<a href=#803 id=803 data-nosnippet>803</a>    <span class="kw">let </span>local = {
+<a href=#804 id=804 data-nosnippet>804</a>        <span class="kw">let </span>chain: Vec&lt;Scope&gt; = std::iter::once(Scope {
+<a href=#805 id=805 data-nosnippet>805</a>            ctx: <span class="kw-2">&amp;*</span>x_ctx,
+<a href=#806 id=806 data-nosnippet>806</a>            columns: ScopeColumns::Frame(schema),
+<a href=#807 id=807 data-nosnippet>807</a>        })
+<a href=#808 id=808 data-nosnippet>808</a>        .chain(scopes.iter().rev().copied())
+<a href=#809 id=809 data-nosnippet>809</a>        .collect();
+<a href=#810 id=810 data-nosnippet>810</a>        reads_local_only(<span class="kw-2">&amp;</span>chain, expr)<span class="question-mark">?
+<a href=#811 id=811 data-nosnippet>811</a>    </span>};
+<a href=#812 id=812 data-nosnippet>812</a>    <span class="kw">if </span>local != <span class="prelude-val">Some</span>(<span class="bool-val">true</span>) {
+<a href=#813 id=813 data-nosnippet>813</a>        <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+<a href=#814 id=814 data-nosnippet>814</a>    }
+<a href=#815 id=815 data-nosnippet>815</a>    <span class="kw">let </span>parsed = parse_sql_expr(expr, x_ctx, <span class="prelude-val">Some</span>(schema))<span class="question-mark">?</span>;
+<a href=#816 id=816 data-nosnippet>816</a>    <span class="kw">let </span><span class="kw-2">mut </span>probe = lf.clone().select([parsed]);
+<a href=#817 id=817 data-nosnippet>817</a>    <span class="kw">let </span>probe_schema = x_ctx.get_frame_schema(<span class="kw-2">&amp;mut </span>probe)<span class="question-mark">?</span>;
+<a href=#818 id=818 data-nosnippet>818</a>    <span class="prelude-val">Ok</span>(probe_schema.get_at_index(<span class="number">0</span>).map(|(<span class="kw">_</span>, dtype)| dtype.clone()))
+<a href=#819 id=819 data-nosnippet>819</a>}
+<a href=#820 id=820 data-nosnippet>820</a>
+<a href=#821 id=821 data-nosnippet>821</a><span class="doccomment">/// Whether comparing a value of `inner` with one of `other` casts it without merging
+<a href=#822 id=822 data-nosnippet>822</a>/// values, so that distinct values of `inner` never equal the same value of `other`.
+<a href=#823 id=823 data-nosnippet>823</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>compares_exactly(inner: <span class="kw-2">&amp;</span>DataType, other: <span class="kw-2">&amp;</span>DataType) -&gt; bool {
+<a href=#824 id=824 data-nosnippet>824</a>    <span class="kw">if </span>inner == other {
+<a href=#825 id=825 data-nosnippet>825</a>        <span class="kw">return </span><span class="bool-val">true</span>;
+<a href=#826 id=826 data-nosnippet>826</a>    }
+<a href=#827 id=827 data-nosnippet>827</a>    get_supertype(inner, other).is_some_and(|to| holds_values(inner, <span class="kw-2">&amp;</span>to))
+<a href=#828 id=828 data-nosnippet>828</a>}
+<a href=#829 id=829 data-nosnippet>829</a>
+<a href=#830 id=830 data-nosnippet>830</a><span class="doccomment">/// Whether `to` holds every value of the numeric dtype `from`.
+<a href=#831 id=831 data-nosnippet>831</a></span><span class="kw">fn </span>holds_values(from: <span class="kw-2">&amp;</span>DataType, to: <span class="kw-2">&amp;</span>DataType) -&gt; bool {
+<a href=#832 id=832 data-nosnippet>832</a>    <span class="kw">let </span>bits = |dtype: <span class="kw-2">&amp;</span>DataType| <span class="kw">match </span>dtype {
+<a href=#833 id=833 data-nosnippet>833</a>        DataType::Int8 | DataType::UInt8 =&gt; <span class="number">8</span>,
+<a href=#834 id=834 data-nosnippet>834</a>        DataType::Int16 | DataType::UInt16 =&gt; <span class="number">16</span>,
+<a href=#835 id=835 data-nosnippet>835</a>        DataType::Int32 | DataType::UInt32 | DataType::Float32 =&gt; <span class="number">32</span>,
+<a href=#836 id=836 data-nosnippet>836</a>        DataType::Int64 | DataType::UInt64 | DataType::Float64 =&gt; <span class="number">64</span>,
+<a href=#837 id=837 data-nosnippet>837</a>        DataType::Int128 | DataType::UInt128 =&gt; <span class="number">128</span>,
+<a href=#838 id=838 data-nosnippet>838</a>        <span class="kw">_ </span>=&gt; <span class="number">0</span>,
+<a href=#839 id=839 data-nosnippet>839</a>    };
+<a href=#840 id=840 data-nosnippet>840</a>    <span class="kw">match </span>(from, to) {
+<a href=#841 id=841 data-nosnippet>841</a>        <span class="kw">_ if </span>from == to =&gt; <span class="bool-val">true</span>,
+<a href=#842 id=842 data-nosnippet>842</a>        (DataType::Float32, DataType::Float64) =&gt; <span class="bool-val">true</span>,
+<a href=#843 id=843 data-nosnippet>843</a>        <span class="comment">// The mantissa holds every integer of up to 24 or 53 bits.
+<a href=#844 id=844 data-nosnippet>844</a>        </span>(from, DataType::Float32) <span class="kw">if </span>from.is_integer() =&gt; bits(from) &lt;= <span class="number">16</span>,
+<a href=#845 id=845 data-nosnippet>845</a>        (from, DataType::Float64) <span class="kw">if </span>from.is_integer() =&gt; bits(from) &lt;= <span class="number">32</span>,
+<a href=#846 id=846 data-nosnippet>846</a>        (from, to) <span class="kw">if </span>from.is_integer() &amp;&amp; to.is_integer() =&gt; {
+<a href=#847 id=847 data-nosnippet>847</a>            <span class="kw">match </span>(from.is_signed_integer(), to.is_signed_integer()) {
+<a href=#848 id=848 data-nosnippet>848</a>                (<span class="bool-val">true</span>, <span class="bool-val">true</span>) | (<span class="bool-val">false</span>, <span class="bool-val">false</span>) =&gt; bits(from) &lt;= bits(to),
+<a href=#849 id=849 data-nosnippet>849</a>                (<span class="bool-val">false</span>, <span class="bool-val">true</span>) =&gt; bits(from) &lt; bits(to),
+<a href=#850 id=850 data-nosnippet>850</a>                (<span class="bool-val">true</span>, <span class="bool-val">false</span>) =&gt; <span class="bool-val">false</span>,
+<a href=#851 id=851 data-nosnippet>851</a>            }
+<a href=#852 id=852 data-nosnippet>852</a>        },
+<a href=#853 id=853 data-nosnippet>853</a>        <span class="kw">_ </span>=&gt; <span class="bool-val">false</span>,
+<a href=#854 id=854 data-nosnippet>854</a>    }
+<a href=#855 id=855 data-nosnippet>855</a>}
+<a href=#856 id=856 data-nosnippet>856</a>
+<a href=#857 id=857 data-nosnippet>857</a><span class="doccomment">/// Whether `node` calls an aggregate outside of its subqueries. A function that isn't
+<a href=#858 id=858 data-nosnippet>858</a>/// known counts as one.
+<a href=#859 id=859 data-nosnippet>859</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>has_aggregate(ctx: <span class="kw-2">&amp;</span>SQLContext, node: <span class="kw-2">&amp;</span>(<span class="kw">impl </span>Visit + <span class="question-mark">?</span>Sized)) -&gt; bool {
+<a href=#860 id=860 data-nosnippet>860</a>    <span class="kw">struct </span>Aggregates&lt;<span class="lifetime">'a</span>&gt; {
+<a href=#861 id=861 data-nosnippet>861</a>        ctx: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>SQLContext,
+<a href=#862 id=862 data-nosnippet>862</a>        query_depth: usize,
+<a href=#863 id=863 data-nosnippet>863</a>    }
+<a href=#864 id=864 data-nosnippet>864</a>
+<a href=#865 id=865 data-nosnippet>865</a>    <span class="kw">impl </span>Visitor <span class="kw">for </span>Aggregates&lt;<span class="lifetime">'_</span>&gt; {
+<a href=#866 id=866 data-nosnippet>866</a>        <span class="kw">type </span>Break = ();
+<a href=#867 id=867 data-nosnippet>867</a>
+<a href=#868 id=868 data-nosnippet>868</a>        <span class="kw">fn </span>pre_visit_query(<span class="kw-2">&amp;mut </span><span class="self">self</span>, _query: <span class="kw-2">&amp;</span>Query) -&gt; ControlFlow&lt;()&gt; {
+<a href=#869 id=869 data-nosnippet>869</a>            <span class="self">self</span>.query_depth += <span class="number">1</span>;
+<a href=#870 id=870 data-nosnippet>870</a>            ControlFlow::Continue(())
+<a href=#871 id=871 data-nosnippet>871</a>        }
+<a href=#872 id=872 data-nosnippet>872</a>
+<a href=#873 id=873 data-nosnippet>873</a>        <span class="kw">fn </span>post_visit_query(<span class="kw-2">&amp;mut </span><span class="self">self</span>, _query: <span class="kw-2">&amp;</span>Query) -&gt; ControlFlow&lt;()&gt; {
+<a href=#874 id=874 data-nosnippet>874</a>            <span class="self">self</span>.query_depth -= <span class="number">1</span>;
+<a href=#875 id=875 data-nosnippet>875</a>            ControlFlow::Continue(())
+<a href=#876 id=876 data-nosnippet>876</a>        }
+<a href=#877 id=877 data-nosnippet>877</a>
+<a href=#878 id=878 data-nosnippet>878</a>        <span class="kw">fn </span>pre_visit_expr(<span class="kw-2">&amp;mut </span><span class="self">self</span>, expr: <span class="kw-2">&amp;</span>SQLExpr) -&gt; ControlFlow&lt;()&gt; {
+<a href=#879 id=879 data-nosnippet>879</a>            <span class="kw">match </span>expr {
+<a href=#880 id=880 data-nosnippet>880</a>                SQLExpr::Function(function) <span class="kw">if </span><span class="self">self</span>.query_depth == <span class="number">0 </span>&amp;&amp; function.over.is_none() =&gt; {
+<a href=#881 id=881 data-nosnippet>881</a>                    <span class="kw">match </span>PolarsSQLFunctions::try_from_sql(function, <span class="self">self</span>.ctx) {
+<a href=#882 id=882 data-nosnippet>882</a>                        <span class="prelude-val">Ok</span>(PolarsSQLFunctions::Udf(<span class="kw">_</span>)) | <span class="prelude-val">Err</span>(<span class="kw">_</span>) =&gt; ControlFlow::Break(()),
+<a href=#883 id=883 data-nosnippet>883</a>                        <span class="prelude-val">Ok</span>(f) <span class="kw">if </span>f.is_builtin_aggregate() =&gt; ControlFlow::Break(()),
+<a href=#884 id=884 data-nosnippet>884</a>                        <span class="prelude-val">Ok</span>(<span class="kw">_</span>) =&gt; ControlFlow::Continue(()),
+<a href=#885 id=885 data-nosnippet>885</a>                    }
+<a href=#886 id=886 data-nosnippet>886</a>                },
+<a href=#887 id=887 data-nosnippet>887</a>                <span class="kw">_ </span>=&gt; ControlFlow::Continue(()),
+<a href=#888 id=888 data-nosnippet>888</a>            }
+<a href=#889 id=889 data-nosnippet>889</a>        }
+<a href=#890 id=890 data-nosnippet>890</a>    }
+<a href=#891 id=891 data-nosnippet>891</a>
+<a href=#892 id=892 data-nosnippet>892</a>    dyn_visit::visit(
+<a href=#893 id=893 data-nosnippet>893</a>        node,
+<a href=#894 id=894 data-nosnippet>894</a>        <span class="kw-2">&amp;mut </span>Aggregates {
+<a href=#895 id=895 data-nosnippet>895</a>            ctx,
+<a href=#896 id=896 data-nosnippet>896</a>            query_depth: <span class="number">0</span>,
+<a href=#897 id=897 data-nosnippet>897</a>        },
+<a href=#898 id=898 data-nosnippet>898</a>    )
+<a href=#899 id=899 data-nosnippet>899</a>    .is_break()
+<a href=#900 id=900 data-nosnippet>900</a>}
+<a href=#901 id=901 data-nosnippet>901</a>
+<a href=#902 id=902 data-nosnippet>902</a><span class="doccomment">/// Whether `expr` is NULL when it aggregates no rows: an aggregate other than a count,
+<a href=#903 id=903 data-nosnippet>903</a>/// possibly cast, negated or combined with a constant by arithmetic.
+<a href=#904 id=904 data-nosnippet>904</a></span><span class="kw">fn </span>null_over_no_rows(ctx: <span class="kw-2">&amp;</span>SQLContext, expr: <span class="kw-2">&amp;</span>SQLExpr) -&gt; bool {
+<a href=#905 id=905 data-nosnippet>905</a>    <span class="kw">use </span>PolarsSQLFunctions::<span class="kw-2">*</span>;
+<a href=#906 id=906 data-nosnippet>906</a>    <span class="kw">match </span>strip_nested(expr) {
+<a href=#907 id=907 data-nosnippet>907</a>        SQLExpr::Function(function) <span class="kw">if </span>function.over.is_none() =&gt; <span class="macro">matches!</span>(
+<a href=#908 id=908 data-nosnippet>908</a>            PolarsSQLFunctions::try_from_sql(function, ctx),
+<a href=#909 id=909 data-nosnippet>909</a>            <span class="prelude-val">Ok</span>(Avg
+<a href=#910 id=910 data-nosnippet>910</a>                | Corr
+<a href=#911 id=911 data-nosnippet>911</a>                | CovarPop
+<a href=#912 id=912 data-nosnippet>912</a>                | CovarSamp
+<a href=#913 id=913 data-nosnippet>913</a>                | First
+<a href=#914 id=914 data-nosnippet>914</a>                | FirstValue
+<a href=#915 id=915 data-nosnippet>915</a>                | Last
+<a href=#916 id=916 data-nosnippet>916</a>                | Max
+<a href=#917 id=917 data-nosnippet>917</a>                | Median
+<a href=#918 id=918 data-nosnippet>918</a>                | Min
+<a href=#919 id=919 data-nosnippet>919</a>                | QuantileCont
+<a href=#920 id=920 data-nosnippet>920</a>                | QuantileDisc
+<a href=#921 id=921 data-nosnippet>921</a>                | StdDev
+<a href=#922 id=922 data-nosnippet>922</a>                | Sum
+<a href=#923 id=923 data-nosnippet>923</a>                | Variance)
+<a href=#924 id=924 data-nosnippet>924</a>        ),
+<a href=#925 id=925 data-nosnippet>925</a>        SQLExpr::Cast { expr, .. }
+<a href=#926 id=926 data-nosnippet>926</a>        | SQLExpr::UnaryOp {
+<a href=#927 id=927 data-nosnippet>927</a>            op: SQLUnaryOperator::Minus,
+<a href=#928 id=928 data-nosnippet>928</a>            expr,
+<a href=#929 id=929 data-nosnippet>929</a>        } =&gt; null_over_no_rows(ctx, expr),
+<a href=#930 id=930 data-nosnippet>930</a>        SQLExpr::BinaryOp {
+<a href=#931 id=931 data-nosnippet>931</a>            left,
+<a href=#932 id=932 data-nosnippet>932</a>            op:
+<a href=#933 id=933 data-nosnippet>933</a>                SQLBinaryOperator::Plus
+<a href=#934 id=934 data-nosnippet>934</a>                | SQLBinaryOperator::Minus
+<a href=#935 id=935 data-nosnippet>935</a>                | SQLBinaryOperator::Multiply
+<a href=#936 id=936 data-nosnippet>936</a>                | SQLBinaryOperator::Divide
+<a href=#937 id=937 data-nosnippet>937</a>                | SQLBinaryOperator::Modulo,
+<a href=#938 id=938 data-nosnippet>938</a>            right,
+<a href=#939 id=939 data-nosnippet>939</a>        } =&gt; {
+<a href=#940 id=940 data-nosnippet>940</a>            <span class="kw">let </span>constant = |e: <span class="kw-2">&amp;</span>SQLExpr| !expr_references_any_column(e) &amp;&amp; !has_aggregate(ctx, e);
+<a href=#941 id=941 data-nosnippet>941</a>            (null_over_no_rows(ctx, left) &amp;&amp; constant(right))
+<a href=#942 id=942 data-nosnippet>942</a>                || (constant(left) &amp;&amp; null_over_no_rows(ctx, right))
+<a href=#943 id=943 data-nosnippet>943</a>        },
+<a href=#944 id=944 data-nosnippet>944</a>        <span class="kw">_ </span>=&gt; <span class="bool-val">false</span>,
+<a href=#945 id=945 data-nosnippet>945</a>    }
+<a href=#946 id=946 data-nosnippet>946</a>}
+<a href=#947 id=947 data-nosnippet>947</a>
+<a href=#948 id=948 data-nosnippet>948</a><span class="doccomment">/// `ROW_NUMBER() OVER (PARTITION BY .. ORDER BY ..)`.
+<a href=#949 id=949 data-nosnippet>949</a></span><span class="kw">fn </span>row_number(partition_by: Vec&lt;SQLExpr&gt;, order_by: Vec&lt;OrderByExpr&gt;) -&gt; SQLExpr {
+<a href=#950 id=950 data-nosnippet>950</a>    SQLExpr::Function(Function {
+<a href=#951 id=951 data-nosnippet>951</a>        name: ObjectName::from(<span class="macro">vec!</span>[Ident::new(<span class="string">"ROW_NUMBER"</span>)]),
+<a href=#952 id=952 data-nosnippet>952</a>        uses_odbc_syntax: <span class="bool-val">false</span>,
+<a href=#953 id=953 data-nosnippet>953</a>        parameters: FunctionArguments::None,
+<a href=#954 id=954 data-nosnippet>954</a>        args: FunctionArguments::List(FunctionArgumentList {
+<a href=#955 id=955 data-nosnippet>955</a>            duplicate_treatment: <span class="prelude-val">None</span>,
+<a href=#956 id=956 data-nosnippet>956</a>            args: <span class="macro">vec!</span>[],
+<a href=#957 id=957 data-nosnippet>957</a>            clauses: <span class="macro">vec!</span>[],
+<a href=#958 id=958 data-nosnippet>958</a>        }),
+<a href=#959 id=959 data-nosnippet>959</a>        filter: <span class="prelude-val">None</span>,
+<a href=#960 id=960 data-nosnippet>960</a>        null_treatment: <span class="prelude-val">None</span>,
+<a href=#961 id=961 data-nosnippet>961</a>        over: <span class="prelude-val">Some</span>(WindowType::WindowSpec(WindowSpec {
+<a href=#962 id=962 data-nosnippet>962</a>            window_name: <span class="prelude-val">None</span>,
+<a href=#963 id=963 data-nosnippet>963</a>            partition_by,
+<a href=#964 id=964 data-nosnippet>964</a>            order_by,
+<a href=#965 id=965 data-nosnippet>965</a>            window_frame: <span class="prelude-val">None</span>,
+<a href=#966 id=966 data-nosnippet>966</a>        })),
+<a href=#967 id=967 data-nosnippet>967</a>        within_group: <span class="macro">vec!</span>[],
+<a href=#968 id=968 data-nosnippet>968</a>    })
+<a href=#969 id=969 data-nosnippet>969</a>}
+</code></pre></div></section></main></body></html>

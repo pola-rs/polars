@@ -1,0 +1,6 @@
+﻿polars.Expr.deserialize
+=======================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.deserialize

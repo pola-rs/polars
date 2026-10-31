@@ -1,0 +1,6 @@
+﻿polars.Expr.str.strip_chars
+===========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.str.strip_chars

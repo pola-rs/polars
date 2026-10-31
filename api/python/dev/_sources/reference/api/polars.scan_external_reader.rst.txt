@@ -1,0 +1,6 @@
+﻿polars.scan\_external\_reader
+=============================
+
+.. currentmodule:: polars
+
+.. autofunction:: scan_external_reader

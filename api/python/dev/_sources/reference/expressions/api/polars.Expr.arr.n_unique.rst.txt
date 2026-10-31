@@ -1,0 +1,6 @@
+﻿polars.Expr.arr.n_unique
+========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.arr.n_unique

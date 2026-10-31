@@ -1,0 +1,6 @@
+﻿polars.Expr.arcsinh
+===================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.arcsinh

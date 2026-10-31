@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ConcurrencyStrategy"],"fn":["get_download_chunk_size","get_random_access_chunk_size","get_streaming_chunk_size"],"struct":["FetchConfig"]};

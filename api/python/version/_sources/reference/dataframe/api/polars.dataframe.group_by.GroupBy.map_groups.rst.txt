@@ -1,0 +1,6 @@
+﻿polars.dataframe.group\_by.GroupBy.map\_groups
+==============================================
+
+.. currentmodule:: polars.dataframe.group_by
+
+.. automethod:: GroupBy.map_groups

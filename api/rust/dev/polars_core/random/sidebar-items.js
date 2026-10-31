@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["get_global_random_u64","set_global_random_seed"]};

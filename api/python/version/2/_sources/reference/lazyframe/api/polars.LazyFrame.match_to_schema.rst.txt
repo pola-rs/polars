@@ -1,0 +1,6 @@
+﻿polars.LazyFrame.match\_to\_schema
+==================================
+
+.. currentmodule:: polars
+
+.. automethod:: LazyFrame.match_to_schema

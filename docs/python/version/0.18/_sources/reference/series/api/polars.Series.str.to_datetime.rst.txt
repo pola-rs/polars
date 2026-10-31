@@ -1,0 +1,6 @@
+﻿polars.Series.str.to_datetime
+=============================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.str.to_datetime

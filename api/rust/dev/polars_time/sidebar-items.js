@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["chunkedarray","prelude","series"],"struct":["IndexSpace","Window"],"trait":["PolarsRound","PolarsUpsample"]};

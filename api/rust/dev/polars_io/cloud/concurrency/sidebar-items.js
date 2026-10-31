@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["RegimeState"],"fn":["get_inflight_floor_request_budget","get_inflight_request_budget"],"struct":["ConcurrencyController","ControllerConfig","HeadRttChannel","HeadRttWindow","InFlightBudget","InFlightPermit","InFlightStats","IoSample","Model","Regime"]};
