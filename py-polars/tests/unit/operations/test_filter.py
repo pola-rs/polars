@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import multiprocessing
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -11,6 +12,8 @@ import polars.selectors as cs
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import PolarsDataType
     from tests.conftest import PlMonkeyPatch
 
@@ -417,6 +420,56 @@ def test_filter_wide_frame_single_chunk() -> None:
     assert_frame_equal(out, df.filter(df.get_column("m")))
 
 
+def _check_filter_short_run(run: tuple[int, int], values: pl.Expr) -> None:
+    from polars._plr import _estimate_memory_usage
+
+    n = 1_000_000
+    s = pl.int_range(n, eager=True).to_frame("i").select(values).to_series()
+    expected = s.slice(run[0], run[1] - run[0]).to_list()
+    mask = pl.int_range(n, eager=True).is_between(run[0], run[1], closed="left")
+    out = s.filter(mask)
+    size = s.estimated_size()
+    before = _estimate_memory_usage()
+    del s
+    after = _estimate_memory_usage()
+    assert after < before - size // 2, (before, after, size)
+    assert out.to_list() == expected
+
+
+def _check_filter_string_data() -> None:
+    from polars._plr import _estimate_memory_usage
+
+    n = 100_000
+    s = pl.Series(["x" * 1024]).gather(pl.zeros(n, pl.UInt32, eager=True))
+    mask = pl.int_range(n, eager=True).is_between(10, 10_010, closed="left")
+    before = _estimate_memory_usage()
+    out = s.filter(mask)
+    after = _estimate_memory_usage()
+    assert after - before < 1 << 20, (before, after)
+    assert out.len() == 10_000
+    assert out[0] == "x" * 1024
+
+
+@pytest.fixture
+def run_memory_check(
+    request: pytest.FixtureRequest, plmonkeypatch: PlMonkeyPatch
+) -> Callable[..., None]:
+    """Run a check in a new process, so memory left by earlier tests can't skew it."""
+    plmonkeypatch.setenv("POLARS_OOC_DRIFT_THRESHOLD", "0")
+    plmonkeypatch.syspath_prepend(request.config.rootpath)
+
+    def run(check: Callable[..., None], *args: object) -> None:
+        proc = multiprocessing.get_context("spawn").Process(target=check, args=args)
+        proc.start()
+        proc.join(timeout=60)
+        if proc.is_alive():
+            proc.kill()
+            proc.join()
+        assert proc.exitcode == 0, f"check failed in new process ({proc.exitcode=})"
+
+    return run
+
+
 @pytest.mark.parametrize("run", [(10, 13), (0, 3), (999_997, 1_000_000)])
 @pytest.mark.parametrize(
     "values",
@@ -427,32 +480,12 @@ def test_filter_wide_frame_single_chunk() -> None:
     ],
 )
 def test_filter_short_run_does_not_keep_input(
-    run: tuple[int, int], values: pl.Expr, plmonkeypatch: PlMonkeyPatch
+    run: tuple[int, int], values: pl.Expr, run_memory_check: Callable[..., None]
 ) -> None:
-    from polars._plr import _estimate_memory_usage
-
-    plmonkeypatch.setenv("POLARS_OOC_DRIFT_THRESHOLD", "0")
-    n = 1_000_000
-    s = pl.int_range(n, eager=True).to_frame("i").select(values).to_series()
-    expected = s.slice(run[0], run[1] - run[0]).to_list()
-    mask = pl.int_range(n, eager=True).is_between(run[0], run[1], closed="left")
-    out = s.filter(mask)
-    size = s.estimated_size()
-    before = _estimate_memory_usage()
-    del s
-    assert _estimate_memory_usage() < before - size // 2
-    assert out.to_list() == expected
+    run_memory_check(_check_filter_short_run, run, values)
 
 
-def test_filter_short_run_shares_string_data(plmonkeypatch: PlMonkeyPatch) -> None:
-    from polars._plr import _estimate_memory_usage
-
-    plmonkeypatch.setenv("POLARS_OOC_DRIFT_THRESHOLD", "0")
-    n = 100_000
-    s = pl.Series(["x" * 1024]).gather(pl.zeros(n, pl.UInt32, eager=True))
-    mask = pl.int_range(n, eager=True).is_between(10, 10_010, closed="left")
-    before = _estimate_memory_usage()
-    out = s.filter(mask)
-    assert _estimate_memory_usage() - before < 1 << 20
-    assert out.len() == 10_000
-    assert out[0] == "x" * 1024
+def test_filter_short_run_shares_string_data(
+    run_memory_check: Callable[..., None],
+) -> None:
+    run_memory_check(_check_filter_string_data)
