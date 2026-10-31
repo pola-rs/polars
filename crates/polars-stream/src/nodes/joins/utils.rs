@@ -113,22 +113,37 @@ impl SpillFrameSearchBuffer {
 
     pub(super) fn split_at(&mut self, mut at: usize) -> Self {
         at = at.clamp(0, self.total_rows);
-        let mut top = self.clone();
-        top.total_rows = at;
-        top.frozen = true;
+        let top = self.slice(0, at);
         self.skip_rows += at;
         self.total_rows -= at;
         self.gc();
         top
     }
 
-    pub(super) fn slice(mut self, offset: usize, len: usize) -> Self {
-        self.skip_rows += offset;
-        self.total_rows -= offset;
-        self.total_rows = usize::min(self.total_rows, len);
-        self.frozen = true;
-        self.gc();
-        self
+    /// Returns a frozen buffer that only holds the frames covering the given rows.
+    pub(super) fn slice(&self, offset: usize, len: usize) -> Self {
+        let offset = offset.min(self.total_rows);
+        let len = len.min(self.total_rows - offset);
+        let mut sfs_at_offsets = BTreeMap::new();
+        let mut skip_rows = 0;
+        if len > 0 {
+            let start = self.live_start() + offset;
+            let first_offset = *self.sfs_at_offsets.range(..=start).next_back().unwrap().0;
+            sfs_at_offsets.extend(
+                self.sfs_at_offsets
+                    .range(first_offset..start + len)
+                    .map(|(offset, frame)| (*offset, frame.clone())),
+            );
+            skip_rows = start - first_offset;
+        }
+        SpillFrameSearchBuffer {
+            schema: self.schema.clone(),
+            sfs_at_offsets,
+            spill_ctx: self.spill_ctx.clone(),
+            total_rows: len,
+            skip_rows,
+            frozen: true,
+        }
     }
 
     pub(super) async fn into_df(self) -> DataFrame {
@@ -428,5 +443,62 @@ impl JoinSampleStats {
     pub fn all_rows_build_bytes(&self, rows: usize) -> f64 {
         self.distinct_keys_build_bytes(rows)
             + rows as f64 * (self.row_width + size_of::<IdxSize>() as f64)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_core::df;
+
+    use super::*;
+
+    fn buffer(frames: usize, rows_per_frame: usize) -> SpillFrameSearchBuffer {
+        let schema = Arc::new(Schema::from_iter([Field::new("k".into(), DataType::Int64)]));
+        let mut buf = SpillFrameSearchBuffer::empty_with_schema(
+            schema,
+            RandomSpillContext::new("test".into(), None),
+        );
+        for i in 0..frames {
+            let start = (i * rows_per_frame) as i64;
+            let df =
+                df!("k" => (start..start + rows_per_frame as i64).collect::<Vec<_>>()).unwrap();
+            ASYNC.block_on(buf.push_sf(SpillFrame::new_unregistered(df)));
+        }
+        buf
+    }
+
+    fn keys(buf: &SpillFrameSearchBuffer) -> Vec<i64> {
+        let df = ASYNC.block_on(buf.clone().into_df());
+        df.column("k")
+            .unwrap()
+            .i64()
+            .unwrap()
+            .into_no_null_iter()
+            .collect()
+    }
+
+    #[test]
+    fn test_slice_keeps_only_covered_frames() {
+        let buf = buffer(100, 10);
+        let slice = buf.slice(25, 20);
+        assert_eq!(keys(&slice), (25..45).collect::<Vec<_>>());
+        assert_eq!(slice.sfs_at_offsets.len(), 3);
+
+        assert_eq!(keys(&buf.slice(990, 100)), (990..1000).collect::<Vec<_>>());
+        assert!(buf.slice(1000, 5).is_empty());
+    }
+
+    #[test]
+    fn test_split_at_keeps_only_covered_frames() {
+        let mut buf = buffer(100, 10);
+        let mut start = 0;
+        while !buf.is_empty() {
+            let top = buf.split_at(15);
+            let end = (start + 15).min(1000);
+            assert!(top.sfs_at_offsets.len() <= 3);
+            assert_eq!(keys(&top), (start..end).collect::<Vec<_>>());
+            start = end;
+        }
+        assert_eq!(start, 1000);
     }
 }
