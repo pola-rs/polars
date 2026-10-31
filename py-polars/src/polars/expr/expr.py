@@ -44,6 +44,7 @@ from polars._utils.various import (
     NO_DEFAULT,
     extend_bool,
     normalize_filepath,
+    qualified_type_name,
     sphinx_accessor,
     warn_null_comparison,
 )
@@ -372,42 +373,70 @@ class Expr(metaclass=_Meta):
 
     # operators
     def __add__(self, other: IntoExpr) -> Expr:
-        other_pyexpr = parse_into_expression(other, str_as_lit=True)
+        other_pyexpr = parse_into_expression(
+            other, str_as_lit=True, unsupported_as_none=True
+        )
+        if other_pyexpr is None:
+            return NotImplemented
         return wrap_expr(self._pyexpr + other_pyexpr)
 
     def __radd__(self, other: IntoExpr) -> Expr:
-        other_pyexpr = parse_into_expression(other, str_as_lit=True)
+        other_pyexpr = parse_into_expression(
+            other, str_as_lit=True, unsupported_as_none=True
+        )
+        if other_pyexpr is None:
+            return NotImplemented
         return wrap_expr(other_pyexpr + self._pyexpr)
 
     def __and__(self, other: IntoExprColumn | int | bool) -> Expr:
-        other_pyexpr = parse_into_expression(other)
+        other_pyexpr = parse_into_expression(other, unsupported_as_none=True)
+        if other_pyexpr is None:
+            return NotImplemented
         return wrap_expr(self._pyexpr.and_(other_pyexpr))
 
     def __rand__(self, other: IntoExprColumn | int | bool) -> Expr:
-        other_expr = parse_into_expression(other)
+        other_expr = parse_into_expression(other, unsupported_as_none=True)
+        if other_expr is None:
+            return NotImplemented
         return wrap_expr(other_expr.and_(self._pyexpr))
 
     def __eq__(self, other: IntoExpr) -> Expr:  # type: ignore[override]
         warn_null_comparison(other)
-        other_pyexpr = parse_into_expression(other, str_as_lit=True)
+        other_pyexpr = parse_into_expression(
+            other, str_as_lit=True, unsupported_as_none=True
+        )
+        if other_pyexpr is None:
+            return _reflected_equality(self, other, "__eq__")
         return wrap_expr(self._pyexpr.eq(other_pyexpr))
 
     def __floordiv__(self, other: IntoExpr) -> Expr:
-        other_pyexpr = parse_into_expression(other)
+        other_pyexpr = parse_into_expression(other, unsupported_as_none=True)
+        if other_pyexpr is None:
+            return NotImplemented
         return wrap_expr(self._pyexpr // other_pyexpr)
 
     def __rfloordiv__(self, other: IntoExpr) -> Expr:
-        other_pyexpr = parse_into_expression(other)
+        other_pyexpr = parse_into_expression(other, unsupported_as_none=True)
+        if other_pyexpr is None:
+            return NotImplemented
         return wrap_expr(other_pyexpr // self._pyexpr)
 
     def __ge__(self, other: IntoExpr) -> Expr:
         warn_null_comparison(other)
-        other_pyexpr = parse_into_expression(other, str_as_lit=True)
+        other_pyexpr = parse_into_expression(
+            other, str_as_lit=True, unsupported_as_none=True
+        )
+        if other_pyexpr is None:
+            return NotImplemented
         return wrap_expr(self._pyexpr.gt_eq(other_pyexpr))
 
     def __gt__(self, other: IntoExpr) -> Expr:
         warn_null_comparison(other)
-        other_pyexpr = parse_into_expression(other, str_as_lit=True)
+        other_pyexpr = parse_into_expression(
+            other, str_as_lit=True, unsupported_as_none=True
+        )
+        if other_pyexpr is None:
+            return NotImplemented
         return wrap_expr(self._pyexpr.gt(other_pyexpr))
 
     def __invert__(self) -> Expr:
@@ -415,79 +444,119 @@ class Expr(metaclass=_Meta):
 
     def __le__(self, other: IntoExpr) -> Expr:
         warn_null_comparison(other)
-        other_pyexpr = parse_into_expression(other, str_as_lit=True)
+        other_pyexpr = parse_into_expression(
+            other, str_as_lit=True, unsupported_as_none=True
+        )
+        if other_pyexpr is None:
+            return NotImplemented
         return wrap_expr(self._pyexpr.lt_eq(other_pyexpr))
 
     def __lt__(self, other: IntoExpr) -> Expr:
         warn_null_comparison(other)
-        other_pyexpr = parse_into_expression(other, str_as_lit=True)
+        other_pyexpr = parse_into_expression(
+            other, str_as_lit=True, unsupported_as_none=True
+        )
+        if other_pyexpr is None:
+            return NotImplemented
         return wrap_expr(self._pyexpr.lt(other_pyexpr))
 
     def __mod__(self, other: IntoExpr) -> Expr:
-        other_pyexpr = parse_into_expression(other)
+        other_pyexpr = parse_into_expression(other, unsupported_as_none=True)
+        if other_pyexpr is None:
+            return NotImplemented
         return wrap_expr(self._pyexpr % other_pyexpr)
 
     def __rmod__(self, other: IntoExpr) -> Expr:
-        other_pyexpr = parse_into_expression(other)
+        other_pyexpr = parse_into_expression(other, unsupported_as_none=True)
+        if other_pyexpr is None:
+            return NotImplemented
         return wrap_expr(other_pyexpr % self._pyexpr)
 
     def __mul__(self, other: IntoExpr) -> Expr:
-        other_pyexpr = parse_into_expression(other)
+        other_pyexpr = parse_into_expression(other, unsupported_as_none=True)
+        if other_pyexpr is None:
+            return NotImplemented
         return wrap_expr(self._pyexpr * other_pyexpr)
 
     def __rmul__(self, other: IntoExpr) -> Expr:
-        other_pyexpr = parse_into_expression(other)
+        other_pyexpr = parse_into_expression(other, unsupported_as_none=True)
+        if other_pyexpr is None:
+            return NotImplemented
         return wrap_expr(other_pyexpr * self._pyexpr)
 
     def __ne__(self, other: IntoExpr) -> Expr:  # type: ignore[override]
         warn_null_comparison(other)
-        other_pyexpr = parse_into_expression(other, str_as_lit=True)
+        other_pyexpr = parse_into_expression(
+            other, str_as_lit=True, unsupported_as_none=True
+        )
+        if other_pyexpr is None:
+            return _reflected_equality(self, other, "__ne__")
         return wrap_expr(self._pyexpr.neq(other_pyexpr))
 
     def __neg__(self) -> Expr:
         return wrap_expr(-self._pyexpr)
 
     def __or__(self, other: IntoExprColumn | int | bool) -> Expr:
-        other_pyexpr = parse_into_expression(other)
+        other_pyexpr = parse_into_expression(other, unsupported_as_none=True)
+        if other_pyexpr is None:
+            return NotImplemented
         return wrap_expr(self._pyexpr.or_(other_pyexpr))
 
     def __ror__(self, other: IntoExprColumn | int | bool) -> Expr:
-        other_expr = parse_into_expression(other)
+        other_expr = parse_into_expression(other, unsupported_as_none=True)
+        if other_expr is None:
+            return NotImplemented
         return wrap_expr(other_expr.or_(self._pyexpr))
 
     def __pos__(self) -> Expr:
         return self
 
     def __pow__(self, exponent: IntoExprColumn | int | float) -> Expr:
-        exponent_pyexpr = parse_into_expression(exponent)
+        exponent_pyexpr = parse_into_expression(exponent, unsupported_as_none=True)
+        if exponent_pyexpr is None:
+            return NotImplemented
         return wrap_expr(self._pyexpr.pow(exponent_pyexpr))
 
     def __rpow__(self, base: IntoExprColumn | int | float) -> Expr:
-        base_pyexpr = parse_into_expression(base)
+        base_pyexpr = parse_into_expression(base, unsupported_as_none=True)
+        if base_pyexpr is None:
+            return NotImplemented
         return wrap_expr(base_pyexpr) ** self
 
     def __sub__(self, other: IntoExpr) -> Expr:
-        other_pyexpr = parse_into_expression(other)
+        other_pyexpr = parse_into_expression(other, unsupported_as_none=True)
+        if other_pyexpr is None:
+            return NotImplemented
         return wrap_expr(self._pyexpr - other_pyexpr)
 
     def __rsub__(self, other: IntoExpr) -> Expr:
-        other_pyexpr = parse_into_expression(other)
+        other_pyexpr = parse_into_expression(other, unsupported_as_none=True)
+        if other_pyexpr is None:
+            return NotImplemented
         return wrap_expr(other_pyexpr - self._pyexpr)
 
     def __truediv__(self, other: IntoExpr) -> Expr:
-        other_pyexpr = parse_into_expression(other)
+        other_pyexpr = parse_into_expression(other, unsupported_as_none=True)
+        if other_pyexpr is None:
+            return NotImplemented
         return wrap_expr(self._pyexpr / other_pyexpr)
 
     def __rtruediv__(self, other: IntoExpr) -> Expr:
-        other_pyexpr = parse_into_expression(other)
+        other_pyexpr = parse_into_expression(other, unsupported_as_none=True)
+        if other_pyexpr is None:
+            return NotImplemented
         return wrap_expr(other_pyexpr / self._pyexpr)
 
     def __xor__(self, other: IntoExprColumn | int | bool) -> Expr:
-        other_pyexpr = parse_into_expression(other)
+        other_pyexpr = parse_into_expression(other, unsupported_as_none=True)
+        if other_pyexpr is None:
+            return NotImplemented
         return wrap_expr(self._pyexpr.xor_(other_pyexpr))
 
     def __rxor__(self, other: IntoExprColumn | int | bool) -> Expr:
-        other_expr = parse_into_expression(other)
+        other_expr = parse_into_expression(other, unsupported_as_none=True)
+        if other_expr is None:
+            return NotImplemented
         return wrap_expr(other_expr.xor_(self._pyexpr))
 
     def __getstate__(self) -> bytes:
@@ -13042,6 +13111,29 @@ class Expr(metaclass=_Meta):
                 version="2.0",
             )
             return getattr_fallback(self, super(), name)
+
+
+def _reflected_equality(expr: Expr, other: Any, op: Literal["__eq__", "__ne__"]) -> Any:
+    """
+    Let `other` handle `==`/`!=` with an expression if Polars does not support it.
+
+    Returning `NotImplemented` from a binary operator
+    makes Python try the reflected operator of `other`.
+    But `__eq__` and `__ne__` are different from the other operators
+    in that if neither object implements the operator
+    then they fallback to identity comparison (returning a `bool`).
+    This means that `expr == object()` would return `False` instead of raising.
+    Whether we want to return `False` instead of raising is up to discussion,
+    but for backwards compatibility, when we did not return `NotImplemented`,
+    we keep raising.
+    """
+    result = getattr(type(other), op)(other, expr)
+    if result is NotImplemented:
+        symbol = {"__eq__": "==", "__ne__": "!="}[op]
+        other_type = qualified_type_name(other)
+        msg = f"{symbol!r} not supported between instances of 'Expr' and {other_type!r}"
+        raise TypeError(msg)
+    return result
 
 
 def _prepare_alpha(

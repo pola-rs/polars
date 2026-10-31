@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Literal, overload
 import polars._reexport as pl
 from polars import functions as F
 from polars._utils.various import qualified_type_name
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, UnsupportedLiteralError
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars._plr as plr
@@ -18,6 +18,32 @@ if TYPE_CHECKING:
     from polars._typing import ColumnNameOrSelector, IntoExpr, PolarsDataType
 
 
+@overload
+def parse_into_expression(
+    input: IntoExpr,
+    *,
+    str_as_lit: bool = ...,
+    list_as_series: bool = ...,
+    structify: bool = ...,
+    dtype: PolarsDataType | None = ...,
+    require_selector: bool = ...,
+    unsupported_as_none: Literal[False] = ...,
+) -> PyExpr: ...
+
+
+@overload
+def parse_into_expression(
+    input: IntoExpr,
+    *,
+    str_as_lit: bool = ...,
+    list_as_series: bool = ...,
+    structify: bool = ...,
+    dtype: PolarsDataType | None = ...,
+    require_selector: bool = ...,
+    unsupported_as_none: bool,
+) -> PyExpr | None: ...
+
+
 def parse_into_expression(
     input: IntoExpr,
     *,
@@ -26,7 +52,8 @@ def parse_into_expression(
     structify: bool = False,
     dtype: PolarsDataType | None = None,
     require_selector: bool = False,
-) -> PyExpr:
+    unsupported_as_none: bool = False,
+) -> PyExpr | None:
     """
     Parse a single input into an expression.
 
@@ -47,10 +74,15 @@ def parse_into_expression(
         this to the `lit` constructor.
     require_selector
         Require that the input is a valid selector (eg: column name or selector).
+    unsupported_as_none
+        Return `None` instead of raising :class:`UnsupportedLiteralError`
+        if the type of the input cannot be converted into an expression.
+        Errors raised for inputs of a supported type (e.g. a list with mixed types)
+        are still raised.
 
     Returns
     -------
-    PyExpr
+    PyExpr or None
     """
     if isinstance(input, pl.Expr):
         expr = input
@@ -64,6 +96,11 @@ def parse_into_expression(
             raise TypeError(msg)
         elif isinstance(input, list) and list_as_series:
             expr = F.lit(pl.Series(input), dtype=dtype)
+        elif unsupported_as_none:
+            try:
+                expr = F.lit(input, dtype=dtype)
+            except UnsupportedLiteralError:
+                return None
         else:
             expr = F.lit(input, dtype=dtype)
 

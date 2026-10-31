@@ -11,6 +11,7 @@ Errors
     :nosignatures:
 
     PolarsError
+    PolarsTypeError
     AttributeRemovedError
     ColumnNotFoundError
     ComputeError
@@ -31,6 +32,7 @@ Errors
     StructFieldNotFoundError
     TooManyRowsReturnedError
     UnsuitableSQLError
+    UnsupportedLiteralError
 
 Warnings
 ~~~~~~~~
