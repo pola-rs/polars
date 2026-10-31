@@ -447,13 +447,19 @@ impl Series {
                     import_arrow_dictionary_array(name.clone(), arr, key_type, &polars_dtype)
                 });
 
-                let mut first = series_iter.next().unwrap()?;
+                let first = series_iter.next().unwrap()?;
+                let dtype = first.dtype().clone();
+                let mut chunks = first.into_chunks();
 
+                // Preserve empty chunks: nested arrays need their children to stay aligned.
                 for s in series_iter {
-                    first.append_owned(s?)?;
+                    chunks.extend(s?.into_chunks());
                 }
 
-                Ok(first)
+                // SAFETY: All chunks were imported with the same Arrow dtype and polars_dtype.
+                Ok(Series::from_chunks_and_dtype_unchecked(
+                    name, chunks, &dtype,
+                ))
             },
             #[cfg(feature = "object")]
             ArrowDataType::Extension(ext)

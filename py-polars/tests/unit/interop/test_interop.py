@@ -41,6 +41,32 @@ def test_arrow_list_roundtrip() -> None:
         assert c1.to_pylist() == c2.to_pylist()
 
 
+@pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["", "a", "b"])])
+@pytest.mark.parametrize(
+    "chunks",
+    [
+        [[["a"]], [None], [["a", "b", "a"]], [["b"]]],
+        [[[]], [None], [["a", "b"]], [["a"]]],
+        [[[""]], [[]], [["a", "b", ""]], [None]],
+        [[[]], [None], [[]]],
+    ],
+)
+def test_arrow_list_dictionary_empty_chunks(
+    dtype: pl.DataType, chunks: list[list[list[str] | None]]
+) -> None:
+    expected = pl.concat(
+        [pl.Series("a", chunk, dtype=pl.List(dtype)) for chunk in chunks],
+        rechunk=False,
+    )
+    assert expected.n_chunks() == len(chunks)
+
+    # Import all chunks together, as when passing a Series to a plugin.
+    result = pl.Series(PyCapsuleStreamHolder(expected))
+
+    assert_series_equal(result, expected)
+    assert result.n_chunks() == expected.n_chunks()
+
+
 def test_arrow_null_roundtrip() -> None:
     tbl = pa.table({"a": [None, None], "b": [[None, None], [None, None]]})
     df = pl.from_arrow(tbl)
