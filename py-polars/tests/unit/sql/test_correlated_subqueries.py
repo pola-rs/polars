@@ -1703,6 +1703,9 @@ def test_correlated_subquery_reading_query_further_out_scopes(query: str) -> Non
         # A row number, or a scalar subquery with several rows, sees the repeated rows.
         "SELECT a.id, 3 IN (SELECT ROW_NUMBER() OVER () FROM d WHERE EXISTS (SELECT 1 FROM c WHERE c.v < a.id * 10)) AS z FROM a",
         "SELECT a.id FROM a WHERE EXISTS (SELECT 1 FROM d WHERE d.k = (SELECT c.k FROM c WHERE c.v < a.id * 10))",
+        # The value would be computed before the filter that reads `a` drops rows.
+        "SELECT a.id, EXISTS (SELECT 1 FROM d WHERE d.k IN (SELECT ROW_NUMBER() OVER () FROM c WHERE c.v < a.id)) AS z FROM a",
+        "SELECT a.id, EXISTS (SELECT 1 FROM d WHERE d.k IN (SELECT CAST(c.p AS INT) FROM c WHERE c.v < a.id)) AS z FROM a",
         # The dropped ORDER BY of a subquery without FROM must still be checked.
         "SELECT a.id FROM a WHERE EXISTS (SELECT 1 FROM d WHERE d.k = (SELECT a.id ORDER BY CAST('bad' AS INT)))",
     ],

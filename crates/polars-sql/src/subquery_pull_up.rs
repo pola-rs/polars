@@ -850,6 +850,19 @@ fn try_move(
     if !filters.is_empty() && (!filters_allowed || !distinct) {
         return Ok(None);
     }
+    // The moved table computes the value before the filters drop rows, so the value must
+    // neither read other rows nor fail on a row that a filter drops.
+    let unsafe_before_filters = |value: &SQLExpr| {
+        calls_function(value)
+            || visit_expressions(value, |e| match e {
+                SQLExpr::Cast { .. } => ControlFlow::Break(()),
+                _ => ControlFlow::Continue(()),
+            })
+            .is_break()
+    };
+    if !filters.is_empty() && value.is_some_and(unsafe_before_filters) {
+        return Ok(None);
+    }
 
     let name = format!("{NESTED_PREFIX}{}", unique_column_name());
     let value_name = format!("{name}_v");
