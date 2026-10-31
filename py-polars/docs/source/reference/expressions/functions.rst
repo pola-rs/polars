@@ -48,6 +48,7 @@ These functions are available from the Polars module root and can be used as exp
    fold
    format
    from_epoch
+   from_year_week_day
    head
    implode
    int_range
