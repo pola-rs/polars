@@ -3193,7 +3193,7 @@ impl SQLContext {
                 }
                 is_new
             });
-            // Constant keys do not split the groups. `GROUPING()` needs every key.
+            // Literal keys do not split the groups. `GROUPING()` needs every key.
             let order_by_exprs = match &query.order_by {
                 Some(OrderBy {
                     kind: OrderByKind::Expressions(exprs),
@@ -3209,13 +3209,11 @@ impl SQLContext {
                     .chain(order_by_exprs)
                     .any(|e| !collect_grouping_calls(e).is_empty());
             if !uses_grouping {
-                if group_by_keys
-                    .iter()
-                    .any(|key| !is_constant(&strip_outer_alias(key)))
-                {
-                    group_by_keys.retain(|key| !is_constant(&strip_outer_alias(key)));
-                } else {
+                let is_literal = |key: &Expr| matches!(strip_outer_alias(key), Expr::Literal(_));
+                if group_by_keys.iter().all(is_literal) {
                     group_by_keys.truncate(1);
+                } else {
+                    group_by_keys.retain(|key| !is_literal(key));
                 }
             }
         }

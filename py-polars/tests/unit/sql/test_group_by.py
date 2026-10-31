@@ -1520,6 +1520,14 @@ def test_group_by_constant_key_in_grouping(grouped: pl.DataFrame, query: str) ->
     )
 
 
+def test_group_by_constant_key_errors_are_kept(grouped: pl.DataFrame) -> None:
+    for key in ["a, CAST('bad' AS INT)", "'x', CAST('bad' AS INT)"]:
+        with pytest.raises(InvalidOperationError, match="conversion"):
+            pl.SQLContext(t=grouped).execute(
+                f"SELECT COUNT(*) AS n FROM t GROUP BY {key}", eager=True
+            )
+
+
 def test_group_by_constant_named_like_key() -> None:
     frame = pl.DataFrame({"literal": [0, 0, 1]})
     assert_group_by_matches(
