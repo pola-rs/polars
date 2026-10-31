@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import os
+import subprocess
 import sys
-import time
 from collections import Counter
 from datetime import datetime
 from decimal import Decimal
@@ -724,33 +725,56 @@ def test_sort_resume_over_phase_boundary_multiplexer(sort_mode: str) -> None:
     )
 
 
+_DECAY_SCRIPT = f"""
+import os
+import sys
+import time
+
+import polars as pl
+from polars.testing import assert_frame_equal
+
+df = pl.DataFrame({{"k": pl.Series(range({N_ROWS})).shuffle(seed=0)}})
+out = df.lazy().sort("k").collect(engine="streaming")
+assert_frame_equal(out, df.sort("k"))
+print("sort done", file=sys.stderr, flush=True)
+
+# With a positive budget nothing needs to spill anymore.
+del os.environ["POLARS_OOC_MEMORY_BUDGET_MB"]
+pl.Config.reload_env_vars()
+deadline = time.monotonic() + 10
+while time.monotonic() < deadline:
+    with open(sys.argv[1]) as f:
+        if "restoring allocator decay" in f.read():
+            break
+    time.sleep(0.05)
+"""
+
+
 @pytest.mark.write_disk
 @pytest.mark.slow
 @pytest.mark.skipif(sys.platform == "win32", reason="only jemalloc has a decay")
-def test_sort_spill_sets_and_restores_allocator_decay(
-    plmonkeypatch: PlMonkeyPatch, tmp_path: Path, capfd: pytest.CaptureFixture[str]
-) -> None:
-    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
-    plmonkeypatch.setenv("POLARS_OOC_PRESSURE_DECAY_GRACE_MS", "0")
-    df = pl.DataFrame({"k": pl.Series(range(N_ROWS)).shuffle(seed=0)})
+def test_sort_spill_sets_and_restores_allocator_decay(tmp_path: Path) -> None:
+    # The decay and the spill state are global to the process, and earlier tests
+    # can leave them changed, so this runs in a new process.
+    env = {
+        **os.environ,
+        **PARTITION_ENV,
+        **SPILL_ENV,
+        "POLARS_OOC_SPILL_DIR": str(tmp_path),
+        "POLARS_OOC_PRESSURE_DECAY_GRACE_MS": "0",
+        "POLARS_VERBOSE": "1",
+    }
+    err_path = tmp_path / "stderr.txt"
+    with err_path.open("w") as err_file:
+        subprocess.run(
+            [sys.executable, "-c", _DECAY_SCRIPT, str(err_path)],
+            env=env,
+            stderr=err_file,
+            check=True,
+            timeout=60,
+        )
 
-    # The first round only brings the decay to a known state: an earlier test may
-    # have left it changed, and whether this sort spills depends on the memory
-    # left over from earlier tests. The second round must enter and restore.
-    for i in range(2):
-        _apply_sort_mode("spilled", plmonkeypatch, tmp_path)
-        out = df.lazy().sort("k").collect(engine="streaming")
-        assert_frame_equal(out, df.sort("k"))
-        err = capfd.readouterr().err
-        if i > 0:
-            assert "setting allocator dirty decay to 0" in err
-            assert "restoring allocator decay" not in err
-
-        # With a positive budget nothing needs to spill anymore.
-        plmonkeypatch.delenv("POLARS_OOC_MEMORY_BUDGET_MB")
-        deadline = time.monotonic() + 10
-        while "restoring allocator decay" not in err and time.monotonic() < deadline:
-            time.sleep(0.05)
-            err += capfd.readouterr().err
-        if i > 0:
-            assert "restoring allocator decay" in err
+    before, after = err_path.read_text().split("sort done")
+    assert "setting allocator dirty decay to 0" in before
+    assert "restoring allocator decay" not in before
+    assert "restoring allocator decay" in after
