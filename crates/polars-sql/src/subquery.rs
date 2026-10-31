@@ -3561,7 +3561,13 @@ pub(crate) fn quantified_as_exists(ctx: &SQLContext, conj: &SQLExpr) -> Option<S
         return None;
     };
     let spellings = ctx.catalog_spellings();
-    if !is_correlated_subquery(subquery, spellings) || expr_contains_subquery(left) {
+    // `x` is evaluated per pair of rows after the move, so it must give the same value
+    // for each of them.
+    if !is_correlated_subquery(subquery, spellings)
+        || expr_contains_subquery(left)
+        || contains_random(left.as_ref(), true)
+        || has_column_selector(left)
+    {
         return None;
     }
     let select = eligible_subquery_select(subquery)?;
@@ -3570,8 +3576,13 @@ pub(crate) fn quantified_as_exists(ctx: &SQLContext, conj: &SQLExpr) -> Option<S
     else {
         return None;
     };
+    // An aggregate anywhere makes the subquery give one row.
     if matches!(select.distinct, Some(Distinct::On(_)))
-        || has_aggregate(ctx, value)
+        || has_aggregate(ctx, select)
+        || subquery
+            .order_by
+            .as_ref()
+            .is_some_and(|o| has_aggregate(ctx, o))
         || expr_has_window_functions(value)
     {
         return None;

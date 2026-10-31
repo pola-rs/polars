@@ -868,6 +868,14 @@ def test_quantified_subquery_correlated(
         "SELECT a FROM t1 WHERE t1.b > ALL (SELECT MAX(x.b) FROM t1 AS x WHERE x.a < t1.a)",
         "SELECT a FROM t1 WHERE NOT t1.b > ALL (SELECT x.b FROM t1 AS x WHERE x.a < t1.a)",
         "SELECT t1.b > ANY (SELECT x.b FROM t1 AS x WHERE x.a < t1.a) FROM t1",
+        # the aggregate gives one row, also when no row matches
+        "SELECT a FROM t1 WHERE t1.b > ANY "
+        "(SELECT 1 FROM t1 AS x WHERE x.a < t1.a ORDER BY COUNT(*))",
+        # these would read the subquery's rows, or draw once per pair of rows
+        "SELECT a FROM t1 WHERE COLUMNS('^b$') > ANY "
+        "(SELECT x.b FROM t1 AS x WHERE x.a < t1.a)",
+        "SELECT a FROM t1 WHERE RANDOM() < ANY "
+        "(SELECT x.b FROM t1 AS x WHERE x.a < t1.a)",
     ],
 )
 def test_quantified_subquery_correlated_ordering_rejected(query: str) -> None:
