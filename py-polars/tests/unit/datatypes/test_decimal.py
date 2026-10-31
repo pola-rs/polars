@@ -1580,3 +1580,21 @@ def test_decimal_is_in_exact() -> None:
     # float data still can't be compared with a decimal
     with pytest.raises(pl.exceptions.InvalidOperationError, match="cannot check"):
         pl.Series([1.0]).is_in(pl.Series([D("1.0")]).implode())
+
+
+@pytest.mark.parametrize("method", ["floor", "ceil", "round_sig_figs"])
+@pytest.mark.parametrize("payload", [-(2**127), 2**127 - 1])
+def test_decimal_round_null_slot_payload(method: str, payload: int) -> None:
+    # Arrow buffer needed: casting to Decimal zeroes null-slot payloads.
+    def le_bytes(v: int) -> bytes:
+        return (v & (2**64 - 1)).to_bytes(8, "little") + (
+            (v >> 64) & (2**64 - 1)
+        ).to_bytes(8, "little")
+
+    values = pa.py_buffer(le_bytes(100) + le_bytes(payload))
+    arr = pa.Array.from_buffers(
+        pa.decimal128(38, 2), 2, [pa.py_buffer(bytes([0b01])), values]
+    )
+    s = pl.Series(arr)
+    args = (1,) if method == "round_sig_figs" else ()
+    assert getattr(s, method)(*args).to_list() == [D("1"), None]

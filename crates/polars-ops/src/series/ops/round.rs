@@ -224,35 +224,37 @@ pub trait RoundSeries: SeriesSealed {
             let precision = ca.precision();
             let scale = ca.scale() as u32;
 
-            let s = ca.physical().apply_values(|v| {
-                if v == 0 {
-                    return 0;
-                }
+            let s = ca
+                .physical()
+                .apply_nonnull_values_generic(DataType::Int128, |v| {
+                    if v == 0 {
+                        return 0;
+                    }
 
-                let mut magnitude = v.abs().ilog10();
-                let magnitude_mult = 10i128.pow(magnitude); // @Q? It might be better to do this with a
-                // LUT.
-                if v.abs() > magnitude_mult {
-                    magnitude += 1;
-                }
-                let decimals = magnitude.saturating_sub(digits as u32);
-                let multiplier = 10i128.pow(decimals); // @Q? It might be better to do this with a
-                // LUT.
-                let threshold = multiplier / 2;
+                    let mut magnitude = v.abs().ilog10();
+                    let magnitude_mult = 10i128.pow(magnitude); // @Q? It might be better to do this with a
+                    // LUT.
+                    if v.abs() > magnitude_mult {
+                        magnitude += 1;
+                    }
+                    let decimals = magnitude.saturating_sub(digits as u32);
+                    let multiplier = 10i128.pow(decimals); // @Q? It might be better to do this with a
+                    // LUT.
+                    let threshold = multiplier / 2;
 
-                // We use rounding=ROUND_HALF_EVEN
-                let rem = v % multiplier;
-                let is_v_floor_even = decimals <= scale && ((v - rem) / multiplier) % 2 == 0;
-                let threshold = threshold + i128::from(is_v_floor_even);
-                // An exact value doesn't round, even when the threshold is 0.
-                let round_offset = if rem != 0 && rem.abs() >= threshold {
-                    multiplier
-                } else {
-                    0
-                };
-                let round_offset = if v < 0 { -round_offset } else { round_offset };
-                v - rem + round_offset
-            });
+                    // We use rounding=ROUND_HALF_EVEN
+                    let rem = v % multiplier;
+                    let is_v_floor_even = decimals <= scale && ((v - rem) / multiplier) % 2 == 0;
+                    let threshold = threshold + i128::from(is_v_floor_even);
+                    // An exact value doesn't round, even when the threshold is 0.
+                    let round_offset = if rem != 0 && rem.abs() >= threshold {
+                        multiplier
+                    } else {
+                        0
+                    };
+                    let round_offset = if v < 0 { -round_offset } else { round_offset };
+                    v - rem + round_offset
+                });
 
             return rounded_decimal(s, precision, scale as usize, "rounding");
         }
@@ -314,12 +316,14 @@ pub trait RoundSeries: SeriesSealed {
             let decimal_delta = scale;
             let multiplier = 10i128.pow(decimal_delta);
 
-            let ca = ca.physical().apply_values(|v| {
-                let rem = v % multiplier;
-                let round_offset = if v < 0 { multiplier + rem } else { rem };
-                let round_offset = if rem == 0 { 0 } else { round_offset };
-                v - round_offset
-            });
+            let ca = ca
+                .physical()
+                .apply_nonnull_values_generic(DataType::Int128, |v| {
+                    let rem = v % multiplier;
+                    let round_offset = if v < 0 { multiplier + rem } else { rem };
+                    let round_offset = if rem == 0 { 0 } else { round_offset };
+                    v - round_offset
+                });
 
             return rounded_decimal(ca, precision, scale as usize, "floor");
         }
@@ -356,12 +360,14 @@ pub trait RoundSeries: SeriesSealed {
             let decimal_delta = scale;
             let multiplier = 10i128.pow(decimal_delta);
 
-            let ca = ca.physical().apply_values(|v| {
-                let rem = v % multiplier;
-                let round_offset = if v < 0 { -rem } else { multiplier - rem };
-                let round_offset = if rem == 0 { 0 } else { round_offset };
-                v + round_offset
-            });
+            let ca = ca
+                .physical()
+                .apply_nonnull_values_generic(DataType::Int128, |v| {
+                    let rem = v % multiplier;
+                    let round_offset = if v < 0 { -rem } else { multiplier - rem };
+                    let round_offset = if rem == 0 { 0 } else { round_offset };
+                    v + round_offset
+                });
 
             return rounded_decimal(ca, precision, scale as usize, "ceil");
         }
