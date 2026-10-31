@@ -1994,7 +1994,7 @@ impl SQLExprVisitor<'_> {
                         polars_bail!(SQLSyntax: "invalid 'length' for SUBSTRING")
                     },
                     _ => {
-                        let adjusted_start = start - lit(1);
+                        let adjusted_start = substring_offset(start);
                         when(adjusted_start.clone().lt(lit(0)))
                             .then(e.clone().str().slice(
                                 lit(0),
@@ -2018,7 +2018,7 @@ impl SQLExprVisitor<'_> {
                         polars_bail!(SQLSyntax: "invalid 'start' for SUBSTRING")
                     },
                     _ => e.str().slice(
-                        (start - lit(1)).clip_min(lit(0)),
+                        substring_offset(start).clip_min(lit(0)),
                         lit(LiteralValue::untyped_null()),
                     ),
                 })
@@ -2371,6 +2371,8 @@ pub(crate) fn parse_extract_date_part(expr: Expr, field: &DateTimeField) -> Pola
 
 /// The 1-indexed position of `substring` in `e`, or 0 if it is not found.
 pub(crate) fn sql_position(e: Expr, substring: Expr) -> Expr {
+    let e = e.cast(DataType::String);
+    let substring = substring.cast(DataType::String);
     let found = e
         .clone()
         .str()
@@ -2380,6 +2382,11 @@ pub(crate) fn sql_position(e: Expr, substring: Expr) -> Expr {
     when(e.is_null().or(substring.is_null()))
         .then(lit(LiteralValue::untyped_null()))
         .otherwise(found.fill_null(typed_lit(0i64)))
+}
+
+/// The 0-indexed offset of a 1-indexed SUBSTRING start.
+pub(crate) fn substring_offset(start: Expr) -> Expr {
+    start.cast(DataType::Int64) - lit(1)
 }
 
 /// A negative SUBSTRING length gives an empty string.

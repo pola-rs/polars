@@ -648,6 +648,17 @@ def test_string_length_arithmetic() -> None:
     assert df.sql("SELECT OCTET_LENGTH(s) - 3 AS n FROM self").to_dict(
         as_series=False
     ) == {"n": [-1, 0, -3, None]}
+    assert pl.sql(
+        "SELECT STRPOS(NULL, 'a') AS a, POSITION('a' IN NULL) AS b", eager=True
+    ).to_dict(as_series=False) == {"a": [None], "b": [None]}
+
+
+def test_string_substr_unsigned_start() -> None:
+    df = pl.DataFrame(
+        {"s": ["abc", "abc"], "n": [0, 2]}, schema_overrides={"n": pl.UInt32}
+    )
+    res = df.sql("SELECT SUBSTR(s, n) AS a, SUBSTRING(s, n, 2) AS b FROM self")
+    assert res.to_dict(as_series=False) == {"a": ["abc", "bc"], "b": ["a", "bc"]}
 
 
 def test_string_lpad_rpad() -> None:

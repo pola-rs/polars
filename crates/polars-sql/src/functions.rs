@@ -37,7 +37,7 @@ use crate::sql_expr::{
     adjust_one_indexed_param, approximate_literal, clip_substring_length, decimal_literal,
     decimal_literal_to_f64, interval_to_duration, order_by_sort_options, parse_extract_date_part,
     parse_sql_array, parse_sql_expr, resolve_expr_dtype, sql_binary, sql_position,
-    temporal_string_as,
+    substring_offset, temporal_string_as,
 };
 use crate::sql_visitors::{contains_random, grouping_call_args};
 use crate::window_frames::{MAX_ROW_OFFSET, is_frame_aggregate};
@@ -1432,7 +1432,7 @@ impl SQLFunctionVisitor<'_> {
             // ----
             BitAnd => self.visit_binary::<Expr>(Expr::and),
             #[cfg(feature = "bitwise")]
-            BitCount => self.visit_unary(Expr::bitwise_count_ones),
+            BitCount => self.visit_unary(|e| e.bitwise_count_ones().cast(DataType::Int64)),
             BitNot => self.visit_unary(Expr::not),
             BitOr => self.visit_binary::<Expr>(Expr::or),
             BitXor => self.visit_binary::<Expr>(Expr::xor),
@@ -1916,7 +1916,7 @@ impl SQLFunctionVisitor<'_> {
                             Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) if n <= 0 => e,
                             Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => e.str().slice(lit(n - 1), lit(LiteralValue::untyped_null())),
                             Expr::Literal(_) => polars_bail!(SQLSyntax: "invalid 'start' for SUBSTR ({})", args[1]),
-                            _ => e.str().slice((start - lit(1)).clip_min(lit(0)), lit(LiteralValue::untyped_null())),
+                            _ => e.str().slice(substring_offset(start).clip_min(lit(0)), lit(LiteralValue::untyped_null())),
                         })
                     }),
                     3 => self.try_visit_ternary(|e: Expr, start: Expr, length: Expr| {
@@ -1935,7 +1935,7 @@ impl SQLFunctionVisitor<'_> {
                                 polars_bail!(SQLSyntax: "invalid 'length' for SUBSTR ({})", args[1])
                             },
                             _ => {
-                                let adjusted_start = start - lit(1);
+                                let adjusted_start = substring_offset(start);
                                 when(adjusted_start.clone().lt(lit(0)))
                                     .then(e.clone().str().slice(lit(0), (length.clone() + adjusted_start.clone()).clip_min(lit(0))))
                                     .otherwise(e.str().slice(adjusted_start, length))
