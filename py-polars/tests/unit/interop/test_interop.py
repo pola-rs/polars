@@ -1156,6 +1156,40 @@ def test_from_arrow_nested_decimal_29651() -> None:
     assert_frame_equal(df, expected)
 
 
+ARRAY_TEST_DATA = [[-250, 125], None, [125, None], [125, -250]]
+
+
+@pytest.mark.parametrize(
+    ("array", "inner_dtype"),
+    [
+        (pa.array(ARRAY_TEST_DATA, pa.list_(pa.int32(), 2)), pl.Int32),
+        (pa.array(ARRAY_TEST_DATA, pa.list_(pa.decimal32(5, 2), 2)), pl.Decimal(5, 2)),
+        (pa.array(ARRAY_TEST_DATA, pa.list_(pa.decimal64(12, 2), 2)), pl.Decimal(12, 2)),
+        (
+            # child array with its own offset
+            pa.FixedSizeListArray.from_arrays(
+                pa.array([9, 9, -250, 125, 0, 0, 125, None, 125, -250]).slice(2),
+                2,
+                mask=pa.array([False, True, False, False]),
+            ),
+            pl.Int64,
+        ),
+        (pa.array([[], None, [], []], pa.list_(pa.int32(), 0)), pl.Int32),
+    ],
+)
+def test_from_arrow_sliced_fixed_size_list(
+    array: pa.FixedSizeListArray, inner_dtype: pl.DataType
+) -> None:
+    for source in (
+        array.slice(1, 2),
+        array.slice(2, 0),
+        pa.chunked_array([array.slice(0, 2), array.slice(2)]),
+    ):
+        series = pl.Series(source)
+        assert series.dtype == pl.Array(inner_dtype, array.type.list_size)
+        assert series.to_list() == source.to_pylist()
+
+
 def test_df_pycapsule_interface() -> None:
     df = pl.DataFrame(
         {
