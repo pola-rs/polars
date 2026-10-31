@@ -2,6 +2,8 @@ pub mod arrow_c_stream;
 pub mod cloud_options;
 #[cfg(all(feature = "cloud", feature = "parquet"))]
 pub mod iceberg_plugin;
+#[cfg(feature = "database")]
+pub mod io_plugin;
 #[cfg(feature = "parquet")]
 pub mod parquet_encryption;
 pub mod scan_options;

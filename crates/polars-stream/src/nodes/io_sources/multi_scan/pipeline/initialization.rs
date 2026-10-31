@@ -178,7 +178,10 @@ async fn finish_initialize_multi_scan_pipeline(
     let reader_capabilities = config.reader_capabilities()?;
 
     // Remote paths, or any path under `POLARS_FORCE_ASYNC`. Files and buffers never qualify.
-    let sources_run_async = config.sources.first().is_some_and(|x| x.run_async());
+    let sources_run_async = config
+        .file_reader_builder
+        .sources_are_remote()
+        .unwrap_or_else(|| config.sources.first().is_some_and(|x| x.run_async()));
 
     if sources_run_async && reader_capabilities.contains(ReaderCapabilities::NEEDS_FILE_CACHE_INIT)
     {
@@ -500,6 +503,14 @@ async fn finish_initialize_multi_scan_pipeline(
         );
     }
 
+    // A reader's own cap (e.g. database sessions) is exact in ordered mode too: a started
+    // reader holds a slot until it has been joined. The started-reader channel alone
+    // admits one more (the reader being joined, a full channel, and one waiting to be
+    // sent), which deadlocks a reader that waits for a resource the later ones hold.
+    let ordered_reader_slots = (!unordered_files
+        && config.file_reader_builder.max_concurrent_scans().is_some())
+    .then(|| Arc::new(Semaphore::new(max_concurrent_scans)));
+
     let unordered_files = unordered_files.then(|| UnorderedFiles {
         reader_slots: Arc::new(Semaphore::new(max_concurrent_scans)),
         merge_capacity: num_pipelines,
@@ -517,6 +528,7 @@ async fn finish_initialize_multi_scan_pipeline(
             max_concurrent_scans,
             read_bytes_limit: ReadBytesLimit::new(calc_max_concurrent_scan_bytes(num_pipelines)),
             unordered_files: unordered_files.clone(),
+            ordered_reader_slots,
             skip_files_mask,
             extra_ops,
             constant_args: StartReaderArgsConstant {

@@ -20,13 +20,24 @@
 //! * An ID is dropped on one side only after the other side has released its successor, so that
 //!   a compatible pair of released versions always exists.
 //!
+//! Generic contracts, usable by any plugin: [`file_reader_v1`] (feature `file_reader`) and
+//! [`lazyframe_resolver_v1`] (feature `lazyframe_resolver`, which includes `file_reader`). Hosts
+//! that call them from anywhere in a query find the plugins through [`registry`], by ID string.
+//! They are not [`PluginId`] variants: released plugins match on `PluginId` exhaustively, and
+//! Cargo feature unification would add the variants to their builds.
+//!
 //! Each plugin type's contract is behind a Cargo feature of the same name (e.g. `iceberg`).
 //! Features only control what is compiled; they never change an ID or a layout.
 #![allow(clippy::missing_safety_doc)]
 
 pub mod common;
+#[cfg(feature = "file_reader")]
+pub mod file_reader_v1;
 #[cfg(feature = "iceberg")]
 pub mod iceberg_v1;
+#[cfg(feature = "lazyframe_resolver")]
+pub mod lazyframe_resolver_v1;
+pub mod registry;
 
 use std::ffi::CStr;
 

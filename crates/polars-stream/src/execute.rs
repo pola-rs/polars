@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
 use crossbeam_channel::Sender;
+use futures::StreamExt;
+use futures::stream::FuturesUnordered;
 use parking_lot::Mutex;
 use polars_async::executor::{self, TaskMetricAggregator};
 use polars_core::frame::DataFrame;
@@ -40,10 +42,10 @@ impl StreamingExecutionState {
         self.task_metrics.as_deref()
     }
 
-    /// Spawns a task which is awaited at the end of the query.
-    #[allow(unused)]
+    /// Spawns a task which is awaited at the end of the query. Spawned once the query has ended
+    /// (or failed), it runs without anything awaiting it.
     pub fn spawn_query_task<F: Future<Output = PolarsResult<()>> + Send + 'static>(&self, fut: F) {
-        self.query_tasks_send.send(ASYNC.spawn(fut)).unwrap();
+        let _ = self.query_tasks_send.send(ASYNC.spawn(fut));
     }
 
     /// Spawns a task which is awaited at the end of the current subphase. That is
@@ -270,10 +272,12 @@ fn run_subgraph(
             pipe.spawn(scope, &mut join_handles);
         }
 
-        // Wait until all tasks are done.
+        // Wait until all tasks are done. The first error returns at once: leaving the scope
+        // cancels the remaining tasks, which may wait for a slow source.
         ASYNC.block_in_place_on(async move {
-            for handle in join_handles {
-                handle.await?;
+            let mut join_handles: FuturesUnordered<_> = join_handles.into_iter().collect();
+            while let Some(result) = join_handles.next().await {
+                result?;
             }
             PolarsResult::Ok(())
         })
@@ -319,13 +323,55 @@ pub fn execute_graph(
         }
     }
 
+    let result = run_graph(graph, &state, &node_states, metrics, &subphase_tasks_recv);
+    if let Err(e) = result {
+        // The failed query's nodes, and the background tasks they hold, are dropped first: work
+        // they hand to the query on drop (a source's cleanup) can then end, and ends before the
+        // error is returned.
+        drop(std::mem::take(&mut graph.nodes));
+        ASYNC.block_in_place_on(async {
+            while let Ok(handle) = query_tasks_recv.try_recv() {
+                let _ = handle.await;
+            }
+        });
+        return Err(e);
+    }
+
+    // Finalize query tasks.
+    ASYNC.block_in_place_on(async {
+        // TODO: track this in metrics.
+        while let Ok(handle) = query_tasks_recv.try_recv() {
+            handle.await.unwrap()?;
+        }
+        PolarsResult::Ok(())
+    })?;
+
+    // Extract output from in-memory nodes.
+    let mut out = SparseSecondaryMap::new();
+    for (node_key, node) in graph.nodes.iter_mut() {
+        if let Some(df) = node.compute.get_output()? {
+            out.insert(node_key, df);
+        }
+    }
+
+    Ok(out)
+}
+
+/// Runs the graph's phases until every pipe is done.
+fn run_graph(
+    graph: &mut Graph,
+    state: &StreamingExecutionState,
+    node_states: &SecondaryMap<GraphNodeKey, StreamingExecutionState>,
+    metrics: Option<Arc<Mutex<GraphMetrics>>>,
+    subphase_tasks_recv: &crossbeam_channel::Receiver<JoinHandle<PolarsResult<()>>>,
+) -> PolarsResult<()> {
     let mut pipe_seq_offsets = SecondaryMap::new();
     loop {
         // Update the states.
         if polars_core::config::verbose() {
             eprintln!("polars-stream: updating graph state");
         }
-        graph.update_all_states(&node_states, metrics.as_deref())?;
+        graph.update_all_states(node_states, metrics.as_deref())?;
 
         if let Some(m) = metrics.as_ref() {
             m.lock().flush(&graph.pipes);
@@ -360,8 +406,8 @@ pub fn execute_graph(
             &nodes,
             &pipes,
             &mut pipe_seq_offsets,
-            &state,
-            &node_states,
+            state,
+            node_states,
             metrics.clone(),
         )?;
         ASYNC.block_in_place_on(async {
@@ -380,23 +426,5 @@ pub fn execute_graph(
     for pipe in graph.pipes.values() {
         assert!(pipe.send_state == PortState::Done && pipe.recv_state == PortState::Done);
     }
-
-    // Finalize query tasks.
-    ASYNC.block_in_place_on(async {
-        // TODO: track this in metrics.
-        while let Ok(handle) = query_tasks_recv.try_recv() {
-            handle.await.unwrap()?;
-        }
-        PolarsResult::Ok(())
-    })?;
-
-    // Extract output from in-memory nodes.
-    let mut out = SparseSecondaryMap::new();
-    for (node_key, node) in graph.nodes.iter_mut() {
-        if let Some(df) = node.compute.get_output()? {
-            out.insert(node_key, df);
-        }
-    }
-
-    Ok(out)
+    Ok(())
 }

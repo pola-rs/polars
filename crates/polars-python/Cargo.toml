@@ -162,6 +162,14 @@ json = [
   "polars-parquet?/serde",
 ]
 scan_lines = ["polars/scan_lines", "polars-mem-engine/scan_lines"]
+# `scan_database`, through the `polars_database` I/O plugin (generic I/O plugin contracts).
+database = [
+  "dep:polars-io-ext-ffi",
+  "polars-io-ext-ffi/lazyframe_resolver",
+  "polars-io/io_plugin_ffi",
+  "polars-plan/io_plugin_ffi",
+  "polars-stream?/io_plugin_ffi",
+]
 trigonometry = ["polars/trigonometry"]
 sign = ["polars/sign"]
 asof_join = ["polars/asof_join"]
@@ -295,6 +303,7 @@ io = [
   "scan_lines",
   "cloud",
   "clipboard",
+  "database",
 ]
 
 optimizations = [

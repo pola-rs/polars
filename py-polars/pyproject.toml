@@ -67,7 +67,9 @@ excel = ["polars[calamine,openpyxl,xlsx2csv,xlsxwriter]"]
 adbc = ["adbc-driver-manager[dbapi]", "adbc-driver-sqlite[dbapi]"]
 connectorx = ["connectorx >= 0.3.2"]
 sqlalchemy = ["sqlalchemy", "polars[pandas]"]
-database = ["polars[adbc,connectorx,sqlalchemy]"]
+# `polars-database` is the database scan plugin (`scan_database`), up to (excluding) its next
+# major version.
+database = ["polars[adbc,connectorx,sqlalchemy]", "polars-database >= 0.1.0, < 1.0.0"]
 
 # Cloud
 fsspec = ["fsspec"]
@@ -103,8 +105,12 @@ ignore-missing-imports = [
   "_polars_runtime_compat.*",
   "IPython.*",
   "altair.*",
+  "clickhouse_connect.*",
   "duckdb.*",
+  "oracledb",
+  "polars_database",
   "polars_iceberg",
+  "psycopg",
   "pyiceberg.*",
 ]
 # pyrefly equivalent of mypy's `follow_imports = "skip"`
@@ -152,6 +158,7 @@ module = [
   "altair.*",
   "arrow_odbc",
   "backports",
+  "clickhouse_connect.*",
   "connectorx",
   "dateutil.*",
   "deltalake.*",
@@ -164,10 +171,13 @@ module = [
   "matplotlib.*",
   "moto.server",
   "openpyxl",
+  "oracledb",
   "polars.polars",
   "polars._plr",
   "polars_cloud",
+  "polars_database",
   "polars_iceberg",
+  "psycopg",
   "pyarrow.*",
   "pydantic",
   "pyiceberg.*",
