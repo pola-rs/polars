@@ -494,6 +494,7 @@ impl Display for ExprIRDisplay<'_> {
                 partition_by,
                 order_by,
                 mapping: _,
+                may_reorder: _,
             } => {
                 let function = self.with_root(function).parenthesize_if_binexpr();
                 let partition_by = self.with_slice(partition_by);

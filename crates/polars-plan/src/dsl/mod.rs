@@ -885,6 +885,7 @@ impl Expr {
             partition_by,
             order_by,
             mapping,
+            may_reorder: false,
         })
     }
 

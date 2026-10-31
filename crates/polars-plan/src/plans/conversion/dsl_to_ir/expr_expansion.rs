@@ -725,6 +725,7 @@ fn expand_expression_rec(
             partition_by,
             order_by,
             mapping,
+            may_reorder,
         } => {
             let mut exprs =
                 Vec::with_capacity(partition_by.len() + 1 + usize::from(order_by.is_some()));
@@ -746,6 +747,7 @@ fn expand_expression_rec(
                         .as_ref()
                         .map(|(_, options)| (Arc::new(e.last().unwrap().clone()), *options)),
                     mapping: *mapping,
+                    may_reorder: *may_reorder,
                 },
             )?
         },

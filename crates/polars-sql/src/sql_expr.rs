@@ -2180,14 +2180,31 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
             polars_bail!(SQLInterface: "invalid expression (found unexpected token '{}')", token)
         },
     }
-    Ok(match &expr {
+    let expr = match &expr {
         SelectItem::ExprWithAlias { expr, alias } => {
             let expr = parse_sql_expr(expr, &mut ctx, None)?;
             expr.alias(alias.value.as_str())
         },
         SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr, &mut ctx, None)?,
         _ => polars_bail!(SQLInterface: "unable to parse '{}' as Expr", s),
-    })
+    };
+    // The expression is used in a DataFrame query, whose row order must be kept.
+    Ok(expr.map_expr(|e| match e {
+        Expr::Over {
+            function,
+            partition_by,
+            order_by,
+            mapping,
+            may_reorder: _,
+        } => Expr::Over {
+            function,
+            partition_by,
+            order_by,
+            mapping,
+            may_reorder: false,
+        },
+        e => e,
+    }))
 }
 
 pub(crate) fn interval_to_duration(interval: &Interval, fixed: bool) -> PolarsResult<Duration> {

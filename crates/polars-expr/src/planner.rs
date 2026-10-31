@@ -158,6 +158,7 @@ pub fn create_window_expr(
         partition_by,
         order_by,
         mapping,
+        may_reorder: _,
     } = aexpr.clone()
     else {
         polars_bail!(InvalidOperation: "expected a window expression")
