@@ -268,6 +268,8 @@ pub enum AExpr {
         partition_by: Vec<Node>,
         order_by: Option<(Node, SortOptions)>,
         mapping: WindowMapping,
+        /// See [`Expr::Over`].
+        may_reorder: bool,
     },
     #[cfg(feature = "dynamic_group_by")]
     Rolling {

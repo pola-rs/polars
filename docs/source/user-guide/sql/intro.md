@@ -114,7 +114,7 @@ ctx.execute("DROP TABLE big_orders")  # dropped from the catalog
 - `CREATE TEMP TABLE` always creates a registered table instead.
 - `DROP TABLE` drops a registered table of that name first, else the catalog table, permanently.
   `DROP TABLE ... PURGE` also deletes the table's data files.
-- `TRUNCATE` and `DELETE` are not supported on catalog tables.
+- `DELETE` is not supported on catalog tables.
 
 `CREATE SCHEMA` and `DROP SCHEMA` create and drop a namespace. A name that starts with an attached
 catalog is a namespace of it, any other name one of the default catalog (not under
@@ -132,12 +132,14 @@ ctx.execute("ALTER TABLE lake.sales.orders ADD COLUMN discount DOUBLE")
 ctx.execute("ALTER TABLE lake.sales.orders RENAME COLUMN qty TO quantity")
 ```
 
-`INSERT INTO` appends rows to a catalog table, and `INSERT OVERWRITE` replaces all of its rows, in
-every partition (a `WHERE` in the query selects the new rows, not the ones replaced):
+`INSERT INTO` appends rows to a catalog table. `INSERT OVERWRITE` replaces all of its rows, in every
+partition. A `WHERE` in its query selects the new rows, not the ones replaced. `TRUNCATE` deletes
+all rows:
 
 ```python
 ctx.execute("INSERT INTO lake.sales.orders (id, quantity) VALUES (1, 10), (2, 20)")
 ctx.execute("INSERT OVERWRITE lake.sales.orders SELECT * FROM staged_orders")
+ctx.execute("TRUNCATE TABLE lake.sales.orders")
 ```
 
 See `SQLContext.register_catalog` for the details.

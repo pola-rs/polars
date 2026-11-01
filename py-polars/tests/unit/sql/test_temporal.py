@@ -82,19 +82,19 @@ def test_datetime_to_time(time_unit: Literal["ns", "us", "ms"]) -> None:
 @pytest.mark.parametrize(
     ("parts", "dtype", "expected"),
     [
-        (["decade", "decades"], pl.Int32, [202, 202, 200]),
-        (["isoyear"], pl.Int32, [2024, 2020, 2005]),
-        (["year", "y"], pl.Int32, [2024, 2020, 2006]),
-        (["quarter"], pl.Int8, [1, 4, 1]),
-        (["month", "months", "mon", "mons"], pl.Int8, [1, 12, 1]),
-        (["week", "weeks"], pl.Int8, [1, 53, 52]),
-        (["doy"], pl.Int16, [7, 365, 1]),
-        (["isodow"], pl.Int8, [7, 3, 7]),
-        (["dow"], pl.Int8, [0, 3, 0]),
-        (["day", "days", "d"], pl.Int8, [7, 30, 1]),
-        (["hour", "hours", "h"], pl.Int8, [1, 10, 23]),
-        (["minute", "min", "mins", "m"], pl.Int8, [2, 30, 59]),
-        (["second", "seconds", "secs", "sec"], pl.Int8, [3, 45, 59]),
+        (["decade", "decades"], pl.Int64, [202, 202, 200]),
+        (["isoyear"], pl.Int64, [2024, 2020, 2005]),
+        (["year", "y"], pl.Int64, [2024, 2020, 2006]),
+        (["quarter"], pl.Int64, [1, 4, 1]),
+        (["month", "months", "mon", "mons"], pl.Int64, [1, 12, 1]),
+        (["week", "weeks"], pl.Int64, [1, 53, 52]),
+        (["doy"], pl.Int64, [7, 365, 1]),
+        (["isodow"], pl.Int64, [7, 3, 7]),
+        (["dow"], pl.Int64, [0, 3, 0]),
+        (["day", "days", "d"], pl.Int64, [7, 30, 1]),
+        (["hour", "hours", "h"], pl.Int64, [1, 10, 23]),
+        (["minute", "min", "mins", "m"], pl.Int64, [2, 30, 59]),
+        (["second", "seconds", "secs", "sec"], pl.Int64, [3, 45, 59]),
         (
             ["millisecond", "milliseconds", "ms"],
             pl.Float64,
@@ -144,6 +144,46 @@ def test_extract(parts: list[str], dtype: pl.DataType, expected: list[Any]) -> N
                 res = ctx.execute(f"SELECT {fn} AS {part} FROM frame_data").to_series()
                 assert res.dtype == dtype
                 assert res.to_list() == expected
+
+
+def test_extract_arithmetic() -> None:
+    df = pl.DataFrame({"dt": [datetime(2024, 12, 31, 23, 59, 58), None]})
+    assert_sql_matches(
+        df,
+        query="""
+            SELECT
+              EXTRACT(MONTH FROM dt) * 100 AS month,
+              EXTRACT(DAY FROM dt) * EXTRACT(MONTH FROM dt) AS day_month,
+              EXTRACT(HOUR FROM dt) * 3600 AS hour,
+              EXTRACT(MINUTE FROM dt) * 60 AS minute,
+              EXTRACT(SECOND FROM dt) * 60 AS second,
+              EXTRACT(DOY FROM dt) * 1000 AS doy,
+              EXTRACT(DOW FROM dt) - 10 AS dow,
+              EXTRACT(YEAR FROM dt) * 1000000 AS year
+            FROM self
+        """,
+        compare_with="duckdb",
+        check_dtypes=True,
+        expected={
+            "month": [1200, None],
+            "day_month": [372, None],
+            "hour": [82800, None],
+            "minute": [3540, None],
+            "second": [3480, None],
+            "doy": [366000, None],
+            "dow": [-8, None],
+            "year": [2024000000, None],
+        },
+    )
+
+
+def test_extract_year_filter_uses_dates() -> None:
+    lf = pl.LazyFrame({"d": [date(2019, 12, 31), date(2020, 1, 1)]})
+    q = pl.SQLContext(frame=lf).execute(
+        "SELECT d FROM frame WHERE EXTRACT(YEAR FROM d) = 2020"
+    )
+    assert "year" not in q.explain()
+    assert q.collect()["d"].to_list() == [date(2020, 1, 1)]
 
 
 def test_extract_errors() -> None:
@@ -199,7 +239,7 @@ def test_extract_century_millennium(dt: date, expected: list[int]) -> None:
                 data=[expected + expected],
                 schema=["c1", "c2", "c3", "c4"],
                 orient="row",
-            ).cast(pl.Int32),
+            ).cast(pl.Int64),
         )
 
 

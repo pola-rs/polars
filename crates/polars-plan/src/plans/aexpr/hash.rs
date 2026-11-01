@@ -59,8 +59,10 @@ impl Hash for AExpr {
                 order_by,
                 function: _,
                 partition_by: _,
+                may_reorder,
             } => {
                 mapping.hash(state);
+                may_reorder.hash(state);
                 if let Some(o) = order_by {
                     o.1.hash(state);
                 }

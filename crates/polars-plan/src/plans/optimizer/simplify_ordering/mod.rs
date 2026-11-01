@@ -23,12 +23,26 @@ use crate::prelude::{AExpr, IR};
 pub enum Edge {
     #[default]
     Ordered,
+    /// Only the query result observes the order. Windows that may reorder their rows (see
+    /// `Expr::Over`) do not keep it, other nodes treat it as ordered.
+    ResultOrdered,
     Unordered,
 }
 
 impl Edge {
     pub fn is_unordered(&self) -> bool {
         matches!(self, Self::Unordered)
+    }
+
+    pub fn is_result_ordered(&self) -> bool {
+        matches!(self, Self::ResultOrdered)
+    }
+
+    /// Marks an ordered input edge as only observed by the result if the output edge is.
+    fn pass_result_order(&mut self, out_edge: &Edge) {
+        if out_edge.is_result_ordered() && matches!(self, Self::Ordered) {
+            *self = Self::ResultOrdered;
+        }
     }
 }
 
@@ -181,6 +195,10 @@ impl SimplifyIRNodeOrder<'_> {
 
                 if !input_order_observe {
                     *in_edge = Edge::Unordered;
+                } else if !((is_hstack && exprs_observable_orders.contains(O::INDEPENDENT))
+                    || eos.internally_observed_orders().contains(O::COLUMN))
+                {
+                    in_edge.pass_result_order(out_edge);
                 }
 
                 if !exprs_observable_orders.contains(O::INDEPENDENT)
@@ -254,11 +272,14 @@ impl SimplifyIRNodeOrder<'_> {
                 let predicate_observable_orders =
                     eos.simplify_projected_exprs(&[predicate.node()], false);
 
-                if out_edge.is_unordered()
-                    && !(eos.internally_observed_orders().contains(O::COLUMN)
-                        || predicate_observable_orders.contains(O::INDEPENDENT))
+                if !(eos.internally_observed_orders().contains(O::COLUMN)
+                    || predicate_observable_orders.contains(O::INDEPENDENT))
                 {
-                    *in_edge = Edge::Unordered;
+                    if out_edge.is_unordered() {
+                        *in_edge = Edge::Unordered;
+                    } else {
+                        in_edge.pass_result_order(out_edge);
+                    }
                 }
 
                 if in_edge.is_unordered() {
@@ -331,6 +352,15 @@ impl SimplifyIRNodeOrder<'_> {
                 ordered_eval,
                 ..
             } => {
+                let may_reorder = exprs.iter().all(|e| {
+                    matches!(
+                        self.expr_arena.get(e.node()),
+                        AExpr::Over {
+                            may_reorder: true,
+                            ..
+                        }
+                    )
+                });
                 let ([in_edge], [out_edge]) = unpack_edges!(2);
 
                 // Without `maintain_order` on the order key, rows with equal keys may be
@@ -343,13 +373,17 @@ impl SimplifyIRNodeOrder<'_> {
                         .iter()
                         .any(|e| !is_order_insensitive_window(e.node(), self.expr_arena));
 
-                if out_edge.is_unordered() {
+                if out_edge.is_unordered() || (may_reorder && out_edge.is_result_ordered()) {
                     *maintain_order = false;
                 }
                 *ordered_eval = observes;
 
-                if !*maintain_order && !observes {
-                    *in_edge = Edge::Unordered;
+                if !observes {
+                    if *maintain_order {
+                        in_edge.pass_result_order(out_edge);
+                    } else {
+                        *in_edge = Edge::Unordered;
+                    }
                 }
             },
 
@@ -569,6 +603,8 @@ impl SimplifyIRNodeOrder<'_> {
                 if in_edge.is_unordered() || out_edge.is_unordered() {
                     *in_edge = Edge::Unordered;
                     *out_edge = Edge::Unordered;
+                } else {
+                    in_edge.pass_result_order(out_edge);
                 }
             },
 
@@ -604,6 +640,8 @@ impl SimplifyIRNodeOrder<'_> {
                 if !keys_pin_order && (!payload.maintain_order() || in_edge.is_unordered()) {
                     *in_edge = Edge::Unordered;
                     payload.set_maintain_order(false);
+                } else if !keys_pin_order && matches!(in_edge, Edge::Ordered) {
+                    *in_edge = Edge::ResultOrdered;
                 }
             },
 

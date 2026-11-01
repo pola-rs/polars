@@ -279,6 +279,7 @@ pub fn is_input_independent_rec(
             partition_by,
             order_by,
             mapping: _,
+            may_reorder: _,
         } => {
             is_input_independent_rec(*function, arena, cache)
                 && partition_by
@@ -2706,6 +2707,7 @@ fn lower_exprs_with_ctx(
                 partition_by,
                 order_by: None,
                 mapping: WindowMapping::GroupsToRows,
+                may_reorder: _,
             } => {
                 let out_name = unique_column_name();
                 let function_ir = AExprBuilder::new_from_node(function).expr_ir(out_name.clone());
