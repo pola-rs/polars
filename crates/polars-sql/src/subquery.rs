@@ -1585,10 +1585,10 @@ impl SQLContext {
     // A projection without an aggregate is taken as the `item` of its values,
     // which raises when an outer row matches more than one inner row.
     // Equality-only correlation: `inner GROUP BY <corr cols>` once, joined onto
-    // the outer frame on those columns directly. Otherwise: row-index the outer
-    // frame, inner-join outer × inner on the correlation predicates (`join_where`
-    // handles inequality), aggregate per outer row, then left-join back on the
-    // row index. Either way, `COUNT` over no matches is 0, every other aggregate
+    // the outer frame on those columns directly. Otherwise: inner-join the outer
+    // keys × inner on the correlation predicates (`join_where` handles inequality),
+    // aggregate per key, then left-join back (see `non_equi_correlated_aggregate`).
+    // Either way, `COUNT` over no matches is 0, every other aggregate
     // is NULL. Returns `None` when uncorrelated or not a supported shape.
     // When `join_tree` describes the outer frame and the subquery repeats a part
     // of it, the aggregate is taken over the outer frame itself instead.
