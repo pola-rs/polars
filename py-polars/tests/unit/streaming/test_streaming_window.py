@@ -11,9 +11,10 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from polars._typing import EngineType
     from tests.conftest import PlMonkeyPatch
 
-ENGINES = ["in-memory", "streaming"]
+ENGINES: list[EngineType] = ["in-memory", "streaming"]
 
 
 def _frame(n: int = 20_000) -> pl.DataFrame:
@@ -36,7 +37,9 @@ def _write_parts(df: pl.DataFrame, path: Path, parts: int = 8) -> pl.LazyFrame:
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_stacked_windows_over_group_by_evaluate_in_same_order(engine: str) -> None:
+def test_stacked_windows_over_group_by_evaluate_in_same_order(
+    engine: EngineType,
+) -> None:
     q = (
         _frame()
         .lazy()
@@ -46,12 +49,12 @@ def test_stacked_windows_over_group_by_evaluate_in_same_order(engine: str) -> No
         .with_columns(w2=pl.col("w1").cum_sum().over("h"))
         .with_columns(w3=pl.col("x").cum_sum().over("g") + pl.col("w2") * 0)
     )
-    out = q.collect(engine=engine)  # type: ignore[call-overload]
+    out = q.collect(engine=engine)
     assert_series_equal(out["w1"], out["w3"], check_names=False)
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_window_in_cached_branch_stays_aligned(engine: str) -> None:
+def test_window_in_cached_branch_stays_aligned(engine: EngineType) -> None:
     base = (
         _frame()
         .lazy()
@@ -61,7 +64,7 @@ def test_window_in_cached_branch_stays_aligned(engine: str) -> None:
     )
     left = base.select("k", c=pl.col("x").cum_sum().over("g"))
     right = base.select(k2="k", g2="g", x2="x")
-    out = pl.concat([left, right], how="horizontal").collect(engine=engine)  # type: ignore[call-overload]
+    out = pl.concat([left, right], how="horizontal").collect(engine=engine)
 
     assert_series_equal(out["k"], out["k2"], check_names=False)
     expected = out.select(pl.col("x2").cum_sum().over("g2"))
@@ -322,7 +325,7 @@ def test_window_unordered_shape_error(expr: pl.Expr) -> None:
     assert len(_window_headers(q)) == 1
     for engine in ENGINES:
         with pytest.raises(pl.exceptions.ShapeError):
-            q.collect(engine=engine)  # type: ignore[call-overload]
+            q.collect(engine=engine)
 
 
 def test_window_scalar_order_key() -> None:
@@ -330,7 +333,7 @@ def test_window_scalar_order_key() -> None:
     q = lf.with_columns(w=pl.col("x").cum_sum().over("g", order_by=pl.col("t").sum()))
     expected = lf.with_columns(w=pl.col("x").cum_sum().over("g")).collect()
     for engine in ENGINES:
-        assert_frame_equal(q.collect(engine=engine), expected)  # type: ignore[call-overload]
+        assert_frame_equal(q.collect(engine=engine), expected)
 
 
 def test_window_repeated_partition_keys() -> None:
