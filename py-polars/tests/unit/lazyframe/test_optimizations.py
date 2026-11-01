@@ -1813,6 +1813,15 @@ def test_simplify_year_comparison(dtype: pl.DataType, year: int) -> None:
     assert "year" in lf.select(pl.col("x").dt.year() == year).explain()
 
 
+def test_simplify_year_comparison_through_int64_cast() -> None:
+    lf = pl.LazyFrame({"x": [dt.date(2019, 12, 31), dt.date(2020, 1, 1), None]})
+    q = lf.filter(pl.col("x").dt.year().cast(pl.Int64) == 2020)
+    assert "year" not in q.explain()
+    assert q.collect()["x"].to_list() == [dt.date(2020, 1, 1)]
+    q = lf.filter(pl.col("x").dt.year().cast(pl.Int16) == 2020)
+    assert "year" in q.explain()
+
+
 @pytest.mark.parametrize("dtype", [pl.Date, pl.Datetime("ms"), pl.Datetime("us")])
 def test_simplify_year_comparison_keeps_null_years(dtype: pl.DataType) -> None:
     # `dt.year()` is null for values outside the supported dates.

@@ -9,6 +9,7 @@ import pytest
 import polars as pl
 from polars.exceptions import InvalidOperationError, SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.sql import assert_sql_matches
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -491,8 +492,8 @@ def test_string_position() -> None:
                 },
                 schema={
                     "txt": pl.String,
-                    "match_E": pl.UInt32,
-                    "match_X": pl.UInt32,
+                    "match_E": pl.Int64,
+                    "match_X": pl.Int64,
                 },
             ),
         )
@@ -581,7 +582,9 @@ def test_string_substr() -> None:
                   {func}(scol{sep1}-3{sep2}5) AS "s-3_5",
                   {func}(scol{sep1}-10{sep2}13) AS "s-10_13",
                   {func}(scol{sep1}"n"{sep2}2) AS "s-n2",
-                  {func}(scol{sep1}2{sep2}"n"+3) AS "s-2n3"
+                  {func}(scol{sep1}2{sep2}"n"+3) AS "s-2n3",
+                  {func}(scol{sep1}"n") AS "s-n",
+                  {func}(scol{sep1}1{sep2}"n") AS "s-1n"
                 FROM df
                 """
             ).collect()
@@ -612,7 +615,54 @@ def test_string_substr() -> None:
             "s-10_13": ["ab", "ab", "ab", None],
             "s-n2": ["", "cd", "bc", None],
             "s-2n3": ["b", "bcde", "bc", None],
+            "s-n": ["abcdefg", "cde", "bc", None],
+            "s-1n": ["", "abc", "ab", None],
         }
+
+
+def test_string_length_arithmetic() -> None:
+    df = pl.DataFrame({"s": ["ab", "a b", "", None]})
+    assert_sql_matches(
+        df,
+        query="""
+            SELECT
+              LENGTH(s) - 3 AS len,
+              CHAR_LENGTH(s) - 3 AS char_len,
+              BIT_LENGTH(s) - 24 AS bit_len,
+              POSITION(' ' IN s) - 1 AS pos,
+              STRPOS(s, ' ') - 1 AS strpos,
+              SUBSTRING(s, 1, POSITION(' ' IN s) - 1) AS head
+            FROM self
+        """,
+        compare_with="duckdb",
+        check_dtypes=True,
+        expected={
+            "len": [-1, 0, -3, None],
+            "char_len": [-1, 0, -3, None],
+            "bit_len": [-8, 0, -24, None],
+            "pos": [-1, 1, -1, None],
+            "strpos": [-1, 1, -1, None],
+            "head": ["", "a", "", None],
+        },
+    )
+    assert df.sql("SELECT OCTET_LENGTH(s) - 3 AS n FROM self").to_dict(
+        as_series=False
+    ) == {"n": [-1, 0, -3, None]}
+    assert pl.sql(
+        "SELECT STRPOS(NULL, 'a') AS a, POSITION('a' IN NULL) AS b", eager=True
+    ).to_dict(as_series=False) == {"a": [None], "b": [None]}
+
+
+def test_string_substr_unsigned_start() -> None:
+    df = pl.DataFrame(
+        {"s": ["abc", "abc"], "n": [0, 2]}, schema_overrides={"n": pl.UInt32}
+    )
+    res = df.sql("SELECT SUBSTR(s, n) AS a, SUBSTRING(s, n, 2) AS b FROM self")
+    assert res.to_dict(as_series=False) == {"a": ["abc", "bc"], "b": ["a", "bc"]}
+
+    df = pl.DataFrame({"s": ["abc"], "n": ["bad"]})
+    with pytest.raises(InvalidOperationError):
+        df.sql("SELECT SUBSTRING(s FROM n) FROM self")
 
 
 def test_string_lpad_rpad() -> None:

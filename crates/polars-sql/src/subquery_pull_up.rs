@@ -28,17 +28,21 @@ use polars_core::utils::get_supertype;
 use polars_lazy::prelude::*;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, Distinct, ExcludeSelectItem, Expr as SQLExpr, Function,
-    FunctionArgumentList, FunctionArguments, GroupByExpr, Ident, ObjectName, OrderByExpr,
-    OrderByKind, Query, Select, SelectItem, SetExpr, TableAlias, TableFactor, TableWithJoins,
-    UnaryOperator as SQLUnaryOperator, Value as SQLValue, Visit, Visitor, VisitorMut, WindowSpec,
-    WindowType,
+    FunctionArgumentList, FunctionArguments, GroupByExpr, Ident, JoinConstraint, JoinOperator,
+    ObjectName, OrderByExpr, OrderByKind, Query, Select, SelectItem, SetExpr, TableAlias,
+    TableFactor, TableWithJoins, UnaryOperator as SQLUnaryOperator, Value as SQLValue, Visit,
+    Visitor, VisitorMut, WindowSpec, WindowType,
 };
+use sqlparser::dialect::GenericDialect;
+use sqlparser::parser::Parser;
 
 use crate::context::{TableInfo, combine_conditions, flatten_and_conditions};
+use crate::dyn_visit::{visit_expressions, visit_expressions_mut};
 use crate::functions::PolarsSQLFunctions;
-use crate::sql_expr::parse_sql_expr;
+use crate::sql_expr::{parse_sql_expr, to_sql_interface_err};
 use crate::sql_visitors::{
-    expr_contains_subquery, expr_has_window_functions, expr_references_any_column, is_subquery_expr,
+    expr_contains_scalar_subquery, expr_contains_subquery, expr_has_window_functions,
+    expr_references_any_column, is_subquery_expr,
 };
 use crate::subquery::{
     eligible_query_block, eligible_subquery_body, exists_aggregates, first_row_limit, strip_nested,
@@ -47,6 +51,17 @@ use crate::{SQLContext, dyn_visit, unique_column_name};
 
 /// The alias prefix of the derived tables that hold a moved subquery.
 pub(crate) const NESTED_PREFIX: &str = "__POLARS_NESTED_";
+
+/// How the query around a subquery reads the rows of the subquery.
+#[derive(Clone, Copy)]
+pub(crate) enum ReadAs {
+    /// Only which rows exist counts, as for EXISTS and IN.
+    Set,
+    /// The value of its row, as for a scalar subquery.
+    Value,
+    /// The rows are grouped afterwards.
+    Groups,
+}
 
 /// The columns of the frame a subquery is decorrelated against.
 #[derive(Clone, Copy)]
@@ -112,9 +127,10 @@ impl SQLContext {
         &self,
         columns: ScopeColumns<'_>,
         subquery: &Query,
+        read_as: ReadAs,
     ) -> Option<Query> {
         // An error while preparing leaves the subquery unchanged.
-        prepare(&[Scope { ctx: self, columns }], subquery).unwrap_or(None)
+        prepare(&[Scope { ctx: self, columns }], subquery, read_as).unwrap_or(None)
     }
 
     /// `expr` with `pull_up_nested` applied to each of its subqueries, or `None` if nothing
@@ -148,7 +164,11 @@ impl SQLContext {
                 if self.query_depth == 0
                     && let Some(subquery) = expr_subquery(expr)
                 {
-                    let prepared = self.ctx.pull_up_nested(self.columns, subquery);
+                    let read_as = match expr {
+                        SQLExpr::Subquery(_) => ReadAs::Value,
+                        _ => ReadAs::Set,
+                    };
+                    let prepared = self.ctx.pull_up_nested(self.columns, subquery, read_as);
                     self.prepared.push(prepared);
                 }
                 ControlFlow::Continue(())
@@ -229,17 +249,33 @@ fn expr_subquery_mut(expr: &mut SQLExpr) -> Option<&mut Query> {
 
 /// `x` with the subqueries of its WHERE that read one of `scopes` (the queries around
 /// `x`, outermost first) moved into its FROM, or `None` if nothing moved. Inner queries
-/// are handled first.
-fn prepare(scopes: &[Scope<'_>], x: &Query) -> PolarsResult<Option<Query>> {
+/// are handled first. The conjuncts of an inner join condition filter the joined rows as
+/// those of the WHERE do, and their subqueries move as well.
+fn prepare(scopes: &[Scope<'_>], x: &Query, read_as: ReadAs) -> PolarsResult<Option<Query>> {
     let Some(select) = eligible_query_block(x) else {
         return Ok(None);
     };
-    let Some(selection) = &select.selection else {
-        return Ok(None);
+    let (mut split_from, on_conjuncts) = match split_join_candidates(&select.from) {
+        Some((from, conjuncts)) => (Some(from), conjuncts),
+        None => (None, Vec::new()),
     };
-    let conjuncts = flatten_and_conditions(selection);
-    if !conjuncts.iter().any(|conj| candidate(conj).is_some()) {
-        return Ok(None);
+    let inlined = select.selection.as_ref().and_then(inline_from_less);
+    let unchanged = || {
+        inlined
+            .clone()
+            .map(|selection| with_selection(x, select, Some(selection)))
+    };
+    let conjuncts = inlined
+        .as_ref()
+        .or(select.selection.as_ref())
+        .map(flatten_and_conditions)
+        .unwrap_or_default();
+    if on_conjuncts.is_empty()
+        && !conjuncts
+            .iter()
+            .any(|conj| candidate(conj).is_some() || expr_contains_scalar_subquery(conj))
+    {
+        return Ok(unchanged());
     }
     // The added columns are excluded from `SELECT *`, which can't be combined with
     // these.
@@ -249,7 +285,7 @@ fn prepare(scopes: &[Scope<'_>], x: &Query) -> PolarsResult<Option<Query>> {
             || options.opt_replace.is_some()
             || options.opt_rename.is_some())
     }) {
-        return Ok(None);
+        return Ok(unchanged());
     }
     // The FROM of `x` is resolved as it is when `x` is planned. Only what moves into the
     // derived tables is planned strictly, and so is everything that reads it here. A FROM
@@ -258,44 +294,86 @@ fn prepare(scopes: &[Scope<'_>], x: &Query) -> PolarsResult<Option<Query>> {
     let x_frame = match select.from.is_empty() {
         true => None,
         false => {
-            let Some((names, lf, schema)) = x_ctx.resolve_subquery_from(select)? else {
-                return Ok(None);
+            let resolved = match &split_from {
+                None => x_ctx.resolve_subquery_from(select)?,
+                Some(from) => {
+                    let mut stripped = select.clone();
+                    stripped.from = from.clone();
+                    x_ctx.resolve_subquery_from(&stripped)?
+                },
+            };
+            let Some((names, lf, schema)) = resolved else {
+                return Ok(unchanged());
             };
             if names.is_empty() {
-                return Ok(None);
+                return Ok(unchanged());
             }
             Some((lf, schema))
         },
     };
     x_ctx.strict_relations = true;
 
+    let repeats_harmless = repeats_harmless(x, select, read_as);
     let mut kept = Vec::new();
     let mut moved = Vec::new();
-    for conj in conjuncts {
+    let conjuncts = conjuncts
+        .into_iter()
+        .map(|conj| (conj, false))
+        .chain(on_conjuncts.iter().map(|conj| (conj, true)));
+    for (conj, in_join) in conjuncts {
         let Some((compare, y)) = candidate(conj) else {
             kept.push(conj.clone());
             continue;
         };
         let x_frame = x_frame.as_ref().map(|(lf, schema)| (lf, schema.as_ref()));
+        let y_read_as = match strip_nested(conj) {
+            SQLExpr::Exists { .. } | SQLExpr::InSubquery { .. } => ReadAs::Set,
+            _ => ReadAs::Value,
+        };
         let prepared_y = {
             let mut inner = scopes.to_vec();
             inner.push(Scope {
                 ctx: &x_ctx,
                 columns: frame_columns(x_frame),
             });
-            prepare(&inner, y).unwrap_or(None)
+            prepare(&inner, y, y_read_as).unwrap_or(None)
         };
         let y = prepared_y.as_ref().unwrap_or(y);
-        match try_move(scopes, &mut x_ctx, x_frame, compare, y).unwrap_or(None) {
+        // A filter can match a row of `x` with several values of a scalar `y`, which must
+        // instead raise.
+        let filters_allowed = repeats_harmless && matches!(y_read_as, ReadAs::Set);
+        match try_move(scopes, &mut x_ctx, x_frame, compare, y, filters_allowed).unwrap_or(None) {
             Some(m) => {
                 kept.extend(m.replaced);
                 moved.push((m.table, m.columns));
             },
-            None => kept.push(conj.clone()),
+            None => match (in_join, &mut split_from) {
+                (true, Some(from)) => restore_join_conjunct(from, conj.clone()),
+                _ => kept.push(conj.clone()),
+            },
+        }
+    }
+    // A conjunct that reads both `x` and a query around it is decorrelated as a whole,
+    // which a subquery in it prevents. An uncorrelated scalar subquery in it is read from
+    // a derived table of one row instead.
+    let x_frame = x_frame.as_ref().map(|(lf, schema)| (lf, schema.as_ref()));
+    let x_chain: Vec<Scope> = std::iter::once(Scope {
+        ctx: &x_ctx,
+        columns: frame_columns(x_frame),
+    })
+    .chain(scopes.iter().rev().copied())
+    .collect();
+    for conj in &mut kept {
+        if !expr_contains_scalar_subquery(conj) || !reads_local_and_foreign(&x_chain, conj)? {
+            continue;
+        }
+        if let Some((hoisted, tables)) = hoist_uncorrelated(&x_ctx, conj) {
+            *conj = hoisted;
+            moved.extend(tables);
         }
     }
     if moved.is_empty() {
-        return Ok(None);
+        return Ok(unchanged());
     }
 
     let mut select = select.clone();
@@ -316,13 +394,254 @@ fn prepare(scopes: &[Scope<'_>], x: &Query) -> PolarsResult<Option<Query>> {
             options.opt_exclude = Some(ExcludeSelectItem::Multiple(excluded));
         }
     }
+    if let Some(from) = split_from {
+        select.from = from;
+    }
     select
         .from
         .extend(moved.into_iter().map(|(table, _)| table));
-    select.selection = combine_conditions(kept, SQLBinaryOperator::And);
+    Ok(Some(with_selection(
+        x,
+        &select,
+        combine_conditions(kept, SQLBinaryOperator::And),
+    )))
+}
+
+/// `conj` with each of its scalar subqueries read from a derived table of one row that
+/// holds its value, and those tables with their column. `None` if a subquery reads a
+/// relation it doesn't declare, which `x_ctx` (strict) rejects.
+#[allow(clippy::type_complexity)]
+fn hoist_uncorrelated(
+    x_ctx: &SQLContext,
+    conj: &SQLExpr,
+) -> Option<(SQLExpr, Vec<(TableWithJoins, Vec<String>)>)> {
+    struct Hoist<'a> {
+        x_ctx: &'a SQLContext,
+        query_depth: usize,
+        tables: Vec<(TableWithJoins, Vec<String>)>,
+    }
+
+    impl VisitorMut for Hoist<'_> {
+        type Break = ();
+
+        fn pre_visit_query(&mut self, _query: &mut Query) -> ControlFlow<()> {
+            self.query_depth += 1;
+            ControlFlow::Continue(())
+        }
+
+        fn post_visit_query(&mut self, _query: &mut Query) -> ControlFlow<()> {
+            self.query_depth -= 1;
+            ControlFlow::Continue(())
+        }
+
+        fn pre_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<()> {
+            if self.query_depth > 0 {
+                return ControlFlow::Continue(());
+            }
+            let SQLExpr::Subquery(subquery) = expr else {
+                return ControlFlow::Continue(());
+            };
+            let name = format!("{NESTED_PREFIX}{}", unique_column_name());
+            let value_name = format!("{name}_v");
+            let Ok(query) = select_value(SQLExpr::Subquery(subquery.clone()), &value_name) else {
+                return ControlFlow::Break(());
+            };
+            let mut ctx = self.x_ctx.isolated();
+            let planned = ctx
+                .execute_query(&query)
+                .and_then(|mut lf| ctx.get_frame_schema(&mut lf));
+            if planned.is_err() {
+                return ControlFlow::Break(());
+            }
+            *expr = SQLExpr::CompoundIdentifier(vec![Ident::new(&name), Ident::new(&value_name)]);
+            self.tables
+                .push((derived_table(query, &name), vec![value_name]));
+            ControlFlow::Continue(())
+        }
+    }
+
+    let mut conj = conj.clone();
+    let mut hoist = Hoist {
+        x_ctx,
+        query_depth: 0,
+        tables: Vec::new(),
+    };
+    if dyn_visit::visit_mut(&mut conj, &mut hoist).is_break() {
+        return None;
+    }
+    Some((conj, hoist.tables))
+}
+
+/// `SELECT <value> AS <alias>`.
+fn select_value(value: SQLExpr, alias: &str) -> PolarsResult<Query> {
+    let mut query = Parser::new(&GenericDialect)
+        .try_with_sql("SELECT NULL")
+        .and_then(|mut parser| parser.parse_query())
+        .map_err(to_sql_interface_err)?;
+    let SetExpr::Select(select) = query.body.as_mut() else {
+        unreachable!()
+    };
+    select.projection = vec![SelectItem::ExprWithAlias {
+        expr: value,
+        alias: Ident::new(alias),
+    }];
+    Ok(*query)
+}
+
+/// `query` as a derived table named `name`.
+fn derived_table(query: Query, name: &str) -> TableWithJoins {
+    TableWithJoins {
+        relation: TableFactor::Derived {
+            lateral: false,
+            subquery: Box::new(query),
+            alias: Some(TableAlias {
+                explicit: true,
+                name: Ident::new(name),
+                columns: vec![],
+                at: None,
+            }),
+            sample: None,
+        },
+        joins: vec![],
+    }
+}
+
+/// `from` without the conjuncts of the condition of its last join that hold a subquery,
+/// and those conjuncts, or `None` if there are none. Only a single FROM item whose joins
+/// are all inner gives them up: they then filter the rows as WHERE does, and read the
+/// same relations.
+#[allow(clippy::type_complexity)]
+fn split_join_candidates(from: &[TableWithJoins]) -> Option<(Vec<TableWithJoins>, Vec<SQLExpr>)> {
+    let [item] = from else {
+        return None;
+    };
+    let all_inner = item.joins.iter().all(|join| {
+        matches!(
+            join.join_operator,
+            JoinOperator::Join(_) | JoinOperator::Inner(_) | JoinOperator::CrossJoin(_)
+        )
+    });
+    let (JoinOperator::Join(JoinConstraint::On(on)) | JoinOperator::Inner(JoinConstraint::On(on))) =
+        &item.joins.last()?.join_operator
+    else {
+        return None;
+    };
+    if !all_inner {
+        return None;
+    }
+    let (moving, rest): (Vec<&SQLExpr>, Vec<&SQLExpr>) = flatten_and_conditions(on)
+        .into_iter()
+        .partition(|conj| candidate(conj).is_some());
+    if moving.is_empty() {
+        return None;
+    }
+    let moving = moving.into_iter().cloned().collect();
+    let rest = combine_conditions(rest.into_iter().cloned().collect(), SQLBinaryOperator::And);
+    let mut from = from.to_vec();
+    from[0].joins.last_mut().unwrap().join_operator = match rest {
+        Some(on) => JoinOperator::Inner(JoinConstraint::On(on)),
+        None => JoinOperator::CrossJoin(JoinConstraint::None),
+    };
+    Some((from, moving))
+}
+
+/// Add `conj` back to the condition of the last join of `from`.
+fn restore_join_conjunct(from: &mut [TableWithJoins], conj: SQLExpr) {
+    let join = from[0].joins.last_mut().unwrap();
+    let on = match std::mem::replace(
+        &mut join.join_operator,
+        JoinOperator::CrossJoin(JoinConstraint::None),
+    ) {
+        JoinOperator::Inner(JoinConstraint::On(on)) => SQLExpr::BinaryOp {
+            left: Box::new(on),
+            op: SQLBinaryOperator::And,
+            right: Box::new(conj),
+        },
+        _ => conj,
+    };
+    join.join_operator = JoinOperator::Inner(JoinConstraint::On(on));
+}
+
+/// `x`, whose body is `select`, with `selection` as the WHERE of `select`.
+fn with_selection(x: &Query, select: &Select, selection: Option<SQLExpr>) -> Query {
+    let mut select = select.clone();
+    select.selection = selection;
     let mut x = x.clone();
     x.body = Box::new(SetExpr::Select(Box::new(select)));
-    Ok(Some(x))
+    x
+}
+
+/// `selection` with each scalar subquery that selects one expression without FROM
+/// replaced by that expression, which it is on one row. `None` if there is none. A
+/// function may be an aggregate, which reads the rows of the query around it.
+fn inline_from_less(selection: &SQLExpr) -> Option<SQLExpr> {
+    fn value(subquery: &Query) -> Option<&SQLExpr> {
+        let select = eligible_query_block(subquery)?;
+        first_row_limit(subquery)?;
+        // A clause that is dropped must not be left unchecked.
+        if !select.from.is_empty()
+            || select.selection.is_some()
+            || subquery.order_by.is_some()
+            || matches!(select.distinct, Some(Distinct::On(_)))
+            || select.exclude.is_some()
+            || !select.named_window.is_empty()
+            || !select.cluster_by.is_empty()
+            || !select.distribute_by.is_empty()
+            || !select.sort_by.is_empty()
+        {
+            return None;
+        }
+        let [SelectItem::UnnamedExpr(value) | SelectItem::ExprWithAlias { expr: value, .. }] =
+            select.projection.as_slice()
+        else {
+            return None;
+        };
+        let plain = visit_expressions(value, |e| match e {
+            SQLExpr::Function(_) => ControlFlow::Break(()),
+            e if is_subquery_expr(e) => ControlFlow::Break(()),
+            _ => ControlFlow::Continue(()),
+        })
+        .is_continue();
+        plain.then_some(value)
+    }
+
+    struct Inline {
+        query_depth: usize,
+        inlined: bool,
+    }
+
+    impl VisitorMut for Inline {
+        type Break = ();
+
+        fn pre_visit_query(&mut self, _query: &mut Query) -> ControlFlow<()> {
+            self.query_depth += 1;
+            ControlFlow::Continue(())
+        }
+
+        fn post_visit_query(&mut self, _query: &mut Query) -> ControlFlow<()> {
+            self.query_depth -= 1;
+            ControlFlow::Continue(())
+        }
+
+        fn pre_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<()> {
+            if self.query_depth == 0
+                && let SQLExpr::Subquery(subquery) = &*expr
+                && let Some(value) = value(subquery)
+            {
+                *expr = SQLExpr::Nested(Box::new(value.clone()));
+                self.inlined = true;
+            }
+            ControlFlow::Continue(())
+        }
+    }
+
+    let mut selection = selection.clone();
+    let mut inline = Inline {
+        query_depth: 0,
+        inlined: false,
+    };
+    let _ = dyn_visit::visit_mut(&mut selection, &mut inline);
+    inline.inlined.then_some(selection)
 }
 
 fn frame_columns<'a>(frame: Option<(&LazyFrame, &'a Schema)>) -> ScopeColumns<'a> {
@@ -369,13 +688,15 @@ fn candidate(conj: &SQLExpr) -> Option<(Option<Compare<'_>>, &Query)> {
 
 /// Move `y`, compared by `compare` (or under EXISTS), into the FROM of `x`, whose context
 /// is `x_ctx` and whose frame is `x_frame` (`None` without FROM). `scopes` are the queries
-/// around `x`. `None` if `y` reads none of `scopes`, or isn't a shape that moves.
+/// around `x`. `filters_allowed` is whether a row of `x` may match several rows of `y`.
+/// `None` if `y` reads none of `scopes`, or isn't a shape that moves.
 fn try_move(
     scopes: &[Scope<'_>],
     x_ctx: &mut SQLContext,
     x_frame: Option<(&LazyFrame, &Schema)>,
     compare: Option<Compare<'_>>,
     y: &Query,
+    filters_allowed: bool,
 ) -> PolarsResult<Option<Moved>> {
     use SQLBinaryOperator::*;
     let Some(first_row) = first_row_limit(y) else {
@@ -443,6 +764,15 @@ fn try_move(
         },
         false => Vec::new(),
     };
+    // The moved table reads the rows of every key at once.
+    if value
+        .into_iter()
+        .chain(&select.selection)
+        .chain(order_by.iter().map(|ob| &ob.expr))
+        .any(|e| numbers_rows(x_ctx, e))
+    {
+        return Ok(None);
+    }
 
     let mut y_ctx = x_ctx.isolated();
     let Some((y_names, _, y_schema)) = y_ctx.resolve_subquery_from(select)? else {
@@ -453,8 +783,33 @@ fn try_move(
     {
         return Ok(None);
     }
+    // The compared operand may be a column of a query around `x`, which `x` then reads
+    // next to the moved subquery. That only helps if `y` reads `x`: otherwise the
+    // comparison already reads no column of `x`.
+    let foreign_lhs = match compare {
+        Some((lhs, ..)) => {
+            let x_chain: Vec<Scope> = std::iter::once(Scope {
+                ctx: &*x_ctx,
+                columns: frame_columns(x_frame),
+            })
+            .chain(scopes.iter().rev().copied())
+            .collect();
+            match bind(&x_chain, lhs)? {
+                Some(Binding::Foreign {
+                    dtype: Some(dtype), ..
+                }) => Some(dtype),
+                _ => None,
+            }
+        },
+        None => None,
+    };
     let mut kept = Vec::new();
     let mut keys = Vec::new();
+    // Other conjuncts that read a query around `y`. They move into `x`, and read the
+    // columns of `y` that they need from the moved table. A row of `x` can then match
+    // several of its rows.
+    let mut filters = Vec::new();
+    let mut locals = Vec::new();
     let mut reads_outer = false;
     if let Some(selection) = &select.selection {
         // Innermost first: `y`, `x`, then the queries around `x`.
@@ -478,20 +833,52 @@ fn try_move(
                 kept.push(c.clone());
                 continue;
             }
-            let Some((key, depth)) = correlation_key(&chain, c)? else {
+            if let Some((key, depth)) = correlation_key(&chain, c)? {
+                reads_outer |= depth >= 2;
+                keys.push(key);
+                continue;
+            }
+            let Some((columns, depth)) = foreign_filter(&chain, c)? else {
                 return Ok(None);
             };
             reads_outer |= depth >= 2;
-            keys.push(key);
+            filters.push(c);
+            for column in columns {
+                if !locals.contains(&column) {
+                    locals.push(column);
+                }
+            }
         }
     }
+    reads_outer |= foreign_lhs.is_some() && !(keys.is_empty() && filters.is_empty());
     if !reads_outer {
+        return Ok(None);
+    }
+    // A limit or an aggregate per key must see the rows that the filters drop.
+    let distinct = !aggregates && !first_row;
+    if !filters.is_empty() && (!filters_allowed || !distinct) {
+        return Ok(None);
+    }
+    // The moved table computes the value before the filters drop rows, so the value must
+    // not be able to fail on a row that a filter drops: it is a column or a literal.
+    let plain = |value: &SQLExpr| {
+        matches!(
+            strip_nested(value),
+            SQLExpr::Identifier(_) | SQLExpr::CompoundIdentifier(_) | SQLExpr::Value(_)
+        )
+    };
+    if !filters.is_empty() && value.is_some_and(|value| !plain(value)) {
+        return Ok(None);
+    }
+    // A moved table without columns would have no rows.
+    if value.is_none() && keys.is_empty() && locals.is_empty() {
         return Ok(None);
     }
 
     let name = format!("{NESTED_PREFIX}{}", unique_column_name());
     let value_name = format!("{name}_v");
     let key_names: Vec<String> = (0..keys.len()).map(|i| format!("{name}_k{i}")).collect();
+    let local_names: Vec<String> = (0..locals.len()).map(|i| format!("{name}_c{i}")).collect();
     let mut pulled = select.clone();
     pulled.projection = value
         .map(|value| (value.clone(), value_name.clone()))
@@ -501,6 +888,7 @@ fn try_move(
                 .map(|k| k.inner.clone())
                 .zip(key_names.iter().cloned()),
         )
+        .chain(locals.iter().cloned().zip(local_names.iter().cloned()))
         .map(|(expr, alias)| SelectItem::ExprWithAlias {
             expr,
             alias: Ident::new(alias),
@@ -508,7 +896,6 @@ fn try_move(
         .collect();
     pulled.selection = combine_conditions(kept, And);
     let partition_by: Vec<SQLExpr> = keys.iter().map(|k| k.inner.clone()).collect();
-    let distinct = !aggregates && !first_row;
     if aggregates {
         pulled.group_by = GroupByExpr::Expressions(partition_by, vec![]);
     } else if first_row {
@@ -546,28 +933,19 @@ fn try_move(
         let Some(value_dtype) = pulled_schema.get(value_name.as_str()) else {
             return Ok(None);
         };
-        let Some(lhs_dtype) = local_dtype(scopes, x_ctx, x_frame, lhs)? else {
-            return Ok(None);
+        let lhs_dtype = match foreign_lhs {
+            Some(dtype) => dtype,
+            None => match local_dtype(scopes, x_ctx, x_frame, lhs)? {
+                Some(dtype) => dtype,
+                None => return Ok(None),
+            },
         };
         if !compares_exactly(value_dtype, &lhs_dtype) {
             return Ok(None);
         }
     }
 
-    let table = TableWithJoins {
-        relation: TableFactor::Derived {
-            lateral: false,
-            subquery: Box::new(pulled_query),
-            alias: Some(TableAlias {
-                explicit: true,
-                name: Ident::new(&name),
-                columns: vec![],
-                at: None,
-            }),
-            sample: None,
-        },
-        joins: vec![],
-    };
+    let table = derived_table(pulled_query, &name);
     let column =
         |column: &str| SQLExpr::CompoundIdentifier(vec![Ident::new(&name), Ident::new(column)]);
     let binary = |left: SQLExpr, op: SQLBinaryOperator, right: SQLExpr| SQLExpr::BinaryOp {
@@ -575,6 +953,16 @@ fn try_move(
         op,
         right: Box::new(right),
     };
+    let filters = filters.into_iter().map(|filter| {
+        let mut filter = filter.clone();
+        let _ = visit_expressions_mut(&mut filter, |e| {
+            if let Some(i) = locals.iter().position(|local| local == e) {
+                *e = column(&local_names[i]);
+            }
+            ControlFlow::<()>::Continue(())
+        });
+        filter
+    });
     let replaced = compare
         .map(|(lhs, op, subquery_left)| match subquery_left {
             true => binary(column(&value_name), op, lhs.clone()),
@@ -586,11 +974,13 @@ fn try_move(
                 .zip(&key_names)
                 .map(|(key, key_name)| binary(column(key_name), Eq, key.foreign)),
         )
+        .chain(filters)
         .collect();
     let columns = value
         .map(|_| value_name)
         .into_iter()
         .chain(key_names)
+        .chain(local_names)
         .collect();
     Ok(Some(Moved {
         table,
@@ -751,6 +1141,29 @@ fn reads_local_only(chain: &[Scope<'_>], expr: &SQLExpr) -> PolarsResult<Option<
     }
 }
 
+/// Whether `expr` reads a column of the innermost scope of `chain` and one of a scope
+/// around it.
+fn reads_local_and_foreign(chain: &[Scope<'_>], expr: &SQLExpr) -> PolarsResult<bool> {
+    let (mut local, mut foreign) = (false, false);
+    let flow = visit_columns(expr, |column| match bind(chain, column) {
+        Ok(Some(Binding::Local)) => {
+            local = true;
+            ControlFlow::Continue(())
+        },
+        Ok(Some(Binding::Foreign { .. })) => {
+            foreign = true;
+            ControlFlow::Continue(())
+        },
+        Ok(None) => ControlFlow::Break(None),
+        Err(e) => ControlFlow::Break(Some(e)),
+    });
+    match flow {
+        ControlFlow::Break(Some(e)) => Err(e),
+        ControlFlow::Break(None) => Ok(false),
+        ControlFlow::Continue(()) => Ok(local && foreign),
+    }
+}
+
 /// `conj` as an equality between an expression over the subquery alone and a column of
 /// a query around it, with the depth of that query in `chain`.
 fn correlation_key(
@@ -788,6 +1201,156 @@ fn correlation_key(
         }
     }
     Ok(None)
+}
+
+/// The columns of the subquery that `conj` reads, and the depth in `chain` of the
+/// furthest query around it that it reads. `None` if it calls a function, or reads a
+/// column that its relation doesn't have.
+fn foreign_filter(
+    chain: &[Scope<'_>],
+    conj: &SQLExpr,
+) -> PolarsResult<Option<(Vec<SQLExpr>, usize)>> {
+    // A function may read other rows or draw a random value, which differs once the
+    // filter runs per pair of rows.
+    if calls_function(conj) {
+        return Ok(None);
+    }
+    let mut locals = Vec::new();
+    let mut max_depth = 0;
+    let flow = visit_columns(conj, |column| match bind(chain, column) {
+        Ok(Some(Binding::Local)) => {
+            locals.push(column.clone());
+            ControlFlow::Continue(())
+        },
+        Ok(Some(Binding::Foreign { depth, .. })) => {
+            max_depth = max_depth.max(depth);
+            ControlFlow::Continue(())
+        },
+        Ok(None) => ControlFlow::Break(None),
+        Err(e) => ControlFlow::Break(Some(e)),
+    });
+    match flow {
+        ControlFlow::Break(Some(e)) => Err(e),
+        ControlFlow::Break(None) => Ok(None),
+        ControlFlow::Continue(()) => Ok((max_depth > 0).then_some((locals, max_depth))),
+    }
+}
+
+/// Whether repeating a row of `x` (whose body is `select`) keeps what the query around it
+/// reads: `x` is read as a set or for its first row, and calls no function outside of its
+/// subqueries. A function may aggregate, number the rows or draw a random value.
+fn repeats_harmless(x: &Query, select: &Select, read_as: ReadAs) -> bool {
+    let read_once = match (read_as, first_row_limit(x)) {
+        (ReadAs::Groups, _) => false,
+        (_, Some(true)) => true,
+        (ReadAs::Set, Some(false)) => true,
+        _ => false,
+    };
+    let order_by: &[OrderByExpr] = match x.order_by.as_ref().map(|o| &o.kind) {
+        None => &[],
+        Some(OrderByKind::Expressions(exprs)) => exprs,
+        Some(_) => return false,
+    };
+    let projection = select.projection.iter().filter_map(|item| match item {
+        SelectItem::UnnamedExpr(e) | SelectItem::ExprWithAlias { expr: e, .. } => Some(e),
+        _ => None,
+    });
+    let join_conditions = select
+        .from
+        .iter()
+        .flat_map(|item| &item.joins)
+        .filter_map(|join| match &join.join_operator {
+            JoinOperator::Join(JoinConstraint::On(on))
+            | JoinOperator::Inner(JoinConstraint::On(on)) => Some(on),
+            _ => None,
+        });
+    read_once
+        && !matches!(select.distinct, Some(Distinct::On(_)))
+        && !projection
+            .chain(order_by.iter().map(|ob| &ob.expr))
+            .chain(&select.selection)
+            .chain(join_conditions)
+            .any(calls_function)
+}
+
+/// Whether `expr` calls a function without OVER that reads the other rows of its frame,
+/// such as `ROW_NUMBER()`, outside of its subqueries. A function that isn't known counts
+/// as one.
+fn numbers_rows(ctx: &SQLContext, expr: &SQLExpr) -> bool {
+    use PolarsSQLFunctions::*;
+    struct Functions<'a> {
+        ctx: &'a SQLContext,
+        query_depth: usize,
+    }
+
+    impl Visitor for Functions<'_> {
+        type Break = ();
+
+        fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth += 1;
+            ControlFlow::Continue(())
+        }
+
+        fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth -= 1;
+            ControlFlow::Continue(())
+        }
+
+        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+            match expr {
+                SQLExpr::Function(function) if self.query_depth == 0 && function.over.is_none() => {
+                    match PolarsSQLFunctions::try_from_sql(function, self.ctx) {
+                        Ok(
+                            CumeDist | DenseRank | Lag | Lead | NthValue | Ntile | PercentRank
+                            | Rank | RowNumber | Udf(_),
+                        )
+                        | Err(_) => ControlFlow::Break(()),
+                        Ok(_) => ControlFlow::Continue(()),
+                    }
+                },
+                _ => ControlFlow::Continue(()),
+            }
+        }
+    }
+
+    dyn_visit::visit(
+        expr,
+        &mut Functions {
+            ctx,
+            query_depth: 0,
+        },
+    )
+    .is_break()
+}
+
+/// Whether `expr` calls a function outside of its subqueries.
+fn calls_function(expr: &SQLExpr) -> bool {
+    struct Functions {
+        query_depth: usize,
+    }
+
+    impl Visitor for Functions {
+        type Break = ();
+
+        fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth += 1;
+            ControlFlow::Continue(())
+        }
+
+        fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth -= 1;
+            ControlFlow::Continue(())
+        }
+
+        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+            match expr {
+                SQLExpr::Function(_) if self.query_depth == 0 => ControlFlow::Break(()),
+                _ => ControlFlow::Continue(()),
+            }
+        }
+    }
+
+    dyn_visit::visit(expr, &mut Functions { query_depth: 0 }).is_break()
 }
 
 /// The dtype of `expr` over the frame of `x`, or `None` if it reads anything else.
