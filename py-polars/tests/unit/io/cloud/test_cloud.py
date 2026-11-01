@@ -568,6 +568,49 @@ def test_sink_single_put_28356(
 
 
 @pytest.mark.slow
+def test_scan_error_names_failing_object(s3: CountingS3) -> None:
+    df = pl.DataFrame({"a": [1]})
+    s3.client.put_object(Bucket="bucket", Key="first.parquet", Body=_parquet_bytes(df))
+    q = pl.scan_parquet("s3://bucket/first.parquet", storage_options=s3.storage_options)
+    assert_frame_equal(q.collect(), df)
+
+    # The bucket's cached store was built for the first object.
+    q = pl.scan_parquet(
+        "s3://bucket/second.parquet", storage_options=s3.storage_options
+    )
+    with pytest.raises(
+        FileNotFoundError, match=r"\(path: s3://bucket/second\.parquet\)"
+    ):
+        q.collect()
+
+
+@pytest.mark.slow
+def test_sink_error_names_failing_object(
+    s3: CountingS3, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # S3 minimum part size.
+    plmonkeypatch.setenv("POLARS_UPLOAD_CHUNK_SIZE", str(5 * 1024 * 1024))
+    storage_options = {**s3.storage_options, "max_retries": 0}
+
+    pl.LazyFrame({"x": [1]}).sink_parquet(
+        "s3://bucket/first", storage_options=storage_options
+    )
+
+    # Answer each part upload (`partNumber` in the query) with an HTTP 500.
+    def fail_part_uploads(environ: dict[str, Any]) -> bool | None:
+        if "partNumber" in environ["QUERY_STRING"]:
+            return True
+        return None
+
+    s3.on_request = fail_part_uploads
+    # Incompressible, so that it spans multiple parts.
+    large = pl.LazyFrame({"x": pl.int_range(1_000_000, eager=True).hash()})
+    # The bucket's cached store was built for the first object.
+    with pytest.raises(OSError, match=r"\(path: s3://bucket/second\)"):
+        large.sink_parquet("s3://bucket/second", storage_options=storage_options)
+
+
+@pytest.mark.slow
 @pytest.mark.parametrize("decoy", [False, True])
 def test_scan_csv_mixed_buckets_29758(s3: CountingS3, decoy: bool) -> None:
     # Unique keys: file cache entries are keyed by URI and persist across runs.

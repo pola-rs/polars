@@ -230,8 +230,23 @@ pub(crate) struct PolarsObjectStoreBuilder {
 }
 
 impl PolarsObjectStoreBuilder {
-    pub(super) fn path(&self) -> &PlRefPath {
-        &self.path
+    /// Converts `path` to a full URL under the store's root URL. For example, it converts
+    /// `dir/a.parquet` to `s3://bucket/dir/a.parquet`.
+    pub(super) fn full_url(&self, path: &object_store::path::Path) -> PlRefPath {
+        // The root URL depends on the store type:
+        // - HTTP: `self.path` is the root URL, either the origin of an `HttpOriginStore` or the
+        //   one URL of an `HttpStore`, whose object path is always empty.
+        // - Other stores: the root URL is the scheme and authority of `self.path`, such as
+        //   `s3://bucket` from `s3://bucket/first.parquet`.
+        let base_len = match self.cloud_type {
+            CloudType::Http => self.path.as_str().len(),
+            _ => self.path.authority_end_position(),
+        };
+        if path.as_ref().is_empty() {
+            self.path.sliced(0..base_len)
+        } else {
+            PlRefPath::new(format!("{}/{path}", &self.path.as_str()[..base_len]))
+        }
     }
 
     pub(crate) fn rate_limit_signal(&self) -> Option<PacingBudget> {
@@ -552,6 +567,46 @@ mod test {
         let out = object_path_from_str(path).unwrap();
 
         assert_eq!(out.as_ref(), path);
+    }
+
+    #[test]
+    fn test_full_url() {
+        use polars_utils::pl_path::PlRefPath;
+
+        use super::{CloudType, PolarsObjectStoreBuilder, object_path_from_str};
+
+        let full_url = |store_path: &str, cloud_type: CloudType, path: &str| {
+            PolarsObjectStoreBuilder {
+                path: PlRefPath::new(store_path),
+                cloud_type,
+                options: None,
+                rate_limiter: None,
+            }
+            .full_url(&object_path_from_str(path).unwrap())
+            .to_string()
+        };
+
+        assert_eq!(
+            full_url(
+                "az://bucket/dir/first.parquet",
+                CloudType::Azure,
+                "dir/second.parquet"
+            ),
+            "az://bucket/dir/second.parquet"
+        );
+        assert_eq!(
+            full_url("s3://bucket/first.parquet", CloudType::Aws, ""),
+            "s3://bucket"
+        );
+        // Polars ties this store to one URL, because an object path cannot hold `//`.
+        assert_eq!(
+            full_url("http://host/x//e.parquet", CloudType::Http, ""),
+            "http://host/x//e.parquet"
+        );
+        assert_eq!(
+            full_url("/dir/first.parquet", CloudType::File, "dir/second.parquet"),
+            "/dir/second.parquet"
+        );
     }
 }
 
