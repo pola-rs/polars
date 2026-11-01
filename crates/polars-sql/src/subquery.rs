@@ -42,8 +42,8 @@ use crate::sql_visitors::{
     contains_random, expr_contains_subquery, expr_has_window_functions, has_column_selector,
     is_subquery_expr,
 };
-use crate::subquery_outer_select::{reads_inner_column, when_then};
-use crate::subquery_pull_up::ScopeColumns;
+use crate::subquery_outer_select::{calls_query_function, reads_inner_column, when_then};
+use crate::subquery_pull_up::{ReadAs, ScopeColumns, has_aggregate};
 use crate::{SQLContext, col, unique_column_name};
 
 impl SQLContext {
@@ -205,14 +205,31 @@ impl SQLContext {
         {
             return Ok(None);
         }
-        let Some(left_key) = self.try_parse_outer_only_expr(lhs, outer_schema)? else {
-            return Ok(None);
+        // A row value `(a, b) IN (SELECT x, y ...)` matches on every column. With
+        // NOT IN, a NULL in one column does not make the whole row unknown.
+        let lhs = match unwrap_nested(lhs) {
+            SQLExpr::Tuple(items) if !scalar && !negated => items.as_slice(),
+            SQLExpr::Tuple(_) => return Ok(None),
+            _ => std::slice::from_ref(lhs),
         };
+        let mut left_keys = Vec::with_capacity(lhs.len());
+        for e in lhs {
+            let Some(key) = self.try_parse_outer_only_expr(e, outer_schema)? else {
+                return Ok(None);
+            };
+            left_keys.push(key);
+        }
 
         let mut inner_lf = self.execute_isolated(|ctx| ctx.execute_query(subquery))?;
         let inner_schema = self.get_frame_schema(&mut inner_lf)?;
-        polars_ensure!(inner_schema.len() == 1, SQLSyntax: "SQL subquery returns more than one column");
-        let right_key = col(inner_schema.get_at_index(0).unwrap().0.clone());
+        if left_keys.len() == 1 {
+            polars_ensure!(inner_schema.len() == 1, SQLSyntax: "SQL subquery returns more than one column");
+        }
+        polars_ensure!(
+            inner_schema.len() == left_keys.len(),
+            SQLSyntax: "SQL subquery returns {} columns for a row value of {}", inner_schema.len(), left_keys.len()
+        );
+        let right_keys = inner_schema.iter_names().cloned().map(col).collect();
         if scalar {
             inner_lf = inner_lf.select([first().as_expr().item(true)]);
         }
@@ -222,8 +239,8 @@ impl SQLContext {
             inner_lf,
             outer_schema,
             &inner_schema,
-            vec![left_key],
-            vec![right_key],
+            left_keys,
+            right_keys,
             anti,
             // Only `KeepTrue` "NOT IN" needs 3VL correction.
             anti && !scalar && filter_mode == FilterMode::KeepTrue,
@@ -3536,6 +3553,105 @@ fn declared_anywhere(query: &Query, spellings: &CatalogSpellings) -> Vec<Relatio
     declared.0
 }
 
+/// `x <op> ANY (SELECT e FROM .. WHERE p)` over a correlated subquery as
+/// `EXISTS (SELECT 1 FROM .. WHERE p AND x <op> e)`, and `x <op> ALL (..)` as
+/// `NOT EXISTS (SELECT 1 FROM .. WHERE p AND (x <op> e) IS NOT TRUE)`. These differ
+/// only where the comparison is NULL, so they hold for a WHERE conjunct, which keeps
+/// the rows where it is true. `x` must name only relations the subquery does not
+/// declare, so moving it into the subquery does not change what it reads.
+pub(crate) fn quantified_as_exists(ctx: &SQLContext, conj: &SQLExpr) -> Option<SQLExpr> {
+    let (left, compare_op, right, all) = match conj {
+        SQLExpr::AnyOp {
+            left,
+            compare_op,
+            right,
+            ..
+        } => (left, compare_op, right, false),
+        SQLExpr::AllOp {
+            left,
+            compare_op,
+            right,
+        } => (left, compare_op, right, true),
+        _ => return None,
+    };
+    let SQLExpr::Subquery(subquery) = right.as_ref() else {
+        return None;
+    };
+    let spellings = ctx.catalog_spellings();
+    // `x` is evaluated per pair of rows after the move, so it must give the same value
+    // for each of them.
+    if !is_correlated_subquery(subquery, spellings)
+        || expr_contains_subquery(left)
+        || contains_random(left.as_ref(), true)
+        || has_column_selector(left)
+        || calls_query_function(ctx, left)
+    {
+        return None;
+    }
+    let select = eligible_subquery_select(subquery)?;
+    let [SelectItem::UnnamedExpr(value) | SelectItem::ExprWithAlias { expr: value, .. }] =
+        select.projection.as_slice()
+    else {
+        return None;
+    };
+    // An aggregate anywhere makes the subquery give one row.
+    if matches!(select.distinct, Some(Distinct::On(_)))
+        || has_aggregate(ctx, select)
+        || subquery
+            .order_by
+            .as_ref()
+            .is_some_and(|o| has_aggregate(ctx, o))
+        || expr_has_window_functions(value)
+        || calls_query_function(ctx, value)
+    {
+        return None;
+    }
+    let declared = declared_anywhere(subquery, spellings);
+    let mut reads_inner = false;
+    let _ = visit_expressions(left.as_ref(), |e: &SQLExpr| {
+        reads_inner |= match e {
+            SQLExpr::Identifier(_) => true,
+            SQLExpr::CompoundIdentifier(parts) => match_qualifier(parts, declared.iter()).is_some(),
+            _ => false,
+        };
+        ControlFlow::<()>::Continue(())
+    });
+    if reads_inner {
+        return None;
+    }
+    let compare = SQLExpr::Nested(Box::new(SQLExpr::BinaryOp {
+        left: left.clone(),
+        op: compare_op.clone(),
+        right: Box::new(value.clone()),
+    }));
+    let condition = if all {
+        SQLExpr::IsNotTrue(Box::new(compare))
+    } else {
+        compare
+    };
+    let mut select = select.clone();
+    select.projection = vec![SelectItem::UnnamedExpr(SQLExpr::value(SQLValue::Number(
+        "1".into(),
+        false,
+    )))];
+    select.selection = combine_conditions(
+        select
+            .selection
+            .take()
+            .into_iter()
+            .chain([condition])
+            .collect(),
+        SQLBinaryOperator::And,
+    );
+    let mut subquery = subquery.as_ref().clone();
+    subquery.body = Box::new(SetExpr::Select(Box::new(select)));
+    subquery.order_by = None;
+    Some(SQLExpr::Exists {
+        subquery: Box::new(subquery),
+        negated: all,
+    })
+}
+
 /// Rewrite `x = ANY (subquery)` to `x IN (subquery)` and `x <> ALL (subquery)`
 /// to `x NOT IN (subquery)`, which they are equivalent to.
 struct DesugarQuantified;
@@ -3624,9 +3740,13 @@ impl CorrelatedLowering<'_> {
         {
             return Ok(Some(name.clone()));
         }
-        let prepared = self
-            .ctx
-            .pull_up_nested(ScopeColumns::Frame(self.outer_schema), subquery);
+        let read_as = match kind {
+            SubqueryKind::Scalar => ReadAs::Value,
+            SubqueryKind::Exists | SubqueryKind::In(_) => ReadAs::Set,
+        };
+        let prepared =
+            self.ctx
+                .pull_up_nested(ScopeColumns::Frame(self.outer_schema), subquery, read_as);
         let original = subquery;
         let subquery = prepared.as_ref().unwrap_or(subquery);
         let grouped = self

@@ -443,6 +443,7 @@ pub(super) fn to_aexpr_impl(
             partition_by,
             order_by,
             mapping,
+            may_reorder,
         } => {
             let (function, output_name) = recurse_arc!(function)?;
             let order_by = if let Some((e, options)) = order_by {
@@ -462,6 +463,7 @@ pub(super) fn to_aexpr_impl(
                     partition_by: partition_nodes,
                     order_by,
                     mapping,
+                    may_reorder,
                 },
                 output_name,
             )
