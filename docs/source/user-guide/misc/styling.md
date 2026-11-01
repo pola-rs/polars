@@ -2,7 +2,7 @@
 
 Data in a Polars `DataFrame` can be styled for presentation use the `DataFrame.style` property. This
 returns a `GT` object from
-[Great Tables](https://posit-dev.github.io/great-tables/articles/intro.html), which enables
+[Great Tables](https://posit-dev.github.io/great-tables/user-guide/introduction.html), which enables
 structuring, formatting, and styling for table display.
 
 {{code_block('user-guide/misc/styling','dataframe',[])}}
