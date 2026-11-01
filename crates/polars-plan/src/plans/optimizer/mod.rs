@@ -46,6 +46,7 @@ mod slice_pushdown_expr;
 mod slice_pushdown_lp;
 mod sortedness;
 mod stack_opt;
+mod window_top_one;
 
 use collapse_and_project::SimpleProjectionAndCollapse;
 use delay_rechunk::DelayRechunk;
@@ -403,6 +404,15 @@ pub fn optimize(
                 }
             },
         }
+    }
+
+    if opt_flags.streaming() && !opt_flags.gpu() {
+        window_top_one::rewrite_top_one_windows(
+            root,
+            ir_arena,
+            expr_arena,
+            pushdown_maintain_errors,
+        );
     }
 
     expand_datasets::expand_datasets(
