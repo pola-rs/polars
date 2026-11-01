@@ -558,6 +558,83 @@ def test_sql_window_order_by_mixed_directions() -> None:
         """
     )
     assert 'ORDER BY "t" DESC NULLS LAST, "h", "id" DESC' in _window_headers(q)[0]
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("build", "maintain_order"),
+    [
+        (
+            lambda ctx: ctx.execute(
+                """
+                SELECT id, g, x FROM (
+                    SELECT *, ROW_NUMBER() OVER (
+                        PARTITION BY g ORDER BY x DESC, id DESC
+                    ) AS rn FROM t
+                ) WHERE rn = 1
+                """
+            ),
+            False,
+        ),
+        (
+            lambda ctx: ctx.execute(
+                "SELECT id, SUM(x) OVER (PARTITION BY g) AS s FROM t"
+            ).filter(pl.col("s") > 0),
+            False,
+        ),
+        (
+            lambda ctx: ctx.execute(
+                "SELECT id, ROW_NUMBER() OVER (PARTITION BY g ORDER BY x, id) AS rn "
+                "FROM t LIMIT 50"
+            ),
+            True,
+        ),
+        (
+            lambda ctx: ctx.execute(
+                "SELECT id, ROW_NUMBER() OVER (PARTITION BY g ORDER BY x, id) AS rn "
+                "FROM t"
+            ).with_row_index(),
+            True,
+        ),
+        (
+            lambda ctx: ctx.execute(
+                "SELECT id, ROW_NUMBER() OVER (PARTITION BY g ORDER BY x, id) AS rn "
+                "FROM t"
+            ).with_columns(c=pl.col("rn").cum_sum()),
+            True,
+        ),
+    ],
+)
+def test_sql_window_reorders_rows_only_for_result(
+    build: Callable[[pl.SQLContext[pl.LazyFrame]], pl.LazyFrame],
+    maintain_order: bool,
+) -> None:
+    q = build(pl.SQLContext(t=_frame().lazy()))
+    headers = _window_headers(q)
+    assert len(headers) == 1
+    assert f"maintain_order: {str(maintain_order).lower()}" in headers[0]
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=maintain_order,
+    )
+
+
+def test_sql_expr_window_keeps_row_order() -> None:
+    q = (
+        _frame()
+        .lazy()
+        .with_columns(
+            pl.sql_expr("ROW_NUMBER() OVER (PARTITION BY g ORDER BY x, id)").alias("rn")
+        )
+    )
+    headers = _window_headers(q)
+    assert len(headers) == 1
+    assert "maintain_order: true" in headers[0]
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
 
 

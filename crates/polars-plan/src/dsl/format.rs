@@ -53,6 +53,7 @@ impl fmt::Debug for Expr {
                 partition_by,
                 order_by,
                 mapping: _,
+                may_reorder: _,
             } => {
                 if let Some((order_by, _)) = order_by {
                     write!(
