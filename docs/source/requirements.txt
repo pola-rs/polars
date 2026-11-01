@@ -7,9 +7,9 @@ matplotlib
 plotnine
 seaborn
 plotly
-numba >= 0.54
+numba >= 0.68.1
 numpy
 
 zensical==0.0.63
 markdown-exec==1.12.3
-pygithub==2.6.1
+pygithub==2.10.0
