@@ -3853,7 +3853,16 @@ fn non_equi_correlated_aggregate(
     prefix: &str,
     maintain_order: MaintainOrderJoin,
 ) -> PolarsResult<LazyFrame> {
-    let has_equality = corr_preds.iter().any(|p| p.op == SQLBinaryOperator::Eq);
+    let has_equality = corr_preds.iter().any(|p| p.op == SQLBinaryOperator::Eq)
+        || general.iter().any(|e| {
+            matches!(
+                e,
+                Expr::BinaryExpr {
+                    op: Operator::Eq | Operator::EqValidity,
+                    ..
+                }
+            )
+        });
     let has_general = !general.is_empty();
     let join_preds = correlated_join_predicates(
         corr_preds.iter().map(|p| p.to_expr(prefix)).chain(general),

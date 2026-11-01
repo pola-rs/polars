@@ -822,6 +822,16 @@ def test_correlated_aggregate_inequality_per_distinct_key() -> None:
     assert "_idx" not in plan
 
 
+@pytest.mark.parametrize("predicate", ["i.k + 1 = o.k", "i.k = ABS(o.k)"])
+def test_correlated_aggregate_computed_equality_per_row(predicate: str) -> None:
+    with pl.SQLContext(frames=_key_frames()) as ctx:
+        plan = ctx.execute(
+            f"SELECT p, (SELECT SUM(v) FROM i WHERE {predicate}) AS r FROM o"
+        ).explain(optimized=False)
+    assert "UNIQUE" not in plan
+    assert "_idx" in plan
+
+
 def _counting_source(
     df: pl.DataFrame, on_batch: Callable[[pl.DataFrame], None]
 ) -> pl.LazyFrame:
