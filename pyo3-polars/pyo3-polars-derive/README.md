@@ -1,4 +1,9 @@
-# Procedure macros for pyo3-polars
+# pyo3-polars-derive
 
-This crate is not intended for direct usage. Use `pyo3-polars` to get the functionality of this
-crate.
+> **Deprecated:**
+
+This crate is retained as a compatibility re-export of the Polars expression-plugin macro. Import
+the macro through either:
+
+- `polars_plugin::polars_expr`, or
+- `pyo3_polars::derive::polars_expr`.

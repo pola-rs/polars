@@ -110,7 +110,7 @@ out = df.with_columns(
 ```
 
 See the full example in [example/derive_expression]:
-https://github.com/pola-rs/pyo3-polars/tree/main/example/derive_expression
+https://github.com/pola-rs/polars/tree/main/pyo3-polars/example/derive_expression
 
 ## 2. PyO3 extensions for Polars
 
