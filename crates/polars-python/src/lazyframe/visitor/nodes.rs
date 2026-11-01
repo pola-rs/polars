@@ -15,7 +15,8 @@ use polars_plan::dsl::default_values::{DefaultFieldValues, IcebergDefaultFieldVa
 use polars_plan::dsl::deletion::IcebergDeletes;
 use polars_plan::plans::{HintIR, IR};
 use polars_plan::prelude::{
-    FileScanIR, FunctionIR, JoinTypeOptionsIR, PythonPredicate, UnifiedScanArgs,
+    FileScanIR, FileWriteFormat, FunctionIR, JoinTypeOptionsIR, PythonPredicate, SinkTypeIR,
+    UnifiedScanArgs,
 };
 use polars_utils::pl_str::PlSmallStr;
 use pyo3::IntoPyObjectExt;
@@ -27,6 +28,22 @@ use super::expr_nodes::PyGroupbyOptions;
 use crate::lazyframe::visit::PyExprIR;
 use crate::series::PySeries;
 use crate::{PyDataFrame, Wrap};
+
+/// Reject sink options that can't be passed on to the visitor.
+fn check_sink_supported(payload: &SinkTypeIR) -> PyResult<()> {
+    let file_format = match payload {
+        SinkTypeIR::File(options) => &options.file_format,
+        SinkTypeIR::Partitioned(options) => &options.file_format,
+        SinkTypeIR::Memory | SinkTypeIR::Callback(_) => return Ok(()),
+    };
+    match file_format {
+        #[cfg(feature = "parquet")]
+        FileWriteFormat::Parquet(options) if options.encryption.is_some() => {
+            Err(PyNotImplementedError::new_err("parquet encryption"))
+        },
+        _ => Ok(()),
+    }
+}
 
 fn scan_type_to_pyobject(
     py: Python<'_>,
@@ -44,6 +61,9 @@ fn scan_type_to_pyobject(
         },
         #[cfg(feature = "parquet")]
         FileScanIR::Parquet { options, .. } => {
+            if options.decryption.is_some() {
+                return Err(PyNotImplementedError::new_err("parquet decryption"));
+            }
             let options = serde_json::to_string(options)
                 .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
             let cloud_options = serde_json::to_string(cloud_options)
@@ -996,16 +1016,19 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 .into_py_any(py)?,
         }
         .into_py_any(py),
-        IR::Sink { input, payload } => Sink {
-            input: input.0,
-            payload: PyString::new(
-                py,
-                &serde_json::to_string(payload)
-                    .map_err(|err| PyValueError::new_err(format!("{err:?}")))?,
-            )
-            .into(),
-        }
-        .into_py_any(py),
+        IR::Sink { input, payload } => {
+            check_sink_supported(payload)?;
+            Sink {
+                input: input.0,
+                payload: PyString::new(
+                    py,
+                    &serde_json::to_string(payload)
+                        .map_err(|err| PyValueError::new_err(format!("{err:?}")))?,
+                )
+                .into(),
+            }
+            .into_py_any(py)
+        },
         IR::SinkMultiple { .. } => Err(PyNotImplementedError::new_err(
             "Not expecting to see a SinkMultiple node",
         )),
