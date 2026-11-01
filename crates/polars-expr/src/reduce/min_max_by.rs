@@ -322,6 +322,88 @@ where
     }
 }
 
+const INLINE_KEY_BYTES: usize = 30;
+
+/// The bytes of a key, stored inline when they are short so that per-group state needs no
+/// allocation.
+#[derive(Clone)]
+enum KeyBytes {
+    Inline {
+        len: u8,
+        buf: [u8; INLINE_KEY_BYTES],
+    },
+    Heap(Vec<u8>),
+}
+
+impl KeyBytes {
+    const EMPTY: Self = Self::Inline {
+        len: 0,
+        buf: [0; INLINE_KEY_BYTES],
+    };
+
+    #[inline(always)]
+    fn new(bytes: &[u8]) -> Self {
+        let mut key = Self::EMPTY;
+        key.set(bytes);
+        key
+    }
+
+    #[inline(always)]
+    fn as_slice(&self) -> &[u8] {
+        match self {
+            // SAFETY: `len <= INLINE_KEY_BYTES`.
+            Self::Inline { len, buf } => unsafe { buf.get_unchecked(..*len as usize) },
+            Self::Heap(bytes) => bytes,
+        }
+    }
+
+    #[inline(always)]
+    fn set(&mut self, bytes: &[u8]) {
+        match self {
+            Self::Inline { len, buf } if bytes.len() <= INLINE_KEY_BYTES => {
+                buf[..bytes.len()].copy_from_slice(bytes);
+                *len = bytes.len() as u8;
+            },
+            Self::Heap(old) if bytes.len() > INLINE_KEY_BYTES => {
+                old.clear();
+                old.extend_from_slice(bytes);
+            },
+            _ if bytes.len() <= INLINE_KEY_BYTES => {
+                *self = Self::EMPTY;
+                self.set(bytes);
+            },
+            _ => *self = Self::Heap(bytes.to_vec()),
+        }
+    }
+}
+
+/// Keeps the smallest key, `None` until the first key.
+#[inline(always)]
+fn select_min_bytes(a: &mut Option<KeyBytes>, b: &[u8]) -> bool {
+    match a {
+        Some(av) if b < av.as_slice() => {
+            av.set(b);
+            true
+        },
+        Some(_) => false,
+        None => {
+            *a = Some(KeyBytes::new(b));
+            true
+        },
+    }
+}
+
+/// Keeps the largest key. The empty key is not larger than any other key, so it is the initial
+/// value.
+#[inline(always)]
+fn select_max_bytes(a: &mut KeyBytes, b: &[u8]) -> bool {
+    let better = b > a.as_slice();
+    if better {
+        a.set(b);
+    }
+    better
+}
+
 #[derive(Clone)]
 struct BinaryMinSelector;
 #[derive(Clone)]
@@ -329,7 +411,7 @@ struct BinaryMaxSelector;
 
 impl SelectReducer for BinaryMinSelector {
     type Dtype = BinaryType;
-    type Value = Option<Vec<u8>>;
+    type Value = Option<KeyBytes>;
 
     fn init(&self) -> Self::Value {
         // There's no "maximum string" initializer.
@@ -350,36 +432,21 @@ impl SelectReducer for BinaryMinSelector {
         a: &mut Self::Value,
         b: <Self::Dtype as PolarsDataType>::Physical<'_>,
     ) -> bool {
-        if let Some(av) = a {
-            if b < av.as_slice() {
-                av.clear();
-                av.extend_from_slice(b);
-                true
-            } else {
-                false
-            }
-        } else {
-            *a = Some(b.to_vec());
-            true
-        }
+        select_min_bytes(a, b)
     }
 
     fn select_combine(&self, a: &mut Self::Value, b: &Self::Value) -> bool {
-        if let Some(bv) = b {
-            self.select_one(a, bv)
-        } else {
-            false
-        }
+        b.as_ref()
+            .is_some_and(|b| select_min_bytes(a, b.as_slice()))
     }
 }
 
 impl SelectReducer for BinaryMaxSelector {
     type Dtype = BinaryType;
-    type Value = Vec<u8>;
+    type Value = KeyBytes;
 
     fn init(&self) -> Self::Value {
-        // Empty string is <= any other string, so can initialize max with it.
-        Vec::new()
+        KeyBytes::EMPTY
     }
 
     #[inline(always)]
@@ -396,16 +463,11 @@ impl SelectReducer for BinaryMaxSelector {
         a: &mut Self::Value,
         b: <Self::Dtype as PolarsDataType>::Physical<'_>,
     ) -> bool {
-        let better = b > a.as_slice();
-        if better {
-            a.clear();
-            a.extend_from_slice(b);
-        }
-        better
+        select_max_bytes(a, b)
     }
 
     fn select_combine(&self, a: &mut Self::Value, b: &Self::Value) -> bool {
-        self.select_one(a, b)
+        select_max_bytes(a, b.as_slice())
     }
 }
 
@@ -416,10 +478,9 @@ struct BinaryOffsetMaxSelector;
 
 impl SelectReducer for BinaryOffsetMinSelector {
     type Dtype = BinaryOffsetType;
-    type Value = Option<Vec<u8>>;
+    type Value = Option<KeyBytes>;
 
     fn init(&self) -> Self::Value {
-        // There's no "maximum string" initializer.
         None
     }
 
@@ -432,36 +493,21 @@ impl SelectReducer for BinaryOffsetMinSelector {
         a: &mut Self::Value,
         b: <Self::Dtype as PolarsDataType>::Physical<'_>,
     ) -> bool {
-        if let Some(av) = a {
-            if b < av.as_slice() {
-                av.clear();
-                av.extend_from_slice(b);
-                true
-            } else {
-                false
-            }
-        } else {
-            *a = Some(b.to_vec());
-            true
-        }
+        select_min_bytes(a, b)
     }
 
     fn select_combine(&self, a: &mut Self::Value, b: &Self::Value) -> bool {
-        if let Some(bv) = b {
-            self.select_one(a, bv)
-        } else {
-            false
-        }
+        b.as_ref()
+            .is_some_and(|b| select_min_bytes(a, b.as_slice()))
     }
 }
 
 impl SelectReducer for BinaryOffsetMaxSelector {
     type Dtype = BinaryOffsetType;
-    type Value = Vec<u8>;
+    type Value = KeyBytes;
 
     fn init(&self) -> Self::Value {
-        // Empty string is <= any other string, so can initialize max with it.
-        Vec::new()
+        KeyBytes::EMPTY
     }
 
     fn arg_ca(&self, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
@@ -473,16 +519,11 @@ impl SelectReducer for BinaryOffsetMaxSelector {
         a: &mut Self::Value,
         b: <Self::Dtype as PolarsDataType>::Physical<'_>,
     ) -> bool {
-        let better = b > a.as_slice();
-        if better {
-            a.clear();
-            a.extend_from_slice(b);
-        }
-        better
+        select_max_bytes(a, b)
     }
 
     fn select_combine(&self, a: &mut Self::Value, b: &Self::Value) -> bool {
-        self.select_one(a, b)
+        select_max_bytes(a, b.as_slice())
     }
 }
 
@@ -937,6 +978,10 @@ where
             )?;
         }
         Ok(())
+    }
+
+    fn num_fixed_states(&self) -> usize {
+        1 + self.payload.num_fixed_states()
     }
 
     fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
