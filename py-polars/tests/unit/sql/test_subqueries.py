@@ -159,6 +159,42 @@ def test_in_subquery() -> None:
         ).collect()
 
 
+def test_row_value_in_subquery() -> None:
+    frames = {
+        "a": pl.DataFrame(
+            {
+                "x": [1, 2, 3, None, 1, 1],
+                "y": [1, 2, 3, 4, None, 1],
+                "z": [0, 1, 2, 3, 4, 5],
+            }
+        ),
+        "b": pl.DataFrame(
+            {"p": [1.0, 3.0, None, 1.0], "q": [1, 9, 4, 1], "g": [0, 0, 1, 1]}
+        ),
+    }
+    for query in [
+        "SELECT z FROM a WHERE (x, y) IN (SELECT p, q FROM b) ORDER BY z",
+        "SELECT z FROM a WHERE ((x, y)) IN (SELECT p, q FROM b)",
+        "SELECT z FROM a WHERE (y, x) IN (SELECT q, p FROM b WHERE q < 5) AND z > 0",
+        "SELECT z FROM a WHERE (x, y) IN (SELECT MAX(p), MIN(q) FROM b GROUP BY g)",
+    ]:
+        assert_sql_matches(
+            frames=frames,
+            query=query,
+            compare_with="duckdb",
+            check_row_order=False,
+            engines=["in-memory", "streaming"],
+        )
+    res = pl.SQLContext(frames=frames).execute(
+        "DELETE FROM a WHERE (x, y) IN (SELECT p, q FROM b)", eager=True
+    )
+    assert res["z"].to_list() == [1, 2, 3, 4]
+    with pytest.raises(SQLSyntaxError, match="returns 3 columns for a row value of 2"):
+        pl.SQLContext(frames=frames).execute(
+            "SELECT z FROM a WHERE (x, y) IN (SELECT p, q, g FROM b)", eager=True
+        )
+
+
 def test_subquery_20732() -> None:
     lf = pl.concat(
         [
