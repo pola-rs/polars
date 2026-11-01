@@ -1951,8 +1951,9 @@ def test_sort_by_first_last_shared_by_streaming(
     )
     long_by = pl.format("{}{}", pl.lit("y" * 40), pl.col("o"))
     exprs = []
+    bys: list[list[str | pl.Expr]] = [["k", "o"], [long_by]]
     for desc in [False, True]:
-        for by in [["k", "o"], [long_by]]:
+        for by in bys:
             e = pl.all().exclude("g").sort_by(by, descending=desc)
             sfx = f"_{desc}_{len(by)}"
             exprs += [
