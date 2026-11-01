@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError
+from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 
 pytest.importorskip("pyiceberg.catalog.sql")
@@ -2481,13 +2481,15 @@ def test_alter_catalog_table_invalid_decimal(lake: CountingCatalog) -> None:
         "DECIMAL(10, 2147483648)",
         "STRUCT<x DECIMAL(2, 3)>",
     ]:
-        with pytest.raises(TypeError, match="an Iceberg decimal has a precision"):
+        with pytest.raises(SQLSyntaxError, match="invalid DECIMAL scale"):
             ctx.execute(f"ALTER TABLE lineitem ADD COLUMN d {decimal}")
-        with pytest.raises(TypeError, match="an Iceberg decimal has a precision"):
+        with pytest.raises(SQLSyntaxError, match="invalid DECIMAL scale"):
             ctx.execute(f"CREATE TABLE bad (d {decimal})")
+
     ctx.execute("CREATE TABLE dec (d DECIMAL(10, 2))")
-    with pytest.raises(TypeError, match="an Iceberg decimal has a precision"):
+    with pytest.raises(SQLSyntaxError, match="invalid DECIMAL scale"):
         ctx.execute("ALTER TABLE dec ALTER COLUMN d SET DATA TYPE DECIMAL(12, 13)")
+
     assert iceberg_columns(lake, "tpch", "lineitem") == [("k", "long"), ("v", "string")]
     assert iceberg_columns(lake, "tpch", "dec") == [("d", "decimal(10, 2)")]
     assert not lake.table_exists(("tpch", "bad"))
