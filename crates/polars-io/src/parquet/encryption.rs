@@ -21,12 +21,26 @@ pub trait EncryptionPropertiesFactory: Send + Sync {
     ///
     /// This is used to validate the columns before any file is written.
     fn encrypted_column_names(&self) -> Vec<String>;
+
+    /// The properties used for every file, if they are fixed rather than created per file.
+    ///
+    /// Only fixed properties can be serialized.
+    fn fixed_properties(&self) -> Option<&Arc<FileEncryptionProperties>> {
+        None
+    }
 }
 
 /// Creates the properties used to decrypt each Parquet file read.
 pub trait DecryptionPropertiesFactory: Send + Sync {
     /// Create decryption properties for a file.
     fn file_decryption_properties(&self) -> PolarsResult<Arc<FileDecryptionProperties>>;
+
+    /// The properties used for every file, if they are fixed rather than created per file.
+    ///
+    /// Only fixed properties can be serialized.
+    fn fixed_properties(&self) -> Option<&Arc<FileDecryptionProperties>> {
+        None
+    }
 }
 
 /// File encryption properties can be specified directly and used as a factory.
@@ -40,6 +54,10 @@ impl EncryptionPropertiesFactory for Arc<FileEncryptionProperties> {
             .map(str::to_string)
             .collect()
     }
+
+    fn fixed_properties(&self) -> Option<&Arc<FileEncryptionProperties>> {
+        Some(self)
+    }
 }
 
 /// File decryption properties can be specified directly and used as a factory.
@@ -47,12 +65,16 @@ impl DecryptionPropertiesFactory for Arc<FileDecryptionProperties> {
     fn file_decryption_properties(&self) -> PolarsResult<Arc<FileDecryptionProperties>> {
         Ok(Arc::clone(self))
     }
+
+    fn fixed_properties(&self) -> Option<&Arc<FileDecryptionProperties>> {
+        Some(self)
+    }
 }
 
 /// Determines how to encrypt Parquet files when writing.
 ///
-/// This may hold secret keys, so can't be serialized, and is compared and hashed
-/// by pointer.
+/// This is compared and hashed by pointer. It can only be serialized when it holds
+/// fixed properties, and the serialized form includes the secret keys.
 #[derive(Clone)]
 pub struct ParquetEncryption(Arc<dyn EncryptionPropertiesFactory>);
 
@@ -90,8 +112,8 @@ impl From<Arc<FileEncryptionProperties>> for ParquetEncryption {
 
 /// Determines how to decrypt Parquet files when reading.
 ///
-/// This may hold secret keys, so can't be serialized, and is compared and hashed
-/// by pointer.
+/// This is compared and hashed by pointer. It can only be serialized when it holds
+/// fixed properties, and the serialized form includes the secret keys.
 // The factory is double-boxed to make this a thin pointer, keeping `FileScanIR` small.
 #[derive(Clone)]
 pub struct ParquetDecryption(Arc<Box<dyn DecryptionPropertiesFactory>>);
@@ -123,9 +145,9 @@ pub fn file_decryption_properties(
         .transpose()
 }
 
-/// Implement traits that compare and hash by pointer, and refuse to serialize.
+/// Implement traits that compare and hash by pointer, and serialize fixed properties only.
 macro_rules! impl_opaque_traits {
-    ($t:ident, $description:literal) => {
+    ($t:ident, $properties:ty, $description:literal) => {
         impl Debug for $t {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 f.write_str(stringify!($t))
@@ -148,26 +170,29 @@ macro_rules! impl_opaque_traits {
 
         #[cfg(feature = "serde")]
         impl<'de> serde::Deserialize<'de> for $t {
-            fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
             where
                 D: serde::Deserializer<'de>,
             {
-                use serde::de::Error;
-                Err(D::Error::custom(concat!(
-                    "cannot deserialize ",
-                    $description
-                )))
+                Arc::<$properties>::deserialize(deserializer).map(Self::from)
             }
         }
 
         #[cfg(feature = "serde")]
         impl serde::Serialize for $t {
-            fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
             where
                 S: serde::Serializer,
             {
                 use serde::ser::Error;
-                Err(S::Error::custom(concat!("cannot serialize ", $description)))
+                match self.0.fixed_properties() {
+                    Some(properties) => properties.serialize(serializer),
+                    None => Err(S::Error::custom(concat!(
+                        "cannot serialize ",
+                        $description,
+                        " that are not created from explicit keys"
+                    ))),
+                }
             }
         }
 
@@ -182,14 +207,22 @@ macro_rules! impl_opaque_traits {
             }
 
             fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-                Vec::<u8>::json_schema(generator)
+                <$properties>::json_schema(generator)
             }
         }
     };
 }
 
-impl_opaque_traits!(ParquetEncryption, "parquet encryption properties");
-impl_opaque_traits!(ParquetDecryption, "parquet decryption properties");
+impl_opaque_traits!(
+    ParquetEncryption,
+    FileEncryptionProperties,
+    "parquet encryption properties"
+);
+impl_opaque_traits!(
+    ParquetDecryption,
+    FileDecryptionProperties,
+    "parquet decryption properties"
+);
 
 #[cfg(test)]
 mod tests {

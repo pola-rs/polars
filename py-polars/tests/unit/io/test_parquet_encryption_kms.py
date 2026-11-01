@@ -649,14 +649,30 @@ def test_use_pyarrow_raises(tmp_path: Path) -> None:
         pl.read_parquet(path, use_pyarrow=True, decryption=decryption_config(kms))
 
 
-def test_serialize_raises(tmp_path: Path) -> None:
+def test_serialize_scan_raises(tmp_path: Path) -> None:
     kms = InMemoryKms()
     path = tmp_path / "out.parquet"
     basic_data().write_parquet(path, encryption=encryption_config(kms))
     lf = pl.scan_parquet(path, decryption=decryption_config(kms))
     with pytest.raises(
         pl.exceptions.ComputeError,
-        match="cannot serialize parquet decryption properties",
+        match="cannot serialize parquet decryption properties that are not created from explicit keys",
+    ):
+        lf.serialize()
+
+
+def test_serialize_sink_raises(tmp_path: Path) -> None:
+    kms = InMemoryKms()
+    lf = (
+        basic_data()
+        .lazy()
+        .sink_parquet(
+            tmp_path / "out.parquet", encryption=encryption_config(kms), lazy=True
+        )
+    )
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match="cannot serialize parquet encryption properties that are not created from explicit keys",
     ):
         lf.serialize()
 
