@@ -812,13 +812,14 @@ def test_correlated_aggregate_not_restricted_by_larger_outer() -> None:
     )
 
 
-def test_correlated_aggregate_inequality_keeps_row_index_path() -> None:
+def test_correlated_aggregate_inequality_per_distinct_key() -> None:
     with pl.SQLContext(frames=_key_frames()) as ctx:
         plan = ctx.execute(
             "SELECT p, (SELECT SUM(v) FROM i WHERE i.k < o.k) AS r FROM o"
         ).explain(optimized=False)
     assert "SEMI JOIN" not in plan
-    assert "_idx" in plan
+    assert "UNIQUE" in plan
+    assert "_idx" not in plan
 
 
 def _counting_source(

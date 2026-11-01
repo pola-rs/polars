@@ -359,7 +359,6 @@ impl SQLContext {
             return Ok(None);
         }
 
-        let idx_name = format_pl_smallstr!("{prefix}idx");
         let count_name = format_pl_smallstr!("{prefix}cnt");
 
         // Apply inner-only filters, then rename inner columns to collision-free
@@ -374,34 +373,18 @@ impl SQLContext {
         let inner_renamed = inner_filtered.rename(&rename_from, &rename_to, true);
         inner_renamed.set_cached_arena(self.lp_arena, self.expr_arena);
 
-        let join_preds = correlated_join_predicates(
-            corr_preds.iter().map(|p| p.to_expr(&prefix)).chain(general),
+        let joined = non_equi_correlated_aggregate(
+            lf.clone(),
+            inner_renamed,
+            &corr_preds,
+            general,
+            vec![len().alias(count_name.clone())],
             outer_schema,
             inner_schema,
             &prefix,
-        );
-
-        let outer_indexed = row_indexed_once(lf.clone(), idx_name.clone());
-        let matched = outer_indexed
-            .clone()
-            .join_builder()
-            .with(inner_renamed)
-            .how(JoinType::Inner)
-            .join_where(join_preds);
-        let grouped = matched
-            .group_by([col(idx_name.clone())])
-            .agg([len().alias(count_name.clone())]);
-
-        let joined = outer_indexed
-            .join_builder()
-            .with(grouped)
-            .left_on([col(idx_name.clone())])
-            .right_on([col(idx_name.clone())])
-            .how(JoinType::Left)
-            .coalesce(JoinCoalesce::CoalesceColumns)
-            .maintain_order(MaintainOrderJoin::Left)
-            .finish()?
-            .with_columns([col(count_name.clone()).fill_null(lit(0))]);
+            MaintainOrderJoin::Left,
+        )?
+        .with_columns([col(count_name.clone()).fill_null(lit(0))]);
 
         let matches = if negated {
             col(count_name.clone()).eq(lit(0))
@@ -409,7 +392,7 @@ impl SQLContext {
             col(count_name.clone()).gt(lit(0))
         };
         Ok(Some(joined.filter(matches).drop(Selector::ByName {
-            names: Arc::from([idx_name, count_name]),
+            names: Arc::from([count_name]),
             strict: true,
         })))
     }
@@ -1825,36 +1808,17 @@ impl SQLContext {
             return Ok(Some((drop_added_keys(joined, added), result_name)));
         }
 
-        let join_preds = correlated_join_predicates(
-            corr_preds.iter().map(|p| p.to_expr(&prefix)).chain(general),
+        let joined = aggregate.finish(non_equi_correlated_aggregate(
+            lf,
+            inner_renamed,
+            &corr_preds,
+            general,
+            aggregate.aggs.clone(),
             outer_schema,
             &inner_schema,
             &prefix,
-        );
-        let idx_name = format_pl_smallstr!("{prefix}idx");
-
-        let outer_indexed = row_indexed_once(lf, idx_name.clone());
-        let matched = outer_indexed
-            .clone()
-            .join_builder()
-            .with(inner_renamed)
-            .how(JoinType::Inner)
-            .join_where(join_preds);
-        let grouped = matched
-            .group_by([col(idx_name.clone())])
-            .agg(aggregate.aggs.clone());
-
-        let joined = aggregate
-            .finish(left_join_aggregate(
-                outer_indexed,
-                grouped,
-                vec![col(idx_name.clone())],
-                vec![col(idx_name.clone())],
-            )?)
-            .drop(Selector::ByName {
-                names: Arc::from([idx_name]),
-                strict: true,
-            });
+            MaintainOrderJoin::None,
+        )?);
         Ok(Some((joined, result_name)))
     }
 
@@ -2026,33 +1990,17 @@ impl SQLContext {
                 .agg([value.alias(set_name.clone())]);
             drop_added_keys(left_join_aggregate(lf, grouped, outer_on, inner_on)?, added)
         } else {
-            let join_preds = correlated_join_predicates(
-                corr_preds.iter().map(|p| p.to_expr(&prefix)).chain(general),
+            non_equi_correlated_aggregate(
+                lf,
+                inner_renamed,
+                &corr_preds,
+                general,
+                vec![value.alias(set_name.clone())],
                 outer_schema,
                 &inner_schema,
                 &prefix,
-            );
-            let idx_name = format_pl_smallstr!("{prefix}idx");
-            let outer_indexed = row_indexed_once(lf, idx_name.clone());
-            let matched = outer_indexed
-                .clone()
-                .join_builder()
-                .with(inner_renamed)
-                .how(JoinType::Inner)
-                .join_where(join_preds);
-            let grouped = matched
-                .group_by([col(idx_name.clone())])
-                .agg([value.alias(set_name.clone())]);
-            left_join_aggregate(
-                outer_indexed,
-                grouped,
-                vec![col(idx_name.clone())],
-                vec![col(idx_name.clone())],
+                MaintainOrderJoin::None,
             )?
-            .drop(Selector::ByName {
-                names: Arc::from([idx_name]),
-                strict: true,
-            })
         };
 
         // An outer row with no matching inner rows joins to null, which is the
@@ -2383,7 +2331,6 @@ impl SQLContext {
             return Ok(Some((joined, flag_name)));
         }
 
-        let idx_name = format_pl_smallstr!("{prefix}idx");
         let count_name = format_pl_smallstr!("{prefix}cnt");
 
         // Rename inner columns to collision-free names so they can't clash
@@ -2397,41 +2344,25 @@ impl SQLContext {
         let inner_renamed = inner_filtered.rename(&rename_from, &rename_to, true);
         inner_renamed.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
 
-        let join_preds = correlated_join_predicates(
-            corr_preds.iter().map(|p| p.to_expr(&prefix)).chain(general),
+        let joined = non_equi_correlated_aggregate(
+            lf,
+            inner_renamed,
+            &corr_preds,
+            general,
+            vec![len().alias(count_name.clone())],
             outer_schema,
             &inner_schema,
             &prefix,
-        );
-
-        let outer_indexed = row_indexed_once(lf, idx_name.clone());
-        let matched = outer_indexed
-            .clone()
-            .join_builder()
-            .with(inner_renamed)
-            .how(JoinType::Inner)
-            .join_where(join_preds);
-        let grouped = matched
-            .group_by([col(idx_name.clone())])
-            .agg([len().alias(count_name.clone())]);
-
-        let joined = outer_indexed
-            .join_builder()
-            .with(grouped)
-            .left_on([col(idx_name.clone())])
-            .right_on([col(idx_name.clone())])
-            .how(JoinType::Left)
-            .coalesce(JoinCoalesce::CoalesceColumns)
-            .maintain_order(MaintainOrderJoin::Left)
-            .finish()?
-            .with_columns([col(count_name.clone())
-                .fill_null(lit(0))
-                .gt(lit(0))
-                .alias(flag_name.clone())])
-            .drop(Selector::ByName {
-                names: Arc::from([idx_name, count_name]),
-                strict: true,
-            });
+            MaintainOrderJoin::Left,
+        )?
+        .with_columns([col(count_name.clone())
+            .fill_null(lit(0))
+            .gt(lit(0))
+            .alias(flag_name.clone())])
+        .drop(Selector::ByName {
+            names: Arc::from([count_name]),
+            strict: true,
+        });
         Ok(Some((joined, flag_name)))
     }
 
@@ -3899,6 +3830,99 @@ fn is_elementwise(expr: &Expr) -> bool {
 // materialisation.
 pub(crate) fn row_indexed_once(lf: LazyFrame, name: PlSmallStr) -> LazyFrame {
     lf.with_row_index(name, None).cache()
+}
+
+// Joins the outer rows to the inner rows that match the correlation predicates and
+// aggregates the matches with `aggs`. An outer row without matches gets NULL
+// aggregates.
+//
+// Without an equality correlation, the join pairs every outer row with many inner
+// rows, so the subquery is evaluated once per distinct value of the outer columns
+// that the predicates and aggregates read, and joined back on those columns. It is
+// evaluated per outer row when a column can't be a join key, or when a float column
+// is read by more than a plain comparison, which could tell -0.0 from 0.0.
+#[expect(clippy::too_many_arguments)]
+fn non_equi_correlated_aggregate(
+    outer: LazyFrame,
+    inner: LazyFrame,
+    corr_preds: &[CorrPredicate],
+    general: Vec<Expr>,
+    aggs: Vec<Expr>,
+    outer_schema: &Schema,
+    inner_schema: &Schema,
+    prefix: &str,
+    maintain_order: MaintainOrderJoin,
+) -> PolarsResult<LazyFrame> {
+    let has_equality = corr_preds.iter().any(|p| p.op == SQLBinaryOperator::Eq);
+    let has_general = !general.is_empty();
+    let join_preds = correlated_join_predicates(
+        corr_preds.iter().map(|p| p.to_expr(prefix)).chain(general),
+        outer_schema,
+        inner_schema,
+        prefix,
+    );
+    let reads_outer = |exprs: &[Expr]| -> PlHashSet<PlSmallStr> {
+        exprs
+            .iter()
+            .flat_map(expr_to_leaf_column_names_iter)
+            .filter(|name| outer_schema.contains(name))
+            .collect()
+    };
+    let agg_reads = reads_outer(&aggs);
+    let mut read = reads_outer(&join_preds);
+    let exact_floats = has_general || !agg_reads.is_empty();
+    read.extend(agg_reads);
+    let keys: Vec<Expr> = outer_schema
+        .iter_names()
+        .filter(|name| read.contains(*name))
+        .map(|name| col(name.clone()))
+        .collect();
+    let per_row = has_equality
+        || keys.is_empty()
+        || outer_schema
+            .iter()
+            .filter(|(name, _)| read.contains(*name))
+            .any(|(_, dtype)| {
+                dtype.is_nested() || dtype.is_object() || (exact_floats && dtype.is_float())
+            });
+
+    let (outer, domain, keys) = if per_row {
+        let idx_name = format_pl_smallstr!("{prefix}idx");
+        let outer = row_indexed_once(outer, idx_name.clone());
+        (outer.clone(), outer, vec![col(idx_name)])
+    } else {
+        let outer = outer.cache();
+        let domain = outer
+            .clone()
+            .select(keys.clone())
+            .unique(None, UniqueKeepStrategy::Any);
+        (outer, domain, keys)
+    };
+    let grouped = domain
+        .join_builder()
+        .with(inner)
+        .how(JoinType::Inner)
+        .join_where(join_preds)
+        .group_by(keys.clone())
+        .agg(aggs);
+    let joined = outer
+        .join_builder()
+        .with(grouped)
+        .left_on(keys.clone())
+        .right_on(keys)
+        .how(JoinType::Left)
+        .join_nulls(true)
+        .coalesce(JoinCoalesce::CoalesceColumns)
+        .maintain_order(maintain_order)
+        .finish()?;
+    Ok(if per_row {
+        joined.drop(Selector::ByName {
+            names: Arc::from([format_pl_smallstr!("{prefix}idx")]),
+            strict: true,
+        })
+    } else {
+        joined
+    })
 }
 
 fn prefixed_inner(prefix: &str, name: &str) -> PlSmallStr {
