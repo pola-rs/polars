@@ -65,3 +65,55 @@ def test_arr_get_oob_errors_at_schema_26088() -> None:
     lf.select(pl.col("arr").arr.get(-1)).collect_schema()
 
     lf.select(pl.col("arr").arr.get(5, null_on_oob=True)).collect_schema()
+
+
+@pytest.mark.parametrize(
+    "lhs_dtype",
+    [pl.Boolean, pl.Int64, pl.Float16, pl.Float32, pl.Float64, pl.Decimal(10, 2)],
+)
+@pytest.mark.parametrize(
+    "rhs_dtype",
+    [pl.Duration, pl.Time, pl.Date, pl.Datetime],
+)
+def test_collect_schema_truediv_rejects_temporal_rhs_27565(
+    lhs_dtype: pl.DataType, rhs_dtype: pl.DataType
+) -> None:
+    lf = pl.LazyFrame(
+        {"a": [None], "b": [None]}, schema={"a": lhs_dtype, "b": rhs_dtype}
+    ).select(result=pl.col("a") / pl.col("b"))
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="not allowed"):
+        lf.collect_schema()
+
+
+@pytest.mark.parametrize(
+    "lhs_dtype",
+    [pl.Duration, pl.Time, pl.Date, pl.Datetime],
+)
+def test_collect_schema_truediv_rejects_temporal_div_string_27565(
+    lhs_dtype: pl.DataType,
+) -> None:
+    lf = (
+        pl.LazyFrame({"a": [0], "b": ["x"]})
+        .cast({"a": lhs_dtype})
+        .select(result=pl.col("a") / pl.col("b"))
+    )
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="not allowed"):
+        lf.collect_schema()
+
+
+def test_collect_schema_truediv_duration_numeric_ok_27565() -> None:
+    lf = (
+        pl.LazyFrame({"a": [100], "b": [2]})
+        .cast({"a": pl.Duration})
+        .select(result=pl.col("a") / pl.col("b"))
+    )
+    assert lf.collect_schema()["result"] == pl.Duration()
+
+
+def test_collect_schema_truediv_duration_by_duration_ok_27565() -> None:
+    lf = (
+        pl.LazyFrame({"a": [100], "b": [50]})
+        .cast({"a": pl.Duration, "b": pl.Duration})
+        .select(result=pl.col("a") / pl.col("b"))
+    )
+    assert lf.collect_schema()["result"] == pl.Float64
