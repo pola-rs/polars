@@ -49,7 +49,7 @@ jobs:
           ref: ${{ inputs.sha }}
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -116,7 +116,7 @@ jobs:
           swap-size-gb: 10
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -199,7 +199,7 @@ jobs:
         uses: ./.github/actions/setup-windows-arm64
 
       - name: Free some disk space (remove unused packages)
-        uses: jlumbroso/free-disk-space@v1.3.1
+        uses: jlumbroso/free-disk-space@v2.0.0
         if: ${{ runner.os == 'Linux' }}
 
       - name: Download base package
@@ -216,7 +216,7 @@ jobs:
           swap-size-gb: 10
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -384,7 +384,7 @@ jobs:
 
       - name: Create GitHub release
         id: github-release
-        uses: release-drafter/release-drafter@v6
+        uses: release-drafter/release-drafter@v7
         with:
           config-name: release-drafter-python.yml
           name: Python Polars ${{ steps.version.outputs.version }}
