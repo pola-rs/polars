@@ -195,7 +195,9 @@ fn disambiguate_output_names(exprs: Vec<(Expr, bool)>, schema: &Schema) -> Polar
     let mut result = Vec::with_capacity(exprs.len());
     for (expr, is_explicit_alias) in exprs {
         let name = expr.to_field(schema)?.name;
-        let verbatim_repeat = claimed.get(&name).is_some_and(|claimant| claimant == &expr);
+        // A repeated constant gets a new name, like other constants.
+        let verbatim_repeat =
+            !is_constant(&expr) && claimed.get(&name).is_some_and(|claimant| claimant == &expr);
         if is_explicit_alias
             || verbatim_repeat
             || (!used.contains(&name) && !protected.contains(&name))
