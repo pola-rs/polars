@@ -111,9 +111,9 @@ nav = [
         "user-guide/misc/comparison.md",
         "user-guide/misc/arrow.md",
         "user-guide/misc/polars_llms.md",
-        "user-guide/misc/monitoring.md",
       ] },
       "user-guide/gpu-support.md",
+      "user-guide/query-profiling.md",
     ] },
     { API = [
       "api/reference.md",
@@ -219,6 +219,7 @@ module_name = "docs/source/_build/scripts/macro"
 "user-guide/basics/reading-writing.md" = "user-guide/getting-started.md"
 "user-guide/basics/expressions.md" = "user-guide/getting-started.md"
 "user-guide/basics/joins.md" = "user-guide/getting-started.md"
+"user-guide/misc/monitoring.md" = "user-guide/query-profiling.md"
 "polars-on-premise/index.md" = "https://docs.cloud.pola.rs/polars-on-premises/"
 "polars-on-premise/bare-metal/getting-started.md" = "https://docs.cloud.pola.rs/polars-on-premises/bare-metal/getting-started/"
 "polars-on-premise/kubernetes/getting-started.md" = "https://docs.cloud.pola.rs/polars-on-premises/kubernetes/"
