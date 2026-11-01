@@ -489,13 +489,10 @@ def test_decimal_mul_skips_values_under_null_lists() -> None:
     mask = pl.Series([False, True])
     df = pl.DataFrame(
         {"a": [[D(10**37)], [D(1)]]}, schema={"a": pl.List(pl.Decimal(38, 0))}
-    )
+    ).with_columns(b=pl.col("a").list.to_array(1))
     out = df.select(
         pl.when(mask).then("a").list.eval(pl.sql_expr('"" * 100')),
-        pl.when(mask)
-        .then(pl.col("a").list.to_array(1))
-        .arr.eval(pl.sql_expr('"" * 100'))
-        .alias("b"),
+        pl.when(mask).then("b").arr.eval(pl.sql_expr('"" * 100')),
     )
     assert out.rows() == [(None, None), ([D(100)], [D(100)])]
 
