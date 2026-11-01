@@ -159,6 +159,42 @@ def test_in_subquery() -> None:
         ).collect()
 
 
+def test_row_value_in_subquery() -> None:
+    frames = {
+        "a": pl.DataFrame(
+            {
+                "x": [1, 2, 3, None, 1, 1],
+                "y": [1, 2, 3, 4, None, 1],
+                "z": [0, 1, 2, 3, 4, 5],
+            }
+        ),
+        "b": pl.DataFrame(
+            {"p": [1.0, 3.0, None, 1.0], "q": [1, 9, 4, 1], "g": [0, 0, 1, 1]}
+        ),
+    }
+    for query in [
+        "SELECT z FROM a WHERE (x, y) IN (SELECT p, q FROM b) ORDER BY z",
+        "SELECT z FROM a WHERE ((x, y)) IN (SELECT p, q FROM b)",
+        "SELECT z FROM a WHERE (y, x) IN (SELECT q, p FROM b WHERE q < 5) AND z > 0",
+        "SELECT z FROM a WHERE (x, y) IN (SELECT MAX(p), MIN(q) FROM b GROUP BY g)",
+    ]:
+        assert_sql_matches(
+            frames=frames,
+            query=query,
+            compare_with="duckdb",
+            check_row_order=False,
+            engines=["in-memory", "streaming"],
+        )
+    res = pl.SQLContext(frames=frames).execute(
+        "DELETE FROM a WHERE (x, y) IN (SELECT p, q FROM b)", eager=True
+    )
+    assert res["z"].to_list() == [1, 2, 3, 4]
+    with pytest.raises(SQLSyntaxError, match="returns 3 columns for a row value of 2"):
+        pl.SQLContext(frames=frames).execute(
+            "SELECT z FROM a WHERE (x, y) IN (SELECT p, q, g FROM b)", eager=True
+        )
+
+
 def test_subquery_20732() -> None:
     lf = pl.concat(
         [
@@ -833,18 +869,60 @@ def test_quantified_subquery_matches_in(
     )
 
 
-@pytest.mark.parametrize("projection", ["x.b", "MAX(x.b)"])
-@pytest.mark.parametrize("op", [">", "<", ">=", "<="])
+@pytest.mark.parametrize("op", [">", "<", ">=", "<=", "=", "<>"])
 @pytest.mark.parametrize("quantifier", ["ANY", "ALL"])
-def test_quantified_subquery_correlated_ordering_rejected(
-    projection: str, op: str, quantifier: str
+@pytest.mark.parametrize(
+    "subquery",
+    [
+        "SELECT x.b FROM t1 AS x WHERE x.a < o.a",
+        "SELECT x.b FROM t1 AS x WHERE x.a = o.a",
+        "SELECT DISTINCT x.b + 5 FROM t1 AS x WHERE x.a > o.a AND x.b IS NOT NULL",
+    ],
+)
+def test_quantified_subquery_correlated(
+    op: str,
+    quantifier: str,
+    subquery: str,
+    correlated_in_frames: dict[str, pl.DataFrame],
 ) -> None:
+    assert_sql_matches(
+        frames=correlated_in_frames,
+        query=(
+            f"SELECT a FROM t1 o WHERE o.a > 1 AND o.b {op} {quantifier} ({subquery})"
+            " ORDER BY a"
+        ),
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # `b` would read the subquery's own column
+        "SELECT a FROM t1 WHERE b > ALL (SELECT x.b FROM t1 AS x WHERE x.a < t1.a)",
+        "SELECT a FROM t1 WHERE t1.b > ALL (SELECT MAX(x.b) FROM t1 AS x WHERE x.a < t1.a)",
+        "SELECT a FROM t1 WHERE NOT t1.b > ALL (SELECT x.b FROM t1 AS x WHERE x.a < t1.a)",
+        "SELECT t1.b > ANY (SELECT x.b FROM t1 AS x WHERE x.a < t1.a) FROM t1",
+        # the aggregate gives one row, also when no row matches
+        "SELECT a FROM t1 WHERE t1.b > ANY "
+        "(SELECT 1 FROM t1 AS x WHERE x.a < t1.a ORDER BY COUNT(*))",
+        # these would read the subquery's rows, or draw once per pair of rows
+        "SELECT a FROM t1 WHERE COLUMNS('^b$') > ANY "
+        "(SELECT x.b FROM t1 AS x WHERE x.a < t1.a)",
+        "SELECT a FROM t1 WHERE RANDOM() < ANY "
+        "(SELECT x.b FROM t1 AS x WHERE x.a < t1.a)",
+        # a row number depends on the rows of the query it is in
+        "SELECT a FROM t1 WHERE 2 > ANY "
+        "(SELECT ROW_NUMBER() FROM t1 AS x WHERE x.a < t1.a)",
+        "SELECT a FROM t1 WHERE ROW_NUMBER() > ANY "
+        "(SELECT x.b FROM t1 AS x WHERE x.a < t1.a)",
+    ],
+)
+def test_quantified_subquery_correlated_ordering_rejected(query: str) -> None:
     ctx = pl.SQLContext(t1=pl.DataFrame({"a": [1, 2], "b": [3, 4]}))
     with pytest.raises(SQLInterfaceError, match="correlated subquery"):
-        ctx.execute(
-            f"SELECT a FROM t1 WHERE b {op} {quantifier}"
-            f" (SELECT {projection} FROM t1 AS x WHERE x.a < t1.a)"
-        ).collect()
+        ctx.execute(query).collect()
 
 
 @pytest.mark.parametrize("op", [">", "<", ">=", "<="])

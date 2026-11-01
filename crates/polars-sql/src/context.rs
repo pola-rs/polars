@@ -26,16 +26,14 @@ use sqlparser::ast::{
     NamedWindowDefinition, NamedWindowExpr, ObjectName, ObjectType, OrderBy, OrderByKind, Query,
     RenameSelectItem, SchemaName, Select, SelectFlavor, SelectItem,
     SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, SqlOption, Statement,
-    TableAlias, TableFactor, TableObject, TableWithJoins, Truncate,
+    TableAlias, TableFactor, TableObject, TableWithJoins, Truncate, TruncateTableTarget,
     UnaryOperator as SQLUnaryOperator, Value as SQLValue, ValueWithSpan, Values, VisitorMut,
     WildcardAdditionalOptions, WindowSpec, WindowType, With,
 };
-use sqlparser::dialect::GenericDialect;
-use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::catalog::{
-    CatalogAlter, CatalogDdl, CatalogNamespace, CatalogRegistry, CatalogSpellings, CatalogTable,
-    RewrittenName, alter_table_column, alter_table_properties, create_schema_options,
+    CatalogAlter, CatalogNamespace, CatalogRegistry, CatalogSpellings, CatalogStatement,
+    CatalogTable, RewrittenName, alter_table_column, alter_table_properties, create_schema_options,
     create_table_columns, create_table_options, create_table_partitioning, display_name,
     name_parts, name_position, rewrite_catalog_names,
 };
@@ -56,7 +54,7 @@ use crate::join_keys::{sql_join_key_pair, sql_join_where_predicate};
 use crate::sql_expr::{
     convert_int_literal_for_string, is_string_expr, order_by_sort_options, parse_sql_array,
     parse_sql_expr, resolve_compound_identifier, resolve_expr_dtype, series_from_literals,
-    to_sql_interface_err,
+    sql_parser, to_sql_interface_err,
 };
 use crate::sql_visitors::{
     QualifyExpression, TableIdentifierCollector, check_ambiguous_column,
@@ -66,7 +64,7 @@ use crate::sql_visitors::{
 };
 use crate::subquery::{
     LowerScope, RewriteStage, SubqueryBindings, desugar_quantified_subqueries,
-    is_correlated_subquery, row_indexed_once,
+    is_correlated_subquery, quantified_as_exists, row_indexed_once,
 };
 use crate::subquery_pull_up::NESTED_PREFIX;
 use crate::table_functions::PolarsTableFunctions;
@@ -197,7 +195,9 @@ fn disambiguate_output_names(exprs: Vec<(Expr, bool)>, schema: &Schema) -> Polar
     let mut result = Vec::with_capacity(exprs.len());
     for (expr, is_explicit_alias) in exprs {
         let name = expr.to_field(schema)?.name;
-        let verbatim_repeat = claimed.get(&name).is_some_and(|claimant| claimant == &expr);
+        // A repeated constant gets a new name, like other constants.
+        let verbatim_repeat =
+            !is_constant(&expr) && claimed.get(&name).is_some_and(|claimant| claimant == &expr);
         if is_explicit_alias
             || verbatim_repeat
             || (!used.contains(&name) && !protected.contains(&name))
@@ -441,9 +441,9 @@ impl SQLContext {
         Ok(tables)
     }
 
-    /// The catalog DDL of `query`, if any, for the caller to perform: [`SQLContext::execute`]
-    /// rejects it.
-    pub fn catalog_ddl(&self, query: &str) -> PolarsResult<Option<CatalogDdl>> {
+    /// The catalog statement of `query`, if any, for the caller to perform:
+    /// [`SQLContext::execute`] rejects it.
+    pub fn catalog_statement(&self, query: &str) -> PolarsResult<Option<CatalogStatement>> {
         let stmt = parse_single_statement(query)?;
         match &stmt {
             Statement::Drop {
@@ -455,6 +455,7 @@ impl SQLContext {
             },
             Statement::AlterTable(alter) => return self.catalog_alter_table(alter),
             Statement::Insert(insert) => return self.catalog_insert(insert, None),
+            Statement::Truncate(truncate) => return self.catalog_truncate(truncate),
             Statement::Query(query) => {
                 let SetExpr::Insert(Statement::Insert(insert)) = query.body.as_ref() else {
                     return Ok(None);
@@ -466,7 +467,7 @@ impl SQLContext {
                 let Some((name, namespace)) = self.catalog_schema_target(name)? else {
                     return Ok(None);
                 };
-                return Ok(Some(CatalogDdl::CreateSchema {
+                return Ok(Some(CatalogStatement::CreateSchema {
                     name,
                     namespace,
                     if_not_exists,
@@ -479,7 +480,7 @@ impl SQLContext {
             } => {
                 let (name, if_exists) = drop_schema_parts(&stmt)?;
                 return Ok(self.catalog_schema_target(name)?.map(|(name, namespace)| {
-                    CatalogDdl::DropSchema {
+                    CatalogStatement::DropSchema {
                         name,
                         namespace,
                         if_exists,
@@ -491,7 +492,7 @@ impl SQLContext {
         let (names, if_exists, purge) = drop_table_parts(&stmt)?;
         Ok(self
             .catalog_drop_target(names, purge)?
-            .map(|(name, table)| CatalogDdl::DropTable {
+            .map(|(name, table)| CatalogStatement::DropTable {
                 name,
                 table,
                 if_exists,
@@ -523,8 +524,11 @@ impl SQLContext {
         )
     }
 
-    /// The catalog DDL of a `CREATE TABLE`, if its name resolves to a catalog table.
-    fn catalog_create_table(&self, create_table: &CreateTable) -> PolarsResult<Option<CatalogDdl>> {
+    /// The catalog statement of a `CREATE TABLE`, if its name resolves to a catalog table.
+    fn catalog_create_table(
+        &self,
+        create_table: &CreateTable,
+    ) -> PolarsResult<Option<CatalogStatement>> {
         let Some(table) = self.catalog_create_target(&create_table.name)? else {
             return Ok(None);
         };
@@ -572,7 +576,7 @@ impl SQLContext {
                 tbl_name, registered
             );
         }
-        Ok(Some(CatalogDdl::CreateTable {
+        Ok(Some(CatalogStatement::CreateTable {
             name: tbl_name,
             table,
             if_not_exists: *if_not_exists,
@@ -631,25 +635,18 @@ impl SQLContext {
     /// Error for a statement changing a table of an attached catalog, which SQL can't do yet.
     /// The name resolves as in a read, so a table of the default catalog is also an error.
     /// With `local_first`, a registered table with the whole name is changed instead, and a
-    /// name starting with an attached catalog that resolves to no table is left to it. With
-    /// `if_exists`, only a name starting with an attached catalog is, so the statement's no-op
-    /// on a missing table applies.
+    /// name starting with an attached catalog that resolves to no table is left to it.
     fn ensure_not_catalog_table(
         &self,
         name: &ObjectName,
         statement: &str,
         local_first: bool,
-        if_exists: bool,
     ) -> PolarsResult<()> {
         let Some(parts) = name_parts(name) else {
             return Ok(());
         };
         let named = self.catalogs.named_catalog(&parts);
-        let table = match (named, if_exists) {
-            (None, true) => None,
-            _ => self.catalogs.resolve(&parts),
-        };
-        let Some(table) = table else {
+        let Some(table) = self.catalogs.resolve(&parts) else {
             return match named {
                 Some(catalog) if !local_first => polars_bail!(
                     SQLInterface: "{} on a table of attached catalog '{}' is not supported{}",
@@ -917,7 +914,7 @@ impl SQLContext {
             Statement::AlterTable(alter) => self.execute_alter_table(alter)?,
             Statement::Insert(insert) => self.execute_insert(insert)?,
             stmt @ Statement::Explain { .. } => self.execute_explain(stmt)?,
-            stmt @ Statement::Truncate { .. } => self.execute_truncate_table(stmt)?,
+            Statement::Truncate(truncate) => self.execute_truncate_table(truncate)?,
             stmt @ Statement::Delete { .. } => self.execute_delete_from_table(stmt)?,
             _ => polars_bail!(
                 SQLInterface: "statement type is not supported:\n{:?}", ast,
@@ -1338,7 +1335,10 @@ impl SQLContext {
                 explicit_row: _,
                 rows,
                 value_keyword: _,
-            }) => self.process_values(rows.iter().map(|p| &p.content)),
+            }) => {
+                let lf = self.process_values(rows.iter().map(|p| &p.content))?;
+                self.process_order_by(lf, &query.order_by, None)
+            },
 
             SetExpr::Table(tbl) => {
                 if let Some(table_name) = tbl.table_name.as_ref() {
@@ -1652,7 +1652,7 @@ impl SQLContext {
         let (names, if_exists, purge) = drop_table_parts(stmt)?;
         if let Some((name, table)) = self.catalog_drop_target(names, purge)? {
             polars_bail!(
-                SQLInterface: "DROP TABLE of catalog table '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_ddl`)",
+                SQLInterface: "DROP TABLE of catalog table '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_statement`)",
                 name, display_name(&table.full_name())
             );
         }
@@ -1744,7 +1744,7 @@ impl SQLContext {
     fn execute_schema_ddl(&self, statement: &str, name: &ObjectName) -> PolarsResult<LazyFrame> {
         if let Some((name, namespace)) = self.catalog_schema_target(name)? {
             polars_bail!(
-                SQLInterface: "{} of catalog schema '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_ddl`)",
+                SQLInterface: "{} of catalog schema '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_statement`)",
                 statement, name, display_name(&namespace.full_name())
             );
         }
@@ -1773,8 +1773,8 @@ impl SQLContext {
             .map(|table| (tbl, table)))
     }
 
-    /// The catalog DDL of an `ALTER TABLE`, if its name resolves to a catalog table.
-    fn catalog_alter_table(&self, alter: &AlterTable) -> PolarsResult<Option<CatalogDdl>> {
+    /// The catalog statement of an `ALTER TABLE`, if its name resolves to a catalog table.
+    fn catalog_alter_table(&self, alter: &AlterTable) -> PolarsResult<Option<CatalogStatement>> {
         let Some((name, table)) = self.catalog_change_target(&alter.name)? else {
             return Ok(None);
         };
@@ -1786,7 +1786,7 @@ impl SQLContext {
         let [op] = alter.operations.as_slice() else {
             polars_bail!(SQLInterface: "`ALTER TABLE` takes one operation per statement")
         };
-        Ok(Some(CatalogDdl::AlterTable {
+        Ok(Some(CatalogStatement::AlterTable {
             name,
             table,
             if_exists: alter.if_exists,
@@ -1798,7 +1798,7 @@ impl SQLContext {
     fn execute_alter_table(&self, alter: &AlterTable) -> PolarsResult<LazyFrame> {
         if let Some((name, table)) = self.catalog_change_target(&alter.name)? {
             polars_bail!(
-                SQLInterface: "ALTER TABLE of catalog table '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_ddl`)",
+                SQLInterface: "ALTER TABLE of catalog table '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_statement`)",
                 name, display_name(&table.full_name())
             );
         }
@@ -1826,13 +1826,13 @@ impl SQLContext {
         polars_err!(SQLInterface: "`{}` is supported only for catalog tables{}", statement, hint)
     }
 
-    /// The catalog DDL of an `INSERT`, if its table resolves to a catalog table; `outer` is a
+    /// The catalog statement of an `INSERT`, if its table resolves to a catalog table; `outer` is a
     /// query around it (`WITH ... INSERT ...`).
     fn catalog_insert(
         &self,
         insert: &Insert,
         outer: Option<&Query>,
-    ) -> PolarsResult<Option<CatalogDdl>> {
+    ) -> PolarsResult<Option<CatalogStatement>> {
         let TableObject::TableName(name) = &insert.table else {
             polars_bail!(SQLInterface: "`INSERT` into a table function is not supported")
         };
@@ -1850,7 +1850,7 @@ impl SQLContext {
                 _ => polars_bail!(SQLInterface: "INSERT column names must be unqualified; found `{}`", column),
             })
             .collect::<PolarsResult<Vec<_>>>()?;
-        Ok(Some(CatalogDdl::Insert {
+        Ok(Some(CatalogStatement::Insert {
             name: tbl,
             table,
             columns,
@@ -1871,7 +1871,7 @@ impl SQLContext {
         };
         if let Some((tbl, table)) = self.catalog_change_target(name)? {
             polars_bail!(
-                SQLInterface: "{} of catalog table '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_ddl`)",
+                SQLInterface: "{} of catalog table '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_statement`)",
                 statement, tbl, display_name(&table.full_name())
             );
         }
@@ -1924,7 +1924,7 @@ impl SQLContext {
             }
             self.set_active_relations(from_tables);
             if let TableFactor::Table { name, .. } = &tbl_expr.relation {
-                self.ensure_not_catalog_table(name, "DELETE", true, false)?;
+                self.ensure_not_catalog_table(name, "DELETE", true)?;
             }
             let (_, lf) = self.get_table(&tbl_expr.relation)?;
             if selection.is_none() {
@@ -1945,52 +1945,38 @@ impl SQLContext {
     }
 
     // TRUNCATE <tbl>
-    fn execute_truncate_table(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
-        if let Statement::Truncate(Truncate {
-            table_names,
-            partitions,
-            table: _, // whether the `TABLE` keyword was present: cosmetic
-            if_exists,
-            identity,
-            cascade,
-            on_cluster,
-        }) = stmt
-        {
-            polars_ensure!(identity.is_none(), SQLInterface: "`TRUNCATE ... RESTART/CONTINUE IDENTITY` is not supported");
-            polars_ensure!(cascade.is_none(), SQLInterface: "`TRUNCATE ... CASCADE/RESTRICT` is not supported");
-            polars_ensure!(on_cluster.is_none(), SQLInterface: "`TRUNCATE ... ON CLUSTER` is not supported");
-
-            match partitions {
-                None => {
-                    if table_names.len() != 1 {
-                        polars_bail!(SQLInterface: "TRUNCATE expects exactly one table name; found {}", table_names.len())
-                    }
-                    self.ensure_not_catalog_table(
-                        &table_names[0].name,
-                        "TRUNCATE",
-                        true,
-                        *if_exists,
-                    )?;
-                    let tbl = object_name_to_string(&table_names[0].name);
-                    let mut table_map = self.table_map.write().unwrap();
-                    match key_ignoring_case(&table_map, &tbl)?.cloned() {
-                        Some(key) => {
-                            let lf = table_map.get_mut(&key).unwrap();
-                            *lf = lf.clone().clear();
-                            Ok(lf.clone())
-                        },
-                        // `TRUNCATE TABLE IF EXISTS <tbl>` is a no-op on a missing table.
-                        None if *if_exists => Ok(DataFrame::empty().lazy()),
-                        None => polars_bail!(SQLInterface: "table '{}' does not exist", tbl),
-                    }
-                },
-                _ => {
-                    polars_bail!(SQLInterface: "TRUNCATE does not support use of 'partitions'")
-                },
-            }
-        } else {
-            polars_bail!(SQLInterface: "unexpected statement type; expected TRUNCATE")
+    fn execute_truncate_table(&mut self, truncate: &Truncate) -> PolarsResult<LazyFrame> {
+        let (name, if_exists) = truncate_parts(truncate)?;
+        if let Some((tbl, table)) = self.catalog_change_target(name)? {
+            polars_bail!(
+                SQLInterface: "TRUNCATE of catalog table '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_statement`)",
+                tbl, display_name(&table.full_name())
+            );
         }
+        let tbl = object_name_to_string(name);
+        let mut table_map = self.table_map.write().unwrap();
+        match key_ignoring_case(&table_map, &tbl)?.cloned() {
+            Some(key) => {
+                let lf = table_map.get_mut(&key).unwrap();
+                *lf = lf.clone().clear();
+                Ok(lf.clone())
+            },
+            // `TRUNCATE TABLE IF EXISTS <tbl>` is a no-op on a missing table.
+            None if if_exists => Ok(DataFrame::empty().lazy()),
+            None => polars_bail!(SQLInterface: "table '{}' does not exist", tbl),
+        }
+    }
+
+    /// The catalog statement of a `TRUNCATE`, if its name resolves to a catalog table.
+    fn catalog_truncate(&self, truncate: &Truncate) -> PolarsResult<Option<CatalogStatement>> {
+        let (name, if_exists) = truncate_parts(truncate)?;
+        Ok(self
+            .catalog_change_target(name)?
+            .map(|(name, table)| CatalogStatement::Truncate {
+                name,
+                table,
+                if_exists,
+            }))
     }
 
     fn register_cte(&mut self, name: &str, lf: LazyFrame) {
@@ -3195,6 +3181,29 @@ impl SQLContext {
                 }
                 is_new
             });
+            // Literal keys do not split the groups. `GROUPING()` needs every key.
+            let order_by_exprs = match &query.order_by {
+                Some(OrderBy {
+                    kind: OrderByKind::Expressions(exprs),
+                    ..
+                }) => exprs.iter().map(|ob| &ob.expr).collect(),
+                _ => vec![],
+            };
+            let uses_grouping = !self.group_scope.grouping_calls.is_empty()
+                || select_stmt
+                    .having
+                    .iter()
+                    .chain(&select_stmt.qualify)
+                    .chain(order_by_exprs)
+                    .any(|e| !collect_grouping_calls(e).is_empty());
+            if !uses_grouping {
+                let is_literal = |key: &Expr| matches!(strip_outer_alias(key), Expr::Literal(_));
+                if group_by_keys.iter().all(is_literal) {
+                    group_by_keys.truncate(1);
+                } else {
+                    group_by_keys.retain(|key| !is_literal(key));
+                }
+            }
         }
 
         let has_group_by = !group_by_keys.is_empty() || grouping_sets.is_some();
@@ -3526,6 +3535,23 @@ impl SQLContext {
         bindings: &mut SubqueryBindings,
         select_stmt: Option<&Select>,
     ) -> PolarsResult<LazyFrame> {
+        let quantified = where_expr.and_then(|where_expr| {
+            let conjuncts = flatten_and_conditions(where_expr);
+            let rewritten: Vec<_> = conjuncts
+                .iter()
+                .map(|conj| quantified_as_exists(self, conj))
+                .collect();
+            rewritten.iter().any(Option::is_some).then(|| {
+                let conjuncts = conjuncts
+                    .into_iter()
+                    .zip(rewritten)
+                    .map(|(conj, rewritten)| rewritten.unwrap_or_else(|| conj.clone()))
+                    .collect();
+                combine_conditions(conjuncts, SQLBinaryOperator::And).unwrap()
+            })
+        });
+        let where_expr = quantified.as_ref().or(where_expr);
+
         // A correlated scalar subquery is lowered against the frame as it stands, so
         // the conjuncts that don't need it are applied first: the lowering can then
         // restrict its aggregate to the rows that survive them.
@@ -4953,9 +4979,9 @@ impl SQLContext {
                     polars_bail!(SQLInterface: "temporary tables cannot be created in catalog '{}'", catalog);
                 }
             } else {
-                // The caller creates catalog tables (see `catalog_ddl`); here they are an error.
+                // The caller creates catalog tables (see `catalog_statement`); here they are an error.
                 self.catalog_create_target(name)?;
-                self.ensure_not_catalog_table(name, "CREATE TABLE", false, false)?;
+                self.ensure_not_catalog_table(name, "CREATE TABLE", false)?;
             }
             let tbl_name = object_name_to_string(name);
             let existing = self.registered_table_key(&tbl_name)?;
@@ -5387,6 +5413,12 @@ impl SQLContext {
                     None => resolve(self, e),
                 }
             },
+            // A constant key, as `GROUP BY 'all'`; numbers are ordinals.
+            SQLExpr::Value(ValueWithSpan { value, .. })
+                if !matches!(value, SQLValue::Number(..)) =>
+            {
+                parse_sql_expr(e, self, Some(schema))
+            },
             // Drop the alias that restores the unqualified name, so two
             // relations sharing a column name give distinct keys.
             SQLExpr::CompoundIdentifier(_) => resolve(self, e).map(|e| strip_outer_alias(&e)),
@@ -5779,7 +5811,11 @@ impl SQLContext {
                         e
                     }
                 };
-                let group_by = lf.group_by(group_by_keys);
+                let mut group_by = lf.group_by(group_by_keys);
+                if !has_column_key {
+                    // That select returns a row even when there are no input rows.
+                    group_by = group_by.having(len().gt(lit(0)));
+                }
                 match having {
                     Some(having) => group_by.having(in_groups(strip_aggregate_marks(
                         splitter.read_keys_per_group(having),
@@ -7459,6 +7495,36 @@ fn drop_schema_parts(stmt: &Statement) -> PolarsResult<(&ObjectName, bool)> {
     Ok((name, *if_exists))
 }
 
+/// The table name and `IF EXISTS` of a `TRUNCATE` statement, rejecting unsupported modifiers.
+fn truncate_parts(truncate: &Truncate) -> PolarsResult<(&ObjectName, bool)> {
+    // Destructure exhaustively so new sqlparser fields surface as compile errors.
+    let Truncate {
+        table_names,
+        partitions,
+        table: _, // whether the `TABLE` keyword was present: cosmetic
+        if_exists,
+        identity,
+        cascade,
+        on_cluster,
+    } = truncate;
+    polars_ensure!(identity.is_none(), SQLInterface: "`TRUNCATE ... RESTART/CONTINUE IDENTITY` is not supported");
+    polars_ensure!(cascade.is_none(), SQLInterface: "`TRUNCATE ... CASCADE/RESTRICT` is not supported");
+    polars_ensure!(on_cluster.is_none(), SQLInterface: "`TRUNCATE ... ON CLUSTER` is not supported");
+    polars_ensure!(partitions.is_none(), SQLInterface: "TRUNCATE does not support use of 'partitions'");
+    let [
+        TruncateTableTarget {
+            name,
+            // no table inheritance: cosmetic
+            only: _,
+            has_asterisk: _,
+        },
+    ] = table_names.as_slice()
+    else {
+        polars_bail!(SQLInterface: "TRUNCATE expects exactly one table name; found {}", table_names.len())
+    };
+    Ok((name, *if_exists))
+}
+
 /// The change an `ALTER TABLE` operation makes to a catalog table.
 fn alter_table_operation(op: &AlterTableOperation) -> PolarsResult<CatalogAlter> {
     Ok(match op {
@@ -7621,14 +7687,7 @@ fn parse_single_statement(query: &str) -> PolarsResult<Statement> {
 }
 
 fn parse_sql(query: &str) -> PolarsResult<Vec<Statement>> {
-    let mut parser = Parser::new(&GenericDialect);
-    parser = parser.with_options(ParserOptions {
-        trailing_commas: true,
-        ..Default::default()
-    });
-    parser
-        .try_with_sql(query)
-        .map_err(to_sql_interface_err)?
+    sql_parser(query)?
         .parse_statements()
         .map_err(to_sql_interface_err)
 }
