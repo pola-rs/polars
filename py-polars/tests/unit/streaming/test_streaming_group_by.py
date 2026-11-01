@@ -766,6 +766,30 @@ def test_streaming_group_by_mostly_cold(group_by_mode: str) -> None:
     assert_frame_equal(out, expected, check_row_order=False)
 
 
+@_modes("at_once", "stored")
+def test_streaming_group_by_mostly_cold_fused_inputs(group_by_mode: str) -> None:
+    n = 2048
+    i = pl.int_range(n)
+    df = _mostly_cold_frame(n).with_columns(
+        o=(i * 37) % 11, s=pl.format("s{}", i).cast(pl.String)
+    )
+    by = ["o", "v"]
+    q = (
+        df.lazy()
+        .group_by("k")
+        .agg(
+            pl.col("s", "v").sort_by(by, descending=True).first().name.suffix("_first"),
+            pl.col("s").min_by(pl.col("o") * 2 - pl.col("v")).alias("s_min_by"),
+            (pl.col("v") * 2).sum().alias("d"),
+        )
+    )
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
 def _keys(dtype: str) -> dict[str, pl.Expr]:
     g = pl.col("g")
     long_string = pl.format("a-string-longer-than-twelve-{}", g)

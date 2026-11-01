@@ -40,7 +40,7 @@ use super::{ComputeNode, NodeMemoryUsage};
 use crate::execute::StreamingExecutionState;
 use crate::expression::StreamExpr;
 use crate::graph::PortState;
-use crate::hash_shuffle::batches::{LoadedFrame, PrepareFrame, build_from_batches, make_batches};
+use crate::hash_shuffle::batches::{BuildPartition, LoadedFrame, build_from_batches, make_batches};
 use crate::hash_shuffle::frame_with_keys::SpillFrameWithKeys;
 use crate::hash_shuffle::store::StoredPartition;
 use crate::metrics::{Metric, MetricUnit, NodeMetricsRegistry, kind};
@@ -312,13 +312,10 @@ impl GroupByNode {
         }
         pre_aggs.free(state)?;
 
-        let params = &*self.params;
-        let prepare: &PrepareFrame<'_> =
-            &move |input, frame| params.prepare_frame(input, frame, state).boxed();
-        let add_batch =
-            |(p, table, _): &mut Partition, batch: &[LoadedFrame]| -> PolarsResult<()> {
-                // Partitions start at different frames, so that tasks don't read the same frame at
-                // the same time.
+        let add_batch: &BuildPartition<'_, Partition> = &move |(p, table, _), batch, state| {
+            async move {
+                // Partitions start at different frames, so that tasks don't read the same frame
+                // at the same time.
                 let start = *p * batch.len() / num_partitions;
                 for i in 0..batch.len() {
                     let frame = &batch[(start + i) % batch.len()];
@@ -326,18 +323,15 @@ impl GroupByNode {
                     if rows.is_some_and(|rows| rows.is_empty()) {
                         continue;
                     }
-                    table.add_rows(frame.input, &frame.frame, rows)?;
+                    table
+                        .add_rows(frame.input, &frame.frame, rows, state)
+                        .await?;
                 }
                 Ok(())
-            };
-        build_from_batches(
-            batches,
-            partitioner,
-            &mut partitions,
-            Some(prepare),
-            &add_batch,
-            state,
-        )?;
+            }
+            .boxed()
+        };
+        build_from_batches(batches, partitioner, &mut partitions, add_batch, state)?;
 
         for_each_parallel(partitions.iter_mut(), state.task_metrics(), &|(
             _,
@@ -375,10 +369,9 @@ impl GroupByNode {
             batches,
             partitioner,
             &mut stored,
-            None,
-            &|stored: &mut StoredPartition, batch: &[LoadedFrame]| {
+            &|stored: &mut StoredPartition, batch: &[LoadedFrame], _| {
                 stored.write_batch(batch);
-                Ok(())
+                async { Ok(()) }.boxed()
             },
             state,
         )?;
