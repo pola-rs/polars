@@ -40,7 +40,8 @@ pub struct InputStats {
     pub pre_agg_state_bytes: u64,
     /// The number of states of the other reductions, summed over the pre-aggregate groups.
     pub pre_agg_fixed_states: u64,
-    pub num_reductions: u64,
+    /// The number of fixed-size reduction states of one group.
+    pub states_per_group: u64,
     /// Whether a reduction has states that grow with the values of a group.
     pub has_growing_states: bool,
     pub estimated_groups: u64,
@@ -80,7 +81,7 @@ impl InputStats {
             .checked_div(self.cold_rows)
             .unwrap_or_else(|| {
                 self.pre_agg_key_bytes / self.pre_agg_groups.max(1)
-                    + REDUCTION_STATE_BYTES * self.num_reductions
+                    + REDUCTION_STATE_BYTES * self.states_per_group
             })
     }
 }
