@@ -328,13 +328,17 @@ def delete_iceberg(
 
 def _scan_catalog_table(
     identifier: tuple[str, ...],
-    catalog_config: IcebergCatalogConfig,
+    catalog: IcebergCatalogConfig | str,
     catalog_instance: pyiceberg.catalog.Catalog | None,
     *,
     storage_options: StorageOptionsDict | None,
     display_name: str,
 ) -> LazyFrame:
-    """Lazily scan a catalog table by its identifier parts, for SQL catalogs."""
+    """
+    Lazily scan a catalog table by its identifier parts, for SQL catalogs.
+
+    `catalog` is the catalog's config, or the name to resolve it by.
+    """
     from polars._plr import PyLazyFrame
 
     dataset = IcebergScanResolver(
@@ -342,7 +346,8 @@ def _scan_catalog_table(
             table_=NoPickleOption(None),
             table_descriptor_=IcebergCatalogTableDescriptor(
                 table_identifier=identifier,
-                catalog_config=catalog_config,
+                catalog_config=None if isinstance(catalog, str) else catalog,
+                catalog_name=catalog if isinstance(catalog, str) else None,
                 catalog_=NoPickleOption(_reusable_catalog(catalog_instance)),
                 display_name=display_name,
             ),
