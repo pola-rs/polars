@@ -25,6 +25,7 @@ from polars.io.iceberg._dataset import (
     IcebergScanTableSerializer,
     IcebergTableWrap,
 )
+from polars.io.iceberg._sink import IcebergSinkState
 
 pytestmark = pytest.mark.write_disk
 
@@ -300,3 +301,71 @@ def test_descriptor_without_catalog_name_field_unpickles(sales: SqlCatalog) -> N
     ).get()
 
     assert table.name() == ("ns", "t")
+
+
+def table_rows(catalog: SqlCatalog) -> pl.DataFrame:
+    return pl.scan_iceberg(catalog.load_table("ns.t")).collect().sort("a")
+
+
+def test_sink_state_does_not_resolve_at_build() -> None:
+    pl.Config.set_iceberg_catalog_resolver(fail_resolver)
+
+    state = IcebergSinkState.new("ns.t", mode="append", catalog="sales")
+
+    assert isinstance(state.attach_sink(pl.LazyFrame({"a": [3]})), pl.LazyFrame)
+
+
+@pytest.mark.usefixtures("_pyiceberg_planner")
+def test_sink_iceberg_appends_through_resolver(sales: SqlCatalog) -> None:
+    resolver, names = recording(sales)
+    pl.Config.set_iceberg_catalog_resolver(resolver)
+
+    pl.LazyFrame({"a": [3]}).sink_iceberg("ns.t", mode="append", catalog="sales")
+
+    assert_frame_equal(table_rows(sales), pl.DataFrame({"a": [1, 2, 3]}))
+    assert "sales" in names
+
+
+@pytest.mark.usefixtures("_pyiceberg_planner")
+def test_sink_plan_serializes_only_the_name(sales: SqlCatalog) -> None:
+    pl.Config.set_iceberg_catalog_resolver(fail_resolver)
+    state = IcebergSinkState.new("ns.t", mode="append", catalog="sales")
+    data = state.attach_sink(pl.LazyFrame({"a": [3]})).serialize()
+
+    assert b"sales" in data
+    assert b"sqlite" not in data
+    assert b"SqlCatalog" not in data
+
+    resolver, names = recording(sales)
+    pl.Config.set_iceberg_catalog_resolver(resolver)
+    pl.LazyFrame.deserialize(io.BytesIO(data)).collect()
+
+    assert_frame_equal(table_rows(sales), pl.DataFrame({"a": [1, 2, 3]}))
+    assert names
+
+
+@pytest.mark.usefixtures("_pyiceberg_planner")
+def test_sink_surfaces_resolver_error_after_deserialize(sales: SqlCatalog) -> None:
+    pl.Config.set_iceberg_catalog_resolver(fail_resolver)
+    state = IcebergSinkState.new("ns.t", mode="append", catalog="sales")
+    data = state.attach_sink(pl.LazyFrame({"a": [3]})).serialize()
+
+    def refusing(name: str) -> Catalog:
+        msg = "can only be resolved while planning"
+        raise ComputeError(msg)
+
+    pl.Config.set_iceberg_catalog_resolver(refusing)
+
+    with pytest.raises(ComputeError, match=r"^can only be resolved while planning$"):
+        pl.LazyFrame.deserialize(io.BytesIO(data)).collect()
+    assert_frame_equal(table_rows(sales), pl.DataFrame({"a": [1, 2]}))
+
+
+def test_sink_catalog_name_with_table_target(sales: SqlCatalog) -> None:
+    with pytest.raises(TypeError, match="requires a table identifier"):
+        IcebergSinkState.new(sales.load_table("ns.t"), catalog="sales")
+
+
+def test_sink_empty_catalog_name() -> None:
+    with pytest.raises(ValueError, match="must not be empty"):
+        IcebergSinkState.new("ns.t", catalog="")
