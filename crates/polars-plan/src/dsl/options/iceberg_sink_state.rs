@@ -12,10 +12,11 @@ use super::iceberg_properties::IcebergProperties;
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "python", derive(pyo3::IntoPyObject, pyo3::FromPyObject))]
 pub struct IcebergSinkState {
-    /// Python class module
-    pub py_catalog_class_module: PlSmallStr,
+    /// Python class module. `None` (with the qualname) means `catalog_name` is resolved
+    /// by the Iceberg catalog resolver wherever the sink runs.
+    pub py_catalog_class_module: Option<PlSmallStr>,
     /// Python class qualname
-    pub py_catalog_class_qualname: PlSmallStr,
+    pub py_catalog_class_qualname: Option<PlSmallStr>,
 
     pub catalog_name: PlSmallStr,
     pub catalog_properties: IcebergProperties,
