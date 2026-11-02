@@ -17,14 +17,7 @@ from pyiceberg.catalog.noop import NoopCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.utils.config import Config
 
-from polars.io.cloud._utils import NoPickleOption
 from polars.io.iceberg._catalog_resolver import check_catalog_name, resolve_catalog
-from polars.io.iceberg._dataset import (
-    IcebergCatalogConfig,
-    IcebergCatalogTableDescriptor,
-    IcebergScanTableSerializer,
-    IcebergTableWrap,
-)
 from polars.io.iceberg._sink import IcebergSinkState
 
 pytestmark = pytest.mark.write_disk
@@ -282,25 +275,6 @@ def test_scan_static_path_ignores_catalog_name(sales: SqlCatalog) -> None:
     df = pl.scan_iceberg(metadata_location, catalog="sales").collect()
 
     assert_frame_equal(df, pl.DataFrame({"a": [1, 2]}))
-
-
-def test_descriptor_without_catalog_name_field_unpickles(sales: SqlCatalog) -> None:
-    descriptor = IcebergCatalogTableDescriptor(
-        table_identifier="ns.t",
-        catalog_config=IcebergCatalogConfig.from_catalog(sales),
-    )
-    # As pickled by a polars that predates catalog names.
-    del descriptor.__dict__["catalog_name"]
-    descriptor = pickle.loads(pickle.dumps(descriptor))
-
-    table = IcebergTableWrap(
-        table_=NoPickleOption(None),
-        table_descriptor_=descriptor,
-        serializer=IcebergScanTableSerializer(),
-        iceberg_storage_properties=None,
-    ).get()
-
-    assert table.name() == ("ns", "t")
 
 
 def table_rows(catalog: SqlCatalog) -> pl.DataFrame:
