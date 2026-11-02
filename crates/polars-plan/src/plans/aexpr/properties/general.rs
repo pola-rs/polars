@@ -179,7 +179,7 @@ fn evaluates_fallible(ae: &AExpr, expr_arena: &Arena<AExpr>) -> bool {
     roots.iter().any(|root| {
         expr_arena
             .iter(*root)
-            .any(|(_, ae)| ae.is_fallible_top_level(expr_arena))
+            .any(|(_, ae)| ae.is_fallible_top_level_ignoring_overflow(expr_arena))
     })
 }
 
@@ -294,7 +294,9 @@ impl ExprPushdownGroup {
         match self {
             ExprPushdownGroup::Pushable | ExprPushdownGroup::Fallible => {
                 // Downgrade to unpushable if fallible
-                if ae.is_fallible_top_level(expr_arena) || evaluates_fallible(ae, expr_arena) {
+                if ae.is_fallible_top_level_ignoring_overflow(expr_arena)
+                    || evaluates_fallible(ae, expr_arena)
+                {
                     *self = ExprPushdownGroup::Fallible;
                 }
 
