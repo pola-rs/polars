@@ -961,11 +961,22 @@ def _drop_catalog_table(catalog: pyiceberg.catalog.Catalog, ddl: dict[str, Any])
         msg = f"{missing} ({error}); catalog identifiers are case-sensitive"
         raise NoSuchTableError(msg) from error
     except Exception as error:
+        # a catalog may refuse a plain drop before it looks for the table
+        if not purge and not _table_exists(catalog, identifier):
+            if ddl["if_exists"]:
+                return response
+            msg = f"{missing}; catalog identifiers are case-sensitive"
+            raise NoSuchTableError(msg) from error
         # it may have dropped the table before failing (a purge deletes files last)
         error.add_note(
             f"dropping table '{ddl['name']}' failed: catalog table "
             f"'{_display_name(identifier)}' of catalog '{ddl['catalog']}'"
         )
+        if not purge:
+            error.add_note(
+                "some catalogs drop tables only with `PURGE`, which also deletes "
+                "the data files"
+            )
         raise
     return response
 
@@ -1704,14 +1715,29 @@ def _drop_if_unchanged(
 
     Iceberg has no conditional drop: a write landing just before the drop is lost.
     """
-    try:
+    from pyiceberg.exceptions import NoSuchTableError
+
+    def unchanged() -> bool:
         current = catalog.load_table(identifier)
-        if (
-            current.metadata_location != metadata_location
-            or current.current_snapshot() is not None
-        ):
+        return (
+            current.metadata_location == metadata_location
+            and current.current_snapshot() is None
+        )
+
+    try:
+        if not unchanged():
             return False
-        catalog.drop_table(identifier)
+        try:
+            catalog.drop_table(identifier)
+        except Exception:
+            # a catalog that drops tables only with a purge, if the table is still
+            # unchanged (the drop may also have landed, or another writer acted)
+            try:
+                if not unchanged():
+                    return False
+            except NoSuchTableError:
+                return True
+            catalog.purge_table(identifier)
     except Exception:
         return False
     return True

@@ -1157,6 +1157,62 @@ def test_create_catalog_table_as_select_commit_not_rejected(
 
 
 @pytest.mark.write_disk
+def test_create_catalog_table_as_select_cleanup_purge_only(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import BadRequestError
+
+    def purge_only(identifier: Any) -> None:
+        msg = "only with purge enabled"
+        raise BadRequestError(msg)
+
+    # created, then filled: a failed fill removes the new table with a purge
+    monkeypatch.setattr(lake, "create_table_transaction", no_staged_create)
+    monkeypatch.setattr(lake, "purge_table", lake.drop_table)
+    monkeypatch.setattr(lake, "drop_table", purge_only)
+    ctx = lake_ctx(lake)
+    ctx.register("src", pl.LazyFrame({"v": ["1", "x"]}))
+    with pytest.raises(pl.exceptions.InvalidOperationError) as exc:
+        ctx.execute("CREATE TABLE t AS SELECT CAST(v AS INT) AS x FROM src")
+    assert not lake.table_exists(("tpch", "t"))
+    assert not any("left in the catalog" in note for note in exc.value.__notes__)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("meanwhile", ["recreated", "appended"])
+def test_create_catalog_table_as_select_cleanup_keeps_others_tables(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch, meanwhile: str
+) -> None:
+    from pyiceberg.exceptions import BadRequestError
+
+    drop = lake.drop_table
+    other = pl.DataFrame({"x": [7]}, schema={"x": pl.Int32})
+
+    def drop_then_other_writer(identifier: Any) -> None:
+        if meanwhile == "recreated":
+            # the drop lands, its response is lost, and the name is taken again
+            drop(identifier)
+            table = lake.create_table(identifier, schema=other.to_arrow().schema)
+        else:
+            # a purge-only refusal, while another writer appends
+            table = lake.load_table(identifier)
+        other.write_iceberg(table, mode="append")
+        msg = "only with purge enabled"
+        raise BadRequestError(msg)
+
+    monkeypatch.setattr(lake, "create_table_transaction", no_staged_create)
+    monkeypatch.setattr(lake, "drop_table", drop_then_other_writer)
+    monkeypatch.setattr(lake, "purge_table", drop)
+    ctx = lake_ctx(lake)
+    ctx.register("src", pl.LazyFrame({"v": ["1", "x"]}))
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        ctx.execute("CREATE TABLE t AS SELECT CAST(v AS INT) AS x FROM src")
+    monkeypatch.undo()
+    # the other writer's table and rows are kept
+    assert table_rows(lake, "tpch", "t") == [(7,)]
+
+
+@pytest.mark.write_disk
 def test_create_catalog_table_as_select_cleanup_storage_options(
     lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1774,6 +1830,47 @@ def test_drop_catalog_table_purge_fails_after_drop(
 
 
 @pytest.mark.write_disk
+def test_drop_catalog_table_purge_only(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import BadRequestError
+
+    drops: list[Any] = []
+
+    def purge_only(identifier: Any) -> None:
+        drops.append(identifier)
+        msg = "only with purge enabled"
+        raise BadRequestError(msg)
+
+    # a catalog that drops tables only with a purge, refusing before it looks
+    monkeypatch.setattr(lake, "purge_table", lake.drop_table)
+    monkeypatch.setattr(lake, "drop_table", purge_only)
+    ctx = lake_ctx(lake)
+    with pytest.raises(BadRequestError) as exc:
+        ctx.execute("DROP TABLE orders")
+    assert "only with `PURGE`" in exc.value.__notes__[-1]
+    assert lake.table_exists(("tpch", "orders"))
+    # a missing table is reported as one, checked after the refusal
+    with pytest.raises(NoSuchTableError, match="table 'nope' does not exist"):
+        ctx.execute("DROP TABLE nope")
+    ctx.execute("DROP TABLE IF EXISTS nope")
+    assert drops == [("tpch", "orders"), ("tpch", "nope"), ("tpch", "nope")]
+    ctx.execute("DROP TABLE orders PURGE")
+    assert not lake.table_exists(("tpch", "orders"))
+
+
+@pytest.mark.write_disk
+def test_drop_catalog_table_plain_drop_not_checked_first(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # an entry the existence check misses is still dropped
+    monkeypatch.setattr(lake, "table_exists", lambda identifier: False)
+    lake_ctx(lake).execute("DROP TABLE orders")
+    monkeypatch.undo()
+    assert not lake.table_exists(("tpch", "orders"))
+
+
+@pytest.mark.write_disk
 def test_drop_catalog_table_checks(
     lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1795,15 +1892,17 @@ def test_drop_catalog_table_checks(
     # an existence check that fails lets the purge run
     ctx.execute("DROP TABLE orders PURGE")
     assert checks == [("tpch", "orders")]
-    # a plain drop is not checked first, and its failure keeps its own error
+    # a plain drop is checked only after it fails, and keeps its own error
     monkeypatch.setattr(lake, "drop_table", deny)
     with pytest.raises(PermissionError, match="drop not allowed") as exc:
         ctx.execute("DROP TABLE IF EXISTS lineitem")
     assert exc.value.__notes__ == [
         "dropping table 'lineitem' failed: catalog table 'tpch.lineitem' of "
-        "catalog 'lake'"
+        "catalog 'lake'",
+        "some catalogs drop tables only with `PURGE`, which also deletes the data "
+        "files",
     ]
-    assert checks == [("tpch", "orders")]
+    assert checks == [("tpch", "orders"), ("tpch", "lineitem")]
 
     # a table dropped by another writer after the check
     def gone(identifier: Any) -> None:

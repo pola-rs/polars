@@ -193,7 +193,7 @@ which case the statement is a no-op.
 
 **Catalog tables:** a name that resolves to an attached catalog, and to no registered
 table, drops the table from the catalog, permanently. ``PURGE`` also deletes its data
-files.
+files. Some catalogs drop tables only with ``PURGE``.
 
 .. code-block:: sql
 
