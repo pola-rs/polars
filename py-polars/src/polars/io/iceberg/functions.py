@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Literal
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.wrap import wrap_ldf
 from polars.io.cloud._utils import NoPickleOption
+from polars.io.iceberg._catalog_resolver import check_catalog_name
 from polars.io.iceberg._dataset import (
     IcebergCatalogConfig,
     IcebergCatalogTableDescriptor,
@@ -35,6 +36,7 @@ def scan_iceberg(
     storage_options: StorageOptionsDict | None = None,
     catalog: pyiceberg.catalog.Catalog
     | polars.io.iceberg.IcebergCatalogConfig
+    | str
     | None = None,
     reader_override: Literal["native", "pyiceberg"] | None = None,
     use_metadata_statistics: bool = True,
@@ -69,6 +71,15 @@ def scan_iceberg(
     catalog
         PyIceberg catalog to load the table from if the provided `target`
         was a table name.
+
+        This can also be a catalog name, which is kept in the query plan and
+        resolved when the table is loaded, by the resolver set with
+        :meth:`Config.set_iceberg_catalog_resolver` where the query runs (by
+        default, `pyiceberg.catalog.load_catalog(name)`).
+
+        .. warning::
+            Passing a catalog name is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
     reader_override
         Overrides the reader used to read the data.
 
@@ -237,6 +248,15 @@ def scan_iceberg(
 
         if "/" in source or "\\" in source:
             table_descriptor_ = source  # Inferred as static metadata path
+        elif isinstance(catalog, str):
+            issue_unstable_warning(
+                "passing a catalog name to `scan_iceberg` is considered unstable."
+            )
+            # Resolved where the table is loaded, which may be another process.
+            table_descriptor_ = IcebergCatalogTableDescriptor(
+                table_identifier=source,
+                catalog_name=check_catalog_name(catalog),
+            )
         else:
             catalog_config, catalog_instance = (
                 IcebergCatalogConfig._from_api_parameter_or_environment_default(

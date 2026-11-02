@@ -19,6 +19,7 @@ from polars.io.iceberg._cache import (
     get_metadata_file_cache,
     load_static_table,
 )
+from polars.io.iceberg._catalog_resolver import resolve_catalog
 from polars.io.iceberg._plugin import (
     plugin_planner_required,
     plugin_scan,
@@ -67,7 +68,11 @@ class IcebergScanTableSerializer(IcebergTableSerializer):
 @dataclass(kw_only=True)
 class IcebergCatalogTableDescriptor:
     table_identifier: str | pyiceberg.typedef.Identifier
-    catalog_config: IcebergCatalogConfig
+    # Exactly one of `catalog_config` and `catalog_name` is set.
+    catalog_config: IcebergCatalogConfig | None = None
+    # Resolved with the current resolver wherever the table is loaded, so nothing
+    # resolved is pickled.
+    catalog_name: str | None = None
     # Used for table loads when set; `catalog_config` is the fallback after
     # unpickling, and for descriptors pickled without this field.
     catalog_: NoPickleOption[pyiceberg.catalog.Catalog] | None = None
@@ -114,6 +119,16 @@ def _load_static_table(
     return table
 
 
+def _new_descriptor_catalog(
+    descriptor: IcebergCatalogTableDescriptor,
+) -> pyiceberg.catalog.Catalog:
+    if descriptor.catalog_name is not None:
+        return resolve_catalog(descriptor.catalog_name)
+    config = descriptor.catalog_config
+    assert config is not None
+    return config.class_(config.name, **config.properties)
+
+
 def _load_catalog_table(
     catalog: pyiceberg.catalog.Catalog, descriptor: IcebergCatalogTableDescriptor
 ) -> pyiceberg.table.Table:
@@ -144,12 +159,17 @@ class IcebergTableWrap:
         """Fetch the PyIceberg Table object."""
         if self.table_.get() is None:
             if verbose():
+                descriptor = self.table_descriptor_
                 from_ = (
                     "catalog table descriptor: "
-                    f"{self.table_descriptor_.table_identifier = }, "
-                    f"{self.table_descriptor_.catalog_config.class_ = }"
-                    if isinstance(self.table_descriptor_, IcebergCatalogTableDescriptor)
-                    else f"metadata path: {self.table_descriptor_}"
+                    f"{descriptor.table_identifier = }, "
+                    + (
+                        f"{descriptor.catalog_name = }"
+                        if descriptor.catalog_config is None
+                        else f"{descriptor.catalog_config.class_ = }"
+                    )
+                    if isinstance(descriptor, IcebergCatalogTableDescriptor)
+                    else f"metadata path: {descriptor}"
                 )
 
                 eprint(f"IcebergTableWrap: construct table from {from_}")
@@ -161,10 +181,7 @@ class IcebergTableWrap:
                 catalog = catalog_.get() if catalog_ is not None else None
 
                 if catalog is None:
-                    catalog = self.table_descriptor_.catalog_config.class_(
-                        self.table_descriptor_.catalog_config.name,
-                        **self.table_descriptor_.catalog_config.properties,
-                    )
+                    catalog = _new_descriptor_catalog(self.table_descriptor_)
                 elif verbose():
                     eprint("IcebergTableWrap: reuse catalog instance")
 

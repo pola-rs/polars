@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import io
+import pickle
 from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError
+from polars.testing import assert_frame_equal
 
 pytest.importorskip("pyiceberg.catalog.sql")
 
@@ -14,7 +17,16 @@ from pyiceberg.catalog.noop import NoopCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.utils.config import Config
 
+from polars.io.cloud._utils import NoPickleOption
 from polars.io.iceberg._catalog_resolver import check_catalog_name, resolve_catalog
+from polars.io.iceberg._dataset import (
+    IcebergCatalogConfig,
+    IcebergCatalogTableDescriptor,
+    IcebergScanTableSerializer,
+    IcebergTableWrap,
+)
+
+pytestmark = pytest.mark.write_disk
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -177,3 +189,114 @@ def test_check_catalog_name_rejects_empty() -> None:
     assert check_catalog_name("sales") == "sales"
     with pytest.raises(ValueError, match="must not be empty"):
         check_catalog_name("")
+
+
+@pytest.fixture
+def _pyiceberg_planner(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Results must not depend on whether `polars_iceberg` is installed.
+    monkeypatch.setenv("POLARS_ICEBERG_PLANNER", "pyiceberg")
+
+
+@pytest.mark.usefixtures("_pyiceberg_planner")
+def test_scan_does_not_resolve_at_build() -> None:
+    pl.Config.set_iceberg_catalog_resolver(fail_resolver)
+
+    assert isinstance(pl.scan_iceberg("ns.t", catalog="sales"), pl.LazyFrame)
+
+
+@pytest.mark.usefixtures("_pyiceberg_planner")
+def test_scan_resolves_at_collect(sales: SqlCatalog) -> None:
+    resolver, names = recording(sales)
+    pl.Config.set_iceberg_catalog_resolver(resolver)
+
+    df = pl.scan_iceberg("ns.t", catalog="sales").collect()
+
+    assert_frame_equal(df, pl.DataFrame({"a": [1, 2]}))
+    assert names == ["sales"]
+
+
+@pytest.mark.usefixtures("_pyiceberg_planner")
+def test_scan_serializes_only_the_name(sales: SqlCatalog) -> None:
+    pl.Config.set_iceberg_catalog_resolver(fail_resolver)
+    data = pl.scan_iceberg("ns.t", catalog="sales").serialize()
+
+    assert b"sales" in data
+    assert b"sqlite" not in data
+    assert b"SqlCatalog" not in data
+
+    resolver, names = recording(sales)
+    pl.Config.set_iceberg_catalog_resolver(resolver)
+    df = pl.LazyFrame.deserialize(io.BytesIO(data)).collect()
+
+    assert_frame_equal(df, pl.DataFrame({"a": [1, 2]}))
+    assert names == ["sales"]
+
+
+@pytest.mark.usefixtures("_pyiceberg_planner")
+def test_scan_uses_resolver_active_at_collect(sales: SqlCatalog) -> None:
+    with pl.Config(set_iceberg_catalog_resolver=fail_resolver):
+        lf = pl.scan_iceberg("ns.t", catalog="sales")
+
+    resolver, names = recording(sales)
+    pl.Config.set_iceberg_catalog_resolver(resolver)
+
+    assert_frame_equal(lf.collect(), pl.DataFrame({"a": [1, 2]}))
+    assert names == ["sales"]
+
+
+@pytest.mark.usefixtures("_pyiceberg_planner")
+def test_scan_two_named_catalogs_in_one_query(
+    sales: SqlCatalog, tmp_path: Path
+) -> None:
+    east = new_catalog(tmp_path, "east", pl.DataFrame({"a": [3]}))
+    catalogs = {"sales": sales, "east": east}
+    names: list[str] = []
+
+    def resolver(name: str) -> Catalog:
+        names.append(name)
+        return catalogs[name]
+
+    pl.Config.set_iceberg_catalog_resolver(resolver)
+    df = pl.concat(
+        [
+            pl.scan_iceberg("ns.t", catalog="sales"),
+            pl.scan_iceberg("ns.t", catalog="east"),
+        ]
+    ).collect()
+
+    assert_frame_equal(df.sort("a"), pl.DataFrame({"a": [1, 2, 3]}))
+    assert set(names) == {"sales", "east"}
+
+
+def test_scan_empty_catalog_name() -> None:
+    with pytest.raises(ValueError, match="must not be empty"):
+        pl.scan_iceberg("ns.t", catalog="")
+
+
+@pytest.mark.usefixtures("_pyiceberg_planner")
+def test_scan_static_path_ignores_catalog_name(sales: SqlCatalog) -> None:
+    pl.Config.set_iceberg_catalog_resolver(fail_resolver)
+    metadata_location = sales.load_table("ns.t").metadata_location
+
+    df = pl.scan_iceberg(metadata_location, catalog="sales").collect()
+
+    assert_frame_equal(df, pl.DataFrame({"a": [1, 2]}))
+
+
+def test_descriptor_without_catalog_name_field_unpickles(sales: SqlCatalog) -> None:
+    descriptor = IcebergCatalogTableDescriptor(
+        table_identifier="ns.t",
+        catalog_config=IcebergCatalogConfig.from_catalog(sales),
+    )
+    # As pickled by a polars that predates catalog names.
+    del descriptor.__dict__["catalog_name"]
+    descriptor = pickle.loads(pickle.dumps(descriptor))
+
+    table = IcebergTableWrap(
+        table_=NoPickleOption(None),
+        table_descriptor_=descriptor,
+        serializer=IcebergScanTableSerializer(),
+        iceberg_storage_properties=None,
+    ).get()
+
+    assert table.name() == ("ns", "t")
