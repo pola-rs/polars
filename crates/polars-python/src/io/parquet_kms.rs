@@ -1,13 +1,13 @@
 //! Parquet modular encryption with keys managed by a KMS, using a KMS client implemented in Python.
 //!
-//! The KMS integration itself lives in `polars_io::parquet::encryption::kms`.
+//! The KMS integration itself lives in `polars_io::parquet::encryption::kms`, so that it can be
+//! serialized as part of a query plan.
 
 use std::time::Duration;
 
 use parquet_key_management::crypto_factory::{DecryptionConfiguration, EncryptionConfiguration};
 pub use polars_io::parquet::encryption::kms::PyKmsConnectionConfig;
 use polars_io::parquet::encryption::kms::{KmsDecryption, KmsEncryption, PythonCryptoFactory};
-use polars_io::parquet::encryption::{ParquetDecryption, ParquetEncryption};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -88,11 +88,12 @@ impl PyParquetEncryption {
         encryption_config: &PyEncryptionConfiguration,
     ) -> PyResult<Self> {
         Ok(Self {
-            inner: ParquetEncryption::new(KmsEncryption::new(
+            inner: KmsEncryption::new(
                 crypto_factory.inner.clone(),
                 kms_connection_config.config()?.clone(),
                 encryption_config.inner.clone(),
-            )),
+            )
+            .into(),
         })
     }
 }
@@ -107,11 +108,12 @@ impl PyParquetDecryption {
         decryption_config: &PyDecryptionConfiguration,
     ) -> PyResult<Self> {
         Ok(Self {
-            inner: ParquetDecryption::new(KmsDecryption::new(
+            inner: KmsDecryption::new(
                 crypto_factory.inner.clone(),
                 kms_connection_config.config()?.clone(),
                 decryption_config.inner.clone(),
-            )),
+            )
+            .into(),
         })
     }
 }

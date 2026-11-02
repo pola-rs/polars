@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import io
 import re
 import subprocess
 import sys
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from polars._typing import EngineType
+    from tests.conftest import PlMonkeyPatch
 
 MASTER_KEYS = {
     "footer_key": b"0123456789012345",
@@ -649,32 +651,161 @@ def test_use_pyarrow_raises(tmp_path: Path) -> None:
         pl.read_parquet(path, use_pyarrow=True, decryption=decryption_config(kms))
 
 
-def test_serialize_scan_raises(tmp_path: Path) -> None:
-    kms = InMemoryKms()
+def serde_round_trip(lf: pl.LazyFrame) -> pl.LazyFrame:
+    """Serialize and deserialize a query."""
+    return pl.LazyFrame.deserialize(io.BytesIO(lf.serialize()))
+
+
+# Note: `InMemoryKms` holds a list of connection configs, but these can't be pickled,
+# so any tests that serialize a scan or sink create a new `InMemoryKms` rather
+# than re-use one that may hold recorded configs.
+
+
+def test_serialize_scan(tmp_path: Path) -> None:
     path = tmp_path / "out.parquet"
-    basic_data().write_parquet(path, encryption=encryption_config(kms))
-    lf = pl.scan_parquet(path, decryption=decryption_config(kms))
-    with pytest.raises(
-        pl.exceptions.ComputeError,
-        match="cannot serialize parquet decryption properties that are not created from explicit keys",
-    ):
-        lf.serialize()
+    basic_data().write_parquet(path, encryption=encryption_config(InMemoryKms()))
+    lf = pl.scan_parquet(path, decryption=decryption_config(InMemoryKms())).filter(
+        pl.col("id") < 10
+    )
+
+    result = serde_round_trip(lf).collect()
+
+    assert_frame_equal(result, basic_data().filter(pl.col("id") < 10))
 
 
-def test_serialize_sink_raises(tmp_path: Path) -> None:
-    kms = InMemoryKms()
+@pytest.mark.parametrize("partitioned", [False, True])
+def test_serialize_sink(tmp_path: Path, partitioned: bool) -> None:
+    path = tmp_path / ("out" if partitioned else "out.parquet")
+    target = pl.PartitionBy(path, key="part") if partitioned else path
     lf = (
         basic_data()
         .lazy()
         .sink_parquet(
-            tmp_path / "out.parquet", encryption=encryption_config(kms), lazy=True
+            target, encryption=encryption_config(InMemoryKms()), mkdir=True, lazy=True
         )
     )
-    with pytest.raises(
-        pl.exceptions.ComputeError,
-        match="cannot serialize parquet encryption properties that are not created from explicit keys",
-    ):
-        lf.serialize()
+
+    serde_round_trip(lf).collect()
+
+    files = parquet_files(path)
+    assert len(files) == (3 if partitioned else 1)
+    for file in files:
+        assert b"secret_" not in file.read_bytes()
+    df = pl.read_parquet(path, decryption=decryption_config(InMemoryKms()))
+    assert_frame_equal(
+        df, basic_data(), check_row_order=False, check_column_order=False
+    )
+
+
+class ConfigCheckingKms(InMemoryKms):
+    """An in-memory KMS that only creates clients for the expected config."""
+
+    def __init__(self, expected_config: dict[str, Any]) -> None:
+        super().__init__()
+        self.expected_config = expected_config
+
+    def create_client(self, config: KmsConnectionConfig) -> InMemoryKmsClient:
+        actual_config = {
+            "kms_instance_id": config.kms_instance_id,
+            "kms_instance_url": config.kms_instance_url,
+            "key_access_token": config.key_access_token,
+            "custom_kms_conf": config.custom_kms_conf,
+        }
+        if actual_config != self.expected_config:
+            msg = f"unexpected KMS connection config: {actual_config}"
+            raise ValueError(msg)
+        return super().create_client(config)
+
+
+def test_serialize_keeps_configuration(tmp_path: Path) -> None:
+    expected_config: dict[str, Any] = {
+        "kms_instance_id": "instance",
+        "kms_instance_url": KMS_URL,
+        "key_access_token": "token",
+        "custom_kms_conf": {"a": "1", "b": "2"},
+    }
+
+    def connection_config() -> KmsConnectionConfig:
+        return KmsConnectionConfig(**expected_config)
+
+    path = tmp_path / "out.parquet"
+    lf = (
+        basic_data()
+        .lazy()
+        .sink_parquet(
+            path,
+            encryption=encryption_config(
+                ConfigCheckingKms(expected_config),
+                connection_config(),
+                plaintext_footer=True,
+                double_wrapping=False,
+            ),
+            lazy=True,
+        )
+    )
+    serde_round_trip(lf).collect()
+
+    # The footer is plaintext, so the schema can be read without keys
+    assert pl.scan_parquet(path).collect_schema() == basic_data().schema
+    material = footer_key_material(path)
+    assert material["doubleWrapping"] is False
+    assert material["kmsInstanceID"] == "instance"
+    assert material["kmsInstanceURL"] == KMS_URL
+
+    lf = pl.scan_parquet(
+        path,
+        decryption=decryption_config(
+            ConfigCheckingKms(expected_config), connection_config()
+        ),
+    )
+    assert_frame_equal(serde_round_trip(lf).collect(), basic_data())
+
+
+def test_serialize_without_cloudpickle(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # An importable KMS client factory is pickled with `pickle`
+    plmonkeypatch.setitem(sys.modules, "cloudpickle", None)  # type: ignore[arg-type]
+    path = tmp_path / "out.parquet"
+    lf = (
+        basic_data()
+        .lazy()
+        .sink_parquet(path, encryption=encryption_config(InMemoryKms()), lazy=True)
+    )
+
+    serde_round_trip(lf).collect()
+
+    df = pl.read_parquet(path, decryption=decryption_config(InMemoryKms()))
+    assert_frame_equal(df, basic_data())
+
+
+def test_serialize_closure(tmp_path: Path) -> None:
+    # A KMS client factory that can't be pickled with `pickle` uses cloudpickle
+    pytest.importorskip("cloudpickle")
+    kms = InMemoryKms()
+
+    def create_client(config: KmsConnectionConfig) -> InMemoryKmsClient:
+        return InMemoryKmsClient(kms)
+
+    path = tmp_path / "out.parquet"
+    lf = (
+        basic_data()
+        .lazy()
+        .sink_parquet(
+            path,
+            encryption=ParquetEncryptionConfig(
+                CryptoFactory(create_client),
+                KmsConnectionConfig(),
+                EncryptionConfiguration("footer_key", uniform_encryption=True),
+            ),
+            lazy=True,
+        )
+    )
+
+    serde_round_trip(lf).collect()
+
+    df = pl.read_parquet(path, decryption=decryption_config(InMemoryKms()))
+    assert_frame_equal(df, basic_data())
 
 
 @pytest.mark.parametrize(

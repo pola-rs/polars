@@ -1,4 +1,8 @@
 //! Parquet modular encryption with keys managed by a KMS, using a KMS client implemented in Python.
+//!
+//! The KMS configuration can be serialized, so that queries can be run elsewhere, such as on
+//! Polars Cloud. The Python KMS client factory is pickled, and the KMS connection configuration
+//! is serialized as is, including the key access token.
 
 use std::sync::Arc;
 
@@ -15,6 +19,7 @@ use polars_error::{PolarsError, PolarsResult, polars_err};
 use polars_parquet::parquet::encryption::decrypt::{FileDecryptionProperties, KeyRetriever};
 use polars_parquet::parquet::encryption::encrypt::FileEncryptionProperties;
 use polars_parquet::parquet::error::{ParquetError, ParquetResult};
+use polars_utils::python_function::PythonObject;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyMemoryView, PyString};
@@ -89,7 +94,7 @@ impl KmsClient for PyKmsClient {
 }
 
 /// Creates KMS clients by calling a Python function with a `PyKmsConnectionConfig`.
-struct PyKmsClientFactory(Py<PyAny>);
+struct PyKmsClientFactory(Arc<PythonObject>);
 
 impl KmsClientFactory for PyKmsClientFactory {
     fn create_client(
@@ -214,13 +219,22 @@ impl PyKmsConnectionConfig {
 /// `wrap_key` and `unwrap_key` methods.
 #[derive(Clone)]
 pub struct PythonCryptoFactory {
+    kms_client_factory: Arc<PythonObject>,
     crypto_factory: Arc<CryptoFactory>,
 }
 
 impl PythonCryptoFactory {
     pub fn new(kms_client_factory: Py<PyAny>) -> Self {
+        Self::from_python_object(Arc::new(PythonObject(kms_client_factory)))
+    }
+
+    fn from_python_object(kms_client_factory: Arc<PythonObject>) -> Self {
+        let crypto_factory = Arc::new(CryptoFactory::new(PyKmsClientFactory(Arc::clone(
+            &kms_client_factory,
+        ))));
         Self {
-            crypto_factory: Arc::new(CryptoFactory::new(PyKmsClientFactory(kms_client_factory))),
+            kms_client_factory,
+            crypto_factory,
         }
     }
 }
@@ -332,5 +346,274 @@ impl DecryptionPropertiesFactory for KmsDecryption {
             )))
             .build()?,
         )
+    }
+}
+
+/// Serialization of the KMS configuration.
+///
+/// The connection configuration is a snapshot, so refreshing the key access token
+/// after serialization doesn't affect the deserialized configuration.
+#[cfg(any(feature = "serde", feature = "dsl-schema"))]
+#[cfg_attr(not(feature = "serde"), allow(dead_code))]
+mod serialization {
+    use std::collections::BTreeMap;
+    use std::time::Duration;
+
+    use super::*;
+
+    // Maps are sorted so that serialization is deterministic.
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+    #[cfg_attr(feature = "dsl-schema", schemars(rename = "KmsConnectionConfig"))]
+    struct SerializableKmsConnectionConfig {
+        kms_instance_id: String,
+        kms_instance_url: String,
+        key_access_token: String,
+        custom_kms_conf: BTreeMap<String, String>,
+    }
+
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+    #[cfg_attr(
+        feature = "dsl-schema",
+        schemars(rename = "KmsEncryptionConfiguration")
+    )]
+    struct SerializableEncryptionConfiguration {
+        footer_key_id: String,
+        column_key_ids: BTreeMap<String, Vec<String>>,
+        plaintext_footer: bool,
+        double_wrapping: bool,
+        cache_lifetime: Option<Duration>,
+        internal_key_material: bool,
+        data_key_length_bits: u32,
+    }
+
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+    #[cfg_attr(
+        feature = "dsl-schema",
+        schemars(rename = "KmsDecryptionConfiguration")
+    )]
+    struct SerializableDecryptionConfiguration {
+        cache_lifetime: Option<Duration>,
+        read_kms_url: bool,
+    }
+
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+    #[cfg_attr(feature = "dsl-schema", schemars(rename = "KmsEncryption"))]
+    struct SerializableKmsEncryption {
+        #[cfg_attr(
+            feature = "serde",
+            serde(
+                serialize_with = "PythonObject::serialize_with_pyversion",
+                deserialize_with = "PythonObject::deserialize_with_pyversion"
+            )
+        )]
+        kms_client_factory: Arc<PythonObject>,
+        kms_connection_config: SerializableKmsConnectionConfig,
+        encryption_configuration: SerializableEncryptionConfiguration,
+    }
+
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+    #[cfg_attr(feature = "dsl-schema", schemars(rename = "KmsDecryption"))]
+    struct SerializableKmsDecryption {
+        #[cfg_attr(
+            feature = "serde",
+            serde(
+                serialize_with = "PythonObject::serialize_with_pyversion",
+                deserialize_with = "PythonObject::deserialize_with_pyversion"
+            )
+        )]
+        kms_client_factory: Arc<PythonObject>,
+        kms_connection_config: SerializableKmsConnectionConfig,
+        decryption_configuration: SerializableDecryptionConfiguration,
+    }
+
+    impl SerializableKmsConnectionConfig {
+        fn new(config: &KmsConnectionConfig) -> Self {
+            Self {
+                kms_instance_id: config.kms_instance_id().to_string(),
+                kms_instance_url: config.kms_instance_url().to_string(),
+                key_access_token: config.key_access_token(),
+                custom_kms_conf: config
+                    .custom_kms_conf()
+                    .iter()
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect(),
+            }
+        }
+
+        fn into_config(self) -> Arc<KmsConnectionConfig> {
+            Arc::new(
+                KmsConnectionConfig::builder()
+                    .set_kms_instance_id(self.kms_instance_id)
+                    .set_kms_instance_url(self.kms_instance_url)
+                    .set_key_access_token(self.key_access_token)
+                    .set_custom_kms_conf(self.custom_kms_conf.into_iter().collect())
+                    .build(),
+            )
+        }
+    }
+
+    impl SerializableEncryptionConfiguration {
+        fn new(config: &EncryptionConfiguration) -> Self {
+            Self {
+                footer_key_id: config.footer_key_id().to_string(),
+                column_key_ids: config
+                    .column_key_ids()
+                    .iter()
+                    .map(|(key_id, columns)| (key_id.clone(), columns.clone()))
+                    .collect(),
+                plaintext_footer: config.plaintext_footer(),
+                double_wrapping: config.double_wrapping(),
+                cache_lifetime: config.cache_lifetime(),
+                internal_key_material: config.internal_key_material(),
+                data_key_length_bits: config.data_key_length_bits(),
+            }
+        }
+
+        fn into_config(self) -> parquet_key_management::errors::Result<EncryptionConfiguration> {
+            let mut builder = EncryptionConfiguration::builder(self.footer_key_id)
+                .set_plaintext_footer(self.plaintext_footer)
+                .set_double_wrapping(self.double_wrapping)
+                .set_cache_lifetime(self.cache_lifetime);
+            for (key_id, columns) in self.column_key_ids {
+                builder = builder.add_column_key(key_id, columns);
+            }
+            let config = builder.build()?;
+            // The builder can't set these yet, so check that they have the values that
+            // were serialized, rather than silently changing them.
+            if config.internal_key_material() != self.internal_key_material
+                || config.data_key_length_bits() != self.data_key_length_bits
+            {
+                return Err(KmsError::General(format!(
+                    "cannot deserialize a KMS encryption configuration with \
+                    internal_key_material={} and data_key_length_bits={}",
+                    self.internal_key_material, self.data_key_length_bits
+                )));
+            }
+            Ok(config)
+        }
+    }
+
+    impl SerializableDecryptionConfiguration {
+        fn new(config: &DecryptionConfiguration) -> Self {
+            Self {
+                cache_lifetime: config.cache_lifetime(),
+                read_kms_url: config.read_kms_url(),
+            }
+        }
+
+        fn into_config(self) -> DecryptionConfiguration {
+            DecryptionConfiguration::builder()
+                .set_cache_lifetime(self.cache_lifetime)
+                .set_read_kms_url(self.read_kms_url)
+                .build()
+        }
+    }
+
+    #[cfg(feature = "serde")]
+    impl serde::Serialize for KmsEncryption {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            SerializableKmsEncryption {
+                kms_client_factory: Arc::clone(&self.crypto_factory.kms_client_factory),
+                kms_connection_config: SerializableKmsConnectionConfig::new(
+                    &self.kms_connection_config,
+                ),
+                encryption_configuration: SerializableEncryptionConfiguration::new(
+                    &self.encryption_configuration,
+                ),
+            }
+            .serialize(serializer)
+        }
+    }
+
+    #[cfg(feature = "serde")]
+    impl<'de> serde::Deserialize<'de> for KmsEncryption {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            use serde::de::Error;
+
+            let encryption = SerializableKmsEncryption::deserialize(deserializer)?;
+            Ok(Self::new(
+                PythonCryptoFactory::from_python_object(encryption.kms_client_factory),
+                encryption.kms_connection_config.into_config(),
+                encryption
+                    .encryption_configuration
+                    .into_config()
+                    .map_err(D::Error::custom)?,
+            ))
+        }
+    }
+
+    #[cfg(feature = "serde")]
+    impl serde::Serialize for KmsDecryption {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            SerializableKmsDecryption {
+                kms_client_factory: Arc::clone(&self.crypto_factory.kms_client_factory),
+                kms_connection_config: SerializableKmsConnectionConfig::new(
+                    &self.kms_connection_config,
+                ),
+                decryption_configuration: SerializableDecryptionConfiguration::new(
+                    &self.decryption_configuration,
+                ),
+            }
+            .serialize(serializer)
+        }
+    }
+
+    #[cfg(feature = "serde")]
+    impl<'de> serde::Deserialize<'de> for KmsDecryption {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            let decryption = SerializableKmsDecryption::deserialize(deserializer)?;
+            Ok(Self::new(
+                PythonCryptoFactory::from_python_object(decryption.kms_client_factory),
+                decryption.kms_connection_config.into_config(),
+                decryption.decryption_configuration.into_config(),
+            ))
+        }
+    }
+
+    #[cfg(feature = "dsl-schema")]
+    impl schemars::JsonSchema for KmsEncryption {
+        fn schema_name() -> std::borrow::Cow<'static, str> {
+            SerializableKmsEncryption::schema_name()
+        }
+
+        fn schema_id() -> std::borrow::Cow<'static, str> {
+            SerializableKmsEncryption::schema_id()
+        }
+
+        fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+            SerializableKmsEncryption::json_schema(generator)
+        }
+    }
+
+    #[cfg(feature = "dsl-schema")]
+    impl schemars::JsonSchema for KmsDecryption {
+        fn schema_name() -> std::borrow::Cow<'static, str> {
+            SerializableKmsDecryption::schema_name()
+        }
+
+        fn schema_id() -> std::borrow::Cow<'static, str> {
+            SerializableKmsDecryption::schema_id()
+        }
+
+        fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+            SerializableKmsDecryption::json_schema(generator)
+        }
     }
 }

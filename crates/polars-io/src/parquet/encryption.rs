@@ -24,26 +24,12 @@ pub trait EncryptionPropertiesFactory: Send + Sync {
     ///
     /// This is used to validate the columns before any file is written.
     fn encrypted_column_names(&self) -> Vec<String>;
-
-    /// The properties used for every file, if they are fixed rather than created per file.
-    ///
-    /// Only fixed properties can be serialized.
-    fn fixed_properties(&self) -> Option<&Arc<FileEncryptionProperties>> {
-        None
-    }
 }
 
 /// Creates the properties used to decrypt each Parquet file read.
 pub trait DecryptionPropertiesFactory: Send + Sync {
     /// Create decryption properties for a file.
     fn file_decryption_properties(&self) -> PolarsResult<Arc<FileDecryptionProperties>>;
-
-    /// The properties used for every file, if they are fixed rather than created per file.
-    ///
-    /// Only fixed properties can be serialized.
-    fn fixed_properties(&self) -> Option<&Arc<FileDecryptionProperties>> {
-        None
-    }
 }
 
 /// File encryption properties can be specified directly and used as a factory.
@@ -57,10 +43,6 @@ impl EncryptionPropertiesFactory for Arc<FileEncryptionProperties> {
             .map(str::to_string)
             .collect()
     }
-
-    fn fixed_properties(&self) -> Option<&Arc<FileEncryptionProperties>> {
-        Some(self)
-    }
 }
 
 /// File decryption properties can be specified directly and used as a factory.
@@ -68,34 +50,54 @@ impl DecryptionPropertiesFactory for Arc<FileDecryptionProperties> {
     fn file_decryption_properties(&self) -> PolarsResult<Arc<FileDecryptionProperties>> {
         Ok(Arc::clone(self))
     }
+}
 
-    fn fixed_properties(&self) -> Option<&Arc<FileDecryptionProperties>> {
-        Some(self)
+/// How encryption properties are created.
+enum EncryptionSource {
+    /// The same properties, with explicit keys, are used for every file.
+    Fixed(Arc<FileEncryptionProperties>),
+    /// Keys are generated for each file, and wrapped using a KMS.
+    #[cfg(feature = "parquet_kms")]
+    Kms(Arc<kms::KmsEncryption>),
+    /// Any other factory, which can't be serialized.
+    Custom(Box<dyn EncryptionPropertiesFactory>),
+}
+
+impl EncryptionSource {
+    fn factory(&self) -> &dyn EncryptionPropertiesFactory {
+        match self {
+            Self::Fixed(properties) => properties,
+            #[cfg(feature = "parquet_kms")]
+            Self::Kms(kms) => kms.as_ref(),
+            Self::Custom(factory) => factory.as_ref(),
+        }
     }
 }
 
 /// Determines how to encrypt Parquet files when writing.
 ///
-/// This is compared and hashed by pointer. It can only be serialized when it holds
-/// fixed properties, and the serialized form includes the secret keys.
+/// This is compared and hashed by pointer. It can be serialized when it uses fixed
+/// properties or a KMS, and the serialized form includes any secret keys and tokens.
 #[derive(Clone)]
-pub struct ParquetEncryption(Arc<dyn EncryptionPropertiesFactory>);
+pub struct ParquetEncryption(Arc<EncryptionSource>);
 
 impl ParquetEncryption {
     /// Create properties for each file using a factory.
+    ///
+    /// A query using a custom factory can't be serialized.
     pub fn new(factory: impl EncryptionPropertiesFactory + 'static) -> Self {
-        Self(Arc::new(factory))
+        Self(Arc::new(EncryptionSource::Custom(Box::new(factory))))
     }
 
     /// Get the properties to use for encrypting a single file.
     pub fn file_properties(&self) -> PolarsResult<Arc<FileEncryptionProperties>> {
-        self.0.file_encryption_properties()
+        self.0.factory().file_encryption_properties()
     }
 
     /// The dot-separated paths of the columns that are encrypted with their own key,
     /// or none for uniform encryption.
     pub fn encrypted_column_names(&self) -> Vec<String> {
-        self.0.encrypted_column_names()
+        self.0.factory().encrypted_column_names()
     }
 
     /// Checks that each column that is to be encrypted with its own key is present in
@@ -109,33 +111,71 @@ impl ParquetEncryption {
 
 impl From<Arc<FileEncryptionProperties>> for ParquetEncryption {
     fn from(properties: Arc<FileEncryptionProperties>) -> Self {
-        Self::new(properties)
+        Self(Arc::new(EncryptionSource::Fixed(properties)))
+    }
+}
+
+#[cfg(feature = "parquet_kms")]
+impl From<kms::KmsEncryption> for ParquetEncryption {
+    fn from(kms: kms::KmsEncryption) -> Self {
+        Self(Arc::new(EncryptionSource::Kms(Arc::new(kms))))
+    }
+}
+
+/// How decryption properties are created.
+enum DecryptionSource {
+    /// The same properties, with explicit keys, are used for every file.
+    Fixed(Arc<FileDecryptionProperties>),
+    /// Keys are unwrapped using a KMS.
+    #[cfg(feature = "parquet_kms")]
+    Kms(Arc<kms::KmsDecryption>),
+    /// Any other factory, which can't be serialized.
+    Custom(Box<dyn DecryptionPropertiesFactory>),
+}
+
+impl DecryptionSource {
+    fn factory(&self) -> &dyn DecryptionPropertiesFactory {
+        match self {
+            Self::Fixed(properties) => properties,
+            #[cfg(feature = "parquet_kms")]
+            Self::Kms(kms) => kms.as_ref(),
+            Self::Custom(factory) => factory.as_ref(),
+        }
     }
 }
 
 /// Determines how to decrypt Parquet files when reading.
 ///
-/// This is compared and hashed by pointer. It can only be serialized when it holds
-/// fixed properties, and the serialized form includes the secret keys.
-// The factory is double-boxed to make this a thin pointer, keeping `FileScanIR` small.
+/// This is compared and hashed by pointer. It can be serialized when it uses fixed
+/// properties or a KMS, and the serialized form includes any secret keys and tokens.
+// This is a thin pointer, keeping `FileScanIR` small.
 #[derive(Clone)]
-pub struct ParquetDecryption(Arc<Box<dyn DecryptionPropertiesFactory>>);
+pub struct ParquetDecryption(Arc<DecryptionSource>);
 
 impl ParquetDecryption {
     /// Create properties for each file using a factory.
+    ///
+    /// A query using a custom factory can't be serialized.
     pub fn new(factory: impl DecryptionPropertiesFactory + 'static) -> Self {
-        Self(Arc::new(Box::new(factory)))
+        Self(Arc::new(DecryptionSource::Custom(Box::new(factory))))
     }
 
     /// Get the properties to use for decrypting a single file.
     pub fn file_properties(&self) -> PolarsResult<Arc<FileDecryptionProperties>> {
-        self.0.file_decryption_properties()
+        self.0.factory().file_decryption_properties()
     }
 }
 
 impl From<Arc<FileDecryptionProperties>> for ParquetDecryption {
     fn from(properties: Arc<FileDecryptionProperties>) -> Self {
-        Self::new(properties)
+        Self(Arc::new(DecryptionSource::Fixed(properties)))
+    }
+}
+
+#[cfg(feature = "parquet_kms")]
+impl From<kms::KmsDecryption> for ParquetDecryption {
+    fn from(kms: kms::KmsDecryption) -> Self {
+        Self(Arc::new(DecryptionSource::Kms(Arc::new(kms))))
     }
 }
 
@@ -148,9 +188,90 @@ pub fn file_decryption_properties(
         .transpose()
 }
 
-/// Implement traits that compare and hash by pointer, and serialize fixed properties only.
+/// The serialized forms of [`ParquetEncryption`] and [`ParquetDecryption`].
+#[cfg(any(feature = "serde", feature = "dsl-schema"))]
+mod serialization {
+    use super::*;
+
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+    #[cfg_attr(feature = "dsl-schema", schemars(rename = "ParquetEncryption"))]
+    pub(super) enum SerializableParquetEncryption {
+        Fixed(Arc<FileEncryptionProperties>),
+        #[cfg(feature = "parquet_kms")]
+        Kms(Arc<kms::KmsEncryption>),
+    }
+
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+    #[cfg_attr(feature = "dsl-schema", schemars(rename = "ParquetDecryption"))]
+    pub(super) enum SerializableParquetDecryption {
+        Fixed(Arc<FileDecryptionProperties>),
+        #[cfg(feature = "parquet_kms")]
+        Kms(Arc<kms::KmsDecryption>),
+    }
+
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))]
+    impl ParquetEncryption {
+        pub(super) fn to_serializable(&self) -> Option<SerializableParquetEncryption> {
+            match &*self.0 {
+                EncryptionSource::Fixed(properties) => {
+                    Some(SerializableParquetEncryption::Fixed(Arc::clone(properties)))
+                },
+                #[cfg(feature = "parquet_kms")]
+                EncryptionSource::Kms(kms) => {
+                    Some(SerializableParquetEncryption::Kms(Arc::clone(kms)))
+                },
+                EncryptionSource::Custom(_) => None,
+            }
+        }
+    }
+
+    impl From<SerializableParquetEncryption> for ParquetEncryption {
+        fn from(serializable: SerializableParquetEncryption) -> Self {
+            Self(Arc::new(match serializable {
+                SerializableParquetEncryption::Fixed(properties) => {
+                    EncryptionSource::Fixed(properties)
+                },
+                #[cfg(feature = "parquet_kms")]
+                SerializableParquetEncryption::Kms(kms) => EncryptionSource::Kms(kms),
+            }))
+        }
+    }
+
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))]
+    impl ParquetDecryption {
+        pub(super) fn to_serializable(&self) -> Option<SerializableParquetDecryption> {
+            match &*self.0 {
+                DecryptionSource::Fixed(properties) => {
+                    Some(SerializableParquetDecryption::Fixed(Arc::clone(properties)))
+                },
+                #[cfg(feature = "parquet_kms")]
+                DecryptionSource::Kms(kms) => {
+                    Some(SerializableParquetDecryption::Kms(Arc::clone(kms)))
+                },
+                DecryptionSource::Custom(_) => None,
+            }
+        }
+    }
+
+    impl From<SerializableParquetDecryption> for ParquetDecryption {
+        fn from(serializable: SerializableParquetDecryption) -> Self {
+            Self(Arc::new(match serializable {
+                SerializableParquetDecryption::Fixed(properties) => {
+                    DecryptionSource::Fixed(properties)
+                },
+                #[cfg(feature = "parquet_kms")]
+                SerializableParquetDecryption::Kms(kms) => DecryptionSource::Kms(kms),
+            }))
+        }
+    }
+}
+
+/// Implement traits that compare and hash by pointer, and serialize through the
+/// serializable form.
 macro_rules! impl_opaque_traits {
-    ($t:ident, $properties:ty, $description:literal) => {
+    ($t:ident, $serializable:ident, $description:literal) => {
         impl Debug for $t {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 f.write_str(stringify!($t))
@@ -177,7 +298,7 @@ macro_rules! impl_opaque_traits {
             where
                 D: serde::Deserializer<'de>,
             {
-                Arc::<$properties>::deserialize(deserializer).map(Self::from)
+                serialization::$serializable::deserialize(deserializer).map(Self::from)
             }
         }
 
@@ -188,12 +309,12 @@ macro_rules! impl_opaque_traits {
                 S: serde::Serializer,
             {
                 use serde::ser::Error;
-                match self.0.fixed_properties() {
-                    Some(properties) => properties.serialize(serializer),
+                match self.to_serializable() {
+                    Some(serializable) => serializable.serialize(serializer),
                     None => Err(S::Error::custom(concat!(
                         "cannot serialize ",
                         $description,
-                        " that are not created from explicit keys"
+                        " created by a custom factory"
                     ))),
                 }
             }
@@ -202,15 +323,15 @@ macro_rules! impl_opaque_traits {
         #[cfg(feature = "dsl-schema")]
         impl schemars::JsonSchema for $t {
             fn schema_name() -> std::borrow::Cow<'static, str> {
-                stringify!($t).into()
+                serialization::$serializable::schema_name()
             }
 
             fn schema_id() -> std::borrow::Cow<'static, str> {
-                std::borrow::Cow::Borrowed(concat!(module_path!(), "::", stringify!($t)))
+                serialization::$serializable::schema_id()
             }
 
             fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-                <$properties>::json_schema(generator)
+                serialization::$serializable::json_schema(generator)
             }
         }
     };
@@ -218,12 +339,12 @@ macro_rules! impl_opaque_traits {
 
 impl_opaque_traits!(
     ParquetEncryption,
-    FileEncryptionProperties,
+    SerializableParquetEncryption,
     "parquet encryption properties"
 );
 impl_opaque_traits!(
     ParquetDecryption,
-    FileDecryptionProperties,
+    SerializableParquetDecryption,
     "parquet decryption properties"
 );
 
@@ -262,5 +383,51 @@ mod tests {
 
         let decryption = ParquetDecryption::from(Arc::clone(&a));
         assert!(Arc::ptr_eq(&decryption.file_properties().unwrap(), &a));
+    }
+
+    #[test]
+    fn test_thin_pointers() {
+        assert_eq!(
+            std::mem::size_of::<Option<ParquetDecryption>>(),
+            std::mem::size_of::<usize>()
+        );
+        assert_eq!(
+            std::mem::size_of::<Option<ParquetEncryption>>(),
+            std::mem::size_of::<usize>()
+        );
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn test_serialize_fixed() {
+        let properties = FileDecryptionProperties::builder(b"0123456789012345".to_vec())
+            .with_aad_prefix(b"prefix".to_vec())
+            .build()
+            .unwrap();
+        let decryption = ParquetDecryption::from(Arc::clone(&properties));
+        let json = serde_json::to_string(&decryption).unwrap();
+        let deserialized: ParquetDecryption = serde_json::from_str(&json).unwrap();
+        assert!(*deserialized.file_properties().unwrap() == *properties);
+
+        let properties = FileEncryptionProperties::builder(b"0123456789012345".to_vec())
+            .with_column_key("a", b"1234567890123450".to_vec())
+            .build()
+            .unwrap();
+        let encryption = ParquetEncryption::from(Arc::clone(&properties));
+        let json = serde_json::to_string(&encryption).unwrap();
+        let deserialized: ParquetEncryption = serde_json::from_str(&json).unwrap();
+        assert_eq!(*deserialized.file_properties().unwrap(), *properties);
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn test_serialize_custom_factory_fails() {
+        let err = serde_json::to_string(&ParquetDecryption::new(Factory)).unwrap_err();
+        assert!(
+            err.to_string().contains(
+                "cannot serialize parquet decryption properties created by a custom factory"
+            ),
+            "{err}"
+        );
     }
 }
