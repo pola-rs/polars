@@ -23,6 +23,12 @@ CRS84 = {"crs": "OGC:CRS84"}
 XY = pl.Struct({"x": pl.Float64, "y": pl.Float64})
 XYZ = pl.Struct({"x": pl.Float64, "y": pl.Float64, "z": pl.Float64})
 BOX_XY = pl.Struct(dict.fromkeys(["xmin", "ymin", "xmax", "ymax"], pl.Float64))
+BOX_XYZ = pl.Struct(
+    dict.fromkeys(["xmin", "ymin", "zmin", "xmax", "ymax", "zmax"], pl.Float64)
+)
+BOX_XYM = pl.Struct(
+    dict.fromkeys(["xmin", "ymin", "mmin", "xmax", "ymax", "mmax"], pl.Float64)
+)
 
 
 def _write_geo(table: pa.Table, version: str, columns: dict[str, Any]) -> io.BytesIO:
@@ -37,6 +43,10 @@ def _ext(dtype: PolarsDataType) -> tuple[str, PolarsDataType, Any]:
     assert isinstance(dtype, pl.Extension)
     md = dtype.ext_metadata()
     return dtype.ext_name(), dtype.ext_storage(), None if md is None else json.loads(md)
+
+
+def _covering(box_name: str, box: pl.Struct) -> dict[str, Any]:
+    return {"bbox": {f.name: [box_name, f.name] for f in box.fields}}
 
 
 def _geo_metadata(df: pl.DataFrame) -> Any:
@@ -154,6 +164,7 @@ def test_write_geoparquet_skips_box(plmonkeypatch: PlMonkeyPatch, version: str) 
     geo = _geo_metadata(df)
     assert geo["primary_column"] == "a"
     assert list(geo["columns"]) == ["a"]
+    assert "covering" not in geo["columns"]["a"]
     assert _geo_metadata(df.select("bbox")) is None
 
     buf = io.BytesIO()
@@ -162,6 +173,91 @@ def test_write_geoparquet_skips_box(plmonkeypatch: PlMonkeyPatch, version: str) 
     out = pl.read_parquet(buf.getvalue())
     assert _ext(out.schema["bbox"]) == _ext(df.schema["bbox"])
     assert out["bbox"].ext.storage().to_list() == [bounds]
+
+
+def test_write_geoparquet_covering(plmonkeypatch: PlMonkeyPatch) -> None:
+    xy = {"xmin": 1.0, "ymin": 2.0, "xmax": 1.0, "ymax": 2.0}
+    xyz = {"xmin": 1.0, "ymin": 2.0, "zmin": 3.0, "xmax": 1.0, "ymax": 2.0, "zmax": 3.0}
+    df = pl.DataFrame(
+        {
+            "geometry": [POINT_WKB],
+            "bbox": [xy],
+            "a": [{"x": 1.0, "y": 2.0, "z": 3.0}],
+            "a_bbox": [xyz],
+        },
+        schema={
+            "geometry": pl.Extension("geoarrow.wkb", pl.Binary, json.dumps(CRS84)),
+            "bbox": pl.Extension("geoarrow.box", BOX_XY, json.dumps(CRS84)),
+            "a": pl.Extension("geoarrow.point", XYZ, None),
+            # A box without a CRS may cover a geometry with one.
+            "a_bbox": pl.Extension("geoarrow.box", BOX_XYZ, None),
+        },
+    )
+    assert _geo_metadata(df) is None
+
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.1")
+    columns = _geo_metadata(df)["columns"]
+    assert set(columns) == {"geometry", "a"}
+    assert columns["geometry"]["covering"] == _covering("bbox", BOX_XY)
+    assert columns["a"]["covering"] == _covering("a_bbox", BOX_XYZ)
+
+    # Only a `geoarrow.box` is a covering, not a plain struct with the same fields.
+    plain = df.with_columns(pl.col("bbox").ext.storage())
+    assert "covering" not in _geo_metadata(plain)["columns"]["geometry"]
+
+    buf = io.BytesIO()
+    df.write_parquet(buf)
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_READ", "1")
+    out = pl.read_parquet(buf.getvalue())
+    for name in df.columns:
+        assert _ext(out.schema[name]) == _ext(df.schema[name])
+    assert out.select(pl.all().ext.storage()).rows() == [
+        (POINT_WKB, xy, {"x": 1.0, "y": 2.0, "z": 3.0}, xyz)
+    ]
+
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.0")
+    geometry = _geo_metadata(df.select("geometry", "bbox"))["columns"]["geometry"]
+    assert "covering" not in geometry
+
+
+@pytest.mark.parametrize(
+    ("schema", "match"),
+    [
+        (
+            {
+                "geometry": pl.Extension("geoarrow.wkb", pl.Binary, '{"crs": null}'),
+                "bbox": pl.Extension("geoarrow.box", BOX_XYM, '{"crs": null}'),
+            },
+            "must have Float64 fields xmin, ymin",
+        ),
+        (
+            {
+                "geometry": pl.Extension("geoarrow.wkb", pl.Binary, json.dumps(CRS84)),
+                "bbox": pl.Extension(
+                    "geoarrow.box", BOX_XY, json.dumps({"crs": PROJJSON})
+                ),
+            },
+            "differs from the geometry's",
+        ),
+        (
+            {
+                "geometry": pl.Extension("geoarrow.wkb", pl.Binary, '{"crs": null}'),
+                "geography": pl.Extension("geoarrow.wkb", pl.Binary, '{"crs": null}'),
+                "bbox": pl.Extension("geoarrow.box", BOX_XY, '{"crs": null}'),
+            },
+            "'bbox' already covers another column",
+        ),
+    ],
+)
+def test_write_geoparquet_covering_errors(
+    plmonkeypatch: PlMonkeyPatch, schema: dict[str, PolarsDataType], match: str
+) -> None:
+    df = pl.DataFrame({name: [None] for name in schema}, schema=schema)
+    assert _geo_metadata(df) is None
+
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.1")
+    with pytest.raises(pl.exceptions.InvalidOperationError, match=match):
+        df.write_parquet(io.BytesIO())
 
 
 @pytest.mark.parametrize(
