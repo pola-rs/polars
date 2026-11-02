@@ -313,6 +313,21 @@ pub(crate) fn node_stats_with_cache(
             let columns = shadowed_columns(&inner, exprs, expr_arena);
             Some(NodeStats { columns, ..inner })
         },
+        // As tall as the tallest input.
+        IR::HConcat { inputs, .. } => {
+            let (first, rest) = inputs.split_first()?;
+            let mut acc = node_stats_with_cache(*first, ir_arena, expr_arena, cache)?;
+            for input in rest {
+                let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
+                acc = NodeStats {
+                    filtered: acc.filtered.max(inner.filtered),
+                    unfiltered: acc.unfiltered.max(inner.unfiltered),
+                    max_rows: acc.max_rows.zip(inner.max_rows).map(|(a, b)| a.max(b)),
+                    columns: join_columns(&acc, &inner),
+                };
+            }
+            Some(acc)
+        },
         _ => None,
     };
     cache.insert(node, stats.clone());

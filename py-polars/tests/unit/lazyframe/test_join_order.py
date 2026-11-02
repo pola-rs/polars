@@ -547,6 +547,16 @@ def test_union_leaf_is_estimated(tmp_path: Path) -> None:
     )
 
 
+def test_hconcat_leaf_is_estimated(tmp_path: Path) -> None:
+    # As tall as the tallest input.
+    frames = star_frames(tmp_path)
+    extra = pl.LazyFrame({"s": range(50)})
+    frames["dim_a"] = pl.concat([frames["dim_a"], extra], how="horizontal")
+    lf = star_query(frames)
+
+    assert_reordered(lf, ["fact", "dim_b", "dim_a"], ["fact", "dim_a", "dim_b"])
+
+
 def test_gather_leaf_is_estimated(tmp_path: Path) -> None:
     # The indices are a frame of their own, so the gather's height is that frame's.
     frames = star_frames(tmp_path)
