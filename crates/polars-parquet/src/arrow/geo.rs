@@ -232,7 +232,9 @@ pub fn geo_key_value(schema: &ArrowSchema) -> PolarsResult<Option<KeyValue>> {
                 column.insert("crs".into(), crs.clone());
             },
             Some(crs) => {
-                let of_type = crs_type.map(|t| format!(" of type '{t}'")).unwrap_or_default();
+                let of_type = crs_type
+                    .map(|t| format!(" of type '{t}'"))
+                    .unwrap_or_default();
                 polars_bail!(
                     InvalidOperation: "cannot write column '{}' as GeoParquet: CRS {}{} must be a PROJJSON object, null or '{}'; \
                     convert it to PROJJSON, or pass your own '{}' key in the file metadata",
