@@ -965,7 +965,12 @@ def _drop_catalog_table(catalog: pyiceberg.catalog.Catalog, ddl: dict[str, Any])
         if not purge and not _table_exists(catalog, identifier):
             if ddl["if_exists"]:
                 return response
-            msg = f"{missing}; catalog identifiers are case-sensitive"
+            # or the drop landed before the error
+            msg = (
+                f"table '{ddl['name']}' does not exist, or the catalog dropped it "
+                f"before failing: catalog table '{_display_name(identifier)}' "
+                f"({error}); catalog identifiers are case-sensitive"
+            )
             raise NoSuchTableError(msg) from error
         # it may have dropped the table before failing (a purge deletes files last)
         error.add_note(
@@ -1713,7 +1718,8 @@ def _drop_if_unchanged(
 ) -> bool:
     """Drop a table only if no other writer changed it since `metadata_location`.
 
-    Iceberg has no conditional drop: a write landing just before the drop is lost.
+    A refused drop is retried as a purge. Iceberg has no conditional drop: a write
+    landing just before the drop is lost.
     """
     from pyiceberg.exceptions import NoSuchTableError
 
@@ -1730,8 +1736,7 @@ def _drop_if_unchanged(
         try:
             catalog.drop_table(identifier)
         except Exception:
-            # a catalog that drops tables only with a purge, if the table is still
-            # unchanged (the drop may also have landed, or another writer acted)
+            # the drop may have landed, or the catalog drops only with a purge
             try:
                 if not unchanged():
                     return False

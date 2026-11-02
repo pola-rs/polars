@@ -1175,6 +1175,7 @@ def test_create_catalog_table_as_select_cleanup_purge_only(
     with pytest.raises(pl.exceptions.InvalidOperationError) as exc:
         ctx.execute("CREATE TABLE t AS SELECT CAST(v AS INT) AS x FROM src")
     assert not lake.table_exists(("tpch", "t"))
+    assert any("'t' could not be created" in note for note in exc.value.__notes__)
     assert not any("left in the catalog" in note for note in exc.value.__notes__)
 
 
@@ -1868,6 +1869,28 @@ def test_drop_catalog_table_plain_drop_not_checked_first(
     lake_ctx(lake).execute("DROP TABLE orders")
     monkeypatch.undo()
     assert not lake.table_exists(("tpch", "orders"))
+
+
+@pytest.mark.write_disk
+def test_drop_catalog_table_lost_response(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    drop = lake.drop_table
+
+    def drop_then_fail(identifier: Any) -> None:
+        drop(identifier)
+        msg = "response lost"
+        raise TimeoutError(msg)
+
+    # a drop that lands before the catalog fails can't be told from a missing table
+    monkeypatch.setattr(lake, "drop_table", drop_then_fail)
+    ctx = lake_ctx(lake)
+    with pytest.raises(NoSuchTableError, match="or the catalog dropped it") as exc:
+        ctx.execute("DROP TABLE orders")
+    assert "(response lost)" in str(exc.value)
+    ctx.execute("DROP TABLE IF EXISTS lineitem")
+    assert not lake.table_exists(("tpch", "orders"))
+    assert not lake.table_exists(("tpch", "lineitem"))
 
 
 @pytest.mark.write_disk
