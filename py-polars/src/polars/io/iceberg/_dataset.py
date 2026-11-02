@@ -68,11 +68,9 @@ class IcebergScanTableSerializer(IcebergTableSerializer):
 @dataclass(kw_only=True)
 class IcebergCatalogTableDescriptor:
     table_identifier: str | pyiceberg.typedef.Identifier
-    # Exactly one of `catalog_config` and `catalog_name` is set.
-    catalog_config: IcebergCatalogConfig | None = None
-    # Resolved with the current resolver wherever the table is loaded, so nothing
-    # resolved is pickled.
-    catalog_name: str | None = None
+    # A catalog name is resolved with the current resolver wherever the table is
+    # loaded, so nothing resolved is pickled.
+    catalog_config: IcebergCatalogConfig | str
     # Used for table loads when set; `catalog_config` is the fallback after
     # unpickling, and for descriptors pickled without this field.
     catalog_: NoPickleOption[pyiceberg.catalog.Catalog] | None = None
@@ -122,10 +120,9 @@ def _load_static_table(
 def _new_descriptor_catalog(
     descriptor: IcebergCatalogTableDescriptor,
 ) -> pyiceberg.catalog.Catalog:
-    if descriptor.catalog_name is not None:
-        return resolve_catalog(descriptor.catalog_name)
     config = descriptor.catalog_config
-    assert config is not None
+    if isinstance(config, str):
+        return resolve_catalog(config)
     return config.class_(config.name, **config.properties)
 
 
@@ -164,8 +161,8 @@ class IcebergTableWrap:
                     "catalog table descriptor: "
                     f"{descriptor.table_identifier = }, "
                     + (
-                        f"{descriptor.catalog_name = }"
-                        if descriptor.catalog_config is None
+                        f"catalog name {descriptor.catalog_config!r}"
+                        if isinstance(descriptor.catalog_config, str)
                         else f"{descriptor.catalog_config.class_ = }"
                     )
                     if isinstance(descriptor, IcebergCatalogTableDescriptor)

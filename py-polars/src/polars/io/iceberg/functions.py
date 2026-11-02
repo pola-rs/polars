@@ -255,7 +255,7 @@ def scan_iceberg(
             # Resolved where the table is loaded, which may be another process.
             table_descriptor_ = IcebergCatalogTableDescriptor(
                 table_identifier=source,
-                catalog_name=check_catalog_name(catalog),
+                catalog_config=check_catalog_name(catalog),
             )
         else:
             catalog_config, catalog_instance = (
@@ -346,8 +346,7 @@ def _scan_catalog_table(
             table_=NoPickleOption(None),
             table_descriptor_=IcebergCatalogTableDescriptor(
                 table_identifier=identifier,
-                catalog_config=None if isinstance(catalog, str) else catalog,
-                catalog_name=catalog if isinstance(catalog, str) else None,
+                catalog_config=catalog,
                 catalog_=NoPickleOption(_reusable_catalog(catalog_instance)),
                 display_name=display_name,
             ),
