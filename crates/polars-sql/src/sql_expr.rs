@@ -582,7 +582,11 @@ impl SQLExprVisitor<'_> {
                     Some(elems) => {
                         let elems = self.cast_array_elements_for(elems, Some(&expr))?;
                         let set_has_null = elems.null_count() > 0;
-                        let membership = sql_is_in(expr, lit(elems.implode()?.into_series()));
+                        // a list scalar, as from the Python API: type coercion gives it
+                        // the column's type, so the filter can be pushed down
+                        let dtype = DataType::List(Box::new(elems.dtype().clone()));
+                        let list = lit(Scalar::new(dtype, AnyValue::List(elems)));
+                        let membership = sql_is_in(expr, list);
                         let is_in = if set_has_null {
                             // Non-match against sets containing NULL is unknown, not FALSE
                             membership.or(sql_unknown())

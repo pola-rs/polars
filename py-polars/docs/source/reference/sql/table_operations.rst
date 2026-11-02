@@ -153,11 +153,26 @@ DELETE
 Remove specific rows from a table using an (optional) constraint.
 Omitting the constraint deletes *all* rows, equivalent to `TRUNCATE`.
 
+On a table of an attached catalog, it deletes the matching rows in one commit. It returns
+the statement, not the remaining rows. Rows where the condition is NULL are kept. The
+condition compares columns with constants (``=``, ``<>``, ``<``, ``<=``, ``>``, ``>=``,
+``IN``, ``BETWEEN``, ``IS [NOT] NULL``, ``LIKE 'prefix%'``), combined with ``AND``, ``OR``
+and ``NOT``. On floating-point columns, ``>``, ``>=`` and ``<>`` are not supported. String
+constants may only contain letters, digits, spaces, ``-`` and ``_`` for now. Decimal
+columns cannot be compared with constants yet. Data
+files whose rows all match are dropped, and the others are rewritten (copy-on-write), also
+on a merge-on-read table.
+
+If another writer commits first, ``DELETE`` retries when that writer's rows cannot match the
+condition. Otherwise it fails, unless the table's ``write.delete.isolation-level`` is
+``snapshot``. The other writer's matching rows are then kept.
+
 **Example:**
 
 .. code-block:: sql
 
     DELETE FROM some_table WHERE value < 0
+    DELETE FROM lake.sales.orders WHERE order_date < DATE '2020-01-01'
 
 .. _drop_schema:
 
