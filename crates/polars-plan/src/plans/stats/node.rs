@@ -326,6 +326,20 @@ pub(crate) fn node_stats_with_cache(
                     columns: join_columns(&acc, &inner),
                 };
             }
+            // A shorter input is padded with nulls or broadcast, so its null counts
+            // no longer hold.
+            if !rest.is_empty() {
+                acc.columns = acc.columns.map(|columns| {
+                    let columns = columns.iter().map(|(name, stats)| {
+                        let stats = ScanColumnStats {
+                            null_count: Card::Unknown,
+                            ..stats.clone()
+                        };
+                        (name.clone(), stats)
+                    });
+                    Arc::new(columns.collect())
+                });
+            }
             Some(acc)
         },
         _ => None,
@@ -474,6 +488,10 @@ fn passed_through_columns(
 ) -> Option<Arc<ScanColumnStatsMap>> {
     let mut kept = ScanColumnStatsMap::default();
     for e in exprs {
+        if let Some(stats) = literal_column(e, expr_arena) {
+            kept.insert(e.output_name().clone(), stats);
+            continue;
+        }
         let source = into_column(e.node(), expr_arena)?;
         if let Some(stats) = inner.column(source) {
             kept.insert(e.output_name().clone(), stats.clone());
@@ -483,21 +501,27 @@ fn passed_through_columns(
 }
 
 /// The input's statistics, less every column `exprs` overwrites with a computed
-/// one. `with_columns` keeps the rest of the frame as it was.
+/// one, plus those of the literal columns it adds. `with_columns` keeps the rest of
+/// the frame as it was.
 fn shadowed_columns(
     inner: &NodeStats,
     exprs: &[ExprIR],
     expr_arena: &Arena<AExpr>,
 ) -> Option<Arc<ScanColumnStatsMap>> {
-    let columns = inner.columns.as_ref()?;
+    let empty = ScanColumnStatsMap::default();
+    let columns = inner.columns.as_deref().unwrap_or(&empty);
+    let literals: Vec<(&PlSmallStr, ScanColumnStats)> = exprs
+        .iter()
+        .filter_map(|e| Some((e.output_name(), literal_column(e, expr_arena)?)))
+        .collect();
     let overwrites = |e: &ExprIR| {
         into_column(e.node(), expr_arena) != Some(e.output_name())
             && columns.contains_key(e.output_name())
     };
-    if !exprs.iter().any(overwrites) {
-        return Some(Arc::clone(columns));
+    if literals.is_empty() && !exprs.iter().any(overwrites) {
+        return inner.columns.clone();
     }
-    let kept: ScanColumnStatsMap = columns
+    let mut kept: ScanColumnStatsMap = columns
         .iter()
         .filter(|(name, _)| {
             !exprs
@@ -506,7 +530,24 @@ fn shadowed_columns(
         })
         .map(|(name, stats)| (name.clone(), stats.clone()))
         .collect();
+    kept.extend(
+        literals
+            .into_iter()
+            .map(|(name, stats)| (name.clone(), stats)),
+    );
     (!kept.is_empty()).then(|| Arc::new(kept))
+}
+
+/// Statistics of a column holding one non-null literal on every row.
+fn literal_column(e: &ExprIR, expr_arena: &Arena<AExpr>) -> Option<ScanColumnStats> {
+    match expr_arena.get(e.node()) {
+        AExpr::Literal(lv) if lv.is_scalar() && !lv.is_null() => Some(ScanColumnStats {
+            distinct: Card::Exact(1),
+            null_count: Card::Exact(0),
+            ..Default::default()
+        }),
+        _ => None,
+    }
 }
 
 /// Whether an expression leaves the frame's height alone, either by producing one
