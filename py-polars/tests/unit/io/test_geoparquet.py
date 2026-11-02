@@ -183,14 +183,14 @@ def test_geoparquet_crs_round_trip(
         (
             "1.1",
             pl.Extension("geoarrow.wkb", pl.Binary, '{"crs": "EPSG:4326"}'),
-            "CRS",
+            r"CRS \"EPSG:4326\" must be .*convert it to PROJJSON, or pass your own 'geo' key",
         ),
         (
             "1.1",
             pl.Extension(
                 "geoarrow.wkb", pl.Binary, '{"crs": "OGC:CRS84", "crs_type": "srid"}'
             ),
-            "CRS",
+            r"CRS \"OGC:CRS84\" of type 'srid' must be",
         ),
     ],
 )

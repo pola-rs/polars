@@ -231,9 +231,14 @@ pub fn geo_key_value(schema: &ArrowSchema) -> PolarsResult<Option<KeyValue>> {
             Some(crs @ Value::Object(_)) => {
                 column.insert("crs".into(), crs.clone());
             },
-            Some(_) => polars_bail!(
-                InvalidOperation: "cannot write column '{}' as GeoParquet: CRS must be a PROJJSON object, null or '{}'", name, DEFAULT_CRS
-            ),
+            Some(crs) => {
+                let of_type = crs_type.map(|t| format!(" of type '{t}'")).unwrap_or_default();
+                polars_bail!(
+                    InvalidOperation: "cannot write column '{}' as GeoParquet: CRS {}{} must be a PROJJSON object, null or '{}'; \
+                    convert it to PROJJSON, or pass your own '{}' key in the file metadata",
+                    name, crs, of_type, DEFAULT_CRS, GEO_KEY
+                )
+            },
         }
         match ext_metadata.get("edges") {
             None => {},
