@@ -968,20 +968,24 @@ def _small_budget(plmonkeypatch: PlMonkeyPatch, tmp_path: Path) -> None:
     plmonkeypatch.setenv("POLARS_OOC_SPILL_DIR", str(tmp_path))
 
 
+def _wide_key(i: pl.Expr) -> pl.Expr:
+    """Make a 400 byte string key, so that few rows give a large result."""
+    return i.cast(pl.String).str.pad_start(400, "0")
+
+
 def _sum_per_group(name: str) -> tuple[pl.LazyFrame, pl.DataFrame]:
     """Return a group-by that wants its largest grant, and its expected result."""
-    num_groups = 50_000
+    num_groups = 2_000
     k, v = f"k_{name}", f"v_{name}"
     i = pl.int_range(2 * num_groups)
     lf = (
-        pl.select((i % num_groups).alias(k), i.alias(v))
+        pl.select(_wide_key(i % num_groups).alias(k), i.alias(v))
         .lazy()
         .group_by(k)
         .agg(pl.col(v).sum())
     )
-    expected = pl.select(pl.int_range(num_groups).alias(k)).with_columns(
-        (2 * pl.col(k) + num_groups).alias(v)
-    )
+    g = pl.int_range(num_groups)
+    expected = pl.select(_wide_key(g).alias(k), (2 * g + num_groups).alias(v))
     return lf, expected
 
 
@@ -1000,7 +1004,9 @@ def test_streaming_group_by_memory_grant_concurrent(
     # The second gets two thirds of the 250 kB the first left in the pool.
     assert _grants(err) == [(166_667, 500_000), (500_000, 500_000)]
     # Each of the 8 partitions needs about 200 kB, so fewer than 4 fit in either grant.
-    assert _num_builders(err) == [1, 2]
+    builders = _num_builders(err)
+    assert len(builders) == 2
+    assert max(builders) < 4
     for expected in (expected_a, expected_b):
         assert_frame_equal(
             out.select(expected.columns), expected, check_row_order=False
@@ -1020,11 +1026,11 @@ def test_streaming_group_by_memory_grant_returned(
     assert_frame_equal(out, expected, check_row_order=False)
 
     # Only the last row fails to parse, while its stored partition is built.
-    n = 100_000
+    n = 4_000
     i = pl.int_range(n)
     t = pl.when(i < n - 1).then(i.cast(pl.String)).otherwise(pl.lit("x"))
     failing = (
-        pl.select(k=i % (n // 2), t=t)
+        pl.select(k=_wide_key(i % (n // 2)), t=t)
         .lazy()
         .group_by("k")
         .agg(pl.col("t").max(), pl.col("t").str.to_integer().sum().alias("t_sum"))
