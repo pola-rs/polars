@@ -369,3 +369,29 @@ def test_sink_catalog_name_with_table_target(sales: SqlCatalog) -> None:
 def test_sink_empty_catalog_name() -> None:
     with pytest.raises(ValueError, match="must not be empty"):
         IcebergSinkState.new("ns.t", catalog="")
+
+
+@pytest.mark.usefixtures("_pyiceberg_planner")
+def test_sink_state_resolves_again_after_pickling(sales: SqlCatalog) -> None:
+    # What a commit task in another process receives: the state after planning.
+    resolver, _ = recording(sales)
+    pl.Config.set_iceberg_catalog_resolver(resolver)
+    state = IcebergSinkState.new("ns.t", mode="append", catalog="sales")
+    state._attach_resolved_sink(pl.LazyFrame({"a": [3]})._ldf)
+    data = pickle.dumps(state)
+
+    assert b"sqlite" not in data
+    assert b"SqlCatalog" not in data
+
+    resolver, names = recording(sales)
+    pl.Config.set_iceberg_catalog_resolver(resolver)
+    pickle.loads(data).table()
+    assert names == ["sales"]
+
+    def refusing(name: str) -> Catalog:
+        msg = "can only be resolved while planning"
+        raise ComputeError(msg)
+
+    pl.Config.set_iceberg_catalog_resolver(refusing)
+    with pytest.raises(ComputeError, match=r"^can only be resolved while planning$"):
+        pickle.loads(data).commit([])
