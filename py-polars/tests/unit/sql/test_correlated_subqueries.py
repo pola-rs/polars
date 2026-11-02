@@ -812,12 +812,23 @@ def test_correlated_aggregate_not_restricted_by_larger_outer() -> None:
     )
 
 
-def test_correlated_aggregate_inequality_keeps_row_index_path() -> None:
+def test_correlated_aggregate_inequality_per_distinct_key() -> None:
     with pl.SQLContext(frames=_key_frames()) as ctx:
         plan = ctx.execute(
             "SELECT p, (SELECT SUM(v) FROM i WHERE i.k < o.k) AS r FROM o"
         ).explain(optimized=False)
     assert "SEMI JOIN" not in plan
+    assert "UNIQUE" in plan
+    assert "_idx" not in plan
+
+
+@pytest.mark.parametrize("predicate", ["i.k + 1 = o.k", "i.k = ABS(o.k)"])
+def test_correlated_aggregate_computed_equality_per_row(predicate: str) -> None:
+    with pl.SQLContext(frames=_key_frames()) as ctx:
+        plan = ctx.execute(
+            f"SELECT p, (SELECT SUM(v) FROM i WHERE {predicate}) AS r FROM o"
+        ).explain(optimized=False)
+    assert "UNIQUE" not in plan
     assert "_idx" in plan
 
 
