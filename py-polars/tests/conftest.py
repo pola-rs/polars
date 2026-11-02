@@ -75,8 +75,9 @@ def pytest_configure(config: pytest.Config) -> None:
     global _xdist_worker_log
     _xdist_worker_log = (log_dir, worker_id)
     try:
+        global_capture = getattr(capman, "_global_capturing", None)
         for stream in ("out", "err"):
-            capture = getattr(capman._global_capturing, stream, None)
+            capture = getattr(global_capture, stream, None)
             _capture_to_file(capture, _crash_log_path(log_dir, worker_id, stream))
     except Exception as exc:
         # Never let this break an otherwise fine test run.
