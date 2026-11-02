@@ -329,7 +329,7 @@ pub mod kll {
         let compactor_var = 2.0 * geometric_tail(1.0 / (2.0 * CAPACITY_DECAY));
 
         // `Σw²` of the sampler in units of (n/k)²:
-        //   * `feed` conserves weight, so at most `n / 2^h` emissions happen at height `h`,
+        //   * The sampler conserves weight, so at most `n / 2^h` emissions happen at height `h`,
         //     each a step of size `2^h` (KLL Lemma 2). Summed, that is at most `n * 2^L`.
         //   * Level L-1 sits at depth D = H - L and was replaced, so `k * c^D ≤ CUTOFF`.
         //     Hence `2^D ≥ (k / CUTOFF)^α` where `α = ln 2 / ln(1/c)` (KLL Theorem. 2).
@@ -624,8 +624,9 @@ pub mod kll {
                         self.update_compactors(item);
                     }
                 } else {
+                    // One compaction may leave the sketch over capacity; take an item regardless.
                     let free = self.total_capacity.saturating_sub(self.items.len());
-                    let n = usize::min(usize::max(free, 1), remaining);
+                    let n = free.clamp(1, remaining);
                     let new_items = items.by_ref().take(n);
                     self.items
                         .extend(new_items.map(|item| item.borrow().to_owned()));
@@ -1319,7 +1320,11 @@ pub mod req {
             self.consumed_items += remaining as u64;
             while remaining > 0 {
                 self.compact_if_needed(0);
-                let n = usize::min(self.compactor_capacity() - self.levels[0].size, remaining);
+                // A close-out can shrink the capacity below the size of level 0.
+                let free = self
+                    .compactor_capacity()
+                    .saturating_sub(self.levels[0].size);
+                let n = free.clamp(1, remaining);
                 let new_items = items.by_ref().take(n);
                 self.items
                     .extend(new_items.map(|item| item.borrow().to_owned()));
@@ -1731,8 +1736,9 @@ mod tests {
     #[test]
     fn chunk_sizes_do_not_affect_accuracy() {
         use ApproxQuantileMethod as M;
-        const N: u64 = 1_000_000;
-        const ERROR: f64 = 0.01;
+        const N: u64 = 200_000;
+        // Loose enough for KLL to switch to its sampler within `N` items.
+        const ERROR: f64 = 0.1;
         let items: Vec<u64> = (0..N).collect();
         let methods = [M::KLL, M::ReqSketch { hra: false }, M::DoubleReqSketch];
         for method in methods {
