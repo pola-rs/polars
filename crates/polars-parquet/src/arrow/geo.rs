@@ -362,12 +362,8 @@ pub fn geo_key_value(
             column.insert("epoch".into(), epoch.clone());
         }
 
-        let mut bbox_source = encoding.list_depth.map(|_| {
-            let axes = [("x", "x"), ("y", "y"), ("z", "z")];
-            (name.to_string(), axes[..2 + has_z as usize].to_vec())
-        });
         if version != "1.0.0"
-            && let Some((box_name, layout, covering)) =
+            && let Some((box_name, covering)) =
                 bbox_covering(schema, name, ext_metadata.get("crs"))?
         {
             if covering_columns.contains(&box_name) {
@@ -377,23 +373,20 @@ pub fn geo_key_value(
                 );
             }
             column.insert("covering".into(), covering);
-            // WKB has no statistics of its coordinates, but the box covering it does.
-            if bbox_source.is_none() {
-                let (mins, maxs) = layout.split_at(layout.len() / 2);
-                bbox_source = Some((
-                    box_name.clone(),
-                    mins.iter().copied().zip(maxs.iter().copied()).collect(),
-                ));
-            }
             covering_columns.push(box_name);
         }
+        // WKB has no statistics of its coordinates, so it gets no `bbox`.
+        // Its covering's statistics can't stand in for them:
+        // a box that crosses the antimeridian has `xmin > xmax`,
+        // and the smallest `xmin` and largest `xmax` would leave it out.
+        let is_native = encoding.list_depth.is_some();
         // A spherical edge can bulge beyond its vertices.
         let spherical = ext_metadata.get("edges").is_some_and(|e| e == "spherical");
+        let axes = &["x", "y", "z"][..2 + has_z as usize];
         if let Some(statistics) = statistics
+            && is_native
             && !spherical
-            && let Some((bbox_column, min_max_leaf_per_axis)) = &bbox_source
-            && let Some(bbox) =
-                bbox_from_leaf_statistics(statistics, bbox_column, min_max_leaf_per_axis)
+            && let Some(bbox) = bbox_from_leaf_statistics(statistics, name, axes)
         {
             column.insert("bbox".into(), bbox.into());
         }
@@ -436,13 +429,13 @@ fn covering_name(geometry: &str) -> String {
     }
 }
 
-/// Returns the name of the box column that covers `geometry`, its layout, and its `covering` metadata.
+/// Returns the name of the box column that covers `geometry`, and its `covering` metadata.
 /// Returns `None` if there is no `geoarrow.box` column named after [`covering_name`].
 fn bbox_covering(
     schema: &ArrowSchema,
     geometry: &str,
     geometry_crs: Option<&Value>,
-) -> PolarsResult<Option<(String, &'static [&'static str], Value)>> {
+) -> PolarsResult<Option<(String, Value)>> {
     let box_name = covering_name(geometry);
     let Some(ArrowDataType::Extension(ext)) = schema.get(box_name.as_str()).map(|f| &f.dtype)
     else {
@@ -474,20 +467,21 @@ fn bbox_covering(
         .iter()
         .map(|field| (field.to_string(), json!([box_name, field])))
         .collect();
-    Ok(Some((box_name, layout, json!({ "bbox": bbox }))))
+    Ok(Some((box_name, json!({ "bbox": bbox }))))
 }
 
 /// Returns `[mins..., maxs...]`, or `None` if the statistics can't tell.
 fn bbox_from_leaf_statistics(
     statistics: &FileStatistics,
     column: &str,
-    min_max_leaf_per_axis: &[(&str, &str)],
+    axes: &[&str],
 ) -> Option<Vec<f64>> {
-    let mut mins = Vec::with_capacity(min_max_leaf_per_axis.len());
-    let mut maxs = Vec::with_capacity(min_max_leaf_per_axis.len());
-    for (min_leaf, max_leaf) in min_max_leaf_per_axis {
-        mins.push(leaf_min_max_over_row_groups(statistics, column, min_leaf)?.0);
-        maxs.push(leaf_min_max_over_row_groups(statistics, column, max_leaf)?.1);
+    let mut mins = Vec::with_capacity(axes.len());
+    let mut maxs = Vec::with_capacity(axes.len());
+    for axis in axes {
+        let (min, max) = leaf_min_max_over_row_groups(statistics, column, axis)?;
+        mins.push(min);
+        maxs.push(max);
     }
     mins.extend(maxs);
     // JSON can't hold infinities.

@@ -381,11 +381,11 @@ def test_write_geoparquet_bbox(plmonkeypatch: PlMonkeyPatch, tmp_path: Path) -> 
         # Nulls and NaNs are left out of the bounds.
         "a": [1.0, -4.0, 3.0, 2.0],
         "b": [-1.0, 0.0, 0.0, 1.0, 5.0, 2.0],
-        # WKB is bounded by the box that covers it.
-        "geometry": [-2.0, 0.0, 1.0, 3.0],
     }
     columns = _geo_metadata(df, row_group_size=1)["columns"]
     assert {name: c["bbox"] for name, c in columns.items() if "bbox" in c} == expected
+    # WKB gets no `bbox`, not even from the box that covers it.
+    assert "covering" in columns["geometry"]
 
     path = tmp_path / "a.parquet"
     df.lazy().sink_parquet(path, row_group_size=1)
@@ -401,8 +401,7 @@ def _spherical(df: pl.DataFrame) -> pl.DataFrame:
         return pl.Extension(ext.ext_name(), ext.ext_storage(), md)
 
     return df.with_columns(
-        pl.col(name).ext.storage().ext.to(dtype(name))
-        for name in ["a", "b", "geometry"]
+        pl.col(name).ext.storage().ext.to(dtype(name)) for name in ["a", "b"]
     )
 
 
@@ -423,6 +422,30 @@ def test_write_geoparquet_no_bbox(
     columns = _geo_metadata(df, row_group_size=1, **kwargs)["columns"]
     assert set(columns) == {"a", "b", "geometry", "c"}
     assert all("bbox" not in c for c in columns.values())
+
+
+def test_write_geoparquet_no_bbox_from_covering_over_antimeridian(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    # The minimum `xmin` and maximum `xmax` of these boxes are 0 and 10,
+    # which leave out the first box: it crosses the antimeridian from 170 to -170.
+    df = pl.DataFrame(
+        {
+            "geometry": [POINT_WKB] * 2,
+            "bbox": [
+                {"xmin": 170.0, "ymin": 0.0, "xmax": -170.0, "ymax": 1.0},
+                {"xmin": 0.0, "ymin": 0.0, "xmax": 10.0, "ymax": 1.0},
+            ],
+        },
+        schema={
+            "geometry": pl.Extension("geoarrow.wkb", pl.Binary, json.dumps(CRS84)),
+            "bbox": pl.Extension("geoarrow.box", BOX_XY, json.dumps(CRS84)),
+        },
+    )
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.1")
+    geometry = _geo_metadata(df)["columns"]["geometry"]
+    assert geometry["covering"] == _covering("bbox", BOX_XY)
+    assert "bbox" not in geometry
 
 
 def test_write_geoparquet_bbox_encrypted(
