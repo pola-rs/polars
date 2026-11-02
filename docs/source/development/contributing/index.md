@@ -108,6 +108,14 @@ Python tests to verify all functionality.
 Finally, install [dprint](https://dprint.dev/install/). This is not strictly required, but it is
 recommended as we use it to autoformat certain file types.
 
+!!! note
+
+    If you use [Nix](https://nixos.org/), running `nix develop` in the repository root enters a
+    development shell providing Rust (with toolchain sourced from `rust-toolchain.toml`), Python
+    (and its virtual environment), dprint, and CMake. If using NixOS, you will need to enable
+    [nix-ld](https://github.com/nix-community/nix-ld/) system-wide so that the pre-built binaries
+    in the virtual environment such as `uv`, `ruff`, and `typos` can run.
+
 You can now check that everything works correctly by going into the `py-polars` directory and
 running the test suite (warning: this may be slow the first time you run it):
 
