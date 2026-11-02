@@ -5,7 +5,7 @@ use serde_json::{Map, Value, json};
 
 use crate::parquet::metadata::KeyValue;
 
-pub(crate) const GEO_KEY: &str = "geo";
+pub const GEO_KEY: &str = "geo";
 
 /// The geoparquet spec states that something that has no `crs` key should be considered "OGC: CRS84".
 const DEFAULT_CRS: &str = "OGC:CRS84";

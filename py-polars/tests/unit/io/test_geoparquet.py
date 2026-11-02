@@ -12,6 +12,8 @@ import pytest
 import polars as pl
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from polars._typing import PolarsDataType
     from tests.conftest import PlMonkeyPatch
 
@@ -199,6 +201,25 @@ def test_write_geoparquet_errors(
     df = pl.DataFrame({"a": [None]}, schema={"a": dtype})
     with pytest.raises(pl.exceptions.InvalidOperationError, match=match):
         df.write_parquet(io.BytesIO())
+
+
+def test_write_geoparquet_error_before_file_is_opened(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path
+) -> None:
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.1")
+    dtype = pl.Extension("geoarrow.wkb", pl.Binary, '{"crs": "EPSG:4326"}')
+    df = pl.DataFrame({"a": [POINT_WKB] * 2, "p": [1, 2]}).with_columns(
+        pl.col("a").ext.to(dtype)
+    )
+
+    path = tmp_path / "a.parquet"
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="CRS"):
+        df.write_parquet(path)
+    assert not path.exists()
+
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="CRS"):
+        df.lazy().sink_parquet(pl.PartitionBy(tmp_path / "p", key="p"), mkdir=True)
+    assert list(tmp_path.rglob("*.parquet")) == []
 
 
 @pytest.mark.parametrize("as_callable", [False, True])
