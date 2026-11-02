@@ -253,7 +253,7 @@ def test_series_from_numpy_temporal_scalars_other_units() -> None:
     assert_series_equal(s, pl.Series([3_000]).cast(pl.Duration("ms")))
 
     # The unit count is applied: 5 * 10ms.
-    s = pl.Series([np.datetime64(5, "10ms")])
+    s = pl.Series([np.datetime64(5, ("ms", 10))])
     assert_series_equal(s, pl.Series([50]).cast(pl.Datetime("ms")))
 
     with pytest.raises(ValueError, match="unit 'M'"):
