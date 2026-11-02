@@ -7,6 +7,10 @@ use crate::parquet::metadata::KeyValue;
 
 const GEO_KEY: &str = "geo";
 
+/// The CRS of a GeoParquet column without a `crs` key.
+/// In GeoArrow, a missing CRS is unknown instead, which GeoParquet writes as `crs: null`.
+const DEFAULT_CRS: &str = "OGC:CRS84";
+
 struct Encoding {
     geoparquet: &'static str,
     geoarrow: &'static str,
@@ -130,7 +134,16 @@ pub fn apply_geo_metadata(metadata: &Metadata, schema: &mut ArrowSchema) {
         }
 
         let mut ext_metadata = Map::new();
-        for key in ["crs", "edges", "epoch"] {
+        match column.get("crs") {
+            None => {
+                ext_metadata.insert("crs".into(), DEFAULT_CRS.into());
+            },
+            Some(Value::Null) => {},
+            Some(crs) => {
+                ext_metadata.insert("crs".into(), crs.clone());
+            },
+        }
+        for key in ["edges", "epoch"] {
             if let Some(value) = column.get(key) {
                 ext_metadata.insert(key.into(), value.clone());
             }
@@ -201,13 +214,19 @@ pub fn geo_key_value(schema: &ArrowSchema) -> PolarsResult<Option<KeyValue>> {
         let mut column = Map::new();
         column.insert("encoding".into(), encoding.geoparquet.into());
         column.insert("geometry_types".into(), geometry_types.into());
+        let crs_type = ext_metadata.get("crs_type").and_then(Value::as_str);
         match ext_metadata.get("crs") {
-            None => {},
-            Some(crs @ (Value::Null | Value::Object(_))) => {
+            None | Some(Value::Null) => {
+                column.insert("crs".into(), Value::Null);
+            },
+            Some(Value::String(crs))
+                if crs == DEFAULT_CRS && matches!(crs_type, None | Some("authority_code")) => {},
+            Some(Value::Object(projjson)) if is_crs84(projjson) => {},
+            Some(crs @ Value::Object(_)) => {
                 column.insert("crs".into(), crs.clone());
             },
             Some(_) => polars_bail!(
-                InvalidOperation: "cannot write column '{}' as GeoParquet: CRS must be a PROJJSON object or null", name
+                InvalidOperation: "cannot write column '{}' as GeoParquet: CRS must be a PROJJSON object, null or '{}'", name, DEFAULT_CRS
             ),
         }
         match ext_metadata.get("edges") {
@@ -240,4 +259,11 @@ pub fn geo_key_value(schema: &ArrowSchema) -> PolarsResult<Option<KeyValue>> {
         key: GEO_KEY.to_string(),
         value: Some(geo.to_string()),
     }))
+}
+
+/// Whether a PROJJSON CRS is OGC:CRS84, by its `id` as the GeoParquet spec suggests.
+fn is_crs84(projjson: &Map<String, Value>) -> bool {
+    projjson
+        .get("id")
+        .is_some_and(|id| id["authority"] == "OGC" && id["code"] == "CRS84")
 }
