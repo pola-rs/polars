@@ -258,10 +258,7 @@ impl Shared {
                     // An empty result is sent as one empty morsel.
                     let df = frame.slice(*offset as i64, morsel_size);
                     *offset += df.height();
-                    if *offset >= frame.height() {
-                        self.sent(*bytes);
-                        *task = TaskState::Idle;
-                    }
+                    let done = (*offset >= frame.height()).then_some(*bytes);
                     let seq = MorselSeq::new(self.next_seq.fetch_add(1, Ordering::Relaxed));
                     let mut morsel = Morsel::new_unregistered(df, seq, source_token.clone());
                     morsel.set_consume_token(wait_group.token());
@@ -269,6 +266,12 @@ impl Shared {
                         return Ok(());
                     }
                     wait_group.wait().await;
+                    // The slices share the buffers of the result, so it only counts as sent once
+                    // the last one is consumed.
+                    if let Some(bytes) = done {
+                        self.sent(bytes);
+                        *task = TaskState::Idle;
+                    }
                 },
             }
         }
