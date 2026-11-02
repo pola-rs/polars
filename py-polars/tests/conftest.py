@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import io
 import os
 import sys
@@ -28,6 +29,8 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 _xdist_crash_config: pytest.Config | None = None
 _xdist_crash_log_dir: tempfile.TemporaryDirectory[str] | None = None
+# The log directory and id of this xdist worker, if it is one.
+_xdist_worker_log: tuple[str, str] | None = None
 
 # How much of a crashed worker's captured output we echo, in bytes.
 _XDIST_CRASH_OUTPUT_LIMIT = 64 * 1024
@@ -37,13 +40,12 @@ def _crash_log_path(log_dir: str | Path, worker_id: str, stream: str) -> Path:
     return Path(log_dir) / f"{worker_id}.{stream}"
 
 
-def _capture_to_file(capman: Any, stream: str, path: Path) -> None:
-    """Redirect pytest's fd-level capture of `stream` to a persistent file."""
-    capture = getattr(capman._global_capturing, stream, None)
+def _capture_to_file(capture: Any, path: Path) -> None:
+    """Redirect an fd-level pytest capture to a persistent file."""
     tmpfile = getattr(capture, "tmpfile", None)
     targetfd = getattr(capture, "targetfd", None)
     if tmpfile is None or targetfd is None:
-        return  # Not capturing this stream at fd level (`-s`, `--capture=sys`).
+        return  # Not capturing at fd level (`-s`, `--capture=sys`, `capsys`).
 
     # This is rather hacky but the tempfile pytest creates is passed to multiple
     # places before now, so it would be too late to replace that file object
@@ -70,11 +72,12 @@ def pytest_configure(config: pytest.Config) -> None:
     if log_dir is None or worker_id is None or capman is None:
         return
 
+    global _xdist_worker_log
+    _xdist_worker_log = (log_dir, worker_id)
     try:
         for stream in ("out", "err"):
-            _capture_to_file(
-                capman, stream, _crash_log_path(log_dir, worker_id, stream)
-            )
+            capture = getattr(capman._global_capturing, stream, None)
+            _capture_to_file(capture, _crash_log_path(log_dir, worker_id, stream))
     except Exception as exc:
         # Never let this break an otherwise fine test run.
         print(f"failed to redirect fd capture: {exc!r}", file=sys.stderr)
@@ -91,6 +94,27 @@ def pytest_configure_node(node: Any) -> None:
     node.workerinput["polars_crash_log_dir"] = _xdist_crash_log_dir.name
 
 
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_call(item: pytest.Item) -> None:
+    """Also persist the output captured by a `capfd` fixture in xdist workers."""
+    if _xdist_worker_log is None:
+        return
+    log_dir, worker_id = _xdist_worker_log
+    # The capture manager's hook wrapper has started the fixture's capture.
+    capman = item.config.pluginmanager.getplugin("capturemanager")
+    capture = getattr(getattr(capman, "_capture_fixture", None), "_capture", None)
+    if capture is None:
+        return
+
+    try:
+        for stream in ("out", "err"):
+            path = _crash_log_path(log_dir, worker_id, f"fixture-{stream}")
+            _capture_to_file(getattr(capture, stream, None), path)
+    except Exception as exc:
+        # Never let this break an otherwise fine test run.
+        print(f"failed to redirect fixture fd capture: {exc!r}", file=sys.stderr)
+
+
 def pytest_unconfigure(config: pytest.Config) -> None:
     global _xdist_crash_log_dir
     if _xdist_crash_log_dir is not None:
@@ -101,11 +125,11 @@ def pytest_unconfigure(config: pytest.Config) -> None:
 def _read_crash_output(worker_id: str, stream: str) -> str:
     if _xdist_crash_log_dir is None:
         return ""
-    path = _crash_log_path(_xdist_crash_log_dir.name, worker_id, stream)
-    try:
-        data = path.read_bytes()
-    except OSError:
-        return ""
+    data = b""
+    for name in (stream, f"fixture-{stream}"):
+        path = _crash_log_path(_xdist_crash_log_dir.name, worker_id, name)
+        with contextlib.suppress(OSError):
+            data += path.read_bytes()
     if len(data) > _XDIST_CRASH_OUTPUT_LIMIT:
         data = b"<truncated>\n" + data[-_XDIST_CRASH_OUTPUT_LIMIT:]
     return data.decode("utf-8", errors="replace").strip()
