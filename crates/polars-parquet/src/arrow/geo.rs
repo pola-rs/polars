@@ -1,10 +1,12 @@
 //! Conversion between GeoParquet `geo` file metadata and GeoArrow extension types.
 use polars_arrow::datatypes::{ArrowDataType, ArrowSchema, ExtensionType, Metadata};
 use polars_error::{PolarsResult, polars_bail, polars_err, polars_warn};
+use polars_parquet_format::RowGroup;
 use polars_utils::pl_str::PlSmallStr;
 use serde_json::{Map, Value, json};
 
-use crate::parquet::metadata::KeyValue;
+use crate::parquet::metadata::{ColumnDescriptor, KeyValue};
+use crate::parquet::types::decode;
 
 pub const GEO_KEY: &str = "geo";
 
@@ -259,9 +261,19 @@ fn box_layout(dtype: &ArrowDataType) -> Option<&'static [&'static str]> {
     })
 }
 
+/// The statistics of a written file, to fill in the `bbox` of each geometry column.
+pub struct FileStatistics<'a> {
+    pub columns: &'a [ColumnDescriptor],
+    pub row_groups: &'a [RowGroup],
+}
+
 /// Builds the GeoParquet `geo` metadata for the GeoArrow columns in `schema` if
 /// `POLARS_GEOPARQUET_WRITE` is set to `1.0` or `1.1`.
-pub fn geo_key_value(schema: &ArrowSchema) -> PolarsResult<Option<KeyValue>> {
+/// The `bbox` of each geometry column is only filled in if `statistics` are given.
+pub fn geo_key_value(
+    schema: &ArrowSchema,
+    statistics: Option<&FileStatistics<'_>>,
+) -> PolarsResult<Option<KeyValue>> {
     let version = match std::env::var("POLARS_GEOPARQUET_WRITE").as_deref() {
         Err(_) | Ok("") => return Ok(None),
         Ok("1.0") => "1.0.0",
@@ -349,8 +361,13 @@ pub fn geo_key_value(schema: &ArrowSchema) -> PolarsResult<Option<KeyValue>> {
         if let Some(epoch) = ext_metadata.get("epoch") {
             column.insert("epoch".into(), epoch.clone());
         }
+
+        let mut bbox_source = encoding.list_depth.map(|_| {
+            let axes = [("x", "x"), ("y", "y"), ("z", "z")];
+            (name.to_string(), axes[..2 + has_z as usize].to_vec())
+        });
         if version != "1.0.0"
-            && let Some((box_name, covering)) =
+            && let Some((box_name, layout, covering)) =
                 bbox_covering(schema, name, ext_metadata.get("crs"))?
         {
             if covering_columns.contains(&box_name) {
@@ -360,7 +377,25 @@ pub fn geo_key_value(schema: &ArrowSchema) -> PolarsResult<Option<KeyValue>> {
                 );
             }
             column.insert("covering".into(), covering);
+            // WKB has no statistics of its coordinates, but the box covering it does.
+            if bbox_source.is_none() {
+                let (mins, maxs) = layout.split_at(layout.len() / 2);
+                bbox_source = Some((
+                    box_name.clone(),
+                    mins.iter().copied().zip(maxs.iter().copied()).collect(),
+                ));
+            }
             covering_columns.push(box_name);
+        }
+        // A spherical edge can bulge beyond its vertices.
+        let spherical = ext_metadata.get("edges").is_some_and(|e| e == "spherical");
+        if let Some(statistics) = statistics
+            && !spherical
+            && let Some((bbox_column, min_max_leaf_per_axis)) = &bbox_source
+            && let Some(bbox) =
+                bbox_from_leaf_statistics(statistics, bbox_column, min_max_leaf_per_axis)
+        {
+            column.insert("bbox".into(), bbox.into());
         }
 
         primary_column.get_or_insert(name.as_str());
@@ -401,13 +436,13 @@ fn covering_name(geometry: &str) -> String {
     }
 }
 
-/// Returns the name of the box column that covers `geometry`, and its `covering` metadata.
+/// Returns the name of the box column that covers `geometry`, its layout, and its `covering` metadata.
 /// Returns `None` if there is no `geoarrow.box` column named after [`covering_name`].
 fn bbox_covering(
     schema: &ArrowSchema,
     geometry: &str,
     geometry_crs: Option<&Value>,
-) -> PolarsResult<Option<(String, Value)>> {
+) -> PolarsResult<Option<(String, &'static [&'static str], Value)>> {
     let box_name = covering_name(geometry);
     let Some(ArrowDataType::Extension(ext)) = schema.get(box_name.as_str()).map(|f| &f.dtype)
     else {
@@ -439,7 +474,56 @@ fn bbox_covering(
         .iter()
         .map(|field| (field.to_string(), json!([box_name, field])))
         .collect();
-    Ok(Some((box_name, json!({ "bbox": bbox }))))
+    Ok(Some((box_name, layout, json!({ "bbox": bbox }))))
+}
+
+/// Returns `[mins..., maxs...]`, or `None` if the statistics can't tell.
+fn bbox_from_leaf_statistics(
+    statistics: &FileStatistics,
+    column: &str,
+    min_max_leaf_per_axis: &[(&str, &str)],
+) -> Option<Vec<f64>> {
+    let mut mins = Vec::with_capacity(min_max_leaf_per_axis.len());
+    let mut maxs = Vec::with_capacity(min_max_leaf_per_axis.len());
+    for (min_leaf, max_leaf) in min_max_leaf_per_axis {
+        mins.push(leaf_min_max_over_row_groups(statistics, column, min_leaf)?.0);
+        maxs.push(leaf_min_max_over_row_groups(statistics, column, max_leaf)?.1);
+    }
+    mins.extend(maxs);
+    // JSON can't hold infinities.
+    mins.iter().all(|v| v.is_finite()).then_some(mins)
+}
+
+/// Returns `None` if the statistics are missing or encrypted, or the leaf only holds nulls and NaNs.
+fn leaf_min_max_over_row_groups(
+    statistics: &FileStatistics,
+    column: &str,
+    leaf: &str,
+) -> Option<(f64, f64)> {
+    let leaf_index = statistics.columns.iter().position(|c| {
+        let path = &c.path_in_schema;
+        path.first().is_some_and(|p| p.as_str() == column)
+            && path.last().is_some_and(|p| p.as_str() == leaf)
+    })?;
+    let mut bounds: Option<(f64, f64)> = None;
+    for row_group in statistics.row_groups {
+        let chunk = &row_group.columns[leaf_index];
+        // Hidden statistics must not leak through the `bbox`.
+        if chunk.crypto_metadata.is_some() {
+            return None;
+        }
+        let stats = chunk.meta_data.as_ref()?.statistics.as_ref()?;
+        // Row groups of only nulls and NaNs have no minimum and maximum.
+        let (Some(min), Some(max)) = (&stats.min_value, &stats.max_value) else {
+            continue;
+        };
+        let (min, max) = (decode::<f64>(min), decode::<f64>(max));
+        bounds = Some(match bounds {
+            None => (min, max),
+            Some((lo, hi)) => (lo.min(min), hi.max(max)),
+        });
+    }
+    bounds
 }
 
 /// Whether a PROJJSON CRS is OGC:CRS84, by its `id` as the GeoParquet spec suggests.
