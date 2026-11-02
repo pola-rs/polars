@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 POINT_WKB = struct.pack("<bIdd", 1, 1, 1.0, 2.0)
 PROJJSON = {"type": "GeographicCRS", "name": "WGS 84"}
+CRS84 = {"crs": "OGC:CRS84"}
 XY = pl.Struct({"x": pl.Float64, "y": pl.Float64})
 XYZ = pl.Struct({"x": pl.Float64, "y": pl.Float64, "z": pl.Float64})
 
@@ -56,8 +57,8 @@ def test_read_geoparquet_1_0(plmonkeypatch: PlMonkeyPatch) -> None:
 
     plmonkeypatch.setenv("POLARS_GEOPARQUET_READ", "1")
     df = pl.read_parquet(buf)
-    assert _ext(df.schema["a"]) == ("geoarrow.wkb", pl.Binary, None)
-    assert _ext(df.schema["b"]) == ("geoarrow.wkb", pl.Binary, {"crs": None})
+    assert _ext(df.schema["a"]) == ("geoarrow.wkb", pl.Binary, CRS84)
+    assert _ext(df.schema["b"]) == ("geoarrow.wkb", pl.Binary, None)
     assert _ext(df.schema["c"]) == (
         "geoarrow.wkb",
         pl.Binary,
@@ -75,19 +76,25 @@ def test_read_geoparquet_1_1_native(plmonkeypatch: PlMonkeyPatch) -> None:
     }
     plmonkeypatch.setenv("POLARS_GEOPARQUET_READ", "1")
     df = pl.read_parquet(_write_geo(table, "1.1.0", columns))
-    assert _ext(df.schema["a"]) == ("geoarrow.point", XY, None)
-    assert _ext(df.schema["b"]) == ("geoarrow.linestring", pl.List(XYZ), None)
+    assert _ext(df.schema["a"]) == ("geoarrow.point", XY, CRS84)
+    assert _ext(df.schema["b"]) == ("geoarrow.linestring", pl.List(XYZ), CRS84)
     assert df["a"].ext.storage().to_list() == [point]
 
 
 def test_write_geoparquet(plmonkeypatch: PlMonkeyPatch) -> None:
     md = json.dumps({"crs": PROJJSON, "edges": "spherical", "epoch": 2021.5})
     df = pl.DataFrame(
-        {"a": [POINT_WKB], "b": [POINT_WKB], "c": [[{"x": 1.0, "y": 2.0, "z": 3.0}]]},
+        {
+            "a": [POINT_WKB],
+            "b": [POINT_WKB],
+            "c": [[{"x": 1.0, "y": 2.0, "z": 3.0}]],
+            "d": [POINT_WKB],
+        },
         schema={
             "a": pl.Extension("geoarrow.wkb", pl.Binary, md),
             "b": pl.Extension("geoarrow.wkb", pl.Binary, '{"crs": null}'),
             "c": pl.Extension("geoarrow.multipoint", pl.List(XYZ), None),
+            "d": pl.Extension("geoarrow.wkb", pl.Binary, json.dumps(CRS84)),
         },
     )
     assert _geo_metadata(df) is None
@@ -98,7 +105,7 @@ def test_write_geoparquet(plmonkeypatch: PlMonkeyPatch) -> None:
     assert _geo_metadata(df.drop("c")) == {
         "version": "1.0.0",
         "primary_column": "a",
-        "columns": {"a": a, "b": {**wkb, "crs": None}},
+        "columns": {"a": a, "b": {**wkb, "crs": None}, "d": wkb},
     }
 
     plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.1")
@@ -108,7 +115,12 @@ def test_write_geoparquet(plmonkeypatch: PlMonkeyPatch) -> None:
         "columns": {
             "a": a,
             "b": {**wkb, "crs": None},
-            "c": {"encoding": "multipoint", "geometry_types": ["MultiPoint Z"]},
+            "c": {
+                "encoding": "multipoint",
+                "geometry_types": ["MultiPoint Z"],
+                "crs": None,
+            },
+            "d": wkb,
         },
     }
 
@@ -116,11 +128,48 @@ def test_write_geoparquet(plmonkeypatch: PlMonkeyPatch) -> None:
     df.write_parquet(buf)
     plmonkeypatch.setenv("POLARS_GEOPARQUET_READ", "1")
     out = pl.read_parquet(buf.getvalue())
-    for name in df.columns:
+    # A `null` CRS reads back as no CRS at all, both meaning it is unknown.
+    for name in "acd":
         assert _ext(out.schema[name]) == _ext(df.schema[name])
+    assert _ext(out.schema["b"]) == ("geoarrow.wkb", pl.Binary, None)
     assert out.select(pl.all().ext.storage()).rows() == [
-        (POINT_WKB, POINT_WKB, [{"x": 1.0, "y": 2.0, "z": 3.0}])
+        (POINT_WKB, POINT_WKB, [{"x": 1.0, "y": 2.0, "z": 3.0}], POINT_WKB)
     ]
+
+
+@pytest.mark.parametrize(
+    ("metadata", "written", "read"),
+    [
+        (None, {"crs": None}, None),
+        ({"crs": None}, {"crs": None}, None),
+        (CRS84, {}, CRS84),
+        ({**CRS84, "crs_type": "authority_code"}, {}, CRS84),
+        ({"crs": {**PROJJSON, "id": {"authority": "OGC", "code": "CRS84"}}}, {}, CRS84),
+        ({"crs": PROJJSON}, {"crs": PROJJSON}, {"crs": PROJJSON}),
+    ],
+)
+def test_geoparquet_crs_round_trip(
+    plmonkeypatch: PlMonkeyPatch,
+    metadata: dict[str, Any] | None,
+    written: dict[str, Any],
+    read: dict[str, Any] | None,
+) -> None:
+    md = None if metadata is None else json.dumps(metadata)
+    df = pl.DataFrame(
+        {"a": [POINT_WKB]}, schema={"a": pl.Extension("geoarrow.wkb", pl.Binary, md)}
+    )
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.1")
+    assert _geo_metadata(df)["columns"]["a"] == {
+        "encoding": "WKB",
+        "geometry_types": [],
+        **written,
+    }
+
+    buf = io.BytesIO()
+    df.write_parquet(buf)
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_READ", "1")
+    out = pl.read_parquet(buf.getvalue())
+    assert _ext(out.schema["a"]) == ("geoarrow.wkb", pl.Binary, read)
 
 
 @pytest.mark.parametrize(
@@ -131,7 +180,14 @@ def test_write_geoparquet(plmonkeypatch: PlMonkeyPatch) -> None:
         ("1.1", pl.Extension("geoarrow.wkt", pl.String), "geoarrow.wkt"),
         (
             "1.1",
-            pl.Extension("geoarrow.wkb", pl.Binary, '{"crs": "OGC:CRS84"}'),
+            pl.Extension("geoarrow.wkb", pl.Binary, '{"crs": "EPSG:4326"}'),
+            "CRS",
+        ),
+        (
+            "1.1",
+            pl.Extension(
+                "geoarrow.wkb", pl.Binary, '{"crs": "OGC:CRS84", "crs_type": "srid"}'
+            ),
             "CRS",
         ),
     ],
