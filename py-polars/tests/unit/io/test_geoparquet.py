@@ -22,6 +22,7 @@ PROJJSON = {"type": "GeographicCRS", "name": "WGS 84"}
 CRS84 = {"crs": "OGC:CRS84"}
 XY = pl.Struct({"x": pl.Float64, "y": pl.Float64})
 XYZ = pl.Struct({"x": pl.Float64, "y": pl.Float64, "z": pl.Float64})
+BOX_XY = pl.Struct(dict.fromkeys(["xmin", "ymin", "xmax", "ymax"], pl.Float64))
 
 
 def _write_geo(table: pa.Table, version: str, columns: dict[str, Any]) -> io.BytesIO:
@@ -137,6 +138,30 @@ def test_write_geoparquet(plmonkeypatch: PlMonkeyPatch) -> None:
     assert out.select(pl.all().ext.storage()).rows() == [
         (POINT_WKB, POINT_WKB, [{"x": 1.0, "y": 2.0, "z": 3.0}], POINT_WKB)
     ]
+
+
+@pytest.mark.parametrize("version", ["1.0", "1.1"])
+def test_write_geoparquet_skips_box(plmonkeypatch: PlMonkeyPatch, version: str) -> None:
+    bounds = {"xmin": 1.0, "ymin": 2.0, "xmax": 1.0, "ymax": 2.0}
+    df = pl.DataFrame(
+        {"a": [POINT_WKB], "bbox": [bounds]},
+        schema={
+            "a": pl.Extension("geoarrow.wkb", pl.Binary, '{"crs": null}'),
+            "bbox": pl.Extension("geoarrow.box", BOX_XY, '{"crs": null}'),
+        },
+    )
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", version)
+    geo = _geo_metadata(df)
+    assert geo["primary_column"] == "a"
+    assert list(geo["columns"]) == ["a"]
+    assert _geo_metadata(df.select("bbox")) is None
+
+    buf = io.BytesIO()
+    df.write_parquet(buf)
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_READ", "1")
+    out = pl.read_parquet(buf.getvalue())
+    assert _ext(out.schema["bbox"]) == _ext(df.schema["bbox"])
+    assert out["bbox"].ext.storage().to_list() == [bounds]
 
 
 @pytest.mark.parametrize(

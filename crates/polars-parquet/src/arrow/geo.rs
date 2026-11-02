@@ -10,6 +10,8 @@ pub const GEO_KEY: &str = "geo";
 /// The geoparquet spec states that something that has no `crs` key should be considered "OGC: CRS84".
 const DEFAULT_CRS: &str = "OGC:CRS84";
 
+const BOX_EXTENSION_NAME: &str = "geoarrow.box";
+
 struct Encoding {
     geoparquet: &'static str,
     geoarrow: &'static str,
@@ -177,7 +179,8 @@ pub fn geo_key_value(schema: &ArrowSchema) -> PolarsResult<Option<KeyValue>> {
         let ArrowDataType::Extension(ext) = &field.dtype else {
             continue;
         };
-        if !ext.name.starts_with("geoarrow.") {
+        // GeoParquet has no box encoding, so a box is written as a plain struct column.
+        if !ext.name.starts_with("geoarrow.") || ext.name == BOX_EXTENSION_NAME {
             continue;
         }
         let name = &field.name;
