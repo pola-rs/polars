@@ -42,7 +42,7 @@ impl ParquetWriterStarter {
             .as_ref()
             .is_some_and(|kv| kv.may_contain(GEO_KEY))
         {
-            geo_key_value(&arrow_schema)?;
+            geo_key_value(&arrow_schema, None)?;
         }
         let initialized_state = match &options.encryption {
             Some(encryption) => {

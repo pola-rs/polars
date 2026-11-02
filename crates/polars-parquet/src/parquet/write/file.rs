@@ -234,6 +234,10 @@ impl<W: Write> FileWriter<W> {
         &self.schema
     }
 
+    pub fn row_groups(&self) -> &[RowGroup] {
+        &self.row_groups
+    }
+
     /// Returns the [`ThriftFileMetadata`]. This is Some iff the [`Self::end`] has been called
     /// and the file is not encrypted. Encrypted files return None, as their plaintext metadata
     /// would expose information about encrypted columns, such as statistics.

@@ -49,9 +49,9 @@ def _covering(box_name: str, box: pl.Struct) -> dict[str, Any]:
     return {"bbox": {f.name: [box_name, f.name] for f in box.fields}}
 
 
-def _geo_metadata(df: pl.DataFrame) -> Any:
+def _geo_metadata(df: pl.DataFrame, **kwargs: Any) -> Any:
     buf = io.BytesIO()
-    df.write_parquet(buf)
+    df.write_parquet(buf, **kwargs)
     metadata = pq.read_metadata(pa.BufferReader(buf.getvalue())).metadata
     return json.loads(metadata[b"geo"]) if b"geo" in metadata else None
 
@@ -208,6 +208,7 @@ def test_write_geoparquet(plmonkeypatch: PlMonkeyPatch) -> None:
                 "encoding": "multipoint",
                 "geometry_types": ["MultiPoint Z"],
                 "crs": None,
+                "bbox": [1.0, 2.0, 3.0, 1.0, 2.0, 3.0],
             },
             "d": wkb,
         },
@@ -334,6 +335,113 @@ def test_write_geoparquet_covering_errors(
     plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.1")
     with pytest.raises(pl.exceptions.InvalidOperationError, match=match):
         df.write_parquet(io.BytesIO())
+
+
+def _bbox_frame() -> pl.DataFrame:
+    nan = float("nan")
+    return pl.DataFrame(
+        {
+            "a": [
+                {"x": 1.0, "y": 2.0},
+                None,
+                {"x": nan, "y": -4.0},
+                {"x": 3.0, "y": 0.0},
+            ],
+            "b": [
+                [{"x": 0.0, "y": 0.0, "z": 0.0}, {"x": 1.0, "y": 1.0, "z": 1.0}],
+                [{"x": -1.0, "y": 5.0, "z": 2.0}],
+                [],
+                None,
+            ],
+            "geometry": [POINT_WKB] * 4,
+            "bbox": [
+                {"xmin": 0.0, "ymin": 0.0, "xmax": 1.0, "ymax": 1.0},
+                {"xmin": -2.0, "ymin": 1.0, "xmax": 0.0, "ymax": 3.0},
+                None,
+                None,
+            ],
+            "c": [POINT_WKB] * 4,
+        },
+        schema={
+            "a": pl.Extension("geoarrow.point", XY, None),
+            "b": pl.Extension("geoarrow.linestring", pl.List(XYZ), None),
+            "geometry": pl.Extension("geoarrow.wkb", pl.Binary, None),
+            "bbox": pl.Extension("geoarrow.box", BOX_XY, None),
+            "c": pl.Extension("geoarrow.wkb", pl.Binary, None),
+        },
+    )
+
+
+def test_write_geoparquet_bbox(plmonkeypatch: PlMonkeyPatch, tmp_path: Path) -> None:
+    df = _bbox_frame()
+    assert _geo_metadata(df) is None
+
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.1")
+    expected = {
+        # Nulls and NaNs are left out of the bounds.
+        "a": [1.0, -4.0, 3.0, 2.0],
+        "b": [-1.0, 0.0, 0.0, 1.0, 5.0, 2.0],
+        # WKB is bounded by the box that covers it.
+        "geometry": [-2.0, 0.0, 1.0, 3.0],
+    }
+    columns = _geo_metadata(df, row_group_size=1)["columns"]
+    assert {name: c["bbox"] for name, c in columns.items() if "bbox" in c} == expected
+
+    path = tmp_path / "a.parquet"
+    df.lazy().sink_parquet(path, row_group_size=1)
+    columns = json.loads(pq.read_metadata(path).metadata[b"geo"])["columns"]
+    assert {name: c["bbox"] for name, c in columns.items() if "bbox" in c} == expected
+
+
+def _spherical(df: pl.DataFrame) -> pl.DataFrame:
+    def dtype(name: str) -> pl.Extension:
+        ext = df.schema[name]
+        assert isinstance(ext, pl.Extension)
+        md = '{"edges": "spherical"}'
+        return pl.Extension(ext.ext_name(), ext.ext_storage(), md)
+
+    return df.with_columns(
+        pl.col(name).ext.storage().ext.to(dtype(name))
+        for name in ["a", "b", "geometry"]
+    )
+
+
+@pytest.mark.parametrize(
+    ("df", "kwargs"),
+    [
+        (_bbox_frame(), {"statistics": False}),
+        (_bbox_frame(), {"statistics": {"min": False}}),
+        (_bbox_frame().clear(4), {}),
+        (_spherical(_bbox_frame()), {}),
+    ],
+    ids=["no-statistics", "no-min", "all-null", "spherical"],
+)
+def test_write_geoparquet_no_bbox(
+    plmonkeypatch: PlMonkeyPatch, df: pl.DataFrame, kwargs: dict[str, Any]
+) -> None:
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.1")
+    columns = _geo_metadata(df, row_group_size=1, **kwargs)["columns"]
+    assert set(columns) == {"a", "b", "geometry", "c"}
+    assert all("bbox" not in c for c in columns.values())
+
+
+def test_write_geoparquet_bbox_encrypted(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path
+) -> None:
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.1")
+    df = _bbox_frame().select("a")
+    path = tmp_path / "a.parquet"
+    df.write_parquet(path)
+    assert b'"bbox"' in path.read_bytes()
+
+    # The plaintext footer holds the `geo` metadata, but not the encrypted statistics.
+    encryption = pl.ParquetEncryptionProperties(
+        footer_key=b"0123456789012345", plaintext_footer=True
+    )
+    df.write_parquet(path, encryption=encryption)
+    data = path.read_bytes()
+    assert b'"encoding":"point"' in data
+    assert b'"bbox"' not in data
 
 
 @pytest.mark.parametrize(
