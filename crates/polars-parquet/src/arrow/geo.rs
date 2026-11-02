@@ -12,6 +12,12 @@ const DEFAULT_CRS: &str = "OGC:CRS84";
 
 const BOX_EXTENSION_NAME: &str = "geoarrow.box";
 
+/// The field layouts of a box that GeoParquet accepts as a bbox covering.
+const BOX_LAYOUTS: [&[&str]; 2] = [
+    &["xmin", "ymin", "xmax", "ymax"],
+    &["xmin", "ymin", "zmin", "xmax", "ymax", "zmax"],
+];
+
 struct Encoding {
     geoparquet: &'static str,
     geoarrow: &'static str,
@@ -175,6 +181,7 @@ pub fn geo_key_value(schema: &ArrowSchema) -> PolarsResult<Option<KeyValue>> {
 
     let mut primary_column = None;
     let mut columns = Map::new();
+    let mut covering_columns = Vec::new();
     for field in schema.iter_values() {
         let ArrowDataType::Extension(ext) = &field.dtype else {
             continue;
@@ -200,15 +207,7 @@ pub fn geo_key_value(schema: &ArrowSchema) -> PolarsResult<Option<KeyValue>> {
             )
         })?;
 
-        let ext_metadata = match ext.metadata.as_deref() {
-            None => Map::new(),
-            Some(md) => match serde_json::from_str(md) {
-                Ok(Value::Object(md)) => md,
-                _ => polars_bail!(
-                    InvalidOperation: "cannot write column '{}' as GeoParquet: invalid extension metadata", name
-                ),
-            },
-        };
+        let ext_metadata = extension_metadata(name, ext)?;
 
         let geometry_types = match encoding.list_depth {
             None => vec![],
@@ -258,6 +257,19 @@ pub fn geo_key_value(schema: &ArrowSchema) -> PolarsResult<Option<KeyValue>> {
         if let Some(epoch) = ext_metadata.get("epoch") {
             column.insert("epoch".into(), epoch.clone());
         }
+        if version != "1.0.0"
+            && let Some((box_name, covering)) =
+                bbox_covering(schema, name, ext_metadata.get("crs"))?
+        {
+            if covering_columns.contains(&box_name) {
+                polars_bail!(
+                    InvalidOperation: "cannot write column '{}' as GeoParquet: its covering '{}' already covers another column",
+                    name, box_name
+                );
+            }
+            column.insert("covering".into(), covering);
+            covering_columns.push(box_name);
+        }
 
         primary_column.get_or_insert(name.as_str());
         columns.insert(name.to_string(), Value::Object(column));
@@ -275,6 +287,82 @@ pub fn geo_key_value(schema: &ArrowSchema) -> PolarsResult<Option<KeyValue>> {
         key: GEO_KEY.to_string(),
         value: Some(geo.to_string()),
     }))
+}
+
+fn extension_metadata(name: &str, ext: &ExtensionType) -> PolarsResult<Map<String, Value>> {
+    match ext.metadata.as_deref() {
+        None => Ok(Map::new()),
+        Some(md) => match serde_json::from_str(md) {
+            Ok(Value::Object(md)) => Ok(md),
+            _ => polars_bail!(
+                InvalidOperation: "cannot write column '{}' as GeoParquet: invalid extension metadata", name
+            ),
+        },
+    }
+}
+
+/// The geoarrow-rs naming scheme for the bbox column of a geometry column.
+fn covering_name(geometry: &str) -> String {
+    match geometry {
+        "geometry" | "geography" => "bbox".into(),
+        _ => format!("{geometry}_bbox"),
+    }
+}
+
+/// Returns the name of the box column that covers `geometry`, and its `covering` metadata.
+/// Returns `None` if there is no `geoarrow.box` column named after [`covering_name`].
+fn bbox_covering(
+    schema: &ArrowSchema,
+    geometry: &str,
+    geometry_crs: Option<&Value>,
+) -> PolarsResult<Option<(String, Value)>> {
+    let box_name = covering_name(geometry);
+    let Some(ArrowDataType::Extension(ext)) = schema.get(box_name.as_str()).map(|f| &f.dtype)
+    else {
+        return Ok(None);
+    };
+    if ext.name != BOX_EXTENSION_NAME {
+        return Ok(None);
+    }
+
+    let ArrowDataType::Struct(fields) = &ext.inner else {
+        polars_bail!(
+            InvalidOperation: "cannot write column '{}' as GeoParquet covering of '{}': storage type {:?} is not a struct",
+            box_name, geometry, ext.inner
+        );
+    };
+    let layout = BOX_LAYOUTS
+        .into_iter()
+        .find(|layout| {
+            fields.len() == layout.len()
+                && fields
+                    .iter()
+                    .zip(*layout)
+                    .all(|(f, name)| f.name == *name && f.dtype == ArrowDataType::Float64)
+        })
+        .ok_or_else(|| {
+            polars_err!(
+                InvalidOperation: "cannot write column '{}' as GeoParquet covering of '{}': \
+                storage type {:?} must have Float64 fields xmin, ymin, [zmin,] xmax, ymax, [zmax] in that order",
+                box_name, geometry, ext.inner
+            )
+        })?;
+
+    let box_crs = extension_metadata(&box_name, ext)?.remove("crs");
+    if let Some(crs) = box_crs.filter(|crs| !crs.is_null())
+        && Some(&crs) != geometry_crs
+    {
+        polars_bail!(
+            InvalidOperation: "cannot write column '{}' as GeoParquet covering of '{}': its CRS {} differs from the geometry's",
+            box_name, geometry, crs
+        );
+    }
+
+    let bbox: Map<String, Value> = layout
+        .iter()
+        .map(|field| (field.to_string(), json!([box_name, field])))
+        .collect();
+    Ok(Some((box_name, json!({ "bbox": bbox }))))
 }
 
 /// Whether a PROJJSON CRS is OGC:CRS84, by its `id` as the GeoParquet spec suggests.
