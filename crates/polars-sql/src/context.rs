@@ -7406,7 +7406,6 @@ fn statement_table_identifiers(
     }
 }
 
-/// Whether `stmt` is a query that only reads; `INSERT`/`UPDATE` bodies write to the context.
 /// Strictly cast column `name` of type `dtype` to `to`, aligning struct fields by name first.
 fn cast_matching_struct_fields(name: &PlSmallStr, dtype: &DataType, to: &DataType) -> Expr {
     let shape = match_struct_fields(dtype, to);
@@ -7419,6 +7418,7 @@ fn cast_matching_struct_fields(name: &PlSmallStr, dtype: &DataType, to: &DataTyp
     expr.strict_cast(to.clone())
 }
 
+/// Whether `stmt` is a query that only reads; `INSERT`/`UPDATE` bodies write to the context.
 fn is_read_only_query(stmt: &Statement) -> bool {
     match stmt {
         Statement::Query(query) => {

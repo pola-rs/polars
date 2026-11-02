@@ -2791,6 +2791,37 @@ def test_struct_cast_strict_expr_30471(dtype: pl.Struct, engine: EngineType) -> 
     assert_series_equal(out.to_series(), nulls.cast(dtype))
 
 
+@pytest.mark.parametrize(
+    ("s", "dtype"),
+    [
+        (
+            pl.Series(
+                [[{"a": 1, "b": 2}]],
+                dtype=pl.Array(pl.Struct({"a": pl.Int64, "b": pl.Int64}), 1),
+            ),
+            pl.Array(pl.Struct({"b": pl.Int64, "a": pl.Int64}), 1),
+        ),
+        (
+            pl.Series([{"x": {"a": 1, "b": 2}}]),
+            pl.Struct({"x": pl.Struct({"a": pl.Int64, "b": pl.Int64, "c": pl.Int64})}),
+        ),
+    ],
+    ids=["array_reordered", "nested_added"],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_struct_cast_strict_expr_nested_30471(
+    s: pl.Series, dtype: pl.DataType, engine: EngineType
+) -> None:
+    lf = s.to_frame("s").lazy()
+    with pytest.raises(InvalidOperationError):
+        s.cast(dtype)
+    with pytest.raises(InvalidOperationError):
+        lf.select(pl.col("s").cast(dtype)).collect(engine=engine)
+
+    out = lf.select(pl.col("s").cast(dtype, strict=False)).collect(engine=engine)
+    assert_series_equal(out.to_series(), s.cast(dtype, strict=False).rename("s"))
+
+
 def test_struct_supertype_casts_30471() -> None:
     df = pl.DataFrame(
         {

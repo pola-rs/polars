@@ -5,6 +5,8 @@ use polars_compute::gather::take_unchecked;
 
 use crate::prelude::*;
 
+/// Check that two dtypes have the same struct fields: same names, same order, nested in
+/// lists and arrays. Field dtypes are not compared.
 pub fn check_is_valid_struct_cast(
     input_dtype: &DataType,
     output_dtype: &DataType,

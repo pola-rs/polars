@@ -353,14 +353,21 @@ def test_cast_json() -> None:
 
 
 @pytest.mark.parametrize(
-    "sql_type",
-    ["STRUCT<y VARCHAR, x BIGINT>", "STRUCT<x BIGINT, y VARCHAR, z DOUBLE>"],
+    ("sql_type", "expected"),
+    [
+        ("STRUCT<y VARCHAR, x BIGINT>", {"y": "a", "x": 1}),
+        ("STRUCT<x BIGINT, y VARCHAR, z DOUBLE>", {"x": 1, "y": "a", "z": None}),
+    ],
 )
-def test_cast_struct_fields_strict(sql_type: str) -> None:
+def test_cast_struct_fields_strict(sql_type: str, expected: dict[str, Any]) -> None:
     # CAST, like a strict `Series.cast`, rejects reordered or added struct fields
     df = pl.DataFrame({"s": [{"x": 1, "y": "a"}]})
     with pytest.raises(InvalidOperationError, match="failed in column 's'"):
         df.sql(f"SELECT CAST(s AS {sql_type}) AS s FROM self")
+
+    # TRY_CAST matches fields by name
+    out = df.sql(f"SELECT TRY_CAST(s AS {sql_type}) AS s FROM self")
+    assert out["s"].to_list() == [expected]
 
 
 @pytest.mark.parametrize(

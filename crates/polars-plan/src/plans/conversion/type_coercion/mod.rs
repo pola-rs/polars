@@ -39,7 +39,8 @@ use super::*;
 
 pub struct TypeCoercionRule {}
 
-/// The strict casts that type coercion may run non-strict.
+/// The strict casts that type coercion may run non-strict. A `false` or `Raise` field keeps
+/// that kind of cast strict; it does not make the cast raise.
 const RELAXED_CAST_POLICY: CastColumnsPolicy = CastColumnsPolicy {
     integer_upcast: true,
     integer_to_float_cast: false,
