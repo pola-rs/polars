@@ -199,3 +199,22 @@ def test_write_geoparquet_errors(
     df = pl.DataFrame({"a": [None]}, schema={"a": dtype})
     with pytest.raises(pl.exceptions.InvalidOperationError, match=match):
         df.write_parquet(io.BytesIO())
+
+
+@pytest.mark.parametrize("as_callable", [False, True])
+def test_write_geoparquet_explicit_geo_key(
+    plmonkeypatch: PlMonkeyPatch, as_callable: bool
+) -> None:
+    # Polars refuses to derive the `geo` key for a string CRS,
+    # but one passed in by the user is written as is.
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.1")
+    dtype = pl.Extension("geoarrow.wkb", pl.Binary, '{"crs": "EPSG:4326"}')
+    df = pl.DataFrame({"a": [POINT_WKB]}, schema={"a": dtype})
+    column = {"encoding": "WKB", "geometry_types": [], "crs": PROJJSON}
+    geo = {"version": "1.1.0", "primary_column": "a", "columns": {"a": column}}
+    metadata = {"geo": json.dumps(geo)}
+
+    buf = io.BytesIO()
+    df.write_parquet(buf, metadata=(lambda _: metadata) if as_callable else metadata)
+    written = pq.read_metadata(pa.BufferReader(buf.getvalue())).metadata
+    assert json.loads(written[b"geo"]) == geo
