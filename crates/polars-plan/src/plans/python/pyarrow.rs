@@ -3,7 +3,7 @@ use std::fmt::Write;
 use polars_core::datatypes::AnyValue;
 #[cfg(feature = "dtype-datetime")]
 use polars_core::prelude::TimeZone;
-use polars_core::prelude::{DataType, ExplodeOptions, Schema, TimeUnit};
+use polars_core::prelude::{ChunkCompareEq, DataType, ExplodeOptions, NamedFrom, Schema, TimeUnit};
 use polars_core::series::Series;
 use polars_utils::pl_str::PlSmallStr;
 use pyo3::prelude::*;
@@ -74,6 +74,15 @@ pub(crate) fn needle_isin_haystack(
     }
     if !nulls_equal {
         haystack_series = haystack_series.drop_nulls();
+    }
+    // PyArrow's `isin` distinguishes `-0.0` from `0.0`, Polars does not.
+    if haystack_series.dtype().is_float() {
+        if haystack_series.equal(0.0f64).ok()?.any() {
+            let zeros = Series::new(PlSmallStr::EMPTY, [0.0f64, -0.0])
+                .cast(haystack_series.dtype())
+                .ok()?;
+            haystack_series.append(&zeros).ok()?;
+        }
     }
     Some(IsInHaystack::Series(haystack_series))
 }
@@ -753,18 +762,29 @@ pub fn aexpr_to_pyarrow<'py>(
                 return None;
             };
             let needle = input[0].dtype(schema, expr_arena).ok()?;
-            let values_list = match needle_isin_haystack(
+            let isin = match needle_isin_haystack(
                 function,
                 needle,
                 lv,
                 *nulls_equal,
                 Some(LIST_ITEM_LIMIT),
             )? {
-                IsInHaystack::Empty => return pc.call_method1("scalar", (false,)).ok(),
-                IsInHaystack::Series(s) => series_to_py_list(py, &s)?,
+                IsInHaystack::Empty => pc.call_method1("scalar", (false,)).ok()?,
+                IsInHaystack::Series(s) => col
+                    .call_method1("isin", (series_to_py_list(py, &s)?,))
+                    .ok()?,
             };
+            if *nulls_equal {
+                return Some(isin);
+            }
 
-            col.call_method1("isin", (values_list,)).ok()
+            // PyArrow's `isin` gives `false` for a null needle, Polars gives null.
+            let pa = py.import("pyarrow").ok()?;
+            let null_bool = pa
+                .call_method1("scalar", (py.None(), pa.call_method0("bool_").ok()?))
+                .ok()?;
+            let is_null = col.call_method0("is_null").ok()?;
+            pc.call_method1("if_else", (is_null, null_bool, isin)).ok()
         },
         #[cfg(feature = "is_between")]
         AExpr::Function {

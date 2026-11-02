@@ -408,7 +408,8 @@ def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
     capture = capfd.readouterr().err
 
     assert (
-        "converted pyarrow predicate: <pyarrow.compute.Expression is_in(id" in capture
+        "converted pyarrow predicate: <pyarrow.compute.Expression "
+        "if_else(is_null(id, {nan_is_null=false}), null[bool], is_in(id" in capture
     )
     assert "1," in capture
     assert "3" in capture
@@ -442,7 +443,10 @@ def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
     result = q.collect()
     capture = capfd.readouterr().err
 
-    assert "converted pyarrow predicate: <pyarrow.compute.Expression false>" in capture
+    assert (
+        "converted pyarrow predicate: <pyarrow.compute.Expression "
+        "if_else(is_null(id, {nan_is_null=false}), null[bool], false)>" in capture
+    )
     assert "residual predicate: None" in capture
 
     assert_frame_equal(q.collect(), expected)
@@ -458,11 +462,38 @@ def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
 
     plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "0")
 
-    assert "converted pyarrow predicate: <pyarrow.compute.Expression false>" in capture
+    assert (
+        "converted pyarrow predicate: <pyarrow.compute.Expression "
+        "if_else(is_null(id, {nan_is_null=false}), null[bool], false)>" in capture
+    )
     assert "residual predicate: None" in capture
 
     assert_frame_equal(q.collect(), expected)
     assert_frame_equal(df.filter(pred), expected)
+
+
+def test_pyarrow_dataset_is_in_predicate_pushdown_null_and_zero_30531() -> None:
+    df = pl.DataFrame({"k": [None, 2, 3], "f": [-0.0, 0.0, None]})
+    lf = pl.scan_pyarrow_dataset(
+        ds.dataset(df.to_arrow(compat_level=pl.CompatLevel.oldest()))
+    )
+
+    assert_frame_equal(
+        lf.filter(~pl.col("k").is_in([2, 5])).collect(),
+        pl.DataFrame({"k": [3], "f": [None]}, schema=df.schema),
+    )
+    assert_frame_equal(
+        lf.filter(pl.col("f").is_in([0.0])).collect(),
+        pl.DataFrame({"k": [None, 2], "f": [-0.0, 0.0]}, schema=df.schema),
+    )
+    assert_frame_equal(
+        lf.filter(pl.col("f").is_in([-0.0])).collect(),
+        pl.DataFrame({"k": [None, 2], "f": [-0.0, 0.0]}, schema=df.schema),
+    )
+    assert_frame_equal(
+        lf.filter(~pl.col("k").is_in(pl.Series([], dtype=pl.Int64))).collect(),
+        pl.DataFrame({"k": [2, 3], "f": [0.0, None]}, schema=df.schema),
+    )
 
 
 def test_pyarrow_dataset_comm_subplan_elim(tmp_path: Path) -> None:
