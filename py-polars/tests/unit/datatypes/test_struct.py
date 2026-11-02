@@ -479,7 +479,7 @@ def test_struct_order() -> None:
 def test_struct_values_matched_to_fields() -> None:
     # struct values are matched to the target fields positionally if they have
     # the same field names, else by name (with any missing fields set to null)
-    values = [
+    values: list[Any] = [
         {"a": 1, "b": "x"},  # the target fields
         {"b": "y", "a": 2},  # reordered
         {"b": "w", "a": 9},  # also reordered
@@ -490,7 +490,7 @@ def test_struct_values_matched_to_fields() -> None:
         {},  # no fields
         None,
     ]
-    expected = [
+    expected: list[Any] = [
         {"a": 1, "b": "x"},
         {"a": 2, "b": "y"},
         {"a": 9, "b": "w"},
@@ -503,18 +503,26 @@ def test_struct_values_matched_to_fields() -> None:
     ]
     dtype = pl.Struct({"a": pl.Int64, "b": pl.String})
 
-    # target fields inferred from the first value
-    s = pl.Series(values)
-    assert s.dtype == dtype
-    assert s.to_list() == expected
+    # target fields inferred from all values, which keeps the extra field
+    merged_dtype = pl.Struct({"a": pl.Int64, "b": pl.String, "c": pl.Boolean})
+    merged = [
+        None if e is None else {**e, "c": v.get("c")}
+        for v, e in zip(values, expected, strict=True)
+    ]
+    assert_series_equal(pl.Series(values), pl.Series(merged, dtype=merged_dtype))
 
     # target fields given explicitly
     df = pl.from_dicts([{"s": v} for v in values], schema={"s": dtype})
     assert df["s"].to_list() == expected
 
     # nested struct values
-    s = pl.Series([None if v is None else {"s": v} for v in values])
-    assert s.to_list() == [None if v is None else {"s": v} for v in expected]
+    assert_series_equal(
+        pl.Series([None if v is None else {"s": v} for v in values]),
+        pl.Series(
+            [None if m is None else {"s": m} for m in merged],
+            dtype=pl.Struct({"s": merged_dtype}),
+        ),
+    )
 
     # target fields from the supertype, which has the extra field
     s = pl.Series(values, strict=False)
@@ -2879,3 +2887,34 @@ def test_struct_supertype_cast_keeps_literal_fields_30471(literal_first: bool) -
     )
     with pytest.raises(InvalidOperationError):
         df.select(expr)
+
+
+def test_struct_constructor_keys_missing_in_first_value_21314() -> None:
+    s = pl.Series([{"a": 1}, None, {"b": 2, "c": {"x": 3}}, {"c": {"y": "z"}}])
+    expected = pl.Series(
+        [
+            {"a": 1, "b": None, "c": None},
+            None,
+            {"a": None, "b": 2, "c": {"x": 3, "y": None}},
+            {"a": None, "b": None, "c": {"x": None, "y": "z"}},
+        ],
+        dtype=pl.Struct(
+            {
+                "a": pl.Int64,
+                "b": pl.Int64,
+                "c": pl.Struct({"x": pl.Int64, "y": pl.String}),
+            }
+        ),
+    )
+    assert_series_equal(s, expected)
+
+    # a field first seen as null is inferred from all its values
+    s = pl.Series([{"a": None}, {"a": Decimal("1.5")}, {"a": Decimal("1.25")}])
+    expected = pl.Series(
+        [{"a": None}, {"a": Decimal("1.50")}, {"a": Decimal("1.25")}],
+        dtype=pl.Struct({"a": pl.Decimal(38, 2)}),
+    )
+    assert_series_equal(s, expected)
+
+    with pytest.raises(TypeError):
+        pl.Series([{"a": 1}, {"a": "x"}])

@@ -36,6 +36,7 @@ impl Series {
     ///   first non-null value. If any other non-null values do not match this
     ///   data type, an error is raised. If the first non-null value is a
     ///   decimal the slice is scanned for the maximum precision and scale possible.
+    ///   If it is a struct, the fields of all struct values are merged.
     /// - If `strict` is `false`, the data type is the supertype of the `values`.
     ///   An error is returned if no supertype can be determined.
     ///   **WARNING**: A full pass over the values is required to determine the supertype.
@@ -79,6 +80,8 @@ impl Series {
                     }
                     DataType::Decimal(prec, scale)
                 },
+                #[cfg(feature = "dtype-struct")]
+                DataType::Struct(fields) => DataType::Struct(merge_struct_fields(values, fields)),
                 dt => dt,
             }
         } else {
@@ -869,6 +872,41 @@ impl std::hash::Hash for FieldsByName<'_> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.0.iter().for_each(|fld| fld.name.hash(state));
     }
+}
+
+/// Adds the fields of all struct `values` missing from `fields`, in first-seen order.
+/// Added fields, and fields with conflicting non-null data types, get the `Null` data
+/// type, so `any_values_to_struct` infers them from their values.
+#[cfg(feature = "dtype-struct")]
+fn merge_struct_fields(values: &[AnyValue], fields: Vec<Field>) -> Vec<Field> {
+    let mut merged: PlIndexMap<PlSmallStr, DataType> =
+        fields.into_iter().map(|f| (f.name, f.dtype)).collect();
+    let mut seen = PlHashSet::<&[Field]>::default();
+    let mut last: &[Field] = &[];
+    for av in values {
+        let av_fields: &[Field] = match av {
+            AnyValue::StructOwned(payload) => &payload.1,
+            AnyValue::Struct(_, _, av_fields) => av_fields,
+            _ => continue,
+        };
+        if av_fields == last {
+            continue;
+        }
+        last = av_fields;
+        if !seen.insert(av_fields) {
+            continue;
+        }
+        for fld in av_fields {
+            let dtype = merged.entry(fld.name.clone()).or_insert(DataType::Null);
+            if !fld.dtype.is_null() && *dtype != fld.dtype {
+                *dtype = DataType::Null;
+            }
+        }
+    }
+    merged
+        .into_iter()
+        .map(|(name, dtype)| Field::new(name, dtype))
+        .collect()
 }
 
 #[cfg(feature = "dtype-struct")]
