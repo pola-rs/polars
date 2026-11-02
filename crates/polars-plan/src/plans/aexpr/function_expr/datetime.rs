@@ -80,9 +80,32 @@ pub enum IRTemporalFunction {
     },
 }
 
+impl<'a> FieldsMapper<'a> {
+    /// Validate that the dtype is temporal.
+    pub fn ensure_is_temporal(&self) -> PolarsResult<()> {
+        let dt = self.args()[0].dtype();
+        polars_ensure!(
+            dt.is_temporal() || matches!(dt, DataType::Unknown(UnknownKind::Any)),
+            InvalidOperation:
+            "expected Date(time)/Duration/Time data type for temporal operation, got: {dt:?}"
+        );
+        Ok(())
+    }
+}
+
 impl IRTemporalFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use IRTemporalFunction::*;
+        // `pl.datetime` and `pl.duration` build temporal values from integer inputs.
+        let is_constructor = match self {
+            DatetimeFunction { .. } => true,
+            #[cfg(feature = "dtype-duration")]
+            Duration(_) => true,
+            _ => false,
+        };
+        if !is_constructor {
+            mapper.ensure_is_temporal()?;
+        }
         match self {
             Millennium | Century | Year | IsoYear => mapper.with_dtype(DataType::Int32),
             OrdinalDay => mapper.with_dtype(DataType::Int16),

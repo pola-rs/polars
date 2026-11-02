@@ -17,9 +17,26 @@ pub enum IRCategoricalFunction {
     Physical,
 }
 
+impl<'a> FieldsMapper<'a> {
+    /// Validate that the dtype is Categorical or Enum.
+    pub fn ensure_is_categorical(&self) -> PolarsResult<()> {
+        let dt = self.args()[0].dtype();
+        polars_ensure!(
+            dt.is_categorical() || dt.is_enum() || matches!(dt, DataType::Unknown(UnknownKind::Any)),
+            InvalidOperation:
+            "expected Categorical or Enum data type for categorical operation, got: {dt:?}"
+        );
+        Ok(())
+    }
+}
+
 impl IRCategoricalFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use IRCategoricalFunction::*;
+        // `cat.to` builds a categorical from its integer physical representation.
+        if !matches!(self, To(..)) {
+            mapper.ensure_is_categorical()?;
+        }
         match self {
             #[cfg(feature = "strings")]
             LenBytes => mapper.with_dtype(DataType::UInt32),
