@@ -113,7 +113,7 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
 
             for (iter, arr, elem_idx) in arrays.iter_mut() {
                 *elem_idx += 1;
-                if i + 1 != output_length && *elem_idx == arr.len() {
+                while *elem_idx == arr.len() {
                     *arr = iter.next().unwrap();
                     *elem_idx = 0;
                 }
@@ -132,7 +132,7 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
             s.push_str(&format[start..end]);
 
             *elem_idx += 1;
-            if i + 1 != output_length && *elem_idx == arr.len() {
+            while *elem_idx == arr.len() {
                 *arr = iter.next().unwrap();
                 *elem_idx = 0;
             }
