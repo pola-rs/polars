@@ -7,8 +7,7 @@ use crate::parquet::metadata::KeyValue;
 
 const GEO_KEY: &str = "geo";
 
-/// The CRS of a GeoParquet column without a `crs` key.
-/// In GeoArrow, a missing CRS is unknown instead, which GeoParquet writes as `crs: null`.
+/// The geoparquet spec states that something that has no `crs` key should be considered "OGC: CRS84".
 const DEFAULT_CRS: &str = "OGC:CRS84";
 
 struct Encoding {
@@ -138,6 +137,8 @@ pub fn apply_geo_metadata(metadata: &Metadata, schema: &mut ArrowSchema) {
             None => {
                 ext_metadata.insert("crs".into(), DEFAULT_CRS.into());
             },
+            // Geoarrow designates an 'unknown' CRS by leaving `crs` out,
+            // while GeoParquet explicitly writes it as `Null`.
             Some(Value::Null) => {},
             Some(crs) => {
                 ext_metadata.insert("crs".into(), crs.clone());
@@ -216,9 +217,14 @@ pub fn geo_key_value(schema: &ArrowSchema) -> PolarsResult<Option<KeyValue>> {
         column.insert("geometry_types".into(), geometry_types.into());
         let crs_type = ext_metadata.get("crs_type").and_then(Value::as_str);
         match ext_metadata.get("crs") {
+            // Geoarrow designates an 'unknown' CRS by leaving `crs` out,
+            // while GeoParquet explicitly writes it as `Null`.
+            // Leaving the key out would claim the data is in OGC:CRS84.
             None | Some(Value::Null) => {
                 column.insert("crs".into(), Value::Null);
             },
+            // The default is left out, as it is the only string CRS we can write without PROJ.
+            // An SRID that reads "OGC:CRS84" means whatever its producer says, so it is refused.
             Some(Value::String(crs))
                 if crs == DEFAULT_CRS && matches!(crs_type, None | Some("authority_code")) => {},
             Some(Value::Object(projjson)) if is_crs84(projjson) => {},
