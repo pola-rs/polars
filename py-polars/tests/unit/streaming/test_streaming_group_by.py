@@ -936,6 +936,13 @@ def _grants(err: str) -> list[tuple[int, int]]:
     return sorted((int(g), int(w)) for g, w in _GRANT_LINE.findall(err))
 
 
+def _num_builders(err: str) -> list[int]:
+    """The number of partitions each group-by builds at a time, sorted."""
+    return sorted(
+        int(n) for n in re.findall(r"\[group-by\]: building (\d+) partitions", err)
+    )
+
+
 def test_streaming_group_by_memory_grant_fraction_zero(
     group_by_mode: str, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
@@ -983,13 +990,17 @@ def test_streaming_group_by_memory_grant_concurrent(
     plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
     _small_budget(plmonkeypatch, tmp_path)
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", "4")
     lf_a, expected_a = _sum_per_group("a")
     lf_b, expected_b = _sum_per_group("b")
 
     # Both group-bys take their grant before either sends.
     out = pl.concat([lf_a, lf_b], how="horizontal").collect(engine="streaming")
+    err = capfd.readouterr().err
     # The second gets two thirds of the 250 kB the first left in the pool.
-    assert _grants(capfd.readouterr().err) == [(166_667, 500_000), (500_000, 500_000)]
+    assert _grants(err) == [(166_667, 500_000), (500_000, 500_000)]
+    # Each of the 8 partitions needs about 200 kB, so fewer than 4 fit in either grant.
+    assert _num_builders(err) == [1, 2]
     for expected in (expected_a, expected_b):
         assert_frame_equal(
             out.select(expected.columns), expected, check_row_order=False

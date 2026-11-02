@@ -76,6 +76,9 @@ struct Shared {
     grant: Mutex<Grant>,
     /// The estimated bytes of the result of one stored partition.
     partition_bytes: u64,
+    /// The number of tasks that build stored partitions: those whose estimated results fit in the
+    /// grant together, and at least one.
+    num_builders: usize,
 }
 
 /// Sends the results as morsels across execution phases. Each output task builds or sends at
@@ -109,6 +112,14 @@ impl Flush {
             .collect();
         let unsent_bytes = outputs.iter().map(|(_, bytes)| bytes).sum::<u64>()
             + partitions.len() as u64 * partition_bytes;
+        let num_builders = grant
+            .bytes()
+            .checked_div(partition_bytes)
+            .map_or(num_tasks, |n| n.try_into().unwrap_or(usize::MAX))
+            .clamp(1, num_tasks.max(1));
+        if !partitions.is_empty() && polars_config::config().verbose() {
+            eprintln!("[group-by]: building {num_builders} partitions at a time");
+        }
         let mut grant = Grant {
             grant,
             unsent_bytes,
@@ -125,6 +136,7 @@ impl Flush {
             actual_groups,
             grant: Mutex::new(grant),
             partition_bytes,
+            num_builders,
         };
         for output in outputs {
             shared.outputs.push(output).ok().unwrap();
@@ -168,10 +180,10 @@ impl Flush {
         let Self { shared, tasks } = self;
         let shared = &*shared;
         let source_token = SourceToken::new();
-        for (send, task) in senders.into_iter().zip(tasks.iter_mut()) {
+        for (task_idx, (send, task)) in senders.into_iter().zip(tasks.iter_mut()).enumerate() {
             let source_token = source_token.clone();
             join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
-                let result = shared.run(task, send, &source_token, state).await;
+                let result = shared.run(task_idx, task, send, &source_token, state).await;
                 if result.is_err() {
                     shared.failed.store(true, Ordering::Relaxed);
                 }
@@ -198,6 +210,7 @@ impl Shared {
     /// Works on `task` until no work is left, a stop is requested or another task failed.
     async fn run(
         &self,
+        task_idx: usize,
         task: &mut TaskState,
         mut send: PortSender,
         source_token: &SourceToken,
@@ -218,7 +231,9 @@ impl Shared {
                             offset: 0,
                             bytes,
                         };
-                    } else if let Some(stored) = self.partitions.pop() {
+                    } else if task_idx < self.num_builders
+                        && let Some(stored) = self.partitions.pop()
+                    {
                         let mut table =
                             PartitionTable::new(self.params.clone(), self.reserve_groups);
                         for (pre_agg, groups) in self.pre_aggs.in_partition(stored.index()) {
