@@ -1,13 +1,13 @@
 use std::cmp::Reverse;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use crossbeam_queue::ArrayQueue;
 use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::DataFrame;
 use polars_error::PolarsResult;
-use polars_ooc::memory_manager;
+use polars_ooc::{MemoryGrant, memory_manager};
 
 use super::pre_agg::SplitPreAggs;
 use super::table::{GroupByParams, PartitionTable};
@@ -26,17 +26,42 @@ enum TaskState {
         table: PartitionTable,
         stored: StoredPartition,
     },
-    /// A result being sent, from row `offset` on.
+    /// A result being sent, from row `offset` on. It counts `bytes` towards the unsent bytes of
+    /// the grant.
     Sending {
         frame: DataFrame,
         offset: usize,
+        bytes: u64,
     },
+}
+
+/// The memory grant of the flush, shrunk to the unsent bytes once they fall below half of it.
+struct Grant {
+    grant: MemoryGrant,
+    /// The bytes of the results not yet sent, estimated for the stored partitions.
+    unsent_bytes: u64,
+}
+
+impl Grant {
+    /// Counts `bytes` as sent.
+    fn sent(&mut self, bytes: u64) {
+        self.unsent_bytes -= bytes;
+        if self.unsent_bytes < self.grant.bytes() / 2 {
+            self.grant.shrink_to(self.unsent_bytes);
+            if polars_config::config().verbose() {
+                eprintln!(
+                    "[group-by]: memory grant shrunk to {} bytes",
+                    self.unsent_bytes
+                );
+            }
+        }
+    }
 }
 
 /// What the output tasks share.
 struct Shared {
-    /// Results ready to be sent.
-    outputs: ArrayQueue<DataFrame>,
+    /// Results ready to be sent, with their sizes in bytes.
+    outputs: ArrayQueue<(DataFrame, u64)>,
     /// Partitions to build, largest first.
     partitions: ArrayQueue<StoredPartition>,
     /// The pre-aggregates the stored partitions are built from.
@@ -48,6 +73,9 @@ struct Shared {
     /// Set when a task failed, so that the others stop.
     failed: AtomicBool,
     actual_groups: MetricReporter<kind::Sum>,
+    grant: Mutex<Grant>,
+    /// The estimated bytes of the result of one stored partition.
+    partition_bytes: u64,
 }
 
 /// Sends the results as morsels across execution phases. Each output task builds or sends at
@@ -59,6 +87,7 @@ pub struct Flush {
 }
 
 impl Flush {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         outputs: Vec<DataFrame>,
         mut partitions: Vec<StoredPartition>,
@@ -67,8 +96,24 @@ impl Flush {
         params: Arc<GroupByParams>,
         reserve_groups: usize,
         actual_groups: MetricReporter<kind::Sum>,
+        grant: MemoryGrant,
+        partition_bytes: u64,
     ) -> Self {
         partitions.sort_by_key(|p| Reverse(p.estimated_size()));
+        let outputs: Vec<_> = outputs
+            .into_iter()
+            .map(|frame| {
+                let bytes = frame.estimated_size(false) as u64;
+                (frame, bytes)
+            })
+            .collect();
+        let unsent_bytes = outputs.iter().map(|(_, bytes)| bytes).sum::<u64>()
+            + partitions.len() as u64 * partition_bytes;
+        let mut grant = Grant {
+            grant,
+            unsent_bytes,
+        };
+        grant.sent(0);
         let shared = Shared {
             outputs: ArrayQueue::new(outputs.len().max(1)),
             partitions: ArrayQueue::new(partitions.len().max(1)),
@@ -78,9 +123,11 @@ impl Flush {
             next_seq: AtomicU64::new(0),
             failed: AtomicBool::new(false),
             actual_groups,
+            grant: Mutex::new(grant),
+            partition_bytes,
         };
-        for frame in outputs {
-            shared.outputs.push(frame).ok().unwrap();
+        for output in outputs {
+            shared.outputs.push(output).ok().unwrap();
         }
         for partition in partitions {
             shared.partitions.push(partition).ok().unwrap();
@@ -134,7 +181,20 @@ impl Flush {
     }
 }
 
+impl Drop for Flush {
+    fn drop(&mut self) {
+        let bytes = self.shared.grant.get_mut().unwrap().grant.bytes();
+        if bytes > 0 && polars_config::config().verbose() {
+            eprintln!("[group-by]: memory grant of {bytes} bytes returned");
+        }
+    }
+}
+
 impl Shared {
+    fn sent(&self, bytes: u64) {
+        self.grant.lock().unwrap().sent(bytes);
+    }
+
     /// Works on `task` until no work is left, a stop is requested or another task failed.
     async fn run(
         &self,
@@ -152,8 +212,12 @@ impl Shared {
 
             match task {
                 TaskState::Idle => {
-                    if let Some(frame) = self.outputs.pop() {
-                        *task = TaskState::Sending { frame, offset: 0 };
+                    if let Some((frame, bytes)) = self.outputs.pop() {
+                        *task = TaskState::Sending {
+                            frame,
+                            offset: 0,
+                            bytes,
+                        };
                     } else if let Some(stored) = self.partitions.pop() {
                         let mut table =
                             PartitionTable::new(self.params.clone(), self.reserve_groups);
@@ -174,18 +238,28 @@ impl Shared {
                         let frame = table.finish()?;
                         self.actual_groups.add(frame.height() as i64);
                         *task = if frame.height() > 0 {
-                            TaskState::Sending { frame, offset: 0 }
+                            TaskState::Sending {
+                                frame,
+                                offset: 0,
+                                bytes: self.partition_bytes,
+                            }
                         } else {
+                            self.sent(self.partition_bytes);
                             TaskState::Idle
                         };
                     }
                     memory_manager().spill().await;
                 },
-                TaskState::Sending { frame, offset } => {
+                TaskState::Sending {
+                    frame,
+                    offset,
+                    bytes,
+                } => {
                     // An empty result is sent as one empty morsel.
                     let df = frame.slice(*offset as i64, morsel_size);
                     *offset += df.height();
                     if *offset >= frame.height() {
+                        self.sent(*bytes);
                         *task = TaskState::Idle;
                     }
                     let seq = MorselSeq::new(self.next_seq.fetch_add(1, Ordering::Relaxed));

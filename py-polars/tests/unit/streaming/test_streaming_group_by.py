@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
@@ -744,6 +745,17 @@ def _mostly_cold_frame(n: int) -> pl.DataFrame:
     return pl.select(k=pl.when(i % 8 == 0).then(0).otherwise(n + i), v=i)
 
 
+def _mostly_cold_len(n: int) -> pl.DataFrame:
+    """Return the expected `group_by("k").agg(pl.len())` of `_mostly_cold_frame(n)`."""
+    cold = [j for j in range(n) if j % 8]
+    return pl.DataFrame(
+        [
+            pl.Series("k", [0, *(n + j for j in cold)], dtype=pl.Int64),
+            pl.Series("len", [n // 8] + [1] * len(cold), dtype=pl.get_index_type()),
+        ]
+    )
+
+
 def test_streaming_group_by_mostly_cold(group_by_mode: str) -> None:
     n = 2048
     m = n // 8
@@ -751,11 +763,8 @@ def test_streaming_group_by_mostly_cold(group_by_mode: str) -> None:
     cold = [j for j in range(n) if j % 8]
     keys = pl.Series("k", [0, *(n + j for j in cold)], dtype=pl.Int64)
 
-    expected = pl.DataFrame(
-        [keys, pl.Series("len", [m] + [1] * len(cold), dtype=pl.get_index_type())]
-    )
     out = gb.agg(pl.len()).collect(engine="streaming")
-    assert_frame_equal(out, expected, check_row_order=False)
+    assert_frame_equal(out, _mostly_cold_len(n), check_row_order=False)
 
     expected = pl.DataFrame(
         [keys, pl.Series("v", [8 * m * (m - 1) // 2, *cold], dtype=pl.Int64)]
@@ -914,6 +923,104 @@ def test_streaming_group_by_into_sampling_join(
         len=pl.lit(3, dtype=pl.get_index_type()),
         w=3000 + k,
     )
+    assert_frame_equal(out, expected, check_row_order=False)
+
+
+_GRANT_LINE = re.compile(
+    r"\[group-by\]: .*memory grant of (\d+) bytes \((\d+) wanted\)"
+)
+
+
+def _grants(err: str) -> list[tuple[int, int]]:
+    """The granted and wanted bytes of each group-by in the verbose output, sorted."""
+    return sorted((int(g), int(w)) for g, w in _GRANT_LINE.findall(err))
+
+
+def test_streaming_group_by_memory_grant_fraction_zero(
+    group_by_mode: str, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    plmonkeypatch.setenv("POLARS_OOC_MEMORY_GRANT_FRACTION", "0")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", "4")
+    n = 2048
+    lf = _mostly_cold_frame(n).lazy().group_by("k").agg(pl.len())
+    out = lf.collect(engine="streaming")
+    err = capfd.readouterr().err
+    [(granted, _)] = _grants(err)
+    assert granted == 0
+    if group_by_mode == "at_once":
+        # The batch size allows no more than two partitions per pipeline.
+        assert "[group-by]: 8 partitions stored" in err
+    assert_frame_equal(out, _mostly_cold_len(n), check_row_order=False)
+
+
+def _small_budget(plmonkeypatch: PlMonkeyPatch, tmp_path: Path) -> None:
+    """Set a memory budget of 1 MB, of which a group-by wants at most 500 kB."""
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_OOC_MEMORY_BUDGET_MB", "1")
+    plmonkeypatch.setenv("POLARS_OOC_SPILL_DIR", str(tmp_path))
+
+
+def _sum_per_group(name: str) -> tuple[pl.LazyFrame, pl.DataFrame]:
+    """Return a group-by that wants its largest grant, and its expected result."""
+    num_groups = 50_000
+    k, v = f"k_{name}", f"v_{name}"
+    i = pl.int_range(2 * num_groups)
+    lf = pl.select(**{k: i % num_groups, v: i}).lazy().group_by(k).agg(pl.col(v).sum())
+    expected = pl.select(**{k: pl.int_range(num_groups)}).with_columns(
+        **{v: 2 * pl.col(k) + num_groups}
+    )
+    return lf, expected
+
+
+@pytest.mark.write_disk
+def test_streaming_group_by_memory_grant_concurrent(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    _small_budget(plmonkeypatch, tmp_path)
+    lf_a, expected_a = _sum_per_group("a")
+    lf_b, expected_b = _sum_per_group("b")
+
+    # Both group-bys take their grant before either sends.
+    out = pl.concat([lf_a, lf_b], how="horizontal").collect(engine="streaming")
+    # The second gets two thirds of the 250 kB the first left in the pool.
+    assert _grants(capfd.readouterr().err) == [(166_667, 500_000), (500_000, 500_000)]
+    for expected in (expected_a, expected_b):
+        assert_frame_equal(
+            out.select(expected.columns), expected, check_row_order=False
+        )
+
+
+@pytest.mark.write_disk
+def test_streaming_group_by_memory_grant_returned(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    _small_budget(plmonkeypatch, tmp_path)
+    plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "4")
+    plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", "4")
+    lf, expected = _sum_per_group("a")
+    out = lf.collect(engine="streaming")
+    assert _grants(capfd.readouterr().err) == [(500_000, 500_000)]
+    assert_frame_equal(out, expected, check_row_order=False)
+
+    # Only the last row fails to parse, while its stored partition is built.
+    n = 100_000
+    i = pl.int_range(n)
+    t = pl.when(i < n - 1).then(i.cast(pl.String)).otherwise(pl.lit("x"))
+    failing = (
+        pl.select(k=i % (n // 2), t=t)
+        .lazy()
+        .group_by("k")
+        .agg(pl.col("t").max(), pl.col("t").str.to_integer().sum().alias("t_sum"))
+    )
+    with pytest.raises(pl.exceptions.ComputeError, match="strict integer parsing"):
+        failing.collect(engine="streaming")
+    err = capfd.readouterr().err
+    assert _grants(err) == [(500_000, 500_000)]
+    assert re.search(r"\[group-by\]: memory grant of [1-9]\d* bytes returned", err)
+
+    out = lf.collect(engine="streaming")
+    assert _grants(capfd.readouterr().err) == [(500_000, 500_000)]
     assert_frame_equal(out, expected, check_row_order=False)
 
 
