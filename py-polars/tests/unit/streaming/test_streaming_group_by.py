@@ -966,9 +966,14 @@ def _sum_per_group(name: str) -> tuple[pl.LazyFrame, pl.DataFrame]:
     num_groups = 50_000
     k, v = f"k_{name}", f"v_{name}"
     i = pl.int_range(2 * num_groups)
-    lf = pl.select(**{k: i % num_groups, v: i}).lazy().group_by(k).agg(pl.col(v).sum())
-    expected = pl.select(**{k: pl.int_range(num_groups)}).with_columns(
-        **{v: 2 * pl.col(k) + num_groups}
+    lf = (
+        pl.select((i % num_groups).alias(k), i.alias(v))
+        .lazy()
+        .group_by(k)
+        .agg(pl.col(v).sum())
+    )
+    expected = pl.select(pl.int_range(num_groups).alias(k)).with_columns(
+        (2 * pl.col(k) + num_groups).alias(v)
     )
     return lf, expected
 
