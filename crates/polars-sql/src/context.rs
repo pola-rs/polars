@@ -4,6 +4,7 @@ use std::sync::{Arc, OnceLock, RwLock};
 
 use chrono::{NaiveDateTime, SubsecRound};
 use polars_core::prelude::*;
+use polars_core::utils::match_struct_fields;
 #[cfg(feature = "asof_join")]
 use polars_core::utils::try_get_supertype;
 use polars_defs::expr::RoundMode;
@@ -1468,8 +1469,8 @@ impl SQLContext {
             };
             if l_dtype != r_dtype {
                 let dtype = try_get_supertype(l_dtype, r_dtype)?;
-                lf_casts.push(col(l_name.clone()).strict_cast(dtype.clone()));
-                rf_casts.push(col(r_name.clone()).strict_cast(dtype));
+                lf_casts.push(cast_matching_struct_fields(l_name, l_dtype, &dtype));
+                rf_casts.push(cast_matching_struct_fields(r_name, r_dtype, &dtype));
             }
         }
         if !lf_casts.is_empty() {
@@ -2164,11 +2165,10 @@ impl SQLContext {
                 .iter()
                 .zip(schema.iter())
                 .map(|((lf_name, lf_dtype), (col_name, dtype))| {
-                    let e = col(lf_name.clone());
                     let e = if lf_dtype == dtype {
-                        e
+                        col(lf_name.clone())
                     } else {
-                        e.strict_cast(dtype.clone())
+                        cast_matching_struct_fields(lf_name, lf_dtype, dtype)
                     };
                     e.alias(col_name.clone())
                 })
@@ -7437,6 +7437,18 @@ fn statement_table_identifiers(
     } else {
         collector.tables
     }
+}
+
+/// Strictly cast column `name` of type `dtype` to `to`, aligning struct fields by name first.
+fn cast_matching_struct_fields(name: &PlSmallStr, dtype: &DataType, to: &DataType) -> Expr {
+    let shape = match_struct_fields(dtype, to);
+    let expr = col(name.clone());
+    let expr = if shape != *dtype {
+        expr.cast(shape)
+    } else {
+        expr
+    };
+    expr.strict_cast(to.clone())
 }
 
 /// Whether `stmt` is a query that only reads; `INSERT`/`UPDATE` bodies write to the context.
