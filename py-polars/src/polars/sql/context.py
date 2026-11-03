@@ -16,7 +16,7 @@ from polars._utils.expired import RenamedParameter, removed_parameters
 from polars._utils.pycapsule import is_pycapsule
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import _get_stack_locals, qualified_type_name
-from polars._utils.wrap import wrap_ldf
+from polars._utils.wrap import wrap_expr, wrap_ldf
 from polars.convert import from_pandas
 from polars.dataframe import DataFrame
 from polars.exceptions import SQLInterfaceError
@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from typing import Any, Final, Literal, Self, TypeAlias
 
     import pyiceberg.catalog
+    import pyiceberg.expressions
     import pyiceberg.partitioning
     import pyiceberg.schema
     import pyiceberg.table
@@ -475,7 +476,7 @@ class SQLContext(Generic[FrameType]):
         from polars.io.iceberg.functions import _scan_catalog_table
 
         if (stmt := self._ctxt.catalog_statement(query)) is not None:
-            return self._execute_catalog_statement(stmt)._ldf
+            return self._execute_catalog_statement(stmt, query)._ldf
 
         tables = []
         identifier: list[str]
@@ -492,8 +493,8 @@ class SQLContext(Generic[FrameType]):
             tables.append((full_name, lf._ldf))
         return self._ctxt.execute_with_catalog_tables(query, tables)
 
-    def _execute_catalog_statement(self, stmt: dict[str, Any]) -> LazyFrame:
-        """Perform the catalog statement that `catalog_statement` returned."""
+    def _execute_catalog_statement(self, stmt: dict[str, Any], query: str) -> LazyFrame:
+        """Perform the statement of `query` that `catalog_statement` returned."""
         config, instance, storage_options = self._catalogs[stmt["catalog"]]
         catalog = (
             instance
@@ -524,6 +525,16 @@ class SQLContext(Generic[FrameType]):
             )
         elif stmt["kind"] == "truncate":
             response = _truncate_catalog_table(catalog, stmt)
+        elif stmt["kind"] == "delete":
+            full_name = [stmt["catalog"], *stmt["identifier"]]
+            response = _delete_catalog_table(
+                catalog,
+                stmt,
+                lambda scan: wrap_expr(
+                    self._ctxt.catalog_delete_predicate(query, [(full_name, scan._ldf)])
+                ),
+                storage_options,
+            )
         else:
             msg = f"unsupported catalog statement {stmt['kind']!r}"
             raise NotImplementedError(msg)
@@ -619,7 +630,10 @@ class SQLContext(Generic[FrameType]):
           in :ref:`INSERT <insert>`.
         * `TRUNCATE [TABLE] [IF EXISTS] <name>` deletes all of a catalog table's
           rows in one commit, without writing data files.
-        * `DELETE` is not supported on catalog tables.
+        * `DELETE FROM <name> [WHERE <condition>]` deletes the matching rows in one
+          commit, keeping rows where the condition is NULL. The condition compares
+          columns with constants. It returns the statement, not the remaining rows.
+          See :ref:`DELETE FROM <delete_from_table>`.
 
         Catalogs attached inside a `with SQLContext()` block are detached on exit,
         like the tables registered there. If that detaches the default catalog, the
@@ -974,7 +988,7 @@ def _truncate_catalog_table(
     catalog: pyiceberg.catalog.Catalog, stmt: dict[str, Any]
 ) -> str:
     """Delete all rows of the catalog table of a `TRUNCATE`, returning the response."""
-    from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
+    from pyiceberg.exceptions import NoSuchTableError
 
     identifier: tuple[str, ...] = tuple(stmt["identifier"])
     name, full_name = stmt["name"], _display_name([stmt["catalog"], *identifier])
@@ -983,42 +997,203 @@ def _truncate_catalog_table(
         f"table '{name}' does not exist: catalog table "
         f"'{_display_name(identifier)}' could not be truncated"
     )
-    # checked first, as not every catalog reports a missing table as one on load
-    if not _table_exists(catalog, identifier):
+    try:
+        table = _load_catalog_table(catalog, identifier, missing)
+    except NoSuchTableError:
         if stmt["if_exists"]:
             return response
-        msg = f"{missing}; catalog identifiers are case-sensitive"
-        raise NoSuchTableError(msg)
-    try:
-        table = catalog.load_table(identifier)
-    except (NoSuchTableError, NoSuchNamespaceError) as error:
-        if stmt["if_exists"]:
-            return response
-        msg = f"{missing} ({error}); catalog identifiers are case-sensitive"
-        raise NoSuchTableError(msg) from error
-    try:
-        _delete_all_rows(table)
-    except Exception as error:
-        error.add_note(
-            f"table '{name}' could not be truncated: catalog table "
-            f"'{_display_name(identifier)}' of catalog '{stmt['catalog']}'"
-        )
         raise
+    where = (
+        f"catalog table '{_display_name(identifier)}' of catalog '{stmt['catalog']}'"
+    )
+    _delete_rows(
+        table,
+        None,
+        refused=f"table '{name}' could not be truncated: {where}",
+        unknown=f"table '{name}' may have been truncated (commit state unknown): {where}",
+    )
     return response
 
 
-def _delete_all_rows(table: pyiceberg.table.Table) -> None:
-    """Delete all rows of `table` in one commit. An empty table commits nothing."""
-    from pyiceberg.expressions import AlwaysTrue
+def _load_catalog_table(
+    catalog: pyiceberg.catalog.Catalog, identifier: tuple[str, ...], missing: str
+) -> pyiceberg.table.Table:
+    """Load the table a statement changes, raising `missing` if it does not exist."""
+    from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 
-    with table.transaction() as tx:
-        # data files are dropped whole, without reading or writing any
-        with tx.update_snapshot().delete() as delete:
-            delete.delete_by_predicate(AlwaysTrue())
-            rewrite = delete.rewrites_needed
+    # checked first, as not every catalog reports a missing table as one on load
+    if not _table_exists(catalog, identifier):
+        msg = f"{missing}; catalog identifiers are case-sensitive"
+        raise NoSuchTableError(msg)
+    try:
+        return catalog.load_table(identifier)
+    except (NoSuchTableError, NoSuchNamespaceError) as error:
+        msg = f"{missing} ({error}); catalog identifiers are case-sensitive"
+        raise NoSuchTableError(msg) from error
+
+
+def _delete_rows(
+    table: pyiceberg.table.Table,
+    delete_filter: pyiceberg.expressions.BooleanExpression | None,
+    *,
+    refused: str,
+    unknown: str,
+) -> None:
+    """
+    Delete the rows of `table` matching `delete_filter` (or all) in one commit.
+
+    On failure, the note `refused` if nothing was committed, else `unknown`.
+    """
+    import uuid
+
+    from pyiceberg.exceptions import (
+        CommitStateUnknownException,
+        ValidationException,
+    )
+    from pyiceberg.expressions import AlwaysTrue
+    from pyiceberg.table import Table
+
+    from polars.io.iceberg._sink import (
+        _SINK_UUID_PROPERTY,
+        _already_committed,
+        _AlreadyCommitted,
+        _sink_transaction,
+        _SinkCatalog,
+    )
+
+    delete_filter = AlwaysTrue() if delete_filter is None else delete_filter
+    # as a sink's commit: a failed commit is checked for having landed before
+    # PyIceberg retries it or deletes its manifests
+    commit_uuid = str(uuid.uuid4())
+    properties = {_SINK_UUID_PROPERTY: commit_uuid}
+
+    class _Catalog(_SinkCatalog):
+        # what a commit request raised, its outcome already resolved
+        raised: Exception | None = None
+
+        def commit_table(self, *args: Any, **kwargs: Any) -> Any:
+            try:
+                return super().commit_table(*args, **kwargs)
+            except Exception as error:
+                self.raised = error
+                raise
+
+    catalog = _Catalog(table.catalog, commit_uuid, verbose=False)
+    wrapped = Table(
+        table.name(),
+        table.metadata,
+        table.metadata_location,
+        table.io,
+        catalog,  # type: ignore[arg-type]
+        table.config,
+    )
+    location = table.location_provider().data_path
+    rewrite = False
+    try:
+        try:
+            with _sink_transaction(wrapped, commit_uuid) as tx:
+                # data files whose rows all match are dropped whole, without reading any
+                update = tx.update_snapshot(snapshot_properties=properties)
+                with update.delete() as delete:
+                    delete.delete_by_predicate(delete_filter)
+                    rewrite = delete.rewrites_needed
+                if rewrite:
+                    # other files that may match are rewritten without those rows
+                    tx.delete(delete_filter, snapshot_properties=properties)
+        except (_AlreadyCommitted, CommitStateUnknownException, ValidationException):
+            raise
+        except Exception as error:
+            # a failure after a commit request, but not of it (eg: the refresh for
+            # a retry), is resolved against the catalog
+            if not catalog._snapshot_ids or error is catalog.raised:
+                raise
+            try:
+                landed = _already_committed(
+                    table.catalog.load_table(table.name()).metadata, commit_uuid
+                )
+            except Exception:
+                landed = False
+            if landed:
+                return
+            msg = "a failed Iceberg commit may still land"
+            raise CommitStateUnknownException(msg) from error
+    except _AlreadyCommitted:
+        return
+    except CommitStateUnknownException as error:
         if rewrite:
-            # a data file without a record count is read to drop its rows
-            tx.delete(AlwaysTrue())
+            error.add_note(f"rewritten data files kept under '{location}'")
+        error.add_note(unknown)
+        raise
+    except Exception as error:
+        if rewrite:
+            error.add_note(f"rewritten data files may remain under '{location}'")
+        error.add_note(refused)
+        raise
+
+
+def _delete_condition_error(
+    full_name: str, condition: str, reason: str, *, hint: bool
+) -> SQLInterfaceError:
+    if len(condition) > 200:
+        condition = f"{condition[:200]}..."
+    msg = f"DELETE on catalog table '{full_name}' cannot apply `{condition}`: {reason}"
+    if hint:
+        msg += (
+            "\n\nHint: compare columns with constants, combined with AND, OR, NOT. "
+            "Or select the matching keys first, then delete with `WHERE id IN (...)`."
+        )
+    return SQLInterfaceError(msg)
+
+
+def _delete_catalog_table(
+    catalog: pyiceberg.catalog.Catalog,
+    stmt: dict[str, Any],
+    predicate_of: Callable[[LazyFrame], Expr],
+    storage_options: StorageOptionsDict | None,
+) -> str:
+    """Delete the rows of a `DELETE` from its catalog table, returning the response."""
+    from polars.io.iceberg._utils import (
+        UnconvertiblePredicateError,
+        predicate_to_pyiceberg_delete_filter,
+    )
+    from polars.io.iceberg.functions import scan_iceberg
+
+    identifier: tuple[str, ...] = tuple(stmt["identifier"])
+    name, table_name = stmt["name"], _display_name(identifier)
+    full_name = _display_name([stmt["catalog"], *identifier])
+    if stmt["subquery"]:
+        raise _delete_condition_error(
+            full_name, stmt["condition"], "subquery", hint=True
+        )
+    missing = (
+        f"table '{name}' does not exist: no rows of catalog table '{table_name}' "
+        "could be deleted"
+    )
+    table = _load_catalog_table(catalog, identifier, missing)
+    # planned against this load, so that the filter binds the same columns
+    predicate = predicate_of(scan_iceberg(table, storage_options=storage_options))
+    try:
+        delete_filter = predicate_to_pyiceberg_delete_filter(predicate, table)
+    except UnconvertiblePredicateError as error:
+        if error.reason is not None:
+            reason, hint = error.reason, False
+        elif stmt["hint_unsupported_part"] is not None:
+            reason, hint = stmt["hint_unsupported_part"], True
+        elif error.likely is not None:
+            reason, hint = error.likely, False
+        else:
+            reason, hint = "unsupported expression", True
+        raise _delete_condition_error(
+            full_name, stmt["condition"], reason, hint=hint
+        ) from error
+    where = f"catalog table '{table_name}' of catalog '{stmt['catalog']}'"
+    _delete_rows(
+        table,
+        delete_filter,
+        refused=f"no rows of table '{name}' were deleted: {where}",
+        unknown=f"rows of table '{name}' may have been deleted (commit state unknown): {where}",
+    )
+    return f"DELETE FROM {full_name}"
 
 
 def _create_catalog_namespace(
@@ -1530,8 +1705,6 @@ def _insert_catalog_table(
     storage_options: StorageOptionsDict | None,
 ) -> str:
     """Write the rows of an `INSERT` to its catalog table, returning the response."""
-    from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
-
     from polars.datatypes import Null
     from polars.exceptions import (
         ColumnNotFoundError,
@@ -1550,15 +1723,7 @@ def _insert_catalog_table(
         f"table '{name}' does not exist: catalog table '{table_name}' could not be "
         "written"
     )
-    # checked first, as not every catalog reports a missing table as one on load
-    if not _table_exists(catalog, identifier):
-        msg = f"{missing}; catalog identifiers are case-sensitive"
-        raise NoSuchTableError(msg)
-    try:
-        table = catalog.load_table(identifier)
-    except (NoSuchTableError, NoSuchNamespaceError) as error:
-        msg = f"{missing} ({error}); catalog identifiers are case-sensitive"
-        raise NoSuchTableError(msg) from error
+    table = _load_catalog_table(catalog, identifier, missing)
 
     lf = query_frame(stmt["query"])
     source = lf.collect_schema()

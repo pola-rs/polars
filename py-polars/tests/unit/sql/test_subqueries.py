@@ -1328,6 +1328,53 @@ def test_correlated_scalar_subquery_rejects_foreign_qualifier() -> None:
 
 
 @pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT id, (SELECT AVG(x) FROM t2 WHERE t2.d < t1.d) AS r FROM t1",
+        "SELECT id, (SELECT COUNT(*) FROM t2 WHERE t2.d <> t1.d) AS r FROM t1",
+        "SELECT id, (SELECT MAX(x) FROM t2 WHERE t2.f > t1.f) AS r FROM t1",
+        "SELECT id FROM t1 WHERE EXISTS (SELECT 1 FROM t2 WHERE t2.d > t1.d)",
+        "SELECT id FROM t1 WHERE NOT EXISTS (SELECT 1 FROM t2 WHERE t2.d > t1.d)",
+        "SELECT id, EXISTS (SELECT 1 FROM t2 WHERE t2.d > t1.d) AS r FROM t1",
+        "SELECT id FROM t1 WHERE id * 10 IN (SELECT x FROM t2 WHERE t2.d >= t1.d)",
+    ],
+)
+def test_non_equi_correlated_subquery_repeated_outer_values(query: str) -> None:
+    assert_sql_matches(
+        frames={
+            "t1": pl.DataFrame(
+                {
+                    "id": [1, 2, 3, 4, 5, 6, 7],
+                    "d": [1, 1, 2, None, 3, 3, 2],
+                    "f": [0.0, -0.0, 1.5, None, 1.5, 2.0, 0.0],
+                }
+            ),
+            "t2": pl.DataFrame(
+                {
+                    "d": [1, 2, 2, 3, None],
+                    "x": [10, 20, 30, 40, 50],
+                    "f": [-4.0, 0.0, 1.5, 4.0, None],
+                }
+            ),
+        },
+        query=f"{query} ORDER BY id",
+        compare_with="duckdb",
+    )
+
+
+def test_non_equi_correlated_subquery_signed_zero() -> None:
+    df = pl.DataFrame({"id": [1, 2, 3], "f": [0.0, -0.0, 0.0]})
+    t2 = pl.DataFrame({"f": [-4.0, 0.0, 1.5]})
+    res = pl.SQLContext(t1=df, t2=t2).execute(
+        """
+        SELECT id, (SELECT COUNT(*) FROM t2 WHERE t2.f < ATAN2(t1.f, -1.0)) AS r
+        FROM t1 ORDER BY id
+        """
+    )
+    assert res.collect()["r"].to_list() == [3, 1, 3]
+
+
+@pytest.mark.parametrize(
     "predicate",
     [
         "cost > (SELECT avg(cost) FROM sales s2)",

@@ -1557,3 +1557,14 @@ def test_join_where_predicate_column_loses_suffix(
         query.collect(engine=engine, optimizations=disabled),
         check_row_order=False,
     )
+
+
+@pytest.mark.parametrize("how", ["inner", "left"])
+def test_join_where_projection_keeps_right_key_30519(
+    how: Literal["inner", "left"],
+) -> None:
+    left = pl.LazyFrame({"x": [1], "k": [9]})
+    right = pl.LazyFrame({"y": [0], "k": [5]})
+    lf = left.join_where(right, pl.col("x") >= pl.col("y"), how=how)
+    assert_frame_equal(lf.select("x").collect(), pl.DataFrame({"x": [1]}))
+    assert_frame_equal(lf.select("k_right").collect(), pl.DataFrame({"k_right": [5]}))

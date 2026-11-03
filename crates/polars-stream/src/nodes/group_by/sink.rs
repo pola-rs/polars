@@ -202,7 +202,7 @@ impl LocalSink {
                     num_values += size.num_values as u64;
                     bytes += size.bytes as u64;
                 },
-                None => num_fixed += 1,
+                None => num_fixed += r.num_fixed_states() as u64,
             }
         }
         let growing = &mut self.growing_states_per_input[input_idx];
@@ -746,7 +746,11 @@ impl GroupBySink {
         )?;
 
         let mut stats = InputStats {
-            num_reductions: params.grouped_reductions.len() as u64,
+            states_per_group: params
+                .grouped_reductions
+                .iter()
+                .map(|r| r.num_fixed_states() as u64)
+                .sum(),
             has_growing_states: params
                 .grouped_reductions
                 .iter()

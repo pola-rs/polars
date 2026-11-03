@@ -39,7 +39,7 @@ pub fn make_batches(
     batches
 }
 
-/// A frame of the current batch: loaded, prepared and split.
+/// A frame of the current batch: loaded and split.
 pub struct LoadedFrame {
     pub input: usize,
     pub frame: FrameWithKeys,
@@ -54,19 +54,23 @@ impl LoadedFrame {
     }
 }
 
-/// Runs once on each loaded frame of the given input, before it is split.
-pub type PrepareFrame<'p> =
-    dyn Fn(usize, FrameWithKeys) -> BoxFuture<'p, PolarsResult<FrameWithKeys>> + Sync + 'p;
+/// Adds the rows of a batch to one partition.
+pub type BuildPartition<'b, S> = dyn for<'a> Fn(
+        &'a mut S,
+        &'a [LoadedFrame],
+        &'a StreamingExecutionState,
+    ) -> BoxFuture<'a, PolarsResult<()>>
+    + Sync
+    + 'b;
 
 /// Calls `build` on every partition once per batch, with the frames of that batch loaded. While
-/// low-priority tasks build the partitions, high-priority tasks load, prepare and split the next
-/// batch (each frame once) and free the previous one.
+/// low-priority tasks build the partitions, high-priority tasks load and split the next batch
+/// (each frame once) and free the previous one.
 pub fn build_from_batches<S: Send>(
     batches: Vec<Vec<(usize, SpillFrameWithKeys)>>,
     partitioner: &HashPartitioner,
     partitions: &mut [S],
-    prepare: Option<&PrepareFrame<'_>>,
-    build: &(dyn Fn(&mut S, &[LoadedFrame]) -> PolarsResult<()> + Sync),
+    build: &BuildPartition<'_, S>,
     state: &StreamingExecutionState,
 ) -> PolarsResult<()> {
     let mut current = Vec::new();
@@ -78,7 +82,6 @@ pub fn build_from_batches<S: Send>(
             &current,
             partitions,
             partitioner,
-            prepare,
             build,
             state,
         )?;
@@ -91,7 +94,6 @@ pub fn build_from_batches<S: Send>(
         &current,
         partitions,
         partitioner,
-        prepare,
         build,
         state,
     )?;
@@ -101,25 +103,22 @@ pub fn build_from_batches<S: Send>(
         &[],
         partitions,
         partitioner,
-        prepare,
         build,
         state,
     )?;
     Ok(())
 }
 
-/// One task scope with a task per item: high-priority tasks drop the frames `to_free` and load,
-/// prepare and split the frames `to_load`, while low-priority tasks build every partition from
+/// One task scope with a task per item: high-priority tasks drop the frames `to_free` and load
+/// and split the frames `to_load`, while low-priority tasks build every partition from
 /// `batch`, unless it is empty. Returns the loaded frames.
-#[allow(clippy::too_many_arguments)]
 fn build_and_load<S: Send>(
     to_load: Vec<(usize, SpillFrameWithKeys)>,
     to_free: Vec<LoadedFrame>,
     batch: &[LoadedFrame],
     partitions: &mut [S],
     partitioner: &HashPartitioner,
-    prepare: Option<&PrepareFrame<'_>>,
-    build: &(dyn Fn(&mut S, &[LoadedFrame]) -> PolarsResult<()> + Sync),
+    build: &BuildPartition<'_, S>,
     state: &StreamingExecutionState,
 ) -> PolarsResult<Vec<LoadedFrame>> {
     executor::task_scope(state.task_metrics(), |scope| {
@@ -131,7 +130,7 @@ fn build_and_load<S: Send>(
             .into_iter()
             .map(|(input, frame)| {
                 scope.spawn_task(TaskPriority::High, async move {
-                    let loaded = load_frame(input, frame, partitioner, prepare).await?;
+                    let loaded = load_frame(input, frame, partitioner).await?;
                     memory_manager().spill().await;
                     PolarsResult::Ok(loaded)
                 })
@@ -144,7 +143,7 @@ fn build_and_load<S: Send>(
                 .iter_mut()
                 .map(|partition| {
                     scope.spawn_task(TaskPriority::Low, async move {
-                        build(partition, batch)?;
+                        build(partition, batch, state).await?;
                         memory_manager().spill().await;
                         PolarsResult::Ok(())
                     })
@@ -172,12 +171,8 @@ async fn load_frame(
     input: usize,
     frame: SpillFrameWithKeys,
     partitioner: &HashPartitioner,
-    prepare: Option<&PrepareFrame<'_>>,
 ) -> PolarsResult<LoadedFrame> {
-    let mut frame = frame.load().await;
-    if let Some(prepare) = prepare {
-        frame = prepare(input, frame).await?;
-    }
+    let frame = frame.load().await;
     let split = split(&frame.keys, frame.mask.as_ref(), partitioner);
     Ok(LoadedFrame {
         input,

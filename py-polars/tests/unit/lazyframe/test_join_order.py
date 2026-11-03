@@ -547,6 +547,62 @@ def test_union_leaf_is_estimated(tmp_path: Path) -> None:
     )
 
 
+def test_hconcat_leaf_is_estimated(tmp_path: Path) -> None:
+    # As tall as the tallest input.
+    frames = star_frames(tmp_path)
+    extra = pl.LazyFrame({"s": range(50)})
+    frames["dim_a"] = pl.concat([frames["dim_a"], extra], how="horizontal")
+    lf = star_query(frames)
+
+    assert_reordered(lf, ["fact", "dim_b", "dim_a"], ["fact", "dim_a", "dim_b"])
+
+
+def test_hconcat_padding_hides_null_counts(tmp_path: Path) -> None:
+    # `s` has no nulls in its file, but padding to the taller input fills it with
+    # them, so the filter keeps all but one row.
+    frames = star_frames(tmp_path)
+    frames |= write_scans(
+        tmp_path,
+        tall=pl.DataFrame({"t_key": [i % 50 for i in range(10_000)]}),
+        short=pl.DataFrame({"s": [1]}),
+    )
+    padded = pl.concat(
+        [frames["tall"], frames["short"]], how="horizontal_extend"
+    ).filter(pl.col("s").is_null())
+    lf = (
+        frames["fact"]
+        .join(padded, left_on="f_dim_a", right_on="t_key", coalesce=False)
+        .join(
+            frames["dim_a"].filter(pl.col("a_flag")),
+            left_on="f_dim_a",
+            right_on="a_key",
+            coalesce=False,
+        )
+    )
+
+    assert_reordered(
+        lf, ["fact", "tall", "short", "dim_a"], ["fact", "dim_a", "tall", "short"]
+    )
+
+
+def test_join_on_a_literal_key_is_a_cross_product(tmp_path: Path) -> None:
+    frames = write_scans(
+        tmp_path,
+        fact=pl.DataFrame({"f_b": [i % 20 for i in range(1000)]}),
+        # Repeats each key three times, so it fans out.
+        dim_b=pl.DataFrame({"b_key": [i % 20 for i in range(60)]}),
+        dim_c=pl.DataFrame({"c_val": list(range(5))}),
+    )
+    lf = (
+        frames["fact"]
+        .with_columns(c=pl.lit(True))
+        .join(frames["dim_c"].with_columns(c=pl.lit(True)), on="c", coalesce=False)
+        .join(frames["dim_b"], left_on="f_b", right_on="b_key", coalesce=False)
+    )
+
+    assert_reordered(lf, ["fact", "dim_c", "dim_b"], ["fact", "dim_b", "dim_c"])
+
+
 def test_gather_leaf_is_estimated(tmp_path: Path) -> None:
     # The indices are a frame of their own, so the gather's height is that frame's.
     frames = star_frames(tmp_path)

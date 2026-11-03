@@ -2111,3 +2111,40 @@ def test_dataframe_height() -> None:
 
     with pytest.raises(AssertionError):
         assert_frame_equal(pl.DataFrame(), pl.DataFrame(height=10))
+
+
+@dataclasses.dataclass
+class _Inner30471:
+    a: int
+    b: int
+
+
+@dataclasses.dataclass
+class _Row30471:
+    s: _Inner30471
+
+
+def test_struct_schema_overrides_match_fields_by_name_30471() -> None:
+    rows = [_Row30471(_Inner30471(1, 2))]
+    table = pa.table({"s": [{"a": 1, "b": 2}], "l": [[{"a": 1, "b": 2}]]})
+    reordered = pl.Struct({"b": pl.Int64, "a": pl.Int64})
+    added = pl.Struct({"a": pl.Int64, "b": pl.Int64, "c": pl.Int64})
+
+    # Struct fields are reordered and added by name.
+    assert pl.DataFrame(rows, schema_overrides={"s": reordered}).rows() == [
+        ({"b": 2, "a": 1},)
+    ]
+    assert pl.DataFrame(rows, schema_overrides={"s": added}).rows() == [
+        ({"a": 1, "b": 2, "c": None},)
+    ]
+    out = pl.DataFrame(table, schema_overrides={"s": reordered, "l": pl.List(added)})
+    assert out.rows() == [({"b": 2, "a": 1}, [{"a": 1, "b": 2, "c": None}])]
+
+    # Dropping a field and out-of-range values still raise.
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.DataFrame(rows, schema_overrides={"s": pl.Struct({"a": pl.Int64})})
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.DataFrame(
+            [_Row30471(_Inner30471(1, 300))],
+            schema_overrides={"s": pl.Struct({"b": pl.Int8, "a": pl.Int64})},
+        )

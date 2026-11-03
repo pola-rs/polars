@@ -10178,5 +10178,5 @@ def _resolve_temporal_dtype(
         elif time_unit == "ms":
             dtype = PolarsType("ms")
         elif time_unit == "D" and ndtype.type == np.datetime64:
-            dtype = Date
+            dtype = Date if dtype is None else Datetime("us")
     return dtype
