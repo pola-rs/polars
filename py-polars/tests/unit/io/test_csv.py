@@ -1679,7 +1679,7 @@ def test_error_message(chunk_override: None) -> None:
 
 def test_csv_categorical_lifetime(chunk_override: None) -> None:
     # escaped strings do some heap allocates in the builder
-    # this tests of the lifetimes remains valid
+    # this tests if the lifetimes remain valid
     csv = textwrap.dedent(
         r"""
     a,b
@@ -2685,7 +2685,7 @@ def test_csv_write_scalar_empty_chunk_20273(
 
 def test_csv_malformed_quote_in_unenclosed_field_22395(chunk_override: None) -> None:
     # Note - the malformed detection logic is very basic, and fails to detect many
-    # types at this point (for eaxample: 'a,b"c,x"y' will not be detected).
+    # types at this point (for example: 'a,b"c,x"y' will not be detected).
     # Below is a one pattern that will be flagged (odd number of quotes in a row).
     malformed = b"""\
 a,b,x"y

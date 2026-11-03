@@ -167,7 +167,7 @@ pub struct MyKwargs {
 }
 
 /// If you want to accept `kwargs`. You define a `kwargs` argument
-/// on the second position in you plugin. You can provide any custom struct that is deserializable
+/// on the second position in your plugin. You can provide any custom struct that is deserializable
 /// with the pickle protocol (on the Rust side).
 #[polars_expr(output_type=String)]
 fn append_kwargs(input: &[Series], kwargs: MyKwargs) -> PolarsResult<Series> {

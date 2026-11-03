@@ -250,7 +250,7 @@ def time_(
     Returns
     -------
     Expr
-        Expression of data type :class:`Date`.
+        Expression of data type :class:`Time`.
 
     Examples
     --------

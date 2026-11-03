@@ -112,7 +112,7 @@ def floats(
     allow_nan: bool = True,
     allow_infinity: bool = True,
 ) -> SearchStrategy[float]:
-    """Create a strategy for generating integers."""
+    """Create a strategy for generating floats."""
     return st.floats(
         width=bit_width, allow_nan=allow_nan, allow_infinity=allow_infinity
     )
