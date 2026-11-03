@@ -23,6 +23,8 @@ PROJJSON = {"type": "GeographicCRS", "name": "WGS 84"}
 CRS84 = {"crs": "OGC:CRS84"}
 XY = pl.Struct({"x": pl.Float64, "y": pl.Float64})
 XYZ = pl.Struct({"x": pl.Float64, "y": pl.Float64, "z": pl.Float64})
+XYM = pl.Struct({"x": pl.Float64, "y": pl.Float64, "m": pl.Float64})
+XYZM = pl.Struct(dict.fromkeys(["x", "y", "z", "m"], pl.Float64))
 BOX_XY = pl.Struct(dict.fromkeys(["xmin", "ymin", "xmax", "ymax"], pl.Float64))
 BOX_XYZ = pl.Struct(
     dict.fromkeys(["xmin", "ymin", "zmin", "xmax", "ymax", "zmax"], pl.Float64)
@@ -636,6 +638,16 @@ def test_geoparquet_crs_round_trip(
         ("2.0", pl.Extension("geoarrow.wkb", pl.Binary), "POLARS_GEOPARQUET_WRITE"),
         ("1.0", pl.Extension("geoarrow.point", XY), "geoarrow.point"),
         ("1.1", pl.Extension("geoarrow.wkt", pl.String), "geoarrow.wkt"),
+        (
+            "1.1",
+            pl.Extension("geoarrow.point", XYM),
+            r"GeoParquet 1\.1\.0: it cannot store M values",
+        ),
+        (
+            "1.1",
+            pl.Extension("geoarrow.polygon", pl.List(pl.List(XYZM))),
+            r"GeoParquet 1\.1\.0: it cannot store M values",
+        ),
         (
             "1.1",
             pl.Extension("geoarrow.wkb", pl.Binary, '{"crs": "EPSG:4326"}'),
