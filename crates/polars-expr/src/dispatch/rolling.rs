@@ -129,7 +129,7 @@ pub(super) fn rolling_corr_cov(
     } = rolling_options;
     polars_ensure!(
         min_periods <= window_size,
-        InvalidOperation: "`min_periods` ({}) should be <= `window_size` ({})",
+        InvalidOperation: "`min_samples` ({}) should be <= `window_size` ({})",
         min_periods, window_size
     );
 
