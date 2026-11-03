@@ -956,17 +956,145 @@ def test_sql_first_row_number_maintains_errors(plmonkeypatch: PlMonkeyPatch) -> 
 @pytest.mark.parametrize(
     "build",
     [
-        lambda lf: pl.SQLContext(t=lf).execute(
-            "SELECT * FROM (SELECT *, ROW_NUMBER() OVER "
-            "(PARTITION BY g ORDER BY t, id) AS rn FROM t) u WHERE rn = 2"
+        lambda lf: lf.filter(
+            (pl.col("rn") == 1) & (pl.col("s").str.to_integer() > pl.col("rn") - 1)
         ),
+        lambda lf: lf.with_columns(
+            keep=(pl.col("rn") == 1) & (pl.col("s").str.to_integer() > 0)
+        ).filter("keep"),
+    ],
+)
+def test_sql_first_row_number_maintains_predicate_errors(
+    build: Callable[[pl.LazyFrame], pl.LazyFrame], plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_PUSHDOWN_OPT_MAINTAIN_ERRORS", "1")
+    lf = pl.LazyFrame({"g": [1, 1], "s": ["1", "bad"], "id": [0, 1]})
+    q = build(
+        pl.SQLContext(t=lf).execute(
+            "SELECT *, ROW_NUMBER() OVER (PARTITION BY g ORDER BY id) AS rn FROM t"
+        )
+    )
+    assert len(_window_headers(q)) == 1
+    for engine in ENGINES:
+        with pytest.raises(pl.exceptions.ComputeError):
+            q.collect(engine=engine)
+
+
+def test_sql_first_row_number_maintain_errors_conjunction(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_PUSHDOWN_OPT_MAINTAIN_ERRORS", "1")
+    q = pl.SQLContext(t=_payload_frame(500)).execute(
+        "SELECT id, g FROM t QUALIFY ROW_NUMBER() OVER "
+        "(PARTITION BY g ORDER BY t DESC, id) = 1 AND x > 100"
+    )
+    assert _window_headers(q) == []
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT * FROM (SELECT *, ROW_NUMBER() OVER "
+        "(PARTITION BY g ORDER BY t DESC, id) AS rn FROM t) u "
+        "WHERE rn = 1 AND x > 500",
+        "SELECT * FROM (SELECT *, ROW_NUMBER() OVER "
+        "(PARTITION BY g ORDER BY t DESC, id) AS rn FROM t) u "
+        "WHERE x > 500 AND 1 = rn",
+        "SELECT * FROM (SELECT *, ROW_NUMBER() OVER "
+        "(PARTITION BY g ORDER BY t DESC, id) AS rn FROM t) u "
+        "WHERE rn <= 3 AND rn >= 1 AND rn < 2",
+        "SELECT * FROM (SELECT *, ROW_NUMBER() OVER "
+        "(PARTITION BY g ORDER BY t DESC, id) AS rn FROM t) u "
+        "WHERE rn <= 9223372036854775807 AND rn <= 1",
+        "SELECT id, g FROM t QUALIFY ROW_NUMBER() OVER "
+        "(PARTITION BY g ORDER BY t DESC, id) = 1",
+        "SELECT id, g FROM t QUALIFY ROW_NUMBER() OVER "
+        "(PARTITION BY g ORDER BY t DESC, id) = 1 AND x > 100",
+    ],
+)
+def test_sql_first_row_number_conjunctions(query: str) -> None:
+    q = pl.SQLContext(t=_payload_frame(500)).execute(query)
+    assert _window_headers(q) == []
+    assert "AGGREGATE" in q.explain(engine="streaming")
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
+def test_filter_on_shared_boolean_columns_plans_quickly() -> None:
+    lf = pl.LazyFrame({"x": [0, 1]}).with_columns(
+        a=pl.col("x") == 0, b=pl.col("x") <= 0
+    )
+    for _ in range(40):
+        lf = lf.with_columns(
+            a=pl.col("a") & pl.col("b"),
+            b=pl.col("a") & pl.col("b") & (pl.col("x") >= 0),
+        )
+    q = lf.filter("a").select("x")
+    assert_frame_equal(q.collect(engine="streaming"), pl.DataFrame({"x": [0]}))
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
         lambda lf: pl.SQLContext(t=lf).execute(
             "SELECT * FROM (SELECT *, ROW_NUMBER() OVER "
             "(PARTITION BY g ORDER BY t, id) + 5 AS rn FROM t) u WHERE rn = 6"
         ),
         lambda lf: pl.SQLContext(t=lf).execute(
             "SELECT * FROM (SELECT *, ROW_NUMBER() OVER "
+            "(PARTITION BY g ORDER BY t, id) AS rn FROM t) u WHERE rn = 2"
+        ),
+        lambda lf: pl.SQLContext(t=lf).execute(
+            "SELECT * FROM (SELECT *, ROW_NUMBER() OVER "
             "(PARTITION BY g ORDER BY t, id) AS rn FROM t) u WHERE rn <= 2"
+        ),
+        lambda lf: pl.SQLContext(t=lf).execute(
+            "SELECT id, g FROM t QUALIFY ROW_NUMBER() OVER "
+            "(PARTITION BY g ORDER BY t, id) <= 3"
+        ),
+        lambda lf: pl.SQLContext(t=lf).execute(
+            "SELECT * FROM (SELECT *, SUM(x) OVER (PARTITION BY g) AS c "
+            "FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY g ORDER BY t, id) AS rn "
+            "FROM t) u) v WHERE rn = 1"
+        ),
+        lambda lf: pl.SQLContext(t=lf).execute(
+            "SELECT * FROM (SELECT *, ROW_NUMBER() OVER "
+            "(PARTITION BY g ORDER BY t, id) AS rn FROM t) u WHERE rn <= 0"
+        ),
+        lambda lf: pl.SQLContext(t=lf).execute(
+            "SELECT * FROM (SELECT *, ROW_NUMBER() OVER "
+            "(PARTITION BY g ORDER BY t, id) AS rn FROM t) u "
+            "WHERE rn < -9223372036854775808"
+        ),
+        lambda lf: pl.SQLContext(t=lf).execute(
+            "SELECT * FROM (SELECT *, ROW_NUMBER() OVER "
+            "(PARTITION BY g ORDER BY t, id) AS rn FROM t) u WHERE rn = 1 OR x > 500"
+        ),
+        lambda lf: (
+            pl.SQLContext(t=lf)
+            .execute(
+                "SELECT * FROM (SELECT *, ROW_NUMBER() OVER "
+                "(PARTITION BY g ORDER BY t, id) AS rn FROM t) u"
+            )
+            .filter((pl.col("rn") == 1) & (pl.col("x") > pl.col("x").mean()))
+        ),
+        lambda lf: pl.SQLContext(t=lf).execute(
+            "SELECT * FROM (SELECT *, SUM(x) OVER (PARTITION BY g ORDER BY id) AS c "
+            "FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY g ORDER BY t, id) AS rn "
+            "FROM t) u) v WHERE rn = 1"
+        ),
+        lambda lf: pl.SQLContext(t=lf).execute(
+            "SELECT * FROM (SELECT *, SUM(rn) OVER (PARTITION BY g) AS c "
+            "FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY g ORDER BY t, id) AS rn "
+            "FROM t) u) v WHERE rn = 1"
         ),
         lambda lf: pl.SQLContext(t=lf).execute(
             "SELECT * FROM (SELECT *, RANK() OVER "
@@ -981,7 +1109,7 @@ def test_other_row_number_filters_keep_window(
     build: Callable[[pl.LazyFrame], pl.LazyFrame],
 ) -> None:
     q = build(_keyed_frame(500).lazy())
-    assert len(_window_headers(q)) == 1
+    assert len(_window_headers(q)) >= 1
     assert_frame_equal(
         q.collect(engine="streaming"),
         q.collect(engine="in-memory"),

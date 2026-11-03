@@ -10,8 +10,9 @@
 //!       input
 //! ```
 //!
-//! Only done if the window may reorder its output and may pick any of the rows with equal order
-//! keys, as the group-by does.
+//! The filter may also be a conjunction, or a column computed by such a predicate below it, as
+//! `QUALIFY` gives. Only done if the window may reorder its output and may pick any of the rows
+//! with equal order keys, as the group-by does.
 
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::scalar::Scalar;
@@ -21,8 +22,6 @@ use super::simplify_expr::lower_sort_reads;
 use crate::plans::*;
 use crate::unique_column_name;
 
-/// With `maintain_errors`, only projections of plain columns are crossed, so that no
-/// expression that could fail runs on fewer rows.
 pub(super) fn rewrite_top_one_windows(
     root: Node,
     ir_arena: &mut Arena<IR>,
@@ -37,12 +36,16 @@ pub(super) fn rewrite_top_one_windows(
             continue;
         }
         let ir = ir_arena.get(node);
-        if let IR::Filter { input, predicate } = ir
-            && let Some((name, keep)) = row_number_filter(predicate.node(), expr_arena)
-            && let Some(found_window) =
-                find_window(*input, name, keep, ir_arena, expr_arena, maintain_errors)
-        {
-            found.push(found_window);
+        if let IR::Filter { input, predicate } = ir {
+            let mut conjuncts = Conjuncts::default();
+            if conjuncts
+                .add(predicate.node(), expr_arena, maintain_errors)
+                .is_some()
+                && let Some(found_window) =
+                    find_window(*input, conjuncts, ir_arena, expr_arena, maintain_errors)
+            {
+                found.push(found_window);
+            }
         }
         ir.copy_inputs(&mut stack);
     }
@@ -52,24 +55,73 @@ pub(super) fn rewrite_top_one_windows(
     }
 }
 
-/// Which row numbers a filter keeps.
-#[derive(Clone, Copy)]
-enum Keep {
-    Equal(i64),
-    LessThan(i64),
+/// Whether `node` computes every row on its own, so that it gives the same result on fewer rows.
+/// With `maintain_errors`, only columns, literals and comparisons are allowed, as these cannot fail.
+fn is_rowwise(node: Node, expr_arena: &Arena<AExpr>, maintain_errors: bool) -> bool {
+    if maintain_errors {
+        return expr_arena.iter(node).all(|(_, e)| match e {
+            AExpr::Column(_) => true,
+            AExpr::Literal(lv) => lv.is_scalar(),
+            AExpr::BinaryExpr { op, .. } => {
+                op.is_comparison_or_bitwise()
+                    || matches!(op, Operator::LogicalAnd | Operator::LogicalOr)
+            },
+            _ => false,
+        });
+    }
+    let mut group = ExprPushdownGroup::Pushable;
+    !group
+        .update_with_expr_rec(expr_arena.get(node), expr_arena, None)
+        .blocks_pushdown(maintain_errors)
 }
 
-impl Keep {
-    fn is_only(self, first: i64) -> bool {
-        match self {
-            Self::Equal(v) => v == first,
-            Self::LessThan(v) => v == first + 1,
+/// The parts of a predicate that are joined by AND.
+#[derive(Default)]
+struct Conjuncts {
+    /// The largest value kept per column.
+    bounds: PlIndexMap<PlSmallStr, i128>,
+    /// Boolean columns that must be true.
+    columns: PlIndexSet<PlSmallStr>,
+}
+
+impl Conjuncts {
+    /// Adds the parts of `node`. Returns `None` if a part is not rowwise.
+    fn add(&mut self, node: Node, expr_arena: &Arena<AExpr>, maintain_errors: bool) -> Option<()> {
+        if let AExpr::BinaryExpr {
+            left,
+            op: Operator::And | Operator::LogicalAnd,
+            right,
+        } = expr_arena.get(node)
+        {
+            self.add(*left, expr_arena, maintain_errors)?;
+            return self.add(*right, expr_arena, maintain_errors);
         }
+        if !is_rowwise(node, expr_arena, maintain_errors) {
+            return None;
+        }
+        match expr_arena.get(node) {
+            AExpr::Column(name) => {
+                self.columns.insert(name.clone());
+            },
+            _ => {
+                if let Some((name, bound)) = upper_bound(node, expr_arena) {
+                    self.add_bound(name, bound);
+                }
+            },
+        }
+        Some(())
+    }
+
+    fn add_bound(&mut self, name: PlSmallStr, bound: i128) {
+        self.bounds
+            .entry(name)
+            .and_modify(|b| *b = (*b).min(bound))
+            .or_insert(bound);
     }
 }
 
-/// The column and the row numbers kept by a predicate `col(name) {==, <=, <} lit`.
-fn row_number_filter(predicate: Node, expr_arena: &Arena<AExpr>) -> Option<(PlSmallStr, Keep)> {
+/// The column and the largest value kept by a predicate `col(name) {==, <=, <} lit`.
+fn upper_bound(predicate: Node, expr_arena: &Arena<AExpr>) -> Option<(PlSmallStr, i128)> {
     let AExpr::BinaryExpr { left, op, right } = expr_arena.get(predicate) else {
         return None;
     };
@@ -78,18 +130,17 @@ fn row_number_filter(predicate: Node, expr_arena: &Arena<AExpr>) -> Option<(PlSm
         (AExpr::Literal(lv), AExpr::Column(name)) => (name, op.swap_operands()?, lv),
         _ => return None,
     };
-    let value = int_literal(value)?;
-    let keep = match op {
-        Operator::Eq | Operator::EqValidity | Operator::LtEq => Keep::Equal(value),
-        Operator::Lt => Keep::LessThan(value),
+    let value = i128::from(int_literal(value)?);
+    let bound = match op {
+        Operator::Eq | Operator::EqValidity | Operator::LtEq => value,
+        Operator::Lt => value - 1,
         _ => return None,
     };
-    Some((name.clone(), keep))
+    Some((name.clone(), bound))
 }
 
 fn int_literal(lv: &LiteralValue) -> Option<i64> {
-    lv.get_datatype()
-        .is_integer()
+    (lv.is_scalar() && lv.get_datatype().is_integer())
         .then(|| lv.extract_i64().ok())
         .flatten()
 }
@@ -98,36 +149,45 @@ fn int_literal(lv: &LiteralValue) -> Option<i64> {
 struct FoundWindow {
     node: Node,
     name: PlSmallStr,
-    keep: Keep,
+    /// The largest row number that is kept.
+    bound: i128,
     /// The window output columns that are read above it, if known.
     live: Option<PlIndexSet<PlSmallStr>>,
 }
 
-/// Follows `name` down to the window that computes it, through projections that compute every
-/// row on its own.
+/// Follows the bounds of a filter down to the window that computes one of them, through
+/// projections that are rowwise.
 fn find_window(
     mut node: Node,
-    mut name: PlSmallStr,
-    keep: Keep,
+    conjuncts: Conjuncts,
     ir_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
     maintain_errors: bool,
 ) -> Option<FoundWindow> {
+    let Conjuncts {
+        mut bounds,
+        mut columns,
+    } = conjuncts;
     let mut live: Option<PlIndexSet<PlSmallStr>> = None;
     loop {
         match ir_arena.get(node) {
             IR::Window { exprs, .. } => {
-                return (exprs.len() == 1 && exprs[0].output_name() == &name).then_some(
-                    FoundWindow {
-                        node,
-                        name,
-                        keep,
-                        live,
-                    },
-                );
+                let [e] = exprs.as_slice() else {
+                    return None;
+                };
+                let bound = *bounds.get(e.output_name())?;
+                return Some(FoundWindow {
+                    node,
+                    name: e.output_name().clone(),
+                    bound,
+                    live,
+                });
             },
-            IR::SimpleProjection { input, columns } => {
-                live.get_or_insert_with(|| columns.iter_names().cloned().collect());
+            IR::SimpleProjection {
+                input,
+                columns: projected,
+            } => {
+                live.get_or_insert_with(|| projected.iter_names().cloned().collect());
                 node = *input;
             },
             IR::Select {
@@ -135,26 +195,52 @@ fn find_window(
             }
             | IR::HStack { input, exprs, .. } => {
                 let is_select = matches!(ir_arena.get(node), IR::Select { .. });
-                let crossable = |e: &ExprIR| {
-                    if maintain_errors {
-                        matches!(expr_arena.get(e.node()), AExpr::Column(_))
-                    } else {
-                        is_elementwise_rec(e.node(), expr_arena)
-                    }
-                };
-                if !exprs.iter().all(crossable) {
+                if !exprs
+                    .iter()
+                    .all(|e| is_rowwise(e.node(), expr_arena, maintain_errors))
+                {
                     return None;
                 }
-                match exprs.iter().find(|e| e.output_name() == &name) {
-                    Some(e) => {
-                        let AExpr::Column(input_name) = expr_arena.get(e.node()) else {
-                            return None;
-                        };
-                        name = input_name.clone();
-                    },
-                    None if is_select => return None,
-                    None => {},
+                let defining = |name: &PlSmallStr| exprs.iter().find(|e| e.output_name() == name);
+                let input_column = |e: &ExprIR| match expr_arena.get(e.node()) {
+                    AExpr::Column(c) => Some(c.clone()),
+                    _ => None,
+                };
+
+                let mut below = Conjuncts::default();
+                for (name, bound) in bounds.drain(..) {
+                    match defining(&name) {
+                        Some(e) => {
+                            if let Some(c) = input_column(e) {
+                                below.add_bound(c, bound);
+                            }
+                        },
+                        None if is_select => {},
+                        None => below.add_bound(name, bound),
+                    }
                 }
+                for name in columns.drain(..) {
+                    match defining(&name) {
+                        Some(e) => {
+                            let mut definition = Conjuncts::default();
+                            if definition
+                                .add(e.node(), expr_arena, maintain_errors)
+                                .is_some()
+                            {
+                                for (c, bound) in definition.bounds {
+                                    below.add_bound(c, bound);
+                                }
+                                below.columns.extend(definition.columns);
+                            }
+                        },
+                        None if is_select => {},
+                        None => {
+                            below.columns.insert(name);
+                        },
+                    }
+                }
+                bounds = below.bounds;
+                columns = below.columns;
 
                 let is_live =
                     |e: &&ExprIR| live.as_ref().is_none_or(|l| l.contains(e.output_name()));
@@ -262,7 +348,7 @@ fn rewrite_window(
     let FoundWindow {
         node,
         name,
-        keep,
+        bound,
         live,
     } = window;
     let IR::Window {
@@ -289,7 +375,7 @@ fn rewrite_window(
         return None;
     };
     let first = first_row_number(*function, expr_arena)?;
-    if !keep.is_only(first) {
+    if bound != i128::from(first) {
         return None;
     }
 
