@@ -90,7 +90,7 @@ impl MetaNameSpace {
             .any(|e| matches!(e, Expr::Selector(Selector::Matches(_))))
     }
 
-    /// Get a hold to an implementor of the `Display` trait that will format as
+    /// Get a hold to an implementor of the `Display` trait that will format
     /// the expression as a tree
     pub fn into_tree_formatter(
         self,

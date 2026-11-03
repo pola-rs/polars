@@ -46,6 +46,7 @@ mod slice_pushdown_expr;
 mod slice_pushdown_lp;
 mod sortedness;
 mod stack_opt;
+mod window_top_one;
 
 use collapse_and_project::SimpleProjectionAndCollapse;
 use delay_rechunk::DelayRechunk;
@@ -351,9 +352,9 @@ pub fn optimize(
         })?;
     }
 
-    if opt_flags.streaming() && !opt_flags.gpu() {
-        extract_window::extract_windows(root, ir_arena, expr_arena);
-    }
+    let has_windows = opt_flags.streaming()
+        && !opt_flags.gpu()
+        && extract_window::extract_windows(root, ir_arena, expr_arena);
 
     if opt_flags.contains(OptFlags::CHECK_ORDER_OBSERVE) {
         match ir_arena.get(root) {
@@ -403,6 +404,15 @@ pub fn optimize(
                 }
             },
         }
+    }
+
+    if has_windows {
+        window_top_one::rewrite_top_one_windows(
+            root,
+            ir_arena,
+            expr_arena,
+            pushdown_maintain_errors,
+        );
     }
 
     expand_datasets::expand_datasets(

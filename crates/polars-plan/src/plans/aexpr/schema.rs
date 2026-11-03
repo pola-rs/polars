@@ -67,6 +67,7 @@ impl AExpr {
                 partition_by,
                 order_by,
                 mapping,
+                may_reorder: _,
             } => {
                 for node in partition_by {
                     validate_expr(*node, ctx)?;
@@ -444,6 +445,7 @@ impl AExpr {
                 partition_by: _,
                 order_by: _,
                 mapping: _,
+                may_reorder: _,
             }
             | BinaryExpr { left: expr, .. }
             | Explode { expr, .. }
@@ -832,7 +834,7 @@ fn get_arithmetic_field(
                         op, l, r,
                     )
                 },
-                // List<->primitive operations can be done directly after casting the to the primitive
+                // List<->primitive operations can be done directly after casting to the primitive
                 // supertype for the primitive values on both sides.
                 (list_dtype @ List(_), other_dtype) | (other_dtype, list_dtype @ List(_)) => {
                     let dtype = list_dtype.cast_leaf(try_get_supertype(

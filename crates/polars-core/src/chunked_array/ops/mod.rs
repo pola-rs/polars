@@ -281,7 +281,7 @@ pub trait ChunkAgg<T> {
 
 /// Quantile and median aggregation.
 pub trait ChunkQuantile<T> {
-    /// Returns the mean value in the array.
+    /// Returns the median value in the array.
     /// Returns `None` if the array is empty or only contains null values.
     fn median(&self) -> Option<T> {
         None
@@ -407,13 +407,13 @@ pub trait ChunkSort<T: PolarsDataType> {
     #[allow(unused_variables)]
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<T>;
 
-    /// Returned a sorted `ChunkedArray`.
+    /// Return a sorted `ChunkedArray`.
     fn sort(&self, descending: bool) -> ChunkedArray<T>;
 
     /// Retrieve the indexes needed to sort this array.
     fn arg_sort(&self, options: SortOptions) -> IdxCa;
 
-    /// Retrieve the indexes need to sort this and the other arrays.
+    /// Retrieve the indexes needed to sort this and the other arrays.
     #[allow(unused_variables)]
     fn arg_sort_multiple(
         &self,
@@ -454,7 +454,7 @@ impl FillNullStrategy {
 
 /// Replace None values with a value
 pub trait ChunkFillNullValue<T> {
-    /// Replace None values with a give value `T`.
+    /// Replace None values with a given value `T`.
     fn fill_null_with_values(&self, value: T) -> PolarsResult<Self>
     where
         Self: Sized;

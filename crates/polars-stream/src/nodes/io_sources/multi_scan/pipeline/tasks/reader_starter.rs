@@ -11,7 +11,7 @@ use polars_core::config::verbose_print_sensitive;
 use polars_core::prelude::{AnyValue, DataType};
 use polars_core::scalar::Scalar;
 use polars_core::schema::iceberg::IcebergSchema;
-use polars_error::{PolarsResult, polars_ensure};
+use polars_error::PolarsResult;
 use polars_mem_engine::scan_predicate::skip_files_mask::SkipFilesMask;
 use polars_plan::dsl::{MissingColumnsPolicy, ScanSource};
 use polars_utils::IdxSize;
@@ -209,24 +209,16 @@ impl ReaderStarter {
                 debug_assert!(extra_ops.has_row_index_or_slice())
             }
 
-            if cfg!(debug_assertions)
-                && let Some(n_rows_in_file) = n_rows_in_file
-                && let Some(mask_len) = external_filter_mask.as_ref().map(|fm| fm.len())
-            {
-                // @NOTE: the deletion files / vectors may be truncated
-                polars_ensure!(mask_len <= n_rows_in_file.num_physical_rows(),
-                    ComputeError: "deletion row count: {}, exceeds number of physical rows: {}",
-                    mask_len, n_rows_in_file.num_physical_rows()
-                )
-            }
-
             // `fast_n_rows_in_file()` or negative slice, we know the exact row count here already.
             // After this point, if n_rows_in_file is `Some`, it should contain the exact physical
             // and deleted row counts.
             if let Some(n_rows_in_file) = n_rows_in_file.as_mut() {
                 if let Some(external_filter_mask) = external_filter_mask.as_ref() {
                     unsafe {
-                        n_rows_in_file.set_deleted_rows(external_filter_mask.num_deleted_rows())
+                        n_rows_in_file.set_deleted_rows(
+                            external_filter_mask
+                                .num_deleted_rows(n_rows_in_file.num_physical_rows()),
+                        )
                     }
                 }
 
@@ -283,11 +275,7 @@ impl ReaderStarter {
                             reader.row_position_after_slice(pre_slice_this_file).await?;
 
                         let num_deleted_rows = external_filter_mask.as_ref().map_or(0, |mask| {
-                            mask.slice(
-                                0,
-                                mask.len().min(usize::try_from(num_physical_rows).unwrap()),
-                            )
-                            .num_deleted_rows()
+                            mask.num_deleted_rows(usize::try_from(num_physical_rows).unwrap())
                         });
 
                         let file_row_count = RowCounter::new(num_physical_rows, num_deleted_rows);
@@ -429,8 +417,7 @@ impl ReaderStarter {
 
                     let num_deleted_rows = external_filter_mask.map_or(0, |external_filter_mask| {
                         external_filter_mask
-                            .slice(0, usize::try_from(num_physical_rows).unwrap())
-                            .num_deleted_rows()
+                            .num_deleted_rows(usize::try_from(num_physical_rows).unwrap())
                     });
 
                     row_position_this_file = RowCounter::new(num_physical_rows, num_deleted_rows);

@@ -129,7 +129,7 @@ use crate::utils::{Wrap, handle_casting_failures, materialize_dyn_int};
 /// ```
 ///
 /// ## Creation
-/// Series can be create from different data structures. Below we'll show a few ways we can create
+/// Series can be created from different data structures. Below we'll show a few ways we can create
 /// a Series object.
 ///
 /// ```

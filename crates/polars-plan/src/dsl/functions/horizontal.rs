@@ -159,6 +159,14 @@ pub fn sum_horizontal<E: AsRef<[Expr]>>(exprs: E, ignore_nulls: bool) -> PolarsR
     ))
 }
 
+/// Cumulatively sum values horizontally across columns into a struct.
+#[cfg(feature = "dtype-struct")]
+pub fn cum_sum_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
+    let exprs = exprs.as_ref().to_vec();
+    polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
+    Ok(Expr::n_ary(FunctionExpr::CumSumHorizontal, exprs))
+}
+
 /// Compute the mean of all values horizontally across columns.
 pub fn mean_horizontal<E: AsRef<[Expr]>>(exprs: E, ignore_nulls: bool) -> PolarsResult<Expr> {
     let exprs = exprs.as_ref().to_vec();

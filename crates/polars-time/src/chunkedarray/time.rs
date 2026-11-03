@@ -15,7 +15,7 @@ pub trait TimeMethods {
     /// Returns the second number from 0 to 59.
     fn second(&self) -> Int8Chunked;
 
-    /// Extract second from underlying NaiveDateTime representation.
+    /// Extract nanosecond from underlying NaiveDateTime representation.
     /// Returns the number of nanoseconds since the whole non-leap second.
     /// The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
     fn nanosecond(&self) -> Int32Chunked;
@@ -44,7 +44,7 @@ impl TimeMethods for TimeChunked {
             .apply_kernel_cast::<Int8Type>(&time_to_second)
     }
 
-    /// Extract second from underlying NaiveDateTime representation.
+    /// Extract nanosecond from underlying NaiveDateTime representation.
     /// Returns the number of nanoseconds since the whole non-leap second.
     /// The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
     fn nanosecond(&self) -> Int32Chunked {

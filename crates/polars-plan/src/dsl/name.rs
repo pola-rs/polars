@@ -14,7 +14,7 @@ impl ExprNameNameSpace {
     /// # use polars_plan::prelude::*;
     /// fn example(df: LazyFrame) -> LazyFrame {
     ///     df.select([
-    /// // even thought the alias yields a different column name,
+    /// // even though the alias yields a different column name,
     /// // `keep` will make sure that the original column name is used
     ///         col("*").alias("foo").name().keep()
     /// ])

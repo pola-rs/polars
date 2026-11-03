@@ -1636,7 +1636,7 @@ def test_arg_min_and_arg_max_sorted() -> None:
     assert s.arg_min() == 1
     assert s.arg_max() == 5
     s = pl.Series([None, 5, 4, 3, 2, 1])
-    s.sort(descending=True, in_place=True)  # set descing sorted flag
+    s.sort(descending=True, in_place=True)  # set descending sorted flag
     assert s.flags == {"SORTED_ASC": False, "SORTED_DESC": True}
     assert s.arg_min() == 5
     assert s.arg_max() == 1
@@ -1648,7 +1648,7 @@ def test_arg_min_and_arg_max_sorted() -> None:
     assert s.arg_min() == 1
     assert s.arg_max() == 5
     s = pl.Series([None, "e", "d", "c", "b", "a"])
-    s.sort(descending=True, in_place=True)  # set descing sorted flag
+    s.sort(descending=True, in_place=True)  # set descending sorted flag
     assert s.flags == {"SORTED_ASC": False, "SORTED_DESC": True}
     assert s.arg_min() == 5
     assert s.arg_max() == 1
@@ -1813,7 +1813,7 @@ def test_nested_list_types_preserved(dtype: pl.DataType) -> None:
 
 
 def test_to_physical() -> None:
-    # casting an int result in an int
+    # casting an int results in an int
     s = pl.Series("a", [1, 2, 3])
     assert_series_equal(s.to_physical(), s)
 

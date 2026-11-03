@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::future::Future;
 use std::hash::Hash;
@@ -13,7 +14,7 @@ pub use object_store::azure::AzureCredential;
 #[cfg(feature = "gcp")]
 pub use object_store::gcp::GcpCredential;
 use polars_core::config;
-use polars_error::{PolarsResult, polars_bail};
+use polars_error::{PolarsResult, polars_bail, to_compute_err};
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "python")]
 use polars_utils::python_function::PythonObject;
@@ -26,6 +27,35 @@ pub enum PlCredentialProvider {
     Function(CredentialProviderFunction),
     #[cfg(feature = "python")]
     Python(PythonCredentialProvider),
+    /// Configuration for `credential_provider="auto"`. This is plain data, the provider is built
+    /// from it by name on the side that executes the query.
+    AutoInit(AutoInitConfig),
+}
+
+/// Inputs of an auto-initialized credential provider, extracted from `storage_options` and the
+/// path on the client side.
+///
+/// Note: The JSON form of this is also the interface to the Python-side
+/// `_build_auto_init_credential_provider()`.
+#[derive(Clone, Debug, PartialEq, Hash, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub enum AutoInitConfig {
+    Aws {
+        profile_name: Option<PlSmallStr>,
+        region_name: Option<PlSmallStr>,
+        auto_init_unhandled_key: Option<PlSmallStr>,
+        storage_options: BTreeMap<PlSmallStr, Option<PlSmallStr>>,
+    },
+    Azure {
+        tenant_id: Option<PlSmallStr>,
+        storage_account: Option<PlSmallStr>,
+    },
+    Gcp {},
+    GcpToken {
+        token: PlSmallStr,
+    },
 }
 
 impl PlCredentialProvider {
@@ -53,13 +83,11 @@ impl PlCredentialProvider {
         )))
     }
 
-    #[allow(unused)]
-    pub(super) fn func_addr(&self) -> usize {
-        match self {
-            Self::Function(CredentialProviderFunction(v)) => Arc::as_ptr(v) as *const () as usize,
-            #[cfg(feature = "python")]
-            Self::Python(v) => v.func_addr(),
-        }
+    #[cfg(feature = "python")]
+    pub fn from_auto_init_json(json: &str) -> PolarsResult<Self> {
+        serde_json::from_str(json).map(Self::AutoInit).map_err(
+            |e| polars_error::polars_err!(ComputeError: "invalid auto-init credential config: {e}"),
+        )
     }
 
     /// Python passes a `CredentialProviderBuilder`, this calls the builder to build the final
@@ -76,6 +104,7 @@ impl PlCredentialProvider {
             Self::Python(v) => Ok(v
                 .try_into_initialized(clear_cached_credentials)?
                 .map(Self::Python)),
+            Self::AutoInit(config) => config.try_into_initialized(clear_cached_credentials),
         }
     }
 
@@ -87,6 +116,62 @@ impl PlCredentialProvider {
                 .to_vec()),
             #[cfg(feature = "python")]
             Self::Python(v) => v.stable_cache_key(),
+            Self::AutoInit(config) => {
+                // Hashed, as the config can contain a token.
+                let json = serde_json::to_vec(config).map_err(to_compute_err)?;
+                let mut out = b"auto_init:".to_vec();
+                out.extend_from_slice(blake3::hash(&json).as_bytes());
+                Ok(out)
+            },
+        }
+    }
+}
+
+impl AutoInitConfig {
+    fn try_into_initialized(
+        self,
+        clear_cached_credentials: bool,
+    ) -> PolarsResult<Option<PlCredentialProvider>> {
+        // A token given in `storage_options` needs no Python.
+        #[cfg(feature = "gcp")]
+        if let Self::GcpToken { token } = &self {
+            let credential = Arc::new(object_store::gcp::GcpCredential {
+                bearer: token.to_string(),
+            });
+
+            return Ok(Some(PlCredentialProvider::from_func(move || {
+                let credential = credential.clone();
+                Box::pin(async move { Ok((ObjectStoreCredential::Gcp(credential), u64::MAX)) })
+            })));
+        }
+
+        #[cfg(feature = "python")]
+        {
+            Ok(
+                PythonCredentialProvider::build_auto_init(&self, clear_cached_credentials)?
+                    .map(PlCredentialProvider::Python),
+            )
+        }
+
+        // Without Python, fall back to the object_store's own environment-based credentials, as
+        // when the Python provider's dependencies are not installed. A requested profile cannot
+        // be loaded that way.
+        #[cfg(not(feature = "python"))]
+        {
+            let _ = clear_cached_credentials;
+
+            if let Self::Aws {
+                profile_name: Some(profile_name),
+                ..
+            } = &self
+            {
+                polars_bail!(
+                    ComputeError:
+                    "cannot load requested aws_profile '{profile_name}': requires Python"
+                )
+            }
+
+            Ok(None)
         }
     }
 }
@@ -179,6 +264,7 @@ impl IntoCredentialProvider for PlCredentialProvider {
             Self::Function(v) => v.into_aws_provider(),
             #[cfg(feature = "python")]
             Self::Python(v) => v.into_aws_provider(),
+            Self::AutoInit(_) => unreachable!("auto-init credential provider was not initialized"),
         }
     }
 
@@ -188,6 +274,7 @@ impl IntoCredentialProvider for PlCredentialProvider {
             Self::Function(v) => v.into_azure_provider(),
             #[cfg(feature = "python")]
             Self::Python(v) => v.into_azure_provider(),
+            Self::AutoInit(_) => unreachable!("auto-init credential provider was not initialized"),
         }
     }
 
@@ -197,6 +284,7 @@ impl IntoCredentialProvider for PlCredentialProvider {
             Self::Function(v) => v.into_gcp_provider(),
             #[cfg(feature = "python")]
             Self::Python(v) => v.into_gcp_provider(),
+            Self::AutoInit(_) => unreachable!("auto-init credential provider was not initialized"),
         }
     }
 
@@ -205,6 +293,7 @@ impl IntoCredentialProvider for PlCredentialProvider {
             Self::Function(v) => v.storage_update_options(),
             #[cfg(feature = "python")]
             Self::Python(v) => v.storage_update_options(),
+            Self::AutoInit(_) => unreachable!("auto-init credential provider was not initialized"),
         }
     }
 }
@@ -358,40 +447,107 @@ impl Hash for CredentialProviderFunction {
     }
 }
 
+/// Serialized form of [`PlCredentialProvider`].
+///
+/// Note: Variant order is part of the serialized format. `Builder` and `Provider` keep the
+/// positions they had when this was `PythonCredentialProvider`.
 #[cfg(feature = "serde")]
-impl<'de> serde::Deserialize<'de> for PlCredentialProvider {
+#[derive(serde::Serialize, serde::Deserialize)]
+enum SerializedCredentialProvider {
+    #[cfg(feature = "python")]
+    #[serde(
+        serialize_with = "PythonObject::serialize_with_pyversion",
+        deserialize_with = "PythonObject::deserialize_with_pyversion"
+    )]
+    Builder(Arc<PythonObject>),
+    #[cfg(not(feature = "python"))]
+    Builder(RequiresPython),
+    #[cfg(feature = "python")]
+    #[serde(
+        serialize_with = "PythonObject::serialize_with_pyversion",
+        deserialize_with = "PythonObject::deserialize_with_pyversion"
+    )]
+    Provider(Arc<PythonObject>),
+    #[cfg(not(feature = "python"))]
+    Provider(RequiresPython),
+    AutoInit(AutoInitConfig),
+}
+
+#[cfg(all(feature = "serde", not(feature = "python")))]
+enum RequiresPython {}
+
+#[cfg(all(feature = "serde", not(feature = "python")))]
+impl serde::Serialize for RequiresPython {
+    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match *self {}
+    }
+}
+
+#[cfg(all(feature = "serde", not(feature = "python")))]
+impl<'de> serde::Deserialize<'de> for RequiresPython {
     fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        #[cfg(feature = "python")]
-        {
-            Ok(Self::Python(PythonCredentialProvider::deserialize(
-                _deserializer,
-            )?))
-        }
-        #[cfg(not(feature = "python"))]
-        {
-            use serde::de::Error;
-            Err(D::Error::custom("cannot deserialize PlCredentialProvider"))
-        }
+        use serde::de::Error;
+        Err(D::Error::custom(
+            "cannot deserialize Python credential provider without Python",
+        ))
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for PlCredentialProvider {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(
+            match SerializedCredentialProvider::deserialize(deserializer)? {
+                #[cfg(feature = "python")]
+                SerializedCredentialProvider::Builder(v) => {
+                    Self::Python(PythonCredentialProvider::Builder(v))
+                },
+                #[cfg(feature = "python")]
+                SerializedCredentialProvider::Provider(v) => {
+                    Self::Python(PythonCredentialProvider::Provider(v))
+                },
+                #[cfg(not(feature = "python"))]
+                SerializedCredentialProvider::Builder(v)
+                | SerializedCredentialProvider::Provider(v) => match v {},
+                SerializedCredentialProvider::AutoInit(v) => Self::AutoInit(v),
+            },
+        )
     }
 }
 
 #[cfg(feature = "serde")]
 impl serde::Serialize for PlCredentialProvider {
-    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
         use serde::ser::Error;
 
-        #[cfg(feature = "python")]
-        if let PlCredentialProvider::Python(v) = self {
-            return v.serialize(_serializer);
-        }
+        let v = match self {
+            Self::Function(_) => {
+                return Err(S::Error::custom(format!("cannot serialize {self:?}")));
+            },
+            #[cfg(feature = "python")]
+            Self::Python(PythonCredentialProvider::Builder(v)) => {
+                SerializedCredentialProvider::Builder(v.clone())
+            },
+            #[cfg(feature = "python")]
+            Self::Python(PythonCredentialProvider::Provider(v)) => {
+                SerializedCredentialProvider::Provider(v.clone())
+            },
+            Self::AutoInit(v) => SerializedCredentialProvider::AutoInit(v.clone()),
+        };
 
-        Err(S::Error::custom(format!("cannot serialize {self:?}")))
+        v.serialize(serializer)
     }
 }
 
@@ -406,7 +562,16 @@ impl schemars::JsonSchema for PlCredentialProvider {
     }
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        Vec::<u8>::json_schema(generator)
+        /// Schema of [`SerializedCredentialProvider`], with Python objects as bytes.
+        #[derive(schemars::JsonSchema)]
+        #[allow(dead_code)]
+        enum CredentialProviderSchema {
+            Builder(Vec<u8>),
+            Provider(Vec<u8>),
+            AutoInit(AutoInitConfig),
+        }
+
+        CredentialProviderSchema::json_schema(generator)
     }
 }
 
@@ -510,7 +675,7 @@ mod python_impl {
     use std::hash::Hash;
     use std::sync::Arc;
 
-    use polars_error::{PolarsError, PolarsResult, polars_err};
+    use polars_error::{PolarsError, PolarsResult, polars_err, to_compute_err};
     use polars_utils::pl_str::PlSmallStr;
     use polars_utils::python_function::PythonObject;
     use pyo3::exceptions::PyValueError;
@@ -518,32 +683,42 @@ mod python_impl {
     use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};
     use pyo3::{Python, intern};
 
-    use super::IntoCredentialProvider;
+    use super::{AutoInitConfig, IntoCredentialProvider};
 
     #[derive(Clone, Debug)]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     pub enum PythonCredentialProvider {
-        #[cfg_attr(
-            feature = "serde",
-            serde(
-                serialize_with = "PythonObject::serialize_with_pyversion",
-                deserialize_with = "PythonObject::deserialize_with_pyversion"
-            )
-        )]
         /// Indicates `py_object` is a `CredentialProviderBuilder`.
         Builder(Arc<PythonObject>),
-        #[cfg_attr(
-            feature = "serde",
-            serde(
-                serialize_with = "PythonObject::serialize_with_pyversion",
-                deserialize_with = "PythonObject::deserialize_with_pyversion"
-            )
-        )]
         /// Indicates `py_object` is an instantiated credential provider
         Provider(Arc<PythonObject>),
     }
 
     impl PythonCredentialProvider {
+        /// Builds the Python credential provider for an auto-init config, using the Python
+        /// that executes the query. Returns `None` if it could not be auto-initialized.
+        pub(super) fn build_auto_init(
+            config: &AutoInitConfig,
+            clear_cached_credentials: bool,
+        ) -> PolarsResult<Option<Self>> {
+            let config_json = serde_json::to_string(config).map_err(to_compute_err)?;
+
+            let opt_initialized_py_object = Python::attach(|py| {
+                let v = py
+                    .import(intern!(py, "polars.io.cloud.credential_provider._builder"))?
+                    .call_method1(
+                        intern!(py, "_build_auto_init_credential_provider"),
+                        (config_json, clear_cached_credentials),
+                    )?;
+
+                pyo3::PyResult::Ok((!v.is_none()).then(|| v.unbind()))
+            })?;
+
+            Ok(opt_initialized_py_object
+                .map(PythonObject)
+                .map(Arc::new)
+                .map(Self::Provider))
+        }
+
         /// Performs initialization if necessary.
         ///
         /// This exists as a separate step that must be called beforehand. This approach is easier
@@ -935,5 +1110,62 @@ mod tests {
             ),
             Ok(None)
         ));
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn test_serde_auto_init() {
+        use super::*;
+
+        let provider = PlCredentialProvider::AutoInit(AutoInitConfig::Aws {
+            profile_name: Some("p".into()),
+            region_name: None,
+            auto_init_unhandled_key: None,
+            storage_options: [("region".into(), Some("eu-west-1".into()))]
+                .into_iter()
+                .collect(),
+        });
+
+        let mut bytes = vec![];
+        polars_utils::pl_serialize::serialize_dsl(&mut bytes, &provider).unwrap();
+        let out: PlCredentialProvider =
+            polars_utils::pl_serialize::deserialize_dsl(&mut bytes.as_slice()).unwrap();
+        assert_eq!(out, provider);
+
+        let out: PlCredentialProvider =
+            serde_json::from_str(&serde_json::to_string(&provider).unwrap()).unwrap();
+        assert_eq!(out, provider);
+
+        // The format Python passes in.
+        let PlCredentialProvider::AutoInit(config) = &provider else {
+            unreachable!()
+        };
+        assert_eq!(
+            serde_json::to_string(config).unwrap(),
+            r#"{"aws":{"profile_name":"p","region_name":null,"auto_init_unhandled_key":null,"storage_options":{"region":"eu-west-1"}}}"#
+        );
+        assert_eq!(
+            serde_json::from_str::<AutoInitConfig>(r#"{"gcp":{}}"#).unwrap(),
+            AutoInitConfig::Gcp {}
+        );
+    }
+
+    #[cfg(feature = "gcp")]
+    #[test]
+    fn test_auto_init_gcp_token_is_native() {
+        use super::*;
+
+        let provider =
+            PlCredentialProvider::AutoInit(AutoInitConfig::GcpToken { token: "A".into() })
+                .try_into_initialized(false)
+                .unwrap()
+                .unwrap();
+
+        let PlCredentialProvider::Function(CredentialProviderFunction(f)) = provider else {
+            panic!()
+        };
+        let (credential, expiry) = futures::executor::block_on(f()).unwrap();
+        assert_eq!(credential.unwrap_gcp().bearer, "A");
+        assert_eq!(expiry, u64::MAX);
     }
 }

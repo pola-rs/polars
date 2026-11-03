@@ -37,7 +37,7 @@ def test_scan_nonexistent_cloud_path_17444(format: str) -> None:
 
     path_str = f"s3://my-nonexistent-bucket/data.{format}"
     scan_function = getattr(pl, f"scan_{format}")
-    # Prevent automatic credential provideder instantiation, otherwise CI may fail with
+    # Prevent automatic credential provider instantiation, otherwise CI may fail with
     # * pytest.PytestUnraisableExceptionWarning:
     #   * Exception ignored:
     #     * ResourceWarning: unclosed socket

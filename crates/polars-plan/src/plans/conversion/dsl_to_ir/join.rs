@@ -585,7 +585,8 @@ fn resolve_join_where(
         })
         .expect("'join_where' requires at least one predicate");
 
-    if how.is_inner() {
+    let is_inner = how.is_inner();
+    if is_inner {
         // Use the filter splitter so aggregates see the full join input,
         // regardless of the predicate order.
         let predicates = if ctxt.opt_flags.predicate_pushdown() {
@@ -619,8 +620,9 @@ fn resolve_join_where(
         *options = Arc::new(new_options);
     }
 
+    // Outer predicates are stored on the join, so they read its output schema.
     ctxt.conversion_optimizer
-        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, last_node, false)
+        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, last_node, !is_inner)
         .context("'join_where' failed")?;
 
     Ok((last_node, join_node))

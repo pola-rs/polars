@@ -297,6 +297,8 @@ def test_incomplete_sides_need_lopsided_rows(
     err = capfd.readouterr().err
     assert "sides are incomplete, estimated rows are: 20000 vs. 100000" in err
     assert "estimated retained bytes" not in err
+    # Both sides have unique keys, so neither references the other.
+    assert "right references left: false" in err
     assert "build side chosen: right" in err
 
 
@@ -355,6 +357,179 @@ def test_incomplete_sides_without_estimates(
     q = assert_semi(left, right, left.collect(), on="k")
     assert build_side_chosen(q, plmonkeypatch, capfd, from_estimates=True) is None
     assert build_side_chosen(q, plmonkeypatch, capfd) == "right"
+
+
+def sparse(n: int, keep_every: int) -> pl.LazyFrame:
+    # The filter is estimated to keep a fifth of the rows.
+    lf = pl.LazyFrame({"k": np.arange(n), "c": np.arange(n) % keep_every})
+    return lf.filter(pl.col("c") < 1).drop("c")
+
+
+def incomplete_sides_err(
+    q: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> str:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    q.collect(engine="streaming")
+    err = capfd.readouterr().err
+    plmonkeypatch.delenv("POLARS_VERBOSE")
+    return err
+
+
+def test_incomplete_sides_right_references_left(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The left side is estimated at 200000 rows but keeps 5000 unique keys. The
+    # right side repeats each key four times, so it references the left keys
+    # and retains more bytes at the estimated lengths.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+    left = sparse(1_000_000, 200)
+    right = pl.LazyFrame({"k": np.arange(1_000_000) // 4})
+    expected = left.collect().filter(pl.col("k") < 250_000)
+    q = assert_semi(left, right, expected, on="k")
+    err = incomplete_sides_err(q, plmonkeypatch, capfd)
+    assert "estimated rows are: 200000 vs. 1000000" in err
+    assert "right references left: true" in err
+    assert "estimated build bytes are" in err
+    assert "build side chosen: left" in err
+    q = left.join(right, on="k", how="anti")
+    assert build_side_chosen(q, plmonkeypatch, capfd, from_estimates=True) == "left"
+
+
+def test_incomplete_sides_right_references_left_without_estimates(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # An IO plugin has no row estimate. The right side references the unique
+    # left keys, so it is taken as longer and the left side is built.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+
+    def source(
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        n_rows: int | None,
+        batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        for i in range(20):
+            yield pl.DataFrame({"k": np.arange(100) + i * 100})
+
+    left = register_io_source(source, schema={"k": pl.Int64})
+    right = pl.LazyFrame({"k": np.arange(100_000) // 4})
+    q = assert_semi(left, right, left.collect(), on="k")
+    err = incomplete_sides_err(q, plmonkeypatch, capfd)
+    assert "estimated rows are" not in err
+    assert "right references left: true" in err
+    assert "build side chosen: left" in err
+
+
+def test_incomplete_sides_right_much_smaller(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The right side references the unique left keys, but has eight times
+    # fewer rows, so it is built without looking at the keys.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+    left = pl.LazyFrame({"k": np.arange(800_000)})
+    right = pl.LazyFrame({"k": np.arange(100_000) // 4})
+    expected = left.collect().filter(pl.col("k") < 25_000)
+    q = assert_semi(left, right, expected, on="k")
+    err = incomplete_sides_err(q, plmonkeypatch, capfd)
+    assert "estimated rows are: 800000 vs. 100000" in err
+    assert "right references left" not in err
+    assert "build side chosen: right" in err
+
+
+def test_incomplete_sides_right_references_left_but_fewer_bytes(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The right side references the unique left keys, but its 300000 keys
+    # retain fewer bytes than the 100000 left rows with their keys.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+    left = pl.LazyFrame({"k": np.arange(100_000)})
+    right = pl.LazyFrame({"k": np.arange(300_000) // 10})
+    expected = left.collect().filter(pl.col("k") < 30_000)
+    q = assert_semi(left, right, expected, on="k")
+    err = incomplete_sides_err(q, plmonkeypatch, capfd)
+    assert "right references left: true" in err
+    assert "estimated build bytes are" in err
+    assert "build side chosen: right" in err
+
+
+def test_incomplete_sides_null_keys_reference_nothing(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The right keys are mostly null and otherwise unique. Nulls don't match,
+    # so they don't make the right side look like it repeats the left keys.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+    left = sparse(1_000_000, 200)
+    k = np.arange(1_000_000)
+    right = pl.LazyFrame({"k": k}).select(
+        pl.when(pl.col("k") % 20 == 0).then(pl.col("k"))
+    )
+    expected = left.collect().filter(pl.col("k") % 20 == 0)
+    q = assert_semi(left, right, expected, on="k")
+    err = incomplete_sides_err(q, plmonkeypatch, capfd)
+    assert "right references left: false" in err
+    assert "build side chosen: right" in err
+    # When nulls are equal they are one key, which the right side repeats.
+    q = assert_semi(left, right, expected, on="k", nulls_equal=True)
+    err = incomplete_sides_err(q, plmonkeypatch, capfd)
+    assert "right references left: true" in err
+
+
+def test_incomplete_sides_anti_left_null_keys(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The left keys of an anti join are mostly distinct tuples with a null.
+    # They reference nothing, but each is kept as its own group. Counting
+    # those groups makes the 100000 left rows retain more bytes than the
+    # 200000 right keys, so the right side is built.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+    i = pl.int_range(100_000, eager=True)
+    left = pl.DataFrame({"a": i}).select(
+        a=pl.when(pl.col("a") % 20 == 0).then(pl.col("a")), b=pl.col("a")
+    )
+    j = (pl.int_range(200_000, eager=True) // 4) * 20
+    right = pl.DataFrame({"a": j, "b": j})
+    on = ["a", "b"]
+    expected = left.filter(pl.col("a").is_not_null())
+    q = assert_semi(left.lazy(), right.lazy(), expected, on=on)
+    q = left.lazy().join(right.lazy(), on=on, how="anti")
+    err = incomplete_sides_err(q, plmonkeypatch, capfd)
+    assert "estimated rows are: 100000 vs. 200000" in err
+    assert "right references left: true" in err
+    assert "estimated build bytes are" in err
+    assert "build side chosen: right" in err
+
+
+def test_incomplete_sides_sample_slow_right(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The right side comes in small batches. It is sampled to the limit before
+    # the sides are compared, however early the left side reaches it.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+
+    def source(
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        n_rows: int | None,
+        batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        for i in range(100):
+            yield pl.DataFrame({"k": np.arange(10) + i * 10})
+
+    left = pl.LazyFrame({"k": np.arange(100_000)})
+    right = register_io_source(source, schema={"k": pl.Int64})
+    expected = left.collect().filter(pl.col("k") < 1_000)
+    q = assert_semi(left, right, expected, on="k")
+    err = incomplete_sides_err(q, plmonkeypatch, capfd)
+    line = next(x for x in err.splitlines() if "sample lengths are" in x)
+    assert int(line.rsplit(" ", 1)[1].rstrip(".")) >= 100
 
 
 def test_sampling_hints(

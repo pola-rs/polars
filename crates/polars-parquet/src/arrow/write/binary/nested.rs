@@ -3,7 +3,7 @@ use polars_arrow::offset::Offset;
 use polars_error::PolarsResult;
 
 use super::super::{WriteOptions, nested, utils};
-use super::basic::{build_statistics, encode_plain};
+use super::basic::{build_statistics, data_bytes, encode_plain};
 use crate::arrow::write::Nested;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::DataPage;
@@ -34,7 +34,7 @@ where
     } else {
         None
     };
-    utils::build_plain_page(
+    let mut page = utils::build_plain_page(
         buffer,
         num_values,
         nested[0].len(),
@@ -45,5 +45,7 @@ where
         type_,
         options,
         Encoding::Plain,
-    )
+    )?;
+    page.unencoded_byte_array_data_bytes = Some(data_bytes(array) as i64);
+    Ok(page)
 }

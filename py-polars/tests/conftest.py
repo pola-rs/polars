@@ -22,7 +22,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--cloud-distributed",
         action="store_true",
         default=False,
-        help="Run all queries by default of the distributed engine",
+        help="Run all queries by default on the distributed engine",
     )
 
 
@@ -48,7 +48,7 @@ def _capture_to_file(capman: Any, stream: str, path: Path) -> None:
     # This is rather hacky but the tempfile pytest creates is passed to multiple
     # places before now, so it would be too late to replace that file object
     # with something we control. So we instead change the underlying file
-    # descriptors to point out our path of choice.
+    # descriptors to point at our path of choice.
     with path.open("wb+", buffering=0) as f:
         os.dup2(f.fileno(), tmpfile.fileno())
         os.dup2(f.fileno(), targetfd)

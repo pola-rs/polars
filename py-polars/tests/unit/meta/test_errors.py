@@ -723,7 +723,7 @@ def test_shift_with_null_raises(fill_value: Any) -> None:
         )
 
 
-def test_raies_on_mismatch_column_length_24500() -> None:
+def test_raise_on_mismatch_column_length_24500() -> None:
     df = pl.DataFrame(
         {
             "a": [10, 10, 10, 20, 20, 20],
@@ -743,7 +743,7 @@ def test_raies_on_mismatch_column_length_24500() -> None:
         )
 
 
-def test_raies_on_mismatch_column_length_binary_expr() -> None:
+def test_raise_on_mismatch_column_length_binary_expr() -> None:
     df = pl.DataFrame(
         {
             "a": [10, 10, 10, 20, 20, 20],

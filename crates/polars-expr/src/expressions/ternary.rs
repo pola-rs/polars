@@ -184,13 +184,13 @@ impl PhysicalExpr for TernaryExpr {
             match (mask.len(), truthy.len()) {
                 (l, 1) if l != 1 => return self.cast_arm(truthy.new_from_index(0, l)),
                 (1, r) if r != 1 => return self.cast_arm(truthy),
-                (1, 1) => {}, // Forced to evaluate truthy to resolve broadcast height.
+                (1, 1) => {}, // Forced to evaluate falsy to resolve broadcast height.
                 (l, r) => {
                     polars_ensure!(l == r, ShapeMismatch: "mismatch between condition height ({}) and truthy height ({}) in when/then/otherwise", l, r);
                     return self.cast_arm(truthy);
                 },
             }
-            falsy = op_falsy()?; // Forced to evaluate truthy to resolve broadcast height.
+            falsy = op_falsy()?; // Forced to evaluate falsy to resolve broadcast height.
         } else if self.run_par {
             let (t, f) = RAYON.install(|| rayon::join(op_truthy, op_falsy));
             truthy = t?;
@@ -234,7 +234,10 @@ impl PhysicalExpr for TernaryExpr {
         // - non-unit literals
         // - AggregatedScalar or AggregatedList
         let mut has_non_unit_literal = false;
-        let mut has_aggregated = false;
+        let mut has_agg_scalar = false;
+        let mut has_agg_list = false;
+        let mut has_not_agg = false;
+        let mut has_large_groups = false;
         // Unknown groups (rows and their positions do not match initial groups).
         let mut non_aggregated_unknown_groups = false;
 
@@ -248,13 +251,15 @@ impl PhysicalExpr for TernaryExpr {
                     }
                 },
                 NotAggregated(_) => {
+                    has_not_agg = true;
+                    has_large_groups |= ac.has_large_groups();
                     non_aggregated_unknown_groups |= !ac.original_groups;
                 },
-                AggregatedScalar(_) | AggregatedList(_) => {
-                    has_aggregated = true;
-                },
+                AggregatedScalar(_) => has_agg_scalar = true,
+                AggregatedList(_) => has_agg_list = true,
             }
         }
+        let has_aggregated = has_agg_scalar || has_agg_list;
 
         if has_non_unit_literal {
             // finish_as_iters for non-unit literals to avoid materializing the
@@ -291,6 +296,42 @@ impl PhysicalExpr for TernaryExpr {
             ac_truthy.with_agg_state(LiteralScalar(out));
 
             return Ok(ac_truthy);
+        }
+
+        let may_broadcast_scalars = has_agg_scalar
+            && has_not_agg
+            && !has_agg_list
+            && !has_large_groups
+            && !non_aggregated_unknown_groups
+            && !groups.is_empty()
+            && !groups.is_overlapping();
+        if may_broadcast_scalars {
+            // Zip once on all values, with the scalars repeated over their groups.
+            let acs = [&mut ac_truthy, &mut ac_falsy, &mut ac_mask];
+            let t = acs
+                .iter()
+                .position(|ac| matches!(ac.agg_state(), NotAggregated(_)))
+                .unwrap();
+            let aligned = acs.iter().all(|ac| match ac.agg_state() {
+                NotAggregated(_) => ac.is_aligned_with(acs[t]),
+                _ => true,
+            });
+            if aligned && let Some(target) = acs[t].flat_broadcast_target() {
+                let [truthy, falsy, mask] = acs.each_ref().map(|ac| match ac.agg_state() {
+                    AggregatedScalar(c) => target.repeat(c),
+                    _ => Ok(ac.get_values().clone()),
+                });
+                let out = truthy?.zip_with(mask?.bool()?, &falsy?)?;
+                acs[t].finish_broadcast(target, out)?;
+                if state.verbose() {
+                    eprintln!("ternary agg: finish NotAggregated with broadcast AggregatedScalar");
+                }
+                return Ok(match t {
+                    0 => ac_truthy,
+                    1 => ac_falsy,
+                    _ => ac_mask,
+                });
+            }
         }
 
         for ac in [&mut ac_mask, &mut ac_truthy, &mut ac_falsy].into_iter() {

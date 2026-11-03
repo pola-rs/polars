@@ -1,6 +1,7 @@
 use std::borrow::Borrow;
 use std::fmt;
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 use polars_compute::approx_quantile::{ApproxQuantileMethod, FinalizedSketch, Sketch};
 use polars_core::with_match_physical_numeric_polars_type;
@@ -50,13 +51,28 @@ macro_rules! with_match_sketch_item {
     }};
 }
 
+/// Set `is_single_group` only if the reduction has a single group and is finalized once, after
+/// every reduction derived from it through `new_empty` was combined into it.
+///
+/// # Panics
+///
+/// With `is_single_group` set incorrectly, `finalize` panics at best, and at worst the estimates
+/// exceed the requested error.
 pub fn new_approx_quantile_sketch_reduction(
     dtype: DataType,
     method: ApproxQuantileMethod,
     error: f64,
     failure_probability: f64,
+    is_single_group: bool,
 ) -> PolarsResult<Box<dyn GroupedReduction>> {
-    new_sketch_reduction(dtype, method, error, failure_probability, true)
+    new_sketch_reduction(
+        dtype,
+        method,
+        error,
+        failure_probability,
+        true,
+        is_single_group,
+    )
 }
 
 /// Like [`new_approx_quantile_sketch_reduction`], but outputs the serialized
@@ -67,7 +83,7 @@ pub fn new_approx_quantile_state_reduction(
     error: f64,
     failure_probability: f64,
 ) -> PolarsResult<Box<dyn GroupedReduction>> {
-    new_sketch_reduction(dtype, method, error, failure_probability, false)
+    new_sketch_reduction(dtype, method, error, failure_probability, false, false)
 }
 
 fn new_sketch_reduction(
@@ -76,9 +92,16 @@ fn new_sketch_reduction(
     error: f64,
     failure_probability: f64,
     finalize: bool,
+    is_single_group: bool,
 ) -> PolarsResult<Box<dyn GroupedReduction>> {
     Ok(with_match_sketch_item!(&dtype, |T, B| {
-        let reducer = SketchReducer::<T, B>::new(method, error, failure_probability, finalize);
+        let reducer = SketchReducer::<T, B>::new(
+            method,
+            error,
+            failure_probability,
+            finalize,
+            is_single_group,
+        );
         Box::new(VecGroupedReduction::new(dtype.clone(), reducer))
     }))
 }
@@ -113,9 +136,14 @@ where
         error: f64,
         failure_probability: f64,
         finalize: bool,
+        is_single_group: bool,
     ) -> Self {
+        let mut template = Sketch::new(&method, error, failure_probability);
+        if is_single_group {
+            template = template.with_shared_count(Arc::default());
+        }
         Self {
-            template: Sketch::new(&method, error, failure_probability),
+            template,
             finalize,
             dtype: PhantomData,
         }

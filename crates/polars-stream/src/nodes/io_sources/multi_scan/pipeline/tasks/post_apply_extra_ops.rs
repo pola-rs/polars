@@ -87,7 +87,7 @@ impl PostApplyExtraOps {
                                 unreachable!()
                             };
 
-                            mask.slice(offset, len).num_deleted_rows()
+                            mask.slice(offset, len).num_deleted_rows(len)
                         });
 
                         RowCounter::new(physical_rows, deleted_rows)

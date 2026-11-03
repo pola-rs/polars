@@ -8,6 +8,6 @@ pub enum SyncOnCloseType {
 
     /// Sync only the file contents.
     Data,
-    /// Synce the file contents and the metadata.
+    /// Sync the file contents and the metadata.
     All,
 }

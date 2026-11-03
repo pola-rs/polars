@@ -435,10 +435,10 @@ pub(super) fn optimize_functions(
 fn is_string_concat(ae: &AExpr, ignore_nulls: bool) -> bool {
     matches!(ae, AExpr::Function {
                 function:IRFunctionExpr::StringExpr(
-                    IRStringFunction::ConcatHorizontal{delimiter: sep, ignore_nulls: func_inore_nulls},
+                    IRStringFunction::ConcatHorizontal{delimiter: sep, ignore_nulls: func_ignore_nulls},
                 ),
                 ..
-            } if sep.is_empty() && *func_inore_nulls == ignore_nulls)
+            } if sep.is_empty() && *func_ignore_nulls == ignore_nulls)
 }
 
 #[cfg(all(feature = "strings", feature = "concat_str"))]

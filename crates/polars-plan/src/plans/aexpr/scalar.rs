@@ -48,6 +48,49 @@ pub fn is_known_length_ae(node: Node, arena: &Arena<AExpr>) -> bool {
     }
 }
 
+/// Matches `int_range(0, length)` with step 1, where `length` is `len()` or `count()`, and returns
+/// `length` and the dtype of the range.
+///
+/// `length` may be cast to a dtype that holds any length, as a strict cast to a narrower one fails
+/// on one more row than a cast of the range would.
+#[cfg(feature = "range")]
+pub fn int_range_over_length_ae(node: Node, arena: &Arena<AExpr>) -> Option<(Node, DataType)> {
+    let AExpr::Function {
+        input,
+        function: IRFunctionExpr::Range(IRRangeFunction::IntRange { step: 1, dtype }),
+        ..
+    } = arena.get(node)
+    else {
+        return None;
+    };
+    let [start, end] = input.as_slice() else {
+        return None;
+    };
+    if !matches!(arena.get(start.node()), AExpr::Literal(lit) if lit.extract_usize().ok() == Some(0))
+    {
+        return None;
+    }
+    let mut length = end.node();
+    if let AExpr::Cast {
+        expr,
+        dtype: cast_dtype,
+        ..
+    } = arena.get(length)
+        && (*cast_dtype == IDX_DTYPE
+            || matches!(
+                cast_dtype,
+                DataType::Int64 | DataType::UInt64 | DataType::Int128 | DataType::UInt128
+            ))
+    {
+        length = *expr;
+    }
+    matches!(
+        arena.get(length),
+        AExpr::Len | AExpr::Agg(IRAggExpr::Count { .. })
+    )
+    .then(|| (length, dtype.clone()))
+}
+
 /// Whether every output value only depends on the values in its own row and on the set of rows
 /// in the group, not on the order of those rows.
 #[recursive::recursive]

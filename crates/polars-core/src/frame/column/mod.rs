@@ -18,6 +18,8 @@ use self::series::SeriesColumn;
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::flags::StatisticsFlags;
 use crate::datatypes::ReshapeDimension;
+#[cfg(feature = "algorithm_group_by")]
+use crate::frame::group_by::aggregations::nulls_at_one_end;
 use crate::prelude::*;
 use crate::series::{BitRepr, IsSorted};
 use crate::utils::Container;
@@ -790,7 +792,12 @@ impl Column {
 
                 // Use dtype-aware validity updates so Struct fields see the nulls.
                 let s = scalar_col.take_materialized_series().rechunk();
-                s.with_validity(validity.into_opt_validity()).into_column()
+                let mut out = s.with_validity(validity.into_opt_validity());
+                // The values are equal, so the result is sorted only if its nulls are at one end.
+                if !nulls_at_one_end(&out) {
+                    out.set_sorted_flag(IsSorted::Not);
+                }
+                out.into_column()
             },
         }
     }
@@ -1153,7 +1160,7 @@ impl Column {
                 return;
             }
 
-            // If we want to maintain order but we also needs to invert, we need to invert
+            // If we want to maintain order but we also need to invert, we need to invert
             // per group of items.
             //
             // @NOTE: Since the column is sorted, arg_unique can also take a fast path and
@@ -1962,7 +1969,7 @@ impl PartialEq for Column {
 impl From<Series> for Column {
     #[inline]
     fn from(series: Series) -> Self {
-        // We instantiate a Scalar Column if the Series is length is 1. This makes it possible for
+        // We instantiate a Scalar Column if the Series length is 1. This makes it possible for
         // future operations to be faster.
         if series.len() == 1 {
             return Self::Scalar(ScalarColumn::unit_scalar_from_series(series));

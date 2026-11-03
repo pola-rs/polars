@@ -38,7 +38,7 @@ class SeriesPlot:
 
         `s.plot.hist(**kwargs)` is shorthand for
         `alt.Chart(s.to_frame()).mark_bar(tooltip=True).encode(x=alt.X(f'{s.name}:Q', bin=True), y='count()', **kwargs).interactive()`,
-        and is provided for convenience - for full customisatibility, use a plotting
+        and is provided for convenience - for full customisability, use a plotting
         library directly.
 
         .. versionchanged:: 1.6.0
@@ -84,7 +84,7 @@ class SeriesPlot:
 
         `s.plot.kde(**kwargs)` is shorthand for
         `alt.Chart(s.to_frame()).transform_density(s.name, as_=[s.name, 'density']).mark_area(tooltip=True).encode(x=s.name, y='density:Q', **kwargs).interactive()`,
-        and is provided for convenience - for full customisatibility, use a plotting
+        and is provided for convenience - for full customisability, use a plotting
         library directly.
 
         .. versionchanged:: 1.6.0
@@ -128,7 +128,7 @@ class SeriesPlot:
 
         `s.plot.line(**kwargs)` is shorthand for
         `alt.Chart(s.to_frame().with_row_index()).mark_line(tooltip=True).encode(x='index', y=s.name, **kwargs).interactive()`,
-        and is provided for convenience - for full customisatibility, use a plotting
+        and is provided for convenience - for full customisability, use a plotting
         library directly.
 
         .. versionchanged:: 1.6.0

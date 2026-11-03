@@ -46,12 +46,16 @@ pub fn _arg_bottom_k(
         return Ok(NoNull::new(by_column[0].arg_sort((&sort_options).into())));
     }
 
-    let encoded = _get_rows_encoded(
+    let limit = IdxSize::try_from(k).unwrap_or(IdxSize::MAX);
+    if let Some(idx) = arg_sort_packed_rows(by_column, &sort_options, Some(limit))? {
+        return Ok(NoNull::new(idx));
+    }
+
+    let arr = _get_rows_encoded(
         by_column,
         &sort_options.descending,
         &sort_options.nulls_last,
     )?;
-    let arr = encoded.into_array();
     let mut rows = arr
         .values_iter()
         .enumerate_idx()

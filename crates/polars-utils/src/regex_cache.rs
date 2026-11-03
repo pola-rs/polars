@@ -3,6 +3,8 @@ use std::sync::Arc;
 
 use regex::bytes::Regex as BytesRegex;
 use regex::{Regex, RegexBuilder};
+use regex_syntax::ast::{self, Ast, RepetitionKind, RepetitionRange};
+use regex_syntax::hir::translate::Translator;
 
 use crate::cache::LruCache;
 
@@ -24,6 +26,7 @@ fn get_size_limit() -> Option<usize> {
 /// A cache for compiled regular expressions.
 pub struct RegexCache {
     cache: LruCache<String, Regex>,
+    is_match_cache: LruCache<String, Regex>,
     bytes_cache: LruCache<usize, (Arc<BytesRegex>, BytesRegex)>,
     size_limit: Option<usize>,
 }
@@ -32,21 +35,27 @@ impl RegexCache {
     fn new() -> Self {
         Self {
             cache: LruCache::with_capacity(32),
+            is_match_cache: LruCache::with_capacity(32),
             bytes_cache: LruCache::with_capacity(32),
             size_limit: get_size_limit(),
         }
     }
 
     pub fn compile(&mut self, re: &str) -> Result<&Regex, regex::Error> {
-        let size_limit = &mut self.size_limit;
-        let r = self.cache.try_get_or_insert_with(re, |re| {
-            build_within_size_limit(size_limit, |limit| {
-                let mut builder = RegexBuilder::new(re);
-                if let Some(bytes) = limit {
-                    builder.size_limit(bytes);
-                }
-                builder.build()
-            })
+        compile_cached(&mut self.cache, &mut self.size_limit, re)
+    }
+
+    /// Like [`Self::compile`], for `is_match` only, see [`is_match_pattern`].
+    pub fn compile_is_match(&mut self, re: &str) -> Result<&Regex, regex::Error> {
+        let Self {
+            cache,
+            is_match_cache,
+            size_limit,
+            ..
+        } = self;
+        let r = is_match_cache.try_get_or_insert_with(re, |re| match is_match_pattern(re) {
+            Some(trimmed) => build_regex(size_limit, &trimmed),
+            None => compile_cached(cache, size_limit, re).cloned(),
         });
         Ok(&*r?)
     }
@@ -61,6 +70,69 @@ impl RegexCache {
             })
             .1
     }
+}
+
+fn compile_cached<'a>(
+    cache: &'a mut LruCache<String, Regex>,
+    size_limit: &mut Option<usize>,
+    re: &str,
+) -> Result<&'a Regex, regex::Error> {
+    let r = cache.try_get_or_insert_with(re, |re| build_regex(size_limit, re));
+    Ok(&*r?)
+}
+
+fn build_regex(size_limit: &mut Option<usize>, re: &str) -> Result<Regex, regex::Error> {
+    build_within_size_limit(size_limit, |limit| {
+        let mut builder = RegexBuilder::new(re);
+        if let Some(bytes) = limit {
+            builder.size_limit(bytes);
+        }
+        builder.build()
+    })
+}
+
+/// `pat` without the repetitions at either end that can match nothing (`.*foo.*` -> `foo`): same
+/// `is_match`, but since regex 1.13.1 a leading `.*` disables its reverse suffix/inner search.
+pub fn is_match_pattern(pat: &str) -> Option<String> {
+    let ast = ast::parse::Parser::new().parse(pat).ok()?;
+    let Ast::Concat(concat) = &ast else {
+        return None;
+    };
+    let items = &concat.asts;
+    let is_flags = |a: &Ast| matches!(a, Ast::Flags(_));
+    let can_match_empty = |a: &Ast| match a {
+        Ast::Repetition(rep) => match rep.op.kind {
+            RepetitionKind::ZeroOrOne | RepetitionKind::ZeroOrMore => true,
+            RepetitionKind::OneOrMore => false,
+            RepetitionKind::Range(
+                RepetitionRange::Exactly(min)
+                | RepetitionRange::AtLeast(min)
+                | RepetitionRange::Bounded(min, _),
+            ) => min == 0,
+        },
+        _ => false,
+    };
+    let kept = |a: &Ast| !is_flags(a) && !can_match_empty(a);
+    let first = items.iter().position(kept)?;
+    let last = items.iter().rposition(kept)?;
+    if items[..first]
+        .iter()
+        .chain(&items[last + 1..])
+        .all(is_flags)
+    {
+        return None;
+    }
+    // Only rewrite patterns that compile, so errors stay the same.
+    Translator::new().translate(pat, &ast).ok()?;
+    // Slice `pat` rather than print a `Hir`, which doesn't round-trip nested repetitions.
+    let span = |a: &Ast| a.span().start.offset..a.span().end.offset;
+    let mut out = String::new();
+    // Flags apply to what follows them.
+    for a in items[..first].iter().filter(|a| is_flags(a)) {
+        out.push_str(&pat[span(a)]);
+    }
+    out.push_str(&pat[span(&items[first]).start..span(&items[last]).end]);
+    Some(out)
 }
 
 // We do this little loop to only check POLARS_REGEX_SIZE_LIMIT when a regex
@@ -90,6 +162,11 @@ thread_local! {
 
 pub fn compile_regex(re: &str) -> Result<Regex, regex::Error> {
     LOCAL_REGEX_CACHE.with_borrow_mut(|cache| cache.compile(re).cloned())
+}
+
+/// Like [`compile_regex`], for `is_match` only, see [`is_match_pattern`].
+pub fn compile_is_match_regex(re: &str) -> Result<Regex, regex::Error> {
+    LOCAL_REGEX_CACHE.with_borrow_mut(|cache| cache.compile_is_match(re).cloned())
 }
 
 pub fn with_regex_cache<R, F: FnOnce(&mut RegexCache) -> R>(f: F) -> R {

@@ -1215,7 +1215,7 @@ class Expr(metaclass=_Meta):
         Converts to another expression by calling `function`.
 
         Runs during the plan stage (unlike `pipe_with_schema`),
-        which means that the dytype of this expression is known.
+        which means that the dtype of this expression is known.
         This allows choosing a different expression depending on the dtype of the input,
         including the metadata of extension types. This also means that any
         exceptions raised by `function` will only be emitted during the plan stage.
@@ -3748,7 +3748,7 @@ class Expr(metaclass=_Meta):
         """
         Get minimum value, but propagate/poison encountered NaN values.
 
-        This differs from numpy's `nanmax` as numpy defaults to propagating NaN values,
+        This differs from numpy's `nanmin` as numpy defaults to propagating NaN values,
         whereas polars defaults to ignoring them.
 
         .. engine-support:: in-memory, streaming, distributed
@@ -10104,7 +10104,7 @@ class Expr(metaclass=_Meta):
         """
         return wrap_expr(
             self._pyexpr.rolling_skew(
-                window_size, bias=bias, min_periods=min_samples, center=center
+                window_size, bias=bias, min_samples=min_samples, center=center
             )
         )
 
@@ -10170,7 +10170,7 @@ class Expr(metaclass=_Meta):
                 window_size,
                 fisher=fisher,
                 bias=bias,
-                min_periods=min_samples,
+                min_samples=min_samples,
                 center=center,
             )
         )
@@ -12376,7 +12376,7 @@ class Expr(metaclass=_Meta):
         """
         Flags the expression as 'sorted'.
 
-        Enables downstream code to user fast paths for sorted arrays. It is
+        Enables downstream code to use fast paths for sorted arrays. It is
         recommended to also set whether `nulls_last` is `True` or `False`, as
         this enables many internal optimizations.
 
@@ -12998,6 +12998,8 @@ class Expr(metaclass=_Meta):
         unordered: bool = False,
         descending: Sequence[bool] | None = None,
         nulls_last: Sequence[bool] | None = None,
+        output: Literal["binary_offset", "binary", "optimal"] = "binary_offset",
+        encode_nulls: Sequence[bool] | None = None,
     ) -> Expr:
         dtypes_pyexprs = [
             parse_into_datatype_expr(dtype)._pydatatype_expr for dtype in dtypes
@@ -13007,10 +13009,12 @@ class Expr(metaclass=_Meta):
             assert descending is None
             assert nulls_last is None
 
-            result = self._pyexpr.row_decode_unordered(names, dtypes_pyexprs)
+            result = self._pyexpr.row_decode_unordered(
+                names, dtypes_pyexprs, output, encode_nulls
+            )
         else:
             result = self._pyexpr.row_decode_ordered(
-                names, dtypes_pyexprs, descending, nulls_last
+                names, dtypes_pyexprs, descending, nulls_last, output, encode_nulls
             )
 
         return wrap_expr(result)

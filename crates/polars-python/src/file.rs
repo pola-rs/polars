@@ -198,7 +198,7 @@ impl Write for PyFileLikeObject {
         // Note on the .extract() method:
         // In case of a PyString object, it returns the number of chars,
         // so we need to take extra steps if the underlying string is not all ASCII.
-        // In case of a ByBytes object, it returns the number of bytes.
+        // In case of a PyBytes object, it returns the number of bytes.
         let expects_str = self.expects_str;
         let expects_str_and_is_ascii = expects_str && buf.is_ascii();
 
@@ -486,7 +486,7 @@ pub(crate) fn get_file_like(f: Py<PyAny>, truncate: bool) -> PyResult<Box<dyn Fi
     Ok(get_either_file(f, truncate)?.into_dyn())
 }
 
-/// If the give file-like is a BytesIO, read its contents in a memory-efficient
+/// If the given file-like is a BytesIO, read its contents in a memory-efficient
 /// way.
 fn read_if_bytesio(py_f: Bound<PyAny>) -> Bound<PyAny> {
     let bytes_io = py_f.py().import("io").unwrap().getattr("BytesIO").unwrap();

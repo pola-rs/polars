@@ -25,7 +25,7 @@ use polars_error::PolarsResult;
 use polars_expr::groups::Grouper;
 use polars_expr::reduce::GroupedReduction;
 use polars_expr::state::ExecutionState;
-use polars_ooc::{MostRecentSpillContext, memory_manager};
+use polars_ooc::{MemoryGrant, MostRecentSpillContext, memory_manager};
 use polars_utils::IdxSize;
 use polars_utils::hashing::HashPartitioner;
 use polars_utils::pl_str::PlSmallStr;
@@ -40,7 +40,7 @@ use super::{ComputeNode, NodeMemoryUsage};
 use crate::execute::StreamingExecutionState;
 use crate::expression::StreamExpr;
 use crate::graph::PortState;
-use crate::hash_shuffle::batches::{LoadedFrame, PrepareFrame, build_from_batches, make_batches};
+use crate::hash_shuffle::batches::{BuildPartition, LoadedFrame, build_from_batches, make_batches};
 use crate::hash_shuffle::frame_with_keys::SpillFrameWithKeys;
 use crate::hash_shuffle::store::StoredPartition;
 use crate::metrics::{Metric, MetricUnit, NodeMetricsRegistry, kind};
@@ -222,16 +222,27 @@ impl GroupByNode {
         }
     }
 
-    /// Builds the results once all input is received. With at most one partition per pipeline
-    /// all partitions are built here; otherwise the cold rows are stored per partition, and the
-    /// partitions are built while the results are sent.
+    /// Builds the results once all input is received. The number of partitions follows the
+    /// memory grant taken here. With at most one partition per pipeline all partitions are built
+    /// here; otherwise the cold rows are stored per partition, and the partitions are built while
+    /// the results are sent.
     fn start_flush(
         &self,
         sink: GroupBySink,
         state: &StreamingExecutionState,
     ) -> PolarsResult<Flush> {
         let (stats, frames, pre_aggs) = sink.finish_input(&self.params, &self.spill_ctx, state)?;
-        let num_partitions = self.tuning.num_partitions(&stats, self.num_pipelines);
+        let wanted_grant_bytes = self.tuning.wanted_grant_bytes(&stats);
+        let grant = MemoryGrant::take(wanted_grant_bytes, self.tuning.max_grant_fraction);
+        // A full grant keeps the partitions as large as the largest grant allows.
+        let memory_limit = if grant.bytes() < wanted_grant_bytes {
+            grant.bytes()
+        } else {
+            self.tuning.max_grant_bytes()
+        };
+        let num_partitions = self
+            .tuning
+            .num_partitions(&stats, self.num_pipelines, memory_limit);
         let partitioner = HashPartitioner::new(num_partitions, 0);
         let pre_aggs = SplitPreAggs::new(pre_aggs, &partitioner, state)?;
         let num_frames = frames.len();
@@ -245,10 +256,11 @@ impl GroupByNode {
                 "stored"
             };
             eprintln!(
-                "[group-by]: {num_partitions} partitions {how}, {num_frames} frames in {} batches, {} pre-aggregates, {} estimated groups",
+                "[group-by]: {num_partitions} partitions {how}, {num_frames} frames in {} batches, {} pre-aggregates, {} estimated groups, memory grant of {} bytes ({wanted_grant_bytes} wanted)",
                 batches.len(),
                 pre_aggs.len(),
-                stats.estimated_groups
+                stats.estimated_groups,
+                grant.bytes(),
             );
         }
         self.estimated_groups
@@ -273,6 +285,8 @@ impl GroupByNode {
             self.params.clone(),
             reserve_groups,
             actual_groups,
+            grant,
+            stats.partition_grant_bytes(num_partitions),
         ))
     }
 
@@ -312,13 +326,10 @@ impl GroupByNode {
         }
         pre_aggs.free(state)?;
 
-        let params = &*self.params;
-        let prepare: &PrepareFrame<'_> =
-            &move |input, frame| params.prepare_frame(input, frame, state).boxed();
-        let add_batch =
-            |(p, table, _): &mut Partition, batch: &[LoadedFrame]| -> PolarsResult<()> {
-                // Partitions start at different frames, so that tasks don't read the same frame at
-                // the same time.
+        let add_batch: &BuildPartition<'_, Partition> = &move |(p, table, _), batch, state| {
+            async move {
+                // Partitions start at different frames, so that tasks don't read the same frame
+                // at the same time.
                 let start = *p * batch.len() / num_partitions;
                 for i in 0..batch.len() {
                     let frame = &batch[(start + i) % batch.len()];
@@ -326,18 +337,15 @@ impl GroupByNode {
                     if rows.is_some_and(|rows| rows.is_empty()) {
                         continue;
                     }
-                    table.add_rows(frame.input, &frame.frame, rows)?;
+                    table
+                        .add_rows(frame.input, &frame.frame, rows, state)
+                        .await?;
                 }
                 Ok(())
-            };
-        build_from_batches(
-            batches,
-            partitioner,
-            &mut partitions,
-            Some(prepare),
-            &add_batch,
-            state,
-        )?;
+            }
+            .boxed()
+        };
+        build_from_batches(batches, partitioner, &mut partitions, add_batch, state)?;
 
         for_each_parallel(partitions.iter_mut(), state.task_metrics(), &|(
             _,
@@ -375,10 +383,9 @@ impl GroupByNode {
             batches,
             partitioner,
             &mut stored,
-            None,
-            &|stored: &mut StoredPartition, batch: &[LoadedFrame]| {
+            &|stored: &mut StoredPartition, batch: &[LoadedFrame], _| {
                 stored.write_batch(batch);
-                Ok(())
+                async { Ok(()) }.boxed()
             },
             state,
         )?;

@@ -8,6 +8,7 @@ use polars_arrow::datatypes::ArrowDataType;
 use crate::NotSimdPrimitive;
 
 mod array;
+mod binary;
 mod boolean;
 mod list;
 mod scalar;

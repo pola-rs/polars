@@ -18,9 +18,9 @@ use polars_plan::plans::{
 };
 use polars_plan::prelude::*;
 use polars_plan::utils::rename_columns;
-use polars_utils::IdxSize;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::{IdxSize, format_pl_smallstr};
 use recursive::recursive;
 use slotmap::DenseSlotMap;
 
@@ -113,7 +113,7 @@ fn build_group_by_fallback(
 // represent the aggregate result in the post-select.
 //
 // For each input to this aggregate uniq_input_names is updated to map the
-// unique id of the input expressions to an input columns the aggregate
+// unique id of the input expressions to an input column the aggregate
 // expression expects.
 //
 // uniq_agg_exprs is updated with the unique id of the aggregate mapping to
@@ -499,8 +499,8 @@ fn try_lower_elementwise_scalar_agg_expr(
                 RowEncodingVariant::Ordered {
                     descending: None,
                     nulls_last: None,
-                    broadcast_nulls: Some(true),
                 },
+                true,
                 expr_arena,
             )
             .expr_ir_unnamed();
@@ -889,6 +889,100 @@ fn try_lower_agg_input_expr(
     }
 }
 
+/// Merges the `min_by`/`max_by` aggregations that share the function and the `by` input into one
+/// over a struct of their inputs, so that the group-by keeps one `by` value per group for all of
+/// them. Returns `None` if nothing is merged.
+fn merge_min_max_by(
+    aggs: &[ExprIR],
+    input_schema: &Schema,
+    canonical_exprs: &mut CanonicalExprMap,
+    expr_cache: &mut ExprCache,
+    expr_arena: &mut Arena<AExpr>,
+) -> Option<Vec<ExprIR>> {
+    let mut merged: PlIndexMap<_, Vec<usize>> = PlIndexMap::new();
+    for (i, agg) in aggs.iter().enumerate() {
+        let AExpr::Function {
+            input, function, ..
+        } = expr_arena.get(agg.node())
+        else {
+            continue;
+        };
+        let (is_max, order) = match function {
+            IRFunctionExpr::MinBy { order } => (false, *order),
+            IRFunctionExpr::MaxBy { order } => (true, *order),
+            _ => continue,
+        };
+        let [x, by] = input.as_slice() else {
+            continue;
+        };
+        let (x, by) = (x.node(), by.node());
+        if !is_elementwise_rec_cached(x, expr_arena, expr_cache)
+            || !is_elementwise_rec_cached(by, expr_arena, expr_cache)
+        {
+            continue;
+        }
+        let Ok(dtype) = expr_arena
+            .get(x)
+            .to_dtype(&ToFieldContext::new(expr_arena, input_schema))
+        else {
+            continue;
+        };
+        if dtype.contains_objects() {
+            continue;
+        }
+        let by_id = canonical_exprs.resolve(by, expr_arena);
+        merged.entry((is_max, order, by_id)).or_default().push(i);
+    }
+    merged.retain(|_, idxs| idxs.len() > 1);
+    if merged.is_empty() {
+        return None;
+    }
+
+    let mut out = aggs.to_vec();
+    for idxs in merged.values() {
+        let AExpr::Function {
+            input,
+            function,
+            options,
+        } = expr_arena.get(aggs[idxs[0]].node()).clone()
+        else {
+            unreachable!()
+        };
+        let fields = idxs
+            .iter()
+            .enumerate()
+            .map(|(j, i)| {
+                let AExpr::Function { input, .. } = expr_arena.get(aggs[*i].node()) else {
+                    unreachable!()
+                };
+                ExprIR::new(
+                    input[0].node(),
+                    OutputName::Alias(format_pl_smallstr!("{j}")),
+                )
+            })
+            .collect();
+        let payload =
+            AExprBuilder::function(fields, IRFunctionExpr::AsStruct, expr_arena).expr_ir_unnamed();
+        let merged_node = expr_arena.add(AExpr::Function {
+            input: vec![payload, input[1].clone()],
+            function,
+            options,
+        });
+        for (j, i) in idxs.iter().enumerate() {
+            let field = AExprBuilder::function(
+                vec![ExprIR::from_node(merged_node, expr_arena)],
+                IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(format_pl_smallstr!(
+                    "{j}"
+                ))),
+                expr_arena,
+            )
+            .node();
+            out[*i] = ExprIR::new(field, OutputName::Alias(aggs[*i].output_name().clone()));
+        }
+    }
+    Some(out)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn try_build_streaming_group_by(
     mut input: PhysStream,
@@ -942,6 +1036,15 @@ pub fn try_build_streaming_group_by(
     };
 
     let mut canonical_exprs = CanonicalExprMap::new();
+    let input_schema = input.output_schema(phys_sm).clone();
+    let merged_aggs = merge_min_max_by(
+        aggs,
+        &input_schema,
+        &mut canonical_exprs,
+        expr_cache,
+        expr_arena,
+    );
+    let aggs = merged_aggs.as_deref().unwrap_or(aggs);
 
     // Extract aggregates, input expressions for those aggregates and replace
     // with agg node output columns.
@@ -993,7 +1096,6 @@ pub fn try_build_streaming_group_by(
         }
     }
 
-    let input_schema = input.output_schema(phys_sm).clone();
     for agg in aggs {
         let Some(trans_node) = try_lower_elementwise_scalar_agg_expr(
             agg.node(),
@@ -1299,16 +1401,14 @@ pub fn try_build_sorted_group_by(
             .iter()
             .map(|k| k.field(input_schema, expr_arena))
             .collect::<PolarsResult<Vec<_>>>()?;
-        let expr = AExprBuilder::function(
+        let expr = AExprBuilder::row_encode(
             keys.to_vec(),
-            IRFunctionExpr::RowEncode(
-                key_fields.iter().map(|k| k.dtype().clone()).collect(),
-                RowEncodingVariant::Ordered {
-                    descending: None,
-                    nulls_last: None,
-                    broadcast_nulls: None,
-                },
-            ),
+            key_fields.iter().map(|k| k.dtype().clone()).collect(),
+            RowEncodingVariant::Ordered {
+                descending: None,
+                nulls_last: None,
+            },
+            false,
             expr_arena,
         )
         .expr_ir(input_column.clone());
@@ -1385,14 +1485,15 @@ pub fn try_build_sorted_group_by(
                 AExprBuilder::col(input_column.clone(), expr_arena).expr_ir(input_column.clone());
             let expr = AExprBuilder::function(
                 vec![expr],
-                IRFunctionExpr::RowDecode(
-                    key_fields,
-                    RowEncodingVariant::Ordered {
+                IRFunctionExpr::RowDecode {
+                    fields: key_fields,
+                    variant: RowEncodingVariant::Ordered {
                         descending: None,
                         nulls_last: None,
-                        broadcast_nulls: None,
                     },
-                ),
+                    output: RowEncodingOutputType::AlwaysBinaryOffset,
+                    encode_nulls: None,
+                },
                 expr_arena,
             )
             .expr_ir(input_column.clone());

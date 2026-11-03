@@ -1,7 +1,7 @@
 use polars_core::chunked_array::cast::CastOptions;
 
 use super::*;
-use crate::plans::aexpr::{ExprPushdownGroup, is_inherently_nondeterministic};
+use crate::plans::aexpr::{ExprPushdownGroup, is_elementwise_rec, is_inherently_nondeterministic};
 
 fn commutes_with_filter(predicate: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
     matches!(
@@ -1384,7 +1384,10 @@ fn try_rewrite_outer_iejoin(
 
     let suffix = options.args.suffix().clone();
 
-    if matches!(options.args.maintain_order, MaintainOrderJoin::None) {
+    // IEJoin evaluates its keys per input, which is only valid for elementwise predicates.
+    if matches!(options.args.maintain_order, MaintainOrderJoin::None)
+        && is_elementwise_rec(predicate.node(), expr_arena)
+    {
         let mut on_local: PlIndexMap<PlSmallStr, ExprIR> = init_indexmap(None);
         let mut local_dedup = PredicateDedupState::default();
         insert_predicate_dedup(&mut on_local, &predicate, expr_arena, &mut local_dedup);

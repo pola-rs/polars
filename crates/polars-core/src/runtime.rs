@@ -34,8 +34,18 @@ impl RAYON {
 
         #[cfg(any(target_os = "emscripten", not(target_family = "wasm")))]
         {
-            self.with(|p| p.install(op))
+            let mut op = Some(op);
+            let mut out = None;
+            self.install_dyn(&mut || out = Some(op.take().unwrap()()));
+            out.unwrap()
         }
+    }
+
+    // Instantiates the rayon install machinery only once instead of for every `install` caller.
+    #[cfg(any(target_os = "emscripten", not(target_family = "wasm")))]
+    #[inline(never)]
+    fn install_dyn(&self, op: &mut (dyn FnMut() + Send)) {
+        self.with(|p| p.install(op))
     }
 
     pub fn join<A, B, RA, RB>(&self, oper_a: A, oper_b: B) -> (RA, RB)

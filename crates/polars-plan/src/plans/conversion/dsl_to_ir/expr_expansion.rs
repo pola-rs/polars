@@ -92,7 +92,7 @@ fn function_input_wildcard_expansion(function: &FunctionExpr) -> FunctionExpansi
             | F::ReduceHorizontal { .. }
             | F::SumHorizontal { .. }
             | F::MeanHorizontal { .. }
-            | F::RowEncode(..)
+            | F::RowEncode { .. }
     );
     let mut allow_empty_inputs = matches!(
         function,
@@ -107,7 +107,7 @@ fn function_input_wildcard_expansion(function: &FunctionExpr) -> FunctionExpansi
         expand_into_inputs |= matches!(function, F::AsStruct);
         expand_into_inputs |= matches!(
             function,
-            F::CumReduceHorizontal { .. } | F::CumFoldHorizontal { .. }
+            F::CumReduceHorizontal { .. } | F::CumFoldHorizontal { .. } | F::CumSumHorizontal
         );
     }
     #[cfg(feature = "ffi_plugin")]
@@ -725,6 +725,7 @@ fn expand_expression_rec(
             partition_by,
             order_by,
             mapping,
+            may_reorder,
         } => {
             let mut exprs =
                 Vec::with_capacity(partition_by.len() + 1 + usize::from(order_by.is_some()));
@@ -746,6 +747,7 @@ fn expand_expression_rec(
                         .as_ref()
                         .map(|(_, options)| (Arc::new(e.last().unwrap().clone()), *options)),
                     mapping: *mapping,
+                    may_reorder: *may_reorder,
                 },
             )?
         },

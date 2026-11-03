@@ -1040,7 +1040,7 @@ def test_from_arrow_fixed_offset(fixed_offset: str, etc_tz: str) -> None:
     assert_series_equal(result, expected)
 
 
-def test_from_avro_valid_time_zone_13032() -> None:
+def test_from_arrow_valid_time_zone_13032() -> None:
     arr = pa.array(
         [datetime(2021, 1, 1, 0, 0, 0, 0)], type=pa.timestamp("ns", tz="00:00")
     )
@@ -1103,6 +1103,96 @@ def test_compat_level(plmonkeypatch: PlMonkeyPatch) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "arrow_dtype",
+    [pa.decimal32(9, 7), pa.decimal64(18, 8), pa.decimal128(38, 8)],
+)
+def test_pycapsule_stream_decimal_29651(arrow_dtype: pa.DataType) -> None:
+    values = [Decimal("24.5790000"), Decimal("-1.2345678"), None]
+    table = pa.table({"x": pa.array(values, type=arrow_dtype)})
+    schema = {"x": pl.Decimal(arrow_dtype.precision, arrow_dtype.scale)}
+
+    reader = pa.RecordBatchReader.from_batches(table.schema, table.to_batches())
+    df = pl.DataFrame(PyCapsuleStreamHolder(reader))
+    assert_frame_equal(df, pl.DataFrame({"x": values}, schema=schema))
+
+    reader = pa.RecordBatchReader.from_batches(
+        table.schema, table.slice(1).to_batches()
+    )
+    df = pl.DataFrame(PyCapsuleStreamHolder(reader))
+    expected = pl.DataFrame({"x": [Decimal("-1.2345678"), None]}, schema=schema)
+    assert_frame_equal(df, expected)
+
+
+def test_from_arrow_nested_decimal_29651() -> None:
+    table = pa.table(
+        {
+            "l": pa.array(
+                [[Decimal("1.5"), None], None, [Decimal("-2.25")], []],
+                pa.list_(pa.decimal64(10, 2)),
+            ),
+            "s": pa.array(
+                [{"d": Decimal("3.125")}, {"d": Decimal("-1.5")}, {"d": None}, None],
+                pa.struct([("d", pa.decimal32(5, 3))]),
+            ),
+        }
+    )
+    df = pl.DataFrame(table)
+    expected = pl.DataFrame(
+        {
+            "l": [[Decimal("1.50"), None], None, [Decimal("-2.25")], []],
+            "s": [
+                {"d": Decimal("3.125")},
+                {"d": Decimal("-1.500")},
+                {"d": None},
+                None,
+            ],
+        },
+        schema={
+            "l": pl.List(pl.Decimal(10, 2)),
+            "s": pl.Struct({"d": pl.Decimal(5, 3)}),
+        },
+    )
+    assert_frame_equal(df, expected)
+
+
+ARRAY_TEST_DATA = [[-250, 125], None, [125, None], [125, -250]]
+
+
+@pytest.mark.parametrize(
+    ("array", "inner_dtype"),
+    [
+        (pa.array(ARRAY_TEST_DATA, pa.list_(pa.int32(), 2)), pl.Int32),
+        (pa.array(ARRAY_TEST_DATA, pa.list_(pa.decimal32(5, 2), 2)), pl.Decimal(5, 2)),
+        (
+            pa.array(ARRAY_TEST_DATA, pa.list_(pa.decimal64(12, 2), 2)),
+            pl.Decimal(12, 2),
+        ),
+        (
+            # child array with its own offset
+            pa.FixedSizeListArray.from_arrays(
+                pa.array([9, 9, -250, 125, 0, 0, 125, None, 125, -250]).slice(2),
+                2,
+                mask=pa.array([False, True, False, False]),
+            ),
+            pl.Int64,
+        ),
+        (pa.array([[], None, [], []], pa.list_(pa.int32(), 0)), pl.Int32),
+    ],
+)
+def test_from_arrow_sliced_fixed_size_list(
+    array: pa.FixedSizeListArray, inner_dtype: pl.DataType
+) -> None:
+    for source in (
+        array.slice(1, 2),
+        array.slice(2, 0),
+        pa.chunked_array([array.slice(0, 2), array.slice(2)]),
+    ):
+        series = pl.Series(source)
+        assert series.dtype == pl.Array(inner_dtype, array.type.list_size)
+        assert series.to_list() == source.to_pylist()
+
+
 def test_df_pycapsule_interface() -> None:
     df = pl.DataFrame(
         {
@@ -1160,7 +1250,7 @@ def test_to_arrow_empty_chunks_20627() -> None:
     assert df.to_arrow().shape == (1, 1)
 
 
-def test_from_arrow_recorbatch() -> None:
+def test_from_arrow_recordbatch() -> None:
     n_legs = pa.array([2, 2, 4, 4, 5, 100])
     animals = pa.array(
         ["Flamingo", "Parrot", "Dog", "Horse", "Brittle stars", "Centipede"]

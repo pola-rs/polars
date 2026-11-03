@@ -132,7 +132,7 @@ impl DateLikeNameSpace {
             .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::WeekDay))
     }
 
-    /// Get the month of a Date/Datetime.
+    /// Get the day of a Date/Datetime.
     pub fn day(self) -> Expr {
         self.0
             .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::Day))

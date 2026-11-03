@@ -277,9 +277,19 @@ fn dispatch_join_by_type(
         // TODO: @scalar-opt.
         let left_by_series: Vec<_> = left_by.materialized_column_iter().cloned().collect();
         let right_by_series: Vec<_> = right_by.materialized_column_iter().cloned().collect();
-        let lhs_keys = prepare_keys_multiple(&left_by_series, false)?;
-        let rhs_keys = prepare_keys_multiple(&right_by_series, false)?;
-        asof_join_by_binary::<BinaryOffsetType>(&lhs_keys, &rhs_keys, join)
+        let (lhs_keys, rhs_keys) = prepare_keys_multiple(&left_by_series, &right_by_series, false)?;
+        if lhs_keys.dtype() != &DataType::BinaryOffset {
+            return dispatch_join_by_type(
+                &mut lhs_keys.into_frame(),
+                &mut rhs_keys.into_frame(),
+                join,
+            );
+        }
+        asof_join_by_binary::<BinaryOffsetType>(
+            lhs_keys.binary_offset().unwrap(),
+            rhs_keys.binary_offset().unwrap(),
+            join,
+        )
     };
     Ok(out)
 }
@@ -493,8 +503,8 @@ pub trait AsofJoinBy: IntoDf {
             right_key = right_on;
         }
 
-        let left_asof = left_key.to_physical_repr();
-        let right_asof = right_key.to_physical_repr();
+        let left_asof = _asof_key_to_physical(left_key)?;
+        let right_asof = _asof_key_to_physical(right_key)?;
         let right_asof_name = right_asof.name();
         let left_asof_name = left_asof.name();
         _check_asof_columns(
