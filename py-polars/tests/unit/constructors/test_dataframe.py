@@ -279,6 +279,20 @@ def test_df_init_from_sequence_of_generators_29121() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_df_init_row_oriented_int_to_bool_30541() -> None:
+    # Row construction into a Boolean column used to keep only 1 as True; the
+    # column constructor and `cast` map every non-zero number to True.
+    rows = [[1], [2], [0], [3], [255]]
+    result = pl.DataFrame(rows, schema={"b": pl.Boolean}, orient="row", strict=False)
+    expected = pl.DataFrame({"b": [1, 2, 0, 3, 255]}, schema={"b": pl.Boolean}, strict=False)
+    assert_frame_equal(result, expected)
+    assert result["b"].to_list() == [True, True, False, True, True]
+
+    dicts = [{"b": 1}, {"b": 2}, {"b": 0}]
+    result = pl.DataFrame(dicts, schema={"b": pl.Boolean}, strict=False)
+    assert result["b"].to_list() == [True, True, False]
+
+
 def test_df_init_resolution_leaves_dispatch_registry_alone_29121() -> None:
     SomeRow = dataclasses.make_dataclass("Row29121", [("a", int)])
     registered = set(_sequence_to_pydf_dispatcher.registry)

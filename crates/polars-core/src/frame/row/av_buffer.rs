@@ -58,8 +58,10 @@ impl<'a> AnyValueBuffer<'a> {
             (Boolean(builder), AnyValue::Null) => builder.append_null(),
             (Boolean(builder), AnyValue::Boolean(v)) => builder.append_value(v),
             (Boolean(builder), val) => {
+                // Same rule as the column constructor and `cast`: zero is false,
+                // any other number is true (#30541).
                 let v = val.extract::<u8>()?;
-                builder.append_value(v == 1)
+                builder.append_value(v != 0)
             },
             (Int32(builder), AnyValue::Null) => builder.append_null(),
             (Int32(builder), val) => builder.append_value(val.extract()?),
