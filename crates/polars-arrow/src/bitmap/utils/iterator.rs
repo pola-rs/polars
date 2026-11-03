@@ -88,7 +88,7 @@ impl<'a> BitmapIter<'a> {
         num_leading_ones
     }
 
-    /// Consume and returns the numbers of `0` / `false` values that the start of the iterator.
+    /// Consume and returns the numbers of `0` / `false` values at the start of the iterator.
     ///
     /// This performs the same operation as `(&mut iter).take_while(|b| !b).count()`.
     ///
@@ -477,7 +477,7 @@ mod tests {
                     // Check value.
                     assert_eq!(out, expected);
 
-                    // Check internal sate.
+                    // Check internal state.
                     let final_rest_len = iter_test.rest_len;
                     let final_word_len = iter_test.word_len;
                     match out {

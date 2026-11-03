@@ -44,7 +44,7 @@ impl Default for MutableBooleanArray {
 }
 
 impl MutableBooleanArray {
-    /// Creates an new empty [`MutableBooleanArray`].
+    /// Creates a new empty [`MutableBooleanArray`].
     pub fn new() -> Self {
         Self::with_capacity(0)
     }
@@ -81,7 +81,7 @@ impl MutableBooleanArray {
         })
     }
 
-    /// Creates an new [`MutableBooleanArray`] with a capacity of values.
+    /// Creates a new [`MutableBooleanArray`] with a capacity of values.
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             dtype: ArrowDataType::Boolean,
@@ -135,7 +135,7 @@ impl MutableBooleanArray {
     }
 
     /// Extends the [`MutableBooleanArray`] from an iterator of values of trusted len.
-    /// This differs from `extend_trusted_len` which accepts in iterator of optional values.
+    /// This differs from `extend_trusted_len` which accepts an iterator of optional values.
     #[inline]
     pub fn extend_trusted_len_values<I>(&mut self, iterator: I)
     where
@@ -146,7 +146,7 @@ impl MutableBooleanArray {
     }
 
     /// Extends the [`MutableBooleanArray`] from an iterator of values of trusted len.
-    /// This differs from `extend_trusted_len_unchecked`, which accepts in iterator of optional values.
+    /// This differs from `extend_trusted_len_unchecked`, which accepts an iterator of optional values.
     ///
     /// # Safety
     /// The iterator must be trusted len.
@@ -264,7 +264,7 @@ impl MutableBooleanArray {
         self.values.set(index, value.unwrap_or_default());
 
         if value.is_none() && self.validity.is_none() {
-            // When the validity is None, all elements so far are valid. When one of the elements is set of null,
+            // When the validity is None, all elements so far are valid. When one of the elements is set to null,
             // the validity must be initialized.
             self.validity = Some(MutableBitmap::from_trusted_len_iter(std::iter::repeat_n(
                 true,
@@ -341,7 +341,7 @@ impl MutableBooleanArray {
         unsafe { Self::from_trusted_len_iter_unchecked(iterator) }
     }
 
-    /// Creates a [`BooleanArray`] from an falible iterator of trusted length.
+    /// Creates a [`BooleanArray`] from a fallible iterator of trusted length.
     ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
@@ -570,7 +570,7 @@ impl Extend<Option<bool>> for MutableBooleanArray {
 }
 
 impl TryExtend<Option<bool>> for MutableBooleanArray {
-    /// This is infalible and is implemented for consistency with all other types
+    /// This is infallible and is implemented for consistency with all other types
     fn try_extend<I: IntoIterator<Item = Option<bool>>>(&mut self, iter: I) -> PolarsResult<()> {
         self.extend(iter);
         Ok(())
@@ -578,7 +578,7 @@ impl TryExtend<Option<bool>> for MutableBooleanArray {
 }
 
 impl TryPush<Option<bool>> for MutableBooleanArray {
-    /// This is infalible and is implemented for consistency with all other types
+    /// This is infallible and is implemented for consistency with all other types
     fn try_push(&mut self, item: Option<bool>) -> PolarsResult<()> {
         self.push(item);
         Ok(())

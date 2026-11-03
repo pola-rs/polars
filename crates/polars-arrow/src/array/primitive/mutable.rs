@@ -218,7 +218,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
         }
     }
     /// Extends the [`MutablePrimitiveArray`] from an iterator of values of trusted len.
-    /// This differs from `extend_trusted_len` which accepts in iterator of optional values.
+    /// This differs from `extend_trusted_len` which accepts an iterator of optional values.
     #[inline]
     pub fn extend_trusted_len_values<I>(&mut self, iterator: I)
     where
@@ -228,7 +228,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
     }
 
     /// Extends the [`MutablePrimitiveArray`] from an iterator of values of trusted len.
-    /// This differs from `extend_trusted_len_unchecked` which accepts in iterator of optional values.
+    /// This differs from `extend_trusted_len_unchecked` which accepts an iterator of optional values.
     ///
     /// # Safety
     /// The iterator must be trusted len.
@@ -342,7 +342,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
         *self.values.get_unchecked_mut(index) = value.unwrap_or_default();
 
         if value.is_none() && self.validity.is_none() {
-            // When the validity is None, all elements so far are valid. When one of the elements is set of null,
+            // When the validity is None, all elements so far are valid. When one of the elements is set to null,
             // the validity must be initialized.
             let mut validity = MutableBitmap::new();
             validity.extend_constant(self.len(), true);
@@ -389,7 +389,7 @@ impl<T: NativeType> TryExtend<Option<T>> for MutablePrimitiveArray<T> {
 }
 
 impl<T: NativeType> TryPush<Option<T>> for MutablePrimitiveArray<T> {
-    /// This is infalible and is implemented for consistency with all other types
+    /// This is infallible and is implemented for consistency with all other types
     #[inline]
     fn try_push(&mut self, item: Option<T>) -> PolarsResult<()> {
         self.push(item);

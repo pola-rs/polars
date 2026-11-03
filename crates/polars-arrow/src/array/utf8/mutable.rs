@@ -298,7 +298,7 @@ impl<O: Offset, P: AsRef<str>> FromIterator<Option<P>> for MutableUtf8Array<O> {
 
 impl<O: Offset> MutableUtf8Array<O> {
     /// Extends the [`MutableUtf8Array`] from an iterator of values of trusted len.
-    /// This differs from `extended_trusted_len` which accepts iterator of optional values.
+    /// This differs from `extend_trusted_len` which accepts iterator of optional values.
     #[inline]
     pub fn extend_trusted_len_values<I, P>(&mut self, iterator: I)
     where
@@ -309,7 +309,7 @@ impl<O: Offset> MutableUtf8Array<O> {
     }
 
     /// Extends the [`MutableUtf8Array`] from an iterator of values.
-    /// This differs from `extended_trusted_len` which accepts iterator of optional values.
+    /// This differs from `extend_trusted_len` which accepts iterator of optional values.
     #[inline]
     pub fn extend_values<I, P>(&mut self, iterator: I)
     where
@@ -326,7 +326,7 @@ impl<O: Offset> MutableUtf8Array<O> {
     }
 
     /// Extends the [`MutableUtf8Array`] from an iterator of values of trusted len.
-    /// This differs from `extended_trusted_len_unchecked` which accepts iterator of optional
+    /// This differs from `extend_trusted_len_unchecked` which accepts iterator of optional
     /// values.
     ///
     /// # Safety
@@ -442,7 +442,7 @@ impl<O: Offset> MutableUtf8Array<O> {
         Ok(array)
     }
 
-    /// Creates a [`MutableUtf8Array`] from an falible iterator of trusted length.
+    /// Creates a [`MutableUtf8Array`] from an fallible iterator of trusted length.
     ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
@@ -469,7 +469,7 @@ impl<O: Offset> MutableUtf8Array<O> {
         ))
     }
 
-    /// Creates a [`MutableUtf8Array`] from an falible iterator of trusted length.
+    /// Creates a [`MutableUtf8Array`] from an fallible iterator of trusted length.
     #[inline]
     pub fn try_from_trusted_len_iter<E, I, P>(iterator: I) -> std::result::Result<Self, E>
     where
