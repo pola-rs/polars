@@ -8,7 +8,7 @@ use polars_utils::float16::pf16;
 use polars_utils::floor_divmod::FloorDivMod;
 use polars_utils::total_ord::ToTotalOrd;
 use simplify_functions::optimize_functions;
-use sort_lowering::lower_sort_reads;
+pub(super) use sort_lowering::lower_sort_reads;
 mod arity;
 
 use crate::plans::*;
