@@ -245,7 +245,7 @@ impl MetadataPerSource {
                     n_surviving += 1;
                 }
                 // Note: may degrade to Unresolved if the invariant (first source index == 0)
-                // cannot be uphold.
+                // cannot be upheld.
                 Self::new(kept, n_surviving)
             },
             Self::Full(s) => {

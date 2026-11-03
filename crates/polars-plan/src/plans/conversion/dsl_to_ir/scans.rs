@@ -113,7 +113,7 @@ pub(super) async fn dsl_to_ir(
             );
         }
 
-        // For cloud we must deduplicate files. Serialization/deserialization leads to Arc's losing there
+        // For cloud we must deduplicate files. Serialization/deserialization leads to Arc's losing their
         // sharing.
         let (mut file_info, scan_type_ir) = {
             cache_file_info

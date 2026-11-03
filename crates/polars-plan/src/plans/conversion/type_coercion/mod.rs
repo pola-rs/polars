@@ -80,7 +80,7 @@ pub(crate) fn modify_supertype(
     // TODO! This must be removed and dealt properly with dynamic str.
     use DataType::*;
     match (type_left, type_right, left, right) {
-        // if the we compare a categorical to a literal string we want to cast the literal to categorical
+        // if we compare a categorical to a literal string we want to cast the literal to categorical
         #[cfg(feature = "dtype-categorical")]
         (dt @ Categorical(_, _), String | Unknown(UnknownKind::Str), _, AExpr::Literal(_))
         | (String | Unknown(UnknownKind::Str), dt @ Categorical(_, _), AExpr::Literal(_), _)
@@ -1646,7 +1646,7 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
             // of expressible integers:
             let max_int_value = 10i128.pow((*p_to - *s_to) as u32) - 1;
             let min_int_value = -max_int_value;
-            // The datatype's range must fit in the decimal datatypes's range:
+            // The datatype's range must fit in the decimal datatype's range:
             max_int_value >= dt.max().unwrap().value().extract::<i128>().unwrap()
                 && min_int_value <= dt.min().unwrap().value().extract::<i128>().unwrap()
         },

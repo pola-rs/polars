@@ -28,7 +28,7 @@ When the array iterator is pulled the first time, the following happens:
     returned and the remaining of the page is consumed into multiple mutable arrays of length
     `chunk_size` into a FIFO queue.
 
-Subsequent pulls of arrays will first try to pull from the FIFO queue. Once the queue is empty, the
+Subsequent pulls of arrays will first try to pull from the FIFO queue. Once the queue is empty,
 a new page is pulled.
 
 ### `PageState`
@@ -54,7 +54,7 @@ type.
 For nested type with N+1 levels (1 is the primitive), we need to build the nest information of each
 N levels + the non-nested Arrow array.
 
-This is done by first transversing the parquet types and using it to initialize, per chunk, the N
+This is done by first traversing the parquet types and using it to initialize, per chunk, the N
 levels.
 
 The per-chunk execution is then similar but `chunk_size` only drives the number of retrieved rows
@@ -70,4 +70,4 @@ The `PageState` of nested types is composed by 4 iterators:
 
 The idea is that an iterator of `rep, def` contain all the information to decode the nesting
 structure of an arrow array. The other two iterators are equivalent to the non-nested types with the
-exception that `def levels` are no equivalent to arrow bitmaps.
+exception that `def levels` are not equivalent to arrow bitmaps.

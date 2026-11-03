@@ -519,7 +519,7 @@ impl DataType {
                 true
             },
 
-            // @NOTE: we are being conversative
+            // @NOTE: we are being conservative
             _ => return None,
         })
     }
@@ -1707,7 +1707,7 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
         },
         #[cfg(feature = "dtype-array")]
         (Array(inner_l, width_l), Array(inner_r, width_r)) => {
-            polars_ensure!(width_l == width_r, ComputeError: "widths of FixedSizeWidth Series are not equal");
+            polars_ensure!(width_l == width_r, ComputeError: "widths of FixedSizeList Series are not equal");
             let merged = merge_dtypes(inner_l, inner_r)?;
             Array(Box::new(merged), *width_l)
         },

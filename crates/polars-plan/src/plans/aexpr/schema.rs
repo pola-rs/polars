@@ -834,7 +834,7 @@ fn get_arithmetic_field(
                         op, l, r,
                     )
                 },
-                // List<->primitive operations can be done directly after casting the to the primitive
+                // List<->primitive operations can be done directly after casting to the primitive
                 // supertype for the primitive values on both sides.
                 (list_dtype @ List(_), other_dtype) | (other_dtype, list_dtype @ List(_)) => {
                     let dtype = list_dtype.cast_leaf(try_get_supertype(

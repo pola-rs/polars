@@ -442,7 +442,7 @@ impl<O: Offset> MutableUtf8Array<O> {
         Ok(array)
     }
 
-    /// Creates a [`MutableUtf8Array`] from an fallible iterator of trusted length.
+    /// Creates a [`MutableUtf8Array`] from a fallible iterator of trusted length.
     ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
@@ -469,7 +469,7 @@ impl<O: Offset> MutableUtf8Array<O> {
         ))
     }
 
-    /// Creates a [`MutableUtf8Array`] from an fallible iterator of trusted length.
+    /// Creates a [`MutableUtf8Array`] from a fallible iterator of trusted length.
     #[inline]
     pub fn try_from_trusted_len_iter<E, I, P>(iterator: I) -> std::result::Result<Self, E>
     where

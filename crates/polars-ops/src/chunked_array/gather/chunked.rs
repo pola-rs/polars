@@ -250,7 +250,7 @@ impl TakeChunked for Series {
         }
     }
 
-    /// Take function that checks of null state in `ChunkIdx`.
+    /// Take function that checks for null state in `ChunkIdx`.
     unsafe fn take_opt_chunked_unchecked<const B: u64>(
         &self,
         by: &[ChunkId<B>],
@@ -396,7 +396,7 @@ where
         out
     }
 
-    // Take function that checks of null state in `ChunkIdx`.
+    // Take function that checks for null state in `ChunkIdx`.
     unsafe fn take_opt_chunked_unchecked<const B: u64>(
         &self,
         by: &[ChunkId<B>],
@@ -658,7 +658,7 @@ where
     T: PolarsDataType<Array = BinaryViewArrayGeneric<V>>,
     V: ViewType + ?Sized,
 {
-    // Dedup buffers up front. Note: don't do this during view update, as this is often is much
+    // Dedup buffers up front. Note: don't do this during view update, as this is often much
     // more costly.
     let mut buffers = Vec::with_capacity(ca.chunks().len());
     // Dont need to include the length, as we look at the arc pointers, which are immutable.

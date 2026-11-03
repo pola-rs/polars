@@ -810,7 +810,7 @@ impl<'a> FieldsMapper<'a> {
     }
 
     #[cfg(feature = "dtype-array")]
-    /// Map the dtype to the dtype of the array elements, with typo validation.
+    /// Map the dtype to the dtype of the array elements, with type validation.
     pub fn try_map_to_array_inner_dtype(&self) -> PolarsResult<Field> {
         let dt = self.fields[0].dtype();
         match dt {
