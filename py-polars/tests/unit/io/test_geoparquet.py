@@ -52,9 +52,11 @@ def _covering(box_name: str, box: pl.Struct) -> dict[str, Any]:
 
 
 def _metadata(source: io.BytesIO | Path) -> dict[bytes, bytes]:
-    if isinstance(source, io.BytesIO):
-        return pq.read_metadata(pa.BufferReader(source.getvalue())).metadata
-    return pq.read_metadata(source).metadata
+    where = (
+        pa.BufferReader(source.getvalue()) if isinstance(source, io.BytesIO) else source
+    )
+    metadata: dict[bytes, bytes] = pq.read_metadata(where).metadata
+    return metadata
 
 
 def _read_geo(source: io.BytesIO | Path) -> Any:
