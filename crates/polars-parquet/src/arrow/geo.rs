@@ -1,5 +1,5 @@
 //! Conversion between GeoParquet `geo` file metadata and GeoArrow extension types.
-use polars_arrow::datatypes::{ArrowDataType, ArrowSchema, ExtensionType, Metadata};
+use polars_arrow::datatypes::{ArrowDataType, ArrowSchema, ExtensionType, Field, Metadata};
 use polars_error::{PolarsResult, polars_bail, polars_err, polars_warn};
 use polars_parquet_format::RowGroup;
 use polars_utils::pl_str::PlSmallStr;
@@ -69,24 +69,30 @@ const ENCODINGS: [Encoding; 7] = [
     native("multipolygon", "geoarrow.multipolygon", "MultiPolygon", 3),
 ];
 
-/// Returns `Some(has_z)` if `dtype` is a valid storage type for `encoding`.
-fn check_storage(encoding: &Encoding, mut dtype: &ArrowDataType) -> Option<bool> {
-    let Some(list_depth) = encoding.list_depth else {
-        return matches!(
-            dtype,
-            ArrowDataType::Binary | ArrowDataType::LargeBinary | ArrowDataType::BinaryView
-        )
-        .then_some(false);
-    };
-    for _ in 0..list_depth {
+/// Returns the fields of the coordinate struct inside `dtype`, `None` for WKB.
+fn coordinate_fields<'a>(encoding: &Encoding, mut dtype: &'a ArrowDataType) -> Option<&'a [Field]> {
+    for _ in 0..encoding.list_depth? {
         dtype = match dtype {
             ArrowDataType::List(f) | ArrowDataType::LargeList(f) => &f.dtype,
             _ => return None,
         };
     }
-    let ArrowDataType::Struct(fields) = dtype else {
-        return None;
-    };
+    match dtype {
+        ArrowDataType::Struct(fields) => Some(fields),
+        _ => None,
+    }
+}
+
+/// Returns `Some(has_z)` if `dtype` is a valid storage type for `encoding`.
+fn check_storage(encoding: &Encoding, dtype: &ArrowDataType) -> Option<bool> {
+    if encoding.list_depth.is_none() {
+        return matches!(
+            dtype,
+            ArrowDataType::Binary | ArrowDataType::LargeBinary | ArrowDataType::BinaryView
+        )
+        .then_some(false);
+    }
+    let fields = coordinate_fields(encoding, dtype)?;
     let valid = (2..=3).contains(&fields.len())
         && fields
             .iter()
@@ -363,6 +369,14 @@ fn build_geo(
                 )
             })?;
         let has_z = check_storage(encoding, &ext.inner).ok_or_else(|| {
+            let has_m = coordinate_fields(encoding, &ext.inner)
+                .is_some_and(|fields| fields.iter().any(|f| f.name == "m"));
+            if has_m {
+                return polars_err!(
+                    InvalidOperation: "cannot write column '{}' as GeoParquet {}: it cannot store M values",
+                    name, version
+                );
+            }
             polars_err!(
                 InvalidOperation: "cannot write column '{}' as GeoParquet: storage type {:?} does not match '{}'",
                 name, ext.inner, ext.name
