@@ -8,35 +8,41 @@
 //! Core interactions:
 //! - Observation (`Stats`): delivered bandwidth (response body bytes as they arrive), bytes in use
 //!   and what bound each round of up to `ROUND_TICKS` ticks. Bandwidth counts the ticks after the
-//!   first, assuming a budget change settles within one tick.
+//!   first, assuming a budget change settles within one tick. A tick without traffic (nothing in
+//!   use, nothing arrived: a gap between scans) is no observation: the round in progress is
+//!   dropped and the next one starts with the traffic.
 //! - Estimation (`Ramp`, `Knee`): the knee, the best guess from the (budget, bandwidth) samples
-//!   of RampUp; an accepted probe replaces it.
+//!   of RampUp; an accepted probe starts RampUp again.
 //! - Control (`Phase`): sets the budget from the knee and what to learn next: RampUp explores
 //!   upward, Stable holds the knee, Probe explores above it, the brake backs off.
 //!
 //! Phases:
-//! - Init: waits for a round with arrived bytes (scan start, not a sample); doubles the budget
-//!   once if it bound and the limiter did not.
-//! - RampUp: doubles the budget per round while it binds and the bandwidth grows by
-//!   `RAMP_BW_GROWTH` over the best round (a round ends after two ticks when the growth shows).
-//!   A round where the budget bound, bandwidth arrived and a settled tick used half of the budget
-//!   is a sample. Once there is a sample, RampUp ends at the knee, the smallest sampled budget with
-//!   `KNEE_BW_FRACTION` of the best sampled bandwidth, on: no growth; the budget not binding
-//!   (another limit binds: requests, pipeline, decode); the request lifetime (bytes in use /
-//!   bandwidth) at `RAMP_LIFETIME_RATIO` x its minimum in two rounds in a row (growth from scan
-//!   warm-up, not from the budget; the first such round holds and is no sample); or the brake.
-//! - Stable: holds the knee; after `PROBE_INTERVAL` without the brake, Probe.
+//! - Init: holds the initial budget until the first tick where the byte budget binds and the
+//!   limiter does not; doubles it there, once, and RampUp starts from a zero reference. No rounds.
+//! - RampUp: acts on sample rounds only: rounds where the budget bound, bandwidth arrived and a
+//!   settled tick used half of the budget. A sample whose bandwidth grows by `RAMP_BW_GROWTH` over
+//!   the best sample doubles the budget (a round ends after two ticks when the growth shows); a
+//!   sample without growth counts as no growth; a bound round that is no sample holds. Once there
+//!   is a sample, RampUp ends at the knee, the smallest sampled budget with `KNEE_BW_FRACTION` of
+//!   the best sampled bandwidth, on: no growth; the budget not binding (another limit binds:
+//!   requests, pipeline, decode); the request lifetime (bytes in use / bandwidth) at
+//!   `RAMP_LIFETIME_RATIO` x its minimum in two rounds in a row (growth from scan warm-up, not from
+//!   the budget; the first such round holds and is no sample); or the brake.
+//! - Stable: holds the knee; after `PROBE_INTERVAL` without the brake, Probe. The probe reference
+//!   is the best sustained bandwidth (minimum of the last `SUSTAINED_ROUNDS` rounds) of the rounds
+//!   in the probe interval where the budget binds and the limiter does not.
 //! - Probe: tries `PROBE_BUDGET_STEP` x the knee for at most `PROBE_ROUNDS` rounds. If, in a round
-//!   where the budget binds, the sustained bandwidth (minimum of the last `SUSTAINED_ROUNDS`
-//!   rounds) reaches `PROBE_BW_GROWTH` x the probe reference, that budget becomes the knee. Back
-//!   to Stable either way.
+//!   where the budget binds, the sustained bandwidth reaches `PROBE_BW_GROWTH` x the probe
+//!   reference, the curve still rises above the knee: RampUp again from the probe's budget, with
+//!   the probe as its first sample. Otherwise back to Stable.
 //! - Idle: no traffic for `IDLE_GRACE`. A knee is kept until `IDLE_RESET`, then back to Init;
 //!   without one, back to Init at once.
 //!
 //! Bounds:
 //! - The budget stays within [initial budget, max budget].
-//! - While the HTTP rate limiter binds, bandwidth follows the limiter. Such a round holds RampUp,
-//!   cannot make a probe the knee, does not raise the probe reference and is no brake signal; its
+//! - While the HTTP rate limiter binds, bandwidth follows the limiter. Such a tick does not end
+//!   Init; such a round holds RampUp, cannot accept a probe, does not raise the probe reference and
+//!   is no brake signal; its
 //!   bandwidth still counts in the recent rounds that the sustained bandwidth is taken from.
 //! - The brake (in-flight bytes up without bandwidth, or a bandwidth collapse) ends RampUp (once
 //!   there is a sample) and Probe; in Stable it steps the budget down by `BRAKE_BUDGET_STEP` per
@@ -137,7 +143,6 @@ pub enum KneeSource {
     NotBinding,
     Lifetime,
     Brake,
-    Probe,
 }
 
 impl KneeSource {
@@ -147,7 +152,6 @@ impl KneeSource {
             KneeSource::NotBinding => "not_binding",
             KneeSource::Lifetime => "lifetime",
             KneeSource::Brake => "brake",
-            KneeSource::Probe => "probe",
         }
     }
 }
@@ -155,9 +159,8 @@ impl KneeSource {
 #[derive(Clone, Copy, Debug)]
 struct Knee {
     budget: u64,
-    /// Reference for Probe, in bytes/s: the best sampled RampUp bandwidth (at least 1), raised to
-    /// the sustained bandwidth of Stable rounds where the budget binds and the limiter does not;
-    /// an accepted probe sets it to its sustained bandwidth.
+    /// Reference for Probe, in bytes/s: the best sustained bandwidth of the rounds in the probe
+    /// interval where the budget binds and the limiter does not; 0 until there is one.
     probe_ref_bw: f64,
     source: KneeSource,
 }
@@ -228,7 +231,8 @@ impl Ramp {
     }
 
     /// Learns from a round. `braking`: the brake after this round; `recent_max`: the best
-    /// bandwidth of the last rounds.
+    /// bandwidth of the last rounds. Only a sample round measures the budget: it grows, raises the
+    /// reference or counts as no growth.
     fn round(&mut self, r: &Round, braking: bool, recent_max: f64) -> RampStep {
         if r.limiter_bound {
             // The reference stays at the last level measured without the limiter.
@@ -245,8 +249,11 @@ impl Ramp {
         }
         let lifetime_rose =
             lifetime.is_some_and(|lifetime| lifetime >= RAMP_LIFETIME_RATIO * self.min_lifetime);
-        let grew = self.grows(bw);
-        self.best_bw = self.best_bw.max(bw);
+        let measured = r.knee_sample();
+        let grew = measured && self.grows(bw);
+        if measured {
+            self.best_bw = self.best_bw.max(bw);
+        }
 
         if lifetime_rose {
             // Right after a doubling, bytes in use can double before bandwidth does (requests
@@ -272,12 +279,12 @@ impl Ramp {
             self.not_binding_rounds = 0;
             return RampStep::Double;
         }
-        if r.bytes_bound {
+        if r.bytes_bound && measured {
             self.no_growth_rounds += 1;
             if self.no_growth_rounds >= NO_GROWTH_ROUNDS && has_samples {
                 return RampStep::Stop(KneeSource::NoGrowth);
             }
-        } else {
+        } else if !r.bytes_bound {
             // Another limit binds (requests, pipeline, decode). Without a sample there is no knee
             // yet: stay in RampUp.
             self.not_binding_rounds += 1;
@@ -314,7 +321,7 @@ impl Ramp {
             .unwrap_or(budget);
         Knee {
             budget,
-            probe_ref_bw: plateau.max(1.0),
+            probe_ref_bw: 0.0,
             source,
         }
     }
@@ -425,8 +432,9 @@ impl Stats {
         self.last_tick = None;
     }
 
-    /// `nominal_tick`: the length of the first tick, and of the first after `clear`.
-    fn push(&mut self, t: &KneeTick, nominal_tick: Duration) {
+    /// `nominal_tick`: the length of the first tick, and of the first after `clear`. Returns the
+    /// tick length in seconds.
+    fn push(&mut self, t: &KneeTick, nominal_tick: Duration) -> f64 {
         self.brake.push(t.bytes_in_use, t.bytes_arrived);
         let tick_secs = self.last_tick.map_or_else(
             || nominal_tick.as_secs_f64(),
@@ -434,6 +442,7 @@ impl Stats {
         );
         self.last_tick = Some(t.now);
         self.round.push(t, tick_secs);
+        tick_secs
     }
 
     /// Ends the round: records its bandwidth and updates the brake. The next round starts with
@@ -594,6 +603,11 @@ impl KneeController {
         self.budget
     }
 
+    /// Probe reference of the current knee in bytes/s, 0 without one.
+    pub fn probe_ref_bw(&self) -> f64 {
+        self.current_knee().map_or(0.0, |knee| knee.probe_ref_bw)
+    }
+
     fn current_knee(&self) -> Option<&Knee> {
         match &self.phase {
             Phase::Knee(knee, _) => Some(knee),
@@ -643,7 +657,24 @@ impl KneeController {
             return self.budget;
         }
 
-        self.stats.push(&t, self.cfg.tick);
+        let tick_secs = self.stats.push(&t, self.cfg.tick);
+
+        if !traffic {
+            // A gap (nothing in use, nothing arrived) is no observation: the round restarts with
+            // the traffic.
+            self.stats.round = Round::new(self.budget);
+            return self.budget;
+        }
+        if matches!(self.phase, Phase::Init) {
+            // The first tick where the byte budget binds and the limiter does not doubles the
+            // initial budget once, and RampUp measures from a zero reference. Init has no rounds.
+            if t.bytes_bound() && !t.limiter.is_some_and(|l| l.bound(tick_secs)) {
+                self.set_budget(self.cfg.init_budget.saturating_mul(2));
+                self.phase = Phase::RampUp(Ramp::new(0.0));
+            }
+            self.stats.round = Round::new(self.budget);
+            return self.budget;
+        }
 
         // A RampUp round whose second tick already shows the growth ends there.
         let round = &self.stats.round;
@@ -651,7 +682,7 @@ impl KneeController {
             Phase::RampUp(ramp) => {
                 round.ticks == 2
                     && !round.limiter_bound
-                    && round.bytes_bound
+                    && round.knee_sample()
                     && ramp.grows(round.bw())
             },
             _ => false,
@@ -666,14 +697,8 @@ impl KneeController {
         let r = self.stats.finish_round();
 
         self.phase = match mem::take(&mut self.phase) {
-            Phase::Init if r.arrived == 0 => Phase::Init,
-            Phase::Init => {
-                // Scan start: not a sample.
-                if r.bytes_bound && !r.limiter_bound {
-                    self.set_budget(self.budget.saturating_mul(2));
-                }
-                Phase::RampUp(Ramp::new(r.bw()))
-            },
+            // Not reached: Init has no rounds.
+            phase @ Phase::Init => phase,
             Phase::RampUp(mut ramp) => {
                 match ramp.round(&r, self.stats.braking(), self.stats.recent_bw.max()) {
                     RampStep::Hold => Phase::RampUp(ramp),
@@ -692,7 +717,8 @@ impl KneeController {
                     // `set_budget` keeps it at or above the initial budget.
                     let stepped = (self.budget as f64 * BRAKE_BUDGET_STEP) as u64;
                     self.set_budget(stepped.max(knee.budget / 2));
-                    // The probe interval restarts when the brake releases.
+                    // The probe interval, and its reference, restart when the brake releases.
+                    knee.probe_ref_bw = 0.0;
                     Phase::Knee(knee, KneeMode::Stable { since: now })
                 } else if now.duration_since(since) >= PROBE_INTERVAL {
                     self.set_budget((knee.budget as f64 * PROBE_BUDGET_STEP) as u64);
@@ -702,22 +728,22 @@ impl KneeController {
                     Phase::Knee(knee, KneeMode::Stable { since })
                 }
             },
-            Phase::Knee(mut knee, KneeMode::Probe { rounds }) => {
+            Phase::Knee(knee, KneeMode::Probe { rounds }) => {
                 let rounds = rounds + 1;
                 let sustained = self.stats.recent_bw.sustained();
                 let improved = !self.stats.braking()
                     && r.bytes_bound
                     && !r.limiter_bound
+                    && knee.probe_ref_bw > 0.0
                     && sustained >= PROBE_BW_GROWTH * knee.probe_ref_bw;
                 if improved {
-                    // More bandwidth at the probe's budget: it becomes the knee.
-                    knee = Knee {
-                        budget: self.budget,
-                        probe_ref_bw: sustained,
-                        source: KneeSource::Probe,
-                    };
-                }
-                if self.stats.braking() || improved || rounds >= PROBE_ROUNDS {
+                    // The curve still rises above the knee: RampUp again from the probe's budget,
+                    // with the probe as its first sample.
+                    let mut ramp = Ramp::new(sustained);
+                    ramp.record_sample(self.budget, sustained);
+                    self.set_budget(self.budget.saturating_mul(2));
+                    Phase::RampUp(ramp)
+                } else if self.stats.braking() || rounds >= PROBE_ROUNDS {
                     self.stable(knee, now)
                 } else {
                     Phase::Knee(knee, KneeMode::Probe { rounds })
@@ -742,8 +768,9 @@ impl KneeController {
         self.stats.clear(self.budget);
     }
 
-    /// Stable at `knee`, with a fresh probe interval.
-    fn stable(&mut self, knee: Knee, now: Instant) -> Phase {
+    /// Stable at `knee`, with a fresh probe interval and reference.
+    fn stable(&mut self, mut knee: Knee, now: Instant) -> Phase {
+        knee.probe_ref_bw = 0.0;
         self.set_budget(knee.budget);
         Phase::Knee(knee, KneeMode::Stable { since: now })
     }
@@ -763,6 +790,17 @@ mod tests {
             max_budget: u64::MAX,
             tick: Duration::from_millis(100),
         }
+    }
+
+    /// Runs until Stable with bytes in flight capped at `cap`; returns the next tick.
+    fn run_to_stable(c: &mut KneeController, t0: Instant, cap: u64) -> u64 {
+        let mut i = 0;
+        while c.phase_label() != "stable" {
+            run_capped_inflight(c, t0, i..i + 1, cap);
+            i += 1;
+            assert!(i < 60);
+        }
+        i
     }
 
     /// One 100 ms tick `i` on the clock `t0`; `waited` byte acquires waited.
@@ -863,24 +901,29 @@ mod tests {
             tick(&mut c, t0, i, 0, 0, 0, None);
         }
         assert_eq!(c.phase_label(), "idle");
-        tick(&mut c, t0, 430, 100, 100, 1, None);
+        tick(&mut c, t0, 430, 50, 50, 0, None);
         assert_eq!(c.knee(), None);
-        assert_eq!(c.budget(), 100);
+        assert_eq!((c.phase_label(), c.budget()), ("init", 100));
     }
 
     /// Scan start (fills the budget, delivers little); then the HTTP rate limiter admits requests
     /// at its rate, half of them metadata, and doubles it every round: data bandwidth doubles too,
-    /// but RampUp holds. Once the limiter releases, demand (150) stays below the budget: still no
-    /// knee, so no Stable target scaled from scan-start bandwidth.
+    /// but RampUp holds. Once the limiter releases, demand (150) stays below the budget: the knee is
+    /// the budget RampUp holds, not the scan-start sample.
     #[test]
     fn ramp_up_holds_while_the_limiter_binds() {
         let mut c = KneeController::new(cfg());
         let t0 = Instant::now();
-        let mut step = |i: u64, bytes_arrived: u64, demand: u64, rate: f64, admitted: u64| {
+        let step = |c: &mut KneeController,
+                    i: u64,
+                    bytes_arrived: u64,
+                    demand: u64,
+                    rate: f64,
+                    admitted: u64| {
             let budget = c.budget();
             let limiter = Some(LimiterTick { rate, admitted });
             tick(
-                &mut c,
+                c,
                 t0,
                 i,
                 bytes_arrived,
@@ -890,21 +933,123 @@ mod tests {
             );
         };
         for i in 0..3 {
-            step(i, 1, u64::MAX, 100.0, 1);
+            step(&mut c, i, 1, u64::MAX, 100.0, 1);
         }
+        let ramp_budget = c.budget();
         let mut rate = 100.0;
         for i in 3..24 {
             if i % 3 == 0 {
                 rate *= 2.0;
             }
             let admitted = (rate * 0.1) as u64;
-            step(i, 10 * (admitted / 2), u64::MAX, rate, admitted);
+            step(&mut c, i, 10 * (admitted / 2), u64::MAX, rate, admitted);
         }
+        assert_eq!((c.phase_label(), c.budget()), ("ramp_up", ramp_budget));
         for i in 24..45 {
-            step(i, 5000, 150, 1e6, 50);
+            step(&mut c, i, 5000, 150, 1e6, 50);
         }
-        assert_eq!(c.phase_label(), "ramp_up");
-        assert_eq!(c.knee(), None);
-        assert_eq!(c.budget(), 200);
+        assert_eq!(c.knee(), Some(ramp_budget));
+    }
+
+    /// Traffic that does not bind (footer reads) keeps Init at the initial budget, a tick where
+    /// the limiter binds does not end it, and the first tick where the byte budget binds doubles
+    /// once, before any bytes arrive.
+    #[test]
+    fn start_doubles_once_at_the_first_bound_tick() {
+        let mut c = KneeController::new(cfg());
+        let t0 = Instant::now();
+        for i in 0..6 {
+            tick(&mut c, t0, i, 2, 5, 0, None);
+        }
+        assert_eq!((c.phase_label(), c.budget()), ("init", 100));
+        let limiter = Some(LimiterTick {
+            rate: 10.0,
+            admitted: 10,
+        });
+        tick(&mut c, t0, 6, 50, 100, 1, limiter);
+        assert_eq!((c.phase_label(), c.budget()), ("init", 100));
+        tick(&mut c, t0, 7, 0, 100, 1, None);
+        assert_eq!((c.phase_label(), c.budget()), ("ramp_up", 200));
+    }
+
+    /// RampUp acts only on sample rounds: rounds where an acquire waited but little of the budget
+    /// was in use (bursts, scan edges) neither double nor count as no growth.
+    #[test]
+    fn ramp_up_ignores_bound_rounds_that_are_no_sample() {
+        let mut c = KneeController::new(cfg());
+        let t0 = Instant::now();
+        tick(&mut c, t0, 0, 0, 100, 1, None);
+        for i in 1..10 {
+            tick(&mut c, t0, i, 5, 10, 1, None);
+        }
+        assert_eq!((c.phase_label(), c.budget()), ("ramp_up", 200));
+        run_capped_inflight(&mut c, t0, 10..13, 6400);
+        assert_eq!(c.budget(), 400);
+    }
+
+    /// A scan ends inside a RampUp round, and after a gap of more than `NOT_BINDING_ROUNDS` rounds
+    /// the next scan reaches a higher plateau. The gap ticks are no observation (not rounds that do
+    /// not bind), so RampUp continues to the new plateau.
+    #[test]
+    fn scan_gap_does_not_end_ramp_up() {
+        let mut c = KneeController::new(cfg());
+        let t0 = Instant::now();
+        run_capped_inflight(&mut c, t0, 0..7, 6400);
+        tick(&mut c, t0, 7, 50, 1, 1, None);
+        for i in 8..30 {
+            tick(&mut c, t0, i, 0, 0, 0, None);
+        }
+        run_capped_inflight(&mut c, t0, 30..60, 6400);
+        let knee = c.knee().unwrap_or(0);
+        assert!(knee >= 6400, "{knee}");
+    }
+
+    /// RampUp sets the knee at the plateau, then the knee budget delivers 75% of it (the request
+    /// mix changed) while larger budgets still reach the plateau. The reference is what the knee
+    /// delivers in the probe interval, so the probe is accepted and RampUp raises the knee.
+    #[test]
+    fn stale_knee_is_raised_by_a_probe() {
+        let mut c = KneeController::new(cfg());
+        let t0 = Instant::now();
+        let i = run_to_stable(&mut c, t0, 1600);
+        let knee = c.knee().unwrap();
+        for j in i..i + 80 {
+            let budget = c.budget();
+            let bytes = if budget == knee {
+                1200
+            } else {
+                budget.min(1600)
+            };
+            tick(&mut c, t0, j, bytes, budget, 1, None);
+        }
+        assert!(
+            c.knee().is_some_and(|k| k > knee),
+            "{knee} -> {:?}",
+            c.knee()
+        );
+    }
+
+    /// A noisy link without gain: three ticks in twelve dip to an eighth at any budget, spoiling
+    /// one or two of every four rounds depending on the offset. The reference and the probe see
+    /// the same dips, so probes do not ratchet the knee up.
+    #[test]
+    fn dips_do_not_ratchet_the_knee() {
+        // Every offset of the dips against the round boundaries.
+        for offset in 0..ROUND_TICKS as u64 {
+            let mut c = KneeController::new(cfg());
+            let t0 = Instant::now();
+            let i = run_to_stable(&mut c, t0, 1600);
+            let knee = c.knee();
+            for j in i..i + 300 {
+                let budget = c.budget();
+                let bytes = if ((j + offset) / 3) % 4 == 0 {
+                    200
+                } else {
+                    1600
+                };
+                tick(&mut c, t0, j, bytes, budget, 1, None);
+            }
+            assert_eq!(c.knee(), knee, "offset {offset}");
+        }
     }
 }

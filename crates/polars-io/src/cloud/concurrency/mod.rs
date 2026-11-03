@@ -514,11 +514,12 @@ impl ConcurrencyController {
                     let model_fields = match &knee_controller {
                         Some(k) => format!(
                             "kphase={}, knee={:.1} MB, knee_src={}, bound={bound}, \
-                            bw_round={:.1} MB/s, braking={}",
+                            bw_round={:.1} MB/s, probe_ref={:.1} MB/s, braking={}",
                             k.phase_label(),
                             k.knee().unwrap_or(0) as f64 / 1e6,
                             k.knee_source().map_or("-", |source| source.label()),
                             k.last_bw_round() / 1e6,
+                            k.probe_ref_bw() / 1e6,
                             u8::from(k.braking()),
                         ),
                         None => format!(
