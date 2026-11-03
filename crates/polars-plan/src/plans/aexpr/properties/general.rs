@@ -372,7 +372,7 @@ pub fn can_pre_agg(agg: Node, expr_arena: &Arena<AExpr>, _input_schema: &Schema)
 
             // check if the aggregation type is partitionable
             // only simple aggregation like col().sum
-            // that can be divided in to the aggregation of their partitions are allowed
+            // that can be divided into the aggregation of their partitions are allowed
             let can_partition = (expr_arena).iter(agg).all(|(_, ae)| {
                 use AExpr::*;
                 match ae {

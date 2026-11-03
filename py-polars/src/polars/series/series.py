@@ -1126,7 +1126,7 @@ class Series(metaclass=_Meta):
 
     def _recursive_cast_to_dtype(self, leaf_dtype: PolarsDataType) -> Series:
         """
-        Convert leaf dtype the to given primitive datatype.
+        Convert leaf dtype to the given primitive datatype.
 
         This is equivalent to logic in DataType::cast_leaf() in Rust.
         """
@@ -2319,7 +2319,7 @@ class Series(metaclass=_Meta):
         """
         Get minimum value, but propagate/poison encountered NaN values.
 
-        This differs from numpy's `nanmax` as numpy defaults to propagating NaN values,
+        This differs from numpy's `nanmin` as numpy defaults to propagating NaN values,
         whereas polars defaults to ignoring them.
 
         Examples
@@ -3970,7 +3970,7 @@ class Series(metaclass=_Meta):
         k
             Number of elements to return.
         reverse
-            Consider the `k` largest elements of the `by` column( (instead of the `k`
+            Consider the `k` largest elements of the `by` column (instead of the `k`
             smallest). This can be specified per column by passing a sequence of
             booleans.
 
@@ -7209,7 +7209,7 @@ class Series(metaclass=_Meta):
             2001-01-02 00:00:00
         ]
 
-        Compute the rolling mean with the temporal windows
+        Compute the rolling sum with the temporal windows
         from the second series closed on the right:
 
         >>> s.rolling_sum_by(d, "3h")
@@ -9803,7 +9803,7 @@ class Series(metaclass=_Meta):
         """
         Flags the Series as 'sorted'.
 
-        Enables downstream code to user fast paths for sorted arrays.
+        Enables downstream code to use fast paths for sorted arrays.
 
         Parameters
         ----------

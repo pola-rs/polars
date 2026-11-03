@@ -401,7 +401,7 @@ pub(super) fn to_aexpr_impl(
 
             assert!(
                 output_dtype.is_known(),
-                "output type of anonymous functions must bet set"
+                "output type of anonymous functions must be set"
             );
 
             (

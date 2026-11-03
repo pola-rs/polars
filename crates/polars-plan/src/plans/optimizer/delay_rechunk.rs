@@ -21,7 +21,7 @@ impl OptimizationRule for DelayRechunk {
         node: Node,
     ) -> PolarsResult<Option<IR>> {
         match lp_arena.get(node) {
-            // An aggregation can be partitioned, its wasteful to rechunk before that partition.
+            // An aggregation can be partitioned, it's wasteful to rechunk before that partition.
             #[allow(unused_mut)]
             IR::GroupBy { input, keys, .. } => {
                 // Multiple keys on multiple chunks is much slower, so rechunk.

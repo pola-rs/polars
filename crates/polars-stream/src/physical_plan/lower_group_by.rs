@@ -113,7 +113,7 @@ fn build_group_by_fallback(
 // represent the aggregate result in the post-select.
 //
 // For each input to this aggregate uniq_input_names is updated to map the
-// unique id of the input expressions to an input columns the aggregate
+// unique id of the input expressions to an input column the aggregate
 // expression expects.
 //
 // uniq_agg_exprs is updated with the unique id of the aggregate mapping to

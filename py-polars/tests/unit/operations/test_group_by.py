@@ -1381,7 +1381,7 @@ def test_lit_iter_schema() -> None:
     assert result.to_dict(as_series=False) == expected
 
 
-def test_absence_off_null_prop_8224() -> None:
+def test_absence_of_null_prop_8224() -> None:
     # a reminder to self to not do null propagation
     # it is inconsistent and makes output dtype
     # dependent of the data, big no!

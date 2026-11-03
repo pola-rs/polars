@@ -157,11 +157,11 @@ pub trait TemporalMethods: AsSeries {
             DataType::Date => s.date().map(|ca| (ca.year() - 1i32).div(1000f64) + 1),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => s.datetime().map(|ca| (ca.year() - 1i32).div(1000f64) + 1),
-            dt => polars_bail!(opq = century, dt),
+            dt => polars_bail!(opq = millennium, dt),
         }
     }
 
-    /// Calculate the millennium from the underlying NaiveDateTime representation.
+    /// Calculate the century from the underlying NaiveDateTime representation.
     fn century(&self) -> PolarsResult<Int32Chunked> {
         let s = self.as_series();
         match s.dtype() {

@@ -72,7 +72,7 @@ impl<
 
         idx = std::cmp::min(idx, length - 1);
 
-        // we can unwrap because we sliced of the nulls
+        // we can unwrap because we sliced off the nulls
         match self.method {
             QuantileMethod::Midpoint => {
                 let top_idx = ((length as f64 - 1.0) * self.prob).ceil() as usize;

@@ -597,7 +597,7 @@ struct TreeViewColumn {
     center: usize,
 }
 
-/// Meta-info of a column in a populated `TreeFmtVisitor` required for the pretty-print of a tree
+/// Meta-info of a row in a populated `TreeFmtVisitor` required for the pretty-print of a tree
 #[derive(Clone, Default, Debug)]
 struct TreeViewRow {
     offset: usize,
@@ -901,7 +901,7 @@ impl From<TreeView<'_>> for Canvas {
             3 + value.rows.iter().map(|r| r.height).sum::<usize>() + 3 * (value.n_rows - 1);
         let mut canvas = Canvas::new(width, height, Glyphs::default());
 
-        // Axles
+        // Axes
         let (x, y) = (value.n_rows_width + 2, 1);
         canvas.draw_symbol(Point(x, y), '┌');
         canvas.draw_line(Point(x + 1, y), Orientation::Horizontal, width - x);

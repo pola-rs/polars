@@ -184,13 +184,13 @@ impl PhysicalExpr for TernaryExpr {
             match (mask.len(), truthy.len()) {
                 (l, 1) if l != 1 => return self.cast_arm(truthy.new_from_index(0, l)),
                 (1, r) if r != 1 => return self.cast_arm(truthy),
-                (1, 1) => {}, // Forced to evaluate truthy to resolve broadcast height.
+                (1, 1) => {}, // Forced to evaluate falsy to resolve broadcast height.
                 (l, r) => {
                     polars_ensure!(l == r, ShapeMismatch: "mismatch between condition height ({}) and truthy height ({}) in when/then/otherwise", l, r);
                     return self.cast_arm(truthy);
                 },
             }
-            falsy = op_falsy()?; // Forced to evaluate truthy to resolve broadcast height.
+            falsy = op_falsy()?; // Forced to evaluate falsy to resolve broadcast height.
         } else if self.run_par {
             let (t, f) = RAYON.install(|| rayon::join(op_truthy, op_falsy));
             truthy = t?;

@@ -536,7 +536,7 @@ impl Duration {
             day = last_day_of_month
         }
 
-        // Retrieve the original time and construct a data
+        // Retrieve the original time and construct a date
         // with the new year, month and day
         let hour = ts.hour();
         let minute = ts.minute();

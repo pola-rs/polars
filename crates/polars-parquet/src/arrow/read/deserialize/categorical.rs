@@ -61,7 +61,7 @@ impl<'a, T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>>
 
 /// Special decoder for Polars Enum and Categorical's.
 ///
-/// These are marked as special in the Arrow Field Metadata and they have the properly that for a
+/// These are marked as special in the Arrow Field Metadata and they have the property that for a
 /// given row group all the values are in the dictionary page and all data pages are dictionary
 /// encoded. This makes the job of decoding them extremely simple and fast.
 pub struct CategoricalDecoder<T> {

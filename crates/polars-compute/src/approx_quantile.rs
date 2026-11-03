@@ -266,7 +266,7 @@ fn estimate_quantile_index(cum_weight: Option<&[u64]>, estimated_rank: u64) -> u
 pub mod kll {
     use super::*;
 
-    /// `CAPACITY_DECAY` specifies how much smaller compactor h+1 is wrt to h.
+    /// `CAPACITY_DECAY` specifies how much smaller compactor h+1 is wrt h.
     /// KLL calls this `c`.
     const CAPACITY_DECAY: f64 = 2.0 / 3.0;
 

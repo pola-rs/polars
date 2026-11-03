@@ -252,7 +252,7 @@ impl<'a, T: Unpackable> Decoder<'a, T> {
         let mut unpacked_ptr = vec.as_mut_ptr().wrapping_add(vec.len());
 
         for _ in 0..num_packs {
-            // This unwrap should never fail since the packed length is checked on initialized of
+            // This unwrap should never fail since the packed length is checked on initialization of
             // the `Decoder`.
             let packed = self.packed.next().unwrap();
 
@@ -262,7 +262,7 @@ impl<'a, T: Unpackable> Decoder<'a, T> {
             //
             // - The elements in this buffer are properly aligned, so elements in a slice will also
             // be properly aligned.
-            // - It is deferencable because it is (i) not null, (ii) in one allocated object, (iii)
+            // - It is dereferenceable because it is (i) not null, (ii) in one allocated object, (iii)
             // not pointing to deallocated memory, (iv) we do not rely on atomicity and (v) we do
             // not read or write beyond the lifetime of `vec`.
             // - All data is initialized before reading it. This is not perfect but should not lead
@@ -279,7 +279,7 @@ impl<'a, T: Unpackable> Decoder<'a, T> {
         // SAFETY:
         // We have written these elements before so we know that these are available now.
         //
-        // - The capacity is larger since we reserved enough spaced with the opening
+        // - The capacity is larger since we reserved enough space with the opening
         // `vec::reserve`.
         // - All elements are initialized by the `decode_pack` into the `unpacked_ref`.
         unsafe { vec.set_len(vec.len() + self.length) }

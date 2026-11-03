@@ -1294,7 +1294,7 @@ class LoadFromBytesImpl(abc.ABC):
 
     @abc.abstractmethod
     def load_from_bytes(self, byte_values: list[bytes | None]) -> pl.Series:
-        """`bytes_values` should be of binary type."""
+        """`byte_values` should be of binary type."""
 
 
 class LoadBinaryFromBytes(LoadFromBytesImpl):
