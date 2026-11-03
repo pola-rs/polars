@@ -10104,7 +10104,7 @@ class Expr(metaclass=_Meta):
         """
         return wrap_expr(
             self._pyexpr.rolling_skew(
-                window_size, bias=bias, min_periods=min_samples, center=center
+                window_size, bias=bias, min_samples=min_samples, center=center
             )
         )
 
@@ -10170,7 +10170,7 @@ class Expr(metaclass=_Meta):
                 window_size,
                 fisher=fisher,
                 bias=bias,
-                min_periods=min_samples,
+                min_samples=min_samples,
                 center=center,
             )
         )

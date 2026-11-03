@@ -26,7 +26,7 @@ pub(crate) trait RollingAggWindow<T: NativeType, Out: NativeType> {
     /// Returns the length of the underlying input.
     fn slice_len(&self) -> usize;
 
-    fn is_valid(&self, min_periods: usize) -> bool;
+    fn is_valid(&self, min_samples: usize) -> bool;
 }
 
 #[repr(transparent)]
@@ -50,7 +50,7 @@ impl<T: NativeType, Out: NativeType, Agg: RollingAggWindowNoNulls<T, Out>> Rolli
         self.0.slice_len()
     }
 
-    fn is_valid(&self, _min_periods: usize) -> bool {
+    fn is_valid(&self, _min_samples: usize) -> bool {
         true
     }
 }
@@ -71,8 +71,8 @@ impl<T: NativeType, Out: NativeType, Agg: RollingAggWindowNulls<T, Out>> Rolling
         self.0.slice_len()
     }
 
-    fn is_valid(&self, min_periods: usize) -> bool {
-        self.0.is_valid(min_periods)
+    fn is_valid(&self, min_samples: usize) -> bool {
+        self.0.is_valid(min_samples)
     }
 }
 
@@ -82,7 +82,7 @@ pub(crate) fn rolling_apply_agg<T, Out, Agg>(
     period: Duration,
     time: &[i64],
     closed_window: ClosedWindow,
-    min_periods: usize,
+    min_samples: usize,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
     sorting_indices: Option<&[IdxSize]>,
@@ -99,9 +99,9 @@ where
     }?;
 
     if let Some(indices) = sorting_indices {
-        rolling_apply_agg_window(agg_window, offset_iter, min_periods, indices)
+        rolling_apply_agg_window(agg_window, offset_iter, min_samples, indices)
     } else {
-        rolling_apply_agg_window_sorted(agg_window, offset_iter, min_periods)
+        rolling_apply_agg_window_sorted(agg_window, offset_iter, min_samples)
     }
 }
 
@@ -110,7 +110,7 @@ where
 fn rolling_apply_agg_window_sorted<Agg, O, T, Out>(
     agg_window: &mut Agg,
     offsets: O,
-    min_periods: usize,
+    min_samples: usize,
 ) -> PolarsResult<ArrayRef>
 where
     Agg: RollingAggWindow<T, Out>,
@@ -124,15 +124,15 @@ where
             result.map(|(start, len)| {
                 let end = start + len;
 
-                // On the Python side, if `min_periods` wasn't specified, it is set to
+                // On the Python side, if `min_samples` wasn't specified, it is set to
                 // `1`. In that case, this condition is the same as checking
                 // `if start == end`.
-                if len < (min_periods as IdxSize) {
+                if len < (min_samples as IdxSize) {
                     None
                 } else {
                     // SAFETY: we are in bounds
                     unsafe { agg_window.update(start as usize, end as usize) }
-                    if agg_window.is_valid(min_periods) {
+                    if agg_window.is_valid(min_samples) {
                         agg_window.get_agg(idx)
                     } else {
                         None
@@ -149,7 +149,7 @@ where
 fn rolling_apply_agg_window<Agg, O, T, Out>(
     agg_window: &mut Agg,
     offsets: O,
-    min_periods: usize,
+    min_samples: usize,
     sorting_indices: &[IdxSize],
 ) -> PolarsResult<ArrayRef>
 where
@@ -165,16 +165,16 @@ where
         let end = start + len;
         let out_idx = unsafe { sorting_indices.get_unchecked(idx) };
 
-        // On the Python side, if `min_periods` wasn't specified, it is set to
+        // On the Python side, if `min_samples` wasn't specified, it is set to
         // `1`. In that case, this condition is the same as checking
         // `if start == end`.
-        if len >= (min_periods as IdxSize) {
+        if len >= (min_samples as IdxSize) {
             // SAFETY:
             // we are in bound
             unsafe { agg_window.update(start as usize, end as usize) };
             // idx is the position of the current element in the window,
             // because the values were sorted by 'by' before.
-            let res = if agg_window.is_valid(min_periods) {
+            let res = if agg_window.is_valid(min_samples) {
                 agg_window.get_agg(idx)
             } else {
                 None

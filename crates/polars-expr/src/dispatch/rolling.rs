@@ -124,13 +124,13 @@ pub(super) fn rolling_corr_cov(
     }
     let RollingOptionsFixedWindow {
         window_size,
-        min_periods,
+        min_samples,
         ..
     } = rolling_options;
     polars_ensure!(
-        min_periods <= window_size,
-        InvalidOperation: "`min_periods` ({}) should be <= `window_size` ({})",
-        min_periods, window_size
+        min_samples <= window_size,
+        InvalidOperation: "`min_samples` ({}) should be <= `window_size` ({})",
+        min_samples, window_size
     );
 
     let st = match polars_core::utils::try_get_supertype(s[0].dtype(), s[1].dtype())? {
@@ -166,10 +166,10 @@ pub(super) fn rolling_corr_cov(
         let validity = combine_validities_and(x_arr.validity(), y_arr.validity());
         let (x_vals, y_vals) = (x_arr.values().as_slice(), y_arr.values().as_slice());
         let out = if is_corr {
-            rolling_corr(x_vals, y_vals, validity.as_ref(), window_size, min_periods)
+            rolling_corr(x_vals, y_vals, validity.as_ref(), window_size, min_samples)
         } else {
             let ddof = cov_options.ddof.unwrap_or(1);
-            rolling_cov(x_vals, y_vals, validity.as_ref(), window_size, min_periods, ddof)
+            rolling_cov(x_vals, y_vals, validity.as_ref(), window_size, min_samples, ddof)
         };
         Series::try_from((x.name().clone(), out)).map(Column::from)
     })

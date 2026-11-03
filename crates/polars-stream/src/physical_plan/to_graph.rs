@@ -2107,7 +2107,7 @@ fn to_graph_rec<'a>(
                         let state: EwmMeanState<$T> = EwmMeanState::new(
                             AsPrimitive::<$T>::as_(options.alpha),
                             options.adjust,
-                            options.min_periods,
+                            options.min_samples,
                             options.ignore_nulls,
                         );
 
@@ -2118,7 +2118,7 @@ fn to_graph_rec<'a>(
                     with_match_physical_float_type!(dtype, |$T| {
                         let state: EwmSumState<$T> = EwmSumState::new(
                             AsPrimitive::<$T>::as_(options.alpha),
-                            options.min_periods,
+                            options.min_samples,
                             options.ignore_nulls,
                         );
 
@@ -2130,7 +2130,7 @@ fn to_graph_rec<'a>(
                         AsPrimitive::<$T>::as_(options.alpha),
                         options.adjust,
                         options.bias,
-                        options.min_periods,
+                        options.min_samples,
                         options.ignore_nulls,
                     );
 
