@@ -1,46 +1,72 @@
-use std::cmp::Reverse;
-use std::collections::BinaryHeap;
-use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
+use futures::FutureExt;
 use polars_arrow::array::builder::ShareStrategy;
-use polars_async::executor;
+use polars_core::config;
 use polars_core::frame::builder::DataFrameBuilder;
-use polars_core::prelude::*;
-use polars_core::runtime::{ASYNC, RAYON};
-use polars_expr::hash_keys::HashKeys;
 use polars_expr::idx_table::IdxTable;
-use polars_ooc::{MostRecentSpillContext, SpillFrame};
+use polars_ooc::MostRecentSpillContext;
 use polars_utils::IdxSize;
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
-use polars_utils::itertools::Itertools;
-use polars_utils::priority::Priority;
-use polars_utils::sparse_init_vec::SparseInitVec;
 
 use super::probe::{ProbeState, ProbeTable};
 use super::{EquiJoinParams, select_keys_with_columns, select_payload};
+use crate::hash_shuffle::batches::{
+    BuildPartition, LoadedFrame, build_from_batches, make_batches, make_ordered_batches,
+};
+use crate::hash_shuffle::frame_with_keys::{FrameWithKeys, SpillFrameWithKeys};
+use crate::hash_shuffle::split::{NullRows, rows_or_all};
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::joins::BufferedStream;
 use crate::nodes::joins::runtime_filter::KeyFilterBuilder;
 
 #[derive(Default)]
 pub(super) struct LocalBuilder {
-    // The complete list of morsels and their computed hashes seen by this builder.
-    morsels: Vec<(MorselSeq, SpillFrame, HashKeys)>,
+    // The morsels seen by this builder, with their hashed keys.
+    frames: Vec<(MorselSeq, SpillFrameWithKeys)>,
 
-    // A cardinality sketch per partition for the keys seen by this builder.
-    sketch_per_p: Vec<CardinalitySketch>,
+    // A cardinality sketch of the keys seen by this builder.
+    sketch: CardinalitySketch,
 
     // The key of each runtime filter seen by this builder.
     key_filters: Vec<KeyFilterBuilder>,
+}
 
-    // morsel_idxs_values_per_p[p][start..stop] contains the offsets into morsels[i]
-    // for partition p, where start, stop are:
-    // let start = morsel_idxs_offsets[i * num_partitions + p];
-    // let stop = morsel_idxs_offsets[(i + 1) * num_partitions + p];
-    morsel_idxs_values_per_p: Vec<Vec<IdxSize>>,
-    morsel_idxs_offsets_per_p: Vec<usize>,
+/// The hash table and payload of one partition while they are built.
+struct PartitionBuilder {
+    index: usize,
+    table: Box<dyn IdxTable>,
+    payload: DataFrameBuilder,
+    // Position of each payload row in the full build input, if tracked.
+    row_positions: Vec<u64>,
+    all_rows: Vec<IdxSize>,
+}
+
+impl PartitionBuilder {
+    /// Inserts the rows of this partition of `frame`. If `first_row` is given, the position of
+    /// the first row of `frame` in the full build input, the positions of the rows are kept.
+    fn add_rows(&mut self, frame: &LoadedFrame, track_unmatchable: bool, first_row: Option<u64>) {
+        let keys = &frame.frame.keys;
+        let rows = rows_or_all(
+            frame.partition_rows(self.index),
+            &mut self.all_rows,
+            keys.len(),
+        );
+        if rows.is_empty() {
+            return;
+        }
+        unsafe {
+            self.table.insert_keys_subset(keys, rows, track_unmatchable);
+            self.payload
+                .gather_extend(&frame.frame.frame, rows, ShareStrategy::Never);
+        }
+        if let Some(first_row) = first_row {
+            #[allow(clippy::unnecessary_cast)] // Necessary when IdxSize = u64.
+            self.row_positions
+                .extend(rows.iter().map(|i| first_row + *i as u64));
+        }
+    }
 }
 
 pub(super) struct BuildState {
@@ -51,21 +77,17 @@ pub(super) struct BuildState {
 impl BuildState {
     pub(super) fn new(
         num_pipelines: usize,
-        num_partitions: usize,
         params: &EquiJoinParams,
         sampled_probe_morsels: BufferedStream,
     ) -> Self {
         let local_builders = (0..num_pipelines)
             .map(|_| LocalBuilder {
-                morsels: Vec::new(),
-                sketch_per_p: vec![CardinalitySketch::default(); num_partitions],
                 key_filters: if params.publishes_runtime_filters() {
                     params.runtime_filters.new_builders()
                 } else {
                     Vec::new()
                 },
-                morsel_idxs_values_per_p: vec![Vec::new(); num_partitions],
-                morsel_idxs_offsets_per_p: vec![0; num_partitions],
+                ..Default::default()
             })
             .collect();
         Self {
@@ -74,15 +96,13 @@ impl BuildState {
         }
     }
 
-    pub(super) async fn partition_and_sink(
+    pub(super) async fn sink(
         mut recv: PortReceiver,
         local: &mut LocalBuilder,
-        partitioner: HashPartitioner,
         params: &EquiJoinParams,
         state: &StreamingExecutionState,
         spill_ctx: &MostRecentSpillContext,
     ) -> PolarsResult<()> {
-        let track_unmatchable = params.emit_unmatched_build();
         let (key_selectors, payload_selector);
         if params.left_is_build.unwrap() {
             payload_selector = &params.left_payload_select;
@@ -94,8 +114,7 @@ impl BuildState {
 
         let publishes_runtime_filters = params.publishes_runtime_filters();
         while let Ok(morsel) = recv.recv().await {
-            // Compute hashed keys and payload. We must rechunk the payload for
-            // later gathers.
+            // Compute hashed keys and payload.
             let df = morsel.df().await;
             let (hash_keys, keys) =
                 select_keys_with_columns(&df, key_selectors, params, &state.in_memory_exec_state)
@@ -105,22 +124,16 @@ impl BuildState {
                     .runtime_filters
                     .extend(&keys, &mut local.key_filters)?;
             }
-            let mut payload = select_payload(df.clone(), payload_selector);
-            payload.rechunk_mut();
+            let payload = select_payload(df.clone(), payload_selector);
 
-            hash_keys.gen_idxs_per_partition(
-                &partitioner,
-                &mut local.morsel_idxs_values_per_p,
-                &mut local.sketch_per_p,
-                None,
-                track_unmatchable,
-            );
-
-            local
-                .morsel_idxs_offsets_per_p
-                .extend(local.morsel_idxs_values_per_p.iter().map(|vp| vp.len()));
-            let sf = SpillFrame::new(payload, spill_ctx).await;
-            local.morsels.push((morsel.seq(), sf, hash_keys));
+            hash_keys.sketch_cardinality(&mut local.sketch);
+            let frame = FrameWithKeys {
+                frame: payload,
+                keys: hash_keys,
+                mask: None,
+            };
+            let frame = SpillFrameWithKeys::new(frame, spill_ctx).await;
+            local.frames.push((morsel.seq(), frame));
         }
         Ok(())
     }
@@ -129,7 +142,7 @@ impl BuildState {
     pub(super) fn is_empty(&self) -> bool {
         self.local_builders
             .iter()
-            .all(|b| b.morsels.iter().all(|(_, _, keys)| keys.is_empty()))
+            .all(|b| b.frames.iter().all(|(_, f)| f.num_rows() == 0))
     }
 
     /// Hand every build key to the runtime filters. Filters set from a sample
@@ -147,119 +160,15 @@ impl BuildState {
         params.runtime_filters.publish_merged(locals);
     }
 
-    pub(super) fn finalize_ordered(
+    /// Builds the hash table and payload of every partition, loading the stored frames one batch
+    /// of about `batch_bytes` at a time.
+    pub(super) fn finalize(
         &mut self,
         params: &EquiJoinParams,
         table: &dyn IdxTable,
-    ) -> ProbeState {
-        let track_unmatchable = params.emit_unmatched_build();
-        let payload_schema = if params.left_is_build.unwrap() {
-            &params.left_payload_schema
-        } else {
-            &params.right_payload_schema
-        };
-
-        let num_partitions = self.local_builders[0].sketch_per_p.len();
-        let local_builders = &self.local_builders;
-        let probe_tables: SparseInitVec<ProbeTable> = SparseInitVec::with_capacity(num_partitions);
-
-        RAYON.scope(|s| {
-            for p in 0..num_partitions {
-                let probe_tables = &probe_tables;
-                s.spawn(move |_| {
-                    // TODO: every thread does an identical linearize, we can do a single parallel one.
-                    let mut kmerge = BinaryHeap::with_capacity(local_builders.len());
-                    let mut cur_idx_per_loc = vec![0; local_builders.len()];
-
-                    // Compute cardinality estimate and total amount of
-                    // payload for this partition, and initialize k-way merge.
-                    let mut sketch = CardinalitySketch::new();
-                    let mut payload_rows = 0;
-                    for (l_idx, l) in local_builders.iter().enumerate() {
-                        let Some((seq, _, _)) = l.morsels.first() else {
-                            continue;
-                        };
-                        kmerge.push(Priority(Reverse(seq), l_idx));
-
-                        sketch.combine(&l.sketch_per_p[p]);
-                        let offsets_len = l.morsel_idxs_offsets_per_p.len();
-                        payload_rows +=
-                            l.morsel_idxs_offsets_per_p[offsets_len - num_partitions + p];
-                    }
-
-                    // Allocate hash table and payload builder.
-                    let mut p_table = table.new_empty();
-                    p_table.reserve(sketch.estimate() * 5 / 4);
-                    let mut p_payload = DataFrameBuilder::new(payload_schema.clone());
-                    p_payload.reserve(payload_rows);
-
-                    let mut p_row_positions = Vec::new();
-                    if track_unmatchable {
-                        p_row_positions.reserve(payload_rows);
-                    }
-
-                    // Linearize and build.
-                    unsafe {
-                        // Row offset of the current morsel in the full build input.
-                        let mut morsel_row_offset = 0u64;
-                        while let Some(Priority(Reverse(_seq), l_idx)) = kmerge.pop() {
-                            let l = local_builders.get_unchecked(l_idx);
-                            let idx_in_l = *cur_idx_per_loc.get_unchecked(l_idx);
-                            *cur_idx_per_loc.get_unchecked_mut(l_idx) += 1;
-                            if let Some((next_seq, _, _)) = l.morsels.get(idx_in_l + 1) {
-                                kmerge.push(Priority(Reverse(next_seq), l_idx));
-                            }
-
-                            let (_mseq, sf, keys) = l.morsels.get_unchecked(idx_in_l);
-                            let payload = sf.get_blocking();
-                            let p_morsel_idxs_start =
-                                l.morsel_idxs_offsets_per_p[idx_in_l * num_partitions + p];
-                            let p_morsel_idxs_stop =
-                                l.morsel_idxs_offsets_per_p[(idx_in_l + 1) * num_partitions + p];
-                            let p_morsel_idxs = &l.morsel_idxs_values_per_p[p]
-                                [p_morsel_idxs_start..p_morsel_idxs_stop];
-                            p_table.insert_keys_subset(keys, p_morsel_idxs, track_unmatchable);
-                            p_payload.gather_extend(&payload, p_morsel_idxs, ShareStrategy::Never);
-
-                            if track_unmatchable {
-                                #[allow(clippy::unnecessary_cast)] // Necessary when IdxSize = u64.
-                                p_row_positions.extend(
-                                    p_morsel_idxs.iter().map(|i| morsel_row_offset + *i as u64),
-                                );
-                            }
-                            morsel_row_offset += payload.height() as u64;
-                        }
-                    }
-
-                    probe_tables
-                        .try_set(
-                            p,
-                            ProbeTable {
-                                hash_table: p_table,
-                                payload: p_payload.freeze(),
-                                row_positions: p_row_positions,
-                            },
-                        )
-                        .ok()
-                        .unwrap();
-                });
-            }
-        });
-
-        ProbeState {
-            table_per_partition: probe_tables.try_assume_init().ok().unwrap(),
-            max_seq_sent: MorselSeq::default(),
-            sampled_probe_morsels: core::mem::take(&mut self.sampled_probe_morsels),
-            unordered_morsel_seq: AtomicU64::new(0),
-        }
-    }
-
-    pub(super) fn finalize_unordered(
-        &mut self,
-        params: &EquiJoinParams,
-        table: &dyn IdxTable,
+        batch_bytes: usize,
         state: &StreamingExecutionState,
-    ) -> ProbeState {
+    ) -> PolarsResult<ProbeState> {
         let track_unmatchable = params.emit_unmatched_build();
         let payload_schema = if params.left_is_build.unwrap() {
             &params.left_payload_schema
@@ -267,130 +176,103 @@ impl BuildState {
             &params.right_payload_schema
         };
 
-        // To reduce maximum memory usage we want to drop the morsels
-        // as soon as they're processed, so we move into Arcs. The drops might
-        // also be expensive, so instead of directly dropping we put that on
-        // a work queue.
-        let morsels_per_local_builder = self
-            .local_builders
-            .iter_mut()
-            .map(|b| Arc::new(core::mem::take(&mut b.morsels)))
-            .collect_vec();
-        let (morsel_drop_q_send, morsel_drop_q_recv) =
-            async_channel::bounded(morsels_per_local_builder.len());
-        let num_partitions = self.local_builders[0].sketch_per_p.len();
-        let local_builders = &self.local_builders;
-        let probe_tables: SparseInitVec<ProbeTable> = SparseInitVec::with_capacity(num_partitions);
+        let mut sketch = CardinalitySketch::new();
+        let mut frames = Vec::new();
+        for local in &mut self.local_builders {
+            sketch.combine(&local.sketch);
+            frames.append(&mut local.frames);
+        }
+        let num_rows: usize = frames.iter().map(|(_, f)| f.num_rows()).sum();
+        let num_bytes: usize = frames.iter().map(|(_, f)| f.estimated_size()).sum();
 
-        executor::task_scope(state.task_metrics(), |s| {
-            // Wrap in outer Arc to move to each thread, performing the
-            // expensive clone on that thread.
-            let arc_morsels_per_local_builder = Arc::new(morsels_per_local_builder);
-            let mut join_handles = Vec::new();
-            for p in 0..num_partitions {
-                let arc_morsels_per_local_builder = Arc::clone(&arc_morsels_per_local_builder);
-                let morsel_drop_q_send = morsel_drop_q_send.clone();
-                let morsel_drop_q_recv = morsel_drop_q_recv.clone();
-                let probe_tables = &probe_tables;
-                join_handles.push(s.spawn_task(TaskPriority::High, async move {
-                    // Extract from outer arc and drop outer arc.
-                    let morsels_per_local_builder =
-                        Arc::unwrap_or_clone(arc_morsels_per_local_builder);
-
-                    // Compute cardinality estimate and total amount of
-                    // payload for this partition.
-                    let mut sketch = CardinalitySketch::new();
-                    let mut payload_rows = 0;
-                    for l in local_builders {
-                        sketch.combine(&l.sketch_per_p[p]);
-                        let offsets_len = l.morsel_idxs_offsets_per_p.len();
-                        payload_rows +=
-                            l.morsel_idxs_offsets_per_p[offsets_len - num_partitions + p];
-                    }
-
-                    // Allocate hash table and payload builder.
-                    let mut p_table = table.new_empty();
-                    p_table.reserve(sketch.estimate() * 5 / 4);
-                    let mut p_payload = DataFrameBuilder::new(payload_schema.clone());
-                    p_payload.reserve(payload_rows);
-
-                    // Build.
-                    let mut skip_drop_attempt = false;
-                    for (l, l_morsels) in local_builders.iter().zip(morsels_per_local_builder) {
-                        // Try to help with dropping the processed morsels.
-                        if !skip_drop_attempt {
-                            drop(morsel_drop_q_recv.try_recv());
-                        }
-
-                        for (i, morsel) in l_morsels.iter().enumerate() {
-                            let (_mseq, sf, keys) = morsel;
-                            let payload = sf.get().await;
-                            unsafe {
-                                let p_morsel_idxs_start =
-                                    l.morsel_idxs_offsets_per_p[i * num_partitions + p];
-                                let p_morsel_idxs_stop =
-                                    l.morsel_idxs_offsets_per_p[(i + 1) * num_partitions + p];
-                                let p_morsel_idxs = &l.morsel_idxs_values_per_p[p]
-                                    [p_morsel_idxs_start..p_morsel_idxs_stop];
-                                p_table.insert_keys_subset(keys, p_morsel_idxs, track_unmatchable);
-                                p_payload.gather_extend(
-                                    &payload,
-                                    p_morsel_idxs,
-                                    ShareStrategy::Never,
-                                );
-                            }
-                        }
-
-                        if let Some(l) = Arc::into_inner(l_morsels) {
-                            // If we're the last thread to process this set of morsels we're probably
-                            // falling behind the rest, since the drop can be quite expensive we skip
-                            // a drop attempt hoping someone else will pick up the slack.
-                            drop(morsel_drop_q_send.try_send(l));
-                            skip_drop_attempt = true;
-                        } else {
-                            skip_drop_attempt = false;
-                        }
-                    }
-
-                    // We're done, help others out by doing drops.
-                    drop(morsel_drop_q_send); // So we don't deadlock trying to receive from ourselves.
-                    while let Ok(l_morsels) = morsel_drop_q_recv.recv().await {
-                        drop(l_morsels);
-                    }
-
-                    probe_tables
-                        .try_set(
-                            p,
-                            ProbeTable {
-                                hash_table: p_table,
-                                payload: p_payload.freeze(),
-                                row_positions: Vec::new(),
-                            },
-                        )
-                        .ok()
-                        .unwrap();
-                }));
-            }
-
-            // Drop outer arc after spawning each thread so the inner arcs
-            // can get dropped as soon as they're processed. We also have to
-            // drop the drop queue sender so we don't deadlock waiting for it
-            // to end.
-            drop(arc_morsels_per_local_builder);
-            drop(morsel_drop_q_send);
-
-            ASYNC.block_in_place_on(async move {
-                for handle in join_handles {
-                    handle.await;
+        let num_partitions = state.num_pipelines;
+        let partitioner = HashPartitioner::new(num_partitions, 0);
+        let reserve_keys = sketch.estimate() * 5 / 4 / num_partitions;
+        let mut partitions: Vec<PartitionBuilder> = (0..num_partitions)
+            .map(|index| {
+                let mut table = table.new_empty();
+                table.reserve(reserve_keys);
+                PartitionBuilder {
+                    index,
+                    table,
+                    payload: DataFrameBuilder::new(payload_schema.clone()),
+                    row_positions: Vec::new(),
+                    all_rows: Vec::new(),
                 }
-            });
-        });
+            })
+            .collect();
+        // Rows without a hash (null keys) never match, so they are only kept to be emitted as
+        // unmatched rows.
+        let nulls = if track_unmatchable {
+            NullRows::FirstPartition
+        } else {
+            NullRows::Skip
+        };
 
-        ProbeState {
-            table_per_partition: probe_tables.try_assume_init().ok().unwrap(),
+        let num_frames = frames.len();
+        let mut first_rows = Vec::new();
+        if params.preserve_order_build {
+            // Morsels can share a sequence number, so ties keep the order of pipelines and arrival.
+            frames.sort_by_key(|(seq, _)| *seq);
+            if track_unmatchable {
+                let mut next_row = 0;
+                for (_, frame) in &frames {
+                    first_rows.push(next_row);
+                    next_row += frame.num_rows() as u64;
+                }
+            }
+        }
+        let frames = frames.into_iter().map(|(_, f)| (0, f)).collect();
+        let batches = if params.preserve_order_build {
+            make_ordered_batches(frames, batch_bytes)
+        } else {
+            make_batches(frames, batch_bytes)
+        };
+        if config::verbose() {
+            eprintln!(
+                "[equi-join]: building {num_partitions} partitions from {num_rows} rows ({num_bytes} bytes) in {num_frames} frames, {} batches",
+                batches.len()
+            );
+        }
+
+        let add_batch: &BuildPartition<'_, PartitionBuilder> = &|p, batch, _| {
+            if params.preserve_order_build {
+                for frame in batch {
+                    let first_row = first_rows.get(frame.index).copied();
+                    p.add_rows(frame, track_unmatchable, first_row);
+                }
+            } else {
+                // Partitions start at different frames, so that tasks don't read the same frame at
+                // the same time.
+                let start = p.index * batch.len() / num_partitions;
+                for i in 0..batch.len() {
+                    p.add_rows(&batch[(start + i) % batch.len()], track_unmatchable, None);
+                }
+            }
+            async { Ok(()) }.boxed()
+        };
+        build_from_batches(
+            batches,
+            &partitioner,
+            &mut partitions,
+            nulls,
+            add_batch,
+            state,
+        )?;
+
+        let table_per_partition = partitions
+            .into_iter()
+            .map(|p| ProbeTable {
+                hash_table: p.table,
+                payload: p.payload.freeze(),
+                row_positions: p.row_positions,
+            })
+            .collect();
+        Ok(ProbeState {
+            table_per_partition,
             max_seq_sent: MorselSeq::default(),
             sampled_probe_morsels: core::mem::take(&mut self.sampled_probe_morsels),
             unordered_morsel_seq: AtomicU64::new(0),
-        }
+        })
     }
 }

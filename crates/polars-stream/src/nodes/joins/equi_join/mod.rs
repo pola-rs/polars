@@ -22,6 +22,7 @@ use polars_utils::relaxed_cell::RelaxedCell;
 use self::build::BuildState;
 use self::probe::{EmitUnmatchedState, FusedPredicate, ProbeState};
 use super::runtime_filter::RuntimeFilters;
+use super::tuning::JoinTuning;
 use super::utils::{
     JoinSampleStats, LEFT_BUILD_MARGIN, REF_KEY_RATIO, UNIQUE_BUILD_MARGIN, UNIQUE_KEY_RATIO,
 };
@@ -204,7 +205,6 @@ fn select_payload(df: DataFrame, selector: &[Option<PlSmallStr>]) -> DataFrame {
     unsafe { DataFrame::new_unchecked(height, new_cols) }
 }
 
-#[derive(Default)]
 struct SampleState {
     left: Vec<Morsel>,
     left_len: usize,
@@ -216,9 +216,23 @@ struct SampleState {
     /// filters, until it ends or reaches the sample limit. A side that ends is
     /// complete, so its key ranges are published before the other side is read.
     only_side: Option<bool>,
+    /// Keeps the sampled morsels spillable.
+    spill_ctx: MostRecentSpillContext,
 }
 
 impl SampleState {
+    fn new(only_side: Option<bool>, spill_ctx: MostRecentSpillContext) -> Self {
+        Self {
+            left: Vec::new(),
+            left_len: 0,
+            right: Vec::new(),
+            right_len: 0,
+            limits: Default::default(),
+            only_side,
+            spill_ctx,
+        }
+    }
+
     fn len(&self, left: bool) -> usize {
         if left { self.left_len } else { self.right_len }
     }
@@ -410,13 +424,7 @@ impl SampleState {
             core::mem::swap(&mut sampled_build_morsels, &mut sampled_probe_morsels);
         }
 
-        let partitioner = HashPartitioner::new(state.num_pipelines, 0);
-        let mut build_state = BuildState::new(
-            state.num_pipelines,
-            state.num_pipelines,
-            params,
-            sampled_probe_morsels,
-        );
+        let mut build_state = BuildState::new(state.num_pipelines, params, sampled_probe_morsels);
 
         // Simulate the sample build morsels flowing into the build side.
         if !sampled_build_morsels.is_empty() {
@@ -429,14 +437,7 @@ impl SampleState {
                 for (local_builder, recv) in build_state.local_builders.iter_mut().zip(receivers) {
                     join_handles.push(scope.spawn_task(
                         TaskPriority::High,
-                        BuildState::partition_and_sink(
-                            recv,
-                            local_builder,
-                            partitioner.clone(),
-                            params,
-                            state,
-                            spill_ctx,
-                        ),
+                        BuildState::sink(recv, local_builder, params, state, spill_ctx),
                     ));
                 }
 
@@ -467,6 +468,7 @@ pub struct EquiJoinNode {
     params: EquiJoinParams,
     table: Box<dyn IdxTable>,
     spill_ctx: MostRecentSpillContext,
+    tuning: JoinTuning,
 }
 
 impl EquiJoinNode {
@@ -583,7 +585,6 @@ impl EquiJoinNode {
         let state = if left_is_build.is_some() {
             EquiJoinState::Build(BuildState::new(
                 num_pipelines,
-                num_pipelines,
                 &params,
                 BufferedStream::default(),
             ))
@@ -594,10 +595,9 @@ impl EquiJoinNode {
             } else {
                 params.planned_build_left()
             };
-            EquiJoinState::Sample(SampleState {
-                only_side,
-                ..Default::default()
-            })
+            let spill_ctx =
+                MostRecentSpillContext::new("equi-join-sample".into(), task_metrics.clone());
+            EquiJoinState::Sample(SampleState::new(only_side, spill_ctx))
         };
 
         Ok(Self {
@@ -605,6 +605,7 @@ impl EquiJoinNode {
             params,
             table: new_idx_table(unique_key_schema),
             spill_ctx: MostRecentSpillContext::new("equi-join".into(), task_metrics),
+            tuning: JoinTuning::from_env(),
         })
     }
 }
@@ -654,14 +655,13 @@ impl ComputeNode for EquiJoinNode {
                 build_state.publish_runtime_filters(&mut self.params);
                 self.state = if self.params.args.how == JoinType::Inner && build_state.is_empty() {
                     EquiJoinState::Done
-                } else if self.params.preserve_order_build {
-                    EquiJoinState::Probe(build_state.finalize_ordered(&self.params, &*self.table))
                 } else {
-                    EquiJoinState::Probe(build_state.finalize_unordered(
+                    EquiJoinState::Probe(build_state.finalize(
                         &self.params,
                         &*self.table,
+                        self.tuning.batch_bytes(),
                         state,
-                    ))
+                    )?)
                 };
             }
         }
@@ -814,6 +814,7 @@ impl ComputeNode for EquiJoinNode {
                             &mut sample_state.left_len,
                             sample_state.limits[0].clone(),
                             sample_state.limits[1].clone(),
+                            &sample_state.spill_ctx,
                         ),
                     ));
                 }
@@ -826,6 +827,7 @@ impl ComputeNode for EquiJoinNode {
                             &mut sample_state.right_len,
                             sample_state.limits[1].clone(),
                             sample_state.limits[0].clone(),
+                            &sample_state.spill_ctx,
                         ),
                     ));
                 }
@@ -835,18 +837,10 @@ impl ComputeNode for EquiJoinNode {
                 assert!(recv_ports[probe_idx].is_none());
                 let receivers = recv_ports[build_idx].take().unwrap().parallel();
 
-                let partitioner = HashPartitioner::new(state.num_pipelines, 0);
                 for (local_builder, recv) in build_state.local_builders.iter_mut().zip(receivers) {
                     join_handles.push(scope.spawn_task(
                         TaskPriority::High,
-                        BuildState::partition_and_sink(
-                            recv,
-                            local_builder,
-                            partitioner.clone(),
-                            &self.params,
-                            state,
-                            &self.spill_ctx,
-                        ),
+                        BuildState::sink(recv, local_builder, &self.params, state, &self.spill_ctx),
                     ));
                 }
             },
