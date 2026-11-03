@@ -415,6 +415,11 @@ def test_write_geoparquet_covering(plmonkeypatch: PlMonkeyPatch) -> None:
     plain = df.with_columns(pl.col("bbox").ext.storage())
     assert "covering" not in _geo_metadata(plain)["columns"]["geometry"]
 
+    null_crs = pl.Extension("geoarrow.box", BOX_XYZ, '{"crs": null}')
+    explicit = df.with_columns(pl.col("a_bbox").ext.storage().ext.to(null_crs))
+    covering = _geo_metadata(explicit)["columns"]["a"]["covering"]
+    assert covering == _covering("a_bbox", BOX_XYZ)
+
     buf = io.BytesIO()
     df.write_parquet(buf)
     plmonkeypatch.setenv("POLARS_GEOPARQUET_READ", "1")
@@ -545,6 +550,7 @@ def test_write_geoparquet_bbox(plmonkeypatch: PlMonkeyPatch, tmp_path: Path) -> 
 
     path = tmp_path / "a.parquet"
     df.lazy().sink_parquet(path, row_group_size=1)
+    assert pq.read_metadata(path).num_row_groups == 4
     columns = json.loads(pq.read_metadata(path).metadata[b"geo"])["columns"]
     assert {name: c["bbox"] for name, c in columns.items() if "bbox" in c} == expected
 
@@ -640,6 +646,27 @@ def test_write_geoparquet_bbox_encrypted(
     data = path.read_bytes()
     assert b'"encoding":"point"' in data
     assert b'"bbox"' not in data
+
+
+def test_write_geoparquet_bbox_column_key_encrypted(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path
+) -> None:
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.1")
+    df = _bbox_frame().select(
+        "a",
+        b=pl.lit({"x": 3.0, "y": 4.0}).ext.to(pl.Extension("geoarrow.point", XY, None)),
+    )
+    encryption = pl.ParquetEncryptionProperties(
+        footer_key=b"0123456789012345",
+        column_keys={"a.y": b"1234567890123450"},
+        plaintext_footer=True,
+    )
+    path = tmp_path / "a.parquet"
+    df.write_parquet(path, encryption=encryption)
+    columns = json.loads(pq.read_metadata(path).metadata[b"geo"])["columns"]
+    # One encrypted leaf hides the whole `bbox` of its column, but no other.
+    assert "bbox" not in columns["a"]
+    assert columns["b"]["bbox"] == [3.0, 4.0, 3.0, 4.0]
 
 
 @pytest.mark.parametrize(
@@ -746,3 +773,18 @@ def test_write_geoparquet_explicit_geo_key(
     df.write_parquet(buf, metadata=(lambda _: metadata) if as_callable else metadata)
     written = pq.read_metadata(pa.BufferReader(buf.getvalue())).metadata
     assert json.loads(written[b"geo"]) == geo
+
+
+def test_write_geoparquet_callable_metadata_derives_geo(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.1")
+    df = pl.DataFrame(
+        {"a": [{"x": 1.0, "y": 2.0}]},
+        schema={"a": pl.Extension("geoarrow.point", XY, None)},
+    )
+    buf = io.BytesIO()
+    df.write_parquet(buf, metadata=lambda _: {"k": "v"})
+    written = pq.read_metadata(pa.BufferReader(buf.getvalue())).metadata
+    assert written[b"k"] == b"v"
+    assert json.loads(written[b"geo"])["columns"]["a"]["bbox"] == [1.0, 2.0, 1.0, 2.0]
