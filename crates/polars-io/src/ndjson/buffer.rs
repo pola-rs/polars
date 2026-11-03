@@ -150,6 +150,27 @@ impl Buffer<'_> {
                 buf.append_option(v);
                 Ok(())
             },
+            #[cfg(feature = "dtype-time")]
+            Time(buf) => {
+                let n = match value {
+                    // Parse strings the same way read_json does
+                    Value::String(s) => polars_compute::cast::temporal::utf8_to_naive_time_scalar(
+                        s,
+                        ArrowTimeUnit::Nanosecond,
+                    ),
+                    _ => value.as_i64(),
+                };
+                let v = deserialize_numeric::<Int64Type>(value, n, self.ignore_errors)?;
+                buf.append_option(v);
+                Ok(())
+            },
+            #[cfg(feature = "dtype-duration")]
+            Duration(buf, _) => {
+                let v =
+                    deserialize_numeric::<Int64Type>(value, value.as_i64(), self.ignore_errors)?;
+                buf.append_option(v);
+                Ok(())
+            },
             All(dtype, buf) => {
                 let av = deserialize_all(value, dtype, self.ignore_errors)?;
                 buf.push(av);
