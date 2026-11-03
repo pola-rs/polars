@@ -66,8 +66,8 @@ To learn more, read the [user guide](https://docs.pola.rs/).
 
 ### DataFrame API
 
-Queries are composed from expressions or SQL. This lazy query gets optimized out of the box and runs in
-parallel across all available cores:
+Queries are composed from expressions or SQL. This lazy query gets optimized out of the box and runs
+in parallel across all available cores:
 
 ```python
 import polars as pl
