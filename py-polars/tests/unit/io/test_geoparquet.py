@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import contextlib
 import io
 import json
 import struct
+import warnings
 from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
@@ -238,18 +240,64 @@ def test_write_geoparquet_skips_box(plmonkeypatch: PlMonkeyPatch, version: str) 
         },
     )
     plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", version)
-    geo = _geo_metadata(df)
+
+    # GeoParquet 1.0 does not have coverings, so only outside there we warn
+    def warns() -> Any:
+        if version == "1.0":
+            return contextlib.nullcontext()
+        return pytest.warns(UserWarning, match="'bbox' as a plain struct")
+
+    with warns():
+        geo = _geo_metadata(df)
     assert geo["primary_column"] == "a"
     assert list(geo["columns"]) == ["a"]
     assert "covering" not in geo["columns"]["a"]
-    assert _geo_metadata(df.select("bbox")) is None
+    with warns():
+        assert _geo_metadata(df.select("bbox")) is None
 
     buf = io.BytesIO()
-    df.write_parquet(buf)
+    with warns():
+        df.write_parquet(buf)
     plmonkeypatch.setenv("POLARS_GEOPARQUET_READ", "1")
     out = pl.read_parquet(buf.getvalue())
     assert _ext(out.schema["bbox"]) == _ext(df.schema["bbox"])
     assert out["bbox"].ext.storage().to_list() == [bounds]
+
+
+def test_write_geoparquet_warns_unclaimed_box(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path
+) -> None:
+    # GeoPandas names its covering `bbox` whatever the geometry is called,
+    # but Polars only writes `bbox` as the covering of `geometry` or `geography`.
+    bounds = {"xmin": 1.0, "ymin": 2.0, "xmax": 1.0, "ymax": 2.0}
+    table = pa.table({"geom": pa.array([POINT_WKB], pa.binary()), "bbox": [bounds]})
+    wkb = {
+        "encoding": "WKB",
+        "geometry_types": [],
+        "covering": _covering("bbox", BOX_XY),
+    }
+    buf = _write_geo(table, "1.1.0", {"geom": wkb})
+
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_READ", "1")
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.1")
+    df = pl.read_parquet(buf)
+    assert _ext(df.schema["bbox"])[0] == "geoarrow.box"
+
+    match = "'bbox' as a plain struct.*name it '<geometry>_bbox'"
+    out = io.BytesIO()
+    with pytest.warns(UserWarning, match=match):
+        df.write_parquet(out)
+    geo = json.loads(pq.read_metadata(pa.BufferReader(out.getvalue())).metadata[b"geo"])
+    assert "covering" not in geo["columns"]["geom"]
+    assert pl.read_parquet(out.getvalue())["bbox"].ext.storage().to_list() == [bounds]
+
+    # Once per write, not once per file.
+    partitioned = pl.concat([df, df]).with_columns(p=pl.Series([1, 2]))
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        partitioned.lazy().sink_parquet(pl.PartitionBy(tmp_path, key="p"), mkdir=True)
+    assert len(list(tmp_path.rglob("*.parquet"))) == 2
+    assert sum("plain struct" in str(w.message) for w in caught) == 1
 
 
 def test_write_geoparquet_covering(plmonkeypatch: PlMonkeyPatch) -> None:

@@ -274,6 +274,51 @@ pub fn geo_key_value(
     schema: &ArrowSchema,
     statistics: Option<&FileStatistics<'_>>,
 ) -> PolarsResult<Option<KeyValue>> {
+    Ok(build_geo(schema, statistics)?.and_then(|geo| geo.key_value))
+}
+
+/// Called once per write, before any file is opened.
+pub fn validate_geo_schema(schema: &ArrowSchema) -> PolarsResult<()> {
+    let Some(geo) = build_geo(schema, None)? else {
+        return Ok(());
+    };
+    // GeoParquet 1.0 has no coverings, so there is no name to suggest.
+    if geo.version == "1.0.0" {
+        return Ok(());
+    }
+    for field in schema.iter_values() {
+        if let ArrowDataType::Extension(ext) = &field.dtype
+            && ext.name == BOX_EXTENSION_NAME
+            && !geo
+                .covering_columns
+                .iter()
+                .any(|c| c == field.name.as_str())
+        {
+            // [`geo_key_value`] runs once per file, so warning there would repeat if we write to
+            // multiple files
+            polars_warn!(
+                "writing column '{}' as a plain struct, not as a GeoParquet covering: \
+                no geometry column is named after it; \
+                name it '<geometry>_bbox', or 'bbox' for a column named 'geometry' or 'geography'",
+                field.name
+            );
+        }
+    }
+    Ok(())
+}
+
+struct GeoParquet {
+    version: &'static str,
+    /// `None` if the schema has no geometry columns.
+    key_value: Option<KeyValue>,
+    covering_columns: Vec<String>,
+}
+
+/// Returns `None` if `POLARS_GEOPARQUET_WRITE` is not set.
+fn build_geo(
+    schema: &ArrowSchema,
+    statistics: Option<&FileStatistics<'_>>,
+) -> PolarsResult<Option<GeoParquet>> {
     let version = match std::env::var("POLARS_GEOPARQUET_WRITE").as_deref() {
         Err(_) | Ok("") => return Ok(None),
         Ok("1.0") => "1.0.0",
@@ -395,17 +440,21 @@ pub fn geo_key_value(
         columns.insert(name.to_string(), Value::Object(column));
     }
 
-    let Some(primary_column) = primary_column else {
-        return Ok(None);
-    };
-    let geo = json!({
-        "version": version,
-        "primary_column": primary_column,
-        "columns": columns,
+    let key_value = primary_column.map(|primary_column| {
+        let geo = json!({
+            "version": version,
+            "primary_column": primary_column,
+            "columns": columns,
+        });
+        KeyValue {
+            key: GEO_KEY.to_string(),
+            value: Some(geo.to_string()),
+        }
     });
-    Ok(Some(KeyValue {
-        key: GEO_KEY.to_string(),
-        value: Some(geo.to_string()),
+    Ok(Some(GeoParquet {
+        version,
+        key_value,
+        covering_columns,
     }))
 }
 
@@ -422,6 +471,7 @@ fn extension_metadata(name: &str, ext: &ExtensionType) -> PolarsResult<Map<Strin
 }
 
 /// The geoarrow-rs naming scheme for the bbox column of a geometry column.
+/// The writer links a box to a geometry column by this name only.
 fn covering_name(geometry: &str) -> String {
     match geometry {
         "geometry" | "geography" => "bbox".into(),

@@ -8,7 +8,7 @@ use polars_buffer::Buffer;
 use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
 use polars_io::prelude::{ParquetWriteOptions, get_encodings};
-use polars_parquet::arrow::geo::{GEO_KEY, geo_key_value};
+use polars_parquet::arrow::geo::{GEO_KEY, validate_geo_schema};
 use polars_parquet::write::{
     CompressedPage, Encoding, SchemaDescriptor, Version, WriteOptions, to_parquet_schema,
 };
@@ -37,12 +37,13 @@ impl ParquetWriterStarter {
         options: Arc<ParquetWriteOptions>,
         arrow_schema: ArrowSchemaRef,
     ) -> PolarsResult<Self> {
+        // A user-supplied `geo` key replaces the derived one, so it skips the checks and warnings too.
         if !options
             .key_value_metadata
             .as_ref()
             .is_some_and(|kv| kv.may_contain(GEO_KEY))
         {
-            geo_key_value(&arrow_schema, None)?;
+            validate_geo_schema(&arrow_schema)?;
         }
         let initialized_state = match &options.encryption {
             Some(encryption) => {
