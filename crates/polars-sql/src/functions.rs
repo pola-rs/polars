@@ -55,7 +55,7 @@ pub(crate) struct SQLFunctionVisitor<'a> {
     pub(crate) reads_rows: bool,
 }
 
-/// A parsed value argument. The constant argument of an aggregate without OVER is kept apart:
+/// A parsed value argument. The constant argument of an aggregate is kept apart:
 /// the aggregate follows from the constant and the number of rows read, while reading the
 /// constant once per row would materialize it.
 enum ValueArg {
@@ -3045,12 +3045,19 @@ impl SQLFunctionVisitor<'_> {
 
         for ob in order_by {
             // Note: ORDER BY exprs share their length with the (possibly filtered) base,
-            // so they have to go through `parse_sql_arg` to apply any active FILTER.
-            by.push(self.parse_sql_arg(&ob.expr)?);
+            // so they have to go through `parse_value_arg` to apply any active FILTER.
+            match self.parse_value_arg(&ob.expr)? {
+                ValueArg::Rows(e) => by.push(e),
+                // A constant key does not change the order.
+                ValueArg::Constant(_) => continue,
+            }
 
             let options = order_by_sort_options(&ob.options);
             nulls_last.push(options.nulls_last);
             descending.push(options.descending);
+        }
+        if by.is_empty() {
+            return Ok(expr);
         }
         Ok(expr.sort_by(
             by,
