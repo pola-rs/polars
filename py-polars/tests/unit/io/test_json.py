@@ -1084,7 +1084,7 @@ def test_read_ndjson_small_integers_16167() -> None:
 
 def test_read_ndjson_time_duration_30017() -> None:
     data = b'{"t": "12:34:56", "d": 1}\n{"t": 1000000000, "d": null}\n'
-    schema = {"t": pl.Time, "d": pl.Duration("us")}
+    schema = {"t": pl.Time(), "d": pl.Duration("us")}
     df = pl.read_ndjson(io.BytesIO(data), schema=schema)
     expected = pl.DataFrame(
         {
