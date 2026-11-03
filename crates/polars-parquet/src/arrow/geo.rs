@@ -15,7 +15,13 @@ const DEFAULT_CRS: &str = "OGC:CRS84";
 
 const BOX_EXTENSION_NAME: &str = "geoarrow.box";
 
-/// The field layouts of a box that GeoParquet accepts as a bbox covering.
+// TODO: accept other kinds of bbox too.
+// These are a little more complicated than just struct relabelling, and would require stuff like:
+// - float32 -> Float64 widening
+// - data re-ordering after decoding
+
+/// The field layouts of a `geoarrow.box`.
+/// GeoParquet also allows a covering's fields in another order or as FLOAT, but those can't be read as a box.
 const BOX_LAYOUTS: [&[&str]; 2] = [
     &["xmin", "ymin", "xmax", "ymax"],
     &["xmin", "ymin", "zmin", "xmax", "ymax", "zmax"],
@@ -218,7 +224,7 @@ fn apply_bbox_covering(
     };
     if box_layout(storage) != Some(layout) {
         polars_warn!(
-            "ignoring GeoParquet covering of '{}': type {:?} of column '{}' is not a struct of Float64 fields matching its bbox paths",
+            "ignoring GeoParquet covering of '{}': type {:?} of column '{}' is not a struct of Float64 fields xmin, ymin, [zmin,] xmax, ymax, [zmax] in that order, as a 'geoarrow.box' needs",
             geometry,
             storage,
             box_name
@@ -247,7 +253,7 @@ fn parse_bbox_paths(bbox: &Value) -> Option<(&str, &'static [&'static str])> {
     Some((box_name, layout))
 }
 
-/// Returns the layout of `dtype` if it is a box that GeoParquet accepts as a bbox covering.
+/// Returns the layout of `dtype` if it is a valid `geoarrow.box` storage type.
 fn box_layout(dtype: &ArrowDataType) -> Option<&'static [&'static str]> {
     let ArrowDataType::Struct(fields) = dtype else {
         return None;
