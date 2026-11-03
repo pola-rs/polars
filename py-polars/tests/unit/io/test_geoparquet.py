@@ -313,7 +313,7 @@ def test_write_geoparquet_covering(plmonkeypatch: PlMonkeyPatch) -> None:
         schema={
             "geometry": pl.Extension("geoarrow.wkb", pl.Binary, json.dumps(CRS84)),
             "bbox": pl.Extension("geoarrow.box", BOX_XY, json.dumps(CRS84)),
-            "a": pl.Extension("geoarrow.point", XYZ, None),
+            "a": pl.Extension("geoarrow.point", XYZ, json.dumps({"crs": PROJJSON})),
             # A box without a CRS may cover a geometry with one.
             "a_bbox": pl.Extension("geoarrow.box", BOX_XYZ, None),
         },
@@ -334,8 +334,10 @@ def test_write_geoparquet_covering(plmonkeypatch: PlMonkeyPatch) -> None:
     df.write_parquet(buf)
     plmonkeypatch.setenv("POLARS_GEOPARQUET_READ", "1")
     out = pl.read_parquet(buf.getvalue())
-    for name in df.columns:
+    for name in ["geometry", "bbox", "a"]:
         assert _ext(out.schema[name]) == _ext(df.schema[name])
+    # A box reads back with the metadata of the geometry it covers.
+    assert _ext(out.schema["a_bbox"]) == ("geoarrow.box", BOX_XYZ, {"crs": PROJJSON})
     assert out.select(pl.all().ext.storage()).rows() == [
         (POINT_WKB, xy, {"x": 1.0, "y": 2.0, "z": 3.0}, xyz)
     ]
@@ -602,7 +604,7 @@ def test_write_geoparquet_error_before_file_is_opened(
 def test_write_geoparquet_explicit_geo_key(
     plmonkeypatch: PlMonkeyPatch, as_callable: bool
 ) -> None:
-    # Polars refuses to derive the `geo` key for a string CRS,
+    # Polars refuses to derive the `geo` key for a string CRS such as "EPSG:4326",
     # but one passed in by the user is written as is.
     plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.1")
     dtype = pl.Extension("geoarrow.wkb", pl.Binary, '{"crs": "EPSG:4326"}')
