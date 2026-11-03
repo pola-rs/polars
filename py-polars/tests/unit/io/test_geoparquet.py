@@ -352,6 +352,36 @@ def test_write_geoparquet_box_not_a_covering(
     assert out[box_name].ext.storage().to_list() == [bounds]
 
 
+def test_write_geoparquet_ambiguous_bbox(plmonkeypatch: PlMonkeyPatch) -> None:
+    # Only `geometry` has a covering here,
+    # but on write `bbox` could cover either column.
+    wkb_array = pa.array([POINT_WKB], pa.binary())
+    table = pa.table(
+        {"geometry": wkb_array, "geography": wkb_array, "bbox": [XY_BOUNDS]}
+    )
+    wkb = {"encoding": "WKB", "geometry_types": []}
+    columns = {
+        "geometry": {**wkb, "covering": _covering("bbox", BOX_XY)},
+        "geography": wkb,
+    }
+    buf = _write_geo(table, "1.1.0", columns)
+
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_READ", "1")
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.1")
+    df = pl.read_parquet(buf)
+    assert _ext(df.schema["bbox"])[0] == "geoarrow.box"
+
+    out = io.BytesIO()
+    match = "'bbox' as a plain struct.*could cover both 'geometry' and 'geography'"
+    with pytest.warns(UserWarning, match=match):
+        df.write_parquet(out)
+    geo = json.loads(pq.read_metadata(pa.BufferReader(out.getvalue())).metadata[b"geo"])
+    assert all("covering" not in c for c in geo["columns"].values())
+    assert pl.read_parquet(out.getvalue())["bbox"].ext.storage().to_list() == [
+        XY_BOUNDS
+    ]
+
+
 def test_write_geoparquet_covering(plmonkeypatch: PlMonkeyPatch) -> None:
     xy = {"xmin": 1.0, "ymin": 2.0, "xmax": 1.0, "ymax": 2.0}
     xyz = {"xmin": 1.0, "ymin": 2.0, "zmin": 3.0, "xmax": 1.0, "ymax": 2.0, "zmax": 3.0}
@@ -410,14 +440,6 @@ def test_write_geoparquet_covering(plmonkeypatch: PlMonkeyPatch) -> None:
                 ),
             },
             "differs from the geometry's",
-        ),
-        (
-            {
-                "geometry": pl.Extension("geoarrow.wkb", pl.Binary, '{"crs": null}'),
-                "geography": pl.Extension("geoarrow.wkb", pl.Binary, '{"crs": null}'),
-                "bbox": pl.Extension("geoarrow.box", BOX_XY, '{"crs": null}'),
-            },
-            "'bbox' already covers another column",
         ),
     ],
 )

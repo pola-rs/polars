@@ -303,6 +303,8 @@ pub fn validate_geo_schema(schema: &ArrowSchema) -> PolarsResult<()> {
             // A box that can't be a covering under any name should not be told to rename.
             let reason = if box_layout(&ext.inner).is_none() {
                 "its fields must be Float64 xmin, ymin, [zmin,] xmax, ymax, [zmax] in that order"
+            } else if field.name == "bbox" && bbox_is_ambiguous(schema) {
+                "it could cover both 'geometry' and 'geography'; rename one of them"
             } else {
                 "no geometry column is named after it; \
                 name it '<geometry>_bbox', or 'bbox' for a column named 'geometry' or 'geography'"
@@ -347,8 +349,7 @@ fn build_geo(
         let ArrowDataType::Extension(ext) = &field.dtype else {
             continue;
         };
-        // GeoParquet has no box encoding, so a box is written as a plain struct column.
-        if !ext.name.starts_with("geoarrow.") || ext.name == BOX_EXTENSION_NAME {
+        if !is_geometry_extension(ext) {
             continue;
         }
         let name = &field.name;
@@ -423,12 +424,6 @@ fn build_geo(
             && let Some((box_name, covering)) =
                 bbox_covering(schema, name, ext_metadata.get("crs"))?
         {
-            if covering_columns.contains(&box_name) {
-                polars_bail!(
-                    InvalidOperation: "cannot write column '{}' as GeoParquet: its covering '{}' already covers another column",
-                    name, box_name
-                );
-            }
             column.insert("covering".into(), covering);
             covering_columns.push(box_name);
         }
@@ -482,8 +477,26 @@ fn extension_metadata(name: &str, ext: &ExtensionType) -> PolarsResult<Map<Strin
     }
 }
 
+/// GeoParquet has no box encoding, so a box is written as a plain struct column.
+fn is_geometry_extension(ext: &ExtensionType) -> bool {
+    ext.name.starts_with("geoarrow.") && ext.name != BOX_EXTENSION_NAME
+}
+
+fn is_geometry_column(schema: &ArrowSchema, name: &str) -> bool {
+    matches!(
+        schema.get(name).map(|f| &f.dtype),
+        Some(ArrowDataType::Extension(ext)) if is_geometry_extension(ext)
+    )
+}
+
+fn bbox_is_ambiguous(schema: &ArrowSchema) -> bool {
+    is_geometry_column(schema, "geometry") && is_geometry_column(schema, "geography")
+}
+
 /// The geoarrow-rs naming scheme for the bbox column of a geometry column.
 /// The writer links a box to a geometry column by this name only.
+/// Only `geometry` and `geography` share a name;
+/// when both are geometry columns, `bbox` covers neither, as it can't tell which one it bounds.
 fn covering_name(geometry: &str) -> String {
     match geometry {
         "geometry" | "geography" => "bbox".into(),
@@ -500,6 +513,10 @@ fn bbox_covering(
     geometry_crs: Option<&Value>,
 ) -> PolarsResult<Option<(String, Value)>> {
     let box_name = covering_name(geometry);
+    // Written as a plain struct, gives warning
+    if box_name == "bbox" && bbox_is_ambiguous(schema) {
+        return Ok(None);
+    }
     let Some(ArrowDataType::Extension(ext)) = schema.get(box_name.as_str()).map(|f| &f.dtype)
     else {
         return Ok(None);
