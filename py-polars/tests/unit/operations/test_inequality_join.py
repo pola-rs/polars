@@ -529,6 +529,9 @@ def _outer_join_where_reference(
         pl.col("a") == pl.col("c"),
         (pl.col("a") == pl.col("c")) & (pl.col("b") < pl.col("d")),
         ((pl.col("a") + pl.col("c")) > 5) | pl.col("d").is_null(),
+        pl.col("a") < pl.col("c").cast(pl.Int32),
+        pl.col("a").cast(pl.String) < pl.col("c").cast(pl.String),
+        pl.col("d").cast(pl.String).str.len_bytes() > pl.col("a"),
     ],
 )
 def test_outer_join_where_matches_reference(
@@ -548,6 +551,22 @@ def test_outer_join_where_matches_reference(
     )
     expected = _outer_join_where_reference(left, right, predicate, how)
     assert_frame_equal(got, expected, check_row_order=False)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("dtype", [pl.Int64, pl.Int32])
+def test_outer_join_where_non_elementwise_inequality(
+    engine: EngineType, dtype: pl.DataType
+) -> None:
+    left = pl.LazyFrame({"a": [1, 3]})
+    right = pl.LazyFrame({"b": [2, 4]}, schema={"b": dtype})
+    q = left.join_where(right, pl.col("a") < pl.col("b").shift(1), how="left")
+    # The nested loop result depends on its partitioning, so compare against the
+    # same join without any rewrite.
+    expected = q.collect(
+        engine=engine, optimizations=pl.QueryOptFlags(predicate_pushdown=False)
+    )
+    assert_frame_equal(q.collect(engine=engine), expected, check_row_order=False)
 
 
 @pytest.mark.parametrize(("offset", "length"), [(0, 2), (2, 3), (4, 10)])

@@ -113,22 +113,37 @@ impl SpillFrameSearchBuffer {
 
     pub(super) fn split_at(&mut self, mut at: usize) -> Self {
         at = at.clamp(0, self.total_rows);
-        let mut top = self.clone();
-        top.total_rows = at;
-        top.frozen = true;
+        let top = self.slice(0, at);
         self.skip_rows += at;
         self.total_rows -= at;
         self.gc();
         top
     }
 
-    pub(super) fn slice(mut self, offset: usize, len: usize) -> Self {
-        self.skip_rows += offset;
-        self.total_rows -= offset;
-        self.total_rows = usize::min(self.total_rows, len);
-        self.frozen = true;
-        self.gc();
-        self
+    /// Returns a frozen buffer that only holds the frames covering the given rows.
+    pub(super) fn slice(&self, offset: usize, len: usize) -> Self {
+        let offset = offset.min(self.total_rows);
+        let len = len.min(self.total_rows - offset);
+        let mut sfs_at_offsets = BTreeMap::new();
+        let mut skip_rows = 0;
+        if len > 0 {
+            let start = self.live_start() + offset;
+            let first_offset = *self.sfs_at_offsets.range(..=start).next_back().unwrap().0;
+            sfs_at_offsets.extend(
+                self.sfs_at_offsets
+                    .range(first_offset..start + len)
+                    .map(|(offset, frame)| (*offset, frame.clone())),
+            );
+            skip_rows = start - first_offset;
+        }
+        SpillFrameSearchBuffer {
+            schema: self.schema.clone(),
+            sfs_at_offsets,
+            spill_ctx: self.spill_ctx.clone(),
+            total_rows: len,
+            skip_rows,
+            frozen: true,
+        }
     }
 
     pub(super) async fn into_df(self) -> DataFrame {
@@ -258,6 +273,23 @@ unsafe fn series_get_bypass_validity<'a>(
 /// Bytes a hash table takes per key on top of the key itself.
 const KEY_SLOT_OVERHEAD: f64 = 16.0;
 
+/// A side with at least this key ratio is taken to have unique keys, allowing
+/// for some duplicates.
+pub(super) const UNIQUE_KEY_RATIO: f64 = 0.9;
+
+/// A side with at most this key ratio is taken as referencing a side with
+/// unique keys.
+pub(super) const REF_KEY_RATIO: f64 = 0.55;
+
+/// Extra weight against building a side referencing a side with unique keys.
+/// Referencing sides tend to keep growing and a prefix under-counts their
+/// repeats.
+pub(super) const UNIQUE_BUILD_MARGIN: f64 = 8.0;
+
+/// How much smaller the left side's score must be for it to be built.
+/// This is used to make noisy near-50/50 decisions more stable.
+pub(super) const LEFT_BUILD_MARGIN: f64 = 1.1;
+
 /// Statistics of one join side's sample, used to estimate the bytes its build
 /// keeps.
 pub struct JoinSampleStats {
@@ -267,7 +299,12 @@ pub struct JoinSampleStats {
     /// unique keys, but over-estimates when a few keys hold many rows. `None`
     /// if not requested or there were no non-null keys.
     pub min_hash_key_ratio: Option<f64>,
+    /// Like `key_ratio`, but over the rows whose key is not an invalid null.
+    /// `None` if not requested or there were no such rows.
+    pub ref_key_ratio: Option<f64>,
     pub key_width: f64,
+    /// The bytes per row of the keys as a build stores them.
+    pub hash_keys_width: f64,
     pub row_width: f64,
 }
 
@@ -289,66 +326,111 @@ impl JoinSampleStats {
             return Ok(Self {
                 key_ratio: 0.0,
                 min_hash_key_ratio: None,
+                ref_key_ratio: None,
                 key_width: 0.0,
+                hash_keys_width: 0.0,
                 row_width: 0.0,
             });
         }
-        let ((sketch, min_hash, key_bytes, row_bytes), rows) = fold_sample(
-            morsels,
-            sample_limit,
-            || {
-                let min_hash = with_min_hash.then(MinHashSketch::new);
-                (CardinalitySketch::new(), min_hash, 0usize, 0usize)
-            },
-            |(mut sketch, mut min_hash, key_bytes, row_bytes), df| {
-                let keys = ASYNC.block_on(select_key_columns(df, key_selectors, state))?;
-                let hash_keys =
-                    HashKeys::from_df(&keys, random_state.clone(), null_is_valid, false);
-                match &mut min_hash {
-                    Some(min_hash) => hash_keys.for_each_hash(|_, opt_h| {
-                        sketch.insert(opt_h.unwrap_or(0));
-                        if let Some(h) = opt_h {
-                            min_hash.insert(h);
-                        }
-                    }),
-                    None => hash_keys.sketch_cardinality(&mut sketch),
-                }
-                let row_size = match payload_select {
-                    None => df.estimated_size(true),
-                    Some(select) => {
-                        let payload = df
-                            .columns()
-                            .iter()
-                            .zip(select)
-                            .filter(|(_, name)| name.is_some())
-                            .map(|(c, _)| c.clone())
-                            .collect();
-                        let payload = unsafe { DataFrame::new_unchecked(df.height(), payload) };
-                        payload.estimated_size(true) + keys.estimated_size(true)
-                    },
-                };
-                Ok((
-                    sketch,
-                    min_hash,
-                    key_bytes + keys.estimated_size(true),
-                    row_bytes + row_size,
-                ))
-            },
-            |(mut a, mut am, ak, ar), (b, bm, bk, br)| {
-                a.combine(&b);
-                if let (Some(am), Some(bm)) = (&mut am, &bm) {
-                    am.combine(bm);
-                }
-                (a, am, ak + bk, ar + br)
-            },
-        )?;
+        let ((sketch, min_hash, null_rows, key_bytes, hash_key_bytes, row_bytes), rows) =
+            fold_sample(
+                morsels,
+                sample_limit,
+                || {
+                    let min_hash = with_min_hash.then(MinHashSketch::new);
+                    (
+                        CardinalitySketch::new(),
+                        min_hash,
+                        0usize,
+                        0usize,
+                        0usize,
+                        0usize,
+                    )
+                },
+                |(
+                    mut sketch,
+                    mut min_hash,
+                    mut null_rows,
+                    key_bytes,
+                    hash_key_bytes,
+                    row_bytes,
+                ),
+                 df| {
+                    let keys = ASYNC.block_on(select_key_columns(df, key_selectors, state))?;
+                    let hash_keys =
+                        HashKeys::from_df(&keys, random_state.clone(), null_is_valid, false);
+                    match &mut min_hash {
+                        Some(min_hash) => hash_keys.for_each_hash(|_, opt_h| {
+                            sketch.insert(opt_h.unwrap_or(0));
+                            match opt_h {
+                                Some(h) => min_hash.insert(h),
+                                None if !null_is_valid => null_rows += 1,
+                                None => {},
+                            }
+                        }),
+                        None => hash_keys.sketch_cardinality(&mut sketch),
+                    }
+                    let row_size = match payload_select {
+                        None => df.estimated_size(true),
+                        Some(select) => {
+                            let payload = df
+                                .columns()
+                                .iter()
+                                .zip(select)
+                                .filter(|(_, name)| name.is_some())
+                                .map(|(c, _)| c.clone())
+                                .collect();
+                            let payload = unsafe { DataFrame::new_unchecked(df.height(), payload) };
+                            payload.estimated_size(true) + keys.estimated_size(true)
+                        },
+                    };
+                    Ok((
+                        sketch,
+                        min_hash,
+                        null_rows,
+                        key_bytes + keys.estimated_size(true),
+                        hash_key_bytes + hash_keys.estimated_size(),
+                        row_bytes + row_size,
+                    ))
+                },
+                |(mut a, mut am, an, ak, ah, ar), (b, bm, bn, bk, bh, br)| {
+                    a.combine(&b);
+                    if let (Some(am), Some(bm)) = (&mut am, &bm) {
+                        am.combine(bm);
+                    }
+                    (a, am, an + bn, ak + bk, ah + bh, ar + br)
+                },
+            )?;
+        let distinct = sketch.estimate() as f64;
+        // The invalid null keys share hash 0 in the sketch and are left out here.
+        let ref_key_ratio = (with_min_hash && null_rows < rows).then(|| {
+            let distinct = distinct - f64::from(null_rows > 0);
+            (distinct / (rows - null_rows) as f64).clamp(0.0, 1.0)
+        });
         let rows = rows as f64;
         Ok(Self {
-            key_ratio: (sketch.estimate() as f64 / rows).min(1.0),
+            key_ratio: (distinct / rows).min(1.0),
             min_hash_key_ratio: min_hash.and_then(|m| m.key_ratio()),
+            ref_key_ratio,
             key_width: key_bytes as f64 / rows,
+            hash_keys_width: hash_key_bytes as f64 / rows,
             row_width: row_bytes as f64 / rows,
         })
+    }
+
+    /// Whether this side looks like it references the keys of `other`, which are
+    /// unique: its non-null keys repeat and those of `other` don't.
+    pub fn references_unique(&self, other: &JoinSampleStats) -> bool {
+        self.ref_key_ratio
+            .is_some_and(|ratio| ratio <= REF_KEY_RATIO)
+            && other.min_hash_key_ratio.unwrap_or(0.0) >= UNIQUE_KEY_RATIO
+    }
+
+    /// Bytes retained when building the distinct keys of `rows` rows, with every
+    /// stored key and its partition index kept until the table is built.
+    pub fn all_keys_build_bytes(&self, rows: usize) -> f64 {
+        rows as f64 * (self.hash_keys_width + size_of::<IdxSize>() as f64)
+            + self.distinct_keys_build_bytes(rows)
     }
 
     /// Bytes retained when building a table of the distinct keys of `rows` rows.
@@ -361,5 +443,62 @@ impl JoinSampleStats {
     pub fn all_rows_build_bytes(&self, rows: usize) -> f64 {
         self.distinct_keys_build_bytes(rows)
             + rows as f64 * (self.row_width + size_of::<IdxSize>() as f64)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_core::df;
+
+    use super::*;
+
+    fn buffer(frames: usize, rows_per_frame: usize) -> SpillFrameSearchBuffer {
+        let schema = Arc::new(Schema::from_iter([Field::new("k".into(), DataType::Int64)]));
+        let mut buf = SpillFrameSearchBuffer::empty_with_schema(
+            schema,
+            RandomSpillContext::new("test".into(), None),
+        );
+        for i in 0..frames {
+            let start = (i * rows_per_frame) as i64;
+            let df =
+                df!("k" => (start..start + rows_per_frame as i64).collect::<Vec<_>>()).unwrap();
+            ASYNC.block_on(buf.push_sf(SpillFrame::new_unregistered(df)));
+        }
+        buf
+    }
+
+    fn keys(buf: &SpillFrameSearchBuffer) -> Vec<i64> {
+        let df = ASYNC.block_on(buf.clone().into_df());
+        df.column("k")
+            .unwrap()
+            .i64()
+            .unwrap()
+            .into_no_null_iter()
+            .collect()
+    }
+
+    #[test]
+    fn test_slice_keeps_only_covered_frames() {
+        let buf = buffer(100, 10);
+        let slice = buf.slice(25, 20);
+        assert_eq!(keys(&slice), (25..45).collect::<Vec<_>>());
+        assert_eq!(slice.sfs_at_offsets.len(), 3);
+
+        assert_eq!(keys(&buf.slice(990, 100)), (990..1000).collect::<Vec<_>>());
+        assert!(buf.slice(1000, 5).is_empty());
+    }
+
+    #[test]
+    fn test_split_at_keeps_only_covered_frames() {
+        let mut buf = buffer(100, 10);
+        let mut start = 0;
+        while !buf.is_empty() {
+            let top = buf.split_at(15);
+            let end = (start + 15).min(1000);
+            assert!(top.sfs_at_offsets.len() <= 3);
+            assert_eq!(keys(&top), (start..end).collect::<Vec<_>>());
+            start = end;
+        }
+        assert_eq!(start, 1000);
     }
 }

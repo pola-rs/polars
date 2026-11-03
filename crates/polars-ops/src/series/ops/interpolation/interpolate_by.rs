@@ -338,7 +338,8 @@ pub fn interpolate_by(s: &Column, by: &Column, by_is_sorted: bool) -> PolarsResu
         _ => {
             polars_bail!(InvalidOperation: "expected series to be Float64, Float32, \
                 Int64, Int32, UInt64, UInt32, and `by` to be Date, Datetime, Int64, Int32, \
-                UInt64, UInt32, Float32 or Float64")
+                UInt64, UInt32, Float32 or Float64 (got series of type {} and `by` of type {})",
+                s.dtype(), by.dtype())
         },
     }
 }

@@ -56,6 +56,32 @@ impl Buffer<'_> {
                 }
                 Ok(())
             },
+            #[cfg(feature = "dtype-i8")]
+            Int8(buf) => {
+                let v = deserialize_numeric::<Int8Type>(value, value.as_i8(), self.ignore_errors)?;
+                buf.append_option(v);
+                Ok(())
+            },
+            #[cfg(feature = "dtype-i16")]
+            Int16(buf) => {
+                let v =
+                    deserialize_numeric::<Int16Type>(value, value.as_i16(), self.ignore_errors)?;
+                buf.append_option(v);
+                Ok(())
+            },
+            #[cfg(feature = "dtype-u8")]
+            UInt8(buf) => {
+                let v = deserialize_numeric::<UInt8Type>(value, value.as_u8(), self.ignore_errors)?;
+                buf.append_option(v);
+                Ok(())
+            },
+            #[cfg(feature = "dtype-u16")]
+            UInt16(buf) => {
+                let v =
+                    deserialize_numeric::<UInt16Type>(value, value.as_u16(), self.ignore_errors)?;
+                buf.append_option(v);
+                Ok(())
+            },
             Int32(buf) => {
                 let v =
                     deserialize_numeric::<Int32Type>(value, value.as_i32(), self.ignore_errors)?;
@@ -137,7 +163,11 @@ impl Buffer<'_> {
                 builder.append_null();
                 Ok(())
             },
-            _ => panic!("unexpected dtype when deserializing ndjson"),
+            #[allow(unreachable_patterns)]
+            _ => polars_bail!(
+                ComputeError: "unsupported dtype for column '{}' when reading NDJSON",
+                self.name
+            ),
         }
     }
 

@@ -30,8 +30,8 @@ use std::marker::PhantomData;
 
 #[cfg(feature = "approx_quantile")]
 pub use approx_quantile::{
-    new_approx_quantile_merge_reduction, new_approx_quantile_sketch_reduction,
-    new_approx_quantile_state_reduction,
+    new_approx_quantile_sketch_reduction, new_approx_quantile_state_reduction,
+    new_approx_quantile_union_reduction,
 };
 pub use convert::{into_reduction, unordered_unique_input};
 pub use min_max::{new_max_reduction, new_min_reduction};
@@ -231,6 +231,12 @@ pub trait GroupedReduction: Any + Send + Sync {
     /// not tracked.
     fn state_size(&self) -> Option<StateSize> {
         None
+    }
+
+    /// The number of fixed-size states per group, for memory estimates when
+    /// [`state_size`](Self::state_size) is `None`.
+    fn num_fixed_states(&self) -> usize {
+        1
     }
 
     /// Returns this GroupedReduction as a dyn Any.

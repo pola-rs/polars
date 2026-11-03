@@ -71,7 +71,9 @@ impl PhysicalExpr for SortExpr {
                 let out = ca.lst_sort(self.options)?;
                 ac.with_values(out.into_column(), true, Some(&self.expr))?;
             },
-            _ => {
+            // A single value (per group, or a literal) is already sorted.
+            AggState::AggregatedScalar(_) | AggState::LiteralScalar(_) => {},
+            AggState::NotAggregated(_) => {
                 let series = ac.flat_naive().into_owned();
 
                 let mut sort_options = self.options;

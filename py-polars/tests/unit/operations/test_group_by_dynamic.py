@@ -1678,3 +1678,36 @@ def test_group_by_dynamic_calendar_sparse_skip(engine: EngineType) -> None:
         }
     )
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("group_by", [None, "g"])
+def test_group_by_dynamic_overlapping_per_row_with_per_group_scalar(
+    group_by: str | None,
+) -> None:
+    df = pl.DataFrame(
+        {"t": [0, 1, 2, 3, 4, 5], "g": [1] * 6, "x": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]}
+    )
+    x = pl.col.x
+    out = df.group_by_dynamic("t", every="2i", period="4i", group_by=group_by).agg(
+        sub=x - x.mean(), gt=(x > x.mean()).sum()
+    )
+    assert out["sub"].to_list() == [[-1.5, -0.5, 0.5, 1.5]] * 2 + [[-0.5, 0.5]]
+    assert out["gt"].to_list() == [2, 2, 1]
+
+
+@pytest.mark.parametrize(
+    ("every", "period", "expected"),
+    [
+        # Every row in one window.
+        ("2i", "2i", [[-0.5, 0.5], [-1.0, 1.0], [-1.0, 1.0]]),
+        # t = 2 is in no window.
+        ("3i", "2i", [[-0.5, 0.5], [0.0], [-1.0, 1.0]]),
+    ],
+)
+def test_group_by_dynamic_per_row_with_per_group_scalar(
+    every: str, period: str, expected: list[list[float]]
+) -> None:
+    df = pl.DataFrame({"t": [0, 1, 2, 3, 6, 7], "x": [1.0, 2.0, 3.0, 5.0, 6.0, 8.0]})
+    x = pl.col.x
+    out = df.group_by_dynamic("t", every=every, period=period).agg(sub=x - x.mean())
+    assert out["sub"].to_list() == expected

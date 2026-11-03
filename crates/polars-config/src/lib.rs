@@ -163,7 +163,11 @@ const DEFAULT_FILE_POSIX_FADV: FileAdvice = FileAdvice::Normal;
 const FILE_DEFER_CACHED_READS: &str = "POLARS_FILE_DEFER_CACHED_READS";
 const DEFAULT_FILE_DEFER_CACHED_READS: bool = true;
 
-/// Initial number of slots of each hot table in the streaming group-by.
+/// Number of slots each hot table in the streaming group-by starts with.
+const MIN_HOT_TABLE_SIZE: &str = "POLARS_MIN_HOT_TABLE_SIZE";
+const DEFAULT_MIN_HOT_TABLE_SIZE: u64 = if cfg!(debug_assertions) { 2 } else { 16 };
+
+/// Number of slots up to which the hot tables in the streaming group-by double after misses.
 const HOT_TABLE_SIZE: &str = "POLARS_HOT_TABLE_SIZE";
 const DEFAULT_HOT_TABLE_SIZE: u64 = if cfg!(debug_assertions) { 4 } else { 4096 };
 
@@ -238,6 +242,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     FILE_READ_CONCURRENCY,
     FILE_POSIX_FADV,
     FILE_DEFER_CACHED_READS,
+    MIN_HOT_TABLE_SIZE,
     HOT_TABLE_SIZE,
     MAX_HOT_TABLE_SIZE,
 ];
@@ -288,6 +293,7 @@ pub struct Config {
     file_read_concurrency: AtomicU64,
     file_posix_fadv: AtomicU8,
     file_defer_cached_reads: AtomicBool,
+    min_hot_table_size: AtomicU64,
     hot_table_size: AtomicU64,
     max_hot_table_size: AtomicU64,
 
@@ -362,6 +368,7 @@ impl Config {
             file_read_concurrency: AtomicU64::new(DEFAULT_FILE_READ_CONCURRENCY),
             file_posix_fadv: AtomicU8::new(DEFAULT_FILE_POSIX_FADV as u8),
             file_defer_cached_reads: AtomicBool::new(DEFAULT_FILE_DEFER_CACHED_READS),
+            min_hot_table_size: AtomicU64::new(DEFAULT_MIN_HOT_TABLE_SIZE),
             hot_table_size: AtomicU64::new(DEFAULT_HOT_TABLE_SIZE),
             max_hot_table_size: AtomicU64::new(DEFAULT_MAX_HOT_TABLE_SIZE),
             ooc_effective_memory_budget_bytes: AtomicU64::new(0),
@@ -655,6 +662,11 @@ impl Config {
                     .unwrap_or(DEFAULT_FILE_DEFER_CACHED_READS),
                 Ordering::Relaxed,
             ),
+            MIN_HOT_TABLE_SIZE => self.min_hot_table_size.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_MIN_HOT_TABLE_SIZE),
+                Ordering::Relaxed,
+            ),
             HOT_TABLE_SIZE => self.hot_table_size.store(
                 val.and_then(|x| parse::parse_u64(var, x))
                     .unwrap_or(DEFAULT_HOT_TABLE_SIZE),
@@ -929,7 +941,13 @@ impl Config {
         self.file_defer_cached_reads.load(Ordering::Relaxed)
     }
 
-    /// Initial number of slots of each hot table in the streaming group-by.
+    /// Number of slots each hot table in the streaming group-by starts with.
+    #[inline(always)]
+    pub fn min_hot_table_size(&self) -> u64 {
+        self.min_hot_table_size.load(Ordering::Relaxed)
+    }
+
+    /// Number of slots up to which the hot tables in the streaming group-by double after misses.
     #[inline(always)]
     pub fn hot_table_size(&self) -> u64 {
         self.hot_table_size.load(Ordering::Relaxed)

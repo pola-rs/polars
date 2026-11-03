@@ -608,8 +608,8 @@ fn lower_ir_inner(
                         RowEncodingVariant::Ordered {
                             descending: None,
                             nulls_last: None,
-                            broadcast_nulls: None,
                         },
+                        false,
                         expr_arena,
                     )
                     .expr_ir(key_name.clone())
@@ -1338,6 +1338,8 @@ fn lower_ir_inner(
             let mut tmp_right_col_names: Vec<Option<PlSmallStr>> = Vec::new();
             let args = options.args.clone();
             let runtime_filters = options.runtime_filters.clone();
+            #[cfg(feature = "semi_anti_join")]
+            let estimated_rows = options.estimated_rows;
             let options = options.options.clone();
             // Only the hash equi join evaluates a fused predicate natively; other strategies get
             // a `Filter` on top, and the in-memory fallback applies it from `options`.
@@ -1554,7 +1556,7 @@ fn lower_ir_inner(
                         trans_input_left,
                         trans_left_on,
                         left_on_sorted.as_ref(),
-                        Some(!args.nulls_equal),
+                        !args.nulls_equal,
                         expr_arena,
                         phys_sm,
                         expr_cache,
@@ -1565,7 +1567,7 @@ fn lower_ir_inner(
                             trans_input_right,
                             trans_right_on,
                             right_on_sorted.as_ref(),
-                            Some(!args.nulls_equal),
+                            !args.nulls_equal,
                             expr_arena,
                             phys_sm,
                             expr_cache,
@@ -1671,6 +1673,7 @@ fn lower_ir_inner(
                             args: args.clone(),
                             output_bool: false,
                             runtime_filters: runtime_filters.clone(),
+                            estimated_rows,
                         },
                     )),
                     _ if args.how.is_equi() => {
@@ -2151,7 +2154,7 @@ fn append_sorted_key_column(
     phys_input: PhysStream,
     mut key_exprs: Vec<ExprIR>,
     keys_sorted: Option<&Vec<AExprSorted>>,
-    broadcast_nulls: Option<bool>,
+    propagate_nulls: bool,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
@@ -2176,8 +2179,8 @@ fn append_sorted_key_column(
             RowEncodingVariant::Ordered {
                 descending: sorted_descending,
                 nulls_last: sorted_nulls_last,
-                broadcast_nulls,
             },
+            propagate_nulls,
             expr_arena,
         )
         .expr_ir(key_col_name.clone());

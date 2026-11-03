@@ -32,12 +32,15 @@ where
     ChunkedArray<T>: ChunkVar,
 {
     if a.len() == 1 || b.len() == 1 {
-        return Some(f64::NAN); // (Broadcasted) constant -> NaN correlation.
+        // (Broadcasted) constant -> NaN correlation, unless no pair is complete.
+        let (constant, other) = if a.len() == 1 { (a, b) } else { (b, a) };
+        let n = other.len() - other.null_count();
+        return (constant.null_count() == 0 && n > 0).then_some(f64::NAN);
     }
     let (a, b) = align_chunks_binary(a, b);
     let mut out = PearsonState::default();
     for (a, b) in a.downcast_iter().zip(b.downcast_iter()) {
         out.combine(&polars_compute::moment::pearson_corr(a, b))
     }
-    Some(out.finalize())
+    (out.weight() != 0.0).then(|| out.finalize())
 }

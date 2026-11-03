@@ -402,14 +402,41 @@ mod compressed_writer {
 
     /// Constructor for `WritableTrait` compressed encoders.
     pub enum CompressedWriter<'a, W: io::Write> {
-        Gzip(Option<flate2::write::GzEncoder<&'a mut W>>),
+        Gzip(Option<flate2::write::GzEncoder<GzipTarget<'a, W>>>),
         Zstd(Option<zstd::Encoder<'static, &'a mut W>>),
+    }
+
+    /// Discards writes once `discard` is set.
+    pub struct GzipTarget<'a, W> {
+        inner: &'a mut W,
+        discard: bool,
+    }
+
+    impl<W: io::Write> io::Write for GzipTarget<'_, W> {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            if self.discard {
+                Ok(buf.len())
+            } else {
+                self.inner.write(buf)
+            }
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            if self.discard {
+                Ok(())
+            } else {
+                self.inner.flush()
+            }
+        }
     }
 
     impl<'a, W: io::Write> CompressedWriter<'a, W> {
         pub fn gzip(writer: &'a mut W, level: Option<u32>) -> Self {
             Self::Gzip(Some(flate2::write::GzEncoder::new(
-                writer,
+                GzipTarget {
+                    inner: writer,
+                    discard: false,
+                },
                 level.map(flate2::Compression::new).unwrap_or_default(),
             )))
         }
@@ -440,9 +467,99 @@ mod compressed_writer {
     impl<'a, W: io::Write> CompressedWriter<'a, W> {
         pub fn finish(&mut self) -> io::Result<&'a mut W> {
             match self {
-                Self::Gzip(encoder) => encoder.take().unwrap().finish(),
+                Self::Gzip(encoder) => {
+                    // On failure the encoder stays, so that its drop can't write the trailer.
+                    encoder.as_mut().unwrap().try_finish()?;
+                    encoder.take().unwrap().finish().map(|t| t.inner)
+                },
                 Self::Zstd(encoder) => encoder.take().unwrap().finish(),
             }
+        }
+    }
+
+    impl<W: io::Write> Drop for CompressedWriter<'_, W> {
+        fn drop(&mut self) {
+            // `GzEncoder` writes its trailer on drop, which would make an unfinished file look complete.
+            if let Self::Gzip(Some(encoder)) = self {
+                encoder.get_mut().discard = true;
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use std::io::{self, Read, Write};
+
+        use super::CompressedWriter;
+
+        fn gzip_written(finish: bool) -> Vec<u8> {
+            let mut out = Vec::new();
+            let mut writer = CompressedWriter::gzip(&mut out, None);
+            writer.write_all(b"x\n1\n").unwrap();
+            writer.flush().unwrap();
+            if finish {
+                writer.finish().unwrap();
+            }
+            drop(writer);
+            out
+        }
+
+        #[test]
+        fn dropped_gzip_writer_leaves_no_trailer() {
+            let out = gzip_written(false);
+            assert!(!out.is_empty());
+            let err = flate2::read::GzDecoder::new(out.as_slice())
+                .read_to_end(&mut Vec::new())
+                .unwrap_err();
+            assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
+        }
+
+        struct FailOnce<'a> {
+            out: Vec<u8>,
+            fail: &'a std::cell::Cell<bool>,
+        }
+
+        impl Write for FailOnce<'_> {
+            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+                if self.fail.replace(false) {
+                    return Err(io::Error::other("write failed"));
+                }
+                self.out.extend_from_slice(buf);
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+
+        #[test]
+        fn failed_gzip_finish_leaves_no_trailer() {
+            let fail = std::cell::Cell::new(false);
+            let mut target = FailOnce {
+                out: Vec::new(),
+                fail: &fail,
+            };
+            let mut writer = CompressedWriter::gzip(&mut target, None);
+            writer.write_all(b"x\n1\n").unwrap();
+            writer.flush().unwrap();
+            fail.set(true);
+            assert!(writer.finish().is_err());
+            drop(writer);
+            let err = flate2::read::GzDecoder::new(target.out.as_slice())
+                .read_to_end(&mut Vec::new())
+                .unwrap_err();
+            assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
+        }
+
+        #[test]
+        fn finished_gzip_writer_is_complete() {
+            let out = gzip_written(true);
+            let mut decoded = Vec::new();
+            flate2::read::GzDecoder::new(out.as_slice())
+                .read_to_end(&mut decoded)
+                .unwrap();
+            assert_eq!(decoded, b"x\n1\n");
         }
     }
 }

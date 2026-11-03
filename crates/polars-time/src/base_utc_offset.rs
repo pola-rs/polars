@@ -13,7 +13,7 @@ pub fn base_utc_offset(
     time_zone: &Tz,
 ) -> DurationChunked {
     ca.phys
-        .apply_values(|t| {
+        .apply_nonnull_values_generic(DataType::Int64, |t| {
             let ndt = time_unit.timestamp_to_datetime(t);
             let dt = time_zone.from_utc_datetime(&ndt);
             dt.offset().base_utc_offset().num_milliseconds()

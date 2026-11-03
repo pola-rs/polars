@@ -175,6 +175,16 @@ pub struct RowGroupStats {
     /// The size in bytes of the column chunk's dictionary page as stored on disk
     /// (compressed), if it has one.
     pub dictionary_page_size: Option<u64>,
+    /// Whether some data pages aren't dictionary-encoded although the chunk has a
+    /// dictionary page. Arrow and parquet-mr switch to plain encoding once the
+    /// dictionary grows too large, so the dictionary then holds only part of the values.
+    /// `None` when the writer doesn't record page encodings; Polars doesn't.
+    pub dictionary_fallback: Option<bool>,
+    /// Combined length in bytes of all string or binary values in the column chunk.
+    /// Every occurrence counts, but nulls don't. `None` for other column types, or
+    /// when the writer didn't write size statistics. Arrow, parquet-rs, parquet-java
+    /// and Polars write them by default.
+    pub unencoded_byte_array_size: Option<u64>,
     /// The minimum and maximum value, typed as the column, or as its values for a
     /// categorical column. `None` when the row group doesn't record both exactly, or
     /// they can't be converted to that type.

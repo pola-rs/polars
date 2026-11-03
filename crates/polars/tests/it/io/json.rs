@@ -102,3 +102,24 @@ fn read_ndjson_with_trailing_newline() {
     .unwrap();
     assert!(expected.equals(&df));
 }
+
+#[test]
+fn write_ndjson_empty_chunk() -> PolarsResult<()> {
+    let mut df = df!("x" => [1i64, 2])?;
+    df.vstack_mut(&df!("x" => [3i64, 4])?)?;
+    df.vstack_mut(&df!("x" => [5i64, 6])?)?;
+    let mask = BooleanChunked::new("".into(), [true, true, false, false, true, true]);
+    let mut df = df.filter(&mask)?;
+    let chunk_lens = df.column("x")?.i64()?.chunk_lengths();
+    assert_eq!(chunk_lens.collect::<Vec<_>>(), [2, 0, 2]);
+
+    let mut buf = Vec::new();
+    JsonWriter::new(&mut buf)
+        .with_json_format(JsonFormat::JsonLines)
+        .finish(&mut df)?;
+    assert_eq!(
+        std::str::from_utf8(&buf).unwrap(),
+        "{\"x\":1}\n{\"x\":2}\n{\"x\":5}\n{\"x\":6}\n"
+    );
+    Ok(())
+}

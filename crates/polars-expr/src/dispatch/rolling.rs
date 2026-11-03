@@ -1,20 +1,13 @@
-use std::ops::BitAnd;
-
 use polars_arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
 use polars_core::error::PolarsResult;
 #[cfg(feature = "cov")]
-use polars_core::error::polars_bail;
-use polars_core::prelude::{
-    AnyValue, ChunkCast, Column, DataType, IntoColumn, NamedFrom, RollingOptionsFixedWindow,
-    TimeUnit,
-};
-use polars_core::scalar::Scalar;
+use polars_core::error::{polars_bail, polars_ensure};
+use polars_core::prelude::{Column, DataType, IntoColumn, RollingOptionsFixedWindow, TimeUnit};
 use polars_core::series::Series;
 #[cfg(feature = "cov")]
 use polars_plan::dsl::RollingCovOptions;
 use polars_plan::prelude::PlanCallback;
 use polars_time::prelude::SeriesOpsTime;
-use polars_utils::pl_str::PlSmallStr;
 
 fn roll_with_temporal_conversion<F: FnOnce(&Series) -> PolarsResult<Series>>(
     s: &Column,
@@ -113,116 +106,73 @@ pub(super) fn rolling_kurtosis(
 }
 
 #[cfg(feature = "cov")]
-fn det_count_x_y(window_size: usize, len: usize, dtype: &DataType) -> Series {
-    match dtype {
-        DataType::Float64 => {
-            let values = (0..len)
-                .map(|v| std::cmp::min(window_size, v + 1) as f64)
-                .collect::<Vec<_>>();
-            Series::new(PlSmallStr::EMPTY, values)
-        },
-        DataType::Float32 => {
-            let values = (0..len)
-                .map(|v| std::cmp::min(window_size, v + 1) as f32)
-                .collect::<Vec<_>>();
-            Series::new(PlSmallStr::EMPTY, values)
-        },
-        #[cfg(feature = "dtype-f16")]
-        DataType::Float16 => {
-            use num_traits::AsPrimitive;
-            use polars_utils::float16::pf16;
-            let values = (0..len)
-                .map(|v| std::cmp::min(window_size, v + 1))
-                .map(AsPrimitive::<pf16>::as_)
-                .collect::<Vec<_>>();
-            Series::new(PlSmallStr::EMPTY, values)
-        },
-        _ => unreachable!(),
-    }
-}
-
-#[cfg(feature = "cov")]
 pub(super) fn rolling_corr_cov(
     s: &[Column],
     rolling_options: RollingOptionsFixedWindow,
     cov_options: RollingCovOptions,
     is_corr: bool,
 ) -> PolarsResult<Column> {
-    let mut x = s[0].as_materialized_series().rechunk();
-    let mut y = s[1].as_materialized_series().rechunk();
-
-    let st = match polars_core::utils::try_get_supertype(x.dtype(), y.dtype())? {
-        dt if dt.is_float() => dt,
-        _ => DataType::Float64,
-    };
-
-    x = x.cast(&st)?;
-    y = y.cast(&st)?;
-    let dtype = x.dtype().clone();
-
-    let mean_x_y = (&x * &y)?.rolling_mean(rolling_options.clone())?;
-    let rolling_options_count = RollingOptionsFixedWindow {
-        window_size: rolling_options.window_size,
-        min_periods: 0,
-        ..Default::default()
-    };
-
-    let count_x_y = if (x.null_count() + y.null_count()) > 0 {
-        // mask out nulls on both sides before compute mean/var
-
-        let valids = x.is_not_null().bitand(y.is_not_null());
-        let valids_arr = valids.downcast_as_array();
-        let valids_bitmap = valids_arr.values();
-
-        unsafe {
-            let xarr = &mut x.chunks_mut()[0];
-            *xarr = xarr.with_validity(Some(valids_bitmap.clone()));
-            let yarr = &mut y.chunks_mut()[0];
-            *yarr = yarr.with_validity(Some(valids_bitmap.clone()));
-            x.compute_len();
-            y.compute_len();
-        }
-        valids
-            .cast(&dtype)
-            .unwrap()
-            .rolling_sum(rolling_options_count)?
-    } else {
-        det_count_x_y(rolling_options.window_size, x.len(), &dtype)
-    };
-
-    let mean_x = x.rolling_mean(rolling_options.clone())?;
-    let mean_y = y.rolling_mean(rolling_options.clone())?;
+    use polars_arrow::compute::utils::combine_validities_and;
+    use polars_compute::rolling::{rolling_corr, rolling_cov};
+    #[cfg(feature = "dtype-f16")]
+    use polars_core::datatypes::Float16Type;
+    use polars_core::datatypes::{Float32Type, Float64Type};
+    use polars_core::with_match_physical_float_polars_type;
 
     if is_corr && cov_options.ddof.is_some() {
         polars_bail!(InvalidOperation: "options.ddof must be None for rolling_corr");
     }
-    let ddof_value = cov_options.ddof.unwrap_or(1);
-    let ddof = Series::new(
-        PlSmallStr::EMPTY,
-        &[AnyValue::from(ddof_value).cast(&dtype)],
+    let RollingOptionsFixedWindow {
+        window_size,
+        min_periods,
+        ..
+    } = rolling_options;
+    polars_ensure!(
+        min_periods <= window_size,
+        InvalidOperation: "`min_periods` ({}) should be <= `window_size` ({})",
+        min_periods, window_size
     );
 
-    let numerator = ((mean_x_y - (mean_x * mean_y).unwrap()).unwrap()
-        * (count_x_y.clone() / (count_x_y - ddof).unwrap()).unwrap())
-    .unwrap();
-
-    if is_corr {
-        let var_x = x.rolling_var(rolling_options.clone())?;
-        let var_y = y.rolling_var(rolling_options)?;
-
-        let base = (var_x * var_y).unwrap();
-        let sc = Scalar::new(
-            base.dtype().clone(),
-            AnyValue::Float64(0.5).cast(&dtype).into_static(),
-        );
-        let denominator = super::pow::pow(&mut [base.into_column(), sc.into_column("".into())])
-            .unwrap()
-            .take_materialized_series();
-
-        Ok((numerator / denominator)?.into_column())
+    let st = match polars_core::utils::try_get_supertype(s[0].dtype(), s[1].dtype())? {
+        dt if dt.is_float() => dt,
+        _ => DataType::Float64,
+    };
+    let len = if s[0].len() == 1 {
+        s[1].len()
     } else {
-        Ok(numerator.into_column())
-    }
+        s[0].len()
+    };
+    let prepare = |c: &Column| -> PolarsResult<Series> {
+        let c = match c.len() {
+            n if n == len => c.clone(),
+            1 => c.new_from_index(0, len),
+            n => {
+                let name = if is_corr {
+                    "rolling_corr"
+                } else {
+                    "rolling_cov"
+                };
+                polars_bail!(length_mismatch = name, n, len)
+            },
+        };
+        Ok(c.as_materialized_series().cast(&st)?.rechunk())
+    };
+    let x = prepare(&s[0])?;
+    let y = prepare(&s[1])?;
+
+    with_match_physical_float_polars_type!(&st, |$T| {
+        let x_arr = x.unpack::<$T>()?.downcast_as_array();
+        let y_arr = y.unpack::<$T>()?.downcast_as_array();
+        let validity = combine_validities_and(x_arr.validity(), y_arr.validity());
+        let (x_vals, y_vals) = (x_arr.values().as_slice(), y_arr.values().as_slice());
+        let out = if is_corr {
+            rolling_corr(x_vals, y_vals, validity.as_ref(), window_size, min_periods)
+        } else {
+            let ddof = cov_options.ddof.unwrap_or(1);
+            rolling_cov(x_vals, y_vals, validity.as_ref(), window_size, min_periods, ddof)
+        };
+        Series::try_from((x.name().clone(), out)).map(Column::from)
+    })
 }
 
 pub fn rolling_map(

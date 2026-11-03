@@ -609,6 +609,68 @@ def test_merge_join_exprs() -> None:
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
 
 
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
+@pytest.mark.parametrize("maintain_order", ["none", "left_right", "right_left"])
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize("on", [["key"], ["key", "key_ext"]])
+def test_merge_join_many_partitions(
+    how: JoinStrategy,
+    maintain_order: MaintainOrderJoin,
+    descending: bool,
+    nulls_last: bool,
+    nulls_equal: bool,
+    on: list[str],
+) -> None:
+    # Small morsels split each window into many partitions, and the long runs of 0 and
+    # null are split again on the build side. The left keys go on past the right ones.
+    left_keys = (
+        [None] * 20
+        + [0] * 25
+        + [1, 2, 2, 3, 5, 5, 5, 8]
+        + [9] * 12
+        + list(range(11, 60))
+    )
+    right_keys = [None] * 18 + [0] * 20 + [2, 3, 3, 4, 5, 9, 9, 10, 11, 11]
+
+    def sorted_lf(keys: list[int | None], name: str) -> pl.LazyFrame:
+        return (
+            pl.LazyFrame(
+                {"key": keys, name: range(len(keys))},
+                schema_overrides={"key": pl.Int64},
+            )
+            .with_columns(
+                key_ext=pl.when(pl.col(name) % 7 == 0)
+                .then(None)
+                .otherwise(pl.col("key") % 3)
+            )
+            .sort(on, descending=descending, nulls_last=nulls_last, maintain_order=True)
+            .set_sorted(on, descending=descending, nulls_last=nulls_last)
+        )
+
+    q = sorted_lf(left_keys, "a").join(
+        sorted_lf(right_keys, "b"),
+        on=on,
+        how=how,
+        nulls_equal=nulls_equal,
+        maintain_order=maintain_order,
+    )
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "merge-join" in dot, "merge-join not used in plan"
+
+    expected = q.collect(engine="in-memory")
+    with pl.Config(streaming_chunk_size=4):
+        actual = q.collect(engine="streaming")
+        actual_all, actual_head = pl.collect_all([q, q.head(3)], engine="streaming")
+    check_row_order = maintain_order != "none"
+    assert_frame_equal(actual, expected, check_row_order=check_row_order)
+    assert_frame_equal(actual_all, expected, check_row_order=check_row_order)
+    assert actual_head.height == 3
+    if check_row_order:
+        assert_frame_equal(actual_head, expected.head(3))
+
+
 @pytest.mark.parametrize("df_level_hint", [False, True])
 @pytest.mark.parametrize("left_descending", [False, True])
 @pytest.mark.parametrize("right_descending", [False, True])

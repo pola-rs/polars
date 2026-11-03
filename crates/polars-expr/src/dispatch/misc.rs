@@ -1,12 +1,8 @@
 #[cfg(feature = "approx_quantile")]
 use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure, polars_err};
-use polars_core::prelude::row_encode::{
-    _get_rows_encoded_ca, _get_rows_encoded_ca_unordered, encode_rows_vertical_par_ordered,
-    encode_rows_vertical_par_unordered,
-};
+use polars_core::prelude::row_encode::encode_rows_with_layout_par;
 use polars_core::prelude::*;
-use polars_core::runtime::RAYON;
 use polars_core::scalar::Scalar;
 use polars_core::series::Series;
 use polars_core::series::ops::NullBehavior;
@@ -22,10 +18,11 @@ use polars_plan::dsl::ReshapeDimension;
 use polars_plan::plans::FusedOperator;
 #[cfg(feature = "cov")]
 use polars_plan::plans::IRCorrelationMethod;
-use polars_plan::plans::{AExprSorted, DynamicPredWeakRef, MinMaxByOrder, RowEncodingVariant};
+use polars_plan::plans::{
+    AExprSorted, DynamicPredWeakRef, MinMaxByOrder, RowEncodingOutputType, RowEncodingVariant,
+};
 #[cfg(feature = "cutqcut")]
 use polars_plan::plans::{IRBinMethod, IRBinOptions};
-use polars_row::RowEncodingOptions;
 use polars_utils::IdxSize;
 use polars_utils::broadcast::broadcast_len;
 use polars_utils::pl_str::PlSmallStr;
@@ -53,9 +50,11 @@ pub(super) fn approx_quantile_sketch(
     s: &Column,
     method: &ApproxQuantileMethod,
     error: f64,
+    failure_probability: f64,
 ) -> PolarsResult<Column> {
     let input = s.as_materialized_series_maintain_scalar();
-    let out = polars_ops::prelude::approx_quantile_sketch(&input, error, method)?;
+    let out =
+        polars_ops::prelude::approx_quantile_sketch(&input, method, error, failure_probability)?;
     Ok(out.into_column())
 }
 
@@ -207,42 +206,12 @@ pub fn quantile(s: &[Column], method: QuantileMethod) -> PolarsResult<Column> {
     assert!(s.len() == 2);
     let input = &s[0];
     let quantile = s[1].as_materialized_series();
-    polars_ensure!(!quantile.is_empty(), ComputeError:
-        "the 'quantile' expression input should produce a single quantile or a list of quantiles, \
-        got an empty input"
-    );
-    polars_ensure!(quantile.len() == 1, ComputeError:
-        "polars does not support varying quantiles yet, \
-        make sure the 'quantile' expression input produces a single quantile or a list of quantiles"
-    );
-
-    match quantile.dtype() {
-        DataType::List(_) => {
-            let list = quantile.list()?;
-            let inner_s = list.get_as_series(0).ok_or_else(
-                || polars_err!(ComputeError: "quantile expression contains null values"),
-            )?;
-            if inner_s.has_nulls() {
-                polars_bail!(ComputeError: "quantile expression contains null values");
-            }
-
-            let v: Vec<f64> = inner_s
-                .cast(&DataType::Float64)?
-                .f64()?
-                .into_no_null_iter()
-                .collect();
-
-            input
-                .quantiles_reduce(&v, method)
-                .map(|sc| sc.into_column(input.name().clone()))
-        },
-        _ => {
-            let q: f64 = quantile.get(0).unwrap().try_extract()?;
-            input
-                .quantile_reduce(q, method)
-                .map(|sc| sc.into_column(input.name().clone()))
-        },
-    }
+    let quantiles = extract_quantiles(quantile)?;
+    let out = match quantile.dtype() {
+        DataType::List(_) => input.quantiles_reduce(&quantiles, method)?,
+        _ => input.quantile_reduce(quantiles[0], method)?,
+    };
+    Ok(out.into_column(input.name().clone()))
 }
 
 #[cfg(feature = "mode")]
@@ -1236,12 +1205,13 @@ pub(super) fn ewm_sum_by(
     .map(Column::from)
 }
 
-const ROW_ENCODE_PAR_MIN_ROWS: usize = 1 << 16;
-
 pub fn row_encode(
     c: &mut [Column],
     dts: Vec<DataType>,
     variant: RowEncodingVariant,
+    output: RowEncodingOutputType,
+    encode_nulls: Option<Vec<bool>>,
+    propagate_nulls: bool,
 ) -> PolarsResult<Column> {
     assert_eq!(c.len(), dts.len());
 
@@ -1258,42 +1228,10 @@ pub fn row_encode(
         c.broadcast_in_place_to(length)?;
     }
 
-    let parallel = length >= ROW_ENCODE_PAR_MIN_ROWS && RAYON.current_num_threads() > 1;
-    match variant {
-        RowEncodingVariant::Unordered if parallel => {
-            encode_rows_vertical_par_unordered(c).map(|ca| ca.rechunk().into_owned())
-        },
-        RowEncodingVariant::Unordered => _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, c),
-        RowEncodingVariant::Ordered {
-            descending,
-            nulls_last,
-            broadcast_nulls,
-        } => {
-            let descending = descending.unwrap_or_else(|| vec![false; c.len()]);
-            let nulls_last = nulls_last.unwrap_or_else(|| vec![false; c.len()]);
-            let broadcast_nulls = broadcast_nulls.unwrap_or(false);
-
-            assert_eq!(c.len(), descending.len());
-            assert_eq!(c.len(), nulls_last.len());
-
-            if parallel {
-                encode_rows_vertical_par_ordered(c, &descending, &nulls_last, broadcast_nulls)
-                    .map(|ca| ca.rechunk().into_owned())
-            } else {
-                _get_rows_encoded_ca(
-                    PlSmallStr::EMPTY,
-                    c,
-                    &descending,
-                    &nulls_last,
-                    broadcast_nulls,
-                )
-            }
-        },
-    }
-    .map(|ca| {
-        ca.with_name(PlSmallStr::from_static("row_encoded"))
-            .into_column()
-    })
+    let name = PlSmallStr::from_static("row_encoded");
+    let layout = output.layout(&dts, &variant, encode_nulls.as_deref())?;
+    let rows = encode_rows_with_layout_par(c, &layout, propagate_nulls)?.rechunk();
+    Ok(rows.with_name(name).into_column())
 }
 
 #[cfg(feature = "dtype-struct")]
@@ -1301,42 +1239,16 @@ pub fn row_decode(
     c: &mut [Column],
     fields: Vec<Field>,
     variant: RowEncodingVariant,
+    output: RowEncodingOutputType,
+    encode_nulls: Option<Vec<bool>>,
 ) -> PolarsResult<Column> {
     use polars_core::prelude::row_encode::row_encoding_decode;
 
     assert_eq!(c.len(), 1);
-    let ca = c[0].binary_offset()?;
-
-    let mut opts = Vec::with_capacity(fields.len());
-    match variant {
-        RowEncodingVariant::Unordered => opts.extend(std::iter::repeat_n(
-            RowEncodingOptions::new_unsorted(),
-            fields.len(),
-        )),
-        RowEncodingVariant::Ordered {
-            descending,
-            nulls_last,
-            broadcast_nulls,
-        } => {
-            let descending = descending.unwrap_or_else(|| vec![false; fields.len()]);
-            let nulls_last = nulls_last.unwrap_or_else(|| vec![false; fields.len()]);
-            if broadcast_nulls.is_some() {
-                polars_bail!(InvalidOperation: "broadcast_nulls is not supported for row_decode.");
-            }
-
-            assert_eq!(fields.len(), descending.len());
-            assert_eq!(fields.len(), nulls_last.len());
-
-            opts.extend(
-                descending
-                    .into_iter()
-                    .zip(nulls_last)
-                    .map(|(d, n)| RowEncodingOptions::new_sorted(d, n)),
-            )
-        },
-    }
-
-    row_encoding_decode(ca, &fields, &opts).map(IntoColumn::into_column)
+    let dtypes: Vec<DataType> = fields.iter().map(|f| f.dtype().clone()).collect();
+    let layout = output.layout(&dtypes, &variant, encode_nulls.as_deref())?;
+    row_encoding_decode(c[0].as_materialized_series(), &fields, &layout)
+        .map(IntoColumn::into_column)
 }
 
 pub fn repeat(args: &[Column]) -> PolarsResult<Column> {

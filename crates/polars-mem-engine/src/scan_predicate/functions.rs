@@ -647,6 +647,7 @@ where
         include_file_paths: _,
         deletion_files,
         table_statistics,
+        hive_partitions: _,
         row_count,
         source_sizes: _,
         resolve_heavy_sources: _,

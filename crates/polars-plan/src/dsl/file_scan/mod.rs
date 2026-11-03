@@ -667,6 +667,28 @@ impl std::ops::Deref for TableStatistics {
     }
 }
 
+/// Partition values with one row per source. These feed the same machinery as hive
+/// partitions parsed from paths, but need not come from paths, e.g. Delta *must* read
+/// them from its log.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub struct HivePartitions(pub Arc<DataFrame>);
+
+impl PartialEq for HivePartitions {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for HivePartitions {}
+
+impl Hash for HivePartitions {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_usize(Arc::as_ptr(&self.0) as *const () as usize);
+    }
+}
+
 /// Scan arguments shared across different scan types.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -700,6 +722,8 @@ pub struct UnifiedScanArgs {
 
     pub deletion_files: Option<DeletionFilesList>,
     pub table_statistics: Option<TableStatistics>,
+    /// Used instead of parsing hive partitions from the source paths.
+    pub hive_partitions: Option<HivePartitions>,
     /// Stores (physical, deleted) row counts of the table if known upfront (e.g. for Iceberg).
     /// This allows for row-count queries to succeed without scanning all files.
     ///
@@ -728,12 +752,14 @@ impl UnifiedScanArgs {
 
     /// Whether these arguments hold state that only applies to this scan, so the scan can never
     /// be read as part of a scan over more sources. A row index and a slice restart for every
-    /// scan, and deletion files, table statistics and default values are indexed by source.
+    /// scan, and deletion files, table statistics, hive partitions and default values are indexed
+    /// by source.
     pub(crate) fn has_per_scan_state(&self) -> bool {
         self.row_index.is_some()
             || self.pre_slice.is_some()
             || self.deletion_files.is_some()
             || self.table_statistics.is_some()
+            || self.hive_partitions.is_some()
             || self.default_values.is_some()
     }
 
@@ -766,6 +792,7 @@ impl UnifiedScanArgs {
             include_file_paths,
             deletion_files: _,
             table_statistics: _,
+            hive_partitions: _,
             row_count: _,
             source_sizes: _,
             resolve_heavy_sources,
@@ -840,6 +867,7 @@ impl Default for UnifiedScanArgs {
             include_file_paths: None,
             deletion_files: None,
             table_statistics: None,
+            hive_partitions: None,
             row_count: None,
             source_sizes: None,
             resolve_heavy_sources: None,

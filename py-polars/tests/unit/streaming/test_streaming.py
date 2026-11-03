@@ -15,7 +15,7 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars._typing import JoinStrategy
+    from polars._typing import JoinStrategy, PolarsIntegerType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -348,6 +348,21 @@ def test_elementwise_identification_in_ternary_15767(tmp_path: Path) -> None:
     )
 
 
+def test_replace_literal_mapping_is_elementwise_30404() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3], "d": [10, 20, 30]}).select(
+        b=pl.col("a").replace({1: 100}),
+        c=pl.col("a").replace_strict({1: 100}, default=pl.col("d")),
+    )
+    plan = lf.show_graph(
+        engine="streaming", plan_stage="physical", raw_output=True, show=False
+    )
+    assert isinstance(plan, str)
+    assert "columnar-function" not in plan
+
+    expected = pl.DataFrame({"b": [100, 2, 3], "c": [100, 20, 30]})
+    assert_frame_equal(lf.collect(engine="streaming"), expected)
+
+
 def test_streaming_temporal_17669() -> None:
     df = (
         pl.LazyFrame({"a": [1, 2, 3]}, schema={"a": pl.Datetime("us")})
@@ -468,3 +483,29 @@ def test_log_metrics_reports_query_io_time(
     assert " IO active: " in header
     assert " rx, " in header
     assert " tx), detailed breakdown:" in header
+
+
+@pytest.mark.parametrize("dtype", [pl.Int64, pl.UInt64, pl.Int128, pl.Int32])
+@pytest.mark.parametrize(
+    ("length", "height"),
+    [(pl.len(), 4), (pl.col("a").count(), 3)],
+    ids=["len", "count"],
+)
+def test_streaming_int_range_over_length(
+    dtype: PolarsIntegerType, length: pl.Expr, height: int
+) -> None:
+    q = pl.LazyFrame({"a": [1, None, 3, 4]}).select(
+        pl.int_range(0, length, dtype=dtype)
+    )
+    plan = q.show_graph(
+        engine="streaming", plan_stage="physical", raw_output=True, show=False
+    )
+    assert isinstance(plan, str)
+    # A strict cast of the length to a narrower dtype fails on one more row than a
+    # cast of the row index would, so that one keeps evaluating `int_range`.
+    is_row_index = dtype != pl.Int32
+    assert ("with-row-index" in plan) == is_row_index
+    assert ("columnar-function" in plan) != is_row_index
+
+    expected = pl.DataFrame({"literal": range(height)}, schema={"literal": dtype})
+    assert_frame_equal(q.collect(), expected)

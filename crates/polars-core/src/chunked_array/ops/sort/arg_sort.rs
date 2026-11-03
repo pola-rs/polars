@@ -273,7 +273,7 @@ pub(crate) fn arg_sort_row_fmt(
     parallel: bool,
 ) -> PolarsResult<IdxCa> {
     let rows_encoded = _get_rows_encoded(by, &[descending], &[nulls_last])?;
-    let mut items: Vec<_> = rows_encoded.iter().enumerate_idx().collect();
+    let mut items: Vec<_> = rows_encoded.values_iter().enumerate_idx().collect();
 
     if parallel {
         RAYON.install(|| items.par_sort_by(|a, b| a.1.cmp(b.1)));

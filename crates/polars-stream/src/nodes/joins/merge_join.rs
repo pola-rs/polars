@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::ops::RangeBounds;
+use std::ops::{Range, RangeBounds};
 
 use polars_async::executor::{JoinHandle, TaskMetricAggregator, TaskPriority, TaskScope};
 use polars_async::primitives::distributor_channel::{self, distributor_channel};
@@ -55,14 +55,6 @@ impl MergeJoinParams {
             MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => false,
             MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => true,
             MaintainOrderJoin::None => self.args.how != JoinType::Right,
-        }
-    }
-
-    pub fn preserve_order_probe(&self) -> bool {
-        match &self.args.maintain_order {
-            MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => !self.left_is_build(),
-            MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => self.left_is_build(),
-            MaintainOrderJoin::None => false,
         }
     }
 
@@ -328,7 +320,7 @@ impl ComputeNode for MergeJoinNode {
                     scope.spawn_task(TaskPriority::High, async move {
                         let mut arenas = ComputeJoinArenas::default();
                         while let Ok((build, probe, seq, source_token)) = recv.recv().await {
-                            compute_join_and_send(
+                            let output_open = compute_join_and_send(
                                 build,
                                 probe,
                                 seq,
@@ -339,6 +331,9 @@ impl ComputeNode for MergeJoinNode {
                                 unmatched_send.clone(),
                             )
                             .await?;
+                            if !output_open {
+                                break;
+                            }
                         }
                         Ok(())
                     })
@@ -445,6 +440,7 @@ async fn find_mergeable_task(
     }
 }
 
+/// Returns `false` if the output port is closed.
 #[allow(clippy::too_many_arguments)]
 async fn compute_join_and_send(
     build: SpillFrameSearchBuffer,
@@ -455,7 +451,7 @@ async fn compute_join_and_send(
     arenas: &mut ComputeJoinArenas,
     send: &mut PortSender,
     unmatched_send: tokio::sync::mpsc::Sender<(MorselSeq, DataFrame)>,
-) -> PolarsResult<()> {
+) -> PolarsResult<bool> {
     let morsel_size = get_ideal_morsel_size();
     let wait_group = WaitGroup::default();
 
@@ -533,7 +529,7 @@ async fn compute_join_and_send(
             let mut morsel = Morsel::new_unregistered(df, seq, source_token.clone());
             morsel.set_consume_token(wait_group.token());
             if send.send(morsel).await.is_err() {
-                return Ok(());
+                return Ok(false);
             };
             wait_group.wait().await;
         }
@@ -557,7 +553,7 @@ async fn compute_join_and_send(
                 let mut morsel = Morsel::new_unregistered(df_unmatched, seq, source_token.clone());
                 morsel.set_consume_token(wait_group.token());
                 if send.send(morsel).await.is_err() {
-                    return Ok(());
+                    return Ok(false);
                 }
             } else {
                 unmatched_send.send((seq, df_unmatched)).await.unwrap();
@@ -565,7 +561,7 @@ async fn compute_join_and_send(
             wait_group.wait().await;
         }
     }
-    Ok(())
+    Ok(true)
 }
 
 #[derive(Clone, Debug)]
@@ -587,7 +583,13 @@ async fn find_mergeable(
         };
     assert!(!build_mergeable.is_empty() || !probe_mergeable.is_empty());
 
-    let partitions = find_mergeable_partition(build_mergeable, probe_mergeable, fmp)?;
+    let partitions = find_mergeable_partition(
+        &build_mergeable,
+        &probe_mergeable,
+        fmp.params,
+        get_ideal_morsel_size(),
+    )
+    .await;
     Ok(Ok(partitions))
 }
 
@@ -611,36 +613,119 @@ async fn find_mergeable_limiting(
     Ok(mergeable)
 }
 
-fn find_mergeable_partition(
-    build: SpillFrameSearchBuffer,
-    probe: SpillFrameSearchBuffer,
-    fmp: FindMergeableParams<'_>,
-) -> PolarsResult<UnitVec<(SpillFrameSearchBuffer, SpillFrameSearchBuffer)>> {
-    let morsel_size = get_ideal_morsel_size();
+/// Splits mergeable `build` and `probe` buffers into partitions that can be joined
+/// independently.
+///
+/// Both sides are cut at the same keys, sampled every `morsel_size` rows, so every key
+/// lives in one partition and every row is in one partition. A partition holding a single
+/// matching key with more than a morsel of output has its build side split further, each
+/// part getting the same probe rows.
+async fn find_mergeable_partition(
+    build: &SpillFrameSearchBuffer,
+    probe: &SpillFrameSearchBuffer,
+    params: &MergeJoinParams,
+    morsel_size: usize,
+) -> UnitVec<(SpillFrameSearchBuffer, SpillFrameSearchBuffer)> {
+    let build_params = params.build_params();
+    let probe_params = params.probe_params();
 
-    if fmp.params.preserve_order_probe() || fmp.params.probe_params().emit_unmatched {
-        return Ok(UnitVec::from([(build, probe)]));
+    let mut cut_keys = Vec::new();
+    for idx in (morsel_size..build.height()).step_by(morsel_size) {
+        cut_keys.push(get_key(build, build_params, params, idx).await);
+    }
+    for idx in (morsel_size..probe.height()).step_by(morsel_size) {
+        cut_keys.push(get_key(probe, probe_params, params, idx).await);
+    }
+    cut_keys.sort_by(|l, r| keys_cmp(l, r, params));
+    cut_keys.dedup_by(|l, r| keys_cmp(l, r, params).is_eq());
+
+    // Cut before and after the rows of every key, so that a long run of one key gets its
+    // own partition.
+    let mut cuts = vec![(0, 0)];
+    for key in &cut_keys {
+        let &(build_prev, probe_prev) = cuts.last().unwrap();
+        let lower = (
+            binary_search_lower(build, key, build_prev.., params, build_params).await,
+            binary_search_lower(probe, key, probe_prev.., params, probe_params).await,
+        );
+        let upper = (
+            binary_search_upper(build, key, lower.0.., params, build_params).await,
+            binary_search_upper(probe, key, lower.1.., params, probe_params).await,
+        );
+        for cut in [lower, upper] {
+            if cuts.last() != Some(&cut) {
+                cuts.push(cut);
+            }
+        }
+    }
+    if cuts.last() != Some(&(build.height(), probe.height())) || cuts.len() == 1 {
+        cuts.push((build.height(), probe.height()));
     }
 
-    let est_out_rows = build.height() * probe.height() + build.height() + probe.height();
-    let normal_out_rows = morsel_size.pow(2);
-    let partition_count = est_out_rows.div_ceil(normal_out_rows);
-    if partition_count <= 1 {
-        return Ok(UnitVec::from([(build, probe)]));
+    // Every build part copies its probe rows, so give it enough build rows to keep that copy
+    // small next to its output.
+    const MIN_SPLIT_BUILD_ROWS: usize = 16;
+
+    let mut partitions = UnitVec::with_capacity(cuts.len() - 1);
+    for window in cuts.windows(2) {
+        let [(build_start, probe_start), (build_end, probe_end)] = window else {
+            unreachable!()
+        };
+        let build_len = build_end - build_start;
+        let probe_len = probe_end - probe_start;
+        let probe_part = probe.slice(*probe_start, probe_len);
+
+        let split_build = build_len > MIN_SPLIT_BUILD_ROWS
+            && build_len.saturating_mul(probe_len) > morsel_size
+            && !probe_params.emit_unmatched
+            && is_single_matching_key(
+                build,
+                *build_start..*build_end,
+                probe,
+                *probe_start..*probe_end,
+                params,
+            )
+            .await;
+        if !split_build {
+            partitions.push((build.slice(*build_start, build_len), probe_part));
+            continue;
+        }
+
+        let chunk_size = (morsel_size / probe_len).max(MIN_SPLIT_BUILD_ROWS);
+        for offset in (*build_start..*build_end).step_by(chunk_size) {
+            let len = chunk_size.min(build_end - offset);
+            partitions.push((build.slice(offset, len), probe_part.clone()));
+        }
     }
+    partitions
+}
 
-    let chunk_size = build.height().div_ceil(partition_count);
-    let mut partitions = UnitVec::with_capacity(partition_count);
-
-    // Always make sure that there is at least one partition, even if the build side is empty.
-    partitions.push((build.clone().slice(0, chunk_size), probe.clone()));
-    let mut offset = chunk_size;
-    while offset < build.height() {
-        partitions.push((build.clone().slice(offset, chunk_size), probe.clone()));
-        offset += chunk_size;
+/// Whether the given non-empty build and probe rows all have the same key, and that key can
+/// match.
+async fn is_single_matching_key(
+    build: &SpillFrameSearchBuffer,
+    build_rows: Range<usize>,
+    probe: &SpillFrameSearchBuffer,
+    probe_rows: Range<usize>,
+    params: &MergeJoinParams,
+) -> bool {
+    let build_params = params.build_params();
+    let probe_params = params.probe_params();
+    let key = get_key(build, build_params, params, build_rows.start).await;
+    for (buf, sp, idx) in [
+        (build, build_params, build_rows.end - 1),
+        (probe, probe_params, probe_rows.start),
+        (probe, probe_params, probe_rows.end - 1),
+    ] {
+        if keys_cmp(&key, &get_key(buf, sp, params, idx).await, params).is_ne() {
+            return false;
+        }
     }
-
-    Ok(partitions)
+    // Row-encoded keys are read past their validity above.
+    let is_null = unsafe { build.get_unchecked(build_params.key_col(), build_rows.start) }
+        .await
+        .is_null();
+    params.args.nulls_equal || !is_null
 }
 
 async fn find_mergeable_search(
@@ -816,4 +901,171 @@ async fn binary_search_upper<R: RangeBounds<usize>>(
 
 fn keys_cmp(lhs: &AnyValue, rhs: &AnyValue, params: &MergeJoinParams) -> Ordering {
     reorder_cmp(lhs, rhs, params.key_descending, params.key_nulls_last)
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_core::runtime::ASYNC;
+    use polars_ooc::SpillFrame;
+
+    use super::*;
+
+    const MORSEL_SIZE: usize = 8;
+
+    type Keys = Vec<Option<i64>>;
+
+    fn buffer(keys: &[Option<i64>]) -> SpillFrameSearchBuffer {
+        let schema = Arc::new(Schema::from_iter([Field::new("k".into(), DataType::Int64)]));
+        let mut buf = SpillFrameSearchBuffer::empty_with_schema(
+            schema,
+            RandomSpillContext::new("test".into(), None),
+        );
+        for chunk in keys.chunks(5) {
+            let df = df!("k" => chunk).unwrap();
+            ASYNC.block_on(buf.push_sf(SpillFrame::new_unregistered(df)));
+        }
+        buf
+    }
+
+    fn params(how: JoinType, nulls_equal: bool) -> MergeJoinParams {
+        let side = |emit_unmatched| MergeJoinSideParams {
+            on: vec!["k".into()],
+            tmp_key_col: None,
+            emit_unmatched,
+        };
+        let mut args = JoinArgs::new(how.clone());
+        args.nulls_equal = nulls_equal;
+        MergeJoinParams {
+            left: side(matches!(how, JoinType::Left | JoinType::Full)),
+            right: side(matches!(how, JoinType::Right | JoinType::Full)),
+            output_schema: Arc::new(Schema::default()),
+            key_descending: false,
+            key_nulls_last: true,
+            keys_row_encoded: false,
+            args,
+        }
+    }
+
+    fn keys(buf: &SpillFrameSearchBuffer) -> Keys {
+        let df = ASYNC.block_on(buf.clone().into_df());
+        df.column("k").unwrap().i64().unwrap().iter().collect()
+    }
+
+    fn partition(
+        build: &[Option<i64>],
+        probe: &[Option<i64>],
+        params: &MergeJoinParams,
+    ) -> Vec<(Keys, Keys)> {
+        let partitions = ASYNC.block_on(find_mergeable_partition(
+            &buffer(build),
+            &buffer(probe),
+            params,
+            MORSEL_SIZE,
+        ));
+        partitions
+            .iter()
+            .map(|(build, probe)| (keys(build), keys(probe)))
+            .collect()
+    }
+
+    fn matches(build: &[Option<i64>], probe: &[Option<i64>], nulls_equal: bool) -> usize {
+        let mut count = 0;
+        for b in build {
+            for p in probe {
+                count += usize::from(b == p && (nulls_equal || b.is_some()));
+            }
+        }
+        count
+    }
+
+    #[test]
+    fn test_partition_cuts_both_sides_at_shared_keys() {
+        for descending in [false, true] {
+            // Key i appears i % 3 + 1 times on the build side and i % 2 + 1 times on the
+            // probe side.
+            let mut build: Vec<_> = (0..200)
+                .flat_map(|i| vec![Some(i); i as usize % 3 + 1])
+                .collect();
+            let mut probe: Vec<_> = (50..300)
+                .flat_map(|i| vec![Some(i); i as usize % 2 + 1])
+                .collect();
+            let mut params = params(JoinType::Inner, false);
+            if descending {
+                build.reverse();
+                probe.reverse();
+                params.key_descending = true;
+            }
+            let partitions = partition(&build, &probe, &params);
+
+            let all_build: Vec<_> = partitions.iter().flat_map(|(b, _)| b.clone()).collect();
+            let all_probe: Vec<_> = partitions.iter().flat_map(|(_, p)| p.clone()).collect();
+            assert_eq!(all_build, build);
+            assert_eq!(all_probe, probe);
+
+            let max_part = MORSEL_SIZE + 3;
+            for (b, p) in &partitions {
+                assert!(b.len() <= max_part && p.len() <= max_part);
+            }
+            assert!(partitions.len() <= 2 * (build.len() + probe.len()) / MORSEL_SIZE + 2);
+
+            // Every key is in one partition only.
+            let key_ranges: Vec<_> = partitions
+                .iter()
+                .filter_map(|(b, p)| Some((b.iter().chain(p).min()?, b.iter().chain(p).max()?)))
+                .collect();
+            for pair in key_ranges.windows(2) {
+                let [(min_0, max_0), (min_1, max_1)] = pair else {
+                    unreachable!()
+                };
+                assert!(if descending {
+                    min_0 > max_1
+                } else {
+                    max_0 < min_1
+                });
+            }
+        }
+    }
+
+    #[test]
+    fn test_partition_splits_hot_key() {
+        let mut build = vec![Some(0); 200];
+        build.push(Some(1));
+        let mut probe = vec![Some(0); 150];
+        probe.push(Some(1));
+        let partitions = partition(&build, &probe, &params(JoinType::Inner, false));
+
+        let found: usize = partitions.iter().map(|(b, p)| matches(b, p, false)).sum();
+        assert_eq!(found, matches(&build, &probe, false));
+        let probe_rows: usize = partitions.iter().map(|(_, p)| p.len()).sum();
+        assert!(probe_rows <= matches(&build, &probe, false) + probe.len());
+        assert!(partitions.len() > 2);
+    }
+
+    #[test]
+    fn test_partition_does_not_split_hot_key_when_probe_emits_unmatched() {
+        let build = vec![Some(0); 200];
+        let probe = vec![Some(0); 150];
+        let partitions = partition(&build, &probe, &params(JoinType::Full, false));
+        let probe_rows: usize = partitions.iter().map(|(_, p)| p.len()).sum();
+        assert_eq!(probe_rows, probe.len());
+    }
+
+    #[test]
+    fn test_partition_does_not_split_null_run() {
+        let mut build = vec![Some(1), Some(2), Some(3)];
+        build.extend(vec![None; 100]);
+        let mut probe = vec![Some(2)];
+        probe.extend(vec![None; 100]);
+
+        let partitions = partition(&build, &probe, &params(JoinType::Inner, false));
+        let probe_rows: usize = partitions.iter().map(|(_, p)| p.len()).sum();
+        assert_eq!(probe_rows, probe.len());
+        let found: usize = partitions.iter().map(|(b, p)| matches(b, p, false)).sum();
+        assert_eq!(found, 1);
+
+        let partitions = partition(&build, &probe, &params(JoinType::Inner, true));
+        let found: usize = partitions.iter().map(|(b, p)| matches(b, p, true)).sum();
+        assert_eq!(found, matches(&build, &probe, true));
+        assert!(partitions.len() > 2);
+    }
 }

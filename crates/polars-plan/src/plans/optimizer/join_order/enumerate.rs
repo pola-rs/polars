@@ -447,6 +447,7 @@ mod tests {
                 fused_predicate: None,
             },
             runtime_filters: Vec::new(),
+            estimated_rows: None,
         })
     }
 

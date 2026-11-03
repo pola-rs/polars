@@ -37,6 +37,12 @@ pub(super) fn set_join_build_sides(
         else {
             continue;
         };
+        if options.args.how.is_semi_anti() {
+            if options.args.build_side.is_none() {
+                set_estimated_rows(node, ir_arena, expr_arena, &mut stats);
+            }
+            continue;
+        }
         if options.args.build_side.is_some()
             || options.args.maintain_order != MaintainOrderJoin::None
             || !(options.args.how.is_equi() || options.args.how.is_cross())
@@ -58,6 +64,35 @@ pub(super) fn set_join_build_sides(
         };
         Arc::make_mut(options).args.build_side = Some(side);
     }
+}
+
+/// Store the estimated rows of both inputs of a semi or anti join, which the
+/// streaming engine uses when it cannot sample either side to its end.
+fn set_estimated_rows(
+    node: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+    stats: &mut StatsCache,
+) {
+    let IR::Join {
+        input_left,
+        input_right,
+        ..
+    } = ir_arena.get(node)
+    else {
+        unreachable!()
+    };
+    let (left, right) = (*input_left, *input_right);
+    let Some(left) = node_stats_with_cache(left, ir_arena, expr_arena, stats) else {
+        return;
+    };
+    let Some(right) = node_stats_with_cache(right, ir_arena, expr_arena, stats) else {
+        return;
+    };
+    let IR::Join { options, .. } = ir_arena.get_mut(node) else {
+        unreachable!()
+    };
+    Arc::make_mut(options).estimated_rows = Some([left.filtered as u64, right.filtered as u64]);
 }
 
 /// The side to prefer building the hash table from, or `None` if the statistics

@@ -212,8 +212,8 @@ fn sort_by_first_last_to_min_max_by(
         RowEncodingVariant::Ordered {
             descending: Some(descending),
             nulls_last: Some(nulls_last),
-            broadcast_nulls: None,
         },
+        false,
         arena,
     );
     let out = if is_last {

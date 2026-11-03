@@ -225,7 +225,7 @@ fn map_list_dtype_to_array_dtype(datatype: &DataType, width: usize) -> PolarsRes
     if let DataType::List(inner) = datatype {
         Ok(DataType::Array(inner.clone(), width))
     } else {
-        polars_bail!(ComputeError: "expected List dtype")
+        polars_bail!(ComputeError: "expected List dtype, got {}", datatype)
     }
 }
 

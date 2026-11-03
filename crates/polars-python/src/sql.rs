@@ -1,12 +1,12 @@
 use parking_lot::RwLock;
-use polars::sql::{CatalogDdl, SQLContext, extract_table_identifiers};
+use polars::sql::{CatalogAlter, CatalogStatement, SQLContext, extract_table_identifiers};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
-use crate::PyLazyFrame;
 use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::utils::EnterPolarsExt;
+use crate::{PyExpr, PyLazyFrame};
 
 #[pyclass(frozen, skip_from_py_object)]
 #[repr(transparent)]
@@ -105,23 +105,23 @@ impl PySQLContext {
             .collect())
     }
 
-    /// The catalog DDL of a query, as a dict keyed by `kind`, or None.
-    pub fn catalog_ddl<'py>(
+    /// The catalog statement of a query, as a dict keyed by `kind`, or None.
+    pub fn catalog_statement<'py>(
         &self,
         py: Python<'py>,
         query: &str,
     ) -> PyResult<Option<Bound<'py, PyDict>>> {
-        let ddl = self
+        let stmt = self
             .context
             .read()
-            .catalog_ddl(query)
+            .catalog_statement(query)
             .map_err(PyPolarsErr::from)?;
-        let Some(ddl) = ddl else {
+        let Some(stmt) = stmt else {
             return Ok(None);
         };
         let dict = PyDict::new(py);
-        match ddl {
-            CatalogDdl::DropTable {
+        match stmt {
+            CatalogStatement::DropTable {
                 name,
                 table,
                 if_exists,
@@ -134,14 +134,16 @@ impl PySQLContext {
                 dict.set_item("if_exists", if_exists)?;
                 dict.set_item("purge", purge)?;
             },
-            CatalogDdl::CreateTable {
+            CatalogStatement::CreateTable {
                 name,
                 table,
                 if_not_exists,
                 schema,
+                query,
                 required,
                 location,
                 properties,
+                partition_by,
             } => {
                 dict.set_item("kind", "create_table")?;
                 dict.set_item("name", name)?;
@@ -149,6 +151,7 @@ impl PySQLContext {
                 dict.set_item("identifier", table.identifier)?;
                 dict.set_item("if_not_exists", if_not_exists)?;
                 dict.set_item("schema", Wrap(schema))?;
+                dict.set_item("query", query)?;
                 dict.set_item("required", required)?;
                 dict.set_item("location", location)?;
                 let props = PyDict::new(py);
@@ -156,6 +159,133 @@ impl PySQLContext {
                     props.set_item(key, value)?;
                 }
                 dict.set_item("properties", props)?;
+                let partition_by: Vec<(String, String)> = partition_by
+                    .into_iter()
+                    .map(|field| (field.column, field.transform))
+                    .collect();
+                dict.set_item("partition_by", partition_by)?;
+            },
+            CatalogStatement::CreateSchema {
+                name,
+                namespace,
+                if_not_exists,
+                properties,
+            } => {
+                dict.set_item("kind", "create_schema")?;
+                dict.set_item("name", name)?;
+                dict.set_item("catalog", namespace.catalog)?;
+                dict.set_item("namespace", namespace.namespace)?;
+                dict.set_item("if_not_exists", if_not_exists)?;
+                let props = PyDict::new(py);
+                for (key, value) in properties {
+                    props.set_item(key, value)?;
+                }
+                dict.set_item("properties", props)?;
+            },
+            CatalogStatement::DropSchema {
+                name,
+                namespace,
+                if_exists,
+            } => {
+                dict.set_item("kind", "drop_schema")?;
+                dict.set_item("name", name)?;
+                dict.set_item("catalog", namespace.catalog)?;
+                dict.set_item("namespace", namespace.namespace)?;
+                dict.set_item("if_exists", if_exists)?;
+            },
+            CatalogStatement::Insert {
+                name,
+                table,
+                columns,
+                query,
+                overwrite,
+            } => {
+                dict.set_item("kind", "insert")?;
+                dict.set_item("name", name)?;
+                dict.set_item("catalog", table.catalog)?;
+                dict.set_item("identifier", table.identifier)?;
+                dict.set_item("columns", columns)?;
+                dict.set_item("query", query)?;
+                dict.set_item("overwrite", overwrite)?;
+            },
+            CatalogStatement::Delete {
+                name,
+                table,
+                condition,
+                subquery,
+                hint_unsupported_part,
+            } => {
+                dict.set_item("kind", "delete")?;
+                dict.set_item("name", name)?;
+                dict.set_item("catalog", table.catalog)?;
+                dict.set_item("identifier", table.identifier)?;
+                dict.set_item("condition", condition)?;
+                dict.set_item("subquery", subquery)?;
+                dict.set_item("hint_unsupported_part", hint_unsupported_part)?;
+            },
+            CatalogStatement::Truncate {
+                name,
+                table,
+                if_exists,
+            } => {
+                dict.set_item("kind", "truncate")?;
+                dict.set_item("name", name)?;
+                dict.set_item("catalog", table.catalog)?;
+                dict.set_item("identifier", table.identifier)?;
+                dict.set_item("if_exists", if_exists)?;
+            },
+            CatalogStatement::AlterTable {
+                name,
+                table,
+                if_exists,
+                operation,
+            } => {
+                dict.set_item("kind", "alter_table")?;
+                dict.set_item("name", name)?;
+                dict.set_item("catalog", table.catalog)?;
+                dict.set_item("identifier", table.identifier)?;
+                dict.set_item("if_exists", if_exists)?;
+                let op = PyDict::new(py);
+                match operation {
+                    CatalogAlter::AddColumn {
+                        name,
+                        dtype,
+                        if_not_exists,
+                    } => {
+                        op.set_item("op", "add_column")?;
+                        op.set_item("column", name)?;
+                        op.set_item("dtype", &Wrap(dtype))?;
+                        op.set_item("if_not_exists", if_not_exists)?;
+                    },
+                    CatalogAlter::DropColumn { name, if_exists } => {
+                        op.set_item("op", "drop_column")?;
+                        op.set_item("column", name)?;
+                        op.set_item("if_exists", if_exists)?;
+                    },
+                    CatalogAlter::RenameColumn { old, new } => {
+                        op.set_item("op", "rename_column")?;
+                        op.set_item("column", old)?;
+                        op.set_item("new_name", new)?;
+                    },
+                    CatalogAlter::SetDataType { name, dtype } => {
+                        op.set_item("op", "set_data_type")?;
+                        op.set_item("column", name)?;
+                        op.set_item("dtype", &Wrap(dtype))?;
+                    },
+                    CatalogAlter::DropNotNull { name } => {
+                        op.set_item("op", "drop_not_null")?;
+                        op.set_item("column", name)?;
+                    },
+                    CatalogAlter::SetProperties { properties } => {
+                        op.set_item("op", "set_properties")?;
+                        let props = PyDict::new(py);
+                        for (key, value) in properties {
+                            props.set_item(key, value)?;
+                        }
+                        op.set_item("properties", props)?;
+                    },
+                }
+                dict.set_item("operation", op)?;
             },
         }
         Ok(Some(dict))
@@ -178,6 +308,22 @@ impl PySQLContext {
                 .execute_with_catalog_tables(query, tables)
         })
         .map(Into::into)
+    }
+
+    /// The predicate of the rows a catalog `DELETE` removes, planned against the scan of its
+    /// table, by full name.
+    pub fn catalog_delete_predicate(
+        &self,
+        py: Python<'_>,
+        query: &str,
+        tables: Vec<(Vec<String>, PyLazyFrame)>,
+    ) -> PyResult<PyExpr> {
+        let tables = tables
+            .into_iter()
+            .map(|(full_name, lf)| (full_name, lf.ldf.into_inner()))
+            .collect();
+        py.enter_polars(|| self.context.write().catalog_delete_predicate(query, tables))
+            .map(Into::into)
     }
 
     /// Extract table identifiers from a SQL query string.

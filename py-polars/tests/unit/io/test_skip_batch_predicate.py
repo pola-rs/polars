@@ -4,6 +4,7 @@ import contextlib
 import datetime
 from typing import TYPE_CHECKING, Any, TypedDict
 
+import pytest
 from hypothesis import Phase, given, settings
 
 import polars as pl
@@ -13,6 +14,7 @@ from polars.testing.parametric.strategies import series
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from pathlib import Path
 
     from polars._typing import PolarsDataType, PythonLiteral
 
@@ -307,3 +309,149 @@ def test_float_skip_batch_predicate() -> None:
     )  # Can skip. Non-NaN bounds.
     assert sbp(pl.col("x").is_between(NaN, 4.0)) is None  # No skip. NaN left bound.
     assert sbp(pl.col("x").is_between(1.0, NaN)) is None  # No skip. NaN right bound.
+
+
+def test_is_in_skip_batch_predicate_is_exact_for_large_haystacks() -> None:
+    """A haystack above the unrolled limit tests needles, not the haystack's hull.
+
+    Needles 0..74 and 100..149: a batch on [75, 99] sits inside the hull
+    [0, 149] but holds no needle, and must still be skippable.
+    """
+    dtype = pl.Int64()
+    needles = [*range(75), *range(100, 150)]  # 125 needles, hull [0, 149]
+
+    assert_skp_series(
+        "x",
+        dtype,
+        pl.col("x").is_in(needles),
+        [
+            {"min": 0, "max": 74, "null_count": 0, "len": 10, "can_skip": False},
+            {"min": 75, "max": 99, "null_count": 0, "len": 10, "can_skip": True},
+            {"min": 100, "max": 149, "null_count": 0, "len": 10, "can_skip": False},
+            {"min": 74, "max": 100, "null_count": 0, "len": 10, "can_skip": False},
+            {"min": 150, "max": 199, "null_count": 0, "len": 10, "can_skip": True},
+            # A single known statistic outside the hull still settles it.
+            {"min": 150, "max": None, "null_count": 0, "len": 10, "can_skip": True},
+            {"min": None, "max": -1, "null_count": 0, "len": 10, "can_skip": True},
+            {"min": 80, "max": None, "null_count": 0, "len": 10, "can_skip": False},
+            # Undefined statistics settle nothing.
+            {"min": None, "max": None, "null_count": 0, "len": 10, "can_skip": False},
+            # Every row null, and the haystack holds no null: nothing matches.
+            {"min": None, "max": None, "null_count": 10, "len": 10, "can_skip": True},
+        ],
+    )
+
+
+def test_is_in_skip_batch_predicate_strings() -> None:
+    needles = [f"{i:04}" for i in [*range(75), *range(100, 150)]]
+
+    assert_skp_series(
+        "x",
+        pl.String(),
+        pl.col("x").is_in(needles),
+        [
+            {
+                "min": "0075",
+                "max": "0099",
+                "null_count": 0,
+                "len": 10,
+                "can_skip": True,
+            },
+            {
+                "min": "0070",
+                "max": "0080",
+                "null_count": 0,
+                "len": 10,
+                "can_skip": False,
+            },
+            {
+                "min": "0150",
+                "max": "9999",
+                "null_count": 0,
+                "len": 10,
+                "can_skip": True,
+            },
+        ],
+    )
+
+
+def test_is_in_skip_batch_predicate_unsearchable_dtype() -> None:
+    """Without a binary search, a haystack above the limit falls back to its hull."""
+    dtype = pl.Int128()
+    haystack = pl.List(dtype)
+    small = pl.lit([*range(10), *range(100, 110)], dtype=haystack)
+    large = pl.lit([*range(75), *range(100, 150)], dtype=haystack)
+
+    assert_skp_series(
+        "x",
+        dtype,
+        pl.col("x").is_in(small),
+        [
+            {"min": 20, "max": 90, "null_count": 0, "len": 10, "can_skip": True},
+            {"min": 5, "max": 90, "null_count": 0, "len": 10, "can_skip": False},
+        ],
+    )
+    assert_skp_series(
+        "x",
+        dtype,
+        pl.col("x").is_in(large),
+        [
+            {"min": 75, "max": 99, "null_count": 0, "len": 10, "can_skip": False},
+            {"min": 150, "max": 199, "null_count": 0, "len": 10, "can_skip": True},
+        ],
+    )
+
+
+def test_is_in_skip_batch_predicate_floats() -> None:
+    NaN = float("nan")
+    schema = {"x": pl.Float64()}
+
+    # Statistics leave out NaN, so a NaN needle cannot be ruled out.
+    assert pl.col("x").is_in([1.0, NaN])._skip_batch_predicate(schema) is None
+
+    assert_skp_series(
+        "x",
+        pl.Float64(),
+        pl.col("x").is_in([1.0, 2.0, 5.0]),
+        [
+            {"min": 2.5, "max": 4.5, "null_count": 0, "len": 10, "can_skip": True},
+            {"min": 1.5, "max": 2.5, "null_count": 0, "len": 10, "can_skip": False},
+            {"min": 6.0, "max": 9.0, "null_count": 0, "len": 10, "can_skip": True},
+            {"min": 3.0, "max": 3.0, "null_count": 0, "len": 10, "can_skip": True},
+            # A writer that lets NaN into the statistics.
+            {"min": NaN, "max": NaN, "null_count": 0, "len": 10, "can_skip": False},
+            {"min": NaN, "max": 9.0, "null_count": 0, "len": 10, "can_skip": False},
+        ],
+    )
+
+
+@pytest.mark.parametrize(
+    "needles",
+    [
+        [0.0],
+        [-0.0],
+        [1.5, 3.0],
+        [float(i) for i in range(0, 300, 2)],
+        [float("nan")],
+        [1.5, float("nan")],
+        [float("inf"), float("-inf")],
+    ],
+)
+def test_is_in_float_row_group_pruning_matches_eager(
+    needles: list[float], tmp_path: Path
+) -> None:
+    NaN = float("nan")
+    values = [
+        *[-0.0, 0.0, 1.5],
+        *[NaN, 3.0, NaN],
+        *[float(i) for i in range(1, 150, 2)],
+        *[float("inf"), float("-inf"), None],
+        *[NaN] * 3,
+        *[0.0] * 3,
+    ]
+    df = pl.DataFrame({"x": values}, schema={"x": pl.Float64})
+    path = tmp_path / "f.parquet"
+    df.write_parquet(path, row_group_size=3)
+
+    expr = pl.col("x").is_in(needles)
+    assert_frame_equal(pl.scan_parquet(path).filter(expr).collect(), df.filter(expr))

@@ -18,8 +18,7 @@ where
     T: serde::ser::Serialize,
 {
     if FC {
-        let mut s = rmp_serde::Serializer::new(&mut *writer).with_struct_map();
-        value.serialize(&mut s).map_err(to_compute_err)
+        serialize_dsl(writer, value)
     } else {
         bincode::serde::encode_into_std_write(value, &mut writer, config())
             .map_err(to_compute_err)
@@ -32,7 +31,7 @@ where
     T: serde::de::DeserializeOwned,
 {
     if FC {
-        rmp_serde::from_read(&mut *reader).map_err(to_compute_err)
+        deserialize_dsl(reader)
     } else {
         bincode::serde::decode_from_std_read(&mut reader, config()).map_err(to_compute_err)
     }
@@ -127,24 +126,23 @@ where
 }
 
 /// Serialize function customized for `DslPlan`, with stack overflow protection.
-pub fn serialize_dsl<W, T>(mut writer: W, value: &T) -> PolarsResult<()>
+///
+/// This is also the `FC = true` format, so that every type is only instantiated for a single
+/// serializer.
+pub fn serialize_dsl<T>(writer: &mut dyn Write, value: &T) -> PolarsResult<()>
 where
-    W: std::io::Write,
     T: serde::ser::Serialize,
 {
-    let writer: &mut dyn std::io::Write = &mut writer;
     let mut s = rmp_serde::Serializer::new(writer).with_struct_map();
     let s = serde_stacker::Serializer::new(&mut s);
     value.serialize(s).map_err(to_compute_err)
 }
 
 /// Deserialize function customized for `DslPlan`, with stack overflow protection.
-pub fn deserialize_dsl<T, R>(mut reader: R) -> PolarsResult<T>
+pub fn deserialize_dsl<T>(reader: &mut dyn Read) -> PolarsResult<T>
 where
     T: serde::de::DeserializeOwned,
-    R: std::io::Read,
 {
-    let reader: &mut dyn std::io::Read = &mut reader;
     let mut de = rmp_serde::Deserializer::new(reader);
     de.set_max_depth(usize::MAX);
     let de = serde_stacker::Deserializer::new(&mut de);

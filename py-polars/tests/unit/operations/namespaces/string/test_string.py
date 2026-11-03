@@ -1151,6 +1151,44 @@ def test_contains_dotall_literal_chain() -> None:
         assert s.str.contains(pattern).to_list() == expected
 
 
+def test_contains_leading_trailing_repetitions() -> None:
+    values = ["", "foo", "xfoo", "x\nfoo", "foo\nbar", "FOO", "xf", "é", None]
+    patterns = [
+        ".*foo",
+        "foo.*",
+        ".*foo.*",
+        ".*foo.*bar",
+        "a*foo",
+        "(?:x)?foo",
+        ".*?foo",
+        ".*foo|bar.*",
+        "^.*foo",
+        "(?i).*FOO",
+        "(?x) .* f o o",
+        r".*\bfoo",
+        ".+foo",
+        "(.*)foo",
+        ".*x(?:o{2}?)?f.*",
+    ]
+    s = pl.Series(values)
+    for pattern in patterns:
+        rx = re.compile(pattern)
+        expected = [None if v is None else rx.search(v) is not None for v in values]
+        assert s.str.contains(pattern).to_list() == expected
+    # Python rejects flags that are not at the start.
+    expected = [None if v is None else "foo" in v.lower() for v in values]
+    assert s.str.contains(".*(?i)FOO").to_list() == expected
+    s_lit = pl.Series(["xfoo", "x.*foo"])
+    assert s_lit.str.contains(".*foo", literal=True).to_list() == [False, True]
+
+    df = pl.DataFrame({"s": values}).join(pl.DataFrame({"pat": patterns}), how="cross")
+    expected = [
+        None if v is None else re.search(p, v) is not None for v, p in df.iter_rows()
+    ]
+    out = df.select(pl.col("s").str.contains(pl.col("pat"))).to_series()
+    assert out.to_list() == expected
+
+
 def test_contains_expr() -> None:
     df = pl.DataFrame(
         {

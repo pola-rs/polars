@@ -10,11 +10,12 @@ use polars_core::chunked_array::cast::CastOptions;
 #[cfg(feature = "cutqcut")]
 use polars_plan::dsl::{BinMethod, BinOptions, DslIntervalSpec, FractionSpec};
 use polars_plan::plans::predicates::aexpr_to_skip_batch_predicate;
-use polars_plan::plans::python::pyarrow::predicate_to_pa;
+use polars_plan::plans::python::pyarrow::predicate_to_pa_with_list_limit;
 #[cfg(feature = "is_in")]
 use polars_plan::plans::{AExpr, ArenaExprIter, IRBooleanFunction, IRFunctionExpr};
 use polars_plan::plans::{
-    AExprSorted, ExprToIRContext, IR, RowEncodingVariant, node_to_expr, to_expr_ir,
+    AExprSorted, ExprToIRContext, IR, RowEncodingOutputType, RowEncodingVariant, node_to_expr,
+    to_expr_ir,
 };
 use polars_utils::arena::Arena;
 use pyo3::class::basic::CompareOp;
@@ -1195,12 +1196,14 @@ impl PyExpr {
     ///
     /// The predicate is type-coerced as in a Polars filter, so that operands
     /// Polars casts (e.g. a `Float32` column compared to a `Float64` literal)
-    /// show up as casts, which are not converted.
-    #[pyo3(signature = (schema))]
+    /// show up as casts, which are not converted. `list_limit` caps the length of
+    /// `is_in` lists (`None`: any length).
+    #[pyo3(signature = (schema, list_limit))]
     fn to_pyarrow_predicate(
         &self,
         py: Python<'_>,
         schema: Wrap<Schema>,
+        list_limit: Option<usize>,
     ) -> PyResult<Option<String>> {
         py.enter_polars(|| {
             let plan = DataFrame::empty_with_schema(&schema.0)
@@ -1244,7 +1247,14 @@ impl PyExpr {
             let converted = predicates
                 .iter()
                 .rev()
-                .map(|&predicate| predicate_to_pa(predicate, &plan.expr_arena, &schema.0))
+                .map(|&predicate| {
+                    predicate_to_pa_with_list_limit(
+                        predicate,
+                        &plan.expr_arena,
+                        &schema.0,
+                        list_limit,
+                    )
+                })
                 .collect::<Option<Vec<_>>>();
             PolarsResult::Ok(converted.map(|parts| {
                 if let [part] = parts.as_slice() {
@@ -1257,9 +1267,19 @@ impl PyExpr {
     }
 
     #[staticmethod]
-    fn row_encode_unordered(exprs: Vec<Self>) -> Self {
+    fn row_encode_unordered(
+        exprs: Vec<Self>,
+        output: Wrap<RowEncodingOutputType>,
+        encode_nulls: Option<Vec<bool>>,
+        propagate_nulls: bool,
+    ) -> Self {
         Expr::n_ary(
-            FunctionExpr::RowEncode(RowEncodingVariant::Unordered),
+            FunctionExpr::RowEncode {
+                variant: RowEncodingVariant::Unordered,
+                output: output.0,
+                encode_nulls,
+                propagate_nulls,
+            },
             exprs.into_iter().map(|e| e.inner.clone()).collect(),
         )
         .into()
@@ -1270,19 +1290,32 @@ impl PyExpr {
         exprs: Vec<Self>,
         descending: Option<Vec<bool>>,
         nulls_last: Option<Vec<bool>>,
+        output: Wrap<RowEncodingOutputType>,
+        encode_nulls: Option<Vec<bool>>,
+        propagate_nulls: bool,
     ) -> Self {
         Expr::n_ary(
-            FunctionExpr::RowEncode(RowEncodingVariant::Ordered {
-                descending,
-                nulls_last,
-                broadcast_nulls: None,
-            }),
+            FunctionExpr::RowEncode {
+                variant: RowEncodingVariant::Ordered {
+                    descending,
+                    nulls_last,
+                },
+                output: output.0,
+                encode_nulls,
+                propagate_nulls,
+            },
             exprs.into_iter().map(|e| e.inner.clone()).collect(),
         )
         .into()
     }
 
-    fn row_decode_unordered(&self, names: Vec<String>, datatypes: Vec<PyDataTypeExpr>) -> Self {
+    fn row_decode_unordered(
+        &self,
+        names: Vec<String>,
+        datatypes: Vec<PyDataTypeExpr>,
+        output: Wrap<RowEncodingOutputType>,
+        encode_nulls: Option<Vec<bool>>,
+    ) -> Self {
         let fields = names
             .into_iter()
             .zip(datatypes)
@@ -1290,10 +1323,12 @@ impl PyExpr {
             .collect();
         self.inner
             .clone()
-            .map_unary(FunctionExpr::RowDecode(
+            .map_unary(FunctionExpr::RowDecode {
                 fields,
-                RowEncodingVariant::Unordered,
-            ))
+                variant: RowEncodingVariant::Unordered,
+                output: output.0,
+                encode_nulls,
+            })
             .into()
     }
 
@@ -1303,6 +1338,8 @@ impl PyExpr {
         datatypes: Vec<PyDataTypeExpr>,
         descending: Option<Vec<bool>>,
         nulls_last: Option<Vec<bool>>,
+        output: Wrap<RowEncodingOutputType>,
+        encode_nulls: Option<Vec<bool>>,
     ) -> Self {
         let fields = names
             .into_iter()
@@ -1311,14 +1348,15 @@ impl PyExpr {
             .collect::<Vec<_>>();
         self.inner
             .clone()
-            .map_unary(FunctionExpr::RowDecode(
+            .map_unary(FunctionExpr::RowDecode {
                 fields,
-                RowEncodingVariant::Ordered {
+                variant: RowEncodingVariant::Ordered {
                     descending,
                     nulls_last,
-                    broadcast_nulls: None,
                 },
-            ))
+                output: output.0,
+                encode_nulls,
+            })
             .into()
     }
 

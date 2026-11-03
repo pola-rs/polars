@@ -158,6 +158,7 @@ pub fn create_window_expr(
         partition_by,
         order_by,
         mapping,
+        may_reorder: _,
     } = aexpr.clone()
     else {
         polars_bail!(InvalidOperation: "expected a window expression")
@@ -576,6 +577,7 @@ fn create_physical_expr_inner(
                 output_field,
                 is_scalar,
                 true,
+                false,
             )))
         },
         Eval {
@@ -586,10 +588,9 @@ fn create_physical_expr_inner(
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let evaluation_is_scalar = is_scalar_ae(evaluation, expr_arena);
             let evaluation_is_elementwise = is_elementwise_rec(evaluation, expr_arena);
-            // @NOTE: This is actually also something the downstream apply code should care about.
-            let mut pd_group = ExprPushdownGroup::Pushable;
-            pd_group.update_with_expr_rec(expr_arena.get(evaluation), expr_arena, None);
-            let evaluation_is_fallible = matches!(pd_group, ExprPushdownGroup::Fallible);
+            let evaluation_is_fallible = expr_arena
+                .iter(evaluation)
+                .any(|(_, ae)| ae.is_fallible_top_level(expr_arena));
 
             let output_field = expr_arena
                 .get(expression)
@@ -678,6 +679,7 @@ fn create_physical_expr_inner(
                 output_field,
                 is_scalar,
                 is_fallible,
+                inputs_are_row_wise(&function),
             )))
         },
 
@@ -717,7 +719,44 @@ fn create_physical_expr_inner(
                 output_field,
                 false,
                 false,
+                false,
             )))
         },
+    }
+}
+
+/// Whether the per-group scalar inputs of `function` can be repeated over their groups
+/// (`ApplyExpr::apply_multiple_scalar_broadcast`). Being elementwise is not enough:
+/// - every output row must depend only on the same row of every input (not `is_in`, `replace`);
+/// - the kernel must give the same values for a unit input as for its repeat (not `pow`);
+/// - a full-length input must cost about as much as a call per group (not `str.contains`).
+///
+/// TODO: formalize as a `FunctionFlags` bit, see also `is_fake_elementwise_function` in
+/// polars-stream.
+fn inputs_are_row_wise(function: &IRFunctionExpr) -> bool {
+    use IRFunctionExpr as F;
+    match function {
+        F::FillNull
+        | F::Coalesce
+        | F::MaxHorizontal
+        | F::MinHorizontal
+        | F::SumHorizontal { .. }
+        | F::MeanHorizontal { .. }
+        | F::TruncArith(_) => true,
+        #[cfg(feature = "round_series")]
+        F::Clip { .. } => true,
+        #[cfg(feature = "trigonometry")]
+        F::Atan2 => true,
+        #[cfg(feature = "log")]
+        F::Log => true,
+        #[cfg(feature = "dtype-decimal")]
+        F::DecimalArith { .. } => true,
+        #[cfg(feature = "is_between")]
+        F::Boolean(IRBooleanFunction::IsBetween { .. }) => true,
+        #[cfg(feature = "is_close")]
+        F::Boolean(IRBooleanFunction::IsClose { .. }) => true,
+        #[cfg(feature = "concat_str")]
+        F::StringExpr(IRStringFunction::ConcatHorizontal { .. }) => true,
+        _ => false,
     }
 }

@@ -536,6 +536,8 @@ pub enum PhysNodeKind {
         output_bool: bool,
         /// See `JoinOptionsIR::runtime_filters`.
         runtime_filters: Vec<RuntimeFilter>,
+        /// See `JoinOptionsIR::estimated_rows`.
+        estimated_rows: Option<[u64; 2]>,
     },
 
     CrossJoin {

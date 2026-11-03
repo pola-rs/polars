@@ -84,22 +84,25 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
     for opt_t in iter.into_iter() {
         match opt_t {
             Some(t) => {
-                unsafe {
-                    buf.extend_from_slice(any_as_u8_slice(&t));
-                    // SAFETY: we allocated upfront
-                    validity.push_unchecked(true)
-                }
+                unsafe { buf.extend_from_slice(any_as_u8_slice(&t)) };
+                validity.push(true);
                 mem::forget(t);
             },
             None => {
-                unsafe {
-                    buf.extend_from_slice(any_as_u8_slice(&T::default()));
-                    // SAFETY: we allocated upfront
-                    validity.push_unchecked(false)
-                }
+                // The drop function frees this copy, so the original must not be dropped too.
+                let t = T::default();
+                unsafe { buf.extend_from_slice(any_as_u8_slice(&t)) };
+                validity.push(false);
+                mem::forget(t);
             },
         }
     }
+    // The drop function frees exactly `n_t_vals` values.
+    assert_eq!(
+        validity.len(),
+        n_t_vals,
+        "object iterator did not yield its declared length"
+    );
 
     // We slice the buffer because we want to ignore the padding bytes from here
     // they can be forgotten.

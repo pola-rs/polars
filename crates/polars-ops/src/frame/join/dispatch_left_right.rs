@@ -58,19 +58,23 @@ pub fn materialize_left_join_from_series(
         }
     }
 
-    // Ensure that the chunks are aligned otherwise we go OOB.
+    // The join ids refer to the chunks of the keys, so the frames must have the same chunk
+    // boundaries as their keys, otherwise we go OOB.
     let requires_ordering = matches!(
         args.maintain_order,
         MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft
     );
+    let chunks_match_key = |df: &DataFrame, s: &Series| {
+        !df.should_rechunk() && df.chunk_lengths().eq(s.chunk_lengths())
+    };
 
     let mut right = Cow::Borrowed(right_);
     let mut s_right = s_right.clone();
-    if left.should_rechunk() || requires_ordering || left.n_chunks() != s_left.n_chunks() {
+    if requires_ordering || !chunks_match_key(&left, &s_left) {
         left.rechunk_mut_par();
         s_left = s_left.rechunk();
     }
-    if right.should_rechunk() || requires_ordering || right.n_chunks() != s_right.n_chunks() {
+    if requires_ordering || !chunks_match_key(right_, &s_right) {
         let mut other = right_.clone();
         other.rechunk_mut_par();
         right = Cow::Owned(other);

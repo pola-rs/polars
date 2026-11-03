@@ -489,6 +489,44 @@ def test_cloud_timeout_error() -> None:
 
 @pytest.mark.slow
 @pytest.mark.parametrize(
+    "sink",
+    [
+        pl.LazyFrame.sink_csv,
+        pl.LazyFrame.sink_ipc,
+        pl.LazyFrame.sink_ndjson,
+        pl.LazyFrame.sink_parquet,
+    ],
+)
+def test_sink_failed_query_leaves_no_object(
+    s3: CountingS3, sink: Any, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # S3 minimum part size.
+    plmonkeypatch.setenv("POLARS_UPLOAD_CHUNK_SIZE", str(5 * 1024 * 1024))
+
+    requests: list[str] = []
+
+    def record(environ: dict[str, Any]) -> None:
+        query = environ["QUERY_STRING"].partition("=")[0]
+        requests.append(f"{environ['REQUEST_METHOD']} {query}".strip())
+
+    s3.on_request = record
+
+    failing = pl.LazyFrame({"x": ["a"]}).select(pl.col("x").cast(pl.UInt64))
+    # Incompressible, so that a multipart upload starts before the query fails.
+    rows = pl.LazyFrame({"x": pl.int_range(1_000_000, eager=True).hash()})
+    for lf in [failing, pl.concat([rows, failing])]:
+        requests.clear()
+        with pytest.raises(pl.exceptions.InvalidOperationError):
+            sink(lf, "s3://bucket/out", storage_options=s3.storage_options)
+
+        # `POST uploadId` completes a multipart upload.
+        assert "PUT" not in requests
+        assert "POST uploadId" not in requests
+        assert s3.client.list_objects_v2(Bucket="bucket")["KeyCount"] == 0
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(
     ("sink", "scan"),
     [
         (pl.LazyFrame.sink_ipc, pl.scan_ipc),

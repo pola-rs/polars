@@ -12,7 +12,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
 
 if TYPE_CHECKING:
-    from polars._typing import EngineType
+    from polars._typing import CorrelationMethod, EngineType
 
 
 def test_corr() -> None:
@@ -121,6 +121,33 @@ def test_cov_one_row(engine: EngineType) -> None:
     assert_frame_equal(out, expected)
     out = lf.head(1).select(pl.cov("a", "b", ddof=1)).collect(engine=engine)
     assert out.item() is None
+
+
+@pytest.mark.parametrize("method", ["pearson", "spearman"])
+def test_corr_no_complete_pair(method: CorrelationMethod) -> None:
+    lf = pl.LazyFrame(
+        {"g": [1, 1, 2, 2], "a": [1.0, 2.0, 3.0, 4.0], "b": [None, None, 1.0, 5.0]}
+    )
+    corr = pl.corr("a", "b", method=method)
+    out = lf.group_by("g").agg(corr).sort("g").collect()
+    assert_series_equal(out["a"], pl.Series("a", [None, 1.0]))
+    out = lf.filter(pl.col.g == 1).select(corr).collect()
+    assert out.item() is None
+    out = lf.head(0).select(corr).collect()
+    assert out.item() is None
+
+
+def test_corr_broadcast_no_complete_pair() -> None:
+    lf = pl.LazyFrame(
+        {"a": [1.0, 2.0], "b": [None, None]}, schema_overrides={"b": pl.Float64}
+    )
+    out = lf.select(
+        null_lit=pl.corr("a", pl.lit(None, pl.Float64)),
+        all_null=pl.corr("b", pl.lit(1.0)),
+        constant=pl.corr("a", pl.lit(1.0)),
+    ).collect()
+    assert out.row(0)[:2] == (None, None)
+    assert math.isnan(out["constant"].item())
 
 
 def test_std(fruits_cars: pl.DataFrame) -> None:
@@ -264,6 +291,15 @@ def test_corr_cov_lit_produces_zero_nan_26633() -> None:
     assert math.isnan(result_corr.item())
     result_cov = df.select(pl.cov(pl.lit(1), "a"))
     assert math.isclose(result_cov.item(), 0.0)
+
+
+def test_corr_cov_lit_broadcast() -> None:
+    lf = pl.LazyFrame({"a": [float(i) for i in range(100)]})
+    out = lf.select(
+        cov=pl.cov("a", pl.lit(1.0)), corr=pl.corr(pl.lit(1.0), "a")
+    ).collect()
+    assert out["cov"].item() == 0.0
+    assert math.isnan(out["corr"].item())
 
 
 _NUMERIC_DTYPES = [

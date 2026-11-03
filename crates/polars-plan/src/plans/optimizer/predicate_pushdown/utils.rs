@@ -407,6 +407,7 @@ pub fn pushdown_eligibility(
                     partition_by,
                     order_by: _,
                     mapping: _,
+                    may_reorder: _,
                 } => {
                     partition_by_names.clear();
                     partition_by_names.reserve(partition_by.len());

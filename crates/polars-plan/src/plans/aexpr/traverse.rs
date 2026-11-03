@@ -64,6 +64,7 @@ impl AExpr {
                 partition_by,
                 order_by,
                 mapping: _,
+                may_reorder: _,
             } => {
                 container.extend([*function]);
                 container.extend(partition_by.iter().cloned());
@@ -154,6 +155,7 @@ impl AExpr {
                 partition_by,
                 order_by,
                 mapping: _,
+                may_reorder: _,
             } => {
                 if let Some((n, _)) = order_by {
                     container.extend([*n]);
@@ -274,6 +276,7 @@ impl AExpr {
                 partition_by,
                 order_by,
                 mapping: _,
+                may_reorder: _,
             } => {
                 if let Some((n, _)) = order_by {
                     container.extend([*n]);

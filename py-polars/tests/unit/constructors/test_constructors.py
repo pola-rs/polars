@@ -1942,6 +1942,45 @@ def test_pycapsule_interface(df: pl.DataFrame) -> None:
     assert df.equals(round_trip_df)
 
 
+class _DictionaryExtensionType(pa.ExtensionType):  # type: ignore[misc]
+    def __init__(self, storage_type: pa.DataType) -> None:
+        super().__init__(storage_type, "test.dictionary")
+
+    def __arrow_ext_serialize__(self) -> bytes:
+        return b""
+
+    @classmethod
+    def __arrow_ext_deserialize__(
+        cls, storage_type: pa.DataType, serialized: bytes
+    ) -> Any:
+        return cls(storage_type)
+
+
+@pytest.mark.parametrize("via_pycapsule", [True, False])
+def test_extension_dictionary_29442(via_pycapsule: bool) -> None:
+    values = ["a", None, "b", "a"]
+    storage = pa.array(values).dictionary_encode()
+    arr = pa.ExtensionArray.from_storage(
+        _DictionaryExtensionType(storage.type), storage
+    )
+    s = pl.Series(PyCapsuleArrayHolder(arr) if via_pycapsule else arr)
+    assert s.to_list() == values
+
+    # The export keeps the dictionary values.
+    out = s.to_arrow()
+    assert pa.types.is_dictionary(out.type)
+    assert out.to_pylist() == values
+
+    # Nested inside a list and a struct.
+    list_arr = pa.ListArray.from_arrays(pa.array([0, 1, 4], pa.int32()), arr)
+    s = pl.Series(PyCapsuleArrayHolder(list_arr) if via_pycapsule else list_arr)
+    assert s.to_list() == [["a"], [None, "b", "a"]]
+
+    struct_arr = pa.StructArray.from_arrays([arr], names=["f"])
+    s = pl.Series(PyCapsuleArrayHolder(struct_arr) if via_pycapsule else struct_arr)
+    assert s.to_list() == [{"f": v} for v in values]
+
+
 @pytest.mark.parametrize(
     "tz",
     [

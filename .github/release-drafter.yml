@@ -111,6 +111,9 @@ autolabeler:
   - label: A-io-spreadsheet
     title:
       - '/spreadsheet|excel|\bods\b/i'
+  - label: A-interop-arrow
+    title:
+      - '/__arrow_c_schema__|__arrow_c_stream__|pycapsule/i'
   - label: A-interop-numpy
     title:
       - '/numpy/i'

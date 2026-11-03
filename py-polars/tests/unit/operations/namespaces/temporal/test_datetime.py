@@ -372,6 +372,15 @@ def test_dst_offset_invalid() -> None:
         ser.dt.dst_offset().rename("dst_offset")
 
 
+@pytest.mark.parametrize("time_unit", ["ms", "us"])
+@pytest.mark.parametrize("method", ["base_utc_offset", "dst_offset"])
+def test_offset_null_out_of_range_payload(method: str, time_unit: TimeUnit) -> None:
+    # A null slot's backing value may be any out-of-range number.
+    s = pl.Series([0, 2**62], dtype=pl.Int64).scatter(1, None)
+    out = getattr(s.cast(pl.Datetime(time_unit, "UTC")).dt, method)()
+    assert out.to_list() == [timedelta(0), None]
+
+
 @pytest.mark.parametrize(
     ("time_unit", "expected"),
     [

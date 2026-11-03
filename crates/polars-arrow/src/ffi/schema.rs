@@ -77,14 +77,15 @@ impl ArrowSchema {
         let children_ptr = schema_children(field.dtype(), &mut flags);
         let n_children = children_ptr.len() as i64;
 
-        let dictionary = if let ArrowDataType::Dictionary(_, values, is_ordered) = field.dtype() {
-            flags += *is_ordered as i64;
-            // we do not store field info in the dict values, so can't recover it all :(
-            let field = Field::new(PlSmallStr::EMPTY, values.as_ref().clone(), true);
-            Some(Box::new(ArrowSchema::new(&field)))
-        } else {
-            None
-        };
+        let dictionary =
+            if let ArrowDataType::Dictionary(_, values, is_ordered) = field.dtype().to_storage() {
+                flags += *is_ordered as i64;
+                // we do not store field info in the dict values, so can't recover it all :(
+                let field = Field::new(PlSmallStr::EMPTY, values.as_ref().clone(), true);
+                Some(Box::new(ArrowSchema::new(&field)))
+            } else {
+                None
+            };
 
         let metadata = field
             .metadata

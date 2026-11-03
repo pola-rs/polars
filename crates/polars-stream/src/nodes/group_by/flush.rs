@@ -168,8 +168,7 @@ impl Shared {
                 TaskState::Building { table, stored } => {
                     if let Some((input, frame)) = stored.pop_frame() {
                         let frame = frame.load().await;
-                        let frame = self.params.prepare_frame(input, frame, state).await?;
-                        table.add_rows(input, &frame, None)?;
+                        table.add_rows(input, &frame, None, state).await?;
                     } else {
                         let frame = table.finish()?;
                         self.actual_groups.add(frame.height() as i64);

@@ -27,6 +27,7 @@ use crate::dsl::MetadataPerSource::Unresolved;
 #[cfg(feature = "python")]
 use crate::dsl::python_dsl::PythonScanSource;
 use crate::dsl::{DslPlan, FileScanIR, UnifiedScanArgs};
+use crate::plans::hive::HivePartitionsDf;
 #[cfg(feature = "python")]
 use crate::plans::iterator::ArenaLpIter;
 use crate::plans::optimizer::ApplyScanPredicateFn;
@@ -631,6 +632,7 @@ fn rebuild_scan_from_expanded(
         include_file_paths: _include_file_paths @ None,
         deletion_files,
         table_statistics,
+        hive_partitions,
         row_count,
         source_sizes,
         resolve_heavy_sources: _,
@@ -745,7 +747,9 @@ fn rebuild_scan_from_expanded(
         } => FileScanIR::Anonymous { options, function },
     };
 
-    if hive_options.enabled == Some(true)
+    if let Some(hive_partitions) = hive_partitions {
+        *hive_parts = Some(HivePartitionsDf::try_new(hive_partitions, sources.len())?);
+    } else if hive_options.enabled == Some(true)
         && let Some(paths) = sources.as_paths()
     {
         use polars_arrow::Either;

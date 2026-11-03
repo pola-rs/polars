@@ -18,6 +18,7 @@ use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 pub use arg_min_max::{ArgMaxWindow, ArgMinMaxWindow, ArgMinWindow};
 pub use mean::MeanWindow;
 pub use min_max::MinMaxWindow;
+pub use moment::{rolling_corr, rolling_cov};
 use num_traits::{Bounded, Float, NumCast, One, Zero};
 use polars_arrow::array::{ArrayRef, PrimitiveArray};
 use polars_arrow::bitmap::{Bitmap, MutableBitmap};

@@ -33,7 +33,6 @@ pub fn spearman_rank_corr(a: Expr, b: Expr, propagate_nans: bool) -> Expr {
 
 #[cfg(all(feature = "rolling_window", feature = "cov"))]
 fn dispatch_corr_cov(x: Expr, y: Expr, options: RollingCovOptions, is_corr: bool) -> Expr {
-    // see: https://github.com/pandas-dev/pandas/blob/v1.5.1/pandas/core/window/rolling.py#L1780-L1804
     let rolling_options = RollingOptionsFixedWindow {
         window_size: options.window_size as usize,
         min_periods: options.min_periods as usize,
