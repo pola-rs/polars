@@ -292,6 +292,31 @@ def test_aggregate_of_constant(agg: str, n_rows: int) -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "agg",
+    [
+        "STDDEV(1)",
+        "VARIANCE(1)",
+        "ARRAY_AGG(1)",
+        "STRING_AGG('x', ',')",
+        "COUNT(1)",
+        "AVG(2)",
+        "MAX(1)",
+        "COUNT(DISTINCT 1)",
+    ],
+)
+def test_window_aggregate_of_constant(agg: str) -> None:
+    # A window aggregate reads a constant once per row of the window.
+    df = pl.DataFrame({"g": [1, 2, 2, 3, 3, 3]})
+    for over in ["PARTITION BY g", ""]:
+        assert_sql_matches(
+            df,
+            query=f"SELECT g, {agg} OVER ({over}) AS a FROM self ORDER BY g",
+            compare_with="duckdb",
+            engines=["in-memory", "streaming"],
+        )
+
+
 def test_aggregate_of_constant_not_read_per_row() -> None:
     # The aggregate of a constant follows from the number of rows read, so the
     # constant is not repeated for each row.

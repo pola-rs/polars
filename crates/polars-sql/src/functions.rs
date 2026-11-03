@@ -1414,7 +1414,7 @@ impl SQLFunctionVisitor<'_> {
             };
             self.filter = Some(pred);
         }
-        self.reads_rows = self.window.is_none() && function_name.is_builtin_aggregate();
+        self.reads_rows = function_name.is_builtin_aggregate();
         self.check_window_shape(&function_name)?;
         if self.window.is_some() && is_frame_aggregate(&function_name, self.is_distinct()) {
             return self.visit_window_aggregate(&function_name);
