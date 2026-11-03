@@ -237,7 +237,7 @@ pub(crate) enum PolarsSQLFunctions {
     // Trig functions
     // ----
     /// SQL 'cos' function.
-    /// Compute the cosine sine of the input expression (in radians).
+    /// Compute the cosine of the input expression (in radians).
     /// ```sql
     /// SELECT COS(col1) FROM df;
     /// ```
@@ -261,7 +261,7 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```
     Tan,
     /// SQL 'cosd' function.
-    /// Compute the cosine sine of the input expression (in degrees).
+    /// Compute the cosine of the input expression (in degrees).
     /// ```sql
     /// SELECT COSD(col1) FROM df;
     /// ```
@@ -419,7 +419,7 @@ pub(crate) enum PolarsSQLFunctions {
     /// unless a strftime-compatible formatting string is provided as the second parameter.
     /// ```sql
     /// SELECT DATE('2021-03-15') FROM df;
-    /// SELECT DATE('2021-15-03', '%Y-d%-%m') FROM df;
+    /// SELECT DATE('2021-15-03', '%Y-%d-%m') FROM df;
     /// SELECT DATE('2021-03', '%Y-%m') FROM df;
     /// ```
     Date,
@@ -583,7 +583,7 @@ pub(crate) enum PolarsSQLFunctions {
     /// parameter.
     /// ```sql
     /// SELECT TIMESTAMP('2021-03-15 10:30:45') FROM df;
-    /// SELECT TIMESTAMP('2021-15-03T00:01:02.333', '%Y-d%-%m %H:%M:%S') FROM df;
+    /// SELECT TIMESTAMP('2021-15-03T00:01:02.333', '%Y-%d-%m %H:%M:%S') FROM df;
     /// ```
     Timestamp,
     /// SQL 'upper' function.

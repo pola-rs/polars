@@ -33,7 +33,7 @@ impl RowWidths {
             },
         }
     }
-    /// Push an another [`RowWidths`] into the widths
+    /// Push another [`RowWidths`] into the widths
     pub fn push(&mut self, other: &Self) {
         debug_assert_eq!(self.num_rows(), other.num_rows());
 

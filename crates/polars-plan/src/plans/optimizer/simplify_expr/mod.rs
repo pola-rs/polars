@@ -859,7 +859,7 @@ impl OptimizationRule for SimplifyExprRule {
                 let right_aexpr = expr_arena.get(*right);
 
                 // Inline dynamic value casts
-                // Ensure that dynamic values upcast in lined
+                // Ensure that dynamic values upcast inlined
                 // This will allow const folding later
                 if let (
                     AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(_))),
