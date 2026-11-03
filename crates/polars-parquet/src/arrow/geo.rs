@@ -262,15 +262,15 @@ fn box_layout(dtype: &ArrowDataType) -> Option<&'static [&'static str]> {
 }
 
 /// The statistics of a written file, to fill in the `bbox` of each geometry column.
-pub struct FileStatistics<'a> {
-    pub columns: &'a [ColumnDescriptor],
-    pub row_groups: &'a [RowGroup],
+pub(crate) struct FileStatistics<'a> {
+    pub(crate) columns: &'a [ColumnDescriptor],
+    pub(crate) row_groups: &'a [RowGroup],
 }
 
 /// Builds the GeoParquet `geo` metadata for the GeoArrow columns in `schema` if
 /// `POLARS_GEOPARQUET_WRITE` is set to `1.0` or `1.1`.
 /// The `bbox` of each geometry column is only filled in if `statistics` are given.
-pub fn geo_key_value(
+pub(crate) fn geo_key_value(
     schema: &ArrowSchema,
     statistics: Option<&FileStatistics<'_>>,
 ) -> PolarsResult<Option<KeyValue>> {
