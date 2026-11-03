@@ -28,8 +28,8 @@ When the array iterator is pulled the first time, the following happens:
     returned and the remaining of the page is consumed into multiple mutable arrays of length
     `chunk_size` into a FIFO queue.
 
-Subsequent pulls of arrays will first try to pull from the FIFO queue. Once the queue is empty,
-a new page is pulled.
+Subsequent pulls of arrays will first try to pull from the FIFO queue. Once the queue is empty, a
+new page is pulled.
 
 ### `PageState`
 

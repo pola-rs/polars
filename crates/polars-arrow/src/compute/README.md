@@ -33,6 +33,6 @@ principles:
 
 - When a kernel accepts dynamically-typed arrays, it MUST expect them as `&dyn Array`.
 
-- When an API returns `&dyn Array`, it MUST return `Box<dyn Array>`. The rationale is that a `Box` is
-  mutable, while an `Arc` is not. As such, `Box` offers the most flexible API to consumers and the
-  compiler. Users can cast a `Box` into `Arc` via `.into()`.
+- When an API returns `&dyn Array`, it MUST return `Box<dyn Array>`. The rationale is that a `Box`
+  is mutable, while an `Arc` is not. As such, `Box` offers the most flexible API to consumers and
+  the compiler. Users can cast a `Box` into `Arc` via `.into()`.
