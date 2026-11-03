@@ -2148,3 +2148,14 @@ def test_struct_schema_overrides_match_fields_by_name_30471() -> None:
             [_Row30471(_Inner30471(1, 300))],
             schema_overrides={"s": pl.Struct({"b": pl.Int8, "a": pl.Int64})},
         )
+
+
+def test_init_rows_int_to_bool_nonstrict_30541() -> None:
+    result = pl.DataFrame(
+        [[1], [2], [0], [3], [-1], [1000]],
+        schema={"b": pl.Boolean},
+        orient="row",
+        strict=False,
+    )
+    expected = pl.DataFrame({"b": [True, True, False, True, True, True]})
+    assert_frame_equal(result, expected)
