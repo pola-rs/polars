@@ -23,6 +23,7 @@ pub fn match_keys(
     gather_probe_unmatched: Option<&mut Vec<IdxSize>>,
     build_emit_unmatched: bool,
     descending: bool,
+    nulls_last: bool,
     nulls_equal: bool,
     limit_results: usize,
     build_row_offset: &mut usize,
@@ -39,6 +40,7 @@ pub fn match_keys(
                 gather_probe_unmatched,
                 build_emit_unmatched,
                 descending,
+                nulls_last,
                 nulls_equal,
                 limit_results,
                 build_row_offset,
@@ -94,6 +96,7 @@ fn match_keys_impl<'a, T: PolarsDataType>(
     mut gather_probe_unmatched: Option<&mut Vec<IdxSize>>,
     build_emit_unmatched: bool,
     descending: bool,
+    nulls_last: bool,
     nulls_equal: bool,
     limit_results: usize,
     build_row_offset: &mut usize,
@@ -122,14 +125,20 @@ fn match_keys_impl<'a, T: PolarsDataType>(
                 let probe_keyval = unsafe { probe_key.get_unchecked(probe_idx) };
                 let probe_keyval = probe_keyval.as_ref();
 
-                let mut ord: Ordering = match (&build_keyval, &probe_keyval) {
-                    (None, None) if nulls_equal => Ordering::Equal,
-                    (Some(l), Some(r)) => TotalOrd::tot_cmp(*l, *r),
-                    _ => continue,
+                let ord: Ordering = match (&build_keyval, &probe_keyval) {
+                    (Some(l), Some(r)) => {
+                        let ord = TotalOrd::tot_cmp(*l, *r);
+                        if descending { ord.reverse() } else { ord }
+                    },
+                    // Null build keys only get here if `nulls_equal` is set.
+                    (None, None) => Ordering::Equal,
+                    // Nulls sort before or after all other keys, regardless of `descending`.
+                    (None, Some(_)) if nulls_last => Ordering::Greater,
+                    (None, Some(_)) => Ordering::Less,
+                    (Some(_), None) if nulls_equal && nulls_last => Ordering::Less,
+                    (Some(_), None) if nulls_equal => Ordering::Greater,
+                    (Some(_), None) => continue,
                 };
-                if descending {
-                    ord = ord.reverse();
-                }
 
                 match ord {
                     Ordering::Equal => {
