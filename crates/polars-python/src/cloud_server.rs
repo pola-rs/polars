@@ -77,7 +77,7 @@ fn gpu_post_opt(
         .call((nt,), Some(&kwargs))
         .map_err(|e| polars_err!(ComputeError: "'cuda' conversion failed: {}", e))?;
 
-    // Unpack the arena's.
+    // Unpack the arenas.
     // At this point the `nt` is useless.
     std::mem::swap(lp_arena, &mut *arenas.0.lock().unwrap());
     std::mem::swap(expr_arena, &mut *arenas.1.lock().unwrap());

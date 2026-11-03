@@ -116,7 +116,7 @@ pub enum ParallelStrategy {
     /// (i.e. many row-groups) with a predicate that filters clustered rows or filters heavily. In
     /// other cases, this may slow down the scan compared other strategies.
     ///
-    /// If no predicate is given, this falls back to back to [`ParallelStrategy::Auto`].
+    /// If no predicate is given, this falls back to [`ParallelStrategy::Auto`].
     Prefiltered,
     /// Automatically determine over which unit to parallelize
     /// This will choose the most occurring unit.

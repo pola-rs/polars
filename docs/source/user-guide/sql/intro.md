@@ -4,7 +4,7 @@ While Polars supports interaction with SQL, it's recommended that users familiar
 the [expression syntax](../concepts/expressions-and-contexts.md#expressions) to produce more
 readable and expressive code. As the DataFrame interface is primary, new features are typically
 added to the expression API first. However, if you already have an existing SQL codebase or prefer
-the use of SQL, Polars does offers support for this.
+the use of SQL, Polars does offer support for this.
 
 !!! note Execution
 

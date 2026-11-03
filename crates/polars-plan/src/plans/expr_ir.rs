@@ -11,7 +11,7 @@ use crate::constants::{get_len_name, get_literal_name, get_pl_element_name};
 #[derive(Default, Debug, Clone, Hash, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum OutputName {
-    /// No not yet set.
+    /// Not yet set.
     #[default]
     None,
     /// The most left-hand-side literal will be the output name.

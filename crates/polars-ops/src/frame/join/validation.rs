@@ -15,7 +15,7 @@ pub(crate) fn validate_probe(
     // In left join, always use the right side to create.
     //
     // If `build_shortest_table` and left is shorter, swap. Then rhs will be the probe.
-    // If left == right, swap too. (apply the same logic as `det_hash_prone_order`)
+    // If left == right, swap too. (apply the same logic as `det_hash_probe_order`)
     let should_swap = build_shortest_table && s_left.len() <= s_right.len();
     let probe = if should_swap { s_right } else { s_left };
 
@@ -47,7 +47,7 @@ pub(crate) fn validate_build(
     // In default, build is in rhs.
     let valid = match validation.swap(swapped) {
         // Only check the `build` side.
-        // The other side use `validate_prone` to check
+        // The other side use `validate_probe` to check
         ManyToMany | OneToMany => true,
         ManyToOne | OneToOne => build_size == expected_size,
     };

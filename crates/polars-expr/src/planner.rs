@@ -90,7 +90,7 @@ where
 #[derive(Copy, Clone)]
 pub struct ExpressionConversionState {
     // settings per context
-    // they remain activate between
+    // they remain active between
     // expressions
     pub allow_threading: bool,
     pub has_windows: bool,

@@ -31,7 +31,7 @@ fn cast_and_apply<
 }
 
 pub trait DatetimeMethods: AsDatetime {
-    /// Extract month from underlying NaiveDateTime representation.
+    /// Extract year from underlying NaiveDateTime representation.
     /// Returns the year number in the calendar date.
     fn year(&self) -> Int32Chunked {
         cast_and_apply(self.as_datetime(), temporal::year)
@@ -157,7 +157,7 @@ pub trait DatetimeMethods: AsDatetime {
         cast_and_apply(self.as_datetime(), temporal::second)
     }
 
-    /// Extract second from underlying NaiveDateTime representation.
+    /// Extract nanosecond from underlying NaiveDateTime representation.
     /// Returns the number of nanoseconds since the whole non-leap second.
     /// The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
     fn nanosecond(&self) -> Int32Chunked {

@@ -1456,13 +1456,13 @@ impl EquiJoinNode {
             },
             MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => {
                 if args.build_side == Some(JoinBuildSide::ForceLeft) {
-                    polars_warn!("can't force left build-side with left-maintaining cross-join");
+                    polars_warn!("can't force left build-side with left-maintaining equi-join");
                 }
                 Some(false)
             },
             MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => {
                 if args.build_side == Some(JoinBuildSide::ForceRight) {
-                    polars_warn!("can't force right build-side with right-maintaining cross-join");
+                    polars_warn!("can't force right build-side with right-maintaining equi-join");
                 }
                 Some(true)
             },

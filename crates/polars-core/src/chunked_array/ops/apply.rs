@@ -194,7 +194,7 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
     where
         F: Fn(T::Native) -> T::Native + Copy,
     {
-        // SAFETY, we do no t change the lengths
+        // SAFETY, we do not change the lengths
         unsafe {
             self.downcast_iter_mut()
                 .for_each(|arr| polars_arrow::compute::arity_assign::unary(arr, f))

@@ -999,7 +999,7 @@ def test_scan_delta_dv_delta_sink_mock(
         df.lazy().sink_delta(tmp_path, mode="append")
 
     # note: delta has no order maintaining guarantees with respect to file or row (!?)
-    # therefore: we track file and row mapping explicitl by index inside the dataframe,
+    # therefore: we track file and row mapping explicitly by index inside the dataframe,
     # and extract this from the file as written to stub the right deletion_vectors
     path_to_dv: dict[str, list[int]] = {}
     for p in tmp_path.glob("*.parquet"):

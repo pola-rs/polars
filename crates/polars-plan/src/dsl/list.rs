@@ -72,7 +72,7 @@ impl ListNameSpace {
         self.0.map_unary(FunctionExpr::ListExpr(ListFunction::Min))
     }
 
-    /// Compute the sum the items in every sublist.
+    /// Compute the sum of the items in every sublist.
     pub fn sum(self) -> Expr {
         self.0.map_unary(FunctionExpr::ListExpr(ListFunction::Sum))
     }

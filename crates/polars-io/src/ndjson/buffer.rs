@@ -402,7 +402,7 @@ fn deserialize_all<'a>(
 /// * Default: `{"x": Static(U64(1))}`
 /// * ValueDisplay: `{x: 1}`
 ///
-/// This intended for reading in arbitrary `Value` types into a String type. Note that the output
+/// This is intended for reading in arbitrary `Value` types into a String type. Note that the output
 /// is not guaranteed to be valid JSON as we don't do any escaping of e.g. quote/newline values.
 struct ValueDisplay<'a>(&'a Value<'a>);
 

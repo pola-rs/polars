@@ -692,7 +692,7 @@ pub fn init_builders(
                     }
                 },
                 dt => polars_bail!(
-                    ComputeError: "unsupported data type when reading CSV: {} when reading CSV", dt,
+                    ComputeError: "unsupported data type when reading CSV: {}", dt,
                 ),
             };
             Ok(builder)
