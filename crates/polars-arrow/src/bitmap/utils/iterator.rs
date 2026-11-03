@@ -48,7 +48,7 @@ impl<'a> BitmapIter<'a> {
         }
     }
 
-    /// Consume and returns the numbers of `1` / `true` values at the beginning of the iterator.
+    /// Consumes and returns the number of `1` / `true` values at the beginning of the iterator.
     ///
     /// This performs the same operation as `(&mut iter).take_while(|b| b).count()`.
     ///
@@ -88,7 +88,7 @@ impl<'a> BitmapIter<'a> {
         num_leading_ones
     }
 
-    /// Consume and returns the numbers of `0` / `false` values at the start of the iterator.
+    /// Consumes and returns the number of `0` / `false` values at the start of the iterator.
     ///
     /// This performs the same operation as `(&mut iter).take_while(|b| !b).count()`.
     ///

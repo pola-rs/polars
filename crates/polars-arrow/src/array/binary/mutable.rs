@@ -283,7 +283,7 @@ impl<O: Offset> MutableBinaryArray<O> {
         unsafe { Self::from_trusted_len_values_iter_unchecked(iterator) }
     }
 
-    /// Creates a [`MutableBinaryArray`] from an fallible iterator of trusted length.
+    /// Creates a [`MutableBinaryArray`] from a fallible iterator of trusted length.
     ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
@@ -303,7 +303,7 @@ impl<O: Offset> MutableBinaryArray<O> {
         Ok(Self::try_new(Self::default_dtype(), offsets, values, validity).unwrap())
     }
 
-    /// Creates a [`MutableBinaryArray`] from an fallible iterator of trusted length.
+    /// Creates a [`MutableBinaryArray`] from a fallible iterator of trusted length.
     #[inline]
     pub fn try_from_trusted_len_iter<E, I, P>(iterator: I) -> std::result::Result<Self, E>
     where

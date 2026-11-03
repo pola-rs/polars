@@ -1,4 +1,4 @@
-//! Having `Object<&;static> in [`DataType`] make serde tag the `Deserialize` trait bound 'static
+//! Having `Object<'static>` in [`DataType`] makes serde tag the `Deserialize` trait bound 'static
 //! even though we skip serializing `Object`.
 //!
 //! We could use [serde_1712](https://github.com/serde-rs/serde/issues/1712), but that gave problems caused by

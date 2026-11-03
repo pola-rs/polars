@@ -702,7 +702,7 @@ impl MutableBitmap {
         unsafe { Self::try_from_trusted_len_iter_unchecked(iterator) }
     }
 
-    /// Creates a new [`MutableBitmap`] from an fallible iterator of booleans.
+    /// Creates a new [`MutableBitmap`] from a fallible iterator of booleans.
     ///
     /// # Safety
     /// The caller must guarantee that the iterator is `TrustedLen`.

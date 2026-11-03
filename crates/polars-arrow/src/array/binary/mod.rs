@@ -395,7 +395,7 @@ impl<O: Offset> BinaryArray<O> {
         unsafe { Self::from_trusted_len_iter_unchecked(iterator) }
     }
 
-    /// Creates a [`BinaryArray`] from an fallible iterator of trusted length.
+    /// Creates a [`BinaryArray`] from a fallible iterator of trusted length.
     ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
@@ -409,7 +409,7 @@ impl<O: Offset> BinaryArray<O> {
         MutableBinaryArray::<O>::try_from_trusted_len_iter_unchecked(iterator).map(|x| x.into())
     }
 
-    /// Creates a [`BinaryArray`] from an fallible iterator of trusted length.
+    /// Creates a [`BinaryArray`] from a fallible iterator of trusted length.
     #[inline]
     pub fn try_from_trusted_len_iter<E, I, P>(iter: I) -> Result<Self, E>
     where

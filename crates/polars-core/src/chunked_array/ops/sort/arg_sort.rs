@@ -217,7 +217,7 @@ where
     T: TotalOrd + Send + Sync,
 {
     // Fast path
-    // 1) If array is already sorted in the required order .
+    // 1) If array is already sorted in the required order.
     // 2) If array is reverse sorted -> we do a stable reverse.
     if is_sorted_flag != IsSorted::Not {
         let len_final = options
