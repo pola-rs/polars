@@ -172,6 +172,29 @@ def test_read_geoparquet_invalid_covering(
     assert not isinstance(df.schema["bbox"], pl.Extension)
 
 
+def test_read_geoparquet_covering_claimed_twice(plmonkeypatch: PlMonkeyPatch) -> None:
+    table = pa.table(
+        {
+            "a": pa.array([POINT_WKB], pa.binary()),
+            "b": pa.array([POINT_WKB], pa.binary()),
+            "bbox": [XY_BOUNDS],
+        }
+    )
+    wkb = {
+        "encoding": "WKB",
+        "geometry_types": [],
+        "covering": _covering("bbox", BOX_XY),
+    }
+    buf = _write_geo(table, "1.1.0", {"a": {**wkb, "crs": PROJJSON}, "b": wkb})
+
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_READ", "1")
+    with pytest.warns(UserWarning, match="'bbox' already covers another column"):
+        df = pl.read_parquet(buf)
+    # The first claim wins; the second geometry only loses its covering.
+    assert _ext(df.schema["bbox"]) == ("geoarrow.box", BOX_XY, {"crs": PROJJSON})
+    assert _ext(df.schema["b"]) == ("geoarrow.wkb", pl.Binary, CRS84)
+
+
 def test_write_geoparquet(plmonkeypatch: PlMonkeyPatch) -> None:
     md = json.dumps({"crs": PROJJSON, "edges": "spherical", "epoch": 2021.5})
     df = pl.DataFrame(
@@ -498,6 +521,25 @@ def test_write_geoparquet_no_bbox_from_covering_over_antimeridian(
     assert "bbox" not in geometry
 
 
+def test_write_geoparquet_no_bbox_infinite(plmonkeypatch: PlMonkeyPatch) -> None:
+    inf = float("inf")
+    df = pl.DataFrame(
+        {
+            "a": [{"x": inf, "y": 1.0}, {"x": 1.0, "y": 2.0}],
+            "b": [{"x": 1.0, "y": 2.0}, {"x": 3.0, "y": 4.0}],
+        },
+        schema={
+            "a": pl.Extension("geoarrow.point", XY, None),
+            "b": pl.Extension("geoarrow.point", XY, None),
+        },
+    )
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.1")
+    columns = _geo_metadata(df)["columns"]
+    # JSON can't hold an infinite bound.
+    assert "bbox" not in columns["a"]
+    assert columns["b"]["bbox"] == [1.0, 2.0, 3.0, 4.0]
+
+
 def test_write_geoparquet_bbox_encrypted(
     plmonkeypatch: PlMonkeyPatch, tmp_path: Path
 ) -> None:
@@ -581,8 +623,10 @@ def test_write_geoparquet_errors(
         df.write_parquet(io.BytesIO())
 
 
+# Metadata without a `geo` key must not skip the early check.
+@pytest.mark.parametrize("metadata", [None, {"k": "v"}])
 def test_write_geoparquet_error_before_file_is_opened(
-    plmonkeypatch: PlMonkeyPatch, tmp_path: Path
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path, metadata: dict[str, str] | None
 ) -> None:
     plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.1")
     dtype = pl.Extension("geoarrow.wkb", pl.Binary, '{"crs": "EPSG:4326"}')
@@ -592,11 +636,13 @@ def test_write_geoparquet_error_before_file_is_opened(
 
     path = tmp_path / "a.parquet"
     with pytest.raises(pl.exceptions.InvalidOperationError, match="CRS"):
-        df.write_parquet(path)
+        df.write_parquet(path, metadata=metadata)
     assert not path.exists()
 
     with pytest.raises(pl.exceptions.InvalidOperationError, match="CRS"):
-        df.lazy().sink_parquet(pl.PartitionBy(tmp_path / "p", key="p"), mkdir=True)
+        df.lazy().sink_parquet(
+            pl.PartitionBy(tmp_path / "p", key="p"), mkdir=True, metadata=metadata
+        )
     assert list(tmp_path.rglob("*.parquet")) == []
 
 
