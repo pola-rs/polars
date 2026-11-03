@@ -306,7 +306,7 @@ pub fn validate_geo_schema(schema: &ArrowSchema) -> PolarsResult<()> {
             } else if field.name == "bbox" && bbox_is_ambiguous(schema) {
                 "it could cover both 'geometry' and 'geography'; rename one of them"
             } else {
-                "no geometry column is named after it; \
+                "no geometry column has it as its covering name; \
                 name it '<geometry>_bbox', or 'bbox' for a column named 'geometry' or 'geography'"
             };
             // [`geo_key_value`] runs once per file, so warning there would repeat if we write to
@@ -400,7 +400,7 @@ fn build_geo(
                     .map(|t| format!(" of type '{t}'"))
                     .unwrap_or_default();
                 polars_bail!(
-                    InvalidOperation: "cannot write column '{}' as GeoParquet: CRS {}{} must be a PROJJSON object, null or '{}'; \
+                    InvalidOperation: "cannot write column '{}' as GeoParquet: CRS {}{} must be a PROJJSON object, null, or the authority code '{}'; \
                     convert it to PROJJSON, or pass your own '{}' key in the file metadata",
                     name, crs, of_type, DEFAULT_CRS, GEO_KEY
                 )

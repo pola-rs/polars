@@ -37,7 +37,10 @@ impl ParquetWriterStarter {
         options: Arc<ParquetWriteOptions>,
         arrow_schema: ArrowSchemaRef,
     ) -> PolarsResult<Self> {
-        // A user-supplied `geo` key replaces the derived one, so it skips the checks and warnings too.
+        // Metadata that may set its own `geo` key skips the early checks and warnings,
+        // as that key replaces the derived one.
+        // A callable's keys are only known when each file ends,
+        // so for a callable any error comes from `FileWriter::end`, and there is no warning.
         if !options
             .key_value_metadata
             .as_ref()

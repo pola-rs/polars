@@ -306,7 +306,10 @@ def test_write_geoparquet_warns_unclaimed_box(
     df = pl.read_parquet(buf)
     assert _ext(df.schema["bbox"])[0] == "geoarrow.box"
 
-    match = "'bbox' as a plain struct.*name it '<geometry>_bbox'"
+    match = (
+        "'bbox' as a plain struct, not as a GeoParquet covering: "
+        "no geometry column has it as its covering name; name it '<geometry>_bbox'"
+    )
     out = io.BytesIO()
     with pytest.warns(UserWarning, match=match):
         df.write_parquet(out)
@@ -654,7 +657,7 @@ def test_geoparquet_crs_round_trip(
             pl.Extension(
                 "geoarrow.wkb", pl.Binary, '{"crs": "OGC:CRS84", "crs_type": "srid"}'
             ),
-            r"CRS \"OGC:CRS84\" of type 'srid' must be",
+            r"CRS \"OGC:CRS84\" of type 'srid' must be .*or the authority code 'OGC:CRS84'",
         ),
     ],
 )
