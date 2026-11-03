@@ -1,10 +1,15 @@
 use num_traits::AsPrimitive;
+use polars_compute::filter::filter_values;
 use polars_compute::rolling::QuantileMethod;
 #[cfg(feature = "dtype-f16")]
 use polars_utils::float16::pf16;
-use polars_utils::sort::select_many_unstable_by;
+use polars_utils::sort::{
+    MaskedSlice, SELECT_BLOCK_LEN, SELECT_MIN_PAR_LEN, select_many_by, select_many_unstable_by,
+};
+use rayon::prelude::*;
 
 use super::*;
+use crate::runtime::RAYON;
 
 pub trait QuantileAggSeries {
     /// Get the median of the [`ChunkedArray`] as a new [`Series`] of length 1.
@@ -162,8 +167,9 @@ fn quantiles_with<T: ToPrimitive + Copy + Default>(
         .collect()
 }
 
-/// The `quantile` of `vals`, non-null values in any order, which it reorders.
-pub(crate) fn quantile_of_nonnull<T: ToPrimitive + TotalOrd + Copy + Default>(
+/// The `quantile` of `vals`, non-null values in any order, which it reorders; large inputs are
+/// selected in parallel on the current rayon pool.
+pub(crate) fn quantile_of_nonnull<T: ToPrimitive + TotalOrd + Copy + Default + Send + Sync>(
     vals: &mut [T],
     quantile: f64,
     method: QuantileMethod,
@@ -217,6 +223,20 @@ pub(crate) fn sorted_quantile<T: PolarsNumericType>(
     })
 }
 
+/// The non-null values of `arr`, filtered in parallel blocks.
+fn filter_in_blocks<T: NativeType>(arr: &PrimitiveArray<T>) -> Vec<Vec<T>> {
+    let validity = arr.validity().unwrap();
+    (0..arr.len().div_ceil(SELECT_BLOCK_LEN))
+        .into_par_iter()
+        .map(|block| {
+            let start = block * SELECT_BLOCK_LEN;
+            let len = SELECT_BLOCK_LEN.min(arr.len() - start);
+            let values = &arr.values()[start..start + len];
+            filter_values(values, &validity.clone().sliced(start, len))
+        })
+        .collect()
+}
+
 /// Writes the values at the strictly ascending `ranks` of the sorted non-null values of `ca` to
 /// `out`, reading them directly if `ca` is flagged sorted and selecting them otherwise.
 pub fn order_statistics<T: PolarsNumericType>(
@@ -228,9 +248,39 @@ pub fn order_statistics<T: PolarsNumericType>(
         return;
     }
     match ca.is_sorted_flag() {
-        IsSorted::Not => {
+        // Entering the pool costs a thread wake-up, more than a small selection.
+        IsSorted::Not if ca.len() < SELECT_MIN_PAR_LEN => {
             select_many_unstable_by(&mut ca.to_vec_non_null(), ranks, out, TotalOrd::tot_cmp)
         },
+        IsSorted::Not => RAYON.install(|| {
+            // Mostly-null chunks are filtered first: their copy is small, while masking them
+            // would make the selection's sampling reject most values.
+            let filtered: Vec<Option<Vec<Vec<T::Native>>>> = ca
+                .downcast_iter()
+                .map(|arr| (2 * arr.null_count() > arr.len()).then(|| filter_in_blocks(arr)))
+                .collect();
+            let mut chunks: Vec<MaskedSlice<'_, T::Native>> = Vec::new();
+            for (arr, filtered) in ca.downcast_iter().zip(&filtered) {
+                match filtered {
+                    Some(blocks) => chunks.extend(blocks.iter().map(|values| MaskedSlice {
+                        values,
+                        validity: None,
+                    })),
+                    None => {
+                        let validity = arr.validity().filter(|v| v.unset_bits() > 0).map(|v| {
+                            let (bytes, offset, _) = v.as_slice();
+                            (bytes, offset)
+                        });
+                        chunks.push(MaskedSlice {
+                            values: arr.values(),
+                            validity,
+                        });
+                    },
+                }
+            }
+            let n_valid = ca.len() - ca.null_count();
+            select_many_by(&chunks, n_valid, ranks, out, TotalOrd::tot_cmp)
+        }),
         sorted => sorted_order_stats(ca, sorted == IsSorted::Descending, ranks, out),
     }
 }
