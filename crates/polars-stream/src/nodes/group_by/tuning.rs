@@ -12,8 +12,10 @@ const MAX_PARTITIONS: u64 = 1024;
 /// rows to estimate the size of a group from.
 const REDUCTION_STATE_BYTES: u64 = 16;
 /// The memory for the partitions being built and sent is at least the memory budget divided by
-/// this.
+/// this, unless the memory grant is smaller.
 const MIN_PARTITION_MEMORY_DIVISOR: u64 = 16;
+/// The largest share of the memory grant pool held by one group-by.
+const DEFAULT_MAX_GRANT_FRACTION: f64 = 2.0 / 3.0;
 
 pub fn budget() -> u64 {
     polars_config::config().ooc_memory_budget_bytes()
@@ -40,7 +42,8 @@ pub struct InputStats {
     pub pre_agg_state_bytes: u64,
     /// The number of states of the other reductions, summed over the pre-aggregate groups.
     pub pre_agg_fixed_states: u64,
-    pub num_reductions: u64,
+    /// The number of fixed-size reduction states of one group.
+    pub states_per_group: u64,
     /// Whether a reduction has states that grow with the values of a group.
     pub has_growing_states: bool,
     pub estimated_groups: u64,
@@ -74,13 +77,23 @@ impl InputStats {
         self.pre_agg_key_bytes + state_bytes + split_bytes
     }
 
+    /// The estimated memory of the whole result with a factor 2 margin, in bytes.
+    fn result_bytes_with_margin(&self) -> u64 {
+        self.result_bytes().saturating_mul(2)
+    }
+
+    /// The estimated memory of the result of one partition, with a factor 2 margin.
+    pub fn partition_grant_bytes(&self, num_partitions: usize) -> u64 {
+        self.result_bytes_with_margin() / num_partitions.max(1) as u64
+    }
+
     /// The estimated memory of one group of the result, in bytes.
     fn group_bytes(&self) -> u64 {
         self.cold_bytes
             .checked_div(self.cold_rows)
             .unwrap_or_else(|| {
                 self.pre_agg_key_bytes / self.pre_agg_groups.max(1)
-                    + REDUCTION_STATE_BYTES * self.num_reductions
+                    + REDUCTION_STATE_BYTES * self.states_per_group
             })
     }
 }
@@ -93,6 +106,8 @@ pub struct GroupByTuning {
     num_partitions: Option<usize>,
     /// Forces the size of a batch of cold frames.
     batch_bytes: Option<usize>,
+    /// The largest share of the memory grant pool held by one group-by.
+    pub max_grant_fraction: f64,
 }
 
 impl GroupByTuning {
@@ -103,6 +118,9 @@ impl GroupByTuning {
                 .max(1),
             num_partitions: env_var::<usize>("POLARS_GROUP_BY_NUM_PARTITIONS").map(|n| n.max(1)),
             batch_bytes: env_var("POLARS_GROUP_BY_BATCH_BYTES"),
+            max_grant_fraction: env_var("POLARS_GROUP_BY_MEMORY_GRANT_FRACTION")
+                .unwrap_or(DEFAULT_MAX_GRANT_FRACTION)
+                .clamp(0.0, 1.0),
         }
     }
 
@@ -112,11 +130,28 @@ impl GroupByTuning {
             .unwrap_or_else(|| usize::try_from(budget() / 8).unwrap_or(usize::MAX))
     }
 
+    /// The largest memory grant, in bytes.
+    pub fn max_grant_bytes(&self) -> u64 {
+        let pool_bytes = polars_config::config().ooc_memory_grant_budget_bytes();
+        (pool_bytes as f64 * self.max_grant_fraction).round() as u64
+    }
+
+    /// The memory grant to ask for: the whole result with a factor 2 margin, up to the largest
+    /// grant.
+    pub fn wanted_grant_bytes(&self, stats: &InputStats) -> u64 {
+        stats.result_bytes_with_margin().min(self.max_grant_bytes())
+    }
+
     /// The number of partitions: enough for every pipeline to have work, and enough that the
-    /// results of any `2 * num_pipelines` partitions fit in half the memory budget, or in what
-    /// the pre-aggregates leave of it if that is less. Above `num_pipelines` it is a multiple of
-    /// `num_pipelines`.
-    pub fn num_partitions(&self, stats: &InputStats, num_pipelines: usize) -> usize {
+    /// results of any `2 * num_pipelines` partitions fit in `memory_limit`, or in what the
+    /// pre-aggregates leave of the memory budget if that is less. Above `num_pipelines` it is a
+    /// multiple of `num_pipelines`.
+    pub fn num_partitions(
+        &self,
+        stats: &InputStats,
+        num_pipelines: usize,
+        memory_limit: u64,
+    ) -> usize {
         let work = stats.work();
         if work == 0 {
             return 1;
@@ -128,9 +163,10 @@ impl GroupByTuning {
         let t = num_pipelines.max(1) as u64;
         let n_rows = (work / self.min_rows_per_partition).clamp(1, t);
         let result_bytes = (2 * t).saturating_mul(stats.result_bytes());
-        let partition_memory = (budget() / 2)
-            .min(budget().saturating_sub(stats.pre_agg_bytes()))
-            .max(budget() / MIN_PARTITION_MEMORY_DIVISOR);
+        let partition_memory = budget()
+            .saturating_sub(stats.pre_agg_bytes())
+            .max(budget() / MIN_PARTITION_MEMORY_DIVISOR)
+            .min(memory_limit);
         let n_memory = result_bytes.div_ceil(partition_memory.max(1));
         if n_memory <= t {
             return n_rows.max(n_memory) as usize;

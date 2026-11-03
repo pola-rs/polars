@@ -31,6 +31,8 @@
   <a href="https://pola-rs.github.io/nodejs-polars/index.html">Node.js</a>
   -
   <a href="https://pola-rs.github.io/r-polars/index.html">R</a>
+  -
+  <a href="https://docs.pola.rs/api/python/stable/reference/sql/index.html">SQL</a>
   |
   <b>Agents</b>:
   <a href="https://github.com/polars-inc/skills/tree/main/polars">Skill</a>
@@ -42,18 +44,17 @@
   <a href="https://discord.gg/4UfP5cfBE7">Discord</a>
 </p>
 
-## Polars: Extremely fast Query Engine for DataFrames
+## Polars: Extremely fast Query Engine for DataFrames and SQL
 
-Polars is an analytical query engine for DataFrames, written in Rust. It is designed to be fast,
-easy to use and expressive. Key features are:
+Polars is an analytical query engine written in Rust. Write your queries with the DataFrame API, in
+SQL, or mix both: they run through the same optimizer and the same engine. It is designed to be
+fast, easy to use and expressive. Key features are:
 
 - **Fast**: written from the ground up in Rust with multi-threaded, vectorized (SIMD) execution
-- **Lazy & eager execution**: with query optimization out of the box
-- **Larger-than-RAM**: the streaming engine processes datasets that don't fit in memory
+- **Spill to disk**: Operations that exceed available RAM can spill to disk
 - **Expressive API**: compose complex queries with powerful expressions
 - **Extensible**: extend Polars natively with custom code through
   [I/O and Expression plugins](https://docs.pola.rs/user-guide/plugins/)
-- **Multi-language**: bindings for Python, Rust, Node.js, R, and SQL
 - **GPU support**: optionally accelerate queries on NVIDIA GPUs
 - **Interoperable**: uses the
   [Apache Arrow Columnar Format](https://arrow.apache.org/docs/format/Columnar.html) for zero-copy
@@ -63,8 +64,10 @@ To learn more, read the [user guide](https://docs.pola.rs/).
 
 ## Polars in action
 
-Queries are composed from expressions. This lazy query gets optimized out of the box and runs in
-parallel across all available cores:
+### DataFrame API
+
+Queries are composed from expressions or SQL. This lazy query gets optimized out of the box and runs
+in parallel across all available cores:
 
 ```python
 import polars as pl
@@ -82,17 +85,47 @@ df = (
 )
 ```
 
+### SQL
+
+```python
+import polars as pl
+
+df = pl.sql("""
+    WITH totals AS (
+        SELECT customer_id, SUM(amount) AS total, COUNT(*) AS n_orders
+        FROM read_parquet('orders.parquet')
+        WHERE status = 'shipped'
+        GROUP BY customer_id
+    )
+    SELECT c.name, t.total, t.n_orders, RANK() OVER (ORDER BY t.total DESC) AS rank
+    FROM totals t
+    JOIN read_parquet('customers.parquet') c USING (customer_id)
+    ORDER BY t.total DESC
+""").collect()
+```
+
+### Mix both
+
+DataFrames and LazyFrames in scope can be queried by name, and the result of a SQL query is a
+regular `LazyFrame`, so you can switch between SQL and expressions freely:
+
+```python
+orders = pl.scan_parquet("orders.parquet")
+
+df = (
+    pl.sql("SELECT customer_id, SUM(amount) AS total FROM orders GROUP BY customer_id")
+    .filter(pl.col("total") > 1_000)
+    .collect()
+)
+```
+
+Read more in the [SQL user guide](https://docs.pola.rs/user-guide/sql/intro/).
+
 ## Performance
 
-Polars is very fast. In fact, it is one of the best performing Dataframe solutions available. See
-the [PDS-H benchmarks](https://www.pola.rs/benchmarks.html) results.
-
-### Handles larger-than-RAM data
-
-If you have data that does not fit into memory, Polars' query engine is able to process your query
-(or parts of your query) in a streaming fashion. This drastically reduces memory requirements, so
-you might be able to process your 250GB dataset on your laptop. Collect with
-`collect(engine='streaming')` to run the query streaming.
+Polars is very fast. In fact, it is one of the best performing query engines available, for both
+DataFrame and SQL workloads. See the [PDS-H benchmarks](https://www.pola.rs/benchmarks.html)
+results.
 
 ## Installation
 

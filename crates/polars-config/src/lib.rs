@@ -84,6 +84,9 @@ const DEFAULT_OOC_MEMORY_BUDGET_MB: u64 = u64::MAX;
 const OOC_MEMORY_PREFETCH_FRACTION: &str = "POLARS_OOC_MEMORY_PREFETCH_FRACTION";
 const DEFAULT_OOC_MEMORY_PREFETCH_FRACTION: f64 = 0.5;
 
+const OOC_MEMORY_GRANT_FRACTION: &str = "POLARS_OOC_MEMORY_GRANT_FRACTION";
+const DEFAULT_OOC_MEMORY_GRANT_FRACTION: f64 = 0.75;
+
 const OOC_DISK_BUDGET_MB: &str = "POLARS_OOC_DISK_BUDGET_MB";
 const DEFAULT_OOC_DISK_BUDGET_MB: u64 = 64 * 1000; // 64 GB
 
@@ -220,6 +223,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     OOC_MEMORY_BUDGET_FRACTION,
     OOC_MEMORY_BUDGET_MB,
     OOC_MEMORY_PREFETCH_FRACTION,
+    OOC_MEMORY_GRANT_FRACTION,
     OOC_DISK_BUDGET_MB,
     OOC_SPILL_MIN_BYTES,
     OOC_MAX_PARALLEL_SPILL_TASKS,
@@ -271,6 +275,7 @@ pub struct Config {
     ooc_memory_budget_fraction: AtomicU64,
     ooc_memory_budget_bytes: AtomicU64,
     ooc_memory_prefetch_fraction: AtomicU64,
+    ooc_memory_grant_fraction: AtomicU64,
     ooc_disk_budget_bytes: AtomicU64,
     ooc_spill_min_bytes: AtomicU64,
     ooc_max_parallel_spill_tasks: AtomicU64,
@@ -300,6 +305,7 @@ pub struct Config {
     // Derived from others.
     ooc_effective_memory_budget_bytes: AtomicU64,
     ooc_memory_prefetch_bytes: AtomicU64,
+    ooc_memory_grant_budget_bytes: AtomicU64,
 }
 
 impl Config {
@@ -335,6 +341,7 @@ impl Config {
             ooc_memory_prefetch_fraction: AtomicU64::new(
                 DEFAULT_OOC_MEMORY_PREFETCH_FRACTION.to_bits(),
             ),
+            ooc_memory_grant_fraction: AtomicU64::new(DEFAULT_OOC_MEMORY_GRANT_FRACTION.to_bits()),
             ooc_disk_budget_bytes: AtomicU64::new(
                 DEFAULT_OOC_DISK_BUDGET_MB.saturating_mul(1_000_000),
             ),
@@ -373,6 +380,7 @@ impl Config {
             max_hot_table_size: AtomicU64::new(DEFAULT_MAX_HOT_TABLE_SIZE),
             ooc_effective_memory_budget_bytes: AtomicU64::new(0),
             ooc_memory_prefetch_bytes: AtomicU64::new(0),
+            ooc_memory_grant_budget_bytes: AtomicU64::new(0),
         };
         cfg.reload_env_vars();
         cfg
@@ -416,6 +424,9 @@ impl Config {
         let frac = f64::from_bits(self.ooc_memory_prefetch_fraction.load(Ordering::Relaxed));
         self.ooc_memory_prefetch_bytes
             .store((bytes as f64 * frac) as u64, Ordering::Relaxed);
+        let grant_frac = f64::from_bits(self.ooc_memory_grant_fraction.load(Ordering::Relaxed));
+        self.ooc_memory_grant_budget_bytes
+            .store((bytes as f64 * grant_frac) as u64, Ordering::Relaxed);
 
         let oomkill_frac = f64::from_bits(self.oomkill_threshold_fraction.load(Ordering::Relaxed));
         let oomkill_frac_bytes = if oomkill_frac.is_finite() {
@@ -542,6 +553,12 @@ impl Config {
             OOC_MEMORY_PREFETCH_FRACTION => self.ooc_memory_prefetch_fraction.store(
                 val.and_then(|x| parse::parse_f64_with_limits(var, x, 0.0, 0.99))
                     .unwrap_or(DEFAULT_OOC_MEMORY_PREFETCH_FRACTION)
+                    .to_bits(),
+                Ordering::Relaxed,
+            ),
+            OOC_MEMORY_GRANT_FRACTION => self.ooc_memory_grant_fraction.store(
+                val.and_then(|x| parse::parse_f64_with_limits(var, x, 0.0, 1.0))
+                    .unwrap_or(DEFAULT_OOC_MEMORY_GRANT_FRACTION)
                     .to_bits(),
                 Ordering::Relaxed,
             ),
@@ -818,6 +835,18 @@ impl Config {
     #[inline(always)]
     pub fn ooc_memory_prefetch_bytes(&self) -> u64 {
         self.ooc_memory_prefetch_bytes.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn ooc_memory_grant_fraction(&self) -> f64 {
+        f64::from_bits(self.ooc_memory_grant_fraction.load(Ordering::Relaxed))
+    }
+
+    /// The size of the memory grant pool: `POLARS_OOC_MEMORY_GRANT_FRACTION` times
+    /// [`Self::ooc_memory_budget_bytes`].
+    #[inline(always)]
+    pub fn ooc_memory_grant_budget_bytes(&self) -> u64 {
+        self.ooc_memory_grant_budget_bytes.load(Ordering::Relaxed)
     }
 
     #[inline(always)]

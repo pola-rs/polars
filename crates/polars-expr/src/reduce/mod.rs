@@ -233,6 +233,12 @@ pub trait GroupedReduction: Any + Send + Sync {
         None
     }
 
+    /// The number of fixed-size states per group, for memory estimates when
+    /// [`state_size`](Self::state_size) is `None`.
+    fn num_fixed_states(&self) -> usize {
+        1
+    }
+
     /// Returns this GroupedReduction as a dyn Any.
     fn as_any(&self) -> &dyn Any;
 }

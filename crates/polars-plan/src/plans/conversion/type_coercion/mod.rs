@@ -29,8 +29,8 @@ use polars_core::chunked_array::cast::CastOptions;
 ))]
 use polars_core::utils::try_get_supertype;
 use polars_core::utils::{
-    get_numeric_upcast_supertype_lossless, get_supertype, get_supertype_with_options,
-    materialize_dyn_int,
+    check_is_valid_struct_cast, get_numeric_upcast_supertype_lossless, get_supertype,
+    get_supertype_with_options, materialize_dyn_int,
 };
 use polars_utils::format_list;
 use polars_utils::itertools::Itertools;
@@ -38,6 +38,25 @@ use polars_utils::itertools::Itertools;
 use super::*;
 
 pub struct TypeCoercionRule {}
+
+/// The strict casts that type coercion may run non-strict. A `false` or `Raise` field keeps
+/// that kind of cast strict; it does not make the cast raise.
+const RELAXED_CAST_POLICY: CastColumnsPolicy = CastColumnsPolicy {
+    integer_upcast: true,
+    integer_to_float_cast: false,
+    float_upcast: true,
+    float_downcast: true,
+    datetime_nanoseconds_downcast: true,
+    datetime_microseconds_downcast: true,
+    // Increasing the time unit precision can overflow.
+    datetime_milliseconds_upcast: false,
+    datetime_microseconds_upcast: false,
+    datetime_convert_timezone: true,
+    null_upcast: true,
+    categorical_to_string: true,
+    missing_struct_fields: MissingColumnsPolicy::Insert,
+    extra_struct_fields: ExtraColumnsPolicy::Raise,
+};
 
 macro_rules! unpack {
     ($packed:expr) => {
@@ -139,23 +158,12 @@ impl OptimizationRule for TypeCoercionRule {
                             .dtype;
                         let cast_to = &dtype;
 
-                        let v = CastColumnsPolicy {
-                            integer_upcast: true,
-                            integer_to_float_cast: false,
-                            float_upcast: true,
-                            float_downcast: true,
-                            datetime_nanoseconds_downcast: true,
-                            datetime_microseconds_downcast: true,
-                            // Increasing the time unit precision can overflow.
-                            datetime_milliseconds_upcast: false,
-                            datetime_microseconds_upcast: false,
-                            datetime_convert_timezone: true,
-                            null_upcast: true,
-                            categorical_to_string: true,
-                            missing_struct_fields: MissingColumnsPolicy::Insert,
-                            extra_struct_fields: ExtraColumnsPolicy::Ignore,
-                        }
-                        .should_cast_column("", cast_to, &cast_from);
+                        // A cast that changes struct fields stays strict, so it raises as in
+                        // `Series.cast`.
+                        let v = check_is_valid_struct_cast(&cast_from, cast_to, &PlSmallStr::EMPTY)
+                            .and_then(|()| {
+                                RELAXED_CAST_POLICY.should_cast_column("", cast_to, &cast_from)
+                            });
 
                         match v {
                             // No casting needed
@@ -218,17 +226,18 @@ impl OptimizationRule for TypeCoercionRule {
                     expr_arena.add(AExpr::Cast {
                         expr: truthy_node,
                         dtype: st.clone(),
-                        options: CastOptions::Strict,
+                        options: supertype_cast_options(&type_true, &st),
                     })
                 } else {
                     truthy_node
                 };
 
                 let new_node_falsy = if type_false != st {
+                    let options = supertype_cast_options(&type_false, &st);
                     expr_arena.add(AExpr::Cast {
                         expr: falsy_node,
                         dtype: st,
-                        options: CastOptions::Strict,
+                        options,
                     })
                 } else {
                     falsy_node
@@ -1403,7 +1412,20 @@ fn try_inline_literal_cast(
     Ok(Some(lv))
 }
 
-/// Cast `e` to `to_dtype`. `options` applies to folding a literal; inserted casts are strict.
+/// Options for a cast to a supertype. It is strict, unless it changes struct fields in a way
+/// [`RELAXED_CAST_POLICY`] allows: the strict cast would reject that change.
+fn supertype_cast_options(from: &DataType, to: &DataType) -> CastOptions {
+    if check_is_valid_struct_cast(from, to, &PlSmallStr::EMPTY).is_err()
+        && RELAXED_CAST_POLICY.should_cast_column("", to, from).is_ok()
+    {
+        CastOptions::NonStrict
+    } else {
+        CastOptions::Strict
+    }
+}
+
+/// Cast `e` to `to_dtype`. `options` applies to folding a literal; inserted casts use
+/// [`supertype_cast_options`].
 fn cast_expr_ir(
     e: &mut ExprIR,
     from_dtype: &DataType,
@@ -1428,7 +1450,7 @@ fn cast_expr_ir(
     e.set_node(expr_arena.add(AExpr::Cast {
         expr: e.node(),
         dtype: to_dtype.clone(),
-        options: CastOptions::Strict,
+        options: supertype_cast_options(from_dtype, to_dtype),
     }));
     e.set_dtype(to_dtype.clone());
 

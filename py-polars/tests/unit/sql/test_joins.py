@@ -2818,6 +2818,27 @@ def test_join_on_constant_true_plans_cross_join() -> None:
     assert "CROSS JOIN" not in plan
 
 
+def test_join_on_decimal_mul_range_fused() -> None:
+    frames = {
+        "a": pl.LazyFrame({"x": [10, 11, 13, None]}, schema={"x": pl.Decimal(10, 2)}),
+        "b": pl.LazyFrame(
+            {"lo": [9, 10, 12, None], "k": [1, 2, 3, 4]},
+            schema={"lo": pl.Decimal(10, 2), "k": pl.Int64},
+        ),
+    }
+    query = "SELECT x, k FROM a JOIN b ON a.x BETWEEN b.lo AND b.lo * 1.2"
+    lf = pl.SQLContext(frames=frames).execute(query)
+    plan = lf.explain()
+    assert plan.startswith(("IEJOIN JOIN", "simple π"))
+    assert "FILTER" not in plan
+    assert sorted(lf.collect().rows()) == [
+        (Decimal("10.00"), 1),
+        (Decimal("10.00"), 2),
+        (Decimal("11.00"), 2),
+        (Decimal("13.00"), 3),
+    ]
+
+
 def test_constant_key_join_keeps_validation() -> None:
     a = pl.LazyFrame({"k": [1, 2]})
     b = pl.LazyFrame({"v": ["r", "s"]})

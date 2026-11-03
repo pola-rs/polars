@@ -1538,7 +1538,9 @@ class PyExpr:
         include_breakpoint: bool,
     ) -> PyExpr: ...
     def skip_batch_predicate(self, schema: Any) -> PyExpr | None: ...
-    def to_pyarrow_predicate(self, schema: Any) -> str | None: ...
+    def to_pyarrow_predicate(
+        self, schema: Any, list_limit: int | None
+    ) -> str | None: ...
     @staticmethod
     def row_encode_unordered(
         exprs: Sequence[PyExpr],
@@ -2704,6 +2706,9 @@ class PySQLContext:
     def execute_with_catalog_tables(
         self, query: str, tables: pylist[tuple[pylist[str], PyLazyFrame]]
     ) -> PyLazyFrame: ...
+    def catalog_delete_predicate(
+        self, query: str, tables: pylist[tuple[pylist[str], PyLazyFrame]]
+    ) -> PyExpr: ...
     @staticmethod
     def table_identifiers(
         query: str,

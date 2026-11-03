@@ -484,6 +484,19 @@ def test_decimal_mul_div_out_of_range() -> None:
         df.sql("SELECT big / 1 FROM self")
 
 
+def test_decimal_mul_skips_values_under_null_lists() -> None:
+    # The masked first row would overflow.
+    mask = pl.Series([False, True])
+    df = pl.DataFrame(
+        {"a": [[D(10**37)], [D(1)]]}, schema={"a": pl.List(pl.Decimal(38, 0))}
+    ).with_columns(b=pl.col("a").list.to_array(1))
+    out = df.select(
+        pl.when(mask).then("a").list.eval(pl.sql_expr('"" * 100')),
+        pl.when(mask).then("b").arr.eval(pl.sql_expr('"" * 100')),
+    )
+    assert out.rows() == [(None, None), ([D(100)], [D(100)])]
+
+
 def test_decimal_mul_div_float_and_int_unchanged() -> None:
     df = pl.DataFrame(
         {"a": [D("1.50")], "f": [2.0], "i": [3], "j": [2]},
