@@ -10,8 +10,12 @@ where
     T: PolarsNumericType,
     ChunkedArray<T>: ChunkShiftFill<T, Option<T::Native>>,
 {
-    let fill_value = fill_value.extract::<T::Native>();
-    ca.shift_and_fill(n, fill_value)
+    // `extract` converts a Decimal by value, which drops the scale.
+    let fill_value = match fill_value {
+        AnyValue::Decimal(v, _, _) => AnyValue::Int128(v),
+        av => av,
+    };
+    ca.shift_and_fill(n, fill_value.extract::<T::Native>())
 }
 
 #[cfg(any(
@@ -87,11 +91,7 @@ pub(super) fn shift_and_fill(args: &[Column]) -> PolarsResult<Column> {
                 AnyValue::Null => None,
                 v => polars_bail!(ComputeError: "fill value '{}' is not supported", v),
             };
-            unsafe {
-                ca.shift_and_fill(n, fill_value.as_ref())
-                    .into_column()
-                    .from_physical_unchecked(logical)
-            }
+            Ok(ca.shift_and_fill(n, fill_value.as_ref()).into_column())
         },
         #[cfg(feature = "object")]
         Object(_) => shift_and_fill_with_mask(s, n, fill_value_s),
