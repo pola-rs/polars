@@ -444,6 +444,15 @@ def test_write_geoparquet_covering(plmonkeypatch: PlMonkeyPatch) -> None:
             },
             "differs from the geometry's",
         ),
+        (
+            {
+                "geometry": pl.Extension("geoarrow.wkb", pl.Binary, json.dumps(CRS84)),
+                "bbox": pl.Extension(
+                    "geoarrow.box", BOX_XY, json.dumps({**CRS84, "crs_type": "srid"})
+                ),
+            },
+            "'bbox' as GeoParquet: CRS \"OGC:CRS84\" of type 'srid' must be",
+        ),
     ],
 )
 def test_write_geoparquet_covering_errors(
@@ -455,6 +464,33 @@ def test_write_geoparquet_covering_errors(
     plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.1")
     with pytest.raises(pl.exceptions.InvalidOperationError, match=match):
         df.write_parquet(io.BytesIO())
+
+
+CRS84_PROJJSON = {"crs": {**PROJJSON, "id": {"authority": "OGC", "code": "CRS84"}}}
+
+
+@pytest.mark.parametrize(
+    ("geometry_crs", "box_crs"), [(CRS84_PROJJSON, CRS84), (CRS84, CRS84_PROJJSON)]
+)
+def test_write_geoparquet_covering_crs84_spellings(
+    plmonkeypatch: PlMonkeyPatch,
+    geometry_crs: dict[str, Any],
+    box_crs: dict[str, Any],
+) -> None:
+    # Both spellings are written as OGC:CRS84, so the box covers the geometry.
+    df = pl.DataFrame(
+        {"geometry": [POINT_WKB], "bbox": [XY_BOUNDS]},
+        schema={
+            "geometry": pl.Extension(
+                "geoarrow.wkb", pl.Binary, json.dumps(geometry_crs)
+            ),
+            "bbox": pl.Extension("geoarrow.box", BOX_XY, json.dumps(box_crs)),
+        },
+    )
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.1")
+    geometry = _geo_metadata(df)["columns"]["geometry"]
+    assert geometry["covering"] == _covering("bbox", BOX_XY)
+    assert "crs" not in geometry
 
 
 def _bbox_frame() -> pl.DataFrame:
