@@ -8,7 +8,7 @@ use polars_core::prelude::IntoColumn;
 use polars_core::runtime::RAYON;
 use polars_defs::join::JoinBuildSide;
 use polars_error::PolarsResult;
-use polars_ooc::{MostRecentSpillContext, ParameterFreeSpillContext, SpillFrame};
+use polars_ooc::{MostRecentSpillContext, ParameterFreeSpillContext, SpillFrame, memory_manager};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::relaxed_cell::RelaxedCell;
@@ -112,15 +112,16 @@ fn fold_sample<T: Send>(
             .par_iter()
             .enumerate()
             .try_fold(&init, |acc, (morsel_idx, morsel)| {
-                let sliced;
-                let pin_df = morsel.df_blocking();
-                let df = if morsel_idx == last_morsel_idx {
-                    sliced = pin_df.slice(0, last_morsel_slice);
-                    &sliced
-                } else {
-                    &*pin_df
-                };
-                fold(acc, df)
+                let acc = {
+                    let df = morsel.df_blocking();
+                    if morsel_idx == last_morsel_idx {
+                        fold(acc, &df.slice(0, last_morsel_slice))
+                    } else {
+                        fold(acc, &df)
+                    }
+                }?;
+                memory_manager().spill_blocking();
+                PolarsResult::Ok(acc)
             })
             .try_reduce(&init, |a, b| Ok(reduce(a, b)))
     })?;
