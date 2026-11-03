@@ -352,9 +352,9 @@ pub fn optimize(
         })?;
     }
 
-    if opt_flags.streaming() && !opt_flags.gpu() {
-        extract_window::extract_windows(root, ir_arena, expr_arena);
-    }
+    let has_windows = opt_flags.streaming()
+        && !opt_flags.gpu()
+        && extract_window::extract_windows(root, ir_arena, expr_arena);
 
     if opt_flags.contains(OptFlags::CHECK_ORDER_OBSERVE) {
         match ir_arena.get(root) {
@@ -406,7 +406,7 @@ pub fn optimize(
         }
     }
 
-    if opt_flags.streaming() && !opt_flags.gpu() {
+    if has_windows {
         window_top_one::rewrite_top_one_windows(
             root,
             ir_arena,
