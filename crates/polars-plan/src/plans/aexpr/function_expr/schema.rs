@@ -187,6 +187,8 @@ impl IRFunctionExpr {
                     T::UInt64 => T::UInt64,
                     #[cfg(feature = "dtype-i128")]
                     T::Int128 => T::Int128,
+                    #[cfg(feature = "dtype-u128")]
+                    T::UInt128 => T::UInt128,
                     #[cfg(feature = "dtype-decimal")]
                     T::Decimal(_p, s) => T::Decimal(DEC128_MAX_PREC, *s),
                     _ => T::Int64,
