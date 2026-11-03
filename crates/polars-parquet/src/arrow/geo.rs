@@ -300,13 +300,19 @@ pub fn validate_geo_schema(schema: &ArrowSchema) -> PolarsResult<()> {
                 .iter()
                 .any(|c| c == field.name.as_str())
         {
+            // A box that can't be a covering under any name should not be told to rename.
+            let reason = if box_layout(&ext.inner).is_none() {
+                "its fields must be Float64 xmin, ymin, [zmin,] xmax, ymax, [zmax] in that order"
+            } else {
+                "no geometry column is named after it; \
+                name it '<geometry>_bbox', or 'bbox' for a column named 'geometry' or 'geography'"
+            };
             // [`geo_key_value`] runs once per file, so warning there would repeat if we write to
             // multiple files
             polars_warn!(
-                "writing column '{}' as a plain struct, not as a GeoParquet covering: \
-                no geometry column is named after it; \
-                name it '<geometry>_bbox', or 'bbox' for a column named 'geometry' or 'geography'",
-                field.name
+                "writing column '{}' as a plain struct, not as a GeoParquet covering: {}",
+                field.name,
+                reason
             );
         }
     }
@@ -486,7 +492,8 @@ fn covering_name(geometry: &str) -> String {
 }
 
 /// Returns the name of the box column that covers `geometry`, and its `covering` metadata.
-/// Returns `None` if there is no `geoarrow.box` column named after [`covering_name`].
+/// Returns `None` if there is no `geoarrow.box` column named after [`covering_name`],
+/// or if its fields can't form a covering.
 fn bbox_covering(
     schema: &ArrowSchema,
     geometry: &str,
@@ -501,13 +508,10 @@ fn bbox_covering(
         return Ok(None);
     }
 
-    let layout = box_layout(&ext.inner).ok_or_else(|| {
-        polars_err!(
-            InvalidOperation: "cannot write column '{}' as GeoParquet covering of '{}': \
-            storage type {:?} must have Float64 fields xmin, ymin, [zmin,] xmax, ymax, [zmax] in that order",
-            box_name, geometry, ext.inner
-        )
-    })?;
+    // Written as a plain struct; [`validate_geo_schema`] warns about it.
+    let Some(layout) = box_layout(&ext.inner) else {
+        return Ok(None);
+    };
 
     let box_crs = extension_metadata(&box_name, ext)?.remove("crs");
     if let Some(crs) = box_crs.filter(|crs| !crs.is_null())
