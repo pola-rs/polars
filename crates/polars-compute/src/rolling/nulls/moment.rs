@@ -8,7 +8,7 @@ use super::*;
 pub fn rolling_var<T>(
     arr: &PrimitiveArray<T>,
     window_size: usize,
-    min_periods: usize,
+    min_samples: usize,
     center: bool,
     weights: Option<&[f64]>,
     params: Option<RollingFnParams>,
@@ -28,7 +28,7 @@ where
         arr.values().as_slice(),
         arr.validity().as_ref().unwrap(),
         window_size,
-        min_periods,
+        min_samples,
         offsets_fn,
         params,
     )
@@ -37,7 +37,7 @@ where
 pub fn rolling_skew<T>(
     arr: &PrimitiveArray<T>,
     window_size: usize,
-    min_periods: usize,
+    min_samples: usize,
     center: bool,
     params: Option<RollingFnParams>,
 ) -> ArrayRef
@@ -53,7 +53,7 @@ where
         arr.values().as_slice(),
         arr.validity().as_ref().unwrap(),
         window_size,
-        min_periods,
+        min_samples,
         offsets_fn,
         params,
     )
@@ -62,7 +62,7 @@ where
 pub fn rolling_kurtosis<T>(
     arr: &PrimitiveArray<T>,
     window_size: usize,
-    min_periods: usize,
+    min_samples: usize,
     center: bool,
     params: Option<RollingFnParams>,
 ) -> ArrayRef
@@ -78,7 +78,7 @@ where
         arr.values().as_slice(),
         arr.validity().as_ref().unwrap(),
         window_size,
-        min_periods,
+        min_samples,
         offsets_fn,
         params,
     )

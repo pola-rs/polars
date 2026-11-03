@@ -1487,9 +1487,9 @@ class PyExpr:
         seed: int | None,
     ) -> PyExpr: ...
     def ewm_mean(
-        self, alpha: float, adjust: bool, min_periods: int, ignore_nulls: bool
+        self, alpha: float, adjust: bool, min_samples: int, ignore_nulls: bool
     ) -> PyExpr: ...
-    def ewm_sum(self, alpha: float, min_periods: int, ignore_nulls: bool) -> PyExpr: ...
+    def ewm_sum(self, alpha: float, min_samples: int, ignore_nulls: bool) -> PyExpr: ...
     def ewm_mean_by(self, times: PyExpr, half_life: str) -> PyExpr: ...
     def ewm_sum_by(self, times: PyExpr, half_life: str) -> PyExpr: ...
     def ewm_std(
@@ -1497,7 +1497,7 @@ class PyExpr:
         alpha: float,
         adjust: bool,
         bias: bool,
-        min_periods: int,
+        min_samples: int,
         ignore_nulls: bool,
     ) -> PyExpr: ...
     def ewm_var(
@@ -1505,7 +1505,7 @@ class PyExpr:
         alpha: float,
         adjust: bool,
         bias: bool,
-        min_periods: int,
+        min_samples: int,
         ignore_nulls: bool,
     ) -> PyExpr: ...
     def extend_constant(self, value: PyExpr, n: PyExpr) -> PyExpr: ...
@@ -1787,63 +1787,63 @@ class PyExpr:
         self,
         window_size: int,
         weights: Sequence[float] | None = None,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> PyExpr: ...
     def rolling_sum_by(
         self,
         by: PyExpr,
         window_size: str,
-        min_periods: int,
+        min_samples: int,
         closed: ClosedWindow,
     ) -> PyExpr: ...
     def rolling_min(
         self,
         window_size: int,
         weights: Sequence[float] | None = None,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> PyExpr: ...
     def rolling_min_by(
         self,
         by: PyExpr,
         window_size: str,
-        min_periods: int,
+        min_samples: int,
         closed: ClosedWindow,
     ) -> PyExpr: ...
     def rolling_max(
         self,
         window_size: int,
         weights: Sequence[float] | None = None,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> PyExpr: ...
     def rolling_max_by(
         self,
         by: PyExpr,
         window_size: str,
-        min_periods: int,
+        min_samples: int,
         closed: ClosedWindow,
     ) -> PyExpr: ...
     def rolling_mean(
         self,
         window_size: int,
         weights: Sequence[float] | None = None,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> PyExpr: ...
     def rolling_mean_by(
         self,
         by: PyExpr,
         window_size: str,
-        min_periods: int,
+        min_samples: int,
         closed: ClosedWindow,
     ) -> PyExpr: ...
     def rolling_std(
         self,
         window_size: int,
         weights: Sequence[float] | None = None,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
         ddof: int = 1,
     ) -> PyExpr: ...
@@ -1851,7 +1851,7 @@ class PyExpr:
         self,
         by: PyExpr,
         window_size: str,
-        min_periods: int,
+        min_samples: int,
         closed: ClosedWindow,
         ddof: int = 1,
     ) -> PyExpr: ...
@@ -1859,7 +1859,7 @@ class PyExpr:
         self,
         window_size: int,
         weights: Sequence[float] | None = None,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
         ddof: int = 1,
     ) -> PyExpr: ...
@@ -1867,7 +1867,7 @@ class PyExpr:
         self,
         by: PyExpr,
         window_size: str,
-        min_periods: int,
+        min_samples: int,
         closed: ClosedWindow,
         ddof: int = 1,
     ) -> PyExpr: ...
@@ -1875,14 +1875,14 @@ class PyExpr:
         self,
         window_size: int,
         weights: Sequence[float] | None = None,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> PyExpr: ...
     def rolling_median_by(
         self,
         by: PyExpr,
         window_size: str,
-        min_periods: int,
+        min_samples: int,
         closed: ClosedWindow,
     ) -> PyExpr: ...
     def rolling_quantile(
@@ -1891,7 +1891,7 @@ class PyExpr:
         interpolation: QuantileMethod,
         window_size: int,
         weights: Sequence[float] | None = None,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> PyExpr: ...
     def rolling_quantile_by(
@@ -1900,7 +1900,7 @@ class PyExpr:
         quantile: float,
         interpolation: QuantileMethod,
         window_size: str,
-        min_periods: int,
+        min_samples: int,
         closed: ClosedWindow,
     ) -> PyExpr: ...
     def rolling_rank(
@@ -1908,7 +1908,7 @@ class PyExpr:
         window_size: int,
         method: RankMethod,
         seed: int | None = None,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> PyExpr: ...
     def rolling_rank_by(
@@ -1924,7 +1924,7 @@ class PyExpr:
         self,
         window_size: int,
         bias: bool,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> PyExpr: ...
     def rolling_kurtosis(
@@ -1932,7 +1932,7 @@ class PyExpr:
         window_size: int,
         fisher: bool,
         bias: bool,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> PyExpr: ...
     def rolling_map(
@@ -1940,7 +1940,7 @@ class PyExpr:
         lambda_function: Any,
         window_size: int,
         weights: Sequence[float] | None = None,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> PyExpr: ...
 
@@ -2284,10 +2284,10 @@ class PyOptFlags:
 
 # functions.lazy
 def rolling_corr(
-    x: PyExpr, y: PyExpr, window_size: int, min_periods: int
+    x: PyExpr, y: PyExpr, window_size: int, min_samples: int
 ) -> PyExpr: ...
 def rolling_cov(
-    x: PyExpr, y: PyExpr, window_size: int, min_periods: int, ddof: int
+    x: PyExpr, y: PyExpr, window_size: int, min_samples: int, ddof: int
 ) -> PyExpr: ...
 def arg_sort_by(
     by: Sequence[PyExpr],

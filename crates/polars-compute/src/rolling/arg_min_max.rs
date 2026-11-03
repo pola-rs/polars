@@ -109,8 +109,8 @@ impl<T: NativeType, P: MinMaxPolicy> RollingAggWindowNulls<T, IdxSize>
             .map(|&best_abs| (best_abs - self.start) as IdxSize)
     }
 
-    fn is_valid(&self, min_periods: usize) -> bool {
-        self.nonnulls_in_window >= min_periods
+    fn is_valid(&self, min_samples: usize) -> bool {
+        self.nonnulls_in_window >= min_samples
     }
 
     fn slice_len(&self) -> usize {
