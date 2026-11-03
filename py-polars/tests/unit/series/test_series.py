@@ -1065,6 +1065,30 @@ def test_round_int() -> None:
         pytest.param(
             pl.Series([0.0]), 2, pl.Series([0.0]), id="0 should remain the same"
         ),
+        pytest.param(
+            pl.Series([123456789, 234567890, -123456789]),
+            4,
+            pl.Series([123500000, 234600000, -123500000]),
+            id="i64 past float precision of the scaled value",
+        ),
+        pytest.param(
+            pl.Series([12345, -12345, 99, 42, 0]),
+            4,
+            pl.Series([12350, -12350, 99, 42, 0]),
+            id="i64 half away from zero",
+        ),
+        pytest.param(
+            pl.Series([18446744073709551615], dtype=pl.UInt64),
+            3,
+            pl.Series([18400000000000000000], dtype=pl.UInt64),
+            id="u64 max",
+        ),
+        pytest.param(
+            pl.Series([127, -128], dtype=pl.Int8),
+            2,
+            pl.Series([127, -128], dtype=pl.Int8),
+            id="i8 rounding past the type range is clamped",
+        ),
     ],
 )
 def test_round_sig_figs(

@@ -1,6 +1,8 @@
 use num_traits::AsPrimitive;
 use polars_core::prelude::*;
-use polars_core::with_match_physical_numeric_polars_type;
+use polars_core::{
+    with_match_physical_integer_polars_type, with_match_physical_numeric_polars_type,
+};
 use polars_defs::expr::RoundMode;
 use polars_utils::float16::pf16;
 
@@ -263,6 +265,32 @@ pub trait RoundSeries: SeriesSealed {
             got = s.dtype(),
             expected = "numeric"
         );
+        // Integers are rounded in integer arithmetic: a round trip through f64 loses
+        // the low digits of values past 2^53 and leaves results like 123499999.
+        // 128-bit integers keep the float path, since a rounded magnitude can exceed i128.
+        let is_int_up_to_64_bits = matches!(
+            s.dtype(),
+            DataType::Int8
+                | DataType::Int16
+                | DataType::Int32
+                | DataType::Int64
+                | DataType::UInt8
+                | DataType::UInt16
+                | DataType::UInt32
+                | DataType::UInt64
+        );
+        if is_int_up_to_64_bits {
+            with_match_physical_integer_polars_type!(s.dtype(), |$T| {
+                let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                let min: i128 = <$T as PolarsNumericType>::Native::MIN.as_();
+                let max: i128 = <$T as PolarsNumericType>::Native::MAX.as_();
+                let s = ca.apply_values(|value| {
+                    let rounded = round_int_sig_figs(AsPrimitive::<i128>::as_(value), digits);
+                    AsPrimitive::<<$T as PolarsNumericType>::Native>::as_(rounded.clamp(min, max))
+                }).into_series();
+                return Ok(s);
+            });
+        }
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
             let s = ca.apply_values(|value| {
@@ -378,9 +406,46 @@ pub trait RoundSeries: SeriesSealed {
 
 impl RoundSeries for Series {}
 
+/// Round an integer to `digits` significant digits, half away from zero, without
+/// going through floating point. `digits` is at least 1.
+fn round_int_sig_figs(value: i128, digits: i32) -> i128 {
+    if value == 0 {
+        return 0;
+    }
+    let magnitude = value.unsigned_abs().ilog10() as i32 + 1;
+    if magnitude <= digits {
+        return value;
+    }
+    let multiplier = 10u128.pow((magnitude - digits) as u32);
+    let rounded = (value.unsigned_abs() + multiplier / 2) / multiplier * multiplier;
+    // At most one digit above u64::MAX, so this fits in i128.
+    let rounded = rounded as i128;
+    if value < 0 { -rounded } else { rounded }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_round_int_sig_figs() {
+        assert_eq!(round_int_sig_figs(123456789, 4), 123500000);
+        assert_eq!(round_int_sig_figs(234567890, 4), 234600000);
+        assert_eq!(round_int_sig_figs(-123456789, 4), -123500000);
+        assert_eq!(round_int_sig_figs(12345, 4), 12350);
+        assert_eq!(round_int_sig_figs(-12345, 4), -12350);
+        assert_eq!(round_int_sig_figs(99, 1), 100);
+        assert_eq!(round_int_sig_figs(42, 4), 42);
+        assert_eq!(round_int_sig_figs(0, 3), 0);
+        assert_eq!(
+            round_int_sig_figs(i64::MAX as i128, 2),
+            9_200_000_000_000_000_000
+        );
+        assert_eq!(
+            round_int_sig_figs(u64::MAX as i128, 3),
+            18_400_000_000_000_000_000
+        );
+    }
 
     #[test]
     fn test_round_series() {
