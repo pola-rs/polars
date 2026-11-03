@@ -379,32 +379,9 @@ fn build_geo(
         let mut column = Map::new();
         column.insert("encoding".into(), encoding.geoparquet.into());
         column.insert("geometry_types".into(), geometry_types.into());
-        let crs_type = ext_metadata.get("crs_type").and_then(Value::as_str);
-        match ext_metadata.get("crs") {
-            // Geoarrow designates an 'unknown' CRS by leaving `crs` out,
-            // while GeoParquet explicitly writes it as `Null`.
-            // Leaving the key out would claim the data is in OGC:CRS84.
-            None | Some(Value::Null) => {
-                column.insert("crs".into(), Value::Null);
-            },
-            // The default is left out, as it is the only string CRS we can write without PROJ.
-            // An SRID that reads "OGC:CRS84" means whatever its producer says, so it is refused.
-            Some(Value::String(crs))
-                if crs == DEFAULT_CRS && matches!(crs_type, None | Some("authority_code")) => {},
-            Some(Value::Object(projjson)) if is_crs84(projjson) => {},
-            Some(crs @ Value::Object(_)) => {
-                column.insert("crs".into(), crs.clone());
-            },
-            Some(crs) => {
-                let of_type = crs_type
-                    .map(|t| format!(" of type '{t}'"))
-                    .unwrap_or_default();
-                polars_bail!(
-                    InvalidOperation: "cannot write column '{}' as GeoParquet: CRS {}{} must be a PROJJSON object, null, or the authority code '{}'; \
-                    convert it to PROJJSON, or pass your own '{}' key in the file metadata",
-                    name, crs, of_type, DEFAULT_CRS, GEO_KEY
-                )
-            },
+        let crs = geoparquet_crs(name, &ext_metadata)?;
+        if let Some(crs) = &crs {
+            column.insert("crs".into(), crs.clone());
         }
         match ext_metadata.get("edges") {
             None => {},
@@ -421,8 +398,7 @@ fn build_geo(
         }
 
         if version != "1.0.0"
-            && let Some((box_name, covering)) =
-                bbox_covering(schema, name, ext_metadata.get("crs"))?
+            && let Some((box_name, covering)) = bbox_covering(schema, name, crs.as_ref())?
         {
             column.insert("covering".into(), covering);
             covering_columns.push(box_name);
@@ -473,6 +449,37 @@ fn extension_metadata(name: &str, ext: &ExtensionType) -> PolarsResult<Map<Strin
             _ => polars_bail!(
                 InvalidOperation: "cannot write column '{}' as GeoParquet: invalid extension metadata", name
             ),
+        },
+    }
+}
+
+/// Returns the GeoParquet `crs` of column `name`.
+/// None -> the key is left out meaning OGC:CRS84.
+fn geoparquet_crs(name: &str, ext_metadata: &Map<String, Value>) -> PolarsResult<Option<Value>> {
+    let crs_type = ext_metadata.get("crs_type").and_then(Value::as_str);
+    match ext_metadata.get("crs") {
+        // Geoarrow designates an 'unknown' CRS by leaving `crs` out,
+        // while GeoParquet explicitly writes it as `Null`.
+        // Leaving the key out would claim the data is in OGC:CRS84.
+        None | Some(Value::Null) => Ok(Some(Value::Null)),
+        // The default is left out, as it is the only string CRS we can write without PROJ.
+        // An SRID that reads "OGC:CRS84" means whatever its producer says, so it is refused.
+        Some(Value::String(crs))
+            if crs == DEFAULT_CRS && matches!(crs_type, None | Some("authority_code")) =>
+        {
+            Ok(None)
+        },
+        Some(Value::Object(projjson)) if is_crs84(projjson) => Ok(None),
+        Some(crs @ Value::Object(_)) => Ok(Some(crs.clone())),
+        Some(crs) => {
+            let of_type = crs_type
+                .map(|t| format!(" of type '{t}'"))
+                .unwrap_or_default();
+            polars_bail!(
+                InvalidOperation: "cannot write column '{}' as GeoParquet: CRS {}{} must be a PROJJSON object, null, or the authority code '{}'; \
+                convert it to PROJJSON, or pass your own '{}' key in the file metadata",
+                name, crs, of_type, DEFAULT_CRS, GEO_KEY
+            )
         },
     }
 }
@@ -530,9 +537,10 @@ fn bbox_covering(
         return Ok(None);
     };
 
-    let box_crs = extension_metadata(&box_name, ext)?.remove("crs");
-    if let Some(crs) = box_crs.filter(|crs| !crs.is_null())
-        && Some(&crs) != geometry_crs
+    // A box without a CRS takes its geometry's
+    let box_metadata = extension_metadata(&box_name, ext)?;
+    if let Some(crs) = box_metadata.get("crs").filter(|crs| !crs.is_null())
+        && geoparquet_crs(&box_name, &box_metadata)?.as_ref() != geometry_crs
     {
         polars_bail!(
             InvalidOperation: "cannot write column '{}' as GeoParquet covering of '{}': its CRS {} differs from the geometry's",
