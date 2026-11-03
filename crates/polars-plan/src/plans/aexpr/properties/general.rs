@@ -248,10 +248,17 @@ fn is_input_independent_scalar_top_level(ae: &AExpr) -> bool {
 
 /// Checks if the top-level expression node is row-separable. If this is the case, then `stack` will
 /// be extended further with any nested expression nodes.
+///
+/// This doesn't check that the inputs it pushes line up within a batch, so walking it with
+/// `property_rec` accepts `a.filter(p) + b.filter(q)`; use [`is_row_separable_rec`] for a whole
+/// expression.
 pub fn is_row_separable(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Arena<AExpr>) -> bool {
     is_prop(stack, ae, expr_arena, |ae| ae.is_row_separable_top_level())
 }
 
+/// Whether each expression in `nodes` on its own is row-separable, see [`is_row_separable_rec`].
+///
+/// This doesn't check that the outputs of several expressions line up with each other.
 pub fn all_row_separable<'a, N>(nodes: &'a [N], expr_arena: &Arena<AExpr>) -> bool
 where
     Node: From<&'a N>,
@@ -259,73 +266,84 @@ where
     let mut memo = PlIndexMap::default();
     nodes
         .iter()
-        .all(|n| SubtreeProps::of(n.into(), expr_arena, &mut memo).row_separable)
+        .all(|n| row_separability(n.into(), expr_arena, &mut memo).row_separable)
 }
 
-/// Whether the expression at `node` as a whole is row-separable: every node is, and every node
-/// zips inputs that line up in any batch of rows (see [`SubtreeProps::of`]).
+/// Whether the expression at `node` as a whole is row-separable, see [`row_separability`].
 pub fn is_row_separable_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
-    SubtreeProps::of(node, expr_arena, &mut PlIndexMap::default()).row_separable
+    row_separability(node, expr_arena, &mut PlIndexMap::default()).row_separable
 }
 
-/// The properties of a subtree that decide whether it is row-separable.
-#[derive(Clone, Copy)]
-struct SubtreeProps {
-    row_separable: bool,
+/// The properties of an expression that decide whether it is row-separable.
+#[derive(Clone, Copy, Debug)]
+pub struct RowSeparability {
+    /// Evaluating the expression on batches of rows and concatenating the results gives the same
+    /// output as evaluating it on the whole frame.
+    pub row_separable: bool,
     /// As [`is_elementwise_rec`].
-    elementwise: bool,
+    pub elementwise: bool,
     /// As [`is_input_independent_scalar_rec`].
-    input_independent_scalar: bool,
+    pub input_independent_scalar: bool,
 }
 
-impl SubtreeProps {
-    /// Derives the props of the subtree at `node`, and of every subtree below it into `memo`.
-    ///
-    /// Inputs of row-separable nodes such as `filter` can have the same length over the whole
-    /// frame but not within a batch, so a node that zips several inputs is row-separable only if
-    /// they are all elementwise, or all but one are input-independent scalars.
-    #[recursive::recursive]
-    fn of(node: Node, expr_arena: &Arena<AExpr>, memo: &mut PlIndexMap<Node, Self>) -> Self {
-        if let Some(props) = memo.get(&node) {
-            return *props;
-        }
-        let ae = expr_arena.get(node);
-
-        let mut inputs = unitvec![];
-        ae.inputs_rev(&mut inputs);
-        for &input in inputs.iter() {
-            Self::of(input, expr_arena, memo);
-        }
-
-        // `is_prop` may skip some inputs, such as the literal right-hand side of `is_in`.
-        let mut zipped = unitvec![];
-        let row_separable = is_row_separable(&mut zipped, ae, expr_arena)
-            && zipped.iter().all(|i| memo[i].row_separable)
-            && {
-                let non_scalars = || {
-                    zipped
-                        .iter()
-                        .map(|i| memo[i])
-                        .filter(|p| !p.input_independent_scalar)
-                };
-                non_scalars().count() <= 1 || non_scalars().all(|p| p.elementwise)
-            };
-
-        let mut elementwise_inputs = unitvec![];
-        let elementwise = is_elementwise(&mut elementwise_inputs, ae, expr_arena)
-            && elementwise_inputs.iter().all(|i| memo[i].elementwise);
-
-        let input_independent_scalar = is_input_independent_scalar_top_level(ae)
-            && inputs.iter().all(|i| memo[i].input_independent_scalar);
-
-        let props = Self {
-            row_separable,
-            elementwise,
-            input_independent_scalar,
-        };
-        memo.insert(node, props);
-        props
+/// Derives the [`RowSeparability`] of the expression at `node`, memoizing it and that of the
+/// subexpressions it visits in `memo`, so that sharing `memo` across calls visits each node once.
+///
+/// Every node must be row-separable, and the inputs it zips must line up within a batch (see
+/// [`zipped_inputs_line_up`]). A node that isn't elementwise must also read some input that isn't
+/// an input-independent scalar: `lit([1, 2]).explode()` gives two rows per batch.
+#[recursive::recursive]
+pub fn row_separability(
+    node: Node,
+    expr_arena: &Arena<AExpr>,
+    memo: &mut PlIndexMap<Node, RowSeparability>,
+) -> RowSeparability {
+    if let Some(&props) = memo.get(&node) {
+        return props;
     }
+    let ae = expr_arena.get(node);
+    let mut props_of = |nodes: &[Node]| -> UnitVec<RowSeparability> {
+        nodes
+            .iter()
+            .map(|&n| row_separability(n, expr_arena, memo))
+            .collect()
+    };
+
+    // `is_prop` may skip some inputs, such as the literal right-hand side of `is_in`.
+    let mut stack = unitvec![];
+    let row_separable = is_row_separable(&mut stack, ae, expr_arena) && {
+        let inputs = props_of(&stack);
+        inputs.iter().all(|p| p.row_separable)
+            && zipped_inputs_line_up(&inputs)
+            && (ae.is_elementwise_top_level() || inputs.iter().any(|p| !p.input_independent_scalar))
+    };
+
+    stack.clear();
+    let elementwise = is_elementwise(&mut stack, ae, expr_arena)
+        && props_of(&stack).iter().all(|p| p.elementwise);
+
+    stack.clear();
+    ae.inputs_rev(&mut stack);
+    let input_independent_scalar = is_input_independent_scalar_top_level(ae)
+        && props_of(&stack).iter().all(|p| p.input_independent_scalar);
+
+    let props = RowSeparability {
+        row_separable,
+        elementwise,
+        input_independent_scalar,
+    };
+    memo.insert(node, props);
+    props
+}
+
+/// Whether `inputs`, zipped within a batch of rows, line up as they do over the whole frame: all
+/// are elementwise, or all but one are input-independent scalars.
+///
+/// This is sufficient, not necessary: two filters on the same predicate line up, but are
+/// rejected.
+pub fn zipped_inputs_line_up(inputs: &[RowSeparability]) -> bool {
+    let mut non_scalars = inputs.iter().filter(|p| !p.input_independent_scalar);
+    non_scalars.clone().all(|p| p.elementwise) || non_scalars.nth(1).is_none()
 }
 
 #[derive(Debug, Clone)]

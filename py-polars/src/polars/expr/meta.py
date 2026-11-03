@@ -248,10 +248,12 @@ class ExprMetaNameSpace:
     @unstable()
     def is_row_separable(self) -> bool:
         """
-        Whether or not we split the expression by rows during execution.
+        Whether the expression can be evaluated in batches of rows.
 
-        Row separable expressions will produce a correct output
-        if ran in batches.
+        Evaluating a row separable expression on batches of rows and concatenating
+        the results gives the same output as evaluating it on the whole frame. This
+        checks the whole expression: every operation in it must be row separable,
+        and the inputs it combines must line up within any batch.
 
         Examples
         --------
@@ -267,6 +269,11 @@ class ExprMetaNameSpace:
         >>> e = pl.col("foo").explode()
         >>> e.meta.is_row_separable()
         True
+        >>> e = pl.col("foo").filter(pl.col("foo") > 1) + pl.col("bar").filter(
+        ...     pl.col("bar") > 1
+        ... )
+        >>> e.meta.is_row_separable()
+        False
 
         """
         return self._pyexpr.meta_is_row_separable()

@@ -153,6 +153,7 @@ impl MetaNameSpace {
         Ok(e_ir.is_known_length(&expr_arena))
     }
 
+    /// Indicate if this expression as a whole is row-separable (see [`is_row_separable_rec`]).
     pub fn is_row_separable(self) -> PolarsResult<bool> {
         let (e_ir, expr_arena) = self.into_expr_ir()?;
         Ok(is_row_separable_rec(e_ir.node(), &expr_arena))

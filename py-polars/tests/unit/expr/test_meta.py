@@ -58,11 +58,14 @@ a, b = pl.col("a"), pl.col("b")
         ((a + b).filter(b > 1), True),
         (a.filter(a > 1).is_in([1, 2]), True),
         (pl.when(a.filter(a > 1) > 2).then(1).otherwise(0), True),
+        (pl.lit(1).filter(a > 1), True),
         (a.sum() + 1, False),
         (a.filter(a > 1) + b.filter(b > 1), False),
         (a.drop_nulls() + b, False),
         (a.filter(b.filter(b > 1) > 1), False),
         (pl.struct(x=a.drop_nulls(), y=b.drop_nulls()), False),
+        (pl.lit([1, 2]).explode(), False),
+        (pl.lit(1).drop_nulls(), False),
     ],
 )
 def test_meta_is_row_separable(expr: pl.Expr, row_separable: bool) -> None:
