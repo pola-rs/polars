@@ -30,6 +30,7 @@ pub(crate) fn needle_isin_haystack(
     needle: &DataType,
     lv: &LiteralValue,
     nulls_equal: bool,
+    list_limit: Option<usize>,
 ) -> Option<IsInHaystack> {
     let haystack = lv.get_datatype();
     // Otherwise pyarrow would compare by its own coercion rules.
@@ -65,7 +66,7 @@ pub(crate) fn needle_isin_haystack(
             haystack_series.null_count()
         };
 
-    if converted_len > LIST_ITEM_LIMIT {
+    if list_limit.is_some_and(|limit| converted_len > limit) {
         return None;
     }
     if converted_len == 0 {
@@ -208,13 +209,33 @@ pub fn predicate_to_pa(
     expr_arena: &Arena<AExpr>,
     schema: &Schema,
 ) -> Option<String> {
+    to_pa(predicate, expr_arena, schema, Some(LIST_ITEM_LIMIT))
+}
+
+/// [`predicate_to_pa`] with `is_in` lists of up to `list_limit` values (`None`: any length).
+pub fn predicate_to_pa_with_list_limit(
+    predicate: Node,
+    expr_arena: &Arena<AExpr>,
+    schema: &Schema,
+    list_limit: Option<usize>,
+) -> Option<String> {
+    to_pa(predicate, expr_arena, schema, list_limit)
+}
+
+fn to_pa(
+    predicate: Node,
+    expr_arena: &Arena<AExpr>,
+    schema: &Schema,
+    list_limit: Option<usize>,
+) -> Option<String> {
     match expr_arena.get(predicate) {
         AExpr::BinaryExpr { left, right, op } => match op {
             Operator::EqValidity | Operator::NotEqValidity => {
-                validity_comparison_to_pa(*left, *right, *op, expr_arena, schema)
+                validity_comparison_to_pa(*left, *right, *op, expr_arena, schema, list_limit)
             },
             Operator::Xor => {
-                let (lhs, rhs) = boolean_operands_to_pa(*left, *right, expr_arena, schema)?;
+                let (lhs, rhs) =
+                    boolean_operands_to_pa(*left, *right, expr_arena, schema, list_limit)?;
 
                 Some(format!("(({lhs} | {rhs}) & ~({lhs} & {rhs}))"))
             },
@@ -222,8 +243,8 @@ pub fn predicate_to_pa(
                 let symbol = binary_op_symbol(op)?;
                 reject_inexact_arithmetic(*left, *right, *op, expr_arena, schema)?;
 
-                let mut lhs = predicate_to_pa(*left, expr_arena, schema)?;
-                let rhs = predicate_to_pa(*right, expr_arena, schema)?;
+                let mut lhs = to_pa(*left, expr_arena, schema, list_limit)?;
+                let rhs = to_pa(*right, expr_arena, schema, list_limit)?;
 
                 if op.is_arithmetic() {
                     // PyArrow expressions define no reflected arithmetic operators, so a
@@ -296,13 +317,13 @@ pub fn predicate_to_pa(
             input,
             ..
         } => {
-            let col = predicate_to_pa(input.first()?.node(), expr_arena, schema)?;
+            let col = to_pa(input.first()?.node(), expr_arena, schema, list_limit)?;
 
             let AExpr::Literal(lv) = expr_arena.get(input.get(1)?.node()) else {
                 return None;
             };
             let needle = input[0].dtype(schema, expr_arena).ok()?;
-            match needle_isin_haystack(function, needle, lv, *nulls_equal)? {
+            match needle_isin_haystack(function, needle, lv, *nulls_equal, list_limit)? {
                 IsInHaystack::Empty => Some("pa.compute.scalar(False)".to_string()),
                 IsInHaystack::Series(s) => {
                     let values = series_to_pyarrow_list(&s)?;
@@ -319,7 +340,7 @@ pub fn predicate_to_pa(
             if !matches!(expr_arena.get(input.first()?.node()), AExpr::Column(_)) {
                 None
             } else {
-                let col = predicate_to_pa(input.first()?.node(), expr_arena, schema)?;
+                let col = to_pa(input.first()?.node(), expr_arena, schema, list_limit)?;
                 let left_cmp_op = match closed {
                     ClosedInterval::None | ClosedInterval::Right => Operator::Gt,
                     ClosedInterval::Both | ClosedInterval::Left => Operator::GtEq,
@@ -329,8 +350,8 @@ pub fn predicate_to_pa(
                     ClosedInterval::Both | ClosedInterval::Right => Operator::LtEq,
                 };
 
-                let lower = predicate_to_pa(input.get(1)?.node(), expr_arena, schema)?;
-                let upper = predicate_to_pa(input.get(2)?.node(), expr_arena, schema)?;
+                let lower = to_pa(input.get(1)?.node(), expr_arena, schema, list_limit)?;
+                let upper = to_pa(input.get(2)?.node(), expr_arena, schema, list_limit)?;
 
                 Some(format!(
                     "(({col} {left_cmp_op} {lower}) & ({col} {right_cmp_op} {upper}))"
@@ -343,7 +364,7 @@ pub fn predicate_to_pa(
             input,
             ..
         } => {
-            let col = predicate_to_pa(input.first()?.node(), expr_arena, schema)?;
+            let col = to_pa(input.first()?.node(), expr_arena, schema, list_limit)?;
             let AExpr::Literal(lv) = expr_arena.get(input.get(1)?.node()) else {
                 return None;
             };
@@ -375,7 +396,7 @@ pub fn predicate_to_pa(
                     return None;
                 }
             }
-            let input = predicate_to_pa(input.node(), expr_arena, schema)?;
+            let input = to_pa(input.node(), expr_arena, schema, list_limit)?;
 
             match function {
                 IRFunctionExpr::Boolean(IRBooleanFunction::Not) => Some(format!("~({input})")),
@@ -406,6 +427,7 @@ fn validity_comparison_to_pa(
     op: Operator,
     expr_arena: &Arena<AExpr>,
     schema: &Schema,
+    list_limit: Option<usize>,
 ) -> Option<String> {
     // The column is repeated in the output, so restrict this to plain columns.
     let (column, literal, lv) = match (expr_arena.get(left), expr_arena.get(right)) {
@@ -415,7 +437,7 @@ fn validity_comparison_to_pa(
     };
 
     let eq = matches!(op, Operator::EqValidity);
-    let column = predicate_to_pa(column, expr_arena, schema)?;
+    let column = to_pa(column, expr_arena, schema, list_limit)?;
 
     Some(if lv.is_null() {
         if eq {
@@ -424,7 +446,7 @@ fn validity_comparison_to_pa(
             format!("~({column}).is_null()")
         }
     } else {
-        let literal = predicate_to_pa(literal, expr_arena, schema)?;
+        let literal = to_pa(literal, expr_arena, schema, list_limit)?;
 
         // A null column value is not equal to a non-null literal, whereas the
         // plain comparison would evaluate to null.
@@ -443,14 +465,15 @@ fn boolean_operands_to_pa(
     right: Node,
     expr_arena: &Arena<AExpr>,
     schema: &Schema,
+    list_limit: Option<usize>,
 ) -> Option<(String, String)> {
     if !(returns_boolean(left, expr_arena) && returns_boolean(right, expr_arena)) {
         return None;
     }
 
     Some((
-        predicate_to_pa(left, expr_arena, schema)?,
-        predicate_to_pa(right, expr_arena, schema)?,
+        to_pa(left, expr_arena, schema, list_limit)?,
+        to_pa(right, expr_arena, schema, list_limit)?,
     ))
 }
 
@@ -730,7 +753,13 @@ pub fn aexpr_to_pyarrow<'py>(
                 return None;
             };
             let needle = input[0].dtype(schema, expr_arena).ok()?;
-            let values_list = match needle_isin_haystack(function, needle, lv, *nulls_equal)? {
+            let values_list = match needle_isin_haystack(
+                function,
+                needle,
+                lv,
+                *nulls_equal,
+                Some(LIST_ITEM_LIMIT),
+            )? {
                 IsInHaystack::Empty => return pc.call_method1("scalar", (false,)).ok(),
                 IsInHaystack::Series(s) => series_to_py_list(py, &s)?,
             };

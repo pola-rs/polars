@@ -35,7 +35,7 @@ use crate::catalog::{
     CatalogAlter, CatalogNamespace, CatalogRegistry, CatalogSpellings, CatalogStatement,
     CatalogTable, RewrittenName, alter_table_column, alter_table_properties, create_schema_options,
     create_table_columns, create_table_options, create_table_partitioning, display_name,
-    name_parts, name_position, rewrite_catalog_names,
+    hint_unsupported_part, name_parts, name_position, rewrite_catalog_names,
 };
 use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
@@ -456,6 +456,7 @@ impl SQLContext {
             Statement::AlterTable(alter) => return self.catalog_alter_table(alter),
             Statement::Insert(insert) => return self.catalog_insert(insert, None),
             Statement::Truncate(truncate) => return self.catalog_truncate(truncate),
+            Statement::Delete(delete) => return self.catalog_delete(delete),
             Statement::Query(query) => {
                 let SetExpr::Insert(Statement::Insert(insert)) = query.body.as_ref() else {
                     return Ok(None);
@@ -607,6 +608,68 @@ impl SQLContext {
         res
     }
 
+    /// The predicate of the rows a `DELETE` of a catalog table removes (see
+    /// [`SQLContext::catalog_statement`]), planned as a `SELECT`'s `WHERE` against the scan of
+    /// that table in `tables`, by full name. Without a `WHERE`, every row.
+    pub fn catalog_delete_predicate(
+        &mut self,
+        query: &str,
+        tables: Vec<(Vec<String>, LazyFrame)>,
+    ) -> PolarsResult<Expr> {
+        self.catalog_tables = tables
+            .into_iter()
+            .map(|(full_name, lf)| (full_name.join("."), lf))
+            .collect();
+        let res = self.delete_predicate(query);
+        // the predicate is DSL: the plans built for it hold the table's scan
+        self.lp_arena = Default::default();
+        self.expr_arena = Default::default();
+        self.clear_statement_state();
+        res
+    }
+
+    fn delete_predicate(&mut self, query: &str) -> PolarsResult<Expr> {
+        let mut stmt = parse_single_statement(query)?;
+        self.statement_time = Default::default();
+        self.catalog_spellings = self.rewrite_catalog_names(&mut stmt)?.1;
+        desugar_quantified_subqueries(&mut stmt);
+        let Statement::Delete(delete) = &stmt else {
+            polars_bail!(SQLInterface: "expected a DELETE statement, got `{}`", stmt)
+        };
+        let (from, selection) = delete_parts(delete)?;
+        let mut lf = self.delete_target(from)?;
+        let Some(selection) = selection else {
+            return Ok(lit(true));
+        };
+        polars_ensure!(
+            !expr_contains_subquery(selection),
+            SQLInterface: "subqueries are not supported in the WHERE of a catalog DELETE"
+        );
+        let n_grouping_calls = self.group_scope.grouping_calls.len();
+        if let Some(predicate) = self.input_independent_predicate(selection)? {
+            self.reject_grouping_in_where(n_grouping_calls)?;
+            // A NULL condition deletes nothing.
+            let df = DataFrame::empty()
+                .lazy()
+                .select([predicate.cast(DataType::Boolean)])
+                .collect()?;
+            let value = df.columns()[0].get(0)?;
+            return Ok(lit(matches!(value, AnyValue::Boolean(true))));
+        }
+        let schema = self.get_frame_schema(&mut lf)?;
+        let mut predicate = parse_sql_expr(selection, self, Some(&*schema))?;
+        self.reject_grouping_in_where(n_grouping_calls)?;
+        if predicate.clone().meta().has_multiple_outputs() {
+            predicate = all_horizontal([predicate])?;
+        }
+        // Fails as the `WHERE` of a `SELECT` would (eg: a timestamp across time zones).
+        DataFrame::empty_with_schema(&schema)
+            .lazy()
+            .filter(predicate.clone())
+            .collect()?;
+        Ok(predicate)
+    }
+
     /// Rewrite the catalog table names of `stmt` to their full names (see
     /// [`rewrite_catalog_names`]): by the attached catalogs, else by the names a deferred
     /// statement recorded.
@@ -634,34 +697,20 @@ impl SQLContext {
 
     /// Error for a statement changing a table of an attached catalog, which SQL can't do yet.
     /// The name resolves as in a read, so a table of the default catalog is also an error.
-    /// With `local_first`, a registered table with the whole name is changed instead, and a
-    /// name starting with an attached catalog that resolves to no table is left to it.
-    fn ensure_not_catalog_table(
-        &self,
-        name: &ObjectName,
-        statement: &str,
-        local_first: bool,
-    ) -> PolarsResult<()> {
+    fn ensure_not_catalog_table(&self, name: &ObjectName, statement: &str) -> PolarsResult<()> {
         let Some(parts) = name_parts(name) else {
             return Ok(());
         };
         let named = self.catalogs.named_catalog(&parts);
         let Some(table) = self.catalogs.resolve(&parts) else {
             return match named {
-                Some(catalog) if !local_first => polars_bail!(
+                Some(catalog) => polars_bail!(
                     SQLInterface: "{} on a table of attached catalog '{}' is not supported{}",
                     statement, catalog, self.catalogs.unresolved_hint(&parts).unwrap_or_default()
                 ),
-                _ => Ok(()),
+                None => Ok(()),
             };
         };
-        if local_first
-            && self
-                .registered_table_key(&object_name_to_string(name))?
-                .is_some()
-        {
-            return Ok(());
-        }
         let resolved = match named {
             Some(_) => String::new(),
             None => format!(
@@ -833,6 +882,8 @@ impl SQLContext {
         self.join_base = None;
         self.exists_values.clear();
         self.named_windows.clear();
+        // a failed statement may not have restored it
+        self.group_scope = Default::default();
     }
 
     /// The local time, to microseconds, that `CURRENT_DATE` and friends read in the current
@@ -1880,68 +1931,50 @@ impl SQLContext {
 
     // DELETE FROM <tbl> [WHERE ...]
     fn execute_delete_from_table(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
-        if let Statement::Delete(Delete {
-            tables,
-            from,
-            using,
-            selection,
-            returning,
-            order_by,
-            limit,
-            delete_token: _,
-            optimizer_hints: _,
-            output: _,
-        }) = stmt
-        {
-            let error_message: Option<&'static str> = if !tables.is_empty() {
-                Some("DELETE expects exactly one table name")
-            } else if using.is_some() {
-                Some("DELETE does not support the USING clause")
-            } else if returning.is_some() {
-                Some("DELETE does not support the RETURNING clause")
-            } else if limit.is_some() {
-                Some("DELETE does not support the LIMIT clause")
-            } else if !order_by.is_empty() {
-                Some("DELETE does not support the ORDER BY clause")
-            } else {
-                None
-            };
-
-            if let Some(msg) = error_message {
-                polars_bail!(SQLInterface: msg);
-            }
-
-            let from_tables = match &from {
-                FromTable::WithFromKeyword(from) => from,
-                FromTable::WithoutKeyword(from) => from,
-            };
-            if from_tables.len() > 1 {
-                polars_bail!(SQLInterface: "cannot have multiple tables in DELETE FROM (found {})", from_tables.len())
-            }
-            let tbl_expr = from_tables.first().unwrap();
-            if !tbl_expr.joins.is_empty() {
-                polars_bail!(SQLInterface: "DELETE does not support table JOINs")
-            }
-            self.set_active_relations(from_tables);
-            if let TableFactor::Table { name, .. } = &tbl_expr.relation {
-                self.ensure_not_catalog_table(name, "DELETE", true)?;
-            }
-            let (_, lf) = self.get_table(&tbl_expr.relation)?;
-            if selection.is_none() {
-                // no WHERE clause; equivalent to TRUNCATE (drop all rows)
-                Ok(lf.clear())
-            } else {
-                // apply constraint as inverted filter (drops rows matching the selection)
-                Ok(self.process_where(
-                    lf.clone(),
-                    selection.as_ref(),
-                    FilterMode::RemoveTrue,
-                    None,
-                )?)
-            }
-        } else {
+        let Statement::Delete(delete) = stmt else {
             polars_bail!(SQLInterface: "unexpected statement type; expected DELETE")
+        };
+        let (from, selection) = delete_parts(delete)?;
+        if let TableFactor::Table { name, .. } = &from.relation
+            && let Some((tbl, table)) = self.catalog_change_target(name)?
+        {
+            polars_bail!(
+                SQLInterface: "DELETE of catalog table '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_statement`)",
+                tbl, display_name(&table.full_name())
+            );
         }
+        let lf = self.delete_target(from)?;
+        match selection {
+            // no WHERE clause; equivalent to TRUNCATE (drop all rows)
+            None => Ok(lf.clear()),
+            // apply constraint as inverted filter (drops rows matching the selection)
+            Some(selection) => {
+                self.process_where(lf, Some(selection), FilterMode::RemoveTrue, None)
+            },
+        }
+    }
+
+    fn delete_target(&mut self, from: &TableWithJoins) -> PolarsResult<LazyFrame> {
+        self.set_active_relations(std::slice::from_ref(from));
+        Ok(self.get_table(&from.relation)?.1)
+    }
+
+    /// The catalog statement of a `DELETE`, if its table resolves to a catalog table.
+    fn catalog_delete(&self, delete: &Delete) -> PolarsResult<Option<CatalogStatement>> {
+        let (from, selection) = delete_parts(delete)?;
+        let TableFactor::Table { name, .. } = &from.relation else {
+            return Ok(None);
+        };
+        let Some((tbl, table)) = self.catalog_change_target(name)? else {
+            return Ok(None);
+        };
+        Ok(Some(CatalogStatement::Delete {
+            name: tbl,
+            table,
+            condition: selection.map(|selection| selection.to_string()),
+            subquery: selection.is_some_and(expr_contains_subquery),
+            hint_unsupported_part: selection.and_then(hint_unsupported_part),
+        }))
     }
 
     // TRUNCATE <tbl>
@@ -4981,7 +5014,7 @@ impl SQLContext {
             } else {
                 // The caller creates catalog tables (see `catalog_statement`); here they are an error.
                 self.catalog_create_target(name)?;
-                self.ensure_not_catalog_table(name, "CREATE TABLE", false)?;
+                self.ensure_not_catalog_table(name, "CREATE TABLE")?;
             }
             let tbl_name = object_name_to_string(name);
             let existing = self.registered_table_key(&tbl_name)?;
@@ -7493,6 +7526,35 @@ fn drop_schema_parts(stmt: &Statement) -> PolarsResult<(&ObjectName, bool)> {
         polars_bail!(SQLInterface: "DROP SCHEMA takes one schema name")
     };
     Ok((name, *if_exists))
+}
+
+/// The table and `WHERE` of a `DELETE` statement, rejecting unsupported clauses.
+fn delete_parts(delete: &Delete) -> PolarsResult<(&TableWithJoins, Option<&SQLExpr>)> {
+    // Destructure exhaustively so new sqlparser fields surface as compile errors.
+    let Delete {
+        delete_token: _,
+        optimizer_hints: _,
+        tables,
+        from,
+        using,
+        selection,
+        returning,
+        output,
+        order_by,
+        limit,
+    } = delete;
+    polars_ensure!(tables.is_empty(), SQLInterface: "DELETE expects exactly one table name");
+    polars_ensure!(using.is_none(), SQLInterface: "DELETE does not support the USING clause");
+    polars_ensure!(returning.is_none(), SQLInterface: "DELETE does not support the RETURNING clause");
+    polars_ensure!(output.is_none(), SQLInterface: "DELETE does not support the OUTPUT clause");
+    polars_ensure!(limit.is_none(), SQLInterface: "DELETE does not support the LIMIT clause");
+    polars_ensure!(order_by.is_empty(), SQLInterface: "DELETE does not support the ORDER BY clause");
+    let (FromTable::WithFromKeyword(from) | FromTable::WithoutKeyword(from)) = from;
+    let [from] = from.as_slice() else {
+        polars_bail!(SQLInterface: "cannot have multiple tables in DELETE FROM (found {})", from.len())
+    };
+    polars_ensure!(from.joins.is_empty(), SQLInterface: "DELETE does not support table JOINs");
+    Ok((from, selection.as_ref()))
 }
 
 /// The table name and `IF EXISTS` of a `TRUNCATE` statement, rejecting unsupported modifiers.

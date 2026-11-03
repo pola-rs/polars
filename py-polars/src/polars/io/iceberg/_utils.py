@@ -32,7 +32,7 @@ import polars._reexport as pl
 from polars._utils.convert import to_py_date, to_py_datetime
 from polars._utils.logging import eprint
 from polars._utils.wrap import wrap_s
-from polars.datatypes import Boolean
+from polars.datatypes import Boolean, Decimal
 from polars.exceptions import ComputeError, InvalidOperationError, SchemaError
 from polars.io._utils import null_count_dtype
 
@@ -1408,6 +1408,18 @@ class LoadStringFromBytes(LoadFromBytesImpl):
         return pl.Series(byte_values, dtype=pl.Binary).cast(pl.String)
 
 
+class UnconvertiblePredicateError(InvalidOperationError):
+    """A predicate without an exact PyIceberg equivalent, with a `reason` if known."""
+
+    def __init__(
+        self, message: str, reason: str | None, *, likely: str | None = None
+    ) -> None:
+        super().__init__(message)
+        self.reason = reason
+        # a likely cause when the reason is not known
+        self.likely = likely
+
+
 def predicate_to_pyiceberg_delete_filter(
     predicate: pl.Expr, table: Table
 ) -> pyiceberg.expressions.BooleanExpression:
@@ -1437,12 +1449,16 @@ def predicate_to_pyiceberg_delete_filter(
     from pyiceberg.io.pyarrow import schema_to_pyarrow
     from pyiceberg.types import DoubleType, FloatType
 
-    def error(reason: str) -> InvalidOperationError:
+    def error(
+        reason: str, *, specific: bool = True, likely: str | None = None
+    ) -> UnconvertiblePredicateError:
         msg = (
             f"cannot convert predicate to an equivalent PyIceberg expression: {reason}"
             f"\n\npredicate: {predicate}"
         )
-        return InvalidOperationError(msg)
+        return UnconvertiblePredicateError(
+            msg, reason if specific else None, likely=likely
+        )
 
     if not isinstance(predicate, pl.Expr):
         msg = f"expected predicate to be an Expr, got {type(predicate).__name__!r}"
@@ -1457,10 +1473,19 @@ def predicate_to_pyiceberg_delete_filter(
         msg = f"predicate must be a single boolean expression, got dtypes {dtype}"
         raise InvalidOperationError(msg)
 
-    pyarrow_predicate = predicate._pyexpr.to_pyarrow_predicate(schema)
+    # any IN list length: a delete has no fallback, unlike a scan's pushdown
+    pyarrow_predicate = predicate._pyexpr.to_pyarrow_predicate(schema, list_limit=None)
     if pyarrow_predicate is None:
-        msg = "unsupported expression"
-        raise error(msg)
+        decimals = [
+            name
+            for name in predicate.meta.root_names()
+            if isinstance(schema[name], Decimal)
+        ]
+        likely = (
+            f"decimal column {decimals[0]!r} (not supported yet)" if decimals else None
+        )
+        msg = "unsupported expression" if likely is None else likely
+        raise error(msg, specific=False, likely=likely)
 
     def is_bool_scalar(node: ast.AST) -> bool:
         return (
@@ -1507,7 +1532,7 @@ def predicate_to_pyiceberg_delete_filter(
             return e
         if not isinstance(e, UnboundPredicate) or not isinstance(e.term, Reference):
             msg = f"unsupported expression {e!r}"
-            raise error(msg)
+            raise error(msg, specific=False)
 
         name = e.term.name
         path = name.split(".")
