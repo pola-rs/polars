@@ -410,3 +410,30 @@ def test_io_plugin_io_source_survives_serialization() -> None:
 
     assert isinstance(_scan_fn(roundtripped).io_source, _CallableSource)
     assert_frame_equal(roundtripped.collect(), pl.DataFrame({"a": [1, 2, 3]}))
+
+
+def test_io_plugin_horizontal_non_boolean_operand_predicate() -> None:
+    df = pl.DataFrame(
+        {
+            "i": [0, 1, 2, 3, 4, 5],
+            "c0": pl.Series([0, 1, 2, 3, -1, None], dtype=pl.Int8),
+        }
+    )
+    received = []
+
+    def source(
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        n_rows: int | None,
+        batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        received.append(predicate)
+        out = df if predicate is None else df.lazy().filter(predicate).collect()
+        yield out if with_columns is None else out.select(with_columns)
+
+    pred = pl.all_horizontal(pl.col("c0"), pl.col("c0") > 0).cast(pl.Boolean)
+    out = register_io_source(source, schema=df.schema).filter(pred).collect()
+
+    assert out["i"].to_list() == [1, 2, 3]
+    assert received[0] is not None
+    assert df.lazy().filter(received[0]).collect()["i"].to_list() == [1, 2, 3]

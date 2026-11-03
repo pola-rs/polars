@@ -338,6 +338,29 @@ pub(super) fn process_binary(
     let (right, type_right): (&AExpr, DataType) =
         unpack!(get_aexpr_and_type(expr_arena, node_right, input_schema));
 
+    // Logical and/or take the truthiness of their operands, so cast them to Boolean instead of
+    // to their supertype. Rewrites such as splitting a predicate on `&` or De Morgan's laws turn
+    // the operands into predicates or bitwise operations of their own, which needs them Boolean.
+    if matches!(op, Operator::LogicalAnd | Operator::LogicalOr) {
+        if type_left.is_bool() && type_right.is_bool() {
+            return Ok(None);
+        }
+        let to_bool = |node, dtype: &DataType, expr_arena: &mut Arena<AExpr>| {
+            if dtype.is_bool() {
+                node
+            } else {
+                expr_arena.add(AExpr::Cast {
+                    expr: node,
+                    dtype: Boolean,
+                    options: CastOptions::NonStrict,
+                })
+            }
+        };
+        let left = to_bool(node_left, &type_left, expr_arena);
+        let right = to_bool(node_right, &type_right, expr_arena);
+        return Ok(Some(AExpr::BinaryExpr { left, op, right }));
+    }
+
     match (&type_left, &type_right) {
         (Unknown(UnknownKind::Any), Unknown(UnknownKind::Any)) => return Ok(None),
         (
