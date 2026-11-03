@@ -784,10 +784,14 @@ async fn compute_asof_join(
     let mut right_df = right_dfsb.into_df().await;
     let options = params.as_of_options();
     let left_key = Column::from(_asof_key_to_physical(
-        left_df.column(params.left.key_col())?.as_materialized_series(),
+        left_df
+            .column(params.left.key_col())?
+            .as_materialized_series(),
     )?);
     let right_key = Column::from(_asof_key_to_physical(
-        right_df.column(params.right.key_col())?.as_materialized_series(),
+        right_df
+            .column(params.right.key_col())?
+            .as_materialized_series(),
     )?);
 
     if params.as_of_options().check_sortedness {

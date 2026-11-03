@@ -2349,7 +2349,6 @@ def test_join_asof_key_filter_pushdown_hive_pruning(tmp_path: Path) -> None:
     assert_frame_equal(q.collect(engine="streaming"), expected)
 
 
-
 @pytest.mark.parametrize("by", [None, "g"])
 def test_join_asof_categorical_key_lexical_order_30540(by: str | None) -> None:
     dtype = pl.Categorical(pl.Categories.random())
