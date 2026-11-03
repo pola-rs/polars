@@ -155,9 +155,7 @@ impl MetaNameSpace {
 
     pub fn is_row_separable(self) -> PolarsResult<bool> {
         let (e_ir, expr_arena) = self.into_expr_ir()?;
-        let mut stack = polars_utils::unitvec![];
-        let ae = expr_arena.get(e_ir.node());
-        Ok(is_row_separable(&mut stack, ae, &expr_arena))
+        Ok(is_row_separable_rec(e_ir.node(), &expr_arena))
     }
 
     /// Indicate if this expression yields one scalar value that does not depend on any

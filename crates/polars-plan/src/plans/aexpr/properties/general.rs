@@ -1,3 +1,4 @@
+use polars_utils::aliases::PlIndexMap;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
 
@@ -227,17 +228,22 @@ pub fn is_elementwise_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
 /// functions are excluded.
 pub fn is_input_independent_scalar_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     property_rec(node, expr_arena, |stack, ae, _| {
-        let independent = match ae {
-            AExpr::Literal(lv) => lv.is_scalar(),
-            AExpr::BinaryExpr { .. } | AExpr::Cast { .. } | AExpr::Ternary { .. } => true,
-            AExpr::Function { options, .. } => options.is_elementwise(),
-            _ => false,
-        };
+        let independent = is_input_independent_scalar_top_level(ae);
         if independent {
             ae.inputs_rev(stack);
         }
         independent
     })
+}
+
+/// Whether `ae` yields an input-independent scalar when all its inputs do.
+fn is_input_independent_scalar_top_level(ae: &AExpr) -> bool {
+    match ae {
+        AExpr::Literal(lv) => lv.is_scalar(),
+        AExpr::BinaryExpr { .. } | AExpr::Cast { .. } | AExpr::Ternary { .. } => true,
+        AExpr::Function { options, .. } => options.is_elementwise(),
+        _ => false,
+    }
 }
 
 /// Checks if the top-level expression node is row-separable. If this is the case, then `stack` will
@@ -250,14 +256,76 @@ pub fn all_row_separable<'a, N>(nodes: &'a [N], expr_arena: &Arena<AExpr>) -> bo
 where
     Node: From<&'a N>,
 {
+    let mut memo = PlIndexMap::default();
     nodes
         .iter()
-        .all(|n| is_row_separable_rec(n.into(), expr_arena))
+        .all(|n| SubtreeProps::of(n.into(), expr_arena, &mut memo).row_separable)
 }
 
-/// Recursive variant of `is_row_separable`
+/// Whether the expression at `node` as a whole is row-separable: every node is, and every node
+/// zips inputs that line up in any batch of rows (see [`SubtreeProps::of`]).
 pub fn is_row_separable_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
-    property_rec(node, expr_arena, is_row_separable)
+    SubtreeProps::of(node, expr_arena, &mut PlIndexMap::default()).row_separable
+}
+
+/// The properties of a subtree that decide whether it is row-separable.
+#[derive(Clone, Copy)]
+struct SubtreeProps {
+    row_separable: bool,
+    /// As [`is_elementwise_rec`].
+    elementwise: bool,
+    /// As [`is_input_independent_scalar_rec`].
+    input_independent_scalar: bool,
+}
+
+impl SubtreeProps {
+    /// Derives the props of the subtree at `node`, and of every subtree below it into `memo`.
+    ///
+    /// Inputs of row-separable nodes such as `filter` can have the same length over the whole
+    /// frame but not within a batch, so a node that zips several inputs is row-separable only if
+    /// they are all elementwise, or all but one are input-independent scalars.
+    #[recursive::recursive]
+    fn of(node: Node, expr_arena: &Arena<AExpr>, memo: &mut PlIndexMap<Node, Self>) -> Self {
+        if let Some(props) = memo.get(&node) {
+            return *props;
+        }
+        let ae = expr_arena.get(node);
+
+        let mut inputs = unitvec![];
+        ae.inputs_rev(&mut inputs);
+        for &input in inputs.iter() {
+            Self::of(input, expr_arena, memo);
+        }
+
+        // `is_prop` may skip some inputs, such as the literal right-hand side of `is_in`.
+        let mut zipped = unitvec![];
+        let row_separable = is_row_separable(&mut zipped, ae, expr_arena)
+            && zipped.iter().all(|i| memo[i].row_separable)
+            && {
+                let non_scalars = || {
+                    zipped
+                        .iter()
+                        .map(|i| memo[i])
+                        .filter(|p| !p.input_independent_scalar)
+                };
+                non_scalars().count() <= 1 || non_scalars().all(|p| p.elementwise)
+            };
+
+        let mut elementwise_inputs = unitvec![];
+        let elementwise = is_elementwise(&mut elementwise_inputs, ae, expr_arena)
+            && elementwise_inputs.iter().all(|i| memo[i].elementwise);
+
+        let input_independent_scalar = is_input_independent_scalar_top_level(ae)
+            && inputs.iter().all(|i| memo[i].input_independent_scalar);
+
+        let props = Self {
+            row_separable,
+            elementwise,
+            input_independent_scalar,
+        };
+        memo.insert(node, props);
+        props
+    }
 }
 
 #[derive(Debug, Clone)]
