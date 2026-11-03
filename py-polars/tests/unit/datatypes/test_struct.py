@@ -2916,5 +2916,39 @@ def test_struct_constructor_keys_missing_in_first_value_21314() -> None:
     )
     assert_series_equal(s, expected)
 
-    with pytest.raises(TypeError):
-        pl.Series([{"a": 1}, {"a": "x"}])
+    # missing keys and scattered nulls don't stop the other values from
+    # determining the data type of each field
+    s = pl.Series(
+        [
+            {"a": None, "b": 1},
+            {"a": "x", "b": None},
+            {"b": None},
+            {"c": 1.5, "a": None, "b": 2},
+        ]
+    )
+    expected = pl.Series(
+        [
+            {"a": None, "b": 1, "c": None},
+            {"a": "x", "b": None, "c": None},
+            {"a": None, "b": None, "c": None},
+            {"a": None, "b": 2, "c": 1.5},
+        ],
+        dtype=pl.Struct({"a": pl.String, "b": pl.Int64, "c": pl.Float64}),
+    )
+    assert_series_equal(s, expected)
+
+    # nested struct fields are merged, also under the same outer field names
+    s = pl.Series([{"c": {"x": 1}}, {"c": {"y": "z"}}])
+    expected = pl.Series(
+        [{"c": {"x": 1, "y": None}}, {"c": {"x": None, "y": "z"}}],
+        dtype=pl.Struct({"c": pl.Struct({"x": pl.Int64, "y": pl.String})}),
+    )
+    assert_series_equal(s, expected)
+
+    # the values of a field without a common data type are invalid
+    for values in (
+        [{"a": 1}, {"a": "x"}],
+        [{"a": None}, {"b": 0, "a": 1}, {"a": "x"}],
+    ):
+        with pytest.raises(TypeError, match="unexpected value"):
+            pl.Series(values)
