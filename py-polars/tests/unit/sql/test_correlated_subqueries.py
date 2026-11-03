@@ -2823,8 +2823,6 @@ def test_subquery_qualifier_hidden_by_inner_alias() -> None:
 
 
 def test_nested_subquery_reading_outermost_query() -> None:
-    # Not supported yet: `a` is the outermost relation, which the error must not
-    # report as unknown.
     ctx = pl.SQLContext(
         t=pl.DataFrame({"id": [1, 2]}),
         c=pl.DataFrame({"id": [1, 3]}),
@@ -2833,6 +2831,16 @@ def test_nested_subquery_reading_outermost_query() -> None:
     query = """
         SELECT a.id FROM t AS a
         WHERE EXISTS (SELECT 1 FROM c WHERE EXISTS (SELECT 1 FROM d WHERE d.id > a.id))
+    """
+    assert ctx.execute(query, eager=True).rows() == [(1,)]
+
+    # Not supported yet: `a` is the outermost relation, which the error must not
+    # report as unknown.
+    query = """
+        SELECT a.id, (
+            SELECT max(c.id) FROM c WHERE EXISTS (SELECT 1 FROM d WHERE d.id > a.id)
+        ) AS m
+        FROM t AS a
     """
     with pytest.raises(pl.exceptions.SQLInterfaceError) as exc:
         ctx.execute(query, eager=True)
