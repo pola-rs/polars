@@ -1,9 +1,13 @@
 use std::fmt::Debug;
 
+use polars_arrow::bitmap::utils::SlicesIterator;
+use polars_utils::binary_search::ExponentialSearch;
+use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
+use crate::runtime::RAYON;
 
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -232,4 +236,91 @@ where
             }
         }
     }
+}
+
+/// [`binary_search_ca`] for a `haystack` held in one slice without nulls, searching the needles
+/// with branchless binary searches, or from the previous needle's position within blocks of needles
+/// that are sorted like the haystack, in parallel for many needles.
+pub fn search_sorted_slice<T: PolarsNumericType>(
+    haystack: &[T::Native],
+    needles: &ChunkedArray<T>,
+    side: SearchSortedSide,
+    descending: bool,
+) -> Vec<IdxSize> {
+    const BLOCK: usize = 1 << 12;
+    const MIN_PAR_LEN: usize = 1 << 16;
+
+    let right = side == SearchSortedSide::Right;
+    let before = |x: &T::Native, v: &T::Native| match (descending, right) {
+        (false, false) => x.tot_lt(v),
+        (false, true) => x.tot_le(v),
+        (true, false) => x.tot_gt(v),
+        (true, true) => x.tot_ge(v),
+    };
+    #[allow(clippy::neg_cmp_op_on_partial_ord)]
+    let position = |v: &T::Native| -> usize {
+        // The float total order adds a NaN test to every comparison. For a needle that isn't NaN
+        // the IEEE comparisons below agree with it, also against a NaN in the haystack, so only
+        // NaN needles pay for it.
+        if v.partial_cmp(v).is_some() {
+            match (descending, right) {
+                (false, false) => haystack.partition_point(|x| x < v),
+                (false, true) => haystack.partition_point(|x| x <= v),
+                (true, false) => haystack.partition_point(|x| !(x <= v)),
+                (true, true) => haystack.partition_point(|x| !(x < v)),
+            }
+        } else {
+            haystack.partition_point(|x| before(x, v))
+        }
+    };
+    let ordered_like_haystack = |a: &T::Native, b: &T::Native| {
+        if descending { a.tot_ge(b) } else { a.tot_le(b) }
+    };
+    let fill = |(out, vals): (&mut [IdxSize], &[T::Native])| {
+        if vals.is_sorted_by(ordered_like_haystack) {
+            // Each needle lands at or after the previous one, usually close by, where a search
+            // touches few values and its branches are predictable.
+            let mut pos = 0;
+            for (o, v) in out.iter_mut().zip(vals) {
+                if haystack.get(pos).is_some_and(|x| before(x, v)) {
+                    pos += 1 + (&haystack[pos + 1..]).partition_point_exponential(|x| before(x, v));
+                }
+                *o = pos as IdxSize;
+            }
+        } else {
+            for (o, v) in out.iter_mut().zip(vals) {
+                *o = position(v) as IdxSize;
+            }
+        }
+    };
+
+    let mut out = vec![0 as IdxSize; needles.len()];
+    let mut offset = 0;
+    for arr in needles.downcast_iter() {
+        let part = &mut out[offset..offset + arr.len()];
+        offset += arr.len();
+        // Order is detected per block, so sorted runs inside unsorted needles also take the
+        // forward search.
+        if arr.len() >= MIN_PAR_LEN {
+            RAYON.install(|| {
+                part.par_chunks_mut(BLOCK)
+                    .zip(arr.values().par_chunks(BLOCK))
+                    .for_each(fill)
+            });
+        } else {
+            part.chunks_mut(BLOCK)
+                .zip(arr.values().chunks(BLOCK))
+                .for_each(fill);
+        }
+        // As in `binary_search_ca`, a null needle goes first when the haystack has no nulls.
+        if let Some(validity) = arr.validity().filter(|v| v.unset_bits() > 0) {
+            let mut valid_end = 0;
+            for (start, len) in SlicesIterator::new(validity) {
+                part[valid_end..start].fill(0);
+                valid_end = start + len;
+            }
+            part[valid_end..].fill(0);
+        }
+    }
+    out
 }
