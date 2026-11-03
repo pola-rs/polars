@@ -323,6 +323,35 @@ def test_write_geoparquet_warns_unclaimed_box(
     assert sum("plain struct" in str(w.message) for w in caught) == 1
 
 
+@pytest.mark.parametrize("box_name", ["bbox", "other"])
+def test_write_geoparquet_box_not_a_covering(
+    plmonkeypatch: PlMonkeyPatch, box_name: str
+) -> None:
+    # A valid `geoarrow.box`, but GeoParquet coverings have no M bounds.
+    bounds = {f.name: 1.0 for f in BOX_XYM.fields}
+    df = pl.DataFrame(
+        {"geometry": [POINT_WKB], box_name: [bounds]},
+        schema={
+            "geometry": pl.Extension("geoarrow.wkb", pl.Binary, '{"crs": null}'),
+            box_name: pl.Extension("geoarrow.box", BOX_XYM, '{"crs": null}'),
+        },
+    )
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.1")
+
+    buf = io.BytesIO()
+    match = f"'{box_name}' as a plain struct.*must be Float64 xmin, ymin"
+    with pytest.warns(UserWarning, match=match):
+        df.write_parquet(buf)
+    geo = json.loads(pq.read_metadata(pa.BufferReader(buf.getvalue())).metadata[b"geo"])
+    assert list(geo["columns"]) == ["geometry"]
+    assert "covering" not in geo["columns"]["geometry"]
+
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_READ", "1")
+    out = pl.read_parquet(buf.getvalue())
+    assert _ext(out.schema[box_name]) == _ext(df.schema[box_name])
+    assert out[box_name].ext.storage().to_list() == [bounds]
+
+
 def test_write_geoparquet_covering(plmonkeypatch: PlMonkeyPatch) -> None:
     xy = {"xmin": 1.0, "ymin": 2.0, "xmax": 1.0, "ymax": 2.0}
     xyz = {"xmin": 1.0, "ymin": 2.0, "zmin": 3.0, "xmax": 1.0, "ymax": 2.0, "zmax": 3.0}
@@ -373,13 +402,6 @@ def test_write_geoparquet_covering(plmonkeypatch: PlMonkeyPatch) -> None:
 @pytest.mark.parametrize(
     ("schema", "match"),
     [
-        (
-            {
-                "geometry": pl.Extension("geoarrow.wkb", pl.Binary, '{"crs": null}'),
-                "bbox": pl.Extension("geoarrow.box", BOX_XYM, '{"crs": null}'),
-            },
-            "must have Float64 fields xmin, ymin",
-        ),
         (
             {
                 "geometry": pl.Extension("geoarrow.wkb", pl.Binary, json.dumps(CRS84)),
