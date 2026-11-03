@@ -408,8 +408,8 @@ def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
     capture = capfd.readouterr().err
 
     assert (
-        "converted pyarrow predicate: <pyarrow.compute.Expression "
-        "if_else(is_null(id, {nan_is_null=false}), null[bool], is_in(id" in capture
+        "converted pyarrow predicate: <pyarrow.compute.Expression if_else(is_null(id"
+        in capture
     )
     assert "1," in capture
     assert "3" in capture
@@ -443,11 +443,7 @@ def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
     result = q.collect()
     capture = capfd.readouterr().err
 
-    assert (
-        "converted pyarrow predicate: <pyarrow.compute.Expression "
-        "if_else(is_null(id, {nan_is_null=false}), null[bool], false)>" in capture
-    )
-    assert "residual predicate: None" in capture
+    assert "residual predicate: None" not in capture
 
     assert_frame_equal(q.collect(), expected)
     assert_frame_equal(df.filter(pred), expected)
@@ -462,11 +458,7 @@ def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
 
     plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "0")
 
-    assert (
-        "converted pyarrow predicate: <pyarrow.compute.Expression "
-        "if_else(is_null(id, {nan_is_null=false}), null[bool], false)>" in capture
-    )
-    assert "residual predicate: None" in capture
+    assert "residual predicate: None" not in capture
 
     assert_frame_equal(q.collect(), expected)
     assert_frame_equal(df.filter(pred), expected)
@@ -493,6 +485,21 @@ def test_pyarrow_dataset_is_in_predicate_pushdown_null_and_zero_30531() -> None:
     assert_frame_equal(
         lf.filter(~pl.col("k").is_in(pl.Series([], dtype=pl.Int64))).collect(),
         pl.DataFrame({"k": [2, 3], "f": [0.0, None]}, schema=df.schema),
+    )
+    assert_frame_equal(
+        lf.filter(~pl.col("k").is_in(pl.lit(None, dtype=pl.List(pl.Int64)))).collect(),
+        df.clear(),
+    )
+    assert_frame_equal(
+        lf.filter(pl.col("f").is_in([-0.0, None], nulls_equal=True)).collect(),
+        df,
+    )
+
+    df = pl.DataFrame({"f": [-0.0, 0.0, 1.0]}, schema={"f": pl.Float32})
+    lf = pl.scan_pyarrow_dataset(ds.dataset(df.to_arrow()))
+    assert_frame_equal(
+        lf.filter(pl.col("f").is_in([0.0])).collect(),
+        pl.DataFrame({"f": [-0.0, 0.0]}, schema=df.schema),
     )
 
 

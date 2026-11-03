@@ -38,51 +38,39 @@ pub(crate) fn needle_isin_haystack(
         return None;
     }
 
+    // A null haystack gives null for every row, which `isin` can't express.
     let mut haystack_series = if let LiteralValue::Series(s) = lv
         && s.dtype().is_list()
         && s.len() == 1
+        && s.null_count() == 0
     {
-        if s.null_count() == 0 {
-            s.explode(ExplodeOptions {
-                empty_as_null: false,
-                keep_nulls: false,
-            })
-            .ok()?
-        } else {
-            Series::full_null(PlSmallStr::EMPTY, 0, &DataType::Null)
-        }
+        s.explode(ExplodeOptions {
+            empty_as_null: false,
+            keep_nulls: false,
+        })
+        .ok()?
     } else if let Some(AnyValue::List(s)) = lv.to_any_value() {
         s
-    } else if lv.is_null() {
-        Series::full_null(PlSmallStr::EMPTY, 0, &DataType::Null)
     } else {
         return None;
     };
 
-    let converted_len = haystack_series.len()
-        - if nulls_equal {
-            0
-        } else {
-            haystack_series.null_count()
-        };
-
-    if list_limit.is_some_and(|limit| converted_len > limit) {
-        return None;
-    }
-    if converted_len == 0 {
-        return Some(IsInHaystack::Empty);
-    }
     if !nulls_equal {
         haystack_series = haystack_series.drop_nulls();
     }
     // PyArrow's `isin` distinguishes `-0.0` from `0.0`, Polars does not.
-    if haystack_series.dtype().is_float() {
-        if haystack_series.equal(0.0f64).ok()?.any() {
-            let zeros = Series::new(PlSmallStr::EMPTY, [0.0f64, -0.0])
-                .cast(haystack_series.dtype())
-                .ok()?;
-            haystack_series.append(&zeros).ok()?;
-        }
+    if haystack_series.dtype().is_float() && haystack_series.equal(0.0f64).ok()?.any() {
+        let zeros = Series::new(PlSmallStr::EMPTY, [0.0f64, -0.0])
+            .cast(haystack_series.dtype())
+            .ok()?;
+        haystack_series.append(&zeros).ok()?;
+    }
+
+    if list_limit.is_some_and(|limit| haystack_series.len() > limit) {
+        return None;
+    }
+    if haystack_series.is_empty() {
+        return Some(IsInHaystack::Empty);
     }
     Some(IsInHaystack::Series(haystack_series))
 }
