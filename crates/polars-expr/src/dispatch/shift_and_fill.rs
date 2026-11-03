@@ -12,6 +12,7 @@ where
 {
     // `extract` converts a Decimal by value, which drops the scale.
     let fill_value = match fill_value {
+        #[cfg(feature = "dtype-decimal")]
         AnyValue::Decimal(v, _, _) => AnyValue::Int128(v),
         av => av,
     };
