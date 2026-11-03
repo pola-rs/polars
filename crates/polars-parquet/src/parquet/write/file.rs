@@ -234,7 +234,10 @@ impl<W: Write> FileWriter<W> {
         &self.schema
     }
 
-    pub fn row_groups(&self) -> &[RowGroup] {
+    /// The row groups written so far.
+    /// Unlike [`Self::metadata`], these still hold the statistics of encrypted columns!
+    /// Check `crypto_metadata` before exposing anything derived from them.
+    pub(crate) fn row_groups(&self) -> &[RowGroup] {
         &self.row_groups
     }
 
