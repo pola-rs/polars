@@ -2,6 +2,7 @@ use num_traits::AsPrimitive;
 use polars_compute::rolling::QuantileMethod;
 #[cfg(feature = "dtype-f16")]
 use polars_utils::float16::pf16;
+use polars_utils::sort::select_many_unstable_by;
 
 use super::*;
 
@@ -72,27 +73,20 @@ pub fn extract_quantiles(quantile: &Series) -> PolarsResult<Vec<f64>> {
         },
         _ => vec![quantile.get(0)?.try_extract()?],
     };
-    for &q in &quantiles {
+    check_quantiles(&quantiles)?;
+    Ok(quantiles)
+}
+
+fn check_quantiles(quantiles: &[f64]) -> PolarsResult<()> {
+    for &q in quantiles {
         polars_ensure!(
             (0.0..=1.0).contains(&q),
             ComputeError: "`quantile` should be between 0.0 and 1.0, got {}", q,
         );
     }
-    Ok(quantiles)
+    Ok(())
 }
 
-/// [`quantile_indices`] as indices into `length` sorted values with the `null_count` nulls first.
-fn quantile_idx(
-    quantile: f64,
-    length: usize,
-    null_count: usize,
-    method: QuantileMethod,
-) -> (usize, f64, usize) {
-    let (lower, upper, fraction) = quantile_indices(length - null_count, quantile, method);
-    (lower + null_count, fraction, upper + null_count)
-}
-
-/// helper
 fn linear_interpol<T: Float>(lower: T, upper: T, fraction: f64) -> T {
     if lower == upper {
         lower
@@ -109,186 +103,173 @@ fn midpoint_interpol<T: Float>(lower: T, upper: T) -> T {
     }
 }
 
-// Quickselect algorithm is used when
-//    1. The data is not already sorted
-//    2. We can make a contiguous slice of the data
-//    3. We only need a single quantile
-fn quantile_slice<T: ToPrimitive + TotalOrd + Copy>(
+/// Combines the values at the ranks returned by [`quantile_indices`] into the quantile.
+fn interpolate<T: ToPrimitive>(
+    lower: T,
+    upper: T,
+    fraction: f64,
+    method: QuantileMethod,
+) -> Option<f64> {
+    let lower = lower.to_f64()?;
+    match method {
+        QuantileMethod::Midpoint => Some(midpoint_interpol(lower, upper.to_f64()?)),
+        QuantileMethod::Linear => Some(linear_interpol(lower, upper.to_f64()?, fraction)),
+        _ => Some(lower),
+    }
+}
+
+/// Computes `quantile` of `n_nonnull` values, where `order_stats(ranks, out)` writes the values at
+/// the given ascending ranks of the sorted values to `out`.
+fn quantile_with<T: ToPrimitive + Copy + Default>(
+    n_nonnull: usize,
+    quantile: f64,
+    method: QuantileMethod,
+    order_stats: impl FnOnce(&[usize], &mut [T]),
+) -> Option<f64> {
+    if n_nonnull == 0 {
+        return None;
+    }
+    let (lower, upper, fraction) = quantile_indices(n_nonnull, quantile, method);
+    let k = if lower == upper { 1 } else { 2 };
+    let mut vals = [T::default(); 2];
+    order_stats(&[lower, upper][..k], &mut vals[..k]);
+    interpolate(vals[0], vals[k - 1], fraction, method)
+}
+
+/// [`quantile_with`] for several quantiles, fetching all the order statistics they need at once.
+fn quantiles_with<T: ToPrimitive + Copy + Default>(
+    n_nonnull: usize,
+    quantiles: &[f64],
+    method: QuantileMethod,
+    order_stats: impl FnOnce(&[usize], &mut [T]),
+) -> Vec<Option<f64>> {
+    if n_nonnull == 0 {
+        return vec![None; quantiles.len()];
+    }
+    let indices: Vec<_> = quantiles
+        .iter()
+        .map(|&q| quantile_indices(n_nonnull, q, method))
+        .collect();
+    let mut ranks: Vec<usize> = indices.iter().flat_map(|&(l, u, _)| [l, u]).collect();
+    ranks.sort_unstable();
+    ranks.dedup();
+    let mut vals = vec![T::default(); ranks.len()];
+    order_stats(&ranks, &mut vals);
+    let at = |r| vals[ranks.binary_search(&r).unwrap()];
+    indices
+        .iter()
+        .map(|&(lower, upper, fraction)| interpolate(at(lower), at(upper), fraction, method))
+        .collect()
+}
+
+/// The `quantile` of `vals`, non-null values in any order, which it reorders.
+pub(crate) fn quantile_of_nonnull<T: ToPrimitive + TotalOrd + Copy + Default>(
     vals: &mut [T],
     quantile: f64,
     method: QuantileMethod,
-) -> PolarsResult<Option<f64>> {
-    polars_ensure!((0.0..=1.0).contains(&quantile),
-        ComputeError: "quantile should be between 0.0 and 1.0, got {}", quantile,
-    );
-    if vals.is_empty() {
-        return Ok(None);
-    }
-    if vals.len() == 1 {
-        return Ok(vals[0].to_f64());
-    }
-    let (idx, fraction, top_idx) = quantile_idx(quantile, vals.len(), 0, method);
+) -> Option<f64> {
+    quantile_with(vals.len(), quantile, method, |ranks, out| {
+        select_many_unstable_by(vals, ranks, out, TotalOrd::tot_cmp)
+    })
+}
 
-    let (_lhs, lower, rhs) = vals.select_nth_unstable_by(idx, TotalOrd::tot_cmp);
-    if idx == top_idx {
-        Ok(lower.to_f64())
-    } else {
-        match method {
-            QuantileMethod::Midpoint => {
-                let upper = rhs.iter().copied().min_by(TotalOrd::tot_cmp).unwrap();
-                Ok(Some(midpoint_interpol(
-                    lower.to_f64().unwrap(),
-                    upper.to_f64().unwrap(),
-                )))
-            },
-            QuantileMethod::Linear => {
-                let upper = rhs.iter().copied().min_by(TotalOrd::tot_cmp).unwrap();
-                Ok(
-                    linear_interpol(lower.to_f64().unwrap(), upper.to_f64().unwrap(), fraction)
-                        .to_f64(),
-                )
-            },
-            _ => Ok(lower.to_f64()),
+/// Reads the values at the ascending `ranks` of the non-null values of `ca` into `out`, given that
+/// `ca` is flagged sorted (descending if `descending`), which keeps all its nulls at one end.
+fn sorted_order_stats<T: PolarsNumericType>(
+    ca: &ChunkedArray<T>,
+    descending: bool,
+    ranks: &[usize],
+    out: &mut [T::Native],
+) {
+    let n_nonnull = ca.len() - ca.null_count();
+    let start = ca.first_non_null().unwrap_or(0);
+    debug_assert!(ranks.last().is_none_or(|&r| r < n_nonnull));
+
+    // Visit the ranks in ascending row order, so a single pass over the chunks finds them.
+    let mut chunks = ca.downcast_iter();
+    let mut chunk = chunks.next().unwrap();
+    let mut chunk_start = 0;
+    for j in 0..ranks.len() {
+        let (i, idx) = if descending {
+            let i = ranks.len() - 1 - j;
+            (i, start + n_nonnull - 1 - ranks[i])
+        } else {
+            (j, start + ranks[j])
+        };
+        while idx >= chunk_start + chunk.len() {
+            chunk_start += chunk.len();
+            chunk = chunks.next().unwrap();
         }
+        out[i] = chunk.value(idx - chunk_start);
     }
 }
 
-// This function is called if multiple quantiles are requested
-// but we are able to make a contiguous slice of the data.
-// Right now, we do the same thing as the generic function: sort once and
-// get all quantiles from the sorted data. But we could consider multi-quickselect
-// algorithms in the future.
-fn quantiles_slice<T: ToPrimitive + TotalOrd + Copy>(
-    vals: &mut [T],
+/// The `quantile` of `ca`, which is sorted (descending if `descending`) with its nulls at one end.
+pub(crate) fn sorted_quantile<T: PolarsNumericType>(
+    ca: &ChunkedArray<T>,
+    descending: bool,
+    quantile: f64,
+    method: QuantileMethod,
+) -> Option<f64> {
+    let n_nonnull = ca.len() - ca.null_count();
+    quantile_with(n_nonnull, quantile, method, |ranks, out| {
+        sorted_order_stats(ca, descending, ranks, out)
+    })
+}
+
+/// Writes the values at the strictly ascending `ranks` of the sorted non-null values of `ca` to
+/// `out`, reading them directly if `ca` is flagged sorted and selecting them otherwise.
+pub fn order_statistics<T: PolarsNumericType>(
+    ca: &ChunkedArray<T>,
+    ranks: &[usize],
+    out: &mut [T::Native],
+) {
+    if ranks.is_empty() {
+        return;
+    }
+    match ca.is_sorted_flag() {
+        IsSorted::Not => {
+            select_many_unstable_by(&mut ca.to_vec_non_null(), ranks, out, TotalOrd::tot_cmp)
+        },
+        sorted => sorted_order_stats(ca, sorted == IsSorted::Descending, ranks, out),
+    }
+}
+
+/// The `quantile` of `ca`, after validating it.
+fn ca_quantile<T: PolarsNumericType>(
+    ca: &ChunkedArray<T>,
+    quantile: f64,
+    method: QuantileMethod,
+) -> PolarsResult<Option<f64>> {
+    check_quantiles(&[quantile])?;
+    let n_nonnull = ca.len() - ca.null_count();
+    Ok(quantile_with(n_nonnull, quantile, method, |ranks, out| {
+        order_statistics(ca, ranks, out)
+    }))
+}
+
+/// The `quantiles` of `ca`, after validating them.
+fn ca_quantiles<T: PolarsNumericType>(
+    ca: &ChunkedArray<T>,
     quantiles: &[f64],
     method: QuantileMethod,
 ) -> PolarsResult<Vec<Option<f64>>> {
-    // Validate all quantiles
-    for &q in quantiles {
-        polars_ensure!(
-            (0.0..=1.0).contains(&q),
-            ComputeError: "quantile should be between 0.0 and 1.0, got {}", q
-        );
-    }
-
-    if vals.is_empty() {
-        return Ok(vec![None; quantiles.len()]);
-    }
-    if vals.len() == 1 {
-        let v = vals[0].to_f64();
-        return Ok(vec![v; quantiles.len()]);
-    }
-
-    // For multiple quantiles, just sort once
-    vals.sort_by(TotalOrd::tot_cmp);
-    let n = vals.len();
-
-    let mut out = Vec::with_capacity(quantiles.len());
-
-    for &q in quantiles {
-        let (idx, fraction, top_idx) = quantile_idx(q, n, 0, method);
-
-        // No nulls here, so unwrap is safe
-        let lower = vals[idx].to_f64().unwrap();
-
-        let opt = match method {
-            QuantileMethod::Midpoint => {
-                if top_idx == idx {
-                    Some(lower)
-                } else {
-                    let upper = vals[idx + 1].to_f64().unwrap();
-                    midpoint_interpol(lower, upper).to_f64()
-                }
-            },
-            QuantileMethod::Linear => {
-                if top_idx == idx {
-                    Some(lower)
-                } else {
-                    let upper = vals[idx + 1].to_f64().unwrap();
-                    linear_interpol(lower, upper, fraction).to_f64()
-                }
-            },
-            _ => Some(lower),
-        };
-
-        out.push(opt);
-    }
-
-    Ok(out)
-}
-
-// This function is called if data is already sorted or we cannot make a contiguous slice
-fn generic_quantiles<T>(
-    ca: ChunkedArray<T>,
-    quantiles: &[f64],
-    method: QuantileMethod,
-) -> PolarsResult<Vec<Option<f64>>>
-where
-    T: PolarsNumericType,
-{
-    // Validate all quantiles
-    for &q in quantiles {
-        polars_ensure!(
-            (0.0..=1.0).contains(&q),
-            ComputeError: "`quantile` should be between 0.0 and 1.0, got {}", q,
-        );
-    }
-
-    let null_count = ca.null_count();
-    let length = ca.len();
-
-    if null_count == length {
-        return Ok(vec![None; quantiles.len()]);
-    }
-
-    let sorted = ca.sort(false);
-    let mut out = Vec::with_capacity(quantiles.len());
-
-    for &q in quantiles {
-        let (idx, fraction, top_idx) = quantile_idx(q, length, null_count, method);
-
-        let lower = sorted.get(idx).map(|v| v.to_f64().unwrap());
-
-        let opt = match method {
-            QuantileMethod::Midpoint => {
-                if top_idx == idx {
-                    lower
-                } else {
-                    let upper = sorted.get(idx + 1).map(|v| v.to_f64().unwrap());
-                    midpoint_interpol(lower.unwrap(), upper.unwrap()).to_f64()
-                }
-            },
-            QuantileMethod::Linear => {
-                if top_idx == idx {
-                    lower
-                } else {
-                    let upper = sorted.get(idx + 1).map(|v| v.to_f64().unwrap());
-                    linear_interpol(lower.unwrap(), upper.unwrap(), fraction).to_f64()
-                }
-            },
-            _ => lower,
-        };
-
-        out.push(opt);
-    }
-
-    Ok(out)
+    check_quantiles(quantiles)?;
+    let n_nonnull = ca.len() - ca.null_count();
+    Ok(quantiles_with(
+        n_nonnull,
+        quantiles,
+        method,
+        |ranks, out| order_statistics(ca, ranks, out),
+    ))
 }
 
 impl<T> ChunkQuantile<f64> for ChunkedArray<T>
 where
     T: PolarsIntegerType,
-    T::Native: TotalOrd,
 {
     fn quantile(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<f64>> {
-        // in case of sorted data, the sort is free, so don't take quickselect route
-        if let (Ok(slice), false) = (self.cont_slice(), self.is_sorted_ascending_flag()) {
-            let mut owned = slice.to_vec();
-            quantile_slice(&mut owned, quantile, method)
-        } else {
-            let re_val = generic_quantiles(self.clone(), &[quantile], method)?;
-            Ok(re_val.into_iter().next().unwrap())
-        }
+        ca_quantile(self, quantile, method)
     }
 
     fn quantiles(
@@ -296,13 +277,7 @@ where
         quantiles: &[f64],
         method: QuantileMethod,
     ) -> PolarsResult<Vec<Option<f64>>> {
-        // in case of sorted data, the sort is free, so don't take quickselect route
-        if let (Ok(slice), false) = (self.cont_slice(), self.is_sorted_ascending_flag()) {
-            let mut owned = slice.to_vec();
-            quantiles_slice(&mut owned, quantiles, method)
-        } else {
-            generic_quantiles(self.clone(), quantiles, method)
-        }
+        ca_quantiles(self, quantiles, method)
     }
 
     fn median(&self) -> Option<f64> {
@@ -310,46 +285,11 @@ where
     }
 }
 
-// Version of quantile/median that don't need a memcpy
-impl<T> ChunkedArray<T>
-where
-    T: PolarsIntegerType,
-    T::Native: TotalOrd,
-{
-    pub(crate) fn quantile_faster(
-        mut self,
-        quantile: f64,
-        method: QuantileMethod,
-    ) -> PolarsResult<Option<f64>> {
-        // in case of sorted data, the sort is free, so don't take quickselect route
-        let is_sorted = self.is_sorted_ascending_flag();
-        if let (Some(slice), false) = (self.cont_slice_mut(), is_sorted) {
-            quantile_slice(slice, quantile, method)
-        } else {
-            self.quantile(quantile, method)
-        }
-    }
-
-    pub(crate) fn median_faster(self) -> Option<f64> {
-        self.quantile_faster(0.5, QuantileMethod::Linear).unwrap()
-    }
-}
-
 macro_rules! impl_chunk_quantile_for_float_chunked {
     ($T:ty, $CA:ty) => {
         impl ChunkQuantile<$T> for $CA {
             fn quantile(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<$T>> {
-                // in case of sorted data, the sort is free, so don't take quickselect route
-                let out = if let (Ok(slice), false) =
-                    (self.cont_slice(), self.is_sorted_ascending_flag())
-                {
-                    let mut owned = slice.to_vec();
-                    quantile_slice(&mut owned, quantile, method)
-                } else {
-                    let re_val = generic_quantiles(self.clone(), &[quantile], method)?;
-                    Ok(re_val.into_iter().next().unwrap())
-                };
-                out.map(|v| v.map(|v| v.as_()))
+                Ok(ca_quantile(self, quantile, method)?.map(AsPrimitive::as_))
             }
 
             fn quantiles(
@@ -357,22 +297,10 @@ macro_rules! impl_chunk_quantile_for_float_chunked {
                 quantiles: &[f64],
                 method: QuantileMethod,
             ) -> PolarsResult<Vec<Option<$T>>> {
-                // in case of sorted data, the sort is free, so don't take quickselect route
-                let out = if let (Ok(slice), false) =
-                    (self.cont_slice(), self.is_sorted_ascending_flag())
-                {
-                    let mut owned = slice.to_vec();
-                    quantiles_slice(&mut owned, quantiles, method)
-                } else {
-                    generic_quantiles(self.clone(), quantiles, method)
-                };
-
-                out.map(|vec_t| {
-                    vec_t
-                        .into_iter()
-                        .map(|opt| opt.map(|v| AsPrimitive::<$T>::as_(v)))
-                        .collect::<Vec<Option<$T>>>()
-                })
+                Ok(ca_quantiles(self, quantiles, method)?
+                    .into_iter()
+                    .map(|opt| opt.map(AsPrimitive::as_))
+                    .collect())
             }
 
             fn median(&self) -> Option<$T> {
@@ -386,36 +314,6 @@ macro_rules! impl_chunk_quantile_for_float_chunked {
 impl_chunk_quantile_for_float_chunked!(pf16, Float16Chunked);
 impl_chunk_quantile_for_float_chunked!(f32, Float32Chunked);
 impl_chunk_quantile_for_float_chunked!(f64, Float64Chunked);
-
-macro_rules! impl_float_chunked {
-    ($T:ty, $CA:ty) => {
-        impl $CA {
-            pub(crate) fn quantile_faster(
-                mut self,
-                quantile: f64,
-                method: QuantileMethod,
-            ) -> PolarsResult<Option<$T>> {
-                // in case of sorted data, the sort is free, so don't take quickselect route
-                let is_sorted = self.is_sorted_ascending_flag();
-                if let (Some(slice), false) = (self.cont_slice_mut(), is_sorted) {
-                    Ok(quantile_slice(slice, quantile, method)?.map(AsPrimitive::as_))
-                } else {
-                    Ok(self.quantile(quantile, method)?.map(AsPrimitive::as_))
-                }
-            }
-
-            pub(crate) fn median_faster(self) -> Option<$T> {
-                self.quantile_faster(0.5.into(), QuantileMethod::Linear)
-                    .unwrap()
-            }
-        }
-    };
-}
-
-#[cfg(feature = "dtype-f16")]
-impl_float_chunked!(pf16, Float16Chunked);
-impl_float_chunked!(f32, Float32Chunked);
-impl_float_chunked!(f64, Float64Chunked);
 
 impl ChunkQuantile<String> for StringChunked {}
 impl ChunkQuantile<Series> for ListChunked {}
