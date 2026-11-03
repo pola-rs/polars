@@ -17,7 +17,7 @@ from polars.testing import assert_frame_equal
 pytest.importorskip("pyiceberg.catalog.sql")
 
 from pyiceberg.catalog.sql import SqlCatalog
-from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.exceptions import NoSuchTableError, ServerError
 
 
 class CountingCatalog(SqlCatalog):  # type: ignore[misc]
@@ -1168,6 +1168,7 @@ def test_create_catalog_table_as_select_cleanup_purge_only(
 
     # created, then filled: a failed fill removes the new table with a purge
     monkeypatch.setattr(lake, "create_table_transaction", no_staged_create)
+    # as on a REST catalog, where a purge is a separate request
     monkeypatch.setattr(lake, "purge_table", lake.drop_table)
     monkeypatch.setattr(lake, "drop_table", purge_only)
     ctx = lake_ctx(lake)
@@ -1194,15 +1195,17 @@ def test_create_catalog_table_as_select_cleanup_keeps_others_tables(
             # the drop lands, its response is lost, and the name is taken again
             drop(identifier)
             table = lake.create_table(identifier, schema=other.to_arrow().schema)
-        else:
-            # a purge-only refusal, while another writer appends
-            table = lake.load_table(identifier)
-        other.write_iceberg(table, mode="append")
+            other.write_iceberg(table, mode="append")
+            msg = "response lost"
+            raise TimeoutError(msg)
+        # a purge-only refusal, while another writer appends
+        other.write_iceberg(lake.load_table(identifier), mode="append")
         msg = "only with purge enabled"
         raise BadRequestError(msg)
 
     monkeypatch.setattr(lake, "create_table_transaction", no_staged_create)
     monkeypatch.setattr(lake, "drop_table", drop_then_other_writer)
+    # as on a REST catalog, where a purge is a separate request
     monkeypatch.setattr(lake, "purge_table", drop)
     ctx = lake_ctx(lake)
     ctx.register("src", pl.LazyFrame({"v": ["1", "x"]}))
@@ -1211,6 +1214,81 @@ def test_create_catalog_table_as_select_cleanup_keeps_others_tables(
     monkeypatch.undo()
     # the other writer's table and rows are kept
     assert table_rows(lake, "tpch", "t") == [(7,)]
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("error", [PermissionError, TimeoutError, ServerError])
+def test_create_catalog_table_as_select_cleanup_purges_only_after_bad_request(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch, error: type[Exception]
+) -> None:
+    purges: list[Any] = []
+
+    def fail(identifier: Any) -> None:
+        msg = "drop failed"
+        raise error(msg)
+
+    monkeypatch.setattr(lake, "create_table_transaction", no_staged_create)
+    monkeypatch.setattr(lake, "drop_table", fail)
+    monkeypatch.setattr(lake, "purge_table", purges.append)
+    ctx = lake_ctx(lake)
+    ctx.register("src", pl.LazyFrame({"v": ["1", "x"]}))
+    with pytest.raises(pl.exceptions.InvalidOperationError) as exc:
+        ctx.execute("CREATE TABLE t AS SELECT CAST(v AS INT) AS x FROM src")
+    assert purges == []
+    assert any("left in the catalog" in note for note in exc.value.__notes__)
+    monkeypatch.undo()
+    assert table_rows(lake, "tpch", "t") == []
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_as_select_cleanup_refused_outside_rest(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import BadRequestError
+
+    drops: list[Any] = []
+
+    def refuse(identifier: Any) -> None:
+        drops.append(identifier)
+        msg = "drop refused"
+        raise BadRequestError(msg)
+
+    # the SQL catalog's own purge drops first, so it is refused as well
+    monkeypatch.setattr(lake, "create_table_transaction", no_staged_create)
+    monkeypatch.setattr(lake, "drop_table", refuse)
+    ctx = lake_ctx(lake)
+    ctx.register("src", pl.LazyFrame({"v": ["1", "x"]}))
+    with pytest.raises(pl.exceptions.InvalidOperationError) as exc:
+        ctx.execute("CREATE TABLE t AS SELECT CAST(v AS INT) AS x FROM src")
+    assert drops == [("tpch", "t")] * 2
+    assert any("left in the catalog" in note for note in exc.value.__notes__)
+    monkeypatch.undo()
+    assert table_rows(lake, "tpch", "t") == []
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_as_select_cleanup_purge_finds_table_gone(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import BadRequestError
+
+    def refuse(identifier: Any) -> None:
+        msg = "only with purge enabled"
+        raise BadRequestError(msg)
+
+    def gone(identifier: Any) -> None:
+        raise NoSuchTableError(str(identifier))
+
+    # another writer dropped the table before the purge
+    monkeypatch.setattr(lake, "create_table_transaction", no_staged_create)
+    monkeypatch.setattr(lake, "drop_table", refuse)
+    monkeypatch.setattr(lake, "purge_table", gone)
+    ctx = lake_ctx(lake)
+    ctx.register("src", pl.LazyFrame({"v": ["1", "x"]}))
+    with pytest.raises(pl.exceptions.InvalidOperationError) as exc:
+        ctx.execute("CREATE TABLE t AS SELECT CAST(v AS INT) AS x FROM src")
+    assert any("'t' could not be created" in note for note in exc.value.__notes__)
+    assert not any("left in the catalog" in note for note in exc.value.__notes__)
 
 
 @pytest.mark.write_disk
@@ -1882,13 +1960,13 @@ def test_drop_catalog_table_lost_response(
         msg = "response lost"
         raise TimeoutError(msg)
 
-    # a drop that lands before the catalog fails can't be told from a missing table
+    # a drop that lands before the catalog fails keeps its own error
     monkeypatch.setattr(lake, "drop_table", drop_then_fail)
     ctx = lake_ctx(lake)
-    with pytest.raises(NoSuchTableError, match="or the catalog dropped it") as exc:
-        ctx.execute("DROP TABLE orders")
-    assert "(response lost)" in str(exc.value)
-    ctx.execute("DROP TABLE IF EXISTS lineitem")
+    for statement in ["DROP TABLE orders", "DROP TABLE IF EXISTS lineitem"]:
+        with pytest.raises(TimeoutError, match="response lost") as exc:
+            ctx.execute(statement)
+        assert len(exc.value.__notes__) == 1
     assert not lake.table_exists(("tpch", "orders"))
     assert not lake.table_exists(("tpch", "lineitem"))
 
@@ -1915,17 +1993,15 @@ def test_drop_catalog_table_checks(
     # an existence check that fails lets the purge run
     ctx.execute("DROP TABLE orders PURGE")
     assert checks == [("tpch", "orders")]
-    # a plain drop is checked only after it fails, and keeps its own error
+    # a plain drop refused for another reason is not checked, and keeps its own error
     monkeypatch.setattr(lake, "drop_table", deny)
     with pytest.raises(PermissionError, match="drop not allowed") as exc:
         ctx.execute("DROP TABLE IF EXISTS lineitem")
     assert exc.value.__notes__ == [
         "dropping table 'lineitem' failed: catalog table 'tpch.lineitem' of "
-        "catalog 'lake'",
-        "some catalogs drop tables only with `PURGE`, which also deletes the data "
-        "files",
+        "catalog 'lake'"
     ]
-    assert checks == [("tpch", "orders"), ("tpch", "lineitem")]
+    assert checks == [("tpch", "orders")]
 
     # a table dropped by another writer after the check
     def gone(identifier: Any) -> None:
