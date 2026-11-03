@@ -1,7 +1,14 @@
+use polars_arrow::array::Array;
 use polars_arrow::compute::concatenate::concatenate_validities;
 use polars_core::chunked_array::ops::binning::{FractionSpec, IntervalSpec};
 use polars_core::prelude::*;
-use polars_core::with_match_physical_integer_polars_type;
+use polars_core::runtime::RAYON;
+use polars_core::series::IsSorted;
+use polars_core::{
+    with_match_physical_integer_polars_type, with_match_physical_numeric_polars_type,
+};
+use polars_utils::total_ord::{TotalEq, TotalOrd};
+use rayon::prelude::*;
 
 use crate::series::{SearchSortedSide, search_sorted};
 
@@ -66,6 +73,184 @@ fn gather_at_sorted_positions(
 
     let phys_idx = sort_idx.take(&wanted)?;
     s.take(&phys_idx)
+}
+
+/// Whether `dtype` sorts like its numeric physical type, so that its order statistics can be
+/// selected on the physical values.
+fn sorts_as_physical_numeric(dtype: &DataType) -> bool {
+    dtype.is_numeric() || dtype.is_temporal()
+}
+
+/// The value at each position within the sorted non-null values of `ca`, or `None` past them as a
+/// trailing empty bin requires.
+fn select_at_sorted_positions<T: PolarsNumericType>(
+    ca: &ChunkedArray<T>,
+    positions: &[IdxSize],
+) -> Vec<Option<T::Native>> {
+    let n_nonnull = ca.len() - ca.null_count();
+    let mut ranks: Vec<usize> = positions
+        .iter()
+        .map(|&p| p as usize)
+        .filter(|&p| p < n_nonnull)
+        .collect();
+    ranks.sort_unstable();
+    ranks.dedup();
+    let mut vals = vec![T::Native::default(); ranks.len()];
+    order_statistics(ca, &ranks, &mut vals);
+    positions
+        .iter()
+        .map(|&p| ranks.binary_search(&(p as usize)).ok().map(|i| vals[i]))
+        .collect()
+}
+
+/// [`bins_from_rank_cuts`] without a sort, given the cumulative bin sizes `cuts` and the value at
+/// each cut rank as `boundaries` (`None` past the non-null values).
+fn bins_from_rank_cuts_select<T: PolarsNumericType>(
+    ca: &ChunkedArray<T>,
+    cuts: &[IdxSize],
+    boundaries: &[Option<T::Native>],
+) -> IdxCa {
+    // A value that equals no boundary lands in the bin after every boundary below it. The values
+    // equal to a boundary occupy a contiguous run of ranks, which a stable sort hands out in input
+    // order; counting them gives each its rank, and so its bin.
+    //
+    // The cuts ascend (explicit fractions are validated as sorted), so those past the non-null
+    // values, which no rank reaches and which have no boundary, come last.
+    let n_valid = boundaries.iter().take_while(|b| b.is_some()).count();
+    let cuts = &cuts[..n_valid];
+    let boundaries: Vec<T::Native> = boundaries[..n_valid].iter().map(|b| b.unwrap()).collect();
+
+    // `distinct[m]` is a distinct boundary value, and `first_cut[m]` the first cut with it.
+    let mut distinct: Vec<T::Native> = Vec::new();
+    let mut first_cut: Vec<usize> = Vec::new();
+    for (j, b) in boundaries.iter().enumerate() {
+        if distinct.last().is_none_or(|d| d.tot_ne(b)) {
+            distinct.push(*b);
+            first_cut.push(j);
+        }
+    }
+    first_cut.push(n_valid);
+
+    // Index of the first distinct boundary not less than `v`, and whether it equals `v`.
+    let locate = |v: &T::Native| {
+        let m = distinct.partition_point(|d| d.tot_lt(v));
+        (m, m < distinct.len() && distinct[m].tot_eq(v))
+    };
+
+    // Both passes run in parallel over ranges of rows, which may span chunks. Pass 1 stores each
+    // row's located boundary as `2 * m + equal` in `out` (m <= k <= the number of cuts, which
+    // `bin_at_positions` keeps below `IdxSize::MAX / 2`) and counts per range; the counts give each range the rank of its first value
+    // equal to every boundary. A range is at least as long as there are boundaries, so the
+    // per-range counts and starting ranks (3k + 1 per range) take at most about three times the
+    // memory of `out`.
+    let k = distinct.len();
+    let range_len = (1 << 16).max(k);
+    let arrs: Vec<_> = ca.downcast_iter().collect();
+    let mut chunk_starts = Vec::with_capacity(arrs.len() + 1);
+    chunk_starts.push(0);
+    for arr in &arrs {
+        chunk_starts.push(chunk_starts.last().unwrap() + arr.len());
+    }
+    let mut out = vec![0 as IdxSize; ca.len()];
+    let mut parts: Vec<&mut [IdxSize]> = out.chunks_mut(range_len).collect();
+
+    let counts: Vec<(Vec<IdxSize>, Vec<IdxSize>)> = RAYON.install(|| {
+        parts
+            .par_iter_mut()
+            .enumerate()
+            .map(|(r, part)| {
+                let mut n_between = vec![0 as IdxSize; k + 1];
+                let mut n_equal = vec![0 as IdxSize; k];
+                let (lo, hi) = (r * range_len, r * range_len + part.len());
+                let mut c = chunk_starts.partition_point(|&start| start <= lo) - 1;
+                let mut row = lo;
+                while row < hi {
+                    let (arr, chunk_start) = (arrs[c], chunk_starts[c]);
+                    let end = hi.min(chunk_starts[c + 1]);
+                    let values = &arr.values()[row - chunk_start..end - chunk_start];
+                    let out_piece = &mut part[row - lo..end - lo];
+                    for (i, (v, o)) in values.iter().zip(out_piece.iter_mut()).enumerate() {
+                        if arr.is_valid(row - chunk_start + i) {
+                            let (m, equal) = locate(v);
+                            *o = (2 * m + equal as usize) as IdxSize;
+                            if equal {
+                                n_equal[m] += 1;
+                            } else {
+                                n_between[m] += 1;
+                            }
+                        }
+                    }
+                    row = end;
+                    c += 1;
+                }
+                (n_between, n_equal)
+            })
+            .collect()
+    });
+
+    // Turn each range's tie counts into the rank its first value equal to each boundary takes.
+    let mut next_rank = vec![0 as IdxSize; k];
+    let mut below: IdxSize = 0;
+    for m in 0..k {
+        below += counts
+            .iter()
+            .map(|(n_between, _)| n_between[m])
+            .sum::<IdxSize>();
+        next_rank[m] = below;
+        below += counts
+            .iter()
+            .map(|(_, n_equal)| n_equal[m])
+            .sum::<IdxSize>();
+    }
+    let mut starts: Vec<Vec<IdxSize>> = Vec::with_capacity(counts.len());
+    for (_, n_equal) in &counts {
+        starts.push(next_rank.clone());
+        for (r, n) in next_rank.iter_mut().zip(n_equal) {
+            *r += n;
+        }
+    }
+
+    // Null rows still hold 0, which decodes as "below boundary 0, not equal": it takes no tie
+    // rank, and the validity masks the bin.
+    RAYON.install(|| {
+        parts
+            .into_par_iter()
+            .zip(starts.into_par_iter())
+            .for_each(|(part, mut next_rank)| {
+                for o in part.iter_mut() {
+                    let (m, equal) = (*o as usize / 2, *o % 2 == 1);
+                    let bin = if equal {
+                        let rank = next_rank[m];
+                        next_rank[m] += 1;
+                        let tied_cuts = &cuts[first_cut[m]..first_cut[m + 1]];
+                        first_cut[m] + tied_cuts.partition_point(|&c| c <= rank)
+                    } else {
+                        first_cut[m]
+                    };
+                    *o = bin as IdxSize;
+                }
+            })
+    });
+    IdxCa::from_vec_validity(ca.name().clone(), out, concatenate_validities(ca.chunks()))
+}
+
+/// [`bins_from_rank_cuts`] for `ca` flagged sorted ascending, whose non-null rows are already in
+/// rank order, so each run of rows between two cuts fills one bin.
+fn bins_from_rank_cuts_sorted<T: PolarsNumericType>(
+    ca: &ChunkedArray<T>,
+    cuts: &[IdxSize],
+) -> IdxCa {
+    let n_nonnull = ca.len() - ca.null_count();
+    let start = ca.first_non_null().unwrap_or(0);
+    let mut out = vec![0 as IdxSize; ca.len()];
+    let ranked = &mut out[start..start + n_nonnull];
+    let ends = cuts.iter().map(|&c| (c as usize).min(n_nonnull));
+    let mut lo = 0;
+    for (bin, hi) in ends.chain([n_nonnull]).enumerate() {
+        ranked[lo..hi].fill(bin as IdxSize);
+        lo = hi;
+    }
+    IdxCa::from_vec_validity(ca.name().clone(), out, concatenate_validities(ca.chunks()))
 }
 
 /// Offsets from `min` of the `n_bins - 1` thresholds of equal-width bins over a span.
@@ -377,6 +562,33 @@ fn bin_at_positions(
     let non_null_len = s.len() - s.null_count();
     if non_null_len == 0 {
         return empty_bins(s, n_bins, labels, include_intervals);
+    }
+
+    // `bins_from_rank_cuts_select` packs a boundary index and a flag into one `IdxSize`.
+    if sorts_as_physical_numeric(s.dtype()) && positions.len() < IdxSize::MAX as usize / 2 {
+        let phys = s.to_physical_repr();
+        let (breaks, rank_bins) = with_match_physical_numeric_polars_type!(phys.dtype(), |$T| {
+            let ca: &ChunkedArray<$T> = phys.as_ref().as_ref().as_ref();
+            let breaks = select_at_sorted_positions(ca, positions);
+            let rank_bins = right_closed.is_none().then(|| {
+                if ca.is_sorted_flag() == IsSorted::Ascending {
+                    bins_from_rank_cuts_sorted(ca, positions)
+                } else {
+                    bins_from_rank_cuts_select(ca, positions, &breaks)
+                }
+            });
+            let breaks: ChunkedArray<$T> = breaks.into_iter().collect_ca(s.name().clone());
+            (breaks.into_series(), rank_bins)
+        });
+        // SAFETY: the values came out of the column's own physical values.
+        let breaks = unsafe { breaks.from_physical_unchecked(s.dtype()) }?;
+        let bin_idx = match (right_closed, rank_bins) {
+            (Some(right_closed), _) => bins_from_breaks(s, &breaks, right_closed)?,
+            (None, Some(rank_bins)) => rank_bins,
+            (None, None) => unreachable!(),
+        };
+        let breaks = include_intervals.then_some(breaks);
+        return finish_bins(s.name().clone(), &bin_idx, n_bins, breaks.as_ref(), labels);
     }
 
     // Rank binning may split ties, so the stable sort preserves their input order.
