@@ -1,3 +1,5 @@
+#[cfg(feature = "dtype-struct")]
+use std::borrow::Cow;
 use std::fmt::Write;
 
 use num_traits::AsPrimitive;
@@ -36,6 +38,7 @@ impl Series {
     ///   first non-null value. If any other non-null values do not match this
     ///   data type, an error is raised. If the first non-null value is a
     ///   decimal the slice is scanned for the maximum precision and scale possible.
+    ///   If it is a struct, fields of all struct values are merged (in first-seen order).
     /// - If `strict` is `false`, the data type is the supertype of the `values`.
     ///   An error is returned if no supertype can be determined.
     ///   **WARNING**: A full pass over the values is required to determine the supertype.
@@ -78,6 +81,12 @@ impl Series {
                         }
                     }
                     DataType::Decimal(prec, scale)
+                },
+                #[cfg(feature = "dtype-struct")]
+                DataType::Struct(_) => {
+                    return any_values_to_struct(values, None, strict)
+                        .with_context(|| format!("while constructing Series '{name}'"))
+                        .map(|s| s.with_name(name));
                 },
                 dt => dt,
             }
@@ -190,7 +199,7 @@ impl Series {
                 .into_series()
                 .cast(&DataType::Array(inner.clone(), *size))?,
             #[cfg(feature = "dtype-struct")]
-            DataType::Struct(fields) => any_values_to_struct(values, fields, strict)?,
+            DataType::Struct(fields) => any_values_to_struct(values, Some(fields), strict)?,
             #[cfg(feature = "object")]
             DataType::Object(_) => any_values_to_object(values)?,
             DataType::Null => Series::new_null(PlSmallStr::EMPTY, values.len()),
@@ -871,12 +880,117 @@ impl std::hash::Hash for FieldsByName<'_> {
     }
 }
 
+/// Resolves the fields of struct values (by name) against those of the struct
+/// being built, once per distinct ordered sequence of field names.
+#[cfg(feature = "dtype-struct")]
+struct StructFieldResolver<'a> {
+    target: Option<&'a [Field]>,
+    fields: PlIndexMap<&'a str, Option<&'a DataType>>,
+    ordering_ids: PlHashMap<FieldsByName<'a>, usize>,
+    last: (FieldsByName<'a>, usize),
+    indexes: Vec<usize>,
+    offsets: Vec<usize>,
+}
+
+#[cfg(feature = "dtype-struct")]
+impl<'a> StructFieldResolver<'a> {
+    fn new(target: Option<&'a [Field]>) -> Self {
+        // Values without fields (or that aren't structs) have ordering id 0.
+        let no_fields = FieldsByName(&[]);
+        let to_entry = |fld: &'a Field| (fld.name.as_str(), Some(&fld.dtype));
+        Self {
+            target,
+            fields: target.unwrap_or_default().iter().map(to_entry).collect(),
+            ordering_ids: PlHashMap::from_iter([(no_fields, 0)]),
+            last: (no_fields, 0),
+            indexes: Vec::new(),
+            offsets: vec![0],
+        }
+    }
+
+    /// Returns the ordering id of `av_fields` (potentially merging dtypes).
+    #[inline]
+    fn resolve(&mut self, av_fields: &'a [Field]) -> usize {
+        // Values from the same struct array share (already resolved) fields.
+        if std::ptr::eq(av_fields, self.last.0.0) {
+            return self.last.1;
+        }
+        let av_fields = FieldsByName(av_fields);
+        if self.last.0 != av_fields {
+            let next_id = self.ordering_ids.len();
+            let id = *self.ordering_ids.entry(av_fields).or_insert_with(|| {
+                self.offsets.push(self.indexes.len());
+                for fld in av_fields.0 {
+                    let entry = self.fields.entry(fld.name.as_str());
+                    self.indexes.push(entry.index());
+                    entry.or_insert(Some(&fld.dtype));
+                }
+                next_id
+            });
+            self.last = (av_fields, id);
+        }
+        let id = self.last.1;
+        if self.target.is_none() {
+            let indexes = &self.indexes[self.offsets[id]..];
+            for (fld, &idx) in av_fields.0.iter().zip(indexes) {
+                let dtype = &mut self.fields[idx];
+                if !fld.dtype.is_null()
+                    && let Some(dt) = *dtype
+                    && *dt != fld.dtype
+                {
+                    // `Null` data type gives way to the first non-null one
+                    *dtype = dt.is_null().then_some(&fld.dtype);
+                }
+            }
+        }
+        id
+    }
+
+    /// Returns the struct's fields, and the position (if any) of each in each ordering.
+    fn finish(mut self) -> (Cow<'a, [Field]>, Vec<Option<usize>>) {
+        let fields = match self.target {
+            Some(fields) => Cow::Borrowed(fields),
+            None => {
+                let to_field = |(name, dtype): (&str, Option<&DataType>)| {
+                    Field::new(name.into(), dtype.cloned().unwrap_or(DataType::Null))
+                };
+                Cow::Owned(self.fields.into_iter().map(to_field).collect())
+            },
+        };
+        let n_fields = fields.len();
+        self.offsets.push(self.indexes.len());
+        let mut positions = vec![None; (self.offsets.len() - 1) * n_fields];
+        for (id, range) in self.offsets.windows(2).enumerate() {
+            for (j, &idx) in self.indexes[range[0]..range[1]].iter().enumerate() {
+                // With a `target`, `fields` also has the values' other fields (after its own).
+                if idx < n_fields {
+                    positions[id * n_fields + idx].get_or_insert(j);
+                }
+            }
+        }
+        (fields, positions)
+    }
+}
+
+/// Builds a struct Series from `values` with the given `fields` or, if `None`,
+/// with the fields of all struct `values` (see [`StructFieldResolver`]).
 #[cfg(feature = "dtype-struct")]
 fn any_values_to_struct(
     values: &[AnyValue],
-    fields: &[Field],
+    fields: Option<&[Field]>,
     strict: bool,
 ) -> PolarsResult<Series> {
+    let mut field_resolver = StructFieldResolver::new(fields);
+    let av_field_order_ids: Vec<usize> = values
+        .iter()
+        .map(|av| match av {
+            AnyValue::StructOwned(payload) => field_resolver.resolve(&payload.1),
+            AnyValue::Struct(_, _, av_fields) => field_resolver.resolve(av_fields),
+            _ => 0,
+        })
+        .collect();
+    let (fields, field_positions) = field_resolver.finish();
+
     // Values other than structs here (or lists/arrays of their fields)
     // are null (or invalid if `strict`).
     let n_fields = fields.len();
@@ -897,36 +1011,6 @@ fn any_values_to_struct(
         out.set_outer_validity(Bitmap::opt_from_iter(values.iter().map(is_valid)));
         return Ok(out.into_series());
     }
-
-    // Resolve once per distinct ordered sequence of field names.
-    let mut field_order_ids = PlHashMap::from_iter([(FieldsByName(fields), 0)]);
-    let mut field_positions: Vec<_> = (0..n_fields).map(Some).collect();
-    let mut av_positions = PlHashMap::<&str, usize>::default();
-    let mut last = (FieldsByName(fields), 0);
-    let av_field_order_ids: Vec<usize> = values
-        .iter()
-        .map(|av| {
-            let av_fields = match av {
-                AnyValue::StructOwned(payload) => FieldsByName(&payload.1),
-                AnyValue::Struct(_, _, av_fields) => FieldsByName(av_fields),
-                _ => return 0,
-            };
-            if last.0 != av_fields {
-                let next_id = field_order_ids.len();
-                let id = *field_order_ids.entry(av_fields).or_insert_with(|| {
-                    av_positions.clear();
-                    for (j, fld) in av_fields.0.iter().enumerate() {
-                        av_positions.entry(fld.name.as_str()).or_insert(j);
-                    }
-                    let positions = fields.iter().map(|fld| av_positions.get(fld.name.as_str()));
-                    field_positions.extend(positions.map(|j| j.copied()));
-                    next_id
-                });
-                last = (av_fields, id);
-            }
-            last.1
-        })
-        .collect();
 
     // The physical series fields of the struct.
     let mut series_fields = Vec::with_capacity(n_fields);

@@ -215,7 +215,9 @@ class Series(metaclass=_Meta):
         on the `strict` parameter:
 
         - If `strict` is set to True (default), the inferred data type is equal to the
-          first non-null value, or `Null` if all values are null.
+          first non-null value, or `Null` if all values are null. If that value is a
+          struct (eg: a dict), the inferred :class:`Struct` has the fields of all the
+          struct values (in first-seen order).
         - If `strict` is set to False, the inferred data type is the supertype of the
           values, or :class:`Object` if no supertype can be found. **WARNING**: A full
           pass over the values is required to determine the supertype.
