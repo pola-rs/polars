@@ -1,6 +1,7 @@
 use polars_utils::vec::PushUnchecked;
 
 use super::*;
+use crate::hash_keys::DictSlotCache;
 use crate::hot_groups::fixed_index_table::FixedIndexTable;
 use crate::key_rows::{HotKeyRows, KeyRowCollector, KeyRowLayout, VERIFY_BATCH_SIZE};
 
@@ -11,6 +12,8 @@ pub struct KeyRowHashHotGrouper {
     evicted: KeyRowCollector,
     /// Per hot key whether it was replaced in the current batch.
     replaced: Vec<bool>,
+    /// The hot key each combined dictionary code was verified to be.
+    dict_keys: DictSlotCache,
 }
 
 impl KeyRowHashHotGrouper {
@@ -22,6 +25,7 @@ impl KeyRowHashHotGrouper {
             keys: HotKeyRows::new(layout.clone()),
             evicted: KeyRowCollector::new(layout.clone()),
             layout,
+            dict_keys: DictSlotCache::default(),
         }
     }
 }
@@ -70,12 +74,22 @@ impl HotGrouper for KeyRowHashHotGrouper {
         let mut slots = [0 as IdxSize; VERIFY_BATCH_SIZE];
         let mut hot_keys = [0 as IdxSize; VERIFY_BATCH_SIZE];
         let mut ok = [false; VERIFY_BATCH_SIZE];
+        let mut known = [false; VERIFY_BATCH_SIZE];
+        let mut sub_ok = [false; VERIFY_BATCH_SIZE];
+        let mut to_verify = Vec::with_capacity(VERIFY_BATCH_SIZE);
         let mut rows = Vec::with_capacity(VERIFY_BATCH_SIZE);
         let mut replaced_ks = Vec::new();
+        let mut dict_keys = std::mem::take(&mut self.dict_keys);
+        let codes = keys
+            .combined_codes
+            .as_ref()
+            .filter(|cc| dict_keys.prepare(&cc.dict_ids, cc.len, keys.len()))
+            .map(|cc| cc.codes.as_slice());
         for start in (0..keys.len()).step_by(VERIFY_BATCH_SIZE) {
             let n = VERIFY_BATCH_SIZE.min(keys.len() - start);
             let batch_hashes = &hashes[start..start + n];
             let (slots, hot_keys, ok) = (&mut slots[..n], &mut hot_keys[..n], &mut ok[..n]);
+            let known = &mut known[..n];
 
             // Find the candidate hot key of each key by its hash, hot key 0 standing in
             // for keys without one.
@@ -99,8 +113,49 @@ impl HotGrouper for KeyRowHashHotGrouper {
                     *ok &= unsafe { validity.get_bit_unchecked(start + r) };
                 }
             }
-            if num_found > 0 {
-                unsafe { self.keys.verify(keys, start, hot_keys, &mut rows, ok) };
+            // Keys whose combined code was verified to be the candidate need no comparison.
+            let mut num_known = 0;
+            if let Some(codes) = codes {
+                for (r, k) in hot_keys.iter().enumerate() {
+                    let is_known = ok[r]
+                        && unsafe {
+                            dict_keys.get(*codes.get_unchecked(start + r) as usize) == Some(*k)
+                        };
+                    known[r] = is_known;
+                    num_known += is_known as usize;
+                }
+                polars_core::frame::column::dictionary_stats::add(
+                    polars_core::frame::column::dictionary_stats::Counter::HotVerifySkippedRows,
+                    num_known,
+                );
+                polars_core::frame::column::dictionary_stats::add(
+                    polars_core::frame::column::dictionary_stats::Counter::HotVerifiedRows,
+                    n - num_known,
+                );
+            }
+            if num_found > num_known {
+                unsafe {
+                    if num_known == 0 {
+                        self.keys.verify(keys, start, hot_keys, &mut rows, ok);
+                    } else {
+                        to_verify.clear();
+                        to_verify.extend((0..n).filter(|r| ok[*r] && !known[*r]));
+                        let sub_ok = &mut sub_ok[..to_verify.len()];
+                        sub_ok.fill(true);
+                        self.keys
+                            .verify_subset(keys, start, &to_verify, hot_keys, &mut rows, sub_ok);
+                        for (r, o) in to_verify.iter().zip(sub_ok.iter()) {
+                            ok[*r] = *o;
+                        }
+                    }
+                }
+                if let Some(codes) = codes {
+                    for (r, k) in hot_keys.iter().enumerate() {
+                        if ok[r] && !known[r] {
+                            unsafe { dict_keys.set(*codes.get_unchecked(start + r) as usize, *k) };
+                        }
+                    }
+                }
             }
 
             if num_found == n && ok.iter().all(|ok| *ok) {
@@ -156,10 +211,15 @@ impl HotGrouper for KeyRowHashHotGrouper {
                     }
                 }
             }
+            for k in replaced_ks.iter() {
+                // A replaced hot key is another key now.
+                dict_keys.invalidate_slot(*k);
+            }
             for k in replaced_ks.drain(..) {
                 self.replaced[k as usize] = false;
             }
         }
+        self.dict_keys = dict_keys;
     }
 
     fn keys(&self) -> HashKeys {

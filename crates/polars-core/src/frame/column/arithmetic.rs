@@ -9,7 +9,7 @@ fn num_op_with_broadcast<T: Num + NumCast, F: Fn(&Series, T) -> Series>(
     op: F,
 ) -> Column {
     match c {
-        Column::Series(s) => op(s, n).into(),
+        Column::Series(_) | Column::Dictionary(_) => op(c.as_materialized_series(), n).into(),
         Column::Scalar(s) => {
             ScalarColumn::from_single_value_series(op(&s.as_single_value_series(), n), s.len())
                 .into()

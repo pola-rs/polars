@@ -4,12 +4,14 @@ use polars_buffer::Buffer;
 use polars_compute::binview_index_map::{BinaryViewIndexMap, Entry};
 
 use super::*;
-use crate::hash_keys::HashKeys;
+use crate::hash_keys::{DictCodeCache, HashKeys};
 
 #[derive(Default)]
 pub struct BinviewHashGrouper {
     idx_map: BinaryViewIndexMap<()>,
     null_idx: IdxSize,
+    /// The group of each code of the last dictionary.
+    dict_groups: DictCodeCache,
 }
 
 impl BinviewHashGrouper {
@@ -17,6 +19,7 @@ impl BinviewHashGrouper {
         Self {
             idx_map: BinaryViewIndexMap::default(),
             null_idx: IdxSize::MAX,
+            dict_groups: DictCodeCache::default(),
         }
     }
 
@@ -121,11 +124,64 @@ impl Grouper for BinviewHashGrouper {
         &mut self,
         hash_keys: &HashKeys,
         subset: &[IdxSize],
-        group_idxs: Option<&mut Vec<IdxSize>>,
+        mut group_idxs: Option<&mut Vec<IdxSize>>,
     ) {
         let HashKeys::Binview(hash_keys) = hash_keys else {
             unreachable!()
         };
+
+        if let Some(dc) = &hash_keys.dict_codes {
+            // Taken out of `self` to insert keys while it's borrowed; put back however it goes, as
+            // it keeps the rows it declined and the entries of another dictionary.
+            let mut dict_groups = std::mem::take(&mut self.dict_groups);
+            let done = if let Some(cache) = dict_groups.entries_for(&dc.dict, subset.len()) {
+                let codes = dc.codes.as_slice();
+                let views = hash_keys.keys.views().as_slice();
+                let buffers = hash_keys.keys.data_buffers();
+                let validity = hash_keys.keys.validity();
+                if let Some(g) = group_idxs.as_deref_mut() {
+                    g.reserve(subset.len());
+                }
+                let mut misses = 0;
+                for idx in subset {
+                    let idx = *idx as usize;
+                    // SAFETY: the subset indices are in bounds, and so are valid codes.
+                    let group = unsafe {
+                        if validity.is_some_and(|v| !v.get_bit_unchecked(idx)) {
+                            hash_keys.null_is_valid.then(|| self.insert_null())
+                        } else {
+                            let code = *codes.get_unchecked(idx) as usize;
+                            let cached = cache.get_unchecked_mut(code);
+                            if *cached == IdxSize::MAX {
+                                misses += 1;
+                                let hash = hash_keys.hashes.value_unchecked(idx);
+                                *cached = self.insert_key(hash, *views.get_unchecked(idx), buffers);
+                            }
+                            Some(*cached)
+                        }
+                    };
+                    let Some(group) = group else { continue };
+                    if let Some(g) = group_idxs.as_deref_mut() {
+                        g.push(group);
+                    }
+                }
+                polars_core::frame::column::dictionary_stats::add(
+                    polars_core::frame::column::dictionary_stats::Counter::GroupCacheMisses,
+                    misses,
+                );
+                polars_core::frame::column::dictionary_stats::add(
+                    polars_core::frame::column::dictionary_stats::Counter::GroupCacheHits,
+                    subset.len() - misses,
+                );
+                true
+            } else {
+                false
+            };
+            self.dict_groups = dict_groups;
+            if done {
+                return;
+            }
+        }
 
         unsafe {
             let views = hash_keys.keys.views().as_slice();

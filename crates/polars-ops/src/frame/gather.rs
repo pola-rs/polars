@@ -13,7 +13,9 @@ pub trait GatherDf {
 impl GatherDf for DataFrame {
     fn gather_with_column(&self, idxs: &Column, null_on_oob: bool) -> PolarsResult<DataFrame> {
         match idxs {
-            Column::Series(s) => self.gather_with_series(s, null_on_oob),
+            Column::Series(_) | Column::Dictionary(_) => {
+                self.gather_with_series(idxs.as_materialized_series(), null_on_oob)
+            },
             Column::Scalar(idx_c) => {
                 if idx_c.is_empty() {
                     return Ok(self.clear());
