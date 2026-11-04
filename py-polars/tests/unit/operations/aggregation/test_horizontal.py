@@ -889,3 +889,40 @@ def test_min_max_horizontal_scalar_column_29082() -> None:
     )
     expected = pl.DataFrame({"mn": [2.0, 2.0, 2.0], "mx": [3.0, 3.0, 3.0]})
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    ("horizontal", "expected"),
+    [
+        (pl.all_horizontal, [True, False, False, False, True, None]),
+        (pl.any_horizontal, [True, False, False, False, False, None]),
+    ],
+)
+def test_horizontal_non_boolean_operand_negated(
+    horizontal: Callable[..., pl.Expr], expected: list[bool | None]
+) -> None:
+    df = pl.DataFrame({"c0": pl.Series([0, 1, 2, 3, -1, None], dtype=pl.Int8)})
+    expr = ~horizontal(pl.col("c0"), pl.col("c0") > 0)
+
+    expected_s = pl.Series("c0", expected, dtype=pl.Boolean)
+    assert_series_equal(df.select(expr).to_series(), expected_s)
+    assert_series_equal(df.lazy().select(expr).collect().to_series(), expected_s)
+
+
+@pytest.mark.parametrize("horizontal", [pl.all_horizontal, pl.any_horizontal])
+def test_horizontal_repeated_non_boolean_operand(
+    horizontal: Callable[..., pl.Expr],
+) -> None:
+    df = pl.DataFrame({"c0": pl.Series([0, 1, 2, None], dtype=pl.Int8)})
+    pred = horizontal(pl.col("c0"), pl.col("c0"))
+
+    assert df.filter(pred)["c0"].to_list() == [1, 2]
+    assert df.lazy().filter(pred).collect()["c0"].to_list() == [1, 2]
+
+
+@pytest.mark.parametrize("horizontal", [pl.all_horizontal, pl.any_horizontal])
+def test_horizontal_meta_without_schema(horizontal: Callable[..., pl.Expr]) -> None:
+    expr = horizontal("a", "b")
+    assert expr.meta.root_names() == ["a", "b"]
+    assert expr.meta.is_length_preserving()
+    assert "a" in expr.meta.tree_format(return_as_string=True)

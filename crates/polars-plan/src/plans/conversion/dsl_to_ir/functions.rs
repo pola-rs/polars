@@ -552,10 +552,14 @@ pub(super) fn convert_functions(
 
                     // Convert to binary expression as the optimizer understands those.
                     // Don't exceed 128 expressions as we might stackoverflow.
+                    // Cast the operands to Boolean: rewrites of `LogicalAnd`/`LogicalOr` (splitting
+                    // predicates, De Morgan) assume they are Boolean, like the operands of `&`/`|`.
                     if e.len() < 128 {
-                        let mut r = AExprBuilder::new_from_node(fst.node());
+                        let mut r =
+                            AExprBuilder::new_from_node(horizontal_operand_to_bool(fst, ctx));
                         for expr in &e[1..] {
-                            r = r.logical_and(expr.node(), ctx.arena);
+                            let node = horizontal_operand_to_bool(expr, ctx);
+                            r = r.logical_and(node, ctx.arena);
                         }
                         return Ok((r.node(), fst.output_name().clone()));
                     }
@@ -582,10 +586,14 @@ pub(super) fn convert_functions(
 
                     // Convert to binary expression as the optimizer understands those.
                     // Don't exceed 128 expressions as we might stackoverflow.
+                    // Cast the operands to Boolean: rewrites of `LogicalAnd`/`LogicalOr` (splitting
+                    // predicates, De Morgan) assume they are Boolean, like the operands of `&`/`|`.
                     if e.len() < 128 {
-                        let mut r = AExprBuilder::new_from_node(fst.node());
+                        let mut r =
+                            AExprBuilder::new_from_node(horizontal_operand_to_bool(fst, ctx));
                         for expr in &e[1..] {
-                            r = r.logical_or(expr.node(), ctx.arena);
+                            let node = horizontal_operand_to_bool(expr, ctx);
+                            r = r.logical_or(node, ctx.arena);
                         }
                         return Ok((r.node(), fst.output_name().clone()));
                     }
@@ -1453,4 +1461,17 @@ pub(super) fn convert_functions(
         options,
     };
     Ok((ctx.arena.add(ae_function), output_name))
+}
+
+/// Cast an operand of `any_horizontal`/`all_horizontal` to Boolean if it isn't known to be one.
+/// The dtype can be unresolvable here (e.g. `meta` conversion without a schema), so a failed lookup
+/// also casts.
+fn horizontal_operand_to_bool(e: &ExprIR, ctx: &mut ExprToIRContext) -> Node {
+    if matches!(e.dtype(ctx.schema, ctx.arena), Ok(dtype) if dtype.is_bool()) {
+        e.node()
+    } else {
+        AExprBuilder::new_from_node(e.node())
+            .cast(DataType::Boolean, ctx.arena)
+            .node()
+    }
 }
