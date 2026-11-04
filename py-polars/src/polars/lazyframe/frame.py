@@ -161,6 +161,7 @@ if TYPE_CHECKING:
         MaintainOrderJoin,
         Orientation,
         ParquetCompression,
+        ParquetEncryption,
         ParquetMetadata,
         PivotAgg,
         PlanStage,
@@ -179,7 +180,6 @@ if TYPE_CHECKING:
     from polars.config import TableFormatNames
     from polars.interchange.protocol import CompatLevel
     from polars.io.cloud import CredentialProviderFunction
-    from polars.io.parquet.encryption import ParquetEncryptionProperties
     from polars.lazyframe.in_process import InProcessQuery
     from polars.lazyframe.query_result import QueryResult
 
@@ -2416,7 +2416,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "auto",
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
-        encryption: ParquetEncryptionProperties | None = None,
+        encryption: ParquetEncryption | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> None: ...
@@ -2442,7 +2442,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "auto",
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
-        encryption: ParquetEncryptionProperties | None = None,
+        encryption: ParquetEncryption | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> LazyFrame: ...
@@ -2472,7 +2472,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         sync_on_close: SyncOnCloseMethod | None = None,
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
-        encryption: ParquetEncryptionProperties | None = None,
+        encryption: ParquetEncryption | None = None,
         mkdir: bool = False,
         lazy: bool = False,
         engine: EngineType = "auto",
@@ -2581,7 +2581,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 point without it being considered a breaking change.
         encryption
             Properties for writing Parquet files encrypted with Parquet modular
-            encryption. See :class:`ParquetEncryptionProperties`.
+            encryption. See :class:`ParquetEncryptionProperties`, or
+            :class:`~polars.io.parquet.encryption.ParquetEncryptionConfig` to use keys
+            managed by a KMS.
 
             When partitioning, the partition key values are written unencrypted in
             the file paths. Columns with their own encryption key can't be used as
