@@ -15,7 +15,7 @@ from polars._utils.monitoring import (
     activate_monitoring,
 )
 from polars._utils.unstable import unstable
-from polars._utils.various import normalize_filepath
+from polars._utils.various import normalize_filepath, qualified_type_name
 from polars.lazyframe.engine import Engine
 from polars.lazyframe.engine_config import (
     SUPPORTED_ENGINE_NAMES,
@@ -1791,6 +1791,13 @@ class Config(contextlib.ContextDecorator, metaclass=_Meta):
         >>> pl.Config.set_iceberg_catalog_resolver(resolver)  # doctest: +SKIP
         >>> pl.scan_iceberg("orders.daily", catalog="sales")  # doctest: +SKIP
         """
+        if resolver is not None and not callable(resolver):
+            msg = (
+                "the Iceberg catalog resolver must be callable or None; found "
+                f"{qualified_type_name(resolver)!r}"
+            )
+            raise TypeError(msg)
+
         _set_iceberg_catalog_resolver(resolver)
 
         return cls
