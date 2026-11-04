@@ -747,7 +747,7 @@ impl SQLContext {
         }
         let mut arena = Arena::new();
         let mut ctx = ExprToIRContext::new(&mut arena, join_schema);
-        let Ok(ir) = to_expr_ir(expr.clone(), &mut ctx) else {
+        let Ok(ir) = to_expr_ir(&expr, &mut ctx) else {
             return Ok(None);
         };
         if !is_elementwise_rec(ir.node(), &arena)
@@ -2461,7 +2461,7 @@ fn unwrap_nested(mut expr: &SQLExpr) -> &SQLExpr {
 fn harmless_on_every_row(expr: &Expr, schema: &Schema) -> bool {
     let mut arena = Arena::new();
     let mut ctx = ExprToIRContext::new(&mut arena, schema);
-    let Ok(expr) = to_expr_ir(expr.clone(), &mut ctx) else {
+    let Ok(expr) = to_expr_ir(expr, &mut ctx) else {
         return false;
     };
     let mut group = ExprPushdownGroup::Pushable;
@@ -4479,7 +4479,7 @@ fn null_over_no_rows(combine: &Expr, agg_schema: &Schema, fill: &[(PlSmallStr, E
 fn is_scalar_over(expr: &Expr, schema: &Schema) -> bool {
     let mut arena = Arena::new();
     let mut ctx = ExprToIRContext::new(&mut arena, schema);
-    let Ok(expr) = to_expr_ir(expr.clone(), &mut ctx) else {
+    let Ok(expr) = to_expr_ir(expr, &mut ctx) else {
         return false;
     };
     expr.is_scalar(&arena)
@@ -4489,7 +4489,7 @@ fn is_scalar_over(expr: &Expr, schema: &Schema) -> bool {
 fn is_elementwise_over(combine: &Expr, agg_schema: &Schema) -> bool {
     let mut arena = Arena::new();
     let mut ctx = ExprToIRContext::new(&mut arena, agg_schema);
-    let Ok(combine) = to_expr_ir(combine.clone(), &mut ctx) else {
+    let Ok(combine) = to_expr_ir(combine, &mut ctx) else {
         return false;
     };
     is_elementwise_rec(combine.node(), &arena)

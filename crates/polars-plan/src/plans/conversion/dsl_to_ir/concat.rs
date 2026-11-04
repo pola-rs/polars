@@ -103,7 +103,7 @@ pub(super) fn convert_st_union(
 
             if !exprs.is_empty() {
                 let expr = to_expr_irs(
-                    exprs,
+                    &exprs,
                     &mut ExprToIRContext::new_with_opt_eager(expr_arena, &input_schema, opt_flags),
                 )?;
                 let lp = IRBuilder::new(*input, expr_arena, lp_arena)
