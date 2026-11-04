@@ -30,7 +30,7 @@ impl MetaNameSpace {
         };
         let mut arena = Arena::with_capacity(8);
         let mut ctx = ExprToIRContext::new_no_verification(&mut arena, schema);
-        to_expr_ir(self.0.clone(), &mut ctx)
+        to_expr_ir(&self.0, &mut ctx)
             .map(|expr| aexpr_is_simple_projection(expr.node(), &arena))
             .unwrap_or(false)
     }
@@ -103,7 +103,7 @@ impl MetaNameSpace {
         };
         let mut arena = Default::default();
         let mut ctx = ExprToIRContext::new_no_verification(&mut arena, schema);
-        let node = to_expr_ir(self.0, &mut ctx)?.node();
+        let node = to_expr_ir(&self.0, &mut ctx)?.node();
         let mut visitor = TreeFmtVisitor::default();
         if display_as_dot {
             visitor.display = TreeFmtVisitorDisplay::DisplayDot;
@@ -119,7 +119,7 @@ impl MetaNameSpace {
         let mut expr_arena = Arena::new();
         let schema = Default::default();
         let mut ctx = ExprToIRContext::new_no_verification(&mut expr_arena, &schema);
-        let e_ir = to_expr_ir(self.0, &mut ctx)?;
+        let e_ir = to_expr_ir(&self.0, &mut ctx)?;
 
         Ok((e_ir, expr_arena))
     }

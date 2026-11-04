@@ -2443,7 +2443,7 @@ class Expr(metaclass=_Meta):
 
         .. math:: O(n \log{n})
 
-        .. engine-support:: in-memory, partially-streaming, partially-distributed
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         .. versionchanged:: 1.0.0
             The `descending` parameter was renamed to `reverse`.
@@ -2632,7 +2632,7 @@ class Expr(metaclass=_Meta):
 
         .. math:: O(n \log{n})
 
-        .. engine-support:: in-memory, partially-streaming, partially-distributed
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         .. versionchanged:: 1.0.0
             The `descending` parameter was renamed `reverse`.
@@ -2809,7 +2809,7 @@ class Expr(metaclass=_Meta):
         return the index of any of the maximum values. In this case, the returned index
         is not guaranteed to be the same across multiple runs.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -2838,7 +2838,7 @@ class Expr(metaclass=_Meta):
         return the index of any of the minimum values. In this case, the returned index
         is not guaranteed to be the same across multiple runs.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -2863,7 +2863,7 @@ class Expr(metaclass=_Meta):
         """
         Get the index of the first occurrence of a value, or ``None`` if it's not found.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -3108,7 +3108,7 @@ class Expr(metaclass=_Meta):
         """
         Take values by index.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -3238,7 +3238,7 @@ class Expr(metaclass=_Meta):
         """
         Shift values by the given number of indices.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -3324,7 +3324,9 @@ class Expr(metaclass=_Meta):
         To interpolate over null values see interpolate.
         See the examples below to fill nulls with an expression.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, partially-distributed
+            :partially-distributed: The "mean", "min" and "max" strategies run on a
+                single node.
 
         Parameters
         ----------
@@ -3432,7 +3434,7 @@ class Expr(metaclass=_Meta):
         """
         Fill floating point NaN value with a fill value.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -3477,7 +3479,7 @@ class Expr(metaclass=_Meta):
 
         This is an alias of `.fill_null(strategy="forward")`.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -3498,7 +3500,7 @@ class Expr(metaclass=_Meta):
 
         This is an alias of `.fill_null(strategy="backward")`.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -3635,7 +3637,7 @@ class Expr(metaclass=_Meta):
         If the by expression has multiple values equal to the maximum it is not
         defined which value will be chosen.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -3692,7 +3694,7 @@ class Expr(metaclass=_Meta):
         If the by expression has multiple values equal to the minimum it is not
         defined which value will be chosen.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -3823,10 +3825,7 @@ class Expr(metaclass=_Meta):
         """
         Get median value using linear interpolation.
 
-        .. engine-support:: in-memory, partially-streaming, partially-distributed
-            :partially-distributed: This can map-reduce, but all the data of a single
-                group has to be shuffled to a single partition. Outside a group_by
-                there is only one group, so it runs on a single node.
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         Examples
         --------
@@ -3947,7 +3946,7 @@ class Expr(metaclass=_Meta):
         """
         Compute approximate quantile(s) of an expression.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -4159,8 +4158,8 @@ class Expr(metaclass=_Meta):
         `null` is considered to be a unique value for the purposes of this operation.
 
         .. engine-support:: in-memory, streaming, partially-distributed
-            :partially-distributed: De-duplicates per partition for either value of
-                maintain_order, but the result is gathered onto a single node.
+            :partially-distributed: Distributed when maintain_order=False; otherwise it
+                runs on a single node.
 
         Parameters
         ----------
@@ -4327,7 +4326,9 @@ class Expr(metaclass=_Meta):
         <https://www.postgresql.org/docs/current/tutorial-window.html>`_
         work in PostgreSQL.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, partially-distributed
+            :partially-distributed: Distributed for mapping_strategy="group_to_rows"
+                (the default); "join" and "explode" run on a single node.
 
         Parameters
         ----------
@@ -4588,7 +4589,7 @@ class Expr(metaclass=_Meta):
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, distributed
 
         Parameters
         ----------
@@ -4764,7 +4765,7 @@ class Expr(metaclass=_Meta):
         """
         Get a boolean mask of the local maximum peaks.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, distributed
 
         Examples
         --------
@@ -4789,7 +4790,7 @@ class Expr(metaclass=_Meta):
         """
         Get a boolean mask of the local minimum peaks.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, distributed
 
         Examples
         --------
@@ -4818,7 +4819,7 @@ class Expr(metaclass=_Meta):
         """
         Get quantile value.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, distributed
 
         Parameters
         ----------
@@ -4903,7 +4904,7 @@ class Expr(metaclass=_Meta):
         """
         Bin continuous values into discrete categories.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, distributed
 
         .. deprecated:: 2.0.0
             Use :meth:`bin_intervals` instead. It requires `labels` (pass
@@ -5113,7 +5114,7 @@ class Expr(metaclass=_Meta):
         """
         Bin values into discrete intervals delimited by breakpoints.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         .. warning::
             This functionality is considered **experimental**. It may be removed or
@@ -6049,7 +6050,7 @@ class Expr(metaclass=_Meta):
         """
         Take every nth value in the Series and return as a new Series.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -7136,7 +7137,7 @@ class Expr(metaclass=_Meta):
         """
         Repeat the elements in this Series as specified in the given expression.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, distributed
 
         The repeated elements are expanded into a `List`.
 
@@ -7368,7 +7369,7 @@ class Expr(metaclass=_Meta):
         under any combination of those settings.
 
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -7539,7 +7540,7 @@ class Expr(metaclass=_Meta):
         """
         Print the value that this expression evaluates to and pass on the value.
 
-        .. engine-support:: in-memory, streaming, distributed
+        .. engine-support:: in-memory, streaming
 
         Examples
         --------
@@ -7576,7 +7577,7 @@ class Expr(metaclass=_Meta):
 
         Nulls at the beginning and end of the series remain null.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -9029,7 +9030,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9141,7 +9142,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9254,7 +9255,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9367,7 +9368,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9481,7 +9482,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9599,7 +9600,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9715,7 +9716,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9829,7 +9830,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9978,7 +9979,7 @@ class Expr(metaclass=_Meta):
         parameter. The resulting values will be the rank of the value that is
         at the end of the sliding window.
 
-        .. engine-support:: in-memory, partially-streaming
+        .. engine-support:: in-memory, partially-streaming, distributed
             :partially-streaming: Falls back to in-memory for
                 ``method="random"`` with a ``seed``.
 
@@ -10062,7 +10063,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -10128,7 +10129,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -10196,7 +10197,7 @@ class Expr(metaclass=_Meta):
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -10405,7 +10406,7 @@ class Expr(metaclass=_Meta):
         """
         Calculate the first discrete difference between shifted items.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -10469,7 +10470,7 @@ class Expr(metaclass=_Meta):
 
         Computes the change from the previous row by default.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, distributed
 
         Parameters
         ----------
@@ -10517,7 +10518,7 @@ class Expr(metaclass=_Meta):
 
         See scipy.stats for more information.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -10571,7 +10572,7 @@ class Expr(metaclass=_Meta):
 
         See scipy.stats for more information
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -12026,7 +12027,7 @@ class Expr(metaclass=_Meta):
         """
         Count the occurrence of unique values.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
