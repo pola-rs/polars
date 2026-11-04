@@ -50,9 +50,8 @@ fn idx2usize(idx: &[IdxSize]) -> impl ExactSizeIterator<Item = usize> + '_ {
     idx.iter().map(|i| *i as usize)
 }
 
-/// Whether a column with a sorted flag may take its per-group minimum, maximum,
-/// and their arg variants from the first or last non-null value of each group.
-/// This needs the indices of every group to be in row order.
+/// If true, a column with a sorted flag may take its per-group minimum, maximum,
+/// and arg variants from the first or last non-null value of each group.
 /// Idx groups with nulls are excluded as a conservative choice.
 /// The non-null scans would also be correct for them.
 fn can_take_minmax_from_group_ends(groups: &GroupsType, has_nulls: bool) -> bool {
