@@ -144,7 +144,9 @@ impl GroupsIdx {
         self.idx_in_row_order
     }
 
-    /// See [Self::idx_in_row_order]
+    /// If true, the indices of every group are non-decreasing.
+    /// Sorted columns then take their per-group min and max from the group ends.
+    /// `false` only costs speed, never correctness.
     pub fn set_idx_in_row_order(&mut self, in_row_order: bool) {
         debug_assert!(!in_row_order || self.all.iter().all(|idx| idx.is_sorted()));
         self.idx_in_row_order = in_row_order;
