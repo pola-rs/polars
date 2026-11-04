@@ -1770,7 +1770,8 @@ class Config(contextlib.ContextDecorator, metaclass=_Meta):
         ----------
         resolver
             A function taking a catalog name and returning a PyIceberg catalog.
-            Errors it raises reach the user unchanged. `None` restores the default
+            Errors it raises reach the user unchanged, with a note naming the
+            catalog. `None` restores the default
             resolver, `pyiceberg.catalog.load_catalog(name)`, which reads the
             catalog's configuration from `.pyiceberg.yaml` or `PYICEBERG_CATALOG__*`
             environment variables.

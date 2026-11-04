@@ -6,7 +6,7 @@ import importlib.util
 import sys
 from dataclasses import dataclass
 from time import perf_counter
-from typing import TYPE_CHECKING, Any, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeAlias
 from urllib.parse import urlparse
 
 from polars._utils.logging import eprint
@@ -949,6 +949,49 @@ def _sort_key_exprs(
     return exprs, descending, nulls_last
 
 
+# A sink state's catalog class module and qualname, catalog name and properties.
+_SinkCatalogFields: TypeAlias = tuple[str | None, str | None, str, dict[str, str]]
+
+
+def _sink_catalog_fields(
+    target: str | pyiceberg.table.Table,
+    catalog: pyiceberg.catalog.Catalog | IcebergCatalogConfig | None,
+) -> _SinkCatalogFields:
+    """The catalog fields of a sink to `target` through `catalog`, or its catalog."""
+    catalog_config = (
+        (
+            IcebergCatalogConfig._from_api_parameter_or_environment_default(
+                catalog,
+                fn_name="sink_iceberg",
+            )[0]
+        )
+        if isinstance(target, str)
+        else (
+            IcebergCatalogConfig(
+                class_=type(target.catalog),
+                name=target.catalog.name,
+                properties=target.catalog.properties,
+            )
+        )
+    )
+
+    from pyiceberg.catalog.noop import NoopCatalog
+
+    if catalog_config.class_ is NoopCatalog:
+        msg = (
+            "cannot sink to static Iceberg table: "
+            f"{type(target) = }, {getattr(target, 'catalog', None) = }"
+        )
+        raise TypeError(msg)
+
+    return (
+        catalog_config.class_.__module__,
+        catalog_config.class_.__qualname__,
+        catalog_config.name,
+        catalog_config.properties,
+    )
+
+
 @dataclass(kw_only=True)
 class IcebergSinkState:
     # Both `None` for a catalog name, which `catalog_name` holds.
@@ -1049,9 +1092,6 @@ class IcebergSinkState:
             )
             raise ValueError(msg)
 
-        catalog_class_module: str | None
-        catalog_class_qualname: str | None
-
         if isinstance(catalog, str):
             if not isinstance(target, str):
                 msg = "a catalog name requires a table identifier as `target`"
@@ -1061,40 +1101,20 @@ class IcebergSinkState:
             )
             # Only the name is kept: each process that loads the table, including
             # one that only commits, resolves it with its own resolver.
-            catalog_class_module = catalog_class_qualname = None
-            catalog_name = check_catalog_name(catalog)
-            catalog_properties: dict[str, str] = {}
-        else:
-            catalog_config = (
-                (
-                    IcebergCatalogConfig._from_api_parameter_or_environment_default(
-                        catalog,
-                        fn_name="sink_iceberg",
-                    )[0]
-                )
-                if isinstance(target, str)
-                else (
-                    IcebergCatalogConfig(
-                        class_=type(target.catalog),
-                        name=target.catalog.name,
-                        properties=target.catalog.properties,
-                    )
-                )
+            catalog_fields: _SinkCatalogFields = (
+                None,
+                None,
+                check_catalog_name(catalog),
+                {},
             )
-
-            from pyiceberg.catalog.noop import NoopCatalog
-
-            if catalog_config.class_ is NoopCatalog:
-                msg = (
-                    "cannot sink to static Iceberg table: "
-                    f"{type(target) = }, {getattr(target, 'catalog', None) = }"
-                )
-                raise TypeError(msg)
-
-            catalog_class_module = catalog_config.class_.__module__
-            catalog_class_qualname = catalog_config.class_.__qualname__
-            catalog_name = catalog_config.name
-            catalog_properties = catalog_config.properties
+        else:
+            catalog_fields = _sink_catalog_fields(target, catalog)
+        (
+            catalog_class_module,
+            catalog_class_qualname,
+            catalog_name,
+            catalog_properties,
+        ) = catalog_fields
 
         return IcebergSinkState(
             py_catalog_class_module=catalog_class_module,

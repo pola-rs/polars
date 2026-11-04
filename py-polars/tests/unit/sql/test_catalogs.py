@@ -3860,6 +3860,26 @@ def test_register_catalog_by_name_write_statement_resolves_locally(
     assert names == ["lake"]
 
 
+@pytest.mark.write_disk
+@pytest.mark.usefixtures("_reset_catalog_resolver")
+def test_register_catalog_by_name_statement_query_reuses_catalog(
+    lake: CountingCatalog,
+) -> None:
+    resolver, names = _recording_resolver(lake)
+    pl.Config.set_iceberg_catalog_resolver(resolver)
+    ctx = pl.SQLContext().register_catalog("lake", default_namespace="tpch")
+
+    ctx.execute("INSERT INTO lake.lineitem SELECT k + 10, v FROM lake.lineitem")
+
+    assert table_rows(lake, "tpch", "lineitem") == [
+        (1, "a"),
+        (2, "b"),
+        (11, "a"),
+        (12, "b"),
+    ]
+    assert names == ["lake"]
+
+
 def test_register_catalog_empty_catalog_name() -> None:
     with pytest.raises(ValueError, match="must not be empty"):
         pl.SQLContext().register_catalog("x", "")

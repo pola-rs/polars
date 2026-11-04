@@ -241,6 +241,12 @@ def scan_iceberg(
         if isinstance(source, pyiceberg.table.Table):
             table = source
 
+    if isinstance(catalog, str) and (
+        table is not None or "/" in str(source) or "\\" in str(source)
+    ):
+        msg = "a catalog name requires a table identifier as `source`"
+        raise TypeError(msg)
+
     table_descriptor_: str | IcebergCatalogTableDescriptor | None = None
 
     if table is None:
