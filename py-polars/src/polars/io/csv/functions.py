@@ -359,9 +359,7 @@ def read_csv(
     │ 3   ┆ Charlie ┆ 2002-03-08 │
     └─────┴─────────┴────────────┘
     """
-    if isinstance(separator, re.Pattern) or (
-        isinstance(separator, str) and len(separator.encode("utf8")) > 1
-    ):
+    if isinstance(separator, re.Pattern) or len(separator.encode("utf8")) > 1:
         from polars.io.csv._regex import normalize_regex_csv
 
         _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
@@ -379,6 +377,7 @@ def read_csv(
             msg = "Regex CSV separators require a single source without globbing, include_file_paths, or a custom credential provider"
             raise ValueError(msg)
         pattern = re.compile(separator)
+        raw: str | bytes
         if isinstance(source, (str, Path, bytes)):
             with prepare_file_arg(
                 source,
