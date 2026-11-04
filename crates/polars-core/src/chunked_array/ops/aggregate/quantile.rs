@@ -248,8 +248,9 @@ pub fn order_statistics<T: PolarsNumericType>(
         return;
     }
     match ca.is_sorted_flag() {
-        // Entering the pool costs a thread wake-up, more than a small selection.
-        IsSorted::Not if ca.len() < SELECT_MIN_PAR_LEN => {
+        // Entering the pool costs a thread wake-up, more than a small selection. On one thread,
+        // copying and selecting beats classifying every value against a sampled bracket.
+        IsSorted::Not if ca.len() < SELECT_MIN_PAR_LEN || RAYON.current_num_threads() == 1 => {
             select_many_unstable_by(&mut ca.to_vec_non_null(), ranks, out, TotalOrd::tot_cmp)
         },
         IsSorted::Not => RAYON.install(|| {
