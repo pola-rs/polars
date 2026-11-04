@@ -513,8 +513,9 @@ where
 /// the counts of those below `lo`, equal to `lo`, between, equal to `hi` (unless it equals `lo`),
 /// and of all that count.
 ///
-/// Only with `exact` are values equal to `lo` or `hi` counted apart instead of being between,
-/// which costs more work per value; it is required if `lo` equals `hi`.
+/// Only with `exact` are values equal to `lo` or `hi` counted apart, which costs more work per
+/// value; without it, those equal to `lo` are between and those equal to `hi` above. It is
+/// required if `lo` equals `hi`.
 fn copy_between<T, F>(
     block: &MaskedSlice<'_, T>,
     lo: &T,
@@ -725,8 +726,8 @@ mod tests {
                         check(v, ranks);
                     }
                 }
-                // Mostly valid values are masked as they are read, mostly invalid ones filtered
-                // first.
+                // Both masks are read through the bitmap; mostly invalid values take several
+                // draws per sampled value.
                 for valid_share in [0.7, 0.3] {
                     let mask: Vec<bool> = (0..n).map(|_| rng.random_bool(valid_share)).collect();
                     let n_valid = mask.iter().filter(|m| **m).count();
