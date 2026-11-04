@@ -17,6 +17,7 @@ from pyiceberg.catalog.noop import NoopCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.utils.config import Config
 
+from polars.io.iceberg import _catalog_resolver
 from polars.io.iceberg._catalog_resolver import check_catalog_name, resolve_catalog
 from polars.io.iceberg._sink import IcebergSinkState
 
@@ -82,6 +83,14 @@ def fail_resolver(name: str) -> Catalog:
 
 def test_set_resolver_returns_config() -> None:
     assert pl.Config.set_iceberg_catalog_resolver(fail_resolver) is pl.Config
+
+
+def test_set_resolver_rejects_non_callable() -> None:
+    pl.Config.set_iceberg_catalog_resolver(fail_resolver)
+
+    with pytest.raises(TypeError, match="must be callable or None; found 'dict'"):
+        pl.Config.set_iceberg_catalog_resolver({"sales": None})  # type: ignore[arg-type]
+    assert _catalog_resolver.ICEBERG_CATALOG_RESOLVER is fail_resolver
 
 
 def test_resolve_catalog_uses_installed_resolver(sales: SqlCatalog) -> None:
