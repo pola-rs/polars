@@ -682,8 +682,8 @@ def test_merge_join_many_partitions(
 @pytest.mark.parametrize("nulls_last", [False, True])
 def test_merge_join_null_run_linear_time(null_run_side: str, nulls_last: bool) -> None:
     # A run of nulls, shorter than a morsel, next to many other keys must not be scanned
-    # again for every one of those keys. The outliers sit beyond the keys, on the far side
-    # from the nulls.
+    # again for every one of those keys. The outliers sit beyond the keys, on the far
+    # side from the nulls.
     n = 90_000
     keys = pl.Series(range(n), dtype=pl.Int64)
     outliers = [-(10**12), -(10**12) + 1] if nulls_last else [10**12, 10**12 + 1]
