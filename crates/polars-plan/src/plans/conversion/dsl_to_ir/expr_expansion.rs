@@ -958,6 +958,8 @@ fn expand_expression_rec(
         Expr::Field(names) => {
             out.extend(names.iter().cloned().map(|n| Expr::Field([n].into())));
         },
+        #[cfg(feature = "dtype-struct")]
+        Expr::Path(_) => out.push(expr.clone()),
 
         // SQL only
         Expr::SubPlan(_, _) => unreachable!(),

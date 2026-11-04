@@ -303,6 +303,8 @@ impl fmt::Debug for Expr {
             Selector(s) => fmt::Display::fmt(s, f),
             #[cfg(feature = "dtype-struct")]
             Field(names) => write!(f, "pl.field({names:?})"),
+            #[cfg(feature = "dtype-struct")]
+            Path(path) => write!(f, "pl.path({path:?})"),
         }
     }
 }
