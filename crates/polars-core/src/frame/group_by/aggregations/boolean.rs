@@ -127,7 +127,7 @@ impl BooleanChunked {
 impl BooleanChunked {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
         // faster paths
-        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
+        if is_sorted_fast_path_valid(groups, self.has_nulls()) {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_first_non_null(groups);
@@ -174,7 +174,7 @@ impl BooleanChunked {
     }
     pub(crate) unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
         // faster paths
-        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
+        if is_sorted_fast_path_valid(groups, self.has_nulls()) {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => return self.clone().into_series().agg_last_non_null(groups),
                 IsSorted::Descending => {
@@ -221,7 +221,7 @@ impl BooleanChunked {
 
     pub(crate) unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
         // faster paths
-        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
+        if is_sorted_fast_path_valid(groups, self.has_nulls()) {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_arg_first_non_null(groups);
@@ -260,7 +260,7 @@ impl BooleanChunked {
 
     pub(crate) unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
         // faster paths
-        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
+        if is_sorted_fast_path_valid(groups, self.has_nulls()) {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_arg_last_non_null(groups);

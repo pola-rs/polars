@@ -1911,6 +1911,46 @@ def test_grouped_minmax_after_reverse_on_sorted_column_26141(
     assert_frame_equal(out, expected_df)
 
 
+@pytest.mark.parametrize(
+    ("values", "aggs"),
+    [
+        (list(range(6)), ["min", "max", "arg_min", "arg_max"]),
+        (list("abcdef"), ["min", "max", "arg_min", "arg_max"]),
+        ([False] * 3 + [True] * 3, ["min", "max"]),
+    ],
+)
+@pytest.mark.parametrize("descending", [False, True])
+def test_grouped_minmax_after_in_group_reorder_on_sorted_column_30550(
+    values: list[Any], aggs: list[str], descending: bool
+) -> None:
+    if descending:
+        values = values[::-1]
+    unflagged = pl.DataFrame({"g": [1, 2] * 3, "x": values})
+    df = unflagged.with_columns(pl.col("x").set_sorted(descending=descending))
+
+    reorders = [
+        pl.col("x").reverse(),
+        pl.col("x").sort(descending=not descending),
+        pl.col("x").sort_by("x", descending=not descending).head(2),
+    ]
+    exprs = [
+        getattr(reorder, agg)().alias(f"{i}_{agg}")
+        for i, reorder in enumerate(reorders)
+        for agg in aggs
+    ]
+    assert_frame_equal(
+        df.group_by("g").agg(exprs),
+        unflagged.group_by("g").agg(exprs),
+        check_row_order=False,
+    )
+
+
+def test_window_min_with_order_by_on_sorted_column_30550() -> None:
+    df = pl.DataFrame({"g": [1, 1, 1], "x": [1, 2, 3]}).sort("x")
+    out = df.select(pl.col("x").min().over("g", order_by=-pl.col("x")))
+    assert out["x"].to_list() == [1, 1, 1]
+
+
 @pytest.mark.parametrize("agg_by", [pl.Expr.min_by, pl.Expr.max_by])
 def test_min_max_by_series_length_mismatch_26049(
     agg_by: Callable[[pl.Expr, pl.Expr], pl.Expr],

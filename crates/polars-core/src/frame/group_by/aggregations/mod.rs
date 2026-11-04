@@ -50,6 +50,12 @@ fn idx2usize(idx: &[IdxSize]) -> impl ExactSizeIterator<Item = usize> + '_ {
     idx.iter().map(|i| *i as usize)
 }
 
+/// Whether the minimum and maximum of each group of a sorted column
+/// are the first and last non-null values of that group.
+fn is_sorted_fast_path_valid(groups: &GroupsType, has_nulls: bool) -> bool {
+    groups.is_sorted_within_groups() && (!has_nulls || matches!(groups, GroupsType::Slice { .. }))
+}
+
 // Unlike `rolling_min` and `rolling_max`, group aggregations ignore NaN.
 type MinWindow<'a, T> = MinMaxWindow<'a, T, MinIgnoreNan>;
 type MaxWindow<'a, T> = MinMaxWindow<'a, T, MaxIgnoreNan>;
@@ -500,7 +506,7 @@ where
 {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
         // faster paths
-        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
+        if is_sorted_fast_path_valid(groups, self.has_nulls()) {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_first_non_null(groups);
@@ -576,7 +582,7 @@ where
     where
         for<'b> &'b [T::Native]: ArgMinMax,
     {
-        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
+        if is_sorted_fast_path_valid(groups, self.has_nulls()) {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_arg_first_non_null(groups);
@@ -683,9 +689,7 @@ where
         // Sorted fast-path. We skip this for floats because the largest value might be NaN, which
         // max is supposed to skip unless everything is NaN. We would need an
         // agg_first_non_null_non_nan.
-        if (!self.has_nulls() || matches!(groups, GroupsType::Slice { .. }))
-            && !T::Native::is_float()
-        {
+        if is_sorted_fast_path_valid(groups, self.has_nulls()) && !T::Native::is_float() {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => return self.clone().into_series().agg_last_non_null(groups),
                 IsSorted::Descending => {
@@ -760,9 +764,7 @@ where
         for<'b> &'b [T::Native]: ArgMinMax,
     {
         // Skipped for floats for the same reason as in `agg_max`.
-        if (!self.has_nulls() || matches!(groups, GroupsType::Slice { .. }))
-            && !T::Native::is_float()
-        {
+        if is_sorted_fast_path_valid(groups, self.has_nulls()) && !T::Native::is_float() {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_arg_last_non_null(groups);

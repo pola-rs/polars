@@ -142,11 +142,12 @@ impl PhysicalExpr for SliceExpr {
 
                 match groups.as_ref().as_ref() {
                     GroupsType::Idx(groups) => {
-                        let groups = groups
+                        let mut sliced: GroupsIdx = groups
                             .iter()
                             .map(|(first, idx)| slice_groups_idx(offset, length, first, idx))
                             .collect();
-                        GroupsType::Idx(groups)
+                        sliced.set_sorted_within_groups(groups.is_sorted_within_groups());
+                        GroupsType::Idx(sliced)
                     },
                     GroupsType::Slice {
                         groups,
@@ -178,14 +179,15 @@ impl PhysicalExpr for SliceExpr {
 
                 match groups.as_ref().as_ref() {
                     GroupsType::Idx(groups) => {
-                        let groups = groups
+                        let mut sliced: GroupsIdx = groups
                             .iter()
                             .zip(length.into_no_null_iter())
                             .map(|((first, idx), length)| {
                                 slice_groups_idx(offset, length as usize, first, idx)
                             })
                             .collect();
-                        GroupsType::Idx(groups)
+                        sliced.set_sorted_within_groups(groups.is_sorted_within_groups());
+                        GroupsType::Idx(sliced)
                     },
                     GroupsType::Slice {
                         groups,
@@ -220,14 +222,15 @@ impl PhysicalExpr for SliceExpr {
 
                 match groups.as_ref().as_ref() {
                     GroupsType::Idx(groups) => {
-                        let groups = groups
+                        let mut sliced: GroupsIdx = groups
                             .iter()
                             .zip(offset.into_no_null_iter())
                             .map(|((first, idx), offset)| {
                                 slice_groups_idx(offset, length, first, idx)
                             })
                             .collect();
-                        GroupsType::Idx(groups)
+                        sliced.set_sorted_within_groups(groups.is_sorted_within_groups());
+                        GroupsType::Idx(sliced)
                     },
                     GroupsType::Slice {
                         groups,
@@ -267,7 +270,7 @@ impl PhysicalExpr for SliceExpr {
 
                 match groups.as_ref().as_ref() {
                     GroupsType::Idx(groups) => {
-                        let groups = groups
+                        let mut sliced: GroupsIdx = groups
                             .iter()
                             .zip(offset.into_no_null_iter())
                             .zip(length.into_no_null_iter())
@@ -275,7 +278,8 @@ impl PhysicalExpr for SliceExpr {
                                 slice_groups_idx(offset, length as usize, first, idx)
                             })
                             .collect();
-                        GroupsType::Idx(groups)
+                        sliced.set_sorted_within_groups(groups.is_sorted_within_groups());
+                        GroupsType::Idx(sliced)
                     },
                     GroupsType::Slice {
                         groups,

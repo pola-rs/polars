@@ -699,7 +699,7 @@ impl<'a> AggregationContext<'a> {
         }
 
         let other_lengths = other_groups.iter().map(|g| g.len());
-        let groups: GroupsIdx = match self.groups.as_ref().as_ref() {
+        let mut groups: GroupsIdx = match self.groups.as_ref().as_ref() {
             GroupsType::Idx(i) => i
                 .iter()
                 .zip(other_lengths)
@@ -723,6 +723,7 @@ impl<'a> AggregationContext<'a> {
                 })
                 .collect(),
         };
+        groups.set_sorted_within_groups(self.groups.is_sorted_within_groups());
         self.with_groups(GroupsType::Idx(groups).into_sliceable());
         true
     }

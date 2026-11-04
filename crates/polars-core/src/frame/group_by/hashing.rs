@@ -24,7 +24,7 @@ fn get_init_size() -> usize {
 }
 
 fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsType {
-    if sorted {
+    let mut idx = if sorted {
         // we can just take the first value, no need to flatten
         let mut out = if out.len() == 1 {
             out.pop().unwrap()
@@ -60,16 +60,19 @@ fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsType {
         out.sort_unstable_by_key(|g| g.0);
         let mut idx = GroupsIdx::from_iter(out);
         idx.sorted_by_first_idx = true;
-        GroupsType::Idx(idx)
+        idx
     } else {
         // we can just take the first value, no need to flatten
         if out.len() == 1 {
-            GroupsType::Idx(GroupsIdx::from(out.pop().unwrap()))
+            GroupsIdx::from(out.pop().unwrap())
         } else {
             // flattens
-            GroupsType::Idx(GroupsIdx::from(out))
+            GroupsIdx::from(out)
         }
-    }
+    };
+    // Every partition of `out` must have pushed its indices in row order.
+    idx.sorted_within_groups = true;
+    GroupsType::Idx(idx)
 }
 
 pub(crate) fn group_by<K>(keys: impl Iterator<Item = K>, sorted: bool) -> GroupsType
@@ -107,7 +110,9 @@ where
         }
         (first, groups) = hash_tbl.into_values().unzip();
     }
-    GroupsType::Idx(GroupsIdx::new(first, groups, sorted))
+    let mut idx = GroupsIdx::new(first, groups, sorted);
+    idx.sorted_within_groups = true;
+    GroupsType::Idx(idx)
 }
 
 // giving the slice info to the compiler is much
