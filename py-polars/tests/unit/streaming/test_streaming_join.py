@@ -678,19 +678,22 @@ def test_merge_join_many_partitions(
 @pytest.mark.slow
 @pytest.mark.may_fail_cloud  # reason: timing
 @pytest.mark.parametrize("null_run_side", ["left", "right"])
-def test_merge_join_null_run_linear_time(null_run_side: str) -> None:
+@pytest.mark.parametrize("nulls_last", [False, True])
+def test_merge_join_null_run_linear_time(null_run_side: str, nulls_last: bool) -> None:
     # A run of nulls, shorter than a morsel, next to many other keys must not be scanned
-    # again for every one of those keys.
+    # again for every one of those keys. The outliers sit beyond the keys, on the far side
+    # from the nulls.
     n = 90_000
     keys = pl.Series(range(n), dtype=pl.Int64)
-    null_run = pl.Series([None] * n + [10**12, 10**12 + 1], dtype=pl.Int64)
+    outliers = [-(10**12), -(10**12) + 1] if nulls_last else [10**12, 10**12 + 1]
+    null_run = pl.Series([None] * n + outliers, dtype=pl.Int64)
     left, right = (null_run, keys) if null_run_side == "left" else (keys, null_run)
 
     q = (
         pl.LazyFrame({"key": left})
-        .sort("key")
+        .sort("key", nulls_last=nulls_last)
         .join(
-            pl.LazyFrame({"key": right}).sort("key"),
+            pl.LazyFrame({"key": right}).sort("key", nulls_last=nulls_last),
             on="key",
             nulls_equal=True,
             maintain_order="left_right",
