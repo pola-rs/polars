@@ -332,6 +332,19 @@ def test_float_division_by_scalar(dtype: pl.DataType, divisor: int) -> None:
         assert_frame_equal(out, expected, check_exact=True)
 
 
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+def test_integer_true_division_by_scalar(dtype: pl.DataType) -> None:
+    values = [35, 41, 100, 127]
+    if dtype.is_signed_integer():
+        values += [-35, -127]
+    df = pl.DataFrame({"a": values}, schema={"a": dtype})
+    expected = pl.DataFrame({"a": [v / 100 for v in values]})
+    assert_frame_equal(df.select(pl.col("a") / 100), expected, check_exact=True)
+    for engine in ["in-memory", "streaming"]:
+        out = df.lazy().select(pl.col("a") / 100).collect(engine=engine)  # type: ignore[call-overload]
+        assert_frame_equal(out, expected, check_exact=True)
+
+
 def test_truncdiv_decimal() -> None:
     lf = pl.LazyFrame(
         {"a": [PyDecimal("7.50"), PyDecimal("-7.50")]},
