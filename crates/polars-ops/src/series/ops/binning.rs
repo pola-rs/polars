@@ -1,6 +1,6 @@
 use polars_arrow::array::Array;
 use polars_arrow::compute::concatenate::concatenate_validities;
-use polars_core::chunked_array::ops::binning::{FractionSpec, IntervalSpec};
+use polars_core::chunked_array::ops::binning::{FractionSpec, IntervalSpec, order_statistics};
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::series::IsSorted;
@@ -73,12 +73,6 @@ fn gather_at_sorted_positions(
 
     let phys_idx = sort_idx.take(&wanted)?;
     s.take(&phys_idx)
-}
-
-/// Whether `dtype` sorts like its numeric physical type, so that its order statistics can be
-/// selected on the physical values.
-fn sorts_as_physical_numeric(dtype: &DataType) -> bool {
-    dtype.is_numeric() || dtype.is_temporal()
 }
 
 /// The value at each position within the sorted non-null values of `ca`, or `None` past them as a
@@ -545,8 +539,7 @@ pub fn bin_ranks(
 /// `right_closed` is `Some` for quantile binning, which assigns bins by comparing values
 /// against the gathered breakpoints, and `None` for rank binning, which instead compares
 /// each row's ordinal rank against the cut positions. The rank form therefore splits ties
-/// across adjacent bins, which is the whole point of it -- and never needs the boundary
-/// values unless they are actually reported.
+/// across adjacent bins, which is the whole point of it.
 ///
 /// Either way `positions` indexes into the non-null values in sorted order, but the two
 /// forms arrive at it differently: for quantile binning it is the breakpoint's own sorted
@@ -565,29 +558,27 @@ fn bin_at_positions(
         return empty_bins(s, n_bins, labels, include_intervals);
     }
 
-    // `bins_from_rank_cuts_select` packs a boundary index and a flag into one `IdxSize`.
-    if sorts_as_physical_numeric(s.dtype()) && positions.len() < IdxSize::MAX as usize / 2 {
+    // Numeric and temporal values sort like their physical values, so their boundaries can be
+    // selected on those. `bins_from_rank_cuts_select` packs a boundary index and a flag into one
+    // `IdxSize`.
+    let dtype = s.dtype();
+    if (dtype.is_numeric() || dtype.is_temporal()) && positions.len() < IdxSize::MAX as usize / 2 {
         let phys = s.to_physical_repr();
-        let (breaks, rank_bins) = with_match_physical_numeric_polars_type!(phys.dtype(), |$T| {
+        let (breaks, bin_idx) = with_match_physical_numeric_polars_type!(phys.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = phys.as_ref().as_ref().as_ref();
-            let breaks = select_at_sorted_positions(ca, positions);
-            let rank_bins = right_closed.is_none().then(|| {
-                if ca.is_sorted_flag() == IsSorted::Ascending {
+            let values = select_at_sorted_positions(ca, positions);
+            let breaks: ChunkedArray<$T> = values.iter().copied().collect_ca(s.name().clone());
+            // SAFETY: the values came out of the column's own physical values.
+            let breaks = unsafe { breaks.into_series().from_physical_unchecked(dtype) }?;
+            let bin_idx = match right_closed {
+                Some(right_closed) => bins_from_breaks(s, &breaks, right_closed)?,
+                None if ca.is_sorted_flag() == IsSorted::Ascending => {
                     bins_from_rank_cuts_sorted(ca, positions)
-                } else {
-                    bins_from_rank_cuts_select(ca, positions, &breaks)
-                }
-            });
-            let breaks: ChunkedArray<$T> = breaks.into_iter().collect_ca(s.name().clone());
-            (breaks.into_series(), rank_bins)
+                },
+                None => bins_from_rank_cuts_select(ca, positions, &values),
+            };
+            (breaks, bin_idx)
         });
-        // SAFETY: the values came out of the column's own physical values.
-        let breaks = unsafe { breaks.from_physical_unchecked(s.dtype()) }?;
-        let bin_idx = match (right_closed, rank_bins) {
-            (Some(right_closed), _) => bins_from_breaks(s, &breaks, right_closed)?,
-            (None, Some(rank_bins)) => rank_bins,
-            (None, None) => unreachable!(),
-        };
         let breaks = include_intervals.then_some(breaks);
         return finish_bins(s.name().clone(), &bin_idx, n_bins, breaks.as_ref(), labels);
     }

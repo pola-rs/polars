@@ -446,7 +446,7 @@ where
 
 /// Calls `fill(scratch, block_idx, block)` in parallel for every block of 8 values, with a
 /// `scratch` created by `init` once per rayon job, and returns the validity bytes it produced.
-/// `fill` is dynamic so that the rayon code is only generated once per value type.
+/// `fill` is dynamic so that the rayon code is only generated once per value and scratch type.
 fn fill_blocks_of_8_par<N: Send, S>(
     values: &mut [N],
     init: &(dyn Fn() -> S + Sync),

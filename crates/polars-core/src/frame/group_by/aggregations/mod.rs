@@ -17,7 +17,6 @@ use polars_arrow::legacy::trusted_len::TrustedLenPush;
 use polars_arrow::types::NativeType;
 use polars_compute::rolling::no_nulls::{MomentWindow, QuantileWindow, RollingAggWindowNoNulls};
 use polars_compute::rolling::nulls::{RollingAggWindowNulls, VarianceMoment};
-use polars_compute::rolling::quantile_filter::SealedRolling;
 use polars_compute::rolling::{
     self, ArgMinMaxWindow, MeanWindow, MinMaxWindow, QuantileMethod, RollingFnParams,
     RollingQuantileParams, RollingVarParams, SumWindow, quantile_filter, rolling_argmax_by,
@@ -217,11 +216,7 @@ where
     F: Fn(&IdxVec) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
 {
-    let ca: ChunkedArray<T> = RAYON.install(|| {
-        let all = groups.all();
-        collect_primitive_opt_par(groups.len(), |g| f(&all[g]))
-    });
-    ca.into_series()
+    agg_helper_idx_on_all_with_scratch::<T, (), _>(groups, |_, idx| f(idx))
 }
 
 pub fn _agg_helper_slice<T, F>(groups: &[[IdxSize; 2]], f: F) -> Series
@@ -229,9 +224,7 @@ where
     F: Fn([IdxSize; 2]) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
 {
-    let ca: ChunkedArray<T> =
-        RAYON.install(|| collect_primitive_opt_par(groups.len(), |g| f(groups[g])));
-    ca.into_series()
+    agg_helper_slice_with_scratch::<T, (), _>(groups, |_, g| f(g))
 }
 
 pub fn _agg_helper_idx_idx<'a, F>(groups: &'a GroupsIdx, f: F) -> Series
@@ -262,31 +255,31 @@ where
     ca.into_inner().into_series()
 }
 
-/// [`agg_helper_idx_on_all`] for an `f` that reuses a scratch buffer across groups.
-fn agg_helper_idx_on_all_with_scratch<T, N, F>(groups: &GroupsIdx, f: F) -> Series
+/// [`agg_helper_idx_on_all`] for an `f` that reuses a scratch value across groups.
+fn agg_helper_idx_on_all_with_scratch<T, S, F>(groups: &GroupsIdx, f: F) -> Series
 where
-    F: Fn(&mut ScratchVec<N>, &IdxVec) -> Option<T::Native> + Send + Sync,
+    F: Fn(&mut S, &IdxVec) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
-    N: Send,
+    S: Default,
 {
     let ca: ChunkedArray<T> = RAYON.install(|| {
         let all = groups.all();
-        collect_primitive_opt_par_with_scratch(groups.len(), ScratchVec::default, |scratch, g| {
+        collect_primitive_opt_par_with_scratch(groups.len(), S::default, |scratch, g| {
             f(scratch, &all[g])
         })
     });
     ca.into_series()
 }
 
-/// [`_agg_helper_slice`] for an `f` that reuses a scratch buffer across groups.
-fn agg_helper_slice_with_scratch<T, N, F>(groups: &[[IdxSize; 2]], f: F) -> Series
+/// [`_agg_helper_slice`] for an `f` that reuses a scratch value across groups.
+fn agg_helper_slice_with_scratch<T, S, F>(groups: &[[IdxSize; 2]], f: F) -> Series
 where
-    F: Fn(&mut ScratchVec<N>, [IdxSize; 2]) -> Option<T::Native> + Send + Sync,
+    F: Fn(&mut S, [IdxSize; 2]) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
-    N: Send,
+    S: Default,
 {
     let ca: ChunkedArray<T> = RAYON.install(|| {
-        collect_primitive_opt_par_with_scratch(groups.len(), ScratchVec::default, |scratch, g| {
+        collect_primitive_opt_par_with_scratch(groups.len(), S::default, |scratch, g| {
             f(scratch, groups[g])
         })
     });
@@ -342,7 +335,7 @@ where
             let arr = ca.downcast_as_array();
             let values = arr.values().as_slice();
             let validity = arr.validity();
-            agg_helper_idx_on_all_with_scratch::<K, _, _>(groups, |scratch, idx| {
+            agg_helper_idx_on_all_with_scratch::<K, ScratchVec<_>, _>(groups, |scratch, idx| {
                 debug_assert!(idx.iter().all(|&i| (i as usize) < values.len()));
                 let rows = idx.iter().map(|&i| i as usize);
                 quantile_of_rows(scratch, values, validity, rows, quantile, method).map(to_out)
@@ -408,24 +401,19 @@ where
                 let arr = ca.downcast_as_array();
                 let values = arr.values().as_slice();
                 let validity = arr.validity();
-                agg_helper_slice_with_scratch::<K, _, _>(groups, |scratch, [first, len]| {
-                    let (first, len) = (first as usize, len as usize);
-                    debug_assert!(first + len <= values.len());
-                    let rows = first..first + len;
-                    quantile_of_rows(scratch, values, validity, rows, quantile, method).map(to_out)
-                })
+                agg_helper_slice_with_scratch::<K, ScratchVec<_>, _>(
+                    groups,
+                    |scratch, [first, len]| {
+                        let (first, len) = (first as usize, len as usize);
+                        debug_assert!(first + len <= values.len());
+                        let rows = first..first + len;
+                        quantile_of_rows(scratch, values, validity, rows, quantile, method)
+                            .map(to_out)
+                    },
+                )
             }
         },
     }
-}
-
-unsafe fn agg_median_generic<T, K>(ca: &ChunkedArray<T>, groups: &GroupsType) -> Series
-where
-    T: PolarsNumericType,
-    K: PolarsNumericType,
-    <K as datatypes::PolarsNumericType>::Native: num_traits::Float + SealedRolling,
-{
-    agg_quantile_generic::<T, K>(ca, groups, 0.5, QuantileMethod::Linear)
 }
 
 /// # Safety
@@ -1208,7 +1196,7 @@ impl Float16Chunked {
         agg_quantile_generic::<_, Float16Type>(self, groups, quantile, method)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
-        agg_median_generic::<_, Float16Type>(self, groups)
+        agg_quantile_generic::<_, Float16Type>(self, groups, 0.5, QuantileMethod::Linear)
     }
 }
 impl Float32Chunked {
@@ -1221,7 +1209,7 @@ impl Float32Chunked {
         agg_quantile_generic::<_, Float32Type>(self, groups, quantile, method)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
-        agg_median_generic::<_, Float32Type>(self, groups)
+        agg_quantile_generic::<_, Float32Type>(self, groups, 0.5, QuantileMethod::Linear)
     }
 }
 impl Float64Chunked {
@@ -1234,7 +1222,7 @@ impl Float64Chunked {
         agg_quantile_generic::<_, Float64Type>(self, groups, quantile, method)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
-        agg_median_generic::<_, Float64Type>(self, groups)
+        agg_quantile_generic::<_, Float64Type>(self, groups, 0.5, QuantileMethod::Linear)
     }
 }
 
@@ -1426,6 +1414,6 @@ where
         agg_quantile_generic::<_, Float64Type>(self, groups, quantile, method)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
-        agg_median_generic::<_, Float64Type>(self, groups)
+        agg_quantile_generic::<_, Float64Type>(self, groups, 0.5, QuantileMethod::Linear)
     }
 }

@@ -5,6 +5,7 @@ use std::ops::Deref;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+pub use super::aggregate::quantile::order_statistics;
 use crate::CHEAP_SERIES_HASH_LIMIT;
 use crate::prelude::*;
 use crate::utils::Wrap;
