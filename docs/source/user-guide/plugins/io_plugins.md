@@ -2,15 +2,15 @@
 
 Besides [expression plugins](./expr_plugins.md), Polars supports IO plugins. An IO plugin registers
 a data source that Polars cannot read by itself. Queries over such a source still go through the
-query optimizer and can run on the streaming engine. Columns that a query does not use are not
-read, and a slice can end the read early.
+query optimizer and can run on the streaming engine. Columns that a query does not use are not read,
+and a slice can end the read early.
 
 Polars offers two interfaces for IO plugins:
 
-- [File readers](#file-readers) are built on `FileReaderBuilder` and `FileReader`. Polars drives
-  the reading of every source through them, in the same way as for its built-in file formats.
-  [Combined with `LazyFrameResolver`](#tables-with-lazyframeresolver), they also cover table
-  formats whose list of files is only known at query time.
+- [File readers](#file-readers) are built on `FileReaderBuilder` and `FileReader`. Polars drives the
+  reading of every source through them, in the same way as for its built-in file formats.
+  [Combined with `LazyFrameResolver`](#tables-with-lazyframeresolver), they also cover table formats
+  whose list of files is only known at query time.
 - [Generator-based IO sources](#generator-based-io-sources) are registered with
   `register_io_source`. The plugin provides one generator for the whole source.
 
@@ -32,8 +32,8 @@ source therefore does not have to be a file path. It can also be a URL, a fragme
 key the reader understands. Directories and glob patterns are only expanded into file paths with
 `expand_paths=True`.
 
-Polars handles scans over several sources itself. A row index continues from one source to the
-next, and the scan stops at the first source that lies past the end of a slice.
+Polars handles scans over several sources itself. A row index continues from one source to the next,
+and the scan stops at the first source that lies past the end of a slice.
 
 ### Example format
 
@@ -128,23 +128,22 @@ reader that has to count rows can stop once it reaches the optional `limit`.
 The data itself comes from `collect_batches`, which returns an iterator of DataFrames. Polars stops
 consuming it as soon as it has enough rows. Its arguments describe what to read:
 
-- `columns` lists the columns to read. The list is empty when a query only needs the number of
-  rows, as with `select(pl.len())`. The DataFrames must have the correct height in that case too.
-- `row_index` holds the name of a row index column and the index of the first row in this source.
-  It is only passed when the builder declares support for it.
+- `columns` lists the columns to read. The list is empty when a query only needs the number of rows,
+  as with `select(pl.len())`. The DataFrames must have the correct height in that case too.
+- `row_index` holds the name of a row index column and the index of the first row in this source. It
+  is only passed when the builder declares support for it.
 - `pre_slice` holds the offset and length of a slice, counted from the start of this source. The
   slice can extend past the end of the source, and the offset can even lie beyond it. It is also
   only passed when the builder declares support for it.
-- `filters` holds predicates that the reader may use. They are described
-  [further below](#filters).
+- `filters` holds predicates that the reader may use. They are described [further below](#filters).
 - `num_pipelines` is a hint for how much parallelism the reader may use.
 
-The reader applies these operations in a fixed order. The row index comes first and numbers the
-rows from the start of the source. The slice is applied next, and the filters come last. In the
-example, a row's index therefore depends on its position in the file and not on the slice.
+The reader applies these operations in a fixed order. The row index comes first and numbers the rows
+from the start of the source. The slice is applied next, and the filters come last. In the example,
+a row's index therefore depends on its position in the file and not on the slice.
 
-The batch size of two rows only serves to show that a reader can yield its data in several pieces.
-A real reader would yield larger batches.
+The batch size of two rows only serves to show that a reader can yield its data in several pieces. A
+real reader would yield larger batches.
 
 ### The builder
 
@@ -183,8 +182,8 @@ resources that are expensive to create, such as a thread pool or a connection.
 `explain_properties` returns extra lines for the output of `LazyFrame.explain()`.
 
 The `FileReader` class has further optional methods. `initialize_serial` is called on the readers
-one at a time and in the order of the sources. It is not guaranteed to be called, for example when
-a query stops early. `on_drop` is called when Polars no longer needs a reader. The
+one at a time and in the order of the sources. It is not guaranteed to be called, for example when a
+query stops early. `on_drop` is called when Polars no longer needs a reader. The
 [API reference](https://docs.pola.rs/api/python/stable/reference/plugins.html) lists them in full.
 
 ### Using the reader
@@ -284,8 +283,8 @@ itself, because the filters of a query can rule out whole files.
 
 A `LazyFrameResolver` defers building the scan until the query runs. Polars passes the resolver the
 projection, the row limit and the filters that it would otherwise push into a scan. The resolver
-returns a `LazyFrame` that Polars places into the query plan. That `LazyFrame` can be any query,
-and a scan over a file reader is a natural fit.
+returns a `LazyFrame` that Polars places into the query plan. That `LazyFrame` can be any query, and
+a scan over a file reader is a natural fit.
 
 ### Example catalog
 
@@ -393,8 +392,8 @@ key, Polars caches the resolved `LazyFrame` and reuses it while the arguments st
 version key, Polars calls the resolver at every `collect()`. If a previous resolve with the same
 arguments exists, its key is passed as `existing_resolved_version_key`. When the table has not
 changed, the resolver can return `None` in place of a `LazyFrame` together with that same key.
-Polars then reuses the previous result. Returning `None` with any other key raises an error.
-The example takes its version key from the catalog, so new files become visible to the next query.
+Polars then reuses the previous result. Returning `None` with any other key raises an error. The
+example takes its version key from the catalog, so new files become visible to the next query.
 
 The `applied_filters` field lists the indices of the filters that the returned `LazyFrame` applies
 fully. Polars does not apply these filters again. The example leaves the field empty, because the
@@ -479,9 +478,9 @@ shape: (2, 2)
 ## Generator-based IO sources
 
 Generator-based IO sources are registered with `register_io_source`. Because sources can move data
-zero copy via Arrow FFI and sources can produce large chunks of data before returning, we've
-decided to interface to IO plugins via Python for now, as we don't think the short time the GIL is
-needed should lead to any contention.
+zero copy via Arrow FFI and sources can produce large chunks of data before returning, we've decided
+to interface to IO plugins via Python for now, as we don't think the short time the GIL is needed
+should lead to any contention.
 
 E.g. an IO source can read their dataframe's in rust and only at the rendez-vous move the data
 zero-copy having only a short time the GIL is needed.
