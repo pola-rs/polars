@@ -23,7 +23,7 @@ fn get_init_size() -> usize {
     }
 }
 
-/// Each partition must push its indices in row order,
+/// The indices of each group in `out` must be in row order,
 /// as the result is marked with `idx_in_row_order=true`.
 fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsType {
     let mut idx = if sorted {

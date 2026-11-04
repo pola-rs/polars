@@ -15,7 +15,9 @@ use crate::utils::{NoNull, flatten, slice_slice};
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GroupsIdx {
     pub(crate) sorted_by_first_idx: bool,
-    /// See [`Self::set_idx_in_row_order`].
+    /// If true, the indices of every group are non-decreasing.
+    /// Sorted columns then take their per-group min and max from the group ends.
+    /// `false` only costs speed, never correctness.
     pub(crate) idx_in_row_order: bool,
     /// Positions of the start of each group.
     first: Vec<IdxSize>,
@@ -142,9 +144,9 @@ impl GroupsIdx {
         self.idx_in_row_order
     }
 
-    /// Only set `in_row_order=true` if the indices of every group are non-decreasing.
-    /// This enables a fast path. Setting it to false only costs speed, not correctness.
+    /// See [Self::idx_in_row_order]
     pub fn set_idx_in_row_order(&mut self, in_row_order: bool) {
+        debug_assert!(!in_row_order || self.all.iter().all(|idx| idx.is_sorted()));
         self.idx_in_row_order = in_row_order;
     }
 

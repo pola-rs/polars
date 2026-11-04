@@ -1915,23 +1915,35 @@ def test_grouped_minmax_after_reverse_on_sorted_column_26141(
     ("values", "aggs"),
     [
         (list(range(6)), ["min", "max", "arg_min", "arg_max"]),
+        ([float(i) for i in range(6)], ["min", "max", "arg_min", "arg_max"]),
         (list("abcdef"), ["min", "max", "arg_min", "arg_max"]),
-        ([False] * 3 + [True] * 3, ["min", "max"]),
+        ([False] * 3 + [True] * 3, ["min", "max", "arg_min", "arg_max"]),
     ],
 )
 @pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("sorted_key", [False, True])
 def test_grouped_minmax_after_in_group_reorder_on_sorted_column_30550(
-    values: list[Any], aggs: list[str], descending: bool
+    values: list[Any], aggs: list[str], descending: bool, sorted_key: bool
 ) -> None:
     if descending:
         values = values[::-1]
-    unflagged = pl.DataFrame({"g": [1, 2] * 3, "x": values})
+    # A sorted key gives slice groups instead of hashed index groups.
+    keys = [1, 1, 1, 2, 2, 2] if sorted_key else [1, 2] * 3
+    unflagged = pl.DataFrame({"g": keys, "x": values})
     df = unflagged.with_columns(pl.col("x").set_sorted(descending=descending))
+    if sorted_key:
+        df = df.with_columns(pl.col("g").set_sorted())
 
+    reversed_x = pl.col("x").reverse()
     reorders = [
-        pl.col("x").reverse(),
+        reversed_x,
         pl.col("x").sort(descending=not descending),
         pl.col("x").sort_by("x", descending=not descending).head(2),
+        # These must not mark the reversed groups as being in row order.
+        reversed_x.filter(reversed_x.is_not_null()),
+        reversed_x.unique(maintain_order=True),
+        reversed_x.slice(0, 2),
+        reversed_x.forward_fill(),
     ]
     exprs = [
         getattr(reorder, agg)().alias(f"{i}_{agg}")
@@ -1949,6 +1961,18 @@ def test_window_min_with_order_by_on_sorted_column_30550() -> None:
     df = pl.DataFrame({"g": [1, 1, 1], "x": [1, 2, 3]}).sort("x")
     out = df.select(pl.col("x").min().over("g", order_by=-pl.col("x")))
     assert out["x"].to_list() == [1, 1, 1]
+
+
+def test_grouped_window_min_with_order_by_on_sorted_column_30550() -> None:
+    unflagged = pl.DataFrame({"g": [1, 2] * 3, "x": list(range(6))})
+    df = unflagged.with_columns(pl.col("x").set_sorted())
+
+    expr = pl.col("x").min().over(pl.lit(1), order_by=-pl.col("x"))
+    assert_frame_equal(
+        df.group_by("g").agg(expr),
+        unflagged.group_by("g").agg(expr),
+        check_row_order=False,
+    )
 
 
 @pytest.mark.parametrize("agg_by", [pl.Expr.min_by, pl.Expr.max_by])
