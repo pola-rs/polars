@@ -10,8 +10,8 @@ where
     T: PolarsNumericType,
     ChunkedArray<T>: ChunkShiftFill<T, Option<T::Native>>,
 {
-    // `extract` converts a Decimal by value, which drops the scale.
-    ca.shift_and_fill(n, fill_value.to_physical().extract::<T::Native>())
+    let fill_value = fill_value.to_physical().extract::<T::Native>();
+    ca.shift_and_fill(n, fill_value)
 }
 
 #[cfg(any(
