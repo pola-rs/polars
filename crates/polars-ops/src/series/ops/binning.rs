@@ -139,10 +139,11 @@ fn bins_from_rank_cuts_select<T: PolarsNumericType>(
 
     // Both passes run in parallel over ranges of rows, which may span chunks. Pass 1 stores each
     // row's located boundary as `2 * m + equal` in `out` (m <= k <= the number of cuts, which
-    // `bin_at_positions` keeps below `IdxSize::MAX / 2`) and counts per range; the counts give each range the rank of its first value
-    // equal to every boundary. A range is at least as long as there are boundaries, so the
-    // per-range counts and starting ranks (3k + 1 per range) take at most about three times the
-    // memory of `out`.
+    // `bin_at_positions` keeps below `IdxSize::MAX / 2`), and counts per range how many values lie
+    // between consecutive boundaries and how many equal each. Prefix sums of the counts then give,
+    // per range and boundary, the rank of the range's first value equal to it. All ranges but the
+    // last hold at least k rows, so these 3k + 1 counters per range take at most about three times
+    // the memory of `out`.
     let k = distinct.len();
     let range_len = (1 << 16).max(k);
     let arrs: Vec<_> = ca.downcast_iter().collect();
