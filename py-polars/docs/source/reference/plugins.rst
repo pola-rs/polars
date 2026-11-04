@@ -38,11 +38,9 @@ File readers
     This functionality is considered **unstable**. It may be changed
     at any point without it being considered a breaking change.
 
-A file reader plugin consists of a :class:`~polars.io.external_reader.FileReaderBuilder` and a
-:class:`~polars.io.external_reader.FileReader`. The function :func:`scan_external_reader` connects
-a builder to a list of sources and returns a :class:`LazyFrame`. Polars creates one reader per
-source and drives the reading itself. Scans over several sources therefore support row indices and
-slices in the same way as the built-in file formats.
+A :class:`~polars.io.external_reader.FileReaderBuilder` creates one
+:class:`~polars.io.external_reader.FileReader` per source, and :func:`scan_external_reader` turns a
+builder and a list of sources into a :class:`LazyFrame`.
 
 .. autosummary::
     :toctree: api/
@@ -75,10 +73,8 @@ LazyFrame resolvers
     at any point without it being considered a breaking change.
 
 A :class:`~polars.lazyframe.resolver.LazyFrameResolver` defers building a scan until a query runs.
-Polars passes it the projection, the row limit and the filters of the query. The resolver returns a
-:class:`~polars.LazyFrame` that takes the place of the scan, for example one created with
-:func:`~polars.scan_external_reader`. This suits table formats and catalogs, whose list of files
-can change over time and can be narrowed down by the filters of a query.
+It receives the projection, row limit and filters of the query, and returns a
+:class:`~polars.LazyFrame` that takes the place of the scan. This suits table formats and catalogs.
 
 .. currentmodule:: polars.lazyframe.resolver
 
@@ -98,8 +94,7 @@ can change over time and can be narrowed down by the filters of a query.
 Generator-based IO sources
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-A generator-based IO source is registered with :func:`~polars.io.plugins.register_io_source`. The
-plugin provides a function that returns a generator of DataFrames for the whole source.
+A generator-based IO source provides one generator of DataFrames for the whole source.
 
 .. note::
 

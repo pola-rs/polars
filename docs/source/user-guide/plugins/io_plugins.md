@@ -1,18 +1,14 @@
 # IO Plugins
 
-Besides [expression plugins](./expr_plugins.md), Polars supports IO plugins. An IO plugin registers
-a data source that Polars cannot read by itself. Queries over such a source still go through the
-query optimizer and can run on the streaming engine. Columns that a query does not use are not read,
-and a slice can end the read early.
+Besides [expression plugins](./expr_plugins.md), Polars supports IO plugins for data sources that it
+cannot read by itself. Queries over such sources still benefit from the query optimizer and the
+streaming engine. There are two interfaces:
 
-Polars offers two interfaces for IO plugins:
-
-- [File readers](#file-readers) are built on `FileReaderBuilder` and `FileReader`. Polars drives the
-  reading of every source through them, in the same way as for its built-in file formats.
-  [Combined with `LazyFrameResolver`](#tables-with-lazyframeresolver), they also cover table formats
-  whose list of files is only known at query time.
-- [Generator-based IO sources](#generator-based-io-sources) are registered with
-  `register_io_source`. The plugin provides one generator for the whole source.
+- [File readers](#file-readers) let Polars drive the reading of each source, as it does for its
+  built-in formats. Together with a [`LazyFrameResolver`](#tables-with-lazyframeresolver), they also
+  cover table formats.
+- [Generator-based IO sources](#generator-based-io-sources) provide one generator for the whole
+  source.
 
 ## File readers
 
@@ -21,25 +17,18 @@ Polars offers two interfaces for IO plugins:
     This functionality is considered **unstable**. It may be changed at any point without it being
     considered a breaking change.
 
-A file reader plugin has two parts. A `FileReaderBuilder` describes the scan as a whole. Polars asks
-it which operations the reader can perform itself, and calls it to create one reader per source. A
-`FileReader` reads a single source. It reports the schema and the row count of that source and
-yields the data as DataFrames.
+A `FileReaderBuilder` creates one `FileReader` per source and declares which operations the readers
+apply themselves. Each reader reports the schema and row count of its source and yields the data as
+DataFrames. `pl.scan_external_reader` turns a builder and a list of sources into a `LazyFrame`.
+Polars carries row indices and slices across the sources.
 
-The function `pl.scan_external_reader` connects a builder to a list of sources and returns a
-`LazyFrame`. Each source is a `str` or `bytes` value that Polars hands to the builder unchanged. A
-source therefore does not have to be a file path. It can also be a URL, a fragment ID or any other
-key the reader understands. Directories and glob patterns are only expanded into file paths with
-`expand_paths=True`.
-
-Polars handles scans over several sources itself. A row index continues from one source to the next,
-and the scan stops at the first source that lies past the end of a slice.
+Sources are `str` or `bytes` values that reach the builder unchanged, so they need not be file
+paths. Directories and glob patterns are only expanded with `expand_paths=True`.
 
 ### Example format
 
-The example below reads a made-up format: a text file whose first line is a JSON header with the
-number of rows, followed by one JSON object per row. The header plays the role of the metadata
-section that real file formats have.
+The example reads a made-up format. Its first line is a JSON header with the row count, which stands
+in for the metadata of a real format. One JSON object per row follows.
 
 ```
 {"num_rows": 3}
@@ -276,15 +265,11 @@ exactly.
     This functionality is considered **unstable**. It may be changed at any point without it being
     considered a breaking change.
 
-Table formats and data catalogs store a table as a set of data files plus metadata. The metadata
-lists the files that make up the current version of the table, often with information about the
-values in each file. The list of files can change between two queries. It also depends on the query
-itself, because the filters of a query can rule out whole files.
-
-A `LazyFrameResolver` defers building the scan until the query runs. Polars passes the resolver the
-projection, the row limit and the filters that it would otherwise push into a scan. The resolver
-returns a `LazyFrame` that Polars places into the query plan. That `LazyFrame` can be any query, and
-a scan over a file reader is a natural fit.
+Table formats and data catalogs keep a list of the data files that make up a table. The list can
+change between queries, and the filters of a query can rule out whole files. A `LazyFrameResolver`
+therefore defers building the scan until the query runs. Polars passes it the projection, row limit
+and filters of the query. It returns a `LazyFrame` that takes the place of the scan, typically a
+scan over a file reader.
 
 ### Example catalog
 
