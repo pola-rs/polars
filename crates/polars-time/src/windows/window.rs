@@ -45,7 +45,7 @@ pub(crate) fn ensure_t_in_or_in_front_of_window(
         debug_assert!(stride >= 1);
         let stride = std::cmp::max(stride, 1);
 
-        start = (every * stride).add(tu, start, tz)?;
+        start = every.add_scaled(tu, start, tz, stride)?;
         stop = period.add(tu, start, tz)?;
     }
     Ok(Bounds::new_checked(start, stop))
@@ -205,8 +205,10 @@ impl<'a> BoundsIter<'a> {
         // TODO: find some way to propagate error instead of unwrapping?
         // Issue is that `next` needs to return `Option`.
         self.k += n;
-        self.bi.start = (self.window.every * self.k)
-            .add(self.tu, self.origin, self.tz)
+        self.bi.start = self
+            .window
+            .every
+            .add_scaled(self.tu, self.origin, self.tz, self.k)
             .unwrap();
         self.bi.stop = self
             .window

@@ -916,22 +916,36 @@ impl Duration {
     #[cfg(feature = "temporal")]
     #[inline]
     pub fn add(&self, tu: TimeUnit, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
+        self.add_scaled(tu, t, tz, 1)
+    }
+
+    /// Add `k` multiples of this duration to the timestamp `t` in `tu`.
+    ///
+    /// Scaling `self.nsecs` after converting to `tu` avoids overflowing `i64` nanoseconds
+    /// when `k * self.nsecs` spans more than ~292 years in `ms` or `us`.
+    #[cfg(feature = "temporal")]
+    #[inline]
+    pub fn add_scaled(&self, tu: TimeUnit, t: i64, tz: Option<&Tz>, k: i64) -> PolarsResult<i64> {
         if self.months == 0 && self.weeks == 0 && self.days == 0 {
             // TODO: UTC with months == 0 can also have a fast path here, but checking for it here
             // slows down hot loops of the other cases. If it turns out to be important, we might
             // need to check once beforehand and convert it to nanos.
 
             // A constant duration needs no calendar: keep this path inline at the call site.
-            return Ok(t + tu.from_nsecs(self.signed_nsecs()));
+            return Ok(t + tu.from_nsecs(self.signed_nsecs()) * k);
         }
+        let mut scaled = *self;
+        scaled.nsecs = 0;
+        scaled = scaled * k;
         // The arms have constant unit conversions and are never inlined, so a constant `tu`
         // costs nothing, a loop-invariant one a predictable branch, and the calendar code
         // stays out of the callers' hot loops.
-        match tu {
-            TimeUnit::Nanoseconds => self.add_ns(t, tz),
-            TimeUnit::Microseconds => self.add_us(t, tz),
-            TimeUnit::Milliseconds => self.add_ms(t, tz),
-        }
+        let t = match tu {
+            TimeUnit::Nanoseconds => scaled.add_ns(t, tz)?,
+            TimeUnit::Microseconds => scaled.add_us(t, tz)?,
+            TimeUnit::Milliseconds => scaled.add_ms(t, tz)?,
+        };
+        Ok(t + tu.from_nsecs(self.signed_nsecs()) * k)
     }
 
     #[cfg(feature = "temporal")]
