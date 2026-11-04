@@ -30,7 +30,7 @@ impl<'a, T: PolarsObject> std::iter::Iterator for ObjectIter<'a, T> {
         if self.current == self.current_end {
             None
         // SAFETY:
-        // Se comment below
+        // See comment below
         } else if unsafe { self.array.is_null_unchecked(self.current) } {
             self.current += 1;
             Some(None)
@@ -119,7 +119,7 @@ impl<T: PolarsObject> std::iter::Iterator for OwnedObjectIter<T> {
         if self.current == self.current_end {
             None
         // SAFETY:
-        // Se comment below
+        // See comment below
         } else if unsafe { self.array.is_null_unchecked(self.current) } {
             self.current += 1;
             Some(None)

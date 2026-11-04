@@ -72,7 +72,7 @@ where
                         let idx = idx + offset;
                         let entry = hash_tbl
                             .raw_entry_mut()
-                            // uses the key to check equality to find and entry
+                            // uses the key to check equality to find an entry
                             .from_key_hashed_nocheck(*h, &k);
 
                         match entry {

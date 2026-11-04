@@ -10,7 +10,7 @@ use super::*;
 pub(super) fn rolling_minmax_van_herk_nulls<T, P>(
     arr: &PrimitiveArray<T>,
     window_size: usize,
-    min_periods: usize,
+    min_samples: usize,
     center: bool,
 ) -> ArrayRef
 where
@@ -43,8 +43,8 @@ where
         shift_trailing::<true, T, P>(&mut out, values, validity, window_size, shift);
     }
 
-    // min_periods == 0 still leaves all-null windows invalid.
-    let threshold = min_periods.max(1);
+    // min_samples == 0 still leaves all-null windows invalid.
+    let threshold = min_samples.max(1);
     let offset_fn = match center {
         true => det_offsets_center,
         false => det_offsets,

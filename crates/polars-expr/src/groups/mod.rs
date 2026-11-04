@@ -27,7 +27,7 @@ pub trait Grouper: Any + Send + Sync {
     /// Returns the number of groups in this Grouper.
     fn num_groups(&self) -> IdxSize;
 
-    /// Inserts the given subset of keys into this Grouper. If groups_idxs is
+    /// Inserts the given subset of keys into this Grouper. If group_idxs is
     /// passed it is extended such with the group index of keys[subset[i]].
     /// New groups get consecutive indices in the order they first occur.
     ///

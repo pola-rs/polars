@@ -39,7 +39,7 @@ pub fn default_join_ids() -> ChunkJoinOptIds {
     }
 }
 
-macro_rules! det_hash_prone_order {
+macro_rules! det_hash_probe_order {
     ($self:expr, $other:expr) => {{
         // The shortest relation will be used to create a hash table.
         if $self.len() > $other.len() {
@@ -50,7 +50,7 @@ macro_rules! det_hash_prone_order {
     }};
 }
 
-pub(super) use det_hash_prone_order;
+pub(super) use det_hash_probe_order;
 #[cfg(feature = "performant")]
 use polars_arrow::legacy::conversion::primitive_to_vec;
 

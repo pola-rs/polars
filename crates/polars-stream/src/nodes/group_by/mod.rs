@@ -25,7 +25,7 @@ use polars_error::PolarsResult;
 use polars_expr::groups::Grouper;
 use polars_expr::reduce::GroupedReduction;
 use polars_expr::state::ExecutionState;
-use polars_ooc::{MostRecentSpillContext, memory_manager};
+use polars_ooc::{MemoryGrant, MostRecentSpillContext, memory_manager};
 use polars_utils::IdxSize;
 use polars_utils::hashing::HashPartitioner;
 use polars_utils::pl_str::PlSmallStr;
@@ -222,16 +222,27 @@ impl GroupByNode {
         }
     }
 
-    /// Builds the results once all input is received. With at most one partition per pipeline
-    /// all partitions are built here; otherwise the cold rows are stored per partition, and the
-    /// partitions are built while the results are sent.
+    /// Builds the results once all input is received. The number of partitions follows the
+    /// memory grant taken here. With at most one partition per pipeline all partitions are built
+    /// here; otherwise the cold rows are stored per partition, and the partitions are built while
+    /// the results are sent.
     fn start_flush(
         &self,
         sink: GroupBySink,
         state: &StreamingExecutionState,
     ) -> PolarsResult<Flush> {
         let (stats, frames, pre_aggs) = sink.finish_input(&self.params, &self.spill_ctx, state)?;
-        let num_partitions = self.tuning.num_partitions(&stats, self.num_pipelines);
+        let wanted_grant_bytes = self.tuning.wanted_grant_bytes(&stats);
+        let grant = MemoryGrant::take(wanted_grant_bytes, self.tuning.max_grant_fraction);
+        // A full grant keeps the partitions as large as the largest grant allows.
+        let memory_limit = if grant.bytes() < wanted_grant_bytes {
+            grant.bytes()
+        } else {
+            self.tuning.max_grant_bytes()
+        };
+        let num_partitions = self
+            .tuning
+            .num_partitions(&stats, self.num_pipelines, memory_limit);
         let partitioner = HashPartitioner::new(num_partitions, 0);
         let pre_aggs = SplitPreAggs::new(pre_aggs, &partitioner, state)?;
         let num_frames = frames.len();
@@ -245,10 +256,11 @@ impl GroupByNode {
                 "stored"
             };
             eprintln!(
-                "[group-by]: {num_partitions} partitions {how}, {num_frames} frames in {} batches, {} pre-aggregates, {} estimated groups",
+                "[group-by]: {num_partitions} partitions {how}, {num_frames} frames in {} batches, {} pre-aggregates, {} estimated groups, memory grant of {} bytes ({wanted_grant_bytes} wanted)",
                 batches.len(),
                 pre_aggs.len(),
-                stats.estimated_groups
+                stats.estimated_groups,
+                grant.bytes(),
             );
         }
         self.estimated_groups
@@ -273,6 +285,8 @@ impl GroupByNode {
             self.params.clone(),
             reserve_groups,
             actual_groups,
+            grant,
+            stats.partition_grant_bytes(num_partitions),
         ))
     }
 

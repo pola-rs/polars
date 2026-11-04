@@ -586,7 +586,7 @@ impl<O: Offset> OffsetsBuffer<O> {
 
 impl From<&OffsetsBuffer<i32>> for OffsetsBuffer<i64> {
     fn from(offsets: &OffsetsBuffer<i32>) -> Self {
-        // this conversion is lossless and uphelds all invariants
+        // this conversion is lossless and upholds all invariants
         Self(
             offsets
                 .buffer()
@@ -604,7 +604,7 @@ impl TryFrom<&OffsetsBuffer<i64>> for OffsetsBuffer<i32> {
     fn try_from(offsets: &OffsetsBuffer<i64>) -> Result<Self, Self::Error> {
         i32::try_from(*offsets.last()).map_err(|_| polars_err!(ComputeError: "overflow"))?;
 
-        // this conversion is lossless and uphelds all invariants
+        // this conversion is lossless and upholds all invariants
         Ok(Self(
             offsets
                 .buffer()
@@ -618,7 +618,7 @@ impl TryFrom<&OffsetsBuffer<i64>> for OffsetsBuffer<i32> {
 
 impl From<Offsets<i32>> for Offsets<i64> {
     fn from(offsets: Offsets<i32>) -> Self {
-        // this conversion is lossless and uphelds all invariants
+        // this conversion is lossless and upholds all invariants
         Self(
             offsets
                 .as_slice()
@@ -635,7 +635,7 @@ impl TryFrom<Offsets<i64>> for Offsets<i32> {
     fn try_from(offsets: Offsets<i64>) -> Result<Self, Self::Error> {
         i32::try_from(*offsets.last()).map_err(|_| polars_err!(ComputeError: "overflow"))?;
 
-        // this conversion is lossless and uphelds all invariants
+        // this conversion is lossless and upholds all invariants
         Ok(Self(
             offsets
                 .as_slice()

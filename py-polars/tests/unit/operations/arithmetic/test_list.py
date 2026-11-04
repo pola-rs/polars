@@ -761,7 +761,7 @@ def test_list_arithmetic_div_ops_zero_denominator(
 ) -> None:
     # Notes
     # * truediv (/) on integers upcasts to Float64
-    # * Otherwise, we test floordiv (//) and module/rem (%)
+    # * Otherwise, we test floordiv (//) and modulo/rem (%)
     #   * On integers, 0-denominator is expected to output NULL
     #   * On floats, 0-denominator has different outputs, e.g. NaN, Inf, depending
     #     on a few factors (e.g. whether the numerator is also 0).

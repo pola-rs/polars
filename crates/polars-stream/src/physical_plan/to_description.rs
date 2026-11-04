@@ -1007,7 +1007,7 @@ fn ewm_props(options: &polars_ops::series::EWMOptions, variant: &str) -> Physica
         alpha: options.alpha,
         adjust: options.adjust,
         bias: options.bias,
-        min_periods: options.min_periods,
+        min_samples: options.min_samples,
         ignore_nulls: options.ignore_nulls,
     }
 }

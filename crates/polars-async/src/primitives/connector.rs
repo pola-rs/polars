@@ -310,7 +310,7 @@ impl<T, S> std::future::Future for RecvFuture<'_, T, S> {
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         assert!(
             !self.done,
-            "re-poll after Poll::Ready in connector SendFuture"
+            "re-poll after Poll::Ready in connector RecvFuture"
         );
         unsafe { self.connector.poll_recv(cx.waker()) }
     }

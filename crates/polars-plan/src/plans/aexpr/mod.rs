@@ -257,7 +257,7 @@ pub enum AExpr {
         /// Function arguments
         /// Some functions rely on aliases,
         /// for instance assignment of struct fields.
-        /// Therefor we need [`ExprIr`].
+        /// Therefore we need [`ExprIR`].
         input: Vec<ExprIR>,
         /// function to apply
         function: IRFunctionExpr,

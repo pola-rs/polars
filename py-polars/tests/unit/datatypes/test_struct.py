@@ -5,6 +5,7 @@ import operator
 import re
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
@@ -478,7 +479,7 @@ def test_struct_order() -> None:
 def test_struct_values_matched_to_fields() -> None:
     # struct values are matched to the target fields positionally if they have
     # the same field names, else by name (with any missing fields set to null)
-    values = [
+    values: list[Any] = [
         {"a": 1, "b": "x"},  # the target fields
         {"b": "y", "a": 2},  # reordered
         {"b": "w", "a": 9},  # also reordered
@@ -489,7 +490,7 @@ def test_struct_values_matched_to_fields() -> None:
         {},  # no fields
         None,
     ]
-    expected = [
+    expected: list[Any] = [
         {"a": 1, "b": "x"},
         {"a": 2, "b": "y"},
         {"a": 9, "b": "w"},
@@ -502,18 +503,26 @@ def test_struct_values_matched_to_fields() -> None:
     ]
     dtype = pl.Struct({"a": pl.Int64, "b": pl.String})
 
-    # target fields inferred from the first value
-    s = pl.Series(values)
-    assert s.dtype == dtype
-    assert s.to_list() == expected
+    # target fields inferred from all values, which keeps the extra field
+    merged_dtype = pl.Struct({"a": pl.Int64, "b": pl.String, "c": pl.Boolean})
+    merged = [
+        None if e is None else {**e, "c": v.get("c")}
+        for v, e in zip(values, expected, strict=True)
+    ]
+    assert_series_equal(pl.Series(values), pl.Series(merged, dtype=merged_dtype))
 
     # target fields given explicitly
     df = pl.from_dicts([{"s": v} for v in values], schema={"s": dtype})
     assert df["s"].to_list() == expected
 
     # nested struct values
-    s = pl.Series([None if v is None else {"s": v} for v in values])
-    assert s.to_list() == [None if v is None else {"s": v} for v in expected]
+    assert_series_equal(
+        pl.Series([None if v is None else {"s": v} for v in values]),
+        pl.Series(
+            [None if m is None else {"s": m} for m in merged],
+            dtype=pl.Struct({"s": merged_dtype}),
+        ),
+    )
 
     # target fields from the supertype, which has the extra field
     s = pl.Series(values, strict=False)
@@ -2753,3 +2762,193 @@ def test_struct_when_then_after_parquet_roundtrip_29815() -> None:
         .otherwise(pl.lit("not shipped"))
     )
     assert out.to_series().to_list() == ["TRK123", "not shipped"]
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Struct({"a": pl.Int64, "b": pl.Int64, "c": pl.Int64}),
+        pl.Struct({"b": pl.Int64, "a": pl.Int64}),
+        pl.Struct({"a": pl.Int64}),
+        pl.Struct({"x": pl.Int64, "y": pl.Int64}),
+    ],
+    ids=["added", "reordered", "dropped", "renamed"],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_struct_cast_strict_expr_30471(dtype: pl.Struct, engine: EngineType) -> None:
+    s = pl.Series("s", [{"a": 1, "b": 2}, None])
+    lf = s.to_frame().lazy()
+
+    # Strict casts in expressions raise as `Series.cast` does.
+    with pytest.raises(InvalidOperationError):
+        s.cast(dtype)
+    with pytest.raises(InvalidOperationError):
+        lf.select(pl.col("s").cast(dtype)).collect(engine=engine)
+    with pytest.raises(InvalidOperationError):
+        lf.cast({"s": dtype}).collect(engine=engine)
+    with pytest.raises(InvalidOperationError):
+        lf.select(pl.col("s").implode().cast(pl.List(dtype))).collect(engine=engine)
+
+    # Non-strict casts match fields by name.
+    out = lf.select(pl.col("s").cast(dtype, strict=False)).collect(engine=engine)
+    assert_series_equal(out.to_series(), s.cast(dtype, strict=False))
+
+    # All-null input casts as in `Series.cast`.
+    nulls = pl.Series("s", [None], dtype=s.dtype)
+    out = nulls.to_frame().lazy().select(pl.col("s").cast(dtype)).collect(engine=engine)
+    assert_series_equal(out.to_series(), nulls.cast(dtype))
+
+
+@pytest.mark.parametrize(
+    ("s", "dtype"),
+    [
+        (
+            pl.Series(
+                [[{"a": 1, "b": 2}]],
+                dtype=pl.Array(pl.Struct({"a": pl.Int64, "b": pl.Int64}), 1),
+            ),
+            pl.Array(pl.Struct({"b": pl.Int64, "a": pl.Int64}), 1),
+        ),
+        (
+            pl.Series([{"x": {"a": 1, "b": 2}}]),
+            pl.Struct({"x": pl.Struct({"a": pl.Int64, "b": pl.Int64, "c": pl.Int64})}),
+        ),
+    ],
+    ids=["array_reordered", "nested_added"],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_struct_cast_strict_expr_nested_30471(
+    s: pl.Series, dtype: pl.DataType, engine: EngineType
+) -> None:
+    lf = s.to_frame("s").lazy()
+    with pytest.raises(InvalidOperationError):
+        s.cast(dtype)
+    with pytest.raises(InvalidOperationError):
+        lf.select(pl.col("s").cast(dtype)).collect(engine=engine)
+
+    out = lf.select(pl.col("s").cast(dtype, strict=False)).collect(engine=engine)
+    assert_series_equal(out.to_series(), s.cast(dtype, strict=False).rename("s"))
+
+
+def test_struct_supertype_casts_30471() -> None:
+    df = pl.DataFrame(
+        {
+            "c": [True, False],
+            "s": [{"a": 1}, {"a": 2}],
+            "t": [{"b": 3}, {"b": 4}],
+            "u": [{"a": 5, "b": 6}, {"a": 7, "b": 8}],
+            "v": [{"b": 9, "a": 10}, {"b": 11, "a": 12}],
+        }
+    )
+    out = df.select(
+        when_union=pl.when("c").then("s").otherwise("t"),
+        when_reordered=pl.when("c").then("u").otherwise("v"),
+        concat_list=pl.concat_list("s", "t"),
+        coalesce=pl.coalesce("v", "u"),
+    )
+    assert out.to_dict(as_series=False) == {
+        "when_union": [{"a": 1, "b": None}, {"a": None, "b": 4}],
+        "when_reordered": [{"a": 5, "b": 6}, {"a": 12, "b": 11}],
+        "concat_list": [
+            [{"a": 1, "b": None}, {"a": None, "b": 3}],
+            [{"a": 2, "b": None}, {"a": None, "b": 4}],
+        ],
+        "coalesce": [{"b": 9, "a": 10}, {"b": 11, "a": 12}],
+    }
+
+    # A literal arm is cast to the supertype as a column arm is.
+    out = df.select(pl.when("c").then(pl.lit({"a": 0})).otherwise("u"))
+    assert out.to_series().to_list() == [{"a": 0, "b": None}, {"a": 7, "b": 8}]
+
+
+def test_struct_supertype_cast_overflow_raises_30471() -> None:
+    df = pl.DataFrame(
+        {"c": [True], "l": [{"a": Decimal(10**36)}], "r": [{"a": Decimal(1), "b": 1}]},
+        schema={
+            "c": pl.Boolean,
+            "l": pl.Struct({"a": pl.Decimal(38, 0)}),
+            "r": pl.Struct({"a": pl.Decimal(10, 2), "b": pl.Int64}),
+        },
+    )
+    with pytest.raises(InvalidOperationError):
+        df.select(pl.when("c").then("l").otherwise("r"))
+
+
+@pytest.mark.parametrize("literal_first", [True, False])
+def test_struct_supertype_cast_keeps_literal_fields_30471(literal_first: bool) -> None:
+    # The list literal is cast to the column's dtype, which lacks `b`.
+    df = pl.DataFrame({"c": [True], "s": [[{"a": 3}]]})
+    literal = pl.lit([{"b": 2}])
+    when = pl.when("c")
+    expr = (
+        when.then(literal).otherwise("s")
+        if literal_first
+        else when.then("s").otherwise(literal)
+    )
+    with pytest.raises(InvalidOperationError):
+        df.select(expr)
+
+
+def test_struct_constructor_keys_missing_in_first_value_21314() -> None:
+    s = pl.Series([{"a": 1}, None, {"b": 2, "c": {"x": 3}}, {"c": {"y": "z"}}])
+    expected = pl.Series(
+        [
+            {"a": 1, "b": None, "c": None},
+            None,
+            {"a": None, "b": 2, "c": {"x": 3, "y": None}},
+            {"a": None, "b": None, "c": {"x": None, "y": "z"}},
+        ],
+        dtype=pl.Struct(
+            {
+                "a": pl.Int64,
+                "b": pl.Int64,
+                "c": pl.Struct({"x": pl.Int64, "y": pl.String}),
+            }
+        ),
+    )
+    assert_series_equal(s, expected)
+
+    # a field first seen as null is inferred from all its values
+    s = pl.Series([{"a": None}, {"a": Decimal("1.5")}, {"a": Decimal("1.25")}])
+    expected = pl.Series(
+        [{"a": None}, {"a": Decimal("1.50")}, {"a": Decimal("1.25")}],
+        dtype=pl.Struct({"a": pl.Decimal(38, 2)}),
+    )
+    assert_series_equal(s, expected)
+
+    # missing keys and scattered nulls don't stop the other values from
+    # determining the data type of each field
+    s = pl.Series(
+        [
+            {"a": None, "b": 1},
+            {"a": "x", "b": None},
+            {"b": None},
+            {"c": 1.5, "a": None, "b": 2},
+        ]
+    )
+    expected = pl.Series(
+        [
+            {"a": None, "b": 1, "c": None},
+            {"a": "x", "b": None, "c": None},
+            {"a": None, "b": None, "c": None},
+            {"a": None, "b": 2, "c": 1.5},
+        ],
+        dtype=pl.Struct({"a": pl.String, "b": pl.Int64, "c": pl.Float64}),
+    )
+    assert_series_equal(s, expected)
+
+    # nested struct fields are merged, also under the same outer field names
+    s = pl.Series([{"c": {"x": 1}}, {"c": {"y": "z"}}])
+    expected = pl.Series(
+        [{"c": {"x": 1, "y": None}}, {"c": {"x": None, "y": "z"}}],
+        dtype=pl.Struct({"c": pl.Struct({"x": pl.Int64, "y": pl.String})}),
+    )
+    assert_series_equal(s, expected)
+
+    # the values of a field without a common data type are invalid
+    for values in (
+        [{"a": 1}, {"a": "x"}],
+        [{"a": None}, {"b": 0, "a": 1}, {"a": "x"}],
+    ):
+        with pytest.raises(TypeError, match="unexpected value"):
+            pl.Series(values)

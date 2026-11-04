@@ -569,7 +569,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     let seen_before = ctxt.seen_caches.insert(id, input);
                     assert!(
                         seen_before.is_none(),
-                        "Cache could not have been created in the mean time. That would make the DAG cyclic."
+                        "Cache could not have been created in the meantime. That would make the DAG cyclic."
                     );
                     input
                 },

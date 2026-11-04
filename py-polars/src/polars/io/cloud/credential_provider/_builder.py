@@ -153,6 +153,19 @@ class CredentialProviderBuilder:
     def stable_cache_key(self) -> bytes:
         return self.credential_provider_init.stable_cache_key()
 
+    # Note: The rust-side expects this exact function name.
+    def _auto_init_config_json(self) -> str | None:
+        """
+        Plain configuration of an auto-initialized provider, as JSON.
+
+        Rust stores this in the query plan instead of this object, and builds
+        the provider from it with `_build_auto_init_credential_provider()`.
+        """
+        if isinstance(self.credential_provider_init, AutoInit):
+            return self.credential_provider_init.to_config_json()
+
+        return None
+
     def __getstate__(self) -> Any:
         state = self.credential_provider_init
 
@@ -327,8 +340,56 @@ class AutoInit(CredentialProviderBuilderImpl):
         import hashlib
         import pickle
 
-        hash = hashlib.sha256(pickle.dumps(self))
+        config_json = self.to_config_json()
+        hash = hashlib.sha256(
+            config_json.encode() if config_json is not None else pickle.dumps(self)
+        )
         return hash.digest()[:16]
+
+    def to_config_json(self) -> str | None:
+        """
+        Serialize to JSON with only plain values.
+
+        Matches `AutoInitConfig` on the Rust side. Returns `None` for a class
+        that has no plain configuration.
+        """
+        import json
+
+        if (kind := _AUTO_INIT_KIND_FROM_CLASS.get(self.cls)) is None:
+            return None
+
+        _, kw_names = _AUTO_INIT_CLASS_FROM_KIND[kind]
+
+        # Rust ignores unknown fields, so this would lose them.
+        if not kw_names.issuperset(self.kw):
+            return None
+
+        def to_str(v: Any) -> str | None:
+            return None if v is None else str(v)
+
+        config: dict[str, Any] = {}
+
+        for k, v in self.kw.items():
+            k = k.removeprefix("_")
+
+            if k == "storage_options":
+                config[k] = {sk: to_str(sv) for sk, sv in (v or {}).items()}
+            else:
+                config[k] = to_str(v)
+
+        return json.dumps({kind: config}, sort_keys=True)
+
+    @classmethod
+    def from_config_json(cls, config_json: str) -> AutoInit:
+        import json
+
+        ((kind, config),) = json.loads(config_json).items()
+        provider_cls, kw_names = _AUTO_INIT_CLASS_FROM_KIND[kind]
+
+        return cls(
+            provider_cls,
+            **{k if k in kw_names else f"_{k}": v for k, v in config.items()},
+        )
 
     def stable_cache_key(self) -> bytes:
         return self.get_or_init_cache_key()
@@ -336,6 +397,41 @@ class AutoInit(CredentialProviderBuilderImpl):
     @property
     def provider_repr(self) -> str:
         return self.cls.__name__
+
+
+# Classes of `AutoInit` that have a plain configuration, by `AutoInitConfig` variant
+# on the Rust side, with the keyword arguments it holds. In the config, the
+# arguments are named without their `_` prefix.
+_AUTO_INIT_CLASS_FROM_KIND: Final[dict[str, tuple[type, frozenset[str]]]] = {
+    "aws": (
+        CredentialProviderAWS,
+        frozenset(
+            [
+                "profile_name",
+                "region_name",
+                "_auto_init_unhandled_key",
+                "_storage_options",
+            ]
+        ),
+    ),
+    "azure": (CredentialProviderAzure, frozenset(["tenant_id", "_storage_account"])),
+    "gcp": (CredentialProviderGCP, frozenset()),
+    "gcp_token": (UserProvidedGCPToken, frozenset(["token"])),
+}
+_AUTO_INIT_KIND_FROM_CLASS: Final[dict[type, str]] = {
+    cls: kind for kind, (cls, _) in _AUTO_INIT_CLASS_FROM_KIND.items()
+}
+
+
+# Note: The rust-side expects this exact function name.
+def _build_auto_init_credential_provider(
+    config_json: str,
+    clear_cached_credentials: bool,  # noqa: FBT001
+) -> CredentialProviderBuilderReturn:
+    """Build an auto-initialized provider from `AutoInit.to_config_json()`."""
+    return CredentialProviderBuilder(
+        AutoInit.from_config_json(config_json)
+    ).build_credential_provider(clear_cached_credentials)
 
 
 DEFAULT_CREDENTIAL_PROVIDER: CredentialProviderFunction | Literal["auto"] | None = (
@@ -548,7 +644,7 @@ def _init_credential_provider_builder(
 
             if token is not None:
                 return CredentialProviderBuilder(
-                    InitializedCredentialProvider(UserProvidedGCPToken(token))
+                    AutoInit(UserProvidedGCPToken, token=token)
                 )
 
             if (default := get_default_credential_provider()) is not None:

@@ -161,7 +161,7 @@ impl PredicatePushDown {
             let new_inputs = inputs
                 .into_iter()
                 .map(|node| {
-                    // first we check if we are able to push down the predicate passed this node
+                    // first we check if we are able to push down the predicate past this node
                     // it could be that this node just added the column where we base the predicate on
                     let input_schema = lp_arena.get(node).schema(lp_arena);
                     let mut pushdown_predicates =
@@ -326,7 +326,7 @@ impl PredicatePushDown {
 
                 // TODO!
                 // If a predicates result would be influenced by earlier applied
-                // predicates, we simply don't pushdown this one passed this node
+                // predicates, we simply don't pushdown this one past this node
                 // However, we can do better and let it pass but store the order of the predicates
                 // so that we can apply them in correct order at the deepest level
                 Ok(
@@ -676,11 +676,11 @@ impl PredicatePushDown {
             lp @ Select { .. } if !lp.exprs().any(|e| e.is_length_preserving(expr_arena)) => {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
             },
-            // Pushed down passed these nodes
+            // Pushed down past these nodes
             lp @ HStack { .. } | lp @ Select { .. } | lp @ SimpleProjection { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)
             },
-            // NOT Pushed down passed these nodes
+            // NOT Pushed down past these nodes
             // predicates influence slice sizes / indices
             lp @ (Slice { .. } | Gather { .. } | HConcat { .. }) => {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)

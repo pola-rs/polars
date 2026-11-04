@@ -189,7 +189,7 @@ impl ScalarColumn {
             return self.clone();
         }
 
-        // This is violates an invariant if this triggers, the scalar value is undefined if the
+        // This violates an invariant if this triggers, the scalar value is undefined if the
         // self.length == 0 so therefore we should never resize using that value.
         debug_assert!(length == 0 || self.length > 0);
 

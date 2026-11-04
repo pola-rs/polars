@@ -1,6 +1,6 @@
 use super::*;
 
-/// Specialized expressions for Categorical dtypes.
+/// Specialized expressions for Extension dtypes.
 pub struct ExtensionNameSpace(pub(crate) Expr);
 
 impl ExtensionNameSpace {

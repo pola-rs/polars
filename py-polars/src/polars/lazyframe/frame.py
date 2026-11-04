@@ -2845,7 +2845,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        Sink a large than fits into memory dataset to a Delta Lake table.
+        Sink a larger than fits into memory dataset to a Delta Lake table.
 
         >>> lf = pl.scan_parquet(
         ...     "/path/to/my_larger_than_ram_file.parquet"
@@ -3598,7 +3598,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Whether to check if the filename matches the compression settings.
             Will raise an error if compression is set to 'uncompressed' and the
             filename ends in one of (".gz", ".zst", ".zstd") or if
-            compression != 'uncompressed' and the file uses an mismatched
+            compression != 'uncompressed' and the file uses a mismatched
             extension. Only applies if file is a path.
 
             .. warning::
@@ -3917,7 +3917,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Whether to check if the filename matches the compression settings.
             Will raise an error if compression is set to 'uncompressed' and the
             filename ends in one of (".gz", ".zst", ".zstd") or if
-            compression != 'uncompressed' and the file uses an mismatched
+            compression != 'uncompressed' and the file uses a mismatched
             extension. Only applies if file is a path.
 
             .. warning::
@@ -4855,7 +4855,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4    ┆ null ┆ c    │
         └──────┴──────┴──────┘
 
-        Provide constraints(s) using `**kwargs` syntax:
+        Provide constraint(s) using `**kwargs` syntax:
 
         >>> lf.remove(foo=0, bar=0).collect()
         shape: (4, 3)
@@ -4995,7 +4995,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Select columns from this LazyFrame.
 
-        This will run all expression sequentially instead of in parallel.
+        This will run all expressions sequentially instead of in parallel.
         Use this when the work per expression is cheap.
 
         .. engine-support:: in-memory, streaming, distributed
@@ -5900,7 +5900,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         - date `2016-03-01` from `population` is matched with `2016-01-01` from `gdp`;
         - date `2018-08-01` from `population` is matched with `2019-01-01` from `gdp`.
 
-        They `by` argument allows joining on another column first, before the asof join.
+        The `by` argument allows joining on another column first, before the asof join.
         In this example we join by `country` first, then asof join by date, as above.
 
         >>> gdp_dates = pl.date_range(  # fmt: skip
@@ -6158,7 +6158,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                * - **right_left**
                  - First preserves the order of the right DataFrame, then the left.
         build_side: {'auto', 'prefer_left', 'prefer_right', 'force_left', 'force_right'}
-            Which side of the join will be used as the build side. This side will be
+            Which side of the join will be used as the build side. This side will
             likely be held in memory as a hash table. Note that unless a `force_`
             variant is chosen, the chosen side might differ across Polars versions or
             even between different runs.
@@ -6721,7 +6721,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Added columns will replace existing columns with the same name.
 
-        This will run all expression sequentially instead of in parallel.
+        This will run all expressions sequentially instead of in parallel.
         Use this when the work per expression is cheap.
 
         .. engine-support:: in-memory, streaming, distributed
@@ -7919,7 +7919,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * 'last': Keep the last unique row.
         maintain_order
             Keep the same order as the original DataFrame. This is more expensive
-            to compute. Settings this to `True` blocks the possibility to run on
+            to compute. Setting this to `True` blocks the possibility to run on
             the streaming engine.
 
         Returns
@@ -8598,7 +8598,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streamable
             Whether the function that is given is eligible to be running with the
             streaming engine. That means that the function must produce the same result
-            when it is executed in batches or when it is be executed on the full
+            when it is executed in batches or when it is executed on the full
             dataset.
 
         Warnings
@@ -9335,23 +9335,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         schema
             Target schema to match or evolve to.
         missing_columns
-            Raise of insert missing columns from the input with respect to the `schema`.
+            Raise or insert missing columns from the input with respect to the `schema`.
 
             This can also be an expression per column with what to insert if it is
             missing.
         missing_struct_fields
-            Raise of insert missing struct fields from the input with respect to the
+            Raise or insert missing struct fields from the input with respect to the
             `schema`.
         extra_columns
-            Raise of ignore extra columns from the input with respect to the `schema`.
+            Raise or ignore extra columns from the input with respect to the `schema`.
         extra_struct_fields
-            Raise of ignore extra struct fields from the input with respect to the
+            Raise or ignore extra struct fields from the input with respect to the
             `schema`.
         integer_cast
-            Forbid of upcast for integer columns from the input to the respective column
+            Forbid or upcast for integer columns from the input to the respective column
             in `schema`.
         float_cast
-            Forbid of upcast for float columns from the input to the respective column
+            Forbid or upcast for float columns from the input to the respective column
             in `schema`.
 
         Examples

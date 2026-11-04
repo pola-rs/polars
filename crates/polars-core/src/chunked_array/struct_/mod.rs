@@ -284,7 +284,7 @@ impl StructChunked {
                         write!(scratch, "{av},").unwrap();
                     }
 
-                    // replace latest comma with '|'
+                    // replace latest comma with '}'
                     unsafe {
                         *scratch.as_bytes_mut().last_mut().unwrap_unchecked() = b'}';
                     }

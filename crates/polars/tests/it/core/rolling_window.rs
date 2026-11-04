@@ -6,7 +6,7 @@ fn test_rolling() {
     let a = s
         .rolling_sum(RollingOptionsFixedWindow {
             window_size: 2,
-            min_periods: 1,
+            min_samples: 1,
             ..Default::default()
         })
         .unwrap();
@@ -22,7 +22,7 @@ fn test_rolling() {
     let a = s
         .rolling_min(RollingOptionsFixedWindow {
             window_size: 2,
-            min_periods: 1,
+            min_samples: 1,
             ..Default::default()
         })
         .unwrap();
@@ -39,7 +39,7 @@ fn test_rolling() {
         .rolling_max(RollingOptionsFixedWindow {
             window_size: 2,
             weights: Some(vec![1., 1.]),
-            min_periods: 1,
+            min_samples: 1,
             ..Default::default()
         })
         .unwrap();
@@ -56,12 +56,12 @@ fn test_rolling() {
 }
 
 #[test]
-fn test_rolling_min_periods() {
+fn test_rolling_min_samples() {
     let s = Int32Chunked::new("foo".into(), &[1, 2, 3, 2, 1]).into_series();
     let a = s
         .rolling_max(RollingOptionsFixedWindow {
             window_size: 2,
-            min_periods: 2,
+            min_samples: 2,
             ..Default::default()
         })
         .unwrap();
@@ -89,7 +89,7 @@ fn test_rolling_mean() {
     assert!(
         s.rolling_mean(RollingOptionsFixedWindow {
             window_size: 1,
-            min_periods: 2,
+            min_samples: 2,
             ..Default::default()
         })
         .is_err()
@@ -99,7 +99,7 @@ fn test_rolling_mean() {
     let a = s
         .rolling_mean(RollingOptionsFixedWindow {
             window_size: 3,
-            min_periods: 1,
+            min_samples: 1,
             center: false,
             ..Default::default()
         })
@@ -122,7 +122,7 @@ fn test_rolling_mean() {
     let a = s
         .rolling_mean(RollingOptionsFixedWindow {
             window_size: 3,
-            min_periods: 1,
+            min_samples: 1,
             center: true,
             ..Default::default()
         })
@@ -148,7 +148,7 @@ fn test_rolling_mean() {
         .rolling_mean(RollingOptionsFixedWindow {
             window_size: 2,
             weights: None,
-            min_periods: 2,
+            min_samples: 2,
             center: false,
             ..Default::default()
         })
@@ -181,7 +181,7 @@ fn test_rolling_map() {
             &|s| Ok(s.sum_reduce()?.into_series(s.name().clone())),
             RollingOptionsFixedWindow {
                 window_size: 3,
-                min_periods: 3,
+                min_samples: 3,
                 ..Default::default()
             },
         )
@@ -214,7 +214,7 @@ fn test_rolling_var() {
     assert_eq!(
         s.rolling_var(RollingOptionsFixedWindow {
             window_size: 10,
-            min_periods: 10,
+            min_samples: 10,
             ..Default::default()
         })
         .unwrap()
@@ -224,7 +224,7 @@ fn test_rolling_var() {
 
     let options = RollingOptionsFixedWindow {
         window_size: 3,
-        min_periods: 3,
+        min_samples: 3,
         ..Default::default()
     };
     let out = s
@@ -255,7 +255,7 @@ fn test_rolling_var() {
     let out = s
         .rolling_var(RollingOptionsFixedWindow {
             window_size: 4,
-            min_periods: 3,
+            min_samples: 3,
             center: true,
             ..Default::default()
         })
