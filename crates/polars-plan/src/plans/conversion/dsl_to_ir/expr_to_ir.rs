@@ -12,18 +12,12 @@ pub fn to_expr_ir(expr: &Expr, ctx: &mut ExprToIRContext) -> PolarsResult<ExprIR
     Ok(ExprIR::new(node, OutputName::Alias(output_name)))
 }
 
-pub fn to_expr_ir_materialized_lit(
-    expr: &Expr,
-    ctx: &mut ExprToIRContext,
-) -> PolarsResult<ExprIR> {
+pub fn to_expr_ir_materialized_lit(expr: &Expr, ctx: &mut ExprToIRContext) -> PolarsResult<ExprIR> {
     let (node, output_name) = to_aexpr_impl_materialized_lit(expr, ctx)?;
     Ok(ExprIR::new(node, OutputName::Alias(output_name)))
 }
 
-pub(super) fn to_expr_irs(
-    input: &[Expr],
-    ctx: &mut ExprToIRContext,
-) -> PolarsResult<Vec<ExprIR>> {
+pub(super) fn to_expr_irs(input: &[Expr], ctx: &mut ExprToIRContext) -> PolarsResult<Vec<ExprIR>> {
     let original_with_fields = ctx.with_fields.clone();
     let mut out = Vec::with_capacity(input.len());
     for e in input {
@@ -631,7 +625,9 @@ pub(super) fn to_aexpr_impl(
             };
             return Ok((expr, name));
         },
-        Expr::DataTypeFunction(f) => super::datatype_fn_to_ir::datatype_fn_to_aexpr(f.clone(), ctx)?,
+        Expr::DataTypeFunction(f) => {
+            super::datatype_fn_to_ir::datatype_fn_to_aexpr(f.clone(), ctx)?
+        },
         Expr::RenameAlias { expr, function } => {
             let (expr, name) = to_aexpr_impl(expr, ctx)?;
             let name = function.call(&name)?;
