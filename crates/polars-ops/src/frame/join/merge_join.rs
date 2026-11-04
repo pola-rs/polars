@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::iter::repeat_n;
 
+use bytemuck::TransparentWrapper;
 use polars_arrow::array::Array;
 use polars_arrow::array::builder::ShareStrategy;
 use polars_core::frame::builder::DataFrameBuilder;
@@ -9,7 +10,8 @@ use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_defs::join::{JoinArgs, JoinType};
 use polars_utils::itertools::Itertools;
-use polars_utils::total_ord::TotalOrd;
+use polars_utils::sort::reorder_cmp;
+use polars_utils::total_ord::{TotalOrd, TotalOrdWrap};
 use polars_utils::{IdxSize, format_pl_smallstr};
 
 use crate::series::coalesce_columns;
@@ -117,28 +119,23 @@ fn match_keys_impl<'a, T: PolarsDataType>(
         }
 
         let build_keyval = unsafe { build_key.get_unchecked(*build_row_offset) };
-        let build_keyval = build_keyval.as_ref();
         let mut build_keyval_matched = false;
 
         if nulls_equal || build_keyval.is_some() {
             for probe_idx in *probe_row_offset..probe_key.len() {
                 let probe_keyval = unsafe { probe_key.get_unchecked(probe_idx) };
-                let probe_keyval = probe_keyval.as_ref();
 
-                let ord: Ordering = match (&build_keyval, &probe_keyval) {
-                    (Some(l), Some(r)) => {
-                        let ord = TotalOrd::tot_cmp(*l, *r);
-                        if descending { ord.reverse() } else { ord }
-                    },
-                    // Null build keys only get here if `nulls_equal` is set.
-                    (None, None) => Ordering::Equal,
-                    // Nulls sort before or after all other keys, regardless of `descending`.
-                    (None, Some(_)) if nulls_last => Ordering::Greater,
-                    (None, Some(_)) => Ordering::Less,
-                    (Some(_), None) if nulls_equal && nulls_last => Ordering::Less,
-                    (Some(_), None) if nulls_equal => Ordering::Greater,
-                    (Some(_), None) => continue,
-                };
+                // Row-encoded keys are null wherever any key column is null, so a null probe
+                // key has no place in the order.
+                if !nulls_equal && probe_keyval.is_none() {
+                    continue;
+                }
+                let ord = reorder_cmp(
+                    TotalOrdWrap::wrap_ref(&build_keyval),
+                    TotalOrdWrap::wrap_ref(&probe_keyval),
+                    descending,
+                    nulls_last,
+                );
 
                 match ord {
                     Ordering::Equal => {
