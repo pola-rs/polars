@@ -196,7 +196,7 @@ impl ExprIR {
     /// Create a `ExprIR` structure that implements display
     pub fn display<'a>(&'a self, expr_arena: &'a Arena<AExpr>) -> ExprIRDisplay<'a> {
         ExprIRDisplay {
-            node: self.node(),
+            root: expr_arena.get(self.node()),
             output_name: self.output_name_inner(),
             expr_arena,
         }
@@ -294,7 +294,10 @@ impl ExprIR {
             None => {
                 let dtype = expr_arena
                     .get(self.node)
-                    .to_dtype(&ToFieldContext::new(expr_arena, schema))?;
+                    .to_dtype(&ToFieldContext::new(expr_arena, schema))
+                    .map_err(|e| {
+                        e.with_expr_context(self.display(expr_arena).to_string().into())
+                    })?;
                 let _ = self.output_dtype.set(dtype);
                 Ok(self.output_dtype.get().unwrap())
             },

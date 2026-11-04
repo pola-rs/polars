@@ -268,6 +268,17 @@ fn expand_expression_rec(
     out: &mut Vec<Expr>,
     opt_flags: &mut OptFlags,
 ) -> PolarsResult<usize> {
+    expand_expression_rec_inner(expr, ignored_selector_columns, schema, out, opt_flags)
+        .map_err(|e| e.with_expr_context(expr.to_string().into()))
+}
+
+fn expand_expression_rec_inner(
+    expr: &Expr,
+    ignored_selector_columns: &PlIndexSet<PlSmallStr>,
+    schema: &Schema,
+    out: &mut Vec<Expr>,
+    opt_flags: &mut OptFlags,
+) -> PolarsResult<usize> {
     let start_len = out.len();
     match &expr {
         Expr::Element => out.push(expr.clone()),

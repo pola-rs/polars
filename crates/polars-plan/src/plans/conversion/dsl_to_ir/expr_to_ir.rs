@@ -113,11 +113,15 @@ impl<'a> ExprToIRContext<'a> {
 }
 
 /// Converts expression to AExpr and adds it to the arena, which uses an arena (Vec) for allocation.
-#[recursive]
 pub(super) fn to_aexpr_impl(
     expr: &Expr,
     ctx: &mut ExprToIRContext,
 ) -> PolarsResult<(Node, PlSmallStr)> {
+    to_aexpr_impl_inner(expr, ctx).map_err(|e| e.with_expr_context(expr.to_string().into()))
+}
+
+#[recursive]
+fn to_aexpr_impl_inner(expr: &Expr, ctx: &mut ExprToIRContext) -> PolarsResult<(Node, PlSmallStr)> {
     macro_rules! recurse {
         ($input:expr) => {
             to_aexpr_impl($input, ctx)
