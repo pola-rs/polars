@@ -44,7 +44,8 @@ def _chunked(values: list[Any], dtype: pl.DataType, n_chunks: int = 3) -> pl.Ser
 
 
 def _quantiles(s: pl.Series, qs: list[float], method: QuantileMethod) -> pl.Series:
-    return s.to_frame().select(pl.col("a").quantile(qs, interpolation=method)).item()
+    out = s.to_frame().select(pl.col("a").quantile(qs, interpolation=method))
+    return out.to_series().explode().rename("")
 
 
 @pytest.mark.parametrize("method", METHODS)
@@ -88,7 +89,7 @@ def test_quantile_many_ranks_match_sort(method: QuantileMethod, kind: str) -> No
     # Selecting many ranks at once, including every rank of a small column.
     rng = random.Random(0)
     n = 2000
-    values: list[Any] = {
+    candidates: dict[str, list[Any]] = {
         "random": [rng.randint(-(2**62), 2**62) for _ in range(n)],
         "few_distinct": [rng.randint(0, 2) for _ in range(n)],
         "constant": [7] * n,
@@ -97,8 +98,8 @@ def test_quantile_many_ranks_match_sort(method: QuantileMethod, kind: str) -> No
             rng.choice([math.nan, -0.0, 0.0, math.inf]) if i % 5 == 0 else rng.random()
             for i in range(n)
         ],
-    }[kind]
-    values = [None if i % 11 == 0 else v for i, v in enumerate(values)]
+    }
+    values = [None if i % 11 == 0 else v for i, v in enumerate(candidates[kind])]
     s = _chunked(values, pl.Float64() if kind == "floats" else pl.Int64())
 
     for qs in [[i / 100 for i in range(101)], [i / 9 for i in range(10)]]:
