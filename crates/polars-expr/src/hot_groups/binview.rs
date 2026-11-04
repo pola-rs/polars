@@ -5,7 +5,7 @@ use polars_buffer::Buffer;
 use polars_utils::vec::PushUnchecked;
 
 use super::*;
-use crate::hash_keys::BinviewKeys;
+use crate::hash_keys::{BinviewKeys, DictSlotCache};
 use crate::hot_groups::fixed_index_table::FixedIndexTable;
 
 pub struct BinviewHashHotGrouper {
@@ -14,6 +14,8 @@ pub struct BinviewHashHotGrouper {
     evicted_key_hashes: Vec<u64>,
     evicted_keys: BinaryViewArrayGenericBuilder<[u8]>,
     null_idx: IdxSize,
+    /// The group of each code of the last dictionary.
+    dict_groups: DictSlotCache,
 }
 
 impl BinviewHashHotGrouper {
@@ -23,6 +25,7 @@ impl BinviewHashHotGrouper {
             evicted_key_hashes: Vec::new(),
             evicted_keys: BinaryViewArrayGenericBuilder::new(ArrowDataType::BinaryView),
             null_idx: IdxSize::MAX,
+            dict_groups: DictSlotCache::default(),
         }
     }
 
@@ -30,6 +33,27 @@ impl BinviewHashHotGrouper {
     /// The view must be valid for the given buffer set.
     #[inline(always)]
     unsafe fn insert_key(
+        &mut self,
+        hash: u64,
+        view: View,
+        force_hot: bool,
+        next_hash: u64,
+        buffers: &Buffer<Buffer<u8>>,
+    ) -> Option<EvictIdx> {
+        let opt_g = unsafe { self.insert_key_inner(hash, view, force_hot, next_hash, buffers) };
+        if let Some(g) = opt_g
+            && g.should_evict()
+        {
+            // Codes cached for the evicted key no longer find it in this group.
+            self.dict_groups.invalidate_slot(g.idx() as IdxSize);
+        }
+        opt_g
+    }
+
+    /// # Safety
+    /// The view must be valid for the given buffer set.
+    #[inline(always)]
+    unsafe fn insert_key_inner(
         &mut self,
         hash: u64,
         view: View,
@@ -142,6 +166,60 @@ impl HotGrouper for BinviewHashHotGrouper {
         };
 
         let hashes = hash_keys.hashes.values().as_slice();
+        if let Some(dc) = &hash_keys.dict_codes {
+            let mut groups = std::mem::take(&mut self.dict_groups);
+            if groups.prepare(&[dc.dict.id()], dc.dict.len(), hash_keys.keys.len()) {
+                let codes = dc.codes.as_slice();
+                let views = hash_keys.keys.views().as_slice();
+                let buffers = hash_keys.keys.data_buffers();
+                let (mut hits, mut misses) = (0, 0);
+                hash_keys.for_each_hash(|idx, opt_h| unsafe {
+                    let Some(h) = opt_h else {
+                        if hash_keys.null_is_valid {
+                            push_g(idx as usize, self.insert_null());
+                        }
+                        return;
+                    };
+                    let code = *codes.get_unchecked(idx as usize) as usize;
+                    if let Some(g) = groups.get(code) {
+                        hits += 1;
+                        // Mark the key as accessed, as a hit in the table does, so that a colder
+                        // key sharing its slot doesn't evict it.
+                        let (slot, k) = self.table.find_hash(h);
+                        if k == g {
+                            self.table.touch(slot, h);
+                        }
+                        push_g(idx as usize, Some(EvictIdx::new(g, false)));
+                        return;
+                    }
+                    misses += 1;
+                    let view = views.get_unchecked(idx as usize);
+                    let next_h = *hashes.get(idx as usize + 1).unwrap_or(&u64::MAX);
+                    let opt_g = self.insert_key(h, *view, force_hot, next_h, buffers);
+                    if let Some(g) = opt_g {
+                        if g.should_evict() {
+                            // The evicted key's codes no longer find it in this group. (The cache
+                            // is taken out of `self` here, so `insert_key` can't do this.)
+                            groups.invalidate_slot(g.idx() as IdxSize);
+                        }
+                        groups.set(code, g.idx() as IdxSize);
+                    }
+                    push_g(idx as usize, opt_g);
+                });
+                polars_core::frame::column::dictionary_stats::add(
+                    polars_core::frame::column::dictionary_stats::Counter::HotGroupCacheHits,
+                    hits,
+                );
+                polars_core::frame::column::dictionary_stats::add(
+                    polars_core::frame::column::dictionary_stats::Counter::HotGroupCacheMisses,
+                    misses,
+                );
+                self.dict_groups = groups;
+                return;
+            }
+            // Kept for the rows it declined and the entries of another dictionary.
+            self.dict_groups = groups;
+        }
         unsafe {
             let views = hash_keys.keys.views().as_slice();
             let buffers = hash_keys.keys.data_buffers();
@@ -200,6 +278,7 @@ impl HotGrouper for BinviewHashHotGrouper {
                 hashes,
                 keys,
                 null_is_valid,
+                dict_codes: None,
             })
         }
     }
@@ -215,6 +294,7 @@ impl HotGrouper for BinviewHashHotGrouper {
             hashes: PrimitiveArray::from_vec(hashes),
             keys,
             null_is_valid: false,
+            dict_codes: None,
         })
     }
 
