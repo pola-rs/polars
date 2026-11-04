@@ -4,7 +4,8 @@ use polars_compute::rolling::QuantileMethod;
 #[cfg(feature = "dtype-f16")]
 use polars_utils::float16::pf16;
 use polars_utils::selection::{
-    MaskedSlice, SELECT_BLOCK_LEN, SELECT_MIN_PAR_LEN, select_many_by, select_many_unstable_by,
+    MaskedSlice, SELECT_BLOCK_LEN, SELECT_MIN_PAR_LEN, select_many_by, select_many_seq_by,
+    select_many_unstable_by,
 };
 use rayon::prelude::*;
 
@@ -249,9 +250,10 @@ pub fn order_statistics<T: PolarsNumericType>(
     }
     match ca.is_sorted_flag() {
         // Entering the pool costs a thread wake-up, more than a small selection. On one thread,
-        // copying and selecting beats classifying every value against a sampled bracket.
+        // copying and selecting sequentially beats classifying every value against a sampled
+        // bracket.
         IsSorted::Not if ca.len() < SELECT_MIN_PAR_LEN || RAYON.current_num_threads() == 1 => {
-            select_many_unstable_by(&mut ca.to_vec_non_null(), ranks, out, TotalOrd::tot_cmp)
+            select_many_seq_by(&mut ca.to_vec_non_null(), ranks, out, TotalOrd::tot_cmp)
         },
         IsSorted::Not => RAYON.install(|| {
             // Mostly-null chunks are filtered first: their copy is small, while masking them

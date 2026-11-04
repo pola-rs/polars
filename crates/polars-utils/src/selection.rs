@@ -38,6 +38,16 @@ where
     select_many_rec(segs, len, ranks, 0, out, &cmp);
 }
 
+/// [`select_many_unstable_by`] on the calling thread, whatever the length of `v`.
+pub fn select_many_seq_by<T, F>(v: &mut [T], ranks: &[usize], out: &mut [T], cmp: F)
+where
+    T: Copy,
+    F: Fn(&T, &T) -> Ordering,
+{
+    check_ranks(v.len(), ranks, out);
+    select_many_seq(v, ranks, 0, out, &cmp);
+}
+
 /// Values of which, if `validity` is given, only those whose bit is set count.
 ///
 /// `validity` holds the bytes of an Arrow validity bitmap and the bit offset of the first value.
