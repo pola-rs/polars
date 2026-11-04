@@ -315,7 +315,8 @@ def test_float_division_by_scalar(dtype: pl.DataType, divisor: int) -> None:
             "floordiv": [math.floor(Fraction(v, divisor)) for v in values],
             "truncdiv": [math.trunc(Fraction(v, divisor)) for v in values],
             "mod": [v % divisor for v in values],
-            "truediv": np.array(values, dtype=np_dtype) / np_dtype(1500),
+            "truediv": np.array(values, dtype=np_dtype)
+            / np.array(1500, dtype=np_dtype),
         },
         schema=dict.fromkeys(["floordiv", "truncdiv", "mod", "truediv"], dtype),
     )
