@@ -15,9 +15,9 @@ use crate::metrics::IOMetrics;
 
 pub trait FileReaderBuilder: Debug + Send + Sync + 'static {
     #[cfg(feature = "parquet")]
-    fn parquet_decryption_properties(
+    fn deletion_file_decryption(
         &self,
-    ) -> Option<polars_io::parquet::read::PlFileDecryptionProperties> {
+    ) -> Option<polars_io::parquet::encryption::ParquetDecryption> {
         None
     }
 

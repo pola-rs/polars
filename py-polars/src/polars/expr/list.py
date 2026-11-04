@@ -645,7 +645,7 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def gather(
         self,
-        indices: Expr | Series | list[int] | list[list[int]],
+        indices: IntoExprColumn | list[int] | list[list[int]],
         *,
         null_on_oob: bool = False,
     ) -> Expr:
@@ -1436,7 +1436,7 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
             Parallelism is worth it if there is enough work to do per thread.
 
             This likely should not be used in the group by context, because we already
-            parallel execution per group
+            parallelize execution per group
 
         Examples
         --------

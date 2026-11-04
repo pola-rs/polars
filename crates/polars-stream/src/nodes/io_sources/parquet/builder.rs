@@ -48,19 +48,13 @@ impl std::fmt::Debug for ParquetReaderBuilder {
 }
 
 impl FileReaderBuilder for ParquetReaderBuilder {
-    fn parquet_decryption_properties(
+    fn deletion_file_decryption(
         &self,
-    ) -> Option<polars_io::parquet::read::PlFileDecryptionProperties> {
+    ) -> Option<polars_io::parquet::encryption::ParquetDecryption> {
         self.options
-            .decryption_properties
+            .decryption
             .as_ref()
-            .filter(|properties| {
-                matches!(
-                    properties.0.as_ref(),
-                    polars_io::parquet::read::ParquetDecryptionKeys::PerFile(_)
-                )
-            })
-            .cloned()
+            .and_then(|decryption| decryption.for_deletion_files())
     }
 
     fn reader_name(&self) -> PolarsResult<PlSmallStr> {

@@ -1,6 +1,6 @@
 # IDE configuration
 
-Using an integrated development environments (IDE) and configuring it properly will help you work on
+Using an integrated development environment (IDE) and configuring it properly will help you work on
 Polars more effectively. This page contains some recommendations for configuring popular IDEs.
 
 ## Visual Studio Code

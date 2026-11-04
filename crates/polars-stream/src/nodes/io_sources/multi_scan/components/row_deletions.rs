@@ -80,7 +80,7 @@ impl DeletionFilesProvider {
                         parallel: polars_io::prelude::ParallelStrategy::Auto,
                         low_memory: false,
                         use_statistics: false,
-                        decryption_properties: data_reader.parquet_decryption_properties(),
+                        decryption: data_reader.deletion_file_decryption(),
                     }),
                     pipeline_budget: std::sync::OnceLock::new(),
                     shared_prefetch_wait_group_slot: Default::default(),
@@ -333,12 +333,7 @@ impl DeletionFilesProvider {
                         let deletion_load_tasks = Arc::clone(deletion_load_tasks);
                         let data_path = data_paths[scan_source_idx].clone();
                         let path = path.clone();
-                        let decryption = reader_builder
-                            .options
-                            .decryption_properties
-                            .as_ref()
-                            .and_then(|p| p.for_path(Some(&path)))
-                            .cloned();
+                        let decryption = reader_builder.options.decryption.clone();
                         let content_offset = *content_offset;
                         let cloud_options = cloud_options.clone();
                         let io_metrics = reader_builder.io_metrics.get().cloned();
@@ -352,6 +347,10 @@ impl DeletionFilesProvider {
 
                             deletions
                                 .get_or_try_init(|| async move {
+                                    let decryption = polars_io::parquet::encryption::file_decryption_properties_for_path(
+                                        decryption.as_ref(),
+                                        Some(&path),
+                                    )?;
                                     let fetch_bytes_handle =
                                         tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn({
                                             async move {
@@ -396,7 +395,7 @@ impl DeletionFilesProvider {
                         let mask = deletion_files_init_fut.await?;
 
                         if verbose {
-                            let num_deleted_rows = mask.num_deleted_rows();
+                            let num_deleted_rows = mask.num_deleted_rows(mask.len());
                             let max_index = mask.len().checked_sub(1);
 
                             eprintln!(
@@ -524,7 +523,7 @@ impl ExternalFilterMask {
             None => PlSmallStr::from_static("None"),
             Some(mask) => {
                 let mask_variant = mask.variant_name();
-                let n = mask.num_deleted_rows();
+                let n = mask.num_deleted_rows(mask.len());
                 let s = if n == 1 { "" } else { "s" };
                 format_pl_smallstr!("{mask_variant}(<{n} deletion{s}>)")
             },
@@ -587,20 +586,17 @@ impl ExternalFilterMask {
         }
     }
 
-    pub fn num_deleted_rows(&self) -> usize {
-        match self {
-            Self::Iceberg { mask } => mask
-                .rechunk()
-                .downcast_get(0)
-                .unwrap()
-                .values()
-                .unset_bits(),
-            Self::DeltaDeletionVector { mask } => mask
-                .rechunk()
-                .downcast_get(0)
-                .unwrap()
-                .values()
-                .unset_bits(),
+    /// Number of deleted rows within the first `num_physical_rows` rows.
+    ///
+    /// Iceberg position deletes can reference positions past the end of the data file, these must
+    /// not be counted as deleted rows.
+    pub fn num_deleted_rows(&self, num_physical_rows: usize) -> usize {
+        let mask = self.get_mask();
+
+        if num_physical_rows >= mask.len() {
+            mask.unset_bits()
+        } else {
+            mask.sliced(0, num_physical_rows).unset_bits()
         }
     }
 

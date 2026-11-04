@@ -703,7 +703,7 @@ def test_asof_join_nearest_with_tolerance() -> None:
                     datetime(2022, 1, 3),
                     datetime(
                         2023, 1, 2, 21, 30, 0
-                    ),  # should match with 2023-01-02, 2023-01-03, and 2021-01-04
+                    ),  # should match with 2023-01-02, 2023-01-03, and 2023-01-04
                     datetime(2023, 1, 7),
                 ]
             ),
@@ -1235,7 +1235,7 @@ def test_join_asof_by_argument_parsing() -> None:
         }
     ).sort(by="n")
 
-    # any sequency for by argument is allowed, so we should see the same results here
+    # any sequence for by argument is allowed, so we should see the same results here
     by_list = df1.join_asof(df2, on="n", by=["id1", "id2"])
     by_tuple = df1.join_asof(df2, on="n", by=("id1", "id2"))
     assert_frame_equal(by_list, by_tuple)
@@ -2347,3 +2347,24 @@ def test_join_asof_key_filter_pushdown_hive_pruning(tmp_path: Path) -> None:
     expected = pl.DataFrame({"t": [3, 4], "b": [3, 4]})
     assert_frame_equal(q.collect(engine="in-memory"), expected)
     assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
+@pytest.mark.parametrize("by", [None, "g"])
+def test_join_asof_categorical_key_lexical_order_30540(by: str | None) -> None:
+    dtype = pl.Categorical(pl.Categories.random())
+    # Create the categories in reverse lexical order so that the physical ids
+    # are ordered differently from the strings.
+    pl.Series(["z", "m", "a"], dtype=dtype)
+    left = pl.DataFrame(
+        {"g": [1, 1, 1], "k": ["b", "n", "y"]}, schema_overrides={"k": dtype}
+    )
+    right = pl.DataFrame(
+        {"g": [1, 1, 1], "k": ["a", "m", "z"], "v": [1, 2, 3]},
+        schema_overrides={"k": dtype},
+    )
+    if by is None:
+        right = right.drop("g")
+
+    result = left.join_asof(right, on="k", by=by, check_sortedness=by is None)
+    expected = left.with_columns(v=pl.Series([1, 2, 2]))
+    assert_frame_equal(result, expected)

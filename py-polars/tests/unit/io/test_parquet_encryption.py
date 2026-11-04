@@ -365,8 +365,8 @@ def test_scan_parquet_decryption_wrong_type(tmp_path: Path) -> None:
     path = tmp_path / "out.parquet"
     basic_data().write_parquet(path)
     match = re.escape(
-        "`decryption` must be a `ParquetDecryptionProperties`, "
-        "got 'ParquetEncryptionProperties'"
+        "`decryption` must be a `ParquetDecryptionProperties` or "
+        "`ParquetDecryptionConfig`, got 'ParquetEncryptionProperties'"
     )
     with pytest.raises(TypeError, match=match):
         pl.scan_parquet(path, decryption=basic_encryption_properties())  # type: ignore[arg-type]
@@ -377,8 +377,8 @@ def test_scan_parquet_decryption_wrong_type(tmp_path: Path) -> None:
 def test_write_parquet_encryption_wrong_type(tmp_path: Path) -> None:
     path = tmp_path / "out.parquet"
     match = re.escape(
-        "`encryption` must be a `ParquetEncryptionProperties`, "
-        "got 'ParquetDecryptionProperties'"
+        "`encryption` must be a `ParquetEncryptionProperties` or "
+        "`ParquetEncryptionConfig`, got 'ParquetDecryptionProperties'"
     )
     with pytest.raises(TypeError, match=match):
         basic_data().write_parquet(path, encryption=basic_decryption_properties())  # type: ignore[arg-type]
@@ -558,26 +558,27 @@ def roundtrip_data() -> pl.DataFrame:
     return pl.DataFrame(
         {
             "id": pl.Series(range(NUM_ROWS), dtype=pl.Int64),
-            "a": [f"aaa_{i}" for i in range(NUM_ROWS)],
-            "b": [f"bbb_{i}" for i in range(NUM_ROWS)],
+            "a": [f"aaaaaaa_{i}" for i in range(NUM_ROWS)],
+            "b": [f"bbbbbbb_{i}" for i in range(NUM_ROWS)],
             # Written with dictionary pages
             "cat": pl.Series(
-                [f"cat_{i % 10}" for i in range(NUM_ROWS)], dtype=pl.Categorical
+                [f"ccccccc_{i % 10}" for i in range(NUM_ROWS)], dtype=pl.Categorical
             ),
-            "s": [{"x": f"sss_{i}", "y": i} for i in range(NUM_ROWS)],
-            "l": [[f"lll_{i}", f"lll_{i + 1}"] for i in range(NUM_ROWS)],
+            "s": [{"x": f"sssssss_{i}", "y": i} for i in range(NUM_ROWS)],
+            "l": [[f"lllllll_{i}", f"lllllll_{i + 1}"] for i in range(NUM_ROWS)],
         }
     )
 
 
 # Values in each column of the round trip data start with a marker, which can be
-# searched for in the file bytes to determine whether the column is encrypted.
+# searched for in the file bytes to determine whether the column is encrypted. The
+# markers are long enough that random encrypted bytes do not contain them by chance.
 ROUNDTRIP_MARKERS = {
-    "a": b"aaa_",
-    "b": b"bbb_",
-    "cat": b"cat_",
-    "s.x": b"sss_",
-    "l.list.element": b"lll_",
+    "a": b"aaaaaaa_",
+    "b": b"bbbbbbb_",
+    "cat": b"ccccccc_",
+    "s.x": b"sssssss_",
+    "l.list.element": b"lllllll_",
 }
 ROUNDTRIP_LEAF_COLUMNS = ["id", "a", "b", "cat", "s.x", "s.y", "l.list.element"]
 ALL_COLUMNS = set(ROUNDTRIP_MARKERS)

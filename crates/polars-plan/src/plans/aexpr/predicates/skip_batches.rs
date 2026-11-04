@@ -180,7 +180,7 @@ fn get_binary_expr_target_and_lv<'a>(
 /// Return a new boolean expression determines whether a batch can be skipped based on min, max and
 /// null count statistics.
 ///
-/// This is conversative and may return `None` or `false` when an expression is not yet supported.
+/// This is conservative and may return `None` or `false` when an expression is not yet supported.
 ///
 /// To evaluate, the expression it is given all the original column appended with `_min` and
 /// `_max`. The `min` or `max` cannot be null and when they are null it is assumed they are not

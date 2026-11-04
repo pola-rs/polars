@@ -177,10 +177,9 @@ impl SemiAntiJoinNode {
             } else {
                 params.planned_build_left()
             };
-            SemiAntiJoinState::Sample(SampleState {
-                only_side,
-                ..Default::default()
-            })
+            let spill_ctx =
+                MostRecentSpillContext::new("semi-anti-join-sample".into(), task_metrics.clone());
+            SemiAntiJoinState::Sample(SampleState::new(only_side, spill_ctx))
         };
 
         Ok(Self {
@@ -200,7 +199,6 @@ enum SemiAntiJoinState {
     Done,
 }
 
-#[derive(Default)]
 struct SampleState {
     left: Vec<Morsel>,
     left_len: usize,
@@ -212,9 +210,23 @@ struct SampleState {
     /// filters, until it ends or reaches the sample limit. A side that ends is
     /// complete, so its keys are published before the other side is read.
     only_side: Option<bool>,
+    /// Keeps the sampled morsels spillable.
+    spill_ctx: MostRecentSpillContext,
 }
 
 impl SampleState {
+    fn new(only_side: Option<bool>, spill_ctx: MostRecentSpillContext) -> Self {
+        Self {
+            left: Vec::new(),
+            left_len: 0,
+            right: Vec::new(),
+            right_len: 0,
+            limits: Default::default(),
+            only_side,
+            spill_ctx,
+        }
+    }
+
     fn len(&self, left: bool) -> usize {
         if left { self.left_len } else { self.right_len }
     }
@@ -1283,6 +1295,7 @@ impl ComputeNode for SemiAntiJoinNode {
                             &mut sample_state.left_len,
                             sample_state.limits[0].clone(),
                             sample_state.limits[1].clone(),
+                            &sample_state.spill_ctx,
                         ),
                     ));
                 }
@@ -1295,6 +1308,7 @@ impl ComputeNode for SemiAntiJoinNode {
                             &mut sample_state.right_len,
                             sample_state.limits[1].clone(),
                             sample_state.limits[0].clone(),
+                            &sample_state.spill_ctx,
                         ),
                     ));
                 }

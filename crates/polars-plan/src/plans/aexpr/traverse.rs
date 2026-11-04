@@ -64,6 +64,7 @@ impl AExpr {
                 partition_by,
                 order_by,
                 mapping: _,
+                may_reorder: _,
             } => {
                 container.extend([*function]);
                 container.extend(partition_by.iter().cloned());
@@ -154,6 +155,7 @@ impl AExpr {
                 partition_by,
                 order_by,
                 mapping: _,
+                may_reorder: _,
             } => {
                 if let Some((n, _)) = order_by {
                     container.extend([*n]);
@@ -219,8 +221,8 @@ impl AExpr {
     /// Push the children of this node to the given container, in reverse order.
     /// This ensures the primary node responsible for the name is pushed last.
     ///
-    /// This is subtly different from `input_rev` as this only all expressions included in the
-    /// expression not only the input expressions,
+    /// This is subtly different from `inputs_rev` as this includes all expressions in the
+    /// expression, not only the input expressions.
     pub fn children_rev<E: Extend<Node>>(&self, container: &mut E) {
         use AExpr::*;
 
@@ -274,6 +276,7 @@ impl AExpr {
                 partition_by,
                 order_by,
                 mapping: _,
+                may_reorder: _,
             } => {
                 if let Some((n, _)) = order_by {
                     container.extend([*n]);

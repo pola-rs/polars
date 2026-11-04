@@ -313,7 +313,7 @@ impl ApplyExtraOps {
                         0
                     } else {
                         mask.slice(current_row_position.num_physical_rows(), local_slice_offset)
-                            .num_deleted_rows()
+                            .num_deleted_rows(local_slice_offset)
                     }
                 }),
             );

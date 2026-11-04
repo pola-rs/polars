@@ -776,6 +776,12 @@ def _create_table_schema(
         if dtype == pl.Float64:
             return DoubleType(), pl.Float64()
         if isinstance(dtype, pl.Decimal):
+            if not 0 <= dtype.scale <= dtype.precision <= 38:
+                unsupported.append(
+                    f"'{path}' ({dtype}): an Iceberg decimal has a precision of at "
+                    "most 38 and a scale of at most its precision"
+                )
+                return None
             return DecimalType(dtype.precision, dtype.scale), dtype
         if dtype in (pl.String, pl.Categorical, pl.Enum):
             return StringType(), pl.String()

@@ -8,7 +8,7 @@ pub trait TrustedLenPush<T> {
     /// Caller must ensure the array has enough capacity to hold `T`.
     unsafe fn push_unchecked(&mut self, value: T);
 
-    /// Extend the array with an iterator who's length can be trusted.
+    /// Extend the array with an iterator whose length can be trusted.
     fn extend_trusted_len<I: IntoIterator<Item = T, IntoIter = J>, J: TrustedLen>(
         &mut self,
         iter: I,

@@ -311,6 +311,14 @@ pub fn bin_intervals(
     )
 }
 
+/// Sorted positions among the `non_null_len` non-null values of the `bin_quantiles` breakpoints.
+pub fn bin_quantile_positions(non_null_len: usize, spec: &FractionSpec) -> Vec<IdxSize> {
+    match spec {
+        FractionSpec::Explicit(probs) => quantile_break_positions(non_null_len, probs),
+        FractionSpec::Count(n_bins) => quantile_break_positions_uniform(non_null_len, n_bins.get()),
+    }
+}
+
 pub fn bin_quantiles(
     s: &Series,
     spec: &FractionSpec,
@@ -318,11 +326,7 @@ pub fn bin_quantiles(
     include_intervals: bool,
     right_closed: bool,
 ) -> PolarsResult<Series> {
-    let non_null_len = s.len() - s.null_count();
-    let positions = match spec {
-        FractionSpec::Explicit(probs) => quantile_break_positions(non_null_len, probs),
-        FractionSpec::Count(n_bins) => quantile_break_positions_uniform(non_null_len, n_bins.get()),
-    };
+    let positions = bin_quantile_positions(s.len() - s.null_count(), spec);
     bin_at_positions(
         s,
         &positions,

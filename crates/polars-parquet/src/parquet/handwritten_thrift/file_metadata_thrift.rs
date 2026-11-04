@@ -417,9 +417,10 @@ fn read_encryption_with_column_key(
 /// Decode a `ColumnMetaData` into a [`CompactColumnMetaData`].
 ///
 /// Skip-decode: `type_`, `encodings`, `path_in_schema`, `key_value_metadata`,
-/// `size_statistics`, `geospatial_statistics`. These have no in-tree readers.
-/// See `metadata/compact.rs` for the audit. `encoding_stats` is reduced to
-/// whether some data pages fall back from dictionary encoding.
+/// `geospatial_statistics`. These have no in-tree readers. See
+/// `metadata/compact.rs` for the audit. `encoding_stats` is reduced to whether
+/// some data pages fall back from dictionary encoding, and `size_statistics` to
+/// the size of the byte array values.
 fn read_column_meta_data(
     prot: &mut ThriftSliceInputProtocol<'_>,
     origin_ptr: *const u8,
@@ -435,12 +436,13 @@ fn read_column_meta_data(
     let mut bloom_filter_offset: Option<i64> = None;
     let mut bloom_filter_length: Option<i32> = None;
     let mut dictionary_fallback: Option<bool> = None;
+    let mut unencoded_byte_array_data_bytes: Option<i64> = None;
 
     // Inlined skips at ids 1/2/3 (type_, encodings, path_in_schema): universally
     // present, no in-tree consumer; bypass the generic recursive skip.
-    // Ids 8 (key_value_metadata), 16 (size_statistics), 17 (geospatial): fall
-    // through to the generic skip arm. Dedicated skip_simple_struct helpers
-    // tried for 16/17, no measurable win.
+    // Ids 8 (key_value_metadata), 17 (geospatial): fall through to the generic
+    // skip arm. A dedicated skip_simple_struct helper was tried for 17, no
+    // measurable win.
     read_struct_fields!(prot, |f| {
         1 => prot.skip_vlq()?,
         2 => prot.skip_list_of_varint()?,
@@ -456,6 +458,7 @@ fn read_column_meta_data(
         13 => dictionary_fallback = Some(read_dictionary_fallback(prot)?),
         14 => bloom_filter_offset = Some(prot.read_i64()?),
         15 => bloom_filter_length = Some(prot.read_i32()?),
+        16 => unencoded_byte_array_data_bytes = read_unencoded_byte_array_data_bytes(prot)?,
     });
 
     let codec_i32 = codec.require("ColumnMetaData.codec")?;
@@ -475,7 +478,20 @@ fn read_column_meta_data(
         bloom_filter_offset,
         bloom_filter_length,
         dictionary_fallback,
+        unencoded_byte_array_data_bytes,
     })
+}
+
+/// Decode a `SizeStatistics` into its `unencoded_byte_array_data_bytes`,
+/// skipping the level histograms.
+fn read_unencoded_byte_array_data_bytes(
+    prot: &mut ThriftSliceInputProtocol<'_>,
+) -> ParquetResult<Option<i64>> {
+    let mut bytes: Option<i64> = None;
+    read_struct_fields!(prot, |f| {
+        1 => bytes = Some(prot.read_i64()?),
+    });
+    Ok(bytes)
 }
 
 /// Decode a list of `PageEncodingStats` into whether some data pages with
@@ -807,6 +823,31 @@ mod tests {
     const DICTIONARY_PAGE: [u8; 7] = [0x15, 0x04, 0x15, 0x00, 0x15, 0x02, 0x00];
     const RLE_DICTIONARY_DATA: [u8; 7] = [0x15, 0x00, 0x15, 0x10, 0x15, 0x06, 0x00];
     const PLAIN_DATA: [u8; 7] = [0x15, 0x00, 0x15, 0x00, 0x15, 0x04, 0x00];
+
+    fn decode_unencoded_byte_array_data_bytes(bytes: &[u8]) -> ParquetResult<Option<i64>> {
+        let mut prot = ThriftSliceInputProtocol::new(bytes);
+        read_unencoded_byte_array_data_bytes(&mut prot)
+    }
+
+    #[test]
+    fn size_statistics_unencoded_bytes() {
+        // Field 1 (i64 1000, zigzag-encoded), then field 3, a definition level
+        // histogram of [2, 5], which is skipped.
+        let bytes = [0x16, 0xD0, 0x0F, 0x29, 0x26, 0x04, 0x0A, 0x00];
+        assert_eq!(
+            decode_unencoded_byte_array_data_bytes(&bytes).unwrap(),
+            Some(1000)
+        );
+    }
+
+    #[test]
+    fn size_statistics_histograms_only() {
+        let bytes = [0x39, 0x26, 0x04, 0x0A, 0x00];
+        assert_eq!(
+            decode_unencoded_byte_array_data_bytes(&bytes).unwrap(),
+            None
+        );
+    }
 
     #[test]
     fn dictionary_data_no_fallback() {

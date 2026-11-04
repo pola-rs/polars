@@ -188,7 +188,7 @@ impl ComputeNode for InterpolateNode {
                 {
                     // Add back in the last non-null value and the pending nulls.
                     //
-                    // If we have only seen nulls until now, last_non_null=Null and its just an
+                    // If we have only seen nulls until now, last_non_null=Null and it's just an
                     // extra null at the start.
                     let has_prepended = pending_nulls > 0 || !last_non_null.is_null();
                     if has_prepended {

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+import time
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -609,6 +611,105 @@ def test_merge_join_exprs() -> None:
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
 
 
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
+@pytest.mark.parametrize("maintain_order", ["none", "left_right", "right_left"])
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize("on", [["key"], ["key", "key_ext"]])
+@pytest.mark.parametrize("chunk_size", [4, None])
+def test_merge_join_many_partitions(
+    how: JoinStrategy,
+    maintain_order: MaintainOrderJoin,
+    descending: bool,
+    nulls_last: bool,
+    nulls_equal: bool,
+    on: list[str],
+    chunk_size: int | None,
+) -> None:
+    # Small morsels split each window into many partitions, and the long runs of 0 and
+    # null are split again on the build side. With the default morsel size the window is
+    # a single partition. The left keys go on past the right ones.
+    left_keys = (
+        [None] * 20
+        + [0] * 25
+        + [1, 2, 2, 3, 5, 5, 5, 8]
+        + [9] * 12
+        + list(range(11, 60))
+    )
+    right_keys = [None] * 18 + [0] * 20 + [2, 3, 3, 4, 5, 9, 9, 10, 11, 11]
+
+    def sorted_lf(keys: list[int | None], name: str) -> pl.LazyFrame:
+        return (
+            pl.LazyFrame(
+                {"key": keys, name: range(len(keys))},
+                schema_overrides={"key": pl.Int64},
+            )
+            .with_columns(
+                key_ext=pl.when(pl.col(name) % 7 == 0)
+                .then(None)
+                .otherwise(pl.col("key") % 3)
+            )
+            .sort(on, descending=descending, nulls_last=nulls_last, maintain_order=True)
+            .set_sorted(on, descending=descending, nulls_last=nulls_last)
+        )
+
+    q = sorted_lf(left_keys, "a").join(
+        sorted_lf(right_keys, "b"),
+        on=on,
+        how=how,
+        nulls_equal=nulls_equal,
+        maintain_order=maintain_order,
+    )
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "merge-join" in dot, "merge-join not used in plan"
+
+    expected = q.collect(engine="in-memory")
+    with pl.Config(streaming_chunk_size=chunk_size):
+        actual = q.collect(engine="streaming")
+        actual_all, actual_head = pl.collect_all([q, q.head(3)], engine="streaming")
+    check_row_order = maintain_order != "none"
+    assert_frame_equal(actual, expected, check_row_order=check_row_order)
+    assert_frame_equal(actual_all, expected, check_row_order=check_row_order)
+    assert actual_head.height == 3
+    if check_row_order:
+        assert_frame_equal(actual_head, expected.head(3))
+
+
+@pytest.mark.slow
+@pytest.mark.may_fail_cloud  # reason: timing
+@pytest.mark.parametrize("null_run_side", ["left", "right"])
+@pytest.mark.parametrize("nulls_last", [False, True])
+def test_merge_join_null_run_linear_time(null_run_side: str, nulls_last: bool) -> None:
+    # A run of nulls, shorter than a morsel, next to many other keys must not be scanned
+    # again for every one of those keys. The outliers sit beyond the keys, on the far
+    # side from the nulls.
+    n = 90_000
+    keys = pl.Series(range(n), dtype=pl.Int64)
+    outliers = [-(10**12), -(10**12) + 1] if nulls_last else [10**12, 10**12 + 1]
+    null_run = pl.Series([None] * n + outliers, dtype=pl.Int64)
+    left, right = (null_run, keys) if null_run_side == "left" else (keys, null_run)
+
+    q = (
+        pl.LazyFrame({"key": left})
+        .sort("key", nulls_last=nulls_last)
+        .join(
+            pl.LazyFrame({"key": right}).sort("key", nulls_last=nulls_last),
+            on="key",
+            nulls_equal=True,
+            maintain_order="left_right",
+        )
+    )
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "merge-join" in dot, "merge-join not used in plan"
+
+    t0 = time.time()
+    result = q.collect(engine="streaming")
+    t1 = time.time()
+    assert result.height == 0
+    assert (t1 - t0) < 2
+
+
 @pytest.mark.parametrize("df_level_hint", [False, True])
 @pytest.mark.parametrize("left_descending", [False, True])
 @pytest.mark.parametrize("right_descending", [False, True])
@@ -1086,3 +1187,166 @@ def test_streaming_join_keeps_height_of_input_without_columns(
         q.collect(engine="in-memory"),
         check_row_order=False,
     )
+
+
+SPILL_ENV = {
+    "POLARS_OOC_MEMORY_BUDGET_MB": "0",
+    "POLARS_OOC_SPILL_MIN_BYTES": "1",
+    "POLARS_OOC_DRIFT_THRESHOLD": "0",
+}
+
+
+@pytest.fixture
+def spill_join(plmonkeypatch: PlMonkeyPatch, tmp_path: Path) -> None:
+    """Spills the build side and the samples, in several morsels and batches."""
+    for name, value in SPILL_ENV.items():
+        plmonkeypatch.setenv(name, value)
+    plmonkeypatch.setenv("POLARS_OOC_SPILL_DIR", str(tmp_path))
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "16")
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "40")
+    plmonkeypatch.setenv("POLARS_JOIN_BATCH_BYTES", "1024")
+
+
+# The number of rows, the key modulus and the null key interval of each input of
+# `_spill_join_inputs`.
+_SPILL_JOIN_LEFT = (150, 50, 7)
+_SPILL_JOIN_RIGHT = (120, 45, 11)
+
+
+def _spill_join_input(
+    key_type: str, name: str, num_rows: int, modulo: int, null_every: int
+) -> pl.LazyFrame:
+    i = pl.int_range(num_rows)
+    keys = _join_keys(pl.when(i % null_every != 0).then(i % modulo), key_type)
+    return pl.select(*(e.alias(n) for n, e in keys.items()), i.alias(name)).lazy()
+
+
+def _spill_join_inputs(key_type: str) -> tuple[pl.LazyFrame, pl.LazyFrame]:
+    left = _spill_join_input(key_type, "l", *_SPILL_JOIN_LEFT)
+    right = _spill_join_input(key_type, "r", *_SPILL_JOIN_RIGHT)
+    return left, right
+
+
+def _spill_join_keys(n: int, modulo: int, null_every: int) -> list[int | None]:
+    """The keys of `_spill_join_inputs` as integers."""
+    return [None if i % null_every == 0 else i % modulo for i in range(n)]
+
+
+def _expected_join(how: str, nulls_equal: bool, *, left_first: bool) -> pl.DataFrame:
+    """
+    The `(l, r)` rows of a join of `_spill_join_inputs`.
+
+    Each row of the first side in order with its matches in order, then the
+    unmatched rows of the other side in order.
+    """
+    left = _spill_join_keys(*_SPILL_JOIN_LEFT)
+    right = _spill_join_keys(*_SPILL_JOIN_RIGHT)
+    first, other = (left, right) if left_first else (right, left)
+    keep_first = how == "full" or how == ("left" if left_first else "right")
+    keep_other = how == "full" or how == ("right" if left_first else "left")
+
+    other_rows: dict[int | None, list[int]] = {}
+    for j, k in enumerate(other):
+        if k is not None or nulls_equal:
+            other_rows.setdefault(k, []).append(j)
+    rows: list[tuple[int | None, int | None]] = []
+    matched = set()
+    for i, k in enumerate(first):
+        js = other_rows.get(k, [])
+        matched.update(js)
+        rows.extend((i, j) for j in js)
+        if not js and keep_first:
+            rows.append((i, None))
+    if keep_other:
+        rows.extend((None, j) for j in range(len(other)) if j not in matched)
+
+    if not left_first:
+        rows = [(i, j) for j, i in rows]
+    return pl.DataFrame(rows, schema={"l": pl.Int64, "r": pl.Int64}, orient="row")
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("threads", ["1", None])
+@pytest.mark.parametrize("key_type", ["int", "str", "int, int", "struct"])
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
+@pytest.mark.parametrize(
+    ("maintain_order", "build_side"),
+    [
+        ("none", "auto"),
+        ("none", "force_left"),
+        ("none", "force_right"),
+        ("left", "auto"),
+        ("right", "auto"),
+        ("left_right", "auto"),
+        ("right_left", "auto"),
+    ],
+)
+@pytest.mark.usefixtures("spill_join")
+def test_streaming_join_spilled_build(
+    maintain_order: MaintainOrderJoin,
+    build_side: JoinBuildSide,
+    how: JoinStrategy,
+    nulls_equal: bool,
+    key_type: str,
+    threads: str | None,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    if threads is not None:
+        plmonkeypatch.setenv("POLARS_MAX_THREADS", threads)
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    left, right = _spill_join_inputs(key_type)
+    on = list(_join_keys(pl.lit(0), key_type))
+    q = left.join(
+        right,
+        on=on,
+        how=how,
+        nulls_equal=nulls_equal,
+        maintain_order=maintain_order,
+        build_side=build_side,
+    ).select("l", "r")
+
+    capfd.readouterr()
+    out = q.collect(engine="streaming")
+    err = capfd.readouterr().err
+    [num_batches] = re.findall(r"\[equi-join\]: building .* (\d+) batches", err)
+    assert int(num_batches) > 1
+
+    left_first = maintain_order in ("none", "left", "left_right")
+    expected = _expected_join(how, nulls_equal, left_first=left_first)
+    in_order = maintain_order in ("left_right", "right_left")
+    assert_frame_equal(out, expected, check_row_order=in_order)
+    if maintain_order in ("left", "right"):
+        name = maintain_order[0]
+        assert_series_equal(out[name], expected[name])
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("threads", ["1", None])
+@pytest.mark.parametrize("key_type", ["int", "str", "int, int", "struct"])
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize("how", ["semi", "anti"])
+@pytest.mark.usefixtures("spill_join")
+def test_streaming_semi_anti_join_spilled_samples(
+    how: JoinStrategy,
+    nulls_equal: bool,
+    key_type: str,
+    threads: str | None,
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    if threads is not None:
+        plmonkeypatch.setenv("POLARS_MAX_THREADS", threads)
+    left, right = _spill_join_inputs(key_type)
+    on = list(_join_keys(pl.lit(0), key_type))
+    q = left.join(right, on=on, how=how, nulls_equal=nulls_equal).select("l")
+
+    out = q.collect(engine="streaming")
+    full = _expected_join("left", nulls_equal, left_first=True)
+    matched = full.filter(pl.col("r").is_not_null())["l"].unique()
+    expected = (
+        full.select("l")
+        .unique()
+        .filter(pl.col("l").is_in(matched.implode()) == (how == "semi"))
+    )
+    assert_frame_equal(out, expected, check_row_order=False)

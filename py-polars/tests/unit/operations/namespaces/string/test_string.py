@@ -685,7 +685,7 @@ def test_str_strip_chars_expr() -> None:
         pl.col("s").str.strip_chars_end(None).alias("strip_chars_end"),
     )
 
-    # only whitespace are striped.
+    # only whitespace are stripped.
     expected = pl.DataFrame(
         {
             "strip_chars": ["hello", "^^world^^", "&&hi&&", "polars", None],

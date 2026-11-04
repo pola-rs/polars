@@ -6,7 +6,7 @@ use super::*;
 pub fn rolling_mean<T>(
     values: &[T],
     window_size: usize,
-    min_periods: usize,
+    min_samples: usize,
     center: bool,
     weights: Option<&[f64]>,
     _params: Option<RollingFnParams>,
@@ -22,7 +22,7 @@ where
         None => rolling_apply_agg_window::<MeanWindow<_>, _, _, _>(
             values,
             window_size,
-            min_periods,
+            min_samples,
             offset_fn,
             None,
         ),
@@ -31,7 +31,7 @@ where
             no_nulls::rolling_apply_weights(
                 values,
                 window_size,
-                min_periods,
+                min_samples,
                 offset_fn,
                 no_nulls::compute_mean_weights,
                 &wts,

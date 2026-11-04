@@ -25,6 +25,7 @@ if TYPE_CHECKING:
         CsvQuoteStyle,
         IpcCompression,
         ParquetCompression,
+        ParquetEncryption,
         ParquetMetadata,
         PlanTypePreference,
         PostOptCallback,
@@ -34,7 +35,6 @@ if TYPE_CHECKING:
     from polars.dataframe import DataFrame
     from polars.interchange.protocol import CompatLevel
     from polars.io.cloud import CredentialProviderFunction
-    from polars.io.parquet.encryption import ParquetEncryptionProperties
     from polars.io.partition import PartitionBy, SinkedPathsCallback
     from polars.lazyframe.engine import _CollectBatches
     from polars.lazyframe.frame import LazyFrame
@@ -251,7 +251,7 @@ class RemoteEngine(Engine):
         sync_on_close: SyncOnCloseMethod | None,
         metadata: ParquetMetadata | None,
         arrow_schema: ArrowSchemaExportable | None,
-        encryption: ParquetEncryptionProperties | None,
+        encryption: ParquetEncryption | None,
         mkdir: bool,
         optimizations: QueryOptFlags,
         sinked_paths_callback: SinkedPathsCallback | None,

@@ -187,6 +187,8 @@ impl IRFunctionExpr {
                     T::UInt64 => T::UInt64,
                     #[cfg(feature = "dtype-i128")]
                     T::Int128 => T::Int128,
+                    #[cfg(feature = "dtype-u128")]
+                    T::UInt128 => T::UInt128,
                     #[cfg(feature = "dtype-decimal")]
                     T::Decimal(_p, s) => T::Decimal(DEC128_MAX_PREC, *s),
                     _ => T::Int64,
@@ -565,9 +567,7 @@ impl IRFunctionExpr {
             MaxHorizontal => mapper.map_to_supertype(),
             MinHorizontal => mapper.map_to_supertype(),
             SumHorizontal { .. } => mapper.map_to_supertype().map(|mut f| {
-                if f.dtype == DataType::Boolean {
-                    f.dtype = IDX_DTYPE;
-                }
+                f.dtype = sum_output_dtype(&f.dtype);
                 f
             }),
             MeanHorizontal { .. } => mapper.map_to_supertype().map(|mut f| {
@@ -812,7 +812,7 @@ impl<'a> FieldsMapper<'a> {
     }
 
     #[cfg(feature = "dtype-array")]
-    /// Map the dtype to the dtype of the array elements, with typo validation.
+    /// Map the dtype to the dtype of the array elements, with type validation.
     pub fn try_map_to_array_inner_dtype(&self) -> PolarsResult<Field> {
         let dt = self.fields[0].dtype();
         match dt {

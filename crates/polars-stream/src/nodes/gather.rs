@@ -70,7 +70,7 @@ impl ComputeNode for GatherNode {
                 recv[1..2].swap_with_slice(send);
             },
             GatherState::Done => {
-                recv[0] = PortState::Done;
+                recv.fill(PortState::Done);
                 send[0] = PortState::Done;
             },
         }

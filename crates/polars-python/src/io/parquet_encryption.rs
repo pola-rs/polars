@@ -1,7 +1,5 @@
-use std::sync::Arc;
-
 use polars::prelude::PolarsError;
-use polars_io::parquet::read::ParquetDecryptionKeys;
+use polars_io::parquet::encryption::{ParquetDecryption, ParquetEncryption};
 use polars_parquet::parquet::encryption::decrypt::FileDecryptionProperties;
 use polars_parquet::parquet::encryption::encrypt::FileEncryptionProperties;
 use polars_utils::pl_path::PlRefPath;
@@ -10,14 +8,17 @@ use pyo3::prelude::*;
 use crate::error::PyPolarsErr;
 use crate::prelude::Wrap;
 
+/// Determines how to decrypt Parquet files.
+///
+/// Constructed from explicit keys here, or with keys from a KMS in `parquet_kms`.
 #[pyclass(frozen, from_py_object)]
 #[derive(Clone)]
-pub struct PyFileDecryptionProperties {
-    pub inner: Arc<ParquetDecryptionKeys>,
+pub struct PyParquetDecryption {
+    pub inner: ParquetDecryption,
 }
 
 #[pymethods]
-impl PyFileDecryptionProperties {
+impl PyParquetDecryption {
     #[staticmethod]
     #[expect(clippy::type_complexity)]
     fn from_iceberg_keys(
@@ -35,13 +36,13 @@ impl PyFileDecryptionProperties {
             .collect::<Result<_, _>>()
             .map_err(|e| PyPolarsErr::from(PolarsError::from(e)))?;
         Ok(Self {
-            inner: Arc::new(ParquetDecryptionKeys::PerFile(files)),
+            inner: ParquetDecryption::from_file_properties(files),
         })
     }
 
-    #[new]
+    #[staticmethod]
     #[pyo3(signature = (footer_key, column_keys, aad_prefix, verify_footer_signature))]
-    fn new(
+    fn from_keys(
         footer_key: Vec<u8>,
         column_keys: Vec<(String, Vec<u8>)>,
         aad_prefix: Option<Vec<u8>>,
@@ -57,26 +58,29 @@ impl PyFileDecryptionProperties {
         if !verify_footer_signature {
             builder = builder.disable_footer_signature_verification();
         }
-        let inner = builder
+        let properties = builder
             .build()
             .map_err(|e| PyPolarsErr::from(PolarsError::from(e)))?;
         Ok(Self {
-            inner: Arc::new(ParquetDecryptionKeys::Uniform(inner)),
+            inner: properties.into(),
         })
     }
 }
 
+/// Determines how to encrypt Parquet files.
+///
+/// Constructed from explicit keys here, or with keys from a KMS in `parquet_kms`.
 #[pyclass(frozen, from_py_object)]
 #[derive(Clone)]
-pub struct PyFileEncryptionProperties {
-    pub inner: Arc<FileEncryptionProperties>,
+pub struct PyParquetEncryption {
+    pub inner: ParquetEncryption,
 }
 
 #[pymethods]
-impl PyFileEncryptionProperties {
-    #[new]
+impl PyParquetEncryption {
+    #[staticmethod]
     #[pyo3(signature = (footer_key, column_keys, plaintext_footer, aad_prefix, store_aad_prefix))]
-    fn new(
+    fn from_keys(
         footer_key: Vec<u8>,
         column_keys: Vec<(String, Vec<u8>)>,
         plaintext_footer: bool,
@@ -93,9 +97,11 @@ impl PyFileEncryptionProperties {
                 .with_aad_prefix(aad_prefix)
                 .with_aad_prefix_storage(store_aad_prefix);
         }
-        let inner = builder
+        let properties = builder
             .build()
             .map_err(|e| PyPolarsErr::from(PolarsError::from(e)))?;
-        Ok(Self { inner })
+        Ok(Self {
+            inner: properties.into(),
+        })
     }
 }

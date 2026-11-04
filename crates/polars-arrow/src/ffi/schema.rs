@@ -77,14 +77,15 @@ impl ArrowSchema {
         let children_ptr = schema_children(field.dtype(), &mut flags);
         let n_children = children_ptr.len() as i64;
 
-        let dictionary = if let ArrowDataType::Dictionary(_, values, is_ordered) = field.dtype() {
-            flags += *is_ordered as i64;
-            // we do not store field info in the dict values, so can't recover it all :(
-            let field = Field::new(PlSmallStr::EMPTY, values.as_ref().clone(), true);
-            Some(Box::new(ArrowSchema::new(&field)))
-        } else {
-            None
-        };
+        let dictionary =
+            if let ArrowDataType::Dictionary(_, values, is_ordered) = field.dtype().to_storage() {
+                flags += *is_ordered as i64;
+                // we do not store field info in the dict values, so can't recover it all :(
+                let field = Field::new(PlSmallStr::EMPTY, values.as_ref().clone(), true);
+                Some(Box::new(ArrowSchema::new(&field)))
+            } else {
+                None
+            };
 
         let metadata = field
             .metadata
@@ -362,7 +363,7 @@ unsafe fn to_dtype(schema: &ArrowSchema) -> PolarsResult<ArrowDataType> {
                         },
                         [precision_raw, scale_raw, width_raw] => {
                             // Example: "d:19,10,NNN" decimal bitwidth = NNN [precision 19, scale 10]
-                            // Only bitwdth of 128 currently supported
+                            // Only bitwidth of 128 currently supported
                             let bit_width = width_raw.parse::<usize>().map_err(|_| {
                                 polars_err!(ComputeError: "Decimal bit width is not a valid integer")
                             })?;
@@ -518,8 +519,8 @@ fn to_format(dtype: &ArrowDataType) -> String {
         ArrowDataType::FixedSizeBinary(size) => format!("w:{size}"),
         ArrowDataType::FixedSizeList(_, size) => format!("+w:{size}"),
         ArrowDataType::Union(u) => {
-            let sparsness = if u.mode.is_sparse() { 's' } else { 'd' };
-            let mut r = format!("+u{sparsness}:");
+            let sparseness = if u.mode.is_sparse() { 's' } else { 'd' };
+            let mut r = format!("+u{sparseness}:");
             let ids = if let Some(ids) = &u.ids {
                 ids.iter()
                     .fold(String::new(), |a, b| a + b.to_string().as_str() + ",")

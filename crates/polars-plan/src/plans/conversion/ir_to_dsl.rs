@@ -287,6 +287,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             partition_by,
             order_by,
             mapping,
+            may_reorder,
         } => {
             let function = Arc::new(node_to_expr(function, expr_arena));
             let partition_by = nodes_to_exprs(&partition_by, expr_arena);
@@ -297,6 +298,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 partition_by,
                 order_by,
                 mapping,
+                may_reorder,
             }
         },
         AExpr::Slice {

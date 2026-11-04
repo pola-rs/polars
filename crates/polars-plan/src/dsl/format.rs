@@ -53,6 +53,7 @@ impl fmt::Debug for Expr {
                 partition_by,
                 order_by,
                 mapping: _,
+                may_reorder: _,
             } => {
                 if let Some((order_by, _)) = order_by {
                     write!(
@@ -257,7 +258,7 @@ impl fmt::Debug for Expr {
                 EvalVariant::ArrayAgg => write!(f, "{input:?}.arr.agg({evaluation:?})"),
                 EvalVariant::Cumulative { min_samples } => write!(
                     f,
-                    "{input:?}.Cumulative_eval({evaluation:?}, min_samples={min_samples}"
+                    "{input:?}.cumulative_eval({evaluation:?}, min_samples={min_samples})"
                 ),
             },
             #[cfg(feature = "dtype-struct")]

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use polars_arrow::array::builder::ShareStrategy;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::sort::arg_sort;
@@ -18,9 +20,10 @@ use polars_utils::pl_str::PlSmallStr;
 use rayon::prelude::*;
 
 use super::flush::{Flush, OutputRange, OutputUnit};
+use super::sink_partitions::SinkPartitions;
 use super::tuning::{RowSizes, WindowTuning};
-use super::{StoredMorsel, WindowOutput, WindowParams};
-use crate::hash_shuffle::split::{SplitRows, split};
+use super::{StoredMorsel, WindowParams};
+use crate::hash_shuffle::split::{NullRows, SplitRows, split};
 
 /// The column with the input row of each row in the partitions.
 pub(super) const ROW_ID: PlSmallStr = PlSmallStr::from_static("__POLARS_WINDOW_ROW");
@@ -58,7 +61,7 @@ pub(super) fn evaluate(
         ));
     }
 
-    let keep_morsels = params.output != WindowOutput::Partitions;
+    let keep_morsels = !params.evaluates_whole_rows();
     let read_bytes: usize = morsels.iter().map(|m| m.read_bytes).sum();
     let row_id_bytes = if keep_morsels {
         size_of::<IdxSize>()
@@ -67,16 +70,7 @@ pub(super) fn evaluate(
     };
     let mut row_sizes = RowSizes {
         read: read_bytes / num_rows + row_id_bytes,
-        window: params
-            .exprs
-            .iter()
-            .map(|(name, _)| {
-                let dtype = params.output_schema.get(name).unwrap();
-                dtype
-                    .byte_width()
-                    .map_or(VARIABLE_WIDTH_BYTES, |w| w.ceil() as usize)
-            })
-            .sum(),
+        window: window_bytes_per_row(params),
     };
     let num_partitions = tuning.num_partitions(num_rows, row_sizes.work(), num_pipelines);
     let random_state = PlRandomState::default();
@@ -191,6 +185,110 @@ pub(super) fn evaluate(
         tuning.output_ahead_bytes(),
         (morsel_ctx, partition_ctx),
     ))
+}
+
+/// With [`super::WindowOutput::SinkPartitions`] once rows are partitioned as they arrive: splits
+/// the partitions that need too much memory and packs the partitions into units, which are
+/// evaluated when they are output.
+pub(super) fn evaluate_sink_partitions(
+    params: &Arc<WindowParams>,
+    tuning: &WindowTuning,
+    num_pipelines: usize,
+    sink: SinkPartitions,
+    state: &ExecutionState,
+) -> PolarsResult<Flush> {
+    let (partitions, bytes, partition_ctx) = sink.finish();
+    let spill_ctxs = (
+        LeastRecentSpillContext::new("window".into(), None),
+        partition_ctx,
+    );
+    let num_rows: usize = partitions.iter().flatten().map(|sf| sf.height()).sum();
+    if num_rows == 0 {
+        return Ok(Flush::new(Vec::new(), 0, spill_ctxs));
+    }
+    let row_sizes = RowSizes {
+        read: bytes / num_rows,
+        window: window_bytes_per_row(params),
+    };
+    let shuffle = Shuffle {
+        params,
+        batch_bytes: tuning.batch_bytes(),
+        spill_ctx: &spill_ctxs.1,
+    };
+    let partitions = split_large_partitions(
+        &shuffle,
+        partitions,
+        &row_sizes,
+        tuning.max_partition_bytes(),
+    )?;
+    if polars_core::config::verbose() {
+        eprintln!(
+            "window: {num_rows} rows in {} partitions after splitting large ones",
+            partitions.len()
+        );
+    }
+
+    let eval = Arc::new(PartitionEval {
+        params: params.clone(),
+        random_state: PlRandomState::default(),
+        state: state.clone(),
+    });
+    let max_unit_bytes = tuning.max_unit_bytes(num_pipelines);
+    let min_rows = tuning.min_rows_per_partition();
+    let mut units = Vec::new();
+    let mut frames = Vec::new();
+    let mut rows = 0;
+    let mut push_unit = |frames: Vec<SpillFrame>, rows: usize| {
+        units.push(OutputUnit::Partition {
+            frames,
+            work: rows.saturating_mul(row_sizes.work()),
+            eval: eval.clone(),
+        })
+    };
+    // The partitions are sorted by size, largest first.
+    for (partition, partition_rows) in partitions {
+        if !frames.is_empty()
+            && (rows >= min_rows
+                || (rows + partition_rows).saturating_mul(row_sizes.work()) > max_unit_bytes)
+        {
+            push_unit(std::mem::take(&mut frames), rows);
+            rows = 0;
+        }
+        frames.extend(partition);
+        rows += partition_rows;
+    }
+    if !frames.is_empty() {
+        push_unit(frames, rows);
+    }
+    Ok(Flush::new(units, tuning.max_partition_bytes(), spill_ctxs))
+}
+
+/// What evaluating a unit of [`super::WindowOutput::SinkPartitions`] needs.
+pub(super) struct PartitionEval {
+    params: Arc<WindowParams>,
+    random_state: PlRandomState,
+    state: ExecutionState,
+}
+
+impl PartitionEval {
+    /// The rows of `df` with the window columns appended.
+    pub(super) fn evaluate(&self, df: DataFrame) -> PolarsResult<DataFrame> {
+        evaluate_whole_rows(&self.params, df, &self.random_state, &self.state)
+    }
+}
+
+/// The estimated bytes per row of the window columns.
+fn window_bytes_per_row(params: &WindowParams) -> usize {
+    params
+        .exprs
+        .iter()
+        .map(|(name, _)| {
+            let dtype = params.output_schema.get(name).unwrap();
+            dtype
+                .byte_width()
+                .map_or(VARIABLE_WIDTH_BYTES, |w| w.ceil() as usize)
+        })
+        .sum()
 }
 
 /// Cuts the morsels into output ranges of consecutive morsels and returns the end of each range.
@@ -344,7 +442,7 @@ impl Shuffle<'_> {
                         } else {
                             let keys = df.select(self.params.partition_by.iter().cloned())?;
                             let keys = HashKeys::from_df(&keys, random_state.clone(), true, false);
-                            split(&keys, None, &partitioner)
+                            split(&keys, None, &partitioner, NullRows::FirstPartition)
                         };
                         PolarsResult::Ok(LoadedFrame {
                             df,
@@ -444,7 +542,7 @@ impl Shuffle<'_> {
 
 /// The evaluated windows of one partition.
 struct EvaluatedPartition {
-    /// With [`WindowOutput::Partitions`], the sorted rows with the window columns appended.
+    /// When whole rows are evaluated, the sorted rows with the window columns appended.
     /// Otherwise the window columns with the input row of each row.
     df: DataFrame,
     /// The rows of `df` in each output range, `None` if there is one range.
@@ -472,7 +570,7 @@ fn evaluate_stored_partition(
     let mut df = accumulate_dataframes_vertical_unchecked(dfs);
     df.rechunk_mut();
 
-    if params.output == WindowOutput::Partitions {
+    if params.evaluates_whole_rows() {
         let SortedPartition {
             mut df, windows, ..
         } = evaluate_partition(params, df, random_state, state)?;
@@ -548,6 +646,56 @@ fn evaluate_stored_partition(
         rows_per_range,
         window_bytes,
     })
+}
+
+/// The rows of `df` with the window columns appended. Only the columns the windows read are
+/// sorted and rechunked; the other columns keep their order and chunks.
+fn evaluate_whole_rows(
+    params: &WindowParams,
+    mut df: DataFrame,
+    random_state: &PlRandomState,
+    state: &ExecutionState,
+) -> PolarsResult<DataFrame> {
+    if params.reads_all_columns {
+        df.rechunk_mut();
+        let SortedPartition {
+            mut df, windows, ..
+        } = evaluate_partition(params, df, random_state, state)?;
+        // SAFETY: the window columns have the height of `df` and new names.
+        unsafe { df.hstack_mut_unchecked(&windows) };
+        return Ok(df);
+    }
+
+    let mut read = df.select(params.read_schema.iter_names_cloned())?;
+    read.rechunk_mut();
+    let SortedPartition {
+        df: sorted,
+        windows,
+        gathered_row_for_sorted_row,
+    } = evaluate_partition(params, read, random_state, state)?;
+    drop(sorted);
+    let windows = match gathered_row_for_sorted_row {
+        None => windows,
+        Some(gathered_rows) => {
+            let gathered_rows = gathered_rows.downcast_as_array().values();
+            let mut sorted_row_for_row = vec![0 as IdxSize; gathered_rows.len()];
+            for (sorted_row, row) in gathered_rows.iter().enumerate() {
+                // SAFETY: `gathered_rows` is a permutation of the rows of `df`.
+                unsafe {
+                    *sorted_row_for_row.get_unchecked_mut(*row as usize) = sorted_row as IdxSize
+                };
+            }
+            let sorted_row_for_row = IdxCa::from_vec(PlSmallStr::EMPTY, sorted_row_for_row);
+            windows
+                .iter()
+                // SAFETY: the indices are below the height of the window columns.
+                .map(|c| unsafe { c.take_unchecked(&sorted_row_for_row) })
+                .collect()
+        },
+    };
+    // SAFETY: the window columns have the height of `df` and new names.
+    unsafe { df.hstack_mut_unchecked(&windows) };
+    Ok(df)
 }
 
 fn columns_size(columns: &[Column]) -> usize {

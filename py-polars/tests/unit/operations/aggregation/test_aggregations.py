@@ -725,6 +725,24 @@ def test_approx_quantile_merged_rank_error(method: ApproxQuantileMethod) -> None
     assert abs(got - _rank(quantile, n)) / n <= error
 
 
+def test_approx_quantile_small_morsels(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+    # Large enough for KLL to switch to its sampler.
+    n, error, quantile = 400_000, 0.01, 0.5
+    values = _shuffled(n)
+    with_nulls = [v for pair in zip(values, [None] * n, strict=True) for v in pair]
+    got = (
+        pl.LazyFrame({"a": with_nulls})
+        .select(pl.col("a").approx_quantile(quantile, error=error, method="kll"))
+        .collect()
+        .item()
+    )
+
+    assert got in values
+    # `error` holds in 99.7% of runs; twice it keeps the test from flaking.
+    assert abs(got - _rank(quantile, n)) / n <= 2 * error
+
+
 @pytest.mark.slow
 @given(
     values=st.lists(
@@ -1514,7 +1532,6 @@ def test_agg_with_slice_then_cast_23682(
     ],
 )
 @pytest.mark.parametrize("grouped", [False, True])
-@pytest.mark.may_fail_lazy_schema  # TODO: uint128
 def test_agg_invalid_same_engines_behavior(
     op: str, expr: pl.Expr, df: pl.DataFrame, grouped: bool
 ) -> None:
@@ -2109,6 +2126,31 @@ def test_min_max_by_nested_by_group_by(
     lf = pl.LazyFrame({"g": [1, 1, 2, 2], "by": by, "v": ["a", "b", "c", "d"]})
     q = lf.group_by("g", maintain_order=True).agg(agg(pl.col("v"), pl.col("by")))
     assert_frame_equal(q.collect(), pl.DataFrame({"g": [1, 2], "v": expected}))
+
+
+@pytest.mark.parametrize(
+    ("agg", "expected"),
+    [(pl.Expr.min_by, [1, 5, None]), (pl.Expr.max_by, [3, 5, None])],
+)
+def test_min_max_by_row_encoded_value(
+    agg: Callable[..., pl.Expr], expected: list[int | None]
+) -> None:
+    lf = pl.LazyFrame(
+        {"g": [1, 1, 2, 2, 3], "x": [3, 1, None, 5, 7], "by": [2, 1, None, 4, None]}
+    )
+    q = lf.group_by("g", maintain_order=True).agg(
+        agg(pl.col("x")._row_encode(), pl.col("by")).cast(pl.Binary)
+    )
+    expected_x = [
+        None
+        if v is None
+        else pl.select(pl.lit(v, pl.Int64)._row_encode().cast(pl.Binary)).item()
+        for v in expected
+    ]
+    expected_df = pl.DataFrame(
+        {"g": [1, 2, 3], "x": pl.Series(expected_x, dtype=pl.Binary)}
+    )
+    assert_frame_equal(q.collect(), expected_df)
 
 
 @pytest.mark.parametrize(

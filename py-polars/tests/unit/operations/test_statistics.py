@@ -280,7 +280,7 @@ def test_kurtosis_same_vals() -> None:
     )
 
 
-def test_correction_shape_mismatch_22080() -> None:
+def test_correlation_shape_mismatch_22080() -> None:
     with pytest.raises(pl.exceptions.ShapeError):
         pl.select(pl.corr(pl.Series([1, 2]), pl.Series([2, 3, 5])))
 

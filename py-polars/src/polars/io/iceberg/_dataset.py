@@ -38,7 +38,7 @@ from polars.io.iceberg._utils import (
     name_mapping_by_field_id,
     try_convert_pyarrow_predicate,
 )
-from polars.io.parquet.decryption import ParquetDecryptionProperties
+from polars.io.parquet.encryption import ParquetDecryptionProperties
 from polars.io.scan_options.cast_options import ScanCastOptions
 
 if TYPE_CHECKING:

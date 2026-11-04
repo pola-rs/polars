@@ -1,7 +1,9 @@
 use std::borrow::Borrow;
 use std::fmt;
 use std::marker::PhantomData;
+use std::sync::Arc;
 
+use polars_arrow::trusted_len::TrustMyLength;
 use polars_compute::approx_quantile::{ApproxQuantileMethod, FinalizedSketch, Sketch};
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_ops::series::{sketch_dtype, sketch_repr, sketches_to_series};
@@ -50,13 +52,28 @@ macro_rules! with_match_sketch_item {
     }};
 }
 
+/// Set `is_single_group` only if the reduction has a single group and is finalized once, after
+/// every reduction derived from it through `new_empty` was combined into it.
+///
+/// # Panics
+///
+/// With `is_single_group` set incorrectly, `finalize` panics at best, and at worst the estimates
+/// exceed the requested error.
 pub fn new_approx_quantile_sketch_reduction(
     dtype: DataType,
     method: ApproxQuantileMethod,
     error: f64,
     failure_probability: f64,
+    is_single_group: bool,
 ) -> PolarsResult<Box<dyn GroupedReduction>> {
-    new_sketch_reduction(dtype, method, error, failure_probability, true)
+    new_sketch_reduction(
+        dtype,
+        method,
+        error,
+        failure_probability,
+        true,
+        is_single_group,
+    )
 }
 
 /// Like [`new_approx_quantile_sketch_reduction`], but outputs the serialized
@@ -67,7 +84,7 @@ pub fn new_approx_quantile_state_reduction(
     error: f64,
     failure_probability: f64,
 ) -> PolarsResult<Box<dyn GroupedReduction>> {
-    new_sketch_reduction(dtype, method, error, failure_probability, false)
+    new_sketch_reduction(dtype, method, error, failure_probability, false, false)
 }
 
 fn new_sketch_reduction(
@@ -76,9 +93,16 @@ fn new_sketch_reduction(
     error: f64,
     failure_probability: f64,
     finalize: bool,
+    is_single_group: bool,
 ) -> PolarsResult<Box<dyn GroupedReduction>> {
     Ok(with_match_sketch_item!(&dtype, |T, B| {
-        let reducer = SketchReducer::<T, B>::new(method, error, failure_probability, finalize);
+        let reducer = SketchReducer::<T, B>::new(
+            method,
+            error,
+            failure_probability,
+            finalize,
+            is_single_group,
+        );
         Box::new(VecGroupedReduction::new(dtype.clone(), reducer))
     }))
 }
@@ -113,9 +137,14 @@ where
         error: f64,
         failure_probability: f64,
         finalize: bool,
+        is_single_group: bool,
     ) -> Self {
+        let mut template = Sketch::new(&method, error, failure_probability);
+        if is_single_group {
+            template = template.with_shared_count(Arc::default());
+        }
         Self {
-            template: Sketch::new(&method, error, failure_probability),
+            template,
             finalize,
             dtype: PhantomData,
         }
@@ -141,6 +170,7 @@ where
     B: ToOwned + ?Sized + 'static,
     B::Owned: fmt::Debug + Clone + TotalOrd + Send + Sync + serde::Serialize + 'static,
     for<'a> T::Physical<'a>: Borrow<B>,
+    for<'a> <T::Array as StaticArray>::ValueIterT<'a>: ExactSizeIterator + Clone,
 {
     type Dtype = T;
     type Value = Sketch<B::Owned>;
@@ -161,13 +191,19 @@ where
     #[inline(always)]
     fn reduce_one(&self, a: &mut Self::Value, b: Option<T::Physical<'_>>, _seq_id: u64) {
         if let Some(b) = b {
-            a.update(Borrow::<B>::borrow(&b));
+            a.update::<B>(std::iter::once(b));
         }
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<T>, _seq_id: u64) {
-        for value in ca.iter().flatten() {
-            v.update(Borrow::<B>::borrow(&value));
+        for arr in ca.downcast_iter() {
+            if arr.has_nulls() {
+                let num_values = arr.len() - arr.null_count();
+                // SAFETY: `flatten` yields exactly the non-null values.
+                v.update::<B>(unsafe { TrustMyLength::new(arr.iter().flatten(), num_values) });
+            } else {
+                v.update::<B>(arr.values_iter());
+            }
         }
     }
 

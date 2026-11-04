@@ -109,7 +109,10 @@ pub(crate) fn is_fake_elementwise_function(expr: &AExpr, arena: &Arena<AExpr>) -
                     !is_single_literal_ae(input[1].node(), arena)
                 },
                 #[cfg(feature = "replace")]
-                F::Replace | F::ReplaceStrict { .. } => true,
+                F::Replace | F::ReplaceStrict { .. } => {
+                    !(is_single_literal_ae(input[1].node(), arena)
+                        && is_single_literal_ae(input[2].node(), arena))
+                },
                 _ => false,
             }
         },
@@ -276,6 +279,7 @@ pub fn is_input_independent_rec(
             partition_by,
             order_by,
             mapping: _,
+            may_reorder: _,
         } => {
             is_input_independent_rec(*function, arena, cache)
                 && partition_by
@@ -2703,6 +2707,7 @@ fn lower_exprs_with_ctx(
                 partition_by,
                 order_by: None,
                 mapping: WindowMapping::GroupsToRows,
+                may_reorder: _,
             } => {
                 let out_name = unique_column_name();
                 let function_ir = AExprBuilder::new_from_node(function).expr_ir(out_name.clone());

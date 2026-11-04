@@ -128,6 +128,9 @@ pub enum Expr {
         partition_by: Vec<Expr>,
         order_by: Option<(Arc<Expr>, SortOptions)>,
         mapping: WindowMapping,
+        /// The rows of the frame the window is evaluated in may come out in any order when only
+        /// the query result observes their order. Set by SQL, where results have no row order.
+        may_reorder: bool,
     },
     #[cfg(feature = "dynamic_group_by")]
     Rolling {
@@ -369,11 +372,13 @@ impl Hash for Expr {
                 partition_by,
                 order_by,
                 mapping,
+                may_reorder,
             } => {
                 function.hash(state);
                 partition_by.hash(state);
                 order_by.hash(state);
                 mapping.hash(state);
+                may_reorder.hash(state);
             },
             Expr::Slice {
                 input,
@@ -488,7 +493,7 @@ impl Expr {
     ) -> PolarsResult<Field> {
         let mut ctx = ExprToIRContext::new_with_fields(expr_arena, schema);
         ctx.allow_unknown = true;
-        let expr = to_expr_ir(self.clone(), &mut ctx)?;
+        let expr = to_expr_ir(self, &mut ctx)?;
         let (node, output_name) = expr.into_inner();
         let dtype = expr_arena
             .get(node)

@@ -536,7 +536,7 @@ fn aexpr_slice_pushdown_top(
     let current_ae = expr_arena.get(current_ae_node);
 
     if !current_ae.is_elementwise_top_level()
-        || (maintain_errors && current_ae.is_fallible_top_level(expr_arena))
+        || (maintain_errors && current_ae.is_fallible_top_level_ignoring_overflow(expr_arena))
     {
         state.candidate_push_locations.clear();
     }

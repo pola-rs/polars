@@ -149,5 +149,12 @@ fn test_group_by_aggregate_udfs() -> PolarsResult<()> {
     }?;
     assert!(expected.equals_missing(&res));
 
+    // An aggregate is not a join condition.
+    ctx.register("bar", df! { "w" => &[1i64] }?.lazy());
+    let res = ctx
+        .execute("SELECT * FROM foo JOIN bar ON agg_plugin(foo.v + bar.w) = 9")
+        .and_then(|lf| lf.collect());
+    assert!(res.is_err_and(|e| e.to_string().contains("references both")));
+
     Ok(())
 }

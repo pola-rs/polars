@@ -1457,3 +1457,26 @@ def test_read_database_duckdb_uses_arrow(monkeypatch: pytest.MonkeyPatch) -> Non
             pl.read_database(
                 "SELECT CAST('x' AS INTEGER)", conn, iter_batches=True, batch_size=2
             )
+
+
+def test_read_database_struct_schema_overrides_30471() -> None:
+    duckdb = pytest.importorskip("duckdb")
+    query = "SELECT {'a': 1, 'b': 2} AS s"
+    with duckdb.connect() as conn:
+        # Struct overrides reorder and add fields by name.
+        dtype = pl.Struct({"b": pl.Int64, "a": pl.Int64, "c": pl.Int64})
+        df = pl.read_database(query, conn, schema_overrides={"s": dtype})
+        assert df.schema["s"] == dtype
+        assert df["s"].to_list() == [{"b": 2, "a": 1, "c": None}]
+
+        # Dropping a field or overflowing a value raises.
+        for dtype in (
+            pl.Struct({"a": pl.Int64}),
+            pl.Struct({"a": pl.Int64, "b": pl.Int8}),
+        ):
+            with pytest.raises(pl.exceptions.InvalidOperationError):
+                pl.read_database(
+                    "SELECT {'a': 1, 'b': 300} AS s",
+                    conn,
+                    schema_overrides={"s": dtype},
+                )

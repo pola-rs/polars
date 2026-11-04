@@ -1679,7 +1679,7 @@ def test_error_message(chunk_override: None) -> None:
 
 def test_csv_categorical_lifetime(chunk_override: None) -> None:
     # escaped strings do some heap allocates in the builder
-    # this tests of the lifetimes remains valid
+    # this tests if the lifetimes remain valid
     csv = textwrap.dedent(
         r"""
     a,b
@@ -2114,6 +2114,17 @@ def test_read_filelike_object_12404(chunk_override: None) -> None:
     buf = io.BufferedReader(io.BytesIO(csv))
     df = pl.read_csv(buf, eol_char=";")
     assert_frame_equal(df, expected)
+
+
+def test_write_csv_quote_line_terminator_30181(chunk_override: None) -> None:
+    df = pl.DataFrame({"s": ["x", "a;b", "y"], "a;b": ["p", "q", "r"]})
+    expected = 's,"a;b";x,p;"a;b",q;y,r;'
+
+    assert df.write_csv(line_terminator=";") == expected
+    f = io.BytesIO()
+    df.lazy().sink_csv(f, line_terminator=";")
+    assert f.getvalue().decode() == expected
+    assert_frame_equal(pl.read_csv(expected.encode(), eol_char=";"), df)
 
 
 def test_write_csv_bom(chunk_override: None) -> None:
@@ -2674,7 +2685,7 @@ def test_csv_write_scalar_empty_chunk_20273(
 
 def test_csv_malformed_quote_in_unenclosed_field_22395(chunk_override: None) -> None:
     # Note - the malformed detection logic is very basic, and fails to detect many
-    # types at this point (for eaxample: 'a,b"c,x"y' will not be detected).
+    # types at this point (for example: 'a,b"c,x"y' will not be detected).
     # Below is a one pattern that will be flagged (odd number of quotes in a row).
     malformed = b"""\
 a,b,x"y
@@ -3201,6 +3212,14 @@ def test_read_csv_use_pyarrow_int_columns_27389(tmp_path: Path) -> None:
         pl.read_csv(path, columns=[0], use_pyarrow=True),
         expected,
     )
+
+
+def test_read_csv_use_pyarrow_newlines_in_values_29717() -> None:
+    value = "x" * 600 + "\n" + "y" * 600
+    # Larger than pyarrow's 1 MiB block size.
+    data = ("v\n" + f'"{value}"\n' * 1000).encode()
+    df = pl.read_csv(io.BytesIO(data), use_pyarrow=True)
+    assert_frame_equal(df, pl.DataFrame({"v": [value] * 1000}))
 
 
 def test_read_csv_i64_overflow_infers_i128_27654(chunk_override: None) -> None:
