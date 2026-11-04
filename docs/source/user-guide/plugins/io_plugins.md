@@ -17,10 +17,10 @@ streaming engine. There are two interfaces:
     This functionality is considered **unstable**. It may be changed at any point without it being
     considered a breaking change.
 
-A `FileReaderBuilder` creates one `FileReader` per source and declares which operations the readers
-apply themselves. Each reader reports the schema and row count of its source and yields the data as
-DataFrames. `pl.scan_external_reader` turns a builder and a list of sources into a `LazyFrame`.
-Polars carries row indices and slices across the sources.
+A file reader reads one source of a custom format, and Polars drives the scan across all sources. A
+`FileReaderBuilder` creates one `FileReader` per source and declares which operations the readers
+apply themselves. `pl.scan_external_reader` turns a builder and a list of sources into a
+`LazyFrame`.
 
 Sources are `str` or `bytes` values that reach the builder unchanged, so they need not be file
 paths. Directories and glob patterns are only expanded with `expand_paths=True`.
@@ -107,32 +107,26 @@ class CountedJsonReader(FileReader):
                 yield df
 ```
 
-Polars calls `fetch_metadata` before any other method of a reader. Formats with a small metadata
-section can load it here. The example only reads the header line and leaves the rows untouched.
+`fetch_metadata` is called first and loads the metadata of the source, here the header line.
+`schema` and `n_rows_in_file` describe the source. Polars asks for the row count when it needs to
+know where the next source starts, and counting may stop at the optional `limit`.
 
-The methods `schema` and `n_rows_in_file` describe the source. Polars asks for the row count when it
-needs to know where the next source starts, for example to place a slice across several sources. A
-reader that has to count rows can stop once it reaches the optional `limit`.
-
-The data itself comes from `collect_batches`, which returns an iterator of DataFrames. Polars stops
-consuming it as soon as it has enough rows. Its arguments describe what to read:
+`collect_batches` yields the data as DataFrames, and Polars stops consuming it once it has enough
+rows. Its arguments are:
 
 - `columns` lists the columns to read. The list is empty when a query only needs the number of rows,
   as with `select(pl.len())`. The DataFrames must have the correct height in that case too.
 - `row_index` holds the name of a row index column and the index of the first row in this source. It
   is only passed when the builder declares support for it.
 - `pre_slice` holds the offset and length of a slice, counted from the start of this source. The
-  slice can extend past the end of the source, and the offset can even lie beyond it. It is also
-  only passed when the builder declares support for it.
+  slice can extend past the end of the source. It is also only passed when the builder declares
+  support for it.
 - `filters` holds predicates that the reader may use. They are described [further below](#filters).
 - `num_pipelines` is a hint for how much parallelism the reader may use.
 
-The reader applies these operations in a fixed order. The row index comes first and numbers the rows
-from the start of the source. The slice is applied next, and the filters come last. In the example,
-a row's index therefore depends on its position in the file and not on the slice.
-
-The batch size of two rows only serves to show that a reader can yield its data in several pieces. A
-real reader would yield larger batches.
+The operations apply in a fixed order: row index, then slice, then filters. The row index therefore
+numbers rows from the start of the source, not of the slice. The batch size of two only shows that a
+reader can yield its data in several pieces.
 
 ### The builder
 
@@ -160,20 +154,13 @@ def scan_counted_json(paths: list[str], schema: pl.Schema) -> pl.LazyFrame:
     )
 ```
 
-`ReaderCapabilities` declares which operations the reader applies itself. Operations that are not
-declared are not passed to `collect_batches`. Polars then applies them to the DataFrames that the
-reader yields. A reader without slice support, for example, always reads its source from the start.
+`ReaderCapabilities` declares which operations the reader applies itself. Polars applies the others
+to the DataFrames that the reader yields.
 
-`build_file_reader` creates the reader for one source. Polars may call it from several threads at
-once. The `multi_scan_context` dictionary is shared by all readers of one scan. It can hold
-resources that are expensive to create, such as a thread pool or a connection.
-
-`explain_properties` returns extra lines for the output of `LazyFrame.explain()`.
-
-The `FileReader` class has further optional methods. `initialize_serial` is called on the readers
-one at a time and in the order of the sources. It is not guaranteed to be called, for example when a
-query stops early. `on_drop` is called when Polars no longer needs a reader. The
-[API reference](https://docs.pola.rs/api/python/stable/reference/plugins.html) lists them in full.
+`build_file_reader` may be called from several threads at once. The `multi_scan_context` dictionary
+is shared by all readers of a scan, for example to hold a thread pool. `explain_properties` adds
+lines to the output of `LazyFrame.explain()`. The optional hooks `initialize_serial` and `on_drop`
+are described in the [API reference](https://docs.pola.rs/api/python/stable/reference/plugins.html).
 
 ### Using the reader
 
@@ -217,8 +204,7 @@ shape: (5, 2)
 └──────┴─────────────┘
 ```
 
-A row index and a slice are pushed into the scan. The slice below starts in the first file and ends
-in the second.
+The row index and the slice are pushed into the scan, and the slice spans both files.
 
 ```python
 q = lf.with_row_index().slice(2, 2)
@@ -245,18 +231,13 @@ shape: (2, 3)
 
 ### Filters
 
-A reader that declares `supported_filter` in its capabilities receives the predicates of a query in
-the `filters` argument. Each one is a `FilterExpr`. Its `expr` attribute holds the Polars
-expression. Its `pyarrow_expr` property holds an equivalent PyArrow expression, or `None` if there
-is none. Accessing the property raises an error if the conversion failed.
+A reader that declares `supported_filter` receives the predicates of the query in `filters`. Each is
+a `FilterExpr`, whose `expr` holds the Polars expression and whose `pyarrow_expr` holds a PyArrow
+equivalent, or `None` if there is none. Filters are only passed when the reader also applies every
+row index and slice of the scan.
 
-Filters are only passed when the reader also applies every row index and slice of the scan itself.
-Otherwise Polars could not apply the operations in the order described above.
-
-With `supported_filter="partial"`, the reader may use the filters to skip data, for example with
-statistics stored in the file. Polars still evaluates the filters on the rows that the reader
-yields. With `supported_filter="full"`, Polars relies on the reader to have applied every filter
-exactly.
+With `supported_filter="partial"`, the reader may use the filters to skip data, and Polars filters
+the yielded rows again. With `supported_filter="full"`, the reader must apply them exactly.
 
 ## Tables with `LazyFrameResolver`
 
@@ -265,18 +246,15 @@ exactly.
     This functionality is considered **unstable**. It may be changed at any point without it being
     considered a breaking change.
 
-Table formats and data catalogs keep a list of the data files that make up a table. The list can
-change between queries, and the filters of a query can rule out whole files. A `LazyFrameResolver`
-therefore defers building the scan until the query runs. Polars passes it the projection, row limit
-and filters of the query. It returns a `LazyFrame` that takes the place of the scan, typically a
-scan over a file reader.
+A `LazyFrameResolver` defers resolving the paths to scan until the query runs. The resolver sees the
+columns, row limit and filters that the query requests, and returns the `LazyFrame` to scan. Table
+formats and catalogs use this to scan the current list of files and to skip files that the filters
+rule out.
 
 ### Example catalog
 
-The example keeps its catalog in a JSON file. The catalog has a version number and lists the data
-files of the table. Each file holds the measurements of one day, and the catalog records that day
-next to the path. The data files use the format from the previous section and contain the `day`
-column too.
+The example catalog is a JSON file with a version number and the data files of the table. Each file
+holds the measurements of one day, which the catalog records next to its path.
 
 ```python
 def add_file(catalog_path: str, path: str, day: str, df: pl.DataFrame) -> None:
@@ -348,50 +326,41 @@ class CatalogTable(LazyFrameResolver):
         return lf, ResolvedLazyFrameProps(version_key=version_key)
 ```
 
-The method `schema` returns the schema of the table. Polars needs it to build the query plan, so it
-should not depend on resolving the table.
+`schema` returns the schema of the table without resolving it, as Polars needs it to build the query
+plan. `resolve_lazyframe` receives:
 
-Polars calls `resolve_lazyframe` with the parts of the query that the resolver can take over:
+- `projection`: the columns to return, or `None` for all. An empty list means that only the row
+  count is needed, so the result must keep its height, as `lf.drop("*")` does.
+- `limit`: the maximum number of rows needed, or `None`.
+- `filters`: the predicates of the query as `FilterExpr` objects. `filter_columns` lists the columns
+  they refer to, and `filter_drop_columns_idx` marks the columns at the end of `projection` that
+  only the filters need.
+- `existing_resolved_version_key`: the version key of the previous resolve, described below.
 
-- `projection` lists the columns to return, or is `None` for all columns. An empty list means that
-  only the number of rows is needed. The result must keep its height in that case, which
-  `lf.drop("*")` does.
-- `limit` is the maximum number of rows needed, or `None`.
-- `filters` holds the predicates of the query as `FilterExpr` objects. `filter_columns` lists the
-  columns that they refer to.
-- `filter_drop_columns_idx` marks the columns at the end of `projection` that are only needed to
-  evaluate the filters.
-- `existing_resolved_version_key` is the version key of the previous resolve, as described below.
-
-The resolver in the example evaluates the filters that refer to `day` alone against the catalog. A
-query for a single day thereby only opens the files of that day. Polars evaluates the filters again
-on the rows that the scan returns, so the result stays correct for filters on other columns.
+The example resolver evaluates the filters on `day` against the catalog, so a query for one day only
+opens the files of that day. Polars applies all filters again on the scanned rows.
 
 ### Versions and applied filters
 
-A resolver can return a plain `LazyFrame` or a tuple of a `LazyFrame` and `ResolvedLazyFrameProps`.
-The props carry two pieces of information.
+A resolver returns a `LazyFrame`, optionally paired with `ResolvedLazyFrameProps`.
 
-The `version_key` identifies the version of the table that the result represents. Without a version
-key, Polars caches the resolved `LazyFrame` and reuses it while the arguments stay the same. With a
-version key, Polars calls the resolver at every `collect()`. If a previous resolve with the same
-arguments exists, its key is passed as `existing_resolved_version_key`. When the table has not
-changed, the resolver can return `None` in place of a `LazyFrame` together with that same key.
-Polars then reuses the previous result. Returning `None` with any other key raises an error. The
-example takes its version key from the catalog, so new files become visible to the next query.
+`version_key` identifies the version of the table. Without it, Polars caches the result and reuses
+it for the same arguments. With it, Polars calls the resolver at every `collect()` and passes the
+key of the previous resolve with the same arguments as `existing_resolved_version_key`. If the table
+is unchanged, the resolver returns `None` with that key to reuse the previous result. Returning
+`None` with any other key raises an error. The example takes the key from the catalog, so new files
+show up in the next query.
 
-The `applied_filters` field lists the indices of the filters that the returned `LazyFrame` applies
-fully. Polars does not apply these filters again. The example leaves the field empty, because the
-catalog only rules out whole files and the rows inside a file are not checked.
+`applied_filters` lists the filters that the returned `LazyFrame` applies fully, and Polars skips
+them. The example leaves it empty, because it only skips whole files.
 
-A resolver can also implement `cse_eq` to tell whether two resolvers represent the same table. This
-allows common subplan elimination to read a table only once when a query reads the same columns of
-it several times. The default implementation returns `False`.
+`cse_eq` tells whether two resolvers represent the same table, so that common subplan elimination
+can read it once. It returns `False` by default.
 
 ### Using the resolver
 
-`LazyFrameResolver.lazy()` creates a `LazyFrame` from a resolver. Showing the plan with `explain()`
-resolves the table. The plan shows that only one of the two files is scanned.
+`lazy()` creates a `LazyFrame` from the resolver. `explain()` resolves the table and shows that only
+one of the two files is scanned.
 
 ```python
 add_file(

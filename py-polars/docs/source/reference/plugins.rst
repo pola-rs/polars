@@ -72,9 +72,9 @@ LazyFrame resolvers
     This functionality is considered **unstable**. It may be changed
     at any point without it being considered a breaking change.
 
-A :class:`~polars.lazyframe.resolver.LazyFrameResolver` defers building a scan until a query runs.
-It receives the projection, row limit and filters of the query, and returns a
-:class:`~polars.LazyFrame` that takes the place of the scan. This suits table formats and catalogs.
+A :class:`~polars.lazyframe.resolver.LazyFrameResolver` defers resolving the paths to scan until a
+query runs. The resolver sees the columns, row limit and filters that the query requests, and
+returns the :class:`~polars.LazyFrame` to scan.
 
 .. currentmodule:: polars.lazyframe.resolver
 
