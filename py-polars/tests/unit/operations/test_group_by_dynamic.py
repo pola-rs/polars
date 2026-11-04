@@ -13,7 +13,13 @@ from polars.exceptions import AttributeRemovedError, ComputeError, InvalidOperat
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars._typing import ClosedInterval, EngineType, Label, StartBy
+    from polars._typing import (
+        ClosedInterval,
+        EngineType,
+        Label,
+        StartBy,
+        TimeUnit,
+    )
 
 
 @pytest.mark.parametrize(
@@ -1711,3 +1717,22 @@ def test_group_by_dynamic_per_row_with_per_group_scalar(
     x = pl.col.x
     out = df.group_by_dynamic("t", every=every, period=period).agg(sub=x - x.mean())
     assert out["sub"].to_list() == expected
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("time_unit", ["ms", "us"])
+def test_group_by_dynamic_more_than_292_years_apart_30520(
+    engine: EngineType, time_unit: TimeUnit
+) -> None:
+    # > ~292.3 years (2^63 ns) between timestamps with a sub-daily `every`
+    t0 = datetime(1, 1, 1)
+    t1 = datetime(2025, 1, 1)
+    lf = pl.LazyFrame({"t": pl.Series([t0, t1], dtype=pl.Datetime(time_unit))})
+    out = lf.group_by_dynamic("t", every="6h").agg(pl.len()).collect(engine=engine)
+    expected = pl.DataFrame(
+        {
+            "t": pl.Series([t0, t1], dtype=pl.Datetime(time_unit)),
+            "len": pl.Series([1, 1], dtype=pl.get_index_type()),
+        }
+    )
+    assert_frame_equal(out, expected)

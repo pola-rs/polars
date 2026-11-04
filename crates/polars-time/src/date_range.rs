@@ -137,20 +137,20 @@ pub(crate) fn datetime_range_i64(
         ClosedWindow::Both | ClosedWindow::Left => 0,
         ClosedWindow::Right | ClosedWindow::None => 1,
     };
-    let mut t = (interval * i).add(time_unit, start, time_zone)?;
+    let mut t = interval.add_scaled(time_unit, start, time_zone, i)?;
     i += 1;
     match closed {
         ClosedWindow::Both | ClosedWindow::Right => {
             while t <= end {
                 ts.push(t);
-                t = (interval * i).add(time_unit, start, time_zone)?;
+                t = interval.add_scaled(time_unit, start, time_zone, i)?;
                 i += 1;
             }
         },
         ClosedWindow::Left | ClosedWindow::None => {
             while t < end {
                 ts.push(t);
-                t = (interval * i).add(time_unit, start, time_zone)?;
+                t = interval.add_scaled(time_unit, start, time_zone, i)?;
                 i += 1;
             }
         },

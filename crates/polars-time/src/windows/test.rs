@@ -1044,3 +1044,77 @@ fn test_group_by_windows_placement_range_edges() {
     assert_eq!(l, vec![6 * hour, 10 * hour]);
     assert_eq!(g.as_slice(), &[[6, 4], [10, 4]]);
 }
+
+#[test]
+fn test_group_by_windows_more_than_292_years_apart_30520() {
+    use polars_defs::time::group_by::StartBy;
+
+    let t0 = NaiveDate::from_ymd_opt(1, 1, 1)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap()
+        .and_utc()
+        .timestamp_micros();
+    let t1 = NaiveDate::from_ymd_opt(2025, 1, 1)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap()
+        .and_utc()
+        .timestamp_micros();
+    let ts = [t0, t1];
+    let every = Duration::parse("6h");
+    let period = Duration::parse("6h");
+    let offset = Duration::from_nsecs(0);
+    let w = Window::new(every, period, offset);
+
+    let (groups, lower, upper) = group_by_windows(
+        w,
+        &ts,
+        ClosedWindow::Left,
+        TimeUnit::Microseconds,
+        &None,
+        true,
+        true,
+        StartBy::WindowBound,
+        None,
+    )
+    .unwrap();
+    assert_eq!(groups.as_slice(), &[[0, 1], [1, 1]]);
+    assert_eq!(lower, vec![t0, t1]);
+    assert_eq!(
+        upper,
+        vec![
+            period.add(TimeUnit::Microseconds, t0, None).unwrap(),
+            period.add(TimeUnit::Microseconds, t1, None).unwrap(),
+        ]
+    );
+
+    // Also verify streaming GroupByDynamicWindower produces identical windows
+    let mut windower = GroupByDynamicWindower::new(
+        period,
+        offset,
+        every,
+        StartBy::WindowBound,
+        ClosedWindow::Left,
+        TimeUnit::Microseconds,
+        None,
+        true,
+        true,
+        None,
+    );
+    let mut stream_groups = Vec::new();
+    let mut stream_lower = Vec::new();
+    let mut stream_upper = Vec::new();
+    windower
+        .insert(
+            &ts,
+            &mut stream_groups,
+            &mut stream_lower,
+            &mut stream_upper,
+        )
+        .unwrap();
+    windower.finalize(&mut stream_groups, &mut stream_lower, &mut stream_upper);
+    assert_eq!(stream_groups.as_slice(), &[[0, 1], [1, 1]]);
+    assert_eq!(stream_lower, lower);
+    assert_eq!(stream_upper, upper);
+}

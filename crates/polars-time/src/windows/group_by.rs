@@ -1043,7 +1043,8 @@ impl GroupByDynamicWindower {
     }
 
     fn window_start(&self, k: i64) -> PolarsResult<i64> {
-        (self.every * k).add(self.tu, self.origin, self.tz.as_ref())
+        self.every
+            .add_scaled(self.tu, self.origin, self.tz.as_ref(), k)
     }
 
     /// Find the first window from window `k` on whose upper bound is not behind `target`.
