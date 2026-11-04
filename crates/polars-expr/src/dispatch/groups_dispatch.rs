@@ -411,7 +411,7 @@ pub fn drop_items<'a>(
     ac.groups();
     let predicate = BitMask::from_bitmap(predicate);
     RAYON.install(|| {
-        let sorted_within_groups = ac.groups.is_sorted_within_groups();
+        let idx_in_row_order = ac.groups.is_idx_in_row_order();
         let mut positions: GroupsIdx = match &**ac.groups.as_ref() {
             GroupsType::Idx(idxs) => idxs
                 .into_par_iter()
@@ -460,7 +460,7 @@ pub fn drop_items<'a>(
                 })
                 .collect(),
         };
-        positions.set_sorted_within_groups(sorted_within_groups);
+        positions.set_idx_in_row_order(idx_in_row_order);
         ac.with_groups(GroupsType::Idx(positions).into_sliceable());
     });
 
@@ -886,7 +886,7 @@ pub fn unique<'a>(
     }
 
     RAYON.install(|| {
-        let sorted_within_groups = ac.groups().is_sorted_within_groups();
+        let idx_in_row_order = ac.groups().is_idx_in_row_order();
         let mut positions: GroupsIdx = match &**ac.groups().as_ref() {
             GroupsType::Idx(idx) => idx
                 .into_par_iter()
@@ -909,7 +909,7 @@ pub fn unique<'a>(
                 })
                 .collect(),
         };
-        positions.set_sorted_within_groups(sorted_within_groups);
+        positions.set_idx_in_row_order(idx_in_row_order);
         ac.with_groups(GroupsType::Idx(positions).into_sliceable());
     });
 
@@ -945,7 +945,7 @@ fn fw_bw_fill_null<'a>(
 
     let validity = BitMask::from_bitmap(&validity);
     RAYON.install(|| {
-        let sorted_within_groups = ac.groups().is_sorted_within_groups();
+        let idx_in_row_order = ac.groups().is_idx_in_row_order();
         let mut positions: GroupsIdx = match &**ac.groups().as_ref() {
             GroupsType::Idx(idx) => idx
                 .into_par_iter()
@@ -966,7 +966,7 @@ fn fw_bw_fill_null<'a>(
                 })
                 .collect(),
         };
-        positions.set_sorted_within_groups(sorted_within_groups);
+        positions.set_idx_in_row_order(idx_in_row_order);
         ac.with_groups(GroupsType::Idx(positions).into_sliceable());
     });
 

@@ -1952,6 +1952,21 @@ def test_window_min_with_order_by_on_sorted_column_30550() -> None:
 
 
 @pytest.mark.parametrize("agg_by", [pl.Expr.min_by, pl.Expr.max_by])
+def test_grouped_min_max_by_after_reverse_on_sorted_column_30550(
+    agg_by: Callable[[pl.Expr, pl.Expr], pl.Expr],
+) -> None:
+    unflagged = pl.DataFrame({"g": [1, 2] * 3, "x": list(range(6))})
+    df = unflagged.with_columns(pl.col("x").set_sorted())
+
+    expr = agg_by(pl.col("x").reverse(), pl.col("x").reverse())
+    assert_frame_equal(
+        df.group_by("g").agg(expr),
+        unflagged.group_by("g").agg(expr),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("agg_by", [pl.Expr.min_by, pl.Expr.max_by])
 def test_min_max_by_series_length_mismatch_26049(
     agg_by: Callable[[pl.Expr, pl.Expr], pl.Expr],
 ) -> None:

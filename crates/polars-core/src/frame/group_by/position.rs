@@ -15,8 +15,10 @@ use crate::utils::{NoNull, flatten, slice_slice};
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GroupsIdx {
     pub(crate) sorted_by_first_idx: bool,
-    /// Whether the indices within each group are non-decreasing.
-    pub(crate) sorted_within_groups: bool,
+    /// Whether the indices within each group are in row order (repeats allowed).
+    /// Used to decide if we can take the fast path for min/max.
+    /// `false` is always safe.
+    pub(crate) idx_in_row_order: bool,
     /// Positions of the start of each group.
     first: Vec<IdxSize>,
     /// Global positions of all elements of all groups.
@@ -85,7 +87,7 @@ impl From<Vec<Vec<IdxItem>>> for GroupsIdx {
         }
         GroupsIdx {
             sorted_by_first_idx: false,
-            sorted_within_groups: false,
+            idx_in_row_order: false,
             first,
             all,
         }
@@ -96,7 +98,7 @@ impl GroupsIdx {
     pub fn new(first: Vec<IdxSize>, all: Vec<IdxVec>, sorted_by_first_idx: bool) -> Self {
         Self {
             sorted_by_first_idx,
-            sorted_within_groups: false,
+            idx_in_row_order: false,
             first,
             all,
         }
@@ -138,12 +140,15 @@ impl GroupsIdx {
         self.sorted_by_first_idx
     }
 
-    pub fn is_sorted_within_groups(&self) -> bool {
-        self.sorted_within_groups
+    pub fn is_idx_in_row_order(&self) -> bool {
+        self.idx_in_row_order
     }
 
-    pub fn set_sorted_within_groups(&mut self, sorted: bool) {
-        self.sorted_within_groups = sorted;
+    /// Only set `in_row_order=true` if the indices of every group are non-decreasing.
+    /// Sorted columns then take the minimum and maximum from the ends of each group.
+    /// A wrong `true` gives wrong results, a wrong `false` only costs speed.
+    pub fn set_idx_in_row_order(&mut self, in_row_order: bool) {
+        self.idx_in_row_order = in_row_order;
     }
 
     pub fn iter(
@@ -181,7 +186,7 @@ impl GroupsIdx {
     pub fn new_empty() -> Self {
         Self {
             sorted_by_first_idx: false,
-            sorted_within_groups: true,
+            idx_in_row_order: true,
             first: vec![0],
             all: vec![vec![].into()],
         }
@@ -193,7 +198,7 @@ impl FromIterator<IdxItem> for GroupsIdx {
         let (first, all) = iter.into_iter().unzip();
         GroupsIdx {
             sorted_by_first_idx: false,
-            sorted_within_groups: false,
+            idx_in_row_order: false,
             first,
             all,
         }
@@ -231,7 +236,7 @@ impl FromParallelIterator<IdxItem> for GroupsIdx {
         let (first, all) = par_iter.into_par_iter().unzip();
         GroupsIdx {
             sorted_by_first_idx: false,
-            sorted_within_groups: false,
+            idx_in_row_order: false,
             first,
             all,
         }
@@ -366,7 +371,7 @@ impl GroupsType {
                     .iter()
                     .map(|&[first, len]| (first, (first..first + len).collect::<IdxVec>()))
                     .collect();
-                groups.sorted_within_groups = true;
+                groups.idx_in_row_order = true;
                 groups
             },
         }
@@ -456,9 +461,9 @@ impl GroupsType {
         }
     }
 
-    pub fn is_sorted_within_groups(&self) -> bool {
+    pub fn is_idx_in_row_order(&self) -> bool {
         match self {
-            GroupsType::Idx(groups) => groups.is_sorted_within_groups(),
+            GroupsType::Idx(groups) => groups.is_idx_in_row_order(),
             GroupsType::Slice { .. } => true,
         }
     }
@@ -868,7 +873,7 @@ fn slice_groups_inner(g: &GroupsType, offset: i64, len: usize) -> ManuallyDrop<G
                 Vec::from_raw_parts(ptr, all.len(), all.len())
             };
             let mut sliced = GroupsIdx::new(first, all, groups.is_sorted_by_first_idx());
-            sliced.sorted_within_groups = groups.is_sorted_within_groups();
+            sliced.idx_in_row_order = groups.is_idx_in_row_order();
             ManuallyDrop::new(GroupsType::Idx(sliced))
         },
         GroupsType::Slice {

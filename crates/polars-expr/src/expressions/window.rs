@@ -991,7 +991,7 @@ impl PhysicalExpr for WindowExpr {
         }
 
         let mut subgroups: GroupsIdx = subgroups.into();
-        subgroups.set_sorted_within_groups(groups.is_sorted_within_groups());
+        subgroups.set_idx_in_row_order(groups.is_idx_in_row_order());
         let mut subgroups = GroupsType::Idx(subgroups);
         if let Some((order_by, _, options)) = order_by {
             subgroups =

@@ -23,6 +23,7 @@ fn get_init_size() -> usize {
     }
 }
 
+/// Each partition must push its indices in row order (result embeds that info)
 fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsType {
     let mut idx = if sorted {
         // we can just take the first value, no need to flatten
@@ -70,8 +71,7 @@ fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsType {
             GroupsIdx::from(out)
         }
     };
-    // Every partition of `out` must have pushed its indices in row order.
-    idx.sorted_within_groups = true;
+    idx.idx_in_row_order = true;
     GroupsType::Idx(idx)
 }
 
@@ -111,7 +111,7 @@ where
         (first, groups) = hash_tbl.into_values().unzip();
     }
     let mut idx = GroupsIdx::new(first, groups, sorted);
-    idx.sorted_within_groups = true;
+    idx.idx_in_row_order = true;
     GroupsType::Idx(idx)
 }
 
