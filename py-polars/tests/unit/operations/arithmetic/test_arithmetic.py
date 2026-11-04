@@ -1400,3 +1400,31 @@ def test_reflected_arithmetic_series_27752() -> None:
     assert_series_equal(lhs.__rmod__(rhs), rhs % lhs)
     assert_series_equal(lhs.__rpow__(rhs), rhs**lhs)
     assert_series_equal(lhs.__rsub__(np.array([5, 7, 9])), pl.Series("lhs", [3, 4, 5]))
+
+
+@pytest.mark.parametrize(
+    "lit", [2, 60_000, -60_000, 65_504, -65_504, 65_505, -65_505, 70_000, 1_000_000]
+)
+def test_float16_int_literal_overflow_30319(lit: int) -> None:
+    exprs = {
+        "add": pl.col.a + lit,
+        "sub": pl.col.a - lit,
+        "mul": pl.col.a * lit,
+        "div": pl.col.a / lit,
+        "radd": lit + pl.col.a,
+        "rsub": lit - pl.col.a,
+        "rmul": lit * pl.col.a,
+        "rdiv": lit / pl.col.a,
+    }
+    q = pl.LazyFrame({"a": [1.0]}, schema={"a": pl.Float16}).select(**exprs)
+
+    expected_dtype = pl.Float16 if -65_504 <= lit <= 65_504 else pl.Float64
+    expected = (
+        pl.LazyFrame({"a": [1.0]}, schema={"a": pl.Float64})
+        .select(**exprs)
+        .collect()
+        .cast(expected_dtype)
+    )
+
+    assert_schema_equal(q.collect_schema(), expected.schema)
+    assert_frame_equal(q.collect(), expected)
