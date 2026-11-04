@@ -23,7 +23,7 @@ use super::flush::{Flush, OutputRange, OutputUnit};
 use super::sink_partitions::SinkPartitions;
 use super::tuning::{RowSizes, WindowTuning};
 use super::{StoredMorsel, WindowParams};
-use crate::hash_shuffle::split::{SplitRows, split};
+use crate::hash_shuffle::split::{NullRows, SplitRows, split};
 
 /// The column with the input row of each row in the partitions.
 pub(super) const ROW_ID: PlSmallStr = PlSmallStr::from_static("__POLARS_WINDOW_ROW");
@@ -442,7 +442,7 @@ impl Shuffle<'_> {
                         } else {
                             let keys = df.select(self.params.partition_by.iter().cloned())?;
                             let keys = HashKeys::from_df(&keys, random_state.clone(), true, false);
-                            split(&keys, None, &partitioner)
+                            split(&keys, None, &partitioner, NullRows::FirstPartition)
                         };
                         PolarsResult::Ok(LoadedFrame {
                             df,

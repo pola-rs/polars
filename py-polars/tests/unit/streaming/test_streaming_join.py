@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -1148,3 +1149,166 @@ def test_streaming_join_keeps_height_of_input_without_columns(
         q.collect(engine="in-memory"),
         check_row_order=False,
     )
+
+
+SPILL_ENV = {
+    "POLARS_OOC_MEMORY_BUDGET_MB": "0",
+    "POLARS_OOC_SPILL_MIN_BYTES": "1",
+    "POLARS_OOC_DRIFT_THRESHOLD": "0",
+}
+
+
+@pytest.fixture
+def spill_join(plmonkeypatch: PlMonkeyPatch, tmp_path: Path) -> None:
+    """Spills the build side and the samples, in several morsels and batches."""
+    for name, value in SPILL_ENV.items():
+        plmonkeypatch.setenv(name, value)
+    plmonkeypatch.setenv("POLARS_OOC_SPILL_DIR", str(tmp_path))
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "16")
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "40")
+    plmonkeypatch.setenv("POLARS_JOIN_BATCH_BYTES", "1024")
+
+
+# The number of rows, the key modulus and the null key interval of each input of
+# `_spill_join_inputs`.
+_SPILL_JOIN_LEFT = (150, 50, 7)
+_SPILL_JOIN_RIGHT = (120, 45, 11)
+
+
+def _spill_join_input(
+    key_type: str, name: str, num_rows: int, modulo: int, null_every: int
+) -> pl.LazyFrame:
+    i = pl.int_range(num_rows)
+    keys = _join_keys(pl.when(i % null_every != 0).then(i % modulo), key_type)
+    return pl.select(*(e.alias(n) for n, e in keys.items()), i.alias(name)).lazy()
+
+
+def _spill_join_inputs(key_type: str) -> tuple[pl.LazyFrame, pl.LazyFrame]:
+    left = _spill_join_input(key_type, "l", *_SPILL_JOIN_LEFT)
+    right = _spill_join_input(key_type, "r", *_SPILL_JOIN_RIGHT)
+    return left, right
+
+
+def _spill_join_keys(n: int, modulo: int, null_every: int) -> list[int | None]:
+    """The keys of `_spill_join_inputs` as integers."""
+    return [None if i % null_every == 0 else i % modulo for i in range(n)]
+
+
+def _expected_join(how: str, nulls_equal: bool, *, left_first: bool) -> pl.DataFrame:
+    """
+    The `(l, r)` rows of a join of `_spill_join_inputs`.
+
+    Each row of the first side in order with its matches in order, then the
+    unmatched rows of the other side in order.
+    """
+    left = _spill_join_keys(*_SPILL_JOIN_LEFT)
+    right = _spill_join_keys(*_SPILL_JOIN_RIGHT)
+    first, other = (left, right) if left_first else (right, left)
+    keep_first = how == "full" or how == ("left" if left_first else "right")
+    keep_other = how == "full" or how == ("right" if left_first else "left")
+
+    other_rows: dict[int | None, list[int]] = {}
+    for j, k in enumerate(other):
+        if k is not None or nulls_equal:
+            other_rows.setdefault(k, []).append(j)
+    rows: list[tuple[int | None, int | None]] = []
+    matched = set()
+    for i, k in enumerate(first):
+        js = other_rows.get(k, [])
+        matched.update(js)
+        rows.extend((i, j) for j in js)
+        if not js and keep_first:
+            rows.append((i, None))
+    if keep_other:
+        rows.extend((None, j) for j in range(len(other)) if j not in matched)
+
+    if not left_first:
+        rows = [(i, j) for j, i in rows]
+    return pl.DataFrame(rows, schema={"l": pl.Int64, "r": pl.Int64}, orient="row")
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("threads", ["1", None])
+@pytest.mark.parametrize("key_type", ["int", "str", "int, int", "struct"])
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
+@pytest.mark.parametrize(
+    ("maintain_order", "build_side"),
+    [
+        ("none", "auto"),
+        ("none", "force_left"),
+        ("none", "force_right"),
+        ("left", "auto"),
+        ("right", "auto"),
+        ("left_right", "auto"),
+        ("right_left", "auto"),
+    ],
+)
+@pytest.mark.usefixtures("spill_join")
+def test_streaming_join_spilled_build(
+    maintain_order: MaintainOrderJoin,
+    build_side: JoinBuildSide,
+    how: JoinStrategy,
+    nulls_equal: bool,
+    key_type: str,
+    threads: str | None,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    if threads is not None:
+        plmonkeypatch.setenv("POLARS_MAX_THREADS", threads)
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    left, right = _spill_join_inputs(key_type)
+    on = list(_join_keys(pl.lit(0), key_type))
+    q = left.join(
+        right,
+        on=on,
+        how=how,
+        nulls_equal=nulls_equal,
+        maintain_order=maintain_order,
+        build_side=build_side,
+    ).select("l", "r")
+
+    capfd.readouterr()
+    out = q.collect(engine="streaming")
+    err = capfd.readouterr().err
+    [num_batches] = re.findall(r"\[equi-join\]: building .* (\d+) batches", err)
+    assert int(num_batches) > 1
+
+    left_first = maintain_order in ("none", "left", "left_right")
+    expected = _expected_join(how, nulls_equal, left_first=left_first)
+    in_order = maintain_order in ("left_right", "right_left")
+    assert_frame_equal(out, expected, check_row_order=in_order)
+    if maintain_order in ("left", "right"):
+        name = maintain_order[0]
+        assert_series_equal(out[name], expected[name])
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("threads", ["1", None])
+@pytest.mark.parametrize("key_type", ["int", "str", "int, int", "struct"])
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize("how", ["semi", "anti"])
+@pytest.mark.usefixtures("spill_join")
+def test_streaming_semi_anti_join_spilled_samples(
+    how: JoinStrategy,
+    nulls_equal: bool,
+    key_type: str,
+    threads: str | None,
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    if threads is not None:
+        plmonkeypatch.setenv("POLARS_MAX_THREADS", threads)
+    left, right = _spill_join_inputs(key_type)
+    on = list(_join_keys(pl.lit(0), key_type))
+    q = left.join(right, on=on, how=how, nulls_equal=nulls_equal).select("l")
+
+    out = q.collect(engine="streaming")
+    full = _expected_join("left", nulls_equal, left_first=True)
+    matched = full.filter(pl.col("r").is_not_null())["l"].unique()
+    expected = (
+        full.select("l")
+        .unique()
+        .filter(pl.col("l").is_in(matched.implode()) == (how == "semi"))
+    )
+    assert_frame_equal(out, expected, check_row_order=False)
