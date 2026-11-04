@@ -703,15 +703,29 @@ pub fn aexpr_to_pyarrow<'py>(
     expr_arena: &Arena<AExpr>,
     schema: &Schema,
 ) -> Option<Bound<'py, PyAny>> {
-    match expr_arena.get(predicate) {
+    aexpr_to_pyarrow_impl(py, pc, predicate, expr_arena, schema, true)
+}
+
+// `null_as_false` is set when a null result filters out the row just like
+// `false` does, so the conversion may give `false` where Polars gives null.
+fn aexpr_to_pyarrow_impl<'py>(
+    py: Python<'py>,
+    pc: &Bound<'py, PyAny>,
+    node: Node,
+    expr_arena: &Arena<AExpr>,
+    schema: &Schema,
+    null_as_false: bool,
+) -> Option<Bound<'py, PyAny>> {
+    let convert = |node: Node| aexpr_to_pyarrow_impl(py, pc, node, expr_arena, schema, false);
+    match expr_arena.get(node) {
         AExpr::BinaryExpr { left, right, op } => {
             if matches!(op, Operator::Xor) {
                 if !(returns_boolean(*left, expr_arena) && returns_boolean(*right, expr_arena)) {
                     return None;
                 }
 
-                let l = aexpr_to_pyarrow(py, pc, *left, expr_arena, schema)?;
-                let r = aexpr_to_pyarrow(py, pc, *right, expr_arena, schema)?;
+                let l = convert(*left)?;
+                let r = convert(*right)?;
                 let any = l.call_method1("__or__", (&r,)).ok()?;
                 let both = l
                     .call_method1("__and__", (&r,))
@@ -725,8 +739,17 @@ pub fn aexpr_to_pyarrow<'py>(
             let method = binary_op_method(op)?;
             reject_inexact_arithmetic(*left, *right, *op, expr_arena, schema)?;
 
-            let l = aexpr_to_pyarrow(py, pc, *left, expr_arena, schema)?;
-            let r = aexpr_to_pyarrow(py, pc, *right, expr_arena, schema)?;
+            // Under Kleene logic a null operand of `&` or `|` gives the same
+            // filter result as a `false` one.
+            let operand_null_as_false = null_as_false
+                && matches!(
+                    op,
+                    Operator::And | Operator::Or | Operator::LogicalAnd | Operator::LogicalOr
+                );
+            let l =
+                aexpr_to_pyarrow_impl(py, pc, *left, expr_arena, schema, operand_null_as_false)?;
+            let r =
+                aexpr_to_pyarrow_impl(py, pc, *right, expr_arena, schema, operand_null_as_false)?;
             l.call_method1(method, (r,)).ok()
         },
         AExpr::Column(name) => pc.call_method1("field", (name,)).ok(),
@@ -743,7 +766,7 @@ pub fn aexpr_to_pyarrow<'py>(
             input,
             ..
         } => {
-            let col = aexpr_to_pyarrow(py, pc, input.first()?.node(), expr_arena, schema)?;
+            let col = convert(input.first()?.node())?;
             let rhs_node = input.get(1)?.node();
 
             let AExpr::Literal(lv) = expr_arena.get(rhs_node) else {
@@ -762,11 +785,13 @@ pub fn aexpr_to_pyarrow<'py>(
                     .call_method1("isin", (series_to_py_list(py, &s)?,))
                     .ok()?,
             };
-            if *nulls_equal {
+            // PyArrow's `isin` gives `false` for a null needle, Polars gives null.
+            // Plain `isin` is kept where possible, as readers such as Lance only
+            // use their indices for that form.
+            if *nulls_equal || null_as_false {
                 return Some(isin);
             }
 
-            // PyArrow's `isin` gives `false` for a null needle, Polars gives null.
             let pa = py.import("pyarrow").ok()?;
             let null_bool = pa
                 .call_method1("scalar", (py.None(), pa.call_method0("bool_").ok()?))
@@ -783,7 +808,7 @@ pub fn aexpr_to_pyarrow<'py>(
             if !matches!(expr_arena.get(input.first()?.node()), AExpr::Column(_)) {
                 return None;
             }
-            let col = aexpr_to_pyarrow(py, pc, input.first()?.node(), expr_arena, schema)?;
+            let col = convert(input.first()?.node())?;
             let left_method = match closed {
                 ClosedInterval::None | ClosedInterval::Right => "__gt__",
                 ClosedInterval::Both | ClosedInterval::Left => "__ge__",
@@ -793,8 +818,8 @@ pub fn aexpr_to_pyarrow<'py>(
                 ClosedInterval::Both | ClosedInterval::Right => "__le__",
             };
 
-            let lower = aexpr_to_pyarrow(py, pc, input.get(1)?.node(), expr_arena, schema)?;
-            let upper = aexpr_to_pyarrow(py, pc, input.get(2)?.node(), expr_arena, schema)?;
+            let lower = convert(input.get(1)?.node())?;
+            let upper = convert(input.get(2)?.node())?;
 
             let lower_cmp = col.call_method1(left_method, (lower,)).ok()?;
             let upper_cmp = col.call_method1(right_method, (upper,)).ok()?;
@@ -813,7 +838,7 @@ pub fn aexpr_to_pyarrow<'py>(
                     return None;
                 }
             }
-            let input = aexpr_to_pyarrow(py, pc, input.node(), expr_arena, schema)?;
+            let input = convert(input.node())?;
 
             match function {
                 IRFunctionExpr::Boolean(IRBooleanFunction::Not) => {

@@ -408,8 +408,7 @@ def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
     capture = capfd.readouterr().err
 
     assert (
-        "converted pyarrow predicate: <pyarrow.compute.Expression if_else(is_null(id"
-        in capture
+        "converted pyarrow predicate: <pyarrow.compute.Expression is_in(id" in capture
     )
     assert "1," in capture
     assert "3" in capture
