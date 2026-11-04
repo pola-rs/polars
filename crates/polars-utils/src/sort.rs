@@ -118,18 +118,44 @@ pub fn select_many_by<T, F>(
     T: Copy + Send + Sync,
     F: Fn(&T, &T) -> Ordering + Sync,
 {
+    select_many_by_path(chunks, n_valid, ranks, out, cmp);
+}
+
+/// How [`select_many_by`] started the selection, which lets tests check that each path runs.
+#[derive(Debug, PartialEq, Eq)]
+enum SelectPath {
+    /// Too few values to select in parallel.
+    Sequential,
+    /// Copied only the values in the sampled bracket.
+    Bracket,
+    /// Split every block in three around the sampled bracket.
+    Split,
+    /// Too few drawn values counted to sample, so copied those that count.
+    Unsampled,
+}
+
+/// [`select_many_by`], returning the path it took.
+fn select_many_by_path<T, F>(
+    chunks: &[MaskedSlice<'_, T>],
+    n_valid: usize,
+    ranks: &[usize],
+    out: &mut [T],
+    cmp: F,
+) -> SelectPath
+where
+    T: Copy + Send + Sync,
+    F: Fn(&T, &T) -> Ordering + Sync,
+{
     check_ranks(n_valid, ranks, out);
-    if ranks.is_empty() {
-        return;
-    }
     let raw_len: usize = chunks.iter().map(|c| c.values.len()).sum();
-    if raw_len < SELECT_MIN_PAR_LEN {
+    if ranks.is_empty() || raw_len < SELECT_MIN_PAR_LEN {
         let mut valid = Vec::with_capacity(n_valid);
         for chunk in chunks {
             valid.extend(copy_valid(chunk));
         }
         assert_eq!(valid.len(), n_valid);
-        return select_many_unstable_by(&mut valid, ranks, out, cmp);
+        select_many_unstable_by(&mut valid, ranks, out, cmp);
+        return SelectPath::Sequential;
     }
     let blocks: Vec<MaskedSlice<'_, T>> = chunks
         .iter()
@@ -148,6 +174,7 @@ pub fn select_many_by<T, F>(
     assert_eq!(valid.iter().map(Vec::len).sum::<usize>(), n_valid);
     let segs = valid.iter_mut().map(|v| &mut v[..]).collect();
     select_many_rec(segs, n_valid, ranks, 0, out, &cmp);
+    SelectPath::Unsampled
 }
 
 /// [`select_many_by`] on `blocks` of at most [`SELECT_BLOCK_LEN`] values, given the
@@ -159,7 +186,8 @@ fn select_blocks<T, F>(
     ranks: &[usize],
     out: &mut [T],
     cmp: &F,
-) where
+) -> SelectPath
+where
     T: Copy + Send + Sync,
     F: Fn(&T, &T) -> Ordering + Sync,
 {
@@ -168,7 +196,11 @@ fn select_blocks<T, F>(
 
     // Ranks this close to the middle one most likely lie from `lo` to `hi`, so only the values
     // between them need copying; with repeated values, those equal to either are only counted.
-    let near = |r: usize| 2 * r.abs_diff(ranks[mid]) * SELECT_SAMPLE_LEN <= len * SELECT_SLACK;
+    // Compared in `u64`, as the products overflow a 32-bit `usize` from a few million values.
+    let near = |r: usize| {
+        2 * r.abs_diff(ranks[mid]) as u64 * SELECT_SAMPLE_LEN as u64
+            <= len as u64 * SELECT_SLACK as u64
+    };
     if near(ranks[0]) && near(ranks[ranks.len() - 1]) {
         let mut between: Vec<(Vec<T>, [usize; 5])> = blocks
             .par_iter()
@@ -196,7 +228,7 @@ fn select_blocks<T, F>(
                 .collect();
             let ranks_between = &ranks[first_between..first_hi];
             let k = ranks.len();
-            return select_part(
+            select_part(
                 segs,
                 n_between,
                 len,
@@ -206,6 +238,7 @@ fn select_blocks<T, F>(
                 out_between,
                 cmp,
             );
+            return SelectPath::Bracket;
         }
     }
 
@@ -223,6 +256,7 @@ fn select_blocks<T, F>(
         push_split(&mut parts, copy, *sizes);
     }
     select_split(parts, &lo, &hi, len, ranks, 0, out, cmp);
+    SelectPath::Split
 }
 
 /// [`select_many_unstable_by`] on the concatenated `segs`, which hold `len` values whose sorted
@@ -468,7 +502,7 @@ where
         return None;
     }
     sample.sort_unstable_by(cmp);
-    let pos = rank * SELECT_SAMPLE_LEN / len;
+    let pos = (rank as u64 * SELECT_SAMPLE_LEN as u64 / len as u64) as usize;
     let (lo_pos, hi_pos) = (
         pos.saturating_sub(SELECT_SLACK),
         (pos + SELECT_SLACK).min(SELECT_SAMPLE_LEN - 1),
@@ -482,7 +516,8 @@ where
     Some((sample[lo_pos], sample[hi_pos], repeats))
 }
 
-/// Whether `x` lies below the bracket `[lo, hi)`, or `[lo, lo]` if `lo` equals `hi`.
+/// Whether `x` lies below the upper end of the bracket of `lo` and `hi`, which is `[lo, hi)`, or
+/// `[lo, lo]` if `lo` equals `hi` (`hi_inclusive`).
 ///
 /// Excluding `hi` keeps a bracket over two distinct values from holding all of them.
 fn below_hi<T, F: Fn(&T, &T) -> Ordering>(x: &T, hi: &T, hi_inclusive: bool, cmp: &F) -> bool {
@@ -733,7 +768,7 @@ mod tests {
     }
 
     /// [`select_many_by`] on `v` with the values masked out where `mask` is false.
-    fn check_masked(v: &[i64], mask: &[bool], ranks: &[usize]) {
+    fn check_masked(v: &[i64], mask: &[bool], ranks: &[usize]) -> SelectPath {
         let mut valid: Vec<i64> = v
             .iter()
             .zip(mask)
@@ -743,7 +778,7 @@ mod tests {
         valid.sort();
         let ranks: Vec<usize> = ranks.iter().copied().filter(|&r| r < valid.len()).collect();
         let expected: Vec<i64> = ranks.iter().map(|&r| valid[r]).collect();
-        // Start the bitmap at bit 3 to cover offsets.
+        // Start the bitmap at bit 3, so reads must handle a mask that starts mid-byte.
         let mut bytes = vec![0u8; (mask.len() + 3).div_ceil(8)];
         for (i, _) in mask.iter().enumerate().filter(|(_, m)| **m) {
             bytes[(i + 3) / 8] |= 1 << ((i + 3) % 8);
@@ -760,8 +795,9 @@ mod tests {
             },
         ];
         let mut out = vec![0; ranks.len()];
-        select_many_by(&chunks, valid.len(), &ranks, &mut out, Ord::cmp);
+        let path = select_many_by_path(&chunks, valid.len(), &ranks, &mut out, Ord::cmp);
         assert_eq!(out, expected);
+        path
     }
 
     #[test]
@@ -828,6 +864,36 @@ mod tests {
         }
         let v: Vec<i64> = (0..n as i64).rev().collect();
         let n_valid = mask.iter().filter(|m| **m).count();
-        check_masked(&v, &mask, &[0, n_valid / 2, n_valid - 1]);
+        let path = check_masked(&v, &mask, &[0, n_valid / 2, n_valid - 1]);
+        assert_eq!(path, SelectPath::Unsampled);
+    }
+
+    #[test]
+    fn test_select_many_paths() {
+        let mut rng = SmallRng::seed_from_u64(0);
+        let n = 300_000;
+        let mask = vec![true; n];
+        let distinct: Vec<i64> = (0..n)
+            .map(|_| rng.random_range(i64::MIN..i64::MAX))
+            .collect();
+        let two_values: Vec<i64> = (0..n).map(|_| rng.random_range(0..2)).collect();
+        for (v, ranks, path) in [
+            // Ranks near the middle one lie in its bracket, also when the bounds repeat.
+            (&distinct, vec![n / 2, n / 2 + 1], SelectPath::Bracket),
+            (&two_values, vec![n / 2], SelectPath::Bracket),
+            // Ranks far from the middle one fall outside its bracket.
+            (
+                &distinct,
+                vec![n / 10, n / 2, n - n / 10],
+                SelectPath::Split,
+            ),
+            (
+                &distinct[..1000].to_vec(),
+                vec![500],
+                SelectPath::Sequential,
+            ),
+        ] {
+            assert_eq!(check_masked(v, &mask[..v.len()], &ranks), path);
+        }
     }
 }
