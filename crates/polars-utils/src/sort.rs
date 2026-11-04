@@ -52,11 +52,16 @@ where
     }
 }
 
-/// Below this length, selecting in parallel costs more than it saves.
-pub const SELECT_MIN_PAR_LEN: usize = 1 << 17;
-/// A block length independent of the thread count keeps the selection deterministic.
+/// The unit of parallel work: 256 KiB of `f64` fits a core's L2 cache, and a fixed length makes
+/// which of several equal values is selected the same on every machine and thread count.
 pub const SELECT_BLOCK_LEN: usize = 1 << 15;
+/// Below two blocks, entering the thread pool costs more than the parallel passes save.
+pub const SELECT_MIN_PAR_LEN: usize = 2 * SELECT_BLOCK_LEN;
+/// Values sampled per bracket: the bracket shrinks as the square root of this, while drawing and
+/// sorting the sample is serial.
 const SELECT_SAMPLE_LEN: usize = 1024;
+/// At least half the drawn values are valid when mostly-null chunks are filtered first, so a
+/// sample takes about `2 * SELECT_SAMPLE_LEN` draws; the cap only stops inputs that are not.
 const SELECT_MAX_DRAWS: usize = 64 * SELECT_SAMPLE_LEN;
 /// Three standard deviations of the position in the sample of the value at a rank, at most
 /// `sqrt(SELECT_SAMPLE_LEN) / 2` each.
@@ -194,8 +199,10 @@ where
     let len = n_valid;
     let mid = ranks.len() / 2;
 
-    // Ranks this close to the middle one most likely lie from `lo` to `hi`, so only the values
-    // between them need copying; with repeated values, those equal to either are only counted.
+    // Ranks within half the slack of the middle one keep at least half the slack (1.5 standard
+    // deviations) on either side of the bracket, so they most likely lie from `lo` to `hi` and only
+    // the values between them need copying; with repeated values, those equal to either are only
+    // counted.
     // Compared in `u64`, as the products overflow a 32-bit `usize` from a few million values.
     let near = |r: usize| {
         2 * r.abs_diff(ranks[mid]) as u64 * SELECT_SAMPLE_LEN as u64
