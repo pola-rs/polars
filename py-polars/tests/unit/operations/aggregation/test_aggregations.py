@@ -1916,6 +1916,7 @@ def test_grouped_minmax_after_reverse_on_sorted_column_26141(
     [
         (list(range(6)), ["min", "max", "arg_min", "arg_max"]),
         ([float(i) for i in range(6)], ["min", "max", "arg_min", "arg_max"]),
+        ([None, 1, 2, 3, 4, 5], ["min", "max", "arg_min", "arg_max"]),
         (list("abcdef"), ["min", "max", "arg_min", "arg_max"]),
         ([False] * 3 + [True] * 3, ["min", "max", "arg_min", "arg_max"]),
     ],
@@ -1934,6 +1935,13 @@ def test_grouped_minmax_after_in_group_reorder_on_sorted_column_30550(
     if sorted_key:
         df = df.with_columns(pl.col("g").set_sorted())
 
+    # The fast path returns the last tied position for arg_min and arg_max,
+    # where the slow path returns the first.
+    # TODO: drop `has_ties` once #30582 is resolved.
+    has_ties = len(set(values)) < len(values)
+    no_reorder_aggs = [agg for agg in aggs if not (has_ties and agg.startswith("arg"))]
+    exprs = [getattr(pl.col("x"), agg)().alias(f"x_{agg}") for agg in no_reorder_aggs]
+
     reversed_x = pl.col("x").reverse()
     reorders = [
         reversed_x,
@@ -1945,7 +1953,7 @@ def test_grouped_minmax_after_in_group_reorder_on_sorted_column_30550(
         reversed_x.slice(0, 2),
         reversed_x.forward_fill(),
     ]
-    exprs = [
+    exprs += [
         getattr(reorder, agg)().alias(f"{i}_{agg}")
         for i, reorder in enumerate(reorders)
         for agg in aggs
