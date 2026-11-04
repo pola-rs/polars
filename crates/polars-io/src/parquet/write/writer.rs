@@ -5,7 +5,6 @@ use polars_buffer::Buffer;
 use polars_core::frame::chunk_df_for_writing;
 use polars_core::prelude::*;
 use polars_parquet::arrow::geo::{GEO_KEY, validate_geo_schema};
-use polars_parquet::parquet::encryption::encrypt::FileEncryptionProperties;
 use polars_parquet::write::{
     CompressionOptions, Encoding, FileWriter, StatisticsOptions, Version, WriteOptions,
     get_dtype_encoding, to_parquet_schema,
