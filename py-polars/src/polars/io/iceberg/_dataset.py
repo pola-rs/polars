@@ -19,7 +19,7 @@ from polars.io.iceberg._cache import (
     get_metadata_file_cache,
     load_static_table,
 )
-from polars.io.iceberg._catalog_resolver import resolve_catalog
+from polars.io.iceberg._catalog_resolver import catalog_from
 from polars.io.iceberg._plugin import (
     _native_storage_options,
     plugin_planner_required,
@@ -119,15 +119,6 @@ def _load_static_table(
     return table
 
 
-def _new_descriptor_catalog(
-    descriptor: IcebergCatalogTableDescriptor,
-) -> pyiceberg.catalog.Catalog:
-    config = descriptor.catalog_config
-    if isinstance(config, str):
-        return resolve_catalog(config)
-    return config.class_(config.name, **config.properties)
-
-
 def _load_catalog_table(
     catalog: pyiceberg.catalog.Catalog, descriptor: IcebergCatalogTableDescriptor
 ) -> pyiceberg.table.Table:
@@ -180,7 +171,7 @@ class IcebergTableWrap:
                 catalog = catalog_.get() if catalog_ is not None else None
 
                 if catalog is None:
-                    catalog = _new_descriptor_catalog(self.table_descriptor_)
+                    catalog = catalog_from(self.table_descriptor_.catalog_config)
                 elif verbose():
                     eprint("IcebergTableWrap: reuse catalog instance")
 

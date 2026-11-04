@@ -12,6 +12,8 @@ if TYPE_CHECKING:
 
     import pyiceberg.catalog
 
+    from polars.io.iceberg._dataset import IcebergCatalogConfig
+
     IcebergCatalogResolver: TypeAlias = Callable[[str], pyiceberg.catalog.Catalog]
 
 # Set with `pl.Config.set_iceberg_catalog_resolver`; `None` is the default resolver.
@@ -52,8 +54,15 @@ def resolve_catalog(name: str) -> pyiceberg.catalog.Catalog:
             )
             raise ComputeError(msg) from error
     else:
-        # An installed resolver's errors are meant for the user as written.
-        catalog = resolver(name)
+        # An installed resolver's errors are meant for the user as written; the
+        # note says where they come from, as they may surface far from the scan.
+        try:
+            catalog = resolver(name)
+        except Exception as error:
+            error.add_note(
+                f"raised by the Iceberg catalog resolver for catalog {name!r}"
+            )
+            raise
 
     if not isinstance(catalog, pyiceberg.catalog.Catalog):
         msg = (
@@ -69,3 +78,10 @@ def resolve_catalog(name: str) -> pyiceberg.catalog.Catalog:
         raise TypeError(msg)
 
     return catalog
+
+
+def catalog_from(config: IcebergCatalogConfig | str) -> pyiceberg.catalog.Catalog:
+    """A new catalog from its config, or by resolving its name."""
+    if isinstance(config, str):
+        return resolve_catalog(config)
+    return config.class_(config.name, **config.properties)

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import io
+import os
 import pickle
+import subprocess
+import sys
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -15,7 +18,6 @@ pytest.importorskip("pyiceberg.catalog.sql")
 import pyiceberg.catalog
 from pyiceberg.catalog.noop import NoopCatalog
 from pyiceberg.catalog.sql import SqlCatalog
-from pyiceberg.utils.config import Config
 
 from polars.io.iceberg import _catalog_resolver
 from polars.io.iceberg._catalog_resolver import check_catalog_name, resolve_catalog
@@ -131,20 +133,27 @@ def test_config_context_restores_resolver(sales: SqlCatalog) -> None:
     assert previous_names == ["outer"]
 
 
-def test_default_resolver_reads_pyiceberg_env(
-    sales: SqlCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("PYICEBERG_CATALOG__SALES__TYPE", "sql")
-    monkeypatch.setenv("PYICEBERG_CATALOG__SALES__URI", sales.properties["uri"])
-    monkeypatch.setenv(
-        "PYICEBERG_CATALOG__SALES__WAREHOUSE", sales.properties["warehouse"]
+@pytest.mark.slow
+def test_default_resolver_reads_pyiceberg_env(sales: SqlCatalog) -> None:
+    # PyIceberg reads its environment when it is imported, so in a new process.
+    env = {
+        **os.environ,
+        "PYICEBERG_CATALOG__SALES__TYPE": "sql",
+        "PYICEBERG_CATALOG__SALES__URI": sales.properties["uri"],
+        "PYICEBERG_CATALOG__SALES__WAREHOUSE": sales.properties["warehouse"],
+    }
+    script = (
+        "from polars.io.iceberg._catalog_resolver import resolve_catalog\n"
+        "table = resolve_catalog('sales').load_table('ns.t')\n"
+        "print(table.scan().to_arrow().num_rows)\n"
     )
-    # PyIceberg reads its environment once, at import.
-    monkeypatch.setattr(pyiceberg.catalog, "_ENV_CONFIG", Config())
 
-    table = resolve_catalog("sales").load_table("ns.t")
+    result = subprocess.run(
+        [sys.executable, "-c", script], env=env, capture_output=True, text=True
+    )
 
-    assert table.scan().to_arrow().num_rows == 2
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "2"
 
 
 def test_default_resolver_failure_is_compute_error(
@@ -170,8 +179,22 @@ def test_resolver_error_passes_through() -> None:
 
     pl.Config.set_iceberg_catalog_resolver(resolver)
 
-    with pytest.raises(ComputeError, match=r"^not connected$"):
+    with pytest.raises(ComputeError, match=r"^not connected$") as excinfo:
         resolve_catalog("sales")
+    assert excinfo.value.__notes__ == [
+        "raised by the Iceberg catalog resolver for catalog 'sales'"
+    ]
+
+
+def test_resolver_error_names_the_catalog() -> None:
+    # The documented resolver, a mapping's `__getitem__`.
+    pl.Config.set_iceberg_catalog_resolver({}.__getitem__)
+
+    with pytest.raises(KeyError) as excinfo:
+        resolve_catalog("sale")
+    assert excinfo.value.__notes__ == [
+        "raised by the Iceberg catalog resolver for catalog 'sale'"
+    ]
 
 
 def test_resolver_returning_non_catalog_is_type_error() -> None:
@@ -276,14 +299,16 @@ def test_scan_empty_catalog_name() -> None:
         pl.scan_iceberg("ns.t", catalog="")
 
 
-@pytest.mark.usefixtures("_pyiceberg_planner")
-def test_scan_static_path_ignores_catalog_name(sales: SqlCatalog) -> None:
-    pl.Config.set_iceberg_catalog_resolver(fail_resolver)
+def test_scan_catalog_name_with_static_path(sales: SqlCatalog) -> None:
     metadata_location = sales.load_table("ns.t").metadata_location
 
-    df = pl.scan_iceberg(metadata_location, catalog="sales").collect()
+    with pytest.raises(TypeError, match="requires a table identifier"):
+        pl.scan_iceberg(metadata_location, catalog="sales")
 
-    assert_frame_equal(df, pl.DataFrame({"a": [1, 2]}))
+
+def test_scan_catalog_name_with_table_source(sales: SqlCatalog) -> None:
+    with pytest.raises(TypeError, match="requires a table identifier"):
+        pl.scan_iceberg(sales.load_table("ns.t"), catalog="sales")
 
 
 def table_rows(catalog: SqlCatalog) -> pl.DataFrame:
