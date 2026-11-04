@@ -264,6 +264,29 @@ fn ca_quantiles<T: PolarsNumericType>(
     ))
 }
 
+/// The `quantiles` of the non-null values of `ca` that are not NaN, after validating them, or
+/// `None` if there are no such values.
+pub fn quantiles_without_nan(
+    ca: &Float64Chunked,
+    quantiles: &[f64],
+    method: QuantileMethod,
+) -> PolarsResult<Option<Vec<f64>>> {
+    check_quantiles(quantiles)?;
+    let n_nan: usize = ca
+        .downcast_iter()
+        .map(|arr| arr.non_null_values_iter().filter(|v| v.is_nan()).count())
+        .sum();
+    // NaN orders above every other value, so the lowest ranks are exactly the values without NaN.
+    let n = ca.len() - ca.null_count() - n_nan;
+    if n == 0 {
+        return Ok(None);
+    }
+    let qs = quantiles_with(n, quantiles, method, |ranks, out| {
+        order_statistics(ca, ranks, out)
+    });
+    Ok(Some(qs.into_iter().map(Option::unwrap).collect()))
+}
+
 impl<T> ChunkQuantile<f64> for ChunkedArray<T>
 where
     T: PolarsIntegerType,
