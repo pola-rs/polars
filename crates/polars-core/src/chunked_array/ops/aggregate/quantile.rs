@@ -2,7 +2,7 @@ use num_traits::AsPrimitive;
 use polars_compute::rolling::QuantileMethod;
 #[cfg(feature = "dtype-f16")]
 use polars_utils::float16::pf16;
-use polars_utils::sort::select_many_unstable_by;
+use polars_utils::selection::select_many_unstable_by;
 
 use super::*;
 
