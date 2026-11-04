@@ -326,10 +326,10 @@ def test_float_division_by_scalar(dtype: pl.DataType, divisor: int) -> None:
         "mod": pl.col("a") % divisor,
         "truediv": pl.col("a") / 1500,
     }
-    assert_frame_equal(df.select(**exprs), expected)
+    assert_frame_equal(df.select(**exprs), expected, check_exact=True)
     for engine in ["in-memory", "streaming"]:
         out = df.lazy().select(**exprs).collect(engine=engine)  # type: ignore[call-overload]
-        assert_frame_equal(out, expected)
+        assert_frame_equal(out, expected, check_exact=True)
 
 
 def test_truncdiv_decimal() -> None:

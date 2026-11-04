@@ -108,7 +108,13 @@ macro_rules! impl_float_arith_kernel {
             }
 
             fn prim_true_div_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<Self::TrueDivT> {
-                prim_unary_values(lhs, |x| x / rhs)
+                if rhs == <$T>::one() {
+                    lhs
+                } else if rhs == -<$T>::one() {
+                    Self::prim_wrapping_neg(lhs)
+                } else {
+                    prim_unary_values(lhs, |x| x / rhs)
+                }
             }
 
             fn prim_true_div_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> PArr<Self::TrueDivT> {
