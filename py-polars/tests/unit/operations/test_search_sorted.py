@@ -119,6 +119,9 @@ def test_search_sorted_needle_blocks(
         [rng.integers(-50, 50, 1000).astype(float), [np.nan] * 5, [-0.0, 0.0]]
     )
     haystack = pl.Series(hay).sort(descending=descending)
+    # One chunk without nulls takes the slice search.
+    assert haystack.n_chunks() == 1
+    assert not haystack.has_nulls()
     split = pl.concat([haystack[:500], haystack[500:]], rechunk=False)
     assert split.n_chunks() == 2
 

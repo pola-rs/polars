@@ -238,10 +238,23 @@ where
     }
 }
 
+/// [`binary_search_ca`] for numeric `needles`, faster if `ca` is one chunk without nulls.
+pub fn search_sorted_numeric<T: PolarsNumericType>(
+    ca: &ChunkedArray<T>,
+    needles: &ChunkedArray<T>,
+    side: SearchSortedSide,
+    descending: bool,
+) -> Vec<IdxSize> {
+    match ca.cont_slice() {
+        Ok(haystack) => search_sorted_slice(haystack, needles, side, descending),
+        Err(_) => binary_search_ca(ca, needles.iter(), side, descending),
+    }
+}
+
 /// [`binary_search_ca`] for a `haystack` held in one slice without nulls, searching the needles
 /// with branchless binary searches, or from the previous needle's position within blocks of needles
 /// that are sorted like the haystack, in parallel for many needles.
-pub fn search_sorted_slice<T: PolarsNumericType>(
+fn search_sorted_slice<T: PolarsNumericType>(
     haystack: &[T::Native],
     needles: &ChunkedArray<T>,
     side: SearchSortedSide,
