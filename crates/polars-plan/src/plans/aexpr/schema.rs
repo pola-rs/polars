@@ -952,6 +952,8 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
             let dtype = get_truediv_dtype(list_dtype.leaf_dtype(), other_dtype.leaf_dtype())?;
             list_dtype.cast_leaf(dtype)
         },
+        (Null, Null) => Float64,
+        (Null, dt) => get_truediv_dtype(dt, dt)?,
         #[cfg(feature = "dtype-f16")]
         (Boolean, Float16) => Float16,
         (Boolean, Float32) => Float32,

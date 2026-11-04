@@ -12,6 +12,7 @@ use polars_core::prelude::*;
 use polars_core::runtime::{ASYNC, RAYON};
 use polars_expr::hash_keys::HashKeys;
 use polars_io::predicates::{RuntimeRange, cast_bound};
+use polars_ooc::memory_manager;
 use polars_plan::plans::options::{MAX_BUILD_PROBE_DISTINCT_RATIO, RuntimeFilter};
 use polars_plan::plans::{PredicateExpr, TrivialPredicateExpr};
 use polars_utils::bloom_filter::{AtomicSplitBlockBloom, SplitBlockBloom};
@@ -104,9 +105,13 @@ impl RuntimeFilters {
                 .map(|chunk| {
                     let mut builders = self.new_builders();
                     for morsel in chunk {
-                        let df = morsel.df_blocking();
-                        let keys = ASYNC.block_on(select_key_columns(&df, key_selectors, state))?;
-                        self.extend(&keys, &mut builders)?;
+                        {
+                            let df = morsel.df_blocking();
+                            let keys =
+                                ASYNC.block_on(select_key_columns(&df, key_selectors, state))?;
+                            self.extend(&keys, &mut builders)?;
+                        }
+                        memory_manager().spill_blocking();
                     }
                     PolarsResult::Ok(builders)
                 })

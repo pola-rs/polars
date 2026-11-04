@@ -336,7 +336,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 },
             };
             let predicate_ae = to_expr_ir(
-                predicate,
+                &predicate,
                 &mut ExprToIRContext::new_with_opt_eager(
                     ctxt.expr_arena,
                     &input_schema,
@@ -439,7 +439,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             }
 
             let eirs = to_expr_irs(
-                exprs,
+                &exprs,
                 &mut ExprToIRContext::new_with_opt_eager(
                     ctxt.expr_arena,
                     &input_schema,
@@ -866,7 +866,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             }
 
             let exprs = to_expr_irs(
-                exprs,
+                &exprs,
                 &mut ExprToIRContext::new_with_opt_eager(
                     ctxt.expr_arena,
                     &input_schema,
@@ -1294,7 +1294,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         |duplicate_name: &str| duplicate_name.to_string(),
                     )?);
                     let eirs = to_expr_irs(
-                        exprs,
+                        &exprs,
                         &mut ExprToIRContext::new_with_opt_eager(
                             ctxt.expr_arena,
                             &input_schema,
@@ -1361,7 +1361,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     }
 
                     let expr = to_expr_irs(
-                        expr,
+                        &expr,
                         &mut ExprToIRContext::new_with_opt_eager(
                             ctxt.expr_arena,
                             &input_schema,
@@ -1519,7 +1519,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             include_keys,
                             keys_pre_grouped,
                         } => {
-                            let keys = to_expr_irs(keys, expr_to_ir_cx)?;
+                            let keys = to_expr_irs(&keys, expr_to_ir_cx)?;
 
                             polars_ensure!(
                                 keys.iter().all(|e| is_elementwise_rec(e.node(), ctxt.expr_arena)),
@@ -1568,8 +1568,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         }
 
                         if let FileWriteFormat::Parquet(parquet_options) = &options.file_format
-                            && let Some(encryption_properties) =
-                                &parquet_options.encryption_properties
+                            && let Some(encryption) = &parquet_options.encryption
                             && let PartitionStrategyIR::Keyed {
                                 keys,
                                 include_keys: _,
@@ -1577,7 +1576,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             } = &options.partition_strategy
                         {
                             validate_encrypted_partition_keys(
-                                &encryption_properties.0,
+                                &encryption.encrypted_column_names(),
                                 keys.iter().map(|e| e.output_name().as_str()),
                             )?;
                         }
@@ -1725,7 +1724,7 @@ fn resolve_with_columns(
     let mut output_names = PlIndexSet::with_capacity(exprs.len());
 
     let eirs = to_expr_irs(
-        exprs,
+        &exprs,
         &mut ExprToIRContext::new_with_opt_eager(expr_arena, &input_schema, opt_flags),
     )?;
     for eir in eirs.iter() {
@@ -1798,14 +1797,14 @@ fn resolve_group_by(
         let _ = keys.pop();
     }
     let keys = to_expr_irs(
-        keys,
+        &keys,
         &mut ExprToIRContext::new_with_opt_eager(expr_arena, input_schema, opt_flags),
     )?;
 
     // Add aggregation column(s)
     let aggs = rewrite_projections(aggs, &key_names, input_schema, opt_flags)?;
     let mut aggs = to_expr_irs(
-        aggs,
+        &aggs,
         &mut ExprToIRContext::new_with_opt_eager(expr_arena, input_schema, opt_flags),
     )?;
     utils::validate_expressions(&keys, expr_arena, input_schema, "group by")?;
@@ -1903,21 +1902,18 @@ pub(crate) fn maybe_init_projection_excluding_hive(
 /// unencrypted in the file paths.
 #[cfg(feature = "parquet")]
 fn validate_encrypted_partition_keys<'a>(
-    encryption_properties: &polars_parquet::parquet::encryption::encrypt::FileEncryptionProperties,
+    encrypted_columns: &[String],
     key_names: impl Iterator<Item = &'a str>,
 ) -> PolarsResult<()> {
     for key_name in key_names {
         // Column keys are for Parquet column paths, which are nested under the key name
         // for a struct key.
-        if let Some(column) = encryption_properties
-            .encrypted_column_names()
-            .find(|column| {
-                *column == key_name
-                    || column
-                        .strip_prefix(key_name)
-                        .is_some_and(|rest| rest.starts_with('.'))
-            })
-        {
+        if let Some(column) = encrypted_columns.iter().map(String::as_str).find(|column| {
+            *column == key_name
+                || column
+                    .strip_prefix(key_name)
+                    .is_some_and(|rest| rest.starts_with('.'))
+        }) {
             let reason = if column == key_name {
                 "it is a partition key".to_string()
             } else {
