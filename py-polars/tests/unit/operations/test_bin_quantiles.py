@@ -99,10 +99,9 @@ def test_bin_quantiles_matches_sorted_oracle(n_bins: int, right_closed: bool) ->
         n_bins, labels=False, include_intervals=True, right_closed=right_closed
     )
 
-    assert result.struct["bin"].to_list() == expected
-    assert result.struct["right"].to_list() == [
-        None if b is None else (breaks + [None])[b] for b in expected
-    ]
+    assert_series_equal(result.struct["bin"], pl.Series("bin", expected, pl.UInt32))
+    right = [None if b is None else (breaks + [None])[b] for b in expected]
+    assert_series_equal(result.struct["right"], pl.Series("right", right, pl.Int64))
 
 
 def test_bin_quantiles_decimal_matches_physical() -> None:
@@ -145,4 +144,4 @@ def test_bin_quantiles_floats_explicit_matches_sorted_oracle(
 
     result = s.bin_quantiles(probs, labels=False, right_closed=right_closed)
 
-    assert result.to_list() == expected
+    assert_series_equal(result, pl.Series("a", expected, pl.UInt32))

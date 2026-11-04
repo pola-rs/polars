@@ -134,60 +134,42 @@ def test_bin_ranks_categorical_uses_lexical_order() -> None:
     assert s.bin_ranks(3, labels=False).to_list() == [1, 2, 0]
 
 
-def _total_key(v: Any) -> tuple[bool, Any]:
-    # Polars' total order: NaN is the largest value and equal to itself.
-    return (True, 0) if isinstance(v, float) and math.isnan(v) else (False, v)
-
-
-def _rank_bins_oracle(
-    values: list[Any], cuts: list[int]
-) -> tuple[list[int | None], list[Any]]:
-    """Bins from a stable sort, which splits ties in input order, and the boundaries."""
-    order = sorted(
-        (i for i, v in enumerate(values) if v is not None),
-        key=lambda i: _total_key(values[i]),
-    )
-    bins: list[int | None] = [None] * len(values)
-    for rank, i in enumerate(order):
-        bins[i] = sum(c <= rank for c in cuts)
-    boundaries = [values[order[c]] if c < len(order) else None for c in cuts]
-    return bins, boundaries
-
-
 def _chunked(values: list[Any], dtype: pl.DataType) -> pl.Series:
     parts = [values[i : i + 40] for i in range(0, len(values), 40)]
     return pl.concat([pl.Series("a", p, dtype=dtype) for p in parts], rechunk=False)
 
 
+def _check_against_ordinal_rank(s: pl.Series, n_bins: int) -> None:
+    """Compares with the bins of the ordinal ranks, which break ties in input order."""
+    n = s.len() - s.null_count()
+    k, r = divmod(n, n_bins)
+    cuts = pl.Series([i * k + min(i, r) for i in range(1, n_bins)], dtype=pl.UInt32)
+    rank = s.rank("ordinal") - 1
+    bins = pl.select(
+        pl.when(rank.is_not_null()).then(cuts.search_sorted(rank, side="right"))
+    ).to_series()
+    boundaries = s.drop_nulls().sort().gather(cuts.filter(cuts < n))
+    boundaries = pl.concat(
+        [boundaries, pl.repeat(None, n_bins + 1, dtype=s.dtype, eager=True)]
+    )
+
+    result = s.bin_ranks(n_bins, labels=False, include_intervals=True)
+
+    assert_series_equal(result.struct["bin"], bins.cast(pl.UInt32), check_names=False)
+    assert_series_equal(
+        result.struct["right"],
+        boundaries.gather(bins.fill_null(n_bins)),
+        check_names=False,
+    )
+
+
 @pytest.mark.parametrize("n_bins", [1, 2, 3, 4, 7, 50, 300])
-def test_bin_ranks_matches_stable_sort(n_bins: int) -> None:
+@pytest.mark.parametrize("dtype", [pl.Int64(), pl.Float64()])
+def test_bin_ranks_matches_ordinal_rank(n_bins: int, dtype: pl.DataType) -> None:
     rng = random.Random(n_bins)
-    ints = [None if rng.random() < 0.1 else rng.randint(0, 5) for _ in range(200)]
-    floats = [
-        None if rng.random() < 0.1 else rng.choice([math.nan, -0.0, 0.0, 1.0, 2.5])
-        for _ in range(200)
-    ]
-    cases: list[tuple[list[Any], pl.DataType]] = [
-        (ints, pl.Int64()),
-        (floats, pl.Float64()),
-    ]
-    for values, dtype in cases:
-        s = _chunked(values, dtype)
-        n = len(values) - values.count(None)
-        k, r = divmod(n, n_bins)
-        cuts = [i * k + min(i, r) for i in range(1, n_bins)]
-        bins, boundaries = _rank_bins_oracle(values, cuts)
-
-        result = s.bin_ranks(n_bins, labels=False, include_intervals=True)
-
-        assert result.struct["bin"].to_list() == bins
-        right = [None if b is None else (boundaries + [None])[b] for b in bins]
-        out = result.struct["right"].to_list()
-        assert all(
-            a == b
-            or (a is not None and b is not None and math.isnan(a) and math.isnan(b))
-            for a, b in zip(out, right, strict=True)
-        )
+    choices = [math.nan, -0.0, 0.0, 1.0, 2.5] if dtype.is_float() else range(6)
+    values = [None if rng.random() < 0.1 else rng.choice(choices) for _ in range(200)]
+    _check_against_ordinal_rank(_chunked(values, dtype), n_bins)
 
 
 def test_bin_ranks_splits_ties_in_input_order() -> None:
@@ -197,52 +179,38 @@ def test_bin_ranks_splits_ties_in_input_order() -> None:
     # of 5s, which are handed out in input order.
     result = s.bin_ranks([3 / 7, 5 / 7], labels=False)
 
-    assert result.to_list() == [0, 0, 1, 1, 0, 2, 2]
+    assert_series_equal(result, pl.Series("a", [0, 0, 1, 1, 0, 2, 2], dtype=pl.UInt32))
 
 
-def test_bin_ranks_temporal_and_decimal_match_physical() -> None:
-    rng = random.Random(0)
-    ints = [None if rng.random() < 0.1 else rng.randint(0, 20) for _ in range(100)]
-    s = pl.Series("a", ints, dtype=pl.Int32)
-    expected = s.bin_ranks(6, labels=False)
-    for dtype in [
+@pytest.mark.parametrize(
+    "dtype",
+    [
         pl.Date(),
         pl.Duration("ms"),
         pl.Decimal(10, 2),
         pl.Datetime("us", "Europe/Amsterdam"),
         pl.Time(),
-    ]:
-        result = s.cast(pl.Int64).cast(dtype).bin_ranks(6, labels=False)
-        assert_series_equal(result, expected)
+    ],
+)
+def test_bin_ranks_temporal_and_decimal_match_physical(dtype: pl.DataType) -> None:
+    rng = random.Random(0)
+    ints = [None if rng.random() < 0.1 else rng.randint(0, 20) for _ in range(100)]
+    s = pl.Series("a", ints, dtype=pl.Int64)
+
+    result = s.cast(dtype).bin_ranks(6, labels=False)
+
+    assert_series_equal(result, s.bin_ranks(6, labels=False))
 
 
 @pytest.mark.parametrize("n_bins", [3, 1000])
-def test_bin_ranks_large_matches_stable_sort(n_bins: int) -> None:
+def test_bin_ranks_large_matches_ordinal_rank(n_bins: int) -> None:
     # Large enough for the binning passes to split into parallel ranges.
-    np = pytest.importorskip("numpy")
-    rng = np.random.default_rng(n_bins)
-    values = rng.integers(0, 50, 300_000)
-    valid = rng.random(values.size) > 0.05
-    s = pl.concat(
-        [
-            pl.Series("a", part).set(pl.Series(~mask), None)
-            for part, mask in zip(
-                np.array_split(values, 3), np.array_split(valid, 3), strict=True
-            )
-        ],
-        rechunk=False,
+    df = pl.select(v=pl.int_range(300_000)).select(
+        pl.when(pl.col("v").hash(1) % 20 != 0).then(pl.col("v").hash(2) % 50)
     )
-    idx = np.flatnonzero(valid)
-    order = idx[np.argsort(values[idx], kind="stable")]
-    n = order.size
-    k, r = divmod(n, n_bins)
-    cuts = np.array([i * k + min(i, r) for i in range(1, n_bins)])
-    expected = [None] * values.size
-    bins = np.searchsorted(cuts, np.arange(n), side="right")
-    for i, b in zip(order.tolist(), bins.tolist(), strict=True):
-        expected[i] = b
-
-    assert s.bin_ranks(n_bins, labels=False).to_list() == expected
+    s = pl.concat([part.to_series() for part in df.iter_slices(100_000)], rechunk=False)
+    assert s.n_chunks() == 3
+    _check_against_ordinal_rank(s, n_bins)
 
 
 def test_bin_ranks_many_small_chunks() -> None:
@@ -269,7 +237,7 @@ def test_bin_ranks_cut_at_rank_zero() -> None:
     # The cut at rank 0 leaves the first bin empty.
     result = s.bin_ranks([0.0, 0.5], labels=False)
 
-    assert result.to_list() == [2, 1, None, 1, 2]
+    assert_series_equal(result, pl.Series("a", [2, 1, None, 1, 2], dtype=pl.UInt32))
 
 
 @pytest.mark.parametrize("descending", [False, True])

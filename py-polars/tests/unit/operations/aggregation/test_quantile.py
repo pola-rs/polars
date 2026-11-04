@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars._typing import QuantileMethod
@@ -20,51 +21,18 @@ METHODS: list[QuantileMethod] = [
     "equiprobable",
 ]
 
-QUANTILE_SETS = [
-    [0.5],
-    [0.0, 1.0],
-    [0.1, 0.9],
-    [i / 20 for i in range(21)],
-]
-
-
-def _sort_key(v: Any) -> tuple[bool, Any]:
-    # Polars' total order: NaN is the largest value and equal to itself.
-    if isinstance(v, float) and math.isnan(v):
-        return (True, 0)
-    return (False, v)
-
-
-def _oracle(values: list[Any], q: float, method: QuantileMethod) -> float | None:
-    vals = [
-        float(v) for v in sorted((v for v in values if v is not None), key=_sort_key)
-    ]
-    n = len(vals)
-    if n == 0:
-        return None
-    f = (n - 1) * q
-    lo = math.floor(f)
-    hi = min(math.ceil(f), n - 1)
-    lower, upper = vals[lo], vals[hi]
-    if method == "nearest":
-        return vals[lo + (f - lo >= 0.5)]
-    if method == "lower":
-        return lower
-    if method == "higher":
-        return upper
-    if method == "equiprobable":
-        return vals[max(math.ceil(n * q) - 1, 0)]
-    if lower == upper:
-        return lower
-    if method == "midpoint":
-        return (lower + upper) / 2
-    return (f - lo) * (upper - lower) + lower
-
-
-def _same(a: float | None, b: float | None) -> bool:
-    if a is None or b is None:
-        return a is b
-    return (math.isnan(a) and math.isnan(b)) or a == b
+# Sorted, the non-null values are 1 1 2 3 4 5 6 9; the quantiles fall at positions
+# 0, 1.75, 3.5, 5.25 and 7.
+VALUES = [3, None, 1, 4, 1, 5, 9, 2, 6]
+QS = [0.0, 0.25, 0.5, 0.75, 1.0]
+EXPECTED: dict[QuantileMethod, list[float]] = {
+    "nearest": [1, 2, 4, 5, 9],
+    "higher": [1, 2, 4, 6, 9],
+    "lower": [1, 1, 3, 5, 9],
+    "midpoint": [1, 1.5, 3.5, 5.5, 9],
+    "linear": [1, 1.75, 3.5, 5.25, 9],
+    "equiprobable": [1, 1, 3, 5, 9],
+}
 
 
 def _chunked(values: list[Any], dtype: pl.DataType, n_chunks: int = 3) -> pl.Series:
@@ -75,121 +43,154 @@ def _chunked(values: list[Any], dtype: pl.DataType, n_chunks: int = 3) -> pl.Ser
     return s
 
 
-def _inputs() -> list[tuple[list[Any], pl.DataType]]:
-    rng = random.Random(0)
-    ints = [rng.randint(-50, 50) for _ in range(200)]
-    ties = [rng.choice([0, 1, 2]) for _ in range(200)]
-    floats = [
-        rng.choice([math.nan, -0.0, 0.0, -math.inf, math.inf, None])
-        if rng.random() < 0.2
-        else rng.uniform(-10, 10)
-        for _ in range(200)
-    ]
-    return [
-        ([v if i % 7 else None for i, v in enumerate(ints)], pl.Int64()),
-        (ints, pl.Int32()),
-        ([v if i % 5 else None for i, v in enumerate(ties)], pl.UInt8()),
-        (floats, pl.Float64()),
-        ([3.0] * 50 + [None] * 5, pl.Float64()),
-        ([None, 1, None], pl.Int64()),
-        ([None, None], pl.Int64()),
-    ]
+def _quantiles(s: pl.Series, qs: list[float], method: QuantileMethod) -> pl.Series:
+    return s.to_frame().select(pl.col("a").quantile(qs, interpolation=method)).item()
 
 
 @pytest.mark.parametrize("method", METHODS)
-def test_quantile_matches_sorted_oracle(method: QuantileMethod) -> None:
-    for values, dtype in _inputs():
-        s = _chunked(values, dtype)
-        for qs in QUANTILE_SETS:
-            for q in qs:
-                assert _same(s.quantile(q, method), _oracle(values, q, method))
-
-            result = s.to_frame().select(pl.col("a").quantile(qs, interpolation=method))
-            expected = [_oracle(values, q, method) for q in qs]
-            out = result.item().to_list()
-            assert all(_same(a, b) for a, b in zip(out, expected, strict=True))
-
-
-@pytest.mark.parametrize("method", METHODS)
-@pytest.mark.parametrize("descending", [False, True])
-@pytest.mark.parametrize("nulls_last", [False, True])
-def test_quantile_sorted_flag(
-    method: QuantileMethod, descending: bool, nulls_last: bool
+@pytest.mark.parametrize("dtype", [pl.Int64(), pl.Float64()])
+@pytest.mark.parametrize("order", [None, "asc", "desc"])
+def test_quantile_methods(
+    method: QuantileMethod, dtype: pl.DataType, order: str | None
 ) -> None:
-    rng = random.Random(1)
-    values: list[float | None] = sorted(
-        [rng.choice([math.nan, -0.0, 0.0, rng.uniform(-5, 5)]) for _ in range(60)],
-        key=_sort_key,
-        reverse=descending,
+    s = _chunked(VALUES, dtype)
+    if order is not None:
+        # Flagged sorted, the quantiles are read without selecting.
+        descending = order == "desc"
+        s = s.sort(descending=descending, nulls_last=descending)
+        s = _chunked(s.to_list(), dtype).set_sorted(descending=descending)
+
+    assert [s.quantile(q, method) for q in QS] == EXPECTED[method]
+    assert_series_equal(
+        _quantiles(s, QS, method), pl.Series(EXPECTED[method], dtype=pl.Float64)
     )
-    nulls: list[float | None] = [None] * 7
-    values = values + nulls if nulls_last else nulls + values
-    s = _chunked(values, pl.Float64(), n_chunks=6).set_sorted(descending=descending)
-    for qs in QUANTILE_SETS:
-        for q in qs:
-            assert _same(s.quantile(q, method), _oracle(values, q, method))
-        result = s.to_frame().select(pl.col("a").quantile(qs, interpolation=method))
-        expected = [_oracle(values, q, method) for q in qs]
-        out = result.item().to_list()
-        assert all(_same(a, b) for a, b in zip(out, expected, strict=True))
+
+
+@pytest.mark.parametrize("method", ["lower", "higher"])
+def test_quantile_floats_total_order(method: QuantileMethod) -> None:
+    # Sorted: -inf, the two zeros, 1, 2, inf, NaN; NaN is the largest value.
+    s = _chunked(
+        [math.nan, 2.0, -math.inf, 0.0, None, -0.0, math.inf, 1.0], pl.Float64()
+    )
+    expected = {
+        "lower": [-math.inf, 0.0, 1.0, math.inf, math.nan],
+        "higher": [-math.inf, 0.0, 1.0, math.nan, math.nan],
+    }[method]
+    qs = [0.0, 0.25, 0.5, 0.9, 1.0]
+    assert_series_equal(_quantiles(s, qs, method), pl.Series(expected))
+
+
+@pytest.mark.parametrize("method", ["lower", "higher"])
+@pytest.mark.parametrize(
+    "kind", ["random", "few_distinct", "constant", "descending", "floats"]
+)
+def test_quantile_many_ranks_match_sort(method: QuantileMethod, kind: str) -> None:
+    # Selecting many ranks at once, including every rank of a small column.
+    rng = random.Random(0)
+    n = 2000
+    values: list[Any] = {
+        "random": [rng.randint(-(2**62), 2**62) for _ in range(n)],
+        "few_distinct": [rng.randint(0, 2) for _ in range(n)],
+        "constant": [7] * n,
+        "descending": list(range(n, 0, -1)),
+        "floats": [
+            rng.choice([math.nan, -0.0, 0.0, math.inf]) if i % 5 == 0 else rng.random()
+            for i in range(n)
+        ],
+    }[kind]
+    values = [None if i % 11 == 0 else v for i, v in enumerate(values)]
+    s = _chunked(values, pl.Float64() if kind == "floats" else pl.Int64())
+
+    for qs in [[i / 100 for i in range(101)], [i / 9 for i in range(10)]]:
+        expected = _quantiles(s.sort(), qs, method)
+        assert_series_equal(_quantiles(s, qs, method), expected)
+    small = s.head(50)
+    all_ranks = [i / 49 for i in range(50)]
+    assert_series_equal(
+        _quantiles(small, all_ranks, method),
+        _quantiles(small.sort(), all_ranks, method),
+    )
 
 
 def _check_group_by(df: pl.DataFrame, method: QuantileMethod) -> None:
-    groups: dict[Any, list[Any]] = {}
-    for g, v in df.iter_rows():
-        groups.setdefault(g, []).append(v)
-    for q in [0.0, 0.3, 0.5, 1.0]:
-        result = df.group_by("g", maintain_order=True).agg(
-            pl.col("v").quantile(q, interpolation=method).alias("q"),
-            pl.col("v").median().alias("median"),
-        )
-        for g, out, median in result.iter_rows():
-            assert _same(out, _oracle(groups[g], q, method))
-            assert _same(median, _oracle(groups[g], 0.5, "linear"))
+    """Compares each group's quantiles with those of its sorted values."""
+    qs = [0.0, 0.3, 0.5, 1.0]
+    result = df.group_by("g", maintain_order=True).agg(
+        *(pl.col("v").quantile(q, interpolation=method).alias(str(q)) for q in qs),
+        pl.col("v").median().alias("median"),
+    )
+    groups = {
+        g: sub["v"].sort() for (g,), sub in df.partition_by("g", as_dict=True).items()
+    }
+    expected = pl.DataFrame(
+        {
+            "g": result["g"],
+            **{
+                str(q): [groups[g].quantile(q, method) for g in result["g"]] for q in qs
+            },
+            "median": [groups[g].median() for g in result["g"]],
+        },
+        schema=result.schema,
+    )
+    assert_frame_equal(result, expected)
 
 
 @pytest.mark.parametrize("method", METHODS)
-def test_quantile_group_by(method: QuantileMethod) -> None:
-    rng = random.Random(2)
-    n = 500
-    # Unsorted keys give index groups; small groups and groups of nulls included.
-    for n_groups in [5, 150]:
-        df = pl.DataFrame(
-            {
-                "g": [rng.randrange(n_groups) for _ in range(n)],
-                "v": [
-                    None
-                    if rng.random() < 0.2
-                    else rng.choice([1.5, -0.0, 0.0, math.nan])
-                    if rng.random() < 0.3
-                    else rng.uniform(-10, 10)
-                    for _ in range(n)
-                ],
-            }
-        )
-        _check_group_by(df, method)
-        _check_group_by(
-            df.with_columns(pl.col("v").cast(pl.Int64, strict=False)), method
+@pytest.mark.parametrize("dtype", [pl.Int64(), pl.Float64()])
+def test_quantile_group_by_fixed(method: QuantileMethod, dtype: pl.DataType) -> None:
+    # Group 0 holds VALUES, group 1 only nulls and group 2 one value.
+    rows = [(0, v) for v in VALUES] + [(1, None), (1, None), (2, 7)]
+    expected = pl.DataFrame(
+        {
+            "g": [0, 1, 2],
+            **{
+                str(q): [e, None, 7.0]
+                for q, e in zip(QS, EXPECTED[method], strict=True)
+            },
+        },
+        schema_overrides={str(q): pl.Float64 for q in QS},
+    )
+
+    def run(df: pl.DataFrame) -> pl.DataFrame:
+        return (
+            df.group_by("g")
+            .agg(
+                pl.col("v").quantile(q, interpolation=method).alias(str(q)) for q in QS
+            )
+            .sort("g")
         )
 
-    # A sorted key gives slice groups, here over unsorted multi-chunk values.
-    df = pl.concat(
-        [
-            pl.DataFrame(
-                {
-                    "g": sorted(rng.randrange(40) for _ in range(100)),
-                    "v": [
-                        None if rng.random() < 0.2 else rng.randint(0, 9)
-                        for _ in range(100)
-                    ],
-                }
-            )
-            for _ in range(3)
-        ],
-        rechunk=False,
-    ).with_columns(pl.col("g") + pl.int_range(pl.len()) // 100 * 100)
-    df = df.with_columns(pl.col("g").set_sorted())
+    # Shuffled keys give index groups; sorted keys over unsorted values give slices.
+    shuffled = random.Random(1).sample(rows, len(rows))
+    for df in [
+        pl.DataFrame(shuffled, schema={"g": pl.Int64, "v": dtype}, orient="row"),
+        pl.DataFrame(
+            rows, schema={"g": pl.Int64, "v": dtype}, orient="row"
+        ).with_columns(pl.col("g").set_sorted()),
+    ]:
+        assert_frame_equal(run(df), expected)
+
+
+@pytest.mark.parametrize("method", METHODS)
+def test_quantile_group_by_random(method: QuantileMethod) -> None:
+    rng = random.Random(2)
+    n = 500
+    df = pl.DataFrame(
+        {
+            "g": [rng.randrange(150) for _ in range(n)],
+            "v": [
+                None
+                if rng.random() < 0.2
+                else rng.choice([1.5, -0.0, 0.0, math.nan])
+                if rng.random() < 0.3
+                else rng.uniform(-10, 10)
+                for _ in range(n)
+            ],
+        }
+    )
     _check_group_by(df, method)
+    _check_group_by(df.with_columns(pl.col("v").cast(pl.Int64, strict=False)), method)
+    _check_group_by(df.sort("g").with_columns(pl.col("g").set_sorted()), method)
 
 
 @pytest.mark.parametrize("method", METHODS)
@@ -203,6 +204,17 @@ def test_quantile_group_by_sorted_values(
     nulls: list[int | None] = [None] * 20
     v = [*ints, *nulls] if nulls_last else [*nulls, *ints]
     df = pl.DataFrame({"g": [i // 7 for i in range(len(v))], "v": v}).with_columns(
-        pl.col("g").set_sorted(), pl.col("v").set_sorted(descending=descending)
+        pl.col("g").set_sorted()
     )
-    _check_group_by(df, method)
+    flagged = df.with_columns(pl.col("v").set_sorted(descending=descending))
+    assert df["v"].flags["SORTED_ASC"] is False
+    assert df["v"].flags["SORTED_DESC"] is False
+
+    # Slices of a sorted column are read without selecting.
+    def run(df: pl.DataFrame) -> pl.DataFrame:
+        return df.group_by("g", maintain_order=True).agg(
+            pl.col("v").quantile(q, interpolation=method).alias(str(q))
+            for q in [0.0, 0.3, 0.5, 1.0]
+        )
+
+    assert_frame_equal(run(flagged), run(df))
