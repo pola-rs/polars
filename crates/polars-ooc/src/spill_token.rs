@@ -125,7 +125,7 @@ impl<T: Spillable> SpillTokenInner<T> {
         // while holding the lock to reduce critical section.
         let mut lock = self.lock.lock().unwrap();
         let waiters = core::mem::take(&mut lock.waiters);
-        self.state.fetch_sub(HAS_WAITERS_BIT, Ordering::Relaxed);
+        self.state.fetch_and(!HAS_WAITERS_BIT, Ordering::Relaxed);
         drop(lock);
 
         for w in waiters {
@@ -1033,6 +1033,43 @@ mod tests {
             .unwrap()
             .stats()
             .prefetch_hits_and_waste()
+    }
+
+    #[test]
+    fn concurrent_last_unpins_preserve_waiter_state() {
+        let _guard = crate::test_lock();
+        let token = SpillToken::new(Value(vec![1]));
+        let first_pin = token.try_get().unwrap();
+        let mut waiter = std::pin::pin!(token.inner.wait(RO_PIN_MASK));
+        let mut cx = std::task::Context::from_waker(Waker::noop());
+        assert!(waiter.as_mut().poll(&mut cx).is_pending());
+        assert_eq!(
+            token.inner.state.load(Ordering::Acquire),
+            RO_PIN_COUNT_UNIT | HAS_WAITERS_BIT
+        );
+
+        std::thread::scope(|scope| {
+            let lock = token.inner.lock.lock().unwrap();
+            let wait_for_unpin = || {
+                let deadline = Instant::now() + std::time::Duration::from_secs(30);
+                while token.inner.state.load(Ordering::Acquire) != HAS_WAITERS_BIT {
+                    assert!(Instant::now() < deadline, "last pin was not released");
+                    std::thread::yield_now();
+                }
+            };
+
+            let first = scope.spawn(move || drop(first_pin));
+            wait_for_unpin();
+            let second_pin = token.try_get().unwrap();
+            let second = scope.spawn(move || drop(second_pin));
+            wait_for_unpin();
+            drop(lock);
+            first.join().unwrap();
+            second.join().unwrap();
+        });
+
+        assert_eq!(token.inner.state.load(Ordering::Acquire), 0);
+        assert_eq!(waiter.as_mut().poll(&mut cx), Poll::Ready(0));
     }
 
     #[test]
