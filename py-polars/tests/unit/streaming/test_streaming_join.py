@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import time
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -616,6 +617,7 @@ def test_merge_join_exprs() -> None:
 @pytest.mark.parametrize("nulls_last", [False, True])
 @pytest.mark.parametrize("nulls_equal", [False, True])
 @pytest.mark.parametrize("on", [["key"], ["key", "key_ext"]])
+@pytest.mark.parametrize("chunk_size", [4, None])
 def test_merge_join_many_partitions(
     how: JoinStrategy,
     maintain_order: MaintainOrderJoin,
@@ -623,9 +625,11 @@ def test_merge_join_many_partitions(
     nulls_last: bool,
     nulls_equal: bool,
     on: list[str],
+    chunk_size: int | None,
 ) -> None:
     # Small morsels split each window into many partitions, and the long runs of 0 and
-    # null are split again on the build side. The left keys go on past the right ones.
+    # null are split again on the build side. With the default morsel size the window is
+    # a single partition. The left keys go on past the right ones.
     left_keys = (
         [None] * 20
         + [0] * 25
@@ -661,7 +665,7 @@ def test_merge_join_many_partitions(
     assert "merge-join" in dot, "merge-join not used in plan"
 
     expected = q.collect(engine="in-memory")
-    with pl.Config(streaming_chunk_size=4):
+    with pl.Config(streaming_chunk_size=chunk_size):
         actual = q.collect(engine="streaming")
         actual_all, actual_head = pl.collect_all([q, q.head(3)], engine="streaming")
     check_row_order = maintain_order != "none"
@@ -670,6 +674,40 @@ def test_merge_join_many_partitions(
     assert actual_head.height == 3
     if check_row_order:
         assert_frame_equal(actual_head, expected.head(3))
+
+
+@pytest.mark.slow
+@pytest.mark.may_fail_cloud  # reason: timing
+@pytest.mark.parametrize("null_run_side", ["left", "right"])
+@pytest.mark.parametrize("nulls_last", [False, True])
+def test_merge_join_null_run_linear_time(null_run_side: str, nulls_last: bool) -> None:
+    # A run of nulls, shorter than a morsel, next to many other keys must not be scanned
+    # again for every one of those keys. The outliers sit beyond the keys, on the far
+    # side from the nulls.
+    n = 90_000
+    keys = pl.Series(range(n), dtype=pl.Int64)
+    outliers = [-(10**12), -(10**12) + 1] if nulls_last else [10**12, 10**12 + 1]
+    null_run = pl.Series([None] * n + outliers, dtype=pl.Int64)
+    left, right = (null_run, keys) if null_run_side == "left" else (keys, null_run)
+
+    q = (
+        pl.LazyFrame({"key": left})
+        .sort("key", nulls_last=nulls_last)
+        .join(
+            pl.LazyFrame({"key": right}).sort("key", nulls_last=nulls_last),
+            on="key",
+            nulls_equal=True,
+            maintain_order="left_right",
+        )
+    )
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "merge-join" in dot, "merge-join not used in plan"
+
+    t0 = time.time()
+    result = q.collect(engine="streaming")
+    t1 = time.time()
+    assert result.height == 0
+    assert (t1 - t0) < 2
 
 
 @pytest.mark.parametrize("df_level_hint", [False, True])
