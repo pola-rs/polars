@@ -12,7 +12,13 @@ import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, PolarsError, SchemaError, ShapeError
+from polars.exceptions import (
+    ComputeError,
+    DuplicateError,
+    PolarsError,
+    SchemaError,
+    ShapeError,
+)
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -402,6 +408,27 @@ def test_struct_field_pruning_ipc_schema_evolution(fmt: str, tmp_path: Path) -> 
                 assert_same_as_without_pushdown(q)
 
 
+@pytest.mark.parametrize(
+    "other",
+    [
+        {"a": pl.Int64, "b": pl.Int64, "zz": pl.Int64},
+        {"a": pl.Int64},
+        {"a": pl.Int64, "b": pl.String},
+    ],
+)
+def test_struct_field_pruning_ipc_policy_of_empty_file(
+    other: dict[str, pl.DataType], tmp_path: Path
+) -> None:
+    # Read whole, a file without rows is never checked against the cast policy.
+    pl.DataFrame({"s": [{"a": 1, "b": 2}]}).write_ipc(tmp_path / "0.arrow")
+    pl.DataFrame({"s": []}, schema={"s": pl.Struct(other)}).write_ipc(
+        tmp_path / "1.arrow"
+    )
+    lf = pl.scan_ipc([tmp_path / "0.arrow", tmp_path / "1.arrow"])
+    assert_same_as_without_pushdown(lf.select(a))
+    assert_same_as_without_pushdown(lf.select(a).slice(1, 3))
+
+
 @pytest.mark.parametrize("fmt", ["ipc", "ipc-zstd"])
 def test_struct_field_pruning_ipc_nested_and_dictionaries(
     fmt: str, tmp_path: Path
@@ -598,6 +625,56 @@ def test_struct_field_pruning_keeps_inputs_of_unknown_height() -> None:
     assert assert_same_as_without_pushdown(query(2)).height == 3
     # `x` has 2 rows: dropping `y` would also hide a length mismatch.
     assert_raises_with_and_without_pushdown(query(1), ShapeError)
+
+    # Under `with_columns` the struct is broadcast, but its inputs must still agree.
+    x = pl.col("a").filter(pl.col("a") > 1)
+    for st in [
+        pl.struct(pl.col("a").head(2).alias("x"), pl.col("b").alias("y")),
+        pl.struct(x.alias("x"), x.sum().alias("y")),
+    ]:
+        q = lf.with_columns(t=st).select(pl.col("t").struct.field("y"))
+        assert_raises_with_and_without_pushdown(q, ShapeError)
+
+
+def test_struct_field_pruning_exact_dtypes(tmp_path: Path) -> None:
+    # `struct.drop` delivers exactly the kept fields, also where its input is not
+    # pruned: an `unnest` would bring a dropped field back.
+    df = pl.DataFrame({"s": [{"a": 1, "b": 2, "c": 3}], "a": [10]})
+    q = df.lazy().select(s.struct.drop(["a"]), "a").unnest("s").select("b", "a")
+    assert_same_as_without_pushdown(q)
+
+    # A `with_fields` overwriting a field that is not read is dropped, so the inputs of
+    # a concat disagree on that field's dtype.
+    df = pl.DataFrame({"s": [{"a": 1, "b": 2}]})
+    df.write_parquet(tmp_path / "d.parquet")
+    for lf in [df.lazy(), pl.scan_parquet(tmp_path / "d.parquet")]:
+        for how in ["vertical", "vertical_relaxed"]:
+            q = pl.concat(
+                [
+                    lf.select(s.struct.with_fields(a=pl.lit("x"))),
+                    lf.select(pl.when(True).then(s.struct.with_fields(a=pl.lit("y")))),
+                ],
+                how=how,  # type: ignore[arg-type]
+            )
+            assert_same_as_without_pushdown(q.select(b))
+        q = pl.concat(
+            [
+                lf.select(s),
+                lf.select(s.struct.with_fields(pl.field("a").cast(pl.Float64))),
+            ],
+            how="vertical_relaxed",
+        )
+        assert_same_as_without_pushdown(q.select(b))
+
+    # A positional rename to duplicate names raises.
+    q = df.lazy().select(s.struct.rename_fields(["p", "p"]).struct.field("p"))
+    assert_raises_with_and_without_pushdown(q, DuplicateError)
+
+    # `merge_sorted` of a struct read for its validity only, i.e. without fields.
+    df = pl.DataFrame({"id": [1, 2, 3], "s": [{"a": 1}, None, {"a": 3}]})
+    df.write_parquet(tmp_path / "m.parquet")
+    lf = pl.scan_parquet(tmp_path / "m.parquet")
+    assert_same_as_without_pushdown(lf.merge_sorted(lf, key="id").select(s.is_null()))
 
 
 def test_struct_field_pruning_not_for_gpu_engine(

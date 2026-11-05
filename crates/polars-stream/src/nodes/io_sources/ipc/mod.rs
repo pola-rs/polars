@@ -248,7 +248,10 @@ impl FileReader for IpcFileReader {
             });
 
         // Check the cast policies on the pruned columns as if they were read whole, so that e.g. a
-        // struct field missing from the file raises as it does without the pruning.
+        // struct field missing from the file raises as it does without the pruning. Read whole,
+        // the check runs on the file's first non-empty morsel, so the error is raised there too:
+        // a file without rows does not raise.
+        let mut cast_policy_err: Option<PolarsError> = None;
         if let (Some(field_selection), Some(scan_schema)) =
             (self.field_selection.as_deref(), &self.scan_schema)
         {
@@ -261,16 +264,19 @@ impl FileReader for IpcFileReader {
                 if !projected_schema.contains(name) {
                     continue;
                 }
-                ColumnSelectorBuilder {
+                if let Err(err) = (ColumnSelectorBuilder {
                     cast_columns_policy: cast_columns_policy.clone(),
                     missing_columns_policy: MissingColumnsPolicy::Raise,
-                }
+                })
                 .attach_transforms(
                     ColumnSelector::Position(0),
                     &DataType::from_arrow_field(field),
                     scan_dtype,
                     name,
-                )?;
+                ) {
+                    cast_policy_err = Some(err);
+                    break;
+                }
             }
         }
 
@@ -668,6 +674,9 @@ impl FileReader for IpcFileReader {
                 let df = decode_fut.await?;
                 if df.height() == 0 {
                     continue;
+                }
+                if let Some(err) = cast_policy_err.take() {
+                    return Err(err);
                 }
 
                 if disable_morsel_split {

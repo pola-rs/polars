@@ -10,7 +10,7 @@
 
 use std::sync::Arc;
 
-use polars_core::prelude::{DataType, PlIndexMap};
+use polars_core::prelude::{DataType, PlIndexMap, PlIndexSet};
 use polars_core::schema::Schema;
 #[allow(clippy::disallowed_types)]
 use polars_utils::aliases::{PlHashMap, PlHashSet};
@@ -27,7 +27,10 @@ use crate::dsl::{EvalVariant, FieldSelection};
 use crate::plans::IRArrayFunction;
 use crate::plans::aexpr::ToFieldContext;
 #[cfg(feature = "dtype-struct")]
-use crate::plans::projection_height::{ExprProjectionHeight, aexpr_projection_height_rec};
+use crate::plans::projection_height::{
+    ExprHeightOptions, ExprProjectionHeight, aexpr_projection_height_rec,
+    aexpr_projection_height_rec_with,
+};
 use crate::plans::{
     AExpr, ExprIR, IR, IRAggExpr, IRFunctionExpr, IRListFunction, OutputName, det_join_schema,
 };
@@ -275,14 +278,40 @@ impl<'a> SelectionWalker<'a> {
 
                     // The fields kept are those not dropped, read by name.
                     IRStructFunction::DropFields(_, strict) => {
-                        self.height_free = height_free;
-                        if self.rewrite_schema.is_some() {
-                            // Nothing reads a dropped field, so the input can take its place.
+                        if let Some(schema) = self.rewrite_schema {
+                            // Rewritten to a selection of the kept fields that are read: the
+                            // input alone would bring the dropped fields back where its fields
+                            // are not pruned, e.g. into an `unnest`.
+                            let Ok(DataType::Struct(kept_fields)) = self
+                                .expr_arena
+                                .get(node)
+                                .to_dtype(&ToFieldContext::new(self.expr_arena, schema))
+                            else {
+                                return self.walk_default(node, out, struct_fields);
+                            };
+                            let evaluation = kept_fields
+                                .iter()
+                                .filter(|field| selection.child(field.name()).is_some())
+                                .map(|field| {
+                                    ExprIR::new(
+                                        self.expr_arena
+                                            .add(AExpr::StructField(field.name().clone())),
+                                        OutputName::Alias(field.name().clone()),
+                                    )
+                                })
+                                .collect();
+
+                            self.height_free = height_free;
                             let new_input =
                                 self.walk_rec(input[0].node(), selection, out, struct_fields);
                             self.rewrote = true;
-                            new_input
+                            self.expr_arena.add(AExpr::StructEval {
+                                expr: new_input,
+                                evaluation,
+                                variant: StructEvalVariant::Select,
+                            })
                         } else if !strict {
+                            self.height_free = height_free;
                             let new_input =
                                 self.walk_rec(input[0].node(), selection, out, struct_fields);
                             self.with_new_inputs(node, function_node(input, function), &[new_input])
@@ -304,7 +333,10 @@ impl<'a> SelectionWalker<'a> {
                         else {
                             return self.walk_default(node, out, struct_fields);
                         };
-                        if old_fields.len() != new_names.len() {
+                        // Duplicate names raise, as without the rewrite.
+                        if old_fields.len() != new_names.len()
+                            || new_names.iter().collect::<PlIndexSet<_>>().len() != new_names.len()
+                        {
                             return self.walk_default(node, out, struct_fields);
                         }
 
@@ -645,7 +677,29 @@ impl<'a> SelectionWalker<'a> {
             false
         } else if height_free {
             // Only the height up to broadcasting matters: keep the selected fields, or the
-            // cheapest one (a literal if there is one) as a struct needs a field.
+            // cheapest one (a literal if there is one) as a struct needs a field. An input that
+            // may change the height (a `filter`, a `Range` literal) is kept too: `pl.struct`
+            // raises a `ShapeError` if its height disagrees with the others'.
+            let mut nodes_scratch = ScratchVec::default();
+            let mut heights_scratch = ScratchVec::default();
+            for (e, keep) in input.iter().zip(keep.iter_mut()) {
+                if !*keep {
+                    let height = aexpr_projection_height_rec_with(
+                        e.node(),
+                        self.expr_arena,
+                        &mut nodes_scratch,
+                        &mut heights_scratch,
+                        ExprHeightOptions {
+                            structural_unknowns_only: true,
+                            ..Default::default()
+                        },
+                    );
+                    *keep = matches!(
+                        height,
+                        ExprProjectionHeight::Unknown | ExprProjectionHeight::Range
+                    );
+                }
+            }
             if !keep.iter().any(|k| *k) {
                 let i = input
                     .iter()
@@ -1102,7 +1156,10 @@ fn align_input_dtypes(
     for schema in &input_schemas[1..] {
         for (name, dtype) in common.iter_mut() {
             if let Some(other) = schema.get(name) {
-                *dtype = intersect_dtype(dtype, other);
+                // Top-level columns are read, so they do not differ.
+                if let Some(common) = intersect_dtype(dtype, other) {
+                    *dtype = common;
+                }
             }
         }
     }
@@ -1139,9 +1196,13 @@ fn align_input_dtypes(
     }
 }
 
-/// The struct fields `a` and `b` both have, recursively.
-fn intersect_dtype(a: &DataType, b: &DataType) -> DataType {
-    match (a, b) {
+/// The struct fields `a` and `b` both have, recursively, or `None` if they differ otherwise.
+///
+/// The inputs of a vertical concatenation had equal dtypes before the pruning, so a field whose
+/// dtype differs is one that nobody reads: an input it reverted on dropped an unread `with_fields`
+/// that overwrote it. Such a field is left out.
+fn intersect_dtype(a: &DataType, b: &DataType) -> Option<DataType> {
+    Some(match (a, b) {
         #[cfg(feature = "dtype-struct")]
         (DataType::Struct(a_fields), DataType::Struct(b_fields)) => {
             let b_fields = fields_by_name(b_fields);
@@ -1152,19 +1213,20 @@ fn intersect_dtype(a: &DataType, b: &DataType) -> DataType {
                         let b = b_fields.get(a.name().as_str())?;
                         Some(polars_core::prelude::Field::new(
                             a.name().clone(),
-                            intersect_dtype(a.dtype(), b.dtype()),
+                            intersect_dtype(a.dtype(), b.dtype())?,
                         ))
                     })
                     .collect(),
             )
         },
-        (DataType::List(a), DataType::List(b)) => DataType::List(Box::new(intersect_dtype(a, b))),
+        (DataType::List(a), DataType::List(b)) => DataType::List(Box::new(intersect_dtype(a, b)?)),
         #[cfg(feature = "dtype-array")]
         (DataType::Array(a, width), DataType::Array(b, _)) => {
-            DataType::Array(Box::new(intersect_dtype(a, b)), *width)
+            DataType::Array(Box::new(intersect_dtype(a, b)?), *width)
         },
-        _ => a.clone(),
-    }
+        _ if a == b => a.clone(),
+        _ => return None,
+    })
 }
 
 /// The fields of a struct by name, for lookups that are not linear in the width.
