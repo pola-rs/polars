@@ -182,9 +182,16 @@ class ExprMetaNameSpace:
         return self._pyexpr.meta_is_literal(allow_aliasing)
 
     @unstable()
-    def is_scalar(self) -> bool:
+    def is_scalar(self, *, schema: SchemaDict | None = None) -> bool:
         """
         Whether or not this expression produces a scalar.
+
+        Parameters
+        ----------
+        schema
+            The schema of the frame the expression is evaluated on. The expression is
+            then resolved as in `select`, so the schema must contain every column it
+            reads.
 
         Examples
         --------
@@ -196,14 +203,21 @@ class ExprMetaNameSpace:
         False
 
         """
-        return self._pyexpr.meta_is_scalar()
+        return self._pyexpr.meta_is_scalar(schema)
 
     @unstable()
-    def is_length_preserving(self) -> bool:
+    def is_length_preserving(self, *, schema: SchemaDict | None = None) -> bool:
         """
         Whether or not this expression produces an output is length preserving.
 
         By length preserving we mean the same length as its input.
+
+        Parameters
+        ----------
+        schema
+            The schema of the frame the expression is evaluated on. The expression is
+            then resolved as in `select`, so the schema must contain every column it
+            reads.
 
         Examples
         --------
@@ -218,10 +232,10 @@ class ExprMetaNameSpace:
         True
 
         """
-        return self._pyexpr.meta_is_length_preserving()
+        return self._pyexpr.meta_is_length_preserving(schema)
 
     @unstable()
-    def is_known_length(self) -> bool:
+    def is_known_length(self, *, schema: SchemaDict | None = None) -> bool:
         """
         Whether or not we can define output length.
 
@@ -230,6 +244,13 @@ class ExprMetaNameSpace:
          - scalar
          - ranges
 
+        Parameters
+        ----------
+        schema
+            The schema of the frame the expression is evaluated on. The expression is
+            then resolved as in `select`, so the schema must contain every column it
+            reads.
+
         Examples
         --------
         >>> e = pl.col("foo").sum()
@@ -243,10 +264,10 @@ class ExprMetaNameSpace:
         True
 
         """
-        return self._pyexpr.meta_is_known_length()
+        return self._pyexpr.meta_is_known_length(schema)
 
     @unstable()
-    def is_row_separable(self) -> bool:
+    def is_row_separable(self, *, schema: SchemaDict | None = None) -> bool:
         """
         Whether the expression can be evaluated in batches of rows.
 
@@ -257,9 +278,16 @@ class ExprMetaNameSpace:
         scalar result counts as row separable, as it is broadcast to the height of the
         frame.
 
-        The expression is resolved without a schema, so this answer is conservative
-        where only the schema could decide: `is_in` and `replace` with a column or
-        `Series` argument report `False`.
+        Without a `schema`, this answer is conservative where only the schema could
+        decide: `is_in` and `replace` with a column or `Series` argument report
+        `False`.
+
+        Parameters
+        ----------
+        schema
+            The schema of the frame the expression is evaluated on. The expression is
+            then resolved as in `select`, so the schema must contain every column it
+            reads.
 
         Examples
         --------
@@ -280,9 +308,12 @@ class ExprMetaNameSpace:
         ... )
         >>> e.meta.is_row_separable()
         False
+        >>> e = pl.col(pl.Int64) * 2
+        >>> e.meta.is_row_separable(schema={"foo": pl.Int64, "bar": pl.Int64})
+        True
 
         """
-        return self._pyexpr.meta_is_row_separable()
+        return self._pyexpr.meta_is_row_separable(schema)
 
     @overload
     def output_name(self, *, raise_if_undetermined: Literal[True] = True) -> str: ...
