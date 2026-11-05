@@ -391,11 +391,12 @@ impl FileReader for ParquetFileReader {
             .min(file_metadata.row_groups.len())
             .max(1);
 
-        // This can be set to 1 to force column-per-thread parallelism, e.g. for bug reproduction.
+        // Small enough that the columns of one large row group decode in parallel, so threads stay
+        // busy when few row groups are in flight. Set to 1 for one column per task.
         let target_values_per_thread =
             std::env::var("POLARS_PARQUET_DECODE_TARGET_VALUES_PER_THREAD")
                 .map(|x| x.parse::<usize>().expect("integer").max(1))
-                .unwrap_or(16_777_216);
+                .unwrap_or(1 << 20);
 
         let is_full_projection = projected_arrow_fields.len() == file_schema.len();
 
@@ -532,8 +533,8 @@ struct Config {
     num_pipelines: usize,
     /// Number of row groups to pre-fetch concurrently, this can be across files
     row_group_prefetch_size: usize,
-    /// Minimum number of values for a parallel spawned task to process to amortize
-    /// parallelism overhead.
+    /// Number of values a decode or filter task aims for: a row group's columns are split into
+    /// tasks of about this many values.
     target_values_per_thread: usize,
     /// Minimum number of pieces to split this file's last morsel into. Precomputed by the
     /// multi-scan layer to share the parallelism budget across files.
