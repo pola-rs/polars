@@ -18,6 +18,8 @@ pub(super) struct ByteBudget {
     floor_budget: u64,
     // Volume in use for in-flight traffic, as allowed by the current_budget.
     inflight_in_use: AtomicU64,
+    // Gauge: acquires parked now.
+    acquires_parked: AtomicU64,
     waiters: Notify,
 }
 
@@ -27,15 +29,18 @@ impl ByteBudget {
             current_budget: AtomicU64::new(initial),
             floor_budget,
             inflight_in_use: AtomicU64::new(0),
+            acquires_parked: AtomicU64::new(0),
             waiters: Notify::new(),
         }
     }
 
     /// Acquire a bytes-based permit. The call site is responsible for capping the
-    /// request size to prevent deadlock.
-    async fn acquire_strict(&self, n_bytes: u64) {
+    /// request size to prevent deadlock. Returns whether the caller parked.
+    async fn acquire_strict(&self, n_bytes: u64) -> bool {
         // Pre-empt deadlock.
         assert!(n_bytes <= self.floor_budget);
+
+        let mut parked = false;
 
         // NOTE: Large waiters can starve under sustained small-request load.
         // In practice, this may not be material issue.
@@ -59,7 +64,7 @@ impl ByteBudget {
                     // acquires), so keep the wake chain alive — but only
                     // because progress occurred.
                     self.waiters.notify_one();
-                    return;
+                    return parked;
                 }
                 continue;
             }
@@ -71,7 +76,9 @@ impl ByteBudget {
             if inflight + n_bytes <= cap {
                 continue;
             }
+            let _parked = Parked::new(&self.acquires_parked);
             notified.await;
+            parked = true;
         }
     }
 
@@ -99,6 +106,22 @@ impl ByteBudget {
 
     fn inflight_in_use(&self) -> u64 {
         self.inflight_in_use.load(Ordering::Relaxed)
+    }
+}
+
+/// Counts one parked acquire while alive (also when the acquire is cancelled).
+struct Parked<'a>(&'a AtomicU64);
+
+impl<'a> Parked<'a> {
+    fn new(n: &'a AtomicU64) -> Self {
+        n.fetch_add(1, Relaxed);
+        Self(n)
+    }
+}
+
+impl Drop for Parked<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Relaxed);
     }
 }
 
@@ -189,6 +212,8 @@ pub struct InFlightStats {
     // May exceed 1.0 transiently after a budget shrink, while
     // previously-admitted traffic drains. Expected, not a bug.
     pub bytes_saturation: f64,
+    // Gauge: byte acquires parked at the time of `stats()`.
+    pub byte_acquires_parked: u64,
     pub request_budget: u64,
     pub requests_in_use: u64,
     pub requests_saturation: f64,
@@ -198,6 +223,8 @@ pub struct InFlightStats {
 pub struct InFlightBudget {
     byte_budget: Arc<ByteBudget>,
     request_budget: Arc<RequestBudget>,
+    // Flow: byte acquires admitted after parking, since the last `take_byte_acquires_unparked()`.
+    byte_acquires_unparked: AtomicU64,
 }
 
 impl InFlightBudget {
@@ -207,29 +234,14 @@ impl InFlightBudget {
         initial_request_budget: u64,
         floor_request_budget: u64,
     ) -> Self {
-        let inflight_budget = Self {
+        Self {
             byte_budget: Arc::new(ByteBudget::new(initial_byte_budget, floor_byte_budget)),
             request_budget: Arc::new(RequestBudget::new(
                 initial_request_budget,
                 floor_request_budget,
             )),
-        };
-
-        if polars_config::config().verbose() {
-            eprintln!(
-                "[InFlightConcurrency]: \
-                initial_byte_budget: {}, \
-                floor_byte_budget: {}, \
-                request_budget: {}, \
-                floor_request_budget: {}",
-                initial_byte_budget,
-                floor_byte_budget,
-                initial_request_budget,
-                floor_request_budget
-            );
+            byte_acquires_unparked: AtomicU64::new(0),
         }
-
-        inflight_budget
     }
 
     pub async fn acquire(self: &Arc<Self>, n_bytes: u64) -> InFlightPermit {
@@ -238,7 +250,9 @@ impl InFlightBudget {
         let n_bytes = n_bytes.min(self.byte_budget.floor_byte_budget());
 
         // Byte budget (may wait). Cancel-safe internally.
-        self.byte_budget.acquire_strict(n_bytes).await;
+        if self.byte_budget.acquire_strict(n_bytes).await {
+            self.byte_acquires_unparked.fetch_add(1, Relaxed);
+        }
 
         // Guard immediately — synchronous, so there's no cancellation
         // window between reservation and guard.
@@ -275,6 +289,11 @@ impl InFlightBudget {
         self.request_budget.resize(new);
     }
 
+    /// Flow: byte acquires admitted after parking, since the last call. Read and reset.
+    pub fn take_byte_acquires_unparked(&self) -> u64 {
+        self.byte_acquires_unparked.swap(0, Relaxed)
+    }
+
     pub fn stats(&self) -> InFlightStats {
         let bytes_budget = self.byte_budget.current_budget();
         let bytes_in_use = self.byte_budget.inflight_in_use();
@@ -296,6 +315,7 @@ impl InFlightBudget {
             bytes_budget,
             bytes_in_use,
             bytes_saturation,
+            byte_acquires_parked: self.byte_budget.acquires_parked.load(Relaxed),
             request_budget,
             requests_in_use,
             requests_saturation,
