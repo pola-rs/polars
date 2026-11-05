@@ -60,7 +60,7 @@ def test_string_to_binary() -> None:
     ids=["add", "sub", "mul", "truediv", "floordiv", "mod", "and", "or", "xor"],
 )
 @pytest.mark.parametrize("other", ["b", "i", "lit"])
-def test_binary_arithmetic_raises_in_schema(
+def test_binary_arithmetic_raises_in_schema_30621(
     op: Callable[[pl.Expr, pl.Expr], pl.Expr], other: str
 ) -> None:
     if op is operator.add and other == "b":
@@ -77,7 +77,7 @@ def test_binary_arithmetic_raises_in_schema(
             lf.select(expr).collect_schema()
 
 
-def test_binary_add_binary_schema() -> None:
+def test_binary_add_binary_schema_30621() -> None:
     lf = pl.LazyFrame({"b": [b"x"]}).select(pl.col("b") + pl.col("b"))
     assert lf.collect_schema()["b"] == pl.Binary
     assert lf.collect()["b"].to_list() == [b"xx"]
