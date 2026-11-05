@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import operator
 import os
 from collections import defaultdict
 from collections.abc import (
@@ -58,20 +59,21 @@ from polars._utils.construction import (
     series_to_pydf,
 )
 from polars._utils.convert import parse_as_duration_string
-from polars._utils.deprecation import (
-    deprecate_renamed_parameter,
-    deprecated,
-    issue_deprecation_warning,
+from polars._utils.expired import (
+    RemovedParameter,
+    RenamedParameter,
+    getattr_fallback,
+    raise_for_removed_attributes,
+    removed_parameters,
 )
 from polars._utils.getitem import get_df_item_by_key
-from polars._utils.parse import parse_into_expression
+from polars._utils.parse import parse_into_list_of_expressions_require_selectors
 from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
 from polars._utils.serde import serialize_polars_object
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     NO_DEFAULT,
     _in_notebook,
-    _Omitted,
     is_bool_sequence,
     normalize_filepath,
     parse_version,
@@ -80,7 +82,7 @@ from polars._utils.various import (
     scale_bytes,
     warn_null_comparison,
 )
-from polars._utils.wrap import wrap_expr, wrap_ldf, wrap_s
+from polars._utils.wrap import wrap_ldf, wrap_s
 from polars.config import Config
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.group_by import DynamicGroupBy, GroupBy, RollingGroupBy
@@ -121,12 +123,10 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import write_clipboard_string as _write_clipboard_string
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import (
         Callable,
         Collection,
         Iterator,
-        Mapping,
     )
     from datetime import timedelta
     from io import IOBase
@@ -167,6 +167,7 @@ if TYPE_CHECKING:
         JoinBuildSide,
         JoinStrategy,
         JoinValidation,
+        JoinWhereStrategy,
         Label,
         MaintainOrderJoin,
         MultiColSelector,
@@ -174,6 +175,7 @@ if TYPE_CHECKING:
         OneOrMoreDataTypes,
         Orientation,
         ParquetCompression,
+        ParquetEncryption,
         ParquetMetadata,
         PivotAgg,
         PolarsDataType,
@@ -194,15 +196,9 @@ if TYPE_CHECKING:
     )
     from polars._utils.various import NoDefault
     from polars.config import TableFormatNames
-    from polars.interchange.dataframe import PolarsDataFrame
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.partition import PartitionBy
     from polars.ml.torch import PolarsDataset
-
-    if sys.version_info >= (3, 13):
-        from warnings import deprecated
-    else:
-        from typing_extensions import deprecated  # noqa: TC004
 
     T = TypeVar("T")
     P = ParamSpec("P")
@@ -251,6 +247,8 @@ class DataFrame:
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
         this does not yield conclusive results, column orientation is used.
+        A flat sequence of scalar values is treated as one column unless
+        `orient="row"` is specified, in which case it is treated as one row.
     infer_schema_length : int or None
         The maximum number of rows to scan for schema inference. If set to `None`, the
         full data may be scanned *(this can be slow)*. This parameter only applies if
@@ -393,18 +391,22 @@ class DataFrame:
         if height is not None:
             msg = "the `height` parameter of `DataFrame` is considered unstable."
             issue_unstable_warning(msg)
+        if orient is not None and orient not in ("col", "row"):
+            msg = f"orient must be one of {{'col', 'row'}}, got {orient!r}"
+            raise ValueError(msg)
 
         if data is None:
             self._df = dict_to_pydf(
-                {}, schema=schema, schema_overrides=schema_overrides
+                data={},
+                schema=schema,
+                schema_overrides=schema_overrides,
             )
-
             if height is not None and self.width == 0:
                 self._df = PyDataFrame.empty_with_height(height)
 
-        elif isinstance(data, dict):
+        elif isinstance(data, Mapping):
             self._df = dict_to_pydf(
-                data,
+                data=data,
                 schema=schema,
                 schema_overrides=schema_overrides,
                 strict=strict,
@@ -413,7 +415,7 @@ class DataFrame:
 
         elif isinstance(data, (list, tuple, Sequence)):
             self._df = sequence_to_pydf(
-                data,
+                data=data,
                 schema=schema,
                 schema_overrides=schema_overrides,
                 strict=strict,
@@ -424,12 +426,15 @@ class DataFrame:
 
         elif isinstance(data, pl.Series):
             self._df = series_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides, strict=strict
+                data=data,
+                schema=schema,
+                schema_overrides=schema_overrides,
+                strict=strict,
             )
 
         elif _check_for_numpy(data) and isinstance(data, np.ndarray):
             self._df = numpy_to_pydf(
-                data,
+                data=data,
                 schema=schema,
                 schema_overrides=schema_overrides,
                 strict=strict,
@@ -439,17 +444,23 @@ class DataFrame:
 
         elif _check_for_pyarrow(data) and isinstance(data, pa.Table):
             self._df = arrow_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides, strict=strict
+                data=data,
+                schema=schema,
+                schema_overrides=schema_overrides,
+                strict=strict,
             )
 
         elif _check_for_pandas(data) and isinstance(data, pd.DataFrame):
             self._df = pandas_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides, strict=strict
+                data=data,
+                schema=schema,
+                schema_overrides=schema_overrides,
+                strict=strict,
             )
 
         elif _check_for_torch(data) and isinstance(data, torch.Tensor):
             self._df = numpy_to_pydf(
-                data.numpy(force=False),
+                data=data.numpy(force=False),
                 schema=schema,
                 schema_overrides=schema_overrides,
                 strict=strict,
@@ -463,7 +474,7 @@ class DataFrame:
             and isinstance(data, (Generator, Iterable))
         ):
             self._df = iterable_to_pydf(
-                data,
+                data=data,
                 schema=schema,
                 schema_overrides=schema_overrides,
                 strict=strict,
@@ -473,12 +484,15 @@ class DataFrame:
 
         elif isinstance(data, pl.DataFrame):
             self._df = dataframe_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides, strict=strict
+                data=data,
+                schema=schema,
+                schema_overrides=schema_overrides,
+                strict=strict,
             )
 
         elif is_pycapsule(data):
             self._df = pycapsule_to_frame(
-                data,
+                obj=data,
                 schema=schema,
                 schema_overrides=schema_overrides,
             )._df
@@ -574,7 +588,6 @@ class DataFrame:
         schema: SchemaDefinition | None = None,
         *,
         schema_overrides: SchemaDict | None = None,
-        rechunk: bool = True,
     ) -> DataFrame:
         """
         Construct a DataFrame from an Arrow table.
@@ -599,15 +612,13 @@ class DataFrame:
         schema_overrides : dict, default None
             Support type specification or override of one or more columns; note that
             any dtypes inferred from the columns param will be overridden.
-        rechunk : bool, default True
-            Make sure that all data is in contiguous memory.
         """
         return cls._from_pydf(
             arrow_to_pydf(
                 data,
                 schema=schema,
                 schema_overrides=schema_overrides,
-                rechunk=rechunk,
+                rechunk=False,
             )
         )
 
@@ -1033,62 +1044,6 @@ class DataFrame:
 
         return arr
 
-    @deprecated(
-        "Support for the dataframe interchange protocol is deprecated since version 1.40.0"
-    )
-    def __dataframe__(
-        self,
-        nan_as_null: bool = False,  # noqa: FBT001
-        allow_copy: bool = True,  # noqa: FBT001
-    ) -> PolarsDataFrame:
-        """
-        Convert to a dataframe object implementing the dataframe interchange protocol.
-
-        .. deprecated:: 1.40.0
-            Support for the Dataframe Interchange Protocol is deprecated.
-
-        Parameters
-        ----------
-        nan_as_null
-            Overwrite null values in the data with `NaN`.
-
-            .. warning::
-                This functionality has not been implemented and the parameter will be
-                removed in a future version.
-                Setting this to `True` will raise a `NotImplementedError`.
-        allow_copy
-            Allow memory to be copied to perform the conversion. If set to `False`,
-            causes conversions that are not zero-copy to fail.
-
-        Notes
-        -----
-        Details on the Python dataframe interchange protocol:
-        https://data-apis.org/dataframe-protocol/latest/index.html
-
-        Examples
-        --------
-        Convert a Polars DataFrame to a generic dataframe object and access some
-        properties.
-
-        >>> df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["x", "y"]})
-        >>> dfi = df.__dataframe__()  # doctest: +SKIP
-        >>> dfi.num_rows()  # doctest: +SKIP
-        2
-        >>> dfi.get_column(1).dtype  # doctest: +SKIP
-        (<DtypeKind.FLOAT: 2>, 64, 'g', '=')
-        """
-        if nan_as_null:
-            msg = (
-                "functionality for `nan_as_null` has not been implemented and the"
-                " parameter will be removed in a future version"
-                "\n\nUse the default `nan_as_null=False`."
-            )
-            raise NotImplementedError(msg)
-
-        from polars.interchange.dataframe import PolarsDataFrame
-
-        return PolarsDataFrame(self, allow_copy=allow_copy)
-
     def _comp(self, other: Any, op: ComparisonOperator) -> DataFrame:
         """Compare a DataFrame with another object."""
         if isinstance(other, DataFrame):
@@ -1111,7 +1066,7 @@ class DataFrame:
 
         suffix = "__POLARS_CMP_OTHER"
         other_renamed = other.select(F.all().name.suffix(suffix))
-        combined = F.concat([self, other_renamed], how="horizontal", strict=True)
+        combined = F.concat([self, other_renamed], how="horizontal")
 
         if op == "eq":
             expr = [F.col(n) == F.col(f"{n}{suffix}") for n in self.columns]
@@ -1137,24 +1092,37 @@ class DataFrame:
         op: ComparisonOperator,
     ) -> DataFrame:
         """Compare a DataFrame with a non-DataFrame object."""
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
         warn_null_comparison(other)
+        compare: Callable[[Expr, Any], Expr]
         if op == "eq":
-            return self.select(F.all() == other)
+            compare = operator.eq
         elif op == "neq":
-            return self.select(F.all() != other)
+            compare = operator.ne
         elif op == "gt":
-            return self.select(F.all() > other)
+            compare = operator.gt
         elif op == "lt":
-            return self.select(F.all() < other)
+            compare = operator.lt
         elif op == "gt_eq":
-            return self.select(F.all() >= other)
+            compare = operator.ge
         elif op == "lt_eq":
-            return self.select(F.all() <= other)
+            compare = operator.le
         else:
             msg = f"unexpected comparison operator {op!r}"
             raise ValueError(msg)
 
+        return (
+            self.lazy()
+            ._height_preserving_select(lambda expr: compare(expr, other))
+            ._collect_eager(optimizations=QueryOptFlags._eager())
+        )
+
     def _div(self, other: Any, *, floordiv: bool) -> DataFrame:
+        if self.width == 0:
+            # No columns to divide; the result is the input frame as-is.
+            return self.clone()
+
         if isinstance(other, pl.Series):
             if floordiv:
                 return self.select(F.all() // lit(other))
@@ -1164,26 +1132,19 @@ class DataFrame:
             s = _prepare_other_arg(other, length=self.height)
             other = DataFrame([s.alias(f"n{i}") for i in range(self.width)])
 
-        orig_dtypes = other.dtypes
-        # TODO: Dispatch to a native floordiv
-        other = self._cast_all_from_to(other, INTEGER_DTYPES, Float64)
-        df = self._from_pydf(self._df.div_df(other._df))
+        if not floordiv:
+            other = self._cast_all_from_to(other, INTEGER_DTYPES, Float64)
+            return self._from_pydf(self._df.div_df(other._df))
 
-        df = (
-            df
-            if not floordiv
-            else df.with_columns([s.floor() for s in df if s.dtype.is_float()])
-        )
-        if floordiv:
-            int_casts = [
-                col(column).cast(tp)
-                for i, (column, tp) in enumerate(self.schema.items())
-                if tp.is_integer()
-                and (orig_dtypes[i].is_integer() or orig_dtypes[i] == Null)
-            ]
-            if int_casts:
-                return df.with_columns(int_casts)
-        return df
+        df = self._from_pydf(self._df.floordiv_df(other._df))
+        int_casts = [
+            col(column).cast(tp)
+            for (column, tp), other_tp in zip(
+                self.schema.items(), other.dtypes, strict=False
+            )
+            if tp.is_integer() and (other_tp.is_integer() or other_tp == Null)
+        ]
+        return df.with_columns(int_casts) if int_casts else df
 
     def _cast_all_from_to(
         self, df: DataFrame, from_: frozenset[PolarsDataType], to: PolarsDataType
@@ -1324,7 +1285,7 @@ class DataFrame:
         ----------
         key
             Rows / columns to select. This is easiest to explain via example. Suppose
-            we have a DataFrame with columns `'a'`, `'d'`, `'c'`, `'d'`. Here is what
+            we have a DataFrame with columns `'a'`, `'d'`, `'c'`, `'b'`. Here is what
             various types of `key` would do:
 
             - `df[0, 'a']` extracts the first element of column `'a'` and returns a
@@ -1744,7 +1705,14 @@ class DataFrame:
         )
         return s.get_index_signed(row)
 
-    @deprecate_renamed_parameter("future", "compat_level", version="1.1")
+    @removed_parameters(
+        RenamedParameter(
+            name="future",
+            new_name="compat_level",
+            deprecated_in="1.1",
+            removed_in="2.0",
+        )
+    )
     def to_arrow(self, *, compat_level: CompatLevel | None = None) -> pa.Table:
         """
         Collect the underlying arrow arrays in an Arrow Table.
@@ -1929,6 +1897,48 @@ class DataFrame:
         """
         return self.rows(named=True)
 
+    @overload
+    def to_numpy(
+        self,
+        *,
+        order: IndexOrder = ...,
+        writable: bool = ...,
+        allow_copy: bool = ...,
+        structured: bool = ...,
+        masked: Literal[False] = ...,
+    ) -> np.ndarray[Any, Any]: ...
+
+    @overload
+    def to_numpy(
+        self,
+        *,
+        order: IndexOrder = ...,
+        writable: bool = ...,
+        allow_copy: bool = ...,
+        structured: bool = ...,
+        masked: Literal[True],
+    ) -> np.ma.MaskedArray[Any, Any]: ...
+
+    @overload
+    def to_numpy(
+        self,
+        *,
+        order: IndexOrder = ...,
+        writable: bool = ...,
+        allow_copy: bool = ...,
+        structured: bool = ...,
+        masked: bool,
+    ) -> np.ndarray[Any, Any]: ...
+
+    @removed_parameters(
+        RemovedParameter(
+            name="use_pyarrow",
+            deprecated_in="0.20.28",
+            removed_in="2.0",
+            hint="Polars now uses its native engine for conversion to NumPy by default."
+            " To use PyArrow's engine, call `.to_arrow().to_numpy()` instead.",
+        )
+    )
     def to_numpy(
         self,
         *,
@@ -1936,7 +1946,7 @@ class DataFrame:
         writable: bool = False,
         allow_copy: bool = True,
         structured: bool = False,
-        use_pyarrow: bool | None = None,
+        masked: bool = False,
     ) -> np.ndarray[Any, Any]:
         """
         Convert this DataFrame to a NumPy ndarray.
@@ -1972,15 +1982,16 @@ class DataFrame:
             returned instead.
 
             .. _structured array: https://numpy.org/doc/stable/user/basics.rec.html
+        masked
+            Return a `numpy.ma.MaskedArray` in which null values are masked. The data
+            keeps the type it would have without nulls, and the values under the mask
+            are unspecified. Nulls inside nested columns are converted as they are
+            without `masked`, except for `Struct` columns when `structured=True`.
+            `writable` and `allow_copy` only apply to the data, not the mask.
 
-        use_pyarrow
-            Use `pyarrow.Array.to_numpy
-            <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
-
-            function for the conversion to NumPy if necessary.
-
-            .. deprecated:: 0.20.28
-                Polars now uses its native engine by default for conversion to NumPy.
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Examples
         --------
@@ -2045,14 +2056,22 @@ class DataFrame:
         >>> df.to_numpy(structured=True)
         array([(1, 6.5, 'a'), (2, 7. , 'b'), (3, 8.5, 'c')],
               dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
-        """  # noqa: W505
-        if use_pyarrow is not None:
-            issue_deprecation_warning(
-                "the `use_pyarrow` parameter for `DataFrame.to_numpy` is deprecated."
-                " Polars now uses its native engine by default for conversion to NumPy.",
-                version="0.20.28",
-            )
 
+        Set `masked=True` to represent null values with a mask instead, which preserves
+        the data type.
+
+        >>> df = pl.DataFrame({"a": [1, 2, None], "b": [4, None, 6]})
+        >>> arr = df.to_numpy(masked=True)
+        >>> arr.dtype
+        dtype('int64')
+        >>> arr.mask
+        array([[False, False],
+               [False,  True],
+               [ True, False]])
+        """  # noqa: W505
+        if masked:
+            msg = "the `masked` parameter of `DataFrame.to_numpy()` is considered unstable."
+            issue_unstable_warning(msg)
         if structured:
             if not allow_copy and not self.is_empty():
                 msg = "copy not allowed: cannot create structured array without copying data"
@@ -2065,20 +2084,33 @@ class DataFrame:
                     arr = s.struct.unnest().to_numpy(
                         structured=True,
                         allow_copy=True,
-                        use_pyarrow=use_pyarrow,
+                        masked=masked,
+                    )
+                    if masked and s.has_nulls():
+                        arr[s.is_null().to_numpy()] = np.ma.masked
+                elif masked and s.dtype == String and s.has_nulls():
+                    arr = np.ma.MaskedArray(
+                        s.fill_null("").to_numpy().astype(str),
+                        mask=s.is_null().to_numpy(),
                     )
                 else:
-                    arr = s.to_numpy(use_pyarrow=use_pyarrow)
+                    arr = s.to_numpy(masked=masked)
 
                 if s.dtype == String and not s.has_nulls():
                     arr = arr.astype(str, copy=False)
                 arrays.append(arr)
                 struct_dtype.append((s.name, arr.dtype, arr.shape[1:]))
 
-            out = np.empty(self.height, dtype=struct_dtype)
+            out = (np.ma.empty if masked else np.empty)(self.height, dtype=struct_dtype)
             for idx, c in enumerate(self.columns):
                 out[c] = arrays[idx]
             return out
+
+        if masked:
+            data, mask = self._df.to_numpy_masked(
+                order, writable=writable, allow_copy=allow_copy
+            )
+            return np.ma.MaskedArray(data, mask=np.ma.nomask if mask is None else mask)
 
         return self._df.to_numpy(order, writable=writable, allow_copy=allow_copy)
 
@@ -2491,9 +2523,7 @@ class DataFrame:
                 if features is not None
                 else self.drop(*label_frame.columns)
             ).cast(to_dtype)  # type: ignore[arg-type]
-            frame = F.concat(
-                [label_frame, features_frame], how="horizontal", strict=True
-            )
+            frame = F.concat([label_frame, features_frame], how="horizontal")
         else:
             label_frame = None
             features_frame = None
@@ -2878,6 +2908,11 @@ class DataFrame:
         --------
         DataFrame.write_ndjson
 
+        Notes
+        -----
+        A :class:`Map` column is written as a JSON object, so its keys must be of type
+        String, Categorical or Enum.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -2963,12 +2998,17 @@ class DataFrame:
             Whether to check if the filename matches the compression settings.
             Will raise an error if compression is set to 'uncompressed' and the
             filename ends in one of (".gz", ".zst", ".zstd") or if
-            compression != 'uncompressed' and the file uses an mismatched
+            compression != 'uncompressed' and the file uses a mismatched
             extension. Only applies if file is a path.
 
             .. warning::
                 This functionality is considered **unstable**. It may be changed at any
                 point without it being considered a breaking change.
+
+        Notes
+        -----
+        A :class:`Map` column is written as a JSON object, so its keys must be of type
+        String, Categorical or Enum.
 
         Examples
         --------
@@ -2991,8 +3031,7 @@ class DataFrame:
         else:
             target = file
 
-        engine: EngineType = "in-memory"
-
+        from polars.lazyframe.engine_config import _eager_engine
         from polars.lazyframe.opt_flags import QueryOptFlags
 
         self.lazy().sink_ndjson(
@@ -3001,7 +3040,7 @@ class DataFrame:
             compression_level=compression_level,
             check_extension=check_extension,
             optimizations=QueryOptFlags._eager(),
-            engine=engine,
+            engine=_eager_engine(),
         )
 
         if should_return_buffer:
@@ -3033,7 +3072,6 @@ class DataFrame:
         quote_style: CsvQuoteStyle | None = ...,
         storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
-        retries: int | None = ...,
     ) -> str: ...
 
     @overload
@@ -3060,9 +3098,16 @@ class DataFrame:
         quote_style: CsvQuoteStyle | None = ...,
         storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
-        retries: int | None = ...,
     ) -> None: ...
 
+    @removed_parameters(
+        RemovedParameter(
+            name="retries",
+            deprecated_in="1.37.1",
+            removed_in="2.0",
+            hint="Specify `max_retries` in `storage_options` instead.",
+        )
+    )
     def write_csv(
         self,
         file: str | Path | IO[str] | IO[bytes] | None = None,
@@ -3088,7 +3133,6 @@ class DataFrame:
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int | None = None,
     ) -> str | None:
         """
         Write to comma-separated values (CSV) file.
@@ -3197,11 +3241,6 @@ class DataFrame:
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
-        retries
-            Number of retries if accessing a cloud instance fails.
-
-            .. deprecated:: 1.37.1
-                Pass {"max_retries": n} via `storage_options` instead.
 
         Examples
         --------
@@ -3234,8 +3273,7 @@ class DataFrame:
         else:
             target = file
 
-        engine: EngineType = "in-memory"
-
+        from polars.lazyframe.engine_config import _eager_engine
         from polars.lazyframe.opt_flags import QueryOptFlags
 
         self.lazy().sink_csv(
@@ -3259,9 +3297,8 @@ class DataFrame:
             quote_style=quote_style,
             storage_options=storage_options,
             credential_provider=credential_provider,
-            retries=retries,
             optimizations=QueryOptFlags._eager(),
-            engine=engine,
+            engine=_eager_engine(),
         )
 
         if should_return_buffer:
@@ -3290,6 +3327,7 @@ class DataFrame:
         result: str = self.write_csv(file=None, separator=separator, **kwargs)
         _write_clipboard_string(result)
 
+    @unstable()
     def write_avro(
         self,
         file: str | Path | IO[bytes],
@@ -3298,6 +3336,10 @@ class DataFrame:
     ) -> None:
         """
         Write to Apache Avro file.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -3863,16 +3905,16 @@ class DataFrame:
             column_widths = _expand_selector_dicts(  # type: ignore[assignment]
                 df_original, column_widths, expand_keys=True, expand_values=False
             )
-        column_widths = _unpack_multi_column_dict(column_widths or {})  # type: ignore[assignment]
+        widths: dict[str, int] = _unpack_multi_column_dict(column_widths or {})
 
         for column in df.columns:
             options = {"hidden": True} if column in hidden else {}
             col_idx = table_start[1] + df.get_column_index(column)
-            if column in column_widths:  # type: ignore[operator]
+            if column in widths:
                 ws.set_column_pixels(
                     col_idx,
                     col_idx,
-                    column_widths[column],  # type: ignore[index]
+                    widths[column],
                     None,
                     options,
                 )
@@ -3925,7 +3967,6 @@ class DataFrame:
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int | None = None,
     ) -> BytesIO: ...
 
     @overload
@@ -3940,10 +3981,22 @@ class DataFrame:
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int | None = None,
     ) -> None: ...
 
-    @deprecate_renamed_parameter("future", "compat_level", version="1.1")
+    @removed_parameters(
+        RenamedParameter(
+            name="future",
+            new_name="compat_level",
+            deprecated_in="1.1",
+            removed_in="2.0",
+        ),
+        RemovedParameter(
+            name="retries",
+            deprecated_in="1.37.1",
+            removed_in="2.0",
+            hint="Specify `max_retries` in `storage_options` instead.",
+        ),
+    )
     def write_ipc(
         self,
         file: str | Path | IO[bytes] | None,
@@ -3955,7 +4008,6 @@ class DataFrame:
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int | None = None,
     ) -> BytesIO | None:
         """
         Write to Arrow IPC binary stream or Feather file.
@@ -4003,11 +4055,6 @@ class DataFrame:
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
-        retries
-            Number of retries if accessing a cloud instance fails.
-
-            .. deprecated:: 1.37.1
-                Pass {"max_retries": n} via `storage_options` instead.
 
         Examples
         --------
@@ -4050,7 +4097,6 @@ class DataFrame:
                 record_batch_size=record_batch_size,
                 storage_options=storage_options,
                 credential_provider=credential_provider,
-                retries=retries,
                 optimizations=QueryOptFlags._eager(),
                 engine="streaming",
             )
@@ -4074,7 +4120,14 @@ class DataFrame:
         compat_level: CompatLevel | None = None,
     ) -> None: ...
 
-    @deprecate_renamed_parameter("future", "compat_level", version="1.1")
+    @removed_parameters(
+        RenamedParameter(
+            name="future",
+            new_name="compat_level",
+            deprecated_in="1.1",
+            removed_in="2.0",
+        )
+    )
     def write_ipc_stream(
         self,
         file: str | Path | IO[bytes] | None,
@@ -4133,6 +4186,14 @@ class DataFrame:
         self._df.write_ipc_stream(file, compression, compat_level_py)
         return file if return_bytes else None  # type: ignore[return-value]
 
+    @removed_parameters(
+        RemovedParameter(
+            name="retries",
+            deprecated_in="1.37.1",
+            removed_in="2.0",
+            hint="Specify `max_retries` in `storage_options` instead.",
+        )
+    )
     def write_parquet(
         self,
         file: str | Path | IO[bytes],
@@ -4150,9 +4211,9 @@ class DataFrame:
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int | None = None,
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
+        encryption: ParquetEncryption | None = None,
         mkdir: bool = False,
     ) -> None:
         """
@@ -4240,11 +4301,6 @@ class DataFrame:
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
-        retries
-            Number of retries if accessing a cloud instance fails.
-
-            .. deprecated:: 1.37.1
-                Pass {"max_retries": n} via `storage_options` instead.
         metadata
             A dictionary or callback to add key-values to the file-level Parquet
             metadata.
@@ -4257,6 +4313,19 @@ class DataFrame:
             Provide a custom arrow schema to write to the file. This allows
             setting custom schema and field-level metadata. Names and dtypes
             must match.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
+        encryption
+            Properties for writing Parquet files encrypted with Parquet modular
+            encryption. See :class:`ParquetEncryptionProperties`, or
+            :class:`~polars.io.parquet.encryption.ParquetEncryptionConfig` to use keys
+            managed by a KMS.
+
+            When partitioning, the partition key values are written unencrypted in
+            the file paths. Columns with their own encryption key can't be used as
+            partition keys.
 
             .. warning::
                 This functionality is considered **unstable**. It may be changed at any
@@ -4312,6 +4381,9 @@ class DataFrame:
                 raise ValueError(msg)
             if mkdir:
                 msg = "write_parquet with `use_pyarrow=True` cannot be combined with `mkdir`"
+                raise ValueError(msg)
+            if encryption is not None:
+                msg = "write_parquet with `use_pyarrow=True` cannot be combined with `encryption`"
                 raise ValueError(msg)
 
             tbl = self.to_arrow()
@@ -4380,9 +4452,9 @@ class DataFrame:
             data_page_size=data_page_size,
             storage_options=storage_options,
             credential_provider=credential_provider,
-            retries=retries,
             metadata=metadata,
             arrow_schema=arrow_schema,
+            encryption=encryption,
             engine=engine,
             mkdir=mkdir,
             optimizations=QueryOptFlags._eager(),
@@ -4590,7 +4662,7 @@ class DataFrame:
                 if adbc_module_name.split("_")[-1] == "sqlite":
                     catalog, db_schema = db_schema, None
 
-                    # note: ADBC didnt't support 'replace' until adbc-driver-sqlite
+                    # note: ADBC didn't support 'replace' until adbc-driver-sqlite
                     # version 0.11 (it was released for other drivers in version 0.7)
                     if (
                         driver_manager_version >= (0, 7)
@@ -4768,8 +4840,14 @@ class DataFrame:
             - If 'append', will add new data.
             - If 'overwrite', will replace table with new data.
 
+        Notes
+        -----
+        Columns of required (`NOT NULL`) table fields must not contain nulls.
+        Required fields nested in structs or lists are not supported.
         """
         from pyiceberg.catalog import load_catalog
+
+        from polars.io.iceberg._utils import with_table_nullability
 
         if isinstance(target, str):
             catalog = load_catalog()
@@ -4777,7 +4855,10 @@ class DataFrame:
         else:
             table = target
 
-        data = self.to_arrow(compat_level=CompatLevel.oldest())
+        # Arrow data from Polars is always nullable; required Iceberg fields reject it.
+        data = with_table_nullability(
+            self.to_arrow(compat_level=CompatLevel.oldest()), table.schema()
+        )
 
         if mode == "append":
             table.append(data)
@@ -4790,7 +4871,6 @@ class DataFrame:
         target: str | Path | deltalake.DeltaTable,
         *,
         mode: Literal["error", "append", "overwrite", "ignore"] = ...,
-        overwrite_schema: bool | None = ...,
         storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
         delta_write_options: dict[str, Any] | None = ...,
@@ -4802,18 +4882,25 @@ class DataFrame:
         target: str | Path | deltalake.DeltaTable,
         *,
         mode: Literal["merge"],
-        overwrite_schema: bool | None = ...,
         storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
         delta_merge_options: dict[str, Any],
     ) -> deltalake.table.TableMerger: ...
 
+    @removed_parameters(
+        RemovedParameter(
+            name="overwrite_schema",
+            deprecated_in="0.20.14",
+            removed_in="2.0",
+            hint="Use the `delta_write_options` parameter instead and pass"
+            ' `{"schema_mode": "overwrite"}`.',
+        ),
+    )
     def write_delta(
         self,
         target: str | Path | deltalake.DeltaTable,
         *,
         mode: Literal["error", "append", "overwrite", "ignore", "merge"] = "error",
-        overwrite_schema: bool | None = None,
         storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
@@ -4837,12 +4924,6 @@ class DataFrame:
             - If 'ignore', will not write anything if table already exists.
             - If 'merge', return a `TableMerger` object to merge data from the DataFrame
               with the existing data.
-        overwrite_schema
-            If True, allows updating the schema of the table.
-
-            .. deprecated:: 0.20.14
-                Use the parameter `delta_write_options` instead and pass
-                `{"schema_mode": "overwrite"}`.
         storage_options
             Extra options for the storage backends supported by `deltalake`.
             For cloud storages, this may include configurations for authentication etc.
@@ -4982,13 +5063,6 @@ class DataFrame:
         ...     .execute()
         ... )  # doctest: +SKIP
         """
-        if overwrite_schema is not None:
-            issue_deprecation_warning(
-                "the parameter `overwrite_schema` for `write_delta` is deprecated."
-                ' Use the parameter `delta_write_options` instead and pass `{"schema_mode": "overwrite"}`.',
-                version="0.20.14",
-            )
-
         from polars.io.delta._utils import (
             _check_for_unsupported_types,
             _check_if_delta_available,
@@ -5054,9 +5128,6 @@ class DataFrame:
         else:
             if delta_write_options is None:
                 delta_write_options = {}
-
-            if overwrite_schema:
-                delta_write_options["schema_mode"] = "overwrite"
 
             write_deltalake(
                 table_or_uri=target,
@@ -5258,7 +5329,11 @@ class DataFrame:
         │ a   ┆ 1   │
         └─────┴─────┘
         """
-        return self.select(F.col("*").reverse())
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
+        return (
+            self.lazy().reverse()._collect_eager(optimizations=QueryOptFlags._eager())
+        )
 
     def rename(
         self, mapping: Mapping[str, str] | Callable[[str], str], *, strict: bool = True
@@ -5313,7 +5388,7 @@ class DataFrame:
         return (
             self.lazy()
             .rename(mapping, strict=strict)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def insert_column(self, index: int, column: IntoExprColumn) -> DataFrame:
@@ -5559,7 +5634,7 @@ class DataFrame:
         return (
             self.lazy()
             .filter(*predicates, **constraints)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def remove(
@@ -5671,7 +5746,7 @@ class DataFrame:
         │ 4    ┆ null ┆ c    │
         └──────┴──────┴──────┘
 
-        Provide constraints(s) using `**kwargs` syntax:
+        Provide constraint(s) using `**kwargs` syntax:
 
         >>> df.remove(foo=0, bar=0)
         shape: (4, 3)
@@ -5706,7 +5781,7 @@ class DataFrame:
         return (
             self.lazy()
             .remove(*predicates, **constraints)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     @overload
@@ -5736,7 +5811,14 @@ class DataFrame:
         return_type: Literal["frame", "self"],
     ) -> DataFrame: ...
 
-    @deprecate_renamed_parameter("return_as_string", "return_type", version="1.35.0")
+    @removed_parameters(
+        RenamedParameter(
+            name="return_as_string",
+            new_name="return_type",
+            deprecated_in="1.35.0",
+            removed_in="2.0",
+        )
+    )
     def glimpse(
         self,
         *,
@@ -5848,9 +5930,7 @@ class DataFrame:
         │ 3.0 ┆ null ┆ true  ┆ c    ┆ null ┆ 2022-01-01 │
         └─────┴──────┴───────┴──────┴──────┴────────────┘
         """  # noqa: W505
-        # handle boolean value from now-deprecated `return_as_string` parameter
-        if isinstance(return_type, bool) or return_type is None:  # type: ignore[redundant-expr]
-            return_type = "string" if return_type else None  # type: ignore[redundant-expr]
+        if return_type is None:
             return_frame = False
         else:
             return_frame = return_type == "frame"
@@ -6183,7 +6263,7 @@ class DataFrame:
                 multithreaded=multithreaded,
                 maintain_order=maintain_order,
             )
-            .collect(optimizations=optimizations)
+            ._collect_eager(optimizations=optimizations)
         )
 
     def sql(self, query: str, *, table_name: str = "self") -> DataFrame:
@@ -6261,7 +6341,7 @@ class DataFrame:
         ┌─────┬───────────┬───────┬──────┬──────┐
         │ a   ┆ a_is_even ┆ b_b   ┆ year ┆ zero │
         │ --- ┆ ---       ┆ ---   ┆ ---  ┆ ---  │
-        │ i64 ┆ bool      ┆ str   ┆ i32  ┆ f32  │
+        │ i64 ┆ bool      ┆ str   ┆ i64  ┆ f32  │
         ╞═════╪═══════════╪═══════╪══════╪══════╡
         │ 1   ┆ false     ┆ zz:zz ┆ 1999 ┆ 0.0  │
         │ 2   ┆ true      ┆ yy:yy ┆ 2010 ┆ 0.0  │
@@ -6278,7 +6358,14 @@ class DataFrame:
             ctx.register(name=name, frame=self)
             return ctx.execute(query)
 
-    @deprecate_renamed_parameter("descending", "reverse", version="1.0.0")
+    @removed_parameters(
+        RenamedParameter(
+            name="descending",
+            new_name="reverse",
+            deprecated_in="1.0.0",
+            removed_in="2.0",
+        )
+    )
     def top_k(
         self,
         k: int,
@@ -6354,20 +6441,23 @@ class DataFrame:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
+        optimizations = QueryOptFlags._eager()
+        optimizations.slice_pushdown = True
+        optimizations.predicate_pushdown = True
         return (
             self.lazy()
             .top_k(k, by=by, reverse=reverse)
-            .collect(
-                optimizations=QueryOptFlags(
-                    projection_pushdown=False,
-                    predicate_pushdown=False,
-                    comm_subplan_elim=False,
-                    slice_pushdown=True,
-                )
-            )
+            ._collect_eager(optimizations=optimizations)
         )
 
-    @deprecate_renamed_parameter("descending", "reverse", version="1.0.0")
+    @removed_parameters(
+        RenamedParameter(
+            name="descending",
+            new_name="reverse",
+            deprecated_in="1.0.0",
+            removed_in="2.0",
+        )
+    )
     def bottom_k(
         self,
         k: int,
@@ -6443,17 +6533,13 @@ class DataFrame:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
+        optimizations = QueryOptFlags._eager()
+        optimizations.slice_pushdown = True
+        optimizations.predicate_pushdown = True
         return (
             self.lazy()
             .bottom_k(k, by=by, reverse=reverse)
-            .collect(
-                optimizations=QueryOptFlags(
-                    projection_pushdown=False,
-                    predicate_pushdown=False,
-                    comm_subplan_elim=False,
-                    slice_pushdown=True,
-                )
-            )
+            ._collect_eager(optimizations=optimizations)
         )
 
     def equals(self, other: DataFrame, *, null_equal: bool = True) -> bool:
@@ -6763,7 +6849,9 @@ class DataFrame:
         from polars.lazyframe.opt_flags import QueryOptFlags
 
         return (
-            self.lazy().drop_nans(subset).collect(optimizations=QueryOptFlags._eager())
+            self.lazy()
+            .drop_nans(subset)
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def drop_nulls(
@@ -6884,7 +6972,9 @@ class DataFrame:
         from polars.lazyframe.opt_flags import QueryOptFlags
 
         return (
-            self.lazy().drop_nulls(subset).collect(optimizations=QueryOptFlags._eager())
+            self.lazy()
+            .drop_nulls(subset)
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def pipe(
@@ -7119,47 +7209,6 @@ class DataFrame:
             msg = f"`offset` input for `with_row_index` cannot be {issue}, got {offset}"
             raise ValueError(msg) from None
 
-    @deprecated(
-        "`DataFrame.with_row_count` is deprecated; use `with_row_index` instead."
-        " Note that the default column name has changed from 'row_nr' to 'index'."
-    )
-    def with_row_count(self, name: str = "row_nr", offset: int = 0) -> DataFrame:
-        """
-        Add a column at index 0 that counts the rows.
-
-        .. deprecated:: 0.20.4
-            Use the :meth:`with_row_index` method instead.
-            Note that the default column name has changed from 'row_nr' to 'index'.
-
-        Parameters
-        ----------
-        name
-            Name of the column to add.
-        offset
-            Start the row count at this offset. Default = 0
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 3, 5],
-        ...         "b": [2, 4, 6],
-        ...     }
-        ... )
-        >>> df.with_row_count()  # doctest: +SKIP
-        shape: (3, 3)
-        ┌────────┬─────┬─────┐
-        │ row_nr ┆ a   ┆ b   │
-        │ ---    ┆ --- ┆ --- │
-        │ u32    ┆ i64 ┆ i64 │
-        ╞════════╪═════╪═════╡
-        │ 0      ┆ 1   ┆ 2   │
-        │ 1      ┆ 3   ┆ 4   │
-        │ 2      ┆ 5   ┆ 6   │
-        └────────┴─────┴─────┘
-        """
-        return self.with_row_index(name, offset)
-
     def group_by(
         self,
         *by: IntoExpr | Iterable[IntoExpr],
@@ -7177,7 +7226,7 @@ class DataFrame:
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default group by.
-            Settings this to `True` blocks the possibility
+            Setting this to `True` blocks the possibility
             to run on the streaming engine.
 
             .. note::
@@ -7311,7 +7360,11 @@ class DataFrame:
             self, *by, **named_by, maintain_order=maintain_order, predicates=None
         )
 
-    @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
+    @removed_parameters(
+        RenamedParameter(
+            name="by", new_name="group_by", deprecated_in="0.20.14", removed_in="2.0"
+        )
+    )
     def rolling(
         self,
         index_column: IntoExpr,
@@ -7469,7 +7522,11 @@ class DataFrame:
             predicates=None,
         )
 
-    @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
+    @removed_parameters(
+        RenamedParameter(
+            name="by", new_name="group_by", deprecated_in="0.20.14", removed_in="2.0"
+        )
+    )
     def group_by_dynamic(
         self,
         index_column: IntoExpr,
@@ -7790,7 +7847,11 @@ class DataFrame:
             predicates=None,
         )
 
-    @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
+    @removed_parameters(
+        RenamedParameter(
+            name="by", new_name="group_by", deprecated_in="0.20.14", removed_in="2.0"
+        )
+    )
     def upsample(
         self,
         time_column: str,
@@ -7939,12 +8000,14 @@ class DataFrame:
         other
             Lazy DataFrame to join with.
         left_on
-            Join column of the left DataFrame.
+            Ordered asof key (column name, expression, or selector) for the left
+            DataFrame.
         right_on
-            Join column of the right DataFrame.
+            Ordered asof key (column name, expression, or selector) for the right
+            DataFrame.
         on
-            Join column of both DataFrames. If set, `left_on` and `right_on` should be
-            None.
+            Ordered asof key (column name, expression, or selector) for both DataFrames.
+            If set, `left_on` and `right_on` should be None.
         by_left
             Join on these columns before doing asof join
         by_right
@@ -7994,8 +8057,7 @@ class DataFrame:
             - *True*: Always coalesce join columns.
             - *False*: Never coalesce join columns.
 
-            Note that joining on any other expressions than `col`
-            will turn off coalescing.
+            Only keys that expand to plain column references support coalescing.
         allow_exact_matches
             Whether exact matches are valid join predicates.
 
@@ -8008,6 +8070,15 @@ class DataFrame:
             will error. Currently, the `in-memory` engine cannot check the sortedness
             if 'by' groups are provided. The `streaming` engine will only check the
             sortedness of the rows it processes.
+
+        See Also
+        --------
+        join
+        join_where
+
+        Notes
+        -----
+        The asof key must expand to exactly one expression per input.
 
         Examples
         --------
@@ -8244,10 +8315,17 @@ class DataFrame:
                 allow_exact_matches=allow_exact_matches,
                 check_sortedness=check_sortedness,
             )
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
-    @deprecate_renamed_parameter("join_nulls", "nulls_equal", version="1.24")
+    @removed_parameters(
+        RenamedParameter(
+            name="join_nulls",
+            new_name="nulls_equal",
+            deprecated_in="1.24",
+            removed_in="2.0",
+        )
+    )
     def join(
         self,
         other: DataFrame,
@@ -8274,8 +8352,8 @@ class DataFrame:
         other
             DataFrame to join with.
         on
-            Name(s) of the join columns in both DataFrames. If set, `left_on` and
-            `right_on` should be None. This should not be specified if `how='cross'`.
+            Names, expressions, or selectors used on both DataFrames. If set,
+            `left_on` and `right_on` should be None. Do not use with `how='cross'`.
         how : {'inner', 'left', 'right', 'full', 'semi', 'anti', 'cross'}
             Join strategy.
 
@@ -8303,9 +8381,9 @@ class DataFrame:
                    table. Does not return columns from the right table.
 
         left_on
-            Name(s) of the left join column(s).
+            Join column names, expressions, or selectors of the left DataFrame.
         right_on
-            Name(s) of the right join column(s).
+            Join column names, expressions, or selectors of the right DataFrame.
         suffix
             Suffix to append to columns with a duplicate name.
         validate: {'m:m', 'm:1', '1:m', '1:1'}
@@ -8343,8 +8421,7 @@ class DataFrame:
                  - Never coalesce join columns.
 
             .. note::
-                Joining on any other expressions than `col`
-                will turn off coalescing.
+                Only keys that expand to plain column references support coalescing.
         maintain_order : {'none', 'left', 'right', 'left_right', 'right_left'}
             Which DataFrame row order to preserve, if any.
             Do not rely on any observed ordering without explicitly setting this
@@ -8366,7 +8443,7 @@ class DataFrame:
                * - **right_left**
                  - First preserves the order of the right DataFrame, then the left.
         build_side: {'auto', 'prefer_left', 'prefer_right', 'force_left', 'force_right'}
-            Which side of the join will be used as the build side. This side will be
+            Which side of the join will be used as the build side. This side will
             likely be held in memory as a hash table. Note that unless a `force_`
             variant is chosen, the chosen side might differ across Polars versions or
             even between different runs.
@@ -8391,10 +8468,10 @@ class DataFrame:
                 This functionality is considered **experimental**. It may be removed or
                 changed at any point without it being considered a breaking change.
 
-
         See Also
         --------
         join_asof
+        join_where
 
         Examples
         --------
@@ -8518,7 +8595,7 @@ class DataFrame:
                 maintain_order=maintain_order,
                 build_side=build_side,
             )
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     @unstable()
@@ -8526,14 +8603,11 @@ class DataFrame:
         self,
         other: DataFrame,
         *predicates: Expr | Iterable[Expr],
+        how: JoinWhereStrategy = "inner",
         suffix: str = "_right",
     ) -> DataFrame:
         """
         Perform a join based on one or multiple (in)equality predicates.
-
-        This performs an inner join, so only rows where all predicates are true
-        are included in the result, and a row from either DataFrame may be included
-        multiple times in the result.
 
         .. note::
             The row order of the input DataFrames is not preserved.
@@ -8550,8 +8624,17 @@ class DataFrame:
             (In)Equality condition to join the two tables on.
             When a column name occurs in both tables, the proper suffix must
             be applied in the predicate.
+        how : {'inner', 'left', 'right', 'full'}
+            Join strategy. `'left'` and `'right'` also keep the rows of that input
+            without a match, and `'full'` keeps them from both inputs. The columns of
+            the other input are null in those rows.
         suffix
             Suffix to append to columns with a duplicate name.
+
+        See Also
+        --------
+        join
+        join_asof
 
         Examples
         --------
@@ -8610,6 +8693,29 @@ class DataFrame:
         │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
         │ 102 ┆ 160 ┆ 16  ┆ 4     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
         └─────┴─────┴─────┴───────┴──────┴──────┴──────┴─────────────┘
+
+        Pass `how="left"` to additionally keep left rows that match nothing, with the
+        right columns set to `null`.
+
+        >>> east.join_where(
+        ...     west,
+        ...     pl.col("dur") < pl.col("time"),
+        ...     pl.col("rev") < pl.col("cost"),
+        ...     how="left",
+        ... )
+        shape: (6, 8)
+        ┌─────┬─────┬─────┬───────┬──────┬──────┬──────┬─────────────┐
+        │ id  ┆ dur ┆ rev ┆ cores ┆ t_id ┆ time ┆ cost ┆ cores_right │
+        │ --- ┆ --- ┆ --- ┆ ---   ┆ ---  ┆ ---  ┆ ---  ┆ ---         │
+        │ i64 ┆ i64 ┆ i64 ┆ i64   ┆ i64  ┆ i64  ┆ i64  ┆ i64         │
+        ╞═════╪═════╪═════╪═══════╪══════╪══════╪══════╪═════════════╡
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 498  ┆ 130  ┆ 13   ┆ 2           │
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 676  ┆ 150  ┆ 15   ┆ 1           │
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
+        │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 676  ┆ 150  ┆ 15   ┆ 1           │
+        │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
+        │ 102 ┆ 160 ┆ 16  ┆ 4     ┆ null ┆ null ┆ null ┆ null        │
+        └─────┴─────┴─────┴───────┴──────┴──────┴──────┴─────────────┘
         """
         require_same_type(self, other)
 
@@ -8620,9 +8726,10 @@ class DataFrame:
             .join_where(
                 other.lazy(),
                 *predicates,
+                how=how,
                 suffix=suffix,
             )
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     @unstable()
@@ -8680,7 +8787,7 @@ class DataFrame:
         return (
             self.lazy()
             .gather(indices, null_on_oob=null_on_oob)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def map_rows(
@@ -9024,7 +9131,7 @@ class DataFrame:
         return (
             self.lazy()
             .drop(*columns, strict=strict)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def drop_in_place(self, name: str) -> Series:
@@ -9151,7 +9258,7 @@ class DataFrame:
         return (
             self.lazy()
             .cast(dtypes, strict=strict)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def clear(self, n: int = 0) -> DataFrame:
@@ -9465,7 +9572,7 @@ class DataFrame:
         return (
             self.lazy()
             .fill_null(value, strategy, limit, matches_supertype=matches_supertype)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def fill_nan(self, value: Expr | int | float | None) -> DataFrame:
@@ -9514,13 +9621,17 @@ class DataFrame:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return self.lazy().fill_nan(value).collect(optimizations=QueryOptFlags._eager())
+        return (
+            self.lazy()
+            .fill_nan(value)
+            ._collect_eager(optimizations=QueryOptFlags._eager())
+        )
 
     def explode(
         self,
         columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector],
         *more_columns: ColumnNameOrSelector,
-        empty_as_null: bool = _Omitted,
+        empty_as_null: bool = False,
         keep_nulls: bool = True,
     ) -> DataFrame:
         """
@@ -9562,7 +9673,7 @@ class DataFrame:
         │ b       ┆ [4, 5]    │
         │ c       ┆ [6, 7, 8] │
         └─────────┴───────────┘
-        >>> df.explode("numbers", empty_as_null=False)
+        >>> df.explode("numbers")
         shape: (8, 2)
         ┌─────────┬─────────┐
         │ letters ┆ numbers │
@@ -9589,10 +9700,14 @@ class DataFrame:
                 empty_as_null=empty_as_null,
                 keep_nulls=keep_nulls,
             )
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
-    @deprecate_renamed_parameter("columns", "on", version="1.0.0")
+    @removed_parameters(
+        RenamedParameter(
+            name="columns", new_name="on", deprecated_in="1.0.0", removed_in="2.0"
+        )
+    )
     def pivot(
         self,
         on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
@@ -9818,7 +9933,7 @@ class DataFrame:
                 separator=separator,
                 column_naming=column_naming,
             )
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def unpivot(
@@ -9885,11 +10000,17 @@ class DataFrame:
         │ z   ┆ c        ┆ 6     │
         └─────┴──────────┴───────┘
         """
-        on = None if on is None else _expand_selectors(self, on)
-        index_expanded = [] if index is None else _expand_selectors(self, index)
+        from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return self._from_pydf(
-            self._df.unpivot(on, index_expanded, value_name, variable_name)
+        return (
+            self.lazy()
+            .unpivot(
+                on=on,
+                index=index,
+                variable_name=variable_name,
+                value_name=value_name,
+            )
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def unstack(
@@ -10286,7 +10407,7 @@ class DataFrame:
         return (
             self.lazy()
             .shift(n, fill_value=fill_value)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     @unstable()
@@ -10370,6 +10491,12 @@ class DataFrame:
         │ 1   ┆ x   │
         └─────┴─────┘
         """
+        if self.width == 0:
+            # With no columns every row is identical to every other row.
+            return pl.Series("", [self.height > 1], dtype=Boolean).new_from_index(
+                0, self.height
+            )
+
         return wrap_s(self._df.is_duplicated())
 
     def is_unique(self) -> Series:
@@ -10407,6 +10534,12 @@ class DataFrame:
         │ 3   ┆ z   │
         └─────┴─────┘
         """
+        if self.width == 0:
+            # With no columns every row is identical to every other row.
+            return pl.Series("", [self.height <= 1], dtype=Boolean).new_from_index(
+                0, self.height
+            )
+
         return wrap_s(self._df.is_unique())
 
     def lazy(self) -> LazyFrame:
@@ -10533,7 +10666,7 @@ class DataFrame:
         return (
             self.lazy()
             .select(*exprs, **named_exprs)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def select_seq(
@@ -10542,7 +10675,7 @@ class DataFrame:
         """
         Select columns from this DataFrame.
 
-        This will run all expression sequentially instead of in parallel.
+        This will run all expressions sequentially instead of in parallel.
         Use this when the work per expression is cheap.
 
         Parameters
@@ -10564,7 +10697,7 @@ class DataFrame:
         return (
             self.lazy()
             .select_seq(*exprs, **named_exprs)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def with_columns(
@@ -10699,7 +10832,7 @@ class DataFrame:
         return (
             self.lazy()
             .with_columns(*exprs, **named_exprs)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def with_columns_seq(
@@ -10712,7 +10845,7 @@ class DataFrame:
 
         Added columns will replace existing columns with the same name.
 
-        This will run all expression sequentially instead of in parallel.
+        This will run all expressions sequentially instead of in parallel.
         Use this when the work per expression is cheap.
 
         Parameters
@@ -10739,7 +10872,7 @@ class DataFrame:
         return (
             self.lazy()
             .with_columns_seq(*exprs, **named_exprs)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     @overload
@@ -10809,7 +10942,7 @@ class DataFrame:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return self.lazy().max().collect(optimizations=QueryOptFlags._eager())
+        return self.lazy().max()._collect_eager(optimizations=QueryOptFlags._eager())
 
     def max_horizontal(self) -> Series:
         """
@@ -10864,7 +10997,7 @@ class DataFrame:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return self.lazy().min().collect(optimizations=QueryOptFlags._eager())
+        return self.lazy().min()._collect_eager(optimizations=QueryOptFlags._eager())
 
     def min_horizontal(self) -> Series:
         """
@@ -10919,7 +11052,7 @@ class DataFrame:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return self.lazy().sum().collect(optimizations=QueryOptFlags._eager())
+        return self.lazy().sum()._collect_eager(optimizations=QueryOptFlags._eager())
 
     def sum_horizontal(self, *, ignore_nulls: bool = True) -> Series:
         """
@@ -10983,7 +11116,7 @@ class DataFrame:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return self.lazy().mean().collect(optimizations=QueryOptFlags._eager())
+        return self.lazy().mean()._collect_eager(optimizations=QueryOptFlags._eager())
 
     def mean_horizontal(self, *, ignore_nulls: bool = True) -> Series:
         """
@@ -11062,7 +11195,9 @@ class DataFrame:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return self.lazy().std(ddof).collect(optimizations=QueryOptFlags._eager())
+        return (
+            self.lazy().std(ddof)._collect_eager(optimizations=QueryOptFlags._eager())
+        )
 
     def var(self, ddof: int = 1) -> DataFrame:
         """
@@ -11105,7 +11240,9 @@ class DataFrame:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return self.lazy().var(ddof).collect(optimizations=QueryOptFlags._eager())
+        return (
+            self.lazy().var(ddof)._collect_eager(optimizations=QueryOptFlags._eager())
+        )
 
     def median(self) -> DataFrame:
         """
@@ -11132,7 +11269,7 @@ class DataFrame:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return self.lazy().median().collect(optimizations=QueryOptFlags._eager())
+        return self.lazy().median()._collect_eager(optimizations=QueryOptFlags._eager())
 
     def product(self) -> DataFrame:
         """
@@ -11158,6 +11295,8 @@ class DataFrame:
         │ 6   ┆ 20.0 ┆ 0   │
         └─────┴──────┴─────┘
         """
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
         exprs = []
         for name, dt in self.schema.items():
             if dt.is_numeric() or isinstance(dt, Boolean):
@@ -11165,7 +11304,11 @@ class DataFrame:
             else:
                 exprs.append(F.lit(None).alias(name))
 
-        return self.select(exprs)
+        return (
+            self.lazy()
+            ._aggregate_select(exprs)
+            ._collect_eager(optimizations=QueryOptFlags._eager())
+        )
 
     def quantile(
         self, quantile: float, interpolation: QuantileMethod = "nearest"
@@ -11204,7 +11347,7 @@ class DataFrame:
         return (
             self.lazy()
             .quantile(quantile, interpolation)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def to_dummies(
@@ -11284,6 +11427,10 @@ class DataFrame:
         │ 1     ┆ 1     ┆ b   │
         └───────┴───────┴─────┘
         """
+        if self.width == 0:
+            # No columns to encode; the result is the input frame as-is.
+            return self.clone()
+
         if columns is not None:
             columns = _expand_selectors(self, columns)
         return self._from_pydf(
@@ -11315,7 +11462,7 @@ class DataFrame:
             * 'last': Keep the last unique row.
         maintain_order
             Keep the same order as the original DataFrame. This is more expensive
-            to compute. Settings this to `True` blocks the possibility to run on
+            to compute. Setting this to `True` blocks the possibility to run on
             the streaming engine.
 
         Returns
@@ -11432,17 +11579,17 @@ class DataFrame:
         return (
             self.lazy()
             .unique(subset=subset, keep=keep, maintain_order=maintain_order)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
-    def n_unique(self, subset: str | Expr | Sequence[str | Expr] | None = None) -> int:
+    def n_unique(self, subset: IntoExpr | Collection[IntoExpr] | None = None) -> int:
         """
         Return the number of unique rows, or the number of unique row-subsets.
 
         Parameters
         ----------
         subset
-            One or more columns/expressions that define what to count;
+            Column name(s), selector(s), or expressions that define what to count;
             omit to return the count of unique rows.
 
         Notes
@@ -11492,61 +11639,12 @@ class DataFrame:
         ... )
         3
         """
-        if isinstance(subset, str):
-            expr = F.col(subset)
-        elif isinstance(subset, pl.Expr):
-            expr = subset
-        elif isinstance(subset, Sequence) and len(subset) == 1:
-            expr = wrap_expr(parse_into_expression(subset[0]))
-        else:
-            struct_fields = F.all() if (subset is None) else subset
-            expr = F.struct(struct_fields)
-
-        from polars.lazyframe.opt_flags import QueryOptFlags
-
-        df = (
-            self.lazy()
-            .select(expr.n_unique())
-            .collect(optimizations=QueryOptFlags._eager())
+        parsed_subset = (
+            None
+            if subset is None
+            else parse_into_list_of_expressions_require_selectors(subset)
         )
-        return 0 if df.is_empty() else df.row(0)[0]
-
-    @deprecated(
-        "`DataFrame.approx_n_unique` is deprecated; "
-        "use `select(pl.all().approx_n_unique())` instead."
-    )
-    def approx_n_unique(self) -> DataFrame:
-        """
-        Approximate count of unique values.
-
-        .. deprecated:: 0.20.11
-            Use the `select(pl.all().approx_n_unique())` method instead.
-
-        This is done using the HyperLogLog++ algorithm for cardinality estimation.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, 3, 4],
-        ...         "b": [1, 2, 1, 1],
-        ...     }
-        ... )
-        >>> df.approx_n_unique()  # doctest: +SKIP
-        shape: (1, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ u32 ┆ u32 │
-        ╞═════╪═════╡
-        │ 4   ┆ 2   │
-        └─────┴─────┘
-        """
-        from polars.lazyframe.opt_flags import QueryOptFlags
-
-        return (
-            self.lazy().approx_n_unique().collect(optimizations=QueryOptFlags._eager())
-        )
+        return self._df.n_unique(parsed_subset)
 
     def rechunk(self) -> DataFrame:
         """
@@ -11588,7 +11686,7 @@ class DataFrame:
         *,
         fraction: float | Series | None = None,
         with_replacement: bool = False,
-        shuffle: bool = False,
+        shuffle: bool | None = None,
         seed: int | None = None,
     ) -> DataFrame:
         """
@@ -11604,9 +11702,12 @@ class DataFrame:
         with_replacement
             Allow values to be sampled more than once.
         shuffle
-            If set to True, the order of the sampled rows will be shuffled. If
-            set to False (default), the order of the returned rows will be
-            neither stable nor fully random.
+            Determines the order of the sampled rows.
+            If True, sampled rows are explicitly shuffled.
+            If False, the relative order of the sampled rows is preserved.
+            (i.e. they appear in the same order as the original DataFrame).
+            If None (default), no ordering guarantee; uses the most performant
+            algorithm.
         seed
             Seed for the random number generator. If set to None (default), a
             random seed is generated for each time the sample is called.
@@ -11620,15 +11721,15 @@ class DataFrame:
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... )
-        >>> df.sample(n=2, seed=0)  # doctest: +IGNORE_RESULT
+        >>> df.sample(n=2, shuffle=False, seed=0)  # doctest: +IGNORE_RESULT
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
         │ i64 ┆ i64 ┆ str │
         ╞═════╪═════╪═════╡
-        │ 3   ┆ 8   ┆ c   │
         │ 2   ┆ 7   ┆ b   │
+        │ 3   ┆ 8   ┆ c   │
         └─────┴─────┴─────┘
         """
         if n is not None and fraction is not None:
@@ -11662,7 +11763,6 @@ class DataFrame:
         An example of the supercast rules when applying an arithmetic operation on two
         DataTypes are for instance:
 
-        - Int8 + String = String
         - Float32 + Int64 = Float32
         - Float32 + Float64 = Float64
 
@@ -11707,7 +11807,7 @@ class DataFrame:
         ...         "c": [1.0, 2.0, 3.0],
         ...     }
         ... )
-        >>> df.fold(lambda s1, s2: s1 + s2)
+        >>> df.fold(lambda s1, s2: s1 + s2.cast(pl.String))
         shape: (3,)
         Series: 'a' [str]
         [
@@ -12018,7 +12118,7 @@ class DataFrame:
         include_key
             Include key values inline with the associated data (by default the key
             values are omitted as a memory/performance optimisation, as they can be
-            reoconstructed from the key).
+            reconstructed from the key).
         unique
             Indicate that the key is unique; this will result in a 1:1 mapping from
             key to a single associated row. Note that if the key is *not* actually
@@ -12103,7 +12203,13 @@ class DataFrame:
             data_cols = [k for k in self.schema if k not in key]
             values = self.select(data_cols)
 
-        zipped = zip(keys, values.iter_rows(named=named), strict=True)  # type: ignore[call-overload]
+        if values.width == 0:
+            data_rows: Iterable[Any] = (
+                ({} if named else ()) for _ in range(self.height)
+            )
+        else:
+            data_rows = values.iter_rows(named=named)  # type: ignore[call-overload]
+        zipped = zip(keys, data_rows, strict=True)
 
         # if unique, we expect to write just one entry per key; otherwise, we're
         # returning a list of rows for each key, so append into a defaultdict.
@@ -12355,14 +12461,11 @@ class DataFrame:
         │ 4   ┆ 8   │
         └─────┴─────┘
         """
-        return self.select(F.col("*").gather_every(n, offset))
+        return self.lazy().gather_every(n, offset).collect()
 
     def hash_rows(
         self,
         seed: int = 0,
-        seed_1: int | None = None,
-        seed_2: int | None = None,
-        seed_3: int | None = None,
     ) -> Series:
         """
         Hash and combine the rows in this DataFrame.
@@ -12373,12 +12476,6 @@ class DataFrame:
         ----------
         seed
             Random seed parameter. Defaults to 0.
-        seed_1
-            Random seed parameter. Defaults to `seed` if not set.
-        seed_2
-            Random seed parameter. Defaults to `seed` if not set.
-        seed_3
-            Random seed parameter. Defaults to `seed` if not set.
 
         Notes
         -----
@@ -12404,11 +12501,7 @@ class DataFrame:
             2047317070637311557
         ]
         """
-        k0 = seed
-        k1 = seed_1 if seed_1 is not None else seed
-        k2 = seed_2 if seed_2 is not None else seed
-        k3 = seed_3 if seed_3 is not None else seed
-        return wrap_s(self._df.hash_rows(k0, k1, k2, k3))
+        return wrap_s(self._df.hash_rows(seed))
 
     def interpolate(self) -> DataFrame:
         """
@@ -12438,7 +12531,13 @@ class DataFrame:
         │ 10.0 ┆ null ┆ 9.0      │
         └──────┴──────┴──────────┘
         """
-        return self.select(F.col("*").interpolate())
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
+        return (
+            self.lazy()
+            .interpolate()
+            ._collect_eager(optimizations=QueryOptFlags._eager())
+        )
 
     def is_empty(self) -> bool:
         """
@@ -12584,7 +12683,7 @@ class DataFrame:
         return (
             self.lazy()
             .unnest(columns, *more_columns, separator=separator)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def corr(self, *, label: str | None = None, **kwargs: Any) -> DataFrame:
@@ -12754,7 +12853,7 @@ class DataFrame:
         return (
             self.lazy()
             .merge_sorted(other.lazy(), key, maintain_order=maintain_order)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def set_sorted(
@@ -12791,7 +12890,7 @@ class DataFrame:
         return (
             self.lazy()
             .set_sorted(column, descending=descending, nulls_last=nulls_last)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     @unstable()
@@ -12949,7 +13048,7 @@ class DataFrame:
                 include_nulls=include_nulls,
                 maintain_order=maintain_order,
             )
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def count(self) -> DataFrame:
@@ -12973,50 +13072,7 @@ class DataFrame:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return self.lazy().count().collect(optimizations=QueryOptFlags._eager())
-
-    @deprecated(
-        "`DataFrame.melt` is deprecated; use `DataFrame.unpivot` instead, with "
-        "`index` instead of `id_vars` and `on` instead of `value_vars`"
-    )
-    def melt(
-        self,
-        id_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
-        value_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
-        variable_name: str | None = None,
-        value_name: str | None = None,
-    ) -> DataFrame:
-        """
-        Unpivot a DataFrame from wide to long format.
-
-        Optionally leaves identifiers set.
-
-        This function is useful to massage a DataFrame into a format where one or more
-        columns are identifier variables (id_vars) while all other columns, considered
-        measured variables (value_vars), are "unpivoted" to the row axis leaving just
-        two non-identifier columns, 'variable' and 'value'.
-
-        .. deprecated:: 1.0.0
-            Use the :meth:`.unpivot` method instead.
-
-        Parameters
-        ----------
-        id_vars
-            Column(s) or selector(s) to use as identifier variables.
-        value_vars
-            Column(s) or selector(s) to use as values variables; if `value_vars`
-            is empty all columns that are not in `id_vars` will be used.
-        variable_name
-            Name to give to the `variable` column. Defaults to "variable"
-        value_name
-            Name to give to the `value` column. Defaults to "value"
-        """
-        return self.unpivot(
-            index=id_vars,
-            on=value_vars,
-            variable_name=variable_name,
-            value_name=value_name,
-        )
+        return self.lazy().count()._collect_eager(optimizations=QueryOptFlags._eager())
 
     def show(
         self,
@@ -13048,7 +13104,7 @@ class DataFrame:
         Parameters
         ----------
         limit : int
-            Numbers of rows to show. If a negative value is passed, return all rows
+            Number of rows to show. If a negative value is passed, return all rows
             except the last `abs(n)`. If None is passed, return all rows.
         ascii_tables : bool
             Use ASCII characters to display table outlines. Set False to revert to the
@@ -13261,23 +13317,23 @@ class DataFrame:
         schema
             Target schema to match or evolve to.
         missing_columns
-            Raise of insert missing columns from the input with respect to the `schema`.
+            Raise or insert missing columns from the input with respect to the `schema`.
 
             This can also be an expression per column with what to insert if it is
             missing.
         missing_struct_fields
-            Raise of insert missing struct fields from the input with respect to the
+            Raise or insert missing struct fields from the input with respect to the
             `schema`.
         extra_columns
-            Raise of ignore extra columns from the input with respect to the `schema`.
+            Raise or ignore extra columns from the input with respect to the `schema`.
         extra_struct_fields
-            Raise of ignore extra struct fields from the input with respect to the
+            Raise or ignore extra struct fields from the input with respect to the
             `schema`.
         integer_cast
-            Forbid of upcast for integer columns from the input to the respective column
+            Forbid or upcast for integer columns from the input to the respective column
             in `schema`.
         float_cast
-            Forbid of upcast for float columns from the input to the respective column
+            Forbid or upcast for float columns from the input to the respective column
             in `schema`.
 
         Examples
@@ -13389,7 +13445,7 @@ class DataFrame:
                 integer_cast=integer_cast,
                 float_cast=float_cast,
             )
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def _to_metadata(
@@ -13436,6 +13492,9 @@ class DataFrame:
         unordered: bool = False,
         descending: list[bool] | None = None,
         nulls_last: list[bool] | None = None,
+        output: Literal["binary_offset", "binary", "optimal"] = "binary_offset",
+        encode_nulls: Sequence[bool] | None = None,
+        propagate_nulls: bool = False,
     ) -> Series:
         """
         Row encode the given DataFrame.
@@ -13454,8 +13513,27 @@ class DataFrame:
                 unordered=unordered,
                 descending=descending,
                 nulls_last=nulls_last,
+                output=output,
+                encode_nulls=encode_nulls,
+                propagate_nulls=propagate_nulls,
             )
         ).to_series()
+
+    if not TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self,
+                name,
+                {
+                    "__dataframe__": "the dataframe interchange protocol is not supported anymore. Consider using `to_arrow` or `to_pandas` instead.",
+                    "melt": "use `DataFrame.unpivot` instead, with `index` instead of `id_vars` and `on` instead of `value_vars`",
+                    "with_row_count": "use `with_row_index` instead. Note that the default column name has changed from 'row_nr' to 'index'.",
+                    "approx_n_unique": "use `select(pl.all().approx_n_unique())` instead.",
+                },
+                version="2.0",
+            )
+            return getattr_fallback(self, super(), name)
 
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:

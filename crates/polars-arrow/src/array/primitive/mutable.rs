@@ -218,7 +218,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
         }
     }
     /// Extends the [`MutablePrimitiveArray`] from an iterator of values of trusted len.
-    /// This differs from `extend_trusted_len` which accepts in iterator of optional values.
+    /// This differs from `extend_trusted_len` which accepts an iterator of optional values.
     #[inline]
     pub fn extend_trusted_len_values<I>(&mut self, iterator: I)
     where
@@ -228,7 +228,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
     }
 
     /// Extends the [`MutablePrimitiveArray`] from an iterator of values of trusted len.
-    /// This differs from `extend_trusted_len_unchecked` which accepts in iterator of optional values.
+    /// This differs from `extend_trusted_len_unchecked` which accepts an iterator of optional values.
     ///
     /// # Safety
     /// The iterator must be trusted len.
@@ -303,15 +303,6 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
         self.values.clear();
         self.validity = None;
     }
-
-    /// Apply a function that temporarily freezes this `MutableArray` into a `PrimitiveArray`.
-    pub fn with_freeze<K, F: FnOnce(&PrimitiveArray<T>) -> K>(&mut self, f: F) -> K {
-        let mutable = std::mem::take(self);
-        let arr = mutable.freeze();
-        let out = f(&arr);
-        *self = arr.into_mut().right().unwrap();
-        out
-    }
 }
 
 /// Accessors
@@ -351,7 +342,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
         *self.values.get_unchecked_mut(index) = value.unwrap_or_default();
 
         if value.is_none() && self.validity.is_none() {
-            // When the validity is None, all elements so far are valid. When one of the elements is set of null,
+            // When the validity is None, all elements so far are valid. When one of the elements is set to null,
             // the validity must be initialized.
             let mut validity = MutableBitmap::new();
             validity.extend_constant(self.len(), true);
@@ -398,7 +389,7 @@ impl<T: NativeType> TryExtend<Option<T>> for MutablePrimitiveArray<T> {
 }
 
 impl<T: NativeType> TryPush<Option<T>> for MutablePrimitiveArray<T> {
-    /// This is infalible and is implemented for consistency with all other types
+    /// This is infallible and is implemented for consistency with all other types
     #[inline]
     fn try_push(&mut self, item: Option<T>) -> PolarsResult<()> {
         self.push(item);
@@ -494,7 +485,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
         unsafe { Self::from_trusted_len_iter_unchecked(iterator) }
     }
 
-    /// Creates a [`MutablePrimitiveArray`] from an fallible iterator of trusted length.
+    /// Creates a [`MutablePrimitiveArray`] from a fallible iterator of trusted length.
     ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
@@ -518,7 +509,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
         })
     }
 
-    /// Creates a [`MutablePrimitiveArray`] from an fallible iterator of trusted length.
+    /// Creates a [`MutablePrimitiveArray`] from a fallible iterator of trusted length.
     #[inline]
     pub fn try_from_trusted_len_iter<E, I, P>(iterator: I) -> std::result::Result<Self, E>
     where

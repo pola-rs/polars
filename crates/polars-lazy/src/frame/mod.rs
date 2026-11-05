@@ -27,13 +27,19 @@ use polars_core::error::feature_gated;
 use polars_core::frame::PivotColumnNaming;
 use polars_core::prelude::*;
 use polars_core::query_result::QueryResult;
+#[cfg(feature = "is_between")]
+use polars_defs::expr::ClosedInterval;
+use polars_defs::join::{
+    JoinArgs, JoinBuildSide, JoinCoalesce, JoinType, JoinValidation, MaintainOrderJoin,
+};
+use polars_defs::time::group_by::{DynamicGroupOptions, RollingGroupOptions};
 use polars_io::RowIndex;
 use polars_mem_engine::scan_predicate::functions::apply_scan_predicate_to_scan_ir;
 use polars_mem_engine::{Executor, create_multiple_physical_plans, create_physical_plan};
-use polars_ops::frame::{JoinBuildSide, JoinCoalesce, MaintainOrderJoin};
-#[cfg(feature = "is_between")]
-use polars_ops::prelude::ClosedInterval;
+use polars_observer::{PlannedQuery, QueryObserver};
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
+use polars_plan::plans::ExecutionHooks;
+use polars_plan::prelude::ir_plan_to_description;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::frame::cached_arenas::CachedArena;
@@ -53,6 +59,19 @@ impl IntoLazy for DataFrame {
             cached_arena: Default::default(),
         }
     }
+}
+
+/// Join implementation handed to the optimizer for its hive partition rewrite.
+fn hive_join(
+    left: &DataFrame,
+    right: &DataFrame,
+    left_on: &str,
+    right_on: &str,
+    args: JoinArgs,
+) -> PolarsResult<DataFrame> {
+    use polars_ops::frame::DataFrameJoinOps;
+
+    left.join(right, [left_on], [right_on], args, None)
 }
 
 impl IntoLazy for LazyFrame {
@@ -546,7 +565,10 @@ impl LazyFrame {
             ir_arena,
             expr_arena,
             scratch,
-            apply_scan_predicate_to_scan_ir,
+            ExecutionHooks {
+                apply_scan_predicate_to_scan_ir,
+                hive_join,
+            },
         )?;
 
         Ok(lp_top)
@@ -555,30 +577,16 @@ impl LazyFrame {
     fn prepare_collect_post_opt<P>(
         mut self,
         check_sink: bool,
-        query_start: Option<std::time::Instant>,
         post_opt: P,
     ) -> PolarsResult<(ExecutionState, Box<dyn Executor>, bool)>
     where
-        P: FnOnce(
-            Node,
-            &mut Arena<IR>,
-            &mut Arena<AExpr>,
-            Option<std::time::Duration>,
-        ) -> PolarsResult<()>,
+        P: FnOnce(Node, &mut Arena<IR>, &mut Arena<AExpr>) -> PolarsResult<()>,
     {
         let (mut lp_arena, mut expr_arena) = self.get_arenas();
 
         let mut scratch = vec![];
         let lp_top = self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut scratch)?;
-
-        post_opt(
-            lp_top,
-            &mut lp_arena,
-            &mut expr_arena,
-            // Post optimization callback gets the time since the
-            // query was started as its "base" timepoint.
-            query_start.map(|s| s.elapsed()),
-        )?;
+        post_opt(lp_top, &mut lp_arena, &mut expr_arena)?;
 
         // sink should be replaced
         let no_file_sink = if check_sink {
@@ -606,15 +614,9 @@ impl LazyFrame {
     // post_opt: A function that is called after optimization. This can be used to modify the IR jit.
     pub fn _collect_post_opt<P>(self, post_opt: P) -> PolarsResult<DataFrame>
     where
-        P: FnOnce(
-            Node,
-            &mut Arena<IR>,
-            &mut Arena<AExpr>,
-            Option<std::time::Duration>,
-        ) -> PolarsResult<()>,
+        P: FnOnce(Node, &mut Arena<IR>, &mut Arena<AExpr>) -> PolarsResult<()>,
     {
-        let (mut state, mut physical_plan, _) =
-            self.prepare_collect_post_opt(false, None, post_opt)?;
+        let (mut state, mut physical_plan, _) = self.prepare_collect_post_opt(false, post_opt)?;
         physical_plan.execute(&mut state)
     }
 
@@ -622,9 +624,8 @@ impl LazyFrame {
     fn prepare_collect(
         self,
         check_sink: bool,
-        query_start: Option<std::time::Instant>,
     ) -> PolarsResult<(ExecutionState, Box<dyn Executor>, bool)> {
-        self.prepare_collect_post_opt(check_sink, query_start, |_, _, _, _| Ok(()))
+        self.prepare_collect_post_opt(check_sink, |_, _, _| Ok(()))
     }
 
     /// Execute all the lazy operations and collect them into a [`DataFrame`] using a specified
@@ -635,7 +636,13 @@ impl LazyFrame {
         let engine = match engine {
             Engine::Streaming => Engine::Streaming,
             _ if std::env::var("POLARS_FORCE_STREAMING").as_deref() == Ok("1") => Engine::Streaming,
-            Engine::Auto => Engine::InMemory,
+            Engine::Auto => {
+                if self.opt_state.eager() {
+                    Engine::InMemory
+                } else {
+                    Engine::Streaming
+                }
+            },
             v => v,
         };
 
@@ -656,8 +663,21 @@ impl LazyFrame {
             _ => (),
         }
 
-        let mut ir_plan = self.to_alp_optimized()?;
+        let observer = self
+            .opt_state
+            .query_monitoring()
+            .then(polars_observer::new_query_observer)
+            .flatten();
 
+        if let Some(o) = observer.as_ref() {
+            o.on_query_started()
+        }
+
+        let mut ir_plan = self.to_alp_optimized().inspect_err(|err| {
+            if let Some(o) = observer.as_ref() {
+                o.on_query_failed(err)
+            }
+        })?;
         ir_plan.ensure_root_node_is_sink();
 
         match engine {
@@ -666,35 +686,16 @@ impl LazyFrame {
                     ir_plan.lp_top,
                     &mut ir_plan.lp_arena,
                     &mut ir_plan.expr_arena,
+                    observer,
                 )
             }),
-            Engine::InMemory | Engine::Gpu => {
-                if let IR::SinkMultiple { inputs } = ir_plan.root() {
-                    polars_ensure!(
-                        engine != Engine::Gpu,
-                        InvalidOperation:
-                        "collect_all is not supported for the gpu engine"
-                    );
-
-                    return create_multiple_physical_plans(
-                        inputs.clone().as_slice(),
-                        &mut ir_plan.lp_arena,
-                        &mut ir_plan.expr_arena,
-                        BUILD_STREAMING_EXECUTOR,
-                    )?
-                    .execute()
-                    .map(QueryResult::Multiple);
-                }
-
-                let mut physical_plan = create_physical_plan(
-                    ir_plan.lp_top,
-                    &mut ir_plan.lp_arena,
-                    &mut ir_plan.expr_arena,
-                    BUILD_STREAMING_EXECUTOR,
-                )?;
-                let mut state = ExecutionState::new();
-                physical_plan.execute(&mut state).map(QueryResult::Single)
-            },
+            Engine::InMemory | Engine::Gpu => run_in_memory_query(
+                ir_plan.lp_top,
+                &mut ir_plan.lp_arena,
+                &mut ir_plan.expr_arena,
+                engine,
+                observer,
+            ),
             Engine::Auto => unreachable!(),
         }
     }
@@ -793,37 +794,6 @@ impl LazyFrame {
         Ok(collect_batches)
     }
 
-    // post_opt: A function that is called after optimization. This can be used to modify the IR jit.
-    // This version does profiling of the node execution.
-    pub fn _profile_post_opt<P>(self, post_opt: P) -> PolarsResult<(DataFrame, DataFrame)>
-    where
-        P: FnOnce(
-            Node,
-            &mut Arena<IR>,
-            &mut Arena<AExpr>,
-            Option<std::time::Duration>,
-        ) -> PolarsResult<()>,
-    {
-        let query_start = std::time::Instant::now();
-        let (mut state, mut physical_plan, _) =
-            self.prepare_collect_post_opt(false, Some(query_start), post_opt)?;
-        state.time_nodes(query_start, query_start.elapsed());
-        let out = physical_plan.execute(&mut state)?;
-        let timer_df = state.finish_timer()?;
-        Ok((out, timer_df))
-    }
-
-    /// Profile a LazyFrame.
-    ///
-    /// This will run the query and return a tuple
-    /// containing the materialized DataFrame and a DataFrame that contains profiling information
-    /// of each node that is executed.
-    ///
-    /// The units of the timings are microseconds.
-    pub fn profile(self) -> PolarsResult<(DataFrame, DataFrame)> {
-        self._profile_post_opt(|_, _, _, _| Ok(()))
-    }
-
     pub fn sink_batches(
         mut self,
         function: PlanCallback<DataFrame, bool>,
@@ -867,6 +837,7 @@ impl LazyFrame {
                 ir_plan.lp_top,
                 &mut ir_plan.lp_arena,
                 &mut ir_plan.expr_arena,
+                None,
             )
         };
 
@@ -1007,6 +978,7 @@ impl LazyFrame {
                 run_parallel: true,
                 duplicate_check: true,
                 should_broadcast: true,
+                maintain_dataframe_height: false,
             },
         )
     }
@@ -1019,6 +991,7 @@ impl LazyFrame {
                 run_parallel: false,
                 duplicate_check: true,
                 should_broadcast: true,
+                maintain_dataframe_height: false,
             },
         )
     }
@@ -1211,13 +1184,18 @@ impl LazyFrame {
     /// ```rust
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
-    /// fn anti_join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
+    /// fn anti_join_dataframes(ldf: LazyFrame, other: LazyFrame) -> PolarsResult<LazyFrame> {
     ///         ldf
     ///         .anti_join(other, col("foo"), col("bar").cast(DataType::String))
     /// }
     /// ```
     #[cfg(feature = "semi_anti_join")]
-    pub fn anti_join<E: Into<Expr>>(self, other: LazyFrame, left_on: E, right_on: E) -> LazyFrame {
+    pub fn anti_join<E: Into<Expr>>(
+        self,
+        other: LazyFrame,
+        left_on: E,
+        right_on: E,
+    ) -> PolarsResult<LazyFrame> {
         self.join(
             other,
             [left_on.into()],
@@ -1235,6 +1213,7 @@ impl LazyFrame {
             vec![],
             JoinArgs::new(JoinType::Cross).with_suffix(suffix),
         )
+        .unwrap()
     }
 
     /// Left outer join this query with another lazy query.
@@ -1260,6 +1239,7 @@ impl LazyFrame {
             [right_on.into()],
             JoinArgs::new(JoinType::Left),
         )
+        .unwrap()
     }
 
     /// Inner join this query with another lazy query.
@@ -1285,6 +1265,7 @@ impl LazyFrame {
             [right_on.into()],
             JoinArgs::new(JoinType::Inner),
         )
+        .unwrap()
     }
 
     /// Full outer join this query with another lazy query.
@@ -1310,6 +1291,7 @@ impl LazyFrame {
             [right_on.into()],
             JoinArgs::new(JoinType::Full),
         )
+        .unwrap()
     }
 
     /// Left semi join this query with another lazy query.
@@ -1336,6 +1318,7 @@ impl LazyFrame {
             [right_on.into()],
             JoinArgs::new(JoinType::Semi),
         )
+        .unwrap()
     }
 
     /// Generic function to join two LazyFrames.
@@ -1354,7 +1337,7 @@ impl LazyFrame {
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
     ///
-    /// fn example(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
+    /// fn example(ldf: LazyFrame, other: LazyFrame) -> PolarsResult<LazyFrame> {
     ///         ldf
     ///         .join(other, [col("foo"), col("bar")], [col("foo"), col("bar")], JoinArgs::new(JoinType::Inner))
     /// }
@@ -1365,7 +1348,7 @@ impl LazyFrame {
         left_on: E,
         right_on: E,
         args: JoinArgs,
-    ) -> LazyFrame {
+    ) -> PolarsResult<LazyFrame> {
         let left_on = left_on.as_ref().to_vec();
         let right_on = right_on.as_ref().to_vec();
 
@@ -1378,7 +1361,7 @@ impl LazyFrame {
         left_on: Vec<Expr>,
         right_on: Vec<Expr>,
         args: JoinArgs,
-    ) -> LazyFrame {
+    ) -> PolarsResult<LazyFrame> {
         let JoinArgs {
             how,
             validation,
@@ -1462,6 +1445,7 @@ impl LazyFrame {
                     run_parallel: false,
                     duplicate_check: true,
                     should_broadcast: true,
+                    maintain_dataframe_height: false,
                 },
             )
             .build();
@@ -1490,6 +1474,7 @@ impl LazyFrame {
                 run_parallel: true,
                 duplicate_check: true,
                 should_broadcast: true,
+                maintain_dataframe_height: false,
             },
         )
     }
@@ -1503,6 +1488,7 @@ impl LazyFrame {
                 run_parallel: false,
                 duplicate_check: true,
                 should_broadcast: true,
+                maintain_dataframe_height: false,
             },
         )
     }
@@ -1553,17 +1539,6 @@ impl LazyFrame {
     fn with_columns_impl(self, exprs: Vec<Expr>, options: ProjectionOptions) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().with_columns(exprs, options).build();
-        Self::from_logical_plan(lp, opt_state)
-    }
-
-    pub fn with_context<C: AsRef<[LazyFrame]>>(self, contexts: C) -> LazyFrame {
-        let contexts = contexts
-            .as_ref()
-            .iter()
-            .map(|lf| lf.logical_plan.clone())
-            .collect();
-        let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().with_context(contexts).build();
         Self::from_logical_plan(lp, opt_state)
     }
 
@@ -2212,6 +2187,8 @@ impl JoinBuilder {
     /// The expressions you want to join both tables on.
     ///
     /// The passed expressions must be valid in both `LazyFrame`s in the join.
+    /// Selectors expand independently against each input schema. The results are
+    /// paired in order and both sides must produce the same nonzero number of keys.
     pub fn on<E: AsRef<[Expr]>>(mut self, on: E) -> Self {
         let on = on.as_ref().to_vec();
         self.left_on.clone_from(&on);
@@ -2221,7 +2198,8 @@ impl JoinBuilder {
 
     /// The expressions you want to join the left table on.
     ///
-    /// The passed expressions must be valid in the left table.
+    /// The passed expressions and selectors must be valid in the left table.
+    /// The total expanded key count must be nonzero and match the right side.
     pub fn left_on<E: AsRef<[Expr]>>(mut self, on: E) -> Self {
         self.left_on = on.as_ref().to_vec();
         self
@@ -2229,7 +2207,8 @@ impl JoinBuilder {
 
     /// The expressions you want to join the right table on.
     ///
-    /// The passed expressions must be valid in the right table.
+    /// The passed expressions and selectors must be valid in the right table.
+    /// The total expanded key count must be nonzero and match the left side.
     pub fn right_on<E: AsRef<[Expr]>>(mut self, on: E) -> Self {
         self.right_on = on.as_ref().to_vec();
         self
@@ -2282,7 +2261,7 @@ impl JoinBuilder {
     }
 
     /// Finish builder
-    pub fn finish(self) -> LazyFrame {
+    pub fn finish(self) -> PolarsResult<LazyFrame> {
         let opt_state = self.lf.opt_state;
         let other = self.other.expect("'with' not set in join builder");
 
@@ -2310,9 +2289,9 @@ impl JoinBuilder {
                     args,
                 }
                 .into(),
-            )
+            )?
             .build();
-        LazyFrame::from_logical_plan(lp, opt_state)
+        Ok(LazyFrame::from_logical_plan(lp, opt_state))
     }
 
     // Finish with join predicates
@@ -2397,9 +2376,7 @@ impl JoinBuilder {
         let lp = DslPlan::Join {
             input_left: Arc::new(self.lf.logical_plan),
             input_right: Arc::new(other.logical_plan),
-            left_on: Default::default(),
-            right_on: Default::default(),
-            predicates,
+            condition: JoinCondition::NonEqui { predicates },
             options: Arc::from(options),
         };
 
@@ -2417,6 +2394,50 @@ pub const BUILD_STREAMING_EXECUTOR: Option<polars_mem_engine::StreamingExecutorB
         Some(polars_stream::build_streaming_query_executor)
     }
 };
+
+pub(crate) fn run_in_memory_query(
+    node: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    engine: Engine,
+    observer: Option<Box<dyn QueryObserver>>,
+) -> PolarsResult<QueryResult> {
+    let _guard = observer
+        .as_ref()
+        .map(|o| o.on_query_planned(to_planned_query(node, ir_arena, expr_arena)));
+
+    let result = if let IR::SinkMultiple { inputs } = ir_arena.get(node) {
+        polars_ensure!(
+            engine != Engine::Gpu,
+            InvalidOperation:
+            "collect_all is not supported for the gpu engine"
+        );
+
+        let physical_plan = create_multiple_physical_plans(
+            inputs.clone().as_slice(),
+            ir_arena,
+            expr_arena,
+            BUILD_STREAMING_EXECUTOR,
+        )?;
+        physical_plan.execute().map(QueryResult::Multiple)
+    } else {
+        let mut physical_plan =
+            create_physical_plan(node, ir_arena, expr_arena, BUILD_STREAMING_EXECUTOR)?;
+        let mut state = ExecutionState::new();
+        physical_plan.execute(&mut state).map(QueryResult::Single)
+    };
+
+    result.inspect_err(|err| {
+        if let Some(o) = observer.as_ref() {
+            o.on_query_failed(err);
+        }
+    })
+}
+
+fn to_planned_query(node: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> PlannedQuery {
+    let ir = ir_plan_to_description(&[node], ir_arena, expr_arena);
+    PlannedQuery::new(ir)
+}
 
 pub struct CollectBatches {
     recv: Receiver<PolarsResult<DataFrame>>,

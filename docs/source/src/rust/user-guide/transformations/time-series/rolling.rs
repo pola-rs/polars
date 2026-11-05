@@ -16,7 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ["Date"],
             SortMultipleOptions::default().with_maintain_order(true),
         )?;
-    println!("{}", &df);
+    println!("{}", df);
     // --8<-- [end:df]
 
     // --8<-- [start:group_by]
@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .with_columns([col("Date").dt().year().alias("year")])
         .collect()?;
-    println!("{}", &df_with_year);
+    println!("{}", df_with_year);
     // --8<-- [end:group_by]
 
     // --8<-- [start:group_by_dyn]
@@ -98,7 +98,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .alias("days_in_month"),
         ])
         .collect()?;
-    println!("{}", &out);
+    println!("{}", out);
     // --8<-- [end:group_by_dyn]
 
     // --8<-- [start:group_by_roll]
@@ -121,7 +121,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "time" => time,
         "groups"=> ["a", "a", "a", "b", "b", "a", "a"],
     )?;
-    println!("{}", &df);
+    println!("{}", df);
     // --8<-- [end:group_by_roll]
 
     // --8<-- [start:group_by_dyn2]
@@ -141,7 +141,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .agg([len()])
         .collect()?;
-    println!("{}", &out);
+    println!("{}", out);
     // --8<-- [end:group_by_dyn2]
 
     Ok(())

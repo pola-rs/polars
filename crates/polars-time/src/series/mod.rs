@@ -1,6 +1,8 @@
 use std::ops::Div;
 
-use arrow::temporal_conversions::{MICROSECONDS_IN_DAY, MILLISECONDS_IN_DAY, NANOSECONDS_IN_DAY};
+use polars_arrow::temporal_conversions::{
+    MICROSECONDS_IN_DAY, MILLISECONDS_IN_DAY, NANOSECONDS_IN_DAY,
+};
 use polars_core::prelude::arity::unary_elementwise_values;
 use polars_core::prelude::*;
 
@@ -155,11 +157,11 @@ pub trait TemporalMethods: AsSeries {
             DataType::Date => s.date().map(|ca| (ca.year() - 1i32).div(1000f64) + 1),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => s.datetime().map(|ca| (ca.year() - 1i32).div(1000f64) + 1),
-            dt => polars_bail!(opq = century, dt),
+            dt => polars_bail!(opq = millennium, dt),
         }
     }
 
-    /// Calculate the millennium from the underlying NaiveDateTime representation.
+    /// Calculate the century from the underlying NaiveDateTime representation.
     fn century(&self) -> PolarsResult<Int32Chunked> {
         let s = self.as_series();
         match s.dtype() {
@@ -285,7 +287,7 @@ pub trait TemporalMethods: AsSeries {
             DataType::Time => {
                 let format = get_strftime_format(format, s.dtype())?;
                 s.time()
-                    .map(|ca| ca.to_string(format.as_str()).into_series())
+                    .map(|ca| Ok(ca.to_string(format.as_str())?.into_series()))?
             },
             #[cfg(feature = "dtype-duration")]
             DataType::Duration(_) => s

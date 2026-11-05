@@ -31,7 +31,6 @@ impl HStackColumns {
         Self { gather_indices }
     }
 
-    #[expect(unused)]
     pub fn output_width(&self) -> usize {
         self.gather_indices.len()
     }
@@ -50,14 +49,7 @@ impl HStackColumns {
                 let i = mi.to_usize();
 
                 if mi.marked() {
-                    let c = &cols_right[i];
-
-                    if c.len() != height {
-                        assert_eq!(c.len(), 1);
-                        c.new_from_index(0, height)
-                    } else {
-                        c.clone()
-                    }
+                    cols_right[i].broadcast_to(height).unwrap().into_owned()
                 } else {
                     cols_left[i].clone()
                 }

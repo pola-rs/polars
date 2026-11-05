@@ -1,6 +1,6 @@
-use arrow::array::{MutableBinaryViewArray, Utf8ViewArray};
 use polars::prelude::{ArrowDataType, IntoColumn, PlRefPath, ScanSourceRef};
 use polars::series::Series;
+use polars_arrow::array::{MutableBinaryViewArray, Utf8ViewArray};
 use polars_buffer::Buffer;
 use polars_core::frame::DataFrame;
 use polars_error::{PolarsError, PolarsResult};

@@ -1,4 +1,4 @@
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_arrow::bitmap::{Bitmap, MutableBitmap};
 
 #[test]
 fn from_slice() {
@@ -378,7 +378,7 @@ fn extend_bitmap() {
 }
 
 // TODO! undo miri ignore once issue is fixed in miri
-// this test was a memory hog and lead to OOM in CI
+// this test was a memory hog and led to OOM in CI
 // given enough memory it was able to pass successfully on a local
 #[test]
 #[cfg_attr(miri, ignore)]

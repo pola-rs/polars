@@ -33,7 +33,7 @@ use crate::storage::SharedStorage;
 /// let mut sliced = buffer.clone();
 /// sliced.slice(1, 1);
 /// assert_eq!(sliced.as_ref(), [2].as_ref());
-/// // but cloning forbids getting mut since `slice` and `buffer` now share data
+/// // but cloning forbids getting mut since `sliced` and `buffer` now share data
 /// assert_eq!(buffer.get_mut_slice(), None);
 /// ```
 pub struct Buffer<T> {
@@ -48,6 +48,7 @@ pub struct Buffer<T> {
 }
 
 impl<T> Clone for Buffer<T> {
+    #[inline(always)]
     fn clone(&self) -> Self {
         Self {
             storage: self.storage.clone(),
@@ -455,6 +456,22 @@ mod _serde_impl {
     }
 }
 
+#[cfg(feature = "schemars")]
+impl<T: schemars::JsonSchema> schemars::JsonSchema for Buffer<T> {
+    fn inline_schema() -> bool {
+        Vec::<T>::inline_schema()
+    }
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        Vec::<T>::schema_name()
+    }
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        Vec::<T>::schema_id()
+    }
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        Vec::<T>::json_schema(generator)
+    }
+}
+
 impl<T: Copy> IntoIterator for Buffer<T> {
     type Item = T;
 
@@ -465,7 +482,7 @@ impl<T: Copy> IntoIterator for Buffer<T> {
     }
 }
 
-/// This crates' equivalent of [`std::vec::IntoIter`] for [`Buffer`].
+/// This crate's equivalent of [`std::vec::IntoIter`] for [`Buffer`].
 #[derive(Debug, Clone)]
 pub struct IntoIter<T: Copy> {
     values: Buffer<T>,

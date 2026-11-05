@@ -41,14 +41,10 @@ pub fn create_file_writer_starter(
                 )?)
             };
 
-            Arc::new(ParquetWriterStarter {
-                options: Arc::clone(options),
+            Arc::new(ParquetWriterStarter::try_new(
+                Arc::clone(options),
                 arrow_schema,
-                initialized_state: Default::default(),
-                row_group_size: options
-                    .row_group_size
-                    .map(|x| IdxSize::try_from(x).unwrap()),
-            }) as _
+            )?) as _
         },
         #[cfg(feature = "ipc")]
         FileWriteFormat::Ipc(options) => {
@@ -87,13 +83,21 @@ pub fn create_file_writer_starter(
             }) as _
         },
         #[cfg(feature = "json")]
-        FileWriteFormat::NDJson(options) => Arc::new(
-            crate::nodes::io_sinks::writers::ndjson::NDJsonWriterStarter {
-                options: *options,
-                schema: file_schema.clone(),
-                initialized_state: Default::default(),
-            },
-        ) as _,
+        FileWriteFormat::NDJson(options) => {
+            // The NDJSON serializer runs on a spawned task, where a panic surfaces as a
+            // `JoinError` instead of a query error.
+            for dtype in file_schema.iter_values() {
+                polars_io::json::ensure_json_writable(dtype)?;
+            }
+
+            Arc::new(
+                crate::nodes::io_sinks::writers::ndjson::NDJsonWriterStarter {
+                    options: *options,
+                    schema: file_schema.clone(),
+                    initialized_state: Default::default(),
+                },
+            ) as _
+        },
         #[cfg(not(any(
             feature = "parquet",
             feature = "ipc",

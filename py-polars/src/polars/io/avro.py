@@ -4,6 +4,7 @@ import contextlib
 from pathlib import Path
 from typing import IO, TYPE_CHECKING
 
+from polars._utils.unstable import unstable
 from polars._utils.various import normalize_filepath
 from polars._utils.wrap import wrap_df
 from polars.io._utils import parse_columns_arg
@@ -15,6 +16,7 @@ if TYPE_CHECKING:
     from polars import DataFrame
 
 
+@unstable()
 def read_avro(
     source: str | Path | IO[bytes] | bytes,
     *,
@@ -23,6 +25,10 @@ def read_avro(
 ) -> DataFrame:
     """
     Read into a DataFrame from Apache Avro format.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
 
     Parameters
     ----------

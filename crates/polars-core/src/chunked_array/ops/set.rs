@@ -1,5 +1,5 @@
-use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::legacy::kernels::set::{scatter_single_non_null, set_with_mask};
+use polars_arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_arrow::legacy::kernels::set::{scatter_single_non_null, set_with_mask};
 
 use crate::prelude::*;
 use crate::utils::align_chunks_binary;

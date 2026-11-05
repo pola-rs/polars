@@ -1,6 +1,6 @@
 # IDE configuration
 
-Using an integrated development environments (IDE) and configuring it properly will help you work on
+Using an integrated development environment (IDE) and configuring it properly will help you work on
 Polars more effectively. This page contains some recommendations for configuring popular IDEs.
 
 ## Visual Studio Code
@@ -110,6 +110,8 @@ for more information about the `launch.json` file.
     ```
 
 #### Running the debugger
+
+0. First, compile Polars with full debug information using `make build-debug`.
 
 1. Create a Python script containing Polars code. Ensure that your virtual environment is activated.
 

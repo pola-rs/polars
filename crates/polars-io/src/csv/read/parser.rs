@@ -42,7 +42,7 @@ pub fn count_rows(
                 .try_open_assume_latest()?
         })
     } else {
-        polars_utils::open_file(path.as_std_path())?
+        polars_utils::io::open_file(path.as_std_path())?
     };
 
     let mmap = MMapSemaphore::new_from_file(&file).unwrap();
@@ -94,6 +94,8 @@ pub fn count_rows_from_reader_par(
     let (_, mut leftover) = read_until_start_and_infer_schema(
         &reader_options,
         None,
+        true,
+        true,
         decompressed_size_hint,
         None,
         &mut reader,
@@ -108,9 +110,8 @@ pub fn count_rows_from_reader_par(
     let count = CountLines::new(quote_char, eol_char, comment_prefix.cloned());
     RAYON.install(|| {
         let mut states = Vec::new();
-        let eof_unterminated_row;
 
-        if comment_prefix.is_none() {
+        let eof_unterminated_row = if comment_prefix.is_none() {
             let mut last_slice = Buffer::new();
             let mut err = None;
 
@@ -150,7 +151,7 @@ pub fn count_rows_from_reader_par(
 
             // Technically this is broken if the input has a comment line at the end that is longer
             // than `BYTES_PER_CHUNK`, but in practice this ought to be fine.
-            eof_unterminated_row = ends_in_unterminated_row(&last_slice, eol_char, comment_prefix);
+            ends_in_unterminated_row(&last_slice, eol_char, comment_prefix)
         } else {
             // For the non-compressed case this is a zero-copy op.
             // TODO: Implement streaming chunk logic.
@@ -189,8 +190,8 @@ pub fn count_rows_from_reader_par(
                 })
                 .collect_into_vec(&mut states);
 
-            eof_unterminated_row = ends_in_unterminated_row(&bytes, eol_char, comment_prefix);
-        }
+            ends_in_unterminated_row(&bytes, eol_char, comment_prefix)
+        };
 
         let mut n = 0;
         let mut in_string = false;
@@ -293,7 +294,7 @@ pub(super) fn next_line_position(
         // a,b,c
         // vala,valb,
         // SplitFields returns a count that is 1 less
-        // There fore we accept:
+        // Therefore we accept:
         // expected == count
         // and
         // expected == count - 1
@@ -408,7 +409,7 @@ pub(super) fn skip_whitespace(input: &[u8]) -> &[u8] {
 ///    for line in bytes.split(b'\n') {
 /// ```
 ///
-/// This will fail when strings fields are have embedded end line characters.
+/// This will fail when string fields have embedded end line characters.
 /// For instance: "This is a valid field\nI have multiples lines" is a valid string field, that contains multiple lines.
 pub struct SplitLines<'a> {
     v: &'a [u8],
@@ -663,6 +664,7 @@ impl<'a> Iterator for SplitLines<'a> {
     }
 }
 
+#[derive(Clone)]
 pub struct CountLines {
     quote_char: u8,
     eol_char: u8,
@@ -703,6 +705,10 @@ impl CountLines {
             quoting,
             comment_prefix,
         }
+    }
+
+    pub fn has_comment_prefix(&self) -> bool {
+        self.comment_prefix.is_some()
     }
 
     /// Analyzes a chunk of CSV data.
@@ -982,6 +988,35 @@ impl CountLines {
     }
 }
 
+/// Returns the length of the longest prefix of `bytes` that only holds complete rows, i.e. up to
+/// and including the last `eol_char` outside of a quoted field. Like `skip_lines` itself, the
+/// first `skip_lines` lines are split without regard to quoting. Like the CSV reader, a UTF-8 BOM
+/// after them is skipped, so that a comment prefix on the next line is found.
+pub fn complete_rows_len(
+    bytes: &[u8],
+    quote_char: Option<u8>,
+    comment_prefix: Option<&CommentPrefix>,
+    eol_char: u8,
+    skip_lines: usize,
+) -> usize {
+    let mut start = 0;
+    for _ in 0..skip_lines {
+        match memchr::memchr(eol_char, &bytes[start..]) {
+            Some(pos) => start += pos + 1,
+            None => return start,
+        }
+    }
+
+    const UTF8_BOM_MARKER: &[u8] = b"\xef\xbb\xbf";
+    if bytes[start..].starts_with(UTF8_BOM_MARKER) {
+        start += UTF8_BOM_MARKER.len();
+    }
+
+    let count = CountLines::new(quote_char, eol_char, comment_prefix.cloned());
+    let (_, offset) = count.count_rows(&bytes[start..], false);
+    start + offset
+}
+
 fn ends_in_unterminated_row(
     bytes: &[u8],
     eol_char: u8,
@@ -990,9 +1025,9 @@ fn ends_in_unterminated_row(
     if !bytes.is_empty() && bytes.last().copied().unwrap() != eol_char {
         // We can do a simple backwards-scan to find the start of last line if it is a
         // comment line, since comment lines can't escape new-lines.
-        let last_new_line_post = memchr::memrchr(eol_char, bytes).unwrap_or(0);
+        let last_new_line_pos = memchr::memrchr(eol_char, bytes).unwrap_or(0);
         let last_line_is_comment_line = bytes
-            .get(last_new_line_post + 1..)
+            .get(last_new_line_pos + 1..)
             .map(|line| is_comment_line(line, comment_prefix))
             .unwrap_or(false);
 
@@ -1088,6 +1123,12 @@ pub(super) fn parse_lines(
     let original_bytes_len = bytes.len();
     let n_lines = n_lines as u32;
 
+    let mut iter = SplitFields::new(
+        bytes,
+        parse_options.separator,
+        parse_options.quote_char,
+        parse_options.eol_char,
+    );
     let mut line_count = 0u32;
     loop {
         if line_count > n_lines {
@@ -1111,12 +1152,7 @@ pub(super) fn parse_lines(
         let mut next_projected = unsafe { projection_iter.next().unwrap_unchecked() };
         let mut processed_fields = 0;
 
-        let mut iter = SplitFields::new(
-            bytes,
-            parse_options.separator,
-            parse_options.quote_char,
-            parse_options.eol_char,
-        );
+        iter.next_line(bytes);
         let mut idx = 0u32;
         let mut read_sol = 0;
         loop {
@@ -1175,6 +1211,7 @@ pub(super) fn parse_lines(
                                         \n\
                                         You might want to try:\n\
                                         - increasing `infer_schema_length` (e.g. `infer_schema_length=10000`),\n\
+                                        - increasing `infer_schema_files` (e.g. `infer_schema_files=50`),\n\
                                         - specifying correct dtype with the `schema_overrides` argument\n\
                                         - setting `ignore_errors` to `True`,\n\
                                         - adding `{}` to the `null_values` list.\n\n\

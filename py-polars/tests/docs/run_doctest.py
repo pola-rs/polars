@@ -68,7 +68,7 @@ SKIP_METHODS: set[str] = set()
 for mod, methods in OPTIONAL_MODULES_AND_METHODS.items():
     try:
         importlib.import_module(mod)
-    except ImportError:  # noqa: PERF203
+    except ImportError:
         SKIP_METHODS.update(methods)
         OPTIONAL_MODULES.add(mod)
 
@@ -86,7 +86,7 @@ def modules_in_path(p: Path) -> Iterator[ModuleType]:
             file_name_import = ".".join(file.relative_to(p).parts)[:-3]
             temp_module = importlib.import_module(p.name + "." + file_name_import)
             yield temp_module
-        except ImportError as err:  # noqa: PERF203
+        except ImportError as err:
             if not any(re.search(rf"\b{mod}\b", str(err)) for mod in OPTIONAL_MODULES):
                 raise
 
@@ -115,14 +115,9 @@ if __name__ == "__main__":
 
     # Set doctests to fail on warnings
     warnings.simplefilter("error", Warning)
+    # TODO: Remove in 2.0.
     warnings.filterwarnings(
         "ignore",
-        message="datetime.datetime.utcfromtimestamp\\(\\) is deprecated.*",
-        category=DeprecationWarning,
-    )
-    warnings.filterwarnings(
-        "ignore",
-        message="datetime.datetime.utcnow\\(\\) is deprecated.*",
         category=DeprecationWarning,
     )
 

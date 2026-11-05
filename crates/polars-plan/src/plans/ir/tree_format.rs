@@ -6,6 +6,7 @@ use polars_utils::format_list_truncated;
 use polars_utils::unique_id::UniqueId;
 
 use crate::constants;
+use crate::dsl::dsl_resolver::ResolverExplainHeadingDisplay;
 use crate::plans::ir::IRPlanRef;
 use crate::plans::visitor::{VisitRecursion, Visitor};
 use crate::prelude::ir::format::ColumnsDisplay;
@@ -82,7 +83,7 @@ impl fmt::Display for TreeFmtAExpr<'_> {
             },
             AExpr::Eval { .. } => "list.eval",
             #[cfg(feature = "dtype-struct")]
-            AExpr::StructEval { .. } => "struct.with_fields",
+            AExpr::StructEval { variant, .. } => variant.to_name(),
             AExpr::Function { function, .. } => return write!(f, "function: {function}"),
             #[cfg(feature = "dynamic_group_by")]
             AExpr::Rolling { .. } => "rolling",
@@ -325,19 +326,19 @@ impl<'a> TreeFmtNode<'a> {
                 Join {
                     input_left,
                     input_right,
-                    left_on,
-                    right_on,
                     options,
                     ..
                 } => ND(
                     wh(h, &format!("{} JOIN", options.args.how)),
-                    left_on
-                        .iter()
+                    options
+                        .options
+                        .left_on()
                         .map(|expr| self.expr_node(Some("left on:".to_string()), expr))
                         .chain([self.lp_node(Some("LEFT PLAN:".to_string()), *input_left)])
                         .chain(
-                            right_on
-                                .iter()
+                            options
+                                .options
+                                .right_on()
                                 .map(|expr| self.expr_node(Some("right on:".to_string()), expr)),
                         )
                         .chain([self.lp_node(Some("RIGHT PLAN:".to_string()), *input_right)])
@@ -362,6 +363,31 @@ impl<'a> TreeFmtNode<'a> {
                         .chain([self.lp_node(None, *input)])
                         .collect(),
                 ),
+                Window {
+                    input,
+                    partition_by,
+                    order_by,
+                    exprs,
+                    maintain_order,
+                    ordered_eval,
+                    ..
+                } => ND(
+                    wh(
+                        h,
+                        &super::format::WindowHeaderDisplay {
+                            partition_by,
+                            order_by: order_by.as_ref(),
+                            maintain_order: *maintain_order,
+                            ordered_eval: *ordered_eval,
+                        }
+                        .to_string(),
+                    ),
+                    exprs
+                        .iter()
+                        .map(|expr| self.expr_node(Some("expression:".to_string()), expr))
+                        .chain([self.lp_node(None, *input)])
+                        .collect(),
+                ),
                 Distinct { input, options } => ND(
                     wh(
                         h,
@@ -380,9 +406,6 @@ impl<'a> TreeFmtNode<'a> {
                     wh(h, &format!("{function}")),
                     vec![self.lp_node(None, *input)],
                 ),
-                ExtContext { input, .. } => {
-                    ND(wh(h, "EXTERNAL_CONTEXT"), vec![self.lp_node(None, *input)])
-                },
                 Sink { input, payload } => ND(
                     wh(
                         h,
@@ -439,6 +462,14 @@ impl<'a> TreeFmtNode<'a> {
                         .chain([self.lp_node(Some("RIGHT PLAN:".to_string()), *input_right)])
                         .collect(),
                 ),
+                Recursive { anchor, step, .. } => ND(
+                    wh(h, "RECURSIVE"),
+                    vec![
+                        self.lp_node(Some("ANCHOR:".to_string()), *anchor),
+                        self.lp_node(Some("STEP:".to_string()), *step),
+                    ],
+                ),
+                WorkingTableScan { .. } => ND(wh(h, "WORKING TABLE"), vec![]),
                 UnoptimizedDispatch {
                     inputs,
                     operation,
@@ -450,6 +481,29 @@ impl<'a> TreeFmtNode<'a> {
                         .map(|(input_idx, _col_idx, _arg_name)| &inputs[input_idx])
                         .map(|input| self.lp_node(None, *input))
                         .collect(),
+                ),
+                Resolver {
+                    resolver,
+                    resolved_dsl,
+                    resolved_ir,
+                    ..
+                } => ND(
+                    wh(
+                        h,
+                        &format!(
+                            "{}",
+                            ResolverExplainHeadingDisplay {
+                                indent: 0,
+                                resolver,
+                                resolved_dsl
+                            }
+                        ),
+                    ),
+                    if let Some(node) = *resolved_ir {
+                        vec![self.lp_node(None, node)]
+                    } else {
+                        vec![]
+                    },
                 ),
                 Invalid => ND(wh(h, "INVALID"), vec![]),
             },
@@ -543,7 +597,7 @@ struct TreeViewColumn {
     center: usize,
 }
 
-/// Meta-info of a column in a populated `TreeFmtVisitor` required for the pretty-print of a tree
+/// Meta-info of a row in a populated `TreeFmtVisitor` required for the pretty-print of a tree
 #[derive(Clone, Default, Debug)]
 struct TreeViewRow {
     offset: usize,
@@ -847,7 +901,7 @@ impl From<TreeView<'_>> for Canvas {
             3 + value.rows.iter().map(|r| r.height).sum::<usize>() + 3 * (value.n_rows - 1);
         let mut canvas = Canvas::new(width, height, Glyphs::default());
 
-        // Axles
+        // Axes
         let (x, y) = (value.n_rows_width + 2, 1);
         canvas.draw_symbol(Point(x, y), '┌');
         canvas.draw_line(Point(x + 1, y), Orientation::Horizontal, width - x);

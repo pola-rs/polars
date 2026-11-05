@@ -2,11 +2,11 @@ use std::fmt;
 use std::sync::Mutex;
 
 use polars_buffer::{Buffer, SharedStorage};
+#[cfg(feature = "temporal")]
+use polars_core::chunked_array::temporal::string::StringMethods;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::utils::{accumulate_dataframes_vertical, handle_casting_failures};
-#[cfg(feature = "polars-time")]
-use polars_time::prelude::*;
 use polars_utils::relaxed_cell::RelaxedCell;
 use rayon::prelude::*;
 
@@ -219,6 +219,8 @@ impl<'a> CoreReader<'a> {
         let (inferred_schema, leftover) = read_until_start_and_infer_schema_from_compressed_reader(
             &read_options,
             None,
+            false,
+            false,
             None,
             &mut compressed_reader,
         )?;
@@ -230,7 +232,8 @@ impl<'a> CoreReader<'a> {
         if let Some(dtypes) = dtype_overwrite {
             polars_ensure!(
                 dtypes.len() <= schema.len(),
-                InvalidOperation: "The number of schema overrides must be less than or equal to the number of fields"
+                InvalidOperation: "The number of schema overrides must be less than or equal to the number of fields (got {} overrides for {} fields)",
+                dtypes.len(), schema.len()
             );
             let s = Arc::make_mut(&mut schema);
             for (index, dt) in dtypes.iter().enumerate() {
@@ -501,7 +504,7 @@ impl<'a> CoreReader<'a> {
                         results.lock().unwrap().push((b.as_ptr() as usize, result));
                     });
 
-                    // Check just after we spawned a chunk. That mean we processed all data up until
+                    // Check just after we spawned a chunk. That means we processed all data up until
                     // row count.
                     if self.n_rows.is_some() && total_line_count.load() > self.n_rows.unwrap() {
                         break;

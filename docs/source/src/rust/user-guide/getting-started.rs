@@ -167,7 +167,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             [col("name")],
             [col("name")],
             JoinArgs::new(JoinType::Left),
-        )
+        )?
         .collect()?;
 
     println!("{result}");

@@ -1,6 +1,6 @@
-use arrow::array::{Array, BooleanArray};
-use arrow::bitmap::{binary_fold, quaternary, ternary};
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::{Array, BooleanArray};
+use polars_arrow::bitmap::{binary_fold, quaternary, ternary};
+use polars_arrow::datatypes::ArrowDataType;
 
 /// Returns whether any of the non-null values in the array are `true`.
 ///

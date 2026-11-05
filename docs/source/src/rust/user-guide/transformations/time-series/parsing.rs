@@ -11,7 +11,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap()
         .finish()
         .unwrap();
-    println!("{}", &df);
+    println!("{}", df);
     // --8<-- [end:df]
 
     // --8<-- [start:cast]
@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .with_columns([col("Date").str().to_date(StrptimeOptions::default())])
         .collect()?;
-    println!("{}", &df);
+    println!("{}", df);
     // --8<-- [end:cast]
 
     // --8<-- [start:df3]
@@ -34,7 +34,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .with_columns([col("Date").dt().year().alias("year")])
         .collect()?;
-    println!("{}", &df_with_year);
+    println!("{}", df_with_year);
     // --8<-- [end:df3]
 
     // --8<-- [start:extract]
@@ -42,7 +42,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .with_columns([col("Date").dt().year().alias("year")])
         .collect()?;
-    println!("{}", &df_with_year);
+    println!("{}", df_with_year);
     // --8<-- [end:extract]
 
     // --8<-- [start:mixed]
@@ -71,7 +71,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     let mixed_parsed = df!("date" => &data)?.lazy().select([q]).collect()?;
 
-    println!("{}", &mixed_parsed);
+    println!("{}", mixed_parsed);
     // --8<-- [end:mixed]
 
     Ok(())

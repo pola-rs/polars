@@ -1,11 +1,10 @@
 //! API to read and use bloom filters
 mod hash;
 mod read;
-mod split_block;
 
 pub use hash::{hash_byte, hash_native};
+pub use polars_utils::bloom_filter::{insert, is_in_set};
 pub use read::read;
-pub use split_block::{insert, is_in_set};
 
 #[cfg(test)]
 mod tests {

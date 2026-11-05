@@ -122,7 +122,7 @@ def read_lines(
         storage_options=storage_options,
         credential_provider=credential_provider,
         include_file_paths=include_file_paths,
-    ).collect()
+    )._collect_eager()
 
 
 @unstable()

@@ -60,10 +60,10 @@ impl ComputeNode for RleIdNode {
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             let mut lengths = Vec::new();
             while let Ok(mut m) = recv.recv().await {
-                let df = m.df_mut();
-                if df.height() == 0 {
+                if m.height() == 0 {
                     continue;
                 }
+                let mut df = m.df_mut().await;
 
                 assert_eq!(df.width(), 1);
                 let column = &df[0];
@@ -99,6 +99,7 @@ impl ComputeNode for RleIdNode {
 
                 *df = unsafe { DataFrame::new_unchecked(column.len(), vec![column]) };
 
+                drop(df);
                 if send.send(m).await.is_err() {
                     break;
                 }

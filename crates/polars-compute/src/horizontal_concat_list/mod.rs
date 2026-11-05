@@ -1,8 +1,8 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-use arrow::array::builder::{ArrayBuilder, ShareStrategy, make_builder};
-use arrow::array::{Array, ListArray};
-use arrow::bitmap::BitmapBuilder;
-use arrow::offset::{Offsets, OffsetsBuffer};
+use polars_arrow::array::builder::{ArrayBuilder, ShareStrategy, make_builder};
+use polars_arrow::array::{Array, ListArray};
+use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::offset::{Offsets, OffsetsBuffer};
 use polars_error::PolarsResult;
 
 /// Horizontally concatenate variable-length list columns row-wise.

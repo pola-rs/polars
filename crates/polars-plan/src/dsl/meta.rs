@@ -30,7 +30,7 @@ impl MetaNameSpace {
         };
         let mut arena = Arena::with_capacity(8);
         let mut ctx = ExprToIRContext::new_no_verification(&mut arena, schema);
-        to_expr_ir(self.0.clone(), &mut ctx)
+        to_expr_ir(&self.0, &mut ctx)
             .map(|expr| aexpr_is_simple_projection(expr.node(), &arena))
             .unwrap_or(false)
     }
@@ -83,6 +83,47 @@ impl MetaNameSpace {
         })
     }
 
+    /// Indicate if this expression expands to multiple expressions with regex expansion.
+    pub fn is_regex_projection(&self) -> bool {
+        self.0
+            .into_iter()
+            .any(|e| matches!(e, Expr::Selector(Selector::Matches(_))))
+    }
+
+    /// Get a hold to an implementor of the `Display` trait that will format
+    /// the expression as a tree
+    pub fn into_tree_formatter(
+        self,
+        display_as_dot: bool,
+        schema: Option<&Schema>,
+    ) -> PolarsResult<impl Display> {
+        let schema = match schema {
+            None => &Default::default(),
+            Some(s) => s,
+        };
+        let mut arena = Default::default();
+        let mut ctx = ExprToIRContext::new_no_verification(&mut arena, schema);
+        let node = to_expr_ir(&self.0, &mut ctx)?.node();
+        let mut visitor = TreeFmtVisitor::default();
+        if display_as_dot {
+            visitor.display = TreeFmtVisitorDisplay::DisplayDot;
+        }
+        AexprNode::new(node).visit(&mut visitor, &arena)?;
+        Ok(visitor)
+    }
+}
+
+// Properties
+impl MetaNameSpace {
+    fn into_expr_ir(self) -> PolarsResult<(ExprIR, Arena<AExpr>)> {
+        let mut expr_arena = Arena::new();
+        let schema = Default::default();
+        let mut ctx = ExprToIRContext::new_no_verification(&mut expr_arena, &schema);
+        let e_ir = to_expr_ir(&self.0, &mut ctx)?;
+
+        Ok((e_ir, expr_arena))
+    }
+
     /// Indicate if this expression represents a literal value (optionally aliased).
     pub fn is_literal(&self, allow_aliasing: bool) -> bool {
         self.0.into_iter().all(|e| match e {
@@ -97,32 +138,31 @@ impl MetaNameSpace {
         })
     }
 
-    /// Indicate if this expression expands to multiple expressions with regex expansion.
-    pub fn is_regex_projection(&self) -> bool {
-        self.0
-            .into_iter()
-            .any(|e| matches!(e, Expr::Selector(Selector::Matches(_))))
+    pub fn is_length_preserving(self) -> PolarsResult<bool> {
+        let (e_ir, expr_arena) = self.into_expr_ir()?;
+        Ok(e_ir.is_length_preserving(&expr_arena))
     }
 
-    /// Get a hold to an implementor of the `Display` trait that will format as
-    /// the expression as a tree
-    pub fn into_tree_formatter(
-        self,
-        display_as_dot: bool,
-        schema: Option<&Schema>,
-    ) -> PolarsResult<impl Display> {
-        let schema = match schema {
-            None => &Default::default(),
-            Some(s) => s,
-        };
-        let mut arena = Default::default();
-        let mut ctx = ExprToIRContext::new_no_verification(&mut arena, schema);
-        let node = to_expr_ir(self.0, &mut ctx)?.node();
-        let mut visitor = TreeFmtVisitor::default();
-        if display_as_dot {
-            visitor.display = TreeFmtVisitorDisplay::DisplayDot;
-        }
-        AexprNode::new(node).visit(&mut visitor, &arena)?;
-        Ok(visitor)
+    pub fn is_scalar(self) -> PolarsResult<bool> {
+        let (e_ir, expr_arena) = self.into_expr_ir()?;
+        Ok(e_ir.is_scalar(&expr_arena))
+    }
+
+    pub fn is_known_length(self) -> PolarsResult<bool> {
+        let (e_ir, expr_arena) = self.into_expr_ir()?;
+        Ok(e_ir.is_known_length(&expr_arena))
+    }
+
+    /// Indicate if this expression as a whole is row-separable (see [`is_row_separable_rec`]).
+    pub fn is_row_separable(self) -> PolarsResult<bool> {
+        let (e_ir, expr_arena) = self.into_expr_ir()?;
+        Ok(is_row_separable_rec(e_ir.node(), &expr_arena))
+    }
+
+    /// Indicate if this expression yields one scalar value that does not depend on any
+    /// input frame (see [`is_input_independent_scalar_rec`]).
+    pub fn is_input_independent_scalar(self) -> PolarsResult<bool> {
+        let (e_ir, expr_arena) = self.into_expr_ir()?;
+        Ok(is_input_independent_scalar_rec(e_ir.node(), &expr_arena))
     }
 }

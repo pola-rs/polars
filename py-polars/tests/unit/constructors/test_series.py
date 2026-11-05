@@ -8,10 +8,11 @@ import pandas as pd
 import pytest
 
 import polars as pl
+from polars.testing.asserts.frame import assert_frame_equal
 from polars.testing.asserts.series import assert_series_equal
 
 if TYPE_CHECKING:
-    from polars._typing import PolarsDataType
+    from polars._typing import PolarsDataType, TimeUnit
 
 
 def test_series_mixed_dtypes_list() -> None:
@@ -142,7 +143,7 @@ def test_series_init_nonexistent_datetime() -> None:
 # https://github.com/pola-rs/polars/issues/15518
 def test_series_init_np_temporal_with_nat_15518() -> None:
     arr = np.array(["2020-01-01", "2020-01-02", "2020-01-03"], "datetime64[D]")
-    arr[1] = np.datetime64("NaT")
+    arr[1] = np.datetime64("NaT", "D")
 
     result = pl.Series(arr)
 
@@ -214,3 +215,130 @@ def test_invalid() -> None:
         # `type: ignore`, you may have inadvertently introduced
         # an `Any` type in the `Series.__init__` signature.
         pl.Series(1)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_series_from_numpy_datetime64_scalars_18158(time_unit: TimeUnit) -> None:
+    values = [
+        np.datetime64("2022-01-01T12:34:56.789", time_unit),
+        None,
+        np.datetime64("NaT", time_unit),
+    ]
+    expected = pl.Series(
+        [datetime(2022, 1, 1, 12, 34, 56, 789_000), None, None],
+        dtype=pl.Datetime(time_unit),
+    )
+    assert_series_equal(pl.Series(values), expected)
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_series_from_numpy_timedelta64_scalars_16029(time_unit: TimeUnit) -> None:
+    s = pl.Series(
+        [np.timedelta64(1500, time_unit), None, np.timedelta64("NaT", time_unit)]
+    )
+    expected = pl.Series([1500, None, None]).cast(pl.Duration(time_unit))
+    assert_series_equal(s, expected)
+
+
+def test_series_from_numpy_temporal_scalars_other_units() -> None:
+    # 'D' becomes Date, 's' becomes milliseconds.
+    s = pl.Series([np.datetime64("2022-01-01", "D"), np.datetime64("NaT", "D")])
+    assert_series_equal(s, pl.Series([date(2022, 1, 1), None], dtype=pl.Date))
+
+    s = pl.Series([np.datetime64("2022-01-01T00:00:01", "s")])
+    expected = pl.Series([datetime(2022, 1, 1, 0, 0, 1)], dtype=pl.Datetime("ms"))
+    assert_series_equal(s, expected)
+
+    s = pl.Series([np.timedelta64(3, "s")])
+    assert_series_equal(s, pl.Series([3_000]).cast(pl.Duration("ms")))
+
+    # The unit count is applied: 5 * 10ms.
+    s = pl.Series([np.datetime64(5, ("ms", 10))])
+    assert_series_equal(s, pl.Series([50]).cast(pl.Datetime("ms")))
+
+    with pytest.raises(ValueError, match="unit 'M'"):
+        pl.Series([np.datetime64("2022-01", "M")])
+
+
+@pytest.mark.parametrize(
+    "value", [np.datetime64(2**62, "s"), np.datetime64(2**40, "D")]
+)
+def test_series_from_numpy_temporal_scalars_out_of_range(value: np.datetime64) -> None:
+    with pytest.raises(OverflowError, match="out of range"):
+        pl.Series([value])
+
+
+# Newer NumPy versions deprecate values without a unit.
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+def test_series_from_numpy_temporal_scalars_generic_unit() -> None:
+    s = pl.Series([None, np.datetime64("NaT")])
+    assert_series_equal(s, pl.Series([None, None], dtype=pl.Null))
+
+    with pytest.raises(ValueError, match="unit 'generic'"):
+        pl.Series([np.timedelta64(1)])
+
+
+def test_series_from_numpy_temporal_scalars_14380() -> None:
+    arr = np.array(["2020-08-21"], dtype="datetime64")
+    s = pl.Series("date", list(arr))
+    assert_series_equal(s, pl.Series("date", [date(2020, 8, 21)], dtype=pl.Date))
+
+    expected = pl.Series("date", [datetime(2020, 8, 21)], dtype=pl.Datetime("us"))
+    assert_series_equal(pl.Series("date", list(arr), dtype=pl.Datetime), expected)
+    assert_series_equal(pl.Series("date", arr, dtype=pl.Datetime), expected)
+
+
+def test_series_from_numpy_temporal_scalars_mixed_units() -> None:
+    values = [
+        np.datetime64("2022-01-01T00:00:00.001", "ms"),
+        np.datetime64("2022-01-01T00:00:00.000000002", "ns"),
+    ]
+    with pytest.raises(TypeError, match="unexpected value"):
+        pl.Series(values)
+    expected = pl.Series([1_640_995_200_001, 1_640_995_200_000]).cast(pl.Datetime("ms"))
+    assert_series_equal(pl.Series(values, strict=False), expected)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "expected_dtype", "expected"),
+    [
+        (pl.Datetime("ms"), pl.Datetime("ms"), 1_640_995_200_123),
+        (pl.Datetime("us", "UTC"), pl.Datetime("us", "UTC"), 1_640_995_200_123_456),
+        (pl.Datetime, pl.Datetime("ns"), 1_640_995_200_123_456_789),
+        (pl.Date, pl.Date, 18_993),
+        (pl.Int64, pl.Int64, 1_640_995_200_123_456_789),
+    ],
+)
+def test_series_from_numpy_datetime64_scalars_with_dtype(
+    dtype: PolarsDataType, expected_dtype: PolarsDataType, expected: int
+) -> None:
+    value = np.datetime64("2022-01-01T00:00:00.123456789", "ns")
+    s = pl.Series([value, None], dtype=dtype)
+    assert_series_equal(s, pl.Series([expected, None]).cast(expected_dtype))
+
+
+def test_frame_from_numpy_temporal_scalars_16029() -> None:
+    td = np.timedelta64(1, "ns")
+    expected = pl.DataFrame({"column_0": pl.Series([1]).cast(pl.Duration("ns"))})
+    assert_frame_equal(pl.DataFrame([[td]]), expected)
+    assert_frame_equal(pl.DataFrame({"column_0": [td]}), expected)
+
+    row = (np.timedelta64(5, "ms"), np.datetime64("2022-01-01T00:00:00.000000001"))
+    expected = pl.DataFrame(
+        {
+            "a": pl.Series([5]).cast(pl.Duration("ms")),
+            "b": pl.Series([1_640_995_200_000_000_001]).cast(pl.Datetime("ns")),
+        }
+    )
+    assert_frame_equal(pl.DataFrame([{"a": row[0], "b": row[1]}]), expected)
+    assert_frame_equal(pl.DataFrame([row], schema=["a", "b"], orient="row"), expected)
+
+    s = pl.Series([{"a": np.datetime64("2022-01-01T00:00:00.000000001")}])
+    expected_field = pl.Series("a", [1_640_995_200_000_000_001]).cast(pl.Datetime("ns"))
+    assert_series_equal(s, expected_field.to_frame().to_struct(""))
+
+    s = pl.Series([[np.datetime64("2022-01-01", "us")]])
+    expected_list = pl.Series(
+        [[datetime(2022, 1, 1)]], dtype=pl.List(pl.Datetime("us"))
+    )
+    assert_series_equal(s, expected_list)

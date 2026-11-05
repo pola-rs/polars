@@ -1,7 +1,7 @@
 use std::io::{Read, Write};
 use std::sync::Arc;
 
-use arrow::record_batch::RecordBatch;
+use polars_arrow::record_batch::RecordBatch;
 use polars_core::prelude::*;
 
 use crate::options::RowIndex;

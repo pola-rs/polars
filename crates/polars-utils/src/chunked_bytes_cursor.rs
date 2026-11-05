@@ -88,10 +88,11 @@ where
                 || bytes_read == requested_byte_range.len()
         );
 
-        for chunk_idx in (requested_byte_range.start + bytes_read) / self.chunk_size
-            ..requested_byte_range.end.div_ceil(self.chunk_size.get())
-        {
-            let chunk_bytes = self.chunked_bytes[chunk_idx].as_ref();
+        let chunk_start = (requested_byte_range.start + bytes_read) / self.chunk_size;
+        let chunk_end = requested_byte_range.end.div_ceil(self.chunk_size.get());
+
+        for chunk in &self.chunked_bytes[chunk_start..chunk_end] {
+            let chunk_bytes = chunk.as_ref();
             let len = (requested_byte_range.len() - bytes_read).min(chunk_bytes.len());
 
             buf[bytes_read..bytes_read + len].copy_from_slice(&chunk_bytes[..len]);

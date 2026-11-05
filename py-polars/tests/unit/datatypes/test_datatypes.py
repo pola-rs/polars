@@ -264,7 +264,6 @@ def test_max_min(
 
 
 def test_unknown_resolve() -> None:
-
     q = pl.LazyFrame({"dec": [D("0.25")]})
     assert "Float64" in q.select(pl.col("dec") * (1.0 * 1)).explain()
     q = pl.LazyFrame({"x": 76}, schema={"x": pl.Int32}).select(
@@ -273,6 +272,48 @@ def test_unknown_resolve() -> None:
     plan = q.explain()
     assert "Float64" in plan
     assert "dyn" not in plan
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected_dtype", "expected_value"),
+    [
+        (pl.lit(-2).abs() // pl.lit(0.5), pl.Float64, 4.0),
+        (pl.lit(-2).abs() + pl.lit(0.5), pl.Float64, 2.5),
+        (pl.lit(0.5) + pl.lit(-2).abs(), pl.Float64, 2.5),
+        (pl.lit(1.0).abs() + pl.lit(2).abs(), pl.Float64, 3.0),
+        (pl.lit(-1).abs() + pl.lit(-1).abs(), pl.Int32, 2),
+        (pl.lit(2**40).abs() + pl.lit(-1).abs(), pl.Int64, 2**40 + 1),
+    ],
+)
+def test_unknown_binary_dyn_int_float_non_literal_28539(
+    expr: pl.Expr, expected_dtype: pl.DataType, expected_value: object
+) -> None:
+    assert_frame_equal(
+        pl.select(expr),
+        pl.DataFrame({"literal": pl.Series([expected_value], dtype=expected_dtype)}),
+    )
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected_value"),
+    [
+        (pl.lit(1.0).abs() + pl.lit(1.0).abs() + pl.col("f"), 3.0),
+        (pl.lit(1.0).abs() * pl.lit(2.0).abs() + pl.col("f"), 3.0),
+        (pl.lit(2).abs() + pl.col("f"), 3.0),
+        ((pl.lit(1.0).abs() + pl.lit(2).abs()) + pl.col("f"), 4.0),
+        ((pl.lit(1.0).abs() + pl.lit(2).abs()) // pl.col("f"), 3.0),
+    ],
+)
+def test_dyn_int_float_abs_adapts_to_float32_28539(
+    expr: pl.Expr, expected_value: float
+) -> None:
+    lf = pl.LazyFrame({"f": pl.Series([1.0], dtype=pl.Float32)})
+    out = lf.select(x=expr)
+    assert_frame_equal(
+        out.collect(),
+        pl.DataFrame({"x": pl.Series([expected_value], dtype=pl.Float32)}),
+    )
+    assert_schema_equal(out.collect_schema(), pl.Schema({"x": pl.Float32}))
 
 
 def test_unknown_lit_right_arithmetic_28180() -> None:

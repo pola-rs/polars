@@ -1,4 +1,5 @@
 mod builder;
+mod canonical;
 mod determinism;
 mod equality;
 mod evaluate;
@@ -7,6 +8,7 @@ mod function_expr;
 mod hash;
 mod minterm_iter;
 pub(crate) mod or_factoring;
+mod order_keeping;
 pub mod predicates;
 mod scalar;
 mod schema;
@@ -14,15 +16,26 @@ mod traverse;
 
 use std::hash::{Hash, Hasher};
 
-pub use determinism::{is_inherently_nondeterministic, is_inherently_nondeterministic_top_level};
+pub use canonical::{CanonicalExprId, CanonicalExprMap, CanonicalExprMapWithArena};
+pub use determinism::{
+    is_inherently_nondeterministic, is_inherently_nondeterministic_excluding_udfs_top_level,
+    is_inherently_nondeterministic_top_level,
+};
 pub use function_expr::*;
-pub(crate) use hash::traverse_and_hash_aexpr;
 pub use minterm_iter::MintermIter;
+#[cfg(feature = "round_series")]
+pub(crate) use order_keeping::int_literal;
+pub use order_keeping::{OrderKeeping, order_keeping_column};
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
-pub use scalar::{is_known_length_ae, is_length_preserving_ae, is_scalar_ae};
+#[cfg(feature = "range")]
+pub use scalar::int_range_over_length_ae;
+pub use scalar::{
+    is_known_length_ae, is_length_preserving_ae, is_order_insensitive_ae, is_scalar_ae,
+    is_single_literal_ae,
+};
 use strum_macros::IntoStaticStr;
 pub use traverse::*;
 pub mod projection_height;
@@ -32,6 +45,8 @@ pub use builder::AExprBuilder;
 pub use evaluate::{constant_evaluate, into_column};
 pub use properties::*;
 pub use schema::ToFieldContext;
+#[cfg(feature = "dtype-struct")]
+pub(crate) use schema::get_struct_numeric_dtype;
 
 use crate::constants::LEN;
 use crate::prelude::*;
@@ -42,10 +57,14 @@ pub enum IRAggExpr {
     Min {
         input: Node,
         propagate_nans: bool,
+        /// Return a missing value if there is a missing value.
+        propagate_nulls: bool,
     },
     Max {
         input: Node,
         propagate_nans: bool,
+        /// Return a missing value if there is a missing value.
+        propagate_nulls: bool,
     },
     Median(Node),
     NUnique(Node),
@@ -63,14 +82,17 @@ pub enum IRAggExpr {
         input: Node,
         maintain_order: bool,
     },
-    Sum(Node),
+    Sum {
+        input: Node,
+        /// Return a missing value if there are no non-null values.
+        null_on_empty: bool,
+    },
     Count {
         input: Node,
         include_nulls: bool,
     },
     Std(Node, u8),
     Var(Node, u8),
-    AggGroups(Node),
 }
 
 impl Hash for IRAggExpr {
@@ -80,44 +102,23 @@ impl Hash for IRAggExpr {
             Self::Min {
                 input: _,
                 propagate_nans,
+                propagate_nulls,
             }
             | Self::Max {
                 input: _,
                 propagate_nans,
-            } => propagate_nans.hash(state),
+                propagate_nulls,
+            } => (propagate_nans, propagate_nulls).hash(state),
             Self::Std(_, v) | Self::Var(_, v) => v.hash(state),
             Self::Count {
                 input: _,
                 include_nulls,
             } => include_nulls.hash(state),
+            Self::Sum {
+                input: _,
+                null_on_empty,
+            } => null_on_empty.hash(state),
             _ => {},
-        }
-    }
-}
-
-impl IRAggExpr {
-    pub(super) fn equal_nodes(&self, other: &IRAggExpr) -> bool {
-        use IRAggExpr::*;
-        match (self, other) {
-            (
-                Min {
-                    propagate_nans: l, ..
-                },
-                Min {
-                    propagate_nans: r, ..
-                },
-            ) => l == r,
-            (
-                Max {
-                    propagate_nans: l, ..
-                },
-                Max {
-                    propagate_nans: r, ..
-                },
-            ) => l == r,
-            (Std(_, l), Std(_, r)) => l == r,
-            (Var(_, l), Var(_, r)) => l == r,
-            _ => std::mem::discriminant(self) == std::mem::discriminant(other),
         }
     }
 }
@@ -129,6 +130,7 @@ impl From<IRAggExpr> for GroupByMethod {
             Min {
                 input: _,
                 propagate_nans,
+                propagate_nulls: _,
             } => {
                 if propagate_nans {
                     GroupByMethod::NanMin
@@ -139,6 +141,7 @@ impl From<IRAggExpr> for GroupByMethod {
             Max {
                 input: _,
                 propagate_nans,
+                propagate_nulls: _,
             } => {
                 if propagate_nans {
                     GroupByMethod::NanMax
@@ -155,14 +158,13 @@ impl From<IRAggExpr> for GroupByMethod {
             Item { allow_empty, .. } => GroupByMethod::Item { allow_empty },
             Mean(_) => GroupByMethod::Mean,
             Implode { maintain_order, .. } => GroupByMethod::Implode { maintain_order },
-            Sum(_) => GroupByMethod::Sum,
+            Sum { null_on_empty, .. } => GroupByMethod::Sum { null_on_empty },
             Count {
                 input: _,
                 include_nulls,
             } => GroupByMethod::Count { include_nulls },
             Std(_, ddof) => GroupByMethod::Std(ddof),
             Var(_, ddof) => GroupByMethod::Var(ddof),
-            AggGroups(_) => GroupByMethod::Groups,
         }
     }
 }
@@ -217,9 +219,10 @@ pub enum AExpr {
     },
     Agg(IRAggExpr),
     Ternary {
-        predicate: Node,
+        /// `truthy` and `falsy` come before `predicate` as they determine the output name.
         truthy: Node,
         falsy: Node,
+        predicate: Node,
     },
     AnonymousAgg {
         input: Vec<ExprIR>,
@@ -248,12 +251,13 @@ pub enum AExpr {
     StructEval {
         expr: Node,
         evaluation: Vec<ExprIR>,
+        variant: StructEvalVariant,
     },
     Function {
         /// Function arguments
         /// Some functions rely on aliases,
         /// for instance assignment of struct fields.
-        /// Therefor we need [`ExprIr`].
+        /// Therefore we need [`ExprIR`].
         input: Vec<ExprIR>,
         /// function to apply
         function: IRFunctionExpr,
@@ -264,6 +268,8 @@ pub enum AExpr {
         partition_by: Vec<Node>,
         order_by: Option<(Node, SortOptions)>,
         mapping: WindowMapping,
+        /// See [`Expr::Over`].
+        may_reorder: bool,
     },
     #[cfg(feature = "dynamic_group_by")]
     Rolling {
@@ -308,6 +314,9 @@ impl AExpr {
                 },
                 #[cfg(feature = "replace")]
                 IRFunctionExpr::ReplaceStrict { .. } => true,
+                #[cfg(feature = "dtype-decimal")]
+                IRFunctionExpr::DecimalArith { .. } => true,
+                IRFunctionExpr::TruncArith(_) => true,
                 #[cfg(all(feature = "strings", feature = "temporal"))]
                 IRFunctionExpr::StringExpr(f) => match f {
                     IRStringFunction::Strptime(_, strptime_options) => {
@@ -347,6 +356,23 @@ impl AExpr {
                 options: CastOptions::Strict,
             } => !matches!(arena.get(*expr), AExpr::Literal(_)),
             _ => false,
+        }
+    }
+
+    /// Like `is_fallible_top_level`, but an expression that can only fail on overflow is not
+    /// fallible.
+    pub fn is_fallible_top_level_ignoring_overflow(&self, arena: &Arena<AExpr>) -> bool {
+        match self {
+            #[cfg(feature = "dtype-decimal")]
+            AExpr::Function {
+                function:
+                    IRFunctionExpr::DecimalArith {
+                        op: DecimalArithOp::Mul,
+                        ..
+                    },
+                ..
+            } => false,
+            _ => self.is_fallible_top_level(arena),
         }
     }
 }

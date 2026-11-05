@@ -2,36 +2,62 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Field, InitHashMaps, PlIndexMap, PlIndexSet, SortMultipleOptions};
+use polars_core::prelude::{
+    Field, IDX_DTYPE, InitHashMaps, PlIndexMap, PlIndexSet, SortMultipleOptions,
+};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
+use polars_defs::join::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_error::{PolarsResult, polars_err};
+use polars_expr::reduce::{supports_unique_reduction, unordered_unique_input};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
-use polars_ops::frame::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::{AExpr, IR, IRAggExpr, IRFunctionExpr, NaiveExprMerger, write_group_by};
-use polars_plan::prelude::{GroupbyOptions, *};
+use polars_plan::plans::{
+    AExpr, CanonicalExprId, CanonicalExprMap, IR, IRAggExpr, IRFunctionExpr, write_group_by,
+};
+use polars_plan::prelude::*;
+use polars_plan::utils::rename_columns;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::{IdxSize, unique_column_name};
+use polars_utils::{IdxSize, format_pl_smallstr};
 use recursive::recursive;
-use slotmap::SlotMap;
+use slotmap::DenseSlotMap;
 
 use super::{ExprCache, PhysNode, PhysNodeKey, PhysNodeKind, PhysStream, StreamingLowerIRContext};
 use crate::physical_plan::lower_expr::{
-    build_hstack_stream, build_select_stream, compute_output_schema, is_elementwise_rec_cached,
-    is_fake_elementwise_function, is_input_independent,
+    build_hstack_stream, build_select_stream, build_sort_stream, compute_output_schema,
+    is_elementwise_rec_cached, is_input_independent,
 };
 use crate::physical_plan::lower_ir::{
     build_filter_stream, build_row_idx_stream, build_slice_stream,
 };
+use crate::physical_plan::split_select::split_pre_post_select_minsize_elementwise;
+use crate::unique_column_name;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
 #[derive(Copy, Clone, Debug)]
 pub enum GroupByLowerKind {
     Groups,
     Over,
+}
+
+/// The schema a `PhysNodeKind::GroupBy` input has after evaluating its fused agg inputs,
+/// in order, each of which may refer to those before it.
+pub fn augmented_group_by_input_schema(
+    input_schema: &Arc<Schema>,
+    fused: &[ExprIR],
+    expr_arena: &Arena<AExpr>,
+) -> PolarsResult<Arc<Schema>> {
+    if fused.is_empty() {
+        return Ok(input_schema.clone());
+    }
+    let mut schema = Schema::clone(input_schema);
+    for e in fused {
+        let fused_schema = compute_output_schema(&schema, std::slice::from_ref(e), expr_arena)?;
+        schema.merge(Arc::unwrap_or_clone(fused_schema));
+    }
+    Ok(Arc::new(schema))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -41,10 +67,10 @@ fn build_group_by_fallback(
     aggs: &[ExprIR],
     output_schema: Arc<Schema>,
     maintain_order: bool,
-    options: Arc<GroupbyOptions>,
+    options: Arc<GroupbyOptionsIR>,
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     format_str: Option<String>,
 ) -> PolarsResult<PhysStream> {
     let input_schema = input.output_schema(phys_sm).clone();
@@ -87,28 +113,32 @@ fn build_group_by_fallback(
 // represent the aggregate result in the post-select.
 //
 // For each input to this aggregate uniq_input_names is updated to map the
-// unique id of the input expressions to an input columns the aggregate
+// unique id of the input expressions to an input column the aggregate
 // expression expects.
 //
 // uniq_agg_exprs is updated with the unique id of the aggregate mapping to
 // the aggregate expression and vector of unique input ids for that aggregate.
+//
+// If unique_of is Some(x), expr is implode(unique(x)) and x becomes the input.
 #[allow(clippy::too_many_arguments)]
 fn replace_agg_uniq(
     expr: Node,
-    expr_merger: &mut NaiveExprMerger,
+    unique_of: Option<Node>,
+    canonical_exprs: &mut CanonicalExprMap,
     expr_cache: &mut ExprCache,
     expr_arena: &mut Arena<AExpr>,
     agg_exprs: &mut Vec<ExprIR>,
-    uniq_input_names: &mut PlIndexMap<u32, PlSmallStr>,
-    uniq_agg_exprs: &mut PlIndexMap<u32, (ExprIR, Vec<u32>)>,
-    uniq_elementwise_exprs: &mut PlIndexMap<u32, ExprIR>,
+    uniq_input_names: &mut PlIndexMap<CanonicalExprId, PlSmallStr>,
+    uniq_agg_exprs: &mut PlIndexMap<CanonicalExprId, (ExprIR, Vec<CanonicalExprId>)>,
+    uniq_elementwise_exprs: &mut PlIndexMap<CanonicalExprId, ExprIR>,
+    substream_input_ids: &mut PlIndexSet<CanonicalExprId>,
 ) -> Node {
     let aexpr = expr_arena.get(expr).clone();
     let mut inputs = Vec::new();
     aexpr.inputs_rev(&mut inputs);
     inputs.reverse();
 
-    let agg_id = expr_merger.get_uniq_id(expr).unwrap();
+    let agg_id = canonical_exprs.resolve(expr, expr_arena);
     let name = uniq_agg_exprs
         .entry(agg_id)
         .or_insert_with(|| {
@@ -116,20 +146,42 @@ fn replace_agg_uniq(
             let input_cols = inputs
                 .iter()
                 .map(|input| {
+                    if let Some(x) = unique_of {
+                        let (Some(x_id), x_col) = replace_elementwise_components(
+                            x,
+                            canonical_exprs,
+                            expr_cache,
+                            expr_arena,
+                            uniq_input_names,
+                            uniq_elementwise_exprs,
+                            substream_input_ids,
+                        ) else {
+                            unreachable!()
+                        };
+                        input_ids.push(x_id);
+                        return AExprBuilder::function(
+                            vec![ExprIR::from_node(x_col, expr_arena)],
+                            IRFunctionExpr::Unique(false),
+                            expr_arena,
+                        )
+                        .node();
+                    }
+
                     let (input_id, node) = replace_elementwise_components(
                         *input,
-                        expr_merger,
+                        canonical_exprs,
                         expr_cache,
                         expr_arena,
                         uniq_input_names,
                         uniq_elementwise_exprs,
+                        substream_input_ids,
                     );
                     if let Some(id) = input_id {
                         // Already elementwise.
                         input_ids.push(id);
                         node
                     } else {
-                        let input_id = expr_merger.add_and_get_uniq_id(node, expr_arena);
+                        let input_id = canonical_exprs.resolve(node, expr_arena);
                         input_ids.push(input_id);
                         let input_col = uniq_input_names
                             .entry(input_id)
@@ -153,20 +205,21 @@ fn replace_agg_uniq(
 }
 
 /// Replaces all elementwise subexpressions with column references, storing the elementwise
-/// expressions uniquely in expr_merger/uniq_elementwise_exprs keys.
+/// expressions uniquely in canonical_exprs/uniq_elementwise_exprs keys.
 #[recursive]
 fn replace_elementwise_components(
     expr: Node,
-    expr_merger: &mut NaiveExprMerger,
+    canonical_exprs: &mut CanonicalExprMap,
     expr_cache: &mut ExprCache,
     expr_arena: &mut Arena<AExpr>,
-    uniq_input_names: &mut PlIndexMap<u32, PlSmallStr>,
-    uniq_elementwise_exprs: &mut PlIndexMap<u32, ExprIR>,
-) -> (Option<u32>, Node) {
+    uniq_input_names: &mut PlIndexMap<CanonicalExprId, PlSmallStr>,
+    uniq_elementwise_exprs: &mut PlIndexMap<CanonicalExprId, ExprIR>,
+    substream_input_ids: &mut PlIndexSet<CanonicalExprId>,
+) -> (Option<CanonicalExprId>, Node) {
     if is_elementwise_rec_cached(expr, expr_arena, expr_cache)
         || (is_input_independent(expr, expr_arena, expr_cache) && is_scalar_ae(expr, expr_arena))
     {
-        let id = expr_merger.add_and_get_uniq_id(expr, expr_arena);
+        let id = canonical_exprs.resolve(expr, expr_arena);
         let name = uniq_input_names
             .entry(id)
             .or_insert_with(unique_column_name)
@@ -183,15 +236,17 @@ fn replace_elementwise_components(
         inputs.reverse();
 
         for input in &mut inputs {
-            *input = replace_elementwise_components(
+            let (input_id, node) = replace_elementwise_components(
                 *input,
-                expr_merger,
+                canonical_exprs,
                 expr_cache,
                 expr_arena,
                 uniq_input_names,
                 uniq_elementwise_exprs,
-            )
-            .1;
+                substream_input_ids,
+            );
+            substream_input_ids.extend(input_id);
+            *input = node;
         }
         let rec_node = expr_arena.add(aexpr.replace_inputs(&inputs));
         (None, rec_node)
@@ -207,13 +262,16 @@ fn replace_elementwise_components(
 fn try_lower_elementwise_scalar_agg_expr(
     expr: Node,
     gbl_kind: GroupByLowerKind,
-    expr_merger: &mut NaiveExprMerger,
+    input_schema: &Schema,
+    canonical_exprs: &mut CanonicalExprMap,
     expr_cache: &mut ExprCache,
     expr_arena: &mut Arena<AExpr>,
     agg_exprs: &mut Vec<ExprIR>,
-    uniq_input_names: &mut PlIndexMap<u32, PlSmallStr>,
-    uniq_agg_exprs: &mut PlIndexMap<u32, (ExprIR, Vec<u32>)>,
-    uniq_elementwise_exprs: &mut PlIndexMap<u32, ExprIR>,
+    uniq_input_names: &mut PlIndexMap<CanonicalExprId, PlSmallStr>,
+    uniq_agg_exprs: &mut PlIndexMap<CanonicalExprId, (ExprIR, Vec<CanonicalExprId>)>,
+    uniq_elementwise_exprs: &mut PlIndexMap<CanonicalExprId, ExprIR>,
+    substream_input_ids: &mut PlIndexSet<CanonicalExprId>,
+    unique_input_ids: &PlIndexSet<CanonicalExprId>,
 ) -> Option<Node> {
     // Helper macros to simplify (recursive) calls.
     macro_rules! lower_rec {
@@ -221,28 +279,36 @@ fn try_lower_elementwise_scalar_agg_expr(
             try_lower_elementwise_scalar_agg_expr(
                 $input,
                 gbl_kind,
-                expr_merger,
+                input_schema,
+                canonical_exprs,
                 expr_cache,
                 expr_arena,
                 agg_exprs,
                 uniq_input_names,
                 uniq_agg_exprs,
                 uniq_elementwise_exprs,
+                substream_input_ids,
+                unique_input_ids,
             )
         };
     }
 
     macro_rules! replace_agg_uniq {
         ($input:expr) => {
+            replace_agg_uniq!($input, unique_of = None)
+        };
+        ($input:expr, unique_of = $x:expr) => {
             replace_agg_uniq(
                 $input,
-                expr_merger,
+                $x,
+                canonical_exprs,
                 expr_cache,
                 expr_arena,
                 agg_exprs,
                 uniq_input_names,
                 uniq_agg_exprs,
                 uniq_elementwise_exprs,
+                substream_input_ids,
             )
         };
     }
@@ -259,6 +325,15 @@ fn try_lower_elementwise_scalar_agg_expr(
         }
     }
 
+    // Whether `x` can be the input of a unique reduction.
+    let mut unique_reducible = |x: Node, expr_arena: &Arena<AExpr>| {
+        is_elementwise_rec_cached(x, expr_arena, expr_cache)
+            && expr_arena
+                .get(x)
+                .to_dtype(&ToFieldContext::new(expr_arena, input_schema))
+                .is_ok_and(|dtype| supports_unique_reduction(&dtype))
+    };
+
     match expr_arena.get(expr) {
         // Should be handled separately in `Eval`.
         AExpr::Element => unreachable!(),
@@ -271,7 +346,7 @@ fn try_lower_elementwise_scalar_agg_expr(
         AExpr::Column(_) => {
             match gbl_kind {
                 GroupByLowerKind::Over => {
-                    let id = expr_merger.add_and_get_uniq_id(expr, expr_arena);
+                    let id = canonical_exprs.resolve(expr, expr_arena);
                     let name = uniq_input_names
                         .entry(id)
                         .or_insert_with(unique_column_name)
@@ -330,10 +405,14 @@ fn try_lower_elementwise_scalar_agg_expr(
             }))
         },
 
-        AExpr::StructEval { expr, evaluation } => {
+        AExpr::StructEval {
+            expr,
+            evaluation,
+            variant,
+        } => {
             // @TODO: Reflect the lowering result of `expr` into the respective
             // StructField lowering calls.
-            let (expr, evaluation) = (*expr, evaluation.clone());
+            let (expr, evaluation, variant) = (*expr, evaluation.clone(), *variant);
             let expr = lower_rec!(expr)?;
 
             let new_evaluation = evaluation
@@ -350,6 +429,7 @@ fn try_lower_elementwise_scalar_agg_expr(
             Some(expr_arena.add(AExpr::StructEval {
                 expr,
                 evaluation: new_evaluation,
+                variant,
             }))
         },
 
@@ -384,6 +464,12 @@ fn try_lower_elementwise_scalar_agg_expr(
             ..
         } => Some(replace_agg_uniq!(expr)),
 
+        #[cfg(feature = "approx_quantile")]
+        AExpr::Function {
+            function: IRFunctionExpr::ApproxQuantileSketch { .. },
+            ..
+        } => Some(replace_agg_uniq!(expr)),
+
         AExpr::Function {
             function:
                 IRFunctionExpr::Boolean(
@@ -392,11 +478,39 @@ fn try_lower_elementwise_scalar_agg_expr(
                     | IRBooleanFunction::IsEmpty { .. }
                     | IRBooleanFunction::HasNulls,
                 )
-                | IRFunctionExpr::MinBy
-                | IRFunctionExpr::MaxBy
                 | IRFunctionExpr::NullCount,
             ..
         } => Some(replace_agg_uniq!(expr)),
+
+        AExpr::Function {
+            input,
+            function: function @ (IRFunctionExpr::MinBy { .. } | IRFunctionExpr::MaxBy { .. }),
+            options,
+        } => {
+            let (input, function, options) = (input.clone(), function.clone(), *options);
+            let by_dtype = input[1].dtype(input_schema, expr_arena).ok()?.clone();
+            if !by_dtype.is_nested() {
+                return Some(replace_agg_uniq!(expr));
+            }
+
+            let by = AExprBuilder::row_encode(
+                vec![input[1].clone()],
+                vec![by_dtype],
+                RowEncodingVariant::Ordered {
+                    descending: None,
+                    nulls_last: None,
+                },
+                true,
+                expr_arena,
+            )
+            .expr_ir_unnamed();
+            let encoded = expr_arena.add(AExpr::Function {
+                input: vec![input[0].clone(), by],
+                function,
+                options,
+            });
+            Some(replace_agg_uniq!(encoded))
+        },
 
         #[cfg(feature = "cov")]
         AExpr::Function {
@@ -419,7 +533,7 @@ fn try_lower_elementwise_scalar_agg_expr(
 
         node @ AExpr::Function { input, options, .. }
         | node @ AExpr::AnonymousFunction { input, options, .. }
-            if options.is_elementwise() && !is_fake_elementwise_function(node) =>
+            if options.is_elementwise() && !is_fake_elementwise_function(node, expr_arena) =>
         {
             let node = node.clone();
             let input = input.clone();
@@ -476,7 +590,6 @@ fn try_lower_elementwise_scalar_agg_expr(
                 entropy = log_sum_x.plus(entropy.true_divide(sum_x, expr_arena), expr_arena)
             }
             let lowered = entropy.node();
-            expr_merger.add_expr(lowered, expr_arena);
             lower_rec!(lowered)
         },
 
@@ -498,6 +611,14 @@ fn try_lower_elementwise_scalar_agg_expr(
 
         AExpr::Agg(agg) => {
             match agg {
+                IRAggExpr::Implode {
+                    input,
+                    maintain_order: false,
+                } if let Some(x) = unordered_unique_input(*input, expr_arena)
+                    && unique_reducible(x, expr_arena) =>
+                {
+                    Some(replace_agg_uniq!(expr, unique_of = Some(x)))
+                },
                 IRAggExpr::Min { .. }
                 | IRAggExpr::Max { .. }
                 | IRAggExpr::First(_)
@@ -506,7 +627,7 @@ fn try_lower_elementwise_scalar_agg_expr(
                 | IRAggExpr::LastNonNull(_)
                 | IRAggExpr::Item { .. }
                 | IRAggExpr::Mean(_)
-                | IRAggExpr::Sum(_)
+                | IRAggExpr::Sum { .. }
                 | IRAggExpr::Var(..)
                 | IRAggExpr::Std(..)
                 | IRAggExpr::Count { .. }
@@ -515,8 +636,63 @@ fn try_lower_elementwise_scalar_agg_expr(
                     ..
                 } => Some(replace_agg_uniq!(expr)),
                 IRAggExpr::NUnique(uniq_input) => {
+                    // `drop_nulls().n_unique()` is the count of the non-null unique values.
+                    let (uniq_input, include_nulls) = match expr_arena.get(*uniq_input) {
+                        AExpr::Function {
+                            input,
+                            function: IRFunctionExpr::DropNulls,
+                            ..
+                        } => (input[0].node(), false),
+                        _ => (*uniq_input, true),
+                    };
+                    if unique_reducible(uniq_input, expr_arena) {
+                        let uniq_input_id = canonical_exprs.resolve(uniq_input, expr_arena);
+                        let n_unique = if unique_input_ids.contains(&uniq_input_id) {
+                            // Count the unique list that is already computed.
+                            let unique = AExprBuilder::function(
+                                vec![ExprIR::from_node(uniq_input, expr_arena)],
+                                IRFunctionExpr::Unique(false),
+                                expr_arena,
+                            );
+                            let implode = AExprBuilder::agg(
+                                IRAggExpr::Implode {
+                                    input: unique.node(),
+                                    maintain_order: false,
+                                },
+                                expr_arena,
+                            );
+                            let list =
+                                replace_agg_uniq!(implode.node(), unique_of = Some(uniq_input));
+                            AExprBuilder::function(
+                                vec![ExprIR::from_node(list, expr_arena)],
+                                IRFunctionExpr::ListExpr(IRListFunction::Length),
+                                expr_arena,
+                            )
+                            .node()
+                        } else {
+                            let n_unique =
+                                AExprBuilder::agg(IRAggExpr::NUnique(uniq_input), expr_arena);
+                            replace_agg_uniq!(n_unique.node())
+                        };
+                        if include_nulls {
+                            return Some(n_unique);
+                        }
+                        let has_nulls = AExprBuilder::function(
+                            vec![ExprIR::from_node(uniq_input, expr_arena)],
+                            IRFunctionExpr::Boolean(IRBooleanFunction::HasNulls),
+                            expr_arena,
+                        );
+                        let has_nulls = replace_agg_uniq!(has_nulls.node());
+                        let has_nulls =
+                            AExprBuilder::new_from_node(has_nulls).cast(IDX_DTYPE, expr_arena);
+                        return Some(
+                            AExprBuilder::new_from_node(n_unique)
+                                .minus(has_nulls, expr_arena)
+                                .node(),
+                        );
+                    }
                     let function = IRFunctionExpr::Unique(false);
-                    let uniq_input_expr = ExprIR::from_node(*uniq_input, expr_arena);
+                    let uniq_input_expr = ExprIR::from_node(uniq_input, expr_arena);
                     let uniq_node = expr_arena.add(AExpr::Function {
                         input: vec![uniq_input_expr],
                         options: function.function_options(),
@@ -525,22 +701,20 @@ fn try_lower_elementwise_scalar_agg_expr(
 
                     let count = IRAggExpr::Count {
                         input: uniq_node,
-                        include_nulls: true,
+                        include_nulls,
                     };
                     let count_node = expr_arena.add(AExpr::Agg(count));
-                    expr_merger.add_expr(count_node, expr_arena);
                     Some(replace_agg_uniq!(count_node))
                 },
                 IRAggExpr::Median(..)
                 | IRAggExpr::Implode {
                     maintain_order: true,
                     ..
-                }
-                | IRAggExpr::AggGroups(..) => None, // TODO: allow all aggregates,
+                } => None, // TODO: allow all aggregates,
             }
         },
         AExpr::Len => {
-            let agg_id = expr_merger.get_uniq_id(expr).unwrap();
+            let agg_id = canonical_exprs.resolve(expr, expr_arena);
             let name = uniq_agg_exprs
                 .entry(agg_id)
                 .or_insert_with(|| {
@@ -562,7 +736,7 @@ fn try_lower_agg_input_expr(
     keys: &[ExprIR],
     expr: Node,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<Option<(PhysStream, Node, /* all_keys_included */ bool)>> {
@@ -598,7 +772,7 @@ fn try_lower_agg_input_expr(
             gb_keys.push(ExprIR::new(node, OutputName::Alias(output_name.clone())));
 
             let aggs = &[];
-            let options = Arc::new(GroupbyOptions::default());
+            let options = Arc::new(GroupbyOptionsIR::default());
             let Some(stream) = try_build_streaming_group_by(
                 stream,
                 &gb_keys,
@@ -715,17 +889,111 @@ fn try_lower_agg_input_expr(
     }
 }
 
+/// Merges the `min_by`/`max_by` aggregations that share the function and the `by` input into one
+/// over a struct of their inputs, so that the group-by keeps one `by` value per group for all of
+/// them. Returns `None` if nothing is merged.
+fn merge_min_max_by(
+    aggs: &[ExprIR],
+    input_schema: &Schema,
+    canonical_exprs: &mut CanonicalExprMap,
+    expr_cache: &mut ExprCache,
+    expr_arena: &mut Arena<AExpr>,
+) -> Option<Vec<ExprIR>> {
+    let mut merged: PlIndexMap<_, Vec<usize>> = PlIndexMap::new();
+    for (i, agg) in aggs.iter().enumerate() {
+        let AExpr::Function {
+            input, function, ..
+        } = expr_arena.get(agg.node())
+        else {
+            continue;
+        };
+        let (is_max, order) = match function {
+            IRFunctionExpr::MinBy { order } => (false, *order),
+            IRFunctionExpr::MaxBy { order } => (true, *order),
+            _ => continue,
+        };
+        let [x, by] = input.as_slice() else {
+            continue;
+        };
+        let (x, by) = (x.node(), by.node());
+        if !is_elementwise_rec_cached(x, expr_arena, expr_cache)
+            || !is_elementwise_rec_cached(by, expr_arena, expr_cache)
+        {
+            continue;
+        }
+        let Ok(dtype) = expr_arena
+            .get(x)
+            .to_dtype(&ToFieldContext::new(expr_arena, input_schema))
+        else {
+            continue;
+        };
+        if dtype.contains_objects() {
+            continue;
+        }
+        let by_id = canonical_exprs.resolve(by, expr_arena);
+        merged.entry((is_max, order, by_id)).or_default().push(i);
+    }
+    merged.retain(|_, idxs| idxs.len() > 1);
+    if merged.is_empty() {
+        return None;
+    }
+
+    let mut out = aggs.to_vec();
+    for idxs in merged.values() {
+        let AExpr::Function {
+            input,
+            function,
+            options,
+        } = expr_arena.get(aggs[idxs[0]].node()).clone()
+        else {
+            unreachable!()
+        };
+        let fields = idxs
+            .iter()
+            .enumerate()
+            .map(|(j, i)| {
+                let AExpr::Function { input, .. } = expr_arena.get(aggs[*i].node()) else {
+                    unreachable!()
+                };
+                ExprIR::new(
+                    input[0].node(),
+                    OutputName::Alias(format_pl_smallstr!("{j}")),
+                )
+            })
+            .collect();
+        let payload =
+            AExprBuilder::function(fields, IRFunctionExpr::AsStruct, expr_arena).expr_ir_unnamed();
+        let merged_node = expr_arena.add(AExpr::Function {
+            input: vec![payload, input[1].clone()],
+            function,
+            options,
+        });
+        for (j, i) in idxs.iter().enumerate() {
+            let field = AExprBuilder::function(
+                vec![ExprIR::from_node(merged_node, expr_arena)],
+                IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(format_pl_smallstr!(
+                    "{j}"
+                ))),
+                expr_arena,
+            )
+            .node();
+            out[*i] = ExprIR::new(field, OutputName::Alias(aggs[*i].output_name().clone()));
+        }
+    }
+    Some(out)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn try_build_streaming_group_by(
     mut input: PhysStream,
     keys: &[ExprIR],
     aggs: &[ExprIR],
     maintain_order: bool,
-    options: Arc<GroupbyOptions>,
+    options: Arc<GroupbyOptionsIR>,
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
     gbl_kind: GroupByLowerKind,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<Option<PhysStream>> {
@@ -767,14 +1035,16 @@ pub fn try_build_streaming_group_by(
         aggs
     };
 
-    // Fill all expressions into the merger, letting us extract common subexpressions later.
-    let mut expr_merger = NaiveExprMerger::default();
-    for key in keys {
-        expr_merger.add_expr(key.node(), expr_arena);
-    }
-    for agg in aggs {
-        expr_merger.add_expr(agg.node(), expr_arena);
-    }
+    let mut canonical_exprs = CanonicalExprMap::new();
+    let input_schema = input.output_schema(phys_sm).clone();
+    let merged_aggs = merge_min_max_by(
+        aggs,
+        &input_schema,
+        &mut canonical_exprs,
+        expr_cache,
+        expr_arena,
+    );
+    let aggs = merged_aggs.as_deref().unwrap_or(aggs);
 
     // Extract aggregates, input expressions for those aggregates and replace
     // with agg node output columns.
@@ -784,7 +1054,7 @@ pub fn try_build_streaming_group_by(
     let mut trans_keys = Vec::new();
     let mut trans_output_exprs = Vec::new();
     for key in keys {
-        let key_id = expr_merger.get_uniq_id(key.node()).unwrap();
+        let key_id = canonical_exprs.resolve(key.node(), expr_arena);
         key_ids.insert(key_id);
         let key_name = uniq_input_names
             .entry(key_id)
@@ -807,17 +1077,39 @@ pub fn try_build_streaming_group_by(
     // Maps elementwise input expression ids to column expression.
     let mut uniq_elementwise_exprs = PlIndexMap::new();
 
+    // Elementwise inputs hoisted out of an aggregation input that is resolved by its own
+    // sub-stream derived from the pre-select, which reads them from there as columns.
+    let mut substream_input_ids = PlIndexSet::new();
+
+    // Inputs of unordered unique lists, whose length also gives their n_unique.
+    let mut unique_input_ids = PlIndexSet::new();
+    for agg in aggs {
+        for (_, ae) in expr_arena.iter(agg.node()) {
+            if let AExpr::Agg(IRAggExpr::Implode {
+                input,
+                maintain_order: false,
+            }) = ae
+                && let Some(x) = unordered_unique_input(*input, expr_arena)
+            {
+                unique_input_ids.insert(canonical_exprs.resolve(x, expr_arena));
+            }
+        }
+    }
+
     for agg in aggs {
         let Some(trans_node) = try_lower_elementwise_scalar_agg_expr(
             agg.node(),
             gbl_kind,
-            &mut expr_merger,
+            &input_schema,
+            &mut canonical_exprs,
             expr_cache,
             expr_arena,
             &mut trans_agg_exprs,
             &mut uniq_input_names,
             &mut uniq_agg_exprs,
             &mut uniq_elementwise_exprs,
+            &mut substream_input_ids,
+            &unique_input_ids,
         ) else {
             return Ok(None);
         };
@@ -825,15 +1117,46 @@ pub fn try_build_streaming_group_by(
         trans_output_exprs.push(ExprIR::new(trans_node, output_name));
     }
 
-    // We must lower the keys together with the elementwise inputs to the aggregations.
-    let mut pre_select_input_ids = key_ids.clone();
-    pre_select_input_ids.extend(uniq_elementwise_exprs.keys());
+    // Agg inputs the pre-select has to materialize, on top of the keys.
+    let mut must_preselect_ids = key_ids.clone();
+    match gbl_kind {
+        // Over can't fuse agg inputs.
+        GroupByLowerKind::Over => must_preselect_ids.extend(uniq_elementwise_exprs.keys()),
+        GroupByLowerKind::Groups => must_preselect_ids.extend(&substream_input_ids),
+    }
 
-    let mut pre_select_exprs = Vec::new();
-    for uniq_id in pre_select_input_ids {
-        let name = &uniq_input_names[&uniq_id];
-        let node = expr_merger.get_node(uniq_id).unwrap();
-        pre_select_exprs.push(ExprIR::new(node, OutputName::Alias(name.clone())));
+    let expr_ir = |id: &CanonicalExprId| {
+        let node = canonical_exprs.representative(*id);
+        ExprIR::new(node, OutputName::Alias(uniq_input_names[id].clone()))
+    };
+    let must_preselect = must_preselect_ids.iter().map(expr_ir).collect::<Vec<_>>();
+    let splittable_agg_inputs = uniq_elementwise_exprs
+        .keys()
+        .filter(|id| !must_preselect_ids.contains(*id))
+        .map(expr_ir)
+        .collect::<Vec<_>>();
+
+    // Keep the pre-select narrow: whatever is cheaper to recompute inside the group-by
+    // node than to store in its (spilled) payload comes back as a post-select expression,
+    // which the node evaluates over the rows that need it.
+    let (mut pre_select_exprs, post_select_agg_inputs) = split_pre_post_select_minsize_elementwise(
+        &splittable_agg_inputs,
+        &must_preselect,
+        &input_schema,
+        expr_arena,
+    )?;
+
+    // A post-select expression that is a bare column reference means the split chose to
+    // materialize this input in the pre-select, under either the source column's own name
+    // or a generated one. Point the aggregation at that column instead of fusing a rename.
+    let mut fused_agg_inputs = Vec::new();
+    let mut agg_input_renames = PlIndexMap::new();
+    for expr in post_select_agg_inputs {
+        if let AExpr::Column(stored) = expr_arena.get(expr.node()) {
+            agg_input_renames.insert(expr.output_name().clone(), stored.clone());
+        } else {
+            fused_agg_inputs.push(expr);
+        }
     }
 
     // If all inputs are input independent add a dummy column so the group sizes are correct. See #23868.
@@ -843,7 +1166,7 @@ pub fn try_build_streaming_group_by(
         .all(|e| is_input_independent(e.node(), expr_arena, expr_cache))
     {
         direct_input_needed = true;
-        let dummy_col_name = input.output_schema(phys_sm).get_at_index(0).unwrap().0;
+        let dummy_col_name = input_schema.get_at_index(0).unwrap().0;
         let dummy_col = expr_arena.add(AExpr::Column(dummy_col_name.clone()));
         pre_select_exprs.push(ExprIR::new(
             dummy_col,
@@ -870,7 +1193,13 @@ pub fn try_build_streaming_group_by(
             .iter()
             .all(|i| uniq_elementwise_exprs.contains_key(i))
         {
-            aggs_with_elementwise_inputs.push(agg_expr.clone());
+            let agg_expr = if agg_input_renames.is_empty() {
+                agg_expr.clone()
+            } else {
+                let node = rename_columns(agg_expr.node(), expr_arena, &agg_input_renames);
+                ExprIR::new(node, agg_expr.output_name_inner().clone())
+            };
+            aggs_with_elementwise_inputs.push(agg_expr);
             direct_input_needed = true;
             continue;
         }
@@ -881,7 +1210,7 @@ pub fn try_build_streaming_group_by(
         }
 
         let input_id = input_ids[0];
-        let input_node = expr_merger.get_node(input_id).unwrap();
+        let input_node = canonical_exprs.representative(input_id);
         let input_name = uniq_input_names[&input_id].clone();
         if !other_agg_input_streams.contains_key(&input_id) {
             let Some((stream, trans_node, keys_included)) = try_lower_agg_input_expr(
@@ -917,19 +1246,25 @@ pub fn try_build_streaming_group_by(
     let mut group_by_output_schema = Schema::default();
     let mut inputs = Vec::new();
     let mut key_per_input = Vec::new();
+    let mut fused_agg_inputs_per_input = Vec::new();
     let mut aggs_per_input = Vec::new();
     if direct_input_needed || !all_keys_included_in_other_inputs {
-        let this_input_schema = pre_select.output_schema(phys_sm);
+        let this_input_schema = augmented_group_by_input_schema(
+            pre_select.output_schema(phys_sm),
+            &fused_agg_inputs,
+            expr_arena,
+        )?;
         let exprs = [
             trans_keys.as_slice(),
             aggs_with_elementwise_inputs.as_slice(),
         ]
         .concat();
         let elementwise_out_schema =
-            compute_output_schema(this_input_schema, &exprs, expr_arena).unwrap();
+            compute_output_schema(&this_input_schema, &exprs, expr_arena).unwrap();
         group_by_output_schema.merge((*elementwise_out_schema).clone());
         inputs.push(pre_select);
         key_per_input.push(trans_keys.clone());
+        fused_agg_inputs_per_input.push(fused_agg_inputs);
         aggs_per_input.push(aggs_with_elementwise_inputs);
     }
     for (_input_id, (stream, aggs)) in other_agg_input_streams {
@@ -939,32 +1274,35 @@ pub fn try_build_streaming_group_by(
         group_by_output_schema.merge((*this_out_schema).clone());
         inputs.push(stream);
         key_per_input.push(trans_keys.clone());
+        fused_agg_inputs_per_input.push(Vec::new());
         aggs_per_input.push(aggs);
     }
     let group_by_output_schema = Arc::new(group_by_output_schema);
 
     let agg_node = phys_sm.insert(PhysNode::new(
-        group_by_output_schema.clone(),
+        group_by_output_schema,
         PhysNodeKind::GroupBy {
             inputs,
             key_per_input,
+            fused_agg_inputs_per_input,
             aggs_per_input,
         },
     ));
 
     // Sort the input based on the first row index if maintaining order.
     let mut post_select_input = if maintain_order {
-        let sort_node = phys_sm.insert(PhysNode::new(
-            group_by_output_schema,
-            PhysNodeKind::Sort {
-                input: PhysStream::first(agg_node),
-                by_column: vec![trans_output_exprs.last().unwrap().clone()],
-                slice: None,
-                sort_options: SortMultipleOptions::new(),
-            },
-        ));
+        let sort_stream = build_sort_stream(
+            PhysStream::first(agg_node),
+            vec![trans_output_exprs.last().unwrap().clone()],
+            None,
+            SortMultipleOptions::new(),
+            expr_arena,
+            phys_sm,
+            expr_cache,
+            ctx,
+        )?;
         trans_output_exprs.pop(); // Remove row idx from post-select.
-        PhysStream::first(sort_node)
+        sort_stream
     } else {
         PhysStream::first(agg_node)
     };
@@ -999,6 +1337,8 @@ pub fn try_build_streaming_group_by(
                 left_on: trans_keys.clone(),
                 right_on: trans_keys,
                 args,
+                fused_predicate: None,
+                runtime_filters: Vec::new(),
             },
         ));
         post_select_input = PhysStream::first(join_key);
@@ -1028,10 +1368,10 @@ pub fn try_build_sorted_group_by(
     aggs: &[ExprIR],
     output_schema: Arc<Schema>,
     maintain_order: bool,
-    options: Arc<GroupbyOptions>,
+    options: Arc<GroupbyOptionsIR>,
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
     are_keys_sorted: bool,
@@ -1061,16 +1401,14 @@ pub fn try_build_sorted_group_by(
             .iter()
             .map(|k| k.field(input_schema, expr_arena))
             .collect::<PolarsResult<Vec<_>>>()?;
-        let expr = AExprBuilder::function(
+        let expr = AExprBuilder::row_encode(
             keys.to_vec(),
-            IRFunctionExpr::RowEncode(
-                key_fields.iter().map(|k| k.dtype().clone()).collect(),
-                RowEncodingVariant::Ordered {
-                    descending: None,
-                    nulls_last: None,
-                    broadcast_nulls: None,
-                },
-            ),
+            key_fields.iter().map(|k| k.dtype().clone()).collect(),
+            RowEncodingVariant::Ordered {
+                descending: None,
+                nulls_last: None,
+            },
+            false,
             expr_arena,
         )
         .expr_ir(input_column.clone());
@@ -1096,21 +1434,16 @@ pub fn try_build_sorted_group_by(
 
     let schema = input.output_schema(phys_sm).clone();
     if !are_keys_sorted {
-        let row_idx_name = unique_column_name();
-        input = build_row_idx_stream(input, row_idx_name.clone(), None, phys_sm);
-
-        let row_idx_expr =
-            AExprBuilder::col(row_idx_name.clone(), expr_arena).expr_ir(row_idx_name.clone());
-
-        input = PhysStream::first(phys_sm.insert(PhysNode::new(
-            input.output_schema(phys_sm).clone(),
-            PhysNodeKind::Sort {
-                input,
-                by_column: vec![key, row_idx_expr],
-                slice: None,
-                sort_options: SortMultipleOptions::default(),
-            },
-        )));
+        input = build_sort_stream(
+            input,
+            vec![key],
+            None,
+            SortMultipleOptions::default().with_maintain_order(true),
+            expr_arena,
+            phys_sm,
+            expr_cache,
+            ctx,
+        )?;
     }
 
     let mut gb_output_schema = Schema::with_capacity(aggs.len() + 1);
@@ -1120,10 +1453,11 @@ pub fn try_build_sorted_group_by(
     );
     for agg in aggs {
         let field = agg.field(schema.as_ref(), expr_arena)?;
+        let dtype = field.dtype.materialize_unknown(true)?;
         let dtype = if agg.is_scalar(expr_arena) {
-            field.dtype
+            dtype
         } else {
-            field.dtype.implode()
+            dtype.implode()
         };
         gb_output_schema.insert(field.name, dtype);
     }
@@ -1151,14 +1485,15 @@ pub fn try_build_sorted_group_by(
                 AExprBuilder::col(input_column.clone(), expr_arena).expr_ir(input_column.clone());
             let expr = AExprBuilder::function(
                 vec![expr],
-                IRFunctionExpr::RowDecode(
-                    key_fields,
-                    RowEncodingVariant::Ordered {
+                IRFunctionExpr::RowDecode {
+                    fields: key_fields,
+                    variant: RowEncodingVariant::Ordered {
                         descending: None,
                         nulls_last: None,
-                        broadcast_nulls: None,
                     },
-                ),
+                    output: RowEncodingOutputType::AlwaysBinaryOffset,
+                    encode_nulls: None,
+                },
                 expr_arena,
             )
             .expr_ir(input_column.clone());
@@ -1207,121 +1542,137 @@ pub fn build_group_by_stream(
     aggs: &[ExprIR],
     output_schema: Arc<Schema>,
     maintain_order: bool,
-    options: Arc<GroupbyOptions>,
+    options: Arc<GroupbyOptionsIR>,
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
     expr_arena: &mut Arena<AExpr>,
-    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
     are_keys_sorted: bool,
 ) -> PolarsResult<PhysStream> {
-    #[cfg(feature = "dynamic_group_by")]
-    if let Some(rolling_options) = options.as_ref().rolling.as_ref()
-        && keys.is_empty()
-        && apply.is_none()
-    {
-        let mut input = PhysStream::first(
-            phys_sm.insert(PhysNode::new(
-                output_schema.clone(),
-                PhysNodeKind::RollingGroupBy {
-                    input,
-                    index_column: rolling_options.index_column.clone(),
-                    period: rolling_options.period,
-                    offset: rolling_options.offset,
-                    closed: rolling_options.closed_window,
-                    slice: options
-                        .slice
-                        .filter(|(o, _)| *o >= 0)
-                        .map(|(o, l)| (o as IdxSize, l as IdxSize)),
-                    aggs: aggs.to_vec(),
-                },
-            )),
-        );
-        if let Some((offset, length)) = options.slice.as_ref().filter(|(o, _)| *o < 0) {
-            input = build_slice_stream(input, *offset, *length, phys_sm);
+    'build_streaming_group_by: {
+        // Fallback to in-mem for objects. Otherwise we get an error in CI:
+        //   FAILED tests/unit/dataframe/test_df.py::test_hashing_on_python_objects
+        //   pyo3_runtime.PanicException: Unsupported in row encoding
+        if input
+            .output_schema(phys_sm)
+            .iter_values()
+            .any(|dtype| dtype.contains_objects())
+        {
+            break 'build_streaming_group_by;
         }
-        return Ok(input);
-    } else if let Some(dynamic_options) = options.as_ref().dynamic.as_ref()
-        && keys.is_empty()
-        && apply.is_none()
-    {
-        let mut input = PhysStream::first(
-            phys_sm.insert(PhysNode::new(
-                output_schema.clone(),
-                PhysNodeKind::DynamicGroupBy {
-                    input,
-                    options: dynamic_options.clone(),
-                    aggs: aggs.to_vec(),
-                    slice: options
-                        .slice
-                        .filter(|(o, _)| *o >= 0)
-                        .map(|(o, l)| (o as IdxSize, l as IdxSize)),
-                },
-            )),
-        );
-        if let Some((offset, length)) = options.slice.as_ref().filter(|(o, _)| *o < 0) {
-            input = build_slice_stream(input, *offset, *length, phys_sm);
-        }
-        return Ok(input);
-    }
 
-    if (are_keys_sorted || std::env::var("POLARS_FORCE_SORTED_GROUP_BY").is_ok_and(|v| v == "1"))
-        && let Some(stream) = try_build_sorted_group_by(
+        #[cfg(feature = "dynamic_group_by")]
+        if let Some(rolling_options) = options.as_ref().rolling.as_ref()
+            && keys.is_empty()
+            && apply.is_none()
+        {
+            let mut input = PhysStream::first(
+                phys_sm.insert(PhysNode::new(
+                    output_schema.clone(),
+                    PhysNodeKind::RollingGroupBy {
+                        input,
+                        index_column: rolling_options.index_column.clone(),
+                        period: rolling_options.period,
+                        offset: rolling_options.offset,
+                        closed: rolling_options.closed_window,
+                        placement: rolling_options.placement,
+                        slice: options
+                            .slice
+                            .filter(|(o, _)| *o >= 0)
+                            .map(|(o, l)| (o as IdxSize, l as IdxSize)),
+                        aggs: aggs.to_vec(),
+                    },
+                )),
+            );
+            if let Some((offset, length)) = options.slice.as_ref().filter(|(o, _)| *o < 0) {
+                input = build_slice_stream(input, *offset, *length, phys_sm);
+            }
+            return Ok(input);
+        } else if let Some(dynamic_options) = options.as_ref().dynamic.as_ref()
+            && keys.is_empty()
+            && apply.is_none()
+        {
+            let mut input = PhysStream::first(
+                phys_sm.insert(PhysNode::new(
+                    output_schema.clone(),
+                    PhysNodeKind::DynamicGroupBy {
+                        input,
+                        options: dynamic_options.clone(),
+                        aggs: aggs.to_vec(),
+                        slice: options
+                            .slice
+                            .filter(|(o, _)| *o >= 0)
+                            .map(|(o, l)| (o as IdxSize, l as IdxSize)),
+                    },
+                )),
+            );
+            if let Some((offset, length)) = options.slice.as_ref().filter(|(o, _)| *o < 0) {
+                input = build_slice_stream(input, *offset, *length, phys_sm);
+            }
+            return Ok(input);
+        }
+
+        return if (are_keys_sorted
+            || std::env::var("POLARS_FORCE_SORTED_GROUP_BY").is_ok_and(|v| v == "1"))
+            && let Some(stream) = try_build_sorted_group_by(
+                input,
+                keys,
+                aggs,
+                output_schema.clone(),
+                maintain_order,
+                options.clone(),
+                apply.clone(),
+                expr_arena,
+                phys_sm,
+                expr_cache,
+                ctx,
+                are_keys_sorted,
+            )? {
+            Ok(stream)
+        } else if let Some(stream) = try_build_streaming_group_by(
             input,
             keys,
             aggs,
-            output_schema.clone(),
             maintain_order,
             options.clone(),
             apply.clone(),
+            GroupByLowerKind::Groups,
             expr_arena,
             phys_sm,
             expr_cache,
             ctx,
-            are_keys_sorted,
-        )?
-    {
-        Ok(stream)
-    } else if let Some(stream) = try_build_streaming_group_by(
+        )? {
+            Ok(stream)
+        } else {
+            break 'build_streaming_group_by;
+        };
+    }
+
+    let format_str = ctx.prepare_visualization.then(|| {
+        let mut buffer = String::new();
+        write_group_by(
+            &mut buffer,
+            0,
+            expr_arena,
+            keys,
+            aggs,
+            apply.as_ref(),
+            maintain_order,
+        )
+        .unwrap();
+        buffer
+    });
+    build_group_by_fallback(
         input,
         keys,
         aggs,
+        output_schema,
         maintain_order,
-        options.clone(),
-        apply.clone(),
-        GroupByLowerKind::Groups,
+        options,
+        apply,
         expr_arena,
         phys_sm,
-        expr_cache,
-        ctx,
-    )? {
-        Ok(stream)
-    } else {
-        let format_str = ctx.prepare_visualization.then(|| {
-            let mut buffer = String::new();
-            write_group_by(
-                &mut buffer,
-                0,
-                expr_arena,
-                keys,
-                aggs,
-                apply.as_ref(),
-                maintain_order,
-            )
-            .unwrap();
-            buffer
-        });
-        build_group_by_fallback(
-            input,
-            keys,
-            aggs,
-            output_schema,
-            maintain_order,
-            options,
-            apply,
-            expr_arena,
-            phys_sm,
-            format_str,
-        )
-    }
+        format_str,
+    )
 }

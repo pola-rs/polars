@@ -37,6 +37,10 @@ String
      - Returns the position of a substring within a string.
    * - :ref:`REGEXP_LIKE <regexp_like>`
      - Returns True if `pattern` matches the value (optional: `flags`).
+   * - :ref:`REGEXP_REPLACE <regexp_replace>`
+     - Replaces the first match of `pattern` with `replacement` (optional: `flags`; 'g' replaces all matches).
+   * - :ref:`REPEAT <repeat>`
+     - Returns the string repeated `n` times.
    * - :ref:`REPLACE <replace>`
      - Replaces a given substring with another string.
    * - :ref:`REVERSE <reverse>`
@@ -537,6 +541,59 @@ Returns True if `pattern` matches the value (optional: `flags`).
     # │ abc456 ┆ true          │
     # │ 321cba ┆ false         │
     # └────────┴───────────────┘
+
+.. _regexp_replace:
+
+REGEXP_REPLACE
+--------------
+Replaces the first match of `pattern` with `replacement` (optional: `flags`). The 'g' flag
+replaces all matches; other flags are applied as inline regex flags, such as 'i' for a
+case-insensitive match. In `replacement`, `\1` refers to the first capture group and `\&`
+to the whole match.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": ["abc-123", "ab-cd", "x"]})
+    df.sql(r"""
+      SELECT foo, REGEXP_REPLACE(foo, '(\w+)-(\w+)', '\2-\1') AS bar FROM self
+    """)
+    # shape: (3, 2)
+    # ┌─────────┬─────────┐
+    # │ foo     ┆ bar     │
+    # │ ---     ┆ ---     │
+    # │ str     ┆ str     │
+    # ╞═════════╪═════════╡
+    # │ abc-123 ┆ 123-abc │
+    # │ ab-cd   ┆ cd-ab   │
+    # │ x       ┆ x       │
+    # └─────────┴─────────┘
+
+.. _repeat:
+
+REPEAT
+------
+Returns the string repeated `n` times; a negative `n` gives an empty string.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": ["ab", "c", None], "n": [2, 3, 1]})
+    df.sql("""
+      SELECT foo, REPEAT(foo, n) AS repeated FROM self
+    """)
+    # shape: (3, 2)
+    # ┌──────┬──────────┐
+    # │ foo  ┆ repeated │
+    # │ ---  ┆ ---      │
+    # │ str  ┆ str      │
+    # ╞══════╪══════════╡
+    # │ ab   ┆ abab     │
+    # │ c    ┆ ccc      │
+    # │ null ┆ null     │
+    # └──────┴──────────┘
 
 .. _replace:
 

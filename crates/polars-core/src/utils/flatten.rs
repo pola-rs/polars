@@ -1,4 +1,4 @@
-use arrow::bitmap::MutableBitmap;
+use polars_arrow::bitmap::MutableBitmap;
 use polars_utils::sync::SyncPtr;
 
 use super::*;

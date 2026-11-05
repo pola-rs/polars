@@ -11,7 +11,6 @@ This namespace becomes available by calling `DataFrame.group_by(...)`.
     GroupBy.__iter__
     GroupBy.agg
     GroupBy.all
-    GroupBy.count
     GroupBy.first
     GroupBy.having
     GroupBy.head

@@ -59,7 +59,7 @@ pub enum PrimitiveConvertedType {
     Uint64,
     /// A signed integer value.
     ///
-    /// The number describes the maximum number of meainful data bits in the stored value. 8, 16
+    /// The number describes the maximum number of meaningful data bits in the stored value. 8, 16
     /// and 32 bit values are stored using the INT32 physical type.  64 bit values are stored using
     /// the INT64 physical type.
     ///

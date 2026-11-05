@@ -1,29 +1,34 @@
 mod dynamic;
 mod group_by;
+mod hive;
 mod join;
 mod keys;
-mod utils;
+pub(super) mod utils;
 
-pub use dynamic::{DynamicPred, DynamicPredWeakRef, PredicateExpr, TrivialPredicateExpr};
-use polars_core::prelude::*;
+pub use dynamic::{
+    DynamicPred, DynamicPredWeakRef, PredicateExpr, TrivialPredicateExpr, new_dynamic_pred,
+};
+use polars_buffer::Buffer;
+use polars_io::predicates::ReadOrder;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::scratch_vec::ScratchUnitVec;
 use polars_utils::with_drop::WithDrop;
 use recursive::recursive;
+pub(crate) use utils::combine_predicates;
 use utils::*;
 
 use super::*;
-use crate::plans::optimizer::predicate_pushdown::dynamic::new_dynamic_pred;
 use crate::prelude::optimizer::predicate_pushdown::group_by::process_group_by;
 use crate::prelude::optimizer::predicate_pushdown::join::process_join;
-use crate::utils::{check_input_node, has_aexpr};
+use crate::utils::check_input_node;
 
 pub struct PredicatePushDown {
     // How many cache nodes a predicate may be pushed down to.
     // Normally this is 0. Only needed for CSPE.
     caches_pass_allowance: u32,
     nodes_scratch: ScratchUnitVec<Node>,
-    streaming: bool,
+    dedup_state: PredicateDedupState,
+    pub(crate) streaming: bool,
     // Controls pushing filters past fallible projections
     maintain_errors: bool,
     // Set while re-processing the branches `join::hive::rewrite_hive` so we don't re-enter
@@ -31,17 +36,26 @@ pub struct PredicatePushDown {
     pub(super) hive_rewrite_active: bool,
     // Rewrite hive partitioned join.
     pub(super) partition_hive: bool,
+    // Functions supplied by the caller, e.g. the hive partition key frame join.
+    pub(super) hooks: ExecutionHooks,
 }
 
 impl PredicatePushDown {
-    pub fn new(maintain_errors: bool, streaming: bool, partition_hive: bool) -> Self {
+    pub fn new(
+        maintain_errors: bool,
+        streaming: bool,
+        partition_hive: bool,
+        hooks: ExecutionHooks,
+    ) -> Self {
         Self {
             caches_pass_allowance: 0,
             nodes_scratch: ScratchUnitVec::default(),
+            dedup_state: PredicateDedupState::default(),
             streaming,
             maintain_errors,
             hive_rewrite_active: false,
             partition_hive,
+            hooks,
         }
     }
 }
@@ -95,22 +109,21 @@ impl PredicatePushDown {
                 let mut inputs = lp.inputs();
                 let input = inputs.next().unwrap();
                 // projections should only have a single input.
-                if inputs.next().is_some() {
-                    // except for ExtContext
-                    assert!(matches!(lp, IR::ExtContext { .. }));
-                }
+                assert!(inputs.next().is_none());
                 input
             };
 
             let maintain_errors = self.maintain_errors;
-            let (eligibility, alias_rename_map) = pushdown_eligibility(
+            let (eligibility, projection_map) = pushdown_eligibility(
                 &lp.exprs().cloned().collect::<Vec<_>>(),
+                matches!(lp, IR::Select { .. } | IR::HStack { .. }),
                 &[],
                 &acc_predicates,
                 expr_arena,
                 self.nodes_scratch.get(),
                 maintain_errors,
-                lp_arena.get(input),
+                input,
+                lp_arena,
             )?;
 
             let local_predicates = match eligibility {
@@ -127,9 +140,10 @@ impl PredicatePushDown {
                 },
             };
 
-            if !alias_rename_map.is_empty() {
+            if !projection_map.renames.is_empty() || !projection_map.order_keeping_exprs.is_empty()
+            {
                 for (_, expr_ir) in acc_predicates.iter_mut() {
-                    map_column_references(expr_ir, expr_arena, &alias_rename_map);
+                    projection_map.map_to_input(expr_ir, expr_arena);
                 }
             }
 
@@ -147,7 +161,7 @@ impl PredicatePushDown {
             let new_inputs = inputs
                 .into_iter()
                 .map(|node| {
-                    // first we check if we are able to push down the predicate passed this node
+                    // first we check if we are able to push down the predicate past this node
                     // it could be that this node just added the column where we base the predicate on
                     let input_schema = lp_arena.get(node).schema(lp_arena);
                     let mut pushdown_predicates =
@@ -155,7 +169,12 @@ impl PredicatePushDown {
                     for (_, predicate) in acc_predicates.iter() {
                         // we can pushdown the predicate
                         if check_input_node(predicate.node(), &input_schema, expr_arena) {
-                            insert_predicate_dedup(&mut pushdown_predicates, predicate, expr_arena)
+                            insert_predicate_dedup(
+                                &mut pushdown_predicates,
+                                predicate,
+                                expr_arena,
+                                &mut self.dedup_state,
+                            )
                         }
                         // we cannot pushdown the predicate we do it here
                         else {
@@ -267,12 +286,14 @@ impl PredicatePushDown {
 
                 let local_predicates = match pushdown_eligibility(
                     &[],
+                    false,
                     &[(&tmp_key, predicate.clone())],
                     &acc_predicates,
                     expr_arena,
                     self.nodes_scratch.get(),
                     maintain_errors,
-                    lp_arena.get(input),
+                    input,
+                    lp_arena,
                 )?
                 .0
                 {
@@ -292,7 +313,12 @@ impl PredicatePushDown {
                 };
 
                 if let Some(predicate) = acc_predicates.swap_remove(&tmp_key) {
-                    insert_predicate_dedup(&mut acc_predicates, &predicate, expr_arena);
+                    insert_predicate_dedup(
+                        &mut acc_predicates,
+                        &predicate,
+                        expr_arena,
+                        &mut self.dedup_state,
+                    );
                 }
 
                 let alp = lp_arena.take(input);
@@ -300,7 +326,7 @@ impl PredicatePushDown {
 
                 // TODO!
                 // If a predicates result would be influenced by earlier applied
-                // predicates, we simply don't pushdown this one passed this node
+                // predicates, we simply don't pushdown this one past this node
                 // However, we can do better and let it pass but store the order of the predicates
                 // so that we can apply them in correct order at the deepest level
                 Ok(
@@ -342,6 +368,7 @@ impl PredicatePushDown {
                 scan_type,
                 unified_scan_args,
                 output_schema,
+                maintain_order,
             } => {
                 let mut blocked_names = Vec::with_capacity(2);
 
@@ -386,6 +413,7 @@ impl PredicatePushDown {
                         unified_scan_args,
                         output_schema,
                         scan_type,
+                        maintain_order,
                     }
                 } else {
                     let lp = Scan {
@@ -397,6 +425,7 @@ impl PredicatePushDown {
                         unified_scan_args,
                         output_schema,
                         scan_type,
+                        maintain_order,
                     };
                     if let Some(predicate) = predicate {
                         let input = lp_arena.add(lp);
@@ -448,8 +477,6 @@ impl PredicatePushDown {
             Join {
                 input_left,
                 input_right,
-                left_on,
-                right_on,
                 schema,
                 options,
             } => process_join(
@@ -458,8 +485,6 @@ impl PredicatePushDown {
                 expr_arena,
                 input_left,
                 input_right,
-                left_on,
-                right_on,
                 schema,
                 options,
                 acc_predicates,
@@ -598,15 +623,26 @@ impl PredicatePushDown {
                 }
 
                 if let Some((offset, len, None)) = slice
-                    && by_column.len() == 1
+                    && !by_column.is_empty()
                 {
                     let n = by_column[0].node();
                     if let AExpr::Column(_) = expr_arena.get(n) {
-                        let (dyn_pred_node, pred) = new_dynamic_pred(n, expr_arena);
+                        let read_order = if sort_options.descending.first() == Some(&true) {
+                            ReadOrder::HighFirst
+                        } else {
+                            ReadOrder::LowFirst
+                        };
+                        let (dyn_pred_node, pred) =
+                            new_dynamic_pred(n, expr_arena, Some(read_order));
                         slice = Some((offset, len, Some(pred)));
 
                         let predicate = ExprIR::from_node(dyn_pred_node, expr_arena);
-                        insert_predicate_dedup(&mut acc_predicates, &predicate, expr_arena);
+                        insert_predicate_dedup(
+                            &mut acc_predicates,
+                            &predicate,
+                            expr_arena,
+                            &mut self.dedup_state,
+                        );
                     }
                 }
 
@@ -635,16 +671,22 @@ impl PredicatePushDown {
             lp @ SinkMultiple { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             },
-            // Pushed down passed these nodes
-            lp @ HStack { .. }
-            | lp @ Select { .. }
-            | lp @ SimpleProjection { .. }
-            | lp @ ExtContext { .. } => {
+            // Without a length preserving expression the height does not follow the input: a
+            // select of only scalars gives one row, also on an empty input.
+            lp @ Select { .. } if !lp.exprs().any(|e| e.is_length_preserving(expr_arena)) => {
+                self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+            },
+            // Pushed down past these nodes
+            lp @ HStack { .. } | lp @ Select { .. } | lp @ SimpleProjection { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)
             },
-            // NOT Pushed down passed these nodes
+            // NOT Pushed down past these nodes
             // predicates influence slice sizes / indices
             lp @ (Slice { .. } | Gather { .. } | HConcat { .. }) => {
+                self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+            },
+            // Windows are created after predicate pushdown.
+            lp @ Window { .. } => {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
             },
             // Caches will run predicate push-down in the `cache_states` run.
@@ -658,6 +700,10 @@ impl PredicatePushDown {
             },
             #[cfg(feature = "python")]
             PythonScan { mut options } => {
+                // The predicate is handed to Python as a DSL expression, but dynamic
+                // predicates have no DSL representation.
+                remove_dynamic_pred_minterms(&mut acc_predicates, expr_arena);
+
                 if let Some(predicate) =
                     combine_predicates(acc_predicates.into_values(), expr_arena)
                 {
@@ -692,8 +738,69 @@ impl PredicatePushDown {
             lp @ MergeSorted { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             },
+            // Each round reads the rows of the round before, so filters can't move into or out
+            // of a recursive query.
+            lp @ Recursive { .. } => {
+                self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+            },
+            lp @ WorkingTableScan { .. } => {
+                self.no_pushdown(lp, acc_predicates, lp_arena, expr_arena)
+            },
             UnoptimizedDispatch { .. } => {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+            },
+            // Already resolved: `resolved_ir` is the single input of this node, so we
+            // recurse into it through the normal input dispatch.
+            lp @ Resolver {
+                resolved_ir: Some(_),
+                ..
+            } => self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false),
+            // Not resolved, but a slice was already pushed into this node. Predicates
+            // influence slice sizes / indices, so absorbing them here would evaluate them
+            // before the slice (see the `Slice` arm above). The resolver is only given a
+            // `limit`, it cannot apply the offset itself, so we keep the predicates local.
+            lp @ Resolver { slice: Some(_), .. } => {
+                self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+            },
+            Resolver {
+                resolver,
+                resolver_schema,
+                projection,
+                slice,
+                mut filters,
+                filter_drop_columns_idx,
+                resolved_dsl,
+                resolved_ir,
+            } => {
+                for eir in filters.iter() {
+                    insert_predicate_dedup(
+                        &mut acc_predicates,
+                        eir,
+                        expr_arena,
+                        &mut self.dedup_state,
+                    );
+                }
+
+                filters = Buffer::from_iter(
+                    acc_predicates
+                        .iter()
+                        .flat_map(|(_, eir)| {
+                            MintermIter::new(eir.node(), expr_arena)
+                                .filter(|&node| !contains_dynamic_pred(node, expr_arena))
+                        })
+                        .map(|node| ExprIR::from_node(node, expr_arena)),
+                );
+
+                Ok(Resolver {
+                    resolver,
+                    resolver_schema,
+                    projection,
+                    slice,
+                    filters,
+                    filter_drop_columns_idx,
+                    resolved_dsl,
+                    resolved_ir,
+                })
             },
             Invalid => unreachable!(),
         }
@@ -706,6 +813,11 @@ impl PredicatePushDown {
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {
         let acc_predicates = init_indexmap(None);
+
+        // It is possible that expressions have changed in the arena, so canonical expression ids
+        // are no longer valid
+        self.dedup_state = PredicateDedupState::default();
+
         self.push_down(logical_plan, acc_predicates, lp_arena, expr_arena)
     }
 }

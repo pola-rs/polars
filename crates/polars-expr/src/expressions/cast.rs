@@ -90,7 +90,7 @@ impl PhysicalExpr for CastExpr {
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.input.to_field(input_schema).map(|mut fld| {
-            fld.coerce(self.dtype.clone());
+            fld.set_dtype(self.dtype.clone());
             fld
         })
     }

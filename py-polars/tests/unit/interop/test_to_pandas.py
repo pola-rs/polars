@@ -230,3 +230,25 @@ def test_to_pandas_no_deadlock_multithreaded_27396() -> None:
     with ThreadPoolExecutor(10) as e:
         fs = [e.submit(to_pandas) for _ in range(100)]
         [f.result(timeout=10) for f in fs]
+
+
+@pytest.mark.filterwarnings("ignore::polars.exceptions.PolarsInefficientMapWarning")
+def test_to_pandas_no_deadlock_with_concurrent_map_elements_30358() -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    df = pl.DataFrame({"a": range(10), "s": [str(i) for i in range(10)]})
+    chunked = pl.concat([df] * (2 * pl.thread_pool_size()), rechunk=False)
+
+    def to_pandas() -> None:
+        for _ in range(400):
+            df.to_pandas()
+
+    def map_elements() -> None:
+        for _ in range(400):
+            chunked.with_columns(
+                pl.col("a").map_elements(lambda x: x + 1, return_dtype=pl.Int64)
+            )
+
+    with ThreadPoolExecutor(2) as e:
+        fs = [e.submit(to_pandas), e.submit(map_elements)]
+        [f.result(timeout=10) for f in fs]

@@ -131,7 +131,7 @@ def test_list_concat_rolling_window() -> None:
         [9.0, 2.0, 13.0],
     ]
 
-    # this test proper null behavior of concat list
+    # this tests proper null behavior of concat list
     out = (
         df.with_columns(
             pl.col("A").reshape((-1, 1)).arr.to_list()  # first turn into a list
@@ -363,3 +363,8 @@ def test_list_function_w_scalars() -> None:
         result.collect(), pl.DataFrame(expected, schema={"literals": pl.List(pl.Int32)})
     )
     assert result.collect().schema == result.collect_schema()
+
+
+def test_list_function_single_input_keeps_chunks() -> None:
+    df = pl.concat([pl.DataFrame({"a": [1, 2]})] * 3, rechunk=False)
+    assert df.select(pl.list("a")).n_chunks() == 3

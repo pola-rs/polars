@@ -43,7 +43,7 @@ impl AExpr {
                 falsy,
                 predicate,
             } => {
-                container.extend([*predicate, *truthy, *falsy]);
+                container.extend([*truthy, *falsy, *predicate]);
             },
             AnonymousFunction { input, .. }
             | Function { input, .. }
@@ -64,6 +64,7 @@ impl AExpr {
                 partition_by,
                 order_by,
                 mapping: _,
+                may_reorder: _,
             } => {
                 container.extend([*function]);
                 container.extend(partition_by.iter().cloned());
@@ -77,7 +78,9 @@ impl AExpr {
                 container.extend([*expr, *evaluation]);
             },
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
+            StructEval {
+                expr, evaluation, ..
+            } => {
                 container.extend([*expr]);
                 container.extend(evaluation.iter().map(|x| x.node()));
             },
@@ -152,6 +155,7 @@ impl AExpr {
                 partition_by,
                 order_by,
                 mapping: _,
+                may_reorder: _,
             } => {
                 if let Some((n, _)) = order_by {
                     container.extend([*n]);
@@ -169,7 +173,9 @@ impl AExpr {
                 container.extend([*expr]);
             },
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
+            StructEval {
+                expr, evaluation, ..
+            } => {
                 // Evaluation is included. In case this is not allowed, use `inputs_rev_strict()`.
                 container.extend(evaluation.iter().rev().map(ExprIR::node));
                 container.extend([*expr]);
@@ -200,7 +206,9 @@ impl AExpr {
 
         match self {
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
+            StructEval {
+                expr, evaluation, ..
+            } => {
                 // Evaluation is explicitly excluded. It is up to the caller to handle
                 // any tree traversal if required.
                 _ = evaluation;
@@ -213,8 +221,8 @@ impl AExpr {
     /// Push the children of this node to the given container, in reverse order.
     /// This ensures the primary node responsible for the name is pushed last.
     ///
-    /// This is subtly different from `input_rev` as this only all expressions included in the
-    /// expression not only the input expressions,
+    /// This is subtly different from `inputs_rev` as this includes all expressions in the
+    /// expression, not only the input expressions.
     pub fn children_rev<E: Extend<Node>>(&self, container: &mut E) {
         use AExpr::*;
 
@@ -268,6 +276,7 @@ impl AExpr {
                 partition_by,
                 order_by,
                 mapping: _,
+                may_reorder: _,
             } => {
                 if let Some((n, _)) = order_by {
                     container.extend([*n]);
@@ -281,7 +290,9 @@ impl AExpr {
                 variant: _,
             } => container.extend([*evaluation, *expr]),
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
+            StructEval {
+                expr, evaluation, ..
+            } => {
                 container.extend(evaluation.iter().rev().map(ExprIR::node));
                 container.extend([*expr]);
             },
@@ -358,7 +369,9 @@ impl AExpr {
                 return self;
             },
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
+            StructEval {
+                expr, evaluation, ..
+            } => {
                 *expr = inputs[0];
                 _ = evaluation; // Intentional.
                 return self;
@@ -468,7 +481,9 @@ impl AExpr {
                 return self;
             },
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
+            StructEval {
+                expr, evaluation, ..
+            } => {
                 assert_eq!(inputs.len(), evaluation.len() + 1);
                 *expr = inputs[0];
                 for (e, node) in evaluation.iter_mut().zip(inputs[1..].iter()) {
@@ -536,11 +551,10 @@ impl IRAggExpr {
             Item { input, .. } => Single(*input),
             Mean(input) => Single(*input),
             Implode { input, .. } => Single(*input),
-            Sum(input) => Single(*input),
+            Sum { input, .. } => Single(*input),
             Count { input, .. } => Single(*input),
             Std(input, _) => Single(*input),
             Var(input, _) => Single(*input),
-            AggGroups(input) => Single(*input),
         }
     }
     pub fn set_input(&mut self, input: Node) {
@@ -557,11 +571,10 @@ impl IRAggExpr {
             Item { input, .. } => input,
             Mean(input) => input,
             Implode { input, .. } => input,
-            Sum(input) => input,
+            Sum { input, .. } => input,
             Count { input, .. } => input,
             Std(input, _) => input,
             Var(input, _) => input,
-            AggGroups(input) => input,
         };
         *node = input;
     }

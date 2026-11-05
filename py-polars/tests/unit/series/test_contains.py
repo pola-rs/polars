@@ -16,6 +16,12 @@ import polars as pl
         (None, [1, None], True),
         (None, [1, 2], False),
         (date(2022, 1, 1), [date(2022, 1, 1), date(2023, 1, 1)], True),
+        (4, [1, None], False),
+        (2, [1, None, 2], True),
+        (float("nan"), [1.0, float("nan")], True),
+        ("b", ["a", None, "b"], True),
+        ("c", ["a", "b"], False),
+        (b"b", [b"a", b"b"], True),
     ],
 )
 def test_contains(item: Any, data: list[Any], expected: bool) -> None:

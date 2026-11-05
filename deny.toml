@@ -9,10 +9,11 @@ ignore = [
   # error[unmaintained]: Bincode is unmaintained
   "RUSTSEC-2025-0141",
 
-  # error[vulnerability]: Quadratic run time when checking a start tag for duplicate attribute names in quick-xml
-  "RUSTSEC-2026-0194",
-  # error[vulnerability]: Unbounded namespace-declaration allocation in `NsReader` enables memory-exhaustion denial of service in quick-xml
-  "RUSTSEC-2026-0195",
+  # crypto-bigint 0.5 comes via aws-sigv4 -> p256 -> elliptic-curve 0.13.
+  # Fix is only in 0.7.6 (semver-incompatible); nothing we depend on
+  # supports it yet. Only reached through polars-doc-examples.
+  # Remove once aws-sigv4 / p256 move to crypto-bigint >= 0.7.
+  "RUSTSEC-2026-0387",
 ]
 
 [licenses]
@@ -22,6 +23,7 @@ allow = [
   "Apache-2.0 WITH LLVM-exception",
   "BSD-2-Clause",
   "BSD-3-Clause",
+  "CDLA-Permissive-2.0",
   "ISC",
   "MIT",
   # Unicode data / text processing
@@ -50,6 +52,6 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 # don't use a given patch (these patches are only active in compute-plane).
 unknown-git = "deny"
 allow-git = [
-  "https://github.com/kdn36/arrow-rs-object-store",
   "https://github.com/pola-rs/jemallocator",
+  "https://github.com/pola-rs/hashbrown",
 ]

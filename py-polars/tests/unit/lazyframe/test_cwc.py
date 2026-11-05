@@ -269,7 +269,7 @@ def test_neighbour_live_expr() -> None:
 
 
 def test_cluster_with_columns_collect_all_panic_26092() -> None:
-    lf = pl.LazyFrame()
+    lf = pl.LazyFrame(height=1)
     lf = lf.with_columns(pl.lit(1.0).cast(pl.Float64()).alias("numbers1"))
     lf = lf.with_columns(pl.lit(2.0).cast(pl.Float64()).alias("numbers2"))
 

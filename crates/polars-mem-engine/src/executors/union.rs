@@ -19,6 +19,7 @@ impl Executor for UnionExec {
             }
         }
         let mut inputs = std::mem::take(&mut self.inputs);
+        let n_inputs = inputs.len();
 
         let sliced_path = if let Some((offset, _)) = self.options.slice {
             offset >= 0
@@ -55,6 +56,10 @@ impl Executor for UnionExec {
                 // TODO!: don't read the file yet!
                 if slice_offset > height {
                     slice_offset -= height;
+                    // Keep the union schema when the offset skips every input.
+                    if dfs.is_empty() && idx + 1 == n_inputs {
+                        dfs.push(df.clear());
+                    }
                 }
                 // applying the slice
                 // continue iteration
@@ -81,7 +86,7 @@ impl Executor for UnionExec {
             }
 
             // we don't use par_iter directly because the LP may also start threads for every LP (for instance scan_csv)
-            // this might then lead to a rayon SO. So we take a multitude of the threads to keep work stealing
+            // this might then lead to a rayon SO. So we take a multiple of the threads to keep work stealing
             // within bounds
             let out = RAYON.install(|| {
                 inputs

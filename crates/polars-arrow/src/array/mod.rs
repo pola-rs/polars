@@ -51,7 +51,7 @@ pub trait Splitable: Sized {
         unsafe { self._split_at_unchecked(offset) }
     }
 
-    /// Internal implementation of `split_at_unchecked`. For any usage, prefer the using
+    /// Internal implementation of `split_at_unchecked`. For any usage, prefer using
     /// `split_at` or `split_at_unchecked`.
     ///
     /// # Safety
@@ -86,6 +86,7 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     fn len(&self) -> usize;
 
     /// whether the array is empty
+    #[inline]
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -681,6 +682,7 @@ mod fixed_size_binary;
 mod fixed_size_list;
 mod list;
 pub use list::LIST_VALUES_NAME;
+pub use map::{MAP_ENTRIES_NAME, MAP_KEY_NAME, MAP_VALUE_NAME};
 mod map;
 mod null;
 mod primitive;
@@ -700,6 +702,7 @@ pub mod indexable;
 pub mod iterator;
 
 mod binview;
+pub use binview::{BINVIEW_ARROW_BUFFER_LEN_LIMIT, BINVIEW_MAX_ROW_BYTE_LEN};
 mod values;
 
 pub use binary::{

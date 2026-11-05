@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import sys
 import typing
 from typing import IO, TYPE_CHECKING, Any
 
+import pyarrow as pa
 import pyarrow.ipc
 import pytest
 
@@ -14,6 +16,7 @@ from polars.interchange.protocol import CompatLevel
 from polars.testing.asserts.frame import assert_frame_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from polars._typing import IpcCompression
@@ -131,11 +134,11 @@ def test_sink_ipc_compat_level_22930() -> None:
     f1.seek(0)
     f2.seek(0)
 
-    t1 = pyarrow.ipc.open_file(f1)
+    t1 = pa.ipc.open_file(f1)
     assert "large_string" in str(t1.schema)
     assert_frame_equal(pl.DataFrame(t1.read_all()), df)
 
-    t2 = pyarrow.ipc.open_file(f2)
+    t2 = pa.ipc.open_file(f2)
     assert "large_string" in str(t2.schema)
     assert_frame_equal(pl.DataFrame(t2.read_all()), df)
 
@@ -226,22 +229,22 @@ def test_scan_ipc_file_async_dict(
         {"cat": ["A", "B", "C", "A", "C", "B"]}, schema={"cat": pl.Categorical}
     ).with_row_index()
     lf.sink_ipc(buf)
+    buf.seek(0)
 
     out = pl.scan_ipc(buf).collect()
     expected = lf.collect()
     assert_frame_equal(out, expected)
 
 
-# TODO: create multiple record batches through API instead of env variable
 def test_scan_ipc_file_async_multiple_record_batches(
     plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
-    plmonkeypatch.setenv("POLARS_IDEAL_SINK_MORSEL_SIZE_ROWS", "10")
 
     buf = io.BytesIO()
     lf = pl.LazyFrame({"a": list(range(100))})
-    lf.sink_ipc(buf)
+    lf.sink_ipc(buf, record_batch_size=10)
+    buf.seek(0)
     df = lf.collect()
 
     buffers = typing.cast("list[IO[bytes]]", [buf, buf])
@@ -293,12 +296,14 @@ def test_scan_ipc_varying_block_metadata_len_c4812(
     buf = io.BytesIO()
     df = pl.DataFrame({"a": [n_a * "A", n_b * "B"]})
     df.lazy().sink_ipc(buf, compression=compression, record_batch_size=1)
+    buf.seek(0)
 
-    with pyarrow.ipc.open_file(buf) as reader:
+    with pa.ipc.open_file(buf) as reader:
         assert [
             reader.get_batch(i).num_rows for i in range(reader.num_record_batches)
         ] == [1, 1]
 
+    buf.seek(0)
     assert_frame_equal(pl.scan_ipc(buf).collect(), df)
 
 
@@ -323,7 +328,7 @@ def test_sink_ipc_record_batch_size(record_batch_size: int, n_chunks: int) -> No
     assert_frame_equal(out, df)
 
     buf.seek(0)
-    with pyarrow.ipc.open_file(buf) as reader:
+    with pa.ipc.open_file(buf) as reader:
         record_batch_lengths = [
             reader.get_batch(i).num_rows for i in range(reader.num_record_batches)
         ]
@@ -349,6 +354,7 @@ def test_scan_ipc_compression_with_slice_26063(
     df.lazy().sink_ipc(
         buf, compression=compression, record_batch_size=record_batch_size
     )
+    buf.seek(0)
     out = pl.scan_ipc(buf).slice(slice[0], slice[1]).collect()
     expected = df.slice(slice[0], slice[1])
     assert_frame_equal(out, expected)
@@ -365,6 +371,7 @@ def test_sink_scan_ipc_round_trip_statistics() -> None:
         .with_columns(pl.col.a.shuffle().sort().alias("d"))
     )
     df.lazy().sink_ipc(buf, _record_batch_statistics=True)
+    buf.seek(0)
 
     metadata = df._to_metadata()
 
@@ -394,7 +401,7 @@ def test_sink_ipc_custom_metadata() -> None:
         _record_batch_statistics=True,
     )
 
-    with pyarrow.ipc.open_file(f) as reader:
+    with pa.ipc.open_file(f) as reader:
         assert [
             reader.get_record_batch(i).num_rows
             for i in range(reader.num_record_batches)
@@ -410,8 +417,49 @@ def test_sink_ipc_custom_metadata() -> None:
         _record_batch_statistics=False,
     )
 
-    with pyarrow.ipc.open_file(f) as reader:
+    with pa.ipc.open_file(f) as reader:
         assert reader.metadata is None
+
+
+def test_sink_ipc_custom_metadata_dictionary() -> None:
+    df = pl.DataFrame({"a": ["x", "y", "z", "x", "w"]}, schema={"a": pl.Categorical})
+
+    f = io.BytesIO()
+    df.lazy().sink_ipc(f, record_batch_size=2, _record_batch_statistics=True)
+
+    # Dictionary batches must not be counted.
+    with pa.ipc.open_file(f) as reader:
+        assert json.loads(reader.metadata.get(b"__POLARS_IPC_METADATA")) == {
+            "record_batch_cum_len": [2, 4, 5]
+        }
+
+    buf = f.getvalue()
+    assert_frame_equal(pl.scan_ipc(buf).tail(1).collect(), df.tail(1))
+    assert_frame_equal(pl.scan_ipc(buf).slice(1, 3).collect(), df.slice(1, 3))
+    assert pl.scan_ipc(buf).select(pl.len()).collect().item() == 5
+
+
+@pytest.mark.parametrize(
+    "custom_metadata",
+    [
+        # Older versions of Polars also counted dictionary batches.
+        b'{"record_batch_cum_len": [3, 6]}',
+        b"not json",
+    ],
+)
+def test_scan_ipc_ignores_unusable_custom_metadata(custom_metadata: bytes) -> None:
+    table = pa.table({"a": pa.array(["x", "y", "z"]).dictionary_encode()})
+    metadata = {b"__POLARS_IPC_METADATA": custom_metadata}
+
+    f = io.BytesIO()
+    with pa.ipc.new_file(f, table.schema, metadata=metadata) as writer:
+        writer.write_table(table)
+
+    buf = f.getvalue()
+    with pytest.warns(UserWarning, match="ignoring unusable Polars metadata"):
+        assert pl.scan_ipc(buf).tail(1).collect()["a"].to_list() == ["z"]
+    with pytest.warns(UserWarning, match="ignoring unusable Polars metadata"):
+        assert pl.scan_ipc(buf).select(pl.len()).collect().item() == 3
 
 
 def test_scan_ipc_slicing_and_count_with_custom_metadata(
@@ -588,6 +636,7 @@ def test_sink_scan_ipc_round_trip_statistics_projection(
     df.lazy().sink_ipc(
         buf, record_batch_size=record_batch_size, _record_batch_statistics=True
     )
+    buf.seek(0)
 
     # round-trip with projection
     df = df.select(selection)
@@ -608,6 +657,7 @@ def test_scan_ipc_slice_empty_file() -> None:
 
     for i in range(len(dfs)):
         dfs[i].write_ipc(bufs[i])
+        bufs[i].seek(0)
 
     expected = pl.concat(dfs).slice(50, 100)
     actual = pl.scan_ipc(bufs).slice(50, 100).collect()
@@ -621,7 +671,8 @@ def test_scan_ipc_slice_empty_file() -> None:
     sys.platform == "win32",
     reason="needs unix-only `resource` module to measure memory usage",
 )
-def test_sink_ipc_memory_usage() -> None:
+@pytest.mark.parametrize("force_async", [True, False])
+def test_sink_ipc_memory_usage(force_async: bool) -> None:
     import subprocess
     import sys
 
@@ -658,6 +709,10 @@ print(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
 """,
                         str(n_chunks),
                     ],
+                    env={
+                        "POLARS_FORCE_ASYNC": "1" if force_async else "0",
+                        **os.environ,
+                    },
                 ).decode()
             )
             for _ in range(n_runs)
@@ -672,3 +727,257 @@ print(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
     # 1.42.1: ~1.17
     # Fixed branch (debug build): ~1.008
     assert ratio < 1.05
+
+
+def test_row_count_estimate_ipc(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "a.ipc"
+    pl.DataFrame({"a": range(37)}).write_ipc(path)
+
+    # Polars writes the row count into the footer.
+    assert "ESTIMATED ROWS: 37" in pl.scan_ipc(path).explain()
+
+
+def test_row_count_estimate_ipc_foreign_writer(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "a.ipc"
+
+    # Without the Polars footer the record batch lengths are summed.
+    schema = pa.schema([("a", pa.int64())])
+    with pa.ipc.new_file(path, schema) as writer:
+        for _ in range(4):
+            writer.write_batch(pa.record_batch([pa.array(range(10))], schema=schema))
+
+    assert "ESTIMATED ROWS: 40" in pl.scan_ipc(path).explain()
+
+
+def test_row_count_estimate_ipc_many_blocks(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "a.ipc"
+
+    # Too many record batches to walk, so the count is extrapolated from a sample.
+    schema = pa.schema([("a", pa.int64())])
+    with pa.ipc.new_file(path, schema) as writer:
+        for _ in range(199):
+            writer.write_batch(pa.record_batch([pa.array(range(10))], schema=schema))
+        writer.write_batch(pa.record_batch([pa.array(range(7))], schema=schema))
+
+    assert "ESTIMATED ROWS: 1997" in pl.scan_ipc(path).explain()
+
+
+def test_row_count_estimate_ipc_multifile(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    for name in ("a.ipc", "b.ipc"):
+        pl.DataFrame({"a": range(10)}).write_ipc(tmp_path / name)
+
+    # Only the first source is read, so the rest is extrapolated.
+    assert "ESTIMATED ROWS: 20" in pl.scan_ipc(tmp_path / "*.ipc").explain()
+
+
+@pytest.mark.parametrize(
+    ("query", "maintain_order", "check_row_order"),
+    [
+        (lambda lf: lf, True, True),
+        (lambda lf: lf.head(3), True, True),
+        (lambda lf: lf.select(pl.col("a").sum()), False, True),
+        (lambda lf: lf.sort("a"), False, True),
+        (lambda lf: lf.head(3).select(pl.col("a").sum()), False, True),
+        # Row index without a predicate is currently applied post-scan, which forces
+        # order. Pushing it into the scan would be equally valid, so the flag is not
+        # asserted.
+        (lambda lf: lf.with_row_index().sort("a"), None, True),
+        (
+            lambda lf: lf.with_row_index().filter(pl.col("b") == 1).sort("a"),
+            False,
+            True,
+        ),
+        # Sortedness hints assert an order on the scan output.
+        (
+            lambda lf: (
+                lf.with_columns(pl.col("a").set_sorted()).group_by("a").agg(pl.len())
+            ),
+            True,
+            False,
+        ),
+    ],
+)
+def test_scan_ipc_maintain_order_only_if_observed(
+    query: Callable[[pl.LazyFrame], pl.LazyFrame],
+    maintain_order: bool | None,
+    check_row_order: bool,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    f = io.BytesIO()
+    pl.DataFrame({"a": range(10), "b": [0, 1] * 5}).write_ipc(f, record_batch_size=2)
+    f.seek(0)
+
+    q = query(pl.scan_ipc(f))
+
+    with plmonkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+        capfd.readouterr()
+        out = q.collect(engine="streaming")
+        capture = capfd.readouterr().err
+
+    if maintain_order is not None:
+        reader_lines = [
+            x
+            for x in capture.splitlines()
+            if x.startswith("[IpcFileReader]") and "maintain_order:" in x
+        ]
+        assert reader_lines
+        assert all(
+            f"maintain_order: {str(maintain_order).lower()}" in x for x in reader_lines
+        )
+
+    assert_frame_equal(
+        out,
+        q.collect(
+            engine="streaming",
+            optimizations=pl.QueryOptFlags(check_order_observe=False),
+        ),
+        check_row_order=check_row_order,
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.parametrize("n_files", [1, 3])
+@pytest.mark.parametrize("writer", ["polars_metadata", "pyarrow"])
+def test_scan_ipc_unordered_record_batches(
+    n_files: int, writer: str, tmp_path: Path
+) -> None:
+    n = 10_000
+    a = pl.Series("a", range(n))
+    df = pl.DataFrame(
+        {
+            "a": a,
+            "b": a % 7,
+            "c": pl.select(pl.when(a % 3 == 0).then(a).otherwise(None)).to_series(),
+            "d": pl.select(pl.concat_list([a, a % 5])).to_series(),
+        }
+    )
+
+    for i in range(n_files):
+        start, end = n * i // n_files, n * (i + 1) // n_files
+        part = df.slice(start, end - start)
+        path = tmp_path / f"{i}.ipc"
+        if writer == "polars_metadata":
+            # Record batch lengths in the footer, so row offsets are known up front.
+            part.lazy().sink_ipc(
+                path, record_batch_size=100, _record_batch_statistics=True
+            )
+        else:
+            # No Polars metadata, so row offsets are counted as batches arrive.
+            table = part.to_arrow()
+            with pa.ipc.new_file(path, table.schema) as w:
+                w.write_table(table, max_chunksize=100)
+
+    lf = pl.scan_ipc(tmp_path / "*.ipc")
+
+    def collect(q: pl.LazyFrame) -> pl.DataFrame:
+        return q.collect(engine="streaming")
+
+    assert_frame_equal(collect(lf.sort("a")), df)
+    assert_frame_equal(
+        collect(lf.with_row_index(offset=5).sort("index")),
+        df.with_row_index(offset=5),
+    )
+    assert_frame_equal(
+        collect(lf.with_row_index().filter(pl.col("b") == 3).sort("a")),
+        df.with_row_index().filter(pl.col("b") == 3),
+    )
+    assert_frame_equal(
+        collect(lf.slice(1_234, 5_432).select(pl.col("a").sum(), pl.len())),
+        df.slice(1_234, 5_432).select(pl.col("a").sum(), pl.len()),
+    )
+    assert_frame_equal(
+        collect(lf.group_by("b").agg(pl.col("a").sum()).sort("b")),
+        df.group_by("b").agg(pl.col("a").sum()).sort("b"),
+    )
+    assert_frame_equal(
+        collect(lf.filter(pl.col("b") == 3).select(pl.col("a").sum(), pl.len())),
+        df.filter(pl.col("b") == 3).select(pl.col("a").sum(), pl.len()),
+    )
+    assert_frame_equal(collect(lf.select(pl.len())), df.select(pl.len()))
+
+
+@pytest.mark.write_disk
+def test_scan_ipc_set_sorted_expr_keeps_order(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    n_groups = 500
+    group_size = 20
+    n = n_groups * group_size
+    n_record_batches = 8
+    a = pl.Series("a", range(n)) // group_size
+
+    # Data intentionally skewed so that record batches arrive out of order on decode.
+    k = n // n_record_batches
+    skewed_payload = pl.concat(
+        [
+            pl.select(
+                pl.int_range(k).cast(pl.String).str.pad_start(300, "0")
+            ).to_series(),
+            pl.repeat("", n - k, eager=True),
+        ]
+    ).alias("s")
+    df = pl.DataFrame({"a": a, "s": skewed_payload})
+    df.write_ipc(tmp_path / "sorted.ipc", compression="zstd", record_batch_size=k)
+
+    lf = pl.scan_ipc(tmp_path / "sorted.ipc")
+
+    # Read the payload so its decode cost applies.
+    s_len = pl.col("s").str.len_bytes().sum()
+
+    q_group_by = (
+        lf.with_columns(pl.col("a").set_sorted())
+        .group_by("a")
+        .agg(pl.len(), s_len)
+        .sort("a")
+    )
+    expected_group_by = df.group_by("a").agg(pl.len(), s_len).sort("a")
+
+    right = df.group_by("a").agg(pl.len().alias("n")).sort("a")
+    right.write_ipc(tmp_path / "right.ipc", record_batch_size=n_groups // 8)
+    q_join = (
+        lf.select(pl.col("a").set_sorted(), "s")
+        .join(
+            pl.scan_ipc(tmp_path / "right.ipc").select(
+                pl.col("a").set_sorted(), pl.col("n")
+            ),
+            on="a",
+            maintain_order="none",
+        )
+        .group_by("a")
+        .agg(pl.len(), pl.col("n").first(), s_len)
+        .sort("a")
+    )
+    expected_join = expected_group_by.join(right, on="a").select("a", "len", "n", "s")
+
+    # Verify fast-path
+    def physical_plan(q: pl.LazyFrame) -> str:
+        return q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+
+    assert "sorted-group-by" in physical_plan(q_group_by)
+    assert "merge-join" in physical_plan(q_join)
+
+    # Every scan must keep its order; skewed decode alone may not reorder batches.
+    def collect_ordered(q: pl.LazyFrame) -> pl.DataFrame:
+        with plmonkeypatch.context() as cx:
+            cx.setenv("POLARS_VERBOSE", "1")
+            capfd.readouterr()
+            out = q.collect(engine="streaming")
+            capture = capfd.readouterr().err
+        reader_lines = [
+            x
+            for x in capture.splitlines()
+            if x.startswith("[IpcFileReader]") and "maintain_order:" in x
+        ]
+        assert reader_lines
+        assert all("maintain_order: true" in x for x in reader_lines)
+        return out
+
+    assert_frame_equal(collect_ordered(q_group_by), expected_group_by)
+    assert_frame_equal(collect_ordered(q_join), expected_join)

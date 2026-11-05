@@ -3,8 +3,7 @@ pub(super) mod iterator;
 
 use std::borrow::Cow;
 
-use polars_utils::itertools::Itertools;
-
+use super::align_inner_chunks;
 use crate::prelude::*;
 
 impl ListChunked {
@@ -16,13 +15,17 @@ impl ListChunked {
         }
     }
 
+    /// Relabel the inner dtype, checking its physical representation.
+    ///
+    /// # Safety
+    /// The values must be valid for `dtype`, see [`Self::to_logical`].
+    ///
     /// # Panics
     /// Panics if the physical representation of `dtype` differs the physical
     /// representation of the existing inner `dtype`.
-    pub fn set_inner_dtype(&mut self, dtype: DataType) {
+    pub unsafe fn set_inner_dtype(&mut self, dtype: DataType) {
         assert_eq!(dtype.to_physical(), self.inner_dtype().to_physical());
-        let field = Arc::make_mut(&mut self.field);
-        field.coerce(DataType::List(Box::new(dtype)));
+        unsafe { self.to_logical(dtype) }
     }
 
     pub fn set_fast_explode(&mut self) {
@@ -33,35 +36,38 @@ impl ListChunked {
         self.get_fast_explode_list()
     }
 
-    /// Set the logical type of the [`ListChunked`].
+    /// Relabel the inner dtype without changing values.
     ///
     /// # Safety
-    /// The caller must ensure that the logical type given fits the physical type of the array.
+    /// Physical representations must match, and the values must be safe to read as
+    /// `inner_dtype`: categorical codes in range for every non-null slot, and nested Maps
+    /// satisfying the `MapChunked` storage safety contract.
     pub unsafe fn to_logical(&mut self, inner_dtype: DataType) {
-        debug_assert_eq!(&inner_dtype.to_physical(), self.inner_dtype());
+        debug_assert_eq!(inner_dtype.to_physical(), self.inner_dtype().to_physical());
         let fld = Arc::make_mut(&mut self.field);
-        fld.coerce(DataType::List(Box::new(inner_dtype)))
+        fld.set_dtype(DataType::List(Box::new(inner_dtype)))
     }
 
     /// Convert the datatype of the list into the physical datatype.
     pub fn to_physical_repr(&self) -> Cow<'_, ListChunked> {
-        let Cow::Owned(physical_repr) = self.get_inner().to_physical_repr() else {
+        let inner_dtype = self.inner_dtype();
+        if inner_dtype.to_physical() == *inner_dtype {
             return Cow::Borrowed(self);
-        };
+        }
 
-        let ca = if physical_repr.chunks().len() == 1 && self.chunks().len() > 1 {
-            // Physical repr got rechunked, rechunk self as well.
-            self.rechunk()
-        } else {
-            Cow::Borrowed(self)
-        };
-
-        assert_eq!(ca.chunks().len(), physical_repr.chunks().len());
-
-        let chunks: Vec<_> = ca
+        // Each chunk is converted on its own, as sliced chunks can share one large values array.
+        let chunks: Vec<_> = self
             .downcast_iter()
-            .zip(physical_repr.into_chunks())
-            .map(|(chunk, values)| {
+            .map(|chunk| {
+                // SAFETY: the values have the inner dtype.
+                let values = unsafe {
+                    Series::from_chunks_and_dtype_unchecked(
+                        PlSmallStr::EMPTY,
+                        vec![chunk.values().clone()],
+                        inner_dtype,
+                    )
+                };
+                let values = values.to_physical_repr().rechunk().chunks()[0].clone();
                 LargeListArray::new(
                     ArrowDataType::LargeList(Box::new(ArrowField::new(
                         LIST_VALUES_NAME,
@@ -77,7 +83,7 @@ impl ListChunked {
             .collect();
 
         let name = self.name().clone();
-        let dtype = DataType::List(Box::new(self.inner_dtype().to_physical()));
+        let dtype = DataType::List(Box::new(inner_dtype.to_physical()));
         Cow::Owned(unsafe { ListChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype) })
     }
 
@@ -195,31 +201,8 @@ impl ListChunked {
             assert_eq!(values.len(), self.inner_length());
         }
 
-        // Align the chunks of the lists inner values and the values series.
-        fn align_inner_chunks(ca: &'_ ListChunked, values: &'_ Series) -> Series {
-            if ca.chunks().len() == values.chunks().len()
-                && ca
-                    .downcast_iter()
-                    .map(|arr| arr.values().len())
-                    .zip(values.chunks().iter().map(|arr| arr.len()))
-                    .all_equal()
-            {
-                return values.clone();
-            }
-
-            let mut values = values.rechunk();
-            let chunks = unsafe { values.chunks_mut() };
-            let mut arr = chunks.pop().unwrap();
-            chunks.extend(ca.downcast_iter().map(|ca_arr| {
-                let chunk;
-                (chunk, arr) = arr.split_at_boxed(ca_arr.values().len());
-                chunk
-            }));
-            assert!(arr.is_empty());
-            values
-        }
-
-        let values = align_inner_chunks(self, values);
+        // Align the chunks of the list's inner values and the values series.
+        let values = align_inner_chunks(self.downcast_iter().map(|arr| arr.values().len()), values);
         let values_dtype = values.dtype().clone();
 
         let chunks = self

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
 
 import pytest
 
@@ -129,22 +130,6 @@ def test_shift_fill_value_group_logicals() -> None:
     assert result.dtypes == [pl.Date]
 
 
-def test_shift_n_null() -> None:
-    df = pl.DataFrame({"a": pl.Series([1, 2, 3], dtype=pl.Int32)})
-    out = df.shift(None)  # type: ignore[arg-type]
-    expected = pl.DataFrame({"a": pl.Series([None, None, None], dtype=pl.Int32)})
-    assert_frame_equal(out, expected)
-
-    out = df.shift(None, fill_value=1)  # type: ignore[arg-type]
-    assert_frame_equal(out, expected)
-
-    out = df.select(pl.col("a").shift(None))  # type: ignore[arg-type]
-    assert_frame_equal(out, expected)
-
-    out = df.select(pl.col("a").shift(None, fill_value=1))  # type: ignore[arg-type]
-    assert_frame_equal(out, expected)
-
-
 def test_shift_n_nonscalar() -> None:
     df = pl.DataFrame(
         {
@@ -218,3 +203,21 @@ def test_streaming_shift_with_head_26098() -> None:
         q.collect(engine="streaming"),
         pl.DataFrame({"a": [2]}),
     )
+
+
+@pytest.mark.parametrize("n", [3, -3])
+@pytest.mark.parametrize("length", [0, 2])
+@pytest.mark.parametrize(
+    ("values", "fill_value", "dtype"),
+    [
+        ([{"a": 1}, {"a": 2}], {"a": 0}, pl.Struct({"a": pl.Int64})),
+        (["x", "y"], "z", pl.Enum(["x", "y", "z"])),
+    ],
+)
+def test_shift_and_fill_n_exceeds_len(
+    n: int, length: int, values: list[Any], fill_value: Any, dtype: pl.DataType
+) -> None:
+    df = pl.DataFrame({"s": pl.Series(values[:length], dtype=dtype)})
+    out = df.select(pl.col("s").shift(n, fill_value=pl.lit(fill_value, dtype=dtype)))
+    expected = pl.DataFrame({"s": pl.Series([fill_value] * length, dtype=dtype)})
+    assert_frame_equal(out, expected)

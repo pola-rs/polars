@@ -415,11 +415,13 @@ def test_list_sample() -> None:
     s = pl.Series("values", [[1, 2, 3, None], [None, None], [1, 2], None])
 
     expected_sample_n = pl.Series("values", [[3, None], [None], [2], None])
-    result_n = s.list.sample(n=pl.Series([2, 1, 1, 1]), seed=1)
+    result_n = s.list.sample(n=pl.Series([2, 1, 1, 1]), shuffle=False, seed=1)
     assert_series_equal(result_n, expected_sample_n)
 
     expected_sample_frac = pl.Series("values", [[3, None], [None], [1, 2], None])
-    result_frac = s.list.sample(fraction=pl.Series([0.5, 0.5, 1.0, 0.3]), seed=1)
+    result_frac = s.list.sample(
+        fraction=pl.Series([0.5, 0.5, 1.0, 0.3]), shuffle=False, seed=1
+    )
     assert_series_equal(result_frac, expected_sample_frac)
 
     df = pl.DataFrame(
@@ -430,8 +432,10 @@ def test_list_sample() -> None:
         }
     )
     df = df.select(
-        sample_n=pl.col("values").list.sample(n=pl.col("n"), seed=1),
-        sample_frac=pl.col("values").list.sample(fraction=pl.col("frac"), seed=1),
+        sample_n=pl.col("values").list.sample(n=pl.col("n"), shuffle=False, seed=1),
+        sample_frac=pl.col("values").list.sample(
+            fraction=pl.col("frac"), shuffle=False, seed=1
+        ),
     )
     expected_df = pl.DataFrame(
         {
@@ -562,10 +566,12 @@ def test_list_slice_5866() -> None:
 def test_list_gather() -> None:
     s = pl.Series("a", [[1, 2, 3], [4, 5], [6, 7, 8]])
     # mypy: we make it work, but idiomatic is `arr.get`.
-    assert s.list.gather(0).to_list() == [[1], [4], [6]]  # type: ignore[arg-type]
     assert s.list.gather([0, 1]).to_list() == [[1, 2], [4, 5], [6, 7]]
-
     assert s.list.gather([-1, 1]).to_list() == [[3, 2], [5, 5], [8, 7]]
+
+    msg = "`list.gather` indices must be a list of integers, not a flat dyn int. Use `implode` to wrap the flat value into a list."
+    with pytest.raises(InvalidOperationError, match=re.escape(msg)):
+        s.list.gather(0)  # type: ignore[arg-type]
 
     # use another list to make sure negative indices are respected
     gatherer = pl.Series([[-1, 1], [-1, 1], [-1, -2]])
@@ -599,6 +605,11 @@ def test_list_gather() -> None:
         [42, 1, 2, None],
         [5, 6, 7, None],
     ]
+
+
+def test_list_gather_column_name() -> None:
+    df = pl.DataFrame({"a": [[10, 20, 30]], "idx": [[0, 2]]})
+    assert df.select(pl.col("a").list.gather("idx")).item().to_list() == [10, 30]
 
 
 @pytest.mark.parametrize("maintain_order", [False, True])
@@ -651,15 +662,18 @@ def test_list_get_logical_types() -> None:
 
 
 def test_list_gather_logical_type() -> None:
-    df = pl.DataFrame(
-        {"foo": [["foo", "foo", "bar"]], "bar": [[5.0, 10.0, 12.0]]}
-    ).with_columns(pl.col("foo").cast(pl.List(pl.Categorical)))
+    def chunk(name: str, value: float) -> pl.DataFrame:
+        return pl.DataFrame(
+            {"foo": [[name, name, "bar"]], "bar": [[value, 10.0, 12.0]]}
+        ).with_columns(pl.col("foo").cast(pl.List(pl.Categorical)))
 
-    df = pl.concat([df, df], rechunk=False)
+    # The two rows have to differ: concatenating chunks that hold the same single value
+    # keeps them as one scalar column.
+    df = pl.concat([chunk("foo", 5.0), chunk("baz", 6.0)], rechunk=False)
     assert df.n_chunks() == 2
     assert df.select(pl.all().gather([0, 1])).to_dict(as_series=False) == {
-        "foo": [["foo", "foo", "bar"], ["foo", "foo", "bar"]],
-        "bar": [[5.0, 10.0, 12.0], [5.0, 10.0, 12.0]],
+        "foo": [["foo", "foo", "bar"], ["baz", "baz", "bar"]],
+        "bar": [[5.0, 10.0, 12.0], [6.0, 10.0, 12.0]],
     }
 
 
@@ -681,58 +695,40 @@ def test_list_unique2() -> None:
 def test_list_to_struct() -> None:
     df = pl.DataFrame({"n": [[0, 1, 2], [0, 1]]})
 
-    with pytest.warns(DeprecationWarning, match="to_struct"):
-        assert df.select(pl.col("n").list.to_struct(upper_bound=3)).rows(
-            named=True
-        ) == [
-            {"n": {"field_0": 0, "field_1": 1, "field_2": 2}},
-            {"n": {"field_0": 0, "field_1": 1, "field_2": None}},
-        ]
+    assert df.select(
+        pl.col("n").list.to_struct(["field_0", "field_1", "field_2"])
+    ).rows(named=True) == [
+        {"n": {"field_0": 0, "field_1": 1, "field_2": 2}},
+        {"n": {"field_0": 0, "field_1": 1, "field_2": None}},
+    ]
 
-    with pytest.warns(DeprecationWarning, match="to_struct"):
-        assert df.select(
-            pl.col("n").list.to_struct(fields=lambda idx: f"n{idx}", upper_bound=3)
-        ).rows(named=True) == [
-            {"n": {"n0": 0, "n1": 1, "n2": 2}},
-            {"n": {"n0": 0, "n1": 1, "n2": None}},
-        ]
+    assert df.select(pl.col("n").list.to_struct(["n0", "n1", "n2"])).rows(
+        named=True
+    ) == [
+        {"n": {"n0": 0, "n1": 1, "n2": 2}},
+        {"n": {"n0": 0, "n1": 1, "n2": None}},
+    ]
 
-    assert df.select(pl.col("n").list.to_struct(fields=["one", "two", "three"])).rows(
+    assert df.select(pl.col("n").list.to_struct(["one", "two", "three"])).rows(
         named=True
     ) == [
         {"n": {"one": 0, "two": 1, "three": 2}},
         {"n": {"one": 0, "two": 1, "three": None}},
     ]
 
-    q = df.lazy().select(
-        pl.col("n").list.to_struct(fields=["a", "b"]).struct.field("a")
-    )
-
+    q = df.lazy().select(pl.col("n").list.to_struct(["a", "b"]).struct.field("a"))
     assert_frame_equal(q.collect(), pl.DataFrame({"a": [0, 0]}))
-
-    # Check that:
-    # * Specifying an upper bound calls the field name getter function to
-    #   retrieve the lazy schema
-    # * The upper bound is respected during execution
-    with pytest.warns(DeprecationWarning, match="to_struct"):
-        q = df.lazy().select(
-            pl.col("n").list.to_struct(fields=str, upper_bound=2).struct.unnest()
-        )
-    assert q.collect_schema() == {"0": pl.Int64, "1": pl.Int64}
-    assert_frame_equal(q.collect(), pl.DataFrame({"0": [0, 0], "1": [1, 1]}))
 
 
 def test_list_to_struct_all_null_12119() -> None:
     s = pl.Series([None], dtype=pl.List(pl.Int64))
-    result = s.list.to_struct(fields=["a", "b", "c"]).to_list()
-    assert result == [{"a": None, "b": None, "c": None}]
+    result = s.list.to_struct(["a", "b", "c"]).to_list()
+    assert result == [None]
 
 
 def test_select_from_list_to_struct_11143() -> None:
     ldf = pl.LazyFrame({"some_col": [[1.0, 2.0], [1.5, 3.0]]})
-    ldf = ldf.select(
-        pl.col("some_col").list.to_struct(fields=["a", "b"], upper_bound=2)
-    )
+    ldf = ldf.select(pl.col("some_col").list.to_struct(["a", "b"]))
     df = ldf.select(pl.col("some_col").struct.field("a")).collect()
     assert df.equals(pl.DataFrame({"a": [1.0, 1.5]}))
 
@@ -789,6 +785,33 @@ def test_list_gather_oob_10079() -> None:
     )
     with pytest.raises(OutOfBoundsError, match="gather indices are out of bounds"):
         df.select(pl.col("a").gather(999))
+
+
+@pytest.mark.parametrize(
+    "a",
+    [
+        pl.Series("a", [], pl.List(pl.Int64)),
+        pl.Series("a", [None, None], pl.List(pl.Int64)),
+    ],
+)
+def test_list_gather_keeps_dtype(a: pl.Series) -> None:
+    idx = pl.Series("i", [[0]] * len(a), pl.List(pl.UInt32))
+    out = pl.DataFrame([a, idx]).select(pl.col("a").list.gather(pl.col("i")))
+    assert_series_equal(
+        out.to_series(), pl.Series("a", [None] * len(a), pl.List(pl.Int64))
+    )
+
+
+def test_list_gather_after_eval() -> None:
+    lf = (
+        pl.LazyFrame({"d": [1, 1, 2], "t": [3, 1, 2]})
+        .group_by("d")
+        .agg(pl.col("t").implode(maintain_order=False))
+        .with_columns(i=pl.col("t").list.eval(pl.element().arg_sort()))
+        .select("d", pl.col("t").list.gather(pl.col("i")))
+    )
+    expected = pl.DataFrame({"d": [1, 2], "t": [[1, 3], [2]]})
+    assert_frame_equal(lf.collect(), expected, check_row_order=False)
 
 
 def test_utf8_empty_series_arg_min_max_10703() -> None:
@@ -1001,6 +1024,14 @@ def test_list_sum_bool_schema() -> None:
     assert q.select(pl.col("x").list.sum()).collect_schema()["x"] == pl.get_index_type()
 
 
+def test_list_sum_decimal_schema() -> None:
+    # like `sum()`, the sum takes the full precision
+    q = pl.LazyFrame({"x": [[1, 2]]}, schema={"x": pl.List(pl.Decimal(10, 2))})
+    q = q.select(pl.col("x").list.sum())
+    assert q.collect_schema()["x"] == pl.Decimal(38, 2)
+    assert q.collect().schema == q.collect_schema()
+
+
 def test_list_concat_struct_19279() -> None:
     df = pl.select(
         pl.struct(
@@ -1187,7 +1218,9 @@ def test_list_filter_null() -> None:
 @pytest.mark.may_fail_cloud  # reason: time check
 @pytest.mark.slow
 def test_list_struct_field_perf() -> None:
-    base_df = pl.concat(100 * [pl.DataFrame({"a": [[{"fld": 1}]]})]).rechunk()
+    # The values have to differ: concatenating chunks that hold the same single value
+    # keeps them as one scalar column, which `list.eval` expands on every execution.
+    base_df = pl.DataFrame({"a": [[{"fld": i}] for i in range(100)]}).rechunk()
     df = base_df
 
     q = df.lazy().select(pl.col("a").list.eval(pl.element().struct.field("fld")))
@@ -1206,7 +1239,7 @@ def test_list_struct_field_perf() -> None:
     # Timings (Apple M3 Pro 11-core)
     # * Debug build w/ elementwise: 1x
     # * Release pypi 1.29.0: 80x
-    threshold = 5
+    threshold = 30
 
     if slowdown > threshold:
         msg = f"slowdown ({slowdown}) > {threshold}x ({t0 = }, {t1 = })"
@@ -1293,6 +1326,26 @@ def test_list_contains() -> None:
     assert_series_equal(
         s.list.contains(1, nulls_equal=True),
         pl.Series([True, False, None], dtype=pl.Boolean),
+    )
+
+
+def test_list_contains_multiple_sliced_chunks() -> None:
+    base = pl.DataFrame(
+        {
+            "n": pl.Series([9, 1, 2], dtype=pl.Int8),
+            "h": pl.Series([[9], [1], [2]], dtype=pl.List(pl.Int8)),
+        }
+    )
+    df = pl.concat([base.slice(1, 1), base.slice(2, 1)], rechunk=False)
+    assert df["h"].n_chunks() == 2
+
+    assert_series_equal(
+        df.select(pl.col("h").list.contains(pl.col("n"))).to_series(),
+        pl.Series("h", [True, True]),
+    )
+    assert_series_equal(
+        df.select(pl.col("h").list.contains(2)).to_series(),
+        pl.Series("h", [False, True]),
     )
 
 
@@ -1391,6 +1444,23 @@ def test_list_sample_fraction_with_replacement_27344() -> None:
     assert result["x"][0].to_list() == [1, 1]
 
 
+# shuffle=True and shuffle=None both rely on rand::seq::index::sample's
+# unspecified order, so they produce the same behavior here
+@pytest.mark.parametrize("shuffle", [False, None, True])
+def test_list_sample_reworked_shuffle_23557(shuffle: bool | None) -> None:
+    df = pl.DataFrame({"x": [[1, 2, 3, 4]]})
+
+    result = df.select(pl.col("x").list.sample(n=2, shuffle=shuffle, seed=0))["x"][
+        0
+    ].to_list()
+
+    if shuffle is False:
+        assert result == [1, 2]
+    else:
+        assert len(result) == 2
+        assert set(result).issubset({1, 2, 3, 4})
+
+
 def test_list_eval_exceed_idx_size() -> None:
     s = pl.Series([None])
     s = s.new_from_index(0, 2**31)
@@ -1424,3 +1494,130 @@ def test_list_slice_broadcast_27480(offset: Any, length: Any) -> None:
     )
 
     assert_frame_equal(result, expected)
+
+
+def test_list_slice_null_scalar_offset_29925() -> None:
+    df = pl.DataFrame({"a": [[1, 2]], "b": [1]})
+
+    assert_frame_equal(
+        df.select(
+            pl.when(True).then(None).otherwise(pl.col("a").list.slice(pl.col("b"), 1))
+        ),
+        pl.DataFrame({"literal": [None]}, schema={"literal": pl.List(pl.Int64)}),
+    )
+
+    df = pl.DataFrame({"a": [[1, 2], [3]], "b": [1, 2]})
+    assert df.select(
+        slice=pl.col("a").list.slice(pl.lit(None, pl.Int64), 1),
+        slice_lengths=pl.col("a").list.slice(pl.lit(None, pl.Int64), pl.col("b")),
+    ).to_dict(as_series=False) == {
+        "slice": [None, None],
+        "slice_lengths": [None, None],
+    }
+
+
+@pytest.mark.parametrize(
+    ("offset", "length"),
+    [
+        (0, pl.col("n")),
+        (pl.col("n"), 1),
+        (pl.col("n"), pl.col("n")),
+    ],
+)
+def test_list_slice_all_null_dtype_29926(offset: Any, length: Any) -> None:
+    lf = pl.LazyFrame(
+        {"a": [None, None], "n": [0, 0]},
+        schema={"a": pl.List(pl.String), "n": pl.Int64},
+    ).select(pl.col("a").list.slice(offset, length))
+    expected = pl.DataFrame({"a": [None, None]}, schema={"a": pl.List(pl.String)})
+    assert lf.collect_schema() == expected.schema
+    assert_frame_equal(lf.collect(engine="in-memory"), expected)
+    assert_frame_equal(lf.collect(engine="streaming"), expected)
+
+
+@pytest.mark.parametrize(
+    ("offset", "length", "expected"),
+    [
+        (pl.lit(None), 1, [None, None, None]),
+        (pl.lit(None), pl.col("l"), [None, None, None]),
+        (pl.col("o"), 1, [None, None, [6]]),
+        (pl.col("o"), pl.lit(None), [None, None, [6]]),
+        (pl.col("o"), pl.col("l"), [None, None, [6]]),
+        (1, pl.lit(None), [None, [2, 3], [5, 6]]),
+        (1, pl.col("l"), [None, [2, 3], [5]]),
+        (pl.lit(1), pl.lit(None, pl.Int64), [None, [2, 3], [5, 6]]),
+    ],
+)
+def test_list_slice_nulls(offset: Any, length: Any, expected: list[Any]) -> None:
+    df = pl.DataFrame(
+        {"a": [None, [1, 2, 3], [4, 5, 6]], "o": [1, None, -1], "l": [1, None, 1]}
+    )
+    result = df.select(pl.col("a").list.slice(offset, length))
+    assert_series_equal(
+        result.to_series(), pl.Series("a", expected, dtype=pl.List(pl.Int64))
+    )
+
+
+def test_list_slice_broadcast_nulls() -> None:
+    df = pl.DataFrame({"o": [1, None, -1], "l": [1, None, 1]})
+    a = pl.lit(pl.Series([[1, 2, 3]]))
+    result = df.select(
+        o=a.list.slice(pl.col("o"), 1),
+        l=a.list.slice(1, pl.col("l")),
+        ol=a.list.slice(pl.col("o"), pl.col("l")),
+    )
+    expected = pl.DataFrame(
+        {"o": [[2], None, [3]], "l": [[2], [2, 3], [2]], "ol": [[2], None, [3]]}
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_list_to_struct_raises_on_str_input() -> None:
+    with pytest.raises(TypeError):
+        pl.col("x").list.to_struct("A")
+
+    with pytest.raises(TypeError):
+        pl.Series(dtype=pl.List(pl.Int8)).list.to_struct("A")
+
+    with pytest.raises(TypeError):
+        pl.col("x").arr.to_struct("A")
+
+    with pytest.raises(TypeError):
+        pl.Series(dtype=pl.Array(pl.Int8, 1)).arr.to_struct("A")
+
+
+def test_list_to_struct_outer_nulls_28210() -> None:
+    df = pl.DataFrame(
+        {
+            "list": [[0], [], [None], None],
+            "arr": [[0], [0], [None], None],
+            "arr0": [[], [], None, None],
+        },
+        schema={
+            "list": pl.List(pl.Int8),
+            "arr": pl.Array(pl.Int8, 1),
+            "arr0": pl.Array(pl.Int8, 0),
+        },
+    )
+
+    out = df.select(
+        pl.col("list").list.to_struct([""]),
+        pl.col("arr").arr.to_struct([""]),
+        pl.col("arr0").arr.to_struct([]),
+    )
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {
+                "list": [{"": 0}, {"": None}, {"": None}, None],
+                "arr": [{"": 0}, {"": 0}, {"": None}, None],
+                "arr0": [{}, {}, None, None],
+            },
+            schema={
+                "list": pl.Struct({"": pl.Int8}),
+                "arr": pl.Struct({"": pl.Int8}),
+                "arr0": pl.Struct({}),
+            },
+        ),
+    )

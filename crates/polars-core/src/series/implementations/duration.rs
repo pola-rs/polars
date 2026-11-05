@@ -1,8 +1,6 @@
 use polars_compute::rolling::QuantileMethod;
 
 use super::*;
-#[cfg(feature = "algorithm_group_by")]
-use crate::frame::group_by::*;
 use crate::prelude::*;
 
 unsafe impl IntoSeries for DurationChunked {
@@ -45,9 +43,6 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
     }
 
-    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
-        self.0.physical().into_total_eq_inner()
-    }
     fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
         self.0.physical().into_total_ord_inner()
     }
@@ -108,30 +103,6 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_std(&self, groups: &GroupsType, ddof: u8) -> Series {
-        self.0
-            .physical()
-            .agg_std(groups, ddof)
-            // cast f64 back to physical type
-            .cast(&DataType::Int64)
-            .unwrap()
-            .into_duration(self.0.time_unit())
-            .into_series()
-    }
-
-    #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_var(&self, groups: &GroupsType, ddof: u8) -> Series {
-        self.0
-            .physical()
-            .agg_var(groups, ddof)
-            // cast f64 back to physical type
-            .cast(&DataType::Int64)
-            .unwrap()
-            .into_duration(self.0.time_unit())
-            .into_series()
-    }
-
-    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         // we cannot cast and dispatch as the inner type of the list would be incorrect
         self.0
@@ -144,7 +115,10 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
     fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
         match (self.dtype(), rhs.dtype()) {
             (DataType::Duration(tu), DataType::Duration(tur)) => {
-                polars_ensure!(tu == tur, InvalidOperation: "units are different");
+                polars_ensure!(
+                    tu == tur,
+                    InvalidOperation: "duration time units are different: `{}` and `{}`", tu, tur
+                );
                 let lhs = self.cast(&DataType::Int64, CastOptions::NonStrict).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
                 Ok(lhs.subtract(&rhs)?.into_duration(*tu).into_series())
@@ -155,7 +129,10 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
     fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
         match (self.dtype(), rhs.dtype()) {
             (DataType::Duration(tu), DataType::Duration(tur)) => {
-                polars_ensure!(tu == tur, InvalidOperation: "units are different");
+                polars_ensure!(
+                    tu == tur,
+                    InvalidOperation: "duration time units are different: `{}` and `{}`", tu, tur
+                );
                 let lhs = self.cast(&DataType::Int64, CastOptions::NonStrict).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
                 Ok(lhs.add_to(&rhs)?.into_duration(*tu).into_series())
@@ -180,7 +157,10 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
                     .into_series())
             },
             (DataType::Duration(tu), DataType::Datetime(tur, tz)) => {
-                polars_ensure!(tu == tur, InvalidOperation: "units are different");
+                polars_ensure!(
+                    tu == tur,
+                    InvalidOperation: "time units are different: `{}` and `{}`", tu, tur
+                );
                 let lhs = self.cast(&DataType::Int64, CastOptions::NonStrict).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
                 Ok(lhs
@@ -257,7 +237,11 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
         }
     }
     fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
-        polars_ensure!(self.dtype() == rhs.dtype(), InvalidOperation: "dtypes and units must be equal in duration arithmetic");
+        polars_ensure!(
+            self.dtype() == rhs.dtype(),
+            InvalidOperation: "dtypes and units must be equal in duration arithmetic, got `{}` and `{}`",
+            self.dtype(), rhs.dtype()
+        );
         let lhs = self.cast(&DataType::Int64, CastOptions::NonStrict).unwrap();
         let rhs = rhs.cast(&DataType::Int64).unwrap();
         Ok(lhs
@@ -321,14 +305,6 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
 
     fn median(&self) -> Option<f64> {
         self.0.physical().median()
-    }
-
-    fn std(&self, ddof: u8) -> Option<f64> {
-        self.0.physical().std(ddof)
-    }
-
-    fn var(&self, ddof: u8) -> Option<f64> {
-        self.0.physical().var(ddof)
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
@@ -530,19 +506,11 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         let v = sc.value().as_duration(self.0.time_unit());
         Ok(Scalar::new(self.dtype().clone(), v))
     }
+
     fn min_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.physical().min_reduce();
         let v = sc.value().as_duration(self.0.time_unit());
         Ok(Scalar::new(self.dtype().clone(), v))
-    }
-    fn std_reduce(&self, ddof: u8) -> PolarsResult<Scalar> {
-        let sc = self.0.physical().std_reduce(ddof);
-        let to = self.dtype().to_physical();
-        let v = sc.value().cast(&to);
-        Ok(Scalar::new(
-            self.dtype().clone(),
-            v.as_duration(self.0.time_unit()),
-        ))
     }
 
     fn mean_reduce(&self) -> PolarsResult<Scalar> {

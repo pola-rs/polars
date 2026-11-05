@@ -1,6 +1,7 @@
 import pytest
 
 import polars as pl
+from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal
 
 
@@ -180,10 +181,40 @@ def test_with_columns_scalar_20981() -> None:
 
 
 def test_lazy_with_columns_to_select_28285() -> None:
-    out = (
+    q = (
         pl.LazyFrame()
         .with_columns(a=pl.int_range(5))
         .with_columns(a=pl.lit(2, dtype=pl.Int64))
     )
-    expected = pl.LazyFrame({"a": [2, 2, 2, 2, 2]})
-    assert_frame_equal(out, expected)
+
+    with pytest.raises(ShapeError):
+        q.collect()
+
+    q = pl.LazyFrame().with_columns(a=pl.int_range(5), b=1).with_columns(a=2, b=2)
+
+    with pytest.raises(ShapeError):
+        q.collect()
+
+
+def test_with_columns_zero_width_input_29320() -> None:
+    u = pl.LazyFrame({"c": [1, 2, 3]}).drop("c")
+
+    assert_frame_equal(
+        u.with_columns(x=pl.len()).collect(),
+        pl.DataFrame({"x": [3, 3, 3]}, schema={"x": pl.UInt32}),
+    )
+    # The Python function is opaque to the optimizer, so this expression cannot
+    # be folded into a constant and optimized away before lowering. It
+    # references no columns, so the input schema stays empty.
+    one = pl.lit(1).map_batches(lambda s: s, return_dtype=pl.Int32, is_elementwise=True)
+    assert_frame_equal(
+        u.with_columns(y=one).collect(),
+        pl.DataFrame({"y": [1, 1, 1]}, schema={"y": pl.Int32}),
+    )
+    assert_frame_equal(
+        u.with_columns(x=pl.len(), y=one).collect(),
+        pl.DataFrame(
+            {"x": [3, 3, 3], "y": [1, 1, 1]},
+            schema={"x": pl.UInt32, "y": pl.Int32},
+        ),
+    )

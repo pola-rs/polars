@@ -68,7 +68,7 @@ pub fn register_polars_abort_mechanism() {
         signal_hook::low_level::register(signal_hook::consts::signal::SIGINT, move || {
             // Set the keyboard interrupt flag, but only if there are active catchers.
             ABORT_STATE
-                .fetch_update(Ordering::Release, Ordering::Relaxed, |state| {
+                .try_update(Ordering::Release, Ordering::Relaxed, |state| {
                     let num_catchers = state >> ABORT_CATCHERS_UNIT.trailing_zeros();
                     if num_catchers > 0 {
                         Some(state | ABORT_KEYBOARD_INTERRUPT_BIT)
@@ -84,7 +84,7 @@ pub fn register_polars_abort_mechanism() {
 
 pub fn polars_abort_ooc_out_of_disk() -> ! {
     ABORT_STATE
-        .fetch_update(Ordering::Release, Ordering::Relaxed, |state| {
+        .try_update(Ordering::Release, Ordering::Relaxed, |state| {
             let num_catchers = state >> ABORT_CATCHERS_UNIT.trailing_zeros();
             if num_catchers > 0 {
                 Some(state | ABORT_OOC_OUT_OF_DISK_BIT)
@@ -153,7 +153,7 @@ fn try_register_catcher() -> Result<(), QueryAborted> {
 
 fn unregister_catcher() {
     ABORT_STATE
-        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |state| {
+        .try_update(Ordering::Relaxed, Ordering::Relaxed, |state| {
             let num_catchers = state >> ABORT_CATCHERS_UNIT.trailing_zeros();
             if num_catchers > 1 {
                 Some(state - ABORT_CATCHERS_UNIT)

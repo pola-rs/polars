@@ -522,12 +522,14 @@ def test_scan_cast_options(
     df1 = pl.select(lv1)
     df2 = pl.select(lv2)
 
-    # `cast()` from the Python API should give the same results.
+    # `cast()` from the Python API should give the same results. A strict cast rejects
+    # missing or reordered struct fields.
+    strict = not isinstance(expected.dtype, pl.Struct)
     assert_frame_equal(
         pl.concat(
             [
-                df1.cast(expected.dtype),
-                df2.cast(expected.dtype),
+                df1.cast(expected.dtype, strict=strict),
+                df2.cast(expected.dtype, strict=strict),
             ]
         ),
         expected.to_frame(),
@@ -780,6 +782,9 @@ def test_cast_options_ignore_extra_columns() -> None:
     pl.DataFrame({"a": 1}).write_parquet(files[0])
     pl.DataFrame({"a": 2, "b": 1}).write_parquet(files[1])
 
+    for f in files:
+        f.seek(0)
+
     with pytest.raises(
         pl.exceptions.SchemaError,
         match=r"extra column in file outside of expected schema: b, hint: specify.* or pass",
@@ -815,6 +820,9 @@ def test_scan_cast_options_extra_columns(
 
     write_func(dfs[0], files[0])
     write_func(dfs[1], files[1])
+
+    for f in files:
+        f.seek(0)
 
     with pytest.raises(
         pl.exceptions.SchemaError,

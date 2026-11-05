@@ -52,6 +52,8 @@ static BIN_VIEW_TYPE: ArrowDataType = ArrowDataType::BinaryView;
 static UTF8_VIEW_TYPE: ArrowDataType = ArrowDataType::Utf8View;
 
 // Growth parameters of view array buffers.
+pub const BINVIEW_ARROW_BUFFER_LEN_LIMIT: usize = i32::MAX as usize;
+pub const BINVIEW_MAX_ROW_BYTE_LEN: usize = (u32::MAX - 1) as usize;
 const DEFAULT_BLOCK_SIZE: usize = 8 * 1024;
 const MAX_EXP_BLOCK_SIZE: usize = 16 * 1024 * 1024;
 
@@ -253,6 +255,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         )
     }
 
+    #[inline]
     pub fn data_buffers(&self) -> &Buffer<Buffer<u8>> {
         &self.buffers
     }
@@ -437,6 +440,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     }
 
     /// Returns an iterator of `&[u8]` over every element of this array, ignoring the validity
+    #[inline]
     pub fn values_iter(&self) -> BinaryViewValueIter<'_, T> {
         BinaryViewValueIter::new(self)
     }
@@ -677,6 +681,7 @@ impl Utf8ViewArray {
 }
 
 impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
+    #[inline]
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -700,6 +705,7 @@ impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
         &mut self.dtype
     }
 
+    #[inline]
     fn validity(&self) -> Option<&Bitmap> {
         self.validity.as_ref()
     }

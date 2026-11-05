@@ -19,6 +19,7 @@ from polars.datatypes.classes import (
     Int64,
     Int128,
     List,
+    Map,
     Struct,
     Time,
     UInt8,
@@ -29,19 +30,14 @@ from polars.datatypes.classes import (
 )
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Iterable
+    from typing import Self
 
     from polars._typing import (
         PolarsDataType,
         PolarsIntegerType,
         PolarsTemporalType,
     )
-
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
 
 
 class DataTypeGroup(frozenset):  # type: ignore[type-arg]
@@ -130,4 +126,6 @@ TEMPORAL_DTYPES: Final[frozenset[PolarsTemporalType]] = DataTypeGroup(
     frozenset([Date, Time]) | DATETIME_DTYPES | DURATION_DTYPES
 )
 
-NESTED_DTYPES: Final[frozenset[PolarsDataType]] = DataTypeGroup([List, Struct, Array])
+NESTED_DTYPES: Final[frozenset[PolarsDataType]] = DataTypeGroup(
+    [List, Struct, Array, Map]
+)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
@@ -15,8 +16,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from tests.conftest import PlMonkeyPatch
-
-pytestmark = pytest.mark.xdist_group("streaming")
 
 
 @pytest.mark.slow
@@ -118,7 +117,6 @@ def test_streaming_group_by_types() -> None:
                 [
                     pl.col("person_name").first().alias("str_first"),
                     pl.col("person_name").last().alias("str_last"),
-                    pl.col("person_name").mean().alias("str_mean"),
                     pl.col("bool").first().alias("bool_first"),
                     pl.col("bool").last().alias("bool_first"),
                 ]
@@ -194,6 +192,17 @@ def test_streaming_group_by_sorted_fast_path() -> None:
             results.append(out)
 
         assert_frame_equal(results[0], results[1])
+
+
+def test_streaming_group_by_slice_out_of_bounds_28554() -> None:
+    q = (
+        pl.LazyFrame({"k": [1], "a": [1]})
+        .group_by("k")
+        .agg(s=pl.col("a").sum())
+        .slice(2, 1)
+    )
+
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
 
 
 @pytest.fixture(scope="module")
@@ -530,3 +539,609 @@ def test_streaming_group_by_nested_agg_fallback() -> None:
     )
     expected = {("aaa", n // 3), ("bbb", n - n // 3)}
     assert expected == set(res.rows())
+
+
+@pytest.mark.parametrize("n_groups", [3, 5000])
+def test_streaming_group_by_shared_agg_subexpression(n_groups: int) -> None:
+    n = 20_000
+    df = pl.DataFrame(
+        {
+            "g": [i % n_groups for i in range(n)],
+            "a": [float(i) for i in range(n)],
+            "b": [None if i % 11 == 0 else (i % 7) / 10 for i in range(n)],
+            "c": [(i % 5) / 10 for i in range(n)],
+        }
+    )
+    shared = pl.col("a") * (1 - pl.col("b"))
+    q = (
+        df.lazy()
+        .group_by("g")
+        .agg(
+            shared.sum().alias("s1"),
+            (shared * (1 + pl.col("c"))).sum().alias("s2"),
+            (shared * (1 + pl.col("c"))).max().alias("m2"),
+            pl.col("b").mean(),
+        )
+    )
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("key_dtype", [pl.Int64, pl.String])
+def test_streaming_group_by_hot_table_growth(
+    key_dtype: pl.DataType,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1000")
+    plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "2")
+    plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", "256")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    # Frequent keys, more than the initial hot table holds, mixed with keys that
+    # occur only once.
+    n = 200_000
+    rng = np.random.default_rng(0)
+    heavy = rng.integers(0, 30, n)
+    unique = np.arange(1_000_000, 1_000_000 + n)
+    key = np.where(rng.random(n) < 0.7, heavy, unique)
+    df = pl.DataFrame({"g": key, "v": np.arange(n)}).with_columns(
+        pl.col("g").cast(key_dtype)
+    )
+    q = (
+        df.lazy()
+        .group_by("g")
+        .agg(pl.col("v").sum().alias("sum"), pl.col("v").first().alias("first"))
+    )
+
+    capfd.readouterr()
+    out = q.collect(engine="streaming")
+    assert "[group-by]: hot table" in capfd.readouterr().err
+    assert_frame_equal(out, q.collect(engine="in-memory"), check_row_order=False)
+
+
+def test_streaming_group_by_pre_aggs_over_budget(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1000")
+    plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "4")
+    plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", "4")
+    plmonkeypatch.setenv("POLARS_GROUP_BY_BATCH_BYTES", str(1 << 30))
+    plmonkeypatch.setenv("POLARS_OOC_MEMORY_BUDGET_MB", "1")
+    plmonkeypatch.setenv("POLARS_OOC_SPILL_MIN_BYTES", str(1 << 40))
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    # Each key occurs in one run, so (almost) all groups become pre-aggregates,
+    # which take more memory than the budget.
+    n = 200_000
+    q = (
+        pl.LazyFrame({"k": np.arange(n) // 2, "v": np.arange(n)})
+        .group_by("k")
+        .agg(pl.col("v").sum())
+    )
+
+    capfd.readouterr()
+    out = q.collect(engine="streaming")
+    err = capfd.readouterr().err
+    num_partitions = int(err.split("[group-by]: ")[1].split(" partitions")[0])
+    t = pl.thread_pool_size()
+    max_partitions = max(1024 // t * t, 2 * t)
+    assert num_partitions >= min(16 * t, max_partitions)
+    assert_frame_equal(out, q.collect(engine="in-memory"), check_row_order=False)
+
+
+@pytest.mark.parametrize(
+    "keys",
+    [
+        [pl.col("a")],
+        [pl.col("s")],
+        [pl.col("a"), pl.col("b")],
+        [pl.struct("a", "s")],
+    ],
+)
+def test_streaming_group_by_sorted_runs(
+    keys: list[pl.Expr], plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "16")
+    plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", "16")
+
+    # Runs of equal keys, with far more keys than the hot table holds.
+    n = 2_000
+    a = np.repeat(np.arange(n // 4), 4)
+    df = pl.DataFrame({"a": a, "v": np.arange(n)}).with_columns(
+        pl.when(pl.col("a") % 10 != 0).then(pl.col("a")).alias("a"),
+        b=pl.col("a") % 7,
+        s=pl.col("a").cast(pl.String),
+    )
+    q = (
+        df.lazy()
+        .group_by(keys)
+        .agg(pl.col("v").sum(), pl.col("v").min().alias("min"), pl.len())
+    )
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("n_groups", [3, 100])
+def test_streaming_group_by_null_on_empty_after_valid_morsels(
+    n_groups: int, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "50")
+
+    # Morsels without nulls, then a group that only has nulls.
+    n = 1_000
+    df = pl.DataFrame(
+        {
+            "g": [i % n_groups for i in range(n)] + [n_groups] * 10,
+            "v": [*range(n), *([None] * 10)],
+        }
+    )
+    v = pl.col("v")
+    q = (
+        df.lazy()
+        .group_by("g")
+        .agg(
+            s=pl.when(v.count() > 0).then(v.sum()),
+            mn=v.min(),
+            mx=v.max(),
+        )
+    )
+    out = q.collect(engine="streaming")
+    assert out.filter(pl.col("g") == n_groups).select("s", "mn", "mx").row(0) == (
+        None,
+        None,
+        None,
+    )
+    assert_frame_equal(out, q.collect(engine="in-memory"), check_row_order=False)
+
+
+SPILL_ENV = {
+    "POLARS_OOC_MEMORY_BUDGET_MB": "0",
+    "POLARS_OOC_SPILL_MIN_BYTES": "1",
+    "POLARS_OOC_DRIFT_THRESHOLD": "0",
+}
+
+
+@pytest.fixture(
+    params=[
+        "at_once",
+        "stored",
+        pytest.param("spilled", marks=[pytest.mark.write_disk, pytest.mark.slow]),
+    ]
+)
+def group_by_mode(
+    request: pytest.FixtureRequest, plmonkeypatch: PlMonkeyPatch, tmp_path: Path
+) -> str:
+    """Makes small inputs take the paths of large ones."""
+    mode = str(request.param)
+    plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "4")
+    plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", "4")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "32")
+    plmonkeypatch.setenv("POLARS_GROUP_BY_BATCH_BYTES", "4096")
+    plmonkeypatch.setenv("POLARS_GROUP_BY_MIN_ROWS_PER_PARTITION", "1")
+    if mode != "at_once":
+        num_partitions = 4 * pl.thread_pool_size() + 3
+        plmonkeypatch.setenv("POLARS_GROUP_BY_NUM_PARTITIONS", str(num_partitions))
+    if mode == "spilled":
+        for name, value in SPILL_ENV.items():
+            plmonkeypatch.setenv(name, value)
+        plmonkeypatch.setenv("POLARS_OOC_SPILL_DIR", str(tmp_path))
+    return mode
+
+
+def _modes(*modes: str) -> pytest.MarkDecorator:
+    return pytest.mark.parametrize("group_by_mode", modes, indirect=True)
+
+
+def _mostly_cold_frame(n: int) -> pl.DataFrame:
+    # One frequent key, all other keys unique.
+    i = pl.int_range(n)
+    return pl.select(k=pl.when(i % 8 == 0).then(0).otherwise(n + i), v=i)
+
+
+def _mostly_cold_len(n: int) -> pl.DataFrame:
+    """Return the expected `group_by("k").agg(pl.len())` of `_mostly_cold_frame(n)`."""
+    cold = [j for j in range(n) if j % 8]
+    return pl.DataFrame(
+        [
+            pl.Series("k", [0, *(n + j for j in cold)], dtype=pl.Int64),
+            pl.Series("len", [n // 8] + [1] * len(cold), dtype=pl.get_index_type()),
+        ]
+    )
+
+
+def test_streaming_group_by_mostly_cold(group_by_mode: str) -> None:
+    n = 2048
+    m = n // 8
+    gb = _mostly_cold_frame(n).lazy().group_by("k")
+    cold = [j for j in range(n) if j % 8]
+    keys = pl.Series("k", [0, *(n + j for j in cold)], dtype=pl.Int64)
+
+    out = gb.agg(pl.len()).collect(engine="streaming")
+    assert_frame_equal(out, _mostly_cold_len(n), check_row_order=False)
+
+    expected = pl.DataFrame(
+        [keys, pl.Series("v", [8 * m * (m - 1) // 2, *cold], dtype=pl.Int64)]
+    ).select("k", d=2 * pl.col("v"), v=pl.col("v"))
+    out = gb.agg((pl.col("v") * 2).sum().alias("d"), pl.col("v").sum()).collect(
+        engine="streaming"
+    )
+    assert_frame_equal(out, expected, check_row_order=False)
+
+
+@_modes("at_once", "stored")
+def test_streaming_group_by_mostly_cold_fused_inputs(group_by_mode: str) -> None:
+    n = 2048
+    i = pl.int_range(n)
+    df = _mostly_cold_frame(n).with_columns(
+        o=(i * 37) % 11, s=pl.format("s{}", i).cast(pl.String)
+    )
+    by = ["o", "v"]
+    q = (
+        df.lazy()
+        .group_by("k")
+        .agg(
+            pl.col("s", "v").sort_by(by, descending=True).first().name.suffix("_first"),
+            pl.col("s").min_by(pl.col("o") * 2 - pl.col("v")).alias("s_min_by"),
+            (pl.col("v") * 2).sum().alias("d"),
+        )
+    )
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
+def _keys(dtype: str) -> dict[str, pl.Expr]:
+    g = pl.col("g")
+    long_string = pl.format("a-string-longer-than-twelve-{}", g)
+    keys = {
+        "categorical": {"k": g.cast(pl.String).cast(pl.Categorical)},
+        "decimal": {"k": g.cast(pl.Decimal(18, 2))},
+        "datetime": {"k": g.cast(pl.Datetime("us"))},
+        "string": {"k": long_string},
+        "struct": {"k": pl.struct(a=g, b=g.cast(pl.String))},
+        "multiple": {
+            "i8": (g % 7).cast(pl.Int8),
+            "i16": g.cast(pl.Int16),
+            "i32": g.cast(pl.Int32),
+            "f64": g / 4,
+            "i128": g.cast(pl.Int128) * pl.lit(10**20, dtype=pl.Int128),
+            "b": g % 2 == 0,
+            "s": long_string,
+            "bin": g.cast(pl.String).cast(pl.Binary),
+        },
+    }[dtype]
+    return {name: pl.when(g != 0).then(key) for name, key in keys.items()}
+
+
+@_modes("spilled")
+@pytest.mark.parametrize(
+    "dtype", ["categorical", "decimal", "datetime", "string", "struct", "multiple"]
+)
+def test_streaming_group_by_spilled_keys(group_by_mode: str, dtype: str) -> None:
+    num_groups = 200
+    c = 10
+    keys = _keys(dtype)
+    i = pl.int_range(num_groups * c)
+    lf = (
+        pl.select(g=i % num_groups, v=i)
+        .lazy()
+        .with_columns(**keys)
+        .group_by(list(keys))
+        .agg(pl.len(), pl.col("v").sum())
+    )
+    expected = pl.DataFrame({"g": range(num_groups)}).select(
+        **keys,
+        len=pl.lit(c, dtype=pl.get_index_type()),
+        v=num_groups * c * (c - 1) // 2 + pl.col("g") * c,
+    )
+    assert_frame_equal(lf.collect(engine="streaming"), expected, check_row_order=False)
+
+
+@_modes("stored")
+def test_streaming_group_by_first_last_stored(group_by_mode: str) -> None:
+    i = pl.int_range(1000)
+    v = pl.col("v")
+    lf = (
+        pl.select(k=i % 50, v=pl.when(i >= 50).then(i))
+        .lazy()
+        .group_by("k")
+        .agg(
+            v.first().alias("first"),
+            v.last().alias("last"),
+            v.first(ignore_nulls=True).alias("first_nn"),
+            v.last(ignore_nulls=True).alias("last_nn"),
+        )
+    )
+    k = pl.col("k")
+    expected = pl.select(k=pl.int_range(50)).with_columns(
+        first=pl.lit(None, dtype=pl.Int64),
+        last=950 + k,
+        first_nn=50 + k,
+        last_nn=950 + k,
+    )
+    assert_frame_equal(lf.collect(engine="streaming"), expected, check_row_order=False)
+
+
+@_modes("stored")
+def test_streaming_group_by_multiple_inputs_stored(group_by_mode: str) -> None:
+    num_groups = 200
+    c = 10
+    i = pl.int_range(num_groups * c)
+    v = pl.col("v")
+    lf = (
+        pl.select(g=i % num_groups, v=i)
+        .lazy()
+        .group_by("g")
+        .agg(
+            v.filter(v % 2 == 0).sum().alias("even"),
+            v.filter(v < 0).sum().alias("neg"),
+            pl.len(),
+        )
+    )
+    g = pl.col("g")
+    full = num_groups * c * (c - 1) // 2 + g * c
+    expected = pl.select(g=pl.int_range(num_groups)).select(
+        "g",
+        even=pl.when(g % 2 == 0).then(full).otherwise(0),
+        neg=pl.lit(0, dtype=pl.Int64),
+        len=pl.lit(c, dtype=pl.get_index_type()),
+    )
+    assert_frame_equal(lf.collect(engine="streaming"), expected, check_row_order=False)
+
+
+@_modes("at_once", "stored")
+def test_streaming_group_by_error_while_building_partitions(group_by_mode: str) -> None:
+    n = 2048
+    # Only the last rows fail to parse.
+    t = pl.Series("t", [str(j) if j < n - 3 else "x" for j in range(n)])
+    lf = (
+        _mostly_cold_frame(n)
+        .with_columns(t)
+        .lazy()
+        .group_by("k")
+        .agg(pl.col("t").max(), pl.col("t").str.to_integer().sum().alias("t_sum"))
+    )
+    with pytest.raises(pl.exceptions.ComputeError, match="strict integer parsing"):
+        lf.collect(engine="streaming")
+
+
+@_modes("stored")
+def test_streaming_group_by_head_stored(group_by_mode: str) -> None:
+    n = 2000
+    k = (pl.int_range(n) * 7919) % n
+    lf = pl.select(k=k, v=k).lazy().group_by("k").agg(pl.col("v").sum())
+    out = lf.head(1).collect(engine="streaming")
+    assert out.height == 1
+    assert out["k"][0] == out["v"][0]
+
+
+@_modes("stored")
+def test_streaming_group_by_into_sampling_join(
+    group_by_mode: str, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # The join pauses its inputs after sampling 100 rows.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    left = pl.select(k=pl.int_range(9000) % 3000, v=pl.lit(1, dtype=pl.Int64))
+    right = pl.select(k=pl.int_range(6000) % 3000, w=pl.int_range(6000))
+    lf = (
+        left.lazy()
+        .group_by("k")
+        .agg(pl.col("v").sum(), pl.len())
+        .join(right.lazy().group_by("k").agg(pl.col("w").max()), on="k")
+    )
+
+    out = lf.collect(engine="streaming")
+    k = pl.int_range(3000)
+    expected = pl.select(
+        k=k,
+        v=pl.lit(3, dtype=pl.Int64),
+        len=pl.lit(3, dtype=pl.get_index_type()),
+        w=3000 + k,
+    )
+    assert_frame_equal(out, expected, check_row_order=False)
+
+
+_GRANT_LINE = re.compile(
+    r"\[group-by\]: .*memory grant of (\d+) bytes \((\d+) wanted\)"
+)
+
+
+def _grants(err: str) -> list[tuple[int, int]]:
+    """The granted and wanted bytes of each group-by in the verbose output, sorted."""
+    return sorted((int(g), int(w)) for g, w in _GRANT_LINE.findall(err))
+
+
+def _num_builders(err: str) -> list[int]:
+    """The number of partitions each group-by builds at a time, sorted."""
+    return sorted(
+        int(n) for n in re.findall(r"\[group-by\]: building (\d+) partitions", err)
+    )
+
+
+def test_streaming_group_by_memory_grant_fraction_zero(
+    group_by_mode: str, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    plmonkeypatch.setenv("POLARS_OOC_MEMORY_GRANT_FRACTION", "0")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", "4")
+    n = 2048
+    lf = _mostly_cold_frame(n).lazy().group_by("k").agg(pl.len())
+    out = lf.collect(engine="streaming")
+    err = capfd.readouterr().err
+    [(granted, _)] = _grants(err)
+    assert granted == 0
+    if group_by_mode == "at_once":
+        # The batch size allows no more than two partitions per pipeline.
+        assert "[group-by]: 8 partitions stored" in err
+    assert_frame_equal(out, _mostly_cold_len(n), check_row_order=False)
+
+
+def _small_budget(plmonkeypatch: PlMonkeyPatch, tmp_path: Path) -> None:
+    """Set a memory budget of 1 MB, of which a group-by wants at most 500 kB."""
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_OOC_MEMORY_BUDGET_MB", "1")
+    plmonkeypatch.setenv("POLARS_OOC_SPILL_DIR", str(tmp_path))
+
+
+def _wide_key(i: pl.Expr) -> pl.Expr:
+    """Make a 400 byte string key, so that few rows give a large result."""
+    return i.cast(pl.String).str.pad_start(400, "0")
+
+
+def _sum_per_group(name: str) -> tuple[pl.LazyFrame, pl.DataFrame]:
+    """Return a group-by that wants its largest grant, and its expected result."""
+    num_groups = 2_000
+    k, v = f"k_{name}", f"v_{name}"
+    i = pl.int_range(2 * num_groups)
+    lf = (
+        pl.select(_wide_key(i % num_groups).alias(k), i.alias(v))
+        .lazy()
+        .group_by(k)
+        .agg(pl.col(v).sum())
+    )
+    g = pl.int_range(num_groups)
+    expected = pl.select(_wide_key(g).alias(k), (2 * g + num_groups).alias(v))
+    return lf, expected
+
+
+@pytest.mark.write_disk
+def test_streaming_group_by_memory_grant_concurrent(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    _small_budget(plmonkeypatch, tmp_path)
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", "4")
+    lf_a, expected_a = _sum_per_group("a")
+    lf_b, expected_b = _sum_per_group("b")
+
+    # Both group-bys take their grant before either sends.
+    out = pl.concat([lf_a, lf_b], how="horizontal").collect(engine="streaming")
+    err = capfd.readouterr().err
+    # The second gets two thirds of the 250 kB the first left in the pool.
+    assert _grants(err) == [(166_667, 500_000), (500_000, 500_000)]
+    # Each of the 8 partitions needs about 200 kB, so fewer than 4 fit in either grant.
+    builders = _num_builders(err)
+    assert len(builders) == 2
+    assert max(builders) < 4
+    for expected in (expected_a, expected_b):
+        assert_frame_equal(
+            out.select(expected.columns), expected, check_row_order=False
+        )
+
+
+@pytest.mark.write_disk
+def test_streaming_group_by_memory_grant_returned(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    _small_budget(plmonkeypatch, tmp_path)
+    plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "4")
+    plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", "4")
+    lf, expected = _sum_per_group("a")
+    out = lf.collect(engine="streaming")
+    assert _grants(capfd.readouterr().err) == [(500_000, 500_000)]
+    assert_frame_equal(out, expected, check_row_order=False)
+
+    # Only the last row fails to parse, while its stored partition is built.
+    n = 4_000
+    i = pl.int_range(n)
+    t = pl.when(i < n - 1).then(i.cast(pl.String)).otherwise(pl.lit("x"))
+    failing = (
+        pl.select(k=_wide_key(i % (n // 2)), t=t)
+        .lazy()
+        .group_by("k")
+        .agg(pl.col("t").max(), pl.col("t").str.to_integer().sum().alias("t_sum"))
+    )
+    with pytest.raises(pl.exceptions.ComputeError, match="strict integer parsing"):
+        failing.collect(engine="streaming")
+    err = capfd.readouterr().err
+    assert _grants(err) == [(500_000, 500_000)]
+    assert re.search(r"\[group-by\]: memory grant of [1-9]\d* bytes returned", err)
+
+    out = lf.collect(engine="streaming")
+    assert _grants(capfd.readouterr().err) == [(500_000, 500_000)]
+    assert_frame_equal(out, expected, check_row_order=False)
+
+
+def test_streaming_group_by_unique_n_unique_29904(group_by_mode: str) -> None:
+    n = 300
+    i = pl.int_range(n)
+    df = pl.select(
+        k=i % 7,
+        int=pl.when(i % 11 == 0).then(None).otherwise(i % 40),
+        float=pl.when(i % 13 == 0).then(float("nan")).otherwise((i % 5) - 2.0),
+        str=pl.when(i % 17 == 0).then(None).otherwise((i % 30).cast(pl.String)),
+        mixed_str=pl.Series(
+            [
+                "" if j % 23 == 0 else str(j % 30).rjust(11 + j % 3, "x")
+                for j in range(n)
+            ]
+        ),
+        bin=pl.Series([bytes([j % 7, 0, 255, j % 5] * (1 + j % 4)) for j in range(n)]),
+        bool=pl.when(i % 19 == 0).then(None).otherwise(i % 3 == 0),
+        cat=(i % 4).cast(pl.String).cast(pl.Categorical),
+        dt=pl.date(2020, 1, 1) + pl.duration(days=i % 3),
+        one=(i % 7).cast(pl.String).str.pad_start(20, "x"),
+    )
+    cols = pl.all().exclude("k", "one")
+    lf = (
+        df.lazy()
+        .group_by("k")
+        .agg(
+            cols.n_unique().name.suffix("_n_unique"),
+            cols.unique().name.suffix("_values"),
+            cols.drop_nulls().n_unique().name.suffix("_n_unique_non_null"),
+            pl.col("one").unique(),
+        )
+    )
+
+    dot = lf.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert isinstance(dot, str)
+    assert dot.count('label="group-by') == 1
+    # The n_unique of each column is the length of its unique list.
+    assert "n_unique()" not in dot
+    assert dot.count(".unique().implode(") == df.width - 1
+
+    def sort_lists(lf: pl.LazyFrame, engine: Any) -> pl.DataFrame:
+        out = lf.collect(engine=engine).sort("k")
+        return out.with_columns(pl.col("^.*_values$").list.sort())
+
+    assert_frame_equal(sort_lists(lf, "streaming"), sort_lists(lf, "in-memory"))
+
+
+@pytest.mark.parametrize("repeats", [False, True])
+def test_streaming_group_by_unique_hot_table_switch(
+    repeats: bool, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "32")
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", "4")
+    i = pl.int_range(8192)
+    v = i % 3 if repeats else i
+    df = pl.select(k=i % 64, v=v, s=v.cast(pl.String))
+    lf = (
+        df.lazy()
+        .group_by("k")
+        .agg(
+            pl.col("v").unique(),
+            pl.col("s").n_unique(),
+            pl.col("s").drop_nulls().n_unique().alias("s_non_null"),
+        )
+    )
+
+    out = lf.collect(engine="streaming")
+    switched = "stops using its hot table" in capfd.readouterr().err
+    assert switched != repeats
+
+    expected = lf.collect(engine="in-memory")
+    out, expected = (
+        x.sort("k").with_columns(pl.col("v").list.sort()) for x in (out, expected)
+    )
+    assert_frame_equal(out, expected)

@@ -2,9 +2,15 @@
 use polars_core::datatypes::time_zone::parse_time_zone;
 use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
+use polars_defs::join::{JoinArgs, JoinType};
+use polars_defs::time::duration::{Duration, ensure_duration_matches_dtype};
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
+use polars_defs::time::group_by::ClosedWindow;
 use polars_ops::prelude::*;
 use polars_ops::series::SeriesMethods;
 
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
 use crate::prelude::*;
 
 pub trait PolarsUpsample {

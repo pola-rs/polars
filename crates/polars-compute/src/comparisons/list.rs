@@ -1,10 +1,10 @@
-use arrow::array::{
+use polars_arrow::array::{
     Array, BinaryArray, BinaryViewArray, BooleanArray, DictionaryArray, FixedSizeBinaryArray,
     ListArray, NullArray, PrimitiveArray, StructArray, Utf8Array, Utf8ViewArray,
 };
-use arrow::bitmap::Bitmap;
-use arrow::legacy::utils::CustomIterTools;
-use arrow::types::{Offset, days_ms, i256, months_days_ns};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::legacy::utils::CustomIterTools;
+use polars_arrow::types::{Offset, days_ms, i256, months_days_ns};
 use polars_utils::float16::pf16;
 
 use super::TotalEqKernel;
@@ -54,7 +54,7 @@ macro_rules! compare {
             }};
         }
 
-        use arrow::datatypes::{IntegerType as I, PhysicalType as PH, PrimitiveType as PR};
+        use polars_arrow::datatypes::{IntegerType as I, PhysicalType as PH, PrimitiveType as PR};
         match lhs.values().dtype().to_physical_type() {
             PH::Boolean => call_binary!(BooleanArray),
             PH::BinaryView => call_binary!(BinaryViewArray),
@@ -80,7 +80,7 @@ macro_rules! compare {
             PH::Primitive(PR::MonthDayMillis) => unimplemented!(),
 
             #[cfg(feature = "dtype-array")]
-            PH::FixedSizeList => call_binary!(arrow::array::FixedSizeListArray),
+            PH::FixedSizeList => call_binary!(polars_arrow::array::FixedSizeListArray),
             #[cfg(not(feature = "dtype-array"))]
             PH::FixedSizeList => todo!(
                 "Comparison of FixedSizeListArray is not supported without dtype-array feature"
@@ -154,7 +154,7 @@ macro_rules! compare_broadcast {
 
         assert_eq!(lhs.dtype(), rhs.dtype());
 
-        use arrow::datatypes::{IntegerType as I, PhysicalType as PH, PrimitiveType as PR};
+        use polars_arrow::datatypes::{IntegerType as I, PhysicalType as PH, PrimitiveType as PR};
         match lhs.dtype().to_physical_type() {
             PH::Boolean => call_binary!(BooleanArray),
             PH::BinaryView => call_binary!(BinaryViewArray),
@@ -180,7 +180,7 @@ macro_rules! compare_broadcast {
             PH::Primitive(PR::MonthDayMillis) => unimplemented!(),
 
             #[cfg(feature = "dtype-array")]
-            PH::FixedSizeList => call_binary!(arrow::array::FixedSizeListArray),
+            PH::FixedSizeList => call_binary!(polars_arrow::array::FixedSizeListArray),
             #[cfg(not(feature = "dtype-array"))]
             PH::FixedSizeList => todo!(
                 "Comparison of FixedSizeListArray is not supported without dtype-array feature"

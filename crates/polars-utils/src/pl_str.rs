@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 
 pub use super::pl_ref_str::PlRefStr;
-use crate::relaxed_cell::RelaxedCell;
 
 #[macro_export]
 macro_rules! format_pl_smallstr {
@@ -309,10 +308,18 @@ impl core::fmt::Display for PlSmallStr {
     }
 }
 
-pub fn unique_column_name() -> PlSmallStr {
-    static COUNTER: RelaxedCell<u64> = RelaxedCell::new_u64(0);
-    let idx = COUNTER.fetch_add(1);
-    format_pl_smallstr!("_POLARS_TMP_{idx}")
+/// Defines a `pub(crate) fn unique_column_name()` minting `_POLARS_TMP_{tag}_{n}`.
+#[macro_export]
+macro_rules! define_unique_column_name {
+    ($(#[$attr:meta])* $tag:literal) => {
+        $(#[$attr])*
+        pub(crate) fn unique_column_name() -> $crate::pl_str::PlSmallStr {
+            static COUNTER: $crate::relaxed_cell::RelaxedCell<u64> =
+                $crate::relaxed_cell::RelaxedCell::new_u64(0);
+            let idx = COUNTER.fetch_add(1);
+            $crate::format_pl_smallstr!(concat!("_POLARS_TMP_", $tag, "_{}"), idx)
+        }
+    };
 }
 
 #[cfg(feature = "python")]

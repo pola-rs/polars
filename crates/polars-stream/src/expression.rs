@@ -3,13 +3,13 @@ use std::sync::Arc;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, GroupPositions};
 use polars_core::runtime::ASYNC;
-use polars_error::{PolarsResult, polars_bail};
+use polars_error::PolarsResult;
 use polars_expr::prelude::{AggregationContext, ExecutionState, PhysicalExpr};
 
 #[derive(Clone)]
 pub struct StreamExpr {
     inner: Arc<dyn PhysicalExpr>,
-    // Whether the expression can be re-entering the engine (e.g. a function use the lazy api
+    // Whether the expression can be re-entering the engine (e.g. a function uses the lazy api
     // within that function)
     reentrant: bool,
 }
@@ -42,21 +42,9 @@ impl StreamExpr {
         df: &DataFrame,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
-        let mut c = self.evaluate(df, state).await?;
-
-        if c.len() != df.height() {
-            if c.len() != 1 {
-                polars_bail!(
-                    ShapeMismatch:
-                    "expression result length {} does not match df height {}",
-                    c.len(), df.height(),
-                )
-            }
-
-            c = c.new_from_index(0, df.height());
-        }
-
-        Ok(c)
+        self.evaluate(df, state)
+            .await?
+            .broadcast_owned_to(df.height())
     }
 
     pub fn evaluate_blocking(

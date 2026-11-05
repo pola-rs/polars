@@ -1,8 +1,6 @@
 use polars_compute::rolling::QuantileMethod;
 
 use super::*;
-#[cfg(feature = "algorithm_group_by")]
-use crate::frame::group_by::*;
 use crate::prelude::*;
 
 unsafe impl IntoSeries for DatetimeChunked {
@@ -46,9 +44,6 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
             })
     }
 
-    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
-        self.0.physical().into_total_eq_inner()
-    }
     fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
         self.0.physical().into_total_ord_inner()
     }

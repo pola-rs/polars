@@ -1,7 +1,7 @@
 //! # (De)serializing Arrows Streaming IPC format.
 //!
 //! Arrow Streaming IPC is a [binary format](https://arrow.apache.org/docs/python/ipc.html).
-//! It used for sending an arbitrary length sequence of record batches.
+//! It is used for sending an arbitrary length sequence of record batches.
 //! The format must be processed from start to end, and does not support random access.
 //! It is different than IPC, if you can't deserialize a file with `IpcReader::new`, it's probably an IPC Stream File.
 //!
@@ -36,10 +36,10 @@
 use std::io::{Read, Seek, Write};
 use std::path::PathBuf;
 
-use arrow::datatypes::Metadata;
-use arrow::io::ipc::read::{StreamMetadata, StreamState};
-use arrow::io::ipc::write::WriteOptions;
-use arrow::io::ipc::{read, write};
+use polars_arrow::datatypes::Metadata;
+use polars_arrow::io::ipc::read::{StreamMetadata, StreamState};
+use polars_arrow::io::ipc::write::WriteOptions;
+use polars_arrow::io::ipc::{read, write};
 use polars_core::frame::chunk_df_for_writing;
 use polars_core::prelude::*;
 
@@ -229,7 +229,7 @@ pub struct IpcStreamWriter<W> {
     custom_schema_metadata: Option<Arc<Metadata>>,
 }
 
-use arrow::record_batch::RecordBatch;
+use polars_arrow::record_batch::RecordBatch;
 
 use crate::RowIndex;
 

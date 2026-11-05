@@ -10,7 +10,6 @@ Descriptive
     Series.describe
     Series.estimated_size
     Series.has_nulls
-    Series.has_validity
     Series.is_duplicated
     Series.is_empty
     Series.is_finite

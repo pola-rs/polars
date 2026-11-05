@@ -77,13 +77,13 @@ impl<A, I: Iterator<Item = A>> Iterator for ProjectionIter<'_, A, I> {
 /// Panics iff the projection is not in increasing order (e.g. `[1, 0]` nor `[0, 1, 1]` are valid)
 #[allow(clippy::too_many_arguments)]
 pub fn read_record_batch<R: Read + Seek>(
-    batch: arrow_format::ipc::RecordBatchRef,
+    batch: polars_arrow_format::ipc::RecordBatchRef,
     fields: &ArrowSchema,
     ipc_schema: &IpcSchema,
     projection: Option<&[usize]>,
     limit: Option<usize>,
     dictionaries: &Dictionaries,
-    version: arrow_format::ipc::MetadataVersion,
+    version: polars_arrow_format::ipc::MetadataVersion,
     reader: &mut R,
     block_offset: u64,
     scratch: &mut Vec<u8>,
@@ -99,7 +99,7 @@ pub fn read_record_batch<R: Read + Seek>(
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferRecordBatches(err)))?
         .map(|v| v.iter().map(|v| v as usize).collect::<VecDeque<usize>>())
         .unwrap_or_else(VecDeque::new);
-    let mut buffers: VecDeque<arrow_format::ipc::BufferRef> = buffers.iter().collect();
+    let mut buffers: VecDeque<polars_arrow_format::ipc::BufferRef> = buffers.iter().collect();
 
     let field_nodes = batch
         .nodes()
@@ -251,7 +251,7 @@ pub(crate) fn first_dict_field<'a>(
 /// updating `dictionaries` with the resulting dictionary
 #[allow(clippy::too_many_arguments)]
 pub fn read_dictionary<R: Read + Seek>(
-    batch: arrow_format::ipc::DictionaryBatchRef,
+    batch: polars_arrow_format::ipc::DictionaryBatchRef,
     fields: &ArrowSchema,
     ipc_schema: &IpcSchema,
     dictionaries: &mut Dictionaries,
@@ -301,7 +301,7 @@ pub fn read_dictionary<R: Read + Seek>(
         None,
         None, // we must read the whole dictionary
         dictionaries,
-        arrow_format::ipc::MetadataVersion::V5,
+        polars_arrow_format::ipc::MetadataVersion::V5,
         reader,
         block_offset,
         scratch,
@@ -355,26 +355,33 @@ pub fn prepare_projection(schema: &ArrowSchema, mut projection: Vec<usize>) -> P
 
 pub fn apply_projection(
     chunk: RecordBatchT<Box<dyn Array>>,
-    map: &[usize],
+    indices: &[usize],
 ) -> RecordBatchT<Box<dyn Array>> {
     let length = chunk.len();
 
     // re-order according to projection
     let (schema, arrays) = chunk.into_schema_and_arrays();
-    let mut new_schema = schema.as_ref().clone();
-    let mut new_arrays = arrays.clone();
 
-    map.iter().enumerate().for_each(|(old, new)| {
-        let (old_name, old_field) = schema.get_at_index(old).unwrap();
-        let (new_name, new_field) = new_schema.get_at_index_mut(*new).unwrap();
+    let mut gather_indices = vec![0; indices.len()];
 
-        *new_name = old_name.clone();
-        *new_field = old_field.clone();
+    for (from, &to) in indices.iter().enumerate() {
+        gather_indices[to] = from
+    }
 
-        new_arrays[*new] = arrays[old].clone();
-    });
+    let (arrays, schema): (Vec<Box<dyn Array>>, ArrowSchema) = gather_indices
+        .iter()
+        .map(|&i| {
+            (
+                arrays[i].clone(),
+                schema
+                    .get_at_index(i)
+                    .map(|(l, r)| (l.clone(), r.clone()))
+                    .unwrap(),
+            )
+        })
+        .unzip();
 
-    RecordBatchT::new(length, Arc::new(new_schema), new_arrays)
+    RecordBatchT::new(length, Arc::new(schema), arrays)
 }
 
 #[cfg(test)]

@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import time
 from datetime import date
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -14,10 +13,10 @@ from polars.exceptions import PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars._typing import JoinStrategy
-    from tests.conftest import PlMonkeyPatch
+    from pathlib import Path
 
-pytestmark = pytest.mark.xdist_group("streaming")
+    from polars._typing import JoinStrategy, PolarsIntegerType
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_streaming_categoricals_5921() -> None:
@@ -53,7 +52,6 @@ def test_streaming_block_on_literals_6054() -> None:
     ).sort("col_1").to_dict(as_series=False) == {"col_1": [0, 1], "col_2": [0, 5]}
 
 
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud  # reason: non-pure map_batches
 def test_streaming_streamable_functions(
     plmonkeypatch: PlMonkeyPatch, capfd: Any
@@ -83,13 +81,8 @@ def test_streaming_streamable_functions(
 
 
 @pytest.mark.slow
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud  # reason: timing
 def test_cross_join_stack() -> None:
-    morsel_size = os.environ.get("POLARS_IDEAL_MORSEL_SIZE")
-    if morsel_size is not None and int(morsel_size) < 1000:
-        pytest.skip("test is too slow for small morsel sizes")
-
     a = pl.Series(np.arange(100_000)).to_frame().lazy()
     t0 = time.time()
     assert a.join(a, how="cross").head().collect(engine="streaming").shape == (5, 2)
@@ -129,7 +122,6 @@ def test_streaming_literal_expansion() -> None:
     }
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_streaming_apply(plmonkeypatch: PlMonkeyPatch, capfd: Any) -> None:
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
@@ -299,21 +291,6 @@ def test_boolean_agg_schema() -> None:
 
 
 @pytest.mark.write_disk
-def test_streaming_csv_headers_but_no_data_13770(tmp_path: Path) -> None:
-    with Path.open(tmp_path / "header_no_data.csv", "w") as f:
-        f.write("name, age\n")
-
-    schema = {"name": pl.String, "age": pl.Int32}
-    df = (
-        pl.scan_csv(tmp_path / "header_no_data.csv", schema=schema)
-        .head()
-        .collect(engine="streaming")
-    )
-    assert df.height == 0
-    assert df.schema == schema
-
-
-@pytest.mark.write_disk
 def test_streaming_with_hconcat(tmp_path: Path) -> None:
     df1 = pl.DataFrame(
         {
@@ -333,7 +310,7 @@ def test_streaming_with_hconcat(tmp_path: Path) -> None:
     lf1 = pl.scan_parquet(tmp_path / "df1.parquet")
     lf2 = pl.scan_parquet(tmp_path / "df2.parquet")
     query = (
-        pl.concat([lf1, lf2], how="horizontal", strict=True)
+        pl.concat([lf1, lf2], how="horizontal")
         .group_by("id")
         .agg(pl.all().mean())
         .sort(pl.col("id"))
@@ -369,6 +346,21 @@ def test_elementwise_identification_in_ternary_15767(tmp_path: Path) -> None:
         )
         .sink_parquet(tmp_path / "1")
     )
+
+
+def test_replace_literal_mapping_is_elementwise_30404() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3], "d": [10, 20, 30]}).select(
+        b=pl.col("a").replace({1: 100}),
+        c=pl.col("a").replace_strict({1: 100}, default=pl.col("d")),
+    )
+    plan = lf.show_graph(
+        engine="streaming", plan_stage="physical", raw_output=True, show=False
+    )
+    assert isinstance(plan, str)
+    assert "columnar-function" not in plan
+
+    expected = pl.DataFrame({"b": [100, 2, 3], "c": [100, 20, 30]})
+    assert_frame_equal(lf.collect(engine="streaming"), expected)
 
 
 def test_streaming_temporal_17669() -> None:
@@ -425,16 +417,16 @@ def test_streaming_str_replace_scalar_pattern_26789(
     assert out.to_dict(as_series=False) == {"foo": ["A", "xyz 678 910t"]}
 
 
-def test_streaming_strptime_infer_datetime(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
+def test_streaming_strptime_infer_datetime(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
     df = pl.DataFrame({"s": ["2020-01-01 00:00:00", "2021-06-15 12:30:00"]})
     result = df.lazy().select(pl.col("s").str.to_datetime()).collect(engine="streaming")
     expected = df.lazy().select(pl.col("s").str.to_datetime()).collect()
     assert_frame_equal(result, expected)
 
 
-def test_streaming_strptime_infer_date(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
+def test_streaming_strptime_infer_date(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
     df = pl.DataFrame({"s": ["2020-01-01", "2021-06-15", "2022-12-31"]})
     result = df.lazy().select(pl.col("s").str.to_date()).collect(engine="streaming")
     expected = df.lazy().select(pl.col("s").str.to_date()).collect()
@@ -449,9 +441,9 @@ def test_streaming_strptime_infer_all_null() -> None:
 
 
 def test_streaming_strptime_infer_leading_nulls(
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
     df = pl.DataFrame({"s": [None, None, "2020-01-01", "2021-06-15"]})
     result = df.lazy().select(pl.col("s").str.to_date()).collect(engine="streaming")
     expected = df.lazy().select(pl.col("s").str.to_date()).collect()
@@ -469,9 +461,51 @@ def test_streaming_hconcat_strict_27372() -> None:
             data,
         ],
         how="horizontal",
-        strict=True,
     )
 
     result = lf.collect(engine="streaming")
     expected = lf.collect(engine="in-memory")
     assert_frame_equal(result, expected)
+
+
+def test_log_metrics_reports_query_io_time(
+    plmonkeypatch: PlMonkeyPatch, capfd: Any
+) -> None:
+    plmonkeypatch.setenv("POLARS_LOG_METRICS", "1")
+    capfd.readouterr()
+    pl.LazyFrame({"a": [1, 2, 3]}).select(pl.col("a").sum()).collect(engine="streaming")
+    err = capfd.readouterr().err
+
+    [header] = (
+        line for line in err.splitlines() if line.startswith("Streaming query took")
+    )
+    assert f" CPU on {pl.thread_pool_size()} threads, " in header
+    assert " IO active: " in header
+    assert " rx, " in header
+    assert " tx), detailed breakdown:" in header
+
+
+@pytest.mark.parametrize("dtype", [pl.Int64, pl.UInt64, pl.Int128, pl.Int32])
+@pytest.mark.parametrize(
+    ("length", "height"),
+    [(pl.len(), 4), (pl.col("a").count(), 3)],
+    ids=["len", "count"],
+)
+def test_streaming_int_range_over_length(
+    dtype: PolarsIntegerType, length: pl.Expr, height: int
+) -> None:
+    q = pl.LazyFrame({"a": [1, None, 3, 4]}).select(
+        pl.int_range(0, length, dtype=dtype)
+    )
+    plan = q.show_graph(
+        engine="streaming", plan_stage="physical", raw_output=True, show=False
+    )
+    assert isinstance(plan, str)
+    # A strict cast of the length to a narrower dtype fails on one more row than a
+    # cast of the row index would, so that one keeps evaluating `int_range`.
+    is_row_index = dtype != pl.Int32
+    assert ("with-row-index" in plan) == is_row_index
+    assert ("columnar-function" in plan) != is_row_index
+
+    expected = pl.DataFrame({"literal": range(height)}, schema={"literal": dtype})
+    assert_frame_equal(q.collect(), expected)

@@ -1,13 +1,13 @@
 use std::io::Cursor;
 use std::sync::Arc;
 
-use arrow::array::*;
-use arrow::datatypes::{ArrowSchema, ArrowSchemaRef, Field};
-use arrow::io::ipc::IpcField;
-use arrow::io::ipc::read::{FileReader, read_file_metadata};
-use arrow::io::ipc::write::*;
-use arrow::record_batch::RecordBatchT;
 use polars::prelude::PlSmallStr;
+use polars_arrow::array::*;
+use polars_arrow::datatypes::{ArrowSchema, ArrowSchemaRef, Field};
+use polars_arrow::io::ipc::IpcField;
+use polars_arrow::io::ipc::read::{FileReader, read_file_metadata};
+use polars_arrow::io::ipc::write::*;
+use polars_arrow::record_batch::RecordBatchT;
 use polars_error::*;
 
 pub(crate) fn write(

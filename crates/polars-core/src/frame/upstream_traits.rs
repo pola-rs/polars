@@ -1,6 +1,6 @@
 use std::ops::{Index, Range, RangeFrom, RangeFull, RangeInclusive, RangeTo, RangeToInclusive};
 
-use arrow::record_batch::RecordBatchT;
+use polars_arrow::record_batch::RecordBatchT;
 
 use crate::prelude::*;
 

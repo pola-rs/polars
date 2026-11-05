@@ -1,10 +1,10 @@
-use arrow::array::{
+use polars_arrow::array::{
     Array, BinaryArray, BinaryViewArray, BooleanArray, FixedSizeBinaryArray, PrimitiveArray,
     Utf8Array, Utf8ViewArray,
 };
-use arrow::datatypes::PhysicalType;
-use arrow::types::Offset;
-use arrow::with_match_primitive_type_full;
+use polars_arrow::datatypes::PhysicalType;
+use polars_arrow::types::Offset;
+use polars_arrow::with_match_primitive_type_full;
 use polars_utils::total_ord::ToTotalOrd;
 
 use crate::hyperloglogplus::HyperLogLog;

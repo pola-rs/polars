@@ -88,7 +88,7 @@ fn into_datatype_impl(
             let expr = out.pop().unwrap();
             let mut arena = Arena::new();
             let mut ctx = ExprToIRContext::new(&mut arena, schema);
-            let e = to_expr_ir(expr, &mut ctx)?;
+            let e = to_expr_ir(&expr, &mut ctx)?;
             let dtype = arena
                 .get(e.node())
                 .to_dtype(&ToFieldContext::new(&arena, schema))?;

@@ -1,3 +1,5 @@
+use polars_compute::arithmetic::DivRounding;
+use polars_compute::decimal::{DEC128_MAX_PREC, dec128_fits};
 use polars_compute::rolling::QuantileMethod;
 
 use super::*;
@@ -121,9 +123,6 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
             .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series())
     }
-    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
-        self.0.physical().into_total_eq_inner()
-    }
     fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
         self.0.physical().into_total_ord_inner()
     }
@@ -210,6 +209,12 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
     fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
         let rhs = rhs.decimal()?;
         ((&self.0) / rhs).map(|ca| ca.into_series())
+    }
+    fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
+        let rhs = rhs.decimal()?;
+        self.0
+            .rem_with(rhs, DivRounding::Floor)
+            .map(|ca| ca.into_series())
     }
     #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
@@ -443,9 +448,16 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
             unreachable!()
         };
         let scale = *scale;
-        let prec = polars_compute::decimal::DEC128_MAX_PREC;
-        let sum = self.0.physical().sum();
-        let av = AnyValue::Decimal(sum.unwrap(), prec, scale);
+        let prec = DEC128_MAX_PREC;
+        let sum = self
+            .0
+            .physical()
+            .iter()
+            .flatten()
+            .try_fold(0i128, i128::checked_add)
+            .filter(|sum| dec128_fits(*sum, prec))
+            .ok_or_else(|| polars_err!(ComputeError: "overflow in decimal addition in sum"))?;
+        let av = AnyValue::Decimal(sum, prec, scale);
         Ok(Scalar::new(DataType::Decimal(prec, scale), av))
     }
 
@@ -538,7 +550,7 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
                 .collect::<Float64Chunked>()
                 .into_series();
             Ok(Scalar::new(
-                DataType::List(Box::new(self.dtype().clone())),
+                DataType::List(Box::new(DataType::Float64)),
                 AnyValue::List(scaled_s),
             ))
         } else {

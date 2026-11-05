@@ -6,22 +6,9 @@ use polars_core::runtime::RAYON;
 use polars_core::series::arithmetic::coerce_lhs_rhs;
 use polars_core::utils::dtypes_to_supertype;
 use polars_core::with_match_physical_numeric_polars_type;
+use polars_utils::broadcast::broadcast_len;
+use polars_utils::min_max::MinMax;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
-
-fn validate_column_lengths(cs: &[Column]) -> PolarsResult<()> {
-    let mut length = 1;
-    for c in cs {
-        let len = c.len();
-        if len != 1 && len != length {
-            if length == 1 {
-                length = len;
-            } else {
-                polars_bail!(ShapeMismatch: "cannot evaluate two Series of different lengths ({len} and {length})");
-            }
-        }
-    }
-    Ok(())
-}
 
 pub trait MinMaxHorizontal {
     /// Aggregate the column horizontally to their min values.
@@ -65,75 +52,80 @@ impl SumMeanHorizontal for DataFrame {
 fn min_binary<T>(left: &ChunkedArray<T>, right: &ChunkedArray<T>) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: PartialOrd,
+    T::Native: MinMax,
 {
-    let op = |l: T::Native, r: T::Native| {
-        if l < r { l } else { r }
-    };
-    arity::binary_elementwise_values(left, right, op)
+    if !left.has_nulls() && !right.has_nulls() {
+        arity::broadcast_binary_elementwise_values(left, right, MinMax::min_ignore_nan)
+    } else {
+        arity::broadcast_binary_elementwise(left, right, |opt_l, opt_r| match (opt_l, opt_r) {
+            (Some(l), Some(r)) => Some(l.min_ignore_nan(r)),
+            (Some(x), None) | (None, Some(x)) => Some(x),
+            (None, None) => None,
+        })
+    }
 }
 
 fn max_binary<T>(left: &ChunkedArray<T>, right: &ChunkedArray<T>) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: PartialOrd,
+    T::Native: MinMax,
 {
-    let op = |l: T::Native, r: T::Native| {
-        if l > r { l } else { r }
-    };
-    arity::binary_elementwise_values(left, right, op)
+    if !left.has_nulls() && !right.has_nulls() {
+        arity::broadcast_binary_elementwise_values(left, right, MinMax::max_ignore_nan)
+    } else {
+        arity::broadcast_binary_elementwise(left, right, |opt_l, opt_r| match (opt_l, opt_r) {
+            (Some(l), Some(r)) => Some(l.max_ignore_nan(r)),
+            (Some(x), None) | (None, Some(x)) => Some(x),
+            (None, None) => None,
+        })
+    }
 }
 
 fn min_max_binary_columns(left: &Column, right: &Column, min: bool) -> PolarsResult<Column> {
     if left.dtype().to_physical().is_primitive_numeric()
         && right.dtype().to_physical().is_primitive_numeric()
-        && left.null_count() == 0
-        && right.null_count() == 0
-        && left.len() == right.len()
     {
-        match (left, right) {
-            (Column::Series(left), Column::Series(right)) => {
-                let (lhs, rhs) = coerce_lhs_rhs(left, right)?;
-                let logical = lhs.dtype();
-                let lhs = lhs.to_physical_repr();
-                let rhs = rhs.to_physical_repr();
+        let height = broadcast_len([left, right])?;
+        let left_s = left.as_materialized_series_maintain_scalar();
+        let right_s = right.as_materialized_series_maintain_scalar();
+        let (lhs, rhs) = coerce_lhs_rhs(&left_s, &right_s)?;
+        let logical = lhs.dtype();
 
-                with_match_physical_numeric_polars_type!(lhs.dtype(), |$T| {
-                    let a: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
-                    let b: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
+        let lhs = lhs.to_physical_repr();
+        let rhs = rhs.to_physical_repr();
 
-                    unsafe {
-                        if min {
-                            min_binary(a, b).into_series().from_physical_unchecked(logical)
-                        } else {
-                            max_binary(a, b).into_series().from_physical_unchecked(logical)
-                        }
-                    }
-                })
-                .map(Column::from)
-            },
-            _ => {
-                let mask = if min {
-                    left.lt(right)?
+        with_match_physical_numeric_polars_type!(lhs.dtype(), |$T| {
+            let a: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
+            let b: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
+
+            unsafe {
+                if min {
+                    min_binary(a, b).into_series().from_physical_unchecked(logical)
                 } else {
-                    left.gt(right)?
-                };
-
-                left.zip_with(&mask, right)
-            },
-        }
+                    max_binary(a, b).into_series().from_physical_unchecked(logical)
+                }
+            }
+        })
+        .and_then(|s| s.broadcast_owned_to(height))
+        .map(Column::from)
     } else {
-        let mask = if min {
-            left.lt(right)? & left.is_not_null() | right.is_null()
+        let mut mask = if min {
+            left.lt(right)?
         } else {
-            left.gt(right)? & left.is_not_null() | right.is_null()
+            left.gt(right)?
         };
+        if left.has_nulls() {
+            mask = mask & left.is_not_null();
+        }
+        if right.has_nulls() {
+            mask = mask | right.is_null();
+        }
         left.zip_with(&mask, right)
     }
 }
 
 pub fn max_horizontal(columns: &[Column]) -> PolarsResult<Option<Column>> {
-    validate_column_lengths(columns)?;
+    broadcast_len(columns.iter()).context("max_horizontal")?;
 
     let max_fn = |acc: &Column, s: &Column| min_max_binary_columns(acc, s, false);
 
@@ -159,7 +151,7 @@ pub fn max_horizontal(columns: &[Column]) -> PolarsResult<Option<Column>> {
 }
 
 pub fn min_horizontal(columns: &[Column]) -> PolarsResult<Option<Column>> {
-    validate_column_lengths(columns)?;
+    broadcast_len(columns.iter()).context("min_horizontal")?;
 
     let min_fn = |acc: &Column, s: &Column| min_max_binary_columns(acc, s, true);
 
@@ -188,7 +180,7 @@ pub fn sum_horizontal(
     columns: &[Column],
     null_strategy: NullStrategy,
 ) -> PolarsResult<Option<Column>> {
-    validate_column_lengths(columns)?;
+    broadcast_len(columns.iter()).context("sum_horizontal")?;
     let ignore_nulls = null_strategy == NullStrategy::Ignore;
 
     let apply_null_strategy = |s: Series| -> PolarsResult<Series> {
@@ -210,22 +202,24 @@ pub fn sum_horizontal(
     let non_null_cols = columns
         .iter()
         .filter(|x| x.dtype() != &DataType::Null)
-        .map(|c| c.as_materialized_series())
         .collect::<Vec<_>>();
+    let out_dtype = sum_output_dtype(&dtypes_to_supertype(
+        non_null_cols.iter().map(|c| c.dtype()),
+    )?);
 
     // If we have any null columns and null strategy is not `Ignore`, we can return immediately.
     if !ignore_nulls && non_null_cols.len() < columns.len() {
-        // We must determine the correct return dtype.
-        let return_dtype = match dtypes_to_supertype(non_null_cols.iter().map(|c| c.dtype()))? {
-            DataType::Boolean => IDX_DTYPE,
-            dt => dt,
-        };
         return Ok(Some(Column::full_null(
             columns[0].name().clone(),
             columns[0].len(),
-            &return_dtype,
+            &out_dtype,
         )));
     }
+
+    let non_null_cols = non_null_cols
+        .into_iter()
+        .map(|c| c.as_materialized_series().cast(&out_dtype))
+        .collect::<PolarsResult<Vec<_>>>()?;
 
     match non_null_cols.len() {
         0 => {
@@ -236,24 +230,20 @@ pub fn sum_horizontal(
                 Ok(Some(columns[0].clone()))
             }
         },
-        1 => Ok(Some(
-            apply_null_strategy(if non_null_cols[0].dtype() == &DataType::Boolean {
-                non_null_cols[0].cast(&IDX_DTYPE)?
-            } else {
-                non_null_cols[0].clone()
-            })?
-            .into(),
-        )),
-        2 => sum_fn(non_null_cols[0].clone(), non_null_cols[1].clone())
-            .map(Column::from)
-            .map(Some),
+        1 => {
+            let [s] = <[Series; 1]>::try_from(non_null_cols).unwrap();
+            Ok(Some(apply_null_strategy(s)?.into()))
+        },
+        2 => {
+            let [a, b] = <[Series; 2]>::try_from(non_null_cols).unwrap();
+            sum_fn(a, b).map(Column::from).map(Some)
+        },
         _ => {
             // the try_reduce_with is a bit slower in parallelism,
             // but I don't think it matters here as we parallelize over columns, not over elements
             let out = RAYON.install(|| {
                 non_null_cols
                     .into_par_iter()
-                    .cloned()
                     .map(Ok)
                     .try_reduce_with(sum_fn)
                     // We can unwrap because we started with at least 3 columns, so we always get a Some
@@ -268,7 +258,7 @@ pub fn mean_horizontal(
     columns: &[Column],
     null_strategy: NullStrategy,
 ) -> PolarsResult<Option<Column>> {
-    validate_column_lengths(columns)?;
+    broadcast_len(columns.iter()).context("mean_horizontal")?;
 
     let (numeric_columns, non_numeric_columns): (Vec<_>, Vec<_>) = columns.iter().partition(|s| {
         let dtype = s.dtype();
@@ -347,19 +337,28 @@ pub fn mean_horizontal(
 }
 
 pub fn coalesce_columns(s: &[Column]) -> PolarsResult<Column> {
-    // TODO! this can be faster if we have more than two inputs.
+    // Each iteration recomputes the null mask and allocates a new `out`; a single
+    // pass over all inputs would be faster for many inputs with many nulls.
     polars_ensure!(!s.is_empty(), NoData: "cannot coalesce empty list");
+    let len = broadcast_len(s)?;
     let mut out = s[0].clone();
-    for s in s {
-        if !out.null_count() == 0 {
-            return Ok(out);
-        } else {
-            let mask = out.is_not_null();
-            out = out
-                .as_materialized_series()
-                .zip_with_same_type(&mask, s.as_materialized_series())?
-                .into();
+    for next in &s[1..] {
+        if !out.has_nulls() {
+            break;
         }
+        if out.null_count() == out.len() {
+            out = next.clone().with_name(out.name().clone());
+            continue;
+        }
+        let mask = out.is_not_null();
+        out = out
+            .as_materialized_series()
+            .zip_with_same_type(&mask, next.as_materialized_series())?
+            .into();
+    }
+    // The early exits skip the broadcast `zip_with` would have done.
+    if out.len() != len {
+        out = out.new_from_index(0, len);
     }
     Ok(out)
 }

@@ -1,13 +1,11 @@
 use std::cmp;
-use std::io::{BufRead, Cursor, Read, Write};
+use std::io::{BufRead, Cursor, Read};
 
 use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_error::{feature_gated, to_compute_err};
 
-use crate::utils::file::{Writable, WritableTrait};
 use crate::utils::stream_buf_reader::ReaderSource;
-use crate::utils::sync_on_close::SyncOnCloseType;
 
 /// Represents the compression algorithms that we have decoders for
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
@@ -386,82 +384,182 @@ impl ByteSourceReader<ReaderSource> {
             _ => Self::try_new(ReaderSource::Memory(Cursor::new(slice)), compression),
         }
     }
+
+    /// A reader over bytes that are known to be uncompressed, e.g. already decompressed. Unlike
+    /// [`Self::from_memory`], it does not look for compression magic bytes, which text may start
+    /// with.
+    pub fn from_uncompressed_memory(slice: Buffer<u8>) -> Self {
+        Self::UncompressedMemory { slice, offset: 0 }
+    }
 }
 
-/// Constructor for `WritableTrait` compressed encoders.
-pub enum CompressedWriter {
-    #[cfg(feature = "decompress")]
-    Gzip(Option<flate2::write::GzEncoder<Writable>>),
-    #[cfg(feature = "decompress")]
-    Zstd(Option<zstd::Encoder<'static, Writable>>),
-}
+#[cfg(feature = "decompress")]
+pub use compressed_writer::CompressedWriter;
 
-impl CompressedWriter {
-    pub fn gzip(writer: Writable, level: Option<u32>) -> Self {
-        feature_gated!("decompress", {
-            Self::Gzip(Some(flate2::write::GzEncoder::new(
-                writer,
-                level.map(flate2::Compression::new).unwrap_or_default(),
-            )))
-        })
+#[cfg(feature = "decompress")]
+mod compressed_writer {
+    use std::io;
+
+    /// Constructor for `WritableTrait` compressed encoders.
+    pub enum CompressedWriter<'a, W: io::Write> {
+        Gzip(Option<flate2::write::GzEncoder<GzipTarget<'a, W>>>),
+        Zstd(Option<zstd::Encoder<'static, &'a mut W>>),
     }
 
-    pub fn zstd(writer: Writable, level: Option<u32>) -> std::io::Result<Self> {
-        feature_gated!("decompress", {
+    /// Discards writes once `discard` is set.
+    pub struct GzipTarget<'a, W> {
+        inner: &'a mut W,
+        discard: bool,
+    }
+
+    impl<W: io::Write> io::Write for GzipTarget<'_, W> {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            if self.discard {
+                Ok(buf.len())
+            } else {
+                self.inner.write(buf)
+            }
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            if self.discard {
+                Ok(())
+            } else {
+                self.inner.flush()
+            }
+        }
+    }
+
+    impl<'a, W: io::Write> CompressedWriter<'a, W> {
+        pub fn gzip(writer: &'a mut W, level: Option<u32>) -> Self {
+            Self::Gzip(Some(flate2::write::GzEncoder::new(
+                GzipTarget {
+                    inner: writer,
+                    discard: false,
+                },
+                level.map(flate2::Compression::new).unwrap_or_default(),
+            )))
+        }
+
+        pub fn zstd(writer: &'a mut W, level: Option<u32>) -> io::Result<Self> {
             zstd::Encoder::new(writer, level.unwrap_or(3) as i32)
                 .map(Some)
                 .map(Self::Zstd)
-        })
+        }
     }
-}
 
-impl Write for CompressedWriter {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        feature_gated!("decompress", {
+    impl<'a, W: io::Write> io::Write for CompressedWriter<'a, W> {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
             match self {
                 Self::Gzip(encoder) => encoder.as_mut().unwrap().write(buf),
                 Self::Zstd(encoder) => encoder.as_mut().unwrap().write(buf),
             }
-        })
-    }
+        }
 
-    fn flush(&mut self) -> std::io::Result<()> {
-        feature_gated!("decompress", {
+        fn flush(&mut self) -> io::Result<()> {
             match self {
                 Self::Gzip(encoder) => encoder.as_mut().unwrap().flush(),
                 Self::Zstd(encoder) => encoder.as_mut().unwrap().flush(),
             }
-        })
+        }
     }
-}
 
-impl WritableTrait for CompressedWriter {
-    fn close(&mut self) -> std::io::Result<()> {
-        feature_gated!("decompress", {
-            let writer = match self {
-                Self::Gzip(encoder) => encoder.take().unwrap().finish()?,
-                Self::Zstd(encoder) => encoder.take().unwrap().finish()?,
+    impl<'a, W: io::Write> CompressedWriter<'a, W> {
+        pub fn finish(&mut self) -> io::Result<&'a mut W> {
+            match self {
+                Self::Gzip(encoder) => {
+                    // On failure the encoder stays, so that its drop can't write the trailer.
+                    encoder.as_mut().unwrap().try_finish()?;
+                    encoder.take().unwrap().finish().map(|t| t.inner)
+                },
+                Self::Zstd(encoder) => encoder.take().unwrap().finish(),
+            }
+        }
+    }
+
+    impl<W: io::Write> Drop for CompressedWriter<'_, W> {
+        fn drop(&mut self) {
+            // `GzEncoder` writes its trailer on drop, which would make an unfinished file look complete.
+            if let Self::Gzip(Some(encoder)) = self {
+                encoder.get_mut().discard = true;
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use std::io::{self, Read, Write};
+
+        use super::CompressedWriter;
+
+        fn gzip_written(finish: bool) -> Vec<u8> {
+            let mut out = Vec::new();
+            let mut writer = CompressedWriter::gzip(&mut out, None);
+            writer.write_all(b"x\n1\n").unwrap();
+            writer.flush().unwrap();
+            if finish {
+                writer.finish().unwrap();
+            }
+            drop(writer);
+            out
+        }
+
+        #[test]
+        fn dropped_gzip_writer_leaves_no_trailer() {
+            let out = gzip_written(false);
+            assert!(!out.is_empty());
+            let err = flate2::read::GzDecoder::new(out.as_slice())
+                .read_to_end(&mut Vec::new())
+                .unwrap_err();
+            assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
+        }
+
+        struct FailOnce<'a> {
+            out: Vec<u8>,
+            fail: &'a std::cell::Cell<bool>,
+        }
+
+        impl Write for FailOnce<'_> {
+            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+                if self.fail.replace(false) {
+                    return Err(io::Error::other("write failed"));
+                }
+                self.out.extend_from_slice(buf);
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+
+        #[test]
+        fn failed_gzip_finish_leaves_no_trailer() {
+            let fail = std::cell::Cell::new(false);
+            let mut target = FailOnce {
+                out: Vec::new(),
+                fail: &fail,
             };
+            let mut writer = CompressedWriter::gzip(&mut target, None);
+            writer.write_all(b"x\n1\n").unwrap();
+            writer.flush().unwrap();
+            fail.set(true);
+            assert!(writer.finish().is_err());
+            drop(writer);
+            let err = flate2::read::GzDecoder::new(target.out.as_slice())
+                .read_to_end(&mut Vec::new())
+                .unwrap_err();
+            assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
+        }
 
-            writer.close(SyncOnCloseType::All)
-        })
-    }
-
-    fn sync_all(&self) -> std::io::Result<()> {
-        feature_gated!("decompress", {
-            match self {
-                Self::Gzip(encoder) => encoder.as_ref().unwrap().get_ref().sync_all(),
-                Self::Zstd(encoder) => encoder.as_ref().unwrap().get_ref().sync_all(),
-            }
-        })
-    }
-
-    fn sync_data(&self) -> std::io::Result<()> {
-        feature_gated!("decompress", {
-            match self {
-                Self::Gzip(encoder) => encoder.as_ref().unwrap().get_ref().sync_data(),
-                Self::Zstd(encoder) => encoder.as_ref().unwrap().get_ref().sync_data(),
-            }
-        })
+        #[test]
+        fn finished_gzip_writer_is_complete() {
+            let out = gzip_written(true);
+            let mut decoded = Vec::new();
+            flate2::read::GzDecoder::new(out.as_slice())
+                .read_to_end(&mut decoded)
+                .unwrap();
+            assert_eq!(decoded, b"x\n1\n");
+        }
     }
 }

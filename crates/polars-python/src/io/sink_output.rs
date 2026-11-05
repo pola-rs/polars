@@ -1,4 +1,6 @@
-use polars::prelude::file_provider::{FileProviderFunction, FileProviderType, IcebergPathProvider};
+use polars::prelude::file_provider::{
+    FileProviderFunction, FileProviderType, IcebergPathProvider, IcebergPathProviderLayout,
+};
 use polars::prelude::{PartitionStrategy, PlRefPath, PlSmallStr, SinkDestination, SpecialEq};
 use polars_utils::IdxSize;
 use polars_utils::python_function::PythonObject;
@@ -80,10 +82,21 @@ impl PyFileSinkDestination<'_> {
                             let extension: PyBackedStr = file_path_provider
                                 .getattr(py, intern!(py, "extension"))?
                                 .extract(py)?;
+                            let object_storage_partitioned_paths: Option<bool> = file_path_provider
+                                .getattr(py, intern!(py, "object_storage_partitioned_paths"))?
+                                .extract(py)?;
+
+                            let layout = match object_storage_partitioned_paths {
+                                Some(partitioned_paths) => {
+                                    IcebergPathProviderLayout::ObjectStorage { partitioned_paths }
+                                },
+                                None => IcebergPathProviderLayout::Simple,
+                            };
 
                             FileProviderType::Iceberg(IcebergPathProvider {
                                 extension: PlSmallStr::from_str(&extension),
                                 file_part_prefix: String::new(),
+                                layout,
                             })
                         },
                         id => {

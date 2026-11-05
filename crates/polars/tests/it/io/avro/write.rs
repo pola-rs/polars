@@ -1,16 +1,16 @@
 use std::io::Cursor;
 use std::sync::Arc;
 
-use arrow::array::*;
-use arrow::datatypes::*;
-use arrow::io::avro::avro_schema::file::{Block, CompressedBlock, Compression};
-use arrow::io::avro::avro_schema::write::{compress, write_block, write_metadata};
-use arrow::io::avro::write;
-use arrow::record_batch::RecordBatchT;
 use avro_schema::schema::{Field as AvroField, Record, Schema as AvroSchema};
 use polars::io::avro::{AvroReader, AvroWriter};
 use polars::io::{SerReader, SerWriter};
 use polars::prelude::df;
+use polars_arrow::array::*;
+use polars_arrow::datatypes::*;
+use polars_arrow::io::avro::avro_schema::file::{Block, CompressedBlock, Compression};
+use polars_arrow::io::avro::avro_schema::write::{compress, write_block, write_metadata};
+use polars_arrow::io::avro::write;
+use polars_arrow::record_batch::RecordBatchT;
 use polars_error::PolarsResult;
 
 use super::read::read_avro;
@@ -231,10 +231,10 @@ fn check_large_format() -> PolarsResult<()> {
     let write_data = large_format_data();
 
     let data = write_avro(&write_data, &write_schema, None)?;
-    let (result, read_schame) = read_avro(&data, None)?;
+    let (result, read_schema) = read_avro(&data, None)?;
 
     let expected_schema = large_format_expected_schema();
-    assert_eq!(read_schame, expected_schema);
+    assert_eq!(read_schema, expected_schema);
 
     let expected_data = large_format_expected_data();
     for (c1, c2) in result.columns().iter().zip(expected_data.columns().iter()) {

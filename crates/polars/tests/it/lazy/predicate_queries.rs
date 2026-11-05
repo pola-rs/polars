@@ -61,7 +61,7 @@ fn and_filters(expr: Vec<Expr>) -> Expr {
 #[test]
 fn test_many_filters() -> PolarsResult<()> {
     // just check if it runs. in #3210
-    // we had terrible tree traversion perf.
+    // we had terrible tree traversal perf.
     let df = df! {
         "id" => ["1", "2"]
     }?;
@@ -111,7 +111,7 @@ fn test_filter_block_join() -> PolarsResult<()> {
     let out = df_a
         .lazy()
         .left_join(df_b.lazy(), "a", "a")
-        // mean is influence by join
+        // mean is influenced by join
         .filter(col("c").mean().eq(col("d")))
         .collect()?;
     assert_eq!(out.shape(), (1, 3));
@@ -233,7 +233,7 @@ fn test_predicate_on_join_select_4884() -> PolarsResult<()> {
         .left_on([col("y")])
         .right_on([col("x")])
         .suffix("_right")
-        .finish()
+        .finish()?
         .select([col("x"), col("y_right").alias("y")])
         .filter(col("x").neq(col("y")).and(col("y").eq(2)))
         .collect()?;

@@ -9,9 +9,10 @@ use polars_io::cloud::CloudOptions;
 #[cfg(feature = "cloud")]
 use polars_io::file_cache::FileCacheEntry;
 use polars_io::metrics::IOMetrics;
-use polars_io::utils::byte_source::{DynByteSource, DynByteSourceBuilder};
+use polars_io::utils::byte_source::{DynByteSource, DynByteSourceBuilder, FileByteSource};
 use polars_io::{
-    decode_file_uri_paths, expand_paths, expand_paths_hive, expanded_from_single_directory,
+    BytesPerSource, decode_file_uri_paths, expand_paths, expand_paths_hive,
+    expanded_from_single_directory,
 };
 use polars_utils::mmap::MMapSemaphore;
 use polars_utils::pl_path::PlRefPath;
@@ -51,7 +52,6 @@ pub enum ScanSources {
     Paths(Buffer<PlRefPath>),
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Files(Arc<[File]>),
-    #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Buffers(Arc<[Buffer<u8>]>),
 }
 
@@ -133,6 +133,10 @@ impl ScanSource {
             false
         }
     }
+
+    pub fn is_buffer(&self) -> bool {
+        matches!(self, ScanSource::Buffer(_))
+    }
 }
 
 /// An iterator for [`ScanSources`]
@@ -186,11 +190,11 @@ impl ScanSources {
         match self {
             Self::Paths(paths) => {
                 // csv/ndjson/lines decode here; parquet/ipc decode in the hive variant.
-                let paths = decode_file_uri_paths(paths, scan_args.glob);
+                let decoded = decode_file_uri_paths(paths, scan_args.glob);
 
                 Ok(Self::Paths(
                     expand_paths(
-                        paths.as_ref(),
+                        decoded.as_ref(),
                         scan_args.glob,
                         scan_args.hidden_file_prefix.as_deref().unwrap_or_default(),
                         &mut scan_args.cloud_options,
@@ -208,15 +212,16 @@ impl ScanSources {
     pub async fn expand_paths_with_hive_update(
         &self,
         scan_args: &mut UnifiedScanArgs,
-    ) -> PolarsResult<Self> {
+    ) -> PolarsResult<(Self, BytesPerSource)> {
         match self {
             Self::Paths(paths) => {
                 // Decode up front so expansion, single-directory detection, and hive parsing
                 // all see the same literal path; decoding later misfires hive detection.
-                let paths = decode_file_uri_paths(paths, scan_args.glob);
-                let paths = paths.as_ref();
+                let decoded = decode_file_uri_paths(paths, scan_args.glob);
 
-                let (expanded_paths, hive_start_idx) = expand_paths_hive(
+                let paths = decoded.as_ref();
+
+                let (expanded_paths, hive_start_idx, bytes_per_source) = expand_paths_hive(
                     paths,
                     scan_args.glob,
                     scan_args.hidden_file_prefix.as_deref().unwrap_or_default(),
@@ -232,9 +237,9 @@ impl ScanSources {
                 }
                 scan_args.hive_options.hive_start_idx = hive_start_idx;
 
-                Ok(Self::Paths(expanded_paths))
+                Ok((Self::Paths(expanded_paths), bytes_per_source))
             },
-            v => Ok(v.clone()),
+            v => Ok((v.clone(), None)),
         }
     }
 
@@ -359,6 +364,31 @@ impl ScanSources {
             Self::Files(_) => return None,
         })
     }
+
+    /// The sources of `parts` one after another. Returns `None` if the parts are not all
+    /// `::Paths` or all `::Buffers`.
+    pub(crate) fn concat(parts: &[&Self]) -> Option<Self> {
+        Some(match parts.first()? {
+            Self::Paths(_) => {
+                let mut out = Vec::with_capacity(parts.iter().map(|s| s.len()).sum());
+                for s in parts {
+                    out.extend_from_slice(s.as_paths()?);
+                }
+                Self::Paths(out.into())
+            },
+            Self::Buffers(_) => {
+                let mut out = Vec::with_capacity(parts.iter().map(|s| s.len()).sum());
+                for s in parts {
+                    let Self::Buffers(buffers) = s else {
+                        return None;
+                    };
+                    out.extend(buffers.iter().cloned());
+                }
+                Self::Buffers(out.into())
+            },
+            Self::Files(_) => return None,
+        })
+    }
 }
 
 impl ScanSourceRef<'_> {
@@ -418,7 +448,7 @@ impl ScanSourceRef<'_> {
                             .unwrap(),
                     )?
                 } else {
-                    polars_utils::open_file(path.as_std_path())?
+                    polars_utils::io::open_file(path.as_std_path())?
                 };
 
                 Ok(Buffer::from_owner(MMapSemaphore::new_from_file(&file)?))
@@ -445,7 +475,7 @@ impl ScanSourceRef<'_> {
     fn to_buffer_async(&self, run_async: bool) -> PolarsResult<Buffer<u8>> {
         match self {
             ScanSourceRef::Path(path) => {
-                let file = polars_utils::open_file(path.as_std_path())?;
+                let file = polars_utils::io::open_file(path.as_std_path())?;
                 Ok(Buffer::from_owner(MMapSemaphore::new_from_file(&file)?))
             },
             ScanSourceRef::File(file) => {
@@ -481,7 +511,7 @@ impl ScanSourceRef<'_> {
                         cache_entries.unwrap()[index].try_open_check_latest()?
                     })
                 } else {
-                    polars_utils::open_file(path.as_std_path())?
+                    polars_utils::io::open_file(path.as_std_path())?
                 };
 
                 Ok(Buffer::from_owner(MMapSemaphore::new_from_file(&file)?))
@@ -503,9 +533,19 @@ impl ScanSourceRef<'_> {
                     .try_build_from_path((*path).clone(), cloud_options, io_metrics)
                     .await
             },
-            Self::File(file) => Ok(DynByteSource::from(Buffer::from_owner(
-                MMapSemaphore::new_from_file(file)?,
-            ))),
+            Self::File(file) => match builder {
+                DynByteSourceBuilder::FilePread(read_context) => {
+                    Ok(FileByteSource::try_new_from_std(
+                        file.try_clone()?,
+                        read_context.clone(),
+                        io_metrics,
+                    )?
+                    .into())
+                },
+                _ => Ok(DynByteSource::from(Buffer::from_owner(
+                    MMapSemaphore::new_from_file(file)?,
+                ))),
+            },
             Self::Buffer(buff) => Ok(DynByteSource::from((*buff).clone())),
         }
     }

@@ -2,7 +2,6 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use bytes::Bytes;
-use object_store::PutPayload;
 use polars_error::PolarsResult;
 
 use crate::cloud::PolarsObjectStore;
@@ -19,7 +18,7 @@ impl CloudWriter {
     pub fn new(
         store: PolarsObjectStore,
         path: object_store::path::Path,
-        upload_chunk_size: usize,
+        upload_chunk_size: Option<NonZeroUsize>,
         max_concurrency: NonZeroUsize,
         io_metrics: Option<Arc<IOMetrics>>,
     ) -> Self {
@@ -37,10 +36,6 @@ impl CloudWriter {
         }
     }
 
-    pub async fn start(&mut self) -> PolarsResult<()> {
-        self.writer.start().await
-    }
-
     pub async fn write_all_owned(&mut self, mut bytes: Bytes) -> PolarsResult<()> {
         while !bytes.is_empty() {
             self.bufferer.push_owned(&mut bytes);
@@ -48,25 +43,6 @@ impl CloudWriter {
             if let Some(payload) = self.bufferer.flush_full_chunk() {
                 self.writer.put(payload).await?;
             }
-        }
-
-        Ok(())
-    }
-
-    /// Write multiple Bytes without buffering.
-    pub async fn write_multiple_owned_unbuffered<I, T>(&mut self, bytes: I) -> PolarsResult<()>
-    where
-        I: IntoIterator<Item = T>,
-        Bytes: From<T>,
-    {
-        let payload = PutPayload::from_iter(bytes.into_iter().map(Bytes::from));
-
-        if payload.iter().next().is_some() {
-            if let Some(payload) = self.bufferer.flush() {
-                self.writer.put(payload).await?;
-            }
-
-            self.writer.put(payload).await?;
         }
 
         Ok(())
@@ -85,27 +61,10 @@ impl CloudWriter {
         Ok(())
     }
 
-    pub(super) async fn flush(&mut self) -> PolarsResult<()> {
-        if let Some(payload) = self.bufferer.flush() {
-            self.writer.put(payload).await?;
-        }
-
-        assert!(self.bufferer.is_empty());
-
-        Ok(())
-    }
-
-    pub(super) fn has_buffered_bytes(&self) -> bool {
-        !self.bufferer.is_empty()
-    }
-
     pub async fn finish(&mut self) -> PolarsResult<()> {
-        if let Some(payload) = self.bufferer.flush() {
-            self.writer.put(payload).await?;
-        }
-
+        let tail = self.bufferer.flush();
         assert!(self.bufferer.is_empty());
 
-        self.writer.finish().await
+        self.writer.finish(tail).await
     }
 }

@@ -14,12 +14,12 @@ Miscellaneous
     LazyFrame.collect_schema
     LazyFrame.collect_batches
     LazyFrame.execute
+    LazyFrame.from_lazyframe_resolver
     LazyFrame.sink_batches
     LazyFrame.lazy
     LazyFrame.map_batches
     LazyFrame.pipe
     LazyFrame.pipe_with_schema
-    LazyFrame.profile
     LazyFrame.remote
 
 Serialization

@@ -8,6 +8,20 @@ use crate::ffi;
 /// Implementing this trait incorrect will lead to UB
 pub(crate) unsafe trait ToFfi {
     /// The pointers to the buffers.
+    ///
+    /// Two types: buffers indexed by element go out at their allocation start; buffers
+    /// addressed by the contents of another buffer go out offset-adjusted.
+    ///
+    /// The consumer applies [`Self::offset`] to every buffer that is indexed by element, so
+    /// those are exported at the start of their allocation: `Buffer::storage_ptr`, and
+    /// `Bitmap::as_ptr`, which ignores the bit offset.
+    ///
+    /// Buffers addressed through the contents of another buffer are not indexed by the array
+    /// offset, and are exported offset-adjusted with `Buffer::as_ptr`:
+    /// * `Utf8Array`/`BinaryArray` values, addressed by the offsets buffer;
+    /// * `BinaryViewArray` variadic buffers, addressed by the views.
+    ///
+    /// `ffi::array::buffer_offset` applies the same split on import.
     fn buffers(&self) -> Vec<Option<*const u8>>;
 
     /// The children

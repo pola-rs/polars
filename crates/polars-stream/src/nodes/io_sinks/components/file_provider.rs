@@ -5,26 +5,29 @@ use polars_core::runtime::ASYNC;
 use polars_error::{PolarsResult, polars_ensure};
 use polars_io::cloud::CloudOptions;
 use polars_io::metrics::IOMetrics;
-use polars_io::utils::file::Writable;
 use polars_plan::dsl::file_provider::{FileProviderReturn, FileProviderType};
-use polars_plan::dsl::sink::SinkedPathInfo;
 use polars_plan::prelude::file_provider::FileProviderArgs;
 use polars_utils::pl_path::PlRefPath;
 
-use crate::nodes::io_sinks::components::sinked_path_info_list::SinkedPathInfoList;
+use crate::nodes::io_sinks::components::sinked_path_info_list::{
+    SinkedPathInfoEntry, requested_sinked_paths_callback_with_non_path_error,
+};
 
 pub struct FileProvider {
     pub base_path: PlRefPath,
     pub cloud_options: Option<Arc<CloudOptions>>,
     pub provider_type: FileProviderType,
-    pub upload_chunk_size: NonZeroUsize,
+    pub upload_chunk_size: Option<NonZeroUsize>,
     pub upload_max_concurrency: NonZeroUsize,
     pub io_metrics: Option<Arc<IOMetrics>>,
-    pub sinked_path_info_list: Option<SinkedPathInfoList>,
 }
 
 impl FileProvider {
-    pub async fn open_file(&self, args: FileProviderArgs) -> PolarsResult<Writable> {
+    pub async fn open_file(
+        &self,
+        args: FileProviderArgs,
+        path_info_entry: Option<SinkedPathInfoEntry>,
+    ) -> PolarsResult<crate::nodes::io_sinks::components::writable::WriteTarget> {
         let provided_path: String = 'provided_path: {
             let provided_writable = match &self.provider_type {
                 FileProviderType::Hive(p) => break 'provided_path p.get_path(args)?,
@@ -44,11 +47,16 @@ impl FileProvider {
                 },
             };
 
-            if let Some(v) = &self.sinked_path_info_list {
-                return Err(v.non_path_error());
+            if path_info_entry.is_some() {
+                return Err(requested_sinked_paths_callback_with_non_path_error());
             }
 
-            return Ok(provided_writable);
+            return Ok(
+                crate::nodes::io_sinks::components::writable::WriteTarget::new(
+                    provided_writable,
+                    None,
+                ),
+            );
         };
 
         let path = self.base_path.join(&provided_path);
@@ -71,29 +79,22 @@ impl FileProvider {
             "provided path '{provided_path}' contained parent dir component '..'"
         );
 
-        if !path.has_scheme()
-            && let Some(path) = path.parent()
-        {
-            // Ignore errors from directory creation - the `Writable::try_new()` below will raise
-            // appropriate errors.
-            let _ = tokio::fs::DirBuilder::new()
-                .recursive(true)
-                .create(path)
-                .await;
+        // Raise errors from directory creation here, so the reason it could not be created is
+        // reported, rather than raising "No such file or directory" when we try to open the
+        // missing directory below.
+        polars_io::utils::mkdir::tokio_mkdir_recursive(&path).await?;
+
+        if let Some(path_info_entry) = &path_info_entry {
+            path_info_entry.set_path(path.clone());
         }
 
-        if let Some(v) = &self.sinked_path_info_list {
-            v.path_info_list
-                .lock()
-                .push(SinkedPathInfo { path: path.clone() });
-        }
-
-        Writable::try_new(
+        polars_io::utils::file::Writable::try_new(
             path,
             self.cloud_options.as_deref(),
-            self.upload_chunk_size.get(),
+            self.upload_chunk_size,
             self.upload_max_concurrency.get(),
             self.io_metrics.clone(),
         )
+        .map(|x| crate::nodes::io_sinks::components::writable::WriteTarget::new(x, path_info_entry))
     }
 }

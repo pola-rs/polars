@@ -8,6 +8,10 @@ from polars.testing import assert_frame_equal, assert_series_equal
 
 inf = float("inf")
 
+# `qcut` is deprecated in favour of `bin_intervals`/`bin_quantiles`/`bin_ranks`,
+# but remains covered until it is removed.
+pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
+
 
 def test_qcut() -> None:
     s = pl.Series("a", [-2, -1, 0, 1, 2])
@@ -242,3 +246,14 @@ def test_qcut_full_null_include_breaks_lazy_unnest_27284() -> None:
         schema={"breakpoint": pl.Float64, "category": pl.Categorical},
     )
     assert_frame_equal(out, expected, categorical_as_str=True)
+
+
+@pytest.mark.filterwarnings("default::DeprecationWarning")
+def test_qcut_deprecated() -> None:
+    s = pl.Series("a", [-2, -1, 0, 1, 2])
+
+    with pytest.deprecated_call(match=r"`qcut` is deprecated; use `bin_quantiles`"):
+        s.qcut([0.25, 0.75])
+
+    with pytest.deprecated_call(match=r"`qcut` is deprecated; use `bin_quantiles`"):
+        pl.select(pl.lit(s).qcut(2))

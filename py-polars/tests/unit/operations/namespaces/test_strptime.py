@@ -7,7 +7,7 @@ This method gets its own module due to its complexity.
 from __future__ import annotations
 
 from contextlib import nullcontext as does_not_raise
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
@@ -297,7 +297,7 @@ def test_to_datetime_dates_datetimes() -> None:
         ),
         (
             "20190418T224555.555123Z",
-            datetime(2019, 4, 18, 22, 45, 55, 555123, tzinfo=timezone.utc),
+            datetime(2019, 4, 18, 22, 45, 55, 555123, tzinfo=UTC),
         ),
     ],
 )
@@ -312,7 +312,7 @@ def test_infer_tz_aware_time_unit(time_unit: TimeUnit) -> None:
         time_unit=time_unit
     )
     assert result.dtype == pl.Datetime(time_unit, "UTC")
-    assert result.item() == datetime(2020, 1, 2, 2, 0, tzinfo=timezone.utc)
+    assert result.item() == datetime(2020, 1, 2, 2, 0, tzinfo=UTC)
 
 
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
@@ -321,7 +321,7 @@ def test_infer_tz_aware_with_utc(time_unit: TimeUnit) -> None:
         time_unit=time_unit
     )
     assert result.dtype == pl.Datetime(time_unit, "UTC")
-    assert result.item() == datetime(2020, 1, 2, 2, 0, tzinfo=timezone.utc)
+    assert result.item() == datetime(2020, 1, 2, 2, 0, tzinfo=UTC)
 
 
 def test_str_to_datetime_infer_tz_aware() -> None:
@@ -355,7 +355,7 @@ def test_str_to_datetime_infer_tz_aware() -> None:
     ],
 )
 def test_parsing_offset_aware_with_utc_dtype(result: pl.Series) -> None:
-    expected = pl.Series([datetime(2020, 1, 1, tzinfo=timezone.utc)])
+    expected = pl.Series([datetime(2020, 1, 1, tzinfo=UTC)])
     assert_series_equal(result, expected)
 
 
@@ -540,8 +540,8 @@ def test_to_datetime_ambiguous_or_non_existent() -> None:
 @pytest.mark.parametrize(
     ("ts", "fmt", "expected"),
     [
-        ("2020-01-01T00:00:00Z", None, datetime(2020, 1, 1, tzinfo=timezone.utc)),
-        ("2020-01-01T00:00:00Z", "%+", datetime(2020, 1, 1, tzinfo=timezone.utc)),
+        ("2020-01-01T00:00:00Z", None, datetime(2020, 1, 1, tzinfo=UTC)),
+        ("2020-01-01T00:00:00Z", "%+", datetime(2020, 1, 1, tzinfo=UTC)),
         (
             "2020-01-01T00:00:00+01:00",
             "%Y-%m-%dT%H:%M:%S%z",
@@ -578,8 +578,8 @@ def test_crossing_dst_tz_aware(format: str) -> None:
     result = pl.Series(ts).str.to_datetime(format)
     expected = pl.Series(
         [
-            datetime(2021, 3, 27, 22, 59, 59, tzinfo=timezone.utc),
-            datetime(2021, 3, 28, 21, 59, 59, tzinfo=timezone.utc),
+            datetime(2021, 3, 27, 22, 59, 59, tzinfo=UTC),
+            datetime(2021, 3, 28, 21, 59, 59, tzinfo=UTC),
         ]
     )
     assert_series_equal(result, expected)
@@ -839,6 +839,10 @@ def test_polars_parser_fooled_by_trailing_nonsense_22167() -> None:
         pl.Series(["2025-04-06T18:57:42.77123Z"]).str.to_datetime(
             "%Y-%m-%dT%H:%M:%S.%6f#z"
         )
+    with pytest.raises(InvalidOperationError):
+        pl.Series(["2025-04-06T18:57:42.777561920"]).str.to_datetime(
+            "%Y-%m-%dT%H:%M:%S.%9fZ"
+        )
 
 
 def test_strptime_empty_input_22214() -> None:
@@ -906,7 +910,22 @@ def test_date_parse_omit_day_month() -> None:
             "2022 December",
         ]
     )
-    result = s.str.strptime(pl.Date, "%Y %B")
+    s_abbrev = pl.Series(
+        [
+            "2022 Jan",
+            "2022 Feb",
+            "2022 Mar",
+            "2022 Apr",
+            "2022 May",
+            "2022 Jun",
+            "2022 Jul",
+            "2022 Aug",
+            "2022 Sep",
+            "2022 Oct",
+            "2022 Nov",
+            "2022 Dec",
+        ]
+    )
     expected = pl.Series(
         [
             date(2022, 1, 1),
@@ -923,7 +942,9 @@ def test_date_parse_omit_day_month() -> None:
             date(2022, 12, 1),
         ]
     )
-    assert_series_equal(result, expected)
+    assert_series_equal(s.str.strptime(pl.Date, "%Y %B"), expected)
+    assert_series_equal(s_abbrev.str.strptime(pl.Date, "%Y %b"), expected)
+    assert_series_equal(s_abbrev.str.strptime(pl.Date, "%Y %B"), expected)
 
 
 @pytest.mark.parametrize("length", [1, 5])

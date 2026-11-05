@@ -1,5 +1,5 @@
 //! Traits for miscellaneous operations on ChunkedArray
-use arrow::offset::OffsetsBuffer;
+use polars_arrow::offset::OffsetsBuffer;
 use polars_compute::rolling::QuantileMethod;
 
 use crate::prelude::*;
@@ -11,6 +11,7 @@ mod apply;
 #[cfg(feature = "approx_unique")]
 mod approx_n_unique;
 pub mod arity;
+pub mod binning;
 mod bit_repr;
 mod bits;
 #[cfg(feature = "bitwise")]
@@ -46,6 +47,7 @@ pub mod zip;
 
 pub use bit_repr::reinterpret;
 pub use chunkops::_set_check_length;
+pub use explode::explode_with_row_offsets;
 pub use nesting_utils::ChunkNestingUtils;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
@@ -101,10 +103,6 @@ pub trait ChunkExplode {
         &self,
         options: ExplodeOptions,
     ) -> PolarsResult<(Series, OffsetsBuffer<i64>)>;
-}
-
-pub trait ChunkBytes {
-    fn to_byte_slices(&self) -> Vec<&[u8]>;
 }
 
 /// This differs from ChunkWindowCustom and ChunkWindow
@@ -283,7 +281,7 @@ pub trait ChunkAgg<T> {
 
 /// Quantile and median aggregation.
 pub trait ChunkQuantile<T> {
-    /// Returns the mean value in the array.
+    /// Returns the median value in the array.
     /// Returns `None` if the array is empty or only contains null values.
     fn median(&self) -> Option<T> {
         None
@@ -409,13 +407,13 @@ pub trait ChunkSort<T: PolarsDataType> {
     #[allow(unused_variables)]
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<T>;
 
-    /// Returned a sorted `ChunkedArray`.
+    /// Return a sorted `ChunkedArray`.
     fn sort(&self, descending: bool) -> ChunkedArray<T>;
 
     /// Retrieve the indexes needed to sort this array.
     fn arg_sort(&self, options: SortOptions) -> IdxCa;
 
-    /// Retrieve the indexes need to sort this and the other arrays.
+    /// Retrieve the indexes needed to sort this and the other arrays.
     #[allow(unused_variables)]
     fn arg_sort_multiple(
         &self,
@@ -428,7 +426,7 @@ pub trait ChunkSort<T: PolarsDataType> {
 
 pub type FillNullLimit = Option<IdxSize>;
 
-#[derive(Copy, Clone, Debug, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Hash, Eq)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum FillNullStrategy {
@@ -456,7 +454,7 @@ impl FillNullStrategy {
 
 /// Replace None values with a value
 pub trait ChunkFillNullValue<T> {
-    /// Replace None values with a give value `T`.
+    /// Replace None values with a given value `T`.
     fn fill_null_with_values(&self, value: T) -> PolarsResult<Self>
     where
         Self: Sized;
@@ -666,20 +664,4 @@ pub trait ChunkApplyKernel<A: Array> {
     fn apply_kernel_cast<S>(&self, f: &dyn Fn(&A) -> ArrayRef) -> ChunkedArray<S>
     where
         S: PolarsDataType;
-}
-
-#[cfg(feature = "is_first_distinct")]
-/// Mask the first unique values as `true`
-pub trait IsFirstDistinct<T: PolarsDataType> {
-    fn is_first_distinct(&self) -> PolarsResult<BooleanChunked> {
-        polars_bail!(opq = is_first_distinct, T::get_static_dtype());
-    }
-}
-
-#[cfg(feature = "is_last_distinct")]
-/// Mask the last unique values as `true`
-pub trait IsLastDistinct<T: PolarsDataType> {
-    fn is_last_distinct(&self) -> PolarsResult<BooleanChunked> {
-        polars_bail!(opq = is_last_distinct, T::get_static_dtype());
-    }
 }

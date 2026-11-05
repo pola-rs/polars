@@ -34,11 +34,15 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "cloud")]
 use super::credential_provider::PlCredentialProvider;
 #[cfg(feature = "cloud")]
-use super::dns::get_dns_cache_ttl;
-#[cfg(feature = "cloud")]
 use crate::cloud::ObjectStoreErrorContext;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
-use crate::cloud::dns::CachingResolver;
+use crate::cloud::dns::{CachingResolver, DnsResolverConfig};
+#[cfg(feature = "http")]
+use crate::cloud::http_origin_store::HttpOriginStore;
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
+use crate::cloud::http_rate_limit::PacedHttpConnector;
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
+use crate::cloud::http_rate_limit::RateLimiter;
 #[cfg(feature = "file_cache")]
 use crate::file_cache::get_env_file_cache_ttl;
 #[cfg(feature = "aws")]
@@ -46,8 +50,9 @@ use crate::pl_async::with_concurrency_budget;
 
 #[cfg(feature = "aws")]
 fn to_io_err(err: reqwest::Error) -> PolarsError {
+    let kind = super::polars_object_store::io_error_kind_from_source(&err);
     PolarsError::IO {
-        error: Arc::new(std::io::Error::other(err)),
+        error: Arc::new(std::io::Error::new(kind, err)),
         msg: None,
     }
 }
@@ -104,6 +109,8 @@ pub struct CloudOptions {
     pub config: Option<CloudConfig>,
     #[cfg_attr(feature = "serde", serde(default))]
     pub retry_config: CloudRetryConfig,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub rate_limit_config: CloudRateLimitConfig,
     #[cfg(feature = "cloud")]
     /// Note: In most cases you will want to access this via [`CloudOptions::initialized_credential_provider`]
     /// rather than directly.
@@ -123,6 +130,7 @@ impl CloudOptions {
             file_cache_ttl: get_env_file_cache_ttl(),
             config: None,
             retry_config: CloudRetryConfig::default(),
+            rate_limit_config: CloudRateLimitConfig::default(),
             #[cfg(feature = "cloud")]
             credential_provider: None,
         });
@@ -173,22 +181,29 @@ impl From<CloudRetryConfig> for object_store::RetryConfig {
 
         return out;
 
+        // Retry acts as a 'shock absorber' for the adaptive HTTP rate-limiter.
+        // Two bounds matter for stability and convergence.
+        // - Floor (earliest possible backoff exhaustion) = `max_retries` *
+        //   `init_backoff`. Must be large enough to give the rate-limiter time
+        //   to adapt.
+        // - Ceiling = `retry_timeout`. Must cover convergence after an overshoot
+        //   plus queue drain at the reduced rate.
         static DEFAULTS: LazyLock<object_store::RetryConfig> =
             LazyLock::new(|| object_store::RetryConfig {
                 backoff: object_store::BackoffConfig {
                     init_backoff: Duration::from_millis(parse_env_var(
-                        100,
+                        250,
                         "POLARS_CLOUD_RETRY_INIT_BACKOFF_MS",
                     )),
                     max_backoff: Duration::from_millis(parse_env_var(
-                        15 * 1000,
+                        5 * 1000,
                         "POLARS_CLOUD_RETRY_MAX_BACKOFF_MS",
                     )),
                     base: parse_env_var(2., "POLARS_CLOUD_RETRY_BASE_MULTIPLIER"),
                 },
-                max_retries: parse_env_var(2, "POLARS_CLOUD_MAX_RETRIES"),
+                max_retries: parse_env_var(8, "POLARS_CLOUD_MAX_RETRIES"),
                 retry_timeout: Duration::from_millis(parse_env_var(
-                    10 * 1000,
+                    30 * 1000,
                     "POLARS_CLOUD_RETRY_TIMEOUT_MS",
                 )),
             });
@@ -201,6 +216,24 @@ impl From<CloudRetryConfig> for object_store::RetryConfig {
             })
         }
     }
+}
+
+/// Rate-limit config publicly exposed through storage_options.
+#[derive(Clone, Copy, Default, Debug, PartialEq, Hash, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub struct CloudDirectionalRateLimitConfig {
+    pub init_rate: Option<u64>,
+    pub floor_rate: Option<u64>,
+    pub ceiling_rate: Option<u64>,
+}
+
+#[derive(Clone, Copy, Default, Debug, PartialEq, Hash, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub struct CloudRateLimitConfig {
+    pub read: CloudDirectionalRateLimitConfig,
+    pub write: CloudDirectionalRateLimitConfig,
 }
 
 #[cfg(feature = "http")]
@@ -222,7 +255,7 @@ pub(crate) fn try_build_http_header_map_from_items_slice<S: AsRef<str>>(
 }
 
 #[allow(dead_code)]
-/// Parse an untype configuration hashmap to a typed configuration for the given configuration key type.
+/// Parse an untyped configuration hashmap to a typed configuration for the given configuration key type.
 fn parse_untyped_config<T, I: IntoIterator<Item = (impl AsRef<str>, impl Into<String>)>>(
     config: I,
 ) -> PolarsResult<Configs<T>>
@@ -305,7 +338,9 @@ pub(super) fn get_client_options() -> ClientOptions {
         ))
         .with_user_agent(HeaderValue::from_static(USER_AGENT))
         .with_allow_http(true)
-        .with_dns_resolver(Arc::new(CachingResolver::new(get_dns_cache_ttl())))
+        .with_dns_resolver(Arc::new(
+            CachingResolver::new(DnsResolverConfig::from_env()),
+        ))
 }
 
 #[cfg(feature = "aws")]
@@ -347,6 +382,11 @@ impl CloudOptions {
         self
     }
 
+    pub fn with_rate_limit_config(mut self, rate_limit_config: CloudRateLimitConfig) -> Self {
+        self.rate_limit_config = rate_limit_config;
+        self
+    }
+
     #[cfg(feature = "cloud")]
     pub fn with_credential_provider(
         mut self,
@@ -370,11 +410,14 @@ impl CloudOptions {
 
     /// Build the [`object_store::ObjectStore`] implementation for AWS.
     #[cfg(feature = "aws")]
-    pub async fn build_aws(
+    pub(crate) async fn build_aws(
         &self,
         url: PlRefPath,
         clear_cached_credentials: bool,
+        rate_limiter: Option<&RateLimiter>,
     ) -> PolarsResult<impl object_store::ObjectStore> {
+        use object_store::client::ReqwestConnector;
+
         use super::credential_provider::IntoCredentialProvider;
 
         let opt_credential_provider =
@@ -527,6 +570,16 @@ impl CloudOptions {
             builder
         };
 
+        // Insert HTTP middleware with rate-limiter.
+        let builder = match &rate_limiter {
+            Some(rate_limiter) => {
+                let paced_http_connector =
+                    PacedHttpConnector::new(Box::new(ReqwestConnector::default()), rate_limiter);
+                builder.with_http_connector(paced_http_connector)
+            },
+            None => builder,
+        };
+
         let out = builder
             .with_unsigned_payload(true)
             .build()
@@ -549,11 +602,14 @@ impl CloudOptions {
 
     /// Build the [`object_store::ObjectStore`] implementation for Azure.
     #[cfg(feature = "azure")]
-    pub fn build_azure(
+    pub(crate) fn build_azure(
         &self,
         url: PlRefPath,
         clear_cached_credentials: bool,
+        rate_limiter: Option<&RateLimiter>,
     ) -> PolarsResult<impl object_store::ObjectStore> {
+        use object_store::client::ReqwestConnector;
+
         use super::credential_provider::IntoCredentialProvider;
         use crate::cloud::ObjectStoreErrorContext;
 
@@ -590,6 +646,16 @@ impl CloudOptions {
                 builder
             };
 
+        // Insert HTTP middleware with rate-limiter.
+        let builder = match &rate_limiter {
+            Some(rate_limiter) => {
+                let paced_http_connector =
+                    PacedHttpConnector::new(Box::new(ReqwestConnector::default()), rate_limiter);
+                builder.with_http_connector(paced_http_connector)
+            },
+            None => builder,
+        };
+
         let out = builder
             .build()
             .map_err(|e| ObjectStoreErrorContext::new(url).attach_err_info(e))?;
@@ -611,11 +677,14 @@ impl CloudOptions {
 
     /// Build the [`object_store::ObjectStore`] implementation for GCP.
     #[cfg(feature = "gcp")]
-    pub fn build_gcp(
+    pub(crate) fn build_gcp(
         &self,
         url: PlRefPath,
         clear_cached_credentials: bool,
+        rate_limiter: Option<&RateLimiter>,
     ) -> PolarsResult<impl object_store::ObjectStore> {
+        use object_store::client::ReqwestConnector;
+
         use super::credential_provider::IntoCredentialProvider;
 
         let credential_provider = self.initialized_credential_provider(clear_cached_credentials)?;
@@ -647,6 +716,16 @@ impl CloudOptions {
             builder
         };
 
+        // Insert HTTP middleware with rate-limiter.
+        let builder = match &rate_limiter {
+            Some(rate_limiter) => {
+                let paced_http_connector =
+                    PacedHttpConnector::new(Box::new(ReqwestConnector::default()), rate_limiter);
+                builder.with_http_connector(paced_http_connector)
+            },
+            None => builder,
+        };
+
         let out = builder
             .build()
             .map_err(|e| ObjectStoreErrorContext::new(url).attach_err_info(e))?;
@@ -655,20 +734,38 @@ impl CloudOptions {
     }
 
     #[cfg(feature = "http")]
+    fn http_client_options(&self, url: &PlRefPath) -> PolarsResult<object_store::ClientOptions> {
+        let mut opts = super::get_client_options();
+        if url.scheme() == Some(CloudScheme::Http)
+            && polars_config::config().http_skip_system_certificates()
+        {
+            opts = opts.with_no_system_certificates(true);
+        }
+        if let Some(CloudConfig::Http { headers }) = &self.config {
+            opts = opts.with_default_headers(try_build_http_header_map_from_items_slice(
+                headers.as_slice(),
+            )?);
+        }
+        Ok(opts)
+    }
+
+    /// Builds a store for `url` only.
+    #[cfg(feature = "http")]
     pub fn build_http(&self, url: PlRefPath) -> PolarsResult<impl object_store::ObjectStore> {
         let out = object_store::http::HttpBuilder::new()
             .with_url(url.to_string())
-            .with_client_options({
-                let mut opts = super::get_client_options();
-                if let Some(CloudConfig::Http { headers }) = &self.config {
-                    opts = opts.with_default_headers(try_build_http_header_map_from_items_slice(
-                        headers.as_slice(),
-                    )?);
-                }
-                opts
-            })
+            .with_client_options(self.http_client_options(&url)?)
             .build()
             .map_err(|e| ObjectStoreErrorContext::new(url).attach_err_info(e))?;
+
+        Ok(out)
+    }
+
+    /// Builds a store for all URLs on `base_url` (`scheme://authority`).
+    #[cfg(feature = "http")]
+    pub(crate) fn build_http_origin(&self, base_url: PlRefPath) -> PolarsResult<HttpOriginStore> {
+        let out = HttpOriginStore::new(base_url.as_str(), self.http_client_options(&base_url)?)
+            .map_err(|e| ObjectStoreErrorContext::new(base_url).attach_err_info(e))?;
 
         Ok(out)
     }

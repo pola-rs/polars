@@ -3,7 +3,7 @@ use std::fmt::Write;
 use polars_core::datatypes::AnyValue;
 #[cfg(feature = "dtype-datetime")]
 use polars_core::prelude::TimeZone;
-use polars_core::prelude::{DataType, ExplodeOptions, TimeUnit};
+use polars_core::prelude::{ChunkCompareEq, DataType, ExplodeOptions, NamedFrom, Schema, TimeUnit};
 use polars_core::series::Series;
 use polars_utils::pl_str::PlSmallStr;
 use pyo3::prelude::*;
@@ -25,56 +25,54 @@ pub(crate) enum IsInHaystack {
 }
 
 #[cfg(feature = "is_in")]
-pub(crate) fn needle_isin_haystack(lv: &LiteralValue, nulls_equal: bool) -> Option<IsInHaystack> {
-    if !lv.get_datatype().is_list() {
+pub(crate) fn needle_isin_haystack(
+    function: &IRFunctionExpr,
+    needle: &DataType,
+    lv: &LiteralValue,
+    nulls_equal: bool,
+    list_limit: Option<usize>,
+) -> Option<IsInHaystack> {
+    let haystack = lv.get_datatype();
+    // Otherwise pyarrow would compare by its own coercion rules.
+    if !haystack.is_list() || !function.membership_compares_in_needle_dtype(needle, &haystack) {
         return None;
     }
 
+    // A null haystack gives null for every row, which `isin` can't express.
     let mut haystack_series = if let LiteralValue::Series(s) = lv
         && s.dtype().is_list()
         && s.len() == 1
+        && s.null_count() == 0
     {
-        if s.null_count() == 0 {
-            s.explode(ExplodeOptions {
-                empty_as_null: false,
-                keep_nulls: false,
-            })
-            .ok()?
-        } else {
-            Series::full_null(PlSmallStr::EMPTY, 0, &DataType::Null)
-        }
+        s.explode(ExplodeOptions {
+            empty_as_null: false,
+            keep_nulls: false,
+        })
+        .ok()?
     } else if let Some(AnyValue::List(s)) = lv.to_any_value() {
         s
-    } else if lv.is_null() {
-        Series::full_null(PlSmallStr::EMPTY, 0, &DataType::Null)
     } else {
         return None;
     };
 
-    let converted_len = haystack_series.len()
-        - if nulls_equal {
-            0
-        } else {
-            haystack_series.null_count()
-        };
-
-    if converted_len > LIST_ITEM_LIMIT {
-        return None;
-    }
-    if converted_len == 0 {
-        return Some(IsInHaystack::Empty);
-    }
     if !nulls_equal {
         haystack_series = haystack_series.drop_nulls();
     }
-    Some(IsInHaystack::Series(haystack_series))
-}
+    // PyArrow's `isin` distinguishes `-0.0` from `0.0`, Polars does not.
+    if haystack_series.dtype().is_float() && haystack_series.equal(0.0f64).ok()?.any() {
+        let zeros = Series::new(PlSmallStr::EMPTY, [0.0f64, -0.0])
+            .cast(haystack_series.dtype())
+            .ok()?;
+        haystack_series.append(&zeros).ok()?;
+    }
 
-#[derive(Default, Copy, Clone)]
-struct PyarrowArgs {
-    // pyarrow doesn't allow `filter([True, False])`
-    // but does allow `filter(field("a").isin([True, False]))`
-    allow_literal_series: bool,
+    if list_limit.is_some_and(|limit| haystack_series.len() > limit) {
+        return None;
+    }
+    if haystack_series.is_empty() {
+        return Some(IsInHaystack::Empty);
+    }
+    Some(IsInHaystack::Series(haystack_series))
 }
 
 #[cfg(feature = "dtype-datetime")]
@@ -100,76 +98,175 @@ fn sanitize(name: &str) -> Option<&str> {
     }
 }
 
+/// `AnyValue::dtype`, which panics for categorical values (their mapping is not
+/// a data type).
+fn any_value_dtype(av: &AnyValue<'_>) -> Option<DataType> {
+    match av {
+        #[cfg(feature = "dtype-categorical")]
+        AnyValue::Categorical(..)
+        | AnyValue::CategoricalOwned(..)
+        | AnyValue::Enum(..)
+        | AnyValue::EnumOwned(..) => None,
+        av => Some(av.dtype()),
+    }
+}
+
+/// `pl.col('a').struct.field('b')` -> `["a", "b"]`. `None` if not a plain
+/// column rooting a `.struct.field(...)` chain.
+#[cfg(feature = "dtype-struct")]
+fn struct_field_path(node: Node, expr_arena: &Arena<AExpr>) -> Option<Vec<PlSmallStr>> {
+    match expr_arena.get(node) {
+        AExpr::Column(name) => Some(vec![name.clone()]),
+        AExpr::Function {
+            function: IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(field_name)),
+            input,
+            ..
+        } => {
+            let mut path = struct_field_path(input.first()?.node(), expr_arena)?;
+            path.push(field_name.clone());
+            Some(path)
+        },
+        _ => None,
+    }
+}
+
+/// Render a flat `Series` as a Python list literal, e.g. `[1,2,3]`.
+///
+/// Returns `None` for values we cannot faithfully (or safely) write out as
+/// source text.
+fn series_to_pyarrow_list(s: &Series) -> Option<String> {
+    let mut list_repr = String::with_capacity(s.len() * 5);
+    list_repr.push('[');
+    for av in s.iter() {
+        match av {
+            AnyValue::Null => list_repr.push_str("None,"),
+            AnyValue::Boolean(v) => {
+                let s = if v { "True" } else { "False" };
+                write!(list_repr, "{s},").unwrap();
+            },
+            #[cfg(feature = "dtype-datetime")]
+            AnyValue::Datetime(v, tu, tz) => {
+                let dtm = to_py_datetime(v, &tu, tz);
+                write!(list_repr, "{dtm},").unwrap();
+            },
+            #[cfg(feature = "dtype-date")]
+            AnyValue::Date(v) => {
+                write!(list_repr, "to_py_date({v}),").unwrap();
+            },
+            AnyValue::String(s) => {
+                let _ = sanitize(s)?;
+                write!(list_repr, "{av},").unwrap();
+            },
+            // Hard to sanitize
+            AnyValue::Binary(_) | AnyValue::List(_) => return None,
+            #[cfg(feature = "dtype-array")]
+            AnyValue::Array(_, _) => return None,
+            #[cfg(feature = "dtype-struct")]
+            AnyValue::Struct(_, _, _) => return None,
+            // The `Display` impls round (floats to ~6 significant digits,
+            // decimals through `f64` on the Python side), so a value in the
+            // list would no longer match itself.
+            #[cfg(feature = "dtype-decimal")]
+            AnyValue::Decimal(_, _, _) => return None,
+            av if any_value_dtype(&av).is_some_and(|dt| dt.is_float()) => {
+                // Same rendering as a scalar literal; NaN and inf have no
+                // Python literal.
+                let v = av.extract::<f64>()?;
+                if !v.is_finite() {
+                    return None;
+                }
+                // `Debug` keeps the float a Python float literal (`1.0`, `1e20`).
+                write!(list_repr, "{v:?},").unwrap();
+            },
+            av if any_value_dtype(&av).is_some_and(|dt| dt.is_integer()) => {
+                // Not `{av}`: `AnyValue`'s `Display` inserts the configured
+                // thousands separator (`1,000`).
+                let v = av.extract::<i128>()?;
+                write!(list_repr, "{v},").unwrap();
+            },
+            _ => return None,
+        }
+    }
+    // pop last comma
+    list_repr.pop();
+    list_repr.push(']');
+    Some(list_repr)
+}
+
 // Build an eval-able / AST-walker-compatible string predicate (e.g.
 // `pa.compute.field('x') > pa.compute.scalar(1)`). Used by the iceberg and
 // delta paths which feed the string into Python (delta `eval`s it,
 // iceberg walks it via `try_convert_pyarrow_predicate`).
-pub fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Option<String> {
-    predicate_to_pa_inner(predicate, expr_arena, PyarrowArgs::default())
-}
-
-fn predicate_to_pa_inner(
+//
+// `schema` is the scan output schema, used to resolve column dtypes so that
+// only arithmetic provably equivalent to Polars' is lowered (see
+// [`is_float64_arithmetic`]).
+pub fn predicate_to_pa(
     predicate: Node,
     expr_arena: &Arena<AExpr>,
-    args: PyarrowArgs,
+    schema: &Schema,
+) -> Option<String> {
+    to_pa(predicate, expr_arena, schema, Some(LIST_ITEM_LIMIT))
+}
+
+/// [`predicate_to_pa`] with `is_in` lists of up to `list_limit` values (`None`: any length).
+pub fn predicate_to_pa_with_list_limit(
+    predicate: Node,
+    expr_arena: &Arena<AExpr>,
+    schema: &Schema,
+    list_limit: Option<usize>,
+) -> Option<String> {
+    to_pa(predicate, expr_arena, schema, list_limit)
+}
+
+fn to_pa(
+    predicate: Node,
+    expr_arena: &Arena<AExpr>,
+    schema: &Schema,
+    list_limit: Option<usize>,
 ) -> Option<String> {
     match expr_arena.get(predicate) {
-        AExpr::BinaryExpr { left, right, op } => {
-            if op.is_comparison_or_bitwise() {
-                let left = predicate_to_pa_inner(*left, expr_arena, args)?;
-                let right = predicate_to_pa_inner(*right, expr_arena, args)?;
-                Some(format!("({left} {op} {right})"))
-            } else {
-                None
-            }
+        AExpr::BinaryExpr { left, right, op } => match op {
+            Operator::EqValidity | Operator::NotEqValidity => {
+                validity_comparison_to_pa(*left, *right, *op, expr_arena, schema, list_limit)
+            },
+            Operator::Xor => {
+                let (lhs, rhs) =
+                    boolean_operands_to_pa(*left, *right, expr_arena, schema, list_limit)?;
+
+                Some(format!("(({lhs} | {rhs}) & ~({lhs} & {rhs}))"))
+            },
+            op => {
+                let symbol = binary_op_symbol(op)?;
+                reject_inexact_arithmetic(*left, *right, *op, expr_arena, schema)?;
+
+                let mut lhs = to_pa(*left, expr_arena, schema, list_limit)?;
+                let rhs = to_pa(*right, expr_arena, schema, list_limit)?;
+
+                if op.is_arithmetic() {
+                    // PyArrow expressions define no reflected arithmetic operators, so a
+                    // bare Python literal on the left raises `TypeError` instead of
+                    // building an expression. (Comparisons are fine: Python falls back
+                    // to the reflected comparison on the right-hand expression.)
+                    if matches!(expr_arena.get(*left), AExpr::Literal(_))
+                        && !lhs.starts_with("pa.compute.")
+                    {
+                        lhs = format!("pa.compute.scalar({lhs})");
+                    }
+                }
+
+                Some(format!("({lhs} {symbol} {rhs})"))
+            },
         },
         AExpr::Column(name) => {
             let name = sanitize(name)?;
             Some(format!("pa.compute.field('{name}')"))
         },
-        AExpr::Literal(LiteralValue::Series(s)) => {
-            if !args.allow_literal_series || s.is_empty() || s.len() > 100 {
-                None
-            } else {
-                let mut list_repr = String::with_capacity(s.len() * 5);
-                list_repr.push('[');
-                for av in s.iter() {
-                    match av {
-                        AnyValue::Boolean(v) => {
-                            let s = if v { "True" } else { "False" };
-                            write!(list_repr, "{s},").unwrap();
-                        },
-                        #[cfg(feature = "dtype-datetime")]
-                        AnyValue::Datetime(v, tu, tz) => {
-                            let dtm = to_py_datetime(v, &tu, tz);
-                            write!(list_repr, "{dtm},").unwrap();
-                        },
-                        #[cfg(feature = "dtype-date")]
-                        AnyValue::Date(v) => {
-                            write!(list_repr, "to_py_date({v}),").unwrap();
-                        },
-                        AnyValue::String(s) => {
-                            let _ = sanitize(s)?;
-                            write!(list_repr, "{av},").unwrap();
-                        },
-                        AnyValue::Binary(_) | AnyValue::List(_) => return None,
-                        #[cfg(feature = "dtype-array")]
-                        AnyValue::Array(_, _) => return None,
-                        #[cfg(feature = "dtype-struct")]
-                        AnyValue::Struct(_, _, _) => return None,
-                        _ => {
-                            write!(list_repr, "{av},").unwrap();
-                        },
-                    }
-                }
-                list_repr.pop();
-                list_repr.push(']');
-                Some(list_repr)
-            }
-        },
+        // Only meaningful as the haystack of an `is_in`, which formats it itself.
+        AExpr::Literal(LiteralValue::Series(_)) => None,
         AExpr::Literal(lv) => {
             let av = lv.to_any_value()?;
-            let dtype = av.dtype();
+            let dtype = any_value_dtype(&av)?;
             match av.as_borrowed() {
                 AnyValue::String(s) => {
                     let s = sanitize(s)?;
@@ -194,7 +291,13 @@ fn predicate_to_pa_inner(
                 av => {
                     if dtype.is_float() {
                         let val = av.extract::<f64>()?;
-                        Some(format!("{val}"))
+                        // `inf` is not a Python literal (NaN is special-cased by
+                        // the consumers as a comparison operand).
+                        if val.is_infinite() {
+                            return None;
+                        }
+                        // `Debug` keeps the float a Python float literal (`1.0`, `1e20`).
+                        Some(format!("{val:?}"))
                     } else if dtype.is_integer() {
                         let val = av.extract::<i64>()?;
                         Some(format!("{val}"))
@@ -206,16 +309,24 @@ fn predicate_to_pa_inner(
         },
         #[cfg(feature = "is_in")]
         AExpr::Function {
-            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }),
+            function:
+                function @ IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal, .. }),
             input,
             ..
         } => {
-            let col = predicate_to_pa_inner(input.first()?.node(), expr_arena, args)?;
-            let mut args = args;
-            args.allow_literal_series = true;
-            let values = predicate_to_pa_inner(input.get(1)?.node(), expr_arena, args)?;
+            let col = to_pa(input.first()?.node(), expr_arena, schema, list_limit)?;
 
-            Some(format!("({col}).isin({values})"))
+            let AExpr::Literal(lv) = expr_arena.get(input.get(1)?.node()) else {
+                return None;
+            };
+            let needle = input[0].dtype(schema, expr_arena).ok()?;
+            match needle_isin_haystack(function, needle, lv, *nulls_equal, list_limit)? {
+                IsInHaystack::Empty => Some("pa.compute.scalar(False)".to_string()),
+                IsInHaystack::Series(s) => {
+                    let values = series_to_pyarrow_list(&s)?;
+                    Some(format!("({col}).isin({values})"))
+                },
+            }
         },
         #[cfg(feature = "is_between")]
         AExpr::Function {
@@ -226,7 +337,7 @@ fn predicate_to_pa_inner(
             if !matches!(expr_arena.get(input.first()?.node()), AExpr::Column(_)) {
                 None
             } else {
-                let col = predicate_to_pa_inner(input.first()?.node(), expr_arena, args)?;
+                let col = to_pa(input.first()?.node(), expr_arena, schema, list_limit)?;
                 let left_cmp_op = match closed {
                     ClosedInterval::None | ClosedInterval::Right => Operator::Gt,
                     ClosedInterval::Both | ClosedInterval::Left => Operator::GtEq,
@@ -236,19 +347,53 @@ fn predicate_to_pa_inner(
                     ClosedInterval::Both | ClosedInterval::Right => Operator::LtEq,
                 };
 
-                let lower = predicate_to_pa_inner(input.get(1)?.node(), expr_arena, args)?;
-                let upper = predicate_to_pa_inner(input.get(2)?.node(), expr_arena, args)?;
+                let lower = to_pa(input.get(1)?.node(), expr_arena, schema, list_limit)?;
+                let upper = to_pa(input.get(2)?.node(), expr_arena, schema, list_limit)?;
 
                 Some(format!(
                     "(({col} {left_cmp_op} {lower}) & ({col} {right_cmp_op} {upper}))"
                 ))
             }
         },
+        #[cfg(feature = "strings")]
+        AExpr::Function {
+            function: IRFunctionExpr::StringExpr(IRStringFunction::StartsWith),
+            input,
+            ..
+        } => {
+            let col = to_pa(input.first()?.node(), expr_arena, schema, list_limit)?;
+            let AExpr::Literal(lv) = expr_arena.get(input.get(1)?.node()) else {
+                return None;
+            };
+            let prefix = sanitize(lv.extract_str()?)?;
+            Some(format!("pa.compute.starts_with({col}, pattern='{prefix}')"))
+        },
+        #[cfg(feature = "dtype-struct")]
+        AExpr::Function {
+            function: IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(_)),
+            ..
+        } => {
+            let path = struct_field_path(predicate, expr_arena)?;
+            let quoted = path
+                .iter()
+                .map(|name| Some(format!("'{}'", sanitize(name)?)))
+                .collect::<Option<Vec<_>>>()?;
+            Some(format!("pa.compute.field({})", quoted.join(", ")))
+        },
         AExpr::Function {
             function, input, ..
         } => {
-            let input = input.first().unwrap().node();
-            let input = predicate_to_pa_inner(input, expr_arena, args)?;
+            let input = input.first()?;
+            if matches!(
+                function, // note: only applies to primitive (non-decimal) numeric types
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsNan | IRBooleanFunction::IsNotNan)
+            ) {
+                let dtype = input.dtype(schema, expr_arena).ok()?;
+                if !dtype.is_primitive_numeric() && !dtype.is_null() {
+                    return None;
+                }
+            }
+            let input = to_pa(input.node(), expr_arena, schema, list_limit)?;
 
             match function {
                 IRFunctionExpr::Boolean(IRBooleanFunction::Not) => Some(format!("~({input})")),
@@ -258,11 +403,198 @@ fn predicate_to_pa_inner(
                 IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull) => {
                     Some(format!("~({input}).is_null()"))
                 },
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsNan) => {
+                    Some(format!("({input}).is_nan()"))
+                },
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNan) => {
+                    Some(format!("~({input}).is_nan()"))
+                },
                 _ => None,
             }
         },
         _ => None,
     }
+}
+
+/// Lower `eq_missing` / `ne_missing` against a literal, where the null handling
+/// can be spelled out with `is_null`. `None` for any other operands.
+fn validity_comparison_to_pa(
+    left: Node,
+    right: Node,
+    op: Operator,
+    expr_arena: &Arena<AExpr>,
+    schema: &Schema,
+    list_limit: Option<usize>,
+) -> Option<String> {
+    // The column is repeated in the output, so restrict this to plain columns.
+    let (column, literal, lv) = match (expr_arena.get(left), expr_arena.get(right)) {
+        (AExpr::Column(_), AExpr::Literal(lv)) => (left, right, lv),
+        (AExpr::Literal(lv), AExpr::Column(_)) => (right, left, lv),
+        _ => return None,
+    };
+
+    let eq = matches!(op, Operator::EqValidity);
+    let column = to_pa(column, expr_arena, schema, list_limit)?;
+
+    Some(if lv.is_null() {
+        if eq {
+            format!("({column}).is_null()")
+        } else {
+            format!("~({column}).is_null()")
+        }
+    } else {
+        let literal = to_pa(literal, expr_arena, schema, list_limit)?;
+
+        // A null column value is not equal to a non-null literal, whereas the
+        // plain comparison would evaluate to null.
+        if eq {
+            format!("(({column} == {literal}) & ~({column}).is_null())")
+        } else {
+            format!("(({column} != {literal}) | ({column}).is_null())")
+        }
+    })
+}
+
+/// Lower both operands of a boolean-only operator, or `None` if either is not
+/// known to be boolean.
+fn boolean_operands_to_pa(
+    left: Node,
+    right: Node,
+    expr_arena: &Arena<AExpr>,
+    schema: &Schema,
+    list_limit: Option<usize>,
+) -> Option<(String, String)> {
+    if !(returns_boolean(left, expr_arena) && returns_boolean(right, expr_arena)) {
+        return None;
+    }
+
+    Some((
+        to_pa(left, expr_arena, schema, list_limit)?,
+        to_pa(right, expr_arena, schema, list_limit)?,
+    ))
+}
+
+/// Whether the expression is known to be boolean without consulting the schema.
+/// `^`, `&` and `|` are bitwise operations on integers, which PyArrow
+/// expressions have no equivalent for.
+fn returns_boolean(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    match expr_arena.get(node) {
+        AExpr::BinaryExpr { left, right, op } => {
+            op.is_comparison()
+                || (op.is_bitwise()
+                    && returns_boolean(*left, expr_arena)
+                    && returns_boolean(*right, expr_arena))
+        },
+        AExpr::Literal(lv) => matches!(lv.get_datatype(), DataType::Boolean),
+        AExpr::Function {
+            function: IRFunctionExpr::Boolean(IRBooleanFunction::Not),
+            input,
+            ..
+        } => {
+            // `Not` is also the bitwise negation.
+            input
+                .first()
+                .is_some_and(|e| returns_boolean(e.node(), expr_arena))
+        },
+        AExpr::Function {
+            function: IRFunctionExpr::Boolean(_),
+            ..
+        } => true,
+        _ => false,
+    }
+}
+
+/// Whether `left op right` is `Float64` arithmetic that PyArrow's checked
+/// kernels evaluate exactly like Polars, so the minterm containing it can be
+/// pushed down without an engine-side residual.
+///
+/// Only `+`, `-` and `*` with (transitively) `Float64` operands qualify:
+///
+/// * Integer arithmetic is excluded: Polars wraps on overflow where PyArrow's
+///   `*_checked` kernels raise.
+/// * `TrueDivide` is excluded: Polars yields `inf`/`NaN` on division by zero
+///   where PyArrow raises, and matching Polars' float-division output dtype
+///   would need a dividend cast that loses precision (`Float32`) or errors on
+///   large integers.
+/// * Anything but plain numeric operands (temporal, string, boolean, decimal,
+///   casts, ...) is excluded.
+fn is_float64_arithmetic(
+    left: Node,
+    right: Node,
+    op: Operator,
+    expr_arena: &Arena<AExpr>,
+    schema: &Schema,
+) -> bool {
+    if !matches!(op, Operator::Plus | Operator::Minus | Operator::Multiply) {
+        return false;
+    }
+
+    fn operand_dtype(node: Node, expr_arena: &Arena<AExpr>, schema: &Schema) -> Option<DataType> {
+        match expr_arena.get(node) {
+            AExpr::Column(name) => schema.get(name).cloned(),
+            AExpr::Literal(lv) => Some(lv.get_datatype()),
+            AExpr::BinaryExpr { left, right, op }
+                if is_float64_arithmetic(*left, *right, *op, expr_arena, schema) =>
+            {
+                Some(DataType::Float64)
+            },
+            _ => None,
+        }
+    }
+
+    let (Some(left_dtype), Some(right_dtype)) = (
+        operand_dtype(left, expr_arena, schema),
+        operand_dtype(right, expr_arena, schema),
+    ) else {
+        return false;
+    };
+
+    // Both sides must be plain floats or integers, and at least one side must
+    // already be `Float64` so the result is `Float64` rather than an integer
+    // (wrapping) or `Float32` (different rounding) type.
+    (left_dtype.is_float() || left_dtype.is_integer())
+        && (right_dtype.is_float() || right_dtype.is_integer())
+        && (matches!(left_dtype, DataType::Float64) || matches!(right_dtype, DataType::Float64))
+}
+
+/// `None` if `op` is arithmetic that PyArrow may evaluate differently than
+/// Polars, `Some(())` otherwise (including for non-arithmetic operators).
+/// Shared by both lowering paths so they cannot diverge on what is safe to
+/// push (see [`is_float64_arithmetic`]).
+fn reject_inexact_arithmetic(
+    left: Node,
+    right: Node,
+    op: Operator,
+    expr_arena: &Arena<AExpr>,
+    schema: &Schema,
+) -> Option<()> {
+    if op.is_arithmetic() && !is_float64_arithmetic(left, right, op, expr_arena, schema) {
+        None
+    } else {
+        Some(())
+    }
+}
+
+/// The Python operator reproducing `op` on a PyArrow expression, or `None` when
+/// PyArrow has no equivalent. Mirrors [`binary_op_method`].
+///
+/// The arithmetic operators map onto PyArrow's *checked* kernels; this is
+/// exact only for the `Float64` cases admitted by [`is_float64_arithmetic`].
+fn binary_op_symbol(op: &Operator) -> Option<&'static str> {
+    Some(match op {
+        Operator::Eq => "==",
+        Operator::NotEq => "!=",
+        Operator::Lt => "<",
+        Operator::LtEq => "<=",
+        Operator::Gt => ">",
+        Operator::GtEq => ">=",
+        Operator::And | Operator::LogicalAnd => "&",
+        Operator::Or | Operator::LogicalOr => "|",
+        Operator::Plus => "+",
+        Operator::Minus => "-",
+        Operator::Multiply => "*",
+        _ => return None,
+    })
 }
 
 fn binary_op_method(op: &Operator) -> Option<&'static str> {
@@ -275,7 +607,9 @@ fn binary_op_method(op: &Operator) -> Option<&'static str> {
         Operator::GtEq => "__ge__",
         Operator::And | Operator::LogicalAnd => "__and__",
         Operator::Or | Operator::LogicalOr => "__or__",
-        Operator::Xor => "__xor__",
+        Operator::Plus => "__add__",
+        Operator::Minus => "__sub__",
+        Operator::Multiply => "__mul__",
         _ => return None,
     })
 }
@@ -284,7 +618,7 @@ fn binary_op_method(op: &Operator) -> Option<&'static str> {
 fn anyvalue_to_py<'py>(py: Python<'py>, av: AnyValue<'_>) -> Option<Bound<'py, PyAny>> {
     use pyo3::IntoPyObjectExt;
 
-    let dtype = av.dtype();
+    let dtype = any_value_dtype(&av)?;
     match av.as_borrowed() {
         AnyValue::Null => Some(py.None().into_bound(py)),
         AnyValue::Boolean(v) => v.into_bound_py_any(py).ok(),
@@ -358,17 +692,64 @@ fn series_to_py_list<'py>(py: Python<'py>, s: &Series) -> Option<Bound<'py, PyLi
 }
 
 // Convert an AExpr predicate to a pyarrow expression using python.
+//
+// `schema` is the scan output schema, used to resolve column dtypes so that
+// only arithmetic provably equivalent to Polars' is lowered (see
+// [`is_float64_arithmetic`]).
 pub fn aexpr_to_pyarrow<'py>(
     py: Python<'py>,
     pc: &Bound<'py, PyAny>,
     predicate: Node,
     expr_arena: &Arena<AExpr>,
+    schema: &Schema,
 ) -> Option<Bound<'py, PyAny>> {
-    match expr_arena.get(predicate) {
+    aexpr_to_pyarrow_impl(py, pc, predicate, expr_arena, schema, true)
+}
+
+// `null_as_false` is set when a null result filters out the row just like
+// `false` does, so the conversion may give `false` where Polars gives null.
+fn aexpr_to_pyarrow_impl<'py>(
+    py: Python<'py>,
+    pc: &Bound<'py, PyAny>,
+    node: Node,
+    expr_arena: &Arena<AExpr>,
+    schema: &Schema,
+    null_as_false: bool,
+) -> Option<Bound<'py, PyAny>> {
+    let convert = |node: Node| aexpr_to_pyarrow_impl(py, pc, node, expr_arena, schema, false);
+    match expr_arena.get(node) {
         AExpr::BinaryExpr { left, right, op } => {
+            if matches!(op, Operator::Xor) {
+                if !(returns_boolean(*left, expr_arena) && returns_boolean(*right, expr_arena)) {
+                    return None;
+                }
+
+                let l = convert(*left)?;
+                let r = convert(*right)?;
+                let any = l.call_method1("__or__", (&r,)).ok()?;
+                let both = l
+                    .call_method1("__and__", (&r,))
+                    .ok()?
+                    .call_method0("__invert__")
+                    .ok()?;
+
+                return any.call_method1("__and__", (both,)).ok();
+            }
+
             let method = binary_op_method(op)?;
-            let l = aexpr_to_pyarrow(py, pc, *left, expr_arena)?;
-            let r = aexpr_to_pyarrow(py, pc, *right, expr_arena)?;
+            reject_inexact_arithmetic(*left, *right, *op, expr_arena, schema)?;
+
+            // Under Kleene logic a null operand of `&` or `|` gives the same
+            // filter result as a `false` one.
+            let operand_null_as_false = null_as_false
+                && matches!(
+                    op,
+                    Operator::And | Operator::Or | Operator::LogicalAnd | Operator::LogicalOr
+                );
+            let l =
+                aexpr_to_pyarrow_impl(py, pc, *left, expr_arena, schema, operand_null_as_false)?;
+            let r =
+                aexpr_to_pyarrow_impl(py, pc, *right, expr_arena, schema, operand_null_as_false)?;
             l.call_method1(method, (r,)).ok()
         },
         AExpr::Column(name) => pc.call_method1("field", (name,)).ok(),
@@ -380,22 +761,43 @@ pub fn aexpr_to_pyarrow<'py>(
         },
         #[cfg(feature = "is_in")]
         AExpr::Function {
-            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
+            function:
+                function @ IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal, .. }),
             input,
             ..
         } => {
-            let col = aexpr_to_pyarrow(py, pc, input.first()?.node(), expr_arena)?;
+            let col = convert(input.first()?.node())?;
             let rhs_node = input.get(1)?.node();
 
             let AExpr::Literal(lv) = expr_arena.get(rhs_node) else {
                 return None;
             };
-            let values_list = match needle_isin_haystack(lv, *nulls_equal)? {
-                IsInHaystack::Empty => return pc.call_method1("scalar", (false,)).ok(),
-                IsInHaystack::Series(s) => series_to_py_list(py, &s)?,
+            let needle = input[0].dtype(schema, expr_arena).ok()?;
+            let isin = match needle_isin_haystack(
+                function,
+                needle,
+                lv,
+                *nulls_equal,
+                Some(LIST_ITEM_LIMIT),
+            )? {
+                IsInHaystack::Empty => pc.call_method1("scalar", (false,)).ok()?,
+                IsInHaystack::Series(s) => col
+                    .call_method1("isin", (series_to_py_list(py, &s)?,))
+                    .ok()?,
             };
+            // PyArrow's `isin` gives `false` for a null needle, Polars gives null.
+            // Plain `isin` is kept where possible, as readers such as Lance only
+            // use their indices for that form.
+            if *nulls_equal || null_as_false {
+                return Some(isin);
+            }
 
-            col.call_method1("isin", (values_list,)).ok()
+            let pa = py.import("pyarrow").ok()?;
+            let null_bool = pa
+                .call_method1("scalar", (py.None(), pa.call_method0("bool_").ok()?))
+                .ok()?;
+            let is_null = col.call_method0("is_null").ok()?;
+            pc.call_method1("if_else", (is_null, null_bool, isin)).ok()
         },
         #[cfg(feature = "is_between")]
         AExpr::Function {
@@ -406,7 +808,7 @@ pub fn aexpr_to_pyarrow<'py>(
             if !matches!(expr_arena.get(input.first()?.node()), AExpr::Column(_)) {
                 return None;
             }
-            let col = aexpr_to_pyarrow(py, pc, input.first()?.node(), expr_arena)?;
+            let col = convert(input.first()?.node())?;
             let left_method = match closed {
                 ClosedInterval::None | ClosedInterval::Right => "__gt__",
                 ClosedInterval::Both | ClosedInterval::Left => "__ge__",
@@ -416,8 +818,8 @@ pub fn aexpr_to_pyarrow<'py>(
                 ClosedInterval::Both | ClosedInterval::Right => "__le__",
             };
 
-            let lower = aexpr_to_pyarrow(py, pc, input.get(1)?.node(), expr_arena)?;
-            let upper = aexpr_to_pyarrow(py, pc, input.get(2)?.node(), expr_arena)?;
+            let lower = convert(input.get(1)?.node())?;
+            let upper = convert(input.get(2)?.node())?;
 
             let lower_cmp = col.call_method1(left_method, (lower,)).ok()?;
             let upper_cmp = col.call_method1(right_method, (upper,)).ok()?;
@@ -426,8 +828,17 @@ pub fn aexpr_to_pyarrow<'py>(
         AExpr::Function {
             function, input, ..
         } => {
-            let input = input.first().unwrap().node();
-            let input = aexpr_to_pyarrow(py, pc, input, expr_arena)?;
+            let input = input.first()?;
+            if matches!(
+                function, // note: only applies to primitive (non-decimal) numeric types
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsNan | IRBooleanFunction::IsNotNan)
+            ) {
+                let dtype = input.dtype(schema, expr_arena).ok()?;
+                if !dtype.is_primitive_numeric() && !dtype.is_null() {
+                    return None;
+                }
+            }
+            let input = convert(input.node())?;
 
             match function {
                 IRFunctionExpr::Boolean(IRBooleanFunction::Not) => {
@@ -439,6 +850,14 @@ pub fn aexpr_to_pyarrow<'py>(
                 },
                 IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull) => input
                     .call_method0("is_null")
+                    .ok()?
+                    .call_method0("__invert__")
+                    .ok(),
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsNan) => {
+                    input.call_method0("is_nan").ok()
+                },
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNan) => input
+                    .call_method0("is_nan")
                     .ok()?
                     .call_method0("__invert__")
                     .ok(),

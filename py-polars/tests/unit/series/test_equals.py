@@ -1,9 +1,11 @@
+import re
 from collections.abc import Callable
 from datetime import datetime
 
 import pytest
 
 import polars as pl
+from polars.exceptions import ArgumentRemovedError
 from polars.testing import assert_series_equal
 
 
@@ -121,11 +123,12 @@ def test_ne_missing_expr() -> None:
     assert_series_equal(result_evaluated, expected)
 
 
-def test_series_equals_strict_deprecated() -> None:
+def test_series_equals_strict_removed() -> None:
     s1 = pl.Series("a", [1.0, 2.0, None], pl.Float64)
     s2 = pl.Series("a", [1, 2, None], pl.Int64)
-    with pytest.deprecated_call():
-        assert not s1.equals(s2, strict=True)  # type: ignore[call-arg]
+    msg = "It was renamed to 'check_dtypes'."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s1.equals(s2, strict=True)  # type: ignore[call-arg]
 
 
 @pytest.mark.parametrize("dtype", [pl.List(pl.Int64), pl.Array(pl.Int64, 2)])

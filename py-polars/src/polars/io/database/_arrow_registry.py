@@ -56,22 +56,31 @@ ARROW_DRIVER_REGISTRY: Final[dict[str, list[ArrowDriverProperties]]] = {
             "minimum_version": None,
         }
     ],
+    # DuckDB 1.5.0 added `to_arrow_table` and `to_arrow_reader`; version 2.0.0
+    # removed `fetch_arrow_table` and `fetch_record_batch`.
     "duckdb": [
+        {
+            "fetch_all": "to_arrow_table",
+            "fetch_batches": "to_arrow_reader",
+            "exact_batch_size": True,
+            "repeat_batch_calls": False,
+            "minimum_version": "1.5.0",
+        },
         {
             "fetch_all": "fetch_arrow_table",
             "fetch_batches": "fetch_record_batch",
             "exact_batch_size": True,
             "repeat_batch_calls": False,
             "minimum_version": None,
-        }
+        },
     ],
-    "oracledb": [
+    "oracledb_proxy": [
         {
             "fetch_all": "fetch_df_all",
             "fetch_batches": "fetch_df_batches",
             "exact_batch_size": True,
             "repeat_batch_calls": False,
-            "minimum_version": "3.0.0",
+            "minimum_version": None,  # set on the proxy object (3.4.0)
         }
     ],
     "snowflake": [

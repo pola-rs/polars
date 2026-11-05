@@ -79,10 +79,12 @@ pub trait InitHashMaps {
 impl<K, V> InitHashMaps for PlHashMap<K, V> {
     type HashMap = Self;
 
+    #[inline]
     fn new() -> Self::HashMap {
         Self::with_capacity_and_hasher(0, Default::default())
     }
 
+    #[inline]
     fn with_capacity(capacity: usize) -> Self {
         Self::with_capacity_and_hasher(capacity, Default::default())
     }
@@ -90,10 +92,12 @@ impl<K, V> InitHashMaps for PlHashMap<K, V> {
 impl<K> InitHashMaps for PlHashSet<K> {
     type HashMap = Self;
 
+    #[inline]
     fn new() -> Self::HashMap {
         Self::with_capacity_and_hasher(0, Default::default())
     }
 
+    #[inline]
     fn with_capacity(capacity: usize) -> Self {
         Self::with_capacity_and_hasher(capacity, Default::default())
     }
@@ -102,10 +106,12 @@ impl<K> InitHashMaps for PlHashSet<K> {
 impl<K> InitHashMaps for PlIndexSet<K> {
     type HashMap = Self;
 
+    #[inline]
     fn new() -> Self::HashMap {
         Self::with_capacity_and_hasher(0, Default::default())
     }
 
+    #[inline]
     fn with_capacity(capacity: usize) -> Self::HashMap {
         Self::with_capacity_and_hasher(capacity, Default::default())
     }
@@ -114,10 +120,12 @@ impl<K> InitHashMaps for PlIndexSet<K> {
 impl<K, V> InitHashMaps for PlIndexMap<K, V> {
     type HashMap = Self;
 
+    #[inline]
     fn new() -> Self::HashMap {
         Self::with_capacity_and_hasher(0, Default::default())
     }
 
+    #[inline]
     fn with_capacity(capacity: usize) -> Self::HashMap {
         Self::with_capacity_and_hasher(capacity, Default::default())
     }

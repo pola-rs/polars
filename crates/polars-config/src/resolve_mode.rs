@@ -4,11 +4,11 @@ use std::str::FromStr;
 #[repr(u8)]
 #[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]
 pub enum ResolveMode {
-    #[default]
     None = 0,
     RowCounts = 1,
     Full = 2,
     /// Sample a one-wave subset of footers and extrapolate; exact when the whole set fits.
+    #[default]
     Sampled = 3,
 }
 

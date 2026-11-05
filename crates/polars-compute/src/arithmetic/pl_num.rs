@@ -1,6 +1,6 @@
 use core::any::TypeId;
 
-use arrow::types::NativeType;
+use polars_arrow::types::NativeType;
 use polars_utils::float16::pf16;
 use polars_utils::floor_divmod::FloorDivMod;
 

@@ -1,4 +1,5 @@
 use polars::prelude::*;
+use polars_core::chunked_array::temporal::string::StringMethods;
 
 #[test]
 fn test_to_list_logical() -> PolarsResult<()> {

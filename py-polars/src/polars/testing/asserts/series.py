@@ -4,6 +4,7 @@ import contextlib
 from typing import Any
 
 from polars._utils.deprecation import deprecate_renamed_parameter
+from polars._utils.expired import RenamedParameter, removed_parameters
 from polars.series import Series
 from polars.testing.asserts.utils import raise_assertion_error
 
@@ -24,7 +25,14 @@ def _assert_correct_input_type(left: Any, right: Any) -> bool:
     return True
 
 
-@deprecate_renamed_parameter("check_dtype", "check_dtypes", version="0.20.31")
+@removed_parameters(
+    RenamedParameter(
+        name="check_dtype",
+        new_name="check_dtypes",
+        deprecated_in="0.20.31",
+        removed_in="2.0",
+    ),
+)
 @deprecate_renamed_parameter("rtol", "rel_tol", version="1.32.3")
 @deprecate_renamed_parameter("atol", "abs_tol", version="1.32.3")
 def assert_series_equal(
@@ -44,9 +52,6 @@ def assert_series_equal(
 
     Raises a detailed `AssertionError` if the Series differ.
     This function is intended for use in unit tests.
-
-    .. versionchanged:: 0.20.31
-        The `check_dtype` parameter was renamed `check_dtypes`.
 
     .. versionchanged:: 1.32.3
         The `rtol` and `atol` parameters were renamed to `rel_tol` and `abs_tol`,
@@ -130,7 +135,14 @@ def assert_series_equal(
     )
 
 
-@deprecate_renamed_parameter("check_dtype", "check_dtypes", version="0.20.31")
+@removed_parameters(
+    RenamedParameter(
+        name="check_dtype",
+        new_name="check_dtypes",
+        deprecated_in="0.20.31",
+        removed_in="2.0",
+    ),
+)
 @deprecate_renamed_parameter("rtol", "rel_tol", version="1.32.3")
 @deprecate_renamed_parameter("atol", "abs_tol", version="1.32.3")
 def assert_series_not_equal(
@@ -149,9 +161,6 @@ def assert_series_not_equal(
     Assert that the left and right Series are **not** equal.
 
     This function is intended for use in unit tests.
-
-    .. versionchanged:: 0.20.31
-        The `check_dtype` parameter was renamed `check_dtypes`.
 
     .. versionchanged:: 1.32.3
         The `rtol` and `atol` parameters were renamed to `rel_tol` and `abs_tol`,

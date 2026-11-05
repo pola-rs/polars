@@ -16,7 +16,7 @@ print(df)
 import base64
 
 pl.scan_csv("docs/assets/data/my_many_files_*.csv").show_graph(
-    output_path="docs/assets/images/multiple.png", show=False
+    plan_stage="ir", output_path="docs/assets/images/multiple.png", show=False
 )
 with open("docs/assets/images/multiple.png", "rb") as f:
     png = base64.b64encode(f.read()).decode()
@@ -24,7 +24,12 @@ with open("docs/assets/images/multiple.png", "rb") as f:
 # --8<-- [end:creategraph]
 
 # --8<-- [start:graph]
-pl.scan_csv("docs/assets/data/my_many_files_*.csv").show_graph()
+# Show the "ir" query plan
+pl.scan_csv("docs/assets/data/my_many_files_*.csv").show_graph(plan_stage="ir")
+
+# Show the "physical" query plan
+pl.scan_csv("docs/assets/data/my_many_files_*.csv").show_graph(plan_stage="physical")
+
 # --8<-- [end:graph]
 
 # --8<-- [start:glob]

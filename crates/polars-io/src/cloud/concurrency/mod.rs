@@ -4,27 +4,32 @@
 //! - A (primary) bytes-based budget to model the bandwidth-delay product (BDP)
 //! - A (secondary) count-based budget to limit the number of in-flight requests
 //!
-//! The bytes-based budget models the BDP as
-//!   BDP = BW_max * TTFB_est
+//! Two models set the bytes-based budget (`POLARS_INFLIGHT_BYTE_BUDGET_MODEL`):
+//! - Knee (default, `knee.rs`): measures the smallest budget at which the delivered bandwidth
+//!   stops growing with the budget.
+//! - TTFB: models the BDP as BW_max * TTFB_est, with Model (records IO observations and models
+//!   the network: BW_max, TTFB_est, BDP) and Regime (state machine: Init / RampUp / Stable /
+//!   ProbeUp).
 //!
-//! Three components cooperate:
-//! - Model: records IO observations and models the network (BW_max, TTFB_est, BDP)
-//! - Regime: state machine driving the admission (Init / RampUp / Stable / ProbeUp)
-//! - Admission: admission control, enforces byte-based + request-based budgets
+//! Admission enforces the byte-based and request-based budgets.
 
-// Loosely based on BBR: Congestion-Based Congestion Control
+// The TTFB model is loosely based on BBR: Congestion-Based Congestion Control
 // see https://queue.acm.org/detail.cfm?id=3022184
 
 mod admission;
+mod knee;
 mod model;
 mod regime;
 
-use std::num::{NonZeroU32, NonZeroU64};
+use std::num::NonZeroU64;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering::Relaxed;
 use std::time::{Duration, Instant};
 
 pub use admission::{InFlightBudget, InFlightPermit, InFlightStats};
 use crossbeam_queue::ArrayQueue;
+use knee::{BOUND_FRACTION, KneeConfig, KneeController, KneeTick, LimiterTick};
 pub use model::Model;
 use polars_core::runtime::ASYNC;
 use polars_utils::relaxed_cell::RelaxedCell;
@@ -35,6 +40,7 @@ pub use regime::{Regime, RegimeState};
 const SAMPLE_QUEUE_CAPACITY: usize = 8192;
 
 use crate::cloud::concurrency_config::get_random_access_chunk_size;
+use crate::cloud::http_rate_limit::PacingBudget;
 
 #[derive(Clone, Copy, Debug)]
 pub struct IoSample {
@@ -55,17 +61,50 @@ pub struct ControllerConfig {
     // Lower limit for the byte-based budget - needed to avoid deadlock.
     floor_byte_budget: u64,
     // Count-based request budget.
-    request_budget: u32,
+    request_budget: u64,
+    // Lower limit for the count-based budget.
+    floor_request_budget: u64,
     // Controller regime update frequency.
     control_interval: Duration,
     // Total budget only resizes if the relative changes exceeds this threshold
     budget_resize_threshold: f64,
+    // Which model sets the byte budget (`POLARS_INFLIGHT_BYTE_BUDGET_MODEL`).
+    bdp_model: BdpModel,
+}
+
+/// Which model sets the in-flight byte budget. `Knee` (default) is the knee-based controller;
+/// `Ttfb` is the previous TTFB-based model, kept as a fallback.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum BdpModel {
+    Ttfb,
+    Knee {
+        // Ceiling for the byte budget (per controller, i.e. per object store).
+        max_byte_budget: u64,
+    },
 }
 
 impl Default for ControllerConfig {
     fn default() -> Self {
         // Only used for bytes-based budget.
         let target_chunk_size = get_random_access_chunk_size() as u64;
+        let init_byte_budget = get_init_byte_budget(target_chunk_size);
+        let request_budget = get_inflight_request_budget();
+        let (bdp_model, init_byte_budget) =
+            match std::env::var("POLARS_INFLIGHT_BYTE_BUDGET_MODEL").as_deref() {
+                Err(_) | Ok("knee") => {
+                    let max_byte_budget = get_knee_max_byte_budget(
+                        init_byte_budget,
+                        target_chunk_size,
+                        request_budget.saturating_mul(target_chunk_size),
+                    );
+                    (
+                        BdpModel::Knee { max_byte_budget },
+                        init_byte_budget.min(max_byte_budget),
+                    )
+                },
+                Ok("ttfb") => (BdpModel::Ttfb, init_byte_budget),
+                Ok(v) => panic!("invalid value for POLARS_INFLIGHT_BYTE_BUDGET_MODEL: {v}"),
+            };
         Self {
             window: Duration::from_millis(1000),
 
@@ -79,18 +118,46 @@ impl Default for ControllerConfig {
             //   1 Gbps x 50 ms = 6.25 MB
             //   10 Gbps x 50 ms = 62.5 MB
             //   100 Gbps x 50 ms = 625 MB
-            init_byte_budget: get_init_byte_budget(target_chunk_size),
+            init_byte_budget,
 
             // Byte-based budget floor.
             // Must be >=larger than target_chunk_size to avoid potential deadlock.
             floor_byte_budget: target_chunk_size,
 
-            // Count-based budget, currently fixed
-            request_budget: get_request_budget(),
+            // Count-based budget.
+            request_budget,
+            floor_request_budget: get_inflight_floor_request_budget(),
             control_interval: Duration::from_millis(100),
             budget_resize_threshold: 0.05,
+            bdp_model,
         }
     }
+}
+
+/// Ceiling for the knee's in-flight byte budget: total memory / 16 (cgroup-aware), at most what the
+/// request budget can hold (`max_inflight_bytes` = request budget x max request size), at least the
+/// initial budget. `POLARS_INFLIGHT_MAX_BYTE_BUDGET` sets it, at least one chunk; the initial budget
+/// is then at most this.
+fn get_knee_max_byte_budget(
+    init_byte_budget: u64,
+    target_chunk_size: u64,
+    max_inflight_bytes: u64,
+) -> u64 {
+    std::env::var("POLARS_INFLIGHT_MAX_BYTE_BUDGET").map_or_else(
+        |_| {
+            (polars_utils::sys::total_memory() / 16)
+                .min(max_inflight_bytes)
+                .max(init_byte_budget)
+        },
+        |x| {
+            x.parse::<NonZeroU64>()
+                .unwrap_or_else(|_| {
+                    panic!("invalid value for POLARS_INFLIGHT_MAX_BYTE_BUDGET: {x}")
+                })
+                .get()
+                .max(target_chunk_size)
+        },
+    )
 }
 
 /// Max number of bytes concurrently in flight during the init and start of rampup phase.
@@ -120,14 +187,14 @@ fn get_init_byte_budget(target_chunk_size: u64) -> u64 {
 }
 
 /// Maximum number of requests concurrently in flight.
-pub fn get_request_budget() -> u32 {
+pub fn get_inflight_request_budget() -> u64 {
     // Since object_store/reqwest use HTTP/1 with a connection pool, this value controls the
     // max concurrent TCP sessions to S3 for the pipeline.
     // When modifying this value, consider the max_thread count configuration(s), the OS limitations
     // (e.g., ulimit -n), and any cloud infrastructure limitations.
     std::env::var("POLARS_INFLIGHT_REQUEST_BUDGET")
         .map(|x| {
-            x.parse::<NonZeroU32>()
+            x.parse::<NonZeroU64>()
                 .unwrap_or_else(|_| panic!("invalid value for POLARS_INFLIGHT_REQUEST_BUDGET: {x}"))
                 .get()
         })
@@ -135,37 +202,127 @@ pub fn get_request_budget() -> u32 {
         .max(1)
 }
 
+/// Minimum number of requests concurrently in flight, if demand is there.
+pub fn get_inflight_floor_request_budget() -> u64 {
+    // Since object_store/reqwest use HTTP/1 with a connection pool, this value controls the
+    // max concurrent TCP sessions to S3 for the pipeline.
+    // When modifying this value, consider the max_thread count configuration(s), the OS limitations
+    // (e.g., ulimit -n), and any cloud infrastructure limitations.
+    std::env::var("POLARS_INFLIGHT_FLOOR_REQUEST_BUDGET")
+        .map(|x| {
+            x.parse::<NonZeroU64>()
+                .unwrap_or_else(|_| {
+                    panic!("invalid value for POLARS_INFLIGHT_FLOOR_REQUEST_BUDGET: {x}")
+                })
+                .get()
+        })
+        .unwrap_or(polars_config::config().max_threads() as u64)
+        .max(1)
+}
+
+/// Windowed round-trip time of 0-byte metadata (HEAD) requests.
+/// Diagnostic only, not to be used for BDP estimation.
+#[derive(Debug)]
+pub struct HeadRttChannel {
+    min_ns: AtomicU64,
+    sum_ns: AtomicU64,
+    count: AtomicU64,
+    /// Never reset, unlike `count`: distinguishes the first request of the process from
+    /// the first of a window.
+    total: AtomicU64,
+}
+
+/// One control tick's worth of [`HeadRttChannel`] observations.
+#[derive(Clone, Copy, Debug)]
+pub struct HeadRttWindow {
+    pub min: Option<Duration>,
+    pub avg: Option<Duration>,
+    pub count: u64,
+}
+
+impl HeadRttChannel {
+    fn new() -> Self {
+        Self {
+            min_ns: AtomicU64::new(u64::MAX),
+            sum_ns: AtomicU64::new(0),
+            count: AtomicU64::new(0),
+            total: AtomicU64::new(0),
+        }
+    }
+
+    /// Hot path: four relaxed ops, no queue.
+    fn record(&self, rtt: Duration) {
+        let ns = rtt.as_nanos() as u64;
+        self.min_ns.fetch_min(ns, Relaxed);
+        self.sum_ns.fetch_add(ns, Relaxed);
+        self.count.fetch_add(1, Relaxed);
+
+        if self.total.fetch_add(1, Relaxed) == 0 && polars_config::config().verbose() {
+            eprintln!(
+                "[InFlightConcurrency]: observed first RTT sample (metadata): {} ms",
+                rtt.as_millis()
+            );
+        }
+    }
+
+    /// Read and reset.
+    fn take(&self) -> HeadRttWindow {
+        let min_ns = self.min_ns.swap(u64::MAX, Relaxed);
+        let sum_ns = self.sum_ns.swap(0, Relaxed);
+        let count = self.count.swap(0, Relaxed);
+
+        HeadRttWindow {
+            min: (min_ns != u64::MAX).then(|| Duration::from_nanos(min_ns)),
+            avg: (count > 0).then(|| Duration::from_nanos(sum_ns / count)),
+            count,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct ConcurrencyController {
     config: ControllerConfig,
     sample_queue: Arc<ArrayQueue<IoSample>>,
     samples_dropped: Arc<RelaxedCell<u64>>,
+    // Response body bytes of data requests as they arrive, counted outside the sample queue
+    // (which drops when full). Knee model only.
+    arrived_bytes: Option<Arc<RelaxedCell<u64>>>,
+    head_rtt: Arc<HeadRttChannel>,
     inflight_budget: Arc<InFlightBudget>,
     _control_task: tokio::task::JoinHandle<()>,
 }
 
 impl ConcurrencyController {
-    pub fn new(config: ControllerConfig) -> Self {
+    pub fn new(config: ControllerConfig, pacing_budget: Option<PacingBudget>) -> Self {
         let sample_queue = Arc::new(ArrayQueue::new(SAMPLE_QUEUE_CAPACITY));
         let samples_dropped = Arc::new(RelaxedCell::new_u64(0));
+        let arrived_bytes = matches!(config.bdp_model, BdpModel::Knee { .. })
+            .then(|| Arc::new(RelaxedCell::new_u64(0)));
+        let head_rtt = Arc::new(HeadRttChannel::new());
 
         let inflight_budget = Arc::new(InFlightBudget::new(
             config.init_byte_budget,
             config.floor_byte_budget,
             config.request_budget,
+            config.floor_request_budget,
         ));
 
         let control_task = Self::spawn_control_loop(
             sample_queue.clone(),
             samples_dropped.clone(),
+            arrived_bytes.clone(),
+            head_rtt.clone(),
             inflight_budget.clone(),
             config.clone(),
+            pacing_budget,
         );
 
         Self {
             config,
             sample_queue,
             samples_dropped,
+            arrived_bytes,
+            head_rtt,
             inflight_budget,
             _control_task: control_task,
         }
@@ -175,12 +332,24 @@ impl ConcurrencyController {
         &self.config
     }
 
-    /// Record a completed IO. Hot path.
+    /// Record a completed data request (TTFB model; logged under the knee). Hot path.
     pub fn record_io(&self, sample: IoSample) {
         if self.sample_queue.push(sample).is_err() {
             // Queue full: drop. Samples are statistics is considered acceptable.
             self.samples_dropped.fetch_add(1);
         }
+    }
+
+    /// Record response body bytes of a data request as they arrive (knee model). Hot path.
+    pub fn record_arrived(&self, n_bytes: u64) {
+        if let Some(arrived_bytes) = &self.arrived_bytes {
+            arrived_bytes.fetch_add(n_bytes);
+        }
+    }
+
+    /// Record the round-trip time of a completed 0-byte metadata request. Hot path.
+    pub fn record_head_rtt(&self, rtt: Duration) {
+        self.head_rtt.record(rtt);
     }
 
     pub fn inflight_budget(&self) -> &Arc<InFlightBudget> {
@@ -194,13 +363,23 @@ impl ConcurrencyController {
     fn spawn_control_loop(
         sample_queue: Arc<ArrayQueue<IoSample>>,
         samples_dropped: Arc<RelaxedCell<u64>>,
+        arrived_bytes: Option<Arc<RelaxedCell<u64>>>,
+        head_rtt: Arc<HeadRttChannel>,
         admission: Arc<InFlightBudget>,
         config: ControllerConfig,
+        pacing_budget: Option<PacingBudget>,
     ) -> tokio::task::JoinHandle<()> {
         if polars_config::config().verbose() {
             eprintln!(
-                "[InFlightConcurrency]: spawn control loop: control_interval: {}ms",
-                config.control_interval.as_millis()
+                "[InFlightConcurrency]: spawn control loop: control_interval: {}ms, \
+                bdp_model: {:?}, initial_byte_budget: {}, floor_byte_budget: {}, \
+                request_budget: {}, floor_request_budget: {}",
+                config.control_interval.as_millis(),
+                config.bdp_model,
+                config.init_byte_budget,
+                config.floor_byte_budget,
+                config.request_budget,
+                config.floor_request_budget,
             );
         }
         ASYNC.spawn(async move {
@@ -210,9 +389,32 @@ impl ConcurrencyController {
             let mut ticker = tokio::time::interval(config.control_interval);
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
+            let max_inflight_budget = config.request_budget as f64;
+            let mut limiter_admitted = pacing_budget.as_ref().map_or(0, PacingBudget::admitted);
+
+            let mut knee_controller = match config.bdp_model {
+                BdpModel::Knee { max_byte_budget } => Some(KneeController::new(KneeConfig {
+                    init_budget: config.init_byte_budget,
+                    max_budget: max_byte_budget,
+                    tick: config.control_interval,
+                })),
+                BdpModel::Ttfb => None,
+            };
+            let mut last_tick: Option<Instant> = None;
+
             loop {
                 ticker.tick().await;
                 let now = Instant::now();
+                let tick_secs = last_tick.map_or(config.control_interval.as_secs_f64(), |last| {
+                    now.duration_since(last).as_secs_f64()
+                });
+                last_tick = Some(now);
+
+                // Reduce concurrency to the pacing budget from the rate-limiter.
+                if let Some(ref pacing_budget) = pacing_budget {
+                    let request_budget = pacing_budget.request_budget(max_inflight_budget) as u64;
+                    admission.resize_request_budget(request_budget);
+                }
 
                 // Update model statistics and step regime.
                 let (state, signal, dropped, bw_hwm_held) = {
@@ -228,9 +430,38 @@ impl ConcurrencyController {
                     (state, signal, dropped, bw_hwm_held)
                 };
 
-                if !matches!(state, RegimeState::WarmIdle { .. }) {
+                let bytes_arrived = arrived_bytes.as_ref().map_or(0, |c| c.swap(0));
+                let limiter = pacing_budget.as_ref().map(|p| {
+                    let admitted = p.admitted();
+                    let delta = admitted.wrapping_sub(limiter_admitted);
+                    limiter_admitted = admitted;
+                    LimiterTick {
+                        rate: p.rate(),
+                        admitted: delta,
+                    }
+                });
+                let byte_acquires_unparked = admission.take_byte_acquires_unparked();
+                let stats = admission.stats();
+                let knee_tick = KneeTick {
+                    now,
+                    bytes_arrived,
+                    bytes_in_use: stats.bytes_in_use,
+                    byte_acquires_waited: byte_acquires_unparked + stats.byte_acquires_parked,
+                    bytes_budget: admission.current_byte_budget(),
+                    limiter,
+                };
+                let knee_budget = knee_controller.as_mut().map(|k| k.step(knee_tick));
+
+                if let Some(target) = knee_budget {
+                    let current = admission.current_byte_budget();
+                    let ratio = target as f64 / current.max(1) as f64;
+                    let threshold = config.budget_resize_threshold;
+                    if ratio < (1.0 - threshold) || ratio > (1.0 + threshold) {
+                        admission.resize_byte_budget(target);
+                    }
+                } else if !matches!(state, RegimeState::WarmIdle { .. }) {
                     // Compute base BDP
-                    let base_budget = match (state, signal) {
+                    let base_byte_budget = match (state, signal) {
                         (RegimeState::Init, _) | (_, None) => config.init_byte_budget,
                         (_, Some(signal)) => signal.bdp_bytes().max(config.init_byte_budget),
                     };
@@ -245,53 +476,84 @@ impl ConcurrencyController {
                         // Unreachable.
                         RegimeState::WarmIdle { .. } => 1.0,
                     };
-                    let target_budget = (base_budget as f64 * gain) as u64;
+                    let target_byte_budget = (base_byte_budget as f64 * gain) as u64;
 
                     // Resize if needed.
                     let current_byte_budget = admission.current_byte_budget();
                     let threshold = config.budget_resize_threshold;
                     let should_resize = match current_byte_budget {
-                        0 => target_budget > 0,
+                        0 => target_byte_budget > 0,
                         current => {
-                            let ratio = target_budget as f64 / current as f64;
+                            let ratio = target_byte_budget as f64 / current as f64;
                             ratio < (1.0 - threshold) || ratio > (1.0 + threshold)
                         },
                     };
 
                     if should_resize {
-                        admission.resize_byte_budget(target_budget);
+                        admission.resize_byte_budget(target_byte_budget);
                     }
                 }
 
+                // Drained every tick. Diagnostic only.
+                let head_rtt_window = head_rtt.take();
+
                 // Log snapshot.
                 if std::env::var("POLARS_LOG_CONCURRENCY").is_ok() {
-                    let stats = admission.stats();
+                    // The tick the knee saw, before this tick's resize.
+                    let bound = [
+                        ("bytes", knee_tick.bytes_bound()),
+                        ("requests", stats.requests_saturation >= BOUND_FRACTION),
+                        ("limiter", limiter.is_some_and(|l| l.bound(tick_secs))),
+                    ]
+                    .iter()
+                    .filter(|(_, bound)| *bound)
+                    .map(|(name, _)| *name)
+                    .collect::<Vec<_>>()
+                    .join("+");
+                    let bound = if bound.is_empty() { "none" } else { &bound };
+                    let model_fields = match &knee_controller {
+                        Some(k) => format!(
+                            "kphase={}, knee={:.1} MB, knee_src={}, bound={bound}, \
+                            bw_round={:.1} MB/s, probe_ref={:.1} MB/s, braking={}",
+                            k.phase_label(),
+                            k.knee().unwrap_or(0) as f64 / 1e6,
+                            k.knee_source().map_or("-", |source| source.label()),
+                            k.last_bw_round() / 1e6,
+                            k.probe_ref_bw() / 1e6,
+                            u8::from(k.braking()),
+                        ),
+                        None => format!(
+                            "regime={}, bound={bound}, bw_hwm={:.1} MB/s, bw_avg={:.1} MB/s, \
+                            bdp_obs={:.1} MB",
+                            state.label(),
+                            signal.map(|s| s.bw_hwm_bps).or(bw_hwm_held).unwrap_or(0.0) / 1e6,
+                            signal.map_or(0.0, |s| s.bw_avg_bps) / 1e6,
+                            signal.map_or(0, |s| s.bdp_bytes()) as f64 / 1e6,
+                        ),
+                    };
                     eprintln!(
-                        "[InFlightConcurrency {}] regime={}, \
-                        bw_hwm={:.1} MB/s, \
-                        bw_avg={:.1} MB/s, \
+                        "[InFlightConcurrency {}] {model_fields}, \
+                        bytes_budget={:.1} MB, \
+                        bytes_in_use={:.1} MB ({:.0}%), \
+                        req_budget={}, \
+                        req_in_use={} ({:.0}%), \
                         rtt_min={:.1} ms, \
                         rtt_avg={:.1} ms, \
-                        bdp_obs={:.1} MB, \
-                        bytes_budget={:.1} MB, \
-                        bytes_in_use={:.1} MB, \
-                        bytes_sat={:.2}, \
-                        req_budget={}, \
-                        req_in_use={}, \
-                        req_sat={:.2}",
+                        head_rtt_min={:.1} ms, \
+                        head_rtt_avg={:.1} ms, \
+                        head_n={}",
                         chrono::Utc::now(),
-                        state.label(),
-                        signal.map(|s| s.bw_hwm_bps).or(bw_hwm_held).unwrap_or(0.0) / 1e6,
-                        signal.map_or(0.0, |s| s.bw_avg_bps) / 1e6,
-                        signal.map_or(0, |s| s.ttfb_min.as_millis()),
-                        signal.map_or(0, |s| s.ttfb_avg.as_millis()),
-                        signal.map_or(0, |s| s.bdp_bytes()) as f64 / 1e6,
                         stats.bytes_budget as f64 / 1e6,
                         stats.bytes_in_use as f64 / 1e6,
-                        stats.bytes_saturation,
+                        stats.bytes_saturation * 100.0,
                         stats.request_budget,
                         stats.requests_in_use,
-                        stats.requests_saturation
+                        stats.requests_saturation * 100.0,
+                        signal.map_or(0, |s| s.ttfb_min.as_millis()),
+                        signal.map_or(0, |s| s.ttfb_avg.as_millis()),
+                        head_rtt_window.min.map_or(0.0, |d| d.as_secs_f64() * 1e3),
+                        head_rtt_window.avg.map_or(0.0, |d| d.as_secs_f64() * 1e3),
+                        head_rtt_window.count,
                     );
                     if dropped > 0 {
                         eprintln!(

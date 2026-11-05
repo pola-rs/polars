@@ -5,13 +5,17 @@ use object_store::local::LocalFileSystem;
 use polars_core::config::{self, verbose, verbose_print_sensitive};
 use polars_error::{PolarsError, PolarsResult, polars_bail, polars_err, to_compute_err};
 use polars_utils::aliases::PlHashMap;
+use polars_utils::cache::LruCache;
 use polars_utils::pl_path::{ALLOWED_EXT_SCHEMES, CloudScheme, PlPath, PlRefPath};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{format_pl_smallstr, pl_serialize};
-use tokio::sync::RwLock;
+use tokio::sync::{OnceCell, RwLock};
 
-use super::{CloudLocation, CloudOptions, CloudType, PolarsObjectStore};
-use crate::cloud::{CloudConfig, CloudRetryConfig};
+use super::{CloudLocation, CloudOptions, CloudType, PolarsObjectStore, split_http_url};
+use crate::cloud::http_rate_limit::{
+    DirectionalRateLimitConfig, InitPolicy, PacingBudget, RateLimiter,
+};
+use crate::cloud::{CloudConfig, CloudRateLimitConfig, CloudRetryConfig};
 
 /// Object stores must be cached. Every object-store will do DNS lookups and
 /// get rate limited when querying the DNS (can take up to 5s).
@@ -19,6 +23,12 @@ use crate::cloud::{CloudConfig, CloudRetryConfig};
 #[allow(clippy::type_complexity)]
 static OBJECT_STORE_CACHE: LazyLock<RwLock<PlHashMap<Vec<u8>, PolarsObjectStore>>> =
     LazyLock::new(Default::default);
+
+/// Per-origin HTTP stores; separate so that many origins don't evict the cloud stores.
+#[allow(clippy::type_complexity)]
+static HTTP_STORE_CACHE: LazyLock<
+    std::sync::Mutex<Option<LruCache<Vec<u8>, Arc<OnceCell<PolarsObjectStore>>>>>,
+> = LazyLock::new(Default::default);
 
 /// Trait for external ObjectStore builder (e.g., for HDFS). Unstable.
 pub trait ExtObjectStoreBuilder {
@@ -132,6 +142,7 @@ fn path_and_creds_to_key(path: &PlPath, options: Option<&CloudOptions>) -> Polar
                  file_cache_ttl,
                  config,
                  retry_config,
+                 rate_limit_config,
                  #[cfg(feature = "cloud")]
                      credential_provider: _,
              }|
@@ -141,6 +152,7 @@ fn path_and_creds_to_key(path: &PlPath, options: Option<&CloudOptions>) -> Polar
                     file_cache_ttl: *file_cache_ttl,
                     config: config.clone(),
                     retry_config: *retry_config,
+                    rate_limit_config: *rate_limit_config,
                     #[cfg(feature = "cloud")]
                     credential_provider: credential_cache_key,
                 })
@@ -195,6 +207,7 @@ fn path_and_creds_to_key(path: &PlPath, options: Option<&CloudOptions>) -> Polar
         file_cache_ttl: u64,
         config: Option<CloudConfig>,
         retry_config: CloudRetryConfig,
+        rate_limit_config: CloudRateLimitConfig,
         #[cfg(feature = "cloud")]
         credential_provider: CacheKeyBytes,
     }
@@ -210,11 +223,19 @@ pub(crate) struct PolarsObjectStoreBuilder {
     path: PlRefPath,
     cloud_type: CloudType,
     options: Option<CloudOptions>,
+    // RateLimiter. Authoritative for config and read/write request rate cells (atomics).
+    // The rate-limiter, below the object store, updates them dynamically. The concurrency controller,
+    // above the object store, uses the request rate to limit the number of concurrent requests.
+    rate_limiter: Option<Arc<RateLimiter>>,
 }
 
 impl PolarsObjectStoreBuilder {
     pub(super) fn path(&self) -> &PlRefPath {
         &self.path
+    }
+
+    pub(crate) fn rate_limit_signal(&self) -> Option<PacingBudget> {
+        self.rate_limiter.as_ref().map(|r| r.read_budget())
     }
 
     pub(super) async fn build_impl(
@@ -233,7 +254,31 @@ impl PolarsObjectStoreBuilder {
             eprintln!(
                 "build object-store: file_cache_ttl: {}",
                 options.file_cache_ttl
-            )
+            );
+
+            fn eprint_rate_config(direction: &str, config: &DirectionalRateLimitConfig) {
+                eprintln!(
+                    "object-store rate_limiter config({})]: init_rate: {:.0}rps, floor_rate: {:.0}rps, ceiling_rate: {:.0}rps, horizon: {}ms, max_wait: {}ms, init_policy: {}",
+                    direction,
+                    config.init_rate,
+                    config.floor_rate,
+                    config.ceiling_rate,
+                    config.horizon.as_millis(),
+                    config.max_wait.as_millis(),
+                    {
+                        match config.init_policy {
+                            InitPolicy::SetToInit => "to_init",
+                            InitPolicy::SetToFloor => "to_floor",
+                            InitPolicy::Inherit => "inherit",
+                        }
+                    }
+                )
+            }
+
+            if let Some(rate_limiter) = &self.rate_limiter {
+                eprint_rate_config("read", &rate_limiter.config.read);
+                eprint_rate_config("write", &rate_limiter.config.write);
+            }
         }
 
         let store = match self.cloud_type {
@@ -241,7 +286,11 @@ impl PolarsObjectStoreBuilder {
                 #[cfg(feature = "aws")]
                 {
                     let store = options
-                        .build_aws(self.path.clone(), clear_cached_credentials)
+                        .build_aws(
+                            self.path.clone(),
+                            clear_cached_credentials,
+                            self.rate_limiter.as_deref(),
+                        )
                         .await?;
                     Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
                 }
@@ -251,7 +300,11 @@ impl PolarsObjectStoreBuilder {
             CloudType::Gcp => {
                 #[cfg(feature = "gcp")]
                 {
-                    let store = options.build_gcp(self.path.clone(), clear_cached_credentials)?;
+                    let store = options.build_gcp(
+                        self.path.clone(),
+                        clear_cached_credentials,
+                        self.rate_limiter.as_deref(),
+                    )?;
 
                     Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
                 }
@@ -262,8 +315,11 @@ impl PolarsObjectStoreBuilder {
                 {
                     #[cfg(feature = "azure")]
                     {
-                        let store =
-                            options.build_azure(self.path.clone(), clear_cached_credentials)?;
+                        let store = options.build_azure(
+                            self.path.clone(),
+                            clear_cached_credentials,
+                            self.rate_limiter.as_deref(),
+                        )?;
                         Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
                     }
                 }
@@ -278,8 +334,13 @@ impl PolarsObjectStoreBuilder {
                 {
                     #[cfg(feature = "http")]
                     {
-                        let store = options.build_http(self.path.clone())?;
-                        PolarsResult::Ok(Arc::new(store) as Arc<dyn ObjectStore>)
+                        let store: Arc<dyn ObjectStore> = match split_http_url(&self.path) {
+                            Some((base_url, _)) => Arc::new(
+                                options.build_http_origin(self.path.sliced(0..base_url.len()))?,
+                            ),
+                            None => Arc::new(options.build_http(self.path.clone())?),
+                        };
+                        PolarsResult::Ok(store)
                     }
                 }
                 #[cfg(not(feature = "http"))]
@@ -320,6 +381,14 @@ impl PolarsObjectStoreBuilder {
 
     /// Note: Use `build_impl` for a non-caching version.
     pub(super) async fn build(self) -> PolarsResult<PolarsObjectStore> {
+        if self.cloud_type == CloudType::Http
+            && let Some((base_url, _)) = split_http_url(&self.path)
+        {
+            // The store serves the whole origin, so it must not keep this URL.
+            let path = self.path.sliced(0..base_url.len());
+            return Self { path, ..self }.build_http_cached().await;
+        }
+
         let opt_cache_key = match self.cloud_type {
             CloudType::Aws | CloudType::Gcp | CloudType::Azure => {
                 Some(path_and_creds_to_key(&self.path, self.options.as_ref())?)
@@ -387,8 +456,48 @@ impl PolarsObjectStoreBuilder {
         Ok(store)
     }
 
+    async fn build_http_cached(self) -> PolarsResult<PolarsObjectStore> {
+        // Clamped: the LRU allocates its capacity up front.
+        let capacity = polars_config::config().http_store_cache_size().min(1 << 16) as usize;
+
+        // An uncached cell builds a store that is dropped with its last user.
+        let cell = if capacity == 0 {
+            Default::default()
+        } else {
+            let cache_key = path_and_creds_to_key(&self.path, self.options.as_ref())?;
+            let mut cache = HTTP_STORE_CACHE.lock().unwrap();
+            let cache = match &mut *cache {
+                Some(cache) if cache.max_capacity() == capacity => cache,
+                // First use, or capacity changed at runtime.
+                cache => cache.insert(LruCache::with_capacity(capacity)),
+            };
+            let was_full = cache.len() == capacity;
+            let cell =
+                Arc::clone(cache.get_or_insert_with(cache_key.as_slice(), |_| Default::default()));
+            if !was_full && cache.len() == capacity && config::verbose() {
+                eprintln!(
+                    "build_object_store: http store cache full ({capacity} hosts), evicting \
+                     least recently used from now on (POLARS_HTTP_STORE_CACHE_SIZE)"
+                );
+            }
+            cell
+        };
+
+        cell.get_or_try_init(|| async {
+            let store = self.build_impl(false).await?;
+            PolarsResult::Ok(PolarsObjectStore::new_from_inner(store, self))
+        })
+        .await
+        .cloned()
+    }
+
     pub(crate) fn is_azure(&self) -> bool {
         matches!(&self.cloud_type, CloudType::Azure)
+    }
+
+    /// Http has no credentials to refresh; a rebuild would drop the connection pool.
+    pub(crate) fn rebuild_on_error(&self) -> bool {
+        !matches!(&self.cloud_type, CloudType::Http)
     }
 }
 
@@ -409,10 +518,24 @@ pub async fn build_object_store(
         .map_or(CloudType::File, CloudType::from_cloud_scheme);
     let cloud_location = CloudLocation::new(path.clone(), glob)?;
 
+    let disable_http_rate_limit = polars_config::config().disable_http_rate_limit();
+    let rate_limiter = match cloud_type {
+        CloudType::Aws | CloudType::Azure | CloudType::Gcp if !disable_http_rate_limit => {
+            Some(Arc::new(RateLimiter::new(
+                options
+                    .map(|options| options.rate_limit_config)
+                    .unwrap_or_default()
+                    .into(),
+            )))
+        },
+        _ => None,
+    };
+
     let store = PolarsObjectStoreBuilder {
         path,
         cloud_type,
         options: options.cloned(),
+        rate_limiter,
     }
     .build()
     .await?;

@@ -1,6 +1,6 @@
-use arrow::array::Array;
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::IdxArr;
+use polars_arrow::array::Array;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::IdxArr;
 use polars_utils::IdxSize;
 
 /// # Safety

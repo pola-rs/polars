@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import enum
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, cast
 from zoneinfo import ZoneInfo
 
@@ -17,7 +17,15 @@ from polars._dependencies import (
 from polars._dependencies import numpy as np
 from polars._utils.wrap import wrap_expr
 from polars.datatype_expr import DataTypeExpr
-from polars.datatypes import BaseExtension, Date, Datetime, Duration, Object
+from polars.datatypes import (
+    BaseExtension,
+    Date,
+    Datetime,
+    Duration,
+    Map,
+    Object,
+    Unknown,
+)
 from polars.datatypes.convert import DataTypeMappings
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -92,6 +100,11 @@ def lit(
     elif dtype == Object:
         value_s = pl.Series("literal", [value], dtype=dtype)
         return wrap_expr(plr.lit(value_s._s, allow_object, is_scalar=True))
+    elif dtype == Map:
+        value_s = pl.Series("literal", [value], dtype=dtype)
+        return wrap_expr(plr.lit(value_s._s, allow_object, is_scalar=True))
+    elif dtype == Unknown:
+        dtype = None
 
     if isinstance(value, datetime):
         if dtype == Date:
@@ -121,7 +134,7 @@ def lit(
                     tz = str(value_tz)
                 else:
                     # fixed offset from UTC (eg: +4:00)
-                    value = value.astimezone(timezone.utc)
+                    value = value.astimezone(UTC)
                     tz = "UTC"
 
             # dtype and value both have same time zone
@@ -141,7 +154,7 @@ def lit(
                 )
                 raise TypeError(msg)
 
-        dt_utc = value.replace(tzinfo=timezone.utc)
+        dt_utc = value.replace(tzinfo=UTC)
         dt_utc_s = pl.Series("literal", [dt_utc]).cast(Datetime(time_unit))
         if tz is not None:
             dt_utc_s = dt_utc_s.dt.replace_time_zone(

@@ -9,9 +9,11 @@ The following methods are available under the `Series.struct` attribute.
    :toctree: api/
    :template: autosummary/accessor_method.rst
 
+    Series.struct.eval
     Series.struct.field
     Series.struct.json_encode
     Series.struct.rename_fields
+    Series.struct.drop
     Series.struct.unnest
 
 .. autosummary::

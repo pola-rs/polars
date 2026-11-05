@@ -3,8 +3,6 @@ mod aggregation;
 #[cfg(feature = "pymethods")]
 mod arithmetic;
 #[cfg(feature = "pymethods")]
-mod buffers;
-#[cfg(feature = "pymethods")]
 mod c_interface;
 #[cfg(feature = "pymethods")]
 mod comparison;

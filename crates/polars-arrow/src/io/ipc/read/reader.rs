@@ -1,6 +1,6 @@
 use std::io::{Read, Seek};
 
-use arrow_format::ipc::KeyValueRef;
+use polars_arrow_format::ipc::KeyValueRef;
 use polars_error::{PolarsResult, polars_err};
 use polars_utils::bool::UnsafeBool;
 
@@ -142,7 +142,7 @@ impl<R: Read + Seek> FileReader<R> {
     }
 
     /// Skip over blocks until we have seen at most `offset` rows, returning how many rows we are
-    /// still too see.  
+    /// still to see.  
     ///
     /// This will never go over the `offset`. Meaning that if the `offset < current_block.len()`,
     /// the block will not be skipped.
@@ -171,7 +171,7 @@ impl<R: Read + Seek> FileReader<R> {
 
     pub fn next_record_batch(
         &mut self,
-    ) -> Option<PolarsResult<arrow_format::ipc::RecordBatchRef<'_>>> {
+    ) -> Option<PolarsResult<polars_arrow_format::ipc::RecordBatchRef<'_>>> {
         let block = self.metadata.blocks.get(self.current_block)?;
         self.current_block += 1;
         let message = get_message_from_block(&mut self.reader, block, &mut self.message_scratch);

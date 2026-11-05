@@ -5,11 +5,10 @@ from typing import TYPE_CHECKING, Any
 
 from polars import functions as F
 from polars._utils.convert import parse_as_duration_string
-from polars._utils.deprecation import deprecated
+from polars._utils.expired import getattr_fallback, raise_for_removed_attributes
 from polars._utils.parse.expr import _parse_inputs_as_iterable
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Callable, Iterable, Iterator
     from datetime import timedelta
 
@@ -23,11 +22,6 @@ if TYPE_CHECKING:
         StartBy,
     )
     from polars.lazyframe.group_by import LazyGroupBy
-
-    if sys.version_info >= (3, 13):
-        from warnings import deprecated
-    else:
-        from typing_extensions import deprecated  # noqa: TC004
 
 
 class GroupByIter:
@@ -218,7 +212,7 @@ class GroupBy:
         )
         if self.predicates:
             lgb = lgb.having(self.predicates)
-        groups_df = lgb.agg(F.first().alias(temp_col)).collect(
+        groups_df = lgb.agg(F.first().alias(temp_col))._collect_eager(
             optimizations=QueryOptFlags.none()
         )
 
@@ -378,7 +372,7 @@ class GroupBy:
         return (
             self._lgb()
             .agg(*aggs, **named_aggs)
-            .collect(optimizations=QueryOptFlags.none())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def map_groups(self, function: Callable[[DataFrame], DataFrame]) -> DataFrame:
@@ -504,7 +498,7 @@ class GroupBy:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return self._lgb().head(n).collect(optimizations=QueryOptFlags._eager())
+        return self._lgb().head(n)._collect_eager(optimizations=QueryOptFlags._eager())
 
     def tail(self, n: int = 5) -> DataFrame:
         """
@@ -553,7 +547,7 @@ class GroupBy:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return self._lgb().tail(n).collect(optimizations=QueryOptFlags.none())
+        return self._lgb().tail(n)._collect_eager(optimizations=QueryOptFlags.none())
 
     def all(self) -> DataFrame:
         """
@@ -612,37 +606,6 @@ class GroupBy:
         if name is not None:
             len_expr = len_expr.alias(name)
         return self.agg(len_expr)
-
-    @deprecated("`GroupBy.count` was renamed; use `GroupBy.len` instead")
-    def count(self) -> DataFrame:
-        """
-        Return the number of rows in each group.
-
-        .. deprecated:: 0.20.5
-            This method has been renamed to :func:`GroupBy.len`.
-
-        Rows containing null values count towards the total.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": ["Apple", "Apple", "Orange"],
-        ...         "b": [1, None, 2],
-        ...     }
-        ... )
-        >>> df.group_by("a").count()  # doctest: +SKIP
-        shape: (2, 2)
-        ┌────────┬───────┐
-        │ a      ┆ count │
-        │ ---    ┆ ---   │
-        │ str    ┆ u32   │
-        ╞════════╪═══════╡
-        │ Apple  ┆ 2     │
-        │ Orange ┆ 1     │
-        └────────┴───────┘
-        """
-        return self.agg(F.len().alias("count"))
 
     def first(self, *, ignore_nulls: bool = False) -> DataFrame:
         """
@@ -936,6 +899,19 @@ class GroupBy:
         """
         return self.agg(F.all().sum())
 
+    if not TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self,
+                name,
+                {
+                    "count": "`GroupBy.count` was renamed; use `GroupBy.len` instead.",
+                },
+                version="2.0",
+            )
+            return getattr_fallback(self, super(), name)
+
 
 class RollingGroupBy:
     """
@@ -995,7 +971,7 @@ class RollingGroupBy:
         if self.predicates:
             lgb = lgb.having(self.predicates)
 
-        groups_df = lgb.agg(F.first().alias(temp_col)).collect(
+        groups_df = lgb.agg(F.first().alias(temp_col))._collect_eager(
             optimizations=QueryOptFlags.none()
         )
 
@@ -1059,8 +1035,8 @@ class RollingGroupBy:
         if self.predicates:
             group_by = group_by.having(self.predicates)
 
-        return group_by.agg(*aggs, **named_aggs).collect(
-            optimizations=QueryOptFlags.none()
+        return group_by.agg(*aggs, **named_aggs)._collect_eager(
+            optimizations=QueryOptFlags._eager()
         )
 
     def map_groups(
@@ -1108,8 +1084,21 @@ class RollingGroupBy:
                 group_by=self.group_by,
             )
             .map_groups(function, schema)
-            .collect(optimizations=QueryOptFlags.none())
+            ._collect_eager(optimizations=QueryOptFlags.none())
         )
+
+    if not TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self,
+                name,
+                {
+                    "count": "`GroupBy.count` was renamed; use `GroupBy.len` instead.",
+                },
+                version="2.0",
+            )
+            return getattr_fallback(self, super(), name)
 
 
 class DynamicGroupBy:
@@ -1185,7 +1174,7 @@ class DynamicGroupBy:
         )
         if self.predicates:
             lgb = lgb.having(self.predicates)
-        groups_df = lgb.agg(F.first().alias(temp_col)).collect(
+        groups_df = lgb.agg(F.first().alias(temp_col))._collect_eager(
             optimizations=QueryOptFlags.none()
         )
 
@@ -1257,8 +1246,8 @@ class DynamicGroupBy:
         if self.predicates:
             group_by = group_by.having(self.predicates)
 
-        return group_by.agg(*aggs, **named_aggs).collect(
-            optimizations=QueryOptFlags.none()
+        return group_by.agg(*aggs, **named_aggs)._collect_eager(
+            optimizations=QueryOptFlags._eager()
         )
 
     def map_groups(
@@ -1309,8 +1298,21 @@ class DynamicGroupBy:
                 start_by=self.start_by,
             )
             .map_groups(function, schema)
-            .collect(optimizations=QueryOptFlags.none())
+            ._collect_eager(optimizations=QueryOptFlags.none())
         )
+
+    if not TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self,
+                name,
+                {
+                    "count": "`GroupBy.count` was renamed; use `GroupBy.len` instead.",
+                },
+                version="2.0",
+            )
+            return getattr_fallback(self, super(), name)
 
 
 def _chain_predicates(

@@ -75,5 +75,6 @@ pub fn array_to_page_v1<T: NativeType>(
         CowBuffer::Owned(buffer),
         descriptor.clone(),
         array.len(),
+        array.len() - array.iter().flatten().count(),
     )))
 }

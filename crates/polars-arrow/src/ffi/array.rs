@@ -100,7 +100,13 @@ impl ArrowArray {
     /// # Safety
     /// This method releases `buffers`. Consumers of this struct *must* call `release` before
     /// releasing this struct, or contents in `buffers` leak.
-    pub(crate) fn new(array: Box<dyn Array>) -> Self {
+    pub(crate) fn new(mut array: Box<dyn Array>) -> Self {
+        if let Some(struct_array) = array.as_any_mut().downcast_mut::<StructArray>() {
+            *struct_array = struct_array.to_ffi_aligned();
+        } else if let Some(fsl_array) = array.as_any_mut().downcast_mut::<FixedSizeListArray>() {
+            *fsl_array = fsl_array.to_ffi_aligned();
+        }
+
         #[allow(unused_mut)]
         let (offset, mut buffers, children, dictionary) =
             offset_buffers_children_dictionary(array.as_ref());
@@ -468,7 +474,7 @@ unsafe fn create_dictionary(
     dtype: &ArrowDataType,
     parent: InternalArrowArray,
 ) -> PolarsResult<Option<ArrowArrayChild<'static>>> {
-    if let ArrowDataType::Dictionary(_, values, _) = dtype {
+    if let ArrowDataType::Dictionary(_, values, _) = dtype.to_storage() {
         let dtype = values.as_ref().clone();
         // catch what we can
         if array.dictionary.is_null() {

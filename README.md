@@ -31,62 +31,103 @@
   <a href="https://pola-rs.github.io/nodejs-polars/index.html">Node.js</a>
   -
   <a href="https://pola-rs.github.io/r-polars/index.html">R</a>
+  -
+  <a href="https://docs.pola.rs/api/python/stable/reference/sql/index.html">SQL</a>
   |
-  <b>StackOverflow</b>:
-  <a href="https://stackoverflow.com/questions/tagged/python-polars">Python</a>
+  <b>Agents</b>:
+  <a href="https://github.com/polars-inc/skills/tree/main/polars">Skill</a>
   -
-  <a href="https://stackoverflow.com/questions/tagged/rust-polars">Rust</a>
-  -
-  <a href="https://stackoverflow.com/questions/tagged/nodejs-polars">Node.js</a>
-  -
-  <a href="https://stackoverflow.com/questions/tagged/r-polars">R</a>
+  <a href="https://docs.pola.rs/user-guide/misc/polars_llms/">MCP</a>
   |
   <a href="https://docs.pola.rs/">User guide</a>
   |
   <a href="https://discord.gg/4UfP5cfBE7">Discord</a>
 </p>
 
-## Polars: Extremely fast Query Engine for DataFrames, written in Rust
+## Polars: Extremely fast Query Engine for DataFrames and SQL
 
-Polars is an analytical query engine written for DataFrames. It is designed to be fast, easy to use
-and expressive. Key features are:
+Polars is an analytical query engine written in Rust. Write your queries with the DataFrame API, in
+SQL, or mix both: they run through the same optimizer and the same engine. It is designed to be
+fast, easy to use and expressive. Key features are:
 
-- Lazy | Eager execution
-- Streaming (larger-than-RAM datasets)
-- Query optimization
-- Multi-threaded
-- Written in Rust
-- SIMD
-- Powerful expression API
-- Front end in Python | Rust | NodeJS | R | SQL
-- [Apache Arrow Columnar Format](https://arrow.apache.org/docs/format/Columnar.html)
+- **Fast**: written from the ground up in Rust with multi-threaded, vectorized (SIMD) execution
+- **Spill to disk**: Operations that exceed available RAM can spill to disk
+- **Expressive API**: compose complex queries with powerful expressions
+- **Extensible**: extend Polars natively with custom code through
+  [I/O and Expression plugins](https://docs.pola.rs/user-guide/plugins/)
+- **GPU support**: optionally accelerate queries on NVIDIA GPUs
+- **Interoperable**: uses the
+  [Apache Arrow Columnar Format](https://arrow.apache.org/docs/format/Columnar.html) for zero-copy
+  data sharing
 
 To learn more, read the [user guide](https://docs.pola.rs/).
 
-## Performance 🚀🚀
+## Polars in action
 
-### Blazingly fast
+### DataFrame API
 
-Polars is very fast. In fact, it is one of the best performing solutions available. See the
-[PDS-H benchmarks](https://www.pola.rs/benchmarks.html) results.
+Queries are composed from expressions or SQL. This lazy query gets optimized out of the box and runs
+in parallel across all available cores:
 
-### Lightweight
+```python
+import polars as pl
 
-Polars is also very lightweight. It comes with zero required dependencies, and this shows in the
-import times:
+df = (
+    pl.scan_parquet("orders.parquet")
+    .filter(pl.col("status") == "shipped")
+    .group_by("customer_id")
+    .agg(
+        pl.col("amount").sum().alias("total"),
+        pl.len().alias("n_orders"),
+    )
+    .sort("total", descending=True)
+    .collect()
+)
+```
 
-- polars: 70ms
-- numpy: 104ms
-- pandas: 520ms
+### SQL
 
-### Handles larger-than-RAM data
+```python
+import polars as pl
 
-If you have data that does not fit into memory, Polars' query engine is able to process your query
-(or parts of your query) in a streaming fashion. This drastically reduces memory requirements, so
-you might be able to process your 250GB dataset on your laptop. Collect with
-`collect(engine='streaming')` to run the query streaming.
+df = pl.sql("""
+    WITH totals AS (
+        SELECT customer_id, SUM(amount) AS total, COUNT(*) AS n_orders
+        FROM read_parquet('orders.parquet')
+        WHERE status = 'shipped'
+        GROUP BY customer_id
+    )
+    SELECT c.name, t.total, t.n_orders, RANK() OVER (ORDER BY t.total DESC) AS rank
+    FROM totals t
+    JOIN read_parquet('customers.parquet') c USING (customer_id)
+    ORDER BY t.total DESC
+""").collect()
+```
 
-## Setup
+### Mix both
+
+DataFrames and LazyFrames in scope can be queried by name, and the result of a SQL query is a
+regular `LazyFrame`, so you can switch between SQL and expressions freely:
+
+```python
+orders = pl.scan_parquet("orders.parquet")
+
+df = (
+    pl.sql("SELECT customer_id, SUM(amount) AS total FROM orders GROUP BY customer_id")
+    .filter(pl.col("total") > 1_000)
+    .collect()
+)
+```
+
+Read more in the [SQL user guide](https://docs.pola.rs/user-guide/sql/intro/).
+
+## Performance
+
+Polars is very fast. In fact, it is one of the best performing query engines available, for both
+DataFrame and SQL workloads. See the [PDS-H benchmarks](https://www.pola.rs/benchmarks.html)
+results.
+
+## Installation
 
 ### Python
 
@@ -99,31 +140,19 @@ pip install polars
 See the [User Guide](https://docs.pola.rs/user-guide/installation/#feature-flags) for more details
 on optional dependencies
 
-To see the current Polars version and a full list of its optional dependencies, run:
+<details>
+<summary><b>Compile Polars from source</b></summary>
 
-```python
-pl.show_versions()
-```
-
-## Contributing
-
-Want to contribute? Read our [contributing guide](https://docs.pola.rs/development/contributing/).
-
-## Managed/Distributed Polars
-
-Do you want a managed solution or scale out to distributed clusters? Consider our
-[offering](https://cloud.pola.rs/) and help the project!
-
-## Python: compile Polars from source
-
-If you want a bleeding edge release or maximal performance you should compile Polars from source.
+If you want a bleeding edge release you should compile Polars from source. Advanced users can also
+compile for maximum performance for their architecture.
 
 This can be done by going through the following steps in sequence:
 
 1. Install the latest [Rust compiler](https://www.rust-lang.org/tools/install)
 2. Install [maturin](https://maturin.rs/): `pip install maturin`
 3. `cd py-polars` and choose one of the following:
-   - `make build`, slow binary with debug assertions and symbols, fast compile times
+   - `make build`, slow binary with debug assertions and limited symbols, fast compile times
+   - `make build-debug`, same as `make build`, but with all symbols, produces large binaries
    - `make build-release`, fast binary without debug assertions, minimal debug symbols, long compile
      times
    - `make build-nodebug-release`, same as build-release but without any debug symbols, slightly
@@ -139,22 +168,27 @@ Note that the Rust crate implementing the Python bindings is called `py-polars` 
 the wrapped Rust crate `polars` itself. However, both the Python package and the Python module are
 named `polars`, so you can `pip install polars` and `import polars`.
 
-## Using custom Rust functions in Python
+</details>
 
-Extending Polars with UDFs compiled in Rust is easy. We expose PyO3 extensions for `DataFrame` and
-`Series` data structures. See more in https://github.com/pola-rs/polars/tree/main/pyo3-polars.
+Check the [Installation guide](https://docs.pola.rs/user-guide/installation/) for more advanced
+installations. For example when you expect more than 2^32 (~4.2 billion) rows, run on an old CPU
+(e.g. dating from before 2011), or on an `x86-64` build of Python on Apple Silicon under Rosetta.
 
-## Going big...
+## Contributing
 
-Do you expect more than 2^32 (~4.2 billion) rows? Compile Polars with the `bigidx` feature flag or,
-for Python users, install `pip install polars[rt64]`.
+Want to contribute? Read our [contributing guide](https://docs.pola.rs/development/contributing/)
+and check the issue tracker for accepted issues.
 
-Don't use this unless you hit the row boundary as the default build of Polars is faster and consumes
-less memory.
+Contributors new to the codebase can look for the `good first issue` label to get familiar with the
+project.
 
-## Legacy
+You can [join the Polars Discord server](https://discord.gg/4UfP5cfBE7) for any help along the way.
 
-Do you want Polars to run on an old CPU (e.g. dating from before 2011), or on an `x86-64` build of
-Python on Apple Silicon under Rosetta? Install `pip install polars[rtcompat]`. This version of
-Polars is compiled without [AVX](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) target
-features.
+## Distributed Polars
+
+Running into hardware limitations executing your queries? Read how you can
+[horizontally scale your Polars query on a cluster](https://docs.pola.rs/polars-cloud/).
+
+## License
+
+Polars is licensed under the [MIT License](LICENSE) (SPDX: `MIT`).

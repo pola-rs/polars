@@ -52,15 +52,8 @@ impl Executor for MergeSorted {
             (left?, right?)
         };
 
-        let profile_name = Cow::Borrowed("Merge Sorted");
-        state.record(
-            || {
-                let lhs = merge_key_series(&left, &self.key)?;
-                let rhs = merge_key_series(&right, &self.key)?;
-
-                _merge_sorted_dfs(&left, &right, &lhs, &rhs, true)
-            },
-            profile_name,
-        )
+        let lhs = merge_key_series(&left, &self.key)?;
+        let rhs = merge_key_series(&right, &self.key)?;
+        _merge_sorted_dfs(&left, &right, &lhs, &rhs, true)
     }
 }

@@ -82,3 +82,22 @@ pub fn all_functions() -> Vec<&'static str> {
     functions.extend_from_slice(PolarsSQLFunctions::keywords());
     functions
 }
+
+#[cfg(test)]
+mod tests {
+    use super::all_functions;
+
+    #[test]
+    fn array_inner_product_aliases_are_discoverable() {
+        let functions = all_functions();
+        for name in ["array_inner_product", "array_dot_product"] {
+            assert!(functions.contains(&name));
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "json")]
+    fn read_ndjson_is_discoverable() {
+        assert!(all_functions().contains(&"read_ndjson"));
+    }
+}

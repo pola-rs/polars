@@ -1,8 +1,10 @@
-use std::borrow::Cow;
 use std::sync::Arc;
 
+use polars_core::chunked_array::temporal::string::StringMethods;
 use polars_core::prelude::*;
-use polars_core::utils::{CustomIterTools, handle_casting_failures};
+use polars_core::utils::handle_casting_failures;
+#[cfg(feature = "regex")]
+use polars_ops::chunked_array::strings::regex_replacen_into;
 #[cfg(feature = "regex")]
 use polars_ops::chunked_array::strings::split_regex_helper;
 use polars_ops::prelude::{BinaryNameSpaceImpl, StringNameSpaceImpl};
@@ -10,7 +12,7 @@ use polars_ops::prelude::{BinaryNameSpaceImpl, StringNameSpaceImpl};
 use polars_plan::dsl::StrptimeOptions;
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
 use polars_plan::plans::IRStringFunction;
-use polars_time::prelude::StringMethods;
+use polars_utils::broadcast::broadcast_len;
 #[cfg(feature = "regex")]
 use regex::{NoExpand, escape};
 
@@ -274,7 +276,7 @@ pub(super) fn starts_with(s: &[Column]) -> PolarsResult<Column> {
     Ok(ca.starts_with_chunked(&prefix)?.into_column())
 }
 
-/// Extract a regex pattern from the a string value.
+/// Extract a regex pattern from a string value.
 pub(super) fn extract(s: &[Column], group_index: usize) -> PolarsResult<Column> {
     let ca = s[0].str()?;
     let pat = s[1].str()?;
@@ -465,23 +467,39 @@ pub(super) fn split_regex(s: &[Column], inclusive: bool, strict: bool) -> Polars
     Ok(out.into_column())
 }
 
+/// Yield nulls when a non-strict parse could not infer a format, and report the
+/// values that failed when strict.
+#[cfg(feature = "temporal")]
+fn finish_strptime(
+    out: PolarsResult<Column>,
+    input: &Column,
+    dtype: &DataType,
+    options: &StrptimeOptions,
+) -> PolarsResult<Column> {
+    let out = match out {
+        Err(_) if !options.strict && options.format.is_none() => {
+            Column::full_null(input.name().clone(), input.len(), dtype)
+        },
+        out => out?,
+    };
+
+    if options.strict && input.null_count() != out.null_count() {
+        handle_casting_failures(input.as_materialized_series(), out.as_materialized_series())?;
+    }
+    Ok(out)
+}
+
 #[cfg(feature = "dtype-date")]
 fn to_date(s: &Column, options: &StrptimeOptions) -> PolarsResult<Column> {
     let ca = s.str()?;
-    let out = {
-        if options.exact {
-            ca.as_date(options.format.as_deref(), options.cache)?
-                .into_column()
-        } else {
-            ca.as_date_not_exact(options.format.as_deref())?
-                .into_column()
-        }
-    };
-
-    if options.strict && ca.null_count() != out.null_count() {
-        handle_casting_failures(s.as_materialized_series(), out.as_materialized_series())?;
+    let out = if options.exact {
+        ca.as_date(options.format.as_deref(), options.cache)
+    } else {
+        ca.as_date_not_exact(options.format.as_deref())
     }
-    Ok(out.into_column())
+    .map(|ca| ca.into_column());
+
+    finish_strptime(out, s, &DataType::Date, options)
 }
 
 #[cfg(feature = "dtype-datetime")]
@@ -510,33 +528,28 @@ fn to_datetime(
     };
 
     let out = if options.exact {
-        datetime_strings
-            .as_datetime(
-                options.format.as_deref(),
-                *time_unit,
-                options.cache,
-                tz_aware,
-                time_zone,
-                ambiguous,
-            )?
-            .into_column()
+        datetime_strings.as_datetime(
+            options.format.as_deref(),
+            *time_unit,
+            options.cache,
+            tz_aware,
+            time_zone,
+            ambiguous,
+        )
     } else {
-        datetime_strings
-            .as_datetime_not_exact(
-                options.format.as_deref(),
-                *time_unit,
-                tz_aware,
-                time_zone,
-                ambiguous,
-                true,
-            )?
-            .into_column()
-    };
-
-    if options.strict && datetime_strings.null_count() != out.null_count() {
-        handle_casting_failures(s[0].as_materialized_series(), out.as_materialized_series())?;
+        datetime_strings.as_datetime_not_exact(
+            options.format.as_deref(),
+            *time_unit,
+            tz_aware,
+            time_zone,
+            ambiguous,
+            true,
+        )
     }
-    Ok(out.into_column())
+    .map(|ca| ca.into_column());
+
+    let dtype = DataType::Datetime(*time_unit, time_zone.cloned());
+    finish_strptime(out, &s[0], &dtype, options)
 }
 
 #[cfg(feature = "dtype-time")]
@@ -545,15 +558,12 @@ fn to_time(s: &Column, options: &StrptimeOptions) -> PolarsResult<Column> {
         options.exact, ComputeError: "non-exact not implemented for Time data type"
     );
 
-    let ca = s.str()?;
-    let out = ca
-        .as_time(options.format.as_deref(), options.cache)?
-        .into_column();
+    let out = s
+        .str()?
+        .as_time(options.format.as_deref(), options.cache)
+        .map(|ca| ca.into_column());
 
-    if options.strict && ca.null_count() != out.null_count() {
-        handle_casting_failures(s.as_materialized_series(), out.as_materialized_series())?;
-    }
-    Ok(out.into_column())
+    finish_strptime(out, s, &DataType::Time, options)
 }
 
 #[cfg(feature = "concat_str")]
@@ -586,22 +596,20 @@ fn get_pat(pat: &StringChunked) -> PolarsResult<&str> {
 
 // used only if feature="regex"
 #[allow(dead_code)]
-fn iter_and_replace<'a, F>(ca: &'a StringChunked, val: &'a StringChunked, f: F) -> StringChunked
+fn iter_and_replace<F>(ca: &StringChunked, val: &StringChunked, mut f: F) -> StringChunked
 where
-    F: Fn(&'a str, &'a str) -> Cow<'a, str>,
+    F: FnMut(&str, &str, &mut String) -> bool,
 {
-    let mut out: StringChunked = ca
-        .iter()
-        .zip(val.iter())
-        .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
-            (Some(src), Some(val)) => Some(f(src, val)),
-            (Some(src), None) => Some(Cow::from(src)),
-            _ => None,
-        })
-        .collect_trusted();
-
-    out.rename(ca.name().clone());
-    out
+    let mut buf = String::new();
+    let mut builder = StringChunkedBuilder::new(ca.name().clone(), ca.len());
+    for (opt_src, opt_val) in ca.iter().zip(val.iter()) {
+        match (opt_src, opt_val) {
+            (Some(src), Some(val)) if f(src, val, &mut buf) => builder.append_value(&buf),
+            (Some(src), _) => builder.append_value(src),
+            _ => builder.append_null(),
+        }
+    }
+    builder.finish()
 }
 
 #[cfg(feature = "regex")]
@@ -609,11 +617,26 @@ fn is_literal_pat(pat: &str) -> bool {
     pat.chars().all(|c| !c.is_ascii_punctuation())
 }
 
+/// A pattern without punctuation only matches itself, so the `$` references in the
+/// replacement expand to the same string for every match.
 #[cfg(feature = "regex")]
-fn replace_n<'a>(
-    ca: &'a StringChunked,
-    pat: &'a StringChunked,
-    val: &'a StringChunked,
+fn expand_for_literal_pat<'a>(pat: &str, val: &'a str) -> PolarsResult<std::borrow::Cow<'a, str>> {
+    if !val.contains('$') {
+        return Ok(std::borrow::Cow::Borrowed(val));
+    }
+    let reg = polars_utils::regex_cache::compile_regex(pat)?;
+    let mut out = String::new();
+    if let Some(caps) = reg.captures(pat) {
+        caps.expand(val, &mut out);
+    }
+    Ok(std::borrow::Cow::Owned(out))
+}
+
+#[cfg(feature = "regex")]
+fn replace_n(
+    ca: &StringChunked,
+    pat: &StringChunked,
+    val: &StringChunked,
     literal: bool,
     n: usize,
 ) -> PolarsResult<StringChunked> {
@@ -623,17 +646,16 @@ fn replace_n<'a>(
             let Some(val) = val.get(0) else {
                 return Ok(ca.clone());
             };
-            let literal = literal || is_literal_pat(pat);
-
-            match literal {
-                true => ca.replace_literal(pat, val, n),
-                false => {
-                    if n > 1 {
-                        polars_bail!(ComputeError: "regex replacement with 'n > 1' not yet supported")
-                    }
-                    ca.replace(pat, val)
-                },
+            if literal {
+                return ca.replace_literal(pat, val, n);
             }
+            if is_literal_pat(pat) {
+                return ca.replace_literal(pat, &expand_for_literal_pat(pat, val)?, n);
+            }
+            if n > 1 {
+                polars_bail!(ComputeError: "regex replacement with 'n > 1' not yet supported")
+            }
+            ca.replace(pat, val)
         },
         (1, len_val) => {
             if n > 1 {
@@ -661,11 +683,11 @@ fn replace_n<'a>(
 
             let reg = polars_utils::regex_cache::compile_regex(&pat)?;
 
-            let f = |s: &'a str, val: &'a str| {
+            let f = |s: &str, val: &str, buf: &mut String| {
                 if literal {
-                    reg.replace(s, NoExpand(val))
+                    regex_replacen_into(&reg, s, 1, NoExpand(val), buf)
                 } else {
-                    reg.replace(s, val)
+                    regex_replacen_into(&reg, s, 1, val, buf)
                 }
             };
 
@@ -678,10 +700,10 @@ fn replace_n<'a>(
 }
 
 #[cfg(feature = "regex")]
-fn replace_all<'a>(
-    ca: &'a StringChunked,
-    pat: &'a StringChunked,
-    val: &'a StringChunked,
+fn replace_all(
+    ca: &StringChunked,
+    pat: &StringChunked,
+    val: &StringChunked,
     literal: bool,
 ) -> PolarsResult<StringChunked> {
     match (pat.len(), val.len()) {
@@ -690,12 +712,13 @@ fn replace_all<'a>(
             let val = val.get(0).ok_or_else(
                 || polars_err!(ComputeError: "value cannot be 'null' in 'replace' expression"),
             )?;
-            let literal = literal || is_literal_pat(pat);
-
-            match literal {
-                true => ca.replace_literal_all(pat, val),
-                false => ca.replace_all(pat, val),
+            if literal {
+                return ca.replace_literal_all(pat, val);
             }
+            if is_literal_pat(pat) {
+                return ca.replace_literal_all(pat, &expand_for_literal_pat(pat, val)?);
+            }
+            ca.replace_all(pat, val)
         },
         (1, len_val) => {
             let mut pat = get_pat(pat)?.to_string();
@@ -714,13 +737,13 @@ fn replace_all<'a>(
 
             let reg = polars_utils::regex_cache::compile_regex(&pat)?;
 
-            let f = |s: &'a str, val: &'a str| {
+            let f = |s: &str, val: &str, buf: &mut String| {
                 // According to the docs for replace_all
                 // when literal = True then capture groups are ignored.
                 if literal {
-                    reg.replace_all(s, NoExpand(val))
+                    regex_replacen_into(&reg, s, 0, NoExpand(val), buf)
                 } else {
-                    reg.replace_all(s, val)
+                    regex_replacen_into(&reg, s, 0, val, buf)
                 }
             };
 
@@ -762,10 +785,7 @@ pub(super) fn replace(s: &[Column], literal: bool, n: i64) -> PolarsResult<Colum
 }
 
 #[cfg(feature = "string_normalize")]
-pub(super) fn normalize(
-    s: &Column,
-    form: polars_ops::prelude::UnicodeForm,
-) -> PolarsResult<Column> {
+pub(super) fn normalize(s: &Column, form: polars_defs::expr::UnicodeForm) -> PolarsResult<Column> {
     let ca = s.str()?;
     Ok(ca.str_normalize(form).into_column())
 }
@@ -788,24 +808,10 @@ pub(super) fn to_integer(
         .map(|ok| ok.into_column())
 }
 
-fn _ensure_lengths(s: &[Column]) -> bool {
-    // Calculate the post-broadcast length and ensure everything is consistent.
-    let len = s
-        .iter()
-        .map(|series| series.len())
-        .filter(|l| *l != 1)
-        .max()
-        .unwrap_or(1);
-    s.iter()
-        .all(|series| series.len() == 1 || series.len() == len)
-}
-
 fn _check_same_length(s: &[Column], fn_name: &str) -> Result<(), PolarsError> {
-    polars_ensure!(
-        _ensure_lengths(s),
-        ShapeMismatch: "all series in `str.{}()` should have equal or unit length",
-        fn_name
-    );
+    broadcast_len(s.iter()).with_context(|| {
+        format!("all series in `str.{fn_name}()` should have equal or unit length")
+    })?;
     Ok(())
 }
 

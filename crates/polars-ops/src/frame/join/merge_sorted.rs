@@ -1,4 +1,4 @@
-use arrow::legacy::utils::CustomIterTools;
+use polars_arrow::legacy::utils::CustomIterTools;
 #[cfg(feature = "dtype-categorical")]
 use polars_core::datatypes::CategoricalPhysical;
 use polars_core::prelude::*;
@@ -90,7 +90,7 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsR
 
             let mut validity = None;
             if lhs.has_nulls() || rhs.has_nulls() {
-                use arrow::bitmap::Bitmap;
+                use polars_arrow::bitmap::Bitmap;
 
                 let lhs_validity = lhs
                     .rechunk_validity()

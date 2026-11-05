@@ -1,3 +1,4 @@
+use polars_arrow::bitmap::Bitmap;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_plan::prelude::*;
@@ -14,9 +15,15 @@ pub struct TernaryExpr {
     // Can be expensive on small data to run literals in parallel.
     run_par: bool,
     returns_scalar: bool,
+    truthy_mask_columns: Vec<PlSmallStr>,
+    falsy_mask_columns: Vec<PlSmallStr>,
+    // The dtype of this expression, which is the supertype of the arms and thus
+    // can differ from the dtype of an individual arm.
+    output_dtype: Option<DataType>,
 }
 
 impl TernaryExpr {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         predicate: Arc<dyn PhysicalExpr>,
         truthy: Arc<dyn PhysicalExpr>,
@@ -24,6 +31,9 @@ impl TernaryExpr {
         expr: Expr,
         run_par: bool,
         returns_scalar: bool,
+        truthy_mask_columns: Vec<PlSmallStr>,
+        falsy_mask_columns: Vec<PlSmallStr>,
+        output_dtype: Option<DataType>,
     ) -> Self {
         Self {
             predicate,
@@ -32,6 +42,17 @@ impl TernaryExpr {
             expr,
             run_par,
             returns_scalar,
+            truthy_mask_columns,
+            falsy_mask_columns,
+            output_dtype,
+        }
+    }
+
+    /// Casts an arm we return directly to the output dtype of this expression.
+    fn cast_arm(&self, arm: Column) -> PolarsResult<Column> {
+        match &self.output_dtype {
+            Some(dtype) if arm.dtype() != dtype => arm.cast(dtype),
+            _ => Ok(arm),
         }
     }
 }
@@ -91,17 +112,93 @@ impl PhysicalExpr for TernaryExpr {
         // Don't cache window functions as they run in parallel.
         state.remove_cache_window_flag();
         let mask_series = self.predicate.evaluate(df, &state)?;
-        let mask = mask_series.bool()?.clone();
+        let mut mask = mask_series.bool()?.clone();
 
-        let op_truthy = || self.truthy.evaluate(df, &state);
-        let op_falsy = || self.falsy.evaluate(df, &state);
-        let (truthy, falsy) = if self.run_par {
-            RAYON.install(|| rayon::join(op_truthy, op_falsy))
-        } else {
-            (op_truthy(), op_falsy())
+        // Nulls count as false.
+        let true_count = mask.num_trues();
+        let false_count = mask.len() - true_count;
+
+        let mask_bitmap = (!self.truthy_mask_columns.is_empty()
+            || !self.falsy_mask_columns.is_empty())
+        .then(|| {
+            mask.rechunk_mut();
+            let arr = mask.downcast_as_array();
+            match arr.validity() {
+                Some(validity) => arr.values() & validity,
+                None => arr.values().clone(),
+            }
+        });
+
+        let masked_df = |names: &[PlSmallStr], mask: &Bitmap| -> PolarsResult<DataFrame> {
+            let columns: Vec<&Column> = names.iter().map(|c| df.column(c).unwrap()).collect();
+            // Common subexpression elimination can add a scalar column of one row to a frame
+            // with another height. A branch that only reads such columns under a scalar
+            // predicate is a scalar too.
+            let height = if mask.len() == 1 && columns.iter().all(|c| c.len() == 1) {
+                1
+            } else {
+                df.height()
+            };
+            let columns = columns
+                .into_iter()
+                .map(|c| {
+                    if c.len() != height {
+                        c.new_from_index(0, height).mask(mask)
+                    } else {
+                        c.mask(mask)
+                    }
+                })
+                .collect();
+            DataFrame::new(height, columns)
         };
-        let truthy = truthy?;
-        let falsy = falsy?;
+        let op_truthy = || {
+            if self.truthy_mask_columns.is_empty() || false_count == 0 {
+                return self.truthy.evaluate(df, &state);
+            }
+            let mask_df = masked_df(&self.truthy_mask_columns, mask_bitmap.as_ref().unwrap())?;
+            self.truthy.evaluate(&mask_df, &state)
+        };
+        let op_falsy = || {
+            if self.falsy_mask_columns.is_empty() || true_count == 0 {
+                return self.falsy.evaluate(df, &state);
+            }
+            let mask_df = masked_df(&self.falsy_mask_columns, &!mask_bitmap.as_ref().unwrap())?;
+            self.falsy.evaluate(&mask_df, &state)
+        };
+
+        let (truthy, falsy);
+        if true_count == 0 {
+            falsy = op_falsy()?;
+            match (mask.len(), falsy.len()) {
+                (l, 1) if l != 1 => return self.cast_arm(falsy.new_from_index(0, l)),
+                (1, r) if r != 1 => return self.cast_arm(falsy),
+                (1, 1) => {}, // Forced to evaluate truthy to resolve broadcast height.
+                (l, r) => {
+                    polars_ensure!(l == r, ShapeMismatch: "mismatch between condition height ({}) and falsy height ({}) in when/then/otherwise", l, r);
+                    return self.cast_arm(falsy);
+                },
+            }
+            truthy = op_truthy()?;
+        } else if false_count == 0 {
+            truthy = op_truthy()?;
+            match (mask.len(), truthy.len()) {
+                (l, 1) if l != 1 => return self.cast_arm(truthy.new_from_index(0, l)),
+                (1, r) if r != 1 => return self.cast_arm(truthy),
+                (1, 1) => {}, // Forced to evaluate falsy to resolve broadcast height.
+                (l, r) => {
+                    polars_ensure!(l == r, ShapeMismatch: "mismatch between condition height ({}) and truthy height ({}) in when/then/otherwise", l, r);
+                    return self.cast_arm(truthy);
+                },
+            }
+            falsy = op_falsy()?; // Forced to evaluate falsy to resolve broadcast height.
+        } else if self.run_par {
+            let (t, f) = RAYON.install(|| rayon::join(op_truthy, op_falsy));
+            truthy = t?;
+            falsy = f?;
+        } else {
+            truthy = op_truthy()?;
+            falsy = op_falsy()?;
+        };
 
         truthy.zip_with(&mask, &falsy)
     }
@@ -137,7 +234,10 @@ impl PhysicalExpr for TernaryExpr {
         // - non-unit literals
         // - AggregatedScalar or AggregatedList
         let mut has_non_unit_literal = false;
-        let mut has_aggregated = false;
+        let mut has_agg_scalar = false;
+        let mut has_agg_list = false;
+        let mut has_not_agg = false;
+        let mut has_large_groups = false;
         // Unknown groups (rows and their positions do not match initial groups).
         let mut non_aggregated_unknown_groups = false;
 
@@ -151,13 +251,15 @@ impl PhysicalExpr for TernaryExpr {
                     }
                 },
                 NotAggregated(_) => {
+                    has_not_agg = true;
+                    has_large_groups |= ac.has_large_groups();
                     non_aggregated_unknown_groups |= !ac.original_groups;
                 },
-                AggregatedScalar(_) | AggregatedList(_) => {
-                    has_aggregated = true;
-                },
+                AggregatedScalar(_) => has_agg_scalar = true,
+                AggregatedList(_) => has_agg_list = true,
             }
         }
+        let has_aggregated = has_agg_scalar || has_agg_list;
 
         if has_non_unit_literal {
             // finish_as_iters for non-unit literals to avoid materializing the
@@ -194,6 +296,42 @@ impl PhysicalExpr for TernaryExpr {
             ac_truthy.with_agg_state(LiteralScalar(out));
 
             return Ok(ac_truthy);
+        }
+
+        let may_broadcast_scalars = has_agg_scalar
+            && has_not_agg
+            && !has_agg_list
+            && !has_large_groups
+            && !non_aggregated_unknown_groups
+            && !groups.is_empty()
+            && !groups.is_overlapping();
+        if may_broadcast_scalars {
+            // Zip once on all values, with the scalars repeated over their groups.
+            let acs = [&mut ac_truthy, &mut ac_falsy, &mut ac_mask];
+            let t = acs
+                .iter()
+                .position(|ac| matches!(ac.agg_state(), NotAggregated(_)))
+                .unwrap();
+            let aligned = acs.iter().all(|ac| match ac.agg_state() {
+                NotAggregated(_) => ac.is_aligned_with(acs[t]),
+                _ => true,
+            });
+            if aligned && let Some(target) = acs[t].flat_broadcast_target() {
+                let [truthy, falsy, mask] = acs.each_ref().map(|ac| match ac.agg_state() {
+                    AggregatedScalar(c) => target.repeat(c),
+                    _ => Ok(ac.get_values().clone()),
+                });
+                let out = truthy?.zip_with(mask?.bool()?, &falsy?)?;
+                acs[t].finish_broadcast(target, out)?;
+                if state.verbose() {
+                    eprintln!("ternary agg: finish NotAggregated with broadcast AggregatedScalar");
+                }
+                return Ok(match t {
+                    0 => ac_truthy,
+                    1 => ac_falsy,
+                    _ => ac_mask,
+                });
+            }
         }
 
         for ac in [&mut ac_mask, &mut ac_truthy, &mut ac_falsy].into_iter() {

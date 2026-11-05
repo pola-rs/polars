@@ -131,7 +131,7 @@ import matplotlib.pyplot as plt
 
 fig, ax = plt.subplots()
 sns.scatterplot(
-    df,
+    df.to_pandas(),
     x="sepal_width",
     y="sepal_length",
     hue="species",

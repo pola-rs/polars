@@ -1,5 +1,5 @@
-use arrow::array::{MutableArray, MutableBinaryValuesArray};
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::{MutableArray, MutableBinaryValuesArray};
+use polars_arrow::datatypes::ArrowDataType;
 
 #[test]
 fn capacity() {

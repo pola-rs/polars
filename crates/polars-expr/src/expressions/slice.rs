@@ -1,8 +1,9 @@
 use AnyValue::Null;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
-use polars_core::utils::{CustomIterTools, slice_offsets};
+use polars_core::utils::CustomIterTools;
 use polars_utils::idx_vec::IdxVec;
+use polars_utils::slice::slice_offsets;
 use rayon::prelude::*;
 
 use super::*;

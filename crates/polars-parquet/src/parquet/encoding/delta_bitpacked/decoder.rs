@@ -8,7 +8,7 @@
 //! <https://github.com/apache/parquet-format/blob/e517ac4dbe08d518eb5c2e58576d4c711973db94/Encodings.md#delta-encoding-delta_binary_packed--5>
 //!
 //! Delta encoding compresses sequential integer values by encoding the first value and the
-//! differences between consequentive values. This variant encodes the data into `Block`s and
+//! differences between consecutive values. This variant encodes the data into `Block`s and
 //! `MiniBlock`s.
 //!
 //! - A `Block` contains a minimum delta, bitwidths and one or more miniblocks.
@@ -28,7 +28,6 @@
 //! Note that all these additions need to be wrapping.
 
 use super::super::{bitpacked, uleb128, zigzag_leb128};
-use super::lin_natural_sum;
 use crate::parquet::encoding::bitpacked::{Unpackable, Unpacked};
 use crate::parquet::error::{ParquetError, ParquetResult};
 
@@ -69,8 +68,6 @@ struct MiniBlock<'a> {
     unpacked_end: usize,
 }
 
-pub(crate) struct SumGatherer(pub(crate) usize);
-
 pub trait DeltaGatherer {
     type Target: std::fmt::Debug;
 
@@ -105,65 +102,6 @@ pub trait DeltaGatherer {
     /// Gather a `chunk` of elements into `target`.
     fn gather_chunk(&mut self, target: &mut Self::Target, chunk: &[i64; 64]) -> ParquetResult<()> {
         self.gather_slice(target, chunk)
-    }
-}
-
-impl DeltaGatherer for SumGatherer {
-    type Target = usize;
-
-    fn target_len(&self, _target: &Self::Target) -> usize {
-        self.0
-    }
-    fn target_reserve(&self, _target: &mut Self::Target, _n: usize) {}
-
-    fn gather_one(&mut self, target: &mut Self::Target, v: i64) -> ParquetResult<()> {
-        if v < 0 {
-            return Err(ParquetError::oos(format!(
-                "Invalid delta encoding length {v}"
-            )));
-        }
-
-        *target += v as usize;
-        self.0 += 1;
-        Ok(())
-    }
-    fn gather_constant(
-        &mut self,
-        target: &mut Self::Target,
-        v: i64,
-        delta: i64,
-        num_repeats: usize,
-    ) -> ParquetResult<()> {
-        if v < 0 || (delta < 0 && num_repeats > 0 && (num_repeats - 1) as i64 * delta + v < 0) {
-            return Err(ParquetError::oos("Invalid delta encoding length"));
-        }
-
-        *target += lin_natural_sum(v, delta, num_repeats) as usize;
-
-        Ok(())
-    }
-    fn gather_slice(&mut self, target: &mut Self::Target, slice: &[i64]) -> ParquetResult<()> {
-        let min = slice.iter().copied().min().unwrap_or_default();
-        if min < 0 {
-            return Err(ParquetError::oos(format!(
-                "Invalid delta encoding length {min}"
-            )));
-        }
-
-        *target += slice.iter().copied().map(|v| v as usize).sum::<usize>();
-        self.0 += slice.len();
-        Ok(())
-    }
-    fn gather_chunk(&mut self, target: &mut Self::Target, chunk: &[i64; 64]) -> ParquetResult<()> {
-        let min = chunk.iter().copied().min().unwrap_or_default();
-        if min < 0 {
-            return Err(ParquetError::oos(format!(
-                "Invalid delta encoding length {min}"
-            )));
-        }
-        *target += chunk.iter().copied().map(|v| v as usize).sum::<usize>();
-        self.0 += chunk.len();
-        Ok(())
     }
 }
 
@@ -317,7 +255,7 @@ impl<'a> Decoder<'a> {
         if total_count > 1 {
             let mut num_values_left = total_count - 1;
             while num_values_left > 0 {
-                // If the number of values is does not need all the miniblocks anymore, we need to
+                // If the number of values does not need all the miniblocks anymore, we need to
                 // ignore the later miniblocks and regard them as having bitwidth = 0.
                 //
                 // Quoted from the specification:

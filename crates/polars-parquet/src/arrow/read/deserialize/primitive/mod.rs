@@ -1,15 +1,17 @@
-use arrow::bitmap::BitmapBuilder;
-use arrow::types::NativeType;
+use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::types::NativeType;
 
 use crate::parquet::error::ParquetResult;
 use crate::parquet::types::NativeType as ParquetNativeType;
 use crate::read::deserialize::utils::Decoded;
 use crate::read::expr::ParquetScalar;
 
+mod fixed_len_decimal;
 mod float;
 mod integer;
 pub(crate) mod plain;
 
+pub(crate) use fixed_len_decimal::{FixedLenDecimalDecoder, convert_i128};
 pub(crate) use float::FloatDecoder;
 pub(crate) use integer::IntDecoder;
 
@@ -64,7 +66,7 @@ where
 }
 
 /// A function that defines how to decode from the
-/// [`parquet::types::NativeType`][ParquetNativeType] to the [`arrow::types::NativeType`].
+/// [`parquet::types::NativeType`][ParquetNativeType] to the [`polars_arrow::types::NativeType`].
 ///
 /// This should almost always be inlined.
 pub(crate) trait DecoderFunction<P, T>: Copy

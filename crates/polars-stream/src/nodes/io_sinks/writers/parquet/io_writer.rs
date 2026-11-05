@@ -1,12 +1,15 @@
 use std::sync::Arc;
 
-use arrow::datatypes::ArrowSchemaRef;
+use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_async::executor::{self};
 use polars_buffer::Buffer;
 use polars_error::PolarsResult;
+use polars_io::parquet::encryption::ParquetEncryption;
 use polars_io::parquet::write::BatchedWriter;
 use polars_io::prelude::KeyValueMetadata;
-use polars_parquet::write::{Encoding, FileWriter, SchemaDescriptor, WriteOptions};
+use polars_parquet::write::{
+    Encoding, FileWriter, SchemaDescriptor, WriteOptions, write_metadata_sidecar,
+};
 
 use crate::nodes::io_sinks::writers::interface::FileOpenTaskHandle;
 use crate::nodes::io_sinks::writers::parquet::EncodedRowGroup;
@@ -21,6 +24,7 @@ pub struct IOWriter {
     pub encodings: Buffer<Vec<Encoding>>,
     pub key_value_metadata: Option<KeyValueMetadata>,
     pub num_leaf_columns: usize,
+    pub encryption: Option<ParquetEncryption>,
 }
 
 impl IOWriter {
@@ -34,18 +38,24 @@ impl IOWriter {
             encodings,
             key_value_metadata,
             num_leaf_columns,
+            encryption,
         } = self;
 
-        let (mut file, sync_on_close) = file.await?;
-        let mut buffered_file = file.as_buffered();
+        let encryption_properties = encryption
+            .as_ref()
+            .map(ParquetEncryption::file_properties)
+            .transpose()?;
+        let (mut file, sync_on_close, finish) = file.await?;
+        let mut buffered_file = file.as_buffered_writable();
 
         let mut parquet_writer = BatchedWriter::new(
-            std::sync::Mutex::new(FileWriter::new_with_parquet_schema(
-                &mut *buffered_file,
+            std::sync::Mutex::new(FileWriter::try_new_with_parquet_schema(
+                &mut buffered_file,
                 Arc::unwrap_or_clone(arrow_schema),
                 Arc::unwrap_or_clone(schema_descriptor),
                 write_options,
-            )),
+                encryption_properties,
+            )?),
             encodings,
             write_options,
             false,
@@ -64,11 +74,28 @@ impl IOWriter {
             drop(morsel_permit);
         }
 
+        finish.wait().await?;
         parquet_writer.finish()?;
+        // Encrypted files have no plaintext metadata to expose.
+        let parquet_metadata = {
+            let writer = parquet_writer.get_writer().lock().unwrap();
+            writer
+                .metadata()
+                .map(|metadata| {
+                    let mut out = Vec::new();
+                    write_metadata_sidecar(&mut out, metadata)?;
+                    PolarsResult::Ok(out)
+                })
+                .transpose()?
+        };
         drop(parquet_writer);
+        buffered_file.flush()?;
         drop(buffered_file);
 
-        file.close(sync_on_close)?;
+        if let Some(parquet_metadata) = parquet_metadata {
+            file.set_parquet_metadata(parquet_metadata);
+        }
+        file.close(sync_on_close).await?;
 
         Ok(())
     }

@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Coroutine, Sequence
+from collections.abc import Coroutine, Iterable, Sequence
 from contextlib import suppress
 from inspect import Parameter, signature
 from typing import TYPE_CHECKING, Any, Final, cast
 
-from polars import functions as F
 from polars._utils.various import parse_version, qualified_type_name
-from polars.convert import from_arrow
 from polars.datatypes import N_INFER_DEFAULT
 from polars.exceptions import (
     DuplicateError,
@@ -25,24 +23,17 @@ from polars.io.database._inference import dtype_from_cursor_description
 from polars.io.database._utils import _run_async
 
 if TYPE_CHECKING:
-    import sys
-    from collections.abc import Iterable, Iterator
+    from collections.abc import Iterator
     from types import TracebackType
+    from typing import Self
 
     import pyarrow as pa
-
-    from polars.io.database._arrow_registry import ArrowDriverProperties
-
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
-
     from sqlalchemy.sql.elements import TextClause
     from sqlalchemy.sql.expression import Selectable
 
     from polars import DataFrame
     from polars._typing import ConnectionOrCursor, Cursor, SchemaDict
+    from polars.io.database._arrow_registry import ArrowDriverProperties
 
 _INVALID_QUERY_TYPES: Final[set[str]] = {
     "ALTER",
@@ -86,12 +77,18 @@ class ConnectionExecutor:
         self.driver_name = (
             "arrow_odbc_proxy"
             if isinstance(connection, ODBCCursorProxy)
-            else type(connection).__module__.split(".", 1)[0].lower()
+            # compiled driver modules can have a leading underscore (eg: "_duckdb")
+            else type(connection).__module__.split(".", 1)[0].lower().lstrip("_")
         )
         if self.driver_name == "surrealdb":
             connection = SurrealDBCursorProxy(client=connection)
-        elif self.driver_name == "oracledb" and hasattr(connection, "fetch_df_all"):
+        elif (
+            # note: only the proxy can serve Arrow data (see `_arrow_registry`)
+            self.driver_name == "oracledb"
+            and OracleCursorProxy.supports_arrow(connection)
+        ):
             connection = OracleCursorProxy(connection)
+            self.driver_name = "oracledb_proxy"
 
         self.cursor = self._normalise_cursor(connection)
         self.result: Any = None
@@ -121,9 +118,11 @@ class ConnectionExecutor:
     @staticmethod
     def _apply_overrides(df: DataFrame, schema_overrides: SchemaDict) -> DataFrame:
         """Apply schema overrides to a DataFrame."""
+        from polars._utils.construction.dataframe import cast_column_by_field_names
+
         existing_schema = df.schema
         if cast_cols := [
-            F.col(col).cast(dtype)
+            cast_column_by_field_names(col, existing_schema[col], dtype, strict=True)
             for col, dtype in schema_overrides.items()
             if col in existing_schema and dtype != existing_schema[col]
         ]:
@@ -151,6 +150,15 @@ class ConnectionExecutor:
                 msg = f"`read_database` queries require at least {module_name} version {minimum_version}"
                 raise ModuleUpgradeRequiredError(msg)
 
+    @staticmethod
+    def _duckdb_has_lazy_relations() -> bool:
+        """Check if DuckDB is version 2.0 or later."""
+        try:
+            ConnectionExecutor._check_module_version("duckdb", "2.0.0")
+        except ModuleUpgradeRequiredError:
+            return False
+        return True
+
     def _fetch_arrow(
         self,
         driver_properties: ArrowDriverProperties,
@@ -158,23 +166,31 @@ class ConnectionExecutor:
         batch_size: int | None,
         iter_batches: bool,
     ) -> Iterable[pa.RecordBatch]:
-        """Yield Arrow data as a generator of one or more RecordBatches or Tables."""
+        """Return Arrow data as an iterable of one or more RecordBatches or Tables."""
+        # note: the fetch method is called here, not when iterating, as a DuckDB
+        # relation runs its query (and needs an open cursor) at that call
         fetch_batches = driver_properties["fetch_batches"]
         if not iter_batches or fetch_batches is None:
             fetch_method = driver_properties["fetch_all"]
-            yield getattr(self.result, fetch_method)()
-        else:
-            size = [batch_size] if driver_properties["exact_batch_size"] else []
-            repeat_batch_calls = driver_properties["repeat_batch_calls"]
-            fetchmany_arrow = getattr(self.result, fetch_batches)
-            if not repeat_batch_calls:
-                yield from fetchmany_arrow(*size)
-            else:
-                while True:
-                    arrow = fetchmany_arrow(*size)
-                    if not arrow:
-                        break
-                    yield arrow
+            res = getattr(self.result, fetch_method)()
+            return res if isinstance(res, Iterable) else [res]
+
+        size = [batch_size] if driver_properties["exact_batch_size"] else []
+        fetchmany_arrow = getattr(self.result, fetch_batches)
+        if not driver_properties["repeat_batch_calls"]:
+            return fetchmany_arrow(*size)  # type: ignore[no-any-return]
+        return self._repeat_fetch(fetchmany_arrow, size)
+
+    @staticmethod
+    def _repeat_fetch(
+        fetchmany_arrow: Any, size: list[int | None]
+    ) -> Iterator[pa.RecordBatch]:
+        """Call a batch fetch method until it returns no more data."""
+        while True:
+            arrow = fetchmany_arrow(*size)
+            if not arrow:
+                break
+            yield arrow
 
     @staticmethod
     def _fetchall_rows(result: Cursor, *, is_alchemy: bool) -> Iterable[Sequence[Any]]:
@@ -244,7 +260,9 @@ class ConnectionExecutor:
                 frames = (
                     self._apply_overrides(batch, (schema_overrides or {}))
                     if isinstance(batch, DataFrame)
-                    else from_arrow(batch, schema_overrides=schema_overrides)
+                    else self._apply_overrides(
+                        DataFrame(batch), (schema_overrides or {})
+                    )
                     for batch in self._fetch_arrow(
                         driver_properties,
                         iter_batches=iter_batches,
@@ -360,15 +378,16 @@ class ConnectionExecutor:
 
     @staticmethod
     def _is_alchemy_async(conn: Any) -> bool:
-        """Check if the given connection is SQLALchemy async."""
+        """Check if the given connection is SQLAlchemy async."""
         try:
-            from sqlalchemy.ext.asyncio import (
-                AsyncConnection,
-                AsyncSession,
-                async_sessionmaker,
-            )
+            from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 
-            return isinstance(conn, (AsyncConnection, AsyncSession, async_sessionmaker))
+            if isinstance(conn, (AsyncConnection, AsyncSession)):
+                return True
+
+            from sqlalchemy.ext.asyncio import async_sessionmaker
+
+            return isinstance(conn, async_sessionmaker)
         except ImportError:
             return False
 
@@ -394,17 +413,23 @@ class ConnectionExecutor:
     @staticmethod
     def _is_alchemy_session(conn: Any) -> bool:
         """Check if the given connection is a SQLAlchemy Session object."""
-        from sqlalchemy.ext.asyncio import AsyncSession
         from sqlalchemy.orm import Session, sessionmaker
 
-        if isinstance(conn, (AsyncSession, Session, sessionmaker)):
+        if isinstance(conn, (Session, sessionmaker)):
             return True
 
         try:
+            from sqlalchemy.ext.asyncio import AsyncSession
+
+            if isinstance(conn, AsyncSession):
+                return True
+
             from sqlalchemy.ext.asyncio import async_sessionmaker
 
             return isinstance(conn, async_sessionmaker)
         except ImportError:
+            # SQLAlchemy 2.1 imports greenlet while loading the asyncio extra.
+            # A synchronous connection must still be usable without it.
             return False
 
     @staticmethod
@@ -435,13 +460,6 @@ class ConnectionExecutor:
                 elif conn.engine.driver == "duckdb_engine":
                     self.driver_name = "duckdb"
                     return conn
-                elif conn.engine.driver == "oracledb" and hasattr(
-                    raw_conn := conn.engine.raw_connection().driver_connection,
-                    "fetch_df_all",
-                ):
-                    self.driver_name = "oracledb"
-                    self.can_close_cursor = True
-                    return cast("Cursor", OracleCursorProxy(raw_conn))
                 elif self._is_alchemy_engine(conn):
                     # note: if we create it, we can close it
                     self.can_close_cursor = True
@@ -466,6 +484,20 @@ class ConnectionExecutor:
             "'execute' or 'cursor' method"
         )
         raise TypeError(msg)
+
+    def _oracle_arrow_proxy(self) -> OracleCursorProxy | None:
+        """Return an Arrow proxy for a SQLAlchemy "python-oracledb" connection."""
+        if not self._is_alchemy_async(self.cursor):
+            driver_name = getattr(getattr(self.cursor, "engine", None), "driver", None)
+            if driver_name == "oracledb" and OracleCursorProxy.supports_arrow(
+                # note: proxy the established DBAPI connection so the query
+                # is executed in the caller's own session/transaction
+                raw_conn := getattr(
+                    getattr(self.cursor, "connection", None), "driver_connection", None
+                )
+            ):
+                return OracleCursorProxy(raw_conn)
+        return None
 
     async def _sqlalchemy_async_execute(self, query: TextClause, **options: Any) -> Any:
         """Execute a query using an async SQLAlchemy connection."""
@@ -543,7 +575,31 @@ class ConnectionExecutor:
         options = options or {}
 
         if self._is_alchemy_object(self.cursor):
+            # note: the Arrow "fetch_df_*" methods take raw SQL, so the Oracle fast-path
+            # is only available for string queries; anything else must be compiled first
+            if (
+                isinstance(query, str)
+                and (oracle_proxy := self._oracle_arrow_proxy()) is not None
+            ):
+                # note: `self.cursor` is deliberately left as the SQLAlchemy connection,
+                # so that it remains open (and closeable) for the proxy's lifetime
+                self.driver_name = "oracledb_proxy"
+                self.result = oracle_proxy.execute(query, **options)
+                return self
+
             cursor_execute, options, query = self._sqlalchemy_setup(query, options)
+        elif (
+            self.driver_name == "duckdb"
+            and isinstance(query, str)
+            and self._duckdb_has_lazy_relations()
+        ):
+            # Arrow output from a DuckDB relation avoids copying the result rows
+            if "parameters" in options and "params" not in options:
+                options = options.copy()
+                options["params"] = options.pop("parameters")
+            relation = self.cursor.sql(query, **options)  # type: ignore[attr-defined]
+            self.result = self.cursor if relation is None else relation
+            return self
         else:
             cursor_execute = self.cursor.execute
 
@@ -555,7 +611,12 @@ class ConnectionExecutor:
             params = {}  # type: ignore[assignment]
 
         if not options or any(
-            p.kind in (Parameter.KEYWORD_ONLY, Parameter.POSITIONAL_OR_KEYWORD)
+            p.kind
+            in (
+                Parameter.KEYWORD_ONLY,
+                Parameter.POSITIONAL_OR_KEYWORD,
+                Parameter.VAR_KEYWORD,
+            )
             for p in params.values()
         ):
             result = cursor_execute(query, **options)
@@ -596,22 +657,28 @@ class ConnectionExecutor:
         if defer_cursor_close := (iter_batches and can_close):
             self.can_close_cursor = False
 
-        for frame_init in (
-            self._from_arrow,  # init from arrow-native data (where support exists)
-            self._from_rows,  # row-wise fallback (sqlalchemy, dbapi2, pyodbc, etc)
-        ):
-            frame = frame_init(
-                batch_size=batch_size,
-                iter_batches=iter_batches,
-                schema_overrides=schema_overrides,
-                infer_schema_length=infer_schema_length,
-            )
-            if frame is not None:
-                if defer_cursor_close:
-                    frame_cursor = CloseAfterFrameIter(frame, cursor=self.cursor)
-                    frame = (df for df in frame_cursor)
-                return frame
+        try:
+            for frame_init in (
+                self._from_arrow,  # init from arrow-native data (where support exists)
+                self._from_rows,  # row-wise fallback (sqlalchemy, dbapi2, pyodbc, etc)
+            ):
+                frame = frame_init(
+                    batch_size=batch_size,
+                    iter_batches=iter_batches,
+                    schema_overrides=schema_overrides,
+                    infer_schema_length=infer_schema_length,
+                )
+                if frame is not None:
+                    if defer_cursor_close:
+                        frame_cursor = CloseAfterFrameIter(frame, cursor=self.cursor)
+                        frame = (df for df in frame_cursor)
+                    return frame
+        except BaseException:
+            # no frame iterator owns the cursor, so `__exit__` should close it
+            self.can_close_cursor = can_close
+            raise
 
+        self.can_close_cursor = can_close
         msg = (
             f"Currently no support for {self.driver_name!r} connection {self.cursor!r}"
         )

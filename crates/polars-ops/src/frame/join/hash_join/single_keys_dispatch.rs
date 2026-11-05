@@ -1,14 +1,18 @@
-use arrow::array::PrimitiveArray;
-use polars_core::chunked_array::ops::row_encode::encode_rows_unordered;
+use polars_arrow::array::PrimitiveArray;
+use polars_core::chunked_array::ops::row_encode::{
+    encode_rows_unordered, encode_rows_vertical_par_unordered_propagate_nulls,
+};
 use polars_core::series::BitRepr;
 use polars_core::utils::split;
 use polars_core::with_match_physical_float_polars_type;
+use polars_defs::join::JoinValidation;
 use polars_utils::aliases::PlRandomState;
 use polars_utils::hashing::DirtyHash;
 use polars_utils::nulls::IsNull;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
 use super::*;
+use crate::frame::join::validation::validate_probe;
 use crate::series::SeriesSealed;
 
 pub trait SeriesJoin: SeriesSealed + Sized {
@@ -21,7 +25,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
     ) -> PolarsResult<LeftJoinIds> {
         let s_self = self.as_series();
         let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
-        validate.validate_probe(&lhs, &rhs, false, nulls_equal)?;
+        validate_probe(validate, &lhs, &rhs, false, nulls_equal)?;
 
         let lhs_dtype = lhs.dtype();
         let rhs_dtype = rhs.dtype();
@@ -66,20 +70,20 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 )
             },
             T::List(_) => {
-                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
-                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
                 lhs.hash_join_left(rhs, validate, nulls_equal)
             },
             #[cfg(feature = "dtype-array")]
             T::Array(_, _) => {
-                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
-                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
                 lhs.hash_join_left(rhs, validate, nulls_equal)
             },
             #[cfg(feature = "dtype-struct")]
             T::Struct(_) => {
-                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
-                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
                 lhs.hash_join_left(rhs, validate, nulls_equal)
             },
             x if x.is_float() => {
@@ -169,20 +173,20 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 }
             },
             T::List(_) => {
-                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
-                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
                 lhs.hash_join_semi_anti(rhs, anti, nulls_equal)?
             },
             #[cfg(feature = "dtype-array")]
             T::Array(_, _) => {
-                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
-                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
                 lhs.hash_join_semi_anti(rhs, anti, nulls_equal)?
             },
             #[cfg(feature = "dtype-struct")]
             T::Struct(_) => {
-                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
-                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
                 lhs.hash_join_semi_anti(rhs, anti, nulls_equal)?
             },
             x if x.is_float() => {
@@ -237,7 +241,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
     ) -> PolarsResult<(InnerJoinIds, bool)> {
         let s_self = self.as_series();
         let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
-        validate.validate_probe(&lhs, &rhs, true, nulls_equal)?;
+        validate_probe(validate, &lhs, &rhs, true, nulls_equal)?;
 
         let lhs_dtype = lhs.dtype();
         let rhs_dtype = rhs.dtype();
@@ -295,20 +299,20 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 ))
             },
             T::List(_) => {
-                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
-                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
                 lhs.hash_join_inner(rhs, validate, nulls_equal)
             },
             #[cfg(feature = "dtype-array")]
             T::Array(_, _) => {
-                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
-                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
                 lhs.hash_join_inner(rhs, validate, nulls_equal)
             },
             #[cfg(feature = "dtype-struct")]
             T::Struct(_) => {
-                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
-                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
                 lhs.hash_join_inner(rhs, validate, nulls_equal)
             },
             x if x.is_float() => {
@@ -362,7 +366,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
     ) -> PolarsResult<(PrimitiveArray<IdxSize>, PrimitiveArray<IdxSize>)> {
         let s_self = self.as_series();
         let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
-        validate.validate_probe(&lhs, &rhs, true, nulls_equal)?;
+        validate_probe(validate, &lhs, &rhs, true, nulls_equal)?;
 
         let lhs_dtype = lhs.dtype();
         let rhs_dtype = rhs.dtype();
@@ -390,20 +394,20 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 hash_join_tuples_outer(lhs, rhs, swapped, validate, nulls_equal)
             },
             T::List(_) => {
-                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
-                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
                 lhs.hash_join_outer(rhs, validate, nulls_equal)
             },
             #[cfg(feature = "dtype-array")]
             T::Array(_, _) => {
-                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
-                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
                 lhs.hash_join_outer(rhs, validate, nulls_equal)
             },
             #[cfg(feature = "dtype-struct")]
             T::Struct(_) => {
-                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
-                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
                 lhs.hash_join_outer(rhs, validate, nulls_equal)
             },
             x if x.is_float() => {
@@ -457,6 +461,16 @@ where
         .collect()
 }
 
+fn encode_join_nested_key(s: Series, nulls_equal: bool) -> PolarsResult<Series> {
+    let by = [s.into_column()];
+    let encoded = if nulls_equal {
+        encode_rows_unordered(&by)?
+    } else {
+        encode_rows_vertical_par_unordered_propagate_nulls(&by)?
+    };
+    Ok(encoded.into_series())
+}
+
 fn get_arrays<T: PolarsDataType>(cas: &[ChunkedArray<T>]) -> Vec<&T::Array> {
     cas.iter().flat_map(|arr| arr.downcast_iter()).collect()
 }
@@ -476,7 +490,7 @@ where
         Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
 {
     let n_threads = RAYON.current_num_threads();
-    let (a, b, swapped) = det_hash_prone_order!(left, right);
+    let (a, b, swapped) = det_hash_probe_order!(left, right);
     let splitted_a = split(a, n_threads);
     let splitted_b = split(b, n_threads);
     let splitted_a = get_arrays(&splitted_a);
@@ -649,7 +663,7 @@ where
     T::Native: TotalHash + TotalEq + ToTotalOrd,
     <T::Native as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + IsNull,
 {
-    let (a, b, swapped) = det_hash_prone_order!(ca_in, other);
+    let (a, b, swapped) = det_hash_probe_order!(ca_in, other);
 
     let n_partitions = _set_partition_size();
     let splitted_a = split(a, n_partitions);
@@ -698,7 +712,7 @@ where
     for<'b> <T::Array as StaticArray>::ValueT<'b>: AsRef<[u8]>,
 {
     let (a, b, swapped) = if build_shortest_table {
-        det_hash_prone_order!(ca, other)
+        det_hash_probe_order!(ca, other)
     } else {
         (ca, other, false)
     };

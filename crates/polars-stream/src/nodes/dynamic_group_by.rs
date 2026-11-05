@@ -1,19 +1,22 @@
 use std::sync::Arc;
 
-use arrow::legacy::time_zone::Tz;
 use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
-use polars_async::primitives::distributor_channel::distributor_channel;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Column, DataType, GroupsType, Int64Chunked, IntoColumn, TimeUnit};
+use polars_core::prelude::{
+    Column, GroupsType, Int64Chunked, IntoColumn, slice_groups_are_monotonic,
+};
 use polars_core::schema::Schema;
 use polars_core::series::IsSorted;
-use polars_error::{PolarsError, PolarsResult, polars_bail, polars_ensure};
+use polars_defs::time::duration::ensure_duration_matches_dtype;
+use polars_defs::time::group_by::{DynamicGroupOptionsIR, Label};
+use polars_error::{PolarsError, PolarsResult, polars_ensure};
 use polars_expr::state::ExecutionState;
-use polars_time::prelude::{GroupByDynamicWindower, Label, ensure_duration_matches_dtype};
-use polars_time::{DynamicGroupOptions, LB_NAME, UB_NAME};
+use polars_time::prelude::GroupByDynamicWindower;
+use polars_time::{IndexSpace, LB_NAME, UB_NAME};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::ComputeNode;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
@@ -22,6 +25,7 @@ use crate::expression::StreamExpr;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::pipe::{RecvPort, SendPort};
+use crate::utils::morsel_distributor::morsel_distributor;
 
 type NextWindows = (Vec<[IdxSize; 2]>, Vec<i64>, Vec<i64>, DataFrame);
 
@@ -41,17 +45,19 @@ pub struct DynamicGroupBy {
     index_column_idx: usize,
     label: Label,
     include_boundaries: bool,
+    space: IndexSpace,
     windower: GroupByDynamicWindower,
     aggs: Arc<[(PlSmallStr, StreamExpr)]>,
+    seq_offset: Arc<RelaxedCell<u64>>,
 }
 impl DynamicGroupBy {
     pub fn new(
         schema: Arc<Schema>,
-        options: DynamicGroupOptions,
+        options: DynamicGroupOptionsIR,
         aggs: Arc<[(PlSmallStr, StreamExpr)]>,
         slice: Option<(IdxSize, IdxSize)>,
     ) -> PolarsResult<Self> {
-        let DynamicGroupOptions {
+        let DynamicGroupOptionsIR {
             index_column,
             every,
             period,
@@ -60,6 +66,7 @@ impl DynamicGroupBy {
             include_boundaries,
             closed_window,
             start_by,
+            placement,
         } = options;
 
         polars_ensure!(!every.negative(), ComputeError: "'every' argument must be positive");
@@ -69,35 +76,22 @@ impl DynamicGroupBy {
         ensure_duration_matches_dtype(period, index_dtype, "period")?;
         ensure_duration_matches_dtype(offset, index_dtype, "offset")?;
 
-        use DataType as DT;
-        let (tu, tz) = match index_dtype {
-            DT::Datetime(tu, tz) => (*tu, tz.clone()),
-            DT::Date => (TimeUnit::Microseconds, None),
-            DT::Int64 | DT::Int32 => (TimeUnit::Nanoseconds, None),
-            dt => polars_bail!(
-                ComputeError:
-                "expected any of the following dtypes: {{ Date, Datetime, Int32, Int64 }}, got {}",
-                dt
-            ),
-        };
+        let space = IndexSpace::dynamic(index_dtype)?;
 
         let buf_df = DataFrame::empty_with_arc_schema(schema.clone());
-        let buf_index_column =
-            Column::new_empty(index_column.clone(), &DT::Datetime(tu, tz.clone()));
+        let buf_index_column = Column::new_empty(index_column.clone(), &space.window_dtype());
 
-        // @NOTE: This is a bit strange since it ignores errors, but it mirrors the in-memory
-        // engine.
-        let tz = tz.and_then(|tz| tz.parse::<Tz>().ok());
         let windower = GroupByDynamicWindower::new(
             period,
             offset,
             every,
             start_by,
             closed_window,
-            tu,
-            tz,
+            space.time_unit,
+            space.tz().cloned(),
             include_boundaries || matches!(label, Label::Left),
             include_boundaries || matches!(label, Label::Right),
+            placement,
         );
 
         let (slice_offset, slice_length) = slice.unwrap_or((0, IdxSize::MAX));
@@ -117,8 +111,10 @@ impl DynamicGroupBy {
             index_column_idx,
             label,
             include_boundaries,
+            space,
             windower,
             aggs,
+            seq_offset: Arc::default(),
         })
     }
 
@@ -134,11 +130,14 @@ impl DynamicGroupBy {
         group_by: Option<&str>,
         index_column_name: &str,
         index_column_idx: usize,
+        space: &IndexSpace,
         label: Label,
         include_boundaries: bool,
     ) -> PolarsResult<DataFrame> {
         let height = windows.len();
-        let groups = GroupsType::new_slice(windows, true, true).into_sliceable();
+        // Window ends are not necessarily non-decreasing (month clamping, DST).
+        let monotonic = slice_groups_are_monotonic(&windows);
+        let groups = GroupsType::new_slice(windows, true, monotonic).into_sliceable();
 
         // @NOTE:
         // Rechunk so we can use specialized rolling/dynamic kernels.
@@ -156,37 +155,22 @@ impl DynamicGroupBy {
                 lower.set_sorted_flag(IsSorted::Ascending);
                 upper.set_sorted_flag(IsSorted::Ascending);
             }
-            let mut lower = lower.into_column();
-            let mut upper = upper.into_column();
+            let window_dtype = space.window_dtype();
+            let mut lower = lower.into_column().cast(&window_dtype)?;
+            let mut upper = upper.into_column().cast(&window_dtype)?;
 
             let index_column = &df.columns()[index_column_idx];
-            let index_dtype = index_column.dtype();
-            let mut bound_dtype_physical = index_dtype.to_physical();
-            let mut bound_dtype = index_dtype;
-            if index_dtype.is_date() {
-                bound_dtype = &DataType::Datetime(TimeUnit::Microseconds, None);
-                bound_dtype_physical = DataType::Int64;
-            }
-            lower = lower.cast(&bound_dtype_physical).unwrap();
-            upper = upper.cast(&bound_dtype_physical).unwrap();
-            (lower, upper) = unsafe {
-                (
-                    lower.from_physical_unchecked(bound_dtype)?,
-                    upper.from_physical_unchecked(bound_dtype)?,
-                )
-            };
-
             let key = match label {
                 Label::DataPoint => unsafe { index_column.agg_first(&groups) },
-                Label::Left => lower
-                    .cast(index_dtype)
-                    .unwrap()
+                Label::Left => space
+                    .cast_from_space(&lower)?
                     .with_name(index_column_name.into()),
-                Label::Right => upper
-                    .cast(index_dtype)
-                    .unwrap()
+                Label::Right => space
+                    .cast_from_space(&upper)?
                     .with_name(index_column_name.into()),
             };
+            lower = space.cast_to_boundary(&lower)?;
+            upper = space.cast_to_boundary(&upper)?;
 
             if include_boundaries {
                 columns.extend([lower, upper]);
@@ -245,9 +229,10 @@ impl DynamicGroupBy {
         }
 
         // Prune the data that is not covered by the windows and update the windows accordingly.
+        // Window starts are non-decreasing, but their ends are not: a window opened later
+        // can end earlier (month clamping, DST), so take the max rather than the last.
         let offset = windows[0][0];
-        let end = windows.last().unwrap();
-        let end = end[0] + end[1];
+        let end = windows.iter().map(|[s, len]| s + len).max().unwrap();
 
         if self.slice_offset as usize > windows.len() {
             self.slice_offset -= windows.len() as IdxSize;
@@ -299,7 +284,7 @@ impl ComputeNode for DynamicGroupBy {
     ) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.len() == 1);
 
-        if self.slice_length == 0 {
+        if self.slice_length == 0 || self.windower.is_done() {
             recv[0] = PortState::Done;
             send[0] = PortState::Done;
             std::mem::take(&mut self.buf_df);
@@ -349,13 +334,18 @@ impl ComputeNode for DynamicGroupBy {
                         self.group_by.as_deref(),
                         self.index_column.as_str(),
                         self.index_column_idx,
+                        &self.space,
                         self.label,
                         self.include_boundaries,
                     )
                     .await?;
 
                     _ = send
-                        .send(Morsel::new(df, self.seq.successor(), SourceToken::new()))
+                        .send(Morsel::new_unregistered(
+                            df,
+                            self.seq.successor().offset_by_u64(self.seq_offset.load()),
+                            SourceToken::new(),
+                        ))
                         .await;
                 }
 
@@ -368,11 +358,11 @@ impl ComputeNode for DynamicGroupBy {
         let mut recv = recv.serial();
         let send = send_ports[0].take().unwrap().parallel();
 
-        let (mut distributor, rxs) =
-            distributor_channel::<(Morsel, Vec<[IdxSize; 2]>, Vec<i64>, Vec<i64>)>(
-                send.len(),
-                *DEFAULT_DISTRIBUTOR_BUFFER_SIZE,
-            );
+        let (mut distributor, rxs) = morsel_distributor(
+            send.len(),
+            *DEFAULT_DISTRIBUTOR_BUFFER_SIZE,
+            self.seq_offset.clone(),
+        );
 
         // Worker tasks.
         //
@@ -385,11 +375,12 @@ impl ComputeNode for DynamicGroupBy {
             let group_by = self.group_by.clone();
             let index_column = self.index_column.clone();
             let index_column_idx = self.index_column_idx;
+            let space = self.space.clone();
             let label = self.label;
             let include_boundaries = self.include_boundaries;
 
             scope.spawn_task(TaskPriority::High, async move {
-                while let Ok((mut morsel, windows, lower_bound, upper_bound)) = rx.recv().await {
+                while let Ok((mut morsel, (windows, lower_bound, upper_bound))) = rx.recv().await {
                     morsel = morsel
                         .async_try_map::<PolarsError, _, _>(async |df| {
                             Self::evaluate_one(
@@ -402,6 +393,7 @@ impl ComputeNode for DynamicGroupBy {
                                 group_by.as_deref(),
                                 index_column.as_str(),
                                 index_column_idx,
+                                &space,
                                 label,
                                 include_boundaries,
                             )
@@ -426,8 +418,10 @@ impl ComputeNode for DynamicGroupBy {
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             while let Ok(morsel) = recv.recv().await
                 && self.slice_length > 0
+                && !self.windower.is_done()
             {
-                let (df, seq, source_token, wait_token) = morsel.into_inner();
+                let (sf, seq, source_token, wait_token) = morsel.into_inner();
+                let df = sf.into_df().await;
                 self.seq = seq;
                 drop(wait_token);
 
@@ -441,20 +435,7 @@ impl ComputeNode for DynamicGroupBy {
                     ComputeError: "null values in `group_by_dynamic` not supported, fill nulls."
                 );
 
-                use DataType as DT;
-                let morsel_index_column = match morsel_index_column.dtype() {
-                    DT::Datetime(_, _) => morsel_index_column.clone(),
-                    DT::Date => {
-                        morsel_index_column.cast(&DT::Datetime(TimeUnit::Microseconds, None))?
-                    },
-                    DT::Int32 => morsel_index_column
-                        .cast(&DT::Int64)?
-                        .cast(&DT::Datetime(TimeUnit::Nanoseconds, None))?,
-                    DT::Int64 => {
-                        morsel_index_column.cast(&DT::Datetime(TimeUnit::Nanoseconds, None))?
-                    },
-                    _ => unreachable!(),
-                };
+                let morsel_index_column = self.space.cast_to_space(morsel_index_column)?;
 
                 self.buf_df.vstack_mut_owned(df)?;
                 self.buf_index_column.append_owned(morsel_index_column)?;
@@ -462,10 +443,8 @@ impl ComputeNode for DynamicGroupBy {
                 if let Some((windows, lower_bound, upper_bound, df)) = self.next_windows(false)? {
                     if distributor
                         .send((
-                            Morsel::new(df, seq, source_token),
-                            windows,
-                            lower_bound,
-                            upper_bound,
+                            Morsel::new_unregistered(df, seq, source_token),
+                            (windows, lower_bound, upper_bound),
                         ))
                         .await
                         .is_err()

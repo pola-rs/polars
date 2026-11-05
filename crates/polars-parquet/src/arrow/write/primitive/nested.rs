@@ -1,5 +1,5 @@
-use arrow::array::{Array, PrimitiveArray};
-use arrow::types::NativeType as ArrowNativeType;
+use polars_arrow::array::PrimitiveArray;
+use polars_arrow::types::NativeType as ArrowNativeType;
 use polars_error::PolarsResult;
 
 use super::super::{WriteOptions, nested, utils};
@@ -28,7 +28,7 @@ where
 
     let mut buffer = vec![];
 
-    let (repetition_levels_byte_length, definition_levels_byte_length) =
+    let (repetition_levels_byte_length, definition_levels_byte_length, num_values) =
         nested::write_rep_and_def(options.version, nested, &mut buffer)?;
 
     let buffer = encode_plain(array, encode_options, buffer);
@@ -38,12 +38,11 @@ where
     } else {
         None
     };
-
     utils::build_plain_page(
         buffer,
-        nested::num_values(nested),
+        num_values,
         nested[0].len(),
-        array.null_count(),
+        nested::num_nulls(num_values, array),
         repetition_levels_byte_length,
         definition_levels_byte_length,
         statistics,

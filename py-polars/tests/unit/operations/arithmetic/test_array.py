@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import operator
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -304,6 +305,36 @@ def test_array_truediv_schema(
     df = pl.DataFrame({"lhs": [[None, 10]], "rhs": 2}, schema=schema)
     result = df.lazy().select(pl.col("lhs").truediv("rhs")).collect_schema()["lhs"]
     assert result == expected_dtype
+
+
+@pytest.mark.parametrize(
+    ("lhs_dtype", "literal", "arith_op", "expected_dtype"),
+    [
+        # A dynamically-typed literal (bare Python `1`) must not widen the result
+        # beyond what the array's own leaf dtype already supports.
+        (pl.Array(pl.Float32, 1), 1, operator.add, pl.Array(pl.Float32, 1)),
+        (pl.Array(pl.Float32, 1), 1, operator.sub, pl.Array(pl.Float32, 1)),
+        (pl.Array(pl.Float32, 1), 2, operator.mul, pl.Array(pl.Float32, 1)),
+        (pl.Array(pl.Int8, 1), 1, operator.add, pl.Array(pl.Int8, 1)),
+        (pl.Array(pl.Int64, 1), 1, operator.mod, pl.Array(pl.Int64, 1)),
+        (pl.Array(pl.Int64, 1), 2, operator.floordiv, pl.Array(pl.Int64, 1)),
+        (pl.Array(pl.Float32, 1), 1, operator.truediv, pl.Array(pl.Float32, 1)),
+        (pl.Array(pl.Int64, 1), 2, operator.truediv, pl.Array(pl.Float64, 1)),
+        # A dynamic float literal should still upcast an integer array, as normal.
+        (pl.Array(pl.Int32, 1), 1.5, operator.add, pl.Array(pl.Float64, 1)),
+    ],
+)
+def test_array_arithmetic_literal_dtype(
+    lhs_dtype: PolarsDataType,
+    literal: int | float,
+    arith_op: Callable[[Any, Any], Any],
+    expected_dtype: PolarsDataType,
+) -> None:
+    """The declared schema and the actually-produced dtype must agree (#19671)."""
+    df = pl.DataFrame({"a": [[0]]}, schema={"a": lhs_dtype})
+    q = df.lazy().select(arith_op(pl.col("a"), literal))
+    assert q.collect_schema()["a"] == expected_dtype
+    assert q.collect().schema["a"] == expected_dtype
 
 
 def test_array_literal_broadcast() -> None:

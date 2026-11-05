@@ -1,11 +1,11 @@
 use std::fmt::Debug;
 
-use arrow::array::PrimitiveArray;
-use arrow::datatypes::ArrowDataType;
-use arrow::legacy::error::PolarsResult;
-use arrow::legacy::utils::CustomIterTools;
-use arrow::types::NativeType;
 use num_traits::{Float, Num, NumCast};
+use polars_arrow::array::PrimitiveArray;
+use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::legacy::error::PolarsResult;
+use polars_arrow::legacy::utils::CustomIterTools;
+use polars_arrow::types::NativeType;
 
 mod mean;
 mod min_max;
@@ -51,7 +51,7 @@ pub trait RollingAggWindowNoNulls<T: NativeType, Out: NativeType = T> {
 pub(super) fn rolling_apply_agg_window<Agg, T, O, Fo>(
     values: &[T],
     window_size: usize,
-    min_periods: usize,
+    min_samples: usize,
     det_offsets_fn: Fo,
     params: Option<RollingFnParams>,
 ) -> PolarsResult<ArrayRef>
@@ -66,7 +66,7 @@ where
     let mut agg_window = Agg::new(values, start, end, params, Some(window_size));
     let out = (0..len).map(|idx| {
         let (start, end) = det_offsets_fn(idx, window_size, len);
-        if end - start < min_periods {
+        if end - start < min_samples {
             None
         } else {
             // SAFETY:
@@ -79,10 +79,32 @@ where
     Ok(Box::new(arr))
 }
 
+/// Find the offset into `weights` at which the window for `idx` starts.
+///
+/// Windows at the edges of the array can be shorter than `window_size`, in which case only
+/// part of the weights apply and they have to be lined up with the values that are present.
+pub(super) fn det_weights_start(
+    centered: bool,
+    window_size: usize,
+    idx: usize,
+    start: usize,
+    win_len: usize,
+) -> usize {
+    if centered {
+        let center = (window_size / 2) as isize;
+        let offset = center - (idx as isize - start as isize);
+        offset.max(0) as usize
+    } else if start == 0 {
+        window_size - win_len
+    } else {
+        0
+    }
+}
+
 pub(super) fn rolling_apply_weights<T, Fo, Fa>(
     values: &[T],
     window_size: usize,
-    min_periods: usize,
+    min_samples: usize,
     det_offsets_fn: Fo,
     aggregator: Fa,
     weights: &[T],
@@ -100,28 +122,13 @@ where
             let (start, end) = det_offsets_fn(idx, window_size, len);
             let vals = unsafe { values.get_unchecked(start..end) };
             let win_len = end - start;
-            let weights_start = if centered {
-                // When using centered weights, we need to find the right location
-                // in the weights array specifically by aligning the center of the
-                // window with idx, to handle cases where the window is smaller than
-                // weights array.
-                let center = (window_size / 2) as isize;
-                let offset = center - (idx as isize - start as isize);
-                offset.max(0) as usize
-            } else if start == 0 {
-                // When start is 0, we need to work backwards from the end of the
-                // weights array to ensure we are lined up correctly (since the
-                // start of the values array is implicitly cut off)
-                weights.len() - win_len
-            } else {
-                0
-            };
+            let weights_start = det_weights_start(centered, window_size, idx, start, win_len);
             let weights_slice = &weights[weights_start..weights_start + win_len];
             aggregator(vals, weights_slice)
         })
         .collect_trusted::<Vec<T>>();
 
-    let validity = create_validity(min_periods, len, window_size, det_offsets_fn);
+    let validity = create_validity(min_samples, len, window_size, det_offsets_fn, None, false);
     Ok(Box::new(PrimitiveArray::new(
         ArrowDataType::from(T::PRIMITIVE),
         out.into(),

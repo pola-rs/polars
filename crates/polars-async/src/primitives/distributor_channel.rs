@@ -70,10 +70,12 @@ pub enum SendError<T> {
     Closed(T),
 }
 
-pub enum RecvError {
+pub enum TryRecvError {
     Empty,
     Closed,
 }
+
+pub struct RecvError;
 
 struct ReceiverSlot<T> {
     closed: AtomicBool,
@@ -211,21 +213,21 @@ impl<T: Send> Sender<T> {
 impl<T: Send> Receiver<T> {
     /// Note: This intentionally takes `&mut` to ensure it is only accessed in a single-threaded
     /// manner.
-    pub async fn recv(&mut self) -> Result<T, ()> {
+    pub async fn recv(&mut self) -> Result<T, RecvError> {
         loop {
             // Fast-path.
             match unsafe { self.try_recv() } {
                 Ok(v) => return Ok(v),
-                Err(RecvError::Closed) => return Err(()),
-                Err(RecvError::Empty) => {},
+                Err(TryRecvError::Closed) => return Err(RecvError),
+                Err(TryRecvError::Empty) => {},
             }
 
             // Try again, threatening to park if there's still nothing.
             let park = self.inner.receivers[self.index].parker.park();
             match unsafe { self.try_recv() } {
                 Ok(v) => return Ok(v),
-                Err(RecvError::Closed) => return Err(()),
-                Err(RecvError::Empty) => {},
+                Err(TryRecvError::Closed) => return Err(RecvError),
+                Err(TryRecvError::Empty) => {},
             }
             park.await;
         }
@@ -233,7 +235,7 @@ impl<T: Send> Receiver<T> {
 
     /// # Safety
     /// May only be called from one thread at a time.
-    unsafe fn try_recv(&self) -> Result<T, RecvError> {
+    unsafe fn try_recv(&self) -> Result<T, TryRecvError> {
         loop {
             let read_head = self.inner.receivers[self.index]
                 .read_head
@@ -256,10 +258,10 @@ impl<T: Send> Receiver<T> {
                 // before closing. We can do this relaxed because we'll read it
                 // again in the next iteration with SeqCst if it's a new value.
                 if write_head == self.inner.write_heads[self.index].load(Ordering::Relaxed) {
-                    return Err(RecvError::Closed);
+                    return Err(TryRecvError::Closed);
                 }
             } else {
-                return Err(RecvError::Empty);
+                return Err(TryRecvError::Empty);
             }
         }
     }

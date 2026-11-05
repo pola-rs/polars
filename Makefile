@@ -5,6 +5,7 @@ SHELL=bash
 ifeq ($(VENV),)
 VENV := .venv
 endif
+PYTHON ?= python3
 
 RUNTIME_CARGO_TOML=py-polars/runtime/polars-runtime-32/Cargo.toml
 
@@ -75,7 +76,7 @@ FILTER_PIP_WARNINGS=| grep -v "don't match your environment"; test $${PIPESTATUS
 # directory; checking bin/python allows Make to better-detect/rebuild a broken venv
 $(VENV_BIN)/python:
 	@unset CONDA_PREFIX \
-	&& python3 -m venv $(VENV) \
+	&& $(PYTHON) -m venv $(VENV) \
 	&& $(MAKE) requirements
 
 .PHONY: .venv
@@ -86,7 +87,7 @@ $(VENV_BIN)/python:
 .PHONY: requirements
 requirements:  ## Install/refresh Python project requirements
 	@unset CONDA_PREFIX \
-	&& python3 -m venv $(VENV) --clear \
+	&& $(PYTHON) -m venv $(VENV) --clear \
 	&& $(VENV_BIN)/python -m pip install --upgrade uv \
 	$(if $(EXTRA_REQUIREMENTS),&& $(VENV_BIN)/uv pip install --upgrade --compile-bytecode -r $(EXTRA_REQUIREMENTS)) \
 	&& $(VENV_BIN)/uv pip install --upgrade --compile-bytecode --no-build \
@@ -94,7 +95,7 @@ requirements:  ## Install/refresh Python project requirements
 	   -r py-polars/requirements-lint.txt \
 	   -r py-polars/docs/requirements-docs.txt \
 	   -r docs/source/requirements.txt \
-	&& $(VENV_BIN)/uv pip install --upgrade --compile-bytecode "pyiceberg>=0.7.1" pyiceberg-core!=0.9.0 \
+	&& $(VENV_BIN)/uv pip install --upgrade --compile-bytecode "pyiceberg>=0.12.0" pyiceberg-core!=0.9.0 \
 	&& $(VENV_BIN)/uv pip install --no-deps -e py-polars \
 	&& $(VENV_BIN)/uv pip uninstall polars-runtime-compat polars-runtime-64  ## Uninstall runtimes which might take precedence over polars-runtime-32
 
@@ -103,22 +104,25 @@ requirements-all:  ## Install/refresh all Python requirements (including those n
 	$(MAKE) requirements EXTRA_REQUIREMENTS=py-polars/requirements-ci.txt
 	
 # We set environment variables which will cause unnecessary re-builds if other cargo commands
-# (not run through maturin/Makefile) are ran. By updating .cargo/config.toml those environment
-# variables are sticky.
+# (not run through maturin/Makefile) are ran. By updating .cargo/config.generated.toml (which is
+# gitignored and included from .cargo/config.toml) those environment variables are sticky.
 .PHONY: update-cargo-env
 update-cargo-env: $(VENV_BIN)/python
 	@RUSTFLAGS="$(RUSTFLAGS)" CFLAGS="$(CFLAGS)" $(VENV_BIN)/python tools/update-cargo-env.py
 
 .PHONY: build
-build: update-cargo-env ## Compile and install Python Polars for development
+build: build-mindebug  ## Compile and install Python Polars for development (alias for build-mindebug)
+
+.PHONY: build-debug
+build-debug: update-cargo-env  ## Compile and install Python Polars for development with full debug symbols
 	@unset CONDA_PREFIX \
-	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --features backtrace_filter $(ARGS) --uv \
+	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --features backtrace_filter --profile debug-dev $(ARGS) --uv \
 	$(FILTER_PIP_WARNINGS)
 
 .PHONY: build-mindebug
-build-mindebug: update-cargo-env  ## Same as build, but don't include full debug information
+build-mindebug: update-cargo-env  ## Compile and install Python Polars for development with reduced debug symbols
 	@unset CONDA_PREFIX \
-	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --features backtrace_filter --profile mindebug-dev $(ARGS) --uv \
+	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --features backtrace_filter $(ARGS) --uv \
 	$(FILTER_PIP_WARNINGS)
 
 .PHONY: build-release
@@ -133,6 +137,12 @@ build-nodebug-release: update-cargo-env  ## Same as build-release, but without a
 	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --features backtrace_filter --profile nodebug-release $(ARGS) --uv \
 	$(FILTER_PIP_WARNINGS)
 
+.PHONY: build-fast-release
+build-fast-release: update-cargo-env  ## Same as build-release, but without LTO (much faster to build, a bit slower to run)
+	@unset CONDA_PREFIX \
+	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --features backtrace_filter --profile fast-release $(ARGS) --uv \
+	$(FILTER_PIP_WARNINGS)
+
 .PHONY: build-debug-release
 build-debug-release: update-cargo-env  ## Same as build-release, but with full debug symbols turned on (a bit slower to build)
 	@unset CONDA_PREFIX \
@@ -145,17 +155,21 @@ build-dist-release: update-cargo-env  ## Compile and install Python Polars binar
 	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --features backtrace_filter --profile dist-release $(ARGS) --uv \
 	$(FILTER_PIP_WARNINGS)
 
+.PHONY: build-polars-iceberg
+build-polars-iceberg: .venv  ## Compile and install the `polars_iceberg` I/O plugin (crates/polars-iceberg)
+	@$(MAKE) -s -C crates $@ VENV=$(abspath $(VENV))
+
 .PHONY: check
 check: update-cargo-env ## Run cargo check with all features
 	cargo check --workspace --all-targets --all-features
 
 .PHONY: clippy
 clippy: update-cargo-env ## Run clippy with all features
-	python3 tools/cargo-fail-warning.py clippy --workspace --all-targets --all-features --locked -- -W clippy::dbg_macro
+	$(PYTHON) tools/cargo-fail-warning.py clippy --workspace --all-targets --all-features --locked -- -W clippy::dbg_macro
 
 .PHONY: clippy-default
 clippy-default: update-cargo-env ## Run clippy with default features
-	python3 tools/cargo-fail-warning.py clippy --all-targets --locked -- -W clippy::dbg_macro
+	$(PYTHON) tools/cargo-fail-warning.py clippy --all-targets --locked -- -W clippy::dbg_macro
 
 .PHONY: fmt
 fmt: update-cargo-env ## Run autoformatting and linting

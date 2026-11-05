@@ -1,8 +1,8 @@
 use std::collections::VecDeque;
 use std::marker::PhantomData;
 
-use arrow::bitmap::Bitmap;
-use arrow::types::NativeType;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::types::NativeType;
 use polars_utils::IdxSize;
 use polars_utils::min_max::{MaxPropagateNan, MinMaxPolicy, MinPropagateNan};
 
@@ -109,8 +109,8 @@ impl<T: NativeType, P: MinMaxPolicy> RollingAggWindowNulls<T, IdxSize>
             .map(|&best_abs| (best_abs - self.start) as IdxSize)
     }
 
-    fn is_valid(&self, min_periods: usize) -> bool {
-        self.nonnulls_in_window >= min_periods
+    fn is_valid(&self, min_samples: usize) -> bool {
+        self.nonnulls_in_window >= min_samples
     }
 
     fn slice_len(&self) -> usize {

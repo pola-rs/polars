@@ -26,6 +26,15 @@ pub(crate) fn new_chunks_owned(chunks: &mut Vec<ArrayRef>, other: Vec<ArrayRef>,
     }
 }
 
+/// Unit-length arrays are sorted but don't necessarily carry the flag.
+fn unit_or_sorted_flag<T: PolarsDataType>(ca: &ChunkedArray<T>) -> IsSorted {
+    if ca.len() == 1 {
+        IsSorted::Ascending
+    } else {
+        ca.is_sorted_flag()
+    }
+}
+
 pub(super) fn update_sorted_flag_before_append<T>(ca: &mut ChunkedArray<T>, other: &ChunkedArray<T>)
 where
     T: PolarsDataType,
@@ -44,10 +53,11 @@ where
             ca.is_empty()
                 || (
                     // lhs is non-empty and all-null, so rhs must have nulls ordered first
-                    other.is_sorted_any() && 1 + other.last_non_null().unwrap() == other.len()
+                    unit_or_sorted_flag(other) != IsSorted::Not
+                        && 1 + other.last_non_null().unwrap() == other.len()
                 )
             {
-                other.is_sorted_flag()
+                unit_or_sorted_flag(other)
             } else {
                 IsSorted::Not
             }
@@ -58,10 +68,10 @@ where
             other.is_empty()
                 || (
                     // rhs is non-empty and all-null, so lhs must have nulls ordered last
-                    ca.is_sorted_any() && ca.first_non_null().unwrap() == 0
+                    unit_or_sorted_flag(ca) != IsSorted::Not && ca.first_non_null().unwrap() == 0
                 )
             {
-                ca.is_sorted_flag()
+                unit_or_sorted_flag(ca)
             } else {
                 IsSorted::Not
             }
@@ -70,15 +80,25 @@ where
             // both arrays have non-null values.
             // for arrays of unit length we can ignore the sorted flag, as it is
             // not necessarily set.
-            if !(ca.is_sorted_any() || ca.len() == 1)
-                || !(other.is_sorted_any() || other.len() == 1)
-                || !(
-                    // We will coerce for single values
-                    ca.len() - ca.null_count() == 1
-                        || other.len() - other.null_count() == 1
-                        || ca.is_sorted_flag() == other.is_sorted_flag()
-                )
-            {
+            let both_sorted = (ca.is_sorted_any() || ca.len() == 1)
+                && (other.is_sorted_any() || other.len() == 1);
+
+            // We will coerce for a single distinct value, which is sorted in both directions.
+            // Only compare values when the flags differ, as that is relatively expensive.
+            let flags_differ = ca.is_sorted_flag() != other.is_sorted_flag();
+            let is_single_value = |arr: &ChunkedArray<T>| {
+                arr.len() - arr.null_count() == 1
+                    || (both_sorted
+                        && flags_differ
+                        && unsafe {
+                            arr.value_unchecked(arr.first_non_null().unwrap())
+                                .tot_eq(&arr.value_unchecked(arr.last_non_null().unwrap()))
+                        })
+            };
+            let l_single = is_single_value(ca);
+            let r_single = is_single_value(other);
+
+            if !both_sorted || (flags_differ && !(l_single || r_single)) {
                 IsSorted::Not
             } else {
                 let l_idx = ca.last_non_null().unwrap();
@@ -103,10 +123,7 @@ where
                     let l_val = unsafe { ca.value_unchecked(l_idx) };
                     let r_val = unsafe { other.value_unchecked(r_idx) };
 
-                    match (
-                        ca.len() - ca.null_count() == 1,
-                        other.len() - other.null_count() == 1,
-                    ) {
+                    match (l_single, r_single) {
                         (true, true) => {
                             out = [IsSorted::Descending, IsSorted::Ascending]
                                 [l_val.tot_le(&r_val) as usize];

@@ -1,4 +1,4 @@
-use arrow::array::{BinaryArray, BinaryViewArray, PrimitiveArray};
+use polars_arrow::array::{BinaryArray, BinaryViewArray, PrimitiveArray};
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::*;
 use polars_utils::total_ord::TotalEq;
@@ -153,6 +153,8 @@ pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> 
         | DT::Float64 => unreachable!("primitive numeric"),
 
         // to_physical
+        #[cfg(feature = "dtype-map")]
+        DT::Map(..) => unreachable!(),
         #[cfg(feature = "dtype-decimal")]
         DT::Decimal(..) => unreachable!(),
         #[cfg(feature = "dtype-categorical")]

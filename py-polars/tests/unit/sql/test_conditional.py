@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
@@ -8,6 +8,7 @@ import pytest
 import polars as pl
 from polars.exceptions import SQLSyntaxError
 from polars.testing import assert_frame_equal
+from tests.unit.sql import assert_sql_matches
 
 
 @pytest.fixture
@@ -91,7 +92,9 @@ def test_control_flow(foods_ipc_path: Path) -> None:
             SQLSyntaxError,
             match=r"(IFNULL|NULLIF) expects 2 arguments \(found 3\)",
         ):
-            pl.SQLContext(df=nums).execute(f"SELECT {null_func}(x,y,z) FROM df")
+            pl.SQLContext(df=nums).execute(
+                f"SELECT {null_func}(x,y,z) FROM df"
+            ).collect()
 
 
 def test_greatest_least() -> None:
@@ -113,7 +116,7 @@ def test_greatest_least() -> None:
               GREATEST("a", "b") AS max_ab,
               GREATEST("c", "d", ) AS max_cd,
               GREATEST("e", "f") AS max_ef,
-              GREATEST('1999-12-31'::date, "e", "f") AS max_efx
+              GREATEST(DATE('1999-12-31'), "e", "f") AS max_efx
             FROM df
             """
         ).collect()
@@ -148,7 +151,7 @@ def test_greatest_least() -> None:
               LEAST("a", "b") AS min_ab,
               LEAST("c", "d") AS min_cd,
               LEAST("e", "f") AS min_ef,
-              LEAST("f", "e", '1999-12-31'::date) AS min_efx
+              LEAST("f", "e", DATE('1999-12-31')) AS min_efx
             FROM df
             """
         ).collect()
@@ -175,3 +178,33 @@ def test_greatest_least() -> None:
                 }
             ),
         )
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        "COALESCE(d, '1900-01-01')",
+        "IFNULL(d, '1900-01-01')",
+        "NULLIF(d, '1997-01-01')",
+        "GREATEST(d, '1996-01-01')",
+        "LEAST('1996-01-01', d)",
+        "COALESCE(ts, '2000-01-01 10:30:00')",
+        "NULLIF(ts, '1997-01-01 12:00:00')",
+        "COALESCE(d, ts, '2000-01-01 10:30:00')",
+        "GREATEST(ts, d, '1996-01-01 10:30:00')",
+    ],
+)
+def test_conditional_temporal_strings(expr: str) -> None:
+    df = pl.DataFrame(
+        {
+            "d": [date(1995, 6, 1), None, date(1997, 1, 1)],
+            "ts": [datetime(1995, 6, 1), None, datetime(1997, 1, 1, 12)],
+        }
+    )
+    assert_sql_matches(
+        frames={"t": df},
+        query=f"SELECT {expr} AS x FROM t",
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=["in-memory", "streaming"],
+    )

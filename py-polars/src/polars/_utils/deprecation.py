@@ -77,37 +77,11 @@ def _deprecate_function(message: str) -> IdentityFunction:
     return decorate
 
 
-def deprecate_streaming_parameter() -> IdentityFunction:
-    """Decorator to mark `streaming` argument as deprecated due to being renamed."""
-
-    def decorate(function: Callable[P, T]) -> Callable[P, T]:
-        @wraps(function)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            if "streaming" in kwargs:
-                issue_deprecation_warning(
-                    "the `streaming` parameter was deprecated in 1.25.0; use `engine` instead."
-                )
-                if kwargs["streaming"]:
-                    kwargs["engine"] = "streaming"
-                elif "engine" not in kwargs:
-                    kwargs["engine"] = "in-memory"
-
-                del kwargs["streaming"]
-
-            return function(*args, **kwargs)
-
-        wrapper.__signature__ = inspect.signature(function)  # type: ignore[attr-defined]
-        return wrapper
-
-    return decorate
-
-
 def deprecate_renamed_parameter(
     old_name: str,
     new_name: str,
     *,
     version: str,
-    mapper: Callable[[object], object] = lambda x: x,
 ) -> IdentityFunction:
     """
     Decorator to mark a function parameter as deprecated due to being renamed.
@@ -127,7 +101,7 @@ def deprecate_renamed_parameter(
         @wraps(function)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             _rename_keyword_argument(
-                old_name, new_name, kwargs, function.__qualname__, version, mapper
+                old_name, new_name, kwargs, function.__qualname__, version
             )
             return function(*args, **kwargs)
 
@@ -143,7 +117,6 @@ def _rename_keyword_argument(
     kwargs: dict[str, object],
     func_name: str,
     version: str,
-    mapper: Callable[[object], object],
 ) -> None:
     """Rename a keyword argument of a function."""
     if old_name in kwargs:
@@ -162,7 +135,7 @@ def _rename_keyword_argument(
             f"the argument `{old_name}` for `{func_name}` is deprecated. "
             f"It was renamed to `{new_name}`{in_version}."
         )
-        kwargs[new_name] = mapper(kwargs.pop(old_name))
+        kwargs[new_name] = kwargs.pop(old_name)
 
 
 def deprecate_nonkeyword_arguments(
@@ -347,22 +320,14 @@ def identify_deprecations(*types: DeprecationType) -> dict[str, list[str]]:
         If empty, all types are returned; recognised values are:
             - "function"
             - "renamed_parameter"
-            - "streaming_parameter"
             - "nonkeyword_arguments"
             - "parameter_as_multi_positional"
 
     Examples
     --------
     >>> from polars._utils.deprecation import identify_deprecations
-    >>> identify_deprecations("streaming_parameter")  # doctest: +IGNORE_RESULT
-    {'streaming_parameter': [
-        'functions.lazy.collect_all',
-        'functions.lazy.collect_all_async',
-        'lazyframe.frame.LazyFrame.collect',
-        'lazyframe.frame.LazyFrame.collect_async',
-        'lazyframe.frame.LazyFrame.explain',
-        'lazyframe.frame.LazyFrame.show_graph',
-    ]}
+    >>> identify_deprecations("nonkeyword_arguments")  # doctest: +IGNORE_RESULT
+    {'nonkeyword_arguments': ['functions.business.business_day_count']}
     """
     valid_types = set(get_args(DeprecationType))
     for tp in types:
@@ -403,7 +368,6 @@ __all__ = [
     "deprecate_nonkeyword_arguments",
     "deprecate_parameter_as_multi_positional",
     "deprecate_renamed_parameter",
-    "deprecate_streaming_parameter",
     "deprecated",
     "identify_deprecations",
 ]

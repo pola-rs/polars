@@ -82,7 +82,7 @@ pub(super) fn optimize_functions(
         IRFunctionExpr::Reverse => {
             let input = expr_arena.get(input[0].node());
             match input {
-                AExpr::Sort { expr, options } => {
+                AExpr::Sort { expr, options } if !options.maintain_order => {
                     let mut options = *options;
                     options.descending = !options.descending;
                     options.nulls_last = !options.nulls_last;
@@ -95,7 +95,7 @@ pub(super) fn optimize_functions(
                     expr,
                     by,
                     sort_options,
-                } => {
+                } if !sort_options.maintain_order => {
                     let mut sort_options = sort_options.clone();
                     sort_options.descending = sort_options.descending.iter().map(|x| !*x).collect();
                     sort_options.nulls_last = sort_options.nulls_last.iter().map(|x| !*x).collect();
@@ -137,7 +137,7 @@ pub(super) fn optimize_functions(
             }
         },
         #[cfg(feature = "is_in")]
-        IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }) if ctx.in_filter => {
+        IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }) if ctx.is_filter_predicate => {
             let haystack = expr_arena.get(input[1].node());
             let empty = match haystack {
                 AExpr::Literal(LiteralValue::Series(s)) => s.is_empty(),
@@ -218,24 +218,26 @@ pub(super) fn optimize_functions(
                 AExpr::Literal(lv) if lv.bool().is_some() => {
                     Some(AExpr::Literal(Scalar::from(!lv.bool().unwrap()).into()))
                 },
-                // not(x.is_null) => x.is_not_null
+                // not(x.is_y) => x.is_not_y  and  not(x.is_not_y) => x.is_y
                 AExpr::Function {
                     input,
-                    function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNull),
+                    function:
+                        IRFunctionExpr::Boolean(
+                            f @ IRBooleanFunction::IsNull
+                            | f @ IRBooleanFunction::IsNan
+                            | f @ IRBooleanFunction::IsNotNull
+                            | f @ IRBooleanFunction::IsNotNan,
+                        ),
                     options,
                 } => Some(AExpr::Function {
                     input: input.clone(),
-                    function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
-                    options: *options,
-                }),
-                // not(x.is_not_null) => x.is_null
-                AExpr::Function {
-                    input,
-                    function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
-                    options,
-                } => Some(AExpr::Function {
-                    input: input.clone(),
-                    function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNull),
+                    function: IRFunctionExpr::Boolean(match f {
+                        IRBooleanFunction::IsNull => IRBooleanFunction::IsNotNull,
+                        IRBooleanFunction::IsNan => IRBooleanFunction::IsNotNan,
+                        IRBooleanFunction::IsNotNull => IRBooleanFunction::IsNull,
+                        IRBooleanFunction::IsNotNan => IRBooleanFunction::IsNan,
+                        _ => unreachable!(),
+                    }),
                     options: *options,
                 }),
                 // not(a == b) => a != b
@@ -344,6 +346,70 @@ pub(super) fn optimize_functions(
                 _ => None,
             }
         },
+        #[cfg(feature = "temporal")]
+        IRFunctionExpr::TemporalExpr(IRTemporalFunction::CastTimeUnit(tu)) => {
+            let Some(sc) = scalar_literal(input[0].node(), expr_arena) else {
+                return Ok(None);
+            };
+            let value = sc.as_any_value().extract::<i64>();
+            let out = match sc.dtype() {
+                #[cfg(feature = "dtype-datetime")]
+                DataType::Datetime(from, tz) => match value {
+                    Some(v) => {
+                        let v = from.rescale_to(tu).datetime_value(v);
+                        Scalar::new_datetime(v, tu, tz.clone())
+                    },
+                    None => Scalar::null(DataType::Datetime(tu, tz.clone())),
+                },
+                #[cfg(feature = "dtype-duration")]
+                DataType::Duration(from) => match value {
+                    Some(v) => Scalar::new_duration(from.rescale_to(tu).duration_value(v), tu),
+                    None => Scalar::null(DataType::Duration(tu)),
+                },
+                _ => return Ok(None),
+            };
+            Some(AExpr::Literal(LiteralValue::Scalar(out)))
+        },
+        #[cfg(all(feature = "dtype-datetime", feature = "timezones"))]
+        IRFunctionExpr::TemporalExpr(IRTemporalFunction::ConvertTimeZone(ref time_zone)) => {
+            let Some(sc) = scalar_literal(input[0].node(), expr_arena) else {
+                return Ok(None);
+            };
+            let DataType::Datetime(tu, _) = sc.dtype() else {
+                return Ok(None);
+            };
+            let out = match sc.as_any_value().extract::<i64>() {
+                Some(v) => Scalar::new_datetime(v, *tu, Some(time_zone.clone())),
+                None => Scalar::null(DataType::Datetime(*tu, Some(time_zone.clone()))),
+            };
+            Some(AExpr::Literal(LiteralValue::Scalar(out)))
+        },
+        #[cfg(all(feature = "dtype-datetime", feature = "timezones"))]
+        IRFunctionExpr::TemporalExpr(IRTemporalFunction::ReplaceTimeZone(
+            ref time_zone,
+            non_existent,
+        )) => {
+            let (Some(sc), AExpr::Literal(ambiguous)) = (
+                scalar_literal(input[0].node(), expr_arena),
+                expr_arena.get(input[1].node()),
+            ) else {
+                return Ok(None);
+            };
+            let (DataType::Datetime(_, _), Some(ambiguous)) = (sc.dtype(), ambiguous.extract_str())
+            else {
+                return Ok(None);
+            };
+
+            let s = sc.clone().into_series(PlSmallStr::EMPTY);
+            let ambiguous = StringChunked::from_slice(PlSmallStr::EMPTY, &[ambiguous]);
+            let out = polars_core::chunked_array::temporal::replace_time_zone::replace_time_zone(
+                s.datetime()?,
+                time_zone.as_ref(),
+                &ambiguous,
+                non_existent,
+            )?;
+            Some(single_value_literal(&out.into_series())?)
+        },
         IRFunctionExpr::GatherEvery { n: 1, offset: 0 } => {
             Some(expr_arena.get(input[0].node()).clone())
         },
@@ -369,10 +435,10 @@ pub(super) fn optimize_functions(
 fn is_string_concat(ae: &AExpr, ignore_nulls: bool) -> bool {
     matches!(ae, AExpr::Function {
                 function:IRFunctionExpr::StringExpr(
-                    IRStringFunction::ConcatHorizontal{delimiter: sep, ignore_nulls: func_inore_nulls},
+                    IRStringFunction::ConcatHorizontal{delimiter: sep, ignore_nulls: func_ignore_nulls},
                 ),
                 ..
-            } if sep.is_empty() && *func_inore_nulls == ignore_nulls)
+            } if sep.is_empty() && *func_ignore_nulls == ignore_nulls)
 }
 
 #[cfg(all(feature = "strings", feature = "concat_str"))]
@@ -393,4 +459,24 @@ fn get_string_concat_input(
         } if sep.is_empty() && *func_ignore_nulls == ignore_nulls => Some(input),
         _ => None,
     }
+}
+
+/// Returns the value of `node` if it is a scalar literal of a known dtype.
+#[cfg(feature = "temporal")]
+fn scalar_literal(node: Node, expr_arena: &Arena<AExpr>) -> Option<&Scalar> {
+    match expr_arena.get(node) {
+        AExpr::Literal(LiteralValue::Scalar(sc)) => Some(sc),
+        _ => None,
+    }
+}
+
+/// Turns the single value of `s` into a scalar literal.
+#[cfg(all(feature = "dtype-datetime", feature = "timezones"))]
+fn single_value_literal(s: &Series) -> PolarsResult<AExpr> {
+    debug_assert_eq!(s.len(), 1);
+    let value = s.get(0)?.into_static();
+    Ok(AExpr::Literal(LiteralValue::Scalar(Scalar::new(
+        s.dtype().clone(),
+        value,
+    ))))
 }

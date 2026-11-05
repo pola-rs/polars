@@ -1,6 +1,7 @@
 mod any_value;
-use arrow::compute::concatenate::concatenate_validities;
-use arrow::compute::utils::combine_validities_and;
+pub mod cut;
+use polars_arrow::compute::concatenate::concatenate_validities;
+use polars_arrow::compute::utils::combine_validities_and;
 pub mod flatten;
 pub(crate) mod series;
 mod supertype;
@@ -9,12 +10,13 @@ use std::ops::{Deref, DerefMut};
 mod schema;
 
 pub use any_value::*;
-pub use arrow;
-use arrow::bitmap::Bitmap;
-pub use arrow::legacy::utils::*;
-pub use arrow::trusted_len::TrustMyLength;
 use flatten::*;
 use num_traits::{One, Zero};
+pub use polars_arrow;
+use polars_arrow::bitmap::Bitmap;
+pub use polars_arrow::legacy::utils::*;
+pub use polars_arrow::trusted_len::TrustMyLength;
+use polars_utils::slice::slice_offsets;
 pub use rayon;
 use rayon::prelude::*;
 pub use schema::*;
@@ -39,9 +41,21 @@ pub fn _set_partition_size() -> usize {
     RAYON.current_num_threads()
 }
 
+/// Iterate `items` in parallel with the number of rayon tasks bounded by the thread count.
+///
+/// Use this when the length of `items` grows with the data. A worker adds a stack frame per
+/// stolen job, so an unbounded number of tasks can overflow a worker stack.
+pub fn par_iter_bounded<T: Sync>(items: &[T]) -> rayon::iter::MinLen<rayon::slice::Iter<'_, T>> {
+    const TASKS_PER_THREAD: usize = 8;
+    let min_len = items
+        .len()
+        .div_ceil(_set_partition_size() * TASKS_PER_THREAD);
+    items.par_iter().with_min_len(min_len.max(1))
+}
+
 /// Just a wrapper structure which is useful for certain impl specializations.
 ///
-/// This is for instance use to implement
+/// This is for instance used to implement
 /// `impl<T> FromIterator<T::Native> for NoNull<ChunkedArray<T>>`
 /// as `Option<T::Native>` was already implemented:
 /// `impl<T> FromIterator<Option<T::Native>> for ChunkedArray<T>`
@@ -147,8 +161,7 @@ impl Container for DataFrame {
     }
 
     fn chunk_lengths(&self) -> impl Iterator<Item = usize> {
-        // @scalar-correctness?
-        self.columns()[0].as_materialized_series().chunk_lengths()
+        self.first_col_chunk_lengths()
     }
 }
 
@@ -334,26 +347,6 @@ pub fn split_df(df: &mut DataFrame, target: usize, strict: bool) -> Vec<DataFram
 pub fn slice_slice<T>(vals: &[T], offset: i64, len: usize) -> &[T] {
     let (raw_offset, slice_len) = slice_offsets(offset, len, vals.len());
     &vals[raw_offset..raw_offset + slice_len]
-}
-
-#[inline]
-pub fn slice_offsets(offset: i64, length: usize, array_len: usize) -> (usize, usize) {
-    let signed_start_offset = if offset < 0 {
-        offset.saturating_add_unsigned(array_len as u64)
-    } else {
-        offset
-    };
-    let signed_stop_offset = signed_start_offset.saturating_add_unsigned(length as u64);
-
-    let signed_array_len: i64 = array_len
-        .try_into()
-        .expect("array length larger than i64::MAX");
-    let clamped_start_offset = signed_start_offset.clamp(0, signed_array_len);
-    let clamped_stop_offset = signed_stop_offset.clamp(0, signed_array_len);
-
-    let slice_start_idx = clamped_start_offset as usize;
-    let slice_len = (clamped_stop_offset - clamped_start_offset) as usize;
-    (slice_start_idx, slice_len)
 }
 
 /// Apply a macro on the Series
@@ -730,7 +723,7 @@ macro_rules! apply_method_all_arrow_series {
             DataType::UInt32 => $self.u32().unwrap().$method($($args),*),
             DataType::UInt64 => $self.u64().unwrap().$method($($args),*),
             #[cfg(feature = "dtype-u128")]
-            DataType::UInt128 => $self.u128().unwrap().$medthod($($args),*),
+            DataType::UInt128 => $self.u128().unwrap().$method($($args),*),
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => $self.i8().unwrap().$method($($args),*),
             #[cfg(feature = "dtype-i16")]
@@ -839,25 +832,6 @@ Other dataframe has additional columns: [{df2_extra}]."#,
         df1.width(),
         df2.width(),
     )
-}
-
-pub fn accumulate_dataframes_vertical_unchecked_optional<I>(dfs: I) -> Option<DataFrame>
-where
-    I: IntoIterator<Item = DataFrame>,
-{
-    let mut iter = dfs.into_iter();
-    let additional = iter.size_hint().0;
-    let mut acc_df = iter.next()?;
-    acc_df.reserve_chunks(additional);
-
-    for df in iter {
-        if acc_df.width() != df.width() {
-            panic!("{}", width_mismatch(&acc_df, &df));
-        }
-
-        acc_df.vstack_mut_owned_unchecked(df);
-    }
-    Some(acc_df)
 }
 
 /// This takes ownership of the DataFrame so that drop is called earlier.
@@ -1325,28 +1299,6 @@ where
         }
     }
     None
-}
-
-/// ensure that nulls are propagated to both arrays
-pub fn coalesce_nulls<'a, T: PolarsDataType>(
-    a: &'a ChunkedArray<T>,
-    b: &'a ChunkedArray<T>,
-) -> (Cow<'a, ChunkedArray<T>>, Cow<'a, ChunkedArray<T>>) {
-    if a.null_count() > 0 || b.null_count() > 0 {
-        let (a, b) = align_chunks_binary(a, b);
-        let mut b = b.into_owned();
-        let a = a.coalesce_nulls(b.chunks());
-
-        for arr in a.chunks().iter() {
-            for arr_b in unsafe { b.chunks_mut() } {
-                *arr_b = arr_b.with_validity(arr.validity().cloned())
-            }
-        }
-        b.compute_len();
-        (Cow::Owned(a), Cow::Owned(b))
-    } else {
-        (Cow::Borrowed(a), Cow::Borrowed(b))
-    }
 }
 
 pub fn coalesce_nulls_columns(a: &Column, b: &Column) -> (Column, Column) {

@@ -16,3 +16,4 @@ pub mod partitioner_pipeline;
 pub mod sink_morsel;
 pub mod sinked_path_info_list;
 pub mod size;
+pub mod writable;

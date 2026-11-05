@@ -1,3 +1,5 @@
+use polars_buffer::Buffer;
+
 use super::CowBuffer;
 use crate::parquet::compression::Compression;
 use crate::parquet::encoding::{Encoding, get_length};
@@ -25,6 +27,12 @@ pub struct CompressedDataPage {
     uncompressed_page_size: usize,
     pub(crate) descriptor: Descriptor,
     pub num_rows: Option<usize>,
+    pub num_nulls: Option<usize>,
+    /// Combined length in bytes of all byte array values in the page, used for the
+    /// column chunk's [`SizeStatistics`](polars_parquet_format::SizeStatistics).
+    /// Every occurrence counts, but nulls and length prefixes don't. Only set on
+    /// byte array pages that are being written.
+    pub unencoded_byte_array_data_bytes: Option<i64>,
 }
 
 impl CompressedDataPage {
@@ -36,6 +44,7 @@ impl CompressedDataPage {
         uncompressed_page_size: usize,
         descriptor: Descriptor,
         num_rows: usize,
+        num_nulls: usize,
     ) -> Self {
         Self {
             header,
@@ -44,10 +53,13 @@ impl CompressedDataPage {
             uncompressed_page_size,
             descriptor,
             num_rows: Some(num_rows),
+            num_nulls: Some(num_nulls),
+            unencoded_byte_array_data_bytes: None,
         }
     }
 
     /// Returns a new [`CompressedDataPage`].
+    #[inline]
     pub(crate) fn new_read(
         header: DataPageHeader,
         buffer: CowBuffer,
@@ -62,17 +74,22 @@ impl CompressedDataPage {
             uncompressed_page_size,
             descriptor,
             num_rows: None,
+            num_nulls: None,
+            unencoded_byte_array_data_bytes: None,
         }
     }
 
+    #[inline]
     pub fn header(&self) -> &DataPageHeader {
         &self.header
     }
 
+    #[inline]
     pub fn uncompressed_size(&self) -> usize {
         self.uncompressed_page_size
     }
 
+    #[inline]
     pub fn compressed_size(&self) -> usize {
         self.buffer.len()
     }
@@ -80,16 +97,23 @@ impl CompressedDataPage {
     /// The compression of the data in this page.
     /// Note that what is compressed in a page depends on its version:
     /// in V1, the whole data (`[repetition levels][definition levels][values]`) is compressed; in V2 only the values are compressed.
+    #[inline]
     pub fn compression(&self) -> Compression {
         self.compression
     }
 
+    #[inline]
     pub fn num_values(&self) -> usize {
         self.header.num_values()
     }
 
     pub fn num_rows(&self) -> Option<usize> {
         self.num_rows
+    }
+
+    /// The number of null values, see [`DataPage::new`]. Only pages that are written have it.
+    pub fn num_nulls(&self) -> Option<usize> {
+        self.num_nulls
     }
 
     pub fn null_count(&self) -> Option<usize> {
@@ -122,6 +146,7 @@ pub enum DataPageHeader {
 }
 
 impl DataPageHeader {
+    #[inline]
     pub fn num_values(&self) -> usize {
         match &self {
             DataPageHeader::V1(d) => d.num_values as usize,
@@ -129,6 +154,7 @@ impl DataPageHeader {
         }
     }
 
+    #[inline]
     pub fn null_count(&self) -> Option<usize> {
         match &self {
             DataPageHeader::V1(_) => None,
@@ -156,23 +182,47 @@ pub struct DataPage {
     pub(super) buffer: CowBuffer,
     pub descriptor: Descriptor,
     pub num_rows: Option<usize>,
+    pub num_nulls: Option<usize>,
+    /// Combined length in bytes of all byte array values in the page, used for the
+    /// column chunk's [`SizeStatistics`](polars_parquet_format::SizeStatistics).
+    /// Every occurrence counts, but nulls and length prefixes don't. Only set on
+    /// byte array pages that are being written.
+    pub unencoded_byte_array_data_bytes: Option<i64>,
+    /// The allocation size of `buffer`, if it is owned by this page alone, so decoders may keep it
+    /// alive.
+    pub(super) shared_capacity: Option<usize>,
+}
+
+/// The buffer of a [`DataPage`] that decoders may keep alive in their output.
+#[derive(Debug, Clone, Copy)]
+pub struct SharedPageBuffer<'a> {
+    pub buffer: &'a Buffer<u8>,
+    /// The size of the allocation that `buffer` keeps alive.
+    pub capacity: usize,
 }
 
 impl DataPage {
+    /// `num_nulls` is the number of null values, including null and empty lists. The page holds
+    /// `num_values - num_nulls` non-null values.
     pub fn new(
         header: DataPageHeader,
         buffer: CowBuffer,
         descriptor: Descriptor,
         num_rows: usize,
+        num_nulls: usize,
     ) -> Self {
         Self {
             header,
             buffer,
             descriptor,
             num_rows: Some(num_rows),
+            num_nulls: Some(num_nulls),
+            unencoded_byte_array_data_bytes: None,
+            shared_capacity: None,
         }
     }
 
+    #[inline]
     pub(crate) fn new_read(
         header: DataPageHeader,
         buffer: CowBuffer,
@@ -183,15 +233,49 @@ impl DataPage {
             buffer,
             descriptor,
             num_rows: None,
+            num_nulls: None,
+            unencoded_byte_array_data_bytes: None,
+            shared_capacity: None,
         }
     }
 
+    #[inline]
     pub fn header(&self) -> &DataPageHeader {
         &self.header
     }
 
+    #[inline]
     pub fn buffer(&self) -> &[u8] {
         &self.buffer
+    }
+
+    /// Turns an owned buffer into a [`Buffer`] that decoders may keep alive in their output.
+    pub fn share_buffer(&mut self) {
+        if let CowBuffer::Owned(buffer) = &mut self.buffer {
+            self.shared_capacity = Some(buffer.capacity());
+            self.buffer = CowBuffer::Borrowed(Buffer::from_vec(std::mem::take(buffer)));
+        }
+    }
+
+    /// The page buffer, if decoders may keep it alive in their output.
+    pub fn shared_buffer(&self) -> Option<SharedPageBuffer<'_>> {
+        match (&self.buffer, self.shared_capacity) {
+            (CowBuffer::Borrowed(buffer), Some(capacity)) => {
+                Some(SharedPageBuffer { buffer, capacity })
+            },
+            _ => None,
+        }
+    }
+
+    /// The page buffer as a `Vec`, if no one else holds it.
+    pub fn into_owned_buffer(self) -> Option<Vec<u8>> {
+        match self.buffer {
+            CowBuffer::Borrowed(buffer) if self.shared_capacity.is_some() => {
+                buffer.into_mut().right()
+            },
+            CowBuffer::Borrowed(_) => None,
+            CowBuffer::Owned(buffer) => Some(buffer),
+        }
     }
 
     /// Returns a mutable reference to the internal buffer.
@@ -200,10 +284,12 @@ impl DataPage {
         self.buffer.to_mut()
     }
 
+    #[inline]
     pub fn num_values(&self) -> usize {
         self.header.num_values()
     }
 
+    #[inline]
     pub fn null_count(&self) -> Option<usize> {
         self.header.null_count()
     }
@@ -305,6 +391,20 @@ impl CompressedPage {
             CompressedPage::Dict(_) => Some(0),
         }
     }
+
+    pub(crate) fn num_nulls(&self) -> Option<usize> {
+        match self {
+            CompressedPage::Data(page) => page.num_nulls(),
+            CompressedPage::Dict(_) => Some(0),
+        }
+    }
+
+    pub(crate) fn unencoded_byte_array_data_bytes(&self) -> Option<i64> {
+        match self {
+            CompressedPage::Data(page) => page.unencoded_byte_array_data_bytes,
+            CompressedPage::Dict(_) => None,
+        }
+    }
 }
 
 /// An uncompressed, encoded dictionary page.
@@ -353,6 +453,7 @@ impl CompressedDictPage {
     }
 
     /// The compression of the data in this page.
+    #[inline]
     pub fn compression(&self) -> Compression {
         self.compression
     }
@@ -447,4 +548,15 @@ pub fn split_buffer(page: &DataPage) -> ParquetResult<EncodedSplitBuffer<'_>> {
             )
         },
     }
+}
+
+pub fn split_plain_buffer_values<T>(page: &DataPage) -> ParquetResult<&[u8]> {
+    let num_values = page.num_values();
+    let mut bytes: &[u8] = split_buffer(page)?.values;
+
+    if bytes.len().div_ceil(std::mem::size_of::<T>()) > num_values {
+        bytes = &bytes[..num_values * std::mem::size_of::<T>()];
+    }
+
+    Ok(bytes)
 }

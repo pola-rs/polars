@@ -48,6 +48,7 @@ macro_rules! flag_getter_setters {
 flag_getter_setters! {
     (TYPE_COERCION, get_type_coercion, set_type_coercion, clear=false)
     (TYPE_CHECK, get_type_check, set_type_check, clear=false)
+    (QUERY_MONITORING, get_query_monitoring, set_query_monitoring, clear=false)
 
     (PROJECTION_PUSHDOWN, get_projection_pushdown, set_projection_pushdown, clear=true)
     (PREDICATE_PUSHDOWN, get_predicate_pushdown, set_predicate_pushdown, clear=true)
@@ -60,6 +61,8 @@ flag_getter_setters! {
     (FAST_PROJECTION, get_fast_projection, set_fast_projection, clear=true)
     (SORT_COLLAPSE, get_sort_collapse, set_sort_collapse, clear=true)
     (PARTITION_HIVE, get_pre_partition_hive, set_pre_partition_hive, clear=true)
+    (JOIN_ORDER, get_join_order, set_join_order, clear=true)
+    (ROW_ESTIMATE, get_row_estimate, set_row_estimate, clear=true)
 
     (EAGER, get_eager, set_eager, clear=true)
     (STREAMING, get_streaming, set_streaming, clear=true)

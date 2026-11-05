@@ -18,6 +18,10 @@ pub struct MergeSortedNode {
 
     maintain_order: bool,
 
+    // Whether the inputs will not produce any more morsels.
+    left_input_done: bool,
+    right_input_done: bool,
+
     // Not yet merged buffers.
     left_unmerged: VecDeque<DataFrame>,
     right_unmerged: VecDeque<DataFrame>,
@@ -31,6 +35,9 @@ impl MergeSortedNode {
             starting_nulls: false,
 
             maintain_order,
+
+            left_input_done: false,
+            right_input_done: false,
 
             left_unmerged: VecDeque::new(),
             right_unmerged: VecDeque::new(),
@@ -112,7 +119,7 @@ fn find_mergeable(
                 right_cutoff = right_null_count;
             } else {
                 // If there are ending nulls then first do things without the
-                // nulls and then repeat with only the nulls the nulls.
+                // nulls and then repeat with only the nulls.
                 let left_is_all_nulls = left_null_count == left.height();
                 let right_is_all_nulls = right_null_count == right.height();
 
@@ -202,10 +209,12 @@ impl ComputeNode for MergeSortedNode {
         // Abstraction: we merge buffer state with port state so we can map
         // to one three possible 'effective' states:
         // no data now (_blocked); data available (); or no data anymore (_done)
-        let left_done = recv[0] == PortState::Done && self.left_unmerged.is_empty();
-        let right_done = recv[1] == PortState::Done && self.right_unmerged.is_empty();
+        self.left_input_done = recv[0] == PortState::Done;
+        self.right_input_done = recv[1] == PortState::Done;
+        let left_done = self.left_input_done && self.left_unmerged.is_empty();
+        let right_done = self.right_input_done && self.right_unmerged.is_empty();
 
-        // We're done as soon as one side is done.
+        // We're done when the output is done or both sides are done.
         if send[0] == PortState::Done || (left_done && right_done) {
             recv[0] = PortState::Done;
             recv[1] = PortState::Done;
@@ -255,6 +264,8 @@ impl ComputeNode for MergeSortedNode {
         let seq = &mut self.seq;
         let starting_nulls = &mut self.starting_nulls;
         let maintain_order = self.maintain_order;
+        let left_input_done = self.left_input_done;
+        let right_input_done = self.right_input_done;
         let left_unmerged = &mut self.left_unmerged;
         let right_unmerged = &mut self.right_unmerged;
 
@@ -265,36 +276,22 @@ impl ComputeNode for MergeSortedNode {
                 if left_unmerged.is_empty() && right_unmerged.is_empty() =>
             {
                 let recv = port.parallel();
-                let inner_handles = recv
-                    .into_iter()
-                    .zip(send)
-                    .map(|(mut recv, mut send)| {
-                        let morsel_offset = *seq;
-                        scope.spawn_task(TaskPriority::High, async move {
-                            let mut max_seq = morsel_offset;
-                            while let Ok(mut morsel) = recv.recv().await {
-                                // Ensure the morsel sequence id stream is monotone non-decreasing.
-                                let seq = morsel.seq().offset_by(morsel_offset);
-                                max_seq = max_seq.max(seq);
+                join_handles.extend(recv.into_iter().zip(send).map(|(mut recv, mut send)| {
+                    let seq = *seq;
+                    scope.spawn_task(TaskPriority::High, async move {
+                        while let Ok(mut morsel) = recv.recv().await {
+                            // Ensure the morsel sequence id stream is monotone non-decreasing.
+                            let seq = morsel.seq().offset_by(seq);
+                            morsel.set_seq(seq);
 
-                                remove_key_column(morsel.df_mut());
-
-                                morsel.set_seq(seq);
-                                if send.send(morsel).await.is_err() {
-                                    break;
-                                }
+                            remove_key_column(&mut *morsel.df_mut().await);
+                            if send.send(morsel).await.is_err() {
+                                break;
                             }
-                            max_seq
-                        })
-                    })
-                    .collect::<Vec<_>>();
+                        }
 
-                join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                    // Update our global maximum.
-                    for handle in inner_handles {
-                        *seq = (*seq).max(handle.await);
-                    }
-                    Ok(())
+                        Ok(())
+                    })
                 }));
             },
 
@@ -314,7 +311,7 @@ impl ComputeNode for MergeSortedNode {
                         // Request the port stop producing morsels.
                         morsel.source_token().stop();
                         // Buffer all the morsels that were already produced.
-                        unmerged.push_back(morsel.into_df());
+                        unmerged.push_back(morsel.into_df().await);
                     }
                 }
 
@@ -341,8 +338,11 @@ impl ComputeNode for MergeSortedNode {
                             starting_nulls,
                             maintain_order,
                         )? {
-                            let left_mergeable =
-                                Morsel::new(left_mergeable, *seq, source_token.clone());
+                            let left_mergeable = Morsel::new_unregistered(
+                                left_mergeable,
+                                *seq,
+                                source_token.clone(),
+                            );
                             *seq = seq.successor();
 
                             if distributor
@@ -390,7 +390,7 @@ impl ComputeNode for MergeSortedNode {
                             }
                             break;
                         };
-                        empty_unmerged.push_back(m.into_df());
+                        empty_unmerged.push_back(m.into_df().await);
                     }
 
                     // Clear out buffers until we cannot anymore. This helps allows us to go to the
@@ -403,7 +403,7 @@ impl ComputeNode for MergeSortedNode {
                         maintain_order,
                     )? {
                         let left_mergeable =
-                            Morsel::new(left_mergeable, *seq, source_token.clone());
+                            Morsel::new_unregistered(left_mergeable, *seq, source_token.clone());
                         *seq = seq.successor();
 
                         if distributor
@@ -418,16 +418,16 @@ impl ComputeNode for MergeSortedNode {
                     // If one of the ports is done and does not have buffered data anymore, we
                     // flush the data on the other side. After this point, this node just pipes
                     // data through.
-                    let pass = if left.is_none() && left_unmerged.is_empty() {
+                    let pass = if left_input_done && left_unmerged.is_empty() {
                         Some((right.as_mut(), &mut *right_unmerged))
-                    } else if right.is_none() && right_unmerged.is_empty() {
+                    } else if right_input_done && right_unmerged.is_empty() {
                         Some((left.as_mut(), &mut *left_unmerged))
                     } else {
                         None
                     };
                     if let Some((pass_port, pass_unmerged)) = pass {
                         for df in std::mem::take(pass_unmerged) {
-                            let m = Morsel::new(df, *seq, source_token.clone());
+                            let m = Morsel::new_unregistered(df, *seq, source_token.clone());
                             *seq = seq.successor();
                             if distributor.send((m, DataFrame::empty())).await.is_err() {
                                 return Ok(());
@@ -456,6 +456,15 @@ impl ComputeNode for MergeSortedNode {
                                 }
                             }
                         }
+                    } else {
+                        // One side is blocked and has no buffered data, so nothing more can be
+                        // merged in this phase. Stop the other side and buffer what it produced.
+                        if let Some(p) = &mut left {
+                            buffer_unmerged(p, left_unmerged).await;
+                        }
+                        if let Some(p) = &mut right {
+                            buffer_unmerged(p, right_unmerged).await;
+                        }
                     }
 
                     Ok(())
@@ -472,7 +481,7 @@ impl ComputeNode for MergeSortedNode {
                             // the input. We don't want to mess with the source token or wait group
                             // and just pass it on.
                             if right.shape_has_zero() {
-                                remove_key_column(left.df_mut());
+                                remove_key_column(&mut *left.df_mut().await);
 
                                 if send.send(left).await.is_err() {
                                     return Ok(());
@@ -480,7 +489,8 @@ impl ComputeNode for MergeSortedNode {
                                 continue;
                             }
 
-                            let (mut left, seq, source_token, _) = left.into_inner();
+                            let (left_sf, seq, source_token, _) = left.into_inner();
+                            let mut left = left_sf.into_df().await;
                             let left_s = left
                                 .columns()
                                 .last()
@@ -505,19 +515,22 @@ impl ComputeNode for MergeSortedNode {
                                 // input so we can divide by half.
                                 let (m1, m2) = merged.split_at((merged.height() / 2) as i64);
 
-                                // MorselSeq have to be monotonely non-decreasing so we can
+                                // MorselSeq have to be monotonically non-decreasing so we can
                                 // pass the same sequence token twice.
-                                let morsel = Morsel::new(m1, seq, source_token.clone());
+                                let morsel =
+                                    Morsel::new_unregistered(m1, seq, source_token.clone());
                                 if send.send(morsel).await.is_err() {
                                     break;
                                 }
-                                let mut morsel = Morsel::new(m2, seq, source_token.clone());
+                                let mut morsel =
+                                    Morsel::new_unregistered(m2, seq, source_token.clone());
                                 morsel.set_consume_token(wait_group.token());
                                 if send.send(morsel).await.is_err() {
                                     break;
                                 }
                             } else {
-                                let mut morsel = Morsel::new(merged, seq, source_token.clone());
+                                let mut morsel =
+                                    Morsel::new_unregistered(merged, seq, source_token.clone());
                                 morsel.set_consume_token(wait_group.token());
                                 if send.send(morsel).await.is_err() {
                                     break;

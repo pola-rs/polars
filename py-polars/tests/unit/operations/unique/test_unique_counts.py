@@ -46,6 +46,28 @@ def test_unique_counts_null() -> None:
     assert_series_equal(s.unique_counts(), expected)
 
 
+def test_unique_counts_boolean_sorted_nulls_last() -> None:
+    ascending = pl.Series("a", [None, False, True, False, None, True, True]).sort(
+        nulls_last=True
+    )
+    assert ascending.to_list() == [False, False, True, True, True, None, None]
+    assert ascending.flags["SORTED_ASC"]
+    assert_series_equal(
+        ascending.unique_counts(),
+        pl.Series("a", [2, 3, 2], dtype=pl.get_index_type()),
+    )
+
+    descending = pl.Series("a", [None, False, True, False, True]).sort(
+        descending=True, nulls_last=True
+    )
+    assert descending.to_list() == [True, True, False, False, None]
+    assert descending.flags["SORTED_DESC"]
+    assert_series_equal(
+        descending.unique_counts(),
+        pl.Series("a", [2, 2, 1], dtype=pl.get_index_type()),
+    )
+
+
 @given(s=series(excluded_dtypes=[pl.Object]))
 def test_unique_counts_parametric(s: pl.Series) -> None:
     result = s.unique_counts()

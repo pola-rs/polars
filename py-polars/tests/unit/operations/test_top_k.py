@@ -9,12 +9,13 @@ from hypothesis.strategies import booleans
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import ComputeError
+from polars.exceptions import ArgumentRemovedError, ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
+    from pathlib import Path
 
     from polars._typing import IntoExpr
 
@@ -199,7 +200,7 @@ def test_top_k() -> None:
     assert_frame_equal(
         df2.group_by("c", maintain_order=True)
         .agg(pl.all().top_k_by("a", 2))
-        .explode(cs.all().exclude("c"), empty_as_null=False),
+        .explode(cs.all().exclude("c")),
         pl.DataFrame(
             {
                 "c": ["Apple", "Apple", "Orange", "Banana", "Banana"],
@@ -213,7 +214,7 @@ def test_top_k() -> None:
     assert_frame_equal(
         df2.group_by("c", maintain_order=True)
         .agg(pl.all().bottom_k_by("a", 2))
-        .explode(cs.all().exclude("c"), empty_as_null=False),
+        .explode(cs.all().exclude("c")),
         pl.DataFrame(
             {
                 "c": ["Apple", "Apple", "Orange", "Banana", "Banana"],
@@ -226,17 +227,23 @@ def test_top_k() -> None:
 
     assert_frame_equal(
         df2.select(
-            pl.col("a", "b", "c").top_k_by(["c", "a"], 2).name.suffix("_top_by_ca"),
-            pl.col("a", "b", "c").top_k_by(["c", "b"], 2).name.suffix("_top_by_cb"),
+            pl.col("a", "b", "c")
+            .top_k_by(["c", "a"], 2)
+            .name.suffix("_top_by_ca")
+            .sort(),
+            pl.col("a", "b", "c")
+            .top_k_by(["c", "b"], 2)
+            .name.suffix("_top_by_cb")
+            .sort(),
         ),
         pl.DataFrame(
             {
                 "a_top_by_ca": [2, 6],
-                "b_top_by_ca": [11, 7],
-                "c_top_by_ca": ["Orange", "Banana"],
+                "b_top_by_ca": [7, 11],
+                "c_top_by_ca": ["Banana", "Orange"],
                 "a_top_by_cb": [2, 5],
-                "b_top_by_cb": [11, 8],
-                "c_top_by_cb": ["Orange", "Banana"],
+                "b_top_by_cb": [8, 11],
+                "c_top_by_cb": ["Banana", "Orange"],
             }
         ),
         check_row_order=False,
@@ -429,8 +436,8 @@ def test_bottom_k_nulls(s: pl.Series, should_sort: bool) -> None:
     assert_series_equal(result, s, check_order=False)
 
 
-def test_top_k_descending_deprecated() -> None:
-    with pytest.deprecated_call():
+def test_top_k_descending_removed() -> None:
+    with pytest.raises(ArgumentRemovedError):
         pl.col("a").top_k_by("b", descending=True)  # type: ignore[call-arg]
 
 
@@ -649,3 +656,85 @@ def test_top_k_dyn_pred_pushdown() -> None:
     assert pred is not None
     assert with_cols is not None
     assert pred.start() > with_cols.start()
+
+
+def test_top_k_bottom_k_categorical_lexical_28344() -> None:
+    s = pl.Series("c", ["9", "1", "5", "3"], dtype=pl.Categorical)
+
+    assert_series_equal(
+        s.top_k(2),
+        pl.Series("c", ["9", "5"], dtype=pl.Categorical),
+        check_order=False,
+    )
+    assert_series_equal(
+        s.bottom_k(2),
+        pl.Series("c", ["1", "3"], dtype=pl.Categorical),
+        check_order=False,
+    )
+
+
+@pytest.mark.parametrize("descending", [False, True])
+def test_top_k_decimal_single_row_row_group(descending: bool, tmp_path: Path) -> None:
+    from decimal import Decimal
+
+    # The last row group has only the maximum value.
+    df = pl.DataFrame(
+        {"x": [Decimal(i) / 4 + 5 for i in range(130)]},
+        schema={"x": pl.Decimal(9, 2)},
+    )
+    path = f"{tmp_path}/data.parquet"
+    df.write_parquet(path, row_group_size=3)
+
+    lf = pl.scan_parquet(path)
+    for _ in range(5):
+        assert_frame_equal(
+            lf.top_k(3, by="x", reverse=descending).collect(engine="streaming"),
+            df.top_k(3, by="x", reverse=descending),
+            check_row_order=False,
+        )
+
+
+@pytest.mark.parametrize("col", ["a", "b"])
+@pytest.mark.parametrize(
+    "optimizations",
+    [
+        pl.QueryOptFlags(),
+        # Keeps the repeated keys while still lowering to a top-k.
+        pl.QueryOptFlags(simplify_expression=False),
+        pl.QueryOptFlags.none(),
+    ],
+)
+def test_top_k_repeated_key_30081(col: str, optimizations: pl.QueryOptFlags) -> None:
+    lf = pl.LazyFrame({"a": [3, 1, 2, 0], "b": ["x", "y", "z", "w"]})
+    expected_asc = pl.DataFrame({"a": [0, 1], "b": ["w", "y"]})
+    expected_desc = pl.DataFrame({"a": [3, 2], "b": ["x", "z"]})
+    if col == "b":
+        expected_asc = pl.DataFrame({"a": [0, 3], "b": ["w", "x"]})
+        expected_desc = pl.DataFrame({"a": [2, 1], "b": ["z", "y"]})
+
+    def collect(q: pl.LazyFrame) -> pl.DataFrame:
+        return q.collect(optimizations=optimizations)
+
+    assert_frame_equal(collect(lf.sort([col, col]).head(2)), expected_asc)
+    assert_frame_equal(
+        collect(lf.sort([col, col], descending=[True, False]).head(2)),
+        expected_desc,
+    )
+    assert_frame_equal(
+        collect(lf.sort(pl.col(col), pl.col(col).reverse()).head(2)), expected_asc
+    )
+    assert_frame_equal(
+        collect(lf.top_k(2, by=[col, col])), expected_desc, check_row_order=False
+    )
+    assert_frame_equal(
+        collect(lf.bottom_k(2, by=[col, col])), expected_asc, check_row_order=False
+    )
+    assert_frame_equal(
+        collect(lf.select(pl.struct(pl.all()).top_k_by([col, col], 2)).unnest("a")),
+        expected_desc,
+        check_row_order=False,
+    )
+    assert_frame_equal(
+        collect(lf.select(pl.all().sort_by(col, col, descending=[False, True]))),
+        pl.concat([expected_asc, expected_desc.reverse()]),
+    )

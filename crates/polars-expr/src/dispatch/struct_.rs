@@ -4,9 +4,10 @@ use polars_core::error::{PolarsResult, polars_err};
 use polars_core::prelude::{
     Column, InitHashMaps, IntoColumn, PlIndexMap, StringChunked, StructChunked,
 };
-use polars_plan::dsl::{ColumnsUdf, SpecialEq};
+use polars_plan::dsl::{ColumnsUdf, SpecialEq, StructEvalVariant};
 use polars_plan::plans::IRStructFunction;
 use polars_plan::prelude::PlanCallback;
+use polars_utils::aliases::PlHashSet;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -15,6 +16,7 @@ pub fn function_expr_to_udf(func: IRStructFunction) -> SpecialEq<Arc<dyn Columns
     match func {
         FieldByName(name) => map!(get_by_name, &name),
         RenameFields(names) => map!(rename_fields, names.clone()),
+        DropFields(names, strict) => map!(drop_fields, names.clone(), strict),
         PrefixFields(prefix) => map!(prefix_fields, prefix.as_str()),
         SuffixFields(suffix) => map!(suffix_fields, suffix.as_str()),
         #[cfg(feature = "json")]
@@ -39,6 +41,32 @@ pub(super) fn rename_fields(s: &Column, names: Arc<[PlSmallStr]>) -> PolarsResul
             s.rename(name.clone());
             s
         })
+        .collect::<Vec<_>>();
+    let mut out = StructChunked::from_series(ca.name().clone(), ca.len(), fields.iter())?;
+    out.zip_outer_validity(ca);
+    Ok(out.into_column())
+}
+
+pub(super) fn drop_fields(
+    s: &Column,
+    names: Arc<[PlSmallStr]>,
+    strict: bool,
+) -> PolarsResult<Column> {
+    // Use PlHashSet to prevent quadratic behavior
+    let names_set = PlHashSet::from_iter(names.iter());
+    let ca = s.struct_()?;
+    if strict {
+        debug_assert!(
+            names
+                .iter()
+                .all(|name| ca.struct_fields().iter().any(|fld| name == fld.name())),
+            "strictness should have already been checked during planning"
+        );
+    }
+    let fields = ca
+        .fields_as_series()
+        .into_iter()
+        .filter(|fld| !names_set.contains(fld.name()))
         .collect::<Vec<_>>();
     let mut out = StructChunked::from_series(ca.name().clone(), ca.len(), fields.iter())?;
     out.zip_outer_validity(ca);
@@ -84,6 +112,7 @@ pub(super) fn to_json(col: &Column) -> PolarsResult<Column> {
     use polars_core::prelude::CompatLevel;
 
     let s = col.as_materialized_series();
+    s.dtype().ensure_json_map_keys()?;
     let iter = (0..s.n_chunks()).map(|i| {
         polars_json::json::write::serialize_to_utf8(&*s.to_arrow(i, CompatLevel::newest()))
     });
@@ -91,23 +120,36 @@ pub(super) fn to_json(col: &Column) -> PolarsResult<Column> {
     Ok(StringChunked::from_chunk_iter(s.name().clone(), iter).into_column())
 }
 
-pub(crate) fn with_fields(args: &[Column]) -> PolarsResult<Column> {
+/// Merge the evaluated fields in `args[1..]` into the input struct `args[0]`.
+///
+/// For [`StructEvalVariant::WithFields`] the input fields are retained (and overwritten on a name
+/// collision); for [`StructEvalVariant::Select`] only the evaluated fields are kept.
+pub(crate) fn struct_eval(args: &[Column], variant: StructEvalVariant) -> PolarsResult<Column> {
     let s = &args[0];
 
     let ca = s.struct_()?;
-    let current = ca.fields_as_series();
 
-    let mut fields = PlIndexMap::with_capacity(current.len() + s.len() - 1);
+    let new_fields = match variant {
+        StructEvalVariant::WithFields => {
+            let current = ca.fields_as_series();
+            let mut fields = PlIndexMap::with_capacity(current.len() + args.len() - 1);
 
-    for field in current.iter() {
-        fields.insert(field.name(), field);
-    }
+            for field in current.iter() {
+                fields.insert(field.name(), field);
+            }
 
-    for field in &args[1..] {
-        fields.insert(field.name(), field.as_materialized_series());
-    }
+            for field in &args[1..] {
+                fields.insert(field.name(), field.as_materialized_series());
+            }
 
-    let new_fields = fields.into_values().cloned().collect::<Vec<_>>();
+            fields.into_values().cloned().collect::<Vec<_>>()
+        },
+        StructEvalVariant::Select => args[1..]
+            .iter()
+            .map(|field| field.as_materialized_series().clone())
+            .collect::<Vec<_>>(),
+    };
+
     let mut out = StructChunked::from_series(ca.name().clone(), ca.len(), new_fields.iter())?;
     out.zip_outer_validity(ca);
     Ok(out.into_column())

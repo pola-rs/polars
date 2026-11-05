@@ -7,15 +7,10 @@ from typing import TYPE_CHECKING, Any, TypeVar, overload
 from polars._utils.various import NO_DEFAULT
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import ItemsView, Iterable, Iterator, KeysView, ValuesView
+    from typing import Self
 
     from polars._utils.various import NoDefault
-
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
 
 D = TypeVar("D")
 K = TypeVar("K")
@@ -87,11 +82,12 @@ class LRUCache(MutableMapping[K, V]):
         """Insert a value into the cache."""
         if self._max_size == 0:
             return
-        while len(self) >= self._max_size:
-            self.popitem()
         if key in self:
             # moving accessed items to the end marks them as recently used
             self._items.move_to_end(key)
+        else:
+            while len(self) >= self._max_size:
+                self.popitem()
         self._items[key] = value
 
     def __repr__(self) -> str:

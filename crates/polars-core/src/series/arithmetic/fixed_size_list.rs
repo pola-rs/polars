@@ -52,6 +52,10 @@ impl NumericFixedSizeListOp {
     pub fn floor_div() -> Self {
         Self(NumericOp::FloorDiv)
     }
+
+    pub fn trunc_div() -> Self {
+        Self(NumericOp::TruncDiv)
+    }
 }
 
 impl NumericFixedSizeListOp {
@@ -69,11 +73,11 @@ use inner::NumericFixedSizeListOpHelper;
 
 #[cfg(feature = "array_arithmetic")]
 mod inner {
-    use arrow::bitmap::{Bitmap, BitmapBuilder};
-    use arrow::compute::utils::combine_validities_and;
     use fixed_size_list::NumericFixedSizeListOp;
     use list_utils::with_match_pl_num_arith;
     use num_traits::Zero;
+    use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+    use polars_arrow::compute::utils::combine_validities_and;
     use polars_compute::arithmetic::pl_num::PlNumArithmetic;
     use polars_utils::float::IsFloat;
 

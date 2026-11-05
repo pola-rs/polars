@@ -1,8 +1,9 @@
-use arrow::legacy::error::PolarsResult;
 use either::Either;
+use polars_arrow::legacy::error::PolarsResult;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
 use polars_core::utils::{get_numeric_upcast_supertype_lossless, try_get_supertype};
+use polars_defs::join::JoinValidation;
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
 
@@ -12,7 +13,7 @@ use crate::dsl::Expr;
 #[cfg(feature = "iejoin")]
 use crate::plans::AExpr;
 
-fn check_join_keys(keys: &[Expr]) -> PolarsResult<()> {
+fn check_join_keys<'a>(keys: impl IntoIterator<Item = &'a Expr>) -> PolarsResult<()> {
     for e in keys {
         if has_expr(e, |e| matches!(e, Expr::Alias(_, _))) {
             polars_bail!(
@@ -24,52 +25,118 @@ fn check_join_keys(keys: &[Expr]) -> PolarsResult<()> {
     Ok(())
 }
 
+fn expand_join_keys(
+    keys: Vec<Expr>,
+    schema: &Schema,
+    side: &str,
+    opt_flags: &mut OptFlags,
+) -> PolarsResult<Vec<Expr>> {
+    let keys = rewrite_projections(keys, &Default::default(), schema, opt_flags)?;
+    polars_ensure!(
+        !keys.is_empty(),
+        InvalidOperation: "{side} join keys expanded to zero expressions"
+    );
+    Ok(keys)
+}
+
+fn to_join_expr_irs(
+    keys: Vec<Expr>,
+    schema: &Schema,
+    expr_arena: &mut Arena<AExpr>,
+    opt_flags: &OptFlags,
+) -> PolarsResult<Vec<ExprIR>> {
+    let mut ctx = ExprToIRContext::new_with_opt_eager(expr_arena, schema, opt_flags);
+    keys.iter()
+        .map(|e| to_expr_ir_materialized_lit(e, &mut ctx))
+        .collect()
+}
+
 /// Returns: left: join_node, right: last_node (often both the same)
 pub fn resolve_join(
     input_left: Either<Arc<DslPlan>, Node>,
     input_right: Either<Arc<DslPlan>, Node>,
-    left_on: Vec<Expr>,
-    right_on: Vec<Expr>,
-    predicates: Vec<Expr>,
+    condition: JoinCondition,
     mut options: JoinOptionsIR,
     ctxt: &mut DslConversionContext,
 ) -> PolarsResult<(Node, Node)> {
-    if !predicates.is_empty() {
-        feature_gated!("iejoin", {
-            debug_assert!(left_on.is_empty() && right_on.is_empty());
-            return resolve_join_where(
-                input_left.unwrap_left(),
-                input_right.unwrap_left(),
-                predicates,
-                options,
-                ctxt,
-            );
-        })
-    }
+    let (mut left_on, mut right_on) = match condition {
+        JoinCondition::NonEqui { predicates } => {
+            feature_gated!("iejoin", {
+                polars_ensure!(!predicates.is_empty(), InvalidOperation: "expected join keys/predicates");
+                return resolve_join_where(
+                    input_left.unwrap_left(),
+                    input_right.unwrap_left(),
+                    predicates,
+                    options,
+                    ctxt,
+                );
+            })
+        },
+        JoinCondition::Equi { left_on, right_on } => (left_on, right_on),
+    };
 
     let owned = Arc::unwrap_or_clone;
-    let mut input_left = input_left.map_right(Ok).right_or_else(|input| {
-        to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(join left)))
-    })?;
-    let mut input_right = input_right.map_right(Ok).right_or_else(|input| {
-        to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(join right)))
-    })?;
+    let mut input_left = input_left
+        .map_right(Ok)
+        .right_or_else(|input| to_alp_impl(owned(input), ctxt).context(failed_here!(join left)))?;
+    let mut input_right = input_right
+        .map_right(Ok)
+        .right_or_else(|input| to_alp_impl(owned(input), ctxt).context(failed_here!(join right)))?;
 
     let schema_left = ctxt.lp_arena.get(input_left).schema(ctxt.lp_arena);
     let schema_right = ctxt.lp_arena.get(input_right).schema(ctxt.lp_arena);
 
     if options.args.how.is_cross() {
-        polars_ensure!(left_on.len() + right_on.len() == 0, InvalidOperation: "a 'cross' join doesn't expect any join keys");
+        polars_ensure!(
+            left_on.is_empty() && right_on.is_empty(),
+            InvalidOperation: "a 'cross' join doesn't expect any join keys"
+        );
     } else {
-        polars_ensure!(left_on.len() + right_on.len() > 0, InvalidOperation: "expected join keys/predicates");
-        check_join_keys(&left_on)?;
-        check_join_keys(&right_on)?;
+        polars_ensure!(
+            !left_on.is_empty() || !right_on.is_empty(),
+            InvalidOperation: "expected join keys/predicates"
+        );
+        check_join_keys(left_on.iter().chain(&right_on))?;
 
-        let mut turn_off_coalesce = false;
-        for e in left_on.iter().chain(right_on.iter()) {
-            // Any expression that is not a simple column expression will turn of coalescing.
-            turn_off_coalesce |= has_expr(e, |e| !matches!(e, Expr::Column(_)));
+        left_on = expand_join_keys(left_on, &schema_left, "left", ctxt.opt_flags)?;
+        right_on = expand_join_keys(right_on, &schema_right, "right", ctxt.opt_flags)?;
+        polars_ensure!(
+            left_on.len() == right_on.len(),
+            InvalidOperation:
+                "join keys expanded to a different number of expressions (left: {}, right: {})",
+            left_on.len(),
+            right_on.len(),
+        );
+
+        #[cfg(feature = "asof_join")]
+        if let JoinType::AsOf(asof_options) = &options.args.how {
+            polars_ensure!(
+                left_on.len() == 1,
+                InvalidOperation:
+                "'asof_join' expects exactly one join key after expression expansion, got {}",
+                left_on.len(),
+            );
+            match (&asof_options.left_by, &asof_options.right_by) {
+                (None, None) => {},
+                (Some(l), Some(r)) => {
+                    polars_ensure!(
+                        l.len() == r.len(),
+                        InvalidOperation: "expected equal number of columns in `by_left` ({}) and `by_right` ({}) in `asof_join`",
+                        l.len(), r.len()
+                    );
+                    validate_columns_in_input(l, &schema_left, "asof_join")?;
+                    validate_columns_in_input(r, &schema_right, "asof_join")?;
+                },
+                _ => {
+                    polars_bail!(InvalidOperation: "expected both 'by_left' and 'by_right' to be set in 'asof_join'")
+                },
+            }
         }
+
+        let turn_off_coalesce = left_on
+            .iter()
+            .chain(&right_on)
+            .any(|e| !matches!(e, Expr::Column(_)));
         if turn_off_coalesce {
             if matches!(options.args.coalesce, JoinCoalesce::CoalesceColumns) {
                 polars_warn!(
@@ -80,64 +147,16 @@ pub fn resolve_join(
         }
 
         options.args.validation.is_valid_join(&options.args.how)?;
-
-        #[cfg(feature = "asof_join")]
-        if let JoinType::AsOf(options) = &options.args.how {
-            match (&options.left_by, &options.right_by) {
-                (None, None) => {},
-                (Some(l), Some(r)) => {
-                    polars_ensure!(l.len() == r.len(), InvalidOperation: "expected equal number of columns in 'by_left' and 'by_right' in 'asof_join'");
-                    validate_columns_in_input(l, &schema_left, "asof_join")?;
-                    validate_columns_in_input(r, &schema_right, "asof_join")?;
-                },
-                _ => {
-                    polars_bail!(InvalidOperation: "expected both 'by_left' and 'by_right' to be set in 'asof_join'")
-                },
-            }
-        }
-
-        polars_ensure!(
-            left_on.len() == right_on.len(),
-            InvalidOperation:
-                "the number of columns given as join key (left: {}, right:{}) should be equal",
-                left_on.len(),
-                right_on.len()
-        );
     }
 
-    let mut left_on = left_on
-        .into_iter()
-        .map(|e| {
-            to_expr_ir_materialized_lit(
-                e,
-                &mut ExprToIRContext::new_with_opt_eager(
-                    ctxt.expr_arena,
-                    &schema_left,
-                    ctxt.opt_flags,
-                ),
-            )
-        })
-        .collect::<PolarsResult<Vec<_>>>()?;
-    let mut right_on = right_on
-        .into_iter()
-        .map(|e| {
-            to_expr_ir_materialized_lit(
-                e,
-                &mut ExprToIRContext::new_with_opt_eager(
-                    ctxt.expr_arena,
-                    &schema_right,
-                    ctxt.opt_flags,
-                ),
-            )
-        })
-        .collect::<PolarsResult<Vec<_>>>()?;
-    let mut joined_on = PlIndexSet::new();
-
+    let mut left_on = to_join_expr_irs(left_on, &schema_left, ctxt.expr_arena, ctxt.opt_flags)?;
+    let mut right_on = to_join_expr_irs(right_on, &schema_right, ctxt.expr_arena, ctxt.opt_flags)?;
     #[cfg(feature = "iejoin")]
     let check = !matches!(options.args.how, JoinType::IEJoin);
     #[cfg(not(feature = "iejoin"))]
     let check = true;
-    if check {
+    if check && left_on.len() > 1 {
+        let mut joined_on = PlIndexSet::with_capacity(left_on.len());
         for (l, r) in left_on.iter().zip(right_on.iter()) {
             polars_ensure!(
                 joined_on.insert((l.output_name(), r.output_name())),
@@ -147,28 +166,46 @@ pub fn resolve_join(
             )
         }
     }
-    drop(joined_on);
 
     ctxt.conversion_optimizer
         .fill_scratch(&left_on, ctxt.expr_arena);
     ctxt.conversion_optimizer
         .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, input_left, true)
-        .map_err(|e| e.context("'join' failed".into()))?;
+        .context("'join' failed")?;
     ctxt.conversion_optimizer
         .fill_scratch(&right_on, ctxt.expr_arena);
     ctxt.conversion_optimizer
         .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, input_right, true)
-        .map_err(|e| e.context("'join' failed".into()))?;
+        .context("'join' failed")?;
 
     // Re-evaluate because of mutable borrows earlier.
     let schema_left = ctxt.lp_arena.get(input_left).schema(ctxt.lp_arena);
     let schema_right = ctxt.lp_arena.get(input_right).schema(ctxt.lp_arena);
 
+    // Inner-joining on the same non-null constant on both sides pairs every row with every
+    // row: a cross join (unless the key multiplicity is to be validated).
+    let same_constant_key = |l: &ExprIR, r: &ExprIR| match (
+        ctxt.expr_arena.get(l.node()),
+        ctxt.expr_arena.get(r.node()),
+    ) {
+        (AExpr::Literal(l), AExpr::Literal(r)) => l.is_scalar() && !l.is_null() && l == r,
+        _ => false,
+    };
+    if options.args.how == JoinType::Inner
+        && options.args.validation == JoinValidation::ManyToMany
+        && left_on
+            .iter()
+            .zip(&right_on)
+            .all(|(l, r)| same_constant_key(l, r))
+    {
+        options.args.how = JoinType::Cross;
+        left_on.clear();
+        right_on.clear();
+    }
+
     // # Resolve scalars
     //
-    // Scalars need to be expanded. We translate them to temporary columns added with
-    // `with_columns` and remove them later with `project`
-    // This way the backends don't have to expand the literals in the join implementation
+    // Materialize scalar keys so schema resolution and coalescing see named columns.
 
     let has_scalars = left_on
         .iter()
@@ -326,29 +363,27 @@ pub fn resolve_join(
 
     #[cfg(feature = "asof_join")]
     if let JoinType::AsOf(options) = &mut options.args.how {
-        use polars_core::utils::arrow::temporal_conversions::MILLISECONDS_IN_DAY;
+        use polars_core::utils::polars_arrow::temporal_conversions::MILLISECONDS_IN_DAY;
+
+        let key_dtype = || {
+            ctxt.expr_arena
+                .get(left_on[0].node())
+                .to_dtype(&ToFieldContext::new(ctxt.expr_arena, &schema_left))
+        };
 
         // prepare the tolerance
         // we must ensure that we use the right units
         if let Some(tol) = &options.tolerance_str {
-            let duration = polars_time::Duration::try_parse(tol)?;
+            let duration = polars_defs::time::duration::Duration::try_parse(tol)?;
             polars_ensure!(
                 duration.months() == 0,
                 ComputeError: "cannot use month offset in timedelta of an asof join; \
                 consider using 4 weeks"
             );
             use DataType::*;
-            match ctxt
-                .expr_arena
-                .get(left_on[0].node())
-                .to_dtype(&ToFieldContext::new(ctxt.expr_arena, &schema_left))?
-            {
+            match key_dtype()? {
                 Datetime(tu, _) | Duration(tu) => {
-                    let tolerance = match tu {
-                        TimeUnit::Nanoseconds => duration.duration_ns(),
-                        TimeUnit::Microseconds => duration.duration_us(),
-                        TimeUnit::Milliseconds => duration.duration_ms(),
-                    };
+                    let tolerance = duration.duration(tu);
                     options.tolerance = Some(Scalar::from(tolerance))
                 },
                 Date => {
@@ -366,52 +401,56 @@ pub fn resolve_join(
                 },
             }
         }
+
+        if let Some(tolerance) = &options.tolerance
+            && let Some(normalized) = normalize_asof_tolerance(tolerance, &key_dtype()?)
+        {
+            options.tolerance = Some(normalized);
+        }
     }
 
+    // The coalesced key columns are replaced by their upcast versions.
+    if !as_with_columns_l.is_empty() {
+        input_left = IRBuilder::new(input_left, ctxt.expr_arena, ctxt.lp_arena)
+            .with_columns(as_with_columns_l, ProjectionOptions::default())
+            .node();
+    }
+    if !as_with_columns_r.is_empty() {
+        input_right = IRBuilder::new(input_right, ctxt.expr_arena, ctxt.lp_arena)
+            .with_columns(as_with_columns_r, ProjectionOptions::default())
+            .node();
+    }
     // These are Arc<Schema>, into_owned is free.
-    let schema_left = schema_left.into_owned();
-    let schema_right = schema_right.into_owned();
+    let schema_left = ctxt
+        .lp_arena
+        .get(input_left)
+        .schema(ctxt.lp_arena)
+        .into_owned();
+    let schema_right = ctxt
+        .lp_arena
+        .get(input_right)
+        .schema(ctxt.lp_arena)
+        .into_owned();
 
-    let join_schema = det_join_schema(
-        &schema_left,
-        &schema_right,
-        &left_on,
-        &right_on,
-        &options,
-        ctxt.expr_arena,
-    )
-    .map_err(|e| e.context(failed_here!(join schema resolving)))?;
+    options.options = {
+        let on = left_on.into_iter().zip(right_on).collect();
+        match &options.args.how {
+            #[cfg(feature = "asof_join")]
+            JoinType::AsOf(_) => JoinTypeOptionsIR::AsOf { on },
+            _ => JoinTypeOptionsIR::Equi {
+                on,
+                fused_predicate: None,
+            },
+        }
+    };
 
-    if key_cols_coalesced {
-        input_left = if as_with_columns_l.is_empty() {
-            input_left
-        } else {
-            ctxt.lp_arena.add(IR::HStack {
-                input: input_left,
-                exprs: as_with_columns_l,
-                schema: schema_left,
-                options: ProjectionOptions::default(),
-            })
-        };
-
-        input_right = if as_with_columns_r.is_empty() {
-            input_right
-        } else {
-            ctxt.lp_arena.add(IR::HStack {
-                input: input_right,
-                exprs: as_with_columns_r,
-                schema: schema_right,
-                options: ProjectionOptions::default(),
-            })
-        };
-    }
+    let join_schema = det_join_schema(&schema_left, &schema_right, &options)
+        .context(failed_here!(join schema resolving))?;
 
     let ir = IR::Join {
         input_left,
         input_right,
         schema: join_schema.clone(),
-        left_on,
-        right_on,
         options: Arc::new(options),
     };
     let join_node = ctxt.lp_arena.add(ir);
@@ -459,15 +498,22 @@ fn resolve_join_where(
     mut options: JoinOptionsIR,
     ctxt: &mut DslConversionContext,
 ) -> PolarsResult<(Node, Node)> {
+    polars_ensure!(
+        options.args.how.supports_non_equi(),
+        InvalidOperation:
+        "'{}' join is not supported with non-equi join conditions",
+        options.args.how,
+    );
+
     // If not eager, respect the flag.
     if ctxt.opt_flags.eager() {
         ctxt.opt_flags.set(OptFlags::PREDICATE_PUSHDOWN, true);
     }
     check_join_keys(&predicates)?;
-    let input_left = to_alp_impl(Arc::unwrap_or_clone(input_left), ctxt)
-        .map_err(|e| e.context(failed_here!(join left)))?;
-    let input_right = to_alp_impl(Arc::unwrap_or_clone(input_right), ctxt)
-        .map_err(|e| e.context(failed_here!(join left)))?;
+    let input_left =
+        to_alp_impl(Arc::unwrap_or_clone(input_left), ctxt).context(failed_here!(join left))?;
+    let input_right =
+        to_alp_impl(Arc::unwrap_or_clone(input_right), ctxt).context(failed_here!(join left))?;
 
     let schema_left = ctxt
         .lp_arena
@@ -475,14 +521,15 @@ fn resolve_join_where(
         .schema(ctxt.lp_arena)
         .into_owned();
 
-    options.args.how = JoinType::Cross;
+    // We start assuming a cross join. Take the how, to keep join information.
+    let how = std::mem::replace(&mut options.args.how, JoinType::Cross);
+    // Left and right joins coalesce. We don't want that in join_where.
+    options.args.coalesce = JoinCoalesce::KeepColumns;
 
     let (mut last_node, join_node) = resolve_join(
         Either::Right(input_left),
         Either::Right(input_right),
-        vec![],
-        vec![],
-        vec![],
+        Default::default(),
         options,
         ctxt,
     )?;
@@ -495,10 +542,11 @@ fn resolve_join_where(
 
     // Perform predicate validation.
     let mut upcast_exprs = Vec::<(Node, DataType)>::new();
+    let mut resolved = Vec::with_capacity(predicates.len());
     for e in predicates {
         let arena = &mut ctxt.expr_arena;
         let predicate = to_expr_ir_materialized_lit(
-            e,
+            &e,
             &mut ExprToIRContext::new_with_opt_eager(arena, &schema_merged, ctxt.opt_flags),
         )?;
         let node = predicate.node();
@@ -508,7 +556,7 @@ fn resolve_join_where(
         let dt_out = ae.to_dtype(&ToFieldContext::new(arena, &schema_merged))?;
         polars_ensure!(
             dt_out == DataType::Boolean,
-            ComputeError: "'join_where' predicates must resolve to boolean"
+            ComputeError: "'join_where' predicates must resolve to boolean, got {}", dt_out
         );
 
         ensure_lossless_binary_comparisons(
@@ -522,17 +570,60 @@ fn resolve_join_where(
         ctxt.conversion_optimizer
             .push_scratch(predicate.node(), ctxt.expr_arena);
 
-        let ir = IR::Filter {
-            input: last_node,
-            predicate,
-        };
-
-        last_node = ctxt.lp_arena.add(ir);
+        resolved.push(predicate);
     }
 
+    let node = resolved
+        .iter()
+        .map(|e| e.node())
+        .reduce(|left, right| {
+            ctxt.expr_arena.add(AExpr::BinaryExpr {
+                left,
+                op: Operator::And,
+                right,
+            })
+        })
+        .expect("'join_where' requires at least one predicate");
+
+    let is_inner = how.is_inner();
+    if is_inner {
+        // Use the filter splitter so aggregates see the full join input,
+        // regardless of the predicate order.
+        let predicates = if ctxt.opt_flags.predicate_pushdown() {
+            SplitPredicates::new(node, ctxt.expr_arena, None, ctxt.pushdown_maintain_errors).map(
+                |SplitPredicates { pushable, fallible }| {
+                    pushable.into_iter().chain(fallible).collect::<Vec<_>>()
+                },
+            )
+        } else {
+            None
+        };
+        for node in predicates.unwrap_or_else(|| vec![node]) {
+            last_node = ctxt.lp_arena.add(IR::Filter {
+                input: last_node,
+                predicate: ExprIR::from_node(node, ctxt.expr_arena),
+            });
+        }
+    } else {
+        // Outer ON conditions must retain unmatched rows.
+        let predicate = ExprIR::from_node(node, ctxt.expr_arena);
+        let IR::Join { options, .. } = ctxt.lp_arena.get(join_node) else {
+            unreachable!()
+        };
+        let mut new_options = (**options).clone();
+        new_options.args.how = how;
+        new_options.options = JoinTypeOptionsIR::CrossAndFilter { predicate };
+
+        let IR::Join { options, .. } = ctxt.lp_arena.get_mut(join_node) else {
+            unreachable!()
+        };
+        *options = Arc::new(new_options);
+    }
+
+    // Outer predicates are stored on the join, so they read its output schema.
     ctxt.conversion_optimizer
-        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, last_node, false)
-        .map_err(|e| e.context("'join_where' failed".into()))?;
+        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, last_node, !is_inner)
+        .context("'join_where' failed")?;
 
     Ok((last_node, join_node))
 }
@@ -620,10 +711,20 @@ fn build_upcast_node_list(
                             left.to_dtype(&ToFieldContext::new(expr_arena, schema_merged))?;
                         let dtype_right =
                             right.to_dtype(&ToFieldContext::new(expr_arena, schema_merged))?;
-                        if dtype_left != dtype_right {
+                        // A decimal compares exactly with another decimal or an integer, and
+                        // a cast to a common decimal type can overflow.
+                        let is_exact = |dt: &DataType| dt.is_decimal() || dt.is_integer();
+                        let decimal_compare = (dtype_left.is_decimal() || dtype_right.is_decimal())
+                            && is_exact(&dtype_left)
+                            && is_exact(&dtype_right);
+                        if dtype_left != dtype_right && !decimal_compare {
                             // Ensure that we have a lossless cast between the two types.
-                            let dt = if dtype_left.is_primitive_numeric()
-                                || dtype_right.is_primitive_numeric()
+                            // Decimal has no lossless numeric upcast.
+                            let either_decimal =
+                                dtype_left.is_decimal() || dtype_right.is_decimal();
+                            let dt = if !either_decimal
+                                && (dtype_left.is_primitive_numeric()
+                                    || dtype_right.is_primitive_numeric())
                             {
                                 get_numeric_upcast_supertype_lossless(&dtype_left, &dtype_right)
                                     .ok_or(PolarsError::SchemaMismatch(
@@ -657,4 +758,24 @@ fn build_upcast_node_list(
         _ => ExprOrigin::None,
     };
     Ok(expr_origin)
+}
+
+/// The tolerance of an asof join on integer keys (by physical type) as the largest distance
+/// two matching keys may have: an unsigned value, capped at the largest distance two keys of
+/// that type can have. The asof engines accept this form, and the optimizer relies on it.
+#[cfg(feature = "asof_join")]
+fn normalize_asof_tolerance(tolerance: &Scalar, key_dtype: &DataType) -> Option<Scalar> {
+    let max_distance = match key_dtype.to_physical() {
+        DataType::Int8 | DataType::UInt8 => u8::MAX as u128,
+        DataType::Int16 | DataType::UInt16 => u16::MAX as u128,
+        DataType::Int32 | DataType::UInt32 => u32::MAX as u128,
+        DataType::Int64 | DataType::UInt64 => u64::MAX as u128,
+        _ => return None,
+    };
+    let value = tolerance.as_any_value();
+    let distance = match value.extract::<i128>() {
+        Some(v) => v.unsigned_abs(),
+        None => value.extract::<u128>()?,
+    };
+    Some(Scalar::from(distance.min(max_distance) as u64))
 }

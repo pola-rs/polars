@@ -154,7 +154,7 @@ print(
     )
     .tab_style(
         style.text(weight="bold"),
-        loc.body(columns="species"),
+        loc.stub(),
     )
     .as_raw_html()
 )

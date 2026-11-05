@@ -43,7 +43,7 @@ def test_repeat_expansion_in_group_by() -> None:
         .agg(pl.repeat(1, pl.len()).cum_sum())
         .to_dict(as_series=False)
     )
-    assert out == {"g": [1, 2, 3], "repeat": [[1], [1, 2], [1, 2, 3]]}
+    assert out == {"g": [1, 2, 3], "literal": [[1], [1, 2], [1, 2, 3]]}
 
 
 def test_agg_after_head() -> None:
@@ -117,7 +117,6 @@ def test_maintain_order_after_sampling() -> None:
     assert result.to_dict(as_series=False) == expected
 
 
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.parametrize("descending", [False, True])
 @pytest.mark.parametrize("nulls_last", [False, True])
 @pytest.mark.parametrize("maintain_order", [False, True])
@@ -127,7 +126,7 @@ def test_sorted_group_by_optimization(
     df = pl.DataFrame({"a": np.random.randint(0, 5, 20)})
 
     # the sorted optimization should not randomize the
-    # groups, so this is tests that we hit the sorted optimization
+    # groups, so this tests that we hit the sorted optimization
     sorted_implicit = (
         df.with_columns(pl.col("a").sort(descending=descending, nulls_last=nulls_last))
         .group_by("a", maintain_order=maintain_order)

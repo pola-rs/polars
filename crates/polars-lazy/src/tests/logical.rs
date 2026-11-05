@@ -1,4 +1,6 @@
-use polars_core::utils::arrow::temporal_conversions::{MICROSECONDS_IN_DAY, MILLISECONDS_IN_DAY};
+use polars_core::utils::polars_arrow::temporal_conversions::{
+    MICROSECONDS_IN_DAY, MILLISECONDS_IN_DAY,
+};
 
 use super::*;
 

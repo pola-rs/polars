@@ -110,6 +110,51 @@ def test_ewm_mean_leading_nulls() -> None:
     ).to_list() == [None, None, 1.0, 1.0]
 
 
+def test_ewm_sum() -> None:
+    s = pl.Series([1, 2, 3, 4, 5])
+    expected = pl.Series([1.0, 2.5, 4.25, 6.125, 8.0625])
+    assert_series_equal(s.ewm_sum(alpha=0.5), expected)
+
+    s = pl.Series([2, 5, 3])
+    expected = pl.Series([2.0, 6.0, 6.0])
+    assert_series_equal(s.ewm_sum(alpha=0.5, ignore_nulls=True), expected)
+    assert_series_equal(s.ewm_sum(alpha=0.5, ignore_nulls=False), expected)
+
+    expected = pl.Series([None, 6.0, 6.0])
+    assert_series_equal(
+        s.ewm_sum(alpha=0.5, min_samples=2, ignore_nulls=True), expected
+    )
+
+    s = pl.Series([None, None, 5.0, 7.0, None, 2.0, 1.0, 4.0])
+    expected = pl.Series(
+        [
+            None,
+            None,
+            5.0,
+            9.5,
+            None,
+            4.375,
+            3.1875,
+            5.59375,
+        ],
+    )
+    assert_series_equal(s.ewm_sum(alpha=0.5, ignore_nulls=False), expected)
+
+    expected = pl.Series(
+        [
+            None,
+            None,
+            5.0,
+            9.5,
+            None,
+            6.75,
+            4.375,
+            6.1875,
+        ],
+    )
+    assert_series_equal(s.ewm_sum(alpha=0.5, ignore_nulls=True), expected)
+
+
 def test_ewm_mean_min_samples() -> None:
     series = pl.Series([1.0, None, None, None])
 
@@ -174,6 +219,21 @@ def test_ewm_std_var_with_nulls() -> None:
     assert_series_equal(std**2, expected)
 
 
+@pytest.mark.parametrize("adjust", [False, True])
+@pytest.mark.parametrize("gap", [5, 34, 60])
+def test_ewm_std_var_long_null_run_28620(adjust: bool, gap: int) -> None:
+    s = pl.Series([10.0] + [None] * gap + [12.0])
+    kwargs: dict[str, Any] = {
+        "span": 2,
+        "adjust": adjust,
+        "bias": False,
+        "ignore_nulls": False,
+    }
+    expected_var = pl.Series([None] * (gap + 1) + [2.0], dtype=pl.Float64)
+    assert_series_equal(s.ewm_var(**kwargs), expected_var)
+    assert_series_equal(s.ewm_std(**kwargs), expected_var.sqrt())
+
+
 def test_ewm_param_validation() -> None:
     s = pl.Series("values", range(10))
 
@@ -201,7 +261,6 @@ def test_ewm_param_validation() -> None:
 
 
 # https://github.com/pola-rs/polars/issues/4951
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud  # reason: chunking
 def test_ewm_with_multiple_chunks() -> None:
     df0 = pl.DataFrame(
@@ -303,6 +362,14 @@ def test_ewm_methods(
                 ewm_mean_pl = ewm_mean_pl.fill_null(strategy="forward")
 
             assert_series_equal(ewm_mean_pl, ewm_mean_pd, abs_tol=1e-07)
+
+            if adjust:
+                ewm_sum_params = {k: v for k, v in pl_params.items() if k != "adjust"}
+                ewm_sum_pl = s.ewm_sum(**ewm_sum_params).fill_nan(None)
+                ewm_sum_pd = pl.Series(p.ewm(**pd_params).sum())
+                if ignore_nulls:
+                    ewm_sum_pl = ewm_sum_pl.fill_null(strategy="forward")
+                assert_series_equal(ewm_sum_pl, ewm_sum_pd, abs_tol=1e-07)
 
             # std:
             ewm_std_pl = s.ewm_std(bias=bias, **pl_params).fill_nan(None)

@@ -1,8 +1,8 @@
 use std::io::Write;
 
-use arrow::datatypes::Metadata;
-use arrow::io::ipc::IpcField;
-use arrow::io::ipc::write::{self, EncodedData, WriteOptions};
+use polars_arrow::datatypes::Metadata;
+use polars_arrow::io::ipc::IpcField;
+use polars_arrow::io::ipc::write::{self, EncodedData, WriteOptions};
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};

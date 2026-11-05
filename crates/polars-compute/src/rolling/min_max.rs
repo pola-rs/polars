@@ -1,5 +1,5 @@
-use arrow::bitmap::Bitmap;
-use arrow::types::NativeType;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::types::NativeType;
 use polars_utils::IdxSize;
 use polars_utils::min_max::MinMaxPolicy;
 
@@ -49,8 +49,8 @@ impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNulls<T> for MinMaxWind
         unsafe { Some(*self.inner.values.get_unchecked(abs)) }
     }
 
-    fn is_valid(&self, min_periods: usize) -> bool {
-        RollingAggWindowNulls::<T, IdxSize>::is_valid(&self.inner, min_periods)
+    fn is_valid(&self, min_samples: usize) -> bool {
+        RollingAggWindowNulls::<T, IdxSize>::is_valid(&self.inner, min_samples)
     }
 
     fn slice_len(&self) -> usize {

@@ -63,7 +63,7 @@ pub fn calc_n_parts(size: u64, target_part_size: NonZeroU64) -> u64 {
         return if size == 0 { 0 } else { 1 };
     }
 
-    let n_parts = size / target_part_size.get();
+    let n_parts = size / target_part_size;
 
     (n_parts..=n_parts.saturating_add(1))
         .min_by_key(|n_parts| (size / *n_parts).abs_diff(target_part_size.get()))

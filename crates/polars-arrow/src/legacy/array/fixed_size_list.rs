@@ -1,6 +1,6 @@
 use polars_error::PolarsResult;
 
-use crate::array::{ArrayRef, FixedSizeListArray, NullArray, new_null_array};
+use crate::array::{ArrayRef, FixedSizeListArray, NullArray, new_empty_array, new_null_array};
 use crate::bitmap::BitmapBuilder;
 use crate::compute::concatenate::concatenate_unchecked;
 use crate::datatypes::ArrowDataType;
@@ -58,34 +58,38 @@ impl AnonymousBuilder {
         self.validity = Some(validity)
     }
 
-    pub fn finish(self, inner_dtype: Option<&ArrowDataType>) -> PolarsResult<FixedSizeListArray> {
-        let mut inner_dtype = inner_dtype.unwrap_or_else(|| self.arrays[0].dtype());
+    pub fn finish(self, inner_dtype: &ArrowDataType) -> PolarsResult<FixedSizeListArray> {
+        let values = if self.arrays.is_empty() {
+            new_empty_array(inner_dtype.clone())
+        } else {
+            let mut inner_dtype = inner_dtype;
 
-        if is_nested_null(inner_dtype) {
-            for arr in &self.arrays {
-                if !is_nested_null(arr.dtype()) {
-                    inner_dtype = arr.dtype();
-                    break;
+            if is_nested_null(inner_dtype) {
+                for arr in &self.arrays {
+                    if !is_nested_null(arr.dtype()) {
+                        inner_dtype = arr.dtype();
+                        break;
+                    }
                 }
-            }
+            };
+
+            // convert nested null arrays to the correct dtype.
+            let arrays = self
+                .arrays
+                .iter()
+                .map(|arr| {
+                    if matches!(arr.dtype(), ArrowDataType::Null) {
+                        new_null_array(inner_dtype.clone(), arr.len())
+                    } else if is_nested_null(arr.dtype()) {
+                        convert_inner_type(&**arr, inner_dtype)
+                    } else {
+                        arr.to_boxed()
+                    }
+                })
+                .collect::<Vec<_>>();
+
+            concatenate_unchecked(&arrays)?
         };
-
-        // convert nested null arrays to the correct dtype.
-        let arrays = self
-            .arrays
-            .iter()
-            .map(|arr| {
-                if matches!(arr.dtype(), ArrowDataType::Null) {
-                    new_null_array(inner_dtype.clone(), arr.len())
-                } else if is_nested_null(arr.dtype()) {
-                    convert_inner_type(&**arr, inner_dtype)
-                } else {
-                    arr.to_boxed()
-                }
-            })
-            .collect::<Vec<_>>();
-
-        let values = concatenate_unchecked(&arrays)?;
 
         let dtype = FixedSizeListArray::default_datatype(values.dtype().clone(), self.width);
         Ok(FixedSizeListArray::new(

@@ -1,4 +1,4 @@
-//! Having `Object<&;static> in [`DataType`] make serde tag the `Deserialize` trait bound 'static
+//! Having `Object<'static>` in [`DataType`] makes serde tag the `Deserialize` trait bound 'static
 //! even though we skip serializing `Object`.
 //!
 //! We could use [serde_1712](https://github.com/serde-rs/serde/issues/1712), but that gave problems caused by
@@ -80,6 +80,8 @@ enum SerializableDataType {
     Null,
     #[cfg(feature = "dtype-struct")]
     Struct(Vec<Field>),
+    #[cfg(feature = "dtype-map")]
+    Map(Box<SerializableDataType>, Box<SerializableDataType>),
     // some logical types we cannot know statically, e.g. Datetime
     Unknown(UnknownKind),
     #[cfg(feature = "dtype-categorical")]
@@ -136,6 +138,11 @@ impl From<&DataType> for SerializableDataType {
             Unknown(kind) => Self::Unknown(*kind),
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds.clone()),
+            #[cfg(feature = "dtype-map")]
+            Map(key, value) => Self::Map(
+                Box::new(key.as_ref().into()),
+                Box::new(value.as_ref().into()),
+            ),
             #[cfg(feature = "dtype-categorical")]
             Categorical(cats, _) => Self::Categorical {
                 name: cats.name().to_string(),
@@ -195,6 +202,8 @@ impl From<SerializableDataType> for DataType {
             Unknown(kind) => Self::Unknown(kind),
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds),
+            #[cfg(feature = "dtype-map")]
+            Map(key, value) => Self::Map(Box::new((*key).into()), Box::new((*value).into())),
             #[cfg(feature = "dtype-categorical")]
             Categorical {
                 name,

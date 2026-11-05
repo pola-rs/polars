@@ -1,8 +1,8 @@
-use arrow::array::PrimitiveArray;
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::datatypes::ArrowDataType;
-use arrow::types::{AlignedBytes, NativeType};
 use bytemuck::Zeroable;
+use polars_arrow::array::PrimitiveArray;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::types::{AlignedBytes, NativeType};
 
 use super::super::utils;
 use super::{
@@ -11,7 +11,7 @@ use super::{
 };
 use crate::parquet::encoding::{Encoding, byte_stream_split, delta_bitpacked, hybrid_rle};
 use crate::parquet::error::ParquetResult;
-use crate::parquet::page::{DataPage, DictPage, split_buffer};
+use crate::parquet::page::{DataPage, DictPage, split_buffer, split_plain_buffer_values};
 use crate::parquet::types::{NativeType as ParquetNativeType, decode};
 use crate::read::Filter;
 use crate::read::deserialize::dictionary_encoded;
@@ -52,7 +52,7 @@ where
                 Ok(Self::Dictionary(values))
             },
             (Encoding::Plain, _) => {
-                let values = split_buffer(page)?.values;
+                let values = split_plain_buffer_values::<P>(page)?;
                 Ok(Self::Plain(values))
             },
             (Encoding::ByteStreamSplit, _) => {
@@ -229,7 +229,7 @@ where
             },
             (StateTranslation::Plain(values), S::Between(low, high)) => {
                 let values = ArrayChunks::new(values).unwrap();
-                use arrow::types::PrimitiveType as PT;
+                use polars_arrow::types::PrimitiveType as PT;
                 let is_signed = match T::PRIMITIVE {
                     PT::Int8 | PT::Int16 | PT::Int32 | PT::Int64 => true,
                     PT::UInt8 | PT::UInt16 | PT::UInt32 | PT::UInt64 => false,
@@ -304,7 +304,7 @@ where
     fn extend_decoded(
         &self,
         decoded: &mut Self::DecodedState,
-        additional: &dyn arrow::array::Array,
+        additional: &dyn polars_arrow::array::Array,
         is_optional: bool,
     ) -> ParquetResult<()> {
         let additional = additional

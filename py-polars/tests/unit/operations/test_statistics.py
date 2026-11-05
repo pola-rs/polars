@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import math
-from datetime import timedelta
+from datetime import date, timedelta
+from typing import TYPE_CHECKING
 
 import pytest
 from hypothesis import given
@@ -9,6 +10,9 @@ from hypothesis import given
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
+
+if TYPE_CHECKING:
+    from polars._typing import CorrelationMethod, EngineType
 
 
 def test_corr() -> None:
@@ -67,6 +71,31 @@ def test_cov_corr_f32_type() -> None:
     assert df.select(pl.corr("a", "b")).dtypes == [pl.Float32]
 
 
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.cov("a", "b"),
+        pl.cov("b", "a"),
+        pl.corr("a", "b"),
+        pl.corr("b", "a"),
+        pl.corr("a", "b", method="spearman"),
+        pl.corr("b", "a", method="spearman"),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_cov_corr_mixed_float_schema(expr: pl.Expr, engine: EngineType) -> None:
+    lf = pl.LazyFrame(
+        {
+            "g": [1, 1, 2, 2],
+            "a": pl.Series([1.0, 2.0, 3.0, 5.0], dtype=pl.Float32),
+            "b": [2.0, 1.0, 4.0, 7.0],
+        }
+    )
+    for q in (lf.select(expr), lf.group_by("g").agg(expr)):
+        assert q.collect_schema().dtypes()[-1] == pl.Float64
+        assert q.collect(engine=engine).dtypes[-1] == pl.Float64
+
+
 def test_cov(fruits_cars: pl.DataFrame) -> None:
     ldf = fruits_cars.lazy()
     for cov_ab in (pl.cov(pl.col("A"), pl.col("B")), pl.cov("A", "B")):
@@ -74,6 +103,51 @@ def test_cov(fruits_cars: pl.DataFrame) -> None:
             ldf.select(cov_ab).collect().to_series(),
             pl.Series("A", [-2.5], pl.Float64()),
         )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_cov_one_row(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"g": [1, 2, 2], "a": [1.0, 2.0, 3.0], "b": [1.0, 3.0, 2.0]})
+    out = (
+        lf.group_by("g")
+        .agg(
+            pl.cov("a", "b", ddof=1).alias("samp"),
+            pl.cov("a", "b", ddof=0).alias("pop"),
+        )
+        .sort("g")
+        .collect(engine=engine)
+    )
+    expected = pl.DataFrame({"g": [1, 2], "samp": [None, -0.5], "pop": [0.0, -0.25]})
+    assert_frame_equal(out, expected)
+    out = lf.head(1).select(pl.cov("a", "b", ddof=1)).collect(engine=engine)
+    assert out.item() is None
+
+
+@pytest.mark.parametrize("method", ["pearson", "spearman"])
+def test_corr_no_complete_pair(method: CorrelationMethod) -> None:
+    lf = pl.LazyFrame(
+        {"g": [1, 1, 2, 2], "a": [1.0, 2.0, 3.0, 4.0], "b": [None, None, 1.0, 5.0]}
+    )
+    corr = pl.corr("a", "b", method=method)
+    out = lf.group_by("g").agg(corr).sort("g").collect()
+    assert_series_equal(out["a"], pl.Series("a", [None, 1.0]))
+    out = lf.filter(pl.col.g == 1).select(corr).collect()
+    assert out.item() is None
+    out = lf.head(0).select(corr).collect()
+    assert out.item() is None
+
+
+def test_corr_broadcast_no_complete_pair() -> None:
+    lf = pl.LazyFrame(
+        {"a": [1.0, 2.0], "b": [None, None]}, schema_overrides={"b": pl.Float64}
+    )
+    out = lf.select(
+        null_lit=pl.corr("a", pl.lit(None, pl.Float64)),
+        all_null=pl.corr("b", pl.lit(1.0)),
+        constant=pl.corr("a", pl.lit(1.0)),
+    ).collect()
+    assert out.row(0)[:2] == (None, None)
+    assert math.isnan(out["constant"].item())
 
 
 def test_std(fruits_cars: pl.DataFrame) -> None:
@@ -118,6 +192,61 @@ def test_quantile(fruits_cars: pl.DataFrame) -> None:
     assert fruits_cars.select(pl.col("A").quantile(0.24, "linear"))["A"][0] == 1.96
 
 
+def test_quantile_list_schema_29030() -> None:
+    lf = pl.LazyFrame({"a": [1.0, 2.0, 3.0]})
+
+    # list of quantiles -> List(Float64), schema must match the materialized result
+    q_list = lf.select(pl.col("a").quantile([0.1, 0.5, 0.9]))
+    assert q_list.collect_schema() == q_list.collect().schema
+    assert q_list.collect_schema()["a"] == pl.List(pl.Float64)
+
+    # single quantile -> plain Float64, must not regress
+    q_scalar = lf.select(pl.col("a").quantile(0.5))
+    assert q_scalar.collect_schema() == q_scalar.collect().schema
+    assert q_scalar.collect_schema()["a"] == pl.Float64
+
+    # a single-element list is still list-shaped output, not scalar
+    q_single_elem_list = lf.select(pl.col("a").quantile([0.5]))
+    assert q_single_elem_list.collect_schema() == q_single_elem_list.collect().schema
+    assert q_single_elem_list.collect_schema()["a"] == pl.List(pl.Float64)
+
+    # empty list of quantiles -> List(Float64) with an empty list per row
+    q_empty_list = lf.select(pl.col("a").quantile([]))
+    assert q_empty_list.collect_schema() == q_empty_list.collect().schema
+    assert q_empty_list.collect_schema()["a"] == pl.List(pl.Float64)
+
+
+@pytest.mark.parametrize(
+    ("values", "quantile_input", "expected_dtype"),
+    [
+        ([1, 2, 3], [0.25, 0.75], pl.List(pl.Float64)),
+        ([1, 2, 3], 0.5, pl.Float64),
+        (
+            [date(2020, 1, 1), date(2020, 6, 1), date(2021, 1, 1)],
+            [0.25, 0.75],
+            pl.List(pl.Datetime("us")),
+        ),
+        (
+            [timedelta(days=1), timedelta(days=2), timedelta(days=3)],
+            [0.25, 0.75],
+            pl.List(pl.Duration("us")),
+        ),
+    ],
+)
+def test_quantile_schema_dtypes_29030(
+    values: list[object],
+    quantile_input: float | list[float],
+    expected_dtype: pl.DataType,
+) -> None:
+    # moment_dtype()'s per-dtype mapping (numeric -> Float64, Date -> Datetime,
+    # Duration preserved, ...) must still apply correctly when the result is
+    # wrapped in List for a list of quantiles.
+    lf = pl.LazyFrame({"a": values})
+    q = lf.select(pl.col("a").quantile(quantile_input))
+    assert q.collect_schema() == q.collect().schema
+    assert q.collect_schema()["a"] == expected_dtype
+
+
 def test_count() -> None:
     lf = pl.LazyFrame(
         {
@@ -151,7 +280,7 @@ def test_kurtosis_same_vals() -> None:
     )
 
 
-def test_correction_shape_mismatch_22080() -> None:
+def test_correlation_shape_mismatch_22080() -> None:
     with pytest.raises(pl.exceptions.ShapeError):
         pl.select(pl.corr(pl.Series([1, 2]), pl.Series([2, 3, 5])))
 
@@ -162,6 +291,15 @@ def test_corr_cov_lit_produces_zero_nan_26633() -> None:
     assert math.isnan(result_corr.item())
     result_cov = df.select(pl.cov(pl.lit(1), "a"))
     assert math.isclose(result_cov.item(), 0.0)
+
+
+def test_corr_cov_lit_broadcast() -> None:
+    lf = pl.LazyFrame({"a": [float(i) for i in range(100)]})
+    out = lf.select(
+        cov=pl.cov("a", pl.lit(1.0)), corr=pl.corr(pl.lit(1.0), "a")
+    ).collect()
+    assert out["cov"].item() == 0.0
+    assert math.isnan(out["corr"].item())
 
 
 _NUMERIC_DTYPES = [
@@ -208,3 +346,14 @@ def test_kurtosis_streaming_matches_in_memory(
         .collect(engine="streaming")
     )
     assert_frame_equal(in_memory, streaming, rel_tol=1e-5)
+
+
+def test_spearman_corr_constant_column_29315() -> None:
+    df = pl.DataFrame({"col1": [0.0] * 245, "col2": list(range(245))})
+    assert math.isnan(df.select(pl.corr("col1", "col2", method="spearman")).item())
+
+
+@pytest.mark.parametrize("n", [117, 245])
+def test_pearson_corr_zero_column_29315(n: int) -> None:
+    df = pl.DataFrame({"col1": [0.0] * n, "col2": list(range(n))})
+    assert math.isnan(df.select(pl.corr("col1", "col2")).item())

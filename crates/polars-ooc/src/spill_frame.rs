@@ -3,20 +3,24 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use polars_async::ASYNC;
+use polars_core::datatypes::CompatLevel;
 use polars_core::frame::DataFrame;
-use polars_io::ipc::{IpcCompression, IpcReader, IpcWriter};
+use polars_io::ipc::{IpcCompression, IpcStreamReader, IpcStreamWriter};
 use polars_io::{SerReader, SerWriter};
 use polars_utils::compression::ZstdLevel;
 
 use crate::spill_context::ParameterFreeSpillContext;
 use crate::spill_file::SpillFile;
-use crate::{BYTES_SPILLED_TO_DISK, PinnedMut, PinnedRef, SpillToken, Spillable, memory_manager};
+use crate::{
+    BYTES_SPILLED_TO_DISK, PinnedMut, PinnedRef, SpillContextParam, SpillToken, Spillable,
+    WeakSpillContext, memory_manager,
+};
 
 impl Spillable for DataFrame {
     type Spilled = Arc<SpillFile>;
 
     fn estimate_byte_size(&self) -> usize {
-        self.estimated_size()
+        self.estimated_size(false)
     }
 
     async fn spill(&self, context_id: &str) -> Self::Spilled {
@@ -26,7 +30,7 @@ impl Spillable for DataFrame {
         // Encode in the current task (on computational executor).
         let mut buf = Vec::new();
 
-        let mut writer = IpcWriter::new(&mut buf).with_parallel(false);
+        let mut writer = IpcStreamWriter::new(&mut buf).with_compat_level(CompatLevel::newest());
         let clvl = polars_config::config().ooc_spill_compression_level();
         if clvl > 0 {
             let zstd_lvl = ZstdLevel::try_new(clvl.try_into().unwrap()).unwrap();
@@ -64,6 +68,10 @@ impl Spillable for DataFrame {
         Arc::new(file)
     }
 
+    fn spilled_bytes(location: &Self::Spilled) -> u64 {
+        location.size()
+    }
+
     async fn unspill(location: &Self::Spilled) -> Self {
         let path = location.path().to_owned();
         ASYNC
@@ -71,9 +79,12 @@ impl Spillable for DataFrame {
                 let file = std::fs::File::open(&path).unwrap_or_else(|e| {
                     panic!("failed to open spill file {:?}: {e}", path.display())
                 });
-                IpcReader::new(file).finish().unwrap_or_else(|e| {
+                let df = IpcStreamReader::new(file).finish().unwrap_or_else(|e| {
                     panic!("failed to read spill file {:?}: {e}", path.display())
-                })
+                });
+                // This thread may not allocate again for a while, so count the frame now.
+                crate::global_alloc::flush_local_drift();
+                df
             })
             .await
             .unwrap()
@@ -101,19 +112,27 @@ impl SpillFrame {
 
     pub async fn new<C: ParameterFreeSpillContext>(df: DataFrame, ctx: &C) -> Self {
         let slf = Self::new_unregistered(df);
-        ctx.register(&slf);
-        memory_manager().spill().await;
+        ctx.register(&slf).await;
         slf
     }
 
     pub fn new_blocking<C: ParameterFreeSpillContext>(df: DataFrame, ctx: &C) -> Self {
         let slf = Self::new_unregistered(df);
-        ctx.register(&slf);
+        ctx.register_no_spill_check(&slf);
         memory_manager().spill_blocking();
         slf
     }
 
+    pub fn current_ctx(&self) -> Option<(WeakSpillContext, SpillContextParam)> {
+        self.token.current_ctx()
+    }
+
+    pub fn unregister(&mut self) -> Option<(WeakSpillContext, SpillContextParam)> {
+        self.token.unregister()
+    }
+
     /// The height of the contained DataFrame. Does not need to unspill DataFrame.
+    #[inline]
     pub fn height(&self) -> usize {
         self.height
     }

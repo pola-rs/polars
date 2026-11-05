@@ -5,7 +5,6 @@ import functools
 import re
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
-from inspect import isclass
 from types import NoneType, UnionType
 from typing import (
     TYPE_CHECKING,
@@ -88,11 +87,13 @@ def parse_py_type_into_dtype(input: PythonDataType | type[object]) -> PolarsData
         return String()
     elif input is bool:
         return Boolean()
-    elif isinstance(input, type) and issubclass(input, datetime):  # type: ignore[redundant-expr]
+
+    is_class = isinstance(input, type)
+    if is_class and issubclass(input, datetime):  # type: ignore[redundant-expr]
         return Datetime("us")
-    elif isinstance(input, type) and issubclass(input, date):  # type: ignore[redundant-expr]
+    elif is_class and issubclass(input, date):  # type: ignore[redundant-expr]
         return Date()
-    elif isinstance(input, type) and issubclass(input, timedelta):  # type: ignore[redundant-expr]
+    elif is_class and issubclass(input, timedelta):  # type: ignore[redundant-expr]
         return Duration
     elif input is time:
         return Time()
@@ -106,10 +107,11 @@ def parse_py_type_into_dtype(input: PythonDataType | type[object]) -> PolarsData
         return Null()
     elif input is list or input is tuple:
         return List
-    elif isclass(input) and issubclass(input, enum.Enum):
+    elif is_class and issubclass(input, enum.Enum):  # type: ignore[redundant-expr]
         return Enum(input)
-    # this is required as pass through. Don't remove
-    elif input == Unknown:
+
+    # this is required for passthrough; don't remove
+    if input == Unknown:
         return Unknown
     elif hasattr(input, "__origin__") and hasattr(input, "__args__"):
         return _parse_generic_into_dtype(input)

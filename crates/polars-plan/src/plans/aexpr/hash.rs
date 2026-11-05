@@ -1,12 +1,9 @@
 use std::hash::{Hash, Hasher};
 
-use polars_utils::arena::{Arena, Node};
-
 use crate::prelude::AExpr;
 
 impl Hash for AExpr {
     // This hashes the variant, not the whole expression
-    // IMPORTANT: This is also used for equality in some cases with blake3.
     // Make sure that all attributes that are important for equality are hashed. Nodes don't have
     // to be hashed.
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -62,8 +59,10 @@ impl Hash for AExpr {
                 order_by,
                 function: _,
                 partition_by: _,
+                may_reorder,
             } => {
                 mapping.hash(state);
+                may_reorder.hash(state);
                 if let Some(o) = order_by {
                     o.1.hash(state);
                 }
@@ -105,7 +104,8 @@ impl Hash for AExpr {
             AExpr::StructEval {
                 expr: _,
                 evaluation: _,
-            } => {},
+                variant,
+            } => variant.hash(state),
             AExpr::Slice {
                 input: _,
                 offset: _,
@@ -113,19 +113,5 @@ impl Hash for AExpr {
             } => {},
             AExpr::Len => {},
         }
-    }
-}
-
-pub(crate) fn traverse_and_hash_aexpr<H: Hasher>(
-    node: Node,
-    expr_arena: &Arena<AExpr>,
-    state: &mut H,
-) {
-    let mut scratch = vec![node];
-
-    while let Some(node) = scratch.pop() {
-        let ae = expr_arena.get(node);
-        ae.hash(state);
-        ae.children_rev(&mut scratch);
     }
 }

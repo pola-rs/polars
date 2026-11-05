@@ -1,7 +1,10 @@
 use polars_async::primitives::connector;
 use polars_async::primitives::wait_group::WaitGroup;
+use polars_ooc::memory_manager;
 
 use crate::morsel::{Morsel, MorselInserter, MorselLinearizer};
+
+pub struct RecvError;
 
 /// This is just a generic enum that can receive from either single or multiple senders.
 pub enum FileReaderOutputRecv {
@@ -17,11 +20,11 @@ pub enum FileReaderOutputSend {
 }
 
 impl FileReaderOutputRecv {
-    pub async fn recv(&mut self) -> Result<Morsel, ()> {
+    pub async fn recv(&mut self) -> Result<Morsel, RecvError> {
         use FileReaderOutputRecv::*;
         match self {
-            Connector(v) => v.recv().await,
-            Linearized(v) => v.get().await.ok_or(()),
+            Connector(v) => v.recv().await.map_err(|_| RecvError),
+            Linearized(v) => v.get().await.ok_or(RecvError),
         }
     }
 }
@@ -51,6 +54,9 @@ impl FileReaderOutputSend {
 
         // We order to wait first, then send. This is intended to allow the producer create the
         // next morsel while waiting for the current one to be consumed.
+
+        // While over the memory budget, wait for spills before sending more.
+        memory_manager().spill().await;
 
         match self {
             Connector(tx, wait_group) => {

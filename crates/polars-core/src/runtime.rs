@@ -1,7 +1,8 @@
 use std::cell::RefCell;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::LazyLock;
-use std::sync::mpsc::{TryRecvError, sync_channel};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use polars_utils::with_drop::WithDrop;
 use rayon::{ThreadPool, ThreadPoolBuilder, Yield};
@@ -33,8 +34,18 @@ impl RAYON {
 
         #[cfg(any(target_os = "emscripten", not(target_family = "wasm")))]
         {
-            self.with(|p| p.install(op))
+            let mut op = Some(op);
+            let mut out = None;
+            self.install_dyn(&mut || out = Some(op.take().unwrap()()));
+            out.unwrap()
         }
+    }
+
+    // Instantiates the rayon install machinery only once instead of for every `install` caller.
+    #[cfg(any(target_os = "emscripten", not(target_family = "wasm")))]
+    #[inline(never)]
+    fn install_dyn(&self, op: &mut (dyn FnMut() + Send)) {
+        self.with(|p| p.install(op))
     }
 
     pub fn join<A, B, RA, RB>(&self, oper_a: A, oper_b: B) -> (RA, RB)
@@ -152,11 +163,17 @@ impl RAYON {
     /// If this thread isn't a rayon thread this simply calls f directly.
     pub fn block_on<R: Send, F: FnOnce() -> R + Send>(&self, f: F) -> R {
         if THREAD_POOL.current_thread_index().is_some() {
-            let (send, recv) = sync_channel(1);
+            // We wrap F such that the resulting closure no longer has F or R as
+            // parameters, and whose only limitation is that it isn't 'static.
             let mut opt_f: Option<F> = Some(f);
+            let mut out: Option<std::thread::Result<R>> = None;
+            let done = AtomicBool::new(false);
+            let waiter = std::thread::current();
             let mut wrap_f = || {
                 let f = AssertUnwindSafe(opt_f.take().unwrap());
-                send.send(catch_unwind(f)).unwrap();
+                out = Some(catch_unwind(f));
+                done.store(true, Ordering::Release);
+                waiter.unpark();
             };
 
             // SAFETY: we always await the future to completion before returning from here, meaning
@@ -166,24 +183,24 @@ impl RAYON {
             let ref_wrap_f: &mut (dyn Send + FnMut()) = &mut wrap_f;
             let static_wrap_f: &'static mut (dyn Send + FnMut() + 'static) =
                 unsafe { core::mem::transmute(ref_wrap_f) };
-            ASYNC.spawn_blocking(static_wrap_f);
+            let join_handle = ASYNC.spawn_blocking(static_wrap_f);
 
-            loop {
-                match recv.try_recv() {
-                    Ok(r) => {
-                        WithDrop::dismiss(abort);
-                        match r {
-                            Ok(v) => return v,
-                            Err(panic) => std::panic::resume_unwind(panic),
-                        }
+            while !join_handle.is_finished() {
+                match rayon::yield_now() {
+                    Some(Yield::Executed) => {},
+                    // Sleep until `f` is done, but wake up now and then to run new Rayon jobs.
+                    Some(Yield::Idle) if !done.load(Ordering::Acquire) => {
+                        std::thread::park_timeout(Duration::from_millis(1))
                     },
-                    Err(TryRecvError::Empty) => match rayon::yield_now() {
-                        Some(Yield::Executed) => {},
-                        Some(Yield::Idle) => std::thread::yield_now(),
-                        None => unreachable!(),
-                    },
-                    Err(TryRecvError::Disconnected) => unreachable!(),
+                    Some(Yield::Idle) => std::thread::yield_now(),
+                    None => unreachable!(),
                 }
+            }
+
+            WithDrop::dismiss(abort);
+            match out.unwrap() {
+                Ok(v) => v,
+                Err(panic) => std::panic::resume_unwind(panic),
             }
         } else {
             f()

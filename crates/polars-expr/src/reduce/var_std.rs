@@ -37,7 +37,6 @@ pub fn new_var_std_reduction(
                 _phantom: PhantomData,
             },
         )),
-        Duration(..) => todo!(),
         Null => Box::new(super::NullGroupedReduction::new(Scalar::null(
             DataType::Null,
         ))),

@@ -4,7 +4,7 @@
 
 On this page you can find a non-exhaustive list of libraries and tools that support Polars. As the
 data ecosystem is evolving fast, more libraries will likely support Polars in the future. One of the
-main drivers is that Polars makes adheres its memory layout to the `Apache Arrow` spec.
+main drivers is that Polars adheres its memory layout to the `Apache Arrow` spec.
 
 ### Table of contents:
 
@@ -104,7 +104,7 @@ more details.
 
 [Mage](https://www.mage.ai) is an open-source data pipeline tool for transforming and integrating
 data. Learn about integration between Polars and Mage at
-[docs.mage.ai](https://docs.mage.ai/integrations/polars).
+[docs.mage.ai](https://docs.mage.ai/guides/blocks/polars).
 
 #### marimo
 

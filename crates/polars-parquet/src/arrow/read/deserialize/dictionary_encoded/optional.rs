@@ -1,6 +1,6 @@
-use arrow::bitmap::Bitmap;
-use arrow::bitmap::bitmask::BitMask;
-use arrow::types::AlignedBytes;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::bitmask::BitMask;
+use polars_arrow::types::AlignedBytes;
 
 use super::{
     IndexMapping, no_more_bitpacked_values, oob_dict_idx, optional_skip_whole_chunks,
@@ -217,8 +217,8 @@ pub fn decode<B: AlignedBytes, D: IndexMapping<Output = B>>(
 
 #[cfg(test)]
 mod tests {
-    use arrow::bitmap::Bitmap;
-    use arrow::types::Bytes4Alignment4;
+    use polars_arrow::bitmap::Bitmap;
+    use polars_arrow::types::Bytes4Alignment4;
 
     use super::decode;
     use crate::parquet::encoding::hybrid_rle::{Encoder, HybridRleDecoder};

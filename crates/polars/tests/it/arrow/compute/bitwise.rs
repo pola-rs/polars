@@ -1,5 +1,5 @@
-use arrow::array::*;
-use arrow::compute::bitwise::*;
+use polars_arrow::array::*;
+use polars_arrow::compute::bitwise::*;
 
 #[test]
 fn test_xor() {

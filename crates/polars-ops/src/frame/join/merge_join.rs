@@ -2,16 +2,18 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::iter::repeat_n;
 
-use arrow::array::Array;
-use arrow::array::builder::ShareStrategy;
+use bytemuck::TransparentWrapper;
+use polars_arrow::array::Array;
+use polars_arrow::array::builder::ShareStrategy;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
+use polars_defs::join::{JoinArgs, JoinType};
 use polars_utils::itertools::Itertools;
-use polars_utils::total_ord::TotalOrd;
+use polars_utils::sort::reorder_cmp;
+use polars_utils::total_ord::{TotalOrd, TotalOrdWrap};
 use polars_utils::{IdxSize, format_pl_smallstr};
 
-use crate::frame::{JoinArgs, JoinType};
 use crate::series::coalesce_columns;
 
 #[allow(clippy::too_many_arguments)]
@@ -23,6 +25,7 @@ pub fn match_keys(
     gather_probe_unmatched: Option<&mut Vec<IdxSize>>,
     build_emit_unmatched: bool,
     descending: bool,
+    nulls_last: bool,
     nulls_equal: bool,
     limit_results: usize,
     build_row_offset: &mut usize,
@@ -39,6 +42,7 @@ pub fn match_keys(
                 gather_probe_unmatched,
                 build_emit_unmatched,
                 descending,
+                nulls_last,
                 nulls_equal,
                 limit_results,
                 build_row_offset,
@@ -94,6 +98,7 @@ fn match_keys_impl<'a, T: PolarsDataType>(
     mut gather_probe_unmatched: Option<&mut Vec<IdxSize>>,
     build_emit_unmatched: bool,
     descending: bool,
+    nulls_last: bool,
     nulls_equal: bool,
     limit_results: usize,
     build_row_offset: &mut usize,
@@ -114,22 +119,23 @@ fn match_keys_impl<'a, T: PolarsDataType>(
         }
 
         let build_keyval = unsafe { build_key.get_unchecked(*build_row_offset) };
-        let build_keyval = build_keyval.as_ref();
         let mut build_keyval_matched = false;
 
         if nulls_equal || build_keyval.is_some() {
             for probe_idx in *probe_row_offset..probe_key.len() {
                 let probe_keyval = unsafe { probe_key.get_unchecked(probe_idx) };
-                let probe_keyval = probe_keyval.as_ref();
 
-                let mut ord: Ordering = match (&build_keyval, &probe_keyval) {
-                    (None, None) if nulls_equal => Ordering::Equal,
-                    (Some(l), Some(r)) => TotalOrd::tot_cmp(*l, *r),
-                    _ => continue,
-                };
-                if descending {
-                    ord = ord.reverse();
+                // Row-encoded keys are null wherever any key column is null, so a null probe
+                // key has no place in the order.
+                if !nulls_equal && probe_keyval.is_none() {
+                    continue;
                 }
+                let ord = reorder_cmp(
+                    TotalOrdWrap::wrap_ref(&build_keyval),
+                    TotalOrdWrap::wrap_ref(&probe_keyval),
+                    descending,
+                    nulls_last,
+                );
 
                 match ord {
                     Ordering::Equal => {
@@ -244,6 +250,8 @@ pub fn gather_and_postprocess(
         (gather_left, gather_right) = (gather_probe, gather_build);
     }
 
+    let left_keys_coalesced_away = should_coalesce && matches!(args.how, JoinType::Right);
+
     // Remove non-payload columns
     for col in left
         .columns()
@@ -266,10 +274,14 @@ pub fn gather_and_postprocess(
         .cloned()
         .collect_vec()
     {
-        if left_on.contains(&col) && should_coalesce {
+        if right_on.contains(&col) && should_coalesce {
             continue;
         }
-        let renamed = match left.schema().contains(&col) {
+        // A right column takes the suffix only where it collides with a left column
+        // that survives coalescing.
+        let collides =
+            left.schema().contains(&col) && !(left_keys_coalesced_away && left_on.contains(&col));
+        let renamed = match collides {
             true => Cow::Owned(format_pl_smallstr!("{}{}", col, args.suffix())),
             false => Cow::Borrowed(&col),
         };
@@ -309,22 +321,38 @@ pub fn gather_and_postprocess(
         None => DataFrame::full_null(right.schema(), gather_left.unwrap().len()),
     };
 
-    // Coalsesce the key columns
-    if args.how == JoinType::Left && should_coalesce {
-        for c in left_on {
-            if right.schema().contains(c) {
-                right.drop_in_place(c.as_str())?;
-            }
-        }
-    } else if args.how == JoinType::Right && should_coalesce {
-        for c in right_on {
-            if left.schema().contains(c) {
-                left.drop_in_place(c.as_str())?;
-            }
+    // Coalesce the key columns.
+    if should_coalesce {
+        match args.how {
+            JoinType::Inner | JoinType::Left => {
+                for c in right_on {
+                    if right.schema().contains(c) {
+                        right.drop_in_place(c.as_str())?;
+                    }
+                }
+            },
+            JoinType::Right => {
+                for c in left_on {
+                    if left.schema().contains(c) {
+                        left.drop_in_place(c.as_str())?;
+                    }
+                }
+            },
+            JoinType::Full => {
+                for (left_keycol, right_keycol) in Iterator::zip(left_on.iter(), right_on.iter()) {
+                    let left_col = left.column(left_keycol).unwrap();
+                    let right_col = right.column(right_keycol).unwrap();
+                    let coalesced =
+                        coalesce_columns(&[left_col.clone(), right_col.clone()]).unwrap();
+                    left.replace(left_keycol, coalesced).unwrap();
+                    right.drop_in_place(right_keycol).unwrap();
+                }
+            },
+            _ => unreachable!(),
         }
     }
 
-    // Rename any right columns to "{}_right"
+    // Rename any duplicate right columns to "{}_right".
     let left_cols: PlHashSet<_> = left.columns().iter().map(Column::name).cloned().collect();
     let right_cols_vec = right.get_column_names_owned();
     let renames = right_cols_vec
@@ -334,38 +362,13 @@ pub fn gather_and_postprocess(
             let renamed = format_pl_smallstr!("{}{}", c, args.suffix());
             (c.as_str(), renamed)
         });
-    right.rename_many(renames).unwrap();
+    right = right.rename_many(renames).unwrap();
 
+    // Merge left and right and drop unused output columns.
     left.hstack_mut(right.columns())?;
-
-    if args.how == JoinType::Full && should_coalesce {
-        // Coalesce key columns
-        for (left_keycol, right_keycol) in Iterator::zip(left_on.iter(), right_on.iter()) {
-            let right_keycol = format_pl_smallstr!("{}{}", right_keycol, args.suffix());
-            let left_col = left.column(left_keycol).unwrap();
-            let right_col = left.column(&right_keycol).unwrap();
-            let coalesced = coalesce_columns(&[left_col.clone(), right_col.clone()]).unwrap();
-            left.replace(left_keycol, coalesced)
-                .unwrap()
-                .drop_in_place(&right_keycol)
-                .unwrap();
-        }
-    }
-
-    if should_coalesce {
-        for col in left_on {
-            if left.schema().contains(col) && !output_schema.contains(col) {
-                left.drop_in_place(col).unwrap();
-            }
-        }
-        for col in right_on {
-            let renamed = match left.schema().contains(col) {
-                true => Cow::Owned(format_pl_smallstr!("{}{}", col, args.suffix())),
-                false => Cow::Borrowed(col),
-            };
-            if left.schema().contains(&renamed) && !output_schema.contains(&renamed) {
-                left.drop_in_place(&renamed).unwrap();
-            }
+    for col in left_on {
+        if left.schema().contains(col) && !output_schema.contains(col) {
+            left.drop_in_place(col).unwrap();
         }
     }
 

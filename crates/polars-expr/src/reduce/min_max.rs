@@ -2,9 +2,9 @@
 use std::borrow::Cow;
 use std::marker::PhantomData;
 
-use arrow::array::BooleanArray;
-use arrow::bitmap::Bitmap;
 use num_traits::Bounded;
+use polars_arrow::array::BooleanArray;
+use polars_arrow::bitmap::Bitmap;
 use polars_core::with_match_physical_integer_polars_type;
 #[cfg(feature = "propagate_nans")]
 use polars_ops::prelude::nan_propagating_aggregate::ca_nan_agg;
@@ -12,6 +12,7 @@ use polars_utils::float::IsFloat;
 use polars_utils::min_max::MinMax;
 
 use super::*;
+use crate::reduce::has_nulls::HasNullsReduce;
 
 pub fn new_min_reduction(
     dtype: DataType,
@@ -97,6 +98,112 @@ pub fn new_max_reduction(
     })
 }
 
+/// Wraps `reduction` so that the groups with a null value give null, if `propagate_nulls`.
+pub fn null_if_has_nulls(
+    reduction: Box<dyn GroupedReduction>,
+    propagate_nulls: bool,
+) -> Box<dyn GroupedReduction> {
+    if propagate_nulls {
+        Box::new(NullIfHasNullsReduction {
+            inner: reduction,
+            has_nulls: Box::new(HasNullsReduce::new()),
+        })
+    } else {
+        reduction
+    }
+}
+
+struct NullIfHasNullsReduction {
+    inner: Box<dyn GroupedReduction>,
+    has_nulls: Box<dyn GroupedReduction>,
+}
+
+impl GroupedReduction for NullIfHasNullsReduction {
+    fn new_empty(&self) -> Box<dyn GroupedReduction> {
+        Box::new(Self {
+            inner: self.inner.new_empty(),
+            has_nulls: self.has_nulls.new_empty(),
+        })
+    }
+
+    fn reserve(&mut self, additional: usize) {
+        self.inner.reserve(additional);
+        self.has_nulls.reserve(additional);
+    }
+
+    fn resize(&mut self, num_groups: IdxSize) {
+        self.inner.resize(num_groups);
+        self.has_nulls.resize(num_groups);
+    }
+
+    fn update_group(
+        &mut self,
+        values: &[&Column],
+        group_idx: IdxSize,
+        seq_id: u64,
+    ) -> PolarsResult<()> {
+        self.inner.update_group(values, group_idx, seq_id)?;
+        self.has_nulls.update_group(values, group_idx, seq_id)
+    }
+
+    unsafe fn update_groups_subset(
+        &mut self,
+        values: &[&Column],
+        subset: &[IdxSize],
+        group_idxs: &[IdxSize],
+        seq_id: u64,
+    ) -> PolarsResult<()> {
+        self.inner
+            .update_groups_subset(values, subset, group_idxs, seq_id)?;
+        self.has_nulls
+            .update_groups_subset(values, subset, group_idxs, seq_id)
+    }
+
+    unsafe fn update_groups_while_evicting(
+        &mut self,
+        values: &[&Column],
+        subset: &[IdxSize],
+        group_idxs: &[EvictIdx],
+        seq_id: u64,
+    ) -> PolarsResult<()> {
+        self.inner
+            .update_groups_while_evicting(values, subset, group_idxs, seq_id)?;
+        self.has_nulls
+            .update_groups_while_evicting(values, subset, group_idxs, seq_id)
+    }
+
+    unsafe fn combine_subset(
+        &mut self,
+        other: &dyn GroupedReduction,
+        subset: &[IdxSize],
+        group_idxs: &[IdxSize],
+    ) -> PolarsResult<()> {
+        let other = other.as_any().downcast_ref::<Self>().unwrap();
+        self.inner
+            .combine_subset(other.inner.as_ref(), subset, group_idxs)?;
+        self.has_nulls
+            .combine_subset(other.has_nulls.as_ref(), subset, group_idxs)
+    }
+
+    fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
+        Box::new(Self {
+            inner: self.inner.take_evictions(),
+            has_nulls: self.has_nulls.take_evictions(),
+        })
+    }
+
+    fn finalize(&mut self) -> PolarsResult<Series> {
+        let values = self.inner.finalize()?;
+        let has_nulls = self.has_nulls.finalize()?;
+        let validity: Bitmap = has_nulls.bool()?.iter().map(|b| b != Some(true)).collect();
+        Ok(values.mask(&validity))
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 // These two variants ignore nans.
 struct Min<T>(PhantomData<T>);
 struct Max<T>(PhantomData<T>);
@@ -167,7 +274,7 @@ impl<T: PolarsFloatType> NumericReduction for NanMin<T> {
 
     #[inline(always)]
     fn init() -> T::Native {
-        T::Native::max_value()
+        T::Native::pos_inf_value()
     }
 
     #[inline(always)]
@@ -187,7 +294,7 @@ impl<T: PolarsFloatType> NumericReduction for NanMax<T> {
 
     #[inline(always)]
     fn init() -> T::Native {
-        T::Native::min_value()
+        T::Native::neg_inf_value()
     }
 
     #[inline(always)]

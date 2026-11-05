@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import decimal
 from collections.abc import Mapping
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Literal, cast
 from zoneinfo import ZoneInfo
 
@@ -50,6 +50,7 @@ from polars.datatypes import (
     Int64,
     Int128,
     List,
+    Map,
     Null,
     Object,
     String,
@@ -65,6 +66,7 @@ from polars.testing.parametric.strategies._utils import flexhash
 from polars.testing.parametric.strategies.dtype import (
     _DEFAULT_ARRAY_WIDTH_LIMIT,
     _DEFAULT_ENUM_CATEGORIES_LIMIT,
+    _DEFAULT_MAP_SIZE_LIMIT,
 )
 
 if TYPE_CHECKING:
@@ -110,7 +112,7 @@ def floats(
     allow_nan: bool = True,
     allow_infinity: bool = True,
 ) -> SearchStrategy[float]:
-    """Create a strategy for generating integers."""
+    """Create a strategy for generating floats."""
     return st.floats(
         width=bit_width, allow_nan=allow_nan, allow_infinity=allow_infinity
     )
@@ -194,7 +196,7 @@ def datetimes(
         max_value=max_value,
         timezones=st.just(time_zone_info),
         allow_imaginary=False,
-    ).map(lambda dt: dt.astimezone(timezone.utc).replace(tzinfo=None))
+    ).map(lambda dt: dt.astimezone(UTC).replace(tzinfo=None))
 
 
 def durations(time_unit: TimeUnit = "us") -> SearchStrategy[timedelta]:
@@ -353,6 +355,56 @@ def structs(
         return st.fixed_dictionaries(strats)
 
 
+def maps(
+    key: PolarsDataType,
+    value: PolarsDataType,
+    *,
+    min_size: int = 0,
+    max_size: int | None = None,
+    allow_null: bool = True,
+    **kwargs: Any,
+) -> SearchStrategy[dict[Any, Any]]:
+    """
+    Create a strategy for generating maps with the given key and value types.
+
+    Parameters
+    ----------
+    key
+        The data type of the keys. Cannot be nested, since keys become Python dict keys
+        and those must be hashable.
+    value
+        The data type of the values.
+    min_size
+        The minimum number of entries in a map.
+    max_size
+        The maximum number of entries in a map.
+    allow_null
+        Allow nulls as possible values.
+    **kwargs
+        Additional arguments that are passed to nested data generation strategies.
+    """
+    if key.is_nested():
+        msg = f"map keys cannot be a nested dtype, got {key!r}"
+        raise InvalidArgument(msg)
+    if key == Null:
+        # Reached via a bare `pl.Map`, which cannot say what its keys are. Generating
+        # `{None: None}` would be worse than refusing: Map keys are never null.
+        msg = "map keys cannot be Null; specify a key type, e.g. `pl.Map(pl.String, pl.Int64)`"
+        raise InvalidArgument(msg)
+    if max_size is None:
+        max_size = _DEFAULT_MAP_SIZE_LIMIT
+
+    inner_kwargs = {
+        k: v for k, v in kwargs.items() if k not in ("min_size", "max_size")
+    }
+    return st.dictionaries(
+        data(key, allow_null=False, **inner_kwargs),
+        data(value, allow_null=allow_null, **inner_kwargs),
+        min_size=min_size,
+        max_size=max_size,
+    )
+
+
 def nulls() -> SearchStrategy[None]:
     """Create a strategy for generating null values."""
     return st.none()
@@ -456,6 +508,10 @@ def data(
             allow_null=allow_null,
             **kwargs,
         )
+    elif dtype == Map:
+        key = getattr(dtype, "key", None) or Null()
+        value = getattr(dtype, "value", None) or Null()
+        strategy = maps(key, value, allow_null=allow_null, **kwargs)
     elif dtype == Struct:
         fields = getattr(dtype, "fields", None) or [Field("f0", Null())]
         strategy = structs(fields, allow_null=allow_null, **kwargs)

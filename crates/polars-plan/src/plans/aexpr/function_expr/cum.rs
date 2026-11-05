@@ -7,6 +7,10 @@ pub(super) mod dtypes {
     use super::*;
 
     pub fn cum_sum(dt: &DataType) -> DataType {
+        #[cfg(feature = "dtype-decimal")]
+        if let Decimal(_, scale) = dt {
+            return Decimal(polars_compute::decimal::DEC128_MAX_PREC, *scale);
+        }
         if dt.is_logical() {
             dt.clone()
         } else {
@@ -16,6 +20,7 @@ pub(super) mod dtypes {
                 Int128 => Int128,
                 UInt32 => UInt32,
                 UInt64 => UInt64,
+                UInt128 => UInt128,
                 #[cfg(feature = "dtype-f16")]
                 Float16 => Float16,
                 Float32 => Float32,
@@ -35,6 +40,7 @@ pub(super) mod dtypes {
             Boolean => Int64,
             UInt64 => UInt64,
             Int128 => Int128,
+            UInt128 => UInt128,
             #[cfg(feature = "dtype-f16")]
             Float16 => Float16,
             Float32 => Float32,

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import re
 import typing
 from collections import OrderedDict
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
@@ -14,6 +16,7 @@ import polars as pl
 import polars.selectors as cs
 from polars import Expr
 from polars.exceptions import (
+    AttributeRemovedError,
     ColumnNotFoundError,
     ComputeError,
     InvalidOperationError,
@@ -25,8 +28,27 @@ from polars.testing.parametric import column, dataframes, series
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-    from polars._typing import PolarsDataType, TimeUnit
+    from polars._typing import EngineType, PolarsDataType, TimeUnit
     from tests.conftest import PlMonkeyPatch
+
+
+@pytest.mark.parametrize(
+    ("name", "msg"),
+    [
+        ("count", "`GroupBy.count` was renamed; use `GroupBy.len` instead."),
+    ],
+)
+def test_removed_methods(name: str, msg: str) -> None:
+    df = pl.DataFrame(schema={"a": pl.Int64})
+    groupers = [
+        df.group_by("a"),
+        df.rolling("a", period="1i"),
+        df.group_by_dynamic("a", every="1i"),
+        df.lazy().group_by("a"),
+    ]
+    for grouper in groupers:
+        with pytest.raises(AttributeRemovedError, match=re.escape(msg)):
+            getattr(grouper, name)
 
 
 def test_group_by() -> None:
@@ -1080,6 +1102,14 @@ def test_group_by_double_on_empty_12194() -> None:
     )
 
 
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_group_by_repeat_literal_on_empty(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"g": []}, schema={"g": pl.Int64})
+    q = lf.group_by("g").agg(pl.repeat(1, pl.len()).min())
+    expected = pl.DataFrame(schema={"g": pl.Int64, "literal": pl.Int32})
+    assert_frame_equal(q.collect(engine=engine), expected)
+
+
 def test_group_by_when_then_no_aggregation_predicate() -> None:
     df = pl.DataFrame(
         {
@@ -1351,7 +1381,7 @@ def test_lit_iter_schema() -> None:
     assert result.to_dict(as_series=False) == expected
 
 
-def test_absence_off_null_prop_8224() -> None:
+def test_absence_of_null_prop_8224() -> None:
     # a reminder to self to not do null propagation
     # it is inconsistent and makes output dtype
     # dependent of the data, big no!
@@ -1426,6 +1456,7 @@ def test_group_by_agg_19173() -> None:
     assert out.schema == pl.Schema([("g", pl.Int64), ("x", pl.List(pl.Float64))])
 
 
+@pytest.mark.may_fail_lazy_schema  # reason: declared-schema
 def test_group_by_map_groups_slice_pushdown_20002() -> None:
     schema = {
         "a": pl.Int8,
@@ -2136,7 +2167,6 @@ def test_group_by_any_all(expr: Callable[[pl.Expr], pl.Expr]) -> None:
         allow_chunks=False,  # bug: See #24960
     )
 )
-@pytest.mark.may_fail_auto_streaming  # bug: See #24960
 def test_group_by_skew_kurtosis(s: pl.Series) -> None:
     df = s.to_frame()
 
@@ -2387,88 +2417,122 @@ def test_group_by_drop_nans(s: pl.Series) -> None:
     )
 
 
-@given(
-    df=dataframes(
-        min_size=1,
-        include_cols=[column(name="key", dtype=pl.UInt8, allow_null=False)],
-    ),
-)
+@pytest.mark.slow
 @pytest.mark.parametrize(
     ("expr", "check_order", "returns_scalar", "length_preserving", "is_window"),
     [
-        (pl.Expr.unique, False, False, False, False),
-        (lambda e: e.unique(maintain_order=True), True, False, False, False),
-        (pl.Expr.drop_nans, True, False, False, False),
-        (pl.Expr.drop_nulls, True, False, False, False),
-        (pl.Expr.null_count, True, False, False, False),
-        (pl.Expr.n_unique, True, True, False, False),
-        (
+        pytest.param(pl.Expr.unique, False, False, False, False, id="unique"),
+        pytest.param(
+            lambda e: e.unique(maintain_order=True),
+            True,
+            False,
+            False,
+            False,
+            id="unique_maintain_order",
+        ),
+        pytest.param(pl.Expr.drop_nans, True, False, False, False, id="drop_nans"),
+        pytest.param(pl.Expr.drop_nulls, True, False, False, False, id="drop_nulls"),
+        pytest.param(pl.Expr.null_count, True, False, False, False, id="null_count"),
+        pytest.param(pl.Expr.n_unique, True, True, False, False, id="n_unique"),
+        pytest.param(
             lambda e: e.filter(pl.int_range(0, e.len()) % 3 == 0),
             True,
             False,
             False,
             False,
+            id="filter",
         ),
-        (pl.Expr.shift, True, False, True, False),
-        (pl.Expr.forward_fill, True, False, True, False),
-        (pl.Expr.backward_fill, True, False, True, False),
-        (pl.Expr.reverse, True, False, True, False),
-        (
+        pytest.param(pl.Expr.shift, True, False, True, False, id="shift"),
+        pytest.param(pl.Expr.forward_fill, True, False, True, False, id="forward_fill"),
+        pytest.param(
+            pl.Expr.backward_fill, True, False, True, False, id="backward_fill"
+        ),
+        pytest.param(pl.Expr.reverse, True, False, True, False, id="reverse"),
+        pytest.param(
             lambda e: (pl.int_range(e.len() - e.len(), e.len()) % 3 == 0).any(),
             True,
             True,
             False,
             False,
+            id="any",
         ),
-        (
+        pytest.param(
             lambda e: (pl.int_range(e.len() - e.len(), e.len()) % 3 == 0).all(),
             True,
             True,
             False,
             False,
+            id="all",
         ),
-        (lambda e: e.head(2), True, False, False, False),
-        (pl.Expr.first, True, True, False, False),
-        (pl.Expr.mode, False, False, False, False),
-        (lambda e: e.fill_null(e.first()).over(e), True, False, True, True),
-        (lambda e: e.first().over(e), True, False, True, True),
-        (
+        pytest.param(lambda e: e.head(2), True, False, False, False, id="head"),
+        pytest.param(pl.Expr.first, True, True, False, False, id="first"),
+        pytest.param(pl.Expr.mode, False, False, False, False, id="mode"),
+        pytest.param(
+            lambda e: e.fill_null(e.first()).over(e),
+            True,
+            False,
+            True,
+            True,
+            id="fill_null_over",
+        ),
+        pytest.param(
+            lambda e: e.first().over(e), True, False, True, True, id="first_over"
+        ),
+        pytest.param(
             lambda e: e.fill_null(e.first()).over(e, mapping_strategy="join"),
             True,
             False,
             True,
             True,
+            id="fill_null_over_join",
         ),
-        (
+        pytest.param(
             lambda e: e.fill_null(e.first()).over(e, mapping_strategy="explode"),
             True,
             False,
             False,
             True,
+            id="fill_null_over_explode",
         ),
-        (
+        pytest.param(
             lambda e: e.fill_null(strategy="forward").over([e]),
             True,
             False,
             True,
             True,
+            id="fill_null_forward_over",
         ),
-        (lambda e: e.fill_null(e.first()).over(e, order_by=e), True, False, True, True),
-        (
+        pytest.param(
+            lambda e: e.fill_null(e.first()).over(e, order_by=e),
+            True,
+            False,
+            True,
+            True,
+            id="fill_null_over_order_by",
+        ),
+        pytest.param(
             lambda e: e.fill_null(e.first()).over(e, order_by=e, descending=True),
             True,
             False,
             True,
             True,
+            id="fill_null_over_order_by_descending",
         ),
-        (
+        pytest.param(
             lambda e: e.gather(pl.int_range(0, e.len()).slice(1, 3)),
             True,
             False,
             False,
             False,
+            id="gather",
         ),
     ],
+)
+@given(
+    df=dataframes(
+        min_size=1,
+        include_cols=[column(name="key", dtype=pl.UInt8, allow_null=False)],
+    ),
 )
 def test_grouped_agg_parametric(
     df: pl.DataFrame,
@@ -2706,42 +2770,47 @@ def test_group_by_first_last_big(
 def group_by_first_last_test_impl(
     group_as_slice: bool, n: int, dtype: PolarsDataType
 ) -> None:
+    def to_target_dtype(s: pl.Series) -> pl.Series:
+        if dtype == pl.Categorical:
+            # For categorical, we must go through String.
+            return s.cast(pl.String).cast(dtype)
+        if isinstance(dtype, pl.List):
+            # For lists, we have to explicitly construct the list with pl.list,
+            # preserving validity so a null scalar maps to a null list.
+            inner = s.cast(dtype.inner)
+            return pl.select(
+                pl.when(inner.is_not_null()).then(pl.list(inner))
+            ).to_series()
+        return s.cast(dtype)
+
     idx = pl.Series([1, 2, 3, 4, 5], dtype=pl.Int32)
 
+    a = pl.Series(
+        [
+            *[None] * 0, *list(range(1, n + 1)), *[None] * 0,  # idx = 1
+            *[None] * 1, *list(range(2, n - 0)), *[None] * 1,  # idx = 2
+            *[None] * 2, *list(range(3, n - 1)), *[None] * 2,  # idx = 3
+            *[None] * 3, *list(range(4, n - 2)), *[None] * 3,  # idx = 4
+            *[None] * 4, *list(range(5, n - 3)), *[None] * 4,  # idx = 5
+        ],
+        dtype=pl.Int32,
+    )  # fmt: skip
     lf = pl.LazyFrame(
         {
             "idx": pl.Series(
                 [1] * n + [2] * n + [3] * n + [4] * n + [5] * n, dtype=pl.Int32
             ),
             # Each successive group has an additional None spanning the elements
-            "a": pl.Series(
-                [
-                    *[None] * 0, *list(range(1, n + 1)), *[None] * 0,  # idx = 1
-                    *[None] * 1, *list(range(2, n - 0)), *[None] * 1,  # idx = 2
-                    *[None] * 2, *list(range(3, n - 1)), *[None] * 2,  # idx = 3
-                    *[None] * 3, *list(range(4, n - 2)), *[None] * 3,  # idx = 4
-                    *[None] * 4, *list(range(5, n - 3)), *[None] * 4,  # idx = 5
-                ],
-                dtype=pl.Int32,
-            ),
+            "a": to_target_dtype(a),
         }
-    )  # fmt: skip
+    )
     if group_as_slice:
         lf = lf.set_sorted("idx")  # Use GroupSlice path
-
-    if dtype == pl.Categorical:
-        # for Categorical, we must first go through String
-        lf = lf.with_columns(pl.col("a").cast(pl.String))
-    lf = lf.with_columns(pl.col("a").cast(dtype))
 
     # first()
     result = lf.group_by("idx", maintain_order=True).agg(pl.col("a").first()).collect()
     expected_vals = pl.Series([1, None, None, None, None])
-    if dtype == pl.Categorical:
-        # for Categorical, we must first go through String
-        expected_vals = expected_vals.cast(pl.String)
-
-    expected_vals = expected_vals.cast(dtype)
+    expected_vals = to_target_dtype(expected_vals)
     expected = pl.DataFrame({"idx": idx, "a": expected_vals})
     assert_frame_equal(result, expected)
     result = lf.group_by("idx", maintain_order=True).first().collect()
@@ -2754,11 +2823,7 @@ def group_by_first_last_test_impl(
         .collect()
     )
     expected_vals = pl.Series([1, 2, 3, 4, 5])
-    if dtype == pl.Categorical:
-        # for Categorical, we must first go through String
-        expected_vals = expected_vals.cast(pl.String)
-
-    expected_vals = expected_vals.cast(dtype)
+    expected_vals = to_target_dtype(expected_vals)
     expected = pl.DataFrame({"idx": idx, "a": expected_vals})
     assert_frame_equal(result, expected)
     result = lf.group_by("idx", maintain_order=True).first(ignore_nulls=True).collect()
@@ -2767,11 +2832,7 @@ def group_by_first_last_test_impl(
     # last()
     result = lf.group_by("idx", maintain_order=True).agg(pl.col("a").last()).collect()
     expected_vals = pl.Series([n, None, None, None, None])
-    if dtype == pl.Categorical:
-        # for Categorical, we must first go through String
-        expected_vals = expected_vals.cast(pl.String)
-
-    expected_vals = expected_vals.cast(dtype)
+    expected_vals = to_target_dtype(expected_vals)
     expected = pl.DataFrame({"idx": idx, "a": expected_vals})
     assert_frame_equal(result, expected)
     result = lf.group_by("idx", maintain_order=True).last().collect()
@@ -2784,50 +2845,37 @@ def group_by_first_last_test_impl(
         .collect()
     )
     expected_vals = pl.Series([n, n - 1, n - 2, n - 3, n - 4])
-    if dtype == pl.Categorical:
-        # for Categorical, we must first go through String
-        expected_vals = expected_vals.cast(pl.String)
-
-    expected_vals = expected_vals.cast(dtype)
+    expected_vals = to_target_dtype(expected_vals)
     expected = pl.DataFrame({"idx": idx, "a": expected_vals})
     assert_frame_equal(result, expected)
     result = lf.group_by("idx", maintain_order=True).last(ignore_nulls=True).collect()
     assert_frame_equal(result, expected)
 
     # Test with no nulls
+    a = pl.Series(
+        [
+            *list(range(1, n + 1)),  # idx = 1
+            *list(range(2, n + 2)),  # idx = 2
+            *list(range(3, n + 3)),  # idx = 3
+            *list(range(4, n + 4)),  # idx = 4
+            *list(range(5, n + 5)),  # idx = 5
+        ],
+        dtype=pl.Int32,
+    )
     lf = pl.LazyFrame(
         {
             "idx": pl.Series(
                 [1] * n + [2] * n + [3] * n + [4] * n + [5] * n, dtype=pl.Int32
             ),
-            # Each successive group has an additional None spanning the elements
-            "a": pl.Series(
-                [
-                    *list(range(1, n + 1)),  # idx = 1
-                    *list(range(2, n + 2)),  # idx = 2
-                    *list(range(3, n + 3)),  # idx = 3
-                    *list(range(4, n + 4)),  # idx = 4
-                    *list(range(5, n + 5)),  # idx = 5
-                ],
-                dtype=pl.Int32,
-            ),
+            "a": to_target_dtype(a),
         }
     )
     if group_as_slice:
         lf = lf.set_sorted("idx")  # Use GroupSlice path
 
-    if dtype == pl.Categorical:
-        # for Categorical, we must first go through String
-        lf = lf.with_columns(pl.col("a").cast(pl.String))
-    lf = lf.with_columns(pl.col("a").cast(dtype))
-
     # first()
     expected_vals = pl.Series([1, 2, 3, 4, 5])
-    if dtype == pl.Categorical:
-        # for Categorical, we must first go through String
-        expected_vals = expected_vals.cast(pl.String)
-
-    expected_vals = expected_vals.cast(dtype)
+    expected_vals = to_target_dtype(expected_vals)
     expected = pl.DataFrame({"idx": idx, "a": expected_vals})
     result = lf.group_by("idx", maintain_order=True).agg(pl.col("a").first()).collect()
     assert_frame_equal(result, expected)
@@ -2846,11 +2894,7 @@ def group_by_first_last_test_impl(
 
     # last()
     expected_vals = pl.Series([n, n + 1, n + 2, n + 3, n + 4])
-    if dtype == pl.Categorical:
-        # for Categorical, we must first go through String
-        expected_vals = expected_vals.cast(pl.String)
-
-    expected_vals = expected_vals.cast(dtype)
+    expected_vals = to_target_dtype(expected_vals)
     expected = pl.DataFrame({"idx": idx, "a": expected_vals})
     result = lf.group_by("idx", maintain_order=True).agg(pl.col("a").last()).collect()
     assert_frame_equal(result, expected)
@@ -2902,6 +2946,51 @@ def test_sorted_group_by() -> None:
         ],
         check_row_order=False,
     )
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_sorted_group_by_clipped_key(maintain_order: bool) -> None:
+    # Clipping can make different values equal, the next key is then not sorted.
+    lf = pl.LazyFrame({"a": [-3, -2, -1], "b": [1, 2, 1]}).set_sorted("a", "b")
+    q = lf.group_by(pl.col("a").clip(0, 10), "b", maintain_order=maintain_order).len()
+    expected = pl.DataFrame(
+        {"a": [0, 0], "b": [1, 2], "len": [2, 1]},
+        schema_overrides={"len": pl.get_index_type()},
+    )
+    assert_frame_equal(
+        q.collect(engine="streaming"), expected, check_row_order=maintain_order
+    )
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        pl.col("a").forward_fill().alias("k"),
+        pl.col("c").set_sorted(),
+        pl.len().alias("k"),
+        pl.col("c").sort().alias("k"),
+        pl.col("c").rle_id().alias("k"),
+    ],
+)
+def test_sorted_group_by_key_merges_values(key: pl.Expr) -> None:
+    # The first key makes different values of "a" equal, so "b" is not sorted within it.
+    lf = pl.LazyFrame(
+        {"a": [1, 1, None, None], "b": [1, 2, 1, 2], "c": [0, 0, 0, 0]}
+    ).set_sorted("a", "b", nulls_last=True)
+    q = lf.group_by(key, "b").agg(pl.col("a").sum())
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
+def test_sorted_group_by_more_keys_than_sorted_columns() -> None:
+    lf = pl.LazyFrame({"a": [1, 2], "c": [0, 0]}).set_sorted("a")
+    keys = [pl.col("c").set_sorted().alias(name) for name in ["x", "y", "z"]]
+    q = lf.group_by(keys).agg(pl.col("a").sum())
+    expected = pl.DataFrame({"x": [0], "y": [0], "z": [0], "a": [3]})
+    assert_frame_equal(q.collect(engine="streaming"), expected)
 
 
 def test_sorted_group_by_slice() -> None:
@@ -3026,37 +3115,35 @@ def test_group_by_agg_get_oob_error_26747() -> None:
 
 
 def test_group_by_arg_max_boolean_26978() -> None:
-    # https://github.com/pola-rs/polars/issues/26978
+    def check_result(result: pl.DataFrame) -> None:
+        # max_by doesn't guarantee which tied row is returned, so extract the
+        # actual value and verify it is one of the valid True-indices (2, 3, 4).
+        idx_val = result["index"][0]
+        assert idx_val in {2, 3, 4}
+        assert_frame_equal(
+            result,
+            pl.DataFrame(
+                {
+                    "group": ["A", "A", "A", "A", "A"],
+                    "val": [False, False, True, True, True],
+                    "index": pl.Series([idx_val] * 5, dtype=pl.get_index_type()),
+                }
+            ),
+        )
+
     df = pl.DataFrame(
         {
             "group": ["A"] * 5,
             "val": [False, False, True, True, True],
         }
     )
-
-    result = df.group_by("group").agg(pl.col("val").arg_max())
-    assert_frame_equal(
-        result,
-        pl.DataFrame(
-            {"group": ["A"], "val": pl.Series([2], dtype=pl.get_index_type())}
-        ),
+    check_result(
+        df.with_row_index()
+        .group_by("group")
+        .agg(pl.col("val"), pl.col("index").max_by("val"))
+        .explode("val", empty_as_null=False)
     )
-
-    result = df.with_columns(pl.row_index().max_by("val").over("group"))
-    # max_by doesn't guarantee which tied row is returned, so extract the
-    # actual value and verify it is one of the valid True-indices (2, 3, 4).
-    idx_val = result["index"][0]
-    assert idx_val in {2, 3, 4}
-    assert_frame_equal(
-        result,
-        pl.DataFrame(
-            {
-                "group": ["A", "A", "A", "A", "A"],
-                "val": [False, False, True, True, True],
-                "index": pl.Series([idx_val] * 5, dtype=pl.get_index_type()),
-            }
-        ),
-    )
+    check_result(df.with_columns(pl.row_index().max_by("val").over("group")))
 
 
 def test_structify_keyword_27147() -> None:
@@ -3082,6 +3169,14 @@ def test_group_by_arg_max_arg_min_binary_27171() -> None:
         result,
         pl.DataFrame({"key": ["a", "b"], "val": pl.Series([0, 0], dtype=idx_dtype)}),
     )
+
+
+@pytest.mark.parametrize("descending", [False, True])
+def test_group_by_arg_max_sorted_float_nan(descending: bool) -> None:
+    df = pl.DataFrame({"g": [1, 1], "k": [1.0, float("nan")]})
+    df = df.sort("k", descending=descending)
+    result = df.group_by("g").agg(pl.col("k").arg_max())
+    assert result["k"].item() == (1 if descending else 0)
 
 
 def test_group_by_arg_max_string_single_element_27171() -> None:
@@ -3171,3 +3266,555 @@ def test_group_by_max_sorted_nan_28121() -> None:
     out = df.group_by("g").agg(pl.col("x").max())
     expected = pl.DataFrame({"g": [1], "x": [2.0]})
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    ("agg", "args"),
+    [
+        ("first", []),
+        ("last", []),
+        ("min", []),
+        ("max", []),
+        ("mean", []),
+        ("median", []),
+        ("var", []),
+        ("std", []),
+        ("skew", []),
+        ("kurtosis", []),
+        ("quantile", [0.5]),
+    ],
+)
+def test_group_by_f16_agg_28353(agg: str, args: list[float]) -> None:
+    df64 = pl.DataFrame({"g": ["a", "a", "b", "b"], "x": [1.0, 2.0, 3.0, 4.0]})
+    out64 = df64.group_by("g").agg(getattr(pl.col.x, agg)(*args))
+    df16 = df64.with_columns(pl.col.x.cast(pl.Float16))
+    out16 = df16.group_by("g").agg(getattr(pl.col.x, agg)(*args).cast(pl.Float64))
+    assert_frame_equal(out16, out64, check_row_order=False, rel_tol=1e-3, abs_tol=1e-4)
+
+
+@pytest.mark.parametrize("agg", ["any", "all"])
+@pytest.mark.parametrize("ignore_nulls", [True, False])
+@pytest.mark.parametrize("null_frac", [0.0, 0.3])
+def test_group_by_bool_agg_any_all_single_chunk_28684(
+    agg: str, ignore_nulls: bool, null_frac: float
+) -> None:
+    # must be large enough to trigger chunk fragmentation
+    n = 20_000
+    rng = np.random.default_rng(0)
+
+    vals = rng.random(n) < 0.5
+    nulls = rng.random(n) < null_frac
+    b = [None if is_null else bool(v) for v, is_null in zip(vals, nulls, strict=True)]
+    df = pl.DataFrame({"g": np.arange(n), "b": pl.Series(b, dtype=pl.Boolean)})
+
+    out = df.group_by("g", maintain_order=True).agg(
+        getattr(pl.col("b"), agg)(ignore_nulls=ignore_nulls)
+    )
+
+    assert out["b"].n_chunks() == 1
+
+    expected = df["b"] if not ignore_nulls else df["b"].fill_null(agg == "all")
+    assert_series_equal(out["b"], expected, check_names=False)
+
+
+@pytest.mark.parametrize("agg", ["min", "max"])
+@pytest.mark.parametrize("set_sorted", [False, True])
+@pytest.mark.parametrize("null_frac", [0.0, 0.3])
+def test_group_by_bool_agg_min_max_single_chunk_28684(
+    agg: str, set_sorted: bool, null_frac: float
+) -> None:
+    # must be large enough to trigger chunk fragmentation
+    n = 20_000
+    rng = np.random.default_rng(0)
+
+    vals = rng.random(n) < 0.5
+    nulls = rng.random(n) < null_frac
+    b = [None if is_null else bool(v) for v, is_null in zip(vals, nulls, strict=True)]
+    df = pl.DataFrame({"g": np.arange(n), "b": pl.Series(b, dtype=pl.Boolean)})
+
+    if set_sorted:
+        df = df.sort("b")
+
+    out = df.group_by("g", maintain_order=True).agg(getattr(pl.col("b"), agg)())
+    assert out["b"].n_chunks() == 1
+
+    expected = df["b"]
+    assert_series_equal(out["b"], expected, check_names=False)
+
+
+def test_group_by_agg_primitive_opt_single_chunk_28684() -> None:
+    # must be large enough to trigger chunk fragmentation
+    n = 20_000
+    rng = np.random.default_rng(0)
+    v = rng.random(n)
+    v[rng.random(n) < 0.2] = np.nan
+
+    df = pl.DataFrame(
+        {
+            "g": np.arange(n),
+            "v": v,
+            "b": rng.random(n) < 0.5,
+            "i": rng.integers(0, 1000, n),
+            "c": pl.Series(rng.choice(["a", "b", "c"], n)).cast(pl.Categorical),
+            "d": pl.Series(np.arange(n).astype("datetime64[ms]")),
+        }
+    )
+
+    out = df.group_by("g").agg(
+        pl.col("v").min(),
+        pl.col("v").max().alias("max"),
+        pl.col("v").mean().alias("mean"),
+        pl.col("v").median().alias("median"),
+        pl.col("v").std().alias("std"),
+        pl.col("v").var().alias("var"),
+        pl.col("v").quantile(0.5).alias("quantile"),
+        pl.col("v").first().alias("first"),
+        pl.col("v").n_unique().alias("n_unique"),
+        pl.col("v").arg_min().alias("arg_min"),
+        pl.col("v").arg_max().alias("arg_max"),
+        pl.col("b").arg_min().alias("b_arg_min"),
+        pl.col("b").arg_max().alias("b_arg_max"),
+        pl.col("v").nan_max().alias("nan_max"),
+        pl.col("v").nan_min().alias("nan_min"),
+        pl.col("i").min().alias("i_min"),
+        pl.col("i").max().alias("i_max"),
+        pl.col("b").min().alias("b_min"),
+        pl.col("b").max().alias("b_max"),
+        pl.col("c").min().alias("c_min"),
+        pl.col("c").max().alias("c_max"),
+        pl.col("d").min().alias("d_min"),
+        pl.col("d").max().alias("d_max"),
+        pl.col("d").mean().alias("d_mean"),
+    )
+
+    assert [s.n_chunks() for s in out.select(pl.exclude("g"))] == [1] * (out.width - 1)
+
+
+def test_group_by_filtered_agg_missing_group_29322() -> None:
+    df = pl.DataFrame(
+        {
+            "f": [7, 7, None, 3, 7, 28, 13, 7, 7, 7],
+            "g": [5, -100, 3, 200, -2, 50, 1, 7, 9, -30],
+            "a": [1, 2, 3, None, 5, 6, 7, 8, 9, 10],
+        }
+    )
+    result = (
+        df.lazy()
+        .group_by("f")
+        .agg(
+            pl.col("g").filter(pl.col("g").is_between(-40, 13)).count().alias("v0"),
+            pl.col("a").unique().sum().alias("v1"),
+        )
+        .sort("f", nulls_last=True)
+        .collect()
+    )
+    expected = pl.DataFrame(
+        {
+            "f": [3, 7, 13, 28, None],
+            "v0": pl.Series([0, 5, 1, 0, 1], dtype=get_index_type()),
+            "v1": [0, 35, 7, 6, 3],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_group_by_arg_min_max_single_null_slice_group() -> None:
+    df = pl.DataFrame(
+        {"g": [1, 2, 2], "v": [1, 2, 3], "by": pl.Series([None, 5, 4], dtype=pl.Int64)}
+    ).set_sorted("g")
+    out = df.group_by("g", maintain_order=True).agg(
+        pl.col("by").arg_min().alias("arg_min"),
+        pl.col("by").arg_max().alias("arg_max"),
+        pl.col("v").min_by("by").alias("min_by"),
+        pl.col("v").max_by("by").alias("max_by"),
+    )
+    assert out.row(0) == (1, None, None, None, None)
+    assert out.row(1) == (2, 1, 0, 3, 2)
+
+
+def test_group_by_arg_min_max_by_scalar_column_29504() -> None:
+    idx_dtype = pl.get_index_type()
+    df = pl.DataFrame({"k": [1], "v": [1.0], "p": [2]})
+
+    for empty in [df.clear(), df.filter(False)]:
+        result = empty.group_by("k").agg(
+            pl.col("v").max_by("p").alias("max_by"),
+            pl.col("v").min_by("p").alias("min_by"),
+            pl.col("p").arg_max().alias("arg_max"),
+            pl.col("p").arg_min().alias("arg_min"),
+        )
+        expected = pl.DataFrame(
+            schema={
+                "k": pl.Int64,
+                "max_by": pl.Float64,
+                "min_by": pl.Float64,
+                "arg_max": idx_dtype,
+                "arg_min": idx_dtype,
+            }
+        )
+        assert_frame_equal(result, expected)
+
+    df = pl.DataFrame({"k": [1, 2, 2], "v": [1.0, 2.0, 3.0]})
+    result = df.group_by("k", maintain_order=True).agg(
+        pl.col("v").max_by(pl.lit(1)).alias("max_by"),
+        pl.col("v").min_by(pl.lit(None, dtype=pl.Int64)).alias("min_by"),
+    )
+    expected = pl.DataFrame(
+        {"k": [1, 2], "max_by": [1.0, 2.0], "min_by": [None, None]},
+        schema_overrides={"min_by": pl.Float64},
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("op", "dtype"),
+    [
+        (op, dtype)
+        for op in ["mean", "median", "std", "var"]
+        for dtype in [
+            pl.String,
+            pl.Binary,
+            pl.Categorical,
+            pl.List(pl.Int64),
+            pl.Array(pl.Int64, 2),
+            pl.Struct({"x": pl.Int64}),
+        ]
+    ]
+    + [
+        (op, dtype)
+        for op in ["std", "var"]
+        for dtype in [pl.Date, pl.Datetime("us"), pl.Duration("us"), pl.Time]
+    ],
+)
+def test_moment_agg_unsupported_dtype_raises_27309(
+    op: str, dtype: PolarsDataType
+) -> None:
+    lf = pl.LazyFrame(
+        {"a": [1, 1, 2], "b": [None, None, None]},
+        schema={"a": pl.Int64, "b": dtype},
+    )
+    expr = getattr(pl.col("b"), op)()
+    for q in [lf.group_by("a").agg(expr), lf.select(expr)]:
+        with pytest.raises(
+            InvalidOperationError, match=f"`{op}` operation not supported"
+        ):
+            q.collect_schema()
+        with pytest.raises(
+            InvalidOperationError, match=f"`{op}` operation not supported"
+        ):
+            q.collect()
+
+
+def test_sliced_group_by_maintain_order_30079() -> None:
+    df = pl.DataFrame({"k": [5, 3, 9, 1, 7, 2, 8, 4, 6, 0] * 100, "v": range(1000)})
+
+    q = df.lazy().group_by("k", maintain_order=True).agg(pl.col("v").sum())
+    for _ in range(5):
+        assert q.head(3).sort("k").collect()["k"].to_list() == [3, 5, 9]
+        assert q.slice(1, 1).sort("k").collect()["k"].to_list() == [3]
+
+    q = (
+        df.lazy()
+        .sort("v", descending=True)
+        .group_by("k", maintain_order=True)
+        .agg(pl.col("v").sum())
+    )
+    for _ in range(5):
+        assert q.head(3).sort("k").collect()["k"].to_list() == [0, 4, 6]
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("sorted_key", [False, True])
+def test_group_by_per_row_with_per_group_scalar(
+    engine: EngineType, sorted_key: bool
+) -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 1, 2, 2, 3], "x": [1.0, 2.0, 6.0, None, 4.0, None]})
+    if sorted_key:
+        lf = lf.with_columns(pl.col.g.set_sorted())
+    x = pl.col.x
+    q = lf.group_by("g", maintain_order=True).agg(
+        sub=x - x.mean(),
+        scalar_left=x.mean() - x,
+        gt_sum=(x > x.mean()).sum(),
+        two_scalars=(x - x.min()) / (x.max() - x.min()),
+        sliced=x.slice(1, 2) - x.mean(),
+        empty=x.filter(x > 100) - x.mean(),
+        filter_len=x.filter(x >= x.mean()).len(),
+        fill_null=x.fill_null(x.mean()),
+        clip=x.clip(x.min(), x.mean()),
+        max_horizontal=pl.max_horizontal(x, 3, x.min()),
+    )
+    idx = pl.get_index_type()
+    expected = pl.DataFrame(
+        {
+            "g": [1, 2, 3],
+            "sub": [[-2.0, -1.0, 3.0], [None, 0.0], [None]],
+            "scalar_left": [[2.0, 1.0, -3.0], [None, 0.0], [None]],
+            "gt_sum": pl.Series([1, 0, 0], dtype=idx),
+            "two_scalars": [[0.0, 0.2, 1.0], [None, float("nan")], [None]],
+            "sliced": [[-1.0, 3.0], [0.0], []],
+            "empty": [[], [], []],
+            "filter_len": pl.Series([1, 1, 0], dtype=idx),
+            "fill_null": [[1.0, 2.0, 6.0], [4.0, 4.0], [None]],
+            "clip": [[1.0, 2.0, 3.0], [None, 4.0], [None]],
+            "max_horizontal": [[3.0, 3.0, 6.0], [4.0, 4.0], [3.0]],
+        },
+        schema_overrides={"empty": pl.List(pl.Float64)},
+    )
+    assert_frame_equal(q.collect(engine=engine), expected)
+
+
+def test_group_by_per_row_with_per_group_scalar_dtypes() -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 2],
+            "i": [1, 3, 2],
+            "s": ["a", "b", "c"],
+            "d": [date(2020, 1, 1), date(2020, 1, 3), date(2020, 1, 2)],
+        }
+    )
+    i = pl.col.i
+    out = df.group_by("g", maintain_order=True).agg(
+        div=i / i.sum(),
+        clip=i.clip(0, i.min() + 1),
+        eq=pl.col.s == pl.col.s.first(),
+        concat=pl.col.s + pl.col.s.last(),
+        duration=pl.col.d - pl.col.d.min(),
+        struct=pl.struct(a=i) * i.max(),
+        minus_len=i - pl.len(),
+    )
+    expected = pl.DataFrame(
+        {
+            "g": [1, 2],
+            "div": [[0.25, 0.75], [1.0]],
+            "clip": [[1, 2], [2]],
+            "eq": [[True, False], [True]],
+            "concat": [["ab", "bb"], ["cc"]],
+            "duration": [[timedelta(0), timedelta(days=2)], [timedelta(0)]],
+            "struct": [[{"a": 3}, {"a": 9}], [{"a": 4}]],
+            "minus_len": [[-1, 1], [1]],
+        },
+        schema_overrides={"duration": pl.List(pl.Duration("us"))},
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_group_by_per_row_with_per_group_scalar_decimal_overflow() -> None:
+    dtype = pl.Decimal(38, 0)
+    df = pl.DataFrame({"g": [1, 1, 2, 2], "x": [1, 9, 1, 9]}).with_columns(
+        pl.col.x.cast(dtype) * pl.lit(10**37, dtype=dtype)
+    )
+    x = pl.col.x
+    small = x.filter(x < pl.lit(2 * 10**37, dtype=dtype))
+    # Only the rows that the filter drops would overflow.
+    out = df.group_by("g", maintain_order=True).agg(small + small.max())
+    assert out["x"].to_list() == [[Decimal(2 * 10**37)]] * 2
+    with pytest.raises(ComputeError, match="overflow in decimal addition"):
+        df.group_by("g").agg(x + x.max())
+
+
+def test_group_by_per_row_with_per_group_scalar_ternary_and_multiple_inputs() -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 2, 2],
+            "x": [1.0, 2.0, 6.0, None, 4.0],
+            "y": [5.0, 0.0, 1.0, 2.0, None],
+        }
+    )
+    x, y = pl.col.x, pl.col.y
+    out = df.group_by("g", maintain_order=True).agg(
+        scalar_otherwise=pl.when(x > 1).then(x).otherwise(x.mean()),
+        scalar_mask=pl.when(x.mean() > 3).then(x).otherwise(-x),
+        scalar_then=pl.when(x > x.mean()).then(x.mean()).otherwise(x),
+        max_horizontal=pl.max_horizontal(x, y, x.min()),
+        coalesce=pl.coalesce(x, y, x.mean()),
+        max_horizontal_scalars_first=pl.max_horizontal(x.min(), x, y.max(), y),
+        coalesce_scalar_first=pl.coalesce(x.first(), y, x.mean(), x),
+    )
+    expected = pl.DataFrame(
+        {
+            "g": [1, 2],
+            "scalar_otherwise": [[3.0, 2.0, 6.0], [4.0, 4.0]],
+            "scalar_mask": [[-1.0, -2.0, -6.0], [None, 4.0]],
+            "scalar_then": [[1.0, 2.0, 3.0], [None, 4.0]],
+            "max_horizontal": [[5.0, 2.0, 6.0], [4.0, 4.0]],
+            "coalesce": [[1.0, 2.0, 6.0], [2.0, 4.0]],
+            "max_horizontal_scalars_first": [[5.0, 5.0, 6.0], [4.0, 4.0]],
+            "coalesce_scalar_first": [[1.0, 1.0, 1.0], [2.0, 4.0]],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_group_by_per_group_scalar_set_like_inputs() -> None:
+    # These read a per-group scalar as a set, a mapping or a unit exponent.
+    df = pl.DataFrame({"g": [1, 1, 2, 2], "x": [2, 1, 2, 5]})
+    x = pl.col.x
+    out = df.group_by("g", maintain_order=True).agg(
+        is_in=x.is_in(x.min()),
+        replace=x.replace(x.min(), 0),
+        replace_strict=x.replace_strict(x.min(), 0, default=-1),
+        pow=x.pow(x.min()),
+    )
+    expected = pl.DataFrame(
+        {
+            "g": [1, 2],
+            "is_in": [[False, True], [True, False]],
+            "replace": [[2, 0], [0, 5]],
+            "replace_strict": [[-1, 0], [0, -1]],
+            "pow": [[2, 1], [4, 25]],
+        },
+        schema_overrides={"replace_strict": pl.List(pl.Int32)},
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_group_by_per_group_scalar_float_division() -> None:
+    # In small groups a per-group scalar divides like a column (as with `.over()`), not
+    # like a constant, which multiplies by its reciprocal (#14596).
+    df = pl.DataFrame({"g": [1, 1, 2, 2, 2], "x": [38.2, 1.0, 0.1, 0.3, 0.7]})
+    x = pl.col.x
+    out = df.group_by("g", maintain_order=True).agg(
+        floordiv=x // x.max(), mod=x % x.max(), div=x / x.sum()
+    )
+    assert out["floordiv"].to_list() == [[1.0, 0.0], [0.0, 0.0, 1.0]]
+    assert out["mod"].to_list()[0] == [0.0, 1.0]
+    over = df.select(
+        floordiv=x // x.max().over("g"),
+        mod=x % x.max().over("g"),
+        div=x / x.sum().over("g"),
+    )
+    assert_frame_equal(out.drop("g").explode(cs.all()), over, check_exact=True)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_group_by_per_group_scalar_partial_and_aggregated_inputs(
+    engine: EngineType,
+) -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 1, 2, 2], "x": [1.0, None, 6.0, 4.0, None]})
+    x = pl.col.x
+    q = lf.group_by("g", maintain_order=True).agg(
+        sliced_fill_null=x.slice(1, 2).fill_null(x.mean()),
+        filtered_clip=x.filter(x > 1).clip(x.min(), 5.0),
+        shifted=x.shift(1) - x.max(),
+        cum_sum=x.cum_sum() * x.max(),
+        when_literal=pl.when(x > x.mean()).then(x.mean()).otherwise(0.0),
+    )
+    expected = pl.DataFrame(
+        {
+            "g": [1, 2],
+            "sliced_fill_null": [[3.5, 6.0], [4.0]],
+            "filtered_clip": [[5.0], [4.0]],
+            "shifted": [[None, -5.0, None], [None, 0.0]],
+            "cum_sum": [[6.0, None, 42.0], [16.0, None]],
+            "when_literal": [[0.0, 0.0, 3.5], [0.0, 0.0]],
+        }
+    )
+    assert_frame_equal(q.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize(
+    "op",
+    [
+        lambda x, s: x + s,
+        lambda x, s: x.shift() + s,
+        lambda x, s: x.fill_null(s),
+        lambda x, s: pl.when(x > 1).then(x).otherwise(s),
+    ],
+)
+def test_group_by_per_group_scalar_of_wrong_length(
+    op: Callable[[pl.Expr, pl.Expr], pl.Expr],
+) -> None:
+    df = pl.DataFrame({"g": [1, 1, 2, 2, 3, 3], "x": [1, 2, 3, 4, 5, 6]})
+    x = pl.col.x
+    short = x.sum().map_batches(
+        lambda s: s.head(2), return_dtype=pl.Int64, is_elementwise=True
+    )
+    with pytest.raises(ComputeError, match="different length: 2 than the groups"):
+        df.group_by("g", maintain_order=True).agg(op(x, short))
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("group_len", [3, 300])
+@pytest.mark.parametrize("sorted_keys", [False, True])
+def test_group_by_per_group_scalar_small_and_large_groups(
+    engine: EngineType, group_len: int, sorted_keys: bool
+) -> None:
+    # 3 and 300 values per group: either side of the broadcast threshold (256).
+    n = 2 * group_len
+    df = pl.DataFrame(
+        {
+            "g": [i // group_len if sorted_keys else i % 2 for i in range(n)],
+            "x": [None if i % 5 == 0 else float(i % 7) for i in range(n)],
+        }
+    )
+    x = pl.col.x
+
+    def exprs(over: bool) -> dict[str, pl.Expr]:
+        def s(e: pl.Expr) -> pl.Expr:
+            return e.over("g") if over else e
+
+        return {
+            "gt": x > s(x.mean()),
+            "sub": x - s(x.min()),
+            "fill_null": x.fill_null(s(x.max())),
+            "clip": x.clip(s(x.min()) + 1, s(x.max()) - 1),
+            "when": pl.when(x > s(x.mean())).then(x).otherwise(s(x.min())),
+        }
+
+    out = df.lazy().group_by("g", maintain_order=True).agg(**exprs(over=False))
+    expected = (
+        df.lazy()
+        .with_columns(**exprs(over=True))
+        .group_by("g", maintain_order=True)
+        .agg(pl.col(list(exprs(over=True))))
+    )
+    assert_frame_equal(out.collect(engine=engine), expected.collect(engine=engine))
+
+
+@pytest.mark.parametrize(
+    "agg",
+    [
+        Expr.first,
+        Expr.last,
+        lambda e: e.first(ignore_nulls=True),
+        lambda e: e.last(ignore_nulls=True),
+        Expr.min,
+        Expr.max,
+        Expr.mean,
+        Expr.median,
+        Expr.bitwise_and,
+        Expr.bitwise_or,
+    ],
+)
+@pytest.mark.parametrize(
+    ("keep", "is_sorted"),
+    [
+        ([True, False, True, False], False),
+        ([False, True, True, False], False),
+        ([True, True, False, False], True),
+        ([False, False, True, True], True),
+    ],
+)
+def test_group_by_literal_agg_empty_groups_sorted_flag_30326(
+    agg: Callable[[Expr], Expr], keep: list[bool], is_sorted: bool
+) -> None:
+    df = pl.DataFrame({"g": [1, 2, 3, 4], "keep": keep}).with_columns(v=pl.lit(5))
+    v = df.group_by("g", maintain_order=True).agg(agg(pl.col("v").filter("keep")))["v"]
+
+    assert v.to_list() == [5 if k else None for k in keep]
+    assert v.flags["SORTED_ASC"] == is_sorted
+    assert v.max() == 5
+    assert v.n_unique() == 2
+    assert v.unique().sort().to_list() == [None, 5]
+
+
+def test_group_by_literal_agg_empty_groups_categorical_30326() -> None:
+    df = pl.DataFrame({"g": [1, 2, 3, 4], "keep": [True, False, True, False]})
+    df = df.with_columns(v=pl.lit("x", dtype=pl.Categorical))
+    out = df.group_by("g", maintain_order=True).agg(pl.col("v").filter("keep").first())
+    v = out["v"]
+
+    # The sorted flag sits on the physical, which `flags` does not show.
+    assert v.n_unique() == 2
+    assert v.unique().len() == 2

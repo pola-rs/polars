@@ -34,11 +34,12 @@ use std::borrow::Cow;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
-use arrow::compute::aggregate::estimated_bytes_size;
 pub use from::*;
-pub use iterator::{SeriesIter, SeriesPhysIter};
+pub use iterator::SeriesIter;
 use num_traits::NumCast;
+use polars_arrow::compute::aggregate::estimated_bytes_size;
 use polars_error::feature_gated;
+use polars_utils::broadcast::BroadcastLength;
 use polars_utils::float::IsFloat;
 pub use series_trait::{IsSorted, *};
 
@@ -128,7 +129,7 @@ use crate::utils::{Wrap, handle_casting_failures, materialize_dyn_int};
 /// ```
 ///
 /// ## Creation
-/// Series can be create from different data structures. Below we'll show a few ways we can create
+/// Series can be created from different data structures. Below we'll show a few ways we can create
 /// a Series object.
 ///
 /// ```
@@ -351,6 +352,37 @@ impl Series {
         Ok(self)
     }
 
+    /// Returns a series with the given length.
+    ///
+    /// Errors if this series' length is not 1 and also not equal to the requested length.
+    pub fn broadcast_to(&self, length: usize) -> PolarsResult<Cow<'_, Self>> {
+        let len = self.len();
+        if len == length {
+            Ok(Cow::Borrowed(self))
+        } else if len == 1 {
+            Ok(Cow::Owned(self.new_from_index(0, length)))
+        } else {
+            polars_bail!(
+                ShapeMismatch: "can't broadcast Series '{}' of length {len} to length {length}",
+                self.name()
+            );
+        }
+    }
+
+    /// See broadcast_to.
+    pub fn broadcast_in_place_to(&mut self, length: usize) -> PolarsResult<()> {
+        if let Cow::Owned(new) = self.broadcast_to(length)? {
+            *self = new;
+        }
+        Ok(())
+    }
+
+    /// See broadcast_to.
+    pub fn broadcast_owned_to(mut self, length: usize) -> PolarsResult<Self> {
+        self.broadcast_in_place_to(length)?;
+        Ok(self)
+    }
+
     /// Sort the series with specific options.
     ///
     /// # Example
@@ -500,7 +532,15 @@ impl Series {
     ///
     /// # Safety
     ///
-    /// This can lead to invalid memory access in downstream code.
+    /// Payloads must be safe to read as `dtype`: categorical codes in range for every
+    /// non-null slot, and Maps satisfying the `MapChunked` storage safety contract. Null
+    /// Map rows may span entries, and those entries may themselves be null; they are left
+    /// alone. Null entries or keys in live rows are errors. Unsafe payloads can cause
+    /// invalid memory access downstream.
+    ///
+    /// # Key uniqueness
+    /// Not required for safety. Whole-row transformations preserve existing uniqueness;
+    /// key-changing transformations must use validated construction.
     pub unsafe fn from_physical_unchecked(&self, dtype: &DataType) -> PolarsResult<Self> {
         debug_assert!(!self.dtype().is_logical(), "{:?}", self.dtype());
 
@@ -544,7 +584,10 @@ impl Series {
                 })
             },
 
-            (D::Int32, D::Date) => feature_gated!("dtype-time", Ok(self.clone().into_date())),
+            // Arrow `LargeBinary` arrays are read into a series as `Binary`.
+            (D::Binary, D::BinaryOffset) => self.cast(&D::BinaryOffset),
+
+            (D::Int32, D::Date) => feature_gated!("dtype-date", Ok(self.clone().into_date())),
             (D::Int64, D::Datetime(tu, tz)) => feature_gated!(
                 "dtype-datetime",
                 Ok(self.clone().into_datetime(*tu, tz.clone()))
@@ -575,6 +618,16 @@ impl Series {
                     .map(|ca| ca.into_series())
             },
 
+            #[cfg(feature = "dtype-map")]
+            (D::List(_), D::Map(_, _)) => {
+                use crate::chunked_array::logical::ensure_live_entries_non_null;
+
+                let storage = self.from_physical_unchecked(&dtype.map_storage_dtype().unwrap())?;
+                // Nulls that propagation left under null rows are legal; only live rows
+                // must own no null entry or key.
+                ensure_live_entries_non_null(storage.list().unwrap())?;
+                Ok(MapChunked::from_storage_unchecked(dtype.clone(), storage).into_series())
+            },
             #[cfg(feature = "dtype-extension")]
             (_, D::Extension(typ, storage)) => {
                 let storage_series = self.from_physical_unchecked(storage.as_ref())?;
@@ -672,6 +725,7 @@ impl Series {
             DataType::Float16 => Ok(self.f16().unwrap().is_not_nan()),
             DataType::Float32 => Ok(self.f32().unwrap().is_not_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_not_nan()),
+            DataType::Null => Ok(BooleanChunked::full_null(self.name().clone(), self.len())),
             dt if dt.is_primitive_numeric() => {
                 let arr = BooleanArray::full(self.len(), true, ArrowDataType::Boolean)
                     .with_validity(self.rechunk_validity());
@@ -773,6 +827,11 @@ impl Series {
                 Cow::Borrowed(_) => Cow::Borrowed(self),
                 Cow::Owned(ca) => Cow::Owned(ca.into_series()),
             },
+            #[cfg(feature = "dtype-map")]
+            Map(_, _) => match self.map().unwrap().storage().to_physical_repr() {
+                Cow::Borrowed(storage) => Cow::Owned(storage.clone()),
+                Cow::Owned(storage) => Cow::Owned(storage),
+            },
             #[cfg(feature = "dtype-extension")]
             Extension(_, _) => self.ext().unwrap().storage().to_physical_repr(),
             _ => Cow::Borrowed(self),
@@ -862,6 +921,32 @@ impl Series {
     /// Cast throws an error if conversion had overflows
     pub fn strict_cast(&self, dtype: &DataType) -> PolarsResult<Series> {
         self.cast_with_options(dtype, CastOptions::Strict)
+    }
+
+    /// Cast non-strictly, also returning the rows the cast did not represent exactly.
+    ///
+    /// A row is inexact if it became null or does not survive the cast back unchanged. The mask
+    /// is `None` if every row cast exactly.
+    #[doc(hidden)]
+    pub fn _cast_reporting_inexact(
+        &self,
+        dtype: &DataType,
+    ) -> PolarsResult<(Series, Option<BooleanChunked>)> {
+        let casted = self.cast_with_options(dtype, CastOptions::NonStrict)?;
+        // An integer converts to an integer or decimal exactly or not at all, and the non-strict
+        // cast makes the values out of range null. The null counts tell whether any were.
+        if self.dtype().is_integer() && (dtype.is_integer() || dtype.is_decimal()) {
+            if casted.null_count() == self.null_count() {
+                return Ok((casted, None));
+            }
+            let inexact = &casted.is_null() & &self.is_not_null();
+            return Ok((casted, Some(inexact)));
+        }
+        // Null-safe: a cast back that overflows to null must count as inexact.
+        let roundtrip = casted.cast_with_options(self.dtype(), CastOptions::NonStrict)?;
+        let inexact = roundtrip.not_equal_missing(self)?;
+        debug_assert_eq!(inexact.null_count(), 0);
+        Ok((casted, inexact.any().then_some(inexact)))
     }
 
     #[cfg(feature = "dtype-decimal")]
@@ -1081,6 +1166,7 @@ impl Default for Series {
 impl Deref for Series {
     type Target = dyn SeriesTrait;
 
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         self.0.as_ref()
     }
@@ -1124,9 +1210,18 @@ impl<T: PolarsPhysicalType> AsMut<ChunkedArray<T>> for dyn SeriesTrait + '_ {
     }
 }
 
+impl BroadcastLength for Series {
+    fn _broadcast_len(&self) -> usize {
+        self.len()
+    }
+
+    fn _column_name(&self) -> Option<&str> {
+        Some(self.name())
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use crate::prelude::*;
     use crate::series::*;
 
     #[test]
@@ -1159,7 +1254,7 @@ mod test {
                     ArrowDataType::Int32,
                     true,
                 ))),
-                unsafe { arrow::offset::Offsets::new_unchecked(vec![0, 1]) }.into(),
+                unsafe { polars_arrow::offset::Offsets::new_unchecked(vec![0, 1]) }.into(),
                 PrimitiveArray::new(ArrowDataType::Int32, vec![1i32].into(), None).to_boxed(),
                 None,
             )],

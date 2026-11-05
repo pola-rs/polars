@@ -1,11 +1,6 @@
 #[cfg(feature = "allocator")]
 pub mod allocator;
 
-// Since Python Polars cannot share its version into here and we need to be able to build this
-// package correctly without `py-polars`, we need to mirror the version here.
-// example: 1.35.0-beta.1
-pub static PYPOLARS_VERSION: &str = "1.42.1";
-
 // We allow multiple features to be set simultaneously so checking with all-features
 // is possible. In the case multiple are set or none at all, we set the repr to "unknown".
 #[cfg(all(feature = "rtcompat", not(any(feature = "rt32", feature = "rt64"))))]
@@ -36,6 +31,12 @@ use crate::expr::PyExpr;
 use crate::expr::datatype::PyDataTypeExpr;
 use crate::expr::selector::PySelector;
 use crate::io::arrow_c_stream::PyArrowCStreamReader;
+#[cfg(feature = "parquet")]
+use crate::io::parquet_encryption::{PyParquetDecryption, PyParquetEncryption};
+#[cfg(feature = "parquet")]
+use crate::io::parquet_kms::{
+    PyCryptoFactory, PyDecryptionConfiguration, PyEncryptionConfiguration, PyKmsConnectionConfig,
+};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::lazyframe::PyInProcessQuery;
 use crate::lazyframe::{PyLazyFrame, PyOptFlags};
@@ -66,7 +67,6 @@ fn _ir_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<MapFunction>().unwrap();
     m.add_class::<Union>().unwrap();
     m.add_class::<HConcat>().unwrap();
-    m.add_class::<ExtContext>().unwrap();
     m.add_class::<Sink>().unwrap();
     Ok(())
 }
@@ -91,6 +91,7 @@ fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<Function>().unwrap();
     m.add_class::<Slice>().unwrap();
     m.add_class::<Len>().unwrap();
+    m.add_class::<Explode>().unwrap();
     m.add_class::<Window>().unwrap();
     m.add_class::<Rolling>().unwrap();
     m.add_class::<PyOperator>().unwrap();
@@ -98,6 +99,8 @@ fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyBooleanFunction>().unwrap();
     m.add_class::<PyTemporalFunction>().unwrap();
     m.add_class::<PyStructFunction>().unwrap();
+    m.add_class::<PyListFunction>().unwrap();
+    m.add_class::<PyArrayFunction>().unwrap();
     m.add_class::<PyRollingFunction>().unwrap();
     m.add_class::<PyRollingFunctionBy>().unwrap();
     m.add_class::<PyEwmFunction>().unwrap();
@@ -125,6 +128,16 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PySQLContext>().unwrap();
     m.add_class::<PyCategories>().unwrap();
     m.add_class::<PyArrowCStreamReader>().unwrap();
+
+    #[cfg(feature = "pymethods")]
+    m.add_class::<crate::polars_cloud_observer::CloudStreamingMetricsHandle>()
+        .unwrap();
+
+    #[cfg(feature = "pymethods")]
+    m.add_wrapped(wrap_pyfunction!(
+        crate::polars_cloud_observer::set_query_monitoring
+    ))
+    .unwrap();
 
     // Submodules
     // LogicalPlan objects
@@ -181,6 +194,8 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::sum_horizontal))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::cum_sum_horizontal))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::mean_horizontal))
         .unwrap();
 
@@ -235,6 +250,8 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::lit)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::map_expr))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::pipe_with_dtype))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::pearson_corr))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::rolling_corr))
@@ -282,6 +299,35 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     #[cfg(feature = "parquet")]
     m.add_wrapped(wrap_pyfunction!(functions::read_parquet_metadata))
         .unwrap();
+    #[cfg(all(feature = "cloud", feature = "parquet"))]
+    m.add_wrapped(wrap_pyfunction!(
+        crate::io::iceberg_plugin::_iceberg_plugin_scan
+    ))
+    .unwrap();
+    #[cfg(all(feature = "cloud", feature = "parquet"))]
+    m.add_class::<crate::io::iceberg_plugin::metadata_cache::PyIcebergMetadataFileCache>()
+        .unwrap();
+    #[cfg(all(feature = "cloud", feature = "parquet"))]
+    m.add(
+        "_IO_PLUGIN_IDS",
+        crate::io::iceberg_plugin::SUPPORTED_IDS
+            .iter()
+            .map(|id| id.as_str())
+            .collect::<Vec<_>>(),
+    )
+    .unwrap();
+    #[cfg(feature = "parquet")]
+    m.add_class::<PyParquetDecryption>().unwrap();
+    #[cfg(feature = "parquet")]
+    m.add_class::<PyParquetEncryption>().unwrap();
+    #[cfg(feature = "parquet")]
+    m.add_class::<PyKmsConnectionConfig>().unwrap();
+    #[cfg(feature = "parquet")]
+    m.add_class::<PyCryptoFactory>().unwrap();
+    #[cfg(feature = "parquet")]
+    m.add_class::<PyEncryptionConfiguration>().unwrap();
+    #[cfg(feature = "parquet")]
+    m.add_class::<PyDecryptionConfiguration>().unwrap();
     #[cfg(all(feature = "parquet", feature = "json"))]
     m.add_wrapped(wrap_pyfunction!(
         functions::_bench_parquet_metadata_bincode_size
@@ -458,8 +504,9 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
 
     // Build info
-    m.add("__version__", PYPOLARS_VERSION)?;
+    m.add("__version__", crate::PYPOLARS_VERSION)?;
     m.add("RUNTIME_REPR", RUNTIME_REPR)?;
+    m.add("_BUILD_COMMIT", crate::PYPOLARS_BUILD_COMMIT)?;
 
     // Plugins
     #[cfg(feature = "ffi_plugin")]

@@ -46,6 +46,7 @@ impl<'a> IsNull for BytesHash<'a> {
 }
 
 impl Hash for BytesHash<'_> {
+    #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
         state.write_u64(self.hash)
     }
@@ -64,7 +65,7 @@ pub fn hash_to_partition(h: u64, n_partitions: usize) -> usize {
     // h / 2^64 is almost a uniform random number in [0, 1), and thus
     // floor(h * n_partitions / 2^64) is almost a uniform random integer in
     // [0, n_partitions). Despite being written with u128 multiplication this
-    // compiles to a single mul / mulhi instruction on x86-x64/aarch64.
+    // compiles to a single mul / mulhi instruction on x86-64/aarch64.
     ((h as u128 * n_partitions as u128) >> 64) as usize
 }
 
@@ -95,7 +96,7 @@ impl HashPartitioner {
 
     /// Converts a hash to a partition. It is guaranteed that the output is
     /// in the range [0, n_partitions), and that independent HashPartitioners
-    /// that we initialized with the same num_partitions and seed return the same
+    /// that were initialized with the same num_partitions and seed return the same
     /// partition.
     #[inline(always)]
     pub fn hash_to_partition(&self, hash: u64) -> usize {
@@ -103,7 +104,7 @@ impl HashPartitioner {
         // r / 2^64 is almost a uniform random number in [0, 1), and thus
         // floor(r * n_partitions / 2^64) is almost a uniform random integer in
         // [0, n_partitions). Despite being written with u128 multiplication this
-        // compiles to a single mul / mulhi instruction on x86-x64/aarch64.
+        // compiles to a single mul / mulhi instruction on x86-64/aarch64.
         let shuffled = hash.wrapping_mul(self.seed);
         ((shuffled as u128 * self.num_partitions as u128) >> 64) as usize
     }
@@ -130,10 +131,12 @@ pub trait DirtyHash {
 // Multiplication by a 'random' odd number gives a universal hash function in
 // the top bits.
 const RANDOM_ODD: u64 = 0x55fbfd6bfc5458e9;
+const RANDOM_ODD2: u64 = 0x495705b285852baf;
 
 macro_rules! impl_hash_partition_as_u64 {
     ($T: ty) => {
         impl DirtyHash for $T {
+            #[inline(always)]
             fn dirty_hash(&self) -> u64 {
                 (*self as u64).wrapping_mul(RANDOM_ODD)
             }
@@ -151,28 +154,36 @@ impl_hash_partition_as_u64!(i32);
 impl_hash_partition_as_u64!(i64);
 
 impl DirtyHash for u128 {
+    #[inline(always)]
     fn dirty_hash(&self) -> u64 {
-        (*self as u64)
-            .wrapping_mul(RANDOM_ODD)
-            .wrapping_add((*self >> 64) as u64)
+        let lo = *self as u64;
+        let hi = (*self >> 64) as u64;
+        let hlo = lo.wrapping_mul(RANDOM_ODD);
+        let hhi = hi.wrapping_mul(RANDOM_ODD2);
+        hlo.wrapping_add(hhi)
     }
 }
 
 impl DirtyHash for i128 {
+    #[inline(always)]
     fn dirty_hash(&self) -> u64 {
-        (*self as u64)
-            .wrapping_mul(RANDOM_ODD)
-            .wrapping_add((*self >> 64) as u64)
+        let lo = *self as u64;
+        let hi = (*self as u128 >> 64) as u64;
+        let hlo = lo.wrapping_mul(RANDOM_ODD);
+        let hhi = hi.wrapping_mul(RANDOM_ODD2);
+        hlo.wrapping_add(hhi)
     }
 }
 
 impl DirtyHash for BytesHash<'_> {
+    #[inline(always)]
     fn dirty_hash(&self) -> u64 {
         self.hash
     }
 }
 
 impl<T: DirtyHash + ?Sized> DirtyHash for &T {
+    #[inline(always)]
     fn dirty_hash(&self) -> u64 {
         (*self).dirty_hash()
     }
@@ -181,6 +192,7 @@ impl<T: DirtyHash + ?Sized> DirtyHash for &T {
 // TODO: we should probably encourage explicit null handling, but for now we'll
 // allow directly getting a partition from a nullable value.
 impl<T: DirtyHash> DirtyHash for Option<T> {
+    #[inline(always)]
     fn dirty_hash(&self) -> u64 {
         self.as_ref().map(|s| s.dirty_hash()).unwrap_or(0)
     }

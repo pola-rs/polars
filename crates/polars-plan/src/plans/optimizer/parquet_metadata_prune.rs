@@ -1,5 +1,5 @@
-//! Prune `FileScanIR::Parquet`'s pre-decoded metadata (`first_metadata`
-//! and `metadata_per_source`) to projected + predicate columns.
+//! Prune `FileScanIR::Parquet`'s pre-decoded `metadata_per_source` to
+//! projected + predicate columns.
 //!
 //! Runs at the end of the optimizer pipeline, after projection and predicate
 //! pushdown have resolved each scan's projection / predicate. Walks the IR
@@ -56,13 +56,18 @@ pub(super) fn prune_parquet_metadata(
         // Variant check first: skip the projection/predicate work entirely
         // for non-Parquet scans (CSV, IPC, NDJson, Python, Anonymous).
         let FileScanIR::Parquet {
-            first_metadata,
             metadata_per_source,
             ..
         } = scan_type.as_mut()
         else {
             continue;
         };
+
+        // Name-based pruning can drop mapped columns whose physical names differ,
+        // incorrectly returning nulls. Keep their metadata until pruning supports mappings.
+        if unified_scan_args.column_mapping.is_some() {
+            continue;
+        }
 
         let Some(projection) = unified_scan_args.projection.clone() else {
             continue;
@@ -92,10 +97,7 @@ pub(super) fn prune_parquet_metadata(
                 .unwrap_or_else(|| m.clone())
         };
 
-        *first_metadata = first_metadata.as_ref().map(prune_one);
-        *metadata_per_source = metadata_per_source
-            .as_ref()
-            .map(|s| s.iter().map(prune_one).collect());
+        *metadata_per_source = metadata_per_source.map_footers(prune_one);
     }
 }
 

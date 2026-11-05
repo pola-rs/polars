@@ -10,9 +10,9 @@ authors = [
   { name = "Ritchie Vink", email = "ritchie46@gmail.com" },
 ]
 # example: 1.35.0b1
-version = "1.42.1"
+version = "2.1.0"
 license = { file = "LICENSE" }
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 
 keywords = ["dataframe", "arrow", "out-of-core"]
 classifiers = [
@@ -24,16 +24,16 @@ classifiers = [
   "Programming Language :: Python",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Programming Language :: Rust",
   "Topic :: Scientific/Engineering",
   "Typing :: Typed",
 ]
 # example: 1.35.0b1
-dependencies = ["polars-runtime-32 == 1.42.1"]
+dependencies = ["polars-runtime-32 == 2.1.0"]
 
 [project.urls]
 Homepage = "https://www.pola.rs/"
@@ -44,11 +44,12 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 [project.optional-dependencies]
 # Runtimes
 # example: 1.35.0b1
-rt64 = ["polars-runtime-64 == 1.42.1"]
-rtcompat = ["polars-runtime-compat == 1.42.1"]
+rt64 = ["polars-runtime-64 == 2.1.0"]
+rtcompat = ["polars-runtime-compat == 2.1.0"]
 
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
-polars_cloud = ["polars_cloud >= 0.4.0"]
+polars_cloud = ["polars_cloud >= 0.13.0"]
+polars_nanook = ["polars_nanook"]
 # Interop
 numpy = ["numpy >= 1.16.0"]
 pandas = ["pandas", "polars[pyarrow]"]
@@ -72,8 +73,10 @@ database = ["polars[adbc,connectorx,sqlalchemy]"]
 fsspec = ["fsspec"]
 
 # Other I/O
-deltalake = ["deltalake >= 1.0.0, != 1.5.*"]
-iceberg = ["pyiceberg >= 0.7.1"]
+deltalake = ["deltalake >= 1.2.0, != 1.5.*"]
+# `polars-iceberg` is the native Iceberg scan planning plugin, up to (excluding) its next major
+# version. `release-python` runs the test suite against the lower bound installed from PyPI.
+iceberg = ["pyiceberg >= 0.12.0", "polars-iceberg >= 0.1.0, < 1.0.0"]
 
 # Other
 async = ["gevent"]
@@ -101,6 +104,7 @@ ignore-missing-imports = [
   "IPython.*",
   "altair.*",
   "duckdb.*",
+  "polars_iceberg",
   "pyiceberg.*",
 ]
 # pyrefly equivalent of mypy's `follow_imports = "skip"`
@@ -163,6 +167,7 @@ module = [
   "polars.polars",
   "polars._plr",
   "polars_cloud",
+  "polars_iceberg",
   "pyarrow.*",
   "pydantic",
   "pyiceberg.*",
@@ -282,6 +287,10 @@ addopts = [
   "--strict-config",
   "--strict-markers",
   "--import-mode=importlib",
+  "--dist=loadgroup",
+  # A hard worker crash (e.g. a segfault) hangs under `--dist=loadgroup` when
+  # xdist tries to restart the worker and re-run the crashed group.
+  "--max-worker-restart=0",
   # Default to running fast tests only. To run ALL tests, run: pytest -m ""
   "-m not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only",
 ]
@@ -293,8 +302,8 @@ markers = [
   "release: Tests that should be run on a Polars release build.",
   "slow: Tests with a longer than average runtime.",
   "write_disk: Tests that write to disk",
-  "may_fail_auto_streaming: Test that may fail when automatically using the streaming engine for all lazy queries.",
   "may_fail_cloud: Test that may fail when automatically using the cloud distributed engine for all lazy queries.",
+  "may_fail_lazy_schema: Test whose lazy queries may have a `collect_schema()` that disagrees with the schema of the collected DataFrame.",
   "may_fail_strict: Test that may fail strict mode.",
 ]
 filterwarnings = [
@@ -315,8 +324,6 @@ filterwarnings = [
   "ignore:Deprecated API features detected.*:DeprecationWarning",
   # numpy import can generate this warning in Python 3.13 on certain runners
   "ignore:.*numpy\\.longdouble.*:UserWarning",
-  # TODO: https://github.com/pola-rs/polars/issues/20065.
-  "ignore:.*DataFrame Interchange Protocol is deprecated",
 ]
 xfail_strict = true
 

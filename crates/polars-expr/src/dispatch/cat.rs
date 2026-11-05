@@ -13,7 +13,6 @@ use polars_plan::plans::IRCategoricalFunction;
 pub fn function_expr_to_udf(func: IRCategoricalFunction) -> SpecialEq<Arc<dyn ColumnsUdf>> {
     use IRCategoricalFunction::*;
     match func {
-        GetCategories => map!(get_categories),
         #[cfg(feature = "strings")]
         LenBytes => map!(len_bytes),
         #[cfg(feature = "strings")]
@@ -27,12 +26,6 @@ pub fn function_expr_to_udf(func: IRCategoricalFunction) -> SpecialEq<Arc<dyn Co
         To(dtype, strict) => map!(cat_to, &dtype, strict),
         Physical => map!(cat_physical),
     }
-}
-
-fn get_categories(s: &Column) -> PolarsResult<Column> {
-    let mapping = s.dtype().cat_mapping()?;
-    let ca = unsafe { StringChunked::from_chunks(s.name().clone(), vec![mapping.to_arrow(true)]) };
-    Ok(ca.into_column())
 }
 
 // Determine mapping between categories and underlying physical. For local, this is just 0..n.

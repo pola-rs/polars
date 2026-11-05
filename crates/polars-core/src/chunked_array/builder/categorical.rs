@@ -1,4 +1,4 @@
-use arrow::bitmap::BitmapBuilder;
+use polars_arrow::bitmap::BitmapBuilder;
 
 use crate::prelude::*;
 
@@ -14,7 +14,7 @@ pub struct CategoricalChunkedBuilder<T: PolarsCategoricalType> {
 impl<T: PolarsCategoricalType> CategoricalChunkedBuilder<T> {
     pub fn new(name: PlSmallStr, dtype: DataType) -> Self {
         let (DataType::Categorical(_, mapping) | DataType::Enum(_, mapping)) = &dtype else {
-            panic!("non-Categorical/Enum dtype in CategoricalChunkedbuilder")
+            panic!("non-Categorical/Enum dtype in CategoricalChunkedBuilder")
         };
         Self {
             name,

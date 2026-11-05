@@ -93,3 +93,14 @@ pub fn ensure_matching_dtypes_if_found(
             Ok(())
         })
 }
+
+/// Resolve duplicate keys in every `Map` nested inside a decoded parquet column.
+///
+/// The parquet spec allows a `MAP` to contain duplicate keys, but the Polars `Map` dtype does not,
+/// so each reader has to canonicalize.
+pub fn canonicalize_parquet_maps(series: &mut Series) -> PolarsResult<()> {
+    if let Some(canonicalized) = series.canonicalize_maps()? {
+        *series = canonicalized;
+    }
+    Ok(())
+}

@@ -87,7 +87,7 @@ fn test_column(column: &str, compression: CompressionOptions) -> ParquetResult<(
     let columns = std::iter::once(Ok(pages));
 
     let writer = Cursor::new(vec![]);
-    let mut writer = FileWriter::new(writer, schema, options, None);
+    let mut writer = FileWriter::try_new(writer, schema, options, None, None)?;
 
     writer.write(u64::MAX, DynIter::new(columns))?;
     writer.end(None)?;
@@ -202,7 +202,7 @@ fn basic() -> ParquetResult<()> {
     let columns = std::iter::once(Ok(pages));
 
     let writer = Cursor::new(vec![]);
-    let mut writer = FileWriter::new(writer, schema, options, None);
+    let mut writer = FileWriter::try_new(writer, schema, options, None, None)?;
 
     writer.write(u64::MAX, DynIter::new(columns))?;
     writer.end(None)?;
@@ -220,7 +220,7 @@ fn basic() -> ParquetResult<()> {
             .unwrap()
             .next()
             .unwrap()
-            .uncompressed_size(),
+            .uncompressed_size()?,
         expected
     );
 
@@ -230,7 +230,7 @@ fn basic() -> ParquetResult<()> {
 #[test]
 fn test_parquet() {
     // In CI: This test will be skipped because the file does not exist.
-    if let Ok(r) = polars_utils::open_file("data/simple.parquet".as_ref()) {
+    if let Ok(r) = polars_utils::io::open_file("data/simple.parquet".as_ref()) {
         let reader = ParquetReader::new(r);
         let df = reader.finish().unwrap();
         assert_eq!(df.get_column_names(), ["a", "b"]);

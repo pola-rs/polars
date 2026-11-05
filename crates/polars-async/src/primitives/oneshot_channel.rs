@@ -20,7 +20,7 @@ pub struct Receiver<T> {
 }
 
 impl<T: Send> Receiver<T> {
-    pub async fn recv(mut self) -> Result<T, ()> {
+    pub async fn recv(mut self) -> Result<T, connector::RecvError> {
         self.inner.recv().await
     }
 }

@@ -4,8 +4,6 @@
 pub mod cat;
 #[cfg(feature = "dtype-categorical")]
 pub use cat::*;
-#[cfg(feature = "rolling_window_by")]
-pub(crate) use polars_time::prelude::*;
 
 mod arithmetic;
 mod arity;
@@ -27,6 +25,8 @@ mod from;
 pub mod function_expr;
 pub mod functions;
 mod list;
+#[cfg(feature = "dtype-map")]
+mod map;
 mod match_to_schema;
 #[cfg(feature = "meta")]
 mod meta;
@@ -40,6 +40,7 @@ mod scan_sources;
 mod selector;
 #[cfg(feature = "serde")]
 mod serializable_plan;
+mod sql;
 mod statistics;
 #[cfg(feature = "strings")]
 pub mod string;
@@ -51,6 +52,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 mod iter;
+mod join;
 mod plan;
 pub use arity::*;
 #[cfg(feature = "dtype-array")]
@@ -60,13 +62,18 @@ pub use expr::*;
 #[cfg(feature = "dtype-extension")]
 pub use extension::*;
 pub use function_expr::*;
+pub use join::JoinCondition;
 pub use list::*;
+#[cfg(feature = "dtype-map")]
+pub use map::*;
 pub use match_to_schema::*;
 #[cfg(feature = "meta")]
 pub use meta::*;
 pub use name::*;
 pub use options::*;
 pub use plan::*;
+#[cfg(feature = "approx_quantile")]
+pub use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
@@ -76,11 +83,15 @@ use polars_core::series::ops::NullBehavior;
 #[cfg(feature = "is_close")]
 use polars_utils::total_ord::TotalOrdWrap;
 pub use selector::{DataTypeSelector, Selector, TimeUnitSet, TimeZoneSet};
+pub use sql::{
+    CachedSqlStatement, SqlCatalogTable, SqlResolver, get_sql_resolver, set_sql_resolver,
+};
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
 pub use udf::UserDefinedFunction;
 mod file_scan;
 pub use file_scan::*;
+pub mod dsl_resolver;
 use functions::lit;
 pub use scan_sources::{ScanSource, ScanSourceIter, ScanSourceRef, ScanSources};
 
@@ -173,7 +184,7 @@ impl Expr {
         AggExpr::First(Arc::new(self)).into()
     }
 
-    /// Get the first non-nullvalue in the group.
+    /// Get the first non-null value in the group.
     pub fn first_non_null(self) -> Self {
         AggExpr::FirstNonNull(Arc::new(self)).into()
     }
@@ -211,11 +222,6 @@ impl Expr {
         self.map_binary(FunctionExpr::Quantile { method }, quantile)
     }
 
-    /// Get the group indexes of the group by operation.
-    pub fn agg_groups(self) -> Self {
-        AggExpr::AggGroups(Arc::new(self)).into()
-    }
-
     /// Explode the String/List column.
     pub fn explode(self, options: ExplodeOptions) -> Self {
         Expr::Explode {
@@ -237,11 +243,6 @@ impl Expr {
     /// Append expressions. This is done by adding the chunks of `other` to this [`Series`].
     pub fn append<E: Into<Expr>>(self, other: E, upcast: bool) -> Self {
         self.map_binary(FunctionExpr::Append { upcast }, other.into())
-    }
-
-    /// Collect all chunks into a single chunk before continuing.
-    pub fn rechunk(self) -> Self {
-        self.map_unary(FunctionExpr::Rechunk)
     }
 
     /// Get the first `n` elements of the Expr result.
@@ -271,12 +272,16 @@ impl Expr {
         self.map_unary(FunctionExpr::ArgUnique)
     }
 
-    /// Get the index value that has the minimum value.
+    /// Get an index of a minimal value.
+    ///
+    /// In the case of a tie, this may return the index of any of the minimum values.
     pub fn arg_min(self) -> Self {
         self.map_unary(FunctionExpr::ArgMin)
     }
 
-    /// Get the index value that has the maximum value.
+    /// Get an index of a maximum value.
+    ///
+    /// In the case of a tie, this may return the index of any of the maximum values.
     pub fn arg_max(self) -> Self {
         self.map_unary(FunctionExpr::ArgMax)
     }
@@ -575,7 +580,7 @@ impl Expr {
     /// It is the responsibility of the caller that the schema is correct by giving
     /// the correct output_type. If None given the output type of the input expr is used.
     ///
-    /// This difference with [map](Self::map) is that `apply` will create a separate `Series` per group.
+    /// The difference with [map](Self::map) is that `apply` will create a separate `Series` per group.
     ///
     /// * `map` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
     /// * `apply` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
@@ -639,6 +644,11 @@ impl Expr {
     /// Shift the values in the array by some period and fill the resulting empty values.
     pub fn shift_and_fill<E: Into<Expr>, IE: Into<Expr>>(self, n: E, fill_value: IE) -> Self {
         self.map_ternary(FunctionExpr::ShiftAndFill, n.into(), fill_value.into())
+    }
+
+    /// Single-input version of [`functions::pipe_with_dtype`].
+    pub fn pipe_with_dtype(self, callback: PlanCallback<(Vec<Expr>, Vec<DataType>), Expr>) -> Self {
+        functions::pipe_with_dtype([self], callback)
     }
 
     /// Cumulatively count values from 0 to len.
@@ -847,15 +857,27 @@ impl Expr {
             if e.is_empty() {
                 return None;
             }
-            let e = if e.len() == 1 {
-                Arc::new(e[0].clone().into())
-            } else {
-                feature_gated!["dtype-struct", {
-                    let e = e.iter().map(|e| e.clone().into()).collect::<Vec<_>>();
-                    Arc::new(functions::as_struct(e))
-                }]
-            };
-            Some((e, options))
+            if e.len() == 1 {
+                return Some((Arc::new(e[0].clone().into()), options));
+            }
+            // Row-encode the keys so the sort options apply to every key.
+            let e = e.iter().map(|e| e.clone().into()).collect::<Vec<_>>();
+            let encoded = Expr::n_ary(
+                FunctionExpr::RowEncode {
+                    variant: RowEncodingVariant::Ordered {
+                        descending: Some(vec![options.descending]),
+                        nulls_last: Some(vec![options.nulls_last]),
+                    },
+                    output: RowEncodingOutputType::AlwaysBinaryOffset,
+                    encode_nulls: None,
+                    propagate_nulls: false,
+                },
+                e,
+            );
+            Some((
+                Arc::new(encoded),
+                SortOptions::default().with_maintain_order(options.maintain_order),
+            ))
         });
 
         Ok(Expr::Over {
@@ -863,6 +885,7 @@ impl Expr {
             partition_by,
             order_by,
             mapping,
+            may_reorder: false,
         })
     }
 
@@ -979,6 +1002,25 @@ impl Expr {
     #[cfg(feature = "approx_unique")]
     pub fn approx_n_unique(self) -> Self {
         self.map_unary(FunctionExpr::ApproxNUnique)
+    }
+
+    /// Get the approximate quantile value.
+    #[cfg(feature = "approx_quantile")]
+    pub fn approx_quantile<E: Into<Expr>>(
+        self,
+        quantile: E,
+        error: f64,
+        use_formal_bound: bool,
+        method: ApproxQuantileMethod,
+    ) -> Self {
+        self.map_binary(
+            FunctionExpr::ApproxQuantile {
+                method,
+                error,
+                use_formal_bound,
+            },
+            quantile.into(),
+        )
     }
 
     /// Bitwise "and" operation.
@@ -1418,6 +1460,12 @@ impl Expr {
         })
     }
 
+    #[cfg(feature = "cutqcut")]
+    /// Assign each value to a bin.
+    pub fn bin(self, options: BinOptions) -> Expr {
+        self.map_unary(FunctionExpr::Bin(options))
+    }
+
     #[cfg(feature = "rle")]
     /// Get the lengths of runs of identical values.
     pub fn rle(self) -> Expr {
@@ -1468,12 +1516,12 @@ impl Expr {
         self.map_unary(FunctionExpr::Kurtosis(fisher, bias))
     }
 
-    /// Get maximal value that could be hold by this dtype.
+    /// Get maximal value that could be held by this dtype.
     pub fn upper_bound(self) -> Expr {
         self.map_unary(FunctionExpr::UpperBound)
     }
 
-    /// Get minimal value that could be hold by this dtype.
+    /// Get minimal value that could be held by this dtype.
     pub fn lower_bound(self) -> Expr {
         self.map_unary(FunctionExpr::LowerBound)
     }
@@ -1497,6 +1545,18 @@ impl Expr {
     /// Calculate the exponentially-weighted moving average by a time column.
     pub fn ewm_mean_by(self, times: Expr, half_life: Duration) -> Self {
         self.map_binary(FunctionExpr::EwmMeanBy { half_life }, times)
+    }
+
+    #[cfg(feature = "ewma")]
+    /// Calculate the exponentially-weighted moving sum.
+    pub fn ewm_sum(self, options: EWMOptions) -> Self {
+        self.map_unary(FunctionExpr::EwmSum { options })
+    }
+
+    #[cfg(feature = "ewma_by")]
+    /// Calculate the exponentially-weighted moving sum by a time column.
+    pub fn ewm_sum_by(self, times: Expr, half_life: Duration) -> Self {
+        self.map_binary(FunctionExpr::EwmSumBy { half_life }, times)
     }
 
     #[cfg(feature = "ewma")]
@@ -1586,6 +1646,18 @@ impl Expr {
     }
 
     #[cfg(feature = "log")]
+    /// Compute the error function of all elements in the input array.
+    pub fn erf(self) -> Self {
+        self.map_unary(FunctionExpr::Erf)
+    }
+
+    #[cfg(feature = "log")]
+    /// Compute the complementary error function of all elements in the input array.
+    pub fn erfc(self) -> Self {
+        self.map_unary(FunctionExpr::Erfc)
+    }
+
+    #[cfg(feature = "log")]
     /// Compute the entropy as `-sum(pk * log(pk))`.
     /// where `pk` are discrete probabilities.
     pub fn entropy(self, base: f64, normalize: bool) -> Self {
@@ -1608,8 +1680,13 @@ impl Expr {
 
     #[cfg(feature = "row_hash")]
     /// Compute the hash of every element.
-    pub fn hash(self, k0: u64, k1: u64, k2: u64, k3: u64) -> Expr {
-        self.map_unary(FunctionExpr::Hash(k0, k1, k2, k3))
+    pub fn hash(self, seed: u64) -> Expr {
+        self.map_unary(FunctionExpr::Hash(seed))
+    }
+
+    /// Compute the 32-bit MurmurHash3 of the values as defined by the Iceberg specification.
+    pub fn mm3_hash(self) -> Expr {
+        self.map_unary(FunctionExpr::Mm3Hash)
     }
 
     pub fn to_physical(self) -> Expr {
@@ -1674,6 +1751,14 @@ impl Expr {
         extension::ExtensionNameSpace(self)
     }
 
+    /// Get the [`map::MapNameSpace`].
+    ///
+    /// Named `map_` because [`Expr::map`] is the elementwise UDF entry point.
+    #[cfg(feature = "dtype-map")]
+    pub fn map_(self) -> map::MapNameSpace {
+        map::MapNameSpace(self)
+    }
+
     /// Get the [`struct_::StructNameSpace`].
     #[cfg(feature = "dtype-struct")]
     pub fn struct_(self) -> struct_::StructNameSpace {
@@ -1720,7 +1805,7 @@ where
 /// It is the responsibility of the caller that the schema is correct by giving
 /// the correct output_type. If None given the output type of the input expr is used.
 ///
-/// This difference with [`map_multiple`] is that [`apply_multiple`] will create a separate [`Series`] per group.
+/// The difference with [`map_multiple`] is that [`apply_multiple`] will create a separate [`Series`] per group.
 ///
 /// * [`map_multiple`] should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
 /// * [`apply_multiple`] should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.

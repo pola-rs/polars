@@ -1,15 +1,15 @@
 use std::borrow::Cow;
 use std::cell::Cell;
 
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::compute::concatenate::concatenate_unchecked;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::compute::concatenate::concatenate_unchecked;
 use polars_error::constants::LENGTH_LIMIT_MSG;
+use polars_utils::slice::slice_offsets;
 
 use super::*;
 use crate::chunked_array::flags::StatisticsFlags;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
-use crate::utils::slice_offsets;
 
 pub(crate) fn split_at(
     chunks: &[ArrayRef],
@@ -101,7 +101,7 @@ thread_local!(pub static CHECK_LENGTH: Cell<bool> = const { Cell::new(true) });
 
 /// Meant for internal use. In very rare conditions this can be turned off.
 /// # Safety
-/// The caller must ensure the Series that exceeds the length get's deconstructed
+/// The caller must ensure the Series that exceeds the length gets deconstructed
 /// into array values or list values before and never is used.
 pub unsafe fn _set_check_length(check: bool) {
     CHECK_LENGTH.set(check)
@@ -133,6 +133,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// Check if ChunkedArray is empty.
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -224,6 +225,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         for (arr, validity) in unsafe { self.chunks_mut().iter_mut() }.zip(validities.iter()) {
             *arr = arr.with_validity(validity.clone())
         }
+        self.compute_len();
     }
 
     /// Split the array. The chunks are reallocated the underlying data slices are zero copy.

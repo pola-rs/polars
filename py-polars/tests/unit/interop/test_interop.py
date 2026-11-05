@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import io
-from datetime import date, datetime, time, timedelta, timezone
+import re
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, cast
 from zoneinfo import ZoneInfo
@@ -14,6 +15,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import (
+    ArgumentRemovedError,
     ComputeError,
     DuplicateError,
     InvalidOperationError,
@@ -22,7 +24,7 @@ from polars.exceptions import (
 )
 from polars.interchange.protocol import CompatLevel
 from polars.testing import assert_frame_equal, assert_series_equal
-from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
+from tests.unit.utils.pycapsule_utils import PyCapsuleArrayHolder, PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
     from tests.conftest import PlMonkeyPatch
@@ -82,6 +84,93 @@ def test_arrow_dict_to_polars() -> None:
         values=["AAA", "BBB", "CCC", "DDD", "BBB", "AAA", "CCC", "DDD", "DDD", "CCC"],
     )
     assert_series_equal(s, pl.Series("pa_dict", pa_dict))
+
+
+def _arrow_field(dtype: pl.DataType) -> pa.Field:
+    return pl.DataFrame({"x": pl.Series([], dtype=dtype)}).to_arrow().schema.field("x")
+
+
+@pytest.mark.parametrize(
+    ("keys", "expected", "expected_cats", "expected_phys"),
+    [
+        # More rows than dictionary values: each value is looked up once.
+        (
+            [2, None, 0, 2, 3, 0],
+            ["b", None, "a", "b", None, "a"],
+            ["b", "a"],
+            [0, None, 1, 0, None, 1],
+        ),
+        ([3, 0, 3, 2], [None, "a", None, "b"], ["a", "b"], [None, 0, None, 1]),
+        ([2, 0, 2, 0], ["b", "a", "b", "a"], ["b", "a"], [0, 1, 0, 1]),
+        # Fewer rows than dictionary values: each row is looked up.
+        ([2, 3], ["b", None], ["b"], [0, None]),
+    ],
+)
+def test_arrow_dict_to_categorical(
+    keys: list[int | None],
+    expected: list[str | None],
+    expected_cats: list[str],
+    expected_phys: list[int | None],
+) -> None:
+    cats = pl.Categories.random(physical=pl.UInt8)
+    field = _arrow_field(pl.Categorical(cats))
+    arr = pa.DictionaryArray.from_arrays(
+        pa.array(keys, pa.uint8()),
+        pa.array(["a", "unused", "b", None], pa.large_string()),
+    )
+    s = cast("pl.DataFrame", pl.from_arrow(pa.table({"x": arr}, pa.schema([field]))))[
+        "x"
+    ]
+    assert s.dtype == pl.Categorical(cats)
+    assert s.to_list() == expected
+    # Unused dictionary values are not inserted, and ids follow first use.
+    assert cats.to_series().to_list() == expected_cats
+    assert s.to_physical().to_list() == expected_phys
+
+
+@pytest.mark.parametrize(
+    ("keys", "expected"),
+    [([-1, 0, 1, 0], [None, "a", "b", "a"]), ([-1], [None])],
+)
+def test_arrow_dict_negative_keys(keys: list[int], expected: list[str | None]) -> None:
+    arr = pa.DictionaryArray.from_arrays(
+        pa.array(keys, pa.int32()), pa.array(["a", "b"]), safe=False
+    )
+    assert cast("pl.Series", pl.from_arrow(arr)).to_list() == expected
+
+
+def test_arrow_dict_out_of_bounds_keys() -> None:
+    arr = pa.DictionaryArray.from_arrays(
+        pa.array([0, 2, 1], pa.int32()), pa.array(["a", "b"]), safe=False
+    )
+    with pytest.raises(pl.exceptions.PanicException):
+        pl.from_arrow(arr)
+
+
+def test_arrow_dict_to_enum() -> None:
+    dtype = pl.Enum(["b", "c"])
+    field = _arrow_field(dtype)
+    arr = pa.DictionaryArray.from_arrays(
+        pa.array([2, None, 0, 2, 3, 0], pa.uint8()),
+        pa.array(["a", "unused", "b", None], pa.large_string()),
+    )
+    s = cast("pl.DataFrame", pl.from_arrow(pa.table({"x": arr}, pa.schema([field]))))[
+        "x"
+    ]
+    assert s.dtype == dtype
+    assert s.to_list() == ["b", None, None, "b", None, None]
+
+
+def test_arrow_dict_chunks_to_categorical() -> None:
+    ca = pa.chunked_array(
+        [
+            pa.DictionaryArray.from_arrays([1, 0, 1], ["a", "b"]),
+            pa.DictionaryArray.from_arrays([0, None, 1], ["c", "a"]),
+        ]
+    )
+    s = cast("pl.Series", pl.from_arrow(ca))
+    assert s.dtype == pl.Categorical
+    assert s.to_list() == ["b", "a", "b", "c", None, "a"]
 
 
 def test_arrow_list_chunked_array() -> None:
@@ -267,11 +356,23 @@ def test_from_arrow_with_bigquery_metadata() -> None:
         schema=arrow_schema,
     )
 
+    df = pl.from_arrow(arrow_tbl)
+    assert isinstance(df, pl.DataFrame)
+
+    # The BigQuery sql-type metadata is retained as an extension dtype,
+    # but must not affect the underlying storage dtypes
+    assert df.schema == {
+        "id": pl.Extension("google:sqlType:integer", pl.Int64),
+        "misc": pl.Extension(
+            "google:sqlType:struct", pl.Struct({"num": pl.Int32, "val": pl.String})
+        ),
+    }
+
     expected_data = {"id": [1, 2], "num": [None, None], "val": [None, None]}
     expected_schema = {"id": pl.Int64, "num": pl.Int32, "val": pl.String}
     assert_frame_equal(
+        df.select(pl.all().ext.storage()).unnest("misc"),
         pl.DataFrame(expected_data, schema=expected_schema),
-        pl.from_arrow(arrow_tbl).unnest("misc"),  # type: ignore[union-attr]
     )
 
 
@@ -392,13 +493,18 @@ def test_from_pyarrow_map() -> None:
     pl.DataFrame(pa_table.slice(0, 0))
 
     result = pl.DataFrame(pa_table)
+    assert result.schema == {"idx": pl.Int16, "mapping": pl.Map(pl.String, pl.String)}
     assert result.to_dict(as_series=False) == {
         "idx": [1, 2],
-        "mapping": [
-            [{"key": "a", "value": "something"}],
-            [{"key": "a", "value": "else"}, {"key": "b", "value": "another key"}],
-        ],
+        "mapping": [{"a": "something"}, {"a": "else", "b": "another key"}],
     }
+
+
+def test_from_pyarrow_map_preserves_nulls_28652() -> None:
+    pa_map = pa.array([[], None, [("k", 1)]], type=pa.map_(pa.string(), pa.int64()))
+    result = pl.Series(pa_map)
+    assert result.dtype == pl.Map(pl.String, pl.Int64)
+    assert result.to_list() == [{}, None, {"k": 1}]
 
 
 def test_from_fixed_size_binary_list() -> None:
@@ -407,6 +513,12 @@ def test_from_fixed_size_binary_list() -> None:
     s = cast("pl.Series", pl.from_arrow(arrow_array))
     assert s.dtype == pl.List(pl.Binary)
     assert s.to_list() == val
+
+
+def test_from_repr_tbl_removed() -> None:
+    msg = "It was renamed to 'data'."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.from_repr(tbl="")  # type: ignore[call-arg]
 
 
 def test_dataframe_from_repr() -> None:
@@ -922,13 +1034,13 @@ def test_from_arrow_fixed_offset(fixed_offset: str, etc_tz: str) -> None:
         type=pa.timestamp("us", tz=fixed_offset),
     )
     result = cast("pl.Series", pl.from_arrow(arr))
-    expected = pl.Series(
-        [datetime(2021, 1, 1, tzinfo=timezone.utc)]
-    ).dt.convert_time_zone(etc_tz)
+    expected = pl.Series([datetime(2021, 1, 1, tzinfo=UTC)]).dt.convert_time_zone(
+        etc_tz
+    )
     assert_series_equal(result, expected)
 
 
-def test_from_avro_valid_time_zone_13032() -> None:
+def test_from_arrow_valid_time_zone_13032() -> None:
     arr = pa.array(
         [datetime(2021, 1, 1, 0, 0, 0, 0)], type=pa.timestamp("ns", tz="00:00")
     )
@@ -991,6 +1103,96 @@ def test_compat_level(plmonkeypatch: PlMonkeyPatch) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "arrow_dtype",
+    [pa.decimal32(9, 7), pa.decimal64(18, 8), pa.decimal128(38, 8)],
+)
+def test_pycapsule_stream_decimal_29651(arrow_dtype: pa.DataType) -> None:
+    values = [Decimal("24.5790000"), Decimal("-1.2345678"), None]
+    table = pa.table({"x": pa.array(values, type=arrow_dtype)})
+    schema = {"x": pl.Decimal(arrow_dtype.precision, arrow_dtype.scale)}
+
+    reader = pa.RecordBatchReader.from_batches(table.schema, table.to_batches())
+    df = pl.DataFrame(PyCapsuleStreamHolder(reader))
+    assert_frame_equal(df, pl.DataFrame({"x": values}, schema=schema))
+
+    reader = pa.RecordBatchReader.from_batches(
+        table.schema, table.slice(1).to_batches()
+    )
+    df = pl.DataFrame(PyCapsuleStreamHolder(reader))
+    expected = pl.DataFrame({"x": [Decimal("-1.2345678"), None]}, schema=schema)
+    assert_frame_equal(df, expected)
+
+
+def test_from_arrow_nested_decimal_29651() -> None:
+    table = pa.table(
+        {
+            "l": pa.array(
+                [[Decimal("1.5"), None], None, [Decimal("-2.25")], []],
+                pa.list_(pa.decimal64(10, 2)),
+            ),
+            "s": pa.array(
+                [{"d": Decimal("3.125")}, {"d": Decimal("-1.5")}, {"d": None}, None],
+                pa.struct([("d", pa.decimal32(5, 3))]),
+            ),
+        }
+    )
+    df = pl.DataFrame(table)
+    expected = pl.DataFrame(
+        {
+            "l": [[Decimal("1.50"), None], None, [Decimal("-2.25")], []],
+            "s": [
+                {"d": Decimal("3.125")},
+                {"d": Decimal("-1.500")},
+                {"d": None},
+                None,
+            ],
+        },
+        schema={
+            "l": pl.List(pl.Decimal(10, 2)),
+            "s": pl.Struct({"d": pl.Decimal(5, 3)}),
+        },
+    )
+    assert_frame_equal(df, expected)
+
+
+ARRAY_TEST_DATA = [[-250, 125], None, [125, None], [125, -250]]
+
+
+@pytest.mark.parametrize(
+    ("array", "inner_dtype"),
+    [
+        (pa.array(ARRAY_TEST_DATA, pa.list_(pa.int32(), 2)), pl.Int32),
+        (pa.array(ARRAY_TEST_DATA, pa.list_(pa.decimal32(5, 2), 2)), pl.Decimal(5, 2)),
+        (
+            pa.array(ARRAY_TEST_DATA, pa.list_(pa.decimal64(12, 2), 2)),
+            pl.Decimal(12, 2),
+        ),
+        (
+            # child array with its own offset
+            pa.FixedSizeListArray.from_arrays(
+                pa.array([9, 9, -250, 125, 0, 0, 125, None, 125, -250]).slice(2),
+                2,
+                mask=pa.array([False, True, False, False]),
+            ),
+            pl.Int64,
+        ),
+        (pa.array([[], None, [], []], pa.list_(pa.int32(), 0)), pl.Int32),
+    ],
+)
+def test_from_arrow_sliced_fixed_size_list(
+    array: pa.FixedSizeListArray, inner_dtype: pl.DataType
+) -> None:
+    for source in (
+        array.slice(1, 2),
+        array.slice(2, 0),
+        pa.chunked_array([array.slice(0, 2), array.slice(2)]),
+    ):
+        series = pl.Series(source)
+        assert series.dtype == pl.Array(inner_dtype, array.type.list_size)
+        assert series.to_list() == source.to_pylist()
+
+
 def test_df_pycapsule_interface() -> None:
     df = pl.DataFrame(
         {
@@ -1009,10 +1211,10 @@ def test_df_pycapsule_interface() -> None:
     expected_schema = pl.Schema([("a", pl.Int128), ("b", pl.String), ("c", pl.String)])
 
     for arrow_obj in (
-        pl.from_arrow(capsule_df),  # capsule
+        pl.DataFrame(capsule_df),  # capsule
         out,  # table loaded from capsule
     ):
-        df_res = pl.from_arrow(arrow_obj, schema_overrides=schema_overrides)
+        df_res = pl.DataFrame(arrow_obj, schema_overrides=schema_overrides)
         assert expected_schema == df_res.schema  # type: ignore[union-attr]
         assert isinstance(df_res, pl.DataFrame)
         assert df.equals(df_res)
@@ -1026,15 +1228,6 @@ def test_misaligned_nested_arrow_19097() -> None:
     assert_series_equal(pl.Series("a", a.to_arrow()), a)
 
 
-def test_arrow_roundtrip_lex_cat_20288() -> None:
-    tb = pl.Series("a", ["A", "B"], pl.Categorical()).to_frame().to_arrow()
-    df = pl.from_arrow(tb)
-    assert isinstance(df, pl.DataFrame)
-    dt = df.schema["a"]
-    assert isinstance(dt, pl.Categorical)
-    assert dt.ordering == "lexical"
-
-
 def test_from_arrow_20271() -> None:
     df = pl.from_arrow(
         pa.table({"b": pa.DictionaryArray.from_arrays([0, 1], ["D", "E"])})
@@ -1046,12 +1239,18 @@ def test_from_arrow_20271() -> None:
     )
 
 
+def test_series_to_arrow_future_removed() -> None:
+    msg = "It was renamed to 'compat_level'."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.Series("a", [1, 2, 3]).to_arrow(future=True)  # type: ignore[call-arg]
+
+
 def test_to_arrow_empty_chunks_20627() -> None:
     df = pl.concat(2 * [pl.Series([1])]).filter(pl.Series([False, True])).to_frame()
     assert df.to_arrow().shape == (1, 1)
 
 
-def test_from_arrow_recorbatch() -> None:
+def test_from_arrow_recordbatch() -> None:
     n_legs = pa.array([2, 2, 4, 4, 5, 100])
     animals = pa.array(
         ["Flamingo", "Parrot", "Dog", "Horse", "Brittle stars", "Centipede"]
@@ -1097,37 +1296,38 @@ def test_from_arrow_map_containing_timestamp_23658() -> None:
         ),
     )
 
-    expect = pl.DataFrame(
+    out = pl.DataFrame(arrow_tbl)
+    assert out.schema == pl.Schema(
         {
-            "column_1": [
-                [
-                    {
-                        "field_1": [
-                            {"key": 1, "value": datetime(2025, 1, 1)},
-                            {"key": 2, "value": datetime(2025, 1, 2)},
-                            {"key": 2, "value": None},
-                        ]
-                    },
-                    {"field_1": []},
-                    None,
-                ]
-            ],
-        },
-        schema={
             "column_1": pl.List(
-                pl.Struct(
-                    {
-                        "field_1": pl.List(
-                            pl.Struct({"key": pl.Int32, "value": pl.Datetime("ms")})
-                        )
-                    }
-                )
+                pl.Struct({"field_1": pl.Map(pl.Int32, pl.Datetime("ms"))})
             )
-        },
+        }
     )
 
-    out = pl.DataFrame(arrow_tbl)
-    assert_frame_equal(out, expect)
+    # Arrow import does not canonicalize, so the duplicate key 2 survives in the
+    # entries; a Python dict cannot hold it, and keeps the last value.
+    entries = pl.List(pl.Struct({"key": pl.Int32, "value": pl.Datetime("ms")}))
+    assert out["column_1"].explode().struct.field("field_1").cast(
+        entries
+    ).to_list() == [
+        [
+            {"key": 1, "value": datetime(2025, 1, 1)},
+            {"key": 2, "value": datetime(2025, 1, 2)},
+            {"key": 2, "value": None},
+        ],
+        [],
+        None,
+    ]
+    assert out.to_dicts() == [
+        {
+            "column_1": [
+                {"field_1": {1: datetime(2025, 1, 1), 2: None}},
+                {"field_1": {}},
+                None,
+            ]
+        }
+    ]
 
 
 def test_schema_constructor_from_schema_capsule() -> None:
@@ -1135,9 +1335,7 @@ def test_schema_constructor_from_schema_capsule() -> None:
         [pa.field("test", pa.map_(pa.int32(), pa.timestamp("ms")))]
     )
 
-    assert pl.Schema(arrow_schema) == {
-        "test": pl.List(pl.Struct({"key": pl.Int32, "value": pl.Datetime("ms")}))
-    }
+    assert pl.Schema(arrow_schema) == {"test": pl.Map(pl.Int32, pl.Datetime("ms"))}
 
     # Test __arrow_c_schema__ implementation on `pl.Schema`
     assert pa.schema(pl.Schema({"x": pl.Int32})) == pa.schema(
@@ -1550,3 +1748,116 @@ def test_from_pandas_timestamp_17382() -> None:
     assert isinstance(result, datetime)
     assert result.tzinfo == ZoneInfo("UTC")
     assert result == datetime(2021, 1, 1, 0, 0, 0, tzinfo=ZoneInfo("UTC"))
+
+
+def test_sliced_struct_arrow_export_19612() -> None:
+    df = pl.DataFrame(
+        {"x": [{"value": "A"}, None, {"value": "B"}, None]},
+    )
+
+    arrow_tbls = [
+        df.slice(0, 1).to_arrow(),
+        df.slice(1, 1).to_arrow(),
+        df.slice(2, 1).to_arrow(),
+        df.slice(3, 1).to_arrow(),
+    ]
+
+    expected_row_values = [{"value": "A"}, None, {"value": "B"}, None]
+
+    for arrow_tbl, expect_row_value in zip(
+        arrow_tbls, expected_row_values, strict=True
+    ):
+        assert_frame_equal(
+            pl.DataFrame(arrow_tbl),
+            pl.DataFrame({"x": [expect_row_value]}, schema=df.schema),
+        )
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype", "expected"),
+    [
+        (
+            [[0, 0], [1, 2], [3, 4], None, [7, 8]],
+            pl.Array(pl.Int64, 2),
+            [[1, 2], [3, 4], None],
+        ),
+        (
+            [[0], [1, 2], [3, 4, 5], None, [7, 8]],
+            pl.List(pl.Int64),
+            [[1, 2], [3, 4, 5], None],
+        ),
+    ],
+)
+def test_sliced_nested_arrow_export_28583(
+    values: list[Any], dtype: pl.DataType, expected: list[Any]
+) -> None:
+    s = pl.Series(values, dtype=dtype).slice(1, 3)
+
+    assert s.to_list() == expected
+    assert s.to_arrow().to_pylist() == expected
+    assert pa.table(s.to_frame()).column(0).to_pylist() == expected
+
+
+def test_from_arrow_capsule_24511() -> None:
+    assert_series_equal(
+        pl.from_arrow(PyCapsuleStreamHolder(pl.DataFrame({"x": 1}))),  # type: ignore[arg-type]
+        pl.Series([{"x": 1}]),
+    )
+
+    assert_series_equal(
+        pl.from_arrow(PyCapsuleArrayHolder(pl.Series([{"x": 1}]).to_arrow())),  # type: ignore[arg-type]
+        pl.Series([{"x": 1}]),
+    )
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype"),
+    [
+        (["short", "a_string_longer_than_12"], pl.String),
+        ([b"short", b"a_string_longer_than_12"], pl.Binary),
+    ],
+)
+def test_binview_sliced_buffer_arrow_export_28612(
+    values: list[Any], dtype: pl.DataType
+) -> None:
+    df = pl.DataFrame({"c": values}, schema={"c": dtype})
+    df = pl.DataFrame(df.to_arrow())
+
+    assert df.to_series().to_list() == values
+    assert df.to_arrow().column("c").to_pylist() == values
+    assert pa.table(df).column("c").to_pylist() == values
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        [["a"], ["b"]],
+        [["x" * 13]],
+        [[["a"]]],
+        [[1], [2]],
+    ],
+)
+def test_series_from_arrow_large_list_child_cast_28626(values: list[Any]) -> None:
+    s = pl.Series("c", values)
+    assert pl.Series("c", s.to_arrow()).to_list() == values
+    assert (
+        pl.DataFrame(pl.DataFrame({"c": s}).to_arrow()).to_series().to_list() == values
+    )
+
+
+@pytest.mark.parametrize(
+    ("values", "fast_explode", "exploded"),
+    [
+        ([["a", "b"], ["c"]], True, ["a", "b", "c"]),
+        ([["a"], [], ["b"]], False, ["a", None, "b"]),
+        ([["a"], None, ["b"]], False, ["a", None, "b"]),
+    ],
+)
+def test_series_from_arrow_large_list_keeps_fast_explode_28626(
+    values: list[Any], fast_explode: bool, exploded: list[Any]
+) -> None:
+    imported = pl.Series("c", pl.Series("c", values).to_arrow())
+
+    assert imported.to_list() == values
+    assert imported.flags["FAST_EXPLODE"] is fast_explode
+    assert imported.explode(empty_as_null=True, keep_nulls=True).to_list() == exploded

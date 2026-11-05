@@ -41,7 +41,8 @@ impl Partitioner {
         morsel: Morsel,
         in_memory_exec_state: &ExecutionState,
     ) -> PolarsResult<PartitionedDataFrames> {
-        let (df, _, _, input_wait_token) = morsel.into_inner();
+        let (sf, _, _, input_wait_token) = morsel.into_inner();
+        let df = sf.into_df().await;
         let input_size = RowCountAndSize::new_from_df(&df);
         let partitions_vec = match self {
             Self::FileSize => vec![Partition {

@@ -121,6 +121,8 @@ def test_append_enum_22764() -> None:
     g = io.BytesIO()
     pl.DataFrame({"someletter": ["A", "B"]}).write_csv(f)
 
+    f.seek(0)
+
     schema = pl.Schema(
         {
             "someletter": pl.Enum(["A", "B"]),

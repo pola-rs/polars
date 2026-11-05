@@ -5,9 +5,10 @@
 
 use polars_core::prelude::*;
 pub use polars_plan::dsl::functions::*;
+use polars_plan::dsl::{DslPlan, HConcatOptions};
 use polars_plan::prelude::UnionArgs;
 
-use crate::prelude::*;
+use crate::frame::LazyFrame;
 
 pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
     inputs: L,
@@ -81,6 +82,8 @@ mod test {
     #[test]
     #[cfg(feature = "diagonal_concat")]
     fn test_diag_concat_lf() -> PolarsResult<()> {
+        use crate::frame::IntoLazy;
+
         let a = df![
             "a" => [1, 2],
             "b" => ["a", "b"]

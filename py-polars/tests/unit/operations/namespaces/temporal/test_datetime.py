@@ -126,15 +126,6 @@ def test_dt_replace_time_zone_none(time_zone: str | None, time_unit: TimeUnit) -
     assert result.item() == expected
 
 
-def test_dt_datetime_deprecated() -> None:
-    s = pl.Series([datetime(2022, 1, 1, 23)]).dt.replace_time_zone("Asia/Kathmandu")
-    with pytest.deprecated_call():
-        result = s.dt.datetime()
-    expected = datetime(2022, 1, 1, 23)
-    assert result.dtype == pl.Datetime(time_zone=None)
-    assert result.item() == expected
-
-
 @pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu", "UTC"])
 def test_local_date_sortedness(time_zone: str | None) -> None:
     # singleton
@@ -142,12 +133,45 @@ def test_local_date_sortedness(time_zone: str | None) -> None:
     result = ser.dt.date()
     assert result.flags["SORTED_ASC"]
 
-    # 2 elements
+    # 2 elements - the flag is only kept when local dates are known to be monotonic
     ser = (
         pl.Series([datetime(2022, 1, 1, 23)] * 2).dt.replace_time_zone(time_zone)
     ).sort()
     result = ser.dt.date()
-    assert result.flags["SORTED_ASC"]
+    assert result.flags["SORTED_ASC"] == (time_zone != "Asia/Kathmandu")
+
+
+def test_local_date_truncate_sortedness_28560() -> None:
+    utc = (
+        pl.Series([datetime(2010, 3, 4, 13) + timedelta(hours=h) for h in range(4)])
+        .dt.replace_time_zone("UTC")
+        .sort()
+    )
+    assert utc.dt.date().flags["SORTED_ASC"]
+    assert utc.dt.truncate("1h").flags["SORTED_ASC"]
+    assert utc.dt.truncate("1mo").flags["SORTED_ASC"]
+
+    # Antarctica/Casey moved from +11 to +08 at 2010-03-04 15:00 UTC.
+    casey = utc.dt.convert_time_zone("Antarctica/Casey")
+
+    d = casey.dt.date()
+    assert not d.flags["SORTED_ASC"]
+    assert d.min() == date(2010, 3, 4)
+    assert d.sort().to_list() == [
+        date(2010, 3, 4),
+        date(2010, 3, 5),
+        date(2010, 3, 5),
+        date(2010, 3, 5),
+    ]
+
+    t = casey.dt.truncate("1d")
+    assert not t.flags["SORTED_ASC"]
+    assert t.sort().dt.replace_time_zone(None).to_list() == [
+        datetime(2010, 3, 4),
+        datetime(2010, 3, 5),
+        datetime(2010, 3, 5),
+        datetime(2010, 3, 5),
+    ]
 
 
 @pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu", "UTC"])
@@ -346,6 +370,15 @@ def test_dst_offset_invalid() -> None:
         match=r"`dst_offset` operation not supported for dtype `datetime\[μs\]` \(expected: time-zone-aware datetime\)",
     ):
         ser.dt.dst_offset().rename("dst_offset")
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us"])
+@pytest.mark.parametrize("method", ["base_utc_offset", "dst_offset"])
+def test_offset_null_out_of_range_payload(method: str, time_unit: TimeUnit) -> None:
+    # A null slot's backing value may be any out-of-range number.
+    s = pl.Series([0, 2**62], dtype=pl.Int64).scatter(1, None)
+    out = getattr(s.cast(pl.Datetime(time_unit, "UTC")).dt, method)()
+    assert out.to_list() == [timedelta(0), None]
 
 
 @pytest.mark.parametrize(
@@ -592,6 +625,18 @@ def test_cast_time_units(
     dates = pl.Series([datetime(2001, 1, 1), datetime(2001, 2, 1, 10, 8, 9)])
 
     assert dates.dt.cast_time_unit(time_unit).cast(int).to_list() == date_in_that_unit
+
+
+def test_cast_time_unit_overflow_22878() -> None:
+    s = pl.Series([datetime(9999, 12, 31)], dtype=pl.Datetime("us", "UTC"))
+    with pytest.raises(InvalidOperationError):
+        s.dt.cast_time_unit("ns")
+    assert s.dt.cast_time_unit("ms").dtype == pl.Datetime("ms", "UTC")
+
+    d = pl.Series([timedelta(days=200_000)], dtype=pl.Duration("us"))
+    with pytest.raises(InvalidOperationError):
+        d.dt.cast_time_unit("ns")
+    assert d.dt.cast_time_unit("ms").to_list() == [timedelta(days=200_000)]
 
 
 def test_epoch_matches_timestamp() -> None:
@@ -1419,22 +1464,6 @@ def test_series_datetime_timeunits(
     assert list(s.dt.microsecond()) == [v.microsecond for v in s]
 
 
-def test_dt_median_deprecated() -> None:
-    values = [date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)]
-    s = pl.Series(values)
-    with pytest.deprecated_call():
-        result = s.dt.median()
-    assert result == s.median()
-
-
-def test_dt_mean_deprecated() -> None:
-    values = [date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)]
-    s = pl.Series(values)
-    with pytest.deprecated_call():
-        result = s.dt.mean()
-    assert result == s.mean()
-
-
 @pytest.mark.parametrize(
     "dtype",
     [
@@ -1596,3 +1625,40 @@ def test_dt_extract_present_out_of_range_27862(method: str, tz: str | None) -> N
     assert s.null_count() == 0  # the value is present, not masked
     out = getattr(s.dt, method)()
     assert out[0] is None
+
+
+def test_offset_by_out_of_range_no_panic_29017() -> None:
+    df = pl.DataFrame({"d": [date(2023, 1, 1)]})
+    s = pl.Series("d", [date(2023, 1, 1)])
+
+    with pytest.raises(ComputeError, match="is out of the supported range"):
+        df.with_columns(pl.col("d").dt.offset_by("260120y"))
+
+    with pytest.raises(ComputeError, match="is out of the supported range"):
+        s.dt.offset_by("260120y")
+
+    with pytest.raises(ComputeError, match="is out of the supported range"):
+        s.dt.offset_by("-300000y")
+
+    with pytest.raises(ComputeError, match="is out of the supported range"):
+        s.dt.offset_by("2147483647mo")
+
+    # months large enough that months / 12 overflows i32
+    with pytest.raises(ComputeError, match="is out of the supported range"):
+        s.dt.offset_by("99999999999999999mo")
+
+
+def test_offset_by_boundary_value_succeeds_df_29017() -> None:
+    df = pl.DataFrame({"d": [date(2023, 1, 1)]})
+    result = df.with_columns(pl.col("d").dt.offset_by("260119y"))
+    assert result["d"].dt.year().item() == 262142
+    assert result["d"].dt.month().item() == 1
+    assert result["d"].dt.day().item() == 1
+
+
+def test_offset_by_boundary_value_succeeds_series_29017() -> None:
+    s = pl.Series("d", [date(2023, 1, 1)])
+    result = s.dt.offset_by("260119y")
+    assert result.dt.year().item() == 262142
+    assert result.dt.month().item() == 1
+    assert result.dt.day().item() == 1

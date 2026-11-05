@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 from datetime import date
+from typing import TYPE_CHECKING
 
 import hypothesis.strategies as st
 import numpy as np
@@ -11,7 +12,10 @@ from hypothesis import assume, given, reject
 import polars as pl
 from polars._utils.various import parse_version
 from polars.exceptions import ComputeError, ShapeError
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable
 
 
 def test_business_day_count() -> None:
@@ -117,7 +121,7 @@ def test_business_day_count_schema() -> None:
     )
     assert result.collect_schema()["business_day_count"] == pl.Int32
     assert result.collect().schema["business_day_count"] == pl.Int32
-    assert 'col("start").business_day_count([col("end"), Series])' in result.explain()
+    assert 'col("start").business_day_count([col("end"), []])' in result.explain()
 
 
 def test_business_day_count_w_holidays() -> None:
@@ -264,3 +268,53 @@ def test_business_day_count_bad_holidays() -> None:
                 "start", "end", holidays=pl.Series([["abc"], [], ["def"]])
             )
         )
+
+
+def test_business_day_nulls_28018() -> None:
+    holiday = dt.date(2023, 11, 23)
+    end = dt.date(2023, 11, 24)
+
+    df = pl.DataFrame(
+        {
+            "start": [holiday, holiday],
+            "end": [None, end],
+        },
+        schema={
+            "start": pl.Date,
+            "end": pl.Date,
+        },
+    )
+
+    expected = pl.DataFrame({"start": [None, 0]}, schema={"start": pl.Int32})
+    out = df.select(
+        pl.business_day_count(
+            "start",
+            "end",
+            holidays=[holiday],
+        )
+    )
+    assert_frame_equal(expected, out)
+
+
+@pytest.mark.parametrize(
+    ("make_expr", "dtype"),
+    [
+        (
+            lambda h: pl.business_day_count(
+                pl.col("d").first(), pl.col("d").last(), holidays=h
+            ),
+            pl.Int32,
+        ),
+        (lambda h: pl.col("d").first().dt.add_business_days(1, holidays=h), pl.Date),
+        (lambda h: pl.col("d").first().dt.is_business_day(holidays=h), pl.Boolean),
+    ],
+)
+@pytest.mark.parametrize("holidays", [(), [date(2024, 1, 2)]])
+def test_business_functions_scalar_in_agg(
+    make_expr: Callable[[Iterable[date]], pl.Expr],
+    dtype: pl.DataType,
+    holidays: Iterable[date],
+) -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 2], "d": [date(2024, 1, 1)] * 3})
+    out = lf.group_by("g").agg(make_expr(holidays).alias("out")).collect()
+    assert out.schema["out"] == dtype

@@ -1,13 +1,19 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, Literal
 
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError, SQLInterfaceError, SQLSyntaxError
+from polars.exceptions import (
+    ComputeError,
+    InvalidOperationError,
+    SQLInterfaceError,
+    SQLSyntaxError,
+)
 from polars.testing import assert_frame_equal
+from tests.unit.sql import assert_sql_matches
 
 
 def test_date_func() -> None:
@@ -76,19 +82,19 @@ def test_datetime_to_time(time_unit: Literal["ns", "us", "ms"]) -> None:
 @pytest.mark.parametrize(
     ("parts", "dtype", "expected"),
     [
-        (["decade", "decades"], pl.Int32, [202, 202, 200]),
-        (["isoyear"], pl.Int32, [2024, 2020, 2005]),
-        (["year", "y"], pl.Int32, [2024, 2020, 2006]),
-        (["quarter"], pl.Int8, [1, 4, 1]),
-        (["month", "months", "mon", "mons"], pl.Int8, [1, 12, 1]),
-        (["week", "weeks"], pl.Int8, [1, 53, 52]),
-        (["doy"], pl.Int16, [7, 365, 1]),
-        (["isodow"], pl.Int8, [7, 3, 7]),
-        (["dow"], pl.Int8, [0, 3, 0]),
-        (["day", "days", "d"], pl.Int8, [7, 30, 1]),
-        (["hour", "hours", "h"], pl.Int8, [1, 10, 23]),
-        (["minute", "min", "mins", "m"], pl.Int8, [2, 30, 59]),
-        (["second", "seconds", "secs", "sec"], pl.Int8, [3, 45, 59]),
+        (["decade", "decades"], pl.Int64, [202, 202, 200]),
+        (["isoyear"], pl.Int64, [2024, 2020, 2005]),
+        (["year", "y"], pl.Int64, [2024, 2020, 2006]),
+        (["quarter"], pl.Int64, [1, 4, 1]),
+        (["month", "months", "mon", "mons"], pl.Int64, [1, 12, 1]),
+        (["week", "weeks"], pl.Int64, [1, 53, 52]),
+        (["doy"], pl.Int64, [7, 365, 1]),
+        (["isodow"], pl.Int64, [7, 3, 7]),
+        (["dow"], pl.Int64, [0, 3, 0]),
+        (["day", "days", "d"], pl.Int64, [7, 30, 1]),
+        (["hour", "hours", "h"], pl.Int64, [1, 10, 23]),
+        (["minute", "min", "mins", "m"], pl.Int64, [2, 30, 59]),
+        (["second", "seconds", "secs", "sec"], pl.Int64, [3, 45, 59]),
         (
             ["millisecond", "milliseconds", "ms"],
             pl.Float64,
@@ -138,6 +144,46 @@ def test_extract(parts: list[str], dtype: pl.DataType, expected: list[Any]) -> N
                 res = ctx.execute(f"SELECT {fn} AS {part} FROM frame_data").to_series()
                 assert res.dtype == dtype
                 assert res.to_list() == expected
+
+
+def test_extract_arithmetic() -> None:
+    df = pl.DataFrame({"dt": [datetime(2024, 12, 31, 23, 59, 58), None]})
+    assert_sql_matches(
+        df,
+        query="""
+            SELECT
+              EXTRACT(MONTH FROM dt) * 100 AS month,
+              EXTRACT(DAY FROM dt) * EXTRACT(MONTH FROM dt) AS day_month,
+              EXTRACT(HOUR FROM dt) * 3600 AS hour,
+              EXTRACT(MINUTE FROM dt) * 60 AS minute,
+              EXTRACT(SECOND FROM dt) * 60 AS second,
+              EXTRACT(DOY FROM dt) * 1000 AS doy,
+              EXTRACT(DOW FROM dt) - 10 AS dow,
+              EXTRACT(YEAR FROM dt) * 1000000 AS year
+            FROM self
+        """,
+        compare_with="duckdb",
+        check_dtypes=True,
+        expected={
+            "month": [1200, None],
+            "day_month": [372, None],
+            "hour": [82800, None],
+            "minute": [3540, None],
+            "second": [3480, None],
+            "doy": [366000, None],
+            "dow": [-8, None],
+            "year": [2024000000, None],
+        },
+    )
+
+
+def test_extract_year_filter_uses_dates() -> None:
+    lf = pl.LazyFrame({"d": [date(2019, 12, 31), date(2020, 1, 1)]})
+    q = pl.SQLContext(frame=lf).execute(
+        "SELECT d FROM frame WHERE EXTRACT(YEAR FROM d) = 2020"
+    )
+    assert "year" not in q.explain()
+    assert q.collect()["d"].to_list() == [date(2020, 1, 1)]
 
 
 def test_extract_errors() -> None:
@@ -193,7 +239,7 @@ def test_extract_century_millennium(dt: date, expected: list[int]) -> None:
                 data=[expected + expected],
                 schema=["c1", "c2", "c3", "c4"],
                 orient="row",
-            ).cast(pl.Int32),
+            ).cast(pl.Int64),
         )
 
 
@@ -215,11 +261,26 @@ def test_extract_century_millennium(dt: date, expected: list[int]) -> None:
         ("dt::datetime = '1960-01-07 00:00'", [2]),
         ("dt::datetime = '1960-01-07 00:00:00'", [2]),
         ("dtm BETWEEN '2020-12-30 10:30:44' AND '2023-01-01 00:00'", [2]),
-        ("dt IN ('1960-01-07','2077-01-01','2222-02-22')", [1, 2]),
+        ("dt IN (DATE '1960-01-07', DATE '2077-01-01' , DATE '2222-02-22')", [1, 2]),
         (
             "dtm = '2024-01-07 01:02:03.123456000' OR dtm = '2020-12-30 10:30:45.987654'",
             [0, 2],
         ),
+        # string on the left
+        ("'2020-12-30T10:30:45.987' <= dtm", [0, 2]),
+        ("'2006-01-01' < dtm::date", [0, 2]),
+        ("'2006-01-01' < dtm", [0, 1, 2]),
+        ("'2006-01-01' >= dtm", []),
+        ("'1960-01-07' <> dt", [0, 1]),
+        ("'22:10:30' != tm", [0, 2]),
+        ("'1960-01-07 00:00' = dt::datetime", [2]),
+        ("'2021-01-01' BETWEEN dt AND dtm", [0]),
+        ("'2021-01-01' NOT BETWEEN dt AND dtm", [1, 2]),
+        ("'12:00' BETWEEN tm AND '23:00'", [2]),
+        # string against an expression
+        ("dt + INTERVAL '1 day' = '1960-01-08'", [2]),
+        ("'2006-01-02 01:00' <= dtm + INTERVAL '1 hour'", [0, 2]),
+        ("COALESCE(dt, dt) > '2050-01-01'", [1]),
     ],
 )
 def test_implicit_temporal_strings(constraint: str, expected: list[int]) -> None:
@@ -267,6 +328,33 @@ def test_implicit_temporal_string_errors(dtval: str) -> None:
         match=r"(conversion.*failed)|(cannot compare.*string.*temporal)",
     ):
         df.sql(f"SELECT * FROM self WHERE dt = '{dtval}'")
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"(conversion.*failed)|(cannot compare.*string.*temporal)",
+    ):
+        df.sql(f"SELECT * FROM self WHERE '{dtval}' = dt")
+
+
+def test_implicit_temporal_strings_without_schema() -> None:
+    df = pl.DataFrame({"dtm": [datetime(2000, 1, 1, 12), datetime(2000, 1, 2, 12)]})
+    res = df.select(
+        a=pl.sql_expr("CAST(dtm AS DATE) = '2000-01-01'"),
+        b=pl.sql_expr("'2000-01-01' < dtm::date"),
+    )
+    assert res.rows() == [(True, False), (False, True)]
+
+
+def test_string_literal_minus_temporal() -> None:
+    df = pl.DataFrame(
+        {"dt": [date(2000, 1, 1), None], "dtm": [datetime(1999, 12, 31, 12), None]}
+    )
+    res = df.sql(
+        "SELECT '2000-01-02' - dt AS a, '2000-01-01 00:00:00' - dtm AS b FROM self"
+    )
+    expected = pl.DataFrame(
+        {"a": [timedelta(days=1), None], "b": [timedelta(hours=12), None]}
+    )
+    assert_frame_equal(res, expected)
 
 
 def test_strftime() -> None:
@@ -336,7 +424,7 @@ def test_strptime() -> None:
         pl.sql_expr("STRPTIME(s,'%Y.%m.%d',false) AS dt")
 
 
-def test_temporal_stings_to_datetime() -> None:
+def test_temporal_strings_to_datetime() -> None:
     df = pl.DataFrame(
         {
             "s_dt": ["2077-10-10", "1942-01-08", "2000-07-05"],
@@ -403,9 +491,9 @@ def test_temporal_typed_literals() -> None:
         """
         SELECT
           -- typed literals
-          DATE '2020-12-30' AS dt,
-          TIME '00:01:02' AS tm1,
-          TIME '23:59:59.123456' AS tm2,
+          DATE('2020-12-30') AS dt,
+          TIME('00:01:02') AS tm1,
+          TIME('23:59:59.123456') AS tm2,
           TIMESTAMP '1930-01-01 12:30:00' AS dtm1,
           TIMESTAMP '2077-04-27T23:45:30.123456' AS dtm2,
           -- arrays of typed literals
@@ -482,3 +570,657 @@ def test_timestamp_time_unit_errors() -> None:
             match="sql parser error: Expected: literal int, found: - ",
         ):
             ctx.execute("SELECT ts::timestamp(-3) FROM frame_data")
+
+
+def test_typed_temporal_literal_comparison() -> None:
+    df = pl.DataFrame(
+        {
+            "d": [date(2019, 6, 1), date(2020, 1, 1), date(2021, 1, 1)],
+            "ts": [
+                datetime(2019, 6, 1, 12),
+                datetime(2020, 1, 1, 8),
+                datetime(2021, 1, 1, 0),
+            ],
+        }
+    )
+    for query in (
+        "SELECT d FROM self WHERE d > DATE '2019-12-31' ORDER BY d",
+        "SELECT d FROM self WHERE d BETWEEN DATE '2019-01-01' AND DATE '2020-06-01' ORDER BY d",
+        "SELECT ts FROM self WHERE ts > TIMESTAMP '2019-12-31 00:00:00' ORDER BY ts",
+    ):
+        assert_sql_matches(df, query=query, compare_with="duckdb")
+
+
+@pytest.mark.parametrize("op", ["<", "<=", ">", ">=", "=", "!=", "<>"])
+@pytest.mark.parametrize(
+    "timestamp", ["2020-01-01 00:00:00", "2020-01-01 08:30:00", "2019-12-31"]
+)
+def test_date_compared_with_timestamp_literal(op: str, timestamp: str) -> None:
+    df = pl.DataFrame(
+        {"d": [date(2019, 12, 31), date(2020, 1, 1), date(2020, 1, 2), None]}
+    )
+    for where in (f"d {op} TIMESTAMP '{timestamp}'", f"TIMESTAMP '{timestamp}' {op} d"):
+        assert_sql_matches(
+            df,
+            query=f"SELECT d FROM self WHERE {where} ORDER BY d",
+            compare_with="duckdb",
+        )
+
+
+def test_date_compared_with_timestamp_literal_keeps_output_name() -> None:
+    df = pl.DataFrame({"d": [date(2019, 12, 31), date(2020, 1, 2)]})
+    for query, name in (
+        ("SELECT TIMESTAMP '2020-01-01' < d FROM self ORDER BY literal", "literal"),
+        ("SELECT d < TIMESTAMP '2020-01-01' FROM self ORDER BY d", "d"),
+        (
+            "SELECT TIMESTAMP '2020-01-01' BETWEEN d AND d FROM self ORDER BY literal",
+            "literal",
+        ),
+    ):
+        assert df.sql(query).columns == [name]
+
+
+@pytest.mark.parametrize("negated", ["", "NOT"])
+def test_date_between_timestamp_literals(negated: str) -> None:
+    df = pl.DataFrame(
+        {
+            "d": [
+                date(2019, 12, 31),
+                date(2020, 1, 1),
+                date(2020, 1, 2),
+                date(2020, 1, 3),
+                None,
+            ]
+        }
+    )
+    assert_sql_matches(
+        df,
+        query=f"""
+            SELECT d FROM self
+            WHERE d {negated} BETWEEN TIMESTAMP '2020-01-01 12:00:00'
+                AND TIMESTAMP '2020-01-02 12:00:00'
+            ORDER BY d
+        """,
+        compare_with="duckdb",
+    )
+
+
+def test_date_filter_bounds_are_date_literals() -> None:
+    lf = pl.LazyFrame({"d": [date(1993, 12, 31), date(1994, 6, 1), date(1995, 1, 1)]})
+    for lower, upper in (
+        ("TIMESTAMP '1994-01-01'", "TIMESTAMP '1994-01-01' + INTERVAL '1' YEAR"),
+        ("TIMESTAMP '1994-01-01'", "DATE '1994-01-01' + INTERVAL '1' YEAR"),
+        ("DATE '1994-01-01'", "DATE '1995-01-01'"),
+        ("'1994-01-01'", "'1995-01-01'"),
+        ("CAST('1994-01-01' AS DATE)", "'1994-01-01'::date + INTERVAL '1' YEAR"),
+    ):
+        query = f"SELECT d FROM self WHERE d >= {lower} AND d < {upper}"
+        res = lf.sql(query)
+        plan = res.explain()
+        assert "cast" not in plan
+        assert "strptime" not in plan
+        assert "offset_by" not in plan
+        assert 'col("d") >= 1994-01-01' in plan
+        assert 'col("d") < 1995-01-01' in plan
+        assert res.collect()["d"].to_list() == [date(1994, 6, 1)]
+
+
+def test_date_compared_with_timestamp_literal_out_of_timestamp_range() -> None:
+    # A Date past the range of Datetime("us") is compared as a date, not as a
+    # timestamp it cannot be cast to.
+    far = pl.Series("d", [200_000_000, -200_000_000], dtype=pl.Int32).cast(pl.Date)
+    df = pl.DataFrame({"d": far})
+    res = df.sql("SELECT d FROM self WHERE d >= TIMESTAMP '1994-01-01'")
+    assert res["d"].to_physical().to_list() == [200_000_000]
+
+
+def test_typed_literal_interval_arithmetic() -> None:
+    df = pl.DataFrame({"a": [1]})
+    assert_sql_matches(
+        df,
+        query="""
+            SELECT
+              DATE '2020-01-31' + INTERVAL '1' MONTH AS d1,
+              DATE '2020-03-31' - INTERVAL '1' MONTH AS d2,
+              TIMESTAMP '2020-01-01 23:00:00' + INTERVAL '2' HOUR AS ts
+            FROM self
+        """,
+        compare_with="duckdb",
+    )
+
+
+def test_typed_literal_invalid_date() -> None:
+    with pytest.raises(SQLSyntaxError, match="invalid DATE literal '2023-02-30'"):
+        pl.LazyFrame({"a": [1]}).sql(
+            "SELECT DATE '2023-02-30' AS d FROM self"
+        ).collect()
+
+
+@pytest.mark.parametrize(
+    ("literal", "expected"),
+    [
+        ("DATE '2020-02-29'", date(2020, 2, 29)),
+        ("TIME '12:30:05'", time(12, 30, 5)),
+        ("TIMESTAMP '2020-01-01 08:00:00'", datetime(2020, 1, 1, 8)),
+    ],
+)
+def test_typed_temporal_literal(literal: str, expected: Any) -> None:
+    df = pl.DataFrame({"a": [1]})
+    with pl.SQLContext(frames={"tbl": df}, eager=True) as ctx:
+        assert ctx.execute(f"SELECT {literal} AS x FROM tbl").item() == expected
+
+
+@pytest.mark.parametrize(
+    ("precision", "time_unit"),
+    [(3, "ms"), (6, "us"), (9, "ns")],
+)
+def test_typed_timestamp_literal_precision(precision: int, time_unit: str) -> None:
+    # the declared precision selects the time unit
+    df = pl.DataFrame({"a": [1]})
+    with pl.SQLContext(frames={"tbl": df}, eager=True) as ctx:
+        res = ctx.execute(
+            f"SELECT TIMESTAMP({precision}) '2020-01-01 08:00:00.123' AS x FROM tbl"
+        )
+    assert res.schema["x"] == pl.Datetime(time_unit)  # type: ignore[arg-type]
+
+
+def test_date_plus_integer_days() -> None:
+    df = pl.DataFrame(
+        {
+            "dt": [date(2020, 1, 1), date(2020, 2, 28), date(2021, 2, 28)],
+            "n": [5, 2, 2],
+        }
+    )
+    with pl.SQLContext(frames={"tbl": df}, eager=True) as ctx:
+        res = ctx.execute(
+            """
+            SELECT
+              dt + 5 AS plus_lit,
+              5 + dt AS lit_plus,
+              dt - 5 AS minus_lit,
+              dt + n AS plus_col,
+              dt - n AS minus_col
+            FROM tbl
+            """
+        )
+    assert res.to_dict(as_series=False) == {
+        "plus_lit": [date(2020, 1, 6), date(2020, 3, 4), date(2021, 3, 5)],
+        "lit_plus": [date(2020, 1, 6), date(2020, 3, 4), date(2021, 3, 5)],
+        "minus_lit": [date(2019, 12, 27), date(2020, 2, 23), date(2021, 2, 23)],
+        "plus_col": [date(2020, 1, 6), date(2020, 3, 1), date(2021, 3, 2)],
+        "minus_col": [date(2019, 12, 27), date(2020, 2, 26), date(2021, 2, 26)],
+    }
+
+
+def test_date_integer_arithmetic_in_filter() -> None:
+    df = pl.DataFrame({"dt": [date(2020, 1, 1), date(2020, 1, 8), date(2020, 1, 15)]})
+    with pl.SQLContext(frames={"tbl": df}, eager=True) as ctx:
+        res = ctx.execute("SELECT dt FROM tbl WHERE dt > DATE '2020-01-01' + 7")
+    assert res.to_series().to_list() == [date(2020, 1, 15)]
+
+
+def test_date_arithmetic_leaves_other_dtypes_alone() -> None:
+    df = pl.DataFrame({"a": [1, 2], "dt": [date(2020, 1, 1), date(2020, 3, 5)]})
+    with pl.SQLContext(frames={"tbl": df}, eager=True) as ctx:
+        res = ctx.execute("SELECT a + 5 AS x, dt - dt AS y FROM tbl")
+    assert res.schema["x"] == pl.Int64
+    assert res.schema["y"] == pl.Duration("us")
+
+
+@pytest.mark.parametrize("fn", ["TIMESTAMP", "DATETIME"])
+def test_typed_timestamp_literal_bare_date(fn: str) -> None:
+    df = pl.DataFrame(
+        {
+            "ts": [
+                datetime(1993, 12, 31, 23, 59),
+                datetime(1994, 1, 1),
+                datetime(1994, 1, 2),
+            ]
+        }
+    )
+    assert_sql_matches(
+        df,
+        query=f"SELECT ts FROM self WHERE ts >= {fn} '1994-01-01' ORDER BY ts",
+        expected={"ts": [datetime(1994, 1, 1), datetime(1994, 1, 2)]},
+        compare_with="duckdb",
+    )
+
+
+def test_interval_leading_field() -> None:
+    df = pl.DataFrame(
+        {
+            "dt": [date(1994, 1, 1), date(1994, 3, 31), date(1994, 4, 1)],
+            "dtm": [
+                datetime(1994, 1, 1),
+                datetime(1994, 1, 1, 2),
+                datetime(1994, 1, 1, 3),
+            ],
+        }
+    )
+    assert_sql_matches(
+        df,
+        query="""
+            SELECT
+              dt + INTERVAL '3' MONTH AS m3,
+              dt + INTERVAL 1 YEAR AS y1,
+              dt - INTERVAL '2' DAY AS d2,
+              dtm + INTERVAL '90' MINUTE AS min90
+            FROM self
+            WHERE dt < DATE '1994-01-01' + INTERVAL '3' MONTH
+              AND dtm < TIMESTAMP '1994-01-01' + INTERVAL 2 HOUR
+            ORDER BY dt
+        """,
+        expected={
+            "m3": [date(1994, 4, 1)],
+            "y1": [date(1995, 1, 1)],
+            "d2": [date(1993, 12, 30)],
+            "min90": [datetime(1994, 1, 1, 1, 30)],
+        },
+        compare_with="duckdb",
+    )
+    with pytest.raises(SQLSyntaxError, match="invalid interval"):
+        df.sql("SELECT dt + INTERVAL '1 2' MONTH FROM self")
+
+
+@pytest.mark.parametrize(
+    "part",
+    [
+        "microsecond",
+        "millisecond",
+        "second",
+        "minute",
+        "hour",
+        "day",
+        "week",
+        "month",
+        "quarter",
+        "year",
+        "MINUTES",
+    ],
+)
+def test_date_trunc(part: str) -> None:
+    df = pl.DataFrame(
+        {
+            "dtm": [
+                datetime(1994, 3, 6, 13, 45, 30, 123456),
+                datetime(2000, 12, 31, 23, 59, 59, 999999),
+                None,
+            ]
+        }
+    )
+    assert_sql_matches(
+        df,
+        query=f"SELECT DATE_TRUNC('{part}', dtm) AS t FROM self",
+        compare_with="duckdb",
+    )
+
+
+def test_date_trunc_date_and_null() -> None:
+    df = pl.DataFrame({"d": [date(2024, 5, 17), None]})
+    out = df.sql(
+        """
+        SELECT
+          DATE_TRUNC('month', d) AS month,
+          DATE_TRUNC('hour', d) + INTERVAL '1 hour' AS hour,
+          DATE_TRUNC(NULL, d) AS null_part
+        FROM self
+        """
+    )
+    assert out.to_dict(as_series=False) == {
+        "month": [datetime(2024, 5, 1), None],
+        "hour": [datetime(2024, 5, 17, 1), None],
+        "null_part": [None, None],
+    }
+
+
+def test_date_trunc_input_type_in_clauses() -> None:
+    t = pl.DataFrame(
+        {
+            "g": [1, 1, 2],
+            "d": [date(2024, 5, 17), date(2024, 6, 2), date(2024, 4, 1)],
+        }
+    )
+    r = pl.DataFrame({"g": [1, 2], "d": [date(2024, 7, 9), date(2024, 3, 3)]})
+    ctx = pl.SQLContext(t=t, r=r)
+
+    out = ctx.execute(
+        """
+        SELECT g, MAX(d) AS m FROM t GROUP BY g
+        HAVING DATE_TRUNC('hour', m) + INTERVAL '1 hour' > TIMESTAMP '2024-05-01'
+        """,
+        eager=True,
+    )
+    assert out.rows() == [(1, date(2024, 6, 2))]
+
+    # A selector in HAVING does not match the SELECT aliases.
+    out = ctx.execute(
+        """
+        SELECT g, MAX(d) AS md FROM t GROUP BY g
+        HAVING MIN(COLUMNS('d')) > DATE '2024-05-01'
+        """,
+        eager=True,
+    )
+    assert out.rows() == [(1, date(2024, 6, 2))]
+
+    out = ctx.execute(
+        "SELECT DATE_TRUNC('month', MAX(d) OVER ()) AS m FROM t", eager=True
+    )
+    assert out.to_series().to_list() == [datetime(2024, 6, 1)] * 3
+
+    out = ctx.execute(
+        """
+        SELECT g FROM t
+        ORDER BY DATE_TRUNC('month', (SELECT MAX(r.d) FROM r WHERE r.g = t.g)), d
+        """,
+        eager=True,
+    )
+    assert out.to_series().to_list() == [2, 1, 1]
+
+
+def test_date_trunc_errors() -> None:
+    df = pl.DataFrame({"dtm": [datetime(2000, 1, 1)], "part": ["day"]})
+    with pytest.raises(SQLSyntaxError, match="DATE_TRUNC does not support 'century'"):
+        df.sql("SELECT DATE_TRUNC('century', dtm) FROM self")
+    with pytest.raises(SQLSyntaxError, match="invalid 'part' for DATE_TRUNC"):
+        df.sql("SELECT DATE_TRUNC(part, dtm) FROM self")
+    with pytest.raises(SQLInterfaceError, match="DATE_TRUNC cannot determine the type"):
+        pl.sql_expr("DATE_TRUNC('day', dtm)")
+    with pytest.raises(SQLInterfaceError, match="DATE_TRUNC cannot determine the type"):
+        df.sql("SELECT DATE_TRUNC('hour', (SELECT DATE '2024-05-17')) FROM self")
+
+
+def test_date_part_functions() -> None:
+    df = pl.DataFrame(
+        {
+            "dtm": [
+                datetime(1994, 3, 6, 13, 45, 30),
+                datetime(2000, 12, 31, 0, 1, 2),
+            ]
+        }
+    )
+    assert_sql_matches(
+        df,
+        query="""
+            SELECT
+              YEAR(dtm) AS y,
+              QUARTER(dtm) AS q,
+              MONTH(dtm) AS mo,
+              WEEK(dtm) AS w,
+              DAY(dtm) AS d,
+              DAYOFWEEK(dtm) AS dow,
+              DAYOFYEAR(dtm) AS doy,
+              HOUR(dtm) AS h,
+              MINUTE(dtm) AS mi,
+              SECOND(dtm) AS s
+            FROM self
+            WHERE YEAR(dtm) IN (1994, 2000)
+            ORDER BY dtm
+        """,
+        expected={
+            "y": [1994, 2000],
+            "q": [1, 4],
+            "mo": [3, 12],
+            "w": [9, 52],
+            "d": [6, 31],
+            "dow": [0, 0],
+            "doy": [65, 366],
+            "h": [13, 0],
+            "mi": [45, 1],
+            "s": [30, 2],
+        },
+        compare_with="duckdb",
+    )
+
+
+@pytest.mark.parametrize(
+    "sql_type",
+    ["TIMESTAMPTZ", "TIMESTAMP WITH TIME ZONE", "TIMESTAMP(3) WITH TIME ZONE"],
+)
+def test_cast_to_timestamp_with_time_zone(sql_type: str) -> None:
+    df = pl.DataFrame(
+        {
+            "with_offset": ["2026-09-17 04:30:00+10:00", "2026-09-17 04:30:00Z"],
+            "naive": ["2026-09-17 04:30:00", None],
+            "dt": [datetime(2026, 9, 17, 4, 30), None],
+        }
+    )
+    res = df.sql(
+        f"""
+        SELECT
+          CAST(with_offset AS {sql_type}) AS with_offset,
+          CAST(naive AS {sql_type}) AS naive,
+          CAST(dt AS {sql_type}) AS dt,
+          CAST('2026-09-17 04:30:00-02:00' AS {sql_type}) AS lit
+        FROM self
+        """
+    )
+    tu = "ms" if "(3)" in sql_type else "us"
+    dtype = pl.Datetime(tu, "UTC")  # type: ignore[arg-type]
+    utc = UTC
+    expected = pl.DataFrame(
+        {
+            "with_offset": [
+                datetime(2026, 9, 16, 18, 30, tzinfo=utc),
+                datetime(2026, 9, 17, 4, 30, tzinfo=utc),
+            ],
+            "naive": [datetime(2026, 9, 17, 4, 30, tzinfo=utc), None],
+            "dt": [datetime(2026, 9, 17, 4, 30, tzinfo=utc), None],
+            "lit": [datetime(2026, 9, 17, 6, 30, tzinfo=utc)] * 2,
+        },
+        schema=dict.fromkeys(["with_offset", "naive", "dt", "lit"], dtype),
+    )
+    assert_frame_equal(res, expected)
+
+
+def test_timestamp_without_time_zone() -> None:
+    res = pl.sql(
+        """
+        SELECT
+          CAST('2026-09-17 04:30:00' AS TIMESTAMP WITHOUT TIME ZONE) AS ts,
+          CAST('04:30:00' AS TIME WITHOUT TIME ZONE) AS t,
+          TIMESTAMP WITHOUT TIME ZONE '2026-09-17 04:30:00-05:00' AS lit
+        """,
+        eager=True,
+    )
+    assert res.schema == {
+        "ts": pl.Datetime("us"),
+        "t": pl.Time,
+        "lit": pl.Datetime("us"),
+    }
+    assert res.row(0) == (
+        datetime(2026, 9, 17, 4, 30),
+        time(4, 30),
+        datetime(2026, 9, 17, 4, 30),
+    )
+
+
+@pytest.mark.parametrize(
+    ("literal", "expected"),
+    [
+        # a naive timestamp ignores the offset
+        ("TIMESTAMP '2026-09-17 04:30:00+10:00'", datetime(2026, 9, 17, 4, 30)),
+        ("TIMESTAMP '2026-09-17T04:30:00Z'", datetime(2026, 9, 17, 4, 30)),
+        (
+            "TIMESTAMPTZ '2026-09-17 04:30:00.5-0130'",
+            datetime(2026, 9, 17, 6, 0, 0, 500000, tzinfo=UTC),
+        ),
+        (
+            "TIMESTAMPTZ '2026-09-17 04:30:00'",
+            datetime(2026, 9, 17, 4, 30, tzinfo=UTC),
+        ),
+    ],
+)
+def test_timestamp_literal_with_offset(literal: str, expected: datetime) -> None:
+    assert pl.sql(f"SELECT {literal} AS x", eager=True).item() == expected
+
+
+def test_at_time_zone() -> None:
+    df = pl.DataFrame(
+        {
+            "ts": [datetime(2026, 1, 15, 12), datetime(2026, 7, 15, 12), None],
+            "tz": [datetime(2026, 1, 15, 12), datetime(2026, 7, 15, 12), None],
+        },
+        schema={"ts": pl.Datetime("us"), "tz": pl.Datetime("us", "UTC")},
+    )
+    res = df.sql(
+        """
+        SELECT
+          ts AT TIME ZONE 'Europe/Amsterdam' AS naive_to_utc,
+          tz AT TIME ZONE 'Europe/Amsterdam' AS aware_to_naive,
+          ts AT TIME ZONE 'UTC' AT TIME ZONE 'America/New_York' AS utc_to_local,
+          CAST('2026-07-15 12:00:00+02:00' AS TIMESTAMPTZ) AT TIME ZONE 'UTC' AS lit
+        FROM self
+        """
+    )
+    assert res.schema == {
+        "naive_to_utc": pl.Datetime("us", "UTC"),
+        "aware_to_naive": pl.Datetime("us"),
+        "utc_to_local": pl.Datetime("us"),
+        "lit": pl.Datetime("us"),
+    }
+    assert res["naive_to_utc"].to_list() == [
+        datetime(2026, 1, 15, 11, tzinfo=UTC),
+        datetime(2026, 7, 15, 10, tzinfo=UTC),
+        None,
+    ]
+    assert res["aware_to_naive"].to_list() == [
+        datetime(2026, 1, 15, 13),
+        datetime(2026, 7, 15, 14),
+        None,
+    ]
+    assert res["utc_to_local"].to_list() == [
+        datetime(2026, 1, 15, 7),
+        datetime(2026, 7, 15, 8),
+        None,
+    ]
+    assert res["lit"].to_list() == [datetime(2026, 7, 15, 10)] * 3
+
+
+def test_at_time_zone_errors() -> None:
+    df = pl.DataFrame({"d": [date(2026, 1, 1)], "ts": [datetime(2026, 1, 1)]})
+    with pytest.raises(SQLInterfaceError, match="AT TIME ZONE expects a timestamp"):
+        df.sql("SELECT d AT TIME ZONE 'UTC' FROM self")
+    with pytest.raises(SQLInterfaceError, match="AT TIME ZONE expects a timestamp"):
+        df.sql("SELECT '2026-01-01 00:00:00' AT TIME ZONE 'UTC' FROM self")
+    with pytest.raises(SQLInterfaceError, match="string literal time zone"):
+        df.sql("SELECT ts AT TIME ZONE d FROM self")
+    with pytest.raises(ComputeError, match="unable to parse time zone"):
+        df.sql("SELECT ts AT TIME ZONE 'Mars/Olympus' FROM self")
+    with pytest.raises(SQLInterfaceError, match="expects a time zone; found ''"):
+        df.sql("SELECT ts AT TIME ZONE '' FROM self")
+
+
+def test_at_time_zone_compare_and_add() -> None:
+    res = pl.sql(
+        """
+        SELECT
+          TIMESTAMP '2026-01-01 01:00:00' AT TIME ZONE 'Europe/Amsterdam'
+            = '2026-01-01 00:00:00' AS eq_str,
+          TIMESTAMP '2026-01-01 01:00:00' AT TIME ZONE 'Europe/Amsterdam'
+            = TIMESTAMPTZ '2026-01-01 00:00:00Z' AS eq_tz,
+          (TIMESTAMP '2026-03-28 12:00:00' AT TIME ZONE 'Europe/Amsterdam'
+            + INTERVAL '1 day') AT TIME ZONE 'UTC' AS plus_day
+        """,
+        eager=True,
+    )
+    assert res.row(0) == (True, True, datetime(2026, 3, 29, 11))
+
+
+def test_at_time_zone_sql_expr() -> None:
+    df = pl.DataFrame({"ts": [datetime(2026, 1, 15, 12)]})
+    expr = pl.sql_expr("CAST(ts AS TIMESTAMP) AT TIME ZONE 'Europe/Amsterdam'")
+    assert df.select(expr).item() == datetime(2026, 1, 15, 11, tzinfo=UTC)
+
+
+def test_timestamptz_array_literal_mixed_offsets() -> None:
+    res = pl.sql(
+        """
+        SELECT
+          [TIMESTAMPTZ '2026-01-01 00:00:00Z', TIMESTAMPTZ '2026-01-02 00:00:00'] AS tz,
+          [TIMESTAMP '2026-01-01 00:00:00+05:00', TIMESTAMP '2026-01-02'] AS naive
+        """,
+        eager=True,
+    )
+    utc = UTC
+    assert res.row(0) == (
+        [datetime(2026, 1, 1, tzinfo=utc), datetime(2026, 1, 2, tzinfo=utc)],
+        [datetime(2026, 1, 1), datetime(2026, 1, 2)],
+    )
+
+
+def test_timestamp_array_literal_invalid_value() -> None:
+    res = pl.sql(
+        "SELECT [TIMESTAMP '2026-01-01', TRY_CAST('bad' AS TIMESTAMP)] AS x",
+        eager=True,
+    )
+    assert res.item().to_list() == [datetime(2026, 1, 1), None]
+    with pytest.raises(ComputeError, match="could not find an appropriate format"):
+        pl.sql("SELECT [CAST('bad' AS TIMESTAMP)] AS x", eager=True)
+
+
+@pytest.mark.parametrize("zone", ["$$UTC$$", "('UTC')"])
+def test_at_time_zone_string_forms(zone: str) -> None:
+    res = pl.sql(f"SELECT TIMESTAMP '2026-01-01' AT TIME ZONE {zone} AS x", eager=True)
+    assert res.item() == datetime(2026, 1, 1, tzinfo=UTC)
+
+
+def test_current_date_and_time() -> None:
+    before = datetime.now()
+    res = pl.sql(
+        """
+        SELECT
+          CURRENT_DATE AS d,
+          CURRENT_TIME AS t,
+          CURRENT_TIMESTAMP AS ts,
+          NOW() AS now,
+          LOCALTIME AS lt,
+          LOCALTIMESTAMP AS lts,
+          CURRENT_TIMESTAMP = (SELECT NOW()) AS same_in_subquery,
+          CURRENT_DATE = CAST(CURRENT_TIMESTAMP AS DATE) AS same_date,
+          CURRENT_TIME = CAST(CURRENT_TIMESTAMP AS TIME) AS same_time
+        """,
+        eager=True,
+    )
+    after = datetime.now()
+    assert res.schema == {
+        "d": pl.Date,
+        "t": pl.Time,
+        "ts": pl.Datetime("us"),
+        "now": pl.Datetime("us"),
+        "lt": pl.Time,
+        "lts": pl.Datetime("us"),
+        "same_in_subquery": pl.Boolean,
+        "same_date": pl.Boolean,
+        "same_time": pl.Boolean,
+    }
+    row = res.row(0, named=True)
+    assert before <= row["ts"] <= after
+    assert row["now"] == row["lts"] == row["ts"]
+    assert row["d"] == row["ts"].date()
+    assert row["t"] == row["lt"] == row["ts"].time()
+    assert row["same_in_subquery"]
+    assert row["same_date"]
+    assert row["same_time"]
+
+
+def test_current_date_arithmetic() -> None:
+    today = date.today()
+    df = pl.DataFrame({"d": [today - timedelta(days=400), today, None]})
+    res = df.sql(
+        """
+        SELECT
+          d,
+          d >= CURRENT_DATE - INTERVAL '6 months' AS recent,
+          CURRENT_DATE - d AS age,
+          EXTRACT(YEAR FROM CURRENT_DATE) AS year,
+        FROM self
+        """
+    )
+    assert res["recent"].to_list() == [False, True, None]
+    assert res["age"].to_list() == [timedelta(days=400), timedelta(0), None]
+    assert res["year"].to_list() == [today.year] * 3
+
+
+def test_current_timestamp_precision_unsupported() -> None:
+    with pytest.raises(SQLInterfaceError):
+        pl.sql("SELECT CURRENT_TIMESTAMP(3)", eager=True)

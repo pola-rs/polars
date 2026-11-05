@@ -29,4 +29,4 @@ def test_arrow_stream_error_raises_compute_error() -> None:
             return reader.__arrow_c_stream__(requested_schema)
 
     with pytest.raises(ComputeError, match=error_msg):
-        pl.from_arrow(FailingStream())
+        pl.DataFrame(FailingStream())

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import re
 from datetime import datetime, time, timedelta
 from decimal import Decimal as D
 from typing import Any
@@ -10,7 +11,7 @@ import pytest
 from hypothesis import given
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
+from polars.exceptions import ArgumentRemovedError, InvalidOperationError
 from polars.testing import assert_series_equal, assert_series_not_equal
 from polars.testing.parametric import dtypes, series
 
@@ -375,7 +376,7 @@ def test_assert_series_equal_temporal(data1: Any, data2: Any) -> None:
             pl.Series([[[[0.2, math.nan, 3.0]]]]),
             pl.Series([[[[0.2, math.nan, 3.00000001]]]]),
             {"abs_tol": 0.1},
-            id="double_nested_list_of_float__and_nan_abs_tol_high",
+            id="double_nested_list_of_float_and_nan_abs_tol_high",
         ),
         pytest.param(
             pl.Series([[[[[0.2, 3.0]]]]]),
@@ -728,15 +729,16 @@ def test_assert_series_equal_w_large_integers_12328() -> None:
         assert_series_equal(left, right)
 
 
-def test_assert_series_equal_check_dtype_deprecated() -> None:
+def test_assert_series_equal_check_dtype_removed() -> None:
     s1 = pl.Series("a", [1, 2])
     s2 = pl.Series("a", [1.0, 2.0])
     s3 = pl.Series("a", [2, 1])
 
-    with pytest.deprecated_call():
+    msg = "It was renamed to 'check_dtypes'."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
         assert_series_equal(s1, s2, check_dtype=False)  # type: ignore[call-arg]
 
-    with pytest.deprecated_call():
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
         assert_series_not_equal(s1, s3, check_dtype=False)  # type: ignore[call-arg]
 
 

@@ -11,7 +11,12 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import NUMERIC_DTYPES, TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
-    from polars._typing import ConcatMethod, CorrelationMethod, PolarsDataType
+    from polars._typing import (
+        ConcatMethod,
+        CorrelationMethod,
+        EngineType,
+        PolarsDataType,
+    )
 
 
 def test_concat_align() -> None:
@@ -189,9 +194,9 @@ def test_concat_horizontal_single_df(lazy: bool) -> None:
     a = pl.DataFrame({"a": ["a", "b"], "b": [1, 2]})
 
     if lazy:
-        out = pl.concat([a.lazy()], how="horizontal", strict=True).collect()
+        out = pl.concat([a.lazy()], how="horizontal").collect()
     else:
-        out = pl.concat([a], how="horizontal", strict=True)
+        out = pl.concat([a], how="horizontal")
 
     expected = a
     assert_frame_equal(out, expected)
@@ -301,7 +306,7 @@ def test_spearman_propagate_nans_with_all_nulls_does_not_panic() -> None:
 
     out = df.select(pl.corr("x", "y", method="spearman", propagate_nans=True))
 
-    assert str(out.item()) == "nan"
+    assert out.item() is None
 
 
 def test_align_frames() -> None:
@@ -527,6 +532,98 @@ def test_coalesce_eager() -> None:
         pl.coalesce("x", "y", eager=True)
 
 
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_coalesce_broadcast_first_input(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"a": [None, 2, 3], "b": [10, None, 30], "g": [1, 1, 2]})
+
+    result = lf.select(
+        lit=pl.coalesce(pl.lit(1), "a"),
+        agg=pl.coalesce(pl.col("b").max(), "a"),
+        lit_sum=pl.coalesce(pl.lit(1), "a").sum(),
+    ).collect(engine=engine)
+    expected = pl.DataFrame(
+        {"lit": [1, 1, 1], "agg": [30, 30, 30], "lit_sum": [3, 3, 3]},
+        schema={"lit": pl.Int64, "agg": pl.Int64, "lit_sum": pl.Int64},
+    )
+    assert_frame_equal(result, expected)
+
+    result = (
+        lf.group_by("g", maintain_order=True)
+        .agg(
+            first=pl.coalesce(pl.col("b").first(), "a"),
+            lit=pl.coalesce(pl.lit(1), "a"),
+        )
+        .collect(engine=engine)
+    )
+    expected = pl.DataFrame(
+        {"g": [1, 2], "first": [[10, 10], [30]], "lit": [[1, 1], [1]]},
+        schema={"g": pl.Int64, "first": pl.List(pl.Int64), "lit": pl.List(pl.Int64)},
+    )
+    assert_frame_equal(result, expected)
+
+    result = lf.select(pl.coalesce(pl.lit(1), "a").len().over("g")).collect(
+        engine=engine
+    )
+    assert result.to_series().to_list() == [2, 2, 1]
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_coalesce_null_and_scalar_inputs(engine: EngineType) -> None:
+    lf = pl.LazyFrame(
+        {
+            "n": [None, None, None],
+            "a": [None, 2, 3],
+            "b": [10, None, 30],
+            "g": [1, 1, 2],
+        },
+        schema_overrides={"n": pl.Int64},
+    )
+    null = pl.lit(None, pl.Int64)
+
+    result = lf.select(
+        null_lit=pl.coalesce(null, "a"),
+        null_null_lit=pl.coalesce(null, null, "b"),
+        null_col_lit=pl.coalesce("n", pl.lit(5), "b"),
+        mid_break=pl.coalesce("a", pl.lit(1), "b"),
+    ).collect(engine=engine)
+    expected = pl.DataFrame(
+        {
+            "null_lit": [None, 2, 3],
+            "null_null_lit": [10, None, 30],
+            "null_col_lit": [5, 5, 5],
+            "mid_break": [1, 2, 3],
+        },
+        schema=dict.fromkeys(
+            ["null_lit", "null_null_lit", "null_col_lit", "mid_break"], pl.Int64
+        ),
+    )
+    assert_frame_equal(result, expected)
+
+    # The output keeps the first input's name, also when that input is all-null.
+    result = lf.select(pl.coalesce("n", "a")).collect(engine=engine)
+    expected = pl.DataFrame({"n": [None, 2, 3]}, schema={"n": pl.Int64})
+    assert_frame_equal(result, expected)
+
+    result = (
+        lf.group_by("g", maintain_order=True)
+        .agg(null_lit=pl.coalesce(null, "a"))
+        .collect(engine=engine)
+    )
+    expected = pl.DataFrame(
+        {"g": [1, 2], "null_lit": [[None, 2], [3]]},
+        schema={"g": pl.Int64, "null_lit": pl.List(pl.Int64)},
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_coalesce_length_mismatch(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3], "b": [None, 2, 3]})
+    for exprs in [("a", pl.col("b").head(2)), ("b", pl.col("a").head(2))]:
+        with pytest.raises(pl.exceptions.ShapeError):
+            lf.select(pl.coalesce(*exprs)).collect(engine=engine)
+
+
 def test_overflow_diff() -> None:
     df = pl.DataFrame({"a": [20, 10, 30]})
     assert df.select(pl.col("a").cast(pl.UInt64).diff()).to_dict(as_series=False) == {
@@ -663,48 +760,41 @@ def test_head_tail(fruits_cars: pl.DataFrame) -> None:
     "dtype", [pl.Int32, pl.Boolean, pl.String, pl.Categorical, pl.List]
 )
 def test_first_last(dtype: PolarsDataType) -> None:
+    def to_target_dtype(s: pl.Series) -> pl.Series:
+        # For categorical, we must go through String.
+        if dtype == pl.Categorical:
+            return s.cast(pl.String).cast(dtype)
+        # For lists, we have to explicitly construct the list with pl.list,
+        # preserving validity so a null scalar maps to a null list.
+        if dtype == pl.List:
+            inner = s.cast(pl.Int64)
+            return pl.select(
+                pl.when(inner.is_not_null()).then(pl.list(inner)).alias(s.name)
+            ).to_series()
+        return s.cast(dtype)
+
     # Ensure multiple chunks.
     s1 = pl.Series("a", [None, None], dtype=pl.Int32)
     s2 = pl.Series("a", [None, 3, 4, None], dtype=pl.Int32)
     s3 = pl.Series("a", [None, None], dtype=pl.Int32)
     s = s1.append(s2).append(s3)
-    if dtype == pl.Categorical:
-        # For categorical, we must go through String
-        s = s.cast(pl.String)
-    s = s.cast(dtype)
+    s = to_target_dtype(s)
     lf = s.to_frame().lazy()
 
     result = lf.select(pl.col("a").first()).collect()
-    expected_value = pl.Series("a", [None])
-    if dtype == pl.Categorical:
-        # For categorical, we must go through String
-        expected_value = expected_value.cast(pl.String)
-    expected = expected_value.cast(dtype).to_frame()
+    expected = to_target_dtype(pl.Series("a", [None])).to_frame()
     assert_frame_equal(result, expected)
 
     result = lf.select(pl.col("a").first(ignore_nulls=True)).collect()
-    expected_value = pl.Series("a", [3])
-    if dtype == pl.Categorical:
-        # For categorical, we must go through String
-        expected_value = expected_value.cast(pl.String)
-
-    expected = expected_value.cast(dtype).to_frame()
+    expected = to_target_dtype(pl.Series("a", [3])).to_frame()
     assert_frame_equal(result, expected)
 
     result = lf.select(pl.col("a").last()).collect()
-    expected_value = pl.Series("a", [None])
-    if dtype == pl.Categorical:
-        # For categorical, we must go through String
-        expected_value = expected_value.cast(pl.String)
-    expected = expected_value.cast(dtype).to_frame()
+    expected = to_target_dtype(pl.Series("a", [None])).to_frame()
     assert_frame_equal(result, expected)
 
     result = lf.select(pl.col("a").last(ignore_nulls=True)).collect()
-    expected_value = pl.Series("a", [4])
-    if dtype == pl.Categorical:
-        # For categorical, we must go through String
-        expected_value = expected_value.cast(pl.String)
-    expected = expected_value.cast(dtype).to_frame()
+    expected = to_target_dtype(pl.Series("a", [4])).to_frame()
     assert_frame_equal(result, expected)
 
     # Test with empty
@@ -724,15 +814,12 @@ def test_first_last(dtype: PolarsDataType) -> None:
     assert_frame_equal(result, expected)
 
     # Test with no nulls
-    lf = pl.Series("a", [1, 2, 3, 4, 5], dtype=pl.Int32).to_frame().lazy()
-    expected_value = pl.Series("a", [1])
-    if dtype == pl.Categorical:
-        # For categorical, we must go through String
-        expected_value = expected_value.cast(pl.String)
-        lf = lf.with_columns(pl.col("a").cast(pl.String))
-
-    lf = lf.with_columns(pl.col("a").cast(dtype))
-    expected = expected_value.cast(dtype).to_frame()
+    lf = (
+        to_target_dtype(pl.Series("a", [1, 2, 3, 4, 5], dtype=pl.Int32))
+        .to_frame()
+        .lazy()
+    )
+    expected = to_target_dtype(pl.Series("a", [1])).to_frame()
 
     result = lf.select(pl.col("a").first()).collect()
     assert_frame_equal(result, expected)
@@ -740,11 +827,7 @@ def test_first_last(dtype: PolarsDataType) -> None:
     result = lf.select(pl.col("a").first(ignore_nulls=True)).collect()
     assert_frame_equal(result, expected)
 
-    expected_value = pl.Series("a", [5])
-    if dtype == pl.Categorical:
-        # For categorical, we must go through String
-        expected_value = expected_value.cast(pl.String)
-    expected = expected_value.cast(dtype).to_frame()
+    expected = to_target_dtype(pl.Series("a", [5])).to_frame()
 
     result = lf.select(pl.col("a").last()).collect()
     assert_frame_equal(result, expected)

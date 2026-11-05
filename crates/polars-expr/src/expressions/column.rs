@@ -20,29 +20,6 @@ impl ColumnExpr {
 }
 
 impl ColumnExpr {
-    fn check_external_context(
-        &self,
-        out: PolarsResult<Column>,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        match out {
-            Ok(col) => Ok(col),
-            Err(e) => {
-                if state.ext_contexts.is_empty() {
-                    Err(e)
-                } else {
-                    for df in state.ext_contexts.as_ref() {
-                        let out = df.column(&self.name);
-                        if out.is_ok() {
-                            return out.cloned();
-                        }
-                    }
-                    Err(e)
-                }
-            },
-        }
-    }
-
     fn process_by_idx(
         &self,
         out: &Column,
@@ -106,7 +83,7 @@ impl PhysicalExpr for ColumnExpr {
     }
 
     fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
-        let out = match self.schema.get_full(&self.name) {
+        match self.schema.get_full(&self.name) {
             Some((idx, _, _)) => {
                 // check if the schema was correct
                 // if not do O(n) search
@@ -131,8 +108,7 @@ impl PhysicalExpr for ColumnExpr {
                 }
                 self.process_by_linear_search(df, state, true)
             },
-        };
-        self.check_external_context(out, state)
+        }
     }
 
     #[allow(clippy::ptr_arg)]

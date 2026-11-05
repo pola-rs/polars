@@ -1,5 +1,5 @@
-use arrow::array::{BinaryViewArray, Utf8ViewArray};
-use arrow::bitmap::Bitmap;
+use polars_arrow::array::{BinaryViewArray, Utf8ViewArray};
+use polars_arrow::bitmap::Bitmap;
 
 use super::TotalEqKernel;
 use crate::comparisons::TotalOrdKernel;

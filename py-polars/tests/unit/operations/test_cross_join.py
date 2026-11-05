@@ -118,3 +118,16 @@ def test_cross_join_maintain_order_24663(maintain_order: MaintainOrderJoin) -> N
         .filter((pl.col.x + pl.col.y) % 2 == 0),
         expected.lazy().filter((pl.col.x + pl.col.y) % 2 == 0),
     )
+
+
+def test_cross_join_cast_eq_28447() -> None:
+    a = pl.DataFrame({"ya": [1, 2, 3]})
+    b = pl.DataFrame({"yb": [1, 2], "xb": [1.0, 2.5]})
+
+    q = (
+        a.lazy()
+        .join(b.lazy(), how="cross")
+        .filter(pl.col("ya") == pl.col("yb"))
+        .filter(pl.col("ya") == pl.col("xb"))
+    )
+    assert_frame_equal(q, pl.LazyFrame({"ya": [1], "yb": [1], "xb": [1.0]}))

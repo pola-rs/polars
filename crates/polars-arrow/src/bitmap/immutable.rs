@@ -167,6 +167,15 @@ impl Bitmap {
         AlignedBitmapSlice::new(&self.storage, self.offset, self.length)
     }
 
+    /// Reallocates if this bitmap has a bit offset that is not a multiple of 8.
+    pub fn to_aligned_bitmap(&self) -> Bitmap {
+        if self.offset.is_multiple_of(8) {
+            self.clone()
+        } else {
+            Bitmap::from_trusted_len_iter(self.iter())
+        }
+    }
+
     /// Returns the byte slice of this [`Bitmap`].
     ///
     /// The returned tuple contains:
@@ -357,6 +366,14 @@ impl Bitmap {
         self.storage.deref().as_ptr()
     }
 
+    /// If this bitmap has a bit offset that is a multiple of 8, returns
+    /// an offset-adjusted `Some(ptr)`.
+    pub fn as_aligned_ptr(&self) -> Option<*const u8> {
+        self.offset
+            .is_multiple_of(8)
+            .then(|| unsafe { self.as_ptr().add(self.offset / 8) })
+    }
+
     /// Returns a pointer to the start of this [`Bitmap`] (ignores `offsets`)
     /// This pointer is allocated iff `self.len() > 0`.
     pub(crate) fn offset(&self) -> usize {
@@ -371,6 +388,9 @@ impl Bitmap {
     /// * this [`Bitmap`] has not been cloned (i.e. [`Arc`]`::get_mut` yields [`Some`])
     /// * this [`Bitmap`] was not imported from the c data interface (FFI)
     pub fn into_mut(mut self) -> Either<Self, MutableBitmap> {
+        if self.offset != 0 {
+            return Either::Left(self);
+        }
         match self.storage.try_into_vec() {
             Ok(v) => Either::Right(MutableBitmap::from_vec(v, self.length)),
             Err(storage) => {

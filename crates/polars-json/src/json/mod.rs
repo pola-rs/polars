@@ -1,5 +1,6 @@
 pub mod deserialize;
 pub(crate) mod infer_schema;
+pub mod ordered;
 
 pub use deserialize::deserialize;
 pub use infer_schema::infer;

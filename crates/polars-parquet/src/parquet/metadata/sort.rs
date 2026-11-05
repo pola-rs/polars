@@ -20,6 +20,8 @@ pub enum SortOrder {
     Signed,
     /// Unsigned (depending on physical type either value or byte-wise) comparison.
     Unsigned,
+    /// IEEE 754 total order (PARQUET-2249): `-NaN < ... < -0.0 < +0.0 < ... < +NaN`.
+    IEEE754TotalOrder,
     /// Comparison is undefined.
     Undefined,
 }
@@ -56,7 +58,7 @@ fn get_logical_sort_order(logical_type: &PrimitiveLogicalType) -> SortOrder {
         Timestamp { .. } => SortOrder::Signed,
         Unknown => SortOrder::Undefined,
         Uuid => SortOrder::Unsigned,
-        Float16 => SortOrder::Unsigned,
+        Float16 => SortOrder::Signed,
     }
 }
 
