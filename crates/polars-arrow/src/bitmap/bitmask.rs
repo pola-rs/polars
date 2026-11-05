@@ -3,7 +3,7 @@ use std::simd::{Mask, MaskElement};
 
 use polars_utils::slice::load_padded_le_u64;
 
-use super::iterator::{FastU56BitmapIter, SetBitIdxIter};
+use super::iterator::{FastU56BitmapIter, TrueIdxIter};
 use super::utils::{self, BitChunk, BitChunks, BitmapIter, count_zeros, fmt};
 use crate::bitmap::Bitmap;
 
@@ -240,8 +240,8 @@ impl<'a> BitMask<'a> {
         FastU56BitmapIter::new(self.bytes, self.offset, self.len)
     }
 
-    pub fn set_bit_idx_iter(self) -> SetBitIdxIter<'a> {
-        SetBitIdxIter::new(self.bytes, self.offset, self.len)
+    pub fn set_bit_idx_iter(self) -> TrueIdxIter<'a> {
+        TrueIdxIter::new(self.bytes, self.offset, self.len)
     }
 
     #[cfg(feature = "simd")]
