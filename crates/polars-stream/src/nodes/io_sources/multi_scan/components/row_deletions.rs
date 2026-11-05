@@ -70,6 +70,8 @@ impl DeletionFilesProvider {
                 let reader_builder = ParquetReaderBuilder {
                     bytes_per_source: None,
                     first_metadata: None,
+                    field_selection: None,
+                    scan_schema: None,
                     options: Arc::new(polars_io::prelude::ParquetOptions {
                         schema: Some(Arc::new(Schema::from_iter([
                             (PlSmallStr::from_static("file_path"), DataType::String),

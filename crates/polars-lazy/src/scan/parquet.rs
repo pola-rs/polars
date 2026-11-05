@@ -83,6 +83,7 @@ impl LazyFileListReader for LazyParquetReader {
             expand_paths: true,
             hidden_file_prefix: None,
             projection: None,
+            field_selection: None,
             column_mapping: None,
             default_values: None,
             // Note: We call `with_row_index()` on the LazyFrame below

@@ -622,6 +622,7 @@ fn rebuild_scan_from_expanded(
         expand_paths: _,
         hidden_file_prefix: _hidden_file_prefix @ None,
         projection: _projection @ None,
+        field_selection: _field_selection @ None,
         column_mapping,
         default_values,
         row_index: _row_index @ None,

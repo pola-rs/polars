@@ -283,7 +283,7 @@ pub fn optimize(
     }
 
     if opt_flags.projection_pushdown() {
-        projection_pushdown(root, ir_arena, expr_arena, has_recursive);
+        projection_pushdown(root, ir_arena, expr_arena, has_recursive, !opt_flags.gpu());
     }
 
     if opt_flags.fast_projection() {

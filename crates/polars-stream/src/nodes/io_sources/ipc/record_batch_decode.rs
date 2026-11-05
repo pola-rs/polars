@@ -6,9 +6,12 @@ use polars_arrow::io::ipc::read::{Dictionaries, ProjectionInfo};
 use polars_arrow::io::ipc::write::KeyValueRef;
 use polars_core::chunked_array::flags::StatisticsFlags;
 use polars_core::frame::DataFrame;
+use polars_core::prelude::ArrowDataType;
 use polars_core::schema::Schema;
 use polars_core::utils::polars_arrow::io::ipc::read::common::apply_projection;
-use polars_core::utils::polars_arrow::io::ipc::read::{BlockReader, FileMetadata, read_batch};
+use polars_core::utils::polars_arrow::io::ipc::read::{
+    BlockReader, FileMetadata, read_batch_pruned,
+};
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_io::RowIndex;
 use polars_utils::IdxSize;
@@ -21,6 +24,8 @@ pub(super) struct RecordBatchDecoder {
     pub(super) file_metadata: Arc<FileMetadata>,
     pub(super) pl_schema: Arc<Schema>,
     pub(super) projection_info: Arc<Option<ProjectionInfo>>,
+    /// Struct columns read with only some of their fields, indexed like the file schema.
+    pub(super) pruned_dtypes: Option<Arc<[Option<ArrowDataType>]>>,
     pub(super) dictionaries: Arc<Option<Dictionaries>>,
     pub(super) row_index: Option<RowIndex>,
     pub(super) read_statistics_flags: bool,
@@ -63,11 +68,12 @@ impl RecordBatchDecoder {
         let mut df = if pl_schema.is_empty() {
             DataFrame::empty_with_height(slice_len)
         } else {
-            let chunk = read_batch(
+            let chunk = read_batch_pruned(
                 &mut reader.reader,
                 dictionaries,
                 &file_metadata.clone(),
                 projection_info.as_ref().map(|x| x.columns.as_ref()),
+                self.pruned_dtypes.as_deref(),
                 limit,
                 block_index,
                 true,
