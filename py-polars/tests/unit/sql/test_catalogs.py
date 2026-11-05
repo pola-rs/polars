@@ -4193,12 +4193,12 @@ def test_update_catalog_table_refused_on_retry(
     assert any("no rows of table 'lineitem'" in n for n in exc.value.__notes__)
     monkeypatch.undo()
     assert table_rows(lake, "tpch", "lineitem")[0][:2] == (1, "a")
-    # nothing written is left behind
+    # nothing written is left behind (by name: Windows paths mix separators)
     referenced = {
-        t.file.file_path
+        t.file.file_path.rsplit("/", 1)[-1]
         for t in lake.load_table(("tpch", "lineitem")).scan().plan_files()
     }
-    assert {f"file://{p}" for p in tmp_path.rglob("*.parquet")} == referenced
+    assert {p.name for p in tmp_path.rglob("*.parquet")} == referenced
 
 
 @pytest.mark.write_disk
@@ -4278,7 +4278,7 @@ def test_update_catalog_table_partition_pruning(lake: CountingCatalog) -> None:
         NestedField(2, "x", DoubleType()),
         NestedField(3, "p", IntegerType()),
     )
-    for name, source in (("dbl", 2), ("nul", 3)):
+    for name, source in (("dbl", 2), ("nulls", 3)):
         spec = PartitionSpec(PartitionField(source, 1000, IdentityTransform(), "part"))
         table = lake.create_table(("tpch", name), schema=schema, partition_spec=spec)
         table.append(
@@ -4292,9 +4292,9 @@ def test_update_catalog_table_partition_pruning(lake: CountingCatalog) -> None:
     ctx.execute("UPDATE dbl SET k = 10 WHERE x = 0.1")
     assert table_rows(lake, "tpch", "dbl")[-1] == (10, 0.1, 0)
     # a NULL partition value under OR fails PyIceberg's planning: plan without it
-    ctx.execute("UPDATE nul SET k = 20 WHERE p < 1 OR k = 3")
+    ctx.execute("UPDATE nulls SET k = 20 WHERE p < 1 OR k = 3")
     rows = [(2, 2.0, 5), (20, 0.1, 0), (20, None, None)]
-    assert table_rows(lake, "tpch", "nul") == rows
+    assert table_rows(lake, "tpch", "nulls") == rows
 
 
 @pytest.mark.write_disk
