@@ -293,11 +293,11 @@ async fn spawn_group(
                 GroupBytes::None
             } else {
                 let byte_source = byte_source.clone();
+                let fetch = async move { byte_source.get_ranges(&mut ranges).await.map(Arc::new) };
+                #[cfg(feature = "cloud")]
+                let fetch = polars_io::cloud::concurrency::in_issue_order(fetch);
                 // In its own task, so body chunks wake only the fetch, not every record batch task.
-                let fetch =
-                    tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn(async move {
-                        byte_source.get_ranges(&mut ranges).await.map(Arc::new)
-                    }));
+                let fetch = tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn(fetch));
                 GroupBytes::Fetched(
                     fetch
                         .map(|r| {
