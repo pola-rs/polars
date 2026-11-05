@@ -138,8 +138,8 @@ pub fn is_prop<P: Fn(&AExpr) -> bool>(
     }
 
     match ae {
-        // Literals that aren't being projected are allowed to be non-scalar, so we don't add them
-        // for inspection. (e.g. `is_in(<literal>)`).
+        // A single-value right-hand side of `is_in` is broadcast, so it needn't be inspected. A
+        // multi-row literal is zipped row by row.
         #[cfg(feature = "is_in")]
         Function {
             function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }),
@@ -150,7 +150,7 @@ pub fn is_prop<P: Fn(&AExpr) -> bool>(
                 assert_eq!(input.len(), 2); // A.is_in(B)
                 let rhs = rhs.node();
 
-                if matches!(expr_arena.get(rhs), AExpr::Literal { .. }) {
+                if is_single_literal_ae(rhs, expr_arena) {
                     stack.extend([input[0].node()]);
                     return;
                 }
