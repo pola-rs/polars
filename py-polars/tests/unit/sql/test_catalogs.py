@@ -3845,10 +3845,18 @@ def test_update_catalog_table(
 
 
 @pytest.mark.write_disk
-def test_update_catalog_table_files(lake: CountingCatalog, tmp_path: Path) -> None:
+def test_update_catalog_table_files(
+    lake: CountingCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from pyiceberg.table.snapshots import Operation
 
     ctx = update_ctx(lake)
+    # the file-list scans are planned already: no plugin check, nor its warning
+    planner_checks: list[None] = []
+    monkeypatch.setattr(
+        "polars.io.iceberg._dataset.use_plugin_planner",
+        lambda: planner_checks.append(None) or False,
+    )
 
     def snapshots() -> Any:
         return lake.load_table(("tpch", "t")).metadata.snapshots
@@ -3862,6 +3870,7 @@ def test_update_catalog_table_files(lake: CountingCatalog, tmp_path: Path) -> No
     before, n_snapshots = data_files(), len(snapshots())
     # only the file with a match is replaced, in one OVERWRITE snapshot
     ctx.execute("UPDATE t SET v = 'x' WHERE k = 3")
+    assert planner_checks == []
     after = data_files()
     assert len(before & after) == 1
     assert len(after - before) == 1

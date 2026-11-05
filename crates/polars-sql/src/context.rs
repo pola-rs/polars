@@ -7816,7 +7816,7 @@ fn is_row_wise(expr: &Expr, schema: &Schema) -> PolarsResult<bool> {
         .map_expr(|e| if is_random(&e) { lit(0u64) } else { e });
     let mut arena = Arena::new();
     let mut ctx = ExprToIRContext::new(&mut arena, schema);
-    let ir = to_expr_ir(probe, &mut ctx)?;
+    let ir = to_expr_ir(&probe, &mut ctx)?;
     Ok(is_elementwise_rec(ir.node(), &arena))
 }
 

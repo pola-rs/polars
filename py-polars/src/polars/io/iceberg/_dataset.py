@@ -517,10 +517,11 @@ class IcebergScanResolver:
             )
             raise ValueError(msg)
 
+        # checked first: `use_plugin_planner` warns when the plugin is missing
         if (
-            reader_override != "pyiceberg"
+            self.file_tasks is None
+            and reader_override != "pyiceberg"
             and use_plugin_planner()
-            and self.file_tasks is None
         ):
             if verbose:
                 eprint(
