@@ -1,8 +1,8 @@
 //! Multi-scan readers of I/O plugins (`polars.io_plugin.file_reader.v1`).
 //!
 //! The plugin's functions block: they run on blocking threads. A reader pulls its source's Arrow
-//! C stream on a blocking thread and turns the batches into morsels; it applies positive slices
-//! itself, and gets row counts from the plugin.
+//! C stream on a blocking thread and turns the batches into morsels; it applies slices itself
+//! (a negative one resolved from the source's row count), and gets row counts from the plugin.
 //!
 //! A plugin call still running when its task is dropped (an early stop of the query, an error
 //! elsewhere) is handed to the query, which waits for it before it returns: a plugin's cleanup
@@ -135,10 +135,13 @@ impl Reader {
         Ok(Arc::new(import_struct_schema(schema, &self.scan.package)?))
     }
 
-    fn n_rows(&self) -> PolarsResult<IdxSize> {
-        let n = unsafe { (self.plugin().reader_n_rows)(self.handle) }
+    fn n_rows(&self) -> PolarsResult<u64> {
+        unsafe { (self.plugin().reader_n_rows)(self.handle) }
             .into_result()
-            .map_err(|e| self.err(e))?;
+            .map_err(|e| self.err(e))
+    }
+
+    fn to_idxsize(&self, n: u64) -> PolarsResult<IdxSize> {
         idxsize_try_from(n).map_err(|_| {
             polars_err!(
                 ComputeError:
@@ -281,11 +284,17 @@ impl FileReaderBuilder for FfiFileReaderBuilder {
 
     fn reader_capabilities(&self) -> PolarsResult<ReaderCapabilities> {
         use ReaderCapabilities as RC;
-        let mut caps = RC::PRE_SLICE;
+        // A negative slice of one source is resolved from its count, which may exceed
+        // `IdxSize` where the slice doesn't.
+        let mut caps = RC::PRE_SLICE | RC::NEGATIVE_PRE_SLICE;
         if self.flags & flags::UNORDERED != 0 {
             caps |= RC::UNORDERED_FILES;
         }
         Ok(caps)
+    }
+
+    fn may_be_compressed_file(&self) -> bool {
+        false
     }
 
     fn set_execution_state(&self, execution_state: &StreamingExecutionState) {
@@ -338,13 +347,14 @@ impl FileReaderBuilder for FfiFileReaderBuilder {
 pub struct FfiFileReader {
     reader: Arc<Reader>,
     schema: Option<SchemaRef>,
-    n_rows: Option<IdxSize>,
+    n_rows: Option<u64>,
     task_metrics: Option<Arc<TaskMetricAggregator>>,
     query_tasks: QueryTasks,
 }
 
 impl FfiFileReader {
-    async fn count(&mut self) -> PolarsResult<IdxSize> {
+    /// The source's row count, which may exceed `IdxSize` until a slice narrows it.
+    async fn count(&mut self) -> PolarsResult<u64> {
         if let Some(n) = self.n_rows {
             return Ok(n);
         }
@@ -379,37 +389,40 @@ struct SliceState {
 }
 
 impl SliceState {
-    fn new(pre_slice: Option<Slice>) -> PolarsResult<Self> {
-        Ok(match pre_slice {
+    /// `pre_slice` is positive.
+    fn new(pre_slice: Option<&Slice>) -> Self {
+        match pre_slice {
             None => Self {
                 skip: 0,
                 remaining: usize::MAX,
             },
-            Some(Slice::Positive { offset, len }) => Self {
-                skip: offset,
-                remaining: len,
+            Some(slice) => Self {
+                skip: slice.positive_offset(),
+                remaining: slice.len(),
             },
-            Some(Slice::Negative { .. }) => {
-                polars_bail!(ComputeError: "I/O plugin reader was given a negative slice")
-            },
-        })
+        }
     }
 
     fn done(&self) -> bool {
         self.remaining == 0
     }
 
-    fn apply(&mut self, df: DataFrame) -> DataFrame {
-        let h = df.height();
-        if self.skip >= h {
-            self.skip -= h;
-            return df.slice(0, 0);
+    /// Moves past `h` more rows: the offset and length of the part of them in the slice.
+    fn advance(&mut self, h: u64) -> (u64, u64) {
+        let skip = self.skip as u64;
+        if skip >= h {
+            self.skip -= h as usize;
+            return (0, 0);
         }
-        let take = (h - self.skip).min(self.remaining);
-        let out = df.slice(self.skip as i64, take);
+        let take = (h - skip).min(self.remaining as u64);
         self.skip = 0;
-        self.remaining -= take;
-        out
+        self.remaining -= take as usize;
+        (skip, take)
+    }
+
+    fn apply(&mut self, df: DataFrame) -> DataFrame {
+        let (offset, len) = self.advance(df.height() as u64);
+        df.slice(offset as i64, len as usize)
     }
 }
 
@@ -425,7 +438,8 @@ impl FileReader for FfiFileReader {
     }
 
     async fn n_rows_in_file(&mut self) -> PolarsResult<IdxSize> {
-        self.count().await
+        let n = self.count().await?;
+        self.reader.to_idxsize(n)
     }
 
     fn begin_read(
@@ -452,8 +466,6 @@ impl FileReader for FfiFileReader {
                 polars_bail!(ComputeError: "I/O plugin reader was given a mapped projection")
             },
         };
-        let slice_end = pre_slice.as_ref().map(|s| s.end_position());
-        let mut slice = SliceState::new(pre_slice)?;
         let (mut tx, rx) = FileReaderOutputSend::new_serial();
 
         let mut slf = FfiFileReader {
@@ -470,19 +482,32 @@ impl FileReader for FfiFileReader {
                 let _ = tx.send(slf.schema().await?);
             }
             if let Some(tx) = n_rows_in_file_tx {
-                let _ = tx.send(slf.count().await?);
+                let _ = tx.send(slf.n_rows_in_file().await?);
             }
+            let pre_slice = match pre_slice {
+                Some(s @ Slice::Negative { .. }) => {
+                    let n = slf.count().await?;
+                    Some(s.restrict_to_bounds(usize::try_from(n).unwrap_or(usize::MAX)))
+                },
+                s => s,
+            };
+            let slice_end = pre_slice.as_ref().map(|s| s.end_position());
+            let mut slice = SliceState::new(pre_slice.as_ref());
 
             let source_token = SourceToken::new();
 
-            // Only the row count is needed: no rows are read.
+            // Only the row count is needed: no rows are read. The count may exceed `IdxSize`
+            // where the slice doesn't.
             if projected.is_empty() {
                 let n = slf.count().await?;
-                let df = slice.apply(DataFrame::empty_with_height(n as usize));
+                let (_, height) = slice.advance(n);
+                let height = slf.reader.to_idxsize(height)?;
                 if let Some(tx) = row_position_on_end_tx {
-                    let _ = tx.send(n);
+                    let end = slice_end.map_or(n, |end| (end as u64).min(n));
+                    let _ = tx.send(idxsize_try_from(end).unwrap_or(IdxSize::MAX));
                 }
-                if df.height() > 0 {
+                if height > 0 {
+                    let df = DataFrame::empty_with_height(height as usize);
                     let _ = tx
                         .send_morsel(Morsel::new_unregistered(
                             df,

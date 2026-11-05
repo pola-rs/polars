@@ -101,9 +101,11 @@ def dtype_from_database_typename(
                 raise_unmatched=False,
             )
         else:
+            # an element type in brackets keeps its own modifiers
+            # (eg: ClickHouse 'Array(Decimal(10, 2))')
             if inner_value := dtype_from_database_typename(
                 value[1:-1]
-                if (value[0], value[-1]) == ("<", ">")
+                if (value[0], value[-1]) in (("<", ">"), ("(", ")"))
                 else re.sub(r"\W", "", re.sub(r"\WOF\W", "", value)),
                 raise_unmatched=False,
             ):

@@ -34,6 +34,9 @@ if TYPE_CHECKING:
         ("array[bool]", pl.List(pl.Boolean)),
         ("array of nchar(8)", pl.List(pl.String)),
         ("array[array[int8]]", pl.List(pl.List(pl.Int64))),
+        ("Array(Decimal(10, 2))", pl.List(pl.Decimal(10, 2))),
+        ("Array(Nullable(Decimal(18, 4)))", pl.List(pl.Decimal(18, 4))),
+        ("Array(Int32)", pl.List(pl.Int32)),
         # numeric types
         ("numeric[10,5]", pl.Decimal(10, 5)),
         ("bigdecimal", pl.Decimal),

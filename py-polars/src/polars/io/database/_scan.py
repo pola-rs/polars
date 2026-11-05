@@ -220,6 +220,16 @@ def _copy_containers(value: Any) -> Any:
     return value
 
 
+def _check_dtypes(name: str, schema: SchemaDict) -> None:
+    """Refuse `Object`: no database column reads as one (Arrow carries bytes)."""
+    from polars.datatypes import Object
+
+    for column, dtype in Schema(schema).items():
+        if isinstance(dtype, Object):
+            msg = f"{name}: column {column!r} can't be read as {dtype}"
+            raise TypeError(msg)
+
+
 def _check_live_sqlite3(connection: Any) -> None:
     """Sessions run on other threads: a default sqlite3 connection refuses them."""
     import sqlite3
@@ -550,6 +560,10 @@ def scan_database(
             if lo > hi:
                 msg = f"partition_range must be (low, high), got {partition_range!r}"
                 raise ValueError(msg)
+
+    for name, value in (("schema", schema), ("schema_overrides", schema_overrides)):
+        if value is not None:
+            _check_dtypes(name, value)
 
     engine = connection
     connection_kind, connection = _connection_kind(connection)

@@ -34,6 +34,12 @@ pub trait FileReaderBuilder: Debug + Send + Sync + 'static {
         false
     }
 
+    /// Whether a source may be a compressed file, which can't be sliced from its end. Sources
+    /// that aren't files at all (plugin source ids) are never.
+    fn may_be_compressed_file(&self) -> bool {
+        !self.is_external_python_reader()
+    }
+
     fn is_external_python_reader_with_filter_support(&self) -> PolarsResult<bool> {
         Ok(false)
     }

@@ -522,3 +522,12 @@ def test_streaming_error_does_not_panic_on_teardown(tmp_path: Path, capfd: Any) 
         with pytest.raises(pl.exceptions.PolarsError):
             lf.collect(engine="streaming")
     assert "panicked" not in capfd.readouterr().err
+
+
+def test_streaming_row_index_overflow_is_an_error() -> None:
+    # panicked in the streaming engine; the in-memory engine raised
+    offset = 2**32 - 2 if pl.get_index_type() == pl.UInt32 else 2**64 - 2
+    lf = pl.LazyFrame({"a": [1, 2, 3]}).with_row_index(offset=offset)
+    for engine in ["streaming", "in-memory"]:
+        with pytest.raises(pl.exceptions.ComputeError, match="overflows"):
+            lf.collect(engine=engine)  # type: ignore[arg-type]

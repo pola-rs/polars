@@ -545,3 +545,33 @@ def test_arrow_type_polars_cannot_read_is_an_error(tmp_path: Path) -> None:
     lf = pl.scan_database("SELECT iv FROM t", f"duckdb:///{path}")
     with pytest.raises(pl.exceptions.ComputeError, match="can't read"):
         lf.collect()
+
+
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+def test_count_of_a_slice_of_a_source_beyond_idxsize(
+    tmp_path: Path, engine: Any
+) -> None:
+    # the whole source's count was checked against IdxSize before the slice
+    duckdb = pytest.importorskip("duckdb")
+    path = str(tmp_path / "t.duckdb")
+    duckdb.connect(path).close()
+    query = "SELECT range AS id FROM range(5000000000)"
+    lf = pl.scan_database(query, f"duckdb:///{path}")
+    assert lf.head(3).select(pl.len()).collect(engine=engine).item() == 3
+    assert lf.slice(4_999_999_998).select(pl.len()).collect(engine=engine).item() == 2
+    # a negative slice was resolved from the count narrowed to IdxSize
+    assert lf.tail(2).collect(engine=engine)["id"].to_list() == [
+        4_999_999_998,
+        4_999_999_999,
+    ]
+    assert lf.slice(-3, 2).select(pl.len()).collect(engine=engine).item() == 2
+    # the in-memory engine read (and numbered) the whole source below the row index
+    out = lf.with_row_index().slice(3, 2).collect(engine=engine)
+    assert out.rows() == [(3, 3), (4, 4)]
+
+
+def test_object_dtype_is_refused(uri: str) -> None:
+    # read as Binary, silently
+    for kwargs in [{"schema_overrides": {"s": pl.Object}}, {"schema": {"s": pl.Object}}]:
+        with pytest.raises(TypeError, match="column 's' can't be read as"):
+            pl.scan_database("t", uri, **kwargs)  # type: ignore[arg-type]

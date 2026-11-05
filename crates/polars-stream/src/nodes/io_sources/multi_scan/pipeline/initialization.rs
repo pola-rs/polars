@@ -229,7 +229,7 @@ async fn finish_initialize_multi_scan_pipeline(
                     || reader_capabilities.contains(ReaderCapabilities::ROW_INDEX))
                 && (config.deletion_files.is_none()
                     || reader_capabilities.contains(ReaderCapabilities::EXTERNAL_FILTER_MASK))
-                && (config.file_reader_builder.is_external_python_reader()
+                && (!config.file_reader_builder.may_be_compressed_file()
                     || !ASYNC
                         .spawn(is_compressed_source(
                             config.sources.get(0).unwrap().into_owned()?,
