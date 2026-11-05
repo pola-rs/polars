@@ -1123,6 +1123,12 @@ pub(super) fn parse_lines(
     let original_bytes_len = bytes.len();
     let n_lines = n_lines as u32;
 
+    let mut iter = SplitFields::new(
+        bytes,
+        parse_options.separator,
+        parse_options.quote_char,
+        parse_options.eol_char,
+    );
     let mut line_count = 0u32;
     loop {
         if line_count > n_lines {
@@ -1146,12 +1152,7 @@ pub(super) fn parse_lines(
         let mut next_projected = unsafe { projection_iter.next().unwrap_unchecked() };
         let mut processed_fields = 0;
 
-        let mut iter = SplitFields::new(
-            bytes,
-            parse_options.separator,
-            parse_options.quote_char,
-            parse_options.eol_char,
-        );
+        iter.next_line(bytes);
         let mut idx = 0u32;
         let mut read_sol = 0;
         loop {
