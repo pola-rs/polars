@@ -1012,7 +1012,7 @@ class DataFrame:
         self,
         dtype: np.dtype[Any] | None = None,
         copy: bool | None = None,  # noqa: FBT001
-    ) -> np.ndarray[Any, Any]:
+    ) -> np.ndarray[tuple[int, int], np.dtype[Any]]:
         """
         Return a NumPy ndarray with the given data type.
 
@@ -1897,29 +1897,51 @@ class DataFrame:
         """
         return self.rows(named=True)
 
-    @overload
+    @overload  # default
     def to_numpy(
         self,
         *,
         order: IndexOrder = ...,
         writable: bool = ...,
         allow_copy: bool = ...,
-        structured: bool = ...,
+        structured: Literal[False] = ...,
         masked: Literal[False] = ...,
-    ) -> np.ndarray[Any, Any]: ...
+    ) -> np.ndarray[tuple[int, int], np.dtype[Any]]: ...
 
-    @overload
+    @overload  # masked
     def to_numpy(
         self,
         *,
         order: IndexOrder = ...,
         writable: bool = ...,
         allow_copy: bool = ...,
-        structured: bool = ...,
+        structured: Literal[False] = ...,
         masked: Literal[True],
-    ) -> np.ma.MaskedArray[Any, Any]: ...
+    ) -> np.ma.MaskedArray[tuple[int, int], np.dtype[Any]]: ...
 
-    @overload
+    @overload  # structured
+    def to_numpy(
+        self,
+        *,
+        order: IndexOrder = ...,
+        writable: bool = ...,
+        allow_copy: bool = ...,
+        structured: Literal[True],
+        masked: Literal[False] = ...,
+    ) -> np.ndarray[tuple[int], np.dtype[np.void]]: ...
+
+    @overload  # masked & structured
+    def to_numpy(
+        self,
+        *,
+        order: IndexOrder = ...,
+        writable: bool = ...,
+        allow_copy: bool = ...,
+        structured: Literal[True],
+        masked: Literal[True],
+    ) -> np.ma.MaskedArray[tuple[int], np.dtype[np.void]]: ...
+
+    @overload  # workaround for python/mypy#14764
     def to_numpy(
         self,
         *,
@@ -1927,8 +1949,8 @@ class DataFrame:
         writable: bool = ...,
         allow_copy: bool = ...,
         structured: bool = ...,
-        masked: bool,
-    ) -> np.ndarray[Any, Any]: ...
+        masked: bool = ...,
+    ) -> np.ndarray[tuple[Any, ...], np.dtype[Any]]: ...
 
     @removed_parameters(
         RemovedParameter(
@@ -1947,7 +1969,7 @@ class DataFrame:
         allow_copy: bool = True,
         structured: bool = False,
         masked: bool = False,
-    ) -> np.ndarray[Any, Any]:
+    ) -> np.ndarray[tuple[Any, ...], np.dtype[Any]]:
         """
         Convert this DataFrame to a NumPy ndarray.
 
