@@ -44,7 +44,7 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
                         // The sink destination is passed around separately, can't check the
                         // eligibility here.
                     },
-                    SinkType::Iceberg(_) => {},
+                    SinkType::Iceberg(_) | SinkType::Delta(_) => {},
                 }
             },
             _ => (),

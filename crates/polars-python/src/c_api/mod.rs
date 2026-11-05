@@ -299,6 +299,9 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     #[cfg(feature = "parquet")]
     m.add_wrapped(wrap_pyfunction!(functions::read_parquet_metadata))
         .unwrap();
+    #[cfg(all(feature = "parquet", feature = "json"))]
+    m.add_wrapped(wrap_pyfunction!(crate::io::delta_stats::_delta_file_stats))
+        .unwrap();
     #[cfg(all(feature = "cloud", feature = "parquet"))]
     m.add_wrapped(wrap_pyfunction!(
         crate::io::iceberg_plugin::_iceberg_plugin_scan
