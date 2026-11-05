@@ -69,10 +69,18 @@ pub enum ConcurrencyStrategy {
     BytesBased,
 }
 
+/// Whether a scan's pipeline window grows with the in-flight byte budget of the store it reads from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PipelineWindow {
+    FollowInflight,
+    Fixed,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct FetchConfig {
     pub chunk_size: usize,
     pub strategy: ConcurrencyStrategy,
+    pub pipeline_window: PipelineWindow,
 }
 
 impl FetchConfig {
@@ -87,6 +95,7 @@ impl FetchConfig {
         Self {
             chunk_size: get_random_access_chunk_size(),
             strategy: ConcurrencyStrategy::BytesBased,
+            pipeline_window: PipelineWindow::FollowInflight,
         }
     }
 
@@ -98,6 +107,7 @@ impl FetchConfig {
             chunk_size: get_streaming_chunk_size(),
             // TODO: For now - keep as Legacy. Switch to Unbounded in a future PR.
             strategy: ConcurrencyStrategy::Legacy,
+            pipeline_window: PipelineWindow::Fixed,
         }
     }
 
@@ -107,6 +117,7 @@ impl FetchConfig {
         Self {
             chunk_size: get_download_chunk_size(),
             strategy: ConcurrencyStrategy::Legacy,
+            pipeline_window: PipelineWindow::Fixed,
         }
     }
 }
