@@ -437,9 +437,10 @@ pub(crate) fn py_object_to_any_value(
     fn get_numpy_temporal(ob: &Bound<'_, PyAny>, is_datetime: bool) -> PyResult<AnyValue<'static>> {
         let py = ob.py();
         static DATETIME_DATA: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+        let np_dtype = ob.getattr(intern!(py, "dtype"))?;
         let (unit, count): (String, i64) = DATETIME_DATA
             .import(py, "numpy", "datetime_data")?
-            .call1((ob.getattr(intern!(py, "dtype"))?,))?
+            .call1((&np_dtype,))?
             .extract()?;
         let value: i64 = ob
             .call_method1(intern!(py, "astype"), (intern!(py, "int64"),))?
@@ -462,16 +463,29 @@ pub(crate) fn py_object_to_any_value(
                 )));
             },
         };
-        let out_of_range = || PyOverflowError::new_err(format!("NumPy value {ob} is out of range"));
-        let value = count
-            .checked_mul(factor)
-            .and_then(|f| value.checked_mul(f))
-            .ok_or_else(out_of_range)?;
-        Ok(match time_unit {
-            None => AnyValue::Date(i32::try_from(value).map_err(|_| out_of_range())?),
-            Some(tu) if is_datetime => AnyValue::Datetime(value, tu, None),
-            Some(tu) => AnyValue::Duration(value, tu),
-        })
+        let ticks = count.checked_mul(factor).and_then(|f| value.checked_mul(f));
+        let av = match time_unit {
+            None => ticks
+                .and_then(|v| i32::try_from(v).ok())
+                .map(AnyValue::Date),
+            Some(tu) if is_datetime => ticks.map(|v| AnyValue::Datetime(v, tu, None)),
+            Some(tu) => ticks.map(|v| AnyValue::Duration(v, tu)),
+        };
+        if let Some(av) = av {
+            return Ok(av);
+        }
+        // (out-of-range values raise the same error as other temporal conversions)
+        let to = match time_unit {
+            None => DataType::Date,
+            Some(tu) if is_datetime => DataType::Datetime(tu, None),
+            Some(tu) => DataType::Duration(tu),
+        };
+        let from = np_dtype.getattr(intern!(py, "name"))?;
+        // (NumPy can't format some values with a unit multiple, eg: `datetime64[10ms]`)
+        let value = ob
+            .str()
+            .map_or_else(|_| value.to_string(), |s| s.to_string());
+        Err(PyPolarsErr::from(time_unit_conversion_error(from, &to, value)).into())
     }
 
     /// The ticks and time unit of a pandas `Timestamp` or `Timedelta` (at its own resolution,
