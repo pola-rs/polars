@@ -1,12 +1,11 @@
 # IO Plugins
 
-Besides [expression plugins](./expr_plugins.md), Polars supports IO plugins for data sources that it
-cannot read by itself. Queries over such sources still benefit from the query optimizer and the
-streaming engine. There are two interfaces:
+An IO plugin interface is exposed that can be used to implement custom file reading logic. This is
+useful for file formats that polars does not have a native reader for.
 
-- [File readers](#file-readers) let Polars drive the reading of each source, as it does for its
-  built-in formats. Together with a [`LazyFrameResolver`](#tables-with-lazyframeresolver), they also
-  cover table formats.
+- [File readers](#file-readers), which get called by polars to read a user-supplied path. This can
+  be used together with a [`LazyFrameResolver`](#tables-with-lazyframeresolver), which allows custom
+  resolution logic for the list of paths to scan.
 - [Generator-based IO sources](#generator-based-io-sources) provide one generator for the whole
   source.
 
@@ -17,18 +16,18 @@ streaming engine. There are two interfaces:
     This functionality is considered **unstable**. It may be changed at any point without it being
     considered a breaking change.
 
-A file reader reads one source of a custom format, and Polars drives the scan across all sources. A
-`FileReaderBuilder` creates one `FileReader` per source and declares which operations the readers
-apply themselves. `pl.scan_external_reader` turns a builder and a list of sources into a
-`LazyFrame`.
+The file reader implementation interface is split into 2 parts:
 
-Sources are `str` or `bytes` values that reach the builder unchanged, so they need not be file
-paths. Directories and glob patterns are only expanded with `expand_paths=True`.
+- `FileReaderBuilder`: Gets called by polars to build `FileReader`s for each path that is being
+  scanned.
+- `FileReader`: Responsible for reading the data of a single path.
+
+`pl.scan_external_reader` takes a builder, a list of sources and a schema, and returns a
+`LazyFrame`.
 
 ### Example format
 
-The example reads a made-up format. Its first line is a JSON header with the row count, which stands
-in for the metadata of a real format. One JSON object per row follows.
+Given this example NDJSON data, where the first row is a JSON-formatted header line:
 
 ```
 {"num_rows": 3}
@@ -107,26 +106,24 @@ class CountedJsonReader(FileReader):
                 yield df
 ```
 
-`fetch_metadata` is called first and loads the metadata of the source, here the header line.
-`schema` and `n_rows_in_file` describe the source. Polars asks for the row count when it needs to
-know where the next source starts, and counting may stop at the optional `limit`.
+- `fetch_metadata` is called by polars first to allow the file reader to perform metadata fetching
+  before the actual read.
+- `schema` and `n_rows_in_file` describe the source. A `limit` is provided to allow readers
+  (optionally) to stop counting rows early.
+- `collect_batches` yields the data as `DataFrame`s:
+  - `columns` lists the columns to read. **If this is given as an empty list, the reader should
+    still produce 0-column DataFrames with the correct height.**
+  - `row_index` holds the name of a row index column and the index of the first row in this source
+    that the reader should apply. It is not passed unless the `FileReaderBuilder` declares that the
+    reader supports applying the row index.
+  - `pre_slice` holds the offset and length of a slice, counted from the start of this source. Note,
+    the slice can extend past the end of the source. It is also only passed when the builder
+    declares support for it.
+  - `filters` holds predicates that the reader may use. They are described
+    [further below](#filters).
+  - `num_pipelines` is a hint for how much parallelism the reader should use.
 
-`collect_batches` yields the data as DataFrames, and Polars stops consuming it once it has enough
-rows. Its arguments are:
-
-- `columns` lists the columns to read. The list is empty when a query only needs the number of rows,
-  as with `select(pl.len())`. The DataFrames must have the correct height in that case too.
-- `row_index` holds the name of a row index column and the index of the first row in this source. It
-  is only passed when the builder declares support for it.
-- `pre_slice` holds the offset and length of a slice, counted from the start of this source. The
-  slice can extend past the end of the source. It is also only passed when the builder declares
-  support for it.
-- `filters` holds predicates that the reader may use. They are described [further below](#filters).
-- `num_pipelines` is a hint for how much parallelism the reader may use.
-
-The operations apply in a fixed order: row index, then slice, then filters. The row index therefore
-numbers rows from the start of the source, not of the slice. The batch size of two only shows that a
-reader can yield its data in several pieces.
+The order which operations should be applied is: row index, then slice, then filters.
 
 ### The builder
 
@@ -154,17 +151,19 @@ def scan_counted_json(paths: list[str], schema: pl.Schema) -> pl.LazyFrame:
     )
 ```
 
-`ReaderCapabilities` declares which operations the reader applies itself. Polars applies the others
-to the DataFrames that the reader yields.
+- `ReaderCapabilities` declares which operations the reader applies itself. Polars applies the
+  others to the DataFrames that the reader yields.
+- `build_file_reader` may be called from several threads at once. A `multi_scan_context` dictionary
+  is provided as a shared context accessible by all file readers during a scan, which can be used
+  for e.g. synchronization, or holding a shared threadpool.
+- `explain_properties` adds lines to the output of `LazyFrame.explain()`.
 
-`build_file_reader` may be called from several threads at once. The `multi_scan_context` dictionary
-is shared by all readers of a scan, for example to hold a thread pool. `explain_properties` adds
-lines to the output of `LazyFrame.explain()`. The optional hooks `initialize_serial` and `on_drop`
-are described in the [API reference](https://docs.pola.rs/api/python/stable/reference/plugins.html).
+The optional hooks `initialize_serial` and `on_drop` are described in the
+[API reference](https://docs.pola.rs/api/python/stable/reference/plugins.html).
 
 ### Using the reader
 
-The helper below writes two files in the example format. The scan then reads both as one table.
+This helper writes 2 files in the example format, which are then scanned as a single table:
 
 ```python
 def write_counted_json(path: str, df: pl.DataFrame) -> None:
@@ -204,7 +203,7 @@ shape: (5, 2)
 └──────┴─────────────┘
 ```
 
-The row index and the slice are pushed into the scan, and the slice spans both files.
+Row index and slice get pushed down into the scan. Note the slice spans across both files:
 
 ```python
 q = lf.with_row_index().slice(2, 2)
@@ -231,13 +230,18 @@ shape: (2, 3)
 
 ### Filters
 
-A reader that declares `supported_filter` receives the predicates of the query in `filters`. Each is
-a `FilterExpr`, whose `expr` holds the Polars expression and whose `pyarrow_expr` holds a PyArrow
-equivalent, or `None` if there is none. Filters are only passed when the reader also applies every
-row index and slice of the scan.
+Readers that declare `supported_filter` in their `ReaderCapabilities` receive the predicates of the
+query in `filters`. Each one is a `FilterExpr`:
 
-With `supported_filter="partial"`, the reader may use the filters to skip data, and Polars filters
-the yielded rows again. With `supported_filter="full"`, the reader must apply them exactly.
+- `expr` holds the polars expression.
+- `pyarrow_expr` holds an equivalent PyArrow expression, or `None` if the expression cannot be
+  converted.
+
+Filters are not passed unless the reader also supports applying the row index and slice of the scan.
+
+- `supported_filter="partial"`: The reader may use the filters to skip data. Polars will filter the
+  yielded rows again afterwards.
+- `supported_filter="full"`: **The reader must apply the filters exactly.**
 
 ## Tables with `LazyFrameResolver`
 
@@ -246,15 +250,16 @@ the yielded rows again. With `supported_filter="full"`, the reader must apply th
     This functionality is considered **unstable**. It may be changed at any point without it being
     considered a breaking change.
 
-A `LazyFrameResolver` defers resolving the paths to scan until the query runs. The resolver sees the
-columns, row limit and filters that the query requests, and returns the `LazyFrame` to scan. Table
-formats and catalogs use this to scan the current list of files and to skip files that the filters
-rule out.
+A `LazyFrameResolver` allows the paths to scan to be decided when the query runs instead of when it
+is built. It gets called by polars with the columns, row limit and filters of the query, and returns
+the `LazyFrame` to scan. This is useful for e.g. table formats and catalogs, which can use it to
+scan the latest list of files, and skip files that cannot match the filters.
 
 ### Example catalog
 
-The example catalog is a JSON file with a version number and the data files of the table. Each file
-holds the measurements of one day, which the catalog records next to its path.
+Given this example catalog, which is a JSON file holding a version number and the list of data files
+in the table. Each data file holds the measurements of a single day, which is also recorded in the
+catalog:
 
 ```python
 def add_file(catalog_path: str, path: str, day: str, df: pl.DataFrame) -> None:
@@ -326,41 +331,45 @@ class CatalogTable(LazyFrameResolver):
         return lf, ResolvedLazyFrameProps(version_key=version_key)
 ```
 
-`schema` returns the schema of the table without resolving it, as Polars needs it to build the query
-plan. `resolve_lazyframe` receives:
+- `schema` returns the schema of the table. It is called by polars when building the query plan, so
+  it should not resolve the table.
+- `resolve_lazyframe` returns the `LazyFrame` to scan:
+  - `projection` lists the columns to return, or `None` for all columns. **If this is given as an
+    empty list, the result should still have the correct height** (e.g. using `lf.drop("*")`).
+  - `limit` is the maximum number of rows needed, or `None`.
+  - `filters` holds the predicates of the query as `FilterExpr`s. `filter_columns` lists the columns
+    they refer to, and `filter_drop_columns_idx` marks the columns at the end of `projection` that
+    are only needed by the filters.
+  - `existing_resolved_version_key` is the version key of the previous resolve, described
+    [below](#versions-and-applied-filters).
 
-- `projection`: the columns to return, or `None` for all. An empty list means that only the row
-  count is needed, so the result must keep its height, as `lf.drop("*")` does.
-- `limit`: the maximum number of rows needed, or `None`.
-- `filters`: the predicates of the query as `FilterExpr` objects. `filter_columns` lists the columns
-  they refer to, and `filter_drop_columns_idx` marks the columns at the end of `projection` that
-  only the filters need.
-- `existing_resolved_version_key`: the version key of the previous resolve, described below.
-
-The example resolver evaluates the filters on `day` against the catalog, so a query for one day only
-opens the files of that day. Polars applies all filters again on the scanned rows.
+The example resolver applies the filters on `day` to the list of files in the catalog, so that a
+query for a single day only opens the files of that day. Polars will still apply all filters again
+afterwards.
 
 ### Versions and applied filters
 
-A resolver returns a `LazyFrame`, optionally paired with `ResolvedLazyFrameProps`.
+A resolver can optionally return a `ResolvedLazyFrameProps` alongside the `LazyFrame`:
 
-`version_key` identifies the version of the table. Without it, Polars caches the result and reuses
-it for the same arguments. With it, Polars calls the resolver at every `collect()` and passes the
-key of the previous resolve with the same arguments as `existing_resolved_version_key`. If the table
-is unchanged, the resolver returns `None` with that key to reuse the previous result. Returning
-`None` with any other key raises an error. The example takes the key from the catalog, so new files
-show up in the next query.
+- `version_key` identifies the version of the table:
+  - If it is not given, polars caches the resolved `LazyFrame` and reuses it for calls with the same
+    arguments.
+  - If it is given, polars calls the resolver on every `collect()`, passing the key of the previous
+    resolve with the same arguments as `existing_resolved_version_key`. If the table is unchanged,
+    the resolver can return `None` with that same key to reuse the previous result. Note, returning
+    `None` with any other key raises an error.
+- `applied_filters` lists the filters that are fully applied by the returned `LazyFrame`. Polars
+  will not apply these again. The example leaves it empty, as it only skips whole files.
 
-`applied_filters` lists the filters that the returned `LazyFrame` applies fully, and Polars skips
-them. The example leaves it empty, because it only skips whole files.
+The example takes the version key from the catalog, so that new files show up in the next query.
 
-`cse_eq` tells whether two resolvers represent the same table, so that common subplan elimination
-can read it once. It returns `False` by default.
+A resolver can also implement `cse_eq` to tell whether two resolvers represent the same table. This
+allows common subplan elimination to read the table only once. It returns `False` by default.
 
 ### Using the resolver
 
-`lazy()` creates a `LazyFrame` from the resolver. `explain()` resolves the table and shows that only
-one of the two files is scanned.
+`lazy()` creates a `LazyFrame` from the resolver. Note `explain()` resolves the table, and shows
+that only one of the two files gets scanned:
 
 ```python
 add_file(
@@ -405,7 +414,7 @@ shape: (1, 2)
 └──────┴─────────────┘
 ```
 
-A file added to the catalog shows up in the next run of the same query.
+A file added to the catalog shows up the next time the same query is run:
 
 ```python
 add_file(
@@ -432,25 +441,25 @@ shape: (2, 2)
 ## Generator-based IO sources
 
 Generator-based IO sources are registered with `register_io_source`. Because sources can move data
-zero copy via Arrow FFI and sources can produce large chunks of data before returning, we've decided
-to interface to IO plugins via Python for now, as we don't think the short time the GIL is needed
-should lead to any contention.
+zero copy via Arrow FFI and sources can produce large chunks of data before returning, IO plugins
+are interfaced via Python for now, as the short time the GIL is needed is not expected to lead to
+any contention.
 
 E.g. an IO source can read their dataframe's in rust and only at the rendez-vous move the data
 zero-copy having only a short time the GIL is needed.
 
 ### Use case
 
-You want IO plugins if you have a source file not supported by Polars and you want to benefit from
-optimizations like projection pushdown, predicate pushdown, early stopping and support of our
+IO plugins are useful for source files not supported by Polars that should still benefit from
+optimizations like projection pushdown, predicate pushdown, early stopping and support of the
 streaming engine.
 
 ### Example
 
-So let's write a simple, very bad, custom CSV source and register that as an IO plugin. I want to
-stress that this is a very bad example and is only given for learning purposes.
+This example writes a simple, very bad, custom CSV source and registers it as an IO plugin. Note, it
+is only given for learning purposes.
 
-First we define some imports we need:
+First, the imports that are needed:
 
 ```python
 # Use python for csv parsing.
@@ -465,8 +474,8 @@ import io
 #### Parsing the schema
 
 Every `scan` function in Polars has to be able to provide the schema of the data it reads. For this
-simple csv parser we will always read the data as `pl.String`. The only thing that differs are the
-field names and the number of fields.
+simple csv parser the data is always read as `pl.String`. The only thing that differs are the field
+names and the number of fields.
 
 ```python
 def parse_schema(csv_str: str) -> pl.Schema:
@@ -475,7 +484,7 @@ def parse_schema(csv_str: str) -> pl.Schema:
     return pl.Schema({k: pl.String for k in first_line.split(",")})
 ```
 
-If we run this with small csv file `"a,b,c\n1,2,3"` we get the schema:
+Running this with the small csv file `"a,b,c\n1,2,3"` gives the schema:
 `Schema([('a', String), ('b', String), ('c', String)])`.
 
 ```python
@@ -485,9 +494,9 @@ Schema([('a', String), ('b', String), ('c', String)])
 
 #### Writing the source
 
-Next up is the actual source. For this we create an outer and an inner function. The outer function
+Next up is the actual source, which consists of an outer and an inner function. The outer function
 `my_scan_csv` is the user facing function. This function will accept the file name and other
-potential arguments you would need for reading the source. For csv files, these arguments could be
+potential arguments needed for reading the source. For csv files, these arguments could be
 "delimiter", "quote_char" and such.
 
 This outer function calls `register_io_source` which accepts a `callable` and a `schema`. The schema
@@ -514,8 +523,8 @@ The arguments of this function are predefined and this function must accept:
   A hint of the ideal batch size the reader's generator must produce.
 
 The inner function is the actual implementation of the IO source and can also call into Rust/C++ or
-wherever the IO plugin is written. If you want to see an IO source implemented in Rust, take a look
-at our [plugins repository](https://github.com/pola-rs/pyo3-polars/tree/main/example/io_plugin).
+wherever the IO plugin is written. For an IO source implemented in Rust, see the
+[plugins repository](https://github.com/pola-rs/pyo3-polars/tree/main/example/io_plugin).
 
 ```python
 def my_scan_csv(csv_str: str) -> pl.LazyFrame:
@@ -539,7 +548,7 @@ def my_scan_csv(csv_str: str) -> pl.LazyFrame:
         # Skip the header.
         _ = next(reader)
 
-        # Ensure we don't read more rows than requested from the engine
+        # Don't read more rows than requested by the engine.
         while n_rows is None or n_rows > 0:
             if n_rows is not None:
                 batch_size = min(batch_size, n_rows)
@@ -557,7 +566,7 @@ def my_scan_csv(csv_str: str) -> pl.LazyFrame:
             df = pl.from_records(rows, schema=schema, orient="row")
             n_rows -= df.height
 
-            # If we would make a performant reader, we would not read these
+            # A performant reader would not read these
             # columns at all.
             if with_columns is not None:
                 df = df.select(with_columns)
@@ -574,7 +583,7 @@ def my_scan_csv(csv_str: str) -> pl.LazyFrame:
 
 #### Taking it for a (very slow) spin
 
-Finally we can test our source:
+Finally, the source can be tested:
 
 ```python
 csv_str1 = """a,b,c,d
@@ -622,10 +631,10 @@ shape: (2, 2)
 
 ### For engine authors: identifying a source
 
-This section is for people writing a Polars execution engine. If you are writing an IO source, you
-can skip it.
+This section is for people writing a Polars execution engine, and can be skipped when writing an IO
+source.
 
-Polars does not call your source directly. It calls a wrapper that deserializes the predicate and
+Polars does not call the source directly. It calls a wrapper that deserializes the predicate and
 forwards the call. Engines may need to identify sources they know about, for example to provide
 execution context or call additional methods.
 
