@@ -449,10 +449,19 @@ def test_series_from_numpy_temporal_scalars_other_units() -> None:
 
 
 @pytest.mark.parametrize(
-    "value", [np.datetime64(2**62, "s"), np.datetime64(2**40, "D")]
+    ("value", "msg"),
+    [
+        (np.datetime64(2**62, "s"), r"`datetime64\[s\]` to `datetime\[ms\]`"),
+        (np.datetime64(2**40, "D"), r"`datetime64\[D\]` to `date`"),
+        (np.datetime64(2**62, ("ms", 10)), r"`datetime64\[10ms\]` to `datetime\[ms\]`"),
+        (np.timedelta64(2**62, "s"), r"`timedelta64\[s\]` to `duration\[ms\]`"),
+    ],
 )
-def test_series_from_numpy_temporal_scalars_out_of_range(value: np.datetime64) -> None:
-    with pytest.raises(OverflowError, match="out of range"):
+def test_series_from_numpy_temporal_scalars_out_of_range(
+    value: np.datetime64 | np.timedelta64, msg: str
+) -> None:
+    # (consistent with pandas `Timestamp`/`Timedelta` values that are out of range)
+    with pytest.raises(InvalidOperationError, match=rf"conversion from {msg} failed"):
         pl.Series([value])
 
 
@@ -481,10 +490,14 @@ def test_series_from_numpy_temporal_scalars_mixed_units() -> None:
         np.datetime64("2022-01-01T00:00:00.001", "ms"),
         np.datetime64("2022-01-01T00:00:00.000000002", "ns"),
     ]
-    with pytest.raises(TypeError, match="unexpected value"):
-        pl.Series(values)
-    expected = pl.Series([1_640_995_200_001, 1_640_995_200_000]).cast(pl.Datetime("ms"))
-    assert_series_equal(pl.Series(values, strict=False), expected)
+    # the finest unit is used (without loss of precision), independent of value order
+    ns = [1_640_995_200_001_000_000, 1_640_995_200_000_000_002]
+    for strict in (True, False):
+        for vals, expected in ((values, ns), (values[::-1], ns[::-1])):
+            assert_series_equal(
+                pl.Series(vals, strict=strict),
+                pl.Series(expected).cast(pl.Datetime("ns")),
+            )
 
 
 @pytest.mark.parametrize(
