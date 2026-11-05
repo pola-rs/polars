@@ -534,6 +534,7 @@ pub(super) fn convert_functions(
                     nulls_last,
                 },
                 B::AllHorizontal => {
+                    ensure_horizontal_operands_bool(&e, IB::AllHorizontal, ctx)?;
                     let Some(fst) = e.first() else {
                         return Ok((
                             ctx.arena.add(AExpr::Literal(Scalar::from(true).into())),
@@ -552,14 +553,10 @@ pub(super) fn convert_functions(
 
                     // Convert to binary expression as the optimizer understands those.
                     // Don't exceed 128 expressions as we might stackoverflow.
-                    // Cast the operands to Boolean: rewrites of `LogicalAnd`/`LogicalOr` (splitting
-                    // predicates, De Morgan) assume they are Boolean, like the operands of `&`/`|`.
                     if e.len() < 128 {
-                        let mut r =
-                            AExprBuilder::new_from_node(horizontal_operand_to_bool(fst, ctx));
+                        let mut r = AExprBuilder::new_from_node(fst.node());
                         for expr in &e[1..] {
-                            let node = horizontal_operand_to_bool(expr, ctx);
-                            r = r.logical_and(node, ctx.arena);
+                            r = r.logical_and(expr.node(), ctx.arena);
                         }
                         return Ok((r.node(), fst.output_name().clone()));
                     }
@@ -567,6 +564,7 @@ pub(super) fn convert_functions(
                     IB::AllHorizontal
                 },
                 B::AnyHorizontal => {
+                    ensure_horizontal_operands_bool(&e, IB::AnyHorizontal, ctx)?;
                     // This can be created by col(*).is_null() on empty dataframes.
                     let Some(fst) = e.first() else {
                         return Ok((
@@ -586,14 +584,10 @@ pub(super) fn convert_functions(
 
                     // Convert to binary expression as the optimizer understands those.
                     // Don't exceed 128 expressions as we might stackoverflow.
-                    // Cast the operands to Boolean: rewrites of `LogicalAnd`/`LogicalOr` (splitting
-                    // predicates, De Morgan) assume they are Boolean, like the operands of `&`/`|`.
                     if e.len() < 128 {
-                        let mut r =
-                            AExprBuilder::new_from_node(horizontal_operand_to_bool(fst, ctx));
+                        let mut r = AExprBuilder::new_from_node(fst.node());
                         for expr in &e[1..] {
-                            let node = horizontal_operand_to_bool(expr, ctx);
-                            r = r.logical_or(node, ctx.arena);
+                            r = r.logical_or(expr.node(), ctx.arena);
                         }
                         return Ok((r.node(), fst.output_name().clone()));
                     }
@@ -1463,15 +1457,25 @@ pub(super) fn convert_functions(
     Ok((ctx.arena.add(ae_function), output_name))
 }
 
-/// Cast an operand of `any_horizontal`/`all_horizontal` to Boolean if it isn't known to be one.
-/// The dtype can be unresolvable here (e.g. `meta` conversion without a schema), so a failed lookup
-/// also casts.
-fn horizontal_operand_to_bool(e: &ExprIR, ctx: &mut ExprToIRContext) -> Node {
-    if matches!(e.dtype(ctx.schema, ctx.arena), Ok(dtype) if dtype.is_bool()) {
-        e.node()
-    } else {
-        AExprBuilder::new_from_node(e.node())
-            .cast(DataType::Boolean, ctx.arena)
-            .node()
+/// `any_horizontal`/`all_horizontal` take Boolean operands, like `any`/`all`. The rewrite to
+/// `LogicalAnd`/`LogicalOr` relies on it: splitting predicates and De Morgan assume Boolean
+/// operands. The dtype can be unresolvable here (e.g. `meta` conversion without a schema), so a
+/// failed lookup is let through.
+fn ensure_horizontal_operands_bool(
+    e: &[ExprIR],
+    function: IRBooleanFunction,
+    ctx: &mut ExprToIRContext,
+) -> PolarsResult<()> {
+    for expr in e {
+        if let Ok(dtype) = expr.dtype(ctx.schema, ctx.arena) {
+            polars_ensure!(
+                dtype.is_bool()
+                    || dtype.is_null()
+                    || matches!(dtype, DataType::Unknown(UnknownKind::Any)),
+                SchemaMismatch: "non-Boolean input passed to `{function}`: '{}' has dtype '{dtype}'",
+                expr.output_name()
+            );
+        }
     }
+    Ok(())
 }

@@ -14,9 +14,6 @@ import polars.selectors as cs
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-    from pathlib import Path
-
     from polars._typing import PolarsDataType
 
 
@@ -474,36 +471,3 @@ assert out.len() == 10_000
 assert out[0] == "x" * 1024
 """
     )
-
-
-@pytest.mark.parametrize(
-    ("horizontal", "negate", "expected"),
-    [
-        (pl.all_horizontal, False, [1, 2, 3]),
-        (pl.all_horizontal, True, [0, 4]),
-        (pl.any_horizontal, False, [1, 2, 3, 4]),
-        (pl.any_horizontal, True, [0]),
-    ],
-)
-def test_filter_horizontal_non_boolean_operand(
-    horizontal: Callable[..., pl.Expr],
-    negate: bool,
-    expected: list[int],
-    tmp_path: Path,
-) -> None:
-    df = pl.DataFrame(
-        {
-            "i": [0, 1, 2, 3, 4, 5],
-            "c0": pl.Series([0, 1, 2, 3, -1, None], dtype=pl.Int8),
-        }
-    )
-    pred = horizontal(pl.col("c0"), pl.col("c0") > 0).cast(pl.Boolean)
-    if negate:
-        pred = ~pred
-
-    assert df.filter(pred)["i"].to_list() == expected
-    assert df.lazy().filter(pred).collect()["i"].to_list() == expected
-
-    path = tmp_path / "data.parquet"
-    df.write_parquet(path)
-    assert pl.scan_parquet(path).filter(pred).collect()["i"].to_list() == expected
