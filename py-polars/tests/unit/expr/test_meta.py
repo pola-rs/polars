@@ -103,3 +103,16 @@ def test_meta_properties_schema() -> None:
 
     with pytest.raises(pl.exceptions.ColumnNotFoundError):
         pl.col("x").meta.is_scalar(schema=schema)
+
+
+@pytest.mark.parametrize(
+    "expr", [pl.col("s").struct.unnest(), pl.col("s").struct.field("x", "y")]
+)
+def test_meta_struct_fields_without_schema(expr: pl.Expr) -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        expr.meta.is_scalar()
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        expr.meta.tree_format(return_as_string=True)
+
+    schema = {"s": pl.Struct({"x": pl.Int64, "y": pl.Int64})}
+    assert expr.meta.is_length_preserving(schema=schema)
