@@ -50,7 +50,7 @@ pub(super) fn set_join_build_sides(
             continue;
         }
         let (left, right) = (*input_left, *input_right);
-        // equi joins sample lopsideness at runtime.
+        // equi joins sample lopsidedness at runtime.
         // cross joins don't so, plan time estimates
         // are all we have. TODO!: change this if that
         // assumption changes.

@@ -158,7 +158,7 @@ def json_normalize(
     Normalize semi-structured deserialized JSON data into a flat table.
 
     Dictionary objects that will not be unnested/normalized are encoded
-    as json string data. Unlike it pandas' counterpart, this function will
+    as json string data. Unlike its pandas' counterpart, this function will
     not encode dictionaries as objects at any level.
 
     .. warning::

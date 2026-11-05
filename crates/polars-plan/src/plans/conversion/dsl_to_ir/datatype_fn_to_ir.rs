@@ -98,7 +98,7 @@ pub fn datatype_fn_to_aexpr(
             let fields: Vec<Field> = match dt_expr.into_datatype(ctx.schema)? {
                 #[cfg(feature = "dtype-struct")]
                 DataType::Struct(fields) => fields,
-                dt => polars_bail!(InvalidOperation: "`{dt}` is not an Struct"),
+                dt => polars_bail!(InvalidOperation: "`{dt}` is not a Struct"),
             };
 
             let value = match f {

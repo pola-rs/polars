@@ -175,6 +175,7 @@ if TYPE_CHECKING:
         OneOrMoreDataTypes,
         Orientation,
         ParquetCompression,
+        ParquetEncryption,
         ParquetMetadata,
         PivotAgg,
         PolarsDataType,
@@ -196,7 +197,6 @@ if TYPE_CHECKING:
     from polars._utils.various import NoDefault
     from polars.config import TableFormatNames
     from polars.io.cloud import CredentialProviderFunction
-    from polars.io.parquet.encryption import ParquetEncryptionProperties
     from polars.io.partition import PartitionBy
     from polars.ml.torch import PolarsDataset
 
@@ -1285,7 +1285,7 @@ class DataFrame:
         ----------
         key
             Rows / columns to select. This is easiest to explain via example. Suppose
-            we have a DataFrame with columns `'a'`, `'d'`, `'c'`, `'d'`. Here is what
+            we have a DataFrame with columns `'a'`, `'d'`, `'c'`, `'b'`. Here is what
             various types of `key` would do:
 
             - `df[0, 'a']` extracts the first element of column `'a'` and returns a
@@ -2998,7 +2998,7 @@ class DataFrame:
             Whether to check if the filename matches the compression settings.
             Will raise an error if compression is set to 'uncompressed' and the
             filename ends in one of (".gz", ".zst", ".zstd") or if
-            compression != 'uncompressed' and the file uses an mismatched
+            compression != 'uncompressed' and the file uses a mismatched
             extension. Only applies if file is a path.
 
             .. warning::
@@ -4213,7 +4213,7 @@ class DataFrame:
         ) = "auto",
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
-        encryption: ParquetEncryptionProperties | None = None,
+        encryption: ParquetEncryption | None = None,
         mkdir: bool = False,
     ) -> None:
         """
@@ -4319,7 +4319,9 @@ class DataFrame:
                 point without it being considered a breaking change.
         encryption
             Properties for writing Parquet files encrypted with Parquet modular
-            encryption. See :class:`ParquetEncryptionProperties`.
+            encryption. See :class:`ParquetEncryptionProperties`, or
+            :class:`~polars.io.parquet.encryption.ParquetEncryptionConfig` to use keys
+            managed by a KMS.
 
             When partitioning, the partition key values are written unencrypted in
             the file paths. Columns with their own encryption key can't be used as
@@ -4660,7 +4662,7 @@ class DataFrame:
                 if adbc_module_name.split("_")[-1] == "sqlite":
                     catalog, db_schema = db_schema, None
 
-                    # note: ADBC didnt't support 'replace' until adbc-driver-sqlite
+                    # note: ADBC didn't support 'replace' until adbc-driver-sqlite
                     # version 0.11 (it was released for other drivers in version 0.7)
                     if (
                         driver_manager_version >= (0, 7)
@@ -5744,7 +5746,7 @@ class DataFrame:
         │ 4    ┆ null ┆ c    │
         └──────┴──────┴──────┘
 
-        Provide constraints(s) using `**kwargs` syntax:
+        Provide constraint(s) using `**kwargs` syntax:
 
         >>> df.remove(foo=0, bar=0)
         shape: (4, 3)
@@ -7224,7 +7226,7 @@ class DataFrame:
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default group by.
-            Settings this to `True` blocks the possibility
+            Setting this to `True` blocks the possibility
             to run on the streaming engine.
 
             .. note::
@@ -8441,7 +8443,7 @@ class DataFrame:
                * - **right_left**
                  - First preserves the order of the right DataFrame, then the left.
         build_side: {'auto', 'prefer_left', 'prefer_right', 'force_left', 'force_right'}
-            Which side of the join will be used as the build side. This side will be
+            Which side of the join will be used as the build side. This side will
             likely be held in memory as a hash table. Note that unless a `force_`
             variant is chosen, the chosen side might differ across Polars versions or
             even between different runs.
@@ -10673,7 +10675,7 @@ class DataFrame:
         """
         Select columns from this DataFrame.
 
-        This will run all expression sequentially instead of in parallel.
+        This will run all expressions sequentially instead of in parallel.
         Use this when the work per expression is cheap.
 
         Parameters
@@ -10843,7 +10845,7 @@ class DataFrame:
 
         Added columns will replace existing columns with the same name.
 
-        This will run all expression sequentially instead of in parallel.
+        This will run all expressions sequentially instead of in parallel.
         Use this when the work per expression is cheap.
 
         Parameters
@@ -11460,7 +11462,7 @@ class DataFrame:
             * 'last': Keep the last unique row.
         maintain_order
             Keep the same order as the original DataFrame. This is more expensive
-            to compute. Settings this to `True` blocks the possibility to run on
+            to compute. Setting this to `True` blocks the possibility to run on
             the streaming engine.
 
         Returns
@@ -12116,7 +12118,7 @@ class DataFrame:
         include_key
             Include key values inline with the associated data (by default the key
             values are omitted as a memory/performance optimisation, as they can be
-            reoconstructed from the key).
+            reconstructed from the key).
         unique
             Indicate that the key is unique; this will result in a 1:1 mapping from
             key to a single associated row. Note that if the key is *not* actually
@@ -13102,7 +13104,7 @@ class DataFrame:
         Parameters
         ----------
         limit : int
-            Numbers of rows to show. If a negative value is passed, return all rows
+            Number of rows to show. If a negative value is passed, return all rows
             except the last `abs(n)`. If None is passed, return all rows.
         ascii_tables : bool
             Use ASCII characters to display table outlines. Set False to revert to the
@@ -13315,23 +13317,23 @@ class DataFrame:
         schema
             Target schema to match or evolve to.
         missing_columns
-            Raise of insert missing columns from the input with respect to the `schema`.
+            Raise or insert missing columns from the input with respect to the `schema`.
 
             This can also be an expression per column with what to insert if it is
             missing.
         missing_struct_fields
-            Raise of insert missing struct fields from the input with respect to the
+            Raise or insert missing struct fields from the input with respect to the
             `schema`.
         extra_columns
-            Raise of ignore extra columns from the input with respect to the `schema`.
+            Raise or ignore extra columns from the input with respect to the `schema`.
         extra_struct_fields
-            Raise of ignore extra struct fields from the input with respect to the
+            Raise or ignore extra struct fields from the input with respect to the
             `schema`.
         integer_cast
-            Forbid of upcast for integer columns from the input to the respective column
+            Forbid or upcast for integer columns from the input to the respective column
             in `schema`.
         float_cast
-            Forbid of upcast for float columns from the input to the respective column
+            Forbid or upcast for float columns from the input to the respective column
             in `schema`.
 
         Examples

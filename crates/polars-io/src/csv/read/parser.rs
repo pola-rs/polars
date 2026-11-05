@@ -294,7 +294,7 @@ pub(super) fn next_line_position(
         // a,b,c
         // vala,valb,
         // SplitFields returns a count that is 1 less
-        // There fore we accept:
+        // Therefore we accept:
         // expected == count
         // and
         // expected == count - 1
@@ -409,7 +409,7 @@ pub(super) fn skip_whitespace(input: &[u8]) -> &[u8] {
 ///    for line in bytes.split(b'\n') {
 /// ```
 ///
-/// This will fail when strings fields are have embedded end line characters.
+/// This will fail when string fields have embedded end line characters.
 /// For instance: "This is a valid field\nI have multiples lines" is a valid string field, that contains multiple lines.
 pub struct SplitLines<'a> {
     v: &'a [u8],
@@ -1025,9 +1025,9 @@ fn ends_in_unterminated_row(
     if !bytes.is_empty() && bytes.last().copied().unwrap() != eol_char {
         // We can do a simple backwards-scan to find the start of last line if it is a
         // comment line, since comment lines can't escape new-lines.
-        let last_new_line_post = memchr::memrchr(eol_char, bytes).unwrap_or(0);
+        let last_new_line_pos = memchr::memrchr(eol_char, bytes).unwrap_or(0);
         let last_line_is_comment_line = bytes
-            .get(last_new_line_post + 1..)
+            .get(last_new_line_pos + 1..)
             .map(|line| is_comment_line(line, comment_prefix))
             .unwrap_or(false);
 
@@ -1123,6 +1123,12 @@ pub(super) fn parse_lines(
     let original_bytes_len = bytes.len();
     let n_lines = n_lines as u32;
 
+    let mut iter = SplitFields::new(
+        bytes,
+        parse_options.separator,
+        parse_options.quote_char,
+        parse_options.eol_char,
+    );
     let mut line_count = 0u32;
     loop {
         if line_count > n_lines {
@@ -1146,12 +1152,7 @@ pub(super) fn parse_lines(
         let mut next_projected = unsafe { projection_iter.next().unwrap_unchecked() };
         let mut processed_fields = 0;
 
-        let mut iter = SplitFields::new(
-            bytes,
-            parse_options.separator,
-            parse_options.quote_char,
-            parse_options.eol_char,
-        );
+        iter.next_line(bytes);
         let mut idx = 0u32;
         let mut read_sol = 0;
         loop {

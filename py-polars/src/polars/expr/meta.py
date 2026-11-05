@@ -184,7 +184,7 @@ class ExprMetaNameSpace:
     @unstable()
     def is_scalar(self) -> bool:
         """
-        Whether or not this expressions produces a scalar.
+        Whether or not this expression produces a scalar.
 
         Examples
         --------
@@ -203,7 +203,7 @@ class ExprMetaNameSpace:
         """
         Whether or not this expression produces an output is length preserving.
 
-        By length preserving we mean the same length as it's input.
+        By length preserving we mean the same length as its input.
 
         Examples
         --------
@@ -388,7 +388,7 @@ class ExprMetaNameSpace:
         """
         Try to turn this expression in a selector.
 
-        Raises if the underlying expressions is not a column or selector.
+        Raises if the underlying expression is not a column or selector.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed

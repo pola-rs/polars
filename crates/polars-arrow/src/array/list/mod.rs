@@ -210,14 +210,14 @@ impl<O: Offset> ListArray<O> {
         }
     }
 
-    /// Returns a the inner [`Field`]
+    /// Returns the inner [`Field`]
     /// # Panics
     /// Panics iff the logical type is not consistent with this struct.
     pub fn get_child_field(dtype: &ArrowDataType) -> &Field {
         Self::try_get_child(dtype).unwrap()
     }
 
-    /// Returns a the inner [`Field`]
+    /// Returns the inner [`Field`]
     /// # Errors
     /// Panics iff the logical type is not consistent with this struct.
     pub fn try_get_child(dtype: &ArrowDataType) -> PolarsResult<&Field> {
@@ -234,7 +234,7 @@ impl<O: Offset> ListArray<O> {
         }
     }
 
-    /// Returns a the inner [`ArrowDataType`]
+    /// Returns the inner [`ArrowDataType`]
     /// # Panics
     /// Panics iff the logical type is not consistent with this struct.
     pub fn get_child_type(dtype: &ArrowDataType) -> &ArrowDataType {

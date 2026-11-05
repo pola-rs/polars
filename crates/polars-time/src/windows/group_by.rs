@@ -106,7 +106,7 @@ fn update_groups_and_bounds(
 /// - offset
 ///
 /// And every window boundary we search for the values that fit that window by the given
-/// `ClosedWindow`. The groups are return as `GroupTuples` together with the lower bound and upper
+/// `ClosedWindow`. The groups are returned as `GroupTuples` together with the lower bound and upper
 /// bound timestamps. These timestamps indicate the start (lower) and end (upper) of the window of
 /// that group.
 ///
@@ -333,7 +333,7 @@ pub(crate) fn group_by_values_iter_window_behind_t(
     }))
 }
 
-// window is with -1 periods of t
+// window is within -1 periods of t
 // ----t---
 //  [---]
 #[allow(clippy::too_many_arguments)]
@@ -683,8 +683,8 @@ pub fn group_by_values(
         }
         // partial lookbehind
         // this one is still single threaded
-        // can make it parallel later, its a bit more complicated because the boundaries are unknown
-        // window is with -1 periods of t
+        // can make it parallel later, it's a bit more complicated because the boundaries are unknown
+        // window is within -1 periods of t
         // ----t---
         //  [---]
         else {

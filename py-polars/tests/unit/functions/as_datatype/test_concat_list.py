@@ -130,7 +130,7 @@ def test_list_concat_rolling_window() -> None:
         [9.0, 2.0, 13.0],
     ]
 
-    # this test proper null behavior of concat list
+    # this tests proper null behavior of concat list
     out = (
         df.with_columns(
             pl.col("A").reshape((-1, 1)).arr.to_list()  # first turn into a list

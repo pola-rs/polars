@@ -28,7 +28,7 @@ pub struct SchemaInferenceOptions {
     ///
     /// This defaults to `TimeUnit::Nanosecond`, but INT96 timestamps outside of the range of years 1678-2262,
     /// will overflow when parsed as `Timestamp(TimeUnit::Nanosecond)`. Setting this to a lower resolution
-    /// (e.g. TimeUnit::Milliseconds) will result in loss of precision, but support a larger range of dates
+    /// (e.g. TimeUnit::Millisecond) will result in loss of precision, but support a larger range of dates
     /// without overflowing when parsing the data.
     pub int96_coerce_to_timeunit: TimeUnit,
 

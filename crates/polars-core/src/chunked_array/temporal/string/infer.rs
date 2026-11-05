@@ -66,7 +66,7 @@ polars_utils::regex_cache::cached_regex! {
             [-/\.]?                # separator
             (?P<month>[01]?\d{1})  # month
             [-/\.]?                # separator
-            (?:\d{1,2})            # year
+            (?:\d{1,2})            # day
             [T\ ]                  # separator
             (?:\d{2})              # hour
             :?                     # separator

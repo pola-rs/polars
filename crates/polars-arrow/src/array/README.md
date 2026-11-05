@@ -42,7 +42,7 @@ This document describes the overall design of this module.
   - `from_slice`: from a slice of values (e.g. `AsRef<[bool]>` for `BooleanArray`)
   - `from_trusted_len_iter` from an iterator of trusted len of optional values
   - `from_trusted_len_values_iter` from an iterator of trusted len of values
-  - `try_from_trusted_len_iter` from an fallible iterator of trusted len of optional values
+  - `try_from_trusted_len_iter` from a fallible iterator of trusted len of optional values
 
 ### Slot offsets
 
@@ -55,7 +55,7 @@ This document describes the overall design of this module.
 
 - Conversely, `offset` MUST only be changed by `slice`.
 
-The rational of the above is that it enable us to be fully interoperable with the offset logic
+The rationale of the above is that it enables us to be fully interoperable with the offset logic
 supported by the C data interface, while at the same time easily perform array slices within Rust's
 type safety mechanism.
 
@@ -80,5 +80,5 @@ type safety mechanism.
   This is achieved by converting mutable versions to immutable counterparts (e.g.
   `MutableBitmap -> Bitmap`).
 
-  The rational is that `MutableArray`s can be used to perform in-place operations under the arrow
+  The rationale is that `MutableArray`s can be used to perform in-place operations under the arrow
   spec.

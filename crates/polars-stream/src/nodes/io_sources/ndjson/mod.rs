@@ -362,7 +362,7 @@ impl FileReader for NDJsonFileReader {
             reverse: is_negative_slice,
         };
 
-        // Unify the two source options (uncompressed local file mmapp'ed, or streaming async with
+        // Unify the two source options (uncompressed local file mmap'ed, or streaming async with
         // transparent decompression), into one unified reader source.
         let reader_source = if use_async_prefetch {
             // Prepare parameters for Prefetch task.

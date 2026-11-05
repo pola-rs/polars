@@ -4,6 +4,8 @@ pub mod cloud_options;
 pub mod iceberg_plugin;
 #[cfg(feature = "parquet")]
 pub mod parquet_encryption;
+#[cfg(feature = "parquet")]
+pub mod parquet_kms;
 pub mod scan_options;
 pub mod sink_options;
 pub mod sink_output;

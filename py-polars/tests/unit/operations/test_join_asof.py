@@ -703,7 +703,7 @@ def test_asof_join_nearest_with_tolerance() -> None:
                     datetime(2022, 1, 3),
                     datetime(
                         2023, 1, 2, 21, 30, 0
-                    ),  # should match with 2023-01-02, 2023-01-03, and 2021-01-04
+                    ),  # should match with 2023-01-02, 2023-01-03, and 2023-01-04
                     datetime(2023, 1, 7),
                 ]
             ),
@@ -1235,7 +1235,7 @@ def test_join_asof_by_argument_parsing() -> None:
         }
     ).sort(by="n")
 
-    # any sequency for by argument is allowed, so we should see the same results here
+    # any sequence for by argument is allowed, so we should see the same results here
     by_list = df1.join_asof(df2, on="n", by=["id1", "id2"])
     by_tuple = df1.join_asof(df2, on="n", by=("id1", "id2"))
     assert_frame_equal(by_list, by_tuple)

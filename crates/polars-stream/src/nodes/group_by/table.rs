@@ -13,6 +13,7 @@ use super::InputPayload;
 use super::pre_agg::PreAgg;
 use crate::execute::StreamingExecutionState;
 use crate::hash_shuffle::frame_with_keys::FrameWithKeys;
+use crate::hash_shuffle::split::rows_or_all;
 
 /// What the sink and every partition table read.
 pub struct GroupByParams {
@@ -28,23 +29,6 @@ pub struct GroupByParams {
     /// The templates for the reductions of each hot table and partition table.
     pub grouped_reductions: Vec<Box<dyn GroupedReduction>>,
     pub has_order_sensitive_agg: bool,
-}
-
-/// `rows`, or else the first `len` row indices, from `all_rows`.
-fn rows_or_all<'a>(
-    rows: Option<&'a [IdxSize]>,
-    all_rows: &'a mut Vec<IdxSize>,
-    len: usize,
-) -> &'a [IdxSize] {
-    match rows {
-        Some(rows) => rows,
-        None => {
-            if all_rows.len() < len {
-                all_rows.extend(all_rows.len() as IdxSize..len as IdxSize);
-            }
-            &all_rows[..len]
-        },
-    }
 }
 
 /// The groups and reduction states of one partition.
