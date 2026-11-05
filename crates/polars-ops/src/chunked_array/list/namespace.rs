@@ -1,8 +1,6 @@
-use std::borrow::Cow;
 use std::fmt::Write;
 
 use polars_compute::gather::sublist::list::{index_is_oob, sublist_get};
-use polars_compute::horizontal_concat_list::horizontal_concat_list_unchecked;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 use polars_core::utils::{CustomIterTools, try_get_supertype};
@@ -14,6 +12,7 @@ use crate::chunked_array::list::sum_mean::sum_with_nulls;
 use crate::prelude::diff;
 use crate::prelude::list::sum_mean::{mean_list_numerical, sum_list_numerical};
 use crate::series::ArgAgg;
+use crate::series::concat_list::concat_list;
 
 pub(super) fn has_inner_nulls(ca: &ListChunked) -> bool {
     for arr in ca.downcast_iter() {
@@ -24,13 +23,7 @@ pub(super) fn has_inner_nulls(ca: &ListChunked) -> bool {
     false
 }
 
-fn cast_rhs(
-    other: &mut [Column],
-    inner_type: &DataType,
-    dtype: &DataType,
-    length: usize,
-    allow_broadcast: bool,
-) -> PolarsResult<()> {
+fn cast_rhs(other: &mut [Column], inner_type: &DataType, dtype: &DataType) -> PolarsResult<()> {
     for s in other.iter_mut() {
         // make sure that inner types match before we coerce into list
         if !matches!(s.dtype(), DataType::List(_)) {
@@ -52,17 +45,6 @@ fn cast_rhs(
                     e
                 )
             })?;
-        }
-
-        if allow_broadcast {
-            // broadcast JIT
-            s.broadcast_in_place_to(length)?;
-        } else {
-            polars_ensure!(
-                s.len() == length || s.len() == 1,
-                ShapeMismatch: "series length {} does not match expected length of {}",
-                s.len(), length
-            );
         }
     }
     Ok(())
@@ -564,7 +546,6 @@ pub trait ListNameSpaceImpl: AsList {
             return Ok(ca.clone());
         }
 
-        let length = ca.len();
         let mut other = other.to_vec();
         let mut inner_super_type = ca.inner_dtype().clone();
 
@@ -579,33 +560,14 @@ pub trait ListNameSpaceImpl: AsList {
             }
         }
 
+        // cast lhs and rhs
         let dtype = &DataType::List(Box::new(inner_super_type.clone()));
+        let ca = ca.cast(dtype)?;
+        cast_rhs(&mut other, &inner_super_type, dtype)?;
 
-        // Cast lhs and rhs to a common `list[supertype]`. Unit-length rhs columns are left un-expanded
-        // (`allow_broadcast=false`); the kernel broadcasts them in-place, which avoids materializing the broadcast.
-        let ca_series = ca.cast(dtype)?;
-        let ca = ca_series.list().unwrap();
-        cast_rhs(&mut other, &inner_super_type, dtype, length, false)?;
-
-        // Collect single-chunk list arrays: `self` first, then the rhs columns.
-        let mut list_chunkeds: Vec<Cow<'_, ListChunked>> = Vec::with_capacity(other.len() + 1);
-        list_chunkeds.push(ca.rechunk());
-        for s in &other {
-            list_chunkeds.push(s.list()?.rechunk());
-        }
-        let arrays: Vec<_> = list_chunkeds
-            .iter()
-            .map(|lc| lc.downcast_iter().next().unwrap().clone())
-            .collect();
-
-        // SAFETY: after casting all arrays share the same inner (super)type, and each has length `length`
-        // (== output height) or 1 (broadcast).
-        let out_arr = unsafe { horizontal_concat_list_unchecked(&arrays) }?;
-        let mut out = ListChunked::with_chunk(ca.name().clone(), out_arr);
-
-        // The kernel operates on physical arrays; restore the logical inner dtype.
-        unsafe { out.to_logical(inner_super_type) };
-        Ok(out)
+        other.insert(0, ca.into_column());
+        let out = concat_list(&other, dtype)?;
+        Ok(out.list()?.clone())
     }
 }
 

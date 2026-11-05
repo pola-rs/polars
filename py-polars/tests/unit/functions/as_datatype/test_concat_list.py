@@ -1,10 +1,11 @@
 from datetime import datetime
 from decimal import Decimal as D
+from typing import Any
 
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -313,6 +314,54 @@ def test_concat_list_decimal() -> None:
         [D("1.5"), D("0.1")],
         [D("2.5"), None],
     ]
+
+
+def test_concat_list_sliced_and_null_rows() -> None:
+    s = pl.Series("a", [[0], [1, 2], None, [3], [4, 5, 6]])
+    t = pl.Series("b", [[9], None, [7, 8], [], [10]])
+    out = pl.select(pl.concat_list(s.slice(1), t.slice(1)))
+    assert out.to_series().to_list() == [None, None, [3], [4, 5, 6, 10]]
+    # Null rows are output as empty lists.
+    assert out.to_series().list.explode().to_list() == [None, None, 3, 4, 5, 6, 10]
+
+
+def test_concat_list_broadcast_null_scalar() -> None:
+    df = pl.DataFrame({"a": [[1], [2], [3]]})
+    out = df.select(pl.concat_list("a", pl.lit(None, dtype=pl.List(pl.Int64))))
+    assert out.to_series().to_list() == [None, None, None]
+
+
+def test_concat_list_all_scalars() -> None:
+    df = pl.DataFrame({"x": [1, 2, 3]})
+    out = df.select(pl.concat_list(pl.lit([1, 2]), pl.lit([3])), "x")
+    assert out.to_series().to_list() == [[1, 2, 3]] * 3
+
+
+@pytest.mark.parametrize(
+    ("dtype", "a", "b"),
+    [
+        (pl.Boolean, [[True], [False, None]], [[None], [True]]),
+        (pl.Binary, [[b"a"], [b"bc", None]], [[None], [b"d"]]),
+        (pl.Array(pl.Int64, 2), [[[1, 2]], [[3, 4], None]], [[None], [[5, 6]]]),
+        (pl.Null, [[None], [None, None]], [[None], []]),
+    ],
+)
+def test_concat_list_inner_dtypes(
+    dtype: pl.DataType, a: list[Any], b: list[Any]
+) -> None:
+    df = pl.DataFrame(
+        {"a": a, "b": b}, schema={"a": pl.List(dtype), "b": pl.List(dtype)}
+    )
+    out = df.select(pl.concat_list("a", "b").alias("c"))
+    assert out.schema["c"] == pl.List(dtype)
+    assert out["c"].to_list() == [x + y for x, y in zip(a, b, strict=True)]
+
+
+def test_concat_list_height_mismatch_raises() -> None:
+    a = pl.Series("a", [[1], [2]])
+    b = pl.Series("b", [[1], [2], [3]])
+    with pytest.raises(ShapeError):
+        pl.select(pl.concat_list(a, b))
 
 
 def test_list_function() -> None:
