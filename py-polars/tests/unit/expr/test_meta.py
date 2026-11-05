@@ -66,6 +66,15 @@ a, b = pl.col("a"), pl.col("b")
         (pl.struct(x=a.drop_nulls(), y=b.drop_nulls()), False),
         (pl.lit([1, 2]).explode(), False),
         (pl.lit(1).drop_nulls(), False),
+        (pl.lit([1, 2]).list.eval(pl.element()).explode(), False),
+        (pl.lit([1, 2]).list.eval(pl.len()).explode(), False),
+        (
+            pl.lit(1)
+            .map_batches(lambda s: s, is_elementwise=True, return_dtype=pl.Int32)
+            .drop_nulls(),
+            False,
+        ),
+        (pl.lit(1).is_in(pl.Series([[1, 2]])).drop_nulls(), False),
     ],
 )
 def test_meta_is_row_separable(expr: pl.Expr, row_separable: bool) -> None:

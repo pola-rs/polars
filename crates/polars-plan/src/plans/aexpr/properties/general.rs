@@ -284,14 +284,16 @@ pub struct RowSeparability {
     pub elementwise: bool,
     /// As [`is_input_independent_scalar_rec`].
     pub input_independent_scalar: bool,
+    /// The expression reads a column or the frame's length.
+    pub frame_dependent: bool,
 }
 
 /// Derives the [`RowSeparability`] of the expression at `node`, memoizing it and that of the
 /// subexpressions it visits in `memo`, so that sharing `memo` across calls visits each node once.
 ///
 /// Every node must be row-separable, and the inputs it zips must line up within a batch (see
-/// [`zipped_inputs_line_up`]). A node that isn't elementwise must also read some input that isn't
-/// an input-independent scalar: `lit([1, 2]).explode()` gives two rows per batch.
+/// [`zipped_inputs_line_up`]). A node that isn't elementwise must also have an input that reads the
+/// frame: `lit([1, 2]).explode()` gives two rows per batch.
 #[recursive::recursive]
 pub fn row_separability(
     node: Node,
@@ -315,7 +317,7 @@ pub fn row_separability(
         let inputs = props_of(&stack);
         inputs.iter().all(|p| p.row_separable)
             && zipped_inputs_line_up(&inputs)
-            && (ae.is_elementwise_top_level() || inputs.iter().any(|p| !p.input_independent_scalar))
+            && (ae.is_elementwise_top_level() || inputs.iter().any(|p| p.frame_dependent))
     };
 
     stack.clear();
@@ -324,13 +326,17 @@ pub fn row_separability(
 
     stack.clear();
     ae.inputs_rev(&mut stack);
+    let inputs = props_of(&stack);
     let input_independent_scalar = is_input_independent_scalar_top_level(ae)
-        && props_of(&stack).iter().all(|p| p.input_independent_scalar);
+        && inputs.iter().all(|p| p.input_independent_scalar);
+    let frame_dependent =
+        matches!(ae, AExpr::Column(_) | AExpr::Len) || inputs.iter().any(|p| p.frame_dependent);
 
     let props = RowSeparability {
         row_separable,
         elementwise,
         input_independent_scalar,
+        frame_dependent,
     };
     memo.insert(node, props);
     props
