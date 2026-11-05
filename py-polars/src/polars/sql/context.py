@@ -1377,16 +1377,15 @@ def _candidate_tasks(
     Each with all its delete files: planning with a filter also drops the delete files
     whose rows can't match it, which a rewrite of the whole file needs.
     """
+    from pyiceberg.manifest import ManifestContent
+
     tasks = _filtered_tasks(table, row_filter)
     snapshot = table.current_snapshot()
-    if (
-        not tasks
-        or snapshot is None
-        or (
-            snapshot.summary is not None
-            and snapshot.summary.get("total-delete-files") == "0"
-        )
-    ):
+    if not tasks or snapshot is None:
+        return tasks
+    # delete files are in delete manifests (spec), the summary's totals can be wrong
+    manifests = snapshot.manifests(table.io)
+    if all(m.content != ManifestContent.DELETES for m in manifests):
         return tasks
     complete = {t.file.file_path: t for t in table.scan().plan_files()}
     return [complete[t.file.file_path] for t in tasks]

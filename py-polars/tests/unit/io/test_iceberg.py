@@ -9113,11 +9113,13 @@ def _add_position_deletes(
     deletion_vectors: bool = False,
     stale_deletion_vectors: dict[str, list[int]] | None = None,
     row_bounds: dict[int, tuple[bytes, bytes]] | None = None,
+    summary: dict[str, str] | None = None,
 ) -> Any:
     """
     Commit a snapshot adding one position delete file per data file.
 
     `row_bounds` adds (lower, upper) bounds of the deleted rows' columns, by field ID.
+    `summary` holds properties of the snapshot summary, written as given.
 
     With `single_delete_file`, one delete file holds the deletes of all data files (it
     is then scoped to the partition rather than to a data file). `partition` is the
@@ -9335,7 +9337,7 @@ def _add_position_deletes(
             "parent-snapshot-id": parent.snapshot_id,
             "sequence-number": sequence_number,
             "manifest-list": list_path,
-            "summary": Summary(Operation.DELETE),
+            "summary": Summary(Operation.DELETE, **(summary or {})),
             "schema-id": tbl.schema().schema_id,
         }
     )

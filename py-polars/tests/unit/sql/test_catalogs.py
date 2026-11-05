@@ -4298,7 +4298,14 @@ def test_update_catalog_table_partition_pruning(lake: CountingCatalog) -> None:
 
 
 @pytest.mark.write_disk
-def test_update_catalog_table_position_deletes(lake: CountingCatalog) -> None:
+@pytest.mark.parametrize(
+    "summary",
+    [{}, {"total-delete-files": "0"}],
+    ids=["no totals", "undercounted totals"],
+)
+def test_update_catalog_table_position_deletes(
+    lake: CountingCatalog, summary: dict[str, str]
+) -> None:
     from tests.unit.io.test_iceberg import _add_position_deletes
 
     table = lake.create_table(("tpch", "d"), schema=LINEITEM.to_arrow().schema)
@@ -4311,8 +4318,14 @@ def test_update_catalog_table_position_deletes(lake: CountingCatalog) -> None:
 
     # with bounds of the deleted row, which planning on `k = 1` would leave out
     k = struct.pack("<q", 2)
-    _add_position_deletes(
-        lake.load_table(("tpch", "d")), {data_file(): [1]}, row_bounds={1: (k, k)}
+    table = _add_position_deletes(
+        lake.load_table(("tpch", "d")),
+        {data_file(): [1]},
+        row_bounds={1: (k, k)},
+        summary=summary,
+    )
+    assert table.current_snapshot().summary.get("total-delete-files") == summary.get(
+        "total-delete-files"
     )
     # a row deleted before stays deleted in the rewritten file
     ctx = lake_ctx(lake)
