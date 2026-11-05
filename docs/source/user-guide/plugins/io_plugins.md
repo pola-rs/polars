@@ -106,22 +106,26 @@ class CountedJsonReader(FileReader):
                 yield df
 ```
 
+<!-- dprint-ignore-start -->
+
 - `fetch_metadata` is called by polars first to allow the file reader to perform metadata fetching
   before the actual read.
 - `schema` and `n_rows_in_file` describe the source. A `limit` is provided to allow readers
   (optionally) to stop counting rows early.
 - `collect_batches` yields the data as `DataFrame`s:
-  - `columns` lists the columns to read. **If this is given as an empty list, the reader should
-    still produce 0-column DataFrames with the correct height.**
-  - `row_index` holds the name of a row index column and the index of the first row in this source
-    that the reader should apply. It is not passed unless the `FileReaderBuilder` declares that the
-    reader supports applying the row index.
-  - `pre_slice` holds the offset and length of a slice, counted from the start of this source. Note,
-    the slice can extend past the end of the source. It is also only passed when the builder
-    declares support for it.
-  - `filters` holds predicates that the reader may use. They are described
-    [further below](#filters).
-  - `num_pipelines` is a hint for how much parallelism the reader should use.
+    - `columns` lists the columns to read. **If this is given as an empty list, the reader should
+      still produce 0-column DataFrames with the correct height.**
+    - `row_index` holds the name of a row index column and the index of the first row in this source
+      that the reader should apply. It is not passed unless the `FileReaderBuilder` declares that the
+      reader supports applying the row index.
+    - `pre_slice` holds the offset and length of a slice, counted from the start of this source. Note,
+      the slice can extend past the end of the source. It is also only passed when the builder
+      declares support for it.
+    - `filters` holds predicates that the reader may use. They are described
+      [further below](#filters).
+    - `num_pipelines` is a hint for how much parallelism the reader should use.
+
+<!-- dprint-ignore-end -->
 
 The order which operations should be applied is: row index, then slice, then filters.
 
@@ -331,17 +335,21 @@ class CatalogTable(LazyFrameResolver):
         return lf, ResolvedLazyFrameProps(version_key=version_key)
 ```
 
+<!-- dprint-ignore-start -->
+
 - `schema` returns the schema of the table. It is called by polars when building the query plan, so
   it should not resolve the table.
 - `resolve_lazyframe` returns the `LazyFrame` to scan:
-  - `projection` lists the columns to return, or `None` for all columns. **If this is given as an
-    empty list, the result should still have the correct height** (e.g. using `lf.drop("*")`).
-  - `limit` is the maximum number of rows needed, or `None`.
-  - `filters` holds the predicates of the query as `FilterExpr`s. `filter_columns` lists the columns
-    they refer to, and `filter_drop_columns_idx` marks the columns at the end of `projection` that
-    are only needed by the filters.
-  - `existing_resolved_version_key` is the version key of the previous resolve, described
-    [below](#versions-and-applied-filters).
+    - `projection` lists the columns to return, or `None` for all columns. **If this is given as an
+      empty list, the result should still have the correct height** (e.g. using `lf.drop("*")`).
+    - `limit` is the maximum number of rows needed, or `None`.
+    - `filters` holds the predicates of the query as `FilterExpr`s. `filter_columns` lists the columns
+      they refer to, and `filter_drop_columns_idx` marks the columns at the end of `projection` that
+      are only needed by the filters.
+    - `existing_resolved_version_key` is the version key of the previous resolve, described
+      [below](#versions-and-applied-filters).
+
+<!-- dprint-ignore-end -->
 
 The example resolver applies the filters on `day` to the list of files in the catalog, so that a
 query for a single day only opens the files of that day. Polars will still apply all filters again
@@ -351,15 +359,19 @@ afterwards.
 
 A resolver can optionally return a `ResolvedLazyFrameProps` alongside the `LazyFrame`:
 
+<!-- dprint-ignore-start -->
+
 - `version_key` identifies the version of the table:
-  - If it is not given, polars caches the resolved `LazyFrame` and reuses it for calls with the same
-    arguments.
-  - If it is given, polars calls the resolver on every `collect()`, passing the key of the previous
-    resolve with the same arguments as `existing_resolved_version_key`. If the table is unchanged,
-    the resolver can return `None` with that same key to reuse the previous result. Note, returning
-    `None` with any other key raises an error.
+    - If it is not given, polars caches the resolved `LazyFrame` and reuses it for calls with the same
+      arguments.
+    - If it is given, polars calls the resolver on every `collect()`, passing the key of the previous
+      resolve with the same arguments as `existing_resolved_version_key`. If the table is unchanged,
+      the resolver can return `None` with that same key to reuse the previous result. Note, returning
+      `None` with any other key raises an error.
 - `applied_filters` lists the filters that are fully applied by the returned `LazyFrame`. Polars
   will not apply these again. The example leaves it empty, as it only skips whole files.
+
+<!-- dprint-ignore-end -->
 
 The example takes the version key from the catalog, so that new files show up in the next query.
 
