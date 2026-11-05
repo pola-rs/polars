@@ -240,7 +240,7 @@ impl<'a> BitMask<'a> {
         FastU56BitmapIter::new(self.bytes, self.offset, self.len)
     }
 
-    pub fn set_bit_idx_iter(self) -> TrueIdxIter<'a> {
+    pub fn true_idx_iter(self) -> TrueIdxIter<'a> {
         TrueIdxIter::new(self.bytes, self.offset, self.len)
     }
 

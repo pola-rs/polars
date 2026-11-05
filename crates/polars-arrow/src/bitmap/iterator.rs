@@ -43,6 +43,7 @@ pub struct SetBitIdxIter<'a, const EXACT: bool> {
     bytes: &'a [u8],
     /// Number of bits from the start of the current word to the end.
     bits_left: usize,
+    /// Set bits of the current word not yet returned.
     word: u64,
     /// Output index of bit 0 of the current word. Wraps below zero for the
     /// first word if the offset is not byte-aligned.
@@ -74,6 +75,7 @@ impl<'a> SetBitIdxIter<'a, true> {
 
     /// Iterates over the indices of the valid entries, or `0..len` if there
     /// is no validity.
+    #[inline]
     pub fn from_validity(len: usize, validity: Option<&'a Bitmap>) -> Self {
         let Some(validity) = validity else {
             return Self::all_set(len);
@@ -85,6 +87,7 @@ impl<'a> SetBitIdxIter<'a, true> {
     }
 
     /// Iterates over `0..len`, as if all bits are set.
+    #[inline]
     pub fn all_set(len: usize) -> Self {
         Self {
             bytes: &[],

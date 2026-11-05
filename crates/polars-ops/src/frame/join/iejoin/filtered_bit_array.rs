@@ -33,15 +33,18 @@ impl FilteredBitArray {
         }
         let bits = BitMask::new(self.bit_array.as_slice(), 0, len);
         let start_chunk = start / Self::CHUNK_SIZE;
-        let filter = BitMask::new(self.filter.as_slice(), 0, self.filter.len())
-            .sliced(start_chunk, self.filter.len() - start_chunk);
-        for chunk_idx in filter.set_bit_idx_iter() {
+        let filter = BitMask::new(
+            self.filter.as_slice(),
+            start_chunk,
+            self.filter.len() - start_chunk,
+        );
+        for chunk_idx in filter.true_idx_iter() {
             let chunk_idx = start_chunk + chunk_idx;
             let chunk_start = max(start, chunk_idx * Self::CHUNK_SIZE);
             let chunk_end = min((chunk_idx + 1) * Self::CHUNK_SIZE, len);
             let chunk = bits.sliced(chunk_start, chunk_end - chunk_start);
             chunk
-                .set_bit_idx_iter()
+                .true_idx_iter()
                 .for_each(|i| action(chunk_start + i));
         }
     }
