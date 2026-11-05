@@ -43,9 +43,7 @@ impl FilteredBitArray {
             let chunk_start = max(start, chunk_idx * Self::CHUNK_SIZE);
             let chunk_end = min((chunk_idx + 1) * Self::CHUNK_SIZE, len);
             let chunk = bits.sliced(chunk_start, chunk_end - chunk_start);
-            chunk
-                .true_idx_iter()
-                .for_each(|i| action(chunk_start + i));
+            chunk.true_idx_iter().for_each(|i| action(chunk_start + i));
         }
     }
 }
