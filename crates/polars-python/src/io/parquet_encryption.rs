@@ -2,9 +2,11 @@ use polars::prelude::PolarsError;
 use polars_io::parquet::encryption::{ParquetDecryption, ParquetEncryption};
 use polars_parquet::parquet::encryption::decrypt::FileDecryptionProperties;
 use polars_parquet::parquet::encryption::encrypt::FileEncryptionProperties;
+use polars_utils::pl_path::PlRefPath;
 use pyo3::prelude::*;
 
 use crate::error::PyPolarsErr;
+use crate::prelude::Wrap;
 
 /// Determines how to decrypt Parquet files.
 ///
@@ -17,6 +19,27 @@ pub struct PyParquetDecryption {
 
 #[pymethods]
 impl PyParquetDecryption {
+    #[staticmethod]
+    #[expect(clippy::type_complexity)]
+    fn from_iceberg_keys(
+        files: Vec<(Wrap<PlRefPath>, Vec<u8>, Option<Vec<u8>>)>,
+    ) -> PyResult<Self> {
+        let files = files
+            .into_iter()
+            .map(|(path, key, aad)| {
+                let mut builder = FileDecryptionProperties::builder(key);
+                if let Some(aad) = aad {
+                    builder = builder.with_aad_prefix(aad);
+                }
+                builder.build().map(|properties| (path.0, properties))
+            })
+            .collect::<Result<_, _>>()
+            .map_err(|e| PyPolarsErr::from(PolarsError::from(e)))?;
+        Ok(Self {
+            inner: ParquetDecryption::from_file_properties(files),
+        })
+    }
+
     #[staticmethod]
     #[pyo3(signature = (footer_key, column_keys, aad_prefix, verify_footer_signature))]
     fn from_keys(

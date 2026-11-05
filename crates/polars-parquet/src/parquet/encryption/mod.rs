@@ -4,6 +4,9 @@
 mod ciphers;
 pub mod decrypt;
 pub mod encrypt;
+pub mod iceberg;
 pub(crate) mod modules;
 #[cfg(test)]
 mod write_tests;
+
+pub use ciphers::AesGcmBlockDecryptor as AesGcmDecryptor;

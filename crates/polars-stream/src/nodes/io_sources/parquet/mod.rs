@@ -10,7 +10,7 @@ use polars_core::schema::{Schema, SchemaExt, SchemaRef};
 use polars_error::{PolarsResult, polars_err};
 use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
-use polars_io::parquet::encryption::file_decryption_properties;
+use polars_io::parquet::encryption::file_decryption_properties_for_path;
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, ParquetOptions};
 use polars_io::utils::byte_source::{BufferByteSource, DynByteSource, DynByteSourceBuilder};
@@ -178,7 +178,11 @@ impl FileReader for ParquetFileReader {
 
             Arc::new(polars_parquet::parquet::read::deserialize_metadata(
                 metadata_bytes,
-                file_decryption_properties(self.config.decryption.as_ref())?.as_ref(),
+                file_decryption_properties_for_path(
+                    self.config.decryption.as_ref(),
+                    self.scan_source.as_scan_source_ref().as_path(),
+                )?
+                .as_ref(),
             )?)
         };
 

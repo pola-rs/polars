@@ -61,6 +61,7 @@ pub enum DeletionFilesProvider {
 impl DeletionFilesProvider {
     pub fn try_new(
         deletion_files: Option<DeletionFilesList>,
+        #[allow(unused)] data_reader: &dyn FileReaderBuilder,
         selected_sources: ScanSources,
         execution_state: &crate::execute::StreamingExecutionState,
         io_metrics: Option<Arc<IOMetrics>>,
@@ -79,7 +80,7 @@ impl DeletionFilesProvider {
                         parallel: polars_io::prelude::ParallelStrategy::Auto,
                         low_memory: false,
                         use_statistics: false,
-                        decryption: None,
+                        decryption: data_reader.deletion_file_decryption(),
                     }),
                     pipeline_budget: std::sync::OnceLock::new(),
                     shared_prefetch_wait_group_slot: Default::default(),
@@ -332,6 +333,7 @@ impl DeletionFilesProvider {
                         let deletion_load_tasks = Arc::clone(deletion_load_tasks);
                         let data_path = data_paths[scan_source_idx].clone();
                         let path = path.clone();
+                        let decryption = reader_builder.options.decryption.clone();
                         let content_offset = *content_offset;
                         let cloud_options = cloud_options.clone();
                         let io_metrics = reader_builder.io_metrics.get().cloned();
@@ -345,6 +347,10 @@ impl DeletionFilesProvider {
 
                             deletions
                                 .get_or_try_init(|| async move {
+                                    let decryption = polars_io::parquet::encryption::file_decryption_properties_for_path(
+                                        decryption.as_ref(),
+                                        Some(&path),
+                                    )?;
                                     let fetch_bytes_handle =
                                         tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn({
                                             async move {
@@ -365,6 +371,15 @@ impl DeletionFilesProvider {
                                         }));
 
                                     let puffin_bytes = fetch_bytes_handle.await.unwrap()?;
+                                    let puffin_bytes = if let Some(properties) = decryption {
+                                        polars_parquet::parquet::encryption::iceberg::decrypt_stream(
+                                            &puffin_bytes,
+                                            properties.footer_key(None)?.as_slice(),
+                                            properties.aad_prefix().map(Vec::as_slice).unwrap_or_default(),
+                                        )?.into()
+                                    } else {
+                                        puffin_bytes
+                                    };
                                     load_iceberg_puffin_deletes(puffin_bytes)
                                 })
                                 .await?

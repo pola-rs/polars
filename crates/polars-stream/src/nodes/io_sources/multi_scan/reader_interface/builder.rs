@@ -14,6 +14,13 @@ use crate::execute::StreamingExecutionState;
 use crate::metrics::IOMetrics;
 
 pub trait FileReaderBuilder: Debug + Send + Sync + 'static {
+    #[cfg(feature = "parquet")]
+    fn deletion_file_decryption(
+        &self,
+    ) -> Option<polars_io::parquet::encryption::ParquetDecryption> {
+        None
+    }
+
     fn reader_name(&self) -> PolarsResult<PlSmallStr>;
 
     fn reader_capabilities(&self) -> PolarsResult<ReaderCapabilities>;

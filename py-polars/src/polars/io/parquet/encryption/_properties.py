@@ -137,6 +137,16 @@ class ParquetDecryptionProperties:
             verify_footer_signature,
         )
 
+    @classmethod
+    def _from_iceberg_keys(
+        cls, keys: Mapping[str, tuple[bytes, bytes | None]]
+    ) -> ParquetDecryptionProperties:
+        properties = cls.__new__(cls)
+        properties._pydecryption = PyParquetDecryption.from_iceberg_keys(
+            [(path, key, aad) for path, (key, aad) in keys.items()]
+        )
+        return properties
+
 
 def _check_bytes(value: Any, name: str) -> None:
     if not isinstance(value, bytes):

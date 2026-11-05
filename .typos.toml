@@ -27,6 +27,7 @@ aimd = "aimd"
 flate = "flate"
 
 [default.extend-identifiers]
+AGS1 = "AGS1"
 AKS = "AKS"
 ba_field = "ba_field"
 

@@ -15,12 +15,13 @@ use crate::cloud::{
     CloudLocation, CloudOptions, PolarsObjectStore, build_object_store, object_path_from_str,
 };
 use crate::configs::cloud_footer_read_size;
-use crate::parquet::encryption::{ParquetDecryption, file_decryption_properties};
+use crate::parquet::encryption::{ParquetDecryption, file_decryption_properties_for_path};
 use crate::parquet::metadata::FileMetadataRef;
 
 pub struct ParquetObjectStore {
     store: PolarsObjectStore,
     path: ObjectPath,
+    uri: PlRefPath,
     metadata: Option<FileMetadataRef>,
     schema: Option<ArrowSchemaRef>,
     decryption_properties: Option<Arc<FileDecryptionProperties>>,
@@ -32,12 +33,14 @@ impl ParquetObjectStore {
         options: Option<&CloudOptions>,
         metadata: Option<FileMetadataRef>,
     ) -> PolarsResult<Self> {
-        let (CloudLocation { prefix, .. }, store) = build_object_store(uri, options, false).await?;
+        let (CloudLocation { prefix, .. }, store) =
+            build_object_store(uri.clone(), options, false).await?;
         let path = object_path_from_str(&prefix)?;
 
         Ok(ParquetObjectStore {
             store,
             path,
+            uri,
             metadata,
             schema: None,
             decryption_properties: None,
@@ -46,7 +49,8 @@ impl ParquetObjectStore {
 
     /// Set how to decrypt an encrypted parquet file.
     pub fn with_decryption(mut self, decryption: Option<&ParquetDecryption>) -> PolarsResult<Self> {
-        self.decryption_properties = file_decryption_properties(decryption)?;
+        self.decryption_properties =
+            file_decryption_properties_for_path(decryption, Some(&self.uri))?;
         Ok(self)
     }
 

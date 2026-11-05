@@ -79,6 +79,7 @@ async fn resolve_negative_slice(
 
     let deletion_files_provider = DeletionFilesProvider::try_new(
         config.deletion_files.clone(),
+        config.file_reader_builder.as_ref(),
         config.sources.clone(),
         execution_state,
         io_metrics,
