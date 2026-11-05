@@ -1040,7 +1040,7 @@ def test_from_arrow_fixed_offset(fixed_offset: str, etc_tz: str) -> None:
     assert_series_equal(result, expected)
 
 
-def test_from_avro_valid_time_zone_13032() -> None:
+def test_from_arrow_valid_time_zone_13032() -> None:
     arr = pa.array(
         [datetime(2021, 1, 1, 0, 0, 0, 0)], type=pa.timestamp("ns", tz="00:00")
     )
@@ -1299,7 +1299,7 @@ def test_to_arrow_empty_chunks_20627() -> None:
     assert df.to_arrow().shape == (1, 1)
 
 
-def test_from_arrow_recorbatch() -> None:
+def test_from_arrow_recordbatch() -> None:
     n_legs = pa.array([2, 2, 4, 4, 5, 100])
     animals = pa.array(
         ["Flamingo", "Parrot", "Dog", "Horse", "Brittle stars", "Centipede"]

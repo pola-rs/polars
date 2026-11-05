@@ -37,7 +37,7 @@ pub use union::UnionScalar;
 use crate::{match_integer_type, with_match_primitive_type_full};
 
 /// Trait object declaring an optional value with a [`ArrowDataType`].
-/// This strait is often used in APIs that accept multiple scalar types.
+/// This trait is often used in APIs that accept multiple scalar types.
 pub trait Scalar: std::fmt::Debug + Send + Sync + dyn_clone::DynClone + 'static {
     /// convert itself to
     fn as_any(&self) -> &dyn Any;

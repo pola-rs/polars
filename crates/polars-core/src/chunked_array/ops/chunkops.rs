@@ -101,7 +101,7 @@ thread_local!(pub static CHECK_LENGTH: Cell<bool> = const { Cell::new(true) });
 
 /// Meant for internal use. In very rare conditions this can be turned off.
 /// # Safety
-/// The caller must ensure the Series that exceeds the length get's deconstructed
+/// The caller must ensure the Series that exceeds the length gets deconstructed
 /// into array values or list values before and never is used.
 pub unsafe fn _set_check_length(check: bool) {
     CHECK_LENGTH.set(check)

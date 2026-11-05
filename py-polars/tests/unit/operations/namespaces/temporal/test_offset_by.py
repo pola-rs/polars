@@ -206,7 +206,7 @@ def test_offset_by_rfc_5545_boundaries(
         (datetime(2025, 4, 30, 2, 30), "-1mo", datetime(2025, 3, 30, 3, 30)),
     ],
 )
-def test_offset_by_rfc_5545_boundaries_non_existest(
+def test_offset_by_rfc_5545_boundaries_non_existent(
     start: datetime, by: str, expected_dt: datetime
 ) -> None:
     s = pl.Series([start]).dt.replace_time_zone("Europe/Amsterdam")

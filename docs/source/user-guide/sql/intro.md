@@ -4,7 +4,7 @@ While Polars supports interaction with SQL, it's recommended that users familiar
 the [expression syntax](../concepts/expressions-and-contexts.md#expressions) to produce more
 readable and expressive code. As the DataFrame interface is primary, new features are typically
 added to the expression API first. However, if you already have an existing SQL codebase or prefer
-the use of SQL, Polars does offers support for this.
+the use of SQL, Polars does offer support for this.
 
 !!! note Execution
 
@@ -133,12 +133,13 @@ ctx.execute("ALTER TABLE lake.sales.orders RENAME COLUMN qty TO quantity")
 ```
 
 `INSERT INTO` appends rows to a catalog table. `INSERT OVERWRITE` replaces all of its rows, in every
-partition. A `WHERE` in its query selects the new rows, not the ones replaced. `TRUNCATE` deletes
-all rows:
+partition. A `WHERE` in its query selects the new rows, not the ones replaced. `DELETE` deletes the
+rows matching a condition that compares columns with constants. `TRUNCATE` deletes all rows:
 
 ```python
 ctx.execute("INSERT INTO lake.sales.orders (id, quantity) VALUES (1, 10), (2, 20)")
 ctx.execute("INSERT OVERWRITE lake.sales.orders SELECT * FROM staged_orders")
+ctx.execute("DELETE FROM lake.sales.orders WHERE quantity = 0")
 ctx.execute("TRUNCATE TABLE lake.sales.orders")
 ```
 

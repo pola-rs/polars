@@ -5,7 +5,7 @@ a new one. Casting is available through the function `cast`.
 
 The function `cast` includes a parameter `strict` that determines how Polars behaves when it
 encounters a value that cannot be converted from the source data type to the target data type. The
-default behaviour is `strict=True`, which means that Polars will thrown an error to notify the user
+default behaviour is `strict=True`, which means that Polars will throw an error to notify the user
 of the failed conversion while also providing details on the values that couldn't be cast. On the
 other hand, if `strict=False`, any values that cannot be converted to the target data type will be
 quietly converted to `null`.

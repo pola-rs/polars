@@ -163,7 +163,7 @@ pub fn set_query_monitoring(
         .getattr(POLARS_CLOUD_OBSERVER_CLASS_NAME)
         .map_err(|_| {
             PyRuntimeError::new_err(
-                "the installed `polars_cloud` is incompatible with this Polars build.\
+                "the installed `polars_cloud` is incompatible with this Polars build. \
              Ensure the polars_cloud and polars versions match.",
             )
         })?;

@@ -33,7 +33,12 @@ use crate::plans::{
 use crate::prelude::{ProjectionOptions, WindowMapping};
 use crate::unique_column_name;
 
-pub(super) fn extract_windows(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) {
+/// Returns whether any window was moved into an `IR::Window`.
+pub(super) fn extract_windows(
+    root: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> bool {
     let mut visited = PlIndexSet::new();
     let mut stack = vec![root];
     let mut projections = Vec::new();
@@ -64,12 +69,14 @@ pub(super) fn extract_windows(root: Node, ir_arena: &mut Arena<IR>, expr_arena: 
         stack.extend(ir.inputs());
     }
 
+    let mut has_windows = false;
     for node in projections {
-        extract_from_projection(node, ir_arena, expr_arena);
+        has_windows |= extract_from_projection(node, ir_arena, expr_arena);
     }
     for node in filters {
-        extract_from_filter(node, ir_arena, expr_arena);
+        has_windows |= extract_from_filter(node, ir_arena, expr_arena);
     }
+    has_windows
 }
 
 /// Computes the predicate of a filter in an `HStack` below it, so its windows can be extracted
@@ -80,7 +87,13 @@ pub(super) fn extract_windows(root: Node, ir_arena: &mut Arena<IR>, expr_arena: 
 ///                            HSTACK [pred as tmp]
 ///                              input
 /// ```
-fn extract_from_filter(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) {
+///
+/// Returns whether any window was moved.
+fn extract_from_filter(
+    node: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> bool {
     let IR::Filter { input, predicate } = ir_arena.get(node) else {
         unreachable!()
     };
@@ -97,7 +110,7 @@ fn extract_from_filter(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Ar
         expr_arena,
     );
     if !extract_from_projection(hstack, ir_arena, expr_arena) {
-        return;
+        return false;
     }
     let filter = ir_arena.add(IR::Filter {
         input: hstack,
@@ -111,6 +124,7 @@ fn extract_from_filter(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Ar
             columns,
         },
     );
+    true
 }
 
 struct WindowSpec {

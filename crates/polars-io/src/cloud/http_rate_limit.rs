@@ -396,7 +396,7 @@ enum Regime {
     Track { anchor: f64 },
 }
 
-// Adaptive Increase Multiplicative Decrease (AIMD) state.
+// Additive Increase Multiplicative Decrease (AIMD) state.
 // Note: the initial fast_ramp is multiplicative, not additive.
 // Cold path: state gets updated every tick interval.
 #[derive(Debug)]
@@ -671,7 +671,7 @@ impl AdaptiveRateController {
         // Update signal, if any.
         state.update_success_rate(win_succeeded, elapsed_s);
 
-        // Goodput is a always a lower bound on capacity, so an observation may always
+        // Goodput is always a lower bound on capacity, so an observation may always
         // increase. It may only decrease when the system was pressure-tested (i.e., demand saturated).
         if let Some(observed) = state.success_rate {
             let pressure_tested =
@@ -832,7 +832,7 @@ impl std::error::Error for PacerBusy {}
 
 // PACER INCL WAITER_QUEUE
 
-// The pacer is responsible for admissin/denial into the `TokenBucket` annex
+// The pacer is responsible for admission/denial into the `TokenBucket` annex
 // `WaiterQueue`. Once admitted, it paces the requests to the prescribed rate.
 
 #[derive(Debug, Default)]

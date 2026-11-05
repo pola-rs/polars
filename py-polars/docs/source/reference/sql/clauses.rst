@@ -20,7 +20,7 @@ Query Clauses
    * - :ref:`WHERE <where>`
      - Filter rows returned from the query based on the given conditions.
    * - :ref:`GROUP BY <group_by>`
-     - Aggregate row values based based on one or more key columns.
+     - Aggregate row values based on one or more key columns.
    * - :ref:`GROUP BY ALL <group_by_all>`
      - Automatically group by all non-aggregate columns in the projection.
    * - :ref:`HAVING <having>`

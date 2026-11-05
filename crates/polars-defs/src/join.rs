@@ -476,7 +476,7 @@ pub enum AsofStrategy {
     Backward,
     /// selects the first row in the right DataFrame whose ‘on’ key is greater than or equal to the left’s key.
     Forward,
-    /// selects the right in the right DataFrame whose 'on' key is nearest to the left's key.
+    /// selects the row in the right DataFrame whose 'on' key is nearest to the left's key.
     Nearest,
 }
 

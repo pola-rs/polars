@@ -3,10 +3,10 @@ use polars::sql::{CatalogAlter, CatalogStatement, SQLContext, extract_table_iden
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
-use crate::PyLazyFrame;
 use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::utils::EnterPolarsExt;
+use crate::{PyExpr, PyLazyFrame};
 
 #[pyclass(frozen, skip_from_py_object)]
 #[repr(transparent)]
@@ -208,6 +208,21 @@ impl PySQLContext {
                 dict.set_item("query", query)?;
                 dict.set_item("overwrite", overwrite)?;
             },
+            CatalogStatement::Delete {
+                name,
+                table,
+                condition,
+                subquery,
+                hint_unsupported_part,
+            } => {
+                dict.set_item("kind", "delete")?;
+                dict.set_item("name", name)?;
+                dict.set_item("catalog", table.catalog)?;
+                dict.set_item("identifier", table.identifier)?;
+                dict.set_item("condition", condition)?;
+                dict.set_item("subquery", subquery)?;
+                dict.set_item("hint_unsupported_part", hint_unsupported_part)?;
+            },
             CatalogStatement::Truncate {
                 name,
                 table,
@@ -293,6 +308,22 @@ impl PySQLContext {
                 .execute_with_catalog_tables(query, tables)
         })
         .map(Into::into)
+    }
+
+    /// The predicate of the rows a catalog `DELETE` removes, planned against the scan of its
+    /// table, by full name.
+    pub fn catalog_delete_predicate(
+        &self,
+        py: Python<'_>,
+        query: &str,
+        tables: Vec<(Vec<String>, PyLazyFrame)>,
+    ) -> PyResult<PyExpr> {
+        let tables = tables
+            .into_iter()
+            .map(|(full_name, lf)| (full_name, lf.ldf.into_inner()))
+            .collect();
+        py.enter_polars(|| self.context.write().catalog_delete_predicate(query, tables))
+            .map(Into::into)
     }
 
     /// Extract table identifiers from a SQL query string.

@@ -48,7 +48,7 @@ where
     I: IntoParallelIterator,
 {
     let it = par_iter.into_par_iter();
-    // be careful optimizing allocations. Its hard to figure out the size
+    // be careful optimizing allocations. It's hard to figure out the size
     // needed
     // https://github.com/pola-rs/polars/issues/1562
     it.fold(Vec::new, vec_push)

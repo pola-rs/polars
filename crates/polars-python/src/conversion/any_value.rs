@@ -408,6 +408,55 @@ pub(crate) fn py_object_to_any_value(
         }
     }
 
+    fn get_numpy_datetime(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
+        get_numpy_temporal(ob, true)
+    }
+
+    fn get_numpy_timedelta(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
+        get_numpy_temporal(ob, false)
+    }
+
+    /// Converts a NumPy datetime64/timedelta64 scalar using the unit stored in the value.
+    fn get_numpy_temporal(ob: &Bound<'_, PyAny>, is_datetime: bool) -> PyResult<AnyValue<'static>> {
+        let py = ob.py();
+        static DATETIME_DATA: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+        let (unit, count): (String, i64) = DATETIME_DATA
+            .import(py, "numpy", "datetime_data")?
+            .call1((ob.getattr(intern!(py, "dtype"))?,))?
+            .extract()?;
+        let value: i64 = ob
+            .call_method1(intern!(py, "astype"), (intern!(py, "int64"),))?
+            .extract()?;
+        // NaT
+        if value == i64::MIN {
+            return Ok(AnyValue::Null);
+        }
+
+        let (time_unit, factor) = match &*unit {
+            "D" if is_datetime => (None, 1),
+            "ns" => (Some(TimeUnit::Nanoseconds), 1),
+            "us" => (Some(TimeUnit::Microseconds), 1),
+            "ms" => (Some(TimeUnit::Milliseconds), 1),
+            "s" => (Some(TimeUnit::Milliseconds), 1000),
+            _ => {
+                return Err(PyValueError::new_err(format!(
+                    "cannot convert NumPy value {ob} with unit '{unit}'\n\n\
+                    'D' (datetime64 only), 's', 'ms', 'us' and 'ns' units are supported."
+                )));
+            },
+        };
+        let out_of_range = || PyOverflowError::new_err(format!("NumPy value {ob} is out of range"));
+        let value = count
+            .checked_mul(factor)
+            .and_then(|f| value.checked_mul(f))
+            .ok_or_else(out_of_range)?;
+        Ok(match time_unit {
+            None => AnyValue::Date(i32::try_from(value).map_err(|_| out_of_range())?),
+            Some(tu) if is_datetime => AnyValue::Datetime(value, tu, None),
+            Some(tu) => AnyValue::Duration(value, tu),
+        })
+    }
+
     fn get_time(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
         let time = ob.extract::<NaiveTime>()?;
 
@@ -649,6 +698,14 @@ pub(crate) fn py_object_to_any_value(
                 if ob.is_instance(ndarray_type)? {
                     // will convert via Series -> mmap_numpy_array
                     return Ok(get_list as InitFn);
+                }
+                static DATETIME64_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
+                if ob.is_instance(DATETIME64_TYPE.import(py, "numpy", "datetime64")?)? {
+                    return Ok(get_numpy_datetime as InitFn);
+                }
+                static TIMEDELTA64_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
+                if ob.is_instance(TIMEDELTA64_TYPE.import(py, "numpy", "timedelta64")?)? {
+                    return Ok(get_numpy_timedelta as InitFn);
                 }
             }
             static DECIMAL_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();

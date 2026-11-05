@@ -224,7 +224,7 @@ rust:
     feature_flags: [streaming]
   concat: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/functions/fn.concat.html
   concat_list:
-    name: concat_lst
+    name: concat_list
     link: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/fn.concat_list.html
   concat_str:
     name: concat_str

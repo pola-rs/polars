@@ -14,7 +14,7 @@ pub trait DictValue {
     /// Will not do any bound checks but must check validity.
     unsafe fn get_unchecked(&self, item: usize) -> Self::IterValue<'_>;
 
-    /// Take a [`dyn Array`] an try to downcast it to the type of `DictValue`.
+    /// Take a [`dyn Array`] and try to downcast it to the type of `DictValue`.
     fn downcast_values(array: &dyn Array) -> PolarsResult<&Self>
     where
         Self: Sized;

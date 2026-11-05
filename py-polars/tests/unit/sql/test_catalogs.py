@@ -4,6 +4,7 @@ import io
 import pickle
 import re
 import shutil
+import warnings
 from datetime import UTC, date
 from pathlib import Path
 from typing import Any
@@ -288,23 +289,6 @@ def test_catalog_tables_in_subqueries(lake: CountingCatalog) -> None:
         eager=True,
     )
     assert res.to_series().to_list() == [20, 30]
-
-
-@pytest.mark.write_disk
-@pytest.mark.parametrize(
-    "statement",
-    [
-        "DELETE FROM lineitem WHERE k = 1",
-        "DELETE FROM lake.tpch.lineitem",
-    ],
-)
-def test_catalog_statement_is_not_supported(
-    lake: CountingCatalog, statement: str
-) -> None:
-    with pytest.raises(
-        SQLInterfaceError, match="attached catalog 'lake' is not supported"
-    ):
-        lake_ctx(lake).execute(statement)
 
 
 def table_fields(catalog: CountingCatalog, *identifier: str) -> list[Any]:
@@ -3145,6 +3129,457 @@ def test_truncate_catalog_table_concurrent(tmp_path: Path) -> None:
         tx.set_properties({"write.delete.isolation-level": "snapshot"})
     lake.race = ("tpch", "lineitem")
     lake_ctx(lake).execute("TRUNCATE TABLE lineitem")
+    assert table_rows(lake, "tpch", "lineitem") == [(99, "raced")]
+
+
+ORDERS = [(1, 10), (2, 20), (3, 30)]
+STRING_LIMIT = "(only letters, digits, space, '-' and '_' for now)"
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "DELETE FROM lake.tpch.orders WHERE k = 2",
+        "DELETE FROM tpch.orders WHERE o > 15 AND o < 25",
+        "DELETE FROM orders AS x WHERE x.k = 2",
+        "DELETE FROM orders WHERE lake.tpch.orders.k = 2",
+        "DELETE FROM orders WHERE k IN (2, 5)",
+        "DELETE FROM orders WHERE k BETWEEN 2 AND 2",
+        "DELETE FROM orders WHERE NOT (k <> 2 OR o IS NULL)",
+    ],
+)
+def test_delete_catalog_table(lake: CountingCatalog, statement: str) -> None:
+    res = lake_ctx(lake).execute(statement, eager=True)
+    assert res.item() == "DELETE FROM lake.tpch.orders"
+    assert table_rows(lake, "tpch", "orders") == [(1, 10), (3, 30)]
+    assert len(table_rows(lake, "tpch", "lineitem")) == 2
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("condition", "remaining"),
+    [
+        ("", []),
+        ("WHERE 1", []),
+        ("WHERE 1 = 1", []),
+        ("WHERE 0", ORDERS),
+        ("WHERE NULL", ORDERS),
+        ("WHERE 1 = NULL", ORDERS),
+        ("WHERE NOT NULL", ORDERS),
+    ],
+)
+def test_delete_catalog_table_constant_condition(
+    lake: CountingCatalog, condition: str, remaining: list[Any]
+) -> None:
+    lake_ctx(lake).execute(f"DELETE FROM orders {condition}")
+    assert table_rows(lake, "tpch", "orders") == remaining
+
+
+@pytest.mark.write_disk
+def test_delete_catalog_table_files(lake: CountingCatalog, tmp_path: Path) -> None:
+    from pyiceberg.table.snapshots import Operation
+
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE t (k INT, v VARCHAR)")
+    for values in ("(1, 'a')", "(2, 'b'), (3, 'c')", "(4, 'd'), (5, 'e')"):
+        ctx.execute(f"INSERT INTO t VALUES {values}")
+
+    def operations() -> list[Operation]:
+        snapshots = lake.load_table(("tpch", "t")).metadata.snapshots
+        return [s.summary.operation for s in snapshots[3:]]
+
+    # a file whose rows all match is dropped whole
+    files = set(tmp_path.rglob("*.parquet"))
+    ctx.execute("DELETE FROM t WHERE k = 1")
+    assert operations() == [Operation.DELETE]
+    assert set(tmp_path.rglob("*.parquet")) == files
+    # no match, also within a file's bounds: no commit
+    ctx.execute("DELETE FROM t WHERE k = 9 OR v = 'bb'")
+    assert operations() == [Operation.DELETE]
+    # a file with some matching rows is rewritten, both in one commit
+    ctx.execute("DELETE FROM t WHERE k = 2 OR k >= 4")
+    assert operations() == [Operation.DELETE, Operation.DELETE, Operation.OVERWRITE]
+    assert table_rows(lake, "tpch", "t") == [(3, "c")]
+    assert len(set(tmp_path.rglob("*.parquet")) - files) == 1
+    # an IN list on an INT column; a value it can't hold matches nothing
+    ctx.execute("DELETE FROM t WHERE k IN (3000000000)")
+    assert table_rows(lake, "tpch", "t") == [(3, "c")]
+    ctx.execute("DELETE FROM t WHERE k IN (3, 3000000000)")
+    assert table_rows(lake, "tpch", "t") == []
+
+
+@pytest.mark.write_disk
+def test_delete_catalog_table_types(lake: CountingCatalog) -> None:
+    from datetime import datetime
+
+    df = pl.DataFrame(
+        {
+            "k": [1, 2, None, 4],
+            "d": [date(2024, 1, 1), date(2024, 1, 2), None, date(2024, 1, 4)],
+            "s": ["ab", "b", None, "ac"],
+            "f": [0.5, 1.5, None, float("nan")],
+            "ts": [datetime(2024, 1, 1, tzinfo=UTC)] * 4,
+            "st": [{"a": 1}, {"a": 2}, {"a": None}, {"a": 4}],
+        }
+    )
+    table = lake.create_table(("tpch", "typed"), schema=df.to_arrow().schema)
+    df.write_iceberg(table, mode="append")
+    ctx = lake_ctx(lake)
+
+    def keys() -> list[Any]:
+        return sorted(
+            (r[0] for r in table_rows(lake, "tpch", "typed")),
+            key=lambda k: (k is None, k or 0),
+        )
+
+    # rows where the condition is NULL are kept
+    ctx.execute("DELETE FROM typed WHERE k <> 1 AND s LIKE 'a%'")
+    assert keys() == [1, 2, None]
+    ctx.execute("DELETE FROM typed WHERE d = '2024-01-02'")
+    assert keys() == [1, None]
+    ctx.execute("DELETE FROM typed WHERE ts = '2023-01-01 00:00:00'")
+    assert keys() == [1, None]
+    # a timestamp without a time zone fails as in a SELECT
+    with pytest.raises(pl.exceptions.SchemaError):
+        ctx.execute("DELETE FROM typed WHERE ts = TIMESTAMP '2024-01-01 00:00:00'")
+    assert keys() == [1, None]
+    ctx.execute("DELETE FROM typed WHERE f < 1.0")
+    assert keys() == [None]
+    # a reason of the conversion itself
+    with pytest.raises(SQLInterfaceError, match=re.escape("`st.a = 1`: nested field")):
+        ctx.execute("DELETE FROM typed WHERE st.a = 1")
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("condition", "reason"),
+    [
+        ("upper(v) = 'A'", "function `upper(v)`"),
+        ("k + 1 = 2", "arithmetic `k + 1`"),
+        ("CAST(k AS VARCHAR) = '1'", "cast `CAST(k AS VARCHAR)`"),
+        ("v LIKE '%a'", "LIKE pattern '%a' (only 'prefix%')"),
+        ("v ILIKE 'A%'", "ILIKE"),
+        ("k = 1 OR k = length(v)", "comparison of two columns `k = length(v)`"),
+        ("k IN (1, NULL)", "NULL in the IN list"),
+        ("v = 'a@b.com'", f"string constant 'a@b.com' {STRING_LIMIT}"),
+        ("v IN ('a', 'it''s')", f"string constant 'it''s' {STRING_LIMIT}"),
+        ("v LIKE 'a.%'", f"string constant 'a.%' {STRING_LIMIT}"),
+        ("k IN (SELECT k FROM orders)", "subquery"),
+        ("EXISTS (SELECT 1 FROM orders AS o WHERE o.k = lineitem.k)", "subquery"),
+    ],
+)
+def test_delete_catalog_table_unsupported_condition(
+    lake: CountingCatalog, condition: str, reason: str
+) -> None:
+    snapshot = lake.load_table(("tpch", "lineitem")).current_snapshot()
+    with pytest.raises(SQLInterfaceError) as exc:
+        lake_ctx(lake).execute(f"DELETE FROM lineitem WHERE {condition}")
+    assert str(exc.value).startswith(
+        f"DELETE on catalog table 'lake.tpch.lineitem' cannot apply `{condition}`: "
+        f"{reason}\n\nHint: compare columns with constants"
+    )
+    assert lake.load_table(("tpch", "lineitem")).current_snapshot() == snapshot
+
+
+@pytest.mark.write_disk
+def test_delete_catalog_table_condition_message(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    # the conversion's own reason comes without the hint
+    with pytest.raises(SQLInterfaceError) as exc:
+        ctx.execute("DELETE FROM lineitem WHERE k = 2 AND 1 = 1")
+    assert str(exc.value).endswith(": constant boolean subexpression")
+    # a long condition is shortened
+    keys = ", ".join(map(str, range(1000)))
+    with pytest.raises(SQLInterfaceError) as exc:
+        ctx.execute(f"DELETE FROM lineitem WHERE k IN ({keys}, NULL)")
+    assert len(str(exc.value)) < 500
+
+
+@pytest.mark.write_disk
+def test_delete_catalog_table_decimal_condition(lake: CountingCatalog) -> None:
+    from decimal import Decimal
+
+    df = pl.DataFrame({"d": [Decimal("1.50"), None]}, schema={"d": pl.Decimal(10, 2)})
+    df.write_iceberg(lake.create_table(("tpch", "dec"), df.to_arrow().schema), "append")
+    ctx = lake_ctx(lake)
+    with pytest.raises(SQLInterfaceError) as exc:
+        ctx.execute("DELETE FROM dec WHERE d = 1.50")
+    assert str(exc.value).endswith(
+        "cannot apply `d = 1.50`: decimal column 'd' (not supported yet)"
+    )
+    # the shape of the SQL comes first
+    with pytest.raises(SQLInterfaceError, match="function `abs\\(d\\)`"):
+        ctx.execute("DELETE FROM dec WHERE abs(d) = 1.50")
+    ctx.execute("DELETE FROM dec WHERE d IS NULL")
+    assert table_rows(lake, "tpch", "dec") == [(Decimal("1.50"),)]
+
+
+@pytest.mark.write_disk
+def test_delete_catalog_table_state(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import gc
+    import weakref
+
+    loaded: list[Any] = []
+    load_table = lake.load_table
+
+    def tracked_load_table(identifier: Any) -> Any:
+        table = load_table(identifier)
+        loaded.append(weakref.ref(table))
+        return table
+
+    monkeypatch.setattr(lake, "load_table", tracked_load_table)
+    ctx = lake_ctx(lake)
+    for k in (1, 2):
+        ctx.execute(f"DELETE FROM orders WHERE k = {k}")
+    gc.collect()
+    # no statement keeps the tables it loaded
+    assert [ref() for ref in loaded] == [None] * len(loaded)
+    # a failed condition leaves nothing for the next statement
+    for _ in range(2):
+        with pytest.raises(SQLSyntaxError, match="GROUPING"):
+            ctx.execute("DELETE FROM orders WHERE GROUPING(k) = 0")
+    ctx.register("local", pl.LazyFrame({"k": [1, 2]}))
+    for _ in range(2):
+        with pytest.raises(SQLSyntaxError, match="GROUPING"):
+            ctx.execute("DELETE FROM local WHERE GROUPING(k) = 0")
+    assert table_rows(lake, "tpch", "orders") == [(3, 30)]
+
+
+NO_RETRY = {"commit.retry.num-retries": "0"}
+RETRY = {"commit.retry.min-wait-ms": "0", "commit.retry.max-wait-ms": "0"}
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("statement", "remaining"),
+    [("TRUNCATE TABLE t", []), ("DELETE FROM t WHERE k <= 3", [(4, "d")])],
+)
+@pytest.mark.parametrize(
+    ("properties", "request_", "loads", "outcome", "landed"),
+    [
+        # the request lands, but its response is lost or fails
+        (NO_RETRY, "lands, then conflict", {}, "ok", True),
+        (RETRY, "lands, then conflict", {}, "ok", True),
+        (NO_RETRY, "lands, then connection lost", {}, "ok", True),
+        (NO_RETRY, "lands, then conflict", {1: "fails"}, "unknown", True),
+        # it lands while the retry refreshes the table
+        (RETRY, "conflict, lands later", {2: "lands"}, "ok", True),
+        (RETRY, "conflict, lands later", {2: "lands, fails"}, "ok", True),
+        (
+            RETRY,
+            "conflict, lands later",
+            {2: "lands, fails", 3: "fails"},
+            "unknown",
+            True,
+        ),
+        # it does not land
+        (NO_RETRY, "conflict", {}, "refused", False),
+        (NO_RETRY, "forbidden", {}, "refused", False),
+        (RETRY, "conflict, then forbidden", {}, "refused", False),
+        (NO_RETRY, "connection lost", {}, "unknown", False),
+        (RETRY, "conflict", {2: "fails"}, "unknown", False),
+    ],
+)
+def test_delete_catalog_table_commit_outcome(
+    lake: CountingCatalog,
+    monkeypatch: pytest.MonkeyPatch,
+    statement: str,
+    remaining: list[Any],
+    properties: dict[str, str],
+    request_: str,
+    loads: dict[int, str],
+    outcome: str,
+    landed: bool,
+) -> None:
+    from pyiceberg.exceptions import (
+        CommitFailedException,
+        CommitStateUnknownException,
+        ForbiddenError,
+    )
+
+    # two data files: one dropped whole, one rewritten by the DELETE
+    table = lake.create_table(
+        ("tpch", "t"), schema=LINEITEM.to_arrow().schema, properties=properties
+    )
+    for rows in ({"k": [1, 2], "v": ["a", "b"]}, {"k": [3, 4], "v": ["c", "d"]}):
+        pl.DataFrame(rows).write_iceberg(table, mode="append")
+    commit, load = lake.commit_table, lake.load_table
+    requests: list[Any] = []
+    state: dict[str, Any] = {}
+
+    def commit_table(*args: Any) -> Any:
+        # the fake decides the order: the first request, then the loads after it
+        requests.append(args)
+        if request_.startswith("lands"):
+            commit(*args)
+        elif request_.endswith("lands later"):
+            state["stashed"] = args
+        state["loads"] = 0
+        if request_ == "forbidden" or (
+            request_ == "conflict, then forbidden" and len(requests) == 2
+        ):
+            msg = "not allowed"
+            raise ForbiddenError(msg)
+        msg = "connection reset" if request_.endswith("connection lost") else "conflict"
+        raise OSError(msg) if "connection" in request_ else CommitFailedException(msg)
+
+    def load_table(identifier: Any) -> Any:
+        if "loads" in state and not state.get("inner"):
+            state["loads"] += 1
+            action = loads.get(state["loads"], "")
+            if "lands" in action:
+                state["inner"] = True
+                commit(*state.pop("stashed"))
+                state["inner"] = False
+            if "fails" in action:
+                msg = "unreachable"
+                raise OSError(msg)
+        return load(identifier)
+
+    monkeypatch.setattr(lake, "commit_table", commit_table)
+    monkeypatch.setattr(lake, "load_table", load_table)
+    ctx = lake_ctx(lake)
+    if outcome == "ok":
+        ctx.execute(statement)
+    else:
+        raised = (
+            CommitStateUnknownException
+            if outcome == "unknown"
+            else ForbiddenError
+            if "forbidden" in request_
+            else CommitFailedException
+        )
+        with pytest.raises(raised) as exc:
+            ctx.execute(statement)
+        verb = "deleted" if statement.startswith("DELETE") else "truncated"
+        assert ("unknown" in exc.value.__notes__[-1]) == (outcome == "unknown")
+        assert verb in exc.value.__notes__[-1]
+    monkeypatch.undo()
+    # one request (two after a plain conflict), none after a landing; the table reads
+    assert len(requests) == (2 if request_ == "conflict, then forbidden" else 1)
+    expected = remaining if landed else [(1, "a"), (2, "b"), (3, "c"), (4, "d")]
+    assert table_rows(lake, "tpch", "t") == expected
+
+
+@pytest.mark.write_disk
+def test_delete_catalog_table_no_match_commits_nothing(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def commit_table(*args: Any) -> Any:
+        msg = "no commit expected"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(lake, "commit_table", commit_table)
+    lake_ctx(lake).execute("DELETE FROM orders WHERE k = 99")
+    assert len(table_rows(lake, "tpch", "orders")) == 3
+
+
+@pytest.mark.write_disk
+def test_delete_catalog_table_long_in_list(lake: CountingCatalog) -> None:
+    # more values than a scan pushes down
+    keys = ", ".join(map(str, range(2, 1000)))
+    lake_ctx(lake).execute(f"DELETE FROM orders WHERE k IN ({keys})")
+    assert table_rows(lake, "tpch", "orders") == [(1, 10)]
+
+
+@pytest.mark.write_disk
+def test_delete_catalog_table_float_condition(lake: CountingCatalog) -> None:
+    df = pl.DataFrame({"x": [0.5, 1.5, float("nan")]})
+    df.write_iceberg(lake.create_table(("tpch", "f"), df.to_arrow().schema), "append")
+    ctx = lake_ctx(lake)
+    # the conversion refuses: NaN orders above all values in Polars only
+    with pytest.raises(SQLInterfaceError, match=r"`x > 1\.0`: GreaterThan on"):
+        ctx.execute("DELETE FROM f WHERE x > 1.0")
+    ctx.execute("DELETE FROM f WHERE x < 1.0")
+    assert len(table_rows(lake, "tpch", "f")) == 2
+
+
+@pytest.mark.write_disk
+def test_delete_catalog_table_resolution(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    # a registered table of the name comes first, as in a read
+    ctx.register("orders", pl.LazyFrame({"k": [1, 2]}))
+    assert ctx.execute("DELETE FROM orders WHERE k = 1", eager=True).rows() == [(2,)]
+    assert table_rows(lake, "tpch", "orders") == ORDERS
+    ctx.execute("DELETE FROM lake.tpch.orders WHERE k = 1")
+    assert table_rows(lake, "tpch", "orders") == [(2, 20), (3, 30)]
+    with pytest.raises(NoSuchTableError, match="could be deleted; catalog"):
+        ctx.execute("DELETE FROM lake.tpch.missing WHERE k = 1")
+    with pytest.raises(NoSuchTableError, match="identifiers are case-sensitive"):
+        ctx.execute("DELETE FROM LINEITEM")
+    # the statement goes to the catalog, not to the frame-level execute
+    with pytest.raises(SQLInterfaceError, match="must be performed on the catalog"):
+        ctx._ctxt.execute("DELETE FROM lineitem")
+    assert len(table_rows(lake, "tpch", "lineitem")) == 2
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("statement", "error"),
+    [
+        ("DELETE FROM orders USING lineitem WHERE orders.k = lineitem.k", "USING"),
+        ("DELETE FROM orders WHERE k = 1 RETURNING k", "RETURNING"),
+        ("DELETE FROM orders, lineitem WHERE k = 1", "multiple tables"),
+        ("DELETE FROM orders JOIN lineitem ON true WHERE k = 1", "JOINs"),
+    ],
+)
+def test_delete_catalog_table_sql_errors(
+    lake: CountingCatalog, statement: str, error: str
+) -> None:
+    with pytest.raises(SQLInterfaceError, match=re.escape(error)):
+        lake_ctx(lake).execute(statement)
+    assert table_rows(lake, "tpch", "orders") == ORDERS
+
+
+@pytest.mark.write_disk
+def test_delete_catalog_table_merge_on_read(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute(
+        "ALTER TABLE orders SET TBLPROPERTIES ('write.delete.mode' = 'merge-on-read')"
+    )
+    # rewriting a file falls back to copy-on-write, as PyIceberg warns
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        ctx.execute("DELETE FROM orders WHERE k = 1")
+    assert [w.category for w in record] == [UserWarning]
+    # dropping whole files needs no delete files: no warning
+    ctx.execute("DELETE FROM orders WHERE k > 1")
+    assert table_rows(lake, "tpch", "orders") == []
+
+
+@pytest.mark.write_disk
+def test_delete_catalog_table_concurrent(tmp_path: Path) -> None:
+    from pyiceberg.exceptions import ValidationException
+
+    lake = RacingCatalog(
+        "lake", uri=f"sqlite:///{tmp_path / 'c.db'}", warehouse=f"file://{tmp_path}"
+    )
+    lake.create_namespace(("tpch",))
+    table = lake.create_table(("tpch", "lineitem"), schema=LINEITEM.to_arrow().schema)
+    LINEITEM.write_iceberg(table, mode="append")
+    ctx = lake_ctx(lake)
+    # the other writer's row can't match: retried on the new snapshot
+    lake.race = ("tpch", "lineitem")
+    ctx.execute("DELETE FROM lineitem WHERE k = 1")
+    assert table_rows(lake, "tpch", "lineitem") == [(2, "b"), (99, "raced")]
+    # it might: refused, deleting nothing
+    ctx.execute("INSERT INTO lineitem VALUES (3, 'c'), (4, 'd')")
+    lake.race = ("tpch", "lineitem")
+    with pytest.raises(ValidationException) as exc:
+        ctx.execute("DELETE FROM lineitem WHERE k > 3")
+    notes = exc.value.__notes__
+    assert any("rewritten data files may remain under" in n for n in notes)
+    assert any("no rows of table 'lineitem'" in n for n in notes)
+    rows = [(2, "b"), (3, "c"), (4, "d"), (99, "raced"), (99, "raced")]
+    assert table_rows(lake, "tpch", "lineitem") == rows
+    # with snapshot isolation, as the table asks, the other writer's rows are kept
+    with lake.load_table(("tpch", "lineitem")).transaction() as tx:
+        tx.set_properties({"write.delete.isolation-level": "snapshot"})
+    lake.race = ("tpch", "lineitem")
+    ctx.execute("DELETE FROM lineitem WHERE k > 1")
     assert table_rows(lake, "tpch", "lineitem") == [(99, "raced")]
 
 

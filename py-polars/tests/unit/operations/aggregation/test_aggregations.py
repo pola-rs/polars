@@ -727,10 +727,12 @@ def test_approx_quantile_merged_rank_error(method: ApproxQuantileMethod) -> None
 
 def test_approx_quantile_small_morsels(plmonkeypatch: PlMonkeyPatch) -> None:
     plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
-    n, error, quantile = 100_000, 0.01, 0.5
+    # Large enough for KLL to switch to its sampler.
+    n, error, quantile = 400_000, 0.01, 0.5
     values = _shuffled(n)
+    with_nulls = [v for pair in zip(values, [None] * n, strict=True) for v in pair]
     got = (
-        pl.LazyFrame({"a": values})
+        pl.LazyFrame({"a": with_nulls})
         .select(pl.col("a").approx_quantile(quantile, error=error, method="kll"))
         .collect()
         .item()
@@ -1530,7 +1532,6 @@ def test_agg_with_slice_then_cast_23682(
     ],
 )
 @pytest.mark.parametrize("grouped", [False, True])
-@pytest.mark.may_fail_lazy_schema  # TODO: uint128
 def test_agg_invalid_same_engines_behavior(
     op: str, expr: pl.Expr, df: pl.DataFrame, grouped: bool
 ) -> None:
