@@ -681,7 +681,14 @@ impl<'a> Iterator for GroupsTypeIter<'a> {
         self.idx += 1;
         out
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = self.len.saturating_sub(self.idx);
+        (remaining, Some(remaining))
+    }
 }
+
+impl ExactSizeIterator for GroupsTypeIter<'_> {}
 
 pub struct GroupsTypeParIter<'a> {
     vals: &'a GroupsType,
