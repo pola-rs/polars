@@ -3853,9 +3853,13 @@ def test_update_catalog_table_files(
     ctx = update_ctx(lake)
     # the file-list scans are planned already: no plugin check, nor its warning
     planner_checks: list[None] = []
+
+    def use_plugin_planner() -> bool:
+        planner_checks.append(None)
+        return False
+
     monkeypatch.setattr(
-        "polars.io.iceberg._dataset.use_plugin_planner",
-        lambda: planner_checks.append(None) or False,
+        "polars.io.iceberg._dataset.use_plugin_planner", use_plugin_planner
     )
 
     def snapshots() -> Any:
