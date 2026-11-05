@@ -218,25 +218,25 @@ impl<const EXACT: bool> Iterator for SetBitIdxIter<'_, EXACT> {
         F: FnMut(B, Self::Item) -> B,
     {
         let mut acc = init;
-        let mut run = self.run_pos..self.run_end;
+        for idx in self.run_pos..self.run_end {
+            acc = f(acc, idx);
+        }
         loop {
-            for idx in run {
-                acc = f(acc, idx);
-            }
-            while self.word != 0 {
-                let idx = self
-                    .word_start
-                    .wrapping_add(self.word.trailing_zeros() as usize);
-                acc = f(acc, idx);
-                self.word &= self.word - 1;
+            if self.word == u64::MAX {
+                for i in 0..64 {
+                    acc = f(acc, self.word_start + i);
+                }
+            } else {
+                while self.word != 0 {
+                    let idx = self
+                        .word_start
+                        .wrapping_add(self.word.trailing_zeros() as usize);
+                    acc = f(acc, idx);
+                    self.word &= self.word - 1;
+                }
             }
             if !self.advance() {
                 return acc;
-            }
-            run = 0..0;
-            if self.word == u64::MAX {
-                self.start_run();
-                run = self.run_pos..self.run_end;
             }
         }
     }
