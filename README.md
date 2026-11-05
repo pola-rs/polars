@@ -187,7 +187,7 @@ You can [join the Polars Discord server](https://discord.gg/4UfP5cfBE7) for any 
 ## Distributed Polars
 
 Running into hardware limitations executing your queries? Read how you can
-[horizontally scale your Polars query on a cluster](https://docs.pola.rs/polars-cloud/).
+[horizontally scale your Polars query on a cluster](https://docs.nanook.pola.rs/).
 
 ## License
 
