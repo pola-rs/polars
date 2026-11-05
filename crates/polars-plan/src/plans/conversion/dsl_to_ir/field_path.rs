@@ -4,14 +4,13 @@
 //! kernel.
 //!
 //! ```text
-//! path     := name ( "." name )*
-//! name     := ident | "`" escaped "`"
-//! ident    := ( alpha | "_" ) ( alpha | numeric | "_" )*
-//! escaped  := any chars, with `` for a literal backtick
+//! path  := name ( "." name )*
+//! name  := ( alpha | "_" ) ( alpha | numeric | "_" )*
 //! ```
 //!
-//! Unquoted names are kept to letters, digits and `_`, and the only step is `.name`, so that other
-//! characters (`[`, `*`, a leading digit as in `a.0`, ...) stay free for syntax added later.
+//! Names are kept to letters, digits and `_`, and the only step is `.name`, so that other
+//! characters (`[`, `*`, `` ` ``, a leading digit as in `a.0`, ...) stay free for syntax added
+//! later, such as a way to quote other names.
 use super::*;
 use crate::constants::get_pl_element_name;
 
@@ -28,6 +27,15 @@ fn is_ident_start(c: char) -> bool {
 
 fn is_ident_continue(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
+}
+
+/// `c` in backticks, for error messages.
+fn show_char(c: char) -> String {
+    if c == '`' {
+        "`` ` ``".into()
+    } else {
+        format!("`{c}`")
+    }
 }
 
 struct Parser {
@@ -50,28 +58,6 @@ impl Parser {
     fn name(&mut self) -> Result<PlSmallStr, PathParseError> {
         match self.peek() {
             None => self.err(self.pos, "expected a field name, found end of path"),
-            Some('`') => {
-                let start = self.pos;
-                self.pos += 1;
-                let mut name = String::new();
-                loop {
-                    match self.peek() {
-                        None => return self.err(start, "unterminated backtick-quoted name"),
-                        Some('`') if self.chars.get(self.pos + 1) == Some(&'`') => {
-                            name.push('`');
-                            self.pos += 2;
-                        },
-                        Some('`') => {
-                            self.pos += 1;
-                            return Ok(name.into());
-                        },
-                        Some(c) => {
-                            name.push(c);
-                            self.pos += 1;
-                        },
-                    }
-                }
-            },
             Some('.') => self.err(self.pos, "expected a field name, found `.`"),
             Some('*') => self.err(
                 self.pos,
@@ -80,7 +66,8 @@ impl Parser {
             Some(c) if !is_ident_start(c) => self.err(
                 self.pos,
                 format!(
-                    "an unquoted name must start with a letter or `_` (quote other names with backticks), found `{c}`"
+                    "a name must start with a letter or `_`, found {}",
+                    show_char(c)
                 ),
             ),
             Some(_) => {
@@ -116,29 +103,18 @@ pub(super) fn parse_field_path(path: &str) -> Result<Vec<PlSmallStr>, PathParseE
                     "`[` is reserved: a path only selects struct fields; use `.list` or `.arr` methods for list and array elements",
                 );
             },
-            '`' => return p.err(p.pos, "expected `.` or end of path, found `` ` ``"),
             c => {
                 return p.err(
                     p.pos,
                     format!(
-                        "an unquoted name may only contain letters, digits and `_` (quote other names with backticks), found `{c}`"
+                        "a name may only contain letters, digits and `_`, found {}",
+                        show_char(c)
                     ),
                 );
             },
         }
     }
     Ok(names)
-}
-
-fn write_name(out: &mut String, name: &str) {
-    let mut chars = name.chars();
-    if chars.next().is_some_and(is_ident_start) && chars.all(is_ident_continue) {
-        out.push_str(name);
-    } else {
-        out.push('`');
-        out.push_str(&name.replace('`', "``"));
-        out.push('`');
-    }
 }
 
 /// The output name and root of `pl.path(path)` without a schema: the last and first names of the
@@ -153,7 +129,7 @@ pub(crate) fn field_path_names(path: &PlSmallStr) -> (PlSmallStr, PlSmallStr) {
 /// Resolve `pl.path(path)` into `struct.field` expressions.
 ///
 /// Inside `struct.with_fields` the root is a field of the struct in scope, elsewhere it is a
-/// column of the input schema. A column literally named `a.b` is `` pl.path("`a.b`") ``.
+/// column of the input schema. A column literally named `a.b` is `pl.col("a.b")`.
 pub(super) fn field_path_to_expr(path: &PlSmallStr, ctx: &ExprToIRContext) -> PolarsResult<Expr> {
     // Inside `list.eval` / `arr.eval` the schema still holds the outer columns, but those can't
     // be used there. The schema check catches dtype resolution of a nested `eval`'s input, which
@@ -171,17 +147,17 @@ pub(super) fn field_path_to_expr(path: &PlSmallStr, ctx: &ExprToIRContext) -> Po
             None if ctx.schema.contains(path) => ("column", "pl.col"),
             _ => return String::new(),
         };
-        let mut quoted = String::new();
-        write_name(&mut quoted, path);
-        format!(
-            "\n\nHint: to select the {what} with that exact name, use `{func}({path:?})` or quote it: `pl.path({quoted:?})`"
-        )
+        format!("\n\nHint: to select the {what} with that exact name, use `{func}({path:?})`")
     };
 
     let names = parse_field_path(path).map_err(|e| {
+        let mut hint = literal_name_hint();
+        if hint.is_empty() {
+            hint = "\n\nHint: select fields with other names with `struct.field`".into();
+        }
         polars_err!(
             InvalidOperation:
-            "invalid path {path:?}: {} (at index {}){}", e.msg, e.pos, literal_name_hint()
+            "invalid path {path:?}: {} (at index {}){hint}", e.msg, e.pos
         )
     })?;
     let (root, fields) = names.split_first().unwrap();
@@ -214,8 +190,7 @@ pub(super) fn field_path_to_expr(path: &PlSmallStr, ctx: &ExprToIRContext) -> Po
     };
 
     // Rendered path up to the current name, for errors.
-    let mut at = String::new();
-    write_name(&mut at, root);
+    let mut at = root.to_string();
 
     for name in fields {
         dtype = match dtype {
@@ -240,7 +215,7 @@ pub(super) fn field_path_to_expr(path: &PlSmallStr, ctx: &ExprToIRContext) -> Po
             name.clone(),
         )));
         at.push('.');
-        write_name(&mut at, name);
+        at.push_str(name);
     }
 
     Ok(expr)
@@ -264,25 +239,9 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_field_path_escaped() {
-        assert_eq!(parse("`x.y`.`[0]`.``"), ["x.y", "[0]", ""]);
-        assert_eq!(parse("`a``b`"), ["a`b"]);
-        assert_eq!(parse("````"), ["`"]);
-        assert_eq!(parse("a.`0`.b"), ["a", "0", "b"]);
-    }
-
-    #[test]
     fn test_parse_field_path_errors() {
-        let start = |c: &str| {
-            format!(
-                "an unquoted name must start with a letter or `_` (quote other names with backticks), found `{c}`"
-            )
-        };
-        let inner = |c: &str| {
-            format!(
-                "an unquoted name may only contain letters, digits and `_` (quote other names with backticks), found `{c}`"
-            )
-        };
+        let start = |c: &str| format!("a name must start with a letter or `_`, found {c}");
+        let inner = |c: &str| format!("a name may only contain letters, digits and `_`, found {c}");
         let bracket = "`[` is reserved: a path only selects struct fields; use `.list` or `.arr` methods for list and array elements".to_string();
         let cases: &[(&str, usize, String)] = &[
             ("", 0, "expected a field name, found end of path".into()),
@@ -290,24 +249,19 @@ mod tests {
             ("a..b", 2, "expected a field name, found `.`".into()),
             (".a", 0, "expected a field name, found `.`".into()),
             ("ä.", 2, "expected a field name, found end of path".into()),
-            ("a.0", 2, start("0")),
-            ("0", 0, start("0")),
-            ("-a", 0, start("-")),
-            ("a.[0]", 2, start("[")),
-            ("a]", 1, inner("]")),
-            ("my col", 2, inner(" ")),
-            ("a.b$", 3, inner("$")),
+            ("a.0", 2, start("`0`")),
+            ("0", 0, start("`0`")),
+            ("-a", 0, start("`-`")),
+            ("a.[0]", 2, start("`[`")),
+            ("a]", 1, inner("`]`")),
+            ("my col", 2, inner("` `")),
+            ("a.b$", 3, inner("`$`")),
             ("a[0]", 1, bracket.clone()),
             ("a.b[]", 3, bracket.clone()),
             ("a.b[*].c", 3, bracket),
-            (
-                "a`b`",
-                1,
-                "expected `.` or end of path, found `` ` ``".into(),
-            ),
-            ("`a`b", 3, inner("b")),
-            ("`ab", 0, "unterminated backtick-quoted name".into()),
-            ("a.`b``", 2, "unterminated backtick-quoted name".into()),
+            ("`a`", 0, start("`` ` ``")),
+            ("a.`b`", 2, start("`` ` ``")),
+            ("a`b`", 1, inner("`` ` ``")),
             (
                 "a.*",
                 2,
@@ -332,21 +286,7 @@ mod tests {
         };
         assert_eq!(names("a.b.c"), ("c".into(), "a".into()));
         assert_eq!(names("a"), ("a".into(), "a".into()));
-        assert_eq!(names("`x.y`"), ("x.y".into(), "x.y".into()));
+        assert_eq!(names("`x.y`"), ("`x.y`".into(), "`x.y`".into()));
         assert_eq!(names("a[b"), ("a[b".into(), "a[b".into()));
-    }
-
-    #[test]
-    fn test_write_path_roundtrip() {
-        for path in ["a.b.c", "`x.y`.z", "`a``b`", "a.``", "_a.`0`.`my col`.b_1"] {
-            let mut out = String::new();
-            for (i, name) in parse_field_path(path).unwrap().iter().enumerate() {
-                if i > 0 {
-                    out.push('.');
-                }
-                write_name(&mut out, name);
-            }
-            assert_eq!(out, path);
-        }
     }
 }

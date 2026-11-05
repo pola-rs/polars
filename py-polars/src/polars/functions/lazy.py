@@ -95,11 +95,10 @@ def path(path: str) -> Expr:
         This functionality is considered **unstable**. It may be changed at any
         point without it being considered a breaking change.
 
-    An unquoted name is a letter or `_` followed by letters, digits or `_` (Unicode
-    letters and numerals count). Any other name is quoted with backticks, with
-    a doubled backtick for a literal one: ``pl.path("`my col`.`x.y`")`` is the field
-    `x.y` of the column `my col`. Other characters, such as `[`, and names starting
-    with a digit (`a.0`) are reserved for future syntax.
+    A name is a letter or `_` followed by letters, digits or `_` (Unicode letters
+    and numerals count). Other characters, such as `[` or a space, and names
+    starting with a digit (`a.0`) are reserved for future syntax; select fields with
+    such names with :meth:`Expr.struct.field`.
 
     The output name is the last name of the path (as with `struct.field`).
 
@@ -113,21 +112,21 @@ def path(path: str) -> Expr:
     >>> df = pl.DataFrame(
     ...     {
     ...         "a": [
-    ...             {"b": {"c": 1}, "my col": 10},
-    ...             {"b": {"c": 2}, "my col": 20},
+    ...             {"b": {"c": 1}, "d": 10},
+    ...             {"b": {"c": 2}, "d": 20},
     ...         ]
     ...     }
     ... )
-    >>> df.select(pl.path("a.b.c"), pl.path("a.`my col`"))
+    >>> df.select(pl.path("a.b.c"), pl.path("a.d"))
     shape: (2, 2)
-    ┌─────┬────────┐
-    │ c   ┆ my col │
-    │ --- ┆ ---    │
-    │ i64 ┆ i64    │
-    ╞═════╪════════╡
-    │ 1   ┆ 10     │
-    │ 2   ┆ 20     │
-    └─────┴────────┘
+    ┌─────┬─────┐
+    │ c   ┆ d   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 10  │
+    │ 2   ┆ 20  │
+    └─────┴─────┘
 
     Inside `struct.with_fields`, a path starts from a field of the struct.
 

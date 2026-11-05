@@ -105,18 +105,15 @@ def test_path_with_fields_scope(df: pl.DataFrame, lazy: bool) -> None:
     assert out.to_dict(as_series=False) == {"s": [{"c": 5, "b": {"c": 5}}]}
 
 
-@pytest.mark.parametrize("lazy", [False, True])
-def test_path_escaping(lazy: bool) -> None:
-    df = pl.DataFrame({"x.y": [{"z.w": 1, "`q": 2, "[0]": 3, "0": 4}]})
-    out = select(
-        df,
-        pl.path("`x.y`.`z.w`"),
-        pl.path("`x.y`.```q`"),
-        pl.path("`x.y`.`[0]`"),
-        pl.path("`x.y`.`0`"),
-        lazy=lazy,
-    )
-    assert out.to_dict(as_series=False) == {"z.w": [1], "`q": [2], "[0]": [3], "0": [4]}
+def test_path_no_quoting() -> None:
+    # Backticks are reserved, not a way to quote other names.
+    df = pl.DataFrame({"x.y": [{"z": 1}], "s": [{"0": 2}]})
+    for path, idx in [("`x.y`.z", 0), ("s.`0`", 2)]:
+        with pytest.raises(
+            InvalidOperationError,
+            match=rf"(?s)found `` ` `` \(at index {idx}\).*`struct\.field`",
+        ):
+            df.select(pl.path(path))
 
 
 @pytest.mark.parametrize("lazy", [False, True])
@@ -124,20 +121,17 @@ def test_path_always_path(lazy: bool) -> None:
     # The string is always a path, even if a column has that exact name.
     df = pl.DataFrame({"a": [{"b": 1}], "a.b": [2]})
     assert select(df, pl.path("a.b"), lazy=lazy).to_dict(as_series=False) == {"b": [1]}
-    assert select(df, pl.path("`a.b`"), lazy=lazy).to_dict(as_series=False) == {
-        "a.b": [2]
-    }
     e = pl.path("a.b")
     assert (e.meta.output_name(), e.meta.root_names()) == ("b", ["a"])
 
     # Without a column `a`, it is an error, pointing at the literal column.
     df = pl.DataFrame({"a.b": [2], "x[0]": [3]})
-    hint = r"use `pl\.col\(\"a\.b\"\)` or quote it: `pl\.path\(\"`a\.b`\"\)`"
+    hint = r"use `pl\.col\(\"a\.b\"\)`"
     with pytest.raises(ColumnNotFoundError, match=hint):
         select(df, pl.path("a.b"), lazy=lazy)
     with pytest.raises(
         InvalidOperationError,
-        match=r"(?s)invalid path \"x\[0\]\".*pl\.path\(\"`x\[0\]`\"\)",
+        match=r"(?s)invalid path \"x\[0\]\".*pl\.col\(\"x\[0\]\"\)",
     ):
         select(df, pl.path("x[0]"), lazy=lazy)
 
@@ -150,20 +144,17 @@ def test_path_with_fields_literal_name(lazy: bool) -> None:
         df,
         pl.col("s").struct.with_fields(
             pl.field("x.y").alias("lit"),
-            pl.path("`x.y`").alias("quoted"),
             pl.path("x.y").alias("path"),
         ),
         lazy=lazy,
     )
     assert out.to_dict(as_series=False) == {
-        "s": [{"x.y": 1, "x": {"y": 2}, "lit": 1, "quoted": 1, "path": 2}]
+        "s": [{"x.y": 1, "x": {"y": 2}, "lit": 1, "path": 2}]
     }
 
     df = pl.DataFrame({"s": [{"a[": 1}]})
     q = df.lazy().select(pl.col("s").struct.with_fields(pl.path("a[")))
-    with pytest.raises(
-        InvalidOperationError, match=r"use `pl\.field\(\"a\[\"\)` or quote it"
-    ):
+    with pytest.raises(InvalidOperationError, match=r"use `pl\.field\(\"a\[\"\)`"):
         q.collect()
 
 
@@ -177,7 +168,7 @@ def test_path_with_fields_literal_name(lazy: bool) -> None:
         ("a.l[]", r"`\[` is reserved.*\(at index 3\)"),
         ("a.l[*]", r"`\[` is reserved.*\(at index 3\)"),
         ("a]", r"found `\]` \(at index 1\)"),
-        ("`a", r"unterminated backtick-quoted name \(at index 0\)"),
+        ("`a", r"found `` ` `` \(at index 0\)"),
         ("a.*", r"`\.\*` is not supported yet \(at index 2\)"),
     ],
 )
@@ -195,11 +186,6 @@ def test_path_parse_errors(df: pl.DataFrame, path: str, msg: str) -> None:
         ("_1", "_1"),
         ("a_b0", "a_b0"),
         ("äö1", "äö1"),
-        ("`0`", "0"),
-        ("`my col`", "my col"),
-        ("`a-b`", "a-b"),
-        ("`$x`", "$x"),
-        ("``", ""),
     ],
 )
 def test_path_names(path: str, column: str) -> None:
@@ -222,8 +208,8 @@ def test_path_names(path: str, column: str) -> None:
     ],
 )
 def test_path_reserved_names(path: str, msg: str) -> None:
-    # Unquoted names are a letter or `_` followed by letters, digits or `_`; anything
-    # else is reserved for future syntax and needs backticks.
+    # Names are a letter or `_` followed by letters, digits or `_`; anything else is
+    # reserved for future syntax.
     df = pl.DataFrame({"a": [{"0": 1}], "0": [2], "my col": [3]})
     with pytest.raises(InvalidOperationError, match=msg):
         df.select(pl.path(path))
@@ -313,7 +299,6 @@ def test_path_meta() -> None:
     assert pl.path("a.b.c").meta.root_names() == ["a"]
     assert pl.path("a.b.c").meta.output_name() == "c"
     assert pl.path("a").meta.output_name() == "a"
-    assert pl.path("`x.y`.z").meta.root_names() == ["x.y"]
     assert (pl.path("a.b") + pl.col("x")).meta.root_names() == ["a", "x"]
     assert "a" in pl.path("a.b").meta.tree_format(return_as_string=True)
     # A string that doesn't parse as a path is taken as is (the plan then fails).
@@ -334,7 +319,7 @@ def test_path_meta() -> None:
 
 
 def test_path_serde(df: pl.DataFrame) -> None:
-    e = pl.path("a.`b`.c") * 2
+    e = pl.path("a.b.c") * 2
     out = pl.Expr.deserialize(e.meta.serialize(), format="binary")
     assert_frame_equal(df.select(out), df.select(e))
 
