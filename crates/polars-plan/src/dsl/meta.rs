@@ -174,10 +174,12 @@ impl MetaNameSpace {
 
     /// Indicate if this expression as a whole is row-separable (see [`is_row_separable_rec`]).
     pub fn is_row_separable(self, schema: Option<&Schema>) -> PolarsResult<bool> {
+        let has_schema = schema.is_some();
         let (exprs, expr_arena) = self.into_expr_irs(schema)?;
-        Ok(exprs
-            .iter()
-            .all(|e| is_row_separable_rec(e.node(), &expr_arena)))
+        Ok(exprs.iter().all(|e| {
+            is_row_separable_rec(e.node(), &expr_arena)
+                && (has_schema || !has_unresolved_set_argument(e.node(), &expr_arena))
+        }))
     }
 
     /// Indicate if this expression yields one scalar value that does not depend on any
@@ -186,4 +188,26 @@ impl MetaNameSpace {
         let (e_ir, expr_arena) = self.into_expr_ir()?;
         Ok(is_input_independent_scalar_rec(e_ir.node(), &expr_arena))
     }
+}
+
+/// Whether an `is_in` or `replace` has a non-literal argument, which only the schema can resolve
+/// into a set (`implode()`) or a value per row.
+fn has_unresolved_set_argument(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    expr_arena.iter(node).any(|(_, ae)| match ae {
+        #[cfg(feature = "is_in")]
+        AExpr::Function {
+            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }),
+            input,
+            ..
+        } => !matches!(expr_arena.get(input[1].node()), AExpr::Literal(_)),
+        #[cfg(feature = "replace")]
+        AExpr::Function {
+            function: IRFunctionExpr::Replace | IRFunctionExpr::ReplaceStrict { .. },
+            input,
+            ..
+        } => input[1..3]
+            .iter()
+            .any(|e| !matches!(expr_arena.get(e.node()), AExpr::Literal(_))),
+        _ => false,
+    })
 }
