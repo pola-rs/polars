@@ -1,6 +1,7 @@
-use std::cmp::min;
+use std::cmp::{max, min};
 
 use polars_arrow::bitmap::MutableBitmap;
+use polars_arrow::bitmap::bitmask::BitMask;
 
 /// Bit array with a filter to speed up searching for set bits when sparse,
 /// based on section 4.1 from Khayyat et al. 2015,
@@ -25,25 +26,23 @@ impl FilteredBitArray {
         self.filter.set_unchecked(index / Self::CHUNK_SIZE, true);
     }
 
-    pub unsafe fn on_set_bits_from<F>(&self, start: usize, mut action: F)
-    where
-        F: FnMut(usize),
-    {
+    pub fn on_set_bits_from(&self, start: usize, mut action: impl FnMut(usize)) {
+        let len = self.bit_array.len();
+        if start >= len {
+            return;
+        }
+        let bits = BitMask::new(self.bit_array.as_slice(), 0, len);
         let start_chunk = start / Self::CHUNK_SIZE;
-        let mut chunk_offset = start % Self::CHUNK_SIZE;
-        for chunk_idx in start_chunk..self.filter.len() {
-            if self.filter.get_unchecked(chunk_idx) {
-                // There are some set bits in this chunk
-                let start = chunk_idx * Self::CHUNK_SIZE + chunk_offset;
-                let end = min((chunk_idx + 1) * Self::CHUNK_SIZE, self.bit_array.len());
-                for bit_idx in start..end {
-                    // SAFETY: `bit_idx` is always less than `self.bit_array.len()`
-                    if self.bit_array.get_unchecked(bit_idx) {
-                        action(bit_idx);
-                    }
-                }
-            }
-            chunk_offset = 0;
+        let filter = BitMask::new(self.filter.as_slice(), 0, self.filter.len())
+            .sliced(start_chunk, self.filter.len() - start_chunk);
+        for chunk_idx in filter.set_bit_idx_iter() {
+            let chunk_idx = start_chunk + chunk_idx;
+            let chunk_start = max(start, chunk_idx * Self::CHUNK_SIZE);
+            let chunk_end = min((chunk_idx + 1) * Self::CHUNK_SIZE, len);
+            let chunk = bits.sliced(chunk_start, chunk_end - chunk_start);
+            chunk
+                .set_bit_idx_iter()
+                .for_each(|i| action(chunk_start + i));
         }
     }
 }

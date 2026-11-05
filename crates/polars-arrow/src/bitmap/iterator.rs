@@ -95,6 +95,106 @@ impl Iterator for TrueIdxIter<'_> {
 
 unsafe impl TrustedLen for TrueIdxIter<'_> {}
 
+/// Iterator over the indices of the set bits, optimized for sparse bitmaps.
+#[derive(Clone)]
+pub struct SetBitIdxIter<'a> {
+    /// Starts at the current word.
+    bytes: &'a [u8],
+    /// Number of bits from the start of the current word to the end.
+    bits_left: usize,
+    word: u64,
+    /// Output index of bit 0 of the current word. Wraps below zero for the
+    /// first word if the offset is not byte-aligned.
+    word_start: usize,
+}
+
+impl<'a> SetBitIdxIter<'a> {
+    pub fn new(bytes: &'a [u8], offset: usize, len: usize) -> Self {
+        assert!(bytes.len() * 8 >= offset + len);
+        let bytes = &bytes[offset / 8..];
+        let bit_offset = offset % 8;
+        let bits_left = bit_offset + len;
+        Self {
+            bytes,
+            bits_left,
+            word: load_word_to_end(bytes, bits_left) & (u64::MAX << bit_offset),
+            word_start: 0usize.wrapping_sub(bit_offset),
+        }
+    }
+
+    /// Moves to the next word, returns false if there is none.
+    #[inline(always)]
+    fn load_next_word(&mut self) -> bool {
+        if self.bits_left <= 64 {
+            return false;
+        }
+        self.bytes = &self.bytes[8..];
+        self.bits_left -= 64;
+        self.word_start = self.word_start.wrapping_add(64);
+        self.word = load_word_to_end(self.bytes, self.bits_left);
+        true
+    }
+}
+
+/// Loads the next 64 bits, with the bits at or after `bits_left` cleared.
+#[inline(always)]
+fn load_word_to_end(bytes: &[u8], bits_left: usize) -> u64 {
+    let word = load_padded_le_u64(bytes);
+    if bits_left < 64 {
+        word & ((1 << bits_left) - 1)
+    } else {
+        word
+    }
+}
+
+impl Iterator for SetBitIdxIter<'_> {
+    type Item = usize;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.word == 0 {
+            if !self.load_next_word() {
+                return None;
+            }
+        }
+
+        let idx = self
+            .word_start
+            .wrapping_add(self.word.trailing_zeros() as usize);
+        self.word &= self.word - 1;
+        Some(idx)
+    }
+
+    // All-ones fast path in fold, hoists branch out of inner loop. Sum,
+    // for_each, etc, dispatch to fold.
+    #[inline]
+    fn fold<B, F>(mut self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let mut acc = init;
+        loop {
+            if self.word == u64::MAX {
+                for i in 0..64 {
+                    acc = f(acc, self.word_start + i);
+                }
+            } else {
+                while self.word != 0 {
+                    let idx = self
+                        .word_start
+                        .wrapping_add(self.word.trailing_zeros() as usize);
+                    acc = f(acc, idx);
+                    self.word &= self.word - 1;
+                }
+            }
+
+            if !self.load_next_word() {
+                return acc;
+            }
+        }
+    }
+}
+
 pub struct FastU32BitmapIter<'a> {
     bytes: &'a [u8],
     shift: u32,
