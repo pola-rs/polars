@@ -302,3 +302,12 @@ def test_replace_single_argument_not_mapping() -> None:
         match="`new` argument is required if `old` argument is not a Mapping type",
     ):
         df.select(pl.col("a").replace("b"))
+
+
+@pytest.mark.parametrize("height", [1, 3])
+def test_replace_list_column_per_row_raises(height: int) -> None:
+    df = pl.DataFrame({"a": [1] * height, "l": [[1]] * height})
+    with pytest.raises(InvalidOperationError, match="per row"):
+        df.select(pl.col("a").replace(pl.col("l"), 9))
+    with pytest.raises(InvalidOperationError, match="per row"):
+        df.select(pl.col("a").replace_strict(1, pl.col("l")))

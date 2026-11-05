@@ -988,6 +988,13 @@ impl OptimizationRule for TypeCoercionRule {
                     !type_old.contains_objects() && !type_new.contains_objects(),
                     InvalidOperation: "`replace` does not support `old`/`new` values of object dtype"
                 );
+                let is_single =
+                    |node| is_scalar_ae(node, expr_arena) || is_single_literal_ae(node, expr_arena);
+                polars_ensure!(
+                    (!type_old.is_list() || is_single(input[1].node()))
+                        && (!type_new.is_list() || is_single(input[2].node())),
+                    InvalidOperation: "`replace` does not support a list of `old`/`new` values per row"
+                );
 
                 let (DataType::List(_), DataType::List(_)) = (&type_old, &type_new) else {
                     let function = function.clone();
