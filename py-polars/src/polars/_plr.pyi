@@ -2760,6 +2760,9 @@ class PySQLContext:
     def catalog_delete_predicate(
         self, query: str, tables: pylist[tuple[pylist[str], PyLazyFrame]]
     ) -> PyExpr: ...
+    def catalog_update_plan(
+        self, query: str, tables: pylist[tuple[pylist[str], PyLazyFrame]]
+    ) -> tuple[PyExpr, pylist[tuple[str, PyExpr]]]: ...
     @staticmethod
     def table_identifiers(
         query: str,
