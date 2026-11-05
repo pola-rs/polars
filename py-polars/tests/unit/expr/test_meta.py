@@ -48,7 +48,7 @@ def test_meta_properties() -> None:
     assert not e.meta.is_scalar()
 
 
-a, b = pl.col("a"), pl.col("b")
+a, b, c = pl.col("a"), pl.col("b"), pl.col("c")
 
 
 @pytest.mark.parametrize(
@@ -75,6 +75,9 @@ a, b = pl.col("a"), pl.col("b")
             False,
         ),
         (pl.lit(1).is_in(pl.Series([[1, 2]])).drop_nulls(), False),
+        (a.is_in(pl.Series([[1], [2], [3], [4]])), False),
+        (a.is_in(b), False),
+        (a.replace(b, c), False),
     ],
 )
 def test_meta_is_row_separable(expr: pl.Expr, row_separable: bool) -> None:

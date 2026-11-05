@@ -257,6 +257,7 @@ pub fn is_row_separable(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Aren
 }
 
 /// Whether each expression in `nodes` on its own is row-separable, see [`is_row_separable_rec`].
+/// Public API for downstream crates such as Polars Cloud.
 ///
 /// This doesn't check that the outputs of several expressions line up with each other.
 pub fn all_row_separable<'a, N>(nodes: &'a [N], expr_arena: &Arena<AExpr>) -> bool
@@ -278,14 +279,41 @@ pub fn is_row_separable_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
 #[derive(Clone, Copy, Debug)]
 pub struct RowSeparability {
     /// Evaluating the expression on batches of rows and concatenating the results gives the same
-    /// output as evaluating it on the whole frame.
+    /// output as evaluating it on the whole frame, where a scalar result is broadcast to the
+    /// frame's height.
     pub row_separable: bool,
-    /// As [`is_elementwise_rec`].
+    /// Elementwise and safe to evaluate in batches: as [`is_elementwise_rec`], but without
+    /// [`is_fake_elementwise_function`]s.
     pub elementwise: bool,
     /// As [`is_input_independent_scalar_rec`].
     pub input_independent_scalar: bool,
     /// The expression reads a column or the frame's length.
     pub frame_dependent: bool,
+}
+
+/// Whether `ae` is flagged elementwise, but an input isn't zipped row by row with the others, e.g.
+/// the right-hand side of `is_in` that isn't a single literal.
+pub fn is_fake_elementwise_function(ae: &AExpr, expr_arena: &Arena<AExpr>) -> bool {
+    match ae {
+        AExpr::Function {
+            function, input, ..
+        } => {
+            use IRFunctionExpr as F;
+            match function {
+                #[cfg(feature = "is_in")]
+                F::Boolean(IRBooleanFunction::IsIn { .. }) => {
+                    !is_single_literal_ae(input[1].node(), expr_arena)
+                },
+                #[cfg(feature = "replace")]
+                F::Replace | F::ReplaceStrict { .. } => {
+                    !(is_single_literal_ae(input[1].node(), expr_arena)
+                        && is_single_literal_ae(input[2].node(), expr_arena))
+                },
+                _ => false,
+            }
+        },
+        _ => false,
+    }
 }
 
 /// Derives the [`RowSeparability`] of the expression at `node`, memoizing it and that of the
@@ -304,29 +332,27 @@ pub fn row_separability(
         return props;
     }
     let ae = expr_arena.get(node);
-    let mut props_of = |nodes: &[Node]| -> UnitVec<RowSeparability> {
-        nodes
-            .iter()
-            .map(|&n| row_separability(n, expr_arena, memo))
-            .collect()
-    };
-
-    // `is_prop` may skip some inputs, such as the literal right-hand side of `is_in`.
     let mut stack = unitvec![];
-    let row_separable = is_row_separable(&mut stack, ae, expr_arena) && {
-        let inputs = props_of(&stack);
-        inputs.iter().all(|p| p.row_separable)
-            && zipped_inputs_line_up(&inputs)
-            && (ae.is_elementwise_top_level() || inputs.iter().any(|p| p.frame_dependent))
-    };
-
-    stack.clear();
-    let elementwise = is_elementwise(&mut stack, ae, expr_arena)
-        && props_of(&stack).iter().all(|p| p.elementwise);
-
-    stack.clear();
     ae.inputs_rev(&mut stack);
-    let inputs = props_of(&stack);
+    let inputs: UnitVec<RowSeparability> = stack
+        .iter()
+        .map(|&n| row_separability(n, expr_arena, memo))
+        .collect();
+    let fake_elementwise = is_fake_elementwise_function(ae, expr_arena);
+
+    let row_separable = !fake_elementwise
+        && ae.is_row_separable_top_level()
+        && inputs.iter().all(|p| p.row_separable)
+        && zipped_inputs_line_up(&inputs)
+        && (ae.is_elementwise_top_level() || inputs.iter().any(|p| p.frame_dependent));
+
+    // `is_elementwise` skips the single-literal right-hand side of `is_in`, as
+    // `is_elementwise_rec` does. Every input it pushes is in `memo` already.
+    stack.clear();
+    let elementwise = !fake_elementwise
+        && is_elementwise(&mut stack, ae, expr_arena)
+        && stack.iter().all(|n| memo[n].elementwise);
+
     let input_independent_scalar = is_input_independent_scalar_top_level(ae)
         && inputs.iter().all(|p| p.input_independent_scalar);
     let frame_dependent =

@@ -732,7 +732,7 @@ fn create_physical_expr_inner(
 /// - a full-length input must cost about as much as a call per group (not `str.contains`).
 ///
 /// TODO: formalize as a `FunctionFlags` bit, see also `is_fake_elementwise_function` in
-/// polars-stream.
+/// polars-plan.
 fn inputs_are_row_wise(function: &IRFunctionExpr) -> bool {
     use IRFunctionExpr as F;
     match function {
