@@ -7,48 +7,42 @@ use crate::plans::projection_height::{
     aexpr_projection_height_rec_with,
 };
 
-pub fn to_expr_ir(expr: Expr, ctx: &mut ExprToIRContext) -> PolarsResult<ExprIR> {
+pub fn to_expr_ir(expr: &Expr, ctx: &mut ExprToIRContext) -> PolarsResult<ExprIR> {
     let (node, output_name) = to_aexpr_impl(expr, ctx)?;
     Ok(ExprIR::new(node, OutputName::Alias(output_name)))
 }
 
-pub fn to_expr_ir_materialized_lit(expr: Expr, ctx: &mut ExprToIRContext) -> PolarsResult<ExprIR> {
+pub fn to_expr_ir_materialized_lit(expr: &Expr, ctx: &mut ExprToIRContext) -> PolarsResult<ExprIR> {
     let (node, output_name) = to_aexpr_impl_materialized_lit(expr, ctx)?;
     Ok(ExprIR::new(node, OutputName::Alias(output_name)))
 }
 
-pub(super) fn to_expr_irs(
-    input: Vec<Expr>,
-    ctx: &mut ExprToIRContext,
-) -> PolarsResult<Vec<ExprIR>> {
+pub(super) fn to_expr_irs(input: &[Expr], ctx: &mut ExprToIRContext) -> PolarsResult<Vec<ExprIR>> {
     let original_with_fields = ctx.with_fields.clone();
-    input
-        .into_iter()
-        .map(|e| {
-            let e = to_expr_ir(e, ctx)?;
-            ctx.with_fields = original_with_fields.clone();
-            Ok(e)
-        })
-        .collect()
+    let mut out = Vec::with_capacity(input.len());
+    for e in input {
+        out.push(to_expr_ir(e, ctx)?);
+        ctx.with_fields = original_with_fields.clone();
+    }
+    Ok(out)
 }
 
 fn to_aexpr_impl_materialized_lit(
-    expr: Expr,
+    expr: &Expr,
     ctx: &mut ExprToIRContext,
 ) -> PolarsResult<(Node, PlSmallStr)> {
     // Already convert `Lit Float and Lit Int` expressions that are not used in a binary / function expression.
     // This means they can be materialized immediately
-    let e = match expr {
-        Expr::Literal(lv @ LiteralValue::Dyn(_)) => Expr::Literal(lv.materialize()),
-        Expr::Alias(inner, name) if matches!(&*inner, Expr::Literal(LiteralValue::Dyn(_))) => {
-            let Expr::Literal(lv) = &*inner else {
-                unreachable!()
-            };
-            Expr::Alias(Arc::new(Expr::Literal(lv.clone().materialize())), name)
+    match expr {
+        Expr::Literal(lv @ LiteralValue::Dyn(_)) => {
+            to_aexpr_impl(&Expr::Literal(lv.clone().materialize()), ctx)
         },
-        e => e,
-    };
-    to_aexpr_impl(e, ctx)
+        Expr::Alias(inner, name) if matches!(&**inner, Expr::Literal(LiteralValue::Dyn(_))) => {
+            let (node, _) = to_aexpr_impl_materialized_lit(inner, ctx)?;
+            Ok((node, name.clone()))
+        },
+        e => to_aexpr_impl(e, ctx),
+    }
 }
 
 pub struct ExprToIRContext<'a> {
@@ -126,19 +120,12 @@ impl<'a> ExprToIRContext<'a> {
 /// Converts expression to AExpr and adds it to the arena, which uses an arena (Vec) for allocation.
 #[recursive]
 pub(super) fn to_aexpr_impl(
-    expr: Expr,
+    expr: &Expr,
     ctx: &mut ExprToIRContext,
 ) -> PolarsResult<(Node, PlSmallStr)> {
-    let owned = Arc::unwrap_or_clone;
-
     macro_rules! recurse {
         ($input:expr) => {
             to_aexpr_impl($input, ctx)
-        };
-    }
-    macro_rules! recurse_arc {
-        ($input:expr) => {
-            recurse!(owned($input))
         };
     }
 
@@ -148,36 +135,36 @@ pub(super) fn to_aexpr_impl(
         };
     }
 
-    macro_rules! to_aexpr_mat_lit_arc {
-        ($input:expr) => {
-            to_aexpr_mat_lit!(owned($input))
-        };
-    }
-
     let (v, output_name) = match expr {
         Expr::Element => (AExpr::Element, PlSmallStr::EMPTY),
         Expr::Explode { input, options } => {
-            let (expr, output_name) = recurse_arc!(input)?;
-            (AExpr::Explode { expr, options }, output_name)
+            let (expr, output_name) = recurse!(input)?;
+            (
+                AExpr::Explode {
+                    expr,
+                    options: *options,
+                },
+                output_name,
+            )
         },
-        Expr::Alias(e, name) => return Ok((recurse_arc!(e)?.0, name)),
+        Expr::Alias(e, name) => return Ok((recurse!(e)?.0, name.clone())),
         Expr::Literal(lv) => {
             let output_name = lv.output_column_name();
-            (AExpr::Literal(lv), output_name)
+            (AExpr::Literal(lv.clone()), output_name)
         },
         Expr::Column(name) => {
             if ctx.check_column_names {
-                ctx.schema.try_index_of(&name)?;
+                ctx.schema.try_index_of(name)?;
             }
-            (AExpr::Column(name.clone()), name)
+            (AExpr::Column(name.clone()), name.clone())
         },
         Expr::BinaryExpr { left, op, right } => {
-            let (l, output_name) = recurse_arc!(left)?;
-            let (r, _) = recurse_arc!(right)?;
+            let (l, output_name) = recurse!(left)?;
+            let (r, _) = recurse!(right)?;
             (
                 AExpr::BinaryExpr {
                     left: l,
-                    op,
+                    op: *op,
                     right: r,
                 },
                 output_name,
@@ -188,8 +175,8 @@ pub(super) fn to_aexpr_impl(
             dtype,
             options,
         } => {
-            let (expr, output_name) = recurse_arc!(expr)?;
-            let dtype = dtype.into_datatype(ctx.schema)?;
+            let (expr, output_name) = recurse!(expr)?;
+            let dtype = dtype.clone().into_datatype(ctx.schema)?;
 
             // Casting to `Unknown(Any)` carries no information and
             // the engine treats it as a no-op (see `Series::cast_with_options`), so
@@ -203,7 +190,7 @@ pub(super) fn to_aexpr_impl(
                 AExpr::Cast {
                     expr,
                     dtype,
-                    options,
+                    options: *options,
                 },
                 output_name,
             )
@@ -214,33 +201,39 @@ pub(super) fn to_aexpr_impl(
             returns_scalar,
             null_on_oob,
         } => {
-            let (expr, output_name) = recurse_arc!(expr)?;
-            let (idx, _) = to_aexpr_mat_lit_arc!(idx)?;
+            let (expr, output_name) = recurse!(expr)?;
+            let (idx, _) = to_aexpr_mat_lit!(idx)?;
             (
                 AExpr::Gather {
                     expr,
                     idx,
-                    returns_scalar,
-                    null_on_oob,
+                    returns_scalar: *returns_scalar,
+                    null_on_oob: *null_on_oob,
                 },
                 output_name,
             )
         },
         Expr::Sort { expr, options } => {
-            let (expr, output_name) = recurse_arc!(expr)?;
-            (AExpr::Sort { expr, options }, output_name)
+            let (expr, output_name) = recurse!(expr)?;
+            (
+                AExpr::Sort {
+                    expr,
+                    options: *options,
+                },
+                output_name,
+            )
         },
         Expr::SortBy {
             expr,
             by,
             sort_options,
         } => {
-            let (expr, output_name) = recurse_arc!(expr)?;
+            let (expr, output_name) = recurse!(expr)?;
             let by: Vec<Node> = by
-                .into_iter()
+                .iter()
                 .map(|e| Ok(recurse!(e)?.0))
                 .collect::<PolarsResult<_>>()?;
-            let sort_options = sort_options.expand_flags(by.len())?;
+            let sort_options = sort_options.clone().expand_flags(by.len())?;
 
             (
                 AExpr::SortBy {
@@ -252,8 +245,8 @@ pub(super) fn to_aexpr_impl(
             )
         },
         Expr::Filter { input, by } => {
-            let (input, output_name) = recurse_arc!(input)?;
-            let (by, _) = recurse_arc!(by)?;
+            let (input, output_name) = recurse!(input)?;
+            let (by, _) = recurse!(by)?;
             (AExpr::Filter { input, by }, output_name)
         },
         Expr::Agg(agg) => {
@@ -262,11 +255,11 @@ pub(super) fn to_aexpr_impl(
                     input,
                     propagate_nans,
                 } => {
-                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
+                    let (input, output_name) = to_aexpr_mat_lit!(input)?;
                     (
                         IRAggExpr::Min {
                             input,
-                            propagate_nans,
+                            propagate_nans: *propagate_nans,
                             propagate_nulls: false,
                         },
                         output_name,
@@ -276,57 +269,63 @@ pub(super) fn to_aexpr_impl(
                     input,
                     propagate_nans,
                 } => {
-                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
+                    let (input, output_name) = to_aexpr_mat_lit!(input)?;
                     (
                         IRAggExpr::Max {
                             input,
-                            propagate_nans,
+                            propagate_nans: *propagate_nans,
                             propagate_nulls: false,
                         },
                         output_name,
                     )
                 },
                 AggExpr::Median(input) => {
-                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
+                    let (input, output_name) = to_aexpr_mat_lit!(input)?;
                     (IRAggExpr::Median(input), output_name)
                 },
                 AggExpr::NUnique(input) => {
-                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
+                    let (input, output_name) = to_aexpr_mat_lit!(input)?;
                     (IRAggExpr::NUnique(input), output_name)
                 },
                 AggExpr::First(input) => {
-                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
+                    let (input, output_name) = to_aexpr_mat_lit!(input)?;
                     (IRAggExpr::First(input), output_name)
                 },
                 AggExpr::FirstNonNull(input) => {
-                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
+                    let (input, output_name) = to_aexpr_mat_lit!(input)?;
                     (IRAggExpr::FirstNonNull(input), output_name)
                 },
                 AggExpr::Last(input) => {
-                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
+                    let (input, output_name) = to_aexpr_mat_lit!(input)?;
                     (IRAggExpr::Last(input), output_name)
                 },
                 AggExpr::LastNonNull(input) => {
-                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
+                    let (input, output_name) = to_aexpr_mat_lit!(input)?;
                     (IRAggExpr::LastNonNull(input), output_name)
                 },
                 AggExpr::Item { input, allow_empty } => {
-                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
-                    (IRAggExpr::Item { input, allow_empty }, output_name)
+                    let (input, output_name) = to_aexpr_mat_lit!(input)?;
+                    (
+                        IRAggExpr::Item {
+                            input,
+                            allow_empty: *allow_empty,
+                        },
+                        output_name,
+                    )
                 },
                 AggExpr::Mean(input) => {
-                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
+                    let (input, output_name) = to_aexpr_mat_lit!(input)?;
                     (IRAggExpr::Mean(input), output_name)
                 },
                 AggExpr::Implode {
                     input,
                     maintain_order,
                 } => {
-                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
+                    let (input, output_name) = to_aexpr_mat_lit!(input)?;
                     (
                         IRAggExpr::Implode {
                             input,
-                            maintain_order,
+                            maintain_order: *maintain_order,
                         },
                         output_name,
                     )
@@ -335,17 +334,17 @@ pub(super) fn to_aexpr_impl(
                     input,
                     include_nulls,
                 } => {
-                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
+                    let (input, output_name) = to_aexpr_mat_lit!(input)?;
                     (
                         IRAggExpr::Count {
                             input,
-                            include_nulls,
+                            include_nulls: *include_nulls,
                         },
                         output_name,
                     )
                 },
                 AggExpr::Sum(input) => {
-                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
+                    let (input, output_name) = to_aexpr_mat_lit!(input)?;
                     (
                         IRAggExpr::Sum {
                             input,
@@ -355,12 +354,12 @@ pub(super) fn to_aexpr_impl(
                     )
                 },
                 AggExpr::Std(input, ddof) => {
-                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
-                    (IRAggExpr::Std(input, ddof), output_name)
+                    let (input, output_name) = to_aexpr_mat_lit!(input)?;
+                    (IRAggExpr::Std(input, *ddof), output_name)
                 },
                 AggExpr::Var(input, ddof) => {
-                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
-                    (IRAggExpr::Var(input, ddof), output_name)
+                    let (input, output_name) = to_aexpr_mat_lit!(input)?;
+                    (IRAggExpr::Var(input, *ddof), output_name)
                 },
             };
             (AExpr::Agg(a_agg), output_name)
@@ -370,9 +369,9 @@ pub(super) fn to_aexpr_impl(
             truthy,
             falsy,
         } => {
-            let (p, _) = to_aexpr_mat_lit_arc!(predicate)?;
-            let (t, output_name) = recurse_arc!(truthy)?;
-            let (f, _) = recurse_arc!(falsy)?;
+            let (p, _) = to_aexpr_mat_lit!(predicate)?;
+            let (t, output_name) = recurse!(truthy)?;
+            let (f, _) = recurse!(falsy)?;
             (
                 AExpr::Ternary {
                     predicate: p,
@@ -400,7 +399,7 @@ pub(super) fn to_aexpr_impl(
                 .map(|e| e.field(ctx.schema, ctx.arena))
                 .collect::<PolarsResult<Vec<_>>>()?;
 
-            let function = function.materialize()?;
+            let function = function.clone().materialize()?;
             let out = function.get_field(ctx.schema, &fields)?;
             let output_dtype = out.dtype();
 
@@ -413,14 +412,14 @@ pub(super) fn to_aexpr_impl(
                 AExpr::AnonymousFunction {
                     input,
                     function: LazySerde::Deserialized(function),
-                    options,
-                    fmt_str,
+                    options: *options,
+                    fmt_str: fmt_str.clone(),
                 },
                 output_name,
             )
         },
         Expr::Function { input, function } => {
-            return convert_functions(input, function, ctx);
+            return convert_functions(input, function.clone(), ctx);
         },
         #[cfg(feature = "dynamic_group_by")]
         Expr::Rolling {
@@ -430,15 +429,15 @@ pub(super) fn to_aexpr_impl(
             offset,
             closed_window,
         } => {
-            let (function, output_name) = recurse_arc!(function)?;
-            let (index_column, _) = to_aexpr_mat_lit_arc!(index_column)?;
+            let (function, output_name) = recurse!(function)?;
+            let (index_column, _) = to_aexpr_mat_lit!(index_column)?;
             (
                 AExpr::Rolling {
                     function,
                     index_column,
-                    period,
-                    offset,
-                    closed_window,
+                    period: *period,
+                    offset: *offset,
+                    closed_window: *closed_window,
                 },
                 output_name,
             )
@@ -450,15 +449,15 @@ pub(super) fn to_aexpr_impl(
             mapping,
             may_reorder,
         } => {
-            let (function, output_name) = recurse_arc!(function)?;
+            let (function, output_name) = recurse!(function)?;
             let order_by = if let Some((e, options)) = order_by {
-                Some((recurse_arc!(e)?.0, options))
+                Some((recurse!(e)?.0, *options))
             } else {
                 None
             };
 
             let partition_nodes = partition_by
-                .into_iter()
+                .iter()
                 .map(|e| Ok(to_aexpr_impl_materialized_lit(e, ctx)?.0))
                 .collect::<PolarsResult<_>>()?;
 
@@ -467,8 +466,8 @@ pub(super) fn to_aexpr_impl(
                     function,
                     partition_by: partition_nodes,
                     order_by,
-                    mapping,
-                    may_reorder,
+                    mapping: *mapping,
+                    may_reorder: *may_reorder,
                 },
                 output_name,
             )
@@ -478,9 +477,9 @@ pub(super) fn to_aexpr_impl(
             offset,
             length,
         } => {
-            let (input, output_name) = recurse_arc!(input)?;
-            let (offset, _) = to_aexpr_mat_lit_arc!(offset)?;
-            let (length, _) = to_aexpr_mat_lit_arc!(length)?;
+            let (input, output_name) = recurse!(input)?;
+            let (offset, _) = to_aexpr_mat_lit!(offset)?;
+            let (length, _) = to_aexpr_mat_lit!(length)?;
             (
                 AExpr::Slice {
                     input,
@@ -495,7 +494,7 @@ pub(super) fn to_aexpr_impl(
             evaluation,
             variant,
         } => {
-            let (expr, output_name) = recurse_arc!(expr)?;
+            let (expr, output_name) = recurse!(expr)?;
             let expr_dtype = ctx.arena.get(expr).to_dtype(&ctx.to_field_ctx())?;
             let element_dtype = variant.element_dtype(&expr_dtype)?;
 
@@ -519,13 +518,13 @@ pub(super) fn to_aexpr_impl(
                 allow_unknown: ctx.allow_unknown,
                 check_column_names: ctx.check_column_names,
             };
-            let (evaluation, _) = to_aexpr_impl(owned(evaluation), &mut evaluation_ctx)?;
+            let (evaluation, _) = to_aexpr_impl(evaluation, &mut evaluation_ctx)?;
 
             match variant {
                 EvalVariant::List | EvalVariant::ListAgg => {},
                 EvalVariant::Array { as_list } => {
                     polars_ensure!(
-                        as_list ||
+                        *as_list ||
                         matches!(
                             aexpr_projection_height_rec(evaluation, ctx.arena, &mut Default::default(), &mut Default::default()),
                             ExprProjectionHeight::Column
@@ -546,7 +545,7 @@ pub(super) fn to_aexpr_impl(
                 AExpr::Eval {
                     expr,
                     evaluation,
-                    variant,
+                    variant: *variant,
                 },
                 output_name,
             )
@@ -557,7 +556,7 @@ pub(super) fn to_aexpr_impl(
             evaluation,
             variant,
         } => {
-            let (expr, output_name) = recurse_arc!(expr)?;
+            let (expr, output_name) = recurse!(expr)?;
             let expr_dtype = ctx.arena.get(expr).to_dtype(&ctx.to_field_ctx())?;
 
             let DataType::Struct(fields) = &expr_dtype else {
@@ -613,14 +612,14 @@ pub(super) fn to_aexpr_impl(
                 AExpr::StructEval {
                     expr,
                     evaluation: eval_ir,
-                    variant,
+                    variant: *variant,
                 },
                 output_name,
             )
         },
         Expr::Len => (AExpr::Len, get_len_name()),
         Expr::KeepName(expr) => {
-            let (expr, _) = to_aexpr_impl(owned(expr), ctx)?;
+            let (expr, _) = to_aexpr_impl(expr, ctx)?;
             let name = ArenaExprIter::iter(ctx.arena, expr).find_map(|e| match e.1 {
                 AExpr::Column(name) => Some(name.clone()),
                 _ => None,
@@ -633,9 +632,11 @@ pub(super) fn to_aexpr_impl(
             };
             return Ok((expr, name));
         },
-        Expr::DataTypeFunction(f) => super::datatype_fn_to_ir::datatype_fn_to_aexpr(f, ctx)?,
+        Expr::DataTypeFunction(f) => {
+            super::datatype_fn_to_ir::datatype_fn_to_aexpr(f.clone(), ctx)?
+        },
         Expr::RenameAlias { expr, function } => {
-            let (expr, name) = to_aexpr_impl(owned(expr), ctx)?;
+            let (expr, name) = to_aexpr_impl(expr, ctx)?;
             let name = function.call(&name)?;
             return Ok((expr, name));
         },
@@ -644,7 +645,7 @@ pub(super) fn to_aexpr_impl(
         Expr::PipeWithDtype { input, callback } => {
             let mut dtypes = Vec::with_capacity(input.len());
             for e in input.iter() {
-                let (node, _) = recurse!(e.clone())?;
+                let (node, _) = recurse!(e)?;
                 let dtype = ctx
                     .arena
                     .get(node)
@@ -652,7 +653,7 @@ pub(super) fn to_aexpr_impl(
                     .context("'pipe_with_dtype' failed to resolve its input dtype")?;
                 dtypes.push(dtype);
             }
-            return recurse!(callback.call((input, dtypes))?);
+            return recurse!(&callback.call((input.clone(), dtypes))?);
         },
         #[cfg(feature = "dtype-struct")]
         Expr::Field(name) => {
@@ -678,7 +679,7 @@ pub(super) fn to_aexpr_impl(
         },
         #[cfg(feature = "dtype-struct")]
         Expr::Path(path) => {
-            return recurse!(super::field_path::field_path_to_expr(&path, ctx)?);
+            return recurse!(&super::field_path::field_path_to_expr(path, ctx)?);
         },
 
         e @ Expr::SubPlan { .. } | e @ Expr::Selector(_) => {

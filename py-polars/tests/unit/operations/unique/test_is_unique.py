@@ -58,6 +58,12 @@ def test_is_unique_struct() -> None:
     ).is_duplicated().to_list() == [True, False, True]
 
 
+def test_is_unique_struct_outer_null_30599() -> None:
+    s = pl.Series("s", [{"a": None}, None, {"a": 1}])
+    assert s.is_unique().to_list() == [True, True, True]
+    assert s.is_duplicated().to_list() == [False, False, False]
+
+
 def test_is_unique_list() -> None:
     # Expression API (original issue)
     df = pl.DataFrame({"a": [[0, 1], [0, 1]]})

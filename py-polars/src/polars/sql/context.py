@@ -948,7 +948,11 @@ def _pyiceberg_catalog_class() -> type | None:
 
 def _drop_catalog_table(catalog: pyiceberg.catalog.Catalog, ddl: dict[str, Any]) -> str:
     """Drop the catalog table of a `DROP TABLE`, returning the response."""
-    from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
+    from pyiceberg.exceptions import (
+        BadRequestError,
+        NoSuchNamespaceError,
+        NoSuchTableError,
+    )
 
     identifier: tuple[str, ...] = tuple(ddl["identifier"])
     purge = ddl["purge"]
@@ -975,11 +979,23 @@ def _drop_catalog_table(catalog: pyiceberg.catalog.Catalog, ddl: dict[str, Any])
         msg = f"{missing} ({error}); catalog identifiers are case-sensitive"
         raise NoSuchTableError(msg) from error
     except Exception as error:
+        # a purge-only catalog may refuse a plain drop (400) before looking for it
+        refused = not purge and isinstance(error, BadRequestError)
+        if refused and not _table_exists(catalog, identifier):
+            if ddl["if_exists"]:
+                return response
+            msg = f"{missing} ({error}); catalog identifiers are case-sensitive"
+            raise NoSuchTableError(msg) from error
         # it may have dropped the table before failing (a purge deletes files last)
         error.add_note(
             f"dropping table '{ddl['name']}' failed: catalog table "
             f"'{_display_name(identifier)}' of catalog '{ddl['catalog']}'"
         )
+        if refused:
+            error.add_note(
+                "some catalogs drop tables only with `PURGE`, which also deletes "
+                "the data files"
+            )
         raise
     return response
 
@@ -1867,16 +1883,30 @@ def _drop_if_unchanged(
 ) -> bool:
     """Drop a table only if no other writer changed it since `metadata_location`.
 
-    Iceberg has no conditional drop: a write landing just before the drop is lost.
+    A drop refused as a bad request (400) is retried as a purge. Iceberg has no
+    conditional drop: a write landing just before the drop is lost.
     """
-    try:
+    from pyiceberg.exceptions import BadRequestError, NoSuchTableError
+
+    def unchanged() -> bool:
         current = catalog.load_table(identifier)
-        if (
-            current.metadata_location != metadata_location
-            or current.current_snapshot() is not None
-        ):
+        return (
+            current.metadata_location == metadata_location
+            and current.current_snapshot() is None
+        )
+
+    try:
+        if not unchanged():
             return False
-        catalog.drop_table(identifier)
+        try:
+            catalog.drop_table(identifier)
+        except BadRequestError:
+            # a catalog that drops only with a purge refuses a plain drop
+            if not unchanged():
+                return False
+            catalog.purge_table(identifier)
+    except NoSuchTableError:
+        return True
     except Exception:
         return False
     return True

@@ -340,7 +340,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 },
             };
             let predicate_ae = to_expr_ir(
-                predicate,
+                &predicate,
                 &mut ExprToIRContext::new_with_opt_eager(
                     ctxt.expr_arena,
                     &input_schema,
@@ -443,7 +443,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             }
 
             let eirs = to_expr_irs(
-                exprs,
+                &exprs,
                 &mut ExprToIRContext::new_with_opt_eager(
                     ctxt.expr_arena,
                     &input_schema,
@@ -870,7 +870,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             }
 
             let exprs = to_expr_irs(
-                exprs,
+                &exprs,
                 &mut ExprToIRContext::new_with_opt_eager(
                     ctxt.expr_arena,
                     &input_schema,
@@ -1298,7 +1298,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         |duplicate_name: &str| duplicate_name.to_string(),
                     )?);
                     let eirs = to_expr_irs(
-                        exprs,
+                        &exprs,
                         &mut ExprToIRContext::new_with_opt_eager(
                             ctxt.expr_arena,
                             &input_schema,
@@ -1365,7 +1365,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     }
 
                     let expr = to_expr_irs(
-                        expr,
+                        &expr,
                         &mut ExprToIRContext::new_with_opt_eager(
                             ctxt.expr_arena,
                             &input_schema,
@@ -1523,7 +1523,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             include_keys,
                             keys_pre_grouped,
                         } => {
-                            let keys = to_expr_irs(keys, expr_to_ir_cx)?;
+                            let keys = to_expr_irs(&keys, expr_to_ir_cx)?;
 
                             polars_ensure!(
                                 keys.iter().all(|e| is_elementwise_rec(e.node(), ctxt.expr_arena)),
@@ -1728,7 +1728,7 @@ fn resolve_with_columns(
     let mut output_names = PlIndexSet::with_capacity(exprs.len());
 
     let eirs = to_expr_irs(
-        exprs,
+        &exprs,
         &mut ExprToIRContext::new_with_opt_eager(expr_arena, &input_schema, opt_flags),
     )?;
     for eir in eirs.iter() {
@@ -1801,14 +1801,14 @@ fn resolve_group_by(
         let _ = keys.pop();
     }
     let keys = to_expr_irs(
-        keys,
+        &keys,
         &mut ExprToIRContext::new_with_opt_eager(expr_arena, input_schema, opt_flags),
     )?;
 
     // Add aggregation column(s)
     let aggs = rewrite_projections(aggs, &key_names, input_schema, opt_flags)?;
     let mut aggs = to_expr_irs(
-        aggs,
+        &aggs,
         &mut ExprToIRContext::new_with_opt_eager(expr_arena, input_schema, opt_flags),
     )?;
     utils::validate_expressions(&keys, expr_arena, input_schema, "group by")?;
