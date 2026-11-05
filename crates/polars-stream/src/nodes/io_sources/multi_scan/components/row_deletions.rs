@@ -41,7 +41,7 @@ pub enum DeletionFilesProvider {
         data_paths: Buffer<PlRefPath>,
         paths: Arc<PlIndexMap<usize, polars_plan::dsl::deletion::IcebergDeletes>>,
         // Amortized allocations
-        reader_builder: ParquetReaderBuilder,
+        reader_builder: Box<ParquetReaderBuilder>,
         projected_schema: SchemaRef,
         deletion_load_tasks: Arc<
             parking_lot::Mutex<
@@ -102,7 +102,7 @@ impl DeletionFilesProvider {
                 Ok(Self::Iceberg {
                     data_paths,
                     paths,
-                    reader_builder,
+                    reader_builder: Box::new(reader_builder),
                     projected_schema: Arc::new(Schema::from_iter([
                         (PlSmallStr::from_static("file_path"), DataType::String),
                         (PlSmallStr::from_static("pos"), DataType::Int64),

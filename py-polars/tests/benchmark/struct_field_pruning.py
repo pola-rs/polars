@@ -22,6 +22,7 @@ import argparse
 import os
 import statistics
 import time
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -149,7 +150,7 @@ def bench_plan(n_fields: int, repeat: int, tmp_dir: Path) -> None:
     pl.DataFrame(schema=schema).write_parquet(path)
 
     s = pl.col("s")
-    queries = {
+    queries: dict[str, Callable[[pl.LazyFrame], pl.LazyFrame]] = {
         "whole": lambda lf: lf.select(s),
         "3 fields": lambda lf: lf.select(
             s.struct.field("f0", "f17", f"f{n_fields - 1}")
@@ -163,17 +164,16 @@ def bench_plan(n_fields: int, repeat: int, tmp_dir: Path) -> None:
 
     print(f"plan time, struct of {n_fields} fields, repeat: {repeat}")
     print(f"{'query':>12} {'source':>10} {'pushdown s':>11} {'no pushdown s':>14}")
-    for source, make in [
-        ("parquet", lambda: pl.scan_parquet(path)),
-        ("in-memory", lambda: pl.DataFrame(schema=schema).lazy()),
-    ]:
+    sources: dict[str, Callable[[], pl.LazyFrame]] = {
+        "parquet": lambda: pl.scan_parquet(path),
+        "in-memory": lambda: pl.DataFrame(schema=schema).lazy(),
+    }
+    for source, make in sources.items():
         for name, query in queries.items():
             q = query(make())
             row = []
             for opts in [pl.QueryOptFlags(), NO_PUSHDOWN]:
-                t_min, _, _ = measure(
-                    lambda q=q, opts=opts: q.explain(optimizations=opts), repeat
-                )  # type: ignore[misc]
+                t_min, _, _ = measure(partial(q.explain, optimizations=opts), repeat)
                 row.append(t_min)
             print(f"{name:>12} {source:>10} {row[0]:>11.4f} {row[1]:>14.4f}")
 

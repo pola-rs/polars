@@ -388,18 +388,18 @@ mod tests {
 
         use FieldSelection as FS;
 
-        let ab = fields(&[("a", FS::All), ("b", fields(&[("x", FS::All)]))]);
-        let ba = fields(&[("b", fields(&[("x", FS::All)])), ("a", FS::All)]);
-        assert_eq!(ab, ba);
+        let forward = fields(&[("a", FS::All), ("b", fields(&[("x", FS::All)]))]);
+        let reversed = fields(&[("b", fields(&[("x", FS::All)])), ("a", FS::All)]);
+        assert_eq!(forward, reversed);
         let state = std::hash::RandomState::new();
-        assert_eq!(state.hash_one(&ab), state.hash_one(&ba));
+        assert_eq!(state.hash_one(&forward), state.hash_one(&reversed));
 
         let to_scan = |s: FieldSelection| ScanFieldSelection(s.fields().unwrap().clone());
-        let (ab, ba) = (to_scan(ab), to_scan(ba));
-        assert_eq!(ab, ba);
-        assert_eq!(state.hash_one(&ab), state.hash_one(&ba));
+        let (forward, reversed) = (to_scan(forward), to_scan(reversed));
+        assert_eq!(forward, reversed);
+        assert_eq!(state.hash_one(&forward), state.hash_one(&reversed));
         assert_ne!(
-            state.hash_one(&ab),
+            state.hash_one(&forward),
             state.hash_one(to_scan(fields(&[("a", FS::All), ("b", FS::All)])))
         );
     }
