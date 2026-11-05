@@ -106,6 +106,28 @@ def test_dtype_inference_from_invalid_string(value: str) -> None:
     assert inferred_dtype is None
 
 
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        # a quoted time zone isn't read: the values' own zone is used
+        ("Nullable(DateTime64(3, 'UTC'))", None),
+        ("Nullable(DateTime('Asia/Tokyo'))", None),
+        ("DateTime64(6, 'Europe/Amsterdam')", None),
+        ("Enum8('a' = 1, 'b' = 2)", None),
+        # wider than a Polars Decimal: the precision comes from the values
+        ("Nullable(Decimal(76, 10))", pl.Decimal),
+        ("DECIMAL(50,2)", pl.Decimal),
+        ("NUMERIC(50, 2)", pl.Decimal),
+    ],
+)
+def test_dtype_inference_falls_back_to_values(
+    value: str, expected: PolarsDataType | None
+) -> None:
+    dtype = dtype_from_database_typename(value=value, raise_unmatched=False)
+    # (`pl.Decimal == pl.Decimal(10, 2)`: compare the plain class exactly)
+    assert dtype is expected
+
+
 def test_infer_schema_length(tmp_sqlite_inference_db: Path) -> None:
     # note: first row of this test database contains only NULL values
     with closing(sqlite3.connect(tmp_sqlite_inference_db)) as conn:

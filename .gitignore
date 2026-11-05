@@ -75,3 +75,6 @@ tasks/
 
 # `polars_iceberg` I/O plugin: a clone or worktree of https://github.com/pola-rs/polars-iceberg.
 /crates/polars-iceberg
+
+# `polars_database` I/O plugin: a clone or worktree of https://github.com/pola-rs/polars-database.
+/crates/polars-database

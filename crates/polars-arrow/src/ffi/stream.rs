@@ -42,7 +42,7 @@ unsafe fn handle_error(iter: &mut ArrowArrayStream) -> PolarsError {
     }
 
     let error = unsafe { CStr::from_ptr(error) };
-    polars_err!(ComputeError: "got external error: {}", error.to_str().unwrap())
+    polars_err!(ComputeError: "got external error: {}", error.to_string_lossy())
 }
 
 /// Implements an iterator of [`Array`] consumed from the [C stream interface](https://arrow.apache.org/docs/format/CStreamInterface.html).
@@ -154,7 +154,10 @@ unsafe extern "C" fn get_next(iter: *mut ArrowArrayStream, array: *mut ArrowArra
             0
         },
         Some(Err(err)) => {
-            private.error = Some(CString::new(err.to_string().as_bytes().to_vec()).unwrap());
+            // A NUL would end the C string: without it, `CString::new` can't fail (and a panic
+            // here can't unwind out of this `extern "C"` function).
+            let message = err.to_string().replace('\0', "\\0");
+            private.error = Some(CString::new(message).unwrap());
             2001 // custom application specific error (since this is never a result of this interface)
         },
         None => {

@@ -509,3 +509,16 @@ def test_streaming_int_range_over_length(
 
     expected = pl.DataFrame({"literal": range(height)}, schema={"literal": dtype})
     assert_frame_equal(q.collect(), expected)
+
+
+def test_streaming_error_does_not_panic_on_teardown(tmp_path: Path, capfd: Any) -> None:
+    # Leaving the task scope at the first error used to cancel a task while a
+    # sibling was joining it: "joined on cancelled task", printed by the panic
+    # hook (caught, the right error was still raised).
+    path = tmp_path / "bad.csv"
+    path.write_text("a\n" + "1\n" * 200_000 + "x\n" + "1\n" * 200_000)
+    lf = pl.scan_csv(path, schema={"a": pl.Int64}).select(pl.col("a").sum())
+    for _ in range(50):
+        with pytest.raises(pl.exceptions.PolarsError):
+            lf.collect(engine="streaming")
+    assert "panicked" not in capfd.readouterr().err

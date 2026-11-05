@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from importlib import import_module
 from typing import TYPE_CHECKING, Any
+from urllib.parse import unquote, urlsplit
 
 from polars._dependencies import _PYARROW_AVAILABLE, import_optional
 from polars._utils.various import parse_version
@@ -75,6 +76,50 @@ def _read_sql_connectorx(
     return DataFrame(tbl, schema_overrides=schema_overrides)  # type: ignore[return-value]
 
 
+# a driver name, as found in a manifest; never a path, manifest or library to load
+_ADBC_DRIVER_NAME = re.compile(r"[a-z0-9_]+")
+
+
+def _find_installed_adbc_driver(driver_name: str) -> tuple[str, str | None] | None:
+    """
+    Find an ADBC driver that isn't a pip package (e.g. installed with `dbc`).
+
+    Searches ADBC driver manifests the same way `scan_database` does:
+    `ADBC_DRIVER_PATH`, the virtual environment, then the user and system
+    configuration directories. Only bare driver names are looked up: the name
+    comes from the URI's scheme, and `find_adbc_driver` would also load a path,
+    a manifest or a library named by it.
+    """
+    if not _ADBC_DRIVER_NAME.fullmatch(driver_name):
+        return None
+    try:
+        from polars_database import find_adbc_driver
+    except ImportError as e:
+        if e.name != "polars_database":
+            raise
+        return None
+    return find_adbc_driver(driver_name)
+
+
+def _find_installed_adbc_driver_for(
+    driver_name: str, err: ModuleNotFoundError
+) -> tuple[str, str | None] | None:
+    """
+    `_find_installed_adbc_driver`, as the fallback for a missing driver package.
+
+    A `polars-database` that fails to load (or to search) does not replace the
+    original "driver not detected" error `err`: its error is added to it as a note.
+    """
+    try:
+        return _find_installed_adbc_driver(driver_name)
+    except Exception as e:
+        err.add_note(
+            "(polars-database, which finds ADBC drivers installed with `dbc`, "
+            f"failed: {type(e).__name__}: {e})"
+        )
+        return None
+
+
 def _read_sql_adbc(
     query: str,
     connection_uri: str,
@@ -83,7 +128,15 @@ def _read_sql_adbc(
 ) -> DataFrame:
     module_name = _get_adbc_module_name_from_uri(connection_uri)
     # import the driver first, to ensure a good error message if not installed
-    _import_optional_adbc_driver(module_name, dbapi_submodule=False)
+    try:
+        _import_optional_adbc_driver(module_name, dbapi_submodule=False)
+    except ModuleUpgradeRequiredError:
+        raise
+    except ModuleNotFoundError as err:
+        # not a pip package; it may still be installed as a manifest (e.g. with `dbc`)
+        driver_name = _get_adbc_driver_name_from_uri(connection_uri)
+        if _find_installed_adbc_driver_for(driver_name, err) is None:
+            raise
     adbc_driver_manager = import_optional("adbc_driver_manager")
     adbc_str_version = getattr(adbc_driver_manager, "__version__", "0.0")
     adbc_version = parse_version(adbc_str_version)
@@ -181,13 +234,61 @@ def _import_optional_adbc_driver(
 def _open_adbc_connection(connection_uri: str) -> Any:
     driver_name = _get_adbc_driver_name_from_uri(connection_uri)
     module_name = _get_adbc_module_name_from_uri(connection_uri)
-    adbc_driver = _import_optional_adbc_driver(module_name)
 
     # some backends require the driver name to be stripped from the URI
     if driver_name in ("duckdb", "snowflake", "sqlite"):
         connection_uri = re.sub(f"^{driver_name}:/{{,3}}", "", connection_uri)
 
+    try:
+        adbc_driver = _import_optional_adbc_driver(module_name)
+    except ModuleUpgradeRequiredError:
+        raise
+    except ModuleNotFoundError as err:
+        if (found := _find_installed_adbc_driver_for(driver_name, err)) is None:
+            raise
+        # load the driver library through the generic driver manager
+        dbapi = import_module("adbc_driver_manager.dbapi")
+        library, entrypoint = found
+        return dbapi.connect(
+            driver=library,
+            entrypoint=entrypoint,
+            db_kwargs=_adbc_db_kwargs(driver_name, connection_uri),
+        )
+
     return adbc_driver.connect(connection_uri)
+
+
+def _adbc_db_kwargs(driver_name: str, connection_uri: str) -> dict[str, str]:
+    """
+    Database options for a driver loaded through the generic driver manager.
+
+    Mirrors what the driver's own Python package (and `scan_database`) passes: DuckDB
+    takes a `path`, and ClickHouse its HTTP endpoint, with the credentials as options.
+    """
+    if driver_name == "duckdb":
+        # (the scheme is already stripped)
+        path, _, _ = connection_uri.partition("?")
+        return {"path": unquote(path) or ":memory:"}
+    if driver_name == "clickhouse" and "://" in connection_uri:
+        parts = urlsplit(connection_uri)
+        kvs = [kv for kv in parts.query.split("&") if kv]
+        secure = parts.scheme.lower().endswith("s") or any(
+            kv.lower() in ("secure=true", "secure=1") for kv in kvs
+        )
+        query = [kv for kv in kvs if not kv.lower().startswith("secure=")]
+        if database := parts.path.strip("/"):
+            query.insert(0, f"database={database}")
+        host = parts.netloc.rpartition("@")[2]
+        uri = f"{'https' if secure else 'http'}://{host}"
+        if query:
+            uri += "/?" + "&".join(query)
+        kwargs = {"uri": uri}
+        if parts.username is not None:
+            kwargs["username"] = unquote(parts.username)
+        if parts.password is not None:
+            kwargs["password"] = unquote(parts.password)
+        return kwargs
+    return {"uri": connection_uri}
 
 
 def _is_adbc_snowflake_conn(conn: Any) -> bool:

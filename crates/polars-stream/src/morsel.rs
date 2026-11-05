@@ -54,7 +54,13 @@ impl MorselSeq {
 /// to stop with passing new morsels this execution phase.
 #[derive(Clone, Debug)]
 pub struct SourceToken {
-    stop: Arc<RelaxedCell<bool>>,
+    inner: Arc<SourceTokenInner>,
+}
+
+#[derive(Debug, Default)]
+struct SourceTokenInner {
+    stop: RelaxedCell<bool>,
+    stop_notify: tokio::sync::Notify,
 }
 
 impl Default for SourceToken {
@@ -66,16 +72,28 @@ impl Default for SourceToken {
 impl SourceToken {
     pub fn new() -> Self {
         Self {
-            stop: Arc::default(),
+            inner: Arc::default(),
         }
     }
 
     pub fn stop(&self) {
-        self.stop.store(true);
+        if !self.inner.stop.load() {
+            self.inner.stop.store(true);
+            self.inner.stop_notify.notify_waiters();
+        }
     }
 
     pub fn stop_requested(&self) -> bool {
-        self.stop.load()
+        self.inner.stop.load()
+    }
+
+    /// Resolves once a stop is requested, for a source that waits for its input.
+    pub async fn stop_requested_wait(&self) {
+        // Created before the check, the future sees any later `notify_waiters`.
+        let notified = self.inner.stop_notify.notified();
+        if !self.stop_requested() {
+            notified.await;
+        }
     }
 }
 

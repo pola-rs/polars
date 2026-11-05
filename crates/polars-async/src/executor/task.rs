@@ -229,14 +229,21 @@ where
     fn poll_join(&self, cx: &mut Context<'_>) -> Poll<F::Output> {
         self.join_waker.register(cx.waker());
         if let Some(mut data) = self.data.try_lock() {
-            if matches!(*data, TaskData::Empty | TaskData::Polling(..)) {
+            // A task is only cancelled when its scope is torn down (or its AbortOnDropHandle,
+            // the only way to join it, is dropped). A joiner still polling it is a sibling in
+            // that scope, mid-poll on another thread, and is cancelled next: stay pending
+            // rather than panic, which would print through the panic hook although the panic
+            // is caught and its result discarded.
+            if matches!(
+                *data,
+                TaskData::Empty | TaskData::Polling(..) | TaskData::Cancelled
+            ) {
                 return Poll::Pending;
             }
 
             match core::mem::replace(&mut *data, TaskData::Joined) {
                 TaskData::Ready(output) => Poll::Ready(output),
                 TaskData::Panic(error) => resume_unwind(error),
-                TaskData::Cancelled => panic!("joined on cancelled task"),
                 _ => unreachable!("invalid TaskData when joining"),
             }
         } else {

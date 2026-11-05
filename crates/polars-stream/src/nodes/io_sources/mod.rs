@@ -3,6 +3,8 @@ pub mod multi_scan;
 pub mod batch;
 #[cfg(feature = "csv")]
 pub mod csv;
+#[cfg(feature = "io_plugin_ffi")]
+pub mod external_ffi;
 #[cfg(feature = "python")]
 pub mod external_python;
 #[cfg(feature = "ipc")]
