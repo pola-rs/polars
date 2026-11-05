@@ -3048,6 +3048,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         snapshot_properties: dict[str, str] | None = None,
         catalog: pyiceberg.catalog.Catalog
         | polars.io.iceberg.IcebergCatalogConfig
+        | str
         | None = None,
         storage_options: StorageOptionsDict | None = None,
         compression: ParquetCompression = "zstd",
@@ -3139,6 +3140,19 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         catalog
             PyIceberg catalog to load the table from if the provided `target`
             was a table identifier.
+
+            This can also be a catalog name, which is kept in the query plan and
+            resolved by the resolver set with
+            :meth:`Config.set_iceberg_catalog_resolver` (by default,
+            `pyiceberg.catalog.load_catalog(name)`) in each process that loads the
+            table, including the one that commits. With `create_if_not_exists` or
+            `schema_mode`, the schema of the LazyFrame is read when the sink is
+            set up, so catalog names in the LazyFrame's own scans are resolved
+            then, in the calling process.
+
+            .. warning::
+                Passing a catalog name is considered **unstable**. It may be
+                changed at any point without it being considered a breaking change.
         storage_options
             Extra options for the storage backends supported by `pyiceberg`.
             For cloud storages, this may include configurations for authentication etc.

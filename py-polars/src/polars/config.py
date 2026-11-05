@@ -15,7 +15,7 @@ from polars._utils.monitoring import (
     activate_monitoring,
 )
 from polars._utils.unstable import unstable
-from polars._utils.various import normalize_filepath
+from polars._utils.various import normalize_filepath, qualified_type_name
 from polars.lazyframe.engine import Engine
 from polars.lazyframe.engine_config import (
     SUPPORTED_ENGINE_NAMES,
@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from polars.io.cloud.credential_provider._providers import (
         CredentialProviderFunction,
     )
+    from polars.io.iceberg._catalog_resolver import IcebergCatalogResolver
 
 
 __all__ = ["Config"]
@@ -112,6 +113,18 @@ def _set_default_credential_provider(provider: Any) -> None:
     builder.DEFAULT_CREDENTIAL_PROVIDER = provider
 
 
+def _get_iceberg_catalog_resolver() -> Any:
+    import polars.io.iceberg._catalog_resolver as catalog_resolver
+
+    return catalog_resolver.ICEBERG_CATALOG_RESOLVER
+
+
+def _set_iceberg_catalog_resolver(resolver: Any) -> None:
+    import polars.io.iceberg._catalog_resolver as catalog_resolver
+
+    catalog_resolver.ICEBERG_CATALOG_RESOLVER = resolver
+
+
 # Python-object options cannot be stored in environment variables or `Config.save`.
 # Register them here so contexts and resets handle them like other options.
 _POLARS_CFG_RUNTIME_VARS: Final[
@@ -126,6 +139,11 @@ _POLARS_CFG_RUNTIME_VARS: Final[
         _get_default_credential_provider,
         _set_default_credential_provider,
         "auto",
+    ),
+    "set_iceberg_catalog_resolver": (
+        _get_iceberg_catalog_resolver,
+        _set_iceberg_catalog_resolver,
+        None,
     ),
 }
 
@@ -169,6 +187,7 @@ class ConfigParameters(TypedDict, total=False):
     expr_depth_warning: int
     engine_affinity: EngineType | None
     default_credential_provider: CredentialProviderFunction | Literal["auto"] | None
+    iceberg_catalog_resolver: IcebergCatalogResolver | None
     enable_monitoring: bool | None
 
     set_ascii_tables: bool | None
@@ -195,6 +214,7 @@ class ConfigParameters(TypedDict, total=False):
     set_verbose: bool | None
     set_expr_depth_warning: int
     set_engine_affinity: EngineType | None
+    set_iceberg_catalog_resolver: IcebergCatalogResolver | None
 
 
 class _Meta(type):
@@ -1726,6 +1746,60 @@ class Config(contextlib.ContextDecorator, metaclass=_Meta):
             raise ValueError(credential_provider)
 
         _set_default_credential_provider(credential_provider)
+
+        return cls
+
+    @classmethod
+    def set_iceberg_catalog_resolver(
+        cls, resolver: IcebergCatalogResolver | None
+    ) -> type[Config]:
+        """
+        Set the function that turns an Iceberg catalog name into a catalog.
+
+        A catalog name passed as `catalog` to :func:`scan_iceberg` and
+        :meth:`LazyFrame.sink_iceberg`, or registered with
+        :meth:`SQLContext.register_catalog`, is kept in the query plan as a name. It
+        is resolved with the resolver that is set where the plan runs, which may be
+        another process than the one that built the plan.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        resolver
+            A function taking a catalog name and returning a PyIceberg catalog.
+            Errors it raises reach the user unchanged, with a note naming the
+            catalog. `None` restores the default
+            resolver, `pyiceberg.catalog.load_catalog(name)`, which reads the
+            catalog's configuration from `.pyiceberg.yaml` or `PYICEBERG_CATALOG__*`
+            environment variables.
+
+        Notes
+        -----
+        Polars may call the resolver in any process that runs part of a query, at
+        any time while building or running it, from several threads at once, and
+        more than once for the same name. Polars does not cache catalogs by name,
+        and never serializes a resolved catalog: caching, and refreshing expiring
+        credentials, are up to the resolver.
+
+        Examples
+        --------
+        >>> from pyiceberg.catalog.sql import SqlCatalog  # doctest: +SKIP
+        >>> catalogs = {"sales": SqlCatalog("sales", uri=uri)}  # doctest: +SKIP
+        >>> resolver = catalogs.__getitem__  # doctest: +SKIP
+        >>> pl.Config.set_iceberg_catalog_resolver(resolver)  # doctest: +SKIP
+        >>> pl.scan_iceberg("orders.daily", catalog="sales")  # doctest: +SKIP
+        """
+        if resolver is not None and not callable(resolver):
+            msg = (
+                "the Iceberg catalog resolver must be callable or None; found "
+                f"{qualified_type_name(resolver)!r}"
+            )
+            raise TypeError(msg)
+
+        _set_iceberg_catalog_resolver(resolver)
 
         return cls
 

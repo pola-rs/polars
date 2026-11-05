@@ -110,11 +110,12 @@ class SQLContext(Generic[FrameType]):
     _tables_scope_stack: list[set[str]]
     # Attached catalogs and the default catalog on scope entry.
     _catalogs_scope_stack: list[tuple[set[str], str | None]]
-    # Attached catalogs by name: config, instance (if known) and storage options.
+    # Attached catalogs by name: config (or the catalog name to resolve), instance
+    # (if known) and storage options.
     _catalogs: dict[
         str,
         tuple[
-            IcebergCatalogConfig,
+            IcebergCatalogConfig | str,
             pyiceberg.catalog.Catalog | None,
             StorageOptionsDict | None,
         ],
@@ -472,7 +473,17 @@ class SQLContext(Generic[FrameType]):
             res = wrap_ldf(self._ctxt.execute(query))
         return res.collect() if eager or self._eager_execution else res
 
-    def _execute_with_catalogs(self, query: str) -> PyLazyFrame:
+    def _execute_with_catalogs(
+        self,
+        query: str,
+        resolved: dict[str, pyiceberg.catalog.Catalog] | None = None,
+    ) -> PyLazyFrame:
+        """
+        Execute `query` with its catalog tables scanned.
+
+        `resolved` holds catalogs already resolved by name for this execution, so
+        that the query of a catalog statement does not resolve them again.
+        """
         from polars.io.iceberg.functions import _scan_catalog_table
 
         if (stmt := self._ctxt.catalog_statement(query)) is not None:
@@ -482,6 +493,8 @@ class SQLContext(Generic[FrameType]):
         identifier: list[str]
         for catalog_name, identifier in self._ctxt.catalog_tables(query):
             config, instance, storage_options = self._catalogs[catalog_name]
+            if instance is None and resolved is not None:
+                instance = resolved.get(catalog_name)
             full_name = [catalog_name, *identifier]
             lf = _scan_catalog_table(
                 tuple(identifier),
@@ -495,19 +508,18 @@ class SQLContext(Generic[FrameType]):
 
     def _execute_catalog_statement(self, stmt: dict[str, Any], query: str) -> LazyFrame:
         """Perform the statement of `query` that `catalog_statement` returned."""
+        from polars.io.iceberg._catalog_resolver import catalog_from
+
         config, instance, storage_options = self._catalogs[stmt["catalog"]]
-        catalog = (
-            instance
-            if instance is not None
-            else config.class_(config.name, **config.properties)
-        )
+        catalog = instance if instance is not None else catalog_from(config)
+        resolved = {stmt["catalog"]: catalog} if isinstance(config, str) else None
         if stmt["kind"] == "drop_table":
             response = _drop_catalog_table(catalog, stmt)
         elif stmt["kind"] == "create_table":
             response = _create_catalog_table(
                 catalog,
                 stmt,
-                lambda query: wrap_ldf(self._execute_with_catalogs(query)),
+                lambda query: wrap_ldf(self._execute_with_catalogs(query, resolved)),
                 storage_options,
             )
         elif stmt["kind"] == "create_schema":
@@ -520,7 +532,7 @@ class SQLContext(Generic[FrameType]):
             response = _insert_catalog_table(
                 catalog,
                 stmt,
-                lambda query: wrap_ldf(self._execute_with_catalogs(query)),
+                lambda query: wrap_ldf(self._execute_with_catalogs(query, resolved)),
                 storage_options,
             )
         elif stmt["kind"] == "truncate":
@@ -543,7 +555,7 @@ class SQLContext(Generic[FrameType]):
     def register_catalog(
         self,
         name: str,
-        catalog: pyiceberg.catalog.Catalog | IcebergCatalogConfig,
+        catalog: pyiceberg.catalog.Catalog | IcebergCatalogConfig | str | None = None,
         *,
         default_namespace: str | Sequence[str] | None = None,
         default: bool = False,
@@ -577,7 +589,8 @@ class SQLContext(Generic[FrameType]):
             catalog stays the default if it was (see `default`). A name that
             differs from an attached catalog's only in case is an error.
         catalog
-            A PyIceberg catalog, or an `IcebergCatalogConfig`.
+            A PyIceberg catalog, an `IcebergCatalogConfig`, or a catalog name.
+            Omitted, it is `name`.
         default_namespace
             The namespace of table names without one: a string (split on ".") or a
             sequence of namespace parts.
@@ -663,22 +676,32 @@ class SQLContext(Generic[FrameType]):
         >>> ctx.execute("DROP TABLE big_orders")  # doctest: +SKIP
         """
         from polars.io.iceberg import IcebergCatalogConfig
+        from polars.io.iceberg._catalog_resolver import check_catalog_name
 
         issue_unstable_warning("`SQLContext.register_catalog` is considered unstable.")
-        pyiceberg_catalog = _pyiceberg_catalog_class()
-        if not isinstance(catalog, IcebergCatalogConfig) and not (
-            pyiceberg_catalog is not None and isinstance(catalog, pyiceberg_catalog)
-        ):
-            msg = (
-                "`register_catalog` takes a PyIceberg catalog or an "
-                f"`IcebergCatalogConfig`; found {qualified_type_name(catalog)!r}"
+        if catalog is None:
+            catalog = name
+
+        config: IcebergCatalogConfig | str
+        instance: pyiceberg.catalog.Catalog | None
+        if isinstance(catalog, str):
+            config, instance = check_catalog_name(catalog), None
+        else:
+            pyiceberg_catalog = _pyiceberg_catalog_class()
+            if not isinstance(catalog, IcebergCatalogConfig) and not (
+                pyiceberg_catalog is not None and isinstance(catalog, pyiceberg_catalog)
+            ):
+                msg = (
+                    "`register_catalog` takes a PyIceberg catalog, an "
+                    "`IcebergCatalogConfig` or a catalog name; found "
+                    f"{qualified_type_name(catalog)!r}"
+                )
+                raise TypeError(msg)
+            config, instance = (
+                IcebergCatalogConfig._from_api_parameter_or_environment_default(
+                    catalog, fn_name="register_catalog"
+                )
             )
-            raise TypeError(msg)
-        config, instance = (
-            IcebergCatalogConfig._from_api_parameter_or_environment_default(
-                catalog, fn_name="register_catalog"
-            )
-        )
         self._ctxt.register_catalog(name, _namespace_parts(default_namespace), default)
         self._catalogs[name] = (config, instance, storage_options)
         return self

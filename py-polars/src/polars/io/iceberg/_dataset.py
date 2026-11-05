@@ -19,6 +19,7 @@ from polars.io.iceberg._cache import (
     get_metadata_file_cache,
     load_static_table,
 )
+from polars.io.iceberg._catalog_resolver import catalog_from
 from polars.io.iceberg._plugin import (
     plugin_planner_required,
     plugin_scan,
@@ -67,7 +68,9 @@ class IcebergScanTableSerializer(IcebergTableSerializer):
 @dataclass(kw_only=True)
 class IcebergCatalogTableDescriptor:
     table_identifier: str | pyiceberg.typedef.Identifier
-    catalog_config: IcebergCatalogConfig
+    # A catalog name is resolved with the current resolver wherever the table is
+    # loaded, so nothing resolved is pickled.
+    catalog_config: IcebergCatalogConfig | str
     # Used for table loads when set; `catalog_config` is the fallback after
     # unpickling, and for descriptors pickled without this field.
     catalog_: NoPickleOption[pyiceberg.catalog.Catalog] | None = None
@@ -144,12 +147,17 @@ class IcebergTableWrap:
         """Fetch the PyIceberg Table object."""
         if self.table_.get() is None:
             if verbose():
+                descriptor = self.table_descriptor_
                 from_ = (
                     "catalog table descriptor: "
-                    f"{self.table_descriptor_.table_identifier = }, "
-                    f"{self.table_descriptor_.catalog_config.class_ = }"
-                    if isinstance(self.table_descriptor_, IcebergCatalogTableDescriptor)
-                    else f"metadata path: {self.table_descriptor_}"
+                    f"{descriptor.table_identifier = }, "
+                    + (
+                        f"catalog name {descriptor.catalog_config!r}"
+                        if isinstance(descriptor.catalog_config, str)
+                        else f"{descriptor.catalog_config.class_ = }"
+                    )
+                    if isinstance(descriptor, IcebergCatalogTableDescriptor)
+                    else f"metadata path: {descriptor}"
                 )
 
                 eprint(f"IcebergTableWrap: construct table from {from_}")
@@ -161,10 +169,7 @@ class IcebergTableWrap:
                 catalog = catalog_.get() if catalog_ is not None else None
 
                 if catalog is None:
-                    catalog = self.table_descriptor_.catalog_config.class_(
-                        self.table_descriptor_.catalog_config.name,
-                        **self.table_descriptor_.catalog_config.properties,
-                    )
+                    catalog = catalog_from(self.table_descriptor_.catalog_config)
                 elif verbose():
                     eprint("IcebergTableWrap: reuse catalog instance")
 

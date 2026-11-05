@@ -18,6 +18,7 @@ Config options
     Config.set_fmt_float
     Config.set_fmt_str_lengths
     Config.set_fmt_table_cell_list_len
+    Config.set_iceberg_catalog_resolver
     Config.set_streaming_chunk_size
     Config.set_tbl_cell_alignment
     Config.set_tbl_cell_numeric_alignment
