@@ -182,6 +182,7 @@ module = [
   "polars._plr",
   "polars_cloud",
   "polars_database",
+  "polars_nanook",
   "polars_iceberg",
   "psycopg",
   "pyarrow.*",

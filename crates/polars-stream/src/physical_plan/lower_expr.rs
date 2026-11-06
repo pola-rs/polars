@@ -91,35 +91,6 @@ impl<'a> From<&LowerExprContext<'a>> for StreamingLowerIRContext<'a> {
     }
 }
 
-pub(crate) fn is_fake_elementwise_function(expr: &AExpr, arena: &Arena<AExpr>) -> bool {
-    // The in-memory engine treats ApplyList as elementwise but this is not actually
-    // the case. It doesn't cause any problems for the in-memory engine because of
-    // how it does the execution but it causes errors for new-streaming.
-
-    // Some other functions are also marked as elementwise for filter pushdown
-    // but aren't actually elementwise (e.g. arguments aren't same length).
-    match expr {
-        AExpr::Function {
-            function, input, ..
-        } => {
-            use IRFunctionExpr as F;
-            match function {
-                #[cfg(feature = "is_in")]
-                F::Boolean(IRBooleanFunction::IsIn { .. }) => {
-                    !is_single_literal_ae(input[1].node(), arena)
-                },
-                #[cfg(feature = "replace")]
-                F::Replace | F::ReplaceStrict { .. } => {
-                    !(is_single_literal_ae(input[1].node(), arena)
-                        && is_single_literal_ae(input[2].node(), arena))
-                },
-                _ => false,
-            }
-        },
-        _ => false,
-    }
-}
-
 pub(crate) fn is_elementwise_rec_cached(
     expr_key: ExprNodeKey,
     arena: &Arena<AExpr>,

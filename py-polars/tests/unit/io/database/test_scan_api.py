@@ -572,6 +572,9 @@ def test_count_of_a_slice_of_a_source_beyond_idxsize(
 
 def test_object_dtype_is_refused(uri: str) -> None:
     # read as Binary, silently
-    for kwargs in [{"schema_overrides": {"s": pl.Object}}, {"schema": {"s": pl.Object}}]:
+    for kwargs in [
+        {"schema_overrides": {"s": pl.Object}},
+        {"schema": {"s": pl.Object}},
+    ]:
         with pytest.raises(TypeError, match="column 's' can't be read as"):
             pl.scan_database("t", uri, **kwargs)  # type: ignore[arg-type]

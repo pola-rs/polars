@@ -15,7 +15,7 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars._typing import JoinStrategy, PolarsIntegerType
+    from polars._typing import EngineType, JoinStrategy, PolarsIntegerType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -524,10 +524,10 @@ def test_streaming_error_does_not_panic_on_teardown(tmp_path: Path, capfd: Any) 
     assert "panicked" not in capfd.readouterr().err
 
 
-def test_streaming_row_index_overflow_is_an_error() -> None:
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+def test_streaming_row_index_overflow_is_an_error(engine: EngineType) -> None:
     # panicked in the streaming engine; the in-memory engine raised
     offset = 2**32 - 2 if pl.get_index_type() == pl.UInt32 else 2**64 - 2
     lf = pl.LazyFrame({"a": [1, 2, 3]}).with_row_index(offset=offset)
-    for engine in ["streaming", "in-memory"]:
-        with pytest.raises(pl.exceptions.ComputeError, match="overflows"):
-            lf.collect(engine=engine)  # type: ignore[arg-type]
+    with pytest.raises(pl.exceptions.ComputeError, match="overflows"):
+        lf.collect(engine=engine)

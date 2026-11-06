@@ -1,6 +1,7 @@
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_expression_hash_set() -> None:
@@ -45,3 +46,44 @@ def test_meta_properties() -> None:
     assert not e.meta.is_length_preserving()
     assert e.meta.is_row_separable()
     assert not e.meta.is_scalar()
+
+
+a, b, c = pl.col("a"), pl.col("b"), pl.col("c")
+
+
+@pytest.mark.parametrize(
+    ("expr", "row_separable"),
+    [
+        (a.filter(a > 1) * 2, True),
+        ((a + b).filter(b > 1), True),
+        (a.filter(a > 1).is_in([1, 2]), True),
+        (pl.when(a.filter(a > 1) > 2).then(1).otherwise(0), True),
+        (pl.lit(1).filter(a > 1), True),
+        (a.sum() + 1, False),
+        (a.filter(a > 1) + b.filter(b > 1), False),
+        (a.drop_nulls() + b, False),
+        (a.filter(b.filter(b > 1) > 1), False),
+        (pl.struct(x=a.drop_nulls(), y=b.drop_nulls()), False),
+        (pl.lit([1, 2]).explode(), False),
+        (pl.lit(1).drop_nulls(), False),
+        (pl.lit([1, 2]).list.eval(pl.element()).explode(), False),
+        (pl.lit([1, 2]).list.eval(pl.len()).explode(), False),
+        (
+            pl.lit(1)
+            .map_batches(lambda s: s, is_elementwise=True, return_dtype=pl.Int32)
+            .drop_nulls(),
+            False,
+        ),
+        (pl.lit(1).is_in(pl.Series([[1, 2]])).drop_nulls(), False),
+        (a.is_in(pl.Series([[1], [2], [3], [4]])), False),
+        (a.is_in(b), False),
+        (a.replace(b, c), False),
+    ],
+)
+def test_meta_is_row_separable(expr: pl.Expr, row_separable: bool) -> None:
+    assert expr.meta.is_row_separable() == row_separable
+
+    if row_separable:
+        df = pl.DataFrame({"a": [0, 1, 2, 3, None, 5], "b": [3, 2, None, 0, 5, 4]})
+        batches = pl.concat([df[:2].select(expr), df[2:].select(expr)])
+        assert_frame_equal(batches, df.select(expr))

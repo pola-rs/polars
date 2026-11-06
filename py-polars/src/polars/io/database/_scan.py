@@ -58,7 +58,15 @@ def _connection_kind(connection: Any) -> tuple[str, Any]:
             raise TypeError(msg)
         # a URL is a URI with a driver pin
         if hasattr(connection, "render_as_string"):
-            return "uri", connection.render_as_string(hide_password=False)
+            uri = connection.render_as_string(hide_password=False)
+            if getattr(connection, "username", None) is not None:
+                # SQLAlchemy leaves a space in the userinfo unencoded (`@`, `:`, `/`
+                # are encoded), which libpq rejects
+                scheme, sep, rest = uri.partition("://")
+                userinfo, at, tail = rest.partition("@")
+                if at:
+                    uri = f"{scheme}{sep}{userinfo.replace(' ', '%20')}{at}{tail}"
+            return "uri", uri
         # an Engine connects through its own pool, creator and connect_args
         if hasattr(connection, "url") and callable(
             getattr(connection, "connect", None)

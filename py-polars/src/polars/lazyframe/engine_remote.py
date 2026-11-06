@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
     from pathlib import Path
 
-    import polars_cloud as pc
+    import polars_nanook as pc
 
     from polars._typing import (
         ArrowSchemaExportable,
