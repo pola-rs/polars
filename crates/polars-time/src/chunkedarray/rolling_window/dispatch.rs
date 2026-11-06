@@ -2,18 +2,20 @@ use std::borrow::Cow;
 
 #[cfg(feature = "dtype-f16")]
 use num_traits::real::Real;
+use polars_arrow::temporal_conversions::MICROSECONDS_IN_DAY;
 use polars_arrow::types::NativeType;
 use polars_compute::rolling::no_nulls::RollingAggWindowNoNulls;
 use polars_compute::rolling::nulls::RollingAggWindowNulls;
-use polars_compute::rolling::{MeanWindow, SumWindow, no_nulls, nulls};
+use polars_compute::rolling::{ExactMeanWindow, MeanWindow, SumWindow, no_nulls, nulls};
 use polars_core::{with_match_physical_float_polars_type, with_match_physical_numeric_polars_type};
 use polars_defs::time::duration::ensure_duration_matches_dtype;
 use polars_defs::time::group_by::ClosedWindow;
 use polars_ops::series::SeriesMethods;
-use polars_utils::float::IsFloat;
 
 use super::*;
 use crate::series::AsSeries;
+
+const US_IN_DAY: i128 = MICROSECONDS_IN_DAY as i128;
 
 #[cfg(feature = "rolling_window")]
 #[allow(clippy::type_complexity)]
@@ -80,7 +82,7 @@ fn rolling_agg_by<T, Out, NoNullsAgg, NullsAgg>(
 ) -> PolarsResult<Series>
 where
     T: PolarsNumericType,
-    T::Native: NativeType + IsFloat,
+    T::Native: NativeType,
     Out: NativeType,
     NoNullsAgg: RollingAggWindowNoNulls<T::Native, Out>,
     NullsAgg: RollingAggWindowNulls<T::Native, Out>,
@@ -253,6 +255,67 @@ pub trait SeriesOpsTime: AsSeries {
             )
         })
     }
+    /// Apply an exact rolling mean to temporal physical values.
+    #[cfg(feature = "rolling_window_by")]
+    fn rolling_mean_temporal_by(
+        &self,
+        by: &Series,
+        options: RollingOptionsDynamicWindow,
+        floor: bool,
+        date: bool,
+    ) -> PolarsResult<Series> {
+        let ca = self.as_series().i64()?;
+        if date {
+            rolling_agg_by::<
+                Int64Type,
+                i64,
+                ExactMeanWindow<true, US_IN_DAY>,
+                ExactMeanWindow<true, US_IN_DAY>,
+            >(ca, by, options)
+        } else if floor {
+            rolling_agg_by::<Int64Type, i64, ExactMeanWindow<true, 1>, ExactMeanWindow<true, 1>>(
+                ca, by, options,
+            )
+        } else {
+            rolling_agg_by::<Int64Type, i64, ExactMeanWindow<false, 1>, ExactMeanWindow<false, 1>>(
+                ca, by, options,
+            )
+        }
+    }
+
+    /// Apply an exact rolling mean to temporal physical values.
+    #[cfg(feature = "rolling_window")]
+    fn rolling_mean_temporal(
+        &self,
+        options: RollingOptionsFixedWindow,
+        floor: bool,
+        date: bool,
+    ) -> PolarsResult<Series> {
+        let ca = self.as_series().i64()?;
+        if date {
+            rolling_agg(
+                ca,
+                options,
+                &rolling::no_nulls::rolling_mean_exact::<true, US_IN_DAY>,
+                &rolling::nulls::rolling_mean_exact::<true, US_IN_DAY>,
+            )
+        } else if floor {
+            rolling_agg(
+                ca,
+                options,
+                &rolling::no_nulls::rolling_mean_exact::<true, 1>,
+                &rolling::nulls::rolling_mean_exact::<true, 1>,
+            )
+        } else {
+            rolling_agg(
+                ca,
+                options,
+                &rolling::no_nulls::rolling_mean_exact::<false, 1>,
+                &rolling::nulls::rolling_mean_exact::<false, 1>,
+            )
+        }
+    }
+
     /// Apply a rolling sum to a Series based on another Series.
     #[cfg(feature = "rolling_window_by")]
     fn rolling_sum_by(

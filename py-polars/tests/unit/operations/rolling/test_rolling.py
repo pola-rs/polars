@@ -3029,3 +3029,124 @@ def test_rolling_slice_per_window_offset_values_30432() -> None:
     assert out["first"].to_list() == [1, 2, 1, 3, 3]
     assert out["window"].to_list() == [[1], [2], [1, 2], [3, 4], [3, 4]]
     assert not out["first"].flags["SORTED_ASC"]
+
+
+@pytest.mark.parametrize(
+    ("dtype", "values", "expected"),
+    [
+        (
+            pl.Datetime("ns"),
+            [1_704_067_200_000_000_000, 1_704_067_200_000_001_000],
+            1_704_067_200_000_000_500,
+        ),
+        (pl.Datetime("ns"), [-3, -2], -3),
+        (pl.Duration("ns"), [-3, -2], -2),
+        (pl.Time, [1, 2], 1),
+        (pl.Date, [0, 1], 43_200_000_000),
+    ],
+)
+def test_exact_temporal_rolling_mean(
+    dtype: pl.DataType, values: list[int], expected: int
+) -> None:
+    frame = pl.DataFrame({"value": pl.Series(values).cast(dtype), "index": [0, 1]})
+    for result in (
+        frame.select(pl.col("value").rolling_mean(2)).to_series(),
+        frame.select(
+            pl.col("value").rolling_mean_by("index", "2i", min_samples=2)
+        ).to_series(),
+    ):
+        assert result.cast(pl.Int64).to_list() == [None, expected]
+
+
+def test_exact_temporal_rolling_mean_extreme_dates() -> None:
+    frame = pl.DataFrame(
+        {
+            "value": pl.Series([-(2**31), 2**31 - 1], dtype=pl.Int32).cast(pl.Date),
+            "index": [0, 1],
+        }
+    )
+    for result in (
+        frame.select(pl.col("value").rolling_mean(2)).to_series(),
+        frame.select(
+            pl.col("value").rolling_mean_by("index", "2i", min_samples=2)
+        ).to_series(),
+    ):
+        assert result.cast(pl.Int64).to_list() == [None, -43_200_000_000]
+
+
+def test_exact_temporal_rolling_mean_nulls_and_overflow() -> None:
+    base = 1_704_067_200_000_000_000
+    frame = pl.DataFrame(
+        {
+            "value": pl.Series([base, None, base + 1_000]).cast(pl.Datetime("ns")),
+            "index": [0, 1, 2],
+        }
+    )
+    for result in (
+        frame.select(pl.col("value").rolling_mean(3, min_samples=2)).to_series(),
+        frame.select(
+            pl.col("value").rolling_mean_by("index", "3i", min_samples=2)
+        ).to_series(),
+    ):
+        assert result.cast(pl.Int64).to_list() == [None, None, base + 500]
+
+    centered = frame.select(
+        pl.col("value").rolling_mean(3, min_samples=2, center=True)
+    ).to_series()
+    assert centered.cast(pl.Int64).to_list() == [None, base + 500, None]
+
+    values = pl.Series([2**63 - 1, 2**63 - 3]).cast(pl.Datetime("ns"))
+    assert values.rolling_mean(2).cast(pl.Int64).to_list() == [
+        None,
+        2**63 - 2,
+    ]
+
+
+def test_exact_temporal_rolling_mean_by_unsorted() -> None:
+    base = 1_704_067_200_000_000_000
+    frame = pl.DataFrame(
+        {
+            "value": pl.Series([base + 2_000, base, None, base + 1_000]).cast(
+                pl.Datetime("ns")
+            ),
+            "index": [2, 0, 3, 1],
+        }
+    )
+    result = frame.select(
+        pl.col("value").rolling_mean_by("index", "3i", min_samples=1)
+    ).to_series()
+    assert result.cast(pl.Int64).to_list() == [
+        base + 1_000,
+        base,
+        base + 1_500,
+        base + 500,
+    ]
+
+
+@pytest.mark.parametrize(
+    ("dtype", "values", "expected"),
+    [
+        (pl.Datetime("ns"), [0, -1], -1),
+        (pl.Duration("ns"), [0, -1], 0),
+        (pl.Time, [0, 1], 0),
+    ],
+)
+def test_temporal_rolling_quantile_rounding(
+    dtype: pl.DataType, values: list[int], expected: int
+) -> None:
+    frame = pl.DataFrame({"value": pl.Series(values).cast(dtype), "index": [0, 1]})
+    for result in (
+        frame.select(pl.col("value").rolling_median(2)).to_series(),
+        frame.select(
+            pl.col("value").rolling_quantile(0.5, "midpoint", window_size=2)
+        ).to_series(),
+        frame.select(
+            pl.col("value").rolling_median_by("index", "2i", min_samples=2)
+        ).to_series(),
+        frame.select(
+            pl.col("value").rolling_quantile_by(
+                "index", "2i", quantile=0.5, interpolation="midpoint", min_samples=2
+            )
+        ).to_series(),
+    ):
+        assert result.cast(pl.Int64).to_list() == [None, expected]
