@@ -25,20 +25,23 @@ use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, CreateTable, CreateTableLikeKind, CreateTableOptions, Cte,
     Delete, Distinct, DropBehavior, ExcludeSelectItem, Expr as SQLExpr, Fetch, FromTable,
     FunctionArg, FunctionArgExpr, FunctionArguments, GroupByExpr, HiveDistributionStyle,
-    HiveFormat, Ident, Insert, JoinConstraint, JoinOperator, LimitClause, NamedWindowDefinition,
-    NamedWindowExpr, ObjectName, ObjectNamePart, ObjectType, OrderBy, OrderByKind, Query,
-    RenameSelectItem, SchemaName, Select, SelectFlavor, SelectItem,
-    SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, SqlOption, Statement,
-    TableAlias, TableFactor, TableObject, TableWithJoins, Truncate, TruncateTableTarget,
-    UnaryOperator as SQLUnaryOperator, Update, Value as SQLValue, ValueWithSpan, Values,
-    VisitorMut, WildcardAdditionalOptions, WindowSpec, WindowType, With,
+    HiveFormat, Ident, Insert, Join, JoinConstraint, JoinOperator, LimitClause, Merge, MergeAction,
+    MergeClause, MergeClauseKind, MergeInsertExpr, MergeInsertKind, MergeUpdateExpr,
+    MergeUpdateKind, NamedWindowDefinition, NamedWindowExpr, ObjectName, ObjectNamePart,
+    ObjectType, OrderBy, OrderByKind, OutputClause, Query, RenameSelectItem, SchemaName, Select,
+    SelectFlavor, SelectItem, SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier,
+    SqlOption, Statement, TableAlias, TableFactor, TableObject, TableWithJoins, Truncate,
+    TruncateTableTarget, UnaryOperator as SQLUnaryOperator, Update, Value as SQLValue,
+    ValueWithSpan, Values, Visitor, VisitorMut, WildcardAdditionalOptions, WindowSpec, WindowType,
+    With,
 };
 
 use crate::catalog::{
     CatalogAlter, CatalogNamespace, CatalogRegistry, CatalogSpellings, CatalogStatement,
-    CatalogTable, RewrittenName, alter_table_column, alter_table_properties, create_schema_options,
-    create_table_columns, create_table_options, create_table_partitioning, display_name,
-    hint_unsupported_part, name_parts, name_position, rewrite_catalog_names,
+    CatalogTable, MergeClausePlan, MergePlan, MergeSourcePlan, RewrittenName, alter_table_column,
+    alter_table_properties, create_schema_options, create_table_columns, create_table_options,
+    create_table_partitioning, display_name, hint_unsupported_part, name_parts, name_position,
+    rewrite_catalog_names,
 };
 use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
@@ -92,6 +95,68 @@ type UpdateParts<'a> = (
     Vec<(String, SQLExpr)>,
     Option<&'a SQLExpr>,
 );
+
+/// Columns of a catalog `MERGE`'s frames; the Python side uses the same names.
+const MERGE_FILE: &str = "__polars_merge_file";
+const MERGE_POS: &str = "__polars_merge_pos";
+const MERGE_SOURCE_ROW: &str = "__polars_merge_s";
+const MERGE_ACTION: &str = "__polars_merge_action";
+/// The name a catalog `MERGE`'s collected source is planned under.
+const MERGE_SOURCE: &str = "__polars_merge_source";
+
+/// What a `WHEN` clause of a `MERGE` does, with its tuple assignments flattened.
+enum MergeActionParts {
+    Update(Vec<(String, SQLExpr)>),
+    Delete,
+    Nothing,
+    Insert {
+        columns: Option<Vec<String>>,
+        values: Vec<SQLExpr>,
+    },
+}
+
+/// A `WHEN` clause of a `MERGE`, numbered as written from 1.
+struct MergeClauseParts {
+    number: usize,
+    predicate: Option<SQLExpr>,
+    action: MergeActionParts,
+}
+
+/// The target, source, `ON` and `WHEN` clauses of a `MERGE`, by clause kind.
+struct MergeParts<'a> {
+    target: &'a TableFactor,
+    source: &'a TableFactor,
+    on: &'a SQLExpr,
+    matched: Vec<MergeClauseParts>,
+    not_matched: Vec<MergeClauseParts>,
+}
+
+/// The relations and schemas that a `MERGE`'s column names resolve against.
+struct MergeScope<'a> {
+    target: &'a RelationName,
+    source: &'a RelationName,
+    target_schema: &'a Schema,
+    source_schema: &'a Schema,
+}
+
+/// The relation(s) whose columns an expression of a `MERGE` reads.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum MergeSide {
+    Neither,
+    Target,
+    Source,
+    Both,
+}
+
+impl MergeSide {
+    fn and(self, other: MergeSide) -> MergeSide {
+        match (self, other) {
+            (MergeSide::Neither, side) | (side, MergeSide::Neither) => side,
+            (a, b) if a == b => a,
+            _ => MergeSide::Both,
+        }
+    }
+}
 
 /// For SELECT projection items; helps simplify any required disambiguation.
 enum ProjectionItem {
@@ -471,6 +536,7 @@ impl SQLContext {
             Statement::Truncate(truncate) => return self.catalog_truncate(truncate),
             Statement::Delete(delete) => return self.catalog_delete(delete),
             Statement::Update(update) => return self.catalog_update(update),
+            Statement::Merge(merge) => return self.catalog_merge(merge),
             Statement::Query(query) => {
                 let insert = match query.body.as_ref() {
                     SetExpr::Insert(Statement::Insert(insert)) => insert,
@@ -480,6 +546,9 @@ impl SQLContext {
                     SetExpr::Delete(_) => {
                         polars_bail!(SQLInterface: "DELETE does not support a WITH clause")
                     },
+                    SetExpr::Merge(_) => polars_bail!(
+                        SQLInterface: "WITH before MERGE is not yet supported; put the WITH clause inside a subquery in USING"
+                    ),
                     _ => return Ok(None),
                 };
                 return self.catalog_insert(insert, Some(query));
@@ -668,9 +737,400 @@ impl SQLContext {
         res
     }
 
+    /// Plan the source of a catalog `MERGE` against the scans of the catalog tables it reads, by
+    /// full name: its `USING` relation, with the columns the statement reads, and the keys of
+    /// its `ON`. Starts the statement's clock, which [`Self::catalog_merge_plan`] keeps.
+    pub fn catalog_merge_source(
+        &mut self,
+        query: &str,
+        tables: Vec<(Vec<String>, LazyFrame)>,
+    ) -> PolarsResult<MergeSourcePlan> {
+        self.catalog_tables = tables
+            .into_iter()
+            .map(|(full_name, lf)| (full_name.join("."), lf))
+            .collect();
+        let res = self.merge_source(query);
+        self.lp_arena = Default::default();
+        self.expr_arena = Default::default();
+        self.clear_statement_state();
+        res
+    }
+
+    /// Plan a catalog `MERGE` of `source` (its source, as [`Self::catalog_merge_source`] gave it,
+    /// with a row index) into the scan of its target table, by full name. The target's scan holds
+    /// the file and row position of each row.
+    pub fn catalog_merge_plan(
+        &mut self,
+        query: &str,
+        tables: Vec<(Vec<String>, LazyFrame)>,
+        source: LazyFrame,
+    ) -> PolarsResult<MergePlan> {
+        self.catalog_tables = tables
+            .into_iter()
+            .map(|(full_name, lf)| (full_name.join("."), lf))
+            .collect();
+        let res = self.merge_plan(query, source);
+        self.lp_arena = Default::default();
+        self.expr_arena = Default::default();
+        self.clear_statement_state();
+        res
+    }
+
+    fn merge_source(&mut self, query: &str) -> PolarsResult<MergeSourcePlan> {
+        let stmt = self.parse_catalog_dml(query)?;
+        let Statement::Merge(merge) = &stmt else {
+            polars_bail!(SQLInterface: "expected a MERGE statement, got `{}`", stmt)
+        };
+        let parts = merge_parts(merge)?;
+        let (target_schema, target) = self.merge_target(parts.target)?;
+        // the source is planned alone: the target's alias must not hide its name
+        self.table_aliases.clear();
+        let source_twj = TableWithJoins {
+            relation: parts.source.clone(),
+            joins: vec![],
+        };
+        self.set_active_relations(std::slice::from_ref(&source_twj));
+        let mut source_lf = self.execute_from_statement(&source_twj)?;
+        let source_schema = self.get_frame_schema(&mut source_lf)?;
+        for name in [MERGE_FILE, MERGE_POS, MERGE_SOURCE_ROW, MERGE_ACTION] {
+            polars_ensure!(
+                !target_schema.contains(name) && !source_schema.contains(name),
+                SQLInterface: "MERGE does not support a column named '{}'", name
+            );
+        }
+        let source = self.merge_source_relation(parts.source)?;
+        check_distinct_relations(&target, &source)?;
+        let scope = MergeScope {
+            target: &target,
+            source: &source,
+            target_schema: &target_schema,
+            source_schema: &source_schema,
+        };
+        let mut keys = Vec::new();
+        for (column, key) in merge_keys(parts.on, &scope)? {
+            let key = parse_sql_expr(&key, self, Some(&source_schema))?;
+            polars_ensure!(
+                is_row_wise(&key, &source_schema)?,
+                SQLInterface: "aggregate and set-returning functions are not allowed in ON of a MERGE"
+            );
+            keys.push((column, key));
+        }
+        let columns = merge_source_columns(&parts, &scope);
+        Ok(MergeSourcePlan {
+            source: source_lf.select(columns.iter().map(|c| col(c.as_str())).collect::<Vec<_>>()),
+            keys,
+        })
+    }
+
+    /// The schema and relation name of a `MERGE`'s target, resolved as a table read.
+    fn merge_target(&mut self, target: &TableFactor) -> PolarsResult<(SchemaRef, RelationName)> {
+        let twj = TableWithJoins {
+            relation: target.clone(),
+            joins: vec![],
+        };
+        self.set_active_relations(std::slice::from_ref(&twj));
+        let mut lf = self.get_table(target)?.1;
+        let schema = self.get_frame_schema(&mut lf)?;
+        let name = relation_name(target)
+            .map(|name| name.spelled(target, &self.catalog_spellings))
+            .ok_or_else(
+                || polars_err!(SQLInterface: "MERGE requires a named catalog table as its target"),
+            )?;
+        Ok((schema, name))
+    }
+
+    fn merge_plan(&mut self, query: &str, source: LazyFrame) -> PolarsResult<MergePlan> {
+        let stmt = self.parse_catalog_dml_keeping_clock(query)?;
+        let Statement::Merge(merge) = &stmt else {
+            polars_bail!(SQLInterface: "expected a MERGE statement, got `{}`", stmt)
+        };
+        let parts = merge_parts(merge)?;
+        let (target_schema, target) = self.merge_target(parts.target)?;
+        let written: Vec<&PlSmallStr> = target_schema
+            .iter_names()
+            .filter(|name| ![MERGE_FILE, MERGE_POS].contains(&name.as_str()))
+            .collect();
+        // The collected source, under its name in the statement.
+        let source_relation = self.merge_source_relation(parts.source)?;
+        let target_name = match parts.target {
+            TableFactor::Table { name, .. } => object_name_to_string(name),
+            _ => String::new(),
+        };
+        let source_factor = match parts.source {
+            // its own name, unless that would also resolve the target
+            TableFactor::Table {
+                name,
+                alias: None,
+                args: None,
+                ..
+            } if !object_name_to_string(name).eq_ignore_ascii_case(&target_name) => {
+                self.cte_map.insert(object_name_to_string(name), source);
+                parts.source.clone()
+            },
+            _ => {
+                self.cte_map.insert(MERGE_SOURCE.to_string(), source);
+                TableFactor::Table {
+                    name: ObjectName::from(vec![Ident::new(MERGE_SOURCE)]),
+                    alias: Some(TableAlias {
+                        explicit: true,
+                        name: Ident::new(
+                            source_relation.parts().last().cloned().unwrap_or_default(),
+                        ),
+                        columns: vec![],
+                        at: None,
+                    }),
+                    args: None,
+                    with_hints: vec![],
+                    version: None,
+                    with_ordinality: false,
+                    partitions: vec![],
+                    json_path: None,
+                    sample: None,
+                    index_hints: vec![],
+                }
+            },
+        };
+
+        // WHEN MATCHED: the pairs of target and source rows that match ON
+        let twj = TableWithJoins {
+            relation: parts.target.clone(),
+            joins: vec![Join {
+                relation: source_factor.clone(),
+                global: false,
+                join_operator: JoinOperator::Inner(JoinConstraint::On(parts.on.clone())),
+            }],
+        };
+        let from = std::slice::from_ref(&twj);
+        self.active_relations = declared_relations(from, &self.catalog_spellings);
+        let mut joined = self.execute_from_statement(&twj)?;
+        self.set_join_base(from);
+        let schema = self.get_frame_schema(&mut joined)?;
+        // a value from the pair alone, as the join evaluates it
+        let _ = self.merge_expr(parts.on, &schema, "ON")?;
+        let mut values = Vec::new();
+        let mut conditions = Vec::new();
+        let mut matched = Vec::new();
+        for (k, clause) in parts.matched.iter().enumerate() {
+            let number = clause.number;
+            conditions.push(match &clause.predicate {
+                Some(predicate) => self.merge_condition(predicate, &schema, number)?,
+                None => lit(true),
+            });
+            matched.push(match &clause.action {
+                MergeActionParts::Update(assignments) => {
+                    let mut columns = Vec::with_capacity(assignments.len());
+                    for (j, (column, value)) in assignments.iter().enumerate() {
+                        polars_ensure!(
+                            written.iter().any(|c| c.as_str() == column),
+                            ColumnNotFound: "column '{}' not found; column names are case-sensitive", column
+                        );
+                        let location = format!("the SET of column '{column}' in WHEN clause {number}");
+                        let value = self.merge_expr(value, &schema, &location)?;
+                        values.push(value.clone().alias(format!("__polars_merge_set_{k}_{j}")));
+                        columns.push((column.clone(), value));
+                    }
+                    MergeClausePlan {
+                        kind: "update",
+                        number,
+                        columns,
+                    }
+                },
+                MergeActionParts::Delete => MergeClausePlan {
+                    kind: "delete",
+                    number,
+                    columns: vec![],
+                },
+                MergeActionParts::Nothing => MergeClausePlan {
+                    kind: "nothing",
+                    number,
+                    columns: vec![],
+                },
+                MergeActionParts::Insert { .. } => {
+                    polars_bail!(SQLInterface: "WHEN MATCHED takes UPDATE, DELETE or DO NOTHING (WHEN clause {})", number)
+                },
+            });
+        }
+        let action = first_clause(conditions).alias(MERGE_ACTION);
+        values.push(action.clone());
+        // Fails as the `SELECT` of these values would.
+        DataFrame::empty_with_schema(&schema)
+            .lazy()
+            .select(values)
+            .collect()?;
+        let pairs = joined.with_column(action);
+
+        // WHEN NOT MATCHED: the source rows, which see the source alone
+        self.joined_aliases.clear();
+        self.join_base = None;
+        self.table_aliases.clear();
+        let source_twj = TableWithJoins {
+            relation: source_factor,
+            joins: vec![],
+        };
+        let from = std::slice::from_ref(&source_twj);
+        self.active_relations = declared_relations(from, &self.catalog_spellings);
+        let mut source_lf = self.execute_from_statement(&source_twj)?;
+        self.set_join_base(from);
+        let source_schema = self.get_frame_schema(&mut source_lf)?;
+        let scope = MergeScope {
+            target: &target,
+            source: &source_relation,
+            target_schema: &target_schema,
+            source_schema: &source_schema,
+        };
+        let mut values = Vec::new();
+        let mut conditions = Vec::new();
+        let mut not_matched = Vec::new();
+        for (k, clause) in parts.not_matched.iter().enumerate() {
+            let number = clause.number;
+            if let Some(predicate) = &clause.predicate {
+                check_no_target_reference(predicate, &scope, number)?;
+            }
+            conditions.push(match &clause.predicate {
+                Some(predicate) => self.merge_condition(predicate, &source_schema, number)?,
+                None => lit(true),
+            });
+            not_matched.push(match &clause.action {
+                MergeActionParts::Insert {
+                    columns: listed,
+                    values: inserted,
+                } => {
+                    let targets: Vec<String> = match listed {
+                        Some(listed) => {
+                            for column in listed {
+                                polars_ensure!(
+                                    written.iter().any(|c| c.as_str() == column),
+                                    ColumnNotFound: "column '{}' not found; column names are case-sensitive", column
+                                );
+                            }
+                            listed.clone()
+                        },
+                        None => {
+                            polars_ensure!(
+                                inserted.len() == written.len(),
+                                SQLInterface: "the INSERT of WHEN clause {} gives {} values for {} target columns; without a column list it takes one value per column (list the columns to insert)",
+                                number, inserted.len(), written.len()
+                            );
+                            written.iter().map(|c| c.to_string()).collect()
+                        },
+                    };
+                    let mut columns = Vec::with_capacity(targets.len());
+                    for (j, (column, value)) in targets.into_iter().zip(inserted).enumerate() {
+                        check_no_target_reference(value, &scope, number)?;
+                        let location = format!("the INSERT values of WHEN clause {number}");
+                        let value = self.merge_expr(value, &source_schema, &location)?;
+                        values.push(value.clone().alias(format!("__polars_merge_ins_{k}_{j}")));
+                        columns.push((column, value));
+                    }
+                    MergeClausePlan {
+                        kind: "insert",
+                        number,
+                        columns,
+                    }
+                },
+                MergeActionParts::Nothing => MergeClausePlan {
+                    kind: "nothing",
+                    number,
+                    columns: vec![],
+                },
+                _ => polars_bail!(
+                    SQLInterface: "WHEN NOT MATCHED takes INSERT or DO NOTHING (WHEN clause {})", number
+                ),
+            });
+        }
+        let action = first_clause(conditions).alias(MERGE_ACTION);
+        values.push(action.clone());
+        DataFrame::empty_with_schema(&source_schema)
+            .lazy()
+            .select(values)
+            .collect()?;
+        let inserts = source_lf.with_column(action);
+        Ok(MergePlan {
+            pairs,
+            inserts,
+            matched,
+            not_matched,
+        })
+    }
+
+    /// Plan the condition of `WHEN` clause `number` of a `MERGE`: boolean, a NULL never holding.
+    fn merge_condition(
+        &mut self,
+        expr: &SQLExpr,
+        schema: &Schema,
+        number: usize,
+    ) -> PolarsResult<Expr> {
+        let location = format!("the condition of WHEN clause {number}");
+        let condition = self.merge_expr(expr, schema, &location)?;
+        let dtype = DataFrame::empty_with_schema(schema)
+            .lazy()
+            .select([condition.clone().alias("c")])
+            .collect_schema()?
+            .get("c")
+            .cloned()
+            .unwrap_or(DataType::Null);
+        match dtype {
+            DataType::Boolean => Ok(condition),
+            DataType::Null => Ok(condition.cast(DataType::Boolean)),
+            dtype => polars_bail!(
+                SQLInterface: "{} of a MERGE must be boolean, not {}", location, dtype
+            ),
+        }
+    }
+
+    /// The name a `MERGE`'s source is known by: its alias, else its table name as written.
+    fn merge_source_relation(&self, source: &TableFactor) -> PolarsResult<RelationName> {
+        if let TableFactor::Table {
+            alias: None,
+            args: None,
+            ..
+        } = source
+            && let Some(name) = relation_name(source)
+        {
+            return Ok(name.spelled(source, &self.catalog_spellings));
+        }
+        merge_source_relation(source)
+    }
+
+    /// Plan an expression of a `MERGE` against `schema`: a value from its own row.
+    fn merge_expr(
+        &mut self,
+        expr: &SQLExpr,
+        schema: &Schema,
+        location: &str,
+    ) -> PolarsResult<Expr> {
+        if let Some(base) = &self.join_base
+            && !self.joined_aliases.is_empty()
+        {
+            check_for_ambiguous_column_refs(
+                expr,
+                &self.joined_aliases,
+                &base.table_name,
+                &base.using_cols,
+                &self.active_relations,
+                schema,
+            )?;
+        }
+        let planned = parse_sql_expr(expr, self, Some(schema))?;
+        polars_ensure!(
+            is_row_wise(&planned, schema)?,
+            SQLInterface: "aggregate and set-returning functions are not allowed in {} of a MERGE", location
+        );
+        polars_ensure!(
+            !planned.clone().meta().has_multiple_outputs(),
+            SQLInterface: "{} of a MERGE must be a single expression", location
+        );
+        Ok(planned)
+    }
+
     fn parse_catalog_dml(&mut self, query: &str) -> PolarsResult<Statement> {
-        let mut stmt = parse_single_statement(query)?;
         self.statement_time = Default::default();
+        self.parse_catalog_dml_keeping_clock(query)
+    }
+
+    /// As `parse_catalog_dml`, on the clock of the statement's earlier planning calls.
+    fn parse_catalog_dml_keeping_clock(&mut self, query: &str) -> PolarsResult<Statement> {
+        let mut stmt = parse_single_statement(query)?;
         self.catalog_spellings = self.rewrite_catalog_names(&mut stmt)?.1;
         desugar_quantified_subqueries(&mut stmt);
         Ok(stmt)
@@ -1070,6 +1530,7 @@ impl SQLContext {
             Statement::Truncate(truncate) => self.execute_truncate_table(truncate)?,
             stmt @ Statement::Delete { .. } => self.execute_delete_from_table(stmt)?,
             Statement::Update(update) => self.execute_update(update)?,
+            Statement::Merge(merge) => self.execute_merge(merge)?,
             _ => polars_bail!(
                 SQLInterface: "statement type is not supported:\n{:?}", ast,
             ),
@@ -2132,6 +2593,32 @@ impl SQLContext {
             );
         }
         Err(self.catalog_tables_only("UPDATE", name))
+    }
+
+    /// The catalog statement of a `MERGE`, if its target resolves to a catalog table.
+    fn catalog_merge(&self, merge: &Merge) -> PolarsResult<Option<CatalogStatement>> {
+        let parts = merge_parts(merge)?;
+        let TableFactor::Table { name, .. } = parts.target else {
+            return Ok(None);
+        };
+        let Some((tbl, table)) = self.catalog_change_target(name)? else {
+            return Ok(None);
+        };
+        Ok(Some(CatalogStatement::Merge { name: tbl, table }))
+    }
+
+    // MERGE INTO <tbl> ...: only for catalog tables
+    fn execute_merge(&self, merge: &Merge) -> PolarsResult<LazyFrame> {
+        let TableFactor::Table { name, .. } = &merge.table else {
+            polars_bail!(SQLInterface: "MERGE requires a named catalog table as its target")
+        };
+        if let Some((tbl, table)) = self.catalog_change_target(name)? {
+            polars_bail!(
+                SQLInterface: "MERGE into catalog table '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_statement`)",
+                tbl, display_name(&table.full_name())
+            );
+        }
+        Err(self.catalog_tables_only("MERGE", name))
     }
 
     // TRUNCATE <tbl>
@@ -7807,6 +8294,619 @@ fn update_parts(update: &Update) -> PolarsResult<UpdateParts<'_>> {
         }
     }
     Ok((table, parts, selection.as_ref()))
+}
+
+/// The parts of a `MERGE`, rejecting the forms that it does not support.
+fn merge_parts(merge: &Merge) -> PolarsResult<MergeParts<'_>> {
+    // Destructure exhaustively so new sqlparser fields surface as compile errors.
+    let Merge {
+        merge_token: _,
+        optimizer_hints,
+        into,
+        table,
+        source,
+        on,
+        clauses,
+        output,
+    } = merge;
+    polars_ensure!(*into, SQLInterface: "MERGE requires INTO; write `MERGE INTO {} USING ...`", table);
+    polars_ensure!(optimizer_hints.is_empty(), SQLInterface: "optimizer hints are not supported in MERGE");
+    match output {
+        None => {},
+        Some(OutputClause::Returning { .. }) => {
+            polars_bail!(SQLInterface: "RETURNING is not yet supported in MERGE; omit RETURNING")
+        },
+        Some(OutputClause::Output { .. }) => {
+            polars_bail!(SQLInterface: "OUTPUT is not supported in MERGE")
+        },
+    }
+    polars_ensure!(!clauses.is_empty(), SQLInterface: "MERGE requires at least one WHEN clause");
+    polars_ensure!(
+        matches!(table, TableFactor::Table { .. }),
+        SQLInterface: "MERGE requires a named catalog table as its target"
+    );
+    check_dml_target(table, "MERGE")?;
+    check_merge_source(source)?;
+    check_merge_expr(on, "ON", false)?;
+
+    let mut matched = Vec::new();
+    let mut not_matched = Vec::new();
+    // per clause kind, the unconditional clause that ends it
+    let mut last: [Option<usize>; 2] = [None, None];
+    for (i, clause) in clauses.iter().enumerate() {
+        let number = i + 1;
+        let MergeClause {
+            when_token: _,
+            clause_kind,
+            predicate,
+            action,
+        } = clause;
+        let (kind, name) = match clause_kind {
+            MergeClauseKind::Matched => (0, "MATCHED"),
+            MergeClauseKind::NotMatched | MergeClauseKind::NotMatchedByTarget => (1, "NOT MATCHED"),
+            MergeClauseKind::NotMatchedBySource => polars_bail!(
+                SQLInterface: "NOT MATCHED BY SOURCE is not yet supported in MERGE (WHEN clause {}); select the unmatched target keys first, then DELETE or UPDATE them in a separate statement",
+                number
+            ),
+        };
+        if let Some(first) = last[kind] {
+            polars_bail!(
+                SQLInterface: "WHEN clause {} of the MERGE is unreachable after the unconditional WHEN {} clause {}",
+                number, name, first
+            );
+        }
+        if predicate.is_none() {
+            last[kind] = Some(number);
+        }
+        if let Some(predicate) = predicate {
+            check_merge_expr(
+                predicate,
+                &format!("the condition of WHEN clause {number}"),
+                false,
+            )?;
+        }
+        let action = match action {
+            MergeAction::Update(update) => {
+                MergeActionParts::Update(merge_update_parts(update, number)?)
+            },
+            MergeAction::Delete { .. } => MergeActionParts::Delete,
+            MergeAction::DoNothing { .. } => MergeActionParts::Nothing,
+            MergeAction::Insert(insert) => merge_insert_parts(insert, number)?,
+        };
+        let parts = MergeClauseParts {
+            number,
+            predicate: predicate.clone(),
+            action,
+        };
+        if kind == 0 {
+            matched.push(parts);
+        } else {
+            not_matched.push(parts);
+        }
+    }
+    Ok(MergeParts {
+        target: table,
+        source,
+        on,
+        matched,
+        not_matched,
+    })
+}
+
+/// The `SET` columns and values of a `MERGE`'s `UPDATE` action.
+fn merge_update_parts(
+    update: &MergeUpdateExpr,
+    number: usize,
+) -> PolarsResult<Vec<(String, SQLExpr)>> {
+    let MergeUpdateExpr {
+        update_token: _,
+        kind,
+        update_predicate,
+        delete_predicate,
+    } = update;
+    polars_ensure!(
+        update_predicate.is_none(),
+        SQLInterface: "`UPDATE ... WHERE` predicates are not supported in MERGE (WHEN clause {})", number
+    );
+    polars_ensure!(
+        delete_predicate.is_none(),
+        SQLInterface: "`DELETE WHERE` clauses are not supported in MERGE (WHEN clause {})", number
+    );
+    let assignments = match kind {
+        MergeUpdateKind::Set(assignments) => assignments,
+        MergeUpdateKind::Wildcard => polars_bail!(
+            SQLInterface: "UPDATE SET * is not yet supported in MERGE (WHEN clause {}); write the assignments, as `UPDATE SET id = s.id, v = s.v`",
+            number
+        ),
+    };
+    let mut parts: Vec<(String, SQLExpr)> = Vec::with_capacity(assignments.len());
+    for Assignment { target, value } in assignments {
+        let pairs: Vec<(&ObjectName, SQLExpr)> = match target {
+            AssignmentTarget::ColumnName(name) => vec![(name, value.clone())],
+            AssignmentTarget::Tuple(names) => {
+                let values = tuple_values(value).ok_or_else(|| {
+                    polars_err!(
+                        SQLInterface: "the UPDATE of WHEN clause {} assigns a tuple of columns from a list of values, as `(a, b) = (1, 2)`; got `{}`", number, value
+                    )
+                })?;
+                polars_ensure!(
+                    values.len() == names.len(),
+                    SQLInterface: "the UPDATE of WHEN clause {} assigns {} columns from {} values (`{} = {}`)",
+                    number, names.len(), values.len(), target, value
+                );
+                names.iter().zip(values).collect()
+            },
+        };
+        for (name, value) in pairs {
+            let [ObjectNamePart::Identifier(ident)] = name.0.as_slice() else {
+                polars_bail!(
+                    SQLInterface: "UPDATE in MERGE takes unqualified top-level column names; got `{}` in WHEN clause {}", name, number
+                )
+            };
+            let column = &ident.value;
+            polars_ensure!(
+                !parts.iter().any(|(c, _)| c == column),
+                SQLInterface: "multiple assignments to column '{}' in the UPDATE of WHEN clause {}", column, number
+            );
+            check_merge_expr(
+                &value,
+                &format!("the SET of column '{column}' in WHEN clause {number}"),
+                true,
+            )?;
+            parts.push((column.clone(), value));
+        }
+    }
+    Ok(parts)
+}
+
+/// The columns and values of a `MERGE`'s `INSERT` action.
+fn merge_insert_parts(insert: &MergeInsertExpr, number: usize) -> PolarsResult<MergeActionParts> {
+    let MergeInsertExpr {
+        insert_token: _,
+        columns,
+        kind_token: _,
+        kind,
+        insert_predicate,
+    } = insert;
+    polars_ensure!(
+        insert_predicate.is_none(),
+        SQLInterface: "`INSERT ... WHERE` predicates are not supported in MERGE (WHEN clause {})", number
+    );
+    let values = match kind {
+        MergeInsertKind::Values(Values { rows, .. }) => {
+            let [row] = rows.as_slice() else {
+                polars_bail!(SQLInterface: "the INSERT of WHEN clause {} takes exactly one VALUES row", number)
+            };
+            row.content.clone()
+        },
+        MergeInsertKind::Row => polars_bail!(
+            SQLInterface: "INSERT ROW is not yet supported in MERGE (WHEN clause {}); list the columns and values, as `INSERT (id, v) VALUES (s.id, s.v)`",
+            number
+        ),
+        MergeInsertKind::Wildcard => polars_bail!(
+            SQLInterface: "INSERT * is not yet supported in MERGE (WHEN clause {}); list the columns and values, as `INSERT (id, v) VALUES (s.id, s.v)`",
+            number
+        ),
+    };
+    let mut names: Vec<String> = Vec::with_capacity(columns.len());
+    for name in columns {
+        let [ObjectNamePart::Identifier(ident)] = name.0.as_slice() else {
+            polars_bail!(
+                SQLInterface: "INSERT in MERGE takes unqualified top-level column names; got `{}` in WHEN clause {}", name, number
+            )
+        };
+        polars_ensure!(
+            !names.contains(&ident.value),
+            SQLInterface: "column '{}' is listed more than once in the INSERT of WHEN clause {}", ident.value, number
+        );
+        names.push(ident.value.clone());
+    }
+    polars_ensure!(
+        names.is_empty() || names.len() == values.len(),
+        SQLInterface: "the INSERT of WHEN clause {} lists {} columns but {} values", number, names.len(), values.len()
+    );
+    for value in &values {
+        check_merge_expr(
+            value,
+            &format!("the INSERT values of WHEN clause {number}"),
+            true,
+        )?;
+    }
+    Ok(MergeActionParts::Insert {
+        columns: (!names.is_empty()).then_some(names),
+        values,
+    })
+}
+
+/// Reject the parts of an expression of a `MERGE` that it does not support at `location`.
+/// Values may call `RANDOM()`; `ON` and the conditions, which the plan evaluates more than once,
+/// may not.
+fn check_merge_expr(expr: &SQLExpr, location: &str, allow_random: bool) -> PolarsResult<()> {
+    // the plan's own columns are not the tables'
+    let internal = visit_expressions(expr, |e| {
+        let name = match e {
+            SQLExpr::Identifier(ident) => Some(&ident.value),
+            // `t.col`, not a struct field `t.col.field`
+            SQLExpr::CompoundIdentifier(idents) if idents.len() == 2 => Some(&idents[1].value),
+            _ => None,
+        };
+        match name {
+            Some(name)
+                if [MERGE_FILE, MERGE_POS, MERGE_SOURCE_ROW, MERGE_ACTION]
+                    .contains(&name.as_str()) =>
+            {
+                ControlFlow::Break(name.clone())
+            },
+            _ => ControlFlow::Continue(()),
+        }
+    });
+    if let ControlFlow::Break(name) = internal {
+        polars_bail!(ColumnNotFound: "column '{}' not found in {} of a MERGE", name, location);
+    }
+    polars_ensure!(
+        !expr_contains_subquery(expr),
+        SQLInterface: "subqueries in {} are not yet supported in MERGE; where equivalent, compute the values in the USING subquery and use its columns", location
+    );
+    polars_ensure!(
+        !expr_has_window_functions(expr),
+        SQLInterface: "window functions are not allowed in {} of a MERGE", location
+    );
+    polars_ensure!(
+        !contains_default_keyword(expr),
+        SQLInterface: "DEFAULT in {} is not yet supported in MERGE; write the value, or NULL for a nullable column", location
+    );
+    polars_ensure!(
+        !contains_column_selector(expr),
+        SQLInterface: "column selectors are not supported in {} of a MERGE; write one expression per column", location
+    );
+    polars_ensure!(
+        allow_random || !contains_random(expr, true),
+        SQLInterface: "volatile functions in {} are not yet supported in MERGE; to draw one value per source row, compute it in the USING subquery and use that column", location
+    );
+    Ok(())
+}
+
+/// Reject the `USING` forms of a `MERGE` that it does not support.
+fn check_merge_source(source: &TableFactor) -> PolarsResult<()> {
+    match source {
+        TableFactor::Table {
+            args: None,
+            alias: Some(alias),
+            ..
+        } if !alias.columns.is_empty() => {
+            polars_bail!(SQLInterface: "column alias lists on a plain source table are not yet supported in MERGE; wrap the table in a subquery, as `USING (SELECT * FROM src) AS s(a, b)`")
+        },
+        TableFactor::Derived {
+            lateral,
+            subquery,
+            alias,
+            ..
+        } => {
+            polars_ensure!(!lateral, SQLInterface: "LATERAL in USING is not yet supported in MERGE");
+            polars_ensure!(
+                alias.is_some(),
+                SQLInterface: "a subquery in USING requires an alias; write `USING (...) AS s`"
+            );
+            // a plain table's alias column list is not applied inside a query yet
+            let mut finder = PlainTableAliasColumns;
+            polars_ensure!(
+                dyn_visit::visit(subquery.as_ref(), &mut finder).is_continue(),
+                SQLInterface: "column alias lists on plain tables are not yet supported in the USING subquery of a MERGE; wrap the table in a subquery, as `(SELECT * FROM src) AS x(a, b)`"
+            );
+        },
+        _ => {},
+    }
+    Ok(())
+}
+
+/// Finds a plain table with a column alias list.
+struct PlainTableAliasColumns;
+
+impl Visitor for PlainTableAliasColumns {
+    type Break = ();
+
+    fn pre_visit_table_factor(&mut self, factor: &TableFactor) -> ControlFlow<()> {
+        match factor {
+            TableFactor::Table {
+                args: None,
+                alias: Some(alias),
+                ..
+            } if !alias.columns.is_empty() => ControlFlow::Break(()),
+            _ => ControlFlow::Continue(()),
+        }
+    }
+}
+
+/// The name a `MERGE`'s source is known by in the statement: its alias, else the last part of
+/// its table name.
+fn merge_source_relation(source: &TableFactor) -> PolarsResult<RelationName> {
+    let alias = match source {
+        TableFactor::Table { alias, .. }
+        | TableFactor::Derived { alias, .. }
+        | TableFactor::TableFunction { alias, .. }
+        | TableFactor::UNNEST { alias, .. } => alias.as_ref().map(|a| a.name.value.clone()),
+        _ => polars_bail!(SQLInterface: "MERGE does not support this USING source: `{}`", source),
+    };
+    let name = alias.or_else(|| match source {
+        TableFactor::Table { name, .. } => name
+            .0
+            .last()
+            .and_then(|p| p.as_ident())
+            .map(|i| i.value.clone()),
+        _ => None,
+    });
+    name.map(|name| RelationName::new(vec![name]))
+        .ok_or_else(|| polars_err!(SQLInterface: "a subquery in USING requires an alias; write `USING (...) AS s`"))
+}
+
+/// The relations whose columns `expr` reads, by the names it writes.
+fn merge_side(expr: &SQLExpr, scope: &MergeScope) -> MergeSide {
+    let mut side = MergeSide::Neither;
+    let _ = visit_expressions(expr, |e| {
+        match e {
+            SQLExpr::Identifier(ident) => {
+                side = side.and(column_side(&ident.value, scope));
+            },
+            SQLExpr::CompoundIdentifier(idents) => {
+                side = side.and(qualified_side(idents, scope));
+            },
+            _ => {},
+        }
+        ControlFlow::<()>::Continue(())
+    });
+    side
+}
+
+/// The relation an unqualified column belongs to: `Both` if it is ambiguous or unknown.
+fn column_side(name: &str, scope: &MergeScope) -> MergeSide {
+    match (
+        scope.target_schema.contains(name),
+        scope.source_schema.contains(name),
+    ) {
+        (true, false) => MergeSide::Target,
+        (false, true) => MergeSide::Source,
+        _ => MergeSide::Both,
+    }
+}
+
+/// The relation a qualified column belongs to: `Both` if the qualifier names both. A first
+/// part naming no relation is a struct column.
+fn qualified_side(idents: &[Ident], scope: &MergeScope) -> MergeSide {
+    match match_qualifier(idents, [scope.target, scope.source].into_iter()) {
+        Some((relations, _)) if relations.len() == 1 => {
+            if std::ptr::eq(relations[0], scope.target) {
+                MergeSide::Target
+            } else {
+                MergeSide::Source
+            }
+        },
+        Some(_) => MergeSide::Both,
+        None => column_side(&idents[0].value, scope),
+    }
+}
+
+/// Reject a source named like the target: their columns could not be told apart.
+fn check_distinct_relations(target: &RelationName, source: &RelationName) -> PolarsResult<()> {
+    let last = |name: &RelationName| name.parts().last().map(|p| p.to_lowercase());
+    polars_ensure!(
+        last(target) != last(source),
+        SQLInterface: "name '{}' is used for both the MERGE target and source; give them distinct aliases",
+        source.key()
+    );
+    Ok(())
+}
+
+/// The column of `expr` if it is a bare top-level column of the target.
+fn target_column(expr: &SQLExpr, scope: &MergeScope) -> Option<String> {
+    match expr {
+        SQLExpr::Nested(inner) => target_column(inner, scope),
+        SQLExpr::Identifier(ident) => {
+            (column_side(&ident.value, scope) == MergeSide::Target).then(|| ident.value.clone())
+        },
+        SQLExpr::CompoundIdentifier(idents) => {
+            let (relations, len) =
+                match_qualifier(idents, [scope.target, scope.source].into_iter())?;
+            let column = &idents[len..];
+            (relations.len() == 1
+                && std::ptr::eq(relations[0], scope.target)
+                && column.len() == 1
+                && scope.target_schema.contains(&column[0].value))
+            .then(|| column[0].value.clone())
+        },
+        _ => None,
+    }
+}
+
+/// The conjuncts of `expr`, through `AND` and parentheses.
+fn conjuncts(expr: &SQLExpr) -> Vec<&SQLExpr> {
+    match expr {
+        SQLExpr::Nested(inner) => conjuncts(inner),
+        SQLExpr::BinaryOp {
+            left,
+            op: SQLBinaryOperator::And,
+            right,
+        } => {
+            let mut parts = conjuncts(left);
+            parts.extend(conjuncts(right));
+            parts
+        },
+        _ => vec![expr],
+    }
+}
+
+/// The keys of a `MERGE`'s `ON`: the target column and source expression of each conjunct
+/// `target_column = source_expression`. At least one is required.
+fn merge_keys(on: &SQLExpr, scope: &MergeScope) -> PolarsResult<Vec<(String, SQLExpr)>> {
+    let mut on_unwrapped = on;
+    while let SQLExpr::Nested(inner) = on_unwrapped {
+        on_unwrapped = inner;
+    }
+    polars_ensure!(
+        !matches!(on_unwrapped, SQLExpr::Value(ValueWithSpan { value: SQLValue::Boolean(false), .. })),
+        SQLInterface: "ON FALSE is not yet supported in MERGE; to insert the source rows, use `INSERT INTO ... SELECT ...`"
+    );
+    let mut keys = Vec::new();
+    for conjunct in conjuncts(on) {
+        let SQLExpr::BinaryOp {
+            left,
+            op: SQLBinaryOperator::Eq,
+            right,
+        } = conjunct
+        else {
+            continue;
+        };
+        for side in [left, right] {
+            if let SQLExpr::Identifier(ident) = side.as_ref() {
+                polars_ensure!(
+                    !(scope.target_schema.contains(&ident.value)
+                        && scope.source_schema.contains(&ident.value)),
+                    SQLInterface: "ambiguous reference to column \"{}\" in ON of a MERGE; qualify it with the target or source name",
+                    ident.value
+                );
+            }
+        }
+        for (target, source) in [(left, right), (right, left)] {
+            if let Some(column) = target_column(target, scope)
+                && merge_side(source, scope) == MergeSide::Source
+            {
+                keys.push((column, source.as_ref().clone()));
+                break;
+            }
+        }
+    }
+    polars_ensure!(
+        !keys.is_empty(),
+        SQLInterface: "this ON condition is not yet supported in MERGE: ON must contain `target_column = source_expression`, alone or joined with AND, where the target side is a top-level target column and the source side an expression over source columns; if an equivalent condition has a common key equality, write `ON t.id = s.id AND (...)`"
+    );
+    Ok(keys)
+}
+
+/// The source columns that a `MERGE` reads, in the source's order.
+fn merge_source_columns(parts: &MergeParts, scope: &MergeScope) -> Vec<String> {
+    let mut used: PlHashSet<String> = PlHashSet::new();
+    // a name both sides have is kept, so that planning reports it as ambiguous
+    let mut note = |expr: &SQLExpr, source_alone: bool| {
+        let _ = visit_expressions(expr, |e| {
+            match e {
+                SQLExpr::Identifier(ident) => {
+                    if scope.source_schema.contains(&ident.value) {
+                        used.insert(ident.value.clone());
+                    }
+                },
+                // WHEN NOT MATCHED sees the source alone: a first part naming no source is
+                // a struct column
+                SQLExpr::CompoundIdentifier(idents)
+                    if source_alone
+                        && match_qualifier(idents, std::iter::once(scope.source)).is_none()
+                        && scope.source_schema.contains(&idents[0].value) =>
+                {
+                    used.insert(idents[0].value.clone());
+                },
+                SQLExpr::CompoundIdentifier(idents) => {
+                    match match_qualifier(idents, [scope.target, scope.source].into_iter()) {
+                        Some((relations, len)) => {
+                            if relations.iter().any(|r| std::ptr::eq(*r, scope.source))
+                                && let Some(column) = idents.get(len)
+                            {
+                                used.insert(column.value.clone());
+                            }
+                        },
+                        // a struct column and its fields
+                        None => {
+                            if scope.source_schema.contains(&idents[0].value) {
+                                used.insert(idents[0].value.clone());
+                            }
+                        },
+                    }
+                },
+                _ => {},
+            }
+            ControlFlow::<()>::Continue(())
+        });
+    };
+    note(parts.on, false);
+    for clause in &parts.matched {
+        if let Some(predicate) = &clause.predicate {
+            note(predicate, false);
+        }
+        if let MergeActionParts::Update(assignments) = &clause.action {
+            for (_, value) in assignments {
+                note(value, false);
+            }
+        }
+    }
+    for clause in &parts.not_matched {
+        if let Some(predicate) = &clause.predicate {
+            note(predicate, true);
+        }
+        if let MergeActionParts::Insert { values, .. } = &clause.action {
+            for value in values {
+                note(value, true);
+            }
+        }
+    }
+    scope
+        .source_schema
+        .iter_names()
+        .filter(|name| used.contains(name.as_str()))
+        .map(|name| name.to_string())
+        .collect()
+}
+
+/// Whether a qualified name of a `WHEN NOT MATCHED` clause reads the source, which is all
+/// that clause sees: the source's name or one of its struct columns.
+fn reads_source(idents: &[Ident], scope: &MergeScope) -> bool {
+    match_qualifier(idents, std::iter::once(scope.source)).is_some()
+        || scope.source_schema.contains(&idents[0].value)
+}
+
+/// Reject a target column in a `WHEN NOT MATCHED` clause, which sees the source alone.
+fn check_no_target_reference(
+    expr: &SQLExpr,
+    scope: &MergeScope,
+    number: usize,
+) -> PolarsResult<()> {
+    let mut found: Option<String> = None;
+    let _ = visit_expressions(expr, |e| {
+        let target = match e {
+            SQLExpr::Identifier(ident) => (!scope.source_schema.contains(&ident.value)
+                && scope.target_schema.contains(&ident.value))
+            .then(|| ident.value.clone()),
+            SQLExpr::CompoundIdentifier(idents) => (!reads_source(idents, scope)
+                && qualified_side(idents, scope) == MergeSide::Target)
+                .then(|| {
+                    idents
+                        .iter()
+                        .map(|i| i.value.as_str())
+                        .collect::<Vec<_>>()
+                        .join(".")
+                }),
+            _ => None,
+        };
+        match target {
+            Some(name) => {
+                found = Some(name);
+                ControlFlow::Break(())
+            },
+            None => ControlFlow::Continue(()),
+        }
+    });
+    match found {
+        Some(name) => polars_bail!(
+            SQLInterface: "target column '{}' is not available in WHEN NOT MATCHED (WHEN clause {}); only source columns can be used there",
+            name, number
+        ),
+        None => Ok(()),
+    }
+}
+
+/// The index of the first of `conditions` that holds, as `UInt32`; null if none does.
+fn first_clause(conditions: Vec<Expr>) -> Expr {
+    let mut expr = lit(LiteralValue::untyped_null()).cast(DataType::UInt32);
+    for (k, condition) in conditions.into_iter().enumerate().rev() {
+        expr = when(condition).then(lit(k as u32)).otherwise(expr);
+    }
+    expr
 }
 
 /// The values of a tuple assignment: `(x, y)` or `ROW(x, y)`, or `(x)` for one column.
