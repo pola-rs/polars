@@ -116,3 +116,11 @@ def test_meta_struct_fields_without_schema(expr: pl.Expr) -> None:
 
     schema = {"s": pl.Struct({"x": pl.Int64, "y": pl.Int64})}
     assert expr.meta.is_length_preserving(schema=schema)
+
+
+def test_meta_is_row_separable_is_in_list_column() -> None:
+    expr = pl.col("a").is_in(pl.col("l"))
+    # Only the schema tells a list column, zipped row by row, from a set.
+    assert not expr.meta.is_row_separable()
+    assert expr.meta.is_row_separable(schema={"a": pl.Int64, "l": pl.List(pl.Int64)})
+    assert not expr.meta.is_row_separable(schema={"a": pl.Int64, "l": pl.Int64})

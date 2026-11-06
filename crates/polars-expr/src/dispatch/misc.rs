@@ -350,24 +350,29 @@ pub(super) fn hist(
 
 #[cfg(feature = "replace")]
 pub(super) fn replace(s: &[Column]) -> PolarsResult<Column> {
-    polars_ops::series::replace(s[0].as_materialized_series(), s[1].list()?, s[2].list()?)
+    // A broadcast scalar is one list of values, not one per row.
+    let old = s[1].as_materialized_series_maintain_scalar();
+    let new = s[2].as_materialized_series_maintain_scalar();
+    polars_ops::series::replace(s[0].as_materialized_series(), old.list()?, new.list()?)
         .map(Column::from)
 }
 
 #[cfg(feature = "replace")]
 pub(super) fn replace_strict(s: &[Column], return_dtype: Option<DataType>) -> PolarsResult<Column> {
+    let old = s[1].as_materialized_series_maintain_scalar();
+    let new = s[2].as_materialized_series_maintain_scalar();
     match s.get(3) {
         Some(default) => polars_ops::series::replace_or_default(
             s[0].as_materialized_series(),
-            s[1].list()?,
-            s[2].list()?,
+            old.list()?,
+            new.list()?,
             default.as_materialized_series(),
             return_dtype,
         ),
         None => polars_ops::series::replace_strict(
             s[0].as_materialized_series(),
-            s[1].list()?,
-            s[2].list()?,
+            old.list()?,
+            new.list()?,
             return_dtype,
         ),
     }
