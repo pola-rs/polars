@@ -853,24 +853,26 @@ fn lower_exprs_with_ctx(
                 input: ref inner_exprs,
                 function:
                     IRFunctionExpr::ValueCounts {
-                        sort: false,
+                        sort,
                         parallel: _,
                         name: count_name,
-                        normalize: false,
+                        normalize,
                     },
                 options: _,
             } => {
                 // Transform:
                 //    expr.value_counts(
-                //      sort=False,
+                //      sort=sort,
                 //      parallel=_,
                 //      name=count_name,
-                //      normalize=False
+                //      normalize=normalize
                 //    ).alias(name)
                 //      ->
                 //    .select(expr.alias(name))
                 //    .group_by(name)
                 //      .agg(count_name = pl.len())
+                //    [.sort(count_name, descending=True)]
+                //    [.with_columns(count_name / count_name.sum())]
                 //    .select(pl.struct([name, count_name]))
 
                 assert_eq!(inner_exprs.len(), 1);
@@ -911,6 +913,35 @@ fn lower_exprs_with_ctx(
                     },
                     false,
                 )?;
+
+                let stream = if sort {
+                    build_sort_stream_with_ctx(
+                        stream,
+                        vec![
+                            AExprBuilder::col(tmp_count_name.clone(), ctx.expr_arena)
+                                .expr_ir(tmp_count_name.clone()),
+                        ],
+                        None,
+                        SortMultipleOptions::default().with_order_descending(true),
+                        ctx,
+                    )?
+                } else {
+                    stream
+                };
+
+                let stream = if normalize {
+                    let count = AExprBuilder::col(tmp_count_name.clone(), ctx.expr_arena);
+                    let total = count.sum(ctx.expr_arena);
+                    let proportion = count
+                        .cast(DataType::Float64, ctx.expr_arena)
+                        .true_divide(total, ctx.expr_arena)
+                        .expr_ir(tmp_count_name.clone());
+                    let value = AExprBuilder::col(tmp_value_name.clone(), ctx.expr_arena)
+                        .expr_ir(tmp_value_name.clone());
+                    build_select_stream_with_ctx(stream, &[value, proportion], ctx)?
+                } else {
+                    stream
+                };
 
                 let value = ExprIR::new(
                     ctx.expr_arena.add(AExpr::Column(tmp_value_name)),
