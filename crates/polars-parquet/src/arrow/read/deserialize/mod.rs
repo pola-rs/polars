@@ -69,9 +69,10 @@ pub fn create_list(
                 validity,
             )))
         },
-        ArrowDataType::FixedSizeList(_, _) => Ok(Box::new(FixedSizeListArray::new(
-            dtype, length, values, validity,
-        ))),
+        ArrowDataType::FixedSizeList(_, _) => Ok(Box::new(
+            FixedSizeListArray::try_new(dtype, length, values, validity)
+                .map_err(|e| ParquetError::oos(e.to_string()))?,
+        )),
         _ => unreachable!(),
     }
 }

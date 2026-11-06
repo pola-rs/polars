@@ -2095,6 +2095,96 @@ def test_ambiguous_column_detection_in_joins() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT s.f FROM a JOIN c ON a.k = c.k",
+        "SELECT a.k FROM a JOIN c ON a.k = c.k WHERE s.f > 15",
+        "SELECT s.* FROM a JOIN c ON a.k = c.k",
+    ],
+)
+def test_ambiguous_struct_path_in_joins(query: str) -> None:
+    # `s` is a struct column of both relations, as `k` is a column of both
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2], "s": [{"f": 10}, {"f": 20}]}),
+        "c": pl.DataFrame({"k": [1, 2], "s": [{"f": 77}, {"f": 88}]}),
+    }
+    with pytest.raises(
+        SQLInterfaceError,
+        match=r'ambiguous reference to column "s" \(use one of: a\.s, c\.s\)',
+    ):
+        pl.SQLContext(frames).execute(query, eager=True)
+
+    res = pl.SQLContext(frames).execute(
+        "SELECT a.s.f AS x, c.s.f AS y FROM a JOIN c ON a.k = c.k ORDER BY x",
+        eager=True,
+    )
+    assert res.rows() == [(10, 77), (20, 88)]
+
+    # a USING column is one column
+    frames["c"] = pl.DataFrame({"k": [1, 2], "s": [{"f": 10}, {"f": 99}]})
+    res = pl.SQLContext(frames).execute(
+        "SELECT s.f FROM a JOIN c USING (s)", eager=True
+    )
+    assert res.rows() == [(10,)]
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            "SELECT s.f FROM a JOIN b ON a.id = b.id RIGHT SEMI JOIN c ON a.id = c.id",
+            30,
+        ),
+        (
+            "SELECT s.* FROM a JOIN b ON a.id = b.id RIGHT SEMI JOIN c ON a.id = c.id",
+            30,
+        ),
+        (
+            "SELECT s.f FROM a JOIN b ON a.id = b.id RIGHT SEMI JOIN c ON a.id = c.id "
+            "JOIN c AS d USING (s)",
+            30,
+        ),
+        ("SELECT id FROM a JOIN b ON a.id = b.id RIGHT SEMI JOIN c ON a.id = c.id", 1),
+    ],
+)
+def test_columns_after_right_semi_join(query: str, expected: int) -> None:
+    # only the columns of `c` survive the right semi join, also one named like the
+    # joined `b.s`
+    frames = {
+        "a": pl.DataFrame({"id": [1], "s": [{"f": 10}]}),
+        "b": pl.DataFrame({"id": [1], "s": [{"f": 20}]}),
+        "c": pl.DataFrame({"id": [1], "s": [{"f": 30}], "s:b": [{"f": 40}]}),
+    }
+    res = pl.SQLContext(frames).execute(query, eager=True)
+    assert res.rows() == [(expected,)]
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            "SELECT b.x FROM a JOIN b ON a.id = b.id, c RIGHT SEMI JOIN d ON c.id = d.id",
+            2,
+        ),
+        (
+            "SELECT id FROM o WHERE EXISTS (SELECT 1 FROM a JOIN b ON a.id = b.id, "
+            "c RIGHT SEMI JOIN d ON c.id = d.id WHERE b.x = 2 AND o.id = a.id)",
+            1,
+        ),
+    ],
+)
+def test_right_semi_join_keeps_earlier_from_item(query: str, expected: int) -> None:
+    # the right semi join drops `c`, not `b` of the earlier FROM item
+    frames = {
+        name: pl.DataFrame({"id": [1], "x": [x]})
+        for name, x in [("a", 1), ("b", 2), ("c", 3), ("d", 4)]
+    }
+    frames["o"] = pl.DataFrame({"id": [1]})
+    res = pl.SQLContext(frames).execute(query, eager=True)
+    assert res.rows() == [(expected,)]
+
+
 def test_join_relations_sharing_last_name_part() -> None:
     # `tpch.lineitem` and `tpch_sf100.lineitem` are both called `lineitem`; the join
     # itself is fine, only a qualifier naming both is ambiguous
