@@ -20,7 +20,7 @@ import importlib.metadata
 import os
 from typing import TYPE_CHECKING, Any
 
-from polars._utils.logging import verbose
+from polars._utils.logging import eprint, verbose
 from polars._utils.wrap import wrap_ldf
 from polars._warnings import issue_warning
 from polars.exceptions import ComputeError, PerformanceWarning
@@ -131,9 +131,6 @@ def plugin_scan(
     user_storage_options: StorageOptionsDict | None,
 ) -> LazyFrame:
     """Plan the scan of `tbl` with the plugin; returns the native parquet scan."""
-    from polars.io.iceberg._dataset import (
-        _convert_iceberg_to_object_store_storage_options,
-    )
     from polars.io.iceberg._utils import name_mapping_by_field_id
 
     plr = _plr()
@@ -152,23 +149,9 @@ def plugin_scan(
         msg = "iceberg: unsupported: table without a metadata location"
         raise NotImplementedError(msg)
 
-    # Catalog-provided IO properties (e.g. vended credentials) with known object store
-    # equivalents, overridden by the user's storage options.
-    storage_options = _catalog_storage_options(tbl.io.properties, metadata_location)
-    if user_storage_options is not None:
-        user_options = _convert_iceberg_to_object_store_storage_options(
-            user_storage_options
-        )
-        # The user's credentials replace the catalog's as a whole: mixing them
-        # (e.g. a profile with vended keys) is ambiguous, and rejected by the
-        # credential provider.
-        if any(_is_credential_key(k) for k in user_options):
-            storage_options = {
-                k: v
-                for k, v in storage_options.items()
-                if k not in _CATALOG_CREDENTIAL_KEYS
-            }
-        storage_options.update(user_options)
+    storage_options = _storage_options(
+        tbl.io.properties, metadata_location, user_storage_options
+    )
 
     credential_provider = _init_credential_provider_builder(
         "auto", metadata_location, storage_options, "scan_iceberg"
@@ -254,6 +237,88 @@ _S3_CLIENT_PROPERTIES = {
     "client.region": "s3.region",
 }
 
+# FileIO property prefixes, by the URL schemes they configure.
+_PROPERTY_SCHEMES: dict[str, tuple[str, ...]] = {
+    "s3.": ("s3", "s3a", "s3n"),
+    "client.": ("s3", "s3a", "s3n"),
+    "adls.": _AZURE_SCHEMES,
+    "gcs.": ("gs", "gcs"),
+    "hf.": ("hf",),
+}
+
+
+def _storage_options(
+    properties: Mapping[str, Any],
+    location: str,
+    user_storage_options: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """
+    Object store options of a table at `location`.
+
+    Its FileIO properties (e.g. vended credentials) with known object store
+    equivalents, overridden by the user's storage options. Raises
+    `NotImplementedError` as `_catalog_storage_options`.
+    """
+    from polars.io.iceberg._dataset import (
+        _convert_iceberg_to_object_store_storage_options,
+    )
+
+    storage_options = _catalog_storage_options(properties, location)
+    if user_storage_options is not None:
+        # Empty values are unset, as for the catalog's.
+        user_options = {
+            k: v
+            for k, v in _convert_iceberg_to_object_store_storage_options(
+                dict(user_storage_options)
+            ).items()
+            if v not in ("", None)
+        }
+        # The user's credentials replace the catalog's as a whole: mixing them
+        # (e.g. a profile with vended keys) is ambiguous, and rejected by the
+        # credential provider.
+        if any(_is_credential_key(k) for k in user_options):
+            storage_options = {
+                k: v
+                for k, v in storage_options.items()
+                if k not in _CATALOG_CREDENTIAL_KEYS
+            }
+        # User keys last, in their order: of two aliases, the later one wins.
+        storage_options = {
+            k: v for k, v in storage_options.items() if k not in user_options
+        }
+        storage_options.update(user_options)
+    return storage_options
+
+
+def _native_storage_options(
+    table: pyiceberg.table.Table,
+    user_storage_options: Mapping[str, Any] | None,
+    location: str | None = None,
+) -> dict[str, Any] | None:
+    """
+    Object store options for Polars' own reads and writes of `table`'s files.
+
+    As `_storage_options`, for files at `location` (default: the table's). With
+    FileIO properties that have no object store equivalent, the user's storage
+    options alone.
+    """
+    from polars.io.iceberg._dataset import (
+        _convert_iceberg_to_object_store_storage_options,
+    )
+
+    try:
+        return _storage_options(
+            table.io.properties, location or table.location(), user_storage_options
+        )
+    except NotImplementedError as e:
+        if verbose():
+            eprint(f"{e}; using the user's storage options only")
+        if user_storage_options is None:
+            return None
+        return _convert_iceberg_to_object_store_storage_options(
+            dict(user_storage_options)
+        )
+
 
 def _catalog_storage_options(
     properties: Mapping[str, Any], location: str
@@ -271,7 +336,11 @@ def _catalog_storage_options(
 
     scheme = location.split("://", 1)[0].lower() if "://" in location else ""
     # Empty values are unset, as in PyIceberg.
-    properties = {k: v for k, v in properties.items() if v not in ("", None)}
+    properties = {
+        k: v
+        for k, v in properties.items()
+        if v not in ("", None) and _configures(k, scheme)
+    }
     for schemes, keys in _UNSUPPORTED_IO_PROPERTIES.items():
         if scheme in schemes and (
             unsupported := sorted(k for k in keys if k in properties)
@@ -306,6 +375,15 @@ def _catalog_storage_options(
         if scheme in schemes and _property_is_true(properties, anonymous_key):
             storage_options[skip_signature_key] = "true"
     return storage_options
+
+
+def _configures(key: str, scheme: str) -> bool:
+    """Whether FileIO property `key` applies to `scheme` (other backends' don't)."""
+    return all(
+        scheme in schemes
+        for prefix, schemes in _PROPERTY_SCHEMES.items()
+        if key.startswith(prefix)
+    )
 
 
 def _property_is_true(properties: Mapping[str, Any], key: str) -> bool:

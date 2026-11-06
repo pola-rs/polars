@@ -15,7 +15,6 @@ from polars.exceptions import ComputeError
 from polars.io.cloud._utils import NoPickleOption
 from polars.io.iceberg._dataset import (
     IcebergCatalogConfig,
-    _convert_iceberg_to_object_store_storage_options,
 )
 from polars.io.iceberg._utils import (
     _is_null_pushdown_safe,
@@ -1339,9 +1338,17 @@ class IcebergSinkState:
             self.table_name, schema=self._get_source_schema()
         )
 
-    def _get_converted_storage_options(self) -> dict[str, str]:
-        return _convert_iceberg_to_object_store_storage_options(
-            self.iceberg_storage_properties
+    def _get_converted_storage_options(self) -> dict[str, Any]:
+        from polars.io.iceberg._plugin import _native_storage_options
+
+        # The table's FileIO properties (e.g. catalog credentials), as for scans
+        return (
+            _native_storage_options(
+                self.table(),
+                self.iceberg_storage_properties,
+                self.sink_base_path(object_storage_enabled=True),
+            )
+            or {}
         )
 
     def attach_sink(self, lf: pl.LazyFrame) -> pl.LazyFrame:
@@ -1816,10 +1823,13 @@ class IcebergSinkState:
         table = self.table()
         if not self.iceberg_storage_properties:
             return table.io
-        return load_file_io(
-            {**table.io.properties, **self.iceberg_storage_properties},
-            location=table.location(),
-        )
+        # Empty values are unset, as for the write.
+        user = {
+            k: v
+            for k, v in self.iceberg_storage_properties.items()
+            if v not in ("", None)
+        }
+        return load_file_io({**table.io.properties, **user}, location=table.location())
 
     def sink_base_path(self, *, object_storage_enabled: bool) -> str:
         from pyiceberg.table import TableProperties

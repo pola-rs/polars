@@ -9366,3 +9366,75 @@ def _deletion_vector_blob(positions: list[int]) -> bytes:
     )
     body = b"\xd1\xd3\x39\x64" + vector
     return len(body).to_bytes(4, "big") + body + zlib.crc32(body).to_bytes(4, "big")
+
+
+def test_iceberg_native_storage_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    import polars.io.iceberg._plugin as plugin
+
+    class Table:
+        def __init__(
+            self, properties: dict[str, Any], location: str = "s3://bucket/t"
+        ) -> None:
+            self.io = type("IO", (), {"properties": properties})()
+            self._location = location
+
+        def location(self) -> str:
+            return self._location
+
+    # Polars' own reads and writes (PyIceberg planner, sink) take them as the plugin
+    table = Table(
+        {"s3.region": "eu-west-1", "s3.access-key-id": "k", "s3.secret-access-key": "s"}
+    )
+    assert plugin._native_storage_options(table, None) == {  # type: ignore[arg-type]
+        "aws_region": "eu-west-1",
+        "aws_access_key_id": "k",
+        "aws_secret_access_key": "s",
+    }
+    # the user's credentials replace the catalog's
+    assert plugin._native_storage_options(table, {"aws_profile": "p"}) == {  # type: ignore[arg-type]
+        "aws_region": "eu-west-1",
+        "aws_profile": "p",
+    }
+    # remote signing has no object store equivalent: the user's options alone
+    table = Table({"s3.remote-signing-enabled": "true", "s3.region": "eu-west-1"})
+    assert plugin._native_storage_options(table, None) is None  # type: ignore[arg-type]
+    assert plugin._native_storage_options(table, {"s3.region": "us-east-1"}) == {  # type: ignore[arg-type]
+        "aws_region": "us-east-1"
+    }
+    # properties of other backends don't apply
+    table = Table({"s3.region": "eu-west-1", "adls.account-name": "a"}, "gs://b/t")
+    assert plugin._native_storage_options(table, None) == {}  # type: ignore[arg-type]
+    table = Table({"s3.region": "eu-west-1"}, "file:///tmp/t")
+    assert plugin._native_storage_options(table, None) == {}  # type: ignore[arg-type]
+    # unless the files are elsewhere, e.g. the sink's `write.data.path`
+    assert plugin._native_storage_options(table, None, "s3://bucket/data") == {  # type: ignore[arg-type]
+        "aws_region": "eu-west-1"
+    }
+    # boolean values, which PyIceberg takes
+    table = Table({"s3.force-virtual-addressing": True})
+    assert plugin._native_storage_options(table, None) == {  # type: ignore[arg-type]
+        "aws_virtual_hosted_style_request": "true"
+    }
+    # the storage host is not the OAuth authority host: the URL gives it
+    table = Table(
+        {"adls.account-host": "h.blob.core.windows.net", "adls.account-name": "a"},
+        "abfss://c@a.dfs.core.windows.net/t",
+    )
+    assert plugin._native_storage_options(table, None) == {  # type: ignore[arg-type]
+        "azure_storage_account_name": "a"
+    }
+    # the user's keys come last, in their order: of two aliases, the later one wins
+    table = Table({"s3.endpoint": "c"})
+    user = {"aws_endpoint": "first", "aws_endpoint_url": "last"}
+    out = plugin._native_storage_options(table, user)  # type: ignore[arg-type]
+    assert out is not None
+    assert list(out.items()) == [
+        ("aws_endpoint", "first"),
+        ("aws_endpoint_url", "last"),
+    ]
+    # empty user values are unset: they keep the catalog's credentials
+    table = Table({"s3.access-key-id": "k", "s3.secret-access-key": "s"})
+    assert plugin._native_storage_options(table, {"aws_session_token": ""}) == {  # type: ignore[arg-type]
+        "aws_access_key_id": "k",
+        "aws_secret_access_key": "s",
+    }
