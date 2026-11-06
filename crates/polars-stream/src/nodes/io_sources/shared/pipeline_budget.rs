@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use polars_core::config;
 use polars_io::cloud::concurrency::{InFlightBudget, get_inflight_request_budget};
 use polars_io::cloud::concurrency_config::{FetchConfig, get_download_chunk_size};
+use polars_io::utils::byte_source::DynByteSource;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 // Pipeline window: the bytes and fetches a scan holds between fetch and decode.
@@ -15,7 +16,9 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 // - Ordered scans also hold completed fetches behind the head of line: the target adds the
 //   delivered bandwidth times the slack, and the count limit is 8192 once a file follows a store
 //   (otherwise the default x2, at most 2048).
-// - Local fetches and limits set by env vars keep a fixed window.
+// - Local file fetches grow to as many row groups as it takes to give every decoder a task, plus
+//   one being read.
+// - In-memory sources and limits set by env vars keep a fixed window.
 // - A fetch larger than the window grows it if it can, else runs alone (`OversizedPermit`).
 // - Each scan starts at the default limits. Bytes above them come from one process-wide pool (a
 //   fraction of total memory), first come, first served, and return when the scan ends.
@@ -190,6 +193,38 @@ struct LogStats {
     grow_cap: AtomicU8,
 }
 
+/// How a scan's window may grow while it fetches.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum WindowGrowth<'a> {
+    /// The window keeps its limits.
+    Fixed,
+    /// As many fetches as it takes to give every decoder a task, plus one being read.
+    Local,
+    /// Derived from the in-flight byte budget of the fetch's store (see `grow_window`).
+    Store(&'a InFlightBudget),
+}
+
+impl<'a> WindowGrowth<'a> {
+    /// Growth for a fetch from `byte_source`, given its `DynByteSource::window_inflight_budget`.
+    pub(crate) fn for_source(
+        byte_source: &DynByteSource,
+        inflight: Option<&'a InFlightBudget>,
+    ) -> Self {
+        match (inflight, byte_source) {
+            (Some(inflight), _) => Self::Store(inflight),
+            (None, DynByteSource::File(_)) => Self::Local,
+            (None, _) => Self::Fixed,
+        }
+    }
+
+    fn inflight(self) -> Option<&'a InFlightBudget> {
+        match self {
+            Self::Store(inflight) => Some(inflight),
+            Self::Fixed | Self::Local => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct PipelineBudget {
     count: Arc<Semaphore>,
@@ -205,6 +240,8 @@ pub struct PipelineBudget {
     num_pipelines: usize,
     /// How many `OversizedPermit`s are in flight: 0 or 1.
     oversized_in_flight: Arc<AtomicUsize>,
+    /// Largest local window target so far, in bytes.
+    local_target: Arc<AtomicUsize>,
     registration: Arc<ScanRegistration>,
     log_stats: Arc<LogStats>,
     last_reported: Arc<Mutex<Instant>>,
@@ -240,6 +277,7 @@ impl PipelineBudget {
             ordered: Arc::new(AtomicBool::new(false)),
             num_pipelines,
             oversized_in_flight: Arc::default(),
+            local_target: Arc::default(),
             registration: Arc::new(ScanRegistration::new()),
             log_stats: Arc::default(),
             last_reported: Arc::new(Mutex::new(Instant::now())),
@@ -308,24 +346,29 @@ impl PipelineBudget {
         }
     }
 
-    /// Grows the kbytes limit from the pool toward the target: the in-flight byte budget of the
-    /// fetch's store, plus the reorder headroom of an ordered scan, plus one fetch of `n_bytes` per
-    /// decode slot. The target is at most the count limit times `n_bytes`, and growth at most what
-    /// the pool has left. Never shrinks; paused while an `OversizedPermit` lives.
-    fn grow_window(&self, n_bytes: usize, inflight: &InFlightBudget) {
+    /// Grows the kbytes limit from the pool toward a target derived from:
+    /// - for a store, its in-flight byte budget;
+    /// - for a local file (`inflight` is `None`), `local_target`.
+    ///
+    /// Never shrinks; paused while an `OversizedPermit` lives.
+    fn grow_window(&self, n_bytes: usize, inflight: Option<&InFlightBudget>) {
         // TODO: the window can't grow while an oversized fetch is running, even if the pool has
         // room. Charging each fetch its full size and tracking the overshoot would lift this.
         if self.oversized_in_flight.load(Ordering::Acquire) > 0 {
             return;
         }
-        let headroom = if self.ordered.load(Ordering::Acquire) {
-            (inflight.delivered_bandwidth() as f64 * ORDERED_SLACK.as_secs_f64()) as usize
-        } else {
-            0
+        let headroom = match inflight {
+            Some(inflight) if self.ordered.load(Ordering::Acquire) => {
+                (inflight.delivered_bandwidth() as f64 * ORDERED_SLACK.as_secs_f64()) as usize
+            },
+            _ => 0,
         };
-        let target_bytes = (inflight.current_byte_budget() as usize)
-            .saturating_add(headroom)
-            .saturating_add((self.num_pipelines + 1).saturating_mul(n_bytes));
+        let target_bytes = match inflight {
+            Some(inflight) => (inflight.current_byte_budget() as usize)
+                .saturating_add(headroom)
+                .saturating_add((self.num_pipelines + 1).saturating_mul(n_bytes)),
+            None => self.local_target.load(Ordering::Relaxed),
+        };
         let cap_bytes = self.count_limit().saturating_mul(n_bytes);
         let mut grow_cap = if cap_bytes < target_bytes {
             GrowCap::CountLimit
@@ -381,10 +424,9 @@ impl PipelineBudget {
         }
     }
 
-    /// Acquire permit for a fetch of `n_bytes`. `inflight`: the in-flight budget of the fetch's
-    /// store if its window follows it (`DynByteSource::window_inflight_budget`); the window then
-    /// grows when the fetch finds it short, and again every `GROW_RETRY_INTERVAL` while it waits
-    /// (not for an oversized fetch).
+    /// Acquire permit for a fetch of `n_bytes` that decodes in `decode_tasks` tasks. Unless
+    /// `window` is `WindowGrowth::Fixed`, the window grows when the fetch finds it short, and
+    /// again every `GROW_RETRY_INTERVAL` while it waits (not for an oversized fetch).
     ///
     /// Acquisition order is kbytes-first, then count, so that the count_in_use
     /// value is meaningful. All pipeline paths (parquet, IPC) must acquire
@@ -395,12 +437,18 @@ impl PipelineBudget {
     pub(crate) async fn acquire(
         &self,
         n_bytes: usize,
-        inflight: Option<&InFlightBudget>,
+        window: WindowGrowth<'_>,
+        decode_tasks: usize,
     ) -> PipelinePermit {
-        let inflight = inflight.filter(|_| self.can_grow_kbytes);
-        if let Some(inflight) = inflight
-            && self.kbytes.available_permits() < n_bytes.div_ceil(1 << 10)
-        {
+        let may_grow = self.can_grow_kbytes && !matches!(window, WindowGrowth::Fixed);
+        let inflight = window.inflight();
+        if matches!(window, WindowGrowth::Local) {
+            // Enough fetches to give every decoder a task, plus one being read.
+            let fetches = self.num_pipelines.div_ceil(decode_tasks.max(1)) + 1;
+            self.local_target
+                .fetch_max(fetches.saturating_mul(n_bytes), Ordering::Relaxed);
+        }
+        if may_grow && self.kbytes.available_permits() < n_bytes.div_ceil(1 << 10) {
             self.grow_window(n_bytes, inflight);
         }
 
@@ -413,23 +461,22 @@ impl PipelineBudget {
 
         // Semaphores are never closed, so acquire cannot fail.
         let kbytes = self.kbytes.clone().acquire_many_owned(charged_kbytes);
-        let mut kbytes_permit = match inflight.filter(|_| !oversized) {
-            Some(inflight) => {
-                tokio::pin!(kbytes);
-                loop {
-                    tokio::select! {
-                        permit = &mut kbytes => break permit,
-                        _ = tokio::time::sleep(GROW_RETRY_INTERVAL) => {
-                            self.grow_window(n_bytes, inflight)
-                        },
-                    }
+        let mut kbytes_permit = if may_grow && !oversized {
+            tokio::pin!(kbytes);
+            loop {
+                tokio::select! {
+                    permit = &mut kbytes => break permit,
+                    _ = tokio::time::sleep(GROW_RETRY_INTERVAL) => {
+                        self.grow_window(n_bytes, inflight)
+                    },
                 }
-            },
-            None => kbytes.await,
+            }
+        } else {
+            kbytes.await
         }
         .unwrap();
         // Holding the whole window with nothing else in flight: grow if possible, take what fits.
-        if oversized && let Some(inflight) = inflight {
+        if oversized && may_grow {
             self.grow_window(n_bytes, inflight);
             // The limit never shrinks and is at most `MAX_KBYTES_LIMIT`, so this fits a `u32`.
             let extra = self.permit_kbytes(n_bytes) as u32 - charged_kbytes;

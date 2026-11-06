@@ -128,6 +128,25 @@ pub(super) struct RowGroupDecoder {
 }
 
 impl RowGroupDecoder {
+    /// Number of tasks a row group of `n_rows` rows decodes in: columns split by
+    /// `target_values_per_thread`, or into at most `num_pipelines` tasks when prefiltered.
+    pub(super) fn decode_tasks(&self, n_rows: usize, sliced: bool) -> usize {
+        let n_cols = self.projected_arrow_fields.len();
+        if self.prefilters(sliced, self.nothing_to_evaluate()) {
+            n_cols.min(self.num_pipelines)
+        } else {
+            n_cols.div_ceil(calc_cols_per_thread(n_rows, self.target_values_per_thread))
+        }
+    }
+
+    /// Whether a row group is decoded by `row_group_data_to_df_prefiltered`.
+    fn prefilters(&self, sliced: bool, nothing_to_evaluate: bool) -> bool {
+        self.use_prefiltered
+            && !sliced
+            && !self.predicate_field_indices.is_empty()
+            && !nothing_to_evaluate
+    }
+
     pub(super) async fn row_group_data_to_df(
         &self,
         mut row_group_data: RowGroupData,
@@ -149,11 +168,7 @@ impl RowGroupDecoder {
         });
 
         let nothing_to_evaluate = self.nothing_to_evaluate();
-        if self.use_prefiltered
-            && row_group_data.slice.is_none()
-            && !self.predicate_field_indices.is_empty()
-            && !nothing_to_evaluate
-        {
+        if self.prefilters(row_group_data.slice.is_some(), nothing_to_evaluate) {
             self.row_group_data_to_df_prefiltered(row_group_data).await
         } else {
             self.row_group_data_to_df_impl(row_group_data, nothing_to_evaluate)
