@@ -998,4 +998,75 @@ mod tests {
             }
         }
     }
+
+    /// Pages are cut by their size in bytes, not by the average value size, so a few large
+    /// values among many small ones do not end up in a single oversized page.
+    #[test]
+    fn test_skewed_value_sizes() {
+        const PAGE_SIZE: usize = 1024;
+        // Room for the levels on top of the values and their 4-byte length prefixes.
+        const PAGE_OVERHEAD: usize = 64;
+
+        let small = vec![0u8; 1];
+        let large = vec![0u8; 300];
+        let values: Vec<&[u8]> = std::iter::repeat_n(small.as_slice(), 1000)
+            .chain(std::iter::repeat_n(large.as_slice(), 4))
+            .chain(std::iter::repeat_n(small.as_slice(), 1000))
+            .collect();
+        let num_rows = values.len();
+
+        let view = BinaryViewArray::from_slice_values(&values).boxed();
+        let large_binary = BinaryArray::<i64>::from_slice(&values).boxed();
+        let strings: Vec<String> = values
+            .iter()
+            .map(|v| String::from_utf8(v.to_vec()).unwrap())
+            .collect();
+        let large_utf8 = Utf8Array::<i64>::from_slice(&strings).boxed();
+        let list = ListArray::<i64>::new(
+            ArrowDataType::LargeList(Box::new(Field::new(
+                "item".into(),
+                ArrowDataType::BinaryView,
+                false,
+            ))),
+            (0..=num_rows as i64)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+            view.clone(),
+            None,
+        )
+        .boxed();
+
+        let options = WriteOptions {
+            statistics: StatisticsOptions::empty(),
+            version: Version::V1,
+            compression: CompressionOptions::Uncompressed,
+            data_page_size: Some(PAGE_SIZE),
+        };
+
+        for array in [view, large_binary, large_utf8, list] {
+            let type_ =
+                to_parquet_type(&Field::new("a".into(), array.dtype().clone(), false)).unwrap();
+            let mut columns =
+                array_to_columns(array.clone(), type_, options, &[Encoding::Plain]).unwrap();
+
+            let mut rows_written = 0;
+            for page in columns.remove(0) {
+                let Page::Data(page) = page.unwrap() else {
+                    panic!("expected a data page");
+                };
+                rows_written += page.num_values();
+                if page.num_values() > 1 {
+                    assert!(
+                        page.buffer().len() <= PAGE_SIZE + PAGE_OVERHEAD,
+                        "{:?}: page of {} values is {} bytes",
+                        array.dtype(),
+                        page.num_values(),
+                        page.buffer().len(),
+                    );
+                }
+            }
+            assert_eq!(rows_written, num_rows);
+        }
+    }
 }
