@@ -73,7 +73,7 @@ def test_over_replace_strict_22870() -> None:
         }
     )
 
-    # More rows than threads, so that the streaming engine puts several rows in a morsel.
+    # More rows than threads, so that a streaming morsel holds several rows.
     n = 500
     df = pl.DataFrame(
         {
