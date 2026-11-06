@@ -40,8 +40,10 @@ use super::{ComputeNode, NodeMemoryUsage};
 use crate::execute::StreamingExecutionState;
 use crate::expression::StreamExpr;
 use crate::graph::PortState;
-use crate::hash_shuffle::batches::{BuildPartition, LoadedFrame, build_from_batches, make_batches};
-use crate::hash_shuffle::frame_with_keys::SpillFrameWithKeys;
+use crate::hash_shuffle::batches::{
+    BatchFrame, BuildPartition, LoadedFrame, build_from_batches, make_batches,
+};
+use crate::hash_shuffle::split::NullRows;
 use crate::hash_shuffle::store::StoredPartition;
 use crate::metrics::{Metric, MetricUnit, NodeMetricsRegistry, kind};
 use crate::pipe::{RecvPort, SendPort};
@@ -295,7 +297,7 @@ impl GroupByNode {
     fn build_partitions(
         &self,
         pre_aggs: SplitPreAggs,
-        batches: Vec<Vec<(usize, SpillFrameWithKeys)>>,
+        batches: Vec<Vec<BatchFrame>>,
         partitioner: &HashPartitioner,
         reserve_groups: usize,
         state: &StreamingExecutionState,
@@ -345,7 +347,14 @@ impl GroupByNode {
             }
             .boxed()
         };
-        build_from_batches(batches, partitioner, &mut partitions, add_batch, state)?;
+        build_from_batches(
+            batches,
+            partitioner,
+            &mut partitions,
+            NullRows::FirstPartition,
+            add_batch,
+            state,
+        )?;
 
         for_each_parallel(partitions.iter_mut(), state.task_metrics(), &|(
             _,
@@ -370,7 +379,7 @@ impl GroupByNode {
     /// partitions can be built a few at a time while the results are sent.
     fn store_partitions(
         &self,
-        batches: Vec<Vec<(usize, SpillFrameWithKeys)>>,
+        batches: Vec<Vec<BatchFrame>>,
         partitioner: &HashPartitioner,
         state: &StreamingExecutionState,
     ) -> PolarsResult<Vec<StoredPartition>> {
@@ -383,6 +392,7 @@ impl GroupByNode {
             batches,
             partitioner,
             &mut stored,
+            NullRows::FirstPartition,
             &|stored: &mut StoredPartition, batch: &[LoadedFrame], _| {
                 stored.write_batch(batch);
                 async { Ok(()) }.boxed()

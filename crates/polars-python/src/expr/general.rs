@@ -1010,21 +1010,21 @@ impl PyExpr {
             .into()
     }
 
-    fn ewm_mean(&self, alpha: f64, adjust: bool, min_periods: usize, ignore_nulls: bool) -> Self {
+    fn ewm_mean(&self, alpha: f64, adjust: bool, min_samples: usize, ignore_nulls: bool) -> Self {
         let options = EWMOptions {
             alpha,
             adjust,
             bias: false,
-            min_periods,
+            min_samples,
             ignore_nulls,
         };
         self.inner.clone().ewm_mean(options).into()
     }
-    fn ewm_sum(&self, alpha: f64, min_periods: usize, ignore_nulls: bool) -> Self {
+    fn ewm_sum(&self, alpha: f64, min_samples: usize, ignore_nulls: bool) -> Self {
         let options = EWMOptions {
             alpha,
             bias: false,
-            min_periods,
+            min_samples,
             ignore_nulls,
             ..Default::default()
         };
@@ -1048,14 +1048,14 @@ impl PyExpr {
         alpha: f64,
         adjust: bool,
         bias: bool,
-        min_periods: usize,
+        min_samples: usize,
         ignore_nulls: bool,
     ) -> Self {
         let options = EWMOptions {
             alpha,
             adjust,
             bias,
-            min_periods,
+            min_samples,
             ignore_nulls,
         };
         self.inner.clone().ewm_std(options).into()
@@ -1065,14 +1065,14 @@ impl PyExpr {
         alpha: f64,
         adjust: bool,
         bias: bool,
-        min_periods: usize,
+        min_samples: usize,
         ignore_nulls: bool,
     ) -> Self {
         let options = EWMOptions {
             alpha,
             adjust,
             bias,
-            min_periods,
+            min_samples,
             ignore_nulls,
         };
         self.inner.clone().ewm_var(options).into()
@@ -1179,7 +1179,7 @@ impl PyExpr {
         py.enter_polars(|| {
             let mut ctx = ExprToIRContext::new(&mut aexpr_arena, &schema.0);
             ctx.allow_unknown = true;
-            let node = to_expr_ir(self.inner.clone(), &mut ctx)?.node();
+            let node = to_expr_ir(&self.inner, &mut ctx)?.node();
             let Some(node) = aexpr_to_skip_batch_predicate(node, &mut aexpr_arena, &schema.0)
             else {
                 return Ok(None);

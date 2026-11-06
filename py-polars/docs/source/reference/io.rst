@@ -141,6 +141,29 @@ Parquet
    DataFrame.write_parquet
    LazyFrame.sink_parquet
 
+Parquet encryption
+~~~~~~~~~~~~~~~~~~
+.. autosummary::
+   :toctree: api/
+
+   ParquetDecryptionProperties
+   ParquetEncryptionProperties
+
+.. currentmodule:: polars.io.parquet.encryption
+
+.. autosummary::
+   :toctree: api/
+
+   CryptoFactory
+   DecryptionConfiguration
+   EncryptionConfiguration
+   KmsClient
+   KmsConnectionConfig
+   ParquetDecryptionConfig
+   ParquetEncryptionConfig
+
+.. currentmodule:: polars
+
 External
 ~~~~~~~~
 .. autosummary::

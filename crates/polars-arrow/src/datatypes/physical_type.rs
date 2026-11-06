@@ -24,7 +24,7 @@ pub enum PhysicalType {
     LargeBinary,
     /// A variable-length string in Unicode with UTF-8 encoding.
     Utf8,
-    /// A variable-length string in Unicode with UFT-8 encoding and 64-bit offsets.
+    /// A variable-length string in Unicode with UTF-8 encoding and 64-bit offsets.
     LargeUtf8,
     /// A list of some data type with variable length.
     List,

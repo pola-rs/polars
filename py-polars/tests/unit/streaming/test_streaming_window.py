@@ -11,9 +11,10 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from polars._typing import EngineType
     from tests.conftest import PlMonkeyPatch
 
-ENGINES = ["in-memory", "streaming"]
+ENGINES: list[EngineType] = ["in-memory", "streaming"]
 
 
 def _frame(n: int = 20_000) -> pl.DataFrame:
@@ -36,7 +37,9 @@ def _write_parts(df: pl.DataFrame, path: Path, parts: int = 8) -> pl.LazyFrame:
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_stacked_windows_over_group_by_evaluate_in_same_order(engine: str) -> None:
+def test_stacked_windows_over_group_by_evaluate_in_same_order(
+    engine: EngineType,
+) -> None:
     q = (
         _frame()
         .lazy()
@@ -46,12 +49,12 @@ def test_stacked_windows_over_group_by_evaluate_in_same_order(engine: str) -> No
         .with_columns(w2=pl.col("w1").cum_sum().over("h"))
         .with_columns(w3=pl.col("x").cum_sum().over("g") + pl.col("w2") * 0)
     )
-    out = q.collect(engine=engine)  # type: ignore[call-overload]
+    out = q.collect(engine=engine)
     assert_series_equal(out["w1"], out["w3"], check_names=False)
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_window_in_cached_branch_stays_aligned(engine: str) -> None:
+def test_window_in_cached_branch_stays_aligned(engine: EngineType) -> None:
     base = (
         _frame()
         .lazy()
@@ -61,7 +64,7 @@ def test_window_in_cached_branch_stays_aligned(engine: str) -> None:
     )
     left = base.select("k", c=pl.col("x").cum_sum().over("g"))
     right = base.select(k2="k", g2="g", x2="x")
-    out = pl.concat([left, right], how="horizontal").collect(engine=engine)  # type: ignore[call-overload]
+    out = pl.concat([left, right], how="horizontal").collect(engine=engine)
 
     assert_series_equal(out["k"], out["k2"], check_names=False)
     expected = out.select(pl.col("x2").cum_sum().over("g2"))
@@ -322,7 +325,7 @@ def test_window_unordered_shape_error(expr: pl.Expr) -> None:
     assert len(_window_headers(q)) == 1
     for engine in ENGINES:
         with pytest.raises(pl.exceptions.ShapeError):
-            q.collect(engine=engine)  # type: ignore[call-overload]
+            q.collect(engine=engine)
 
 
 def test_window_scalar_order_key() -> None:
@@ -330,7 +333,7 @@ def test_window_scalar_order_key() -> None:
     q = lf.with_columns(w=pl.col("x").cum_sum().over("g", order_by=pl.col("t").sum()))
     expected = lf.with_columns(w=pl.col("x").cum_sum().over("g")).collect()
     for engine in ENGINES:
-        assert_frame_equal(q.collect(engine=engine), expected)  # type: ignore[call-overload]
+        assert_frame_equal(q.collect(engine=engine), expected)
 
 
 def test_window_repeated_partition_keys() -> None:
@@ -575,7 +578,7 @@ def test_sql_window_order_by_mixed_directions() -> None:
                     SELECT *, ROW_NUMBER() OVER (
                         PARTITION BY g ORDER BY x DESC, id DESC
                     ) AS rn FROM t
-                ) WHERE rn = 1
+                ) WHERE rn <= 2
                 """
             ),
             False,
@@ -849,17 +852,264 @@ def _payload_frame(n: int = 2000) -> pl.LazyFrame:
     )
 
 
-def test_window_mode_sql_dedup(window_mode: str) -> None:
+def test_window_mode_sql_top_rows(window_mode: str) -> None:
     q = pl.SQLContext(t=_payload_frame()).execute(
         """
         SELECT id, g, h, s, l FROM (
             SELECT *, ROW_NUMBER() OVER (PARTITION BY g ORDER BY t DESC, id) AS rn
             FROM t
         ) u
-        WHERE rn = 1
+        WHERE rn <= 2
         """
     )
     _assert_unordered_physical_windows(q)
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("where", ["rn = 1", "rn <= 1", "rn < 2", "1 >= rn"])
+@pytest.mark.parametrize("evict", [False, True])
+def test_sql_first_row_number_as_group_by(
+    where: str, evict: bool, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    if evict:
+        plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "2")
+        plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "2")
+        plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", "2")
+    q = pl.SQLContext(t=_payload_frame(500)).execute(
+        f"""
+        SELECT id, g, s, l, rn FROM (
+            SELECT *, ROW_NUMBER() OVER (
+                PARTITION BY g, h ORDER BY t DESC NULLS LAST, id
+            ) AS rn
+            FROM t
+        ) u
+        WHERE {where}
+        """
+    )
+    assert _window_headers(q) == []
+    assert "AGGREGATE" in q.explain(engine="streaming")
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
+def test_sql_first_row_number_only_keys() -> None:
+    q = pl.SQLContext(t=_keyed_frame(500)).execute(
+        """
+        SELECT g FROM (
+            SELECT g, ROW_NUMBER() OVER (PARTITION BY g ORDER BY g) AS rn FROM t
+        ) u
+        WHERE rn = 1
+        """
+    )
+    assert _window_headers(q) == []
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
+def test_sql_first_row_number_keeps_winner_key() -> None:
+    # -0.0 and +0.0 are one group, the output has the key of the picked row.
+    lf = pl.LazyFrame({"g": [-0.0, 0.0], "id": [0, 1]})
+    q = pl.SQLContext(t=lf).execute(
+        """
+        SELECT 1.0 / g AS inv, id FROM (
+            SELECT *, ROW_NUMBER() OVER (PARTITION BY g ORDER BY id DESC) AS rn
+            FROM t
+        ) u
+        WHERE rn = 1
+        """
+    )
+    assert _window_headers(q) == []
+    expected = pl.DataFrame({"inv": [float("inf")], "id": [1]})
+    assert_frame_equal(q.collect(engine="streaming"), expected)
+    assert_frame_equal(q.collect(engine="in-memory"), expected)
+
+
+def test_sql_first_row_number_maintains_errors(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_PUSHDOWN_OPT_MAINTAIN_ERRORS", "1")
+    lf = pl.LazyFrame({"g": [1, 1], "s": ["1", "bad"], "id": [0, 1]})
+    q = pl.SQLContext(t=lf).execute(
+        """
+        SELECT * FROM (
+            SELECT CAST(s AS INT) AS v,
+                   ROW_NUMBER() OVER (PARTITION BY g ORDER BY id) AS rn
+            FROM t
+        ) u
+        WHERE rn = 1
+        """
+    )
+    assert len(_window_headers(q)) == 1
+    for engine in ENGINES:
+        with pytest.raises(pl.exceptions.InvalidOperationError):
+            q.collect(engine=engine)
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda lf: lf.filter(
+            (pl.col("rn") == 1) & (pl.col("s").str.to_integer() > pl.col("rn") - 1)
+        ),
+        lambda lf: lf.with_columns(
+            keep=(pl.col("rn") == 1) & (pl.col("s").str.to_integer() > 0)
+        ).filter("keep"),
+    ],
+)
+def test_sql_first_row_number_maintains_predicate_errors(
+    build: Callable[[pl.LazyFrame], pl.LazyFrame], plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_PUSHDOWN_OPT_MAINTAIN_ERRORS", "1")
+    lf = pl.LazyFrame({"g": [1, 1], "s": ["1", "bad"], "id": [0, 1]})
+    q = build(
+        pl.SQLContext(t=lf).execute(
+            "SELECT *, ROW_NUMBER() OVER (PARTITION BY g ORDER BY id) AS rn FROM t"
+        )
+    )
+    assert len(_window_headers(q)) == 1
+    for engine in ENGINES:
+        with pytest.raises(pl.exceptions.ComputeError):
+            q.collect(engine=engine)
+
+
+def test_sql_first_row_number_maintain_errors_conjunction(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_PUSHDOWN_OPT_MAINTAIN_ERRORS", "1")
+    q = pl.SQLContext(t=_payload_frame(500)).execute(
+        "SELECT id, g FROM t QUALIFY ROW_NUMBER() OVER "
+        "(PARTITION BY g ORDER BY t DESC, id) = 1 AND x > 100"
+    )
+    assert _window_headers(q) == []
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT * FROM (SELECT *, ROW_NUMBER() OVER "
+        "(PARTITION BY g ORDER BY t DESC, id) AS rn FROM t) u "
+        "WHERE rn = 1 AND x > 500",
+        "SELECT * FROM (SELECT *, ROW_NUMBER() OVER "
+        "(PARTITION BY g ORDER BY t DESC, id) AS rn FROM t) u "
+        "WHERE x > 500 AND 1 = rn",
+        "SELECT * FROM (SELECT *, ROW_NUMBER() OVER "
+        "(PARTITION BY g ORDER BY t DESC, id) AS rn FROM t) u "
+        "WHERE rn <= 3 AND rn >= 1 AND rn < 2",
+        "SELECT * FROM (SELECT *, ROW_NUMBER() OVER "
+        "(PARTITION BY g ORDER BY t DESC, id) AS rn FROM t) u "
+        "WHERE rn <= 9223372036854775807 AND rn <= 1",
+        "SELECT id, g FROM t QUALIFY ROW_NUMBER() OVER "
+        "(PARTITION BY g ORDER BY t DESC, id) = 1",
+        "SELECT id, g FROM t QUALIFY ROW_NUMBER() OVER "
+        "(PARTITION BY g ORDER BY t DESC, id) = 1 AND x > 100",
+    ],
+)
+def test_sql_first_row_number_conjunctions(query: str) -> None:
+    q = pl.SQLContext(t=_payload_frame(500)).execute(query)
+    assert _window_headers(q) == []
+    assert "AGGREGATE" in q.explain(engine="streaming")
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
+def test_filter_on_shared_boolean_columns_plans_quickly() -> None:
+    lf = pl.LazyFrame({"x": [0, 1]}).with_columns(
+        a=pl.col("x") == 0, b=pl.col("x") <= 0
+    )
+    for _ in range(40):
+        lf = lf.with_columns(
+            a=pl.col("a") & pl.col("b"),
+            b=pl.col("a") & pl.col("b") & (pl.col("x") >= 0),
+        )
+    q = lf.filter("a").select("x")
+    assert_frame_equal(q.collect(engine="streaming"), pl.DataFrame({"x": [0]}))
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda lf: pl.SQLContext(t=lf).execute(
+            "SELECT * FROM (SELECT *, ROW_NUMBER() OVER "
+            "(PARTITION BY g ORDER BY t, id) + 5 AS rn FROM t) u WHERE rn = 6"
+        ),
+        lambda lf: pl.SQLContext(t=lf).execute(
+            "SELECT * FROM (SELECT *, ROW_NUMBER() OVER "
+            "(PARTITION BY g ORDER BY t, id) AS rn FROM t) u WHERE rn = 2"
+        ),
+        lambda lf: pl.SQLContext(t=lf).execute(
+            "SELECT * FROM (SELECT *, ROW_NUMBER() OVER "
+            "(PARTITION BY g ORDER BY t, id) AS rn FROM t) u WHERE rn <= 2"
+        ),
+        lambda lf: pl.SQLContext(t=lf).execute(
+            "SELECT id, g FROM t QUALIFY ROW_NUMBER() OVER "
+            "(PARTITION BY g ORDER BY t, id) <= 3"
+        ),
+        lambda lf: pl.SQLContext(t=lf).execute(
+            "SELECT * FROM (SELECT *, SUM(x) OVER (PARTITION BY g) AS c "
+            "FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY g ORDER BY t, id) AS rn "
+            "FROM t) u) v WHERE rn = 1"
+        ),
+        lambda lf: pl.SQLContext(t=lf).execute(
+            "SELECT * FROM (SELECT *, ROW_NUMBER() OVER "
+            "(PARTITION BY g ORDER BY t, id) AS rn FROM t) u WHERE rn <= 0"
+        ),
+        lambda lf: pl.SQLContext(t=lf).execute(
+            "SELECT * FROM (SELECT *, ROW_NUMBER() OVER "
+            "(PARTITION BY g ORDER BY t, id) AS rn FROM t) u "
+            "WHERE rn < -9223372036854775808"
+        ),
+        lambda lf: pl.SQLContext(t=lf).execute(
+            "SELECT * FROM (SELECT *, ROW_NUMBER() OVER "
+            "(PARTITION BY g ORDER BY t, id) AS rn FROM t) u WHERE rn = 1 OR x > 500"
+        ),
+        lambda lf: (
+            pl.SQLContext(t=lf)
+            .execute(
+                "SELECT * FROM (SELECT *, ROW_NUMBER() OVER "
+                "(PARTITION BY g ORDER BY t, id) AS rn FROM t) u"
+            )
+            .filter((pl.col("rn") == 1) & (pl.col("x") > pl.col("x").mean()))
+        ),
+        lambda lf: pl.SQLContext(t=lf).execute(
+            "SELECT * FROM (SELECT *, SUM(x) OVER (PARTITION BY g ORDER BY id) AS c "
+            "FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY g ORDER BY t, id) AS rn "
+            "FROM t) u) v WHERE rn = 1"
+        ),
+        lambda lf: pl.SQLContext(t=lf).execute(
+            "SELECT * FROM (SELECT *, SUM(rn) OVER (PARTITION BY g) AS c "
+            "FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY g ORDER BY t, id) AS rn "
+            "FROM t) u) v WHERE rn = 1"
+        ),
+        lambda lf: pl.SQLContext(t=lf).execute(
+            "SELECT * FROM (SELECT *, RANK() OVER "
+            "(PARTITION BY g ORDER BY t) AS rn FROM t) u WHERE rn = 1"
+        ),
+        lambda lf: lf.filter(
+            pl.int_range(pl.len()).over("g", order_by=["t", "id"]) == 0
+        ),
+    ],
+)
+def test_other_row_number_filters_keep_window(
+    build: Callable[[pl.LazyFrame], pl.LazyFrame],
+) -> None:
+    q = build(_keyed_frame(500).lazy())
+    assert len(_window_headers(q)) >= 1
     assert_frame_equal(
         q.collect(engine="streaming"),
         q.collect(engine="in-memory"),

@@ -89,7 +89,7 @@ pub fn build_slice_stream(
     }
 }
 
-/// Creates a new PhysStream which is filters the input stream.
+/// Creates a new PhysStream which filters the input stream.
 pub fn build_filter_stream(
     input: PhysStream,
     predicate: ExprIR,

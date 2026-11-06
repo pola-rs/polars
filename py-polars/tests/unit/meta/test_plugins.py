@@ -58,7 +58,7 @@ def test_register_plugin_function_invalid_plugin_path(
 
     with pytest.raises(
         ComputeError,
-        match=f"error loading dynamic library: .*: {re.escape(str(plugin_path))}$",
+        match=f"(?m)error loading dynamic library: .*: {re.escape(str(plugin_path))}$",
     ):
         pl.select(expr)
 
@@ -87,7 +87,8 @@ def test_register_plugin_function_invalid_plugin_long_path(
         ),
     ) as exc_info:
         pl.select(expr)
-    assert str(plugin_path) not in str(exc_info.value)
+    # Only the IO error is truncated, the expression context shows the full path.
+    assert str(plugin_path) not in str(exc_info.value).splitlines()[0]
 
 
 @pytest.mark.parametrize(

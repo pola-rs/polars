@@ -169,6 +169,9 @@ fn sort_by_groups_no_match<'a>(
     });
     let c = ca?.with_name(s_in.name().clone()).into_column();
     ac_in.with_values(c, true, Some(expr))?;
+    if options.limit.is_some() {
+        ac_in.with_update_groups(UpdateGroups::WithSeriesLen);
+    }
     Ok(ac_in)
 }
 

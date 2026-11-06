@@ -8,7 +8,7 @@
 //! <https://github.com/apache/parquet-format/blob/e517ac4dbe08d518eb5c2e58576d4c711973db94/Encodings.md#delta-encoding-delta_binary_packed--5>
 //!
 //! Delta encoding compresses sequential integer values by encoding the first value and the
-//! differences between consequentive values. This variant encodes the data into `Block`s and
+//! differences between consecutive values. This variant encodes the data into `Block`s and
 //! `MiniBlock`s.
 //!
 //! - A `Block` contains a minimum delta, bitwidths and one or more miniblocks.
@@ -255,7 +255,7 @@ impl<'a> Decoder<'a> {
         if total_count > 1 {
             let mut num_values_left = total_count - 1;
             while num_values_left > 0 {
-                // If the number of values is does not need all the miniblocks anymore, we need to
+                // If the number of values does not need all the miniblocks anymore, we need to
                 // ignore the later miniblocks and regard them as having bitwidth = 0.
                 //
                 // Quoted from the specification:

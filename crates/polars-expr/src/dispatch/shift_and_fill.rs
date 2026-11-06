@@ -10,7 +10,7 @@ where
     T: PolarsNumericType,
     ChunkedArray<T>: ChunkShiftFill<T, Option<T::Native>>,
 {
-    let fill_value = fill_value.extract::<T::Native>();
+    let fill_value = fill_value.to_physical().extract::<T::Native>();
     ca.shift_and_fill(n, fill_value)
 }
 
@@ -87,11 +87,7 @@ pub(super) fn shift_and_fill(args: &[Column]) -> PolarsResult<Column> {
                 AnyValue::Null => None,
                 v => polars_bail!(ComputeError: "fill value '{}' is not supported", v),
             };
-            unsafe {
-                ca.shift_and_fill(n, fill_value.as_ref())
-                    .into_column()
-                    .from_physical_unchecked(logical)
-            }
+            Ok(ca.shift_and_fill(n, fill_value.as_ref()).into_column())
         },
         #[cfg(feature = "object")]
         Object(_) => shift_and_fill_with_mask(s, n, fill_value_s),

@@ -57,7 +57,7 @@ impl LiteralExpr {
                     DataType::Int64 => {
                         polars_ensure!(
                             low >= i64::MIN as i128 && high <= i64::MAX as i128,
-                            ComputeError: "range not within bounds of `Int32`: [{}, {}]", low, high
+                            ComputeError: "range not within bounds of `Int64`: [{}, {}]", low, high
                         );
                         let low = low as i64;
                         let high = high as i64;

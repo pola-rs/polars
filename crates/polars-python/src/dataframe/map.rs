@@ -151,7 +151,7 @@ fn collect_lambda_ret_with_rows_output<'py>(
             // we know that row constructor of polars dataframe does not keep a reference
             // to the row. Before we mutate the row buf again, the reference is dropped.
             // we only cannot prove it to the compiler.
-            // we still to this because it save a Vec allocation in a hot loop.
+            // we still do this because it saves a Vec allocation in a hot loop.
             Ok(unsafe { &*ptr })
         }
     });

@@ -146,7 +146,7 @@ pub struct AggregationContext<'a> {
     pub(crate) state: AggState,
     /// group tuples for AggState
     pub(crate) groups: Cow<'a, GroupPositions>,
-    /// This is used to determined if we need to update the groups
+    /// This is used to determine if we need to update the groups
     /// into a sorted groups. We do this lazily, so that this work only is
     /// done when the groups are needed
     pub(crate) update_groups: UpdateGroups,
@@ -238,7 +238,7 @@ impl<'a> AggregationContext<'a> {
     }
 
     /// # Arguments
-    /// - `aggregated` sets if the Series is a list due to aggregation (could also be a list because its
+    /// - `aggregated` sets if the Series is a list due to aggregation (could also be a list because it's
     ///   the columns dtype)
     fn new(
         column: Column,
@@ -344,7 +344,7 @@ impl<'a> AggregationContext<'a> {
     }
 
     /// # Arguments
-    /// - `aggregated` sets if the Series is a list due to aggregation (could also be a list because its
+    /// - `aggregated` sets if the Series is a list due to aggregation (could also be a list because it's
     ///   the columns dtype)
     pub(crate) fn with_values(
         &mut self,

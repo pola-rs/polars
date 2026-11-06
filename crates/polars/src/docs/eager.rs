@@ -415,7 +415,7 @@
 //!
 //! ## Groupby
 //!
-//! Note that Polars lazy is a lot more powerful in and more performant in group_by operations.
+//! Note that Polars lazy is a lot more powerful and more performant in group_by operations.
 //! In lazy a myriad of aggregations can be combined from expressions.
 //!
 //! See more in:

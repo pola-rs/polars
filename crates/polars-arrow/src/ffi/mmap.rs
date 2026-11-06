@@ -154,7 +154,7 @@ pub unsafe fn slice_and_owner<T: NativeType, O: Send + 'static>(
 ///
 /// # Safety
 ///
-/// Using this function is not unsafe, but the returned BooleanArrays's lifetime
+/// Using this function is not unsafe, but the returned BooleanArray's lifetime
 /// is bound to the lifetime of the slice. The returned [`BooleanArray`] _must
 /// not_ outlive the passed slice.
 pub unsafe fn bitmap(data: &[u8], offset: usize, length: usize) -> PolarsResult<BooleanArray> {

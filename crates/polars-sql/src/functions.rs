@@ -55,7 +55,7 @@ pub(crate) struct SQLFunctionVisitor<'a> {
     pub(crate) reads_rows: bool,
 }
 
-/// A parsed value argument. The constant argument of an aggregate without OVER is kept apart:
+/// A parsed value argument. The constant argument of an aggregate is kept apart:
 /// the aggregate follows from the constant and the number of rows read, while reading the
 /// constant once per row would materialize it.
 enum ValueArg {
@@ -237,7 +237,7 @@ pub(crate) enum PolarsSQLFunctions {
     // Trig functions
     // ----
     /// SQL 'cos' function.
-    /// Compute the cosine sine of the input expression (in radians).
+    /// Compute the cosine of the input expression (in radians).
     /// ```sql
     /// SELECT COS(col1) FROM df;
     /// ```
@@ -261,7 +261,7 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```
     Tan,
     /// SQL 'cosd' function.
-    /// Compute the cosine sine of the input expression (in degrees).
+    /// Compute the cosine of the input expression (in degrees).
     /// ```sql
     /// SELECT COSD(col1) FROM df;
     /// ```
@@ -419,7 +419,7 @@ pub(crate) enum PolarsSQLFunctions {
     /// unless a strftime-compatible formatting string is provided as the second parameter.
     /// ```sql
     /// SELECT DATE('2021-03-15') FROM df;
-    /// SELECT DATE('2021-15-03', '%Y-d%-%m') FROM df;
+    /// SELECT DATE('2021-15-03', '%Y-%d-%m') FROM df;
     /// SELECT DATE('2021-03', '%Y-%m') FROM df;
     /// ```
     Date,
@@ -583,7 +583,7 @@ pub(crate) enum PolarsSQLFunctions {
     /// parameter.
     /// ```sql
     /// SELECT TIMESTAMP('2021-03-15 10:30:45') FROM df;
-    /// SELECT TIMESTAMP('2021-15-03T00:01:02.333', '%Y-d%-%m %H:%M:%S') FROM df;
+    /// SELECT TIMESTAMP('2021-15-03T00:01:02.333', '%Y-%d-%m %H:%M:%S') FROM df;
     /// ```
     Timestamp,
     /// SQL 'upper' function.
@@ -1414,7 +1414,7 @@ impl SQLFunctionVisitor<'_> {
             };
             self.filter = Some(pred);
         }
-        self.reads_rows = self.window.is_none() && function_name.is_builtin_aggregate();
+        self.reads_rows = function_name.is_builtin_aggregate();
         self.check_window_shape(&function_name)?;
         if self.window.is_some() && is_frame_aggregate(&function_name, self.is_distinct()) {
             return self.visit_window_aggregate(&function_name);
@@ -3045,12 +3045,19 @@ impl SQLFunctionVisitor<'_> {
 
         for ob in order_by {
             // Note: ORDER BY exprs share their length with the (possibly filtered) base,
-            // so they have to go through `parse_sql_arg` to apply any active FILTER.
-            by.push(self.parse_sql_arg(&ob.expr)?);
+            // so they have to go through `parse_value_arg` to apply any active FILTER.
+            match self.parse_value_arg(&ob.expr)? {
+                ValueArg::Rows(e) => by.push(e),
+                // A constant key does not change the order.
+                ValueArg::Constant(_) => continue,
+            }
 
             let options = order_by_sort_options(&ob.options);
             nulls_last.push(options.nulls_last);
             descending.push(options.descending);
+        }
+        if by.is_empty() {
+            return Ok(expr);
         }
         Ok(expr.sort_by(
             by,

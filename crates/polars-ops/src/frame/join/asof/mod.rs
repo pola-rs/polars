@@ -256,6 +256,16 @@ pub fn _check_asof_columns(
     Ok(())
 }
 
+/// Converts an asof join key to the representation it is compared on.
+/// Categoricals are ordered lexically, so they are compared as strings.
+pub fn _asof_key_to_physical(s: &Series) -> PolarsResult<Series> {
+    if s.dtype().is_categorical() {
+        s.cast(&DataType::String)
+    } else {
+        Ok(s.to_physical_repr().into_owned())
+    }
+}
+
 pub trait AsofJoin: IntoDf {
     #[doc(hidden)]
     #[allow(clippy::too_many_arguments)]
@@ -281,8 +291,8 @@ pub trait AsofJoin: IntoDf {
             check_sortedness,
             false,
         )?;
-        let left_key = left_key.to_physical_repr();
-        let right_key = right_key.to_physical_repr();
+        let left_key = _asof_key_to_physical(left_key)?;
+        let right_key = _asof_key_to_physical(right_key)?;
 
         let mut take_idx =
             _join_asof_dispatch(&left_key, &right_key, strategy, tolerance, allow_eq)?;

@@ -40,9 +40,7 @@ where
     let build = |items: &[T]| {
         let mut sketch = Sketch::new(method, error, failure_probability)
             .with_shared_count(Arc::clone(&shared_count));
-        for item in items {
-            sketch.update(item);
-        }
+        sketch.update::<T>(items.iter());
         sketch
     };
 

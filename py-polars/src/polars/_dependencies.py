@@ -165,7 +165,7 @@ if TYPE_CHECKING:
     import hypothesis
     import numpy
     import pandas
-    import polars_cloud
+    import polars_nanook as polars_cloud
     import pyarrow
     import pydantic
     import pyiceberg

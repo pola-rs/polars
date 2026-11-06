@@ -9,7 +9,7 @@ use polars_expr::prelude::{AggregationContext, ExecutionState, PhysicalExpr};
 #[derive(Clone)]
 pub struct StreamExpr {
     inner: Arc<dyn PhysicalExpr>,
-    // Whether the expression can be re-entering the engine (e.g. a function use the lazy api
+    // Whether the expression can be re-entering the engine (e.g. a function uses the lazy api
     // within that function)
     reentrant: bool,
 }

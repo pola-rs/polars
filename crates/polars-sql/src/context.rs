@@ -14,22 +14,24 @@ use polars_defs::join::{JoinArgs, JoinCoalesce, JoinType, MaintainOrderJoin};
 use polars_lazy::prelude::*;
 use polars_plan::dsl::function_expr::StructFunction;
 use polars_plan::plans::visitor::TreeWalker;
+use polars_plan::plans::{ExprToIRContext, is_elementwise_rec, to_expr_ir};
 use polars_plan::prelude::*;
 use polars_plan::utils::expr_to_leaf_column_names_iter;
 use polars_utils::aliases::{PlHashSet, PlIndexSet};
 use polars_utils::format_pl_smallstr;
 use polars_utils::unique_id::UniqueId;
 use sqlparser::ast::{
-    AlterColumnOperation, AlterTable, AlterTableOperation, BinaryOperator as SQLBinaryOperator,
-    CreateTable, CreateTableLikeKind, CreateTableOptions, Cte, Delete, Distinct, DropBehavior,
-    ExcludeSelectItem, Expr as SQLExpr, Fetch, FromTable, FunctionArg, GroupByExpr,
-    HiveDistributionStyle, HiveFormat, Ident, Insert, JoinConstraint, JoinOperator, LimitClause,
-    NamedWindowDefinition, NamedWindowExpr, ObjectName, ObjectType, OrderBy, OrderByKind, Query,
+    AlterColumnOperation, AlterTable, AlterTableOperation, Assignment, AssignmentTarget,
+    BinaryOperator as SQLBinaryOperator, CreateTable, CreateTableLikeKind, CreateTableOptions, Cte,
+    Delete, Distinct, DropBehavior, ExcludeSelectItem, Expr as SQLExpr, Fetch, FromTable,
+    FunctionArg, FunctionArgExpr, FunctionArguments, GroupByExpr, HiveDistributionStyle,
+    HiveFormat, Ident, Insert, JoinConstraint, JoinOperator, LimitClause, NamedWindowDefinition,
+    NamedWindowExpr, ObjectName, ObjectNamePart, ObjectType, OrderBy, OrderByKind, Query,
     RenameSelectItem, SchemaName, Select, SelectFlavor, SelectItem,
     SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, SqlOption, Statement,
     TableAlias, TableFactor, TableObject, TableWithJoins, Truncate, TruncateTableTarget,
-    UnaryOperator as SQLUnaryOperator, Value as SQLValue, ValueWithSpan, Values, VisitorMut,
-    WildcardAdditionalOptions, WindowSpec, WindowType, With,
+    UnaryOperator as SQLUnaryOperator, Update, Value as SQLValue, ValueWithSpan, Values,
+    VisitorMut, WildcardAdditionalOptions, WindowSpec, WindowType, With,
 };
 
 use crate::catalog::{
@@ -84,6 +86,12 @@ pub struct TableInfo {
 /// An `ORDER BY` clause pointed at the aggregated frame, with the named
 /// aggregates the `GROUP BY` has to add for it.
 type ResolvedOrderBy = (Option<OrderBy>, Vec<(PlSmallStr, Expr)>);
+/// The table, `SET` columns with their values, and `WHERE` of an `UPDATE`.
+type UpdateParts<'a> = (
+    &'a TableWithJoins,
+    Vec<(String, SQLExpr)>,
+    Option<&'a SQLExpr>,
+);
 
 /// For SELECT projection items; helps simplify any required disambiguation.
 enum ProjectionItem {
@@ -280,6 +288,9 @@ pub struct SQLContext {
     /// Whether a qualifier may only name a relation that a `FROM` declares, also before any
     /// `FROM` is processed. Kept by the contexts of subqueries.
     pub(crate) strict_relations: bool,
+    /// How many subqueries enclose this scope. CTEs, derived tables and set operands don't
+    /// count: they read no enclosing scope.
+    pub(crate) nesting: usize,
 }
 
 /// The first relation of the current `FROM` and the (joined table, column) pairs
@@ -346,6 +357,7 @@ impl Default for SQLContext {
             catalog_spellings: Default::default(),
             statement_time: Default::default(),
             strict_relations: false,
+            nesting: 0,
         }
     }
 }
@@ -458,9 +470,17 @@ impl SQLContext {
             Statement::Insert(insert) => return self.catalog_insert(insert, None),
             Statement::Truncate(truncate) => return self.catalog_truncate(truncate),
             Statement::Delete(delete) => return self.catalog_delete(delete),
+            Statement::Update(update) => return self.catalog_update(update),
             Statement::Query(query) => {
-                let SetExpr::Insert(Statement::Insert(insert)) = query.body.as_ref() else {
-                    return Ok(None);
+                let insert = match query.body.as_ref() {
+                    SetExpr::Insert(Statement::Insert(insert)) => insert,
+                    SetExpr::Update(_) => {
+                        polars_bail!(SQLInterface: "UPDATE does not support a WITH clause")
+                    },
+                    SetExpr::Delete(_) => {
+                        polars_bail!(SQLInterface: "DELETE does not support a WITH clause")
+                    },
+                    _ => return Ok(None),
                 };
                 return self.catalog_insert(insert, Some(query));
             },
@@ -629,27 +649,107 @@ impl SQLContext {
         res
     }
 
-    fn delete_predicate(&mut self, query: &str) -> PolarsResult<Expr> {
+    /// The predicate of the rows an `UPDATE` of a catalog table changes, and the value of each
+    /// `SET` column, planned against the scan of that table in `tables`, by full name (as
+    /// [`SQLContext::catalog_delete_predicate`]).
+    pub fn catalog_update_plan(
+        &mut self,
+        query: &str,
+        tables: Vec<(Vec<String>, LazyFrame)>,
+    ) -> PolarsResult<(Expr, Vec<(String, Expr)>)> {
+        self.catalog_tables = tables
+            .into_iter()
+            .map(|(full_name, lf)| (full_name.join("."), lf))
+            .collect();
+        let res = self.update_plan(query);
+        self.lp_arena = Default::default();
+        self.expr_arena = Default::default();
+        self.clear_statement_state();
+        res
+    }
+
+    fn parse_catalog_dml(&mut self, query: &str) -> PolarsResult<Statement> {
         let mut stmt = parse_single_statement(query)?;
         self.statement_time = Default::default();
         self.catalog_spellings = self.rewrite_catalog_names(&mut stmt)?.1;
         desugar_quantified_subqueries(&mut stmt);
+        Ok(stmt)
+    }
+
+    fn delete_predicate(&mut self, query: &str) -> PolarsResult<Expr> {
+        let stmt = self.parse_catalog_dml(query)?;
         let Statement::Delete(delete) = &stmt else {
             polars_bail!(SQLInterface: "expected a DELETE statement, got `{}`", stmt)
         };
         let (from, selection) = delete_parts(delete)?;
         let mut lf = self.delete_target(from)?;
+        self.dml_predicate(&mut lf, selection, "DELETE")
+    }
+
+    fn update_plan(&mut self, query: &str) -> PolarsResult<(Expr, Vec<(String, Expr)>)> {
+        let stmt = self.parse_catalog_dml(query)?;
+        let Statement::Update(update) = &stmt else {
+            polars_bail!(SQLInterface: "expected an UPDATE statement, got `{}`", stmt)
+        };
+        let (target, assignments, selection) = update_parts(update)?;
+        polars_ensure!(
+            matches!(target.relation, TableFactor::Table { .. }),
+            SQLInterface: "UPDATE of `{}` is not supported", target.relation
+        );
+        let mut lf = self.delete_target(target)?;
+        let predicate = self.dml_predicate(&mut lf, selection, "UPDATE")?;
+        let schema = self.get_frame_schema(&mut lf)?;
+        let mut values = Vec::with_capacity(assignments.len());
+        for (column, value) in assignments {
+            polars_ensure!(
+                schema.contains(&column),
+                ColumnNotFound: "column '{}' not found; column names are case-sensitive", column
+            );
+            let expr = parse_sql_expr(&value, self, Some(&*schema))?;
+            polars_ensure!(
+                is_row_wise(&expr, &schema)?,
+                SQLInterface: "the value of column '{}' in the SET of an UPDATE must come from its own row (no aggregate or set-returning function)",
+                column
+            );
+            polars_ensure!(
+                !expr.clone().meta().has_multiple_outputs(),
+                SQLInterface: "the value of column '{}' in the SET of an UPDATE must be a single expression",
+                column
+            );
+            values.push((column, expr));
+        }
+        // Fails as the `SELECT` of these values would.
+        DataFrame::empty_with_schema(&schema)
+            .lazy()
+            .select(
+                values
+                    .iter()
+                    .map(|(c, e)| e.clone().alias(c.as_str()))
+                    .collect::<Vec<_>>(),
+            )
+            .collect()?;
+        Ok((predicate, values))
+    }
+
+    /// The predicate of a catalog `DELETE` or `UPDATE`'s `WHERE`, against `lf`; every row
+    /// without one.
+    fn dml_predicate(
+        &mut self,
+        lf: &mut LazyFrame,
+        selection: Option<&SQLExpr>,
+        statement: &str,
+    ) -> PolarsResult<Expr> {
         let Some(selection) = selection else {
             return Ok(lit(true));
         };
         polars_ensure!(
             !expr_contains_subquery(selection),
-            SQLInterface: "subqueries are not supported in the WHERE of a catalog DELETE"
+            SQLInterface: "subqueries are not supported in the WHERE of a catalog {}", statement
         );
         let n_grouping_calls = self.group_scope.grouping_calls.len();
         if let Some(predicate) = self.input_independent_predicate(selection)? {
             self.reject_grouping_in_where(n_grouping_calls)?;
-            // A NULL condition deletes nothing.
+            // A NULL condition matches nothing.
             let df = DataFrame::empty()
                 .lazy()
                 .select([predicate.cast(DataType::Boolean)])
@@ -657,7 +757,7 @@ impl SQLContext {
             let value = df.columns()[0].get(0)?;
             return Ok(lit(matches!(value, AnyValue::Boolean(true))));
         }
-        let schema = self.get_frame_schema(&mut lf)?;
+        let schema = self.get_frame_schema(lf)?;
         let mut predicate = parse_sql_expr(selection, self, Some(&*schema))?;
         self.reject_grouping_in_where(n_grouping_calls)?;
         if predicate.clone().meta().has_multiple_outputs() {
@@ -934,6 +1034,7 @@ impl SQLContext {
             catalog_spellings: self.catalog_spellings.clone(),
             statement_time: self.statement_time.clone(),
             strict_relations: self.strict_relations,
+            nesting: self.nesting + 1,
 
             ..Default::default()
         }
@@ -968,6 +1069,7 @@ impl SQLContext {
             stmt @ Statement::Explain { .. } => self.execute_explain(stmt)?,
             Statement::Truncate(truncate) => self.execute_truncate_table(truncate)?,
             stmt @ Statement::Delete { .. } => self.execute_delete_from_table(stmt)?,
+            Statement::Update(update) => self.execute_update(update)?,
             _ => polars_bail!(
                 SQLInterface: "statement type is not supported:\n{:?}", ast,
             ),
@@ -1126,6 +1228,8 @@ impl SQLContext {
         F: FnOnce(&mut Self) -> PolarsResult<LazyFrame>,
     {
         let mut ctx = self.isolated();
+        // Not a subquery scope; a subquery caller counts one itself.
+        ctx.nesting = self.nesting;
 
         // Execute query with clean state (eg: nested/subquery)
         let lf = query(&mut ctx)?;
@@ -1312,27 +1416,45 @@ impl SQLContext {
     }
 
     /// Check the SELECT and WHERE expressions of a block for ambiguous unqualified
-    /// columns (if there were joins).
-    pub(crate) fn check_select_column_refs(&self, select_stmt: &Select) -> PolarsResult<()> {
+    /// columns (if there were joins). `schema` is the schema of the joined frame.
+    pub(crate) fn check_select_column_refs(
+        &self,
+        select_stmt: &Select,
+        schema: &Schema,
+    ) -> PolarsResult<()> {
         let Some(base) = &self.join_base else {
             return Ok(());
         };
         if self.joined_aliases.is_empty() {
             return Ok(());
         }
-        let check_expr = |e| {
+        let check_expr = |e: &SQLExpr| {
             check_for_ambiguous_column_refs(
                 e,
                 &self.joined_aliases,
                 &base.table_name,
                 &base.using_cols,
                 &self.active_relations,
+                schema,
             )
         };
         for item in &select_stmt.projection {
             match item {
                 SelectItem::UnnamedExpr(e) | SelectItem::ExprWithAlias { expr: e, .. } => {
                     check_expr(e)?
+                },
+                // `s.*` reads a struct column `s` when no relation is named `s`.
+                SelectItem::QualifiedWildcard(
+                    SelectItemQualifiedWildcardKind::ObjectName(name),
+                    _,
+                ) => {
+                    let parts = name
+                        .0
+                        .iter()
+                        .filter_map(|p| p.as_ident().cloned())
+                        .chain([Ident::new("*")])
+                        .collect();
+                    check_expr(&SQLExpr::CompoundIdentifier(parts))?
                 },
                 _ => {},
             }
@@ -1978,6 +2100,40 @@ impl SQLContext {
         }))
     }
 
+    /// The catalog statement of an `UPDATE`, if its table resolves to a catalog table.
+    fn catalog_update(&self, update: &Update) -> PolarsResult<Option<CatalogStatement>> {
+        let (target, assignments, selection) = update_parts(update)?;
+        let TableFactor::Table { name, .. } = &target.relation else {
+            return Ok(None);
+        };
+        let Some((tbl, table)) = self.catalog_change_target(name)? else {
+            return Ok(None);
+        };
+        Ok(Some(CatalogStatement::Update {
+            name: tbl,
+            table,
+            columns: assignments.into_iter().map(|(column, _)| column).collect(),
+            condition: selection.map(|selection| selection.to_string()),
+            subquery: selection.is_some_and(expr_contains_subquery),
+            hint_unsupported_part: selection.and_then(hint_unsupported_part),
+        }))
+    }
+
+    // UPDATE <tbl> SET ... [WHERE ...]: only for catalog tables
+    fn execute_update(&self, update: &Update) -> PolarsResult<LazyFrame> {
+        let (target, ..) = update_parts(update)?;
+        let TableFactor::Table { name, .. } = &target.relation else {
+            polars_bail!(SQLInterface: "UPDATE of `{}` is not supported", target.relation)
+        };
+        if let Some((tbl, table)) = self.catalog_change_target(name)? {
+            polars_bail!(
+                SQLInterface: "UPDATE of catalog table '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_statement`)",
+                tbl, display_name(&table.full_name())
+            );
+        }
+        Err(self.catalog_tables_only("UPDATE", name))
+    }
+
     // TRUNCATE <tbl>
     fn execute_truncate_table(&mut self, truncate: &Truncate) -> PolarsResult<LazyFrame> {
         let (name, if_exists) = truncate_parts(truncate)?;
@@ -2323,6 +2479,10 @@ impl SQLContext {
                 let (keep_left, keep_right) = join_keeps_inputs(&join.join_operator);
                 if !keep_left {
                     kept.clear();
+                    // The columns of the left relations are gone, so are their aliases.
+                    for relation in &left_relations {
+                        self.joined_aliases.remove(relation);
+                    }
                 }
                 if keep_right {
                     kept.push(&join.relation);
@@ -2915,7 +3075,8 @@ impl SQLContext {
         };
 
         self.set_join_base(&select_stmt.from);
-        self.check_select_column_refs(select_stmt)?;
+        let mut schema = self.get_frame_schema(&mut lf)?;
+        self.check_select_column_refs(select_stmt, &schema)?;
 
         // Apply `WHERE` constraint (using residual filter for implicit joins)
         let where_expr = if implicit_join_filter.is_some() {
@@ -2923,7 +3084,6 @@ impl SQLContext {
         } else {
             select_stmt.selection.as_ref()
         };
-        let mut schema = self.get_frame_schema(&mut lf)?;
 
         // Shared by every pass over this frame: WHERE, the projection list and HAVING.
         let mut bindings = SubqueryBindings::new();
@@ -4308,6 +4468,7 @@ impl SQLContext {
             &left.name,
             &self.join_using_cols,
             &self.active_relations,
+            &schema,
         )?;
         let join_base = self.join_base.replace(JoinBase {
             table_name: left.name.to_string(),
@@ -4480,12 +4641,14 @@ impl SQLContext {
         {
             return Ok(false);
         }
+        // `check` passed qualified columns only, so no struct path needs the joined schema.
         check_for_ambiguous_column_refs(
             expr,
             &self.joined_aliases,
             &tbl_left.name,
             &self.join_using_cols,
             &self.active_relations,
+            &tbl_left.schema,
         )?;
         Ok(true)
     }
@@ -7566,7 +7729,187 @@ fn delete_parts(delete: &Delete) -> PolarsResult<(&TableWithJoins, Option<&SQLEx
         polars_bail!(SQLInterface: "cannot have multiple tables in DELETE FROM (found {})", from.len())
     };
     polars_ensure!(from.joins.is_empty(), SQLInterface: "DELETE does not support table JOINs");
+    check_dml_target(&from.relation, "DELETE")?;
     Ok((from, selection.as_ref()))
+}
+
+/// The table, `SET` columns with their values, and `WHERE` of an `UPDATE` statement,
+/// rejecting unsupported forms. A tuple assignment `(a, b) = (x, y)` is one per column.
+fn update_parts(update: &Update) -> PolarsResult<UpdateParts<'_>> {
+    // Destructure exhaustively so new sqlparser fields surface as compile errors.
+    let Update {
+        update_token: _,
+        optimizer_hints: _,
+        table,
+        assignments,
+        from,
+        selection,
+        returning,
+        output,
+        or,
+        order_by,
+        limit,
+    } = update;
+    polars_ensure!(from.is_none(), SQLInterface: "UPDATE does not support the FROM clause");
+    polars_ensure!(returning.is_none(), SQLInterface: "UPDATE does not support the RETURNING clause");
+    polars_ensure!(output.is_none(), SQLInterface: "UPDATE does not support the OUTPUT clause");
+    polars_ensure!(or.is_none(), SQLInterface: "UPDATE does not support `UPDATE OR ...`");
+    polars_ensure!(order_by.is_empty(), SQLInterface: "UPDATE does not support the ORDER BY clause");
+    polars_ensure!(limit.is_none(), SQLInterface: "UPDATE does not support the LIMIT clause");
+    polars_ensure!(table.joins.is_empty(), SQLInterface: "UPDATE does not support table JOINs");
+    check_dml_target(&table.relation, "UPDATE")?;
+    let mut parts: Vec<(String, SQLExpr)> = Vec::with_capacity(assignments.len());
+    for Assignment { target, value } in assignments {
+        let pairs: Vec<(&ObjectName, SQLExpr)> = match target {
+            AssignmentTarget::ColumnName(name) => vec![(name, value.clone())],
+            AssignmentTarget::Tuple(names) => {
+                let values = tuple_values(value).ok_or_else(|| {
+                    polars_err!(
+                        SQLInterface: "UPDATE assigns a tuple of columns from a list of values, as `(a, b) = (1, 2)`; got `{}`", value
+                    )
+                })?;
+                polars_ensure!(
+                    values.len() == names.len(),
+                    SQLInterface: "UPDATE assigns {} columns from {} values (`{} = {}`)",
+                    names.len(), values.len(), target, value
+                );
+                names.iter().zip(values).collect()
+            },
+        };
+        for (name, value) in pairs {
+            let [ObjectNamePart::Identifier(ident)] = name.0.as_slice() else {
+                polars_bail!(
+                    SQLInterface: "UPDATE takes unqualified column names in SET; table qualifiers and nested fields are not supported (`{}`)", name
+                )
+            };
+            let column = &ident.value;
+            polars_ensure!(
+                !parts.iter().any(|(c, _)| c == column),
+                SQLInterface: "multiple assignments to column '{}' in UPDATE", column
+            );
+            polars_ensure!(
+                !contains_default_keyword(&value),
+                SQLInterface: "UPDATE does not support DEFAULT (column '{}'); write NULL", column
+            );
+            polars_ensure!(
+                !expr_contains_subquery(&value),
+                SQLInterface: "subqueries are not supported in the SET of an UPDATE (column '{}')", column
+            );
+            polars_ensure!(
+                !expr_has_window_functions(&value),
+                SQLInterface: "window functions are not allowed in the SET of an UPDATE (column '{}')", column
+            );
+            polars_ensure!(
+                !contains_column_selector(&value),
+                SQLInterface: "column selectors are not allowed in the SET of an UPDATE (column '{}')", column
+            );
+            parts.push((column.clone(), value));
+        }
+    }
+    Ok((table, parts, selection.as_ref()))
+}
+
+/// The values of a tuple assignment: `(x, y)` or `ROW(x, y)`, or `(x)` for one column.
+fn tuple_values(value: &SQLExpr) -> Option<Vec<SQLExpr>> {
+    match value {
+        SQLExpr::Tuple(values) => Some(values.clone()),
+        SQLExpr::Nested(value) => Some(vec![value.as_ref().clone()]),
+        SQLExpr::Function(func)
+            if func.over.is_none()
+                && func.filter.is_none()
+                && matches!(func.parameters, FunctionArguments::None)
+                && matches!(
+                    func.name.0.as_slice(),
+                    [ObjectNamePart::Identifier(ident)] if ident.value.eq_ignore_ascii_case("row")
+                ) =>
+        {
+            let FunctionArguments::List(list) = &func.args else {
+                return None;
+            };
+            if list.duplicate_treatment.is_some() || !list.clauses.is_empty() {
+                return None;
+            }
+            list.args
+                .iter()
+                .map(|arg| match arg {
+                    FunctionArg::Unnamed(FunctionArgExpr::Expr(e)) => Some(e.clone()),
+                    _ => None,
+                })
+                .collect()
+        },
+        _ => None,
+    }
+}
+
+/// Whether `expr` gives each row a value from that row alone, `RANDOM()` included.
+fn is_row_wise(expr: &Expr, schema: &Schema) -> PolarsResult<bool> {
+    let probe = expr
+        .clone()
+        .map_expr(|e| if is_random(&e) { lit(0u64) } else { e });
+    let mut arena = Arena::new();
+    let mut ctx = ExprToIRContext::new(&mut arena, schema);
+    let ir = to_expr_ir(&probe, &mut ctx)?;
+    Ok(is_elementwise_rec(ir.node(), &arena))
+}
+
+/// Reject the target forms of a `DELETE` or `UPDATE` that sqlparser accepts but that are not
+/// a plain table: table-function arguments, alias column lists, and `ONLY` / `LOW_PRIORITY` /
+/// `IGNORE`, which the generic dialect reads as a table of that name with an alias.
+fn check_dml_target(relation: &TableFactor, statement: &str) -> PolarsResult<()> {
+    let TableFactor::Table {
+        name, alias, args, ..
+    } = relation
+    else {
+        return Ok(());
+    };
+    polars_ensure!(args.is_none(), SQLInterface: "{} of a table function is not supported", statement);
+    if let Some(alias) = alias {
+        polars_ensure!(
+            alias.columns.is_empty(),
+            SQLInterface: "{} does not support column names in the table alias", statement
+        );
+        if let [ObjectNamePart::Identifier(ident)] = name.0.as_slice()
+            && ident.quote_style.is_none()
+            && ["ONLY", "LOW_PRIORITY", "IGNORE"]
+                .iter()
+                .any(|kw| ident.value.eq_ignore_ascii_case(kw))
+        {
+            polars_bail!(
+                SQLInterface: "`{} {}` is not supported", statement, ident.value.to_uppercase()
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Whether `expr` uses the keyword `DEFAULT` (sqlparser reads it as an unquoted identifier).
+fn contains_default_keyword(expr: &SQLExpr) -> bool {
+    visit_expressions(expr, |e| match e {
+        SQLExpr::Identifier(ident)
+            if ident.quote_style.is_none() && ident.value.eq_ignore_ascii_case("DEFAULT") =>
+        {
+            ControlFlow::Break(())
+        },
+        _ => ControlFlow::Continue(()),
+    })
+    .is_break()
+}
+
+/// Whether `expr` holds a wildcard or a `COLUMNS(...)` selector.
+fn contains_column_selector(expr: &SQLExpr) -> bool {
+    visit_expressions(expr, |e| match e {
+        SQLExpr::Wildcard(_) | SQLExpr::QualifiedWildcard(..) => ControlFlow::Break(()),
+        SQLExpr::Function(func)
+            if matches!(
+                func.name.0.as_slice(),
+                [ObjectNamePart::Identifier(ident)] if ident.value.eq_ignore_ascii_case("columns")
+            ) =>
+        {
+            ControlFlow::Break(())
+        },
+        _ => ControlFlow::Continue(()),
+    })
+    .is_break()
 }
 
 /// The table name and `IF EXISTS` of a `TRUNCATE` statement, rejecting unsupported modifiers.

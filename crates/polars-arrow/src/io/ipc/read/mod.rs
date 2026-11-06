@@ -5,7 +5,7 @@
 //! [`StreamReader`](stream::StreamReader), which only supports reading
 //! data in the order it was written in.
 //! In addition, there is a Block-based struct [`BlockReader`](reader::BlockReader), which
-//! enabled random access to a standalone IPC Block.
+//! enables random access to a standalone IPC Block.
 use crate::array::Array;
 
 mod array;

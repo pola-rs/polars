@@ -27,7 +27,7 @@ use slotmap::DenseSlotMap;
 use super::{ExprCache, PhysNode, PhysNodeKey, PhysNodeKind, PhysStream, StreamingLowerIRContext};
 use crate::physical_plan::lower_expr::{
     build_hstack_stream, build_select_stream, build_sort_stream, compute_output_schema,
-    is_elementwise_rec_cached, is_fake_elementwise_function, is_input_independent,
+    is_elementwise_rec_cached, is_input_independent,
 };
 use crate::physical_plan::lower_ir::{
     build_filter_stream, build_row_idx_stream, build_slice_stream,
@@ -113,7 +113,7 @@ fn build_group_by_fallback(
 // represent the aggregate result in the post-select.
 //
 // For each input to this aggregate uniq_input_names is updated to map the
-// unique id of the input expressions to an input columns the aggregate
+// unique id of the input expressions to an input column the aggregate
 // expression expects.
 //
 // uniq_agg_exprs is updated with the unique id of the aggregate mapping to
@@ -533,7 +533,7 @@ fn try_lower_elementwise_scalar_agg_expr(
 
         node @ AExpr::Function { input, options, .. }
         | node @ AExpr::AnonymousFunction { input, options, .. }
-            if options.is_elementwise() && !is_fake_elementwise_function(node, expr_arena) =>
+            if options.is_elementwise() =>
         {
             let node = node.clone();
             let input = input.clone();

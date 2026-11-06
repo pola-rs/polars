@@ -40,7 +40,7 @@ pub trait RollingAggWindowNulls<T: NativeType, Out: NativeType = T> {
     /// Returns the length of the underlying input.
     fn slice_len(&self) -> usize;
 
-    fn is_valid(&self, min_periods: usize) -> bool;
+    fn is_valid(&self, min_samples: usize) -> bool;
 }
 
 // Use an aggregation window that maintains the state
@@ -48,7 +48,7 @@ pub(super) fn rolling_apply_agg_window<Agg, T, Out, Fo>(
     values: &[T],
     validity: &Bitmap,
     window_size: usize,
-    min_periods: usize,
+    min_samples: usize,
     det_offsets_fn: Fo,
     params: Option<RollingFnParams>,
 ) -> ArrayRef
@@ -62,7 +62,7 @@ where
     let (start, end) = det_offsets_fn(0, window_size, len);
     let mut agg_window = Agg::new(values, validity, start, end, params, Some(window_size));
 
-    let mut validity = create_validity(min_periods, len, window_size, det_offsets_fn, None, false)
+    let mut validity = create_validity(min_samples, len, window_size, det_offsets_fn, None, false)
         .unwrap_or_else(|| {
             let mut validity = MutableBitmap::with_capacity(len);
             validity.extend_constant(len, true);
@@ -76,7 +76,7 @@ where
             // we are in bounds
             unsafe { agg_window.update(start, end) };
             match agg_window.get_agg(idx) {
-                Some(val) if agg_window.is_valid(min_periods) => val,
+                Some(val) if agg_window.is_valid(min_samples) => val,
                 Some(_) => {
                     // SAFETY: we are in bounds
                     unsafe { validity.set_unchecked(idx, false) };
@@ -252,7 +252,7 @@ mod test {
         let vals = vec![3, 3, 3, 10, 10, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
         let validity = Bitmap::new_with_value(true, vals.len());
         let window_size = 3;
-        let min_periods = 3;
+        let min_samples = 3;
 
         let arr = Int32Array::new(ArrowDataType::Int32, vals.into(), Some(validity));
 
@@ -260,7 +260,7 @@ mod test {
             arr.values().as_slice(),
             arr.validity().as_ref().unwrap(),
             window_size,
-            min_periods,
+            min_samples,
             det_offsets,
             None,
         );

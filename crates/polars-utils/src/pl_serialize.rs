@@ -1,6 +1,6 @@
 //! Centralized Polars serialization entry.
 //!
-//! Currently provides two serialization scheme's.
+//! Currently provides two serialization schemes.
 //! - Self-describing (and thus more forward compatible) activated with `FC: true`
 //! - Compact activated with `FC: false`
 use std::io::{Read, Write};
