@@ -35,7 +35,7 @@ def _sqlcatalog_null_pool(monkeypatch: pytest.MonkeyPatch) -> None:
     except ImportError:
         return
 
-    original_create_engine = pyiceberg_sql.create_engine
+    original_create_engine = vars(pyiceberg_sql)["create_engine"]
 
     def create_engine(url: str, **kwargs: Any) -> Any:
         kwargs["poolclass"] = NullPool
