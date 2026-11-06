@@ -801,3 +801,246 @@ def test_first_last_of_struct_without_fields_streaming() -> None:
             q.collect(engine="streaming", optimizations=NO_PUSHDOWN),
             q.collect(engine="in-memory", optimizations=NO_PUSHDOWN),
         )
+
+
+# A file with garbage in the leaves `s.b` and `l[].q`: a query reading it only passes
+# if it does not read them. Uncompressed, so that they are not the cheapest leaves to
+# read a validity from.
+GARBAGE_DF = pl.DataFrame(
+    {
+        "id": list(range(100)),
+        "s": [
+            None
+            if i % 7 == 3
+            else {"a": i, "b": f"b{i}" * 9, "c": {"x": i, "y": "y" * 9}}
+            for i in range(100)
+        ],
+        "l": [
+            None if i % 9 == 4 else [{"p": i, "q": f"q{i}" * 9}, None]
+            for i in range(100)
+        ],
+    }
+)
+
+
+def garbage_scan(tmp_path: Path, **kw: Any) -> pl.LazyFrame:
+    path = tmp_path / "garbage.parquet"
+    pq.write_table(
+        GARBAGE_DF.to_arrow(),
+        path,
+        use_dictionary=False,
+        write_statistics=False,
+        compression="none",
+    )
+    corrupt_chunk(path, "s.b")
+    corrupt_chunk(path, "l.list.element.q")
+    return pl.scan_parquet(path, **kw)
+
+
+# `GARBAGE_DF` with only the fields of `SUBSET_SCHEMA`.
+SUBSET_DF = pl.DataFrame(
+    {
+        "id": list(range(100)),
+        "s": [None if i % 7 == 3 else {"a": i, "c": {"x": i}} for i in range(100)],
+        "l": [None if i % 9 == 4 else [{"p": i}, None] for i in range(100)],
+    }
+)
+SUBSET_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    "id": pl.Int64,
+    "s": pl.Struct({"a": pl.Int64, "c": pl.Struct({"x": pl.Int64})}),
+    "l": pl.List(pl.Struct({"p": pl.Int64})),
+}
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        lambda lf: lf,
+        lambda lf: lf.select(s),
+        lambda lf: lf.select(a, "id"),
+        lambda lf: lf.select(c),
+        lambda lf: lf.select(s.is_null(), l.list.len()),
+        lambda lf: lf.select(l),
+        lambda lf: lf.filter(a > 50).select(c.struct.field("x")),
+    ],
+)
+def test_struct_field_pruning_schema_override(
+    query: Callable[[pl.LazyFrame], pl.LazyFrame], tmp_path: Path
+) -> None:
+    # A `schema=` with some struct fields left out, whose extra fields the cast ignores:
+    # only its fields are read, with or without projection pushdown.
+    lf = garbage_scan(
+        tmp_path,
+        schema=SUBSET_SCHEMA,
+        cast_options=pl.ScanCastOptions(extra_struct_fields="ignore"),
+    )
+    expected = query(SUBSET_DF.lazy()).collect()
+    assert_engines_equal(query(lf), expected)
+    assert_frame_equal(query(lf).collect(optimizations=NO_PUSHDOWN), expected)
+
+
+def test_struct_field_pruning_schema_override_policies(tmp_path: Path) -> None:
+    path = tmp_path / "d.parquet"
+    GARBAGE_DF.write_parquet(path)
+
+    # Extra fields that raise are still found.
+    q = pl.scan_parquet(path, schema=SUBSET_SCHEMA).select(a)
+    assert_raises_with_and_without_pushdown(q, SchemaError)
+
+    # A field the file lacks is inserted, or raises.
+    schema: dict[str, pl.DataType] = {"s": pl.Struct({"a": pl.Int64, "z": pl.String})}
+    queries: list[Callable[[pl.LazyFrame], pl.LazyFrame]] = [
+        lambda lf: lf.select(s),
+        lambda lf: lf.select(s.struct.field("z")),
+        lambda lf: lf.select(s.is_null()),
+    ]
+    for query in queries:
+        lf = pl.scan_parquet(
+            path,
+            schema=schema,
+            extra_columns="ignore",
+            cast_options=pl.ScanCastOptions(
+                extra_struct_fields="ignore", missing_struct_fields="insert"
+            ),
+        )
+        expected = query(
+            GARBAGE_DF.lazy().select(
+                pl.when(s.is_not_null())
+                .then(pl.struct(a, z=pl.lit(None, pl.String)))
+                .alias("s")
+            )
+        ).collect()
+        assert_engines_equal(query(lf), expected)
+    lf = pl.scan_parquet(
+        path,
+        schema=schema,
+        extra_columns="ignore",
+        cast_options=pl.ScanCastOptions(extra_struct_fields="ignore"),
+    )
+    assert_raises_with_and_without_pushdown(lf.select(a), SchemaError)
+
+    # Files with different extra fields.
+    other = tmp_path / "e.parquet"
+    pl.DataFrame({"s": [{"d": 1.5, "a": 7, "c": {"y": "u", "x": 8}}]}).write_parquet(
+        other
+    )
+    schema = {"s": pl.Struct({"a": pl.Int64, "c": pl.Struct({"x": pl.Int64})})}
+    lf = pl.scan_parquet(
+        [path, other],
+        schema=schema,
+        extra_columns="ignore",
+        cast_options=pl.ScanCastOptions(extra_struct_fields="ignore"),
+    )
+    expected = pl.concat(
+        [
+            SUBSET_DF.select(s),
+            pl.DataFrame({"s": [{"a": 7, "c": {"x": 8}}]}, schema=schema),
+        ]
+    )
+    assert_engines_equal(lf, expected)
+    assert_engines_equal(lf.select(c), expected.select(c))
+
+
+t = pl.col("t")
+e = pl.element()
+cond = pl.col("id") % 3 == 0
+
+MID_PLAN_QUERIES: list[Callable[[pl.LazyFrame], pl.LazyFrame]] = [
+    # A selection made above a group-by reaches its aggregations.
+    lambda lf: lf.group_by("id").agg(s.first()).sort("id").select("id", a),
+    lambda lf: (
+        lf.group_by("id").agg(s.last().alias("t")).sort("id").select(t.is_null())
+    ),
+    lambda lf: (
+        lf.group_by(pl.col("id") // 10)
+        .agg(s)
+        .sort("id")
+        .select(s.list.eval(pl.element().struct.field("a")))
+    ),
+    # Branches of when/then, fill_null and coalesce.
+    lambda lf: lf.select(pl.when(cond).then(s).otherwise(s.shift()).struct.field("a")),
+    lambda lf: lf.select(pl.when(cond).then(s).struct.field("a")),
+    lambda lf: lf.with_columns(t=pl.when(cond).then(s).otherwise(s.reverse())).select(
+        t.struct.field("c").struct.field("x"), "id"
+    ),
+    lambda lf: lf.select(s.fill_null(s.shift(-1)).struct.field("a")),
+    lambda lf: lf.select(pl.coalesce(s.shift(2), s).struct.field("c")),
+    lambda lf: lf.select(pl.coalesce(s.shift(2), s).struct.field("a").is_null()),
+    # Row selections.
+    lambda lf: lf.select(s.reverse().struct.field("a")),
+    lambda lf: lf.select(s.shift(3).struct.field("a")),
+    lambda lf: lf.select(s.drop_nulls().struct.field("a")),
+    lambda lf: lf.select(s.min_by("id").struct.field("a"), s.max_by(a).is_null()),
+    # Lists: `eval` bodies, element selections, lengths.
+    lambda lf: lf.select(l.list.eval(e.struct.field("p") * 2)),
+    lambda lf: lf.select(
+        l.list.eval(e.filter(e.struct.field("p") > 3)).list.eval(e.struct.field("p"))
+    ),
+    lambda lf: lf.select(
+        l.list.eval(
+            pl.struct(e.struct.field("p").alias("v"), pl.lit(1).alias("w"))
+        ).list.eval(e.struct.field("w"))
+    ),
+    lambda lf: lf.select(
+        l.list.eval(e.struct.field("p").cumulative_eval(pl.element().sum()))
+    ),
+    lambda lf: lf.select(l.list.agg(e.struct.field("p").sum())),
+    lambda lf: lf.select(l.list.head(1).list.eval(e.struct.field("p"))),
+    lambda lf: lf.select(l.list.reverse().list.first().struct.field("p")),
+    lambda lf: lf.select(l.list.slice(1, 1).explode().struct.field("p")),
+    lambda lf: lf.select(
+        l.list.gather([1, 0], null_on_oob=True).list.eval(e.struct.field("p"))
+    ),
+    lambda lf: lf.select(l.list.shift(1).list.first().struct.field("p")),
+    lambda lf: lf.select(l.list.sample(n=1, seed=1).list.first().struct.field("p")),
+    lambda lf: lf.select(l.list.drop_nulls().list.len(), l.list.len().alias("n")),
+    lambda lf: lf.select(l.list.eval(e.is_null()).list.sum()),
+]
+
+
+@pytest.mark.parametrize("query", MID_PLAN_QUERIES)
+def test_struct_field_pruning_mid_plan_shapes(
+    query: Callable[[pl.LazyFrame], pl.LazyFrame], tmp_path: Path
+) -> None:
+    expected = query(GARBAGE_DF.lazy()).collect()
+    assert_engines_equal(query(garbage_scan(tmp_path)), expected)
+
+    clean = tmp_path / "clean.parquet"
+    GARBAGE_DF.write_parquet(clean)
+    assert_same_as_without_pushdown(query(pl.scan_parquet(clean)))
+    assert_same_as_without_pushdown(query(GARBAGE_DF.lazy()))
+
+
+def test_struct_field_pruning_branches_pruned_differently(tmp_path: Path) -> None:
+    # One branch's column is needed whole elsewhere, the other's only for the read
+    # field: the branches come back with different fields and are pruned to the same
+    # ones.
+    path = tmp_path / "d.parquet"
+    df = GARBAGE_DF.with_columns(t=s.shift(1))
+    df.write_parquet(path)
+    lf = pl.scan_parquet(path)
+    for q in [
+        lf.select(pl.when(cond).then(s).otherwise(t).struct.field("a"), t),
+        lf.select(pl.coalesce(s, t).struct.field("a"), t.struct.field("b")),
+        lf.with_columns(w=s.fill_null(t)).select(pl.col("w").struct.field("a"), t),
+        pl.concat(
+            [lf.select(pl.when(cond).then(s).otherwise(t)), lf.select(t.alias("s"))]
+        ).select(a),
+    ]:
+        assert_same_as_without_pushdown(q)
+
+
+def test_struct_field_pruning_field_in_eval_body(tmp_path: Path) -> None:
+    # `pl.field()` in a `list.eval` body reads the struct of the enclosing
+    # `with_fields`.
+    path = tmp_path / "d.parquet"
+    pl.DataFrame(
+        {"s": [{"k": 1, "c": {"x": 5}, "ls": [1, 2]}, {"k": 10, "c": None, "ls": [3]}]}
+    ).write_parquet(path)
+    lf = pl.scan_parquet(path)
+    for body in [e + pl.field("k"), e + pl.field("c").struct.field("x")]:
+        q = lf.select(
+            s.struct.with_fields(z=pl.field("ls").list.eval(body)).struct.field("z")
+        )
+        expected = q.collect(engine="streaming", optimizations=NO_PUSHDOWN)
+        assert_frame_equal(q.collect(engine="streaming"), expected)

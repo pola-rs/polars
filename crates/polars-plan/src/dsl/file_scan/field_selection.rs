@@ -216,6 +216,56 @@ impl FieldSelection {
         }
     }
 
+    /// What both `self` and `other`, two selections of one value, select. `self` if they are not
+    /// from one dtype.
+    pub fn intersect(&self, other: &FieldSelection) -> FieldSelection {
+        match (self, other) {
+            (Self::All, other) => other.clone(),
+            (this, Self::All) => this.clone(),
+            (Self::Fields(this), Self::Fields(other)) => Self::Fields(Box::new(
+                this.iter()
+                    .filter_map(|(name, s)| Some((name.clone(), s.intersect(other.get(name)?))))
+                    .collect(),
+            )),
+            (Self::Element(this), Self::Element(other)) => Self::element(this.intersect(other)),
+            (this @ (Self::Fields(_) | Self::Element(_)), _) => this.clone(),
+        }
+    }
+
+    /// The fields of `dtype` that `target` has, matched by name, recursively: what a cast of
+    /// `dtype` to `target` that ignores extra struct fields keeps. A field `target` has and
+    /// `dtype` lacks is left out; a struct none of whose fields `target` has is needed for its
+    /// validity only.
+    pub fn of_target_dtype(dtype: &DataType, target: &DataType) -> FieldSelection {
+        match (dtype, target) {
+            #[cfg(feature = "dtype-struct")]
+            (DataType::Struct(fields), DataType::Struct(target_fields)) => {
+                let target_fields: PlIndexMap<&str, &DataType> = target_fields
+                    .iter()
+                    .map(|f| (f.name().as_str(), f.dtype()))
+                    .collect();
+                let mut out = Self::validity_only();
+                for field in fields {
+                    if let Some(target) = target_fields.get(field.name().as_str()) {
+                        out.insert_child(
+                            field.name().clone(),
+                            Self::of_target_dtype(field.dtype(), target),
+                        );
+                    }
+                }
+                out
+            },
+            (DataType::List(inner), DataType::List(target)) => {
+                Self::element(Self::of_target_dtype(inner, target))
+            },
+            #[cfg(feature = "dtype-array")]
+            (DataType::Array(inner, _), DataType::Array(target, _)) => {
+                Self::element(Self::of_target_dtype(inner, target))
+            },
+            _ => Self::All,
+        }
+    }
+
     /// `inner` applied within `self`: the selection relative to the unpruned value, for a
     /// selection `inner` made on a value already pruned to `self`.
     pub fn compose(&self, inner: &FieldSelection) -> FieldSelection {

@@ -989,27 +989,35 @@ fn lower_ir_inner(
                         // initial hint.
                         metadata_per_source,
                         bytes_per_source,
-                    } => Arc::new(
-                        crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder {
-                            options: Arc::new(options.clone()),
-                            // With a column mapping, the fields to read are resolved per file from
-                            // the mapped projection instead.
-                            field_selection: unified_scan_args
-                                .field_selection
-                                .clone()
-                                .filter(|_| unified_scan_args.column_mapping.is_none()),
-                            scan_schema: (unified_scan_args.field_selection.is_some()
-                                && unified_scan_args.column_mapping.is_none())
-                            .then(|| file_info.schema.clone()),
-                            first_metadata: metadata_per_source.first_metadata().cloned(),
-                            bytes_per_source: bytes_per_source.clone(),
-                            pipeline_budget: std::sync::OnceLock::new(),
-                            shared_prefetch_wait_group_slot: Default::default(),
-                            file_read_context: std::sync::OnceLock::new(),
-                            io_metrics: std::sync::OnceLock::new(),
-                            task_metrics: std::sync::OnceLock::new(),
-                        },
-                    ) as _,
+                    } => {
+                        // With a column mapping, the fields to read are resolved per file from
+                        // the mapped projection instead.
+                        let unmapped = unified_scan_args.column_mapping.is_none();
+                        let prune_to_scan_schema = unmapped
+                            && unified_scan_args.cast_columns_policy.extra_struct_fields
+                                == polars_plan::dsl::ExtraColumnsPolicy::Ignore;
+                        Arc::new(
+                            crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder {
+                                options: Arc::new(options.clone()),
+                                field_selection: unified_scan_args
+                                    .field_selection
+                                    .clone()
+                                    .filter(|_| unmapped),
+                                scan_schema: ((unified_scan_args.field_selection.is_some()
+                                    && unmapped)
+                                    || prune_to_scan_schema)
+                                    .then(|| file_info.schema.clone()),
+                                prune_to_scan_schema,
+                                first_metadata: metadata_per_source.first_metadata().cloned(),
+                                bytes_per_source: bytes_per_source.clone(),
+                                pipeline_budget: std::sync::OnceLock::new(),
+                                shared_prefetch_wait_group_slot: Default::default(),
+                                file_read_context: std::sync::OnceLock::new(),
+                                io_metrics: std::sync::OnceLock::new(),
+                                task_metrics: std::sync::OnceLock::new(),
+                            },
+                        ) as _
+                    },
 
                     #[cfg(feature = "ipc")]
                     FileScanIR::Ipc {

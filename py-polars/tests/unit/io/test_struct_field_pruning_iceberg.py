@@ -238,3 +238,117 @@ def test_struct_field_pruning_iceberg_missing_field(
             assert_raises_with_and_without_pushdown(q)
         else:
             assert_same_as_without_pushdown(q)
+
+
+# Dataset scans (`pl.scan_delta`, `pl.scan_iceberg`), expanded after projection
+# pushdown.
+
+DATASET_DF = pl.DataFrame(
+    {
+        "id": list(range(50)),
+        "s": [
+            None if i % 7 == 3 else {"a": i, "b": f"b{i}" * 9, "c": {"x": i, "y": "y"}}
+            for i in range(50)
+        ],
+        "l": [None if i % 9 == 4 else [{"p": i, "q": f"q{i}" * 9}] for i in range(50)],
+    }
+)
+
+DATASET_QUERIES: list[Callable[[pl.LazyFrame], pl.LazyFrame]] = [
+    lambda lf: lf.select(a),
+    lambda lf: lf.select(s.is_null(), "id"),
+    lambda lf: lf.select(c.struct.field("x")),
+    lambda lf: lf.filter(a > 5).select("id"),
+    lambda lf: lf.select(l.list.first().struct.field("p")),
+    lambda lf: lf.select(s),
+    lambda lf: lf.head(3).select(b),
+    lambda lf: lf.select(pl.len()),
+]
+
+
+def _leaf(path: Path, name: str) -> str:
+    """The leaf of `path` whose dotted path starts and ends like `name` (`l.q`)."""
+    md = pq.ParquetFile(path).metadata
+    first, last = name.split(".")[0], name.split(".")[-1]
+    leaves = [md.schema.column(i).path for i in range(md.num_columns)]
+    (leaf,) = (x for x in leaves if x.startswith(first) and x.endswith("." + last))
+    return str(leaf)
+
+
+def _corrupt_unselected(paths: list[Path]) -> None:
+    for path in paths:
+        corrupt_chunk(path, "s.b")
+        corrupt_chunk(path, _leaf(path, "l.q"))
+
+
+@pytest.fixture
+def delta_path(tmp_path: Path) -> Path:
+    pytest.importorskip("deltalake")
+    path = tmp_path / "delta"
+    DATASET_DF.write_delta(path)
+    return path
+
+
+@pytest.mark.parametrize("query", DATASET_QUERIES)
+def test_struct_field_pruning_delta(
+    query: Callable[[pl.LazyFrame], pl.LazyFrame], delta_path: Path
+) -> None:
+    assert_same_as_without_pushdown(query(pl.scan_delta(delta_path)))
+
+
+def test_struct_field_pruning_delta_skips_unselected_leaves(delta_path: Path) -> None:
+    _corrupt_unselected(list(delta_path.glob("*.parquet")))
+    q = pl.scan_delta(delta_path).select(
+        a, s.is_null().alias("n"), l.list.first().struct.field("p")
+    )
+    with pytest.raises(PolarsError):
+        q.collect(optimizations=NO_PUSHDOWN)
+    assert_engines_equal(
+        q,
+        DATASET_DF.select(a, s.is_null().alias("n"), l.list.first().struct.field("p")),
+    )
+    fields = project_fields(q)
+    assert fields is not None
+    assert "s{a}" in fields
+    assert "l[]{p}" in fields
+
+
+def _iceberg_table(tmp_path: Path) -> Any:
+    pytest.importorskip("pyiceberg")
+    from pyiceberg.catalog.sql import SqlCatalog
+
+    from tests.unit.io.test_iceberg import format_file_uri_iceberg
+
+    catalog = SqlCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path / 'catalog.sqlite'}",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    catalog.create_namespace("ns")
+    data = DATASET_DF.to_arrow(compat_level=pl.CompatLevel.oldest())
+    table = catalog.create_table("ns.t", schema=data.schema)
+    table.append(data)
+    return table
+
+
+@pytest.mark.filterwarnings("ignore::polars.exceptions.PerformanceWarning")
+@pytest.mark.parametrize("reader_override", ["native", "pyiceberg"])
+@pytest.mark.parametrize("query", DATASET_QUERIES)
+def test_struct_field_pruning_scan_iceberg(
+    query: Callable[[pl.LazyFrame], pl.LazyFrame], reader_override: Any, tmp_path: Path
+) -> None:
+    # The pyiceberg reader is a Python scan, which can't prune: its output is narrowed.
+    lf = pl.scan_iceberg(_iceberg_table(tmp_path), reader_override=reader_override)
+    assert_same_as_without_pushdown(query(lf))
+
+
+@pytest.mark.filterwarnings("ignore::polars.exceptions.PerformanceWarning")
+def test_struct_field_pruning_scan_iceberg_skips_unselected_leaves(
+    tmp_path: Path,
+) -> None:
+    table = _iceberg_table(tmp_path)
+    _corrupt_unselected(list(tmp_path.rglob("*.parquet")))
+    q = pl.scan_iceberg(table).select(a, l.list.first().struct.field("p"))
+    with pytest.raises(PolarsError):
+        q.collect(optimizations=NO_PUSHDOWN)
+    assert_engines_equal(q, DATASET_DF.select(a, l.list.first().struct.field("p")))

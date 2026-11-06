@@ -1179,7 +1179,7 @@ impl PyExpr {
         py.enter_polars(|| {
             let mut ctx = ExprToIRContext::new(&mut aexpr_arena, &schema.0);
             ctx.allow_unknown = true;
-            let node = to_expr_ir(self.inner.clone(), &mut ctx)?.node();
+            let node = to_expr_ir(&self.inner, &mut ctx)?.node();
             let Some(node) = aexpr_to_skip_batch_predicate(node, &mut aexpr_arena, &schema.0)
             else {
                 return Ok(None);

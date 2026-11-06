@@ -205,7 +205,7 @@ impl NodeTraverser {
                     let mut ctx = ExprToIRContext::new(&mut expr_arena, &schema);
                     ctx.allow_unknown = true;
                     // NOTE: Probably throwing away the output names here is not okay?
-                    to_expr_ir(e.inner, &mut ctx)
+                    to_expr_ir(&e.inner, &mut ctx)
                         .map_err(PyPolarsErr::from)
                         .map(|v| v.node().0)
                 })

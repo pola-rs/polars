@@ -493,7 +493,7 @@ impl Expr {
     ) -> PolarsResult<Field> {
         let mut ctx = ExprToIRContext::new_with_fields(expr_arena, schema);
         ctx.allow_unknown = true;
-        let expr = to_expr_ir(self.clone(), &mut ctx)?;
+        let expr = to_expr_ir(self, &mut ctx)?;
         let (node, output_name) = expr.into_inner();
         let dtype = expr_arena
             .get(node)

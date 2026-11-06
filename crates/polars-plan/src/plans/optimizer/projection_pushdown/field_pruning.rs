@@ -10,6 +10,7 @@
 
 use std::sync::Arc;
 
+use polars_core::error::PolarsResult;
 use polars_core::prelude::{DataType, PlIndexMap, PlIndexSet};
 use polars_core::schema::Schema;
 #[allow(clippy::disallowed_types)]
@@ -124,6 +125,9 @@ pub(super) struct SelectionWalker<'a> {
     /// Whether the height of the node being walked matters only up to broadcasting: it is (a
     /// struct field of) the expression of a `with_columns`.
     height_free: bool,
+    /// While walking the bodies of `list.eval` / `arr.eval` (innermost last): what is needed of
+    /// `pl.element()` in each, `None` while it is not read.
+    element_selections: Vec<Option<FieldSelection>>,
 }
 
 impl<'a> SelectionWalker<'a> {
@@ -138,6 +142,7 @@ impl<'a> SelectionWalker<'a> {
             rewrite_schema: rewrite_schema.filter(|_| prune),
             rewrote: false,
             height_free: false,
+            element_selections: Vec::new(),
         }
     }
 
@@ -218,7 +223,22 @@ impl<'a> SelectionWalker<'a> {
             _ => {},
         }
 
-        if matches!(ae, AExpr::Literal(_) | AExpr::Len | AExpr::Element) {
+        if matches!(ae, AExpr::Element) {
+            if let Some(element_selection) = self.element_selections.last_mut() {
+                let selection = if self.prune {
+                    selection.clone()
+                } else {
+                    FieldSelection::All
+                };
+                match element_selection {
+                    Some(s) => s.union(selection),
+                    None => *element_selection = Some(selection),
+                }
+            }
+            return node;
+        }
+
+        if matches!(ae, AExpr::Literal(_) | AExpr::Len) {
             return node;
         }
 
@@ -457,6 +477,71 @@ impl<'a> SelectionWalker<'a> {
                 let new_input = self.walk_rec(input, selection, out, struct_fields);
                 self.with_new_inputs(node, AExpr::Agg(agg.clone()), &[new_input])
             },
+            // The value is a list of the input's values.
+            AExpr::Agg(ref agg @ IRAggExpr::Implode { input, .. }) => {
+                let input_selection = match selection {
+                    FieldSelection::Element(element) => element.as_ref().clone(),
+                    FieldSelection::Fields(fields) if fields.is_empty() => {
+                        FieldSelection::validity_only()
+                    },
+                    _ => FieldSelection::All,
+                };
+                let new_input = self.walk_rec(input, &input_selection, out, struct_fields);
+                self.with_new_inputs(node, AExpr::Agg(agg.clone()), &[new_input])
+            },
+            // Every branch is (part of) the value. They are rewritten to the selected fields, as
+            // their dtypes must be equal and each may come back with other fields.
+            AExpr::Ternary {
+                truthy,
+                falsy,
+                predicate,
+            } if !selection.is_all() => {
+                match self.walk_branches(
+                    &[truthy, falsy],
+                    selection,
+                    out,
+                    struct_fields.as_deref_mut(),
+                ) {
+                    Some(branches) => {
+                        let new_predicate =
+                            self.walk_rec(predicate, &FieldSelection::All, out, struct_fields);
+                        self.expr_arena.add(AExpr::Ternary {
+                            truthy: branches[0],
+                            falsy: branches[1],
+                            predicate: new_predicate,
+                        })
+                    },
+                    None => self.walk_default(node, out, struct_fields),
+                }
+            },
+            AExpr::Function {
+                ref input,
+                function: IRFunctionExpr::FillNull | IRFunctionExpr::Coalesce,
+                ..
+            } if !selection.is_all() => {
+                let branches: Vec<Node> = input.iter().map(|e| e.node()).collect();
+                match self.walk_branches(&branches, selection, out, struct_fields.as_deref_mut()) {
+                    Some(branches) => {
+                        let AExpr::Function {
+                            mut input,
+                            function,
+                            options,
+                        } = ae
+                        else {
+                            unreachable!()
+                        };
+                        for (e, node) in input.iter_mut().zip(branches) {
+                            e.set_node(node);
+                        }
+                        self.expr_arena.add(AExpr::Function {
+                            input,
+                            function,
+                            options,
+                        })
+                    },
+                    None => self.walk_default(node, out, struct_fields),
+                }
+            },
             AExpr::Filter { input, by } => {
                 let new_input = self.walk_rec(input, selection, out, struct_fields.as_deref_mut());
                 let new_by = self.walk_rec(by, &FieldSelection::All, out, struct_fields);
@@ -527,29 +612,81 @@ impl<'a> SelectionWalker<'a> {
                 let new_idx = self.walk_rec(idx, &FieldSelection::All, out, struct_fields);
                 self.with_new_inputs(node, ae, &[new_list, new_idx])
             },
+            // Rows, or elements of each list, selected: the value keeps the fields of the input.
+            AExpr::Function {
+                ref input,
+                ref function,
+                ..
+            } if is_row_selection(function) => {
+                let mut new_inputs = Vec::with_capacity(input.len());
+                for (i, e) in input.iter().enumerate() {
+                    let input_selection = if i == 0 {
+                        selection
+                    } else {
+                        &FieldSelection::All
+                    };
+                    new_inputs.push(self.walk_rec(
+                        e.node(),
+                        input_selection,
+                        out,
+                        struct_fields.as_deref_mut(),
+                    ));
+                }
+                self.with_new_inputs(node, ae, &new_inputs)
+            },
+            // Only the offsets and the validity.
+            AExpr::Function {
+                ref input,
+                function: IRFunctionExpr::ListExpr(IRListFunction::Length),
+                ..
+            } => {
+                let new_input = self.walk_rec(
+                    input[0].node(),
+                    &FieldSelection::validity_only(),
+                    out,
+                    struct_fields,
+                );
+                self.with_new_inputs(node, ae, &[new_input])
+            },
+            // The body is walked (not rewritten) for what it needs of `pl.element()`. In
+            // `list.eval` / `arr.eval` the value's elements are the body's values; the body of
+            // `list.agg` / `arr.agg` (or a non-list `cumulative_eval`) is needed whole.
             AExpr::Eval {
                 expr,
                 evaluation,
-                variant: variant @ (EvalVariant::List | EvalVariant::Array { .. }),
-            } => match self.element_field_chain(evaluation) {
-                Some(path) => {
-                    let mut element = selection.element_selection().clone();
-                    for name in path.into_iter().rev() {
-                        element = FieldSelection::field(name, element);
-                    }
-                    let new_expr =
-                        self.walk_rec(expr, &FieldSelection::element(element), out, struct_fields);
-                    if new_expr == expr {
-                        return node;
-                    }
-                    // `evaluation` is not an input, so it is not replaced.
-                    self.expr_arena.add(AExpr::Eval {
-                        expr: new_expr,
-                        evaluation,
-                        variant,
-                    })
-                },
-                None => self.walk_default(node, out, struct_fields),
+                variant,
+            } => {
+                let body_selection = match variant {
+                    EvalVariant::List | EvalVariant::Array { .. } => match selection {
+                        FieldSelection::Fields(fields) if fields.is_empty() => {
+                            FieldSelection::validity_only()
+                        },
+                        selection => selection.element_selection().clone(),
+                    },
+                    EvalVariant::ListAgg
+                    | EvalVariant::ArrayAgg
+                    | EvalVariant::Cumulative { .. } => FieldSelection::All,
+                };
+                let element = self.walk_eval_body(
+                    evaluation,
+                    &body_selection,
+                    out,
+                    struct_fields.as_deref_mut(),
+                );
+                let input_selection = match variant {
+                    EvalVariant::Cumulative { .. } => FieldSelection::All,
+                    _ => FieldSelection::element(element),
+                };
+                let new_expr = self.walk_rec(expr, &input_selection, out, struct_fields);
+                if new_expr == expr {
+                    return node;
+                }
+                // `evaluation` is not an input, so it is not replaced.
+                self.expr_arena.add(AExpr::Eval {
+                    expr: new_expr,
+                    evaluation,
+                    variant,
+                })
             },
 
             _ => self.walk_default(node, out, struct_fields),
@@ -561,27 +698,66 @@ impl<'a> SelectionWalker<'a> {
         matches!(self.expr_arena.get(node), AExpr::Literal(lv) if lv.is_scalar())
     }
 
-    /// The struct fields read of `pl.element()` if `node` is a plain chain
-    /// `pl.element().struct.field(a).struct.field(b)..`, outermost first; `None` otherwise.
-    fn element_field_chain(&self, mut node: Node) -> Option<Vec<PlSmallStr>> {
-        let mut path = Vec::new();
-        loop {
-            match self.expr_arena.get(node) {
-                AExpr::Element => break,
-                #[cfg(feature = "dtype-struct")]
-                AExpr::Function {
-                    input,
-                    function: IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(name)),
-                    ..
-                } if input.len() == 1 => {
-                    path.push(name.clone());
-                    node = input[0].node();
-                },
-                _ => return None,
-            }
+    /// Walks the body of an `eval` for its value to be needed with `selection`, without
+    /// rewriting it. Returns what it needs of `pl.element()`: for its height at least.
+    fn walk_eval_body(
+        &mut self,
+        evaluation: Node,
+        selection: &FieldSelection,
+        out: &mut ColumnSelection,
+        struct_fields: Option<&mut FieldSelection>,
+    ) -> FieldSelection {
+        let rewrite_schema = self.rewrite_schema.take();
+        self.element_selections.push(None);
+        // `pl.field()` in the body reads the struct of an enclosing `struct.eval`.
+        let new_evaluation = self.walk_rec(evaluation, selection, out, struct_fields);
+        debug_assert_eq!(new_evaluation, evaluation);
+        let element = self.element_selections.pop().unwrap();
+        self.rewrite_schema = rewrite_schema;
+        element.unwrap_or_else(FieldSelection::validity_only)
+    }
+
+    /// Walks `branches`, each (part of) the value, and prunes each to the fields `selection`
+    /// selects of their common dtype. `None` if they can't be: not rewriting, or dtypes that
+    /// differ or can't be resolved.
+    fn walk_branches(
+        &mut self,
+        branches: &[Node],
+        selection: &FieldSelection,
+        out: &mut ColumnSelection,
+        mut struct_fields: Option<&mut FieldSelection>,
+    ) -> Option<Vec<Node>> {
+        let schema = self.rewrite_schema?;
+        let ctx = ToFieldContext::new(self.expr_arena, schema);
+        let dtypes = branches
+            .iter()
+            .map(|b| self.expr_arena.get(*b).to_dtype(&ctx))
+            .collect::<PolarsResult<Vec<DataType>>>()
+            .ok()?;
+        let dtype = dtypes.first()?;
+        if dtypes.iter().any(|d| d != dtype) {
+            return None;
         }
-        path.reverse();
-        Some(path)
+        let selection = selection.clone().normalize(dtype);
+        if selection.is_all() {
+            return None;
+        }
+        let pruned_dtype = selection.prune_dtype(dtype);
+        // Not to a struct without fields (validity only), which a `struct.eval` would build.
+        if has_struct_without_fields(&pruned_dtype) {
+            return None;
+        }
+
+        let new_branches = branches
+            .iter()
+            .map(|branch| {
+                let new_branch =
+                    self.walk_rec(*branch, &selection, out, struct_fields.as_deref_mut());
+                prune_to_dtype(new_branch, dtype, &pruned_dtype, self.expr_arena)
+            })
+            .collect();
+        self.rewrote = true;
+        Some(new_branches)
     }
 
     /// Every child is needed whole.
@@ -900,6 +1076,43 @@ impl<'a> SelectionWalker<'a> {
     }
 }
 
+/// Whether `function` selects rows of its first input (or elements of each of its lists), so
+/// that the value's rows (or elements) are some of the input's.
+fn is_row_selection(function: &IRFunctionExpr) -> bool {
+    match function {
+        IRFunctionExpr::Reverse
+        | IRFunctionExpr::Shift
+        | IRFunctionExpr::DropNulls
+        | IRFunctionExpr::MinBy { .. }
+        | IRFunctionExpr::MaxBy { .. } => true,
+        IRFunctionExpr::ListExpr(f) => match f {
+            IRListFunction::Slice | IRListFunction::Shift => true,
+            #[cfg(feature = "list_gather")]
+            IRListFunction::Gather(_) | IRListFunction::GatherEvery => true,
+            #[cfg(feature = "list_drop_nulls")]
+            IRListFunction::DropNulls => true,
+            #[cfg(feature = "list_sample")]
+            IRListFunction::Sample { .. } => true,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+/// Whether `dtype` has a struct without fields, at any depth.
+fn has_struct_without_fields(dtype: &DataType) -> bool {
+    match dtype {
+        #[cfg(feature = "dtype-struct")]
+        DataType::Struct(fields) => {
+            fields.is_empty() || fields.iter().any(|f| has_struct_without_fields(f.dtype()))
+        },
+        DataType::List(inner) => has_struct_without_fields(inner),
+        #[cfg(feature = "dtype-array")]
+        DataType::Array(inner, _) => has_struct_without_fields(inner),
+        _ => false,
+    }
+}
+
 /// Whether `function` is `list.get` or `arr.get` (and so `first` / `last`).
 fn is_element_get(function: &IRFunctionExpr) -> bool {
     match function {
@@ -1098,6 +1311,16 @@ fn recompute_schema(
                     .collect(),
             );
         },
+        IR::GroupBy { aggs, schema, .. } => {
+            let input_schema = &input_schemas[0];
+            let mut new_schema = schema.as_ref().clone();
+            for e in aggs.iter_mut() {
+                if let Some(dtype) = expr_dtype(e, input_schema, expr_arena) {
+                    *new_schema.get_mut(e.output_name()).unwrap() = dtype;
+                }
+            }
+            *schema = Arc::new(new_schema);
+        },
         IR::MapFunction { function, .. } => function.clear_cached_schema(),
         IR::Union { .. } => {
             align_input_dtypes(node, inputs, &input_schemas, ir_arena, expr_arena);
@@ -1107,7 +1330,7 @@ fn recompute_schema(
             align_input_dtypes(node, inputs, &input_schemas, ir_arena, expr_arena);
         },
         // Schemas derived from the input (`Filter`, `Sort`, `Cache`, ..), or nodes whose inputs
-        // are read whole (`GroupBy` and `Window` ask `All` of every column they read).
+        // are read whole (`Window` and a `GroupBy` with `apply` ask `All` of every column).
         _ => {},
     }
 }
@@ -1239,7 +1462,7 @@ fn fields_by_name(
 
 /// An expression reading the struct value (or list of them) of `node` (of dtype `from`) pruned
 /// to `to`, keeping the outer validity.
-fn prune_to_dtype(
+pub(super) fn prune_to_dtype(
     node: Node,
     from: &DataType,
     to: &DataType,

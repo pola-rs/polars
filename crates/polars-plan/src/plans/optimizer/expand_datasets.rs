@@ -33,6 +33,8 @@ use crate::plans::iterator::ArenaLpIter;
 use crate::plans::optimizer::ApplyScanPredicateFn;
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
 #[cfg(feature = "python")]
+use crate::plans::optimizer::projection_pushdown::narrow_expanded_dataset_scan;
+#[cfg(feature = "python")]
 use crate::plans::stats::dataset_scan_stats;
 use crate::plans::{AExpr, Card, IR, is_elementwise_rec, is_inherently_nondeterministic};
 use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
@@ -107,6 +109,8 @@ pub(super) fn expand_datasets(
             while let Some((node, ir)) = expansion_tasks.next().await {
                 ir_arena.replace(node, ir?);
                 apply_scan_predicate_to_scan_ir(node, ir_arena, expr_arena)?;
+                #[cfg(feature = "python")]
+                narrow_expanded_dataset_scan(node, ir_arena, expr_arena);
             }
 
             PolarsResult::Ok(())

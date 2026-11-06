@@ -15,7 +15,7 @@ pip
 # DEPENDENCIES
 # ------------
 
-polars-cloud
+polars-nanook
 # Interop
 numba >= 0.54
 numpy

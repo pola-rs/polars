@@ -193,6 +193,8 @@ def test_struct_field_pruning_lists_explain(fmt: str, tmp_path: Path) -> None:
         (lf.explode("l").select(pl.len()), "l[]{}"),
         (lf.select("l").explode("l").select(pl.len()), "l[]{}"),
         (lf.select(m.list.last().struct.field("q")), "s{m[]{q}}"),
+        (lf.select(l.list.eval(e.struct.field("a") + 1)), "l[]{a}"),
+        (lf.select(l.list.len()), "l[]{}"),
     ]:
         assert project_fields(q) == fields
     q = lf.select(first.struct.field("a"), last.struct.field("b"))
@@ -200,9 +202,7 @@ def test_struct_field_pruning_lists_explain(fmt: str, tmp_path: Path) -> None:
 
     # Not pruned.
     for q in [
-        lf.select(l.list.eval(e.struct.field("a") + 1)),
         lf.select(l.list.get(pl.col("id"), null_on_oob=True).struct.field("a")),
-        lf.select(l.list.len()),
         lf.select(l, first.struct.field("a").alias("x")),
     ]:
         assert project_fields(q) is None, q.explain()

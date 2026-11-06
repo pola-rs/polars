@@ -185,7 +185,34 @@ struct AmbiguousColumnVisitor<'a> {
     base_table_name: &'a str,
     using_cols: &'a [(String, String)],
     relations: &'a [RelationName],
+    schema: &'a Schema,
     subquery_depth: usize,
+}
+
+impl AmbiguousColumnVisitor<'_> {
+    /// Check a struct path whose first part `name` names no relation: it is ambiguous if
+    /// the joined frame has more than one column `name`, one of them a struct.
+    fn check_struct_path(&self, name: &str) -> PolarsResult<()> {
+        let columns: PlHashSet<&str> = self
+            .joined_aliases
+            .values()
+            .filter_map(|cols| cols.get(name).map(String::as_str))
+            .chain(self.schema.contains(name).then_some(name))
+            .collect();
+        let has_struct = columns
+            .iter()
+            .any(|c| matches!(self.schema.get(c), Some(DataType::Struct(_))));
+        if columns.len() > 1 && has_struct {
+            check_ambiguous_column(
+                name,
+                self.joined_aliases,
+                self.base_table_name,
+                self.using_cols,
+                self.relations,
+            )?;
+        }
+        Ok(())
+    }
 }
 
 impl SQLVisitor for AmbiguousColumnVisitor<'_> {
@@ -205,7 +232,20 @@ impl SQLVisitor for AmbiguousColumnVisitor<'_> {
         if self.subquery_depth > 0 {
             return ControlFlow::Continue(());
         }
-        if let SQLExpr::Identifier(ident) = expr {
+        let col = match expr {
+            SQLExpr::Identifier(ident) => Some(ident),
+            // A struct path (`s.f`) whose first part names no relation reads that column.
+            SQLExpr::CompoundIdentifier(parts)
+                if match_qualifier(parts, self.relations.iter()).is_none() =>
+            {
+                if let Err(err) = self.check_struct_path(&parts[0].value) {
+                    return ControlFlow::Break(err);
+                }
+                None
+            },
+            _ => None,
+        };
+        if let Some(ident) = col {
             if let Err(err) = check_ambiguous_column(
                 &ident.value,
                 self.joined_aliases,
@@ -279,6 +319,7 @@ pub(crate) fn check_for_ambiguous_column_refs(
     base_table_name: &str,
     using_cols: &[(String, String)],
     relations: &[RelationName],
+    schema: &Schema,
 ) -> PolarsResult<()> {
     match dyn_visit::visit(
         expr,
@@ -287,6 +328,7 @@ pub(crate) fn check_for_ambiguous_column_refs(
             base_table_name,
             using_cols,
             relations,
+            schema,
             subquery_depth: 0,
         },
     ) {

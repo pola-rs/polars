@@ -200,6 +200,39 @@ pub fn resolve_pruned_fields(
     Ok(out)
 }
 
+/// `field_selection` narrowed to the struct fields of the dtypes in `scan_schema`, for a cast to
+/// them that ignores extra struct fields: a file column with fields the scan schema leaves out
+/// reads only the others.
+pub fn narrow_to_scan_schema(
+    field_selection: Option<&ScanFieldSelection>,
+    scan_schema: &Schema,
+    file_arrow_schema: &ArrowSchema,
+) -> Option<ScanFieldSelection> {
+    let mut out = field_selection.map_or_else(PlIndexMap::default, |s| s.0.clone());
+
+    for (name, scan_dtype) in scan_schema.iter() {
+        if !scan_dtype.is_nested() {
+            continue;
+        }
+        let Some(arrow_field) = file_arrow_schema.get(name.as_str()) else {
+            continue;
+        };
+        let file_dtype = DataType::from_arrow_field(arrow_field);
+        let target =
+            FieldSelection::of_target_dtype(&file_dtype, scan_dtype).normalize(&file_dtype);
+        if target.is_all() {
+            continue;
+        }
+        let selection = match out.get(name) {
+            Some(selection) => selection.intersect(&target).normalize(&file_dtype),
+            None => target,
+        };
+        out.insert(name.clone(), selection);
+    }
+
+    (!out.is_empty()).then_some(ScanFieldSelection(out))
+}
+
 /// The selection of the fields of `dtype` that `pruned` (`dtype` with some struct fields left out,
 /// matched by name) has.
 fn selection_between(dtype: &DataType, pruned: &DataType) -> FieldSelection {

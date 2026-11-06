@@ -29,7 +29,7 @@ use crate::plans::optimizer::projection_pushdown::edge::{
     GetParentKeyAndPort as _, GetProjectionState, ParentKeyAndPort, Projection, ProjectionState,
 };
 use crate::plans::optimizer::projection_pushdown::field_pruning::{
-    ColumnSelection, ColumnSelectionExt, SelectionWalker, refresh_schemas,
+    ColumnSelection, ColumnSelectionExt, SelectionWalker, prune_to_dtype, refresh_schemas,
 };
 use crate::plans::optimizer::recursive_caches::caches_shared_across_rounds;
 use crate::plans::options::JoinTypeOptionsIR;
@@ -1409,14 +1409,26 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                 let input_names_projection = self.names_set_scratch.get();
 
-                // The keys and aggregations are needed whole, so the output dtypes do not change.
-                for e in storage.get(key).exprs() {
+                // The keys are needed whole. The aggregations are walked with what is needed of
+                // their outputs, unrewritten: a narrowed input narrows their dtypes only, which
+                // `refresh_schemas` recomputes.
+                let IR::GroupBy { keys, aggs, .. } = storage.get(key) else {
+                    unreachable!()
+                };
+                for e in keys {
                     SelectionWalker::collect(
                         self.expr_arena,
                         self.prune_struct_fields,
                         e.node(),
                         input_names_projection,
                     );
+                }
+                let mut walker =
+                    SelectionWalker::new(self.expr_arena, self.prune_struct_fields, None);
+                for e in aggs {
+                    let selection = output_selection(out_edge, e.output_name());
+                    let new_node = walker.walk(e.node(), &selection, input_names_projection);
+                    debug_assert_eq!(new_node, e.node());
                 }
 
                 let IR::GroupBy { options, .. } = storage.get(key) else {
@@ -2605,8 +2617,77 @@ fn scan_supports_field_selection(
         // Parses with the pruned schema.
         #[cfg(feature = "json")]
         FileScanIR::NDJson { .. } => unified_scan_args.column_mapping.is_none(),
+        // Expanded after projection pushdown (`pl.scan_delta`, `pl.scan_iceberg`), keeping the
+        // field selection; an expansion that can't read it is narrowed after the scan
+        // (`narrow_expanded_dataset_scan`).
+        #[cfg(feature = "python")]
+        FileScanIR::PythonDataset { .. } => true,
         _ => false,
     }
+}
+
+/// After a dataset scan at `node` is expanded: if the expanded source can't read the field
+/// selection made for it (e.g. a Python scan fallback), the selection is cleared and the scan's
+/// output narrowed by a `select` above it, keeping the pruned dtypes the plan was made with.
+#[cfg(feature = "python")]
+pub(super) fn narrow_expanded_dataset_scan(
+    node: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) {
+    let IR::Scan {
+        scan_type,
+        unified_scan_args,
+        file_info,
+        output_schema,
+        ..
+    } = ir_arena.get_mut(node)
+    else {
+        return;
+    };
+    if unified_scan_args.field_selection.is_none()
+        || (!matches!(scan_type.as_ref(), FileScanIR::PythonDataset { .. })
+            && scan_supports_field_selection(scan_type, unified_scan_args))
+    {
+        return;
+    }
+
+    let field_selection = unified_scan_args.field_selection.take().unwrap();
+    let pruned_schema = output_schema.clone().unwrap();
+    let mut full_schema = pruned_schema.as_ref().clone();
+    for name in field_selection.0.keys() {
+        if let (Some(dtype), Some(full)) = (full_schema.get_mut(name), file_info.schema.get(name)) {
+            *dtype = full.clone();
+        }
+    }
+    let full_schema = Arc::new(full_schema);
+    *output_schema = Some(full_schema.clone());
+
+    let expr = pruned_schema
+        .iter()
+        .map(|(name, dtype)| {
+            let column = expr_arena.add(AExpr::Column(name.clone()));
+            let pruned = prune_to_dtype(column, full_schema.get(name).unwrap(), dtype, expr_arena);
+            ExprIR::new(pruned, OutputName::Alias(name.clone())).with_dtype(dtype.clone())
+        })
+        .collect();
+
+    let scan = ir_arena.take(node);
+    let scan = ir_arena.add(scan);
+    ir_arena.replace(
+        node,
+        IR::Select {
+            input: scan,
+            expr,
+            schema: pruned_schema,
+            options: ProjectionOptions {
+                run_parallel: false,
+                duplicate_check: false,
+                should_broadcast: false,
+                maintain_dataframe_height: false,
+            },
+        },
+    );
 }
 
 /// The field selection of a scan: the columns of `selection` that are not read whole, relative to
