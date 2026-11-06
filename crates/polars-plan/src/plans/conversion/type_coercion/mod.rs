@@ -999,15 +999,19 @@ impl OptimizationRule for TypeCoercionRule {
                     InvalidOperation: "`replace` does not support `old`/`new` values of object dtype"
                 );
 
-                // `replace_strict` without a `return_dtype` is assumed to keep the dtype.
-                let type_new_values = match function {
+                let is_list_of = |dtype: &DataType, values_dtype: &DataType| {
+                    dtype.is_list() && dtype != values_dtype
+                };
+                let old_is_list = is_list_of(&type_old, &type_in);
+                let new_is_list = match function {
                     IRFunctionExpr::ReplaceStrict {
                         return_dtype: Some(dtype),
-                    } => dtype,
-                    _ => &type_in,
+                    } => is_list_of(&type_new, dtype),
+                    // The output dtype is inferred from `new`, so a list can't be told apart from
+                    // a list of values; it is taken to be the latter.
+                    IRFunctionExpr::ReplaceStrict { return_dtype: None } => type_new.is_list(),
+                    _ => is_list_of(&type_new, &type_in),
                 };
-                let old_is_list = is_replace_list_of_values(&type_old, &type_in);
-                let new_is_list = is_replace_list_of_values(&type_new, type_new_values);
                 if old_is_list {
                     ensure_one_list_of_values(input[1].node(), expr_arena, "replace")?;
                 }
