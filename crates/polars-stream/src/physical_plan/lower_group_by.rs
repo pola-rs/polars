@@ -27,7 +27,7 @@ use slotmap::DenseSlotMap;
 use super::{ExprCache, PhysNode, PhysNodeKey, PhysNodeKind, PhysStream, StreamingLowerIRContext};
 use crate::physical_plan::lower_expr::{
     build_hstack_stream, build_select_stream, build_sort_stream, compute_output_schema,
-    is_elementwise_rec_cached, is_fake_elementwise_function, is_input_independent,
+    is_elementwise_rec_cached, is_input_independent,
 };
 use crate::physical_plan::lower_ir::{
     build_filter_stream, build_row_idx_stream, build_slice_stream,
@@ -533,7 +533,7 @@ fn try_lower_elementwise_scalar_agg_expr(
 
         node @ AExpr::Function { input, options, .. }
         | node @ AExpr::AnonymousFunction { input, options, .. }
-            if options.is_elementwise() && !is_fake_elementwise_function(node, expr_arena) =>
+            if options.is_elementwise() =>
         {
             let node = node.clone();
             let input = input.clone();

@@ -33,6 +33,8 @@ Table Operations
      - Unnest one or more arrays as columns in a new table object.
    * - :ref:`TRUNCATE <truncate>`
      - Remove all data from a table without actually deleting it.
+   * - :ref:`UPDATE <update>`
+     - Change rows of a table in an attached catalog.
 
 
 .. _alter_table:
@@ -208,7 +210,7 @@ which case the statement is a no-op.
 
 **Catalog tables:** a name that resolves to an attached catalog, and to no registered
 table, drops the table from the catalog, permanently. ``PURGE`` also deletes its data
-files.
+files. Some catalogs drop tables only with ``PURGE``.
 
 .. code-block:: sql
 
@@ -327,3 +329,37 @@ it fails if another writer added rows.
 
     TRUNCATE TABLE actual_table
     TRUNCATE TABLE IF EXISTS possible_table
+
+.. _update:
+
+UPDATE
+------
+Change rows of a table of a catalog attached with :meth:`SQLContext.register_catalog`, in
+one commit. ``SET`` gives each column a new value, computed from the row as it was before
+the update. ``SET (a, b) = (x, y)`` sets several columns at once. Without ``WHERE``, every
+row is updated. Rows where the condition is NULL are not updated. The condition has the
+same limits as in :ref:`DELETE <delete_from_table>`. It returns the statement.
+
+Values convert to the column types as in :ref:`INSERT <insert>`, and only the values of
+updated rows must fit. A value comes from its own row, so aggregate, window and
+set-returning functions are not supported. Subqueries, ``FROM``, ``RETURNING`` and
+``DEFAULT`` are not supported either. Column names are case-sensitive. Registered tables
+cannot be updated.
+
+The data files holding a matching row are read in full and replaced in one snapshot
+(copy-on-write). An update that matches no row commits nothing. Iceberg v3 tables, and
+files whose delete files cannot be read with them (such as equality deletes), are not
+supported yet.
+
+If another writer commits first, ``UPDATE`` retries when that writer's rows cannot match the
+condition. Otherwise it fails, unless the table's ``write.update.isolation-level`` is
+``snapshot``. The other writer's matching rows then keep their values. It also fails if that
+writer deleted or replaced rows of the files being rewritten, or changed the table's schema
+or partition spec.
+
+**Example:**
+
+.. code-block:: sql
+
+    UPDATE lake.sales.orders SET status = 'shipped' WHERE id = 42
+    UPDATE lake.sales.orders SET (qty, amount) = (qty + 1, amount * 2) WHERE region = 'EU'

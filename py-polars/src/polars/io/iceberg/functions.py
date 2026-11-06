@@ -269,6 +269,36 @@ def scan_iceberg(
     return wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset))
 
 
+def _scan_iceberg_files(
+    table: pyiceberg.table.Table,
+    tasks: list[pyiceberg.table.FileScanTask],
+    storage_options: StorageOptionsDict | None,
+) -> LazyFrame:
+    """Scan every row of exactly the files of `tasks`, planned on `table`.
+
+    Raises a `ComputeError` when collected if the native reader can't read them.
+    """
+    from polars._plr import PyLazyFrame
+
+    dataset = IcebergScanResolver(
+        table=IcebergTableWrap(
+            table_=NoPickleOption(table),
+            table_descriptor_=None,
+            serializer=IcebergScanTableSerializer(),
+            iceberg_storage_properties=storage_options,
+        ),
+        snapshot_id=None,
+        from_snapshot_id_exclusive=None,
+        to_snapshot_id_inclusive=None,
+        reader_override="native",
+        use_metadata_statistics=False,
+        fast_deletion_count=False,
+        use_pyiceberg_filter=False,
+        file_tasks=tasks,
+    )
+    return wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset))
+
+
 def delete_iceberg(
     target: str | pyiceberg.table.Table,
     predicate: Expr,

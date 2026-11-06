@@ -9101,3 +9101,268 @@ def test_mm3_hash_null_and_unsupported() -> None:
 
     with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.LazyFrame({"a": [1.0]}).select(pl.col("a")._mm3_hash()).collect_schema()
+
+
+def _add_position_deletes(
+    tbl: Any,
+    deletes: dict[str, list[int]],
+    *,
+    single_delete_file: bool = False,
+    partition: Any = None,
+    path_bounds: bool = True,
+    deletion_vectors: bool = False,
+    stale_deletion_vectors: dict[str, list[int]] | None = None,
+    row_bounds: dict[int, tuple[bytes, bytes]] | None = None,
+    summary: dict[str, str] | None = None,
+) -> Any:
+    """
+    Commit a snapshot adding one position delete file per data file.
+
+    `row_bounds` adds (lower, upper) bounds of the deleted rows' columns, by field ID.
+    `summary` holds properties of the snapshot summary, written as given.
+
+    With `single_delete_file`, one delete file holds the deletes of all data files (it
+    is then scoped to the partition rather than to a data file). `partition` is the
+    partition tuple of the delete files (default: unpartitioned). Without
+    `path_bounds`, the delete files have no `file_path` bounds, so they are scoped to
+    the partition even when they reference one data file.
+
+    With `deletion_vectors`, each data file gets a deletion vector (Puffin file) with
+    `referenced_data_file` set and no `file_path` bounds, as Iceberg Java writes them.
+    `stale_deletion_vectors` adds another deletion vector of the data file before it,
+    in the same Puffin file, which the delete file entry does not reference.
+
+    PyIceberg cannot write merge-on-read deletes, so the delete files, the delete
+    manifest and the manifest list are written with its low-level writers.
+    """
+    import uuid
+
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    from pyiceberg.avro.file import AvroOutputFile
+    from pyiceberg.manifest import (
+        DataFile,
+        DataFileContent,
+        FileFormat,
+        ManifestContent,
+        ManifestEntry,
+        ManifestEntryStatus,
+        ManifestWriterV2,
+        write_manifest_list,
+    )
+    from pyiceberg.table.refs import SnapshotRefType
+    from pyiceberg.table.snapshots import Operation, Snapshot, Summary
+    from pyiceberg.table.update import AddSnapshotUpdate, SetSnapshotRefUpdate
+    from pyiceberg.typedef import Record
+
+    class DeleteManifestWriter(ManifestWriterV2):  # type: ignore[misc]
+        def content(self) -> ManifestContent:
+            return ManifestContent.DELETES
+
+        @property
+        def version(self) -> Any:
+            # Format version 3 data files hold `referenced_data_file`.
+            return 3 if deletion_vectors else 2
+
+        def new_writer(self) -> Any:
+            return AvroOutputFile[ManifestEntry](
+                output_file=self._output_file,
+                file_schema=self._with_partition(self.version),
+                record_schema=self._with_partition(self.version),
+                schema_name="manifest_entry",
+                metadata=self._meta,
+            )
+
+        @property
+        def _meta(self) -> dict[str, str]:
+            return {**super()._meta, "content": "deletes"}
+
+    path_field_id, pos_field_id = 2147483546, 2147483545
+    delete_schema = pa.schema(
+        [
+            pa.field(
+                "file_path",
+                pa.string(),
+                nullable=False,
+                metadata={"PARQUET:field_id": str(path_field_id)},
+            ),
+            pa.field(
+                "pos",
+                pa.int64(),
+                nullable=False,
+                metadata={"PARQUET:field_id": str(pos_field_id)},
+            ),
+        ]
+    )
+
+    parent = tbl.current_snapshot()
+    snapshot_id = uuid.uuid4().int >> 65
+    sequence_number = tbl.metadata.last_sequence_number + 1
+
+    groups = (
+        [deletes]
+        if single_delete_file
+        else [{data_path: positions} for data_path, positions in deletes.items()]
+    )
+    delete_files = []
+    if deletion_vectors:
+        assert not single_delete_file
+        for data_path, positions in deletes.items():
+            path = f"{tbl.location()}/data/dv-{uuid.uuid4()}.puffin"
+            local_path = path.removeprefix("file://")
+            stale = (stale_deletion_vectors or {}).get(data_path)
+            blobs = [
+                *([_deletion_vector_blob(stale)] if stale is not None else []),
+                _deletion_vector_blob(positions),
+            ]
+            cardinalities = [
+                *([len(stale)] if stale is not None else []),
+                len(positions),
+            ]
+            offsets = [4]
+            for b in blobs[:-1]:
+                offsets.append(offsets[-1] + len(b))
+            blob = blobs[-1]
+            footer = json.dumps(
+                {
+                    "blobs": [
+                        {
+                            "type": "deletion-vector-v1",
+                            "fields": [pos_field_id - 1],
+                            "snapshot-id": -1,
+                            "sequence-number": -1,
+                            "offset": offset,
+                            "length": len(b),
+                            "properties": {
+                                "referenced-data-file": data_path,
+                                "cardinality": str(cardinality),
+                            },
+                        }
+                        for b, offset, cardinality in zip(
+                            blobs, offsets, cardinalities, strict=True
+                        )
+                    ]
+                }
+            ).encode()
+            puffin = b"".join(
+                [
+                    b"PFA1",
+                    *blobs,
+                    b"PFA1",
+                    footer,
+                    len(footer).to_bytes(4, "little"),
+                    bytes(4),
+                    b"PFA1",
+                ]
+            )
+            Path(local_path).write_bytes(puffin)
+            data_file = DataFile.from_args(
+                _table_format_version=3,
+                content=DataFileContent.POSITION_DELETES,
+                file_path=path,
+                file_format=FileFormat.PUFFIN,
+                partition=Record() if partition is None else partition,
+                record_count=len(positions),
+                file_size_in_bytes=len(puffin),
+                referenced_data_file=data_path,
+                content_offset=offsets[-1],
+                content_size_in_bytes=len(blob),
+            )
+            data_file.spec_id = tbl.spec().spec_id
+            delete_files.append(data_file)
+        groups = []
+
+    for group in groups:
+        path = f"{tbl.location()}/data/delete-{uuid.uuid4()}.parquet"
+        local_path = path.removeprefix("file://")
+        rows = [(p, pos) for p in sorted(group) for pos in group[p]]
+        pq.write_table(
+            pa.table(
+                {"file_path": [p for p, _ in rows], "pos": [pos for _, pos in rows]},
+                schema=delete_schema,
+            ),
+            local_path,
+        )
+        data_file = DataFile.from_args(
+            content=DataFileContent.POSITION_DELETES,
+            file_path=path,
+            file_format=FileFormat.PARQUET,
+            partition=Record() if partition is None else partition,
+            record_count=len(rows),
+            file_size_in_bytes=Path(local_path).stat().st_size,
+            lower_bounds={
+                **({path_field_id: min(group).encode()} if path_bounds else {}),
+                **{i: lo for i, (lo, _) in (row_bounds or {}).items()},
+            },
+            upper_bounds={
+                **({path_field_id: max(group).encode()} if path_bounds else {}),
+                **{i: hi for i, (_, hi) in (row_bounds or {}).items()},
+            },
+        )
+        data_file.spec_id = tbl.spec().spec_id
+        delete_files.append(data_file)
+
+    manifest_path = f"{tbl.location()}/metadata/{uuid.uuid4()}-m0.avro"
+    with DeleteManifestWriter(
+        spec=tbl.spec(),
+        schema=tbl.schema(),
+        output_file=tbl.io.new_output(manifest_path),
+        snapshot_id=snapshot_id,
+        avro_compression="deflate",
+    ) as writer:
+        for data_file in delete_files:
+            writer.add(
+                ManifestEntry.from_args(
+                    status=ManifestEntryStatus.ADDED,
+                    snapshot_id=snapshot_id,
+                    data_file=data_file,
+                )
+            )
+    delete_manifest = writer.to_manifest_file()
+
+    list_path = f"{tbl.location()}/metadata/snap-{snapshot_id}-{uuid.uuid4()}.avro"
+    with write_manifest_list(
+        format_version=2,
+        output_file=tbl.io.new_output(list_path),
+        snapshot_id=snapshot_id,
+        parent_snapshot_id=parent.snapshot_id,
+        sequence_number=sequence_number,
+        avro_compression="deflate",
+    ) as list_writer:
+        list_writer.add_manifests([delete_manifest, *parent.manifests(tbl.io)])
+
+    snapshot = Snapshot.model_validate(
+        {
+            "snapshot-id": snapshot_id,
+            "parent-snapshot-id": parent.snapshot_id,
+            "sequence-number": sequence_number,
+            "manifest-list": list_path,
+            "summary": Summary(Operation.DELETE, **(summary or {})),
+            "schema-id": tbl.schema().schema_id,
+        }
+    )
+    set_ref = SetSnapshotRefUpdate.model_validate(
+        {"ref-name": "main", "type": SnapshotRefType.BRANCH, "snapshot-id": snapshot_id}
+    )
+    tbl.catalog.commit_table(
+        tbl,
+        requirements=(),
+        updates=(AddSnapshotUpdate(snapshot=snapshot), set_ref),
+    )
+    return tbl.catalog.load_table(tbl.name())
+
+
+def _deletion_vector_blob(positions: list[int]) -> bytes:
+    """A `deletion-vector-v1` Puffin blob deleting `positions` (< 2**32)."""
+    import zlib
+
+    from pyroaring import BitMap  # type: ignore[import-not-found]
+
+    # One 32-bit Roaring bitmap, of key 0 (the upper 32 bits of the positions).
+    vector: bytes = (
+        (1).to_bytes(8, "little")
+        + (0).to_bytes(4, "little")
+        + BitMap(positions).serialize()
+    )
+    body = b"\xd1\xd3\x39\x64" + vector
+    return len(body).to_bytes(4, "big") + body + zlib.crc32(body).to_bytes(4, "big")

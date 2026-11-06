@@ -41,8 +41,15 @@ impl AExpr {
     ///
     /// This is taken as `&mut bool` as for some expressions this is determined by the upper node
     /// (e.g. `alias`, `cast`).
-    #[recursive]
     pub fn to_field_impl(&self, ctx: &ToFieldContext) -> PolarsResult<Field> {
+        self.to_field_impl_inner(ctx).map_err(|e| {
+            let expr = ExprIRDisplay::display_aexpr(self, ctx.arena).to_string();
+            e.with_expr_context(expr.into())
+        })
+    }
+
+    #[recursive]
+    fn to_field_impl_inner(&self, ctx: &ToFieldContext) -> PolarsResult<Field> {
         use AExpr::*;
         use DataType::*;
         match self {
