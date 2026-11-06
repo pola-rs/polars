@@ -14,11 +14,12 @@ use crate::utils::{NoNull, flatten, slice_slice};
 /// this make sorting fast.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GroupsIdx {
-    pub(crate) sorted_by_first_idx: bool,
-    /// If true, the indices of every group are non-decreasing.
+    /// If true, the groups are ordered by their first index.
+    pub(crate) groups_sorted_by_first_idx: bool,
+    /// If true, the indices within every group are non-decreasing.
     /// Sorted columns then take their per-group min and max from the group ends.
     /// `false` only costs speed, never correctness.
-    pub(crate) idx_in_row_order: bool,
+    pub(crate) sorted_idxs_in_groups: bool,
     /// Positions of the start of each group.
     first: Vec<IdxSize>,
     /// Global positions of all elements of all groups.
@@ -86,8 +87,8 @@ impl From<Vec<Vec<IdxItem>>> for GroupsIdx {
             first.set_len(cap);
         }
         GroupsIdx {
-            sorted_by_first_idx: false,
-            idx_in_row_order: false,
+            groups_sorted_by_first_idx: false,
+            sorted_idxs_in_groups: false,
             first,
             all,
         }
@@ -95,17 +96,17 @@ impl From<Vec<Vec<IdxItem>>> for GroupsIdx {
 }
 
 impl GroupsIdx {
-    pub fn new(first: Vec<IdxSize>, all: Vec<IdxVec>, sorted_by_first_idx: bool) -> Self {
+    pub fn new(first: Vec<IdxSize>, all: Vec<IdxVec>, groups_sorted_by_first_idx: bool) -> Self {
         Self {
-            sorted_by_first_idx,
-            idx_in_row_order: false,
+            groups_sorted_by_first_idx,
+            sorted_idxs_in_groups: false,
             first,
             all,
         }
     }
 
     pub fn sort_by_first_idx(&mut self) {
-        if self.sorted_by_first_idx {
+        if self.groups_sorted_by_first_idx {
             return;
         }
         let mut idx = 0;
@@ -134,22 +135,22 @@ impl GroupsIdx {
         let (first, all) = RAYON.install(|| rayon::join(take_first, take_all));
         self.first = first;
         self.all = all;
-        self.sorted_by_first_idx = true
+        self.groups_sorted_by_first_idx = true
     }
     pub fn is_sorted_by_first_idx(&self) -> bool {
-        self.sorted_by_first_idx
+        self.groups_sorted_by_first_idx
     }
 
-    pub fn is_idx_in_row_order(&self) -> bool {
-        self.idx_in_row_order
+    pub fn has_sorted_idxs_in_groups(&self) -> bool {
+        self.sorted_idxs_in_groups
     }
 
-    /// If true, the indices of every group are non-decreasing.
+    /// If true, the indices within every group are non-decreasing.
     /// Sorted columns then take their per-group min and max from the group ends.
     /// `false` only costs speed, never correctness.
-    pub fn set_idx_in_row_order(&mut self, in_row_order: bool) {
-        debug_assert!(!in_row_order || self.all.iter().all(|idx| idx.is_sorted()));
-        self.idx_in_row_order = in_row_order;
+    pub fn set_sorted_idxs_in_groups(&mut self, sorted: bool) {
+        debug_assert!(!sorted || self.all.iter().all(|idx| idx.is_sorted()));
+        self.sorted_idxs_in_groups = sorted;
     }
 
     pub fn iter(
@@ -186,8 +187,8 @@ impl GroupsIdx {
     // Create an 'empty group', containing 1 group of length 0
     pub fn new_empty() -> Self {
         Self {
-            sorted_by_first_idx: false,
-            idx_in_row_order: true,
+            groups_sorted_by_first_idx: false,
+            sorted_idxs_in_groups: true,
             first: vec![0],
             all: vec![vec![].into()],
         }
@@ -198,8 +199,8 @@ impl FromIterator<IdxItem> for GroupsIdx {
     fn from_iter<T: IntoIterator<Item = IdxItem>>(iter: T) -> Self {
         let (first, all) = iter.into_iter().unzip();
         GroupsIdx {
-            sorted_by_first_idx: false,
-            idx_in_row_order: false,
+            groups_sorted_by_first_idx: false,
+            sorted_idxs_in_groups: false,
             first,
             all,
         }
@@ -236,8 +237,8 @@ impl FromParallelIterator<IdxItem> for GroupsIdx {
     {
         let (first, all) = par_iter.into_par_iter().unzip();
         GroupsIdx {
-            sorted_by_first_idx: false,
-            idx_in_row_order: false,
+            groups_sorted_by_first_idx: false,
+            sorted_idxs_in_groups: false,
             first,
             all,
         }
@@ -372,7 +373,7 @@ impl GroupsType {
                     .iter()
                     .map(|&[first, len]| (first, (first..first + len).collect::<IdxVec>()))
                     .collect();
-                groups.idx_in_row_order = true;
+                groups.sorted_idxs_in_groups = true;
                 groups
             },
         }
@@ -462,9 +463,9 @@ impl GroupsType {
         }
     }
 
-    pub fn is_idx_in_row_order(&self) -> bool {
+    pub fn has_sorted_idxs_in_groups(&self) -> bool {
         match self {
-            GroupsType::Idx(groups) => groups.is_idx_in_row_order(),
+            GroupsType::Idx(groups) => groups.has_sorted_idxs_in_groups(),
             GroupsType::Slice { .. } => true,
         }
     }
@@ -874,7 +875,7 @@ fn slice_groups_inner(g: &GroupsType, offset: i64, len: usize) -> ManuallyDrop<G
                 Vec::from_raw_parts(ptr, all.len(), all.len())
             };
             let mut sliced = GroupsIdx::new(first, all, groups.is_sorted_by_first_idx());
-            sliced.idx_in_row_order = groups.is_idx_in_row_order();
+            sliced.sorted_idxs_in_groups = groups.has_sorted_idxs_in_groups();
             ManuallyDrop::new(GroupsType::Idx(sliced))
         },
         GroupsType::Slice {

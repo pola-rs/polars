@@ -723,7 +723,7 @@ impl<'a> AggregationContext<'a> {
                 })
                 .collect(),
         };
-        groups.set_idx_in_row_order(self.groups.is_idx_in_row_order());
+        groups.set_sorted_idxs_in_groups(self.groups.has_sorted_idxs_in_groups());
         self.with_groups(GroupsType::Idx(groups).into_sliceable());
         true
     }

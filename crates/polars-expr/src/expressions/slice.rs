@@ -146,7 +146,7 @@ impl PhysicalExpr for SliceExpr {
                             .iter()
                             .map(|(first, idx)| slice_groups_idx(offset, length, first, idx))
                             .collect();
-                        sliced.set_idx_in_row_order(groups.is_idx_in_row_order());
+                        sliced.set_sorted_idxs_in_groups(groups.has_sorted_idxs_in_groups());
                         GroupsType::Idx(sliced)
                     },
                     GroupsType::Slice {
@@ -186,7 +186,7 @@ impl PhysicalExpr for SliceExpr {
                                 slice_groups_idx(offset, length as usize, first, idx)
                             })
                             .collect();
-                        sliced.set_idx_in_row_order(groups.is_idx_in_row_order());
+                        sliced.set_sorted_idxs_in_groups(groups.has_sorted_idxs_in_groups());
                         GroupsType::Idx(sliced)
                     },
                     GroupsType::Slice {
@@ -229,7 +229,7 @@ impl PhysicalExpr for SliceExpr {
                                 slice_groups_idx(offset, length, first, idx)
                             })
                             .collect();
-                        sliced.set_idx_in_row_order(groups.is_idx_in_row_order());
+                        sliced.set_sorted_idxs_in_groups(groups.has_sorted_idxs_in_groups());
                         GroupsType::Idx(sliced)
                     },
                     GroupsType::Slice {
@@ -278,7 +278,7 @@ impl PhysicalExpr for SliceExpr {
                                 slice_groups_idx(offset, length as usize, first, idx)
                             })
                             .collect();
-                        sliced.set_idx_in_row_order(groups.is_idx_in_row_order());
+                        sliced.set_sorted_idxs_in_groups(groups.has_sorted_idxs_in_groups());
                         GroupsType::Idx(sliced)
                     },
                     GroupsType::Slice {

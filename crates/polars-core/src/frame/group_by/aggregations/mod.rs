@@ -50,12 +50,6 @@ fn idx2usize(idx: &[IdxSize]) -> impl ExactSizeIterator<Item = usize> + '_ {
     idx.iter().map(|i| *i as usize)
 }
 
-/// If true, a column with a sorted flag may take its per-group minimum, maximum,
-/// and arg variants from the first or last non-null value of each group.
-fn can_take_minmax_from_group_ends(groups: &GroupsType) -> bool {
-    groups.is_idx_in_row_order()
-}
-
 // Unlike `rolling_min` and `rolling_max`, group aggregations ignore NaN.
 type MinWindow<'a, T> = MinMaxWindow<'a, T, MinIgnoreNan>;
 type MaxWindow<'a, T> = MinMaxWindow<'a, T, MaxIgnoreNan>;
@@ -506,7 +500,7 @@ where
 {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
         // faster paths
-        if can_take_minmax_from_group_ends(groups) {
+        if groups.has_sorted_idxs_in_groups() {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_first_non_null(groups);
@@ -582,7 +576,7 @@ where
     where
         for<'b> &'b [T::Native]: ArgMinMax,
     {
-        if can_take_minmax_from_group_ends(groups) {
+        if groups.has_sorted_idxs_in_groups() {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_arg_first_non_null(groups);
@@ -689,7 +683,7 @@ where
         // Sorted fast-path. We skip this for floats because the largest value might be NaN, which
         // max is supposed to skip unless everything is NaN. We would need an
         // agg_first_non_null_non_nan.
-        if can_take_minmax_from_group_ends(groups) && !T::Native::is_float() {
+        if groups.has_sorted_idxs_in_groups() && !T::Native::is_float() {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => return self.clone().into_series().agg_last_non_null(groups),
                 IsSorted::Descending => {
@@ -764,7 +758,7 @@ where
         for<'b> &'b [T::Native]: ArgMinMax,
     {
         // Skipped for floats for the same reason as in `agg_max`.
-        if can_take_minmax_from_group_ends(groups) && !T::Native::is_float() {
+        if groups.has_sorted_idxs_in_groups() && !T::Native::is_float() {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_arg_last_non_null(groups);

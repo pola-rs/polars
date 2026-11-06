@@ -23,8 +23,8 @@ fn get_init_size() -> usize {
     }
 }
 
-/// The indices of each group in `out` must be in row order,
-/// as the result is marked with `idx_in_row_order=true`.
+/// The indices of each group in `out` must be sorted,
+/// as the result is marked with `sorted_idxs_in_groups=true`.
 fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsType {
     let mut idx = if sorted {
         // we can just take the first value, no need to flatten
@@ -61,7 +61,7 @@ fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsType {
         };
         out.sort_unstable_by_key(|g| g.0);
         let mut idx = GroupsIdx::from_iter(out);
-        idx.sorted_by_first_idx = true;
+        idx.groups_sorted_by_first_idx = true;
         idx
     } else {
         // we can just take the first value, no need to flatten
@@ -72,7 +72,7 @@ fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsType {
             GroupsIdx::from(out)
         }
     };
-    idx.idx_in_row_order = true;
+    idx.sorted_idxs_in_groups = true;
     GroupsType::Idx(idx)
 }
 
@@ -112,7 +112,7 @@ where
         (first, groups) = hash_tbl.into_values().unzip();
     }
     let mut idx = GroupsIdx::new(first, groups, sorted);
-    idx.idx_in_row_order = true;
+    idx.sorted_idxs_in_groups = true;
     GroupsType::Idx(idx)
 }
 
