@@ -1943,7 +1943,8 @@ def test_grouped_minmax_after_in_group_reorder_on_sorted_column_30550(
         reversed_x,
         pl.col("x").sort(descending=not descending),
         pl.col("x").sort_by("x", descending=not descending).head(2),
-        # These must not mark the reversed groups as having sorted indices.
+        # These rebuild the reversed groups,
+        # and must not mark them as having sorted indices.
         reversed_x.filter(reversed_x.is_not_null()),
         reversed_x.unique(maintain_order=True),
         reversed_x.slice(0, 2),

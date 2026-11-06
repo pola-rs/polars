@@ -145,9 +145,9 @@ impl GroupsIdx {
         self.sorted_idxs_in_groups
     }
 
-    /// If true, the indices within every group are non-decreasing.
-    /// Sorted columns then take their per-group min and max from the group ends.
-    /// `false` only costs speed, never correctness.
+    /// Marks whether the indices within every group are ascending,
+    /// which speeds up the per-group minimum and maximum of sorted columns.
+    /// Only pass `sorted=true` if they are. `sorted=false` is always correct.
     pub fn set_sorted_idxs_in_groups(&mut self, sorted: bool) {
         debug_assert!(!sorted || self.all.iter().all(|idx| idx.is_sorted()));
         self.sorted_idxs_in_groups = sorted;

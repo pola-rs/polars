@@ -23,7 +23,7 @@ fn get_init_size() -> usize {
     }
 }
 
-/// The indices of each group in `out` must be sorted,
+/// The indices within each group of `out` must be ascending,
 /// as the result is marked with `sorted_idxs_in_groups=true`.
 fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsType {
     let mut idx = if sorted {
