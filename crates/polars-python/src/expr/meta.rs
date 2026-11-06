@@ -70,39 +70,39 @@ impl PyExpr {
         self.inner.clone().meta().is_literal(allow_aliasing)
     }
 
-    fn meta_is_length_preserving(&self) -> PyResult<bool> {
+    fn meta_is_length_preserving(&self, schema: Option<Wrap<Schema>>) -> PyResult<bool> {
         Ok(self
             .inner
             .clone()
             .meta()
-            .is_length_preserving()
+            .is_length_preserving(schema.as_ref().map(|s| &s.0))
             .map_err(PyPolarsErr::from)?)
     }
 
-    fn meta_is_scalar(&self) -> PyResult<bool> {
+    fn meta_is_scalar(&self, schema: Option<Wrap<Schema>>) -> PyResult<bool> {
         Ok(self
             .inner
             .clone()
             .meta()
-            .is_scalar()
+            .is_scalar(schema.as_ref().map(|s| &s.0))
             .map_err(PyPolarsErr::from)?)
     }
 
-    fn meta_is_known_length(&self) -> PyResult<bool> {
+    fn meta_is_known_length(&self, schema: Option<Wrap<Schema>>) -> PyResult<bool> {
         Ok(self
             .inner
             .clone()
             .meta()
-            .is_known_length()
+            .is_known_length(schema.as_ref().map(|s| &s.0))
             .map_err(PyPolarsErr::from)?)
     }
 
-    fn meta_is_row_separable(&self) -> PyResult<bool> {
+    fn meta_is_row_separable(&self, schema: Option<Wrap<Schema>>) -> PyResult<bool> {
         Ok(self
             .inner
             .clone()
             .meta()
-            .is_row_separable()
+            .is_row_separable(schema.as_ref().map(|s| &s.0))
             .map_err(PyPolarsErr::from)?)
     }
 
