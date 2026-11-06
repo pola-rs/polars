@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use polars_arrow::bitmap::MutableBitmap;
-use polars_core::prelude::{InitHashMaps, PlHashMap};
+use polars_core::prelude::{InitHashMaps, PlHashMap, PlHashSet};
 use polars_core::scalar::Scalar;
 use polars_core::schema::iceberg::{
     IcebergColumn, IcebergColumnType, IcebergSchema, IcebergSchemaRef,
@@ -16,7 +16,7 @@ use polars_utils::pl_str::PlSmallStr;
 
 use crate::nodes::io_sources::multi_scan::components::column_selector::ColumnSelector;
 use crate::nodes::io_sources::multi_scan::components::column_selector::builder::{
-    ColumnSelectorBuilder, build_iceberg_default_value,
+    ColumnSelectorBuilder, build_iceberg_default_value, collect_partitioned_structs,
 };
 use crate::nodes::io_sources::multi_scan::components::default_field_values::IcebergDefaultValueProviderRef;
 use crate::nodes::io_sources::multi_scan::components::projection::{
@@ -224,9 +224,19 @@ impl ProjectionBuilder {
                 let mut mapping: Option<PlHashMap<usize, ProjectionTransform>> = None;
                 let mut missing_columns_mask: Option<MutableBitmap> = None;
                 let mut missing_column_defaults: Option<PlHashMap<usize, Scalar>> = None;
-                let iceberg_default_value_provider = default_values
-                    .as_deref()
-                    .map(|x| IcebergDefaultValueProviderRef::new(x, scan_source_idx));
+                let mut partitioned_structs = PlHashSet::new();
+                let iceberg_default_value_provider = default_values.as_deref().map(|x| {
+                    let provider = IcebergDefaultValueProviderRef::new(x, scan_source_idx);
+                    if field_selections.is_none() {
+                        return provider;
+                    }
+                    // Defaults are built for pruned columns: whether a missing struct is valid
+                    // depends on partition values of fields that may be pruned away.
+                    for column in projected_iceberg_schema.values() {
+                        collect_partitioned_structs(provider, column, &mut partitioned_structs);
+                    }
+                    provider.with_partitioned_structs(&partitioned_structs)
+                });
 
                 for (index, (physical_id, output_iceberg_column)) in
                     projected_iceberg_schema.iter().enumerate()
@@ -240,9 +250,18 @@ impl ProjectionBuilder {
 
                         if let Some(iceberg_default_value_provider) = iceberg_default_value_provider
                         {
+                            // Of the output dtype: only the selected struct fields.
+                            let pruned;
+                            let output_column = match field_selections.as_deref() {
+                                Some(s) => {
+                                    pruned = prune_iceberg_column(output_iceberg_column, &s[index]);
+                                    &pruned
+                                },
+                                None => output_iceberg_column,
+                            };
                             if let Some(default) = build_iceberg_default_value(
                                 iceberg_default_value_provider,
-                                output_iceberg_column,
+                                output_column,
                             )? {
                                 missing_column_defaults
                                     .get_or_insert_with(|| {

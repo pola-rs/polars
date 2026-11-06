@@ -46,6 +46,7 @@ if TYPE_CHECKING:
     import pyiceberg.schema
     import pyiceberg.table
     import pyiceberg.typedef
+    from pyiceberg.table import FileScanTask
 
     from polars._typing import StorageOptionsDict
     from polars.io.cloud._utils import NoPickleOption
@@ -309,6 +310,8 @@ class IcebergScanResolver:
     schema_at_creation: pyiceberg.schema.Schema | None = field(
         default=None, init=False, repr=False
     )
+    # The files to read, as planned by the caller: each is read in full.
+    file_tasks: list[FileScanTask] | None = field(default=None, repr=False)
 
     #
     # PythonDatasetProvider interface functions
@@ -514,7 +517,12 @@ class IcebergScanResolver:
             )
             raise ValueError(msg)
 
-        if reader_override != "pyiceberg" and use_plugin_planner():
+        # checked first: `use_plugin_planner` warns when the plugin is missing
+        if (
+            self.file_tasks is None
+            and reader_override != "pyiceberg"
+            and use_plugin_planner()
+        ):
             if verbose:
                 eprint(
                     "IcebergScanResolver: to_dataset_scan(): "
@@ -653,7 +661,9 @@ class IcebergScanResolver:
                 selected_fields=selected_fields,
             )
 
-            if iceberg_table_filter is not None:
+            if self.file_tasks is not None:
+                file_infos = self.file_tasks
+            elif iceberg_table_filter is not None:
                 try:
                     file_infos = list(
                         scan.filter(

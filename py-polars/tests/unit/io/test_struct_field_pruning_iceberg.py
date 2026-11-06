@@ -10,6 +10,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import PolarsError
+from polars.testing import assert_frame_equal
 from tests.unit.io.test_struct_field_pruning import (
     NO_PUSHDOWN,
     assert_engines_equal,
@@ -22,6 +23,25 @@ from tests.unit.io.test_struct_field_pruning import (
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
+
+
+@pytest.fixture(autouse=True)
+def _sqlcatalog_null_pool(monkeypatch: pytest.MonkeyPatch) -> None:
+    # As in `test_iceberg.py`: pyiceberg's sqlite engine pools connections that are only
+    # closed at shutdown, raising a `ResourceWarning` in some later test.
+    try:
+        import pyiceberg.catalog.sql as pyiceberg_sql
+        from sqlalchemy.pool import NullPool
+    except ImportError:
+        return
+
+    original_create_engine = pyiceberg_sql.create_engine
+
+    def create_engine(url: str, **kwargs: Any) -> Any:
+        kwargs["poolclass"] = NullPool
+        return original_create_engine(url, **kwargs)
+
+    monkeypatch.setattr(pyiceberg_sql, "create_engine", create_engine)
 
 
 def _f(name: str, type_: pa.DataType, field_id: int) -> pa.Field:
@@ -352,3 +372,163 @@ def test_struct_field_pruning_scan_iceberg_skips_unselected_leaves(
     with pytest.raises(PolarsError):
         q.collect(optimizations=NO_PUSHDOWN)
     assert_engines_equal(q, DATASET_DF.select(a, l.list.first().struct.field("p")))
+
+
+def _rewrite_partitioned_files(
+    table: Any, rows: list[dict[str, Any]], schema: Any
+) -> None:
+    """Rewrites the files of the latest partition spec with `rows` of `schema`.
+
+    The struct fields left out come from the partition values.
+    """
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+    for task in table.scan().plan_files():
+        if task.file.spec_id == table.spec().spec_id:
+            pq.write_table(
+                pa.Table.from_pylist(rows, schema=schema_to_pyarrow(schema)),
+                task.file.file_path.removeprefix("file://"),
+            )
+
+
+def _set_initial_default(table: Any, catalog: Any, path: list[str], value: Any) -> Any:
+    """`table` as format version 3, the field at `path` with an `initial-default`."""
+    import json
+    from pathlib import Path
+
+    md_path = Path(
+        table.metadata_location.removeprefix("file:")
+        # Windows //C:/... -> C:/...
+        .removeprefix("//")
+    )
+    md = json.loads(md_path.read_text())
+    md["format-version"] = 3
+    for schema in md["schemas"]:
+        fields = schema["fields"]
+        for name in path:
+            field = next((f for f in fields if f["name"] == name), None)
+            if field is None:
+                break
+            if name == path[-1]:
+                field["initial-default"] = value
+            else:
+                fields = field["type"]["fields"]
+    md_path.write_text(json.dumps(md))
+    return catalog.load_table(table.name())
+
+
+@pytest.mark.write_disk
+@pytest.mark.filterwarnings("ignore::polars.exceptions.PerformanceWarning")
+def test_struct_field_pruning_iceberg_default_validity_from_pruned_partition_field(
+    tmp_path: Path,
+) -> None:
+    # `s.c` is missing from the second file, and non-null there because its pruned-away
+    # field `a` has an identity-partition value: its field `b` takes its default.
+    pytest.importorskip("pyiceberg")
+    from pyiceberg.schema import Schema as IcebergSchema
+    from pyiceberg.types import LongType, NestedField, StructType
+
+    from tests.unit.io.test_iceberg import new_iceberg_table
+
+    table, catalog = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "id", LongType()),
+            NestedField(2, "s", StructType(NestedField(3, "x", LongType()))),
+        ),
+    )
+    table.append(
+        pa.Table.from_pylist(
+            [{"id": 1, "s": {"x": 1}}], schema=table.schema().as_arrow()
+        )
+    )
+    with table.update_schema() as update:
+        update.add_column(
+            ("s", "c"),
+            StructType(
+                NestedField(10, "a", LongType()), NestedField(11, "b", LongType())
+            ),
+        )
+    table = catalog.load_table(table.name())
+    with table.update_spec() as update:
+        update.add_identity("s.c.a")
+    table = catalog.load_table(table.name())
+    table.append(
+        pa.Table.from_pylist(
+            [{"id": 2, "s": {"x": 2, "c": {"a": 7, "b": 9}}}],
+            schema=table.schema().as_arrow(),
+        )
+    )
+    _rewrite_partitioned_files(
+        table, [{"id": 2, "s": {"x": 2}}], table.schema().select("id", "s.x")
+    )
+    table = _set_initial_default(table, catalog, ["s", "c", "b"], 9)
+
+    lf = pl.scan_iceberg(table, reader_override="native")
+    c = s.struct.field("c")
+    expected = pl.DataFrame(
+        {"id": [1, 2], "b": [None, 9], "n": [True, False]},
+        schema={"id": pl.Int64, "b": pl.Int64, "n": pl.Boolean},
+    )
+    q = lf.select("id", c.struct.field("b"), c.is_null().alias("n")).sort("id")
+    assert_frame_equal(q.collect(optimizations=NO_PUSHDOWN), expected)
+    assert_engines_equal(q, expected)
+    assert_same_as_without_pushdown(lf.select("id", c.is_null()).sort("id"))
+    assert_same_as_without_pushdown(lf.select("id", c.struct.field("a")).sort("id"))
+
+
+@pytest.mark.write_disk
+@pytest.mark.filterwarnings("ignore::polars.exceptions.PerformanceWarning")
+def test_struct_field_pruning_iceberg_missing_struct_default_is_pruned(
+    tmp_path: Path,
+) -> None:
+    # `s` is missing from the second file, and filled from its partition value: the
+    # filled struct has only the selected fields, like the one read from the first.
+    pytest.importorskip("pyiceberg")
+    from pyiceberg.schema import Schema as IcebergSchema
+    from pyiceberg.types import LongType, NestedField, StructType
+
+    from tests.unit.io.test_iceberg import new_iceberg_table
+
+    table, catalog = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "id", LongType()),
+            NestedField(
+                2,
+                "s",
+                StructType(
+                    NestedField(3, "a", LongType()), NestedField(4, "b", LongType())
+                ),
+            ),
+        ),
+    )
+    with table.update_spec() as update:
+        update.add_identity("s.a")
+    table = catalog.load_table(table.name())
+    arrow_schema = table.schema().as_arrow()
+    table.append(
+        pa.Table.from_pylist([{"id": 1, "s": {"a": 7, "b": 1}}], schema=arrow_schema)
+    )
+    table.append(
+        pa.Table.from_pylist([{"id": 2, "s": {"a": 8, "b": 2}}], schema=arrow_schema)
+    )
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+    # Only the file of `id` 2 loses `s`.
+    id_schema = schema_to_pyarrow(table.schema().select("id"))
+    for task in table.scan().plan_files():
+        path = task.file.file_path.removeprefix("file://")
+        if pq.read_table(path)["id"].to_pylist() == [2]:
+            pq.write_table(pa.Table.from_pylist([{"id": 2}], schema=id_schema), path)
+
+    lf = pl.scan_iceberg(table, reader_override="native")
+    expected = pl.DataFrame({"id": [1, 2], "a": [7, 8], "b": [1, None]})
+    q = lf.select("id", s.struct.field("a"), s.struct.field("b")).sort("id")
+    assert_frame_equal(q.collect(optimizations=NO_PUSHDOWN), expected)
+    for query in [
+        q,
+        lf.select("id", s.struct.field("a")).sort("id"),
+        pl.concat([lf.select(s), lf.select(s)]).select(s.struct.field("a")),
+    ]:
+        assert_same_as_without_pushdown(query, check_row_order=False)

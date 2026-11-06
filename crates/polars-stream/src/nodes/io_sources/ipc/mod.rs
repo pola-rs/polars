@@ -292,13 +292,38 @@ impl FileReader for IpcFileReader {
             None => DataType::from_arrow_field(field),
         };
 
+        // Columns that the above does not prune (e.g. dictionary-encoded structs, maps) are read
+        // whole and narrowed after decoding, to the dtypes here.
+        let narrowed_dtypes: Option<Arc<Schema>> = self
+            .field_selection
+            .as_deref()
+            .map(|field_selection| {
+                field_selection
+                    .0
+                    .iter()
+                    .filter_map(|(name, selection)| {
+                        let (idx, _, field) = file_metadata.schema.get_full(name)?;
+                        let dtype = selection.prune_dtype(&DataType::from_arrow_field(field));
+                        (dtype != pl_field(idx, field)).then(|| (name.clone(), dtype))
+                    })
+                    .collect::<Schema>()
+            })
+            .filter(|schema| !schema.is_empty())
+            .map(Arc::new);
+
         let file_schema_pl = std::cell::LazyCell::new(|| {
             Arc::new(
                 file_metadata
                     .schema
                     .iter()
                     .enumerate()
-                    .map(|(idx, (name, field))| (name.clone(), pl_field(idx, field)))
+                    .map(|(idx, (name, field))| {
+                        let dtype = narrowed_dtypes
+                            .as_deref()
+                            .and_then(|narrowed| narrowed.get(name).cloned())
+                            .unwrap_or_else(|| pl_field(idx, field));
+                        (name.clone(), dtype)
+                    })
                     .collect::<Schema>(),
             )
         });
@@ -419,6 +444,7 @@ impl FileReader for IpcFileReader {
             pl_schema,
             projection_info,
             pruned_dtypes: pruned_dtypes.clone(),
+            narrowed_dtypes,
             dictionaries: dictionaries.clone(),
             row_index,
             read_statistics_flags,

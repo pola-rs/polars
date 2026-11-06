@@ -29,8 +29,7 @@ use crate::plans::IRArrayFunction;
 use crate::plans::aexpr::ToFieldContext;
 #[cfg(feature = "dtype-struct")]
 use crate::plans::projection_height::{
-    ExprHeightOptions, ExprProjectionHeight, aexpr_projection_height_rec,
-    aexpr_projection_height_rec_with,
+    ExprHeightOptions, ExprProjectionHeight, aexpr_projection_height_rec_with,
 };
 use crate::plans::{
     AExpr, ExprIR, IR, IRAggExpr, IRFunctionExpr, IRListFunction, OutputName, det_join_schema,
@@ -888,16 +887,21 @@ impl<'a> SelectionWalker<'a> {
             // Dropping fields must not change the height of the struct: keep an input of the
             // full height. E.g. a struct of a column and a sum keeps its height without the
             // column only if the sum is not all that remains.
+            // A range zipped with a column has the range's height, not necessarily the frame's.
             let mut nodes_scratch = ScratchVec::default();
             let mut heights_scratch = ScratchVec::default();
             let heights: Vec<ExprProjectionHeight> = input
                 .iter()
                 .map(|e| {
-                    aexpr_projection_height_rec(
+                    aexpr_projection_height_rec_with(
                         e.node(),
                         self.expr_arena,
                         &mut nodes_scratch,
                         &mut heights_scratch,
+                        ExprHeightOptions {
+                            range_is_unknown: true,
+                            ..Default::default()
+                        },
                     )
                 })
                 .collect();
@@ -1009,11 +1013,41 @@ impl<'a> SelectionWalker<'a> {
         let mut new_evaluation = Vec::with_capacity(evaluation.len());
         let mut changed = false;
 
+        // The height of the input struct, for whether a new field may be dropped.
+        let mut nodes_scratch = ScratchVec::default();
+        let mut heights_scratch = ScratchVec::default();
+        let options = ExprHeightOptions {
+            range_is_unknown: true,
+            ..Default::default()
+        };
+        let input_height = aexpr_projection_height_rec_with(
+            expr,
+            self.expr_arena,
+            &mut nodes_scratch,
+            &mut heights_scratch,
+            options,
+        );
+
         for e in evaluation.iter() {
             let field_selection = match selection.child(e.output_name()) {
                 Some(s) => s.clone(),
-                // A new field nobody reads.
-                None if self.rewrite_schema.is_some() => {
+                // A new field nobody reads, if it cannot broadcast the struct to another height
+                // (e.g. a column added to a scalar struct).
+                None if self.rewrite_schema.is_some() && {
+                    use ExprProjectionHeight as H;
+                    let height = aexpr_projection_height_rec_with(
+                        e.node(),
+                        self.expr_arena,
+                        &mut nodes_scratch,
+                        &mut heights_scratch,
+                        ExprHeightOptions {
+                            struct_field: input_height,
+                            ..options
+                        },
+                    );
+                    height == H::Scalar || (height == H::Column && input_height == H::Column)
+                } =>
+                {
                     changed = true;
                     continue;
                 },

@@ -229,10 +229,13 @@ pub fn is_input_independent_rec(
             evaluation,
             variant: _,
         } => {
+            // The `StructField`s of `evaluation` read the struct of `expr`, not the input.
             is_input_independent_rec(*expr, arena, cache)
-                && evaluation
-                    .iter()
-                    .all(|expr| is_input_independent_rec(expr.node(), arena, cache))
+                && evaluation.iter().all(|expr| {
+                    arena
+                        .iter(expr.node())
+                        .all(|(_, ae)| !matches!(ae, AExpr::Column(_) | AExpr::Len))
+                })
         },
         #[cfg(feature = "dynamic_group_by")]
         AExpr::Rolling {

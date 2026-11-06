@@ -1044,3 +1044,75 @@ def test_struct_field_pruning_field_in_eval_body(tmp_path: Path) -> None:
         )
         expected = q.collect(engine="streaming", optimizations=NO_PUSHDOWN)
         assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
+def test_struct_field_pruning_rewrites_of_scalar() -> None:
+    # A scalar struct stays a scalar when rewritten to a `struct.eval`, which reads
+    # fields of the struct (not of the frame).
+    lf = pl.LazyFrame({"x": [1, 2, 3]})
+    st = pl.struct(a=pl.lit(10), b=pl.lit("y"))
+    null = pl.lit(None, pl.Struct({"a": pl.Int32, "b": pl.String}))
+    for e in [
+        pl.struct(a=pl.lit(10)).struct.rename_fields(["b"]).struct.field("b"),
+        st.struct.rename_fields(["c", "d"]).struct.field("d"),
+        pl.coalesce(null, st).struct.field("a"),
+        pl.when(pl.lit(True)).then(st).otherwise(st).struct.field("a"),
+        st.fill_null(st).struct.field("b"),
+        st.struct.with_fields(c=pl.field("a")).struct.field("a"),
+    ]:
+        q = lf.select(e)
+        assert_same_as_without_pushdown(q)
+        assert q.collect(engine="streaming", optimizations=NO_PUSHDOWN).height == 1
+
+
+@pytest.mark.write_disk
+def test_struct_field_pruning_ipc_dictionary_struct(tmp_path: Path) -> None:
+    # A dictionary-encoded struct column is narrowed after decoding.
+
+    values = pa.array([{"a": 1, "b": "x"}, {"a": 2, "b": "y"}])
+    indices = pa.array([0, 1, None, 0], pa.int32())
+    table = pa.table({"s": pa.DictionaryArray.from_arrays(indices, values)})
+    path = tmp_path / "d.arrow"
+    with pa.ipc.new_file(path, table.schema) as w:
+        w.write_table(table)
+    lf = pl.scan_ipc(path)
+    for q in [
+        lf.select(s.struct.field("a")),
+        lf.select(s.struct.field("b"), s.is_null().alias("n")),
+    ]:
+        assert_same_as_without_pushdown(q)
+
+
+def test_struct_field_pruning_keeps_fields_setting_the_height() -> None:
+    # An unread field stays if it may set the struct's height: a range zipped with a
+    # one-row column, or a column added to a scalar struct.
+    one = pl.LazyFrame({"x": [10], "y": [1]})
+    three = pl.LazyFrame({"x": [1, 2, 3], "y": [4, 5, 6]})
+    for q in [
+        one.select(
+            pl.struct(a=pl.int_range(0, 3) + pl.col("x"), b=pl.col("y")).struct.field(
+                "b"
+            )
+        ),
+        one.select(
+            pl.struct(
+                a=pl.col("x") + pl.lit(pl.Series([1, 2, 3])), b=pl.col("y")
+            ).struct.field("b")
+        ),
+        three.select(
+            pl.struct(a=pl.lit(1)).struct.with_fields(c=pl.col("y")).struct.field("a")
+        ),
+        three.select(
+            pl.struct(a=pl.col("x").sum(), b=pl.lit(2))
+            .fill_null(pl.struct(a=pl.lit(3), b=pl.lit(4)))
+            .struct.field("a")
+        ),
+    ]:
+        for engine in ENGINES:
+            try:
+                expected = q.collect(engine=engine, optimizations=NO_PUSHDOWN)  # type: ignore[call-overload]
+            except PolarsError as exc:
+                with pytest.raises(type(exc)):
+                    q.collect(engine=engine)  # type: ignore[call-overload]
+            else:
+                assert_frame_equal(q.collect(engine=engine), expected)  # type: ignore[call-overload]

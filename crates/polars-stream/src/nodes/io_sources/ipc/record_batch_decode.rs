@@ -6,7 +6,9 @@ use polars_arrow::io::ipc::read::{Dictionaries, ProjectionInfo};
 use polars_arrow::io::ipc::write::KeyValueRef;
 use polars_core::chunked_array::flags::StatisticsFlags;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::ArrowDataType;
+use polars_core::prelude::{
+    ArrowDataType, DataType, IntoColumn, IntoSeries, Series, StructChunked,
+};
 use polars_core::schema::Schema;
 use polars_core::utils::polars_arrow::io::ipc::read::common::apply_projection;
 use polars_core::utils::polars_arrow::io::ipc::read::{
@@ -26,6 +28,9 @@ pub(super) struct RecordBatchDecoder {
     pub(super) projection_info: Arc<Option<ProjectionInfo>>,
     /// Struct columns read with only some of their fields, indexed like the file schema.
     pub(super) pruned_dtypes: Option<Arc<[Option<ArrowDataType>]>>,
+    /// Columns read whole but of which only some struct fields are selected, with the dtypes to
+    /// narrow them to.
+    pub(super) narrowed_dtypes: Option<Arc<Schema>>,
     pub(super) dictionaries: Arc<Option<Dictionaries>>,
     pub(super) row_index: Option<RowIndex>,
     pub(super) read_statistics_flags: bool,
@@ -112,6 +117,15 @@ impl RecordBatchDecoder {
             df.slice(i64::try_from(slice_offset).unwrap(), slice_len)
         };
 
+        if let Some(narrowed_dtypes) = &self.narrowed_dtypes {
+            for (name, dtype) in narrowed_dtypes.iter() {
+                if let Some(idx) = df.get_column_index(name) {
+                    let column = narrow_series(df.columns()[idx].as_materialized_series(), dtype)?;
+                    df.replace_column(idx, column.into_column())?;
+                }
+            }
+        }
+
         if let Some(RowIndex { name, offset }) = &self.row_index {
             let current_row_offset = record_batch_data
                 .row_offset
@@ -122,6 +136,35 @@ impl RecordBatchDecoder {
 
         Ok(df)
     }
+}
+
+/// `s` with only the struct fields (by name, at any depth) of `dtype`.
+fn narrow_series(s: &Series, dtype: &DataType) -> PolarsResult<Series> {
+    if s.dtype() == dtype {
+        return Ok(s.clone());
+    }
+    Ok(match dtype {
+        DataType::Struct(fields) => {
+            let ca = s.struct_()?.rechunk();
+            let fields = fields
+                .iter()
+                .map(|f| narrow_series(&ca.field_by_name(f.name())?, f.dtype()))
+                .collect::<PolarsResult<Vec<_>>>()?;
+            let mut out = StructChunked::from_series(s.name().clone(), s.len(), fields.iter())?;
+            out.zip_outer_validity(&ca);
+            out.into_series()
+        },
+        DataType::List(inner) => s
+            .list()?
+            .apply_to_inner(&|values| narrow_series(&values, inner))?
+            .into_series(),
+        #[cfg(feature = "dtype-array")]
+        DataType::Array(inner, _) => s
+            .array()?
+            .apply_to_inner(&|values| narrow_series(&values, inner))?
+            .into_series(),
+        _ => s.clone(),
+    })
 }
 
 fn get_flags(

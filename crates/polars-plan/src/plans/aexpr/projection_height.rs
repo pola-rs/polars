@@ -106,6 +106,11 @@ pub struct ExprHeightOptions {
     /// should set this so that those are not rejected, and leave the rest to the runtime shape
     /// checks.
     pub structural_unknowns_only: bool,
+
+    /// If set, a [`ExprProjectionHeight::Range`] is reported as
+    /// [`ExprProjectionHeight::Unknown`]: zipped with a column of one row, a range broadcasts it
+    /// to the range's length, which a `Column` height would hide.
+    pub range_is_unknown: bool,
 }
 
 impl Default for ExprHeightOptions {
@@ -113,6 +118,7 @@ impl Default for ExprHeightOptions {
         Self {
             struct_field: ExprProjectionHeight::Unknown,
             structural_unknowns_only: false,
+            range_is_unknown: false,
         }
     }
 }
@@ -189,6 +195,18 @@ impl<'a> NodeVisitor for ExprHeightVisitor<'a> {
 
 impl ExprHeightVisitor<'_> {
     fn height(
+        &self,
+        aexpr: &AExpr,
+        input_heights: Option<&mut dyn Collection<ExprProjectionHeight>>,
+    ) -> Option<ExprProjectionHeight> {
+        let height = self.height_inner(aexpr, input_heights);
+        if self.options.range_is_unknown && height == Some(ExprProjectionHeight::Range) {
+            return Some(ExprProjectionHeight::Unknown);
+        }
+        height
+    }
+
+    fn height_inner(
         &self,
         aexpr: &AExpr,
         input_heights: Option<&mut dyn Collection<ExprProjectionHeight>>,
