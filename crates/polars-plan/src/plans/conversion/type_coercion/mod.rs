@@ -910,12 +910,6 @@ impl OptimizationRule for TypeCoercionRule {
                     type_left,
                     type_other
                 );
-                if matches!(
-                    function,
-                    IRFunctionExpr::StringExpr(IRStringFunction::ContainsAny { .. })
-                ) {
-                    ensure_one_list_of_values(input[1].node(), expr_arena, function)?;
-                }
                 None
             },
 
@@ -949,8 +943,7 @@ impl OptimizationRule for TypeCoercionRule {
             )?,
             #[cfg(all(feature = "strings", feature = "find_many"))]
             AExpr::Function {
-                function:
-                    ref function @ IRFunctionExpr::StringExpr(IRStringFunction::ReplaceMany { .. }),
+                function: IRFunctionExpr::StringExpr(IRStringFunction::ReplaceMany { .. }),
                 ref input,
                 ..
             } => {
@@ -977,9 +970,6 @@ impl OptimizationRule for TypeCoercionRule {
                     type_patterns,
                     type_replace_with
                 );
-                for node in [input[1].node(), input[2].node()] {
-                    ensure_one_list_of_values(node, expr_arena, function)?;
-                }
                 None
             },
             #[cfg(feature = "replace")]
@@ -1717,7 +1707,7 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
 
 /// Checks that a list argument of `function` holds one list of values for the whole column, as
 /// its kernel doesn't support a list per row.
-#[cfg(any(feature = "replace", all(feature = "strings", feature = "find_many")))]
+#[cfg(feature = "replace")]
 fn ensure_one_list_of_values(
     node: Node,
     expr_arena: &Arena<AExpr>,
