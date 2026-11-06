@@ -1,7 +1,7 @@
 use polars_buffer::Buffer;
 
 use crate::bitmap::Bitmap;
-use crate::bitmap::iterator::TrueIdxIter;
+use crate::bitmap::iterator::ExactTrueIdxIter;
 use crate::trusted_len::TrustedLen;
 
 mod private {
@@ -102,13 +102,13 @@ impl<'a, A: ArrayAccessor<'a>> ExactSizeIterator for ArrayValuesIter<'a, A> {}
 
 pub struct NonNullValuesIter<'a, A: ?Sized> {
     accessor: &'a A,
-    idxs: TrueIdxIter<'a>,
+    idxs: ExactTrueIdxIter<'a>,
 }
 
 impl<'a, A: ArrayAccessor<'a> + ?Sized> NonNullValuesIter<'a, A> {
     pub fn new(accessor: &'a A, validity: Option<&'a Bitmap>) -> Self {
         Self {
-            idxs: TrueIdxIter::new(accessor.len(), validity),
+            idxs: ExactTrueIdxIter::from_validity(accessor.len(), validity),
             accessor,
         }
     }

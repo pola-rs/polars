@@ -88,6 +88,7 @@ pub fn to_alp(
             if opt_flags.contains(OptFlags::EAGER) {
                 // If we dispatched to the lazy engine from the eager API, we don't want to resolve
                 // where in the query plan it went wrong. It is clear from the backtrace anyway.
+                // The context naming the failing expression is kept.
                 return Err(err.remove_context());
             };
             let Some(ir_until_then) = lp_arena.last_node() else {

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import sqlite3
+import subprocess
+import sys
 import threading
 import time
 from contextlib import closing
@@ -547,6 +549,7 @@ def test_arrow_type_polars_cannot_read_is_an_error(tmp_path: Path) -> None:
         lf.collect()
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("engine", ["streaming", "in-memory"])
 def test_count_of_a_slice_of_a_source_beyond_idxsize(
     tmp_path: Path, engine: Any
@@ -578,3 +581,22 @@ def test_object_dtype_is_refused(uri: str) -> None:
     ]:
         with pytest.raises(TypeError, match="column 's' can't be read as"):
             pl.scan_database("t", uri, **kwargs)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        'lf.group_by("id").map_groups(lambda df: df, schema=None)',
+        'lf.rolling(index_column=pl.col("id") * 1, period="2i")',
+        'lf.group_by_dynamic(index_column=pl.col("id") * 1, every="2i")',
+    ],
+)
+def test_plan_building_resolves_the_schema_without_the_gil(db: Path, call: str) -> None:
+    # The plugin needs the GIL to find the schema: building these plans held it, and
+    # waited on the plugin forever. In a subprocess, so that a hang fails the test.
+    code = f"""
+import polars as pl
+lf = pl.scan_database("t", "sqlite:///" + {str(db)!r})
+{call}
+"""
+    subprocess.run([sys.executable, "-c", code], check=True, timeout=120)

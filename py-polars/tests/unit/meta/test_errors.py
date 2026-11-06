@@ -28,6 +28,8 @@ from polars.testing import assert_frame_equal
 from tests.unit.conftest import TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import ConcatMethod
 
 
@@ -835,3 +837,45 @@ def test_invalid_classmethod_error() -> None:
     match = "'Series' object has no attribute 'nonexistent'"
     with pytest.raises(AttributeError, match=re.escape(match)):
         pl.Series.nonexistent()  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize(
+    ("query", "error", "inner", "outer"),
+    [
+        # Raised while resolving the output schema.
+        (
+            lambda lf: lf.select(x=(pl.col("a").list.len() * 2).sum()),
+            InvalidOperationError,
+            'col("a").list.length()',
+            '(col("a").list.length() * dyn int: 2).sum().alias("x")',
+        ),
+        # Raised by type coercion.
+        (
+            lambda lf: lf.filter(
+                pl.col("a").str.starts_with("x") | pl.col("b").is_null()
+            ),
+            InvalidOperationError,
+            'col("a").str.starts_with(["x"])',
+            'col("a").str.starts_with(["x"]) | col("b").is_null()',
+        ),
+        # Raised while converting the expression.
+        (
+            lambda lf: lf.select(c=(pl.col("a").shift(pl.col("b")) * 2).sum()),
+            ShapeError,
+            'col("a").shift([col("b")])',
+            '[(col("a").shift([col("b")])) * (dyn int: 2)].sum().alias("c")',
+        ),
+    ],
+)
+def test_planning_error_names_expression(
+    query: Callable[[pl.LazyFrame], pl.LazyFrame],
+    error: type[Exception],
+    inner: str,
+    outer: str,
+) -> None:
+    lf = pl.LazyFrame({"a": [1, 2], "b": [1, 2]})
+    with pytest.raises(error) as exc:
+        query(lf).collect_schema()
+    msg = str(exc.value)
+    assert f"This error occurred in the following expression:\n\t{inner}\n" in msg
+    assert f"while evaluating this larger expression:\n\t{outer}\n" in msg

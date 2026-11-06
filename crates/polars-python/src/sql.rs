@@ -223,6 +223,23 @@ impl PySQLContext {
                 dict.set_item("subquery", subquery)?;
                 dict.set_item("hint_unsupported_part", hint_unsupported_part)?;
             },
+            CatalogStatement::Update {
+                name,
+                table,
+                columns,
+                condition,
+                subquery,
+                hint_unsupported_part,
+            } => {
+                dict.set_item("kind", "update")?;
+                dict.set_item("name", name)?;
+                dict.set_item("catalog", table.catalog)?;
+                dict.set_item("identifier", table.identifier)?;
+                dict.set_item("columns", columns)?;
+                dict.set_item("condition", condition)?;
+                dict.set_item("subquery", subquery)?;
+                dict.set_item("hint_unsupported_part", hint_unsupported_part)?;
+            },
             CatalogStatement::Truncate {
                 name,
                 table,
@@ -324,6 +341,26 @@ impl PySQLContext {
             .collect();
         py.enter_polars(|| self.context.write().catalog_delete_predicate(query, tables))
             .map(Into::into)
+    }
+
+    /// The predicate of the rows a catalog `UPDATE` changes and the value of each `SET` column,
+    /// planned against the scan of its table, by full name.
+    pub fn catalog_update_plan(
+        &self,
+        py: Python<'_>,
+        query: &str,
+        tables: Vec<(Vec<String>, PyLazyFrame)>,
+    ) -> PyResult<(PyExpr, Vec<(String, PyExpr)>)> {
+        let tables = tables
+            .into_iter()
+            .map(|(full_name, lf)| (full_name, lf.ldf.into_inner()))
+            .collect();
+        let (predicate, values) =
+            py.enter_polars(|| self.context.write().catalog_update_plan(query, tables))?;
+        Ok((
+            predicate.into(),
+            values.into_iter().map(|(c, e)| (c, e.into())).collect(),
+        ))
     }
 
     /// Extract table identifiers from a SQL query string.
