@@ -6713,9 +6713,15 @@ def test_write_list_null_count(data_page_size: int | None) -> None:
     assert statistics.null_count == statistics_pa.null_count == 4
 
 
+STRING_ENCODINGS = ["PLAIN", "DELTA_LENGTH_BYTE_ARRAY", "DELTA_BYTE_ARRAY"]
+
+
+@pytest.mark.parametrize("encoding", STRING_ENCODINGS)
 @pytest.mark.parametrize("compression", ["snappy", "zstd", "none"])
 @pytest.mark.parametrize("data_page_version", ["1.0", "2.0"])
-def test_plain_strings_small_pages(compression: str, data_page_version: str) -> None:
+def test_strings_small_pages(
+    encoding: str, compression: str, data_page_version: str
+) -> None:
     values = [
         "a" * 12,
         "b" * 13,
@@ -6737,9 +6743,14 @@ def test_plain_strings_small_pages(compression: str, data_page_version: str) -> 
         f,
         compression=compression,
         use_dictionary=False,
+        column_encoding={"s": encoding, "l.list.element": encoding},
         data_page_size=512,
         data_page_version=data_page_version,
     )
+    f.seek(0)
+    row_group = pq.read_metadata(f).row_group(0)
+    assert encoding in row_group.column(1).encodings  # s
+    assert encoding in row_group.column(2).encodings  # l
 
     f.seek(0)
     out = pl.read_parquet(f)
@@ -6770,16 +6781,119 @@ def test_plain_strings_small_pages(compression: str, data_page_version: str) -> 
 )
 @pytest.mark.parametrize("neighbor", [b"x" * 5, "é".encode() * 100])
 @pytest.mark.parametrize("invalid_first", [True, False])
-def test_plain_strings_invalid_utf8(
-    invalid: bytes, neighbor: bytes, invalid_first: bool
+@pytest.mark.parametrize("encoding", STRING_ENCODINGS)
+def test_strings_invalid_utf8(
+    invalid: bytes, neighbor: bytes, invalid_first: bool, encoding: str
 ) -> None:
     values = [invalid, neighbor] if invalid_first else [neighbor, invalid]
     tbl = pa.table({"s": pa.array(values, pa.binary()).view(pa.string())})
     f = io.BytesIO()
-    pq.write_table(tbl, f, use_dictionary=False, compression="snappy")
+    pq.write_table(
+        tbl,
+        f,
+        use_dictionary=False,
+        compression="snappy",
+        column_encoding=encoding,
+    )
     f.seek(0)
     with pytest.raises(pl.exceptions.ComputeError, match=r"(?i)invalid utf-?8"):
         pl.read_parquet(f)
+
+
+@pytest.mark.parametrize("encoding", ["DELTA_LENGTH_BYTE_ARRAY", "DELTA_BYTE_ARRAY"])
+@pytest.mark.parametrize("data_page_size", [256, None])
+def test_delta_strings_shared_prefixes(
+    encoding: str, data_page_size: int | None
+) -> None:
+    values = [
+        # These share the first byte of their only character.
+        "é",
+        "è",
+        # A long shared prefix, followed by a short and a long suffix.
+        "prefix_" * 4 + "a",
+        "prefix_" * 4 + "b" * 30,
+        "pre",
+        "",
+        "x" * 12,
+        "x" * 13,
+        "x" * 12 + "é",
+        "🦆" * 5,
+        "🦆" * 4 + "🐍",
+        None,
+    ]
+    # Mostly values short enough to be inlined, with a single long one.
+    short = [f"s{i}" for i in range(200)] + ["L" * 40]
+    df = pl.DataFrame({"s": values * 20 + short + values}).with_row_index()
+
+    f = io.BytesIO()
+    pq.write_table(
+        df.to_arrow(),
+        f,
+        compression="none",
+        use_dictionary=False,
+        column_encoding={"s": encoding},
+        data_page_size=data_page_size,
+    )
+    f.seek(0)
+    assert encoding in pq.read_metadata(f).row_group(0).column(1).encodings
+
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f), df)
+    for expr in [
+        pl.col("index") % 3 == 0,
+        pl.col("s").str.starts_with("prefix"),
+        pl.col("s").is_null(),
+    ]:
+        f.seek(0)
+        out = pl.scan_parquet(f, parallel="prefiltered").filter(expr).collect()
+        assert_frame_equal(out, df.filter(expr))
+    f.seek(0)
+    assert_frame_equal(pl.scan_parquet(f).slice(7, 230).collect(), df.slice(7, 230))
+
+
+def test_delta_strings_invalid_utf8_in_prefix() -> None:
+    # The second value takes the first byte of the character of the first value.
+    values = pa.array(["é".encode(), b"\xc3x"], pa.binary()).view(pa.string())
+    f = io.BytesIO()
+    pq.write_table(
+        pa.table({"s": values}),
+        f,
+        use_dictionary=False,
+        column_encoding="DELTA_BYTE_ARRAY",
+    )
+    f.seek(0)
+    with pytest.raises(pl.exceptions.ComputeError, match=r"(?i)invalid utf-?8"):
+        pl.read_parquet(f)
+
+
+@pytest.mark.parametrize(
+    ("encoding", "values", "header", "corrupt"),
+    [
+        # The first length is 2, as zigzag 4; make it 50, past the end of the values.
+        ("DELTA_LENGTH_BYTE_ARRAY", ["ab", "c"], b"\x80\x01\x04\x02\x04", 0x64),
+        # The first prefix length is 0; make it 1, longer than the previous value.
+        ("DELTA_BYTE_ARRAY", ["ab", "abc"], b"\x80\x01\x04\x02\x00", 0x02),
+    ],
+)
+def test_delta_strings_corrupt_lengths(
+    encoding: str, values: list[str], header: bytes, corrupt: int
+) -> None:
+    f = io.BytesIO()
+    pq.write_table(
+        pa.table({"s": values}),
+        f,
+        compression="none",
+        use_dictionary=False,
+        column_encoding=encoding,
+        write_statistics=False,
+    )
+    data = bytearray(f.getvalue())
+    # The header of the delta-encoded lengths ends with the first length.
+    assert data.count(header) == 1
+    data[data.index(header) + len(header) - 1] = corrupt
+
+    with pytest.raises(pl.exceptions.ComputeError, match="does not match given length"):
+        pl.read_parquet(io.BytesIO(data))
 
 
 @pytest.mark.write_disk
