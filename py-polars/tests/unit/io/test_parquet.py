@@ -963,6 +963,16 @@ def test_parquet_array_dtype_nulls() -> None:
             pl.Array(pl.Int64, 0),
             marks=pytest.mark.may_fail_cloud,
         ),
+        pytest.param(
+            [[[], None], None, [], [[]]],
+            pl.List(pl.Array(pl.Int64, 0)),
+            marks=pytest.mark.may_fail_cloud,
+        ),
+        pytest.param(
+            [[[], None], None, [[], []]],
+            pl.Array(pl.Array(pl.Int64, 0), 2),
+            marks=pytest.mark.may_fail_cloud,
+        ),
         (
             [[[1, 5, 2], [42, 13, 37]], [[1, 2, 3], [5, 2, 3]], [[1, 2, 1], [3, 1, 3]]],
             pl.Array(pl.Array(pl.Int8, 3), 2),
@@ -1965,6 +1975,285 @@ def test_nested_span_multiple_pages_18400() -> None:
 
     f.seek(0)
     assert_frame_equal(df.head(1), pl.read_parquet(f, n_rows=1))
+
+
+def _write_parquet_with_arrow_schema(
+    path: Path, tbl: pa.Table, arrow_type: pa.DataType
+) -> None:
+    """Write `tbl`, declaring `arrow_type` for column "a" in the Arrow schema."""
+    arrow_schema = pa.schema([pa.field("a", arrow_type)]).serialize()
+    with pq.ParquetWriter(path, tbl.schema, store_schema=False) as writer:
+        writer.write_table(tbl)
+        writer.add_key_value_metadata(
+            {"ARROW:schema": base64.b64encode(arrow_schema.to_pybytes()).decode()}
+        )
+
+
+@pytest.mark.parametrize("rows", [[[1, 2, 3], [4]], [[1, 2, 3]], [[1]]])
+def test_read_parquet_fixed_size_list_row_width_mismatch_raises(
+    rows: list[list[int]], tmp_path: Path
+) -> None:
+    # Variable-size list levels under an Arrow schema that declares `Array(Int64, 2)`.
+    tbl = pa.table({"a": pa.array(rows, pa.list_(pa.int64()))})
+    path = tmp_path / "misaligned.parquet"
+    _write_parquet_with_arrow_schema(path, tbl, pa.list_(pa.int64(), 2))
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match=r"fixed-size list row whose number of elements differs from its width \(2\)",
+    ):
+        pl.read_parquet(path)
+
+
+@pytest.mark.may_fail_cloud  # reason: zero-width array
+@pytest.mark.parametrize(
+    ("values", "pa_dtype"),
+    [
+        ([[], None, []], pa.list_(pa.int64(), 0)),
+        ([[]], pa.list_(pa.field("item", pa.int64(), nullable=False), 0)),
+    ],
+)
+def test_read_parquet_zero_width_array_with_elements_raises(
+    values: list[list[int] | None], pa_dtype: pa.DataType
+) -> None:
+    # Arrow C++ writes non-null zero-width fixed-size lists as holding one element.
+    f = io.BytesIO()
+    pq.write_table(pa.table({"a": pa.array(values, pa_dtype)}), f)
+    f.seek(0)
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match=r"differs from its width \(0\) \(pyarrow writes non-null zero-width",
+    ):
+        pl.read_parquet(f)
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype"),
+    [
+        ([[1, None], None, [3, 4]], pl.Array(pl.Int64, 2)),
+        ([[[1, 2], None], None, [], [[3, 4]]], pl.List(pl.Array(pl.Int64, 2))),
+        ([[[1], []], None, [None, [2, 3]]], pl.Array(pl.List(pl.Int64), 2)),
+        (
+            [[[1, 2], None], None, [[3, None], [5, 6]]],
+            pl.Array(pl.Array(pl.Int64, 2), 2),
+        ),
+        ([{"x": [1, 2]}, None, {"x": None}], pl.Struct({"x": pl.Array(pl.Int64, 2)})),
+    ],
+)
+@pytest.mark.parametrize("use_pyarrow", [False, True])
+def test_read_parquet_fixed_size_list_roundtrip(
+    values: list[Any], dtype: pl.DataType, use_pyarrow: bool, tmp_path: Path
+) -> None:
+    values = values * 4
+    df = pl.DataFrame(
+        {"idx": range(len(values)), "a": values},
+        schema={"idx": pl.Int64, "a": dtype},
+    )
+    path = tmp_path / "fixed_size_list.parquet"
+    df.write_parquet(path, use_pyarrow=use_pyarrow, row_group_size=5)
+
+    assert_frame_equal(pl.read_parquet(path), df)
+    assert_frame_equal(pl.scan_parquet(path).slice(3, 6).collect(), df.slice(3, 6))
+    assert_frame_equal(
+        pl.scan_parquet(path, parallel="prefiltered")
+        .filter(pl.col("idx") % 3 != 1)
+        .collect(),
+        df.filter(pl.col("idx") % 3 != 1),
+    )
+
+
+def test_read_parquet_fixed_size_list_rows_across_pages(io_files_path: Path) -> None:
+    # Current writers keep each row within a data page, so this file was written by
+    # pyarrow (uncompressed, without dictionary) and then split into V1 data pages of 7
+    # levels each by an out-of-tree tool. Most pages start in the middle of a row.
+    n = 40
+    a = [
+        None if i % 7 == 3 else [None if j == i % 5 else i + j for j in range(3)]
+        for i in range(n)
+    ]
+    arrays = [
+        [None if (i + j) % 13 == 0 else i + j for j in range(9)] for i in range(n)
+    ]
+    b = [None if i % 11 == 5 else arrays[i : i + i % 3] for i in range(n)]
+    c = [
+        None
+        if i % 9 == 4
+        else [None if (i + j) % 4 == 0 else i + j for j in range(i % 7)]
+        for i in range(n)
+    ]
+    df = pl.DataFrame(
+        {"idx": range(n), "a": a, "b": b, "c": c},
+        schema={
+            "idx": pl.Int32,
+            "a": pl.Array(pl.Int32, 3),
+            "b": pl.List(pl.Array(pl.Int32, 9)),
+            "c": pl.List(pl.Int32),
+        },
+    )
+    path = io_files_path / "fixed_size_list_rows_across_pages.parquet"
+    _assert_nested_reads(path, df, offset=11, length=17)
+
+
+@pytest.mark.parametrize("width", [2, 20])
+@pytest.mark.parametrize("in_list", [False, True])
+def test_read_parquet_fixed_size_list_mismatch_in_long_run_raises(
+    width: int, in_list: bool, tmp_path: Path
+) -> None:
+    # One row is too long and the next one too short, so there are 1000 * width elements
+    # in total and only the check of each row can catch it.
+    rows = [list(range(width)) for _ in range(1000)]
+    rows[600].append(0)
+    rows[601].pop()
+    values: list[Any] = rows
+    physical, declared = pa.list_(pa.int64()), pa.list_(pa.int64(), width)
+    if in_list:
+        values = [rows[i : i + 2] for i in range(0, 1000, 2)]
+        physical, declared = pa.list_(physical), pa.list_(declared)
+    path = tmp_path / "misaligned.parquet"
+    _write_parquet_with_arrow_schema(
+        path, pa.table({"a": pa.array(values, physical)}), declared
+    )
+    with pytest.raises(
+        pl.exceptions.ComputeError, match=rf"differs from its width \({width}\)"
+    ):
+        pl.read_parquet(path)
+
+
+def _assert_nested_reads(
+    path: Path, expected: pl.DataFrame, *, offset: int = 1234, length: int = 1500
+) -> None:
+    """Check a full read, a slice, and a prefiltered read with a fragmented mask."""
+    assert_frame_equal(pl.read_parquet(path), expected)
+    assert_frame_equal(
+        pl.scan_parquet(path).slice(offset, length).collect(),
+        expected.slice(offset, length),
+    )
+    predicate = pl.col("idx") % 3 != 1
+    assert_frame_equal(
+        pl.scan_parquet(path, parallel="prefiltered").filter(predicate).collect(),
+        expected.filter(predicate),
+    )
+
+
+def _write_small_pages(path: Path, columns: dict[str, Any], schema: pa.Schema) -> None:
+    """Write pages of a few dozen values, so slice and mask edges fall inside pages."""
+    pq.write_table(
+        pa.table(columns, schema=schema),
+        path,
+        data_page_size=512,
+        write_batch_size=64,
+        row_group_size=1000,
+    )
+
+
+_NESTED_STRUCT = pl.Struct({"x": pl.Int64, "y": pl.Struct({"z": pl.Int64})})
+
+
+def _nested_struct_type(nullable: bool) -> pa.DataType:
+    """The Arrow type of `_NESTED_STRUCT`, with nullable fields if `nullable`."""
+    field = functools.partial(pa.field, nullable=nullable)
+    return pa.struct(
+        [field("x", pa.int64()), field("y", pa.struct([field("z", pa.int64())]))]
+    )
+
+
+def _nested_struct_value(i: int, nullable: bool) -> dict[str, Any]:
+    """A `_NESTED_STRUCT` value with each field null for some `i` if `nullable`."""
+    return {
+        "x": None if nullable and i % 5 == 1 else i,
+        "y": None
+        if nullable and i % 4 == 2
+        else {"z": None if nullable and i % 3 == 0 else -i},
+    }
+
+
+@pytest.mark.parametrize("struct_nullable", [False, True])
+@pytest.mark.parametrize("fields_nullable", [False, True])
+def test_read_parquet_struct_without_list(
+    struct_nullable: bool, fields_nullable: bool, tmp_path: Path
+) -> None:
+    # Without a list, each value is a row, whose definition level gives the validity of
+    # each struct and of the leaf.
+    n = 3000
+    rows = [
+        None
+        if struct_nullable and i % 7 == 3
+        else _nested_struct_value(i, fields_nullable)
+        for i in range(n)
+    ]
+    schema = pa.schema(
+        [
+            pa.field("idx", pa.int32()),
+            pa.field(
+                "s", _nested_struct_type(fields_nullable), nullable=struct_nullable
+            ),
+        ]
+    )
+    path = tmp_path / "structs.parquet"
+    _write_small_pages(path, {"idx": range(n), "s": rows}, schema)
+    expected = pl.DataFrame(
+        {"idx": range(n), "s": rows}, schema={"idx": pl.Int32, "s": _NESTED_STRUCT}
+    )
+    _assert_nested_reads(path, expected)
+
+
+@pytest.mark.parametrize("nullable", [False, True])
+@pytest.mark.parametrize("width", [None, 3])
+def test_read_parquet_structs_in_list(
+    nullable: bool, width: int | None, tmp_path: Path
+) -> None:
+    # Each value of a list of structs has an item in each struct, valid as far as its
+    # definition level reaches, among null structs, null rows and empty rows (`List`).
+    n = 3000
+    rows = [
+        None
+        if nullable and i % 7 == 3
+        else [
+            None
+            if nullable and (i + j) % 6 == 5
+            else _nested_struct_value(i + j, nullable)
+            for j in range(width or i % 4)
+        ]
+        for i in range(n)
+    ]
+    item = pa.field("item", _nested_struct_type(nullable), nullable=nullable)
+    schema = pa.schema(
+        [
+            pa.field("idx", pa.int32()),
+            pa.field("a", pa.list_(item, width or -1), nullable=nullable),
+        ]
+    )
+    path = tmp_path / "structs_in_list.parquet"
+    _write_small_pages(path, {"idx": range(n), "a": rows}, schema)
+    dtype = pl.Array(_NESTED_STRUCT, width) if width else pl.List(_NESTED_STRUCT)
+    expected = pl.DataFrame(
+        {"idx": range(n), "a": rows}, schema={"idx": pl.Int32, "a": dtype}
+    )
+    _assert_nested_reads(path, expected)
+
+
+def test_read_parquet_map_with_nulls(tmp_path: Path) -> None:
+    # A map is a list of key-value structs, with null and empty maps and null values.
+    n = 3000
+    rows = [
+        None
+        if i % 7 == 3
+        else {f"k{j}": None if (i + j) % 5 == 0 else i * j for j in range(i % 4)}
+        for i in range(n)
+    ]
+    schema = pa.schema(
+        [pa.field("idx", pa.int32()), pa.field("m", pa.map_(pa.string(), pa.int64()))]
+    )
+    path = tmp_path / "map.parquet"
+    _write_small_pages(
+        path,
+        {"idx": range(n), "m": [r if r is None else list(r.items()) for r in rows]},
+        schema,
+    )
+    expected = pl.DataFrame(
+        {"idx": range(n), "m": rows},
+        schema={"idx": pl.Int32, "m": pl.Map(pl.String, pl.Int64)},
+    )
+    _assert_nested_reads(path, expected)
 
 
 @given(

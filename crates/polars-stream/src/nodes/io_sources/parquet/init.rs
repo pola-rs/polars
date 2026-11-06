@@ -223,6 +223,7 @@ impl ParquetReadImpl {
                 skipper.sort_by_read_order(row_groups.make_contiguous(), |rg| rg.idx);
             }
 
+            let inflight_budget = byte_source.window_inflight_budget();
             let defer_cached_reads = polars_config::config().file_defer_cached_reads();
             let mut row_group_data_fetcher = RowGroupDataFetcher {
                 projection: projected_arrow_fields.clone(),
@@ -244,7 +245,9 @@ impl ParquetReadImpl {
                 let fetch_length = usize::try_from(fetch_length)
                     .expect("ParquetReadImpl: fetch_length too large for usize: {fetch_length}");
 
-                let permit = pipeline_budget.acquire(fetch_length).await;
+                let permit = pipeline_budget
+                    .acquire(fetch_length, inflight_budget.as_deref())
+                    .await;
 
                 // Budget reserved, spawn request
                 let prefetch = row_group_data_fetcher.next().await.unwrap();

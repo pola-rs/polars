@@ -378,12 +378,11 @@ impl FileReader for ParquetFileReader {
         let projected_arrow_fields = projected_arrow_fields()?.clone();
         let memory_prefetch_func = get_memory_prefetch_func(verbose);
 
-        // Ordered scans get a larger count budget: partly offsets head-of-line blocking.
-        if maintain_order {
-            self.row_group_prefetch_sync
-                .pipeline_budget
-                .grow_for_ordered();
-        }
+        // Ordered scans hold completed fetches behind the head of line.
+        self.row_group_prefetch_sync.pipeline_budget.begin_file(
+            byte_source.window_inflight_budget().is_some(),
+            maintain_order,
+        );
         let row_group_prefetch_size = self
             .row_group_prefetch_sync
             .pipeline_budget
