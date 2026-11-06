@@ -1,6 +1,6 @@
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
 use polars_arrow::array::Utf8ViewArray;
-use polars_core::prelude::arity::unary_elementwise;
+use polars_core::prelude::arity::{broadcast_try_binary_elementwise, unary_elementwise};
 use polars_core::prelude::*;
 use polars_core::utils::align_chunks_binary;
 
@@ -47,10 +47,16 @@ pub fn contains_any(
         ca.len(),
         patterns.len()
     );
-    polars_ensure!(
-        patterns.len() == 1,
-        nyi = "`str.contains_any` with a pattern per row"
-    );
+    if patterns.len() != 1 {
+        return broadcast_try_binary_elementwise(ca, patterns, |val, pat| {
+            let (Some(val), Some(pat)) = (val, pat) else {
+                return Ok(None);
+            };
+            let pat = pat.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
+            let ac = build_ac_arr(pat, ascii_case_insensitive, false)?;
+            Ok(Some(ac.find(val).is_some()))
+        });
+    }
 
     if patterns.has_nulls() {
         return Ok(BooleanChunked::full_null(ca.name().clone(), ca.len()));
@@ -98,10 +104,40 @@ pub fn replace_all(
         }
     }
 
-    polars_ensure!(
-        patterns.len() == 1 && replace_with.len() == 1,
-        nyi = "`str.replace_many` with a pattern per row"
-    );
+    if patterns.len() != 1 || replace_with.len() != 1 {
+        let broadcast = |ca: &ListChunked| {
+            if ca.len() == 1 {
+                ca.new_from_index(0, length)
+            } else {
+                ca.clone()
+            }
+        };
+        let (patterns, replace_with) = (broadcast(patterns), broadcast(replace_with));
+        let mut buf = String::new();
+        let out: StringChunked = (0..length)
+            .zip(patterns.amortized_iter())
+            .zip(replace_with.amortized_iter())
+            .map(|((i, pat), with)| {
+                let val = ca.get(if ca.len() == 1 { 0 } else { i });
+                let (Some(val), Some(pat), Some(with)) = (val, pat, with) else {
+                    return Ok(None);
+                };
+                let (ac, with) = build_replacer(
+                    pat.as_ref().str()?,
+                    with.as_ref().str()?,
+                    ascii_case_insensitive,
+                    leftmost,
+                )?;
+                buf.clear();
+                ac.replace_all_with(val, &mut buf, |m, _, dst| {
+                    dst.push_str(with[m.pattern().as_usize()]);
+                    true
+                });
+                Ok(Some(buf.clone()))
+            })
+            .collect::<PolarsResult<_>>()?;
+        return Ok(out.with_name(ca.name().clone()));
+    }
 
     if patterns.has_nulls() || replace_with.has_nulls() {
         return Ok(StringChunked::full_null(ca.name().clone(), ca.len()));
@@ -111,25 +147,16 @@ pub fn replace_all(
         empty_as_null: false,
         keep_nulls: true,
     })?;
-    let patterns = patterns.str()?;
     let replace_with = replace_with.explode(ExplodeOptions {
         empty_as_null: false,
         keep_nulls: true,
     })?;
-    let replace_with = replace_with.str()?;
-
-    let replace_with = replace_with
-        .broadcast_to(patterns.len())
-        .context("expected the same amount of patterns as replacement strings")?;
-
-    polars_ensure!(patterns.null_count() == 0 && replace_with.null_count() == 0, InvalidOperation: "'patterns'/'replace_with' should not have nulls");
-    let replace_with = replace_with
-        .downcast_iter()
-        .flatten()
-        .flatten()
-        .collect::<Vec<_>>();
-
-    let ac = build_ac(patterns, ascii_case_insensitive, leftmost)?;
+    let (ac, replace_with) = build_replacer(
+        patterns.str()?,
+        replace_with.str()?,
+        ascii_case_insensitive,
+        leftmost,
+    )?;
 
     Ok(ca.apply_into_string_amortized(|val, buf| {
         ac.replace_all_with(val, buf, |m, _, dst| {
@@ -137,6 +164,27 @@ pub fn replace_all(
             true
         })
     }))
+}
+
+/// Builds the automaton for `patterns` and the replacement for each of them, broadcasting a single
+/// replacement.
+fn build_replacer<'a>(
+    patterns: &StringChunked,
+    replace_with: &'a StringChunked,
+    ascii_case_insensitive: bool,
+    leftmost: bool,
+) -> PolarsResult<(AhoCorasick, Vec<&'a str>)> {
+    polars_ensure!(
+        replace_with.len() == 1 || replace_with.len() == patterns.len(),
+        ShapeMismatch: "expected the same amount of patterns as replacement strings"
+    );
+    polars_ensure!(patterns.null_count() == 0 && replace_with.null_count() == 0, InvalidOperation: "'patterns'/'replace_with' should not have nulls");
+    let mut replace_with: Vec<&str> = replace_with.iter().flatten().collect();
+    if replace_with.len() == 1 {
+        replace_with = vec![replace_with[0]; patterns.len()];
+    }
+    let ac = build_ac(patterns, ascii_case_insensitive, leftmost)?;
+    Ok((ac, replace_with))
 }
 
 fn push_str(

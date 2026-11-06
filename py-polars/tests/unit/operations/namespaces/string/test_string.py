@@ -2632,13 +2632,29 @@ def test_contains_any_replace_many_imploded_patterns() -> None:
     assert_frame_equal(out.collect(), expected)
 
 
-@pytest.mark.parametrize("height", [1, 3])
-def test_contains_any_replace_many_patterns_per_row_raises(height: int) -> None:
-    df = pl.DataFrame({"s": ["ab"] * height, "p": [["a"]] * height})
-    with pytest.raises(InvalidOperationError, match="per row"):
-        df.lazy().select(pl.col("s").str.contains_any(pl.col("p"))).collect()
-    with pytest.raises(InvalidOperationError, match="per row"):
-        df.lazy().select(pl.col("s").str.replace_many(pl.col("p"), ["b"])).collect()
+def test_contains_any_replace_many_patterns_per_row() -> None:
+    df = pl.DataFrame(
+        {
+            "s": ["ab", "cd", "ab", None],
+            "p": [["a"], ["x", "d"], None, ["a"]],
+            "w": [["1"], ["2", "3"], ["4"], ["5"]],
+        }
+    )
+    out = df.lazy().select(
+        c=pl.col("s").str.contains_any("p"),
+        r=pl.col("s").str.replace_many("p", pl.col("w")),
+        b=pl.col("s").str.replace_many("p", ["_"]),
+        l=pl.lit("abcd").str.contains_any("p"),
+    )
+    expected = pl.DataFrame(
+        {
+            "c": [True, True, None, None],
+            "r": ["1b", "c3", None, None],
+            "b": ["_b", "c_", None, None],
+            "l": [True, True, None, True],
+        }
+    )
+    assert_frame_equal(out.collect(), expected)
 
 
 def test_find_many_null_patterns_broadcast() -> None:
