@@ -914,7 +914,7 @@ impl OptimizationRule for TypeCoercionRule {
                     function,
                     IRFunctionExpr::StringExpr(IRStringFunction::ContainsAny { .. })
                 ) {
-                    ensure_one_list_of_values(input[1].node(), expr_arena, "str.contains_any")?;
+                    ensure_one_list_of_values(input[1].node(), expr_arena, function)?;
                 }
                 None
             },
@@ -949,7 +949,8 @@ impl OptimizationRule for TypeCoercionRule {
             )?,
             #[cfg(all(feature = "strings", feature = "find_many"))]
             AExpr::Function {
-                function: IRFunctionExpr::StringExpr(IRStringFunction::ReplaceMany { .. }),
+                function:
+                    ref function @ IRFunctionExpr::StringExpr(IRStringFunction::ReplaceMany { .. }),
                 ref input,
                 ..
             } => {
@@ -977,7 +978,7 @@ impl OptimizationRule for TypeCoercionRule {
                     type_replace_with
                 );
                 for node in [input[1].node(), input[2].node()] {
-                    ensure_one_list_of_values(node, expr_arena, "str.replace_many")?;
+                    ensure_one_list_of_values(node, expr_arena, function)?;
                 }
                 None
             },
@@ -1012,28 +1013,22 @@ impl OptimizationRule for TypeCoercionRule {
                     IRFunctionExpr::ReplaceStrict { return_dtype: None } => type_new.is_list(),
                     _ => is_list_of(&type_new, &type_in),
                 };
-                if old_is_list {
-                    ensure_one_list_of_values(input[1].node(), expr_arena, "replace")?;
-                }
-                if new_is_list {
-                    ensure_one_list_of_values(input[2].node(), expr_arena, "replace")?;
-                }
-                if old_is_list && new_is_list {
-                    return Ok(None);
-                }
-
                 let function = function.clone();
                 let mut input = input.clone();
+                let mut changed = false;
                 for (i, is_list) in [(1, old_is_list), (2, new_is_list)] {
-                    if !is_list {
+                    if is_list {
+                        ensure_one_list_of_values(input[i].node(), expr_arena, &function)?;
+                    } else {
                         let imploded = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
                             input: input[i].node(),
                             maintain_order: true,
                         }));
                         input[i].set_node(imploded);
+                        changed = true;
                     }
                 }
-                Some(AExpr::Function {
+                changed.then_some(AExpr::Function {
                     function,
                     input,
                     options,
@@ -1726,7 +1721,7 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
 fn ensure_one_list_of_values(
     node: Node,
     expr_arena: &Arena<AExpr>,
-    function: &str,
+    function: &IRFunctionExpr,
 ) -> PolarsResult<()> {
     polars_ensure!(
         is_scalar_ae(node, expr_arena) || is_single_literal_ae(node, expr_arena),

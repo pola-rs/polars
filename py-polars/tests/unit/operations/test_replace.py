@@ -324,7 +324,7 @@ def test_replace_list_of_values_per_row_raises(height: int, values: pl.Expr) -> 
 
 def test_replace_list_input_with_column_values() -> None:
     df = pl.DataFrame(
-        {"x": [[1], [2], [1]], "y": [[1], [5]] * 1 + [[7]], "z": [[10], [50], [70]]}
+        {"x": [[1], [2], [1]], "y": [[1], [5], [7]], "z": [[10], [50], [70]]}
     )
     out = df.lazy().select(
         r=pl.col("x").replace(pl.col("y"), pl.col("z")),

@@ -193,21 +193,20 @@ impl MetaNameSpace {
 /// Whether an `is_in` or `replace` has a non-literal argument, which only the schema can resolve
 /// into a set (`implode()`) or a value per row.
 fn has_unresolved_set_argument(node: Node, expr_arena: &Arena<AExpr>) -> bool {
-    expr_arena.iter(node).any(|(_, ae)| match ae {
+    let is_unresolved = |e: &ExprIR| !matches!(expr_arena.get(e.node()), AExpr::Literal(_));
+    has_aexpr(node, expr_arena, |ae| match ae {
         #[cfg(feature = "is_in")]
         AExpr::Function {
             function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }),
             input,
             ..
-        } => !matches!(expr_arena.get(input[1].node()), AExpr::Literal(_)),
+        } => is_unresolved(&input[1]),
         #[cfg(feature = "replace")]
         AExpr::Function {
             function: IRFunctionExpr::Replace | IRFunctionExpr::ReplaceStrict { .. },
             input,
             ..
-        } => input[1..3]
-            .iter()
-            .any(|e| !matches!(expr_arena.get(e.node()), AExpr::Literal(_))),
+        } => input[1..3].iter().any(is_unresolved),
         _ => false,
     })
 }
