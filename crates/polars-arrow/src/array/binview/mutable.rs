@@ -297,6 +297,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     }
 
     /// Get a [`View`] for a specific set of bytes.
+    #[inline]
     pub fn push_value_into_buffer(&mut self, bytes: &[u8]) -> View {
         assert!(bytes.len() <= u32::MAX as usize);
 
