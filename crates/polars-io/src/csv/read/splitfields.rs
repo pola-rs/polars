@@ -237,7 +237,7 @@ mod inner {
         // the bool is used to indicate that it requires escaping
         type Item = (&'a [u8], bool);
 
-        #[inline]
+        #[inline(always)]
         fn next(&mut self) -> Option<(&'a [u8], bool)> {
             // This must be before we check the cached value
             if self.finished {

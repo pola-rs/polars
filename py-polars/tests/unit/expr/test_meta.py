@@ -1,6 +1,7 @@
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 from polars.testing import assert_frame_equal
 
 
@@ -87,3 +88,39 @@ def test_meta_is_row_separable(expr: pl.Expr, row_separable: bool) -> None:
         df = pl.DataFrame({"a": [0, 1, 2, 3, None, 5], "b": [3, 2, None, 0, 5, 4]})
         batches = pl.concat([df[:2].select(expr), df[2:].select(expr)])
         assert_frame_equal(batches, df.select(expr))
+
+
+def test_meta_properties_schema() -> None:
+    schema = {"a": pl.Int64, "s": pl.String}
+
+    # A selector checks every column it expands to.
+    assert cs.numeric().sum().meta.is_scalar(schema=schema)
+    assert not cs.all().meta.is_scalar(schema=schema)
+    assert pl.all().meta.is_length_preserving(schema=schema)
+    assert pl.all().meta.is_known_length(schema=schema)
+    assert (pl.col(pl.Int64) * 2).meta.is_row_separable(schema=schema)
+    assert not cs.numeric().cum_sum().meta.is_row_separable(schema=schema)
+
+    with pytest.raises(pl.exceptions.ColumnNotFoundError):
+        pl.col("x").meta.is_scalar(schema=schema)
+
+
+@pytest.mark.parametrize(
+    "expr", [pl.col("s").struct.unnest(), pl.col("s").struct.field("x", "y")]
+)
+def test_meta_struct_fields_without_schema(expr: pl.Expr) -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        expr.meta.is_scalar()
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        expr.meta.tree_format(return_as_string=True)
+
+    schema = {"s": pl.Struct({"x": pl.Int64, "y": pl.Int64})}
+    assert expr.meta.is_length_preserving(schema=schema)
+
+
+def test_meta_is_row_separable_is_in_list_column() -> None:
+    expr = pl.col("a").is_in(pl.col("l"))
+    # Only the schema tells a list column, zipped row by row, from a set.
+    assert not expr.meta.is_row_separable()
+    assert expr.meta.is_row_separable(schema={"a": pl.Int64, "l": pl.List(pl.Int64)})
+    assert not expr.meta.is_row_separable(schema={"a": pl.Int64, "l": pl.Int64})

@@ -118,6 +118,21 @@ pub enum CatalogStatement {
         /// The first part of the condition a catalog filter likely can't express, for messages.
         hint_unsupported_part: Option<String>,
     },
+    /// `UPDATE <name> SET <column> = <value>, ... [WHERE <condition>]`.
+    Update {
+        /// The table name as the statement wrote it.
+        name: String,
+        /// The catalog table to update.
+        table: CatalogTable,
+        /// The `SET` columns, in the order written.
+        columns: Vec<String>,
+        /// The `WHERE` condition, as SQL, for messages.
+        condition: Option<String>,
+        /// Whether the condition has a subquery, which a catalog filter can't express.
+        subquery: bool,
+        /// The first part of the condition a catalog filter likely can't express, for messages.
+        hint_unsupported_part: Option<String>,
+    },
     /// `TRUNCATE [TABLE] [IF EXISTS] <name>`.
     Truncate {
         /// The table name as the statement wrote it.

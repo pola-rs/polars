@@ -533,7 +533,7 @@ fn try_lower_elementwise_scalar_agg_expr(
 
         node @ AExpr::Function { input, options, .. }
         | node @ AExpr::AnonymousFunction { input, options, .. }
-            if options.is_elementwise() && !is_fake_elementwise_function(node, expr_arena) =>
+            if options.is_elementwise() =>
         {
             let node = node.clone();
             let input = input.clone();
