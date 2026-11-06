@@ -32,6 +32,7 @@ use crate::nodes::io_sources::multi_scan::reader_interface::{BeginReadArgs, File
 #[cfg(feature = "parquet")]
 use crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder;
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone)]
 pub enum DeletionFilesProvider {
     None,
@@ -67,7 +68,7 @@ impl DeletionFilesProvider {
     ) -> PolarsResult<Self> {
         match deletion_files {
             Some(DeletionFilesList::Iceberg(paths)) => feature_gated!("parquet", {
-                let reader_builder = ParquetReaderBuilder {
+                let mut reader_builder = ParquetReaderBuilder {
                     bytes_per_source: None,
                     first_metadata: None,
                     options: Arc::new(polars_io::prelude::ParquetOptions {
@@ -79,7 +80,7 @@ impl DeletionFilesProvider {
                         parallel: polars_io::prelude::ParallelStrategy::Auto,
                         low_memory: false,
                         use_statistics: false,
-                        decryption_properties: None,
+                        decryption: None,
                     }),
                     pipeline_budget: std::sync::OnceLock::new(),
                     shared_prefetch_wait_group_slot: Default::default(),
@@ -89,6 +90,12 @@ impl DeletionFilesProvider {
                 };
 
                 reader_builder.set_execution_state(execution_state);
+                // Deletion files keep a fixed byte window: no growth, no pool draw.
+                let pipeline_budget = reader_builder.pipeline_budget.take().unwrap();
+                reader_builder
+                    .pipeline_budget
+                    .set(pipeline_budget.with_fixed_kbytes())
+                    .unwrap();
 
                 let ScanSources::Paths(data_paths) = selected_sources else {
                     polars_bail!(

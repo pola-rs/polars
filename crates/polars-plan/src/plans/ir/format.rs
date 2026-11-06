@@ -24,15 +24,19 @@ pub struct IRDisplay<'a> {
 
 #[derive(Clone, Copy)]
 pub struct ExprIRDisplay<'a> {
-    pub(crate) node: Node,
+    pub(crate) root: &'a AExpr,
     pub(crate) output_name: &'a OutputName,
     pub(crate) expr_arena: &'a Arena<AExpr>,
 }
 
 impl<'a> ExprIRDisplay<'a> {
     pub fn display_node(node: Node, expr_arena: &'a Arena<AExpr>) -> Self {
+        Self::display_aexpr(expr_arena.get(node), expr_arena)
+    }
+
+    pub fn display_aexpr(root: &'a AExpr, expr_arena: &'a Arena<AExpr>) -> Self {
         Self {
-            node,
+            root,
             output_name: &OutputName::None,
             expr_arena,
         }
@@ -195,7 +199,7 @@ impl<'a> IRDisplay<'a> {
 
     fn display_expr(&self, root: &'a ExprIR) -> ExprIRDisplay<'a> {
         ExprIRDisplay {
-            node: root.node(),
+            root: self.lp.expr_arena.get(root.node()),
             output_name: root.output_name_inner(),
             expr_arena: self.lp.expr_arena,
         }
@@ -396,7 +400,7 @@ impl<'a> ExprIRDisplay<'a> {
 
     fn with_root<T: AsExpr>(&self, root: &'a T) -> Self {
         Self {
-            node: root.node(),
+            root: self.expr_arena.get(root.node()),
             output_name: root.output_name(),
             expr_arena: self.expr_arena,
         }
@@ -404,7 +408,7 @@ impl<'a> ExprIRDisplay<'a> {
 
     fn parenthesize_if_binexpr(self) -> impl Display + 'a {
         std::fmt::from_fn(move |f| {
-            if let AExpr::BinaryExpr { .. } = self.expr_arena.get(self.node) {
+            if let AExpr::BinaryExpr { .. } = self.root {
                 write!(f, "({self})")
             } else {
                 write!(f, "{self}")
@@ -437,7 +441,7 @@ impl<T: AsExpr> Display for ExprIRSliceDisplay<'_, T> {
         f.write_char('[')?;
         if let Some(fst) = iter.next() {
             let fst = ExprIRDisplay {
-                node: fst.node(),
+                root: self.expr_arena.get(fst.node()),
                 output_name: fst.output_name(),
                 expr_arena: self.expr_arena,
             };
@@ -446,7 +450,7 @@ impl<T: AsExpr> Display for ExprIRSliceDisplay<'_, T> {
 
         for expr in iter {
             let expr = ExprIRDisplay {
-                node: expr.node(),
+                root: self.expr_arena.get(expr.node()),
                 output_name: expr.output_name(),
                 expr_arena: self.expr_arena,
             };
@@ -468,7 +472,7 @@ impl<T: AsExpr> fmt::Debug for ExprIRSliceDisplay<'_, T> {
 impl Display for ExprIRDisplay<'_> {
     #[recursive]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let root = self.expr_arena.get(self.node);
+        let root = self.root;
 
         let has_alias = matches!(self.output_name, OutputName::Alias(_));
         use AExpr::*;

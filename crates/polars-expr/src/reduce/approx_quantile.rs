@@ -3,6 +3,7 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
+use polars_arrow::trusted_len::TrustMyLength;
 use polars_compute::approx_quantile::{ApproxQuantileMethod, FinalizedSketch, Sketch};
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_ops::series::{sketch_dtype, sketch_repr, sketches_to_series};
@@ -169,6 +170,7 @@ where
     B: ToOwned + ?Sized + 'static,
     B::Owned: fmt::Debug + Clone + TotalOrd + Send + Sync + serde::Serialize + 'static,
     for<'a> T::Physical<'a>: Borrow<B>,
+    for<'a> <T::Array as StaticArray>::ValueIterT<'a>: ExactSizeIterator + Clone,
 {
     type Dtype = T;
     type Value = Sketch<B::Owned>;
@@ -189,13 +191,19 @@ where
     #[inline(always)]
     fn reduce_one(&self, a: &mut Self::Value, b: Option<T::Physical<'_>>, _seq_id: u64) {
         if let Some(b) = b {
-            a.update(Borrow::<B>::borrow(&b));
+            a.update::<B>(std::iter::once(b));
         }
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<T>, _seq_id: u64) {
-        for value in ca.iter().flatten() {
-            v.update(Borrow::<B>::borrow(&value));
+        for arr in ca.downcast_iter() {
+            if arr.has_nulls() {
+                let num_values = arr.len() - arr.null_count();
+                // SAFETY: `flatten` yields exactly the non-null values.
+                v.update::<B>(unsafe { TrustMyLength::new(arr.iter().flatten(), num_values) });
+            } else {
+                v.update::<B>(arr.values_iter());
+            }
         }
     }
 

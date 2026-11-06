@@ -506,6 +506,7 @@ async fn compute_join_and_send(
             gather_probe_unmatched,
             params.build_params().emit_unmatched,
             params.key_descending,
+            params.key_nulls_last,
             params.args.nulls_equal,
             morsel_size,
             &mut build_row_offset,

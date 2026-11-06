@@ -7,7 +7,7 @@ use polars_utils::hashing::HashPartitioner;
 use polars_utils::{IdxSize, UnitVec};
 
 use crate::execute::StreamingExecutionState;
-use crate::hash_shuffle::split::{SplitRows, split};
+use crate::hash_shuffle::split::{NullRows, SplitRows, split};
 
 /// Partial states of groups that left a hot table (evictions), or a whole hot table.
 pub struct PreAgg {
@@ -37,7 +37,8 @@ impl SplitPreAggs {
                 pre_aggs.iter_mut(),
                 state.task_metrics(),
                 &|pre_agg| async move {
-                    pre_agg.split = split(&pre_agg.keys, None, partitioner);
+                    pre_agg.split =
+                        split(&pre_agg.keys, None, partitioner, NullRows::FirstPartition);
                     memory_manager().spill().await;
                     Ok(())
                 },

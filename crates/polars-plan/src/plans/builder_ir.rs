@@ -58,7 +58,7 @@ impl<'a> IRBuilder<'a> {
     pub fn add_expr(&mut self, expr: Expr) -> PolarsResult<ExprIR> {
         let schema = self.lp_arena.get(self.root).schema(self.lp_arena);
         let mut ctx = ExprToIRContext::new(self.expr_arena, &schema);
-        to_expr_ir(expr, &mut ctx)
+        to_expr_ir(&expr, &mut ctx)
     }
 
     pub fn project(self, exprs: Vec<ExprIR>, options: ProjectionOptions) -> Self {

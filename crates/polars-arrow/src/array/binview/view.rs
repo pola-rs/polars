@@ -74,23 +74,35 @@ impl View {
         debug_assert!(bytes.len() <= u32::MAX as usize);
         debug_assert!(bytes.len() <= Self::MAX_INLINE_SIZE as usize);
 
-        let mut view = Self {
-            length: bytes.len() as u32,
-            ..Default::default()
+        let len = bytes.len();
+        let src = bytes.as_ptr();
+
+        // Read the bytes with (possibly overlapping) fixed-size loads, so that a variable length
+        // copy does not become a call to memcpy. `lo` holds inline bytes 0..8, `hi` bytes 8..12.
+        // SAFETY: every load is within `bytes`.
+        let (lo, hi) = unsafe {
+            let load4 =
+                |i: usize| u32::from_le_bytes(src.add(i).cast::<[u8; 4]>().read_unaligned()) as u64;
+            if len >= 8 {
+                let head = u64::from_le_bytes(src.cast::<[u8; 8]>().read_unaligned());
+                (head, load4(len - 4) >> ((12 - len) * 8))
+            } else if len >= 4 {
+                (load4(0) | (load4(len - 4) << ((len - 4) * 8)), 0)
+            } else if len > 0 {
+                let mid = len / 2;
+                let lo = *src as u64
+                    | ((*src.add(mid) as u64) << (mid * 8))
+                    | ((*src.add(len - 1) as u64) << ((len - 1) * 8));
+                (lo, 0)
+            } else {
+                (0, 0)
+            }
         };
 
-        let view_ptr = &mut view as *mut _ as *mut u8;
-
-        // SAFETY:
-        // - bytes length <= 12,
-        // - size_of::<View> == 16
-        // - View is laid out as [length, prefix, buffer_idx, offset] (using repr(C))
-        // - By grabbing the view_ptr and adding 4, we have provenance over prefix, buffer_idx and
-        // offset. (i.e. the same could not be achieved with &mut self.prefix as *mut _ as *mut u8)
-        unsafe {
-            let inline_data_ptr = view_ptr.add(4);
-            core::ptr::copy_nonoverlapping(bytes.as_ptr(), inline_data_ptr, bytes.len());
-        }
+        let data = (lo as u128 | ((hi as u128) << 64)) << 32;
+        // SAFETY: `View` is `repr(C)` with the length first, then 12 inline bytes.
+        let mut view = unsafe { std::mem::transmute::<[u8; 16], View>(data.to_le_bytes()) };
+        view.length = len as u32;
         view
     }
 
@@ -609,5 +621,23 @@ pub unsafe fn validate_views_utf8_only<B: AsRef<[u8]>>(
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::View;
+
+    #[test]
+    fn test_new_inline() {
+        let bytes: Vec<u8> = (1..=View::MAX_INLINE_SIZE as u8).collect();
+        for len in 0..=View::MAX_INLINE_SIZE as usize {
+            let mut expected = [0u8; 12];
+            expected[..len].copy_from_slice(&bytes[..len]);
+
+            let view = View::new_inline(&bytes[..len]);
+            assert_eq!(view.length as usize, len);
+            assert_eq!(&bytemuck::bytes_of(&view)[4..], &expected);
+        }
     }
 }
