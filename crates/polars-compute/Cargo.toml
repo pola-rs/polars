@@ -22,6 +22,7 @@ polars-buffer = { workspace = true }
 polars-error = { workspace = true }
 polars-utils = { workspace = true }
 rand = { workspace = true }
+rayon = { workspace = true }
 schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 strength_reduce = { workspace = true }

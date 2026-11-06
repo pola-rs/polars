@@ -1,12 +1,12 @@
 use num_traits::AsPrimitive;
 use polars_compute::filter::filter_values;
 use polars_compute::rolling::QuantileMethod;
-#[cfg(feature = "dtype-f16")]
-use polars_utils::float16::pf16;
-use polars_utils::selection::{
+use polars_compute::selection::{
     MaskedSlice, SELECT_BLOCK_LEN, SELECT_MIN_PAR_LEN, select_many_by, select_many_seq_by,
     select_many_unstable_by,
 };
+#[cfg(feature = "dtype-f16")]
+use polars_utils::float16::pf16;
 use rayon::prelude::*;
 
 use super::*;

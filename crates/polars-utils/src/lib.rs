@@ -64,7 +64,6 @@ pub mod relaxed_cell;
 pub mod row_counter;
 pub mod scratch_vec;
 pub mod select;
-pub mod selection;
 pub mod slice;
 pub mod slice_enum;
 pub mod small_bytes;

@@ -3092,6 +3092,7 @@ dependencies = [
  "polars-utils",
  "proptest",
  "rand 0.10.2",
+ "rayon",
  "schemars",
  "serde",
  "strength_reduce",
