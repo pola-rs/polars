@@ -2616,3 +2616,26 @@ def test_str_concat_removed() -> None:
         AttributeRemovedError, match=re.escape("use `str.join` instead")
     ):
         s.to_frame().select(pl.all().str.concat())  # type: ignore[attr-defined]
+
+
+def test_contains_any_replace_many_imploded_patterns() -> None:
+    # More rows than threads, so that a streaming morsel holds several rows.
+    df = pl.DataFrame({"s": ["ab", "cd", "xy"] * 100, "p": ["a", "c", "q"] * 100})
+    patterns = pl.col("p").unique(maintain_order=True).implode()
+    out = df.lazy().select(
+        pl.col("s").str.contains_any(patterns),
+        r=pl.col("s").str.replace_many(patterns, pl.lit(["A", "C", "Q"])),
+    )
+    expected = pl.DataFrame(
+        {"s": [True, True, False] * 100, "r": ["Ab", "Cd", "xy"] * 100}
+    )
+    assert_frame_equal(out.collect(), expected)
+
+
+@pytest.mark.parametrize("height", [1, 3])
+def test_contains_any_replace_many_patterns_per_row_raises(height: int) -> None:
+    df = pl.DataFrame({"s": ["ab"] * height, "p": [["a"]] * height})
+    with pytest.raises(InvalidOperationError, match="per row"):
+        df.lazy().select(pl.col("s").str.contains_any(pl.col("p"))).collect()
+    with pytest.raises(InvalidOperationError, match="per row"):
+        df.lazy().select(pl.col("s").str.replace_many(pl.col("p"), ["b"])).collect()

@@ -305,9 +305,33 @@ def test_replace_single_argument_not_mapping() -> None:
 
 
 @pytest.mark.parametrize("height", [1, 3])
-def test_replace_list_column_per_row_raises(height: int) -> None:
+@pytest.mark.parametrize(
+    "values",
+    [
+        pl.col("l"),
+        pl.col("l").head(1),
+        pl.lit(pl.Series([[1]])).list.drop_nulls(),
+    ],
+)
+def test_replace_list_of_values_per_row_raises(height: int, values: pl.Expr) -> None:
+    # Even a list that has one row at runtime must be a scalar in the plan.
     df = pl.DataFrame({"a": [1] * height, "l": [[1]] * height})
     with pytest.raises(InvalidOperationError, match="per row"):
-        df.select(pl.col("a").replace(pl.col("l"), 9))
+        df.lazy().select(pl.col("a").replace(values, 9)).collect()
     with pytest.raises(InvalidOperationError, match="per row"):
-        df.select(pl.col("a").replace_strict(1, pl.col("l")))
+        df.lazy().select(pl.col("a").replace_strict(1, values)).collect()
+
+
+def test_replace_list_input_with_column_values() -> None:
+    df = pl.DataFrame(
+        {"x": [[1], [2], [1]], "y": [[1], [5]] * 1 + [[7]], "z": [[10], [50], [70]]}
+    )
+    out = df.lazy().select(
+        r=pl.col("x").replace(pl.col("y"), pl.col("z")),
+        s=pl.col("x").replace_strict(pl.col("y"), pl.col("z"), default=None),
+    )
+    expected = pl.DataFrame(
+        {"r": [[10], [2], [10]], "s": [[10], None, [10]]},
+        schema={"r": pl.List(pl.Int64), "s": pl.List(pl.Int64)},
+    )
+    assert_frame_equal(out.collect(), expected)

@@ -910,6 +910,12 @@ impl OptimizationRule for TypeCoercionRule {
                     type_left,
                     type_other
                 );
+                if matches!(
+                    function,
+                    IRFunctionExpr::StringExpr(IRStringFunction::ContainsAny { .. })
+                ) {
+                    ensure_one_list_of_values(input[1].node(), expr_arena, "str.contains_any")?;
+                }
                 None
             },
 
@@ -970,6 +976,9 @@ impl OptimizationRule for TypeCoercionRule {
                     type_patterns,
                     type_replace_with
                 );
+                for node in [input[1].node(), input[2].node()] {
+                    ensure_one_list_of_values(node, expr_arena, "str.replace_many")?;
+                }
                 None
             },
             #[cfg(feature = "replace")]
@@ -979,6 +988,7 @@ impl OptimizationRule for TypeCoercionRule {
                 ref input,
                 options,
             } => {
+                let (_, type_in) = unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
                 let (_, type_old) =
                     unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
                 let (_, type_new) =
@@ -988,40 +998,42 @@ impl OptimizationRule for TypeCoercionRule {
                     !type_old.contains_objects() && !type_new.contains_objects(),
                     InvalidOperation: "`replace` does not support `old`/`new` values of object dtype"
                 );
-                let is_single =
-                    |node| is_scalar_ae(node, expr_arena) || is_single_literal_ae(node, expr_arena);
-                polars_ensure!(
-                    (!type_old.is_list() || is_single(input[1].node()))
-                        && (!type_new.is_list() || is_single(input[2].node())),
-                    InvalidOperation: "`replace` does not support a list of `old`/`new` values per row"
-                );
 
-                let (DataType::List(_), DataType::List(_)) = (&type_old, &type_new) else {
-                    let function = function.clone();
-                    let mut input = input.clone();
-
-                    if !type_old.is_list() {
-                        let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
-                            input: input[1].node(),
-                            maintain_order: true,
-                        }));
-                        input[1].set_node(other_input);
-                    }
-                    if !type_new.is_list() {
-                        let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
-                            input: input[2].node(),
-                            maintain_order: true,
-                        }));
-                        input[2].set_node(other_input);
-                    }
-
-                    return Ok(Some(AExpr::Function {
-                        function,
-                        input,
-                        options,
-                    }));
+                // `replace_strict` without a `return_dtype` is assumed to keep the dtype.
+                let type_new_values = match function {
+                    IRFunctionExpr::ReplaceStrict {
+                        return_dtype: Some(dtype),
+                    } => dtype,
+                    _ => &type_in,
                 };
-                None
+                let old_is_list = is_replace_list_of_values(&type_old, &type_in);
+                let new_is_list = is_replace_list_of_values(&type_new, type_new_values);
+                if old_is_list {
+                    ensure_one_list_of_values(input[1].node(), expr_arena, "replace")?;
+                }
+                if new_is_list {
+                    ensure_one_list_of_values(input[2].node(), expr_arena, "replace")?;
+                }
+                if old_is_list && new_is_list {
+                    return Ok(None);
+                }
+
+                let function = function.clone();
+                let mut input = input.clone();
+                for (i, is_list) in [(1, old_is_list), (2, new_is_list)] {
+                    if !is_list {
+                        let imploded = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
+                            input: input[i].node(),
+                            maintain_order: true,
+                        }));
+                        input[i].set_node(imploded);
+                    }
+                }
+                Some(AExpr::Function {
+                    function,
+                    input,
+                    options,
+                })
             },
             #[cfg(feature = "range")]
             AExpr::Function {
@@ -1701,5 +1713,20 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
     if !can_cast {
         polars_bail!(InvalidOperation: "cannot cast losslessly from {} to {}", from, to)
     }
+    Ok(())
+}
+
+/// Checks that a list argument of `function` holds one list of values for the whole column, as
+/// its kernel doesn't support a list per row.
+#[cfg(any(feature = "replace", all(feature = "strings", feature = "find_many")))]
+fn ensure_one_list_of_values(
+    node: Node,
+    expr_arena: &Arena<AExpr>,
+    function: &str,
+) -> PolarsResult<()> {
+    polars_ensure!(
+        is_scalar_ae(node, expr_arena) || is_single_literal_ae(node, expr_arena),
+        InvalidOperation: "`{function}` does not support a list of values per row; the list must be a scalar, e.g. an `implode()` or a literal"
+    );
     Ok(())
 }
