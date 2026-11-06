@@ -866,13 +866,12 @@ impl<'a> SelectionWalker<'a> {
                         &mut heights_scratch,
                         ExprHeightOptions {
                             structural_unknowns_only: true,
+                            // A range zipped with a column of one row sets the height too.
+                            range_is_unknown: true,
                             ..Default::default()
                         },
                     );
-                    *keep = matches!(
-                        height,
-                        ExprProjectionHeight::Unknown | ExprProjectionHeight::Range
-                    );
+                    *keep = matches!(height, ExprProjectionHeight::Unknown);
                 }
             }
             if !keep.iter().any(|k| *k) {

@@ -170,6 +170,12 @@ impl<'a> NodeVisitor for ExprHeightVisitor<'a> {
         storage: &mut Self::Storage,
         edges: &mut dyn crate::traversal::edge_provider::NodeEdgesProvider<Self::Edge>,
     ) -> ControlFlow<Self::BreakValue, SubtreeVisit> {
+        #[cfg(feature = "dtype-struct")]
+        if let Some(height) = self.struct_eval_height(storage.get(key), storage) {
+            edges.outputs()[0] = height;
+            return ControlFlow::Continue(SubtreeVisit::Skip);
+        }
+
         ControlFlow::Continue(if let Some(height) = self.height(storage.get(key), None) {
             edges.outputs()[0] = height;
             SubtreeVisit::Skip
@@ -186,6 +192,11 @@ impl<'a> NodeVisitor for ExprHeightVisitor<'a> {
     ) -> ControlFlow<Self::BreakValue> {
         // @NOTE. `post_visit` also runs for nodes whose subtree `pre_visit` skipped, so the
         // `StructField` override has to live in `height()` rather than in `pre_visit`.
+        #[cfg(feature = "dtype-struct")]
+        if matches!(storage.get(key), AExpr::StructEval { .. }) {
+            // Set by `pre_visit`.
+            return ControlFlow::Continue(());
+        }
         edges.outputs()[0] = self
             .height(storage.get(key), Some(&mut *edges.inputs()))
             .unwrap();
@@ -194,6 +205,46 @@ impl<'a> NodeVisitor for ExprHeightVisitor<'a> {
 }
 
 impl ExprHeightVisitor<'_> {
+    /// The height of a `StructEval`: that of its input struct, broadcast by the new fields, in
+    /// which a `StructField` has the height of that struct.
+    #[cfg(feature = "dtype-struct")]
+    fn struct_eval_height(
+        &self,
+        aexpr: &AExpr,
+        arena: &Arena<AExpr>,
+    ) -> Option<ExprProjectionHeight> {
+        let AExpr::StructEval {
+            expr, evaluation, ..
+        } = aexpr
+        else {
+            return None;
+        };
+
+        let mut stack = ScratchVec::default();
+        let mut edges_stack = ScratchVec::default();
+        let input_height = aexpr_projection_height_rec_with(
+            *expr,
+            arena,
+            &mut stack,
+            &mut edges_stack,
+            self.options,
+        );
+        let options = ExprHeightOptions {
+            struct_field: input_height,
+            ..self.options
+        };
+        let height = evaluation.iter().fold(input_height, |acc, e| {
+            acc.zip_with(aexpr_projection_height_rec_with(
+                e.node(),
+                arena,
+                &mut stack,
+                &mut edges_stack,
+                options,
+            ))
+        });
+        Some(height)
+    }
+
     fn height(
         &self,
         aexpr: &AExpr,

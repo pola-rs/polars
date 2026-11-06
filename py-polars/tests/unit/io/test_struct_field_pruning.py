@@ -1059,6 +1059,10 @@ def test_struct_field_pruning_rewrites_of_scalar() -> None:
         pl.when(pl.lit(True)).then(st).otherwise(st).struct.field("a"),
         st.fill_null(st).struct.field("b"),
         st.struct.with_fields(c=pl.field("a")).struct.field("a"),
+        # `len()` in `list.agg` is the length of the list, not the frame's height.
+        pl.struct(a=pl.lit(10))
+        .struct.with_fields(b=pl.lit([1, 2]).list.agg(pl.len()))
+        .struct.field("a"),
     ]:
         q = lf.select(e)
         assert_same_as_without_pushdown(q)
@@ -1107,6 +1111,17 @@ def test_struct_field_pruning_keeps_fields_setting_the_height() -> None:
             .fill_null(pl.struct(a=pl.lit(3), b=pl.lit(4)))
             .struct.field("a")
         ),
+        # A struct broadcast by a column added to it.
+        three.select(
+            pl.struct(
+                keep=pl.lit(5),
+                unused=pl.struct(a=pl.lit(1)).struct.with_fields(b=pl.col("x")),
+            ).struct.field("keep")
+        ),
+        # A range zipped with a one-row column, in `with_columns`.
+        one.with_columns(
+            s=pl.struct(a=pl.col("x"), b=pl.col("x") + pl.int_range(0, 3))
+        ).select(pl.col("s").struct.field("a")),
     ]:
         for engine in ENGINES:
             try:
