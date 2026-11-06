@@ -62,8 +62,6 @@ use polars_core::utils::SuperTypeFlags;
 #[cfg(feature = "random")]
 pub use random::IRRandomMethod;
 use schema::FieldsMapper;
-#[cfg(feature = "replace")]
-pub(crate) use schema::is_replace_list_of_values;
 
 pub use self::binary::IRBinaryFunction;
 #[cfg(feature = "cutqcut")]

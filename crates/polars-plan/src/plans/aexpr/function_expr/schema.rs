@@ -957,12 +957,8 @@ impl<'a> FieldsMapper<'a> {
                 let new = &self.fields[2];
                 let default = self.fields.get(3);
 
-                let inner_dtype = if is_replace_list_of_values(new.dtype(), self.fields[0].dtype())
-                {
-                    new.dtype().inner_dtype().unwrap()
-                } else {
-                    new.dtype()
-                };
+                // @HACK: Related to implicit implode see #22149.
+                let inner_dtype = new.dtype().inner_dtype().unwrap_or(new.dtype());
 
                 match default {
                     Some(default) => try_get_supertype(default.dtype(), inner_dtype)?,
@@ -1015,11 +1011,4 @@ pub(crate) fn args_to_supertype<D: AsRef<DataType>>(dtypes: &[D]) -> PolarsResul
     }
 
     Ok(st)
-}
-
-#[cfg(feature = "replace")]
-/// Whether a `replace` argument of `dtype` is a list of values of `values_dtype`, rather than the
-/// values themselves (which type coercion implodes).
-pub(crate) fn is_replace_list_of_values(dtype: &DataType, values_dtype: &DataType) -> bool {
-    dtype.is_list() && dtype != values_dtype
 }
