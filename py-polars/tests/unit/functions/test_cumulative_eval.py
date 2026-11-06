@@ -22,6 +22,28 @@ def test_cumulative_eval_group_by() -> None:
         check_row_order=False,
     )
 
+def test_cumulative_eval_min_samples_zero() -> None:
+    assert_series_equal(
+        pl.Series("a", [1, 2, 3], pl.Int64).cumulative_eval(
+            pl.element().sum(), min_samples=0
+        ),
+        pl.Series("a", [1, 3, 6], pl.Int64),
+    )
+
+    assert_frame_equal(
+        pl.DataFrame({"v": [1, 2, 3]}).with_columns(
+            c=pl.col("v").cumulative_eval(pl.element().sum(), min_samples=0)
+        ),
+        pl.DataFrame({"v": [1, 2, 3], "c": [1, 3, 6]}),
+    )
+
+    assert_frame_equal(
+        pl.DataFrame({"a": [1, 2, 3, 2, 3, 4, 3], "g": [1, 1, 1, 2, 2, 2, 3]})
+        .group_by("g")
+        .agg(b=pl.col.a.cumulative_eval(pl.element().sum(), min_samples=0)),
+        pl.DataFrame({"g": [1, 2, 3], "b": [[1, 3, 6], [2, 5, 9], [3]]}),
+        check_row_order=False,
+    )
 
 def test_cumulative_eval_deny_non_scalar() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError, match="scalar"):
