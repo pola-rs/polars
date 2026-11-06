@@ -73,12 +73,14 @@ def test_over_replace_strict_22870() -> None:
         }
     )
 
+    # More rows than threads, so that the streaming engine puts several rows in a morsel.
+    n = 500
     df = pl.DataFrame(
         {
-            "cat": ["a", "b", "a", "a", "b"],
-            "data": [2, 3, 4, 5, 6],
-            "a": ["a", "b", "c", "d", "e"],
-            "b": [102, 100, 101, 109, 110],
+            "cat": ["a", "b", "a", "a", "b"] * (n // 5),
+            "data": range(n),
+            "a": ["a", "b", "c", "d", "e"] + [f"x{i}" for i in range(5, n)],
+            "b": [102, 100, 101, 109, 110] + list(range(5, n)),
         }
     )
 
