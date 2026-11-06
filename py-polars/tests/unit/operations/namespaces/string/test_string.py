@@ -2639,3 +2639,24 @@ def test_contains_any_replace_many_patterns_per_row_raises(height: int) -> None:
         df.lazy().select(pl.col("s").str.contains_any(pl.col("p"))).collect()
     with pytest.raises(InvalidOperationError, match="per row"):
         df.lazy().select(pl.col("s").str.replace_many(pl.col("p"), ["b"])).collect()
+
+
+def test_find_many_null_patterns_broadcast() -> None:
+    null = pl.lit(None, dtype=pl.List(pl.String))
+    df = pl.DataFrame({"s": ["ab", "cd"]}).with_columns(p=null)
+    out = df.lazy().select(
+        e=pl.col("s").str.extract_many("p"),
+        f=pl.col("s").str.find_many("p"),
+        c=pl.col("s").str.contains_any(null),
+        r=pl.col("s").str.replace_many(null, ["x"]),
+    )
+    expected = pl.DataFrame(
+        {"e": [None, None], "f": [None, None], "c": [None, None], "r": [None, None]},
+        schema={
+            "e": pl.List(pl.String),
+            "f": pl.List(pl.UInt32),
+            "c": pl.Boolean,
+            "r": pl.String,
+        },
+    )
+    assert_frame_equal(out.collect(), expected)

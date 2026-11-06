@@ -186,11 +186,11 @@ fn extract_many(
     leftmost: bool,
 ) -> PolarsResult<Column> {
     let ca = s[0].str()?;
-    let patterns = s[1].list()?;
+    let patterns = s[1].as_materialized_series_maintain_scalar();
 
     polars_ops::chunked_array::strings::extract_many(
         ca,
-        patterns,
+        patterns.list()?,
         ascii_case_insensitive,
         overlapping,
         leftmost,
@@ -206,11 +206,11 @@ fn find_many(
     leftmost: bool,
 ) -> PolarsResult<Column> {
     let ca = s[0].str()?;
-    let patterns = s[1].list()?;
+    let patterns = s[1].as_materialized_series_maintain_scalar();
 
     polars_ops::chunked_array::strings::find_many(
         ca,
-        patterns,
+        patterns.list()?,
         ascii_case_insensitive,
         overlapping,
         leftmost,
