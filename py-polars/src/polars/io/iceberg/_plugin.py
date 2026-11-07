@@ -259,20 +259,9 @@ def _storage_options(
     equivalents, overridden by the user's storage options. Raises
     `NotImplementedError` as `_catalog_storage_options`.
     """
-    from polars.io.iceberg._dataset import (
-        _convert_iceberg_to_object_store_storage_options,
-    )
-
     storage_options = _catalog_storage_options(properties, location)
     if user_storage_options is not None:
-        # Empty values are unset, as for the catalog's.
-        user_options = {
-            k: v
-            for k, v in _convert_iceberg_to_object_store_storage_options(
-                dict(user_storage_options)
-            ).items()
-            if v not in ("", None)
-        }
+        user_options = _user_storage_options(user_storage_options)
         # The user's credentials replace the catalog's as a whole: mixing them
         # (e.g. a profile with vended keys) is ambiguous, and rejected by the
         # credential provider.
@@ -290,34 +279,43 @@ def _storage_options(
     return storage_options
 
 
-def _native_storage_options(
-    table: pyiceberg.table.Table,
-    user_storage_options: Mapping[str, Any] | None,
-    location: str | None = None,
-) -> dict[str, Any] | None:
-    """
-    Object store options for Polars' own reads and writes of `table`'s files.
-
-    As `_storage_options`, for files at `location` (default: the table's). With
-    FileIO properties that have no object store equivalent, the user's storage
-    options alone.
-    """
+def _user_storage_options(user_storage_options: Mapping[str, Any]) -> dict[str, Any]:
+    """The user's storage options as object store options."""
     from polars.io.iceberg._dataset import (
         _convert_iceberg_to_object_store_storage_options,
     )
 
+    # Empty values are unset, as for the catalog's.
+    return {
+        k: v
+        for k, v in _convert_iceberg_to_object_store_storage_options(
+            dict(user_storage_options)
+        ).items()
+        if v not in ("", None)
+    }
+
+
+def _native_storage_options(
+    table: pyiceberg.table.Table,
+    user_storage_options: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    """
+    Object store options for Polars' own reads and writes of `table`'s files.
+
+    As `_storage_options`, for files at the table's data path. With FileIO
+    properties that have no object store equivalent, the user's storage options
+    alone.
+    """
+    # Where the table writes its data files: stable across scans, unlike a file.
+    location = table.properties.get("write.data.path") or table.location()
     try:
-        return _storage_options(
-            table.io.properties, location or table.location(), user_storage_options
-        )
+        return _storage_options(table.io.properties, location, user_storage_options)
     except NotImplementedError as e:
         if verbose():
             eprint(f"{e}; using the user's storage options only")
         if user_storage_options is None:
             return None
-        return _convert_iceberg_to_object_store_storage_options(
-            dict(user_storage_options)
-        )
+        return _user_storage_options(user_storage_options)
 
 
 def _catalog_storage_options(

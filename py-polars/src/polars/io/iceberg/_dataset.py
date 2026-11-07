@@ -873,9 +873,7 @@ class IcebergScanResolver:
 
             # The table's FileIO properties, as for the plugin's scans
             storage_options = _native_storage_options(
-                tbl,
-                self.table.iceberg_storage_properties,
-                sources[0] if sources else None,
+                tbl, self.table.iceberg_storage_properties
             )
 
             return _NativeIcebergScanData(

@@ -1343,12 +1343,7 @@ class IcebergSinkState:
 
         # The table's FileIO properties (e.g. catalog credentials), as for scans
         return (
-            _native_storage_options(
-                self.table(),
-                self.iceberg_storage_properties,
-                self.sink_base_path(object_storage_enabled=True),
-            )
-            or {}
+            _native_storage_options(self.table(), self.iceberg_storage_properties) or {}
         )
 
     def attach_sink(self, lf: pl.LazyFrame) -> pl.LazyFrame:

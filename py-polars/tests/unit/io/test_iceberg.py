@@ -9373,10 +9373,14 @@ def test_iceberg_native_storage_options(monkeypatch: pytest.MonkeyPatch) -> None
 
     class Table:
         def __init__(
-            self, properties: dict[str, Any], location: str = "s3://bucket/t"
+            self,
+            properties: dict[str, Any],
+            location: str = "s3://bucket/t",
+            table_properties: dict[str, str] | None = None,
         ) -> None:
             self.io = type("IO", (), {"properties": properties})()
             self._location = location
+            self.properties = table_properties or {}
 
         def location(self) -> str:
             return self._location
@@ -9401,13 +9405,20 @@ def test_iceberg_native_storage_options(monkeypatch: pytest.MonkeyPatch) -> None
     assert plugin._native_storage_options(table, {"s3.region": "us-east-1"}) == {  # type: ignore[arg-type]
         "aws_region": "us-east-1"
     }
+    # with empty values unset
+    assert plugin._native_storage_options(table, {"s3.region": ""}) == {}  # type: ignore[arg-type]
     # properties of other backends don't apply
     table = Table({"s3.region": "eu-west-1", "adls.account-name": "a"}, "gs://b/t")
     assert plugin._native_storage_options(table, None) == {}  # type: ignore[arg-type]
     table = Table({"s3.region": "eu-west-1"}, "file:///tmp/t")
     assert plugin._native_storage_options(table, None) == {}  # type: ignore[arg-type]
-    # unless the files are elsewhere, e.g. the sink's `write.data.path`
-    assert plugin._native_storage_options(table, None, "s3://bucket/data") == {  # type: ignore[arg-type]
+    # unless the data files are elsewhere
+    table = Table(
+        {"s3.region": "eu-west-1"},
+        "file:///tmp/t",
+        {"write.data.path": "s3://bucket/data"},
+    )
+    assert plugin._native_storage_options(table, None) == {  # type: ignore[arg-type]
         "aws_region": "eu-west-1"
     }
     # boolean values, which PyIceberg takes
