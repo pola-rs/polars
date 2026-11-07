@@ -41,6 +41,26 @@ fn apply_offsets_to_datetime(
     }
 }
 
+fn datetime_would_overflow(datetime: &Logical<DatetimeType, Int64Type>, offset: &Duration) -> bool {
+    let mut duration = offset.duration(datetime.time_unit());
+
+    if offset.negative() {
+        duration = -duration;
+    }
+
+    match duration {
+        0 => false,
+        n if n > 0 => {
+            let max_timestamp = datetime.phys.max();
+            max_timestamp.is_some_and(|max| max.checked_add(duration).is_none())
+        },
+        _ => {
+            let min_timestamp = datetime.phys.min();
+            min_timestamp.is_some_and(|min| min.checked_add(duration).is_none())
+        },
+    }
+}
+
 pub fn impl_offset_by(ts: &Series, offsets: &Series) -> PolarsResult<Series> {
     let offsets = offsets.str()?;
 
@@ -55,37 +75,53 @@ pub fn impl_offset_by(ts: &Series, offsets: &Series) -> PolarsResult<Series> {
 
     // Sortedness may not be preserved for non-constant durations,
     // see https://github.com/pola-rs/polars/issues/19608 for a counterexample.
-    // Constant durations (e.g. 2 hours) always preserve sortedness.
+    // Constant durations preserve sortedness unless timestamp arithmetic overflows.
     let tz = match dtype {
         DataType::Date => None,
         DataType::Datetime(_, tz) => tz.clone(),
         _ => polars_bail!(InvalidOperation: "expected Date or Datetime, got {dtype}"),
     };
-    let preserve_sortedness = match offsets.len() {
+    let constant_offset = match offsets.len() {
         1 => match offsets.get(0) {
             Some(offset) => {
                 let offset = Duration::try_parse(offset)?;
-                offset.is_constant_duration(tz.as_ref())
+                offset.is_constant_duration(tz.as_ref()).then_some(offset)
             },
-            None => false,
+            None => None,
         },
-        _ => false,
+        _ => None,
     };
 
-    let out = match dtype {
+    let preserve_sortedness = constant_offset.is_some() && ts.is_sorted_flag() != IsSorted::Not;
+
+    let (out, would_overflow) = match dtype {
         DataType::Date => {
             let ts = ts
                 .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
                 .unwrap();
             let datetime = ts.datetime().unwrap();
+
+            let would_overflow = if preserve_sortedness {
+                datetime_would_overflow(datetime, constant_offset.as_ref().unwrap())
+            } else {
+                false
+            };
             let out = apply_offsets_to_datetime(datetime, offsets, None)?;
-            out.cast(&DataType::Datetime(TimeUnit::Microseconds, None))
-                .unwrap()
-                .cast(&DataType::Date)
+            (
+                out.cast(&DataType::Datetime(TimeUnit::Microseconds, None))
+                    .unwrap()
+                    .cast(&DataType::Date),
+                would_overflow,
+            )
         },
         DataType::Datetime(tu, tz) => {
             let datetime = ts.datetime().unwrap();
 
+            let would_overflow = if preserve_sortedness {
+                datetime_would_overflow(datetime, constant_offset.as_ref().unwrap())
+            } else {
+                false
+            };
             let out = match tz {
                 #[cfg(feature = "timezones")]
                 Some(tz) => {
@@ -93,13 +129,16 @@ pub fn impl_offset_by(ts: &Series, offsets: &Series) -> PolarsResult<Series> {
                 },
                 _ => apply_offsets_to_datetime(datetime, offsets, None)?,
             };
-            out.cast(&DataType::Datetime(*tu, tz.clone()))
+            (
+                out.cast(&DataType::Datetime(*tu, tz.clone())),
+                would_overflow,
+            )
         },
         dt => polars_bail!(
             ComputeError: "cannot use 'offset_by' on Series of datatype {}", dt,
         ),
     };
-    if preserve_sortedness {
+    if preserve_sortedness && !would_overflow {
         out.map(|mut out| {
             out.set_sorted_flag(ts.is_sorted_flag());
             out
