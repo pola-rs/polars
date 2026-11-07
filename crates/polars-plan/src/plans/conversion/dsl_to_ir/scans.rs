@@ -1384,20 +1384,41 @@ pub async fn csv_file_info(
             (decompressed_file_size_hint as f64 / header_len as f64).round() as usize
         };
 
-        Ok((schema, estimated_rows))
+        Ok((schema, estimated_rows, first_row_len > 0))
     };
 
-    let merge_func =
-        |a: PolarsResult<(Schema, usize)>, b: PolarsResult<(Schema, usize)>| match (a, b) {
-            (Err(e), _) | (_, Err(e)) => Err(e),
-            (Ok((mut schema_a, row_estimate_a)), Ok((schema_b, row_estimate_b))) => {
-                match (schema_a.is_empty(), schema_b.is_empty()) {
-                    (true, _) => Ok((schema_b, row_estimate_b)),
-                    (_, true) => Ok((schema_a, row_estimate_a)),
-                    _ => match missing_columns_policy {
+    fn adopt_dtypes(schema: &mut Schema, from: &Schema) {
+        for (name, dtype) in schema.iter_mut() {
+            if let Some(from_dtype) = from.get(name) {
+                *dtype = from_dtype.clone();
+            }
+        }
+    }
+
+    let merge_func = |a: PolarsResult<(Schema, usize, bool)>,
+                      b: PolarsResult<(Schema, usize, bool)>| match (a, b) {
+        (Err(e), _) | (_, Err(e)) => Err(e),
+        (
+            Ok((mut schema_a, row_estimate_a, has_rows_a)),
+            Ok((mut schema_b, row_estimate_b, has_rows_b)),
+        ) => {
+            let has_rows = has_rows_a || has_rows_b;
+            match (schema_a.is_empty(), schema_b.is_empty()) {
+                (true, _) => Ok((schema_b, row_estimate_b, has_rows_b)),
+                (_, true) => Ok((schema_a, row_estimate_a, has_rows_a)),
+                _ => {
+                    // The columns of a header-only file are all inferred as `String`, which says
+                    // nothing about their actual dtypes.
+                    match (has_rows_a, has_rows_b) {
+                        (true, false) => adopt_dtypes(&mut schema_b, &schema_a),
+                        (false, true) => adopt_dtypes(&mut schema_a, &schema_b),
+                        _ => {},
+                    }
+                    let row_estimate = row_estimate_a.saturating_add(row_estimate_b);
+                    match missing_columns_policy {
                         MissingColumnsPolicy::Raise => {
                             schema_a.to_supertype(&schema_b)?;
-                            Ok((schema_a, row_estimate_a.saturating_add(row_estimate_b)))
+                            Ok((schema_a, row_estimate, has_rows))
                         },
                         MissingColumnsPolicy::Insert => {
                             // Union merge: keep all columns from both schemas,
@@ -1414,12 +1435,13 @@ pub async fn csv_file_info(
                                     },
                                 }
                             }
-                            Ok((schema_a, row_estimate_a.saturating_add(row_estimate_b)))
+                            Ok((schema_a, row_estimate, has_rows))
                         },
-                    },
-                }
-            },
-        };
+                    }
+                },
+            }
+        },
+    };
 
     assert!(
         csv_options.schema.is_none(),
@@ -1437,7 +1459,7 @@ pub async fn csv_file_info(
         },
     );
 
-    let (inferred_schema, estimated_n_rows) = merge_func(si_results.0, si_results.1)?;
+    let (inferred_schema, estimated_n_rows, _) = merge_func(si_results.0, si_results.1)?;
     let inferred_schema_ref = Arc::new(inferred_schema);
 
     let (schema, reader_schema) = if let Some(rc) = row_index {
