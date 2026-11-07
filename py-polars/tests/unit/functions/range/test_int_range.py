@@ -165,6 +165,32 @@ def test_int_ranges_schema_dtype_arg() -> None:
     assert result.collect().schema == expected_schema
 
 
+@pytest.mark.parametrize(
+    ("start", "end"),
+    [
+        (-3, 3),  # Values below UInt8's range
+        (250, 260),  # Values above UInt8's range
+    ],
+)
+def test_int_ranges_uint8_out_of_range_raises(start: int, end: int) -> None:
+    df = pl.DataFrame({"start": [start], "end": [end]})
+
+    with pytest.raises(InvalidOperationError):
+        df.select(pl.int_ranges("start", "end", dtype=pl.UInt8))
+
+
+def test_int_ranges_uint8_valid_values() -> None:
+    df = pl.DataFrame({"start": [0, 250], "end": [3, 256]})
+
+    result = df.select(pl.int_ranges("start", "end", dtype=pl.UInt8))
+
+    assert result["start"].to_list() == [
+        [0, 1, 2],
+        [250, 251, 252, 253, 254, 255],
+    ]
+    assert result.schema["start"] == pl.List(pl.UInt8)
+
+
 def test_int_range_input_shape_empty() -> None:
     empty = pl.Series(dtype=pl.Time)
     single = pl.Series([5])
