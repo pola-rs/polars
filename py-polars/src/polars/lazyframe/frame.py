@@ -6742,14 +6742,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         strict: bool = True,
     ) -> LazyFrame:
         """
-        Remove columns from the DataFrame.
+        Remove columns from the LazyFrame.
 
         .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
         *columns
-            Names of the columns that should be removed from the dataframe.
+            Names of the columns that should be removed from the lazyframe.
             Accepts column selector input.
         strict
             Validate that all column names exist in the current schema,
@@ -6885,7 +6885,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def reverse(self) -> LazyFrame:
         """
-        Reverse the DataFrame.
+        Reverse the LazyFrame.
 
         .. engine-support:: in-memory, partially-streaming
 
@@ -6996,7 +6996,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def slice(self, offset: int, length: int | None = None) -> LazyFrame:
         """
-        Get a slice of this DataFrame.
+        Get a slice of this LazyFrame.
 
         .. engine-support:: in-memory, streaming, distributed
 
@@ -7172,7 +7172,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def last(self) -> LazyFrame:
         """
-        Get the last row of the DataFrame.
+        Get the last row of the LazyFrame.
 
         .. engine-support:: in-memory, streaming, distributed
 
@@ -7198,7 +7198,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def first(self) -> LazyFrame:
         """
-        Get the first row of the DataFrame.
+        Get the first row of the LazyFrame.
 
         .. engine-support:: in-memory, streaming, distributed
 
@@ -7827,7 +7827,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         keep_nulls: bool = True,
     ) -> LazyFrame:
         """
-        Explode the DataFrame to long format by exploding the given columns.
+        Explode the LazyFrame to long format by exploding the given columns.
 
         .. engine-support:: in-memory, streaming, distributed
 
