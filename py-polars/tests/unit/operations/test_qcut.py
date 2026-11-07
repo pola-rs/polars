@@ -257,3 +257,20 @@ def test_qcut_deprecated() -> None:
 
     with pytest.deprecated_call(match=r"`qcut` is deprecated; use `bin_quantiles`"):
         pl.select(pl.lit(s).qcut(2))
+
+
+@pytest.mark.parametrize("descending", [False, True])
+def test_qcut_nan_excluded_with_sorted_flag(descending: bool) -> None:
+    # NaN orders above every other value, so the quantiles exclude it by rank, also
+    # when they are read off a column flagged sorted.
+    values = [3.0, float("nan"), None, 1.0, 4.0, float("nan"), 1.5, 9.0, 2.0, 6.0]
+    s = pl.Series("a", values)
+    flagged = s.sort(descending=descending).set_sorted(descending=descending)
+    probs = [0.25, 0.5, 0.75]
+
+    expected = s.fill_nan(None).qcut(probs, include_breaks=True)
+    breaks = expected.struct["breakpoint"].unique().drop_nulls().sort()
+    for col in [s, flagged]:
+        result = col.qcut(probs, include_breaks=True).struct["breakpoint"]
+        assert_series_equal(result.unique().drop_nulls().sort(), breaks)
+    assert_series_equal(breaks, pl.Series("breakpoint", [1.75, 3.0, 5.0, float("inf")]))
