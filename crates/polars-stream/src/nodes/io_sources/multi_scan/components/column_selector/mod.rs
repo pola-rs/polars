@@ -1,6 +1,7 @@
-use polars_core::prelude::Column;
+use polars_core::prelude::{Column, DataType, IDX_DTYPE, IdxSize};
 use polars_core::scalar::Scalar;
 use polars_error::PolarsResult;
+use polars_plan::plans::predicates::null_count_dtype;
 use polars_utils::pl_str::PlSmallStr;
 use recursive::recursive;
 
@@ -68,5 +69,63 @@ impl ColumnSelector {
         }
 
         *current = input;
+    }
+
+    /// Derives the parallel `null_count` selector. `None` means "fall back to unknown".
+    #[recursive]
+    pub fn null_count_transform(&self) -> Option<ColumnSelector> {
+        use ColumnSelector as S;
+        use ColumnTransform as TF;
+
+        Some(match self {
+            S::Position(i) => S::Position(*i),
+
+            S::Constant(parts) => {
+                let (name, scalar) = parts.as_ref();
+
+                // A struct constant's leaves may mix defaulted and always-null, so unknown.
+                let scalar = if scalar.is_null() || matches!(scalar.dtype(), DataType::Struct(_)) {
+                    Scalar::null(null_count_dtype(scalar.dtype()))
+                } else {
+                    Scalar::new(IDX_DTYPE, (0 as IdxSize).into())
+                };
+
+                S::Constant(Box::new((name.clone(), scalar)))
+            },
+
+            S::Transformed(parts) => {
+                let (input, transform) = parts.as_ref();
+                let input = input.null_count_transform()?;
+
+                match transform {
+                    TF::Rename { name } => TF::Rename { name: name.clone() }.into_selector(input),
+
+                    TF::StructFieldsMapping { field_selectors } => TF::StructFieldsMapping {
+                        field_selectors: field_selectors
+                            .iter()
+                            .map(ColumnSelector::null_count_transform)
+                            .collect::<Option<_>>()?,
+                    }
+                    .into_selector(input),
+
+                    // Unsafe only for a null-upcast's struct target - no source shape to drop.
+                    TF::Cast { dtype, .. } => {
+                        if matches!(null_count_dtype(dtype), DataType::Struct(_)) {
+                            return None;
+                        }
+                        input
+                    },
+
+                    // List/map/array elements have no per-element null count.
+                    TF::ListValuesMapping { .. } => input,
+
+                    #[cfg(feature = "dtype-array")]
+                    TF::FixedSizeListValuesMapping { .. } => input,
+
+                    #[cfg(feature = "dtype-map")]
+                    TF::MapValuesMapping { .. } => input,
+                }
+            },
+        })
     }
 }
