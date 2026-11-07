@@ -764,7 +764,8 @@ fn fused_outer_join(
     emit_unmatched_left: bool,
     emit_unmatched_right: bool,
 ) -> PolarsResult<DataFrame> {
-    debug_assert!(!args.should_coalesce());
+    // Only a left join coalesces here, which drops right key columns only.
+    debug_assert!(!args.should_coalesce() || !emit_unmatched_right);
     let left_idx_name = PlSmallStr::from_static("__POLARS_FUSED_LEFT_IDX");
     let right_idx_name = PlSmallStr::from_static("__POLARS_FUSED_RIGHT_IDX");
     let left_with_idx = left.with_row_index(left_idx_name.clone(), None)?;

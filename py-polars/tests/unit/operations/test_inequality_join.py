@@ -1483,6 +1483,14 @@ def test_outer_join_where_key_with_both_inputs_condition(
     assert "NESTED LOOP JOIN" not in plan
     assert "FUSED PREDICATE" in plan
 
+    # Coalesces the key columns when the right key is not selected.
+    selected = query.select("k", "v", "v_right")
+    assert_frame_equal(
+        selected.collect(engine=engine),
+        selected.collect(engine=engine, optimizations=disabled),
+        check_row_order=False,
+    )
+
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 @pytest.mark.parametrize("how", ["left", "right", "full"])
