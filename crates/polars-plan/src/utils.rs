@@ -3,9 +3,12 @@ use std::iter::FlatMap;
 
 use polars_core::prelude::*;
 use polars_utils::format_pl_smallstr;
+use polars_utils::idx_vec::UnitVec;
 
 use self::visitor::{AexprNode, RewritingVisitor, TreeWalker};
 use crate::constants::get_len_name;
+#[cfg(feature = "dtype-struct")]
+use crate::plans::conversion::field_path_names;
 use crate::prelude::*;
 
 /// Utility to write comma delimited strings
@@ -139,6 +142,8 @@ pub fn expr_output_name(expr: &Expr) -> PolarsResult<PlSmallStr> {
             Expr::RenameAlias { expr, function } => return function.call(&expr_output_name(expr)?),
             Expr::Len => return Ok(get_len_name()),
             Expr::Literal(val) => return Ok(val.output_column_name()),
+            #[cfg(feature = "dtype-struct")]
+            Expr::Path(path) => return Ok(field_path_names(path).0),
 
             #[cfg(feature = "dtype-struct")]
             Expr::Function {
@@ -179,9 +184,38 @@ pub fn expr_output_name(expr: &Expr) -> PolarsResult<PlSmallStr> {
     );
 }
 
-#[allow(clippy::type_complexity)]
+/// The root column names in the expression tree, including the root of a `pl.path` outside of
+/// `struct.with_fields`. Lazy, so taking only the first names walks only part of the tree.
 pub fn expr_to_leaf_column_names_iter(expr: &Expr) -> impl Iterator<Item = PlSmallStr> + '_ {
-    expr_to_leaf_column_exprs_iter(expr).flat_map(|e| expr_to_leaf_column_name(e).ok())
+    // The flag is set inside the evaluation of `struct.with_fields`, where `pl.path` starts from a
+    // field of the struct rather than from a column.
+    let mut stack = vec![(expr, false)];
+    let mut children = UnitVec::new();
+    std::iter::from_fn(move || {
+        loop {
+            let (e, in_struct_eval) = stack.pop()?;
+            let name = match e {
+                Expr::Column(name) => Some(name.clone()),
+                #[cfg(feature = "dtype-struct")]
+                Expr::Path(path) if !in_struct_eval => Some(field_path_names(path).1),
+                #[cfg(feature = "dtype-struct")]
+                Expr::StructEval {
+                    expr, evaluation, ..
+                } => {
+                    stack.extend(evaluation.iter().rev().map(|e| (e, true)));
+                    stack.push((expr.as_ref(), in_struct_eval));
+                    continue;
+                },
+                _ => None,
+            };
+            e.nodes(&mut children);
+            stack.extend(children.iter().map(|e| (*e, in_struct_eval)));
+            children.clear();
+            if name.is_some() {
+                return name;
+            }
+        }
+    })
 }
 
 /// This should gradually replace expr_to_root_column as this will get all names in the tree.
@@ -191,18 +225,12 @@ pub fn expr_to_leaf_column_names(expr: &Expr) -> Vec<PlSmallStr> {
 
 /// unpack alias(col) to name of the root column name
 pub fn expr_to_leaf_column_name(expr: &Expr) -> PolarsResult<PlSmallStr> {
-    let mut leaves = expr_to_leaf_column_exprs_iter(expr).collect::<Vec<_>>();
-    polars_ensure!(leaves.len() <= 1, ComputeError: "found more than one root column name");
-    match leaves.pop() {
-        Some(Expr::Column(name)) => Ok(name.clone()),
-        Some(Expr::Selector(_)) => polars_bail!(
-            ComputeError: "selector has no root column name",
-        ),
-        Some(_) => unreachable!(),
-        None => polars_bail!(
-            ComputeError: "no root column name found",
-        ),
-    }
+    let mut names = expr_to_leaf_column_names_iter(expr);
+    let Some(name) = names.next() else {
+        polars_bail!(ComputeError: "no root column name found");
+    };
+    polars_ensure!(names.next().is_none(), ComputeError: "found more than one root column name");
+    Ok(name)
 }
 
 #[allow(clippy::type_complexity)]
@@ -225,14 +253,6 @@ pub fn column_node_to_name(node: ColumnNode, arena: &Arena<AExpr>) -> &PlSmallSt
     } else {
         unreachable!()
     }
-}
-
-/// Get all leaf column expressions in the expression tree.
-pub(crate) fn expr_to_leaf_column_exprs_iter(expr: &Expr) -> impl Iterator<Item = &Expr> {
-    expr.into_iter().flat_map(|e| match e {
-        Expr::Column(_) => Some(e),
-        _ => None,
-    })
 }
 
 /// Take a list of expressions and a schema and determine the output schema.

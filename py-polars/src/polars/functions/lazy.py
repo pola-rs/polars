@@ -82,6 +82,68 @@ def field(name: str | list[str]) -> Expr:
     return wrap_expr(plr.field(name))
 
 
+@unstable()
+def path(path: str) -> Expr:
+    """
+    Select a nested struct field by a dot-separated path.
+
+    Outside `struct.with_fields`, the first name of the path is a column, so
+    `pl.path("a.b.c")` is the same as `pl.col("a").struct.field("b").struct.field("c")`.
+    Inside `struct.with_fields`, it is a field of the struct in scope.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed at any
+        point without it being considered a breaking change.
+
+    A name is a letter or `_` followed by letters, digits or `_` (Unicode letters
+    and numerals count). Other characters, such as `[` or a space, and names
+    starting with a digit (`a.0`) are reserved for future syntax; select fields with
+    such names with :meth:`Expr.struct.field`.
+
+    The output name is the last name of the path (as with `struct.field`).
+
+    Parameters
+    ----------
+    path
+        Dot-separated path to the field to select.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [
+    ...             {"b": {"c": 1}, "d": 10},
+    ...             {"b": {"c": 2}, "d": 20},
+    ...         ]
+    ...     }
+    ... )
+    >>> df.select(pl.path("a.b.c"), pl.path("a.d"))
+    shape: (2, 2)
+    ┌─────┬─────┐
+    │ c   ┆ d   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 10  │
+    │ 2   ┆ 20  │
+    └─────┴─────┘
+
+    Inside `struct.with_fields`, a path starts from a field of the struct.
+
+    >>> df.select(pl.col("a").struct.with_fields(pl.path("b.c").alias("c")))
+    shape: (2, 1)
+    ┌────────────┐
+    │ a          │
+    │ ---        │
+    │ struct[3]  │
+    ╞════════════╡
+    │ {{1},10,1} │
+    │ {{2},20,2} │
+    └────────────┘
+    """
+    return wrap_expr(plr.path(path))
+
+
 def element() -> Expr:
     """
     Alias for an element being evaluated in an `eval` or `filter` expression.

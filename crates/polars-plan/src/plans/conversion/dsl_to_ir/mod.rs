@@ -33,6 +33,8 @@ mod concat;
 mod datatype_fn_to_ir;
 mod expr_expansion;
 mod expr_to_ir;
+#[cfg(feature = "dtype-struct")]
+mod field_path;
 mod functions;
 mod join;
 mod scans;
@@ -43,6 +45,8 @@ pub(crate) use expr_expansion::needs_expansion;
 pub use expr_expansion::{expand_expression, is_regex_projection, prepare_projection};
 pub use expr_to_ir::{ExprToIRContext, to_expr_ir};
 use expr_to_ir::{to_expr_ir_materialized_lit, to_expr_irs};
+#[cfg(feature = "dtype-struct")]
+pub(crate) use field_path::field_path_names;
 use sinks::validate_sinks;
 use utils::DslConversionContext;
 
