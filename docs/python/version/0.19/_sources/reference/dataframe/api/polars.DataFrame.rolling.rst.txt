@@ -1,0 +1,6 @@
+﻿polars.DataFrame.rolling
+========================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.rolling

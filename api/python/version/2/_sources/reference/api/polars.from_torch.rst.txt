@@ -1,0 +1,6 @@
+﻿polars.from\_torch
+==================
+
+.. currentmodule:: polars
+
+.. autofunction:: from_torch

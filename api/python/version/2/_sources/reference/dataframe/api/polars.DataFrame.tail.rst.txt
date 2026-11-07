@@ -1,0 +1,6 @@
+﻿polars.DataFrame.tail
+=====================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.tail

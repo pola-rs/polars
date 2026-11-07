@@ -1,0 +1,6 @@
+﻿polars.LazyFrame.join\_where
+============================
+
+.. currentmodule:: polars
+
+.. automethod:: LazyFrame.join_where

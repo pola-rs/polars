@@ -1,0 +1,6 @@
+﻿polars.Expr.dt.epoch
+====================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.dt.epoch

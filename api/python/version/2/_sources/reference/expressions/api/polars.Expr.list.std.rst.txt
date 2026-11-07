@@ -1,0 +1,6 @@
+﻿polars.Expr.list.std
+====================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.list.std

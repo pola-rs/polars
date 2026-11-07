@@ -1,0 +1,6 @@
+﻿polars.lazyframe.resolver.LazyFrameResolver.lazy
+================================================
+
+.. currentmodule:: polars.lazyframe.resolver
+
+.. automethod:: LazyFrameResolver.lazy

@@ -1,0 +1,6 @@
+﻿polars.Expr.keep\_name
+======================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.keep_name

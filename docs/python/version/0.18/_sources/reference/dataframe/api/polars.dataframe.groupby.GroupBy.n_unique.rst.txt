@@ -1,0 +1,6 @@
+﻿polars.dataframe.groupby.GroupBy.n\_unique
+==========================================
+
+.. currentmodule:: polars.dataframe.groupby
+
+.. automethod:: GroupBy.n_unique

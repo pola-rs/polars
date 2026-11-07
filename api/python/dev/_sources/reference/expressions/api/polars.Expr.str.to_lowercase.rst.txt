@@ -1,0 +1,6 @@
+﻿polars.Expr.str.to_lowercase
+============================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.str.to_lowercase

@@ -1,0 +1,6 @@
+﻿polars.Expr.str.count_matches
+=============================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.str.count_matches

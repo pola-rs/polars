@@ -1,0 +1,6 @@
+﻿polars.io.external\_reader.FileReaderBuilder.explain\_properties
+================================================================
+
+.. currentmodule:: polars.io.external_reader
+
+.. automethod:: FileReaderBuilder.explain_properties

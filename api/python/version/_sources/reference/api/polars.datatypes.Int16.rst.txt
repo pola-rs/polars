@@ -1,0 +1,37 @@
+﻿polars.datatypes.Int16
+======================
+
+.. currentmodule:: polars.datatypes
+
+.. autoclass:: Int16
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Int16.__init__
+      ~Int16.base_type
+      ~Int16.from_python
+      ~Int16.is_
+      ~Int16.is_decimal
+      ~Int16.is_float
+      ~Int16.is_integer
+      ~Int16.is_nested
+      ~Int16.is_numeric
+      ~Int16.is_object
+      ~Int16.is_signed_integer
+      ~Int16.is_temporal
+      ~Int16.is_unsigned_integer
+      ~Int16.max
+      ~Int16.min
+      ~Int16.to_python
+   
+   
+
+   
+   
+   

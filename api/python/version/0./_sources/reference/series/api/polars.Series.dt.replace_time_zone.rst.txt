@@ -1,0 +1,6 @@
+﻿polars.Series.dt.replace_time_zone
+==================================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.dt.replace_time_zone

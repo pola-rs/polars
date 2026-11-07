@@ -1,0 +1,37 @@
+﻿polars.Null
+===========
+
+.. currentmodule:: polars
+
+.. autoclass:: Null
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Null.__init__
+      ~Null.base_type
+      ~Null.is_
+      ~Null.is_float
+      ~Null.is_integer
+      ~Null.is_not
+      ~Null.is_numeric
+      ~Null.is_signed_integer
+      ~Null.is_temporal
+      ~Null.is_unsigned_integer
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~Null.is_nested
+   
+   

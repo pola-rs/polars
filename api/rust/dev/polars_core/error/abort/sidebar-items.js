@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["QueryAborted"],"fn":["catch_polars_abort","polars_abort_ooc_out_of_disk","register_polars_abort_mechanism","try_raise_polars_abort"]};

@@ -1,0 +1,6 @@
+﻿polars.lazyframe.query\_result.QueryResult.head
+===============================================
+
+.. currentmodule:: polars.lazyframe.query_result
+
+.. autoproperty:: QueryResult.head

@@ -1,0 +1,6 @@
+﻿polars.sql\_expr
+================
+
+.. currentmodule:: polars
+
+.. autofunction:: sql_expr
