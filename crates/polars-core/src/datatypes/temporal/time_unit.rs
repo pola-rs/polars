@@ -1,17 +1,21 @@
+use std::cmp::Ordering;
+
 #[cfg(feature = "temporal")]
 use chrono::NaiveDateTime;
 #[cfg(feature = "temporal")]
 use polars_arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
+use polars_error::{PolarsError, polars_err};
 
 #[cfg(feature = "temporal")]
 use crate::chunked_array::temporal::{
     datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us,
 };
-use crate::prelude::ArrowTimeUnit;
+use crate::prelude::{ArrowTimeUnit, DataType};
 
-#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Hash)]
+/// Note: variants are ordered from finest to coarsest (`Nanoseconds < Milliseconds`).
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(
     any(feature = "serde-lazy", feature = "serde"),
     derive(serde::Serialize, serde::Deserialize)
@@ -107,24 +111,51 @@ pub enum TimeUnitRescale {
 }
 
 impl TimeUnitRescale {
-    /// Rescales a datetime timestamp, rounding down.
+    /// How each (weeks, days, hours, minutes, seconds, milliseconds, microseconds,
+    /// nanoseconds) duration component is rescaled to `time_unit`: multiplied if coarser,
+    /// or truncated if finer (each component separately).
+    pub fn duration_components(time_unit: TimeUnit) -> [Self; 8] {
+        const NS: i64 = 1_000_000_000;
+        const SCALE_NS: [i64; 8] = [
+            NS * 86_400 * 7, // weeks
+            NS * 86_400,     // days
+            NS * 3_600,      // hours
+            NS * 60,         // minutes
+            NS,              // seconds
+            1_000_000,       // milliseconds
+            1_000,           // microseconds
+            1,               // nanoseconds
+        ];
+        let unit_ns = match time_unit {
+            TimeUnit::Nanoseconds => 1,
+            TimeUnit::Microseconds => 1_000,
+            TimeUnit::Milliseconds => 1_000_000,
+        };
+        SCALE_NS.map(|ns| match ns.cmp(&unit_ns) {
+            Ordering::Greater => TimeUnitRescale::Multiply(ns / unit_ns),
+            Ordering::Less => TimeUnitRescale::Divide(unit_ns / ns),
+            Ordering::Equal => TimeUnitRescale::Unchanged,
+        })
+    }
+
+    /// Rescales a datetime timestamp, rounding down; `None` on overflow.
     #[inline]
-    pub fn datetime_value(self, v: i64) -> i64 {
+    pub fn datetime_value(self, v: i64) -> Option<i64> {
         use polars_utils::floor_divmod::FloorDivMod;
         match self {
-            TimeUnitRescale::Unchanged => v,
-            TimeUnitRescale::Multiply(k) => v.wrapping_mul(k),
-            TimeUnitRescale::Divide(k) => v.wrapping_floor_div_mod(k).0,
+            TimeUnitRescale::Unchanged => Some(v),
+            TimeUnitRescale::Multiply(k) => v.checked_mul(k),
+            TimeUnitRescale::Divide(k) => Some(v.wrapping_floor_div_mod(k).0),
         }
     }
 
-    /// Rescales a duration, rounding towards zero.
+    /// Rescales a duration, rounding towards zero; `None` on overflow.
     #[inline]
-    pub fn duration_value(self, v: i64) -> i64 {
+    pub fn duration_value(self, v: i64) -> Option<i64> {
         match self {
-            TimeUnitRescale::Unchanged => v,
-            TimeUnitRescale::Multiply(k) => v.wrapping_mul(k),
-            TimeUnitRescale::Divide(k) => v.wrapping_div(k),
+            TimeUnitRescale::Unchanged => Some(v),
+            TimeUnitRescale::Multiply(k) => v.checked_mul(k),
+            TimeUnitRescale::Divide(k) => Some(v.wrapping_div(k)),
         }
     }
 }
@@ -152,21 +183,11 @@ impl TimeUnit {
     }
 }
 
-#[cfg(any(feature = "rows", feature = "object"))]
-#[cfg(any(feature = "dtype-datetime", feature = "dtype-duration"))]
-#[inline]
-pub fn convert_time_units<T>(v: T, tu_l: TimeUnit, tu_r: TimeUnit) -> T
-where
-    T: num_traits::Num + num_traits::NumCast,
-{
-    use TimeUnit::*;
-    match (tu_l, tu_r) {
-        (Nanoseconds, Microseconds) => v / T::from(1_000).unwrap(),
-        (Nanoseconds, Milliseconds) => v / T::from(1_000_000).unwrap(),
-        (Microseconds, Nanoseconds) => v * T::from(1_000).unwrap(),
-        (Microseconds, Milliseconds) => v / T::from(1_000).unwrap(),
-        (Milliseconds, Microseconds) => v * T::from(1_000).unwrap(),
-        (Milliseconds, Nanoseconds) => v * T::from(1_000_000).unwrap(),
-        _ => v,
-    }
+/// Error for a temporal value that can't be represented in another time unit.
+pub fn time_unit_conversion_error(
+    from: impl std::fmt::Display,
+    to: &DataType,
+    value: impl std::fmt::Display,
+) -> PolarsError {
+    polars_err!(InvalidOperation: "conversion from `{from}` to `{to}` failed for value: {value}")
 }

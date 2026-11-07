@@ -352,18 +352,22 @@ pub(super) fn optimize_functions(
                 return Ok(None);
             };
             let value = sc.as_any_value().extract::<i64>();
+            // Values that overflow the new time unit are not folded (so they raise when evaluated).
             let out = match sc.dtype() {
                 #[cfg(feature = "dtype-datetime")]
                 DataType::Datetime(from, tz) => match value {
-                    Some(v) => {
-                        let v = from.rescale_to(tu).datetime_value(v);
-                        Scalar::new_datetime(v, tu, tz.clone())
+                    Some(v) => match from.rescale_to(tu).datetime_value(v) {
+                        Some(v) => Scalar::new_datetime(v, tu, tz.clone()),
+                        None => return Ok(None),
                     },
                     None => Scalar::null(DataType::Datetime(tu, tz.clone())),
                 },
                 #[cfg(feature = "dtype-duration")]
                 DataType::Duration(from) => match value {
-                    Some(v) => Scalar::new_duration(from.rescale_to(tu).duration_value(v), tu),
+                    Some(v) => match from.rescale_to(tu).duration_value(v) {
+                        Some(v) => Scalar::new_duration(v, tu),
+                        None => return Ok(None),
+                    },
                     None => Scalar::null(DataType::Duration(tu)),
                 },
                 _ => return Ok(None),

@@ -9,7 +9,7 @@ where
     I: IntoIterator<Item = &'a AnyValue<'a>>,
 {
     let dtypes = any_values_to_dtype_set(values);
-    dtypes_to_supertype(&dtypes)
+    values_dtypes_to_supertype(&dtypes)
 }
 
 /// Determine the supertype and the number of unique data types of a collection of [`AnyValue`].
@@ -20,9 +20,17 @@ where
     I: IntoIterator<Item = &'a AnyValue<'a>>,
 {
     let dtypes = any_values_to_dtype_set(values);
-    let supertype = dtypes_to_supertype(&dtypes)?;
+    let supertype = values_dtypes_to_supertype(&dtypes)?;
     let n_dtypes = dtypes.len();
     Ok((supertype, n_dtypes))
+}
+
+/// Determine the supertype of the data types of a collection of values, using the
+/// finest time unit(s) so that mixed-unit values can be represented without loss.
+pub(crate) fn values_dtypes_to_supertype(dtypes: &PlIndexSet<DataType>) -> PolarsResult<DataType> {
+    let mut supertype = dtypes_to_supertype(dtypes)?;
+    supertype.merge_finest_time_units_from(dtypes);
+    Ok(supertype)
 }
 
 /// Extract the ordered set of data types from a collection of AnyValues
