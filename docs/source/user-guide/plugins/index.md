@@ -16,6 +16,9 @@ Here is a curated (non-exhaustive) list of community-implemented plugins.
 - [polars-hash](https://github.com/ion-elgreco/polars-hash) Stable non-cryptographic and
   cryptographic hashing functions for Polars
 
+## IO
+- [polars-deltalake](https://github.com/ion-elgreco/polars-deltalake) Native Polars I/O plugin for Delta Lake, backed by delta-kernel-rs.
+
 ### Data science
 
 - [polars-distance](https://github.com/ion-elgreco/polars-distance) Polars plugin for pairwise
