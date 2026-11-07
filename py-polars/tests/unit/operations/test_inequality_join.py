@@ -1451,6 +1451,41 @@ def test_outer_join_where_key_with_one_input_condition(
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 @pytest.mark.parametrize("how", ["left", "right", "full"])
+@pytest.mark.parametrize("sorted_keys", [False, True])
+@pytest.mark.parametrize("morsel_size", [2, 100_000])
+def test_outer_join_where_key_with_both_inputs_condition(
+    engine: EngineType,
+    how: Literal["left", "right", "full"],
+    sorted_keys: bool,
+    morsel_size: int,
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", str(morsel_size))
+    left = pl.LazyFrame({"k": [1, 1, 1, 2, 2, 3, None], "v": [1, 5, 4, 2, None, 9, 1]})
+    right = pl.LazyFrame({"k": [1, 1, 2, 3, 4, None], "v": [3, 0, None, 1, 0, 2]})
+    if sorted_keys:
+        left = left.set_sorted("k")
+        right = right.set_sorted("k")
+    query = left.join_where(
+        right,
+        pl.col("k") == pl.col("k_right"),
+        pl.col("v") <= pl.col("v_right"),
+        pl.col("v") != 5,
+        how=how,
+    )
+    disabled = pl.QueryOptFlags(predicate_pushdown=False)
+    assert_frame_equal(
+        query.collect(engine=engine),
+        query.collect(engine=engine, optimizations=disabled),
+        check_row_order=False,
+    )
+    plan = query.explain()
+    assert "NESTED LOOP JOIN" not in plan
+    assert "FUSED PREDICATE" in plan
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("how", ["left", "right", "full"])
 @pytest.mark.parametrize(
     ("predicates", "nested_loop_hows"),
     [
@@ -1466,7 +1501,7 @@ def test_outer_join_where_key_with_one_input_condition(
                 pl.col("k").eq_missing(pl.col("k_right")),
                 pl.col("v") == pl.col("v_right"),
             ],
-            {"left", "right", "full"},
+            set(),
         ),
     ],
 )
