@@ -9,7 +9,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import InvalidOperationError
+from polars.exceptions import InvalidOperationError, ShapeError
 from polars.meta import get_index_type
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -1028,3 +1028,31 @@ def test_when_then_string_literal_categorical_join_29816() -> None:
         {"k": [0, 1], "c": ["z", "b"]}, schema_overrides={"c": pl.Categorical}
     )
     assert_frame_equal(q.collect(), expected, check_row_order=False)
+
+
+@pytest.mark.parametrize(
+    ("predicate", "then", "expected"),
+    [
+        (pl.int_range(0, 4) % 3 == 0, None, [None, 2, 4, None]),
+        (pl.int_range(0, 4).sum() > 0, 7, [7, 7, 7, 7]),
+    ],
+)
+def test_when_then_masked_cse_column_on_empty_frame(
+    predicate: pl.Expr, then: int | None, expected: list[int | None]
+) -> None:
+    # The common `int_range` becomes a CSE column longer than the empty frame.
+    q = pl.LazyFrame().select(
+        a=pl.when(predicate).then(then).otherwise(pl.int_range(0, 4) * 2)
+    )
+    assert "__POLARS_CSER" in q.explain()
+    assert_series_equal(q.collect().to_series(), pl.Series("a", expected))
+
+
+def test_when_then_masked_cse_column_height_mismatch() -> None:
+    r = pl.int_range(0, 5)
+    q = pl.LazyFrame({"a": [1, 2, 3]}).select(
+        x=pl.when(pl.col("a") > 1).then(None).otherwise(r * 2), y=r.sum()
+    )
+    assert "__POLARS_CSER" in q.explain()
+    with pytest.raises(ShapeError):
+        q.collect()
