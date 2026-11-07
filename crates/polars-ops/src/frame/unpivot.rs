@@ -9,8 +9,11 @@ use polars_error::{PolarsResult, polars_err};
 
 use crate::frame::IntoDf;
 
+#[cfg_attr(docsrs, doc(cfg(feature = "pivot")))]
 pub trait UnpivotDF: IntoDf {
     /// Unpivot a `DataFrame` from wide to long format.
+    ///
+    /// Requires the `pivot` feature.
     ///
     /// # Example
     ///
