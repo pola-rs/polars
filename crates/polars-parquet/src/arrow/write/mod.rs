@@ -205,10 +205,9 @@ fn max_page_size(options: WriteOptions) -> usize {
     max_page_size.min(2usize.pow(31) - 2usize.pow(25)) // allowed maximum page size
 }
 
-/// Plain encoding prefixes each variable-length value with its length as a u32.
+/// Parquet's Plain encoding prefixes variable-length values with 4 byte lengths
 const LENGTH_PREFIX: usize = size_of::<u32>();
 
-/// The values of a variable-length leaf.
 enum LeafSizes<'a> {
     Offsets(&'a [i64]),
     Views {
@@ -253,8 +252,9 @@ impl<'a> LeafSizes<'a> {
         })
     }
 
-    /// Like [`row_slice_ranges`], but cuts a page before the row that would take it over
-    /// `max_page_size` plain-encoded bytes. A single row larger than that gets a page of its own.
+    /// Splits the rows into page ranges of `(offset, length)`, cutting before the row that would
+    /// take the page over `max_page_size` plain-encoded bytes. A single row larger than the max
+    /// gets a page of its own.
     fn slice_ranges(
         &self,
         nested: &[Nested],
@@ -300,7 +300,7 @@ impl<'a> LeafSizes<'a> {
 }
 
 /// Page ranges for rows whose cumulative size `bytes_until(row)` can be computed for any row.
-/// Each page end is found with a galloping search, which takes O(log rows-per-page) lookups.
+/// Each page end is found with a binary search, which takes O(log rows) lookups.
 ///
 /// `bytes_until` must be non-decreasing.
 fn search_slice_ranges(
@@ -321,12 +321,6 @@ fn search_slice_ranges(
             // `lo` is a valid end and `hi` does not fit.
             let mut lo = start + 1;
             let mut hi = number_of_rows;
-            let mut step = 1;
-            while lo + step < hi && fits(lo + step) {
-                lo += step;
-                step *= 2;
-            }
-            hi = hi.min(lo + step);
             while hi - lo > 1 {
                 let mid = lo + (hi - lo) / 2;
                 if fits(mid) {
