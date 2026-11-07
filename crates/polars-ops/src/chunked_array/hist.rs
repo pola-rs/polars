@@ -239,6 +239,13 @@ pub fn hist_series(
     include_category: bool,
     include_breakpoint: bool,
 ) -> PolarsResult<Series> {
+    polars_ensure!(
+        s.dtype().is_primitive_numeric(),
+        opq = hist,
+        got = s.dtype(),
+        expected = "integer or float"
+    );
+
     let mut bins_arg = None;
 
     let owned_bins;
@@ -251,12 +258,6 @@ pub fn hist_series(
         let bins = bins.cont_slice().unwrap();
         bins_arg = Some(bins);
     };
-    polars_ensure!(
-        s.dtype().is_primitive_numeric(),
-        opq = hist,
-        got = s.dtype(),
-        expected = "integer or float"
-    );
 
     let out = with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
          let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
