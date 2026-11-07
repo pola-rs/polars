@@ -126,6 +126,13 @@ fn list_required<'a, O: Offset>(array: &'a ListArray<O>, schema: &AvroSchema) ->
     let mut inner = list_values_serializer(array, schema);
     let lengths = array.offsets().lengths();
 
+    // For sliced arrays, the values array is not sliced but offsets are adjusted.
+    // Skip past the values before the first offset.
+    let first_offset = array.offsets().first().to_usize();
+    for _ in 0..first_offset {
+        inner.next();
+    }
+
     Box::new(BufStreamingIterator::new(
         lengths,
         move |length, buf| write_list_items(&mut inner, length, buf),
@@ -140,6 +147,13 @@ fn list_optional<'a, O: Offset>(array: &'a ListArray<O>, schema: &AvroSchema) ->
         .lengths()
         .enumerate()
         .map(|(i, length)| (length, array.is_valid(i)));
+
+    // For sliced arrays, the values array is not sliced but offsets are adjusted.
+    // Skip past the values before the first offset.
+    let first_offset = array.offsets().first().to_usize();
+    for _ in 0..first_offset {
+        inner.next();
+    }
 
     Box::new(BufStreamingIterator::new(
         rows,
