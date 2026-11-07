@@ -1450,6 +1450,45 @@ def test_outer_join_where_key_with_one_input_condition(
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("how", ["left", "right", "full"])
+@pytest.mark.parametrize(
+    ("predicates", "nested_loop_hows"),
+    [
+        ([pl.col("k").eq_missing(pl.col("k_right"))], set()),
+        ([pl.col("k") == pl.col("k_right"), pl.lit(True)], set()),
+        ([pl.col("k") == pl.col("k_right"), pl.lit(False)], set()),
+        (
+            [pl.col("k").eq_missing(pl.col("k_right")), pl.col("v") > 1],
+            {"left", "full"},
+        ),
+        (
+            [
+                pl.col("k").eq_missing(pl.col("k_right")),
+                pl.col("v") == pl.col("v_right"),
+            ],
+            {"left", "right", "full"},
+        ),
+    ],
+)
+def test_outer_join_where_key_kinds(
+    engine: EngineType,
+    how: Literal["left", "right", "full"],
+    predicates: list[pl.Expr],
+    nested_loop_hows: set[str],
+) -> None:
+    left = pl.LazyFrame({"k": [1, 2, None, None], "v": [5, None, 0, 7]})
+    right = pl.LazyFrame({"k": [1, 3, None], "v": [5, 1, 7]})
+    query = left.join_where(right, *predicates, how=how)
+    disabled = pl.QueryOptFlags(predicate_pushdown=False)
+    assert_frame_equal(
+        query.collect(engine=engine),
+        query.collect(engine=engine, optimizations=disabled),
+        check_row_order=False,
+    )
+    assert ("NESTED LOOP JOIN" in query.explain()) == (how in nested_loop_hows)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 @pytest.mark.parametrize("how", ["left", "right"])
 def test_outer_join_where_pushed_condition_downgrades_to_cross(
     engine: EngineType, how: Literal["left", "right"]

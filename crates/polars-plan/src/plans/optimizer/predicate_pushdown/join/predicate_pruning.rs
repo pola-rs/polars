@@ -722,6 +722,7 @@ pub fn try_rewrite_join_type(
             schema_right,
             output_schema,
             &suffix,
+            Operator::Eq,
         )?;
 
         if !equality_conditions.is_empty() {
@@ -1347,21 +1348,30 @@ fn try_rewrite_outer_equi_join(
     let mut remaining = init_indexmap(None);
     let mut dedup = PredicateDedupState::default();
     insert_predicate_dedup(&mut remaining, predicate, expr_arena, &mut dedup);
-    let mut keys = take_equi_join_keys(
-        &mut remaining,
-        expr_arena,
-        schema_left,
-        schema_right,
-        output_schema,
-        &suffix,
-    )?;
+    let mut nulls_equal = false;
+    let mut keys = Vec::new();
+    for key_op in [Operator::Eq, Operator::EqValidity] {
+        keys = take_equi_join_keys(
+            &mut remaining,
+            expr_arena,
+            schema_left,
+            schema_right,
+            output_schema,
+            &suffix,
+            key_op,
+        )?;
+        if !keys.is_empty() {
+            nulls_equal = key_op == Operator::EqValidity;
+            break;
+        }
+    }
     if keys.is_empty() {
         return Ok(false);
     }
     if !remaining.is_empty() {
         // A condition on one input gives a null key to the rows where it does not hold, and a
         // null key matches nothing.
-        if options.args.nulls_equal {
+        if nulls_equal {
             return Ok(false);
         }
         let mut left_mask = None;
@@ -1383,7 +1393,7 @@ fn try_rewrite_outer_equi_join(
                 None,
             )?;
             let mask = match origin {
-                ExprOrigin::Left => &mut left_mask,
+                ExprOrigin::Left | ExprOrigin::None => &mut left_mask,
                 ExprOrigin::Right => &mut right_mask,
                 _ => return Ok(false),
             };
@@ -1407,7 +1417,9 @@ fn try_rewrite_outer_equi_join(
         }
     }
     let on = push_equi_join_keys(keys, expr_arena, schema_right, &suffix, left_on, right_on);
-    Arc::make_mut(options).options = JoinTypeOptionsIR::Equi {
+    let options = Arc::make_mut(options);
+    options.args.nulls_equal = nulls_equal;
+    options.options = JoinTypeOptionsIR::Equi {
         on,
         fused_predicate: None,
     };
@@ -1526,14 +1538,11 @@ fn take_equi_join_keys(
     schema_right: &Schema,
     output_schema: &Schema,
     suffix: &str,
+    key_op: Operator,
 ) -> PolarsResult<Vec<EquiJoinKeys>> {
     let keys = take_predicates_mut(acc_predicates, expr_arena, |ae, _ae_node, expr_arena| {
         Ok(match ae {
-            AExpr::BinaryExpr {
-                left,
-                op: Operator::Eq,
-                right,
-            } => {
+            AExpr::BinaryExpr { left, op, right } if *op == key_op => {
                 let left_origin = ExprOrigin::get_expr_origin(
                     *left,
                     expr_arena,
