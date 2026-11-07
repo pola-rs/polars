@@ -602,7 +602,7 @@ impl PhysicalExpr for AggMinMaxByExpr {
             let by_phys = by_col.as_materialized_series().to_physical_repr();
             if by_phys.dtype().is_primitive_numeric()
                 && !by_col.dtype().is_categorical()
-                && _use_rolling_kernels(slices, *overlapping, *monotonic, by_phys.chunks())
+                && _use_rolling_kernels(slices, *overlapping, *monotonic)
             {
                 let gather_idxs = rolling_numeric_minmax_by(&by_col, slices, self.is_max_by);
                 // SAFETY: The indices come from the same groups as `input_col`.
