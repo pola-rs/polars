@@ -1,12 +1,13 @@
 use std::sync::{Arc, LazyLock};
 
-use polars_core::prelude::PlIndexSet;
 use polars_core::schema::Schema;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::iters_eq::iters_eq;
-use polars_utils::pl_str::PlSmallStr;
 
 use crate::plans::IR;
+use crate::plans::optimizer::projection_pushdown::field_pruning::{
+    ColumnSelection, ColumnSelectionExt,
+};
 use crate::plans::optimizer::projection_pushdown::min_dtype_size_col;
 
 #[derive(Debug, Clone)]
@@ -15,7 +16,7 @@ pub struct Edge(ProjectionState, ParentKeyAndPort);
 impl Edge {
     pub fn new(
         projection: Projection,
-        names: Option<Box<PlIndexSet<PlSmallStr>>>,
+        names: Option<Box<ColumnSelection>>,
         parent_key_and_port: ParentKeyAndPort,
     ) -> Self {
         Self(ProjectionState { projection, names }, parent_key_and_port)
@@ -31,10 +32,10 @@ pub struct ProjectionState {
     pub projection: Projection,
     /// If `projection` is `Projection::All` and this is non-empty, it is assumed to match the
     /// full set of output columns (in order) for the current node.
-    pub names: Option<Box<PlIndexSet<PlSmallStr>>>,
+    pub names: Option<Box<ColumnSelection>>,
 }
 
-static EMPTY_NAMES: LazyLock<PlIndexSet<PlSmallStr>> = LazyLock::new(Default::default);
+static EMPTY_NAMES: LazyLock<ColumnSelection> = LazyLock::new(Default::default);
 
 pub trait GetProjectionState {
     fn projection_state(&self) -> &ProjectionState;
@@ -48,29 +49,26 @@ pub trait GetProjectionState {
         &mut self.projection_state_mut().projection
     }
 
-    fn names(&self) -> &PlIndexSet<PlSmallStr> {
+    fn names(&self) -> &ColumnSelection {
         self.projection_state()
             .names
             .as_deref()
             .unwrap_or(&*EMPTY_NAMES)
     }
 
-    fn names_mut(&mut self) -> &mut PlIndexSet<PlSmallStr> {
+    fn names_mut(&mut self) -> &mut ColumnSelection {
         self.projection_state_mut()
             .names
             .get_or_insert_default()
             .as_mut()
     }
 
-    fn take_names(&mut self) -> Option<Box<PlIndexSet<PlSmallStr>>> {
+    fn take_names(&mut self) -> Option<Box<ColumnSelection>> {
         self.projection_state_mut().names.take()
     }
 
-    /// Returns `None` if the projected names already match the input schema.
-    fn compute_projected_names(
-        &mut self,
-        input_schema: &Schema,
-    ) -> Option<&PlIndexSet<PlSmallStr>> {
+    /// Returns `None` if the projected names already match the input schema, each selected whole.
+    fn compute_projected_names(&mut self, input_schema: &Schema) -> Option<&ColumnSelection> {
         match self.projection() {
             Projection::All => return None,
             Projection::Len => {
@@ -80,20 +78,22 @@ pub trait GetProjectionState {
 
                 if self.names().is_empty() {
                     self.names_mut()
-                        .insert(min_dtype_size_col(input_schema.iter()).unwrap().clone());
+                        .insert_whole(min_dtype_size_col(input_schema.iter()).unwrap().clone());
                 } else {
                     assert_eq!(self.names().len(), 1);
                     if self
                         .names()
                         .first()
-                        .is_none_or(|name| !input_schema.contains(name))
+                        .is_none_or(|(name, _)| !input_schema.contains(name))
                     {
                         panic!("{:?}, {:?}", input_schema, self.names().first())
                     }
                 }
             },
             Projection::Names => {
-                if iters_eq(self.names().iter(), input_schema.iter_names()) {
+                if iters_eq(self.names().keys(), input_schema.iter_names())
+                    && !self.names().has_field_selections()
+                {
                     return None;
                 }
             },
@@ -102,13 +102,14 @@ pub trait GetProjectionState {
         Some(self.names())
     }
 
-    /// Returns `None` if the projected names are not a subset of the input schema.
+    /// Returns `None` if the projected names are not a subset of the input schema, or are all of
+    /// it with every column selected whole.
     fn compute_projected_names_subset(
         &mut self,
         input_schema: &Schema,
-    ) -> Option<&PlIndexSet<PlSmallStr>> {
+    ) -> Option<&ColumnSelection> {
         self.compute_projected_names(input_schema)
-            .filter(|x| x.len() != input_schema.len())
+            .filter(|x| x.len() != input_schema.len() || x.has_field_selections())
     }
 }
 

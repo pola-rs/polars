@@ -42,7 +42,7 @@ pub enum DeletionFilesProvider {
         data_paths: Buffer<PlRefPath>,
         paths: Arc<PlIndexMap<usize, polars_plan::dsl::deletion::IcebergDeletes>>,
         // Amortized allocations
-        reader_builder: ParquetReaderBuilder,
+        reader_builder: Box<ParquetReaderBuilder>,
         projected_schema: SchemaRef,
         deletion_load_tasks: Arc<
             parking_lot::Mutex<
@@ -71,6 +71,9 @@ impl DeletionFilesProvider {
                 let mut reader_builder = ParquetReaderBuilder {
                     bytes_per_source: None,
                     first_metadata: None,
+                    field_selection: None,
+                    scan_schema: None,
+                    prune_to_scan_schema: false,
                     options: Arc::new(polars_io::prelude::ParquetOptions {
                         schema: Some(Arc::new(Schema::from_iter([
                             (PlSmallStr::from_static("file_path"), DataType::String),
@@ -107,7 +110,7 @@ impl DeletionFilesProvider {
                 Ok(Self::Iceberg {
                     data_paths,
                     paths,
-                    reader_builder,
+                    reader_builder: Box::new(reader_builder),
                     projected_schema: Arc::new(Schema::from_iter([
                         (PlSmallStr::from_static("file_path"), DataType::String),
                         (PlSmallStr::from_static("pos"), DataType::Int64),

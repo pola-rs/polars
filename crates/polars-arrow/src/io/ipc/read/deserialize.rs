@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::io::{Read, Seek};
 
 use polars_arrow_format::ipc::{BodyCompressionRef, MetadataVersion};
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_ensure};
 use polars_utils::bool::UnsafeBool;
 
 use super::array::*;
@@ -284,6 +284,139 @@ pub fn read<R: Read + Seek>(
             checked,
         ),
     }
+}
+
+/// Reads `field` as `pruned_dtype`: its own dtype, or for a struct a struct dtype with some of
+/// its fields (see [`read_struct_pruned`]), or for a list a list of such an element.
+#[allow(clippy::too_many_arguments)]
+pub fn read_pruned<R: Read + Seek>(
+    field_nodes: &mut VecDeque<Node>,
+    variadic_buffer_counts: &mut VecDeque<usize>,
+    field: &Field,
+    pruned_dtype: &ArrowDataType,
+    ipc_field: &IpcField,
+    buffers: &mut VecDeque<IpcBuffer>,
+    reader: &mut R,
+    dictionaries: &Dictionaries,
+    block_offset: u64,
+    is_little_endian: bool,
+    compression: Option<BodyCompressionRef>,
+    limit: Option<usize>,
+    version: MetadataVersion,
+    scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
+) -> PolarsResult<Box<dyn Array>> {
+    if &field.dtype != pruned_dtype {
+        match (&field.dtype, pruned_dtype) {
+            (ArrowDataType::List(_), ArrowDataType::List(_)) => {
+                return read_list_pruned::<i32, _>(
+                    field_nodes,
+                    variadic_buffer_counts,
+                    &field.dtype,
+                    pruned_dtype.clone(),
+                    ipc_field,
+                    buffers,
+                    reader,
+                    dictionaries,
+                    block_offset,
+                    is_little_endian,
+                    compression,
+                    limit,
+                    version,
+                    scratch,
+                    checked,
+                )
+                .map(|x| x.boxed());
+            },
+            (ArrowDataType::LargeList(_), ArrowDataType::LargeList(_)) => {
+                return read_list_pruned::<i64, _>(
+                    field_nodes,
+                    variadic_buffer_counts,
+                    &field.dtype,
+                    pruned_dtype.clone(),
+                    ipc_field,
+                    buffers,
+                    reader,
+                    dictionaries,
+                    block_offset,
+                    is_little_endian,
+                    compression,
+                    limit,
+                    version,
+                    scratch,
+                    checked,
+                )
+                .map(|x| x.boxed());
+            },
+            (ArrowDataType::FixedSizeList(_, a), ArrowDataType::FixedSizeList(_, b)) if a == b => {
+                return read_fixed_size_list_pruned(
+                    field_nodes,
+                    variadic_buffer_counts,
+                    &field.dtype,
+                    pruned_dtype.clone(),
+                    ipc_field,
+                    buffers,
+                    reader,
+                    dictionaries,
+                    block_offset,
+                    is_little_endian,
+                    compression,
+                    limit,
+                    version,
+                    scratch,
+                    checked,
+                )
+                .map(|x| x.boxed());
+            },
+            _ => {},
+        }
+    }
+
+    if let (ArrowDataType::Struct(_), ArrowDataType::Struct(_)) = (&field.dtype, pruned_dtype)
+        && &field.dtype != pruned_dtype
+    {
+        return read_struct_pruned(
+            field_nodes,
+            variadic_buffer_counts,
+            field,
+            pruned_dtype,
+            ipc_field,
+            buffers,
+            reader,
+            dictionaries,
+            block_offset,
+            is_little_endian,
+            compression,
+            limit,
+            version,
+            scratch,
+            checked,
+        )
+        .map(|x| x.boxed());
+    }
+
+    polars_ensure!(
+        &field.dtype == pruned_dtype,
+        ComputeError: "IPC: cannot read field '{}' of dtype {:?} as {:?}",
+        field.name, field.dtype, pruned_dtype
+    );
+
+    read(
+        field_nodes,
+        variadic_buffer_counts,
+        field,
+        ipc_field,
+        buffers,
+        reader,
+        dictionaries,
+        block_offset,
+        is_little_endian,
+        compression,
+        limit,
+        version,
+        scratch,
+        checked,
+    )
 }
 
 pub fn skip(
