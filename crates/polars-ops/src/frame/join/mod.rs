@@ -17,7 +17,9 @@ use std::hash::Hash;
 
 pub use args::*;
 #[cfg(feature = "asof_join")]
-pub use asof::{_check_asof_columns, _join_asof_dispatch, AsofJoin, AsofJoinBy};
+pub use asof::{
+    _asof_key_to_physical, _check_asof_columns, _join_asof_dispatch, AsofJoin, AsofJoinBy,
+};
 pub use cross_join::CrossJoin;
 #[cfg(feature = "chunked_ids")]
 use either::Either;

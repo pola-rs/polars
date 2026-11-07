@@ -416,7 +416,7 @@ pub fn int32_to_time32ms(from: &PrimitiveArray<i32>) -> PrimitiveArray<i32> {
     }
 }
 
-/// Conversion of `Int64` to `Time32(TimeUnit::Microsecond)`
+/// Conversion of `Int64` to `Time64(TimeUnit::Microsecond)`
 pub fn int64_to_time64us(from: &PrimitiveArray<i64>) -> PrimitiveArray<i64> {
     // SAFETY: Time64(TimeUnit::Microsecond) is valid for Int64
     unsafe {
@@ -428,7 +428,7 @@ pub fn int64_to_time64us(from: &PrimitiveArray<i64>) -> PrimitiveArray<i64> {
     }
 }
 
-/// Conversion of `Int64` to `Time32(TimeUnit::Nanosecond)`
+/// Conversion of `Int64` to `Time64(TimeUnit::Nanosecond)`
 pub fn int64_to_time64ns(from: &PrimitiveArray<i64>) -> PrimitiveArray<i64> {
     // SAFETY: Time64(TimeUnit::Nanosecond) is valid for Int64
     unsafe {

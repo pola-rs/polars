@@ -504,7 +504,7 @@ impl<'a> CoreReader<'a> {
                         results.lock().unwrap().push((b.as_ptr() as usize, result));
                     });
 
-                    // Check just after we spawned a chunk. That mean we processed all data up until
+                    // Check just after we spawned a chunk. That means we processed all data up until
                     // row count.
                     if self.n_rows.is_some() && total_line_count.load() > self.n_rows.unwrap() {
                         break;

@@ -41,8 +41,15 @@ impl AExpr {
     ///
     /// This is taken as `&mut bool` as for some expressions this is determined by the upper node
     /// (e.g. `alias`, `cast`).
-    #[recursive]
     pub fn to_field_impl(&self, ctx: &ToFieldContext) -> PolarsResult<Field> {
+        self.to_field_impl_inner(ctx).map_err(|e| {
+            let expr = ExprIRDisplay::display_aexpr(self, ctx.arena).to_string();
+            e.with_expr_context(expr.into())
+        })
+    }
+
+    #[recursive]
+    fn to_field_impl_inner(&self, ctx: &ToFieldContext) -> PolarsResult<Field> {
         use AExpr::*;
         use DataType::*;
         match self {
@@ -67,6 +74,7 @@ impl AExpr {
                 partition_by,
                 order_by,
                 mapping,
+                may_reorder: _,
             } => {
                 for node in partition_by {
                     validate_expr(*node, ctx)?;
@@ -444,6 +452,7 @@ impl AExpr {
                 partition_by: _,
                 order_by: _,
                 mapping: _,
+                may_reorder: _,
             }
             | BinaryExpr { left: expr, .. }
             | Explode { expr, .. }
@@ -832,7 +841,7 @@ fn get_arithmetic_field(
                         op, l, r,
                     )
                 },
-                // List<->primitive operations can be done directly after casting the to the primitive
+                // List<->primitive operations can be done directly after casting to the primitive
                 // supertype for the primitive values on both sides.
                 (list_dtype @ List(_), other_dtype) | (other_dtype, list_dtype @ List(_)) => {
                     let dtype = list_dtype.cast_leaf(try_get_supertype(
@@ -950,6 +959,8 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
             let dtype = get_truediv_dtype(list_dtype.leaf_dtype(), other_dtype.leaf_dtype())?;
             list_dtype.cast_leaf(dtype)
         },
+        (Null, Null) => Float64,
+        (Null, dt) => get_truediv_dtype(dt, dt)?,
         #[cfg(feature = "dtype-f16")]
         (Boolean, Float16) => Float16,
         (Boolean, Float32) => Float32,

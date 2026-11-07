@@ -90,7 +90,7 @@ fn test_pass_unrelated_apply() -> PolarsResult<()> {
 fn filter_added_column_issue_2470() -> PolarsResult<()> {
     let df = fruits_cars();
 
-    // the binary expression in the predicate lead to an incorrect pushdown because the rhs
+    // the binary expression in the predicate led to an incorrect pushdown because the rhs
     // was not checked on the schema.
     let out = df
         .lazy()

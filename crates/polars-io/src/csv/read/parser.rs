@@ -12,6 +12,7 @@ use rayon::prelude::*;
 
 use super::CsvParseOptions;
 use super::builder::Builder;
+use super::field_index::{FieldPos, LineIndexer};
 use super::options::{CommentPrefix, NullValuesCompiled};
 use super::splitfields::SplitFields;
 use crate::prelude::CsvReadOptions;
@@ -294,7 +295,7 @@ pub(super) fn next_line_position(
         // a,b,c
         // vala,valb,
         // SplitFields returns a count that is 1 less
-        // There fore we accept:
+        // Therefore we accept:
         // expected == count
         // and
         // expected == count - 1
@@ -409,7 +410,7 @@ pub(super) fn skip_whitespace(input: &[u8]) -> &[u8] {
 ///    for line in bytes.split(b'\n') {
 /// ```
 ///
-/// This will fail when strings fields are have embedded end line characters.
+/// This will fail when string fields have embedded end line characters.
 /// For instance: "This is a valid field\nI have multiples lines" is a valid string field, that contains multiple lines.
 pub struct SplitLines<'a> {
     v: &'a [u8],
@@ -1025,9 +1026,9 @@ fn ends_in_unterminated_row(
     if !bytes.is_empty() && bytes.last().copied().unwrap() != eol_char {
         // We can do a simple backwards-scan to find the start of last line if it is a
         // comment line, since comment lines can't escape new-lines.
-        let last_new_line_post = memchr::memrchr(eol_char, bytes).unwrap_or(0);
+        let last_new_line_pos = memchr::memrchr(eol_char, bytes).unwrap_or(0);
         let last_line_is_comment_line = bytes
-            .get(last_new_line_post + 1..)
+            .get(last_new_line_pos + 1..)
             .map(|line| is_comment_line(line, comment_prefix))
             .unwrap_or(false);
 
@@ -1081,6 +1082,43 @@ pub(super) fn skip_this_line_naive(input: &[u8], eol_char: u8) -> &[u8] {
     }
 }
 
+/// Adds the fields of one column of `batch`.
+///
+/// # Safety
+/// The fields must have been taken from `batch` and `column_idx` must be in bounds of the per
+/// column `null_values`.
+#[allow(clippy::too_many_arguments)]
+unsafe fn add_column(
+    buf: &mut Builder,
+    column_idx: usize,
+    batch: &[u8],
+    column: impl Iterator<Item = FieldPos>,
+    quote_char: Option<u8>,
+    null_values: Option<&NullValuesCompiled>,
+    ignore_errors: bool,
+    missing_is_null: bool,
+) -> Result<(), (usize, PolarsError)> {
+    let column = column.map(|pos| {
+        unsafe { pos.get(batch) }
+            .map(|field| (field, quote_char.is_some_and(|q| field.first() == Some(&q))))
+    });
+    unsafe {
+        buf.add_column(
+            column,
+            column_idx,
+            null_values,
+            ignore_errors,
+            missing_is_null,
+        )
+    }
+}
+
+/// Lines are parsed in batches of about this many bytes, so that a batch stays in cache while its
+/// columns are parsed one after another.
+const BATCH_BYTES: usize = 16 * 1024;
+/// Upper bound on the number of fields in a batch.
+const BATCH_FIELDS: usize = 2 * 1024;
+
 /// Parse CSV.
 ///
 /// # Arguments
@@ -1123,20 +1161,172 @@ pub(super) fn parse_lines(
     let original_bytes_len = bytes.len();
     let n_lines = n_lines as u32;
 
+    let parse_error = |buf: &Builder, field: &[u8], column_idx: usize, e: PolarsError| {
+        let bytes_offset = offset + field.as_ptr() as usize - start;
+        let unparsable = String::from_utf8_lossy(field);
+        let column_name = schema.get_at_index(column_idx).unwrap().0;
+        polars_err!(
+            ComputeError:
+            "could not parse `{}` as dtype `{}` at column '{}' (column number {})\n\n\
+            The current offset in the file is {} bytes.\n\
+            \n\
+            You might want to try:\n\
+            - increasing `infer_schema_length` (e.g. `infer_schema_length=10000`),\n\
+            - increasing `infer_schema_files` (e.g. `infer_schema_files=50`),\n\
+            - specifying correct dtype with the `schema_overrides` argument\n\
+            - setting `ignore_errors` to `True`,\n\
+            - adding `{}` to the `null_values` list.\n\n\
+            Original error: ```{}```",
+            &unparsable,
+            buf.dtype(),
+            column_name,
+            column_idx + 1,
+            bytes_offset,
+            &unparsable,
+            e
+        )
+    };
+
+    let n_fields = projection.len();
+    let quote_char = parse_options.quote_char;
+    // Categorical columns can share their categories, which must then be added in row order.
+    let by_row = buffers.iter().filter(|buf| buf.is_categorical()).count() > 1;
+    macro_rules! add_column {
+        ($buf:expr, $column_idx:expr, $batch:expr, $column:expr) => {
+            // SAFETY: the fields were taken from `batch` and the projection is in bounds of the
+            // schema, which the null values match.
+            unsafe {
+                add_column(
+                    $buf,
+                    $column_idx,
+                    $batch,
+                    $column,
+                    quote_char,
+                    null_values,
+                    ignore_errors,
+                    parse_options.missing_is_null,
+                )
+            }
+        };
+    }
+    fn field_at<'a>(
+        batch: &'a [u8],
+        fields: &[FieldPos],
+        n_fields: usize,
+        row: usize,
+        i: usize,
+    ) -> &'a [u8] {
+        // SAFETY: the fields were taken from `batch`, and a field that fails is not missing.
+        unsafe { fields[row * n_fields + i].get(batch).unwrap_unchecked() }
+    }
+
+    // Parses the lines in `batch`, whose field positions are in `fields`.
+    let flush = |batch: &[u8], fields: &mut Vec<FieldPos>, buffers: &mut [Builder]| {
+        if by_row {
+            for row in 0..fields.len() / n_fields {
+                for i in 0..n_fields {
+                    let column = std::iter::once(fields[row * n_fields + i]);
+                    add_column!(&mut buffers[i], projection[i], batch, column).map_err(
+                        |(_, e)| {
+                            parse_error(
+                                &buffers[i],
+                                field_at(batch, fields, n_fields, row, i),
+                                projection[i],
+                                e,
+                            )
+                        },
+                    )?;
+                }
+            }
+        } else {
+            for i in 0..n_fields {
+                let column = fields.iter().skip(i).step_by(n_fields).copied();
+                add_column!(&mut buffers[i], projection[i], batch, column).map_err(
+                    |(row, e)| {
+                        // Report the first error in row order, the later columns may fail in earlier rows.
+                        let (row, i, e) = (0..row)
+                            .find_map(|row| {
+                                (i + 1..n_fields).find_map(|j| {
+                                    let column = std::iter::once(fields[row * n_fields + j]);
+                                    add_column!(&mut buffers[j], projection[j], batch, column)
+                                        .err()
+                                        .map(|(_, e)| (row, j, e))
+                                })
+                            })
+                            .unwrap_or((row, i, e));
+                        parse_error(
+                            &buffers[i],
+                            field_at(batch, fields, n_fields, row, i),
+                            projection[i],
+                            e,
+                        )
+                    },
+                )?;
+            }
+        }
+        fields.clear();
+        PolarsResult::Ok(())
+    };
+
+    let mut fields: Vec<FieldPos> = Vec::with_capacity(BATCH_FIELDS + projection.len());
+    let mut batch = bytes;
+
+    // The field by field scan skips the rest of a line from its last separator, which with a
+    // separator equal to the quote char toggles the quote state once more.
+    let use_indexer = parse_options.comment_prefix.is_none()
+        && parse_options.quote_char != Some(parse_options.separator);
+    let indexer = use_indexer.then(|| LineIndexer {
+        separator: parse_options.separator,
+        eol_char: parse_options.eol_char,
+        quote_char: parse_options.quote_char.unwrap_or(b'"'),
+        quoting: parse_options.quote_char.is_some(),
+        projection,
+        schema_len,
+        truncate_ragged_lines,
+    });
+
+    let mut iter = SplitFields::new(
+        bytes,
+        parse_options.separator,
+        parse_options.quote_char,
+        parse_options.eol_char,
+    );
     let mut line_count = 0u32;
-    loop {
+    let read = 'lines: loop {
         if line_count > n_lines {
-            let end = bytes.as_ptr() as usize;
-            return Ok(end - start);
+            break bytes.as_ptr() as usize - start;
         }
 
         if bytes.is_empty() {
-            return Ok(original_bytes_len);
+            break original_bytes_len;
         } else if is_comment_line(bytes, parse_options.comment_prefix.as_ref()) {
             // deal with comments
             let bytes_rem = skip_this_line_naive(bytes, parse_options.eol_char);
             bytes = bytes_rem;
             continue;
+        }
+
+        let batch_len = bytes.as_ptr() as usize - batch.as_ptr() as usize;
+        if batch_len >= BATCH_BYTES || fields.len() >= BATCH_FIELDS {
+            flush(batch, &mut fields, buffers)?;
+            batch = bytes;
+        }
+        let line_start = bytes.as_ptr() as usize - batch.as_ptr() as usize;
+
+        if let Some(indexer) = &indexer {
+            let (n_bytes, n) = indexer.index_lines(
+                bytes,
+                line_start,
+                &mut fields,
+                (n_lines - line_count).saturating_add(1),
+                BATCH_BYTES,
+                BATCH_FIELDS,
+            );
+            if n > 0 {
+                bytes = &bytes[n_bytes..];
+                line_count += n;
+                continue;
+            }
         }
 
         // Every line we only need to parse the columns that are projected.
@@ -1146,12 +1336,7 @@ pub(super) fn parse_lines(
         let mut next_projected = unsafe { projection_iter.next().unwrap_unchecked() };
         let mut processed_fields = 0;
 
-        let mut iter = SplitFields::new(
-            bytes,
-            parse_options.separator,
-            parse_options.quote_char,
-            parse_options.eol_char,
-        );
+        iter.next_line(bytes);
         let mut idx = 0u32;
         let mut read_sol = 0;
         loop {
@@ -1161,8 +1346,9 @@ pub(super) fn parse_lines(
                     bytes = unsafe { bytes.get_unchecked(std::cmp::min(read_sol, bytes.len())..) };
                     break;
                 },
-                Some((mut field, needs_escaping)) => {
+                Some((mut field, _)) => {
                     let field_len = field.len();
+                    let field_start = line_start + read_sol;
 
                     // +1 is the split character that is consumed by the iterator.
                     read_sol += field_len + 1;
@@ -1176,55 +1362,20 @@ pub(super) fn parse_lines(
                             }
                         }
 
-                        debug_assert!(processed_fields < buffers.len());
-                        let buf = unsafe {
-                            // SAFETY: processed fields index can never exceed the projection indices.
-                            buffers.get_unchecked_mut(processed_fields)
+                        let Some(pos) = FieldPos::new(field_start, field.len()) else {
+                            if line_start == 0 {
+                                // Report parse errors in the start of this line first.
+                                let n_missing = projection.len() - processed_fields;
+                                fields.extend(std::iter::repeat_n(FieldPos::MISSING, n_missing));
+                                flush(batch, &mut fields, buffers)?;
+                                polars_bail!(ComputeError: "CSV line is too long");
+                            }
+                            fields.truncate(fields.len() - processed_fields);
+                            flush(batch, &mut fields, buffers)?;
+                            batch = bytes;
+                            continue 'lines;
                         };
-                        let mut add_null = false;
-
-                        // if we have null values argument, check if this field equal null value
-                        if let Some(null_values) = null_values {
-                            let field = if needs_escaping && !field.is_empty() {
-                                unsafe { field.get_unchecked(1..field.len() - 1) }
-                            } else {
-                                field
-                            };
-
-                            // SAFETY:
-                            // process fields is in bounds
-                            add_null = unsafe { null_values.is_null(field, idx as usize) }
-                        }
-                        if add_null {
-                            buf.add_null(!parse_options.missing_is_null && field.is_empty())
-                        } else {
-                            buf.add(field, ignore_errors, needs_escaping, parse_options.missing_is_null)
-                                .map_err(|e| {
-                                    let bytes_offset = offset + field.as_ptr() as usize - start;
-                                    let unparsable = String::from_utf8_lossy(field);
-                                    let column_name = schema.get_at_index(idx as usize).unwrap().0;
-                                    polars_err!(
-                                        ComputeError:
-                                        "could not parse `{}` as dtype `{}` at column '{}' (column number {})\n\n\
-                                        The current offset in the file is {} bytes.\n\
-                                        \n\
-                                        You might want to try:\n\
-                                        - increasing `infer_schema_length` (e.g. `infer_schema_length=10000`),\n\
-                                        - increasing `infer_schema_files` (e.g. `infer_schema_files=50`),\n\
-                                        - specifying correct dtype with the `schema_overrides` argument\n\
-                                        - setting `ignore_errors` to `True`,\n\
-                                        - adding `{}` to the `null_values` list.\n\n\
-                                        Original error: ```{}```",
-                                        &unparsable,
-                                        buf.dtype(),
-                                        column_name,
-                                        idx + 1,
-                                        bytes_offset,
-                                        &unparsable,
-                                        e
-                                    )
-                                })?;
-                        }
+                        fields.push(pos);
                         processed_fields += 1;
 
                         // if we have all projected columns we are done with this line
@@ -1235,6 +1386,8 @@ pub(super) fn parse_lines(
                                     bytes = unsafe { bytes.get_unchecked(read_sol..) };
                                 } else {
                                     if !truncate_ragged_lines && read_sol < bytes.len() {
+                                        // Report parse errors in this and earlier lines first.
+                                        flush(batch, &mut fields, buffers)?;
                                         polars_bail!(ComputeError: r#"found more fields than defined in 'Schema'
 
 Consider setting 'truncate_ragged_lines={}'."#, polars_error::constants::TRUE)
@@ -1258,17 +1411,13 @@ Consider setting 'truncate_ragged_lines={}'."#, polars_error::constants::TRUE)
         // there can be lines that miss fields (also the comma values)
         // this means the splitter won't process them.
         // We traverse them to read them as null values.
-        while processed_fields < projection.len() {
-            debug_assert!(processed_fields < buffers.len());
-            let buf = unsafe {
-                // SAFETY: processed fields index can never exceed the projection indices.
-                buffers.get_unchecked_mut(processed_fields)
-            };
-            buf.add_null(!parse_options.missing_is_null);
-            processed_fields += 1;
+        for _ in processed_fields..projection.len() {
+            fields.push(FieldPos::MISSING);
         }
         line_count += 1;
-    }
+    };
+    flush(batch, &mut fields, buffers)?;
+    Ok(read)
 }
 
 #[cfg(test)]

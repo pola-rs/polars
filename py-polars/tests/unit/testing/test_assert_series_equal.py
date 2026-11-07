@@ -376,7 +376,7 @@ def test_assert_series_equal_temporal(data1: Any, data2: Any) -> None:
             pl.Series([[[[0.2, math.nan, 3.0]]]]),
             pl.Series([[[[0.2, math.nan, 3.00000001]]]]),
             {"abs_tol": 0.1},
-            id="double_nested_list_of_float__and_nan_abs_tol_high",
+            id="double_nested_list_of_float_and_nan_abs_tol_high",
         ),
         pytest.param(
             pl.Series([[[[[0.2, 3.0]]]]]),

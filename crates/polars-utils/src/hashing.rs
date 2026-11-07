@@ -65,7 +65,7 @@ pub fn hash_to_partition(h: u64, n_partitions: usize) -> usize {
     // h / 2^64 is almost a uniform random number in [0, 1), and thus
     // floor(h * n_partitions / 2^64) is almost a uniform random integer in
     // [0, n_partitions). Despite being written with u128 multiplication this
-    // compiles to a single mul / mulhi instruction on x86-x64/aarch64.
+    // compiles to a single mul / mulhi instruction on x86-64/aarch64.
     ((h as u128 * n_partitions as u128) >> 64) as usize
 }
 
@@ -96,7 +96,7 @@ impl HashPartitioner {
 
     /// Converts a hash to a partition. It is guaranteed that the output is
     /// in the range [0, n_partitions), and that independent HashPartitioners
-    /// that we initialized with the same num_partitions and seed return the same
+    /// that were initialized with the same num_partitions and seed return the same
     /// partition.
     #[inline(always)]
     pub fn hash_to_partition(&self, hash: u64) -> usize {
@@ -104,7 +104,7 @@ impl HashPartitioner {
         // r / 2^64 is almost a uniform random number in [0, 1), and thus
         // floor(r * n_partitions / 2^64) is almost a uniform random integer in
         // [0, n_partitions). Despite being written with u128 multiplication this
-        // compiles to a single mul / mulhi instruction on x86-x64/aarch64.
+        // compiles to a single mul / mulhi instruction on x86-64/aarch64.
         let shuffled = hash.wrapping_mul(self.seed);
         ((shuffled as u128 * self.num_partitions as u128) >> 64) as usize
     }

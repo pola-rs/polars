@@ -1050,6 +1050,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 // Turn on coalesce if non-coalesced keys are not included in projection. Reduces materialization.
                 if !options.args.should_coalesce()
                     && matches!(options.args.how, JoinType::Inner | JoinType::Left)
+                    && matches!(options.options, JoinTypeOptionsIR::Equi { .. })
                     && options
                         .options
                         .left_on()

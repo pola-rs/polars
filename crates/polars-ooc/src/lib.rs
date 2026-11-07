@@ -1,5 +1,6 @@
 mod decay;
 mod global_alloc;
+mod memory_grant;
 mod memory_manager;
 mod spill_context;
 mod spill_file;
@@ -7,6 +8,7 @@ mod spill_frame;
 mod spill_token;
 
 pub use global_alloc::{Allocator, estimate_memory_usage};
+pub use memory_grant::MemoryGrant;
 pub use memory_manager::{MemoryReservation, memory_manager};
 use polars_utils::relaxed_cell::RelaxedCell;
 pub use spill_context::{

@@ -61,7 +61,7 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
         }
     }
 
-    /// Returned a sorted `ChunkedArray`.
+    /// Return a sorted `ChunkedArray`.
     #[must_use]
     pub fn sort(&self, descending: bool) -> CategoricalChunked<T> {
         self.sort_with(SortOptions {

@@ -857,7 +857,7 @@ def test_predicate_hive_pruning_with_cast(tmp_path: Path) -> None:
 
     assert_frame_equal(q.collect(), expect)
 
-    # This filter expr with stprtime is effectively what LazyFrame.sql()
+    # This filter expr with strptime is effectively what LazyFrame.sql()
     # generates
     q = lf.filter(
         pl.col("date")

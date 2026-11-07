@@ -75,7 +75,7 @@ def negate_duration_string(duration: str) -> str:
 
 
 def date_to_int(d: date) -> int:
-    """Convert a Python time object to an integer."""
+    """Convert a Python date object to an integer."""
     return (d - EPOCH_DATE).days
 
 

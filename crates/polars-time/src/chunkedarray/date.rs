@@ -14,7 +14,7 @@ pub(crate) fn naive_datetime_to_date(v: NaiveDateTime) -> i32 {
 }
 
 pub trait DateMethods: AsDate {
-    /// Extract month from underlying NaiveDate representation.
+    /// Extract year from underlying NaiveDate representation.
     /// Returns the year number in the calendar date.
     fn year(&self) -> Int32Chunked {
         let ca = self.as_date();
@@ -36,7 +36,7 @@ pub trait DateMethods: AsDate {
             .apply_kernel_cast::<Int32Type>(&date_to_iso_year)
     }
 
-    /// Extract month from underlying NaiveDateTime representation.
+    /// Extract quarter from underlying NaiveDateTime representation.
     /// Quarters range from 1 to 4.
     fn quarter(&self) -> Int8Chunked {
         let months = self.month();

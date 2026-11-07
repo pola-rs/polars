@@ -125,45 +125,50 @@ impl FileEncryptionProperties {
 
     /// Checks that each column that is to be encrypted is present in the schema exactly once
     pub fn validate_encrypted_column_names(&self, schema: &SchemaDescriptor) -> ParquetResult<()> {
-        // Different columns can have the same dot-separated path, e.g. a top-level column
-        // named `a.b` and field `b` of struct column `a`.
-        let mut column_path_counts = PlHashMap::<Cow<'_, str>, usize>::default();
-        for column in schema.columns() {
-            *column_path_counts
-                .entry(column_path_string(column))
-                .or_default() += 1;
-        }
-
-        let mut columns_missing_in_schema = self
-            .column_keys
-            .keys()
-            .filter(|column| !column_path_counts.contains_key(column.as_str()))
-            .map(String::as_str)
-            .collect::<Vec<_>>();
-        if !columns_missing_in_schema.is_empty() {
-            columns_missing_in_schema.sort();
-            return Err(encryption_err!(
-                "The following columns with encryption keys specified were not found in the schema: {}",
-                columns_missing_in_schema.join(", ")
-            ));
-        }
-
-        let mut ambiguous_columns = self
-            .column_keys
-            .keys()
-            .filter(|column| column_path_counts[column.as_str()] > 1)
-            .map(String::as_str)
-            .collect::<Vec<_>>();
-        if !ambiguous_columns.is_empty() {
-            ambiguous_columns.sort();
-            return Err(encryption_err!(
-                "The following columns with encryption keys specified match multiple columns \
-                with the same dot-separated path, so can't be encrypted separately: {}",
-                ambiguous_columns.join(", ")
-            ));
-        }
-        Ok(())
+        validate_encrypted_column_names(self.encrypted_column_names(), schema)
     }
+}
+
+/// Checks that each column that is to be encrypted with a column key is present in the
+/// schema exactly once.
+pub fn validate_encrypted_column_names<'a>(
+    encrypted_columns: impl IntoIterator<Item = &'a str>,
+    schema: &SchemaDescriptor,
+) -> ParquetResult<()> {
+    // Different columns can have the same dot-separated path, e.g. a top-level column
+    // named `a.b` and field `b` of struct column `a`.
+    let mut column_path_counts = PlHashMap::<Cow<'_, str>, usize>::default();
+    for column in schema.columns() {
+        *column_path_counts
+            .entry(column_path_string(column))
+            .or_default() += 1;
+    }
+
+    let (mut columns_missing_in_schema, mut ambiguous_columns): (Vec<_>, Vec<_>) =
+        encrypted_columns
+            .into_iter()
+            .filter(|column| {
+                column_path_counts
+                    .get(*column)
+                    .is_none_or(|count| *count > 1)
+            })
+            .partition(|column| !column_path_counts.contains_key(*column));
+    if !columns_missing_in_schema.is_empty() {
+        columns_missing_in_schema.sort();
+        return Err(encryption_err!(
+            "The following columns with encryption keys specified were not found in the schema: {}",
+            columns_missing_in_schema.join(", ")
+        ));
+    }
+    if !ambiguous_columns.is_empty() {
+        ambiguous_columns.sort();
+        return Err(encryption_err!(
+            "The following columns with encryption keys specified match multiple columns \
+            with the same dot-separated path, so can't be encrypted separately: {}",
+            ambiguous_columns.join(", ")
+        ));
+    }
+    Ok(())
 }
 
 /// Builder for [`FileEncryptionProperties`]

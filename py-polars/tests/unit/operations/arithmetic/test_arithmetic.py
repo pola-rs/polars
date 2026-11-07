@@ -1400,3 +1400,25 @@ def test_reflected_arithmetic_series_27752() -> None:
     assert_series_equal(lhs.__rmod__(rhs), rhs % lhs)
     assert_series_equal(lhs.__rpow__(rhs), rhs**lhs)
     assert_series_equal(lhs.__rsub__(np.array([5, 7, 9])), pl.Series("lhs", [3, 4, 5]))
+
+
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+@pytest.mark.parametrize("value", [2**64, -(2**64), 2**99, -(2**99)])
+def test_add_large_dyn_int_to_typed_int_20829(
+    dtype: PolarsIntegerType, value: int
+) -> None:
+    result = pl.select(pl.lit(1, dtype=dtype) + pl.lit(value))
+    expected_dtype = (
+        pl.UInt128 if dtype in UNSIGNED_INTEGER_DTYPES and value > 0 else pl.Int128
+    )
+    expected = pl.DataFrame(
+        {"literal": [value + 1]}, schema={"literal": expected_dtype}
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_add_large_dyn_int_to_uint128_20829() -> None:
+    df = pl.DataFrame({"a": [2**127]}, schema={"a": pl.UInt128})
+    result = df.select(pl.col("a") + 2**70)
+    expected = pl.DataFrame({"a": [2**127 + 2**70]}, schema={"a": pl.UInt128})
+    assert_frame_equal(result, expected)

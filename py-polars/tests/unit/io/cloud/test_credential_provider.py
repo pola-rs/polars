@@ -117,6 +117,78 @@ def test_credential_provider_serialization_auto_init(
         q.collect()
 
 
+@pytest.mark.parametrize(
+    ("path", "storage_options", "expected"),
+    [
+        (
+            "s3://bucket/path",
+            {"aws_profile": "p", "aws_region": "eu-west-1"},
+            {
+                "aws": {
+                    "auto_init_unhandled_key": None,
+                    "profile_name": "p",
+                    "region_name": "eu-west-1",
+                    "storage_options": {"region": "eu-west-1"},
+                }
+            },
+        ),
+        (
+            "abfss://container@account.dfs.core.windows.net/path",
+            {"azure_tenant_id": "t"},
+            {"azure": {"storage_account": "account", "tenant_id": "t"}},
+        ),
+        ("gs://bucket/path", None, {"gcp": {}}),
+        ("gs://bucket/path", {"token": "A"}, {"gcp_token": {"token": "A"}}),
+    ],
+)
+def test_credential_provider_auto_init_plain_config(
+    path: str,
+    storage_options: dict[str, str] | None,
+    expected: dict[str, Any],
+) -> None:
+    import json
+
+    builder = _init_credential_provider_builder("auto", path, storage_options, "test")
+    assert builder is not None
+
+    config_json = builder._auto_init_config_json()
+    assert config_json is not None
+    assert json.loads(config_json) == expected
+
+    v = AutoInit.from_config_json(config_json)
+    assert isinstance(builder.credential_provider_init, AutoInit)
+    assert v.cls is builder.credential_provider_init.cls
+    assert v.kw == builder.credential_provider_init.kw
+    assert v.to_config_json() == config_json
+
+    # The query plan holds the plain config, not a pickled Python object.
+    serialized = pl.scan_parquet(
+        path, storage_options=storage_options, credential_provider="auto"
+    ).serialize()
+    ((kind, config),) = expected.items()
+    assert b"AutoInit" in serialized
+    assert kind.encode() in serialized
+    assert all(k.encode() in serialized for k in config)
+    assert b"CredentialProviderBuilder" not in serialized
+    assert b"cloudpickle" not in serialized
+
+
+def test_credential_provider_not_plain_config() -> None:
+    builder = _init_credential_provider_builder(
+        lambda: ({}, None), "s3://bucket/path", None, "test"
+    )
+    assert builder is not None
+    assert builder._auto_init_config_json() is None
+
+    # Arguments the Rust-side config doesn't hold must not be dropped.
+    v = AutoInit(
+        polars.io.cloud.credential_provider.CredentialProviderAWS,
+        assume_role={"RoleArn": "..."},
+    )
+    assert v.to_config_json() is None
+    assert CredentialProviderBuilder(v)._auto_init_config_json() is None
+
+
 @pytest.mark.slow
 def test_credential_provider_serialization_custom_provider() -> None:
     err_magic = "err_magic_3"

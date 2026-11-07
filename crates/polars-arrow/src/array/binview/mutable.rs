@@ -224,7 +224,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         if len <= View::MAX_INLINE_SIZE {
             self.views.push(v);
         } else {
-            // Do no mix use of push_view and push_value_ignore_validity -
+            // Do not mix use of push_view and push_value_ignore_validity -
             // it causes fragmentation.
             self.finish_in_progress();
 
@@ -297,6 +297,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     }
 
     /// Get a [`View`] for a specific set of bytes.
+    #[inline]
     pub fn push_value_into_buffer(&mut self, bytes: &[u8]) -> View {
         assert!(bytes.len() <= u32::MAX as usize);
 

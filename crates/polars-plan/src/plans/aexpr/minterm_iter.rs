@@ -4,7 +4,7 @@ use polars_utils::unitvec;
 
 use super::{AExpr, Operator};
 
-/// An iterator over all the minterms in a boolean expression boolean.
+/// An iterator over all the minterms in a boolean expression.
 ///
 /// In other words, all the terms that can `AND` together to form this expression.
 ///

@@ -44,7 +44,7 @@ pub struct FileMetadata {
     pub size: u64,
 }
 
-/// Read the row count by summing the length of the of the record batches
+/// Read the row count by summing the length of the record batches
 pub fn get_row_count<R: Read + Seek>(reader: &mut R) -> PolarsResult<i64> {
     let (_, footer_len) = read_footer_len(reader)?;
     let footer = read_footer(reader, footer_len)?;
@@ -53,7 +53,7 @@ pub fn get_row_count<R: Read + Seek>(reader: &mut R) -> PolarsResult<i64> {
     get_row_count_from_blocks(reader, &blocks)
 }
 
-///  Read the row count by summing the length of the of the record batches in blocks
+///  Read the row count by summing the length of the record batches in blocks
 pub fn get_row_count_from_blocks<R: Read + Seek>(
     reader: &mut R,
     blocks: &[polars_arrow_format::ipc::Block],

@@ -6,8 +6,8 @@ use crate::constants::{get_pl_element_name, get_pl_structfields_name};
 
 /// Applies expression simplification and type coercion during conversion to IR.
 pub struct ConversionOptimizer {
-    /// (expression, schema index, is filter predicate if in a filter)
-    scratch: Vec<(Node, usize, bool)>,
+    /// (expression, top-level expression, schema index, is filter predicate if in a filter)
+    scratch: Vec<(Node, Node, usize, bool)>,
     schemas: Vec<Schema>,
 
     simplify: Option<SimplifyExprRule>,
@@ -22,7 +22,8 @@ pub struct ConversionOptimizer {
 }
 
 struct ExtendVec<'a> {
-    out: &'a mut Vec<(Node, usize, bool)>,
+    out: &'a mut Vec<(Node, Node, usize, bool)>,
+    root: Node,
     schema_idx: usize,
     is_filter_predicate: bool,
 }
@@ -30,9 +31,25 @@ impl Extend<Node> for ExtendVec<'_> {
     fn extend<T: IntoIterator<Item = Node>>(&mut self, iter: T) {
         self.out.extend(
             iter.into_iter()
-                .map(|n| (n, self.schema_idx, self.is_filter_predicate)),
+                .map(|n| (n, self.root, self.schema_idx, self.is_filter_predicate)),
         )
     }
+}
+
+/// Names the expression that failed and the top-level expression it is part of.
+fn add_expr_context(
+    err: PolarsError,
+    node: Node,
+    root: Node,
+    expr_arena: &Arena<AExpr>,
+) -> PolarsError {
+    let display = |n| {
+        ExprIRDisplay::display_node(n, expr_arena)
+            .to_string()
+            .into()
+    };
+    err.with_expr_context(display(node))
+        .with_expr_context(display(root))
 }
 
 impl ConversionOptimizer {
@@ -66,12 +83,14 @@ impl ConversionOptimizer {
     }
 
     pub fn push_scratch(&mut self, expr: Node, expr_arena: &Arena<AExpr>) {
-        self.scratch.push((expr, 0, true));
+        let root = expr;
+        self.scratch.push((root, root, 0, true));
         // traverse all subexpressions and add to the stack
         let expr = unsafe { expr_arena.get_unchecked(expr) };
 
         expr.inputs_rev_strict(&mut ExtendVec {
             out: &mut self.scratch,
+            root,
             schema_idx: 0,
             is_filter_predicate: passes_on_filter_predicate(expr),
         });
@@ -126,7 +145,12 @@ impl ConversionOptimizer {
         };
 
         self.schemas.clear();
-        while let Some((current_expr_node, schema_idx, is_filter_predicate)) = self.scratch.pop() {
+        while let Some((current_expr_node, root, schema_idx, is_filter_predicate)) =
+            self.scratch.pop()
+        {
+            let add_context = |e, expr_arena: &Arena<AExpr>| {
+                add_expr_context(e, current_expr_node, root, expr_arena)
+            };
             ctx.is_filter_predicate = is_filter && is_filter_predicate;
             let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
 
@@ -147,15 +171,18 @@ impl ConversionOptimizer {
                 } else {
                     &self.schemas[schema_idx - 1]
                 };
-                let expr = expr_arena
+                let expr_dtype = expr_arena
                     .get(*expr)
-                    .to_dtype(&ToFieldContext::new(expr_arena, schema))?;
-
-                let element_dtype = variant.element_dtype(&expr)?;
+                    .to_dtype(&ToFieldContext::new(expr_arena, schema))
+                    .map_err(|e| add_context(e, expr_arena))?;
+                let element_dtype = variant
+                    .element_dtype(&expr_dtype)
+                    .map_err(|e| add_context(e, expr_arena))?;
                 let mut schema = schema.clone();
                 schema.insert(get_pl_element_name(), element_dtype.clone());
                 self.schemas.push(schema);
-                self.scratch.push((*evaluation, self.schemas.len(), false));
+                self.scratch
+                    .push((*evaluation, root, self.schemas.len(), false));
             }
 
             // Similar for StructEval
@@ -172,13 +199,15 @@ impl ConversionOptimizer {
                 };
                 let struct_dtype = expr_arena
                     .get(*expr)
-                    .to_dtype(&ToFieldContext::new(expr_arena, schema))?;
+                    .to_dtype(&ToFieldContext::new(expr_arena, schema))
+                    .map_err(|e| add_context(e, expr_arena))?;
 
                 let mut schema = schema.clone();
                 schema.insert(get_pl_structfields_name(), struct_dtype);
                 self.schemas.push(schema);
                 for e in evaluation {
-                    self.scratch.push((e.node(), self.schemas.len(), false))
+                    self.scratch
+                        .push((e.node(), root, self.schemas.len(), false))
                 }
             }
 
@@ -189,15 +218,17 @@ impl ConversionOptimizer {
             };
 
             if let Some(rule) = &mut self.simplify {
-                while let Some(x) =
-                    rule.optimize_expr(expr_arena, current_expr_node, schema, ctx)?
+                while let Some(x) = rule
+                    .optimize_expr(expr_arena, current_expr_node, schema, ctx)
+                    .map_err(|e| add_context(e, expr_arena))?
                 {
                     expr_arena.replace(current_expr_node, x);
                 }
             }
             if let Some(rule) = &mut self.coerce {
-                while let Some(x) =
-                    rule.optimize_expr(expr_arena, current_expr_node, schema, ctx)?
+                while let Some(x) = rule
+                    .optimize_expr(expr_arena, current_expr_node, schema, ctx)
+                    .map_err(|e| add_context(e, expr_arena))?
                 {
                     expr_arena.replace(current_expr_node, x);
                 }
@@ -207,6 +238,7 @@ impl ConversionOptimizer {
             // traverse subexpressions and add to the stack
             expr.inputs_rev_strict(&mut ExtendVec {
                 out: &mut self.scratch,
+                root,
                 schema_idx,
                 is_filter_predicate: is_filter_predicate && passes_on_filter_predicate(expr),
             });

@@ -43,7 +43,7 @@ def assert_fast_count(
     capture = capfd.readouterr().err
     project_logs = set(re.findall(r"project: \d+", capture))
 
-    # Logs current differ depending on file type / implementation dispatch
+    # Logs currently differ depending on file type / implementation dispatch
     if "FAST COUNT" in lf.explain():
         # * Should be no projections when fast count is enabled
         assert not project_logs

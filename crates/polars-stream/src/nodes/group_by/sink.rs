@@ -23,6 +23,7 @@ use crate::expression::StreamExpr;
 use crate::hash_shuffle::frame_with_keys::{
     FrameWithKeys, FrameWithKeysBuilder, SpillFrameWithKeys,
 };
+use crate::hash_shuffle::split::rows_or_all;
 use crate::morsel::{Morsel, get_ideal_morsel_size};
 
 #[cfg(debug_assertions)]
@@ -202,7 +203,7 @@ impl LocalSink {
                     num_values += size.num_values as u64;
                     bytes += size.bytes as u64;
                 },
-                None => num_fixed += 1,
+                None => num_fixed += r.num_fixed_states() as u64,
             }
         }
         let growing = &mut self.growing_states_per_input[input_idx];
@@ -338,17 +339,7 @@ impl LocalSink {
             let frame_rows = get_ideal_morsel_size();
             let builder = self.cold_row_builders[input_idx]
                 .get_or_insert_with(|| FrameWithKeysBuilder::new(df.schema().clone(), &keys));
-            let idxs = match cold_idxs {
-                Some(idxs) => idxs,
-                None => {
-                    let n = self.all_row_idxs.len();
-                    if n < df.height() {
-                        self.all_row_idxs
-                            .extend(n as IdxSize..df.height() as IdxSize);
-                    }
-                    &self.all_row_idxs[..df.height()]
-                },
-            };
+            let idxs = rows_or_all(cold_idxs, &mut self.all_row_idxs, df.height());
             unsafe { builder.gather_extend(&df, &keys, idxs) };
             if builder.len() < frame_rows {
                 return;
@@ -746,7 +737,11 @@ impl GroupBySink {
         )?;
 
         let mut stats = InputStats {
-            num_reductions: params.grouped_reductions.len() as u64,
+            states_per_group: params
+                .grouped_reductions
+                .iter()
+                .map(|r| r.num_fixed_states() as u64)
+                .sum(),
             has_growing_states: params
                 .grouped_reductions
                 .iter()

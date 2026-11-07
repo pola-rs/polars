@@ -5,16 +5,17 @@ use std::ops::ControlFlow;
 use polars_core::prelude::*;
 use polars_utils::aliases::PlHashMap;
 use sqlparser::ast::{
-    ColumnDef, ColumnOption, CreateTableOptions, DataType as SQLDataType, Expr, Function,
-    FunctionArg, FunctionArgExpr, FunctionArguments, HiveDistributionStyle, Ident, ObjectName,
-    ObjectNamePart, Query, SetExpr, SqlOption, Statement, TableFactor, UnaryOperator, Value,
-    ValueWithSpan, Visitor, VisitorMut, With,
+    BinaryOperator, ColumnDef, ColumnOption, CreateTableOptions, DataType as SQLDataType, Expr,
+    Function, FunctionArg, FunctionArgExpr, FunctionArguments, HiveDistributionStyle, Ident,
+    ObjectName, ObjectNamePart, Query, SetExpr, SqlOption, Statement, TableFactor, UnaryOperator,
+    Value, ValueWithSpan, Visitor, VisitorMut, With,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 use sqlparser::tokenizer::{Location, Span};
 
 use crate::dyn_visit;
+use crate::sql_visitors::expr_references_any_column;
 use crate::types::map_sql_dtype_to_polars;
 
 /// A table of an attached catalog that a statement reads.
@@ -35,10 +36,10 @@ pub struct CatalogNamespace {
     pub namespace: Vec<String>,
 }
 
-/// A statement changing a catalog table, for the caller to perform (see
-/// [`SQLContext::catalog_ddl`](crate::SQLContext::catalog_ddl)).
+/// A DDL or DML statement on a catalog table or schema, for the caller to perform (see
+/// [`SQLContext::catalog_statement`](crate::SQLContext::catalog_statement)).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum CatalogDdl {
+pub enum CatalogStatement {
     /// `DROP TABLE [IF EXISTS] <name> [PURGE]`.
     DropTable {
         /// The table name as the statement wrote it.
@@ -104,6 +105,50 @@ pub enum CatalogDdl {
         /// `OVERWRITE`: replace the table's rows.
         overwrite: bool,
     },
+    /// `DELETE FROM <name> [WHERE <condition>]`.
+    Delete {
+        /// The table name as the statement wrote it.
+        name: String,
+        /// The catalog table to delete rows from.
+        table: CatalogTable,
+        /// The `WHERE` condition, as SQL, for messages.
+        condition: Option<String>,
+        /// Whether the condition has a subquery, which a catalog filter can't express.
+        subquery: bool,
+        /// The first part of the condition a catalog filter likely can't express, for messages.
+        hint_unsupported_part: Option<String>,
+    },
+    /// `UPDATE <name> SET <column> = <value>, ... [WHERE <condition>]`.
+    Update {
+        /// The table name as the statement wrote it.
+        name: String,
+        /// The catalog table to update.
+        table: CatalogTable,
+        /// The `SET` columns, in the order written.
+        columns: Vec<String>,
+        /// The `WHERE` condition, as SQL, for messages.
+        condition: Option<String>,
+        /// Whether the condition has a subquery, which a catalog filter can't express.
+        subquery: bool,
+        /// The first part of the condition a catalog filter likely can't express, for messages.
+        hint_unsupported_part: Option<String>,
+    },
+    /// `MERGE INTO <name> USING <source> ON <condition> WHEN ...`.
+    Merge {
+        /// The table name as the statement wrote it.
+        name: String,
+        /// The catalog table to merge into.
+        table: CatalogTable,
+    },
+    /// `TRUNCATE [TABLE] [IF EXISTS] <name>`.
+    Truncate {
+        /// The table name as the statement wrote it.
+        name: String,
+        /// The catalog table to empty.
+        table: CatalogTable,
+        /// `IF EXISTS`.
+        if_exists: bool,
+    },
     /// `ALTER TABLE [IF EXISTS] <name> <operation>`.
     AlterTable {
         /// The table name as the statement wrote it.
@@ -115,6 +160,38 @@ pub enum CatalogDdl {
         /// The change, one per statement.
         operation: CatalogAlter,
     },
+}
+
+/// The source of a catalog `MERGE`, planned by [`crate::SQLContext::catalog_merge_source`].
+pub struct MergeSourcePlan {
+    /// The `USING` relation, with the columns the statement reads.
+    pub source: polars_lazy::frame::LazyFrame,
+    /// Per key of `ON` (`target_column = source_expression`), the target column and the key
+    /// over the source's columns.
+    pub keys: Vec<(String, polars_plan::dsl::Expr)>,
+}
+
+/// A planned `WHEN` clause of a catalog `MERGE`.
+pub struct MergeClausePlan {
+    /// `update`, `delete`, `nothing` or `insert`.
+    pub kind: &'static str,
+    /// The clause's number in the statement, from 1.
+    pub number: usize,
+    /// Per target column written, its value over the columns of the plan's frame.
+    pub columns: Vec<(String, polars_plan::dsl::Expr)>,
+}
+
+/// A catalog `MERGE`, planned by [`crate::SQLContext::catalog_merge_plan`].
+pub struct MergePlan {
+    /// The pairs of a target and a source row matching `ON`, with the index of the matched
+    /// clause that applies (null if none does).
+    pub pairs: polars_lazy::frame::LazyFrame,
+    /// The source rows, with the index of the not-matched clause that applies (null if none).
+    pub inserts: polars_lazy::frame::LazyFrame,
+    /// The `WHEN MATCHED` clauses, in order.
+    pub matched: Vec<MergeClausePlan>,
+    /// The `WHEN NOT MATCHED` clauses, in order.
+    pub not_matched: Vec<MergeClausePlan>,
 }
 
 /// A change to a catalog table's top-level columns or properties, by an `ALTER TABLE`.
@@ -1018,4 +1095,154 @@ pub(crate) fn display_name(parts: &[String]) -> String {
         })
         .collect();
     parts.join(".")
+}
+
+/// The first part of a `DELETE` condition that a catalog filter can't express, described for a
+/// message. Only a hint: converting the planned predicate decides.
+pub(crate) fn hint_unsupported_part(expr: &Expr) -> Option<String> {
+    use BinaryOperator as Op;
+    if !expr_references_any_column(expr) {
+        return None;
+    }
+    match expr {
+        Expr::Nested(e)
+        | Expr::UnaryOp {
+            op: UnaryOperator::Not,
+            expr: e,
+        } => hint_unsupported_part(e),
+        Expr::BinaryOp {
+            left,
+            op: Op::And | Op::Or,
+            right,
+        } => hint_unsupported_part(left).or_else(|| hint_unsupported_part(right)),
+        Expr::BinaryOp {
+            left,
+            op: Op::Eq | Op::NotEq | Op::Lt | Op::LtEq | Op::Gt | Op::GtEq,
+            right,
+        } => match expr_references_any_column(left) && expr_references_any_column(right) {
+            true => Some(format!("comparison of two columns `{expr}`")),
+            false => unsupported_operand(left)
+                .or_else(|| unsupported_operand(right))
+                .or_else(|| {
+                    unsupported_string(left, false).or_else(|| unsupported_string(right, false))
+                }),
+        },
+        Expr::IsDistinctFrom(left, right) | Expr::IsNotDistinctFrom(left, right) => {
+            match expr_references_any_column(left) && expr_references_any_column(right) {
+                true => Some(format!("comparison of two columns `{expr}`")),
+                false => unsupported_operand(left)
+                    .or_else(|| unsupported_operand(right))
+                    .or_else(|| {
+                        unsupported_string(left, false).or_else(|| unsupported_string(right, false))
+                    }),
+            }
+        },
+        Expr::IsNull(e)
+        | Expr::IsNotNull(e)
+        | Expr::IsTrue(e)
+        | Expr::IsNotTrue(e)
+        | Expr::IsFalse(e)
+        | Expr::IsNotFalse(e) => unsupported_operand(e),
+        Expr::InList { expr: e, list, .. } => unsupported_operand(e).or_else(|| {
+            match list.iter().any(|item| {
+                matches!(
+                    item,
+                    Expr::Value(ValueWithSpan {
+                        value: Value::Null,
+                        ..
+                    })
+                )
+            }) {
+                true => Some("NULL in the IN list".to_string()),
+                false => list
+                    .iter()
+                    .find_map(|item| column_in_bound(item, expr))
+                    .or_else(|| list.iter().find_map(|item| unsupported_string(item, false))),
+            }
+        }),
+        Expr::Between {
+            expr: e, low, high, ..
+        } => unsupported_operand(e)
+            .or_else(|| column_in_bound(low, expr))
+            .or_else(|| column_in_bound(high, expr))
+            .or_else(|| unsupported_string(low, false))
+            .or_else(|| unsupported_string(high, false)),
+        Expr::Like {
+            any,
+            expr: e,
+            pattern,
+            escape_char,
+            ..
+        } => unsupported_operand(e).or_else(|| {
+            let prefix = !any
+                && escape_char.is_none()
+                && matches!(pattern.as_ref(), Expr::Value(ValueWithSpan {
+                    value: Value::SingleQuotedString(p), ..
+                }) if is_prefix_pattern(p));
+            match prefix {
+                true => unsupported_string(pattern, true),
+                false => Some(format!("LIKE pattern {pattern} (only 'prefix%')")),
+            }
+        }),
+        Expr::ILike { .. } => Some("ILIKE".to_string()),
+        Expr::Identifier(_) | Expr::CompoundIdentifier(_) => None,
+        _ => Some(describe_operand(expr)),
+    }
+}
+
+fn unsupported_operand(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Identifier(_) | Expr::CompoundIdentifier(_) => None,
+        Expr::Nested(e) => unsupported_operand(e),
+        _ if !expr_references_any_column(expr) => None,
+        _ => Some(describe_operand(expr)),
+    }
+}
+
+/// With `like`, a trailing '%' is the pattern's wildcard, not part of the constant.
+fn unsupported_string(expr: &Expr, like: bool) -> Option<String> {
+    let Expr::Value(ValueWithSpan {
+        value: Value::SingleQuotedString(s),
+        ..
+    }) = expr
+    else {
+        return None;
+    };
+    let text = match like {
+        true => s.strip_suffix('%').unwrap_or(s),
+        false => s,
+    };
+    // as `sanitize` in polars-plan's pyarrow predicates
+    let supported = |c: char| c.is_alphanumeric() || matches!(c, ' ' | '-' | '_');
+    (!text.chars().all(supported)).then(|| {
+        format!("string constant {expr} (only letters, digits, space, '-' and '_' for now)")
+    })
+}
+
+fn column_in_bound(bound: &Expr, expr: &Expr) -> Option<String> {
+    expr_references_any_column(bound).then(|| format!("comparison of two columns `{expr}`"))
+}
+
+fn describe_operand(expr: &Expr) -> String {
+    use BinaryOperator as Op;
+    match expr {
+        Expr::Function(_) => format!("function `{expr}`"),
+        Expr::Cast { .. } => format!("cast `{expr}`"),
+        Expr::BinaryOp {
+            op: Op::Plus | Op::Minus | Op::Multiply | Op::Divide | Op::Modulo,
+            ..
+        }
+        | Expr::UnaryOp {
+            op: UnaryOperator::Minus | UnaryOperator::Plus,
+            ..
+        } => format!("arithmetic `{expr}`"),
+        _ => format!("expression `{expr}`"),
+    }
+}
+
+fn is_prefix_pattern(pattern: &str) -> bool {
+    match pattern.strip_suffix('%') {
+        Some(prefix) => !prefix.is_empty() && !prefix.contains(['%', '_']),
+        None => !pattern.contains(['%', '_']),
+    }
 }

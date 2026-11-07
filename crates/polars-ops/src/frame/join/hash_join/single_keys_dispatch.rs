@@ -490,7 +490,7 @@ where
         Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
 {
     let n_threads = RAYON.current_num_threads();
-    let (a, b, swapped) = det_hash_prone_order!(left, right);
+    let (a, b, swapped) = det_hash_probe_order!(left, right);
     let splitted_a = split(a, n_threads);
     let splitted_b = split(b, n_threads);
     let splitted_a = get_arrays(&splitted_a);
@@ -663,7 +663,7 @@ where
     T::Native: TotalHash + TotalEq + ToTotalOrd,
     <T::Native as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + IsNull,
 {
-    let (a, b, swapped) = det_hash_prone_order!(ca_in, other);
+    let (a, b, swapped) = det_hash_probe_order!(ca_in, other);
 
     let n_partitions = _set_partition_size();
     let splitted_a = split(a, n_partitions);
@@ -712,7 +712,7 @@ where
     for<'b> <T::Array as StaticArray>::ValueT<'b>: AsRef<[u8]>,
 {
     let (a, b, swapped) = if build_shortest_table {
-        det_hash_prone_order!(ca, other)
+        det_hash_probe_order!(ca, other)
     } else {
         (ca, other, false)
     };

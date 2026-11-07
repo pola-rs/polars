@@ -257,7 +257,7 @@ pub enum AExpr {
         /// Function arguments
         /// Some functions rely on aliases,
         /// for instance assignment of struct fields.
-        /// Therefor we need [`ExprIr`].
+        /// Therefore we need [`ExprIR`].
         input: Vec<ExprIR>,
         /// function to apply
         function: IRFunctionExpr,
@@ -268,6 +268,8 @@ pub enum AExpr {
         partition_by: Vec<Node>,
         order_by: Option<(Node, SortOptions)>,
         mapping: WindowMapping,
+        /// See [`Expr::Over`].
+        may_reorder: bool,
     },
     #[cfg(feature = "dynamic_group_by")]
     Rolling {
@@ -354,6 +356,23 @@ impl AExpr {
                 options: CastOptions::Strict,
             } => !matches!(arena.get(*expr), AExpr::Literal(_)),
             _ => false,
+        }
+    }
+
+    /// Like `is_fallible_top_level`, but an expression that can only fail on overflow is not
+    /// fallible.
+    pub fn is_fallible_top_level_ignoring_overflow(&self, arena: &Arena<AExpr>) -> bool {
+        match self {
+            #[cfg(feature = "dtype-decimal")]
+            AExpr::Function {
+                function:
+                    IRFunctionExpr::DecimalArith {
+                        op: DecimalArithOp::Mul,
+                        ..
+                    },
+                ..
+            } => false,
+            _ => self.is_fallible_top_level(arena),
         }
     }
 }

@@ -559,7 +559,7 @@ def test_categorical_lexical_sort_2732() -> None:
 def test_enum_scan_21564() -> None:
     s = pl.Series("a", ["A"], pl.Enum(["A"]))
 
-    # DataFrame with a an enum field
+    # DataFrame with an enum field
     f = io.BytesIO()
     s.to_frame().write_ipc(f)
 

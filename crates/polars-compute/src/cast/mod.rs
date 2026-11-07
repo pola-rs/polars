@@ -37,7 +37,7 @@ pub use utf8_to::*;
 pub struct CastOptionsImpl {
     /// default to false
     /// whether an overflowing cast should be converted to `None` (default), or be wrapped (i.e. `256i16 as u8 = 0` vectorized).
-    /// Settings this to `true` is 5-6x faster for numeric types.
+    /// Setting this to `true` is 5-6x faster for numeric types.
     pub wrapped: bool,
     /// default to false
     /// whether to cast to an integer at the best-effort
