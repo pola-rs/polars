@@ -23,6 +23,7 @@ polars-descriptions = { workspace = true }
 polars-error = { workspace = true }
 polars-ffi = { workspace = true, optional = true }
 polars-io = { workspace = true, features = ["lazy", "csv", "async"] }
+polars-io-ext-ffi = { workspace = true, optional = true, features = ["lazyframe_resolver"] }
 polars-json = { workspace = true, optional = true }
 polars-parquet = { workspace = true, optional = true }
 polars-row = { workspace = true }
@@ -87,6 +88,8 @@ cloud = ["polars-io/cloud"]
 ipc = ["polars-io/ipc"]
 json = ["polars-io/json", "polars-json"]
 scan_lines = []
+# Host side of the generic I/O plugin contracts (`polars_io_ext_ffi`).
+io_plugin_ffi = ["polars-io/io_plugin_ffi", "dep:serde_json", "dep:polars-io-ext-ffi"]
 csv = ["polars-io/csv"]
 temporal = [
   "chrono",

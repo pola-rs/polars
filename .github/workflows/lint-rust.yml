@@ -13,6 +13,7 @@ on:
       - deny.toml
       - Cargo.toml
       - .github/workflows/lint-rust.yml
+      - .github/actions/clone-polars-database/**
   push:
     branches:
       - main
@@ -28,6 +29,7 @@ on:
       - deny.toml
       - Cargo.toml
       - .github/workflows/lint-rust.yml
+      - .github/actions/clone-polars-database/**
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -45,18 +47,22 @@ jobs:
       - name: Clone polars-iceberg
         uses: ./.github/actions/clone-polars-iceberg
 
+      - name: Clone polars-database
+        uses: ./.github/actions/clone-polars-database
+
       - name: Set up Rust
         run: rustup component add clippy
 
-      # Add polars-iceberg to Cargo.lock so `--locked` passes. `--workspace` only touches workspace
-      # members; fail if any existing lock entry changed (i.e. anything other than an addition).
-      - name: Add polars-iceberg to Cargo.lock
+      # Add polars-iceberg and polars-database to Cargo.lock so `--locked` passes. `--workspace` only
+      # touches workspace members; fail if any existing lock entry changed (i.e. anything other than
+      # an addition).
+      - name: Add polars-iceberg and polars-database to Cargo.lock
         run: |
           cargo update --workspace
           git diff --stat Cargo.lock
           if git diff -U0 Cargo.lock | grep -q '^-[^-]'; then
             git diff Cargo.lock
-            echo "::error::Updating Cargo.lock for polars-iceberg changed existing entries"
+            echo "::error::Updating Cargo.lock for polars-iceberg and polars-database changed existing entries"
             exit 1
           fi
 
@@ -98,6 +104,9 @@ jobs:
 
       - name: Clone polars-iceberg
         uses: ./.github/actions/clone-polars-iceberg
+
+      - name: Clone polars-database
+        uses: ./.github/actions/clone-polars-database
 
       - name: Set up Rust
         run: rustup component add rustfmt

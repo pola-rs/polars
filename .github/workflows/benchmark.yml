@@ -7,6 +7,7 @@ on:
       - Cargo.toml
       - py-polars/tests/benchmark/**
       - .github/workflows/benchmark.yml
+      - .github/actions/clone-polars-database/**
   push:
     branches:
       - main
@@ -16,6 +17,7 @@ on:
       - Cargo.toml
       - py-polars/tests/benchmark/**
       - .github/workflows/benchmark.yml
+      - .github/actions/clone-polars-database/**
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -32,6 +34,9 @@ jobs:
 
       - name: Clone polars-iceberg
         uses: ./.github/actions/clone-polars-iceberg
+
+      - name: Clone polars-database
+        uses: ./.github/actions/clone-polars-database
 
       - name: Free some disk space (remove unused packages)
         uses: jlumbroso/free-disk-space@v1.3.1
@@ -142,6 +147,14 @@ jobs:
           maturin develop --uv --manifest-path ../crates/polars-iceberg/Cargo.toml
           # The plugin tests skip when the module is missing; fail here instead.
           python -c 'import polars_iceberg'
+
+      - name: Install polars_database plugin
+        working-directory: py-polars
+        run: |
+          # The venv is created by uv and has no pip.
+          maturin develop --uv --manifest-path ../crates/polars-database/Cargo.toml
+          # The plugin tests skip when the module is missing; fail here instead.
+          python -c 'import polars_database'
 
       - name: Run non-benchmark tests
         working-directory: py-polars

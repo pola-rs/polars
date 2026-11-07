@@ -25,6 +25,8 @@ typ = "typ"
 aimd = "aimd"
 # `flate2` crate.
 flate = "flate"
+# prefix of authenticate/authentication (substring match)
+authenticat = "authenticat"
 
 [default.extend-identifiers]
 AKS = "AKS"

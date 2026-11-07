@@ -6,8 +6,8 @@ use polars_utils::python_function::PythonObject;
 use pyo3::prelude::*;
 
 use crate::conversion::Wrap;
-use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
+use crate::utils::EnterPolarsExt;
 use crate::{PyExpr, PyLazyFrame};
 
 #[pyclass(frozen)]
@@ -45,13 +45,20 @@ impl PyLazyGroupBy {
     }
 
     #[pyo3(signature = (lambda, schema))]
-    fn map_groups(&self, lambda: Py<PyAny>, schema: Option<Wrap<Schema>>) -> PyResult<PyLazyFrame> {
+    fn map_groups(
+        &self,
+        py: Python<'_>,
+        lambda: Py<PyAny>,
+        schema: Option<Wrap<Schema>>,
+    ) -> PyResult<PyLazyFrame> {
         let lgb = self.lgb.clone().unwrap();
         let schema = match schema {
             Some(schema) => Arc::new(schema.0),
-            None => LazyFrame::from(lgb.logical_plan.clone())
-                .collect_schema()
-                .map_err(PyPolarsErr::from)?,
+            // Without the GIL: a source's schema may come from Python (an I/O plugin).
+            None => {
+                let mut lf = LazyFrame::from(lgb.logical_plan.clone());
+                py.enter_polars(move || lf.collect_schema())?
+            },
         };
 
         let function = PythonObject(lambda);

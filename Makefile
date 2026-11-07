@@ -159,6 +159,10 @@ build-dist-release: update-cargo-env  ## Compile and install Python Polars binar
 build-polars-iceberg: .venv  ## Compile and install the `polars_iceberg` I/O plugin (crates/polars-iceberg)
 	@$(MAKE) -s -C crates $@ VENV=$(abspath $(VENV))
 
+.PHONY: build-polars-database
+build-polars-database: .venv  ## Compile and install the `polars_database` I/O plugin (crates/polars-database)
+	@$(MAKE) -s -C crates $@ VENV=$(abspath $(VENV))
+
 .PHONY: check
 check: update-cargo-env ## Run cargo check with all features
 	cargo check --workspace --all-targets --all-features

@@ -17,6 +17,7 @@ use polars_plan::dsl::{MissingColumnsPolicy, ScanSource};
 use polars_utils::IdxSize;
 use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
+use tokio::sync::Semaphore;
 
 use crate::nodes::io_sources::multi_scan::components;
 use crate::nodes::io_sources::multi_scan::components::apply_extra_ops::ApplyExtraOps;
@@ -43,6 +44,9 @@ pub struct ReaderStarter {
     pub max_concurrent_scans: usize,
     pub read_bytes_limit: ReadBytesLimit,
     pub unordered_files: Option<UnorderedFiles>,
+    /// In ordered mode, when the reader caps its concurrency: a slot per started reader,
+    /// held until it is joined.
+    pub ordered_reader_slots: Option<Arc<Semaphore>>,
     pub skip_files_mask: Option<SkipFilesMask>,
     pub extra_ops: ExtraOperations,
     pub constant_args: StartReaderArgsConstant,
@@ -67,6 +71,7 @@ impl ReaderStarter {
             max_concurrent_scans,
             read_bytes_limit,
             unordered_files,
+            ordered_reader_slots,
             skip_files_mask,
             extra_ops,
             constant_args,
@@ -334,9 +339,10 @@ impl ReaderStarter {
                 ..Default::default()
             };
 
-            let slot = match &unordered_files {
-                Some(u) => Some(u.reader_slots.clone().acquire_owned().await.unwrap()),
-                None => None,
+            let slot = match (&unordered_files, &ordered_reader_slots) {
+                (Some(u), _) => Some(u.reader_slots.clone().acquire_owned().await.unwrap()),
+                (None, Some(slots)) => Some(slots.clone().acquire_owned().await.unwrap()),
+                (None, None) => None,
             };
             let (read_bytes, max_concurrent_scans_this_file) = match reader.local_read_size() {
                 Some(bytes) => {

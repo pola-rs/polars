@@ -15,7 +15,7 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars._typing import JoinStrategy, PolarsIntegerType
+    from polars._typing import EngineType, JoinStrategy, PolarsIntegerType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -509,3 +509,25 @@ def test_streaming_int_range_over_length(
 
     expected = pl.DataFrame({"literal": range(height)}, schema={"literal": dtype})
     assert_frame_equal(q.collect(), expected)
+
+
+def test_streaming_error_does_not_panic_on_teardown(tmp_path: Path, capfd: Any) -> None:
+    # Leaving the task scope at the first error used to cancel a task while a
+    # sibling was joining it: "joined on cancelled task", printed by the panic
+    # hook (caught, the right error was still raised).
+    path = tmp_path / "bad.csv"
+    path.write_text("a\n" + "1\n" * 200_000 + "x\n" + "1\n" * 200_000)
+    lf = pl.scan_csv(path, schema={"a": pl.Int64}).select(pl.col("a").sum())
+    for _ in range(50):
+        with pytest.raises(pl.exceptions.PolarsError):
+            lf.collect(engine="streaming")
+    assert "panicked" not in capfd.readouterr().err
+
+
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+def test_streaming_row_index_overflow_is_an_error(engine: EngineType) -> None:
+    # panicked in the streaming engine; the in-memory engine raised
+    offset = 2**32 - 2 if pl.get_index_type() == pl.UInt32 else 2**64 - 2
+    lf = pl.LazyFrame({"a": [1, 2, 3]}).with_row_index(offset=offset)
+    with pytest.raises(pl.exceptions.ComputeError, match="overflows"):
+        lf.collect(engine=engine)

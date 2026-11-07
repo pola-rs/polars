@@ -327,14 +327,28 @@ jobs:
         id: version
         uses: ./.github/actions/polars-iceberg-version
 
-  # Full Python test suite, with the polars-iceberg plugin installed from PyPI at the version
-  # required in pyproject.toml.
+  polars-database-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
+
+      - name: Get polars-database version
+        id: version
+        uses: ./.github/actions/polars-database-version
+
+  # Full Python test suite, with the polars-iceberg and polars-database plugins installed from PyPI
+  # at the versions required in pyproject.toml.
   test-python:
-    needs: [polars-iceberg-version]
+    needs: [polars-iceberg-version, polars-database-version]
     uses: ./.github/workflows/test-python.yml
     with:
       sha: ${{ inputs.sha }}
       polars-iceberg-version: ${{ needs.polars-iceberg-version.outputs.version }}
+      polars-database-version: ${{ needs.polars-database-version.outputs.version }}
 
   publish-to-pypi:
     needs: [base-package, create-sdist, build-wheels, test-python]
