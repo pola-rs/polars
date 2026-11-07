@@ -1105,7 +1105,12 @@ def test_compat_level(plmonkeypatch: PlMonkeyPatch) -> None:
 
 @pytest.mark.parametrize(
     "arrow_dtype",
-    [pa.decimal32(9, 7), pa.decimal64(18, 8), pa.decimal128(38, 8)],
+    [
+        pa.decimal32(9, 7),
+        pa.decimal64(18, 8),
+        pa.decimal128(38, 8),
+        pa.decimal256(38, 8),
+    ],
 )
 def test_pycapsule_stream_decimal_29651(arrow_dtype: pa.DataType) -> None:
     values = [Decimal("24.5790000"), Decimal("-1.2345678"), None]
@@ -1124,36 +1129,80 @@ def test_pycapsule_stream_decimal_29651(arrow_dtype: pa.DataType) -> None:
     assert_frame_equal(df, expected)
 
 
-def test_from_arrow_nested_decimal_29651() -> None:
+@pytest.mark.parametrize(
+    "arrow_dtype",
+    [
+        pa.decimal32(5, 2),
+        pa.decimal64(12, 2),
+        pa.decimal128(25, 2),
+        pa.decimal256(25, 2),
+    ],
+)
+def test_from_arrow_nested_decimal_29651(arrow_dtype: pa.DataType) -> None:
+    a, b = Decimal("-2.50"), Decimal("1.25")
     table = pa.table(
         {
-            "l": pa.array(
-                [[Decimal("1.5"), None], None, [Decimal("-2.25")], []],
-                pa.list_(pa.decimal64(10, 2)),
+            "scalar": pa.array([a, b, None], arrow_dtype),
+            "dictionary": pa.DictionaryArray.from_arrays(
+                pa.array([1, None, 0], pa.int8()), pa.array([a, b], arrow_dtype)
             ),
-            "s": pa.array(
-                [{"d": Decimal("3.125")}, {"d": Decimal("-1.5")}, {"d": None}, None],
-                pa.struct([("d", pa.decimal32(5, 3))]),
+            "list": pa.array([[a, None], None, []], pa.list_(arrow_dtype)),
+            "array": pa.array([[a, None], None, [b, a]], pa.list_(arrow_dtype, 2)),
+            "struct": pa.array(
+                [{"x": a}, {"x": None}, None], pa.struct([("x", arrow_dtype)])
+            ),
+            "map": pa.array([[("k", a)], None, []], pa.map_(pa.string(), arrow_dtype)),
+            "list_struct": pa.array(
+                [[{"x": a}, {"x": None}], None, []],
+                pa.list_(pa.struct([("x", arrow_dtype)])),
             ),
         }
     )
+    dtype = pl.Decimal(arrow_dtype.precision, arrow_dtype.scale)
     df = pl.DataFrame(table)
-    expected = pl.DataFrame(
-        {
-            "l": [[Decimal("1.50"), None], None, [Decimal("-2.25")], []],
-            "s": [
-                {"d": Decimal("3.125")},
-                {"d": Decimal("-1.500")},
-                {"d": None},
-                None,
-            ],
-        },
-        schema={
-            "l": pl.List(pl.Decimal(10, 2)),
-            "s": pl.Struct({"d": pl.Decimal(5, 3)}),
-        },
-    )
-    assert_frame_equal(df, expected)
+    assert df.schema == {
+        "scalar": dtype,
+        "dictionary": dtype,
+        "list": pl.List(dtype),
+        "array": pl.Array(dtype, 2),
+        "struct": pl.Struct({"x": dtype}),
+        "map": pl.Map(pl.String, dtype),
+        "list_struct": pl.List(pl.Struct({"x": dtype})),
+    }
+    expected = table.to_pydict()
+    expected["map"] = [None if row is None else dict(row) for row in expected["map"]]
+    assert df.to_dict(as_series=False) == expected
+
+
+def test_from_arrow_decimal256_excess_precision() -> None:
+    values = pa.array([Decimal("1e38")], pa.decimal256(39, 0))
+    with pytest.raises(
+        InvalidOperationError,
+        match="precision must be between 1 and 38",
+    ):
+        pl.from_arrow(values)
+
+
+@pytest.mark.parametrize("value", [2**200, 10**38, -(10**38)])
+@pytest.mark.parametrize(
+    "validity",
+    [
+        [True, False, True],  # out-of-range values under nulls are ignored
+        [True, True, False],
+        [True, True, True],  # imported without a validity bitmap
+    ],
+)
+def test_from_arrow_decimal256_out_of_range(value: int, validity: list[bool]) -> None:
+    data = b"".join(v.to_bytes(32, "little", signed=True) for v in (1, value, -1))
+    buffers = [pa.array(validity).buffers()[1], pa.py_buffer(data)]
+    array = pa.Array.from_buffers(pa.decimal256(38, 0), 3, buffers)
+    if validity[1]:
+        with pytest.raises(
+            ComputeError, match=r"Decimal256 value doesn't fit Decimal\(38, 0\)"
+        ):
+            pl.Series(array)
+    else:
+        assert pl.Series(array).to_list() == [Decimal(1), None, Decimal(-1)]
 
 
 ARRAY_TEST_DATA = [[-250, 125], None, [125, None], [125, -250]]
