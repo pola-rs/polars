@@ -32,6 +32,7 @@ mod window_frames;
 
 pub use catalog::{
     CatalogAlter, CatalogNamespace, CatalogPartitionField, CatalogStatement, CatalogTable,
+    MergeClausePlan, MergePlan, MergeSourcePlan,
 };
 pub use context::{SQLContext, extract_table_identifiers};
 pub use resolver::register_sql_resolver;
