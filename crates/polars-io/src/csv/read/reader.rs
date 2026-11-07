@@ -98,6 +98,7 @@ impl CsvReadOptions {
 
 impl<R: MmapBytesReader> CsvReader<R> {
     fn core_reader(&mut self) -> PolarsResult<CoreReader<'_>> {
+        self.options.apply_column_names_overwrite_to_schema()?;
         let reader_bytes = get_reader_bytes(&mut self.reader)?;
 
         let parse_options = self.options.get_parse_options();
@@ -116,6 +117,7 @@ impl<R: MmapBytesReader> CsvReader<R> {
             self.options.columns.clone(),
             self.options.n_threads,
             self.options.schema_overwrite.clone(),
+            self.options.column_names_overwrite.clone(),
             self.options.dtype_overwrite.clone(),
             self.predicate.clone(),
             self.options.fields_to_cast.clone(),
