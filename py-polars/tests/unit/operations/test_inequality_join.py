@@ -1427,6 +1427,29 @@ def test_outer_join_where_pushes_non_preserved_input_filter(
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("how", ["left", "right", "full"])
+@pytest.mark.parametrize("sides", ["left", "right", "both"])
+def test_outer_join_where_key_with_one_input_condition(
+    engine: EngineType, how: Literal["left", "right", "full"], sides: str
+) -> None:
+    left = pl.LazyFrame({"k": [1, 2, 2, 3, None], "v": [5, None, 0, 7, 9]})
+    right = pl.LazyFrame({"k": [1, 2, 3, 3, None], "v": [0, 1, None, 4, 2]})
+    predicates = [pl.col("k") == pl.col("k_right")]
+    if sides != "right":
+        predicates.append(pl.col("v") > 1)
+    if sides != "left":
+        predicates.append(pl.col("v_right") < 3)
+    query = left.join_where(right, *predicates, how=how)
+    disabled = pl.QueryOptFlags(predicate_pushdown=False)
+    assert_frame_equal(
+        query.collect(engine=engine),
+        query.collect(engine=engine, optimizations=disabled),
+        check_row_order=False,
+    )
+    assert "NESTED LOOP JOIN" not in query.explain()
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 @pytest.mark.parametrize("how", ["left", "right"])
 def test_outer_join_where_pushed_condition_downgrades_to_cross(
     engine: EngineType, how: Literal["left", "right"]

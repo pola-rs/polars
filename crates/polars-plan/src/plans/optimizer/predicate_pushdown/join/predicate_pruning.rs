@@ -1347,7 +1347,7 @@ fn try_rewrite_outer_equi_join(
     let mut remaining = init_indexmap(None);
     let mut dedup = PredicateDedupState::default();
     insert_predicate_dedup(&mut remaining, predicate, expr_arena, &mut dedup);
-    let keys = take_equi_join_keys(
+    let mut keys = take_equi_join_keys(
         &mut remaining,
         expr_arena,
         schema_left,
@@ -1355,8 +1355,56 @@ fn try_rewrite_outer_equi_join(
         output_schema,
         &suffix,
     )?;
-    if !remaining.is_empty() || keys.is_empty() {
+    if keys.is_empty() {
         return Ok(false);
+    }
+    if !remaining.is_empty() {
+        // A condition on one input gives a null key to the rows where it does not hold, and a
+        // null key matches nothing.
+        if options.args.nulls_equal {
+            return Ok(false);
+        }
+        let mut left_mask = None;
+        let mut right_mask = None;
+        let conditions: Vec<Node> = remaining
+            .values()
+            .flat_map(|p| MintermIter::new(p.node(), expr_arena))
+            .collect();
+        for node in conditions {
+            if !is_elementwise_rec(node, expr_arena) {
+                return Ok(false);
+            }
+            let origin = ExprOrigin::get_expr_origin(
+                node,
+                expr_arena,
+                schema_left,
+                schema_right,
+                &suffix,
+                None,
+            )?;
+            let mask = match origin {
+                ExprOrigin::Left => &mut left_mask,
+                ExprOrigin::Right => &mut right_mask,
+                _ => return Ok(false),
+            };
+            *mask = Some(match mask.take() {
+                Some(m) => AExprBuilder::new_from_node(m).and(node, expr_arena).node(),
+                None => node,
+            });
+        }
+        let key = &mut keys[0];
+        for (mask, key) in [
+            (left_mask, &mut key.input_lhs),
+            (right_mask, &mut key.input_rhs),
+        ] {
+            if let Some(mask) = mask {
+                let dtype = expr_arena
+                    .get(*key)
+                    .to_dtype(&ToFieldContext::new(expr_arena, output_schema))?;
+                let null = AExprBuilder::lit_scalar(Scalar::null(dtype), expr_arena);
+                *key = AExprBuilder::when_then_otherwise(mask, *key, null, expr_arena).node();
+            }
+        }
     }
     let on = push_equi_join_keys(keys, expr_arena, schema_right, &suffix, left_on, right_on);
     Arc::make_mut(options).options = JoinTypeOptionsIR::Equi {
