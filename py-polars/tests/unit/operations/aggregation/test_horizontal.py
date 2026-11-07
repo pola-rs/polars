@@ -9,17 +9,24 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import ComputeError, InvalidOperationError, PolarsError
+from polars.exceptions import (
+    ComputeError,
+    InvalidOperationError,
+    PolarsError,
+    SchemaError,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from pathlib import Path
 
     from polars._typing import PolarsDataType
 
 
 def test_any_expr(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.select(pl.any_horizontal("A", "B")).to_series()[0] is True
+    out = fruits_cars.select(pl.any_horizontal(pl.col("A") > 4, pl.col("B") > 4))
+    assert out.to_series()[0] is True
 
 
 def test_all_any_horizontally() -> None:
@@ -70,7 +77,7 @@ def test_empty_all_any_horizontally() -> None:
 
 
 def test_all_any_single_input() -> None:
-    df = pl.DataFrame({"a": [0, 1, None]})
+    df = pl.DataFrame({"a": [False, True, None]})
     out = df.select(
         all=pl.all_horizontal(pl.col("a")), any=pl.any_horizontal(pl.col("a"))
     )
@@ -438,8 +445,12 @@ def test_horizontal_expr_use_left_name() -> None:
     assert df.select(pl.sum_horizontal("a", "b")).columns == ["a"]
     assert df.select(pl.max_horizontal("*")).columns == ["a"]
     assert df.select(pl.min_horizontal("b", "a")).columns == ["b"]
-    assert df.select(pl.any_horizontal("b", "a")).columns == ["b"]
-    assert df.select(pl.all_horizontal("a", "b")).columns == ["a"]
+    assert df.select(pl.any_horizontal(pl.col("b") > 0, pl.col("a") > 0)).columns == [
+        "b"
+    ]
+    assert df.select(pl.all_horizontal(pl.col("a") > 0, pl.col("b") > 0)).columns == [
+        "a"
+    ]
 
 
 def test_horizontal_broadcasting() -> None:
@@ -889,3 +900,53 @@ def test_min_max_horizontal_scalar_column_29082() -> None:
     )
     expected = pl.DataFrame({"mn": [2.0, 2.0, 2.0], "mx": [3.0, 3.0, 3.0]})
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("horizontal", [pl.all_horizontal, pl.any_horizontal])
+@pytest.mark.parametrize("n_operands", [1, 2, 130])
+def test_horizontal_non_boolean_operand_raises(
+    horizontal: Callable[..., pl.Expr], n_operands: int, tmp_path: Path
+) -> None:
+    df = pl.DataFrame(
+        {
+            "b": [True, False, None],
+            "c0": pl.Series([0, 1, None], dtype=pl.Int8),
+        }
+    )
+    expr = horizontal(pl.col("c0"), *[pl.col("b")] * (n_operands - 1))
+    msg = "non-Boolean input passed to `(all|any)_horizontal`: 'c0' has dtype 'i8'"
+
+    with pytest.raises(SchemaError, match=msg):
+        df.select(expr)
+    with pytest.raises(SchemaError, match=msg):
+        df.lazy().select(~expr).collect()
+    with pytest.raises(SchemaError, match=msg):
+        df.filter(expr)
+
+    path = tmp_path / "data.parquet"
+    df.write_parquet(path)
+    with pytest.raises(SchemaError, match=msg):
+        pl.scan_parquet(path).filter(expr).collect()
+
+
+@pytest.mark.parametrize(
+    ("horizontal", "expected"),
+    [
+        (pl.all_horizontal, [None, False, None]),
+        (pl.any_horizontal, [True, None, None]),
+    ],
+)
+def test_horizontal_null_operand(
+    horizontal: Callable[..., pl.Expr], expected: list[bool | None]
+) -> None:
+    df = pl.DataFrame({"b": [True, False, None]})
+    out = df.select(horizontal(pl.col("b"), pl.lit(None)))
+    assert_series_equal(out.to_series(), pl.Series("b", expected, dtype=pl.Boolean))
+
+
+@pytest.mark.parametrize("horizontal", [pl.all_horizontal, pl.any_horizontal])
+def test_horizontal_meta_without_schema(horizontal: Callable[..., pl.Expr]) -> None:
+    expr = horizontal("a", "b")
+    assert expr.meta.root_names() == ["a", "b"]
+    assert expr.meta.is_length_preserving()
+    assert "a" in expr.meta.tree_format(return_as_string=True)

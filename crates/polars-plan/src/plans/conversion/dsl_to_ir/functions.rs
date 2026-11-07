@@ -537,6 +537,7 @@ pub(super) fn convert_functions(
                     nulls_last,
                 },
                 B::AllHorizontal => {
+                    ensure_horizontal_operands_bool(&e, IB::AllHorizontal, ctx)?;
                     let Some(fst) = e.first() else {
                         return Ok((
                             ctx.arena.add(AExpr::Literal(Scalar::from(true).into())),
@@ -566,6 +567,7 @@ pub(super) fn convert_functions(
                     IB::AllHorizontal
                 },
                 B::AnyHorizontal => {
+                    ensure_horizontal_operands_bool(&e, IB::AnyHorizontal, ctx)?;
                     // This can be created by col(*).is_null() on empty dataframes.
                     let Some(fst) = e.first() else {
                         return Ok((
@@ -1456,4 +1458,27 @@ pub(super) fn convert_functions(
         options,
     };
     Ok((ctx.arena.add(ae_function), output_name))
+}
+
+/// `any_horizontal`/`all_horizontal` take Boolean operands, like `any`/`all`. The rewrite to
+/// `LogicalAnd`/`LogicalOr` relies on it: splitting predicates and De Morgan assume Boolean
+/// operands. The dtype can be unresolvable here (e.g. `meta` conversion without a schema), so a
+/// failed lookup is let through.
+fn ensure_horizontal_operands_bool(
+    e: &[ExprIR],
+    function: IRBooleanFunction,
+    ctx: &mut ExprToIRContext,
+) -> PolarsResult<()> {
+    for expr in e {
+        if let Ok(dtype) = expr.dtype(ctx.schema, ctx.arena) {
+            polars_ensure!(
+                dtype.is_bool()
+                    || dtype.is_null()
+                    || matches!(dtype, DataType::Unknown(UnknownKind::Any)),
+                SchemaMismatch: "non-Boolean input passed to `{function}`: '{}' has dtype '{dtype}'",
+                expr.output_name()
+            );
+        }
+    }
+    Ok(())
 }
