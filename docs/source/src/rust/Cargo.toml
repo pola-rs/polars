@@ -19,6 +19,20 @@ tokio = { workspace = true }
 
 [dependencies.polars]
 workspace = true
+features = [
+  "dtype-array",
+  "dtype-struct",
+  "lazy",
+  "strings",
+  "regex",
+  "log",
+  "rank",
+  "round_series",
+  "is_in",
+  "temporal",
+  "streaming",
+  "fmt",
+]
 
 [[bin]]
 name = "home"
@@ -71,7 +85,6 @@ required-features = ["polars/lazy", "polars/round_series", "polars/regex"]
 [[bin]]
 name = "expressions-lists"
 path = "user-guide/expressions/lists.rs"
-required-features = ["polars/lazy"]
 [[bin]]
 name = "expressions-missing-data"
 path = "user-guide/expressions/missing-data.rs"
