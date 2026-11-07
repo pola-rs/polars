@@ -1484,7 +1484,12 @@ def test_outer_join_where_key_with_both_inputs_condition(
     assert "FUSED PREDICATE" in plan
 
     # Coalesces the key columns when the right key is not selected.
-    selected = query.select("k", "v", "v_right")
+    selected = left.join_where(
+        right,
+        pl.col("k") == pl.col("k_right"),
+        pl.col("v") <= pl.col("v_right"),
+        how=how,
+    ).select("k", "v", "v_right")
     assert_frame_equal(
         selected.collect(engine=engine),
         selected.collect(engine=engine, optimizations=disabled),
