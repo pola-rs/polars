@@ -447,7 +447,7 @@ impl EvalExpr {
         let mut deposit: Option<Bitmap> = None;
 
         let groups = if min_samples == 0 {
-            (1..input.len() as IdxSize).map(|i| [0, i]).collect()
+            (0..input.len() as IdxSize).map(|i| [0, i + 1]).collect()
         } else {
             let validity = validity
                 .clone()
