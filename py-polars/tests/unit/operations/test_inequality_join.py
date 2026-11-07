@@ -1489,6 +1489,17 @@ def test_outer_join_where_key_kinds(
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_cross_join_nulls_equal_filter_on_equality(engine: EngineType) -> None:
+    left = pl.LazyFrame({"k": [None, 1]})
+    right = pl.LazyFrame({"k": [None, 1]})
+    query = left.join(right, how="cross", nulls_equal=True).filter(
+        pl.col("k") == pl.col("k_right")
+    )
+    expected = pl.DataFrame({"k": [1], "k_right": [1]})
+    assert_frame_equal(query.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 @pytest.mark.parametrize("how", ["left", "right"])
 def test_outer_join_where_pushed_condition_downgrades_to_cross(
     engine: EngineType, how: Literal["left", "right"]

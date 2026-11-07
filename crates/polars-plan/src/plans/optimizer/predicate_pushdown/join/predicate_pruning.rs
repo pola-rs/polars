@@ -729,6 +729,7 @@ pub fn try_rewrite_join_type(
             let join_options = Arc::make_mut(options);
             join_options.args.how = JoinType::Inner;
             join_options.args.coalesce = JoinCoalesce::KeepColumns;
+            join_options.args.nulls_equal = false;
             push_equi_join_keys(
                 equality_conditions,
                 expr_arena,
