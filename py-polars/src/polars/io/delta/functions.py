@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import warnings
 from typing import TYPE_CHECKING, Any
 
 from polars._utils.expired import RemovedParameter, removed_parameters
 from polars._utils.wrap import wrap_ldf
+from polars._warnings import find_stacklevel
 from polars.io.cloud._utils import NoPickleOption
 from polars.io.delta._dataset import DeltaDataset
 
@@ -321,13 +323,27 @@ def scan_delta(
 
     del credential_provider
 
-    if table is not None and (
-        table._storage_options is not None or storage_options is not None
-    ):
-        storage_options = {
-            **(table._storage_options or {}),
-            **(storage_options or {}),
-        }
+    if table is not None:
+        if any(
+            [
+                version is not None,
+                storage_options is not None,
+                delta_table_options is not None,
+            ]
+        ):
+            warnings.warn(
+                """When supplying a DeltaTable directly, `version`, `storage_options`, and `delta_table_options` are ignored.
+                To silence this warning, don't supply those parameters.""",
+                RuntimeWarning,
+                stacklevel=find_stacklevel(),
+            )
+        version = table.version()
+        delta_table_options = None
+        if table._storage_options is not None or storage_options is not None:
+            storage_options = {
+                **(table._storage_options or {}),
+                **(storage_options or {}),
+            }
 
     dataset = DeltaDataset(
         table_=NoPickleOption(table),

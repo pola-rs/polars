@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -14,8 +13,6 @@ from polars.io.cloud._utils import POLARS_STORAGE_CONFIG_KEYS, _get_path_scheme
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-
-    from deltalake import DeltaTable
 
     from polars import DataFrame, DataType, Series
     from polars._typing import PolarsDataType, SchemaDict, StorageOptionsDict
@@ -32,7 +29,7 @@ def _resolve_delta_lake_uri(table_uri: str | Path, *, strict: bool = True) -> st
 
 
 def _get_delta_lake_table(
-    table_path: str | Path | DeltaTable,
+    table_path: str | Path,
     version: int | str | datetime | None = None,
     storage_options: StorageOptionsDict | None = None,
     delta_table_options: dict[str, Any] | None = None,
@@ -55,21 +52,6 @@ def _get_delta_lake_table(
             if k not in POLARS_STORAGE_CONFIG_KEYS
         }
 
-    if isinstance(table_path, deltalake.DeltaTable):
-        if any(
-            [
-                version is not None,
-                storage_options is not None,
-                delta_table_options is not None,
-            ]
-        ):
-            warnings.warn(
-                """When supplying a DeltaTable directly, `version`, `storage_options`, and `delta_table_options` are ignored.
-                To silence this warning, don't supply those parameters.""",
-                RuntimeWarning,
-                stacklevel=1,
-            )
-        return table_path
     if delta_table_options is None:
         delta_table_options = {}
     resolved_uri = _resolve_delta_lake_uri(table_path)
