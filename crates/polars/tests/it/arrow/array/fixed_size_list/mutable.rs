@@ -90,3 +90,10 @@ fn extend_from_self() {
 
     assert_eq!(a, b);
 }
+
+#[test]
+fn reserve() {
+    let mut list = MutableFixedSizeListArray::new(MutablePrimitiveArray::<i32>::new(), 3);
+    list.reserve(10);
+    assert!(list.values().capacity() >= 30);
+}
