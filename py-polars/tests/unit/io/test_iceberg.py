@@ -6368,8 +6368,10 @@ def test_convert_iceberg_storage_options_dot_filtering() -> None:
             "user": "foo",
             "hdfs.host": "localhost",
             "hdfs.port": "9005",
-            # "dfs.replication": "3",
-            # "write.parquet.compression": "zstd",
+            "dfs.replication": "3",
+            "dfs.nameservices": "ns1",
+            "dfs.ha.namenodes.ns1": "nn1,nn2",
+            "write.parquet.compression": "zstd",
             "other.foo": "bar",
         }
     )
@@ -6378,9 +6380,11 @@ def test_convert_iceberg_storage_options_dot_filtering() -> None:
     assert result["user"] == "foo"
     assert result["hdfs.host"] == "localhost"
     assert result["hdfs.port"] == "9005"
+    assert result["dfs.replication"] == "3"
+    assert result["dfs.nameservices"] == "ns1"
+    assert result["dfs.ha.namenodes.ns1"] == "nn1,nn2"
 
     # drop
-    assert "dfs.replication" not in result
     assert "write.parquet.compression" not in result
     assert "other.foo" not in result
 
