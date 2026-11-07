@@ -118,6 +118,28 @@ pub enum CatalogStatement {
         /// The first part of the condition a catalog filter likely can't express, for messages.
         hint_unsupported_part: Option<String>,
     },
+    /// `UPDATE <name> SET <column> = <value>, ... [WHERE <condition>]`.
+    Update {
+        /// The table name as the statement wrote it.
+        name: String,
+        /// The catalog table to update.
+        table: CatalogTable,
+        /// The `SET` columns, in the order written.
+        columns: Vec<String>,
+        /// The `WHERE` condition, as SQL, for messages.
+        condition: Option<String>,
+        /// Whether the condition has a subquery, which a catalog filter can't express.
+        subquery: bool,
+        /// The first part of the condition a catalog filter likely can't express, for messages.
+        hint_unsupported_part: Option<String>,
+    },
+    /// `MERGE INTO <name> USING <source> ON <condition> WHEN ...`.
+    Merge {
+        /// The table name as the statement wrote it.
+        name: String,
+        /// The catalog table to merge into.
+        table: CatalogTable,
+    },
     /// `TRUNCATE [TABLE] [IF EXISTS] <name>`.
     Truncate {
         /// The table name as the statement wrote it.
@@ -138,6 +160,38 @@ pub enum CatalogStatement {
         /// The change, one per statement.
         operation: CatalogAlter,
     },
+}
+
+/// The source of a catalog `MERGE`, planned by [`crate::SQLContext::catalog_merge_source`].
+pub struct MergeSourcePlan {
+    /// The `USING` relation, with the columns the statement reads.
+    pub source: polars_lazy::frame::LazyFrame,
+    /// Per key of `ON` (`target_column = source_expression`), the target column and the key
+    /// over the source's columns.
+    pub keys: Vec<(String, polars_plan::dsl::Expr)>,
+}
+
+/// A planned `WHEN` clause of a catalog `MERGE`.
+pub struct MergeClausePlan {
+    /// `update`, `delete`, `nothing` or `insert`.
+    pub kind: &'static str,
+    /// The clause's number in the statement, from 1.
+    pub number: usize,
+    /// Per target column written, its value over the columns of the plan's frame.
+    pub columns: Vec<(String, polars_plan::dsl::Expr)>,
+}
+
+/// A catalog `MERGE`, planned by [`crate::SQLContext::catalog_merge_plan`].
+pub struct MergePlan {
+    /// The pairs of a target and a source row matching `ON`, with the index of the matched
+    /// clause that applies (null if none does).
+    pub pairs: polars_lazy::frame::LazyFrame,
+    /// The source rows, with the index of the not-matched clause that applies (null if none).
+    pub inserts: polars_lazy::frame::LazyFrame,
+    /// The `WHEN MATCHED` clauses, in order.
+    pub matched: Vec<MergeClausePlan>,
+    /// The `WHEN NOT MATCHED` clauses, in order.
+    pub not_matched: Vec<MergeClausePlan>,
 }
 
 /// A change to a catalog table's top-level columns or properties, by an `ALTER TABLE`.

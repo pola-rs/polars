@@ -4,6 +4,7 @@ import io
 import pickle
 import re
 import shutil
+import struct
 import warnings
 from datetime import UTC, date
 from pathlib import Path
@@ -18,7 +19,7 @@ from polars.testing import assert_frame_equal
 pytest.importorskip("pyiceberg.catalog.sql")
 
 from pyiceberg.catalog.sql import SqlCatalog
-from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.exceptions import NoSuchTableError, ServerError
 
 
 class CountingCatalog(SqlCatalog):  # type: ignore[misc]
@@ -1141,6 +1142,141 @@ def test_create_catalog_table_as_select_commit_not_rejected(
 
 
 @pytest.mark.write_disk
+def test_create_catalog_table_as_select_cleanup_purge_only(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import BadRequestError
+
+    def purge_only(identifier: Any) -> None:
+        msg = "only with purge enabled"
+        raise BadRequestError(msg)
+
+    # created, then filled: a failed fill removes the new table with a purge
+    monkeypatch.setattr(lake, "create_table_transaction", no_staged_create)
+    # as on a REST catalog, where a purge is a separate request
+    monkeypatch.setattr(lake, "purge_table", lake.drop_table)
+    monkeypatch.setattr(lake, "drop_table", purge_only)
+    ctx = lake_ctx(lake)
+    ctx.register("src", pl.LazyFrame({"v": ["1", "x"]}))
+    with pytest.raises(pl.exceptions.InvalidOperationError) as exc:
+        ctx.execute("CREATE TABLE t AS SELECT CAST(v AS INT) AS x FROM src")
+    assert not lake.table_exists(("tpch", "t"))
+    assert any("'t' could not be created" in note for note in exc.value.__notes__)
+    assert not any("left in the catalog" in note for note in exc.value.__notes__)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("meanwhile", ["recreated", "appended"])
+def test_create_catalog_table_as_select_cleanup_keeps_others_tables(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch, meanwhile: str
+) -> None:
+    from pyiceberg.exceptions import BadRequestError
+
+    drop = lake.drop_table
+    other = pl.DataFrame({"x": [7]}, schema={"x": pl.Int32})
+
+    def drop_then_other_writer(identifier: Any) -> None:
+        if meanwhile == "recreated":
+            # the drop lands, its response is lost, and the name is taken again
+            drop(identifier)
+            table = lake.create_table(identifier, schema=other.to_arrow().schema)
+            other.write_iceberg(table, mode="append")
+            msg = "response lost"
+            raise TimeoutError(msg)
+        # a purge-only refusal, while another writer appends
+        other.write_iceberg(lake.load_table(identifier), mode="append")
+        msg = "only with purge enabled"
+        raise BadRequestError(msg)
+
+    monkeypatch.setattr(lake, "create_table_transaction", no_staged_create)
+    monkeypatch.setattr(lake, "drop_table", drop_then_other_writer)
+    # as on a REST catalog, where a purge is a separate request
+    monkeypatch.setattr(lake, "purge_table", drop)
+    ctx = lake_ctx(lake)
+    ctx.register("src", pl.LazyFrame({"v": ["1", "x"]}))
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        ctx.execute("CREATE TABLE t AS SELECT CAST(v AS INT) AS x FROM src")
+    monkeypatch.undo()
+    # the other writer's table and rows are kept
+    assert table_rows(lake, "tpch", "t") == [(7,)]
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("error", [PermissionError, TimeoutError, ServerError])
+def test_create_catalog_table_as_select_cleanup_purges_only_after_bad_request(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch, error: type[Exception]
+) -> None:
+    purges: list[Any] = []
+
+    def fail(identifier: Any) -> None:
+        msg = "drop failed"
+        raise error(msg)
+
+    monkeypatch.setattr(lake, "create_table_transaction", no_staged_create)
+    monkeypatch.setattr(lake, "drop_table", fail)
+    monkeypatch.setattr(lake, "purge_table", purges.append)
+    ctx = lake_ctx(lake)
+    ctx.register("src", pl.LazyFrame({"v": ["1", "x"]}))
+    with pytest.raises(pl.exceptions.InvalidOperationError) as exc:
+        ctx.execute("CREATE TABLE t AS SELECT CAST(v AS INT) AS x FROM src")
+    assert purges == []
+    assert any("left in the catalog" in note for note in exc.value.__notes__)
+    monkeypatch.undo()
+    assert table_rows(lake, "tpch", "t") == []
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_as_select_cleanup_refused_outside_rest(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import BadRequestError
+
+    drops: list[Any] = []
+
+    def refuse(identifier: Any) -> None:
+        drops.append(identifier)
+        msg = "drop refused"
+        raise BadRequestError(msg)
+
+    # the SQL catalog's own purge drops first, so it is refused as well
+    monkeypatch.setattr(lake, "create_table_transaction", no_staged_create)
+    monkeypatch.setattr(lake, "drop_table", refuse)
+    ctx = lake_ctx(lake)
+    ctx.register("src", pl.LazyFrame({"v": ["1", "x"]}))
+    with pytest.raises(pl.exceptions.InvalidOperationError) as exc:
+        ctx.execute("CREATE TABLE t AS SELECT CAST(v AS INT) AS x FROM src")
+    assert drops == [("tpch", "t")] * 2
+    assert any("left in the catalog" in note for note in exc.value.__notes__)
+    monkeypatch.undo()
+    assert table_rows(lake, "tpch", "t") == []
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_as_select_cleanup_purge_finds_table_gone(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import BadRequestError
+
+    def refuse(identifier: Any) -> None:
+        msg = "only with purge enabled"
+        raise BadRequestError(msg)
+
+    def gone(identifier: Any) -> None:
+        raise NoSuchTableError(str(identifier))
+
+    # another writer dropped the table before the purge
+    monkeypatch.setattr(lake, "create_table_transaction", no_staged_create)
+    monkeypatch.setattr(lake, "drop_table", refuse)
+    monkeypatch.setattr(lake, "purge_table", gone)
+    ctx = lake_ctx(lake)
+    ctx.register("src", pl.LazyFrame({"v": ["1", "x"]}))
+    with pytest.raises(pl.exceptions.InvalidOperationError) as exc:
+        ctx.execute("CREATE TABLE t AS SELECT CAST(v AS INT) AS x FROM src")
+    assert any("'t' could not be created" in note for note in exc.value.__notes__)
+    assert not any("left in the catalog" in note for note in exc.value.__notes__)
+
+
+@pytest.mark.write_disk
 def test_create_catalog_table_as_select_cleanup_storage_options(
     lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1758,6 +1894,69 @@ def test_drop_catalog_table_purge_fails_after_drop(
 
 
 @pytest.mark.write_disk
+def test_drop_catalog_table_purge_only(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import BadRequestError
+
+    drops: list[Any] = []
+
+    def purge_only(identifier: Any) -> None:
+        drops.append(identifier)
+        msg = "only with purge enabled"
+        raise BadRequestError(msg)
+
+    # a catalog that drops tables only with a purge, refusing before it looks
+    monkeypatch.setattr(lake, "purge_table", lake.drop_table)
+    monkeypatch.setattr(lake, "drop_table", purge_only)
+    ctx = lake_ctx(lake)
+    with pytest.raises(BadRequestError) as exc:
+        ctx.execute("DROP TABLE orders")
+    assert "only with `PURGE`" in exc.value.__notes__[-1]
+    assert lake.table_exists(("tpch", "orders"))
+    # a missing table is reported as one, checked after the refusal
+    with pytest.raises(NoSuchTableError, match="table 'nope' does not exist"):
+        ctx.execute("DROP TABLE nope")
+    ctx.execute("DROP TABLE IF EXISTS nope")
+    assert drops == [("tpch", "orders"), ("tpch", "nope"), ("tpch", "nope")]
+    ctx.execute("DROP TABLE orders PURGE")
+    assert not lake.table_exists(("tpch", "orders"))
+
+
+@pytest.mark.write_disk
+def test_drop_catalog_table_plain_drop_not_checked_first(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # an entry the existence check misses is still dropped
+    monkeypatch.setattr(lake, "table_exists", lambda identifier: False)
+    lake_ctx(lake).execute("DROP TABLE orders")
+    monkeypatch.undo()
+    assert not lake.table_exists(("tpch", "orders"))
+
+
+@pytest.mark.write_disk
+def test_drop_catalog_table_lost_response(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    drop = lake.drop_table
+
+    def drop_then_fail(identifier: Any) -> None:
+        drop(identifier)
+        msg = "response lost"
+        raise TimeoutError(msg)
+
+    # a drop that lands before the catalog fails keeps its own error
+    monkeypatch.setattr(lake, "drop_table", drop_then_fail)
+    ctx = lake_ctx(lake)
+    for statement in ["DROP TABLE orders", "DROP TABLE IF EXISTS lineitem"]:
+        with pytest.raises(TimeoutError, match="response lost") as exc:
+            ctx.execute(statement)
+        assert len(exc.value.__notes__) == 1
+    assert not lake.table_exists(("tpch", "orders"))
+    assert not lake.table_exists(("tpch", "lineitem"))
+
+
+@pytest.mark.write_disk
 def test_drop_catalog_table_checks(
     lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1779,7 +1978,7 @@ def test_drop_catalog_table_checks(
     # an existence check that fails lets the purge run
     ctx.execute("DROP TABLE orders PURGE")
     assert checks == [("tpch", "orders")]
-    # a plain drop is not checked first, and its failure keeps its own error
+    # a plain drop refused for another reason is not checked, and keeps its own error
     monkeypatch.setattr(lake, "drop_table", deny)
     with pytest.raises(PermissionError, match="drop not allowed") as exc:
         ctx.execute("DROP TABLE IF EXISTS lineitem")
@@ -3355,7 +3554,15 @@ RETRY = {"commit.retry.min-wait-ms": "0", "commit.retry.max-wait-ms": "0"}
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("statement", "remaining"),
-    [("TRUNCATE TABLE t", []), ("DELETE FROM t WHERE k <= 3", [(4, "d")])],
+    [
+        ("TRUNCATE TABLE t", []),
+        ("DELETE FROM t WHERE k <= 3", [(4, "d")]),
+        ("UPDATE t SET v = 'z' WHERE k <= 3", [(1, "z"), (2, "z"), (3, "z"), (4, "d")]),
+        (
+            "INSERT INTO t VALUES (5, 'e')",
+            [(1, "a"), (2, "b"), (3, "c"), (4, "d"), (5, "e")],
+        ),
+    ],
 )
 @pytest.mark.parametrize(
     ("properties", "request_", "loads", "outcome", "landed"),
@@ -3454,7 +3661,9 @@ def test_delete_catalog_table_commit_outcome(
         )
         with pytest.raises(raised) as exc:
             ctx.execute(statement)
-        verb = "deleted" if statement.startswith("DELETE") else "truncated"
+        verb = {"DELETE": "deleted", "UPDATE": "updated", "INSERT": "written"}.get(
+            statement.split()[0], "truncated"
+        )
         assert ("unknown" in exc.value.__notes__[-1]) == (outcome == "unknown")
         assert verb in exc.value.__notes__[-1]
     monkeypatch.undo()
@@ -3581,6 +3790,1429 @@ def test_delete_catalog_table_concurrent(tmp_path: Path) -> None:
     lake.race = ("tpch", "lineitem")
     ctx.execute("DELETE FROM lineitem WHERE k > 1")
     assert table_rows(lake, "tpch", "lineitem") == [(99, "raced")]
+
+
+def update_ctx(lake: CountingCatalog) -> pl.SQLContext[pl.LazyFrame]:
+    """A context with table `t` of two data files: k in (1, 2) and in (3, 4)."""
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE t (k INT, v VARCHAR, n BIGINT)")
+    ctx.execute("INSERT INTO t VALUES (1, 'a', 10), (2, 'b', 20)")
+    ctx.execute("INSERT INTO t VALUES (3, 'c', 30), (4, 'd', NULL)")
+    return ctx
+
+
+T_ROWS = [(1, "a", 10), (2, "b", 20), (3, "c", 30), (4, "d", None)]
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("statement", "rows"),
+    [
+        ("UPDATE t SET v = 'x' WHERE k = 1", [(1, "x", 10), *T_ROWS[1:]]),
+        (
+            "UPDATE lake.tpch.t SET n = n + 1",
+            [(1, "a", 11), (2, "b", 21), (3, "c", 31), (4, "d", None)],
+        ),
+        (
+            "UPDATE t AS x SET n = x.k WHERE x.v = 'c'",
+            [*T_ROWS[:2], (3, "c", 3), T_ROWS[3]],
+        ),
+        ("UPDATE t SET (v, n) = ('y', 0) WHERE k > 3", [*T_ROWS[:3], (4, "y", 0)]),
+        ("UPDATE t SET (v, n) = ROW('y', 0) WHERE k > 3", [*T_ROWS[:3], (4, "y", 0)]),
+        # every value is of the row before the update
+        (
+            "UPDATE t SET k = n, n = k WHERE k = 2",
+            [T_ROWS[0], *T_ROWS[2:], (20, "b", 2)],
+        ),
+        (
+            "UPDATE t SET n = NULL WHERE n IS NOT NULL AND k < 3",
+            [(1, "a", None), (2, "b", None), *T_ROWS[2:]],
+        ),
+        # a NULL condition updates nothing
+        (
+            "UPDATE t SET v = 'x' WHERE n > 15 AND v <> 'c'",
+            [*T_ROWS[:1], (2, "x", 20), *T_ROWS[2:]],
+        ),
+        ("UPDATE t SET v = 'x' WHERE NULL", T_ROWS),
+    ],
+)
+def test_update_catalog_table(
+    lake: CountingCatalog, statement: str, rows: list[Any]
+) -> None:
+    ctx = update_ctx(lake)
+    assert ctx.execute(statement, eager=True).item() == "UPDATE lake.tpch.t"
+    assert table_rows(lake, "tpch", "t") == rows
+
+
+@pytest.mark.write_disk
+def test_update_catalog_table_files(
+    lake: CountingCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.table.snapshots import Operation
+
+    ctx = update_ctx(lake)
+    # the file-list scans are planned already: no plugin check, nor its warning
+    planner_checks: list[None] = []
+
+    def use_plugin_planner() -> bool:
+        planner_checks.append(None)
+        return False
+
+    monkeypatch.setattr(
+        "polars.io.iceberg._dataset.use_plugin_planner", use_plugin_planner
+    )
+
+    def snapshots() -> Any:
+        return lake.load_table(("tpch", "t")).metadata.snapshots
+
+    def data_files() -> set[str]:
+        return {
+            task.file.file_path
+            for task in lake.load_table(("tpch", "t")).scan().plan_files()
+        }
+
+    before, n_snapshots = data_files(), len(snapshots())
+    # only the file with a match is replaced, in one OVERWRITE snapshot
+    ctx.execute("UPDATE t SET v = 'x' WHERE k = 3")
+    assert planner_checks == []
+    after = data_files()
+    assert len(before & after) == 1
+    assert len(after - before) == 1
+    assert [s.summary.operation for s in snapshots()[n_snapshots:]] == [
+        Operation.OVERWRITE
+    ]
+    assert table_rows(lake, "tpch", "t") == [*T_ROWS[:2], (3, "x", 30), T_ROWS[3]]
+    # no match, also within a file's bounds: no commit, no warning
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        for condition in ("k = 99", "k = 2 AND v = 'zz'", "0"):
+            ctx.execute(f"UPDATE t SET v = 'never' WHERE {condition}")
+    assert len(snapshots()) == n_snapshots + 1
+    # a table without a snapshot: nothing to update
+    ctx.execute("CREATE TABLE e (k INT)")
+    ctx.execute("UPDATE e SET k = 1")
+    assert lake.load_table(("tpch", "e")).current_snapshot() is None
+
+
+@pytest.mark.write_disk
+def test_update_catalog_table_partitioned(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE p (k INT, part VARCHAR) PARTITION BY (part)")
+    ctx.execute("INSERT INTO p VALUES (1, 'x'), (2, 'x'), (3, 'y')")
+    table = lake.load_table(("tpch", "p"))
+    before = {t.file.file_path for t in table.scan().plan_files()}
+    # a row moves to another partition; the untouched partition keeps its file
+    ctx.execute("UPDATE p SET part = 'y' WHERE k = 1")
+    table = lake.load_table(("tpch", "p"))
+    tasks = list(table.scan().plan_files())
+    assert {t.file.partition[0] for t in tasks} == {"x", "y"}
+    assert len({t.file.file_path for t in tasks} & before) == 1
+    assert table_rows(lake, "tpch", "p") == [(1, "y"), (2, "x"), (3, "y")]
+    rows = table.scan(row_filter="part = 'y'").to_arrow().to_pylist()
+    assert sorted(r["k"] for r in rows) == [1, 3]
+
+
+@pytest.mark.write_disk
+def test_update_catalog_table_casts(lake: CountingCatalog) -> None:
+    ctx = update_ctx(lake)
+    # a fraction into an integer column is rounded, as by INSERT
+    ctx.execute("UPDATE t SET k = 2.5 WHERE k = 2")
+    ctx.execute("UPDATE t SET n = CAST(2.5 AS DOUBLE) WHERE k = 1")
+    assert table_rows(lake, "tpch", "t") == [(1, "a", 2), (3, "b", 20), *T_ROWS[2:]]
+    # only the updated rows' values must fit the INT column
+    ctx.execute("UPDATE t SET k = n * 1000000000 WHERE k = 1")
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="column 'k'"):
+        ctx.execute("UPDATE t SET k = n * 1000000000 WHERE k = 3")
+    # another kind of value needs a CAST
+    with pytest.raises(pl.exceptions.SchemaError, match="convert it with CAST"):
+        ctx.execute("UPDATE t SET k = '7' WHERE k = 4")
+    ctx.execute("UPDATE t SET k = CAST('7' AS INT) WHERE k = 4")
+    rows = [(3, "b", 20), (3, "c", 30), (7, "d", None), (2000000000, "a", 2)]
+    assert table_rows(lake, "tpch", "t") == rows
+
+
+@pytest.mark.write_disk
+def test_update_catalog_table_not_null(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE r (k INT NOT NULL, v VARCHAR)")
+    ctx.execute("INSERT INTO r VALUES (1, 'a'), (2, NULL)")
+    snapshot = lake.load_table(("tpch", "r")).current_snapshot()
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="NOT NULL"):
+        ctx.execute("UPDATE r SET k = NULL WHERE k = 1")
+    # a NULL computed from the row is refused by the write, before any commit
+    with pytest.raises(pl.exceptions.PolarsError):
+        ctx.execute("UPDATE r SET k = CASE WHEN v IS NULL THEN NULL ELSE k END")
+    assert lake.load_table(("tpch", "r")).current_snapshot() == snapshot
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("statement", "error"),
+    [
+        ("UPDATE t SET v = 'x' FROM orders WHERE t.k = orders.k", "FROM clause"),
+        ("UPDATE t SET v = 'x' RETURNING k", "RETURNING"),
+        ("UPDATE t SET v = 'x' WHERE k = 1 LIMIT 1", "LIMIT"),
+        ("UPDATE t SET v = 'x', v = 'y'", "multiple assignments to column 'v'"),
+        (
+            "UPDATE t SET (v, n) = ('x', 1), v = 'y'",
+            "multiple assignments to column 'v'",
+        ),
+        ("UPDATE t SET (v, n) = ('x')", "assigns 2 columns from 1 values"),
+        ("UPDATE t SET (v, n) = 'x'", "from a list of values"),
+        ("UPDATE t SET (v, n) = (SELECT 'x', 1)", "from a list of values"),
+        ("UPDATE t SET t.v = 'x'", "unqualified column names"),
+        ("UPDATE t SET v = DEFAULT", "DEFAULT (column 'v'); write NULL"),
+        ("UPDATE t SET v = coalesce(DEFAULT, 'x')", "DEFAULT (column 'v')"),
+        (
+            "UPDATE t SET n = (SELECT max(k) FROM orders)",
+            "subqueries are not supported in the SET",
+        ),
+        ("UPDATE t SET n = max(k)", "must come from its own row"),
+        ("UPDATE t SET n = corr(k, n)", "must come from its own row"),
+        ("UPDATE t SET n = unnest([1, 2])", "must come from its own row"),
+        ("UPDATE t SET n = count(*)", "must come from its own row"),
+        ("UPDATE t SET n = row_number() OVER ()", "window functions"),
+        ("UPDATE t SET n = COLUMNS('k')", "column selectors"),
+        ("UPDATE ONLY t SET v = 'x'", "`UPDATE ONLY` is not supported"),
+        ("UPDATE t AS x(a, b, c) SET v = 'x'", "column names in the table alias"),
+        (
+            "WITH q AS (SELECT 1) UPDATE t SET v = 'x'",
+            "UPDATE does not support a WITH clause",
+        ),
+        ("UPDATE t JOIN orders ON true SET v = 'x'", "JOINs"),
+        ("UPDATE read_parquet('x.parquet') SET v = 'x'", "UPDATE of a table function"),
+    ],
+)
+def test_update_catalog_table_sql_errors(
+    lake: CountingCatalog, statement: str, error: str
+) -> None:
+    ctx = update_ctx(lake)
+    snapshot = lake.load_table(("tpch", "t")).current_snapshot()
+    with pytest.raises(SQLInterfaceError, match=re.escape(error)):
+        ctx.execute(statement)
+    assert lake.load_table(("tpch", "t")).current_snapshot() == snapshot
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("statement", "error"),
+    [
+        ("DELETE FROM ONLY orders WHERE k = 1", "`DELETE ONLY` is not supported"),
+        (
+            "DELETE FROM orders AS x(a, b) WHERE k = 1",
+            "column names in the table alias",
+        ),
+        (
+            "WITH q AS (SELECT 1) DELETE FROM orders",
+            "DELETE does not support a WITH clause",
+        ),
+        ("DELETE FROM read_parquet('x.parquet')", "DELETE of a table function"),
+    ],
+)
+def test_delete_catalog_table_target_errors(
+    lake: CountingCatalog, statement: str, error: str
+) -> None:
+    with pytest.raises(SQLInterfaceError, match=re.escape(error)):
+        lake_ctx(lake).execute(statement)
+    assert table_rows(lake, "tpch", "orders") == ORDERS
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    "statement", ["DELETE FROM lineitem", "UPDATE lineitem SET v = 'x'"]
+)
+@pytest.mark.parametrize(
+    ("condition", "reason", "hint"),
+    [
+        ("v = 'a@b.com'", f"string constant 'a@b.com' {STRING_LIMIT}", True),
+        ("k = 1 OR k = length(v)", "comparison of two columns `k = length(v)`", True),
+        ("k IN (SELECT k FROM orders)", "subquery", True),
+        ("k = 2 AND 1 = 1", "constant boolean subexpression", False),
+    ],
+)
+def test_catalog_dml_conditions_shared(
+    lake: CountingCatalog, statement: str, condition: str, reason: str, hint: bool
+) -> None:
+    snapshot = lake.load_table(("tpch", "lineitem")).current_snapshot()
+    with pytest.raises(SQLInterfaceError) as exc:
+        lake_ctx(lake).execute(f"{statement} WHERE {condition}")
+    keyword = statement.split()[0]
+    message = str(exc.value)
+    assert message.startswith(
+        f"{keyword} on catalog table 'lake.tpch.lineitem' cannot apply `{condition}`: "
+        f"{reason}"
+    )
+    assert ("Hint: compare columns with constants" in message) == hint
+    if hint:
+        assert f"then {keyword.lower()} with `WHERE id IN (...)`" in message
+    assert lake.load_table(("tpch", "lineitem")).current_snapshot() == snapshot
+
+
+@pytest.mark.write_disk
+def test_update_catalog_table_resolution(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    with pytest.raises(NoSuchTableError, match="could be updated; catalog"):
+        ctx.execute("UPDATE lake.tpch.missing SET k = 1")
+    with pytest.raises(pl.exceptions.ColumnNotFoundError, match="case-sensitive"):
+        ctx.execute("UPDATE orders SET K = 1")
+    # a registered frame can't be updated, and hides the catalog table of its name
+    ctx.register("orders", pl.LazyFrame({"k": [1]}))
+    with pytest.raises(SQLInterfaceError, match="supported only for catalog tables"):
+        ctx.execute("UPDATE orders SET k = 2")
+    ctx.unregister("orders")
+    # the statement goes to the catalog, not to the frame-level execute
+    with pytest.raises(SQLInterfaceError, match="must be performed on the catalog"):
+        ctx._ctxt.execute("UPDATE orders SET k = 2")
+    assert table_rows(lake, "tpch", "orders") == ORDERS
+
+
+@pytest.mark.write_disk
+def test_update_catalog_table_v3_refused(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.table import Table
+
+    # PyIceberg can't write a v3 table yet
+    monkeypatch.setattr(Table, "format_version", property(lambda self: 3))
+    with pytest.raises(NotImplementedError, match="Iceberg v3 table"):
+        lake_ctx(lake).execute("UPDATE orders SET o = 0")
+    monkeypatch.undo()
+    assert table_rows(lake, "tpch", "orders") == ORDERS
+
+
+@pytest.mark.write_disk
+def test_update_catalog_table_concurrent(tmp_path: Path) -> None:
+    from pyiceberg.exceptions import ValidationException
+
+    lake = RacingCatalog(
+        "lake", uri=f"sqlite:///{tmp_path / 'c.db'}", warehouse=f"file://{tmp_path}"
+    )
+    lake.create_namespace(("tpch",))
+    table = lake.create_table(("tpch", "lineitem"), schema=LINEITEM.to_arrow().schema)
+    LINEITEM.write_iceberg(table, mode="append")
+    ctx = lake_ctx(lake)
+    # the other writer's row can't match: retried on the new snapshot
+    lake.race = ("tpch", "lineitem")
+    ctx.execute("UPDATE lineitem SET v = 'x' WHERE k = 1")
+    assert table_rows(lake, "tpch", "lineitem") == [(1, "x"), (2, "b"), (99, "raced")]
+    # it might: refused, updating nothing
+    lake.race = ("tpch", "lineitem")
+    with pytest.raises(ValidationException) as exc:
+        ctx.execute("UPDATE lineitem SET v = 'y' WHERE k > 50")
+    assert any("no rows of table 'lineitem'" in n for n in exc.value.__notes__)
+    rows = [(1, "x"), (2, "b"), (99, "raced"), (99, "raced")]
+    assert table_rows(lake, "tpch", "lineitem") == rows
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("properties", "refused"),
+    [
+        ({}, True),
+        ({"write.update.isolation-level": "snapshot"}, False),
+        # UPDATE reads its own property, not DELETE's
+        ({"write.delete.isolation-level": "snapshot"}, True),
+        (
+            {
+                "write.update.isolation-level": "snapshot",
+                "write.delete.isolation-level": "serializable",
+            },
+            False,
+        ),
+    ],
+)
+def test_update_catalog_table_isolation_level(
+    tmp_path: Path, properties: dict[str, str], refused: bool
+) -> None:
+    from pyiceberg.exceptions import ValidationException
+
+    lake = RacingCatalog(
+        "lake", uri=f"sqlite:///{tmp_path / 'c.db'}", warehouse=f"file://{tmp_path}"
+    )
+    lake.create_namespace(("tpch",))
+    table = lake.create_table(
+        ("tpch", "lineitem"), schema=LINEITEM.to_arrow().schema, properties=properties
+    )
+    LINEITEM.write_iceberg(table, mode="append")
+    ctx = lake_ctx(lake)
+    # the other writer appends a row that matches
+    lake.race = ("tpch", "lineitem")
+    if refused:
+        with pytest.raises(ValidationException):
+            ctx.execute("UPDATE lineitem SET v = 'y' WHERE k > 1")
+        assert table_rows(lake, "tpch", "lineitem") == [
+            (1, "a"),
+            (2, "b"),
+            (99, "raced"),
+        ]
+    else:
+        # snapshot isolation: the other writer's row keeps its value
+        ctx.execute("UPDATE lineitem SET v = 'y' WHERE k > 1")
+        assert table_rows(lake, "tpch", "lineitem") == [
+            (1, "a"),
+            (2, "y"),
+            (99, "raced"),
+        ]
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("change", ["schema", "equality deletes"])
+def test_update_catalog_table_refused_on_retry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    from pyiceberg.exceptions import ValidationException
+    from pyiceberg.types import LongType
+
+    import polars.io.iceberg._sink as sink
+
+    lake = RacingCatalog(
+        "lake", uri=f"sqlite:///{tmp_path / 'c.db'}", warehouse=f"file://{tmp_path}"
+    )
+    lake.create_namespace(("tpch",))
+    table = lake.create_table(("tpch", "lineitem"), schema=LINEITEM.to_arrow().schema)
+    LINEITEM.write_iceberg(table, mode="append")
+    commit = RacingCatalog.commit_table
+    state = {"raced": False}
+
+    def commit_table(self: Any, table: Any, requirements: Any, updates: Any) -> Any:
+        if not state["raced"]:
+            state["raced"] = True
+            if change == "schema":
+                with self.load_table(("tpch", "lineitem")).update_schema() as update:
+                    update.add_column("w", LongType())
+            else:
+                self.race = ("tpch", "lineitem")
+        return commit(self, table, requirements, updates)
+
+    if change == "equality deletes":
+        # PyIceberg can't write equality deletes; the check finds the raced commit's
+        monkeypatch.setattr(sink, "_added_conflicting_deletes", lambda *_: True)
+    monkeypatch.setattr(RacingCatalog, "commit_table", commit_table)
+    with pytest.raises(ValidationException) as exc:
+        lake_ctx(lake).execute("UPDATE lineitem SET v = 'x' WHERE k = 1")
+    assert any("no rows of table 'lineitem'" in n for n in exc.value.__notes__)
+    monkeypatch.undo()
+    assert table_rows(lake, "tpch", "lineitem")[0][:2] == (1, "a")
+    # nothing written is left behind (by name: Windows paths mix separators)
+    referenced = {
+        t.file.file_path.rsplit("/", 1)[-1]
+        for t in lake.load_table(("tpch", "lineitem")).scan().plan_files()
+    }
+    assert {p.name for p in tmp_path.rglob("*.parquet")} == referenced
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("change", "statement", "rows"),
+    [
+        (
+            "ADD COLUMN w BIGINT",
+            "UPDATE t SET w = n * 2 WHERE k <= 2",
+            [
+                (1, "a", 10, 20),
+                (2, "b", 20, 40),
+                (3, "c", 30, None),
+                (4, "d", None, None),
+                (5, "e", 50, 5),
+            ],
+        ),
+        (
+            "RENAME COLUMN v TO name",
+            "UPDATE t SET name = 'z' WHERE k = 1 OR k = 5",
+            [(1, "z", 10), (2, "b", 20), (3, "c", 30), (4, "d", None), (5, "z", 50)],
+        ),
+        (
+            "DROP COLUMN n",
+            "UPDATE t SET v = 'z' WHERE k = 1",
+            [(1, "z"), (2, "b"), (3, "c"), (4, "d"), (5, "e")],
+        ),
+        (
+            "ALTER COLUMN k SET DATA TYPE BIGINT",
+            "UPDATE t SET k = k + 3000000000 WHERE k = 1",
+            [
+                (2, "b", 20),
+                (3, "c", 30),
+                (4, "d", None),
+                (5, "e", 50),
+                (3000000001, "a", 10),
+            ],
+        ),
+    ],
+)
+def test_update_catalog_table_after_schema_change(
+    lake: CountingCatalog, change: str, statement: str, rows: list[Any]
+) -> None:
+    # files written before the change are read with the table's current schema
+    ctx = update_ctx(lake)
+    ctx.execute(f"ALTER TABLE t {change}")
+    values = {"ADD": "(5, 'e', 50, 5)", "DROP": "(5, 'e')"}.get(
+        change.split()[0], "(5, 'e', 50)"
+    )
+    ctx.execute(f"INSERT INTO t VALUES {values}")
+    ctx.execute(statement)
+    assert table_rows(lake, "tpch", "t") == rows
+
+
+@pytest.mark.write_disk
+def test_update_catalog_table_pattern_column_names(lake: CountingCatalog) -> None:
+    df = pl.DataFrame({"k": [1, 2], "^k$": [10, 20], "*": [100, 200]})
+    table = lake.create_table(("tpch", "r"), schema=df.to_arrow().schema)
+    df.write_iceberg(table, mode="append")
+    # a column name that is a pattern to `col` updates that column alone
+    ctx = lake_ctx(lake)
+    ctx.execute('UPDATE r SET "^k$" = 7 WHERE k = 1')
+    ctx.execute('UPDATE r SET "*" = 5 WHERE k = 2')
+    assert table_rows(lake, "tpch", "r") == [(1, 7, 100), (2, 20, 5)]
+
+
+@pytest.mark.write_disk
+def test_update_catalog_table_partition_pruning(lake: CountingCatalog) -> None:
+    import pyarrow as pa
+    from pyiceberg.partitioning import PartitionField, PartitionSpec
+    from pyiceberg.schema import Schema
+    from pyiceberg.transforms import IdentityTransform
+    from pyiceberg.types import DoubleType, IntegerType, NestedField
+
+    schema = Schema(
+        NestedField(1, "k", IntegerType()),
+        NestedField(2, "x", DoubleType()),
+        NestedField(3, "p", IntegerType()),
+    )
+    for name, source in (("dbl", 2), ("nulls", 3)):
+        spec = PartitionSpec(PartitionField(source, 1000, IdentityTransform(), "part"))
+        table = lake.create_table(("tpch", name), schema=schema, partition_spec=spec)
+        table.append(
+            pa.table(
+                {"k": [1, 2, 3], "x": [0.1, 2.0, None], "p": [0, 5, None]},
+                schema=schema.as_arrow(),
+            )
+        )
+    ctx = lake_ctx(lake)
+    # PyIceberg reads a DOUBLE partition value as float32: no file may be pruned on it
+    ctx.execute("UPDATE dbl SET k = 10 WHERE x = 0.1")
+    assert table_rows(lake, "tpch", "dbl")[-1] == (10, 0.1, 0)
+    # a NULL partition value under OR fails PyIceberg's planning: plan without it
+    ctx.execute("UPDATE nulls SET k = 20 WHERE p < 1 OR k = 3")
+    rows = [(2, 2.0, 5), (20, 0.1, 0), (20, None, None)]
+    assert table_rows(lake, "tpch", "nulls") == rows
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    "summary",
+    [{}, {"total-delete-files": "0"}],
+    ids=["no totals", "undercounted totals"],
+)
+def test_update_catalog_table_position_deletes(
+    lake: CountingCatalog, summary: dict[str, str]
+) -> None:
+    from tests.unit.io.test_iceberg import _add_position_deletes
+
+    table = lake.create_table(("tpch", "d"), schema=LINEITEM.to_arrow().schema)
+    df = pl.DataFrame({"k": [1, 2, 3], "v": ["a", "b", "c"]})
+    df.write_iceberg(table, mode="append")
+
+    def data_file() -> str:
+        table = lake.load_table(("tpch", "d"))
+        return str(next(iter(table.scan().plan_files())).file.file_path)
+
+    # with bounds of the deleted row, which planning on `k = 1` would leave out
+    k = struct.pack("<q", 2)
+    table = _add_position_deletes(
+        lake.load_table(("tpch", "d")),
+        {data_file(): [1]},
+        row_bounds={1: (k, k)},
+        summary=summary,
+    )
+    assert table.current_snapshot().summary.get("total-delete-files") == summary.get(
+        "total-delete-files"
+    )
+    # a row deleted before stays deleted in the rewritten file
+    ctx = lake_ctx(lake)
+    ctx.execute("UPDATE d SET v = 'x' WHERE k = 1")
+    ctx.execute("UPDATE d SET v = 'y' WHERE k = 2")
+    assert table_rows(lake, "tpch", "d") == [(1, "x"), (3, "c")]
+    # a delete file not scoped to one data file: not read in full natively, refused
+    table = _add_position_deletes(
+        lake.load_table(("tpch", "d")), {data_file(): [0]}, path_bounds=False
+    )
+    with pytest.raises(pl.exceptions.ComputeError) as exc:
+        ctx.execute("UPDATE d SET v = 'z'")
+    assert "no rows of table 'd' were updated" in exc.value.__notes__[-1]
+    assert lake.load_table(("tpch", "d")).current_snapshot() == table.current_snapshot()
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("change", ["delete", "position delete", "partition spec"])
+def test_update_catalog_table_replaced_file_changed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    from pyiceberg.exceptions import ValidationException
+
+    from tests.unit.io.test_iceberg import _add_position_deletes
+
+    lake = RacingCatalog(
+        "lake", uri=f"sqlite:///{tmp_path / 'c.db'}", warehouse=f"file://{tmp_path}"
+    )
+    lake.create_namespace(("tpch",))
+    table = lake.create_table(("tpch", "lineitem"), schema=LINEITEM.to_arrow().schema)
+    LINEITEM.write_iceberg(table, mode="append")
+    commit = RacingCatalog.commit_table
+    state = {"raced": False}
+
+    def commit_table(self: Any, table: Any, requirements: Any, updates: Any) -> Any:
+        if not state["raced"]:
+            state["raced"] = True
+            other = self.load_table(("tpch", "lineitem"))
+            if change == "delete":
+                # another writer deletes a row of the file being replaced
+                other.delete("k = 2")
+            elif change == "position delete":
+                # with bounds of the deleted row: PyIceberg's own check skips it
+                path = next(iter(other.scan().plan_files())).file.file_path
+                k = struct.pack("<q", 2)
+                _add_position_deletes(other, {path: [1]}, row_bounds={1: (k, k)})
+            else:
+                with other.update_spec() as update:
+                    update.add_identity("v")
+        return commit(self, table, requirements, updates)
+
+    monkeypatch.setattr(RacingCatalog, "commit_table", commit_table)
+    with pytest.raises(ValidationException) as exc:
+        lake_ctx(lake).execute("UPDATE lineitem SET v = 'x' WHERE k = 1")
+    assert any("no rows of table 'lineitem'" in n for n in exc.value.__notes__)
+    monkeypatch.undo()
+    rows = table_rows(lake, "tpch", "lineitem")
+    assert rows == ([(1, "a"), (2, "b")] if change == "partition spec" else [(1, "a")])
+
+
+@pytest.mark.write_disk
+def test_update_catalog_table_isolation_attribute(lake: CountingCatalog) -> None:
+    from polars.io.iceberg._sink import _set_isolation_operation
+
+    # a PyIceberg without the private attribute: refuse, rather than validate wrongly
+    with pytest.raises(NotImplementedError, match="isolation level"):
+        _set_isolation_operation(object(), "overwrite")
+
+
+MERGE_SOURCE = pl.DataFrame(
+    {"k": [2, 3, 5, None], "v": ["B", "C", "E", "N"], "n": [200, 300, 500, 0]}
+)
+
+
+def merge_ctx(lake: CountingCatalog) -> pl.SQLContext[pl.LazyFrame]:
+    """`update_ctx`'s table `t`, and the registered frame `src`."""
+    ctx = update_ctx(lake)
+    ctx.register("src", MERGE_SOURCE)
+    return ctx
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("clauses", "rows"),
+    [
+        # an upsert; a NULL key matches nothing
+        (
+            "ON t.k = s.k WHEN MATCHED THEN UPDATE SET v = s.v "
+            "WHEN NOT MATCHED THEN INSERT VALUES (s.k, s.v, s.n)",
+            [
+                (1, "a", 10),
+                (2, "B", 20),
+                (3, "C", 30),
+                (4, "d", None),
+                (5, "E", 500),
+                (None, "N", 0),
+            ],
+        ),
+        # the first clause whose condition holds applies
+        (
+            "ON t.k = s.k WHEN MATCHED AND s.k = 2 THEN DELETE "
+            "WHEN MATCHED THEN UPDATE SET n = s.n",
+            [(1, "a", 10), (3, "c", 300), (4, "d", None)],
+        ),
+        (
+            "ON t.k = s.k WHEN MATCHED THEN DO NOTHING "
+            "WHEN NOT MATCHED AND s.k IS NOT NULL THEN INSERT (k) VALUES (s.k)",
+            [*T_ROWS, (5, None, None)],
+        ),
+        # conditions of one side in ON leave rows unmatched, not filtered
+        (
+            "ON t.k = s.k AND t.v = 'zz' WHEN MATCHED THEN DELETE "
+            "WHEN NOT MATCHED THEN INSERT (k, v) VALUES (s.k, s.v)",
+            [
+                (1, "a", 10),
+                (2, "B", None),
+                (2, "b", 20),
+                (3, "C", None),
+                (3, "c", 30),
+                (4, "d", None),
+                (5, "E", None),
+                (None, "N", None),
+            ],
+        ),
+        (
+            "ON t.k = s.k AND s.n > 250 WHEN MATCHED THEN UPDATE SET v = s.v "
+            "WHEN NOT MATCHED THEN INSERT (k, v) VALUES (s.k, 'new')",
+            [
+                (1, "a", 10),
+                (2, "b", 20),
+                (2, "new", None),
+                (3, "C", 30),
+                (4, "d", None),
+                (5, "new", None),
+                (None, "new", None),
+            ],
+        ),
+        (
+            "ON t.k = s.k WHEN NOT MATCHED AND s.k = 5 THEN INSERT (k, v) "
+            "VALUES (s.k, 'five') WHEN NOT MATCHED THEN INSERT (v, k) VALUES (s.v, s.k)",
+            [*T_ROWS, (5, "five", None), (None, "N", None)],
+        ),
+        # every value is of the row before the update
+        (
+            "ON t.k = s.k WHEN MATCHED THEN UPDATE SET n = t.k, k = t.n",
+            [(1, "a", 10), (4, "d", None), (20, "b", 2), (30, "c", 3)],
+        ),
+        (
+            "ON t.k = s.k WHEN NOT MATCHED BY TARGET AND s.k > 4 THEN INSERT (k) "
+            "VALUES (s.k)",
+            [*T_ROWS, (5, None, None)],
+        ),
+        (
+            "ON (s.k = t.k) WHEN MATCHED AND s.k = 3 THEN UPDATE SET (v, n) = "
+            "(s.v, t.n + 1)",
+            [(1, "a", 10), (2, "b", 20), (3, "C", 31), (4, "d", None)],
+        ),
+        # constants only: as many rows as take the action, none here
+        (
+            "ON t.k = s.k WHEN MATCHED AND s.k = 100 THEN UPDATE SET k = 1, v = 'x', "
+            "n = 0 WHEN NOT MATCHED AND s.k = 100 THEN INSERT (k, v) VALUES (7, 'x')",
+            T_ROWS,
+        ),
+    ],
+)
+def test_merge_catalog_table(
+    lake: CountingCatalog, clauses: str, rows: list[Any]
+) -> None:
+    ctx = merge_ctx(lake)
+    response = ctx.execute(f"MERGE INTO t USING src AS s {clauses}", eager=True)
+    assert response.item() == "MERGE INTO lake.tpch.t"
+    assert table_rows(lake, "tpch", "t") == rows
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("statement", "rows"),
+    [
+        (
+            "MERGE INTO t USING (SELECT k, count(*) AS c FROM src GROUP BY k) AS s "
+            "ON t.k = s.k WHEN MATCHED THEN UPDATE SET n = s.c",
+            [(1, "a", 10), (2, "b", 1), (3, "c", 1), (4, "d", None)],
+        ),
+        (
+            "MERGE INTO t USING (VALUES (1, 'x'), (9, 'y')) AS s(k, v) ON t.k = s.k "
+            "WHEN MATCHED THEN UPDATE SET v = s.v "
+            "WHEN NOT MATCHED THEN INSERT (k, v) VALUES (s.k, s.v)",
+            [(1, "x", 10), *T_ROWS[1:], (9, "y", None)],
+        ),
+        (
+            "MERGE INTO lake.tpch.t AS x USING orders AS o ON x.k = o.k "
+            "WHEN MATCHED THEN UPDATE SET n = o.o",
+            [(1, "a", 10), (2, "b", 20), (3, "c", 30), (4, "d", None)],
+        ),
+        # the target as its own source, read at the same snapshot
+        (
+            "MERGE INTO t USING t AS s ON t.k = s.k + 1 "
+            "WHEN MATCHED THEN UPDATE SET n = s.n",
+            [(1, "a", 10), (2, "b", 10), (3, "c", 20), (4, "d", 30)],
+        ),
+    ],
+)
+def test_merge_catalog_table_sources(
+    lake: CountingCatalog, statement: str, rows: list[Any]
+) -> None:
+    ctx = merge_ctx(lake)
+    ctx.execute(statement)
+    assert table_rows(lake, "tpch", "t") == rows
+
+
+@pytest.mark.write_disk
+def test_merge_catalog_table_files(lake: CountingCatalog) -> None:
+    from pyiceberg.table.snapshots import Operation
+
+    ctx = merge_ctx(lake)
+
+    def snapshots() -> Any:
+        return lake.load_table(("tpch", "t")).metadata.snapshots
+
+    def data_files() -> set[str]:
+        return {
+            task.file.file_path
+            for task in lake.load_table(("tpch", "t")).scan().plan_files()
+        }
+
+    before, n_snapshots = data_files(), len(snapshots())
+    # only the file with a changed row is replaced, inserts added, in one snapshot
+    ctx.execute(
+        "MERGE INTO t USING (VALUES (3, 'x'), (7, 'y')) AS s(k, v) ON t.k = s.k "
+        "WHEN MATCHED THEN UPDATE SET v = s.v "
+        "WHEN NOT MATCHED THEN INSERT (k, v) VALUES (s.k, s.v)"
+    )
+    after = data_files()
+    assert len(before & after) == 1
+    assert [s.summary.operation for s in snapshots()[n_snapshots:]] == [
+        Operation.OVERWRITE
+    ]
+    # nothing to change: no commit, no warning
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        ctx.execute(
+            "MERGE INTO t USING src AS s ON t.k = s.k "
+            "WHEN MATCHED AND s.v = 'zz' THEN DELETE"
+        )
+        ctx.execute(
+            "MERGE INTO t USING (VALUES (99)) AS s(k) ON t.k = s.k "
+            "WHEN MATCHED THEN DELETE"
+        )
+    assert len(snapshots()) == n_snapshots + 1
+    # inserts only: no file replaced
+    files = data_files()
+    ctx.execute(
+        "MERGE INTO t USING (VALUES (8)) AS s(k) ON t.k = s.k "
+        "WHEN NOT MATCHED THEN INSERT (k) VALUES (s.k)"
+    )
+    assert files < data_files()
+    # a table without a snapshot: everything is inserted
+    ctx.execute("CREATE TABLE e (k INT)")
+    ctx.execute(
+        "MERGE INTO e USING src AS s ON e.k = s.k "
+        "WHEN MATCHED THEN DELETE WHEN NOT MATCHED THEN INSERT VALUES (s.k)"
+    )
+    assert table_rows(lake, "tpch", "e") == [(2,), (3,), (5,), (None,)]
+
+
+@pytest.mark.write_disk
+def test_merge_catalog_table_changed_twice(lake: CountingCatalog) -> None:
+    ctx = merge_ctx(lake)
+    ctx.register("dup", pl.DataFrame({"k": [2, 2], "v": ["X", "Y"]}))
+    snapshot = lake.load_table(("tpch", "t")).current_snapshot()
+    for action in ("UPDATE SET v = s.v", "DELETE"):
+        with pytest.raises(SQLInterfaceError, match="more than one source row") as exc:
+            ctx.execute(
+                f"MERGE INTO t USING dup AS s ON t.k = s.k WHEN MATCHED THEN {action}"
+            )
+        assert any("no rows of table 't'" in n for n in exc.value.__notes__)
+    assert lake.load_table(("tpch", "t")).current_snapshot() == snapshot
+    # one changing pair per target row: fine
+    ctx.execute(
+        "MERGE INTO t USING dup AS s ON t.k = s.k "
+        "WHEN MATCHED AND s.v = 'X' THEN DO NOTHING "
+        "WHEN MATCHED THEN UPDATE SET v = s.v"
+    )
+    assert table_rows(lake, "tpch", "t") == [(1, "a", 10), (2, "Y", 20), *T_ROWS[2:]]
+
+
+@pytest.mark.write_disk
+def test_merge_catalog_table_source_read_once(lake: CountingCatalog) -> None:
+    ctx = merge_ctx(lake)
+    calls: list[None] = []
+
+    def keys(df: pl.DataFrame) -> pl.DataFrame:
+        calls.append(None)
+        # rows in another order on every read
+        return df.sample(fraction=1.0, shuffle=True)
+
+    source = pl.LazyFrame({"k": range(10)}).map_batches(
+        keys, schema={"k": pl.Int64}, streamable=False
+    )
+    ctx.register("keys", source)
+    ctx.execute(
+        "MERGE INTO t USING (SELECT k, k * 10 AS n FROM keys) AS s ON t.k = s.k "
+        "WHEN MATCHED THEN UPDATE SET n = s.n "
+        "WHEN NOT MATCHED THEN INSERT (k, n) VALUES (s.k, s.n)"
+    )
+    assert len(calls) == 1
+    rows = table_rows(lake, "tpch", "t")
+    assert [r[0] for r in rows] == list(range(10))
+    assert all(n == k * 10 for k, _, n in rows)
+
+
+@pytest.mark.write_disk
+def test_merge_catalog_table_casts(lake: CountingCatalog) -> None:
+    ctx = merge_ctx(lake)
+    # another kind of value needs a CAST
+    with pytest.raises(pl.exceptions.SchemaError, match="convert it with CAST"):
+        ctx.execute(
+            "MERGE INTO t USING src AS s ON t.k = s.k "
+            "WHEN NOT MATCHED THEN INSERT (k, n) VALUES (s.k, s.v)"
+        )
+    # only the rows taking an action are cast for it
+    ctx.execute(
+        "MERGE INTO t USING (VALUES (1, 9000000000), (2, 7)) AS s(k, big) "
+        "ON t.k = s.k WHEN MATCHED AND s.big < 100 THEN UPDATE SET k = s.big"
+    )
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="column 'k'"):
+        ctx.execute(
+            "MERGE INTO t USING (VALUES (1, 9000000000)) AS s(k, big) "
+            "ON t.k = s.k WHEN MATCHED THEN UPDATE SET k = s.big"
+        )
+    assert table_rows(lake, "tpch", "t") == [
+        (1, "a", 10),
+        *T_ROWS[2:3],
+        (4, "d", None),
+        (7, "b", 20),
+    ]
+
+    ctx.execute("CREATE TABLE r (k INT NOT NULL, v VARCHAR)")
+    for clause in ("INSERT (v) VALUES (s.v)", "INSERT (k, v) VALUES (NULL, s.v)"):
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="NOT NULL"):
+            ctx.execute(
+                f"MERGE INTO r USING src AS s ON r.k = s.k WHEN NOT MATCHED THEN {clause}"
+            )
+    assert lake.load_table(("tpch", "r")).current_snapshot() is None
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("statement", "error"),
+    [
+        (
+            "MERGE t USING src AS s ON t.k = s.k WHEN MATCHED THEN DELETE",
+            "requires INTO",
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k "
+            "WHEN NOT MATCHED BY SOURCE THEN DELETE",
+            "NOT MATCHED BY SOURCE is not yet supported",
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k WHEN MATCHED THEN UPDATE SET *",
+            "UPDATE SET * is not yet supported",
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k WHEN NOT MATCHED THEN INSERT *",
+            "INSERT * is not yet supported",
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k WHEN NOT MATCHED THEN INSERT ROW",
+            "INSERT ROW is not yet supported",
+        ),
+        (
+            "WITH q AS (SELECT 1) MERGE INTO t USING src AS s ON t.k = s.k "
+            "WHEN MATCHED THEN DELETE",
+            "WITH before MERGE is not yet supported",
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k WHEN MATCHED THEN DELETE "
+            "RETURNING *",
+            "RETURNING is not yet supported",
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k < s.k WHEN MATCHED THEN DELETE",
+            "this ON condition is not yet supported",
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k OR t.v = s.v "
+            "WHEN MATCHED THEN DELETE",
+            "this ON condition is not yet supported",
+        ),
+        (
+            "MERGE INTO t USING src AS s ON FALSE "
+            "WHEN NOT MATCHED THEN INSERT (k) VALUES (s.k)",
+            "ON FALSE is not yet supported",
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k AND random() > 0.5 "
+            "WHEN MATCHED THEN DELETE",
+            "volatile functions in ON",
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k "
+            "WHEN MATCHED AND random() > 0.5 THEN DELETE",
+            "volatile functions in the condition of WHEN clause 1",
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k "
+            "WHEN MATCHED AND s.k IN (SELECT k FROM src) THEN DELETE",
+            "subqueries in the condition of WHEN clause 1",
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k "
+            "WHEN MATCHED THEN UPDATE SET n = (SELECT max(n) FROM src)",
+            "subqueries in the SET of column 'n'",
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k "
+            "WHEN MATCHED THEN UPDATE SET t.v = s.v",
+            "unqualified top-level column names",
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k "
+            "WHEN MATCHED THEN UPDATE SET v = s.v, v = 'x'",
+            "multiple assignments to column 'v'",
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k "
+            "WHEN MATCHED THEN UPDATE SET v = DEFAULT",
+            "DEFAULT in the SET of column 'v'",
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k "
+            "WHEN MATCHED THEN UPDATE SET n = max(s.n)",
+            "aggregate and set-returning functions are not allowed",
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k "
+            "WHEN MATCHED THEN UPDATE SET n = row_number() OVER ()",
+            "window functions are not allowed",
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k "
+            "WHEN MATCHED THEN DELETE WHEN MATCHED THEN UPDATE SET v = 'x'",
+            "WHEN clause 2 of the MERGE is unreachable",
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k "
+            "WHEN NOT MATCHED THEN INSERT (k, k) VALUES (s.k, s.k)",
+            "listed more than once",
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k "
+            "WHEN NOT MATCHED THEN INSERT (k, v) VALUES (s.k)",
+            "lists 2 columns but 1 values",
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k "
+            "WHEN NOT MATCHED THEN INSERT VALUES (s.k, s.v)",
+            "gives 2 values for 3 target columns",
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k "
+            "WHEN NOT MATCHED THEN INSERT VALUES (s.k, s.v, s.n), (s.k, s.v, s.n)",
+            "exactly one VALUES row",
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k "
+            "WHEN NOT MATCHED THEN INSERT (k) VALUES (t.k)",
+            "target column 't.k' is not available in WHEN NOT MATCHED",
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k "
+            "WHEN MATCHED THEN UPDATE SET v = v",
+            "ambiguous reference to column",
+        ),
+        (
+            "MERGE INTO t USING (SELECT * FROM src) ON t.k = k WHEN MATCHED THEN DELETE",
+            "a subquery in USING requires an alias",
+        ),
+        (
+            "MERGE INTO t USING src AS s(a, b, c) ON t.k = s.a WHEN MATCHED THEN DELETE",
+            "column alias lists on a plain source table",
+        ),
+        (
+            "MERGE INTO t USING t ON t.k = t.k WHEN MATCHED THEN DELETE",
+            "is used for both the MERGE target and source",
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k "
+            "WHEN MATCHED THEN UPDATE SET v = s.v WHERE s.k > 1",
+            "`UPDATE ... WHERE` predicates are not supported",
+        ),
+        (
+            "MERGE INTO t AS x(a, b, c) USING src AS s ON x.a = s.k "
+            "WHEN MATCHED THEN DELETE",
+            "column names in the table alias",
+        ),
+    ],
+)
+def test_merge_catalog_table_sql_errors(
+    lake: CountingCatalog, statement: str, error: str
+) -> None:
+    ctx = merge_ctx(lake)
+    snapshot = lake.load_table(("tpch", "t")).current_snapshot()
+    with pytest.raises(SQLInterfaceError, match=re.escape(error)):
+        ctx.execute(statement)
+    assert lake.load_table(("tpch", "t")).current_snapshot() == snapshot
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("statement", "error", "kind"),
+    [
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k AND t.n > avg(t.n) "
+            "WHEN MATCHED THEN DELETE",
+            "aggregate and set-returning functions are not allowed in ON",
+            SQLInterfaceError,
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k = sum(s.k) WHEN MATCHED THEN DELETE",
+            "aggregate and set-returning functions are not allowed in ON",
+            SQLInterfaceError,
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k WHEN MATCHED AND s.n THEN DELETE",
+            "the condition of WHEN clause 1 of a MERGE must be boolean",
+            SQLInterfaceError,
+        ),
+        (
+            "MERGE INTO t USING src AS s ON k = s.k WHEN MATCHED THEN DELETE",
+            'ambiguous reference to column "k" in ON',
+            SQLInterfaceError,
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k "
+            "WHEN MATCHED THEN UPDATE SET v = t.__polars_merge_pos",
+            "column '__polars_merge_pos' not found",
+            pl.exceptions.ColumnNotFoundError,
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k "
+            "WHEN MATCHED THEN UPDATE SET n = s.__polars_merge_s",
+            "column '__polars_merge_s' not found",
+            pl.exceptions.ColumnNotFoundError,
+        ),
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k "
+            "WHEN MATCHED THEN UPDATE SET missing = 1",
+            "column 'missing' not found",
+            pl.exceptions.ColumnNotFoundError,
+        ),
+        # checked before any row is read, also when no row would take the action
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k "
+            "WHEN MATCHED AND s.k = 100 THEN DELETE "
+            "WHEN MATCHED AND s.k = 100 THEN UPDATE SET n = 'x'",
+            "the UPDATE of WHEN clause 2 gives String",
+            pl.exceptions.SchemaError,
+        ),
+    ],
+)
+def test_merge_catalog_table_checked_first(
+    lake: CountingCatalog, statement: str, error: str, kind: type[Exception]
+) -> None:
+    ctx = merge_ctx(lake)
+    calls: list[None] = []
+
+    def read(df: pl.DataFrame) -> pl.DataFrame:
+        calls.append(None)
+        return df
+
+    ctx.register(
+        "src", MERGE_SOURCE.lazy().map_batches(read, schema=MERGE_SOURCE.schema)
+    )
+    with pytest.raises(kind, match=re.escape(error)):
+        ctx.execute(statement)
+    assert calls == []
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("statement", "rows"),
+    [
+        # a NULL condition does not hold
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k WHEN MATCHED AND NULL THEN DELETE",
+            T_ROWS,
+        ),
+        # the source's table name, qualified
+        (
+            "MERGE INTO t USING tpch.orders ON t.k = tpch.orders.k "
+            "WHEN MATCHED THEN UPDATE SET n = lake.tpch.orders.o",
+            [(1, "a", 10), (2, "b", 20), (3, "c", 30), (4, "d", None)],
+        ),
+        (
+            "MERGE INTO t USING orders ON t.k = orders.k "
+            "WHEN MATCHED AND orders.o > 15 THEN UPDATE SET n = orders.o + 1",
+            [(1, "a", 10), (2, "b", 21), (3, "c", 31), (4, "d", None)],
+        ),
+        # NOT MATCHED sees the source alone: no ambiguity with the target's names
+        (
+            "MERGE INTO t USING src AS s ON t.k = s.k "
+            "WHEN NOT MATCHED AND k = 5 THEN INSERT (k, v, n) VALUES (k, v, n)",
+            [*T_ROWS, (5, "E", 500)],
+        ),
+    ],
+)
+def test_merge_catalog_table_names(
+    lake: CountingCatalog, statement: str, rows: list[Any]
+) -> None:
+    ctx = merge_ctx(lake)
+    ctx.execute(statement)
+    assert table_rows(lake, "tpch", "t") == rows
+
+
+@pytest.mark.write_disk
+def test_merge_catalog_table_struct_columns(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE st (k INT, v INT)")
+    ctx.execute("INSERT INTO st VALUES (1, 10), (2, 20)")
+    ctx.register(
+        "nested",
+        pl.DataFrame({"k": [1, 3], "info": [{"a": 100}, {"a": 300}]}),
+    )
+    # an unqualified struct column of the source, as `SELECT info.a` reads it
+    ctx.execute(
+        "MERGE INTO st USING nested AS s ON st.k = s.k "
+        "WHEN MATCHED THEN UPDATE SET v = info.a "
+        "WHEN NOT MATCHED THEN INSERT VALUES (s.k, s.info.a)"
+    )
+    assert table_rows(lake, "tpch", "st") == [(1, 100), (2, 20), (3, 300)]
+
+
+@pytest.mark.write_disk
+def test_merge_catalog_table_pattern_column_names(lake: CountingCatalog) -> None:
+    # names that `col` would read as patterns are kept as they are
+    ctx = lake_ctx(lake)
+    ctx.execute('CREATE TABLE odd (k INT, "*" INT, "^v.*$" VARCHAR)')
+    ctx.execute("INSERT INTO odd VALUES (1, 10, 'a'), (2, 20, 'b')")
+    ctx.execute(
+        "MERGE INTO odd USING (VALUES (1, 'x'), (3, 'y')) AS s(k, v) ON odd.k = s.k "
+        'WHEN MATCHED THEN UPDATE SET "^v.*$" = s.v '
+        'WHEN NOT MATCHED THEN INSERT (k, "^v.*$") VALUES (s.k, s.v)'
+    )
+    assert table_rows(lake, "tpch", "odd") == [
+        (1, 10, "x"),
+        (2, 20, "b"),
+        (3, None, "y"),
+    ]
+
+
+@pytest.mark.write_disk
+def test_merge_catalog_table_not_null_from_data(lake: CountingCatalog) -> None:
+    ctx = merge_ctx(lake)
+    ctx.execute("CREATE TABLE r (k INT NOT NULL, v VARCHAR)")
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="column 'k'") as exc:
+        ctx.execute(
+            "MERGE INTO r USING src AS s ON r.k = s.k "
+            "WHEN NOT MATCHED THEN INSERT VALUES (s.k, s.v)"
+        )
+    assert any("no rows of table 'r'" in n for n in exc.value.__notes__)
+    assert lake.load_table(("tpch", "r")).current_snapshot() is None
+
+
+@pytest.mark.write_disk
+def test_merge_catalog_table_round_two(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    # a self merge whose target alone has an alias
+    ctx.execute("CREATE TABLE t (k INT, v INT)")
+    ctx.execute("INSERT INTO t VALUES (1, 10), (2, 20)")
+    ctx.execute(
+        "MERGE INTO t AS x USING t ON x.k = t.k WHEN MATCHED THEN UPDATE SET v = t.v + 1"
+    )
+    assert table_rows(lake, "tpch", "t") == [(1, 11), (2, 21)]
+    # string keys, as many as PyIceberg prunes an IN by and one more
+    ctx.execute("CREATE TABLE s (k VARCHAR, v INT)")
+    ctx.execute("INSERT INTO s VALUES ('key000', 0), ('zzz', 1)")
+    for n in (200, 201):
+        ctx.register("keys", pl.DataFrame({"k": [f"key{i:03}" for i in range(n)]}))
+        ctx.execute(
+            "MERGE INTO s USING keys AS q ON s.k = q.k WHEN MATCHED THEN DELETE"
+        )
+        assert table_rows(lake, "tpch", "s") == [("zzz", 1)]
+        ctx.execute("INSERT INTO s VALUES ('key000', 0)")
+    # a key column named like a pattern
+    ctx.execute('CREATE TABLE p ("*" INT, v INT)')
+    ctx.execute("INSERT INTO p VALUES (1, 10)")
+    ctx.execute(
+        'MERGE INTO p USING (VALUES (1, 100)) AS q(k, v) ON p."*" = q.k '
+        "WHEN MATCHED THEN UPDATE SET v = q.v"
+    )
+    assert table_rows(lake, "tpch", "p") == [(1, 100)]
+    # WHEN NOT MATCHED sees the source alone: `t.a` is its struct column `t`
+    ctx.register("nested", pl.DataFrame({"k": [3], "t": [{"a": 100}]}))
+    ctx.execute(
+        "MERGE INTO t USING nested AS s ON t.k = s.k "
+        "WHEN NOT MATCHED THEN INSERT VALUES (s.k, t.a)"
+    )
+    assert table_rows(lake, "tpch", "t") == [(1, 11), (2, 21), (3, 100)]
+    # a struct field named like the plan's own columns
+    ctx.register(
+        "fields", pl.DataFrame({"k": [1], "info": [{"__polars_merge_pos": 7}]})
+    )
+    ctx.execute(
+        "MERGE INTO t USING fields AS s ON t.k = s.k "
+        "WHEN MATCHED THEN UPDATE SET v = s.info.__polars_merge_pos"
+    )
+    assert table_rows(lake, "tpch", "t") == [(1, 7), (2, 21), (3, 100)]
+
+
+@pytest.mark.write_disk
+def test_merge_catalog_table_key_filter_kinds(lake: CountingCatalog) -> None:
+    from pyiceberg.expressions import AlwaysTrue
+
+    from polars.sql.context import _merge_key_filter
+
+    table = lake.load_table(("tpch", "lineitem"))
+    # keys without an exact order or range leave the filter as is, past the IN limit
+    for values, dtype in [
+        ([{"x": i} for i in range(201)], pl.Struct({"x": pl.Int64})),
+        ([[i] for i in range(201)], pl.List(pl.Int64)),
+    ]:
+        source = pl.DataFrame({"a": values})
+        target = pl.Schema({"k": dtype})
+        assert (
+            _merge_key_filter(source, [("k", pl.col("a"))], table, target)
+            == AlwaysTrue()
+        )
+    # dates past Python's range: no range, no error
+    days = pl.Series("a", range(2932897, 2933098)).cast(pl.Date)
+    target = pl.Schema({"k": pl.Date})
+    assert (
+        _merge_key_filter(pl.DataFrame(days), [("k", pl.col("a"))], table, target)
+        == AlwaysTrue()
+    )
+
+
+@pytest.mark.write_disk
+def test_merge_registered_frame_refused(lake: CountingCatalog) -> None:
+    ctx = merge_ctx(lake)
+    with pytest.raises(SQLInterfaceError, match="supported only for catalog tables"):
+        ctx.execute(
+            "MERGE INTO src USING t AS s ON src.k = s.k WHEN MATCHED THEN DELETE"
+        )
+
+
+@pytest.mark.write_disk
+def test_merge_catalog_table_key_filter(lake: CountingCatalog) -> None:
+    from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And, In
+
+    from polars.sql.context import _merge_key_filter
+
+    table = lake.load_table(("tpch", "lineitem"))
+    target = pl.Schema({"k": pl.Int64, "v": pl.String})
+    source = pl.DataFrame(
+        {"a": [1, 2, None], "b": [1.0, 2.0, None], "c": [None, None, None]},
+        schema={"a": pl.Int32, "b": pl.Float64, "c": pl.Int64},
+    )
+    # an integer key narrows the filter, NULLs dropped
+    row_filter = _merge_key_filter(source, [("k", pl.col("a"))], table, target)
+    if isinstance(row_filter, And):
+        row_filter = row_filter.left
+    assert isinstance(row_filter, In)
+    assert {lit.value for lit in row_filter.literals} == {1, 2}
+    # a float key compares the column lossily: no narrowing
+    assert (
+        _merge_key_filter(source, [("k", pl.col("b"))], table, target) == AlwaysTrue()
+    )
+    # only NULL keys: nothing can match
+    assert (
+        _merge_key_filter(source, [("k", pl.col("c"))], table, target) == AlwaysFalse()
+    )
+    # more keys than PyIceberg prunes an IN by: their range
+    many = pl.DataFrame({"a": range(1000)})
+    row_filter = _merge_key_filter(many, [("k", pl.col("a"))], table, target)
+    assert "GreaterThanOrEqual" in repr(row_filter)
+    assert "LessThanOrEqual" in repr(row_filter)
+    # a key out of the column's range matches nothing
+    narrow = pl.Schema({"k": pl.Int8, "v": pl.String})
+    big = pl.DataFrame({"a": [1000]})
+    assert _merge_key_filter(big, [("k", pl.col("a"))], table, narrow) == AlwaysFalse()
+
+
+@pytest.mark.write_disk
+def test_merge_catalog_table_concurrent(tmp_path: Path) -> None:
+    from pyiceberg.exceptions import ValidationException
+
+    lake = RacingCatalog(
+        "lake", uri=f"sqlite:///{tmp_path / 'c.db'}", warehouse=f"file://{tmp_path}"
+    )
+    lake.create_namespace(("tpch",))
+    table = lake.create_table(("tpch", "lineitem"), schema=LINEITEM.to_arrow().schema)
+    LINEITEM.write_iceberg(table, mode="append")
+    ctx = lake_ctx(lake)
+    # the other writer adds key 99, which this MERGE would insert: refused
+    lake.race = ("tpch", "lineitem")
+    with pytest.raises(ValidationException) as exc:
+        ctx.execute(
+            "MERGE INTO lineitem USING (VALUES (99, 'mine')) AS s(k, v) "
+            "ON lineitem.k = s.k WHEN NOT MATCHED THEN INSERT VALUES (s.k, s.v)"
+        )
+    assert any("no rows of table 'lineitem'" in n for n in exc.value.__notes__)
+    assert table_rows(lake, "tpch", "lineitem") == [(1, "a"), (2, "b"), (99, "raced")]
+    # the other writer's row can't match: retried on the new snapshot
+    lake.race = ("tpch", "lineitem")
+    ctx.execute(
+        "MERGE INTO lineitem USING (VALUES (1, 'x'), (5, 'e')) AS s(k, v) "
+        "ON lineitem.k = s.k WHEN MATCHED THEN UPDATE SET v = s.v "
+        "WHEN NOT MATCHED THEN INSERT VALUES (s.k, s.v)"
+    )
+    rows = [(1, "x"), (2, "b"), (5, "e"), (99, "raced"), (99, "raced")]
+    assert table_rows(lake, "tpch", "lineitem") == rows
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("properties", "refused"),
+    [
+        ({}, True),
+        ({"write.update.isolation-level": "snapshot"}, False),
+        # MERGE reads UPDATE's property, as PyIceberg maps an overwrite to it
+        ({"write.delete.isolation-level": "snapshot"}, True),
+    ],
+)
+def test_merge_catalog_table_isolation_level(
+    tmp_path: Path, properties: dict[str, str], refused: bool
+) -> None:
+    from pyiceberg.exceptions import ValidationException
+
+    lake = RacingCatalog(
+        "lake", uri=f"sqlite:///{tmp_path / 'c.db'}", warehouse=f"file://{tmp_path}"
+    )
+    lake.create_namespace(("tpch",))
+    table = lake.create_table(
+        ("tpch", "lineitem"), schema=LINEITEM.to_arrow().schema, properties=properties
+    )
+    LINEITEM.write_iceberg(table, mode="append")
+    statement = (
+        "MERGE INTO lineitem USING (VALUES (99, 'mine')) AS s(k, v) "
+        "ON lineitem.k = s.k WHEN NOT MATCHED THEN INSERT VALUES (s.k, s.v)"
+    )
+    # the other writer appends the key this MERGE inserts
+    lake.race = ("tpch", "lineitem")
+    if refused:
+        with pytest.raises(ValidationException):
+            lake_ctx(lake).execute(statement)
+        rows = [(1, "a"), (2, "b"), (99, "raced")]
+    else:
+        lake_ctx(lake).execute(statement)
+        rows = [(1, "a"), (2, "b"), (99, "mine"), (99, "raced")]
+    assert table_rows(lake, "tpch", "lineitem") == rows
+
+
+@pytest.mark.write_disk
+def test_merge_catalog_table_position_deletes(lake: CountingCatalog) -> None:
+    from tests.unit.io.test_iceberg import _add_position_deletes
+
+    table = lake.create_table(("tpch", "d"), schema=LINEITEM.to_arrow().schema)
+    df = pl.DataFrame({"k": [1, 2, 3], "v": ["a", "b", "c"]})
+    df.write_iceberg(table, mode="append")
+    data_file = next(iter(table.scan().plan_files())).file.file_path
+    # with bounds of the deleted row, which the key filter `k IN (1)` leaves out
+    k = struct.pack("<q", 2)
+    _add_position_deletes(
+        lake.load_table(("tpch", "d")), {data_file: [1]}, row_bounds={1: (k, k)}
+    )
+    lake_ctx(lake).execute(
+        "MERGE INTO d USING (VALUES (1, 'x')) AS s(k, v) ON d.k = s.k "
+        "WHEN MATCHED THEN UPDATE SET v = s.v"
+    )
+    assert table_rows(lake, "tpch", "d") == [(1, "x"), (3, "c")]
+
+
+@pytest.mark.write_disk
+def test_merge_catalog_table_partitioned(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE p (k INT, part VARCHAR) PARTITION BY (part)")
+    ctx.execute("INSERT INTO p VALUES (1, 'x'), (2, 'x'), (3, 'y')")
+    ctx.execute(
+        "MERGE INTO p USING (VALUES (1, 'y'), (4, 'z')) AS s(k, part) ON p.k = s.k "
+        "WHEN MATCHED THEN UPDATE SET part = s.part "
+        "WHEN NOT MATCHED THEN INSERT VALUES (s.k, s.part)"
+    )
+    assert table_rows(lake, "tpch", "p") == [(1, "y"), (2, "x"), (3, "y"), (4, "z")]
+    rows = lake.load_table(("tpch", "p")).scan(row_filter="part = 'y'").to_arrow()
+    assert sorted(rows["k"].to_pylist()) == [1, 3]
 
 
 @pytest.mark.write_disk

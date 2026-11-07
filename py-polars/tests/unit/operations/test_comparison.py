@@ -16,6 +16,7 @@ from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from contextlib import AbstractContextManager as ContextManager
     from pathlib import Path
 
@@ -1447,3 +1448,26 @@ def test_comparison_int_fractional_literal_prunes_row_groups(
     )
     assert out["x"].to_list() == list(range(850, 901))
     assert "reading 2 / 10 row groups" in capfd.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        (lambda lhs, rhs: lhs < rhs, True),
+        (lambda lhs, rhs: lhs <= rhs, True),
+        (lambda lhs, rhs: lhs > rhs, False),
+        (lambda lhs, rhs: lhs >= rhs, False),
+        (lambda lhs, rhs: lhs == rhs, False),
+        (lambda lhs, rhs: lhs != rhs, True),
+        (lambda lhs, rhs: lhs.eq_missing(rhs), False),
+        (lambda lhs, rhs: lhs.ne_missing(rhs), True),
+    ],
+)
+def test_compare_unit_literal_with_scalar_column_30518(
+    op: Callable[[pl.Expr, pl.Expr], pl.Expr], expected: bool
+) -> None:
+    df = pl.DataFrame({"p": [1, 2, 3]}).with_columns(x=pl.lit(5.0))
+    assert_frame_equal(
+        df.select(y=op(pl.lit(0.0), pl.col("x"))),
+        pl.DataFrame({"y": [expected] * 3}),
+    )

@@ -1,3 +1,4 @@
+use polars_utils::aliases::PlIndexMap;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
 
@@ -137,8 +138,8 @@ pub fn is_prop<P: Fn(&AExpr) -> bool>(
     }
 
     match ae {
-        // Literals that aren't being projected are allowed to be non-scalar, so we don't add them
-        // for inspection. (e.g. `is_in(<literal>)`).
+        // A single-value right-hand side of `is_in` is broadcast, so it needn't be inspected. A
+        // multi-row literal is zipped row by row.
         #[cfg(feature = "is_in")]
         Function {
             function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }),
@@ -149,7 +150,7 @@ pub fn is_prop<P: Fn(&AExpr) -> bool>(
                 assert_eq!(input.len(), 2); // A.is_in(B)
                 let rhs = rhs.node();
 
-                if matches!(expr_arena.get(rhs), AExpr::Literal { .. }) {
+                if is_single_literal_ae(rhs, expr_arena) {
                     stack.extend([input[0].node()]);
                     return;
                 }
@@ -227,12 +228,7 @@ pub fn is_elementwise_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
 /// functions are excluded.
 pub fn is_input_independent_scalar_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     property_rec(node, expr_arena, |stack, ae, _| {
-        let independent = match ae {
-            AExpr::Literal(lv) => lv.is_scalar(),
-            AExpr::BinaryExpr { .. } | AExpr::Cast { .. } | AExpr::Ternary { .. } => true,
-            AExpr::Function { options, .. } => options.is_elementwise(),
-            _ => false,
-        };
+        let independent = is_input_independent_scalar_top_level(ae);
         if independent {
             ae.inputs_rev(stack);
         }
@@ -240,24 +236,116 @@ pub fn is_input_independent_scalar_rec(node: Node, expr_arena: &Arena<AExpr>) ->
     })
 }
 
+/// Whether `ae` yields an input-independent scalar when all its inputs do.
+fn is_input_independent_scalar_top_level(ae: &AExpr) -> bool {
+    match ae {
+        AExpr::Literal(lv) => lv.is_scalar(),
+        AExpr::BinaryExpr { .. } | AExpr::Cast { .. } | AExpr::Ternary { .. } => true,
+        AExpr::Function { options, .. } => options.is_elementwise(),
+        _ => false,
+    }
+}
+
 /// Checks if the top-level expression node is row-separable. If this is the case, then `stack` will
 /// be extended further with any nested expression nodes.
+///
+/// This doesn't check that the inputs it pushes line up within a batch, so walking it with
+/// `property_rec` accepts `a.filter(p) + b.filter(q)`; use [`is_row_separable_rec`] for a whole
+/// expression.
 pub fn is_row_separable(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Arena<AExpr>) -> bool {
     is_prop(stack, ae, expr_arena, |ae| ae.is_row_separable_top_level())
 }
 
+/// Whether each expression in `nodes` on its own is row-separable, see [`is_row_separable_rec`].
+/// Public API for downstream crates such as Polars Cloud.
+///
+/// This doesn't check that the outputs of several expressions line up with each other.
 pub fn all_row_separable<'a, N>(nodes: &'a [N], expr_arena: &Arena<AExpr>) -> bool
 where
     Node: From<&'a N>,
 {
+    let mut memo = PlIndexMap::default();
     nodes
         .iter()
-        .all(|n| is_row_separable_rec(n.into(), expr_arena))
+        .all(|n| row_separability(n.into(), expr_arena, &mut memo).row_separable)
 }
 
-/// Recursive variant of `is_row_separable`
+/// Whether the expression at `node` as a whole is row-separable, see [`row_separability`].
 pub fn is_row_separable_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
-    property_rec(node, expr_arena, is_row_separable)
+    row_separability(node, expr_arena, &mut PlIndexMap::default()).row_separable
+}
+
+/// The properties of an expression that decide whether it is row-separable.
+#[derive(Clone, Copy, Debug)]
+pub struct RowSeparability {
+    /// Evaluating the expression on batches of rows and concatenating the results gives the same
+    /// output as evaluating it on the whole frame, where a scalar result is broadcast to the
+    /// frame's height.
+    pub row_separable: bool,
+    /// As [`is_elementwise_rec`].
+    pub elementwise: bool,
+    /// As [`is_input_independent_scalar_rec`].
+    pub input_independent_scalar: bool,
+    /// The expression reads a column or the frame's length.
+    pub frame_dependent: bool,
+}
+
+/// Derives the [`RowSeparability`] of the expression at `node`, memoizing it and that of the
+/// subexpressions it visits in `memo`, so that sharing `memo` across calls visits each node once.
+///
+/// Every node must be row-separable, and the inputs it zips must line up within a batch (see
+/// [`zipped_inputs_line_up`]). A node that isn't elementwise must also have an input that reads the
+/// frame: `lit([1, 2]).explode()` gives two rows per batch.
+#[recursive::recursive]
+pub fn row_separability(
+    node: Node,
+    expr_arena: &Arena<AExpr>,
+    memo: &mut PlIndexMap<Node, RowSeparability>,
+) -> RowSeparability {
+    if let Some(&props) = memo.get(&node) {
+        return props;
+    }
+    let ae = expr_arena.get(node);
+    let mut stack = unitvec![];
+    ae.inputs_rev(&mut stack);
+    let inputs: UnitVec<RowSeparability> = stack
+        .iter()
+        .map(|&n| row_separability(n, expr_arena, memo))
+        .collect();
+    let row_separable = ae.is_row_separable_top_level()
+        && inputs.iter().all(|p| p.row_separable)
+        && zipped_inputs_line_up(&inputs)
+        && (ae.is_elementwise_top_level() || inputs.iter().any(|p| p.frame_dependent));
+
+    // `is_elementwise` skips the single-literal right-hand side of `is_in`, as
+    // `is_elementwise_rec` does. Every input it pushes is in `memo` already.
+    stack.clear();
+    let elementwise =
+        is_elementwise(&mut stack, ae, expr_arena) && stack.iter().all(|n| memo[n].elementwise);
+
+    let input_independent_scalar = is_input_independent_scalar_top_level(ae)
+        && inputs.iter().all(|p| p.input_independent_scalar);
+    let frame_dependent =
+        matches!(ae, AExpr::Column(_) | AExpr::Len) || inputs.iter().any(|p| p.frame_dependent);
+
+    let props = RowSeparability {
+        row_separable,
+        elementwise,
+        input_independent_scalar,
+        frame_dependent,
+    };
+    memo.insert(node, props);
+    props
+}
+
+/// Whether `inputs`, zipped within a batch of rows, line up as they do over the whole frame: all
+/// are elementwise, or all but one are input-independent scalars.
+///
+/// This is sufficient, not necessary: two filters on the same predicate line up, but are
+/// rejected.
+pub fn zipped_inputs_line_up(inputs: &[RowSeparability]) -> bool {
+    let mut non_scalars = inputs.iter().filter(|p| !p.input_independent_scalar);
+    non_scalars.clone().all(|p| p.elementwise) || non_scalars.nth(1).is_none()
 }
 
 #[derive(Debug, Clone)]

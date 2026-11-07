@@ -30,7 +30,7 @@ impl MetaNameSpace {
         };
         let mut arena = Arena::with_capacity(8);
         let mut ctx = ExprToIRContext::new_no_verification(&mut arena, schema);
-        to_expr_ir(self.0.clone(), &mut ctx)
+        to_expr_ir(&self.0, &mut ctx)
             .map(|expr| aexpr_is_simple_projection(expr.node(), &arena))
             .unwrap_or(false)
     }
@@ -103,7 +103,7 @@ impl MetaNameSpace {
         };
         let mut arena = Default::default();
         let mut ctx = ExprToIRContext::new_no_verification(&mut arena, schema);
-        let node = to_expr_ir(self.0, &mut ctx)?.node();
+        let node = to_expr_ir(&self.0, &mut ctx)?.node();
         let mut visitor = TreeFmtVisitor::default();
         if display_as_dot {
             visitor.display = TreeFmtVisitorDisplay::DisplayDot;
@@ -119,9 +119,28 @@ impl MetaNameSpace {
         let mut expr_arena = Arena::new();
         let schema = Default::default();
         let mut ctx = ExprToIRContext::new_no_verification(&mut expr_arena, &schema);
-        let e_ir = to_expr_ir(self.0, &mut ctx)?;
+        let e_ir = to_expr_ir(&self.0, &mut ctx)?;
 
         Ok((e_ir, expr_arena))
+    }
+
+    /// Resolves the expression as `select` does on a frame with `schema`, which must contain every
+    /// column it reads, or on its own without a schema.
+    fn into_expr_irs(self, schema: Option<&Schema>) -> PolarsResult<(Vec<ExprIR>, Arena<AExpr>)> {
+        let Some(schema) = schema else {
+            let (e_ir, expr_arena) = self.into_expr_ir()?;
+            return Ok((vec![e_ir], expr_arena));
+        };
+        let plan = DslBuilder::from_existing_df(DataFrame::empty_with_schema(schema))
+            .project(vec![self.0], Default::default())
+            .build()
+            .to_alp()?;
+        let exprs = match plan.lp_arena.get(plan.lp_top) {
+            IR::Select { expr, .. } => expr.clone(),
+            // A selector that matches no column.
+            _ => Vec::new(),
+        };
+        Ok((exprs, plan.expr_arena))
     }
 
     /// Indicate if this expression represents a literal value (optionally aliased).
@@ -138,26 +157,29 @@ impl MetaNameSpace {
         })
     }
 
-    pub fn is_length_preserving(self) -> PolarsResult<bool> {
-        let (e_ir, expr_arena) = self.into_expr_ir()?;
-        Ok(e_ir.is_length_preserving(&expr_arena))
+    pub fn is_length_preserving(self, schema: Option<&Schema>) -> PolarsResult<bool> {
+        let (exprs, expr_arena) = self.into_expr_irs(schema)?;
+        Ok(exprs.iter().all(|e| e.is_length_preserving(&expr_arena)))
     }
 
-    pub fn is_scalar(self) -> PolarsResult<bool> {
-        let (e_ir, expr_arena) = self.into_expr_ir()?;
-        Ok(e_ir.is_scalar(&expr_arena))
+    pub fn is_scalar(self, schema: Option<&Schema>) -> PolarsResult<bool> {
+        let (exprs, expr_arena) = self.into_expr_irs(schema)?;
+        Ok(exprs.iter().all(|e| e.is_scalar(&expr_arena)))
     }
 
-    pub fn is_known_length(self) -> PolarsResult<bool> {
-        let (e_ir, expr_arena) = self.into_expr_ir()?;
-        Ok(e_ir.is_known_length(&expr_arena))
+    pub fn is_known_length(self, schema: Option<&Schema>) -> PolarsResult<bool> {
+        let (exprs, expr_arena) = self.into_expr_irs(schema)?;
+        Ok(exprs.iter().all(|e| e.is_known_length(&expr_arena)))
     }
 
-    pub fn is_row_separable(self) -> PolarsResult<bool> {
-        let (e_ir, expr_arena) = self.into_expr_ir()?;
-        let mut stack = polars_utils::unitvec![];
-        let ae = expr_arena.get(e_ir.node());
-        Ok(is_row_separable(&mut stack, ae, &expr_arena))
+    /// Indicate if this expression as a whole is row-separable (see [`is_row_separable_rec`]).
+    pub fn is_row_separable(self, schema: Option<&Schema>) -> PolarsResult<bool> {
+        let has_schema = schema.is_some();
+        let (exprs, expr_arena) = self.into_expr_irs(schema)?;
+        Ok(exprs.iter().all(|e| {
+            is_row_separable_rec(e.node(), &expr_arena)
+                && (has_schema || !has_unresolved_set_argument(e.node(), &expr_arena))
+        }))
     }
 
     /// Indicate if this expression yields one scalar value that does not depend on any
@@ -166,4 +188,25 @@ impl MetaNameSpace {
         let (e_ir, expr_arena) = self.into_expr_ir()?;
         Ok(is_input_independent_scalar_rec(e_ir.node(), &expr_arena))
     }
+}
+
+/// Whether an `is_in` or `replace` has a non-literal argument, which only the schema can resolve
+/// into a set (`implode()`) or a value per row.
+fn has_unresolved_set_argument(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    let is_unresolved = |e: &ExprIR| !matches!(expr_arena.get(e.node()), AExpr::Literal(_));
+    has_aexpr(node, expr_arena, |ae| match ae {
+        #[cfg(feature = "is_in")]
+        AExpr::Function {
+            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }),
+            input,
+            ..
+        } => is_unresolved(&input[1]),
+        #[cfg(feature = "replace")]
+        AExpr::Function {
+            function: IRFunctionExpr::Replace | IRFunctionExpr::ReplaceStrict { .. },
+            input,
+            ..
+        } => input[1..3].iter().any(is_unresolved),
+        _ => false,
+    })
 }

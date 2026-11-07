@@ -10,6 +10,7 @@ use polars_core::schema::{Schema, SchemaExt, SchemaRef};
 use polars_error::{PolarsResult, polars_err};
 use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
+use polars_io::parquet::encryption::file_decryption_properties;
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, ParquetOptions};
 use polars_io::utils::byte_source::{BufferByteSource, DynByteSource, DynByteSourceBuilder};
@@ -177,7 +178,7 @@ impl FileReader for ParquetFileReader {
 
             Arc::new(polars_parquet::parquet::read::deserialize_metadata(
                 metadata_bytes,
-                self.config.decryption_properties.as_ref().map(|p| &p.0),
+                file_decryption_properties(self.config.decryption.as_ref())?.as_ref(),
             )?)
         };
 
@@ -376,6 +377,12 @@ impl FileReader for ParquetFileReader {
         // Prepare parameters for dispatch
         let projected_arrow_fields = projected_arrow_fields()?.clone();
         let memory_prefetch_func = get_memory_prefetch_func(verbose);
+
+        // Ordered scans hold completed fetches behind the head of line.
+        self.row_group_prefetch_sync.pipeline_budget.begin_file(
+            byte_source.window_inflight_budget().is_some(),
+            maintain_order,
+        );
         let row_group_prefetch_size = self
             .row_group_prefetch_sync
             .pipeline_budget
@@ -383,11 +390,12 @@ impl FileReader for ParquetFileReader {
             .min(file_metadata.row_groups.len())
             .max(1);
 
-        // This can be set to 1 to force column-per-thread parallelism, e.g. for bug reproduction.
+        // Small enough that the columns of one large row group decode in parallel, so threads stay
+        // busy when few row groups are in flight. Set to 1 for one column per task.
         let target_values_per_thread =
             std::env::var("POLARS_PARQUET_DECODE_TARGET_VALUES_PER_THREAD")
                 .map(|x| x.parse::<usize>().expect("integer").max(1))
-                .unwrap_or(16_777_216);
+                .unwrap_or(1 << 20);
 
         let is_full_projection = projected_arrow_fields.len() == file_schema.len();
 
@@ -524,8 +532,8 @@ struct Config {
     num_pipelines: usize,
     /// Number of row groups to pre-fetch concurrently, this can be across files
     row_group_prefetch_size: usize,
-    /// Minimum number of values for a parallel spawned task to process to amortize
-    /// parallelism overhead.
+    /// Number of values a decode or filter task aims for: a row group's columns are split into
+    /// tasks of about this many values.
     target_values_per_thread: usize,
     /// Minimum number of pieces to split this file's last morsel into. Precomputed by the
     /// multi-scan layer to share the parallelism budget across files.
