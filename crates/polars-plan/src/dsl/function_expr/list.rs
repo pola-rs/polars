@@ -5,6 +5,7 @@ use super::*;
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum ListFunction {
     Concat,
+    Explode(ExplodeOptions),
     #[cfg(feature = "is_in")]
     Contains {
         nulls_equal: bool,
@@ -60,6 +61,7 @@ impl Display for ListFunction {
 
         let name = match self {
             Concat => "concat",
+            Explode(_) => "explode",
             #[cfg(feature = "is_in")]
             Contains { nulls_equal: _ } => "contains",
             #[cfg(feature = "list_drop_nulls")]

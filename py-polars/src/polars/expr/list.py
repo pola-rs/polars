@@ -1240,7 +1240,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         └─────┘
         """
         return wrap_expr(
-            self._pyexpr.explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
+            self._pyexpr.list_explode(
+                empty_as_null=empty_as_null, keep_nulls=keep_nulls
+            )
         )
 
     def count_matches(self, element: IntoExpr) -> Expr:

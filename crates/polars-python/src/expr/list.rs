@@ -39,6 +39,17 @@ impl PyExpr {
         self.inner.clone().list().eval(expr.inner).into()
     }
 
+    fn list_explode(&self, empty_as_null: bool, keep_nulls: bool) -> Self {
+        self.inner
+            .clone()
+            .list()
+            .explode(ExplodeOptions {
+                empty_as_null,
+                keep_nulls,
+            })
+            .into()
+    }
+
     fn list_agg(&self, expr: PyExpr) -> Self {
         self.inner.clone().list().agg(expr.inner).into()
     }
