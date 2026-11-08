@@ -23,6 +23,9 @@ if TYPE_CHECKING:
 
 N_ROW_GROUPS = 10
 ROWS_PER_GROUP = 100
+# A filter over the build keys checked per row: a bloom filter, or a bitset for
+# integer keys in a small range.
+KEY_SET = re.compile(r"(bloom|bitset) of")
 
 
 @pytest.fixture
@@ -314,10 +317,10 @@ def test_union_scans_choose_per_row_filtering_each(
     fact_part(tmp_path, "narrow", [i % 10 for i in range(n)])
     # Other scan options keep the inputs from being merged into one scan.
     narrow = pl.scan_parquet(tmp_path / "narrow.parquet", low_memory=True)
-    q = pl.concat([wide, narrow]).join(tiny(0, 1, 2, 3, 4), on="k")
+    q = pl.concat([wide, narrow]).join(tiny(0, 2, 4, 6, 8), on="k")
     out, choices, err = union_bloom_log(q, plmonkeypatch, capfd)
     assert choices == ["false", "true"]
-    assert "bloom of" in err
+    assert KEY_SET.search(err)
     assert "dropping bloom filter" not in err
     assert out.height == 5 + 500
     assert_matches_in_memory(q, out)
@@ -1096,11 +1099,11 @@ def test_scan_without_statistics_is_not_eligible(tmp_path: Path) -> None:
     assert q.collect(engine="streaming").get_column("k").sort().to_list() == [220, 240]
 
 
-def test_broad_range_filters_rows_by_bloom(
+def test_broad_range_filters_rows_by_bitset(
     tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
     # Shuffled keys: every row group spans the range, so nothing is skipped and
-    # the bloom filter over the build keys filters the rows instead.
+    # a bitset over the build keys filters the rows instead.
     n = N_ROW_GROUPS * ROWS_PER_GROUP
     keys = pl.Series("k", range(n)).shuffle(seed=1)
     path = tmp_path / "shuffled.parquet"
@@ -1110,7 +1113,7 @@ def test_broad_range_filters_rows_by_bloom(
     q = pl.scan_parquet(path).join(dim(220, 240), on="k")
     out, err = reader_log(q, plmonkeypatch, capfd)
     assert "reading 10 / 10 row groups" in err
-    assert "bloom: Some" in err
+    assert "bitset: Some" in err
     assert "Pre-filtered decode enabled (1 live [1 column predicates" in err
     assert out.get_column("k").sort().to_list() == [220, 240]
 
@@ -1368,7 +1371,7 @@ def test_bloom_with_a_static_predicate_on_the_key(
 ) -> None:
     q = shuffled_fact.filter(pl.col("k") > 500).join(tiny(220, 240, 620, 640), on="k")
     err = bloom_run(q, plmonkeypatch, capfd, [620, 640])
-    assert "bloom of" in err
+    assert KEY_SET.search(err)
     assert "reading 10 / 10 row groups" in err
 
 
@@ -1407,7 +1410,7 @@ def test_weak_bloom_is_bypassed(
     )
     q = pl.scan_parquet(path).join(build, on="s")
     out, err = reader_log(q, plmonkeypatch, capfd)
-    assert "bloom of" in err
+    assert KEY_SET.search(err)
     assert "Dynamic predicate bypassed" in err
     assert out.height == n
     assert_matches_in_memory(q, out)
@@ -1423,7 +1426,7 @@ def test_bloom_gate_keeps_the_range_only(
     q = shuffled_fact.join(tiny(0, 1, 2, key="k2"), on="k2")
     out, err = reader_log(q, plmonkeypatch, capfd)
     assert "bloom: None" in err
-    assert "bloom of" not in err
+    assert not KEY_SET.search(err)
     assert "Dynamic predicate started filtering rows" in err
     assert "Dynamic predicate bypassed" not in err
     assert out.get_column("k2").unique().sort().to_list() == [0, 1, 2]
@@ -1485,7 +1488,7 @@ def test_two_blooms_on_one_scan_key(
     q = shuffled_fact.join(dim(220, 240, 260), on="k").join(tiny(240, 260, 280), on="k")
     assert q.explain(engine="streaming").count("dynamic_predicate") == 2
     err = bloom_run(q, plmonkeypatch, capfd, [240, 260])
-    assert err.count("bloom of") == 2
+    assert len(KEY_SET.findall(err)) == 2
     assert "Pre-filtered decode enabled (1 live [1 column predicates" in err
 
 
@@ -1495,11 +1498,11 @@ def test_bloom_on_composite_keys(
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     other = pl.LazyFrame(
-        {"k": [230, 231, 232], "k2": [230 % 7, 231 % 7, 6], "d": [1, 2, 3]}
+        {"k": [230, 233, 236], "k2": [230 % 7, 233 % 7, 6], "d": [1, 2, 3]}
     ).filter(pl.col("d") > 0)
     q = shuffled_fact.join(other, on=["k", "k2"])
-    err = bloom_run(q, plmonkeypatch, capfd, [230, 231])
-    assert err.count("bloom of") >= 1
+    err = bloom_run(q, plmonkeypatch, capfd, [230, 233])
+    assert KEY_SET.search(err)
 
 
 def test_bloom_never_matches_null_keys(
@@ -1519,14 +1522,32 @@ def test_bloom_never_matches_null_keys(
     )
     q = pl.scan_parquet(path).join(build, on="k")
     err = bloom_run(q, plmonkeypatch, capfd, [221])
-    assert "bloom of" in err
+    assert KEY_SET.search(err)
+
+
+def test_dense_integer_keys_filter_by_their_range(
+    shuffled_fact: pl.LazyFrame,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # Every value between the smallest and largest key is a key, so the range
+    # alone is exact and nothing is checked per key.
+    build = pl.LazyFrame({"k": [None, *range(300, 340)]}).with_columns(
+        e=pl.int_range(pl.len())
+    )
+    q = shuffled_fact.join(build.filter(pl.col("e") >= 0), on="k")
+    err = bloom_run(q, plmonkeypatch, capfd, list(range(300, 340)))
+    assert "bloom: None, bitset: None" in err
+    assert "Dynamic predicate started filtering rows" in err
 
 
 def test_bloom_is_sized_from_the_build_keys_seen(
     tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
     n = 1_000_000
-    keys = pl.Series("k", range(n)).shuffle(seed=5)
+    # Spread out, so the keys span too wide a range for a bitset.
+    spread = 1024
+    keys = pl.Series("k", range(0, n * spread, spread)).shuffle(seed=5)
     path = tmp_path / "large.parquet"
     pl.DataFrame({"k": keys, "v": keys}).write_parquet(
         path, row_group_size=n // 10, statistics="full"
@@ -1534,9 +1555,9 @@ def test_bloom_is_sized_from_the_build_keys_seen(
     # Conjuncts the plan cannot estimate, so it expects far fewer build keys than
     # the 200k that arrive: more than a bloom filter of the planned size holds,
     # yet few enough of the probe keys to be worth probing.
-    build = pl.LazyFrame({"k": range(0, n, 5), "a": range(0, n, 5)}).filter(
-        (pl.col("a") >= 0) & (pl.col("k") < n)
-    )
+    build = pl.LazyFrame(
+        {"k": range(0, n * spread, 5 * spread), "a": range(0, n, 5)}
+    ).filter((pl.col("a") >= 0) & (pl.col("k") < n * spread))
     q = pl.scan_parquet(path).join(build, on="k")
     out, err = reader_log(q, plmonkeypatch, capfd)
     planned = re.search(r"runtime filter on k: (\d+) distinct build keys", err)
@@ -1570,7 +1591,7 @@ def test_bloom_key_dtypes(
     ).filter(pl.col("e") >= 0)
     q = pl.scan_parquet(path).join(build, on="k")
     err = bloom_run(q, plmonkeypatch, capfd, [220, 240], column="v")
-    assert "bloom of" in err
+    assert KEY_SET.search(err)
 
 
 # A semi join publishes from either side, an anti join from its left side only.
@@ -1586,14 +1607,14 @@ def test_semi_join_publishes_from_either_side(
     assert "BUILD SIDE: ForceRight" in plan
     assert plan.count("dynamic_predicate") == 1
     err = bloom_run(q, plmonkeypatch, capfd, [220, 240])
-    assert "bloom of" in err
+    assert KEY_SET.search(err)
 
     q = tiny(220, 240, 1000).join(shuffled_fact, on="k", how="semi")
     plan = q.explain(engine="streaming")
     assert "BUILD SIDE: ForceLeft" in plan
     assert plan.count("dynamic_predicate") == 1
     err = bloom_run(q, plmonkeypatch, capfd, [220, 240])
-    assert "bloom of" in err
+    assert KEY_SET.search(err)
 
 
 def test_anti_join_publishes_from_the_left_only(
@@ -1606,7 +1627,7 @@ def test_anti_join_publishes_from_the_left_only(
     assert "BUILD SIDE: ForceLeft" in plan
     assert plan.count("dynamic_predicate") == 1
     err = bloom_run(q, plmonkeypatch, capfd, [1000])
-    assert "bloom of" in err
+    assert KEY_SET.search(err)
 
     q = shuffled_fact.join(tiny(220, 240, 1000), on="k", how="anti")
     plan = q.explain(engine="streaming")
