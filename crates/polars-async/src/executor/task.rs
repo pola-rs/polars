@@ -33,33 +33,38 @@ impl TaskState {
 
     /// Wake this task. Returns true if task.schedule should be called.
     fn wake(&self) -> bool {
+        // We always write, even if the state doesn't change. If we only loaded
+        // SCHEDULED / NOTIFIED_WHILE_RUNNING, nothing would order our caller's
+        // prior writes with the upcoming poll, which could then miss them
+        // while we skip rescheduling, losing the wakeup. As a read-modify-write
+        // we either precede start_running (which then acquires our writes) or
+        // observe RUNNING and reschedule.
         self.state
-            .try_update(Ordering::Release, Ordering::Relaxed, |state| match state {
-                Self::SCHEDULED | Self::NOTIFIED_WHILE_RUNNING => None,
-                Self::RUNNING => Some(Self::NOTIFIED_WHILE_RUNNING),
-                Self::IDLE => Some(Self::SCHEDULED),
+            .update(Ordering::Release, Ordering::Relaxed, |state| match state {
+                Self::SCHEDULED | Self::NOTIFIED_WHILE_RUNNING => state,
+                Self::RUNNING => Self::NOTIFIED_WHILE_RUNNING,
+                Self::IDLE => Self::SCHEDULED,
                 _ => unreachable!("invalid TaskState"),
             })
-            .map(|state| state == Self::IDLE)
-            .unwrap_or(false)
+            == Self::IDLE
     }
 
     /// Start running this task.
     fn start_running(&self) {
-        assert_eq!(self.state.load(Ordering::Acquire), Self::SCHEDULED);
-        self.state.store(Self::RUNNING, Ordering::Relaxed);
+        // Must be a read-modify-write, see wake().
+        let old_state = self.state.swap(Self::RUNNING, Ordering::Acquire);
+        assert_eq!(old_state, Self::SCHEDULED);
     }
 
     /// Done running this task. Returns true if task.schedule should be called.
     fn reschedule_after_running(&self) -> bool {
         self.state
-            .try_update(Ordering::Release, Ordering::Relaxed, |state| match state {
-                Self::RUNNING => Some(Self::IDLE),
-                Self::NOTIFIED_WHILE_RUNNING => Some(Self::SCHEDULED),
+            .update(Ordering::Release, Ordering::Relaxed, |state| match state {
+                Self::RUNNING => Self::IDLE,
+                Self::NOTIFIED_WHILE_RUNNING => Self::SCHEDULED,
                 _ => panic!("TaskState::reschedule_after_running() called on invalid state"),
             })
-            .map(|old_state| old_state == Self::NOTIFIED_WHILE_RUNNING)
-            .unwrap_or(false)
+            == Self::NOTIFIED_WHILE_RUNNING
     }
 }
 
@@ -85,7 +90,7 @@ where
     F: Future + Send + 'a,
     F::Output: Send + 'static,
     S: Fn(Arc<dyn Runnable<M>>) + Send + Sync + Copy + 'static,
-    M: Send + Sync + 'static,
+    M: OnCancel + Send + Sync + 'static,
 {
     /// # Safety
     /// It is the responsibility of the caller that before lifetime 'a ends the
@@ -116,7 +121,7 @@ where
     F: Future + Send,
     F::Output: Send + 'static,
     S: Fn(Arc<dyn Runnable<M>>) + Send + Sync + Copy + 'static,
-    M: Send + Sync + 'static,
+    M: OnCancel + Send + Sync + 'static,
 {
     fn wake(self: Arc<Self>) {
         if self.state.wake() {
@@ -138,7 +143,7 @@ where
     F: Future + Send,
     F::Output: Send + 'static,
     S: Fn(Arc<dyn Runnable<M>>) + Send + Sync + Copy + 'static,
-    M: Send + Sync + 'static,
+    M: OnCancel + Send + Sync + 'static,
 {
 }
 
@@ -159,7 +164,7 @@ where
     F: Future + Send,
     F::Output: Send + 'static,
     S: Fn(Arc<dyn Runnable<M>>) + Send + Sync + Copy + 'static,
-    M: Send + Sync + 'static,
+    M: OnCancel + Send + Sync + 'static,
 {
     #[inline]
     fn metadata(&self) -> &M {
@@ -219,7 +224,7 @@ where
     F: Future + Send,
     F::Output: Send + 'static,
     S: Fn(Arc<dyn Runnable<M>>) + Send + Sync + Copy + 'static,
-    M: Send + Sync + 'static,
+    M: OnCancel + Send + Sync + 'static,
 {
     fn poll_join(&self, cx: &mut Context<'_>) -> Poll<F::Output> {
         self.join_waker.register(cx.waker());
@@ -240,6 +245,11 @@ where
     }
 }
 
+/// Task metadata that is notified when its task is cancelled.
+pub trait OnCancel {
+    fn on_cancel(&self);
+}
+
 /// Fully type-erased task.
 pub trait Cancellable: Send + Sync {
     fn cancel(&self);
@@ -250,7 +260,7 @@ where
     F: Future + Send,
     F::Output: Send + 'static,
     S: Send + Sync + 'static,
-    M: Send + Sync + 'static,
+    M: OnCancel + Send + Sync + 'static,
 {
     fn cancel(&self) {
         let mut data = self.data.lock();
@@ -261,6 +271,7 @@ where
             // Still in-progress, cancel.
             _ => {
                 *data = TaskData::Cancelled;
+                self.metadata.on_cancel();
                 if let Some(join_waker) = self.join_waker.take() {
                     join_waker.wake();
                 }
@@ -274,7 +285,7 @@ where
     F: Future + Send + 'static,
     F::Output: Send + 'static,
     S: Fn(Arc<dyn Runnable<M>>) + Send + Sync + Copy + 'static,
-    M: Send + Sync + 'static,
+    M: OnCancel + Send + Sync + 'static,
 {
     unsafe { Task::spawn(future, schedule, metadata) }.into_dyn()
 }
@@ -292,7 +303,7 @@ where
     F: Future + Send + 'a,
     F::Output: Send + 'static,
     S: Fn(Arc<dyn Runnable<M>>) + Send + Sync + Copy + 'static,
-    M: Send + Sync + 'static,
+    M: OnCancel + Send + Sync + 'static,
 {
     Task::spawn(future, schedule, metadata).into_dyn()
 }

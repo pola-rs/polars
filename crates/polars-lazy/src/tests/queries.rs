@@ -1301,6 +1301,26 @@ fn test_regex_selection() -> PolarsResult<()> {
 }
 
 #[test]
+fn test_sort_first_last_nan() -> PolarsResult<()> {
+    let df = df!["a" => [1.0, f64::NAN, 2.0]]?;
+    let out = df
+        .lazy()
+        .select([
+            col("a")
+                .sort(SortOptions::default().with_order_descending(true))
+                .first()
+                .alias("first"),
+            col("a").sort(SortOptions::default()).last().alias("last"),
+        ])
+        .collect_with_engine(Engine::InMemory)?
+        .unwrap_single();
+    for name in ["first", "last"] {
+        assert!(out.column(name)?.f64()?.get(0).unwrap().is_nan());
+    }
+    Ok(())
+}
+
+#[test]
 fn test_sort_by() -> PolarsResult<()> {
     let df = df![
         "a" => [1, 2, 3, 4, 5],

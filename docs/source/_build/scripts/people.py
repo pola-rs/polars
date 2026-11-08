@@ -28,14 +28,9 @@ def get_people_md():
             )
 
 
-def on_startup(command, dirty):
-    """Mkdocs hook to autogenerate docs/assets/people.md on startup"""
+if __name__ == "__main__":
     try:
         get_people_md()
     except Exception as e:
         msg = f"WARNING:{__file__}: Could not generate docs/assets/people.md. Got error: {str(e)}"
         print(msg)
-
-
-if __name__ == "__main__":
-    get_people_md()

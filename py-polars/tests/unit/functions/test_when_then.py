@@ -3,14 +3,18 @@ from __future__ import annotations
 import itertools
 import random
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 import polars.selectors as cs
 from polars.exceptions import InvalidOperationError
+from polars.meta import get_index_type
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType
 
 
 def test_when_then() -> None:
@@ -812,6 +816,26 @@ def test_when_then_simplification() -> None:
     )
 
 
+def test_when_then_simplification_scalar_branches() -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 2], "a": [1, 2, 3]})
+    q = lf.group_by("g", maintain_order=True).agg(
+        pl.when(True).then(pl.col("a").max()).otherwise(pl.col("a").min())
+    )
+    assert "when" not in q.explain()
+    assert_frame_equal(q.collect(), pl.DataFrame({"g": [1, 2], "a": [2, 3]}))
+
+    # A scalar branch next to a column branch is not folded, as it would change the
+    # height.
+    q = lf.select(pl.when(True).then(pl.col("a").max()).otherwise(pl.col("a")))
+    assert "when" in q.explain()
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [3, 3, 3]}))
+
+    # A scalar branch that is not taken is broadcast to the taken branch, so it can go.
+    q = lf.select(pl.when(False).then(pl.col("a").max()).otherwise(pl.col("a")))
+    assert "when" not in q.explain()
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 2, 3]}))
+
+
 def test_when_then_in_group_by_aggregated_22922() -> None:
     df = pl.DataFrame({"group": ["x", "y", "x", "y"], "value": [1, 2, 3, 4]})
     out = df.group_by("group", maintain_order=True).agg(
@@ -864,3 +888,143 @@ def test_when_otherwise_broadcast_28969(
         {"t": [1 if x else 2 for x in input]}, schema={"t": pl.Int64}
     )
     assert_frame_equal(out, expected)
+
+
+def test_when_then_scalar_condition_on_empty_frame_with_cse() -> None:
+    n = pl.len().cast(pl.Int64)
+    running = pl.col("x").cum_sum()
+    q = pl.LazyFrame({"x": []}, schema={"x": pl.Int64}).with_columns(
+        pl.when(n > 1).then((running - 1) / (n - 1)).otherwise(0.0).alias("y"),
+        (running * n).alias("z"),
+    )
+    expected = pl.DataFrame(
+        schema={"x": pl.Int64, "y": pl.Float64, "z": pl.Int64},
+    )
+    assert_frame_equal(q.collect(engine="in-memory"), expected)
+
+
+@pytest.mark.parametrize("height", [0, 3])
+def test_when_then_scalar_condition_with_cse_scalar_branch(height: int) -> None:
+    n = (pl.col("x") > 5).sum()
+    q = pl.LazyFrame({"x": range(height)}, schema={"x": pl.Int64}).select(
+        pl.when(n > 0).then(n * 2)
+    )
+    expected = pl.DataFrame({"x": [None]}, schema={"x": get_index_type()})
+    assert_frame_equal(q.collect(engine="in-memory"), expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_when_then_scalar_condition_masks_unselected_branch(engine: EngineType) -> None:
+    q = pl.LazyFrame({"x": ["bad", "worse"]}).select(
+        pl.when(pl.lit(False)).then(pl.col("x").cast(pl.Int64)).otherwise(0)
+    )
+    assert q.collect(engine=engine).to_series().to_list() == [0, 0]
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_when_then_masked_list_item_struct_30252(engine: EngineType) -> None:
+    schema = {
+        "params": pl.List(
+            pl.Struct({"key": pl.String, "value": pl.Struct({"int_value": pl.Int64})})
+        )
+    }
+    lf = pl.LazyFrame(
+        {"params": [[{"key": "foo", "value": {"int_value": 42}}], []]},
+        schema=schema,
+    )
+    filtered = pl.col.params.list.filter(pl.element().struct.field("key") == "foo")
+    q = lf.select(
+        pl.when(filtered.list.len() > 0).then(
+            filtered.list.item(allow_empty=True)
+            .struct.field("value")
+            .struct.field("int_value")
+        )
+    )
+    assert q.collect(engine=engine).to_series().to_list() == [42, None]
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_when_then_masks_multichunk_struct_29799(engine: EngineType) -> None:
+    df = pl.DataFrame(
+        {
+            "v": [1.0, 0.0, None, 2.0, 0.0],
+            "s": [{"a": 1}, {"a": 2}, None, {"a": 4}, {"a": 5}],
+        }
+    )
+    df = pl.concat([df[:1], df[1:]], rechunk=False)
+    assert df["s"].n_chunks() == 2
+
+    q = df.lazy().select(
+        then=pl.when(pl.col.v > 0).then(pl.col.s.struct.field("a") + 1),
+        otherwise=pl.when(pl.col.v > 0).then(0).otherwise(pl.col.s.struct.field("a")),
+        struct=pl.when(pl.col.v > 0).then(pl.col.s),
+    )
+    expected = pl.DataFrame(
+        {
+            "then": [2, None, None, 5, None],
+            "otherwise": [0, 2, None, 0, 5],
+            "struct": [{"a": 1}, None, None, {"a": 4}, None],
+        }
+    )
+    assert_frame_equal(q.collect(engine=engine), expected)
+
+    # The strict cast only succeeds if masking nulled the field in every chunk.
+    df = pl.concat(
+        [
+            pl.DataFrame({"m": [True], "s": [{"a": "1"}]}),
+            pl.DataFrame({"m": [False], "s": [{"a": "bad"}]}),
+        ],
+        rechunk=False,
+    )
+    out = (
+        df.lazy()
+        .select(pl.when("m").then(pl.col.s.struct.field("a").cast(pl.Int64)))
+        .collect(engine=engine)
+    )
+    assert out.to_series().to_list() == [1, None]
+
+    # Three uneven chunks, masked out only inside the middle one. Uses vstack, not
+    # concat: concat can leave a stale null-propagation flag (#29815).
+    df = (
+        pl.DataFrame({"m": [True, True], "s": [{"a": "0"}, {"a": "1"}]})
+        .vstack(
+            pl.DataFrame(
+                {"m": [True, False, True], "s": [{"a": "2"}, {"a": "bad"}, {"a": "4"}]}
+            )
+        )
+        .vstack(pl.DataFrame({"m": [True], "s": [{"a": "5"}]}))
+    )
+    assert [len(c) for c in df["s"].get_chunks()] == [2, 3, 1]
+    out = (
+        df.lazy()
+        .select(pl.when("m").then(pl.col.s.struct.field("a").cast(pl.Int64)))
+        .collect(engine=engine)
+    )
+    assert out.to_series().to_list() == [0, 1, 2, None, 4, 5]
+
+    # Original reproducer.
+    df = pl.DataFrame({"v": [1.0] + [0.0] * 16}).with_columns(
+        pl.struct(pl.col("v").alias("ma")).alias("symbol"),
+    )
+    df = pl.concat([df[:1], df[1:]], rechunk=False)
+    s = pl.col("symbol").struct.field("ma")
+    out = (
+        df.lazy()
+        .select(pl.when(s > 0).then(1).when(s > 0).then(1).forward_fill().alias("x"))
+        .collect(engine=engine)
+    )
+    assert out["x"].to_list() == [1] * 17
+
+
+def test_when_then_string_literal_categorical_join_29816() -> None:
+    lf = pl.LazyFrame(
+        {"k": [0, 1], "c": ["a", "b"]}, schema_overrides={"c": pl.Categorical}
+    )
+    q = lf.with_columns(
+        pl.when(pl.col("c") == "a").then(pl.lit("z")).otherwise(pl.col("c")).alias("c")
+    ).join(pl.LazyFrame({"k": [0, 1]}), on="k")
+    assert q.collect_schema()["c"] == pl.Categorical
+    expected = pl.DataFrame(
+        {"k": [0, 1], "c": ["z", "b"]}, schema_overrides={"c": pl.Categorical}
+    )
+    assert_frame_equal(q.collect(), expected, check_row_order=False)

@@ -18,6 +18,7 @@ from polars.testing import assert_frame_equal, assert_frame_not_equal
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from polars._typing import EngineType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -29,7 +30,7 @@ def num_cse_occurrences(explanation: str) -> int:
 def create_dataframe_source(
     source_df: pl.DataFrame,
     is_pure: bool,
-    validate_schame: bool = False,
+    validate_schema: bool = False,
 ) -> pl.LazyFrame:
     """Generates a custom io source based on the provided pl.DataFrame."""
 
@@ -49,7 +50,7 @@ def create_dataframe_source(
     return register_io_source(
         dataframe_source,
         schema=source_df.schema,
-        validate_schema=validate_schame,
+        validate_schema=validate_schema,
         is_pure=is_pure,
     )
 
@@ -322,9 +323,9 @@ def test_cse_group_by_10215() -> None:
         (pl.col("a").sum() * pl.col("a").sum()).alias("x"),
         (pl.col("b").sum() * pl.col("b").sum()).alias("y"),
         (pl.col("a").sum() * pl.col("a").sum()).alias("x2"),
-        ((pl.col("a") + 2).sum() * pl.col("a").sum()).alias("x3"),
-        ((pl.col("a") + 2).sum() * pl.col("b").sum()).alias("x4"),
-        ((pl.col("a") + 2).sum() * pl.col("b").sum()),
+        ((pl.col("a") * 2).sum() * pl.col("a").sum()).alias("x3"),
+        ((pl.col("a") * 2).sum() * pl.col("b").sum()).alias("x4"),
+        ((pl.col("a") * 2).sum() * pl.col("b").sum()),
     )
 
     assert "__POLARS_CSER" in result.explain(
@@ -336,9 +337,9 @@ def test_cse_group_by_10215() -> None:
             "x": [1],
             "y": [1],
             "x2": [1],
-            "x3": [3],
-            "x4": [3],
-            "a": [3],
+            "x3": [2],
+            "x4": [2],
+            "a": [2],
         }
     )
     assert_frame_equal(
@@ -1019,11 +1020,19 @@ def test_cse_custom_io_source_same_object() -> None:
     assert io_source.call_count == 0
 
     assert_frame_equal(
-        pl.concat(pl.collect_all(lfs)),
+        pl.concat(pl.collect_all(lfs, engine="in-memory")),
         pl.DataFrame({"a": [1, 2, 3, 4, 5, 1, 2, 3, 4, 5]}),
     )
 
     assert io_source.call_count == 1
+
+    # The streaming engine reads a pure source again instead of caching it.
+    assert_frame_equal(
+        pl.concat(pl.collect_all(lfs, engine="streaming")),
+        pl.DataFrame({"a": [1, 2, 3, 4, 5, 1, 2, 3, 4, 5]}),
+    )
+
+    assert io_source.call_count == 3
 
     io_source = Mock(wraps=lambda *_: iter([df]))
 
@@ -1574,6 +1583,33 @@ def test_projection_pushdown_cache_node_inputs_point_to_same_node_28367() -> Non
     assert_frame_equal(q4.select(pl.col.x.min()).collect(), pl.DataFrame({"x": [1]}))
 
 
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("cache_mode", ["manual", "source", "automatic"])
+@pytest.mark.parametrize("projection", [["k"], ["v", "k"]])
+def test_nested_cache_preserves_projection_29707(
+    engine: EngineType,
+    cache_mode: str,
+    projection: list[str],
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_ALLOW_NESTED_CSPE", "1")
+
+    source = pl.LazyFrame({"k": [1, 2, 3], "v": [1, 2, 2]})
+    if cache_mode != "automatic":
+        source = source.cache()
+    projected = source.select(projection)
+    if cache_mode == "manual":
+        projected = projected.cache()
+    query = pl.concat([projected, projected]).join(source, on="k")
+
+    expected = pl.DataFrame({"k": [1, 2, 3, 1, 2, 3], "v": [1, 2, 2, 1, 2, 2]})
+    if projection == ["v", "k"]:
+        expected = expected.select("v", "k", pl.col("v").alias("v_right"))
+
+    assert query.collect_schema() == expected.schema
+    assert_frame_equal(query.collect(engine=engine), expected, check_row_order=False)
+
+
 def test_csee_height_mismatch_28364() -> None:
     buf = io.BytesIO()
     pl.LazyFrame({"x": [1, 2]}).sink_ipc(buf, record_batch_size=1)
@@ -1589,7 +1625,7 @@ def test_cspe_with_non_pushable_filters_19479() -> None:
     # The predicates reference a column computed within the common subplan, so they
     # cannot be pushed past it. We keep the cache so the subplan is shared.
     lazy_df = pl.LazyFrame({"foo": [1, 2, 3, 4, 5], "bar": [6, 7, 8, 9, 10]})
-    common_subplan = lazy_df.with_columns(pl.col("foo") * 2)
+    common_subplan = lazy_df.with_columns(pl.col("foo") * pl.col("bar"))
 
     expr1 = common_subplan.filter(pl.col("foo") * 2 > 4)
     expr2 = common_subplan.filter(pl.col("foo") * 2 < 8)
@@ -1631,9 +1667,9 @@ def test_cspe_with_mixed_filters_19479() -> None:
     # shared across all branches rather than removing them for a partial pushdown.
     q_base = pl.LazyFrame(
         {"foo": [1, 2, 3, 4, 5], "bar": [6, 7, 8, 9, 10]}
-    ).with_columns(pl.col("foo") * 2)
+    ).with_columns(pl.col("foo") * pl.col("bar"))
 
-    # `foo * 2` is computed within the subplan -> not pushable.
+    # `foo * bar` is computed within the subplan -> not pushable.
     q1 = q_base.filter(pl.col("foo") * 2 > 4)
     q2 = q_base.filter(pl.col("foo") * 2 < 8)
     # `bar` is available before the subplan -> pushable.
@@ -1654,7 +1690,7 @@ def test_cspe_with_mixed_filters_19479() -> None:
 
 def test_cspe_with_filters_sink_multiple_19479() -> None:
     lazy_df = pl.LazyFrame({"foo": [1, 2, 3, 4, 5], "bar": [6, 7, 8, 9, 10]})
-    common_subplan = lazy_df.with_columns(pl.col("foo") * 2)
+    common_subplan = lazy_df.with_columns(pl.col("foo") * pl.col("bar"))
 
     expr1 = common_subplan.filter(pl.col("foo") * 2 > 4)
     expr2 = common_subplan.filter(pl.col("foo") * 2 < 8)
@@ -1864,8 +1900,9 @@ def test_cspe_nested_cache_does_not_block_pushable_filters() -> None:
     # Currently, with POLARS_ALLOW_NESTED_CSPE=1, we only cache the unfiltered scan,
     # which is why this is disabled by default (DEFAULT_ALLOW_NESTED_CSPE == false).
     plan = q.explain()
-    assert plan.count('SELECTION: col("a") > 90') == 2, plan
-    assert plan.count('SELECTION: col("a") < 5') == 2, plan
+    assert "FILTER" not in plan, plan
+    assert plan.count('SELECTION: col("a") > 90') == 1, plan
+    assert plan.count('SELECTION: col("a") < 5') == 1, plan
 
     assert_frame_equal(
         q.collect(),
@@ -2258,3 +2295,64 @@ def test_cspe_narrowing_ignores_a_reader_that_keeps_no_rows(dead: pl.Expr) -> No
         q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
         check_row_order=False,
     )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("method", ["select", "with_columns"])
+def test_cspe_filter_on_redefined_column_not_pushed_into_cache_29788(
+    engine: EngineType, method: str
+) -> None:
+    base = pl.LazyFrame(
+        {"c": ["a", "b"], "d": ["x", "y"], "e": [1, 2], "v": [1, 2], "w": [3, 4]}
+    ).filter(pl.col("e") > 0)
+
+    def proj(v: str) -> pl.LazyFrame:
+        # Redefines "c" in terms of the original "c".
+        exprs = [(pl.col("c") + pl.col("d")).alias("c"), pl.col(v).alias("x")]
+        if method == "select":
+            lf = base.select(exprs)
+        else:
+            lf = base.with_columns(exprs)
+        return lf.select("c", "x")
+
+    q = pl.concat([proj("v"), proj("w")]).filter(pl.col("c") == "ax")
+
+    expected = pl.DataFrame({"c": ["ax", "ax"], "x": [1, 3]})
+    assert_frame_equal(q.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize("method", ["select", "with_columns"])
+def test_cse_scalar_multichunk_projection_29902(method: str) -> None:
+    # The first chunk must be large enough to trigger chunk-wise evaluation.
+    n = 2 * pl.thread_pool_size() + 10
+    df = pl.concat(
+        [pl.DataFrame({"x": range(n)}), pl.DataFrame({"x": [n]})], rechunk=False
+    )
+    assert df.n_chunks() == 2
+
+    exprs = {"a": pl.col("x") + pl.col("x").sum(), "b": pl.col("x").sum()}
+    lf = df.lazy()
+    q = lf.select(**exprs) if method == "select" else lf.with_columns(**exprs)
+
+    total = sum(range(n + 1))
+    expected = pl.DataFrame(
+        {"a": [x + total for x in range(n + 1)], "b": [total] * (n + 1)}
+    )
+    if method == "with_columns":
+        expected = pl.concat([df.rechunk(), expected], how="horizontal")
+    assert_frame_equal(q.collect(engine="in-memory"), expected)
+
+
+def test_cse_group_by_scalar_28653() -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 2], "j": [1, 2, 3]})
+    lit = pl.lit(-1.5).abs()
+
+    q = lf.group_by("g", maintain_order=True).agg(a=lit, b=lit)
+    expected = pl.DataFrame({"g": [1, 2], "a": [1.5, 1.5], "b": [1.5, 1.5]})
+    out = q.collect()
+    assert_frame_equal(out, expected)
+    assert out.schema == q.collect_schema()
+
+    q = lf.group_by("g", maintain_order=True).agg(c=pl.col("j") + lit, d=lit)
+    expected = pl.DataFrame({"g": [1, 2], "c": [[2.5, 3.5], [4.5]], "d": [1.5, 1.5]})
+    assert_frame_equal(q.collect(), expected)

@@ -1,7 +1,7 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
-use polars_async::executor;
+use polars_async::executor::{self, TaskMetricAggregator};
 use polars_async::primitives::connector;
 use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
@@ -13,7 +13,9 @@ use crate::nodes::io_sinks::components::file_provider::FileProvider;
 use crate::nodes::io_sinks::components::file_sink::{FileSinkPermit, FileSinkTaskData};
 use crate::nodes::io_sinks::components::sinked_path_info_list::SinkedPathInfoList;
 use crate::nodes::io_sinks::components::size::RowCountAndSize;
-use crate::nodes::io_sinks::writers::interface::{FileOpenTaskHandle, FileWriterStarter};
+use crate::nodes::io_sinks::writers::interface::{
+    FileOpenTaskHandle, FileWriterStarter, finish_signal,
+};
 use crate::utils::tokio_handle_ext;
 
 #[derive(Clone)]
@@ -23,6 +25,7 @@ pub struct PartitionSinkStarter {
     pub sync_on_close: SyncOnCloseType,
     pub num_pipelines_per_sink: NonZeroUsize,
     pub sinked_path_info_list: Option<SinkedPathInfoList>,
+    pub task_metrics: Option<Arc<TaskMetricAggregator>>,
 }
 
 impl PartitionSinkStarter {
@@ -33,7 +36,11 @@ impl PartitionSinkStarter {
         file_permit: FileSinkPermit,
     ) -> PolarsResult<FileSinkTaskData> {
         let file_provider = Arc::clone(&self.file_provider);
-        let path_info_entry = self.sinked_path_info_list.as_ref().map(|x| x.new_entry());
+        let path_info_entry = self.sinked_path_info_list.as_ref().map(|x| {
+            let entry = x.new_entry();
+            entry.set_partition_keys(Arc::clone(&file_provider_args.partition_keys));
+            entry
+        });
         let file_open_task = tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn({
             let path_info_entry = path_info_entry.clone();
             async move {
@@ -44,14 +51,17 @@ impl PartitionSinkStarter {
         }));
 
         let (morsel_tx, morsel_rx) = connector::connector();
+        let (finish_tx, finish_rx) = finish_signal();
 
         let writer_handle = self.writer_starter.start_file_writer(
             morsel_rx,
-            FileOpenTaskHandle::new(file_open_task, self.sync_on_close),
+            FileOpenTaskHandle::new(file_open_task, self.sync_on_close, finish_rx),
             self.num_pipelines_per_sink,
+            self.task_metrics.clone(),
         )?;
 
-        let task_handle = executor::spawn(TaskPriority::High, async move {
+        let task_metrics = self.task_metrics.as_deref();
+        let task_handle = executor::spawn(TaskPriority::High, task_metrics, async move {
             writer_handle.await?;
             Ok(file_permit)
         });
@@ -61,6 +71,7 @@ impl PartitionSinkStarter {
             start_position,
             task_handle,
             path_info_entry,
+            finish_tx,
         ))
     }
 }

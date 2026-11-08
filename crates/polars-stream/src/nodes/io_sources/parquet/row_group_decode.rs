@@ -1,10 +1,12 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use polars_async::executor::TaskPriority;
+use polars_async::executor::{TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::opt_spawned_future::parallelize_first_to_local;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{ArrowField, BooleanChunked, ChunkFilter, Column, DataType, IntoColumn};
+use polars_core::prelude::{
+    ArrowDataType, ArrowField, BooleanChunked, ChunkFilter, Column, DataType, IDX_DTYPE, IntoColumn,
+};
 use polars_core::scalar::Scalar;
 use polars_core::series::Series;
 use polars_core::utils::polars_arrow::bitmap::{Bitmap, MutableBitmap};
@@ -19,6 +21,7 @@ use polars_utils::{IdxSize, UnitVec};
 
 use super::passes::{Selectivity, keeps_most_rows, plan_passes, promote};
 use super::row_group_data_fetch::RowGroupData;
+use super::statistics::RuntimeRangeSkipper;
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
 
 /// Where a column of a row group comes from. Sorts in output order.
@@ -101,6 +104,7 @@ impl DynamicConjunct {
 /// Turns row group data into DataFrames.
 pub(super) struct RowGroupDecoder {
     pub(super) num_pipelines: usize,
+    pub(super) task_metrics: Option<Arc<TaskMetricAggregator>>,
     pub(super) projected_arrow_fields: Arc<[ArrowFieldProjection]>,
     pub(super) row_index: Option<RowIndex>,
     pub(super) predicate: Option<ScanIOPredicate>,
@@ -120,13 +124,43 @@ pub(super) struct RowGroupDecoder {
     /// Indices into `projected_arrow_fields. This must be sorted.
     pub(super) non_predicate_field_indices: Arc<[usize]>,
     pub(super) target_values_per_thread: usize,
+    pub(super) runtime_range_skipper: Option<Arc<RuntimeRangeSkipper>>,
 }
 
 impl RowGroupDecoder {
+    /// Number of tasks a row group of `n_rows` rows decodes in: columns split by
+    /// `target_values_per_thread`, or into at most `num_pipelines` tasks when prefiltered.
+    pub(super) fn decode_tasks(&self, n_rows: usize, sliced: bool) -> usize {
+        let n_cols = self.projected_arrow_fields.len();
+        if self.prefilters(sliced, self.nothing_to_evaluate()) {
+            n_cols.min(self.num_pipelines)
+        } else {
+            n_cols.div_ceil(calc_cols_per_thread(n_rows, self.target_values_per_thread))
+        }
+    }
+
+    /// Whether a row group is decoded by `row_group_data_to_df_prefiltered`.
+    fn prefilters(&self, sliced: bool, nothing_to_evaluate: bool) -> bool {
+        self.use_prefiltered
+            && !sliced
+            && !self.predicate_field_indices.is_empty()
+            && !nothing_to_evaluate
+    }
+
     pub(super) async fn row_group_data_to_df(
         &self,
         mut row_group_data: RowGroupData,
     ) -> PolarsResult<DataFrame> {
+        if self
+            .runtime_range_skipper
+            .as_ref()
+            .is_some_and(|s| s.skips(row_group_data.row_group_idx))
+        {
+            return Ok(self.empty_df());
+        }
+
+        row_group_data.fetched_bytes.fetch_if_evicted().await?;
+
         // If the slice consumes the entire row-group. Don't slice. This allows for prefiltering to
         // happen more often until we properly support prefiltering with pre-slices.
         row_group_data.slice.take_if(|slice| {
@@ -134,16 +168,27 @@ impl RowGroupDecoder {
         });
 
         let nothing_to_evaluate = self.nothing_to_evaluate();
-        if self.use_prefiltered
-            && row_group_data.slice.is_none()
-            && !self.predicate_field_indices.is_empty()
-            && !nothing_to_evaluate
-        {
+        if self.prefilters(row_group_data.slice.is_some(), nothing_to_evaluate) {
             self.row_group_data_to_df_prefiltered(row_group_data).await
         } else {
             self.row_group_data_to_df_impl(row_group_data, nothing_to_evaluate)
                 .await
         }
+    }
+
+    /// The output of a row group without rows.
+    fn empty_df(&self) -> DataFrame {
+        let columns = self
+            .row_index
+            .iter()
+            .map(|ri| Column::new_empty(ri.name.clone(), &IDX_DTYPE))
+            .chain(
+                self.projected_arrow_fields
+                    .iter()
+                    .map(|p| Column::new_empty(p.output_name().clone(), &p.output_dtype())),
+            )
+            .collect();
+        unsafe { DataFrame::new_unchecked(0, columns) }
     }
 
     /// Whether the predicate keeps every row for now: it has no static part
@@ -203,8 +248,13 @@ impl RowGroupDecoder {
             let mask = predicate.predicate.evaluate_io(&df)?;
             let mask = mask.bool().unwrap();
 
-            let filtered =
-                filter_cols(df.into_columns(), mask, self.target_values_per_thread).await?;
+            let filtered = filter_cols(
+                df.into_columns(),
+                mask,
+                self.target_values_per_thread,
+                self.task_metrics.as_deref(),
+            )
+            .await?;
 
             let height = if let Some(fst) = filtered.first() {
                 fst.len()
@@ -278,6 +328,7 @@ impl RowGroupDecoder {
 
             parallelize_first_to_local(
                 TaskPriority::Low,
+                self.task_metrics.as_deref(),
                 (0..projected_arrow_fields.len())
                     .step_by(cols_per_thread)
                     .map(move |offset| {
@@ -358,16 +409,16 @@ fn decode_column(
 
     let columns_to_deserialize = iter
         .map(|col_md| {
-            let byte_range = col_md.byte_range();
+            let byte_range = col_md.byte_range()?;
 
-            (
+            Ok((
                 col_md,
                 row_group_data
                     .fetched_bytes
-                    .get_range(byte_range.start as usize..byte_range.end as usize),
-            )
+                    .get_range(byte_range.start as usize..byte_range.end as usize)?,
+            ))
         })
-        .collect::<Vec<_>>();
+        .collect::<PolarsResult<Vec<_>>>()?;
 
     let skip_num_rows_check = matches!(filter, Some(Filter::Predicate(_)));
 
@@ -404,6 +455,7 @@ async fn filter_cols(
     cols: Vec<Column>,
     mask: &BooleanChunked,
     target_values_per_thread: usize,
+    task_metrics: Option<&TaskMetricAggregator>,
 ) -> PolarsResult<Vec<Column>> {
     if cols.is_empty() {
         return Ok(cols);
@@ -420,6 +472,7 @@ async fn filter_cols(
 
         parallelize_first_to_local(
             TaskPriority::Low,
+            task_metrics,
             (0..cols.len()).step_by(cols_per_thread).map(move |offset| {
                 let cols = cols.clone();
                 let mask = mask.clone();
@@ -467,6 +520,8 @@ enum Item {
 
 /// The rows a predicate column keeps.
 enum Kept {
+    /// Nothing was evaluated on the column, so it keeps every row of the pass.
+    All,
     /// The column holds every row of the pass.
     Masked(Bitmap),
     /// The column holds the kept rows only.
@@ -530,7 +585,7 @@ impl Pass {
             if let Some(m) = dynamic_mask(c, column)? {
                 mask = Some(and_masks(mask, m));
             }
-            Ok(mask.map(|m| (i, Kept::Masked(m))))
+            Ok(Some((i, mask.map_or(Kept::All, Kept::Masked))))
         };
 
         let field_idx = match source {
@@ -614,7 +669,7 @@ impl RowGroupDecoder {
         debug_assert!(row_group_data.slice.is_none()); // Invariant of the optimizer.
         assert!(self.predicate_field_indices.len() <= self.projected_arrow_fields.len());
 
-        let row_group_data = Arc::new(row_group_data);
+        let mut row_group_data = Arc::new(row_group_data);
         let projection_height = row_group_data.row_group_metadata.num_rows();
         let mut passes = self.passes.lock().unwrap().clone();
         // A conjunct that just started filtering rows is measured on every row
@@ -628,6 +683,9 @@ impl RowGroupDecoder {
             })
             .collect();
         if !newly_active.is_empty() {
+            if polars_core::config::verbose() {
+                eprintln!("[ParquetFileReader]: Dynamic predicate started filtering rows");
+            }
             passes = Arc::new(promote(&passes, &newly_active));
             *self.passes.lock().unwrap() = passes.clone();
         }
@@ -691,15 +749,18 @@ impl RowGroupDecoder {
                     continue;
                 };
                 let m = match &kept_rows {
-                    Kept::Masked(m) | Kept::Filtered(m) => m,
+                    Kept::All => None,
+                    Kept::Masked(m) | Kept::Filtered(m) => Some(m),
                 };
                 selectivity[c] = Selectivity {
                     input_rows: kept,
-                    kept_rows: m.set_bits(),
+                    kept_rows: m.map_or(kept, |m| m.set_bits()),
                 };
-                pass_mask = Some(and_masks(pass_mask, m.clone()));
+                if let Some(m) = m {
+                    pass_mask = Some(and_masks(pass_mask, m.clone()));
+                }
                 match kept_rows {
-                    Kept::Masked(_) => live_columns.push((d.source, d.column)),
+                    Kept::All | Kept::Masked(_) => live_columns.push((d.source, d.column)),
                     Kept::Filtered(own) => filtered.push((d.source, d.column, own)),
                 }
             }
@@ -748,6 +809,17 @@ impl RowGroupDecoder {
                     None => rest_mask,
                     Some(mask) => compose_masks(&mask, &rest_mask),
                 });
+            }
+        }
+
+        // A deferred row group's pages can be evicted while the passes run, so check again
+        // before reading the other columns. The pass tasks have finished, so nothing else holds
+        // `row_group_data`.
+        if !self.non_predicate_field_indices.is_empty() {
+            let data = Arc::get_mut(&mut row_group_data);
+            debug_assert!(data.is_some());
+            if let Some(data) = data {
+                data.fetched_bytes.fetch_if_evicted().await?;
             }
         }
 
@@ -829,6 +901,7 @@ impl RowGroupDecoder {
         let task_handles = {
             parallelize_first_to_local(
                 TaskPriority::Low,
+                self.task_metrics.as_deref(),
                 (0..n_items).step_by(cols_per_thread).map(move |offset| {
                     let items = items.clone();
                     let pass = pass.clone();
@@ -856,7 +929,13 @@ impl RowGroupDecoder {
         mask: &BooleanChunked,
     ) -> PolarsResult<Vec<(Source, Column)>> {
         let (sources, columns): (Vec<Source>, Vec<Column>) = live_columns.into_iter().unzip();
-        let columns = filter_cols(columns, mask, self.target_values_per_thread).await?;
+        let columns = filter_cols(
+            columns,
+            mask,
+            self.target_values_per_thread,
+            self.task_metrics.as_deref(),
+        )
+        .await?;
         Ok(sources.into_iter().zip(columns).collect())
     }
 }
@@ -916,18 +995,19 @@ fn decode_column_prefiltered(
 
     let columns_to_deserialize = iter
         .map(|col_md| {
-            let byte_range = col_md.byte_range();
+            let byte_range = col_md.byte_range()?;
 
-            (
+            Ok((
                 col_md,
                 row_group_data
                     .fetched_bytes
-                    .get_range(byte_range.start as usize..byte_range.end as usize),
-            )
+                    .get_range(byte_range.start as usize..byte_range.end as usize)?,
+            ))
         })
-        .collect::<Vec<_>>();
+        .collect::<PolarsResult<Vec<_>>>()?;
 
-    let prefilter = !arrow_field.dtype.is_nested();
+    let prefilter = !arrow_field.dtype.is_nested()
+        || matches!(arrow_field.dtype, ArrowDataType::Dictionary(..));
 
     let deserialize_filter =
         prefilter.then(|| polars_parquet::read::Filter::Mask(mask_bitmap.clone()));

@@ -321,7 +321,10 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => {
                 let mut out = self.0.cast_with_options(dtype, CastOptions::NonStrict)?;
-                out.set_sorted_flag(self.0.physical().is_sorted_flag());
+                // Overflowing values become null, which may break the order of the nulls.
+                if out.null_count() == self.0.null_count() {
+                    out.set_sorted_flag(self.0.physical().is_sorted_flag());
+                }
                 Ok(out)
             },
             _ => self.0.cast_with_options(dtype, cast_options),

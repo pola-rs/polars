@@ -10,8 +10,12 @@ use polars_core::chunked_array::cast::CastOptions;
 #[cfg(feature = "cutqcut")]
 use polars_plan::dsl::{BinMethod, BinOptions, DslIntervalSpec, FractionSpec};
 use polars_plan::plans::predicates::aexpr_to_skip_batch_predicate;
+use polars_plan::plans::python::pyarrow::predicate_to_pa_with_list_limit;
+#[cfg(feature = "is_in")]
+use polars_plan::plans::{AExpr, ArenaExprIter, IRBooleanFunction, IRFunctionExpr};
 use polars_plan::plans::{
-    AExprSorted, ExprToIRContext, RowEncodingVariant, node_to_expr, to_expr_ir,
+    AExprSorted, ExprToIRContext, IR, RowEncodingOutputType, RowEncodingVariant, node_to_expr,
+    to_expr_ir,
 };
 use polars_utils::arena::Arena;
 use pyo3::class::basic::CompareOp;
@@ -61,6 +65,9 @@ impl PyExpr {
     }
     fn __floordiv__(&self, rhs: Self) -> PyResult<Self> {
         Ok(dsl::binary_expr(self.inner.clone(), Operator::FloorDivide, rhs.inner).into())
+    }
+    fn trunc_div(&self, rhs: Self) -> PyResult<Self> {
+        Ok(self.inner.clone().trunc_div(rhs.inner).into())
     }
     fn __neg__(&self) -> PyResult<Self> {
         Ok(self.inner.clone().neg().into())
@@ -815,7 +822,7 @@ impl PyExpr {
                 SortOptions {
                     descending: order_by_descending,
                     nulls_last: order_by_nulls_last,
-                    maintain_order: false,
+                    maintain_order: true,
                     ..Default::default()
                 },
             )
@@ -1003,21 +1010,21 @@ impl PyExpr {
             .into()
     }
 
-    fn ewm_mean(&self, alpha: f64, adjust: bool, min_periods: usize, ignore_nulls: bool) -> Self {
+    fn ewm_mean(&self, alpha: f64, adjust: bool, min_samples: usize, ignore_nulls: bool) -> Self {
         let options = EWMOptions {
             alpha,
             adjust,
             bias: false,
-            min_periods,
+            min_samples,
             ignore_nulls,
         };
         self.inner.clone().ewm_mean(options).into()
     }
-    fn ewm_sum(&self, alpha: f64, min_periods: usize, ignore_nulls: bool) -> Self {
+    fn ewm_sum(&self, alpha: f64, min_samples: usize, ignore_nulls: bool) -> Self {
         let options = EWMOptions {
             alpha,
             bias: false,
-            min_periods,
+            min_samples,
             ignore_nulls,
             ..Default::default()
         };
@@ -1041,14 +1048,14 @@ impl PyExpr {
         alpha: f64,
         adjust: bool,
         bias: bool,
-        min_periods: usize,
+        min_samples: usize,
         ignore_nulls: bool,
     ) -> Self {
         let options = EWMOptions {
             alpha,
             adjust,
             bias,
-            min_periods,
+            min_samples,
             ignore_nulls,
         };
         self.inner.clone().ewm_std(options).into()
@@ -1058,14 +1065,14 @@ impl PyExpr {
         alpha: f64,
         adjust: bool,
         bias: bool,
-        min_periods: usize,
+        min_samples: usize,
         ignore_nulls: bool,
     ) -> Self {
         let options = EWMOptions {
             alpha,
             adjust,
             bias,
-            min_periods,
+            min_samples,
             ignore_nulls,
         };
         self.inner.clone().ewm_var(options).into()
@@ -1116,6 +1123,9 @@ impl PyExpr {
     }
     fn hash(&self, seed: u64) -> Self {
         self.inner.clone().hash(seed).into()
+    }
+    fn mm3_hash(&self) -> Self {
+        self.inner.clone().mm3_hash().into()
     }
     fn set_sorted_flag(&self, descending: bool, nulls_last: bool) -> Self {
         let sortedness = AExprSorted::default()
@@ -1169,7 +1179,7 @@ impl PyExpr {
         py.enter_polars(|| {
             let mut ctx = ExprToIRContext::new(&mut aexpr_arena, &schema.0);
             ctx.allow_unknown = true;
-            let node = to_expr_ir(self.inner.clone(), &mut ctx)?.node();
+            let node = to_expr_ir(&self.inner, &mut ctx)?.node();
             let Some(node) = aexpr_to_skip_batch_predicate(node, &mut aexpr_arena, &schema.0)
             else {
                 return Ok(None);
@@ -1181,10 +1191,95 @@ impl PyExpr {
         })
     }
 
+    /// The filter predicate as a PyArrow compute expression string, or `None`
+    /// if (any part of) it cannot be converted.
+    ///
+    /// The predicate is type-coerced as in a Polars filter, so that operands
+    /// Polars casts (e.g. a `Float32` column compared to a `Float64` literal)
+    /// show up as casts, which are not converted. `list_limit` caps the length of
+    /// `is_in` lists (`None`: any length).
+    #[pyo3(signature = (schema, list_limit))]
+    fn to_pyarrow_predicate(
+        &self,
+        py: Python<'_>,
+        schema: Wrap<Schema>,
+        list_limit: Option<usize>,
+    ) -> PyResult<Option<String>> {
+        py.enter_polars(|| {
+            let plan = DataFrame::empty_with_schema(&schema.0)
+                .lazy()
+                .filter(self.inner.clone())
+                .logical_plan
+                .to_alp()?;
+            // The conversion splits a conjunction into stacked filters.
+            let mut predicates = vec![];
+            let mut node = plan.lp_top;
+            while let IR::Filter { input, predicate } = plan.lp_arena.get(node) {
+                predicates.push(predicate.node());
+                node = *input;
+            }
+            polars_ensure!(
+                !predicates.is_empty()
+                    && matches!(plan.lp_arena.get(node), IR::DataFrameScan { .. }),
+                ComputeError: "expected a filter plan"
+            );
+            // The PyArrow `isin` only keeps `nulls_equal` through the haystack's
+            // nulls, but e.g. PyIceberg evaluates membership as null for null
+            // needles.
+            #[cfg(feature = "is_in")]
+            if predicates.iter().any(|&predicate| {
+                plan.expr_arena.iter(predicate).any(|(_, ae)| {
+                    matches!(
+                        ae,
+                        AExpr::Function {
+                            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn {
+                                nulls_equal: true,
+                                ..
+                            }),
+                            ..
+                        }
+                    )
+                })
+            }) {
+                return Ok(None);
+            }
+            // Filters lower in the plan are applied first.
+            let converted = predicates
+                .iter()
+                .rev()
+                .map(|&predicate| {
+                    predicate_to_pa_with_list_limit(
+                        predicate,
+                        &plan.expr_arena,
+                        &schema.0,
+                        list_limit,
+                    )
+                })
+                .collect::<Option<Vec<_>>>();
+            PolarsResult::Ok(converted.map(|parts| {
+                if let [part] = parts.as_slice() {
+                    part.clone()
+                } else {
+                    format!("({})", parts.join(" & "))
+                }
+            }))
+        })
+    }
+
     #[staticmethod]
-    fn row_encode_unordered(exprs: Vec<Self>) -> Self {
+    fn row_encode_unordered(
+        exprs: Vec<Self>,
+        output: Wrap<RowEncodingOutputType>,
+        encode_nulls: Option<Vec<bool>>,
+        propagate_nulls: bool,
+    ) -> Self {
         Expr::n_ary(
-            FunctionExpr::RowEncode(RowEncodingVariant::Unordered),
+            FunctionExpr::RowEncode {
+                variant: RowEncodingVariant::Unordered,
+                output: output.0,
+                encode_nulls,
+                propagate_nulls,
+            },
             exprs.into_iter().map(|e| e.inner.clone()).collect(),
         )
         .into()
@@ -1195,19 +1290,32 @@ impl PyExpr {
         exprs: Vec<Self>,
         descending: Option<Vec<bool>>,
         nulls_last: Option<Vec<bool>>,
+        output: Wrap<RowEncodingOutputType>,
+        encode_nulls: Option<Vec<bool>>,
+        propagate_nulls: bool,
     ) -> Self {
         Expr::n_ary(
-            FunctionExpr::RowEncode(RowEncodingVariant::Ordered {
-                descending,
-                nulls_last,
-                broadcast_nulls: None,
-            }),
+            FunctionExpr::RowEncode {
+                variant: RowEncodingVariant::Ordered {
+                    descending,
+                    nulls_last,
+                },
+                output: output.0,
+                encode_nulls,
+                propagate_nulls,
+            },
             exprs.into_iter().map(|e| e.inner.clone()).collect(),
         )
         .into()
     }
 
-    fn row_decode_unordered(&self, names: Vec<String>, datatypes: Vec<PyDataTypeExpr>) -> Self {
+    fn row_decode_unordered(
+        &self,
+        names: Vec<String>,
+        datatypes: Vec<PyDataTypeExpr>,
+        output: Wrap<RowEncodingOutputType>,
+        encode_nulls: Option<Vec<bool>>,
+    ) -> Self {
         let fields = names
             .into_iter()
             .zip(datatypes)
@@ -1215,10 +1323,12 @@ impl PyExpr {
             .collect();
         self.inner
             .clone()
-            .map_unary(FunctionExpr::RowDecode(
+            .map_unary(FunctionExpr::RowDecode {
                 fields,
-                RowEncodingVariant::Unordered,
-            ))
+                variant: RowEncodingVariant::Unordered,
+                output: output.0,
+                encode_nulls,
+            })
             .into()
     }
 
@@ -1228,6 +1338,8 @@ impl PyExpr {
         datatypes: Vec<PyDataTypeExpr>,
         descending: Option<Vec<bool>>,
         nulls_last: Option<Vec<bool>>,
+        output: Wrap<RowEncodingOutputType>,
+        encode_nulls: Option<Vec<bool>>,
     ) -> Self {
         let fields = names
             .into_iter()
@@ -1236,14 +1348,15 @@ impl PyExpr {
             .collect::<Vec<_>>();
         self.inner
             .clone()
-            .map_unary(FunctionExpr::RowDecode(
+            .map_unary(FunctionExpr::RowDecode {
                 fields,
-                RowEncodingVariant::Ordered {
+                variant: RowEncodingVariant::Ordered {
                     descending,
                     nulls_last,
-                    broadcast_nulls: None,
                 },
-            ))
+                output: output.0,
+                encode_nulls,
+            })
             .into()
     }
 

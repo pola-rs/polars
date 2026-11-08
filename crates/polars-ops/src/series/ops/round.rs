@@ -1,6 +1,6 @@
-use num_traits::AsPrimitive;
+use num_traits::{AsPrimitive, PrimInt};
 use polars_core::prelude::*;
-use polars_core::with_match_physical_numeric_polars_type;
+use polars_core::{with_match_physical_float_polars_type, with_match_physical_integer_polars_type};
 use polars_defs::expr::RoundMode;
 use polars_utils::float16::pf16;
 
@@ -36,6 +36,34 @@ fn rounded_decimal(
     Ok(values
         .into_decimal_unchecked(precision, scale)
         .into_series())
+}
+
+/// Rounds an integer half away from zero to `digits` significant digits, returning `None`
+/// if the result doesn't fit `T`.
+fn int_round_sig_figs<T: PrimInt>(v: T, digits: u32) -> Option<T> {
+    let n = if let Some(abs) = v.to_i64().map(i64::unsigned_abs).or(v.to_u64()) {
+        (abs | 1).ilog10() + 1
+    } else {
+        let abs = v.to_i128().map(i128::unsigned_abs).or(v.to_u128()).unwrap();
+        abs.ilog10() + 1
+    };
+    if n <= digits {
+        return Some(v);
+    }
+    // 10^(n - 1) <= |v|, and it is never equal to |T::MIN|, so the multiplier fits in T.
+    let multiplier = T::from(10).unwrap().pow(n - digits);
+
+    let neg = v < T::zero();
+    let rem = v % multiplier;
+    let truncated = v - rem;
+    let rem_abs = if neg { T::zero() - rem } else { rem };
+    if rem_abs < multiplier / (T::one() + T::one()) {
+        Some(truncated)
+    } else if neg {
+        truncated.checked_sub(&multiplier)
+    } else {
+        truncated.checked_add(&multiplier)
+    }
 }
 
 /// Apply the given rounding operation across f16/f32/f64 types.
@@ -202,14 +230,22 @@ pub trait RoundSeries: SeriesSealed {
             RoundMode::HalfToEven => "rounding ('half_to_even')",
             RoundMode::HalfAwayFromZero => "rounding ('half_away_from_zero')",
         };
-        polars_ensure!(s.dtype().is_integer(), InvalidOperation: "{} can only be used on numeric types", op);
+        polars_ensure!(
+            s.dtype().is_integer(),
+            op = op,
+            got = s.dtype(),
+            expected = "numeric"
+        );
         Ok(s.clone())
     }
 
-    /// Round underlying floating point array to the given number of significant digits.
+    /// Round to the given number of significant digits.
     fn round_sig_figs(&self, digits: i32) -> PolarsResult<Series> {
         let s = self.as_series();
-        polars_ensure!(digits >= 1, InvalidOperation: "digits must be an integer >= 1");
+        polars_ensure!(
+            digits >= 1,
+            InvalidOperation: "digits must be an integer >= 1, got {}", digits
+        );
 
         #[cfg(feature = "dtype-decimal")]
         if let Some(ca) = s.try_decimal() {
@@ -249,8 +285,20 @@ pub trait RoundSeries: SeriesSealed {
             return rounded_decimal(s, precision, scale as usize, "rounding");
         }
 
-        polars_ensure!(s.dtype().is_primitive_numeric(), InvalidOperation: "round_sig_figs can only be used on numeric types" );
-        with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+        polars_ensure!(
+            s.dtype().is_primitive_numeric(),
+            opq = round_sig_figs,
+            got = s.dtype(),
+            expected = "numeric"
+        );
+        if s.dtype().is_integer() {
+            with_match_physical_integer_polars_type!(s.dtype(), |$T| {
+                let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                let out = ca.apply(|opt_v| opt_v.and_then(|v| int_round_sig_figs(v, digits as u32)));
+                return Ok(out.into_series());
+            });
+        }
+        with_match_physical_float_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
             let s = ca.apply_values(|value| {
                 let value = AsPrimitive::<f64>::as_(value);
@@ -311,7 +359,12 @@ pub trait RoundSeries: SeriesSealed {
             return rounded_decimal(ca, precision, scale as usize, "floor");
         }
 
-        polars_ensure!(s.dtype().is_primitive_numeric(), InvalidOperation: "floor can only be used on numeric types" );
+        polars_ensure!(
+            s.dtype().is_primitive_numeric(),
+            opq = floor,
+            got = s.dtype(),
+            expected = "numeric"
+        );
         Ok(s.clone())
     }
 
@@ -348,7 +401,12 @@ pub trait RoundSeries: SeriesSealed {
             return rounded_decimal(ca, precision, scale as usize, "ceil");
         }
 
-        polars_ensure!(s.dtype().is_primitive_numeric(), InvalidOperation: "ceil can only be used on numeric types" );
+        polars_ensure!(
+            s.dtype().is_primitive_numeric(),
+            opq = ceil,
+            got = s.dtype(),
+            expected = "numeric"
+        );
         Ok(s.clone())
     }
 }

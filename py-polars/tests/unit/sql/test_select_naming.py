@@ -77,6 +77,27 @@ def test_verbatim_duplicate_selection_still_errors(df_naming: pl.DataFrame) -> N
             ctx.execute("SELECT *, a FROM t1")
 
 
+def test_repeated_constants_are_renamed(df_naming: pl.DataFrame) -> None:
+    """A repeated unaliased constant gets a new name, like distinct constants."""
+    with pl.SQLContext(frames={"t1": df_naming}, eager=True) as ctx:
+        out = ctx.execute("SELECT a, NULL, NULL, 1, 1 FROM t1 ORDER BY a")
+        assert out.columns == ["a", "literal", "literal:1", "literal:2", "literal:3"]
+        assert out.row(0) == (1, None, None, 1, 1)
+
+        out = ctx.execute(
+            "SELECT a, NULL, SUM(b) AS s, NULL FROM t1 GROUP BY a ORDER BY a"
+        )
+        assert out.columns == ["a", "literal", "s", "literal:1"]
+        assert out.rows() == [
+            (1, None, 10, None),
+            (2, None, 20, None),
+            (3, None, 5, None),
+        ]
+
+        out = ctx.execute("SELECT NULL, SUM(b) AS s, NULL FROM t1")
+        assert out.rows() == [(None, 35, None)]
+
+
 def test_no_collision_output_names_are_unchanged(df_naming: pl.DataFrame) -> None:
     """Queries without a naming collision keep their pre-existing output names."""
     assert_sql_matches(

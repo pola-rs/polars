@@ -18,6 +18,9 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::total_ord::TotalOrdWrap;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
+#[cfg(feature = "is_in")]
+use super::membership::with_needle_cast;
+
 pub fn function_expr_to_udf(
     func: IRBooleanFunction,
     input: &[ExprIR],
@@ -47,16 +50,30 @@ pub fn function_expr_to_udf(
         IsBetween { closed } => map_as_slice!(is_between, closed),
         // A known haystack is prepared once and reused.
         #[cfg(feature = "is_in")]
-        IsIn { nulls_equal }
-            if input
-                .get(1)
-                .is_some_and(|e| is_single_literal_ae(e.node(), expr_arena)) =>
+        IsIn {
+            nulls_equal,
+            needle_cast,
+        } if input
+            .get(1)
+            .is_some_and(|e| is_single_literal_ae(e.node(), expr_arena)) =>
         {
             let haystack = OnceLock::new();
-            wrap!(is_in_prepared, nulls_equal, &haystack)
+            wrap!(
+                move |s: &mut [Column]| with_needle_cast(s, 0, 1, needle_cast.as_ref(), |s| {
+                    is_in_prepared(s, nulls_equal, &haystack)
+                })
+            )
         },
         #[cfg(feature = "is_in")]
-        IsIn { nulls_equal } => wrap!(is_in, nulls_equal),
+        IsIn {
+            nulls_equal,
+            needle_cast,
+        } => wrap!(
+            move |s: &mut [Column]| with_needle_cast(s, 0, 1, needle_cast.as_ref(), |s| is_in(
+                s,
+                nulls_equal
+            ))
+        ),
         #[cfg(feature = "is_close")]
         IsClose {
             abs_tol,

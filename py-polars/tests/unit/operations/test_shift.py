@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Any
 
 import pytest
 
@@ -49,7 +51,6 @@ def test_shift_frame(fruits_cars: pl.DataFrame) -> None:
             assert res[rows, cols] is None
 
 
-@pytest.mark.may_fail_lazy_schema  # TODO: supertype
 def test_shift_fill_value() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
 
@@ -203,3 +204,69 @@ def test_streaming_shift_with_head_26098() -> None:
         q.collect(engine="streaming"),
         pl.DataFrame({"a": [2]}),
     )
+
+
+@pytest.mark.parametrize("n", [3, -3])
+@pytest.mark.parametrize("length", [0, 2])
+@pytest.mark.parametrize(
+    ("values", "fill_value", "dtype"),
+    [
+        ([{"a": 1}, {"a": 2}], {"a": 0}, pl.Struct({"a": pl.Int64})),
+        (["x", "y"], "z", pl.Enum(["x", "y", "z"])),
+    ],
+)
+def test_shift_and_fill_n_exceeds_len(
+    n: int, length: int, values: list[Any], fill_value: Any, dtype: pl.DataType
+) -> None:
+    df = pl.DataFrame({"s": pl.Series(values[:length], dtype=dtype)})
+    out = df.select(pl.col("s").shift(n, fill_value=pl.lit(fill_value, dtype=dtype)))
+    expected = pl.DataFrame({"s": pl.Series([fill_value] * length, dtype=dtype)})
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("fill_value", "expected", "dtype"),
+    [
+        (Decimal("1.25"), [Decimal("1.25"), Decimal("1.25")], pl.Decimal(38, 2)),
+        (Decimal("1.2"), [Decimal("1.20"), Decimal("1.25")], pl.Decimal(38, 2)),
+        (7, [Decimal("7.00"), Decimal("1.25")], pl.Decimal(38, 2)),
+        (pl.col("s").last(), [Decimal("2.50"), Decimal("1.25")], pl.Decimal(38, 2)),
+        (
+            pl.lit(Decimal("1.2345"), dtype=pl.Decimal(10, 4)),
+            [Decimal("1.2345"), Decimal("1.2500")],
+            pl.Decimal(38, 4),
+        ),
+    ],
+)
+def test_shift_fill_value_decimal_30544(
+    fill_value: Any, expected: list[Decimal], dtype: pl.DataType, engine: Any
+) -> None:
+    lf = pl.LazyFrame(
+        {"s": pl.Series([Decimal("1.25"), Decimal("2.50")], dtype=pl.Decimal(38, 2))}
+    )
+    out = lf.select(pl.col("s").shift(1, fill_value=fill_value)).collect(engine=engine)
+    assert_frame_equal(out, pl.DataFrame({"s": pl.Series(expected, dtype=dtype)}))
+
+
+@pytest.mark.parametrize(
+    ("values", "fill_value", "dtype"),
+    [
+        (
+            [[Decimal("1.25")], [Decimal("2.50")]],
+            [Decimal("3.75")],
+            pl.List(pl.Decimal(38, 2)),
+        ),
+        (
+            [[{"t": datetime(2020, 1, 1)}], [{"t": datetime(2020, 1, 2)}]],
+            [{"t": datetime(2021, 1, 1)}],
+            pl.List(pl.Struct({"t": pl.Datetime("us")})),
+        ),
+    ],
+)
+def test_shift_fill_value_list_logical(
+    values: list[Any], fill_value: list[Any], dtype: pl.DataType
+) -> None:
+    s = pl.Series("s", values, dtype=dtype)
+    out = s.shift(1, fill_value=pl.lit(fill_value, dtype=dtype))
+    assert_series_equal(out, pl.Series("s", [fill_value, values[0]], dtype=dtype))

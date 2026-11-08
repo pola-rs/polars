@@ -434,7 +434,82 @@ class ExprStructNameSpace(_NamespaceSuggestMixin):
 
         See Also
         --------
+        eval
         field
         """
         pyexprs = parse_into_list_of_expressions(*exprs, **named_exprs)
         return wrap_expr(self._pyexpr.struct_with_fields(pyexprs))
+
+    def eval(
+        self,
+        *exprs: IntoExpr | Iterable[IntoExpr],
+        **named_exprs: IntoExpr,
+    ) -> Expr:
+        """
+        Select fields of this struct, dropping the fields that are not selected.
+
+        This is similar to `select` on `DataFrame`. Use
+        :meth:`~ExprStructNameSpace.with_fields` to retain the fields that are not
+        selected.
+
+        The expressions must be length-preserving; they are evaluated against the
+        fields of the struct, which are addressed with :func:`polars.field`.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Parameters
+        ----------
+        *exprs
+            Field(s) to select, specified as positional arguments.
+            Accepts expression input. Strings are parsed as column names, other
+            non-expression inputs are parsed as literals.
+        **named_exprs
+            Additional fields to select, specified as keyword arguments.
+            The fields will be renamed to the keyword used.
+
+        See Also
+        --------
+        with_fields
+        field
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "coords": [{"x": 1, "y": 4}, {"x": 4, "y": 9}, {"x": 9, "y": 16}],
+        ...         "multiply": [10, 2, 3],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("coords").struct.eval(
+        ...         pl.field("x").sqrt(),
+        ...         y_mul=pl.field("y") * pl.col("multiply"),
+        ...     )
+        ... )
+        shape: (3, 2)
+        ┌───────────┬──────────┐
+        │ coords    ┆ multiply │
+        │ ---       ┆ ---      │
+        │ struct[2] ┆ i64      │
+        ╞═══════════╪══════════╡
+        │ {1.0,40}  ┆ 10       │
+        │ {2.0,18}  ┆ 2        │
+        │ {3.0,48}  ┆ 3        │
+        └───────────┴──────────┘
+
+        Fields that are not selected are dropped:
+
+        >>> df.select(pl.col("coords").struct.eval(pl.field("y")))
+        shape: (3, 1)
+        ┌───────────┐
+        │ coords    │
+        │ ---       │
+        │ struct[1] │
+        ╞═══════════╡
+        │ {4}       │
+        │ {9}       │
+        │ {16}      │
+        └───────────┘
+        """
+        pyexprs = parse_into_list_of_expressions(*exprs, **named_exprs)
+        return wrap_expr(self._pyexpr.struct_eval(pyexprs))

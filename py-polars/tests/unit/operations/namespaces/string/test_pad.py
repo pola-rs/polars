@@ -176,5 +176,5 @@ def test_str_zfill_unicode_not_respected() -> None:
 
     result = lf.select(pl.col("a").str.zfill(6))
 
-    expected = pl.LazyFrame({"a": ["0Café", "000345", "東京", None]})
+    expected = pl.LazyFrame({"a": ["00Café", "000345", "0000東京", None]})
     assert_frame_equal(result, expected)

@@ -44,7 +44,7 @@ pub(super) fn call_dsl_resolvers(
 
     #[cfg(feature = "python")]
     let py_lazyframe_resolve_threadpool: LazyCell<Arc<PyThreadPool>> =
-        LazyCell::new(|| Arc::new(PyThreadPool::new()));
+        LazyCell::new(|| Arc::new(PyThreadPool::new_scan_resolve_thread_pool()));
 
     let expr_arena_ref = &*expr_arena;
 
@@ -259,6 +259,14 @@ pub(super) fn call_dsl_resolvers(
                     let mut opt_flags = opt_flags;
                     to_alp(dsl, expr_arena, ir_arena, &mut opt_flags)?
                 };
+
+                polars_ensure!(
+                    !matches!(
+                        ir_arena.get(ir_node),
+                        IR::Sink { .. } | IR::SinkMultiple { .. }
+                    ),
+                    InvalidOperation: "LazyFrame resolver cannot return a sink"
+                );
 
                 let ir_node_schema = ir_arena.get(ir_node).schema(ir_arena).into_owned();
 

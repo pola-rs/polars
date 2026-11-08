@@ -22,7 +22,7 @@ pub use into_groups::*;
 pub use position::*;
 
 use crate::chunked_array::ops::row_encode::{
-    encode_rows_unordered, encode_rows_vertical_par_unordered,
+    encode_rows_with_layout, encode_rows_with_layout_par, get_optimal_row_encoding_layout,
 };
 
 impl DataFrame {
@@ -85,12 +85,13 @@ impl DataFrame {
 
                 Ok(GroupsType::new_slice(groups, false, true))
             } else {
+                let opts = vec![RowEncodingOptions::new_unsorted(); by.len()];
+                let layout = get_optimal_row_encoding_layout(&by, &[], &opts);
                 let rows = if multithreaded {
-                    encode_rows_vertical_par_unordered(&by)
+                    encode_rows_with_layout_par(&by, &layout, false)?
                 } else {
-                    encode_rows_unordered(&by)
-                }?
-                .into_series();
+                    encode_rows_with_layout(&by, &layout, false)?
+                };
                 rows.group_tuples(multithreaded, sorted)
             }
         };
@@ -420,8 +421,8 @@ impl<'a> GroupBy<'a> {
     where
         F: FnMut(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
     {
-        if self.df.height() == 0 {
-            // return empty dataframe with correct schema
+        // Rolling and dynamic group-bys can have rows but no windows.
+        if self.df.height() == 0 || self.get_groups().is_empty() {
             if let Some(schema) = schema {
                 return Ok(DataFrame::empty_with_arc_schema(schema.clone()));
             }
@@ -490,7 +491,7 @@ pub enum GroupByMethod {
     Last,
     LastNonNull,
     Item { allow_empty: bool },
-    Sum,
+    Sum { null_on_empty: bool },
     Groups,
     NUnique,
     Quantile(f64, QuantileMethod),
@@ -517,7 +518,7 @@ impl Display for GroupByMethod {
             Last => "last",
             LastNonNull => "last_non_null",
             Item { .. } => "item",
-            Sum => "sum",
+            Sum { .. } => "sum",
             Groups => "groups",
             NUnique => "n_unique",
             Quantile(_, _) => "quantile",
@@ -547,7 +548,7 @@ pub fn fmt_group_by_column(name: &str, method: GroupByMethod) -> PlSmallStr {
         Last => format_pl_smallstr!("{name}_last"),
         LastNonNull => format_pl_smallstr!("{name}_last_non_null"),
         Item { .. } => format_pl_smallstr!("{name}_item"),
-        Sum => format_pl_smallstr!("{name}_sum"),
+        Sum { .. } => format_pl_smallstr!("{name}_sum"),
         Groups => PlSmallStr::from_static("groups"),
         NUnique => format_pl_smallstr!("{name}_n_unique"),
         Count { .. } => format_pl_smallstr!("{name}_count"),

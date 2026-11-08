@@ -2,6 +2,7 @@
 //! DataFrame module.
 use std::borrow::Cow;
 
+use either::Either;
 use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_row::ArrayRef;
 use polars_utils::UnitVec;
@@ -15,7 +16,7 @@ use crate::prelude::gather::check_bounds_ca;
 use crate::prelude::*;
 #[cfg(feature = "row_hash")]
 use crate::utils::split_df;
-use crate::utils::{Container, NoNull, slice_offsets, try_get_supertype};
+use crate::utils::{Container, NoNull, try_get_supertype};
 use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
 
 #[cfg(feature = "dataframe_arithmetic")]
@@ -44,6 +45,7 @@ pub(crate) mod validation;
 
 use polars_arrow::record_batch::{RecordBatch, RecordBatchT};
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::slice::slice_offsets;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
@@ -102,8 +104,14 @@ impl DataFrame {
     /// the visible size of the buffer, not its total capacity.
     ///
     /// FFI buffers are included in this estimation.
-    pub fn estimated_size(&self) -> usize {
-        self.columns().iter().map(Column::estimated_size).sum()
+    ///
+    /// If `expanded` is true, scalar columns are counted as if they were materialized. Otherwise,
+    /// they are counted by the memory they currently use.
+    pub fn estimated_size(&self, expanded: bool) -> usize {
+        self.columns()
+            .iter()
+            .map(|c| c.estimated_size(expanded))
+            .sum()
     }
 
     pub fn try_apply_columns(
@@ -315,19 +323,25 @@ impl DataFrame {
 
     /// Returns true if the chunks of the columns do not align and re-chunking should be done
     pub fn should_rechunk(&self) -> bool {
+        // Scalar columns have no chunks of their own and align with any layout, even when they
+        // are materialized.
+        //
         // Fast check. It is also needed for correctness, as code below doesn't check if the number
         // of chunks is equal.
-        if !self.columns().iter().map(Column::n_chunks).all_equal() {
+        if !self
+            .columns()
+            .iter()
+            .filter_map(Column::as_series)
+            .map(|s| s.n_chunks())
+            .all_equal()
+        {
             return true;
         }
 
-        // From here we check chunk lengths. Skipping the columns without chunks is
-        // safe because the counts are equal: either every count is 1, or there is
-        // no such column left.
         let mut chunk_lengths = self
             .columns()
             .iter()
-            .filter_map(Column::lazy_as_materialized_series)
+            .filter_map(Column::as_series)
             .map(|s| s.chunk_lengths());
         match chunk_lengths.next() {
             None => false,
@@ -446,6 +460,14 @@ impl DataFrame {
             None if self.width() == 0 => 0,
             None => 1,
             Some(s) => s.n_chunks(),
+        }
+    }
+
+    /// The chunk lengths of the first column that has chunks, see [`Self::first_col_n_chunks`].
+    pub(crate) fn first_col_chunk_lengths(&self) -> impl Iterator<Item = usize> + '_ {
+        match self.columns().iter().find_map(|col| col.as_series()) {
+            None => Either::Right((self.width() > 0).then_some(self.height()).into_iter()),
+            Some(s) => Either::Left(s.chunk_lengths()),
         }
     }
 
@@ -726,7 +748,7 @@ impl DataFrame {
     /// online operations where you add `n` rows and rerun a query.
     ///
     /// Prefer `vstack` over `extend` when you want to append many times before doing a query. For instance
-    /// when you read in multiple files and when to store them in a single `DataFrame`. In the latter case, finish the sequence
+    /// when you read in multiple files and want to store them in a single `DataFrame`. In the latter case, finish the sequence
     /// of `append` operations with a [`rechunk`](Self::align_chunks_par).
     pub fn extend(&mut self, other: &DataFrame) -> PolarsResult<()> {
         polars_ensure!(
@@ -1146,11 +1168,8 @@ impl DataFrame {
         } else {
             // Rechunk when not all chunks are aligned. This avoid O(n*m) overhead,
             // where n = number of chunks, and m = number of columns.
-            let all_chunks_aligned = !self.should_rechunk()
-                && self
-                    .materialized_column_iter()
-                    .next()
-                    .is_some_and(|s| s.chunk_lengths().eq(mask.chunk_lengths()));
+            let all_chunks_aligned =
+                !self.should_rechunk() && self.first_col_chunk_lengths().eq(mask.chunk_lengths());
 
             let mask = if all_chunks_aligned {
                 Cow::Borrowed(mask)
@@ -1179,11 +1198,8 @@ impl DataFrame {
                 Ok(self.clear())
             }
         } else {
-            let all_chunks_aligned = !self.should_rechunk()
-                && self
-                    .materialized_column_iter()
-                    .next()
-                    .is_some_and(|s| s.chunk_lengths().eq(mask.chunk_lengths()));
+            let all_chunks_aligned =
+                !self.should_rechunk() && self.first_col_chunk_lengths().eq(mask.chunk_lengths());
 
             let mask = if all_chunks_aligned {
                 Cow::Borrowed(mask)
@@ -1414,7 +1430,7 @@ impl DataFrame {
         }
         let by_column = self.select_to_vec(by)?;
 
-        let mut out = self.sort_impl(by_column, sort_options, None)?;
+        let mut out = self.clone().sort_impl(by_column, sort_options, None)?;
         unsafe { out.set_schema_from(self) };
 
         *self = out;
@@ -1425,8 +1441,8 @@ impl DataFrame {
     #[doc(hidden)]
     /// This is the dispatch of Self::sort, and exists to reduce compile bloat by monomorphization.
     pub fn sort_impl(
-        &self,
-        by_column: Vec<Column>,
+        self,
+        mut by_column: Vec<Column>,
         sort_options: SortMultipleOptions,
         slice: Option<(i64, usize)>,
     ) -> PolarsResult<Self> {
@@ -1435,7 +1451,7 @@ impl DataFrame {
             return if let Some((offset, len)) = slice {
                 Ok(self.slice(offset, len))
             } else {
-                Ok(self.clone())
+                Ok(self)
             };
         }
 
@@ -1469,7 +1485,7 @@ impl DataFrame {
         };
 
         if self.shape_has_zero() {
-            let mut out = self.clone();
+            let mut out = self;
             set_sorted(&mut out);
             return Ok(out);
         }
@@ -1497,7 +1513,7 @@ impl DataFrame {
             } else {
                 IsSorted::Ascending
             };
-            // If null count is 0 then nulls_last doesnt matter
+            // If null count is 0 then nulls_last doesn't matter
             // Safe to get value at last position since the dataframe is not empty (taken care above)
             let no_sorting_required = (by_column[0].is_sorted_flag() == required_sorting)
                 && ((by_column[0].null_count() == 0)
@@ -1508,7 +1524,7 @@ impl DataFrame {
                 return if let Some((offset, len)) = slice {
                     Ok(self.slice(offset, len))
                 } else {
-                    Ok(self.clone())
+                    Ok(self)
                 };
             }
         }
@@ -1516,9 +1532,29 @@ impl DataFrame {
         let has_nested = by_column.iter().any(|s| s.dtype().is_nested());
         let allow_threads = sort_options.multithreaded;
 
-        // a lot of indirection in both sorting and take
-        let mut df = self.clone();
-        let df = df.rechunk_mut_par();
+        // a lot of indirection in both sorting and take; rechunking the owned
+        // frame frees the old chunks
+        let mut df = self;
+        if df.columns().iter().any(|c| c.n_chunks() > 1) {
+            // Keys that are columns of this frame take the rechunked columns,
+            // so that their old chunks are freed too.
+            let frame_key_idxs: Vec<Option<usize>> = by_column
+                .iter()
+                .map(|c| {
+                    let s = c.as_series()?;
+                    let idx = df.get_column_index(s.name())?;
+                    let ds = df.columns()[idx].as_series()?;
+                    Arc::ptr_eq(&ds.0, &s.0).then_some(idx)
+                })
+                .collect();
+            df.rechunk_mut_par();
+            for (c, idx) in by_column.iter_mut().zip(frame_key_idxs) {
+                if let Some(idx) = idx {
+                    *c = df.columns()[idx].clone();
+                }
+            }
+        }
+        let df = &df;
         let mut take = match (by_column.len(), has_nested) {
             (1, false) => {
                 let s = &by_column[0];
@@ -2130,8 +2166,7 @@ impl DataFrame {
                     .map(|c| c.field().to_arrow(compat_level))
                     .collect(),
             ),
-            idx: 0,
-            n_chunks: usize::max(1, self.first_col_n_chunks()),
+            cursor: ChunkCursor::new(self),
             compat_level,
             parallel,
         })
@@ -2154,16 +2189,14 @@ impl DataFrame {
         }
 
         RecordBatchIterWrap::PhysicalBatches(PhysRecordBatchIter {
+            df: self,
             schema: Arc::new(
                 self.columns()
                     .iter()
                     .map(|c| c.field().to_arrow(CompatLevel::newest()))
                     .collect(),
             ),
-            arr_iters: self
-                .materialized_column_iter()
-                .map(|s| s.chunks().iter())
-                .collect(),
+            cursor: ChunkCursor::new(self),
         })
     }
 
@@ -2631,11 +2664,53 @@ impl DataFrame {
     }
 }
 
+/// Cursor over the chunks a [`DataFrame`] is laid out along.
+struct ChunkCursor<'a> {
+    /// The chunks of the first column that has any; empty when no column does.
+    chunks: &'a [ArrayRef],
+    height: usize,
+    idx: usize,
+}
+
+impl<'a> ChunkCursor<'a> {
+    fn new(df: &'a DataFrame) -> Self {
+        let chunks = match df.columns().iter().find_map(Column::as_series) {
+            Some(s) => s.chunks().as_slice(),
+            None => &[],
+        };
+
+        Self {
+            chunks,
+            height: df.height(),
+            idx: 0,
+        }
+    }
+
+    fn n_chunks(&self) -> usize {
+        usize::max(1, self.chunks.len())
+    }
+
+    /// The index and number of rows of the next chunk.
+    fn next(&mut self) -> Option<(usize, usize)> {
+        let idx = self.idx;
+        if idx >= self.n_chunks() {
+            return None;
+        }
+
+        self.idx += 1;
+        Some((idx, self.chunks.get(idx).map_or(self.height, |c| c.len())))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let n = self.n_chunks() - self.idx;
+        (n, Some(n))
+    }
+}
+
 pub struct RecordBatchIter<'a> {
     df: &'a DataFrame,
     schema: ArrowSchemaRef,
-    idx: usize,
-    n_chunks: usize,
+    cursor: ChunkCursor<'a>,
     compat_level: CompatLevel,
     parallel: bool,
 }
@@ -2644,66 +2719,60 @@ impl Iterator for RecordBatchIter<'_> {
     type Item = RecordBatch;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.idx >= self.n_chunks {
-            return None;
-        }
+        let (idx, length) = self.cursor.next()?;
 
-        // Create a batch of the columns with the same chunk no.
-        let batch_cols: Vec<ArrayRef> = if self.parallel {
-            let iter = self
-                .df
-                .columns()
-                .par_iter()
-                .map(Column::as_materialized_series)
-                .map(|s| s.to_arrow(self.idx, self.compat_level));
-            RAYON.install(|| iter.collect())
-        } else {
-            self.df
-                .columns()
-                .iter()
-                .map(Column::as_materialized_series)
-                .map(|s| s.to_arrow(self.idx, self.compat_level))
-                .collect()
+        let to_arrow = |c: &Column| match c.as_series() {
+            Some(s) => s.to_arrow(idx, self.compat_level),
+            None => c.slice(0, length).rechunk_to_arrow(self.compat_level),
         };
 
-        let length = batch_cols.first().map_or(0, |arr| arr.len());
-
-        self.idx += 1;
+        let batch_cols: Vec<ArrayRef> = if self.parallel {
+            let iter = self.df.columns().par_iter().map(to_arrow);
+            RAYON.install(|| iter.collect())
+        } else {
+            self.df.columns().iter().map(to_arrow).collect()
+        };
 
         Some(RecordBatch::new(length, self.schema.clone(), batch_cols))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let n = self.n_chunks - self.idx;
-        (n, Some(n))
+        self.cursor.size_hint()
     }
 }
 
 pub struct PhysRecordBatchIter<'a> {
+    df: &'a DataFrame,
     schema: ArrowSchemaRef,
-    arr_iters: Vec<std::slice::Iter<'a, ArrayRef>>,
+    cursor: ChunkCursor<'a>,
 }
 
 impl Iterator for PhysRecordBatchIter<'_> {
     type Item = RecordBatch;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let arrs = self
-            .arr_iters
-            .iter_mut()
-            .map(|phys_iter| phys_iter.next().cloned())
-            .collect::<Option<Vec<_>>>()?;
+        let (idx, length) = self.cursor.next()?;
 
-        let length = arrs.first().map_or(0, |arr| arr.len());
+        let arrs = self
+            .df
+            .columns()
+            .iter()
+            .map(|c| match c.as_series() {
+                Some(s) => s.chunks()[idx].clone(),
+                None => c
+                    .slice(0, length)
+                    .take_materialized_series()
+                    .rechunk()
+                    .chunks()[0]
+                    .clone(),
+            })
+            .collect::<Vec<_>>();
+
         Some(RecordBatch::new(length, self.schema.clone(), arrs))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        if let Some(iter) = self.arr_iters.first() {
-            iter.size_hint()
-        } else {
-            (0, None)
-        }
+        self.cursor.size_hint()
     }
 }
 
@@ -2959,6 +3028,60 @@ mod test {
 
         df.vstack_mut(&df.slice(0, 3)).unwrap();
         assert_eq!(df.first_col_n_chunks(), 2)
+    }
+
+    #[test]
+    fn test_chunk_alignment_with_scalar_column() {
+        let mut df = df! { "int" => [0, 1] }.unwrap();
+        df.vstack_mut(&df! { "int" => [2] }.unwrap()).unwrap();
+        df.insert_column(
+            0,
+            Column::new_scalar("str".into(), Scalar::from(PlSmallStr::from_static("a")), 3),
+        )
+        .unwrap();
+
+        // A materialized scalar column still follows the layout of the other columns.
+        for materialize in [false, true] {
+            if materialize {
+                df.columns()[0].as_materialized_series();
+            }
+            assert!(!df.should_rechunk());
+
+            let batch_lengths = |batches: Vec<RecordBatch>| {
+                batches
+                    .iter()
+                    .map(|b| {
+                        assert!(b.arrays().iter().all(|arr| arr.len() == b.len()));
+                        b.len()
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let batches = df.iter_chunks(CompatLevel::newest(), false).collect();
+            assert_eq!(batch_lengths(batches), [2, 1]);
+            let batches = df.iter_chunks_physical().collect();
+            assert_eq!(batch_lengths(batches), [2, 1]);
+        }
+    }
+
+    #[test]
+    fn test_vstack_scalar_chunk_alignment() {
+        // Appending equal scalars keeps the column unmaterialized.
+        let mut df = df! {
+            "int" => [0],
+            "str" => ["a"],
+        }
+        .unwrap();
+        df.vstack_mut(&df! { "int" => [1], "str" => ["a"] }.unwrap())
+            .unwrap();
+
+        assert_eq!(df.column("int").unwrap().n_chunks(), 2);
+        assert!(df.column("str").unwrap().as_scalar_column().is_some());
+        assert!(!df.should_rechunk());
+
+        let batches = df
+            .iter_chunks(CompatLevel::newest(), false)
+            .collect::<Vec<_>>();
+        assert_eq!(batches.iter().map(|b| b.len()).collect::<Vec<_>>(), [1, 1]);
     }
 
     #[test]

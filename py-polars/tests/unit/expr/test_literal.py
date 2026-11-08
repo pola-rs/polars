@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
@@ -49,7 +49,7 @@ def test_literal_integer_20807() -> None:
         (ZoneInfo("Asia/Kabul"), None),
         (ZoneInfo("Asia/Kabul"), pl.Datetime("us", "Asia/Kabul")),
         (ZoneInfo("Europe/Paris"), pl.Datetime("us", "Europe/Paris")),
-        (timezone.utc, pl.Datetime("us", "UTC")),
+        (UTC, pl.Datetime("us", "UTC")),
     ],
 )
 def test_literal_datetime_timezone(tz: Any, lit_dtype: pl.DataType | None) -> None:
@@ -71,7 +71,7 @@ def test_literal_datetime_timezone(tz: Any, lit_dtype: pl.DataType | None) -> No
             # fixed offset from UTC
             tzoffset(None, 16200),
             None,
-            datetime(2019, 12, 31, 19, 30, tzinfo=timezone.utc),
+            datetime(2019, 12, 31, 19, 30, tzinfo=UTC),
         ),
         (
             # fixed offset from UTC

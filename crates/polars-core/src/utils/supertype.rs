@@ -518,6 +518,7 @@ pub fn get_supertype_with_options(
                     },
                     // Materialize float to float
                     UnknownKind::Float | UnknownKind::Int(_) if dt.is_float() => Some(dt.clone()),
+                    UnknownKind::Float if dt.is_bool() => Some(Unknown(UnknownKind::Float)),
                     UnknownKind::Float if dt.is_integer() => {
                         if dt.is_known() {
                             Some(Float64)
@@ -547,7 +548,7 @@ pub fn get_supertype_with_options(
                                 materialize_smallest_dyn_int(*v).dtype()
                             };
                             match dt {
-                                UInt64 if smallest_fitting_dtype.is_signed_integer() => {
+                                UInt64 if matches!(smallest_fitting_dtype, Int8 | Int16 | Int32 | Int64) => {
                                     // Ensure we don't cast to float when dealing with dynamic literals
                                     Some(Int64)
                                 },
@@ -672,6 +673,9 @@ fn materialize_dyn_int_pos(v: i128) -> AnyValue<'static> {
         Some(v) => AnyValue::UInt32(v),
         None => match u64::try_from(v).ok() {
             Some(v) => AnyValue::UInt64(v),
+            #[cfg(feature = "dtype-u128")]
+            None => AnyValue::UInt128(v as u128),
+            #[cfg(not(feature = "dtype-u128"))]
             None => AnyValue::Null,
         },
     }
@@ -686,16 +690,7 @@ fn materialize_smallest_dyn_int(v: i128) -> AnyValue<'static> {
     if let Ok(v) = i16::try_from(v) {
         return AnyValue::Int16(v);
     }
-    match i32::try_from(v).ok() {
-        Some(v) => AnyValue::Int32(v),
-        None => match i64::try_from(v).ok() {
-            Some(v) => AnyValue::Int64(v),
-            None => match u64::try_from(v).ok() {
-                Some(v) => AnyValue::UInt64(v),
-                None => AnyValue::Null,
-            },
-        },
-    }
+    materialize_dyn_int(v)
 }
 
 pub fn merge_dtypes_many<I: IntoIterator<Item = D> + Clone, D: AsRef<DataType>>(

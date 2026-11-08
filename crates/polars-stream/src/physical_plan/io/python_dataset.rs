@@ -4,6 +4,7 @@ use polars_core::config;
 use polars_plan::plans::{ExpandedPythonScan, python_df_to_rust};
 use polars_utils::format_pl_smallstr;
 use pyo3::exceptions::PyStopIteration;
+use pyo3::sync::PyOnceLock;
 use pyo3::{PyTypeInfo, intern};
 
 use crate::execute::StreamingExecutionState;
@@ -19,17 +20,20 @@ pub fn python_dataset_scan_to_reader_builder(
 
     let (name, get_batch_fn) = match &expanded_scan.variant {
         S::Pyarrow => {
-            let generator = Python::attach(|py| {
-                let generator = expanded_scan.scan_fn.call0(py).unwrap();
-
-                generator.bind(py).get_item(0).unwrap().unbind()
-            });
+            // Created on the first batch, so that Python errors are returned rather than panicking
+            // here.
+            let scan_fn = expanded_scan.scan_fn.clone();
+            let generator = PyOnceLock::<Py<PyAny>>::new();
 
             (
                 format_pl_smallstr!("python[{} @ pyarrow]", &expanded_scan.name),
                 Box::new(move |_state: &StreamingExecutionState| {
                     Python::attach(|py| {
-                        let generator = generator.bind(py);
+                        let generator = generator
+                            .get_or_try_init(py, || {
+                                PyResult::Ok(scan_fn.0.call0(py)?.bind(py).get_item(0)?.unbind())
+                            })?
+                            .bind(py);
 
                         match generator.call_method0(intern!(py, "__next__")) {
                             Ok(out) => python_df_to_rust(py, out).map(Some),

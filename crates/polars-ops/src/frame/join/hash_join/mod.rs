@@ -12,7 +12,6 @@ use polars_core::runtime::RAYON;
 use polars_core::utils::_set_partition_size;
 use polars_defs::join::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_utils::index::ChunkId;
-use polars_utils::unique_column_name;
 pub(super) use single_keys::*;
 pub use single_keys_dispatch::SeriesJoin;
 #[cfg(feature = "asof_join")]
@@ -27,6 +26,7 @@ pub(crate) use sort_merge::*;
 pub use super::*;
 #[cfg(feature = "chunked_ids")]
 use crate::chunked_array::gather::chunked::TakeChunkedHorPar;
+use crate::unique_column_name;
 
 pub fn default_join_ids() -> ChunkJoinOptIds {
     #[cfg(feature = "chunked_ids")]
@@ -39,7 +39,7 @@ pub fn default_join_ids() -> ChunkJoinOptIds {
     }
 }
 
-macro_rules! det_hash_prone_order {
+macro_rules! det_hash_probe_order {
     ($self:expr, $other:expr) => {{
         // The shortest relation will be used to create a hash table.
         if $self.len() > $other.len() {
@@ -50,7 +50,7 @@ macro_rules! det_hash_prone_order {
     }};
 }
 
-pub(super) use det_hash_prone_order;
+pub(super) use det_hash_probe_order;
 #[cfg(feature = "performant")]
 use polars_arrow::legacy::conversion::primitive_to_vec;
 

@@ -532,6 +532,29 @@ def test_semi_join_above_a_selective_filter_stays(tmp_path: Path) -> None:
     assert_same_result(lf)
 
 
+def test_semi_join_moves_below_a_join_on_two_keys() -> None:
+    # Every fact row matches one price row on (ts, region).
+    fact = pl.LazyFrame(
+        {
+            "ts": [t for t in range(40) for _ in range(100)],
+            "duid": list(range(100)) * 40,
+        }
+    ).with_columns(date=pl.col("ts") // 10)
+    dim = pl.LazyFrame({"duid": range(100), "region": [u % 5 for u in range(100)]})
+    price = pl.LazyFrame(
+        {"ts": [t for t in range(40) for _ in range(5)], "region": list(range(5)) * 40}
+    )
+    dates = pl.LazyFrame({"date": [1]})
+    lf = (
+        fact.join(dim, on="duid")
+        .join(price, on=["ts", "region"])
+        .join(dates, on="date", how="semi")
+    )
+    plan = lf.explain(optimizations=ON)
+    assert all_joins(plan)[-1] == "SEMI JOIN:"
+    assert_same_result(lf)
+
+
 @pytest.mark.parametrize("how", ["semi", "anti"])
 def test_pushed_down_join_keys_a_suffixed_column_by_its_own_name(
     how: JoinStrategy,

@@ -402,8 +402,12 @@ fn aexpr_slice_pushdown_top(
     )
     .unwrap();
 
-    if let AExpr::Column(_) | AExpr::Len = ae {
-        *col_hit_count = col_hit_count.map(|x| x + 1);
+    match ae {
+        AExpr::Column(_) | AExpr::Len => *col_hit_count = col_hit_count.map(|x| x + 1),
+        // A window runs its function per group and keeps the frame height, so it needs all
+        // rows of the frame.
+        AExpr::Over { .. } => *col_hit_count = None,
+        _ => {},
     }
 
     let len_cmp_slice = len_cmp_head_slice(ae, expr_arena)
@@ -532,7 +536,7 @@ fn aexpr_slice_pushdown_top(
     let current_ae = expr_arena.get(current_ae_node);
 
     if !current_ae.is_elementwise_top_level()
-        || (maintain_errors && current_ae.is_fallible_top_level(expr_arena))
+        || (maintain_errors && current_ae.is_fallible_top_level_ignoring_overflow(expr_arena))
     {
         state.candidate_push_locations.clear();
     }

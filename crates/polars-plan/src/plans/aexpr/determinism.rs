@@ -119,6 +119,7 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::Pow(_) => false,
         #[cfg(feature = "row_hash")]
         F::Hash(..) => false,
+        F::Mm3Hash => false,
         #[cfg(feature = "arg_where")]
         F::ArgWhere => false,
         #[cfg(feature = "index_of")]
@@ -157,7 +158,7 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::ArgUnique => false,
         F::ArgMin | F::ArgMax => false,
         F::ArgSort { .. } => false,
-        F::MinBy | F::MaxBy => false,
+        F::MinBy { .. } | F::MaxBy { .. } => false,
         F::Product => false,
         // Only the `Random` tie-breaker is inherently non-deterministic.
         // The other `RankMethod` variants (Average, Min, Max, Dense,
@@ -239,9 +240,9 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         #[cfg(feature = "reinterpret")]
         F::Reinterpret(_) => false,
         F::ExtendConstant => false,
-        F::RowEncode(..) => false,
+        F::RowEncode { .. } => false,
         #[cfg(feature = "dtype-struct")]
-        F::RowDecode(..) => false,
+        F::RowDecode { .. } => false,
 
         #[cfg(feature = "random")]
         F::Random { .. } => true,

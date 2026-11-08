@@ -20,6 +20,7 @@ use crate::nodes::io_sources::multi_scan::reader_interface::{
 pub mod builder {
     use std::sync::{Arc, Mutex};
 
+    use polars_error::PolarsResult;
     use polars_utils::pl_str::PlSmallStr;
 
     use super::BatchFnReader;
@@ -35,12 +36,12 @@ pub mod builder {
     }
 
     impl FileReaderBuilder for BatchFnReaderBuilder {
-        fn reader_name(&self) -> &str {
-            &self.name
+        fn reader_name(&self) -> PolarsResult<PlSmallStr> {
+            Ok(self.name.clone())
         }
 
-        fn reader_capabilities(&self) -> ReaderCapabilities {
-            ReaderCapabilities::empty()
+        fn reader_capabilities(&self) -> PolarsResult<ReaderCapabilities> {
+            Ok(ReaderCapabilities::empty())
         }
 
         fn set_execution_state(&self, execution_state: &StreamingExecutionState) {
@@ -52,7 +53,7 @@ pub mod builder {
             _source: polars_plan::prelude::ScanSource,
             _cloud_options: Option<Arc<polars_io::cloud::CloudOptions>>,
             scan_source_idx: usize,
-        ) -> Box<dyn FileReader> {
+        ) -> PolarsResult<Box<dyn FileReader>> {
             assert_eq!(scan_source_idx, 0);
 
             let mut reader = self
@@ -64,7 +65,7 @@ pub mod builder {
 
             reader.execution_state = Some(self.execution_state.lock().unwrap().clone().unwrap());
 
-            Box::new(reader) as Box<dyn FileReader>
+            Ok(Box::new(reader) as Box<dyn FileReader>)
         }
     }
 
@@ -183,6 +184,7 @@ impl FileReader for BatchFnReader {
             missing_columns_policy: _,
             num_pipelines: _,
             disable_morsel_split: _,
+            maintain_order: _,
             last_morsel_pipelines: _,
             callbacks:
                 FileReaderCallbacks {
@@ -218,7 +220,8 @@ impl FileReader for BatchFnReader {
 
         let (mut morsel_sender, morsel_rx) = FileReaderOutputSend::new_serial();
 
-        let handle = spawn(TaskPriority::Low, async move {
+        let task_metrics = self.execution_state().task_metrics();
+        let handle = spawn(TaskPriority::Low, task_metrics, async move {
             if let Some(file_schema_tx) = file_schema_tx {
                 let opt_df;
 
@@ -295,6 +298,40 @@ impl FileReader for BatchFnReader {
         });
 
         Ok((morsel_rx, handle))
+    }
+
+    /// Reads all batches and buffers them for the following `begin_read`, as the batch function
+    /// can be called through only once (e.g. for resolving a negative slice).
+    async fn n_rows_in_file(&mut self) -> PolarsResult<IdxSize> {
+        let mut get_batch_state = self
+            .get_batch_state
+            .take()
+            .expect("unimplemented: BatchFnReader called more than once");
+
+        let mut batches = std::collections::VecDeque::new();
+        let mut n_rows: usize = 0;
+
+        loop {
+            let opt_df;
+
+            (get_batch_state, opt_df) =
+                GetBatchState::next(get_batch_state, self.execution_state().clone()).await?;
+
+            let Some(df) = opt_df else {
+                break;
+            };
+
+            n_rows = n_rows.saturating_add(df.height());
+            batches.push_back(df);
+        }
+
+        let batches = std::sync::Mutex::new(batches);
+        self.get_batch_state = Some(GetBatchState::from(Box::new(
+            move |_: &StreamingExecutionState| Ok(batches.lock().unwrap().pop_front()),
+        ) as GetBatchFn));
+
+        IdxSize::try_from(n_rows)
+            .map_err(|_| polars_err!(bigidx, ctx = "batch reader", size = n_rows))
     }
 }
 

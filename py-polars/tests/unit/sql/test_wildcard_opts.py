@@ -7,6 +7,7 @@ import pytest
 import polars as pl
 from polars.exceptions import DuplicateError, SQLInterfaceError
 from polars.testing import assert_frame_equal
+from tests.unit.sql import assert_sql_matches
 
 
 @pytest.fixture
@@ -163,6 +164,47 @@ def test_select_replace(
             check_cols + df.columns[1:] if check_cols == ["Identifier"] else df.columns
         )
         assert res.columns == expected_columns
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT * EXCLUDE (x), SUM(x) AS s FROM t GROUP BY g, ab ORDER BY g, ab",
+        "SELECT * EXCLUDE (x, ab), SUM(x) AS s FROM t GROUP BY ALL ORDER BY g",
+        "SELECT * ILIKE 'g%', SUM(x) AS s FROM t GROUP BY g ORDER BY g",
+        "SELECT * EXCLUDE (x, ab) RENAME (g AS h), SUM(x) AS s FROM t GROUP BY g ORDER BY h",
+        "SELECT * EXCLUDE (x, ab) RENAME (g AS h), SUM(x) AS s FROM t GROUP BY h ORDER BY 1",
+        "SELECT * EXCLUDE (x), COUNT(*) AS n FROM t GROUP BY g, ab HAVING COUNT(*) > 0 ORDER BY ab",
+        "SELECT u.* EXCLUDE (y), SUM(x) AS s FROM t JOIN u ON t.g = u.g GROUP BY u.g ORDER BY 1",
+        "SELECT * EXCLUDE (x), x FROM t ORDER BY g, x",
+        "SELECT * EXCLUDE (x), x + 1 AS x FROM t ORDER BY g, x",
+        "SELECT * ILIKE 'a%', 1 AS z, g FROM t ORDER BY ab",
+        "SELECT * RENAME (g AS h), g FROM t ORDER BY h, x",
+        "SELECT t.*, u.* EXCLUDE (g) FROM t JOIN u ON t.g = u.g ORDER BY t.g, ab",
+    ],
+)
+def test_wildcard_options_apply_to_wildcard_only(query: str) -> None:
+    frames = {
+        "t": pl.DataFrame({"g": [1, 1, 2], "x": [10, 20, 30], "ab": [1, 2, 3]}),
+        "u": pl.DataFrame({"g": [1, 2], "y": [5, 6]}),
+    }
+    assert_sql_matches(frames, query=query, compare_with="duckdb")
+
+
+@pytest.mark.parametrize("group_by", ["", "GROUP BY ALL"])
+def test_qualified_wildcard_rename_to_duplicate_name(group_by: str) -> None:
+    frames = {
+        "t": pl.DataFrame({"g": [1]}),
+        "u": pl.DataFrame({"g": [1], "x": [100]}),
+    }
+    res = pl.SQLContext(frames).execute(
+        f"""
+        SELECT t.*, u.* EXCLUDE (g) RENAME (x AS g)
+        FROM t JOIN u ON t.g = u.g {group_by}
+        """,
+        eager=True,
+    )
+    assert_frame_equal(res, pl.DataFrame({"g": [1], "g:u": [100]}))
 
 
 def test_select_wildcard_errors(df: pl.DataFrame) -> None:

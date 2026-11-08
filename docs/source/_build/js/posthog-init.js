@@ -50,6 +50,7 @@ if (POSTHOG_ALLOWED_HOSTS.includes(location.hostname)) {
 		api_host: "https://iji.pola.rs",
 		ui_host: "https://eu.posthog.com",
 		defaults: "2026-05-30",
+        autocapture: false,
 		cookieless_mode: "always",
 		person_profiles: "never",
 	});

@@ -335,3 +335,19 @@ def test_arr_eval_categorical_min_max_25906() -> None:
         s.arr.agg(pl.element().arg_max()),
         pl.Series("a", [0, 0], dtype=pl.get_index_type()),
     )
+
+
+def test_arr_agg_null_rows_30252() -> None:
+    dtype = pl.Struct({"a": pl.Int64, "b": pl.Struct({"c": pl.Int64})})
+    x = {"a": 1, "b": {"c": 2}}
+    y = {"a": 3, "b": {"c": 4}}
+    s = pl.Series("s", [None, [x], None, [y]], dtype=pl.Array(dtype, 1))
+    out = s.arr.agg(pl.element().first())
+    assert_series_equal(out, pl.Series("s", [None, x, None, y], dtype=dtype))
+    # The null rows must also be null in the fields.
+    assert out.struct.field("b").struct.field("c").to_list() == [None, 2, None, 4]
+
+    s = pl.Series("s", [None, [None], None], dtype=pl.Array(pl.Null, 1))
+    assert_series_equal(
+        s.arr.agg(pl.element().first()), pl.Series("s", [None, None, None])
+    )

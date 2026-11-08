@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
@@ -10,7 +10,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import AttributeRemovedError, ComputeError, InvalidOperationError
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars._typing import ClosedInterval, EngineType, Label, StartBy
@@ -553,7 +553,7 @@ def test_truncate_negative_offset(tzinfo: ZoneInfo | None) -> None:
         ]
 
 
-def test_groupy_by_dynamic_median_10695() -> None:
+def test_group_by_dynamic_median_10695() -> None:
     df = pl.DataFrame(
         {
             "timestamp": pl.datetime_range(
@@ -993,10 +993,10 @@ def test_earliest_point_included_when_offset_is_set_15241(start_by: StartBy) -> 
         data={
             "t": pl.Series(
                 [
-                    datetime(2024, 3, 22, 3, 0, tzinfo=timezone.utc),
-                    datetime(2024, 3, 22, 4, 0, tzinfo=timezone.utc),
-                    datetime(2024, 3, 22, 5, 0, tzinfo=timezone.utc),
-                    datetime(2024, 3, 22, 6, 0, tzinfo=timezone.utc),
+                    datetime(2024, 3, 22, 3, 0, tzinfo=UTC),
+                    datetime(2024, 3, 22, 4, 0, tzinfo=UTC),
+                    datetime(2024, 3, 22, 5, 0, tzinfo=UTC),
+                    datetime(2024, 3, 22, 6, 0, tzinfo=UTC),
                 ]
             ),
             "v": [1, 10, 100, 1000],
@@ -1011,8 +1011,8 @@ def test_earliest_point_included_when_offset_is_set_15241(start_by: StartBy) -> 
     expected = pl.DataFrame(
         {
             "t": [
-                datetime(2024, 3, 21, 5, 0, tzinfo=timezone.utc),
-                datetime(2024, 3, 22, 5, 0, tzinfo=timezone.utc),
+                datetime(2024, 3, 21, 5, 0, tzinfo=UTC),
+                datetime(2024, 3, 22, 5, 0, tzinfo=UTC),
             ],
             "v": [[1, 10], [100, 1000]],
         }
@@ -1391,7 +1391,7 @@ def test_group_by_dynamic_very_large_offset() -> None:
             index_column="ts",
             every="10i",
             period="10i",
-            offset="1000000000000i",  # atypcial value, used for stress test only
+            offset="1000000000000i",  # atypical value, used for stress test only
         )
         .agg(pl.col("val").sum())
         .select("val")
@@ -1568,3 +1568,146 @@ def test_group_by_dynamic_empty_include_boundaries_columns(
 
     assert result.height == 0
     assert result.schema == expected.schema
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("start", "every", "time_zone"),
+    [
+        # Month-end start: clamping to a short month must not carry over.
+        (datetime(2024, 1, 31), "1mo", None),
+        (datetime(2024, 1, 31), "2mo", None),
+        (datetime(2024, 1, 31, 12), "1q", None),
+        (datetime(2024, 2, 29), "1y", None),
+        # Start on a local time that is skipped once by daylight saving.
+        (datetime(2021, 3, 10, 2, 30), "1d", "America/New_York"),
+        (datetime(2021, 3, 7, 2, 30), "1w", "America/New_York"),
+    ],
+)
+def test_group_by_dynamic_calendar_grid_matches_datetime_range(
+    engine: EngineType, start: datetime, every: str, time_zone: str | None
+) -> None:
+    end = start + timedelta(days=730)
+    t = pl.datetime_range(
+        start, end, "1d", time_zone=time_zone, eager=True, time_unit="us"
+    ).alias("t")
+    expected = pl.datetime_range(
+        start, end, every, time_zone=time_zone, eager=True, time_unit="us"
+    ).alias("_lower_boundary")
+
+    lf = pl.LazyFrame({"t": t})
+    out = (
+        lf.group_by_dynamic(
+            "t",
+            every=every,
+            period="1h",
+            start_by="datapoint",
+            include_boundaries=True,
+        )
+        .agg(pl.len())
+        .collect(engine=engine)
+    )
+    assert_series_equal(out["_lower_boundary"], expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("closed", ["left", "right", "both", "none"])
+@pytest.mark.parametrize("every", ["1mo", "2mo"])
+@pytest.mark.parametrize("period", ["1d", "2d", "3d"])
+def test_group_by_dynamic_calendar_sparse_matches_dense(
+    engine: EngineType, closed: ClosedInterval, every: str, period: str
+) -> None:
+    dense = pl.datetime_range(
+        datetime(2024, 1, 31), datetime(2025, 12, 31), "1d", eager=True, time_unit="us"
+    ).alias("t")
+    rng = np.random.default_rng(0)
+
+    def windows(t: pl.Series) -> pl.DataFrame:
+        return (
+            pl.LazyFrame({"t": t, "v": t})
+            .group_by_dynamic(
+                "t",
+                every=every,
+                period=period,
+                closed=closed,
+                start_by="datapoint",
+                include_boundaries=True,
+            )
+            .agg(pl.col("v"))
+            .collect(engine=engine)
+        )
+
+    expected = windows(dense)
+    for _ in range(10):
+        mask = rng.random(dense.len()) < 0.05
+        mask[0] = True
+        sparse = dense.filter(pl.Series(mask))
+        result = windows(sparse)
+
+        expected_sparse = (
+            expected.with_columns(pl.col("v").list.set_intersection(sparse.implode()))
+            .filter(pl.col("v").list.len() > 0)
+            .with_columns(pl.col("v").list.sort())
+        )
+        assert_frame_equal(result, expected_sparse)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_group_by_dynamic_calendar_sparse_skip(engine: EngineType) -> None:
+    lf = pl.LazyFrame(
+        {"t": [datetime(2024, 1, 31), datetime(2024, 7, 9), datetime(2024, 8, 1)]}
+    )
+    out = (
+        lf.group_by_dynamic(
+            "t",
+            every="1mo",
+            period="2d",
+            start_by="datapoint",
+            closed="right",
+            include_boundaries=True,
+        )
+        .agg(pl.len())
+        .collect(engine=engine)
+    )
+    expected = pl.DataFrame(
+        {
+            "_lower_boundary": [datetime(2024, 7, 31)],
+            "_upper_boundary": [datetime(2024, 8, 2)],
+            "t": [datetime(2024, 7, 31)],
+            "len": pl.Series([1], dtype=pl.get_index_type()),
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("group_by", [None, "g"])
+def test_group_by_dynamic_overlapping_per_row_with_per_group_scalar(
+    group_by: str | None,
+) -> None:
+    df = pl.DataFrame(
+        {"t": [0, 1, 2, 3, 4, 5], "g": [1] * 6, "x": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]}
+    )
+    x = pl.col.x
+    out = df.group_by_dynamic("t", every="2i", period="4i", group_by=group_by).agg(
+        sub=x - x.mean(), gt=(x > x.mean()).sum()
+    )
+    assert out["sub"].to_list() == [[-1.5, -0.5, 0.5, 1.5]] * 2 + [[-0.5, 0.5]]
+    assert out["gt"].to_list() == [2, 2, 1]
+
+
+@pytest.mark.parametrize(
+    ("every", "period", "expected"),
+    [
+        # Every row in one window.
+        ("2i", "2i", [[-0.5, 0.5], [-1.0, 1.0], [-1.0, 1.0]]),
+        # t = 2 is in no window.
+        ("3i", "2i", [[-0.5, 0.5], [0.0], [-1.0, 1.0]]),
+    ],
+)
+def test_group_by_dynamic_per_row_with_per_group_scalar(
+    every: str, period: str, expected: list[list[float]]
+) -> None:
+    df = pl.DataFrame({"t": [0, 1, 2, 3, 6, 7], "x": [1.0, 2.0, 3.0, 5.0, 6.0, 8.0]})
+    x = pl.col.x
+    out = df.group_by_dynamic("t", every=every, period=period).agg(sub=x - x.mean())
+    assert out["sub"].to_list() == expected

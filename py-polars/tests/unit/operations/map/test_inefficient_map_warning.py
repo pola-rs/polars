@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import datetime as dt
+import dis
 import json
 import math
 import re
+import types
 from datetime import date, datetime
 from functools import partial
 from math import cosh
@@ -13,7 +15,12 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars._utils.udfs import _BYTECODE_PARSER_CACHE_, _NUMPY_FUNCTIONS, BytecodeParser
+from polars._utils.udfs import (
+    _BYTECODE_PARSER_CACHE_,
+    _INSTRUCTIONS_CACHE_,
+    _NUMPY_FUNCTIONS,
+    BytecodeParser,
+)
 from polars._utils.various import in_terminal_that_supports_colour
 from polars.exceptions import PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -367,6 +374,10 @@ NOOP_TEST_CASES = [
     "lambda x: MY_LIST in x",
     'lambda x: "first" if x == 1 else "not first"',
     'lambda x: np.sign(x, casting="unsafe")',
+    "lambda x: x.encode()",
+    "lambda x: x.lower",
+    "lambda x: x.replace('a', x)",
+    "lambda x: x.replace('a', 'b', 1, 2)",
 ]
 
 EVAL_ENVIRONMENT = {
@@ -875,3 +886,65 @@ def test_parse_global_function_without_module() -> None:
         s.map_elements(udf, return_dtype=pl.Float64),
         pl.Series("a", [1.0, 2.0**math.e]),
     )
+
+
+@pytest.fixture
+def disassembled(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+    """Record every object that the parser disassembles."""
+    calls: list[Any] = []
+
+    def get_instructions(x: Any) -> Any:
+        calls.append(x)
+        return dis.get_instructions(x)
+
+    monkeypatch.setattr("polars._utils.udfs.get_instructions", get_instructions)
+    _INSTRUCTIONS_CACHE_.clear()
+    return calls
+
+
+def test_parse_skips_disassembly_if_not_rewritable(disassembled: list[Any]) -> None:
+    udf = lambda x: f"{x}!"  # noqa: E731
+    parser = BytecodeParser(udf, map_target="expr")
+    assert not parser.can_attempt_rewrite()
+    assert parser.to_expression("a") is None
+    assert disassembled == []
+
+    # the original instructions are still available (on demand)
+    assert parser.original_instructions == list(dis.get_instructions(udf))
+    assert disassembled == [udf]
+
+
+def test_parse_reuses_code_object_disassembly(disassembled: list[Any]) -> None:
+    # functions created from the same source share a code object
+    def make_udf() -> Callable[[Any], Any]:
+        return lambda x: x * 2 + 1
+
+    udfs = [make_udf() for _ in range(3)]
+    code = udfs[0].__code__
+
+    # an equal, but distinct, code object
+    other_code = code.replace()
+    assert other_code == code
+    assert other_code is not code
+    udfs.append(types.FunctionType(other_code, globals()))
+
+    for udf in udfs:
+        parser = BytecodeParser(udf, map_target="expr")
+        assert parser.to_expression("a") == '(pl.col("a") * 2) + 1'
+        assert parser.original_instructions == list(dis.get_instructions(udf))
+        assert _INSTRUCTIONS_CACHE_[code] == parser.original_instructions
+        assert disassembled == [code]
+
+
+def test_parse_unhashable_code_constants() -> None:
+    udf = lambda x: x + 1  # noqa: E731
+    code = udf.__code__.replace(co_consts=udf.__code__.co_consts + ([],))
+    udf = types.FunctionType(code, globals())
+    assert udf(1) == 2
+    with pytest.raises(TypeError):
+        hash(code)
+
+    parser = BytecodeParser(udf, map_target="expr")
+    assert not parser._skipped_disassembly
+    assert not parser.can_attempt_rewrite()
+    assert parser.to_expression("a") is None

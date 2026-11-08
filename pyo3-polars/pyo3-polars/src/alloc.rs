@@ -2,8 +2,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::ffi::c_char;
 
 use once_cell::race::OnceRef;
-use pyo3::ffi::{PyCapsule_Import, Py_IsInitialized};
-use pyo3::Python;
+use pyo3::ffi::{PyCapsule_Import, PyGILState_Ensure, PyGILState_Release, Py_IsInitialized};
 
 unsafe extern "C" fn fallback_alloc(size: usize, align: usize) -> *mut u8 {
     System.alloc(Layout::from_size_align_unchecked(size, align))
@@ -68,17 +67,19 @@ impl PolarsAllocator {
         // otherwise it will cause infinite recursion.
         self.0.get_or_init(|| {
             let r = (unsafe { Py_IsInitialized() } != 0)
-                .then(|| {
-                    Python::attach(|_| unsafe {
-                        let capsule =
-                            (PyCapsule_Import(ALLOCATOR_CAPSULE_NAME.as_ptr() as *const c_char, 0)
-                                as *const AllocatorCapsule)
-                                .as_ref();
-                        if capsule.is_none() {
-                            pyo3::ffi::PyErr_Clear();
-                        }
-                        capsule
-                    })
+                .then(|| unsafe {
+                    // Use the C API instead of `Python::attach`, which can allocate
+                    // and thus recurse back into this function.
+                    let gstate = PyGILState_Ensure();
+                    let capsule =
+                        (PyCapsule_Import(ALLOCATOR_CAPSULE_NAME.as_ptr() as *const c_char, 0)
+                            as *const AllocatorCapsule)
+                            .as_ref();
+                    if capsule.is_none() {
+                        pyo3::ffi::PyErr_Clear();
+                    }
+                    PyGILState_Release(gstate);
+                    capsule
                 })
                 .flatten();
             #[cfg(debug_assertions)]

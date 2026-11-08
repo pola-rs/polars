@@ -3,6 +3,7 @@ from __future__ import annotations
 import abc
 import os
 import threading
+from copy import copy
 from typing import TYPE_CHECKING, Any, Final, Literal
 
 import polars._utils.logging
@@ -151,6 +152,19 @@ class CredentialProviderBuilder:
 
     def stable_cache_key(self) -> bytes:
         return self.credential_provider_init.stable_cache_key()
+
+    # Note: The rust-side expects this exact function name.
+    def _auto_init_config_json(self) -> str | None:
+        """
+        Plain configuration of an auto-initialized provider, as JSON.
+
+        Rust stores this in the query plan instead of this object, and builds
+        the provider from it with `_build_auto_init_credential_provider()`.
+        """
+        if isinstance(self.credential_provider_init, AutoInit):
+            return self.credential_provider_init.to_config_json()
+
+        return None
 
     def __getstate__(self) -> Any:
         state = self.credential_provider_init
@@ -326,8 +340,56 @@ class AutoInit(CredentialProviderBuilderImpl):
         import hashlib
         import pickle
 
-        hash = hashlib.sha256(pickle.dumps(self))
+        config_json = self.to_config_json()
+        hash = hashlib.sha256(
+            config_json.encode() if config_json is not None else pickle.dumps(self)
+        )
         return hash.digest()[:16]
+
+    def to_config_json(self) -> str | None:
+        """
+        Serialize to JSON with only plain values.
+
+        Matches `AutoInitConfig` on the Rust side. Returns `None` for a class
+        that has no plain configuration.
+        """
+        import json
+
+        if (kind := _AUTO_INIT_KIND_FROM_CLASS.get(self.cls)) is None:
+            return None
+
+        _, kw_names = _AUTO_INIT_CLASS_FROM_KIND[kind]
+
+        # Rust ignores unknown fields, so this would lose them.
+        if not kw_names.issuperset(self.kw):
+            return None
+
+        def to_str(v: Any) -> str | None:
+            return None if v is None else str(v)
+
+        config: dict[str, Any] = {}
+
+        for k, v in self.kw.items():
+            k = k.removeprefix("_")
+
+            if k == "storage_options":
+                config[k] = {sk: to_str(sv) for sk, sv in (v or {}).items()}
+            else:
+                config[k] = to_str(v)
+
+        return json.dumps({kind: config}, sort_keys=True)
+
+    @classmethod
+    def from_config_json(cls, config_json: str) -> AutoInit:
+        import json
+
+        ((kind, config),) = json.loads(config_json).items()
+        provider_cls, kw_names = _AUTO_INIT_CLASS_FROM_KIND[kind]
+
+        return cls(
+            provider_cls,
+            **{k if k in kw_names else f"_{k}": v for k, v in config.items()},
+        )
 
     def stable_cache_key(self) -> bytes:
         return self.get_or_init_cache_key()
@@ -335,6 +397,41 @@ class AutoInit(CredentialProviderBuilderImpl):
     @property
     def provider_repr(self) -> str:
         return self.cls.__name__
+
+
+# Classes of `AutoInit` that have a plain configuration, by `AutoInitConfig` variant
+# on the Rust side, with the keyword arguments it holds. In the config, the
+# arguments are named without their `_` prefix.
+_AUTO_INIT_CLASS_FROM_KIND: Final[dict[str, tuple[type, frozenset[str]]]] = {
+    "aws": (
+        CredentialProviderAWS,
+        frozenset(
+            [
+                "profile_name",
+                "region_name",
+                "_auto_init_unhandled_key",
+                "_storage_options",
+            ]
+        ),
+    ),
+    "azure": (CredentialProviderAzure, frozenset(["tenant_id", "_storage_account"])),
+    "gcp": (CredentialProviderGCP, frozenset()),
+    "gcp_token": (UserProvidedGCPToken, frozenset(["token"])),
+}
+_AUTO_INIT_KIND_FROM_CLASS: Final[dict[type, str]] = {
+    cls: kind for kind, (cls, _) in _AUTO_INIT_CLASS_FROM_KIND.items()
+}
+
+
+# Note: The rust-side expects this exact function name.
+def _build_auto_init_credential_provider(
+    config_json: str,
+    clear_cached_credentials: bool,  # noqa: FBT001
+) -> CredentialProviderBuilderReturn:
+    """Build an auto-initialized provider from `AutoInit.to_config_json()`."""
+    return CredentialProviderBuilder(
+        AutoInit.from_config_json(config_json)
+    ).build_credential_provider(clear_cached_credentials)
 
 
 DEFAULT_CREDENTIAL_PROVIDER: CredentialProviderFunction | Literal["auto"] | None = (
@@ -351,6 +448,24 @@ def _init_credential_provider_builder(
     storage_options: StorageOptionsDict | None,
     caller_name: str,
 ) -> CredentialProviderBuilder | None:
+    aws_storage_options: dict[str, str | None] = {}
+    for key, value in (storage_options or {}).items():
+        key = key.lower().removeprefix("aws_")
+        if key in {"region", "default_region", "virtual_hosted_style_request"}:
+            aws_storage_options[key] = value
+        elif key in {"endpoint", "endpoint_url", "endpoint_url_s3"}:
+            aws_storage_options["endpoint"] = None
+
+    def bind_aws_storage_options(
+        provider: CredentialProviderFunction,
+    ) -> CredentialProviderFunction:
+        if not aws_storage_options or not isinstance(provider, CredentialProviderAWS):
+            return provider
+
+        provider = copy(provider)
+        provider._storage_options = aws_storage_options
+        return provider
+
     def f() -> CredentialProviderBuilder | None:
         # Note: The behavior of this function should depend only on the function
         # parameters. Any environment-specific behavior should take place inside
@@ -377,7 +492,7 @@ def _init_credential_provider_builder(
             issue_unstable_warning(msg)
 
             return CredentialProviderBuilder.from_initialized_provider(
-                credential_provider
+                bind_aws_storage_options(credential_provider)
             )
 
         if DEFAULT_CREDENTIAL_PROVIDER is None:
@@ -389,10 +504,14 @@ def _init_credential_provider_builder(
         if (scheme := _get_path_scheme(first_scan_path)) is None:
             return None
 
-        def get_default_credential_provider() -> CredentialProviderBuilder | None:
+        def get_default_credential_provider(
+            *, bind_aws: bool = False
+        ) -> CredentialProviderBuilder | None:
             return (
                 CredentialProviderBuilder.from_initialized_provider(
-                    DEFAULT_CREDENTIAL_PROVIDER
+                    bind_aws_storage_options(DEFAULT_CREDENTIAL_PROVIDER)
+                    if bind_aws
+                    else DEFAULT_CREDENTIAL_PROVIDER
                 )
                 if DEFAULT_CREDENTIAL_PROVIDER != "auto"
                 else None
@@ -445,31 +564,26 @@ def _init_credential_provider_builder(
             )
 
         elif _is_aws_cloud(scheme=scheme, first_scan_path=str(first_scan_path)):
-            region = None
             profile = None
-            default_region = None
+            region = aws_storage_options.get("region")
+            default_region = aws_storage_options.get("default_region")
             unhandled_key = None
-            has_endpoint_url = False
 
             if storage_options is not None:
                 for k, v in storage_options.items():
                     k = k.lower()
 
                     # https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html
-                    if k in {"aws_region", "region"}:
-                        region = v
-                    elif k in {"aws_default_region", "default_region"}:
-                        default_region = v
-                    elif k in {"aws_profile", "profile"}:
+                    if k in {"aws_profile", "profile"}:
                         profile = v
-                    elif k in {
-                        "aws_endpoint",
-                        "aws_endpoint_url",
+                    elif k in AUTOINIT_IGNORED_KEYS or k.removeprefix("aws_") in {
+                        "region",
+                        "default_region",
                         "endpoint",
                         "endpoint_url",
+                        "endpoint_url_s3",
+                        "virtual_hosted_style_request",
                     }:
-                        has_endpoint_url = True
-                    elif k in AUTOINIT_IGNORED_KEYS:
                         continue
                     else:
                         # We assume this is some sort of access key
@@ -485,7 +599,8 @@ def _init_credential_provider_builder(
 
             if (
                 unhandled_key is None
-                and (default := get_default_credential_provider()) is not None
+                and (default := get_default_credential_provider(bind_aws=True))
+                is not None
             ):
                 return default
 
@@ -495,7 +610,7 @@ def _init_credential_provider_builder(
                     profile_name=profile,
                     region_name=region or default_region,
                     _auto_init_unhandled_key=unhandled_key,
-                    _storage_options_has_endpoint_url=has_endpoint_url,
+                    _storage_options={**aws_storage_options, "region": region},
                 )
             )
 
@@ -529,7 +644,7 @@ def _init_credential_provider_builder(
 
             if token is not None:
                 return CredentialProviderBuilder(
-                    InitializedCredentialProvider(UserProvidedGCPToken(token))
+                    AutoInit(UserProvidedGCPToken, token=token)
                 )
 
             if (default := get_default_credential_provider()) is not None:

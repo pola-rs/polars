@@ -100,8 +100,7 @@ where
 
     fn finish(mut self) -> PolarsResult<DataFrame> {
         let rechunk = self.rechunk;
-        let metadata =
-            avro::avro_schema::read::read_metadata(&mut self.reader).map_err(to_compute_err)?;
+        let metadata = read::read_metadata(&mut self.reader)?;
         let schema = read::infer_schema(&metadata.record)?;
 
         if let Some(columns) = &self.columns {

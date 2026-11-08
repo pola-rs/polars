@@ -47,7 +47,7 @@ impl IOWriter {
             write_custom_pl_metadata,
         } = self;
 
-        let (mut target, sync_on_close) = file.await?;
+        let (mut target, sync_on_close, finish) = file.await?;
 
         let mut writer = WritableWrap {
             writable: target.as_writable(),
@@ -102,7 +102,17 @@ impl IOWriter {
             );
 
             match batch_type {
-                IpcBatchType::Record => record_blocks.push(ipc_block),
+                IpcBatchType::Record => {
+                    record_blocks.push(ipc_block);
+
+                    if let Some(md) = custom_pl_metadata.as_mut() {
+                        if let Some(end_offset) = num_rows.checked_add(md.num_rows().unwrap_or(0)) {
+                            md.record_batch_cum_len.push(end_offset);
+                        } else {
+                            custom_pl_metadata = None;
+                        };
+                    }
+                },
                 IpcBatchType::Dictionary => dictionary_blocks.push(ipc_block),
             };
 
@@ -119,17 +129,11 @@ impl IOWriter {
                 )
                 .await?;
 
-            if let Some(md) = custom_pl_metadata.as_mut() {
-                if let Some(end_offset) = num_rows.checked_add(md.num_rows().unwrap_or(0)) {
-                    md.record_batch_cum_len.push(end_offset);
-                } else {
-                    custom_pl_metadata = None;
-                };
-            }
-
             drop(morsel_permit);
             drop(finish_write_token);
         }
+
+        finish.wait().await?;
 
         let custom_metadata = if let Some(custom_pl_metadata) = custom_pl_metadata {
             Some(vec![(

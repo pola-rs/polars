@@ -158,6 +158,104 @@ def test_decimal_cast() -> None:
     assert result.to_dict(as_series=False) == expected
 
 
+def test_decimal_cast_to_int_truncates_24841() -> None:
+    s = pl.Series(
+        ["1.5", "2.5", "10.51", "-1.5", "-10.99", "0.999999999"],
+        dtype=pl.Decimal(38, 9),
+    )
+    expected = [1, 2, 10, -1, -10, 0]
+    assert s.cast(pl.Int64).to_list() == expected
+    assert [pl.select(pl.lit(v).cast(pl.Int64)).item() for v in s] == expected
+
+
+@pytest.mark.parametrize(
+    ("scale", "cases"),
+    [
+        (
+            1,
+            [
+                ("0.5", 0),
+                ("-0.5", 0),
+                ("1.5", 1),
+                ("-1.5", -1),
+                ("9999999999999999999999999999999999999.9", 10**37 - 1),
+                ("-9999999999999999999999999999999999999.9", -(10**37) + 1),
+            ],
+        ),
+        (
+            9,
+            [
+                ("0.5", 0),
+                ("-0.5", 0),
+                ("2.5", 2),
+                ("-2.5", -2),
+                ("0.999999999", 0),
+                ("-0.999999999", 0),
+                ("1.000000001", 1),
+                ("-1.000000001", -1),
+                ("9.999999999", 9),
+                ("-9.999999999", -9),
+                ("10.000000000", 10),
+                ("-10.000000000", -10),
+                ("18446744073.709551615", 18446744073),
+                ("18446744073.709551616", 18446744073),
+                ("-18446744073.709551616", -18446744073),
+                ("99999999999999999999999999999.999999999", 10**29 - 1),
+                ("-99999999999999999999999999999.999999999", -(10**29) + 1),
+            ],
+        ),
+        (
+            19,
+            [
+                ("0.5", 0),
+                ("-0.5", 0),
+                ("1.9999999999999999999", 1),
+                ("-1.9999999999999999999", -1),
+                ("2.0000000000000000000", 2),
+                ("-2.0000000000000000000", -2),
+                ("1.8446744073709551616", 1),
+                ("9999999999999999999.9999999999999999999", 10**19 - 1),
+                ("-9999999999999999999.9999999999999999999", -(10**19) + 1),
+            ],
+        ),
+        (
+            20,
+            [
+                ("0.5", 0),
+                ("-0.5", 0),
+                ("1.5", 1),
+                ("-1.5", -1),
+                ("0.99999999999999999999", 0),
+                ("-0.99999999999999999999", 0),
+                ("1.00000000000000000001", 1),
+                ("-1.00000000000000000001", -1),
+                ("999999999999999999.99999999999999999999", 10**18 - 1),
+                ("-999999999999999999.99999999999999999999", -(10**18) + 1),
+            ],
+        ),
+        (
+            38,
+            [
+                ("0.5", 0),
+                ("-0.5", 0),
+                ("0.99999999999999999999999999999999999999", 0),
+                ("-0.99999999999999999999999999999999999999", 0),
+            ],
+        ),
+    ],
+)
+def test_decimal_cast_to_int_truncation_boundaries(
+    scale: int, cases: list[tuple[str, int]]
+) -> None:
+    dtype = pl.Decimal(38, scale)
+    s = pl.Series([v for v, _ in cases], dtype=dtype)
+    expected = [e for _, e in cases]
+    assert s.cast(pl.Int128).to_list() == expected
+    assert [
+        pl.select(pl.lit(v, dtype=dtype).cast(pl.Int128)).item() for v in s
+    ] == expected
+
+
 def test_decimal_cast_no_scale() -> None:
     with pytest.raises(TypeError):
         pl.Series().cast(pl.Decimal)
@@ -414,6 +512,23 @@ def test_decimal_cumulative_aggregations() -> None:
             "cum_sum": [D("2.2"), D("3.3"), D("6.6")],
             "cum_min": [D("2.2"), D("1.1"), D("1.1")],
             "cum_max": [D("2.2"), D("2.2"), D("3.3")],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_decimal_cumulative_aggregations_reverse() -> None:
+    df = pl.Series("a", [D("1.25"), D("2.50"), None]).to_frame()
+    result = df.select(
+        pl.col("a").cum_sum(reverse=True).alias("cum_sum"),
+        pl.col("a").cum_min(reverse=True).alias("cum_min"),
+        pl.col("a").cum_max(reverse=True).alias("cum_max"),
+    )
+    expected = pl.DataFrame(
+        {
+            "cum_sum": [D("3.75"), D("2.50"), None],
+            "cum_min": [D("1.25"), D("2.50"), None],
+            "cum_max": [D("2.50"), D("2.50"), None],
         }
     )
     assert_frame_equal(result, expected)
@@ -720,7 +835,6 @@ def test_decimal_arithmetic_int_schema_29104(
         assert schema[name] == pl.Decimal(38, 4)
 
 
-@pytest.mark.may_fail_lazy_schema  # TODO: precision
 def test_decimal_horizontal_20482() -> None:
     b = pl.LazyFrame(
         {
@@ -1011,6 +1125,35 @@ def test_decimal_sum_overflow_28585(
         s.to_frame().lazy().select(pl.col("d").sum()).collect(engine=engine)
 
 
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+def test_decimal_sum_past_38_digits_in_between(
+    engine: Literal["streaming", "in-memory"],
+) -> None:
+    s = pl.Series("d", [D(6 * 10**37)] * 2 + [D(-6 * 10**37)], dtype=pl.Decimal(38, 0))
+    assert s.sum() == D(6 * 10**37)
+    out = s.to_frame().lazy().select(pl.col("d").sum()).collect(engine=engine)
+    assert out.item() == D(6 * 10**37)
+
+
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+def test_decimal_group_by_mean_sum_past_i128(
+    engine: Literal["streaming", "in-memory"],
+) -> None:
+    big = D(10**38 - 1)
+    lf = pl.LazyFrame(
+        {"g": [1, 2, 1, 2, 1], "d": [big, D(1), big, D(2), big]},
+        schema={"g": pl.Int64, "d": pl.Decimal(38, 0)},
+    )
+    out = lf.group_by("g").agg(pl.col("d").mean()).sort("g").collect(engine=engine)
+    assert out["d"].to_list() == [pytest.approx(1e38), 1.5]
+    out = lf.select(pl.col("d").mean()).collect(engine=engine)
+    assert out.item() == pytest.approx(3e38 / 5)
+
+    if engine == "streaming":
+        with pytest.raises(ComputeError, match="overflow in decimal addition in sum"):
+            lf.group_by("g").agg(pl.col("d").sum()).collect(engine=engine)
+
+
 def _mixed_scale_frame() -> pl.DataFrame:
     return pl.DataFrame(
         {"a": [D("99999.99")], "b": [D("0.333")]},
@@ -1172,6 +1315,99 @@ def test_decimal_add_sub_cancellation() -> None:
 
     with pytest.raises(ComputeError, match="overflow in decimal"):
         df.select(pl.col("a") + pl.col("b"))
+
+
+def test_decimal_add_sub_scalar_mixed_scale() -> None:
+    df = pl.DataFrame(
+        {"a": [D("0.05"), None, D("1.25")]}, schema={"a": pl.Decimal(15, 2)}
+    )
+    a = pl.col("a")
+    out = df.select(
+        rsub=1 - a,
+        add=a + pl.lit(D("0.5"), pl.Decimal(2, 1)),
+        # 10^36 doesn't fit Decimal(38, 2) on its own, only the differences do.
+        big=a - pl.lit(D(10**36), pl.Decimal(38, 0)),
+        null=pl.lit(None, pl.Decimal(2, 1)) + a,
+    )
+    assert out.to_dict(as_series=False) == {
+        "rsub": [D("0.95"), None, D("-0.25")],
+        "add": [D("0.55"), None, D("1.75")],
+        "big": [D("-" + "9" * 36 + ".95"), None, D("-" + "9" * 35 + "8.75")],
+        "null": [None, None, None],
+    }
+    assert out.schema == pl.Schema(dict.fromkeys(out.columns, pl.Decimal(38, 2)))
+
+    with pytest.raises(ComputeError, match="overflow in decimal"):
+        df.select(pl.lit(D(-(10**36)), pl.Decimal(38, 0)) - a)
+
+
+def test_decimal_add_sub_mul_overflow_in_null_slot() -> None:
+    df = pl.DataFrame(
+        {"a": [D(9 * 10**37), D(1)], "valid": [False, True]},
+        schema={"a": pl.Decimal(38, 0), "valid": pl.Boolean},
+    )
+    # The null slot keeps 9 * 10^37.
+    b = pl.when("valid").then("a")
+    c = pl.lit(D(-5 * 10**37), pl.Decimal(38, 0))
+    out = df.select(add=b + b, sub=b - c, mul=b * b)
+    assert out.to_dict(as_series=False) == {
+        "add": [None, D(2)],
+        "sub": [None, D(5 * 10**37 + 1)],
+        "mul": [None, D(1)],
+    }
+
+    a = pl.col("a")
+    for expr in [a + a, a - c, a * a]:
+        with pytest.raises(ComputeError, match="overflow in decimal"):
+            df.select(expr)
+
+
+@pytest.mark.parametrize("shift", [0, 1])
+def test_decimal_add_sub_mul_i64_edges(shift: int) -> None:
+    lo, hi = -(2**63), 2**63 - 1
+    # With shift 1, the second chunk has values that don't fit an i64.
+    a = [lo, hi, 7, lo - shift, hi + shift, None]
+    b = [hi, lo, None, lo, hi + shift, 7]
+    df = pl.concat(
+        [
+            pl.DataFrame(
+                {"a": a[i : i + 3], "b": b[i : i + 3]},
+                schema=[("a", pl.Int128), ("b", pl.Int128)],
+            )
+            for i in (0, 3)
+        ],
+        rechunk=False,
+    ).cast(pl.Decimal(38, 0))
+    out = df.select(
+        add=pl.col.a + pl.col.b,
+        sub=pl.col.a - pl.col.b,
+        mul=pl.col.a * pl.col.b,
+        sub_lit=1 - pl.col.a,
+        mul_lit=pl.col.a * 3,
+    )
+
+    def expected(op: Callable[[int, int], int]) -> list[int | None]:
+        return [
+            None if x is None or y is None else op(x, y)
+            for x, y in zip(a, b, strict=True)
+        ]
+
+    assert out.to_dict(as_series=False) == {
+        "add": expected(operator.add),
+        "sub": expected(operator.sub),
+        "mul": expected(operator.mul),
+        "sub_lit": [None if x is None else 1 - x for x in a],
+        "mul_lit": [None if x is None else x * 3 for x in a],
+    }
+
+
+@pytest.mark.parametrize("last", [7, 2**63])
+def test_decimal_add_mul_i64_blocks(last: int) -> None:
+    # Spans several blocks of the i64 path, with the last value not fitting an i64.
+    values = [*range(3000), last]
+    s = pl.Series(values, dtype=pl.Int128).cast(pl.Decimal(38, 0))
+    assert (s + s).to_list() == [2 * v for v in values]
+    assert (s * s).to_list() == [v * v for v in values]
 
 
 def test_decimal_integer_ops_mixed_scale() -> None:

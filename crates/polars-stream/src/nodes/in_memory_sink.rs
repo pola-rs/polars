@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use polars_async::executor::TaskMetricAggregator;
 use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_ooc::{LeastRecentSpillContext, ParameterFreeSpillContext};
+use polars_ooc::{LeastRecentSpillContext, ParameterFreeSpillContext, SpillFrame};
 
 use super::compute_node_prelude::*;
 use crate::utils::in_memory_linearize::linearize;
@@ -16,12 +17,26 @@ pub struct InMemorySinkNode {
 }
 
 impl InMemorySinkNode {
-    pub fn new(schema: Arc<Schema>) -> Self {
+    pub fn new(schema: Arc<Schema>, task_metrics: Option<Arc<TaskMetricAggregator>>) -> Self {
         Self {
             morsels_per_pipe: Mutex::default(),
             schema,
-            spill_ctx: LeastRecentSpillContext::new("in-memory-sink".into()),
+            spill_ctx: LeastRecentSpillContext::new("in-memory-sink".into(), task_metrics),
         }
+    }
+
+    /// Takes the collected morsels in order, as frames registered in `spill_ctx`. They can be
+    /// spilled while `spill_ctx` lives.
+    pub fn take_spill_frames(&mut self, spill_ctx: &LeastRecentSpillContext) -> Arc<[SpillFrame]> {
+        let morsels_per_pipe = core::mem::take(&mut *self.morsels_per_pipe.get_mut());
+        linearize(morsels_per_pipe)
+            .into_iter()
+            .map(|morsel| {
+                let sf = morsel.into_sf();
+                spill_ctx.register_no_spill_check(&sf);
+                sf
+            })
+            .collect()
     }
 }
 
@@ -47,8 +62,8 @@ impl ComputeNode for InMemorySinkNode {
         Ok(())
     }
 
-    fn is_memory_intensive_pipeline_blocker(&self) -> bool {
-        true
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        NodeMemoryUsage::Accumulating
     }
 
     fn spawn<'env, 's>(

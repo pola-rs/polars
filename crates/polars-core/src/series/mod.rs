@@ -129,7 +129,7 @@ use crate::utils::{Wrap, handle_casting_failures, materialize_dyn_int};
 /// ```
 ///
 /// ## Creation
-/// Series can be create from different data structures. Below we'll show a few ways we can create
+/// Series can be created from different data structures. Below we'll show a few ways we can create
 /// a Series object.
 ///
 /// ```
@@ -584,6 +584,9 @@ impl Series {
                 })
             },
 
+            // Arrow `LargeBinary` arrays are read into a series as `Binary`.
+            (D::Binary, D::BinaryOffset) => self.cast(&D::BinaryOffset),
+
             (D::Int32, D::Date) => feature_gated!("dtype-date", Ok(self.clone().into_date())),
             (D::Int64, D::Datetime(tu, tz)) => feature_gated!(
                 "dtype-datetime",
@@ -918,6 +921,32 @@ impl Series {
     /// Cast throws an error if conversion had overflows
     pub fn strict_cast(&self, dtype: &DataType) -> PolarsResult<Series> {
         self.cast_with_options(dtype, CastOptions::Strict)
+    }
+
+    /// Cast non-strictly, also returning the rows the cast did not represent exactly.
+    ///
+    /// A row is inexact if it became null or does not survive the cast back unchanged. The mask
+    /// is `None` if every row cast exactly.
+    #[doc(hidden)]
+    pub fn _cast_reporting_inexact(
+        &self,
+        dtype: &DataType,
+    ) -> PolarsResult<(Series, Option<BooleanChunked>)> {
+        let casted = self.cast_with_options(dtype, CastOptions::NonStrict)?;
+        // An integer converts to an integer or decimal exactly or not at all, and the non-strict
+        // cast makes the values out of range null. The null counts tell whether any were.
+        if self.dtype().is_integer() && (dtype.is_integer() || dtype.is_decimal()) {
+            if casted.null_count() == self.null_count() {
+                return Ok((casted, None));
+            }
+            let inexact = &casted.is_null() & &self.is_not_null();
+            return Ok((casted, Some(inexact)));
+        }
+        // Null-safe: a cast back that overflows to null must count as inexact.
+        let roundtrip = casted.cast_with_options(self.dtype(), CastOptions::NonStrict)?;
+        let inexact = roundtrip.not_equal_missing(self)?;
+        debug_assert_eq!(inexact.null_count(), 0);
+        Ok((casted, inexact.any().then_some(inexact)))
     }
 
     #[cfg(feature = "dtype-decimal")]

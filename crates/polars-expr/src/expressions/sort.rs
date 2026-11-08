@@ -49,6 +49,11 @@ impl PhysicalExpr for SortExpr {
 
     fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let series = self.physical_expr.evaluate(df, state)?;
+        if self.options.limit.is_some() {
+            let sorted_idx = series.arg_sort(self.options);
+            // SAFETY: sorted index are within bounds.
+            return Ok(unsafe { series.take_unchecked(&sorted_idx) });
+        }
         series.sort_with(self.options)
     }
 
@@ -66,7 +71,9 @@ impl PhysicalExpr for SortExpr {
                 let out = ca.lst_sort(self.options)?;
                 ac.with_values(out.into_column(), true, Some(&self.expr))?;
             },
-            _ => {
+            // A single value (per group, or a literal) is already sorted.
+            AggState::AggregatedScalar(_) | AggState::LiteralScalar(_) => {},
+            AggState::NotAggregated(_) => {
                 let series = ac.flat_naive().into_owned();
 
                 let mut sort_options = self.options;

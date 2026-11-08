@@ -202,22 +202,24 @@ pub fn sum_horizontal(
     let non_null_cols = columns
         .iter()
         .filter(|x| x.dtype() != &DataType::Null)
-        .map(|c| c.as_materialized_series())
         .collect::<Vec<_>>();
+    let out_dtype = sum_output_dtype(&dtypes_to_supertype(
+        non_null_cols.iter().map(|c| c.dtype()),
+    )?);
 
     // If we have any null columns and null strategy is not `Ignore`, we can return immediately.
     if !ignore_nulls && non_null_cols.len() < columns.len() {
-        // We must determine the correct return dtype.
-        let return_dtype = match dtypes_to_supertype(non_null_cols.iter().map(|c| c.dtype()))? {
-            DataType::Boolean => IDX_DTYPE,
-            dt => dt,
-        };
         return Ok(Some(Column::full_null(
             columns[0].name().clone(),
             columns[0].len(),
-            &return_dtype,
+            &out_dtype,
         )));
     }
+
+    let non_null_cols = non_null_cols
+        .into_iter()
+        .map(|c| c.as_materialized_series().cast(&out_dtype))
+        .collect::<PolarsResult<Vec<_>>>()?;
 
     match non_null_cols.len() {
         0 => {
@@ -228,24 +230,20 @@ pub fn sum_horizontal(
                 Ok(Some(columns[0].clone()))
             }
         },
-        1 => Ok(Some(
-            apply_null_strategy(if non_null_cols[0].dtype() == &DataType::Boolean {
-                non_null_cols[0].cast(&IDX_DTYPE)?
-            } else {
-                non_null_cols[0].clone()
-            })?
-            .into(),
-        )),
-        2 => sum_fn(non_null_cols[0].clone(), non_null_cols[1].clone())
-            .map(Column::from)
-            .map(Some),
+        1 => {
+            let [s] = <[Series; 1]>::try_from(non_null_cols).unwrap();
+            Ok(Some(apply_null_strategy(s)?.into()))
+        },
+        2 => {
+            let [a, b] = <[Series; 2]>::try_from(non_null_cols).unwrap();
+            sum_fn(a, b).map(Column::from).map(Some)
+        },
         _ => {
             // the try_reduce_with is a bit slower in parallelism,
             // but I don't think it matters here as we parallelize over columns, not over elements
             let out = RAYON.install(|| {
                 non_null_cols
                     .into_par_iter()
-                    .cloned()
                     .map(Ok)
                     .try_reduce_with(sum_fn)
                     // We can unwrap because we started with at least 3 columns, so we always get a Some
@@ -339,19 +337,28 @@ pub fn mean_horizontal(
 }
 
 pub fn coalesce_columns(s: &[Column]) -> PolarsResult<Column> {
-    // TODO! this can be faster if we have more than two inputs.
+    // Each iteration recomputes the null mask and allocates a new `out`; a single
+    // pass over all inputs would be faster for many inputs with many nulls.
     polars_ensure!(!s.is_empty(), NoData: "cannot coalesce empty list");
+    let len = broadcast_len(s)?;
     let mut out = s[0].clone();
-    for s in s {
-        if !out.null_count() == 0 {
-            return Ok(out);
-        } else {
-            let mask = out.is_not_null();
-            out = out
-                .as_materialized_series()
-                .zip_with_same_type(&mask, s.as_materialized_series())?
-                .into();
+    for next in &s[1..] {
+        if !out.has_nulls() {
+            break;
         }
+        if out.null_count() == out.len() {
+            out = next.clone().with_name(out.name().clone());
+            continue;
+        }
+        let mask = out.is_not_null();
+        out = out
+            .as_materialized_series()
+            .zip_with_same_type(&mask, next.as_materialized_series())?
+            .into();
+    }
+    // The early exits skip the broadcast `zip_with` would have done.
+    if out.len() != len {
+        out = out.new_from_index(0, len);
     }
     Ok(out)
 }

@@ -37,7 +37,7 @@ pub use utf8_to::*;
 pub struct CastOptionsImpl {
     /// default to false
     /// whether an overflowing cast should be converted to `None` (default), or be wrapped (i.e. `256i16 as u8 = 0` vectorized).
-    /// Settings this to `true` is 5-6x faster for numeric types.
+    /// Setting this to `true` is 5-6x faster for numeric types.
     pub wrapped: bool,
     /// default to false
     /// whether to cast to an integer at the best-effort
@@ -414,7 +414,11 @@ pub fn cast(
     match (from_type, to_type) {
         (Null, _) | (_, Null) => Ok(new_null_array(to_type.clone(), array.len())),
         (Struct(from_fd), Struct(to_fd)) => {
-            polars_ensure!(from_fd.len() == to_fd.len(), InvalidOperation: "Cannot cast struct with different number of fields.");
+            polars_ensure!(
+                from_fd.len() == to_fd.len(),
+                InvalidOperation: "Cannot cast struct with different number of fields ({} vs {}).",
+                from_fd.len(), to_fd.len()
+            );
             cast_struct(array.as_any().downcast_ref().unwrap(), to_type, options).map(|x| x.boxed())
         },
         (Struct(_), _) | (_, Struct(_)) => polars_bail!(InvalidOperation:

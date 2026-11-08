@@ -74,24 +74,43 @@ impl View {
         debug_assert!(bytes.len() <= u32::MAX as usize);
         debug_assert!(bytes.len() <= Self::MAX_INLINE_SIZE as usize);
 
-        let mut view = Self {
-            length: bytes.len() as u32,
-            ..Default::default()
+        let len = bytes.len();
+
+        // Read the bytes with (possibly overlapping) fixed-size loads, so that a variable length
+        // copy does not become a call to memcpy. `lo` holds inline bytes 0..8, `hi` bytes 8..12.
+        // From 4 bytes on, whether there are 8 is a select rather than a branch.
+        let (lo, hi) = match (bytes.first_chunk::<4>(), bytes.last_chunk::<4>()) {
+            (Some(first), Some(last)) => {
+                // Bytes 4..8, or the last 4 bytes again if there are fewer than 8 (always `Some`).
+                let mid_at = (len - 4).min(4);
+                let mid = bytes[mid_at..].first_chunk::<4>().unwrap_or(last);
+                let lo = u32::from_le_bytes(*first) as u64
+                    | ((u32::from_le_bytes(*mid) as u64) << (mid_at * 8));
+
+                // Bytes 8..12 are the end of the last 4 bytes, if there are more than 8.
+                let hi = (u32::from_le_bytes(*last) as u64)
+                    .checked_shr(((12 - len) * 8) as u32)
+                    .unwrap_or(0);
+                (lo, hi)
+            },
+            _ if len > 0 => {
+                let mid = len / 2;
+                let lo = bytes[0] as u64
+                    | ((bytes[mid] as u64) << (mid * 8))
+                    | ((bytes[len - 1] as u64) << ((len - 1) * 8));
+                (lo, 0)
+            },
+            _ => (0, 0),
         };
 
-        let view_ptr = &mut view as *mut _ as *mut u8;
-
-        // SAFETY:
-        // - bytes length <= 12,
-        // - size_of::<View> == 16
-        // - View is laid out as [length, prefix, buffer_idx, offset] (using repr(C))
-        // - By grabbing the view_ptr and adding 4, we have provenance over prefix, buffer_idx and
-        // offset. (i.e. the same could not be achieved with &mut self.prefix as *mut _ as *mut u8)
-        unsafe {
-            let inline_data_ptr = view_ptr.add(4);
-            core::ptr::copy_nonoverlapping(bytes.as_ptr(), inline_data_ptr, bytes.len());
+        // The inline bytes are laid out over the fields after the length in memory order.
+        let field = |word: u64| u32::from_ne_bytes((word as u32).to_le_bytes());
+        Self {
+            length: len as u32,
+            prefix: field(lo),
+            buffer_idx: field(lo >> 32),
+            offset: field(hi),
         }
-        view
     }
 
     /// Create a new inline view
@@ -246,6 +265,26 @@ impl View {
                 self.get_inlined_slice_unchecked()
             } else {
                 self.get_external_slice_unchecked(buffers)
+            }
+        }
+    }
+
+    /// Hashes the bytes this view refers to. Inline views are canonical, so they are hashed
+    /// directly from their 16 bytes.
+    ///
+    /// # Safety
+    /// Assumes that this view is valid for the given buffers.
+    #[inline]
+    pub unsafe fn hash_with_buffers_unchecked<B: AsRef<[u8]>, S: std::hash::BuildHasher>(
+        &self,
+        buffers: &[B],
+        build_hasher: &S,
+    ) -> u64 {
+        unsafe {
+            if self.length <= Self::MAX_INLINE_SIZE {
+                build_hasher.hash_one(self.as_u128())
+            } else {
+                build_hasher.hash_one(self.get_external_slice_unchecked(buffers))
             }
         }
     }
@@ -589,5 +628,23 @@ pub unsafe fn validate_views_utf8_only<B: AsRef<[u8]>>(
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::View;
+
+    #[test]
+    fn test_new_inline() {
+        let bytes: Vec<u8> = (1..=View::MAX_INLINE_SIZE as u8).collect();
+        for len in 0..=View::MAX_INLINE_SIZE as usize {
+            let mut expected = [0u8; 12];
+            expected[..len].copy_from_slice(&bytes[..len]);
+
+            let view = View::new_inline(&bytes[..len]);
+            assert_eq!(view.length as usize, len);
+            assert_eq!(&bytemuck::bytes_of(&view)[4..], &expected);
+        }
     }
 }

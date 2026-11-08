@@ -43,7 +43,6 @@ polars-arrow-format = { workspace = true, optional = true, features = ["ipc"] }
 
 # for IPC compression
 lz4 = { version = "1.24", optional = true }
-zstd = { workspace = true, optional = true }
 
 # to write to parquet as a stream
 futures = { workspace = true, optional = true }
@@ -90,7 +89,7 @@ full = [
   "chrono-tz",
 ]
 io_ipc = ["polars-arrow-format", "polars-error/polars-arrow-format"]
-io_ipc_compression = ["lz4", "zstd", "io_ipc"]
+io_ipc_compression = ["lz4", "polars-utils/zstd", "io_ipc"]
 io_flight = ["io_ipc", "polars-arrow-format/flight-data", "async-stream", "futures", "tokio"]
 
 io_avro = ["avro-schema", "polars-error/avro-schema"]

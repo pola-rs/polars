@@ -180,6 +180,46 @@ def test_in_memory_frames_are_reordered() -> None:
     assert_frame_equal(off.sort(pl.all()), on.sort(pl.all()))
 
 
+def test_dimension_attribute_shared_with_a_third_table_is_not_a_key(
+    tmp_path: Path,
+) -> None:
+    # Each unit has a region, and price has one row per (ts, region). Joined on
+    # region alone, dim and price give every unit every price of its region.
+    frames = write_scans(
+        tmp_path,
+        fact=pl.DataFrame(
+            {
+                "ts": [t for t in range(40) for _ in range(100)],
+                "duid": [f"U{u}" for u in range(100)] * 40,
+            }
+        ),
+        dim=pl.DataFrame(
+            {
+                "duid": [f"U{u}" for u in range(100)],
+                "region": [f"R{u % 5}" for u in range(100)],
+            }
+        ),
+        price=pl.DataFrame(
+            {
+                "ts": [t for t in range(40) for _ in range(5)],
+                "region": [f"R{r}" for r in range(5)] * 40,
+            }
+        ),
+    )
+    lf = (
+        frames["fact"]
+        .join(frames["dim"], on="duid")
+        .join(frames["price"], on=["ts", "region"])
+    )
+
+    assert scan_order(lf.explain(optimizations=ON))[:2] == ["fact", "dim"]
+    assert_frame_equal(
+        lf.collect(optimizations=ON),
+        lf.collect(optimizations=OFF),
+        check_row_order=False,
+    )
+
+
 def test_group_by_leaf_is_estimated(tmp_path: Path) -> None:
     frames = star_frames(tmp_path)
     # A group-by emits at most one row per input row, so `dim_a` is still the
@@ -491,12 +531,13 @@ def test_sort_leaf_is_estimated(tmp_path: Path) -> None:
 def test_union_leaf_is_estimated(tmp_path: Path) -> None:
     # A union holds every row of every input, so it is the sum of them. The two
     # inputs must be different files, or common-subplan elimination caches them
-    # into one scan.
+    # into one scan. Other scan options keep them from being merged into one scan.
     frames = star_frames(tmp_path)
-    more = write_scans(
+    write_scans(
         tmp_path,
         dim_a_more=pl.DataFrame({"a_key": list(range(50, 60)), "a_flag": [False] * 10}),
-    )["dim_a_more"]
+    )
+    more = pl.scan_parquet(tmp_path / "dim_a_more.parquet", low_memory=True)
     lf = star_query({**frames, "dim_a": pl.concat([frames["dim_a"], more])})
 
     assert_reordered(
@@ -504,6 +545,62 @@ def test_union_leaf_is_estimated(tmp_path: Path) -> None:
         ["fact", "dim_b", "dim_a", "dim_a_more"],
         ["fact", "dim_a", "dim_a_more", "dim_b"],
     )
+
+
+def test_hconcat_leaf_is_estimated(tmp_path: Path) -> None:
+    # As tall as the tallest input.
+    frames = star_frames(tmp_path)
+    extra = pl.LazyFrame({"s": range(50)})
+    frames["dim_a"] = pl.concat([frames["dim_a"], extra], how="horizontal")
+    lf = star_query(frames)
+
+    assert_reordered(lf, ["fact", "dim_b", "dim_a"], ["fact", "dim_a", "dim_b"])
+
+
+def test_hconcat_padding_hides_null_counts(tmp_path: Path) -> None:
+    # `s` has no nulls in its file, but padding to the taller input fills it with
+    # them, so the filter keeps all but one row.
+    frames = star_frames(tmp_path)
+    frames |= write_scans(
+        tmp_path,
+        tall=pl.DataFrame({"t_key": [i % 50 for i in range(10_000)]}),
+        short=pl.DataFrame({"s": [1]}),
+    )
+    padded = pl.concat(
+        [frames["tall"], frames["short"]], how="horizontal_extend"
+    ).filter(pl.col("s").is_null())
+    lf = (
+        frames["fact"]
+        .join(padded, left_on="f_dim_a", right_on="t_key", coalesce=False)
+        .join(
+            frames["dim_a"].filter(pl.col("a_flag")),
+            left_on="f_dim_a",
+            right_on="a_key",
+            coalesce=False,
+        )
+    )
+
+    assert_reordered(
+        lf, ["fact", "tall", "short", "dim_a"], ["fact", "dim_a", "tall", "short"]
+    )
+
+
+def test_join_on_a_literal_key_is_a_cross_product(tmp_path: Path) -> None:
+    frames = write_scans(
+        tmp_path,
+        fact=pl.DataFrame({"f_b": [i % 20 for i in range(1000)]}),
+        # Repeats each key three times, so it fans out.
+        dim_b=pl.DataFrame({"b_key": [i % 20 for i in range(60)]}),
+        dim_c=pl.DataFrame({"c_val": list(range(5))}),
+    )
+    lf = (
+        frames["fact"]
+        .with_columns(c=pl.lit(True))
+        .join(frames["dim_c"].with_columns(c=pl.lit(True)), on="c", coalesce=False)
+        .join(frames["dim_b"], left_on="f_b", right_on="b_key", coalesce=False)
+    )
+
+    assert_reordered(lf, ["fact", "dim_c", "dim_b"], ["fact", "dim_b", "dim_c"])
 
 
 def test_gather_leaf_is_estimated(tmp_path: Path) -> None:

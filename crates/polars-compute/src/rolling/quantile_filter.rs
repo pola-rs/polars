@@ -589,7 +589,7 @@ impl<T: FinishLinear> FinishLinear for Option<T> {
 struct QuantileUpdate<M: LenGet> {
     inner: M,
     quantile: f64,
-    min_periods: usize,
+    min_samples: usize,
     method: QuantileMethod,
 }
 
@@ -598,9 +598,9 @@ where
     M: LenGet,
     <M as LenGet>::Item: Default + IsNull + Copy + FinishLinear + Debug,
 {
-    fn new(method: QuantileMethod, min_periods: usize, quantile: f64, inner: M) -> Self {
+    fn new(method: QuantileMethod, min_samples: usize, quantile: f64, inner: M) -> Self {
         Self {
-            min_periods,
+            min_samples,
             quantile,
             inner,
             method,
@@ -612,7 +612,7 @@ where
         let null_count = self.inner.null_count();
         let valid_length = self.inner.len() - null_count;
 
-        if M::Item::HAS_NULLS && valid_length < self.min_periods {
+        if M::Item::HAS_NULLS && valid_length < self.min_samples {
             // Default is None
             return M::Item::default();
         }
@@ -673,7 +673,7 @@ where
 
 pub(super) fn rolling_quantile<A, Out: Pushable<<A as Indexable>::Item>>(
     method: QuantileMethod,
-    min_periods: usize,
+    min_samples: usize,
     k: usize,
     values: A,
     quantile: f64,
@@ -730,7 +730,7 @@ where
         // SAFETY: bounded by capacity
         unsafe { block_left.undelete(i) };
 
-        let mut mu = QuantileUpdate::new(method, min_periods, quantile, &mut block_left);
+        let mut mu = QuantileUpdate::new(method, min_samples, quantile, &mut block_left);
         out.push(mu.quantile());
     }
     for i in 1..n_blocks + 1 {
@@ -768,7 +768,7 @@ where
                 let mut union = BlockUnion::new(&mut *ptr_left, &mut *ptr_right);
                 union.set_state(j);
                 let q: <A as Indexable>::Item =
-                    QuantileUpdate::new(method, min_periods, quantile, union).quantile();
+                    QuantileUpdate::new(method, min_samples, quantile, union).quantile();
                 out.push(q);
             }
         }

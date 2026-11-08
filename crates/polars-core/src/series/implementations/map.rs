@@ -111,12 +111,7 @@ impl private::PrivateSeries for SeriesWrap<MapChunked> {
         columns.push(self.0.clone().into_series().into_column());
         columns.extend(by.iter().cloned());
 
-        argsort_multiple_row_fmt(
-            &columns,
-            options.descending.clone(),
-            options.nulls_last.clone(),
-            options.multithreaded,
-        )
+        argsort_multiple_row_fmt(&columns, options)
     }
 }
 

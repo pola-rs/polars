@@ -1,3 +1,5 @@
+#[cfg(feature = "dtype-struct")]
+use std::borrow::Cow;
 use std::fmt::Write;
 
 use num_traits::AsPrimitive;
@@ -7,6 +9,8 @@ use polars_compute::cast::SerPrimitive;
 #[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::builder::CategoricalChunkedBuilder;
 use crate::chunked_array::builder::{AnonymousOwnedListBuilder, get_list_builder};
+#[cfg(feature = "dtype-struct")]
+use crate::prelude::any_value::arr_to_any_value;
 use crate::prelude::*;
 use crate::utils::any_values_to_supertype;
 
@@ -34,6 +38,7 @@ impl Series {
     ///   first non-null value. If any other non-null values do not match this
     ///   data type, an error is raised. If the first non-null value is a
     ///   decimal the slice is scanned for the maximum precision and scale possible.
+    ///   If it is a struct, fields of all struct values are merged (in first-seen order).
     /// - If `strict` is `false`, the data type is the supertype of the `values`.
     ///   An error is returned if no supertype can be determined.
     ///   **WARNING**: A full pass over the values is required to determine the supertype.
@@ -76,6 +81,12 @@ impl Series {
                         }
                     }
                     DataType::Decimal(prec, scale)
+                },
+                #[cfg(feature = "dtype-struct")]
+                DataType::Struct(_) => {
+                    return any_values_to_struct(values, None, strict)
+                        .with_context(|| format!("while constructing Series '{name}'"))
+                        .map(|s| s.with_name(name));
                 },
                 dt => dt,
             }
@@ -188,7 +199,7 @@ impl Series {
                 .into_series()
                 .cast(&DataType::Array(inner.clone(), *size))?,
             #[cfg(feature = "dtype-struct")]
-            DataType::Struct(fields) => any_values_to_struct(values, fields, strict)?,
+            DataType::Struct(fields) => any_values_to_struct(values, Some(fields), strict)?,
             #[cfg(feature = "object")]
             DataType::Object(_) => any_values_to_object(values)?,
             DataType::Null => Series::new_null(PlSmallStr::EMPTY, values.len()),
@@ -846,101 +857,190 @@ fn any_values_to_array(
     Ok(out)
 }
 
+/// A Struct's Fields, compared and hashed by name.
 #[cfg(feature = "dtype-struct")]
-fn _any_values_to_struct<'a>(
-    av_fields: &[Field],
-    av_values: &[AnyValue<'a>],
-    field_index: usize,
-    field: &Field,
-    fields: &[Field],
-    field_avs: &mut Vec<AnyValue<'a>>,
-) {
-    // TODO: Optimize.
+#[derive(Clone, Copy)]
+struct FieldsByName<'a>(&'a [Field]);
 
-    let mut append_by_search = || {
-        // Search for the name.
-        if let Some(i) = av_fields
-            .iter()
-            .position(|av_fld| av_fld.name == field.name)
-        {
-            field_avs.push(av_values[i].clone());
-            return;
-        }
-        field_avs.push(AnyValue::Null)
-    };
+#[cfg(feature = "dtype-struct")]
+impl Eq for FieldsByName<'_> {}
 
-    // All fields are available in this single value.
-    // We can use the index to get value.
-    if fields.len() == av_fields.len() {
-        if fields.iter().zip(av_fields.iter()).any(|(l, r)| l != r) {
-            append_by_search()
-        } else {
-            let av_val = av_values
-                .get(field_index)
-                .cloned()
-                .unwrap_or(AnyValue::Null);
-            field_avs.push(av_val)
-        }
-    }
-    // Not all fields are available, we search the proper field.
-    else {
-        // Search for the name.
-        append_by_search()
+#[cfg(feature = "dtype-struct")]
+impl PartialEq for FieldsByName<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        let names_eq = |(l, r): (&Field, &Field)| l.name == r.name;
+        self.0.len() == other.0.len() && self.0.iter().zip(other.0).all(names_eq)
     }
 }
 
 #[cfg(feature = "dtype-struct")]
+impl std::hash::Hash for FieldsByName<'_> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.iter().for_each(|fld| fld.name.hash(state));
+    }
+}
+
+/// Resolves the fields of struct values (by name) against those of the struct
+/// being built, once per distinct ordered sequence of field names.
+#[cfg(feature = "dtype-struct")]
+struct StructFieldResolver<'a> {
+    target: Option<&'a [Field]>,
+    fields: PlIndexMap<&'a str, Option<&'a DataType>>,
+    ordering_ids: PlHashMap<FieldsByName<'a>, usize>,
+    last: (FieldsByName<'a>, usize),
+    indexes: Vec<usize>,
+    offsets: Vec<usize>,
+}
+
+#[cfg(feature = "dtype-struct")]
+impl<'a> StructFieldResolver<'a> {
+    fn new(target: Option<&'a [Field]>) -> Self {
+        // Values without fields (or that aren't structs) have ordering id 0.
+        let no_fields = FieldsByName(&[]);
+        let to_entry = |fld: &'a Field| (fld.name.as_str(), Some(&fld.dtype));
+        Self {
+            target,
+            fields: target.unwrap_or_default().iter().map(to_entry).collect(),
+            ordering_ids: PlHashMap::from_iter([(no_fields, 0)]),
+            last: (no_fields, 0),
+            indexes: Vec::new(),
+            offsets: vec![0],
+        }
+    }
+
+    /// Returns the ordering id of `av_fields` (potentially merging dtypes).
+    #[inline]
+    fn resolve(&mut self, av_fields: &'a [Field]) -> usize {
+        // Values from the same struct array share (already resolved) fields.
+        if std::ptr::eq(av_fields, self.last.0.0) {
+            return self.last.1;
+        }
+        let av_fields = FieldsByName(av_fields);
+        if self.last.0 != av_fields {
+            let next_id = self.ordering_ids.len();
+            let id = *self.ordering_ids.entry(av_fields).or_insert_with(|| {
+                self.offsets.push(self.indexes.len());
+                for fld in av_fields.0 {
+                    let entry = self.fields.entry(fld.name.as_str());
+                    self.indexes.push(entry.index());
+                    entry.or_insert(Some(&fld.dtype));
+                }
+                next_id
+            });
+            self.last = (av_fields, id);
+        }
+        let id = self.last.1;
+        if self.target.is_none() {
+            let indexes = &self.indexes[self.offsets[id]..];
+            for (fld, &idx) in av_fields.0.iter().zip(indexes) {
+                let dtype = &mut self.fields[idx];
+                if !fld.dtype.is_null()
+                    && let Some(dt) = *dtype
+                    && *dt != fld.dtype
+                {
+                    // `Null` data type gives way to the first non-null one
+                    *dtype = dt.is_null().then_some(&fld.dtype);
+                }
+            }
+        }
+        id
+    }
+
+    /// Returns the struct's fields, and the position (if any) of each in each ordering.
+    fn finish(mut self) -> (Cow<'a, [Field]>, Vec<Option<usize>>) {
+        let fields = match self.target {
+            Some(fields) => Cow::Borrowed(fields),
+            None => {
+                let to_field = |(name, dtype): (&str, Option<&DataType>)| {
+                    Field::new(name.into(), dtype.cloned().unwrap_or(DataType::Null))
+                };
+                Cow::Owned(self.fields.into_iter().map(to_field).collect())
+            },
+        };
+        let n_fields = fields.len();
+        self.offsets.push(self.indexes.len());
+        let mut positions = vec![None; (self.offsets.len() - 1) * n_fields];
+        for (id, range) in self.offsets.windows(2).enumerate() {
+            for (j, &idx) in self.indexes[range[0]..range[1]].iter().enumerate() {
+                // With a `target`, `fields` also has the values' other fields (after its own).
+                if idx < n_fields {
+                    positions[id * n_fields + idx].get_or_insert(j);
+                }
+            }
+        }
+        (fields, positions)
+    }
+}
+
+/// Builds a struct Series from `values` with the given `fields` or, if `None`,
+/// with the fields of all struct `values` (see [`StructFieldResolver`]).
+#[cfg(feature = "dtype-struct")]
 fn any_values_to_struct(
     values: &[AnyValue],
-    fields: &[Field],
+    fields: Option<&[Field]>,
     strict: bool,
 ) -> PolarsResult<Series> {
-    // Fast path for structs with no fields.
-    if fields.is_empty() {
+    let mut field_resolver = StructFieldResolver::new(fields);
+    let av_field_order_ids: Vec<usize> = values
+        .iter()
+        .map(|av| match av {
+            AnyValue::StructOwned(payload) => field_resolver.resolve(&payload.1),
+            AnyValue::Struct(_, _, av_fields) => field_resolver.resolve(av_fields),
+            _ => 0,
+        })
+        .collect();
+    let (fields, field_positions) = field_resolver.finish();
+
+    // Values other than structs here (or lists/arrays of their fields)
+    // are null (or invalid if `strict`).
+    let n_fields = fields.len();
+    let is_valid = |av: &AnyValue| match av {
+        AnyValue::StructOwned(_) | AnyValue::Struct(..) => true,
+        AnyValue::List(s) => s.len() == n_fields,
+        #[cfg(feature = "dtype-array")]
+        AnyValue::Array(s, _) => s.len() == n_fields,
+        _ => false,
+    };
+    if strict && let Some(av) = values.iter().find(|av| !av.is_null() && !is_valid(av)) {
+        return Err(invalid_value_error(&DataType::Struct(fields.to_vec()), av));
+    }
+
+    // Empty struct fast path (no fields, but outer validity still required).
+    if n_fields == 0 {
         let mut out = StructChunked::from_series(PlSmallStr::EMPTY, values.len(), [].iter())?;
-        out.set_outer_validity(Bitmap::opt_from_iter(values.iter().map(|av| !av.is_null())));
+        out.set_outer_validity(Bitmap::opt_from_iter(values.iter().map(is_valid)));
         return Ok(out.into_series());
     }
 
     // The physical series fields of the struct.
-    let mut series_fields = Vec::with_capacity(fields.len());
-    let mut has_outer_validity = false;
+    let mut series_fields = Vec::with_capacity(n_fields);
     let mut field_avs = Vec::with_capacity(values.len());
     for (i, field) in fields.iter().enumerate() {
         field_avs.clear();
 
-        for av in values.iter() {
+        for (av, &field_order_id) in values.iter().zip(&av_field_order_ids) {
+            let position = field_positions[field_order_id * n_fields + i];
             match av {
                 AnyValue::StructOwned(payload) => {
-                    let av_fields = &payload.1;
                     let av_values = &payload.0;
-                    _any_values_to_struct(av_fields, av_values, i, field, fields, &mut field_avs);
+                    field_avs.push(position.map_or(AnyValue::Null, |j| av_values[j].as_borrowed()));
                 },
-                AnyValue::Struct(_, _, av_fields) => {
-                    let av_values: Vec<_> = av._iter_struct_av().collect();
-                    _any_values_to_struct(av_fields, &av_values, i, field, fields, &mut field_avs);
+                AnyValue::Struct(idx, arr, av_fields) => {
+                    field_avs.push(position.map_or(AnyValue::Null, |j| {
+                        // SAFETY: `idx` and `j` are in bounds; `av_fields[j]` describes this child.
+                        unsafe { arr_to_any_value(&*arr.values()[j], *idx, av_fields[j].dtype()) }
+                    }));
                 },
-                AnyValue::List(s) if s.len() == fields.len() => {
+                AnyValue::List(s) if s.len() == n_fields => {
                     let av = unsafe { s.get_unchecked(i) };
                     field_avs.push(av);
                 },
                 #[cfg(feature = "dtype-array")]
-                AnyValue::Array(s, _) if s.len() == fields.len() => {
+                AnyValue::Array(s, _) if s.len() == n_fields => {
                     let av = unsafe { s.get_unchecked(i) };
                     field_avs.push(av);
                 },
-                AnyValue::Null => {
-                    has_outer_validity = true;
-                    field_avs.push(AnyValue::Null)
-                },
-                _ => {
-                    if strict {
-                        return Err(invalid_value_error(&DataType::Struct(fields.to_vec()), av));
-                    } else {
-                        has_outer_validity = true;
-                        field_avs.push(AnyValue::Null)
-                    }
-                },
+                _ => field_avs.push(AnyValue::Null),
             }
         }
         // If the inferred dtype is null, we let auto inference work.
@@ -959,8 +1059,9 @@ fn any_values_to_struct(
 
     let mut out =
         StructChunked::from_series(PlSmallStr::EMPTY, values.len(), series_fields.iter())?;
-    if has_outer_validity {
-        out.set_outer_validity(Bitmap::opt_from_iter(values.iter().map(|av| !av.is_null())));
+    let validity = Bitmap::opt_from_iter(values.iter().map(is_valid));
+    if validity.is_some() {
+        out.set_outer_validity(validity);
     }
     Ok(out.into_series())
 }

@@ -393,7 +393,7 @@ def dataframes(  # noqa: D417
     │ 0.5         ┆ 2095-11-19 22:05:17.647961 ┆ -0.5      │
     └─────────────┴────────────────────────────┴───────────┘
 
-    Use :class:`column` for more control over which exactly which columns are generated.
+    Use :class:`column` for more control over exactly which columns are generated.
 
     >>> from polars.testing.parametric import column
     >>> dfs = dataframes(

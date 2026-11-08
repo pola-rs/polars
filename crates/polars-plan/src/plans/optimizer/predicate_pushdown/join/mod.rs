@@ -1,6 +1,8 @@
 use polars_utils::format_pl_smallstr;
 
 use super::*;
+#[cfg(feature = "asof_join")]
+mod asof;
 mod predicate_pruning;
 use hive::rewrite_hive;
 use predicate_pruning::*;
@@ -44,6 +46,14 @@ pub(super) fn process_join(
 
     let schema_left = lp_arena.get(input_left).schema(lp_arena).into_owned();
     let schema_right = lp_arena.get(input_right).schema(lp_arena).into_owned();
+
+    try_downgrade_non_equi_join(
+        &schema_left,
+        &schema_right,
+        &mut options,
+        &acc_predicates,
+        expr_arena,
+    );
 
     push_down_join_condition(
         &mut input_left,
@@ -244,6 +254,10 @@ pub(super) fn process_join(
     let mut output_key_to_right_input_map: PlIndexMap<PlSmallStr, PlSmallStr> =
         PlIndexMap::with_capacity(get_rhs_column_keys_iter().len());
 
+    // A predicate moved to the other key column is cast back to the dtype it was typed against.
+    let mut output_key_to_left_input_casts: PlIndexMap<PlSmallStr, DataType> = Default::default();
+    let mut output_key_to_right_input_casts: PlIndexMap<PlSmallStr, DataType> = Default::default();
+
     if options.is_pure_equi() {
         for (lhs_input_key, rhs_input_key) in
             get_lhs_column_keys_iter().zip(get_rhs_column_keys_iter())
@@ -251,6 +265,9 @@ pub(super) fn process_join(
             let (Some(lhs_input_key), Some(rhs_input_key)) = (lhs_input_key, rhs_input_key) else {
                 continue;
             };
+            let lhs_dtype = schema_left.get(lhs_input_key).unwrap();
+            let rhs_dtype = schema_right.get(rhs_input_key).unwrap();
+            let dtypes_differ = lhs_dtype != rhs_dtype;
 
             // lhs_input_key: Column name within the left table.
             use JoinType::*;
@@ -259,8 +276,10 @@ pub(super) fn process_join(
             if match &options.args.how {
                 Left | Inner | Full => true,
 
+                // Asof matches `by` keys on their physical values, so a cast to the other
+                // logical dtype can change the value.
                 #[cfg(feature = "asof_join")]
-                AsOf(_) => true,
+                AsOf(_) => !dtypes_differ,
                 #[cfg(feature = "semi_anti_join")]
                 Semi | Anti => true,
 
@@ -275,6 +294,10 @@ pub(super) fn process_join(
                 // Note: `lhs_input_key` maintains its name in the output column for all cases except
                 // for a coalescing right-join.
                 output_key_to_right_input_map.insert(lhs_input_key.clone(), rhs_input_key.clone());
+                if dtypes_differ {
+                    output_key_to_right_input_casts
+                        .insert(lhs_input_key.clone(), lhs_dtype.clone());
+                }
             }
 
             // Map output name of an RHS join key output to a key column of the left table.
@@ -295,12 +318,39 @@ pub(super) fn process_join(
 
                 assert!(schema.contains(&rhs_output_key));
 
-                output_key_to_left_input_map.insert(rhs_output_key.clone(), lhs_input_key.clone());
+                if dtypes_differ {
+                    output_key_to_left_input_casts
+                        .insert(rhs_output_key.clone(), rhs_dtype.clone());
+                }
+                output_key_to_left_input_map.insert(rhs_output_key, lhs_input_key.clone());
             }
         }
     }
 
     let mut local_predicates = Vec::with_capacity(acc_predicates.len());
+
+    // A filter on the left key of an as-of join also bounds the right keys it can match.
+    #[cfg(feature = "asof_join")]
+    let asof_keys = match (&options.args.how, left_on.as_slice(), right_on.as_slice()) {
+        (JoinType::AsOf(asof), [l], [r]) => {
+            match (expr_arena.get(l.node()), expr_arena.get(r.node())) {
+                (AExpr::Column(l), AExpr::Column(r))
+                    if schema_left.get(l) == schema_right.get(r) =>
+                {
+                    Some((
+                        asof,
+                        l.clone(),
+                        r.clone(),
+                        schema_left.get(l).unwrap().clone(),
+                    ))
+                },
+                _ => None,
+            }
+        },
+        _ => None,
+    };
+    #[cfg(feature = "asof_join")]
+    let mut asof_pushdown_right = Vec::new();
 
     // Which sides of the join a predicate can be pushed to, and whether it has to
     // stay above the join as well.
@@ -308,12 +358,23 @@ pub(super) fn process_join(
         push_left: bool,
         push_right: bool,
         keep_local: bool,
+        #[cfg(feature = "asof_join")]
+        uses_asof_key: bool,
     }
     let classify = |predicate: &ExprIR, expr_arena: &Arena<AExpr>| {
         let mut push_left = true;
         let mut push_right = true;
+        #[cfg(feature = "asof_join")]
+        let mut uses_asof_key = false;
 
         for col_name in aexpr_to_leaf_names_iter(predicate.node(), expr_arena) {
+            #[cfg(feature = "asof_join")]
+            {
+                uses_asof_key |= asof_keys
+                    .as_ref()
+                    .is_some_and(|(_, left_key, ..)| left_key == col_name);
+            }
+
             let origin: ExprOrigin = ExprOrigin::get_column_origin(
                 col_name.as_str(),
                 &schema_left,
@@ -399,6 +460,8 @@ pub(super) fn process_join(
             push_left,
             push_right,
             keep_local: has_residual,
+            #[cfg(feature = "asof_join")]
+            uses_asof_key,
         }
     };
 
@@ -408,7 +471,12 @@ pub(super) fn process_join(
                     opt: &mut PredicatePushDown| {
         if placement.push_left {
             let mut predicate = predicate.clone();
-            map_column_references(&mut predicate, expr_arena, &output_key_to_left_input_map);
+            map_column_references_with_casts(
+                &mut predicate,
+                expr_arena,
+                &output_key_to_left_input_map,
+                &output_key_to_left_input_casts,
+            );
             insert_predicate_dedup(
                 &mut pushdown_left,
                 &predicate,
@@ -419,7 +487,12 @@ pub(super) fn process_join(
 
         if placement.push_right {
             let mut predicate = predicate;
-            map_column_references(&mut predicate, expr_arena, &output_key_to_right_input_map);
+            map_column_references_with_casts(
+                &mut predicate,
+                expr_arena,
+                &output_key_to_right_input_map,
+                &output_key_to_right_input_casts,
+            );
             remove_suffix(
                 &mut predicate,
                 expr_arena,
@@ -437,6 +510,21 @@ pub(super) fn process_join(
 
     for (_, predicate) in acc_predicates {
         let placement = classify(&predicate, expr_arena);
+        #[cfg(feature = "asof_join")]
+        if placement.uses_asof_key
+            && !placement.push_right
+            && let Some((asof, left_key, right_key, key_dtype)) = &asof_keys
+        {
+            asof_pushdown_right.extend(asof::asof_right_predicates(
+                predicate.node(),
+                asof,
+                left_key,
+                right_key,
+                key_dtype,
+                &schema_left,
+                expr_arena,
+            ));
+        }
         if !placement.keep_local {
             push(predicate, &placement, expr_arena, opt);
             continue;
@@ -452,6 +540,17 @@ pub(super) fn process_join(
             }
         }
         local_predicates.push(predicate);
+    }
+
+    #[cfg(feature = "asof_join")]
+    for node in asof_pushdown_right {
+        let predicate = ExprIR::from_node(node, expr_arena);
+        insert_predicate_dedup(
+            &mut pushdown_right,
+            &predicate,
+            expr_arena,
+            &mut opt.dedup_state,
+        );
     }
 
     opt.pushdown_and_assign(input_left, pushdown_left, lp_arena, expr_arena)?;
@@ -556,7 +655,7 @@ fn key_non_null_predicates(
 }
 
 /// Whether `predicate`, `name.is_not_null()` for one column, pushed into `node` reaches an
-/// outer join that `try_rewrite_join_type` makes stricter because of it.
+/// outer join that becomes stricter because of it.
 fn downgradable_outer_join_below(
     opt: &mut PredicatePushDown,
     mut node: Node,
@@ -598,7 +697,9 @@ fn downgradable_outer_join_below(
         let schema_left = lp_arena.get(*input_left).schema(lp_arena);
         let schema_right = lp_arena.get(*input_right).schema(lp_arena);
         let origin = non_null_side_for_column(&name, &schema_left, &schema_right, options);
-        if options.is_pure_equi() && downgraded_join_type(how, origin).is_some() {
+        if join_condition_allows_downgrade(options, expr_arena)
+            && downgraded_join_type(how, origin).is_some()
+        {
             return Ok(true);
         }
         // Only the side whose rows the join keeps can take the predicate.

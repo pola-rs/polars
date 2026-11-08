@@ -160,10 +160,16 @@ impl Window {
     }
 }
 
+/// Iterates the windows `origin + every * k` for `k = 0, 1, ...`. Each start is computed from
+/// `origin` rather than from the previous start, so that calendar durations clamp the same way
+/// as in `datetime_range`, and skipping ahead gives the same windows as stepping one by one.
 pub struct BoundsIter<'a> {
     window: Window,
     // wrapping boundary
     boundary: Bounds,
+    origin: i64,
+    // index of the window in `bi`
+    k: i64,
     // boundary per window iterator
     bi: Bounds,
     tu: TimeUnit,
@@ -179,18 +185,34 @@ impl<'a> BoundsIter<'a> {
         start_by: StartBy,
         origin: Option<i64>,
     ) -> PolarsResult<Self> {
-        let start = match origin {
+        let origin = match origin {
             Some(origin) => origin,
             None => window.first_window_start(boundary.start, closed_window, tu, tz, start_by)?,
         };
-        let stop = window.period.add(tu, start, tz)?;
+        let stop = window.period.add(tu, origin, tz)?;
         Ok(Self {
             window,
             boundary,
-            bi: Bounds::new(start, stop),
+            origin,
+            k: 0,
+            bi: Bounds::new(origin, stop),
             tu,
             tz,
         })
+    }
+
+    fn advance(&mut self, n: i64) {
+        // TODO: find some way to propagate error instead of unwrapping?
+        // Issue is that `next` needs to return `Option`.
+        self.k += n;
+        self.bi.start = (self.window.every * self.k)
+            .add(self.tu, self.origin, self.tz)
+            .unwrap();
+        self.bi.stop = self
+            .window
+            .period
+            .add(self.tu, self.bi.start, self.tz)
+            .unwrap();
     }
 }
 
@@ -200,18 +222,7 @@ impl Iterator for BoundsIter<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         if self.bi.start < self.boundary.stop {
             let out = self.bi;
-            // TODO: find some way to propagate error instead of unwrapping?
-            // Issue is that `next` needs to return `Option`.
-            self.bi.start = self
-                .window
-                .every
-                .add(self.tu, self.bi.start, self.tz)
-                .unwrap();
-            self.bi.stop = self
-                .window
-                .period
-                .add(self.tu, self.bi.start, self.tz)
-                .unwrap();
+            self.advance(1);
             Some(out)
         } else {
             None
@@ -219,16 +230,10 @@ impl Iterator for BoundsIter<'_> {
     }
 
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        let n: i64 = n.try_into().unwrap();
         if self.bi.start < self.boundary.stop {
-            self.bi.start = (self.window.every * n)
-                .add(self.tu, self.bi.start, self.tz)
-                .unwrap();
-            self.bi.stop = self
-                .window
-                .period
-                .add(self.tu, self.bi.start, self.tz)
-                .unwrap();
+            if n > 0 {
+                self.advance(n.try_into().unwrap());
+            }
             self.next()
         } else {
             None

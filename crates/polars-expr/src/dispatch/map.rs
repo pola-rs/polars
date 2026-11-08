@@ -14,8 +14,8 @@ pub fn function_expr_to_udf(func: IRMapFunction) -> SpecialEq<Arc<dyn ColumnsUdf
         Keys => map!(map_keys),
         Values => map!(map_values),
         Length => map!(map_len),
-        ContainsKey => map_as_slice!(contains_key),
-        Get => map_as_slice!(get),
+        ContainsKey { needle_cast } => map_as_slice!(contains_key, needle_cast.as_ref()),
+        Get { needle_cast } => map_as_slice!(get, needle_cast.as_ref()),
     }
 }
 
@@ -36,13 +36,15 @@ fn map_len(c: &Column) -> PolarsResult<Column> {
     c.try_apply_unary_elementwise(|s| Ok(s.map()?.storage().list()?.lst_lengths().into_series()))
 }
 
-fn contains_key(args: &mut [Column]) -> PolarsResult<Column> {
+fn contains_key(args: &mut [Column], needle_cast: Option<&DataType>) -> PolarsResult<Column> {
+    super::membership::cast_map_key(&mut args[1], needle_cast)?;
     with_map_and_key(args, |map, key| {
         map_contains_key(map, key).map(IntoColumn::into_column)
     })
 }
 
-fn get(args: &mut [Column]) -> PolarsResult<Column> {
+fn get(args: &mut [Column], needle_cast: Option<&DataType>) -> PolarsResult<Column> {
+    super::membership::cast_map_key(&mut args[1], needle_cast)?;
     with_map_and_key(args, |map, key| {
         map_get(map, key).map(IntoColumn::into_column)
     })

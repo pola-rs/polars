@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use polars_async::executor::TaskMetricAggregator;
 use polars_core::schema::Schema;
 
 use super::compute_node_prelude::*;
@@ -19,12 +20,16 @@ pub enum DynamicSliceNode {
 }
 
 impl DynamicSliceNode {
-    pub fn new(offset_schema: Arc<Schema>, length_schema: Arc<Schema>) -> Self {
+    pub fn new(
+        offset_schema: Arc<Schema>,
+        length_schema: Arc<Schema>,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
+    ) -> Self {
         assert!(offset_schema.len() == 1);
         assert!(length_schema.len() == 1);
         Self::GatheringParams {
-            offset: InMemorySinkNode::new(offset_schema),
-            length: InMemorySinkNode::new(length_schema),
+            offset: InMemorySinkNode::new(offset_schema, task_metrics.clone()),
+            length: InMemorySinkNode::new(length_schema, task_metrics),
         }
     }
 }
@@ -53,7 +58,11 @@ impl ComputeNode for DynamicSliceNode {
                 if let Ok(non_neg_offset) = offset.try_into() {
                     *self = Self::Streaming(StreamingSliceNode::new(non_neg_offset, length));
                 } else {
-                    *self = Self::Negative(NegativeSliceNode::new(offset, length));
+                    *self = Self::Negative(NegativeSliceNode::new(
+                        offset,
+                        length,
+                        state.task_metrics.clone(),
+                    ));
                 }
             }
         }
@@ -77,6 +86,14 @@ impl ComputeNode for DynamicSliceNode {
             },
         }
         Ok(())
+    }
+
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        match self {
+            Self::GatheringParams { .. } => NodeMemoryUsage::Bounded,
+            Self::Streaming(node) => node.memory_usage(),
+            Self::Negative(node) => node.memory_usage(),
+        }
     }
 
     fn spawn<'env, 's>(

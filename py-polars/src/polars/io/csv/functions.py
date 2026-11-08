@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Literal
 
@@ -371,9 +371,9 @@ def read_csv(
                 raise ValueError(msg)
 
     if schema_overrides is not None and not isinstance(
-        schema_overrides, (dict, Sequence)
+        schema_overrides, (Mapping, Sequence)
     ):
-        msg = "`schema_overrides` should be of type list or dict"
+        msg = f"`schema_overrides` should be a mapping or a sequence, got {qualified_type_name(schema_overrides)!r}"
         raise TypeError(msg)
 
     if raise_if_empty is None:
@@ -433,6 +433,7 @@ def read_csv(
                         delimiter=separator,
                         quote_char=quote_char if quote_char else False,
                         double_quote=quote_char is not None and quote_char == '"',
+                        newlines_in_values=bool(quote_char),
                     ),
                     pa.csv.ConvertOptions(
                         column_types=None,
@@ -840,9 +841,9 @@ def scan_csv(
     └─────┴──────┘
     """
     if schema_overrides is not None and not isinstance(
-        schema_overrides, (dict, Sequence)
+        schema_overrides, (Mapping, Sequence)
     ):
-        msg = "`schema_overrides` should be of type list or dict"
+        msg = f"`schema_overrides` should be a mapping or a sequence, got {qualified_type_name(schema_overrides)!r}"
         raise TypeError(msg)
 
     if new_columns is not None and with_column_names is not None:
@@ -892,14 +893,14 @@ def scan_csv(
     dtype_list: list[tuple[str, PolarsDataType]] | None = None
     dtype_slice: Sequence[PolarsDataType] | None = None
     if schema_overrides is not None:
-        if isinstance(schema_overrides, dict):
+        if isinstance(schema_overrides, Mapping):
             dtype_list = []
             for k, v in schema_overrides.items():
                 dtype_list.append((k, parse_into_dtype(v)))
         elif isinstance(schema_overrides, Sequence):
             dtype_slice = [parse_into_dtype(v) for v in schema_overrides]
         else:
-            msg = f"`schema_overrides` should be of type list or dict, got {qualified_type_name(schema_overrides)!r}"
+            msg = f"`schema_overrides` should be a mapping or a sequence, got {qualified_type_name(schema_overrides)!r}"
             raise TypeError(msg)
     processed_null_values = _process_null_values(null_values)
 

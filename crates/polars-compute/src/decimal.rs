@@ -32,12 +32,14 @@ use std::cmp::Ordering;
 
 use polars_error::{PolarsResult, polars_ensure};
 
+use crate::arithmetic::DivRounding;
+
 /// The maximum precision of a Decimal128.
 pub const DEC128_MAX_PREC: usize = 38;
 
 pub fn dec128_verify_prec_scale(p: usize, s: usize) -> PolarsResult<()> {
-    polars_ensure!((1..=DEC128_MAX_PREC).contains(&p), InvalidOperation: "precision must be between 1 and 38");
-    polars_ensure!(s <= p, InvalidOperation: "scale must be less than or equal to precision");
+    polars_ensure!((1..=DEC128_MAX_PREC).contains(&p), InvalidOperation: "precision must be between 1 and 38, got {}", p);
+    polars_ensure!(s <= p, InvalidOperation: "scale must be less than or equal to precision, got scale {} and precision {}", s, p);
     Ok(())
 }
 
@@ -246,36 +248,50 @@ fn mul_128_pow10(x: i128, e: usize) -> Option<i128> {
     x.checked_mul(POW10_I128[e])
 }
 
+/// Returns (floor(n / 10^e), n % 10^e == 0), with 1 <= e <= DEC128_MAX_PREC
+/// and n <= 2^127 + 10^e / 2.
+#[inline]
+fn div_128_pow10_impl(n: u128, e: usize) -> (u128, bool) {
+    // Most values fit in 64 bits, where a single division replaces the
+    // 128x128 widening multiply.
+    if n <= u64::MAX as u128 && POW10_I128[e] <= u64::MAX as i128 {
+        let d = POW10_I128[e] as u64;
+        let nu = n as u64;
+        return ((nu / d) as u128, nu.is_multiple_of(d));
+    }
+
+    let c = POW10_127_INV_MUL[e];
+    let s = POW10_127_SHIFT[e];
+    let (lo, hi) = widening_mul_128(n, c);
+    (hi >> s, lo < c && (hi << (128 - s)) == 0)
+}
+
 /// Returns round(x / 10^e), with e <= DEC128_MAX_PREC, rounding to nearest even.
 #[inline]
-fn div_128_pow10(x: i128, e: usize) -> i128 {
+fn div_128_pow10_round(x: i128, e: usize) -> i128 {
     if e == 0 {
         return x;
     }
 
     let n = x.unsigned_abs();
     let z = n + ((POW10_I128[e] as u128) / 2); // Can't overflow.
-
-    // Most values fit in 64 bits, where a single division replaces the
-    // 128x128 widening multiply.
-    if z <= u64::MAX as u128 && POW10_I128[e] <= u64::MAX as i128 {
-        let d = POW10_I128[e] as u64;
-        let zu = z as u64;
-        let mut ret = (zu / d) as i128;
-        // z = n + d/2, so d divides z iff n is exactly halfway; round to even.
-        if zu.is_multiple_of(d) && ret % 2 == 1 {
-            ret -= 1;
-        }
-        return if x < 0 { -ret } else { ret };
-    }
-
-    let c = POW10_127_INV_MUL[e];
-    let s = POW10_127_SHIFT[e];
-    let (lo, hi) = widening_mul_128(z, c);
-    let mut ret = (hi >> s) as i128;
-    if lo < c && ret % 2 == 1 && (hi << (128 - s)) == 0 {
+    let (q, is_multiple) = div_128_pow10_impl(z, e);
+    let mut ret = q as i128;
+    // z = n + 10^e/2, so 10^e divides z iff n is exactly halfway; round to even.
+    if is_multiple && ret % 2 == 1 {
         ret -= 1;
     }
+    if x < 0 { -ret } else { ret }
+}
+
+/// Returns x / 10^e, with e <= DEC128_MAX_PREC, rounding towards zero.
+#[inline]
+fn div_128_pow10_trunc(x: i128, e: usize) -> i128 {
+    if e == 0 {
+        return x;
+    }
+
+    let ret = div_128_pow10_impl(x.unsigned_abs(), e).0 as i128;
     if x < 0 { -ret } else { ret }
 }
 
@@ -474,9 +490,60 @@ pub fn dec128_fits(x: i128, p: usize) -> bool {
     (-POW10_I128[p] < x) & (x < POW10_I128[p])
 }
 
+/// Returns zero if x fits in an i64.
+#[inline(always)]
+fn i64_overflow_bits(x: i128) -> u64 {
+    ((x >> 64) as u64) ^ (((x as i64) >> 63) as u64)
+}
+
+/// Applies `op` to all values as i64s. Returns `None` if a value doesn't fit an i64.
+pub fn i64_unary_values(xs: &[i128], op: impl Fn(i64) -> i128) -> Option<Vec<i128>> {
+    let mut out = Vec::with_capacity(xs.len());
+    // Checks per block, to stop early if values don't fit.
+    for xs in xs.chunks(1024) {
+        let mut overflow = 0;
+        for (o, x) in out.spare_capacity_mut().iter_mut().zip(xs) {
+            overflow |= i64_overflow_bits(*x);
+            o.write(op(*x as i64));
+        }
+        if overflow != 0 {
+            return None;
+        }
+        // SAFETY: the loop wrote xs.len() values.
+        unsafe { out.set_len(out.len() + xs.len()) };
+    }
+    Some(out)
+}
+
+/// Applies `op` to all pairs as i64s. Returns `None` if a value doesn't fit an i64.
+pub fn i64_binary_values(
+    l: &[i128],
+    r: &[i128],
+    op: impl Fn(i64, i64) -> i128,
+) -> Option<Vec<i128>> {
+    assert_eq!(l.len(), r.len());
+    let mut out = Vec::with_capacity(l.len());
+    // Checks per block, to stop early if values don't fit.
+    for (l, r) in l.chunks(1024).zip(r.chunks(1024)) {
+        let mut overflow = 0;
+        for ((o, a), b) in out.spare_capacity_mut().iter_mut().zip(l).zip(r) {
+            overflow |= i64_overflow_bits(*a) | i64_overflow_bits(*b);
+            o.write(op(*a as i64, *b as i64));
+        }
+        if overflow != 0 {
+            return None;
+        }
+        // SAFETY: the loop wrote l.len() values.
+        unsafe { out.set_len(out.len() + l.len()) };
+    }
+    Some(out)
+}
+
+/// Converts a Decimal128 with the given scale to an integer, truncating
+/// towards zero.
 #[inline]
 pub fn dec128_to_i128(x: i128, s: usize) -> i128 {
-    if s == 0 { x } else { div_128_pow10(x, s) }
+    div_128_pow10_trunc(x, s)
 }
 
 /// Converts an i128 to a Decimal128 with the given precision and scale,
@@ -545,7 +612,7 @@ pub fn f64_to_dec128(x: f64, p: usize, s: usize) -> Option<i128> {
 #[inline]
 pub fn dec128_rescale(x: i128, old_s: usize, new_p: usize, new_s: usize) -> Option<i128> {
     let r = if new_s < old_s {
-        div_128_pow10(x, old_s - new_s)
+        div_128_pow10_round(x, old_s - new_s)
     } else if new_s > old_s {
         mul_128_pow10(x, new_s - old_s)?
     } else {
@@ -659,10 +726,10 @@ fn i256_to_dec128(x: I256, s: usize, s_out: usize) -> Option<i128> {
 /// if the result doesn't fit a Decimal128.
 #[inline]
 fn i128_to_dec128_scaled(x: i128, s: usize, s_out: usize) -> Option<i128> {
-    let r = if s_out < s {
-        div_128_pow10(x, s - s_out)
-    } else {
-        x.checked_mul(POW10_I128[s_out - s])?
+    let r = match s_out.cmp(&s) {
+        Ordering::Less => div_128_pow10_round(x, s - s_out),
+        Ordering::Equal => x,
+        Ordering::Greater => x.checked_mul(POW10_I128[s_out - s])?,
     };
     dec128_fits(r, DEC128_MAX_PREC).then_some(r)
 }
@@ -850,7 +917,13 @@ fn dec128_div_scaled_wide(l: i128, sl: usize, r: i128, sr: usize, s_out: usize) 
 /// The integer quotient q and remainder of l (scale sl) by r (scale sr), with
 /// l = q * r + rem and the remainder at scale max(sl, sr). Truncating gives the
 /// remainder the sign of l, flooring the sign of r. Returns None if r is zero.
-fn dec128_divrem(l: i128, sl: usize, r: i128, sr: usize, floor: bool) -> Option<(I256, I256)> {
+fn dec128_divrem(
+    l: i128,
+    sl: usize,
+    r: i128,
+    sr: usize,
+    rounding: DivRounding,
+) -> Option<(I256, I256)> {
     if r == 0 {
         return None;
     }
@@ -868,7 +941,7 @@ fn dec128_divrem(l: i128, sl: usize, r: i128, sr: usize, floor: bool) -> Option<
         None => (zero, lm),
     };
     let neg = (l < 0) != (r < 0);
-    if floor && neg && rem != zero {
+    if rounding == DivRounding::Floor && neg && rem != zero {
         let q = I256 {
             neg: true,
             mag: q.add(U256::from_u128(1)),
@@ -889,7 +962,7 @@ fn dec128_divrem(l: i128, sl: usize, r: i128, sr: usize, floor: bool) -> Option<
 }
 
 /// Returns the remainder of Decimal128s l (scale sl) and r (scale sr) at scale
-/// s_out, rounded to nearest even: with the sign of r if `floor`, else with the
+/// s_out, rounded to nearest even: with the sign of r when flooring, else with the
 /// sign of l. Returns None if r is zero or the result doesn't fit a Decimal128.
 pub fn dec128_rem_scaled(
     l: i128,
@@ -897,14 +970,14 @@ pub fn dec128_rem_scaled(
     r: i128,
     sr: usize,
     s_out: usize,
-    floor: bool,
+    rounding: DivRounding,
 ) -> Option<i128> {
-    let (_, rem) = dec128_divrem(l, sl, r, sr, floor)?;
+    let (_, rem) = dec128_divrem(l, sl, r, sr, rounding)?;
     i256_to_dec128(rem, sl.max(sr), s_out)
 }
 
 /// Returns the integer quotient of Decimal128s l (scale sl) and r (scale sr),
-/// rounded down if `floor`, else toward zero, as a Decimal128 at scale s_out.
+/// rounded per `rounding`, as a Decimal128 at scale s_out.
 /// Returns None if r is zero or the result doesn't fit a Decimal128.
 pub fn dec128_int_div_scaled(
     l: i128,
@@ -912,9 +985,9 @@ pub fn dec128_int_div_scaled(
     r: i128,
     sr: usize,
     s_out: usize,
-    floor: bool,
+    rounding: DivRounding,
 ) -> Option<i128> {
-    let (q, _) = dec128_divrem(l, sl, r, sr, floor)?;
+    let (q, _) = dec128_divrem(l, sl, r, sr, rounding)?;
     i256_to_dec128(q, 0, s_out)
 }
 
@@ -1281,7 +1354,7 @@ mod test {
         sl: usize,
         r: i128,
         sr: usize,
-        floor: bool,
+        rounding: DivRounding,
     ) -> Option<(BigInt, BigInt, usize)> {
         if r == 0 {
             return None;
@@ -1292,7 +1365,10 @@ mod test {
         // BigInt division truncates toward zero.
         let mut q = &a / &b;
         let mut m = &a - &q * &b;
-        if floor && m != BigInt::from(0) && m.is_negative() != b.is_negative() {
+        if rounding == DivRounding::Floor
+            && m != BigInt::from(0)
+            && m.is_negative() != b.is_negative()
+        {
             q -= 1u8;
             m += &b;
         }
@@ -1305,9 +1381,9 @@ mod test {
         r: i128,
         sr: usize,
         s_out: usize,
-        floor: bool,
+        rounding: DivRounding,
     ) -> Option<i128> {
-        let (_, m, s) = divrem_oracle(l, sl, r, sr, floor)?;
+        let (_, m, s) = divrem_oracle(l, sl, r, sr, rounding)?;
         bigdecimal_to_dec128(
             &BigDecimal::from_bigint(m, s as i64),
             DEC128_MAX_PREC,
@@ -1321,24 +1397,24 @@ mod test {
         r: i128,
         sr: usize,
         s_out: usize,
-        floor: bool,
+        rounding: DivRounding,
     ) -> Option<i128> {
-        let (q, _, _) = divrem_oracle(l, sl, r, sr, floor)?;
+        let (q, _, _) = divrem_oracle(l, sl, r, sr, rounding)?;
         big_to_dec128(q * pow10_big(s_out))
     }
 
     fn check_all_scaled(l: i128, sl: usize, r: i128, sr: usize, s_out: usize) {
         let ctx = format!("l={l}, sl={sl}, r={r}, sr={sr}, s_out={s_out}");
-        for floor in [false, true] {
+        for rounding in [DivRounding::Trunc, DivRounding::Floor] {
             assert_eq!(
-                dec128_rem_scaled(l, sl, r, sr, s_out, floor),
-                rem_oracle(l, sl, r, sr, s_out, floor),
-                "rem floor={floor} {ctx}"
+                dec128_rem_scaled(l, sl, r, sr, s_out, rounding),
+                rem_oracle(l, sl, r, sr, s_out, rounding),
+                "rem {rounding:?} {ctx}"
             );
             assert_eq!(
-                dec128_int_div_scaled(l, sl, r, sr, s_out, floor),
-                int_div_oracle(l, sl, r, sr, s_out, floor),
-                "int_div floor={floor} {ctx}"
+                dec128_int_div_scaled(l, sl, r, sr, s_out, rounding),
+                int_div_oracle(l, sl, r, sr, s_out, rounding),
+                "int_div {rounding:?} {ctx}"
             );
         }
         assert_eq!(
@@ -1488,31 +1564,32 @@ mod test {
         // Remainder and integer quotient: truncating follows the dividend's sign,
         // flooring the divisor's.
         let (rem, idiv) = (dec128_rem_scaled, dec128_int_div_scaled);
-        assert_eq!(rem(-75, 1, 2, 0, 1, false), Some(-15));
-        assert_eq!(rem(-75, 1, 2, 0, 1, true), Some(5));
-        assert_eq!(rem(75, 1, -2, 0, 1, false), Some(15));
-        assert_eq!(rem(75, 1, -2, 0, 1, true), Some(-5));
-        assert_eq!(rem(-80, 1, 2, 0, 1, true), Some(0));
-        assert_eq!(idiv(-75, 1, 2, 0, 0, false), Some(-3));
-        assert_eq!(idiv(-75, 1, 2, 0, 0, true), Some(-4));
-        assert_eq!(idiv(75, 1, -2, 0, 0, true), Some(-4));
-        assert_eq!(idiv(7, 0, 2, 0, 2, true), Some(300));
+        use DivRounding::{Floor, Trunc};
+        assert_eq!(rem(-75, 1, 2, 0, 1, Trunc), Some(-15));
+        assert_eq!(rem(-75, 1, 2, 0, 1, Floor), Some(5));
+        assert_eq!(rem(75, 1, -2, 0, 1, Trunc), Some(15));
+        assert_eq!(rem(75, 1, -2, 0, 1, Floor), Some(-5));
+        assert_eq!(rem(-80, 1, 2, 0, 1, Floor), Some(0));
+        assert_eq!(idiv(-75, 1, 2, 0, 0, Trunc), Some(-3));
+        assert_eq!(idiv(-75, 1, 2, 0, 0, Floor), Some(-4));
+        assert_eq!(idiv(75, 1, -2, 0, 0, Floor), Some(-4));
+        assert_eq!(idiv(7, 0, 2, 0, 2, Floor), Some(300));
         // Aligning 10^37 to scale 1 exceeds 38 digits: 10^37 % 0.3 = 0.1.
-        assert_eq!(rem(POW10_I128[37], 0, 3, 1, 1, false), Some(1));
-        assert_eq!(idiv(POW10_I128[37], 0, 3, 1, 0, false), Some(p38 / 3));
+        assert_eq!(rem(POW10_I128[37], 0, 3, 1, 1, Trunc), Some(1));
+        assert_eq!(idiv(POW10_I128[37], 0, 3, 1, 0, Trunc), Some(p38 / 3));
         // 10^37 aligned to scale 38 exceeds a u128: 10^-38 % 10^37 = 10^-38.
-        assert_eq!(rem(1, 38, POW10_I128[37], 0, 38, false), Some(1));
-        assert_eq!(rem(-1, 38, POW10_I128[37], 0, 38, false), Some(-1));
-        assert_eq!(idiv(-1, 38, POW10_I128[37], 0, 0, false), Some(0));
-        assert_eq!(idiv(-1, 38, POW10_I128[37], 0, 0, true), Some(-1));
+        assert_eq!(rem(1, 38, POW10_I128[37], 0, 38, Trunc), Some(1));
+        assert_eq!(rem(-1, 38, POW10_I128[37], 0, 38, Trunc), Some(-1));
+        assert_eq!(idiv(-1, 38, POW10_I128[37], 0, 0, Trunc), Some(0));
+        assert_eq!(idiv(-1, 38, POW10_I128[37], 0, 0, Floor), Some(-1));
         // Flooring it would need 75 digits.
-        assert_eq!(rem(-1, 38, POW10_I128[37], 0, 38, true), None);
-        assert_eq!(idiv(max, 0, 1, 38, 0, true), None);
-        assert_eq!(rem(max, 0, -max, 0, 0, true), Some(0));
+        assert_eq!(rem(-1, 38, POW10_I128[37], 0, 38, Floor), None);
+        assert_eq!(idiv(max, 0, 1, 38, 0, Floor), None);
+        assert_eq!(rem(max, 0, -max, 0, 0, Floor), Some(0));
         // |i128::MIN + 1| = 2^127 - 1, which is 1 mod 3.
-        assert_eq!(rem(i128::MIN + 1, 0, 3, 0, 0, false), Some(-1));
-        assert_eq!(rem(1, 0, 0, 0, 0, false), None);
-        assert_eq!(idiv(1, 0, 0, 3, 0, true), None);
+        assert_eq!(rem(i128::MIN + 1, 0, 3, 0, 0, Trunc), Some(-1));
+        assert_eq!(rem(1, 0, 0, 0, 0, Trunc), None);
+        assert_eq!(idiv(1, 0, 0, 3, 0, Floor), None);
 
         // Results at the precision boundary.
         assert_eq!(dec128_add_scaled(max - 1, 0, 1, 0, 0), Some(max));

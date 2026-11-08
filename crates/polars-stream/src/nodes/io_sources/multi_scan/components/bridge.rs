@@ -29,6 +29,10 @@ pub enum BridgeRecvPort {
     },
     /// Parallel post-apply ops will connect through this.
     Linearized { rx: MorselLinearizer },
+    /// Morsels of several concurrent files, in arrival order.
+    Merged {
+        rx: tokio::sync::mpsc::Receiver<Morsel>,
+    },
 }
 
 impl BridgeRecvPort {
@@ -43,6 +47,7 @@ impl BridgeRecvPort {
                 }
             },
             Linearized { rx } => rx.get().await.ok_or(RecvError),
+            Merged { rx } => rx.recv().await.ok_or(RecvError),
         }
     }
 }

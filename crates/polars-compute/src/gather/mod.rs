@@ -22,7 +22,7 @@ use polars_arrow::array::{
     self, Array, ArrayCollectIterExt, ArrayFromIterDtype, BinaryViewArray, NullArray, StaticArray,
     Utf8ViewArray, new_empty_array,
 };
-use polars_arrow::datatypes::{ArrowDataType, IdxArr};
+use polars_arrow::datatypes::{ArrowDataType, IdxArr, PhysicalType, PrimitiveType};
 use polars_arrow::types::Index;
 
 pub mod binary;
@@ -39,7 +39,8 @@ pub mod sublist;
 use polars_arrow::with_match_primitive_type_full;
 
 /// Returns a new [`Array`] with only indices at `indices`. Null indices are taken as nulls.
-/// The returned array has a length equal to `indices.len()`.
+/// The returned array has a length equal to `indices.len()`, and the dtype of `values` if
+/// `has_native_take` holds for it.
 /// # Safety
 /// Doesn't do bound checks
 pub unsafe fn take_unchecked(values: &dyn Array, indices: &IdxArr) -> Box<dyn Array> {
@@ -48,7 +49,7 @@ pub unsafe fn take_unchecked(values: &dyn Array, indices: &IdxArr) -> Box<dyn Ar
     }
 
     use polars_arrow::datatypes::PhysicalType::*;
-    match values.dtype().to_physical_type() {
+    let out: Box<dyn Array> = match values.dtype().to_physical_type() {
         Null => Box::new(NullArray::new(values.dtype().clone(), indices.len())),
         Boolean => {
             let values = values.as_any().downcast_ref().unwrap();
@@ -83,6 +84,57 @@ pub unsafe fn take_unchecked(values: &dyn Array, indices: &IdxArr) -> Box<dyn Ar
             binview::take_binview_unchecked(array, indices).boxed()
         },
         t => unimplemented!("Take not supported for data type {:?}", t),
+    };
+    debug_assert!(
+        !has_native_take(values.dtype()) || out.dtype() == values.dtype(),
+        "take changed dtype {:?} into {:?}",
+        values.dtype(),
+        out.dtype()
+    );
+    out
+}
+
+/// Whether [`take_unchecked`] supports `dtype` and returns it unchanged. Keep in sync with
+/// the match in [`take_unchecked`].
+pub(crate) fn has_native_take(dtype: &ArrowDataType) -> bool {
+    use ArrowDataType as D;
+    use PhysicalType as T;
+    use PrimitiveType as P;
+    match dtype {
+        D::Extension(_) => false,
+        D::LargeList(field) | D::FixedSizeList(field, _) => has_native_take(field.dtype()),
+        D::Struct(fields) => fields.iter().all(|f| has_native_take(f.dtype())),
+        // Exhaustive, so new physical types must be classified here.
+        dt => match dt.to_physical_type() {
+            T::Null | T::Boolean | T::BinaryView | T::Utf8View | T::LargeBinary => true,
+            T::Primitive(p) => match p {
+                P::Int8
+                | P::Int16
+                | P::Int32
+                | P::Int64
+                | P::Int128
+                | P::UInt8
+                | P::UInt16
+                | P::UInt32
+                | P::UInt64
+                | P::UInt128
+                | P::Float16
+                | P::Float32
+                | P::Float64 => true,
+                P::Int256 | P::DaysMs | P::MonthDayNano | P::MonthDayMillis => false,
+            },
+            T::Binary
+            | T::FixedSizeBinary
+            | T::FixedSizeList
+            | T::Utf8
+            | T::LargeUtf8
+            | T::List
+            | T::LargeList
+            | T::Struct
+            | T::Union
+            | T::Map
+            | T::Dictionary(_) => false,
+        },
     }
 }
 

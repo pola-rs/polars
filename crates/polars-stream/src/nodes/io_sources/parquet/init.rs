@@ -1,8 +1,10 @@
 use std::sync::{Arc, Mutex};
 
+use futures::future::Either;
+use futures::stream::FuturesUnordered;
+use futures::{FutureExt, StreamExt};
 use polars_arrow::datatypes::ArrowDataType;
 use polars_async::executor;
-use polars_core::frame::DataFrame;
 use polars_core::prelude::DataType;
 use polars_core::runtime::ASYNC;
 use polars_error::{PolarsResult, polars_ensure};
@@ -10,14 +12,19 @@ use polars_io::predicates::{ColumnPredicateExpr, SpecializedColumnPredicate};
 use polars_io::prelude::ParallelStrategy;
 use polars_parquet::read::PredicateFilter;
 use polars_utils::IdxSize;
+use tokio::sync::Semaphore;
 
-use super::row_group_data_fetch::RowGroupDataFetcher;
+use super::row_group_data_fetch::{ReadStats, RowGroupDataFetcher, row_groups_to_read};
 use super::row_group_decode::{DynamicConjunct, PredicateColumn, RowGroupDecoder, Source};
 use super::{AsyncTaskData, ParquetReadImpl};
 use crate::morsel::{Morsel, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
-use crate::nodes::io_sources::parquet::statistics::calculate_row_group_pred_pushdown_skip_mask;
+use crate::nodes::io_sources::parquet::statistics::{
+    RuntimeRangeSkipper, calculate_row_group_pred_pushdown_skip_mask,
+};
+use crate::nodes::io_sources::shared::morsels::split_to_morsels;
+use crate::nodes::io_sources::shared::pipeline_budget::WindowGrowth;
 use crate::nodes::{MorselSeq, TaskPriority};
 use crate::utils::tokio_handle_ext::{self, AbortOnDropHandle};
 
@@ -28,8 +35,8 @@ fn filter_while_decoding(projection: &ArrowFieldProjection) -> bool {
         return false;
     };
     match arrow_field.dtype() {
-        A::Dictionary(..)
-        | A::Decimal(..)
+        A::Dictionary(..) => true,
+        A::Decimal(..)
         | A::Decimal32(..)
         | A::Decimal64(..)
         | A::Decimal256(..)
@@ -49,6 +56,7 @@ impl ParquetReadImpl {
     pub(super) fn init_morsel_distributor(&mut self) -> AsyncTaskData {
         let verbose = self.verbose;
         let use_statistics = self.options.use_statistics;
+        let maintain_order = self.maintain_order;
 
         let (mut morsel_sender, morsel_rx) = FileReaderOutputSend::new_serial();
 
@@ -66,7 +74,20 @@ impl ParquetReadImpl {
         let predicate = self.predicate.clone();
         let memory_prefetch_func = self.memory_prefetch_func;
 
-        let row_group_decoder = self.init_row_group_decoder();
+        let runtime_range_skipper = predicate
+            .as_ref()
+            .filter(|_| use_statistics)
+            .and_then(|p| {
+                RuntimeRangeSkipper::new(
+                    &p.runtime_ranges,
+                    &self.metadata,
+                    &projected_arrow_fields,
+                    verbose,
+                )
+            })
+            .map(Arc::new);
+
+        let row_group_decoder = self.init_row_group_decoder(runtime_range_skipper.clone());
         let row_group_decoder = Arc::new(row_group_decoder);
 
         let ideal_morsel_size = get_ideal_morsel_size();
@@ -92,9 +113,8 @@ impl ParquetReadImpl {
         // Three concurrency limits bound the pipeline:
         // (a) rg_prefetch_kbytes_semaphore: bounds possibly compressed projected bytes
         //     in the pipeline. Primary memory bound, but does not account for decompression.
-        // (b) rg_prefetch_semaphore: bounds row group count in the pipeline. Secondary
-        //     bound, only binding for degenerate cases (many tiny row groups where
-        //     (a) is not exhausted).
+        // (b) rg_prefetch_semaphore: bounds row group count in the pipeline. Binds before (a)
+        //     for row groups smaller than the kbytes limit divided by the count limit.
         // (c) prefetch channel depth: sized >= (b) so it is never the binding constraint.
         //     The channel is a handoff queue between the prefetch and decode tasks, not
         //     a concurrency gate.
@@ -111,10 +131,13 @@ impl ParquetReadImpl {
         let row_index = self.row_index.clone();
 
         let pipeline_budget = self.pipeline_budget.clone();
+        let decoder = row_group_decoder.clone();
 
         let rg_prefetch_prev_all_spawned = Option::take(&mut self.rg_prefetch_prev_all_spawned);
         let rg_prefetch_current_all_spawned =
             Option::take(&mut self.rg_prefetch_current_all_spawned);
+
+        let task_metrics = self.task_metrics.clone();
 
         let prefetch_task = AbortOnDropHandle(ASYNC.spawn(async move {
             polars_ensure!(
@@ -171,6 +194,7 @@ impl ParquetReadImpl {
                 }
             }
 
+            let has_row_index = row_index.is_some();
             let row_group_mask = calculate_row_group_pred_pushdown_skip_mask(
                 row_group_slice.clone(),
                 use_statistics,
@@ -179,20 +203,41 @@ impl ParquetReadImpl {
                 projected_arrow_fields.clone(),
                 row_index,
                 verbose,
+                task_metrics.as_deref(),
+                runtime_range_skipper.as_deref(),
             )
             .await?;
 
+            let mut row_groups = row_groups_to_read(
+                &metadata,
+                row_group_slice,
+                row_group_mask.as_ref(),
+                row_offset,
+                slice_range,
+            );
+            // Rows can come out in any order, so read first the row groups that tighten
+            // the runtime ranges the most.
+            if !maintain_order
+                && !has_row_index
+                && normalized_pre_slice.is_none()
+                && let Some(skipper) = &runtime_range_skipper
+            {
+                skipper.sort_by_read_order(row_groups.make_contiguous(), |rg| rg.idx);
+            }
+
+            let inflight_budget = byte_source.window_inflight_budget();
+            let window_growth = WindowGrowth::for_source(&byte_source, inflight_budget.as_deref());
+            let defer_cached_reads = polars_config::config().file_defer_cached_reads();
             let mut row_group_data_fetcher = RowGroupDataFetcher {
                 projection: projected_arrow_fields.clone(),
                 is_full_projection,
                 predicate,
-                slice_range,
                 memory_prefetch_func,
                 metadata,
                 byte_source,
-                row_group_slice,
-                row_group_mask,
-                row_offset,
+                row_groups,
+                runtime_range_skipper,
+                read_stats: Arc::new(ReadStats::new(verbose, defer_cached_reads)),
             };
 
             if let Some(rg_prefetch_prev_all_spawned) = rg_prefetch_prev_all_spawned {
@@ -203,14 +248,16 @@ impl ParquetReadImpl {
                 let fetch_length = usize::try_from(fetch_length)
                     .expect("ParquetReadImpl: fetch_length too large for usize: {fetch_length}");
 
-                let permit = pipeline_budget.acquire(fetch_length).await;
+                let decode_tasks = decoder.decode_tasks(
+                    row_group_data_fetcher.peek_next_num_rows(),
+                    row_group_data_fetcher.peek_next_sliced(),
+                );
+                let permit = pipeline_budget
+                    .acquire(fetch_length, window_growth, decode_tasks)
+                    .await;
 
                 // Budget reserved, spawn request
-                let Some(prefetch) = row_group_data_fetcher.next().await else {
-                    // Mask skipped all remaining row groups between peek and next — release permits
-                    drop(permit);
-                    break;
-                };
+                let prefetch = row_group_data_fetcher.next().await.unwrap();
 
                 if prefetch_send.send((prefetch?, permit)).await.is_err() {
                     break;
@@ -223,20 +270,90 @@ impl ParquetReadImpl {
         }));
 
         // Decode loop (spawns decodes on the computational executor).
-        let (decode_send, mut decode_recv) = tokio::sync::mpsc::channel(self.config.num_pipelines);
-        let decode_task = AbortOnDropHandle(ASYNC.spawn(async move {
-            while let Some((prefetch_task, permits)) = prefetch_recv.recv().await {
-                let row_group_data = prefetch_task.await.unwrap()?;
-                let row_group_decoder = row_group_decoder.clone();
-                let decode_fut = executor::spawn(TaskPriority::High, async move {
-                    row_group_decoder.row_group_data_to_df(row_group_data).await
-                });
-                if decode_send.send((decode_fut, permits)).await.is_err() {
-                    break;
+        // Unordered decodes are bounded by their own slots, so its channel stays shallow.
+        let num_pipelines = self.config.num_pipelines;
+        let (decode_send, mut decode_recv) =
+            tokio::sync::mpsc::channel(if maintain_order { num_pipelines } else { 1 });
+        let decode_task = if maintain_order {
+            AbortOnDropHandle(ASYNC.spawn(async move {
+                let metrics = row_group_decoder.task_metrics.as_deref();
+                while let Some((prefetch_task, permits)) = prefetch_recv.recv().await {
+                    let row_group_data = prefetch_task.await.unwrap()?;
+                    let row_group_decoder = row_group_decoder.clone();
+                    let decode_fut = executor::spawn(TaskPriority::High, metrics, async move {
+                        row_group_decoder.row_group_data_to_df(row_group_data).await
+                    });
+                    if decode_send
+                        .send((Either::Left(decode_fut), permits))
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
                 }
-            }
-            PolarsResult::Ok(())
-        }));
+                PolarsResult::Ok(())
+            }))
+        } else {
+            // Decode in fetch completion order; each decode hands off its own result.
+            AbortOnDropHandle(ASYNC.spawn(async move {
+                let metrics = row_group_decoder.task_metrics.as_deref();
+                let mut fetches = FuturesUnordered::new();
+                let mut prefetch_done = false;
+                // In-flight bound of num_pipelines + 1, matching the ordered path.
+                let decode_slots = Arc::new(Semaphore::new(num_pipelines + 1));
+                let mut decode_handles = FuturesUnordered::new();
+
+                // `closed()` is always enabled, so `select!` never sees every branch disabled.
+                while !(prefetch_done && fetches.is_empty()) {
+                    tokio::select! {
+                        biased;
+
+                        // Distributor is gone; dropping the handles cancels running decodes.
+                        _ = decode_send.closed() => return Ok(()),
+
+                        v = prefetch_recv.recv(), if !prefetch_done => match v {
+                            Some((prefetch_task, permits)) => {
+                                fetches.push(async move { (prefetch_task.await.unwrap(), permits) })
+                            },
+                            None => prefetch_done = true,
+                        },
+
+                        Some((row_group_data, permits)) = fetches.next() => {
+                            let row_group_data = row_group_data?;
+
+                            // Backpressure: blocks the prefetch drain until a slot frees.
+                            let slot = decode_slots.clone().acquire_owned().await.unwrap();
+
+                            // Keep the set bounded; panics surface on drain.
+                            while let Some(Some(())) = decode_handles.next().now_or_never() {}
+
+                            let row_group_decoder = row_group_decoder.clone();
+                            let decode_send = decode_send.clone();
+
+                            decode_handles.push(executor::AbortOnDropHandle::new(executor::spawn(
+                                TaskPriority::High,
+                                metrics,
+                                async move {
+                                    let df = row_group_decoder
+                                        .row_group_data_to_df(row_group_data)
+                                        .await;
+
+                                    if !matches!(&df, Ok(df) if df.height() == 0) {
+                                        let fut = Either::Right(std::future::ready(df));
+                                        let _ = decode_send.send((fut, permits)).await;
+                                    }
+                                    drop(slot);
+                                },
+                            )));
+                        },
+                    }
+                }
+
+                drop(decode_send);
+                while decode_handles.next().await.is_some() {}
+                PolarsResult::Ok(())
+            }))
+        };
 
         // Distributes morsels across pipelines. This does not perform any CPU or I/O bound work -
         // it is purely a dispatch loop. Run on the computational executor to reduce context switches.
@@ -245,7 +362,8 @@ impl ParquetReadImpl {
         // is shared across files in the scan.
         let last_morsel_pipelines = self.config.last_morsel_pipelines;
         let disable_morsel_split = self.disable_morsel_split;
-        let distribute_task = executor::spawn(TaskPriority::High, async move {
+        let task_metrics = self.task_metrics.as_deref();
+        let distribute_task = executor::spawn(TaskPriority::High, task_metrics, async move {
             let mut morsel_seq = MorselSeq::default();
             // Note: We don't use this (it is handled by the bridge). But morsels require a source token.
             let source_token = SourceToken::new();
@@ -340,7 +458,10 @@ impl ParquetReadImpl {
     /// This must be called AFTER the following have been initialized:
     /// * `self.projected_arrow_fields`
     /// * `self.physical_predicate`
-    pub(super) fn init_row_group_decoder(&mut self) -> RowGroupDecoder {
+    pub(super) fn init_row_group_decoder(
+        &mut self,
+        runtime_range_skipper: Option<Arc<RuntimeRangeSkipper>>,
+    ) -> RowGroupDecoder {
         let projected_arrow_fields = self.projected_arrow_fields.clone();
         let row_index = self.row_index.clone();
         let target_values_per_thread = self.config.target_values_per_thread;
@@ -473,6 +594,7 @@ impl ParquetReadImpl {
 
         RowGroupDecoder {
             num_pipelines: self.config.num_pipelines,
+            task_metrics: self.task_metrics.clone(),
             projected_arrow_fields,
             row_index,
             predicate,
@@ -484,6 +606,7 @@ impl ParquetReadImpl {
             passes: Mutex::new(Arc::new(passes)),
             non_predicate_field_indices,
             target_values_per_thread,
+            runtime_range_skipper,
         }
     }
 }
@@ -507,31 +630,7 @@ fn filtered_range(exclude: &[usize], len: usize) -> impl Iterator<Item = usize> 
     })
 }
 
-pub(crate) fn split_to_morsels(
-    df: &DataFrame,
-    ideal_morsel_size: usize,
-    last_morsel: bool,
-    last_morsel_pipelines: usize,
-) -> impl Iterator<Item = DataFrame> + '_ {
-    let mut n_morsels = if df.height() > 3 * ideal_morsel_size / 2 {
-        // num_rows > (1.5 * ideal_morsel_size)
-        (df.height() / ideal_morsel_size).max(2)
-    } else {
-        1
-    };
-
-    if last_morsel {
-        n_morsels = n_morsels.max(last_morsel_pipelines);
-    }
-
-    let rows_per_morsel = df.height().div_ceil(n_morsels).max(1);
-
-    (0..i64::try_from(df.height()).unwrap())
-        .step_by(rows_per_morsel)
-        .map(move |offset| df.slice(offset, rows_per_morsel))
-        .filter(|df| df.height() > 0)
-}
-
+#[cfg(test)]
 mod tests {
 
     #[test]

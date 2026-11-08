@@ -131,11 +131,11 @@ fn test_incorrect_shift() {
         // Number of arguments is incorrect
         ensure_error(
             &format!("a, b, {func}() OVER (PARTITION BY a ORDER BY b) as c"),
-            "expects 1 or 2 arguments",
+            "expects 1 to 3 arguments",
         );
         ensure_error(
-            &format!("a, b, {func}(b, 1, 2) OVER (PARTITION BY a ORDER BY b) as c"),
-            "expects 1 or 2 arguments",
+            &format!("a, b, {func}(b, 1, 2, 3) OVER (PARTITION BY a ORDER BY b) as c"),
+            "expects 1 to 3 arguments",
         );
 
         // Second argument is not a constant
@@ -146,16 +146,6 @@ fn test_incorrect_shift() {
         ensure_error(
             &format!("a, b, {func}(b, a + 1) OVER (PARTITION BY a ORDER BY b) as c"),
             "offset must be an integer",
-        );
-
-        // Second argument is not positive
-        ensure_error(
-            &format!("a, b, {func}(b, -1) OVER (PARTITION BY a ORDER BY b) as c"),
-            "offset must be positive",
-        );
-        ensure_error(
-            &format!("a, b, {func}(b, 0) OVER (PARTITION BY a ORDER BY b) as c"),
-            "offset must be positive",
         );
     }
 }

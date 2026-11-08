@@ -44,3 +44,9 @@ pub fn infer_schema<R: std::io::BufRead>(
 pub fn count_rows(full_bytes: &[u8]) -> usize {
     json_lines(full_bytes).count()
 }
+
+/// Returns the length of the longest prefix of `bytes` that only holds complete rows, i.e. up to
+/// and including the last line break.
+pub fn complete_rows_len(bytes: &[u8]) -> usize {
+    memchr::memrchr(b'\n', bytes).map_or(0, |i| i + 1)
+}

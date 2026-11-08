@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import io
+from datetime import datetime
+from decimal import Decimal
+from typing import Any
+
 import pyarrow as pa
 import pytest
 from hypothesis import given
@@ -633,3 +638,222 @@ def test_explode_params() -> None:
         df.explode("a", empty_as_null=False, keep_nulls=False),
         pl.DataFrame({"a": [1, 2, 3, 4, 5, 6], "b": [1, 1, 1, 3, 3, 3]}),
     )
+
+
+def _explode_rows(
+    rows: list[Any], *, empty_as_null: bool, keep_nulls: bool
+) -> list[Any]:
+    out: list[Any] = []
+    for r in rows:
+        if r is None:
+            out += [None] if keep_nulls else []
+        elif len(r) == 0:
+            out += [None] if empty_as_null else []
+        else:
+            out += list(r)
+    return out
+
+
+EXPLODE_AGG_DATA = [
+    ([[1, None], None, [], [2, 3], None, [4], [], [5, 6]], pl.List(pl.Int64)),
+    ([["a"], None, [], ["b", None], None, ["c"], [], ["d", "e"]], pl.List(pl.String)),
+    (
+        [[[1]], None, [], [[2], None], None, [[]], [], [[3, 4]]],
+        pl.List(pl.List(pl.Int64)),
+    ),
+    (
+        [[1, 2], None, [3, None], [4, 5], None, [6, 7], [8, 9], [0, 0]],
+        pl.Array(pl.Int64, 2),
+    ),
+    # Logical inner dtypes must keep their physical representation.
+    (
+        [["x"], None, [], ["y", None], None, ["x"], [], ["z", "y"]],
+        pl.List(pl.Categorical),
+    ),
+    (
+        [["x"], None, [], ["y", None], None, ["x"], [], ["z", "y"]],
+        pl.List(pl.Enum(["x", "y", "z"])),
+    ),
+    (
+        [
+            [datetime(2020, 1, 1)],
+            None,
+            [],
+            [datetime(2021, 2, 3), None],
+            None,
+            [datetime(1999, 12, 31)],
+            [],
+            [datetime(2000, 1, 1)],
+        ],
+        pl.List(pl.Datetime("us")),
+    ),
+    (
+        [
+            [Decimal("1.25")],
+            None,
+            [],
+            [Decimal("-2.50"), None],
+            None,
+            [Decimal("0.01")],
+            [],
+            [Decimal("3.00")],
+        ],
+        pl.List(pl.Decimal(10, 2)),
+    ),
+    (
+        [[{"x": 1}], None, [], [{"x": None}, None], None, [{"x": 2}], [], [{"x": 3}]],
+        pl.List(pl.Struct({"x": pl.Int64})),
+    ),
+]
+EXPLODE_AGG_KEYS = [0, 1, 0, 2, 1, 0, 2, 3]
+
+
+@pytest.mark.parametrize("empty_as_null", [False, True])
+@pytest.mark.parametrize("keep_nulls", [False, True])
+@pytest.mark.parametrize("sort_first", [False, True])
+@pytest.mark.parametrize(("data", "dtype"), EXPLODE_AGG_DATA)
+def test_explode_agg_29993(
+    data: list[Any],
+    dtype: pl.DataType,
+    empty_as_null: bool,
+    keep_nulls: bool,
+    sort_first: bool,
+) -> None:
+    opts = {"empty_as_null": empty_as_null, "keep_nulls": keep_nulls}
+    df = pl.DataFrame({"k": EXPLODE_AGG_KEYS, "a": pl.Series(data, dtype=dtype)})
+    if sort_first:
+        # Sorted keys give slice groups.
+        df = df.sort("k", maintain_order=True)
+
+    groups: dict[int, list[Any]] = {}
+    for k, d in zip(EXPLODE_AGG_KEYS, data, strict=True):
+        groups.setdefault(k, []).append(d)
+    keys = sorted(groups)
+
+    out = (
+        df.group_by("k")
+        .agg(
+            plain=pl.col("a").explode(**opts),
+            first=pl.col("a").first().explode(**opts),
+            empty=pl.col("a").filter(pl.col("k") < 0).explode(**opts),
+        )
+        .sort("k")
+    )
+    assert out["plain"].to_list() == [_explode_rows(groups[k], **opts) for k in keys]
+    assert out["first"].to_list() == [
+        _explode_rows(groups[k][:1], **opts) for k in keys
+    ]
+    assert out["empty"].to_list() == [[] for _ in keys]
+
+    # Overlapping groups.
+    out = (
+        df.with_row_index()
+        .rolling("index", period="3i")
+        .agg(pl.col("a").explode(**opts))
+    )
+    rows = df["a"].to_list()
+    assert out["a"].to_list() == [
+        _explode_rows(rows[max(0, i - 2) : i + 1], **opts) for i in range(len(rows))
+    ]
+
+
+def test_explode_agg_literal_29993() -> None:
+    df = pl.DataFrame({"k": [1, 2, 1]})
+    out = df.group_by("k").agg(pl.lit([1, 2]).explode()).sort("k")
+    assert out["literal"].to_list() == [[1, 2], [1, 2]]
+
+
+def test_explode_agg_chained_29993() -> None:
+    df = pl.DataFrame(
+        {
+            "k": [0, 1, 0, 1, 0],
+            "a": [["x", None], ["y"], None, [], ["x", "z"]],
+        }
+    )
+    out = (
+        df.group_by("k")
+        .agg(pl.col("a").explode().drop_nulls().unique().sort())
+        .sort("k")
+    )
+    assert out["a"].to_list() == [["x", "z"], ["y"]]
+
+
+def test_list_agg_explode_30023() -> None:
+    s = pl.Series([[[]], [[1, 2]], [None, [3]]], dtype=pl.List(pl.List(pl.Int64)))
+    expected = [[], [1, 2], [None, 3]]
+    assert s.list.agg(pl.element().explode()).to_list() == expected
+    assert s.list.eval(pl.element().explode()).to_list() == expected
+
+
+def _via_arrow_table(s: pl.Series) -> pl.Series:
+    # Builds the list from Arrow arrays, as a Parquet read does.
+    df = pl.from_arrow(pa.table({s.name: s.to_arrow()}))
+    assert isinstance(df, pl.DataFrame)
+    return df.to_series()
+
+
+@pytest.mark.parametrize("empty_as_null", [False, True])
+@pytest.mark.parametrize("keep_nulls", [False, True])
+@pytest.mark.parametrize(
+    ("rows", "dtype"),
+    [
+        ([[1, 2], [3], [4, 5, 6]], pl.List(pl.Int64)),
+        ([[1, 2], [], [3]], pl.List(pl.Int64)),
+        ([[1, 2], None, [3]], pl.List(pl.Int64)),
+        (
+            [[{"x": 1}, {"x": 2}], [{"x": 3}], [{"x": None}]],
+            pl.List(pl.Struct({"x": pl.Int64})),
+        ),
+        (
+            [[{"x": 1}], [], None, [{"x": 2}]],
+            pl.List(pl.Struct({"x": pl.Int64})),
+        ),
+        ([[[1], [2, 3]], [[4]], [[]]], pl.List(pl.List(pl.Int64))),
+    ],
+)
+def test_explode_list_from_arrow_30175(
+    rows: list[Any], dtype: pl.DataType, *, empty_as_null: bool, keep_nulls: bool
+) -> None:
+    s = _via_arrow_table(pl.Series("a", rows, dtype=dtype))
+    opts = {"empty_as_null": empty_as_null, "keep_nulls": keep_nulls}
+    for offset in range(len(rows)):
+        out = s.slice(offset).explode(**opts)
+        assert out.to_list() == _explode_rows(rows[offset:], **opts)
+
+
+@pytest.mark.parametrize("keep_nulls", [False, True])
+def test_explode_list_from_arrow_masked_null_row_30175(*, keep_nulls: bool) -> None:
+    # The null row still covers the value 3, which must not be exploded.
+    arr = pa.LargeListArray.from_arrays(
+        pa.array([0, 2, 3, 4], pa.int64()),
+        pa.array([1, 2, 3, 4], pa.int64()),
+        mask=pa.array([False, True, False]),
+    )
+    s = _via_arrow_table(pl.Series("a", arr))
+    expected = _explode_rows(
+        [[1, 2], None, [4]], empty_as_null=True, keep_nulls=keep_nulls
+    )
+    assert s.explode(keep_nulls=keep_nulls).to_list() == expected
+
+
+def test_explode_list_columns_from_memory_and_arrow_30175() -> None:
+    rows = [[{"x": 1}], [{"x": 2}, {"x": 3}], [{"x": 4}]]
+    a = pl.Series("a", rows, dtype=pl.List(pl.Struct({"x": pl.Int64})))
+    df = pl.DataFrame([a, _via_arrow_table(a).alias("b")]).slice(1)
+    expected = pl.DataFrame(
+        {"a": [{"x": 2}, {"x": 3}, {"x": 4}], "b": [{"x": 2}, {"x": 3}, {"x": 4}]}
+    )
+    assert_frame_equal(df.explode("a", "b"), expected)
+
+
+def test_explode_list_read_from_parquet_30175() -> None:
+    df = pl.DataFrame(
+        {
+            "id": [1, 2],
+            "a": [[{"x": 1, "l": [1, 2]}, {"x": 2, "l": []}], [{"x": 3, "l": [3]}]],
+        }
+    )
+    f = io.BytesIO()
+    df.write_parquet(f)
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f).explode("a"), df.explode("a"))

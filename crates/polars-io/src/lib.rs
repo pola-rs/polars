@@ -4,7 +4,7 @@
 #![cfg_attr(
     feature = "allow_unused",
     allow(unused, dead_code, irrefutable_let_patterns)
-)] // Maybe be caused by some feature
+)] // May be caused by some feature
 #![allow(ambiguous_glob_reexports)]
 extern crate core;
 
@@ -15,6 +15,7 @@ pub mod catalog;
 pub mod cloud;
 #[cfg(any(feature = "csv", feature = "json"))]
 pub mod csv;
+pub mod external_reader;
 #[cfg(feature = "file_cache")]
 pub mod file_cache;
 #[cfg(any(feature = "ipc", feature = "ipc_streaming"))]

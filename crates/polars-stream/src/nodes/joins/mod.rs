@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
 use crossbeam_queue::ArrayQueue;
-use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
+use polars_async::executor::{JoinHandle, TaskMetricAggregator, TaskPriority, TaskScope};
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::IntoColumn;
 use polars_core::runtime::RAYON;
 use polars_defs::join::JoinBuildSide;
 use polars_error::PolarsResult;
-use polars_ooc::{MostRecentSpillContext, SpillFrame};
+use polars_ooc::{MostRecentSpillContext, ParameterFreeSpillContext, SpillFrame, memory_manager};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::relaxed_cell::RelaxedCell;
@@ -30,6 +30,7 @@ pub mod range_join;
 mod runtime_filter;
 #[cfg(feature = "semi_anti_join")]
 pub mod semi_anti_join;
+mod tuning;
 mod utils;
 
 // If one side is this much bigger than the other side we'll always use the
@@ -57,31 +58,30 @@ async fn select_key_columns(
     unsafe { DataFrame::new_unchecked_with_broadcast(df.height(), key_columns) }
 }
 
-/// Buffers the morsels of one side of a join until it ends, the sample limit
-/// is reached, or the other side ended and this side has many times its rows.
+/// Buffers the morsels of one side of a join, registered in `spill_ctx`, until its
+/// stream ends or it has `limit` rows. When its stream ends, the other side is
+/// limited to `LOPSIDED_SAMPLE_FACTOR` times its rows: if this input is done,
+/// sampling ends there, and otherwise it continues in the next phase.
 async fn sample_sink(
     mut recv: PortReceiver,
     morsels: &mut Vec<Morsel>,
     len: &mut usize,
-    this_final_len: Arc<RelaxedCell<usize>>,
-    other_final_len: Arc<RelaxedCell<usize>>,
-    join_sample_limit: usize,
+    limit: Arc<RelaxedCell<usize>>,
+    other_limit: Arc<RelaxedCell<usize>>,
+    spill_ctx: &MostRecentSpillContext,
 ) -> PolarsResult<()> {
     while let Ok(mut morsel) = recv.recv().await {
         *len += morsel.height();
-        if *len >= join_sample_limit
-            || *len
-                >= other_final_len
-                    .load()
-                    .saturating_mul(LOPSIDED_SAMPLE_FACTOR)
-        {
+        if *len >= limit.load() {
             morsel.source_token().stop();
         }
 
         drop(morsel.take_consume_token());
+        spill_ctx.register(morsel.sf()).await;
         morsels.push(morsel);
     }
-    this_final_len.store(*len);
+    let lopsided_limit = len.saturating_mul(LOPSIDED_SAMPLE_FACTOR);
+    other_limit.store(other_limit.load().min(lopsided_limit));
     Ok(())
 }
 
@@ -112,15 +112,16 @@ fn fold_sample<T: Send>(
             .par_iter()
             .enumerate()
             .try_fold(&init, |acc, (morsel_idx, morsel)| {
-                let sliced;
-                let pin_df = morsel.df_blocking();
-                let df = if morsel_idx == last_morsel_idx {
-                    sliced = pin_df.slice(0, last_morsel_slice);
-                    &sliced
-                } else {
-                    &*pin_df
-                };
-                fold(acc, df)
+                let acc = {
+                    let df = morsel.df_blocking();
+                    if morsel_idx == last_morsel_idx {
+                        fold(acc, &df.slice(0, last_morsel_slice))
+                    } else {
+                        fold(acc, &df)
+                    }
+                }?;
+                memory_manager().spill_blocking();
+                PolarsResult::Ok(acc)
             })
             .try_reduce(&init, |a, b| Ok(reduce(a, b)))
     })?;
@@ -168,13 +169,19 @@ struct BufferedStream {
 }
 
 impl BufferedStream {
-    pub fn new(name: PlSmallStr, morsels: Vec<Morsel>, start_offset: MorselSeq) -> Self {
+    pub fn new(
+        name: PlSmallStr,
+        morsels: Vec<Morsel>,
+        start_offset: MorselSeq,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
+    ) -> Self {
         // Relabel so we can insert into parallel streams later.
         let mut seq = start_offset;
-        let ctx = MostRecentSpillContext::new(name);
+        let ctx = MostRecentSpillContext::new(name, task_metrics);
         let queue = ArrayQueue::new(morsels.len().max(1));
         for morsel in morsels {
-            let sf = SpillFrame::new_blocking(morsel.into_df_blocking(), &ctx);
+            let sf = morsel.into_sf();
+            ctx.register_no_spill_check(&sf);
             queue.push((sf, seq)).unwrap();
             seq = seq.successor();
         }

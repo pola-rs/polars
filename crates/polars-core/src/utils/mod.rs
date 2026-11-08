@@ -16,6 +16,7 @@ pub use polars_arrow;
 use polars_arrow::bitmap::Bitmap;
 pub use polars_arrow::legacy::utils::*;
 pub use polars_arrow::trusted_len::TrustMyLength;
+use polars_utils::slice::slice_offsets;
 pub use rayon;
 use rayon::prelude::*;
 pub use schema::*;
@@ -54,7 +55,7 @@ pub fn par_iter_bounded<T: Sync>(items: &[T]) -> rayon::iter::MinLen<rayon::slic
 
 /// Just a wrapper structure which is useful for certain impl specializations.
 ///
-/// This is for instance use to implement
+/// This is for instance used to implement
 /// `impl<T> FromIterator<T::Native> for NoNull<ChunkedArray<T>>`
 /// as `Option<T::Native>` was already implemented:
 /// `impl<T> FromIterator<Option<T::Native>> for ChunkedArray<T>`
@@ -160,8 +161,7 @@ impl Container for DataFrame {
     }
 
     fn chunk_lengths(&self) -> impl Iterator<Item = usize> {
-        // @scalar-correctness?
-        self.columns()[0].as_materialized_series().chunk_lengths()
+        self.first_col_chunk_lengths()
     }
 }
 
@@ -347,26 +347,6 @@ pub fn split_df(df: &mut DataFrame, target: usize, strict: bool) -> Vec<DataFram
 pub fn slice_slice<T>(vals: &[T], offset: i64, len: usize) -> &[T] {
     let (raw_offset, slice_len) = slice_offsets(offset, len, vals.len());
     &vals[raw_offset..raw_offset + slice_len]
-}
-
-#[inline]
-pub fn slice_offsets(offset: i64, length: usize, array_len: usize) -> (usize, usize) {
-    let signed_start_offset = if offset < 0 {
-        offset.saturating_add_unsigned(array_len as u64)
-    } else {
-        offset
-    };
-    let signed_stop_offset = signed_start_offset.saturating_add_unsigned(length as u64);
-
-    let signed_array_len: i64 = array_len
-        .try_into()
-        .expect("array length larger than i64::MAX");
-    let clamped_start_offset = signed_start_offset.clamp(0, signed_array_len);
-    let clamped_stop_offset = signed_stop_offset.clamp(0, signed_array_len);
-
-    let slice_start_idx = clamped_start_offset as usize;
-    let slice_len = (clamped_stop_offset - clamped_start_offset) as usize;
-    (slice_start_idx, slice_len)
 }
 
 /// Apply a macro on the Series
@@ -743,7 +723,7 @@ macro_rules! apply_method_all_arrow_series {
             DataType::UInt32 => $self.u32().unwrap().$method($($args),*),
             DataType::UInt64 => $self.u64().unwrap().$method($($args),*),
             #[cfg(feature = "dtype-u128")]
-            DataType::UInt128 => $self.u128().unwrap().$medthod($($args),*),
+            DataType::UInt128 => $self.u128().unwrap().$method($($args),*),
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => $self.i8().unwrap().$method($($args),*),
             #[cfg(feature = "dtype-i16")]

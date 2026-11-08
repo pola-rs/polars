@@ -232,7 +232,8 @@ impl<'a> CoreReader<'a> {
         if let Some(dtypes) = dtype_overwrite {
             polars_ensure!(
                 dtypes.len() <= schema.len(),
-                InvalidOperation: "The number of schema overrides must be less than or equal to the number of fields"
+                InvalidOperation: "The number of schema overrides must be less than or equal to the number of fields (got {} overrides for {} fields)",
+                dtypes.len(), schema.len()
             );
             let s = Arc::make_mut(&mut schema);
             for (index, dt) in dtypes.iter().enumerate() {
@@ -503,7 +504,7 @@ impl<'a> CoreReader<'a> {
                         results.lock().unwrap().push((b.as_ptr() as usize, result));
                     });
 
-                    // Check just after we spawned a chunk. That mean we processed all data up until
+                    // Check just after we spawned a chunk. That means we processed all data up until
                     // row count.
                     if self.n_rows.is_some() && total_line_count.load() > self.n_rows.unwrap() {
                         break;

@@ -81,6 +81,10 @@ pub fn dyn_array_max_ignore_nan(arr: &dyn Array) -> Option<Box<dyn Scalar>> {
     call!(arr, MinMaxKernel::max_ignore_nan_kernel)
 }
 
+pub fn dyn_array_min_max_ignore_nan(arr: &dyn Array) -> Option<(Box<dyn Scalar>, Box<dyn Scalar>)> {
+    call!(arr, MinMaxKernel::min_max_ignore_nan_kernel, ret_two)
+}
+
 pub fn dyn_array_min_propagate_nan(arr: &dyn Array) -> Option<Box<dyn Scalar>> {
     call!(arr, MinMaxKernel::min_propagate_nan_kernel)
 }

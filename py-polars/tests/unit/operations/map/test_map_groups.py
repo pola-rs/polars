@@ -13,6 +13,8 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from polars._typing import EngineType
+
 
 def test_map_groups() -> None:
     df = pl.DataFrame(
@@ -63,6 +65,16 @@ def test_map_groups_rolling() -> None:
         ]
     )
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_map_groups_dynamic_no_windows(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"i": [0, 1, 2], "v": [1.0, 2.0, 3.0]})
+    gb = lf.group_by_dynamic("i", every="10i", period="1i", offset="5i")
+    schema = {"v": pl.Float64}
+
+    result = gb.map_groups(lambda df: df.select(pl.col.v.sum()), schema=schema)
+    assert_frame_equal(result.collect(engine=engine), pl.DataFrame(schema=schema))
 
 
 def test_map_groups_empty() -> None:

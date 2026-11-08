@@ -10,6 +10,7 @@ use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_arrow::datatypes::ArrowDataType;
 use polars_arrow::pushable::Pushable;
 use polars_compute::filter::filter_boolean_kernel;
+use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
 
 use self::filter::Filter;
@@ -294,6 +295,15 @@ pub(super) trait Decoded {
     fn extend_nulls(&mut self, n: usize);
 }
 
+/// The predicate evaluated on the dictionary of a column chunk.
+pub(super) enum DictPredicate {
+    /// The predicate result for each dictionary value.
+    Mask(Bitmap),
+    /// The predicate could not be evaluated on the dictionary, so it is evaluated on the values
+    /// of the rows instead.
+    EvaluateRows,
+}
+
 /// A decoder that knows how to map `State` -> Array
 pub(super) trait Decoder: Sized {
     /// The state that this decoder derives from a [`DataPage`]. This is bound to the page.
@@ -306,16 +316,23 @@ pub(super) trait Decoder: Sized {
 
     const CHUNKED: bool = false;
 
+    /// Evaluates the predicate on each dictionary value. An error means the rows have to be
+    /// evaluated instead.
     fn evaluate_dict_predicate(
         &self,
         dict: &Self::Dict,
         predicate: &PredicateFilter,
-    ) -> ParquetResult<Bitmap> {
-        Ok(predicate.predicate.evaluate(dict))
+    ) -> PolarsResult<Bitmap> {
+        predicate.predicate.try_evaluate(dict)
     }
 
     /// Initializes a new [`Self::DecodedState`].
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState;
+
+    /// Whether the output may keep the buffer of `page` alive instead of copying out of it.
+    fn can_share_page_buffer(&self, _page: &DataPage) -> bool {
+        false
+    }
 
     /// Deserializes a [`DictPage`] into [`Self::Dict`].
     fn deserialize_dict(&mut self, page: DictPage) -> ParquetResult<Self::Dict>;
@@ -335,6 +352,7 @@ pub(super) trait Decoder: Sized {
         is_optional: bool,
     ) -> ParquetResult<()>;
 
+    #[allow(clippy::too_many_arguments)]
     fn unspecialized_predicate_decode(
         &mut self,
         state: State<'_, Self>,
@@ -342,6 +360,7 @@ pub(super) trait Decoder: Sized {
         pred_true_mask: &mut BitmapBuilder,
         predicate: &PredicateFilter,
         dict: Option<Self::Dict>,
+        _dict_predicate: Option<&DictPredicate>,
         dtype: &ArrowDataType,
     ) -> ParquetResult<()> {
         let is_optional = state.is_optional;
@@ -363,17 +382,56 @@ pub(super) trait Decoder: Sized {
         }
         .into_boxed();
 
-        let mask = if let Some(validity) = intermediate_array.validity() {
+        let validity = intermediate_array
+            .validity()
+            .filter(|validity| validity.unset_bits() > 0);
+        let mask = if let Some(validity) = validity
+            && predicate.predicate.can_evaluate_null_slots()
+        {
             let ignore_validity_array = intermediate_array.with_validity(None);
-            let mask = predicate.predicate.evaluate(ignore_validity_array.as_ref());
+            let mask = predicate
+                .predicate
+                .try_evaluate(ignore_validity_array.as_ref())
+                .map_err(|e| ParquetError::InvalidParameter(e.to_string()))?;
 
-            if predicate.predicate.evaluate_null() {
+            if predicate
+                .predicate
+                .evaluate_null()
+                .map_err(|e| ParquetError::InvalidParameter(e.to_string()))?
+            {
                 polars_arrow::bitmap::or_not(&mask, validity)
             } else {
                 &mask & validity
             }
+        } else if let Some(validity) = validity {
+            let valid_array = polars_compute::filter::filter_with_bitmap(
+                intermediate_array.with_validity(None).as_ref(),
+                validity,
+            );
+            let valid_mask = predicate
+                .predicate
+                .try_evaluate(valid_array.as_ref())
+                .map_err(|e| ParquetError::InvalidParameter(e.to_string()))?;
+
+            let null_is_true = predicate
+                .predicate
+                .evaluate_null()
+                .map_err(|e| ParquetError::InvalidParameter(e.to_string()))?;
+            let mut valid_mask = valid_mask.iter();
+            let mut mask = BitmapBuilder::with_capacity(validity.len());
+            for is_valid in validity.iter() {
+                mask.push(if is_valid {
+                    valid_mask.next().unwrap()
+                } else {
+                    null_is_true
+                });
+            }
+            mask.freeze()
         } else {
-            predicate.predicate.evaluate(intermediate_array.as_ref())
+            predicate
+                .predicate
+                .try_evaluate(intermediate_array.as_ref())
+                .map_err(|e| ParquetError::InvalidParameter(e.to_string()))?
         };
 
         let filtered =
@@ -542,15 +600,27 @@ impl<D: Decoder> PageDecoder<D> {
             specialized_pred,
             Some(SpecializedParquetColumnExpr::Equal(ParquetScalar::Null)),
         );
-        let pred_tracks_nulls = p.predicate.evaluate_null();
+        // An error is raised when a null row is decoded.
+        let pred_tracks_nulls = p.predicate.evaluate_null().unwrap_or(true);
 
-        let mut dict_mask = None;
+        let mut dict_predicate = None;
         if let Some(dict) = self.dict.as_ref() {
             // @Performance. If we have a predicate, we can prune stuff out of the dictionary and
             // reduce memory consumption.
             self.decoder.apply_dictionary(&mut target, dict)?;
-            dict_mask = Some(self.decoder.evaluate_dict_predicate(dict, p)?);
+            dict_predicate = Some(match self.decoder.evaluate_dict_predicate(dict, p) {
+                Ok(mask) => {
+                    assert_eq!(mask.len(), dict.len());
+                    DictPredicate::Mask(mask)
+                },
+                Err(_) => DictPredicate::EvaluateRows,
+            });
         }
+        let dict_mask = match &dict_predicate {
+            Some(DictPredicate::Mask(mask)) => Some(mask),
+            _ => None,
+        };
+        let evaluate_rows = matches!(dict_predicate, Some(DictPredicate::EvaluateRows));
 
         if let Some(metrics) = self.metrics.as_deref_mut() {
             metrics.decode_type = DecodeType::Predicate;
@@ -565,7 +635,7 @@ impl<D: Decoder> PageDecoder<D> {
 
             // Skip a dictionary encoded page if none of the dictionary values match the predicate.
             // This is essentially a slower version of statistics skipping.
-            can_skip_page |= dict_mask.as_ref().is_some_and(|dm| dm.set_bits() == 0)
+            can_skip_page |= dict_mask.is_some_and(|dm| dm.set_bits() == 0)
                 && page.page().header().is_dictionary_encoded()
                 && (!pred_tracks_nulls
                     || page.page().null_count() == Some(0)
@@ -590,7 +660,10 @@ impl<D: Decoder> PageDecoder<D> {
 
             let iter = &mut self.iter;
             let (page, time) = option_time(self.metrics.is_some(), move || page.decompress(iter));
-            let page = page?;
+            let mut page = page?;
+            if self.decoder.can_share_page_buffer(&page) {
+                page.share_buffer();
+            }
 
             if let Some(time) = time {
                 let metrics = self.metrics.as_deref_mut().unwrap();
@@ -626,12 +699,14 @@ impl<D: Decoder> PageDecoder<D> {
                 // handled in the kernels. If it cannot be handled in the kernels, catch it here
                 // and load it as if it weren't filtered.
                 let mut page_ptm = BitmapBuilder::new();
-                if self.decoder.evaluate_predicate(
-                    &state,
-                    specialized_pred,
-                    &mut page_ptm,
-                    dict_mask.as_ref(),
-                )? {
+                if !evaluate_rows
+                    && self.decoder.evaluate_predicate(
+                        &state,
+                        specialized_pred,
+                        &mut page_ptm,
+                        dict_mask,
+                    )?
+                {
                     if page_ptm.set_bits() == 0 {
                         pred_true_mask.extend_constant(page.num_values(), false);
                         return Ok(());
@@ -686,6 +761,7 @@ impl<D: Decoder> PageDecoder<D> {
                         &mut pred_true_mask,
                         p,
                         self.dict.clone(),
+                        dict_predicate.as_ref(),
                         &self.dtype,
                     )?;
                 }
@@ -772,7 +848,10 @@ impl<D: Decoder> PageDecoder<D> {
 
             let iter = &mut self.iter;
             let (page, time) = option_time(self.metrics.is_some(), move || page.decompress(iter));
-            let page = page?;
+            let mut page = page?;
+            if self.decoder.can_share_page_buffer(&page) {
+                page.share_buffer();
+            }
 
             if let Some(time) = time {
                 let metrics = self.metrics.as_deref_mut().unwrap();

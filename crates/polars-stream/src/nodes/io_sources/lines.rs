@@ -1,13 +1,16 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use polars_async::executor::TaskMetricAggregator;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
+use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
 use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::metrics::IOMetrics;
-use polars_io::utils::byte_source::{self, DynByteSourceBuilder, FileReadContext};
+use polars_io::utils::byte_source::{DynByteSourceBuilder, FileReadContext};
 use polars_plan::dsl::ScanSource;
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::relaxed_cell::RelaxedCell;
 
 use crate::nodes::io_sources::multi_scan::reader_interface::FileReader;
@@ -16,12 +19,14 @@ use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::Reader
 use crate::nodes::io_sources::ndjson::NDJsonFileReader;
 use crate::nodes::io_sources::ndjson::builder::ndjson_reader_capabilities;
 use crate::nodes::io_sources::ndjson::chunk_reader::ChunkReaderBuilder;
+use crate::nodes::io_sources::shared::file_init::CLOUD_PRE_INIT_LIMIT;
 
 pub struct LineReaderBuilder {
     pub prefetch_limit: RelaxedCell<usize>,
     pub prefetch_semaphore: std::sync::OnceLock<Arc<tokio::sync::Semaphore>>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
     pub io_metrics: std::sync::OnceLock<Arc<IOMetrics>>,
+    pub task_metrics: std::sync::OnceLock<Arc<TaskMetricAggregator>>,
     pub file_read_context: std::sync::OnceLock<FileReadContext>,
 }
 
@@ -36,15 +41,19 @@ impl std::fmt::Debug for LineReaderBuilder {
 }
 
 impl FileReaderBuilder for LineReaderBuilder {
-    fn reader_name(&self) -> &str {
-        "line"
+    fn reader_name(&self) -> PolarsResult<PlSmallStr> {
+        Ok(PlSmallStr::from_static("line"))
     }
 
-    fn reader_capabilities(&self) -> ReaderCapabilities {
-        ndjson_reader_capabilities()
+    fn reader_capabilities(&self) -> PolarsResult<ReaderCapabilities> {
+        Ok(ndjson_reader_capabilities())
     }
 
     fn set_execution_state(&self, execution_state: &crate::execute::StreamingExecutionState) {
+        if let Some(task_metrics) = execution_state.task_metrics.clone() {
+            self.task_metrics.set(task_metrics).ok().unwrap();
+        }
+
         // The maximum number of chunks actively being prefetched at any point in time.
         let prefetch_limit = std::env::var("POLARS_LINES_CHUNK_PREFETCH_LIMIT")
             .map(|x| {
@@ -76,14 +85,18 @@ impl FileReaderBuilder for LineReaderBuilder {
         self.io_metrics.set(io_metrics).ok().unwrap()
     }
 
+    fn preferred_remote_pre_init(&self) -> Option<usize> {
+        Some(CLOUD_PRE_INIT_LIMIT)
+    }
+
     fn build_file_reader(
         &self,
         source: ScanSource,
         cloud_options: Option<Arc<CloudOptions>>,
         _scan_source_idx: usize,
-    ) -> Box<dyn FileReader> {
+    ) -> PolarsResult<Box<dyn FileReader>> {
         use crate::metrics::OptIOMetrics;
-        use crate::nodes::io_sources::ndjson::ChunkPrefetchSync;
+        use crate::nodes::io_sources::shared::file_init::ChunkPrefetchSync;
 
         let scan_source = source;
         let chunk_reader_builder = ChunkReaderBuilder::Lines;
@@ -99,28 +112,9 @@ impl FileReaderBuilder for LineReaderBuilder {
             } else if scan_source.is_buffer() {
                 DynByteSourceBuilder::Mmap
             } else {
-                let read_context = self.file_read_context.get_or_init(|| {
-                    let cfg = polars_config::config();
-                    let enable_o_direct = cfg.direct_io();
-                    let concurrency = cfg.file_read_concurrency().max(1) as usize;
-                    let fadv = cfg.file_posix_fadv();
-
-                    if verbose {
-                        eprintln!(
-                            "[LineReaderBuilder]: file read_context as configured: \
-                                read_concurrency: {concurrency}, \
-                                posix_fadv: {fadv}, \
-                                o_direct: {enable_o_direct}"
-                        );
-                    }
-
-                    FileReadContext {
-                        enable_o_direct,
-                        concurrency,
-                        permits: byte_source::global_read_permits(),
-                        advice: fadv,
-                    }
-                });
+                let read_context = self
+                    .file_read_context
+                    .get_or_init(|| FileReadContext::from_config("LineReaderBuilder"));
                 DynByteSourceBuilder::FilePread(read_context.clone())
             };
 
@@ -141,8 +135,9 @@ impl FileReaderBuilder for LineReaderBuilder {
             },
             init_data: None,
             io_metrics: OptIOMetrics(self.io_metrics.get().cloned()),
+            task_metrics: self.task_metrics.get().cloned(),
         };
 
-        Box::new(reader) as _
+        Ok(Box::new(reader) as _)
     }
 }

@@ -6,7 +6,7 @@ mod binary;
 mod datetime;
 mod functions;
 #[cfg(any(feature = "is_in", feature = "dtype-map"))]
-mod is_in;
+mod membership;
 
 use binary::process_binary;
 #[cfg(all(
@@ -17,7 +17,7 @@ use datetime::coerce_temporal_dt;
 #[cfg(all(feature = "range", feature = "dtype-datetime"))]
 use datetime::{ensure_datetime, ensure_int, temporal_range_output_type};
 #[cfg(any(feature = "is_in", feature = "dtype-map"))]
-use is_in::MembershipForm;
+use membership::MembershipForm;
 use polars_core::chunked_array::cast::CastOptions;
 #[cfg(any(
     all(
@@ -29,8 +29,8 @@ use polars_core::chunked_array::cast::CastOptions;
 ))]
 use polars_core::utils::try_get_supertype;
 use polars_core::utils::{
-    get_numeric_upcast_supertype_lossless, get_supertype, get_supertype_with_options,
-    materialize_dyn_int,
+    check_is_valid_struct_cast, get_numeric_upcast_supertype_lossless, get_supertype,
+    get_supertype_with_options, materialize_dyn_int,
 };
 use polars_utils::format_list;
 use polars_utils::itertools::Itertools;
@@ -38,6 +38,25 @@ use polars_utils::itertools::Itertools;
 use super::*;
 
 pub struct TypeCoercionRule {}
+
+/// The strict casts that type coercion may run non-strict. A `false` or `Raise` field keeps
+/// that kind of cast strict; it does not make the cast raise.
+const RELAXED_CAST_POLICY: CastColumnsPolicy = CastColumnsPolicy {
+    integer_upcast: true,
+    integer_to_float_cast: false,
+    float_upcast: true,
+    float_downcast: true,
+    datetime_nanoseconds_downcast: true,
+    datetime_microseconds_downcast: true,
+    // Increasing the time unit precision can overflow.
+    datetime_milliseconds_upcast: false,
+    datetime_microseconds_upcast: false,
+    datetime_convert_timezone: true,
+    null_upcast: true,
+    categorical_to_string: true,
+    missing_struct_fields: MissingColumnsPolicy::Insert,
+    extra_struct_fields: ExtraColumnsPolicy::Raise,
+};
 
 macro_rules! unpack {
     ($packed:expr) => {
@@ -51,7 +70,7 @@ pub(super) use unpack;
 
 /// determine if we use the supertype or not. For instance when we have a column Int64 and we compare with literal UInt32
 /// it would be wasteful to cast the column instead of the literal.
-fn modify_supertype(
+pub(crate) fn modify_supertype(
     mut st: DataType,
     left: &AExpr,
     right: &AExpr,
@@ -61,7 +80,7 @@ fn modify_supertype(
     // TODO! This must be removed and dealt properly with dynamic str.
     use DataType::*;
     match (type_left, type_right, left, right) {
-        // if the we compare a categorical to a literal string we want to cast the literal to categorical
+        // if we compare a categorical to a literal string we want to cast the literal to categorical
         #[cfg(feature = "dtype-categorical")]
         (dt @ Categorical(_, _), String | Unknown(UnknownKind::Str), _, AExpr::Literal(_))
         | (String | Unknown(UnknownKind::Str), dt @ Categorical(_, _), AExpr::Literal(_), _)
@@ -139,22 +158,12 @@ impl OptimizationRule for TypeCoercionRule {
                             .dtype;
                         let cast_to = &dtype;
 
-                        let v = CastColumnsPolicy {
-                            integer_upcast: true,
-                            integer_to_float_cast: false,
-                            float_upcast: true,
-                            float_downcast: true,
-                            datetime_nanoseconds_downcast: true,
-                            datetime_microseconds_downcast: true,
-                            datetime_milliseconds_upcast: true,
-                            datetime_microseconds_upcast: true,
-                            datetime_convert_timezone: true,
-                            null_upcast: true,
-                            categorical_to_string: true,
-                            missing_struct_fields: MissingColumnsPolicy::Insert,
-                            extra_struct_fields: ExtraColumnsPolicy::Ignore,
-                        }
-                        .should_cast_column("", cast_to, &cast_from);
+                        // A cast that changes struct fields stays strict, so it raises as in
+                        // `Series.cast`.
+                        let v = check_is_valid_struct_cast(&cast_from, cast_to, &PlSmallStr::EMPTY)
+                            .and_then(|()| {
+                                RELAXED_CAST_POLICY.should_cast_column("", cast_to, &cast_from)
+                            });
 
                         match v {
                             // No casting needed
@@ -217,17 +226,18 @@ impl OptimizationRule for TypeCoercionRule {
                     expr_arena.add(AExpr::Cast {
                         expr: truthy_node,
                         dtype: st.clone(),
-                        options: CastOptions::Strict,
+                        options: supertype_cast_options(&type_true, &st),
                     })
                 } else {
                     truthy_node
                 };
 
                 let new_node_falsy = if type_false != st {
+                    let options = supertype_cast_options(&type_false, &st);
                     expr_arena.add(AExpr::Cast {
                         expr: falsy_node,
                         dtype: st,
-                        options: CastOptions::Strict,
+                        options,
                     })
                 } else {
                     falsy_node
@@ -283,10 +293,30 @@ impl OptimizationRule for TypeCoercionRule {
 
                 let needle_dtype = unpack!(try_get_dtype(expr_arena, needle.node(), schema).ok());
 
+                // Rounding a fractional bound of an integer needle must not change how the
+                // other bound is compared, nor drop a cast of it that can raise.
+                let is_fractional_bound = |bound_dtype: &DataType| {
+                    needle_dtype.is_integer()
+                        && (bound_dtype.is_float() || bound_dtype.is_decimal())
+                };
+                let keeps_other_cmp = |bound_dtype: &DataType, other_dtype: &DataType| {
+                    (bound_dtype.is_float() && other_dtype.is_float())
+                        || (bound_dtype.is_decimal()
+                            && (other_dtype == bound_dtype || *other_dtype == needle_dtype))
+                };
+
                 let (low_ae, low_dtype) =
                     unpack!(get_aexpr_and_type(expr_arena, low.node(), schema));
+                let early_high_dtype = if is_fractional_bound(&low_dtype) {
+                    Some(unpack!(try_get_dtype(expr_arena, high.node(), schema).ok()))
+                } else {
+                    None
+                };
 
                 if low_dtype != needle_dtype
+                    && early_high_dtype
+                        .as_ref()
+                        .is_none_or(|high_dtype| keeps_other_cmp(&low_dtype, high_dtype))
                     && let AExpr::Literal(lv) = low_ae
                 {
                     use crate::plans::type_coercion::binary::BoolValueAlways;
@@ -321,10 +351,15 @@ impl OptimizationRule for TypeCoercionRule {
                     }
                 }
 
-                let (high_ae, high_dtype) =
-                    unpack!(get_aexpr_and_type(expr_arena, high.node(), schema));
+                let high_dtype = match early_high_dtype {
+                    Some(high_dtype) => high_dtype,
+                    None => unpack!(try_get_dtype(expr_arena, high.node(), schema).ok()),
+                };
+                let high_ae = expr_arena.get(high.node());
 
                 if high_dtype != needle_dtype
+                    && (!is_fractional_bound(&high_dtype)
+                        || keeps_other_cmp(&high_dtype, &low_dtype))
                     && let AExpr::Literal(lv) = high_ae
                 {
                     if let LiteralValue::Scalar(lit) = lv.clone().materialize()
@@ -452,20 +487,20 @@ impl OptimizationRule for TypeCoercionRule {
             AExpr::Function {
                 function:
                     IRFunctionExpr::MapExpr(
-                        ref func @ (IRMapFunction::Get | IRMapFunction::ContainsKey),
+                        ref func @ (IRMapFunction::Get { .. } | IRMapFunction::ContainsKey { .. }),
                     ),
                 ..
             } => {
                 let op = match func {
-                    IRMapFunction::Get => "map.get",
+                    IRMapFunction::Get { .. } => "map.get",
                     _ => "map.contains_key",
                 };
-                coerce_is_in(
+                membership::coerce_is_in(
                     expr_node,
                     expr_arena,
                     schema,
                     MembershipForm::Contains,
-                    |input, arena| is_in::resolve_map_key(input, arena, schema, op),
+                    |input, arena| membership::resolve_map_key(input, arena, schema, op),
                 )?
             },
             #[cfg(feature = "is_in")]
@@ -500,8 +535,8 @@ impl OptimizationRule for TypeCoercionRule {
                     _ => unreachable!(),
                 };
 
-                coerce_is_in(expr_node, expr_arena, schema, form, |input, arena| {
-                    is_in::resolve_is_in(input, arena, schema, form, op, None)
+                membership::coerce_is_in(expr_node, expr_arena, schema, form, |input, arena| {
+                    membership::resolve_is_in(input, arena, schema, form, op)
                 })?
             },
             AExpr::Function {
@@ -548,6 +583,7 @@ impl OptimizationRule for TypeCoercionRule {
                 })
             },
             // shift and fill should only cast left and fill value to super type.
+            // @3.0: Raise a type error instead of upcasting the input.
             AExpr::Function {
                 function: IRFunctionExpr::ShiftAndFill,
                 ref input,
@@ -615,7 +651,7 @@ impl OptimizationRule for TypeCoercionRule {
             } => {
                 polars_ensure!(
                     (0.0..=1.0).contains(&ewm_options.alpha),
-                    ComputeError: "alpha must be in [0; 1]"
+                    ComputeError: "alpha must be in [0; 1], got {}", ewm_options.alpha
                 );
 
                 let input_expr = match &input.as_slice() {
@@ -874,6 +910,12 @@ impl OptimizationRule for TypeCoercionRule {
                     type_left,
                     type_other
                 );
+                if matches!(
+                    function,
+                    IRFunctionExpr::StringExpr(IRStringFunction::ContainsAny { .. })
+                ) {
+                    ensure_one_list_of_values(input[1].node(), expr_arena, function)?;
+                }
                 None
             },
 
@@ -907,7 +949,8 @@ impl OptimizationRule for TypeCoercionRule {
             )?,
             #[cfg(all(feature = "strings", feature = "find_many"))]
             AExpr::Function {
-                function: IRFunctionExpr::StringExpr(IRStringFunction::ReplaceMany { .. }),
+                function:
+                    ref function @ IRFunctionExpr::StringExpr(IRStringFunction::ReplaceMany { .. }),
                 ref input,
                 ..
             } => {
@@ -934,6 +977,9 @@ impl OptimizationRule for TypeCoercionRule {
                     type_patterns,
                     type_replace_with
                 );
+                for node in [input[1].node(), input[2].node()] {
+                    ensure_one_list_of_values(node, expr_arena, function)?;
+                }
                 None
             },
             #[cfg(feature = "replace")]
@@ -943,6 +989,7 @@ impl OptimizationRule for TypeCoercionRule {
                 ref input,
                 options,
             } => {
+                let (_, type_in) = unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
                 let (_, type_old) =
                     unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
                 let (_, type_new) =
@@ -953,32 +1000,39 @@ impl OptimizationRule for TypeCoercionRule {
                     InvalidOperation: "`replace` does not support `old`/`new` values of object dtype"
                 );
 
-                let (DataType::List(_), DataType::List(_)) = (&type_old, &type_new) else {
-                    let function = function.clone();
-                    let mut input = input.clone();
-
-                    if !type_old.is_list() {
-                        let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
-                            input: input[1].node(),
-                            maintain_order: true,
-                        }));
-                        input[1].set_node(other_input);
-                    }
-                    if !type_new.is_list() {
-                        let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
-                            input: input[2].node(),
-                            maintain_order: true,
-                        }));
-                        input[2].set_node(other_input);
-                    }
-
-                    return Ok(Some(AExpr::Function {
-                        function,
-                        input,
-                        options,
-                    }));
+                let is_list_of = |dtype: &DataType, values_dtype: &DataType| {
+                    dtype.is_list() && dtype != values_dtype
                 };
-                None
+                let old_is_list = is_list_of(&type_old, &type_in);
+                let new_is_list = match function {
+                    IRFunctionExpr::ReplaceStrict {
+                        return_dtype: Some(dtype),
+                    } => is_list_of(&type_new, dtype),
+                    // The output dtype is inferred from `new`, so a list can't be told apart from
+                    // a list of values; it is taken to be the latter.
+                    IRFunctionExpr::ReplaceStrict { return_dtype: None } => type_new.is_list(),
+                    _ => is_list_of(&type_new, &type_in),
+                };
+                let function = function.clone();
+                let mut input = input.clone();
+                let mut changed = false;
+                for (i, is_list) in [(1, old_is_list), (2, new_is_list)] {
+                    if is_list {
+                        ensure_one_list_of_values(input[i].node(), expr_arena, &function)?;
+                    } else {
+                        let imploded = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
+                            input: input[i].node(),
+                            maintain_order: true,
+                        }));
+                        input[i].set_node(imploded);
+                        changed = true;
+                    }
+                }
+                changed.then_some(AExpr::Function {
+                    function,
+                    input,
+                    options,
+                })
             },
             #[cfg(feature = "range")]
             AExpr::Function {
@@ -1040,6 +1094,25 @@ impl OptimizationRule for TypeCoercionRule {
                         InvalidOperation: "`{name}` must be numeric for `int_ranges`, got {dtype}"
                     );
                     Ok(Some(DataType::Int64))
+                },
+            )?,
+            // The estimate casts the quantile to `Float64`, so give a dynamic literal
+            // that dtype rather than leaving it unknown in the plan.
+            #[cfg(feature = "approx_quantile")]
+            AExpr::Function {
+                function: IRFunctionExpr::ApproxQuantileEstimate { .. },
+                ..
+            } => coerce_function_inputs(
+                expr_node,
+                expr_arena,
+                schema,
+                CastOptions::Strict,
+                |i, dtype| {
+                    let is_dyn_number = matches!(
+                        dtype,
+                        DataType::Unknown(UnknownKind::Int(_) | UnknownKind::Float)
+                    );
+                    Ok((i == 1 && is_dyn_number).then_some(DataType::Float64))
                 },
             )?,
             #[cfg(feature = "moment")]
@@ -1297,110 +1370,6 @@ fn inline_or_prune_cast(
     Ok(out)
 }
 
-/// Apply membership or Map lookup casts chosen by `resolve`.
-///
-/// `expr_node` must be an [`AExpr::Function`] whose operands are laid out as `form` says.
-#[cfg(any(feature = "is_in", feature = "dtype-map"))]
-fn coerce_is_in(
-    expr_node: Node,
-    expr_arena: &mut Arena<AExpr>,
-    schema: &Schema,
-    form: MembershipForm,
-    resolve: impl FnOnce(
-        &[ExprIR],
-        &Arena<AExpr>,
-    ) -> PolarsResult<Option<is_in::IsInTypeCoercionResult>>,
-) -> PolarsResult<Option<AExpr>> {
-    let AExpr::Function {
-        function,
-        input,
-        options,
-    } = expr_arena.get(expr_node)
-    else {
-        unreachable!("caller matched a function expression")
-    };
-    let options = *options;
-    let (flat, nested) = (form.flat(), form.nested());
-
-    let Some(result) = resolve(input, expr_arena)? else {
-        return Ok(None);
-    };
-
-    let function = function.clone();
-    let mut input = input.to_vec();
-    use self::is_in::IsInTypeCoercionResult;
-    match result {
-        IsInTypeCoercionResult::SuperType(flat_type, nested_type) => {
-            let (_, type_left) =
-                unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
-            let (_, type_other) =
-                unpack!(get_aexpr_and_type(expr_arena, input[nested].node(), schema));
-            cast_expr_ir(
-                &mut input[flat],
-                &type_left,
-                &flat_type,
-                expr_arena,
-                CastOptions::NonStrict,
-            )?;
-            cast_expr_ir(
-                &mut input[nested],
-                &type_other,
-                &nested_type,
-                expr_arena,
-                CastOptions::NonStrict,
-            )?;
-        },
-        IsInTypeCoercionResult::SelfCast { dtype, strict } => {
-            let (_, type_self) =
-                unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
-            let options = if strict {
-                CastOptions::Strict
-            } else {
-                CastOptions::NonStrict
-            };
-            cast_expr_ir(&mut input[flat], &type_self, &dtype, expr_arena, options)?;
-        },
-        IsInTypeCoercionResult::OtherCast { dtype, strict } => {
-            let (_, type_other) =
-                unpack!(get_aexpr_and_type(expr_arena, input[nested].node(), schema));
-            let options = if strict {
-                CastOptions::Strict
-            } else {
-                CastOptions::NonStrict
-            };
-            cast_expr_ir(&mut input[nested], &type_other, &dtype, expr_arena, options)?;
-        },
-        #[cfg(feature = "dtype-map")]
-        IsInTypeCoercionResult::LenientSelfCast(dtype) => {
-            let (_, type_self) =
-                unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
-            // Unrepresentable keys become null rather than raising.
-            cast_expr_ir_with(
-                &mut input[flat],
-                &type_self,
-                &dtype,
-                expr_arena,
-                CastOptions::NonStrict,
-                CastOptions::NonStrict,
-            )?;
-        },
-        IsInTypeCoercionResult::Implode => {
-            assert!(!form.is_contains());
-            let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
-                input: input[nested].node(),
-                maintain_order: true,
-            }));
-            input[nested].set_node(other_input);
-        },
-    }
-
-    Ok(Some(AExpr::Function {
-        function,
-        input,
-        options,
-    }))
-}
-
 fn try_inline_literal_cast(
     lv: &LiteralValue,
     dtype: &DataType,
@@ -1461,32 +1430,26 @@ fn try_inline_literal_cast(
     Ok(Some(lv))
 }
 
+/// Options for a cast to a supertype. It is strict, unless it changes struct fields in a way
+/// [`RELAXED_CAST_POLICY`] allows: the strict cast would reject that change.
+fn supertype_cast_options(from: &DataType, to: &DataType) -> CastOptions {
+    if check_is_valid_struct_cast(from, to, &PlSmallStr::EMPTY).is_err()
+        && RELAXED_CAST_POLICY.should_cast_column("", to, from).is_ok()
+    {
+        CastOptions::NonStrict
+    } else {
+        CastOptions::Strict
+    }
+}
+
+/// Cast `e` to `to_dtype`. `options` applies to folding a literal; inserted casts use
+/// [`supertype_cast_options`].
 fn cast_expr_ir(
     e: &mut ExprIR,
     from_dtype: &DataType,
     to_dtype: &DataType,
     expr_arena: &mut Arena<AExpr>,
     options: CastOptions,
-) -> PolarsResult<()> {
-    // Non-literal casts are strict; `options` controls only literal folding.
-    cast_expr_ir_with(
-        e,
-        from_dtype,
-        to_dtype,
-        expr_arena,
-        options,
-        CastOptions::Strict,
-    )
-}
-
-/// Use `literal_options` for folding and `cast_options` for inserted casts.
-fn cast_expr_ir_with(
-    e: &mut ExprIR,
-    from_dtype: &DataType,
-    to_dtype: &DataType,
-    expr_arena: &mut Arena<AExpr>,
-    literal_options: CastOptions,
-    cast_options: CastOptions,
 ) -> PolarsResult<()> {
     if from_dtype == to_dtype {
         return Ok(());
@@ -1495,7 +1458,7 @@ fn cast_expr_ir_with(
     check_cast(from_dtype, to_dtype)?;
 
     if let AExpr::Literal(lv) = expr_arena.get(e.node()) {
-        if let Some(literal) = try_inline_literal_cast(lv, to_dtype, literal_options)? {
+        if let Some(literal) = try_inline_literal_cast(lv, to_dtype, options)? {
             e.set_node(expr_arena.add(AExpr::Literal(literal)));
             e.set_dtype(to_dtype.clone());
             return Ok(());
@@ -1505,7 +1468,7 @@ fn cast_expr_ir_with(
     e.set_node(expr_arena.add(AExpr::Cast {
         expr: e.node(),
         dtype: to_dtype.clone(),
-        options: cast_options,
+        options: supertype_cast_options(from_dtype, to_dtype),
     }));
     e.set_dtype(to_dtype.clone());
 
@@ -1701,7 +1664,7 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
             // of expressible integers:
             let max_int_value = 10i128.pow((*p_to - *s_to) as u32) - 1;
             let min_int_value = -max_int_value;
-            // The datatype's range must fit in the decimal datatypes's range:
+            // The datatype's range must fit in the decimal datatype's range:
             max_int_value >= dt.max().unwrap().value().extract::<i128>().unwrap()
                 && min_int_value <= dt.min().unwrap().value().extract::<i128>().unwrap()
         },
@@ -1749,5 +1712,20 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
     if !can_cast {
         polars_bail!(InvalidOperation: "cannot cast losslessly from {} to {}", from, to)
     }
+    Ok(())
+}
+
+/// Checks that a list argument of `function` holds one list of values for the whole column, as
+/// its kernel doesn't support a list per row.
+#[cfg(any(feature = "replace", all(feature = "strings", feature = "find_many")))]
+fn ensure_one_list_of_values(
+    node: Node,
+    expr_arena: &Arena<AExpr>,
+    function: &IRFunctionExpr,
+) -> PolarsResult<()> {
+    polars_ensure!(
+        is_scalar_ae(node, expr_arena) || is_single_literal_ae(node, expr_arena),
+        InvalidOperation: "`{function}` does not support a list of values per row; the list must be a scalar, e.g. an `implode()` or a literal"
+    );
     Ok(())
 }

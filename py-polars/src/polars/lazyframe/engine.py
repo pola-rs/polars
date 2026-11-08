@@ -34,6 +34,7 @@ if TYPE_CHECKING:
         CsvQuoteStyle,
         IpcCompression,
         ParquetCompression,
+        ParquetEncryption,
         ParquetMetadata,
         PostOptCallback,
         StorageOptionsDict,
@@ -197,6 +198,7 @@ class Engine(ABC):
         sync_on_close: SyncOnCloseMethod | None,
         metadata: ParquetMetadata | None,
         arrow_schema: ArrowSchemaExportable | None,
+        encryption: ParquetEncryption | None,
         mkdir: bool,
         optimizations: QueryOptFlags,
         sinked_paths_callback: SinkedPathsCallback | None,
@@ -493,6 +495,7 @@ class _LocalEngine(Engine):
         sync_on_close: SyncOnCloseMethod | None,
         metadata: ParquetMetadata | None,
         arrow_schema: ArrowSchemaExportable | None,
+        encryption: ParquetEncryption | None,
         mkdir: bool,
         optimizations: QueryOptFlags,
         sinked_paths_callback: SinkedPathsCallback | None,
@@ -513,6 +516,7 @@ class _LocalEngine(Engine):
                 sync_on_close=sync_on_close,
                 metadata=metadata,
                 arrow_schema=arrow_schema,
+                encryption=encryption,
                 mkdir=mkdir,
                 sinked_paths_callback=sinked_paths_callback,
             ),
@@ -695,7 +699,7 @@ class _AutoEngine(_LocalEngine):
 
 class InMemoryEngine(_LocalEngine):
     """
-    The in-memory engine.
+    Execute queries fully in memory.
 
     Parameters
     ----------
@@ -710,7 +714,7 @@ class InMemoryEngine(_LocalEngine):
 
 class StreamingEngine(_LocalEngine):
     """
-    The streaming engine.
+    Execute queries in a streaming fashion, supporting larger-than-memory data.
 
     Parameters
     ----------
@@ -731,7 +735,7 @@ class StreamingEngine(_LocalEngine):
 
 class GPUEngine(_LocalEngine):
     """
-    Configuration options for the GPU execution engine.
+    Execute queries on the GPU.
 
     Use this if you want control over details of the execution.
 

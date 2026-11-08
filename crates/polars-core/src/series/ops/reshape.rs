@@ -109,12 +109,19 @@ impl Series {
             InvalidOperation: "at least one dimension must be specified"
         );
 
-        let leaf_array = self
-            .trim_lists_to_normalized_offsets()
-            .as_ref()
-            .unwrap_or(self)
-            .get_leaf_array()
-            .rechunk();
+        // Null rows may store any values: null them, then skip the values of null lists.
+        let mut leaf_array = self.propagate_nulls().unwrap_or_else(|| self.clone());
+        loop {
+            leaf_array = match leaf_array.dtype() {
+                DataType::Array(_, _) => leaf_array.array()?.get_inner(),
+                DataType::List(_) => leaf_array.explode(ExplodeOptions {
+                    empty_as_null: false,
+                    keep_nulls: false,
+                })?,
+                _ => break,
+            };
+        }
+        let leaf_array = leaf_array.rechunk();
         let size = leaf_array.len();
 
         let mut total_dim_size = 1;

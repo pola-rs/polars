@@ -1,5 +1,4 @@
 use polars_arrow::legacy::error::PolarsResult;
-use polars_core::chunked_array::ops::sort::_broadcast_bools;
 use polars_core::utils::{SuperTypeFlags, try_get_supertype, try_get_supertype_with_options};
 use polars_utils::arena::Node;
 use polars_utils::format_pl_smallstr;
@@ -15,7 +14,7 @@ use crate::plans::conversion::dsl_to_ir::expr_to_ir::to_expr_irs;
 use crate::plans::{AExpr, IRFunctionExpr};
 
 pub(super) fn convert_functions(
-    input: Vec<Expr>,
+    input: &[Expr],
     function: FunctionExpr,
     ctx: &mut ExprToIRContext,
 ) -> PolarsResult<(Node, PlSmallStr)> {
@@ -50,9 +49,15 @@ pub(super) fn convert_functions(
                 A::Get(v) => IA::Get(v),
                 A::Join(v) => IA::Join(v),
                 #[cfg(feature = "is_in")]
-                A::Contains { nulls_equal } => IA::Contains { nulls_equal },
+                A::Contains { nulls_equal } => IA::Contains {
+                    nulls_equal,
+                    needle_cast: None,
+                },
                 #[cfg(feature = "array_count")]
-                A::CountMatches => IA::CountMatches,
+                A::CountMatches => {
+                    polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'element' must be a scalar value");
+                    IA::CountMatches
+                },
                 A::Shift => IA::Shift,
                 A::Explode(options) => IA::Explode(options),
                 A::Concat => IA::Concat,
@@ -157,8 +162,8 @@ pub(super) fn convert_functions(
                 M::Keys => IM::Keys,
                 M::Values => IM::Values,
                 M::Length => IM::Length,
-                M::ContainsKey => IM::ContainsKey,
-                M::Get => IM::Get,
+                M::ContainsKey => IM::ContainsKey { needle_cast: None },
+                M::Get => IM::Get { needle_cast: None },
             })
         },
         #[cfg(feature = "dtype-extension")]
@@ -182,7 +187,10 @@ pub(super) fn convert_functions(
             I::ListExpr(match list_function {
                 L::Concat => IL::Concat,
                 #[cfg(feature = "is_in")]
-                L::Contains { nulls_equal } => IL::Contains { nulls_equal },
+                L::Contains { nulls_equal } => IL::Contains {
+                    nulls_equal,
+                    needle_cast: None,
+                },
                 #[cfg(feature = "list_drop_nulls")]
                 L::DropNulls => IL::DropNulls,
                 #[cfg(feature = "list_sample")]
@@ -205,7 +213,10 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "list_gather")]
                 L::GatherEvery => IL::GatherEvery,
                 #[cfg(feature = "list_count")]
-                L::CountMatches => IL::CountMatches,
+                L::CountMatches => {
+                    polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'element' must be a scalar value");
+                    IL::CountMatches
+                },
                 L::Sum => IL::Sum,
                 L::Length => IL::Length,
                 L::Max => IL::Max,
@@ -391,7 +402,10 @@ pub(super) fn convert_functions(
                 S::Drop(pl_small_strs, strict) => IS::DropFields(pl_small_strs, strict),
                 S::PrefixFields(pl_small_str) => IS::PrefixFields(pl_small_str),
                 S::SuffixFields(pl_small_str) => IS::SuffixFields(pl_small_str),
-                S::SelectFields(_) => unreachable!("handled by expression expansion"),
+                // Expression expansion resolves these, but `Expr.meta` converts without it.
+                S::SelectFields(selector) => polars_bail!(
+                    InvalidOperation: "'Expr: struct.field({selector})' not allowed in this context/location"
+                ),
                 #[cfg(feature = "json")]
                 S::JsonEncode => IS::JsonEncode,
                 S::MapFieldNames(f) => IS::MapFieldNames(f),
@@ -507,7 +521,10 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "is_between")]
                 B::IsBetween { closed } => IB::IsBetween { closed },
                 #[cfg(feature = "is_in")]
-                B::IsIn { nulls_equal } => IB::IsIn { nulls_equal },
+                B::IsIn { nulls_equal } => IB::IsIn {
+                    nulls_equal,
+                    needle_cast: None,
+                },
                 #[cfg(feature = "is_close")]
                 B::IsClose {
                     abs_tol,
@@ -620,6 +637,7 @@ pub(super) fn convert_functions(
         }),
         #[cfg(feature = "row_hash")]
         F::Hash(seed) => I::Hash(seed),
+        F::Mm3Hash => I::Mm3Hash,
         #[cfg(feature = "arg_where")]
         F::ArgWhere => I::ArgWhere,
         #[cfg(feature = "index_of")]
@@ -879,8 +897,12 @@ pub(super) fn convert_functions(
             descending,
             nulls_last,
         },
-        F::MinBy => I::MinBy,
-        F::MaxBy => I::MaxBy,
+        F::MinBy => I::MinBy {
+            order: MinMaxByOrder::SkipNulls,
+        },
+        F::MaxBy => I::MaxBy {
+            order: MinMaxByOrder::SkipNulls,
+        },
         F::Product => I::Product,
         #[cfg(feature = "rank")]
         F::Rank { options, seed } => I::Rank { options, seed },
@@ -897,7 +919,15 @@ pub(super) fn convert_functions(
         #[cfg(feature = "top_k")]
         F::TopK { descending } => I::TopK { descending },
         #[cfg(feature = "top_k")]
-        F::TopKBy { descending } => I::TopKBy { descending },
+        F::TopKBy { descending } => {
+            // The inputs are the values, `k` and then the keys.
+            let options = SortMultipleOptions::default()
+                .with_order_descending_multi(descending)
+                .expand_flags(e.len().saturating_sub(2))?;
+            I::TopKBy {
+                descending: options.descending,
+            }
+        },
         #[cfg(feature = "cum_agg")]
         F::CumCount { reverse } => I::CumCount { reverse },
         #[cfg(feature = "cum_agg")]
@@ -963,7 +993,12 @@ pub(super) fn convert_functions(
                 .materialize_unknown(false)?;
             let sketch = AExprBuilder::function(
                 vec![e[0].clone()],
-                I::ApproxQuantileSketch { method, error },
+                I::ApproxQuantileSketch {
+                    method,
+                    error,
+                    failure_probability:
+                        polars_compute::approx_quantile::DEFAULT_FAILURE_PROBABILITY,
+                },
                 ctx.arena,
             );
             let estimate = AExprBuilder::function(
@@ -1229,6 +1264,37 @@ pub(super) fn convert_functions(
             return_dtype: return_dtype.try_map(|dtype| dtype.into_datatype(ctx.schema))?,
             include_init,
         },
+        #[cfg(feature = "dtype-struct")]
+        F::CumSumHorizontal => {
+            let mut dtype = e[0].dtype(ctx.schema, ctx.arena)?.clone();
+            for e in &e[1..] {
+                dtype = try_get_supertype(&dtype, e.dtype(ctx.schema, ctx.arena)?)?;
+            }
+            let mut dtype = dtype.materialize_unknown(false)?;
+            if dtype == DataType::Boolean {
+                dtype = IDX_DTYPE;
+            }
+
+            let mut acc = AExprBuilder::lit_scalar(Scalar::from(0i32), ctx.arena)
+                .cast(dtype.clone(), ctx.arena);
+            let fields = e
+                .iter()
+                .map(|e| {
+                    acc = AExprBuilder::new_from_aexpr(
+                        AExpr::Cast {
+                            expr: acc.plus(e.node(), ctx.arena).node(),
+                            dtype: dtype.clone(),
+                            options: CastOptions::NonStrict,
+                        },
+                        ctx.arena,
+                    );
+                    acc.expr_ir(e.output_name().clone())
+                })
+                .collect();
+            let output_name = e[0].output_name().clone();
+            let out = AExprBuilder::function(fields, I::AsStruct, ctx.arena);
+            return Ok((out.node(), output_name));
+        },
 
         F::MaxHorizontal => I::MaxHorizontal,
         F::MinHorizontal => I::MinHorizontal,
@@ -1299,6 +1365,12 @@ pub(super) fn convert_functions(
                     target_dtype.numeric_to_unsigned_bit_repr(),
                 ) {
                     (Some(l), Some(r)) if l == r => {},
+                    #[cfg(feature = "dtype-decimal")]
+                    _ if matches!(
+                        (&input_dtype, &target_dtype),
+                        (DataType::Int128, DataType::Decimal(_, _))
+                            | (DataType::Decimal(_, _), DataType::Int128)
+                    ) => {},
                     _ => polars_bail!(
                         InvalidOperation:
                         "cannot reinterpret from {input_dtype:?} to {target_dtype:?}"
@@ -1318,8 +1390,13 @@ pub(super) fn convert_functions(
             I::ExtendConstant
         },
 
-        F::RowEncode(mut v) => {
-            let dts = e
+        F::RowEncode {
+            mut variant,
+            output,
+            encode_nulls,
+            propagate_nulls,
+        } => {
+            let dtypes = e
                 .iter()
                 .map(|e| {
                     e.dtype(ctx.schema, ctx.arena)?
@@ -1331,25 +1408,40 @@ pub(super) fn convert_functions(
                 descending,
                 nulls_last,
                 ..
-            } = &mut v
+            } = &mut variant
             {
-                for opts in [descending, nulls_last].into_iter().flatten() {
-                    _broadcast_bools(e.len(), opts);
-                    polars_ensure!(
-                        opts.len() == e.len(),
-                        ShapeMismatch: "row_encode: got {} columns but {} sort options", e.len(), opts.len()
-                    );
+                let options = SortMultipleOptions {
+                    descending: descending.take().unwrap_or(vec![false]),
+                    nulls_last: nulls_last.take().unwrap_or(vec![false]),
+                    ..Default::default()
                 }
+                .expand_flags(e.len())?;
+                *descending = Some(options.descending);
+                *nulls_last = Some(options.nulls_last);
             }
-            I::RowEncode(dts, v)
+            I::RowEncode {
+                dtypes,
+                variant,
+                output,
+                encode_nulls,
+                propagate_nulls,
+            }
         },
         #[cfg(feature = "dtype-struct")]
-        F::RowDecode(fs, v) => I::RowDecode(
-            fs.into_iter()
+        F::RowDecode {
+            fields,
+            variant,
+            output,
+            encode_nulls,
+        } => I::RowDecode {
+            fields: fields
+                .into_iter()
                 .map(|(name, dt_expr)| Ok(Field::new(name, dt_expr.into_datatype(ctx.schema)?)))
                 .collect::<PolarsResult<Vec<_>>>()?,
-            v,
-        ),
+            variant,
+            output,
+            encode_nulls,
+        },
     };
 
     let mut options = ir_function.function_options();

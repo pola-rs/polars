@@ -11,6 +11,8 @@ pub(super) struct DslConversionContext<'a> {
     pub(super) pushdown_maintain_errors: bool,
     pub(super) verbose: bool,
     pub(super) seen_caches: PlIndexMap<UniqueId, Node>,
+    /// The `Recursive` nodes whose step is being converted, with their working table schema.
+    pub(super) recursions: Vec<(UniqueId, SchemaRef)>,
 }
 
 pub(super) fn expand_expressions(
@@ -23,7 +25,7 @@ pub(super) fn expand_expressions(
     let schema = lp_arena.get(input).schema(lp_arena);
     let exprs = rewrite_projections(exprs, &Default::default(), &schema, opt_flags)?;
     to_expr_irs(
-        exprs,
+        &exprs,
         &mut ExprToIRContext::new_with_opt_eager(expr_arena, &schema, opt_flags),
     )
 }

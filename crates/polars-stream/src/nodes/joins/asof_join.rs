@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::collections::VecDeque;
 
 use AsofStrategy::*;
-use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
+use polars_async::executor::{JoinHandle, TaskMetricAggregator, TaskPriority, TaskScope};
 use polars_async::primitives::distributor_channel as dc;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::prelude::row_encode::_get_rows_encoded_ca;
@@ -11,7 +11,9 @@ use polars_core::utils::{Container, accumulate_dataframes_vertical_unchecked};
 use polars_defs::join::{AsOfOptions, AsofStrategy, JoinArgs, JoinType};
 use polars_ooc::RandomSpillContext;
 use polars_ops::frame::is_sorted::DataFrameIsSorted;
-use polars_ops::frame::{_check_asof_columns, _finish_join, _join_asof_dispatch};
+use polars_ops::frame::{
+    _asof_key_to_physical, _check_asof_columns, _finish_join, _join_asof_dispatch,
+};
 use polars_ops::series::{rle_lengths, rle_lengths_helper_ca};
 use polars_utils::itertools::Itertools;
 use polars_utils::scratch_vec::ScratchVec;
@@ -108,6 +110,7 @@ impl AsOfJoinNode {
         by_descending: Option<Vec<bool>>,
         by_nulls_last: Option<Vec<bool>>,
         args: JoinArgs,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
     ) -> Self {
         let JoinType::AsOf(ref options) = args.how else {
             unreachable!();
@@ -151,7 +154,7 @@ impl AsOfJoinNode {
             left_buffer: Default::default(),
             right_buffer: SpillFrameSearchBuffer::empty_with_schema(
                 right_input_schema,
-                RandomSpillContext::new("asof-join-search-buffer".into()),
+                RandomSpillContext::new("asof-join-search-buffer".into(), task_metrics),
             ),
             output_seq: Default::default(),
             last_non_null_row_left: None,
@@ -220,6 +223,8 @@ impl ComputeNode for AsOfJoinNode {
             AsOfJoinState::Done => {
                 recv.fill(PortState::Done);
                 send[0] = PortState::Done;
+                self.left_buffer = VecDeque::new();
+                self.right_buffer = self.right_buffer.empty_clone();
             },
         }
 
@@ -778,11 +783,16 @@ async fn compute_asof_join(
 ) -> PolarsResult<DataFrame> {
     let mut right_df = right_dfsb.into_df().await;
     let options = params.as_of_options();
-    let left_key = left_df.column(params.left.key_col())?.to_physical_repr();
-    let right_key = right_df
-        .column(params.right.key_col())?
-        .clone()
-        .to_physical_repr();
+    let left_key = Column::from(_asof_key_to_physical(
+        left_df
+            .column(params.left.key_col())?
+            .as_materialized_series(),
+    )?);
+    let right_key = Column::from(_asof_key_to_physical(
+        right_df
+            .column(params.right.key_col())?
+            .as_materialized_series(),
+    )?);
 
     if params.as_of_options().check_sortedness {
         check_df_sorted(&left_df, params.left_by(), params.left.key_col(), params)?;

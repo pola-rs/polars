@@ -1,5 +1,7 @@
 use std::collections::BTreeSet;
 
+use polars_core::chunked_array::cast::CastOptions;
+
 use super::*;
 
 /// Projection in the physical plan is done by selecting an expression per thread.
@@ -38,12 +40,17 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
         let lp = lp_arena.get(node);
 
         match lp {
-            Select { input, expr, .. } => {
+            Select {
+                input,
+                expr,
+                schema,
+                ..
+            } => {
                 if !self.processed.contains(&node) {
                     // First check if we can apply the optimization before we allocate.
                     if !expr.iter().all(|e| e.plain_column(expr_arena).is_some()) {
                         self.processed.insert(node);
-                        return Ok(None);
+                        return Ok(literal_select_to_scan(expr, schema, expr_arena));
                     }
 
                     let exprs = expr
@@ -118,4 +125,32 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
             _ => Ok(None),
         }
     }
+}
+
+/// A select of only scalar literals gives one row that does not depend on its input.
+fn literal_select_to_scan(
+    expr: &[ExprIR],
+    schema: &SchemaRef,
+    expr_arena: &Arena<AExpr>,
+) -> Option<IR> {
+    let columns = expr
+        .iter()
+        .zip(schema.iter())
+        .map(|(e, (name, dtype))| {
+            let scalar = match expr_arena.get(e.node()) {
+                AExpr::Literal(LiteralValue::Scalar(sc)) => sc.clone(),
+                AExpr::Literal(LiteralValue::Dyn(d)) => d
+                    .clone()
+                    .try_materialize_to_dtype(dtype, CastOptions::Strict)
+                    .ok()?,
+                _ => return None,
+            };
+            (scalar.dtype() == dtype).then(|| Column::new_scalar(name.clone(), scalar, 1))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(IR::DataFrameScan {
+        df: Arc::new(DataFrame::new(1, columns).ok()?),
+        schema: schema.clone(),
+        output_schema: None,
+    })
 }

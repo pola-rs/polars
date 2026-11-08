@@ -98,6 +98,29 @@ fn read_uncompressed_buffer<T: NativeType, R: Read + Seek>(
     Ok(buffer)
 }
 
+/// Decompresses `input`, appending the first `len` decompressed bytes to `output`.
+fn decompress(
+    compression: Compression,
+    input: &[u8],
+    output: &mut Vec<u8>,
+    len: usize,
+) -> PolarsResult<()> {
+    let compression = compression
+        .codec()
+        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferCompression(err)))?;
+
+    match compression {
+        polars_arrow_format::ipc::CompressionType::Lz4Frame => {
+            compression::decompress_lz4(input, output, len)
+        },
+        polars_arrow_format::ipc::CompressionType::Zstd => {
+            compression::decompress_zstd(input, output, len)
+        },
+    }
+}
+
+/// Reads a compressed buffer of `T` values and returns the bytes of its first
+/// values.
 fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
     reader: &mut R,
     buffer_length: usize,
@@ -106,7 +129,7 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
     is_little_endian: bool,
     compression: Compression,
     scratch: &mut Vec<u8>,
-) -> PolarsResult<Vec<T>> {
+) -> PolarsResult<Vec<u8>> {
     if row_limit == Some(0) {
         return Ok(vec![]);
     }
@@ -140,32 +163,18 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
             ComputeError: "Malformed IPC file: got decompressed buffer length which is not a multiple of the data type");
     let n_rows_in_array = decompressed_bytes / size_of::<T>();
 
-    if decompressed_len_field == -1 {
-        return Ok(bytemuck::cast_slice(&scratch[8..]).to_vec());
-    }
-
-    // It is undefined behavior to call read_exact on un-initialized, https://doc.rust-lang.org/std/io/trait.Read.html#tymethod.read
-    // see also https://github.com/MaikKlein/ash/issues/354#issue-781730580
-
     let n_rows_exact = row_limit
         .map(|limit| std::cmp::min(limit, n_rows_in_array))
         .unwrap_or(n_rows_in_array);
+    let out_len = n_rows_exact * size_of::<T>();
 
-    let mut buffer = vec![T::default(); n_rows_exact];
-    let out_slice = bytemuck::cast_slice_mut(&mut buffer);
-
-    let compression = compression
-        .codec()
-        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferCompression(err)))?;
-
-    match compression {
-        polars_arrow_format::ipc::CompressionType::Lz4Frame => {
-            compression::decompress_lz4(&scratch[8..], out_slice)?;
-        },
-        polars_arrow_format::ipc::CompressionType::Zstd => {
-            compression::decompress_zstd(&scratch[8..], out_slice)?;
-        },
+    if decompressed_len_field == -1 {
+        // The data is stored uncompressed.
+        return Ok(scratch[8..8 + out_len].to_vec());
     }
+
+    let mut buffer = Vec::new();
+    decompress(compression, &scratch[8..], &mut buffer, out_len)?;
     Ok(buffer)
 }
 
@@ -250,15 +259,18 @@ pub fn read_buffer<T: NativeType, R: Read + Seek>(
     reader.seek(SeekFrom::Start(block_offset + offset))?;
 
     if let Some(compression) = compression {
-        Ok(read_compressed_buffer(
+        let bytes = read_compressed_buffer::<T, _>(
             reader,
             buffer_length,
             Some(length),
             is_little_endian,
             compression,
             scratch,
-        )?
-        .into())
+        )?;
+        // Copies only if the allocation is not aligned for `T`.
+        Ok(Buffer::from_vec(bytes)
+            .try_transmute::<T>()
+            .unwrap_or_else(|bytes| bytemuck::pod_collect_to_vec(&bytes).into()))
     } else {
         Ok(read_uncompressed_buffer(reader, buffer_length, length, is_little_endian)?.into())
     }
@@ -324,25 +336,11 @@ fn read_compressed_bitmap<R: Read + Seek>(
         ComputeError: "Malformed IPC file: got unexpected decompressed output length {decompressed_bytes}, expected {}", row_limit.div_ceil(8));
 
     if decompressed_len_field == -1 {
-        return Ok(bytemuck::cast_slice(&scratch[8..]).to_vec());
+        return Ok(scratch[8..].to_vec());
     }
 
-    #[expect(clippy::slow_vector_initialization)] // Avoid alloc_zeroed, leads to syscall.
     let mut buffer = Vec::new();
-    buffer.resize(decompressed_bytes, 0);
-
-    let compression = compression
-        .codec()
-        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferCompression(err)))?;
-
-    match compression {
-        polars_arrow_format::ipc::CompressionType::Lz4Frame => {
-            compression::decompress_lz4(&scratch[8..], &mut buffer)?;
-        },
-        polars_arrow_format::ipc::CompressionType::Zstd => {
-            compression::decompress_zstd(&scratch[8..], &mut buffer)?;
-        },
-    }
+    decompress(compression, &scratch[8..], &mut buffer, decompressed_bytes)?;
     Ok(buffer)
 }
 
@@ -413,4 +411,52 @@ pub fn read_validity<R: Read + Seek>(
             .ok_or_else(|| polars_err!(oos = OutOfSpecKind::ExpectedBuffer))?;
         None
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use polars_arrow_format::ipc::planus::{Builder, ReadAsRoot};
+    use polars_arrow_format::ipc::{
+        BodyCompression, BodyCompressionMethod, BodyCompressionRef, CompressionType,
+    };
+
+    use super::*;
+
+    #[test]
+    fn read_uncompressed_buffer_in_compressed_body() {
+        let mut builder = Builder::new();
+        let compression = builder.finish(
+            &BodyCompression {
+                codec: CompressionType::Lz4Frame,
+                method: BodyCompressionMethod::Buffer,
+            },
+            None,
+        );
+        let compression = BodyCompressionRef::read_as_root(compression).unwrap();
+
+        // An uncompressed length of -1 means the data that follows is not compressed.
+        let values = [i128::MIN, -1, 0, i128::MAX];
+        let mut data = (-1i64).to_le_bytes().to_vec();
+        data.extend_from_slice(bytemuck::cast_slice(&values));
+
+        let mut scratch = vec![];
+        for (row_limit, expected) in [
+            (None, &values[..]),
+            (Some(2), &values[..2]),
+            (Some(10), &values[..]),
+        ] {
+            let out = read_compressed_buffer::<i128, _>(
+                &mut Cursor::new(&data),
+                data.len(),
+                row_limit,
+                is_native_little_endian(),
+                compression,
+                &mut scratch,
+            )
+            .unwrap();
+            assert_eq!(out, bytemuck::cast_slice::<i128, u8>(expected));
+        }
+    }
 }

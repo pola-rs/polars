@@ -12,6 +12,7 @@ use polars_parquet::write::{
 use super::batched_writer::BatchedWriter;
 use super::options::ParquetCompression;
 use super::{KeyValueMetadata, ParquetWriteOptions};
+use crate::parquet::encryption::ParquetEncryption;
 use crate::shared::schema_to_arrow_checked;
 
 impl ParquetWriteOptions {
@@ -25,6 +26,7 @@ impl ParquetWriteOptions {
             .with_row_group_size(self.row_group_size)
             .with_data_page_size(self.data_page_size)
             .with_key_value_metadata(self.key_value_metadata.clone())
+            .with_encryption(self.encryption.clone())
     }
 }
 
@@ -46,6 +48,8 @@ pub struct ParquetWriter<W> {
     key_value_metadata: Option<KeyValueMetadata>,
     /// Context info for the Parquet file being written.
     context_info: Option<PlHashMap<String, String>>,
+    /// How to encrypt the file with Parquet modular encryption
+    encryption: Option<ParquetEncryption>,
 }
 
 impl<W> ParquetWriter<W>
@@ -66,6 +70,7 @@ where
             parallel: true,
             key_value_metadata: None,
             context_info: None,
+            encryption: None,
         }
     }
 
@@ -115,12 +120,28 @@ where
         self
     }
 
+    /// Set how to encrypt the file with Parquet modular encryption.
+    pub fn with_encryption(mut self, encryption: Option<ParquetEncryption>) -> Self {
+        self.encryption = encryption;
+        self
+    }
+
     pub fn batched(self, schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
         let schema = schema_to_arrow_checked(schema, CompatLevel::newest(), "parquet")?;
         let parquet_schema = to_parquet_schema(&schema)?;
         let encodings = get_encodings(&schema);
         let options = self.materialize_options();
-        let writer = Mutex::new(FileWriter::try_new(self.writer, schema, options)?);
+        let encryption_properties = self
+            .encryption
+            .as_ref()
+            .map(ParquetEncryption::file_properties)
+            .transpose()?;
+        let writer = Mutex::new(FileWriter::try_new(
+            self.writer,
+            schema,
+            options,
+            encryption_properties,
+        )?);
 
         Ok(BatchedWriter {
             writer,

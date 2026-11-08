@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+import pyarrow as pa
 import pytest
 
 import polars as pl
@@ -176,3 +177,34 @@ def test_reshape_list_not_fitting(shape: tuple[int, ...]) -> None:
         match=re.escape(f"cannot reshape array of size 12 into shape {shape}"),
     ):
         df.lazy().select(pl.col("a").reshape(shape)).collect()
+
+
+def test_reshape_array_null_row_stored_values_30273() -> None:
+    # The null row stores valid 9s, which must become nulls.
+    ints = pa.array([1, 2, 9, 9, 3, 4])
+    mask = pa.array([False, True, False])
+    s = pl.Series("a", pa.FixedSizeListArray.from_arrays(ints, 2, mask=mask))
+    assert s.reshape((-1,)).to_list() == [1, 2, None, None, 3, 4]
+    assert s.reshape((-1, 1, 2)).to_list() == [[[1, 2]], [[None, None]], [[3, 4]]]
+
+    values = pa.FixedSizeListArray.from_arrays(ints, 2)
+    nested = pl.Series("a", pa.FixedSizeListArray.from_arrays(values, 1, mask=mask))
+    assert nested.reshape((-1,)).to_list() == [1, 2, None, None, 3, 4]
+
+
+def test_reshape_list_null_row_stored_values_30273() -> None:
+    # The null list row stores a valid 9, which must be dropped.
+    offsets = pa.array([0, 2, 3, 5], pa.int32())
+    lists = pa.ListArray.from_arrays(offsets, pa.array([1, 2, 9, 3, 4]))
+    mask = pa.array([False, True, False])
+    s = pl.Series("a", pa.ListArray.from_arrays(offsets, lists.values, mask=mask))
+    assert s.reshape((-1,)).to_list() == [1, 2, 3, 4]
+    assert s[1:].reshape((-1,)).to_list() == [3, 4]
+
+    nested = pl.Series("a", pa.FixedSizeListArray.from_arrays(lists, 1, mask=mask))
+    assert nested.reshape((-1,)).to_list() == [1, 2, 3, 4]
+
+    keep = pl.Series([True, False, True])
+    s = pl.Series("a", [[{"x": 1}], [{"x": 2}], [{"x": 3}]])
+    hidden = pl.select(pl.when(keep).then(s)).to_series()
+    assert hidden.reshape((-1,)).to_list() == [{"x": 1}, {"x": 3}]

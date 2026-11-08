@@ -334,6 +334,7 @@ def test_bitwise_boolean(expr: pl.Expr, result: list[bool]) -> None:
 def test_bitwise_boolean_evict_path(plmonkeypatch: PlMonkeyPatch) -> None:
     plmonkeypatch.setenv("POLARS_MAX_THREADS", "1")
     plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "2")
+    plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", "2")
     n_groups = 100
     group_size_pairs = 10
     group_size = group_size_pairs * 2

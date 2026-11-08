@@ -16,7 +16,7 @@ Array
    * - :ref:`ARRAY_INNER_PRODUCT <array_inner_product>`
      - Returns the inner product of two fixed-size arrays. Alias: ``ARRAY_DOT_PRODUCT``.
    * - :ref:`ARRAY_LENGTH <array_length>`
-     - Returns the length of the array.
+     - Returns the length of the array (optional: the dimension, which must be 1).
    * - :ref:`ARRAY_LOWER <array_lower>`
      - Returns the lower bound (min value) in an array.
    * - :ref:`ARRAY_MEAN <array_mean>`
@@ -31,6 +31,12 @@ Array
      - Returns the array with the unique elements.
    * - :ref:`ARRAY_UPPER <array_upper>`
      - Returns the upper bound (max value) in an array.
+   * - :ref:`CARDINALITY <cardinality>`
+     - Returns the number of elements in the array.
+   * - :ref:`GENERATE_SERIES <generate_series>`
+     - Returns an array of values from start to stop, stop included.
+   * - :ref:`RANGE <range>`
+     - Returns an array of values from start to stop, stop not included.
    * - :ref:`UNNEST <unnest>`
      - Unnests (explodes) an array column into multiple rows.
 
@@ -179,7 +185,8 @@ Array is null for a row, the result for that row is null.
 
 ARRAY_LENGTH
 ------------
-Returns the length of the array.
+Returns the length of the array. An optional second argument names the dimension, which
+must be 1.
 
 **Example:**
 
@@ -386,6 +393,99 @@ Returns the upper bound (max value) in an array.
     # │ [5, 0]     ┆ 5        │
     # │ [4, 8, -2] ┆ 8        │
     # └────────────┴──────────┘
+
+.. _cardinality:
+
+CARDINALITY
+-----------
+Returns the number of elements in the array.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": [[1, 2], [4, 3, 2]]})
+    df.sql("""
+      SELECT foo, CARDINALITY(foo) AS n_elems FROM self
+    """)
+    # shape: (2, 2)
+    # ┌───────────┬─────────┐
+    # │ foo       ┆ n_elems │
+    # │ ---       ┆ ---     │
+    # │ list[i64] ┆ u32     │
+    # ╞═══════════╪═════════╡
+    # │ [1, 2]    ┆ 2       │
+    # │ [4, 3, 2] ┆ 3       │
+    # └───────────┴─────────┘
+
+.. _generate_series:
+
+GENERATE_SERIES
+---------------
+Returns an array of values from start to stop, stop included. Takes ``(stop)``,
+``(start, stop)`` or ``(start, stop, step)``. Integers return ``Int64`` values, with a
+start of 0 and a step of 1 by default. Dates and timestamps take an ``INTERVAL`` step and
+return timestamps. Also available as a table function, see
+:ref:`GENERATE_SERIES <generate_series_table_func>`.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"lo": [1, 2], "hi": [3, 5]})
+    df.sql("""
+      SELECT lo, hi, GENERATE_SERIES(lo, hi) AS gs FROM self
+    """)
+    # shape: (2, 3)
+    # ┌─────┬─────┬─────────────┐
+    # │ lo  ┆ hi  ┆ gs          │
+    # │ --- ┆ --- ┆ ---         │
+    # │ i64 ┆ i64 ┆ list[i64]   │
+    # ╞═════╪═════╪═════════════╡
+    # │ 1   ┆ 3   ┆ [1, 2, 3]   │
+    # │ 2   ┆ 5   ┆ [2, 3, … 5] │
+    # └─────┴─────┴─────────────┘
+
+    pl.sql("""
+      SELECT UNNEST(
+        GENERATE_SERIES(DATE '2026-01-01', DATE '2026-01-03', INTERVAL '1 day')
+      ) AS d
+    """).collect()
+    # shape: (3, 1)
+    # ┌─────────────────────┐
+    # │ d                   │
+    # │ ---                 │
+    # │ datetime[μs]        │
+    # ╞═════════════════════╡
+    # │ 2026-01-01 00:00:00 │
+    # │ 2026-01-02 00:00:00 │
+    # │ 2026-01-03 00:00:00 │
+    # └─────────────────────┘
+
+.. _range:
+
+RANGE
+-----
+Like :ref:`GENERATE_SERIES <generate_series>`, but stop is not included. Also available
+as a table function, see :ref:`RANGE <range_table_func>`.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"lo": [1, 2], "hi": [3, 5]})
+    df.sql("""
+      SELECT lo, hi, RANGE(lo, hi) AS r FROM self
+    """)
+    # shape: (2, 3)
+    # ┌─────┬─────┬───────────┐
+    # │ lo  ┆ hi  ┆ r         │
+    # │ --- ┆ --- ┆ ---       │
+    # │ i64 ┆ i64 ┆ list[i64] │
+    # ╞═════╪═════╪═══════════╡
+    # │ 1   ┆ 3   ┆ [1, 2]    │
+    # │ 2   ┆ 5   ┆ [2, 3, 4] │
+    # └─────┴─────┴───────────┘
 
 .. _unnest:
 

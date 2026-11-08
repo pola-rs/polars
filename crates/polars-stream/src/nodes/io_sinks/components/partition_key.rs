@@ -13,7 +13,6 @@ pub enum PreComputedKeys {
 }
 
 impl PreComputedKeys {
-    #[expect(unused)]
     pub fn name(&self) -> &'static str {
         match self {
             Self::Binview(_) => "Binview",

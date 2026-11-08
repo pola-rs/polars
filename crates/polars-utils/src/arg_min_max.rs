@@ -4,6 +4,12 @@ pub trait ArgMinMax {
     fn argmin(&self) -> usize;
 
     fn argmax(&self) -> usize;
+
+    /// Skips the values whose bit in the `validity` bitmap (starting at bit `offset`) is
+    /// not set. Returns `None` if no value is valid.
+    fn argmin_masked(&self, validity: &[u8], offset: usize) -> Option<usize>;
+
+    fn argmax_masked(&self, validity: &[u8], offset: usize) -> Option<usize>;
 }
 
 macro_rules! impl_argminmax {
@@ -16,6 +22,14 @@ macro_rules! impl_argminmax {
             fn argmax(&self) -> usize {
                 argminmax::ArgMinMax::argmax(self)
             }
+
+            fn argmin_masked(&self, validity: &[u8], offset: usize) -> Option<usize> {
+                argminmax::ArgMinMaxMasked::argmin_masked(self, validity, offset)
+            }
+
+            fn argmax_masked(&self, validity: &[u8], offset: usize) -> Option<usize> {
+                argminmax::ArgMinMaxMasked::argmax_masked(self, validity, offset)
+            }
         }
     };
 }
@@ -24,64 +38,14 @@ impl_argminmax!(&[u8]);
 impl_argminmax!(&[u16]);
 impl_argminmax!(&[u32]);
 impl_argminmax!(&[u64]);
+impl_argminmax!(&[u128]);
 impl_argminmax!(&[i8]);
 impl_argminmax!(&[i16]);
 impl_argminmax!(&[i32]);
 impl_argminmax!(&[i64]);
+impl_argminmax!(&[i128]);
 impl_argminmax!(&[f32]);
 impl_argminmax!(&[f64]);
-
-impl ArgMinMax for &[i128] {
-    fn argmin(&self) -> usize {
-        let mut min_val = i128::MAX;
-        let mut min_idx = 0;
-        for (idx, val) in self.iter().enumerate() {
-            if *val < min_val {
-                min_val = *val;
-                min_idx = idx;
-            }
-        }
-        min_idx
-    }
-
-    fn argmax(&self) -> usize {
-        let mut max_val = i128::MIN;
-        let mut max_idx = 0;
-        for (idx, val) in self.iter().enumerate() {
-            if *val > max_val {
-                max_val = *val;
-                max_idx = idx;
-            }
-        }
-        max_idx
-    }
-}
-
-impl ArgMinMax for &[u128] {
-    fn argmin(&self) -> usize {
-        let mut min_val = u128::MAX;
-        let mut min_idx = 0;
-        for (idx, val) in self.iter().enumerate() {
-            if *val < min_val {
-                min_val = *val;
-                min_idx = idx;
-            }
-        }
-        min_idx
-    }
-
-    fn argmax(&self) -> usize {
-        let mut max_val = u128::MIN;
-        let mut max_idx = 0;
-        for (idx, val) in self.iter().enumerate() {
-            if *val > max_val {
-                max_val = *val;
-                max_idx = idx;
-            }
-        }
-        max_idx
-    }
-}
 
 impl ArgMinMax for &[pf16] {
     fn argmin(&self) -> usize {
@@ -92,5 +56,15 @@ impl ArgMinMax for &[pf16] {
     fn argmax(&self) -> usize {
         let transmuted: &&[half::f16] = unsafe { std::mem::transmute(self) };
         argminmax::ArgMinMax::argmax(transmuted)
+    }
+
+    fn argmin_masked(&self, validity: &[u8], offset: usize) -> Option<usize> {
+        let transmuted: &&[half::f16] = unsafe { std::mem::transmute(self) };
+        argminmax::ArgMinMaxMasked::argmin_masked(transmuted, validity, offset)
+    }
+
+    fn argmax_masked(&self, validity: &[u8], offset: usize) -> Option<usize> {
+        let transmuted: &&[half::f16] = unsafe { std::mem::transmute(self) };
+        argminmax::ArgMinMaxMasked::argmax_masked(transmuted, validity, offset)
     }
 }

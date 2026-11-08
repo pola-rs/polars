@@ -11,7 +11,7 @@ use crate::constants::{get_len_name, get_literal_name, get_pl_element_name};
 #[derive(Default, Debug, Clone, Hash, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum OutputName {
-    /// No not yet set.
+    /// Not yet set.
     #[default]
     None,
     /// The most left-hand-side literal will be the output name.
@@ -196,7 +196,7 @@ impl ExprIR {
     /// Create a `ExprIR` structure that implements display
     pub fn display<'a>(&'a self, expr_arena: &'a Arena<AExpr>) -> ExprIRDisplay<'a> {
         ExprIRDisplay {
-            node: self.node(),
+            root: expr_arena.get(self.node()),
             output_name: self.output_name_inner(),
             expr_arena,
         }
@@ -284,13 +284,20 @@ impl ExprIR {
         is_known_length_ae(self.node, expr_arena)
     }
 
+    pub fn is_order_insensitive(&self, expr_arena: &Arena<AExpr>) -> bool {
+        is_order_insensitive_ae(self.node, expr_arena)
+    }
+
     pub fn dtype(&self, schema: &Schema, expr_arena: &Arena<AExpr>) -> PolarsResult<&DataType> {
         match self.output_dtype.get() {
             Some(dtype) => Ok(dtype),
             None => {
                 let dtype = expr_arena
                     .get(self.node)
-                    .to_dtype(&ToFieldContext::new(expr_arena, schema))?;
+                    .to_dtype(&ToFieldContext::new(expr_arena, schema))
+                    .map_err(|e| {
+                        e.with_expr_context(self.display(expr_arena).to_string().into())
+                    })?;
                 let _ = self.output_dtype.set(dtype);
                 Ok(self.output_dtype.get().unwrap())
             },

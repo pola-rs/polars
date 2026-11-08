@@ -4,7 +4,7 @@ use polars_arrow::array::{Array, PrimitiveArray};
 use polars_arrow::bitmap::BitmapBuilder;
 use polars_arrow::types::NativeType;
 
-// Low-level comparison kernel.
+// Low-level arithmetic kernel.
 pub trait ArithmeticKernel: Sized + Array {
     type Scalar;
     type TrueDivT: NativeType;
@@ -147,6 +147,13 @@ impl<T: HasPrimitiveArithmeticKernel> ArithmeticKernel for PrimitiveArray<T> {
     fn true_div(self, rhs: Self) -> PrimitiveArray<Self::TrueDivT> { T::prim_true_div(self, rhs) }
     fn true_div_scalar(self, rhs: Self::Scalar) -> PrimitiveArray<Self::TrueDivT> { T::prim_true_div_scalar(self, rhs) }
     fn true_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> PrimitiveArray<Self::TrueDivT> { T::prim_true_div_scalar_lhs(lhs, rhs) }
+}
+
+/// How an integer division rounds its quotient; the remainder takes the matching sign.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DivRounding {
+    Floor,
+    Trunc,
 }
 
 mod float;

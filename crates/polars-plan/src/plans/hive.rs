@@ -7,11 +7,24 @@ use polars_utils::pl_path::PlRefPath;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::dsl::HivePartitions;
+
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug, Clone)]
 pub struct HivePartitionsDf(DataFrame);
 
 impl HivePartitionsDf {
+    pub fn try_new(partitions: &HivePartitions, num_sources: usize) -> PolarsResult<Self> {
+        polars_ensure!(
+            partitions.0.height() == num_sources,
+            ShapeMismatch:
+            "number of hive partition rows ({}) does not match number of scan sources ({})",
+            partitions.0.height(),
+            num_sources,
+        );
+        Ok(Self(partitions.0.as_ref().clone()))
+    }
+
     /// Filter the columns to those contained in `projected_columns`.
     pub fn filter_columns(&self, projected_columns: &Schema) -> Self {
         let columns: Vec<_> = self
@@ -160,10 +173,15 @@ pub fn hive_partitions_from_paths(
         Arc::new(hive_schema)
     };
 
+    let parse_schema: Schema = hive_schema
+        .iter()
+        .map(|(name, dtype)| Field::new(name.clone(), parse_dtype(dtype)))
+        .collect();
+
     let mut buffers = polars_io::csv::read::builder::init_builders(
         &(0..hive_schema.len()).collect::<Vec<_>>(),
         paths.len(),
-        hive_schema.as_ref(),
+        &parse_schema,
         None,
         polars_io::prelude::CsvEncoding::Utf8,
         false,
@@ -184,7 +202,9 @@ pub fn hive_partitions_from_paths(
             let buf = buffers.get_mut(index).unwrap();
 
             if value != "__HIVE_DEFAULT_PARTITION__" {
-                buf.add(value.as_bytes(), false, false, false)?;
+                // An empty value is null, except for `String` columns.
+                let missing_is_null = !hive_schema.get_at_index(index).unwrap().1.is_string();
+                buf.add(value.as_bytes(), false, false, missing_is_null)?;
             } else {
                 buf.add_null(false);
             }
@@ -193,7 +213,8 @@ pub fn hive_partitions_from_paths(
 
     let mut buffers = buffers
         .into_iter()
-        .map(|x| Ok(x.into_series()?.into_column()))
+        .zip(hive_schema.iter_values())
+        .map(|(x, dtype)| finish_parsed_column(x.into_series()?, dtype))
         .collect::<PolarsResult<Vec<_>>>()?;
     buffers.sort_by_key(|s| reader_schema.index_of(s.name()).unwrap_or(usize::MAX));
 
@@ -201,6 +222,32 @@ pub fn hive_partitions_from_paths(
         paths.len(),
         buffers,
     )?)))
+}
+
+/// The dtype used to parse Hive values of `dtype`. The CSV builders cannot parse `Time`, so it is
+/// parsed as `String` and converted in [`finish_parsed_column`], as the CSV reader does.
+fn parse_dtype(dtype: &DataType) -> DataType {
+    match dtype {
+        #[cfg(feature = "dtype-time")]
+        DataType::Time => DataType::String,
+        dt => dt.clone(),
+    }
+}
+
+fn finish_parsed_column(s: Series, dtype: &DataType) -> PolarsResult<Column> {
+    match dtype {
+        #[cfg(feature = "dtype-time")]
+        DataType::Time => {
+            use polars_core::chunked_array::temporal::string::StringMethods;
+
+            let out = s.str()?.as_time(None, false)?.into_series();
+            if out.null_count() != s.null_count() {
+                polars_core::utils::handle_casting_failures(&s, &out)?;
+            }
+            Ok(out.into_column())
+        },
+        _ => Ok(s.into_column()),
+    }
 }
 
 /// Parse a Hive partition string (e.g. "column=1.5") into a name and value part.

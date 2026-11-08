@@ -25,6 +25,7 @@ if TYPE_CHECKING:
         CsvQuoteStyle,
         IpcCompression,
         ParquetCompression,
+        ParquetEncryption,
         ParquetMetadata,
         StorageOptionsDict,
         SyncOnCloseMethod,
@@ -70,6 +71,7 @@ def _sink_parquet_plan(
     sync_on_close: SyncOnCloseMethod | None,
     metadata: ParquetMetadata | None,
     arrow_schema: ArrowSchemaExportable | None,
+    encryption: ParquetEncryption | None,
     mkdir: bool,
     sinked_paths_callback: SinkedPathsCallback | None,
 ) -> LazyFrame:
@@ -88,13 +90,33 @@ def _sink_parquet_plan(
         msg = "`arrow_schema` parameter is considered unstable"
         issue_unstable_warning(msg)
 
+    if encryption is not None:
+        msg = "`encryption` parameter is considered unstable"
+        issue_unstable_warning(msg)
+
+        from polars.io.parquet.encryption import (
+            ParquetEncryptionConfig,
+            ParquetEncryptionProperties,
+        )
+
+        if not isinstance(
+            encryption, (ParquetEncryptionProperties, ParquetEncryptionConfig)
+        ):
+            msg = (
+                "`encryption` must be a `ParquetEncryptionProperties` or "
+                "`ParquetEncryptionConfig`, "
+                f"got {qualified_type_name(encryption)!r}"
+            )
+            raise TypeError(msg)
+
+    default_statistics = {
+        "min": True,
+        "max": True,
+        "distinct_count": False,
+        "null_count": True,
+    }
     if isinstance(statistics, bool) and statistics:
-        statistics = {
-            "min": True,
-            "max": True,
-            "distinct_count": False,
-            "null_count": True,
-        }
+        statistics = default_statistics
     elif isinstance(statistics, bool) and not statistics:
         statistics = {}
     elif statistics == "full":
@@ -104,6 +126,9 @@ def _sink_parquet_plan(
             "distinct_count": True,
             "null_count": True,
         }
+    elif isinstance(statistics, dict):
+        # Keys missing from the dict keep their default.
+        statistics = {**default_statistics, **statistics}
 
     credential_provider_builder = _init_credential_provider_builder(
         credential_provider, path, storage_options, "sink_parquet"
@@ -139,6 +164,7 @@ def _sink_parquet_plan(
         data_page_size=data_page_size,
         metadata=metadata,
         arrow_schema=arrow_schema,
+        encryption=(encryption._pyencryption if encryption is not None else None),
     )
     return wrap_ldf(ldf_py)
 

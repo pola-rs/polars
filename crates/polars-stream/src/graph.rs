@@ -48,12 +48,24 @@ impl Graph {
         node: impl FnOnce(GraphNodeKey) -> N,
         inputs: impl IntoIterator<Item = (GraphNodeKey, usize)>,
     ) -> GraphNodeKey {
+        self.try_add_node_with_key(|key| Ok(node(key)), inputs)
+            .unwrap()
+    }
+
+    /// [`Self::add_node_with_key`], for a node whose construction can fail.
+    pub fn try_add_node_with_key<N: ComputeNode + 'static>(
+        &mut self,
+        node: impl FnOnce(GraphNodeKey) -> PolarsResult<N>,
+        inputs: impl IntoIterator<Item = (GraphNodeKey, usize)>,
+    ) -> PolarsResult<GraphNodeKey> {
         // Add the GraphNode.
-        let node_key = self.nodes.insert_with_key(|node_key| GraphNode {
-            compute: Box::new(node(node_key)),
-            inputs: Vec::new(),
-            outputs: Vec::new(),
-        });
+        let node_key = self.nodes.try_insert_with_key(|node_key| {
+            PolarsResult::Ok(GraphNode {
+                compute: Box::new(node(node_key)?),
+                inputs: Vec::new(),
+                outputs: Vec::new(),
+            })
+        })?;
 
         // Create and add pipes that connect input to output.
         for (recv_port, (sender, send_port)) in inputs.into_iter().enumerate() {
@@ -80,13 +92,13 @@ impl Graph {
             self.nodes[sender].outputs[send_port] = pipe_key;
         }
 
-        node_key
+        Ok(node_key)
     }
 
     /// Updates all the nodes' states until a fixed point is reached.
     pub fn update_all_states(
         &mut self,
-        state: &StreamingExecutionState,
+        node_states: &SecondaryMap<GraphNodeKey, StreamingExecutionState>,
         metrics: Option<&Mutex<GraphMetrics>>,
     ) -> PolarsResult<()> {
         let mut to_update: Vec<_> = self.nodes.keys().collect();
@@ -120,7 +132,7 @@ impl Graph {
             }
 
             node.compute
-                .update_state(&mut recv_state, &mut send_state, state)?;
+                .update_state(&mut recv_state, &mut send_state, &node_states[node_key])?;
             let elapsed = start.map(|s| s.elapsed());
             if let Some(lock) = metrics {
                 let is_done = recv_state.iter().all(|s| *s == PortState::Done)

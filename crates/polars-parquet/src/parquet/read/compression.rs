@@ -2,29 +2,30 @@ use polars_parquet_format::DataPageHeaderV2;
 
 use super::PageReader;
 use crate::parquet::CowBuffer;
-use crate::parquet::compression::{self, Compression, DecompressionContext};
+use crate::parquet::compression::{self, Compression};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::Descriptor;
 use crate::parquet::page::{
     CompressedDataPage, CompressedPage, DataPage, DataPageHeader, DictPage, Page,
 };
 
+/// Decompresses into `buffer`, which ends up holding exactly `uncompressed_size` bytes.
 #[inline]
 fn decompress_v1(
     compressed: &[u8],
     compression: Compression,
-    buffer: &mut [u8],
-    context: &mut DecompressionContext,
+    buffer: &mut Vec<u8>,
+    uncompressed_size: usize,
 ) -> ParquetResult<()> {
-    compression::decompress(compression, compressed, buffer, context)
+    compression::decompress(compression, compressed, buffer, 0, uncompressed_size)
 }
 
 fn decompress_v2(
     compressed: &[u8],
     page_header: &DataPageHeaderV2,
     compression: Compression,
-    buffer: &mut [u8],
-    context: &mut DecompressionContext,
+    buffer: &mut Vec<u8>,
+    uncompressed_size: usize,
 ) -> ParquetResult<()> {
     // When processing data page v2, depending on enabled compression for the
     // page, we should account for uncompressed data ('offset') of
@@ -38,30 +39,40 @@ fn decompress_v2(
     let can_decompress = page_header.is_compressed.unwrap_or(true);
 
     if can_decompress {
-        if offset > buffer.len() || offset > compressed.len() {
+        if offset > uncompressed_size || offset > compressed.len() {
             return Err(ParquetError::oos(
                 "V2 Page Header reported incorrect offset to compressed data",
             ));
         }
 
-        (buffer[..offset]).copy_from_slice(&compressed[..offset]);
+        if buffer.len() >= offset {
+            buffer[..offset].copy_from_slice(&compressed[..offset]);
+        } else {
+            buffer.clear();
+            buffer.extend_from_slice(&compressed[..offset]);
+        }
 
         // https://github.com/pola-rs/polars/issues/22170
         if compressed.len() > offset {
             compression::decompress(
                 compression,
                 &compressed[offset..],
-                &mut buffer[offset..],
-                context,
+                buffer,
+                offset,
+                uncompressed_size - offset,
             )?;
+        } else {
+            buffer.truncate(offset);
+            buffer.resize(uncompressed_size, 0);
         }
     } else {
-        if buffer.len() != compressed.len() {
+        buffer.clear();
+        if uncompressed_size != compressed.len() {
             return Err(ParquetError::oos(
                 "V2 Page Header reported incorrect decompressed size",
             ));
         }
-        buffer.copy_from_slice(compressed);
+        buffer.extend_from_slice(compressed);
     }
     Ok(())
 }
@@ -69,11 +80,7 @@ fn decompress_v2(
 /// Decompresses the page, using `buffer` for decompression.
 /// If `page.buffer.len() == 0`, there was no decompression and the buffer was moved.
 /// Else, decompression took place.
-pub fn decompress(
-    compressed_page: CompressedPage,
-    buffer: &mut Vec<u8>,
-    context: &mut DecompressionContext,
-) -> ParquetResult<Page> {
+pub fn decompress(compressed_page: CompressedPage, buffer: &mut Vec<u8>) -> ParquetResult<Page> {
     Ok(match (compressed_page.compression(), compressed_page) {
         (Compression::Uncompressed, CompressedPage::Data(page)) => Page::Data(DataPage::new_read(
             page.header,
@@ -81,21 +88,13 @@ pub fn decompress(
             page.descriptor,
         )),
         (_, CompressedPage::Data(page)) => {
-            // prepare the compression buffer
             let read_size = page.uncompressed_size();
-            if read_size > buffer.capacity() {
-                // Clear before resizing to avoid memcpy'ing junk we don't care about anymore rather
-                // than just memset'ing zeroes.
-                buffer.clear();
-            }
-            buffer.resize(read_size, 0);
-
             match page.header() {
                 DataPageHeader::V1(_) => {
-                    decompress_v1(&page.buffer, page.compression, buffer, context)?
+                    decompress_v1(&page.buffer, page.compression, buffer, read_size)?
                 },
                 DataPageHeader::V2(header) => {
-                    decompress_v2(&page.buffer, header, page.compression, buffer, context)?
+                    decompress_v2(&page.buffer, header, page.compression, buffer, read_size)?
                 },
             }
             let buffer = CowBuffer::Owned(std::mem::take(buffer));
@@ -108,16 +107,12 @@ pub fn decompress(
             is_sorted: page.is_sorted,
         }),
         (_, CompressedPage::Dict(page)) => {
-            // prepare the compression buffer
-            let read_size = page.uncompressed_page_size;
-            if read_size > buffer.capacity() {
-                // Clear before resizing to avoid memcpy'ing junk we don't care about anymore rather
-                // than just memset'ing zeroes.
-                buffer.clear();
-            }
-            buffer.resize(read_size, 0);
-
-            decompress_v1(&page.buffer, page.compression(), buffer, context)?;
+            decompress_v1(
+                &page.buffer,
+                page.compression(),
+                buffer,
+                page.uncompressed_page_size,
+            )?;
             let buffer = CowBuffer::Owned(std::mem::take(buffer));
 
             Page::Dict(DictPage {
@@ -159,17 +154,12 @@ impl streaming_decompression::Decompressed for Page {
 pub struct BasicDecompressor {
     reader: PageReader,
     buffer: Vec<u8>,
-    context: DecompressionContext,
 }
 
 impl BasicDecompressor {
     /// Create a new [`BasicDecompressor`]
     pub fn new(reader: PageReader, buffer: Vec<u8>) -> Self {
-        Self {
-            reader,
-            buffer,
-            context: DecompressionContext::Unset,
-        }
+        Self { reader, buffer }
     }
 
     /// The total number of values is given from the `ColumnChunk` metadata.
@@ -194,11 +184,8 @@ impl BasicDecompressor {
             None => Ok(None),
             Some(p) => {
                 let num_values = p.num_values;
-                let page = decompress(
-                    CompressedPage::Dict(p),
-                    &mut Vec::with_capacity(num_values),
-                    &mut self.context,
-                )?;
+                let page =
+                    decompress(CompressedPage::Dict(p), &mut Vec::with_capacity(num_values))?;
 
                 match page {
                     Page::Dict(d) => Ok(Some(d)),
@@ -209,9 +196,8 @@ impl BasicDecompressor {
     }
 
     pub fn reuse_page_buffer(&mut self, page: DataPage) {
-        let buffer = match page.buffer {
-            CowBuffer::Borrowed(_) => return,
-            CowBuffer::Owned(vec) => vec,
+        let Some(buffer) = page.into_owned_buffer() else {
+            return;
         };
 
         if self.buffer.capacity() > buffer.capacity() {
@@ -237,11 +223,7 @@ impl DataPageItem {
     }
 
     pub fn decompress(self, decompressor: &mut BasicDecompressor) -> ParquetResult<DataPage> {
-        let p = decompress(
-            CompressedPage::Data(self.page),
-            &mut decompressor.buffer,
-            &mut decompressor.context,
-        )?;
+        let p = decompress(CompressedPage::Data(self.page), &mut decompressor.buffer)?;
         let Page::Data(p) = p else {
             panic!("Decompressing a data page should result in a data page");
         };
@@ -306,17 +288,10 @@ mod tests {
         compressed: &[u8],
         page_header: &DataPageHeaderV2,
         compression: Compression,
-        buffer: &mut [u8],
+        buffer: &mut Vec<u8>,
         expected: &[u8],
     ) {
-        decompress_v2(
-            compressed,
-            page_header,
-            compression,
-            buffer,
-            &mut DecompressionContext::Unset,
-        )
-        .unwrap();
+        decompress_v2(compressed, page_header, compression, buffer, expected.len()).unwrap();
         assert_eq!(buffer, expected);
     }
 }

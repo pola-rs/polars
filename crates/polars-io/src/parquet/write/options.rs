@@ -7,6 +7,7 @@ use polars_parquet::write::{
 use serde::{Deserialize, Serialize};
 
 use super::KeyValueMetadata;
+use crate::parquet::encryption::ParquetEncryption;
 
 #[derive(Default, Clone, Debug, PartialEq, Hash, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -25,6 +26,9 @@ pub struct ParquetWriteOptions {
     pub arrow_schema: Option<ArrowSchemaRef>,
     #[cfg_attr(feature = "serde", serde(default))]
     pub compat_level: Option<CompatLevel>,
+    /// How to encrypt files with Parquet modular encryption
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub encryption: Option<ParquetEncryption>,
 }
 
 impl ParquetWriteOptions {

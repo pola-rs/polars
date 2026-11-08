@@ -91,7 +91,7 @@ where
                 set2.clear();
                 set2.extend(b);
             }
-            // We could speed this up, but implementing ourselves, but we need to have a cloneable
+            // We could speed this up by implementing ourselves, but we need to have a cloneable
             // iterator as we need 2 passes
             set.extend(a);
             out.extend_buf(set.symmetric_difference(set2).copied())
@@ -366,8 +366,18 @@ pub fn list_set_operation(
     b: &ListChunked,
     set_op: SetOperation,
 ) -> PolarsResult<ListChunked> {
-    polars_ensure!(a.len() == b.len() || b.len() == 1 || a.len() == 1, ShapeMismatch: "column lengths don't match");
-    polars_ensure!(a.dtype() == b.dtype(), InvalidOperation: "cannot do 'set' operation on dtypes: {} and {}", a.dtype(), b.dtype());
+    polars_ensure!(
+        a.len() == b.len() || b.len() == 1 || a.len() == 1,
+        length_mismatch = "list set operation",
+        a.len(),
+        b.len()
+    );
+    polars_ensure!(
+        a.dtype() == b.dtype(),
+        op = "list set",
+        a.dtype(),
+        b.dtype()
+    );
     let mut a = a.clone();
     let mut b = b.clone();
     if a.len() != b.len() {

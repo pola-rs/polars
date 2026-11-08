@@ -177,6 +177,32 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
             exprs: fmt_exprs(exprs, expr_arena),
             should_broadcast: *should_broadcast,
         },
+        IR::Window {
+            partition_by,
+            order_by,
+            exprs,
+            maintain_order,
+            ordered_eval,
+            ..
+        } => IrPropsDescription::Window {
+            partition_by: partition_by.iter().map(ToString::to_string).collect(),
+            order_by: order_by
+                .iter()
+                .flat_map(|(names, options)| {
+                    names
+                        .iter()
+                        .enumerate()
+                        .map(|(i, name)| SortColumnDescription {
+                            expr: name.to_string(),
+                            descending: options.descending[i],
+                            nulls_last: options.nulls_last[i],
+                        })
+                })
+                .collect(),
+            exprs: fmt_exprs(exprs, expr_arena),
+            maintain_order: *maintain_order,
+            ordered_eval: *ordered_eval,
+        },
         IR::Invalid => IrPropsDescription::Invalid,
         IR::Join { options, .. } => {
             let o = options.as_ref();
@@ -473,6 +499,10 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
         } => IrPropsDescription::MergeSorted {
             keys: key.iter().map(|k| k.to_string()).collect(),
             maintain_order: *maintain_order,
+        },
+        IR::Recursive { id, .. } => IrPropsDescription::Recursive { id: id.to_string() },
+        IR::WorkingTableScan { id, .. } => {
+            IrPropsDescription::WorkingTableScan { id: id.to_string() }
         },
         IR::Resolver {
             resolver,

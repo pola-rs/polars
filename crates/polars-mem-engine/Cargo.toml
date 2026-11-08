@@ -12,6 +12,7 @@ description = "In memory engine of the Polars project."
 futures = { workspace = true, optional = true }
 memmap = { workspace = true }
 polars-arrow = { workspace = true }
+polars-buffer = { workspace = true }
 polars-config = { workspace = true }
 polars-core = { workspace = true, features = ["lazy"] }
 polars-defs = { workspace = true }

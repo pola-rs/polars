@@ -1,4 +1,5 @@
 use polars_arrow::array::{ArrayRef, FixedSizeListArray, PrimitiveArray};
+use polars_arrow::compute::utils::combine_validities_and;
 use polars_arrow::datatypes::IdxArr;
 use polars_arrow::legacy::index::IndexToUsize;
 use polars_arrow::legacy::utils::CustomIterTools;
@@ -50,6 +51,9 @@ pub fn sub_fixed_size_list_get_literal(
     if !null_on_oob && take_by.null_count() > 0 {
         polars_bail!(ComputeError: "get index is out of bounds");
     }
+    // Null rows may store any values, so don't read them.
+    let validity = combine_validities_and(take_by.validity(), arr.validity());
+    let take_by = take_by.with_validity(validity);
 
     let values = arr.values();
     // SAFETY:
@@ -66,6 +70,9 @@ pub fn sub_fixed_size_list_get(
     if !null_on_oob && take_by.null_count() > 0 {
         polars_bail!(ComputeError: "get index is out of bounds");
     }
+    // Null rows may store any values, so don't read them.
+    let validity = combine_validities_and(take_by.validity(), arr.validity());
+    let take_by = take_by.with_validity(validity);
 
     let values = arr.values();
     // SAFETY:

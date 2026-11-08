@@ -76,6 +76,29 @@ def test_unnest_table_function_errors() -> None:
             ctx.execute("SELECT * FROM UNNEST([1, 2, 3]) tbl (colx) WITH OFFSET")
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT u.x FROM UNNEST([1, 2]) AS u(x) CROSS JOIN t",
+        "SELECT u.x, t.a FROM t JOIN UNNEST([5, 6]) AS u(x) ON t.a = u.x",
+        "SELECT a FROM t WHERE EXISTS (SELECT 1 FROM UNNEST([5, 6]) AS u(x) WHERE u.x = t.a)",
+    ],
+)
+def test_unnest_alias_qualifies_columns(query: str) -> None:
+    assert_sql_matches(
+        {"t": pl.DataFrame({"a": [5]})},
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+    )
+
+
+def test_unnest_alias_named_like_table_is_ambiguous() -> None:
+    ctx = pl.SQLContext(t=pl.LazyFrame({"a": [5]}))
+    with pytest.raises(SQLInterfaceError, match='ambiguous reference to table "t"'):
+        ctx.execute("SELECT t.a FROM UNNEST([1, 2]) AS t(a), t", eager=True)
+
+
 def test_unnest_select_expressions() -> None:
     # Multiple expressions should be exploded inline/together
     df = pl.DataFrame(

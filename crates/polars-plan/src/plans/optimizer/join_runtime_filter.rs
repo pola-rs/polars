@@ -1,13 +1,15 @@
 //! Let a hash join tell the parquet scan under its probe side which keys the build
 //! side holds.
 //!
-//! A join whose one side is known to be small gets that side forced as build side;
-//! one whose side is only estimated small gets it preferred. Every probe key that
+//! A join whose one side is known to be much smaller than a scan under its other
+//! side gets that side forced as build side; one whose side is only estimated to be
+//! much smaller gets it preferred. Every probe key that
 //! reads a parquet scan column unchanged gets a dynamic predicate on that scan. The
-//! join publishes the range of its build keys once the build is done, and the scan
-//! skips row groups outside it. When the build keys are estimated to be a small
-//! share of the scan's distinct keys the join also publishes a bloom filter over
-//! them, and the predicate is evaluated per row; otherwise it only skips batches.
+//! join publishes the range of its build keys once the build is done. The scan
+//! skips the row groups outside the range and drops the rows outside it. When the
+//! build keys are estimated to be a small share of the scan's distinct keys the
+//! join also publishes a bloom filter over them, which the scan probes per row
+//! instead. The scan stops checking rows once the filter keeps most of them.
 //!
 //! A forced join blocks its probe input until the build is done, so its range is
 //! always published before the scan opens. A preferred join with a filter reads its
@@ -28,7 +30,9 @@
 //! A semi join publishes from either side and an anti join from its left side
 //! only, as the rows of its right side that match no left key change nothing. A
 //! semi join may prefer its right side on an estimate; a left side is only built
-//! when forced, as building it keeps its rows.
+//! when forced, as building it keeps its rows. It is not forced when the right keys
+//! are known to be much fewer than its estimated rows, as a right build keeps only
+//! those.
 
 use std::sync::Arc;
 
@@ -40,22 +44,20 @@ use polars_utils::pl_str::PlSmallStr;
 
 use super::join_build_side::{LOPSIDED_FACTOR, side_stats};
 use super::predicate_pushdown::utils::{map_column_references, push_past};
+use super::pushdown_maintain_errors;
 use crate::dsl::{FileScanIR, ScanFlags};
 use crate::plans::aexpr::deep_clone_ae;
 use crate::plans::aexpr::predicates::supports_runtime_range;
-use crate::plans::optimizer::predicate_pushdown::{DynamicPred, new_batch_only_dynamic_pred};
+use crate::plans::optimizer::predicate_pushdown::{DynamicPred, new_dynamic_pred};
 use crate::plans::options::{MAX_BUILD_PROBE_DISTINCT_RATIO, RuntimeFilter};
 use crate::plans::schema::join_right_output_names;
 use crate::plans::stats::StatsCache;
 use crate::plans::{
-    AExpr, ExprIR, IR, IRFunctionExpr, JoinOptionsIR, JoinTypeOptionsIR, NodeStats, Operator,
-    into_column, is_inherently_nondeterministic,
+    AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, NodeStats, Operator, into_column,
+    is_inherently_nondeterministic,
 };
 use crate::prelude::{JoinType, MaintainOrderJoin};
 use crate::utils::has_aexpr;
-
-/// Estimated bytes a build side chosen here may take.
-const BUILD_BYTES: f64 = 256.0 * 1024.0 * 1024.0;
 
 pub(super) fn attach_join_runtime_filters(
     root: Node,
@@ -118,24 +120,32 @@ fn process_join(
         return;
     };
     let on = on.clone();
-    let Some((left_stats, left_width)) = side_stats(input_left, ir_arena, expr_arena, stats) else {
+    let Some((left_stats, _)) = side_stats(input_left, ir_arena, expr_arena, stats) else {
         return;
     };
-    let Some((right_stats, right_width)) = side_stats(input_right, ir_arena, expr_arena, stats)
-    else {
+    let Some((right_stats, _)) = side_stats(input_right, ir_arena, expr_arena, stats) else {
         return;
     };
 
     // A bounded side before an estimated one, the smaller of two alike; the first
     // whose range prunes a scan much larger than itself is taken.
     // Try the right side first when candidates rank equally.
-    let mut sides = build_candidates(false, &right_stats, right_width);
-    sides.extend(build_candidates(true, &left_stats, left_width));
+    let mut sides = build_candidates(false, &right_stats);
+    sides.extend(build_candidates(true, &left_stats));
     let how = &options.args.how;
-    if how.is_semi() {
-        sides.retain(|s| s.forced || !s.left);
-    } else if how.is_anti() {
-        sides.retain(|s| s.forced && s.left);
+    if how.is_semi() || how.is_anti() {
+        let right_distinct = on.iter().try_fold(1.0, |acc, (_, right_key)| {
+            let name = into_column(right_key.node(), expr_arena)?;
+            Some(acc * right_stats.key_distinct_estimate(name)?)
+        });
+        sides.retain(|s| {
+            if s.left {
+                s.forced
+                    && right_distinct.is_none_or(|d| d * LOPSIDED_FACTOR >= left_stats.filtered)
+            } else {
+                how.is_semi()
+            }
+        });
     }
     sides.sort_by(|a, b| b.forced.cmp(&a.forced).then(a.rows.total_cmp(&b.rows)));
 
@@ -195,7 +205,6 @@ fn process_join(
                 );
             }
             if bloom {
-                evaluate_per_row(predicate.node(), expr_arena);
                 bloom_probes.add(probe_distinct);
             }
             attach_to_scan(scan, predicate, ir_arena, expr_arena);
@@ -259,29 +268,23 @@ struct BuildCandidate {
     forced: bool,
 }
 
-/// The ways a filtered side may be built from: forced when its bound fits the
-/// byte budget, preferred when its estimate fits.
-fn build_candidates(left: bool, stats: &NodeStats, width: f64) -> Vec<BuildCandidate> {
-    let mut candidates = Vec::new();
+/// The ways a filtered side may be built from: forced when it has a bound, and
+/// preferred on its estimate.
+fn build_candidates(left: bool, stats: &NodeStats) -> Vec<BuildCandidate> {
     if stats.filtered >= stats.unfiltered {
-        return candidates;
+        return Vec::new();
     }
-    let fits = |rows: f64| rows * width <= BUILD_BYTES;
-    if let Some(rows) = stats.max_rows().filter(|b| fits(*b)) {
-        candidates.push(BuildCandidate {
-            left,
-            rows,
-            forced: true,
-        });
-    }
-    if fits(stats.filtered) {
-        candidates.push(BuildCandidate {
-            left,
-            rows: stats.filtered,
-            forced: false,
-        });
-    }
-    candidates
+    let forced = stats.max_rows().map(|rows| BuildCandidate {
+        left,
+        rows,
+        forced: true,
+    });
+    let preferred = BuildCandidate {
+        left,
+        rows: stats.filtered,
+        forced: false,
+    };
+    forced.into_iter().chain([preferred]).collect()
 }
 
 /// A probe key that reached one or more scans.
@@ -293,7 +296,7 @@ struct TracedKey {
 }
 
 /// The probe keys whose column reaches a scan that can skip batches, each with the
-/// batch-only predicates to put on those scans.
+/// predicates to put on those scans.
 fn trace_probe_keys(
     probe_input: Node,
     probe_keys: Vec<Option<PlSmallStr>>,
@@ -309,7 +312,7 @@ fn trace_probe_keys(
             continue;
         }
         let column = expr_arena.add(AExpr::Column(name));
-        let (dyn_node, pred) = new_batch_only_dynamic_pred(column, expr_arena);
+        let (dyn_node, pred) = new_dynamic_pred(column, expr_arena, None);
         let predicate = ExprIR::from_node(dyn_node, expr_arena);
         let origins = scan_origins(probe_input, predicate, ir_arena, expr_arena, scratch);
         if !origins.is_empty() {
@@ -364,6 +367,7 @@ fn scan_origins(
             .iter()
             .any(|e| has_aexpr(e.node(), expr_arena, |ae| matches!(ae, AExpr::Over { .. })))
     };
+    let maintain_errors = pushdown_maintain_errors();
     let mut origins = PlIndexMap::default();
     let mut paths = vec![(node, predicate)];
     'paths: while let Some((mut node, mut predicate)) = paths.pop() {
@@ -387,7 +391,14 @@ fn scan_origins(
                 | IR::Filter { .. }
                 | IR::Select { .. }
                 | IR::HStack { .. } => {
-                    match push_past(node, &mut predicate, ir_arena, expr_arena, scratch, true) {
+                    match push_past(
+                        node,
+                        &mut predicate,
+                        ir_arena,
+                        expr_arena,
+                        scratch,
+                        maintain_errors,
+                    ) {
                         Ok(Some(input)) => node = input,
                         _ => continue 'paths,
                     }
@@ -467,18 +478,6 @@ fn skips_batches(scan_type: &FileScanIR) -> bool {
         .contains(ScanFlags::SKIPS_BATCHES_BY_STATISTICS)
 }
 
-/// Let the scan evaluate the dynamic predicate per row, not only by statistics.
-fn evaluate_per_row(node: Node, expr_arena: &mut Arena<AExpr>) {
-    let AExpr::Function {
-        function: IRFunctionExpr::DynamicPred { batch_only, .. },
-        ..
-    } = expr_arena.get_mut(node)
-    else {
-        unreachable!()
-    };
-    *batch_only = false;
-}
-
 fn column_name<'a>(predicate: &ExprIR, expr_arena: &'a Arena<AExpr>) -> &'a PlSmallStr {
     let AExpr::Function { input, .. } = expr_arena.get(predicate.node()) else {
         unreachable!()
@@ -494,11 +493,14 @@ fn attach_to_scan(
 ) {
     let IR::Scan {
         predicate: existing,
+        predicate_file_skip_applied,
         ..
     } = ir_arena.get_mut(scan)
     else {
         unreachable!()
     };
+    // Files are skipped by the scan predicate after these filters are attached.
+    debug_assert!(predicate_file_skip_applied.is_none());
     *existing = Some(match existing.take() {
         None => predicate,
         Some(existing) => {

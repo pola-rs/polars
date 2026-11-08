@@ -44,13 +44,17 @@ pub fn replace_time_zone(
     };
 
     let mut out = out?.into_datetime(datetime.time_unit(), time_zone.cloned());
-    if from_time_zone == TimeZone::UTC && ambiguous.len() == 1 && ambiguous.get(0) == Some("raise")
+    if from_time_zone == TimeZone::UTC
+        && ambiguous.len() == 1
+        && ambiguous.get(0) == Some("raise")
+        && out.null_count() == datetime.null_count()
     {
         // In general, the sortedness flag can't be preserved.
         // To be safe, we only do so in the simplest case when we know for sure that there is no "daylight savings weirdness" going on, i.e.:
         // - `from_tz` is guaranteed to not observe daylight savings time;
-        // - user is just passing 'raise' to 'ambiguous'.
-        // Both conditions above need to be satisfied.
+        // - user is just passing 'raise' to 'ambiguous';
+        // - no new nulls were introduced (e.g. by `non_existent='null'`).
+        // All conditions above need to be satisfied.
         out.physical_mut()
             .set_sorted_flag(datetime.physical().is_sorted_flag());
     }

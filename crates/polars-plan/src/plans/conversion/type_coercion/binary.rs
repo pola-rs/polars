@@ -95,6 +95,7 @@ fn process_list_numeric_arithmetic(
         Operator::Multiply => NumericListOp::mul(),
         Operator::TrueDivide | Operator::RustDivide => NumericListOp::div(),
         Operator::FloorDivide => NumericListOp::floor_div(),
+        Operator::TruncDivide => NumericListOp::trunc_div(),
         Operator::Modulus => NumericListOp::rem(),
         _ => return Ok(None),
     };
@@ -215,7 +216,7 @@ pub(super) fn coerced_binop_dtype(
         match (&type_left, &type_right) {
             (Duration(_), Duration(_)) => return Ok(None),
             (Duration(_), r) if r.is_primitive_numeric() => return Ok(None),
-            (String, a) | (a, String) if a.is_primitive_numeric() => {
+            (String, a) | (a, String) if a.is_primitive_numeric() || a.is_decimal() => {
                 let fmt_side = |node: Node, ae: &AExpr| -> std::string::String {
                     if let AExpr::Column(name) = ae {
                         format!(" column '{name}'")
@@ -287,6 +288,7 @@ fn process_decimal_binary(
                 | Operator::TrueDivide
                 | Operator::RustDivide
                 | Operator::FloorDivide
+                | Operator::TruncDivide
                 | Operator::Modulus
         );
     let is_int =
@@ -605,6 +607,21 @@ pub(super) fn coerce_comparison_literal(
         return None;
     }
 
+    if dtype_lhs.is_integer()
+        && !dtype_lhs.is_unknown()
+        && let Some((floor, is_whole)) =
+            fractional_literal_parts(dtype_lhs, lit_rhs.value(), &supertype)
+    {
+        return coerce_int_cmp_fractional_literal(
+            ae_node_left,
+            dtype_lhs,
+            cmp_op,
+            floor,
+            is_whole,
+            expr_arena,
+        );
+    }
+
     if !matching_and_supported_dtype_class(dtype_lhs, lit_rhs.dtype()) {
         return None;
     }
@@ -795,59 +812,166 @@ pub(super) fn coerce_comparison_literal(
         return Some(ReplaceLit(lit_rhs_casted));
     }
 
-    let nonnull_rows_value: bool = if lit_rhs
+    if lit_rhs
         .clone()
         .cast_with_options(&supertype, CastOptions::NonStrict)
         .ok()?
         .is_null()
     {
-        finish_rewrite_cmp_with_null_literal!()
-    } else {
-        // Since the literal is out of range it's either below min or above max. Determining the side
-        // can be done by comparing against any in-range value (we pick 0).
-        let rhs_phys_lt0 = || {
-            let lit_rhs = lit_rhs.clone().to_physical();
+        finish_rewrite_cmp_with_null_literal!();
+    }
 
-            if lit_rhs.dtype().is_unsigned_integer() {
-                return Some(false);
-            }
+    // Since the literal is out of range it's either below min or above max. Determining the side
+    // can be done by comparing against any in-range value (we pick 0).
+    let rhs_phys_lt0 = || {
+        let lit_rhs = lit_rhs.clone().to_physical();
 
-            let AnyValue::Int128(x) = lit_rhs
-                .cast_with_options(&DataType::Int128, CastOptions::NonStrict)
-                .ok()
-                .filter(|x| !x.is_null())?
-                .as_any_value()
-            else {
-                unreachable!()
-            };
+        if lit_rhs.dtype().is_unsigned_integer() {
+            return Some(false);
+        }
 
-            Some(x < 0)
+        let AnyValue::Int128(x) = lit_rhs
+            .cast_with_options(&DataType::Int128, CastOptions::NonStrict)
+            .ok()
+            .filter(|x| !x.is_null())?
+            .as_any_value()
+        else {
+            unreachable!()
         };
 
-        match cmp_op {
-            Operator::Eq => false,
-            Operator::NotEq => true,
-            Operator::Lt | Operator::LtEq => !rhs_phys_lt0()?,
-            Operator::Gt | Operator::GtEq => rhs_phys_lt0()?,
-            Operator::EqValidity => {
-                return Some(NewAExpr {
-                    aexpr: repeat_opt_bool_ae(Some(false), ae_node_left, expr_arena),
-                    output_constraint: Some(BoolValueAlways::FalseOrNull),
-                });
-            },
-            Operator::NotEqValidity => {
-                return Some(NewAExpr {
-                    aexpr: repeat_opt_bool_ae(Some(true), ae_node_left, expr_arena),
-                    output_constraint: Some(BoolValueAlways::True),
-                });
-            },
-            _ => return None,
-        }
+        Some(x < 0)
+    };
+    out_of_range_rewrite(cmp_op, rhs_phys_lt0, ae_node_left, expr_arena)
+}
+
+/// The floor of a decimal or float literal and whether it is a whole number, when an integer
+/// column of `dtype_lhs` compared to it in `supertype` can be compared to a rounded integer
+/// instead.
+fn fractional_literal_parts(
+    #[cfg_attr(not(feature = "dtype-decimal"), allow(unused_variables))] dtype_lhs: &DataType,
+    value: &AnyValue,
+    supertype: &DataType,
+) -> Option<(i128, bool)> {
+    let value = match *value {
+        #[cfg(feature = "dtype-decimal")]
+        AnyValue::Decimal(mantissa, _, scale) => {
+            // Every value of the column must cast to the decimal, else the cast can raise.
+            let DataType::Decimal(precision, supertype_scale) = *supertype else {
+                return None;
+            };
+            let fits = |bound: Scalar| {
+                bound.value().extract::<i128>().is_some_and(|v| {
+                    polars_compute::decimal::i128_to_dec128(v, precision, supertype_scale).is_some()
+                })
+            };
+            if !(fits(dtype_lhs.min().ok()?) && fits(dtype_lhs.max().ok()?)) {
+                return None;
+            }
+            let divisor = 10i128.checked_pow(scale as u32)?;
+            return Some((
+                mantissa.div_euclid(divisor),
+                mantissa.rem_euclid(divisor) == 0,
+            ));
+        },
+        AnyValue::Float32(v) => v as f64,
+        AnyValue::Float64(v) => v,
+        _ => return None,
+    };
+    // Integers below this bound cast to the float exactly, and larger ones never cross a
+    // literal below it.
+    let exact_below = match supertype {
+        DataType::Float32 => 2f64.powi(f32::MANTISSA_DIGITS as i32),
+        DataType::Float64 => 2f64.powi(f64::MANTISSA_DIGITS as i32),
+        _ => return None,
+    };
+    if value.is_nan() || value.abs() >= exact_below {
+        return None;
+    }
+    let floor = value.floor();
+    Some((floor as i128, floor == value))
+}
+
+/// Rewrite an integer column compared to a fractional literal into a comparison with an integer
+/// literal. The literal is rounded in the direction that keeps the result the same, e.g.
+/// `x < 1.5` becomes `x < 2` and `x > 1.5` becomes `x > 1`.
+fn coerce_int_cmp_fractional_literal(
+    ae_node_left: Node,
+    dtype_lhs: &DataType,
+    cmp_op: Operator,
+    floor: i128,
+    is_whole: bool,
+    expr_arena: &mut Arena<AExpr>,
+) -> Option<CmpLiteralRhsRewrite> {
+    use CmpLiteralRhsRewrite::*;
+
+    let ceil = floor + i128::from(!is_whole);
+
+    let rounded = match cmp_op {
+        Operator::Lt | Operator::GtEq => Some(ceil),
+        Operator::LtEq | Operator::Gt => Some(floor),
+        Operator::Eq | Operator::NotEq | Operator::EqValidity | Operator::NotEqValidity => {
+            is_whole.then_some(floor)
+        },
+        _ => return None,
     };
 
-    // Set all non-null rows to either true / false.
-    // when(left.is_not_null()).then(nonnull_rows_value)
+    if let Some(rounded) = rounded
+        && let Some(value) = AnyValue::Int128(rounded).strict_cast(dtype_lhs)
+    {
+        return Some(ReplaceLit(Scalar::new(
+            dtype_lhs.clone(),
+            value.into_static(),
+        )));
+    }
 
+    // No value of the column type equals the literal, or the literal is out of range. Zero is
+    // always in range, so the sign tells on which side it is.
+    let below_min = || Some(rounded.is_some_and(|r| r < 0));
+    out_of_range_rewrite(cmp_op, below_min, ae_node_left, expr_arena)
+}
+
+/// Rewrites a comparison with a literal that no value of the left side equals. `below_min`
+/// tells whether the literal is below all values, else it is above all values.
+fn out_of_range_rewrite(
+    cmp_op: Operator,
+    below_min: impl FnOnce() -> Option<bool>,
+    ae_node_left: Node,
+    expr_arena: &mut Arena<AExpr>,
+) -> Option<CmpLiteralRhsRewrite> {
+    use CmpLiteralRhsRewrite::*;
+
+    let nonnull_rows_value = match cmp_op {
+        Operator::Eq => false,
+        Operator::NotEq => true,
+        Operator::Lt | Operator::LtEq => !below_min()?,
+        Operator::Gt | Operator::GtEq => below_min()?,
+        Operator::EqValidity => {
+            return Some(NewAExpr {
+                aexpr: repeat_opt_bool_ae(Some(false), ae_node_left, expr_arena),
+                output_constraint: Some(BoolValueAlways::FalseOrNull),
+            });
+        },
+        Operator::NotEqValidity => {
+            return Some(NewAExpr {
+                aexpr: repeat_opt_bool_ae(Some(true), ae_node_left, expr_arena),
+                output_constraint: Some(BoolValueAlways::True),
+            });
+        },
+        _ => return None,
+    };
+    Some(nonnull_rows_rewrite(
+        nonnull_rows_value,
+        ae_node_left,
+        expr_arena,
+    ))
+}
+
+/// `when(left.is_not_null()).then(nonnull_rows_value)`: all non-null rows get the same value.
+fn nonnull_rows_rewrite(
+    nonnull_rows_value: bool,
+    ae_node_left: Node,
+    expr_arena: &mut Arena<AExpr>,
+) -> CmpLiteralRhsRewrite {
     let left_not_null = {
         let function = IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull);
         let options = function.function_options();
@@ -858,7 +982,7 @@ pub(super) fn coerce_comparison_literal(
         })
     };
 
-    Some(NewAExpr {
+    CmpLiteralRhsRewrite::NewAExpr {
         aexpr: AExpr::Ternary {
             predicate: left_not_null,
             truthy: expr_arena.add(AExpr::Literal(LiteralValue::Scalar(Scalar::new(
@@ -875,7 +999,7 @@ pub(super) fn coerce_comparison_literal(
         } else {
             BoolValueAlways::FalseOrNull
         }),
-    })
+    }
 }
 
 fn repeat_opt_bool_ae(value: Option<bool>, len_of: Node, expr_arena: &mut Arena<AExpr>) -> AExpr {

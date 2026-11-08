@@ -12,8 +12,6 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from tests.conftest import PlMonkeyPatch
 
-pytestmark = pytest.mark.xdist_group("streaming")
-
 # Every side below has more rows than this, so both fill the sample.
 SAMPLE_LIMIT = "100"
 

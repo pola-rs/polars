@@ -115,7 +115,11 @@ impl TakeChunked for Column {
         sorted: IsSorted,
         avoid_sharing: bool,
     ) -> Self {
-        // @scalar-opt
+        // A scalar column has the same value in every row, so only their number matters.
+        if let Column::Scalar(s) = self {
+            return s.resize(by.len()).into();
+        }
+
         let s = self.as_materialized_series();
         let s = unsafe { s.take_chunked_unchecked(by, sorted, avoid_sharing) };
         s.into_column()
@@ -126,7 +130,19 @@ impl TakeChunked for Column {
         by: &[ChunkId<B>],
         avoid_sharing: bool,
     ) -> Self {
-        // @scalar-opt
+        // As above, but the null ids still have to be carried over.
+        if let Column::Scalar(s) = self {
+            if !by.iter().any(ChunkId::is_null) {
+                return s.resize(by.len()).into();
+            }
+
+            let idx = IdxCa::from_iter_options(
+                PlSmallStr::EMPTY,
+                by.iter().map(|id| (!id.is_null()).then_some(0)),
+            );
+            return unsafe { self.take_unchecked(&idx) };
+        }
+
         let s = self.as_materialized_series();
         let s = unsafe { s.take_opt_chunked_unchecked(by, avoid_sharing) };
         s.into_column()
@@ -234,7 +250,7 @@ impl TakeChunked for Series {
         }
     }
 
-    /// Take function that checks of null state in `ChunkIdx`.
+    /// Take function that checks for null state in `ChunkIdx`.
     unsafe fn take_opt_chunked_unchecked<const B: u64>(
         &self,
         by: &[ChunkId<B>],
@@ -380,7 +396,7 @@ where
         out
     }
 
-    // Take function that checks of null state in `ChunkIdx`.
+    // Take function that checks for null state in `ChunkIdx`.
     unsafe fn take_opt_chunked_unchecked<const B: u64>(
         &self,
         by: &[ChunkId<B>],
@@ -642,7 +658,7 @@ where
     T: PolarsDataType<Array = BinaryViewArrayGeneric<V>>,
     V: ViewType + ?Sized,
 {
-    // Dedup buffers up front. Note: don't do this during view update, as this is often is much
+    // Dedup buffers up front. Note: don't do this during view update, as this is often much
     // more costly.
     let mut buffers = Vec::with_capacity(ca.chunks().len());
     // Dont need to include the length, as we look at the arc pointers, which are immutable.

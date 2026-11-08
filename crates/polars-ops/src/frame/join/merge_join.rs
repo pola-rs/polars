@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::iter::repeat_n;
 
+use bytemuck::TransparentWrapper;
 use polars_arrow::array::Array;
 use polars_arrow::array::builder::ShareStrategy;
 use polars_core::frame::builder::DataFrameBuilder;
@@ -9,7 +10,8 @@ use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_defs::join::{JoinArgs, JoinType};
 use polars_utils::itertools::Itertools;
-use polars_utils::total_ord::TotalOrd;
+use polars_utils::sort::reorder_cmp;
+use polars_utils::total_ord::{TotalOrd, TotalOrdWrap};
 use polars_utils::{IdxSize, format_pl_smallstr};
 
 use crate::series::coalesce_columns;
@@ -23,6 +25,7 @@ pub fn match_keys(
     gather_probe_unmatched: Option<&mut Vec<IdxSize>>,
     build_emit_unmatched: bool,
     descending: bool,
+    nulls_last: bool,
     nulls_equal: bool,
     limit_results: usize,
     build_row_offset: &mut usize,
@@ -39,6 +42,7 @@ pub fn match_keys(
                 gather_probe_unmatched,
                 build_emit_unmatched,
                 descending,
+                nulls_last,
                 nulls_equal,
                 limit_results,
                 build_row_offset,
@@ -94,6 +98,7 @@ fn match_keys_impl<'a, T: PolarsDataType>(
     mut gather_probe_unmatched: Option<&mut Vec<IdxSize>>,
     build_emit_unmatched: bool,
     descending: bool,
+    nulls_last: bool,
     nulls_equal: bool,
     limit_results: usize,
     build_row_offset: &mut usize,
@@ -114,22 +119,23 @@ fn match_keys_impl<'a, T: PolarsDataType>(
         }
 
         let build_keyval = unsafe { build_key.get_unchecked(*build_row_offset) };
-        let build_keyval = build_keyval.as_ref();
         let mut build_keyval_matched = false;
 
         if nulls_equal || build_keyval.is_some() {
             for probe_idx in *probe_row_offset..probe_key.len() {
                 let probe_keyval = unsafe { probe_key.get_unchecked(probe_idx) };
-                let probe_keyval = probe_keyval.as_ref();
 
-                let mut ord: Ordering = match (&build_keyval, &probe_keyval) {
-                    (None, None) if nulls_equal => Ordering::Equal,
-                    (Some(l), Some(r)) => TotalOrd::tot_cmp(*l, *r),
-                    _ => continue,
-                };
-                if descending {
-                    ord = ord.reverse();
+                // Row-encoded keys are null wherever any key column is null, so a null probe
+                // key has no place in the order.
+                if !nulls_equal && probe_keyval.is_none() {
+                    continue;
                 }
+                let ord = reorder_cmp(
+                    TotalOrdWrap::wrap_ref(&build_keyval),
+                    TotalOrdWrap::wrap_ref(&probe_keyval),
+                    descending,
+                    nulls_last,
+                );
 
                 match ord {
                     Ordering::Equal => {

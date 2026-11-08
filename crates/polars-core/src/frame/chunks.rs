@@ -109,9 +109,8 @@ pub fn chunk_df_for_writing(
     // Accumulate many small chunks to the row group size.
     // See: #16403
     if !df.columns().is_empty()
-        && df.columns()[0]
-            .as_materialized_series()
-            .chunk_lengths()
+        && df
+            .first_col_chunk_lengths()
             .take(5)
             .all(|len| len < row_group_size)
     {
@@ -151,7 +150,7 @@ pub fn chunk_df_for_writing(
             // leads to slow writing performance, so in that case we
             // merge them.
             let n_chunks = df.first_col_n_chunks();
-            if n_chunks > 1 && (df.estimated_size() / n_chunks < 128 * 1024) {
+            if n_chunks > 1 && (df.estimated_size(true) / n_chunks < 128 * 1024) {
                 df.rechunk_mut_par();
             }
         }

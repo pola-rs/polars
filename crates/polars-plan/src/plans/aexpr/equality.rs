@@ -97,7 +97,7 @@ impl AExpr {
             E::Function { input: l_input, function: l_function, options: l_options } => matches!(other, E::Function { input: r_input, function: r_function, options: r_options } if cmp_arg_counts_names(l_input, r_input, l_function.output_depends_on_input_names()) && l_function == r_function && l_options == r_options),
             #[cfg(feature = "dynamic_group_by")]
             E::Rolling { function: _, index_column: _, period: l_period, offset: l_offset, closed_window: l_closed_window } => matches!(other, E::Rolling { function: _, index_column: _, period: r_period, offset: r_offset, closed_window: r_closed_window } if l_period == r_period && l_offset == r_offset && l_closed_window == r_closed_window),
-            E::Over { function: _, partition_by: l_partition_by, order_by: l_order_by, mapping: l_mapping } => matches!(other, E::Over { function: _, partition_by: r_partition_by, order_by: r_order_by, mapping: r_mapping } if l_partition_by.len() == r_partition_by.len() && l_order_by.as_ref().map(|(_, v): &(Node, SortOptions)| v) == r_order_by.as_ref().map(|(_, v): &(Node, SortOptions)| v) && l_mapping == r_mapping),
+            E::Over { function: _, partition_by: l_partition_by, order_by: l_order_by, mapping: l_mapping, may_reorder: l_may_reorder } => matches!(other, E::Over { function: _, partition_by: r_partition_by, order_by: r_order_by, mapping: r_mapping, may_reorder: r_may_reorder } if l_partition_by.len() == r_partition_by.len() && l_order_by.as_ref().map(|(_, v): &(Node, SortOptions)| v) == r_order_by.as_ref().map(|(_, v): &(Node, SortOptions)| v) && l_mapping == r_mapping && l_may_reorder == r_may_reorder),
 
             // Discriminant check done above.
             E::Element |
@@ -106,7 +106,7 @@ impl AExpr {
             E::Slice { input: _, offset: _, length: _ } |
             E::Len => true,
             #[cfg(feature = "dtype-struct")]
-            E::StructEval { expr: _, evaluation: l_evaluation } => matches!(other, E::StructEval { expr: _, evaluation: r_evaluation } if cmp_arg_counts_names(l_evaluation, r_evaluation, true))
+            E::StructEval { expr: _, evaluation: l_evaluation, variant: l_variant } => matches!(other, E::StructEval { expr: _, evaluation: r_evaluation, variant: r_variant } if l_variant == r_variant && cmp_arg_counts_names(l_evaluation, r_evaluation, true))
         };
 
         is_equal
@@ -126,10 +126,11 @@ impl IRAggExpr {
         // match to be exhaustive.
         #[rustfmt::skip]
         let is_equal = match self {
-            A::Min { input: _, propagate_nans: l_propagate_nans } => matches!(other, A::Min { input: _, propagate_nans: r_propagate_nans } if l_propagate_nans == r_propagate_nans),
-            A::Max { input: _, propagate_nans: l_propagate_nans } => matches!(other, A::Max { input: _, propagate_nans: r_propagate_nans } if l_propagate_nans == r_propagate_nans),
+            A::Min { input: _, propagate_nans: l_propagate_nans, propagate_nulls: l_propagate_nulls } => matches!(other, A::Min { input: _, propagate_nans: r_propagate_nans, propagate_nulls: r_propagate_nulls } if l_propagate_nans == r_propagate_nans && l_propagate_nulls == r_propagate_nulls),
+            A::Max { input: _, propagate_nans: l_propagate_nans, propagate_nulls: l_propagate_nulls } => matches!(other, A::Max { input: _, propagate_nans: r_propagate_nans, propagate_nulls: r_propagate_nulls } if l_propagate_nans == r_propagate_nans && l_propagate_nulls == r_propagate_nulls),
             A::Count { input: _, include_nulls: l_include_nulls } => matches!(other, A::Count { input: _, include_nulls: r_include_nulls } if l_include_nulls == r_include_nulls),
             A::Item { input: _, allow_empty: l_allow_empty } => matches!(other, A::Item { input: _, allow_empty: r_allow_empty } if l_allow_empty == r_allow_empty),
+            A::Sum { input: _, null_on_empty: l_null_on_empty } => matches!(other, A::Sum { input: _, null_on_empty: r_null_on_empty } if l_null_on_empty == r_null_on_empty),
             A::Std(_, l_ddof) => matches!(other, A::Std(_, r_ddof) if l_ddof == r_ddof),
             A::Var(_, l_ddof) => matches!(other, A::Var(_, r_ddof) if l_ddof == r_ddof),
 
@@ -141,8 +142,7 @@ impl IRAggExpr {
             A::Last(_) |
             A::LastNonNull(_) |
             A::Mean(_) |
-            A::Implode { .. } |
-            A::Sum(_)  => true,
+            A::Implode { .. } => true,
         };
 
         is_equal

@@ -158,6 +158,12 @@ pub enum IrPropsDescription {
         keys: Vec<String>,
         maintain_order: bool,
     },
+    Recursive {
+        id: String,
+    },
+    WorkingTableScan {
+        id: String,
+    },
     PythonScan {
         scan_source_type: String,
         n_rows: Option<usize>,
@@ -184,6 +190,13 @@ pub enum IrPropsDescription {
         /// Whether the resolver has already been resolved into an IR subplan. If so, that subplan
         /// is this node's input.
         is_resolved: bool,
+    },
+    Window {
+        partition_by: Vec<String>,
+        order_by: Vec<SortColumnDescription>,
+        exprs: Vec<String>,
+        maintain_order: bool,
+        ordered_eval: bool,
     },
 
     #[default]

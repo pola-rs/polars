@@ -1,5 +1,7 @@
 use std::collections::VecDeque;
+use std::sync::Arc;
 
+use polars_async::executor::TaskMetricAggregator;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_ooc::{MostRecentSpillContext, ParameterFreeSpillContext, SpillFrame};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
@@ -13,23 +15,23 @@ enum BufferedStream {
 }
 
 impl BufferedStream {
-    fn new() -> Self {
+    fn new(task_metrics: Option<Arc<TaskMetricAggregator>>) -> Self {
         Self::Open(
             VecDeque::new(),
-            MostRecentSpillContext::new("multiplexer".into()),
+            MostRecentSpillContext::new("multiplexer".into(), task_metrics),
         )
     }
 }
 
+#[derive(Default)]
 pub struct MultiplexerNode {
     buffers: Vec<BufferedStream>,
+    recv_done: bool,
 }
 
 impl MultiplexerNode {
     pub fn new() -> Self {
-        Self {
-            buffers: Vec::default(),
-        }
+        Self::default()
     }
 }
 
@@ -42,18 +44,22 @@ impl ComputeNode for MultiplexerNode {
         &mut self,
         recv: &mut [PortState],
         send: &mut [PortState],
-        _state: &StreamingExecutionState,
+        state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
         assert!(recv.len() == 1 && !send.is_empty());
 
         // Initialize buffered streams, and mark those for which the receiver
         // is no longer interested as closed.
-        self.buffers.resize_with(send.len(), BufferedStream::new);
+        self.buffers.resize_with(send.len(), || {
+            BufferedStream::new(state.task_metrics.clone())
+        });
         for (s, b) in send.iter().zip(&mut self.buffers) {
             if *s == PortState::Done {
                 *b = BufferedStream::Closed;
             }
         }
+
+        self.recv_done = recv[0] == PortState::Done;
 
         // Check if either the input is done, or all outputs are done.
         let input_done = recv[0] == PortState::Done
@@ -96,6 +102,28 @@ impl ComputeNode for MultiplexerNode {
             PortState::Ready
         };
         Ok(())
+    }
+
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        let mut num_open = 0;
+        let mut any_buffered = false;
+        for b in &self.buffers {
+            match b {
+                BufferedStream::Open(v, _) => {
+                    num_open += 1;
+                    any_buffered |= !v.is_empty();
+                },
+                BufferedStream::Closed => {},
+            }
+        }
+
+        if !self.recv_done && num_open >= 2 {
+            NodeMemoryUsage::Unbounded
+        } else if any_buffered {
+            NodeMemoryUsage::Draining
+        } else {
+            NodeMemoryUsage::Bounded
+        }
     }
 
     fn spawn<'env, 's>(

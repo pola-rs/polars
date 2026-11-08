@@ -1,12 +1,12 @@
 pub mod functions;
 pub mod skip_files_mask;
-#[cfg(feature = "dtype-categorical")]
 mod table_statistics;
 use core::fmt;
 use std::sync::Arc;
 
 pub use functions::{create_scan_predicate, initialize_scan_predicate};
 use polars_arrow::bitmap::Bitmap;
+use polars_buffer::Buffer;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{PlIndexMap, PlIndexSet};
 use polars_core::schema::SchemaRef;
@@ -16,6 +16,7 @@ use polars_io::predicates::{
     ColumnPredicate, DynamicColumnPredicate, DynamicPredicateSource, RuntimeRangeHint,
     ScanIOPredicate, SkipBatchPredicate, SpecializedColumnPredicate, StagedScanIOPredicate,
 };
+use polars_plan::plans::expr_ir::ExprIR;
 use polars_utils::pl_str::PlSmallStr;
 
 /// [`ScanPredicate::predicate`] split per column, see [`StagedScanIOPredicate`].
@@ -68,6 +69,8 @@ pub struct ScanPredicate {
     pub predicate: Arc<dyn PhysicalExpr>,
 
     /// `predicate` split for readers that filter while decoding.
+    pub predicate_minterm_eirs: Option<Buffer<ExprIR>>,
+
     pub staged: Option<StagedScanPredicate>,
 
     /// Whether `predicate` filters rows at all. False when the scan only has
@@ -122,19 +125,22 @@ impl ScanPredicate {
         &self,
         skip_batch_predicate: Option<&Arc<dyn SkipBatchPredicate>>,
         schema: SchemaRef,
-    ) -> ScanIOPredicate {
-        ScanIOPredicate {
-            predicate: phys_expr_to_io_expr(self.predicate.clone()),
-            staged: self.staged.as_ref().map(StagedScanPredicate::to_io),
-            filters_rows: self.filters_rows,
-            live_columns: self.live_columns.clone(),
-            skip_batch_predicate: skip_batch_predicate
-                .cloned()
-                .or_else(|| self.to_dyn_skip_batch_predicate(schema)),
-            runtime_ranges: self.runtime_ranges.clone(),
-            hive_predicate: self.hive_predicate.clone().map(phys_expr_to_io_expr),
-            hive_predicate_is_full_predicate: self.hive_predicate_is_full_predicate,
-        }
+    ) -> (ScanIOPredicate, Option<Buffer<ExprIR>>) {
+        (
+            ScanIOPredicate {
+                predicate: phys_expr_to_io_expr(self.predicate.clone()),
+                staged: self.staged.as_ref().map(StagedScanPredicate::to_io),
+                filters_rows: self.filters_rows,
+                live_columns: self.live_columns.clone(),
+                skip_batch_predicate: skip_batch_predicate
+                    .cloned()
+                    .or_else(|| self.to_dyn_skip_batch_predicate(schema)),
+                runtime_ranges: self.runtime_ranges.clone(),
+                hive_predicate: self.hive_predicate.clone().map(phys_expr_to_io_expr),
+                hive_predicate_is_full_predicate: self.hive_predicate_is_full_predicate,
+            },
+            self.predicate_minterm_eirs.clone(),
+        )
     }
 }
 

@@ -31,19 +31,25 @@ impl fmt::Debug for CachedSqlStatement {
     }
 }
 
+/// A catalog table that a deferred SQL query reads: the name the query wrote, the table's full
+/// name (catalog, namespace, table), both as parts, and its scan.
+pub type SqlCatalogTable = (Arc<[PlSmallStr]>, Arc<[PlSmallStr]>, DslPlan);
+
 /// Resolves a SQL query into a [`DslPlan`].
 ///
 /// Implemented by `polars-sql` and registered through [`set_sql_resolver`], as `polars-plan`
 /// cannot depend on `polars-sql`.
 pub trait SqlResolver: Send + Sync {
-    /// `relations` are the named relations the query may reference. The arenas are those of
-    /// the ongoing DSL -> IR conversion.
+    /// `relations` are the named relations the query may reference, and `catalog_tables` the
+    /// catalog tables it reads (name as written, full name, scan). The arenas are those of the
+    /// ongoing DSL -> IR conversion.
     ///
     /// `cached` holds the already-parsed `query` when the node has not been deserialized.
     fn resolve(
         &self,
         query: &str,
         relations: Vec<(PlSmallStr, DslPlan)>,
+        catalog_tables: Vec<SqlCatalogTable>,
         cached: Option<&(dyn Any + Send + Sync)>,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,

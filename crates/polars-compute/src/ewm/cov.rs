@@ -13,12 +13,13 @@ pub struct EwmCovState<T> {
     mean_y: T,
     cov: T,
     weight_sum: T,
-    weight_square_sum: T,
+    /// Sum of `w_i * w_j` over all pairs `i < j` of observation weights.
+    weight_pair_sum: T,
     alpha: T,
     non_null_count: usize,
     adjust: bool,
     bias: bool,
-    min_periods: usize,
+    min_samples: usize,
     ignore_nulls: bool,
 }
 
@@ -26,19 +27,19 @@ impl<T> EwmCovState<T>
 where
     T: num_traits::Float,
 {
-    pub fn new(alpha: T, adjust: bool, bias: bool, min_periods: usize, ignore_nulls: bool) -> Self {
+    pub fn new(alpha: T, adjust: bool, bias: bool, min_samples: usize, ignore_nulls: bool) -> Self {
         Self {
             mean_x: T::zero(),
             mean_y: T::zero(),
             weight: T::zero(),
             cov: T::zero(),
             weight_sum: T::zero(),
-            weight_square_sum: T::zero(),
+            weight_pair_sum: T::zero(),
             alpha,
             non_null_count: 0,
             adjust,
             bias,
-            min_periods: min_periods.max(1),
+            min_samples: min_samples.max(1),
             ignore_nulls,
         }
     }
@@ -68,11 +69,11 @@ where
                 self.mean_y = y;
                 self.weight = T::one();
                 self.weight_sum = T::one();
-                self.weight_square_sum = T::one();
+                self.weight_pair_sum = T::zero();
             } else {
                 if opt_xy.is_some() || !self.ignore_nulls {
                     self.weight_sum *= T::one() - self.alpha;
-                    self.weight_square_sum *= (T::one() - self.alpha) * (T::one() - self.alpha);
+                    self.weight_pair_sum *= (T::one() - self.alpha) * (T::one() - self.alpha);
                     self.weight *= T::one() - self.alpha;
                 }
 
@@ -97,25 +98,26 @@ where
                     self.mean_x = new_mean_x;
                     self.mean_y = new_mean_y;
 
+                    self.weight_pair_sum += self.weight_sum * other_weight;
                     self.weight_sum += other_weight;
-                    self.weight_square_sum += other_weight * other_weight;
 
                     if !self.adjust {
                         self.weight_sum /= new_weight;
-                        self.weight_square_sum /= new_weight * new_weight;
+                        self.weight_pair_sum /= new_weight * new_weight;
                         self.weight = T::one();
                     }
                 }
             }
 
-            (opt_xy.is_some() && self.non_null_count >= self.min_periods)
+            (opt_xy.is_some() && self.non_null_count >= self.min_samples)
                 .then_some(self.cov)
                 .and_then(|cov| {
                     if self.bias {
                         Some(cov)
                     } else {
                         let numerator = self.weight_sum * self.weight_sum;
-                        let denominator = numerator - self.weight_square_sum;
+                        // Equal to `numerator - sum(w_i^2)`, without the cancellation.
+                        let denominator = self.weight_pair_sum + self.weight_pair_sum;
                         if denominator > T::zero() {
                             Some((numerator / denominator) * cov)
                         } else {
@@ -189,7 +191,7 @@ pub fn ewm_var<I, T>(
     alpha: T,
     adjust: bool,
     bias: bool,
-    min_periods: usize,
+    min_samples: usize,
     ignore_nulls: bool,
 ) -> PrimitiveArray<T>
 where
@@ -197,7 +199,7 @@ where
     I::IntoIter: TrustedLen,
     T: Float + NativeType + AddAssign + MulAssign + DivAssign,
 {
-    let mut state = EwmCovState::new(alpha, adjust, bias, min_periods, ignore_nulls);
+    let mut state = EwmCovState::new(alpha, adjust, bias, min_samples, ignore_nulls);
     let iter = state.update_iter(xs.into_iter().map(|x| x.map(|x| (x, x))));
 
     iter.collect()
@@ -208,7 +210,7 @@ pub fn ewm_std<I, T>(
     alpha: T,
     adjust: bool,
     bias: bool,
-    min_periods: usize,
+    min_samples: usize,
     ignore_nulls: bool,
 ) -> PrimitiveArray<T>
 where
@@ -219,7 +221,7 @@ where
         + std::ops::DivAssign
         + std::ops::MulAssign,
 {
-    let mut state = EwmCovState::new(alpha, adjust, bias, min_periods, ignore_nulls);
+    let mut state = EwmCovState::new(alpha, adjust, bias, min_samples, ignore_nulls);
     let iter = state.update_iter(xs.into_iter().map(|x| x.map(|x| (x, x))));
 
     iter.map(|opt_x| opt_x.map(|x| x.sqrt())).collect()
@@ -230,7 +232,7 @@ mod test {
     use super::super::assert_allclose;
     use super::*;
     const ALPHA: f64 = 0.5;
-    const EPS: f64 = 1e-15;
+    const EPS: f64 = 1e-14;
     use std::f64::consts::SQRT_2;
 
     const XS: [Option<f64>; 7] = [
@@ -250,7 +252,7 @@ mod test {
         alpha: T,
         adjust: bool,
         bias: bool,
-        min_periods: usize,
+        min_samples: usize,
         ignore_nulls: bool,
     ) -> PrimitiveArray<T>
     where
@@ -258,7 +260,7 @@ mod test {
         I::IntoIter: TrustedLen,
         T: Float + NativeType + AddAssign + MulAssign + DivAssign,
     {
-        let mut state = EwmCovState::new(alpha, adjust, bias, min_periods, ignore_nulls);
+        let mut state = EwmCovState::new(alpha, adjust, bias, min_samples, ignore_nulls);
         let iter = state.update_iter(xs.into_iter().zip(ys).map(|(x, y)| x.zip(y)));
 
         iter.collect()
@@ -794,7 +796,7 @@ mod test {
     }
 
     #[test]
-    fn test_ewm_min_periods() {
+    fn test_ewm_min_samples() {
         assert_allclose!(
             ewm_var(YS.to_vec(), ALPHA, true, true, 0, false),
             PrimitiveArray::from([

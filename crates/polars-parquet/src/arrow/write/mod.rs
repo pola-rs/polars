@@ -25,7 +25,7 @@ mod row_group;
 mod schema;
 mod utils;
 
-pub use nested::{num_values, write_rep_and_def};
+pub use nested::write_rep_and_def;
 pub use pages::{to_leaves, to_nested, to_parquet_leaves};
 use polars_arrow::array::*;
 use polars_arrow::bitmap::Bitmap;
@@ -1182,7 +1182,7 @@ fn get_encodings_recursive(dtype: &ArrowDataType, encodings: &mut Vec<Encoding>)
     }
 }
 
-/// Transverses the `dtype` up to its (parquet) columns and returns a vector of
+/// Traverses the `dtype` up to its (parquet) columns and returns a vector of
 /// items based on `map`.
 ///
 /// This is used to assign an [`Encoding`] to every parquet column based on the columns' type (see example)

@@ -49,6 +49,15 @@ pub(crate) fn encode_plain<O: Offset>(
     }
 }
 
+/// The total length in bytes of the non-null values.
+pub(crate) fn data_bytes<O: Offset>(array: &BinaryArray<O>) -> usize {
+    if array.null_count() == 0 {
+        array.get_values_size()
+    } else {
+        array.non_null_values_iter().map(<[u8]>::len).sum()
+    }
+}
+
 pub fn array_to_page<O: Offset>(
     array: &BinaryArray<O>,
     options: WriteOptions,
@@ -88,7 +97,7 @@ pub fn array_to_page<O: Offset>(
         None
     };
 
-    utils::build_plain_page(
+    let mut page = utils::build_plain_page(
         buffer,
         array.len(),
         array.len(),
@@ -99,8 +108,9 @@ pub fn array_to_page<O: Offset>(
         type_,
         options,
         encoding,
-    )
-    .map(Page::Data)
+    )?;
+    page.unencoded_byte_array_data_bytes = Some(data_bytes(array) as i64);
+    Ok(Page::Data(page))
 }
 
 pub(crate) fn build_statistics<O: Offset>(

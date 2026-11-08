@@ -18,6 +18,8 @@ A-gpu:
   - '/\bgpu\b/i'
 A-ide:
   - '/\bide\b/i'
+A-interop-arrow:
+  - '/__arrow_c_schema__|__arrow_c_stream__|pycapsule/i'
 A-interop-numpy:
   - '/numpy/i'
 A-interop-pandas:
@@ -40,6 +42,8 @@ A-io-json:
   - '/json/i'
 A-io-parquet:
   - '/parquet/i'
+A-io-partitioning:
+  - '/\bHive\b/i'
 A-io-spreadsheet:
   - '/spreadsheet|excel|\bods\b/i'
 A-panic:

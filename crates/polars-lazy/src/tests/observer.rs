@@ -101,12 +101,12 @@ struct CloseGuard {
 impl Drop for CloseGuard {
     fn drop(&mut self) {
         if let Some(metrics) = self.metrics.as_ref() {
-            let snap = metrics.snapshot();
+            let nodes = metrics.snapshot().nodes;
             self.log.lock().unwrap().push(Event::Snapshot(Snapshot {
-                rows: snap.len(),
-                total_rows_sent: snap.iter().map(|r| r.rows_sent).sum(),
-                any_done: snap.iter().any(|r| r.done),
-                custom: snap
+                rows: nodes.len(),
+                total_rows_sent: nodes.iter().map(|r| r.rows_sent).sum(),
+                any_done: nodes.iter().any(|r| r.done),
+                custom: nodes
                     .iter()
                     .flat_map(|r| r.custom.iter())
                     .map(|metric| (metric.key.clone(), metric.value))
@@ -315,7 +315,11 @@ mod tests {
 
     #[test]
     fn noop_metrics_snapshot_empty() {
-        assert!(NoopQueryMetrics.snapshot().is_empty());
+        let snap = NoopQueryMetrics.snapshot();
+        assert!(snap.nodes.is_empty());
+        assert_eq!(snap.query.io_total_active_ns, 0);
+        assert_eq!(snap.query.io_rx_active_ns, 0);
+        assert_eq!(snap.query.io_tx_active_ns, 0);
     }
 
     /// Build a `PythonScan` `LazyFrame` directly from the DSL with the given

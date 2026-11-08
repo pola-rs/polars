@@ -1,9 +1,10 @@
-use std::borrow::Cow;
 use std::sync::Arc;
 
 use polars_core::chunked_array::temporal::string::StringMethods;
 use polars_core::prelude::*;
-use polars_core::utils::{CustomIterTools, handle_casting_failures};
+use polars_core::utils::handle_casting_failures;
+#[cfg(feature = "regex")]
+use polars_ops::chunked_array::strings::regex_replacen_into;
 #[cfg(feature = "regex")]
 use polars_ops::chunked_array::strings::split_regex_helper;
 use polars_ops::prelude::{BinaryNameSpaceImpl, StringNameSpaceImpl};
@@ -152,8 +153,9 @@ pub fn function_expr_to_udf(func: IRStringFunction) -> SpecialEq<Arc<dyn Columns
 #[cfg(feature = "find_many")]
 fn contains_any(s: &[Column], ascii_case_insensitive: bool) -> PolarsResult<Column> {
     let ca = s[0].str()?;
-    let patterns = s[1].list()?;
-    polars_ops::chunked_array::strings::contains_any(ca, patterns, ascii_case_insensitive)
+    // A broadcast scalar is one list of patterns, not one per row.
+    let patterns = s[1].as_materialized_series_maintain_scalar();
+    polars_ops::chunked_array::strings::contains_any(ca, patterns.list()?, ascii_case_insensitive)
         .map(|out| out.into_column())
 }
 
@@ -164,12 +166,12 @@ fn replace_many(
     leftmost: bool,
 ) -> PolarsResult<Column> {
     let ca = s[0].str()?;
-    let patterns = s[1].list()?;
-    let replace_with = s[2].list()?;
+    let patterns = s[1].as_materialized_series_maintain_scalar();
+    let replace_with = s[2].as_materialized_series_maintain_scalar();
     polars_ops::chunked_array::strings::replace_all(
         ca,
-        patterns,
-        replace_with,
+        patterns.list()?,
+        replace_with.list()?,
         ascii_case_insensitive,
         leftmost,
     )
@@ -184,11 +186,11 @@ fn extract_many(
     leftmost: bool,
 ) -> PolarsResult<Column> {
     let ca = s[0].str()?;
-    let patterns = s[1].list()?;
+    let patterns = s[1].as_materialized_series_maintain_scalar();
 
     polars_ops::chunked_array::strings::extract_many(
         ca,
-        patterns,
+        patterns.list()?,
         ascii_case_insensitive,
         overlapping,
         leftmost,
@@ -204,11 +206,11 @@ fn find_many(
     leftmost: bool,
 ) -> PolarsResult<Column> {
     let ca = s[0].str()?;
-    let patterns = s[1].list()?;
+    let patterns = s[1].as_materialized_series_maintain_scalar();
 
     polars_ops::chunked_array::strings::find_many(
         ca,
-        patterns,
+        patterns.list()?,
         ascii_case_insensitive,
         overlapping,
         leftmost,
@@ -275,7 +277,7 @@ pub(super) fn starts_with(s: &[Column]) -> PolarsResult<Column> {
     Ok(ca.starts_with_chunked(&prefix)?.into_column())
 }
 
-/// Extract a regex pattern from the a string value.
+/// Extract a regex pattern from a string value.
 pub(super) fn extract(s: &[Column], group_index: usize) -> PolarsResult<Column> {
     let ca = s[0].str()?;
     let pat = s[1].str()?;
@@ -595,22 +597,20 @@ fn get_pat(pat: &StringChunked) -> PolarsResult<&str> {
 
 // used only if feature="regex"
 #[allow(dead_code)]
-fn iter_and_replace<'a, F>(ca: &'a StringChunked, val: &'a StringChunked, f: F) -> StringChunked
+fn iter_and_replace<F>(ca: &StringChunked, val: &StringChunked, mut f: F) -> StringChunked
 where
-    F: Fn(&'a str, &'a str) -> Cow<'a, str>,
+    F: FnMut(&str, &str, &mut String) -> bool,
 {
-    let mut out: StringChunked = ca
-        .iter()
-        .zip(val.iter())
-        .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
-            (Some(src), Some(val)) => Some(f(src, val)),
-            (Some(src), None) => Some(Cow::from(src)),
-            _ => None,
-        })
-        .collect_trusted();
-
-    out.rename(ca.name().clone());
-    out
+    let mut buf = String::new();
+    let mut builder = StringChunkedBuilder::new(ca.name().clone(), ca.len());
+    for (opt_src, opt_val) in ca.iter().zip(val.iter()) {
+        match (opt_src, opt_val) {
+            (Some(src), Some(val)) if f(src, val, &mut buf) => builder.append_value(&buf),
+            (Some(src), _) => builder.append_value(src),
+            _ => builder.append_null(),
+        }
+    }
+    builder.finish()
 }
 
 #[cfg(feature = "regex")]
@@ -618,11 +618,26 @@ fn is_literal_pat(pat: &str) -> bool {
     pat.chars().all(|c| !c.is_ascii_punctuation())
 }
 
+/// A pattern without punctuation only matches itself, so the `$` references in the
+/// replacement expand to the same string for every match.
 #[cfg(feature = "regex")]
-fn replace_n<'a>(
-    ca: &'a StringChunked,
-    pat: &'a StringChunked,
-    val: &'a StringChunked,
+fn expand_for_literal_pat<'a>(pat: &str, val: &'a str) -> PolarsResult<std::borrow::Cow<'a, str>> {
+    if !val.contains('$') {
+        return Ok(std::borrow::Cow::Borrowed(val));
+    }
+    let reg = polars_utils::regex_cache::compile_regex(pat)?;
+    let mut out = String::new();
+    if let Some(caps) = reg.captures(pat) {
+        caps.expand(val, &mut out);
+    }
+    Ok(std::borrow::Cow::Owned(out))
+}
+
+#[cfg(feature = "regex")]
+fn replace_n(
+    ca: &StringChunked,
+    pat: &StringChunked,
+    val: &StringChunked,
     literal: bool,
     n: usize,
 ) -> PolarsResult<StringChunked> {
@@ -632,17 +647,16 @@ fn replace_n<'a>(
             let Some(val) = val.get(0) else {
                 return Ok(ca.clone());
             };
-            let literal = literal || is_literal_pat(pat);
-
-            match literal {
-                true => ca.replace_literal(pat, val, n),
-                false => {
-                    if n > 1 {
-                        polars_bail!(ComputeError: "regex replacement with 'n > 1' not yet supported")
-                    }
-                    ca.replace(pat, val)
-                },
+            if literal {
+                return ca.replace_literal(pat, val, n);
             }
+            if is_literal_pat(pat) {
+                return ca.replace_literal(pat, &expand_for_literal_pat(pat, val)?, n);
+            }
+            if n > 1 {
+                polars_bail!(ComputeError: "regex replacement with 'n > 1' not yet supported")
+            }
+            ca.replace(pat, val)
         },
         (1, len_val) => {
             if n > 1 {
@@ -670,11 +684,11 @@ fn replace_n<'a>(
 
             let reg = polars_utils::regex_cache::compile_regex(&pat)?;
 
-            let f = |s: &'a str, val: &'a str| {
+            let f = |s: &str, val: &str, buf: &mut String| {
                 if literal {
-                    reg.replace(s, NoExpand(val))
+                    regex_replacen_into(&reg, s, 1, NoExpand(val), buf)
                 } else {
-                    reg.replace(s, val)
+                    regex_replacen_into(&reg, s, 1, val, buf)
                 }
             };
 
@@ -687,10 +701,10 @@ fn replace_n<'a>(
 }
 
 #[cfg(feature = "regex")]
-fn replace_all<'a>(
-    ca: &'a StringChunked,
-    pat: &'a StringChunked,
-    val: &'a StringChunked,
+fn replace_all(
+    ca: &StringChunked,
+    pat: &StringChunked,
+    val: &StringChunked,
     literal: bool,
 ) -> PolarsResult<StringChunked> {
     match (pat.len(), val.len()) {
@@ -699,12 +713,13 @@ fn replace_all<'a>(
             let val = val.get(0).ok_or_else(
                 || polars_err!(ComputeError: "value cannot be 'null' in 'replace' expression"),
             )?;
-            let literal = literal || is_literal_pat(pat);
-
-            match literal {
-                true => ca.replace_literal_all(pat, val),
-                false => ca.replace_all(pat, val),
+            if literal {
+                return ca.replace_literal_all(pat, val);
             }
+            if is_literal_pat(pat) {
+                return ca.replace_literal_all(pat, &expand_for_literal_pat(pat, val)?);
+            }
+            ca.replace_all(pat, val)
         },
         (1, len_val) => {
             let mut pat = get_pat(pat)?.to_string();
@@ -723,13 +738,13 @@ fn replace_all<'a>(
 
             let reg = polars_utils::regex_cache::compile_regex(&pat)?;
 
-            let f = |s: &'a str, val: &'a str| {
+            let f = |s: &str, val: &str, buf: &mut String| {
                 // According to the docs for replace_all
                 // when literal = True then capture groups are ignored.
                 if literal {
-                    reg.replace_all(s, NoExpand(val))
+                    regex_replacen_into(&reg, s, 0, NoExpand(val), buf)
                 } else {
-                    reg.replace_all(s, val)
+                    regex_replacen_into(&reg, s, 0, val, buf)
                 }
             };
 

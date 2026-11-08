@@ -67,7 +67,8 @@ fn ensure_shape(n: usize, len: usize, with_replacement: bool) -> PolarsResult<()
     polars_ensure!(
         with_replacement || n <= len,
         ShapeMismatch:
-        "cannot take a larger sample than the total population when `with_replacement=false`"
+        "cannot take a larger sample than the total population when `with_replacement=false` (sample size: {}, population: {})",
+        n, len
     );
     Ok(())
 }
@@ -200,7 +201,7 @@ impl DataFrame {
         seed: Option<u64>,
     ) -> PolarsResult<Self> {
         ensure_shape(n, self.height(), with_replacement)?;
-        // All columns should used the same indices. So we first create the indices.
+        // All columns should use the same indices. So we first create the indices.
         let idx = match with_replacement {
             true => create_rand_index_with_replacement(n, self.height(), seed, shuffle),
             false => create_rand_index_no_replacement(n, self.height(), seed, shuffle),

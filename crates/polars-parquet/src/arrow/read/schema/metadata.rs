@@ -1,10 +1,6 @@
 use base64::Engine as _;
 use base64::engine::general_purpose;
-use polars_arrow::datatypes::{
-    ArrowDataType, ArrowSchema, DTYPE_CATEGORICAL_LEGACY, DTYPE_CATEGORICAL_NEW,
-    DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW, Field, IntegerType, MAINTAIN_PL_TYPE,
-    Metadata, PL_KEY,
-};
+use polars_arrow::datatypes::{ArrowSchema, Metadata};
 use polars_arrow::io::ipc::read::deserialize_schema;
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::pl_str::PlSmallStr;
@@ -27,81 +23,6 @@ pub fn read_schema_from_metadata(metadata: &mut Metadata) -> PolarsResult<Option
         .transpose()
 }
 
-fn convert_field(field: &mut Field) {
-    // @NOTE: We cast non-Polars dictionaries to normal values because Polars does not have a
-    // generic dictionary type.
-    field.dtype = match std::mem::take(&mut field.dtype) {
-        ArrowDataType::Dictionary(key_type, value_type, ordered) => {
-            let is_pl_enum_or_categorical =
-                field.metadata.as_ref().is_some_and(|md| {
-                    md.contains_key(DTYPE_ENUM_VALUES_LEGACY)
-                        || md.contains_key(DTYPE_ENUM_VALUES_NEW)
-                        || md.contains_key(DTYPE_CATEGORICAL_NEW)
-                        || md.contains_key(DTYPE_CATEGORICAL_LEGACY)
-                }) && matches!(
-                    key_type,
-                    IntegerType::UInt8 | IntegerType::UInt16 | IntegerType::UInt32
-                ) && matches!(value_type.as_ref(), ArrowDataType::Utf8View);
-            let is_int_to_str = matches!(
-                value_type.as_ref(),
-                ArrowDataType::Utf8View | ArrowDataType::Utf8 | ArrowDataType::LargeUtf8
-            );
-
-            if is_pl_enum_or_categorical {
-                let is_pl_enum = field.metadata.as_ref().is_some_and(|md| {
-                    md.contains_key(DTYPE_ENUM_VALUES_LEGACY)
-                        || md.contains_key(DTYPE_ENUM_VALUES_NEW)
-                });
-                convert_dtype(ArrowDataType::Dictionary(key_type, value_type, is_pl_enum))
-            } else if is_int_to_str {
-                convert_dtype(ArrowDataType::Dictionary(key_type, value_type, ordered))
-            } else {
-                convert_dtype(*value_type)
-            }
-        },
-        ArrowDataType::LargeBinary
-            if field
-                .metadata
-                .as_ref()
-                .is_some_and(|md| md.get(PL_KEY).map(|s| s.as_str()) == Some(MAINTAIN_PL_TYPE)) =>
-        {
-            ArrowDataType::LargeBinary
-        },
-        dt => convert_dtype(dt),
-    };
-}
-
-fn convert_dtype(mut dtype: ArrowDataType) -> ArrowDataType {
-    use ArrowDataType::*;
-    match dtype {
-        List(mut field) => {
-            convert_field(field.as_mut());
-            dtype = LargeList(field);
-        },
-        LargeList(ref mut field) | FixedSizeList(ref mut field, _) => convert_field(field.as_mut()),
-        Struct(ref mut fields) => {
-            for field in fields {
-                convert_field(field);
-            }
-        },
-        Decimal32(p, s) | Decimal64(p, s) => dtype = Decimal(p, s),
-        Float16 => dtype = Float16,
-        Binary | LargeBinary => dtype = BinaryView,
-        Utf8 | LargeUtf8 => dtype = Utf8View,
-        Dictionary(_, ref mut dtype, _) => {
-            let dtype = dtype.as_mut();
-            *dtype = convert_dtype(std::mem::take(dtype));
-        },
-        Extension(ref mut ext) => {
-            ext.inner = convert_dtype(std::mem::take(&mut ext.inner));
-        },
-        Map(ref mut field, _ordered) => convert_field(field.as_mut()),
-        _ => {},
-    }
-
-    dtype
-}
-
 /// Try to convert Arrow schema metadata into a schema
 fn get_arrow_schema_from_metadata(encoded_meta: &str) -> PolarsResult<ArrowSchema> {
     let decoded = general_purpose::STANDARD.decode(encoded_meta);
@@ -112,12 +33,7 @@ fn get_arrow_schema_from_metadata(encoded_meta: &str) -> PolarsResult<ArrowSchem
             } else {
                 bytes.as_slice()
             };
-            let mut schema = deserialize_schema(slice).map(|x| x.0)?;
-            // Convert the data types to the data types we support.
-            for field in schema.iter_values_mut() {
-                convert_field(field);
-            }
-            Ok(schema)
+            deserialize_schema(slice).map(|x| x.0)
         },
         Err(err) => {
             // The C++ implementation returns an error if the schema can't be parsed.

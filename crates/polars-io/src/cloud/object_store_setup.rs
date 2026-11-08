@@ -5,12 +5,13 @@ use object_store::local::LocalFileSystem;
 use polars_core::config::{self, verbose, verbose_print_sensitive};
 use polars_error::{PolarsError, PolarsResult, polars_bail, polars_err, to_compute_err};
 use polars_utils::aliases::PlHashMap;
+use polars_utils::cache::LruCache;
 use polars_utils::pl_path::{ALLOWED_EXT_SCHEMES, CloudScheme, PlPath, PlRefPath};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{format_pl_smallstr, pl_serialize};
-use tokio::sync::RwLock;
+use tokio::sync::{OnceCell, RwLock};
 
-use super::{CloudLocation, CloudOptions, CloudType, PolarsObjectStore};
+use super::{CloudLocation, CloudOptions, CloudType, PolarsObjectStore, split_http_url};
 use crate::cloud::http_rate_limit::{
     DirectionalRateLimitConfig, InitPolicy, PacingBudget, RateLimiter,
 };
@@ -22,6 +23,12 @@ use crate::cloud::{CloudConfig, CloudRateLimitConfig, CloudRetryConfig};
 #[allow(clippy::type_complexity)]
 static OBJECT_STORE_CACHE: LazyLock<RwLock<PlHashMap<Vec<u8>, PolarsObjectStore>>> =
     LazyLock::new(Default::default);
+
+/// Per-origin HTTP stores; separate so that many origins don't evict the cloud stores.
+#[allow(clippy::type_complexity)]
+static HTTP_STORE_CACHE: LazyLock<
+    std::sync::Mutex<Option<LruCache<Vec<u8>, Arc<OnceCell<PolarsObjectStore>>>>>,
+> = LazyLock::new(Default::default);
 
 /// Trait for external ObjectStore builder (e.g., for HDFS). Unstable.
 pub trait ExtObjectStoreBuilder {
@@ -327,8 +334,13 @@ impl PolarsObjectStoreBuilder {
                 {
                     #[cfg(feature = "http")]
                     {
-                        let store = options.build_http(self.path.clone())?;
-                        PolarsResult::Ok(Arc::new(store) as Arc<dyn ObjectStore>)
+                        let store: Arc<dyn ObjectStore> = match split_http_url(&self.path) {
+                            Some((base_url, _)) => Arc::new(
+                                options.build_http_origin(self.path.sliced(0..base_url.len()))?,
+                            ),
+                            None => Arc::new(options.build_http(self.path.clone())?),
+                        };
+                        PolarsResult::Ok(store)
                     }
                 }
                 #[cfg(not(feature = "http"))]
@@ -369,6 +381,14 @@ impl PolarsObjectStoreBuilder {
 
     /// Note: Use `build_impl` for a non-caching version.
     pub(super) async fn build(self) -> PolarsResult<PolarsObjectStore> {
+        if self.cloud_type == CloudType::Http
+            && let Some((base_url, _)) = split_http_url(&self.path)
+        {
+            // The store serves the whole origin, so it must not keep this URL.
+            let path = self.path.sliced(0..base_url.len());
+            return Self { path, ..self }.build_http_cached().await;
+        }
+
         let opt_cache_key = match self.cloud_type {
             CloudType::Aws | CloudType::Gcp | CloudType::Azure => {
                 Some(path_and_creds_to_key(&self.path, self.options.as_ref())?)
@@ -436,8 +456,48 @@ impl PolarsObjectStoreBuilder {
         Ok(store)
     }
 
+    async fn build_http_cached(self) -> PolarsResult<PolarsObjectStore> {
+        // Clamped: the LRU allocates its capacity up front.
+        let capacity = polars_config::config().http_store_cache_size().min(1 << 16) as usize;
+
+        // An uncached cell builds a store that is dropped with its last user.
+        let cell = if capacity == 0 {
+            Default::default()
+        } else {
+            let cache_key = path_and_creds_to_key(&self.path, self.options.as_ref())?;
+            let mut cache = HTTP_STORE_CACHE.lock().unwrap();
+            let cache = match &mut *cache {
+                Some(cache) if cache.max_capacity() == capacity => cache,
+                // First use, or capacity changed at runtime.
+                cache => cache.insert(LruCache::with_capacity(capacity)),
+            };
+            let was_full = cache.len() == capacity;
+            let cell =
+                Arc::clone(cache.get_or_insert_with(cache_key.as_slice(), |_| Default::default()));
+            if !was_full && cache.len() == capacity && config::verbose() {
+                eprintln!(
+                    "build_object_store: http store cache full ({capacity} hosts), evicting \
+                     least recently used from now on (POLARS_HTTP_STORE_CACHE_SIZE)"
+                );
+            }
+            cell
+        };
+
+        cell.get_or_try_init(|| async {
+            let store = self.build_impl(false).await?;
+            PolarsResult::Ok(PolarsObjectStore::new_from_inner(store, self))
+        })
+        .await
+        .cloned()
+    }
+
     pub(crate) fn is_azure(&self) -> bool {
         matches!(&self.cloud_type, CloudType::Azure)
+    }
+
+    /// Http has no credentials to refresh; a rebuild would drop the connection pool.
+    pub(crate) fn rebuild_on_error(&self) -> bool {
+        !matches!(&self.cloud_type, CloudType::Http)
     }
 }
 

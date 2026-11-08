@@ -4,7 +4,7 @@
 #![cfg_attr(
     feature = "allow_unused",
     allow(unused, dead_code, irrefutable_let_patterns)
-)] // Maybe be caused by some feature
+)] // May be caused by some feature
 // combinations
 extern crate core;
 
@@ -18,3 +18,5 @@ pub mod plans;
 pub mod prelude;
 pub mod traversal;
 pub mod utils;
+
+polars_utils::define_unique_column_name!("PLAN");

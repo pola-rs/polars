@@ -92,6 +92,7 @@ if TYPE_CHECKING:
     from builtins import str as str_
     from collections.abc import Callable, Iterable
     from io import IOBase
+    from typing import Concatenate, ParamSpec
 
     from polars import DataFrame, LazyFrame, Series
     from polars._typing import (
@@ -116,13 +117,7 @@ if TYPE_CHECKING:
         WindowMappingStrategy,
     )
     from polars._utils.various import NoDefault
-
-    if sys.version_info >= (3, 11):
-        from typing import Concatenate, ParamSpec
-    else:
-        from typing import Concatenate
-
-        from typing_extensions import ParamSpec
+    from polars.datatypes import DataType
 
     T = TypeVar("T")
     P = ParamSpec("P")
@@ -1210,6 +1205,70 @@ class Expr(metaclass=_Meta):
         └──────┴──────┘
         '''
         return function(self, *args, **kwargs)
+
+    @unstable()
+    def pipe_with_dtype(
+        self,
+        function: Callable[[Expr, DataType], IntoExpr],
+    ) -> Expr:
+        """
+        Converts to another expression by calling `function`.
+
+        Runs during the plan stage (unlike `pipe_with_schema`),
+        which means that the dtype of this expression is known.
+        This allows choosing a different expression depending on the dtype of the input,
+        including the metadata of extension types. This also means that any
+        exceptions raised by `function` will only be emitted during the plan stage.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed at any
+            point without it being considered a breaking change.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Parameters
+        ----------
+        function
+            Callable; will receive the expression as the first parameter and its
+            resolved dtype as the second parameter. The returned expression takes the
+            place of this expression, including its output name.
+
+        See Also
+        --------
+        pipe
+        polars.pipe_with_dtype : Pass multiple expressions to a single function.
+        LazyFrame.pipe_with_schema
+
+        Examples
+        --------
+        Cast integer and string columns to float,
+        but leave the other columns as-is.
+
+        >>> def to_float_if_possible(expr: pl.Expr, dtype: pl.DataType) -> pl.Expr:
+        ...     if dtype.is_integer() or dtype == pl.String:
+        ...         return expr.cast(pl.Float64)
+        ...     return expr
+        >>> df = pl.DataFrame(
+        ...     {"a": [1, 2], "b": ["1.0", "2.5"], "c": [2.0, 3.0], "d": [[1], [2, 3]]},
+        ...     schema={
+        ...         "a": pl.Int64,
+        ...         "b": pl.String,
+        ...         "c": pl.Float32,
+        ...         "d": pl.List(pl.Int64),
+        ...     },
+        ... )
+        >>> df.select(pl.all().pipe_with_dtype(to_float_if_possible))
+        shape: (2, 4)
+        ┌─────┬─────┬─────┬───────────┐
+        │ a   ┆ b   ┆ c   ┆ d         │
+        │ --- ┆ --- ┆ --- ┆ ---       │
+        │ f64 ┆ f64 ┆ f32 ┆ list[i64] │
+        ╞═════╪═════╪═════╪═══════════╡
+        │ 1.0 ┆ 1.0 ┆ 2.0 ┆ [1]       │
+        │ 2.0 ┆ 2.5 ┆ 3.0 ┆ [2, 3]    │
+        └─────┴─────┴─────┴───────────┘
+        """
+        return F.pipe_with_dtype([self], lambda inputs: function(*inputs[0]))
 
     def not_(self) -> Expr:
         """
@@ -2384,7 +2443,7 @@ class Expr(metaclass=_Meta):
 
         .. math:: O(n \log{n})
 
-        .. engine-support:: in-memory, partially-streaming, partially-distributed
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         .. versionchanged:: 1.0.0
             The `descending` parameter was renamed to `reverse`.
@@ -2573,7 +2632,7 @@ class Expr(metaclass=_Meta):
 
         .. math:: O(n \log{n})
 
-        .. engine-support:: in-memory, partially-streaming, partially-distributed
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         .. versionchanged:: 1.0.0
             The `descending` parameter was renamed `reverse`.
@@ -2750,7 +2809,7 @@ class Expr(metaclass=_Meta):
         return the index of any of the maximum values. In this case, the returned index
         is not guaranteed to be the same across multiple runs.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -2779,7 +2838,7 @@ class Expr(metaclass=_Meta):
         return the index of any of the minimum values. In this case, the returned index
         is not guaranteed to be the same across multiple runs.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -2804,7 +2863,7 @@ class Expr(metaclass=_Meta):
         """
         Get the index of the first occurrence of a value, or ``None`` if it's not found.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -3049,7 +3108,7 @@ class Expr(metaclass=_Meta):
         """
         Take values by index.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -3179,7 +3238,7 @@ class Expr(metaclass=_Meta):
         """
         Shift values by the given number of indices.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -3265,7 +3324,9 @@ class Expr(metaclass=_Meta):
         To interpolate over null values see interpolate.
         See the examples below to fill nulls with an expression.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, partially-distributed
+            :partially-distributed: The "mean", "min" and "max" strategies run on a
+                single node.
 
         Parameters
         ----------
@@ -3373,7 +3434,7 @@ class Expr(metaclass=_Meta):
         """
         Fill floating point NaN value with a fill value.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -3418,7 +3479,7 @@ class Expr(metaclass=_Meta):
 
         This is an alias of `.fill_null(strategy="forward")`.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -3439,7 +3500,7 @@ class Expr(metaclass=_Meta):
 
         This is an alias of `.fill_null(strategy="backward")`.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -3576,7 +3637,7 @@ class Expr(metaclass=_Meta):
         If the by expression has multiple values equal to the maximum it is not
         defined which value will be chosen.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -3633,7 +3694,7 @@ class Expr(metaclass=_Meta):
         If the by expression has multiple values equal to the minimum it is not
         defined which value will be chosen.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -3689,7 +3750,7 @@ class Expr(metaclass=_Meta):
         """
         Get minimum value, but propagate/poison encountered NaN values.
 
-        This differs from numpy's `nanmax` as numpy defaults to propagating NaN values,
+        This differs from numpy's `nanmin` as numpy defaults to propagating NaN values,
         whereas polars defaults to ignoring them.
 
         .. engine-support:: in-memory, streaming, distributed
@@ -3764,10 +3825,7 @@ class Expr(metaclass=_Meta):
         """
         Get median value using linear interpolation.
 
-        .. engine-support:: in-memory, partially-streaming, partially-distributed
-            :partially-distributed: This can map-reduce, but all the data of a single
-                group has to be shuffled to a single partition. Outside a group_by
-                there is only one group, so it runs on a single node.
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         Examples
         --------
@@ -3888,7 +3946,7 @@ class Expr(metaclass=_Meta):
         """
         Compute approximate quantile(s) of an expression.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -3931,8 +3989,8 @@ class Expr(metaclass=_Meta):
 
         Notes
         -----
-        * As long as your data can fit in RAM, it is always more efficient to use the
-          regular :meth:`quantile` function instead.
+        * If the Expr has fewer than 100 million items, it is generally more efficient
+          to use the regular :meth:`quantile` function instead.
 
         * NaN values are regarded as larger than any finite number (and equal to one
           another). As a result, ``NaN`` values are treated as the largest values when
@@ -4100,8 +4158,8 @@ class Expr(metaclass=_Meta):
         `null` is considered to be a unique value for the purposes of this operation.
 
         .. engine-support:: in-memory, streaming, partially-distributed
-            :partially-distributed: De-duplicates per partition for either value of
-                maintain_order, but the result is gathered onto a single node.
+            :partially-distributed: Distributed when maintain_order=False; otherwise it
+                runs on a single node.
 
         Parameters
         ----------
@@ -4268,7 +4326,9 @@ class Expr(metaclass=_Meta):
         <https://www.postgresql.org/docs/current/tutorial-window.html>`_
         work in PostgreSQL.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, partially-distributed
+            :partially-distributed: Distributed for mapping_strategy="group_to_rows"
+                (the default); "join" and "explode" run on a single node.
 
         Parameters
         ----------
@@ -4529,7 +4589,7 @@ class Expr(metaclass=_Meta):
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, distributed
 
         Parameters
         ----------
@@ -4705,7 +4765,7 @@ class Expr(metaclass=_Meta):
         """
         Get a boolean mask of the local maximum peaks.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, distributed
 
         Examples
         --------
@@ -4730,7 +4790,7 @@ class Expr(metaclass=_Meta):
         """
         Get a boolean mask of the local minimum peaks.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, distributed
 
         Examples
         --------
@@ -4759,7 +4819,7 @@ class Expr(metaclass=_Meta):
         """
         Get quantile value.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, distributed
 
         Parameters
         ----------
@@ -4844,7 +4904,7 @@ class Expr(metaclass=_Meta):
         """
         Bin continuous values into discrete categories.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, distributed
 
         .. deprecated:: 2.0.0
             Use :meth:`bin_intervals` instead. It requires `labels` (pass
@@ -5054,7 +5114,7 @@ class Expr(metaclass=_Meta):
         """
         Bin values into discrete intervals delimited by breakpoints.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         .. warning::
             This functionality is considered **experimental**. It may be removed or
@@ -5990,7 +6050,7 @@ class Expr(metaclass=_Meta):
         """
         Take every nth value in the Series and return as a new Series.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -6618,6 +6678,7 @@ class Expr(metaclass=_Meta):
         See Also
         --------
         truediv
+        truncdiv
 
         Examples
         --------
@@ -6692,6 +6753,47 @@ class Expr(metaclass=_Meta):
         └──────┴────────┘
         """
         return self.__floordiv__(other)
+
+    def truncdiv(self, other: Any) -> Expr:
+        """
+        Divide, rounding the quotient toward zero.
+
+        Unlike :meth:`floordiv`, which rounds down, this rounds a negative quotient up,
+        as integer division does in C and Rust. The result has the same data type
+        as `floordiv`'s.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Parameters
+        ----------
+        other
+            Numeric literal or expression value.
+
+        See Also
+        --------
+        floordiv
+        truediv
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [-5, -4, 4, 5]})
+        >>> df.with_columns(
+        ...     pl.col("x").floordiv(2).alias("x//2"),
+        ...     pl.col("x").truncdiv(2).alias("truncdiv(x, 2)"),
+        ... )
+        shape: (4, 3)
+        ┌─────┬──────┬────────────────┐
+        │ x   ┆ x//2 ┆ truncdiv(x, 2) │
+        │ --- ┆ ---  ┆ ---            │
+        │ i64 ┆ i64  ┆ i64            │
+        ╞═════╪══════╪════════════════╡
+        │ -5  ┆ -3   ┆ -2             │
+        │ -4  ┆ -2   ┆ -2             │
+        │ 4   ┆ 2    ┆ 2              │
+        │ 5   ┆ 2    ┆ 2              │
+        └─────┴──────┴────────────────┘
+        """
+        return wrap_expr(self._pyexpr.trunc_div(parse_into_expression(other)))
 
     def mod(self, other: Any) -> Expr:
         """
@@ -6994,11 +7096,19 @@ class Expr(metaclass=_Meta):
             Series or sequence of primitive type.
         nulls_equal : bool, default False
             If True, treat null as a distinct value. Null values will not propagate.
+            Note that :meth:`Expr.list.contains` and :meth:`Expr.arr.contains` default
+            to `True`.
 
         Returns
         -------
         Expr
             Expression of data type :class:`Boolean`.
+
+        Notes
+        -----
+        For supported dtype pairs, lossy conversions do not create matches. Values that
+        would overflow or require rounding match nothing. Cast explicitly to compare
+        integers and floats.
 
         Examples
         --------
@@ -7027,7 +7137,7 @@ class Expr(metaclass=_Meta):
         """
         Repeat the elements in this Series as specified in the given expression.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, distributed
 
         The repeated elements are expanded into a `List`.
 
@@ -7259,7 +7369,7 @@ class Expr(metaclass=_Meta):
         under any combination of those settings.
 
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -7363,6 +7473,14 @@ class Expr(metaclass=_Meta):
         """
         return wrap_expr(self._pyexpr.hash(seed))
 
+    def _mm3_hash(self) -> Expr:
+        """
+        Compute the 32-bit MurmurHash3 of the values, as specified by Iceberg.
+
+        This is the hash used by the Iceberg `bucket` partition transform.
+        """
+        return wrap_expr(self._pyexpr.mm3_hash())
+
     def reinterpret(
         self,
         *,
@@ -7370,10 +7488,14 @@ class Expr(metaclass=_Meta):
         dtype: PolarsDataType | None = None,
     ) -> Expr:
         """
-        Reinterpret the underlying bits as a signed/unsigned integer or float.
+        Reinterpret the underlying bits as a signed/unsigned integer, float or decimal.
 
-        This operation is only allowed for numeric types of the same size.
-        For lower bits numbers, you can safely use the cast operation.
+        This operation is only allowed between numeric types of the same size. To
+        convert between types of different sizes, use :meth:`cast` instead.
+
+        A `Decimal` can also be reinterpreted to and from `Int128`, its unscaled integer
+        representation: `1.23` as `Decimal(5, 2)` becomes `123`. Reinterpreting an
+        `Int128` raises if the value doesn't fit the precision of the target `Decimal`.
 
         Exactly one of `signed` or `dtype` must be specified.
 
@@ -7418,7 +7540,7 @@ class Expr(metaclass=_Meta):
         """
         Print the value that this expression evaluates to and pass on the value.
 
-        .. engine-support:: in-memory, streaming, distributed
+        .. engine-support:: in-memory, streaming
 
         Examples
         --------
@@ -7455,7 +7577,7 @@ class Expr(metaclass=_Meta):
 
         Nulls at the beginning and end of the series remain null.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -8908,7 +9030,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming, distributed
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9020,7 +9142,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming, distributed
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9133,7 +9255,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming, distributed
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9246,7 +9368,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming, distributed
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9360,7 +9482,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming, distributed
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9478,7 +9600,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming, distributed
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9594,7 +9716,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming, distributed
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9708,7 +9830,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming, distributed
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9857,7 +9979,9 @@ class Expr(metaclass=_Meta):
         parameter. The resulting values will be the rank of the value that is
         at the end of the sliding window.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, partially-streaming, distributed
+            :partially-streaming: Falls back to in-memory for
+                ``method="random"`` with a ``seed``.
 
         Parameters
         ----------
@@ -9939,7 +10063,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -9981,7 +10105,7 @@ class Expr(metaclass=_Meta):
         """
         return wrap_expr(
             self._pyexpr.rolling_skew(
-                window_size, bias=bias, min_periods=min_samples, center=center
+                window_size, bias=bias, min_samples=min_samples, center=center
             )
         )
 
@@ -10005,7 +10129,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -10047,7 +10171,7 @@ class Expr(metaclass=_Meta):
                 window_size,
                 fisher=fisher,
                 bias=bias,
-                min_periods=min_samples,
+                min_samples=min_samples,
                 center=center,
             )
         )
@@ -10073,7 +10197,7 @@ class Expr(metaclass=_Meta):
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -10282,7 +10406,7 @@ class Expr(metaclass=_Meta):
         """
         Calculate the first discrete difference between shifted items.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -10346,7 +10470,7 @@ class Expr(metaclass=_Meta):
 
         Computes the change from the previous row by default.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, distributed
 
         Parameters
         ----------
@@ -10394,7 +10518,7 @@ class Expr(metaclass=_Meta):
 
         See scipy.stats for more information.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -10448,7 +10572,7 @@ class Expr(metaclass=_Meta):
 
         See scipy.stats for more information
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -11903,7 +12027,7 @@ class Expr(metaclass=_Meta):
         """
         Count the occurrence of unique values.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -12253,7 +12377,7 @@ class Expr(metaclass=_Meta):
         """
         Flags the expression as 'sorted'.
 
-        Enables downstream code to user fast paths for sorted arrays. It is
+        Enables downstream code to use fast paths for sorted arrays. It is
         recommended to also set whether `nulls_last` is `True` or `False`, as
         this enables many internal optimizations.
 
@@ -12875,6 +12999,8 @@ class Expr(metaclass=_Meta):
         unordered: bool = False,
         descending: Sequence[bool] | None = None,
         nulls_last: Sequence[bool] | None = None,
+        output: Literal["binary_offset", "binary", "optimal"] = "binary_offset",
+        encode_nulls: Sequence[bool] | None = None,
     ) -> Expr:
         dtypes_pyexprs = [
             parse_into_datatype_expr(dtype)._pydatatype_expr for dtype in dtypes
@@ -12884,10 +13010,12 @@ class Expr(metaclass=_Meta):
             assert descending is None
             assert nulls_last is None
 
-            result = self._pyexpr.row_decode_unordered(names, dtypes_pyexprs)
+            result = self._pyexpr.row_decode_unordered(
+                names, dtypes_pyexprs, output, encode_nulls
+            )
         else:
             result = self._pyexpr.row_decode_ordered(
-                names, dtypes_pyexprs, descending, nulls_last
+                names, dtypes_pyexprs, descending, nulls_last, output, encode_nulls
             )
 
         return wrap_expr(result)

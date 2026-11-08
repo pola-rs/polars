@@ -16,9 +16,51 @@ mod dyn_iter;
 pub use compression::{Compressor, compress};
 pub use dyn_iter::{DynIter, DynStreamingIterator};
 pub use file::{FileWriter, write_metadata_sidecar};
+use polars_parquet_format::thrift::protocol::{TCompactOutputProtocol, TOutputProtocol};
 pub use row_group::ColumnOffsetsMetadata;
 
+use crate::parquet::error::ParquetResult;
 use crate::parquet::page::CompressedPage;
+
+/// Thrift objects that can be serialized with the compact protocol.
+pub(crate) trait WriteThrift {
+    fn write_thrift<T: TOutputProtocol>(
+        &self,
+        protocol: &mut T,
+    ) -> polars_parquet_format::thrift::Result<usize>;
+
+    /// Serialize the object to bytes.
+    fn to_thrift_bytes(&self) -> ParquetResult<Vec<u8>> {
+        let mut buf = vec![];
+        let mut protocol = TCompactOutputProtocol::new(&mut buf);
+        self.write_thrift(&mut protocol)?;
+        Ok(buf)
+    }
+}
+
+macro_rules! impl_write_thrift {
+    ($($t:ty),*) => {
+        $(
+            impl WriteThrift for $t {
+                fn write_thrift<T: TOutputProtocol>(
+                    &self,
+                    protocol: &mut T,
+                ) -> polars_parquet_format::thrift::Result<usize> {
+                    self.write_to_out_protocol(protocol)
+                }
+            }
+        )*
+    };
+}
+
+impl_write_thrift!(
+    polars_parquet_format::ColumnIndex,
+    polars_parquet_format::ColumnMetaData,
+    polars_parquet_format::FileCryptoMetaData,
+    polars_parquet_format::FileMetaData,
+    polars_parquet_format::OffsetIndex,
+    polars_parquet_format::PageHeader
+);
 
 pub type RowGroupIterColumns<'a, E> =
     DynIter<'a, Result<DynStreamingIterator<'a, CompressedPage, E>, E>>;

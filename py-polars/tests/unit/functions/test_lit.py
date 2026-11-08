@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import enum
-import sys
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
@@ -20,12 +19,9 @@ if TYPE_CHECKING:
     from polars._typing import PolarsDataType
 
 
-if sys.version_info >= (3, 11):
-    from enum import StrEnum
+from enum import StrEnum
 
-    PyStrEnum: type[enum.Enum] | None = StrEnum
-else:
-    PyStrEnum = None
+PyStrEnum: type[enum.Enum] | None = StrEnum
 
 
 @pytest.mark.parametrize(

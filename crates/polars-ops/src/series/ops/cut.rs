@@ -149,7 +149,11 @@ pub fn cut(
     }
 
     let cut_labels = if let Some(l) = labels {
-        polars_ensure!(l.len() == breaks.len() + 1, ShapeMismatch: "provide len(quantiles) + 1 labels");
+        polars_ensure!(
+            l.len() == breaks.len() + 1,
+            ShapeMismatch: "expected {} labels (len(breaks) + 1), got {}",
+            breaks.len() + 1, l.len()
+        );
         l
     } else {
         compute_cut_labels(&breaks, left_closed)?
@@ -213,7 +217,11 @@ pub fn qcut(
     }
 
     let cut_labels = if let Some(l) = labels {
-        polars_ensure!(l.len() == qbreaks.len() + 1, ShapeMismatch: "provide len(quantiles) + 1 labels");
+        polars_ensure!(
+            l.len() == qbreaks.len() + 1,
+            ShapeMismatch: "expected {} labels (len(breaks) + 1), got {}",
+            qbreaks.len() + 1, l.len()
+        );
         l
     } else {
         compute_cut_labels(&qbreaks, left_closed)?

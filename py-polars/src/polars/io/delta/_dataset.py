@@ -5,10 +5,12 @@ from dataclasses import dataclass
 from functools import partial
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
+from urllib.parse import quote, unquote
 
 import polars as pl
 from polars._utils.logging import eprint
 from polars._utils.various import parse_version
+from polars.exceptions import ComputeError
 from polars.io.cloud.credential_provider._providers import (
     _get_credentials_from_provider_expiry_aware,
 )
@@ -26,6 +28,38 @@ if TYPE_CHECKING:
     from polars.io.cloud._utils import NoPickleOption
     from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
     from polars.lazyframe.frame import LazyFrame
+
+
+# Not from `deltalake.table`: those describe deltalake's own readers.
+_MAX_READER_VERSION = 3
+# Reader version 2 tables may use column mapping (v3 lists it as a feature), which is
+# not supported: data files then store columns under physical names.
+_UNSUPPORTED_READER_VERSION = 2
+_SUPPORTED_FEATURES = frozenset(
+    {"deletionVectors", "timestampNtz", "variantType", "variantType-preview"}
+)
+
+
+def _check_reader_protocol(table: DeltaTable) -> None:
+    """Raise if polars cannot read a table with this reader protocol."""
+    from deltalake.exceptions import DeltaProtocolError
+
+    table_protocol = table.protocol()
+    min_reader_version = table_protocol.min_reader_version
+
+    if min_reader_version == _UNSUPPORTED_READER_VERSION:
+        msg = f"delta table requires reader version {min_reader_version} (column mapping), which polars does not support"
+        raise DeltaProtocolError(msg)
+    if min_reader_version > _MAX_READER_VERSION:
+        msg = f"delta table requires reader version {min_reader_version}, polars supports up to {_MAX_READER_VERSION}"
+        raise DeltaProtocolError(msg)
+    if min_reader_version >= 3 and table_protocol.reader_features is not None:
+        missing_features = {*table_protocol.reader_features}.difference(
+            _SUPPORTED_FEATURES
+        )
+        if len(missing_features) > 0:
+            msg = f"delta table requires reader features {sorted(missing_features)}, which polars does not support"
+            raise DeltaProtocolError(msg)
 
 
 def _table_root(table_uri: str) -> str:
@@ -86,6 +120,7 @@ class DeltaDataset:
         limit: int | None = None,
         projection: list[str] | None = None,
         filter_columns: list[str] | None = None,
+        statistics_columns: list[str] | None = None,
         pyarrow_predicate: str | None = None,
     ) -> tuple[LazyFrame, str] | None:
         """Construct a LazyFrame scan."""
@@ -101,6 +136,7 @@ class DeltaDataset:
                 f"limit: {limit}, "
                 f"projection: {projection}, "
                 f"filter_columns: {filter_columns}, "
+                f"statistics_columns: {statistics_columns}, "
                 f"use_pyarrow: {self.use_pyarrow}"
             )
 
@@ -201,16 +237,42 @@ class DeltaDataset:
                 "cannot pair add file sizes with file_uris(), skipping sizes"
             )
 
+        # Statistics of columns that are not filtered on are best effort.
+        best_effort_statistics_columns = [
+            c for c in statistics_columns or [] if c not in (filter_columns or [])
+        ]
+        load_statistics = filter_columns is not None or bool(
+            best_effort_statistics_columns
+        )
+        # Partition values come from the log, as paths need not be hive-style, so
+        # partitioned tables load the add actions even when statistics are not needed.
+        add_actions = (
+            pl.DataFrame(table.get_add_actions())
+            if load_statistics or partition_columns
+            else None
+        )
         table_statistics = (
             _extract_table_statistics_from_delta_add_actions(
-                pl.DataFrame(table.get_add_actions()),
-                filter_columns=filter_columns,
+                add_actions,
+                filter_columns=filter_columns or [],
+                best_effort_columns=best_effort_statistics_columns,
                 schema=schema,
                 verbose=verbose,
             )
-            if filter_columns is not None
+            if add_actions is not None and load_statistics
             else None
         )
+        hive_partitions = None
+        if add_actions is not None and partition_columns:
+            if not all(
+                path.endswith(unquote(add_path))
+                for path, add_path in zip(paths, add_actions["path"], strict=True)
+            ):
+                msg = "delta add actions are not in file_uris() order"
+                raise ComputeError(msg)
+            hive_partitions = add_actions.select(
+                pl.col("partition").struct.field(*hive_schema)
+            ).cast(hive_schema)
 
         reader_features = table.protocol().reader_features
         has_deletion_vectors = (
@@ -241,7 +303,9 @@ class DeltaDataset:
                         schema={"selection_vector": pl.List(pl.Boolean)},
                     )
                 return _extract_delta_deletion_vectors(
-                    requested_paths, delta_deletion_vectors
+                    requested_paths,
+                    delta_deletion_vectors,
+                    table_root=_table_root(table.table_uri),
                 )
 
             deletion_files = (
@@ -261,6 +325,7 @@ class DeltaDataset:
             storage_options=self.storage_options,
             credential_provider=self.credential_provider_builder,  # type: ignore[arg-type]
             _table_statistics=table_statistics,
+            _hive_partitions=hive_partitions,
             _deletion_files=deletion_files,
             _source_sizes=source_sizes,
         ), version_key
@@ -272,24 +337,16 @@ class DeltaDataset:
     def table_uri(self) -> str:
         """Fetch the table URI."""
         if self.table_uri_ is None:
-            assert self.table_.get() is not None
-            self.table_uri_ = self.table().table_uri
+            table = self.table_.get()
+            assert table is not None
+            # Not via table(): pickling must not run the protocol check.
+            self.table_uri_ = table.table_uri
 
         return self.table_uri_
 
     def table(self) -> DeltaTable:
         """Fetch the DeltaTable object."""
-        if self.table_.get() is None:
-            from deltalake.exceptions import DeltaProtocolError
-            from deltalake.table import (
-                MAX_SUPPORTED_READER_VERSION,
-                NOT_SUPPORTED_READER_VERSION,
-                SUPPORTED_READER_FEATURES,
-            )
-
-            # Some reader features require explicit support by the engine (polars)
-            SUPPORTED_READER_FEATURES.add("deletionVectors")
-
+        if (table := self.table_.get()) is None:
             from polars.io.delta._utils import _get_delta_lake_table
 
             assert self.table_uri_ is not None
@@ -315,31 +372,11 @@ class DeltaDataset:
                 delta_table_options=self.delta_table_options,
             )
 
-            table_protocol = table.protocol()
-
-            if (
-                table_protocol.min_reader_version > MAX_SUPPORTED_READER_VERSION
-                or table_protocol.min_reader_version == NOT_SUPPORTED_READER_VERSION
-            ):
-                msg = (
-                    f"The table's minimum reader version is {table_protocol.min_reader_version} "
-                    f"but polars delta scanner only supports version 1 or {MAX_SUPPORTED_READER_VERSION} with these reader features: {SUPPORTED_READER_FEATURES}"
-                )
-                raise DeltaProtocolError(msg)
-            if (
-                table_protocol.min_reader_version >= 3
-                and table_protocol.reader_features is not None
-            ):
-                missing_features = {*table_protocol.reader_features}.difference(
-                    SUPPORTED_READER_FEATURES
-                )
-                if len(missing_features) > 0:
-                    msg = f"The table has set these reader features: {missing_features} but these are not yet supported by the polars delta scanner."
-                    raise DeltaProtocolError(msg)
-
             self.table_.set(table)
 
-        return self.table_.get()  # type: ignore[return-value]
+        # Also checks a user-supplied DeltaTable.
+        _check_reader_protocol(table)
+        return table
 
     def __getstate__(self) -> dict[str, Any]:
         self.table_uri()
@@ -349,9 +386,29 @@ class DeltaDataset:
         self.__dict__ = state
 
 
+# Characters delta-rs leaves unescaped in cloud file_uris(): printable ASCII except the
+# URL path percent-encode set (space, `"`, `<`, `>`, backtick, `{` and `}`). Its URL
+# join reads `#` and `?` as fragment and query delimiters, so these stay unescaped too.
+_URL_PATH_SAFE = "!#$%&'()*+,-./:;=?@[\\]^_|~"
+
+
+def _dv_path_key(path: str, table_root: str | None) -> str:
+    """Return the deletion vector `path` as file_uris() gives it.
+
+    Below the table root, file_uris() decodes local paths and gives cloud paths as a
+    URL path, while deletion vector paths keep the log's percent-encoding.
+    """
+    root = table_root if table_root and path.startswith(table_root) else ""
+    rel = unquote(path[len(root) :])
+    if "://" in path:
+        rel = quote(rel, safe=_URL_PATH_SAFE)
+    return root + rel
+
+
 def _extract_delta_deletion_vectors(
     requested_paths: pl.DataFrame,
     delta_deletion_vectors: pl.DataFrame,
+    table_root: str | None = None,
 ) -> pl.DataFrame:
     """
     Extract the deletion_vectors for the provided requested_paths.
@@ -360,6 +417,8 @@ def _extract_delta_deletion_vectors(
     Output series schema is "selection_vector": List(Boolean), maintaining order.
 
     The selection_vector from deltalake is a keep-mask (True = keep).
+
+    `table_root` is the table prefix of the requested paths (see `_table_root`).
     """
     assert requested_paths.schema == {"path": pl.String}
 
@@ -368,6 +427,19 @@ def _extract_delta_deletion_vectors(
     assert delta_deletion_vectors.schema == delta_dv_schema
 
     file_prefix = "file://" if sys.platform != "win32" else "file:///"
+    delta_deletion_vectors = delta_deletion_vectors.with_columns(
+        pl.col("filepath")
+        .str.replace("^lakefs://", "s3://")
+        .str.strip_prefix(file_prefix)
+    )
+    # Only paths with a percent-escape can differ from their file_uris() form.
+    filepath = delta_deletion_vectors["filepath"]
+    escaped = filepath.str.contains("%", literal=True).fill_null(False).arg_true()
+    if len(escaped) > 0:
+        keys = [_dv_path_key(p, table_root) for p in filepath.gather(escaped).to_list()]
+        delta_deletion_vectors = delta_deletion_vectors.with_columns(
+            filepath.clone().scatter(escaped, keys)
+        )
     joined_df = (
         requested_paths.lazy()
         .with_columns(
@@ -376,11 +448,7 @@ def _extract_delta_deletion_vectors(
             .str.strip_prefix(file_prefix)
         )
         .join(
-            delta_deletion_vectors.lazy().with_columns(
-                pl.col("filepath")
-                .str.replace("^lakefs://", "s3://")
-                .str.strip_prefix(file_prefix)
-            ),
+            delta_deletion_vectors.lazy(),
             left_on="path",
             right_on="filepath",
             how="left",

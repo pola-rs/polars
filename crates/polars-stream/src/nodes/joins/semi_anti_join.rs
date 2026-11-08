@@ -3,7 +3,7 @@ use std::sync::Arc;
 use polars_arrow::array::BooleanArray;
 use polars_arrow::array::builder::ShareStrategy;
 use polars_arrow::bitmap::{BitmapBuilder, MutableBitmap};
-use polars_async::executor;
+use polars_async::executor::{self, TaskMetricAggregator};
 use polars_core::config;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
@@ -23,13 +23,16 @@ use polars_utils::sparse_init_vec::SparseInitVec;
 use rayon::prelude::*;
 
 use super::runtime_filter::{KeyFilterBuilder, RuntimeFilters};
-use super::utils::JoinSampleStats;
+use super::utils::{JoinSampleStats, LEFT_BUILD_MARGIN, UNIQUE_BUILD_MARGIN};
 use super::{
     BufferedStream, LOPSIDED_SAMPLE_FACTOR, build_side_left, emit_morsel_size, sample_sink,
     select_key_columns, send_frames,
 };
 use crate::expression::StreamExpr;
 use crate::nodes::compute_node_prelude::*;
+
+/// How many times fewer estimated rows an incomplete left side needs to be built.
+const LOPSIDED_ESTIMATE_FACTOR: usize = 8;
 
 fn hash_keys(keys: &DataFrame, params: &SemiAntiJoinParams, null_is_valid: bool) -> HashKeys {
     HashKeys::from_df(keys, params.random_state.clone(), null_is_valid, false)
@@ -60,6 +63,8 @@ struct SemiAntiJoinParams {
     runtime_filters: RuntimeFilters,
     random_state: PlRandomState,
     sample_limit: usize,
+    /// See `JoinOptionsIR::estimated_rows`.
+    estimated_rows: Option<[u64; 2]>,
 }
 
 impl SemiAntiJoinParams {
@@ -112,9 +117,11 @@ impl SemiAntiJoinNode {
         left_key_selectors: Vec<StreamExpr>,
         right_key_selectors: Vec<StreamExpr>,
         runtime_filters: Vec<RuntimeFilter>,
+        estimated_rows: Option<[u64; 2]>,
         args: JoinArgs,
         return_bool: bool,
         num_pipelines: usize,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
     ) -> PolarsResult<Self> {
         let sample_limit: usize = polars_config::config()
             .join_sample_limit()
@@ -154,6 +161,7 @@ impl SemiAntiJoinNode {
             build_side: args.build_side,
             runtime_filters: RuntimeFilters::new(runtime_filters, &unique_key_schema),
             sample_limit,
+            estimated_rows,
         };
         let state = if left_is_build.is_some() {
             SemiAntiJoinState::Build(BuildState::new(
@@ -169,17 +177,16 @@ impl SemiAntiJoinNode {
             } else {
                 params.planned_build_left()
             };
-            SemiAntiJoinState::Sample(SampleState {
-                only_side,
-                ..Default::default()
-            })
+            let spill_ctx =
+                MostRecentSpillContext::new("semi-anti-join-sample".into(), task_metrics.clone());
+            SemiAntiJoinState::Sample(SampleState::new(only_side, spill_ctx))
         };
 
         Ok(Self {
             state,
             params,
             grouper: new_hash_grouper(unique_key_schema),
-            spill_ctx: MostRecentSpillContext::new("semi-anti-join".into()),
+            spill_ctx: MostRecentSpillContext::new("semi-anti-join".into(), task_metrics),
         })
     }
 }
@@ -192,19 +199,34 @@ enum SemiAntiJoinState {
     Done,
 }
 
-#[derive(Default)]
 struct SampleState {
     left: Vec<Morsel>,
     left_len: usize,
     right: Vec<Morsel>,
     right_len: usize,
+    /// The number of rows each side may sample.
+    limits: [Arc<RelaxedCell<usize>>; 2],
     /// The only side being read: the preferred build side of a join with runtime
     /// filters, until it ends or reaches the sample limit. A side that ends is
     /// complete, so its keys are published before the other side is read.
     only_side: Option<bool>,
+    /// Keeps the sampled morsels spillable.
+    spill_ctx: MostRecentSpillContext,
 }
 
 impl SampleState {
+    fn new(only_side: Option<bool>, spill_ctx: MostRecentSpillContext) -> Self {
+        Self {
+            left: Vec::new(),
+            left_len: 0,
+            right: Vec::new(),
+            right_len: 0,
+            limits: Default::default(),
+            only_side,
+            spill_ctx,
+        }
+    }
+
     fn len(&self, left: bool) -> usize {
         if left { self.left_len } else { self.right_len }
     }
@@ -247,11 +269,12 @@ impl SampleState {
         let right_saturated = self.right_len >= params.sample_limit;
         let left_done = recv[0] == PortState::Done || left_saturated;
         let right_done = recv[1] == PortState::Done || right_saturated;
-        // A left side that reached the sample limit is only built when it is
-        // preferred. Otherwise the right side is built, however big it is.
+        // With a hint, a left side that reached the sample limit is only built
+        // when it is preferred, so sampling stops there. Without one, the right
+        // side is sampled to the limit too, for its keys to be compared.
         let prefer_left = params.build_side == Some(JoinBuildSide::PreferLeft);
         let stop_sampling = (left_done && right_done)
-            || (left_saturated && !prefer_left)
+            || (left_saturated && params.build_side.is_some() && !prefer_left)
             || (left_done && self.right_len >= LOPSIDED_SAMPLE_FACTOR * self.left_len)
             || (right_done && self.left_len >= LOPSIDED_SAMPLE_FACTOR * self.right_len);
         if !stop_sampling {
@@ -265,41 +288,23 @@ impl SampleState {
             );
         }
 
-        // Building the left side also keeps all of its rows, so it is only
-        // chosen when it was read completely and its estimated bytes are no
-        // more than the key bytes of the sampled right rows.
+        // Building the left side also keeps all of its rows. A complete left
+        // side is built when the right side is still being read, as that side
+        // could be arbitrarily big. When both are complete, the left side is
+        // only built when its estimated bytes are no more than the key bytes
+        // of the right side. When neither is, the plan's row estimates and the
+        // keys of both samples decide.
         let left_complete = recv[0] == PortState::Done;
-        let left_is_build = match (left_complete, right_saturated) {
-            (false, true) => left_saturated && prefer_left,
-            (false, false) => false,
-            (true, _) => {
-                let left = JoinSampleStats::from_sample(
-                    &self.left,
-                    &params.left_key_selectors,
-                    None,
-                    false,
-                    params.null_is_valid_when_built(true),
-                    &params.random_state,
-                    params.sample_limit,
-                    &state.in_memory_exec_state,
-                )?;
-                let right = JoinSampleStats::from_sample(
-                    &self.right,
-                    &params.right_key_selectors,
-                    None,
-                    false,
-                    params.null_is_valid_when_built(false),
-                    &params.random_state,
-                    params.sample_limit,
-                    &state.in_memory_exec_state,
-                )?;
-                let left_bytes = left.all_rows_build_bytes(self.left_len);
-                let right_bytes = right.distinct_keys_build_bytes(self.right_len);
-                if config::verbose() {
-                    eprintln!(
-                        "estimated retained bytes are: {left_bytes:.0} (left, keys and rows) vs. {right_bytes:.0} (right, keys)"
-                    );
-                }
+        let right_complete = recv[1] == PortState::Done;
+        let left_is_build = match (left_complete, right_complete) {
+            (false, false) if params.build_side.is_none() => {
+                self.incomplete_sides_favor_left(params, state)?
+            },
+            (false, _) => right_saturated && left_saturated && prefer_left,
+            (true, false) => true,
+            (true, true) => {
+                let (left_bytes, right_bytes) =
+                    self.build_bytes(self.left_len, self.right_len, params, state)?;
                 left_bytes <= right_bytes
             },
         };
@@ -317,6 +322,145 @@ impl SampleState {
             state,
             spill_ctx,
         )?))
+    }
+
+    /// Whether to build the left side when neither side is complete. A side has at
+    /// least the rows sampled from it, which overrides an estimate the sample
+    /// already exceeds. When the estimates make one side much smaller in rows,
+    /// the left side is built if it is the smaller one and its retained bytes are
+    /// no more than those of the right side. Otherwise the left side is only
+    /// built when the right side references its unique keys and building it
+    /// retains fewer bytes. Without estimates, such a right side is taken as
+    /// `UNIQUE_BUILD_MARGIN` times longer than the left side.
+    fn incomplete_sides_favor_left(
+        &self,
+        params: &SemiAntiJoinParams,
+        state: &StreamingExecutionState,
+    ) -> PolarsResult<bool> {
+        let estimated_rows = params.estimated_rows.map(|[left_estimate, right_estimate]| {
+            let left_rows = usize::try_from(left_estimate)
+                .unwrap_or(usize::MAX)
+                .max(self.left_len);
+            let right_rows = usize::try_from(right_estimate)
+                .unwrap_or(usize::MAX)
+                .max(self.right_len);
+            if config::verbose() {
+                eprintln!(
+                    "semi/anti-join sides are incomplete, estimated rows are: {left_rows} vs. {right_rows}"
+                );
+            }
+            (left_rows, right_rows)
+        });
+        if let Some((left_rows, right_rows)) = estimated_rows {
+            let lopsided = |small: usize, large: usize| {
+                small
+                    .checked_mul(LOPSIDED_ESTIMATE_FACTOR)
+                    .is_some_and(|rows| rows <= large)
+            };
+            if lopsided(left_rows, right_rows) {
+                let (left_bytes, right_bytes) =
+                    self.build_bytes(left_rows, right_rows, params, state)?;
+                return Ok(left_bytes <= right_bytes);
+            }
+            if lopsided(right_rows, left_rows) {
+                return Ok(false);
+            }
+        }
+
+        // A null key that can't match references nothing, so the keys are
+        // compared with the validity of a probe.
+        let left_keys = self.sample_stats(true, true, params.nulls_equal, params, state)?;
+        let right = self.sample_stats(false, true, params.nulls_equal, params, state)?;
+        let references = right.references_unique(&left_keys);
+        if config::verbose() {
+            eprintln!(
+                "semi/anti-join sample keys are: left min_hash_key_ratio={:?}, right ref_key_ratio={:?}, right references left: {references}",
+                left_keys.min_hash_key_ratio, right.ref_key_ratio
+            );
+        }
+        if !references {
+            return Ok(false);
+        }
+
+        let built_null_is_valid = params.null_is_valid_when_built(true);
+        let left = if built_null_is_valid == params.nulls_equal {
+            left_keys
+        } else {
+            self.sample_stats(true, false, built_null_is_valid, params, state)?
+        };
+        let (left_rows, right_rows) = estimated_rows.unwrap_or_else(|| {
+            let rows = params.sample_limit;
+            (rows, (rows as f64 * UNIQUE_BUILD_MARGIN) as usize)
+        });
+        let left_bytes = left.all_keys_build_bytes(left_rows)
+            + left_rows as f64 * (left.row_width + size_of::<IdxSize>() as f64);
+        let right_bytes = right.all_keys_build_bytes(right_rows);
+        if config::verbose() {
+            eprintln!(
+                "estimated build bytes are: {left_bytes:.0} (left, {left_rows} rows) vs. {right_bytes:.0} (right, {right_rows} rows)"
+            );
+        }
+        Ok(left_bytes * LEFT_BUILD_MARGIN < right_bytes)
+    }
+
+    /// The bytes retained when building `left_rows` rows of the left side
+    /// (keys and rows) or `right_rows` rows of the right side (keys), from the
+    /// samples of both sides.
+    fn build_bytes(
+        &self,
+        left_rows: usize,
+        right_rows: usize,
+        params: &SemiAntiJoinParams,
+        state: &StreamingExecutionState,
+    ) -> PolarsResult<(f64, f64)> {
+        let left = self.sample_stats(
+            true,
+            false,
+            params.null_is_valid_when_built(true),
+            params,
+            state,
+        )?;
+        let right = self.sample_stats(
+            false,
+            false,
+            params.null_is_valid_when_built(false),
+            params,
+            state,
+        )?;
+        let left_bytes = left.all_rows_build_bytes(left_rows);
+        let right_bytes = right.distinct_keys_build_bytes(right_rows);
+        if config::verbose() {
+            eprintln!(
+                "estimated retained bytes are: {left_bytes:.0} (left, keys and rows) vs. {right_bytes:.0} (right, keys)"
+            );
+        }
+        Ok((left_bytes, right_bytes))
+    }
+
+    /// The statistics of one side's sample, with null keys valid or not.
+    fn sample_stats(
+        &self,
+        left: bool,
+        with_min_hash: bool,
+        null_is_valid: bool,
+        params: &SemiAntiJoinParams,
+        state: &StreamingExecutionState,
+    ) -> PolarsResult<JoinSampleStats> {
+        let (morsels, key_selectors) = if left {
+            (&self.left, &params.left_key_selectors)
+        } else {
+            (&self.right, &params.right_key_selectors)
+        };
+        JoinSampleStats::from_sample(
+            morsels,
+            key_selectors,
+            None,
+            with_min_hash,
+            null_is_valid,
+            &params.random_state,
+            params.sample_limit,
+            &state.in_memory_exec_state,
+        )
     }
 
     /// Hand the keys of a completely sampled side to the runtime filters.
@@ -352,11 +496,13 @@ impl SampleState {
             "semi-anti-join-left-sample".into(),
             core::mem::take(&mut self.left),
             MorselSeq::default(),
+            state.task_metrics.clone(),
         );
         let mut sampled_probe_morsels = BufferedStream::new(
             "semi-anti-join-right-sample".into(),
             core::mem::take(&mut self.right),
             MorselSeq::default(),
+            state.task_metrics.clone(),
         );
         if !left_is_build {
             core::mem::swap(&mut sampled_build_morsels, &mut sampled_probe_morsels);
@@ -372,7 +518,7 @@ impl SampleState {
 
         // Simulate the sample build morsels flowing into the build side.
         if !sampled_build_morsels.is_empty() {
-            executor::task_scope(|scope| {
+            executor::task_scope(state.task_metrics(), |scope| {
                 let mut join_handles = Vec::new();
                 let receivers = sampled_build_morsels
                     .reinsert(state.num_pipelines, None, scope, &mut join_handles)
@@ -491,6 +637,7 @@ impl BuildState {
                 &partitioner,
                 &mut local.key_idxs_values_per_p,
                 &mut local.sketch_per_p,
+                None,
                 false,
             );
 
@@ -532,7 +679,12 @@ impl BuildState {
         params.runtime_filters.publish_merged(locals);
     }
 
-    fn finalize(&mut self, params: &SemiAntiJoinParams, grouper: &dyn Grouper) -> ProbeState {
+    fn finalize(
+        &mut self,
+        params: &SemiAntiJoinParams,
+        grouper: &dyn Grouper,
+        state: &StreamingExecutionState,
+    ) -> ProbeState {
         let left_is_build = params.left_is_build();
 
         // To reduce maximum memory usage we want to drop the original keys
@@ -557,7 +709,7 @@ impl BuildState {
             SparseInitVec::with_capacity(num_partitions);
         let payloads: SparseInitVec<BuildPayload> = SparseInitVec::with_capacity(num_partitions);
 
-        executor::task_scope(|s| {
+        executor::task_scope(state.task_metrics(), |s| {
             // Wrap in outer Arc to move to each thread, performing the
             // expensive clone on that thread.
             let arc_keys_per_local_builder = Arc::new(keys_per_local_builder);
@@ -831,7 +983,7 @@ impl ProbeState {
         }
         let sampled = core::mem::take(&mut self.sampled_probe_morsels);
         let partitioner = HashPartitioner::new(state.num_pipelines, 0);
-        executor::task_scope(|scope| {
+        executor::task_scope(state.task_metrics(), |scope| {
             let mut join_handles = Vec::new();
             let receivers = sampled
                 .reinsert(state.num_pipelines, None, scope, &mut join_handles)
@@ -994,7 +1146,7 @@ impl ComputeNode for SemiAntiJoinNode {
                 if self.params.empty_build_gives_empty_output() && build_state.is_empty() {
                     self.state = SemiAntiJoinState::Done;
                 } else {
-                    let mut probe_state = build_state.finalize(&self.params, &*self.grouper);
+                    let mut probe_state = build_state.finalize(&self.params, &*self.grouper, state);
                     if self.params.left_is_build() {
                         probe_state.mark_sampled(&self.params, state)?;
                     }
@@ -1036,11 +1188,24 @@ impl ComputeNode for SemiAntiJoinNode {
             SemiAntiJoinState::Sample(sample_state) => {
                 send[0] = PortState::Blocked;
                 for (idx, left) in [(0, true), (1, false)] {
+                    // While both sides are sampled, sampling stops once a side has
+                    // `LOPSIDED_SAMPLE_FACTOR` times the rows of the other, done, side.
+                    let lopsided =
+                        sample_state.only_side.is_none() && recv[1 - idx] == PortState::Done;
+                    let limit = if lopsided {
+                        let lopsided_limit = sample_state
+                            .len(!left)
+                            .saturating_mul(LOPSIDED_SAMPLE_FACTOR);
+                        self.params.sample_limit.min(lopsided_limit)
+                    } else {
+                        self.params.sample_limit
+                    };
+                    sample_state.limits[idx].store(limit);
                     if recv[idx] == PortState::Done {
                         continue;
                     }
                     let open = sample_state.is_open(left);
-                    recv[idx] = if open && sample_state.len(left) < self.params.sample_limit {
+                    recv[idx] = if open && sample_state.len(left) < limit {
                         PortState::Ready
                     } else {
                         PortState::Blocked
@@ -1089,11 +1254,15 @@ impl ComputeNode for SemiAntiJoinNode {
         Ok(())
     }
 
-    fn is_memory_intensive_pipeline_blocker(&self) -> bool {
-        matches!(
-            self.state,
-            SemiAntiJoinState::Sample { .. } | SemiAntiJoinState::Build { .. }
-        )
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        match self.state {
+            SemiAntiJoinState::Sample(_) => NodeMemoryUsage::WillAccumulate,
+            SemiAntiJoinState::Build(_) => NodeMemoryUsage::Accumulating,
+            SemiAntiJoinState::Probe(_) | SemiAntiJoinState::EmitBuild(_) => {
+                NodeMemoryUsage::HoldingUntilDone
+            },
+            SemiAntiJoinState::Done => NodeMemoryUsage::Bounded,
+        }
     }
 
     fn spawn<'env, 's>(
@@ -1117,20 +1286,6 @@ impl ComputeNode for SemiAntiJoinNode {
         match &mut self.state {
             SemiAntiJoinState::Sample(sample_state) => {
                 assert!(send_ports[0].is_none());
-                // A side without a port is done, unless it is not being read.
-                let final_len = |left: bool| {
-                    let idx = if left { 0 } else { 1 };
-                    let known = recv_ports[idx].is_none() && sample_state.is_open(left);
-                    let len = if known {
-                        sample_state.len(left)
-                    } else {
-                        usize::MAX
-                    };
-                    Arc::new(RelaxedCell::from(len))
-                };
-                let left_final_len = final_len(true);
-                let right_final_len = final_len(false);
-
                 if let Some(left_recv) = recv_ports[0].take() {
                     join_handles.push(scope.spawn_task(
                         TaskPriority::High,
@@ -1138,9 +1293,9 @@ impl ComputeNode for SemiAntiJoinNode {
                             left_recv.serial(),
                             &mut sample_state.left,
                             &mut sample_state.left_len,
-                            left_final_len.clone(),
-                            right_final_len.clone(),
-                            self.params.sample_limit,
+                            sample_state.limits[0].clone(),
+                            sample_state.limits[1].clone(),
+                            &sample_state.spill_ctx,
                         ),
                     ));
                 }
@@ -1151,9 +1306,9 @@ impl ComputeNode for SemiAntiJoinNode {
                             right_recv.serial(),
                             &mut sample_state.right,
                             &mut sample_state.right_len,
-                            right_final_len,
-                            left_final_len,
-                            self.params.sample_limit,
+                            sample_state.limits[1].clone(),
+                            sample_state.limits[0].clone(),
+                            &sample_state.spill_ctx,
                         ),
                     ));
                 }

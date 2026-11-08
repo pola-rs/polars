@@ -106,6 +106,7 @@ impl PartitionMorselSender {
                     if let Ok(permit) = self.open_sinks_semaphore.clone().try_acquire_owned() {
                         executor::spawn(
                             TaskPriority::Low,
+                            self.partition_sink_starter.task_metrics.as_deref(),
                             self.error_capture.clone().wrap_future(handle),
                         );
 

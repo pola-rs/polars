@@ -6,10 +6,12 @@ use crate::parquet::types::NativeType as ParquetNativeType;
 use crate::read::deserialize::utils::Decoded;
 use crate::read::expr::ParquetScalar;
 
+mod fixed_len_decimal;
 mod float;
 mod integer;
 pub(crate) mod plain;
 
+pub(crate) use fixed_len_decimal::{FixedLenDecimalDecoder, convert_i128};
 pub(crate) use float::FloatDecoder;
 pub(crate) use integer::IntDecoder;
 
