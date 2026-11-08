@@ -1431,7 +1431,7 @@ fn try_rewrite_outer_equi_join(
     options.args.nulls_equal = nulls_equal;
     options.options = JoinTypeOptionsIR::Equi {
         on,
-        fused_predicate: combine_predicates(fused.into_iter(), expr_arena),
+        fused_predicate: combine_predicates(fused, expr_arena),
     };
     Ok(true)
 }
