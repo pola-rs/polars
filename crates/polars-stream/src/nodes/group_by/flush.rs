@@ -92,7 +92,7 @@ pub struct Flush {
 impl Flush {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        outputs: Vec<DataFrame>,
+        outputs: Vec<(DataFrame, u64)>,
         mut partitions: Vec<StoredPartition>,
         pre_aggs: SplitPreAggs,
         num_tasks: usize,
@@ -103,13 +103,6 @@ impl Flush {
         partition_bytes: u64,
     ) -> Self {
         partitions.sort_by_key(|p| Reverse(p.estimated_size()));
-        let outputs: Vec<_> = outputs
-            .into_iter()
-            .map(|frame| {
-                let bytes = frame.estimated_size(false) as u64;
-                (frame, bytes)
-            })
-            .collect();
         let unsent_bytes = outputs.iter().map(|(_, bytes)| bytes).sum::<u64>()
             + partitions.len() as u64 * partition_bytes;
         let num_builders = grant
