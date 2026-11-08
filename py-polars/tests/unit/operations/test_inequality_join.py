@@ -1479,9 +1479,10 @@ def test_outer_join_where_key_with_both_inputs_condition(
         query.collect(engine=engine, optimizations=disabled),
         check_row_order=False,
     )
-    plan = query.explain()
-    assert "NESTED LOOP JOIN" not in plan
-    assert "FUSED PREDICATE" in plan
+    # Only the streaming engine checks the condition inside an outer equi join.
+    plan = query.explain(engine=engine)
+    assert ("NESTED LOOP JOIN" in plan) == (engine == "in-memory")
+    assert ("FUSED PREDICATE" in plan) == (engine == "streaming")
 
     # Coalesces the key columns when the right key is not selected.
     selected = left.join_where(
@@ -1533,7 +1534,8 @@ def test_outer_join_where_key_kinds(
         query.collect(engine=engine, optimizations=disabled),
         check_row_order=False,
     )
-    assert ("NESTED LOOP JOIN" in query.explain()) == (how in nested_loop_hows)
+    plan = query.explain(engine="streaming")
+    assert ("NESTED LOOP JOIN" in plan) == (how in nested_loop_hows)
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])

@@ -30,7 +30,6 @@ pub use hash_join::*;
 use hashbrown::hash_map::{Entry, RawEntryMut};
 #[cfg(feature = "merge_sorted")]
 pub use merge_sorted::_merge_sorted_dfs;
-use polars_arrow::bitmap::MutableBitmap;
 use polars_arrow::trusted_len::TrustedLen;
 use polars_core::chunked_array::ops::row_encode::{
     encode_rows_with_layout_par, get_binary_offset_row_encoding_layout,
@@ -44,8 +43,7 @@ pub(super) use polars_core::series::IsSorted;
 #[allow(unused_imports)]
 use polars_core::utils::slice_slice;
 use polars_defs::join::{
-    CrossJoinFilter, JoinArgs, JoinCoalesce, JoinType, JoinTypeOptions, JoinValidation,
-    MaintainOrderJoin,
+    JoinArgs, JoinCoalesce, JoinType, JoinTypeOptions, JoinValidation, MaintainOrderJoin,
 };
 use polars_utils::hashing::BytesHash;
 use polars_utils::slice::slice_offsets;
@@ -146,31 +144,22 @@ pub trait DataFrameJoinOps: IntoDf {
         // This join has no per-candidate match condition, so it filters after the fact.
         if let Some(JoinTypeOptions::FusedPredicate(fused_options)) = &options {
             debug_assert!(args.slice.is_none());
+            // Filtering after an outer join would drop its unmatched rows.
+            polars_ensure!(
+                args.how.is_inner(),
+                InvalidOperation: "a fused join predicate is only supported for inner joins on the in-memory engine"
+            );
             let predicate = fused_options.predicate.clone();
-            let emit_unmatched_left = args.how.emits_unmatched_left();
-            let emit_unmatched_right = args.how.emits_unmatched_right();
-            if !emit_unmatched_left && !emit_unmatched_right {
-                let joined = self._join_impl(
-                    other,
-                    selected_left,
-                    selected_right,
-                    args,
-                    None,
-                    _check_rechunk,
-                    _verbose,
-                )?;
-                return predicate.apply(joined, true);
-            }
-            return fused_outer_join(
-                left_df,
+            let joined = self._join_impl(
                 other,
                 selected_left,
                 selected_right,
                 args,
-                predicate.as_ref(),
-                emit_unmatched_left,
-                emit_unmatched_right,
-            );
+                None,
+                _check_rechunk,
+                _verbose,
+            )?;
+            return predicate.apply(joined, true);
         }
 
         #[cfg(feature = "cross_join")]
@@ -749,76 +738,4 @@ pub fn private_left_join_multiple_keys(
         JoinValidation::ManyToMany,
         nulls_equal,
     )
-}
-
-/// An outer equi join where a pair only matches if `predicate` holds for it. A row of a
-/// preserved input without such a pair is emitted once, with nulls for the other input.
-#[allow(clippy::too_many_arguments)]
-fn fused_outer_join(
-    left: &DataFrame,
-    right: &DataFrame,
-    selected_left: Vec<Series>,
-    selected_right: Vec<Series>,
-    mut args: JoinArgs,
-    predicate: &dyn CrossJoinFilter,
-    emit_unmatched_left: bool,
-    emit_unmatched_right: bool,
-) -> PolarsResult<DataFrame> {
-    // Only a left join coalesces here, which drops right key columns only.
-    debug_assert!(!args.should_coalesce() || !emit_unmatched_right);
-    let left_idx_name = PlSmallStr::from_static("__POLARS_FUSED_LEFT_IDX");
-    let right_idx_name = PlSmallStr::from_static("__POLARS_FUSED_RIGHT_IDX");
-    let left_with_idx = left.with_row_index(left_idx_name.clone(), None)?;
-    let right_with_idx = right.with_row_index(right_idx_name.clone(), None)?;
-    args.how = JoinType::Inner;
-    let matched = left_with_idx._join_impl(
-        &right_with_idx,
-        selected_left,
-        selected_right,
-        args,
-        None,
-        true,
-        false,
-    )?;
-    let mut out = predicate.apply(matched, true)?;
-    let left_idx = out.drop_in_place(&left_idx_name)?;
-    let right_idx = out.drop_in_place(&right_idx_name)?;
-
-    let unmatched_rows = |len: usize, matched: &IdxCa| {
-        let mut is_matched = MutableBitmap::from_len_zeroed(len);
-        for i in matched.into_no_null_iter() {
-            is_matched.set(i as usize, true);
-        }
-        (0..len as IdxSize)
-            .filter(|i| !is_matched.get(*i as usize))
-            .collect::<Vec<_>>()
-    };
-    let left_width = left.width();
-    let schema = out.schema().clone();
-    let side_schema = |range: std::ops::Range<usize>| {
-        schema
-            .iter()
-            .skip(range.start)
-            .take(range.len())
-            .map(|(name, dtype)| (name.clone(), dtype.clone()))
-            .collect::<Schema>()
-    };
-    let right_schema = side_schema(left_width..schema.len());
-    if emit_unmatched_left {
-        let idx = unmatched_rows(left.height(), left_idx.idx()?);
-        let mut unmatched = unsafe { left.take_slice_unchecked(&idx) };
-        unmatched.hstack_mut(DataFrame::full_null(&right_schema, idx.len()).columns())?;
-        out.vstack_mut(&unmatched)?;
-    }
-    if emit_unmatched_right {
-        let idx = unmatched_rows(right.height(), right_idx.idx()?);
-        let mut unmatched = DataFrame::full_null(&side_schema(0..left_width), idx.len());
-        let mut taken = unsafe { right.take_slice_unchecked(&idx) }.into_columns();
-        for (column, name) in taken.iter_mut().zip(right_schema.iter_names()) {
-            column.rename(name.clone());
-        }
-        unmatched.hstack_mut(&taken)?;
-        out.vstack_mut(&unmatched)?;
-    }
-    Ok(out)
 }

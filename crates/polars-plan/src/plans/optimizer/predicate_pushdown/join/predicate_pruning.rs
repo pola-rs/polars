@@ -676,6 +676,7 @@ pub fn try_rewrite_join_type(
                 left_on,
                 right_on,
                 expr_arena,
+                streaming,
             )? {
                 #[cfg(feature = "iejoin")]
                 try_rewrite_outer_iejoin(
@@ -1331,6 +1332,7 @@ pub fn try_rewrite_join_type(
 }
 
 /// Recognize an equi join independently of inequality algorithm restrictions.
+#[expect(clippy::too_many_arguments)]
 fn try_rewrite_outer_equi_join(
     schema_left: &SchemaRef,
     schema_right: &SchemaRef,
@@ -1339,6 +1341,7 @@ fn try_rewrite_outer_equi_join(
     left_on: &mut Vec<ExprIR>,
     right_on: &mut Vec<ExprIR>,
     expr_arena: &mut Arena<AExpr>,
+    streaming: bool,
 ) -> PolarsResult<bool> {
     let JoinTypeOptionsIR::CrossAndFilter { predicate } = &options.options else {
         return Ok(false);
@@ -1374,9 +1377,11 @@ fn try_rewrite_outer_equi_join(
     if !remaining.is_empty() {
         let mut left_mask = None;
         let mut right_mask = None;
-        // A condition on both inputs is checked by the join for each pair with equal keys.
-        let can_fuse =
-            options.args.maintain_order == MaintainOrderJoin::None && options.args.slice.is_none();
+        // A condition on both inputs is checked by the join for each pair with equal keys. Only
+        // the streaming engine supports this for outer joins.
+        let can_fuse = streaming
+            && options.args.maintain_order == MaintainOrderJoin::None
+            && options.args.slice.is_none();
         let conditions: Vec<Node> = remaining
             .values()
             .flat_map(|p| MintermIter::new(p.node(), expr_arena))
