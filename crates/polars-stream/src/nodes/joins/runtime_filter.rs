@@ -247,8 +247,9 @@ struct BloomBuilder {
     keys: BloomKeys,
     /// Every key hash seen while buffered, else those of the last batch.
     hashes: Vec<u64>,
-    /// Every integer key column seen while buffered.
-    columns: Vec<Column>,
+    /// Every integer key seen while buffered, until their range is too wide
+    /// for a bitset.
+    values: Option<Vec<i64>>,
     sketch: CardinalitySketch,
 }
 
@@ -271,7 +272,7 @@ impl BloomBuilder {
                 bloom.insert_many(&self.hashes);
             }
             self.hashes = Vec::new();
-            self.columns = Vec::new();
+            self.values = None;
             self.keys = BloomKeys::Planned(bloom);
         }
     }
@@ -285,7 +286,7 @@ impl KeyFilterBuilder {
                 spec: spec.clone(),
                 keys: BloomKeys::Buffered,
                 hashes: Vec::new(),
-                columns: Vec::new(),
+                values: spec.int_keys.then(Vec::new),
                 sketch: CardinalitySketch::new(),
             }),
         }
@@ -301,8 +302,11 @@ impl KeyFilterBuilder {
             }
             let bloom = match &b.keys {
                 BloomKeys::Buffered => {
-                    if b.spec.int_keys {
-                        b.columns.push(column.clone());
+                    if let Some(values) = &mut b.values {
+                        let fits = self.range.int_width().is_some_and(|w| w <= BITSET_MAX_BITS);
+                        if !(fits && push_int_values(values, column)) {
+                            b.values = None;
+                        }
                     }
                     None
                 },
@@ -336,7 +340,7 @@ impl KeyFilter {
         let mut sketch = CardinalitySketch::new();
         let mut planned = false;
         let mut buffered = Vec::new();
-        let mut columns = Vec::new();
+        let mut values = Some(Vec::new());
         for builder in builders {
             range.merge(builder.range);
             if let Some(b) = builder.bloom {
@@ -344,7 +348,10 @@ impl KeyFilter {
                 match b.keys {
                     BloomKeys::Buffered => {
                         buffered.push(b.hashes);
-                        columns.extend(b.columns);
+                        match (&mut values, b.values) {
+                            (Some(all), Some(v)) => all.push(v),
+                            _ => values = None,
+                        }
                     },
                     BloomKeys::Planned(_) => planned = true,
                 }
@@ -360,13 +367,13 @@ impl KeyFilter {
         let weak = spec
             .probe_distinct
             .is_some_and(|probe| distinct as f64 > probe as f64 * MAX_BUILD_PROBE_DISTINCT_RATIO);
-        if !weak && spec.int_keys && !planned {
+        if let Some(values) = values.filter(|_| !weak && !planned) {
             let max_bytes = SplitBlockBloom::size_for(
                 KeyFilterSpec::bloom_capacity(distinct),
                 BLOOM_BITS_PER_KEY,
             )
             .max(BITSET_MIN_BYTES);
-            if let Some(bitset) = KeyBitset::new(&spec.dtype, &range, &columns, max_bytes) {
+            if let Some(bitset) = KeyBitset::new(&spec.dtype, &range, &values, max_bytes) {
                 // The range alone is exact when every value in it is a key.
                 let bitset = (!bitset.is_full()).then_some(bitset);
                 return Self {
@@ -504,18 +511,16 @@ impl std::fmt::Debug for KeyBitset {
 }
 
 impl KeyBitset {
-    /// The bitset of the keys in `columns`, or `None` when their range does not
-    /// fit in `max_bytes`.
+    /// The bitset of `values`, all within `range`, or `None` when the range
+    /// does not fit in `max_bytes`.
     fn new(
         dtype: &DataType,
         range: &KeyRange,
-        columns: &[Column],
+        values: &[Vec<i64>],
         max_bytes: usize,
     ) -> Option<Self> {
-        let (lo, hi) = range.bounds.as_ref()?;
-        let min = lo.value().extract::<i64>()?;
-        let max = hi.value().extract::<i64>()?;
-        let width = (max as i128 - min as i128 + 1) as u64;
+        let (min, _) = range.int_bounds()?;
+        let width = range.int_width()?;
         if width > BITSET_MAX_BITS || width.div_ceil(8) > max_bytes as u64 {
             return None;
         }
@@ -525,15 +530,9 @@ impl KeyBitset {
             width,
             words: vec![0; width.div_ceil(64) as usize],
         };
-        for column in columns {
-            let s = column.as_materialized_series().to_physical_repr();
-            with_match_physical_integer_polars_type!(s.dtype(), |$T| {
-                let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-                for v in ca.iter().flatten() {
-                    let offset = v.to_i64()?.wrapping_sub(min) as u64;
-                    bitset.words[(offset / 64) as usize] |= 1 << (offset % 64);
-                }
-            });
+        for v in values.iter().flatten() {
+            let offset = v.wrapping_sub(min) as u64;
+            bitset.words[(offset / 64) as usize] |= 1 << (offset % 64);
         }
         Some(bitset)
     }
@@ -574,19 +573,36 @@ impl KeyBitset {
             return None;
         }
         let s = column.as_materialized_series().to_physical_repr();
-        let mut mask = BitmapBuilder::with_capacity(column.len());
-        with_match_physical_integer_polars_type!(s.dtype(), |$T| {
+        let mask = with_match_physical_integer_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-            for arr in ca.downcast_iter() {
+            let mut masks = ca.downcast_iter().map(|arr| {
                 let keys = self.mask(arr.values().as_slice());
                 match arr.validity() {
-                    Some(validity) => mask.extend_from_bitmap(&(&keys & validity)),
-                    None => mask.extend_from_bitmap(&keys),
+                    Some(validity) => &keys & validity,
+                    None => keys,
                 }
+            });
+            if ca.chunks().len() == 1 {
+                masks.next().unwrap()
+            } else {
+                let mut mask = BitmapBuilder::with_capacity(ca.len());
+                masks.for_each(|m| mask.extend_from_bitmap(&m));
+                mask.freeze()
             }
         });
-        Some(BooleanChunked::from_bitmap(column.name().clone(), mask.freeze()).into_column())
+        Some(BooleanChunked::from_bitmap(column.name().clone(), mask).into_column())
     }
+}
+
+/// Appends the non-null values of the integer `column`, or returns `false` when
+/// one does not fit in an `i64`.
+fn push_int_values(values: &mut Vec<i64>, column: &Column) -> bool {
+    let s = column.as_materialized_series().to_physical_repr();
+    with_match_physical_integer_polars_type!(s.dtype(), |$T| {
+        let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+        values.reserve(ca.len() - ca.null_count());
+        ca.iter().flatten().all(|v| v.to_i64().map(|v| values.push(v)).is_some())
+    })
 }
 
 /// Min and max of one build key column. Empty until a non-null key is seen; an
@@ -597,6 +613,17 @@ struct KeyRange {
 }
 
 impl KeyRange {
+    fn int_bounds(&self) -> Option<(i64, i64)> {
+        let (lo, hi) = self.bounds.as_ref()?;
+        Some((lo.value().extract::<i64>()?, hi.value().extract::<i64>()?))
+    }
+
+    /// Number of integers in the range, if its bounds fit in an `i64`.
+    fn int_width(&self) -> Option<u64> {
+        let (min, max) = self.int_bounds()?;
+        u64::try_from(max as i128 - min as i128 + 1).ok()
+    }
+
     /// Widen the range to cover the non-null values of `column`.
     fn extend(&mut self, column: &Column) -> PolarsResult<()> {
         let min = column.min_reduce()?;
@@ -925,6 +952,61 @@ mod tests {
         let spec = int_spec(DataType::Int64, 100);
         let filter = KeyFilter::from_builders(&spec, vec![built(&spec, 0..1000)]);
         assert!(filter.bloom.is_some() && filter.bitset.is_none());
+    }
+
+    #[test]
+    fn bitset_masks_sliced_chunks() {
+        let spec = int_spec(DataType::Int64, BUFFERED_ROWS_BUDGET);
+        let build = Column::new("k".into(), (0..100).map(|v| v * 7).collect::<Vec<i64>>());
+        let mut builder = KeyFilterBuilder::new(&spec);
+        builder.extend(&build).unwrap();
+        let filter = KeyFilter::from_builders(&spec, vec![builder]);
+        assert!(filter.bitset.is_some());
+
+        let values = |range: std::ops::Range<i64>| -> Vec<Option<i64>> {
+            range.map(|v| (v % 5 != 0).then_some(v)).collect()
+        };
+        let mut probe = Series::new("k".into(), values(-20..400));
+        probe
+            .append(&Series::new("k".into(), values(400..800)))
+            .unwrap();
+        let probe = probe.slice(3, 790);
+        assert_eq!(probe.chunks().len(), 2);
+        let expected: Vec<bool> = probe
+            .i64()
+            .unwrap()
+            .iter()
+            .map(|v| v.is_some_and(|v| v % 7 == 0 && (0..700).contains(&v)))
+            .collect();
+        assert_eq!(mask(&filter, &probe.into_column()), expected);
+    }
+
+    #[test]
+    fn keys_beyond_a_bitset_keep_the_bloom_filter() {
+        // The full i64 range, and u64 keys past it.
+        let i64_keys = Column::new("k".into(), [i64::MIN, 0, i64::MAX]);
+        let u64_keys = Column::new("k".into(), [0, u64::MAX - 1, u64::MAX]);
+        for (dtype, keys) in [(DataType::Int64, i64_keys), (DataType::UInt64, u64_keys)] {
+            let spec = int_spec(dtype, BUFFERED_ROWS_BUDGET);
+            let mut builder = KeyFilterBuilder::new(&spec);
+            builder.extend(&keys).unwrap();
+            let filter = KeyFilter::from_builders(&spec, vec![builder]);
+            assert!(filter.bloom.is_some() && filter.bitset.is_none());
+            assert!(mask(&filter, &keys).iter().all(|m| *m));
+        }
+    }
+
+    #[test]
+    fn a_planned_builder_keeps_the_bloom_filter() {
+        // One builder stays buffered with its keys, the other goes over the
+        // budget: the keys the latter saw are not kept.
+        let spec = int_spec(DataType::Int64, 1000);
+        let buffered = built(&spec, 0..600);
+        let planned = built(&spec, 600..1200);
+        assert!(is_buffered(&buffered) && !is_buffered(&planned));
+        let filter = KeyFilter::from_builders(&spec, vec![buffered, planned]);
+        assert!(filter.bloom.is_some() && filter.bitset.is_none());
+        assert!(mask(&filter, &keys(0..1200)).iter().all(|m| *m));
     }
 
     #[test]
