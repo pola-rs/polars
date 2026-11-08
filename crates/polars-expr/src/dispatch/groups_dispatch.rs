@@ -746,7 +746,7 @@ fn quantiles_on_groups<'a>(
 
     let values = ac.flat_naive().into_owned();
     // Derived from an empty input so that the dtype is also known when there are no groups.
-    let dtype = quantiles_of(&values.as_materialized_series().clear())?
+    let dtype = quantiles_of(values.clear().as_materialized_series())?
         .dtype()
         .clone()
         .implode();
