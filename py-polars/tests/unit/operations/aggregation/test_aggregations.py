@@ -13,7 +13,7 @@ from hypothesis import strategies as st
 
 import polars as pl
 from polars.exceptions import ComputeError, InvalidOperationError
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import dataframes
 
 if TYPE_CHECKING:
@@ -181,12 +181,18 @@ def test_quantile_error_checking() -> None:
         s.quantile([0.0, 1.2])
 
 
-def test_multi_quantile_group_by_unsupported_26956() -> None:
-    df = pl.DataFrame({"g": ["a", "a", "b", "b"], "v": [1, 2, 3, 4]})
-    with pytest.raises(
-        pl.exceptions.SchemaError, match="expected expression of dtype 'numeric'"
-    ):
-        df.group_by("g").agg(pl.col("v").quantile([0.25, 0.75]))
+def test_multi_quantile_group_by_30566() -> None:
+    df = pl.DataFrame({"g": ["a", "a", "b", "b", "c"], "v": [1, 2, 3, 4, None]})
+    q = pl.col("v").quantile([0.25, 0.75], interpolation="linear")
+    expected = pl.Series("v", [[1.25, 1.75], [3.25, 3.75], [None, None]])
+
+    result = df.group_by("g", maintain_order=True).agg(q)
+    assert_series_equal(result["v"], expected)
+
+    result = df.select(q.over("g"))
+    assert_series_equal(result["v"], expected.gather([0, 0, 1, 1, 2]))
+
+    assert df.clear().group_by("g").agg(q).schema["v"] == pl.List(pl.Float64)
 
 
 def test_quantile_date() -> None:
