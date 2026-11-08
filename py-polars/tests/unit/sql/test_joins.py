@@ -3080,18 +3080,20 @@ def test_join_on_input_filter(join_type: str, qualified: bool, with_key: bool) -
     assert "NESTED LOOP JOIN" not in plan
 
 
-def test_join_on_preserved_input_filter() -> None:
+@pytest.mark.parametrize("join_type", ["LEFT", "RIGHT", "FULL"])
+def test_join_on_preserved_input_filter(join_type: str) -> None:
     frames = {
-        "a": pl.DataFrame({"k": [1, 2, 3], "v": [1, -1, None]}),
-        "b": pl.DataFrame({"k": [1, 2, 3], "v": [-1, 1, None]}),
+        "a": pl.DataFrame({"k": [1, 2, 3, 4], "v": [1, -1, None, 2]}),
+        "b": pl.DataFrame({"k": [1, 2, 3, 4], "v": [-1, 1, None, 2]}),
     }
-    query = """
+    query = f"""
         SELECT a.k, b.k AS bk
-        FROM a LEFT JOIN b ON a.k = b.k AND a.v > 0 AND b.v > 0
+        FROM a {join_type} JOIN b ON a.k = b.k AND a.v > 0 AND b.v > 0
     """
     assert_sql_matches(
         frames, query=query, compare_with="duckdb", check_row_order=False
     )
+    assert "NESTED LOOP JOIN" not in pl.SQLContext(frames).execute(query).explain()
 
 
 @pytest.mark.parametrize("how", ["inner", "left"])
