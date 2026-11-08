@@ -10,7 +10,7 @@ use polars_compute::filter::filter_boolean_kernel;
 use polars_utils::vec::with_cast_mut_vec;
 
 use super::{
-    DecodedState, inlined_are_valid_utf8, invalid_input_err, invalid_utf8_err, new_inline_view,
+    DecodedState, inlined_are_valid_utf8, invalid_input_err, invalid_utf8_err, set_inline_view,
 };
 use crate::parquet::encoding::{delta_byte_array, delta_length_byte_array};
 use crate::parquet::error::ParquetResult;
@@ -101,14 +101,15 @@ pub(super) fn decode_delta_length(
 
     state.binview.finish_in_progress();
     let buffer_idx = state.binview.completed_buffers().len() as u32;
-    let mut views = Vec::with_capacity(num_values);
+    // Unselected values keep an empty view.
+    let mut views = vec![View::default(); num_values];
     let mut offset = 0usize;
     let mut noninlined_bytes_len = 0;
 
     // If no value starts with a continuation byte, the values are valid UTF-8 exactly when their
     // concatenation is.
     let mut none_starting_with_continuation_byte = true;
-    for &length in &lengths {
+    for (i, (view, &length)) in views.iter_mut().zip(&lengths).enumerate() {
         let value = usize::try_from(length)
             .ok()
             .and_then(|length| values.get(offset..offset.checked_add(length)?))
@@ -117,17 +118,14 @@ pub(super) fn decode_delta_length(
 
         let length = value.len();
         if length <= View::MAX_INLINE_SIZE as usize {
-            views.push(new_inline_view(&values[offset..], length));
-        } else if is_selected(views.len()) {
-            noninlined_bytes_len += length;
-            views.push(View::new_from_bytes(value, buffer_idx, offset as u32));
-        } else {
+            set_inline_view(view, &values[offset..], length);
+        } else if is_selected(i) {
             // Only the selected non-inlined values are kept.
-            views.push(View::default());
+            noninlined_bytes_len += length;
+            *view = View::new_from_bytes(value, buffer_idx, offset as u32);
         }
         offset += length;
     }
-    views.resize(num_values, View::default());
 
     let values = &values[..offset];
     if verify_utf8
@@ -188,7 +186,8 @@ pub(super) fn decode_delta_bytes(
     let first_buffer_idx = target.completed_buffers().len();
     let mut buffer_idx = first_buffer_idx as u32;
     let mut buffer = Vec::new();
-    let mut views = Vec::with_capacity(num_values);
+    // Unselected values keep an empty view.
+    let mut views = vec![View::default(); num_values];
 
     // The previous value, followed by at least 16 bytes, so that a short value can be cut from a
     // block of 16 bytes and a short suffix copied as one.
@@ -196,7 +195,8 @@ pub(super) fn decode_delta_bytes(
     let mut last_len = 0;
     let mut offset = 0usize;
     let mut none_starting_with_continuation_byte = true;
-    for (&prefix_length, &suffix_length) in prefix_lengths.iter().zip(&suffix_lengths) {
+    let lengths = prefix_lengths.iter().zip(&suffix_lengths);
+    for (i, (view, (&prefix_length, &suffix_length))) in views.iter_mut().zip(lengths).enumerate() {
         let prefix_length = usize::try_from(prefix_length)
             .ok()
             .filter(|&prefix_length| prefix_length <= last_len)
@@ -222,8 +222,10 @@ pub(super) fn decode_delta_bytes(
         last_len = length;
 
         if length <= View::MAX_INLINE_SIZE as usize {
-            views.push(new_inline_view(&last, length));
-        } else if is_selected(views.len()) {
+            set_inline_view(view, &last, length);
+        } else if is_selected(i) {
+            // Only the selected non-inlined values are kept, as shared prefixes can make the values
+            // much larger than the page.
             let value = &last[..length];
             none_starting_with_continuation_byte &= !starts_with_continuation_byte(value);
             // Offsets are `u32`, so a buffer holds less than 4GiB.
@@ -232,15 +234,10 @@ pub(super) fn decode_delta_bytes(
                 debug_assert_eq!(pushed_idx, buffer_idx);
                 buffer_idx += 1;
             }
-            views.push(View::new_from_bytes(value, buffer_idx, buffer.len() as u32));
+            *view = View::new_from_bytes(value, buffer_idx, buffer.len() as u32);
             buffer.extend_from_slice(value);
-        } else {
-            // Only the selected non-inlined values are kept, as shared prefixes can make the values
-            // much larger than the page.
-            views.push(View::default());
         }
     }
-    views.resize(num_values, View::default());
     if !buffer.is_empty() {
         let pushed_idx = target.push_buffer(buffer.into());
         debug_assert_eq!(pushed_idx, buffer_idx);

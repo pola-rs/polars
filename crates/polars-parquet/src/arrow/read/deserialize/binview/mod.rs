@@ -334,20 +334,20 @@ fn invalid_utf8_err() -> ParquetError {
     ParquetError::oos("String data contained invalid UTF-8")
 }
 
-/// Creates an inline view of the first `len` bytes of `bytes`, cut from a block of its first 16
-/// bytes unless it is shorter, e.g. at the end of a page.
+/// Sets `view` to an inline view of the first `len` bytes of `bytes`, cut from a block of its first
+/// 16 bytes unless it is shorter, e.g. at the end of a page.
 #[inline(always)]
-fn new_inline_view(bytes: &[u8], len: usize) -> View {
+fn set_inline_view(view: &mut View, bytes: &[u8], len: usize) {
     // Inlining the rare fallback into the decoding loops spills their registers.
     #[cold]
     #[inline(never)]
-    fn new_inline_view_cold(value: &[u8]) -> View {
-        View::new_inline(value)
+    fn set_inline_view_cold(view: &mut View, value: &[u8]) {
+        *view = View::new_inline(value);
     }
 
     match bytes.first_chunk::<16>() {
-        Some(block) => View::new_inline_from_block(*block, len),
-        None => new_inline_view_cold(&bytes[..len]),
+        Some(block) => *view = View::new_inline_from_block(*block, len),
+        None => set_inline_view_cold(view, &bytes[..len]),
     }
 }
 
@@ -455,10 +455,14 @@ pub fn decode_plain_generic(
             continue;
         }
 
+        // SAFETY: The empty inline view pushed here is set to the value's view below, which is
+        // inline or refers to the buffer pushed after the loop, and the total length is updated
+        // after the loop.
+        let views = unsafe { target.views_mut() };
+        views.push(View::default());
+        let view = views.last_mut().unwrap();
         if length <= View::MAX_INLINE_SIZE {
-            let view = new_inline_view(value_and_rest, length as usize);
-            // SAFETY: An inline view needs no buffer, and the total length is updated after the loop.
-            unsafe { target.views_mut() }.push(view);
+            set_inline_view(view, value_and_rest, length as usize);
         } else {
             let offset = match &mut buffer {
                 Some(buffer) => {
@@ -470,8 +474,7 @@ pub fn decode_plain_generic(
                 },
                 None => (value.as_ptr() as usize - page_start) as u32,
             };
-            unsafe { target.views_mut() }
-                .push(unsafe { View::new_noninline_unchecked(value, buffer_idx, offset) });
+            *view = View::new_from_bytes(value, buffer_idx, offset);
             noninlined_bytes_len += length as usize;
         }
         total_bytes_len += length as usize;
