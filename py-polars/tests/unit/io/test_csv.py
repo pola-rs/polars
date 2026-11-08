@@ -3373,3 +3373,14 @@ def test_read_csv_quote_char_inside_unquoted_field(engine: EngineType) -> None:
         data.encode(), infer_schema=False, empty_string_is_null=False
     ).collect(engine=engine)
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_read_csv_shared_categories_row_order(engine: EngineType) -> None:
+    cats = pl.Categories.random()
+    dtype = pl.Categorical(cats)
+    out = pl.scan_csv(b"a,b\nx,z\ny,x\n", schema={"a": dtype, "b": dtype}).collect(
+        engine=engine
+    )
+    assert out["a"].to_physical().to_list() == [0, 2]
+    assert out["b"].to_physical().to_list() == [1, 0]

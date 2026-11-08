@@ -174,6 +174,22 @@ impl RowGroupDataFetcher {
         Some(n_bytes)
     }
 
+    /// Number of rows of the row group `peek_next_bytes` sized.
+    pub(super) fn peek_next_num_rows(&self) -> usize {
+        self.row_groups
+            .front()
+            .map_or(0, |rg| self.metadata.row_groups[rg.idx].num_rows())
+    }
+
+    /// Whether the row group `peek_next_bytes` sized is read in part (a slice short of all rows).
+    pub(super) fn peek_next_sliced(&self) -> bool {
+        self.row_groups.front().is_some_and(|rg| {
+            rg.slice.is_some_and(|(offset, len)| {
+                offset > 0 || len < self.metadata.row_groups[rg.idx].num_rows()
+            })
+        })
+    }
+
     /// Fetches the row group `peek_next_bytes` sized.
     pub(super) async fn next(
         &mut self,

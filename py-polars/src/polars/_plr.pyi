@@ -2763,6 +2763,20 @@ class PySQLContext:
     def catalog_update_plan(
         self, query: str, tables: pylist[tuple[pylist[str], PyLazyFrame]]
     ) -> tuple[PyExpr, pylist[tuple[str, PyExpr]]]: ...
+    def catalog_merge_source(
+        self, query: str, tables: pylist[tuple[pylist[str], PyLazyFrame]]
+    ) -> tuple[PyLazyFrame, pylist[tuple[str, PyExpr]]]: ...
+    def catalog_merge_plan(
+        self,
+        query: str,
+        tables: pylist[tuple[pylist[str], PyLazyFrame]],
+        source: PyLazyFrame,
+    ) -> tuple[
+        PyLazyFrame,
+        PyLazyFrame,
+        pylist[tuple[str, int, pylist[tuple[str, PyExpr]]]],
+        pylist[tuple[str, int, pylist[tuple[str, PyExpr]]]],
+    ]: ...
     @staticmethod
     def table_identifiers(
         query: str,
