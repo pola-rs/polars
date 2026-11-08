@@ -6,6 +6,7 @@
 use polars_arrow::array::View;
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::types::Bytes16Alignment4;
+use polars_compute::filter::filter_boolean_kernel;
 use polars_utils::vec::with_cast_mut_vec;
 
 use super::{
@@ -24,25 +25,83 @@ fn starts_with_continuation_byte(value: &[u8]) -> bool {
         .is_some_and(|b| b & 0b1100_0000 == 0b1000_0000)
 }
 
+/// The values of a page that the rows of a filter select, by index among its non-null values:
+/// those from `start` to `end` that `mask`, if any, has.
+struct Selection {
+    start: usize,
+    end: usize,
+    mask: Option<Bitmap>,
+}
+
+impl Selection {
+    /// The selection of `filter`, or `None` if it selects all values.
+    fn new(
+        num_values: usize,
+        page_validity: Option<&Bitmap>,
+        filter: Option<&Filter>,
+    ) -> Option<Self> {
+        // The number of values in the first `num_rows` rows.
+        let num_values_in = |num_rows: usize| {
+            page_validity.map_or(num_rows, |validity| {
+                validity.clone().sliced(0, num_rows).set_bits()
+            })
+        };
+        match filter {
+            Some(Filter::Range(rows)) => {
+                let (start, end) = (num_values_in(rows.start), num_values_in(rows.end));
+                (start > 0 || end < num_values).then_some(Self {
+                    start,
+                    end,
+                    mask: None,
+                })
+            },
+            Some(Filter::Mask(rows)) if rows.unset_bits() > 0 => {
+                // The bits of the rows that hold a value.
+                let mask = page_validity.map_or_else(
+                    || rows.clone(),
+                    |validity| filter_boolean_kernel(rows, validity),
+                );
+                Some(Self {
+                    start: mask.leading_zeros(),
+                    end: mask.len() - mask.trailing_zeros(),
+                    mask: Some(mask),
+                })
+            },
+            _ => None,
+        }
+    }
+
+    /// Whether the value at index `i`, which is less than `end`, is selected.
+    fn contains(&self, i: usize) -> bool {
+        i >= self.start && self.mask.as_ref().is_none_or(|mask| mask.get_bit(i))
+    }
+}
+
 /// Decodes a `DELTA_LENGTH_BYTE_ARRAY` page into `state`, for the rows that `page_validity` and
 /// `filter` select.
 pub(super) fn decode_delta_length(
-    decoder: delta_length_byte_array::Decoder<'_>,
+    mut decoder: delta_length_byte_array::Decoder<'_>,
     verify_utf8: bool,
     state: &mut DecodedState,
     is_optional: bool,
     page_validity: Option<&Bitmap>,
     filter: Option<Filter>,
 ) -> ParquetResult<()> {
+    let num_values = decoder.len();
+    let selection = Selection::new(num_values, page_validity, filter.as_ref());
+    let is_selected = |i| selection.as_ref().is_none_or(|s| s.contains(i));
+    // Values after the last selected one are not needed.
+    let end = selection.as_ref().map_or(num_values, |s| s.end);
+    let mut lengths = Vec::with_capacity(end);
+    decoder.lengths.collect_n(&mut lengths, end)?;
     let values = decoder.values;
-    let lengths = decoder.lengths.collect::<Vec<i64>>()?;
 
     // A page is at most `i32::MAX` bytes, so the offsets fit in the views.
     assert!(values.len() <= u32::MAX as usize);
 
     state.binview.finish_in_progress();
     let buffer_idx = state.binview.completed_buffers().len() as u32;
-    let mut views = Vec::with_capacity(lengths.len());
+    let mut views = Vec::with_capacity(num_values);
     let mut offset = 0usize;
     let mut noninlined_bytes_len = 0;
 
@@ -57,15 +116,18 @@ pub(super) fn decode_delta_length(
         none_starting_with_continuation_byte &= !starts_with_continuation_byte(value);
 
         let length = value.len();
-        let view = if length <= View::MAX_INLINE_SIZE as usize {
-            new_inline_view(&values[offset..], length)
-        } else {
+        if length <= View::MAX_INLINE_SIZE as usize {
+            views.push(new_inline_view(&values[offset..], length));
+        } else if is_selected(views.len()) {
             noninlined_bytes_len += length;
-            View::new_from_bytes(value, buffer_idx, offset as u32)
-        };
-        views.push(view);
+            views.push(View::new_from_bytes(value, buffer_idx, offset as u32));
+        } else {
+            // Only the selected non-inlined values are kept.
+            views.push(View::default());
+        }
         offset += length;
     }
+    views.resize(num_values, View::default());
 
     let values = &values[..offset];
     if verify_utf8
@@ -74,7 +136,7 @@ pub(super) fn decode_delta_length(
         return Err(invalid_utf8_err());
     }
     if noninlined_bytes_len > 0 {
-        // Copying all values at once is fastest, unless the inlined ones take up much of them.
+        // Copying all values at once is fastest, unless the others take up much of them.
         let buffer = if noninlined_bytes_len >= values.len() - values.len() / 4 {
             values.to_vec()
         } else {
@@ -100,26 +162,33 @@ pub(super) fn decode_delta_length(
 /// Decodes a `DELTA_BYTE_ARRAY` page into `state`, for the rows that `page_validity` and `filter`
 /// select.
 pub(super) fn decode_delta_bytes(
-    decoder: delta_byte_array::Decoder<'_>,
+    mut decoder: delta_byte_array::Decoder<'_>,
     verify_utf8: bool,
     state: &mut DecodedState,
     is_optional: bool,
     page_validity: Option<&Bitmap>,
     filter: Option<Filter>,
 ) -> ParquetResult<()> {
-    let prefix_lengths = decoder.prefix_lengths.collect::<Vec<i64>>()?;
-    let suffix_lengths = decoder.suffix_lengths.collect::<Vec<i64>>()?;
-    let suffixes = decoder.values;
-    if prefix_lengths.len() != suffix_lengths.len() {
+    if decoder.prefix_lengths.len() != decoder.suffix_lengths.len() {
         return Err(invalid_input_err());
     }
+    let num_values = decoder.prefix_lengths.len();
+    let selection = Selection::new(num_values, page_validity, filter.as_ref());
+    let is_selected = |i| selection.as_ref().is_none_or(|s| s.contains(i));
+    // Values after the last selected one are not needed.
+    let end = selection.as_ref().map_or(num_values, |s| s.end);
+    let mut prefix_lengths = Vec::with_capacity(end);
+    let mut suffix_lengths = Vec::with_capacity(end);
+    decoder.prefix_lengths.collect_n(&mut prefix_lengths, end)?;
+    decoder.suffix_lengths.collect_n(&mut suffix_lengths, end)?;
+    let suffixes = decoder.values;
 
     let target = &mut state.binview;
     target.finish_in_progress();
     let first_buffer_idx = target.completed_buffers().len();
     let mut buffer_idx = first_buffer_idx as u32;
     let mut buffer = Vec::new();
-    let mut views = Vec::with_capacity(prefix_lengths.len());
+    let mut views = Vec::with_capacity(num_values);
 
     // The previous value, followed by at least 16 bytes, so that a short value can be cut from a
     // block of 16 bytes and a short suffix copied as one.
@@ -152,9 +221,9 @@ pub(super) fn decode_delta_bytes(
         offset += suffix.len();
         last_len = length;
 
-        let view = if length <= View::MAX_INLINE_SIZE as usize {
-            new_inline_view(&last, length)
-        } else {
+        if length <= View::MAX_INLINE_SIZE as usize {
+            views.push(new_inline_view(&last, length));
+        } else if is_selected(views.len()) {
             let value = &last[..length];
             none_starting_with_continuation_byte &= !starts_with_continuation_byte(value);
             // Offsets are `u32`, so a buffer holds less than 4GiB.
@@ -163,12 +232,15 @@ pub(super) fn decode_delta_bytes(
                 debug_assert_eq!(pushed_idx, buffer_idx);
                 buffer_idx += 1;
             }
-            let view = View::new_from_bytes(value, buffer_idx, buffer.len() as u32);
+            views.push(View::new_from_bytes(value, buffer_idx, buffer.len() as u32));
             buffer.extend_from_slice(value);
-            view
-        };
-        views.push(view);
+        } else {
+            // Only the selected non-inlined values are kept, as shared prefixes can make the values
+            // much larger than the page.
+            views.push(View::default());
+        }
     }
+    views.resize(num_values, View::default());
     if !buffer.is_empty() {
         let pushed_idx = target.push_buffer(buffer.into());
         debug_assert_eq!(pushed_idx, buffer_idx);

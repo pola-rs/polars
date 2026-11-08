@@ -124,7 +124,8 @@ impl View {
         unsafe { Self::new_inline_unchecked(bytes) }
     }
 
-    /// Create an inline view from the first `len` bytes of `block` without branching on `len`.
+    /// Create an inline view from the first `len` bytes of `block`, without branching on `len` on
+    /// little-endian targets.
     ///
     /// # Panics
     ///
@@ -133,6 +134,11 @@ impl View {
     pub fn new_inline_from_block(block: [u8; 16], len: usize) -> Self {
         assert!(len <= Self::MAX_INLINE_SIZE as usize);
 
+        // The view is built as a little-endian integer, whose bytes are only laid out like the
+        // fields on little-endian targets.
+        if cfg!(target_endian = "big") {
+            return Self::new_inline(&block[..len]);
+        }
         let mask = (1u128 << (8 * len)) - 1; // Keep the first `len` bytes of the block.
         Self::from(((u128::from_le_bytes(block) & mask) << 32) | len as u128)
     }

@@ -6866,6 +6866,54 @@ def test_delta_strings_invalid_utf8_in_prefix() -> None:
         pl.read_parquet(f)
 
 
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="needs unix-only `resource` module to measure memory usage",
+)
+def test_delta_strings_keep_only_selected_values(tmp_path: Path) -> None:
+    # A value that repeats its predecessor is stored as just its prefix length, so this
+    # page of under 100 KB holds 256 MiB of values. Reading one row must not keep the
+    # others in memory.
+    tmp_path.mkdir(exist_ok=True)
+    paths = {}
+    for name, value in [("small", "x"), ("large", "x" * 65536)]:
+        paths[name] = tmp_path / f"{name}.parquet"
+        pq.write_table(
+            pa.table({"i": range(4096), "s": [value] * 4096}),
+            paths[name],
+            use_dictionary=False,
+            column_encoding={"i": "PLAIN", "s": "DELTA_BYTE_ARRAY"},
+            compression="none",
+        )
+    assert paths["large"].stat().st_size < 100_000
+
+    code = """\
+import resource
+import sys
+
+import polars as pl
+
+lf = pl.scan_parquet(sys.argv[1], parallel="prefiltered")
+assert lf.head(1).collect()["s"].str.len_bytes().to_list() == [int(sys.argv[2])]
+assert lf.filter(pl.col("i") == 7).collect()["s"].str.len_bytes().to_list() == [int(sys.argv[2])]
+print(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+"""
+
+    def peak_rss(name: str, value_len: int) -> int:
+        return min(
+            int(
+                subprocess.check_output(
+                    [sys.executable, "-c", code, str(paths[name]), str(value_len)]
+                )
+            )
+            for _ in range(3)
+        )
+
+    assert peak_rss("large", 65536) < 1.3 * peak_rss("small", 1)
+
+
 @pytest.mark.parametrize(
     ("encoding", "values", "header", "corrupt"),
     [
