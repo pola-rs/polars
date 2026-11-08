@@ -303,8 +303,9 @@ impl KeyFilterBuilder {
             let bloom = match &b.keys {
                 BloomKeys::Buffered => {
                     if let Some(values) = &mut b.values {
-                        let fits = self.range.int_width().is_some_and(|w| w <= BITSET_MAX_BITS);
-                        if !(fits && push_int_values(values, column)) {
+                        let too_wide = self.range.bounds.is_some()
+                            && self.range.int_width().is_none_or(|w| w > BITSET_MAX_BITS);
+                        if too_wide || !push_int_values(values, column) {
                             b.values = None;
                         }
                     }
@@ -553,17 +554,40 @@ impl KeyBitset {
             && unsafe { self.words.get_unchecked((offset / 64) as usize) } >> (offset % 64) & 1 != 0
     }
 
-    /// Which of `values` are keys.
-    fn mask<N: ToPrimitive>(&self, values: &[N]) -> Bitmap {
-        let bytes = values
-            .chunks(8)
-            .map(|chunk| {
-                chunk.iter().enumerate().fold(0u8, |byte, (i, v)| {
-                    byte | ((self.contains(v.to_i64()) as u8) << i)
-                })
+    /// Appends which of `values` are keys to `mask`. A null is never a key.
+    fn extend_mask<N: ToPrimitive>(
+        &self,
+        mask: &mut BitmapBuilder,
+        values: &[N],
+        validity: Option<&Bitmap>,
+    ) {
+        let word = |chunk: &[N]| {
+            chunk.iter().enumerate().fold(0u64, |word, (i, v)| {
+                word | ((self.contains(v.to_i64()) as u64) << i)
             })
-            .collect();
-        Bitmap::try_new(bytes, values.len()).unwrap()
+        };
+        mask.reserve(values.len());
+        let chunks = values.chunks_exact(64);
+        let rest = chunks.remainder();
+        // SAFETY: `values.len()` bits were reserved, and a word holds no bits past
+        // its length.
+        unsafe {
+            match validity {
+                None => {
+                    for chunk in chunks {
+                        mask.push_word_with_len_unchecked(word(chunk), 64);
+                    }
+                    mask.push_word_with_len_unchecked(word(rest), rest.len());
+                },
+                Some(validity) => {
+                    let mut valid = validity.chunks::<u64>();
+                    for (chunk, valid) in chunks.zip(&mut valid) {
+                        mask.push_word_with_len_unchecked(word(chunk) & valid, 64);
+                    }
+                    mask.push_word_with_len_unchecked(word(rest) & valid.remainder(), rest.len());
+                },
+            }
+        }
     }
 
     /// Whether each value is a key. Nulls never are. A column of another dtype
@@ -573,24 +597,14 @@ impl KeyBitset {
             return None;
         }
         let s = column.as_materialized_series().to_physical_repr();
-        let mask = with_match_physical_integer_polars_type!(s.dtype(), |$T| {
+        let mut mask = BitmapBuilder::with_capacity(column.len());
+        with_match_physical_integer_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-            let mut masks = ca.downcast_iter().map(|arr| {
-                let keys = self.mask(arr.values().as_slice());
-                match arr.validity() {
-                    Some(validity) => &keys & validity,
-                    None => keys,
-                }
-            });
-            if ca.chunks().len() == 1 {
-                masks.next().unwrap()
-            } else {
-                let mut mask = BitmapBuilder::with_capacity(ca.len());
-                masks.for_each(|m| mask.extend_from_bitmap(&m));
-                mask.freeze()
+            for arr in ca.downcast_iter() {
+                self.extend_mask(&mut mask, arr.values().as_slice(), arr.validity());
             }
         });
-        Some(BooleanChunked::from_bitmap(column.name().clone(), mask).into_column())
+        Some(BooleanChunked::from_bitmap(column.name().clone(), mask.freeze()).into_column())
     }
 }
 
@@ -919,9 +933,21 @@ mod tests {
             builder.extend(&Column::new("k".into(), values)).unwrap();
             builder
         };
+        // A batch of only nulls, in a builder of its own and before other keys.
+        let mut nulls_first = build(vec![None]);
+        nulls_first
+            .extend(&Column::new(
+                "k".into(),
+                (500..1000)
+                    .map(|v| Some(v * 3))
+                    .chain([None])
+                    .collect::<Vec<_>>(),
+            ))
+            .unwrap();
         let builders = vec![
             build((0..500).map(|v| Some(v * 3)).collect()),
-            build((500..1000).map(|v| Some(v * 3)).chain([None]).collect()),
+            build(vec![None, None]),
+            nulls_first,
         ];
         let filter = KeyFilter::from_builders(&spec, builders);
         assert!(filter.bloom.is_none() && filter.bitset.is_some());
