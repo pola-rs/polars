@@ -3,14 +3,15 @@
 //! Anything that cannot be estimated yields `None` rather than a guess, so a caller
 //! can tell "no estimate" apart from "estimated to be small".
 
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock, Mutex, Weak};
 
-use polars_core::prelude::DataType;
+use polars_core::frame::DataFrame;
+use polars_core::prelude::{Column, DataType, Series, SeriesTrait};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_utils::aliases::InitHashMaps;
 #[expect(clippy::disallowed_types)] // We don't iterate over it.
-use polars_utils::aliases::PlHashMap;
+use polars_utils::aliases::{PlHashMap, PlHashSet};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
@@ -25,10 +26,84 @@ use crate::plans::{
     into_column,
 };
 use crate::prelude::{JoinType, Operator};
+use crate::utils::aexpr_to_leaf_names_iter;
 
-// We don't iterate over it.
+/// Estimates already made, and the columns of in-memory frames worth counting.
+#[derive(Default)]
+pub(crate) struct StatsCache {
+    // We don't iterate over it.
+    #[expect(clippy::disallowed_types)]
+    nodes: PlHashMap<Node, Option<NodeStats>>,
+    /// Set on the first in-memory frame, see [`key_column_names`].
+    #[expect(clippy::disallowed_types)]
+    key_columns: Option<PlHashSet<PlSmallStr>>,
+}
+
+impl StatsCache {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    /// Forget the estimate of `node`, whose id is about to be reused.
+    pub(crate) fn remove(&mut self, node: &Node) {
+        self.nodes.remove(node);
+    }
+}
+
+/// Names of every column used as a join, group-by or distinct key anywhere in the
+/// arena, and of the columns aliased to them.
+///
+/// Counting the distinct values of an in-memory column costs a pass over a sample of
+/// it, so only these are counted. The arena may hold nodes no longer in the plan,
+/// which only adds names.
 #[expect(clippy::disallowed_types)]
-pub(crate) type StatsCache = PlHashMap<Node, Option<NodeStats>>;
+fn key_column_names(ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> PlHashSet<PlSmallStr> {
+    let mut names = PlHashSet::new();
+    let add_keys = |keys: &[ExprIR], names: &mut PlHashSet<PlSmallStr>| {
+        for key in keys {
+            names.insert(key.output_name().clone());
+            names.extend(aexpr_to_leaf_names_iter(key.node(), expr_arena).cloned());
+        }
+    };
+    let mut aliases: Vec<(&PlSmallStr, &PlSmallStr)> = Vec::new();
+    for i in 0..ir_arena.len() {
+        match ir_arena.get(Node(i)) {
+            IR::Join { options, .. } => {
+                if let JoinTypeOptionsIR::Equi { on, .. } = &options.options {
+                    for (left, right) in on.iter() {
+                        add_keys(std::slice::from_ref(left), &mut names);
+                        add_keys(std::slice::from_ref(right), &mut names);
+                    }
+                }
+            },
+            IR::GroupBy { keys, .. } => add_keys(keys, &mut names),
+            IR::Distinct { options, .. } => {
+                if let Some(subset) = &options.subset {
+                    names.extend(subset.iter().cloned());
+                }
+            },
+            IR::Select { expr: exprs, .. } | IR::HStack { exprs, .. } => {
+                aliases.extend(exprs.iter().filter_map(|e| {
+                    let source = into_column(e.node(), expr_arena)?;
+                    (source != e.output_name()).then_some((e.output_name(), source))
+                }));
+            },
+            _ => {},
+        }
+    }
+    // A chain of aliases needs a round per link.
+    loop {
+        let before = names.len();
+        for (output, source) in &aliases {
+            if names.contains(*output) {
+                names.insert((*source).clone());
+            }
+        }
+        if names.len() == before {
+            break names;
+        }
+    }
+}
 
 /// Fallback selectivity for a filter conjunct with no better estimate.
 const DEFAULT_SELECTIVITY: f64 = 0.2;
@@ -77,7 +152,7 @@ pub(crate) fn node_stats_with_cache(
     expr_arena: &Arena<AExpr>,
     cache: &mut StatsCache,
 ) -> Option<NodeStats> {
-    if let Some(hit) = cache.get(&node) {
+    if let Some(hit) = cache.nodes.get(&node) {
         return hit.clone();
     }
     let ir = ir_arena.get(node);
@@ -120,9 +195,20 @@ pub(crate) fn node_stats_with_cache(
             })
         },
 
-        IR::DataFrameScan { .. } => {
+        IR::DataFrameScan {
+            df,
+            schema,
+            output_schema,
+        } => {
             let rows = (leaf_row_count(ir).value()? as f64).max(MIN_CARDINALITY);
-            Some(NodeStats::of_rows(rows))
+            let names = output_schema.as_ref().unwrap_or(schema);
+            let key_columns = cache
+                .key_columns
+                .get_or_insert_with(|| key_column_names(ir_arena, expr_arena));
+            Some(NodeStats {
+                columns: dataframe_columns(df, names, key_columns),
+                ..NodeStats::of_rows(rows)
+            })
         },
         IR::GroupBy {
             input,
@@ -150,7 +236,21 @@ pub(crate) fn node_stats_with_cache(
                     inner.key_distinct_count_product(&sources)
                 });
             let names: Vec<&PlSmallStr> = keys.iter().map(|k| k.output_name()).collect();
-            Some(one_row_per_group(inner, &names, ndv, options.slice))
+            let key_stats: Vec<Option<ScanColumnStats>> = keys
+                .iter()
+                .map(|k| {
+                    into_column(k.node(), expr_arena)
+                        .and_then(|name| inner.column(name))
+                        .cloned()
+                })
+                .collect();
+            Some(one_row_per_group(
+                inner,
+                &names,
+                &key_stats,
+                ndv,
+                options.slice,
+            ))
         },
         IR::Distinct { input, options } => {
             let input_schema;
@@ -163,7 +263,17 @@ pub(crate) fn node_stats_with_cache(
             };
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             let ndv = inner.key_distinct_count_product(&names);
-            Some(one_row_per_group(inner, &names, ndv, options.slice))
+            let key_stats: Vec<Option<ScanColumnStats>> = names
+                .iter()
+                .map(|name| inner.column(name).cloned())
+                .collect();
+            Some(one_row_per_group(
+                inner,
+                &names,
+                &key_stats,
+                ndv,
+                options.slice,
+            ))
         },
         IR::Filter { input, predicate } => {
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
@@ -356,7 +466,7 @@ pub(crate) fn node_stats_with_cache(
         },
         _ => None,
     };
-    cache.insert(node, stats.clone());
+    cache.nodes.insert(node, stats.clone());
     stats
 }
 
@@ -576,14 +686,16 @@ fn keeps_height(expr: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
 /// Estimates for a node emitting one row per distinct combination of `keys`,
 /// optionally sliced.
 ///
-/// `keys` names the output columns, and `ndv` is the distinct combinations they hold
-/// if that is known.
+/// `keys` names the output columns, `key_stats` holds the input statistics of the
+/// column each key reads, and `ndv` is the distinct combinations they hold if that
+/// is known.
 ///
-/// The output columns are the keys, each holding as many distinct values as the
-/// node has rows.
+/// The output columns are the keys. A single key holds as many distinct values as
+/// the node has rows. Each of several keys holds the values of its input column.
 fn one_row_per_group(
     inner: NodeStats,
     keys: &[&PlSmallStr],
+    key_stats: &[Option<ScanColumnStats>],
     ndv: Option<f64>,
     slice: Option<(i64, usize)>,
 ) -> NodeStats {
@@ -599,8 +711,153 @@ fn one_row_per_group(
         groups.unfiltered = sliced(groups.unfiltered, slice);
         groups.max_rows = groups.max_rows.map(|m| sliced(m, slice));
     }
-    groups.columns = single_key_column(keys, groups.filtered);
+    groups.columns = match keys {
+        [_] => single_key_column(keys, groups.filtered),
+        // A slice keeps only some groups, so it may drop values of any key.
+        _ if slice.is_none() => multi_key_columns(keys, key_stats),
+        _ => None,
+    };
     groups
+}
+
+/// The distinct values and range of each of several keys are those of the input
+/// column it reads.
+fn multi_key_columns(
+    keys: &[&PlSmallStr],
+    key_stats: &[Option<ScanColumnStats>],
+) -> Option<Arc<ScanColumnStatsMap>> {
+    let map: ScanColumnStatsMap = keys
+        .iter()
+        .zip(key_stats)
+        .filter_map(|(name, stats)| {
+            let stats = stats.as_ref()?;
+            let stats = ScanColumnStats {
+                distinct: stats.distinct,
+                null_count: Card::Unknown,
+                avg_byte_width: stats.avg_byte_width,
+                int_range: stats.int_range,
+                int_range_partial: stats.int_range_partial,
+                sampled_row_groups: None,
+            };
+            Some(((*name).clone(), stats))
+        })
+        .collect();
+    (!map.is_empty()).then(|| Arc::new(map))
+}
+
+/// Rows a sample of an in-memory frame reads.
+const NDV_SAMPLE_ROWS: usize = 1 << 14;
+
+/// Distinct counts of the columns `names` of an in-memory frame that are in
+/// `key_columns`.
+///
+/// Exact when the frame has at most [`NDV_SAMPLE_ROWS`] rows, otherwise estimated
+/// from a uniform sample.
+#[expect(clippy::disallowed_types)]
+fn dataframe_columns(
+    df: &DataFrame,
+    names: &Schema,
+    key_columns: &PlHashSet<PlSmallStr>,
+) -> Option<Arc<ScanColumnStatsMap>> {
+    let height = df.height();
+    if height == 0 {
+        return None;
+    }
+    let map: ScanColumnStatsMap = names
+        .iter_names()
+        .filter(|name| key_columns.contains(*name))
+        .filter_map(|name| {
+            let column = df.column(name).ok()?;
+            let distinct = column_distinct(column)?;
+            let stats = ScanColumnStats {
+                distinct,
+                ..Default::default()
+            };
+            Some((name.clone(), stats))
+        })
+        .collect();
+    (!map.is_empty()).then(|| Arc::new(map))
+}
+
+/// Distinct counts already made, keyed on the address of a column's data.
+///
+/// The weak reference keeps that address from being reused while the entry
+/// exists, and tells whether the column is still alive.
+// We don't iterate over it.
+#[expect(clippy::disallowed_types)]
+type DistinctCache = PlHashMap<usize, (Weak<dyn SeriesTrait>, usize, Option<Card>)>;
+
+static DISTINCT_CACHE: LazyLock<Mutex<DistinctCache>> = LazyLock::new(Default::default);
+
+/// Entries kept before dead columns are dropped from [`DISTINCT_CACHE`].
+const MAX_CACHED_COLUMNS: usize = 1 << 12;
+
+fn column_distinct(column: &Column) -> Option<Card> {
+    if column.as_scalar_column().is_some() {
+        return Some(Card::Exact(1));
+    }
+    let dtype = column.dtype();
+    if dtype.is_nested() || dtype.is_object() {
+        return None;
+    }
+    let series = column.as_materialized_series();
+    let key = Arc::as_ptr(&series.0) as *const () as usize;
+    // A column can be appended to in place, so the length must match too.
+    if let Some((weak, len, distinct)) = DISTINCT_CACHE.lock().unwrap().get(&key)
+        && weak.strong_count() > 0
+        && *len == series.len()
+    {
+        return *distinct;
+    }
+
+    let distinct = series_distinct(series);
+    let mut cache = DISTINCT_CACHE.lock().unwrap();
+    if cache.len() >= MAX_CACHED_COLUMNS {
+        cache.retain(|_, (weak, _, _)| weak.strong_count() > 0);
+        if cache.len() >= MAX_CACHED_COLUMNS {
+            cache.clear();
+        }
+    }
+    cache.insert(key, (Arc::downgrade(&series.0), series.len(), distinct));
+    distinct
+}
+
+/// Distinct non-null values, exact up to [`NDV_SAMPLE_ROWS`] rows, otherwise
+/// estimated from a uniform sample of it.
+///
+/// A null matches nothing in a join, so it is not counted as a value.
+fn series_distinct(series: &Series) -> Option<Card> {
+    let non_null = series.len() - series.null_count();
+    if series.len() <= NDV_SAMPLE_ROWS {
+        let groups = series.drop_nulls().group_tuples(false, false).ok()?;
+        return Some(Card::Exact(groups.len() as u64));
+    }
+    // Uniform, so the rows of a value stored next to each other are drawn together
+    // as often as anywhere else. A fixed seed keeps plans the same between runs.
+    let sample = series
+        .sample_n(NDV_SAMPLE_ROWS, false, None, Some(0))
+        .ok()?
+        .drop_nulls();
+    if sample.is_empty() {
+        return (non_null == 0).then_some(Card::Exact(0));
+    }
+    let groups = sample.group_tuples(false, false).ok()?;
+    let singletons = groups.iter().filter(|g| g.len() == 1).count();
+    let estimate = sampled_distinct(non_null, sample.len(), groups.len(), singletons);
+    Some(Card::approx(estimate))
+}
+
+/// Distinct values in `rows` rows, from a sample of `sampled` rows holding
+/// `distinct` values of which `singletons` occur once.
+///
+/// This is the Haas-Stokes estimator: a sample without repeats reads as a unique
+/// column, one where every value repeats as a column with no other values.
+fn sampled_distinct(rows: usize, sampled: usize, distinct: usize, singletons: usize) -> u64 {
+    let (rows, sampled) = (rows as f64, sampled as f64);
+    let (distinct, singletons) = (distinct as f64, singletons as f64);
+    let denominator = sampled - singletons + singletons * sampled / rows;
+    let estimate = sampled * distinct / denominator;
+    estimate.clamp(distinct, rows).round() as u64
 }
 
 /// A group-by over one key holds exactly one row per distinct value of it. Several
