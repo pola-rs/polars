@@ -5,9 +5,9 @@ use parking_lot::Mutex;
 use polars_core::config;
 use polars_core::prelude::{InitHashMaps, PlHashSet, PlIndexSet, PlRandomState};
 use polars_core::schema::{Schema, SchemaRef};
-use polars_error::{polars_ensure, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_ensure, polars_err};
 use polars_expr::groups::new_hash_grouper;
-use polars_expr::planner::{create_physical_expr, create_window_expr, ExpressionConversionState};
+use polars_expr::planner::{ExpressionConversionState, create_physical_expr, create_window_expr};
 use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
@@ -17,7 +17,7 @@ use polars_plan::dsl::{
 };
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::options::JoinOptionsIR;
-use polars_plan::plans::{AExpr, ArenaExprIter, IRAggExpr, IR};
+use polars_plan::plans::{AExpr, ArenaExprIter, IR, IRAggExpr};
 use polars_plan::prelude::FunctionFlags;
 use polars_plan::utils::aexpr_to_leaf_names_iter;
 use polars_utils::arena::{Arena, Node};
@@ -35,14 +35,14 @@ use crate::execute::StreamingExecutionState;
 use crate::expression::StreamExpr;
 use crate::graph::{Graph, GraphNodeKey};
 use crate::metrics::{GraphMetrics, NodeMetricsRegistry};
-use crate::morsel::{get_ideal_morsel_size, MorselSeq};
+use crate::morsel::{MorselSeq, get_ideal_morsel_size};
 use crate::nodes;
+use crate::nodes::ComputeNode;
 use crate::nodes::io_sources::multi_scan;
 use crate::nodes::io_sources::multi_scan::config::MultiScanConfig;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 use crate::nodes::joins::merge_join::MergeJoinNode;
-use crate::nodes::ComputeNode;
 use crate::physical_plan::lower_expr::compute_output_schema;
 use crate::physical_plan::lower_group_by::augmented_group_by_input_schema;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
@@ -425,8 +425,8 @@ fn to_graph_rec<'a>(
                     unified_sink_args,
                 },
         } => {
-            use crate::nodes::io_sinks::config::{IOSinkNodeConfig, IOSinkTarget};
             use crate::nodes::io_sinks::IOSinkNode;
+            use crate::nodes::io_sinks::config::{IOSinkNodeConfig, IOSinkTarget};
 
             let input_schema = input.output_schema(ctx.phys_sm).clone();
             let input_key = to_graph_rec(input.node, ctx)?;
@@ -459,6 +459,7 @@ fn to_graph_rec<'a>(
                     approximate_bytes_per_file,
                 },
         } => {
+            use crate::nodes::io_sinks::IOSinkNode;
             use crate::nodes::io_sinks::components::exclude_keys_projection::ExcludeKeysProjection;
             use crate::nodes::io_sinks::components::hstack_columns::HStackColumns;
             use crate::nodes::io_sinks::components::partitioner::{KeyedPartitioner, Partitioner};
@@ -468,7 +469,6 @@ fn to_graph_rec<'a>(
             use crate::nodes::io_sinks::config::{
                 IOSinkNodeConfig, IOSinkTarget, PartitionedTarget,
             };
-            use crate::nodes::io_sinks::IOSinkNode;
 
             let input_schema = input.output_schema(ctx.phys_sm).clone();
             let input_key = to_graph_rec(input.node, ctx)?;
@@ -1874,7 +1874,7 @@ fn to_graph_rec<'a>(
             use pyo3::exceptions::PyStopIteration;
             use pyo3::prelude::*;
             use pyo3::types::{PyBytes, PyNone};
-            use pyo3::{intern, IntoPyObjectExt, PyTypeInfo};
+            use pyo3::{IntoPyObjectExt, PyTypeInfo, intern};
 
             let mut options = options.clone();
 

@@ -162,4 +162,3 @@ pub fn first_run_len(frame: &DataFrame, key: &str) -> PolarsResult<usize> {
     crate::series::ops::rle_lengths(frame.column(key)?, &mut lengths)?;
     Ok(lengths.first().copied().unwrap_or(0) as usize)
 }
-

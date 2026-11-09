@@ -13,11 +13,11 @@ use polars_io::cloud::CloudOptions;
 use polars_io::metrics::IOMetrics;
 use polars_io::utils::file::Writable;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
+use polars_utils::IdxSize;
 use polars_utils::arena::Arena;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_path::{CloudScheme, PlRefPath};
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::IdxSize;
 
 use super::FileWriteFormat;
 use crate::dsl::file_provider::FileProviderType;

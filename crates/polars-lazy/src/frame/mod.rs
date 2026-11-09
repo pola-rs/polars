@@ -8,7 +8,7 @@ mod err;
 mod exitable;
 
 use std::num::NonZeroUsize;
-use std::sync::mpsc::{sync_channel, Receiver};
+use std::sync::mpsc::{Receiver, sync_channel};
 use std::sync::{Arc, Mutex};
 
 pub use anonymous_scan::*;
@@ -35,7 +35,7 @@ use polars_defs::join::{
 use polars_defs::time::group_by::{DynamicGroupOptions, RollingGroupOptions};
 use polars_io::RowIndex;
 use polars_mem_engine::scan_predicate::functions::apply_scan_predicate_to_scan_ir;
-use polars_mem_engine::{create_multiple_physical_plans, create_physical_plan, Executor};
+use polars_mem_engine::{Executor, create_multiple_physical_plans, create_physical_plan};
 use polars_observer::{PlannedQuery, QueryObserver};
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
 use polars_plan::plans::ExecutionHooks;
@@ -458,7 +458,7 @@ impl LazyFrame {
     /// See the method on [Series](polars_core::series::SeriesTrait::shift) for more info on the `shift` operation.
     pub fn shift_and_fill<E: Into<Expr>, IE: Into<Expr>>(self, n: E, fill_value: IE) -> Self {
         self.select(vec![
-            col(PlSmallStr::from_static("*")).shift_and_fill(n.into(), fill_value.into())
+            col(PlSmallStr::from_static("*")).shift_and_fill(n.into(), fill_value.into()),
         ])
     }
 

@@ -4,8 +4,8 @@ use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_core::frame::DataFrame;
 use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
-use polars_plan::prelude::PlanCallback;
 use polars_ops::frame::{first_run_len, split_by_key};
+use polars_plan::prelude::PlanCallback;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::execute::StreamingExecutionState;
@@ -117,8 +117,7 @@ impl ComputeNode for CallbackSinkNode {
                         complete.append(&mut groups);
                     } else {
                         let continues = {
-                            let last =
-                                self.buffer.column(key)?.get(self.buffer.height() - 1)?;
+                            let last = self.buffer.column(key)?.get(self.buffer.height() - 1)?;
                             let first = morsel.column(key)?.get(0)?;
                             last == first
                         };
