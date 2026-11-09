@@ -273,7 +273,7 @@ impl GroupByNode {
         let (outputs, stored, pre_aggs) = if build_at_once {
             let outputs =
                 self.build_partitions(pre_aggs, batches, &partitioner, reserve_groups, state)?;
-            actual_groups.add(outputs.iter().map(|out| out.height() as i64).sum());
+            actual_groups.add(outputs.iter().map(|(out, _)| out.height() as i64).sum());
             (outputs, Vec::new(), SplitPreAggs::default())
         } else {
             let stored = self.store_partitions(batches, &partitioner, state)?;
@@ -293,7 +293,8 @@ impl GroupByNode {
     }
 
     /// Builds every partition: first from the pre-aggregates, then from the cold frames one batch
-    /// at a time. Returns the non-empty results, or one empty result if all are empty.
+    /// at a time. Returns the non-empty results with their estimated sizes in bytes, or one empty
+    /// result if all are empty.
     fn build_partitions(
         &self,
         pre_aggs: SplitPreAggs,
@@ -301,15 +302,15 @@ impl GroupByNode {
         partitioner: &HashPartitioner,
         reserve_groups: usize,
         state: &StreamingExecutionState,
-    ) -> PolarsResult<Vec<DataFrame>> {
-        // The partition index, its table, and the result once finished.
-        type Partition = (usize, PartitionTable, DataFrame);
+    ) -> PolarsResult<Vec<(DataFrame, u64)>> {
+        // The partition index, its table, and the result and its size once finished.
+        type Partition = (usize, PartitionTable, (DataFrame, u64));
 
         let num_partitions = partitioner.num_partitions();
         let mut partitions: Vec<Partition> = (0..num_partitions)
             .map(|p| {
                 let table = PartitionTable::new(self.params.clone(), reserve_groups);
-                (p, table, DataFrame::empty())
+                (p, table, (DataFrame::empty(), 0))
             })
             .collect();
         {
@@ -361,14 +362,19 @@ impl GroupByNode {
             table,
             out,
         )| async move {
-            *out = table.finish()?;
+            let frame = table.finish()?;
+            // Here, in parallel: the size of string columns is computed from all their views the
+            // first time, which takes long for large results (~80 ms for 56M strings).
+            let bytes = frame.estimated_size(false) as u64;
+            *out = (frame, bytes);
             memory_manager().spill().await;
             Ok(())
         })?;
-        let mut outputs: Vec<DataFrame> = partitions.into_iter().map(|(_, _, out)| out).collect();
+        let mut outputs: Vec<(DataFrame, u64)> =
+            partitions.into_iter().map(|(_, _, out)| out).collect();
         // An empty result is still sent, as one empty morsel.
-        if outputs.iter().any(|out| out.height() > 0) {
-            outputs.retain(|out| out.height() > 0);
+        if outputs.iter().any(|(out, _)| out.height() > 0) {
+            outputs.retain(|(out, _)| out.height() > 0);
         } else {
             outputs.truncate(1);
         }
