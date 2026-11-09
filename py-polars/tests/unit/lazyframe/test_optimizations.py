@@ -1156,6 +1156,34 @@ def test_slice_pushdown_expr_leaf_ae_without_col_input_27820() -> None:
 @pytest.mark.parametrize(
     ("expr", "expected"),
     [
+        (pl.col("a").slice(1, 2).head(2), [2, 3]),
+        (pl.col("a").slice(1, 2).head(5), [2, 3]),
+        (pl.col("a").slice(1, 3).head(2), [2, 3]),
+        (pl.col("a").slice(1, 2).slice(1, 1), [3]),
+        (pl.col("a").slice(1).tail(2), [4, 5]),
+        (pl.col("a").abs().slice(1).tail(2), [4, 5]),
+        (pl.col("a").abs().slice(1, 3).slice(-2, 1), [3]),
+        (pl.col("a").slice(-3).head(2), [3, 4]),
+        ((pl.col("a").slice(1) + pl.col("b").slice(1)).tail(2), [44, 55]),
+    ],
+)
+def test_slice_pushdown_expr_nested_slices_30673(
+    expr: pl.Expr, expected: list[int]
+) -> None:
+    q = pl.LazyFrame({"a": [1, 2, 3, 4, 5], "b": [10, 20, 30, 40, 50]}).select(expr)
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": expected}))
+
+
+def test_slice_pushdown_expr_nested_slice_multiple_columns_30673() -> None:
+    q = pl.LazyFrame({"a": [1, 2, 3, 4, 5], "b": [10, 20, 30, 40, 50]}).select(
+        pl.col("a").slice(1, 2).head(2), pl.col("b").slice(1, 2)
+    )
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [2, 3], "b": [20, 30]}))
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected"),
+    [
         (pl.col("a").first().over(pl.lit(1)), [1, 1, 1]),
         (pl.col("a").last().over(pl.lit(1)), [3, 3, 3]),
         ((pl.col("a") + 1).last().over(pl.lit(1)), [4, 4, 4]),
