@@ -8,13 +8,14 @@ use polars_arrow::offset::OffsetsBuffer;
 use polars_arrow::trusted_len::TrustMyLength;
 use polars_compute::rolling::QuantileMethod;
 use polars_compute::unique::{AmortizedUnique, amortized_unique_from_dtype};
+use polars_core::chunked_array::from_iterator_par::ChunkedCollectParIterExt;
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::{
     AnyValue, BooleanChunked, ChunkCast, Column, CompatLevel, DataType, ExplodeOptions,
     Float64Chunked, GroupPositions, GroupsType, IDX_DTYPE, IntoColumn, IntoSeries, LargeListArray,
-    ListChunked, explode_with_row_offsets,
+    ListChunked, explode_with_row_offsets, extract_quantiles,
 };
 use polars_core::runtime::RAYON;
 use polars_core::scalar::Scalar;
@@ -682,6 +683,10 @@ pub fn quantile<'a>(
     let keep_name = ac.get_values().name().clone();
 
     let quantile_column = inputs[1].evaluate(df, state)?;
+    if quantile_column.dtype().is_list() {
+        let quantiles = extract_quantiles(quantile_column.as_materialized_series())?;
+        return quantiles_on_groups(ac, groups, &quantiles, method, keep_name);
+    }
     polars_ensure!(
         !quantile_column.is_empty(),
         ComputeError:
@@ -714,6 +719,50 @@ pub fn quantile<'a>(
     agg.rename(keep_name);
     Ok(AggregationContext::from_agg_state(
         AggState::AggregatedScalar(agg),
+        Cow::Borrowed(groups),
+    ))
+}
+
+/// Computes a list of `quantiles` per group, with the same semantics as `quantiles_reduce` on
+/// each group's values.
+fn quantiles_on_groups<'a>(
+    mut ac: AggregationContext<'a>,
+    groups: &'a GroupPositions,
+    quantiles: &[f64],
+    method: QuantileMethod,
+    name: PlSmallStr,
+) -> PolarsResult<AggregationContext<'a>> {
+    if let AggState::LiteralScalar(c) = &mut ac.state {
+        *c = c.quantiles_reduce(quantiles, method)?.into_column(name);
+        return Ok(ac);
+    }
+
+    let quantiles_of = |s: &Series| -> PolarsResult<Series> {
+        let AnyValue::List(out) = s.quantiles_reduce(quantiles, method)?.into_value() else {
+            unreachable!("`quantiles_reduce` returns a list")
+        };
+        Ok(out)
+    };
+
+    let values = ac.flat_naive().into_owned();
+    // Derived from an empty input so that the dtype is also known when there are no groups.
+    let dtype = quantiles_of(values.clear().as_materialized_series())?
+        .dtype()
+        .clone()
+        .implode();
+
+    // SAFETY: groups are in bounds.
+    let lists = unsafe { values.agg_list(ac.groups()) };
+    let out: ListChunked = RAYON.install(|| {
+        lists
+            .list()?
+            .par_iter()
+            .map(|group| group.map(|group| quantiles_of(&group)).transpose())
+            .collect_ca_with_dtype::<PolarsResult<_>>(name, dtype)
+    })?;
+
+    Ok(AggregationContext::from_agg_state(
+        AggState::AggregatedScalar(out.into_column()),
         Cow::Borrowed(groups),
     ))
 }
