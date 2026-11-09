@@ -325,8 +325,10 @@ impl ProbeOutput {
                         self.unmatched_probe.push(*row);
                     }
                 }
-                self.table_match
-                    .extend(std::iter::repeat_n(IdxSize::MAX, self.unmatched_probe.len()));
+                self.table_match.extend(std::iter::repeat_n(
+                    IdxSize::MAX,
+                    self.unmatched_probe.len(),
+                ));
                 self.probe_match.extend_from_slice(&self.unmatched_probe);
             }
         }

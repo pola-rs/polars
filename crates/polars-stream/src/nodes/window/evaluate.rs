@@ -260,7 +260,11 @@ pub(super) fn evaluate_sink_partitions(
     if !frames.is_empty() {
         push_unit(frames, rows);
     }
-    Ok(FlushState::new(units, tuning.max_partition_bytes(), spill_ctxs))
+    Ok(FlushState::new(
+        units,
+        tuning.max_partition_bytes(),
+        spill_ctxs,
+    ))
 }
 
 /// What evaluating a unit of [`super::WindowOutput::SinkPartitions`] needs.
