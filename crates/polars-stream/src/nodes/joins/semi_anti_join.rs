@@ -1144,10 +1144,20 @@ impl ComputeNode for SemiAntiJoinNode {
                     self.state = SemiAntiJoinState::Done;
                 } else {
                     let mut probe_state = build_state.finalize(&self.params, &*self.grouper, state);
-                    if self.params.left_is_build() {
-                        probe_state.mark_sampled(&self.params, state)?;
+                    // Null keys that can't match get no group, so without groups
+                    // nothing matches.
+                    let no_groups = probe_state
+                        .grouper_per_partition
+                        .iter()
+                        .all(|g| g.num_groups() == 0);
+                    if self.params.empty_build_gives_empty_output() && no_groups {
+                        self.state = SemiAntiJoinState::Done;
+                    } else {
+                        if self.params.left_is_build() {
+                            probe_state.mark_sampled(&self.params, state)?;
+                        }
+                        self.state = SemiAntiJoinState::Probe(probe_state);
                     }
-                    self.state = SemiAntiJoinState::Probe(probe_state);
                 }
             }
         }
