@@ -6,6 +6,7 @@ use polars_core::prelude::{ArrowField, Column, DataType};
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
 use polars_plan::dsl::CastColumnsPolicy;
+use polars_plan::plans::predicates::null_count_dtype;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::nodes::io_sources::multi_scan::components::column_selector::ColumnSelector;
@@ -100,14 +101,43 @@ impl ArrowFieldProjection {
                 transform,
                 output_dtype,
                 ..
+            } => apply_selector(transform, column, output_dtype),
+        }
+    }
+
+    /// Like [`Self::apply_transform`], but for the `null_count` statistic.
+    pub fn apply_null_count_transform(&self, column: Column) -> PolarsResult<Column> {
+        match self {
+            Self::Plain(_) => Ok(column),
+            Self::Mapped {
+                transform,
+                output_dtype,
+                ..
             } => {
-                let output_height = column.len();
-                let out = transform.select_from_columns(&[column], output_height)?;
+                let nc_dtype = null_count_dtype(output_dtype);
 
-                debug_assert_eq!(out.dtype(), output_dtype);
-
-                Ok(out)
+                match transform.null_count_transform() {
+                    Some(selector) => apply_selector(&selector, column, &nc_dtype),
+                    None => Ok(Column::full_null(
+                        PlSmallStr::EMPTY,
+                        column.len(),
+                        &nc_dtype,
+                    )),
+                }
             },
         }
     }
+}
+
+fn apply_selector(
+    selector: &ColumnSelector,
+    column: Column,
+    expected_dtype: &DataType,
+) -> PolarsResult<Column> {
+    let output_height = column.len();
+    let out = selector.select_from_columns(&[column], output_height)?;
+
+    debug_assert_eq!(out.dtype(), expected_dtype);
+
+    Ok(out)
 }
