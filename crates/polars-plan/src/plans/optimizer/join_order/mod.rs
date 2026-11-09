@@ -13,12 +13,15 @@
 //! - [`enumerate`] picks the order,
 //! - [`rebuild`] emits the new plan.
 
+use std::sync::Arc;
+
 use polars_core::error::PolarsResult;
 use polars_core::prelude::PlIndexMap;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;
 use recursive::recursive;
 
+use crate::plans::stats::{KeyColumns, key_column_names};
 use crate::plans::{AExpr, IR};
 
 mod cluster;
@@ -35,7 +38,8 @@ pub(super) fn join_order(
     // from several parents. Rewriting it once per parent would give caches that
     // share an id but not a plan.
     let mut rewritten = PlIndexMap::default();
-    rewrite(root, ir_arena, expr_arena, &mut rewritten)
+    let key_columns = key_column_names(ir_arena, expr_arena);
+    rewrite(root, ir_arena, expr_arena, &mut rewritten, &key_columns)
 }
 
 #[recursive]
@@ -44,16 +48,17 @@ fn rewrite(
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     rewritten: &mut PlIndexMap<Node, Node>,
+    key_columns: &Arc<KeyColumns>,
 ) -> PolarsResult<Node> {
     if let Some(&done) = rewritten.get(&node) {
         return Ok(done);
     }
     // Top-down, so the outermost join of a run forms the cluster and the whole run
     // is considered together.
-    if let Some(mut cluster) = cluster::extract(node, ir_arena, expr_arena) {
+    if let Some(mut cluster) = cluster::extract(node, ir_arena, expr_arena, key_columns) {
         // Leaves are opaque to reordering but may contain clusters of their own.
         for leaf in &mut cluster.leaves {
-            leaf.node = rewrite(leaf.node, ir_arena, expr_arena, rewritten)?;
+            leaf.node = rewrite(leaf.node, ir_arena, expr_arena, rewritten, key_columns)?;
         }
 
         let order = enumerate::order(&cluster);
@@ -66,7 +71,13 @@ fn rewrite(
     let children = ir_arena.get(node).get_inputs();
     let mut new_children = UnitVec::with_capacity(children.len());
     for child in children {
-        new_children.push(rewrite(child, ir_arena, expr_arena, rewritten)?);
+        new_children.push(rewrite(
+            child,
+            ir_arena,
+            expr_arena,
+            rewritten,
+            key_columns,
+        )?);
     }
 
     for (slot, new) in ir_arena.get_mut(node).inputs_mut().zip(new_children) {

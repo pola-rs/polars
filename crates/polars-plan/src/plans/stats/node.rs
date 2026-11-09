@@ -3,7 +3,6 @@
 //! Anything that cannot be estimated yields `None` rather than a guess, so a caller
 //! can tell "no estimate" apart from "estimated to be small".
 
-use std::cell::RefCell;
 use std::sync::{Arc, LazyLock, Mutex, Weak};
 
 use polars_core::frame::DataFrame;
@@ -35,42 +34,27 @@ pub(crate) struct StatsCache {
     // We don't iterate over it.
     #[expect(clippy::disallowed_types)]
     nodes: PlHashMap<Node, Option<NodeStats>>,
-    /// Set on the first in-memory frame, see [`key_column_names`].
+    /// Given by the caller, or made on the first in-memory frame.
     key_columns: Option<Arc<KeyColumns>>,
 }
 
+/// Names of the columns of in-memory frames worth counting, see
+/// [`key_column_names`].
 #[expect(clippy::disallowed_types)]
-type KeyColumns = PlHashSet<PlSmallStr>;
-
-thread_local! {
-    /// The last [`key_column_names`] made, with the arena versions and lengths it
-    /// was made for. Optimizer passes make a new [`StatsCache`] per join, and nodes
-    /// are only ever added to an arena, so this saves a walk over it for each.
-    static KEY_COLUMNS: RefCell<Option<([usize; 4], Arc<KeyColumns>)>> = const { RefCell::new(None) };
-}
-
-fn key_columns(ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Arc<KeyColumns> {
-    let id = [
-        ir_arena.version() as usize,
-        ir_arena.len(),
-        expr_arena.version() as usize,
-        expr_arena.len(),
-    ];
-    KEY_COLUMNS.with_borrow_mut(|last| {
-        if let Some((last_id, names)) = last
-            && *last_id == id
-        {
-            return names.clone();
-        }
-        let names = Arc::new(key_column_names(ir_arena, expr_arena));
-        *last = Some((id, names.clone()));
-        names
-    })
-}
+pub(crate) type KeyColumns = PlHashSet<PlSmallStr>;
 
 impl StatsCache {
     pub(crate) fn new() -> Self {
         Self::default()
+    }
+
+    /// A cache that counts the columns in `key_columns`. A pass making many caches
+    /// shares one set instead of walking the arena for each.
+    pub(crate) fn with_key_columns(key_columns: Arc<KeyColumns>) -> Self {
+        Self {
+            key_columns: Some(key_columns),
+            ..Self::default()
+        }
     }
 
     /// Forget the estimate of `node`, whose id is about to be reused.
@@ -85,7 +69,7 @@ impl StatsCache {
 /// Counting the distinct values of an in-memory column costs a pass over a sample of
 /// it, so only these are counted. The arena may hold nodes no longer in the plan,
 /// which only adds names.
-fn key_column_names(ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> KeyColumns {
+pub(crate) fn key_column_names(ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Arc<KeyColumns> {
     let mut names = KeyColumns::default();
     let add_keys = |keys: &[ExprIR], names: &mut KeyColumns| {
         for key in keys {
@@ -127,7 +111,7 @@ fn key_column_names(ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> KeyColum
             }
         }
         if names.len() == before {
-            break names;
+            break Arc::new(names);
         }
     }
 }
@@ -231,7 +215,7 @@ pub(crate) fn node_stats_with_cache(
             let names = output_schema.as_ref().unwrap_or(schema);
             let key_columns = cache
                 .key_columns
-                .get_or_insert_with(|| key_columns(ir_arena, expr_arena));
+                .get_or_insert_with(|| key_column_names(ir_arena, expr_arena));
             Some(NodeStats {
                 columns: dataframe_columns(df, names, key_columns),
                 ..NodeStats::of_rows(rows)
@@ -822,8 +806,9 @@ static DISTINCT_CACHE: LazyLock<Mutex<DistinctCache>> = LazyLock::new(Default::d
 const MAX_CACHED_COLUMNS: usize = 1 << 12;
 
 fn column_distinct(column: &Column) -> Option<Card> {
-    if column.as_scalar_column().is_some() {
-        return Some(Card::Exact(1));
+    if let Some(column) = column.as_scalar_column() {
+        // Every row holds the one value, so a null one is a column of nulls.
+        return (!column.scalar().is_null()).then_some(Card::Exact(1));
     }
     let dtype = column.dtype();
     if dtype.is_nested() || dtype.is_object() {
