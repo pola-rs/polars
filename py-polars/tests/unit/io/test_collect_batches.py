@@ -239,6 +239,7 @@ def test_split_by_empty(engine: EngineType) -> None:
     ("dtype", "values", "expected"),
     [
         (pl.Int64, [1, 1, 2, 2, 2, 3], [[1, 1], [2, 2, 2], [3]]),
+        (pl.UInt32, [1, 1, 2, 2, 2, 3], [[1, 1], [2, 2, 2], [3]]),
         (
             pl.String,
             ["a", "a", "b", "b", "b", "c"],
