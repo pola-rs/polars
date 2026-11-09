@@ -27,7 +27,8 @@ use super::utils::{
     JoinSampleStats, LEFT_BUILD_MARGIN, REF_KEY_RATIO, UNIQUE_BUILD_MARGIN, UNIQUE_KEY_RATIO,
 };
 use super::{
-    BufferedStream, LOPSIDED_SAMPLE_FACTOR, build_side_left, sample_sink, select_key_columns,
+    BufferedStream, LOPSIDED_ESTIMATE_FACTOR, LOPSIDED_SAMPLE_FACTOR, build_side_left, sample_sink,
+    select_key_columns,
 };
 use crate::expression::StreamExpr;
 use crate::nodes::compute_node_prelude::*;
@@ -49,6 +50,8 @@ struct EquiJoinParams {
     // Key filters for the scans below the planned probe side, set once from a
     // complete sample of the planned build side or from its build.
     runtime_filters: RuntimeFilters,
+    /// See `JoinOptionsIR::estimated_rows`.
+    estimated_rows: Option<[u64; 2]>,
     random_state: PlRandomState,
     sample_limit: usize,
 }
@@ -205,6 +208,37 @@ fn select_payload(df: DataFrame, selector: &[Option<PlSmallStr>]) -> DataFrame {
     unsafe { DataFrame::new_unchecked(height, new_cols) }
 }
 
+/// The rows of both sides, if one side has many times fewer than the other. A
+/// side that ended has its sampled rows; for the others the estimates are used,
+/// unless one is below the rows sampled, which proves it wrong.
+fn lopsided_estimates(
+    estimated_rows: Option<[u64; 2]>,
+    sampled_rows: [usize; 2],
+    ended: [bool; 2],
+) -> Option<(usize, usize)> {
+    let mut rows = estimated_rows?.map(|rows| usize::try_from(rows).unwrap_or(usize::MAX));
+    for i in 0..2 {
+        if ended[i] {
+            rows[i] = sampled_rows[i];
+        } else if rows[i] < sampled_rows[i] {
+            return None;
+        }
+    }
+    let [left_rows, right_rows] = rows;
+    let lopsided = |small: usize, large: usize| {
+        small
+            .checked_mul(LOPSIDED_ESTIMATE_FACTOR)
+            .is_some_and(|rows| rows <= large)
+    };
+    if config::verbose() {
+        eprintln!(
+            "equi-join sides are incomplete, estimated rows are: {left_rows} vs. {right_rows}"
+        );
+    }
+    (lopsided(left_rows, right_rows) || lopsided(right_rows, left_rows))
+        .then_some((left_rows, right_rows))
+}
+
 struct SampleState {
     left: Vec<Morsel>,
     left_len: usize,
@@ -328,23 +362,37 @@ impl SampleState {
                             &state.in_memory_exec_state,
                         )?;
 
-                        // Both lengths are unknown and assumed equal, unless one side has
-                        // unique keys and the other repeats them. The other side is then
-                        // taken to reference the unique side's keys, making it longer by
-                        // the number of times it repeats each key, and is penalized by
-                        // `UNIQUE_BUILD_MARGIN`.
-                        let left_unique =
-                            left.min_hash_key_ratio.unwrap_or(0.0) >= UNIQUE_KEY_RATIO;
-                        let right_unique =
-                            right.min_hash_key_ratio.unwrap_or(0.0) >= UNIQUE_KEY_RATIO;
-                        let mut left_score = left.all_rows_build_bytes(params.sample_limit);
-                        let mut right_score = right.all_rows_build_bytes(params.sample_limit);
-                        if left.key_ratio <= REF_KEY_RATIO && right_unique {
-                            left_score *= UNIQUE_BUILD_MARGIN / (left.key_ratio + 1e-6);
-                        }
-                        if right.key_ratio <= REF_KEY_RATIO && left_unique {
-                            right_score *= UNIQUE_BUILD_MARGIN / (right.key_ratio + 1e-6);
-                        }
+                        let (left_score, right_score) = match lopsided_estimates(
+                            params.estimated_rows,
+                            [self.left_len, self.right_len],
+                            [recv[0] == PortState::Done, recv[1] == PortState::Done],
+                        ) {
+                            Some((left_rows, right_rows)) => (
+                                left.all_rows_build_bytes(left_rows),
+                                right.all_rows_build_bytes(right_rows),
+                            ),
+                            // Both lengths are unknown and assumed equal, unless one side
+                            // has unique keys and the other repeats them. The other side is
+                            // then taken to reference the unique side's keys, making it
+                            // longer by the number of times it repeats each key, and is
+                            // penalized by `UNIQUE_BUILD_MARGIN`.
+                            None => {
+                                let left_unique =
+                                    left.min_hash_key_ratio.unwrap_or(0.0) >= UNIQUE_KEY_RATIO;
+                                let right_unique =
+                                    right.min_hash_key_ratio.unwrap_or(0.0) >= UNIQUE_KEY_RATIO;
+                                let mut left_score = left.all_rows_build_bytes(params.sample_limit);
+                                let mut right_score =
+                                    right.all_rows_build_bytes(params.sample_limit);
+                                if left.key_ratio <= REF_KEY_RATIO && right_unique {
+                                    left_score *= UNIQUE_BUILD_MARGIN / (left.key_ratio + 1e-6);
+                                }
+                                if right.key_ratio <= REF_KEY_RATIO && left_unique {
+                                    right_score *= UNIQUE_BUILD_MARGIN / (right.key_ratio + 1e-6);
+                                }
+                                (left_score, right_score)
+                            },
+                        };
                         if config::verbose() {
                             eprintln!(
                                 "estimated build scores are: {left_score:.0} (left, key_ratio={:.4}, min_hash_key_ratio={:?}, key_width={:.1}, row_width={:.1}) vs. {right_score:.0} (right, key_ratio={:.4}, min_hash_key_ratio={:?}, key_width={:.1}, row_width={:.1})",
@@ -484,6 +532,7 @@ impl EquiJoinNode {
         right_key_selectors: Vec<StreamExpr>,
         fused_predicate: Option<(StreamExpr, Arc<Schema>)>,
         runtime_filters: Vec<RuntimeFilter>,
+        estimated_rows: Option<[u64; 2]>,
         args: JoinArgs,
         num_pipelines: usize,
         task_metrics: Option<Arc<TaskMetricAggregator>>,
@@ -573,6 +622,7 @@ impl EquiJoinNode {
             args,
             fused_predicate,
             runtime_filters,
+            estimated_rows,
             random_state: PlRandomState::default(),
             sample_limit,
         };
@@ -896,5 +946,50 @@ impl ComputeNode for EquiJoinNode {
             },
             EquiJoinState::Done => unreachable!(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lopsided_estimates_are_used() {
+        let open = [false, false];
+        assert_eq!(
+            lopsided_estimates(Some([800, 100]), [100, 100], open),
+            Some((800, 100))
+        );
+        assert_eq!(lopsided_estimates(Some([100, 799]), [100, 100], open), None);
+        assert_eq!(lopsided_estimates(None, [100, 100], open), None);
+    }
+
+    #[test]
+    fn estimates_below_the_sampled_rows_are_not_used() {
+        let open = [false, false];
+        assert_eq!(
+            lopsided_estimates(Some([10_000, 48]), [100, 100], open),
+            None
+        );
+        assert_eq!(
+            lopsided_estimates(Some([48, 10_000]), [100, 100], open),
+            None
+        );
+    }
+
+    #[test]
+    fn ended_sides_use_their_sampled_rows() {
+        assert_eq!(
+            lopsided_estimates(Some([20_000, 800]), [100, 100], [true, false]),
+            Some((100, 800))
+        );
+        assert_eq!(
+            lopsided_estimates(Some([800, 20_000]), [100, 100], [false, true]),
+            Some((800, 100))
+        );
+        assert_eq!(
+            lopsided_estimates(Some([20, 400]), [100, 100], [true, false]),
+            None
+        );
     }
 }

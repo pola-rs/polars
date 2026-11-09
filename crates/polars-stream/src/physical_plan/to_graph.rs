@@ -1528,6 +1528,7 @@ fn to_graph_rec<'a>(
             args,
             fused_predicate: _,
             runtime_filters: _,
+            estimated_rows: _,
         }
         | SemiAntiJoin {
             input_left,
@@ -1619,6 +1620,7 @@ fn to_graph_rec<'a>(
                 EquiJoin {
                     ref fused_predicate,
                     ref runtime_filters,
+                    estimated_rows,
                     ..
                 } => {
                     // Compiled against a narrow frame of exactly the columns it reads, in
@@ -1655,6 +1657,7 @@ fn to_graph_rec<'a>(
                                 right_key_selectors,
                                 fused_predicate,
                                 runtime_filters.clone(),
+                                estimated_rows,
                                 args,
                                 num_pipelines,
                                 registry.task_metrics(),
