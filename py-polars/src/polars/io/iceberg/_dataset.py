@@ -213,7 +213,7 @@ class IcebergCatalogConfig:
 
     class_: type[pyiceberg.catalog.Catalog]
     name: str
-    properties: dict[str, str]
+    properties: dict[str, Any]
 
     @staticmethod
     def from_catalog(catalog: pyiceberg.catalog.Catalog) -> IcebergCatalogConfig:

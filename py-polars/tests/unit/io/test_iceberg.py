@@ -74,6 +74,7 @@ from polars._utils.various import parse_version
 from polars.io._expand_paths import _expand_paths
 from polars.io.cloud._utils import NoPickleOption
 from polars.io.iceberg._dataset import (
+    IcebergCatalogConfig,
     IcebergScanResolver,
     IcebergScanTableSerializer,
     IcebergTableWrap,
@@ -3727,6 +3728,219 @@ def test_sink_iceberg_pickle(tmp_path: Path) -> None:
     assert new_md_path == tbl.metadata_location
 
 
+def _sql_catalog(tmp_path: Path, **properties: Any) -> SqlCatalog:
+    catalog = SqlCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path / 'iceberg_catalog.sqlite'}",
+        warehouse=format_file_uri_iceberg(tmp_path),
+        **properties,
+    )
+    catalog.create_namespace("ns")
+    catalog.create_table(("ns", "t"), IcebergSchema(NestedField(1, "a", LongType())))
+    return catalog
+
+
+def _capture_catalogs(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+    """The catalogs the sink loads its table from, after the plan round trip."""
+    catalogs = []
+    load_or_create = IcebergSinkState._load_or_create_table
+
+    def capture(self: IcebergSinkState, catalog: Any) -> Any:
+        catalogs.append(catalog)
+        return load_or_create(self, catalog)
+
+    monkeypatch.setattr(IcebergSinkState, "_load_or_create_table", capture)
+    return catalogs
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_non_string_catalog_properties(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # e.g. PyIceberg's `auth` config of a REST catalog (#30671)
+    properties = {
+        "auth": {"type": "noop", "scopes": ["a", None]},
+        "n": 1,
+        "f": 2.5,
+        "b": True,
+        "none": None,
+    }
+    catalog = _sql_catalog(tmp_path, **properties)
+    catalogs = _capture_catalogs(monkeypatch)
+
+    pl.LazyFrame({"a": [1]}).sink_iceberg(catalog.load_table("ns.t"), mode="append")
+    # Locally, the caller's catalog is used.
+    pl.LazyFrame({"a": [2]}).sink_iceberg("ns.t", catalog=catalog, mode="append")
+    assert catalogs == [catalog]
+
+    # A serialized sink rebuilds the catalog, from properties of the same types.
+    q = IcebergSinkState.new("ns.t", catalog=catalog).attach_sink(
+        pl.LazyFrame({"a": [3]})
+    )
+    pickle.loads(pickle.dumps(q)).collect()
+
+    rebuilt = catalogs[1]
+    assert rebuilt is not catalog
+    assert {k: rebuilt.properties[k] for k in properties} == properties
+    assert type(rebuilt.properties["n"]) is int
+    assert type(rebuilt.properties["b"]) is bool
+
+    assert sorted(
+        pl.scan_iceberg(catalog.load_table("ns.t")).collect()["a"].to_list()
+    ) == [1, 2, 3]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_sql_non_string_catalog_properties(tmp_path: Path) -> None:
+    catalog = _sql_catalog(tmp_path, auth={"type": "noop"})
+    with pl.SQLContext() as ctx:
+        ctx.register_catalog("lake", catalog)
+        ctx.execute("INSERT INTO lake.ns.t VALUES (1), (2)")
+        ctx.execute("UPDATE lake.ns.t SET a = a + 10 WHERE a = 2")
+        out = ctx.execute("SELECT a FROM lake.ns.t ORDER BY a", eager=True)
+    assert out["a"].to_list() == [1, 12]
+
+
+@pytest.mark.parametrize(
+    ("value", "type_name"),
+    [
+        (object(), "object"),
+        (2**70, "int"),
+        (D("1.5"), "decimal.Decimal"),
+        (float("nan"), "float"),
+        (float("-inf"), "float"),
+        (b"x", "bytes"),
+    ],
+)
+@pytest.mark.write_disk
+def test_sink_iceberg_catalog_property_values_out_of_tree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: Any, type_name: str
+) -> None:
+    # Values that a plan can't carry: kept as they are in this process, refused with
+    # their key when the plan is serialized.
+    catalog = _sql_catalog(tmp_path, nested={"value": value})
+    config = IcebergCatalogConfig.from_catalog(catalog)
+    q = IcebergSinkState.new("ns.t", catalog=config).attach_sink(
+        pl.LazyFrame({"a": [1]})
+    )
+
+    for serialize in (q.serialize, partial(pickle.dumps, q)):
+        with pytest.raises(
+            pl.exceptions.ComputeError,
+            match=rf"Iceberg property 'nested\.value' of type {re.escape(type_name)}",
+        ):
+            serialize()
+
+    # Without a catalog instance, the sink rebuilds it from the same objects.
+    catalogs = _capture_catalogs(monkeypatch)
+    q.collect()
+    assert catalogs[0].properties["nested"]["value"] is value
+    assert pl.scan_iceberg(catalog.load_table("ns.t")).collect()["a"].to_list() == [1]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_property_nesting_limit(tmp_path: Path) -> None:
+    catalog = _sql_catalog(tmp_path)
+    cyclic: dict[str, Any] = {}
+    cyclic["self"] = cyclic
+
+    with pytest.raises(TypeError, match="iceberg_storage_properties") as exc:
+        pl.LazyFrame({"a": [1]}).sink_iceberg(
+            catalog.load_table("ns.t"), mode="append", storage_options={"x": cyclic}
+        )
+    assert "'x' is nested deeper than 128 levels" in str(exc.value.__cause__)
+
+    # A plan crafted beyond the limit is refused when read, not a crash.
+    config = IcebergCatalogConfig.from_catalog(catalog)
+    config.properties["p"] = [None]
+    q = IcebergSinkState.new("ns.t", catalog=config).attach_sink(
+        pl.LazyFrame({"a": [1]})
+    )
+    plan = q.serialize()
+    marker = b"\x81\xa4List\x91\xa4Null"
+    assert plan.count(marker) == 1
+    plan = plan.replace(marker, b"\x81\xa4List\x91" * 50_000 + b"\xa4Null")
+    with pytest.raises(pl.exceptions.ComputeError, match="nested deeper than 128"):
+        pl.LazyFrame.deserialize(io.BytesIO(plan))
+
+
+def test_sink_iceberg_property_keys_must_be_distinct_str(tmp_path: Path) -> None:
+    class Key(str):
+        __hash__ = object.__hash__
+
+        def __eq__(self, other: object) -> bool:
+            return self is other
+
+    catalog = _sql_catalog(tmp_path)
+    tbl = catalog.load_table("ns.t")
+    cases: list[tuple[Any, str]] = [
+        ({"a": "1", Key("a"): "2"}, "duplicate Iceberg property key 'a'"),
+        ({"a": {1: "x"}}, r"keys must be str: got int in 'a'"),
+        ({1: "x"}, "keys must be str: got int at the top level"),
+    ]
+    for storage_options, match in cases:
+        with pytest.raises(TypeError) as exc:
+            pl.LazyFrame({"a": [1]}).sink_iceberg(
+                tbl, mode="append", storage_options=storage_options
+            )
+        assert re.search(match, str(exc.value.__cause__)), exc.value.__cause__
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_storage_options_keep_types_and_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    catalog = _sql_catalog(tmp_path)
+    seen = []
+    convert = IcebergSinkState._get_converted_storage_options
+
+    def capture(self: IcebergSinkState) -> dict[str, Any]:
+        seen.append(self.iceberg_storage_properties)
+        return convert(self)
+
+    monkeypatch.setattr(IcebergSinkState, "_get_converted_storage_options", capture)
+
+    # `max_retries` must stay an int; of two aliases, the later one wins.
+    storage_options = {"max_retries": 2, "s3.region": "first", "aws_region": "second"}
+    pl.LazyFrame({"a": [1]}).sink_iceberg(
+        catalog.load_table("ns.t"), mode="append", storage_options=storage_options
+    )
+
+    assert seen
+    assert all(
+        list(options.items()) == list(storage_options.items()) for options in seen
+    )
+    assert type(seen[-1]["max_retries"]) is int
+    assert (
+        convert(
+            IcebergSinkState.new("ns.t", catalog=catalog, storage_options=seen[-1])
+        )["aws_region"]
+        == "second"
+    )
+
+
+@pytest.mark.parametrize(
+    ("snapshot_properties", "match"),
+    [
+        ({"n": 1}, r"snapshot_properties\['n'\] must be a str mapped to a str"),
+        ({1: "x"}, r"snapshot_properties\[1\] must be a str mapped to a str"),
+        ([("n", "1")], "snapshot_properties must be a dict"),
+    ],
+)
+@pytest.mark.write_disk
+def test_sink_iceberg_snapshot_properties_must_be_strings(
+    tmp_path: Path, snapshot_properties: Any, match: str
+) -> None:
+    catalog = _sql_catalog(tmp_path)
+    tbl = catalog.load_table("ns.t")
+
+    with pytest.raises(TypeError, match=match):
+        pl.LazyFrame({"a": [1]}).sink_iceberg(
+            tbl, mode="append", snapshot_properties=snapshot_properties
+        )
+    assert catalog.load_table("ns.t").current_snapshot() is None
+
+
 @pytest.mark.write_disk
 def test_sink_iceberg__attach_resolved_sink_deferred_to_ir_resolution(
     tmp_path: Path,
@@ -7010,10 +7224,7 @@ def test_scan_iceberg_reuses_catalog(
 
 @pytest.mark.write_disk
 def test_scan_iceberg_catalog_descriptor_without_instance(tmp_path: Path) -> None:
-    from polars.io.iceberg._dataset import (
-        IcebergCatalogConfig,
-        IcebergCatalogTableDescriptor,
-    )
+    from polars.io.iceberg._dataset import IcebergCatalogTableDescriptor
 
     tbl, catalog = new_iceberg_table(
         tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))

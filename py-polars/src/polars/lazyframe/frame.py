@@ -3135,7 +3135,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             they do not exist when the table is created. Requires
             `create_if_not_exists=True`.
         snapshot_properties
-            Custom properties to add to the Iceberg snapshot summary.
+            Custom properties to add to the Iceberg snapshot summary. Keys and values
+            must be strings.
         catalog
             PyIceberg catalog to load the table from if the provided `target`
             was a table identifier.
