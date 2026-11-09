@@ -56,20 +56,37 @@ impl StatsCache {
         }
     }
 
+    /// A cache that also counts the in-memory columns `more_key_columns`.
+    pub(crate) fn with_more_key_columns(
+        more_key_columns: Vec<PlSmallStr>,
+        ir_arena: &Arena<IR>,
+        expr_arena: &Arena<AExpr>,
+    ) -> Self {
+        let names = key_column_names(more_key_columns, ir_arena, expr_arena);
+        Self {
+            key_columns: Rc::new(OnceCell::from(names)),
+            ..Self::default()
+        }
+    }
+
     /// Forget the estimate of `node`, whose id is about to be reused.
     pub(crate) fn remove(&mut self, node: &Node) {
         self.nodes.remove(node);
     }
 }
 
-/// Names of every column used as a join, group-by or distinct key anywhere in the
-/// arena, and of the columns aliased to them.
+/// `names` and the names of every column used as a join, group-by or distinct key
+/// anywhere in the arena, and of the columns aliased to them.
 ///
 /// Counting the distinct values of an in-memory column costs a pass over a sample of
 /// it, so only these are counted. The arena may hold nodes no longer in the plan,
 /// which only adds names.
-fn key_column_names(ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> KeyColumns {
-    let mut names = KeyColumns::default();
+fn key_column_names(
+    names: Vec<PlSmallStr>,
+    ir_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+) -> KeyColumns {
+    let mut names: KeyColumns = names.into_iter().collect();
     let add_keys = |keys: &[ExprIR], names: &mut KeyColumns| {
         for key in keys {
             names.insert(key.output_name().clone());
@@ -214,7 +231,7 @@ pub(crate) fn node_stats_with_cache(
             let names = output_schema.as_ref().unwrap_or(schema);
             let key_columns = cache
                 .key_columns
-                .get_or_init(|| key_column_names(ir_arena, expr_arena));
+                .get_or_init(|| key_column_names(Vec::new(), ir_arena, expr_arena));
             Some(NodeStats {
                 columns: dataframe_columns(df, names, key_columns),
                 ..NodeStats::of_rows(rows)
