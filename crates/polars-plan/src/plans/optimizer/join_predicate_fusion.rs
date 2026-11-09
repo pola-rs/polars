@@ -53,7 +53,7 @@ fn is_fusable_join(options: &JoinOptionsIR) -> bool {
 }
 
 /// Elementwise and infallible, so the join can evaluate it per candidate pair.
-fn can_fuse_predicate(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+pub(super) fn can_fuse_predicate(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     let mut group = ExprPushdownGroup::Pushable;
     group.update_with_expr_rec(expr_arena.get(node), expr_arena, None);
 

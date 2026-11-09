@@ -225,12 +225,13 @@ impl ProbeState {
         let mut materialized_idxsize_range = Vec::new();
         let mut table_match = Vec::new();
         let mut probe_match = Vec::new();
+        let mut unmatched_probe = Vec::new();
         let mut max_seq = MorselSeq::default();
 
         let probe_limit = get_ideal_morsel_size() as IdxSize;
         let mark_matches = params.emit_unmatched_build();
         let emit_unmatched = params.emit_unmatched_probe();
-        assert!(params.fused_predicate.is_none() || (!mark_matches && !emit_unmatched));
+        assert!(params.fused_predicate.is_none() || !params.preserve_order_probe);
 
         let (key_selectors, payload_selector, build_payload_schema, probe_payload_schema);
         if params.left_is_build.unwrap() {
@@ -388,33 +389,57 @@ impl ProbeState {
                         while offset < idxs_in_p.len() {
                             let matches_before_limit = probe_limit - probe_match.len() as IdxSize;
                             let probe_start = probe_match.len();
+                            let probed_start = offset;
                             table_match.clear();
+                            // With a fused predicate, a pair only matches once the predicate
+                            // holds, so the unmatched rows are found after evaluating it.
+                            let fused = params.fused_predicate.is_some();
                             offset += p.hash_table.probe_subset(
                                 &hash_keys,
                                 &idxs_in_p[offset..],
                                 &mut table_match,
                                 &mut probe_match,
-                                mark_matches,
-                                emit_unmatched,
+                                mark_matches && !fused,
+                                emit_unmatched && !fused,
                                 matches_before_limit,
                             ) as usize;
 
-                            if let Some(fused_predicate) = &params.fused_predicate
-                                && !table_match.is_empty()
-                            {
-                                rechunk_once(&mut payload, &mut payload_rechunked);
-                                let kept = fused_predicate
-                                    .retain_matches(
-                                        params.left_is_build.unwrap(),
-                                        &p.payload,
-                                        &mut table_match,
-                                        &payload,
-                                        &mut probe_match[probe_start..],
-                                        &state.in_memory_exec_state,
-                                    )
-                                    .await?;
-                                table_match.truncate(kept);
-                                probe_match.truncate(probe_start + kept);
+                            if let Some(fused_predicate) = &params.fused_predicate {
+                                if !table_match.is_empty() {
+                                    rechunk_once(&mut payload, &mut payload_rechunked);
+                                    let kept = fused_predicate
+                                        .retain_matches(
+                                            params.left_is_build.unwrap(),
+                                            &p.payload,
+                                            &mut table_match,
+                                            &payload,
+                                            &mut probe_match[probe_start..],
+                                            &state.in_memory_exec_state,
+                                        )
+                                        .await?;
+                                    table_match.truncate(kept);
+                                    probe_match.truncate(probe_start + kept);
+                                }
+                                if mark_matches {
+                                    p.hash_table.mark_rows(&table_match);
+                                }
+                                if emit_unmatched {
+                                    // The kept pairs follow the order of the probed rows.
+                                    let mut kept = probe_match[probe_start..].iter().peekable();
+                                    unmatched_probe.clear();
+                                    for row in &idxs_in_p[probed_start..offset] {
+                                        if kept.peek() == Some(&row) {
+                                            while kept.next_if_eq(&row).is_some() {}
+                                        } else {
+                                            unmatched_probe.push(*row);
+                                        }
+                                    }
+                                    table_match.extend(std::iter::repeat_n(
+                                        IdxSize::MAX,
+                                        unmatched_probe.len(),
+                                    ));
+                                    probe_match.extend_from_slice(&unmatched_probe);
+                                }
                             }
 
                             if table_match.is_empty() {

@@ -551,13 +551,8 @@ impl EquiJoinNode {
         let right_payload_schema =
             Arc::new(select_schema(&right_input_schema, &right_payload_select));
 
-        // Unmatched-row bookkeeping would count a candidate before the fused predicate runs, and
-        // the ordered probe would evaluate it a partition group at a time.
-        assert!(
-            fused_predicate.is_none()
-                || (matches!(args.how, JoinType::Inner)
-                    && args.maintain_order == MaintainOrderJoin::None)
-        );
+        // The ordered probe would evaluate the fused predicate a partition group at a time.
+        assert!(fused_predicate.is_none() || args.maintain_order == MaintainOrderJoin::None);
         let fused_predicate = fused_predicate
             .map(|(expr, schema)| {
                 FusedPredicate::new(expr, &schema, &left_payload_schema, &right_payload_schema)
