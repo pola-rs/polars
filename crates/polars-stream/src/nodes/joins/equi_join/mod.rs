@@ -1,4 +1,5 @@
 mod build;
+mod flush;
 mod probe;
 
 use std::sync::Arc;
@@ -14,15 +15,15 @@ use polars_expr::idx_table::{IdxTable, new_idx_table};
 use polars_ooc::MostRecentSpillContext;
 use polars_plan::plans::options::RuntimeFilter;
 use polars_utils::format_pl_smallstr;
-use polars_utils::hashing::HashPartitioner;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::relaxed_cell::RelaxedCell;
 
-use self::build::BuildState;
-use self::probe::{EmitUnmatchedState, FusedPredicate, ProbeState};
+use self::build::{BuildState, PartitionBuilder};
+use self::flush::FlushState;
+use self::probe::{FusedPredicate, ProbeState, ProbeTable};
 use super::runtime_filter::RuntimeFilters;
-use super::tuning::JoinTuning;
+use super::tuning::{BuildStats, JoinTuning};
 use super::utils::{
     JoinSampleStats, LEFT_BUILD_MARGIN, REF_KEY_RATIO, UNIQUE_BUILD_MARGIN, UNIQUE_KEY_RATIO,
 };
@@ -30,6 +31,7 @@ use super::{
     BufferedStream, LOPSIDED_SAMPLE_FACTOR, build_side_left, sample_sink, select_key_columns,
 };
 use crate::expression::StreamExpr;
+use crate::hash_shuffle::store::StoredPartition;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::in_memory_source::InMemorySourceNode;
 
@@ -67,22 +69,60 @@ impl EquiJoinParams {
             && self.left_is_build == self.planned_build_left()
     }
 
+    /// Should we emit unmatched rows from the left side, or else the right side?
+    fn emit_unmatched(&self, left: bool) -> bool {
+        if left {
+            self.args.how.emits_unmatched_left()
+        } else {
+            self.args.how.emits_unmatched_right()
+        }
+    }
+
     /// Should we emit unmatched rows from the build side?
     fn emit_unmatched_build(&self) -> bool {
-        if self.left_is_build.unwrap() {
-            self.args.how == JoinType::Left || self.args.how == JoinType::Full
-        } else {
-            self.args.how == JoinType::Right || self.args.how == JoinType::Full
-        }
+        self.emit_unmatched(self.left_is_build.unwrap())
     }
 
     /// Should we emit unmatched rows from the probe side?
     fn emit_unmatched_probe(&self) -> bool {
-        if self.left_is_build.unwrap() {
-            self.args.how == JoinType::Right || self.args.how == JoinType::Full
+        self.emit_unmatched(!self.left_is_build.unwrap())
+    }
+
+    /// The payload schema of the left side, or else the right side.
+    fn payload_schema(&self, left: bool) -> &Arc<Schema> {
+        if left {
+            &self.left_payload_schema
         } else {
-            self.args.how == JoinType::Left || self.args.how == JoinType::Full
+            &self.right_payload_schema
         }
+    }
+}
+
+/// One hash partition: its stored frames, build frames as input 0 and probe frames as input 1,
+/// and its table while it is in memory.
+struct JoinPartition {
+    stored: StoredPartition,
+    table: Option<ProbeTable>,
+    /// The estimated memory of its table, in bytes.
+    table_bytes: u64,
+}
+
+impl JoinPartition {
+    /// The estimated memory of its table beyond its stored build frames, in bytes.
+    fn net_table_bytes(&self) -> u64 {
+        self.table_bytes.saturating_sub(self.stored.input_size(0))
+    }
+
+    /// Starts building its table from its stored build frames.
+    fn table_builder(
+        &self,
+        table: &dyn IdxTable,
+        params: &EquiJoinParams,
+        stats: &BuildStats,
+    ) -> PartitionBuilder {
+        let schema = params.payload_schema(params.left_is_build.unwrap()).clone();
+        let keys = stats.keys_in(self.stored.num_rows(0)) as usize;
+        PartitionBuilder::new(self.stored.index(), table, schema, keys)
     }
 }
 
@@ -458,7 +498,7 @@ enum EquiJoinState {
     Sample(SampleState),
     Build(BuildState),
     Probe(ProbeState),
-    EmitUnmatchedBuild(EmitUnmatchedState),
+    Flush(FlushState),
     EmitUnmatchedBuildInOrder(InMemorySourceNode),
     Done,
 }
@@ -654,43 +694,35 @@ impl ComputeNode for EquiJoinNode {
                     EquiJoinState::Probe(build_state.finalize(
                         &self.params,
                         &*self.table,
-                        self.tuning.batch_bytes(),
+                        &self.tuning,
                         state,
                     )?)
                 };
             }
         }
 
-        // If we are probing and the probe input is done, emit unmatched if
-        // necessary, otherwise we're done.
+        // If we are probing and the probe input is done, emit the unmatched build rows in order
+        // if needed, otherwise flush the partitions.
         if let EquiJoinState::Probe(probe_state) = &mut self.state {
             let samples_consumed = probe_state.sampled_probe_morsels.is_empty();
             if samples_consumed && recv[probe_idx] == PortState::Done {
-                if self.params.emit_unmatched_build() {
-                    if self.params.preserve_order_build {
-                        let unmatched = probe_state.ordered_unmatched(&self.params);
-                        let src = InMemorySourceNode::new(
-                            Arc::new(unmatched),
-                            probe_state.max_seq_sent.successor(),
-                        );
-                        self.state = EquiJoinState::EmitUnmatchedBuildInOrder(src);
-                    } else {
-                        self.state = EquiJoinState::EmitUnmatchedBuild(EmitUnmatchedState {
-                            partitions: core::mem::take(&mut probe_state.table_per_partition),
-                            active_partition_idx: 0,
-                            offset_in_active_p: 0,
-                            morsel_seq: probe_state.max_seq_sent.successor(),
-                        });
-                    }
+                if self.params.preserve_order_build && self.params.emit_unmatched_build() {
+                    let unmatched = probe_state.ordered_unmatched(&self.params);
+                    let src = InMemorySourceNode::new(
+                        Arc::new(unmatched),
+                        probe_state.max_seq_sent.successor(),
+                    );
+                    self.state = EquiJoinState::EmitUnmatchedBuildInOrder(src);
                 } else {
-                    self.state = EquiJoinState::Done;
+                    let flush = FlushState::new(probe_state, &self.params, &*self.table, state)?;
+                    self.state = EquiJoinState::Flush(flush);
                 }
             }
         }
 
-        // Finally, check if we are done emitting unmatched keys.
-        if let EquiJoinState::EmitUnmatchedBuild(emit_state) = &mut self.state {
-            if emit_state.active_partition_idx >= emit_state.partitions.len() {
+        // Finally, check if we are done flushing.
+        if let EquiJoinState::Flush(flush) = &self.state {
+            if flush.is_finished() {
                 self.state = EquiJoinState::Done;
             }
         }
@@ -745,7 +777,7 @@ impl ComputeNode for EquiJoinNode {
                 }
                 recv[build_idx] = PortState::Done;
             },
-            EquiJoinState::EmitUnmatchedBuild(_) => {
+            EquiJoinState::Flush(_) => {
                 send[0] = PortState::Ready;
                 recv[build_idx] = PortState::Done;
                 recv[probe_idx] = PortState::Done;
@@ -771,9 +803,8 @@ impl ComputeNode for EquiJoinNode {
         match &self.state {
             EquiJoinState::Sample(_) => NodeMemoryUsage::WillAccumulate,
             EquiJoinState::Build(_) => NodeMemoryUsage::Accumulating,
-            EquiJoinState::Probe(_) | EquiJoinState::EmitUnmatchedBuild(_) => {
-                NodeMemoryUsage::HoldingUntilDone
-            },
+            EquiJoinState::Probe(_) => NodeMemoryUsage::HoldingUntilDone,
+            EquiJoinState::Flush(_) => NodeMemoryUsage::Draining,
             EquiJoinState::EmitUnmatchedBuildInOrder(src) => src.memory_usage(),
             EquiJoinState::Done => NodeMemoryUsage::Bounded,
         }
@@ -841,9 +872,15 @@ impl ComputeNode for EquiJoinNode {
             },
             EquiJoinState::Probe(probe_state) => {
                 assert!(recv_ports[build_idx].is_none());
+                let ProbeState {
+                    partitions,
+                    writers,
+                    sampled_probe_morsels,
+                    max_seq_sent,
+                    ..
+                } = probe_state;
                 let senders = send_ports[0].take().unwrap().parallel();
-                let receivers = probe_state
-                    .sampled_probe_morsels
+                let receivers = sampled_probe_morsels
                     .reinsert(
                         state.num_pipelines,
                         recv_ports[probe_idx].take(),
@@ -852,19 +889,18 @@ impl ComputeNode for EquiJoinNode {
                     )
                     .unwrap();
 
-                let partitioner = HashPartitioner::new(state.num_pipelines, 0);
+                let partitions = &*partitions;
+                let mut writers = writers.iter_mut();
                 let probe_tasks = receivers
                     .into_iter()
                     .zip(senders)
                     .map(|(recv, send)| {
                         scope.spawn_task(
                             TaskPriority::High,
-                            ProbeState::partition_and_probe(
+                            partitions.partition_and_probe(
                                 recv,
                                 send,
-                                &probe_state.table_per_partition,
-                                &probe_state.unordered_morsel_seq,
-                                partitioner.clone(),
+                                writers.next(),
                                 &self.params,
                                 state,
                             ),
@@ -872,7 +908,6 @@ impl ComputeNode for EquiJoinNode {
                     })
                     .collect_vec();
 
-                let max_seq_sent = &mut probe_state.max_seq_sent;
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     for probe_task in probe_tasks {
                         *max_seq_sent = (*max_seq_sent).max(probe_task.await?);
@@ -880,14 +915,11 @@ impl ComputeNode for EquiJoinNode {
                     Ok(())
                 }));
             },
-            EquiJoinState::EmitUnmatchedBuild(emit_state) => {
+            EquiJoinState::Flush(flush) => {
                 assert!(recv_ports[build_idx].is_none());
                 assert!(recv_ports[probe_idx].is_none());
-                let send = send_ports[0].take().unwrap().serial();
-                join_handles.push(scope.spawn_task(
-                    TaskPriority::Low,
-                    emit_state.emit_unmatched(send, &self.params, state.num_pipelines),
-                ));
+                let senders = send_ports[0].take().unwrap().parallel();
+                flush.spawn(scope, senders, &self.params, state, join_handles);
             },
             EquiJoinState::EmitUnmatchedBuildInOrder(src_node) => {
                 assert!(recv_ports[build_idx].is_none());

@@ -2,39 +2,47 @@ use std::sync::atomic::AtomicU64;
 
 use futures::FutureExt;
 use polars_arrow::array::builder::ShareStrategy;
+use polars_async::parallel::for_each_parallel;
 use polars_core::config;
 use polars_core::frame::builder::DataFrameBuilder;
+use polars_core::schema::SchemaRef;
 use polars_expr::idx_table::IdxTable;
-use polars_ooc::MostRecentSpillContext;
+use polars_ooc::{MemoryGrant, MostRecentSpillContext, memory_manager};
 use polars_utils::IdxSize;
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
 
-use super::probe::{ProbeState, ProbeTable};
-use super::{EquiJoinParams, select_keys_with_columns, select_payload};
+use super::probe::{ProbePartitions, ProbeState, ProbeTable};
+use super::{EquiJoinParams, JoinPartition, select_keys_with_columns, select_payload};
 use crate::hash_shuffle::batches::{
-    BuildPartition, LoadedFrame, build_from_batches, make_batches, make_ordered_batches,
+    BuildPartition, build_from_batches, make_batches, make_ordered_batches,
 };
 use crate::hash_shuffle::frame_with_keys::{FrameWithKeys, SpillFrameWithKeys};
-use crate::hash_shuffle::split::{NullRows, rows_or_all};
+use crate::hash_shuffle::split::{NullRows, rows_or_all, unhashed_validity};
+use crate::hash_shuffle::store::StoredPartition;
+use crate::hash_shuffle::writer::PartitionedWriter;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::joins::BufferedStream;
 use crate::nodes::joins::runtime_filter::KeyFilterBuilder;
+use crate::nodes::joins::tuning::{BuildStats, JoinTuning};
 
 #[derive(Default)]
-pub(super) struct LocalBuilder {
+pub struct LocalBuilder {
     // The morsels seen by this builder, with their hashed keys.
     frames: Vec<(MorselSeq, SpillFrameWithKeys)>,
 
     // A cardinality sketch of the keys seen by this builder.
     sketch: CardinalitySketch,
 
+    // The rows and bytes seen by this builder.
+    stats: BuildStats,
+
     // The key of each runtime filter seen by this builder.
     key_filters: Vec<KeyFilterBuilder>,
 }
 
 /// The hash table and payload of one partition while they are built.
-struct PartitionBuilder {
+pub struct PartitionBuilder {
     index: usize,
     table: Box<dyn IdxTable>,
     payload: DataFrameBuilder,
@@ -44,22 +52,42 @@ struct PartitionBuilder {
 }
 
 impl PartitionBuilder {
-    /// Inserts the rows of this partition of `frame`. If `first_row` is given, the position of
-    /// the first row of `frame` in the full build input, the positions of the rows are kept.
-    fn add_rows(&mut self, frame: &LoadedFrame, track_unmatchable: bool, first_row: Option<u64>) {
-        let keys = &frame.frame.keys;
-        let rows = rows_or_all(
-            frame.partition_rows(self.index),
-            &mut self.all_rows,
-            keys.len(),
-        );
+    /// Reserves room for a quarter more keys than `estimated_keys`.
+    pub fn new(
+        index: usize,
+        table: &dyn IdxTable,
+        payload_schema: SchemaRef,
+        estimated_keys: usize,
+    ) -> Self {
+        let mut table = table.new_empty();
+        table.reserve(estimated_keys * 5 / 4);
+        Self {
+            index,
+            table,
+            payload: DataFrameBuilder::new(payload_schema),
+            row_positions: Vec::new(),
+            all_rows: Vec::new(),
+        }
+    }
+
+    /// Inserts the rows `rows` of `frame`, or all its rows. If `first_row` is given, the position
+    /// of the first row of `frame` in the full build input, the positions of the rows are kept.
+    pub fn add_rows(
+        &mut self,
+        frame: &FrameWithKeys,
+        rows: Option<&[IdxSize]>,
+        track_unmatchable: bool,
+        first_row: Option<u64>,
+    ) {
+        let keys = &frame.keys;
+        let rows = rows_or_all(rows, &mut self.all_rows, keys.len());
         if rows.is_empty() {
             return;
         }
         unsafe {
             self.table.insert_keys_subset(keys, rows, track_unmatchable);
             self.payload
-                .gather_extend(&frame.frame.frame, rows, ShareStrategy::Never);
+                .gather_extend(&frame.frame, rows, ShareStrategy::Never);
         }
         if let Some(first_row) = first_row {
             #[allow(clippy::unnecessary_cast)] // Necessary when IdxSize = u64.
@@ -67,15 +95,29 @@ impl PartitionBuilder {
                 .extend(rows.iter().map(|i| first_row + *i as u64));
         }
     }
+
+    pub fn finish(self) -> ProbeTable {
+        ProbeTable {
+            hash_table: self.table,
+            payload: self.payload.freeze(),
+            row_positions: self.row_positions,
+        }
+    }
 }
 
-pub(super) struct BuildState {
-    pub(super) local_builders: Vec<LocalBuilder>,
+/// Where the build rows of one partition go: into a table, or into stored frames.
+enum BuildTarget {
+    Table(PartitionBuilder),
+    Stored(StoredPartition),
+}
+
+pub struct BuildState {
+    pub local_builders: Vec<LocalBuilder>,
     sampled_probe_morsels: BufferedStream,
 }
 
 impl BuildState {
-    pub(super) fn new(
+    pub fn new(
         num_pipelines: usize,
         params: &EquiJoinParams,
         sampled_probe_morsels: BufferedStream,
@@ -96,7 +138,7 @@ impl BuildState {
         }
     }
 
-    pub(super) async fn sink(
+    pub async fn sink(
         mut recv: PortReceiver,
         local: &mut LocalBuilder,
         params: &EquiJoinParams,
@@ -132,6 +174,11 @@ impl BuildState {
                 keys: hash_keys,
                 mask: None,
             };
+            local.stats.rows += frame.keys.len() as u64;
+            local.stats.null_rows +=
+                unhashed_validity(&frame.keys).map_or(0, |v| v.unset_bits()) as u64;
+            local.stats.bytes += frame.estimated_size() as u64;
+            local.stats.key_bytes += frame.keys.estimated_size() as u64;
             let frame = SpillFrameWithKeys::new(frame, spill_ctx).await;
             local.frames.push((morsel.seq(), frame));
         }
@@ -139,7 +186,7 @@ impl BuildState {
     }
 
     /// Whether no row was built, sampled morsels included.
-    pub(super) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.local_builders
             .iter()
             .all(|b| b.frames.iter().all(|(_, f)| f.num_rows() == 0))
@@ -148,7 +195,7 @@ impl BuildState {
     /// Hand every build key to the runtime filters. Filters set from a sample
     /// keep their value, whichever side is built; filters of a side that was
     /// not built get a predicate that skips nothing.
-    pub(super) fn publish_runtime_filters(&mut self, params: &mut EquiJoinParams) {
+    pub fn publish_runtime_filters(&mut self, params: &mut EquiJoinParams) {
         if !params.publishes_runtime_filters() {
             params.runtime_filters.publish_nothing();
             return;
@@ -160,54 +207,59 @@ impl BuildState {
         params.runtime_filters.publish_merged(locals);
     }
 
-    /// Builds the hash table and payload of every partition, loading the stored frames one batch
-    /// of about `batch_bytes` at a time.
-    pub(super) fn finalize(
+    /// Takes the memory grant and builds the hash table and payload of every partition, loading
+    /// the stored frames one batch at a time. Unordered joins whose tables do not fit in the grant
+    /// store the partitions instead, and build the tables of the smallest that fit right away.
+    pub fn finalize(
         &mut self,
         params: &EquiJoinParams,
         table: &dyn IdxTable,
-        batch_bytes: usize,
+        tuning: &JoinTuning,
         state: &StreamingExecutionState,
     ) -> PolarsResult<ProbeState> {
+        let left_is_build = params.left_is_build.unwrap();
         let track_unmatchable = params.emit_unmatched_build();
-        let payload_schema = if params.left_is_build.unwrap() {
-            &params.left_payload_schema
-        } else {
-            &params.right_payload_schema
-        };
+        let payload_schema = params.payload_schema(left_is_build);
+        let unordered = !params.preserve_order_probe;
 
         let mut sketch = CardinalitySketch::new();
         let mut frames = Vec::new();
+        let mut stats = BuildStats::default();
         for local in &mut self.local_builders {
             sketch.combine(&local.sketch);
             frames.append(&mut local.frames);
+            stats.add(&local.stats);
         }
-        let num_rows: usize = frames.iter().map(|(_, f)| f.num_rows()).sum();
-        let num_bytes: usize = frames.iter().map(|(_, f)| f.estimated_size()).sum();
+        stats.estimated_keys = sketch.estimate() as u64;
 
-        let num_partitions = state.num_pipelines;
-        let partitioner = HashPartitioner::new(num_partitions, 0);
-        let reserve_keys = sketch.estimate() * 5 / 4 / num_partitions;
-        let mut partitions: Vec<PartitionBuilder> = (0..num_partitions)
-            .map(|index| {
-                let mut table = table.new_empty();
-                table.reserve(reserve_keys);
-                PartitionBuilder {
-                    index,
-                    table,
-                    payload: DataFrameBuilder::new(payload_schema.clone()),
-                    row_positions: Vec::new(),
-                    all_rows: Vec::new(),
-                }
-            })
-            .collect();
-        // Rows without a hash (null keys) never match, so they are only kept to be emitted as
-        // unmatched rows.
-        let nulls = if track_unmatchable {
+        // Rows without a hash (null keys) never match. Ordered joins keep them in the tables to
+        // emit them as unmatched rows in order; unordered joins keep them as frames of their own.
+        let null_rows_in_tables = !unordered && track_unmatchable;
+        let null_frames = unordered && track_unmatchable && !params.args.nulls_equal;
+        let nulls = if null_frames {
+            NullRows::Separate
+        } else if null_rows_in_tables {
             NullRows::FirstPartition
         } else {
             NullRows::Skip
         };
+
+        let table_bytes = stats.all_tables_bytes(null_rows_in_tables);
+        // Ordered joins keep all their tables in memory, so they ask for all of it.
+        let wanted_grant_bytes = if unordered {
+            table_bytes.min(tuning.max_grant_bytes())
+        } else {
+            table_bytes
+        };
+        let grant = MemoryGrant::take(wanted_grant_bytes, tuning.max_grant_fraction);
+        let stored_partitions = if unordered {
+            tuning.num_partitions(table_bytes, grant.bytes(), state.num_pipelines)
+        } else {
+            None
+        };
+        let num_partitions = stored_partitions.unwrap_or(state.num_pipelines);
+        let partitioner = HashPartitioner::new(num_partitions, 0);
+        let partition_keys = sketch.estimate() / num_partitions;
 
         let num_frames = frames.len();
         let mut first_rows = Vec::new();
@@ -223,56 +275,165 @@ impl BuildState {
             }
         }
         let frames = frames.into_iter().map(|(_, f)| (0, f)).collect();
+        let batch_bytes = tuning.batch_bytes();
         let batches = if params.preserve_order_build {
             make_ordered_batches(frames, batch_bytes)
         } else {
             make_batches(frames, batch_bytes)
         };
-        if config::verbose() {
-            eprintln!(
-                "[equi-join]: building {num_partitions} partitions from {num_rows} rows ({num_bytes} bytes) in {num_frames} frames, {} batches",
-                batches.len()
-            );
-        }
+        let num_batches = batches.len();
 
-        let add_batch: &BuildPartition<'_, PartitionBuilder> = &|p, batch, _| {
-            if params.preserve_order_build {
-                for frame in batch {
-                    let first_row = first_rows.get(frame.index).copied();
-                    p.add_rows(frame, track_unmatchable, first_row);
+        let spill_ctx =
+            MostRecentSpillContext::new("equi-join-partition".into(), state.task_metrics.clone());
+        // With `NullRows::Separate` the rows without a hash are stored after the last partition.
+        let mut targets: Vec<BuildTarget> = (0..num_partitions + usize::from(null_frames))
+            .map(|index| {
+                if stored_partitions.is_none() && index < num_partitions {
+                    let schema = payload_schema.clone();
+                    BuildTarget::Table(PartitionBuilder::new(index, table, schema, partition_keys))
+                } else {
+                    BuildTarget::Stored(StoredPartition::new(index, 2, spill_ctx.clone()))
                 }
-            } else {
-                // Partitions start at different frames, so that tasks don't read the same frame at
-                // the same time.
-                let start = p.index * batch.len() / num_partitions;
-                for i in 0..batch.len() {
-                    p.add_rows(&batch[(start + i) % batch.len()], track_unmatchable, None);
-                }
+            })
+            .collect();
+
+        let add_batch: &BuildPartition<'_, BuildTarget> = &|target, batch, _| {
+            match target {
+                BuildTarget::Stored(stored) => stored.write_batch(batch),
+                BuildTarget::Table(p) if params.preserve_order_build => {
+                    for frame in batch {
+                        let rows = frame.partition_rows(p.index);
+                        let first_row = first_rows.get(frame.index).copied();
+                        p.add_rows(&frame.frame, rows, track_unmatchable, first_row);
+                    }
+                },
+                BuildTarget::Table(p) => {
+                    // Partitions start at different frames, so that tasks don't read the same
+                    // frame at the same time.
+                    let start = p.index * batch.len() / num_partitions;
+                    for i in 0..batch.len() {
+                        let frame = &batch[(start + i) % batch.len()];
+                        let rows = frame.partition_rows(p.index);
+                        p.add_rows(&frame.frame, rows, track_unmatchable, None);
+                    }
+                },
             }
             async { Ok(()) }.boxed()
         };
-        build_from_batches(
-            batches,
-            &partitioner,
-            &mut partitions,
-            nulls,
-            add_batch,
-            state,
-        )?;
+        let reservation = stored_partitions
+            .is_none()
+            .then(|| memory_manager().reserve_blocking(table_bytes.saturating_sub(stats.bytes)));
+        build_from_batches(batches, &partitioner, &mut targets, nulls, add_batch, state)?;
+        drop(reservation);
 
-        let table_per_partition = partitions
+        let null_build_rows = null_frames.then(|| match targets.pop() {
+            Some(BuildTarget::Stored(stored)) => stored,
+            _ => unreachable!(),
+        });
+        let table_rows = if null_rows_in_tables {
+            stats.rows
+        } else {
+            stats.rows - stats.null_rows
+        };
+        let mut partitions: Vec<JoinPartition> = targets
             .into_iter()
-            .map(|p| ProbeTable {
-                hash_table: p.table,
-                payload: p.payload.freeze(),
-                row_positions: p.row_positions,
+            .map(|target| match target {
+                BuildTarget::Table(builder) => {
+                    let stored = StoredPartition::new(builder.index, 2, spill_ctx.clone());
+                    let table = builder.finish();
+                    let share = table.payload.height() as f64 / table_rows.max(1) as f64;
+                    JoinPartition {
+                        stored,
+                        table: Some(table),
+                        table_bytes: (table_bytes as f64 * share) as u64,
+                    }
+                },
+                BuildTarget::Stored(stored) => JoinPartition {
+                    table_bytes: stats.table_bytes(stored.num_rows(0), stored.input_size(0)),
+                    stored,
+                    table: None,
+                },
             })
             .collect();
+
+        let num_in_memory = if stored_partitions.is_some() {
+            let grant_bytes = grant.bytes();
+            build_smallest_tables(
+                &mut partitions,
+                table,
+                params,
+                &stats,
+                tuning,
+                grant_bytes,
+                state,
+            )?
+        } else {
+            num_partitions
+        };
+        if config::verbose() {
+            eprintln!(
+                "[equi-join]: building {num_partitions} partitions ({num_in_memory} in memory) from {} rows ({} bytes, {} estimated keys) in {num_frames} frames, {num_batches} batches, {table_bytes} estimated table bytes, memory grant of {} bytes ({wanted_grant_bytes} wanted)",
+                stats.rows,
+                stats.bytes,
+                stats.estimated_keys,
+                grant.bytes(),
+            );
+        }
+
+        let num_stored = num_partitions - num_in_memory;
+        let writers = if num_stored > 0 {
+            let frame_bytes = tuning.writer_frame_bytes(state.num_pipelines, num_stored);
+            (0..state.num_pipelines)
+                .map(|_| PartitionedWriter::new(num_partitions, frame_bytes, spill_ctx.clone()))
+                .collect()
+        } else {
+            Vec::new()
+        };
         Ok(ProbeState {
-            table_per_partition,
+            partitions: ProbePartitions {
+                partitions,
+                partitioner,
+                unordered_morsel_seq: AtomicU64::new(0),
+            },
+            writers,
+            null_build_rows,
+            stats,
+            grant: Some(grant),
             max_seq_sent: MorselSeq::default(),
             sampled_probe_morsels: core::mem::take(&mut self.sampled_probe_morsels),
-            unordered_morsel_seq: AtomicU64::new(0),
         })
     }
+}
+
+/// Builds the tables of the stored partitions with the smallest tables in parallel: as many as fit
+/// in `grant_bytes`, or as forced. Returns how many.
+fn build_smallest_tables(
+    partitions: &mut [JoinPartition],
+    table: &dyn IdxTable,
+    params: &EquiJoinParams,
+    stats: &BuildStats,
+    tuning: &JoinTuning,
+    grant_bytes: u64,
+    state: &StreamingExecutionState,
+) -> PolarsResult<usize> {
+    let track_unmatchable = params.emit_unmatched_build();
+    let mut by_size: Vec<&mut JoinPartition> = partitions.iter_mut().collect();
+    by_size.sort_by_key(|p| p.table_bytes);
+    let sizes: Vec<u64> = by_size.iter().map(|p| p.table_bytes).collect();
+    let num_in_memory = tuning.num_in_memory_partitions(&sizes, grant_bytes);
+    by_size.truncate(num_in_memory);
+
+    let net_bytes = by_size.iter().map(|p| p.net_table_bytes()).sum();
+    let _reservation = memory_manager().reserve_blocking(net_bytes);
+    for_each_parallel(by_size, state.task_metrics(), &|p| async move {
+        let mut builder = p.table_builder(table, params, stats);
+        while let Some((_, frame)) = p.stored.pop_frame() {
+            let frame = frame.load().await;
+            builder.add_rows(&frame, None, track_unmatchable, None);
+            memory_manager().spill().await;
+        }
+        p.table = Some(builder.finish());
+        Ok(())
+    })?;
+    Ok(num_in_memory)
 }

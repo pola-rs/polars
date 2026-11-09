@@ -3,8 +3,8 @@ use polars_expr::hash_keys::HashKeys;
 use polars_utils::IdxSize;
 use polars_utils::hashing::HashPartitioner;
 
-/// Row indices grouped by partition: one array, increasing within each partition (first/last
-/// rely on it), and `num_partitions + 1` offsets into it.
+/// Row indices grouped by partition: one array, increasing within each group (first/last rely on
+/// it), and one more offset into it than there are groups.
 pub struct SplitRows {
     idxs: Vec<IdxSize>,
     offsets: Vec<IdxSize>,
@@ -24,14 +24,23 @@ pub enum NullRows {
     FirstPartition,
     /// They are left out.
     Skip,
-    // TODO: add `Separate`, putting them in one extra group after the last partition, for
-    // splitting the probe side of the equi-join.
+    /// They form one more group after the last partition, which is there even when empty.
+    Separate,
+}
+
+/// The validity of `keys`, if some rows have no hash: those with a null key, unless nulls are
+/// valid keys.
+pub fn unhashed_validity(keys: &HashKeys) -> Option<&Bitmap> {
+    if keys.null_is_valid() {
+        return None;
+    }
+    keys.validity().filter(|v| v.unset_bits() > 0)
 }
 
 /// Groups the rows of `keys` (only those set in `mask`, if given) by partition: one pass for the
 /// partitions and counts, a prefix sum, one pass placing the indices. Rows without a hash go
-/// where `nulls` says. `None` with one partition, no mask and no rows left out: all rows, nothing
-/// computed.
+/// where `nulls` says. `None` with one partition, no mask and no rows left out or separated: all
+/// rows, nothing computed.
 pub fn split(
     keys: &HashKeys,
     mask: Option<&Bitmap>,
@@ -43,29 +52,43 @@ pub fn split(
         assert_eq!(mask.len(), keys.len());
     }
 
+    let unhashed = unhashed_validity(keys);
     let hashed_mask;
     let mut mask = mask;
     if nulls == NullRows::Skip
-        && !keys.null_is_valid()
-        && let Some(validity) = keys.validity().filter(|v| v.unset_bits() > 0)
+        && let Some(validity) = unhashed
     {
         hashed_mask = mask.map_or_else(|| validity.clone(), |m| m & validity);
         mask = Some(&hashed_mask);
     }
 
-    if num_partitions == 1 {
+    let separate = nulls == NullRows::Separate;
+    if num_partitions == 1 && !(separate && unhashed.is_some()) {
         let mask = mask?;
         let idxs: Vec<IdxSize> = mask.true_idx_iter().map(|i| i as IdxSize).collect();
-        let offsets = vec![0, idxs.len() as IdxSize];
+        let mut offsets = vec![0, idxs.len() as IdxSize];
+        if separate {
+            offsets.push(idxs.len() as IdxSize);
+        }
         return Some(SplitRows { idxs, offsets });
     }
 
     let mut partitions = Vec::new();
-    keys.gen_partitions(partitioner, &mut partitions, true);
+    keys.gen_partitions(partitioner, &mut partitions, !separate);
+    if separate && unhashed.is_some() {
+        // `gen_partitions` gives the rows without a hash `IdxSize::MAX`.
+        for p in &mut partitions {
+            if *p == IdxSize::MAX {
+                *p = num_partitions as IdxSize;
+            }
+        }
+    }
     // SAFETY: there is one partition per row, and the mask has one bit per row.
     let in_mask = |i: usize| mask.is_none_or(|m| unsafe { m.get_bit_unchecked(i) });
-    // SAFETY: the partitioner gives partitions below `num_partitions`.
-    Some(unsafe { group_rows(&partitions, num_partitions, in_mask) })
+    let num_groups = num_partitions + usize::from(separate);
+    // SAFETY: the partitioner gives partitions below `num_partitions`, and the rows without a hash
+    // are below `num_groups`.
+    Some(unsafe { group_rows(&partitions, num_groups, in_mask) })
 }
 
 /// `rows`, or else the first `len` row indices, from `all_rows`.
