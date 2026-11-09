@@ -61,9 +61,23 @@ def assert_same_result(
         assert_frame_equal(out, expected, check_row_order=False)
 
 
+def without_return_key_stats(
+    fact: pl.LazyFrame, returns: pl.LazyFrame
+) -> tuple[pl.LazyFrame, pl.LazyFrame]:
+    """Compute the return key on both sides, so neither carries a distinct count."""
+    return (
+        fact.with_columns(pl.col("f_ret") + 0),
+        returns.with_columns(pl.col("r_ret") + 0),
+    )
+
+
 @pytest.mark.parametrize("how", ["left", "semi", "anti"])
 def test_inner_join_moves_below_preserving_join(how: JoinStrategy) -> None:
     fact, returns, dim = frames()
+    if how == "semi":
+        # With distinct counts the semi join is priced to keep fewer rows than the
+        # inner join emits, so it stays below it.
+        fact, returns = without_return_key_stats(fact, returns)
     # Filtering the right side is what lets the estimator price a semi/anti join.
     returns = returns.filter(pl.col("r_amt") < 1.5)
     lf = fact.join(returns, left_on="f_ret", right_on="r_ret", how=how).join(
@@ -76,6 +90,7 @@ def test_inner_join_moves_below_preserving_join(how: JoinStrategy) -> None:
 
 def test_unpriceable_anti_join_is_left_alone() -> None:
     fact, returns, dim = frames()
+    fact, returns = without_return_key_stats(fact, returns)
     not_rewritten(
         fact.join(returns, left_on="f_ret", right_on="r_ret", how="anti").join(
             dim.filter(pl.col("d_flag")), left_on="f_dim", right_on="d_key"

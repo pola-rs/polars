@@ -28,7 +28,7 @@ use crate::plans::iterator::ArenaExprIter;
 use crate::plans::schema::det_join_schema;
 #[cfg(feature = "semi_anti_join")]
 use crate::plans::schema::join_right_output_names;
-use crate::plans::stats::{StatsCache, node_stats_with_cache};
+use crate::plans::stats::{SharedKeyColumns, StatsCache, node_stats_with_cache};
 use crate::plans::{
     AExpr, ExprIR, ExprPushdownGroup, IR, JoinOptionsIR, JoinTypeOptionsIR, MintermIter,
 };
@@ -47,15 +47,20 @@ pub(super) fn push_through_outer_joins(
 ) -> Node {
     // The anti rewrite must not run first, or the inner join above sees an `HStack`
     // where it looks for the filter.
-    let root = run_pass(root, ir_arena, expr_arena, push_inner_through);
+    let key_columns = SharedKeyColumns::default();
+    let root = run_pass(root, ir_arena, expr_arena, &|node, ir_arena, expr_arena| {
+        push_inner_through(node, ir_arena, expr_arena, &key_columns)
+    });
     #[cfg(feature = "semi_anti_join")]
-    let root = run_pass(root, ir_arena, expr_arena, pushdown_semi_anti);
+    let root = run_pass(root, ir_arena, expr_arena, &|node, ir_arena, expr_arena| {
+        pushdown_semi_anti(node, ir_arena, expr_arena, &key_columns)
+    });
     #[cfg(feature = "semi_anti_join")]
-    let root = run_pass(root, ir_arena, expr_arena, filter_to_anti);
+    let root = run_pass(root, ir_arena, expr_arena, &filter_to_anti);
     root
 }
 
-type Rule = fn(Node, &mut Arena<IR>, &mut Arena<AExpr>) -> Node;
+type Rule<'a> = &'a dyn Fn(Node, &mut Arena<IR>, &mut Arena<AExpr>) -> Node;
 
 fn run_pass(
     root: Node,
@@ -144,7 +149,12 @@ fn same_columns(a: &Schema, b: &Schema) -> bool {
 ///
 /// A filter directly above the inner join comes along onto the innermost inner join
 /// it can read from, so predicate fusion still sees it.
-fn push_inner_through(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) -> Node {
+fn push_inner_through(
+    node: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    key_columns: &SharedKeyColumns,
+) -> Node {
     let (join, filter) = match ir_arena.get(node) {
         IR::Filter { input, predicate } if matches!(ir_arena.get(*input), IR::Join { .. }) => {
             let movable = all_conjuncts_pushable(predicate, expr_arena);
@@ -158,7 +168,7 @@ fn push_inner_through(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Are
         _ => None,
     };
 
-    let mut stats = StatsCache::default();
+    let mut stats = StatsCache::with_key_columns(key_columns);
     let Some(pushed) = try_push(join, carried, ir_arena, expr_arena, &mut stats) else {
         return node;
     };
@@ -422,8 +432,13 @@ fn try_push(
 /// The inverse of [`push_inner_through`]. Both price the same two subplans, and only
 /// this one insists on a strict win, so they never undo each other.
 #[cfg(feature = "semi_anti_join")]
-fn pushdown_semi_anti(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) -> Node {
-    let mut stats = StatsCache::default();
+fn pushdown_semi_anti(
+    node: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    key_columns: &SharedKeyColumns,
+) -> Node {
+    let mut stats = StatsCache::with_key_columns(key_columns);
     pushdown_semi_anti_with(node, ir_arena, expr_arena, &mut stats)
 }
 

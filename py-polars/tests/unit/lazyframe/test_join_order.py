@@ -1376,3 +1376,62 @@ def test_transitive_keys_with_multiple_columns_per_leaf(
         query.collect(optimizations=OFF),
         check_row_order=False,
     )
+
+
+def test_in_memory_key_repeated_on_both_sides_is_not_joined_first() -> None:
+    # `rows` holds each `t` once per `n` and `var` once per `f`, so joining them on
+    # `t` alone fans out. Only the distinct counts of the frames show that.
+    n_t, n_f, n_n = 200, 20, 10
+    time = pl.DataFrame({"t": range(n_t)})
+    flows = pl.DataFrame({"f": range(n_f)})
+    var = flows.join(time, how="cross").with_row_index("col_id").lazy()
+    fmap = flows.with_columns(n=pl.col("f") % n_n).lazy()
+    rows = (
+        pl.DataFrame({"n": range(n_n)})
+        .join(time, how="cross")
+        .with_row_index("rid")
+        .lazy()
+    )
+    q = rows.join(var.join(fmap, on="f"), on=["t", "n"]).select("rid", "col_id")
+    assert 'ON: [col("t")]' not in q.explain(optimizations=ON)
+    assert_frame_equal(
+        q.collect(optimizations=ON),
+        q.collect(optimizations=OFF),
+        check_row_order=False,
+    )
+
+
+def test_group_by_keeps_the_distinct_counts_of_its_keys() -> None:
+    # `ts` and `day` repeat once per entity, so the aggregate must not be joined to
+    # `skel` on them before the entity key links the two.
+    ent = pl.int_range(50, eager=True)
+    skel = (
+        pl.DataFrame({"day": pl.int_range(20, eager=True)})
+        .with_columns(ts=pl.col("day"))
+        .join(pl.DataFrame({"id": ent}), how="cross")
+    )
+    id_map = pl.DataFrame({"id": ent, "tk": ent, "known_from": 0, "valid_from": 0})
+    ents = pl.DataFrame({"ent": ent, "tk": ent})
+
+    def chain() -> pl.LazyFrame:
+        return (
+            skel.lazy()
+            .join(id_map.lazy(), on="id")
+            .filter(pl.col("known_from") <= pl.col("ts"))
+            .filter(pl.col("valid_from") <= pl.col("day"))
+            .join(ents.lazy(), on="tk")
+        )
+
+    per = (
+        chain()
+        .group_by(pl.col("ent").alias("id"), "ts", "day")
+        .agg(v=pl.len())
+        .rename({"id": "ent"})
+    )
+    q = chain().select("id", "ts", "day", "ent").join(per, on=["ent", "ts", "day"])
+    assert 'ON: [col("ts"), col("day")]' not in q.explain(optimizations=ON)
+    assert_frame_equal(
+        q.collect(optimizations=ON),
+        q.collect(optimizations=OFF),
+        check_row_order=False,
+    )
