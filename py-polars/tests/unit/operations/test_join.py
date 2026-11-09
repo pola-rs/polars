@@ -361,6 +361,43 @@ def test_join_multiple_keys_right_chunks_differ_from_key() -> None:
     assert_frame_equal(out, expected)
 
 
+@pytest.mark.parametrize("how", ["left", "right"])
+def test_join_struct_null_count_multi_chunk_side_30672(how: JoinStrategy) -> None:
+    structs = pl.concat(
+        [
+            pl.DataFrame({"k": [0], "s": [{"a": 1}]}),
+            pl.DataFrame({"k": [2], "s": [{"a": 2}]}),
+        ],
+        rechunk=False,
+    )
+    keys = pl.DataFrame({"k": [0, 1]})
+    if how == "left":
+        out = keys.join(structs, on="k", how="left", maintain_order="left")
+    else:
+        out = structs.join(keys, on="k", how="right", maintain_order="right")
+    s = out["s"]
+
+    assert s.null_count() == 1
+    assert s.fill_null(strategy="forward").to_list() == [{"a": 1}, {"a": 1}]
+
+
+def test_left_join_struct_null_count_multi_chunk_left_30672() -> None:
+    dtype = pl.Struct({"a": pl.Int64})
+    left = pl.concat(
+        [
+            pl.DataFrame({"k": [0], "s": pl.Series([None], dtype=dtype)}),
+            pl.DataFrame({"k": [1], "s": pl.Series([{"a": 2}], dtype=dtype)}),
+        ],
+        rechunk=False,
+    )
+    # A duplicate match, so the left side is gathered too.
+    right = pl.DataFrame({"k": [0, 0, 1]})
+    s = left.join(right, on="k", how="left", maintain_order="left_right")["s"]
+
+    assert s.null_count() == 2
+    assert s.drop_nulls().to_list() == [{"a": 2}]
+
+
 def test_join_chunks_alignment_4720() -> None:
     # https://github.com/pola-rs/polars/issues/4720
 
