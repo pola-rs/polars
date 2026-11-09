@@ -1478,10 +1478,12 @@ fn lower_ir_inner(
                 .as_ref()
                 .and_then(|v| v.first())
                 .and_then(|s| s.nulls_last);
+            // Only the hash join evaluates the fused predicate of an outer join.
             let use_streaming_merge_join = args.how.is_equi()
                 && join_keys_sorted_together
                 && key_descending.is_some()
-                && key_nulls_last.is_some();
+                && key_nulls_last.is_some()
+                && (fused_predicate.is_none() || args.how.is_inner());
 
             #[cfg(feature = "asof_join")]
             let (mut by_descending, mut by_nulls_last) = (Default::default(), Default::default());
@@ -1732,8 +1734,9 @@ fn lower_ir_inner(
                 let mut stream = PhysStream::first(node);
                 // Anything the join did not take over is applied as a filter instead.
                 if let Some(fused_predicate) = fused_predicate {
-                    // A fused predicate join never carries a slice.
-                    debug_assert!(args.slice.is_none());
+                    // A fused predicate join never carries a slice, and a filter after the
+                    // join would drop the unmatched rows of an outer join.
+                    debug_assert!(args.slice.is_none() && args.how.is_inner());
                     stream = build_filter_stream(
                         stream,
                         fused_predicate,

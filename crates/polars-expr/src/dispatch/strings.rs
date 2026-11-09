@@ -153,8 +153,9 @@ pub fn function_expr_to_udf(func: IRStringFunction) -> SpecialEq<Arc<dyn Columns
 #[cfg(feature = "find_many")]
 fn contains_any(s: &[Column], ascii_case_insensitive: bool) -> PolarsResult<Column> {
     let ca = s[0].str()?;
-    let patterns = s[1].list()?;
-    polars_ops::chunked_array::strings::contains_any(ca, patterns, ascii_case_insensitive)
+    // A broadcast scalar is one list of patterns, not one per row.
+    let patterns = s[1].as_materialized_series_maintain_scalar();
+    polars_ops::chunked_array::strings::contains_any(ca, patterns.list()?, ascii_case_insensitive)
         .map(|out| out.into_column())
 }
 
@@ -165,12 +166,12 @@ fn replace_many(
     leftmost: bool,
 ) -> PolarsResult<Column> {
     let ca = s[0].str()?;
-    let patterns = s[1].list()?;
-    let replace_with = s[2].list()?;
+    let patterns = s[1].as_materialized_series_maintain_scalar();
+    let replace_with = s[2].as_materialized_series_maintain_scalar();
     polars_ops::chunked_array::strings::replace_all(
         ca,
-        patterns,
-        replace_with,
+        patterns.list()?,
+        replace_with.list()?,
         ascii_case_insensitive,
         leftmost,
     )
@@ -185,11 +186,11 @@ fn extract_many(
     leftmost: bool,
 ) -> PolarsResult<Column> {
     let ca = s[0].str()?;
-    let patterns = s[1].list()?;
+    let patterns = s[1].as_materialized_series_maintain_scalar();
 
     polars_ops::chunked_array::strings::extract_many(
         ca,
-        patterns,
+        patterns.list()?,
         ascii_case_insensitive,
         overlapping,
         leftmost,
@@ -205,11 +206,11 @@ fn find_many(
     leftmost: bool,
 ) -> PolarsResult<Column> {
     let ca = s[0].str()?;
-    let patterns = s[1].list()?;
+    let patterns = s[1].as_materialized_series_maintain_scalar();
 
     polars_ops::chunked_array::strings::find_many(
         ca,
-        patterns,
+        patterns.list()?,
         ascii_case_insensitive,
         overlapping,
         leftmost,

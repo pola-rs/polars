@@ -2,6 +2,7 @@ use polars_core::chunked_array::cast::CastOptions;
 
 use super::*;
 use crate::plans::aexpr::{ExprPushdownGroup, is_elementwise_rec, is_inherently_nondeterministic};
+use crate::plans::optimizer::join_predicate_fusion::can_fuse_predicate;
 
 fn commutes_with_filter(predicate: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
     matches!(
@@ -675,6 +676,7 @@ pub fn try_rewrite_join_type(
                 left_on,
                 right_on,
                 expr_arena,
+                streaming,
             )? {
                 #[cfg(feature = "iejoin")]
                 try_rewrite_outer_iejoin(
@@ -722,12 +724,14 @@ pub fn try_rewrite_join_type(
             schema_right,
             output_schema,
             &suffix,
+            Operator::Eq,
         )?;
 
         if !equality_conditions.is_empty() {
             let join_options = Arc::make_mut(options);
             join_options.args.how = JoinType::Inner;
             join_options.args.coalesce = JoinCoalesce::KeepColumns;
+            join_options.args.nulls_equal = false;
             push_equi_join_keys(
                 equality_conditions,
                 expr_arena,
@@ -1328,6 +1332,7 @@ pub fn try_rewrite_join_type(
 }
 
 /// Recognize an equi join independently of inequality algorithm restrictions.
+#[expect(clippy::too_many_arguments)]
 fn try_rewrite_outer_equi_join(
     schema_left: &SchemaRef,
     schema_right: &SchemaRef,
@@ -1336,6 +1341,7 @@ fn try_rewrite_outer_equi_join(
     left_on: &mut Vec<ExprIR>,
     right_on: &mut Vec<ExprIR>,
     expr_arena: &mut Arena<AExpr>,
+    streaming: bool,
 ) -> PolarsResult<bool> {
     let JoinTypeOptionsIR::CrossAndFilter { predicate } = &options.options else {
         return Ok(false);
@@ -1347,21 +1353,90 @@ fn try_rewrite_outer_equi_join(
     let mut remaining = init_indexmap(None);
     let mut dedup = PredicateDedupState::default();
     insert_predicate_dedup(&mut remaining, predicate, expr_arena, &mut dedup);
-    let keys = take_equi_join_keys(
-        &mut remaining,
-        expr_arena,
-        schema_left,
-        schema_right,
-        output_schema,
-        &suffix,
-    )?;
-    if !remaining.is_empty() || keys.is_empty() {
+    let mut nulls_equal = false;
+    let mut keys = Vec::new();
+    for key_op in [Operator::Eq, Operator::EqValidity] {
+        keys = take_equi_join_keys(
+            &mut remaining,
+            expr_arena,
+            schema_left,
+            schema_right,
+            output_schema,
+            &suffix,
+            key_op,
+        )?;
+        if !keys.is_empty() {
+            nulls_equal = key_op == Operator::EqValidity;
+            break;
+        }
+    }
+    if keys.is_empty() {
         return Ok(false);
     }
+    let mut fused = Vec::new();
+    if !remaining.is_empty() {
+        let mut left_mask = None;
+        let mut right_mask = None;
+        // A condition on both inputs is checked by the join for each pair with equal keys. Only
+        // the streaming engine supports this for outer joins.
+        let can_fuse = streaming
+            && options.args.maintain_order == MaintainOrderJoin::None
+            && options.args.slice.is_none();
+        let conditions: Vec<Node> = remaining
+            .values()
+            .flat_map(|p| MintermIter::new(p.node(), expr_arena))
+            .collect();
+        for node in conditions {
+            if !is_elementwise_rec(node, expr_arena) {
+                return Ok(false);
+            }
+            let origin = ExprOrigin::get_expr_origin(
+                node,
+                expr_arena,
+                schema_left,
+                schema_right,
+                &suffix,
+                None,
+            )?;
+            let mask = match origin {
+                ExprOrigin::Left | ExprOrigin::None => &mut left_mask,
+                ExprOrigin::Right => &mut right_mask,
+                _ if can_fuse && can_fuse_predicate(node, expr_arena) => {
+                    fused.push(ExprIR::from_node(node, expr_arena));
+                    continue;
+                },
+                _ => return Ok(false),
+            };
+            *mask = Some(match mask.take() {
+                Some(m) => AExprBuilder::new_from_node(m).and(node, expr_arena).node(),
+                None => node,
+            });
+        }
+        // A condition on one input gives a null key to the rows where it does not hold, and a
+        // null key matches nothing.
+        if nulls_equal && (left_mask.is_some() || right_mask.is_some()) {
+            return Ok(false);
+        }
+        let key = &mut keys[0];
+        for (mask, key) in [
+            (left_mask, &mut key.input_lhs),
+            (right_mask, &mut key.input_rhs),
+        ] {
+            if let Some(mask) = mask {
+                let dtype = expr_arena
+                    .get(*key)
+                    .to_dtype(&ToFieldContext::new(expr_arena, output_schema))?;
+                let null = AExprBuilder::lit_scalar(Scalar::null(dtype), expr_arena);
+                *key = AExprBuilder::when_then_otherwise(mask, *key, null, expr_arena).node();
+            }
+        }
+    }
     let on = push_equi_join_keys(keys, expr_arena, schema_right, &suffix, left_on, right_on);
-    Arc::make_mut(options).options = JoinTypeOptionsIR::Equi {
+    let options = Arc::make_mut(options);
+    options.args.nulls_equal = nulls_equal;
+    options.options = JoinTypeOptionsIR::Equi {
         on,
-        fused_predicate: None,
+        fused_predicate: combine_predicates(fused, expr_arena),
     };
     Ok(true)
 }
@@ -1478,14 +1553,11 @@ fn take_equi_join_keys(
     schema_right: &Schema,
     output_schema: &Schema,
     suffix: &str,
+    key_op: Operator,
 ) -> PolarsResult<Vec<EquiJoinKeys>> {
     let keys = take_predicates_mut(acc_predicates, expr_arena, |ae, _ae_node, expr_arena| {
         Ok(match ae {
-            AExpr::BinaryExpr {
-                left,
-                op: Operator::Eq,
-                right,
-            } => {
+            AExpr::BinaryExpr { left, op, right } if *op == key_op => {
                 let left_origin = ExprOrigin::get_expr_origin(
                     *left,
                     expr_arena,

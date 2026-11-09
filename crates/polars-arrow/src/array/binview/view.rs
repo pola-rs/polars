@@ -75,35 +75,42 @@ impl View {
         debug_assert!(bytes.len() <= Self::MAX_INLINE_SIZE as usize);
 
         let len = bytes.len();
-        let src = bytes.as_ptr();
 
         // Read the bytes with (possibly overlapping) fixed-size loads, so that a variable length
         // copy does not become a call to memcpy. `lo` holds inline bytes 0..8, `hi` bytes 8..12.
-        // SAFETY: every load is within `bytes`.
-        let (lo, hi) = unsafe {
-            let load4 =
-                |i: usize| u32::from_le_bytes(src.add(i).cast::<[u8; 4]>().read_unaligned()) as u64;
-            if len >= 8 {
-                let head = u64::from_le_bytes(src.cast::<[u8; 8]>().read_unaligned());
-                (head, load4(len - 4) >> ((12 - len) * 8))
-            } else if len >= 4 {
-                (load4(0) | (load4(len - 4) << ((len - 4) * 8)), 0)
-            } else if len > 0 {
+        // From 4 bytes on, whether there are 8 is a select rather than a branch.
+        let (lo, hi) = match (bytes.first_chunk::<4>(), bytes.last_chunk::<4>()) {
+            (Some(first), Some(last)) => {
+                // Bytes 4..8, or the last 4 bytes again if there are fewer than 8 (always `Some`).
+                let mid_at = (len - 4).min(4);
+                let mid = bytes[mid_at..].first_chunk::<4>().unwrap_or(last);
+                let lo = u32::from_le_bytes(*first) as u64
+                    | ((u32::from_le_bytes(*mid) as u64) << (mid_at * 8));
+
+                // Bytes 8..12 are the end of the last 4 bytes, if there are more than 8.
+                let hi = (u32::from_le_bytes(*last) as u64)
+                    .checked_shr(((12 - len) * 8) as u32)
+                    .unwrap_or(0);
+                (lo, hi)
+            },
+            _ if len > 0 => {
                 let mid = len / 2;
-                let lo = *src as u64
-                    | ((*src.add(mid) as u64) << (mid * 8))
-                    | ((*src.add(len - 1) as u64) << ((len - 1) * 8));
+                let lo = bytes[0] as u64
+                    | ((bytes[mid] as u64) << (mid * 8))
+                    | ((bytes[len - 1] as u64) << ((len - 1) * 8));
                 (lo, 0)
-            } else {
-                (0, 0)
-            }
+            },
+            _ => (0, 0),
         };
 
-        let data = (lo as u128 | ((hi as u128) << 64)) << 32;
-        // SAFETY: `View` is `repr(C)` with the length first, then 12 inline bytes.
-        let mut view = unsafe { std::mem::transmute::<[u8; 16], View>(data.to_le_bytes()) };
-        view.length = len as u32;
-        view
+        // The inline bytes are laid out over the fields after the length in memory order.
+        let field = |word: u64| u32::from_ne_bytes((word as u32).to_le_bytes());
+        Self {
+            length: len as u32,
+            prefix: field(lo),
+            buffer_idx: field(lo >> 32),
+            offset: field(hi),
+        }
     }
 
     /// Create a new inline view

@@ -17,6 +17,7 @@
 //! ```
 
 pub mod builder;
+mod field_index;
 mod options;
 mod parser;
 mod read_impl;

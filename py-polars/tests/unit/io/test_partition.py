@@ -470,7 +470,7 @@ def test_partition_empty_string_24545(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
-@pytest.mark.parametrize("dtype", [pl.Int64(), pl.Date(), pl.Datetime()])
+@pytest.mark.parametrize("dtype", [pl.Int64(), pl.Date(), pl.Datetime(), pl.Time()])
 def test_partition_empty_dtype_24545(tmp_path: Path, dtype: pl.DataType) -> None:
     df = pl.DataFrame({"b": [1, 2, 3, 4]}).with_columns(
         a=pl.col.b.cast(dtype),
@@ -585,9 +585,9 @@ def test_partition_time_key_fractional_seconds_30046(
         "k=__HIVE_DEFAULT_PARTITION__",
     ]
 
-    out = (
-        pl.scan_parquet(tmp_path, try_parse_hive_dates=False)
-        .with_columns(pl.col("k").str.to_time())
-        .collect()
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).collect(),
+        df,
+        check_row_order=False,
+        check_column_order=False,
     )
-    assert_frame_equal(out, df, check_row_order=False, check_column_order=False)

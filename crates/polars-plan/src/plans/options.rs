@@ -5,7 +5,9 @@ use polars_core::prelude::*;
 use polars_core::utils::SuperTypeOptions;
 #[cfg(feature = "iejoin")]
 use polars_defs::join::IEJoinOptions;
-use polars_defs::join::{CrossJoinFilter, CrossJoinOptions, JoinArgs, JoinType, JoinTypeOptions};
+use polars_defs::join::{
+    CrossJoinFilter, CrossJoinOptions, JoinArgs, JoinType, JoinTypeOptions, MaintainOrderJoin,
+};
 #[cfg(feature = "dynamic_group_by")]
 use polars_defs::time::group_by::{DynamicGroupOptionsIR, RollingGroupOptionsIR};
 use polars_utils::bool::UnsafeBool;
@@ -445,7 +447,13 @@ impl JoinOptionsIR {
             Equi {
                 on,
                 fused_predicate: Some(_),
-            } => how.is_inner() && !on.is_empty() && self.args.slice.is_none(),
+            } => {
+                !on.is_empty()
+                    && self.args.slice.is_none()
+                    && (how.is_inner()
+                        || (matches!(how, JoinType::Left | JoinType::Right | JoinType::Full)
+                            && self.args.maintain_order == MaintainOrderJoin::None))
+            },
             #[cfg(feature = "asof_join")]
             AsOf { .. } => how.is_asof(),
             #[cfg(feature = "iejoin")]

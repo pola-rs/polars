@@ -27,7 +27,6 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::scratch_vec::ScratchVec;
-use polars_utils::unitvec;
 use slotmap::DenseSlotMap;
 
 use super::fmt::fmt_exprs;
@@ -96,37 +95,10 @@ pub(crate) fn is_elementwise_rec_cached(
     arena: &Arena<AExpr>,
     cache: &mut ExprCache,
 ) -> bool {
-    if !cache.is_elementwise.contains_key(&expr_key) {
-        cache.is_elementwise.insert(
-            expr_key,
-            (|| {
-                let mut expr_key = expr_key;
-                let mut stack = unitvec![];
-
-                loop {
-                    let ae = arena.get(expr_key);
-
-                    if is_fake_elementwise_function(ae, arena) {
-                        return false;
-                    }
-
-                    if !polars_plan::plans::is_elementwise(&mut stack, ae, arena) {
-                        return false;
-                    }
-
-                    let Some(next_key) = stack.pop() else {
-                        break;
-                    };
-
-                    expr_key = next_key;
-                }
-
-                true
-            })(),
-        );
-    }
-
-    *cache.is_elementwise.get(&expr_key).unwrap()
+    *cache
+        .is_elementwise
+        .entry(expr_key)
+        .or_insert_with(|| is_elementwise_rec(expr_key, arena))
 }
 
 #[recursive::recursive]
@@ -891,24 +863,26 @@ fn lower_exprs_with_ctx(
                 input: ref inner_exprs,
                 function:
                     IRFunctionExpr::ValueCounts {
-                        sort: false,
+                        sort,
                         parallel: _,
                         name: count_name,
-                        normalize: false,
+                        normalize,
                     },
                 options: _,
             } => {
                 // Transform:
                 //    expr.value_counts(
-                //      sort=False,
+                //      sort=sort,
                 //      parallel=_,
                 //      name=count_name,
-                //      normalize=False
+                //      normalize=normalize
                 //    ).alias(name)
                 //      ->
                 //    .select(expr.alias(name))
                 //    .group_by(name)
                 //      .agg(count_name = pl.len())
+                //    [.sort(count_name, descending=True)]
+                //    [.with_columns(count_name / count_name.sum())]
                 //    .select(pl.struct([name, count_name]))
 
                 assert_eq!(inner_exprs.len(), 1);
@@ -949,6 +923,35 @@ fn lower_exprs_with_ctx(
                     },
                     false,
                 )?;
+
+                let stream = if sort {
+                    build_sort_stream_with_ctx(
+                        stream,
+                        vec![
+                            AExprBuilder::col(tmp_count_name.clone(), ctx.expr_arena)
+                                .expr_ir(tmp_count_name.clone()),
+                        ],
+                        None,
+                        SortMultipleOptions::default().with_order_descending(true),
+                        ctx,
+                    )?
+                } else {
+                    stream
+                };
+
+                let stream = if normalize {
+                    let count = AExprBuilder::col(tmp_count_name.clone(), ctx.expr_arena);
+                    let total = count.sum(ctx.expr_arena);
+                    let proportion = count
+                        .cast(DataType::Float64, ctx.expr_arena)
+                        .true_divide(total, ctx.expr_arena)
+                        .expr_ir(tmp_count_name.clone());
+                    let value = AExprBuilder::col(tmp_value_name.clone(), ctx.expr_arena)
+                        .expr_ir(tmp_value_name.clone());
+                    build_select_stream_with_ctx(stream, &[value, proportion], ctx)?
+                } else {
+                    stream
+                };
 
                 let value = ExprIR::new(
                     ctx.expr_arena.add(AExpr::Column(tmp_value_name)),
@@ -1607,9 +1610,7 @@ fn lower_exprs_with_ctx(
                 input: ref inner_exprs,
                 options,
                 ..
-            } if options.is_elementwise()
-                && !is_fake_elementwise_function(node, ctx.expr_arena) =>
-            {
+            } if options.is_elementwise() => {
                 let inner_nodes = inner_exprs.iter().map(|expr| expr.node()).collect_vec();
                 let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &inner_nodes, ctx)?;
 
@@ -1637,9 +1638,7 @@ fn lower_exprs_with_ctx(
                 input: ref inner_exprs,
                 ref function,
                 options,
-            } if options.is_row_separable()
-                && !is_fake_elementwise_function(node, ctx.expr_arena) =>
-            {
+            } if options.is_row_separable() => {
                 // While these functions are streamable, they are not elementwise, so we
                 // have to transform them to a select node.
                 let inner_nodes = inner_exprs.iter().map(|x| x.node()).collect_vec();

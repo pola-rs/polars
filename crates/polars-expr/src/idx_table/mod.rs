@@ -69,6 +69,9 @@ pub trait IdxTable: Any + Send + Sync {
         limit: IdxSize,
     ) -> IdxSize;
 
+    /// Marks the given rows as matched, as `probe` does with `mark_matches`.
+    fn mark_rows(&self, rows: &[IdxSize]);
+
     /// Get the ChunkIds for each key which was never marked during probing.
     fn unmarked_keys(&self, out: &mut Vec<IdxSize>, offset: IdxSize, limit: IdxSize) -> IdxSize;
 }
