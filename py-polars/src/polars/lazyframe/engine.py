@@ -287,7 +287,7 @@ class Engine(ABC):
         function: Callable[[DataFrame], bool | None],
         *,
         chunk_size: int | None,
-        split_by: str | None = None,
+        split_by: str | None,
         maintain_order: bool,
         optimizations: QueryOptFlags,
     ) -> None:
@@ -665,7 +665,7 @@ class _LocalEngine(Engine):
         function: Callable[[DataFrame], bool | None],
         *,
         chunk_size: int | None,
-        split_by: str | None = None,
+        split_by: str | None,
         maintain_order: bool,
         optimizations: QueryOptFlags,
     ) -> None:
