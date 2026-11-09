@@ -74,7 +74,10 @@ def without_return_key_stats(
 @pytest.mark.parametrize("how", ["left", "semi", "anti"])
 def test_inner_join_moves_below_preserving_join(how: JoinStrategy) -> None:
     fact, returns, dim = frames()
-    fact, returns = without_return_key_stats(fact, returns)
+    if how == "semi":
+        # With distinct counts the semi join is priced to keep fewer rows than the
+        # inner join emits, so it stays below it.
+        fact, returns = without_return_key_stats(fact, returns)
     # Filtering the right side is what lets the estimator price a semi/anti join.
     returns = returns.filter(pl.col("r_amt") < 1.5)
     lf = fact.join(returns, left_on="f_ret", right_on="r_ret", how=how).join(

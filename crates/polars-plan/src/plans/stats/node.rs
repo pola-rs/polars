@@ -3,6 +3,7 @@
 //! Anything that cannot be estimated yields `None` rather than a guess, so a caller
 //! can tell "no estimate" apart from "estimated to be small".
 
+use std::cell::RefCell;
 use std::sync::{Arc, LazyLock, Mutex, Weak};
 
 use polars_core::frame::DataFrame;
@@ -35,8 +36,36 @@ pub(crate) struct StatsCache {
     #[expect(clippy::disallowed_types)]
     nodes: PlHashMap<Node, Option<NodeStats>>,
     /// Set on the first in-memory frame, see [`key_column_names`].
-    #[expect(clippy::disallowed_types)]
-    key_columns: Option<PlHashSet<PlSmallStr>>,
+    key_columns: Option<Arc<KeyColumns>>,
+}
+
+#[expect(clippy::disallowed_types)]
+type KeyColumns = PlHashSet<PlSmallStr>;
+
+thread_local! {
+    /// The last [`key_column_names`] made, with the arena versions and lengths it
+    /// was made for. Optimizer passes make a new [`StatsCache`] per join, and nodes
+    /// are only ever added to an arena, so this saves a walk over it for each.
+    static KEY_COLUMNS: RefCell<Option<([usize; 4], Arc<KeyColumns>)>> = const { RefCell::new(None) };
+}
+
+fn key_columns(ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Arc<KeyColumns> {
+    let id = [
+        ir_arena.version() as usize,
+        ir_arena.len(),
+        expr_arena.version() as usize,
+        expr_arena.len(),
+    ];
+    KEY_COLUMNS.with_borrow_mut(|last| {
+        if let Some((last_id, names)) = last
+            && *last_id == id
+        {
+            return names.clone();
+        }
+        let names = Arc::new(key_column_names(ir_arena, expr_arena));
+        *last = Some((id, names.clone()));
+        names
+    })
 }
 
 impl StatsCache {
@@ -56,10 +85,9 @@ impl StatsCache {
 /// Counting the distinct values of an in-memory column costs a pass over a sample of
 /// it, so only these are counted. The arena may hold nodes no longer in the plan,
 /// which only adds names.
-#[expect(clippy::disallowed_types)]
-fn key_column_names(ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> PlHashSet<PlSmallStr> {
-    let mut names = PlHashSet::new();
-    let add_keys = |keys: &[ExprIR], names: &mut PlHashSet<PlSmallStr>| {
+fn key_column_names(ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> KeyColumns {
+    let mut names = KeyColumns::default();
+    let add_keys = |keys: &[ExprIR], names: &mut KeyColumns| {
         for key in keys {
             names.insert(key.output_name().clone());
             names.extend(aexpr_to_leaf_names_iter(key.node(), expr_arena).cloned());
@@ -77,10 +105,9 @@ fn key_column_names(ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> PlHashSe
                 }
             },
             IR::GroupBy { keys, .. } => add_keys(keys, &mut names),
-            IR::Distinct { options, .. } => {
-                if let Some(subset) = &options.subset {
-                    names.extend(subset.iter().cloned());
-                }
+            IR::Distinct { input, options } => match &options.subset {
+                Some(subset) => names.extend(subset.iter().cloned()),
+                None => names.extend(ir_arena.get(*input).schema(ir_arena).iter_names().cloned()),
             },
             IR::Select { expr: exprs, .. } | IR::HStack { exprs, .. } => {
                 aliases.extend(exprs.iter().filter_map(|e| {
@@ -204,7 +231,7 @@ pub(crate) fn node_stats_with_cache(
             let names = output_schema.as_ref().unwrap_or(schema);
             let key_columns = cache
                 .key_columns
-                .get_or_insert_with(|| key_column_names(ir_arena, expr_arena));
+                .get_or_insert_with(|| key_columns(ir_arena, expr_arena));
             Some(NodeStats {
                 columns: dataframe_columns(df, names, key_columns),
                 ..NodeStats::of_rows(rows)
@@ -745,6 +772,9 @@ fn multi_key_columns(
     (!map.is_empty()).then(|| Arc::new(map))
 }
 
+/// Share of nulls above which an in-memory column gets no distinct count.
+const MAX_NULL_FRACTION: f64 = 0.25;
+
 /// Rows a sample of an in-memory frame reads.
 const NDV_SAMPLE_ROWS: usize = 1 << 14;
 
@@ -753,11 +783,10 @@ const NDV_SAMPLE_ROWS: usize = 1 << 14;
 ///
 /// Exact when the frame has at most [`NDV_SAMPLE_ROWS`] rows, otherwise estimated
 /// from a uniform sample.
-#[expect(clippy::disallowed_types)]
 fn dataframe_columns(
     df: &DataFrame,
     names: &Schema,
-    key_columns: &PlHashSet<PlSmallStr>,
+    key_columns: &KeyColumns,
 ) -> Option<Arc<ScanColumnStatsMap>> {
     let height = df.height();
     if height == 0 {
@@ -825,8 +854,13 @@ fn column_distinct(column: &Column) -> Option<Card> {
 /// Distinct non-null values, exact up to [`NDV_SAMPLE_ROWS`] rows, otherwise
 /// estimated from a uniform sample of it.
 ///
-/// A null matches nothing in a join, so it is not counted as a value.
+/// A null matches nothing in a join, so it is not counted as a value. A join
+/// estimate still counts null rows as if they matched, so no count is given for a
+/// column with more than [`MAX_NULL_FRACTION`] nulls.
 fn series_distinct(series: &Series) -> Option<Card> {
+    if series.null_count() as f64 > MAX_NULL_FRACTION * series.len() as f64 {
+        return None;
+    }
     let non_null = series.len() - series.null_count();
     if series.len() <= NDV_SAMPLE_ROWS {
         let groups = series.drop_nulls().group_tuples(false, false).ok()?;
