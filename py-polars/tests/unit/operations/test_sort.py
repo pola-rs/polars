@@ -1122,6 +1122,17 @@ def test_sort_literals() -> None:
         df.sort(pl.Series(values=[1, 2]))
 
 
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_sort_by_untyped_literal_keys(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"k": [1, 2, 3], "v": [1.0, None, 3.0]})
+    result = lf.sort(
+        pl.when(pl.col("v").is_null()).then(1).otherwise(0),
+        pl.col("k"),
+        descending=[False, True],
+    ).collect(engine=engine)
+    assert result["k"].to_list() == [3, 1, 2]
+
+
 def test_sorted_slice_after_function_20712() -> None:
     assert_frame_equal(
         pl.LazyFrame({"a": 10 * ["A"]})
@@ -1166,7 +1177,7 @@ def test_sort_into_function_into_dynamic_groupby_20715() -> None:
     ) == (90, 3)
 
 
-def test_sort_multicolum_null() -> None:
+def test_sort_multicolumn_null() -> None:
     df = pl.DataFrame({"a": [1], "b": [None]})
     assert df.sort(["a", "b"]).shape == (1, 2)
 
@@ -1421,6 +1432,22 @@ def test_sort_by_sliced_groups_29630() -> None:
         pl.col("a").slice(1, 2).reverse().sort_by(pl.col("b").slice(1, 2))
     )
     assert out["a"].to_list() == [[12, 11], [22, 21]]
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected"),
+    [
+        (pl.col("v").reverse(), [[10], [30]]),
+        (pl.col("v").sort(), [[20], [30]]),
+        (pl.col("v").cum_sum(), [[30], [30]]),
+    ],
+)
+def test_sort_by_head_after_group_op_30551(
+    expr: pl.Expr, expected: list[list[int]]
+) -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 2], "o": [2, 1, 3], "v": [10, 20, 30]})
+    out = lf.group_by("g", maintain_order=True).agg(expr.sort_by("o").head(1))
+    assert_frame_equal(out.collect(), pl.DataFrame({"g": [1, 2], "v": expected}))
 
 
 def test_sort_by_empty_list_eval_25433() -> None:
@@ -1915,6 +1942,64 @@ def test_sort_by_first_last_streaming_evictions(
         q.collect(engine="in-memory"),
         check_row_order=False,
     )
+
+
+@pytest.mark.parametrize("evict", [False, True])
+def test_sort_by_first_last_shared_by_streaming(
+    evict: bool, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    if evict:
+        plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "2")
+        plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "2")
+        plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", "2")
+    n = 100
+    # The keys are unique per group, so every engine picks the same row. Long strings
+    # are longer than the keys stored inline.
+    df = pl.DataFrame(
+        {
+            "g": [i % 5 for i in range(n)],
+            "k": [None if i % 9 == 0 else (i * 31) % 101 % 7 for i in range(n)],
+            "o": list(range(n)),
+            "s": [None if i % 4 == 0 else "x" * (i % 40) for i in range(n)],
+            "st": [None if i % 6 == 0 else {"a": i, "b": str(i)} for i in range(n)],
+            "l": [[i] * (i % 3) for i in range(n)],
+        }
+    )
+    long_by = pl.format("{}{}", pl.lit("y" * 40), pl.col("o"))
+    exprs = []
+    bys: list[list[str | pl.Expr]] = [["k", "o"], [long_by]]
+    for desc in [False, True]:
+        for by in bys:
+            e = pl.all().exclude("g").sort_by(by, descending=desc)
+            sfx = f"_{desc}_{len(by)}"
+            exprs += [
+                e.first().name.suffix(f"_first{sfx}"),
+                e.last().name.suffix(f"_last{sfx}"),
+            ]
+    exprs += [
+        pl.col("o", "s", "st").min_by(long_by).name.suffix("_min_by"),
+        pl.col("o", "s", "st").max_by(long_by).name.suffix("_max_by"),
+        pl.col("st").first().alias("st_first"),
+        pl.col("st").last().alias("st_last"),
+    ]
+    q = df.lazy().group_by("g").agg(exprs)
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
+def test_struct_item_streaming() -> None:
+    df = pl.DataFrame({"g": [1, 2, 2], "st": [{"a": 1}, None, {"a": 3}]})
+    q = df.lazy().group_by("g").agg(pl.col("st").item(allow_empty=True))
+    with pytest.raises(pl.exceptions.ComputeError):
+        q.collect(engine="streaming")
+    q = df.lazy().filter(pl.col("g") == 1).group_by("g").agg(pl.col("st").item())
+    assert q.collect(engine="streaming").to_dict(as_series=False) == {
+        "g": [1],
+        "st": [{"a": 1}],
+    }
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])

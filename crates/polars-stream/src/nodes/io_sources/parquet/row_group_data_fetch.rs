@@ -9,6 +9,7 @@ use polars_core::runtime::ASYNC;
 use polars_core::series::IsSorted;
 use polars_core::utils::polars_arrow::bitmap::Bitmap;
 use polars_error::{PolarsResult, polars_ensure};
+use polars_io::cloud::concurrency::in_issue_order;
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, create_sorting_map};
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
@@ -173,6 +174,22 @@ impl RowGroupDataFetcher {
         Some(n_bytes)
     }
 
+    /// Number of rows of the row group `peek_next_bytes` sized.
+    pub(super) fn peek_next_num_rows(&self) -> usize {
+        self.row_groups
+            .front()
+            .map_or(0, |rg| self.metadata.row_groups[rg.idx].num_rows())
+    }
+
+    /// Whether the row group `peek_next_bytes` sized is read in part (a slice short of all rows).
+    pub(super) fn peek_next_sliced(&self) -> bool {
+        self.row_groups.front().is_some_and(|rg| {
+            rg.slice.is_some_and(|(offset, len)| {
+                offset > 0 || len < self.metadata.row_groups[rg.idx].num_rows()
+            })
+        })
+    }
+
     /// Fetches the row group `peek_next_bytes` sized.
     pub(super) async fn next(
         &mut self,
@@ -191,7 +208,7 @@ impl RowGroupDataFetcher {
         let memory_prefetch_func = self.memory_prefetch_func;
         let read_stats = self.read_stats.clone();
 
-        let handle = ASYNC.spawn(async move {
+        let handle = ASYNC.spawn(in_issue_order(async move {
             let row_group_metadata = &metadata.row_groups[idx];
             let fetched_bytes = match current_byte_source.as_ref() {
                 DynByteSource::Buffer(mem_slice) => {
@@ -281,7 +298,7 @@ impl RowGroupDataFetcher {
                 row_group_metadata: row_group_metadata.clone(),
                 sorting_map,
             })
-        });
+        }));
 
         let handle = tokio_handle_ext::AbortOnDropHandle(handle);
         Some(Ok(handle))

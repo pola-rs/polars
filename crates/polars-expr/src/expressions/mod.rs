@@ -146,7 +146,7 @@ pub struct AggregationContext<'a> {
     pub(crate) state: AggState,
     /// group tuples for AggState
     pub(crate) groups: Cow<'a, GroupPositions>,
-    /// This is used to determined if we need to update the groups
+    /// This is used to determine if we need to update the groups
     /// into a sorted groups. We do this lazily, so that this work only is
     /// done when the groups are needed
     pub(crate) update_groups: UpdateGroups,
@@ -238,7 +238,7 @@ impl<'a> AggregationContext<'a> {
     }
 
     /// # Arguments
-    /// - `aggregated` sets if the Series is a list due to aggregation (could also be a list because its
+    /// - `aggregated` sets if the Series is a list due to aggregation (could also be a list because it's
     ///   the columns dtype)
     fn new(
         column: Column,
@@ -344,7 +344,7 @@ impl<'a> AggregationContext<'a> {
     }
 
     /// # Arguments
-    /// - `aggregated` sets if the Series is a list due to aggregation (could also be a list because its
+    /// - `aggregated` sets if the Series is a list due to aggregation (could also be a list because it's
     ///   the columns dtype)
     pub(crate) fn with_values(
         &mut self,
@@ -594,7 +594,14 @@ impl<'a> AggregationContext<'a> {
     fn flat_naive_length(&self) -> usize {
         match &self.state {
             AggState::NotAggregated(c) => c.len(),
-            AggState::AggregatedList(c) => c.list().unwrap().inner_length(),
+            // A repeated list (a Series literal) is not materialized, which Object values cannot be.
+            AggState::AggregatedList(c) => {
+                match c.as_scalar_column().map(|sc| sc.scalar().value()) {
+                    Some(AnyValue::List(s)) => s.len() * c.len(),
+                    Some(AnyValue::Null) => 0,
+                    _ => c.list().unwrap().inner_length(),
+                }
+            },
             AggState::AggregatedScalar(c) => c.len(),
             AggState::LiteralScalar(_) => 1,
         }

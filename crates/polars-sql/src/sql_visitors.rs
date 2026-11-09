@@ -8,8 +8,8 @@ use std::ops::ControlFlow;
 use polars_core::prelude::*;
 use sqlparser::ast::{
     Expr as SQLExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, FunctionArgumentList,
-    FunctionArguments, ObjectName, Query, SetExpr, TableFactor, Visitor as SQLVisitor, VisitorMut,
-    With,
+    FunctionArguments, ObjectName, Query, SetExpr, TableFactor, Visit, Visitor as SQLVisitor,
+    VisitorMut, With,
 };
 use sqlparser::keywords::ALL_KEYWORDS;
 
@@ -185,7 +185,34 @@ struct AmbiguousColumnVisitor<'a> {
     base_table_name: &'a str,
     using_cols: &'a [(String, String)],
     relations: &'a [RelationName],
+    schema: &'a Schema,
     subquery_depth: usize,
+}
+
+impl AmbiguousColumnVisitor<'_> {
+    /// Check a struct path whose first part `name` names no relation: it is ambiguous if
+    /// the joined frame has more than one column `name`, one of them a struct.
+    fn check_struct_path(&self, name: &str) -> PolarsResult<()> {
+        let columns: PlHashSet<&str> = self
+            .joined_aliases
+            .values()
+            .filter_map(|cols| cols.get(name).map(String::as_str))
+            .chain(self.schema.contains(name).then_some(name))
+            .collect();
+        let has_struct = columns
+            .iter()
+            .any(|c| matches!(self.schema.get(c), Some(DataType::Struct(_))));
+        if columns.len() > 1 && has_struct {
+            check_ambiguous_column(
+                name,
+                self.joined_aliases,
+                self.base_table_name,
+                self.using_cols,
+                self.relations,
+            )?;
+        }
+        Ok(())
+    }
 }
 
 impl SQLVisitor for AmbiguousColumnVisitor<'_> {
@@ -205,7 +232,20 @@ impl SQLVisitor for AmbiguousColumnVisitor<'_> {
         if self.subquery_depth > 0 {
             return ControlFlow::Continue(());
         }
-        if let SQLExpr::Identifier(ident) = expr {
+        let col = match expr {
+            SQLExpr::Identifier(ident) => Some(ident),
+            // A struct path (`s.f`) whose first part names no relation reads that column.
+            SQLExpr::CompoundIdentifier(parts)
+                if match_qualifier(parts, self.relations.iter()).is_none() =>
+            {
+                if let Err(err) = self.check_struct_path(&parts[0].value) {
+                    return ControlFlow::Break(err);
+                }
+                None
+            },
+            _ => None,
+        };
+        if let Some(ident) = col {
             if let Err(err) = check_ambiguous_column(
                 &ident.value,
                 self.joined_aliases,
@@ -279,6 +319,7 @@ pub(crate) fn check_for_ambiguous_column_refs(
     base_table_name: &str,
     using_cols: &[(String, String)],
     relations: &[RelationName],
+    schema: &Schema,
 ) -> PolarsResult<()> {
     match dyn_visit::visit(
         expr,
@@ -287,6 +328,7 @@ pub(crate) fn check_for_ambiguous_column_refs(
             base_table_name,
             using_cols,
             relations,
+            schema,
             subquery_depth: 0,
         },
     ) {
@@ -525,34 +567,39 @@ pub(crate) fn expr_has_window_functions(expr: &SQLExpr) -> bool {
 /// wildcard, as an expression or a function argument, or a `COLUMNS(...)` call.
 pub(crate) fn has_column_selector(expr: &SQLExpr) -> bool {
     visit_expressions(expr, |e| {
-        let is_selector = match e {
-            SQLExpr::Wildcard(_) | SQLExpr::QualifiedWildcard(..) => true,
-            SQLExpr::Function(func) => {
-                let is_columns = func.name.0[0]
-                    .as_ident()
-                    .is_some_and(|ident| ident.value.eq_ignore_ascii_case("columns"));
-                let has_wildcard_arg = match &func.args {
-                    FunctionArguments::List(args) => args.args.iter().any(|arg| {
-                        matches!(
-                            arg,
-                            FunctionArg::Unnamed(
-                                FunctionArgExpr::Wildcard | FunctionArgExpr::QualifiedWildcard(_)
-                            )
-                        )
-                    }),
-                    _ => false,
-                };
-                is_columns || has_wildcard_arg
-            },
-            _ => false,
-        };
-        if is_selector {
+        if is_column_selector(e) {
             ControlFlow::Break(())
         } else {
             ControlFlow::Continue(())
         }
     })
     .is_break()
+}
+
+/// Whether `expr` itself, not counting its children, is a column selector (see
+/// [`has_column_selector`]).
+pub(crate) fn is_column_selector(expr: &SQLExpr) -> bool {
+    match expr {
+        SQLExpr::Wildcard(_) | SQLExpr::QualifiedWildcard(..) => true,
+        SQLExpr::Function(func) => {
+            let is_columns = func.name.0[0]
+                .as_ident()
+                .is_some_and(|ident| ident.value.eq_ignore_ascii_case("columns"));
+            let has_wildcard_arg = match &func.args {
+                FunctionArguments::List(args) => args.args.iter().any(|arg| {
+                    matches!(
+                        arg,
+                        FunctionArg::Unnamed(
+                            FunctionArgExpr::Wildcard | FunctionArgExpr::QualifiedWildcard(_)
+                        )
+                    )
+                }),
+                _ => false,
+            };
+            is_columns || has_wildcard_arg
+        },
+        _ => false,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -616,6 +663,50 @@ pub(crate) fn expr_contains_subquery(expr: &SQLExpr) -> bool {
 /// a value), as opposed to a predicate subquery (`EXISTS`, `IN`).
 pub(crate) fn expr_contains_scalar_subquery(expr: &SQLExpr) -> bool {
     expr_contains(expr, |e| matches!(e, SQLExpr::Subquery(_)))
+}
+
+/// Finds a `RANDOM()` call, outside the subqueries unless `in_subqueries`.
+struct RandomFinder {
+    in_subqueries: bool,
+    query_depth: usize,
+}
+
+impl SQLVisitor for RandomFinder {
+    type Break = ();
+
+    fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+        self.query_depth += 1;
+        ControlFlow::Continue(())
+    }
+
+    fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+        self.query_depth -= 1;
+        ControlFlow::Continue(())
+    }
+
+    fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+        let is_random = matches!(expr, SQLExpr::Function(func) if func
+            .name
+            .0
+            .last()
+            .and_then(|p| p.as_ident())
+            .is_some_and(|i| i.value.eq_ignore_ascii_case("random")));
+        if (self.in_subqueries || self.query_depth == 0) && is_random {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
+        }
+    }
+}
+
+/// Check if `node` calls `RANDOM()`, which yields a new value on every call. Calls in the
+/// subqueries of `node` count only with `in_subqueries`.
+pub(crate) fn contains_random(node: &(impl Visit + ?Sized), in_subqueries: bool) -> bool {
+    let mut finder = RandomFinder {
+        in_subqueries,
+        query_depth: 0,
+    };
+    dyn_visit::visit(node, &mut finder).is_break()
 }
 
 fn expr_contains(expr: &SQLExpr, is_match: impl Fn(&SQLExpr) -> bool) -> bool {

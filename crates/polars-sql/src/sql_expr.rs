@@ -34,9 +34,9 @@ use sqlparser::ast::{
     UnaryOperator as SQLUnaryOperator, Value as SQLValue, ValueWithSpan,
 };
 use sqlparser::dialect::GenericDialect;
-use sqlparser::keywords;
+use sqlparser::keywords::{self, Keyword};
 use sqlparser::parser::{Parser, ParserOptions};
-use sqlparser::tokenizer::Token;
+use sqlparser::tokenizer::{Token, TokenWithSpan, Tokenizer};
 
 use crate::context::join_idents;
 use crate::dyn_visit::visit_expressions;
@@ -51,7 +51,7 @@ use crate::types::{
     bitstring_to_bytes_literal, is_iso_date, is_iso_datetime, is_iso_time, map_sql_dtype_to_polars,
     strip_utc_offset,
 };
-use crate::{SQLContext, unique_column_name};
+use crate::{SQLContext, col, struct_field, unique_column_name};
 
 #[inline]
 #[cold]
@@ -59,6 +59,49 @@ use crate::{SQLContext, unique_column_name};
 /// Convert a Display-able error to PolarsError::SQLInterface
 pub fn to_sql_interface_err(err: impl Display) -> PolarsError {
     PolarsError::SQLInterface(err.to_string().into())
+}
+
+/// A parser of `sql`. `TOP` is only a keyword in `SELECT TOP n`, so that it can also name a
+/// relation or a column.
+pub(crate) fn sql_parser(sql: &str) -> PolarsResult<Parser<'static>> {
+    let options = ParserOptions {
+        trailing_commas: true,
+        ..Default::default()
+    };
+    let mut tokens = Tokenizer::new(&GenericDialect, sql)
+        .with_unescape(options.unescape)
+        .tokenize_with_location()
+        .map_err(to_sql_interface_err)?;
+    demote_top_keyword(&mut tokens);
+    Ok(Parser::new(&GenericDialect)
+        .with_options(options)
+        .with_tokens_with_locations(tokens))
+}
+
+fn demote_top_keyword(tokens: &mut [TokenWithSpan]) {
+    let is_keyword = |token: &Token, keywords: &[Keyword]| matches!(token, Token::Word(word) if keywords.contains(&word.keyword));
+    let mut previous: Option<usize> = None;
+    for i in 0..tokens.len() {
+        if matches!(tokens[i].token, Token::Whitespace(_)) {
+            continue;
+        }
+        if is_keyword(&tokens[i].token, &[Keyword::TOP]) {
+            let next = tokens[i + 1..]
+                .iter()
+                .find(|t| !matches!(t.token, Token::Whitespace(_)))
+                .map(|t| &t.token);
+            let starts_top = previous.is_some_and(|p| {
+                is_keyword(
+                    &tokens[p].token,
+                    &[Keyword::SELECT, Keyword::DISTINCT, Keyword::ALL],
+                )
+            }) && matches!(next, Some(Token::Number(..) | Token::LParen));
+            if !starts_top && let Token::Word(word) = &mut tokens[i].token {
+                word.keyword = Keyword::NoKeyword;
+            }
+        }
+        previous = Some(i);
+    }
 }
 
 /// Sort options for a single `ORDER BY` key.
@@ -203,16 +246,16 @@ fn parse_string_as_temporal(expr: Expr, dtype: &DataType, strict: bool) -> Optio
     })
 }
 
-/// `value` parsed as a literal of temporal `dtype`, or `None` if it does not parse.
-fn temporal_literal(value: &str, dtype: &DataType) -> Option<Expr> {
+/// `value` parsed as a literal of `dtype`, or `None` if it does not parse.
+fn parse_string_literal(value: &str, dtype: &DataType) -> Option<Expr> {
     let s = cast_literal_series(&Series::new(PlSmallStr::EMPTY, [value]), dtype).ok()?;
     let value = s.get(0).ok()?.into_static();
     (!value.is_null()).then(|| lit(Scalar::new(dtype.clone(), value)))
 }
 
-/// A `DATE`, `TIME` or `TIMESTAMP` literal as a value of `dtype`.
+/// A typed literal such as `DATE '2024-01-01'` or `SMALLINT '5'` as a value of `dtype`.
 fn typed_literal(value: &str, dtype: &DataType, sql_type: &SQLDataType) -> PolarsResult<Expr> {
-    temporal_literal(value, dtype)
+    parse_string_literal(value, dtype)
         .ok_or_else(|| polars_err!(SQLSyntax: "invalid {} literal '{}'", sql_type, value))
 }
 
@@ -303,11 +346,43 @@ fn like_pattern_regex(pattern: Expr, case_insensitive: bool, unanchored: bool) -
 /// that parses, else parsed when the query runs. `None` if `dtype` is not temporal.
 fn string_to_temporal(expr: Expr, dtype: &DataType, strict: bool) -> Option<Expr> {
     if let Expr::Literal(lv) = &expr
-        && let Some(value) = lv.extract_str().and_then(|s| temporal_literal(s, dtype))
+        && let Some(value) = lv
+            .extract_str()
+            .and_then(|s| parse_string_literal(s, dtype))
     {
         return Some(value);
     }
     parse_string_as_temporal(expr, dtype, strict)
+}
+
+/// `expr`, if it is an ISO string literal, as a value of the temporal `dtype` it is
+/// compared with or read as; else `expr` itself.
+pub(crate) fn temporal_string_as(expr: &Expr, dtype: Option<&DataType>) -> Expr {
+    let Some(s) = (match expr {
+        Expr::Literal(lv) => lv.extract_str(),
+        _ => None,
+    }) else {
+        return expr.clone();
+    };
+    let parsed = match dtype {
+        Some(dtype @ DataType::Time) if is_iso_time(s) => Some((s.to_string(), dtype)),
+        Some(dtype @ DataType::Date) if is_iso_date(s) => Some((s.to_string(), dtype)),
+        Some(dtype @ DataType::Datetime(_, _)) if is_iso_datetime(s) || is_iso_date(s) => {
+            let s = if s.len() == 10 {
+                // handle upcast from ISO date string (10 chars) to datetime
+                format!("{s}T00:00:00")
+            } else {
+                s.replacen(' ', "T", 1)
+            };
+            Some((s, dtype))
+        },
+        _ => None,
+    };
+    // A string that does not parse keeps its strict parse, which fails
+    // when the query runs.
+    parsed
+        .and_then(|(s, dtype)| string_to_temporal(lit(s), dtype, true))
+        .unwrap_or_else(|| expr.clone())
 }
 
 /// The operator of `b <op> a` given that of `a <op> b`.
@@ -507,7 +582,11 @@ impl SQLExprVisitor<'_> {
                     Some(elems) => {
                         let elems = self.cast_array_elements_for(elems, Some(&expr))?;
                         let set_has_null = elems.null_count() > 0;
-                        let membership = sql_is_in(expr, lit(elems.implode()?.into_series()));
+                        // a list scalar, as from the Python API: type coercion gives it
+                        // the column's type, so the filter can be pushed down
+                        let dtype = DataType::List(Box::new(elems.dtype().clone()));
+                        let list = lit(Scalar::new(dtype, AnyValue::List(elems)));
+                        let membership = sql_is_in(expr, list);
                         let is_in = if set_has_null {
                             // Non-match against sets containing NULL is unknown, not FALSE
                             membership.or(sql_unknown())
@@ -528,15 +607,15 @@ impl SQLExprVisitor<'_> {
             SQLExpr::IsDistinctFrom(e1, e2) => {
                 Ok(self.visit_expr(e1)?.neq_missing(self.visit_expr(e2)?))
             },
-            SQLExpr::IsFalse(expr) => Ok(self.visit_expr(expr)?.eq(lit(false))),
+            SQLExpr::IsFalse(expr) => Ok(self.visit_truth_value(expr)?.eq_missing(lit(false))),
             SQLExpr::IsNotDistinctFrom(e1, e2) => {
                 Ok(self.visit_expr(e1)?.eq_missing(self.visit_expr(e2)?))
             },
-            SQLExpr::IsNotFalse(expr) => Ok(self.visit_expr(expr)?.eq(lit(false)).not()),
+            SQLExpr::IsNotFalse(expr) => Ok(self.visit_truth_value(expr)?.neq_missing(lit(false))),
             SQLExpr::IsNotNull(expr) => Ok(self.visit_expr(expr)?.is_not_null()),
-            SQLExpr::IsNotTrue(expr) => Ok(self.visit_expr(expr)?.eq(lit(true)).not()),
+            SQLExpr::IsNotTrue(expr) => Ok(self.visit_truth_value(expr)?.neq_missing(lit(true))),
             SQLExpr::IsNull(expr) => Ok(self.visit_expr(expr)?.is_null()),
-            SQLExpr::IsTrue(expr) => Ok(self.visit_expr(expr)?.eq(lit(true))),
+            SQLExpr::IsTrue(expr) => Ok(self.visit_truth_value(expr)?.eq_missing(lit(true))),
             SQLExpr::Like {
                 negated,
                 any,
@@ -576,15 +655,9 @@ impl SQLExprVisitor<'_> {
                 self.visit_like(*negated, expr, pattern, &escape_str, true)
             },
             SQLExpr::Nested(expr) => self.visit_expr(expr),
-            SQLExpr::Position { expr, r#in } => Ok(
-                // note: SQL is 1-indexed
-                (self
-                    .visit_expr(r#in)?
-                    .str()
-                    .find(self.visit_expr(expr)?, true)
-                    + typed_lit(1u32))
-                .fill_null(typed_lit(0u32)),
-            ),
+            SQLExpr::Position { expr, r#in } => {
+                Ok(sql_position(self.visit_expr(r#in)?, self.visit_expr(expr)?))
+            },
             SQLExpr::RLike {
                 // note: parses both RLIKE and REGEXP
                 negated,
@@ -651,7 +724,16 @@ impl SQLExprVisitor<'_> {
     fn execute_subquery(&mut self, subquery: &Subquery) -> PolarsResult<LazyFrame> {
         // note: we have to execute subqueries in an isolated scope to prevent
         // propagating any context/arena mutation into the rest of the query
-        self.ctx.execute_isolated(|ctx| ctx.execute_query(subquery))
+        self.ctx
+            .execute_isolated(|ctx| {
+                ctx.nesting += 1;
+                ctx.execute_query(subquery)
+            })
+            .map_err(|e| {
+                self.ctx
+                    .unknown_qualifier_err(subquery, self.active_schema)
+                    .unwrap_or(e)
+            })
     }
 
     /// Visit a `[NOT] EXISTS (subquery)` expression that no earlier rewrite claimed. An
@@ -680,7 +762,11 @@ impl SQLExprVisitor<'_> {
         if is_correlated_subquery(subquery, self.ctx.catalog_spellings())
             || self.has_unnest(subquery)
         {
-            return Err(unsupported());
+            // A name of neither scope is an error of the query, not of this position.
+            return Err(self
+                .ctx
+                .unknown_qualifier_err(subquery, self.active_schema)
+                .unwrap_or_else(unsupported));
         }
         // An unqualified outer column makes the subquery correlated.
         let outer_err = |e, this: &Self| {
@@ -909,31 +995,7 @@ impl SQLExprVisitor<'_> {
     ///   "dt = '2077-10-10'::date"
     ///   "dtm::date = '2077-10-10'
     fn convert_temporal_strings(&self, left: &Expr, right: &Expr) -> Expr {
-        let Some(s) = (match right {
-            Expr::Literal(lv) => lv.extract_str(),
-            _ => None,
-        }) else {
-            return right.clone();
-        };
-        let parsed = match self.cast_or_expr_dtype(left) {
-            Some(dtype @ DataType::Time) if is_iso_time(s) => Some((s.to_string(), dtype)),
-            Some(dtype @ DataType::Date) if is_iso_date(s) => Some((s.to_string(), dtype)),
-            Some(dtype @ DataType::Datetime(_, _)) if is_iso_datetime(s) || is_iso_date(s) => {
-                let s = if s.len() == 10 {
-                    // handle upcast from ISO date string (10 chars) to datetime
-                    format!("{s}T00:00:00")
-                } else {
-                    s.replacen(' ', "T", 1)
-                };
-                Some((s, dtype))
-            },
-            _ => None,
-        };
-        // A string that does not parse keeps its strict parse, which fails
-        // when the query runs.
-        parsed
-            .and_then(|(s, dtype)| string_to_temporal(lit(s), &dtype, true))
-            .unwrap_or_else(|| right.clone())
+        temporal_string_as(right, self.cast_or_expr_dtype(left).as_ref())
     }
 
     fn struct_field_access_expr(
@@ -955,16 +1017,27 @@ impl SQLExprVisitor<'_> {
             expr = if infer_index {
                 match p.parse::<i64>() {
                     Ok(idx) => expr.list().get(lit(idx), true),
-                    Err(_) => expr.struct_().field_by_name(p),
+                    Err(_) => struct_field(expr, p),
                 }
             } else {
-                expr.struct_().field_by_name(p)
+                struct_field(expr, p)
             }
         }
         Ok(expr)
     }
 
     /// Best-effort dtype for an expression; `None` if it cannot be resolved.
+    /// `expr` as a truth value, where a number is true when it isn't zero.
+    fn visit_truth_value(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
+        let expr = self.visit_expr(expr)?;
+        Ok(match self.expr_dtype(&expr) {
+            Some(dtype) if dtype.is_primitive_numeric() || dtype.is_decimal() => {
+                expr.cast(DataType::Boolean)
+            },
+            _ => expr,
+        })
+    }
+
     fn expr_dtype(&self, expr: &Expr) -> Option<DataType> {
         self.ctx.expr_dtype(expr, self.active_schema)
     }
@@ -1794,7 +1867,12 @@ impl SQLExprVisitor<'_> {
                 map_sql_dtype_to_polars(data_type)
             },
             _ => {
-                polars_bail!(SQLInterface: "typed literal should be one of DATE, DATETIME, TIME, or TIMESTAMP (found {})", data_type)
+                let dtype = map_sql_dtype_to_polars(data_type)?;
+                polars_ensure!(
+                    dtype.is_primitive_numeric() || dtype.is_decimal() || dtype.is_string(),
+                    SQLInterface: "typed literal should be a numeric, string or temporal type (found {})", data_type
+                );
+                Ok(dtype)
             },
         }
     }
@@ -1919,7 +1997,7 @@ impl SQLExprVisitor<'_> {
             // SUBSTRING(expr FROM start FOR length)
             (Some(from_expr), Some(for_expr)) => {
                 let start = self.visit_expr(from_expr)?;
-                let length = approximate_literal(self.visit_expr(for_expr)?);
+                let length = clip_substring_length(approximate_literal(self.visit_expr(for_expr)?));
 
                 // note: SQL is 1-indexed, so we need to adjust the offsets accordingly
                 Ok(match (start.clone(), length.clone()) {
@@ -1940,7 +2018,7 @@ impl SQLExprVisitor<'_> {
                         polars_bail!(SQLSyntax: "invalid 'length' for SUBSTRING")
                     },
                     _ => {
-                        let adjusted_start = start - lit(1);
+                        let adjusted_start = substring_offset(start);
                         when(adjusted_start.clone().lt(lit(0)))
                             .then(e.clone().str().slice(
                                 lit(0),
@@ -1963,9 +2041,10 @@ impl SQLExprVisitor<'_> {
                     Expr::Literal(_) => {
                         polars_bail!(SQLSyntax: "invalid 'start' for SUBSTRING")
                     },
-                    _ => e
-                        .str()
-                        .slice(start - lit(1), lit(LiteralValue::untyped_null())),
+                    _ => e.str().slice(
+                        substring_offset(start).clip_min(lit(0)),
+                        lit(LiteralValue::untyped_null()),
+                    ),
                 })
             },
             // SUBSTRING(expr) - not valid, but handle gracefully
@@ -2099,14 +2178,8 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
     let mut ctx = SQLContext::new();
     let s = s.as_ref();
 
-    let mut parser = Parser::new(&GenericDialect);
-    parser = parser.with_options(ParserOptions {
-        trailing_commas: true,
-        ..Default::default()
-    });
-
     // `sql_expr` should only translate expressions, not statements or clauses
-    let mut ast = parser.try_with_sql(s).map_err(to_sql_interface_err)?;
+    let mut ast = sql_parser(s)?;
     if let Token::Word(word) = &ast.peek_token().token {
         if keywords::RESERVED_FOR_COLUMN_ALIAS.contains(&word.keyword) {
             polars_bail!(SQLInterface: "expected an expression (found '{}' clause)", word.value)
@@ -2126,14 +2199,31 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
             polars_bail!(SQLInterface: "invalid expression (found unexpected token '{}')", token)
         },
     }
-    Ok(match &expr {
+    let expr = match &expr {
         SelectItem::ExprWithAlias { expr, alias } => {
             let expr = parse_sql_expr(expr, &mut ctx, None)?;
             expr.alias(alias.value.as_str())
         },
         SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr, &mut ctx, None)?,
         _ => polars_bail!(SQLInterface: "unable to parse '{}' as Expr", s),
-    })
+    };
+    // The expression is used in a DataFrame query, whose row order must be kept.
+    Ok(expr.map_expr(|e| match e {
+        Expr::Over {
+            function,
+            partition_by,
+            order_by,
+            mapping,
+            may_reorder: _,
+        } => Expr::Over {
+            function,
+            partition_by,
+            order_by,
+            mapping,
+            may_reorder: false,
+        },
+        e => e,
+    }))
 }
 
 pub(crate) fn interval_to_duration(interval: &Interval, fixed: bool) -> PolarsResult<Duration> {
@@ -2262,32 +2352,6 @@ pub(crate) fn parse_extract_date_part(expr: Expr, field: &DateTimeField) -> Pola
         _ => field,
     };
     Ok(match field {
-        DateTimeField::Millennium => expr.dt().millennium(),
-        DateTimeField::Century => expr.dt().century(),
-        DateTimeField::Decade => expr.dt().year() / typed_lit(10i32),
-        DateTimeField::Isoyear => expr.dt().iso_year(),
-        DateTimeField::Year | DateTimeField::Years => expr.dt().year(),
-        DateTimeField::Quarter => expr.dt().quarter(),
-        DateTimeField::Month | DateTimeField::Months => expr.dt().month(),
-        DateTimeField::Week(weekday) => {
-            if weekday.is_some() {
-                polars_bail!(SQLSyntax: "EXTRACT/DATE_PART does not support '{}' part", field)
-            }
-            expr.dt().week()
-        },
-        DateTimeField::IsoWeek | DateTimeField::Weeks => expr.dt().week(),
-        DateTimeField::DayOfYear | DateTimeField::Doy => expr.dt().ordinal_day(),
-        DateTimeField::DayOfWeek | DateTimeField::Dow => {
-            let w = expr.dt().weekday();
-            when(w.clone().eq(typed_lit(7i8)))
-                .then(typed_lit(0i8))
-                .otherwise(w)
-        },
-        DateTimeField::Isodow => expr.dt().weekday(),
-        DateTimeField::Day | DateTimeField::Days => expr.dt().day(),
-        DateTimeField::Hour | DateTimeField::Hours => expr.dt().hour(),
-        DateTimeField::Minute | DateTimeField::Minutes => expr.dt().minute(),
-        DateTimeField::Second | DateTimeField::Seconds => expr.dt().second(),
         DateTimeField::Millisecond | DateTimeField::Milliseconds => {
             (expr.clone().dt().second() * typed_lit(1_000f64))
                 + expr.dt().nanosecond().div(typed_lit(1_000_000f64))
@@ -2310,9 +2374,68 @@ pub(crate) fn parse_extract_date_part(expr: Expr, field: &DateTimeField) -> Pola
                 + expr.dt().nanosecond().div(typed_lit(1_000_000_000f64))
         },
         _ => {
-            polars_bail!(SQLSyntax: "EXTRACT/DATE_PART does not support '{}' part", field)
+            let part = match field {
+                DateTimeField::Millennium => expr.dt().millennium(),
+                DateTimeField::Century => expr.dt().century(),
+                DateTimeField::Decade => expr.dt().year() / typed_lit(10i32),
+                DateTimeField::Isoyear => expr.dt().iso_year(),
+                DateTimeField::Year | DateTimeField::Years => expr.dt().year(),
+                DateTimeField::Quarter => expr.dt().quarter(),
+                DateTimeField::Month | DateTimeField::Months => expr.dt().month(),
+                DateTimeField::Week(weekday) => {
+                    if weekday.is_some() {
+                        polars_bail!(SQLSyntax: "EXTRACT/DATE_PART does not support '{}' part", field)
+                    }
+                    expr.dt().week()
+                },
+                DateTimeField::IsoWeek | DateTimeField::Weeks => expr.dt().week(),
+                DateTimeField::DayOfYear | DateTimeField::Doy => expr.dt().ordinal_day(),
+                DateTimeField::DayOfWeek | DateTimeField::Dow => {
+                    let w = expr.dt().weekday();
+                    when(w.clone().eq(typed_lit(7i8)))
+                        .then(typed_lit(0i8))
+                        .otherwise(w)
+                },
+                DateTimeField::Isodow => expr.dt().weekday(),
+                DateTimeField::Day | DateTimeField::Days => expr.dt().day(),
+                DateTimeField::Hour | DateTimeField::Hours => expr.dt().hour(),
+                DateTimeField::Minute | DateTimeField::Minutes => expr.dt().minute(),
+                DateTimeField::Second | DateTimeField::Seconds => expr.dt().second(),
+                _ => {
+                    polars_bail!(SQLSyntax: "EXTRACT/DATE_PART does not support '{}' part", field)
+                },
+            };
+            part.cast(DataType::Int64)
         },
     })
+}
+
+/// The 1-indexed position of `substring` in `e`, or 0 if it is not found.
+pub(crate) fn sql_position(e: Expr, substring: Expr) -> Expr {
+    let e = e.cast(DataType::String);
+    let substring = substring.cast(DataType::String);
+    let found = e
+        .clone()
+        .str()
+        .find(substring.clone(), true)
+        .cast(DataType::Int64)
+        + typed_lit(1i64);
+    when(e.is_null().or(substring.is_null()))
+        .then(lit(LiteralValue::untyped_null()))
+        .otherwise(found.fill_null(typed_lit(0i64)))
+}
+
+/// The 0-indexed offset of a 1-indexed SUBSTRING start.
+pub(crate) fn substring_offset(start: Expr) -> Expr {
+    start.strict_cast(DataType::Int64) - lit(1)
+}
+
+/// A negative SUBSTRING length gives an empty string.
+pub(crate) fn clip_substring_length(length: Expr) -> Expr {
+    match length {
+        Expr::Literal(_) => length,
+        _ => length.clip_min(lit(0)),
+    }
 }
 
 /// Allow an expression that represents a 1-indexed parameter to
@@ -2393,10 +2516,10 @@ pub(crate) fn resolve_compound_identifier(
         for ident in remaining_idents {
             let name = ident.value.as_str();
             match dtype {
-                Some(DataType::Struct(fields)) if name == "*" => {
+                Some(DataType::Struct(fields)) if is_wildcard(ident) => {
                     return Ok(fields
                         .iter()
-                        .map(|fld| column.clone().struct_().field_by_name(&fld.name))
+                        .map(|fld| struct_field(column.clone(), fld.name.clone()))
                         .collect());
                 },
                 Some(DataType::Struct(fields)) => {
@@ -2405,20 +2528,21 @@ pub(crate) fn resolve_compound_identifier(
                         .find(|fld| fld.name == name)
                         .map(|fld| &fld.dtype);
                 },
-                Some(dtype) if name == "*" => {
+                Some(dtype) if is_wildcard(ident) => {
                     polars_bail!(SQLSyntax: "cannot expand '*' on non-Struct dtype; found {:?}", dtype)
                 },
                 _ => dtype = None,
             }
-            column = column.struct_().field_by_name(name);
+            column = struct_field(column, name);
         }
         return Ok(vec![column]);
     }
 
-    let name = &remaining_idents.next().unwrap().value;
+    let name_ident = remaining_idents.next().unwrap();
+    let name = &name_ident.value;
 
     // handle "table.*" wildcard expansion
-    if lf.is_some() && name == "*" {
+    if lf.is_some() && is_wildcard(name_ident) {
         return schema
             .iter_names_and_dtypes()
             .map(|(name, dtype)| {
@@ -2465,10 +2589,10 @@ pub(crate) fn resolve_compound_identifier(
     for ident in remaining_idents {
         let name = ident.value.as_str();
         match dtype {
-            Some(DataType::Struct(fields)) if name == "*" => {
+            Some(DataType::Struct(fields)) if is_wildcard(ident) => {
                 return Ok(fields
                     .iter()
-                    .map(|fld| column.clone().struct_().field_by_name(&fld.name))
+                    .map(|fld| struct_field(column.clone(), fld.name.clone()))
                     .collect());
             },
             Some(DataType::Struct(fields)) => {
@@ -2477,16 +2601,21 @@ pub(crate) fn resolve_compound_identifier(
                     .find(|fld| fld.name == name)
                     .map(|fld| &fld.dtype);
             },
-            Some(dtype) if name == "*" => {
+            Some(dtype) if is_wildcard(ident) => {
                 polars_bail!(SQLSyntax: "cannot expand '*' on non-Struct dtype; found {:?}", dtype)
             },
             _ => {
                 dtype = None;
             },
         }
-        column = column.struct_().field_by_name(name);
+        column = struct_field(column, name);
     }
     Ok(vec![column])
+}
+
+/// Whether `ident` is a `*` wildcard; a quoted `"*"` names a column or field.
+fn is_wildcard(ident: &Ident) -> bool {
+    ident.quote_style.is_none() && ident.value == "*"
 }
 
 /// `lhs <op> rhs` with SQL semantics, resolved once the operand dtypes are known
@@ -2497,7 +2626,7 @@ pub(crate) fn sql_binary(lhs: Expr, op: SqlBinaryOp, rhs: Expr) -> Expr {
 
 /// Whether `expr` only takes literal values, at least one a decimal: a decimal literal,
 /// or a `CASE` of literals.
-fn is_decimal_literal_valued(expr: &Expr) -> bool {
+pub(crate) fn is_decimal_literal_valued(expr: &Expr) -> bool {
     match expr {
         Expr::Ternary { truthy, falsy, .. } => {
             let literal_valued =

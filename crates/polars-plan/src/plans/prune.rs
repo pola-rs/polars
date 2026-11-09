@@ -290,7 +290,7 @@ mod tests {
             ctx.allow_unknown = true;
             let filter = ir_arena.add(IR::Filter {
                 input: scan,
-                predicate: to_expr_ir(col("a").gt_eq(lit(10)), &mut ctx).unwrap(),
+                predicate: to_expr_ir(&col("a").gt_eq(lit(10)), &mut ctx).unwrap(),
             });
 
             // Throw in an unreachable node
@@ -313,7 +313,7 @@ mod tests {
             ctx.allow_unknown = true;
             let sort = ir_arena.add(IR::Sort {
                 input: cache,
-                by_column: vec![to_expr_ir(col("a"), &mut ctx).unwrap()],
+                by_column: vec![to_expr_ir(&col("a"), &mut ctx).unwrap()],
                 slice: None,
                 sort_options: Default::default(),
             });

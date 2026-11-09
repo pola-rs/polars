@@ -24,6 +24,7 @@ use crate::nodes::io_sources::parquet::statistics::{
     RuntimeRangeSkipper, calculate_row_group_pred_pushdown_skip_mask,
 };
 use crate::nodes::io_sources::shared::morsels::split_to_morsels;
+use crate::nodes::io_sources::shared::pipeline_budget::WindowGrowth;
 use crate::nodes::{MorselSeq, TaskPriority};
 use crate::utils::tokio_handle_ext::{self, AbortOnDropHandle};
 
@@ -112,9 +113,8 @@ impl ParquetReadImpl {
         // Three concurrency limits bound the pipeline:
         // (a) rg_prefetch_kbytes_semaphore: bounds possibly compressed projected bytes
         //     in the pipeline. Primary memory bound, but does not account for decompression.
-        // (b) rg_prefetch_semaphore: bounds row group count in the pipeline. Secondary
-        //     bound, only binding for degenerate cases (many tiny row groups where
-        //     (a) is not exhausted).
+        // (b) rg_prefetch_semaphore: bounds row group count in the pipeline. Binds before (a)
+        //     for row groups smaller than the kbytes limit divided by the count limit.
         // (c) prefetch channel depth: sized >= (b) so it is never the binding constraint.
         //     The channel is a handoff queue between the prefetch and decode tasks, not
         //     a concurrency gate.
@@ -131,6 +131,7 @@ impl ParquetReadImpl {
         let row_index = self.row_index.clone();
 
         let pipeline_budget = self.pipeline_budget.clone();
+        let decoder = row_group_decoder.clone();
 
         let rg_prefetch_prev_all_spawned = Option::take(&mut self.rg_prefetch_prev_all_spawned);
         let rg_prefetch_current_all_spawned =
@@ -224,6 +225,8 @@ impl ParquetReadImpl {
                 skipper.sort_by_read_order(row_groups.make_contiguous(), |rg| rg.idx);
             }
 
+            let inflight_budget = byte_source.window_inflight_budget();
+            let window_growth = WindowGrowth::for_source(&byte_source, inflight_budget.as_deref());
             let defer_cached_reads = polars_config::config().file_defer_cached_reads();
             let mut row_group_data_fetcher = RowGroupDataFetcher {
                 projection: projected_arrow_fields.clone(),
@@ -245,7 +248,13 @@ impl ParquetReadImpl {
                 let fetch_length = usize::try_from(fetch_length)
                     .expect("ParquetReadImpl: fetch_length too large for usize: {fetch_length}");
 
-                let permit = pipeline_budget.acquire(fetch_length).await;
+                let decode_tasks = decoder.decode_tasks(
+                    row_group_data_fetcher.peek_next_num_rows(),
+                    row_group_data_fetcher.peek_next_sliced(),
+                );
+                let permit = pipeline_budget
+                    .acquire(fetch_length, window_growth, decode_tasks)
+                    .await;
 
                 // Budget reserved, spawn request
                 let prefetch = row_group_data_fetcher.next().await.unwrap();

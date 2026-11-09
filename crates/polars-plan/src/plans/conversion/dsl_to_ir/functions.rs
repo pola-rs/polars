@@ -14,7 +14,7 @@ use crate::plans::conversion::dsl_to_ir::expr_to_ir::to_expr_irs;
 use crate::plans::{AExpr, IRFunctionExpr};
 
 pub(super) fn convert_functions(
-    input: Vec<Expr>,
+    input: &[Expr],
     function: FunctionExpr,
     ctx: &mut ExprToIRContext,
 ) -> PolarsResult<(Node, PlSmallStr)> {
@@ -54,7 +54,10 @@ pub(super) fn convert_functions(
                     needle_cast: None,
                 },
                 #[cfg(feature = "array_count")]
-                A::CountMatches => IA::CountMatches,
+                A::CountMatches => {
+                    polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'element' must be a scalar value");
+                    IA::CountMatches
+                },
                 A::Shift => IA::Shift,
                 A::Explode(options) => IA::Explode(options),
                 A::Concat => IA::Concat,
@@ -210,7 +213,10 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "list_gather")]
                 L::GatherEvery => IL::GatherEvery,
                 #[cfg(feature = "list_count")]
-                L::CountMatches => IL::CountMatches,
+                L::CountMatches => {
+                    polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'element' must be a scalar value");
+                    IL::CountMatches
+                },
                 L::Sum => IL::Sum,
                 L::Length => IL::Length,
                 L::Max => IL::Max,
@@ -396,7 +402,10 @@ pub(super) fn convert_functions(
                 S::Drop(pl_small_strs, strict) => IS::DropFields(pl_small_strs, strict),
                 S::PrefixFields(pl_small_str) => IS::PrefixFields(pl_small_str),
                 S::SuffixFields(pl_small_str) => IS::SuffixFields(pl_small_str),
-                S::SelectFields(_) => unreachable!("handled by expression expansion"),
+                // Expression expansion resolves these, but `Expr.meta` converts without it.
+                S::SelectFields(selector) => polars_bail!(
+                    InvalidOperation: "'Expr: struct.field({selector})' not allowed in this context/location"
+                ),
                 #[cfg(feature = "json")]
                 S::JsonEncode => IS::JsonEncode,
                 S::MapFieldNames(f) => IS::MapFieldNames(f),
@@ -1381,8 +1390,13 @@ pub(super) fn convert_functions(
             I::ExtendConstant
         },
 
-        F::RowEncode(mut v) => {
-            let dts = e
+        F::RowEncode {
+            mut variant,
+            output,
+            encode_nulls,
+            propagate_nulls,
+        } => {
+            let dtypes = e
                 .iter()
                 .map(|e| {
                     e.dtype(ctx.schema, ctx.arena)?
@@ -1394,7 +1408,7 @@ pub(super) fn convert_functions(
                 descending,
                 nulls_last,
                 ..
-            } = &mut v
+            } = &mut variant
             {
                 let options = SortMultipleOptions {
                     descending: descending.take().unwrap_or(vec![false]),
@@ -1405,15 +1419,29 @@ pub(super) fn convert_functions(
                 *descending = Some(options.descending);
                 *nulls_last = Some(options.nulls_last);
             }
-            I::RowEncode(dts, v)
+            I::RowEncode {
+                dtypes,
+                variant,
+                output,
+                encode_nulls,
+                propagate_nulls,
+            }
         },
         #[cfg(feature = "dtype-struct")]
-        F::RowDecode(fs, v) => I::RowDecode(
-            fs.into_iter()
+        F::RowDecode {
+            fields,
+            variant,
+            output,
+            encode_nulls,
+        } => I::RowDecode {
+            fields: fields
+                .into_iter()
                 .map(|(name, dt_expr)| Ok(Field::new(name, dt_expr.into_datatype(ctx.schema)?)))
                 .collect::<PolarsResult<Vec<_>>>()?,
-            v,
-        ),
+            variant,
+            output,
+            encode_nulls,
+        },
     };
 
     let mut options = ir_function.function_options();

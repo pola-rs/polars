@@ -473,9 +473,22 @@ pub enum FunctionExpr {
     Reinterpret(Option<bool>, Option<DataType>),
     ExtendConstant,
 
-    RowEncode(RowEncodingVariant),
+    RowEncode {
+        variant: RowEncodingVariant,
+        output: RowEncodingOutputType,
+        /// Per column whether its nulls are encoded, `None` means for all columns.
+        encode_nulls: Option<Vec<bool>>,
+        /// Whether a row is null if any of its values is null.
+        propagate_nulls: bool,
+    },
     #[cfg(feature = "dtype-struct")]
-    RowDecode(Vec<(PlSmallStr, DataTypeExpr)>, RowEncodingVariant),
+    RowDecode {
+        fields: Vec<(PlSmallStr, DataTypeExpr)>,
+        variant: RowEncodingVariant,
+        output: RowEncodingOutputType,
+        /// Per column whether its nulls are encoded, `None` means for all columns.
+        encode_nulls: Option<Vec<bool>>,
+    },
 }
 
 impl Hash for FunctionExpr {
@@ -806,11 +819,28 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "top_k")]
             TopKBy { descending } => descending.hash(state),
 
-            RowEncode(variants) => variants.hash(state),
+            RowEncode {
+                variant,
+                output,
+                encode_nulls,
+                propagate_nulls,
+            } => {
+                variant.hash(state);
+                output.hash(state);
+                encode_nulls.hash(state);
+                propagate_nulls.hash(state);
+            },
             #[cfg(feature = "dtype-struct")]
-            RowDecode(fs, variants) => {
-                fs.hash(state);
-                variants.hash(state);
+            RowDecode {
+                fields,
+                variant,
+                output,
+                encode_nulls,
+            } => {
+                fields.hash(state);
+                variant.hash(state);
+                output.hash(state);
+                encode_nulls.hash(state);
             },
         }
     }
@@ -1045,9 +1075,9 @@ impl Display for FunctionExpr {
             Reinterpret(_, _) => "reinterpret",
             ExtendConstant => "extend_constant",
 
-            RowEncode(..) => "row_encode",
+            RowEncode { .. } => "row_encode",
             #[cfg(feature = "dtype-struct")]
-            RowDecode(..) => "row_decode",
+            RowDecode { .. } => "row_decode",
         };
         write!(f, "{s}")
     }

@@ -184,7 +184,7 @@ impl Expr {
         AggExpr::First(Arc::new(self)).into()
     }
 
-    /// Get the first non-nullvalue in the group.
+    /// Get the first non-null value in the group.
     pub fn first_non_null(self) -> Self {
         AggExpr::FirstNonNull(Arc::new(self)).into()
     }
@@ -580,7 +580,7 @@ impl Expr {
     /// It is the responsibility of the caller that the schema is correct by giving
     /// the correct output_type. If None given the output type of the input expr is used.
     ///
-    /// This difference with [map](Self::map) is that `apply` will create a separate `Series` per group.
+    /// The difference with [map](Self::map) is that `apply` will create a separate `Series` per group.
     ///
     /// * `map` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
     /// * `apply` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
@@ -863,11 +863,15 @@ impl Expr {
             // Row-encode the keys so the sort options apply to every key.
             let e = e.iter().map(|e| e.clone().into()).collect::<Vec<_>>();
             let encoded = Expr::n_ary(
-                FunctionExpr::RowEncode(RowEncodingVariant::Ordered {
-                    descending: Some(vec![options.descending]),
-                    nulls_last: Some(vec![options.nulls_last]),
-                    broadcast_nulls: None,
-                }),
+                FunctionExpr::RowEncode {
+                    variant: RowEncodingVariant::Ordered {
+                        descending: Some(vec![options.descending]),
+                        nulls_last: Some(vec![options.nulls_last]),
+                    },
+                    output: RowEncodingOutputType::AlwaysBinaryOffset,
+                    encode_nulls: None,
+                    propagate_nulls: false,
+                },
                 e,
             );
             Some((
@@ -881,6 +885,7 @@ impl Expr {
             partition_by,
             order_by,
             mapping,
+            may_reorder: false,
         })
     }
 
@@ -1511,12 +1516,12 @@ impl Expr {
         self.map_unary(FunctionExpr::Kurtosis(fisher, bias))
     }
 
-    /// Get maximal value that could be hold by this dtype.
+    /// Get maximal value that could be held by this dtype.
     pub fn upper_bound(self) -> Expr {
         self.map_unary(FunctionExpr::UpperBound)
     }
 
-    /// Get minimal value that could be hold by this dtype.
+    /// Get minimal value that could be held by this dtype.
     pub fn lower_bound(self) -> Expr {
         self.map_unary(FunctionExpr::LowerBound)
     }
@@ -1800,7 +1805,7 @@ where
 /// It is the responsibility of the caller that the schema is correct by giving
 /// the correct output_type. If None given the output type of the input expr is used.
 ///
-/// This difference with [`map_multiple`] is that [`apply_multiple`] will create a separate [`Series`] per group.
+/// The difference with [`map_multiple`] is that [`apply_multiple`] will create a separate [`Series`] per group.
 ///
 /// * [`map_multiple`] should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
 /// * [`apply_multiple`] should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.

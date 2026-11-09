@@ -17,17 +17,40 @@ impl SplitRows {
     }
 }
 
+/// Where `split` puts the rows without a hash: those with a null key, unless nulls are valid keys.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum NullRows {
+    /// They go to partition 0.
+    FirstPartition,
+    /// They are left out.
+    Skip,
+    // TODO: add `Separate`, putting them in one extra group after the last partition, for
+    // splitting the probe side of the equi-join.
+}
+
 /// Groups the rows of `keys` (only those set in `mask`, if given) by partition: one pass for the
-/// partitions and counts, a prefix sum, one pass placing the indices. Rows without a hash go to
-/// partition 0. `None` with one partition and no mask: all rows, nothing computed.
+/// partitions and counts, a prefix sum, one pass placing the indices. Rows without a hash go
+/// where `nulls` says. `None` with one partition, no mask and no rows left out: all rows, nothing
+/// computed.
 pub fn split(
     keys: &HashKeys,
     mask: Option<&Bitmap>,
     partitioner: &HashPartitioner,
+    nulls: NullRows,
 ) -> Option<SplitRows> {
     let num_partitions = partitioner.num_partitions();
     if let Some(mask) = mask {
         assert_eq!(mask.len(), keys.len());
+    }
+
+    let hashed_mask;
+    let mut mask = mask;
+    if nulls == NullRows::Skip
+        && !keys.null_is_valid()
+        && let Some(validity) = keys.validity().filter(|v| v.unset_bits() > 0)
+    {
+        hashed_mask = mask.map_or_else(|| validity.clone(), |m| m & validity);
+        mask = Some(&hashed_mask);
     }
 
     if num_partitions == 1 {
@@ -43,6 +66,23 @@ pub fn split(
     let in_mask = |i: usize| mask.is_none_or(|m| unsafe { m.get_bit_unchecked(i) });
     // SAFETY: the partitioner gives partitions below `num_partitions`.
     Some(unsafe { group_rows(&partitions, num_partitions, in_mask) })
+}
+
+/// `rows`, or else the first `len` row indices, from `all_rows`.
+pub fn rows_or_all<'a>(
+    rows: Option<&'a [IdxSize]>,
+    all_rows: &'a mut Vec<IdxSize>,
+    len: usize,
+) -> &'a [IdxSize] {
+    match rows {
+        Some(rows) => rows,
+        None => {
+            if all_rows.len() < len {
+                all_rows.extend(all_rows.len() as IdxSize..len as IdxSize);
+            }
+            &all_rows[..len]
+        },
+    }
 }
 
 impl SplitRows {

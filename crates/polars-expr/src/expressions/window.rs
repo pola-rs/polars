@@ -643,27 +643,15 @@ impl PhysicalExpr for WindowExpr {
 
                                 let (left, right) = if left.dtype().is_nested() {
                                     (
-                                        ChunkedArray::<BinaryOffsetType>::with_chunk(
-                                            "".into(),
-                                            row_encode::_get_rows_encoded_unordered(&[
-                                                left.clone()
-                                            ])?
-                                            .into_array(),
-                                        )
-                                        .into_series(),
-                                        ChunkedArray::<BinaryOffsetType>::with_chunk(
-                                            "".into(),
-                                            row_encode::_get_rows_encoded_unordered(&[
-                                                right.clone()
-                                            ])?
-                                            .into_array(),
-                                        )
-                                        .into_series(),
+                                        encode_rows_unordered(&[left.clone()])?.into_series(),
+                                        encode_rows_unordered(&[right.clone()])?.into_series(),
                                     )
                                 } else {
+                                    // A single-chunk right key gives join ids that are valid
+                                    // for any chunk layout of the aggregated output.
                                     (
                                         left.into_materialized_series().clone(),
-                                        right.into_materialized_series().clone(),
+                                        right.into_materialized_series().rechunk(),
                                     )
                                 };
 

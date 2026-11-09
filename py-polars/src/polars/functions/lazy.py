@@ -1120,10 +1120,10 @@ def map_batches(
         to infer the datatype by calling the function with dummy data and looking at
         the output.
     is_elementwise
-        Set to true if the operations is elementwise for better performance
+        Set to true if the operation is elementwise for better performance
         and optimization.
 
-        An elementwise operations has unit or equal length for all inputs
+        An elementwise operation has unit or equal length for all inputs
         and can be ran sequentially on slices without results being affected.
     returns_scalar
         If the function returns a scalar, by default it will be wrapped in
@@ -1219,10 +1219,10 @@ def map_groups(
         to infer the datatype by calling the function with dummy data and looking at
         the output.
     is_elementwise
-        Set to true if the operations is elementwise for better performance
+        Set to true if the operation is elementwise for better performance
         and optimization.
 
-        An elementwise operations has unit or equal length for all inputs
+        An elementwise operation has unit or equal length for all inputs
         and can be ran sequentially on slices without results being affected.
     returns_scalar
         If the function returns a single scalar as output.
@@ -1300,6 +1300,9 @@ def _row_encode(
     unordered: bool = False,
     descending: list[bool] | None = None,
     nulls_last: list[bool] | None = None,
+    output: Literal["binary_offset", "binary", "optimal"] = "binary_offset",
+    encode_nulls: Sequence[bool] | None = None,
+    propagate_nulls: bool = False,
 ) -> Expr:
     if isinstance(exprs, pl.Selector):
         exprs = [exprs.as_expr()]
@@ -1312,9 +1315,13 @@ def _row_encode(
         assert descending is None
         assert nulls_last is None
 
-        result = plr.PyExpr.row_encode_unordered(pyexprs)
+        result = plr.PyExpr.row_encode_unordered(
+            pyexprs, output, encode_nulls, propagate_nulls
+        )
     else:
-        result = plr.PyExpr.row_encode_ordered(pyexprs, descending, nulls_last)
+        result = plr.PyExpr.row_encode_ordered(
+            pyexprs, descending, nulls_last, output, encode_nulls, propagate_nulls
+        )
 
     return wrap_expr(result)
 
@@ -1335,7 +1342,7 @@ def pipe_with_dtype(
     function: Callable[[list[tuple[Expr, DataType]]], IntoExpr],
 ) -> Expr:
     """
-    Replace `exprs`, at plan time, with the expression returned by `callback`.
+    Replace `exprs`, at plan time, with the expression returned by `function`.
 
     `function` is not executed immediately but only during the plan stage, once
     the dtypes of `exprs` are known. This allows choosing a different expression
@@ -1367,7 +1374,7 @@ def pipe_with_dtype(
 
     See Also
     --------
-    Expr.pipe_with_dtype : Same functionality for a single expressions.
+    Expr.pipe_with_dtype : Same functionality for a single expression.
     LazyFrame.pipe_with_schema
 
     Examples
@@ -2617,7 +2624,7 @@ def rolling_cov(
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.
 
-    .. engine-support:: in-memory, streaming
+    .. engine-support:: in-memory, streaming, distributed
 
     Parameters
     ----------
@@ -2666,7 +2673,7 @@ def rolling_corr(
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.
 
-    .. engine-support:: in-memory, streaming
+    .. engine-support:: in-memory, streaming, distributed
 
     Parameters
     ----------
@@ -2750,7 +2757,7 @@ def row_index(name: str = "index") -> pl.Expr:
     Generates a sequence of integers.
 
     The length of the returned sequence will match the context length, and the
-    datatype will match the one returned by `get_index_dtype()`.
+    datatype will match the one returned by `get_index_type()`.
 
     .. versionadded:: 1.32.0
 

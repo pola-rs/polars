@@ -73,12 +73,14 @@ def test_over_replace_strict_22870() -> None:
         }
     )
 
+    # More rows than threads, so that a streaming morsel holds several rows.
+    n = 500
     df = pl.DataFrame(
         {
-            "cat": ["a", "b", "a", "a", "b"],
-            "data": [2, 3, 4, 5, 6],
-            "a": ["a", "b", "c", "d", "e"],
-            "b": [102, 100, 101, 109, 110],
+            "cat": ["a", "b", "a", "a", "b"] * (n // 5),
+            "data": range(n),
+            "a": ["a", "b", "c", "d", "e"] + [f"x{i}" for i in range(5, n)],
+            "b": [102, 100, 101, 109, 110] + list(range(5, n)),
         }
     )
 
@@ -330,3 +332,32 @@ def test_over_per_row_with_per_group_scalar(engine: EngineType) -> None:
     q = lf.sort("g").select((x - x.mean()).over("g", mapping_strategy="explode"))
     expected = pl.DataFrame({"x": [-2.0, -1.0, 3.0, 0.0, None]})
     assert_frame_equal(q.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_over_object_with_per_group_scalar(engine: EngineType) -> None:
+    # Object values can be neither rechunked nor rebuilt into lists from their inner
+    # values, so they keep the per-group loop.
+    df = pl.DataFrame(
+        {
+            "g": [1, 2, 1, 2, 1, 2],
+            "v": pl.Series(["a", "b", None, "d", "e", None], dtype=pl.Object),
+        }
+    )
+    lf = pl.concat([df, df], rechunk=False).lazy()
+    v = pl.col.v
+    lit = pl.lit(pl.Series(["z"], dtype=pl.Object))
+    q = lf.select(
+        shift=v.shift(1).fill_null(v.first()).over("g"),
+        flat=v.fill_null(v.first()).over("g"),
+        lit=pl.coalesce(v, v.first(), lit).over("g"),
+    )
+    out = q.collect(engine=engine)
+    shift = ["a", "b", "a", "b", "a", "d", "e", "b", "a", "b", "a", "d"]
+    assert out["shift"].to_list() == shift
+    assert out["flat"].to_list() == ["a", "b", "a", "d", "e", "b"] * 2
+    assert out["lit"].to_list() == ["a", "b", "a", "d", "e", "b"] * 2
+
+    q = lf.select((lit == v.first()).over("g"))
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="comparison"):
+        q.collect(engine=engine)

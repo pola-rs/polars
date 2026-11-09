@@ -119,7 +119,7 @@ fn find_mergeable(
                 right_cutoff = right_null_count;
             } else {
                 // If there are ending nulls then first do things without the
-                // nulls and then repeat with only the nulls the nulls.
+                // nulls and then repeat with only the nulls.
                 let left_is_all_nulls = left_null_count == left.height();
                 let right_is_all_nulls = right_null_count == right.height();
 
@@ -515,7 +515,7 @@ impl ComputeNode for MergeSortedNode {
                                 // input so we can divide by half.
                                 let (m1, m2) = merged.split_at((merged.height() / 2) as i64);
 
-                                // MorselSeq have to be monotonely non-decreasing so we can
+                                // MorselSeq have to be monotonically non-decreasing so we can
                                 // pass the same sequence token twice.
                                 let morsel =
                                     Morsel::new_unregistered(m1, seq, source_token.clone());

@@ -46,7 +46,7 @@ class _GeventDataFrameResult(Generic[T]):
 
     @property
     def result(self) -> Any:
-        # required if we did not made any switches and just want results later
+        # required if we did not make any switches and just want results later
         # with block=False and possibly without timeout
         if self._value is not None and not self._result.ready():
             self._watcher_callback()

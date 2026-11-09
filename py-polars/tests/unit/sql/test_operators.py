@@ -9,6 +9,7 @@ import polars as pl
 import polars.selectors as cs
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
+from tests.unit.sql import assert_sql_matches
 
 
 @pytest.fixture
@@ -385,6 +386,21 @@ def test_in_list_column_elements_larger_mixed_list() -> None:
     assert res["a"].to_list() == [1]
 
 
+def test_in_list_compares_like_equality() -> None:
+    # integers take the column's own integer type; floats stay floats, so 2^53 + 1
+    # matches the float 2^53 as with `=` (`2^53.0` is an exact decimal: no match)
+    df = pl.DataFrame(
+        {"i": [7, 9], "k": [7, 2**53 + 1]}, schema={"i": pl.Int32, "k": pl.Int64}
+    )
+    assert df.sql("SELECT i FROM self WHERE i IN (7, 8)").rows() == [(7,)]
+    # the list takes the column's type, as `pl.col("i").is_in([7, 8])` does
+    plan = df.lazy().sql("SELECT i FROM self WHERE i IN (7, 8, 3000000000)").explain()
+    assert ".cast(" not in plan
+    for literal, expected in (("9.007199254740992e15", [(9,)]), (f"{2**53}.0", [])):
+        for predicate in (f"k IN ({literal})", f"k = {literal}"):
+            assert df.sql(f"SELECT i FROM self WHERE {predicate}").rows() == expected
+
+
 def test_in_list_null_three_valued_logic_select_list() -> None:
     # Raw (unfiltered) boolean value of a literal IN-list membership test,
     # including a NULL left-hand operand, which a WHERE-filter-based test
@@ -649,3 +665,20 @@ def test_unary_ops_8890() -> None:
             "c": [-3, -3],
             "d": [4, 4],
         }
+
+
+@pytest.mark.parametrize("op", ["IS TRUE", "IS NOT TRUE", "IS FALSE", "IS NOT FALSE"])
+def test_is_true_false_on_null(op: str) -> None:
+    assert_sql_matches(
+        frames={
+            "t": pl.DataFrame(
+                {
+                    "x": [True, False, None],
+                    "n": [2, 0, None],
+                    "s": ["true", "false", None],
+                }
+            )
+        },
+        query=f"SELECT x {op} AS r, n {op} AS rn, s {op} AS rs FROM t",
+        compare_with="duckdb",
+    )

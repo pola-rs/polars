@@ -21,7 +21,8 @@ use super::{
 };
 use crate::plans::aexpr::filter_constraint::{ColumnBounds, and_chain_bounds};
 use crate::plans::{
-    AExpr, ExprIR, IR, IRBooleanFunction, IRFunctionExpr, JoinTypeOptionsIR, into_column,
+    AExpr, ExprIR, FunctionIR, IR, IRBooleanFunction, IRFunctionExpr, JoinTypeOptionsIR,
+    into_column,
 };
 use crate::prelude::{JoinType, Operator};
 
@@ -313,6 +314,46 @@ pub(crate) fn node_stats_with_cache(
             let columns = shadowed_columns(&inner, exprs, expr_arena);
             Some(NodeStats { columns, ..inner })
         },
+        // As tall as the tallest input.
+        IR::HConcat { inputs, .. } => {
+            let (first, rest) = inputs.split_first()?;
+            let mut acc = node_stats_with_cache(*first, ir_arena, expr_arena, cache)?;
+            for input in rest {
+                let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
+                acc = NodeStats {
+                    filtered: acc.filtered.max(inner.filtered),
+                    unfiltered: acc.unfiltered.max(inner.unfiltered),
+                    max_rows: acc.max_rows.zip(inner.max_rows).map(|(a, b)| a.max(b)),
+                    columns: join_columns(&acc, &inner),
+                };
+            }
+            // A shorter input is padded with nulls or broadcast, so its null counts
+            // no longer hold.
+            if !rest.is_empty() {
+                acc.columns = acc.columns.map(|columns| {
+                    let columns = columns.iter().map(|(name, stats)| {
+                        let stats = ScanColumnStats {
+                            null_count: Card::Unknown,
+                            ..stats.clone()
+                        };
+                        (name.clone(), stats)
+                    });
+                    Arc::new(columns.collect())
+                });
+            }
+            Some(acc)
+        },
+        IR::MapFunction {
+            input,
+            function: FunctionIR::RowIndex { name, .. },
+        } => {
+            let mut inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
+            // The input's statistics may still describe a dropped column of that name.
+            if let Some(columns) = inner.columns.as_mut().filter(|c| c.contains_key(name)) {
+                Arc::make_mut(columns).remove(name);
+            }
+            Some(inner)
+        },
         _ => None,
     };
     cache.insert(node, stats.clone());
@@ -459,7 +500,13 @@ fn passed_through_columns(
 ) -> Option<Arc<ScanColumnStatsMap>> {
     let mut kept = ScanColumnStatsMap::default();
     for e in exprs {
-        let source = into_column(e.node(), expr_arena)?;
+        if let Some(stats) = literal_column(e, expr_arena) {
+            kept.insert(e.output_name().clone(), stats);
+            continue;
+        }
+        let Some(source) = into_column(e.node(), expr_arena) else {
+            continue;
+        };
         if let Some(stats) = inner.column(source) {
             kept.insert(e.output_name().clone(), stats.clone());
         }
@@ -468,21 +515,27 @@ fn passed_through_columns(
 }
 
 /// The input's statistics, less every column `exprs` overwrites with a computed
-/// one. `with_columns` keeps the rest of the frame as it was.
+/// one, plus those of the literal columns it adds. `with_columns` keeps the rest of
+/// the frame as it was.
 fn shadowed_columns(
     inner: &NodeStats,
     exprs: &[ExprIR],
     expr_arena: &Arena<AExpr>,
 ) -> Option<Arc<ScanColumnStatsMap>> {
-    let columns = inner.columns.as_ref()?;
+    let empty = ScanColumnStatsMap::default();
+    let columns = inner.columns.as_deref().unwrap_or(&empty);
+    let literals: Vec<(&PlSmallStr, ScanColumnStats)> = exprs
+        .iter()
+        .filter_map(|e| Some((e.output_name(), literal_column(e, expr_arena)?)))
+        .collect();
     let overwrites = |e: &ExprIR| {
         into_column(e.node(), expr_arena) != Some(e.output_name())
             && columns.contains_key(e.output_name())
     };
-    if !exprs.iter().any(overwrites) {
-        return Some(Arc::clone(columns));
+    if literals.is_empty() && !exprs.iter().any(overwrites) {
+        return inner.columns.clone();
     }
-    let kept: ScanColumnStatsMap = columns
+    let mut kept: ScanColumnStatsMap = columns
         .iter()
         .filter(|(name, _)| {
             !exprs
@@ -491,7 +544,24 @@ fn shadowed_columns(
         })
         .map(|(name, stats)| (name.clone(), stats.clone()))
         .collect();
+    kept.extend(
+        literals
+            .into_iter()
+            .map(|(name, stats)| (name.clone(), stats)),
+    );
     (!kept.is_empty()).then(|| Arc::new(kept))
+}
+
+/// Statistics of a column holding one non-null literal on every row.
+fn literal_column(e: &ExprIR, expr_arena: &Arena<AExpr>) -> Option<ScanColumnStats> {
+    match expr_arena.get(e.node()) {
+        AExpr::Literal(lv) if lv.is_scalar() && !lv.is_null() => Some(ScanColumnStats {
+            distinct: Card::Exact(1),
+            null_count: Card::Exact(0),
+            ..Default::default()
+        }),
+        _ => None,
+    }
 }
 
 /// Whether an expression leaves the frame's height alone, either by producing one
@@ -1349,6 +1419,35 @@ mod tests {
             &Schema::default(),
         );
         assert!((kept - 200.0).abs() < 1e-9, "got {kept}");
+    }
+
+    #[test]
+    fn a_computed_column_keeps_the_statistics_of_the_others() {
+        let range = ScanColumnStats {
+            int_range: Some((0, 99)),
+            ..Default::default()
+        };
+        let stats = leaf(100.0, 100.0)
+            .with_column("a", range.clone())
+            .with_column("b", range);
+
+        let mut expr_arena = Arena::new();
+        let a = expr_arena.add(AExpr::Column(key("a")));
+        let b = expr_arena.add(AExpr::Column(key("b")));
+        let one = expr_arena.add(AExpr::Literal(Scalar::from(1i64).into()));
+        let b_plus_one = expr_arena.add(AExpr::BinaryExpr {
+            left: b,
+            op: Operator::Plus,
+            right: one,
+        });
+        let exprs = [
+            ExprIR::new(a, crate::plans::OutputName::Alias(key("x"))),
+            ExprIR::new(b_plus_one, crate::plans::OutputName::Alias(key("b"))),
+        ];
+
+        let columns = passed_through_columns(&stats, &exprs, &expr_arena).unwrap();
+        assert_eq!(columns.get("x").unwrap().int_range, Some((0, 99)));
+        assert!(!columns.contains_key("b"));
     }
 
     #[test]

@@ -92,7 +92,7 @@ fn function_input_wildcard_expansion(function: &FunctionExpr) -> FunctionExpansi
             | F::ReduceHorizontal { .. }
             | F::SumHorizontal { .. }
             | F::MeanHorizontal { .. }
-            | F::RowEncode(..)
+            | F::RowEncode { .. }
     );
     let mut allow_empty_inputs = matches!(
         function,
@@ -262,6 +262,17 @@ pub(crate) fn needs_expansion(expr: &Expr) -> bool {
 }
 
 fn expand_expression_rec(
+    expr: &Expr,
+    ignored_selector_columns: &PlIndexSet<PlSmallStr>,
+    schema: &Schema,
+    out: &mut Vec<Expr>,
+    opt_flags: &mut OptFlags,
+) -> PolarsResult<usize> {
+    expand_expression_rec_inner(expr, ignored_selector_columns, schema, out, opt_flags)
+        .map_err(|e| e.with_expr_context(expr.to_string().into()))
+}
+
+fn expand_expression_rec_inner(
     expr: &Expr,
     ignored_selector_columns: &PlIndexSet<PlSmallStr>,
     schema: &Schema,
@@ -725,6 +736,7 @@ fn expand_expression_rec(
             partition_by,
             order_by,
             mapping,
+            may_reorder,
         } => {
             let mut exprs =
                 Vec::with_capacity(partition_by.len() + 1 + usize::from(order_by.is_some()));
@@ -746,6 +758,7 @@ fn expand_expression_rec(
                         .as_ref()
                         .map(|(_, options)| (Arc::new(e.last().unwrap().clone()), *options)),
                     mapping: *mapping,
+                    may_reorder: *may_reorder,
                 },
             )?
         },

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import date
+from decimal import Decimal
+
 import pytest
 
 import polars as pl
@@ -564,3 +567,65 @@ def test_except_all_with_reserved_internal_column_name() -> None:
     )
     assert res.columns == [name]
     assert sorted(res[name].to_list()) == [1, 2]
+
+
+@pytest.mark.parametrize("op", ["EXCEPT", "INTERSECT", "EXCEPT ALL", "INTERSECT ALL"])
+def test_except_intersect_column_supertypes(op: str) -> None:
+    df = pl.DataFrame(
+        {"k": [1, 2, 2], "v": [Decimal("1.50"), Decimal("0"), Decimal("0")]},
+        schema={"k": pl.Int32, "v": pl.Decimal(15, 2)},
+    )
+    assert_sql_matches(
+        frames={"t": df},
+        query=f"SELECT k, SUM(v) AS s FROM t GROUP BY k {op} SELECT k, 0 FROM t",
+        compare_with="duckdb",
+        check_row_order=False,
+        check_dtypes=False,
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize("op", ["EXCEPT", "INTERSECT", "EXCEPT ALL", "INTERSECT ALL"])
+def test_except_intersect_cast_overflow_raises(op: str) -> None:
+    query = f"""
+        SELECT CAST(99999999999999999999999999999999999999 AS DECIMAL(38,0)) AS x
+        {op}
+        SELECT CAST(NULL AS DECIMAL(38,1))
+    """
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.sql(query, eager=True)
+
+
+@pytest.mark.parametrize("op", ["EXCEPT", "INTERSECT"])
+def test_except_intersect_struct_fields_by_name(op: str) -> None:
+    # Struct fields are matched by name, as in UNION.
+    df = pl.DataFrame(
+        {"ab": [{"a": 1, "b": 2}], "ba": [{"b": 2, "a": 1}], "a": [{"a": 1}]}
+    )
+    res = df.sql(f"SELECT ab AS s FROM self {op} SELECT ba AS s FROM self")
+    assert res["s"].to_list() == ([] if op == "EXCEPT" else [{"a": 1, "b": 2}])
+    res = df.sql(f"SELECT a AS s FROM self {op} SELECT ab AS s FROM self")
+    assert res["s"].to_list() == ([{"a": 1, "b": None}] if op == "EXCEPT" else [])
+
+
+@pytest.mark.parametrize("op", ["EXCEPT", "INTERSECT"])
+def test_except_intersect_struct_cast_overflow_raises(op: str) -> None:
+    df = pl.DataFrame(
+        {"l": [{"a": Decimal(10**37)}], "r": [{"a": None, "b": 1}]},
+        schema={
+            "l": pl.Struct({"a": pl.Decimal(38, 0)}),
+            "r": pl.Struct({"a": pl.Decimal(38, 2), "b": pl.Int64}),
+        },
+    )
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.sql(f"SELECT l AS s FROM self {op} SELECT r AS s FROM self")
+
+
+@pytest.mark.parametrize("op", ["EXCEPT", "INTERSECT"])
+def test_except_intersect_temporal_cast_overflow_raises(op: str) -> None:
+    ctx = pl.SQLContext(
+        a=pl.DataFrame({"s": [date(2500, 1, 1)]}),
+        b=pl.DataFrame({"s": pl.Series([None], dtype=pl.Datetime("ns"))}),
+    )
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        ctx.execute(f"SELECT s FROM a {op} SELECT s FROM b", eager=True)

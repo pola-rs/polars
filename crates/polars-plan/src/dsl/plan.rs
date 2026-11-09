@@ -323,6 +323,16 @@ impl DslPlan {
         mut writer: W,
         ctx: PlanSerializationContext,
     ) -> PolarsResult<()> {
+        self.serialize_versioned_dyn(&mut writer, ctx)
+    }
+
+    #[cfg(feature = "serde")]
+    #[inline(never)]
+    fn serialize_versioned_dyn(
+        &self,
+        writer: &mut dyn Write,
+        ctx: PlanSerializationContext,
+    ) -> PolarsResult<()> {
         let le_major = DSL_VERSION.0.to_le_bytes();
         let le_minor = DSL_VERSION.1.to_le_bytes();
 
@@ -342,6 +352,12 @@ impl DslPlan {
 
     #[cfg(feature = "serde")]
     pub fn deserialize_versioned<R: Read>(mut reader: R) -> PolarsResult<Self> {
+        Self::deserialize_versioned_dyn(&mut reader)
+    }
+
+    #[cfg(feature = "serde")]
+    #[inline(never)]
+    fn deserialize_versioned_dyn(reader: &mut dyn Read) -> PolarsResult<Self> {
         const MAGIC_LEN: usize = DSL_MAGIC_BYTES.len();
         let mut version_magic = [0u8; MAGIC_LEN + 4];
         reader

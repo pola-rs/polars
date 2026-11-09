@@ -13,6 +13,7 @@ from polars.exceptions import (
     ComputeError,
     InvalidOperationError,
     OutOfBoundsError,
+    ShapeError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import time_func
@@ -607,6 +608,11 @@ def test_list_gather() -> None:
     ]
 
 
+def test_list_gather_column_name() -> None:
+    df = pl.DataFrame({"a": [[10, 20, 30]], "idx": [[0, 2]]})
+    assert df.select(pl.col("a").list.gather("idx")).item().to_list() == [10, 30]
+
+
 @pytest.mark.parametrize("maintain_order", [False, True])
 def test_list_function_group_awareness(maintain_order: bool) -> None:
     df = pl.DataFrame(
@@ -769,6 +775,25 @@ def test_list_count_matches_wildcard_expansion() -> None:
         "a": [0],
         "b": [1],
     }
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_list_count_matches_scalar_element(engine: EngineType) -> None:
+    # More rows than threads, so that a streaming morsel holds several rows.
+    df = pl.DataFrame({"l": [[1, 2, 1]] * 300, "x": [1] * 300})
+    out = (
+        df.lazy()
+        .select(pl.col("l").list.count_matches(pl.col("x").first()))
+        .collect(engine=engine)
+    )
+    assert out.to_series().to_list() == [2] * 300
+
+
+@pytest.mark.parametrize("height", [1, 3])
+def test_list_count_matches_element_per_row_raises(height: int) -> None:
+    df = pl.DataFrame({"l": [[1, 2, 1]] * height, "x": [1] * height})
+    with pytest.raises(ShapeError, match="'element' must be a scalar value"):
+        df.select(pl.col("l").list.count_matches(pl.col("x")))
 
 
 def test_list_gather_oob_10079() -> None:

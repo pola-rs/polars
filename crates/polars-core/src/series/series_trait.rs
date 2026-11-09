@@ -279,14 +279,14 @@ pub trait SeriesTrait:
 
     /// Take from `self` at the indexes given by `idx`.
     ///
-    /// Null values in `idx` because null values in the output array.
+    /// Null values in `idx` become null values in the output array.
     ///
     /// This operation is clone.
     fn take(&self, _indices: &IdxCa) -> PolarsResult<Series>;
 
     /// Take from `self` at the indexes given by `idx`.
     ///
-    /// Null values in `idx` because null values in the output array.
+    /// Null values in `idx` become null values in the output array.
     ///
     /// # Safety
     /// This doesn't check any bounds.

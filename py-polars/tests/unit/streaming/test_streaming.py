@@ -348,6 +348,21 @@ def test_elementwise_identification_in_ternary_15767(tmp_path: Path) -> None:
     )
 
 
+def test_replace_literal_mapping_is_elementwise_30404() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3], "d": [10, 20, 30]}).select(
+        b=pl.col("a").replace({1: 100}),
+        c=pl.col("a").replace_strict({1: 100}, default=pl.col("d")),
+    )
+    plan = lf.show_graph(
+        engine="streaming", plan_stage="physical", raw_output=True, show=False
+    )
+    assert isinstance(plan, str)
+    assert "columnar-function" not in plan
+
+    expected = pl.DataFrame({"b": [100, 2, 3], "c": [100, 20, 30]})
+    assert_frame_equal(lf.collect(engine="streaming"), expected)
+
+
 def test_streaming_temporal_17669() -> None:
     df = (
         pl.LazyFrame({"a": [1, 2, 3]}, schema={"a": pl.Datetime("us")})

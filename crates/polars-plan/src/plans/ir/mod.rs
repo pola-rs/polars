@@ -254,14 +254,17 @@ pub fn window_order_keys(
         && let AExpr::Function {
             input,
             function:
-                IRFunctionExpr::RowEncode(
-                    _,
-                    RowEncodingVariant::Ordered {
-                        descending: Some(descending),
-                        nulls_last: Some(nulls_last),
-                        broadcast_nulls: None | Some(false),
-                    },
-                ),
+                IRFunctionExpr::RowEncode {
+                    dtypes: _,
+                    variant:
+                        RowEncodingVariant::Ordered {
+                            descending: Some(descending),
+                            nulls_last: Some(nulls_last),
+                        },
+                    output: RowEncodingOutputType::AlwaysBinaryOffset,
+                    encode_nulls: None,
+                    propagate_nulls: false,
+                },
             ..
         } = expr_arena.get(key)
         && descending.len() == input.len()

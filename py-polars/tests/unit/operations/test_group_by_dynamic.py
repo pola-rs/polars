@@ -553,7 +553,7 @@ def test_truncate_negative_offset(tzinfo: ZoneInfo | None) -> None:
         ]
 
 
-def test_groupy_by_dynamic_median_10695() -> None:
+def test_group_by_dynamic_median_10695() -> None:
     df = pl.DataFrame(
         {
             "timestamp": pl.datetime_range(
@@ -1391,7 +1391,7 @@ def test_group_by_dynamic_very_large_offset() -> None:
             index_column="ts",
             every="10i",
             period="10i",
-            offset="1000000000000i",  # atypcial value, used for stress test only
+            offset="1000000000000i",  # atypical value, used for stress test only
         )
         .agg(pl.col("val").sum())
         .select("val")

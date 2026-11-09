@@ -50,7 +50,8 @@ pub(crate) fn import_array_pycapsules(
                 .as_ptr() as _,
             ArrowArray::empty(),
         );
-        let array = ffi::import_array_from_c(array_ptr, field.dtype().clone()).unwrap();
+        let array = ffi::import_array_from_c(array_ptr, field.dtype().clone())
+            .map_err(PyPolarsErr::from)?;
 
         Ok((field, array))
     }
@@ -67,7 +68,7 @@ pub(crate) fn import_schema_pycapsule(
             .pointer_checked(Some(c"arrow_schema"))?
             .cast::<ArrowSchema>()
             .as_ref();
-        let field = ffi::import_field_from_c(schema_ptr).unwrap();
+        let field = ffi::import_field_from_c(schema_ptr).map_err(PyPolarsErr::from)?;
 
         Ok(field)
     }

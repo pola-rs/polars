@@ -24,12 +24,77 @@ for more information.
 
 
 IO plugins
-------------------
+----------
 
 IO plugins allow you to register different file formats as sources to the Polars engines.
 
 See the `IO plugins section of the user guide <https://docs.pola.rs/user-guide/plugins/io_plugins/>`_
 for more information.
+
+File readers
+~~~~~~~~~~~~
+
+.. warning::
+    This functionality is considered **unstable**. It may be changed
+    at any point without it being considered a breaking change.
+
+A :class:`~polars.io.external_reader.FileReaderBuilder` creates one
+:class:`~polars.io.external_reader.FileReader` per source, and :func:`scan_external_reader` turns a
+builder and a list of sources into a :class:`LazyFrame`.
+
+.. autosummary::
+    :toctree: api/
+
+    scan_external_reader
+
+.. currentmodule:: polars.io.external_reader
+
+.. autosummary::
+    :toctree: api/
+
+    FileReaderBuilder
+    FileReaderBuilder.build_file_reader
+    FileReaderBuilder.reader_capabilities
+    FileReaderBuilder.explain_properties
+    FileReader
+    FileReader.schema
+    FileReader.n_rows_in_file
+    FileReader.fetch_metadata
+    FileReader.initialize_serial
+    FileReader.collect_batches
+    FileReader.on_drop
+    ReaderCapabilities
+
+LazyFrame resolvers
+~~~~~~~~~~~~~~~~~~~
+
+.. warning::
+    This functionality is considered **unstable**. It may be changed
+    at any point without it being considered a breaking change.
+
+A :class:`~polars.lazyframe.resolver.LazyFrameResolver` defers resolving the paths to scan until a
+query runs. The resolver sees the columns, row limit and filters that the query requests, and
+returns the :class:`~polars.LazyFrame` to scan.
+
+.. currentmodule:: polars.lazyframe.resolver
+
+.. autosummary::
+
+    LazyFrameResolver
+    LazyFrameResolver.lazy
+    LazyFrameResolver.schema
+    LazyFrameResolver.resolve_lazyframe
+    LazyFrameResolver.cse_eq
+    FilterExpr
+    FilterExpr.pyarrow_expr
+    ResolvedLazyFrameProps
+
+.. currentmodule:: polars
+
+Generator-based IO sources
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A generator-based IO source provides one generator of DataFrames for the whole source.
 
 .. note::
 

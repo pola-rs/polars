@@ -180,6 +180,11 @@ pub struct RowGroupStats {
     /// dictionary grows too large, so the dictionary then holds only part of the values.
     /// `None` when the writer doesn't record page encodings; Polars doesn't.
     pub dictionary_fallback: Option<bool>,
+    /// Combined length in bytes of all string or binary values in the column chunk.
+    /// Every occurrence counts, but nulls don't. `None` for other column types, or
+    /// when the writer didn't write size statistics. Arrow, parquet-rs, parquet-java
+    /// and Polars write them by default.
+    pub unencoded_byte_array_size: Option<u64>,
     /// The minimum and maximum value, typed as the column, or as its values for a
     /// categorical column. `None` when the row group doesn't record both exactly, or
     /// they can't be converted to that type.

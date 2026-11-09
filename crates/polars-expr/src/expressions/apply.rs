@@ -415,7 +415,7 @@ impl ApplyExpr {
 
         drop(iters);
 
-        // Take the first aggregation context that as that is the input series.
+        // Take the first aggregation context as that is the input series.
         let ac = acs.swap_remove(0);
         self.finish_apply_groups(ac, ca)
     }
@@ -560,7 +560,7 @@ impl PhysicalExpr for ApplyExpr {
                     // - Any presence of LiteralScalar is immaterial as it gets broadcasted in the UDF.
                     // - Combination of AggregatedScalar and AggregatedList => NOT compatible.
                     // - Combination of AggregatedScalar and NotAggregated => NOT compatible.
-                    // - Any other combination => comptable, and thereforee allowed for elementwise.
+                    // - Any other combination => compatible, and therefore allowed for elementwise.
                     //   In this case, aggregated() on NotAggregated may be required; however, it can be
                     //   prohibitively memory expensive when dealing with overlapping (e.g., rolling) groups,
                     //   in which case we fall-back to group_aware.
@@ -578,7 +578,7 @@ impl PhysicalExpr for ApplyExpr {
                     // - sb = scalar broadcast, may fall back to group_aware
                     // - alit = all_literal
                     // - * = broadcast falls back to group_aware
-                    // - ~ = same a smirror pair (symmetric)
+                    // - ~ = same as mirror pair (symmetric)
                     //
                     //              | AggList | NotAgg   | AggScalar | LitScalar
                     //   --------------------------------------------------------
@@ -614,9 +614,11 @@ impl PhysicalExpr for ApplyExpr {
                     let mut not_agg_groups_may_diverge = false;
                     let mut has_non_unit_literal = false;
                     let mut has_large_groups = false;
+                    let mut has_objects = false;
 
                     let mut previous: Option<&AggregationContext<'_>> = None;
                     for ac in &acs {
+                        has_objects |= ac.get_values().dtype().contains_objects();
                         match ac.state {
                             AggState::AggregatedList(_) => {
                                 has_agg_list = true;
@@ -645,11 +647,14 @@ impl PhysicalExpr for ApplyExpr {
                     let elementwise_must_aggregate =
                         has_not_agg && (has_agg_list || not_agg_groups_may_diverge);
                     let mixes_scalars_and_values = has_agg_scalar && (has_agg_list || has_not_agg);
-                    // The per-group loop matches a non-unit literal to each group's values.
+                    // The per-group loop matches a non-unit literal to each group's values. Object
+                    // values keep it as well: repeating the scalars over them would rechunk them or
+                    // rebuild lists from their inner values, which Object does not support.
                     let may_broadcast_scalars = mixes_scalars_and_values
                         && self.row_wise_inputs
                         && !self.is_scalar()
                         && !has_non_unit_literal
+                        && !has_objects
                         && !has_large_groups
                         && !has_not_agg_with_overlapping_groups
                         && !groups.is_empty();

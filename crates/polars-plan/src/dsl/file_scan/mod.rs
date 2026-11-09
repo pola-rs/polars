@@ -245,7 +245,7 @@ impl MetadataPerSource {
                     n_surviving += 1;
                 }
                 // Note: may degrade to Unresolved if the invariant (first source index == 0)
-                // cannot be uphold.
+                // cannot be upheld.
                 Self::new(kept, n_surviving)
             },
             Self::Full(s) => {
@@ -588,7 +588,9 @@ pub struct CastColumnsPolicy {
     /// DataType::Categorical to string
     pub categorical_to_string: bool,
 
+    /// Target struct fields that the incoming struct lacks: raise, or insert them as null.
     pub missing_struct_fields: MissingColumnsPolicy,
+    /// Incoming struct fields that the target struct lacks: raise, or drop them.
     pub extra_struct_fields: ExtraColumnsPolicy,
 }
 

@@ -32,6 +32,7 @@ use crate::nodes::io_sources::multi_scan::reader_interface::{BeginReadArgs, File
 #[cfg(feature = "parquet")]
 use crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder;
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone)]
 pub enum DeletionFilesProvider {
     None,
@@ -67,7 +68,7 @@ impl DeletionFilesProvider {
     ) -> PolarsResult<Self> {
         match deletion_files {
             Some(DeletionFilesList::Iceberg(paths)) => feature_gated!("parquet", {
-                let reader_builder = ParquetReaderBuilder {
+                let mut reader_builder = ParquetReaderBuilder {
                     bytes_per_source: None,
                     first_metadata: None,
                     options: Arc::new(polars_io::prelude::ParquetOptions {
@@ -79,7 +80,7 @@ impl DeletionFilesProvider {
                         parallel: polars_io::prelude::ParallelStrategy::Auto,
                         low_memory: false,
                         use_statistics: false,
-                        decryption_properties: None,
+                        decryption: None,
                     }),
                     pipeline_budget: std::sync::OnceLock::new(),
                     shared_prefetch_wait_group_slot: Default::default(),
@@ -89,6 +90,12 @@ impl DeletionFilesProvider {
                 };
 
                 reader_builder.set_execution_state(execution_state);
+                // Deletion files keep a fixed byte window: no growth, no pool draw.
+                let pipeline_budget = reader_builder.pipeline_budget.take().unwrap();
+                reader_builder
+                    .pipeline_budget
+                    .set(pipeline_budget.with_fixed_kbytes())
+                    .unwrap();
 
                 let ScanSources::Paths(data_paths) = selected_sources else {
                     polars_bail!(
@@ -380,7 +387,7 @@ impl DeletionFilesProvider {
                         let mask = deletion_files_init_fut.await?;
 
                         if verbose {
-                            let num_deleted_rows = mask.num_deleted_rows();
+                            let num_deleted_rows = mask.num_deleted_rows(mask.len());
                             let max_index = mask.len().checked_sub(1);
 
                             eprintln!(
@@ -508,7 +515,7 @@ impl ExternalFilterMask {
             None => PlSmallStr::from_static("None"),
             Some(mask) => {
                 let mask_variant = mask.variant_name();
-                let n = mask.num_deleted_rows();
+                let n = mask.num_deleted_rows(mask.len());
                 let s = if n == 1 { "" } else { "s" };
                 format_pl_smallstr!("{mask_variant}(<{n} deletion{s}>)")
             },
@@ -571,20 +578,17 @@ impl ExternalFilterMask {
         }
     }
 
-    pub fn num_deleted_rows(&self) -> usize {
-        match self {
-            Self::Iceberg { mask } => mask
-                .rechunk()
-                .downcast_get(0)
-                .unwrap()
-                .values()
-                .unset_bits(),
-            Self::DeltaDeletionVector { mask } => mask
-                .rechunk()
-                .downcast_get(0)
-                .unwrap()
-                .values()
-                .unset_bits(),
+    /// Number of deleted rows within the first `num_physical_rows` rows.
+    ///
+    /// Iceberg position deletes can reference positions past the end of the data file, these must
+    /// not be counted as deleted rows.
+    pub fn num_deleted_rows(&self, num_physical_rows: usize) -> usize {
+        let mask = self.get_mask();
+
+        if num_physical_rows >= mask.len() {
+            mask.unset_bits()
+        } else {
+            mask.sliced(0, num_physical_rows).unset_bits()
         }
     }
 

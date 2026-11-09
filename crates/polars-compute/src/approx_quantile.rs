@@ -1,5 +1,8 @@
+use std::borrow::Borrow;
 use std::ops::RangeInclusive;
 use std::str::FromStr;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::{fmt, mem, slice};
 
 pub use kll::KLLSketch;
@@ -22,9 +25,9 @@ pub const DEFAULT_FAILURE_PROBABILITY: f64 = 1.0 - 0.9973;
 pub const MIN_ERROR: f64 = 1.0 / (1u64 << 32) as f64;
 
 /// Looseness of the formal KLL error bound (estimated by measuring).
-const KLL_BOUND_LOOSENESS: f64 = 5.9;
+const KLL_BOUND_LOOSENESS: f64 = 3.1;
 /// Looseness of the formal REQ error bound (estimated by measuring).
-const REQ_BOUND_LOOSENESS: f64 = 37.0;
+const REQ_BOUND_LOOSENESS: f64 = 34.0;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -131,18 +134,25 @@ impl<T: fmt::Debug + Clone + TotalOrd> FinalizedSketch<T> {
             ComputeError: "`quantile` should be between 0.0 and 1.0, got {}", quantile,
         );
         // We round with ties toward ∞ for consistency with the regular quantile.
+        let rank = (quantile * self.num_items().saturating_sub(1) as f64).round();
+        Ok(self.estimate_at_rank(rank as u64))
+    }
+
+    /// Estimates the item at 0-based `rank` among the ingested items, `None` if out of range.
+    pub fn estimate_at_rank(&self, rank: u64) -> Option<&T> {
         let num_items = self.num_items();
-        let item_rank = (quantile * num_items.saturating_sub(1) as f64).round();
+        if rank >= num_items {
+            return None;
+        }
         let weighted_rank = match num_items {
-            0 => return Ok(None),
             1 => 1,
             _ => {
-                1 + (item_rank * (self.total_weight() - 1) as f64 / (num_items - 1) as f64).round()
-                    as u64
+                1 + (rank as f64 * (self.total_weight() - 1) as f64 / (num_items - 1) as f64)
+                    .round() as u64
             },
         };
         let idx = estimate_quantile_index(self.cum_weight.as_deref(), weighted_rank);
-        Ok(Some(&self.items[idx]))
+        Some(&self.items[idx])
     }
 
     /// Split into the retained items and each item's individual weight.
@@ -257,7 +267,7 @@ fn estimate_quantile_index(cum_weight: Option<&[u64]>, estimated_rank: u64) -> u
 pub mod kll {
     use super::*;
 
-    /// `CAPACITY_DECAY` specifies how much smaller compactor h+1 is wrt to h.
+    /// `CAPACITY_DECAY` specifies how much smaller compactor h+1 is wrt h.
     /// KLL calls this `c`.
     const CAPACITY_DECAY: f64 = 2.0 / 3.0;
 
@@ -266,6 +276,11 @@ pub mod kll {
 
     /// Compactors at or below this capacity are replaced by [`Sampler`].
     const SAMPLER_CUTOFF: usize = 8;
+
+    /// Sync with the shared count every `max(k, consumed_items / SYNC_DIVISOR)` items. That
+    /// bounds the syncs of a sketch to `O(log n)`, while the shared count lags by at most about
+    /// `1 / SYNC_DIVISOR`.
+    const SYNC_DIVISOR: u64 = 8;
 
     /// Some small `k` guaranteeing rank error <= `error * n` w.p. >= 1 - `delta`
     /// for a *single* query value, with `delta` = `failure_probability`.
@@ -306,15 +321,15 @@ pub mod kll {
         //    at most:
         //       n * 2^(H-2) / (k * c) * (1 + 1/(2c) + 1/(2c)^2 + ...)
         //    == n * 2^(H-1) / k * (1/(2c) + 1/(2c)^2 + 1/(2c)^3 + ...)
-        //  * We know that the creation of level H-1 consumed k items of weight 2^(H-2).
-        //    The sum of the weights of those items denote that at least that many
-        //    items were ingested in total, i.e., `k * 2^(H-2) ≤ n.`
+        //  * Level H-1 was either created by compacting k items of weight 2^(H-2), or added by
+        //    `raise_height_for_num_items(G)` with `k * 2^(H-2) ≤ G`, where `finalize` asserts
+        //    `G ≤ n`. Either way, `k * 2^(H-2) ≤ n`.
         //    Rewrite ⇒ n/k ≥ 2^(H-2) ⇒ 2^(H-1) ≤ 2*(n/k).
         //  * Finish: Total variance (in terms of (n/k)²) is at most 2 * (1/(2c) + 1/(2c)^2 + ...).
         let compactor_var = 2.0 * geometric_tail(1.0 / (2.0 * CAPACITY_DECAY));
 
         // `Σw²` of the sampler in units of (n/k)²:
-        //   * `feed` conserves weight, so at most `n / 2^h` emissions happen at height `h`,
+        //   * The sampler conserves weight, so at most `n / 2^h` emissions happen at height `h`,
         //     each a step of size `2^h` (KLL Lemma 2). Summed, that is at most `n * 2^L`.
         //   * Level L-1 sits at depth D = H - L and was replaced, so `k * c^D ≤ CUTOFF`.
         //     Hence `2^D ≥ (k / CUTOFF)^α` where `α = ln 2 / ln(1/c)` (KLL Theorem. 2).
@@ -336,10 +351,6 @@ pub mod kll {
     struct Level {
         offset: usize,
         size: usize,
-        /// Set while the next compaction must take the opposite `coin`.
-        mid_pair: bool,
-        /// Parity promoted by the previous compaction, see `compact_level`.
-        coin: bool,
     }
 
     /// Stand-in for the run of [`SAMPLER_CUTOFF`]-sized compactors at the bottom
@@ -367,8 +378,7 @@ pub mod kll {
         ///
         /// Once per window of `promote_weight` size, return a uniformly sampled
         /// item from the window.
-        #[inline]
-        fn feed<Q: ToOwned<Owned = T> + ?Sized>(
+        fn feed_weighted<Q: ToOwned<Owned = T> + ?Sized>(
             &mut self,
             item_weight: u64,
             promote_weight: u64,
@@ -404,6 +414,88 @@ pub mod kll {
                 emitted
             }
         }
+
+        /// Absorb the unit-weight items of `items`, of which `remaining` are left, up to the end
+        /// of the current window of `promote_weight` size.
+        ///
+        /// Return the number of items absorbed, and a uniformly sampled item from the window if
+        /// it was completed. Only the sampled item is cloned; the others are skipped.
+        fn feed<Q: ToOwned<Owned = T> + ?Sized>(
+            &mut self,
+            promote_weight: u64,
+            rng: &mut SmallRng,
+            items: &mut impl Iterator<Item: Borrow<Q>>,
+            remaining: usize,
+        ) -> (usize, Option<T>) {
+            debug_assert!(0 < remaining && self.weight < promote_weight);
+            debug_assert_eq!(self.weight == 0, self.item.is_none());
+
+            let window_rest = promote_weight - self.weight;
+            if (remaining as u64) < window_rest {
+                let total_weight = self.weight + remaining as u64;
+                if let Some(idx) = rng.random_range(0..total_weight).checked_sub(self.weight) {
+                    let item = items.nth(idx as usize).unwrap();
+                    match &mut self.item {
+                        Some(held) => item.borrow().clone_into(held),
+                        None => self.item = Some(item.borrow().to_owned()),
+                    }
+                }
+                self.weight = total_weight;
+                return (remaining, None);
+            }
+
+            let held = self.item.take();
+            let emitted = match rng.random_range(0..promote_weight).checked_sub(self.weight) {
+                None => {
+                    skip(items, window_rest);
+                    held
+                },
+                Some(idx) => {
+                    let item = items.nth(idx as usize).unwrap().borrow().to_owned();
+                    skip(items, window_rest - idx - 1);
+                    Some(item)
+                },
+            };
+            self.weight = 0;
+            (window_rest as usize, emitted)
+        }
+    }
+
+    fn skip(items: &mut impl Iterator, n: u64) {
+        if let Some(last) = n.checked_sub(1) {
+            items.nth(last as usize);
+        }
+    }
+
+    /// A count of the items consumed by several sketches, and the share of one sketch in it.
+    #[derive(Debug, Clone)]
+    struct SharedCount {
+        /// Number of items consumed by all sketches sharing this count, as far as each has
+        /// synced.
+        count: Arc<AtomicU64>,
+        /// Number of items this sketch already added to `count`.
+        synced_items: u64,
+        /// Number of consumed items at which this sketch syncs next.
+        next_sync_at: u64,
+    }
+
+    impl SharedCount {
+        fn new(count: Arc<AtomicU64>, k: usize) -> Self {
+            Self {
+                count,
+                synced_items: 0,
+                next_sync_at: k as u64,
+            }
+        }
+
+        /// Add the unsynced part of `consumed_items` to the count, and return the new count.
+        #[cold]
+        fn sync(&mut self, consumed_items: u64, k: usize) -> u64 {
+            let delta = consumed_items - self.synced_items;
+            self.synced_items = consumed_items;
+            self.next_sync_at = consumed_items + u64::max(k as u64, consumed_items / SYNC_DIVISOR);
+            self.count.fetch_add(delta, Ordering::Relaxed) + delta
+        }
     }
 
     #[derive(Debug)]
@@ -417,6 +509,8 @@ pub mod kll {
         k: usize,
         /// Total number of items that were consumed by this sketch.
         consumed_items: u64,
+        #[cfg_attr(feature = "serde", serde(skip))]
+        shared_count: Option<SharedCount>,
         /// Maximum number of items before we compact.
         total_capacity: usize,
         /// Height of the base compactor at `levels[0]`.
@@ -436,6 +530,7 @@ pub mod kll {
                 levels: self.levels.clone(),
                 k: self.k,
                 consumed_items: self.consumed_items,
+                shared_count: self.shared_count.clone(),
                 total_capacity: self.total_capacity,
                 sampler: self.sampler.clone(),
                 base_compactor_height: self.base_compactor_height,
@@ -458,6 +553,7 @@ pub mod kll {
                 levels: vec![Level::default()],
                 k,
                 consumed_items: 0,
+                shared_count: None,
                 total_capacity: k,
                 rng: rand::make_rng(),
                 scratch: Vec::default(),
@@ -468,31 +564,83 @@ pub mod kll {
         }
 
         #[inline]
-        pub fn update<Q: ToOwned<Owned = T> + ?Sized>(&mut self, item: &Q) {
-            self.0.update(item);
+        pub fn update<Q: ToOwned<Owned = T> + ?Sized>(
+            &mut self,
+            items: impl ExactSizeIterator<Item: Borrow<Q>>,
+        ) {
+            self.0.update(items);
         }
 
         pub fn merge(&mut self, other: &Self) {
             self.0.merge(&other.0);
         }
 
+        /// Count the items of every sketch given this `count`, and of their clones, in `count`,
+        /// and grow each to the tallest height the error bound allows for it.
+        ///
+        /// Only use this if all those sketches are merged into one before it is finalized.
+        pub fn with_shared_count(mut self, count: Arc<AtomicU64>) -> Self {
+            self.0.shared_count = Some(SharedCount::new(count, self.0.k));
+            self
+        }
+
         /// Stop ingesting, keeping only what this sketch retained.
+        ///
+        /// # Panics
+        ///
+        /// Panics if the sketches sharing its count synced more items to it than were merged
+        /// into this one.
         pub fn finalize(self) -> FinalizedSketch<T> {
             self.0.finalize()
         }
     }
 
     impl<T: fmt::Debug + Clone + TotalOrd> IngestingState<T> {
-        #[inline]
-        pub fn update<Q: ToOwned<Owned = T> + ?Sized>(&mut self, item: &Q) {
-            self.consumed_items += 1;
-            if self.items.len() >= self.total_capacity {
-                self.compact(true);
+        fn update<Q: ToOwned<Owned = T> + ?Sized>(
+            &mut self,
+            items: impl ExactSizeIterator<Item: Borrow<Q>>,
+        ) {
+            let mut items = items;
+            let mut remaining = items.len();
+            self.consumed_items += remaining as u64;
+            if let Some(shared_count) = &mut self.shared_count
+                && self.consumed_items >= shared_count.next_sync_at
+            {
+                let count = shared_count.sync(self.consumed_items, self.k);
+                self.raise_height_for_num_items(count);
             }
-            if self.sampler_is_activated() {
-                self.feed_sampler(1, item);
-            } else {
-                self.update_compactors(item.to_owned());
+
+            while remaining > 0 {
+                if self.items.len() >= self.total_capacity {
+                    self.compact(true);
+                }
+                if self.sampler_is_activated() {
+                    let promote_weight = 1 << self.base_compactor_height;
+                    let Self { sampler, rng, .. } = self;
+                    let (absorbed, emitted) =
+                        sampler.feed(promote_weight, rng, &mut items, remaining);
+                    remaining -= absorbed;
+                    if let Some(item) = emitted {
+                        self.update_compactors(item);
+                    }
+                } else {
+                    // One compaction may leave the sketch over capacity; take an item regardless.
+                    let free = self.total_capacity.saturating_sub(self.items.len());
+                    let n = free.clamp(1, remaining);
+                    let new_items = items.by_ref().take(n);
+                    self.items
+                        .extend(new_items.map(|item| item.borrow().to_owned()));
+                    self.levels[0].size += n;
+                    remaining -= n;
+                }
+            }
+        }
+
+        #[cold]
+        fn raise_height_for_num_items(&mut self, count: u64) {
+            let height = height_for_count(self.k, count);
+            while self.base_compactor_height + self.levels.len() < height {
+                self.add_new_compactor();
             }
         }
 
@@ -504,7 +652,7 @@ pub mod kll {
         fn feed_sampler<Q: ToOwned<Owned = T> + ?Sized>(&mut self, item_weight: u64, item: &Q) {
             let promote_weight = 1 << self.base_compactor_height;
             let Self { sampler, rng, .. } = self;
-            if let Some(item) = sampler.feed(item_weight, promote_weight, rng, item) {
+            if let Some(item) = sampler.feed_weighted(item_weight, promote_weight, rng, item) {
                 self.update_compactors(item);
             }
         }
@@ -569,7 +717,7 @@ pub mod kll {
             let mut drain = self.items.drain(start..);
             for (level, compactor) in self.levels.drain(..num_replaced).enumerate().rev() {
                 for item in drain.by_ref().take(compactor.size) {
-                    promoted.extend(self.sampler.feed(
+                    promoted.extend(self.sampler.feed_weighted(
                         1u64 << (old_base_height + level),
                         promote_weight,
                         &mut self.rng,
@@ -597,15 +745,7 @@ pub mod kll {
             let mut compact_level = self.levels[level];
             let rand: u8 = self.rng.random();
             let coin1 = rand & 0x1 != 0;
-
-            // Only draw a fresh promotion parity every other compaction, and take
-            // the opposite one in between. See DOI 10.3390/s22249612, Sec 3.2.
-            compact_level.coin = match compact_level.mid_pair {
-                true => !compact_level.coin,
-                false => rand & 0x2 != 0,
-            };
-            compact_level.mid_pair = !compact_level.mid_pair;
-            let coin2 = compact_level.coin;
+            let coin2 = rand & 0x2 != 0;
 
             let mut next_level = self.levels[level + 1];
             let mut compact_start = compact_level.offset;
@@ -711,8 +851,6 @@ pub mod kll {
                 self.levels[level] = Level {
                     offset: next_offset,
                     size: l1.size + l2.size,
-                    mid_pair: l1.mid_pair | l2.mid_pair,
-                    coin: merge_coin(l1.mid_pair, l1.coin, l2.mid_pair, l2.coin, &mut self.rng),
                 };
                 next_offset += l1.size + l2.size;
             }
@@ -720,6 +858,11 @@ pub mod kll {
             self.items = items;
 
             self.consumed_items += other.consumed_items;
+            if let Some(shared_count) = &mut self.shared_count {
+                // Leave out `other`'s items: it may have synced them already, and an undercount
+                // is safe.
+                shared_count.synced_items += other.consumed_items;
+            }
             // Absorb the low-weight compactors into our sampler.
             for height in other.base_compactor_height..self.base_compactor_height {
                 let Some(l2) = other.try_level_at(height) else {
@@ -745,12 +888,25 @@ pub mod kll {
             let IngestingState {
                 mut items,
                 levels,
+                k,
                 consumed_items,
+                shared_count,
                 mut scratch,
                 base_compactor_height: base_height,
                 sampler,
                 ..
             } = self;
+
+            if let Some(shared_count) = shared_count {
+                let count = shared_count.count.load(Ordering::Relaxed);
+                assert!(
+                    count <= consumed_items,
+                    "sketches sharing a count synced {count} items to it, but only \
+                     {consumed_items} were merged into this one"
+                );
+            }
+            let height = base_height + levels.len();
+            debug_assert!(height < 2 || (k as u128) << (height - 2) <= consumed_items as u128);
 
             // Base level is not yet sorted
             let base = levels[0];
@@ -793,6 +949,14 @@ pub mod kll {
         }
     }
 
+    /// The tallest height `H` with `k * 2^(H-2) ≤ count`, or 1 if `count < k`.
+    fn height_for_count(k: usize, count: u64) -> usize {
+        match count / k as u64 {
+            0 => 1,
+            ratio => ratio.ilog2() as usize + 2,
+        }
+    }
+
     /// Capacity of the compactor `depth` levels below the top: `ceil(k (2/3)^depth)`
     /// rounded up to an even number, and never below `MIN_COMPACTOR_SIZE`.
     fn compactor_threshold(k: usize, depth: usize) -> usize {
@@ -800,6 +964,148 @@ pub mod kll {
             ((k as u128) * 2u128.pow(depth as u32)).div_ceil(3u128.pow(depth as u32));
         let nominal_size = usize::try_from(nominal_size).expect("overflow");
         usize::max(nominal_size.next_multiple_of(2), MIN_COMPACTOR_SIZE)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        const ERROR: f64 = 0.1;
+
+        fn height<T: fmt::Debug + Clone + TotalOrd>(sketch: &KLLSketch<T>) -> usize {
+            sketch.0.base_compactor_height + sketch.0.levels.len()
+        }
+
+        fn feed(sketch: &mut KLLSketch<u64>, items: std::ops::Range<u64>) {
+            let items: Vec<u64> = items.collect();
+            sketch.update::<u64>(items.iter());
+        }
+
+        #[test]
+        fn height_for_count_is_tallest_within_bound() {
+            for k in [2, 36, 1605] {
+                for count in (0..100_000).chain([u64::MAX / 2, u64::MAX]) {
+                    let h = height_for_count(k, count);
+                    let k = k as u128;
+                    assert!(h == 1 || k << (h - 2) <= count as u128);
+                    assert!(k << (h - 1) > count as u128);
+                }
+            }
+        }
+
+        #[test]
+        fn shared_count_raises_clones() {
+            const N: u64 = 1_000_000;
+            const CLONES: u64 = 4;
+            const CHUNK: u64 = 1_000;
+            let template = KLLSketch::<u64>::new(ERROR, DEFAULT_FAILURE_PROBABILITY)
+                .with_shared_count(Arc::default());
+            let k = template.0.k;
+            let mut clones: Vec<_> = (0..CLONES).map(|_| template.clone()).collect();
+            for (i, start) in (0..N).step_by(CHUNK as usize).enumerate() {
+                feed(&mut clones[i % CLONES as usize], start..start + CHUNK);
+            }
+            for clone in &clones {
+                assert!(height(clone) >= height_for_count(k, N / 2));
+            }
+
+            let mut merged = template;
+            for clone in &clones {
+                merged.merge(clone);
+            }
+            assert!(height(&merged) >= height_for_count(k, N / 2));
+            let finalized = merged.finalize();
+            assert_eq!(finalized.num_items(), N);
+            let median = *finalized.estimate_quantile(0.5).unwrap().unwrap();
+            assert!(median.abs_diff(N / 2) as f64 <= ERROR * N as f64);
+        }
+
+        #[test]
+        #[should_panic(expected = "were merged into this one")]
+        fn finalize_panics_on_unmerged_clone() {
+            let template = KLLSketch::<u64>::new(ERROR, DEFAULT_FAILURE_PROBABILITY)
+                .with_shared_count(Arc::default());
+            let mut a = template.clone();
+            let mut b = template;
+            feed(&mut b, 0..100_000);
+            feed(&mut a, 0..10_000);
+            a.finalize();
+        }
+
+        #[test]
+        fn late_clone_is_raised_and_merged() {
+            let template = KLLSketch::<u64>::new(ERROR, DEFAULT_FAILURE_PROBABILITY)
+                .with_shared_count(Arc::default());
+            let k = template.0.k;
+            let mut early = template.clone();
+            let mut late = template;
+            feed(&mut early, 0..100_000);
+            feed(&mut late, 100_000..110_000);
+            assert!(height(&late) > height_for_count(k, 10_000));
+
+            early.merge(&late);
+            let finalized = early.finalize();
+            assert_eq!(finalized.num_items(), 110_000);
+            let median = *finalized.estimate_quantile(0.5).unwrap().unwrap();
+            assert!(median.abs_diff(55_000) as f64 <= ERROR * 110_000.0);
+        }
+
+        #[test]
+        fn shared_count_is_bumped_by_whole_chunk() {
+            const N: u64 = 1_000_000;
+            let count = Arc::default();
+            let template = KLLSketch::<u64>::new(ERROR, DEFAULT_FAILURE_PROBABILITY)
+                .with_shared_count(Arc::clone(&count));
+            let k = template.0.k;
+            let mut a = template.clone();
+            let mut b = template;
+            feed(&mut a, 0..N);
+            assert_eq!(count.load(Ordering::Relaxed), N);
+            assert!(height(&a) >= height_for_count(k, N));
+
+            feed(&mut b, N..N + k as u64);
+            assert!(height(&b) >= height_for_count(k, N));
+        }
+
+        #[test]
+        fn stratified_sampler_is_uniform_per_window() {
+            use rand::SeedableRng;
+
+            const W: u64 = 8;
+            const WINDOWS: u64 = 80_000;
+            let mut rng = SmallRng::seed_from_u64(0);
+            let items: Vec<u64> = (0..W * WINDOWS).collect();
+            let mut sampler = Sampler::default();
+            let mut emitted = Vec::new();
+            let mut rest = &items[..];
+            while !rest.is_empty() {
+                // Cut the stream at arbitrary points, so windows straddle chunks.
+                let len = usize::min(rng.random_range(1..3 * W as usize), rest.len());
+                let (chunk, tail) = rest.split_at(len);
+                let mut iter = chunk.iter();
+                let mut remaining = len;
+                while remaining > 0 {
+                    let (absorbed, item) = sampler.feed::<u64>(W, &mut rng, &mut iter, remaining);
+                    remaining -= absorbed;
+                    emitted.extend(item);
+                }
+                rest = tail;
+            }
+
+            assert_eq!(emitted.len() as u64, WINDOWS);
+            let mut counts = [0u64; W as usize];
+            for (window, item) in emitted.iter().enumerate() {
+                assert_eq!(item / W, window as u64);
+                counts[(item % W) as usize] += 1;
+            }
+            let expected = (WINDOWS / W) as f64;
+            let chi2: f64 = counts
+                .iter()
+                .map(|c| (*c as f64 - expected).powi(2) / expected)
+                .sum();
+            // The 0.999 quantile of chi² with 7 degrees of freedom.
+            assert!(chi2 < 24.32, "chi² = {chi2}, counts = {counts:?}");
+        }
     }
 }
 
@@ -869,8 +1175,6 @@ pub mod req {
         offset: usize,
         size: usize,
         compaction_schedule: u64,
-        /// Parity promoted by the previous compaction, see `compact_level_once`.
-        coin: bool,
     }
 
     #[derive(Debug)]
@@ -949,8 +1253,11 @@ pub mod req {
         }
 
         #[inline]
-        pub fn update<Q: ToOwned<Owned = T> + ?Sized>(&mut self, item: &Q) {
-            self.0.update(item);
+        pub fn update<Q: ToOwned<Owned = T> + ?Sized>(
+            &mut self,
+            items: impl ExactSizeIterator<Item: Borrow<Q>>,
+        ) {
+            self.0.update(items);
         }
 
         pub fn merge(&mut self, other: &Self) {
@@ -984,9 +1291,12 @@ pub mod req {
         }
 
         #[inline]
-        pub fn update<Q: ToOwned<Owned = T> + ?Sized>(&mut self, item: &Q) {
-            self.lra.update(item);
-            self.hra.update(item);
+        pub fn update<Q: ToOwned<Owned = T> + ?Sized>(
+            &mut self,
+            items: impl ExactSizeIterator<Item: Borrow<Q>> + Clone,
+        ) {
+            self.lra.update(items.clone());
+            self.hra.update(items);
         }
 
         pub fn merge(&mut self, other: &Self) {
@@ -1001,12 +1311,26 @@ pub mod req {
     }
 
     impl<T: fmt::Debug + Clone + TotalOrd> IngestingState<T> {
-        #[inline]
-        pub fn update<Q: ToOwned<Owned = T> + ?Sized>(&mut self, item: &Q) {
-            self.compact_if_needed(0);
-            self.items.push(item.to_owned());
-            self.levels[0].size += 1;
-            self.consumed_items += 1;
+        fn update<Q: ToOwned<Owned = T> + ?Sized>(
+            &mut self,
+            items: impl ExactSizeIterator<Item: Borrow<Q>>,
+        ) {
+            let mut items = items;
+            let mut remaining = items.len();
+            self.consumed_items += remaining as u64;
+            while remaining > 0 {
+                self.compact_if_needed(0);
+                // A close-out can shrink the capacity below the size of level 0.
+                let free = self
+                    .compactor_capacity()
+                    .saturating_sub(self.levels[0].size);
+                let n = free.clamp(1, remaining);
+                let new_items = items.by_ref().take(n);
+                self.items
+                    .extend(new_items.map(|item| item.borrow().to_owned()));
+                self.levels[0].size += n;
+                remaining -= n;
+            }
         }
 
         /// Grow the compactors once a compaction schedule runs out of sections.
@@ -1072,19 +1396,10 @@ pub mod req {
                     }
                 }
 
-                let mid_pair = |l: &Level| !l.compaction_schedule.is_multiple_of(2);
-
                 self.levels[level] = Level {
                     offset: next_offset,
                     size: l1.size + l2.size,
                     compaction_schedule: l1.compaction_schedule | l2.compaction_schedule,
-                    coin: merge_coin(
-                        mid_pair(&l1),
-                        l1.coin,
-                        mid_pair(&l2),
-                        l2.coin,
-                        &mut self.rng,
-                    ),
                 };
                 next_offset += l1.size + l2.size;
             }
@@ -1147,13 +1462,7 @@ pub mod req {
             debug_assert!(l_c.is_multiple_of(2));
             debug_assert!(promote_count >= l_c);
 
-            // Only draw a fresh promotion parity every other compaction, and take
-            // the opposite one in between. See DOI 10.3390/s22249612, Sec 3.2.
-            let coin = match !self.levels[level].compaction_schedule.is_multiple_of(2) {
-                true => !self.levels[level].coin,
-                false => self.rng.random(),
-            };
-            self.levels[level].coin = coin;
+            let coin: bool = self.rng.random();
 
             // Level 0 is not sorted yet.
             let compactor = &mut self.items[compactor_start..compactor_end];
@@ -1290,14 +1599,6 @@ fn finalize_merge_levels<T: fmt::Debug + Clone + TotalOrd>(
     cum_weights
 }
 
-fn merge_coin(mid1: bool, coin1: bool, mid2: bool, coin2: bool, rng: &mut SmallRng) -> bool {
-    match (mid1, mid2) {
-        (true, true) if coin1 != coin2 => rng.random(),
-        (false, true) => coin2,
-        _ => coin1,
-    }
-}
-
 /// Append the merge of two runs, both sorted by `compare`, to `vec`.
 fn merge_sorted<T>(
     vec: &mut Vec<T>,
@@ -1348,11 +1649,22 @@ impl<T: fmt::Debug + Clone + TotalOrd> Sketch<T> {
     }
 
     #[inline]
-    pub fn update<Q: ToOwned<Owned = T> + ?Sized>(&mut self, item: &Q) {
+    pub fn update<Q: ToOwned<Owned = T> + ?Sized>(
+        &mut self,
+        items: impl ExactSizeIterator<Item: Borrow<Q>> + Clone,
+    ) {
         match self {
-            Sketch::Kll(s) => s.update(item),
-            Sketch::Req(s) => s.update(item),
-            Sketch::DoubleReq(s) => s.update(item),
+            Sketch::Kll(s) => s.update(items),
+            Sketch::Req(s) => s.update(items),
+            Sketch::DoubleReq(s) => s.update(items),
+        }
+    }
+
+    /// See [`KLLSketch::with_shared_count`]. A no-op for the other methods.
+    pub fn with_shared_count(self, count: Arc<AtomicU64>) -> Self {
+        match self {
+            Sketch::Kll(s) => Sketch::Kll(s.with_shared_count(count)),
+            s @ (Sketch::Req(_) | Sketch::DoubleReq(_)) => s,
         }
     }
 
@@ -1411,13 +1723,41 @@ mod tests {
                     let mut a = Sketch::new(&method, 0.5, DEFAULT_FAILURE_PROBABILITY);
                     let mut b = a.clone();
                     for v in 0..1_000 {
-                        a.update(&v);
-                        b.update(&v);
+                        a.update::<i32>([v].iter());
+                        b.update::<i32>([v].iter());
                     }
                     a.finalize().items == b.finalize().items
                 })
                 .count();
             assert!(agreed <= 5, "{method:?} clones agreed {agreed}/10 times");
+        }
+    }
+
+    #[test]
+    fn chunk_sizes_do_not_affect_accuracy() {
+        use ApproxQuantileMethod as M;
+        const N: u64 = 200_000;
+        // Loose enough for KLL to switch to its sampler within `N` items.
+        const ERROR: f64 = 0.1;
+        let items: Vec<u64> = (0..N).collect();
+        let methods = [M::KLL, M::ReqSketch { hra: false }, M::DoubleReqSketch];
+        for method in methods {
+            for chunk_size in [1, 7, 255, 256, 257, 100_000, N as usize] {
+                let mut sketch = Sketch::new(&method, ERROR, DEFAULT_FAILURE_PROBABILITY);
+                for chunk in items.chunks(chunk_size) {
+                    sketch.update::<u64>(chunk.iter());
+                }
+                let finalized = sketch.finalize();
+                assert_eq!(finalized.num_items(), N);
+                for q in [0.1, 0.5, 0.9] {
+                    let estimate = *finalized.estimate_quantile(q).unwrap().unwrap();
+                    let rank_error = estimate.abs_diff((q * (N - 1) as f64) as u64) as f64;
+                    assert!(
+                        rank_error <= ERROR * N as f64,
+                        "{method:?} with chunks of {chunk_size}: q={q} estimated {estimate}"
+                    );
+                }
+            }
         }
     }
 }
