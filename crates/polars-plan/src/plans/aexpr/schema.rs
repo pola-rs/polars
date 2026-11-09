@@ -959,8 +959,6 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
             let dtype = get_truediv_dtype(list_dtype.leaf_dtype(), other_dtype.leaf_dtype())?;
             list_dtype.cast_leaf(dtype)
         },
-        (Null, Null) => Float64,
-        (Null, dt) => get_truediv_dtype(dt, dt)?,
         #[cfg(feature = "dtype-duration")]
         (Duration(_), Duration(_)) => Float64,
         #[cfg(feature = "dtype-duration")]
@@ -969,9 +967,13 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
         (Duration(_), dt) => {
             polars_bail!(InvalidOperation: "true division of {} with {} is not allowed", left_dtype, dt)
         },
+        // The temporal bail must precede the `Null` arms: the runtime also
+        // rejects `Null / temporal`, e.g. `Null / Duration`.
         (_, dt) if dt.is_temporal() => {
             polars_bail!(InvalidOperation: "true division of {} with {} is not allowed", left_dtype, right_dtype)
         },
+        (Null, Null) => Float64,
+        (Null, dt) => get_truediv_dtype(dt, dt)?,
         #[cfg(feature = "dtype-f16")]
         (Boolean, Float16) => Float16,
         (Boolean, Float32) => Float32,
