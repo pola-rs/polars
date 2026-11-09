@@ -992,8 +992,13 @@ fn merge_ranges(
                         <= current_merged_range.len().abs_diff(chunk_size);
                     let gap_tolerance =
                         (current_n_bytes.max(range.len()) / 8).clamp(1024 * 1024, 8 * 1024 * 1024);
+                    let useful_bytes = current_n_bytes + range.len();
+                    let excess_bytes = new_merged.len() - useful_bytes;
+                    let excess_tolerance = useful_bytes.max(64 * 1024);
 
-                    leq_current_len_dist_to_chunk_size && distance <= gap_tolerance
+                    leq_current_len_dist_to_chunk_size
+                        && distance <= gap_tolerance
+                        && excess_bytes <= excess_tolerance
                 };
 
                 if should_merge {
@@ -1101,8 +1106,12 @@ mod tests {
 
         // <= 1MiB gap, merge
         assert_eq!(
-            merge_ranges(&[0..1, 1024 * 1024 + 1..1024 * 1024 + 2], None).collect::<Vec<_>>(),
-            [(0..1048578, 2)]
+            merge_ranges(
+                &[0..8 * 1024 * 1024, 9 * 1024 * 1024..17 * 1024 * 1024],
+                None
+            )
+            .collect::<Vec<_>>(),
+            [(0..17 * 1024 * 1024, 2)]
         );
 
         // > 1MiB gap, do not merge
@@ -1131,6 +1140,55 @@ mod tests {
             )
             .collect::<Vec<_>>(),
             [(0..80 * 1024 * 1024, 2)]
+        );
+    }
+
+    #[test]
+    fn test_merge_ranges_bounds_excess_bytes() {
+        use super::merge_ranges;
+
+        let chunk_size = Some(8 * 1024 * 1024);
+        let ranges = (0..16)
+            .map(|i| i * 512 * 1024..i * 512 * 1024 + 1024)
+            .collect::<Vec<_>>();
+        let expected = ranges
+            .iter()
+            .cloned()
+            .enumerate()
+            .map(|(i, range)| (range, i + 1))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            merge_ranges(&ranges, chunk_size).collect::<Vec<_>>(),
+            expected
+        );
+
+        assert_eq!(
+            merge_ranges(&[0..1, 65537..65538], chunk_size).collect::<Vec<_>>(),
+            [(0..65538, 2)]
+        );
+        assert_eq!(
+            merge_ranges(&[0..1, 65538..65539], chunk_size).collect::<Vec<_>>(),
+            [(0..1, 1), (65538..65539, 2)]
+        );
+        assert_eq!(
+            merge_ranges(
+                &[0..1, 32769..32770, 65538..65539, 98307..98308],
+                chunk_size
+            )
+            .collect::<Vec<_>>(),
+            [(0..65539, 3), (98307..98308, 4)]
+        );
+        assert_eq!(
+            merge_ranges(
+                &[
+                    0..512 * 1024,
+                    1536 * 1024..2048 * 1024,
+                    3072 * 1024..3584 * 1024
+                ],
+                chunk_size,
+            )
+            .collect::<Vec<_>>(),
+            [(0..2048 * 1024, 2), (3072 * 1024..3584 * 1024, 3)]
         );
     }
 }
