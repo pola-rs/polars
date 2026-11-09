@@ -21,7 +21,8 @@ use super::{
 };
 use crate::plans::aexpr::filter_constraint::{ColumnBounds, and_chain_bounds};
 use crate::plans::{
-    AExpr, ExprIR, IR, IRBooleanFunction, IRFunctionExpr, JoinTypeOptionsIR, into_column,
+    AExpr, ExprIR, FunctionIR, IR, IRBooleanFunction, IRFunctionExpr, JoinTypeOptionsIR,
+    into_column,
 };
 use crate::prelude::{JoinType, Operator};
 
@@ -341,6 +342,17 @@ pub(crate) fn node_stats_with_cache(
                 });
             }
             Some(acc)
+        },
+        IR::MapFunction {
+            input,
+            function: FunctionIR::RowIndex { name, .. },
+        } => {
+            let mut inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
+            // The input's statistics may still describe a dropped column of that name.
+            if let Some(columns) = inner.columns.as_mut().filter(|c| c.contains_key(name)) {
+                Arc::make_mut(columns).remove(name);
+            }
+            Some(inner)
         },
         _ => None,
     };

@@ -177,6 +177,53 @@ def test_filter_reaches_the_scan_through_a_fallible_projection(
     assert_matches_in_memory(q, out)
 
 
+def test_row_indexed_build_side_publishes(
+    fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    q = fact.join(dim(220, 240).with_row_index(), on="k")
+    assert "dynamic_predicate" in q.explain(engine="streaming")
+    out, groups = row_groups_read(q, plmonkeypatch, capfd)
+    assert groups == "1 / 10 row groups"
+    assert_matches_in_memory(q, out)
+
+
+def test_row_index_drops_statistics_of_a_reused_name(tmp_path: Path) -> None:
+    # The file's `idx` range would make the filtered index look empty, and so a
+    # build side worth publishing.
+    n = 1000
+    keys = pl.arange(0, n, dtype=pl.UInt32, eager=True)
+    pl.DataFrame({"k": keys, "idx": [1_000_000] * n}).write_parquet(
+        tmp_path / "src.parquet", statistics="full"
+    )
+    pl.DataFrame({"k": keys}).write_parquet(
+        tmp_path / "probe.parquet", statistics="full"
+    )
+    src = pl.scan_parquet(tmp_path / "src.parquet")
+    indexed = src.select("k").with_row_index("idx").filter(pl.col("idx") < 500)
+    q = pl.scan_parquet(tmp_path / "probe.parquet").join(
+        indexed, left_on="k", right_on="idx"
+    )
+    assert "dynamic_predicate" not in q.explain(engine="streaming")
+    out = q.collect(engine="streaming")
+    assert out.height == 500
+    assert_matches_in_memory(q, out)
+
+
+def test_correlated_sql_subquery_filters_its_scan(
+    fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The subquery is joined with the outer rows, which carry a row index.
+    q = pl.SQLContext(fact=fact, dims=dim(220, 240)).execute(
+        "SELECT * FROM dims d WHERE EXISTS "
+        "(SELECT 1 FROM fact f WHERE f.k = d.k AND f.k2 <> d.d)"
+    )
+    assert "dynamic_predicate" in q.explain(engine="streaming")
+    out, groups = row_groups_read(q, plmonkeypatch, capfd)
+    assert groups == "1 / 10 row groups"
+    assert out.height == 2
+    assert_matches_in_memory(q, out)
+
+
 def test_not_through_a_sampling_join(
     fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
