@@ -3,7 +3,7 @@ use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "dtype-struct")]
 use polars_core::prelude::Field;
-use polars_core::prelude::{DataType, PlIndexMap};
+use polars_core::prelude::{ArrowDataType, ArrowField, DataType, PlIndexMap};
 use polars_utils::pl_str::PlSmallStr;
 
 /// Which parts of one column's value are needed.
@@ -216,6 +216,36 @@ impl FieldSelection {
         }
     }
 
+    /// [`Self::prune_dtype`] for an arrow field: `field` with only the selected struct fields.
+    pub fn prune_arrow_field(&self, field: &ArrowField) -> ArrowField {
+        field.with_dtype(self.prune_arrow_dtype(&field.dtype))
+    }
+
+    /// [`Self::prune_dtype`] for an arrow dtype. Only plain structs and lists are pruned:
+    /// anything else is kept whole.
+    pub fn prune_arrow_dtype(&self, dtype: &ArrowDataType) -> ArrowDataType {
+        match (dtype, self) {
+            (ArrowDataType::Struct(fields), Self::Fields(selected)) => ArrowDataType::Struct(
+                fields
+                    .iter()
+                    .filter_map(|field| {
+                        Some(selected.get(field.name.as_str())?.prune_arrow_field(field))
+                    })
+                    .collect(),
+            ),
+            (ArrowDataType::List(inner), Self::Element(element)) => {
+                ArrowDataType::List(Box::new(element.prune_arrow_field(inner)))
+            },
+            (ArrowDataType::LargeList(inner), Self::Element(element)) => {
+                ArrowDataType::LargeList(Box::new(element.prune_arrow_field(inner)))
+            },
+            (ArrowDataType::FixedSizeList(inner, width), Self::Element(element)) => {
+                ArrowDataType::FixedSizeList(Box::new(element.prune_arrow_field(inner)), *width)
+            },
+            _ => dtype.clone(),
+        }
+    }
+
     /// What both `self` and `other`, two selections of one value, select. `self` if they are not
     /// from one dtype.
     pub fn intersect(&self, other: &FieldSelection) -> FieldSelection {
@@ -237,6 +267,21 @@ impl FieldSelection {
     /// `dtype` lacks is left out; a struct none of whose fields `target` has is needed for its
     /// validity only.
     pub fn of_target_dtype(dtype: &DataType, target: &DataType) -> FieldSelection {
+        Self::of_target_dtype_impl(dtype, target, false)
+    }
+
+    /// The fields of `dtype` that `narrowed`, `dtype` with some struct fields left out, has. Like
+    /// [`Self::of_target_dtype`], but a struct `narrowed` has a field of that `dtype` lacks is not
+    /// a narrowing of it, and is read whole.
+    pub fn of_narrowed_dtype(dtype: &DataType, narrowed: &DataType) -> FieldSelection {
+        Self::of_target_dtype_impl(dtype, narrowed, true)
+    }
+
+    fn of_target_dtype_impl(
+        dtype: &DataType,
+        target: &DataType,
+        missing_reads_whole: bool,
+    ) -> FieldSelection {
         match (dtype, target) {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(fields), DataType::Struct(target_fields)) => {
@@ -245,49 +290,35 @@ impl FieldSelection {
                     .map(|f| (f.name().as_str(), f.dtype()))
                     .collect();
                 let mut out = Self::validity_only();
+                let mut found = 0;
                 for field in fields {
                     if let Some(target) = target_fields.get(field.name().as_str()) {
+                        found += 1;
                         out.insert_child(
                             field.name().clone(),
-                            Self::of_target_dtype(field.dtype(), target),
+                            Self::of_target_dtype_impl(field.dtype(), target, missing_reads_whole),
                         );
                     }
                 }
+                if missing_reads_whole && found < target_fields.len() {
+                    return Self::All;
+                }
                 out
             },
-            (DataType::List(inner), DataType::List(target)) => {
-                Self::element(Self::of_target_dtype(inner, target))
-            },
+            (DataType::List(inner), DataType::List(target)) => Self::element(
+                Self::of_target_dtype_impl(inner, target, missing_reads_whole),
+            ),
             #[cfg(feature = "dtype-array")]
-            (DataType::Array(inner, _), DataType::Array(target, _)) => {
-                Self::element(Self::of_target_dtype(inner, target))
-            },
+            (DataType::Array(inner, _), DataType::Array(target, _)) => Self::element(
+                Self::of_target_dtype_impl(inner, target, missing_reads_whole),
+            ),
             _ => Self::All,
-        }
-    }
-
-    /// `inner` applied within `self`: the selection relative to the unpruned value, for a
-    /// selection `inner` made on a value already pruned to `self`.
-    pub fn compose(&self, inner: &FieldSelection) -> FieldSelection {
-        match (self, inner) {
-            (Self::All, inner) => inner.clone(),
-            (outer, Self::All) => outer.clone(),
-            (Self::Fields(outer), Self::Fields(inner)) => Self::Fields(Box::new(
-                inner
-                    .iter()
-                    .filter_map(|(name, inner)| {
-                        Some((name.clone(), outer.get(name)?.compose(inner)))
-                    })
-                    .collect(),
-            )),
-            (Self::Element(outer), Self::Element(inner)) => Self::element(outer.compose(inner)),
-            // Not from one dtype: `self` is at least what is needed.
-            (outer @ (Self::Fields(_) | Self::Element(_)), _) => outer.clone(),
         }
     }
 }
 
-fn insert_merged(
+/// Inserts `name` with `selection` into `fields`, unioned with what is already there.
+pub(crate) fn insert_merged(
     fields: &mut PlIndexMap<PlSmallStr, FieldSelection>,
     name: PlSmallStr,
     selection: FieldSelection,
@@ -533,10 +564,10 @@ mod tests {
 
         let outer = FS::element(fields(&[("a", FS::All), ("b", a.clone())]));
         assert_eq!(
-            outer.compose(&FS::element(fields(&[("b", FS::All)]))),
+            outer.intersect(&FS::element(fields(&[("b", FS::All)]))),
             FS::element(fields(&[("b", a.clone())]))
         );
-        assert_eq!(outer.compose(&b), outer);
+        assert_eq!(outer.intersect(&b), outer);
 
         assert_eq!(FS::element(a.clone()).to_string(), "[]{a}");
         assert_eq!(
@@ -550,18 +581,6 @@ mod tests {
         assert_eq!(
             state.hash_one(FS::element(fields(&[("a", FS::All), ("b", FS::All)]))),
             state.hash_one(FS::element(fields(&[("b", FS::All), ("a", FS::All)])))
-        );
-    }
-
-    #[test]
-    fn test_compose() {
-        use FieldSelection as FS;
-
-        let outer = fields(&[("a", FS::All), ("b", fields(&[("x", FS::All)]))]);
-        assert_eq!(outer.compose(&FS::All), outer);
-        assert_eq!(
-            outer.compose(&fields(&[("b", FS::All)])),
-            fields(&[("b", fields(&[("x", FS::All)]))])
         );
     }
 }

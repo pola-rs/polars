@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::io::{Read, Seek};
 
 use polars_arrow_format::ipc::{BodyCompressionRef, MetadataVersion};
-use polars_error::{PolarsResult, polars_ensure};
+use polars_error::{PolarsResult, polars_bail};
 use polars_utils::bool::UnsafeBool;
 
 use super::array::*;
@@ -306,76 +306,83 @@ pub fn read_pruned<R: Read + Seek>(
     scratch: &mut Vec<u8>,
     checked: UnsafeBool,
 ) -> PolarsResult<Box<dyn Array>> {
-    if &field.dtype != pruned_dtype {
-        match (&field.dtype, pruned_dtype) {
-            (ArrowDataType::List(_), ArrowDataType::List(_)) => {
-                return read_list_pruned::<i32, _>(
-                    field_nodes,
-                    variadic_buffer_counts,
-                    &field.dtype,
-                    pruned_dtype.clone(),
-                    ipc_field,
-                    buffers,
-                    reader,
-                    dictionaries,
-                    block_offset,
-                    is_little_endian,
-                    compression,
-                    limit,
-                    version,
-                    scratch,
-                    checked,
-                )
-                .map(|x| x.boxed());
-            },
-            (ArrowDataType::LargeList(_), ArrowDataType::LargeList(_)) => {
-                return read_list_pruned::<i64, _>(
-                    field_nodes,
-                    variadic_buffer_counts,
-                    &field.dtype,
-                    pruned_dtype.clone(),
-                    ipc_field,
-                    buffers,
-                    reader,
-                    dictionaries,
-                    block_offset,
-                    is_little_endian,
-                    compression,
-                    limit,
-                    version,
-                    scratch,
-                    checked,
-                )
-                .map(|x| x.boxed());
-            },
-            (ArrowDataType::FixedSizeList(_, a), ArrowDataType::FixedSizeList(_, b)) if a == b => {
-                return read_fixed_size_list_pruned(
-                    field_nodes,
-                    variadic_buffer_counts,
-                    &field.dtype,
-                    pruned_dtype.clone(),
-                    ipc_field,
-                    buffers,
-                    reader,
-                    dictionaries,
-                    block_offset,
-                    is_little_endian,
-                    compression,
-                    limit,
-                    version,
-                    scratch,
-                    checked,
-                )
-                .map(|x| x.boxed());
-            },
-            _ => {},
-        }
+    if &field.dtype == pruned_dtype {
+        return read(
+            field_nodes,
+            variadic_buffer_counts,
+            field,
+            ipc_field,
+            buffers,
+            reader,
+            dictionaries,
+            block_offset,
+            is_little_endian,
+            compression,
+            limit,
+            version,
+            scratch,
+            checked,
+        );
     }
 
-    if let (ArrowDataType::Struct(_), ArrowDataType::Struct(_)) = (&field.dtype, pruned_dtype)
-        && &field.dtype != pruned_dtype
-    {
-        return read_struct_pruned(
+    match (&field.dtype, pruned_dtype) {
+        (ArrowDataType::List(_), ArrowDataType::List(_)) => read_list_pruned::<i32, _>(
+            field_nodes,
+            variadic_buffer_counts,
+            &field.dtype,
+            pruned_dtype.clone(),
+            ipc_field,
+            buffers,
+            reader,
+            dictionaries,
+            block_offset,
+            is_little_endian,
+            compression,
+            limit,
+            version,
+            scratch,
+            checked,
+        )
+        .map(|x| x.boxed()),
+        (ArrowDataType::LargeList(_), ArrowDataType::LargeList(_)) => read_list_pruned::<i64, _>(
+            field_nodes,
+            variadic_buffer_counts,
+            &field.dtype,
+            pruned_dtype.clone(),
+            ipc_field,
+            buffers,
+            reader,
+            dictionaries,
+            block_offset,
+            is_little_endian,
+            compression,
+            limit,
+            version,
+            scratch,
+            checked,
+        )
+        .map(|x| x.boxed()),
+        (ArrowDataType::FixedSizeList(_, a), ArrowDataType::FixedSizeList(_, b)) if a == b => {
+            read_fixed_size_list_pruned(
+                field_nodes,
+                variadic_buffer_counts,
+                &field.dtype,
+                pruned_dtype.clone(),
+                ipc_field,
+                buffers,
+                reader,
+                dictionaries,
+                block_offset,
+                is_little_endian,
+                compression,
+                limit,
+                version,
+                scratch,
+                checked,
+            )
+            .map(|x| x.boxed())
+        },
+        (ArrowDataType::Struct(_), ArrowDataType::Struct(_)) => read_struct_pruned(
             field_nodes,
             variadic_buffer_counts,
             field,
@@ -392,31 +399,12 @@ pub fn read_pruned<R: Read + Seek>(
             scratch,
             checked,
         )
-        .map(|x| x.boxed());
+        .map(|x| x.boxed()),
+        _ => polars_bail!(
+            ComputeError: "IPC: cannot read field '{}' of dtype {:?} as {:?}",
+            field.name, field.dtype, pruned_dtype
+        ),
     }
-
-    polars_ensure!(
-        &field.dtype == pruned_dtype,
-        ComputeError: "IPC: cannot read field '{}' of dtype {:?} as {:?}",
-        field.name, field.dtype, pruned_dtype
-    );
-
-    read(
-        field_nodes,
-        variadic_buffer_counts,
-        field,
-        ipc_field,
-        buffers,
-        reader,
-        dictionaries,
-        block_offset,
-        is_little_endian,
-        compression,
-        limit,
-        version,
-        scratch,
-        checked,
-    )
 }
 
 pub fn skip(

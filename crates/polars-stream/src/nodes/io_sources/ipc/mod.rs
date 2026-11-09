@@ -25,7 +25,7 @@ use polars_io::ipc::pl_ipc_metadata::{POLARS_IPC_METADATA_KEY, PlIpcMetadata};
 use polars_io::utils::byte_source::{
     BufferByteSource, ByteSource, DynByteSource, DynByteSourceBuilder,
 };
-use polars_plan::dsl::{FieldSelection, MissingColumnsPolicy, ScanFieldSelection, ScanSource};
+use polars_plan::dsl::{MissingColumnsPolicy, ScanFieldSelection, ScanSource};
 use polars_utils::IdxSize;
 use polars_utils::bool::UnsafeBool;
 use polars_utils::mem::prefetch::get_memory_prefetch_func;
@@ -285,10 +285,7 @@ impl FileReader for IpcFileReader {
             .as_deref()
             .and_then(|pruned| pruned[idx].as_ref())
         {
-            Some(dtype) => DataType::from_arrow_field(&ArrowField {
-                dtype: dtype.clone(),
-                ..field.clone()
-            }),
+            Some(dtype) => DataType::from_arrow_field(&field.with_dtype(dtype.clone())),
             None => DataType::from_arrow_field(field),
         };
 
@@ -806,7 +803,7 @@ fn resolve_pruned_dtypes(
         let Some((idx, _, field)) = schema.get_full(name) else {
             continue;
         };
-        let dtype = prune_arrow_dtype(&field.dtype, selection);
+        let dtype = selection.prune_arrow_dtype(&field.dtype);
         if dtype != field.dtype {
             out[idx] = Some(dtype);
             any_pruned = true;
@@ -814,42 +811,6 @@ fn resolve_pruned_dtypes(
     }
 
     any_pruned.then(|| out.into())
-}
-
-/// `dtype` with only the struct fields in `selection`. Only plain structs and lists are pruned:
-/// anything else is read whole.
-fn prune_arrow_dtype(dtype: &ArrowDataType, selection: &FieldSelection) -> ArrowDataType {
-    match (dtype, selection) {
-        (ArrowDataType::Struct(fields), FieldSelection::Fields(selected)) => ArrowDataType::Struct(
-            fields
-                .iter()
-                .filter_map(|field| {
-                    let selection = selected.get(field.name.as_str())?;
-                    Some(ArrowField {
-                        dtype: prune_arrow_dtype(&field.dtype, selection),
-                        ..field.clone()
-                    })
-                })
-                .collect(),
-        ),
-        (ArrowDataType::List(inner), FieldSelection::Element(element)) => {
-            ArrowDataType::List(Box::new(prune_arrow_field(inner, element)))
-        },
-        (ArrowDataType::LargeList(inner), FieldSelection::Element(element)) => {
-            ArrowDataType::LargeList(Box::new(prune_arrow_field(inner, element)))
-        },
-        (ArrowDataType::FixedSizeList(inner, width), FieldSelection::Element(element)) => {
-            ArrowDataType::FixedSizeList(Box::new(prune_arrow_field(inner, element)), *width)
-        },
-        _ => dtype.clone(),
-    }
-}
-
-fn prune_arrow_field(field: &ArrowField, selection: &FieldSelection) -> ArrowField {
-    ArrowField {
-        dtype: prune_arrow_dtype(&field.dtype, selection),
-        ..field.clone()
-    }
 }
 
 async fn read_dictionaries(

@@ -27,6 +27,7 @@ use crate::dsl::default_values::DefaultFieldValues;
 pub mod default_values;
 pub mod deletion;
 mod field_selection;
+pub(crate) use field_selection::insert_merged;
 pub use field_selection::{FieldSelection, ScanFieldSelection};
 #[cfg(feature = "python")]
 pub mod python_delta_dv_provider;

@@ -29,7 +29,7 @@ use crate::plans::optimizer::projection_pushdown::edge::{
     GetParentKeyAndPort as _, GetProjectionState, ParentKeyAndPort, Projection, ProjectionState,
 };
 use crate::plans::optimizer::projection_pushdown::field_pruning::{
-    ColumnSelection, ColumnSelectionExt, SelectionWalker, prune_to_dtype, refresh_schemas,
+    ColumnSelection, ColumnSelectionExt, SelectionWalker, pruning_select, refresh_schemas,
 };
 use crate::plans::optimizer::recursive_caches::caches_shared_across_rounds;
 use crate::plans::options::JoinTypeOptionsIR;
@@ -1959,7 +1959,10 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     return;
                 }
 
-                // The columns read, with what is needed of each.
+                // The columns read, with what is needed of each: only collected if the scan
+                // can read a field selection.
+                let select_fields = self.prune_struct_fields
+                    && scan_supports_field_selection(scan_type, unified_scan_args);
                 let scan_selection = self.names_set_scratch3.get();
 
                 let projected_schema = if out_edge.projection() == Projection::Len
@@ -1983,7 +1986,10 @@ impl ProjectionPushdownVisitor<'_, '_> {
                         None => return,
                     };
 
-                    scan_selection.extend_merged(names.iter().map(|(n, s)| (n.clone(), s.clone())));
+                    if select_fields {
+                        scan_selection
+                            .extend_merged(names.iter().map(|(n, s)| (n.clone(), s.clone())));
+                    }
 
                     projected_schema
                 };
@@ -2011,7 +2017,9 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     for (name, selection) in predicate_selection.drain(..) {
                         Arc::make_mut(&mut scan_projected_schema)
                             .insert(name.clone(), scan_schema.get(&name).unwrap().clone());
-                        scan_selection.insert_merged(name, selection);
+                        if select_fields {
+                            scan_selection.insert_merged(name, selection);
+                        }
                     }
                 }
 
@@ -2034,16 +2042,15 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     schema.insert_at_index(0, entry_name, dtype).unwrap();
                 }
 
-                let field_selection = (self.prune_struct_fields
-                    && scan_supports_field_selection(scan_type, unified_scan_args))
-                .then(|| {
-                    scan_field_selection(
-                        scan_selection,
-                        &file_info.schema,
-                        unified_scan_args.field_selection.as_deref(),
-                    )
-                })
-                .flatten();
+                let field_selection = select_fields
+                    .then(|| {
+                        scan_field_selection(
+                            scan_selection,
+                            &file_info.schema,
+                            unified_scan_args.field_selection.as_deref(),
+                        )
+                    })
+                    .flatten();
 
                 if let Some(field_selection) = &field_selection {
                     let schema = Arc::make_mut(&mut scan_projected_schema);
@@ -2663,31 +2670,10 @@ pub(super) fn narrow_expanded_dataset_scan(
     let full_schema = Arc::new(full_schema);
     *output_schema = Some(full_schema.clone());
 
-    let expr = pruned_schema
-        .iter()
-        .map(|(name, dtype)| {
-            let column = expr_arena.add(AExpr::Column(name.clone()));
-            let pruned = prune_to_dtype(column, full_schema.get(name).unwrap(), dtype, expr_arena);
-            ExprIR::new(pruned, OutputName::Alias(name.clone())).with_dtype(dtype.clone())
-        })
-        .collect();
-
     let scan = ir_arena.take(node);
     let scan = ir_arena.add(scan);
-    ir_arena.replace(
-        node,
-        IR::Select {
-            input: scan,
-            expr,
-            schema: pruned_schema,
-            options: ProjectionOptions {
-                run_parallel: false,
-                duplicate_check: false,
-                should_broadcast: false,
-                maintain_dataframe_height: false,
-            },
-        },
-    );
+    let select = pruning_select(scan, &full_schema, pruned_schema, expr_arena);
+    ir_arena.replace(node, select);
 }
 
 /// The field selection of a scan: the columns of `selection` that are not read whole, relative to
@@ -2709,7 +2695,7 @@ fn scan_field_selection(
             continue;
         };
 
-        let selection = previous.compose(selection).normalize(dtype);
+        let selection = previous.intersect(selection).normalize(dtype);
         if !selection.is_all() {
             out.insert(name.clone(), selection);
         }

@@ -96,8 +96,8 @@ pub fn resolve_pruned_fields(
             .map(leaf_sizes)
             .unwrap_or_default();
         let mut pruner = Pruner::new(&first_sizes);
-        let (decoded, output) = pruner.prune(arrow_field, selection, 0);
-        let dtype = DataType::from_arrow_field(&output);
+        let decoded = pruner.prune(arrow_field, selection, 0);
+        let dtype = DataType::from_arrow_field(&selection.prune_arrow_field(arrow_field));
 
         let narrow_to = |decoded: &ArrowField, dtype: &DataType| -> PolarsResult<_> {
             let decoded_dtype = DataType::from_arrow_field(decoded);
@@ -164,7 +164,7 @@ pub fn resolve_pruned_fields(
             for rg in &metadata.row_groups[1..] {
                 let sizes = leaf_sizes(rg);
                 let mut pruner = Pruner::new(&sizes);
-                let (decoded, _) = pruner.prune(arrow_field, selection, 0);
+                let decoded = pruner.prune(arrow_field, selection, 0);
                 let idx = match decodes
                     .iter()
                     .position(|d| d.leaves.as_ref() == pruner.leaves.as_slice())
@@ -233,42 +233,6 @@ pub fn narrow_to_scan_schema(
     (!out.is_empty()).then_some(ScanFieldSelection(out))
 }
 
-/// The selection of the fields of `dtype` that `pruned` (`dtype` with some struct fields left out,
-/// matched by name) has.
-fn selection_between(dtype: &DataType, pruned: &DataType) -> FieldSelection {
-    if dtype == pruned {
-        return FieldSelection::All;
-    }
-    match (dtype, pruned) {
-        (DataType::Struct(fields), DataType::Struct(pruned_fields)) => {
-            let fields: PlHashMap<&str, &DataType> = fields
-                .iter()
-                .map(|f| (f.name().as_str(), f.dtype()))
-                .collect();
-            let mut selection = FieldSelection::validity_only();
-            for pruned_field in pruned_fields {
-                match fields.get(pruned_field.name().as_str()) {
-                    Some(dtype) => selection.insert_child(
-                        pruned_field.name().clone(),
-                        selection_between(dtype, pruned_field.dtype()),
-                    ),
-                    // Not a narrowing of `dtype`: read it whole.
-                    None => return FieldSelection::All,
-                }
-            }
-            selection
-        },
-        (DataType::List(inner), DataType::List(pruned_inner)) => {
-            FieldSelection::element(selection_between(inner, pruned_inner))
-        },
-        #[cfg(feature = "dtype-array")]
-        (DataType::Array(inner, _), DataType::Array(pruned_inner, _)) => {
-            FieldSelection::element(selection_between(inner, pruned_inner))
-        },
-        _ => FieldSelection::All,
-    }
-}
-
 /// Walks a column and its selection, collecting the leaves to read.
 struct Pruner<'a> {
     /// The compressed size of each leaf of the column in the row group.
@@ -289,30 +253,21 @@ impl<'a> Pruner<'a> {
     }
 
     /// Prunes `field` (whose leaves start at `offset`) to `selection`. Returns the field to
-    /// decode and the field output.
+    /// decode; the field output is `selection.prune_arrow_field(field)`.
     fn prune(
         &mut self,
         field: &ArrowField,
         selection: &FieldSelection,
         offset: usize,
-    ) -> (ArrowField, ArrowField) {
-        let with_dtype = |dtype| {
-            let mut field = field.clone();
-            field.dtype = dtype;
-            field
-        };
-
+    ) -> ArrowField {
         match (field.dtype(), selection) {
             (ArrowDataType::Struct(children), FieldSelection::Fields(selected)) => {
                 let mut decoded_children = Vec::new();
-                let mut output_children = Vec::new();
                 let mut child_offset = offset;
 
                 for child in children {
                     if let Some(child_selection) = selected.get(&child.name) {
-                        let (decoded, output) = self.prune(child, child_selection, child_offset);
-                        decoded_children.push(decoded);
-                        output_children.push(output);
+                        decoded_children.push(self.prune(child, child_selection, child_offset));
                     }
                     child_offset += n_columns(child.dtype());
                 }
@@ -334,38 +289,26 @@ impl<'a> Pruner<'a> {
                     ));
                 }
 
-                (
-                    with_dtype(ArrowDataType::Struct(decoded_children)),
-                    with_dtype(ArrowDataType::Struct(output_children)),
-                )
+                field.with_dtype(ArrowDataType::Struct(decoded_children))
             },
             // A list has no leaves of its own: its offsets and validity come with those of the
             // element.
             (ArrowDataType::List(inner), FieldSelection::Element(element)) => {
-                let (decoded, output) = self.prune(inner, element, offset);
-                (
-                    with_dtype(ArrowDataType::List(Box::new(decoded))),
-                    with_dtype(ArrowDataType::List(Box::new(output))),
-                )
+                let decoded = self.prune(inner, element, offset);
+                field.with_dtype(ArrowDataType::List(Box::new(decoded)))
             },
             (ArrowDataType::LargeList(inner), FieldSelection::Element(element)) => {
-                let (decoded, output) = self.prune(inner, element, offset);
-                (
-                    with_dtype(ArrowDataType::LargeList(Box::new(decoded))),
-                    with_dtype(ArrowDataType::LargeList(Box::new(output))),
-                )
+                let decoded = self.prune(inner, element, offset);
+                field.with_dtype(ArrowDataType::LargeList(Box::new(decoded)))
             },
             (ArrowDataType::FixedSizeList(inner, width), FieldSelection::Element(element)) => {
-                let (decoded, output) = self.prune(inner, element, offset);
-                (
-                    with_dtype(ArrowDataType::FixedSizeList(Box::new(decoded), *width)),
-                    with_dtype(ArrowDataType::FixedSizeList(Box::new(output), *width)),
-                )
+                let decoded = self.prune(inner, element, offset);
+                field.with_dtype(ArrowDataType::FixedSizeList(Box::new(decoded), *width))
             },
             _ => {
                 self.leaves
                     .extend(offset..offset + n_columns(field.dtype()));
-                (field.clone(), field.clone())
+                field.clone()
             },
         }
     }
@@ -492,7 +435,8 @@ pub fn resolve_arrow_field_projections(
             let Some(file_dtype) = file_schema.get(source_name) else {
                 continue;
             };
-            let selection = selection_between(file_dtype, source_dtype).normalize(file_dtype);
+            let selection =
+                FieldSelection::of_narrowed_dtype(file_dtype, source_dtype).normalize(file_dtype);
             match selections.get_mut(source_name) {
                 Some(merged) => merged.union(selection),
                 None => {
@@ -758,10 +702,11 @@ mod tests {
         let s = field("s", struct_of(children));
         let sizes = [1, 50, 40, 30];
         let mut pruner = Pruner::new(&sizes);
-        let (decoded, output) = pruner.prune(&s, &FieldSelection::validity_only(), 0);
+        let selection = FieldSelection::validity_only();
+        let decoded = pruner.prune(&s, &selection, 0);
         assert_eq!(pruner.leaves, vec![3]);
         assert!(pruner.chose_validity_leaf);
-        assert_eq!(output.dtype(), &struct_of(vec![]));
+        assert_eq!(selection.prune_arrow_field(&s).dtype(), &struct_of(vec![]));
         assert_eq!(
             decoded.dtype(),
             &struct_of(vec![field(
@@ -789,7 +734,8 @@ mod tests {
         let selection =
             FieldSelection::element(FieldSelection::field("b".into(), FieldSelection::All));
         let mut pruner = Pruner::new(&[5, 9]);
-        let (decoded, output) = pruner.prune(&l, &selection, 0);
+        let decoded = pruner.prune(&l, &selection, 0);
+        let output = selection.prune_arrow_field(&l);
         assert_eq!(pruner.leaves, vec![1]);
         assert!(!pruner.chose_validity_leaf);
         assert_eq!(decoded, output);
@@ -800,7 +746,8 @@ mod tests {
 
         let selection = FieldSelection::element(FieldSelection::validity_only());
         let mut pruner = Pruner::new(&[5, 9]);
-        let (decoded, output) = pruner.prune(&l, &selection, 0);
+        let decoded = pruner.prune(&l, &selection, 0);
+        let output = selection.prune_arrow_field(&l);
         assert_eq!(pruner.leaves, vec![0]);
         assert!(pruner.chose_validity_leaf);
         assert_eq!(output.dtype(), &list_of(vec![]));
@@ -825,7 +772,7 @@ mod tests {
         leaf_sizes[0] = 1;
 
         let mut pruner = Pruner::new(&leaf_sizes);
-        let (decoded, _) = pruner.prune(&s, &FieldSelection::validity_only(), 0);
+        let decoded = pruner.prune(&s, &FieldSelection::validity_only(), 0);
         assert_eq!(pruner.leaves, vec![0]);
         assert_eq!(n_columns(decoded.dtype()), 1);
     }

@@ -78,12 +78,7 @@ pub trait ColumnSelectionExt {
 
 impl ColumnSelectionExt for ColumnSelection {
     fn insert_merged(&mut self, name: PlSmallStr, selection: FieldSelection) {
-        match self.entry(name) {
-            indexmap::map::Entry::Occupied(mut entry) => entry.get_mut().union(selection),
-            indexmap::map::Entry::Vacant(entry) => {
-                entry.insert(selection);
-            },
-        }
+        crate::dsl::insert_merged(self, name, selection)
     }
 
     fn has_field_selections(&self) -> bool {
@@ -743,7 +738,8 @@ impl<'a> SelectionWalker<'a> {
         }
         let pruned_dtype = selection.prune_dtype(dtype);
         // Not to a struct without fields (validity only), which a `struct.eval` would build.
-        if has_struct_without_fields(&pruned_dtype) {
+        #[cfg(feature = "dtype-struct")]
+        if pruned_dtype.contains_dtype_recursive(&DataType::Struct(vec![])) {
             return None;
         }
 
@@ -1132,20 +1128,6 @@ fn is_row_selection(function: &IRFunctionExpr) -> bool {
     }
 }
 
-/// Whether `dtype` has a struct without fields, at any depth.
-fn has_struct_without_fields(dtype: &DataType) -> bool {
-    match dtype {
-        #[cfg(feature = "dtype-struct")]
-        DataType::Struct(fields) => {
-            fields.is_empty() || fields.iter().any(|f| has_struct_without_fields(f.dtype()))
-        },
-        DataType::List(inner) => has_struct_without_fields(inner),
-        #[cfg(feature = "dtype-array")]
-        DataType::Array(inner, _) => has_struct_without_fields(inner),
-        _ => false,
-    }
-}
-
 /// Whether `function` is `list.get` or `arr.get` (and so `first` / `last`).
 fn is_element_get(function: &IRFunctionExpr) -> bool {
     match function {
@@ -1292,10 +1274,18 @@ fn recompute_schema(
         },
         IR::HStack { exprs, schema, .. } => {
             let input_schema = &input_schemas[0];
+            let mut expr_dtypes =
+                PlIndexMap::with_capacity_and_hasher(exprs.len(), Default::default());
+            for e in exprs.iter_mut() {
+                if !expr_dtypes.contains_key(e.output_name()) {
+                    let dtype = expr_dtype(e, input_schema, expr_arena);
+                    expr_dtypes.insert(e.output_name().clone(), dtype);
+                }
+            }
             let mut new_schema = Schema::with_capacity(schema.len());
             for (name, old_dtype) in schema.iter() {
-                let dtype = match exprs.iter_mut().find(|e| e.output_name() == name) {
-                    Some(e) => expr_dtype(e, input_schema, expr_arena),
+                let dtype = match expr_dtypes.swap_remove(name) {
+                    Some(dtype) => dtype,
                     None => input_schema.get(name).cloned(),
                 };
                 new_schema.insert(name.clone(), dtype.unwrap_or_else(|| old_dtype.clone()));
@@ -1426,29 +1416,40 @@ fn align_input_dtypes(
             continue;
         }
 
-        let expr = common
-            .iter()
-            .map(|(name, dtype)| {
-                let column = expr_arena.add(AExpr::Column(name.clone()));
-                let pruned =
-                    prune_to_dtype(column, input_schema.get(name).unwrap(), dtype, expr_arena);
-                ExprIR::new(pruned, OutputName::Alias(name.clone())).with_dtype(dtype.clone())
-            })
-            .collect();
-
-        let new_input = ir_arena.add(IR::Select {
-            input: *input,
-            expr,
-            schema: common.clone(),
-            options: ProjectionOptions {
-                run_parallel: false,
-                duplicate_check: false,
-                should_broadcast: false,
-                maintain_dataframe_height: false,
-            },
-        });
+        let new_input = pruning_select(*input, input_schema, common.clone(), expr_arena);
+        let new_input = ir_arena.add(new_input);
 
         *ir_arena.get_mut(node).inputs_mut().nth(i).unwrap() = new_input;
+    }
+}
+
+/// A `Select` of `input`, with schema `input_schema`, that prunes each column to its dtype in
+/// `schema`.
+pub(super) fn pruning_select(
+    input: Node,
+    input_schema: &Schema,
+    schema: Arc<Schema>,
+    expr_arena: &mut Arena<AExpr>,
+) -> IR {
+    let expr = schema
+        .iter()
+        .map(|(name, dtype)| {
+            let column = expr_arena.add(AExpr::Column(name.clone()));
+            let pruned = prune_to_dtype(column, input_schema.get(name).unwrap(), dtype, expr_arena);
+            ExprIR::new(pruned, OutputName::Alias(name.clone())).with_dtype(dtype.clone())
+        })
+        .collect();
+
+    IR::Select {
+        input,
+        expr,
+        schema,
+        options: ProjectionOptions {
+            run_parallel: false,
+            duplicate_check: false,
+            should_broadcast: false,
+            maintain_dataframe_height: false,
+        },
     }
 }
 
@@ -1495,7 +1496,7 @@ fn fields_by_name(
 
 /// An expression reading the struct value (or list of them) of `node` (of dtype `from`) pruned
 /// to `to`, keeping the outer validity.
-pub(super) fn prune_to_dtype(
+fn prune_to_dtype(
     node: Node,
     from: &DataType,
     to: &DataType,

@@ -228,10 +228,7 @@ pub fn read_record_batch_pruned<R: Read + Seek>(
         .iter_values()
         .enumerate()
         .map(|(i, field)| match pruned_dtype(i) {
-            Some(dtype) => Field {
-                dtype: dtype.clone(),
-                ..field.clone()
-            },
+            Some(dtype) => field.with_dtype(dtype.clone()),
             None => field.clone(),
         })
         .collect();
