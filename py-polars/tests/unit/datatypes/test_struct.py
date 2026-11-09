@@ -2744,12 +2744,13 @@ def test_struct_eval_empty_non_elementwise_input(input_expr: pl.Expr) -> None:
 
 
 def test_struct_when_then_after_parquet_roundtrip_29815() -> None:
+    # The `then` arm selects few enough rows to be evaluated on only those rows.
     buf = io.BytesIO()
     pl.DataFrame(
         {
             "order": [
                 {"status": "shipped", "tracking": ["TRK123"]},
-                {"status": "pending", "tracking": []},
+                *[{"status": "pending", "tracking": []}] * 3,
             ]
         }
     ).write_parquet(buf)
@@ -2761,7 +2762,7 @@ def test_struct_when_then_after_parquet_roundtrip_29815() -> None:
         .then(pl.col("order").struct.field("tracking").list.get(0))
         .otherwise(pl.lit("not shipped"))
     )
-    assert out.to_series().to_list() == ["TRK123", "not shipped"]
+    assert out.to_series().to_list() == ["TRK123"] + ["not shipped"] * 3
 
 
 @pytest.mark.parametrize(
