@@ -760,6 +760,9 @@ impl LazyFrame {
 
     /// Collect the query in batches.
     ///
+    /// If `split_by` is set, batches are split at every change of that column
+    /// instead of by row count.
+    ///
     /// If lazy is true the query will not start until the first poll (or until
     /// start is called on CollectBatches).
     #[cfg(feature = "async")]
