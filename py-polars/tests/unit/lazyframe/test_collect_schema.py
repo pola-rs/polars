@@ -69,7 +69,15 @@ def test_arr_get_oob_errors_at_schema_26088() -> None:
 
 @pytest.mark.parametrize(
     "lhs_dtype",
-    [pl.Null, pl.Boolean, pl.Int64, pl.Float16, pl.Float32, pl.Float64, pl.Decimal(10, 2)],
+    [
+        pl.Null,
+        pl.Boolean,
+        pl.Int64,
+        pl.Float16,
+        pl.Float32,
+        pl.Float64,
+        pl.Decimal(10, 2),
+    ],
 )
 @pytest.mark.parametrize(
     "rhs_dtype",
