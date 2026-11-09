@@ -168,13 +168,25 @@ def test_collect_batches_split_by(engine: EngineType) -> None:
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
-def test_collect_batches_split_by_across_morsels(engine: EngineType) -> None:
+def test_collect_batches_split_by_many_groups(engine: EngineType) -> None:
     n = 100_000
     df = pl.DataFrame({"ts": [i // 1000 for i in range(n)], "x": range(n)})
 
     frames = list(df.lazy().collect_batches(split_by="ts", engine=engine))
 
     assert len(frames) == 100
+    assert all(f["ts"].n_unique() == 1 for f in frames)
+    assert_frame_equal(pl.concat(frames), df)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_collect_batches_split_by_across_morsels(engine: EngineType) -> None:
+    n = 200_000
+    df = pl.DataFrame({"ts": [0] * (n - 1) + [1], "x": range(n)})
+
+    frames = list(df.lazy().collect_batches(split_by="ts", engine=engine))
+
+    assert [f.height for f in frames] == [n - 1, 1]
     assert all(f["ts"].n_unique() == 1 for f in frames)
     assert_frame_equal(pl.concat(frames), df)
 
