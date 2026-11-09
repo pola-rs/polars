@@ -1,5 +1,3 @@
-use std::num::NonZeroUsize;
-
 use polars_arrow::compute::concatenate::concatenate_validities;
 use polars_core::chunked_array::ops::binning::{FractionSpec, IntervalSpec};
 use polars_core::prelude::gather::check_bounds_ca;
@@ -108,15 +106,15 @@ fn uniform_threshold_offsets(
 // its `Int128` physical) derive representable thresholds in their own width.
 pub fn bin_interval_breaks(
     s: &Series,
-    n_bins: NonZeroUsize,
+    n_bins: usize,
     right_closed: bool,
 ) -> PolarsResult<Option<Series>> {
+    polars_ensure!(n_bins > 0, ComputeError: "binning requires at least one bin");
     let dtype = s.dtype();
     polars_ensure!(
         dtype.is_numeric(),
         InvalidOperation: "`bin_intervals` requires a numeric input, got `{}`", dtype
     );
-    let n_bins = n_bins.get();
     let n_breaks = n_bins - 1;
 
     if dtype.is_float() {
@@ -307,9 +305,10 @@ pub fn bin_intervals(
         // `bins_from_breaks` rejects a mismatch rather than papering over it here.
         IntervalSpec::Breaks(breaks) => Series::clone(breaks),
         IntervalSpec::Count(n_bins) => {
+            let n_bins = n_bins.get();
             // No usable min/max: an empty or all-null column.
-            let Some(breaks) = bin_interval_breaks(s, *n_bins, right_closed)? else {
-                return empty_bins(s, n_bins.get(), labels, include_intervals);
+            let Some(breaks) = bin_interval_breaks(s, n_bins, right_closed)? else {
+                return empty_bins(s, n_bins, labels, include_intervals);
             };
             breaks
         },
