@@ -657,7 +657,8 @@ pub struct TableStatistics(pub Arc<DataFrame>, pub StatisticsBounds);
 pub enum StatisticsBounds {
     /// The values lie within the bounds. Good enough to skip files.
     Loose,
-    /// Non-string bounds are actual values of the file (Iceberg), so they answer aggregates.
+    /// Integer, decimal, date, time and boolean bounds are actual values of the file (Iceberg),
+    /// so they answer aggregates.
     Tight,
 }
 

@@ -228,14 +228,15 @@ fn answerable(aggregate: &Aggregate, schema: &Schema) -> bool {
 }
 
 /// Whether the bounds of `dtype` are exact. Strings can be truncated, and floats lack NaN counts.
+/// Not timestamps either, see the TODO.
+// TODO: allow timestamps once Microsoft Fabric OneLake writes their bounds exactly. The Iceberg
+// metadata it generates for Delta tables (served by its Iceberg REST catalog) floors both bounds
+// to milliseconds, so an upper bound can be below the true maximum (found 2026-11-09).
 fn has_exact_bounds(dtype: &DataType) -> bool {
     dtype.is_integer()
         || dtype.is_bool()
         || dtype.is_decimal()
-        || matches!(
-            dtype,
-            DataType::Date | DataType::Datetime(_, _) | DataType::Time
-        )
+        || matches!(dtype, DataType::Date | DataType::Time)
 }
 
 /// Computes the value of each aggregate, if the statistics of `scan` describe every row exactly.

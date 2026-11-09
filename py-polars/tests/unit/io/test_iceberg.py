@@ -6084,7 +6084,7 @@ _STATISTICS_FRAMES = [
     },
 ]
 _STATISTICS_SCHEMA: dict[str, Any] = {"v": pl.Int64, "dec": pl.Decimal(10, 2)}
-_STATISTICS_COLUMNS = ["id", "v", "d", "ts", "dec", "b", "t"]
+_STATISTICS_COLUMNS = ["id", "v", "d", "dec", "b", "t"]
 
 
 def _statistics_table(catalog: SqlCatalog) -> pyiceberg.table.Table:
@@ -6107,6 +6107,9 @@ def test_scan_iceberg_aggregates_from_statistics(
             for c in _STATISTICS_COLUMNS
             for f in ["min", "max", "count", "null_count"]
         ),
+        # Timestamps: counts only
+        pl.col("ts").count().alias("ts_count"),
+        pl.col("ts").null_count().alias("ts_null_count"),
         pl.len(),
         (pl.col("id").max() - pl.col("id").min()).alias("range"),
     ]
@@ -6139,6 +6142,8 @@ def test_scan_iceberg_aggregates_from_statistics(
         # strings and floats: bounds may be truncated, NaN counts are not known
         lambda lf: lf.select(pl.col("s").max()),
         lambda lf: lf.select(pl.col("f").max()),
+        # timestamps: OneLake floors the bounds of Delta tables to milliseconds
+        lambda lf: lf.select(pl.col("ts").max()),
         # not every row, or not only aggregates the statistics hold
         lambda lf: lf.filter(pl.col("id") > 1).select(pl.col("id").max()),
         lambda lf: lf.head(3).select(pl.col("id").max()),
