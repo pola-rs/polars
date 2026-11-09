@@ -25,7 +25,7 @@ use polars_plan::plans::predicates::{
     aexpr_to_column_predicates, aexpr_to_skip_batch_predicate, null_count_dtype,
 };
 use polars_plan::plans::{
-    AExpr, ExprIRDisplay, FileInfo, IR, IRFunctionExpr, MintermIter, OrderKeeping,
+    AExpr, ExprIRDisplay, FileInfo, IR, IRFunctionExpr, MintermIter, ToFieldContext,
     order_keeping_column,
 };
 use polars_plan::utils::aexpr_to_leaf_names_iter;
@@ -321,9 +321,14 @@ fn runtime_range_hint(
             constant: None,
         }));
     }
-    let Some(OrderKeeping { column, .. }) = order_keeping_column(input, expr_arena, schema) else {
+    let Some(order_keeping) = order_keeping_column(input, expr_arena, schema) else {
         return Ok(None);
     };
+    // Bounds of row groups where the expression overflows are null, so unknown.
+    let dtype = expr_arena
+        .get(input)
+        .to_dtype(&ToFieldContext::new(expr_arena, schema))?;
+    let input = order_keeping.null_on_overflow(input, &dtype, expr_arena);
     let expr = create_physical_expr(
         &ExprIR::from_node(input, expr_arena),
         expr_arena,
@@ -331,7 +336,7 @@ fn runtime_range_hint(
         state,
     )?;
     Ok(Some(RuntimeRangeHint {
-        column,
+        column: order_keeping.column,
         order_keeping_expr: Some(Arc::new(OrderKeepingExpr(expr))),
         source,
         constant: None,

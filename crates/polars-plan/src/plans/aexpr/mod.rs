@@ -25,7 +25,7 @@ pub use function_expr::*;
 pub use minterm_iter::MintermIter;
 #[cfg(feature = "round_series")]
 pub(crate) use order_keeping::int_literal;
-pub use order_keeping::{OrderKeeping, order_keeping_column};
+pub use order_keeping::{OrderKeeping, OverflowGuard, null_unless, order_keeping_column};
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
