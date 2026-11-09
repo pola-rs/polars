@@ -15,10 +15,11 @@ use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, ParquetOptions};
 use polars_io::utils::byte_source::{BufferByteSource, DynByteSource, DynByteSourceBuilder};
 use polars_parquet::read::schema::{SchemaInferenceOptions, infer_schema_with_options};
-use polars_plan::dsl::ScanSource;
+use polars_plan::dsl::{ScanFieldSelection, ScanSource};
 use polars_utils::IdxSize;
 use polars_utils::aliases::PlHashMap;
 use polars_utils::mem::prefetch::get_memory_prefetch_func;
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 
 use super::multi_scan::reader_interface::output::{FileReaderOutputRecv, FileReaderOutputSend};
@@ -30,7 +31,8 @@ use crate::metrics::OptIOMetrics;
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::io_sources::parquet::projection::{
-    ArrowFieldProjection, resolve_arrow_field_projections,
+    ArrowFieldProjection, PrunedField, narrow_to_scan_schema, resolve_arrow_field_projections,
+    resolve_pruned_fields,
 };
 use crate::nodes::{TaskPriority, io_sources};
 use crate::utils::tokio_handle_ext;
@@ -48,6 +50,12 @@ pub struct ParquetFileReader {
     scan_source: ScanSource,
     cloud_options: Option<Arc<CloudOptions>>,
     config: Arc<ParquetOptions>,
+    /// Struct fields to read of the columns not read whole.
+    field_selection: Option<Arc<ScanFieldSelection>>,
+    /// The full schema of the scan, set with `field_selection` or `prune_to_scan_schema`.
+    scan_schema: Option<SchemaRef>,
+    /// Extra struct fields are ignored: read only the fields of the dtypes in `scan_schema`.
+    prune_to_scan_schema: bool,
     /// Set by the builder if we have metadata left over from DSL conversion.
     metadata: Option<Arc<FileMetadata>>,
     file_size: Option<usize>,
@@ -118,7 +126,10 @@ struct RowGroupPrefetchSync {
 struct InitializedState {
     file_metadata: Arc<FileMetadata>,
     file_schema: Arc<ArrowSchema>,
+    /// The file schema, with pruned struct columns narrowed to the fields read.
     file_schema_pl: Option<SchemaRef>,
+    /// Struct columns read for some of their fields.
+    pruned_fields: Arc<PlHashMap<PlSmallStr, Arc<PrunedField>>>,
     byte_source: Arc<DynByteSource>,
 }
 
@@ -187,10 +198,33 @@ impl FileReader for ParquetFileReader {
             &schema_inference_options(&self.config),
         )?);
 
+        let narrowed_field_selection;
+        let field_selection = match &self.scan_schema {
+            Some(scan_schema) if self.prune_to_scan_schema => {
+                narrowed_field_selection = narrow_to_scan_schema(
+                    self.field_selection.as_deref(),
+                    scan_schema,
+                    &file_schema,
+                );
+                narrowed_field_selection.as_ref()
+            },
+            _ => self.field_selection.as_deref(),
+        };
+        let pruned_fields = match field_selection {
+            Some(field_selection) => resolve_pruned_fields(
+                &file_schema,
+                field_selection,
+                self.scan_schema.as_deref(),
+                &file_metadata,
+            )?,
+            None => PlHashMap::default(),
+        };
+
         self.init_data = Some(InitializedState {
             file_metadata,
             file_schema,
             file_schema_pl: None,
+            pruned_fields: Arc::new(pruned_fields),
             byte_source,
         });
 
@@ -224,6 +258,7 @@ impl FileReader for ParquetFileReader {
             file_metadata,
             file_schema: file_arrow_schema,
             file_schema_pl: _,
+            pruned_fields,
             byte_source,
         } = self.init_data.clone().unwrap();
 
@@ -333,6 +368,8 @@ impl FileReader for ParquetFileReader {
                     &file_schema,
                     projection.clone(),
                     cast_columns_policy.clone(),
+                    &pruned_fields,
+                    &file_metadata,
                 )?);
             }
             PolarsResult::Ok(_projected_arrow_fields.as_ref().unwrap().clone())
@@ -397,7 +434,8 @@ impl FileReader for ParquetFileReader {
                 .map(|x| x.parse::<usize>().expect("integer").max(1))
                 .unwrap_or(1 << 20);
 
-        let is_full_projection = projected_arrow_fields.len() == file_schema.len();
+        let is_full_projection = projected_arrow_fields.len() == file_schema.len()
+            && projected_arrow_fields.iter().all(|p| !p.is_pruned());
 
         let (output_recv, handle) = ParquetReadImpl {
             projected_arrow_fields,
@@ -471,11 +509,18 @@ impl ParquetFileReader {
         let InitializedState {
             file_schema,
             file_schema_pl,
+            pruned_fields,
             ..
         } = self.init_data.as_mut().unwrap();
 
         if file_schema_pl.is_none() {
-            *file_schema_pl = Some(Arc::new(Schema::from_arrow_schema(file_schema.as_ref())))
+            let mut schema = Schema::from_arrow_schema(file_schema.as_ref());
+            for (name, pruned) in pruned_fields.iter() {
+                if let Some(dtype) = schema.get_mut(name) {
+                    *dtype = pruned.dtype.clone();
+                }
+            }
+            *file_schema_pl = Some(Arc::new(schema))
         }
 
         file_schema_pl.as_ref().unwrap()

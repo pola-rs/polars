@@ -1,4 +1,4 @@
-use polars_core::prelude::AnyValue;
+use polars_core::prelude::{AnyValue, PlHashSet};
 use polars_error::{PolarsResult, polars_err};
 use polars_plan::dsl::default_values::IcebergDefaultFieldValues;
 
@@ -6,6 +6,10 @@ use polars_plan::dsl::default_values::IcebergDefaultFieldValues;
 pub struct IcebergDefaultValueProviderRef<'a> {
     scan_source_idx: usize,
     default_values: &'a IcebergDefaultFieldValues,
+    /// The physical IDs of the structs with a field (at any depth) that has an
+    /// identity-partition value, if the columns are pruned to selected struct fields: the
+    /// partition field that makes a missing struct valid may be pruned away.
+    partitioned_structs: Option<&'a PlHashSet<u32>>,
 }
 
 impl<'a> IcebergDefaultValueProviderRef<'a> {
@@ -13,7 +17,22 @@ impl<'a> IcebergDefaultValueProviderRef<'a> {
         Self {
             scan_source_idx,
             default_values,
+            partitioned_structs: None,
         }
+    }
+
+    pub fn with_partitioned_structs(self, partitioned_structs: &'a PlHashSet<u32>) -> Self {
+        Self {
+            partitioned_structs: Some(partitioned_structs),
+            ..self
+        }
+    }
+
+    /// Whether the struct `physical_id` has a field with an identity-partition value, if known
+    /// from before pruning (see [`Self::with_partitioned_structs`]).
+    pub fn struct_has_partition_value(&self, physical_id: u32) -> Option<bool> {
+        self.partitioned_structs
+            .map(|structs| structs.contains(&physical_id))
     }
 }
 

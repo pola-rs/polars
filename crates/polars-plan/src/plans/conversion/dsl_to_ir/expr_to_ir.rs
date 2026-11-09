@@ -592,6 +592,7 @@ fn to_aexpr_impl_inner(expr: &Expr, ctx: &mut ExprToIRContext) -> PolarsResult<(
                             ExprHeightOptions {
                                 struct_field: ExprProjectionHeight::Column,
                                 structural_unknowns_only: true,
+                                ..Default::default()
                             },
                         ),
                         ExprProjectionHeight::Unknown

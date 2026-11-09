@@ -989,18 +989,35 @@ fn lower_ir_inner(
                         // initial hint.
                         metadata_per_source,
                         bytes_per_source,
-                    } => Arc::new(
-                        crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder {
-                            options: Arc::new(options.clone()),
-                            first_metadata: metadata_per_source.first_metadata().cloned(),
-                            bytes_per_source: bytes_per_source.clone(),
-                            pipeline_budget: std::sync::OnceLock::new(),
-                            shared_prefetch_wait_group_slot: Default::default(),
-                            file_read_context: std::sync::OnceLock::new(),
-                            io_metrics: std::sync::OnceLock::new(),
-                            task_metrics: std::sync::OnceLock::new(),
-                        },
-                    ) as _,
+                    } => {
+                        // With a column mapping, the fields to read are resolved per file from
+                        // the mapped projection instead.
+                        let unmapped = unified_scan_args.column_mapping.is_none();
+                        let prune_to_scan_schema = unmapped
+                            && unified_scan_args.cast_columns_policy.extra_struct_fields
+                                == polars_plan::dsl::ExtraColumnsPolicy::Ignore;
+                        Arc::new(
+                            crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder {
+                                options: Arc::new(options.clone()),
+                                field_selection: unified_scan_args
+                                    .field_selection
+                                    .clone()
+                                    .filter(|_| unmapped),
+                                scan_schema: ((unified_scan_args.field_selection.is_some()
+                                    && unmapped)
+                                    || prune_to_scan_schema)
+                                    .then(|| file_info.schema.clone()),
+                                prune_to_scan_schema,
+                                first_metadata: metadata_per_source.first_metadata().cloned(),
+                                bytes_per_source: bytes_per_source.clone(),
+                                pipeline_budget: std::sync::OnceLock::new(),
+                                shared_prefetch_wait_group_slot: Default::default(),
+                                file_read_context: std::sync::OnceLock::new(),
+                                io_metrics: std::sync::OnceLock::new(),
+                                task_metrics: std::sync::OnceLock::new(),
+                            },
+                        ) as _
+                    },
 
                     #[cfg(feature = "ipc")]
                     FileScanIR::Ipc {
@@ -1008,6 +1025,11 @@ fn lower_ir_inner(
                         metadata: first_metadata,
                     } => Arc::new(crate::nodes::io_sources::ipc::builder::IpcReaderBuilder {
                         options: Arc::new(options.clone()),
+                        field_selection: unified_scan_args.field_selection.clone(),
+                        scan_schema: unified_scan_args
+                            .field_selection
+                            .is_some()
+                            .then(|| file_info.schema.clone()),
                         first_metadata: first_metadata.clone(),
                         pipeline_budget: std::sync::OnceLock::new(),
                         shared_prefetch_wait_group_slot: Default::default(),
@@ -1107,6 +1129,7 @@ fn lower_ir_inner(
                         multi_scan::functions::resolve_projections::resolve_projections(
                             &output_schema,
                             &file_schema,
+                            unified_scan_args.field_selection.as_deref(),
                             &mut hive_parts,
                             unified_scan_args
                                 .row_index
@@ -1125,6 +1148,7 @@ fn lower_ir_inner(
                             .default_values
                             .filter(|DefaultFieldValues::Iceberg(v)| !v.is_empty())
                             .map(|DefaultFieldValues::Iceberg(v)| v),
+                        unified_scan_args.field_selection.as_deref(),
                     );
 
                     // TODO: We ignore the parameter for some scan types to maintain old behavior,

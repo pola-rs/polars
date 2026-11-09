@@ -408,6 +408,7 @@ impl LazyFileListReader for LazyCsvReader {
                 expand_paths: true,
                 hidden_file_prefix: None,
                 projection: None,
+                field_selection: None,
                 column_mapping: None,
                 default_values: None,
                 row_index,
