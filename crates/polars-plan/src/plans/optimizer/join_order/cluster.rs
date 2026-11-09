@@ -18,7 +18,7 @@ use recursive::recursive;
 use crate::plans::aexpr::{ExprPushdownGroup, is_inherently_nondeterministic};
 use crate::plans::optimizer::join_utils::plain_inner_equi_join;
 use crate::plans::schema::join_right_output_names;
-use crate::plans::stats::{KeyColumns, StatsCache, node_stats_with_cache};
+use crate::plans::stats::{SharedKeyColumns, StatsCache, node_stats_with_cache};
 use crate::plans::{
     AExpr, ExprIR, IR, JoinOptionsIR, MintermIter, NodeStats, OutputName, ProjectionOptions,
     aexpr_to_leaf_names_iter,
@@ -203,7 +203,7 @@ pub(super) fn extract(
     root: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    key_columns: &Arc<KeyColumns>,
+    key_columns: &SharedKeyColumns,
 ) -> Option<Cluster> {
     let IR::Join { options, .. } = ir_arena.get(root_join(root, ir_arena, expr_arena)?) else {
         return None;
@@ -341,7 +341,7 @@ pub(super) fn extract(
     // which leaves happened to be measurable. Taken after renaming so that the
     // per-column statistics are keyed on the names the rebuilt joins use.
     let mut leaves = Vec::with_capacity(nodes.len());
-    let mut stats_cache = StatsCache::with_key_columns(key_columns.clone());
+    let mut stats_cache = StatsCache::with_key_columns(key_columns);
     for (node, schema) in nodes.into_iter().zip(schemas) {
         let stats = node_stats_with_cache(node, ir_arena, expr_arena, &mut stats_cache)?;
         leaves.push(Leaf {

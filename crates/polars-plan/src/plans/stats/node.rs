@@ -3,6 +3,8 @@
 //! Anything that cannot be estimated yields `None` rather than a guess, so a caller
 //! can tell "no estimate" apart from "estimated to be small".
 
+use std::cell::OnceCell;
+use std::rc::Rc;
 use std::sync::{Arc, LazyLock, Mutex, Weak};
 
 use polars_core::frame::DataFrame;
@@ -33,8 +35,7 @@ pub(crate) struct StatsCache {
     // We don't iterate over it.
     #[expect(clippy::disallowed_types)]
     nodes: PlHashMap<Node, Option<NodeStats>>,
-    /// Given by the caller, or made on the first in-memory frame.
-    key_columns: Option<Arc<KeyColumns>>,
+    key_columns: SharedKeyColumns,
 }
 
 /// Names of the columns of in-memory frames worth counting, see
@@ -42,16 +43,15 @@ pub(crate) struct StatsCache {
 #[expect(clippy::disallowed_types)]
 pub(crate) type KeyColumns = PlHashSet<PlSmallStr>;
 
-impl StatsCache {
-    pub(crate) fn new() -> Self {
-        Self::default()
-    }
+/// [`KeyColumns`] made on the first in-memory frame, shared by the caches of a pass.
+pub(crate) type SharedKeyColumns = Rc<OnceCell<KeyColumns>>;
 
-    /// A cache that counts the columns in `key_columns`. A pass making many caches
-    /// shares one set instead of walking the arena for each.
-    pub(crate) fn with_key_columns(key_columns: Arc<KeyColumns>) -> Self {
+impl StatsCache {
+    /// A cache that shares `key_columns` with other caches of the same pass, so the
+    /// arena is walked at most once.
+    pub(crate) fn with_key_columns(key_columns: &SharedKeyColumns) -> Self {
         Self {
-            key_columns: Some(key_columns),
+            key_columns: key_columns.clone(),
             ..Self::default()
         }
     }
@@ -68,7 +68,7 @@ impl StatsCache {
 /// Counting the distinct values of an in-memory column costs a pass over a sample of
 /// it, so only these are counted. The arena may hold nodes no longer in the plan,
 /// which only adds names.
-pub(crate) fn key_column_names(ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Arc<KeyColumns> {
+fn key_column_names(ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> KeyColumns {
     let mut names = KeyColumns::default();
     let add_keys = |keys: &[ExprIR], names: &mut KeyColumns| {
         for key in keys {
@@ -110,7 +110,7 @@ pub(crate) fn key_column_names(ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) 
             }
         }
         if names.len() == before {
-            break Arc::new(names);
+            break names;
         }
     }
 }
@@ -147,7 +147,7 @@ pub fn node_stats(
     ir_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
 ) -> Option<NodeStats> {
-    node_stats_with_cache(node, ir_arena, expr_arena, &mut StatsCache::new())
+    node_stats_with_cache(node, ir_arena, expr_arena, &mut StatsCache::default())
 }
 
 /// [`node_stats`], reusing what `cache` already holds.
@@ -214,7 +214,7 @@ pub(crate) fn node_stats_with_cache(
             let names = output_schema.as_ref().unwrap_or(schema);
             let key_columns = cache
                 .key_columns
-                .get_or_insert_with(|| key_column_names(ir_arena, expr_arena));
+                .get_or_init(|| key_column_names(ir_arena, expr_arena));
             Some(NodeStats {
                 columns: dataframe_columns(df, names, key_columns),
                 ..NodeStats::of_rows(rows)
@@ -234,9 +234,13 @@ pub(crate) fn node_stats_with_cache(
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             // A computed key holds neither the values nor the distinct count of the
             // column it is named after, so only a key reading one column contributes.
-            let ndv = keys
+            let sources: Vec<Option<&PlSmallStr>> = keys
                 .iter()
                 .map(|k| into_column(k.node(), expr_arena))
+                .collect();
+            let ndv = sources
+                .iter()
+                .copied()
                 .collect::<Option<Vec<_>>>()
                 .and_then(|mut sources| {
                     // Several keys reading one column split it no finer than one of
@@ -246,18 +250,10 @@ pub(crate) fn node_stats_with_cache(
                     inner.key_distinct_count_product(&sources)
                 });
             let names: Vec<&PlSmallStr> = keys.iter().map(|k| k.output_name()).collect();
-            let key_stats: Vec<Option<ScanColumnStats>> = keys
-                .iter()
-                .map(|k| {
-                    into_column(k.node(), expr_arena)
-                        .and_then(|name| inner.column(name))
-                        .cloned()
-                })
-                .collect();
             Some(one_row_per_group(
                 inner,
                 &names,
-                &key_stats,
+                &sources,
                 ndv,
                 options.slice,
             ))
@@ -273,14 +269,11 @@ pub(crate) fn node_stats_with_cache(
             };
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             let ndv = inner.key_distinct_count_product(&names);
-            let key_stats: Vec<Option<ScanColumnStats>> = names
-                .iter()
-                .map(|name| inner.column(name).cloned())
-                .collect();
+            let sources: Vec<Option<&PlSmallStr>> = names.iter().copied().map(Some).collect();
             Some(one_row_per_group(
                 inner,
                 &names,
-                &key_stats,
+                &sources,
                 ndv,
                 options.slice,
             ))
@@ -696,8 +689,8 @@ fn keeps_height(expr: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
 /// Estimates for a node emitting one row per distinct combination of `keys`,
 /// optionally sliced.
 ///
-/// `keys` names the output columns, `key_stats` holds the input statistics of the
-/// column each key reads, and `ndv` is the distinct combinations they hold if that
+/// `keys` names the output columns, `sources` the input column each key reads if
+/// it reads one, and `ndv` is the distinct combinations they hold if that
 /// is known.
 ///
 /// The output columns are the keys. A single key holds as many distinct values as
@@ -705,7 +698,7 @@ fn keeps_height(expr: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
 fn one_row_per_group(
     inner: NodeStats,
     keys: &[&PlSmallStr],
-    key_stats: &[Option<ScanColumnStats>],
+    sources: &[Option<&PlSmallStr>],
     ndv: Option<f64>,
     slice: Option<(i64, usize)>,
 ) -> NodeStats {
@@ -724,7 +717,7 @@ fn one_row_per_group(
     groups.columns = match keys {
         [_] => single_key_column(keys, groups.filtered),
         // A slice keeps only some groups, so it may drop values of any key.
-        _ if slice.is_none() => multi_key_columns(keys, key_stats),
+        _ if slice.is_none() => multi_key_columns(keys, sources, &inner),
         _ => None,
     };
     groups
@@ -734,20 +727,17 @@ fn one_row_per_group(
 /// column it reads.
 fn multi_key_columns(
     keys: &[&PlSmallStr],
-    key_stats: &[Option<ScanColumnStats>],
+    sources: &[Option<&PlSmallStr>],
+    inner: &NodeStats,
 ) -> Option<Arc<ScanColumnStatsMap>> {
     let map: ScanColumnStatsMap = keys
         .iter()
-        .zip(key_stats)
-        .filter_map(|(name, stats)| {
-            let stats = stats.as_ref()?;
+        .zip(sources)
+        .filter_map(|(name, source)| {
             let stats = ScanColumnStats {
-                distinct: stats.distinct,
                 null_count: Card::Unknown,
-                avg_byte_width: stats.avg_byte_width,
-                int_range: stats.int_range,
-                int_range_partial: stats.int_range_partial,
                 sampled_row_groups: None,
+                ..inner.column(source.as_ref()?)?.clone()
             };
             Some(((*name).clone(), stats))
         })
@@ -771,8 +761,7 @@ fn dataframe_columns(
     names: &Schema,
     key_columns: &KeyColumns,
 ) -> Option<Arc<ScanColumnStatsMap>> {
-    let height = df.height();
-    if height == 0 {
+    if df.height() == 0 {
         return None;
     }
     let map: ScanColumnStatsMap = names
@@ -845,11 +834,11 @@ fn series_distinct(series: &Series) -> Option<Card> {
     if series.null_count() as f64 > MAX_NULL_FRACTION * series.len() as f64 {
         return None;
     }
-    let non_null = series.len() - series.null_count();
     if series.len() <= NDV_SAMPLE_ROWS {
-        let groups = series.drop_nulls().group_tuples(false, false).ok()?;
-        return Some(Card::Exact(groups.len() as u64));
+        let distinct = series.drop_nulls().n_unique().ok()?;
+        return Some(Card::Exact(distinct as u64));
     }
+    let non_null = series.len() - series.null_count();
     // Uniform, so the rows of a value stored next to each other are drawn together
     // as often as anywhere else. A fixed seed keeps plans the same between runs.
     let sample = series

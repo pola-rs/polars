@@ -28,7 +28,7 @@ use crate::plans::iterator::ArenaExprIter;
 use crate::plans::schema::det_join_schema;
 #[cfg(feature = "semi_anti_join")]
 use crate::plans::schema::join_right_output_names;
-use crate::plans::stats::{KeyColumns, StatsCache, key_column_names, node_stats_with_cache};
+use crate::plans::stats::{SharedKeyColumns, StatsCache, node_stats_with_cache};
 use crate::plans::{
     AExpr, ExprIR, ExprPushdownGroup, IR, JoinOptionsIR, JoinTypeOptionsIR, MintermIter,
 };
@@ -47,15 +47,20 @@ pub(super) fn push_through_outer_joins(
 ) -> Node {
     // The anti rewrite must not run first, or the inner join above sees an `HStack`
     // where it looks for the filter.
-    let root = run_pass(root, ir_arena, expr_arena, push_inner_through);
+    let key_columns = SharedKeyColumns::default();
+    let root = run_pass(root, ir_arena, expr_arena, &|node, ir_arena, expr_arena| {
+        push_inner_through(node, ir_arena, expr_arena, &key_columns)
+    });
     #[cfg(feature = "semi_anti_join")]
-    let root = run_pass(root, ir_arena, expr_arena, pushdown_semi_anti);
+    let root = run_pass(root, ir_arena, expr_arena, &|node, ir_arena, expr_arena| {
+        pushdown_semi_anti(node, ir_arena, expr_arena, &key_columns)
+    });
     #[cfg(feature = "semi_anti_join")]
-    let root = run_pass(root, ir_arena, expr_arena, filter_to_anti);
+    let root = run_pass(root, ir_arena, expr_arena, &filter_to_anti);
     root
 }
 
-type Rule = fn(Node, &mut Arena<IR>, &mut Arena<AExpr>, &Arc<KeyColumns>) -> Node;
+type Rule<'a> = &'a dyn Fn(Node, &mut Arena<IR>, &mut Arena<AExpr>) -> Node;
 
 fn run_pass(
     root: Node,
@@ -66,15 +71,7 @@ fn run_pass(
     // A cached subtree can be reached from several parents; rewriting it once per
     // parent would give caches that share an id but not a plan.
     let mut rewritten = PlIndexMap::default();
-    let key_columns = key_column_names(ir_arena, expr_arena);
-    rewrite(
-        root,
-        ir_arena,
-        expr_arena,
-        &mut rewritten,
-        rule,
-        &key_columns,
-    )
+    rewrite(root, ir_arena, expr_arena, &mut rewritten, rule)
 }
 
 /// Bottom-up: rewrite the inputs, then apply `rule` at this node.
@@ -85,7 +82,6 @@ fn rewrite(
     expr_arena: &mut Arena<AExpr>,
     rewritten: &mut PlIndexMap<Node, Node>,
     rule: Rule,
-    key_columns: &Arc<KeyColumns>,
 ) -> Node {
     if let Some(&done) = rewritten.get(&node) {
         return done;
@@ -99,19 +95,12 @@ fn rewrite(
     let children = ir_arena.get(step).get_inputs();
     let mut new_children = UnitVec::with_capacity(children.len());
     for child in children {
-        new_children.push(rewrite(
-            child,
-            ir_arena,
-            expr_arena,
-            rewritten,
-            rule,
-            key_columns,
-        ));
+        new_children.push(rewrite(child, ir_arena, expr_arena, rewritten, rule));
     }
     for (slot, new) in ir_arena.get_mut(step).inputs_mut().zip(new_children) {
         *slot = new;
     }
-    let new_node = rule(node, ir_arena, expr_arena, key_columns);
+    let new_node = rule(node, ir_arena, expr_arena);
     rewritten.insert(node, new_node);
     new_node
 }
@@ -164,7 +153,7 @@ fn push_inner_through(
     node: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    key_columns: &Arc<KeyColumns>,
+    key_columns: &SharedKeyColumns,
 ) -> Node {
     let (join, filter) = match ir_arena.get(node) {
         IR::Filter { input, predicate } if matches!(ir_arena.get(*input), IR::Join { .. }) => {
@@ -179,7 +168,7 @@ fn push_inner_through(
         _ => None,
     };
 
-    let mut stats = StatsCache::with_key_columns(key_columns.clone());
+    let mut stats = StatsCache::with_key_columns(key_columns);
     let Some(pushed) = try_push(join, carried, ir_arena, expr_arena, &mut stats) else {
         return node;
     };
@@ -447,9 +436,9 @@ fn pushdown_semi_anti(
     node: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    key_columns: &Arc<KeyColumns>,
+    key_columns: &SharedKeyColumns,
 ) -> Node {
-    let mut stats = StatsCache::with_key_columns(key_columns.clone());
+    let mut stats = StatsCache::with_key_columns(key_columns);
     pushdown_semi_anti_with(node, ir_arena, expr_arena, &mut stats)
 }
 
@@ -693,12 +682,7 @@ fn pushdown_pays(
 /// `Filter(is_null(rk) ∧ …)(Left(A, B))` becomes `Anti(A, B)` with `B`'s columns
 /// re-added as nulls. Projection pushdown drops those that nothing reads.
 #[cfg(feature = "semi_anti_join")]
-fn filter_to_anti(
-    node: Node,
-    ir_arena: &mut Arena<IR>,
-    expr_arena: &mut Arena<AExpr>,
-    _key_columns: &Arc<KeyColumns>,
-) -> Node {
+fn filter_to_anti(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) -> Node {
     let IR::Filter { input, predicate } = ir_arena.get(node) else {
         return node;
     };

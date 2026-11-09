@@ -13,15 +13,13 @@
 //! - [`enumerate`] picks the order,
 //! - [`rebuild`] emits the new plan.
 
-use std::sync::Arc;
-
 use polars_core::error::PolarsResult;
 use polars_core::prelude::PlIndexMap;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;
 use recursive::recursive;
 
-use crate::plans::stats::{KeyColumns, key_column_names};
+use crate::plans::stats::SharedKeyColumns;
 use crate::plans::{AExpr, IR};
 
 mod cluster;
@@ -38,7 +36,7 @@ pub(super) fn join_order(
     // from several parents. Rewriting it once per parent would give caches that
     // share an id but not a plan.
     let mut rewritten = PlIndexMap::default();
-    let key_columns = key_column_names(ir_arena, expr_arena);
+    let key_columns = SharedKeyColumns::default();
     rewrite(root, ir_arena, expr_arena, &mut rewritten, &key_columns)
 }
 
@@ -48,7 +46,7 @@ fn rewrite(
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     rewritten: &mut PlIndexMap<Node, Node>,
-    key_columns: &Arc<KeyColumns>,
+    key_columns: &SharedKeyColumns,
 ) -> PolarsResult<Node> {
     if let Some(&done) = rewritten.get(&node) {
         return Ok(done);
