@@ -351,3 +351,14 @@ def test_split_by_null_keys() -> None:
 
     assert [f["ts"].to_list() for f in frames] == [[1], [None, None], [2]]
     assert_frame_equal(pl.concat(frames), df)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_split_by_null_keys_across_morsels(engine: EngineType) -> None:
+    n = 200_000
+    df = pl.DataFrame({"ts": [None] * (n - 1) + [1], "x": range(n)})
+
+    frames = list(df.lazy().collect_batches(split_by="ts", engine=engine))
+
+    assert [f.height for f in frames] == [n - 1, 1]
+    assert_frame_equal(pl.concat(frames), df)
