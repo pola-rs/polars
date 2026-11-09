@@ -8,7 +8,7 @@ mod err;
 mod exitable;
 
 use std::num::NonZeroUsize;
-use std::sync::mpsc::{Receiver, sync_channel};
+use std::sync::mpsc::{sync_channel, Receiver};
 use std::sync::{Arc, Mutex};
 
 pub use anonymous_scan::*;
@@ -35,7 +35,7 @@ use polars_defs::join::{
 use polars_defs::time::group_by::{DynamicGroupOptions, RollingGroupOptions};
 use polars_io::RowIndex;
 use polars_mem_engine::scan_predicate::functions::apply_scan_predicate_to_scan_ir;
-use polars_mem_engine::{Executor, create_multiple_physical_plans, create_physical_plan};
+use polars_mem_engine::{create_multiple_physical_plans, create_physical_plan, Executor};
 use polars_observer::{PlannedQuery, QueryObserver};
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
 use polars_plan::plans::ExecutionHooks;
@@ -458,7 +458,7 @@ impl LazyFrame {
     /// See the method on [Series](polars_core::series::SeriesTrait::shift) for more info on the `shift` operation.
     pub fn shift_and_fill<E: Into<Expr>, IE: Into<Expr>>(self, n: E, fill_value: IE) -> Self {
         self.select(vec![
-            col(PlSmallStr::from_static("*")).shift_and_fill(n.into(), fill_value.into()),
+            col(PlSmallStr::from_static("*")).shift_and_fill(n.into(), fill_value.into())
         ])
     }
 
@@ -769,6 +769,7 @@ impl LazyFrame {
         maintain_order: bool,
         chunk_size: Option<NonZeroUsize>,
         lazy: bool,
+        split_by: Option<PlSmallStr>,
     ) -> PolarsResult<CollectBatches> {
         let (send, recv) = sync_channel(1);
         let runner_send = send.clone();
@@ -780,6 +781,7 @@ impl LazyFrame {
             }),
             maintain_order,
             chunk_size,
+            split_by,
         )?;
         let runner = move || {
             // We use spawn_blocking here as it has a high blocking thread pool limit.
@@ -805,6 +807,7 @@ impl LazyFrame {
         function: PlanCallback<DataFrame, bool>,
         maintain_order: bool,
         chunk_size: Option<NonZeroUsize>,
+        split_by: Option<PlSmallStr>,
     ) -> PolarsResult<Self> {
         use polars_plan::prelude::sink::CallbackSinkType;
 
@@ -812,6 +815,16 @@ impl LazyFrame {
             !matches!(self.logical_plan, DslPlan::Sink { .. }),
             InvalidOperation: "cannot create a sink on top of another sink"
         );
+        if split_by.is_some() {
+            polars_ensure!(
+                maintain_order,
+                InvalidOperation: "split_by requires maintain_order=true"
+            );
+            polars_ensure!(
+                chunk_size.is_none(),
+                InvalidOperation: "split_by cannot be combined with chunk_size"
+            );
+        }
 
         self.logical_plan = DslPlan::Sink {
             input: Arc::new(self.logical_plan),
@@ -819,6 +832,7 @@ impl LazyFrame {
                 function,
                 maintain_order,
                 chunk_size,
+                split_by,
             }),
         };
 

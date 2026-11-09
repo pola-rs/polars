@@ -196,9 +196,9 @@ pub fn python_scan_predicate(
         //  Convert to pyarrow expression if possible
         if matches!(options.python_source, PythonScanSource::Pyarrow) {
             use polars_core::config::verbose_print_sensitive;
-            use polars_plan::plans::MintermIter;
-            use polars_plan::plans::python::ArrowPredicate;
             use polars_plan::plans::python::pyarrow::aexpr_to_pyarrow;
+            use polars_plan::plans::python::ArrowPredicate;
+            use polars_plan::plans::MintermIter;
             use polars_utils::python_function::PythonObject;
             use pyo3::prelude::*;
 
@@ -407,6 +407,7 @@ fn create_physical_plan_impl(
                 function,
                 maintain_order: _,
                 chunk_size,
+                split_by,
             }) => {
                 let chunk_size = chunk_size.map_or(usize::MAX, Into::into);
 
@@ -414,6 +415,20 @@ fn create_physical_plan_impl(
                     input: recurse!(input, state)?,
                     name: PlSmallStr::from_static("batches"),
                     f: Box::new(move |mut buffer, _state| {
+                        if let Some(split_by) = &split_by {
+                            let (mut complete, pending) =
+                                polars_ops::frame::split_by_key(&buffer, split_by)?;
+                            complete.push(pending);
+                            for df in complete {
+                                if df.height() == 0 {
+                                    continue;
+                                }
+                                if function.call(df)? {
+                                    break;
+                                }
+                            }
+                            return Ok(Some(DataFrame::empty()));
+                        }
                         while buffer.height() > 0 {
                             let df;
                             (df, buffer) = buffer.split_at(buffer.height().min(chunk_size) as i64);

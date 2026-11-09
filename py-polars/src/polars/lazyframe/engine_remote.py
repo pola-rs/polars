@@ -202,10 +202,11 @@ class RemoteEngine(Engine):
         optimizations: QueryOptFlags,
         maintain_order: bool = True,
         chunk_size: int | None = None,
+        split_by: str | None = None,
         lazy: bool = False,
     ) -> _CollectBatches:
         """See :meth:`polars.LazyFrame.collect_batches`."""
-        self._reject_if_set(chunk_size=chunk_size, lazy=lazy)
+        self._reject_if_set(chunk_size=chunk_size, split_by=split_by, lazy=lazy)
         # Polars Cloud streams the result back through `scan_arrow_c_stream`, so this
         # really is a `_CollectBatches`; its stubs just type it as a plain iterator.
         return self._target(lf).collect_batches(  # type: ignore[return-value]

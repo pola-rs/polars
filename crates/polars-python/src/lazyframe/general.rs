@@ -774,13 +774,20 @@ impl PyLazyFrame {
         maintain_order: bool,
         chunk_size: Option<NonZeroUsize>,
         lazy: bool,
+        split_by: Option<Wrap<PlSmallStr>>,
     ) -> PyResult<PyCollectBatches> {
         py.enter_polars(|| {
             let ldf = self.ldf.read().clone();
 
             let collect_batches = ldf
                 .clone()
-                .collect_batches(engine.0, maintain_order, chunk_size, lazy)
+                .collect_batches(
+                    engine.0,
+                    maintain_order,
+                    chunk_size,
+                    lazy,
+                    split_by.map(|s| s.0),
+                )
                 .map_err(PyPolarsErr::from)?;
 
             PyResult::Ok(PyCollectBatches {
@@ -980,13 +987,14 @@ impl PyLazyFrame {
         .map_err(Into::into)
     }
 
-    #[pyo3(signature = (function, maintain_order, chunk_size))]
+    #[pyo3(signature = (function, maintain_order, chunk_size, split_by = None))]
     pub fn sink_batches(
         &self,
         py: Python<'_>,
         function: Py<PyAny>,
         maintain_order: bool,
         chunk_size: Option<NonZeroUsize>,
+        split_by: Option<Wrap<PlSmallStr>>,
     ) -> PyResult<PyLazyFrame> {
         let ldf = self.ldf.read().clone();
         py.enter_polars(|| {
@@ -994,6 +1002,7 @@ impl PyLazyFrame {
                 PlanCallback::new_python(PythonObject(function)),
                 maintain_order,
                 chunk_size,
+                split_by.map(|s| s.0),
             )
         })
         .map(Into::into)

@@ -4068,6 +4068,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         function: Callable[[DataFrame], bool | None],
         *,
         chunk_size: int | None = None,
+        split_by: str | None = None,
         maintain_order: bool = True,
         lazy: Literal[False] = ...,
         engine: EngineType = "auto",
@@ -4080,6 +4081,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         function: Callable[[DataFrame], bool | None],
         *,
         chunk_size: int | None = None,
+        split_by: str | None = None,
         maintain_order: bool = True,
         lazy: Literal[True],
         engine: EngineType = "auto",
@@ -4092,6 +4094,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         function: Callable[[DataFrame], bool | None],
         *,
         chunk_size: int | None = None,
+        split_by: str | None = None,
         maintain_order: bool = True,
         lazy: bool = False,
         engine: EngineType = "auto",
@@ -4120,6 +4123,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             early stopping.
         chunk_size
             The number of rows that are buffered before the callback is called.
+        split_by
+            Split batches at every change of this column. The data must be
+            sorted by this column so that each batch holds a single value;
+            requires `maintain_order=True` and cannot be combined with
+            `chunk_size`.
         maintain_order
             Maintain the order in which data is processed.
             Setting this to `False` will be slightly faster.
@@ -4164,6 +4172,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 self,
                 function,
                 chunk_size=chunk_size,
+                split_by=split_by,
                 maintain_order=maintain_order,
             )
 
@@ -4171,6 +4180,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             self,
             function,
             chunk_size=chunk_size,
+            split_by=split_by,
             maintain_order=maintain_order,
             optimizations=optimizations,
         )
@@ -4181,6 +4191,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         *,
         chunk_size: int | None = None,
+        split_by: str | None = None,
         maintain_order: bool = True,
         lazy: bool = False,
         engine: EngineType = "auto",
@@ -4208,6 +4219,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         chunk_size
             The number of rows that are buffered before a chunk is given.
+        split_by
+            Split batches at every change of this column. The data must be
+            sorted by this column so that each batch holds a single value;
+            requires `maintain_order=True` and cannot be combined with
+            `chunk_size`.
         maintain_order
             Maintain the order in which data is processed.
             Setting this to `False` will be slightly faster.
@@ -4237,6 +4253,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
+        >>> lf = pl.LazyFrame({"ts": [1, 1, 2], "x": [1, 2, 3]})
+        >>> for batch in lf.collect_batches(split_by="ts"):
+        ...     print(batch["ts"].to_list())
+        [1, 1]
+        [2]
+
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
         >>> for df in lf.collect_batches():
         ...     print(df)  # doctest: +SKIP
@@ -4251,6 +4273,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             optimizations=optimizations,
             maintain_order=maintain_order,
             chunk_size=chunk_size,
+            split_by=split_by,
             lazy=lazy,
         )
 
