@@ -298,16 +298,20 @@ def _user_storage_options(user_storage_options: Mapping[str, Any]) -> dict[str, 
 def _native_storage_options(
     table: pyiceberg.table.Table,
     user_storage_options: Mapping[str, Any] | None,
+    source: str | None = None,
 ) -> dict[str, Any] | None:
     """
     Object store options for Polars' own reads and writes of `table`'s files.
 
-    As `_storage_options`, for files at the table's data path. With FileIO
-    properties that have no object store equivalent, the user's storage options
-    alone.
+    As `_storage_options`, for files at the table's data path, or at `source`
+    (a file to read) if that is on another backend. With FileIO properties that
+    have no object store equivalent, the user's storage options alone.
     """
     # Where the table writes its data files: stable across scans, unlike a file.
     location = table.properties.get("write.data.path") or table.location()
+    # Files on another backend (e.g. added from elsewhere) take its properties.
+    if source is not None and _backend(source) != _backend(location):
+        location = source
     try:
         return _storage_options(table.io.properties, location, user_storage_options)
     except NotImplementedError as e:
@@ -332,7 +336,7 @@ def _catalog_storage_options(
         _convert_iceberg_property_value,
     )
 
-    scheme = location.split("://", 1)[0].lower() if "://" in location else ""
+    scheme = _url_scheme(location)
     # Empty values are unset, as in PyIceberg.
     properties = {
         k: v
@@ -373,6 +377,16 @@ def _catalog_storage_options(
         if scheme in schemes and _property_is_true(properties, anonymous_key):
             storage_options[skip_signature_key] = "true"
     return storage_options
+
+
+def _url_scheme(location: str) -> str:
+    return location.split("://", 1)[0].lower() if "://" in location else ""
+
+
+def _backend(location: str) -> tuple[str, ...] | None:
+    """The URL schemes of `location`'s backend, as in `_PROPERTY_SCHEMES`."""
+    scheme = _url_scheme(location)
+    return next((s for s in _PROPERTY_SCHEMES.values() if scheme in s), None)
 
 
 def _configures(key: str, scheme: str) -> bool:
@@ -513,6 +527,7 @@ _USER_CREDENTIAL_KEYS = frozenset(
         "web_identity_token_file",
         "container_credentials_relative_uri",
         "container_credentials_full_uri",
+        "container_authorization_token_file",
         "access_key",
         "account_key",
         "master_key",

@@ -9399,6 +9399,14 @@ def test_iceberg_native_storage_options(monkeypatch: pytest.MonkeyPatch) -> None
         "aws_region": "eu-west-1",
         "aws_profile": "p",
     }
+    for key in (
+        "aws_container_authorization_token_file",
+        "container_authorization_token_file",
+    ):
+        assert plugin._native_storage_options(table, {key: "/f"}) == {  # type: ignore[arg-type]
+            "aws_region": "eu-west-1",
+            key: "/f",
+        }
     # remote signing has no object store equivalent: the user's options alone
     table = Table({"s3.remote-signing-enabled": "true", "s3.region": "eu-west-1"})
     assert plugin._native_storage_options(table, None) is None  # type: ignore[arg-type]
@@ -9419,6 +9427,19 @@ def test_iceberg_native_storage_options(monkeypatch: pytest.MonkeyPatch) -> None
         {"write.data.path": "s3://bucket/data"},
     )
     assert plugin._native_storage_options(table, None) == {  # type: ignore[arg-type]
+        "aws_region": "eu-west-1"
+    }
+    # files read on another backend than the data path take that backend's
+    table = Table({"s3.region": "eu-west-1"}, "gs://b/t")
+    assert plugin._native_storage_options(table, None, "s3://b/f.parquet") == {  # type: ignore[arg-type]
+        "aws_region": "eu-west-1"
+    }
+    table = Table(
+        {"s3.region": "eu-west-1"}, "s3://b/t", {"write.data.path": "s3://b/d"}
+    )
+    assert plugin._native_storage_options(table, None, "gs://b/f.parquet") == {}  # type: ignore[arg-type]
+    # an alias of the same backend keeps the data path
+    assert plugin._native_storage_options(table, None, "s3a://b/f.parquet") == {  # type: ignore[arg-type]
         "aws_region": "eu-west-1"
     }
     # boolean values, which PyIceberg takes
