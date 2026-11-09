@@ -1,6 +1,6 @@
-use polars_ops::series::ClosedInterval;
+use polars_defs::expr::ClosedInterval;
 #[cfg(feature = "temporal")]
-use polars_time::ClosedWindow;
+use polars_defs::time::group_by::ClosedWindow;
 
 use super::*;
 

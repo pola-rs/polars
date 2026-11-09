@@ -41,3 +41,67 @@ fn test_construct_list_of_null_series() {
     assert_eq!(s.null_count(), 0);
     assert_eq!(s.field().name(), "a");
 }
+
+#[test]
+#[cfg(feature = "dtype-struct")]
+fn test_borrowed_struct_values_matched_to_fields() -> PolarsResult<()> {
+    let to_series = |df: DataFrame| df.into_struct("s".into()).into_series();
+    let ordered = to_series(df!("a" => [1i64, 2], "b" => ["x", "y"])?);
+    let reordered = to_series(df!("b" => ["p", "q"], "a" => [3i64, 4])?);
+    let missing = to_series(df!("a" => [5i64])?);
+    let values = [
+        ordered.get(0)?,
+        reordered.get(0)?,
+        reordered.get(1)?,
+        missing.get(0)?,
+        ordered.get(1)?,
+        AnyValue::Null,
+    ];
+    assert!(matches!(values[0], AnyValue::Struct(..)));
+
+    // Match each value's fields by position if it has the same field names ("ordered")
+    // or by name ("reordered"); fields that don't match should be null ("missing").
+    let s = Series::from_any_values_and_dtype("s".into(), &values, ordered.dtype(), true)?;
+    let expected = df!(
+        "a" => [Some(1i64), Some(3), Some(4), Some(5), Some(2), None],
+        "b" => [Some("x"), Some("p"), Some("q"), None, Some("y"), None],
+    )?;
+    assert!(s.struct_()?.clone().unnest().equals_missing(&expected));
+    assert_eq!(s.null_count(), 1);
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "dtype-struct")]
+fn test_borrowed_struct_values_fields_merged() -> PolarsResult<()> {
+    let to_series = |df: DataFrame| df.into_struct("s".into()).into_series();
+    let ordered = to_series(df!("a" => [1i64], "b" => ["x"])?);
+    let reordered = to_series(df!("b" => [None, Some("y")], "a" => [2i64, 3])?);
+    let extra = to_series(df!("c" => [None::<i32>], "a" => [4i64])?);
+    let values = [
+        AnyValue::Null,
+        ordered.get(0)?,
+        reordered.get(0)?,
+        reordered.get(1)?,
+        extra.get(0)?,
+    ];
+
+    // The fields of all values are merged in first-seen order, and keep their
+    // (common) data type, even if all of their values are null (ref: "c").
+    let s = Series::from_any_values("s".into(), &values, true)?;
+    let expected = df!(
+        "a" => [None, Some(1i64), Some(2), Some(3), Some(4)],
+        "b" => [None, Some("x"), None, Some("y"), None],
+        "c" => [None::<i32>, None, None, None, None],
+    )?;
+    let expected_dtype = DataType::Struct(expected.schema().iter_fields().collect());
+    assert_eq!(s.dtype(), &expected_dtype);
+    assert!(s.struct_()?.clone().unnest().equals_missing(&expected));
+    assert_eq!(s.null_count(), 1);
+
+    // Values of a field with mixed data types (eg: string/int) are invalid.
+    let conflicting = to_series(df!("a" => ["y"])?);
+    let values = [ordered.get(0)?, conflicting.get(0)?];
+    assert!(Series::from_any_values("s".into(), &values, true).is_err());
+    Ok(())
+}

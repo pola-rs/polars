@@ -63,7 +63,7 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         Parameters
         ----------
         n
-            Number of business days to offset by. Can be a single number of an
+            Number of business days to offset by. Can be a single number or an
             expression.
         week_mask
             Which days of the week to count. The default is Monday to Friday.
@@ -434,12 +434,14 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         microsecond
             Column or literal, ranging from 0-999999.
         ambiguous
-            Determine how to deal with ambiguous datetimes:
+            Determine how to handle daylight savings time (DST)
+            ambiguous datetimes (e.g., when the clock falls back and the
+            same local time occurs twice):
 
-            - `'raise'` (default): raise
-            - `'earliest'`: use the earliest datetime
-            - `'latest'`: use the latest datetime
-            - `'null'`: set to null
+            - 'earliest': use the earliest datetime
+            - 'latest': use the latest datetime
+            - 'raise': raise an error
+            - 'null': set to null
 
         Returns
         -------
@@ -1762,7 +1764,7 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
 
     def epoch(self, time_unit: EpochTimeUnit = "us") -> Expr:
         """
-        Get the time passed since the Unix EPOCH in the give time unit.
+        Get the time passed since the Unix EPOCH in the given time unit.
 
         Parameters
         ----------
@@ -1950,12 +1952,15 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         time_zone
             Time zone for the `Datetime` expression. Pass `None` to unset time zone.
         ambiguous
-            Determine how to deal with ambiguous datetimes:
+            Determine how to handle daylight savings time (DST)
+            ambiguous datetimes (e.g., when the clock falls back and the
+            same local time occurs twice):
 
-            - `'raise'` (default): raise
-            - `'earliest'`: use the earliest datetime
-            - `'latest'`: use the latest datetime
-            - `'null'`: set to null
+            - 'earliest': use the earliest datetime
+            - 'latest': use the latest datetime
+            - 'raise': raise an error
+            - 'null': set to null
+
         non_existent
             Determine how to deal with non-existent datetimes:
 
@@ -2334,7 +2339,7 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         Parameters
         ----------
         fractional
-            Whether to include return the result as a :class:`.Float64`.
+            Whether to return the result as a :class:`.Float64`.
             Because the smallest :type:`.TimeUnit` is `'ns'`, the
             fractional component will always be zero.
 

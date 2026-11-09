@@ -1,6 +1,6 @@
-use polars_io::RowIndex;
 #[cfg(feature = "is_between")]
-use polars_ops::prelude::ClosedInterval;
+use polars_defs::expr::ClosedInterval;
+use polars_io::RowIndex;
 use polars_utils::pl_path::PlRefPath;
 use polars_utils::slice_enum::Slice;
 

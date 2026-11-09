@@ -35,6 +35,7 @@ impl CardinalitySketch {
     }
 
     /// Add a new hash to the sketch.
+    #[inline]
     pub fn insert(&mut self, mut h: u64) {
         const ARBITRARY_ODD: u64 = 0x902813a5785dc787;
         // We multiply by this arbitrarily chosen odd number and then take the

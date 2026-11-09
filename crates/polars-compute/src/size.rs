@@ -1,5 +1,5 @@
-use arrow::array::{Array, ArrayRef, BinaryViewArray, UInt32Array};
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::{Array, ArrayRef, BinaryViewArray, UInt32Array};
+use polars_arrow::datatypes::ArrowDataType;
 use polars_buffer::Buffer;
 
 pub fn binary_size_bytes(array: &BinaryViewArray) -> ArrayRef {

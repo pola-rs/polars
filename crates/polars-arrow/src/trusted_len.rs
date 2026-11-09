@@ -98,14 +98,6 @@ where
     }
 }
 
-impl<J: Clone> TrustMyLength<std::iter::RepeatN<J>, J> {
-    /// Create a new `TrustMyLength` iterator that repeats `value` `len` times.
-    pub fn new_repeat_n(value: J, len: usize) -> Self {
-        // SAFETY: This is always safe since repeat(..).take(n) always repeats exactly `n` times`.
-        unsafe { Self::new(std::iter::repeat_n(value, len), len) }
-    }
-}
-
 impl<I, J> Iterator for TrustMyLength<I, J>
 where
     I: Iterator<Item = J>,

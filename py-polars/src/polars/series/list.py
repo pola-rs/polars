@@ -1046,8 +1046,8 @@ class ListNameSpace(_NamespaceSuggestMixin):
             Run all expression parallel. Don't activate this blindly.
             Parallelism is worth it if there is enough work to do per thread.
 
-            This likely should not be use in the group by context, because we already
-            parallel execution per group
+            This likely should not be used in the group by context, because we already
+            parallelize execution per group
 
         Examples
         --------
@@ -1065,7 +1065,7 @@ class ListNameSpace(_NamespaceSuggestMixin):
     def agg(self, expr: Expr) -> Series:
         """
 
-        Run any polars aggregation expression against the list' elements.
+        Run any polars aggregation expression against the lists' elements.
 
         Parameters
         ----------

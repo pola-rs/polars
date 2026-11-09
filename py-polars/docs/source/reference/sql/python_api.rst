@@ -188,10 +188,12 @@ Methods
     SQLContext.execute
     SQLContext.execute_global
     SQLContext.register
+    SQLContext.register_catalog
     SQLContext.register_globals
     SQLContext.register_many
     SQLContext.tables
     SQLContext.unregister
+    SQLContext.unregister_catalog
 
 
 **Example:**

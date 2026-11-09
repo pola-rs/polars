@@ -244,7 +244,9 @@ mod _python {
         (polars_core::series::Series, series, series),
         (polars_core::frame::DataFrame, df, df),
         (crate::dsl::DslPlan, dsl_plan, dsl_plan),
-        (polars_core::schema::Schema, schema, schema)
+        (polars_core::schema::Schema, schema, schema),
+        (crate::dsl::Expr, expr, expr),
+        (polars_core::datatypes::DataType, dtype, dtype)
     }
 
     impl<T: super::PlanCallbackArgs + Clone> super::PlanCallbackArgs for Arc<T> {
@@ -296,5 +298,20 @@ impl<Args: PlanCallbackArgs, Out: PlanCallbackOut> PlanCallback<Args, Out> {
 
     pub fn new(f: impl Fn(Args) -> PolarsResult<Out> + Send + Sync + 'static) -> Self {
         Self::Rust(SpecialEq::new(Arc::new(f) as _))
+    }
+}
+
+impl<Args, Out> PlanCallback<Args, Out> {
+    /// Hash a function pointer:
+    pub fn hash_location<H: std::hash::Hasher>(&self, state: &mut H) {
+        use std::hash::Hash;
+
+        match self {
+            #[cfg(feature = "python")]
+            // Hash the Python object rather than the `Arc`, as equality also compares the
+            // Python objects.
+            Self::Python(f) => f.as_ptr().hash(state),
+            Self::Rust(f) => Arc::as_ptr(f).cast::<()>().hash(state),
+        }
     }
 }

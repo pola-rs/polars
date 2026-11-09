@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal
 
@@ -248,3 +250,20 @@ def test_broadcast_sliced() -> None:
     expected = pl.DataFrame({"a": [[2], [3, 4]]})
 
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    "op",
+    ["set_union", "set_difference", "set_intersection", "set_symmetric_difference"],
+)
+def test_list_set_operation_broadcast_to_empty(op: str) -> None:
+    empty = pl.Series("a", [], dtype=pl.List(pl.Int64))
+    one = pl.Series("b", [[3]])
+    assert getattr(empty.list, op)(one).len() == 0
+    assert getattr(one.list, op)(empty).len() == 0
+
+    df = pl.DataFrame({"g": [1, 2], "xs": [[1], [2]]})
+    out = df.group_by("g", maintain_order=True).agg(
+        getattr(pl.col("xs").filter(pl.lit(False)).list, op)(pl.Series([[3]]))
+    )
+    assert out.to_dict(as_series=False) == {"g": [1, 2], "xs": [[], []]}

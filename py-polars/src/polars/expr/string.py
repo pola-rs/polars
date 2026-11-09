@@ -68,6 +68,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for the full specification. Example: `"%Y-%m-%d"`.
             If set to None (default), the format is inferred from the data.
+            Required when using the distributed engine (or else the operation will
+            run on a single node).
         strict
             Raise an error if any conversion fails.
         exact
@@ -118,6 +120,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for the full specification. Example: `"%Y-%m-%d %H:%M:%S"`.
             If set to None (default), the format is inferred from the data.
+            Required when using the distributed engine (or else the operation will
+            run on a single node).
         time_unit : {None, 'us', 'ns', 'ms'}
             Unit of time for the resulting Datetime column. If set to None (default),
             the time unit is inferred from the format string if given, eg:
@@ -147,12 +151,14 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         cache
             Use a cache of unique, converted datetimes to apply the conversion.
         ambiguous
-            Determine how to deal with ambiguous datetimes:
+            Determine how to handle daylight savings time (DST)
+            ambiguous datetimes (e.g., when the clock falls back and the
+            same local time occurs twice).
 
-            - `'raise'` (default): raise
-            - `'earliest'`: use the earliest datetime
-            - `'latest'`: use the latest datetime
-            - `'null'`: set to null
+            - 'earliest': use the earliest datetime
+            - 'latest': use the latest datetime
+            - 'raise': raise an error
+            - 'null': set to null
 
         Examples
         --------
@@ -199,6 +205,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for the full specification. Example: `"%H:%M:%S"`.
             If set to None (default), the format is inferred from the data.
+            Required when using the distributed engine (or else the operation will
+            run on a single node).
         strict
             Raise an error if any conversion fails.
         cache
@@ -243,6 +251,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for the full specification. Example: `"%Y-%m-%d %H:%M:%S"`.
             If set to None (default), the format is inferred from the data.
+            Required when using the distributed engine (or else the operation will
+            run on a single node).
         strict
             Raise an error if any conversion fails.
         exact
@@ -255,12 +265,14 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
         ambiguous
-            Determine how to deal with ambiguous datetimes:
+            Determine how to handle daylight savings time (DST)
+            ambiguous datetimes (e.g., when the clock falls back and the
+            same local time occurs twice).
 
-            - `'raise'` (default): raise
-            - `'earliest'`: use the earliest datetime
-            - `'latest'`: use the latest datetime
-            - `'null'`: set to null
+            - 'earliest': use the earliest datetime
+            - 'latest': use the latest datetime
+            - 'raise': raise an error
+            - 'null': set to null
 
         Notes
         -----

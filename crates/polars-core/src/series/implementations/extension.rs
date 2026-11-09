@@ -44,10 +44,6 @@ impl private::PrivateSeries for SeriesWrap<ExtensionChunked> {
         self.0.storage_mut().set_flags(flags)
     }
 
-    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
-        self.0.storage().into_total_eq_inner()
-    }
-
     fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
         self.0.storage().into_total_ord_inner()
     }
@@ -68,10 +64,12 @@ impl private::PrivateSeries for SeriesWrap<ExtensionChunked> {
         self.0.storage().vec_hash_combine(build_hasher, hashes)
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
         self.0.storage().group_tuples(multithreaded, sorted)
     }
 
+    #[cfg(feature = "zip_with")]
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
         assert!(self._dtype() == other.dtype());
         self.try_apply_on_storage(|s| s.zip_with_same_type(mask, other.ext()?.storage()))

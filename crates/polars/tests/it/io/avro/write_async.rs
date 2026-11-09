@@ -1,9 +1,9 @@
-use arrow::array::*;
-use arrow::datatypes::*;
-use arrow::io::avro::write;
-use arrow::record_batch::RecordBatchT;
 use avro_schema::file::Compression;
 use avro_schema::write_async::{write_block, write_metadata};
+use polars_arrow::array::*;
+use polars_arrow::datatypes::*;
+use polars_arrow::io::avro::write;
+use polars_arrow::record_batch::RecordBatchT;
 use polars_error::PolarsResult;
 
 use super::read::read_avro;

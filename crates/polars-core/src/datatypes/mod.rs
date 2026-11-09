@@ -31,17 +31,19 @@ use std::sync::Arc;
 mod schema;
 pub use aliases::*;
 pub use any_value::*;
-pub use arrow::array::{ArrayCollectIterExt, ArrayFromIter, ArrayFromIterDtype, StaticArray};
-#[cfg(feature = "dtype-categorical")]
-use arrow::datatypes::IntegerType;
-pub use arrow::datatypes::reshape::*;
-pub use arrow::datatypes::{ArrowDataType, TimeUnit as ArrowTimeUnit};
-use arrow::types::NativeType;
 use bytemuck::Zeroable;
 pub use dtype::*;
 pub use field::*;
 pub use into_scalar::*;
 use num_traits::{AsPrimitive, Bounded, FromPrimitive, Num, NumCast, One, Zero};
+pub use polars_arrow::array::{
+    ArrayCollectIterExt, ArrayFromIter, ArrayFromIterDtype, StaticArray,
+};
+#[cfg(feature = "dtype-categorical")]
+use polars_arrow::datatypes::IntegerType;
+pub use polars_arrow::datatypes::reshape::*;
+pub use polars_arrow::datatypes::{ArrowDataType, TimeUnit as ArrowTimeUnit};
+use polars_arrow::types::NativeType;
 use polars_compute::arithmetic::HasPrimitiveArithmeticKernel;
 use polars_compute::float_sum::FloatSum;
 #[cfg(feature = "dtype-categorical")]

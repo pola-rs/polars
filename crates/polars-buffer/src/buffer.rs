@@ -33,7 +33,7 @@ use crate::storage::SharedStorage;
 /// let mut sliced = buffer.clone();
 /// sliced.slice(1, 1);
 /// assert_eq!(sliced.as_ref(), [2].as_ref());
-/// // but cloning forbids getting mut since `slice` and `buffer` now share data
+/// // but cloning forbids getting mut since `sliced` and `buffer` now share data
 /// assert_eq!(buffer.get_mut_slice(), None);
 /// ```
 pub struct Buffer<T> {
@@ -48,6 +48,7 @@ pub struct Buffer<T> {
 }
 
 impl<T> Clone for Buffer<T> {
+    #[inline(always)]
     fn clone(&self) -> Self {
         Self {
             storage: self.storage.clone(),
@@ -481,7 +482,7 @@ impl<T: Copy> IntoIterator for Buffer<T> {
     }
 }
 
-/// This crates' equivalent of [`std::vec::IntoIter`] for [`Buffer`].
+/// This crate's equivalent of [`std::vec::IntoIter`] for [`Buffer`].
 #[derive(Debug, Clone)]
 pub struct IntoIter<T: Copy> {
     values: Buffer<T>,

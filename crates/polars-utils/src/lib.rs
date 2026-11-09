@@ -15,6 +15,7 @@ pub mod arena;
 pub mod arg_min_max;
 pub mod array;
 pub mod binary_search;
+pub mod bloom_filter;
 pub mod bool;
 pub mod broadcast;
 pub mod cache;
@@ -29,8 +30,8 @@ pub mod compression;
 pub mod concat_vec;
 pub mod cpuid;
 pub mod error;
+pub mod f2_sketch;
 pub mod file;
-pub mod fixedringbuffer;
 pub mod float;
 pub mod float16;
 pub mod floor_divmod;
@@ -47,6 +48,7 @@ pub mod live_timer;
 pub mod macros;
 pub mod marked_usize;
 pub mod mem;
+pub mod min_hash_sketch;
 pub mod min_max;
 pub mod nulls;
 pub mod option;
@@ -69,6 +71,7 @@ pub mod sort;
 pub mod sparse_init_vec;
 pub mod sync;
 pub mod tick_counter;
+pub mod time;
 pub mod total_ord;
 pub mod unique_id;
 pub mod vec;
@@ -85,9 +88,12 @@ pub mod pl_serialize;
 pub mod python_convert_registry;
 #[cfg(feature = "python")]
 pub mod python_function;
+#[cfg(feature = "python")]
+pub mod python_interns;
+#[cfg(feature = "python")]
+pub mod python_thread_pool;
 #[cfg(feature = "sysinfo")]
 pub mod sys;
 
 pub use idx_vec::UnitVec;
 pub use index::{IdxSize, NullableIdxSize};
-pub use pl_str::unique_column_name;

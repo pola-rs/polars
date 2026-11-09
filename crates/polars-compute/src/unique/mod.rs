@@ -1,4 +1,4 @@
-use arrow::array::Array;
+use polars_arrow::array::Array;
 
 /// Kernel to calculate the number of unique elements where the elements are already sorted.
 pub trait SortedUniqueKernel: Array {
@@ -21,7 +21,7 @@ pub trait SortedUniqueKernel: Array {
 
 /// Optimized kernel to calculate the unique elements of an array.
 ///
-/// This kernel is a specialized for where all values are known to be in some small range of
+/// This kernel is specialized for where all values are known to be in some small range of
 /// values. In this case, you can usually get by with a bitset and bit-arithmetic instead of using
 /// vectors and hashsets. Consequently, this kernel is usually called when further information is
 /// known about the underlying array.

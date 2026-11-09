@@ -59,7 +59,7 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         Parameters
         ----------
         n
-            Number of business days to offset by. Can be a single number of an
+            Number of business days to offset by. Can be a single number or an
             expression.
         week_mask
             Which days of the week to count. The default is Monday to Friday.
@@ -1150,7 +1150,7 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
 
     def epoch(self, time_unit: EpochTimeUnit = "us") -> Series:
         """
-        Get the time passed since the Unix EPOCH in the give time unit.
+        Get the time passed since the Unix EPOCH in the given time unit.
 
         Parameters
         ----------
@@ -1290,13 +1290,16 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         ----------
         time_zone
             Time zone for the `Datetime` Series. Pass `None` to unset time zone.
-        ambiguous
-            Determine how to deal with ambiguous datetimes:
 
-            - `'raise'` (default): raise
-            - `'earliest'`: use the earliest datetime
-            - `'latest'`: use the latest datetime
-            - `'null'`: set to null
+        ambiguous
+            Determine how to handle daylight savings time (DST)
+            ambiguous datetimes (e.g., when the clock falls back and the
+            same local time occurs twice):
+
+            - 'earliest': use the earliest datetime
+            - 'latest': use the latest datetime
+            - 'raise': raise an error
+            - 'null': set to null
         non_existent
             Determine how to deal with non-existent datetimes:
 
@@ -1627,7 +1630,7 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         Parameters
         ----------
         fractional
-            Whether to include return the result as a :class:`.Float64`.
+            Whether to return the result as a :class:`.Float64`.
             Because the smallest :type:`.TimeUnit` is `'ns'`, the
             fractional component will always be zero.
 
@@ -1764,7 +1767,7 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         Notes
         -----
         The `every` argument is created with the
-        the following string language:
+        following string language:
 
         - 1ns   (1 nanosecond)
         - 1us   (1 microsecond)
@@ -1886,7 +1889,7 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         Notes
         -----
         The `every` argument is created with the
-        the following string language:
+        following string language:
 
         - 1ns   (1 nanosecond)
         - 1us   (1 microsecond)
@@ -2170,13 +2173,16 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
             Literal or Series, ranging from 0-59.
         microsecond
             Literal or Series, ranging from 0-999999.
-        ambiguous
-            Determine how to deal with ambiguous datetimes:
 
-            - `'raise'` (default): raise
-            - `'earliest'`: use the earliest datetime
-            - `'latest'`: use the latest datetime
-            - `'null'`: set to null
+        ambiguous
+            Determine how to handle daylight savings time (DST)
+            ambiguous datetimes (e.g., when the clock falls back and the
+            same local time occurs twice):
+
+            - 'earliest': use the earliest datetime
+            - 'latest': use the latest datetime
+            - 'raise': raise an error
+            - 'null': set to null
 
         Returns
         -------

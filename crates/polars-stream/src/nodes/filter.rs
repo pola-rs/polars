@@ -48,6 +48,7 @@ impl ComputeNode for FilterNode {
 
         for (mut recv, mut send) in receivers.into_iter().zip(senders) {
             let slf = &*self;
+
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 while let Ok(morsel) = recv.recv().await {
                     let morsel = morsel

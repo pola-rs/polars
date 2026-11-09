@@ -5,7 +5,6 @@ import enum
 import io
 import operator
 import re
-import sys
 from datetime import date
 from textwrap import dedent
 from typing import TYPE_CHECKING, Any
@@ -25,12 +24,9 @@ from tests.unit.conftest import INTEGER_DTYPES
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-if sys.version_info >= (3, 11):
-    from enum import StrEnum
+from enum import StrEnum
 
-    PyStrEnum: type[enum.Enum] | None = StrEnum
-else:
-    PyStrEnum = None
+PyStrEnum: type[enum.Enum] | None = StrEnum
 
 
 def test_enum_creation() -> None:
@@ -57,7 +53,7 @@ def test_enum_init_empty(categories: pl.Series | list[str] | None) -> None:
 
 def test_enum_init_from_python() -> None:
     # standard string enum
-    class Color1(str, enum.Enum):
+    class Color1(str, enum.Enum):  # noqa: UP042
         RED = "red"
         GREEN = "green"
         BLUE = "blue"
@@ -75,15 +71,13 @@ def test_enum_init_from_python() -> None:
     assert dtype == pl.Enum(["red", "green", "blue"])
 
     # specialised string enum
-    if sys.version_info >= (3, 11):
+    class Color3(enum.Enum):
+        RED = "red"
+        GREEN = "green"
+        BLUE = "blue"
 
-        class Color3(enum.Enum):
-            RED = "red"
-            GREEN = "green"
-            BLUE = "blue"
-
-        dtype = pl.Enum(Color3)
-        assert dtype == pl.Enum(["red", "green", "blue"])
+    dtype = pl.Enum(Color3)
+    assert dtype == pl.Enum(["red", "green", "blue"])
 
 
 def test_enum_init_from_python_invalid() -> None:

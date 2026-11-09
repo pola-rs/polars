@@ -15,6 +15,38 @@ where
         options.multithreaded,
     );
 }
+
+/// Sorts the first `limit` values to the front and returns them. Equal values keep their order, as
+/// in a full sort.
+fn sort_limit_impl<T>(
+    vals: &mut [(IdxSize, T)],
+    limit: usize,
+    options: SortOptions,
+) -> &[(IdxSize, T)]
+where
+    T: TotalOrd + Send + Sync,
+{
+    if limit >= vals.len() {
+        sort_impl(vals, options);
+        return vals;
+    }
+    let cmp = |a: &(IdxSize, T), b: &(IdxSize, T)| {
+        let ord = if options.descending {
+            b.1.tot_cmp(&a.1)
+        } else {
+            a.1.tot_cmp(&b.1)
+        };
+        ord.then(a.0.cmp(&b.0))
+    };
+    let (lower, _el, _upper) = vals.select_nth_unstable_by(limit, cmp);
+    if options.multithreaded {
+        RAYON.install(|| lower.par_sort_unstable_by(cmp));
+    } else {
+        lower.sort_unstable_by(cmp);
+    }
+    lower
+}
+
 // Compute the indexes after reversing a sorted array, maintaining
 // the order of equal elements, in linear time. Faster than sort_impl
 //  as we avoid allocating extra memory.
@@ -29,7 +61,7 @@ where
     let mut rev_idx: Vec<IdxSize> = Vec::with_capacity(len);
     let mut i: IdxSize;
     // We traverse the array, comparing consecutive elements.
-    // We maintain the start and end indice of elements with same value.
+    // We maintain the start and end indices of elements with same value.
     // When we see a new element we push the previous indices in reverse order.
     // We do a final reverse to get stable reverse index.
     // Example -
@@ -46,7 +78,7 @@ where
         for current_element in arr_iter {
             match &previous_element {
                 None => {
-                    //There is atleast one element
+                    //There is at least one element
                     current_end = 1;
                 },
                 Some(prev) => {
@@ -97,7 +129,7 @@ where
     let null_cap = if nulls_last { null_count } else { len };
 
     // Fast path
-    // Only if array is already sorted in the required ordered and
+    // Only if array is already sorted in the required order and
     // nulls are also in the correct position
     if ((options.descending && is_sorted_flag == IsSorted::Descending)
         || (!options.descending && is_sorted_flag == IsSorted::Ascending))
@@ -136,24 +168,9 @@ where
     }
 
     let vals = if let Some(limit) = options.limit {
-        let limit = limit as usize;
         // Overwrite output len.
-        len = limit;
-        let out = if limit >= vals.len() {
-            vals.as_mut_slice()
-        } else {
-            let (lower, _el, _upper) = if options.descending {
-                vals.as_mut_slice()
-                    .select_nth_unstable_by(limit, |a, b| b.1.tot_cmp(&a.1))
-            } else {
-                vals.as_mut_slice()
-                    .select_nth_unstable_by(limit, |a, b| a.1.tot_cmp(&b.1))
-            };
-            lower
-        };
-
-        sort_impl(out, options);
-        out
+        len = std::cmp::min(limit as usize, len);
+        sort_limit_impl(&mut vals, len, options)
     } else {
         sort_impl(vals.as_mut_slice(), options);
         vals.as_slice()
@@ -172,7 +189,9 @@ where
         idx.extend_from_slice(nulls_idx);
         idx
     } else if options.limit.is_some() {
-        nulls_idx.extend(iter.take(len - nulls_idx.len()));
+        nulls_idx.truncate(len);
+        let n_values = len - nulls_idx.len();
+        nulls_idx.extend(iter.take(n_values));
         nulls_idx
     } else {
         let ptr = nulls_idx.as_ptr() as usize;
@@ -198,7 +217,7 @@ where
     T: TotalOrd + Send + Sync,
 {
     // Fast path
-    // 1) If array is already sorted in the required ordered .
+    // 1) If array is already sorted in the required order.
     // 2) If array is reverse sorted -> we do a stable reverse.
     if is_sorted_flag != IsSorted::Not {
         let len_final = options
@@ -235,21 +254,7 @@ where
     }
 
     let vals = if let Some(limit) = options.limit {
-        let limit = limit as usize;
-        let out = if limit >= vals.len() {
-            vals.as_mut_slice()
-        } else {
-            let (lower, _el, _upper) = if options.descending {
-                vals.as_mut_slice()
-                    .select_nth_unstable_by(limit, |a, b| b.1.tot_cmp(&a.1))
-            } else {
-                vals.as_mut_slice()
-                    .select_nth_unstable_by(limit, |a, b| a.1.tot_cmp(&b.1))
-            };
-            lower
-        };
-        sort_impl(out, options);
-        out
+        sort_limit_impl(&mut vals, limit as usize, options)
     } else {
         sort_impl(vals.as_mut_slice(), options);
         vals.as_slice()
@@ -268,7 +273,7 @@ pub(crate) fn arg_sort_row_fmt(
     parallel: bool,
 ) -> PolarsResult<IdxCa> {
     let rows_encoded = _get_rows_encoded(by, &[descending], &[nulls_last])?;
-    let mut items: Vec<_> = rows_encoded.iter().enumerate_idx().collect();
+    let mut items: Vec<_> = rows_encoded.values_iter().enumerate_idx().collect();
 
     if parallel {
         RAYON.install(|| items.par_sort_by(|a, b| a.1.cmp(b.1)));

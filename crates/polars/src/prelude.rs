@@ -1,5 +1,11 @@
 pub use polars_core::prelude::*;
 pub use polars_core::utils::NoNull;
+// Option/enum definitions that used to live in `polars-ops` / `polars-time`.
+pub use polars_defs::expr::*;
+pub use polars_defs::join::*;
+pub use polars_defs::time::duration::*;
+pub use polars_defs::time::group_by::*;
+pub use polars_defs::time::rolling::*;
 #[cfg(feature = "polars-io")]
 pub use polars_io::prelude::*;
 #[cfg(feature = "lazy")]

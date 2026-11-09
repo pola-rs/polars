@@ -2,9 +2,9 @@ use std::io::SeekFrom;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use arrow_format::ipc::planus::ReadAsRoot;
-use arrow_format::ipc::{Block, FooterRef, MessageHeaderRef};
 use futures::{Stream, StreamExt};
+use polars_arrow_format::ipc::planus::ReadAsRoot;
+use polars_arrow_format::ipc::{Block, FooterRef, MessageHeaderRef};
 use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::bool::UnsafeBool;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
@@ -23,9 +23,9 @@ use crate::record_batch::RecordBatch;
 
 async fn read_ipc_message_from_block<'a, R: AsyncRead + AsyncSeek + Unpin>(
     reader: &mut R,
-    block: &arrow_format::ipc::Block,
+    block: &polars_arrow_format::ipc::Block,
     scratch: &'a mut Vec<u8>,
-) -> PolarsResult<arrow_format::ipc::MessageRef<'a>> {
+) -> PolarsResult<polars_arrow_format::ipc::MessageRef<'a>> {
     let offset: u64 = block
         .offset
         .try_into()
@@ -38,7 +38,7 @@ async fn read_ipc_message_from_block<'a, R: AsyncRead + AsyncSeek + Unpin>(
 async fn read_ipc_message<'a, R: AsyncRead + Unpin>(
     reader: &mut R,
     scratch: &'a mut Vec<u8>,
-) -> PolarsResult<arrow_format::ipc::MessageRef<'a>> {
+) -> PolarsResult<polars_arrow_format::ipc::MessageRef<'a>> {
     let mut message_size: [u8; 4] = [0; 4];
 
     reader.read_exact(&mut message_size).await?;
@@ -58,7 +58,7 @@ async fn read_ipc_message<'a, R: AsyncRead + Unpin>(
         .read_to_end(scratch)
         .await?;
 
-    arrow_format::ipc::MessageRef::read_as_root(scratch)
+    polars_arrow_format::ipc::MessageRef::read_as_root(scratch)
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferMessage(err)))
 }
 
@@ -91,18 +91,18 @@ async fn read_footer<R: AsyncRead + AsyncSeek + Unpin>(
     Ok(serialized_footer)
 }
 
-fn schema_to_raw_message(schema: arrow_format::ipc::SchemaRef) -> EncodedData {
+fn schema_to_raw_message(schema: polars_arrow_format::ipc::SchemaRef) -> EncodedData {
     // Turn the IPC schema into an encapsulated message
-    let message = arrow_format::ipc::Message {
-        version: arrow_format::ipc::MetadataVersion::V5,
+    let message = polars_arrow_format::ipc::Message {
+        version: polars_arrow_format::ipc::MetadataVersion::V5,
         // Assumed the conversion is infallible.
-        header: Some(arrow_format::ipc::MessageHeader::Schema(Box::new(
+        header: Some(polars_arrow_format::ipc::MessageHeader::Schema(Box::new(
             schema.try_into().unwrap(),
         ))),
         body_length: 0,
         custom_metadata: None, // todo: allow writing custom metadata
     };
-    let mut builder = arrow_format::ipc::planus::Builder::new();
+    let mut builder = polars_arrow_format::ipc::planus::Builder::new();
     let header = builder.finish(&message, None).to_vec();
 
     // Use `EncodedData` directly instead of `FlightData`. In FlightData we would only use
@@ -115,7 +115,7 @@ fn schema_to_raw_message(schema: arrow_format::ipc::SchemaRef) -> EncodedData {
 
 async fn block_to_raw_message<'a, R>(
     reader: &mut R,
-    block: &arrow_format::ipc::Block,
+    block: &polars_arrow_format::ipc::Block,
     encoded_data: &mut EncodedData,
 ) -> PolarsResult<()>
 where
@@ -143,7 +143,7 @@ pub async fn into_flight_stream<R: AsyncRead + AsyncSeek + Unpin + Send>(
     Ok(async_stream::try_stream! {
         let (_end, len) = read_footer_len(reader).await?;
         let footer_data = read_footer(reader, len).await?;
-        let footer = arrow_format::ipc::FooterRef::read_as_root(&footer_data)
+        let footer = polars_arrow_format::ipc::FooterRef::read_as_root(&footer_data)
             .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferFooter(err)))?;
         let data_blocks = iter_recordbatch_blocks_from_footer(footer)?;
         let dict_blocks = iter_dictionary_blocks_from_footer(footer)?;
@@ -204,7 +204,7 @@ impl<'a, R: AsyncRead + AsyncSeek + Unpin + Send> FlightStreamProducer<'a, R> {
     }
 
     pub fn init(self: &mut Pin<Box<Self>>) -> PolarsResult<()> {
-        let footer = arrow_format::ipc::FooterRef::read_as_root(&self.footer_data)
+        let footer = polars_arrow_format::ipc::FooterRef::read_as_root(&self.footer_data)
             .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferFooter(err)))?;
 
         let footer = Box::new(footer);
@@ -308,7 +308,7 @@ impl FlightConsumer {
 
     pub fn consume(&mut self, msg: EncodedData) -> PolarsResult<Option<RecordBatch>> {
         // Parse the header
-        let message = arrow_format::ipc::MessageRef::read_as_root(&msg.ipc_message)
+        let message = polars_arrow_format::ipc::MessageRef::read_as_root(&msg.ipc_message)
             .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferMessage(err)))?;
 
         let header = message

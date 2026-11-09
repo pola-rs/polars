@@ -2,6 +2,13 @@ mod aggregations;
 mod arity;
 #[cfg(all(feature = "strings", feature = "cse"))]
 mod cse;
+#[cfg(all(
+    feature = "dynamic_group_by",
+    feature = "streaming",
+    feature = "timezones",
+    feature = "dtype-date"
+))]
+mod dynamic_group_by_placement;
 #[cfg(feature = "parquet")]
 mod io;
 mod logical;

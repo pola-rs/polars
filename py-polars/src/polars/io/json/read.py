@@ -57,6 +57,12 @@ def read_json(
     --------
     read_ndjson
 
+    Notes
+    -----
+    JSON objects can be read as :class:`Map` with String, Categorical or Enum keys.
+    Specify Map through `schema` or `schema_overrides`; it is never inferred.
+    Duplicate keys retain their first position and last value.
+
     Examples
     --------
     >>> from io import StringIO

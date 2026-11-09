@@ -1,8 +1,8 @@
 use polars_core::error::PolarsResult;
 use polars_core::prelude::Column;
 use polars_core::series::Series;
+use polars_defs::expr::RoundMode;
 use polars_ops::series::RoundSeries;
-use polars_ops::series::round::RoundMode;
 
 pub(super) fn round(c: &Column, decimals: u32, mode: RoundMode) -> PolarsResult<Column> {
     c.try_apply_unary_elementwise(|s| s.round(decimals, mode))

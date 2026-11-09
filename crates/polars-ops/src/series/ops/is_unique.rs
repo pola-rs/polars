@@ -1,7 +1,7 @@
 use std::hash::Hash;
 
-use arrow::array::BooleanArray;
-use arrow::bitmap::MutableBitmap;
+use polars_arrow::array::BooleanArray;
+use polars_arrow::bitmap::MutableBitmap;
 use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::*;
 use polars_core::series::BitRepr;
@@ -80,15 +80,7 @@ fn dispatcher(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
         #[cfg(feature = "dtype-array")]
         Array(_, _) => return is_unique_nested(&s, invert),
         #[cfg(feature = "dtype-struct")]
-        Struct(_) => {
-            let ca = s.struct_().unwrap().clone();
-            let df = ca.unnest();
-            return if invert {
-                df.is_duplicated()
-            } else {
-                df.is_unique()
-            };
-        },
+        Struct(_) => return is_unique_nested(&s, invert),
         Null => match s.len() {
             0 => BooleanChunked::new(s.name().clone(), [] as [bool; 0]),
             1 => BooleanChunked::new(s.name().clone(), [!invert]),

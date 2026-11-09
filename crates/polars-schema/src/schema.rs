@@ -154,6 +154,7 @@ impl<Field, Metadata> Schema<Field, Metadata> {
     }
 
     /// Get a reference to the dtype of the field named `name`, or `None` if the field doesn't exist.
+    #[inline]
     pub fn get(&self, name: &str) -> Option<&Field> {
         self.fields.get(name)
     }
@@ -179,6 +180,7 @@ impl<Field, Metadata> Schema<Field, Metadata> {
     /// Return all data about the field named `name`: its index in the schema, its name, and its dtype.
     ///
     /// Returns `Some((index, &name, &dtype))` if the field exists, `None` if it doesn't.
+    #[inline]
     pub fn get_full(&self, name: &str) -> Option<(usize, &PlSmallStr, &Field)> {
         self.fields.get_full(name)
     }
@@ -372,6 +374,7 @@ impl<Field, Metadata> Schema<Field, Metadata> {
         self.fields.iter_mut().map(|(_name, dtype)| dtype)
     }
 
+    #[inline]
     pub fn index_of(&self, name: &str) -> Option<usize> {
         self.fields.get_index_of(name)
     }

@@ -1,7 +1,11 @@
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 #[cfg(feature = "round_series")]
-use polars_ops::prelude::floor_div_series;
+use polars_ops::prelude::{floor_div_series, trunc_div_series};
+#[cfg(feature = "dtype-struct")]
+use polars_utils::aliases::PlHashMap;
+#[cfg(feature = "dtype-struct")]
+use polars_utils::broadcast::broadcast_len;
 use recursive::recursive;
 
 use super::*;
@@ -47,6 +51,10 @@ impl BinaryExpr {
 /// Can partially do operations in place.
 fn apply_operator_owned(left: Column, right: Column, op: Operator) -> PolarsResult<Column> {
     match op {
+        #[cfg(feature = "dtype-struct")]
+        _ if left.dtype().is_struct() || right.dtype().is_struct() => {
+            apply_operator(&left, &right, op)
+        },
         Operator::Plus => left.try_add_owned(right),
         Operator::Minus => left.try_sub_owned(right),
         Operator::Multiply
@@ -58,8 +66,64 @@ fn apply_operator_owned(left: Column, right: Column, op: Operator) -> PolarsResu
     }
 }
 
+#[cfg(feature = "dtype-struct")]
+fn try_apply_struct_numeric_operator(
+    left: &Column,
+    right: &Column,
+    op: Operator,
+) -> Option<PolarsResult<Column>> {
+    if !op.is_arithmetic() {
+        return None;
+    }
+    let (struct_column, numeric, numeric_left) = match (left.dtype(), right.dtype()) {
+        (DataType::Struct(_), dtype) if dtype.is_primitive_numeric() => (left, right, false),
+        (dtype, DataType::Struct(_)) if dtype.is_primitive_numeric() => (right, left, true),
+        _ => return None,
+    };
+    Some((|| {
+        let len = broadcast_len([struct_column, numeric]).context("struct arithmetic")?;
+        let struct_column = struct_column.broadcast_to(len)?;
+        let mut cast_cache: PlHashMap<DataType, Column> = PlHashMap::new();
+        let mut out = struct_column
+            .as_materialized_series()
+            .struct_()?
+            .try_apply_fields(|field| {
+                let dtype = field.dtype().leaf_dtype();
+                let numeric = if field.dtype().is_struct()
+                    || matches!(field.dtype(), DataType::Duration(_)) && op == Operator::Multiply
+                    || numeric.dtype() == dtype
+                {
+                    numeric.clone()
+                } else if let Some(casted) = cast_cache.get(dtype) {
+                    casted.clone()
+                } else {
+                    let casted = numeric.cast(dtype)?;
+                    cast_cache.insert(dtype.clone(), casted.clone());
+                    casted
+                };
+                let field = field.clone().into_column();
+                let mut out = if numeric_left {
+                    apply_operator(&numeric, &field, op)?
+                } else {
+                    apply_operator(&field, &numeric, op)?
+                };
+                out.rename(field.name().clone());
+                Ok(out.take_materialized_series())
+            })?;
+        if numeric_left {
+            out.rename(numeric.name().clone());
+        }
+        Ok(out.into_column())
+    })())
+}
+
 pub fn apply_operator(left: &Column, right: &Column, op: Operator) -> PolarsResult<Column> {
     use DataType::*;
+    #[cfg(feature = "dtype-struct")]
+    if let Some(output) = try_apply_struct_numeric_operator(left, right, op) {
+        return output;
+    }
+
     match op {
         Operator::Gt => ChunkCompareIneq::gt(left, right).map(|ca| ca.into_column()),
         Operator::GtEq => ChunkCompareIneq::gt_eq(left, right).map(|ca| ca.into_column()),
@@ -97,6 +161,20 @@ pub fn apply_operator(left: &Column, right: &Column, op: Operator) -> PolarsResu
             #[cfg(feature = "round_series")]
             {
                 floor_div_series(
+                    left.as_materialized_series(),
+                    right.as_materialized_series(),
+                )
+                .map(Column::from)
+            }
+            #[cfg(not(feature = "round_series"))]
+            {
+                panic!("activate 'round_series' feature")
+            }
+        },
+        Operator::TruncDivide => {
+            #[cfg(feature = "round_series")]
+            {
+                trunc_div_series(
                     left.as_materialized_series(),
                     right.as_materialized_series(),
                 )
@@ -223,6 +301,31 @@ impl BinaryExpr {
         ac_l.with_agg_state(AggState::AggregatedList(ca.into_column()));
         Ok(ac_l)
     }
+
+    /// Applies the operator once on all values, with the scalars repeated over their groups.
+    fn apply_scalar_broadcast<'a>(
+        &self,
+        ac_l: AggregationContext<'a>,
+        ac_r: AggregationContext<'a>,
+    ) -> PolarsResult<AggregationContext<'a>> {
+        let scalar_left = ac_l.agg_state().is_scalar();
+        let (ac_scalar, mut ac) = if scalar_left {
+            (ac_l, ac_r)
+        } else {
+            (ac_r, ac_l)
+        };
+        let target = ac.broadcast_target()?;
+        let scalars = target.repeat(ac_scalar.get_values())?;
+        let values = target.values.clone();
+        let (l, r) = if scalar_left {
+            (scalars, values)
+        } else {
+            (values, scalars)
+        };
+        let out = apply_operator_owned(l, r, self.op)?;
+        ac.finish_broadcast(target, out.with_name(self.output_field.name().clone()))?;
+        Ok(ac)
+    }
 }
 
 impl PhysicalExpr for BinaryExpr {
@@ -279,8 +382,9 @@ impl PhysicalExpr for BinaryExpr {
                 || self.right.evaluate_on_groups(df, groups, state),
             )
         });
-        let mut ac_l = result_a?;
-        let mut ac_r = result_b?;
+        let mut acs = [result_a?, result_b?];
+        broadcast_uniform_lists(&mut acs);
+        let [mut ac_l, mut ac_r] = acs;
 
         // Aggregate NotAggregated into AggregatedList, but only if strictly required AND
         // when there is no risk of memory explosion.
@@ -290,16 +394,21 @@ impl PhysicalExpr for BinaryExpr {
         let mut has_not_agg = false;
         let mut has_not_agg_with_overlapping_groups = false;
         let mut not_agg_groups_may_diverge = false;
+        let mut has_large_groups = false;
+        let mut has_objects = false;
 
         let mut previous: Option<&AggregationContext<'_>> = None;
         for ac in [&ac_l, &ac_r] {
+            has_objects |= ac.get_values().dtype().contains_objects();
             match ac.state {
                 AggState::AggregatedList(_) => {
                     has_agg_list = true;
+                    has_large_groups |= ac.has_large_groups();
                 },
                 AggState::AggregatedScalar(_) => has_agg_scalar = true,
                 AggState::NotAggregated(_) => {
                     has_not_agg = true;
+                    has_large_groups |= ac.has_large_groups();
                     if let Some(p) = previous {
                         not_agg_groups_may_diverge |= !p.groups.is_same(&ac.groups)
                     }
@@ -315,6 +424,14 @@ impl PhysicalExpr for BinaryExpr {
         let all_literal = !(has_agg_list || has_agg_scalar || has_not_agg);
         let elementwise_must_aggregate =
             has_not_agg && (has_agg_list || not_agg_groups_may_diverge);
+        let mixes_scalars_and_values = has_agg_scalar && (has_agg_list || has_not_agg);
+        // Object values keep the per-group loop: repeating the scalars over them would rechunk them
+        // or rebuild lists from their inner values, which Object does not support.
+        let may_broadcast_scalars = mixes_scalars_and_values
+            && !has_objects
+            && !has_large_groups
+            && !has_not_agg_with_overlapping_groups
+            && !groups.is_empty();
         let mut aggregated = has_agg_list || has_agg_scalar;
 
         // Arithmetic on Decimal is fallible
@@ -342,7 +459,12 @@ impl PhysicalExpr for BinaryExpr {
         if all_literal {
             // Fast path
             self.apply_all_literal(ac_l, ac_r)
-        } else if has_agg_scalar && (has_agg_list || has_not_agg) {
+        } else if may_broadcast_scalars
+            && (!is_fallible || (ac_l.groups_cover_all_values() && ac_r.groups_cover_all_values()))
+        {
+            // A fallible operator must not see values outside the groups.
+            self.apply_scalar_broadcast(ac_l, ac_r)
+        } else if mixes_scalars_and_values {
             // Not compatible
             self.apply_group_aware(ac_l, ac_r)
         } else if elementwise_must_aggregate && has_not_agg_with_overlapping_groups {

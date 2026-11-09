@@ -196,13 +196,15 @@ pub(super) fn combine(s: &[Column], tu: TimeUnit) -> PolarsResult<Column> {
     let result_naive = datetime + duration;
     match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => Ok(polars_ops::prelude::replace_time_zone(
-            result_naive?.datetime().unwrap(),
-            Some(tz),
-            &StringChunked::from_iter(std::iter::once("raise")),
-            NonExistent::Raise,
-        )?
-        .into_column()),
+        Some(tz) => Ok(
+            polars_core::chunked_array::temporal::replace_time_zone::replace_time_zone(
+                result_naive?.datetime().unwrap(),
+                Some(tz),
+                &StringChunked::from_iter(std::iter::once("raise")),
+                NonExistent::Raise,
+            )?
+            .into_column(),
+        ),
         _ => result_naive,
     }
 }

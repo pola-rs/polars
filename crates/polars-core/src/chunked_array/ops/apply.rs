@@ -122,7 +122,7 @@ where
     F: Fn(S::Native) -> S::Native + Copy,
     S: PolarsNumericType,
 {
-    use arrow::Either::*;
+    use polars_arrow::Either::*;
     let chunks = chunks.into_iter().map(|arr| {
         let owned_arr = arr
             .as_any()
@@ -133,7 +133,7 @@ where
         drop(arr);
 
         let compute_immutable = |arr: &PrimitiveArray<S::Native>| {
-            arrow::compute::arity::unary(
+            polars_arrow::compute::arity::unary(
                 arr,
                 f,
                 S::get_static_dtype().to_arrow(CompatLevel::newest()),
@@ -194,10 +194,10 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
     where
         F: Fn(T::Native) -> T::Native + Copy,
     {
-        // SAFETY, we do no t change the lengths
+        // SAFETY, we do not change the lengths
         unsafe {
             self.downcast_iter_mut()
-                .for_each(|arr| arrow::compute::arity_assign::unary(arr, f))
+                .for_each(|arr| polars_arrow::compute::arity_assign::unary(arr, f))
         };
         // can be in any order now
         self.compute_len();

@@ -4,19 +4,21 @@ use bitflags::bitflags;
 use polars_core::prelude::*;
 use polars_core::utils::SuperTypeOptions;
 #[cfg(feature = "iejoin")]
-use polars_ops::frame::IEJoinOptions;
-use polars_ops::frame::{CrossJoinFilter, CrossJoinOptions, JoinArgs, JoinTypeOptions};
+use polars_defs::join::IEJoinOptions;
+use polars_defs::join::{CrossJoinFilter, CrossJoinOptions, JoinArgs, JoinType, JoinTypeOptions};
+#[cfg(feature = "dynamic_group_by")]
+use polars_defs::time::group_by::{DynamicGroupOptionsIR, RollingGroupOptionsIR};
 use polars_utils::bool::UnsafeBool;
 use polars_utils::itertools::Itertools;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
-use crate::dsl::JoinOptions;
+use crate::dsl::{GroupbyOptions, JoinOptions};
 #[cfg(feature = "cse")]
 use crate::plans::ExpressionHasher;
-use crate::plans::ir::inputs::{Exprs, ExprsMut};
-use crate::plans::{ExprIR, ExpressionComparator, PlSmallStr};
+use crate::plans::ir::inputs::{ExprSchema, Exprs, ExprsMut};
+use crate::plans::{DynamicPred, ExprIR, ExpressionComparator, PlSmallStr};
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
@@ -336,6 +338,53 @@ impl ProjectionOptions {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
+pub struct GroupbyOptionsIR {
+    #[cfg(feature = "dynamic_group_by")]
+    pub dynamic: Option<DynamicGroupOptionsIR>,
+    #[cfg(feature = "dynamic_group_by")]
+    pub rolling: Option<RollingGroupOptionsIR>,
+    /// Take only a slice of the result
+    pub slice: Option<(i64, usize)>,
+}
+
+impl GroupbyOptionsIR {
+    pub fn is_rolling(&self) -> bool {
+        #[cfg(feature = "dynamic_group_by")]
+        {
+            self.rolling.is_some()
+        }
+        #[cfg(not(feature = "dynamic_group_by"))]
+        {
+            false
+        }
+    }
+
+    pub fn is_dynamic(&self) -> bool {
+        #[cfg(feature = "dynamic_group_by")]
+        {
+            self.dynamic.is_some()
+        }
+        #[cfg(not(feature = "dynamic_group_by"))]
+        {
+            false
+        }
+    }
+}
+
+impl From<GroupbyOptions> for GroupbyOptionsIR {
+    fn from(opts: GroupbyOptions) -> Self {
+        Self {
+            #[cfg(feature = "dynamic_group_by")]
+            dynamic: opts.dynamic.map(Into::into),
+            #[cfg(feature = "dynamic_group_by")]
+            rolling: opts.rolling.map(Into::into),
+            slice: opts.slice,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub struct JoinOptionsIR {
@@ -343,6 +392,30 @@ pub struct JoinOptionsIR {
     pub force_parallel: bool,
     pub args: JoinArgs,
     pub options: JoinTypeOptionsIR,
+    /// Ranges of build-side keys the join publishes to scans below its probe side once
+    /// the build is done. Only set together with a forced `args.build_side`.
+    pub runtime_filters: Vec<RuntimeFilter>,
+    /// The estimated rows of the left and right input of a semi or anti join that has
+    /// no `args.build_side`.
+    #[cfg_attr(feature = "ir_serde", serde(default))]
+    pub estimated_rows: Option<[u64; 2]>,
+}
+
+/// Largest ratio of distinct build keys to distinct probe keys for which a
+/// bloom filter is published.
+pub const MAX_BUILD_PROBE_DISTINCT_RATIO: f64 = 0.3;
+
+/// The build-side key at `key_idx` of the join's `on`, published through
+/// `pred` for the probe side: its range, and a bloom filter over its values
+/// when `bloom_keys` gives the number of distinct keys to size it for.
+#[derive(Clone, Debug, PartialEq, Hash)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
+pub struct RuntimeFilter {
+    pub key_idx: usize,
+    pub pred: DynamicPred,
+    pub bloom_keys: Option<usize>,
+    /// The probe side's distinct keys, when the plan can estimate them.
+    pub probe_distinct: Option<usize>,
 }
 
 impl JoinOptionsIR {
@@ -356,18 +429,65 @@ impl JoinOptionsIR {
         self.options.is_non_equi()
     }
 
+    /// Errors if no engine can execute this `args.how` with this match condition.
+    ///
+    /// Whether a non-equi condition ends up executable depends on how far the optimizer
+    /// managed to lower it, so this can only be answered once the plan is optimized.
+    pub fn ensure_executable(&self) -> PolarsResult<()> {
+        use JoinTypeOptionsIR::*;
+
+        let how = &self.args.how;
+        let supported = match &self.options {
+            Equi {
+                fused_predicate: None,
+                ..
+            } => true,
+            Equi {
+                on,
+                fused_predicate: Some(_),
+            } => how.is_inner() && !on.is_empty() && self.args.slice.is_none(),
+            #[cfg(feature = "asof_join")]
+            AsOf { .. } => how.is_asof(),
+            #[cfg(feature = "iejoin")]
+            IEJoin { .. } | Range { .. } => {
+                how.is_ie()
+                    || how.is_range()
+                    || how.is_inner()
+                    || how.is_cross()
+                    || matches!(how, JoinType::Left | JoinType::Right | JoinType::Full)
+            },
+            CrossAndFilter { .. } => {
+                how.is_inner()
+                    || how.is_cross()
+                    || matches!(how, JoinType::Left | JoinType::Right | JoinType::Full)
+            },
+        };
+
+        polars_ensure!(
+            supported,
+            InvalidOperation:
+            "'{}' join is not supported with non-equi join conditions",
+            how,
+        );
+        Ok(())
+    }
+
     pub(crate) fn shallow_eq(&self, other: &Self, expr_cmp: &impl ExpressionComparator) -> bool {
         let Self {
             allow_parallel,
             force_parallel,
             args,
             options,
+            runtime_filters,
+            estimated_rows,
         } = self;
 
         *allow_parallel == other.allow_parallel
             && *force_parallel == other.force_parallel
             && *args == other.args
             && options.shallow_eq(&other.options, expr_cmp)
+            && *runtime_filters == other.runtime_filters
+            && *estimated_rows == other.estimated_rows
     }
 
     #[cfg(feature = "cse")]
@@ -381,12 +501,16 @@ impl JoinOptionsIR {
             force_parallel,
             args,
             options,
+            runtime_filters,
+            estimated_rows,
         } = self;
 
         allow_parallel.hash(state);
         force_parallel.hash(state);
         args.hash(state);
         options.shallow_hash(state, expr_hash);
+        runtime_filters.hash(state);
+        estimated_rows.hash(state);
     }
 }
 
@@ -394,10 +518,19 @@ impl JoinOptionsIR {
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 #[strum(serialize_all = "snake_case")]
 pub enum JoinTypeOptionsIR {
-    /// The match condition is `left == right` for every key pair.
+    /// The match condition is `left == right` for every key pair, and, if there is a
+    /// `fused_predicate`, that predicate as well.
     ///
     /// An empty `on` is a plain cross join.
-    Equi { on: Vec<(ExprIR, ExprIR)> },
+    /// Join keys may be scalar. Execution broadcasts keys to their input's height.
+    Equi {
+        on: Vec<(ExprIR, ExprIR)>,
+        /// Boolean match condition in the join's output namespace, evaluated per
+        /// candidate pair. A pair survives only on `true`; `false` and null reject it.
+        ///
+        /// Only ever set on an inner join with a non-empty `on` and no attached slice.
+        fused_predicate: Option<ExprIR>,
+    },
     /// Backwards/forwards/nearest match on a single key pair. The strategy, tolerance
     /// and `by` group keys live in [`JoinType::AsOf`].
     #[cfg(feature = "asof_join")]
@@ -432,7 +565,10 @@ pub enum JoinTypeOptionsIR {
 
 impl Default for JoinTypeOptionsIR {
     fn default() -> Self {
-        Self::Equi { on: Vec::new() }
+        Self::Equi {
+            on: Vec::new(),
+            fused_predicate: None,
+        }
     }
 }
 
@@ -515,6 +651,16 @@ impl JoinTypeOptionsIR {
             IEJoin { ie_options, .. } | Range { ie_options, .. } => {
                 Ok(Some(JoinTypeOptions::IEJoin(ie_options)))
             },
+            Equi {
+                fused_predicate: Some(fused_predicate),
+                ..
+            } => {
+                let predicate = plan(&fused_predicate)?;
+
+                Ok(Some(JoinTypeOptions::FusedPredicate(CrossJoinOptions {
+                    predicate,
+                })))
+            },
             Equi { .. } => Ok(None),
             #[cfg(feature = "asof_join")]
             AsOf { .. } => Ok(None),
@@ -527,7 +673,7 @@ impl JoinTypeOptionsIR {
     /// They cannot share an or-pattern arm because rustc rejects `#[cfg]` on one alternative.
     pub fn key_pairs(&self) -> Option<&[(ExprIR, ExprIR)]> {
         match self {
-            Self::Equi { on } => Some(on),
+            Self::Equi { on, .. } => Some(on),
             #[cfg(feature = "asof_join")]
             Self::AsOf { on } => Some(on),
             _ => None,
@@ -537,7 +683,7 @@ impl JoinTypeOptionsIR {
     /// See [`Self::key_pairs`].
     fn key_pairs_mut(&mut self) -> Option<&mut Vec<(ExprIR, ExprIR)>> {
         match self {
-            Self::Equi { on } => Some(on),
+            Self::Equi { on, .. } => Some(on),
             #[cfg(feature = "asof_join")]
             Self::AsOf { on } => Some(on),
             _ => None,
@@ -604,6 +750,13 @@ impl JoinTypeOptionsIR {
     ///
     /// The order must stay in sync with [`Self::exprs_mut`].
     pub fn exprs(&self) -> Exprs<'_> {
+        if let Self::Equi {
+            on,
+            fused_predicate,
+        } = self
+        {
+            return Exprs::pair_sides_then(on, fused_predicate.as_ref());
+        }
         if let Some(on) = self.key_pairs() {
             return Exprs::pair_sides(on);
         }
@@ -623,6 +776,13 @@ impl JoinTypeOptionsIR {
     /// See [`Self::exprs`]. Yields in the same order.
     pub fn exprs_mut(&mut self) -> ExprsMut<'_> {
         // Checked first so the mutable borrow does not span the match below.
+        if let Self::Equi {
+            on,
+            fused_predicate,
+        } = self
+        {
+            return ExprsMut::pair_sides_then(on, fused_predicate.as_mut());
+        }
         if self.key_pairs().is_some() {
             return ExprsMut::pair_sides(self.key_pairs_mut().unwrap());
         }
@@ -636,6 +796,18 @@ impl JoinTypeOptionsIR {
             } => ExprsMut::double_slice(left_on, right_on),
             Self::CrossAndFilter { predicate } => ExprsMut::single(predicate),
             _ => ExprsMut::Empty,
+        }
+    }
+
+    /// The schema that the `idx`-th expression of [`Self::exprs`] resolves against.
+    pub fn expr_schema(&self, idx: usize) -> ExprSchema {
+        let n_left = self.left_on_len();
+        if idx < n_left {
+            ExprSchema::Input(0)
+        } else if idx < n_left + self.right_on_len() {
+            ExprSchema::Input(1)
+        } else {
+            ExprSchema::Output
         }
     }
 
@@ -667,14 +839,52 @@ impl JoinTypeOptionsIR {
     /// The match condition is exactly `left == right` for every key pair.
     ///
     /// True for [`Self::AsOf`] too: its strategy and tolerance live in [`JoinType::AsOf`],
-    /// not in the match condition.
+    /// not in the match condition. False once a fused predicate is attached.
     pub fn is_pure_equi(&self) -> bool {
         !self.is_non_equi()
     }
 
     /// The match condition has a non-equality component.
+    ///
+    /// Use [`Self::key_pairs`] instead where what is needed is paired keys: a fused predicate
+    /// join has those as well.
     pub fn is_non_equi(&self) -> bool {
-        self.key_pairs().is_none()
+        self.key_pairs().is_none() || self.has_fused_predicate()
+    }
+
+    pub fn has_fused_predicate(&self) -> bool {
+        self.fused_predicate().is_some()
+    }
+
+    /// The fused match condition, if any. See [`Self::Equi`].
+    pub fn fused_predicate(&self) -> Option<&ExprIR> {
+        match self {
+            Self::Equi {
+                fused_predicate, ..
+            } => fused_predicate.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn push_key_pair(&mut self, left: ExprIR, right: ExprIR) {
+        let Self::Equi { on, .. } = self else {
+            panic!("key pairs can only be added to equi joins")
+        };
+        on.push((left, right));
+    }
+
+    pub(crate) fn set_fused_predicate(&mut self, new: ExprIR) {
+        let Self::Equi {
+            fused_predicate, ..
+        } = self
+        else {
+            panic!("a fused predicate is only supported on equi joins")
+        };
+        assert!(
+            fused_predicate.is_none(),
+            "fused_predicate would be overwritten"
+        );
+        *fused_predicate = Some(new);
     }
 }
 
@@ -685,6 +895,8 @@ impl From<JoinOptions> for JoinOptionsIR {
             force_parallel: opts.force_parallel,
             args: opts.args,
             options: Default::default(),
+            runtime_filters: Vec::new(),
+            estimated_rows: None,
         }
     }
 }

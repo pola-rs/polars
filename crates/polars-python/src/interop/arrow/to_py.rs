@@ -1,11 +1,11 @@
-use arrow::datatypes::ArrowDataType;
-use arrow::ffi;
-use arrow::record_batch::RecordBatch;
 use polars::datatypes::CompatLevel;
 use polars::frame::DataFrame;
 use polars::prelude::{ArrayRef, ArrowField, PlSmallStr, SchemaExt};
 use polars::series::Series;
-use polars_core::utils::arrow;
+use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::ffi;
+use polars_arrow::record_batch::RecordBatch;
+use polars_core::utils::polars_arrow;
 use polars_error::PolarsResult;
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
@@ -95,17 +95,18 @@ pub(crate) fn polars_schema_to_pycapsule<'py>(
     schema: crate::prelude::Wrap<polars::prelude::Schema>,
     compat_level: crate::prelude::PyCompatLevel,
 ) -> PyResult<Bound<'py, PyCapsule>> {
-    let schema: arrow::ffi::ArrowSchema = arrow::ffi::export_field_to_c(&ArrowField::new(
-        PlSmallStr::EMPTY,
-        ArrowDataType::Struct(
-            schema
-                .0
-                .iter_fields()
-                .map(|x| x.to_arrow(compat_level.0))
-                .collect(),
-        ),
-        false,
-    ));
+    let schema: polars_arrow::ffi::ArrowSchema =
+        polars_arrow::ffi::export_field_to_c(&ArrowField::new(
+            PlSmallStr::EMPTY,
+            ArrowDataType::Struct(
+                schema
+                    .0
+                    .iter_fields()
+                    .map(|x| x.to_arrow(compat_level.0))
+                    .collect(),
+            ),
+            false,
+        ));
 
     PyCapsule::new_with_value(py, schema, c"arrow_schema")
 }
@@ -162,8 +163,12 @@ impl Iterator for DataFrameStreamIterator {
             self.idx += 1;
 
             let col_len = batch_cols.first().map_or(self.height, |c| c.len());
-            let array =
-                arrow::array::StructArray::new(self.dtype.clone(), col_len, batch_cols, None);
+            let array = polars_arrow::array::StructArray::new(
+                self.dtype.clone(),
+                col_len,
+                batch_cols,
+                None,
+            );
             Some(Ok(Box::new(array)))
         }
     }

@@ -1,9 +1,21 @@
+from __future__ import annotations
+
+import io
+from datetime import datetime
+from typing import TYPE_CHECKING, Any
+
 import numpy as np
+import pyarrow as pa
 import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError, OutOfBoundsError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from polars._typing import EngineType
 
 
 def test_negative_index() -> None:
@@ -484,3 +496,372 @@ def test_series_gather_null_on_oob() -> None:
 
     result = s.gather([0, 1, 10], null_on_oob=True)
     assert result.to_list() == [1, 2, None]
+
+
+@pytest.mark.parametrize("value", [1, 1.5, "a", True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+def test_gather_scalar_with_interleaved_nulls(
+    value: int | float | str | bool, nulls_last: bool
+) -> None:
+    frame = pl.DataFrame({"x": [value]})
+    result = frame.gather(pl.Series([None, 0, None], dtype=pl.UInt32))
+    values = [value, None, None] if nulls_last else [None, None, value]
+    assert_frame_equal(
+        result.sort("x", nulls_last=nulls_last), pl.DataFrame({"x": values})
+    )
+
+
+def test_gather_null_on_oob_group_by() -> None:
+    lf = pl.LazyFrame({"g": [1, 2, 2], "x": [1.0, 2.0, 3.0]})
+    # Indices outside the Int64 range.
+    wide_idx = pl.Series([0, 2**63, -(2**63) - 1], dtype=pl.Int128)
+    q = lf.group_by("g").agg(
+        pos=pl.col("x").gather([0, 5], null_on_oob=True),
+        neg=pl.col("x").gather([-1, -5], null_on_oob=True),
+        big=pl.col("x").gather([0, 2**32], null_on_oob=True),
+        wide=pl.col("x").gather(wide_idx, null_on_oob=True),
+    )
+    expected = pl.DataFrame(
+        {
+            "g": [1, 2],
+            "pos": [[1.0, None], [2.0, None]],
+            "neg": [[1.0, None], [3.0, None]],
+            "big": [[1.0, None], [2.0, None]],
+            "wide": [[1.0, None, None], [2.0, None, None]],
+        }
+    )
+    for engine in ["in-memory", "streaming"]:
+        assert_frame_equal(
+            q.collect(engine=engine),  # type: ignore[call-overload]
+            expected,
+            check_row_order=False,
+        )
+    with pytest.raises(OutOfBoundsError):
+        lf.group_by("g").agg(pl.col("x").gather([0, 5])).collect()
+
+    assert_frame_equal(
+        lf.select(pl.col("x").gather(wide_idx, null_on_oob=True)).collect(),
+        pl.DataFrame({"x": [1.0, None, None]}),
+    )
+    with pytest.raises(OutOfBoundsError):
+        lf.select(pl.col("x").gather(wide_idx)).collect()
+
+
+@pytest.mark.parametrize(
+    "idx",
+    [
+        [0, 2**32],
+        [-1, 2**32],
+        [-(2**32) - 1, 0],
+        pl.Series([0, 2**32], dtype=pl.UInt64),
+        pl.Series([0, 2**63, -(2**63) - 1], dtype=pl.Int128),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_gather_group_by_large_index_raises(
+    idx: list[int] | pl.Series, engine: EngineType
+) -> None:
+    q = (
+        pl.LazyFrame({"g": [1, 1, 2], "x": [1, 2, 3]})
+        .group_by("g")
+        .agg(pl.col("x").gather(idx))
+    )
+    with pytest.raises(OutOfBoundsError):
+        q.collect(engine=engine)
+
+
+@pytest.mark.parametrize(
+    "idx",
+    [
+        pl.Series([-1, 0], dtype=pl.Int8),
+        pl.Series([-1, 0], dtype=pl.Int128),
+        pl.Series([1, 0], dtype=pl.UInt64),
+    ],
+)
+def test_gather_group_by_index_dtypes(idx: pl.Series) -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 2, 2], "x": [1, 2, 3, 4]})
+    q = lf.group_by("g", maintain_order=True).agg(pl.col("x").gather(idx))
+    expected = pl.DataFrame({"g": [1, 2], "x": [[2, 1], [4, 3]]})
+    assert_frame_equal(q.collect(), expected)
+
+
+@pytest.mark.parametrize(
+    ("data", "dtype"),
+    [
+        (
+            [["a", None], None, [], ["b", "a longer string value", "d"], None, ["e"]],
+            pl.List(pl.String),
+        ),
+        ([[1, None], None, [], [2, 3, 4], None, [5]], pl.List(pl.Int64)),
+        (
+            [[[1], None, []], None, [], [[2, 3]], None, [None]],
+            pl.List(pl.List(pl.Int64)),
+        ),
+        (
+            [[{"x": 1}, None], None, [], [{"x": None}, {"x": 2}], None, [{"x": 3}]],
+            pl.List(pl.Struct({"x": pl.Int64})),
+        ),
+        (
+            [[[1, 2], None], None, [], [[3, 4]], None, [[5, 6]]],
+            pl.List(pl.Array(pl.Int64, 2)),
+        ),
+        ([[True, None], None, [], [False, True], None, [True]], pl.List(pl.Boolean)),
+        ([[None, None], None, [], [None], None, [None]], pl.List(pl.Null)),
+        ([None] * 6, pl.List(pl.Int64)),
+        (
+            [[[1, None], None], None, [], [[None, 4]], None, [[5, 6]]],
+            pl.List(pl.Array(pl.Int64, 2)),
+        ),
+        (
+            [
+                [["a", None], None],
+                None,
+                [],
+                [["a longer string value", ""]],
+                None,
+                [["c", "d"]],
+            ],
+            pl.List(pl.Array(pl.String, 2)),
+        ),
+        (
+            [
+                [[{"x": 1}, None]],
+                None,
+                [],
+                [[{"x": None}, {"x": 2}], None],
+                None,
+                [[{"x": 3}, {"x": 4}]],
+            ],
+            pl.List(pl.Array(pl.Struct({"x": pl.Int64}), 2)),
+        ),
+        (
+            [
+                [[[1, 2], [3, None]], None],
+                None,
+                [],
+                [[[5, 6], [7, 8]]],
+                None,
+                [[None, [9, 10]]],
+            ],
+            pl.List(pl.Array(pl.Int64, (2, 2))),
+        ),
+        (
+            [
+                [[datetime(2026, 1, 1), None]],
+                None,
+                [],
+                [None, [datetime(2026, 1, 2)] * 2],
+                None,
+                [[None, None]],
+            ],
+            pl.List(pl.Array(pl.Datetime("ms"), 2)),
+        ),
+        (
+            [[[True, None, False]], None, [], [[False] * 3, None], None, [[True] * 3]],
+            pl.List(pl.Array(pl.Boolean, 3)),
+        ),
+        ([[[], None], None, [], [[]], None, [[], []]], pl.List(pl.Array(pl.Int32, 0))),
+        (
+            [
+                [{"a": [1, 2]}, None],
+                None,
+                [],
+                [{"a": None}, {"a": [3, None]}],
+                None,
+                [{"a": [5, 6]}],
+            ],
+            pl.List(pl.Struct({"a": pl.Array(pl.Int64, 2)})),
+        ),
+        (
+            [
+                [list(range(128))],
+                None,
+                [],
+                [list(range(128, 256))],
+                None,
+                [[None] * 128],
+            ],
+            pl.List(pl.Array(pl.Int32, 128)),
+        ),
+    ],
+)
+def test_gather_list_29993(data: list[Any], dtype: pl.DataType) -> None:
+    s = pl.Series(data, dtype=dtype)
+    idx = [5, None, 3, 3, 1, 0, 2, None, 4]
+    expected = [None if i is None else data[i] for i in idx]
+    assert s.gather(pl.Series(idx, dtype=pl.get_index_type())).to_list() == expected
+    assert s[1:].gather([4, 0, 2]).to_list() == [data[5], data[1], data[3]]
+
+    df = pl.DataFrame({"k": [0, 1, 0, 1, 0, 1], "a": s})
+    out = df.group_by("k", maintain_order=True).agg("a")
+    assert out["a"].to_list() == [data[0::2], data[1::2]]
+
+
+@pytest.mark.parametrize(
+    ("dtype", "leaf"),
+    [
+        (pl.Int64, lambda i: None if i % 7 == 0 else i),
+        (pl.Boolean, lambda i: i % 3 == 0),
+        (pl.String, lambda i: None if i % 5 == 0 else f"value number {i}"),
+        (pl.Struct({"x": pl.Int64, "s": pl.String}), lambda i: {"x": i, "s": str(i)}),
+        (pl.List(pl.Int64), lambda i: [i, None]),
+        (pl.Array(pl.Int32, 2), lambda i: [i, None]),
+        (pl.Array(pl.String, 2), lambda i: [str(i), None]),
+    ],
+)
+def test_gather_list_wide_rows(dtype: pl.DataType, leaf: Callable[[int], Any]) -> None:
+    # Wide rows of fixed-width values are copied whole instead of gathered per element.
+    rows = [range(40), range(40, 40), range(40, 140), None, range(140, 440)]
+    data = [None if r is None else [leaf(i) for i in r] for r in rows]
+    s = pl.Series(data, dtype=pl.List(dtype))
+    idx = [4, None, 2, 0, 3, 1, 4]
+    expected = [None if i is None else data[i] for i in idx]
+    assert s.gather(pl.Series(idx, dtype=pl.get_index_type())).to_list() == expected
+    assert s[1:].gather([3, 0, 1]).to_list() == [data[4], data[1], data[2]]
+
+
+def test_gather_list_null_rows_with_values() -> None:
+    # Null row 1 still spans the value 3.
+    s = pl.Series(
+        pa.LargeListArray.from_arrays(
+            pa.array([0, 2, 3, 5], pa.int64()),
+            pa.array([1, 2, 3, 4, 5]),
+            mask=pa.array([False, True, False]),
+        )
+    )
+    assert s.to_arrow().offsets.to_pylist() == [0, 2, 3, 5]
+    expected = pl.Series([[4, 5], None, [1, 2], None])
+    assert_series_equal(s.gather([2, 1, 0, 1]), expected)
+
+
+def test_gather_list_of_2d_array_null_hash() -> None:
+    # A null 2-D array element must hash the same after a gather.
+    s = pl.Series([[None, [[1, 2], [3, 4]]]], dtype=pl.List(pl.Array(pl.Int64, (2, 2))))
+    assert pl.concat([s, s.gather([0])]).n_unique() == 1
+
+
+@pytest.mark.parametrize(
+    ("data", "dtype"),
+    [
+        ([[1, 2], None, [3, 4], [5, 6]], pl.Array(pl.Int64, 2)),
+        ([[1, None, 3, 4], None, [5, 6, None, 8], [None] * 4], pl.Array(pl.Int64, 4)),
+        (
+            [["a", None], None, ["a longer string value", ""], [None, "b"]],
+            pl.Array(pl.String, 2),
+        ),
+        (
+            [[{"x": 1}, None], None, [{"x": None}, {"x": 2}], [{"x": 3}, {"x": 4}]],
+            pl.Array(pl.Struct({"x": pl.Int64}), 2),
+        ),
+        (
+            [[[1, 2], [3, None]], None, [None, [5, 6]], [[7, 8], [9, 10]]],
+            pl.Array(pl.Int64, (2, 2)),
+        ),
+        ([[], None, [], []], pl.Array(pl.Int32, 0)),
+        ([[True, None], None, [False, True], [None, None]], pl.Array(pl.Boolean, 2)),
+    ],
+)
+def test_gather_array_rows(data: list[Any], dtype: pl.DataType) -> None:
+    s = pl.Series(data, dtype=dtype)
+    idx = [3, None, 1, 0, 0, 2, None]
+    out = s.gather(pl.Series(idx, dtype=pl.get_index_type()))
+    assert out.dtype == dtype
+    assert out.to_list() == [None if i is None else data[i] for i in idx]
+    assert s[1:].gather([2, 0, 1]).to_list() == [data[3], data[1], data[2]]
+    # A sliced index validity bitmap.
+    sliced_idx = pl.Series([None, 3, None, 1, 0], dtype=pl.get_index_type())[1:]
+    assert s.gather(sliced_idx).to_list() == [data[3], None, data[1], data[0]]
+
+
+def test_gather_list_of_array_hidden_values() -> None:
+    # The null array element hides the valid values 9, 9.
+    arr = pa.FixedSizeListArray.from_arrays(
+        pa.array([9, 9, 1, 2, 3, 4], pa.int64()), 2, mask=pa.array([True, False, False])
+    )
+    s = pl.Series(
+        "a", pa.LargeListArray.from_arrays(pa.array([0, 2, 3], pa.int64()), arr)
+    )
+    out = s.gather([1, 0, 0])
+    assert out.to_list() == [[[3, 4]], [None, [1, 2]], [None, [1, 2]]]
+    assert pl.concat([s, out]).n_unique() == 2
+    assert out.gather([1, 0]).eq_missing(s).all()
+    assert out.to_frame().group_by("a").len().height == 2
+
+    buf = io.BytesIO()
+    out.to_frame().write_ipc(buf)
+    buf.seek(0)
+    assert_series_equal(pl.read_ipc(buf).to_series(), out)
+
+
+@pytest.mark.parametrize(
+    "child",
+    [
+        pa.array(["x", "y", "a", "b"]),
+        pa.array([[9], [9, 9], [1], [2]]),
+        pa.array([{"f": 9}, {"f": 9}, {"f": 1}, {"f": 2}]),
+        pa.array([9, 9, 1, None]),
+        pa.array([True, True, False, None]),
+    ],
+)
+def test_gather_array_null_rows_get_null_values(child: pa.Array) -> None:
+    # Like a null index, a null row gives null values, not the ones stored under it.
+    arr = pa.FixedSizeListArray.from_arrays(child, 2, mask=pa.array([True, False]))
+    s = pl.Series(arr)
+    assert s.to_arrow().values.is_null().to_pylist()[:2] == [False, False]
+    out = s.gather(pl.Series([1, 0, None], dtype=pl.get_index_type()))
+    assert out.to_list() == [s.to_list()[1], None, None]
+    assert out.to_arrow().values.is_null().to_pylist()[2:] == [True] * 4
+
+
+def test_gather_by_column_with_limit_30408() -> None:
+    n = 10_000
+    lf = pl.LazyFrame({"idx": range(n), "x": [float(i) for i in range(n)]})
+    q = lf.with_columns(pl.col("x").gather(pl.col("idx")).alias("y")).limit(1)
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"idx": [0], "x": [0.0], "y": [0.0]}),
+    )
+
+
+@pytest.mark.parametrize(
+    ("values", "descending", "idx", "idx_descending", "idx_nulls_last"),
+    [
+        # Source nulls first, index nulls last.
+        ([None, 1, 2], False, [0, 1, None], False, True),
+        # Source nulls last, index nulls first.
+        ([1, 2, None], False, [None, 1, 2], False, False),
+        # A descending index moves the source nulls to the front.
+        ([1, 2, None], False, [2, 1, None], True, True),
+        # Descending source.
+        ([None, 2, 1], True, [0, 1, None], False, True),
+    ],
+)
+def test_gather_nulls_at_both_ends_drops_sorted_flag_30428(
+    values: list[int | None],
+    descending: bool,
+    idx: list[int | None],
+    idx_descending: bool,
+    idx_nulls_last: bool,
+) -> None:
+    s = pl.Series("s", values).sort(
+        descending=descending, nulls_last=values[-1] is None
+    )
+    i = pl.Series(idx, dtype=pl.UInt32).sort(
+        descending=idx_descending, nulls_last=idx_nulls_last
+    )
+    expected = s.gather(i)
+    for out in [s[i], s.to_frame()[i].to_series()]:
+        assert_series_equal(out, expected)
+        assert out.max() == expected.max()
+        assert out.n_unique() == expected.n_unique()
+
+
+def test_gather_nulls_at_one_end_keeps_sorted_flag_30428() -> None:
+    s = pl.Series([None, 1, 2]).sort()
+    out = s[pl.Series([None, 0, 2], dtype=pl.UInt32).sort()]
+    assert out.to_list() == [None, None, 2]
+    assert out.flags["SORTED_ASC"]
+
+    all_null = s[pl.Series([None, 0], dtype=pl.UInt32).sort()]
+    assert all_null.to_list() == [None, None]
+    assert all_null.max() is None

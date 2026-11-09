@@ -1,5 +1,4 @@
 use polars_core::utils::split_df_as_ref;
-use polars_ops::frame::DataFrameJoinOps;
 
 use super::*;
 use crate::plans::hive::HivePartitionsDf;
@@ -199,19 +198,17 @@ pub fn rewrite_hive(
                     let hive_l = unique_key_frame(hive_left.df(), &l)?;
                     let hive_r = unique_key_frame(hive_right.df(), &r)?;
 
-                    let partitions = hive_l
-                        .join(
-                            &hive_r,
-                            [l.as_str()],
-                            [r.as_str()],
-                            JoinArgs {
-                                how: options.args.how.clone(),
-                                nulls_equal: options.args.nulls_equal,
-                                ..Default::default()
-                            },
-                            None,
-                        )
-                        .unwrap();
+                    let partitions = (opt.hooks.hive_join)(
+                        &hive_l,
+                        &hive_r,
+                        l.as_str(),
+                        r.as_str(),
+                        JoinArgs {
+                            how: options.args.how.clone(),
+                            nulls_equal: options.args.nulls_equal,
+                            ..Default::default()
+                        },
+                    )?;
 
                     let l_key_name = if partitions.schema().contains(l.as_str()) {
                         l.clone()

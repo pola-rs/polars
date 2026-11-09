@@ -59,8 +59,10 @@ impl Hash for AExpr {
                 order_by,
                 function: _,
                 partition_by: _,
+                may_reorder,
             } => {
                 mapping.hash(state);
+                may_reorder.hash(state);
                 if let Some(o) = order_by {
                     o.1.hash(state);
                 }
@@ -102,7 +104,8 @@ impl Hash for AExpr {
             AExpr::StructEval {
                 expr: _,
                 evaluation: _,
-            } => {},
+                variant,
+            } => variant.hash(state),
             AExpr::Slice {
                 input: _,
                 offset: _,

@@ -1,7 +1,8 @@
-use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
+use std::sync::{LazyLock, Once};
 use std::time::Duration;
 
+mod cgroup;
 mod engine;
 mod file_advice;
 mod parse;
@@ -34,7 +35,6 @@ fn default_max_threads() -> u64 {
 }
 
 const IDEAL_MORSEL_SIZE: &str = "POLARS_IDEAL_MORSEL_SIZE";
-const STREAMING_CHUNK_SIZE: &str = "POLARS_STREAMING_CHUNK_SIZE"; // Backwards compatibility.
 const DEFAULT_IDEAL_MORSEL_SIZE: u64 = 100_000;
 
 const ENGINE_AFFINITY: &str = "POLARS_ENGINE_AFFINITY";
@@ -60,6 +60,9 @@ const DEFAULT_VERBOSE_SENSITIVE: bool = false;
 const FORCE_ASYNC: &str = "POLARS_FORCE_ASYNC";
 const DEFAULT_FORCE_ASYNC: bool = false;
 
+const SCAN_CHUNK_STATISTICS: &str = "POLARS_SCAN_CHUNK_STATISTICS";
+const DEFAULT_SCAN_CHUNK_STATISTICS: bool = false;
+
 const IMPORT_INTERVAL_AS_STRUCT: &str = "POLARS_IMPORT_INTERVAL_AS_STRUCT";
 const DEFAULT_IMPORT_INTERVAL_AS_STRUCT: bool = false;
 
@@ -71,9 +74,8 @@ const OOC_SPILL_FORMAT: &str = "POLARS_OOC_SPILL_FORMAT";
 const DEFAULT_OOC_SPILL_FORMAT: SpillFormat = SpillFormat::Ipc;
 
 const OOC_SPILL_COMPRESSION_LEVEL: &str = "POLARS_OOC_SPILL_COMPRESSION_LEVEL";
-const DEFAULT_OOC_SPILL_COMPRESSION_LEVEL: u64 = 0;
+const DEFAULT_OOC_SPILL_COMPRESSION_LEVEL: u64 = 1;
 
-// Unused at the moment.
 const OOC_MEMORY_BUDGET_FRACTION: &str = "POLARS_OOC_MEMORY_BUDGET_FRACTION";
 const DEFAULT_OOC_MEMORY_BUDGET_FRACTION: f64 = 0.8;
 
@@ -81,19 +83,44 @@ const OOC_MEMORY_BUDGET_MB: &str = "POLARS_OOC_MEMORY_BUDGET_MB";
 const DEFAULT_OOC_MEMORY_BUDGET_MB: u64 = u64::MAX;
 
 const OOC_MEMORY_PREFETCH_FRACTION: &str = "POLARS_OOC_MEMORY_PREFETCH_FRACTION";
-const DEFAULT_OOC_MEMORY_PREFETCH_FRACTION: f64 = 0.8;
+const DEFAULT_OOC_MEMORY_PREFETCH_FRACTION: f64 = 0.5;
+
+const OOC_MEMORY_GRANT_FRACTION: &str = "POLARS_OOC_MEMORY_GRANT_FRACTION";
+const DEFAULT_OOC_MEMORY_GRANT_FRACTION: f64 = 0.75;
 
 const OOC_DISK_BUDGET_MB: &str = "POLARS_OOC_DISK_BUDGET_MB";
-const DEFAULT_OOC_DISK_BUDGET_MB: u64 = u64::MAX;
+const DEFAULT_OOC_DISK_BUDGET_MB: u64 = 64 * 1000; // 64 GB
 
 const OOC_SPILL_MIN_BYTES: &str = "POLARS_OOC_SPILL_MIN_BYTES";
-const DEFAULT_OOC_SPILL_MIN_BYTES: u64 = 64 * 1024; // 64 KB
+const DEFAULT_OOC_SPILL_MIN_BYTES: u64 = 64 * 1024; // 64 KiB
+
+const OOC_MAX_PARALLEL_SPILL_TASKS: &str = "POLARS_OOC_MAX_PARALLEL_SPILL_TASKS";
+const DEFAULT_OOC_MAX_PARALLEL_SPILL_TASKS: u64 = 64;
+
+const OOC_MAX_PARALLEL_PREFETCH_TASKS: &str = "POLARS_OOC_MAX_PARALLEL_PREFETCH_TASKS";
+const DEFAULT_OOC_MAX_PARALLEL_PREFETCH_TASKS: u64 = 64;
 
 const OOC_LOG_METRICS: &str = "POLARS_OOC_LOG_METRICS";
 const DEFAULT_OOC_LOG_METRICS: bool = false;
 
+const OOC_PRESSURE_DECAY: &str = "POLARS_OOC_PRESSURE_DECAY";
+const DEFAULT_OOC_PRESSURE_DECAY: bool = true;
+
+const OOC_PRESSURE_DECAY_GRACE_MS: &str = "POLARS_OOC_PRESSURE_DECAY_GRACE_MS";
+const DEFAULT_OOC_PRESSURE_DECAY_GRACE_MS: u64 = 1000;
+
+const OOMKILL_THRESHOLD_FRACTION: &str = "POLARS_OOMKILL_THRESHOLD_FRACTION";
+const DEFAULT_OOMKILL_THRESHOLD_FRACTION: f64 = f64::INFINITY;
+
+const OOMKILL_THRESHOLD_MB: &str = "POLARS_OOMKILL_THRESHOLD_MB";
+const DEFAULT_OOMKILL_THRESHOLD_MB: u64 = u64::MAX;
+
 const JOIN_SAMPLE_LIMIT: &str = "POLARS_JOIN_SAMPLE_LIMIT";
 const DEFAULT_JOIN_SAMPLE_LIMIT: u64 = 10_000_000;
+
+/// Whether hash joins publish key ranges to the parquet scans below them.
+const JOIN_RUNTIME_FILTERS: &str = "POLARS_JOIN_RUNTIME_FILTERS";
+const DEFAULT_JOIN_RUNTIME_FILTERS: bool = true;
 
 /// Allows pruning of strict hconcat inputs in projection pushdown. This can reduce data loading
 /// but may discard shape errors.
@@ -117,6 +144,13 @@ const DEFAULT_NUMA_MOCK_REGIONS: u64 = 0;
 const DISABLE_HTTP_RATE_LIMIT: &str = "POLARS_DISABLE_HTTP_RATE_LIMIT";
 const DEFAULT_DISABLE_HTTP_RATE_LIMIT: bool = false;
 
+const HTTP_SKIP_SYSTEM_CERTIFICATES: &str = "POLARS_HTTP_SKIP_SYSTEM_CERTIFICATES";
+const DEFAULT_HTTP_SKIP_SYSTEM_CERTIFICATES: bool = false;
+
+/// Max number of cached per-origin HTTP object stores; 0 disables the cache.
+const HTTP_STORE_CACHE_SIZE: &str = "POLARS_HTTP_STORE_CACHE_SIZE";
+const DEFAULT_HTTP_STORE_CACHE_SIZE: u64 = 256;
+
 /// Use direct I/O (Linux: `O_DIRECT`), bypassing the page cache.
 const DIRECT_IO: &str = "POLARS_DIRECT_IO";
 const DEFAULT_DIRECT_IO: bool = false;
@@ -128,6 +162,23 @@ const DEFAULT_FILE_READ_CONCURRENCY: u64 = 32;
 const FILE_POSIX_FADV: &str = "POLARS_FILE_POSIX_FADV";
 const DEFAULT_FILE_POSIX_FADV: FileAdvice = FileAdvice::Normal;
 
+/// Read the column chunks of row groups that are in the page cache in the tasks that decode them,
+/// instead of prefetching them (Linux 6.5+, parquet).
+const FILE_DEFER_CACHED_READS: &str = "POLARS_FILE_DEFER_CACHED_READS";
+const DEFAULT_FILE_DEFER_CACHED_READS: bool = true;
+
+/// Number of slots each hot table in the streaming group-by starts with.
+const MIN_HOT_TABLE_SIZE: &str = "POLARS_MIN_HOT_TABLE_SIZE";
+const DEFAULT_MIN_HOT_TABLE_SIZE: u64 = if cfg!(debug_assertions) { 2 } else { 16 };
+
+/// Number of slots up to which the hot tables in the streaming group-by double after misses.
+const HOT_TABLE_SIZE: &str = "POLARS_HOT_TABLE_SIZE";
+const DEFAULT_HOT_TABLE_SIZE: u64 = if cfg!(debug_assertions) { 4 } else { 4096 };
+
+/// Number of slots up to which the hot tables in the streaming group-by may grow.
+const MAX_HOT_TABLE_SIZE: &str = "POLARS_MAX_HOT_TABLE_SIZE";
+const DEFAULT_MAX_HOT_TABLE_SIZE: u64 = if cfg!(debug_assertions) { 16 } else { 1 << 17 };
+
 static KNOWN_OPTIONS: &[&str] = &[
     // Public.
     VERBOSE,
@@ -135,7 +186,6 @@ static KNOWN_OPTIONS: &[&str] = &[
     WARN_UNSTABLE,
     MAX_THREADS,
     IDEAL_MORSEL_SIZE,
-    STREAMING_CHUNK_SIZE,
     ENGINE_AFFINITY,
     PARQUET_BINARY_STATISTICS_TRUNCATE_LENGTH,
     PRUNE_PARQUET_METADATA,
@@ -166,6 +216,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     // Private.
     VERBOSE_SENSITIVE,
     FORCE_ASYNC,
+    SCAN_CHUNK_STATISTICS,
     IMPORT_INTERVAL_AS_STRUCT,
     OOC_DRIFT_THRESHOLD,
     OOC_SPILL_FORMAT,
@@ -173,18 +224,32 @@ static KNOWN_OPTIONS: &[&str] = &[
     OOC_MEMORY_BUDGET_FRACTION,
     OOC_MEMORY_BUDGET_MB,
     OOC_MEMORY_PREFETCH_FRACTION,
+    OOC_MEMORY_GRANT_FRACTION,
     OOC_DISK_BUDGET_MB,
     OOC_SPILL_MIN_BYTES,
+    OOC_MAX_PARALLEL_SPILL_TASKS,
+    OOC_MAX_PARALLEL_PREFETCH_TASKS,
     OOC_LOG_METRICS,
+    OOC_PRESSURE_DECAY,
+    OOC_PRESSURE_DECAY_GRACE_MS,
+    OOMKILL_THRESHOLD_FRACTION,
+    OOMKILL_THRESHOLD_MB,
     JOIN_SAMPLE_LIMIT,
+    JOIN_RUNTIME_FILTERS,
     PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS,
     DNS_LOG_THRESHOLD_MS,
     NUMA_AWARE,
     NUMA_MOCK_REGIONS,
     DISABLE_HTTP_RATE_LIMIT,
+    HTTP_SKIP_SYSTEM_CERTIFICATES,
+    HTTP_STORE_CACHE_SIZE,
     DIRECT_IO,
     FILE_READ_CONCURRENCY,
     FILE_POSIX_FADV,
+    FILE_DEFER_CACHED_READS,
+    MIN_HOT_TABLE_SIZE,
+    HOT_TABLE_SIZE,
+    MAX_HOT_TABLE_SIZE,
 ];
 
 pub struct Config {
@@ -204,27 +269,44 @@ pub struct Config {
     // Private.
     verbose_sensitive: AtomicBool,
     force_async: AtomicBool,
+    scan_chunk_statistics: AtomicBool,
     import_interval_as_struct: AtomicBool,
     ooc_spill_format: AtomicU8,
     ooc_spill_compression_level: AtomicU64,
     ooc_memory_budget_fraction: AtomicU64,
     ooc_memory_budget_bytes: AtomicU64,
     ooc_memory_prefetch_fraction: AtomicU64,
+    ooc_memory_grant_fraction: AtomicU64,
     ooc_disk_budget_bytes: AtomicU64,
     ooc_spill_min_bytes: AtomicU64,
+    ooc_max_parallel_spill_tasks: AtomicU64,
+    ooc_max_parallel_prefetch_tasks: AtomicU64,
     ooc_log_metrics: AtomicBool,
+    ooc_pressure_decay: AtomicBool,
+    ooc_pressure_decay_grace_ms: AtomicU64,
+    oomkill_threshold_fraction: AtomicU64,
+    oomkill_threshold_bytes: AtomicU64,
     join_sample_limit: AtomicU64,
+    join_runtime_filters: AtomicBool,
     projection_pushdown_prune_strict_hconcat_inputs: AtomicBool,
     dns_log_threshold_ms: AtomicU64,
     numa_aware: AtomicBool,
     numa_mock_regions: AtomicU64,
     disable_http_rate_limit: AtomicBool,
+    http_skip_system_certificates: AtomicBool,
+    http_store_cache_size: AtomicU64,
     direct_io: AtomicBool,
     file_read_concurrency: AtomicU64,
     file_posix_fadv: AtomicU8,
+    file_defer_cached_reads: AtomicBool,
+    min_hot_table_size: AtomicU64,
+    hot_table_size: AtomicU64,
+    max_hot_table_size: AtomicU64,
 
     // Derived from others.
+    ooc_effective_memory_budget_bytes: AtomicU64,
     ooc_memory_prefetch_bytes: AtomicU64,
+    ooc_memory_grant_budget_bytes: AtomicU64,
 }
 
 impl Config {
@@ -247,6 +329,7 @@ impl Config {
             // Private.
             verbose_sensitive: AtomicBool::new(DEFAULT_VERBOSE_SENSITIVE),
             force_async: AtomicBool::new(DEFAULT_FORCE_ASYNC),
+            scan_chunk_statistics: AtomicBool::new(DEFAULT_SCAN_CHUNK_STATISTICS),
             import_interval_as_struct: AtomicBool::new(DEFAULT_IMPORT_INTERVAL_AS_STRUCT),
             ooc_spill_format: AtomicU8::new(DEFAULT_OOC_SPILL_FORMAT as u8),
             ooc_spill_compression_level: AtomicU64::new(DEFAULT_OOC_SPILL_COMPRESSION_LEVEL),
@@ -259,12 +342,26 @@ impl Config {
             ooc_memory_prefetch_fraction: AtomicU64::new(
                 DEFAULT_OOC_MEMORY_PREFETCH_FRACTION.to_bits(),
             ),
+            ooc_memory_grant_fraction: AtomicU64::new(DEFAULT_OOC_MEMORY_GRANT_FRACTION.to_bits()),
             ooc_disk_budget_bytes: AtomicU64::new(
                 DEFAULT_OOC_DISK_BUDGET_MB.saturating_mul(1_000_000),
             ),
             ooc_spill_min_bytes: AtomicU64::new(DEFAULT_OOC_SPILL_MIN_BYTES),
+            ooc_max_parallel_spill_tasks: AtomicU64::new(DEFAULT_OOC_MAX_PARALLEL_SPILL_TASKS),
+            ooc_max_parallel_prefetch_tasks: AtomicU64::new(
+                DEFAULT_OOC_MAX_PARALLEL_PREFETCH_TASKS,
+            ),
             ooc_log_metrics: AtomicBool::new(false),
+            ooc_pressure_decay: AtomicBool::new(DEFAULT_OOC_PRESSURE_DECAY),
+            ooc_pressure_decay_grace_ms: AtomicU64::new(DEFAULT_OOC_PRESSURE_DECAY_GRACE_MS),
+            oomkill_threshold_fraction: AtomicU64::new(
+                DEFAULT_OOMKILL_THRESHOLD_FRACTION.to_bits(),
+            ),
+            oomkill_threshold_bytes: AtomicU64::new(
+                DEFAULT_OOMKILL_THRESHOLD_MB.saturating_mul(1_000_000),
+            ),
             join_sample_limit: AtomicU64::new(DEFAULT_JOIN_SAMPLE_LIMIT),
+            join_runtime_filters: AtomicBool::new(DEFAULT_JOIN_RUNTIME_FILTERS),
             projection_pushdown_prune_strict_hconcat_inputs: AtomicBool::new(
                 DEFAULT_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS,
             ),
@@ -273,10 +370,18 @@ impl Config {
             numa_aware: AtomicBool::new(DEFAULT_NUMA_AWARE),
             numa_mock_regions: AtomicU64::new(DEFAULT_NUMA_MOCK_REGIONS),
             disable_http_rate_limit: AtomicBool::new(DEFAULT_DISABLE_HTTP_RATE_LIMIT),
+            http_skip_system_certificates: AtomicBool::new(DEFAULT_HTTP_SKIP_SYSTEM_CERTIFICATES),
+            http_store_cache_size: AtomicU64::new(DEFAULT_HTTP_STORE_CACHE_SIZE),
             direct_io: AtomicBool::new(DEFAULT_DIRECT_IO),
             file_read_concurrency: AtomicU64::new(DEFAULT_FILE_READ_CONCURRENCY),
             file_posix_fadv: AtomicU8::new(DEFAULT_FILE_POSIX_FADV as u8),
+            file_defer_cached_reads: AtomicBool::new(DEFAULT_FILE_DEFER_CACHED_READS),
+            min_hot_table_size: AtomicU64::new(DEFAULT_MIN_HOT_TABLE_SIZE),
+            hot_table_size: AtomicU64::new(DEFAULT_HOT_TABLE_SIZE),
+            max_hot_table_size: AtomicU64::new(DEFAULT_MAX_HOT_TABLE_SIZE),
+            ooc_effective_memory_budget_bytes: AtomicU64::new(0),
             ooc_memory_prefetch_bytes: AtomicU64::new(0),
+            ooc_memory_grant_budget_bytes: AtomicU64::new(0),
         };
         cfg.reload_env_vars();
         cfg
@@ -301,10 +406,40 @@ impl Config {
     }
 
     fn recompute_derived(&self) {
-        let bytes = self.ooc_memory_budget_bytes.load(Ordering::Relaxed);
-        let frac = f64::from_bits(self.ooc_memory_budget_fraction.load(Ordering::Relaxed));
+        static LOGGED_TOTAL_MEMORY: Once = Once::new();
+        if self.verbose() {
+            LOGGED_TOTAL_MEMORY.call_once(|| {
+                let v = total_memory();
+                let gib = (v as f64) / (1024.0 * 1024.0 * 1024.0);
+                eprintln!("total memory: {gib:.3} GiB ({v} bytes)")
+            });
+        }
+
+        let budget_frac = f64::from_bits(self.ooc_memory_budget_fraction.load(Ordering::Relaxed));
+        let bytes = u64::min(
+            self.ooc_memory_budget_bytes.load(Ordering::Relaxed),
+            (total_memory() as f64 * budget_frac) as u64,
+        );
+        self.ooc_effective_memory_budget_bytes
+            .store(bytes, Ordering::Relaxed);
+        let frac = f64::from_bits(self.ooc_memory_prefetch_fraction.load(Ordering::Relaxed));
         self.ooc_memory_prefetch_bytes
             .store((bytes as f64 * frac) as u64, Ordering::Relaxed);
+        let grant_frac = f64::from_bits(self.ooc_memory_grant_fraction.load(Ordering::Relaxed));
+        self.ooc_memory_grant_budget_bytes
+            .store((bytes as f64 * grant_frac) as u64, Ordering::Relaxed);
+
+        let oomkill_frac = f64::from_bits(self.oomkill_threshold_fraction.load(Ordering::Relaxed));
+        let oomkill_frac_bytes = if oomkill_frac.is_finite() {
+            (total_memory() as f64 * oomkill_frac) as u64
+        } else {
+            u64::MAX
+        };
+        let oomkill_mb_bytes = self.oomkill_threshold_bytes.load(Ordering::Relaxed);
+        OOMKILL_THRESHOLD_BYTES_ATOMIC.store(
+            u64::min(oomkill_mb_bytes, oomkill_frac_bytes),
+            Ordering::Relaxed,
+        );
     }
 
     fn apply_env_var(&self, var: &str, val: Option<&str>) {
@@ -330,7 +465,7 @@ impl Config {
                     .unwrap_or(default_max_threads()),
                 Ordering::Relaxed,
             ),
-            IDEAL_MORSEL_SIZE | STREAMING_CHUNK_SIZE => self.ideal_morsel_size.store(
+            IDEAL_MORSEL_SIZE => self.ideal_morsel_size.store(
                 val.and_then(|x| parse::parse_u64(var, x))
                     .unwrap_or(DEFAULT_IDEAL_MORSEL_SIZE),
                 Ordering::Relaxed,
@@ -379,6 +514,11 @@ impl Config {
                     .unwrap_or(DEFAULT_FORCE_ASYNC),
                 Ordering::Relaxed,
             ),
+            SCAN_CHUNK_STATISTICS => self.scan_chunk_statistics.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_SCAN_CHUNK_STATISTICS),
+                Ordering::Relaxed,
+            ),
             IMPORT_INTERVAL_AS_STRUCT => self.import_interval_as_struct.store(
                 val.and_then(|x| parse::parse_bool(var, x))
                     .unwrap_or(DEFAULT_IMPORT_INTERVAL_AS_STRUCT),
@@ -412,8 +552,14 @@ impl Config {
                 Ordering::Relaxed,
             ),
             OOC_MEMORY_PREFETCH_FRACTION => self.ooc_memory_prefetch_fraction.store(
-                val.and_then(|x| parse::parse_f64_with_limits(var, x, 0.0, 0.95))
+                val.and_then(|x| parse::parse_f64_with_limits(var, x, 0.0, 0.99))
                     .unwrap_or(DEFAULT_OOC_MEMORY_PREFETCH_FRACTION)
+                    .to_bits(),
+                Ordering::Relaxed,
+            ),
+            OOC_MEMORY_GRANT_FRACTION => self.ooc_memory_grant_fraction.store(
+                val.and_then(|x| parse::parse_f64_with_limits(var, x, 0.0, 1.0))
+                    .unwrap_or(DEFAULT_OOC_MEMORY_GRANT_FRACTION)
                     .to_bits(),
                 Ordering::Relaxed,
             ),
@@ -428,14 +574,53 @@ impl Config {
                     .unwrap_or(DEFAULT_OOC_SPILL_MIN_BYTES),
                 Ordering::Relaxed,
             ),
+            OOC_MAX_PARALLEL_SPILL_TASKS => self.ooc_max_parallel_spill_tasks.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_OOC_MAX_PARALLEL_SPILL_TASKS)
+                    .max(1), // A semaphore with zero permits would deadlock.
+                Ordering::Relaxed,
+            ),
+            OOC_MAX_PARALLEL_PREFETCH_TASKS => self.ooc_max_parallel_prefetch_tasks.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_OOC_MAX_PARALLEL_PREFETCH_TASKS)
+                    .max(1),
+                Ordering::Relaxed,
+            ),
             OOC_LOG_METRICS => self.ooc_log_metrics.store(
                 val.and_then(|x| parse::parse_bool(var, x))
                     .unwrap_or(DEFAULT_OOC_LOG_METRICS),
                 Ordering::Relaxed,
             ),
+            OOC_PRESSURE_DECAY => self.ooc_pressure_decay.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_OOC_PRESSURE_DECAY),
+                Ordering::Relaxed,
+            ),
+            OOC_PRESSURE_DECAY_GRACE_MS => self.ooc_pressure_decay_grace_ms.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_OOC_PRESSURE_DECAY_GRACE_MS),
+                Ordering::Relaxed,
+            ),
+            OOMKILL_THRESHOLD_FRACTION => self.oomkill_threshold_fraction.store(
+                val.and_then(|x| parse::parse_f64(var, x))
+                    .unwrap_or(DEFAULT_OOMKILL_THRESHOLD_FRACTION)
+                    .to_bits(),
+                Ordering::Relaxed,
+            ),
+            OOMKILL_THRESHOLD_MB => self.oomkill_threshold_bytes.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_OOMKILL_THRESHOLD_MB)
+                    .saturating_mul(1_000_000),
+                Ordering::Relaxed,
+            ),
             JOIN_SAMPLE_LIMIT => self.join_sample_limit.store(
                 val.and_then(|x| parse::parse_u64(var, x))
                     .unwrap_or(DEFAULT_JOIN_SAMPLE_LIMIT),
+                Ordering::Relaxed,
+            ),
+            JOIN_RUNTIME_FILTERS => self.join_runtime_filters.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_JOIN_RUNTIME_FILTERS),
                 Ordering::Relaxed,
             ),
             PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS => {
@@ -465,6 +650,16 @@ impl Config {
                     .unwrap_or(DEFAULT_DISABLE_HTTP_RATE_LIMIT),
                 Ordering::Relaxed,
             ),
+            HTTP_SKIP_SYSTEM_CERTIFICATES => self.http_skip_system_certificates.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_HTTP_SKIP_SYSTEM_CERTIFICATES),
+                Ordering::Relaxed,
+            ),
+            HTTP_STORE_CACHE_SIZE => self.http_store_cache_size.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_HTTP_STORE_CACHE_SIZE),
+                Ordering::Relaxed,
+            ),
             DIRECT_IO => self.direct_io.store(
                 val.and_then(|x| parse::parse_bool(var, x))
                     .unwrap_or(DEFAULT_DIRECT_IO),
@@ -478,6 +673,26 @@ impl Config {
             FILE_POSIX_FADV => self.file_posix_fadv.store(
                 val.and_then(|x| parse::parse_file_advice(var, x))
                     .unwrap_or(DEFAULT_FILE_POSIX_FADV) as u8,
+                Ordering::Relaxed,
+            ),
+            FILE_DEFER_CACHED_READS => self.file_defer_cached_reads.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_FILE_DEFER_CACHED_READS),
+                Ordering::Relaxed,
+            ),
+            MIN_HOT_TABLE_SIZE => self.min_hot_table_size.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_MIN_HOT_TABLE_SIZE),
+                Ordering::Relaxed,
+            ),
+            HOT_TABLE_SIZE => self.hot_table_size.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_HOT_TABLE_SIZE),
+                Ordering::Relaxed,
+            ),
+            MAX_HOT_TABLE_SIZE => self.max_hot_table_size.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_MAX_HOT_TABLE_SIZE),
                 Ordering::Relaxed,
             ),
             _ => {
@@ -572,6 +787,14 @@ impl Config {
         self.force_async.load(Ordering::Relaxed)
     }
 
+    /// Whether a parquet scan, besides its per-column totals, keeps the min, max, null count and
+    /// sizes that each sampled row group records. Planners use these to estimate how a column's
+    /// values are distributed across the files, e.g. how many rows a filter keeps.
+    #[inline(always)]
+    pub fn scan_chunk_statistics(&self) -> bool {
+        self.scan_chunk_statistics.load(Ordering::Relaxed)
+    }
+
     #[inline(always)]
     pub fn import_interval_as_struct(&self) -> bool {
         self.import_interval_as_struct.load(Ordering::Relaxed)
@@ -597,9 +820,12 @@ impl Config {
         f64::from_bits(self.ooc_memory_budget_fraction.load(Ordering::Relaxed))
     }
 
+    /// The stricter of `POLARS_OOC_MEMORY_BUDGET_FRACTION` times the total memory and
+    /// `POLARS_OOC_MEMORY_BUDGET_MB`.
     #[inline(always)]
     pub fn ooc_memory_budget_bytes(&self) -> u64 {
-        self.ooc_memory_budget_bytes.load(Ordering::Relaxed)
+        self.ooc_effective_memory_budget_bytes
+            .load(Ordering::Relaxed)
     }
 
     #[inline(always)]
@@ -613,6 +839,18 @@ impl Config {
     }
 
     #[inline(always)]
+    pub fn ooc_memory_grant_fraction(&self) -> f64 {
+        f64::from_bits(self.ooc_memory_grant_fraction.load(Ordering::Relaxed))
+    }
+
+    /// The size of the memory grant pool: `POLARS_OOC_MEMORY_GRANT_FRACTION` times
+    /// [`Self::ooc_memory_budget_bytes`].
+    #[inline(always)]
+    pub fn ooc_memory_grant_budget_bytes(&self) -> u64 {
+        self.ooc_memory_grant_budget_bytes.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
     pub fn ooc_disk_budget_bytes(&self) -> u64 {
         self.ooc_disk_budget_bytes.load(Ordering::Relaxed)
     }
@@ -623,8 +861,30 @@ impl Config {
     }
 
     #[inline(always)]
+    pub fn ooc_max_parallel_spill_tasks(&self) -> usize {
+        self.ooc_max_parallel_spill_tasks.load(Ordering::Relaxed) as usize
+    }
+
+    #[inline(always)]
+    pub fn ooc_max_parallel_prefetch_tasks(&self) -> usize {
+        self.ooc_max_parallel_prefetch_tasks.load(Ordering::Relaxed) as usize
+    }
+
+    #[inline(always)]
     pub fn ooc_log_metrics(&self) -> bool {
         self.ooc_log_metrics.load(Ordering::Relaxed)
+    }
+
+    /// Whether the allocator returns freed memory right away while out-of-core
+    /// data is being spilled or is spilled.
+    #[inline(always)]
+    pub fn ooc_pressure_decay(&self) -> bool {
+        self.ooc_pressure_decay.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn ooc_pressure_decay_grace_ms(&self) -> u64 {
+        self.ooc_pressure_decay_grace_ms.load(Ordering::Relaxed)
     }
 
     pub fn ooc_spill_dir(&self) -> std::path::PathBuf {
@@ -636,8 +896,18 @@ impl Config {
     }
 
     #[inline(always)]
+    pub fn oomkill_threshold_bytes(&self) -> u64 {
+        get_oomkill_threshold_bytes()
+    }
+
+    #[inline(always)]
     pub fn join_sample_limit(&self) -> u64 {
         self.join_sample_limit.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn join_runtime_filters(&self) -> bool {
+        self.join_runtime_filters.load(Ordering::Relaxed)
     }
 
     #[inline(always)]
@@ -669,6 +939,18 @@ impl Config {
         self.disable_http_rate_limit.load(Ordering::Relaxed)
     }
 
+    /// Whether cleartext `http` clients skip the system trust store. Such a client fails the
+    /// handshake on a redirect to `https`.
+    #[inline(always)]
+    pub fn http_skip_system_certificates(&self) -> bool {
+        self.http_skip_system_certificates.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn http_store_cache_size(&self) -> u64 {
+        self.http_store_cache_size.load(Ordering::Relaxed)
+    }
+
     #[inline(always)]
     pub fn direct_io(&self) -> bool {
         self.direct_io.load(Ordering::Relaxed)
@@ -683,6 +965,29 @@ impl Config {
     pub fn file_posix_fadv(&self) -> FileAdvice {
         FileAdvice::from_discriminant(self.file_posix_fadv.load(Ordering::Relaxed))
     }
+
+    #[inline(always)]
+    pub fn file_defer_cached_reads(&self) -> bool {
+        self.file_defer_cached_reads.load(Ordering::Relaxed)
+    }
+
+    /// Number of slots each hot table in the streaming group-by starts with.
+    #[inline(always)]
+    pub fn min_hot_table_size(&self) -> u64 {
+        self.min_hot_table_size.load(Ordering::Relaxed)
+    }
+
+    /// Number of slots up to which the hot tables in the streaming group-by double after misses.
+    #[inline(always)]
+    pub fn hot_table_size(&self) -> u64 {
+        self.hot_table_size.load(Ordering::Relaxed)
+    }
+
+    /// Number of slots up to which the hot tables in the streaming group-by may grow.
+    #[inline(always)]
+    pub fn max_hot_table_size(&self) -> u64 {
+        self.max_hot_table_size.load(Ordering::Relaxed)
+    }
 }
 
 pub fn config() -> &'static Config {
@@ -690,11 +995,47 @@ pub fn config() -> &'static Config {
     &CONFIG
 }
 
-// Has to be a standalone because LazyLock may not be called from allocator.
+/// Return the total system memory in bytes, respecting cgroup limits and
+/// `POLARS_OVERRIDE_TOTAL_MEMORY_MB`.
+pub fn total_memory() -> u64 {
+    static TOTAL_MEMORY: LazyLock<u64> = LazyLock::new(|| {
+        if let Ok(s) = std::env::var("POLARS_OVERRIDE_TOTAL_MEMORY_MB") {
+            return s
+                .parse::<u64>()
+                .unwrap_or_else(|_| {
+                    panic!("invalid value for POLARS_OVERRIDE_TOTAL_MEMORY_MB: {s}")
+                })
+                .saturating_mul(1_000_000);
+        }
+
+        let mut sys = sysinfo::System::new();
+        sys.refresh_memory_specifics(sysinfo::MemoryRefreshKind::nothing().with_ram());
+        let system_limit = sys.cgroup_limits().map(|limits| limits.total_memory);
+        [
+            Some(sys.total_memory()),
+            system_limit,
+            cgroup::process_cgroup_memory_limit(),
+        ]
+        .into_iter()
+        .flatten()
+        .min()
+        .unwrap()
+    });
+    *TOTAL_MEMORY
+}
+
+// These have to be standalone because LazyLock may not be called from allocator.
 // Plus, it's faster this way.
 static OOC_DRIFT_THRESHOLD_ATOMIC: AtomicU64 = AtomicU64::new(DEFAULT_OOC_DRIFT_THRESHOLD);
+static OOMKILL_THRESHOLD_BYTES_ATOMIC: AtomicU64 =
+    AtomicU64::new(DEFAULT_OOMKILL_THRESHOLD_MB.saturating_mul(1_000_000));
 
 #[inline(always)]
 pub fn get_ooc_drift_threshold() -> u64 {
     OOC_DRIFT_THRESHOLD_ATOMIC.load(Ordering::Relaxed)
+}
+
+#[inline(always)]
+pub fn get_oomkill_threshold_bytes() -> u64 {
+    OOMKILL_THRESHOLD_BYTES_ATOMIC.load(Ordering::Relaxed)
 }

@@ -1,4 +1,4 @@
-use arrow::offset::OffsetsBuffer;
+use polars_arrow::offset::OffsetsBuffer;
 use polars_utils::pl_str::PlSmallStr;
 use rayon::prelude::*;
 #[cfg(feature = "serde")]

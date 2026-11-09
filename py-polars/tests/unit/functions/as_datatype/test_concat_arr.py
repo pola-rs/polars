@@ -176,7 +176,6 @@ def test_concat_arr_zero_fields() -> None:
     )
 
 
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud
 def test_concat_arr_scalar() -> None:
     lit = pl.lit([b"A"], dtype=pl.Array(pl.Binary, 1))

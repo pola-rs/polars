@@ -15,6 +15,6 @@ impl Executor for UdfExec {
             }
         }
         let df = self.input.execute(state)?;
-        self.function.evaluate(df)
+        crate::function_ir::evaluate_function_ir(&self.function, df)
     }
 }

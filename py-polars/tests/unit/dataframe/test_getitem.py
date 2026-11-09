@@ -345,7 +345,7 @@ def test_df_getitem() -> None:
 
 
 def test_df_getitem_numpy() -> None:
-    # nupmy getitem: assumed to be row indices if integers, or columns if strings
+    # numpy getitem: assumed to be row indices if integers, or columns if strings
     df = pl.DataFrame({"a": [1.0, 2.0, 3.0, 4.0], "b": [3, 4, 5, 6]})
 
     # numpy array: positive idxs and empty idx

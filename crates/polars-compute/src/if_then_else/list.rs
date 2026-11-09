@@ -1,6 +1,6 @@
-use arrow::array::builder::{ShareStrategy, StaticArrayBuilder, make_builder};
-use arrow::array::{Array, ArrayCollectIterExt, ListArray, ListArrayBuilder};
-use arrow::bitmap::Bitmap;
+use polars_arrow::array::builder::{ShareStrategy, StaticArrayBuilder, make_builder};
+use polars_arrow::array::{Array, ArrayCollectIterExt, ListArray, ListArrayBuilder};
+use polars_arrow::bitmap::Bitmap;
 
 use super::{IfThenElseKernel, if_then_else_extend};
 
@@ -61,7 +61,7 @@ impl IfThenElseKernel for ListArray<i64> {
     }
 
     fn if_then_else_broadcast_both(
-        dtype: arrow::datatypes::ArrowDataType,
+        dtype: polars_arrow::datatypes::ArrowDataType,
         mask: &Bitmap,
         if_true: Self::Scalar<'_>,
         if_false: Self::Scalar<'_>,

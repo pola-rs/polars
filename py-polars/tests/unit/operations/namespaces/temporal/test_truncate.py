@@ -131,6 +131,36 @@ def test_truncate_unequal_length_22018(as_date: bool) -> None:
         s.dt.truncate(pl.Series(["1y"] * 3))
 
 
+def test_truncate_per_row_every_sortedness_28560() -> None:
+    s = pl.Series([datetime(2020, 1, 1, 10, 30), datetime(2020, 1, 1, 10, 45)])
+    result = s.set_sorted().dt.truncate(pl.Series(["1m", "1d"]))
+    assert not result.flags["SORTED_ASC"]
+    assert result.to_list() == [
+        datetime(2020, 1, 1, 10, 30),
+        datetime(2020, 1, 1),
+    ]
+
+    # A length-1 input broadcast against a per-row `every`.
+    s = pl.Series([datetime(2020, 1, 15, 10, 30)])
+    result = s.dt.truncate(pl.Series(["1d", "1h", "1mo"]))
+    assert not result.flags["SORTED_ASC"]
+    assert result.to_list() == [
+        datetime(2020, 1, 15),
+        datetime(2020, 1, 15, 10),
+        datetime(2020, 1, 1),
+    ]
+
+    s = pl.Series([date(2020, 1, 15), date(2020, 2, 16)]).set_sorted()
+    result = s.dt.truncate("1mo")
+    assert result.flags["SORTED_ASC"]
+    assert result.to_list() == [date(2020, 1, 1), date(2020, 2, 1)]
+
+    s = pl.Series([date(2020, 1, 15), date(2020, 1, 16)])
+    result = s.set_sorted().dt.truncate(pl.Series(["1d", "1mo"]))
+    assert not result.flags["SORTED_ASC"]
+    assert result.to_list() == [date(2020, 1, 15), date(2020, 1, 1)]
+
+
 @pytest.mark.parametrize(
     ("multiplier", "unit", "value", "expected"),
     [

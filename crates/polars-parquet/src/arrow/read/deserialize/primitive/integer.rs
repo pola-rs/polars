@@ -1,8 +1,8 @@
-use arrow::array::PrimitiveArray;
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::datatypes::ArrowDataType;
-use arrow::types::{AlignedBytes, NativeType};
 use bytemuck::Zeroable;
+use polars_arrow::array::PrimitiveArray;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::types::{AlignedBytes, NativeType};
 
 use super::super::utils;
 use super::{
@@ -229,7 +229,7 @@ where
             },
             (StateTranslation::Plain(values), S::Between(low, high)) => {
                 let values = ArrayChunks::new(values).unwrap();
-                use arrow::types::PrimitiveType as PT;
+                use polars_arrow::types::PrimitiveType as PT;
                 let is_signed = match T::PRIMITIVE {
                     PT::Int8 | PT::Int16 | PT::Int32 | PT::Int64 => true,
                     PT::UInt8 | PT::UInt16 | PT::UInt32 | PT::UInt64 => false,
@@ -304,7 +304,7 @@ where
     fn extend_decoded(
         &self,
         decoded: &mut Self::DecodedState,
-        additional: &dyn arrow::array::Array,
+        additional: &dyn polars_arrow::array::Array,
         is_optional: bool,
     ) -> ParquetResult<()> {
         let additional = additional

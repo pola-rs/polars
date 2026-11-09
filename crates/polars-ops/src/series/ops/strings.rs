@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
-use arrow::array::builder::StaticArrayBuilder;
-use arrow::array::{Array, Utf8ViewArrayBuilder};
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::builder::StaticArrayBuilder;
+use polars_arrow::array::{Array, Utf8ViewArrayBuilder};
+use polars_arrow::datatypes::ArrowDataType;
 use polars_core::prelude::{Column, DataType, IntoColumn, StringChunked};
 use polars_core::scalar::Scalar;
 use polars_error::{PolarsContext, PolarsResult};
@@ -36,7 +36,7 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
 
             match &mut validity {
                 v @ None => *v = Some(c_validity),
-                Some(v) => *v = arrow::bitmap::and(v, &c_validity),
+                Some(v) => *v = polars_arrow::bitmap::and(v, &c_validity),
             }
         }
 
@@ -112,11 +112,11 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
             unsafe { builder.push_inline_view_ignore_validity(Default::default()) };
 
             for (iter, arr, elem_idx) in arrays.iter_mut() {
-                *elem_idx += 1;
-                if i + 1 != output_length && *elem_idx == arr.len() {
+                while *elem_idx == arr.len() {
                     *arr = iter.next().unwrap();
                     *elem_idx = 0;
                 }
+                *elem_idx += 1;
             }
 
             continue;
@@ -126,16 +126,16 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
         s.push_str(&format[..insertions[0]]);
 
         for (j, (iter, arr, elem_idx)) in arrays.iter_mut().enumerate() {
-            s.push_str(opt_str_to_string(arr.get(*elem_idx)));
-            let start = insertions[j];
-            let end = insertions.get(j + 1).copied().unwrap_or(format.len());
-            s.push_str(&format[start..end]);
-
-            *elem_idx += 1;
-            if i + 1 != output_length && *elem_idx == arr.len() {
+            while *elem_idx == arr.len() {
                 *arr = iter.next().unwrap();
                 *elem_idx = 0;
             }
+            s.push_str(opt_str_to_string(arr.get(*elem_idx)));
+            *elem_idx += 1;
+
+            let start = insertions[j];
+            let end = insertions.get(j + 1).copied().unwrap_or(format.len());
+            s.push_str(&format[start..end]);
         }
 
         builder.push_value_ignore_validity(&s);

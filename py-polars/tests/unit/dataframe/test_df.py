@@ -5,7 +5,7 @@ import sys
 import typing
 from collections import OrderedDict
 from collections.abc import Iterator, Mapping
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
 from itertools import chain, repeat
@@ -899,7 +899,7 @@ def test_df_fold() -> None:
     )
 
     df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
-    out = df.fold(lambda s1, s2: s1 + s2)
+    out = df.fold(lambda s1, s2: s1 + s2.cast(pl.String))
     assert_series_equal(out, pl.Series("a", ["foo11.0", "bar22.0", "233.0"]))
 
     df = pl.DataFrame({"a": [3, 2, 1], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
@@ -2669,7 +2669,6 @@ def test_selection_regex_and_multicol() -> None:
 
 
 @pytest.mark.parametrize("subset", ["a", cs.starts_with("x", "a")])
-@pytest.mark.may_fail_auto_streaming  # Flaky in CI, see https://github.com/pola-rs/polars/issues/20943
 @pytest.mark.may_fail_cloud
 def test_unique_on_sorted(subset: Any) -> None:
     df = pl.DataFrame(data={"a": [1, 1, 3], "b": [1, 2, 3]})
@@ -2908,14 +2907,14 @@ def test_init_datetimes_with_timezone() -> None:
             "-08:00",
             "UTC",
             "UTC",
-            datetime(2020, 1, 1, 8, tzinfo=timezone.utc),
+            datetime(2020, 1, 1, 8, tzinfo=UTC),
         ),
         (
             timezone(timedelta(hours=-8)),
             "-08:00",
             None,
             "UTC",
-            datetime(2020, 1, 1, 8, tzinfo=timezone.utc),
+            datetime(2020, 1, 1, 8, tzinfo=UTC),
         ),
     ],
 )

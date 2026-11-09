@@ -474,7 +474,7 @@ unsafe fn create_dictionary(
     dtype: &ArrowDataType,
     parent: InternalArrowArray,
 ) -> PolarsResult<Option<ArrowArrayChild<'static>>> {
-    if let ArrowDataType::Dictionary(_, values, _) = dtype {
+    if let ArrowDataType::Dictionary(_, values, _) = dtype.to_storage() {
         let dtype = values.as_ref().clone();
         // catch what we can
         if array.dictionary.is_null() {

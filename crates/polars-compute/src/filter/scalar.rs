@@ -1,6 +1,6 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-use arrow::bitmap::Bitmap;
 use bytemuck::Pod;
+use polars_arrow::bitmap::Bitmap;
 use polars_utils::slice::load_padded_le_u64;
 
 /// # Safety

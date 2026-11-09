@@ -29,6 +29,7 @@ impl VecVTable {
         }
     }
 
+    #[inline]
     fn new_static<T>() -> &'static Self {
         const { &Self::new::<T>() }
     }
@@ -118,6 +119,7 @@ unsafe impl<T: Sync + Send> Send for SharedStorage<T> {}
 unsafe impl<T: Sync + Send> Sync for SharedStorage<T> {}
 
 impl<T> Default for SharedStorage<T> {
+    #[inline]
     fn default() -> Self {
         Self::empty()
     }

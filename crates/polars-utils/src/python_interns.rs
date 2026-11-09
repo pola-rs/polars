@@ -1,0 +1,9 @@
+pub static RESHAPE: pyo3::sync::Interned = pyo3::sync::Interned::new("reshape");
+pub static SHAPE: pyo3::sync::Interned = pyo3::sync::Interned::new("shape");
+pub static DUNDER_GETITEM: pyo3::sync::Interned = pyo3::sync::Interned::new("__getitem__");
+pub static TO_PY_DECIMAL: pyo3::sync::Interned = pyo3::sync::Interned::new("to_py_decimal");
+pub static DUNDER_CLASS: pyo3::sync::Interned = pyo3::sync::Interned::new("__class__");
+pub static DUNDER_NAME: pyo3::sync::Interned = pyo3::sync::Interned::new("__name__");
+pub static NAME: pyo3::sync::Interned = pyo3::sync::Interned::new("name");
+pub static DTYPE: pyo3::sync::Interned = pyo3::sync::Interned::new("dtype");
+pub static COPY: pyo3::sync::Interned = pyo3::sync::Interned::new("copy");

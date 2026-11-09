@@ -1,4 +1,4 @@
-use arrow::offset::Offsets;
+use polars_arrow::offset::Offsets;
 
 use super::*;
 use crate::chunked_array::builder::ListNullChunkedBuilder;
@@ -193,6 +193,12 @@ impl AggList for BinaryChunked {
     }
 }
 
+impl AggList for BinaryOffsetChunked {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
+        agg_list_by_gather_and_offsets(self, groups)
+    }
+}
+
 impl AggList for ListChunked {
     unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         agg_list_by_gather_and_offsets(self, groups)
@@ -214,7 +220,8 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
         let mut length_so_far = 0i64;
         offsets.push(length_so_far);
 
-        //  we know that iterators length
+        // The values of every group: `num_elements`, which differs from `self.len()` for groups
+        // that skip or repeat values.
         let iter = {
             groups
                 .iter()
@@ -242,10 +249,11 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
                     // we know that offsets has allocated enough slots
                     offsets.push_unchecked(length_so_far);
 
-                    let arr = group_vals.downcast_iter().next().unwrap().clone();
-                    arr.into_iter_cloned()
+                    // A slice can span several chunks.
+                    let arrs = group_vals.downcast_iter().cloned().collect::<Vec<_>>();
+                    arrs.into_iter().flat_map(|arr| arr.into_iter_cloned())
                 })
-                .trust_my_length(self.len())
+                .trust_my_length(groups.num_elements())
         };
 
         let mut pe = create_extension(iter);

@@ -207,7 +207,7 @@ impl ApplyExtraOps {
                     external_filter_mask,
                     row_index: row_index.map(|ri| (ri, row_index_col_idx)),
                     column_selectors,
-                    predicate,
+                    predicate: predicate.map(|x| x.scan_io_predicate),
                 };
 
                 // Return a `Noop` if our initialized state does not have any operations. Downstream
@@ -313,7 +313,7 @@ impl ApplyExtraOps {
                         0
                     } else {
                         mask.slice(current_row_position.num_physical_rows(), local_slice_offset)
-                            .num_deleted_rows()
+                            .num_deleted_rows(local_slice_offset)
                     }
                 }),
             );

@@ -1,10 +1,8 @@
 use std::sync::Arc;
 
-use polars_core::datatypes::AnyValue;
 use polars_core::prelude::{Column, PlSmallStr, Series, SortOptions};
 use polars_ops::prelude::SeriesMethods;
 use polars_ops::series::resolve_sort_options;
-use polars_utils::sort::reorder_cmp;
 
 use super::compute_node_prelude::*;
 use super::in_memory_source::InMemorySourceNode;
@@ -19,7 +17,7 @@ enum IsSortedState {
         /// transition.
         committed_nulls_last: Option<bool>,
         /// Last value of the previous morsel, for the cross-morsel boundary check.
-        last_value: Option<AnyValue<'static>>,
+        last_value: Option<Series>,
     },
     Source(InMemorySourceNode),
     Done,
@@ -52,7 +50,7 @@ impl IsSortedNode {
         is_sorted: &'env mut bool,
         committed_descending: &'env mut Option<bool>,
         committed_nulls_last: &'env mut Option<bool>,
-        last_value: &'env mut Option<AnyValue<'static>>,
+        last_value: &'env mut Option<Series>,
         scope: &'s TaskScope<'s, 'env>,
         recv: RecvPort<'_>,
         _state: &'s StreamingExecutionState,
@@ -100,19 +98,28 @@ fn observe(committed: &mut Option<bool>, value: bool) -> bool {
 }
 
 /// Folds one morsel into the running sortedness check. Returns `false` as soon as the input is known
-/// to be unsorted. Inference is done with vectorized series operations; only the two morsel
-/// endpoints are inspected scalar-wise, so this stays `O(1)` per morsel in element lookups.
+/// to be unsorted. Inference is done with vectorized series operations; the boundary with the
+/// previous morsel adds a check of two values, so this stays `O(1)` per morsel in element lookups.
 fn process_morsel(
     series: &Series,
     committed_descending: &mut Option<bool>,
     committed_nulls_last: &mut Option<bool>,
-    last_value: &mut Option<AnyValue<'static>>,
+    last_value: &mut Option<Series>,
 ) -> PolarsResult<bool> {
-    let first = series.get(0).unwrap();
+    // The previous morsel's last value followed by this morsel's first value. It is checked with
+    // `is_sorted` itself, which orders every dtype the same way as within a morsel.
+    let boundary = match last_value.as_ref() {
+        Some(prev) => {
+            let mut boundary = prev.clone();
+            boundary.append(&series.slice(0, 1))?;
+            Some(boundary)
+        },
+        None => None,
+    };
 
     // Reconcile the boundary with the previous morsel before inferring from this one.
-    if let Some(prev) = last_value.as_ref() {
-        match (prev.is_null(), first.is_null()) {
+    if let Some(boundary) = &boundary {
+        match (boundary.get(0)?.is_null(), boundary.get(1)?.is_null()) {
             // A non-null followed by a null fixes nulls-last; a null followed by a non-null fixes
             // nulls-first. A contradiction means the nulls are not all on one side.
             (false, true) if !observe(committed_nulls_last, true) => return Ok(false),
@@ -120,8 +127,8 @@ fn process_morsel(
             _ => {},
         }
         // The first distinct non-null pair fixes the direction, even across a boundary.
-        if committed_descending.is_none() && !prev.is_null() && !first.is_null() && &first != prev {
-            *committed_descending = Some(&first < prev);
+        if committed_descending.is_none() && boundary.null_count() == 0 {
+            *committed_descending = resolve_sort_options(boundary, None, Some(false))?.0;
         }
     }
 
@@ -146,21 +153,14 @@ fn process_morsel(
     if !series.is_sorted(opts)? {
         return Ok(false);
     }
-    if !boundary_ok(last_value.as_ref(), &first, opts) {
-        return Ok(false);
+    if let Some(boundary) = &boundary {
+        if !boundary.is_sorted(opts)? {
+            return Ok(false);
+        }
     }
 
-    *last_value = Some(series.get(series.len() - 1).unwrap().into_static());
+    *last_value = Some(series.slice(-1, 1));
     Ok(true)
-}
-
-fn boundary_ok(prev: Option<&AnyValue<'static>>, first: &AnyValue<'_>, opts: SortOptions) -> bool {
-    match prev {
-        None => true,
-        // The boundary is sorted iff `prev` orders before-or-equal to `first` under the resolved
-        // options. `reorder_cmp` handles both null placement and sort direction.
-        Some(prev) => reorder_cmp(prev, first, opts.descending, opts.nulls_last).is_le(),
-    }
 }
 
 impl ComputeNode for IsSortedNode {

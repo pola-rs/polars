@@ -3,7 +3,7 @@ use std::simd::{Mask, MaskElement};
 
 use polars_utils::slice::load_padded_le_u64;
 
-use super::iterator::FastU56BitmapIter;
+use super::iterator::{FastU56BitmapIter, TrueIdxIter};
 use super::utils::{self, BitChunk, BitChunks, BitmapIter, count_zeros, fmt};
 use crate::bitmap::Bitmap;
 
@@ -226,16 +226,22 @@ impl<'a> BitMask<'a> {
         }
     }
 
+    #[inline(always)]
     pub fn unset_bits(&self) -> usize {
         count_zeros(self.bytes, self.offset, self.len)
     }
 
+    #[inline(always)]
     pub fn set_bits(&self) -> usize {
         self.len - self.unset_bits()
     }
 
     pub fn fast_iter_u56(&self) -> FastU56BitmapIter<'_> {
         FastU56BitmapIter::new(self.bytes, self.offset, self.len)
+    }
+
+    pub fn true_idx_iter(self) -> TrueIdxIter<'a> {
+        TrueIdxIter::new(self.bytes, self.offset, self.len)
     }
 
     #[cfg(feature = "simd")]

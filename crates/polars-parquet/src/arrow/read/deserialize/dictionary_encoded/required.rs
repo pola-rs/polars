@@ -1,4 +1,4 @@
-use arrow::types::AlignedBytes;
+use polars_arrow::types::AlignedBytes;
 
 use super::{IndexMapping, oob_dict_idx, required_skip_whole_chunks, verify_dict_indices};
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};

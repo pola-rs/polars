@@ -1,11 +1,12 @@
-use polars_async::executor::TaskPriority;
+use polars_async::executor::{TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::opt_spawned_future::parallelize_first_to_local;
 use polars_core::prelude::Column;
 
 /// Parallel rechunk of each column over the computational async executor.
-pub async fn rechunk_par(columns: &mut [Column]) {
+pub async fn rechunk_par(columns: &mut [Column], task_metrics: Option<&TaskMetricAggregator>) {
     for fut in parallelize_first_to_local(
         TaskPriority::Low,
+        task_metrics,
         columns.iter_mut().enumerate().filter_map(|(i, c)| {
             (c.n_chunks() > 1).then(|| {
                 let c = std::mem::take(c);

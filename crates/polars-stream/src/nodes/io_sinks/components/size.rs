@@ -22,7 +22,7 @@ impl RowCountAndSize {
     pub fn new_from_df(df: &DataFrame) -> Self {
         Self {
             num_rows: IdxSize::try_from(df.height()).unwrap(),
-            num_bytes: u64::try_from(df.estimated_size()).unwrap(),
+            num_bytes: u64::try_from(df.estimated_size(true)).unwrap(),
         }
     }
 
@@ -60,6 +60,7 @@ impl RowCountAndSize {
 
     /// Returns an error if the resulting row count exceeds `IdxSize::MAX`. `num_bytes` will use
     /// saturating addition.
+    #[expect(clippy::should_implement_trait)] // This add returns Result<> type.
     pub fn add(self, rhs: Self) -> PolarsResult<Self> {
         self.checked_add(rhs).ok_or_else(|| {
             let consider_installing_64 = if cfg!(feature = "bigidx") {
@@ -152,7 +153,6 @@ impl NonZeroRowCountAndSize {
         })
     }
 
-    #[expect(unused)]
     pub fn min(self, other: Self) -> Self {
         Self {
             num_rows: self.num_rows.min(other.num_rows),

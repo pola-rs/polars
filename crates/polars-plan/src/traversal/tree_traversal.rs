@@ -170,19 +170,20 @@ where
         } {
             for i in 0..num_inputs {
                 let key = self.visit_stack[base_visit_stack_len + i].clone();
+                let mut edge_idx = input_edges_start_idx + i;
                 let deleted = matches!(subtree_visit, SubtreeVisit::Skip)
-                    || self
-                        .visitor
-                        .is_deleted_edge(&self.edges[input_edges_start_idx + i])
-                        == Some(true);
-
-                self.traverse_rec(key, input_edges_start_idx + i, deleted)?;
+                    || self.visitor.is_deleted_edge(&self.edges[edge_idx]) == Some(true);
 
                 if deleted {
                     deleted_inputs += 1;
                 } else if deleted_inputs != 0 {
-                    self.edges.swap(i, i - deleted_inputs)
+                    // Compact before traversing, as the traversal can record the index of this
+                    // edge (e.g. as a cache node output).
+                    self.edges.swap(edge_idx, edge_idx - deleted_inputs);
+                    edge_idx -= deleted_inputs;
                 }
+
+                self.traverse_rec(key, edge_idx, deleted)?;
             }
         }
 
@@ -288,6 +289,7 @@ impl<'provider, Edge> NodeEdgesProvider<Edge> for SliceEdgeProvider<'provider, E
 struct Inputs<T>(T);
 
 impl<'a, Edge> Collection<Edge> for Inputs<SliceEdgeProvider<'a, Edge>> {
+    #[inline]
     fn len(&self) -> usize {
         self.0.input_range.len()
     }
@@ -305,6 +307,7 @@ impl<'a, Edge> Collection<Edge> for Inputs<SliceEdgeProvider<'a, Edge>> {
 struct Outputs<T>(T);
 
 impl<'a, Edge> Collection<Edge> for Outputs<SliceEdgeProvider<'a, Edge>> {
+    #[inline]
     fn len(&self) -> usize {
         self.0.output_idxs.len()
     }

@@ -1,6 +1,6 @@
-use arrow::array::BooleanArray;
-use arrow::datatypes::{ArrowDataType, Field};
-use arrow::scalar::{ListScalar, Scalar};
+use polars_arrow::array::BooleanArray;
+use polars_arrow::datatypes::{ArrowDataType, Field};
+use polars_arrow::scalar::{ListScalar, Scalar};
 
 #[allow(clippy::eq_op)]
 #[test]

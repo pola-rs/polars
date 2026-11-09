@@ -6,6 +6,7 @@ use parking_lot::Mutex;
 use polars_core::prelude::*;
 use polars_core::query_result::QueryResult;
 use polars_core::runtime::RAYON;
+use polars_descriptions::MetricUnit;
 use polars_expr::planner::{ExpressionConversionState, create_physical_expr, get_expr_depth_limit};
 use polars_observer::{PlannedQuery, QueryObserver};
 use polars_plan::plans::{IR, IRPlan, IRPlanSorted};
@@ -13,10 +14,11 @@ use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::{AExpr, ir_plan_to_description};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::relaxed_cell::RelaxedCell;
-use slotmap::{SecondaryMap, SlotMap};
+use slotmap::{DenseSlotMap, SecondaryMap};
 
 use crate::graph::{Graph, GraphNodeKey};
 use crate::metrics::GraphMetrics;
+use crate::nodes::recursive::RecursiveInputs;
 use crate::observer_metrics::StreamingQueryMetricsSnapshotter;
 use crate::physical_plan::{
     PhysNode, PhysNodeKey, PhysNodeKind, StreamingLowerIRContext, physical_plan_to_description,
@@ -39,13 +41,19 @@ pub fn run_query(
     expr_arena: &mut Arena<AExpr>,
     observer: Option<Box<dyn QueryObserver>>,
 ) -> PolarsResult<QueryResult> {
-    let query = StreamingQuery::build(node, ir_arena, expr_arena, observer.is_some()).inspect_err(
-        |err| {
-            if let Some(o) = observer.as_ref() {
-                o.on_query_failed(err)
-            }
-        },
-    )?;
+    let query = StreamingQuery::build(
+        node,
+        ir_arena,
+        expr_arena,
+        observer.is_some(),
+        polars_config::config().max_threads(),
+        None,
+    )
+    .inspect_err(|err| {
+        if let Some(o) = observer.as_ref() {
+            o.on_query_failed(err)
+        }
+    })?;
 
     /// if the query fails, [`observer::on_query_failed`] needs to be called before [`_guard`] is dropped
     let _guard = observer
@@ -67,8 +75,12 @@ impl StreamingQuery {
         expr_arena: &Arena<AExpr>,
     ) -> PlannedQuery {
         let ir = ir_plan_to_description(&[ir_node], ir_arena, expr_arena);
-        let physical =
-            physical_plan_to_description(&[self.root_phys_node], &self.phys_sm, expr_arena);
+        let physical = physical_plan_to_description(
+            &[self.root_phys_node],
+            &self.phys_sm,
+            &self.phys_to_ir,
+            expr_arena,
+        );
         let mut query = PlannedQuery::new(ir).with_physical(physical);
         if let Some(snapshotter) = StreamingQueryMetricsSnapshotter::from_query(self) {
             query = query.with_metrics_snapshotter(snapshotter);
@@ -83,14 +95,15 @@ pub fn visualize_physical_plan(
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<String> {
-    let mut phys_sm = SlotMap::with_capacity_and_key(ir_arena.len());
     let sortedness = IRPlanSorted::resolve(node, ir_arena, expr_arena);
 
     let ctx = StreamingLowerIRContext {
         prepare_visualization: true,
         sortedness: &sortedness,
+        recursive_inputs: None,
     };
-    let root_phys_node =
+    let mut phys_sm = DenseSlotMap::with_capacity_and_key(ir_arena.len());
+    let (root_phys_node, _phys_to_ir) =
         crate::physical_plan::build_physical_plan(node, ir_arena, expr_arena, &mut phys_sm, ctx)?;
 
     let out = crate::physical_plan::visualize_plan(root_phys_node, &phys_sm, expr_arena);
@@ -102,9 +115,11 @@ pub struct StreamingQuery {
     top_ir: IR,
     pub graph: Graph,
     pub root_phys_node: PhysNodeKey,
-    pub phys_sm: SlotMap<PhysNodeKey, PhysNode>,
+    pub phys_sm: DenseSlotMap<PhysNodeKey, PhysNode>,
+    pub phys_to_ir: SecondaryMap<PhysNodeKey, Node>,
     pub phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
     pub metrics: Option<Arc<Mutex<GraphMetrics>>>,
+    pub num_pipelines: usize,
 }
 
 /// Configures if IR lowering creates the `format_str` for `InMemoryMap`.
@@ -131,6 +146,8 @@ impl StreamingQuery {
         ir_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
         observe: bool,
+        num_pipelines: usize,
+        recursive_inputs: Option<&RecursiveInputs>,
     ) -> PolarsResult<Self> {
         if let Ok(visual_path) = std::env::var("POLARS_VISUALIZE_IR") {
             let plan = IRPlan {
@@ -141,13 +158,14 @@ impl StreamingQuery {
             let visualization = plan.display_dot().to_string();
             std::fs::write(visual_path, visualization).unwrap();
         }
-        let mut phys_sm = SlotMap::with_capacity_and_key(ir_arena.len());
         let sortedness = IRPlanSorted::resolve(node, ir_arena, expr_arena);
         let ctx = StreamingLowerIRContext {
             prepare_visualization: cfg_prepare_visualization_data(),
             sortedness: &sortedness,
+            recursive_inputs,
         };
-        let root_phys_node = crate::physical_plan::build_physical_plan(
+        let mut phys_sm = DenseSlotMap::with_capacity_and_key(ir_arena.len());
+        let (root_phys_node, phys_to_ir) = crate::physical_plan::build_physical_plan(
             node,
             ir_arena,
             expr_arena,
@@ -160,28 +178,34 @@ impl StreamingQuery {
             std::fs::write(visual_path, visualization).unwrap();
         }
 
-        let (mut graph, phys_to_graph) =
-            crate::physical_plan::physical_plan_to_graph(root_phys_node, &phys_sm, expr_arena)?;
-
-        let top_ir = ir_arena.get(node).clone();
-
         let metrics = if std::env::var("POLARS_TRACK_METRICS").as_deref() == Ok("1")
             || std::env::var("POLARS_LOG_METRICS").as_deref() == Ok("1")
             || observe
         {
-            polars_async::executor::track_task_metrics(true);
-            Some(Arc::default())
+            Some(Arc::new(Mutex::new(GraphMetrics::new(num_pipelines))))
         } else {
             None
         };
+
+        let (mut graph, phys_to_graph) = crate::physical_plan::physical_plan_to_graph(
+            root_phys_node,
+            &phys_sm,
+            expr_arena,
+            metrics.clone(),
+            num_pipelines,
+        )?;
+
+        let top_ir = ir_arena.get(node).clone();
 
         let out = StreamingQuery {
             top_ir,
             graph,
             root_phys_node,
             phys_sm,
+            phys_to_ir,
             phys_to_graph,
             metrics,
+            num_pipelines,
         };
 
         Ok(out)
@@ -193,12 +217,17 @@ impl StreamingQuery {
             mut graph,
             root_phys_node,
             phys_sm,
+            phys_to_ir: _,
             phys_to_graph,
             metrics,
+            num_pipelines,
         } = self;
 
         let query_start = Instant::now();
-        let mut results = crate::execute::execute_graph(&mut graph, metrics.clone())?;
+        // Callbacks in the query may need Rayon, so don't block a Rayon worker while it runs.
+        let mut results = RAYON.block_on(|| {
+            crate::execute::execute_graph(&mut graph, metrics.clone(), num_pipelines)
+        })?;
         let query_elapsed = query_start.elapsed();
 
         // Print metrics.
@@ -243,6 +272,27 @@ impl StreamingQuery {
                 let io_total_bytes_received = node_metrics.io_total_bytes_received;
                 let io_total_bytes_sent = node_metrics.io_total_bytes_sent;
 
+                let custom = node_metrics
+                    .custom
+                    .iter()
+                    .map(|metric| {
+                        let Some(value) = metric.value else {
+                            return format!(", {}=[UNSET]", metric.key);
+                        };
+
+                        match metric.unit {
+                            MetricUnit::Unit => format!(", {}={}", metric.key, value),
+                            MetricUnit::Bytes => format!(", {}={}B", metric.key, value),
+                            MetricUnit::DurationNs => format!(
+                                ", {}={}{:.2?}",
+                                metric.key,
+                                if value < 0 { "-" } else { "" },
+                                Duration::from_nanos(value.unsigned_abs())
+                            ),
+                        }
+                    })
+                    .collect::<String>();
+
                 lines.push(
                     (total_time, format!(
                         "{name}: tot({total_time:.2?}), \
@@ -254,7 +304,8 @@ impl StreamingQuery {
                                     total_active_time={io_total_active_time:.2?}, \
                                     total_bytes_requested={io_total_bytes_requested}, \
                                     total_bytes_received={io_total_bytes_received}, \
-                                    total_bytes_sent={io_total_bytes_sent})"))
+                                    total_bytes_sent={io_total_bytes_sent})\
+                                 {custom}"))
                 );
 
                 total_query_ns += total_ns;
@@ -262,8 +313,13 @@ impl StreamingQuery {
             lines.sort_by_key(|(tot, _)| Reverse(*tot));
 
             let total_query_time = Duration::from_nanos(total_query_ns);
+            let query_metrics = m.query();
+            let io_total = Duration::from_nanos(query_metrics.io_total_active_ns);
+            let io_rx = Duration::from_nanos(query_metrics.io_rx_active_ns);
+            let io_tx = Duration::from_nanos(query_metrics.io_tx_active_ns);
+            let num_threads = query_metrics.num_threads;
             eprintln!(
-                "Streaming query took {query_elapsed:.2?} ({total_query_time:.2?} CPU), detailed breakdown:"
+                "Streaming query took {query_elapsed:.2?} ({total_query_time:.2?} CPU on {num_threads} threads, {io_total:.2?} IO active: {io_rx:.2?} rx, {io_tx:.2?} tx), detailed breakdown:"
             );
             for (_tot, line) in lines {
                 eprintln!("{line}");

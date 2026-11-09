@@ -1,7 +1,7 @@
-use arrow::array::PrimitiveArray;
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::ArrowDataType;
 use either::Either;
+use polars_arrow::array::PrimitiveArray;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::ArrowDataType;
 
 #[test]
 fn array_to_mutable() {

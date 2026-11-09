@@ -1,10 +1,10 @@
 use std::borrow::Cow;
 
-use arrow::array::builder::{ArrayBuilder, ShareStrategy, make_builder};
-use arrow::array::{Array, IntoBoxedArray, ListArray, NullArray};
-use arrow::bitmap::BitmapBuilder;
-use arrow::offset::Offsets;
-use arrow::pushable::Pushable;
+use polars_arrow::array::builder::{ArrayBuilder, ShareStrategy, make_builder};
+use polars_arrow::array::{Array, IntoBoxedArray, ListArray, NullArray};
+use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::offset::Offsets;
+use polars_arrow::pushable::Pushable;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_error::PolarsContext;

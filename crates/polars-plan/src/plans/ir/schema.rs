@@ -32,6 +32,7 @@ impl IR {
             Join { .. } => "join",
             Gather { .. } => "gather",
             HStack { .. } => "hstack",
+            Window { .. } => "window",
             Distinct { .. } => "distinct",
             MapFunction { .. } => "map_function",
             Union { .. } => "union",
@@ -46,7 +47,10 @@ impl IR {
             SimpleProjection { .. } => "simple_projection",
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => "merge_sorted",
+            Recursive { .. } => "recursive",
+            WorkingTableScan { .. } => "working_table_scan",
             UnoptimizedDispatch { .. } => "unoptimized_dispatch",
+            Resolver { .. } => "resolver",
             Invalid => "invalid",
         }
     }
@@ -56,7 +60,7 @@ impl IR {
         let schema = match self {
             #[cfg(feature = "python")]
             PythonScan { options } => &options.schema,
-            DataFrameScan { schema, .. } => schema,
+            DataFrameScan { schema, .. } | WorkingTableScan { schema, .. } => schema,
             Scan { file_info, .. } => &file_info.schema,
             node => {
                 let input = node.get_input()?;
@@ -94,6 +98,7 @@ impl IR {
             GroupBy { schema, .. } => schema,
             Join { schema, .. } => schema,
             HStack { schema, .. } => schema,
+            Window { schema, .. } => schema,
             Distinct { input, .. }
             | Sink {
                 input,
@@ -113,6 +118,8 @@ impl IR {
             },
             #[cfg(feature = "merge_sorted")]
             MergeSorted { input_left, .. } => return arena.get(*input_left).schema(arena),
+            Recursive { anchor, .. } => return arena.get(*anchor).schema(arena),
+            WorkingTableScan { schema, .. } => schema,
             UnoptimizedDispatch {
                 inputs,
                 arg_map,
@@ -123,6 +130,17 @@ impl IR {
                     .map(|input| arena.get(*input).schema(arena).into_owned())
                     .collect_vec();
                 return Cow::Owned(operation.schema(&input_schemas, arg_map));
+            },
+            Resolver {
+                resolver_schema,
+                resolved_ir,
+                ..
+            } => {
+                if let Some(node) = *resolved_ir {
+                    return arena.get(node).schema(arena);
+                }
+
+                resolver_schema
             },
             Invalid => unreachable!(),
         };
@@ -176,6 +194,7 @@ impl IR {
             | GroupBy { schema, .. }
             | Join { schema, .. }
             | HStack { schema, .. }
+            | Window { schema, .. }
             | SimpleProjection {
                 columns: schema, ..
             } => schema.clone(),
@@ -185,6 +204,8 @@ impl IR {
             },
             #[cfg(feature = "merge_sorted")]
             MergeSorted { input_left, .. } => IR::schema_with_cache(*input_left, arena, cache),
+            Recursive { anchor, .. } => IR::schema_with_cache(*anchor, arena, cache),
+            WorkingTableScan { schema, .. } => schema.clone(),
             UnoptimizedDispatch {
                 inputs,
                 arg_map,
@@ -195,6 +216,17 @@ impl IR {
                     .map(|input| IR::schema_with_cache(*input, arena, cache))
                     .collect_vec();
                 operation.schema(&input_schemas, arg_map)
+            },
+            Resolver {
+                resolver_schema,
+                resolved_ir,
+                ..
+            } => {
+                return if let Some(node) = *resolved_ir {
+                    return IR::schema_with_cache(node, arena, cache);
+                } else {
+                    resolver_schema.clone()
+                };
             },
             Invalid => unreachable!(),
         };

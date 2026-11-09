@@ -3,7 +3,7 @@ use std::cell::LazyCell;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-use arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::chunked_array::builder::AnonymousOwnedListBuilder;
 use polars_core::error::{PolarsResult, feature_gated, polars_ensure};
 use polars_core::frame::DataFrame;
@@ -507,6 +507,8 @@ impl PhysicalExpr for EvalExpr {
 
     fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let input = self.input.evaluate(df, state)?;
+        // @scalar-opt: every variant but `Cumulative` maps rows independently, so a scalar
+        // input could be evaluated once and broadcast instead of expanded to full length.
         let out = match self.variant {
             EvalVariant::List => {
                 let lst = input.list()?;
@@ -544,23 +546,23 @@ impl PhysicalExpr for EvalExpr {
             EvalVariant::List => {
                 let input_col = input.flat_naive();
                 let out = self.evaluate_on_list_chunked(input_col.list()?, state, false)?;
-                input.with_values(out, false, Some(&self.expr))?;
+                input.with_values_and_args(out, false, Some(&self.expr), true, self.is_scalar())?;
             },
             EvalVariant::ListAgg => {
                 let input_col = input.flat_naive();
                 let out = self.evaluate_on_list_chunked(input_col.list()?, state, true)?;
-                input.with_values(out, false, Some(&self.expr))?;
+                input.with_values_and_args(out, false, Some(&self.expr), true, self.is_scalar())?;
             },
             EvalVariant::Array { as_list } => feature_gated!("dtype-array", {
                 let arr_col = input.flat_naive();
                 let out =
                     self.evaluate_on_array_chunked(arr_col.array()?, state, as_list, false)?;
-                input.with_values(out, false, Some(&self.expr))?;
+                input.with_values_and_args(out, false, Some(&self.expr), true, self.is_scalar())?;
             }),
             EvalVariant::ArrayAgg => feature_gated!("dtype-array", {
                 let arr_col = input.flat_naive();
                 let out = self.evaluate_on_array_chunked(arr_col.array()?, state, true, true)?;
-                input.with_values(out, false, Some(&self.expr))?;
+                input.with_values_and_args(out, false, Some(&self.expr), true, self.is_scalar())?;
             }),
             EvalVariant::Cumulative { min_samples } => {
                 let mut builder = AnonymousOwnedListBuilder::new(

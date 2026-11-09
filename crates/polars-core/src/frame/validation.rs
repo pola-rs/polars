@@ -65,7 +65,7 @@ pub(super) fn validate_columns_slice(
     Ok(())
 }
 
-pub(super) fn ensure_names_unique<T>(names: &[T]) -> PolarsResult<()>
+pub(crate) fn ensure_names_unique<T>(names: &[T]) -> PolarsResult<()>
 where
     T: AsRef<str>,
 {

@@ -1,7 +1,7 @@
 use std::borrow::Borrow;
 
-use arrow::datatypes::{ArrowDataType, Field};
 use indexmap::map::Entry;
+use polars_arrow::datatypes::{ArrowDataType, Field};
 use polars_utils::pl_str::PlSmallStr;
 use simd_json::borrowed::Object;
 use simd_json::{BorrowedValue, StaticNode};

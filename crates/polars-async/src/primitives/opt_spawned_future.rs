@@ -1,7 +1,7 @@
 use pin_project_lite::pin_project;
 use polars_utils::{UnitVec, unitvec};
 
-use crate::executor::{AbortOnDropHandle, TaskPriority, spawn};
+use crate::executor::{AbortOnDropHandle, TaskMetricAggregator, TaskPriority, spawn};
 
 pin_project! {
     /// Represents a future that may either be local or spawned.
@@ -28,9 +28,13 @@ where
     O: Send + 'static,
 {
     /// Spawns the future onto the async executor.
-    pub fn spawn(task_priority: TaskPriority, fut: F) -> Self {
+    pub fn spawn(
+        task_priority: TaskPriority,
+        task_metrics: Option<&TaskMetricAggregator>,
+        fut: F,
+    ) -> Self {
         LocalOrSpawnedFuture::Spawned {
-            handle: AbortOnDropHandle::new(spawn(task_priority, fut)),
+            handle: AbortOnDropHandle::new(spawn(task_priority, task_metrics, fut)),
         }
     }
 }
@@ -63,6 +67,7 @@ where
 /// used for compute.
 pub fn parallelize_first_to_local<'i, 'o, I, F, O>(
     task_priority: TaskPriority,
+    task_metrics: Option<&TaskMetricAggregator>,
     futures_iter: I,
 ) -> impl ExactSizeIterator<Item = impl Future<Output = O> + Send + 'static> + 'o
 where
@@ -70,11 +75,12 @@ where
     F: Future<Output = O> + Send + 'static,
     O: Send + 'static,
 {
-    parallelize_first_to_local_impl(task_priority, futures_iter).into_iter()
+    parallelize_first_to_local_impl(task_priority, task_metrics, futures_iter).into_iter()
 }
 
 fn parallelize_first_to_local_impl<I, F, O>(
     task_priority: TaskPriority,
+    task_metrics: Option<&TaskMetricAggregator>,
     mut futures_iter: I,
 ) -> UnitVec<LocalOrSpawnedFuture<F, O>>
 where
@@ -97,11 +103,9 @@ where
     // Note:
     // * The local future must come first to ensure we don't block polling it.
     // * Remaining futures must all be spawned upfront into the Vec for them to run parallel.
-    futures.extend([
-        first_fut,
-        LocalOrSpawnedFuture::spawn(task_priority, second_fut),
-    ]);
-    futures.extend(futures_iter.map(|x| LocalOrSpawnedFuture::spawn(task_priority, x)));
+    let spawn_fut = |x| LocalOrSpawnedFuture::spawn(task_priority, task_metrics, x);
+    futures.extend([first_fut, spawn_fut(second_fut)]);
+    futures.extend(futures_iter.map(spawn_fut));
 
     futures
 }

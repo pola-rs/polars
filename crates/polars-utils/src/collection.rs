@@ -18,6 +18,7 @@ pub struct CollectionWrap<T: ?Sized, C: Collection<T>> {
 }
 
 impl<T: ?Sized, C: Collection<T>> CollectionWrap<T, C> {
+    #[inline(always)]
     pub fn new(inner: C) -> Self {
         Self {
             inner,
@@ -55,12 +56,14 @@ impl<T: ?Sized, C: Collection<T>> CollectionWrap<T, C> {
 impl<T: ?Sized, C: Collection<T>> Deref for CollectionWrap<T, C> {
     type Target = C;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
 impl<T: ?Sized, C: Collection<T>> DerefMut for CollectionWrap<T, C> {
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
@@ -93,6 +96,7 @@ impl<T: Clone, C: Collection<T>, const N: usize> TryFrom<CollectionWrap<T, C>> f
 }
 
 impl<T: ?Sized, C: Collection<T>> From<C> for CollectionWrap<T, C> {
+    #[inline]
     fn from(value: C) -> Self {
         Self {
             inner: value,
@@ -102,14 +106,17 @@ impl<T: ?Sized, C: Collection<T>> From<C> for CollectionWrap<T, C> {
 }
 
 impl<T: ?Sized> Collection<T> for &mut dyn Collection<T> {
+    #[inline]
     fn len(&self) -> usize {
         (**self).len()
     }
 
+    #[inline]
     fn get(&self, idx: usize) -> Option<&T> {
         (**self).get(idx)
     }
 
+    #[inline]
     fn get_mut(&mut self, idx: usize) -> Option<&mut T> {
         (**self).get_mut(idx)
     }

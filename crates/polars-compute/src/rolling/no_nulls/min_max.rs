@@ -1,6 +1,7 @@
 use polars_utils::min_max::{MaxPropagateNan, MinMaxPolicy, MinPropagateNan};
 
 use super::super::min_max::MinMaxWindow;
+use super::super::van_herk;
 use super::*;
 
 pub type MinWindow<'a, T> = MinMaxWindow<'a, T, MinPropagateNan>;
@@ -24,31 +25,27 @@ macro_rules! rolling_minmax_func {
         pub fn $rolling_m<T>(
             values: &[T],
             window_size: usize,
-            min_periods: usize,
+            min_samples: usize,
             center: bool,
             weights: Option<&[f64]>,
             _params: Option<RollingFnParams>,
         ) -> PolarsResult<ArrayRef>
         where
-            T: NativeType + PartialOrd + IsFloat + Bounded + NumCast + Mul<Output = T> + Num,
+            T: NativeType + IsFloat + Bounded + NumCast + Mul<Output = T> + Num,
         {
-            let offset_fn = match center {
-                true => det_offsets_center,
-                false => det_offsets,
-            };
             match weights {
-                None => rolling_apply_agg_window::<MinMaxWindow<T, $policy>, _, _, _>(
-                    values,
-                    window_size,
-                    min_periods,
-                    offset_fn,
-                    None,
-                ),
+                None => {
+                    rolling_minmax_van_herk::<T, $policy>(values, window_size, min_samples, center)
+                },
                 Some(weights) => {
                     assert!(
                         T::is_float(),
                         "implementation error, should only be reachable by float types"
                     );
+                    let offset_fn = match center {
+                        true => det_offsets_center,
+                        false => det_offsets,
+                    };
                     let weights = weights
                         .iter()
                         .map(|v| NumCast::from(*v).unwrap())
@@ -56,7 +53,7 @@ macro_rules! rolling_minmax_func {
                     no_nulls::rolling_apply_weights(
                         values,
                         window_size,
-                        min_periods,
+                        min_samples,
                         offset_fn,
                         weighted_min_max::<T, $policy>,
                         &weights,
@@ -70,6 +67,42 @@ macro_rules! rolling_minmax_func {
 
 rolling_minmax_func!(rolling_min, MinPropagateNan);
 rolling_minmax_func!(rolling_max, MaxPropagateNan);
+
+fn rolling_minmax_van_herk<T, P>(
+    values: &[T],
+    window_size: usize,
+    min_samples: usize,
+    center: bool,
+) -> PolarsResult<ArrayRef>
+where
+    T: NativeType + IsFloat + Bounded,
+    P: MinMaxPolicy,
+{
+    let n = values.len();
+    if window_size == 0 {
+        // Every window is empty, so every output is null.
+        return Ok(PrimitiveArray::<T>::new_null(T::PRIMITIVE.into(), n).boxed());
+    }
+    let shift = if center {
+        window_size.div_ceil(2) - 1
+    } else {
+        0
+    };
+    let out = van_herk::rolling_minmax_shifted::<T, P>(values, window_size, shift);
+
+    let offset_fn = match center {
+        true => det_offsets_center,
+        false => det_offsets,
+    };
+    let validity: Option<Bitmap> =
+        create_validity(min_samples, n, window_size, offset_fn, None, center).and_then(Into::into);
+
+    Ok(Box::new(PrimitiveArray::<T>::new(
+        T::PRIMITIVE.into(),
+        out.into(),
+        validity,
+    )))
+}
 
 #[cfg(test)]
 mod test {

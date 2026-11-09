@@ -1,5 +1,5 @@
-use arrow::bitmap::Bitmap;
-use arrow::bitmap::utils::SlicesIterator;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::utils::SlicesIterator;
 use proptest::prelude::*;
 
 use super::bitmap_strategy;

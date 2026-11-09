@@ -1,17 +1,18 @@
 use std::borrow::Cow;
 
-use arrow::types::NativeType;
 #[cfg(feature = "dtype-f16")]
 use num_traits::real::Real;
+use polars_arrow::types::NativeType;
 use polars_compute::rolling::no_nulls::RollingAggWindowNoNulls;
 use polars_compute::rolling::nulls::RollingAggWindowNulls;
 use polars_compute::rolling::{MeanWindow, SumWindow, no_nulls, nulls};
 use polars_core::{with_match_physical_float_polars_type, with_match_physical_numeric_polars_type};
+use polars_defs::time::duration::ensure_duration_matches_dtype;
+use polars_defs::time::group_by::ClosedWindow;
 use polars_ops::series::SeriesMethods;
 use polars_utils::float::IsFloat;
 
 use super::*;
-use crate::prelude::*;
 use crate::series::AsSeries;
 
 #[cfg(feature = "rolling_window")]
@@ -39,7 +40,11 @@ fn rolling_agg<T>(
 where
     T: PolarsNumericType,
 {
-    polars_ensure!(options.min_periods <= options.window_size, InvalidOperation: "`min_periods` should be <= `window_size`");
+    polars_ensure!(
+        options.min_samples <= options.window_size,
+        InvalidOperation: "`min_samples` ({}) should be <= `window_size` ({})",
+        options.min_samples, options.window_size
+    );
     if ca.is_empty() {
         return Ok(Series::new_empty(ca.name().clone(), ca.dtype()));
     }
@@ -50,7 +55,7 @@ where
         0 => rolling_agg_fn(
             arr.values().as_slice(),
             options.window_size,
-            options.min_periods,
+            options.min_samples,
             options.center,
             options.weights.as_deref(),
             options.fn_params,
@@ -58,7 +63,7 @@ where
         _ => rolling_agg_fn_nulls(
             arr,
             options.window_size,
-            options.min_periods,
+            options.min_samples,
             options.center,
             options.weights.as_deref(),
             options.fn_params,
@@ -90,7 +95,8 @@ where
 
     polars_ensure!(
         ca.len() == by.len(),
-        InvalidOperation: "`by` column in `rolling_*_by` must be the same length as values column"
+        InvalidOperation: "`by` column in `rolling_*_by` must be the same length as values column (got {} and {})",
+        by.len(), ca.len()
     );
     ensure_duration_matches_dtype(options.window_size, by.dtype(), "window_size")?;
     polars_ensure!(
@@ -182,7 +188,7 @@ where
             options.window_size,
             by_values,
             options.closed_window,
-            options.min_periods,
+            options.min_samples,
             tu,
             tz.as_ref(),
             sorting_indices_opt
@@ -205,7 +211,7 @@ where
             options.window_size,
             by_values,
             options.closed_window,
-            options.min_periods,
+            options.min_samples,
             tu,
             tz.as_ref(),
             sorting_indices_opt

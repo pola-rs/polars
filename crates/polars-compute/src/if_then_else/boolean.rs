@@ -1,6 +1,6 @@
-use arrow::array::BooleanArray;
-use arrow::bitmap::{self, Bitmap};
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::BooleanArray;
+use polars_arrow::bitmap::{self, Bitmap};
+use polars_arrow::datatypes::ArrowDataType;
 
 use super::{IfThenElseKernel, if_then_else_validity};
 

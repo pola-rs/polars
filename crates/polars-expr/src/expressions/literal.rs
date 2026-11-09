@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::ops::Deref;
 
-use arrow::temporal_conversions::NANOSECONDS_IN_DAY;
+use polars_arrow::temporal_conversions::NANOSECONDS_IN_DAY;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 use polars_plan::constants::get_literal_name;
@@ -57,7 +57,7 @@ impl LiteralExpr {
                     DataType::Int64 => {
                         polars_ensure!(
                             low >= i64::MIN as i128 && high <= i64::MAX as i128,
-                            ComputeError: "range not within bounds of `Int32`: [{}, {}]", low, high
+                            ComputeError: "range not within bounds of `Int64`: [{}, {}]", low, high
                         );
                         let low = low as i64;
                         let high = high as i64;

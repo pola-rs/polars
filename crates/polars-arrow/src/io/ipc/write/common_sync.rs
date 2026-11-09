@@ -1,9 +1,9 @@
 use std::io::Write;
 use std::sync::Arc;
 
-use arrow_format::ipc::KeyValue;
-use arrow_format::ipc::planus::Builder;
 use bytes::Bytes;
+use polars_arrow_format::ipc::KeyValue;
+use polars_arrow_format::ipc::planus::Builder;
 use polars_error::PolarsResult;
 
 use super::super::{ARROW_MAGIC_V2, ARROW_MAGIC_V2_PADDED, CONTINUATION_MARKER};
@@ -142,8 +142,8 @@ pub fn push_footer(
     queue: &mut Vec<Bytes>,
     schema: &ArrowSchema,
     ipc_fields: &[IpcField],
-    dictionary_blocks: Vec<arrow_format::ipc::Block>,
-    record_blocks: Vec<arrow_format::ipc::Block>,
+    dictionary_blocks: Vec<polars_arrow_format::ipc::Block>,
+    record_blocks: Vec<polars_arrow_format::ipc::Block>,
     custom_metadata: Option<Vec<(String, String)>>,
     // Placeholder, inherited from FileWriter for future use.
     custom_schema_metadata: Option<Arc<Metadata>>,
@@ -154,8 +154,8 @@ pub fn push_footer(
 
     let schema = schema::serialize_schema(schema, ipc_fields, custom_schema_metadata.as_deref());
 
-    let root = arrow_format::ipc::Footer {
-        version: arrow_format::ipc::MetadataVersion::V5,
+    let root = polars_arrow_format::ipc::Footer {
+        version: polars_arrow_format::ipc::MetadataVersion::V5,
         schema: Some(Box::new(schema)),
         dictionaries: Some(dictionary_blocks),
         record_batches: Some(record_blocks),

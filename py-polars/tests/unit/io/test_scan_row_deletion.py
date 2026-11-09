@@ -12,6 +12,8 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from tests.conftest import PlMonkeyPatch
+
 
 @pytest.fixture(scope="session")
 def data_files_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
@@ -456,3 +458,75 @@ def test_scan_row_deletion_skips_file_with_all_rows_deleted(
 
     assert_frame_equal(q.slice(10).collect(), expect.drop("index"))
     assert_frame_equal(q.with_row_index().slice(10).collect(), expect)
+
+
+@pytest.mark.write_disk
+def test_scan_row_deletions_force_maintain_order(
+    tmp_path: Path,
+    write_position_deletes: WritePositionDeletes,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # The deletion mask is applied by physical row position after the reader,
+    # so the reader must keep file order even when the query does not observe it.
+    data_path = tmp_path / "data.parquet"
+    pl.select(physical_index=pl.int_range(25, dtype=pl.UInt32)).write_parquet(
+        data_path, row_group_size=5
+    )
+    deletion_files = (  # type: ignore[var-annotated]
+        "iceberg",
+        ({0: [write_position_deletes(pl.Series([1, 2]))]}, {}),
+    )
+
+    q = pl.scan_parquet(
+        data_path,
+        _deletion_files=deletion_files,  # type: ignore[arg-type]
+    ).select(pl.col("physical_index").sum(), pl.len())
+
+    with plmonkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+        capfd.readouterr()
+        out = q.collect(engine="streaming")
+        capture = capfd.readouterr().err
+
+    assert out.row(0) == (sum(range(25)) - 3, 23)
+    reader_lines = [
+        x
+        for x in capture.splitlines()
+        if x.startswith("[ParquetFileReader]") and "maintain_order:" in x
+    ]
+    assert reader_lines
+    assert all("maintain_order: true" in x for x in reader_lines)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("row_index", [False, True])
+def test_scan_row_deletions_position_past_end_of_file_30407(
+    tmp_path: Path,
+    write_position_deletes: WritePositionDeletes,
+    row_index: bool,
+) -> None:
+    paths = [tmp_path / "0.parquet", tmp_path / "1.parquet"]
+    pl.DataFrame({"a": [0, 1, 2, 3]}).write_parquet(paths[0])
+    pl.DataFrame({"a": [4, 5, 6, 7]}).write_parquet(paths[1])
+
+    q = pl.scan_parquet(
+        paths,
+        _deletion_files=(
+            "iceberg",
+            ({0: [write_position_deletes(pl.Series([2, 100]))]}, {}),
+        ),
+    )
+
+    expect = pl.DataFrame({"a": [0, 1, 3, 4, 5, 6, 7]})
+
+    if row_index:
+        q = q.with_row_index()
+        expect = expect.with_row_index()
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.head(5).collect(), expect.head(5))
+    assert_frame_equal(q.slice(3, 2).collect(), expect.slice(3, 2))
+    assert_frame_equal(q.tail(5).collect(), expect.tail(5))
+    assert_frame_equal(q.slice(-6, 2).collect(), expect.slice(-6, 2))
+    assert q.select(pl.len()).collect().item() == 7

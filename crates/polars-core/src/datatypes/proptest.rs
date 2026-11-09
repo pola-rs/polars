@@ -1,7 +1,7 @@
 use std::ops::RangeInclusive;
 use std::rc::Rc;
 
-use arrow::bitmap::bitmask::nth_set_bit_u32;
+use polars_arrow::bitmap::bitmask::nth_set_bit_u32;
 #[cfg(feature = "dtype-categorical")]
 use polars_dtype::categorical::{CategoricalPhysical, Categories, FrozenCategories};
 use polars_utils::pl_str::PlSmallStr;

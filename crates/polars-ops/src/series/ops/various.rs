@@ -1,5 +1,3 @@
-use num_traits::Bounded;
-#[cfg(feature = "dtype-struct")]
 use polars_core::chunked_array::ops::row_encode::_get_rows_encoded_ca;
 use polars_core::prelude::arity::unary_elementwise_values;
 use polars_core::prelude::*;
@@ -99,6 +97,34 @@ pub trait SeriesMethods: SeriesSealed {
     }
 }
 
+/// Lists, arrays, structs and maps have no ordering comparisons, so order them as `sort` does: by
+/// their row encoding. The encoded values are not null, and compare in ascending byte order as the
+/// original values compare under `descending` and `nulls_last`.
+fn row_encode_nested(
+    s: &Series,
+    descending: bool,
+    nulls_last: bool,
+) -> PolarsResult<Option<Series>> {
+    match s.dtype() {
+        DataType::List(_) => {},
+        #[cfg(feature = "dtype-array")]
+        DataType::Array(..) => {},
+        #[cfg(feature = "dtype-struct")]
+        DataType::Struct(_) => {},
+        #[cfg(feature = "dtype-map")]
+        DataType::Map(..) => {},
+        _ => return Ok(None),
+    }
+    let encoded = _get_rows_encoded_ca(
+        PlSmallStr::EMPTY,
+        &[s.clone().into()],
+        &[descending],
+        &[nulls_last],
+        false,
+    )?;
+    Ok(Some(encoded.into_series()))
+}
+
 fn is_sorted_impl(s: &Series, options: SortOptions) -> PolarsResult<bool> {
     let null_count = s.null_count();
 
@@ -112,21 +138,13 @@ fn is_sorted_impl(s: &Series, options: SortOptions) -> PolarsResult<bool> {
         return Ok(true);
     }
 
-    #[cfg(feature = "dtype-struct")]
-    if matches!(s.dtype(), DataType::Struct(_)) {
-        let encoded = _get_rows_encoded_ca(
-            PlSmallStr::EMPTY,
-            &[s.clone().into()],
-            &[options.descending],
-            &[options.nulls_last],
-            false,
-        )?;
+    if let Some(encoded) = row_encode_nested(s, options.descending, options.nulls_last)? {
         let options = SortOptions {
             descending: false,
             nulls_last: false,
             ..options
         };
-        return is_sorted_impl(&encoded.into_series(), options);
+        return is_sorted_impl(&encoded, options);
     }
 
     let s_len = s.len();
@@ -380,6 +398,7 @@ fn infer_descending(s: &Series, nulls_last: bool) -> PolarsResult<Option<bool>> 
 
     let non_null_start = if nulls_last { 0 } else { null_count };
     let non_null = s.slice(non_null_start as i64, non_null_len);
+    let non_null = row_encode_nested(&non_null, false, nulls_last)?.unwrap_or(non_null);
 
     let a = non_null.slice(0, non_null_len - 1);
     let b = non_null.slice(1, non_null_len - 1);
@@ -418,7 +437,9 @@ fn check_cmp<T: NumericNative, Cmp: Fn(&T, &T) -> bool>(
 
 fn is_sorted_ca_num<T: PolarsNumericType>(ca: &ChunkedArray<T>, options: SortOptions) -> bool {
     if let Ok(vals) = ca.cont_slice() {
-        let mut previous = vals[0];
+        let Some(mut previous) = vals.first().copied() else {
+            return true;
+        };
         return if options.descending {
             check_cmp(vals, |prev, c| prev.tot_ge(c), &mut previous)
         } else {
@@ -427,10 +448,11 @@ fn is_sorted_ca_num<T: PolarsNumericType>(ca: &ChunkedArray<T>, options: SortOpt
     };
 
     if ca.null_count() == 0 {
-        let mut previous = if options.descending {
-            T::Native::max_value()
-        } else {
-            T::Native::min_value()
+        let Some(mut previous) = ca
+            .downcast_iter()
+            .find_map(|arr| arr.values().first().copied())
+        else {
+            return true;
         };
         for arr in ca.downcast_iter() {
             let vals = arr.values();

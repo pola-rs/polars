@@ -30,6 +30,7 @@ impl fmt::Display for Expr {
 }
 
 impl fmt::Debug for Expr {
+    #[recursive::recursive]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Expr::*;
         match self {
@@ -53,6 +54,7 @@ impl fmt::Debug for Expr {
                 partition_by,
                 order_by,
                 mapping: _,
+                may_reorder: _,
             } => {
                 if let Some((order_by, _)) = order_by {
                     write!(
@@ -257,15 +259,17 @@ impl fmt::Debug for Expr {
                 EvalVariant::ArrayAgg => write!(f, "{input:?}.arr.agg({evaluation:?})"),
                 EvalVariant::Cumulative { min_samples } => write!(
                     f,
-                    "{input:?}.Cumulative_eval({evaluation:?}, min_samples={min_samples}"
+                    "{input:?}.cumulative_eval({evaluation:?}, min_samples={min_samples})"
                 ),
             },
             #[cfg(feature = "dtype-struct")]
             StructEval {
                 expr: input,
                 evaluation,
+                variant,
             } => {
-                write!(f, "{input:?}.struct.eval({evaluation:?}")
+                let name = variant.to_name();
+                write!(f, "{input:?}.{name}({evaluation:?})")
             },
             Slice {
                 input,
@@ -292,6 +296,10 @@ impl fmt::Debug for Expr {
                     f,
                     "{expr:?}.replace(\"{pattern}\", \"{value}\", literal=true)"
                 ),
+            },
+            PipeWithDtype { input, .. } => match input.as_slice() {
+                [input] => write!(f, "{input:?}.pipe_with_dtype()"),
+                input => write!(f, "pipe_with_dtype({input:?})"),
             },
             Selector(s) => fmt::Display::fmt(s, f),
             #[cfg(feature = "dtype-struct")]

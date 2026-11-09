@@ -11,6 +11,8 @@ mod find_many;
 #[cfg(feature = "extract_jsonpath")]
 mod json_path;
 #[cfg(feature = "strings")]
+mod literal_chain;
+#[cfg(feature = "strings")]
 mod namespace;
 #[cfg(feature = "string_normalize")]
 mod normalize;

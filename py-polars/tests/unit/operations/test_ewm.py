@@ -219,6 +219,21 @@ def test_ewm_std_var_with_nulls() -> None:
     assert_series_equal(std**2, expected)
 
 
+@pytest.mark.parametrize("adjust", [False, True])
+@pytest.mark.parametrize("gap", [5, 34, 60])
+def test_ewm_std_var_long_null_run_28620(adjust: bool, gap: int) -> None:
+    s = pl.Series([10.0] + [None] * gap + [12.0])
+    kwargs: dict[str, Any] = {
+        "span": 2,
+        "adjust": adjust,
+        "bias": False,
+        "ignore_nulls": False,
+    }
+    expected_var = pl.Series([None] * (gap + 1) + [2.0], dtype=pl.Float64)
+    assert_series_equal(s.ewm_var(**kwargs), expected_var)
+    assert_series_equal(s.ewm_std(**kwargs), expected_var.sqrt())
+
+
 def test_ewm_param_validation() -> None:
     s = pl.Series("values", range(10))
 
@@ -246,7 +261,6 @@ def test_ewm_param_validation() -> None:
 
 
 # https://github.com/pola-rs/polars/issues/4951
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud  # reason: chunking
 def test_ewm_with_multiple_chunks() -> None:
     df0 = pl.DataFrame(

@@ -86,11 +86,15 @@ where
         if !(self.start..self.end).contains(&idx) {
             panic!("index out of bounds");
         }
+        // Null cannot have a rank, so explicitly fail.
+        if !self.validity.get(idx).unwrap() {
+            return None;
+        }
         self.policy.rank(&self.ost, &self.slice[idx])
     }
 
-    fn is_valid(&self, min_periods: usize) -> bool {
-        self.validity.get(self.end - 1).unwrap() && self.ost.len() >= min_periods
+    fn is_valid(&self, min_samples: usize) -> bool {
+        self.ost.len() >= min_samples
     }
 
     fn slice_len(&self) -> usize {
@@ -107,7 +111,7 @@ pub type RankWindowRandom<'a, T> = RankWindow<'a, T, IdxSize, RankPolicyRandom>;
 pub fn rolling_rank<T>(
     arr: &PrimitiveArray<T>,
     window_size: usize,
-    min_periods: usize,
+    min_samples: usize,
     center: bool,
     weights: Option<&[f64]>,
     params: Option<RollingFnParams>,
@@ -132,7 +136,7 @@ where
             arr.values().as_slice(),
             arr.validity().as_ref().unwrap(),
             window_size,
-            min_periods,
+            min_samples,
             offset_fn,
             params,
         ),
@@ -140,7 +144,7 @@ where
             arr.values().as_slice(),
             arr.validity().as_ref().unwrap(),
             window_size,
-            min_periods,
+            min_samples,
             offset_fn,
             params,
         ),
@@ -148,7 +152,7 @@ where
             arr.values().as_slice(),
             arr.validity().as_ref().unwrap(),
             window_size,
-            min_periods,
+            min_samples,
             offset_fn,
             params,
         ),
@@ -156,7 +160,7 @@ where
             arr.values().as_slice(),
             arr.validity().as_ref().unwrap(),
             window_size,
-            min_periods,
+            min_samples,
             offset_fn,
             params,
         ),
@@ -164,7 +168,7 @@ where
             arr.values().as_slice(),
             arr.validity().as_ref().unwrap(),
             window_size,
-            min_periods,
+            min_samples,
             offset_fn,
             params,
         ),

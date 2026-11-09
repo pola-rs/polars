@@ -1,4 +1,4 @@
-use arrow::array::*;
+use polars_arrow::array::*;
 
 mod dictionary;
 mod fixed_size_list;

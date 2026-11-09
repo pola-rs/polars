@@ -1,5 +1,5 @@
 #[cfg(feature = "timezones")]
-use arrow::legacy::time_zone::Tz;
+use polars_arrow::legacy::time_zone::Tz;
 use polars_core::error::{PolarsResult, polars_bail};
 use polars_core::prelude::{
     ArithmeticChunked, Column, DataType, IntoColumn, LogicalType, TimeUnit,
@@ -67,14 +67,16 @@ pub(super) fn ordinal_day(s: &Column) -> PolarsResult<Column> {
 pub(super) fn time(s: &Column) -> PolarsResult<Column> {
     match s.dtype() {
         #[cfg(feature = "timezones")]
-        DataType::Datetime(_, Some(_)) => polars_ops::prelude::replace_time_zone(
-            s.datetime().unwrap(),
-            None,
-            &StringChunked::from_iter(std::iter::once("raise")),
-            NonExistent::Raise,
-        )?
-        .cast(&DataType::Time)
-        .map(Column::from),
+        DataType::Datetime(_, Some(_)) => {
+            polars_core::chunked_array::temporal::replace_time_zone::replace_time_zone(
+                s.datetime().unwrap(),
+                None,
+                &StringChunked::from_iter(std::iter::once("raise")),
+                NonExistent::Raise,
+            )?
+            .cast(&DataType::Time)
+            .map(Column::from)
+        },
         DataType::Datetime(_, _) => s
             .datetime()
             .unwrap()
@@ -88,21 +90,13 @@ pub(super) fn date(s: &Column) -> PolarsResult<Column> {
     match s.dtype() {
         #[cfg(feature = "timezones")]
         DataType::Datetime(_, Some(_)) => {
-            let mut out = {
-                polars_ops::chunked_array::replace_time_zone(
-                    s.datetime().unwrap(),
-                    None,
-                    &StringChunked::from_iter(std::iter::once("raise")),
-                    NonExistent::Raise,
-                )?
-                .cast(&DataType::Date)?
-            };
-            // `replace_time_zone` may unset sorted flag. But, we're only taking the date
-            // part of the result, so we can safely preserve the sorted flag here. We may
-            // need to make an exception if a time zone introduces a change which involves
-            // "going back in time" and repeating a day, but we're not aware of that ever
-            // having happened.
-            out.set_sorted_flag(s.is_sorted_flag());
+            let out = polars_core::chunked_array::temporal::replace_time_zone::replace_time_zone(
+                s.datetime().unwrap(),
+                None,
+                &StringChunked::from_iter(std::iter::once("raise")),
+                NonExistent::Raise,
+            )?
+            .cast(&DataType::Date)?;
             Ok(out.into())
         },
         DataType::Datetime(_, _) => s
@@ -262,15 +256,9 @@ pub(super) fn convert_time_zone(s: &Column, time_zone: &TimeZone) -> PolarsResul
 }
 pub(super) fn cast_time_unit(s: &Column, tu: TimeUnit) -> PolarsResult<Column> {
     match s.dtype() {
-        DataType::Datetime(_, _) => {
-            let ca = s.datetime()?;
-            Ok(ca.cast_time_unit(tu).into_column())
-        },
+        DataType::Datetime(_, tz) => s.strict_cast(&DataType::Datetime(tu, tz.clone())),
         #[cfg(feature = "dtype-duration")]
-        DataType::Duration(_) => {
-            let ca = s.as_materialized_series().duration()?;
-            Ok(ca.cast_time_unit(tu).into_column())
-        },
+        DataType::Duration(_) => s.strict_cast(&DataType::Duration(tu)),
         dt => polars_bail!(ComputeError: "dtype `{}` has no time unit", dt),
     }
 }
@@ -279,7 +267,7 @@ pub(super) fn truncate(s: &[Column]) -> PolarsResult<Column> {
     let time_series = &s[0];
     let every = s[1].str()?;
 
-    let mut out = match time_series.dtype() {
+    let out = match time_series.dtype() {
         DataType::Datetime(_, tz) => match tz {
             #[cfg(feature = "timezones")]
             Some(tz) => time_series
@@ -289,9 +277,8 @@ pub(super) fn truncate(s: &[Column]) -> PolarsResult<Column> {
             _ => time_series.datetime()?.truncate(None, every)?.into_column(),
         },
         DataType::Date => time_series.date()?.truncate(None, every)?.into_column(),
-        dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),
+        dt => polars_bail!(opq = truncate, got = dt, expected = "date/datetime"),
     };
-    out.set_sorted_flag(time_series.is_sorted_flag());
     Ok(out)
 }
 

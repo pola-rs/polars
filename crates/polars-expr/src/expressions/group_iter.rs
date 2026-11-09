@@ -51,12 +51,26 @@ impl AggregationContext<'_> {
             },
             AggState::AggregatedList(_) => {
                 let c = self.get_values();
-                let list = c.list().unwrap();
                 let name = if keep_names {
                     c.name().clone()
                 } else {
                     PlSmallStr::EMPTY
                 };
+                // Every group holds the same list, so don't materialize it per group.
+                if let Some(AnyValue::List(s)) = c.as_scalar_column().map(|sc| sc.scalar().value())
+                {
+                    let s = s.rechunk();
+                    // SAFETY: dtype is correct
+                    return unsafe {
+                        Box::new(LitIter::new(
+                            s.chunks()[0].clone(),
+                            c.len(),
+                            s.dtype(),
+                            name,
+                        ))
+                    };
+                }
+                let list = c.list().unwrap();
                 Box::new(list.amortized_iter_with_name(name))
             },
             AggState::NotAggregated(_) => {

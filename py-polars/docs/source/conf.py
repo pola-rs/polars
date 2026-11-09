@@ -128,12 +128,15 @@ def _switcher_version(git_ref: str) -> str:
     return match.group(1) if match else "dev"
 
 
+# The major version served at /api/python/stable/. Bump on a major release.
+STABLE_MAJOR = "2"
+
 git_ref = os.environ.get("POLARS_VERSION", "main")
 switcher_version = _switcher_version(git_ref)
 
 html_context = {"is_dev_build": switcher_version == "dev"}
 
-if switcher_version != "dev" and int(switcher_version) >= 1:
+if switcher_version == STABLE_MAJOR:
     # In this case we generate a docs sitemap for stable
     extensions.append("sphinx_sitemap")
     html_baseurl = f"{web_root}/api/python/stable/"
@@ -155,8 +158,8 @@ html_theme_options = {
             "url": f"{web_root}/",
         },
         {
-            "name": "Polars Cloud API reference",
-            "url": "https://docs.cloud.pola.rs/api/python/stable/reference/index.html",
+            "name": "Polars Nanook API reference",
+            "url": "https://docs.nanook.pola.rs/api/python/stable/reference/index.html",
         },
     ],
     "icon_links": [
@@ -189,7 +192,7 @@ html_theme_options = {
         "json_url": f"{web_root}/api/python/dev/_static/version_switcher.json",
         "version_match": switcher_version,
     },
-    "announcement": "Try distributed Polars on Kubernetes or AWS for free. <a href='https://cloud.pola.rs' target='_blank' rel='noopener noreferrer'>Get started now</a>",
+    "announcement": "Try distributed Polars on Kubernetes or AWS for free. <a href='https://pola.rs/nanook/' target='_blank' rel='noopener noreferrer'>Get started now</a>",
     "show_version_warning_banner": False,
     "navbar_end": ["theme-switcher", "version-switcher", "navbar-icon-links"],
     "check_switcher": False,
@@ -237,7 +240,7 @@ def linkcode_resolve(domain: str, info: dict[str, Any]) -> str | None:
                 # Accessing deprecated objects will generate noisy warnings
                 warnings.simplefilter("ignore", FutureWarning)
                 obj = getattr(obj, part)
-        except AttributeError:  # noqa: PERF203
+        except AttributeError:
             return None
 
     try:

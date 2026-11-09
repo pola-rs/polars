@@ -1,6 +1,6 @@
-use arrow::array::Array;
-use arrow::datatypes::ArrowSchema;
-use arrow::record_batch::RecordBatchT;
+use polars_arrow::array::Array;
+use polars_arrow::datatypes::ArrowSchema;
+use polars_arrow::record_batch::RecordBatchT;
 use polars_buffer::Buffer;
 use polars_error::{PolarsError, PolarsResult, polars_bail, to_compute_err};
 

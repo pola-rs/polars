@@ -1,6 +1,6 @@
-use arrow::bitmap::Bitmap;
-use arrow::bitmap::bitmask::BitMask;
-use arrow::types::AlignedBytes;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::bitmask::BitMask;
+use polars_arrow::types::AlignedBytes;
 
 use super::{IndexMapping, oob_dict_idx, required_skip_whole_chunks, verify_dict_indices};
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
@@ -177,8 +177,8 @@ pub fn decode<B: AlignedBytes, D: IndexMapping<Output = B>>(
 
 #[cfg(test)]
 mod tests {
-    use arrow::bitmap::proptest::bitmap;
-    use arrow::types::Bytes4Alignment4;
+    use polars_arrow::bitmap::proptest::bitmap;
+    use polars_arrow::types::Bytes4Alignment4;
     use proptest::collection::size_range;
     use proptest::prelude::*;
     use proptest::test_runner::TestCaseResult;
@@ -205,7 +205,8 @@ mod tests {
         dict: &[Bytes4Alignment4],
         mask: &Bitmap,
     ) -> TestCaseResult {
-        let mut result = Vec::<arrow::types::Bytes4Alignment4>::with_capacity(mask.set_bits());
+        let mut result =
+            Vec::<polars_arrow::types::Bytes4Alignment4>::with_capacity(mask.set_bits());
         decode(hybrid_rle.clone(), dict, mask.clone(), &mut result).unwrap();
 
         let idxs = hybrid_rle.collect().unwrap();

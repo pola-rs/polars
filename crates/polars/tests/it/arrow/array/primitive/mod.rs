@@ -1,7 +1,7 @@
-use arrow::array::*;
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::*;
-use arrow::types::months_days_ns;
+use polars_arrow::array::*;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::*;
+use polars_arrow::types::months_days_ns;
 use polars_buffer::Buffer;
 
 mod fmt;

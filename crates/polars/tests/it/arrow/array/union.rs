@@ -1,6 +1,6 @@
-use arrow::array::*;
-use arrow::datatypes::*;
-use arrow::scalar::{PrimitiveScalar, Scalar, UnionScalar, Utf8Scalar, new_scalar};
+use polars_arrow::array::*;
+use polars_arrow::datatypes::*;
+use polars_arrow::scalar::{PrimitiveScalar, Scalar, UnionScalar, Utf8Scalar, new_scalar};
 use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 
@@ -330,7 +330,7 @@ fn offsets_must_be_in_bounds() {
     ];
 
     let types = vec![0, 0, 1].into();
-    // it must be equal to length og types
+    // it must be equal to length of types
     let offsets = vec![0, 1].into();
 
     assert!(UnionArray::try_new(dtype, types, fields.clone(), Some(offsets)).is_err());

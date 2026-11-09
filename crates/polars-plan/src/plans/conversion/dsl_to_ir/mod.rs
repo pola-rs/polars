@@ -1,13 +1,16 @@
+use std::pin::Pin;
 use std::sync::LazyLock;
 
-use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
 use expr_expansion::rewrite_projections;
 use futures::stream::FuturesUnordered;
-use hive::hive_partitions_from_paths;
+use hive::{HivePartitionsDf, hive_partitions_from_paths};
+use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::config::verbose;
 use polars_core::runtime::ASYNC;
+#[cfg(feature = "dynamic_group_by")]
+use polars_defs::time::group_by::dynamic_boundary_dtype;
 use polars_error::feature_gated;
 use polars_io::ExternalCompression;
 use polars_utils::format_pl_smallstr;
@@ -21,6 +24,7 @@ use super::stack_opt::ConversionOptimizer;
 use super::*;
 use crate::constants::get_pl_element_name;
 use crate::dsl::PartitionedSinkOptions;
+use crate::dsl::dsl_resolver::DslResolverTrait;
 use crate::dsl::file_provider::{FileProviderType, HivePathProvider};
 use crate::dsl::functions::{all_horizontal, col};
 use crate::plans::conversion::dsl_to_ir::scans::SourcesToFileInfo;
@@ -32,10 +36,14 @@ mod expr_to_ir;
 mod functions;
 mod join;
 mod scans;
+mod sinks;
+mod sql;
 mod utils;
+pub(crate) use expr_expansion::needs_expansion;
 pub use expr_expansion::{expand_expression, is_regex_projection, prepare_projection};
 pub use expr_to_ir::{ExprToIRContext, to_expr_ir};
 use expr_to_ir::{to_expr_ir_materialized_lit, to_expr_irs};
+use sinks::validate_sinks;
 use utils::DslConversionContext;
 
 macro_rules! failed_here {
@@ -68,14 +76,19 @@ pub fn to_alp(
         pushdown_maintain_errors: optimizer::pushdown_maintain_errors(),
         verbose: verbose(),
         seen_caches: Default::default(),
+        recursions: Vec::new(),
     };
 
     match to_alp_impl(lp, &mut ctxt) {
-        Ok(out) => Ok(out),
+        Ok(root) => {
+            validate_sinks(root, ctxt.lp_arena)?;
+            Ok(root)
+        },
         Err(err) => {
             if opt_flags.contains(OptFlags::EAGER) {
                 // If we dispatched to the lazy engine from the eager API, we don't want to resolve
                 // where in the query plan it went wrong. It is clear from the backtrace anyway.
+                // The context naming the failing expression is kept.
                 return Err(err.remove_context());
             };
             let Some(ir_until_then) = lp_arena.last_node() else {
@@ -115,23 +128,19 @@ async fn fetch_metadata(
 ) -> PolarsResult<()> {
     use futures::stream::StreamExt;
     #[cfg(feature = "python")]
-    let py_scan_resolve_threadpool: Arc<
-        LazyLock<PyScanResolveThreadPool, fn() -> PyScanResolveThreadPool>,
-    > = Arc::new(LazyLock::new(PyScanResolveThreadPool::new));
+    let py_scan_resolve_threadpool = Arc::new(LazyLock::new(
+        (|| Arc::new(PyScanResolveThreadPool::new_scan_resolve_thread_pool())) as fn() -> _,
+    ));
 
     let mut futures = lp
         .into_iter()
-        .filter_map(|dsl| {
-            let DslPlan::Scan {
+        .filter_map(|dsl| match dsl {
+            DslPlan::Scan {
                 sources,
                 unified_scan_args,
                 scan_type,
                 cached_ir,
-            } = dsl
-            else {
-                return None;
-            };
-            Some(scans::dsl_to_ir(
+            } => Some(Box::pin(scans::dsl_to_ir(
                 sources.clone(),
                 unified_scan_args.clone(),
                 scan_type.clone(),
@@ -141,6 +150,34 @@ async fn fetch_metadata(
                 Arc::clone(&py_scan_resolve_threadpool),
                 verbose,
             ))
+                as Pin<Box<dyn Future<Output = PolarsResult<()>>>>),
+            DslPlan::Resolver {
+                resolver,
+                resolver_schema,
+                resolved_cache: _,
+            } => {
+                let resolver = Arc::clone(resolver);
+                let resolver_schema = Arc::clone(resolver_schema);
+
+                if resolver_schema.lock().unwrap().is_none() {
+                    Some(
+                        match resolver.schema(
+                            #[cfg(feature = "python")]
+                            Arc::clone(&*py_scan_resolve_threadpool),
+                        ) {
+                            Ok(fut) => Box::pin(async move {
+                                let schema = fut.await?;
+                                *resolver_schema.lock().unwrap() = Some(schema);
+                                Ok(())
+                            }),
+                            Err(e) => Box::pin(std::future::ready(Err(e))),
+                        },
+                    )
+                } else {
+                    None
+                }
+            },
+            _ => None,
         })
         .collect::<FuturesUnordered<_>>();
 
@@ -300,7 +337,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 },
             };
             let predicate_ae = to_expr_ir(
-                predicate,
+                &predicate,
                 &mut ExprToIRContext::new_with_opt_eager(
                     ctxt.expr_arena,
                     &input_schema,
@@ -403,7 +440,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             }
 
             let eirs = to_expr_irs(
-                exprs,
+                &exprs,
                 &mut ExprToIRContext::new_with_opt_eager(
                     ctxt.expr_arena,
                     &input_schema,
@@ -533,7 +570,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     let seen_before = ctxt.seen_caches.insert(id, input);
                     assert!(
                         seen_before.is_none(),
-                        "Cache could not have been created in the mean time. That would make the DAG cyclic."
+                        "Cache could not have been created in the meantime. That would make the DAG cyclic."
                     );
                     input
                 },
@@ -656,7 +693,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     schema,
                     apply,
                     maintain_order,
-                    options,
+                    options: Arc::new(GroupbyOptionsIR::from(Arc::unwrap_or_clone(options))),
                 }
             };
 
@@ -686,9 +723,15 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let input = to_alp_impl(owned(input), ctxt).context(failed_here!(gather))?;
             let idxs = to_alp_impl(owned(idxs), ctxt).context(failed_here!(gather))?;
             let idxs_schema = ctxt.lp_arena.get(idxs).schema(ctxt.lp_arena);
-            polars_ensure!(idxs_schema.len() == 1, InvalidOperation: "'gather' indices DataFrame should have a single column");
+            polars_ensure!(
+                idxs_schema.len() == 1,
+                InvalidOperation: "`gather` indices DataFrame should have a single column, got {} columns", idxs_schema.len()
+            );
             let idx_dtype = &idxs_schema.get_at_index(0).unwrap().1;
-            polars_ensure!(idx_dtype.is_integer(), InvalidOperation: "'gather' indices must have integer dtype");
+            polars_ensure!(
+                idx_dtype.is_integer(),
+                InvalidOperation: "`gather` indices must have integer dtype, got `{}`", idx_dtype
+            );
             IR::Gather {
                 input,
                 idxs,
@@ -824,7 +867,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             }
 
             let exprs = to_expr_irs(
-                exprs,
+                &exprs,
                 &mut ExprToIRContext::new_with_opt_eager(
                     ctxt.expr_arena,
                     &input_schema,
@@ -850,6 +893,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         DslPlan::SQL {
             query,
             relations,
+            catalog_tables,
             cached_stmt,
         } => {
             let resolver = crate::dsl::get_sql_resolver().ok_or_else(|| {
@@ -862,6 +906,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let resolved = resolver.resolve(
                 &query,
                 relations,
+                catalog_tables,
                 cached_stmt.get(),
                 ctxt.lp_arena,
                 ctxt.expr_arena,
@@ -914,7 +959,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let values = values.into_columns(input_schema.as_ref(), &Default::default())?;
 
             polars_ensure!(!on.is_empty(), InvalidOperation: "`pivot` called without `on` columns.");
-            polars_ensure!(on.len() == on_columns.width(), InvalidOperation: "`pivot` expected `on` and `on_columns` to have the same amount of columns.");
+            polars_ensure!(
+                on.len() == on_columns.width(),
+                InvalidOperation: "`pivot` expected `on` and `on_columns` to have the same amount of columns (got {} and {}).",
+                on.len(), on_columns.width()
+            );
             if on.len() > 1 {
                 polars_ensure!(
                     on_columns.columns().iter().zip(on.iter()).all(|(c, o)| o == c.name()),
@@ -1246,7 +1295,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         |duplicate_name: &str| duplicate_name.to_string(),
                     )?);
                     let eirs = to_expr_irs(
-                        exprs,
+                        &exprs,
                         &mut ExprToIRContext::new_with_opt_eager(
                             ctxt.expr_arena,
                             &input_schema,
@@ -1313,7 +1362,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     }
 
                     let expr = to_expr_irs(
-                        expr,
+                        &expr,
                         &mut ExprToIRContext::new_with_opt_eager(
                             ctxt.expr_arena,
                             &input_schema,
@@ -1369,6 +1418,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             (py_lf,),
                         )
                     })?;
+
+                    let state = Python::attach(|py| py_sink_state.extract(py))?;
 
                     let mut plan: Box<DslPlan> = (reg.from_py.dsl_plan)(out)?.downcast().unwrap();
 
@@ -1469,7 +1520,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             include_keys,
                             keys_pre_grouped,
                         } => {
-                            let keys = to_expr_irs(keys, expr_to_ir_cx)?;
+                            let keys = to_expr_irs(&keys, expr_to_ir_cx)?;
 
                             polars_ensure!(
                                 keys.iter().all(|e| is_elementwise_rec(e.node(), ctxt.expr_arena)),
@@ -1515,6 +1566,20 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             )?;
 
                             *Arc::make_mut(arrow_schema) = new_schema;
+                        }
+
+                        if let FileWriteFormat::Parquet(parquet_options) = &options.file_format
+                            && let Some(encryption) = &parquet_options.encryption
+                            && let PartitionStrategyIR::Keyed {
+                                keys,
+                                include_keys: _,
+                                keys_pre_grouped: _,
+                            } = &options.partition_strategy
+                        {
+                            validate_encrypted_partition_keys(
+                                &encryption.encrypted_column_names(),
+                                keys.iter().map(|e| e.output_name().as_str()),
+                            )?;
                         }
                     }
 
@@ -1571,6 +1636,42 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 maintain_order,
             }
         },
+        DslPlan::Recursive {
+            anchor,
+            step,
+            id,
+            round_local_caches,
+        } => {
+            let anchor = to_alp_impl(owned(anchor), ctxt).context(failed_here!(recursive))?;
+            let schema = ctxt.lp_arena.get(anchor).schema(ctxt.lp_arena).into_owned();
+
+            ctxt.recursions.push((id, schema.clone()));
+            let step = to_alp_impl(owned(step), ctxt);
+            ctxt.recursions.pop();
+            let step = step.context(failed_here!(recursive))?;
+
+            let step_schema = ctxt.lp_arena.get(step).schema(ctxt.lp_arena);
+            step_schema
+                .ensure_is_exact_match(&schema)
+                .context("recursive step")?;
+
+            IR::Recursive {
+                anchor,
+                step,
+                id,
+                round_local_caches,
+            }
+        },
+        DslPlan::WorkingTable { id, schema } => {
+            // A plan that reads a working table may also be converted on its own, e.g. to get
+            // its schema.
+            if let Some((_, recursion_schema)) = ctxt.recursions.iter().find(|(r, _)| *r == id) {
+                schema
+                    .ensure_is_exact_match(recursion_schema)
+                    .context("working table")?;
+            }
+            IR::WorkingTableScan { id, schema }
+        },
         DslPlan::IR {
             node,
             dsl,
@@ -1590,6 +1691,23 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 _ => to_alp_impl(owned(dsl), ctxt),
             };
         },
+        DslPlan::Resolver {
+            resolver,
+            resolver_schema,
+            resolved_cache,
+        } => IR::Resolver {
+            resolver,
+            resolver_schema: { resolver_schema.lock().unwrap().clone() }
+                .expect("DslPlan::Resolver schema should be resolved before to_alp_impl()"),
+
+            projection: Default::default(),
+            slice: Default::default(),
+            filters: Default::default(),
+            filter_drop_columns_idx: Default::default(),
+
+            resolved_dsl: resolved_cache,
+            resolved_ir: None,
+        },
     };
     Ok(ctxt.lp_arena.add(v))
 }
@@ -1607,7 +1725,7 @@ fn resolve_with_columns(
     let mut output_names = PlIndexSet::with_capacity(exprs.len());
 
     let eirs = to_expr_irs(
-        exprs,
+        &exprs,
         &mut ExprToIRContext::new_with_opt_eager(expr_arena, &input_schema, opt_flags),
     )?;
     for eir in eirs.iter() {
@@ -1668,8 +1786,9 @@ fn resolve_group_by(
             pop_keys = true;
             let dtype = input_schema.try_get(name.as_str())?;
             if options.include_boundaries {
-                output_schema.with_column("_lower_boundary".into(), dtype.clone());
-                output_schema.with_column("_upper_boundary".into(), dtype.clone());
+                let bound_dtype = dynamic_boundary_dtype(dtype);
+                output_schema.with_column("_lower_boundary".into(), bound_dtype.clone());
+                output_schema.with_column("_upper_boundary".into(), bound_dtype);
             }
             output_schema.with_column(name.clone(), dtype.clone());
         }
@@ -1679,14 +1798,14 @@ fn resolve_group_by(
         let _ = keys.pop();
     }
     let keys = to_expr_irs(
-        keys,
+        &keys,
         &mut ExprToIRContext::new_with_opt_eager(expr_arena, input_schema, opt_flags),
     )?;
 
     // Add aggregation column(s)
     let aggs = rewrite_projections(aggs, &key_names, input_schema, opt_flags)?;
     let mut aggs = to_expr_irs(
-        aggs,
+        &aggs,
         &mut ExprToIRContext::new_with_opt_eager(expr_arena, input_schema, opt_flags),
     )?;
     utils::validate_expressions(&keys, expr_arena, input_schema, "group by")?;
@@ -1778,4 +1897,36 @@ pub(crate) fn maybe_init_projection_excluding_hive(
                     .collect::<Arc<[_]>>()
             }),
     }
+}
+
+/// Rejects column keys for partition key columns, as partition key values are written
+/// unencrypted in the file paths.
+#[cfg(feature = "parquet")]
+fn validate_encrypted_partition_keys<'a>(
+    encrypted_columns: &[String],
+    key_names: impl Iterator<Item = &'a str>,
+) -> PolarsResult<()> {
+    for key_name in key_names {
+        // Column keys are for Parquet column paths, which are nested under the key name
+        // for a struct key.
+        if let Some(column) = encrypted_columns.iter().map(String::as_str).find(|column| {
+            *column == key_name
+                || column
+                    .strip_prefix(key_name)
+                    .is_some_and(|rest| rest.starts_with('.'))
+        }) {
+            let reason = if column == key_name {
+                "it is a partition key".to_string()
+            } else {
+                format!("it is in partition key '{key_name}'")
+            };
+            polars_bail!(
+                InvalidOperation:
+                "cannot encrypt column '{}' as {}, and partition key values are written \
+                unencrypted in the file paths",
+                column, reason
+            );
+        }
+    }
+    Ok(())
 }

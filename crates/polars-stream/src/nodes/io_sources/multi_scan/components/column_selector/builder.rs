@@ -343,6 +343,23 @@ impl ColumnSelectorBuilder {
             };
         }
 
+        // Decimal precision widening with equal scale (allowed Iceberg type promotion).
+        #[cfg(feature = "dtype-decimal")]
+        if let (
+            DataType::Decimal(target_precision, target_scale),
+            DataType::Decimal(incoming_precision, incoming_scale),
+        ) = (target_dtype, incoming_dtype)
+        {
+            return if target_scale != incoming_scale || target_precision < incoming_precision {
+                mismatch_err("incoming dtype cannot safely cast to target dtype")
+            } else if self.cast_columns_policy.integer_upcast {
+                // Lossless, so use overflowing to elide validation.
+                attach_cast(CastOptions::Overflowing)
+            } else {
+                mismatch_err("hint: pass cast_options=pl.ScanCastOptions(integer_cast='upcast')")
+            };
+        }
+
         if target_dtype.is_float() && incoming_dtype.is_float() {
             match (target_dtype, incoming_dtype) {
                 (DataType::Float64, DataType::Float32)
@@ -469,16 +486,9 @@ impl ColumnSelectorBuilder {
         input_selector: ColumnSelector,
         incoming_column: &IcebergColumn,
         target_column: &IcebergColumn,
-        mut iceberg_default_value_provider: Option<IcebergDefaultValueProviderRef>,
+        iceberg_default_value_provider: Option<IcebergDefaultValueProviderRef>,
     ) -> PolarsResult<ColumnSelector> {
         use IcebergColumnType as ICT;
-
-        match &target_column.type_ {
-            ICT::FixedSizeList(..) | ICT::List(_) | ICT::Map(..) => {
-                iceberg_default_value_provider = None
-            },
-            ICT::Struct(_) | ICT::Primitive { .. } => {},
-        }
 
         let selector = (|| {
             let target_dtype = &target_column.type_;
@@ -545,7 +555,7 @@ impl ColumnSelectorBuilder {
                                     ColumnSelector::Constant(Box::new((
                                         output_column.name.clone(),
                                         iceberg_default_value_provider
-                                            .map(|x| build_iceberg_default_value(x, target_column))
+                                            .map(|x| build_iceberg_default_value(x, output_column))
                                             .transpose()?
                                             .flatten()
                                             .unwrap_or_else(|| {
@@ -752,6 +762,32 @@ pub fn build_iceberg_default_value_impl(
 
         ICT::Struct(fields) => {
             use polars_core::prelude::StructChunked;
+
+            // A missing struct is null unless it has a default itself (`{}`, the only non-null
+            // struct default), or a nested field has an identity-partition value: only then do
+            // its fields take their own defaults.
+            fn has_partition_value(
+                provider: IcebergDefaultValueProviderRef,
+                column: &IcebergColumn,
+            ) -> bool {
+                match &column.type_ {
+                    IcebergColumnType::Primitive { .. } => {
+                        provider.has_identity_partition_value(column.physical_id)
+                    },
+                    IcebergColumnType::Struct(fields) => fields
+                        .values()
+                        .any(|field| has_partition_value(provider, field)),
+                    _ => false,
+                }
+            }
+
+            if iceberg_default_value_provider
+                .get_default_value(target_column.physical_id)?
+                .is_none()
+                && !has_partition_value(iceberg_default_value_provider, target_column)
+            {
+                return Ok(None);
+            }
 
             let mut is_input_passthrough = true;
 

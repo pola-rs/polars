@@ -1,4 +1,4 @@
-use polars_ops::frame::MaintainOrderJoin;
+use polars_defs::join::{JoinArgs, JoinType, MaintainOrderJoin};
 
 use super::*;
 
@@ -295,7 +295,7 @@ fn test_lazy_filter_and_rename() {
     .unwrap();
     assert!(lf.collect().unwrap().equals(&correct));
 
-    // now we check if the column is rename or added when we don't select
+    // now we check if the column is renamed or added when we don't select
     let lf = df.lazy().rename(["a"], ["x"], true).filter(col("x").map(
         |s: Column| Ok(s.as_materialized_series().gt(3)?.into_column()),
         |_, f| Ok(Field::new(f.name().clone(), DataType::Boolean)),

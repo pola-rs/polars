@@ -5,11 +5,11 @@ mod utf8;
 
 use std::io::Write;
 
-use arrow::array::Array;
-use arrow::datatypes::ArrowSchema;
-use arrow::io::iterator::StreamingIterator;
-use arrow::record_batch::RecordBatchT;
 pub use fallible_streaming_iterator::*;
+use polars_arrow::array::Array;
+use polars_arrow::datatypes::ArrowSchema;
+use polars_arrow::io::iterator::StreamingIterator;
+use polars_arrow::record_batch::RecordBatchT;
 use polars_error::{PolarsError, PolarsResult};
 use serialize::serialize;
 pub use utf8::serialize_to_utf8;
@@ -49,10 +49,14 @@ where
 
     fn advance(&mut self) -> PolarsResult<()> {
         self.buffer.clear();
-        self.arrays
-            .next()
-            .map(|maybe_array| maybe_array.map(|array| serialize(array.as_ref(), &mut self.buffer)))
-            .transpose()?;
+        // `get` reads an empty buffer as end-of-stream, so skip empty arrays.
+        for array in self.arrays.by_ref() {
+            let array = array?;
+            if !array.as_ref().is_empty() {
+                serialize(array.as_ref(), &mut self.buffer);
+                break;
+            }
+        }
         Ok(())
     }
 

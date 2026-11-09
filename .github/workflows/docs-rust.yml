@@ -29,7 +29,6 @@ jobs:
         with:
           env-vars: ImageVersion
           save-if: ${{ github.event_name == 'push' }}
-          key: ${{ github.ref_name }}
 
       - name: Build Rust documentation
         env:

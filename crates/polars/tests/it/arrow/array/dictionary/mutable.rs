@@ -2,8 +2,8 @@ use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::hash::Hash;
 
-use arrow::array::indexable::{AsIndexed, Indexable};
-use arrow::array::*;
+use polars_arrow::array::indexable::{AsIndexed, Indexable};
+use polars_arrow::array::*;
 use polars_error::PolarsResult;
 use polars_utils::aliases::{InitHashMaps, PlHashSet};
 

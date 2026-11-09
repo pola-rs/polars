@@ -1,4 +1,4 @@
-use arrow::types::AlignedBytes;
+use polars_arrow::types::AlignedBytes;
 
 use super::ArrayChunks;
 use crate::parquet::error::ParquetResult;
@@ -14,7 +14,7 @@ pub fn decode<B: AlignedBytes>(
 
     target.reserve(values.len());
 
-    // SAFETY: Vec guarantees if the `capacity != 0` the pointer to valid since we just reserve
+    // SAFETY: Vec guarantees if the `capacity != 0` the pointer is valid since we just reserve
     // that pointer.
     let dst = unsafe { target.as_mut_ptr().add(target.len()) };
     let src = values.as_ptr();

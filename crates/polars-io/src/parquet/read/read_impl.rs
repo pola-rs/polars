@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::ArrowSchemaRef;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_buffer::Buffer;
 use polars_core::chunked_array::builder::NullChunkedBuilder;
 use polars_core::config;
@@ -111,7 +111,7 @@ fn column_idx_to_series(
     {
         assert_dtypes(field.dtype())
     }
-    let columns = mmap_columns(store, field_md);
+    let columns = mmap_columns(store, field_md)?;
     let (arrays, pred_true_mask) = mmap::to_deserializer(columns, field.clone(), filter)?;
     let mut series = Series::try_from((field, arrays))?;
     canonicalize_parquet_maps(&mut series)?;
@@ -475,7 +475,7 @@ pub fn read_parquet<R: MmapBytesReader>(
     })
 }
 
-pub fn calc_prefilter_cost(mask: &arrow::bitmap::Bitmap) -> f64 {
+pub fn calc_prefilter_cost(mask: &polars_arrow::bitmap::Bitmap) -> f64 {
     let num_edges = mask.num_edges() as f64;
     let rg_len = mask.len() as f64;
 
@@ -496,37 +496,4 @@ pub fn calc_prefilter_cost(mask: &arrow::bitmap::Bitmap) -> f64 {
     // Closer to 0: pre-filtering is probably better.
     // Closer to 1: post-filtering is probably better.
     (num_edges / rg_len).clamp(0.0, 1.0)
-}
-
-#[derive(Clone, Copy)]
-pub enum PrefilterMaskSetting {
-    Auto,
-    Pre,
-    Post,
-}
-
-impl PrefilterMaskSetting {
-    pub fn init_from_env() -> Self {
-        std::env::var("POLARS_PQ_PREFILTERED_MASK").map_or(Self::Auto, |v| match &v[..] {
-            "auto" => Self::Auto,
-            "pre" => Self::Pre,
-            "post" => Self::Post,
-            _ => panic!("Invalid `POLARS_PQ_PREFILTERED_MASK` value '{v}'."),
-        })
-    }
-
-    pub fn should_prefilter(&self, prefilter_cost: f64, dtype: &ArrowDataType) -> bool {
-        match self {
-            Self::Auto => {
-                // Prefiltering is only expensive for nested types so we make the cut-off quite
-                // high.
-                let is_nested = dtype.is_nested();
-
-                // We empirically selected these numbers.
-                !is_nested && prefilter_cost <= 0.01
-            },
-            Self::Pre => true,
-            Self::Post => false,
-        }
-    }
 }

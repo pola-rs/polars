@@ -138,6 +138,13 @@ macro_rules! statistics_from_as {
                 }
             }
 
+            #[inline]
+            pub const fn distinct_count(&self) -> Option<i64> {
+                match self {
+                    $(Self::$variant(s) => s.distinct_count,)+
+                }
+            }
+
             /// Serializes [`Statistics`] into a raw parquet statistics.
             #[inline]
             pub fn serialize(&self) -> ParquetStatistics {

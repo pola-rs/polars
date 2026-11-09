@@ -82,19 +82,22 @@ impl TreeWalker for Expr {
             Filter { input, by } => Filter { input: am(input, &mut f)?, by: am(by, f)? },
             #[cfg(feature = "dynamic_group_by")]
             Rolling { function, index_column, period, offset, closed_window  } => Rolling { function: am(function, &mut f)?, index_column: am(index_column, &mut f)?, period, offset, closed_window  },
-            Over { function, partition_by, order_by, mapping } => {
+            Over { function, partition_by, order_by, mapping, may_reorder } => {
                 let partition_by = partition_by.into_iter().map(&mut f).collect::<Result<_, _>>()?;
                 let order_by = match order_by {
                     Some((by, options)) => Some((am(by, &mut f)?, options)),
                     None => None,
                 };
-                Over { function: am(function, f)?, partition_by, order_by, mapping }
+                Over { function: am(function, f)?, partition_by, order_by, mapping, may_reorder }
             },
             Slice { input, offset, length } => Slice { input: am(input, &mut f)?, offset: am(offset, &mut f)?, length: am(length, f)? },
             KeepName(expr) => KeepName(am(expr, f)?),
             Element => Element,
             Len => Len,
             RenameAlias { function, expr } => RenameAlias { function, expr: am(expr, f)? },
+            PipeWithDtype { input, callback } => {
+                PipeWithDtype { input: input.into_iter().map(f).collect::<Result<_, _>>()?, callback }
+            },
             Display { inputs,  fmt_str } => {
                 Display { inputs: inputs.into_iter().map(f).collect::<Result<_, _>>()?, fmt_str }
             },
@@ -103,8 +106,8 @@ impl TreeWalker for Expr {
             },
             Eval { expr: input, evaluation, variant } => Eval { expr: am(input, &mut f)?, evaluation: am(evaluation, f)?, variant },
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr: input, evaluation } => {
-                StructEval { expr: am(input, &mut f)?, evaluation: evaluation.into_iter().map(f).collect::<Result<_, _>>()?  }
+            StructEval { expr: input, evaluation, variant } => {
+                StructEval { expr: am(input, &mut f)?, evaluation: evaluation.into_iter().map(f).collect::<Result<_, _>>()?, variant  }
             },
             SubPlan(_, _) => self,
             Selector(_) => self,

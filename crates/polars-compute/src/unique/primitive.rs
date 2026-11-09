@@ -1,11 +1,11 @@
 use std::ops::{Add, RangeInclusive, Sub};
 
-use arrow::array::PrimitiveArray;
-use arrow::bitmap::bitmask::BitMask;
-use arrow::bitmap::{BitmapBuilder, MutableBitmap};
-use arrow::datatypes::ArrowDataType;
-use arrow::types::NativeType;
 use num_traits::{FromPrimitive, ToPrimitive};
+use polars_arrow::array::PrimitiveArray;
+use polars_arrow::bitmap::bitmask::BitMask;
+use polars_arrow::bitmap::{BitmapBuilder, MutableBitmap};
+use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::types::NativeType;
 use polars_utils::total_ord::TotalOrd;
 
 use super::RangedUniqueKernel;

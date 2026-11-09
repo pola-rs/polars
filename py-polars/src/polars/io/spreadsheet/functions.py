@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, NoReturn, cast, overload
 
 import polars._reexport as pl
-from polars import from_arrow
 from polars import functions as F
 from polars._dependencies import _PYARROW_AVAILABLE, import_optional
 from polars._utils.expired import RenamedParameter, removed_parameters
@@ -1106,10 +1105,10 @@ def _read_spreadsheet_calamine(
         elif _PYARROW_AVAILABLE:
             # eager loading is faster / more memory-efficient, but requires pyarrow
             ws_arrow = parser.load_sheet_eager(sheet_name, **read_options)
-            df = cast("pl.DataFrame", from_arrow(ws_arrow))
+            df = pl.DataFrame(ws_arrow)
         else:
             ws_arrow = parser.load_sheet(sheet_name, **read_options)
-            df = cast("pl.DataFrame", from_arrow(ws_arrow))
+            df = pl.DataFrame(ws_arrow)
 
         if read_options.get("header_row", False) is None and not read_options.get(
             "column_names"

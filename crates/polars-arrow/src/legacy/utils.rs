@@ -34,8 +34,6 @@ pub trait CustomIterTools: Iterator {
     }
 }
 
-pub trait CustomIterToolsSized: Iterator + Sized {}
-
 impl<T: ?Sized> CustomIterTools for T where T: Iterator {}
 
 pub trait FromTrustedLenIterator<A>: Sized {

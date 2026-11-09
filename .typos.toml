@@ -23,9 +23,12 @@ strat = "strat"
 striter = "striter"
 typ = "typ"
 aimd = "aimd"
+# `flate2` crate.
+flate = "flate"
 
 [default.extend-identifiers]
 AKS = "AKS"
+ba_field = "ba_field"
 
 [type.py]
 extend-ignore-re = ['\.flags\.writeable\b']
@@ -52,3 +55,4 @@ NDJsonWriterStarter = "NDJsonWriterStarter"
 NDJsonWriterOptions = "NDJsonWriterOptions"
 opt_nd = "opt_nd"
 tpe = "tpe"
+lits = "lits"

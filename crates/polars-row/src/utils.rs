@@ -1,12 +1,12 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-use arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 
 #[macro_export]
 macro_rules! with_match_arrow_primitive_type {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
-    use arrow::datatypes::ArrowDataType::*;
+    use polars_arrow::datatypes::ArrowDataType::*;
     use polars_utils::float16::pf16;
     match $key_type {
         Int8 => __with_ty__! { i8 },

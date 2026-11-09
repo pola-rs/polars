@@ -1,7 +1,7 @@
 use std::io::{Read, Seek};
 use std::sync::Arc;
 
-use arrow::datatypes::ArrowSchemaRef;
+use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::*;
 use polars_parquet::read;
 use polars_utils::pl_str::PlRefStr;

@@ -1,4 +1,4 @@
-use arrow::temporal_conversions::{MICROSECONDS, MILLISECONDS, NANOSECONDS, SECONDS_IN_DAY};
+use polars_arrow::temporal_conversions::{MICROSECONDS, MILLISECONDS, NANOSECONDS, SECONDS_IN_DAY};
 use polars_core::datatypes::{AnyValue, DataType, TimeUnit};
 use polars_core::prelude::Column;
 use polars_error::PolarsResult;

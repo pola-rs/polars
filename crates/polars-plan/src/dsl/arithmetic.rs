@@ -57,6 +57,11 @@ impl Expr {
         binary_expr(self, Operator::FloorDivide, rhs)
     }
 
+    /// Divide `self` by `rhs`, rounding the quotient toward zero.
+    pub fn trunc_div(self, rhs: Self) -> Self {
+        binary_expr(self, Operator::TruncDivide, rhs)
+    }
+
     /// True divide `self` by `rhs`
     pub fn true_div(self, rhs: Self) -> Self {
         binary_expr(self, Operator::TrueDivide, rhs)

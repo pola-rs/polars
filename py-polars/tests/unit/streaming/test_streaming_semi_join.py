@@ -1,0 +1,655 @@
+"""Streaming semi joins built from either side."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
+import numpy as np
+import pytest
+
+import polars as pl
+from polars.io.plugins import register_io_source
+from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from polars._typing import JoinBuildSide
+    from tests.conftest import PlMonkeyPatch
+
+BUILD_SIDES: list[JoinBuildSide] = [
+    "auto",
+    "force_left",
+    "force_right",
+    "prefer_left",
+    "prefer_right",
+]
+
+
+def assert_semi(
+    left: pl.LazyFrame,
+    right: pl.LazyFrame,
+    expected: pl.DataFrame,
+    *,
+    build_side: JoinBuildSide = "auto",
+    **kwargs: Any,
+) -> pl.LazyFrame:
+    """Check the semi join, and the anti join as the rest of the left rows."""
+    q = left.join(right, how="semi", build_side=build_side, **kwargs)
+    reference = q.collect(engine="in-memory", optimizations=pl.QueryOptFlags.none())
+    out = q.collect(engine="streaming")
+    assert_frame_equal(out, expected, check_row_order=False)
+    assert_frame_equal(reference, expected, check_row_order=False)
+
+    anti = left.join(right, how="anti", build_side=build_side, **kwargs)
+    anti_out = anti.collect(engine="streaming")
+    assert_frame_equal(
+        anti_out,
+        anti.collect(engine="in-memory", optimizations=pl.QueryOptFlags.none()),
+        check_row_order=False,
+    )
+    assert anti_out.height + out.height == left.collect().height
+    return q
+
+
+def build_side_chosen(
+    q: pl.LazyFrame,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    *,
+    from_estimates: bool = False,
+) -> str | None:
+    """
+    Collect on the streaming engine and report the sampled build side.
+
+    With `from_estimates`, only a side the plan's row estimates chose is reported.
+    """
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    q.collect(engine="streaming")
+    err = capfd.readouterr().err
+    if from_estimates and "sides are incomplete, estimated rows" not in err:
+        return None
+    lines = [line for line in err.splitlines() if "join build side chosen" in line]
+    assert len(lines) <= 1, err
+    return lines[0].rsplit(" ", 1)[1] if lines else None
+
+
+@pytest.mark.parametrize("build_side", BUILD_SIDES)
+def test_duplicates_on_both_sides(build_side: JoinBuildSide) -> None:
+    # Every left row with a matching key survives once, however often the
+    # key occurs on the right.
+    left = pl.LazyFrame({"k": [1, 1, 2, 3, 3, 3], "v": list("abcdef")})
+    right = pl.LazyFrame({"k": [3, 3, 3, 1, 1, 9]})
+    expected = pl.DataFrame({"k": [1, 1, 3, 3, 3], "v": list("abdef")})
+    assert_semi(left, right, expected, on="k", build_side=build_side)
+
+
+@pytest.mark.parametrize("build_side", BUILD_SIDES)
+def test_empty_sides(build_side: JoinBuildSide) -> None:
+    left = pl.LazyFrame({"k": [1, 2, 3], "v": [1.0, 2.0, 3.0]})
+    right = pl.LazyFrame({"k": [1, 2, 3]})
+    empty_left = left.clear()
+    empty_right = right.clear()
+    assert_semi(empty_left, right, empty_left.collect(), on="k", build_side=build_side)
+    assert_semi(left, empty_right, empty_left.collect(), on="k", build_side=build_side)
+    assert_semi(
+        empty_left, empty_right, empty_left.collect(), on="k", build_side=build_side
+    )
+
+
+@pytest.mark.parametrize("build_side", BUILD_SIDES)
+def test_disjoint_keys(build_side: JoinBuildSide) -> None:
+    left = pl.LazyFrame({"k": [1, 2, 3], "v": [1, 2, 3]})
+    right = pl.LazyFrame({"k": [4, 5, 6]})
+    assert_semi(left, right, left.clear().collect(), on="k", build_side=build_side)
+
+
+@pytest.mark.parametrize("build_side", BUILD_SIDES)
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_null_keys(build_side: JoinBuildSide, nulls_equal: bool) -> None:
+    left = pl.LazyFrame({"k": [None, 1, None, 2, 3], "v": [0, 1, 2, 3, 4]})
+    right = pl.LazyFrame({"k": [None, 2, 3, None]})
+    if nulls_equal:
+        expected = pl.DataFrame({"k": [None, None, 2, 3], "v": [0, 2, 3, 4]})
+    else:
+        expected = pl.DataFrame({"k": [2, 3], "v": [3, 4]})
+    assert_semi(
+        left, right, expected, on="k", nulls_equal=nulls_equal, build_side=build_side
+    )
+
+
+@pytest.mark.parametrize("build_side", BUILD_SIDES)
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_composite_and_string_keys(
+    build_side: JoinBuildSide, nulls_equal: bool
+) -> None:
+    left = pl.LazyFrame(
+        {
+            "a": [1, 1, 2, 2, None, 3],
+            "b": ["x", "y", "x", None, "x", "long string key beyond twelve"],
+            "v": [0, 1, 2, 3, 4, 5],
+        }
+    )
+    right = pl.LazyFrame(
+        {
+            "a": [1, 2, None, 3, 3],
+            "b": ["y", None, "x", "long string key beyond twelve", "other"],
+        }
+    )
+    if nulls_equal:
+        expected = left.collect().filter(pl.col("v").is_in([1, 3, 4, 5]))
+    else:
+        expected = left.collect().filter(pl.col("v").is_in([1, 5]))
+    assert_semi(
+        left,
+        right,
+        expected,
+        on=["a", "b"],
+        nulls_equal=nulls_equal,
+        build_side=build_side,
+    )
+    # A single string key uses a different hash table than composite keys.
+    expected = left.collect()
+    if not nulls_equal:
+        expected = expected.filter(pl.col("v") != 3)
+    assert_semi(
+        left,
+        right,
+        expected,
+        on="b",
+        nulls_equal=nulls_equal,
+        build_side=build_side,
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("build_side", BUILD_SIDES)
+def test_skewed_and_large(build_side: JoinBuildSide) -> None:
+    # One hot key on the right, many left rows with duplicate keys, more rows
+    # than one morsel.
+    rng = np.random.default_rng(0)
+    left_keys = rng.integers(0, 50_000, 300_000)
+    left = pl.LazyFrame({"k": left_keys, "v": np.arange(300_000)})
+    right_keys = np.concatenate(
+        [np.full(200_000, 7), rng.integers(0, 100_000, 100_000)]
+    )
+    right = pl.LazyFrame({"k": right_keys, "w": np.arange(300_000)})
+    expected = left.collect().filter(pl.col("k").is_in(np.unique(right_keys)))
+    assert expected.height > 0
+    assert_semi(left, right, expected, on="k", build_side=build_side)
+
+
+def test_downstream_limit() -> None:
+    # A limit stops the join early, whichever side is built.
+    left = pl.LazyFrame({"k": np.arange(200_000) % 1000, "v": np.arange(200_000)})
+    right = pl.LazyFrame({"k": np.arange(0, 1000, 3)})
+    for build_side in BUILD_SIDES:
+        q = left.join(right, on="k", how="semi", build_side=build_side).head(10)
+        out = q.collect(engine="streaming")
+        assert out.height == 10
+        assert (out["k"] % 3 == 0).all()
+        assert_frame_equal(
+            out,
+            left.collect().filter(pl.col("v").is_in(out["v"])),
+            check_row_order=False,
+        )
+
+
+def test_sampling_builds_smaller_left(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "10000")
+    small = pl.LazyFrame({"k": np.arange(0, 2000, 2), "v": np.arange(1000)})
+    large = pl.LazyFrame({"k": np.arange(500_000) % 5000, "w": np.arange(500_000)})
+    expected = small.collect().filter(pl.col("k") < 5000)
+
+    q = assert_semi(small, large, expected, on="k")
+    assert build_side_chosen(q, plmonkeypatch, capfd) == "left"
+    q = small.join(large, on="k", how="anti")
+    assert build_side_chosen(q, plmonkeypatch, capfd) == "left"
+
+    # The large side is complete and its distinct keys are few: it is built.
+    expected = large.collect().filter((pl.col("k") % 2 == 0) & (pl.col("k") < 2000))
+    q = assert_semi(large, small, expected, on="k")
+    assert build_side_chosen(q, plmonkeypatch, capfd) == "right"
+    q = large.join(small, on="k", how="anti")
+    assert build_side_chosen(q, plmonkeypatch, capfd) == "right"
+
+
+def test_sampling_keeps_right_build_for_wide_left(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # Both sides are complete and the left side retains far more bytes than
+    # the distinct keys of the right side, so the right side is built.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "10000")
+    wide = pl.LazyFrame({"k": np.arange(1000), "payload": ["x" * 2000] * 1000})
+    right = pl.LazyFrame({"k": np.arange(5000) % 100})
+    expected = wide.collect().filter(pl.col("k") < 100)
+    q = assert_semi(wide, right, expected, on="k")
+    assert build_side_chosen(q, plmonkeypatch, capfd) == "right"
+
+
+def test_sampling_keeps_right_build_for_incomplete_left(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The right side ends after one wide key while the narrow left side has
+    # only been sampled. Sampling stops, but the left side is not complete,
+    # so it is not built however few bytes its sample retains. An IO plugin
+    # feeds the left side one batch at a time, unlike an in-memory frame.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "10000000")
+
+    def source(
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        n_rows: int | None,
+        batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        for i in range(60):
+            yield pl.DataFrame(
+                {"k": ["a"] * 50_000, "v": np.arange(50_000) + i * 50_000}
+            )
+
+    left = register_io_source(source, schema={"k": pl.String, "v": pl.Int64})
+    right = pl.LazyFrame({"k": ["x" * 8_000_000]})
+    q = assert_semi(left, right, left.clear().collect(), on="k")
+    assert build_side_chosen(q, plmonkeypatch, capfd) == "right"
+
+
+def test_incomplete_sides_use_estimates(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # Both sides are still being read when the left side reaches the sample
+    # limit, so the plan's row estimates pick the side.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+    small = pl.LazyFrame({"k": np.arange(2_000), "v": np.arange(2_000)})
+    large = pl.LazyFrame({"k": np.arange(100_000) // 2})
+
+    q = assert_semi(small, large, small.collect(), on="k")
+    assert build_side_chosen(q, plmonkeypatch, capfd, from_estimates=True) == "left"
+    q = small.join(large, on="k", how="anti")
+    assert build_side_chosen(q, plmonkeypatch, capfd, from_estimates=True) == "left"
+
+    expected = large.collect().filter(pl.col("k") < 2_000)
+    q = assert_semi(large, small, expected, on="k")
+    assert build_side_chosen(q, plmonkeypatch, capfd, from_estimates=True) == "right"
+
+    # An order that is not needed is dropped after the estimates are set.
+    q = small.join(large, on="k", how="semi", maintain_order="left").select(pl.len())
+    assert q.collect(engine="streaming").item() == 2_000
+    assert build_side_chosen(q, plmonkeypatch, capfd, from_estimates=True) == "left"
+
+
+def test_incomplete_sides_need_lopsided_rows(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The left side retains fewer bytes, but has only five times fewer rows,
+    # so the right side is built without comparing bytes.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    left = pl.LazyFrame({"k": np.arange(20_000)})
+    right = pl.LazyFrame({"k": np.arange(100_000)})
+    q = assert_semi(left, right, left.collect(), on="k")
+    capfd.readouterr()
+    q.collect(engine="streaming")
+    err = capfd.readouterr().err
+    assert "sides are incomplete, estimated rows are: 20000 vs. 100000" in err
+    assert "estimated retained bytes" not in err
+    # Both sides have unique keys, so neither references the other.
+    assert "right references left: false" in err
+    assert "build side chosen: right" in err
+
+
+def test_incomplete_sides_keep_right_build_for_wide_left(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The left side has far fewer rows, but they retain more bytes than the
+    # few distinct keys of the right side.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+    wide = pl.LazyFrame({"k": np.arange(2_000), "payload": ["x" * 2_000] * 2_000})
+    right = pl.LazyFrame({"k": np.arange(100_000) % 10})
+    expected = wide.collect().filter(pl.col("k") < 10)
+    q = assert_semi(wide, right, expected, on="k")
+    assert build_side_chosen(q, plmonkeypatch, capfd, from_estimates=True) == "right"
+
+
+def test_incomplete_sides_sample_overrides_low_estimate(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # Each filter is estimated to keep a fifth of the rows but keeps all of
+    # them, so the left side is estimated at 32 rows and the right side at
+    # 320. The left sample alone has more than an eighth of 320 rows.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+
+    def filtered(n: int, num_filters: int) -> pl.LazyFrame:
+        names = [f"c{i}" for i in range(num_filters)]
+        lf = pl.LazyFrame({"k": np.arange(n), **{c: np.zeros(n) for c in names}})
+        return lf.filter([pl.col(c) < 1 for c in names]).select("k")
+
+    left = filtered(100_000, 5)
+    right = filtered(200_000, 4)
+    q = assert_semi(left, right, left.collect(), on="k")
+    assert build_side_chosen(q, plmonkeypatch, capfd, from_estimates=True) == "right"
+
+
+def test_incomplete_sides_without_estimates(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # An IO plugin has no row estimate, so the right side is built as before.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+
+    def source(
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        n_rows: int | None,
+        batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        for i in range(20):
+            yield pl.DataFrame({"k": np.arange(100) + i * 100})
+
+    left = register_io_source(source, schema={"k": pl.Int64})
+    right = pl.LazyFrame({"k": np.arange(100_000)})
+    q = assert_semi(left, right, left.collect(), on="k")
+    assert build_side_chosen(q, plmonkeypatch, capfd, from_estimates=True) is None
+    assert build_side_chosen(q, plmonkeypatch, capfd) == "right"
+
+
+def sparse(n: int, keep_every: int) -> pl.LazyFrame:
+    # The filter is estimated to keep a fifth of the rows.
+    lf = pl.LazyFrame({"k": np.arange(n), "c": np.arange(n) % keep_every})
+    return lf.filter(pl.col("c") < 1).drop("c")
+
+
+def incomplete_sides_err(
+    q: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> str:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    q.collect(engine="streaming")
+    err = capfd.readouterr().err
+    plmonkeypatch.delenv("POLARS_VERBOSE")
+    return err
+
+
+def test_incomplete_sides_right_references_left(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The left side is estimated at 200000 rows but keeps 5000 unique keys. The
+    # right side repeats each key four times, so it references the left keys
+    # and retains more bytes at the estimated lengths.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+    left = sparse(1_000_000, 200)
+    right = pl.LazyFrame({"k": np.arange(1_000_000) // 4})
+    expected = left.collect().filter(pl.col("k") < 250_000)
+    q = assert_semi(left, right, expected, on="k")
+    err = incomplete_sides_err(q, plmonkeypatch, capfd)
+    assert "estimated rows are: 200000 vs. 1000000" in err
+    assert "right references left: true" in err
+    assert "estimated build bytes are" in err
+    assert "build side chosen: left" in err
+    q = left.join(right, on="k", how="anti")
+    assert build_side_chosen(q, plmonkeypatch, capfd, from_estimates=True) == "left"
+
+
+def test_incomplete_sides_right_references_left_without_estimates(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # An IO plugin has no row estimate. The right side references the unique
+    # left keys, so it is taken as longer and the left side is built.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+
+    def source(
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        n_rows: int | None,
+        batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        for i in range(20):
+            yield pl.DataFrame({"k": np.arange(100) + i * 100})
+
+    left = register_io_source(source, schema={"k": pl.Int64})
+    right = pl.LazyFrame({"k": np.arange(100_000) // 4})
+    q = assert_semi(left, right, left.collect(), on="k")
+    err = incomplete_sides_err(q, plmonkeypatch, capfd)
+    assert "estimated rows are" not in err
+    assert "right references left: true" in err
+    assert "build side chosen: left" in err
+
+
+def test_incomplete_sides_right_much_smaller(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The right side references the unique left keys, but has eight times
+    # fewer rows, so it is built without looking at the keys.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+    left = pl.LazyFrame({"k": np.arange(800_000)})
+    right = pl.LazyFrame({"k": np.arange(100_000) // 4})
+    expected = left.collect().filter(pl.col("k") < 25_000)
+    q = assert_semi(left, right, expected, on="k")
+    err = incomplete_sides_err(q, plmonkeypatch, capfd)
+    assert "estimated rows are: 800000 vs. 100000" in err
+    assert "right references left" not in err
+    assert "build side chosen: right" in err
+
+
+def test_incomplete_sides_right_references_left_but_fewer_bytes(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The right side references the unique left keys, but its 300000 keys
+    # retain fewer bytes than the 100000 left rows with their keys.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+    left = pl.LazyFrame({"k": np.arange(100_000)})
+    right = pl.LazyFrame({"k": np.arange(300_000) // 10})
+    expected = left.collect().filter(pl.col("k") < 30_000)
+    q = assert_semi(left, right, expected, on="k")
+    err = incomplete_sides_err(q, plmonkeypatch, capfd)
+    assert "right references left: true" in err
+    assert "estimated build bytes are" in err
+    assert "build side chosen: right" in err
+
+
+def test_incomplete_sides_null_keys_reference_nothing(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The right keys are mostly null and otherwise unique. Nulls don't match,
+    # so they don't make the right side look like it repeats the left keys.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+    left = sparse(1_000_000, 200)
+    k = np.arange(1_000_000)
+    right = pl.LazyFrame({"k": k}).select(
+        pl.when(pl.col("k") % 20 == 0).then(pl.col("k"))
+    )
+    expected = left.collect().filter(pl.col("k") % 20 == 0)
+    q = assert_semi(left, right, expected, on="k")
+    err = incomplete_sides_err(q, plmonkeypatch, capfd)
+    assert "right references left: false" in err
+    assert "build side chosen: right" in err
+    # When nulls are equal they are one key, which the right side repeats.
+    q = assert_semi(left, right, expected, on="k", nulls_equal=True)
+    err = incomplete_sides_err(q, plmonkeypatch, capfd)
+    assert "right references left: true" in err
+
+
+def test_incomplete_sides_anti_left_null_keys(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The left keys of an anti join are mostly distinct tuples with a null.
+    # They reference nothing, but each is kept as its own group. Counting
+    # those groups makes the 100000 left rows retain more bytes than the
+    # 200000 right keys, so the right side is built.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+    i = pl.int_range(100_000, eager=True)
+    left = pl.DataFrame({"a": i}).select(
+        a=pl.when(pl.col("a") % 20 == 0).then(pl.col("a")), b=pl.col("a")
+    )
+    j = (pl.int_range(200_000, eager=True) // 4) * 20
+    right = pl.DataFrame({"a": j, "b": j})
+    on = ["a", "b"]
+    expected = left.filter(pl.col("a").is_not_null())
+    q = assert_semi(left.lazy(), right.lazy(), expected, on=on)
+    q = left.lazy().join(right.lazy(), on=on, how="anti")
+    err = incomplete_sides_err(q, plmonkeypatch, capfd)
+    assert "estimated rows are: 100000 vs. 200000" in err
+    assert "right references left: true" in err
+    assert "estimated build bytes are" in err
+    assert "build side chosen: right" in err
+
+
+def test_incomplete_sides_sample_slow_right(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The right side comes in small batches. It is sampled to the limit before
+    # the sides are compared, however early the left side reaches it.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+
+    def source(
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        n_rows: int | None,
+        batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        for i in range(100):
+            yield pl.DataFrame({"k": np.arange(10) + i * 10})
+
+    left = pl.LazyFrame({"k": np.arange(100_000)})
+    right = register_io_source(source, schema={"k": pl.Int64})
+    expected = left.collect().filter(pl.col("k") < 1_000)
+    q = assert_semi(left, right, expected, on="k")
+    err = incomplete_sides_err(q, plmonkeypatch, capfd)
+    line = next(x for x in err.splitlines() if "sample lengths are" in x)
+    assert int(line.rsplit(" ", 1)[1].rstrip(".")) >= 100
+
+
+def test_sampling_hints(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # Both sides exceed the sample, so only a hint picks the left side.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    left = pl.LazyFrame({"k": np.arange(10_000), "v": np.arange(10_000)})
+    right = pl.LazyFrame({"k": np.arange(0, 20_000, 4)})
+    expected = left.collect().filter(pl.col("k") % 4 == 0)
+    chosen: dict[JoinBuildSide, str | None] = {
+        "auto": "right",
+        "prefer_left": "left",
+        "prefer_right": "right",
+        "force_left": None,
+        "force_right": None,
+    }
+    for build_side, side in chosen.items():
+        q = assert_semi(left, right, expected, on="k", build_side=build_side)
+        assert build_side_chosen(q, plmonkeypatch, capfd) == side
+
+
+def test_ordered_and_is_in_keep_right_build(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "10000")
+    left = pl.LazyFrame({"k": [5, 3, 5, 1, 2, 3], "v": [0, 1, 2, 3, 4, 5]})
+    right = pl.LazyFrame({"k": np.arange(100_000) % 4})
+
+    # An ordered semi join keeps the left order and is never built from the left.
+    q = left.join(right, on="k", how="semi", maintain_order="left")
+    expected = pl.DataFrame({"k": [3, 1, 2, 3], "v": [1, 3, 4, 5]})
+    assert_frame_equal(q.collect(engine="streaming"), expected)
+    assert build_side_chosen(q, plmonkeypatch, capfd) is None
+
+    q = left.join(
+        right, on="k", how="semi", maintain_order="left", build_side="force_left"
+    )
+    assert_frame_equal(q.collect(engine="streaming"), expected)
+
+    q = left.select(pl.col("k").is_in(right.select("k").collect()["k"].implode()))
+    expected = pl.DataFrame({"k": [False, True, False, True, True, True]})
+    assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
+def test_anti_null_keys_sampled_left_build(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # Null left keys must come out of a left-built anti join unless a null on
+    # the right matches them.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "10000")
+    small = pl.LazyFrame({"k": [None, 0, None, 1, 10, 5], "v": [0, 1, 2, 3, 4, 5]})
+    large = pl.LazyFrame({"k": np.arange(0, 4_000_000, 2)}).with_columns(
+        pl.when(pl.col("k") == 2).then(None).otherwise(pl.col("k")).alias("k")
+    )
+    for nulls_equal, kept in [(False, [0, 2, 3, 5]), (True, [3, 5])]:
+        q = small.join(large, on="k", how="anti", nulls_equal=nulls_equal)
+        expected = small.collect().filter(pl.col("v").is_in(kept))
+        assert_frame_equal(
+            q.collect(engine="streaming"), expected, check_row_order=False
+        )
+        assert build_side_chosen(q, plmonkeypatch, capfd) == "left"
+
+
+def test_anti_sampling_counts_null_keys_it_keeps(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # A left-built anti join keeps its null-key rows as groups, so the
+    # sample must count them or the left side looks cheaper than it is.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "10000")
+    n = 1000
+    left = pl.LazyFrame(
+        {
+            "a": pl.Series([None] * n, dtype=pl.Int64),
+            "b": [f"{i:0>40}" for i in range(n)],
+            "v": np.arange(n),
+        }
+    )
+    right = pl.LazyFrame(
+        {"a": np.arange(1500) % 3, "b": [f"{i:0>40}" for i in range(1500)]}
+    )
+    q = left.join(right, on=["a", "b"], how="anti")
+    assert_frame_equal(
+        q.collect(engine="streaming"), left.collect(), check_row_order=False
+    )
+    assert build_side_chosen(q, plmonkeypatch, capfd) == "right"
+
+
+def test_left_build_output_projection() -> None:
+    # Output columns are a subset of the left columns, in a projected order.
+    left = pl.LazyFrame({"a": [1, 2, 3], "k": [1, 2, 3], "b": ["x", "y", "z"]})
+    right = pl.LazyFrame({"k": [3, 1]})
+    q = left.join(right, on="k", how="semi", build_side="force_left").select("b", "a")
+    expected = pl.DataFrame({"b": ["x", "z"], "a": [1, 3]})
+    assert_frame_equal(q.collect(engine="streaming"), expected, check_row_order=False)
+
+    q = left.join(right, on="k", how="semi", build_side="force_left").select(pl.len())
+    assert q.collect(engine="streaming").item() == 2
+
+    q = left.join(right, on="k", how="anti", build_side="force_left").select("b", "a")
+    expected = pl.DataFrame({"b": ["y"], "a": [2]})
+    assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
+def with_nulls(values: np.ndarray[Any, Any], rng: np.random.Generator) -> pl.Series:
+    s = pl.Series("k", values)
+    return s.scatter(rng.choice(len(s), len(s) // 50, replace=False), None)
+
+
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_is_in_single_key(nulls_equal: bool) -> None:
+    # The keys fill many blocks of lookups, the last one partly.
+    n = 5_003
+    rng = np.random.default_rng(0)
+    lf = pl.LazyFrame(
+        {
+            "a": with_nulls(rng.integers(0, n, n), rng),
+            "b": with_nulls(rng.integers(0, 2 * n, n), rng),
+        }
+    )
+    is_in = pl.col("a").is_in(pl.col("b").implode(), nulls_equal=nulls_equal)
+    q = lf.select(is_in.alias("in"), (~is_in).alias("not_in"))
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))

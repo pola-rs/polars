@@ -21,12 +21,19 @@ pub struct IcebergSinkState {
     pub table_name: PlSmallStr,
     pub mode: IcebergCommitMode,
     pub schema_mode: Option<IcebergSchemaMode>,
+    #[cfg(feature = "python")]
+    pub overwrite_filter: Option<PythonObject>, // pyiceberg.expressions.BooleanExpression
+    pub dynamic_partition_overwrite: bool,
+    pub create_if_not_exists: bool,
+    pub create_namespace_if_not_exists: bool,
     pub snapshot_properties: BTreeMap<PlSmallStr, PlSmallStr>,
     pub iceberg_storage_properties: BTreeMap<PlSmallStr, PlSmallStr>,
     pub compression: PlSmallStr,
     pub compression_level: Option<i32>,
     pub row_group_size: Option<usize>,
     pub maintain_order: bool,
+    pub sort_order_id: Option<i32>,
+    pub partition_spec_id: Option<i32>,
 
     pub sink_uuid_str: String,
 
@@ -38,6 +45,9 @@ pub struct IcebergSinkState {
 
     #[cfg(feature = "python")]
     pub commit_result_df: Option<PythonObject>, // NoPickleOption[pl.DataFrame]
+
+    #[cfg(feature = "python")]
+    pub replace_files: Option<PythonObject>, // _ReplaceFiles: the data files a commit replaces
 }
 
 #[derive(Copy, Clone, PartialEq, Debug, Eq, Hash)]
@@ -71,7 +81,7 @@ mod _python_impl {
         pub(crate) fn into_sink_state_obj(self) -> PyResult<Py<PyAny>> {
             Python::attach(|py| {
                 polars_utils::python_convert_registry::get_python_convert_registry()
-                    .py_iceberg_sink_state_class()
+                    .py_iceberg_sink_state_class(py)
                     .call(py, (), Some(&self.into_pyobject(py)?))
             })
         }

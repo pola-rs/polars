@@ -77,6 +77,13 @@ def _engine_from_name(engine: EngineTypeName) -> Engine:
     return selected
 
 
+def _validate_engine(engine: EngineType) -> None:
+    """Validate an engine argument without resolving the configured affinity."""
+    if isinstance(engine, Engine):
+        return
+    _engine_from_name(engine)
+
+
 def _select_engine(engine: EngineType) -> Engine:
     """
     Resolve an engine argument or configured affinity to an `Engine`.

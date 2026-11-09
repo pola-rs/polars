@@ -1,4 +1,6 @@
-use polars_async::executor::{self, TaskPriority};
+use std::sync::Arc;
+
+use polars_async::executor::{self, TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::connector;
 use polars_core::frame::DataFrame;
 use polars_error::{PolarsResult, polars_bail};
@@ -17,6 +19,7 @@ pub struct MorselSerializerPipeline {
     pub base_csv_serializer: CsvSerializer,
     pub base_allocation_size: usize,
     pub max_serializers: usize,
+    pub task_metrics: Option<Arc<TaskMetricAggregator>>,
 }
 
 impl MorselSerializerPipeline {
@@ -28,6 +31,7 @@ impl MorselSerializerPipeline {
             base_csv_serializer,
             base_allocation_size,
             max_serializers,
+            task_metrics,
         } = self;
 
         let mut num_created_serializers: usize = 0;
@@ -42,6 +46,7 @@ impl MorselSerializerPipeline {
                         csv_serializer: base_csv_serializer.clone(),
                         serialized_data: vec![],
                         allocation_size: base_allocation_size,
+                        task_metrics: task_metrics.clone(),
                     }
                 } else if let Some(serializer) = reuse_serializer_rx.recv().await {
                     serializer
@@ -53,6 +58,7 @@ impl MorselSerializerPipeline {
 
             let handle = executor::AbortOnDropHandle::new(executor::spawn(
                 TaskPriority::High,
+                task_metrics.as_deref(),
                 morsel_serializer.serialize_morsel(df),
             ));
 
@@ -71,6 +77,7 @@ pub struct MorselSerializer {
     pub csv_serializer: CsvSerializer,
     pub serialized_data: Vec<u8>,
     allocation_size: usize,
+    task_metrics: Option<Arc<TaskMetricAggregator>>,
 }
 
 impl MorselSerializer {
@@ -79,6 +86,7 @@ impl MorselSerializer {
             csv_serializer,
             serialized_data,
             allocation_size,
+            task_metrics,
         } = &mut self;
 
         if df.width() == 0 && df.height() > 0 {
@@ -89,7 +97,8 @@ impl MorselSerializer {
             )
         }
 
-        rechunk_par(unsafe { df.columns_mut_retain_schema() }).await;
+        let task_metrics = task_metrics.as_deref();
+        rechunk_par(unsafe { df.columns_mut_retain_schema() }, task_metrics).await;
 
         serialized_data.clear();
         serialized_data.reserve_exact(*allocation_size);

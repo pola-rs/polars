@@ -28,9 +28,12 @@ from polars.testing import assert_frame_equal
 from tests.unit.conftest import TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import ConcatMethod
 
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")  # cut
 def test_error_on_reducing_map() -> None:
     df = pl.DataFrame(
         {"id": [0, 0, 0, 1, 1, 1], "t": [2, 4, 5, 10, 11, 14], "y": [0, 1, 1, 2, 3, 4]}
@@ -381,16 +384,6 @@ def test_sort_by_different_lengths() -> None:
             ]
         )
 
-    with pytest.raises(
-        ShapeError,
-        match=r"expressions in 'sort_by' must have matching group lengths",
-    ):
-        df.group_by("group").agg(
-            [
-                pl.col("col1").sort_by(pl.col("col2").first()),
-            ]
-        )
-
 
 def test_err_filter_no_expansion() -> None:
     # df contains floats
@@ -557,7 +550,8 @@ def test_empty_inputs_error() -> None:
                 time_unit="ns",
                 eager=True,
             ),
-            None,
+            # The needle is cast to the values' unit.
+            [False, None, False],
         ),
         ("d", [time(10, 30)], None),
         ("e", [datetime(1999, 12, 31, 10, 30)], None),
@@ -731,7 +725,7 @@ def test_shift_with_null_raises(fill_value: Any) -> None:
         )
 
 
-def test_raies_on_mismatch_column_length_24500() -> None:
+def test_raise_on_mismatch_column_length_24500() -> None:
     df = pl.DataFrame(
         {
             "a": [10, 10, 10, 20, 20, 20],
@@ -751,7 +745,7 @@ def test_raies_on_mismatch_column_length_24500() -> None:
         )
 
 
-def test_raies_on_mismatch_column_length_binary_expr() -> None:
+def test_raise_on_mismatch_column_length_binary_expr() -> None:
     df = pl.DataFrame(
         {
             "a": [10, 10, 10, 20, 20, 20],
@@ -843,3 +837,45 @@ def test_invalid_classmethod_error() -> None:
     match = "'Series' object has no attribute 'nonexistent'"
     with pytest.raises(AttributeError, match=re.escape(match)):
         pl.Series.nonexistent()  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize(
+    ("query", "error", "inner", "outer"),
+    [
+        # Raised while resolving the output schema.
+        (
+            lambda lf: lf.select(x=(pl.col("a").list.len() * 2).sum()),
+            InvalidOperationError,
+            'col("a").list.length()',
+            '(col("a").list.length() * dyn int: 2).sum().alias("x")',
+        ),
+        # Raised by type coercion.
+        (
+            lambda lf: lf.filter(
+                pl.col("a").str.starts_with("x") | pl.col("b").is_null()
+            ),
+            InvalidOperationError,
+            'col("a").str.starts_with(["x"])',
+            'col("a").str.starts_with(["x"]) | col("b").is_null()',
+        ),
+        # Raised while converting the expression.
+        (
+            lambda lf: lf.select(c=(pl.col("a").shift(pl.col("b")) * 2).sum()),
+            ShapeError,
+            'col("a").shift([col("b")])',
+            '[(col("a").shift([col("b")])) * (dyn int: 2)].sum().alias("c")',
+        ),
+    ],
+)
+def test_planning_error_names_expression(
+    query: Callable[[pl.LazyFrame], pl.LazyFrame],
+    error: type[Exception],
+    inner: str,
+    outer: str,
+) -> None:
+    lf = pl.LazyFrame({"a": [1, 2], "b": [1, 2]})
+    with pytest.raises(error) as exc:
+        query(lf).collect_schema()
+    msg = str(exc.value)
+    assert f"This error occurred in the following expression:\n\t{inner}\n" in msg
+    assert f"while evaluating this larger expression:\n\t{outer}\n" in msg

@@ -1,3 +1,5 @@
+use polars_defs::join::{JoinArgs, JoinType};
+
 use super::*;
 
 #[test]
@@ -88,7 +90,7 @@ fn test_pass_unrelated_apply() -> PolarsResult<()> {
 fn filter_added_column_issue_2470() -> PolarsResult<()> {
     let df = fruits_cars();
 
-    // the binary expression in the predicate lead to an incorrect pushdown because the rhs
+    // the binary expression in the predicate led to an incorrect pushdown because the rhs
     // was not checked on the schema.
     let out = df
         .lazy()
@@ -224,8 +226,7 @@ fn test_filter_null_creation_by_cast() -> PolarsResult<()> {
 #[test]
 #[cfg(feature = "cse")]
 fn test_predicate_on_join_suffix_4788() -> PolarsResult<()> {
-    use polars_ops::frame::MaintainOrderJoin;
-
+    use polars_defs::join::MaintainOrderJoin;
     let lf = df![
       "x" => [1, 2],
       "y" => [1, 1],

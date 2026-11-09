@@ -1,9 +1,10 @@
-use arrow::array::{Array, BinaryArray};
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::datatypes::ArrowDataType;
-use arrow::offset::OffsetsBuffer;
+use polars_arrow::array::{Array, BinaryArray};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::offset::OffsetsBuffer;
 use polars_buffer::Buffer;
 use polars_compute::filter::filter_with_bitmap;
+use polars_error::PolarsResult;
 
 use super::utils::dict_indices_decoder;
 use super::{Filter, PredicateFilter};
@@ -92,8 +93,8 @@ impl utils::Decoder for BinaryDecoder {
         &self,
         dict: &Self::Dict,
         predicate: &PredicateFilter,
-    ) -> ParquetResult<Bitmap> {
-        Ok(predicate.predicate.evaluate(dict as &dyn Array))
+    ) -> PolarsResult<Bitmap> {
+        predicate.predicate.try_evaluate(dict as &dyn Array)
     }
 
     fn evaluate_predicate(

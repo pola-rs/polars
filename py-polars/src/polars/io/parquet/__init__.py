@@ -1,3 +1,7 @@
+from polars.io.parquet.encryption import (
+    ParquetDecryptionProperties,
+    ParquetEncryptionProperties,
+)
 from polars.io.parquet.functions import (
     read_parquet,
     read_parquet_metadata,
@@ -6,6 +10,8 @@ from polars.io.parquet.functions import (
 )
 
 __all__ = [
+    "ParquetDecryptionProperties",
+    "ParquetEncryptionProperties",
     "read_parquet",
     "read_parquet_metadata",
     "read_parquet_schema",

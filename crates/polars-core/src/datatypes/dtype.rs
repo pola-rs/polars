@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use arrow::datatypes::{
+use polars_arrow::datatypes::{
     DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW, MAINTAIN_PL_TYPE,
     Metadata, PL_KEY,
 };
@@ -158,47 +158,98 @@ impl Hash for DataType {
 }
 
 impl PartialEq for DataType {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
-        use DataType::*;
-        {
-            match (self, other) {
-                #[cfg(feature = "dtype-categorical")]
-                (Categorical(cats_l, _), Categorical(cats_r, _)) => Arc::ptr_eq(cats_l, cats_r),
-                #[cfg(feature = "dtype-categorical")]
-                (Enum(fcats_l, _), Enum(fcats_r, _)) => Arc::ptr_eq(fcats_l, fcats_r),
-                (Datetime(tu_l, tz_l), Datetime(tu_r, tz_r)) => tu_l == tu_r && tz_l == tz_r,
-                (List(left_inner), List(right_inner)) => left_inner == right_inner,
-                #[cfg(feature = "dtype-duration")]
-                (Duration(tu_l), Duration(tu_r)) => tu_l == tu_r,
-                #[cfg(feature = "dtype-decimal")]
-                (Decimal(p1, s1), Decimal(p2, s2)) => (p1, s1) == (p2, s2),
-                #[cfg(feature = "object")]
-                (Object(lhs), Object(rhs)) => lhs == rhs,
-                #[cfg(feature = "dtype-struct")]
-                (Struct(lhs), Struct(rhs)) => {
-                    std::ptr::eq(Vec::as_ptr(lhs), Vec::as_ptr(rhs)) || lhs == rhs
-                },
-                #[cfg(feature = "dtype-array")]
-                (Array(left_inner, left_width), Array(right_inner, right_width)) => {
-                    left_width == right_width && left_inner == right_inner
-                },
-                #[cfg(feature = "dtype-map")]
-                (Map(key_l, value_l), Map(key_r, value_r)) => key_l == key_r && value_l == value_r,
-                #[cfg(feature = "dtype-extension")]
-                (Extension(ext_l, storage_l), Extension(ext_r, storage_r)) => {
-                    ext_l == ext_r && storage_l == storage_r
-                },
-                (Unknown(l), Unknown(r)) => match (l, r) {
-                    (UnknownKind::Int(_), UnknownKind::Int(_)) => true,
-                    _ => l == r,
-                },
-                _ => std::mem::discriminant(self) == std::mem::discriminant(other),
-            }
-        }
+        std::mem::discriminant(self) == std::mem::discriminant(other)
+            && (!self.has_params() || self.eq_params(other))
     }
 }
 
 impl Eq for DataType {}
+
+impl DataType {
+    /// Indicate if this dtype variant has parameters.
+    #[inline]
+    fn has_params(&self) -> bool {
+        use DataType::*;
+        match self {
+            // Types with no parameters
+            UInt8 | UInt16 | UInt32 | UInt64 | UInt128 => false,
+            Int8 | Int16 | Int32 | Int64 | Int128 => false,
+            Float16 | Float32 | Float64 => false,
+            Boolean | String | Binary | BinaryOffset => false,
+            Date | Time => false,
+            Null => false,
+
+            // Types with parameters
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(..) => true,
+            Datetime(..) | Duration(..) => true,
+            #[cfg(feature = "dtype-array")]
+            Array(..) => true,
+            List(..) => true,
+            #[cfg(feature = "dtype-struct")]
+            Struct(..) => true,
+            #[cfg(feature = "dtype-map")]
+            Map(..) => true,
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(..) | Enum(..) => true,
+            #[cfg(feature = "object")]
+            Object(..) => true,
+            #[cfg(feature = "dtype-extension")]
+            Extension(..) => true,
+            Unknown(..) => true,
+        }
+    }
+
+    /// Compares the parameters of data types of the same variant (see [`Self::has_params`]).
+    /// Like `has_params`, this matches every variant, so new ones must say how they compare.
+    fn eq_params(&self, other: &Self) -> bool {
+        use DataType::*;
+        debug_assert_eq!(std::mem::discriminant(self), std::mem::discriminant(other));
+        match self {
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(p_l, s_l) => matches!(other, Decimal(p_r, s_r) if p_l == p_r && s_l == s_r),
+            Datetime(tu_l, tz_l) => {
+                matches!(other, Datetime(tu_r, tz_r) if tu_l == tu_r && tz_l == tz_r)
+            },
+            Duration(tu_l) => matches!(other, Duration(tu_r) if tu_l == tu_r),
+            #[cfg(feature = "dtype-array")]
+            Array(inner_l, width_l) => {
+                matches!(other, Array(inner_r, width_r) if width_l == width_r && inner_l == inner_r)
+            },
+            List(inner_l) => matches!(other, List(inner_r) if inner_l == inner_r),
+            #[cfg(feature = "dtype-map")]
+            Map(key_l, value_l) => {
+                matches!(other, Map(key_r, value_r) if key_l == key_r && value_l == value_r)
+            },
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields_l) => matches!(other, Struct(fields_r) if
+                std::ptr::eq(fields_l.as_ptr(), fields_r.as_ptr()) || fields_l == fields_r),
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(cats_l, _) => {
+                matches!(other, Categorical(cats_r, _) if Arc::ptr_eq(cats_l, cats_r))
+            },
+            #[cfg(feature = "dtype-categorical")]
+            Enum(fcats_l, _) => matches!(other, Enum(fcats_r, _) if Arc::ptr_eq(fcats_l, fcats_r)),
+            #[cfg(feature = "object")]
+            Object(name_l) => matches!(other, Object(name_r) if name_l == name_r),
+            #[cfg(feature = "dtype-extension")]
+            Extension(ext_l, storage_l) => matches!(other, Extension(ext_r, storage_r) if
+                ext_l == ext_r && storage_l == storage_r),
+            Unknown(l) => matches!(other, Unknown(r) if match (l, r) {
+                (UnknownKind::Int(_), UnknownKind::Int(_)) => true,
+                _ => l == r,
+            }),
+
+            // Types without parameters; `eq_params` is private and `eq` checks the
+            // dtypes before calling it, so we won't reach these cases - can return true
+            UInt8 | UInt16 | UInt32 | UInt64 | UInt128 | Int8 | Int16 | Int32 | Int64 | Int128
+            | Float16 | Float32 | Float64 | Boolean | String | Binary | BinaryOffset | Date
+            | Time | Null => true,
+        }
+    }
+}
 
 impl DataType {
     pub const IDX_DTYPE: Self = {
@@ -355,6 +406,7 @@ impl DataType {
     }
 
     /// Get the inner data type of a nested type.
+    #[inline]
     pub fn inner_dtype(&self) -> Option<&DataType> {
         match self {
             DataType::List(inner) => Some(inner),
@@ -518,7 +570,7 @@ impl DataType {
                 true
             },
 
-            // @NOTE: we are being conversative
+            // @NOTE: we are being conservative
             _ => return None,
         })
     }
@@ -607,6 +659,21 @@ impl DataType {
         self.is_primitive_numeric() || self.is_bool() || self.is_null()
     }
 
+    /// Whether `arr.dot` has a kernel for this inner dtype.
+    pub fn is_supported_array_dot_input(&self) -> bool {
+        use DataType::*;
+        match self {
+            Int8 | Int16 | Int32 | Int64 => true,
+            #[cfg(feature = "dtype-i128")]
+            Int128 => true,
+            UInt8 | UInt16 | UInt32 | UInt64 => true,
+            #[cfg(feature = "dtype-u128")]
+            UInt128 => true,
+            Float32 | Float64 => true,
+            _ => false,
+        }
+    }
+
     /// Check if this [`DataType`] is a logical type
     pub fn is_logical(&self) -> bool {
         self != &self.to_physical()
@@ -634,6 +701,7 @@ impl DataType {
     }
 
     /// Check if this [`DataType`] is a boolean.
+    #[inline]
     pub fn is_bool(&self) -> bool {
         matches!(self, DataType::Boolean)
     }
@@ -895,6 +963,7 @@ impl DataType {
 
     /// Check if this [`DataType`] is a basic floating point type (excludes Decimal).
     /// Note, this also includes `Unknown(UnknownKind::Float)`.
+    #[inline]
     pub fn is_float(&self) -> bool {
         matches!(
             self,
@@ -906,6 +975,7 @@ impl DataType {
     }
 
     /// Check if this [`DataType`] is an integer. Note, this also includes `Unknown(UnknownKind::Int)`.
+    #[inline]
     pub fn is_integer(&self) -> bool {
         matches!(
             self,
@@ -1100,6 +1170,23 @@ impl DataType {
         };
         key.ensure_valid_map_key()?;
         value.ensure_valid_map_value()
+    }
+
+    /// Validate every `Map` nested in this dtype. Unlike [`Self::ensure_valid_map_dtype`],
+    /// this accepts dtypes that are not a `Map` themselves.
+    #[cfg(feature = "dtype-map")]
+    pub fn ensure_valid_map_dtypes(&self) -> PolarsResult<()> {
+        // Keep it cheap for non-Map dtypes.
+        if !self.contains_map() {
+            return Ok(());
+        }
+
+        self.try_visit_with(|dtype| {
+            if dtype.is_map() {
+                dtype.ensure_valid_map_dtype()?;
+            }
+            Ok(())
+        })
     }
 
     pub fn is_extension(&self) -> bool {
@@ -1324,7 +1411,7 @@ impl DataType {
             },
             #[cfg(feature = "dtype-extension")]
             Extension(typ, inner) => Ok(ArrowDataType::Extension(Box::new(
-                arrow::datatypes::ExtensionType {
+                polars_arrow::datatypes::ExtensionType {
                     name: typ.name().into(),
                     inner: inner.try_to_arrow(compat_level)?,
                     metadata: typ.serialize_metadata().map(|m| m.into()),
@@ -1671,7 +1758,7 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
         },
         #[cfg(feature = "dtype-array")]
         (Array(inner_l, width_l), Array(inner_r, width_r)) => {
-            polars_ensure!(width_l == width_r, ComputeError: "widths of FixedSizeWidth Series are not equal");
+            polars_ensure!(width_l == width_r, ComputeError: "widths of FixedSizeList Series are not equal");
             let merged = merge_dtypes(inner_l, inner_r)?;
             Array(Box::new(merged), *width_l)
         },
@@ -1734,6 +1821,7 @@ pub fn unpack_dtypes(dtype: &DataType, include_compound_types: bool) -> PlHashSe
 pub struct CompatLevel(pub(crate) u16);
 
 impl CompatLevel {
+    #[inline]
     pub const fn newest() -> CompatLevel {
         CompatLevel(1)
     }

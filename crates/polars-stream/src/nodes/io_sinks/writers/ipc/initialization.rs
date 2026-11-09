@@ -1,15 +1,15 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use arrow::datatypes::Field as ArrowField;
-use arrow::io::ipc::IpcField;
+use polars_arrow::datatypes::Field as ArrowField;
+use polars_arrow::io::ipc::IpcField;
 use polars_core::prelude::{
     CategoricalMapping, CategoricalPhysicalDtypeExt, CompatLevel, DataType,
 };
 use polars_core::schema::Schema;
 use polars_core::series::arrow_export::ToArrowConverter;
 use polars_core::series::arrow_export::categorical::CategoricalToArrowConverter;
-use polars_core::utils::arrow;
+use polars_core::utils::polars_arrow;
 use polars_utils::pl_str::PlSmallStr;
 
 #[expect(clippy::type_complexity)]

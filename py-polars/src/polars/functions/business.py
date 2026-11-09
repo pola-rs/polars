@@ -24,6 +24,7 @@ def _holidays_to_expr(holidays: Iterable[date] | pl.Expr | pl.Series) -> plr.PyE
     """Convert into Expr of List of Date."""
     if not isinstance(holidays, (pl.Expr, pl.Series)):
         holidays = pl.Series("", [holidays], strict=False, dtype=pl.List(pl.Date))
+        return plr.lit(holidays._s, False, is_scalar=True)
     return parse_into_expression(holidays, dtype=pl.Date)
 
 

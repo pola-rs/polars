@@ -11,7 +11,7 @@ use crate::array::binview::{
 };
 use crate::array::builder::{ShareStrategy, StaticArrayBuilder};
 use crate::array::{Array, BINVIEW_MAX_ROW_BYTE_LEN, BinaryViewArrayGeneric, View, ViewType};
-use crate::bitmap::OptBitmapBuilder;
+use crate::bitmap::{Bitmap, OptBitmapBuilder};
 use crate::datatypes::ArrowDataType;
 use crate::pushable::Pushable;
 
@@ -118,6 +118,32 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
         debug_assert!(view.is_inline());
         self.total_bytes_len += view.length as usize;
         self.views.push(view);
+    }
+
+    pub fn push_null_ignore_validity(&mut self) {
+        self.views.push(View::default());
+    }
+
+    /// Freeze with a validity that was built separately. Validity pushed to this builder is
+    /// dropped.
+    pub fn freeze_with_validity(mut self, validity: Option<Bitmap>) -> BinaryViewArrayGeneric<V> {
+        // Flush active buffer and/or remove extra placeholder buffer.
+        if !self.active_buffer.is_empty() {
+            self.buffer_set[self.active_buffer_idx as usize] = Buffer::from(self.active_buffer);
+        } else if self.buffer_set.last().is_some_and(|b| b.is_empty()) {
+            self.buffer_set.pop();
+        }
+
+        unsafe {
+            BinaryViewArrayGeneric::new_unchecked(
+                self.dtype,
+                Buffer::from(self.views),
+                Buffer::from(self.buffer_set),
+                validity,
+                Some(self.total_bytes_len),
+                self.total_buffer_len,
+            )
+        }
     }
 
     fn switch_active_stealing_bufferset_to(&mut self, buffer_set: &Buffer<Buffer<u8>>) {
@@ -234,23 +260,8 @@ impl<V: ViewType + ?Sized> StaticArrayBuilder for BinaryViewArrayGenericBuilder<
     }
 
     fn freeze(mut self) -> Self::Array {
-        // Flush active buffer and/or remove extra placeholder buffer.
-        if !self.active_buffer.is_empty() {
-            self.buffer_set[self.active_buffer_idx as usize] = Buffer::from(self.active_buffer);
-        } else if self.buffer_set.last().is_some_and(|b| b.is_empty()) {
-            self.buffer_set.pop();
-        }
-
-        unsafe {
-            BinaryViewArrayGeneric::new_unchecked(
-                self.dtype,
-                Buffer::from(self.views),
-                Buffer::from(self.buffer_set),
-                self.validity.into_opt_validity(),
-                Some(self.total_bytes_len),
-                self.total_buffer_len,
-            )
-        }
+        let validity = core::mem::take(&mut self.validity).into_opt_validity();
+        self.freeze_with_validity(validity)
     }
 
     fn freeze_reset(&mut self) -> Self::Array {

@@ -1,7 +1,9 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 
-use arrow::types::NativeType;
+use polars_arrow::types::NativeType;
 
+#[cfg(feature = "approx_quantile")]
+pub mod approx_quantile;
 pub mod arithmetic;
 pub mod arity;
 pub mod binview_index_map;
@@ -21,6 +23,7 @@ pub mod find_validity_mismatch;
 pub mod float_sum;
 #[cfg(feature = "gather")]
 pub mod gather;
+pub mod horizontal_concat_list;
 pub mod horizontal_flatten;
 #[cfg(feature = "approx_unique")]
 pub mod hyperloglogplus;
@@ -30,6 +33,7 @@ pub mod moment;
 pub mod nan;
 pub mod propagate_dictionary;
 pub mod propagate_nulls;
+pub mod rebuild_list;
 pub mod rolling;
 pub mod size;
 pub mod sum;

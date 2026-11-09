@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from decimal import Decimal as D
 
 import pytest
 
@@ -379,3 +380,83 @@ def test_select_from_table_with_reserved_names() -> None:
         eager=True,
     )
     assert out.rows() == [(5, 2)]
+
+
+@pytest.mark.parametrize("literal", ["1e-5", "1E5", "2e3", "-2e+3", "+1E-05", "1.5e2"])
+def test_scientific_notation_literals(literal: str) -> None:
+    value = float(literal)
+    result = pl.sql(f"SELECT {literal} AS value", eager=True)
+    assert_frame_equal(result, pl.DataFrame({"value": [value]}))
+    result = pl.sql(f"SELECT ARRAY[{literal}] AS values", eager=True)
+    assert_frame_equal(result, pl.DataFrame({"values": [[value]]}))
+    frame = pl.DataFrame({"value": [value, None, 42.0]})
+    assert_frame_equal(
+        frame.sql(f"SELECT * FROM self WHERE value IN ({literal})"),
+        frame.head(1),
+    )
+
+
+@pytest.mark.parametrize(
+    ("literal", "dtype"),
+    [
+        ("9223372036854775808", pl.Decimal(19, 0)),
+        ("18446744073709551615", pl.Decimal(20, 0)),
+        ("99999999999999999999999999999999999999", pl.Decimal(38, 0)),
+    ],
+)
+def test_integer_literal_beyond_i64(literal: str, dtype: pl.Decimal) -> None:
+    # an exact numeric literal that doesn't fit Int64 is an exact decimal
+    res = pl.sql(
+        f"SELECT {literal} AS v, ARRAY[{literal}] AS a, 1 IN ({literal}) AS i",
+        eager=True,
+    )
+    assert res.schema == {"v": dtype, "a": pl.List(dtype), "i": pl.Boolean()}
+    assert res.row(0) == (D(literal), [D(literal)], False)
+
+
+@pytest.mark.parametrize(
+    "literal",
+    [
+        "123456789012345678901234567890123456789",
+        "1.23456789012345678901234567890123456789",
+    ],
+)
+def test_exact_literal_beyond_38_digits_raises(literal: str) -> None:
+    # approximating it would make e.g. two literals differing by one compare equal
+    with pytest.raises(SQLInterfaceError, match="needs more than 38 digits"):
+        pl.sql(f"SELECT {literal} AS v", eager=True)
+    # an exponent asks for an approximate value
+    assert pl.sql("SELECT 1.5e40 AS v", eager=True).schema == {"v": pl.Float64}
+
+
+def test_numeric_typed_literals() -> None:
+    df = pl.DataFrame({"x": [5, 7, 10]}, schema={"x": pl.Int16})
+    res = df.sql(
+        """
+        SELECT
+          x,
+          SMALLINT '5' AS a,
+          BIGINT '-3' AS b,
+          DOUBLE '1.5' AS c,
+          DECIMAL(10, 2) '2.25' AS d,
+          VARCHAR 'xy' AS e
+        FROM self
+        WHERE x IN (SMALLINT '5', SMALLINT '10')
+        """
+    )
+    assert res.schema == {
+        "x": pl.Int16,
+        "a": pl.Int16,
+        "b": pl.Int64,
+        "c": pl.Float64,
+        "d": pl.Decimal(10, 2),
+        "e": pl.String,
+    }
+    assert res.rows() == [
+        (5, 5, -3, 1.5, D("2.25"), "xy"),
+        (10, 5, -3, 1.5, D("2.25"), "xy"),
+    ]
+    with pytest.raises(SQLSyntaxError, match="invalid SMALLINT literal 'abc'"):
+        pl.sql("SELECT SMALLINT 'abc' AS v", eager=True)
+    with pytest.raises(SQLInterfaceError, match="typed literal should be"):
+        pl.sql("SELECT BOOLEAN 'true' AS v", eager=True)

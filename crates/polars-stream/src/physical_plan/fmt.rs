@@ -1,17 +1,17 @@
 use std::fmt::Write;
 
-use polars_ops::frame::JoinArgs;
+use polars_defs::join::JoinArgs;
+use polars_defs::time::group_by::ClosedWindow;
+#[cfg(feature = "dynamic_group_by")]
+use polars_defs::time::group_by::DynamicGroupOptionsIR;
 use polars_plan::dsl::PartitionStrategyIR;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, EscapeLabel};
 use polars_plan::prelude::FileWriteFormat;
-use polars_time::ClosedWindow;
-#[cfg(feature = "dynamic_group_by")]
-use polars_time::DynamicGroupOptions;
 use polars_utils::arena::Arena;
 use polars_utils::itertools::Itertools;
 use polars_utils::slice_enum::Slice;
-use slotmap::{Key, SecondaryMap, SlotMap};
+use slotmap::{DenseSlotMap, Key, SecondaryMap};
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
 use crate::physical_plan::ZipBehavior;
@@ -31,10 +31,12 @@ impl NodeStyle {
     pub fn for_node_kind(kind: &PhysNodeKind) -> Self {
         use PhysNodeKind as K;
         match kind {
-            K::InMemoryMap { .. } | K::InMemoryJoin { .. } | K::ColumnarFunction { .. } => {
-                Self::InMemoryFallback
-            },
+            K::InMemoryMap { .. }
+            | K::InMemoryJoin { .. }
+            | K::ColumnarFunction { .. }
+            | K::Recursive { .. } => Self::InMemoryFallback,
             K::InMemorySource { .. }
+            | K::SpillFrameSource { .. }
             | K::InputIndependentSelect { .. }
             | K::NegativeSlice { .. }
             | K::InMemorySink { .. }
@@ -44,6 +46,7 @@ impl NodeStyle {
             | K::SemiAntiJoin { .. }
             | K::CrossJoin { .. }
             | K::Multiplexer { .. }
+            | K::Window { .. }
             | K::Gather { .. } => Self::MemoryIntensive,
             #[cfg(feature = "iejoin")]
             K::RangeJoin { .. } => Self::MemoryIntensive,
@@ -177,7 +180,7 @@ fn fmt_join_label(base_label: &str, left_on: &str, right_on: &str, args: &JoinAr
 #[recursive::recursive]
 fn visualize_plan_rec(
     node_key: PhysNodeKey,
-    phys_sm: &SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &DenseSlotMap<PhysNodeKey, PhysNode>,
     expr_arena: &Arena<AExpr>,
     visited: &mut SecondaryMap<PhysNodeKey, ()>,
     out: &mut Vec<String>,
@@ -190,6 +193,7 @@ fn visualize_plan_rec(
     let kind = &phys_sm[node_key].kind;
 
     use std::slice::from_ref;
+    let recursive_inputs: Vec<super::PhysStream>;
     let (label, inputs) = match kind {
         PhysNodeKind::InMemorySource {
             df,
@@ -213,6 +217,7 @@ fn visualize_plan_rec(
             input,
             selectors,
             extend_original,
+            rechunk_input: _,
         } => {
             let label = if *extend_original {
                 "with-columns"
@@ -234,6 +239,13 @@ fn visualize_plan_rec(
         } => (
             format!("with-row-index\\nname: {name}\\noffset: {offset:?}"),
             from_ref(input),
+        ),
+        PhysNodeKind::SpillFrameSource { schema, .. } => (
+            format!(
+                "spill-frame-source\\ncols: {}",
+                schema.iter_names().cloned().collect::<Vec<_>>().join(", ")
+            ),
+            &[][..],
         ),
         PhysNodeKind::InputIndependentSelect { selectors } => (
             format!(
@@ -257,6 +269,7 @@ fn visualize_plan_rec(
             format!("slice\\noffset: {offset}, length: {length}"),
             from_ref(input),
         ),
+        PhysNodeKind::Reverse { input } => ("reverse".to_owned(), from_ref(input)),
         PhysNodeKind::NegativeSlice {
             input,
             offset,
@@ -367,6 +380,42 @@ fn visualize_plan_rec(
             }
             (label, from_ref(input))
         },
+        PhysNodeKind::Window {
+            input,
+            partition_by,
+            order_by,
+            exprs,
+            ordered_eval,
+            maintain_order,
+            scalar,
+        } => {
+            let name = if *scalar { "scalar-window" } else { "window" };
+            let mut label = format!(
+                "{name}[maintain_order: {maintain_order}, ordered_eval: {ordered_eval}]\\npartition by: "
+            );
+            for (i, name) in partition_by.iter().enumerate() {
+                if i > 0 {
+                    label.push_str(", ");
+                }
+                label.push_str(&escape_graphviz(name));
+            }
+            if let Some((names, _)) = order_by {
+                label.push_str("\\norder by: ");
+                for (i, name) in names.iter().enumerate() {
+                    if i > 0 {
+                        label.push_str(", ");
+                    }
+                    label.push_str(&escape_graphviz(name));
+                }
+            }
+            write!(
+                &mut label,
+                "\\n{}",
+                fmt_exprs_to_label(exprs, expr_arena, FormatExprStyle::Select)
+            )
+            .unwrap();
+            (label, from_ref(input))
+        },
         PhysNodeKind::Map {
             input,
             map: _,
@@ -398,6 +447,19 @@ fn visualize_plan_rec(
                 write!(f, "{output_name} = {format_str}(...)").unwrap();
             }
             (label, &inputs[..])
+        },
+        PhysNodeKind::RollingFixedWindowFunction {
+            input,
+            func: _,
+            window,
+            output_name: _,
+            format_str,
+        } => {
+            let mut label = String::new();
+            label.push_str("rolling-fixed-window-function\\n");
+            let mut f = EscapeLabel(&mut label);
+            write!(f, "{format_str}\nwindow: {window}").unwrap();
+            (label, from_ref(input))
         },
         PhysNodeKind::SortedGroupBy {
             input,
@@ -512,6 +574,12 @@ fn visualize_plan_rec(
             &[*input][..],
         ),
         PhysNodeKind::IsSorted { input, .. } => ("is_sorted".to_owned(), &[*input][..]),
+        PhysNodeKind::Recursive {
+            anchor, externals, ..
+        } => {
+            recursive_inputs = std::iter::once(anchor).chain(externals).copied().collect();
+            ("recursive".to_string(), recursive_inputs.as_slice())
+        },
         PhysNodeKind::OrderedUnion { inputs } => ("ordered-union".to_string(), inputs.as_slice()),
         PhysNodeKind::UnorderedUnion { inputs } => {
             ("unordered-union".to_string(), inputs.as_slice())
@@ -530,6 +598,7 @@ fn visualize_plan_rec(
         PhysNodeKind::Multiplexer { input } => ("multiplexer".to_string(), from_ref(input)),
         PhysNodeKind::MultiScan {
             scan_sources,
+            bytes_per_source: _,
             file_reader_builder,
             cloud_options: _,
             file_projection_builder,
@@ -548,9 +617,29 @@ fn visualize_plan_rec(
             table_statistics: _,
             file_schema: _,
             disable_morsel_split: _,
+            maintain_order: _,
         } => {
-            let mut out = format!("multi-scan[{}]", file_reader_builder.reader_name());
+            let reader_name = match file_reader_builder.reader_name() {
+                Ok(x) => x.to_string(),
+                Err(e) => format!("(error fetching reader name: {e:?})"),
+            };
+            let mut out = format!("multi-scan[{reader_name}]");
             let mut f = EscapeLabel(&mut out);
+
+            #[cfg(feature = "python")]
+            if let Some(builder) = file_reader_builder.downcast_as_external_python_reader() {
+                let props = match builder.explain_properties() {
+                    Ok(x) => x,
+                    Err(e) => polars_utils::aliases::PlIndexMap::from_iter([(
+                        "Error:".into(),
+                        format!("failed explain_properties(): {e:?}"),
+                    )]),
+                };
+
+                for (k, v) in props {
+                    write!(f, "\n{k}: {v}").unwrap();
+                }
+            }
 
             write!(f, "\n{} source", scan_sources.len()).unwrap();
 
@@ -610,14 +699,32 @@ fn visualize_plan_rec(
         PhysNodeKind::GroupBy {
             inputs,
             key_per_input,
+            fused_agg_inputs_per_input,
             aggs_per_input,
         } => {
             let mut out = String::from("group-by");
-            for (key, aggs) in key_per_input.iter().zip(aggs_per_input) {
+            for ((key, fused), aggs) in key_per_input
+                .iter()
+                .zip(fused_agg_inputs_per_input)
+                .zip(aggs_per_input)
+            {
                 write!(
                     &mut out,
-                    "\\nkey:\\n{}\\naggs:\\n{}",
+                    "\\nkey:\\n{}",
                     fmt_exprs_to_label(key, expr_arena, FormatExprStyle::Select),
+                )
+                .ok();
+                if !fused.is_empty() {
+                    write!(
+                        &mut out,
+                        "\\nfused agg inputs:\\n{}",
+                        fmt_exprs_to_label(fused, expr_arena, FormatExprStyle::Select),
+                    )
+                    .ok();
+                }
+                write!(
+                    &mut out,
+                    "\\naggs:\\n{}",
                     fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
                 )
                 .ok();
@@ -631,9 +738,9 @@ fn visualize_plan_rec(
             aggs,
             slice,
         } => {
-            use polars_time::prelude::{Label, StartBy};
+            use polars_defs::time::group_by::{Label, StartBy};
 
-            let DynamicGroupOptions {
+            let DynamicGroupOptionsIR {
                 index_column,
                 every,
                 period,
@@ -642,6 +749,7 @@ fn visualize_plan_rec(
                 include_boundaries,
                 closed_window,
                 start_by,
+                placement,
             } = options;
             let mut s = String::new();
             let f = &mut s;
@@ -672,6 +780,10 @@ fn visualize_plan_rec(
                 )
                 .unwrap();
             }
+            if let Some(placement) = placement {
+                write!(f, "origin: {}\\n", placement.origin).unwrap();
+                write!(f, "start_range: {:?}\\n", placement.start_range).unwrap();
+            }
             if let Some((offset, length)) = slice {
                 write!(f, "slice: {offset}, {length}\\n").unwrap();
             }
@@ -691,6 +803,7 @@ fn visualize_plan_rec(
             period,
             offset,
             closed,
+            placement,
             slice,
             aggs,
         } => {
@@ -700,6 +813,9 @@ fn visualize_plan_rec(
             write!(f, "index column: {index_column}\\n").unwrap();
             write!(f, "period: {period}, offset: {offset}\\n").unwrap();
             write!(f, "closed: {}\\n", <&'static str>::from(*closed)).unwrap();
+            if let Some(placement) = placement {
+                write!(f, "owned_range: {:?}\\n", placement.owned_range).unwrap();
+            }
             if let Some((offset, length)) = slice {
                 write!(f, "slice: {offset}, {length}\\n").unwrap();
             }
@@ -772,6 +888,7 @@ fn visualize_plan_rec(
             left_on,
             right_on,
             args,
+            ..
         }
         | PhysNodeKind::SemiAntiJoin {
             input_left,
@@ -780,6 +897,8 @@ fn visualize_plan_rec(
             right_on,
             args,
             output_bool: _,
+            runtime_filters: _,
+            estimated_rows: _,
         } => {
             let base_label = match phys_sm[node_key].kind {
                 PhysNodeKind::MergeJoin { .. } => "merge-join",
@@ -798,12 +917,24 @@ fn visualize_plan_rec(
                 } if args.how.is_anti() => "is-not-in",
                 _ => unreachable!(),
             };
-            let label = fmt_join_label(
+            let mut label = fmt_join_label(
                 base_label,
                 &fmt_exprs_to_label(left_on, expr_arena, FormatExprStyle::NoAliases),
                 &fmt_exprs_to_label(right_on, expr_arena, FormatExprStyle::NoAliases),
                 args,
             );
+            if let PhysNodeKind::EquiJoin {
+                fused_predicate: Some(fused_predicate),
+                ..
+            } = &phys_sm[node_key].kind
+            {
+                let fused_predicate = fmt_exprs_to_label(
+                    std::slice::from_ref(fused_predicate),
+                    expr_arena,
+                    FormatExprStyle::NoAliases,
+                );
+                label.push_str(&format!("\nfused predicate: {fused_predicate}"));
+            }
             (label, &[*input_left, *input_right][..])
         },
         #[cfg(feature = "iejoin")]
@@ -909,7 +1040,7 @@ fn visualize_plan_rec(
 
 pub fn visualize_plan(
     root: PhysNodeKey,
-    phys_sm: &SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &DenseSlotMap<PhysNodeKey, PhysNode>,
     expr_arena: &Arena<AExpr>,
 ) -> String {
     let mut visited: SecondaryMap<PhysNodeKey, ()> = SecondaryMap::new();

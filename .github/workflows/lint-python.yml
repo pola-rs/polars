@@ -29,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.10', '3.14']
+        python-version: ['3.11', '3.14']
 
     steps:
       - uses: actions/checkout@v7
@@ -52,7 +52,7 @@ jobs:
 
       - name: Run mypy
         working-directory: py-polars
-        # Allow untyped calls for older Python versions (is this still necessary in 3.10?)
+        # Allow untyped calls for older Python versions (is this still necessary in 3.11?)
         # run: mypy ${{ (matrix.python-version == '3.9') && '--allow-untyped-calls' || '' }}
         run: mypy
 

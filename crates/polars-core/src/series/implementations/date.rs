@@ -25,6 +25,7 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
         Cow::Owned(self.0.field())
     }
 
+    #[inline]
     fn _dtype(&self) -> &DataType {
         self.0.dtype()
     }
@@ -44,10 +45,6 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
             .physical()
             .zip_with(mask, other.as_ref().as_ref())
             .map(|ca| ca.into_date().into_series())
-    }
-
-    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
-        self.0.physical().into_total_eq_inner()
     }
 
     fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
@@ -170,6 +167,7 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
         self.0.physical().chunk_lengths()
     }
 
+    #[inline]
     fn name(&self) -> &PlSmallStr {
         self.0.name()
     }
@@ -279,6 +277,7 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
             .into_series()
     }
 
+    #[inline]
     fn len(&self) -> usize {
         self.0.len()
     }
@@ -322,7 +321,10 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => {
                 let mut out = self.0.cast_with_options(dtype, CastOptions::NonStrict)?;
-                out.set_sorted_flag(self.0.physical().is_sorted_flag());
+                // Overflowing values become null, which may break the order of the nulls.
+                if out.null_count() == self.0.null_count() {
+                    out.set_sorted_flag(self.0.physical().is_sorted_flag());
+                }
                 Ok(out)
             },
             _ => self.0.cast_with_options(dtype, cast_options),

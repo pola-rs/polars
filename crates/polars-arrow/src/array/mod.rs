@@ -51,7 +51,7 @@ pub trait Splitable: Sized {
         unsafe { self._split_at_unchecked(offset) }
     }
 
-    /// Internal implementation of `split_at_unchecked`. For any usage, prefer the using
+    /// Internal implementation of `split_at_unchecked`. For any usage, prefer using
     /// `split_at` or `split_at_unchecked`.
     ///
     /// # Safety
@@ -86,6 +86,7 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     fn len(&self) -> usize;
 
     /// whether the array is empty
+    #[inline]
     fn is_empty(&self) -> bool {
         self.len() == 0
     }

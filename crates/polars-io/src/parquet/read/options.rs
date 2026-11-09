@@ -2,6 +2,8 @@ use polars_core::schema::SchemaRef;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::parquet::encryption::ParquetDecryption;
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -10,6 +12,9 @@ pub struct ParquetOptions {
     pub parallel: ParallelStrategy,
     pub low_memory: bool,
     pub use_statistics: bool,
+    /// How to decrypt files encrypted with Parquet modular encryption
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub decryption: Option<ParquetDecryption>,
 }
 
 impl Default for ParquetOptions {
@@ -19,6 +24,7 @@ impl Default for ParquetOptions {
             parallel: ParallelStrategy::default(),
             low_memory: false,
             use_statistics: true,
+            decryption: None,
         }
     }
 }
@@ -39,7 +45,7 @@ pub enum ParallelStrategy {
     /// (i.e. many row-groups) with a predicate that filters clustered rows or filters heavily. In
     /// other cases, this may slow down the scan compared other strategies.
     ///
-    /// If no predicate is given, this falls back to back to [`ParallelStrategy::Auto`].
+    /// If no predicate is given, this falls back to [`ParallelStrategy::Auto`].
     Prefiltered,
     /// Automatically determine over which unit to parallelize
     /// This will choose the most occurring unit.

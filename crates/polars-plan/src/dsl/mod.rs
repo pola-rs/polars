@@ -72,6 +72,8 @@ pub use meta::*;
 pub use name::*;
 pub use options::*;
 pub use plan::*;
+#[cfg(feature = "approx_quantile")]
+pub use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
@@ -81,12 +83,15 @@ use polars_core::series::ops::NullBehavior;
 #[cfg(feature = "is_close")]
 use polars_utils::total_ord::TotalOrdWrap;
 pub use selector::{DataTypeSelector, Selector, TimeUnitSet, TimeZoneSet};
-pub use sql::{CachedSqlStatement, SqlResolver, get_sql_resolver, set_sql_resolver};
+pub use sql::{
+    CachedSqlStatement, SqlCatalogTable, SqlResolver, get_sql_resolver, set_sql_resolver,
+};
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
 pub use udf::UserDefinedFunction;
 mod file_scan;
 pub use file_scan::*;
+pub mod dsl_resolver;
 use functions::lit;
 pub use scan_sources::{ScanSource, ScanSourceIter, ScanSourceRef, ScanSources};
 
@@ -179,7 +184,7 @@ impl Expr {
         AggExpr::First(Arc::new(self)).into()
     }
 
-    /// Get the first non-nullvalue in the group.
+    /// Get the first non-null value in the group.
     pub fn first_non_null(self) -> Self {
         AggExpr::FirstNonNull(Arc::new(self)).into()
     }
@@ -575,7 +580,7 @@ impl Expr {
     /// It is the responsibility of the caller that the schema is correct by giving
     /// the correct output_type. If None given the output type of the input expr is used.
     ///
-    /// This difference with [map](Self::map) is that `apply` will create a separate `Series` per group.
+    /// The difference with [map](Self::map) is that `apply` will create a separate `Series` per group.
     ///
     /// * `map` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
     /// * `apply` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
@@ -639,6 +644,11 @@ impl Expr {
     /// Shift the values in the array by some period and fill the resulting empty values.
     pub fn shift_and_fill<E: Into<Expr>, IE: Into<Expr>>(self, n: E, fill_value: IE) -> Self {
         self.map_ternary(FunctionExpr::ShiftAndFill, n.into(), fill_value.into())
+    }
+
+    /// Single-input version of [`functions::pipe_with_dtype`].
+    pub fn pipe_with_dtype(self, callback: PlanCallback<(Vec<Expr>, Vec<DataType>), Expr>) -> Self {
+        functions::pipe_with_dtype([self], callback)
     }
 
     /// Cumulatively count values from 0 to len.
@@ -847,15 +857,27 @@ impl Expr {
             if e.is_empty() {
                 return None;
             }
-            let e = if e.len() == 1 {
-                Arc::new(e[0].clone().into())
-            } else {
-                feature_gated!["dtype-struct", {
-                    let e = e.iter().map(|e| e.clone().into()).collect::<Vec<_>>();
-                    Arc::new(functions::as_struct(e))
-                }]
-            };
-            Some((e, options))
+            if e.len() == 1 {
+                return Some((Arc::new(e[0].clone().into()), options));
+            }
+            // Row-encode the keys so the sort options apply to every key.
+            let e = e.iter().map(|e| e.clone().into()).collect::<Vec<_>>();
+            let encoded = Expr::n_ary(
+                FunctionExpr::RowEncode {
+                    variant: RowEncodingVariant::Ordered {
+                        descending: Some(vec![options.descending]),
+                        nulls_last: Some(vec![options.nulls_last]),
+                    },
+                    output: RowEncodingOutputType::AlwaysBinaryOffset,
+                    encode_nulls: None,
+                    propagate_nulls: false,
+                },
+                e,
+            );
+            Some((
+                Arc::new(encoded),
+                SortOptions::default().with_maintain_order(options.maintain_order),
+            ))
         });
 
         Ok(Expr::Over {
@@ -863,6 +885,7 @@ impl Expr {
             partition_by,
             order_by,
             mapping,
+            may_reorder: false,
         })
     }
 
@@ -979,6 +1002,25 @@ impl Expr {
     #[cfg(feature = "approx_unique")]
     pub fn approx_n_unique(self) -> Self {
         self.map_unary(FunctionExpr::ApproxNUnique)
+    }
+
+    /// Get the approximate quantile value.
+    #[cfg(feature = "approx_quantile")]
+    pub fn approx_quantile<E: Into<Expr>>(
+        self,
+        quantile: E,
+        error: f64,
+        use_formal_bound: bool,
+        method: ApproxQuantileMethod,
+    ) -> Self {
+        self.map_binary(
+            FunctionExpr::ApproxQuantile {
+                method,
+                error,
+                use_formal_bound,
+            },
+            quantile.into(),
+        )
     }
 
     /// Bitwise "and" operation.
@@ -1418,6 +1460,12 @@ impl Expr {
         })
     }
 
+    #[cfg(feature = "cutqcut")]
+    /// Assign each value to a bin.
+    pub fn bin(self, options: BinOptions) -> Expr {
+        self.map_unary(FunctionExpr::Bin(options))
+    }
+
     #[cfg(feature = "rle")]
     /// Get the lengths of runs of identical values.
     pub fn rle(self) -> Expr {
@@ -1468,12 +1516,12 @@ impl Expr {
         self.map_unary(FunctionExpr::Kurtosis(fisher, bias))
     }
 
-    /// Get maximal value that could be hold by this dtype.
+    /// Get maximal value that could be held by this dtype.
     pub fn upper_bound(self) -> Expr {
         self.map_unary(FunctionExpr::UpperBound)
     }
 
-    /// Get minimal value that could be hold by this dtype.
+    /// Get minimal value that could be held by this dtype.
     pub fn lower_bound(self) -> Expr {
         self.map_unary(FunctionExpr::LowerBound)
     }
@@ -1598,6 +1646,18 @@ impl Expr {
     }
 
     #[cfg(feature = "log")]
+    /// Compute the error function of all elements in the input array.
+    pub fn erf(self) -> Self {
+        self.map_unary(FunctionExpr::Erf)
+    }
+
+    #[cfg(feature = "log")]
+    /// Compute the complementary error function of all elements in the input array.
+    pub fn erfc(self) -> Self {
+        self.map_unary(FunctionExpr::Erfc)
+    }
+
+    #[cfg(feature = "log")]
     /// Compute the entropy as `-sum(pk * log(pk))`.
     /// where `pk` are discrete probabilities.
     pub fn entropy(self, base: f64, normalize: bool) -> Self {
@@ -1622,6 +1682,11 @@ impl Expr {
     /// Compute the hash of every element.
     pub fn hash(self, seed: u64) -> Expr {
         self.map_unary(FunctionExpr::Hash(seed))
+    }
+
+    /// Compute the 32-bit MurmurHash3 of the values as defined by the Iceberg specification.
+    pub fn mm3_hash(self) -> Expr {
+        self.map_unary(FunctionExpr::Mm3Hash)
     }
 
     pub fn to_physical(self) -> Expr {
@@ -1740,7 +1805,7 @@ where
 /// It is the responsibility of the caller that the schema is correct by giving
 /// the correct output_type. If None given the output type of the input expr is used.
 ///
-/// This difference with [`map_multiple`] is that [`apply_multiple`] will create a separate [`Series`] per group.
+/// The difference with [`map_multiple`] is that [`apply_multiple`] will create a separate [`Series`] per group.
 ///
 /// * [`map_multiple`] should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
 /// * [`apply_multiple`] should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
