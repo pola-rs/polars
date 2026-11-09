@@ -135,8 +135,9 @@ impl<'a, A: ArrayAccessor<'a> + ?Sized> Iterator for NonNullValuesIter<'a, A> {
         F: FnMut(B, Self::Item) -> B,
     {
         let accessor = self.accessor;
-        self.idxs
-            .fold(init, |acc, i| f(acc, unsafe { accessor.value_unchecked(i) }))
+        self.idxs.fold(init, |acc, i| {
+            f(acc, unsafe { accessor.value_unchecked(i) })
+        })
     }
 }
 
