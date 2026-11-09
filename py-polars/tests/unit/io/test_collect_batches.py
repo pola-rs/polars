@@ -245,6 +245,11 @@ def test_split_by_empty(engine: EngineType) -> None:
             [["a", "a"], ["b", "b", "b"], ["c"]],
         ),
         (
+            pl.Boolean,
+            [True, True, False, False, False, True],
+            [[True, True], [False, False, False], [True]],
+        ),
+        (
             pl.Categorical,
             ["a", "a", "b", "b", "b", "c"],
             [["a", "a"], ["b", "b", "b"], ["c"]],
