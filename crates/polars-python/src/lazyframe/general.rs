@@ -767,6 +767,7 @@ impl PyLazyFrame {
     }
 
     #[cfg(feature = "async")]
+    #[pyo3(signature = (engine, maintain_order, chunk_size, lazy, split_by = None))]
     fn collect_batches(
         &self,
         py: Python<'_>,
