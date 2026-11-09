@@ -967,6 +967,40 @@ def test_credential_provider_rebuild_clears_cache(
     assert provider_local() == (updated_credentials, None)
 
 
+def test_gcp_token_with_client_options() -> None:
+    # client options, with or without the prefix, don't conflict with a token
+    for key in (
+        "timeout",
+        "google_timeout",
+        "google_proxy_url",
+        "google_base_url",
+        "read_timeout",
+        "google_read_timeout",
+        "google_randomize_addresses",
+        "disable_system_certificates",
+    ):
+        builder = _init_credential_provider_builder(
+            "auto", "gs://bucket/a.parquet", {"bearer_token": "A", key: "x"}, "test"
+        )
+        assert builder is not None
+        assert isinstance(builder.credential_provider_init, AutoInit)
+        assert builder.credential_provider_init.cls is UserProvidedGCPToken
+
+    # without a token they leave the credentials to the rust side, as before
+    path = "gs://bucket/a.parquet"
+    for key in ("google_timeout", "read_timeout"):
+        assert _init_credential_provider_builder("auto", path, {key: "x"}, "t") is None
+
+    # a credential next to the token still does
+    with pytest.raises(ValueError, match="cannot combine token"):
+        _init_credential_provider_builder(
+            "auto",
+            "gs://bucket/a.parquet",
+            {"bearer_token": "A", "google_service_account": "sa.json"},
+            "test",
+        )
+
+
 def test_user_gcp_token_provider(
     plmonkeypatch: PlMonkeyPatch,
 ) -> None:
