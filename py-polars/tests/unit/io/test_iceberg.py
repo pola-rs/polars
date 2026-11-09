@@ -239,7 +239,12 @@ def resolved_table_statistics(
     """Min/max statistics passed to the resolved scan."""
     _, scan_args = resolve_scan(tbl, **kwargs)
     statistics = scan_args["table_statistics"]
-    return None if statistics is None else pl.read_ipc_stream(bytes(statistics))
+    if statistics is None:
+        return None
+    frame, bounds = statistics
+    # Iceberg bounds of non-string types are values of their file.
+    assert bounds == "Tight"
+    return pl.read_ipc_stream(bytes(frame))
 
 
 def new_iceberg_table(
@@ -6033,6 +6038,288 @@ def test_scan_iceberg_fast_count(tmp_path: Path, reader_override: Any) -> None:
         .item()
         == 5
     )
+
+
+def _statistics_catalog(tmp_path: Path) -> SqlCatalog:
+    catalog = SqlCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path / 'iceberg_catalog.sqlite'}",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    catalog.create_namespace("ns")
+    return catalog
+
+
+def _remove_data_files(tbl: pyiceberg.table.Table) -> None:
+    for task in tbl.scan().plan_files():
+        Path(task.file.file_path.removeprefix("file://")).unlink()
+
+
+def _answered_from_statistics(capfd: pytest.CaptureFixture[str]) -> bool:
+    return "answered from table statistics" in capfd.readouterr().err
+
+
+_STATISTICS_FRAMES = [
+    {
+        "id": [1, 7],
+        "v": [None, None],
+        "d": [date(2026, 1, 1), date(2025, 3, 4)],
+        "ts": [datetime(2026, 1, 1, 12), datetime(2024, 1, 1)],
+        "dec": [D("1.25"), D("-3.50")],
+        "b": [True, True],
+        "t": [time(1, 2), time(23, 59)],
+        "s": ["b", "a"],
+        "f": [1.5, 2.5],
+    },
+    {
+        "id": [-4, 3],
+        "v": [10, None],
+        "d": [date(2020, 1, 1), date(2027, 1, 1)],
+        "ts": [datetime(2030, 1, 1), datetime(2023, 1, 1)],
+        "dec": [D("9.99"), D("0.01")],
+        "b": [False, True],
+        "t": [time(0, 0), time(12, 0)],
+        "s": ["z", "c"],
+        "f": [-1.0, 0.5],
+    },
+]
+_STATISTICS_SCHEMA: dict[str, Any] = {"v": pl.Int64, "dec": pl.Decimal(10, 2)}
+_STATISTICS_COLUMNS = ["id", "v", "d", "ts", "dec", "b", "t"]
+
+
+def _statistics_table(catalog: SqlCatalog) -> pyiceberg.table.Table:
+    for frame in _STATISTICS_FRAMES:
+        pl.LazyFrame(frame, schema_overrides=_STATISTICS_SCHEMA).sink_iceberg(
+            "ns.t", catalog=catalog, mode="append", create_if_not_exists=True
+        )
+    return catalog.load_table("ns.t")
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_aggregates_from_statistics(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    catalog = _statistics_catalog(tmp_path)
+    tbl = _statistics_table(catalog)
+    aggs = [
+        *(
+            getattr(pl.col(c), f)().alias(f"{c}_{f}")
+            for c in _STATISTICS_COLUMNS
+            for f in ["min", "max", "count", "null_count"]
+        ),
+        pl.len(),
+        (pl.col("id").max() - pl.col("id").min()).alias("range"),
+    ]
+    expected = pl.concat(
+        pl.DataFrame(f, schema_overrides=_STATISTICS_SCHEMA) for f in _STATISTICS_FRAMES
+    ).select(aggs)
+
+    # Without data files, only statistics can answer.
+    _remove_data_files(tbl)
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+
+    assert_frame_equal(pl.scan_iceberg(tbl).select(aggs).collect(), expected)
+    assert _answered_from_statistics(capfd)
+
+    with pl.SQLContext() as ctx:
+        ctx.register_catalog("lake", catalog)
+        out = ctx.execute(
+            "SELECT max(id) AS m, min(d) AS n, count(v) AS c, count(*) AS r "
+            "FROM lake.ns.t",
+            eager=True,
+        )
+    assert out.row(0) == (7, date(2020, 1, 1), 1, 4)
+    assert _answered_from_statistics(capfd)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # strings and floats: bounds may be truncated, NaN counts are not known
+        lambda lf: lf.select(pl.col("s").max()),
+        lambda lf: lf.select(pl.col("f").max()),
+        # not every row, or not only aggregates the statistics hold
+        lambda lf: lf.filter(pl.col("id") > 1).select(pl.col("id").max()),
+        lambda lf: lf.head(3).select(pl.col("id").max()),
+        lambda lf: lf.with_row_index().select(pl.col("index").max()),
+        lambda lf: lf.select(pl.col("id").max(), pl.col("id").sum().alias("sum")),
+        lambda lf: lf.select(pl.col("id").max() + pl.col("id").first()),
+        lambda lf: lf.select(pl.col("v").max(), pl.col("id")),
+        # nested evaluation contexts: the height or `len()` differ there
+        lambda lf: lf.select(pl.col("id").max().over(pl.lit(1))),
+        lambda lf: lf.select(
+            pl.col("id").max(), pl.lit([10, 20]).list.eval(pl.len()).alias("x")
+        ),
+    ],
+)
+@pytest.mark.write_disk
+def test_scan_iceberg_aggregates_need_exact_statistics(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    query: Callable[[pl.LazyFrame], pl.LazyFrame],
+) -> None:
+    tbl = _statistics_table(_statistics_catalog(tmp_path))
+    expected = query(pl.scan_iceberg(tbl)).collect(
+        optimizations=pl.QueryOptFlags.none()
+    )
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+
+    out = query(pl.scan_iceberg(tbl)).collect()
+
+    assert not _answered_from_statistics(capfd)
+    assert_frame_equal(out, expected, check_row_order=False)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_aggregates_from_statistics_fall_back(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    catalog = _statistics_catalog(tmp_path)
+    # No bounds for `id`
+    tbl = catalog.create_table(
+        ("ns", "counts"),
+        IcebergSchema(NestedField(1, "id", LongType())),
+        properties={"write.metadata.metrics.column.id": "counts"},
+    )
+    pl.DataFrame({"id": [1, 5]}).write_iceberg(tbl, mode="append")
+    tbl = catalog.load_table(("ns", "counts"))
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+
+    max_id = pl.col("id").max()
+    assert pl.scan_iceberg(tbl).select(max_id).collect().item() == 5
+    assert not _answered_from_statistics(capfd)
+
+    # Deleted rows are still in the statistics.
+    tbl = _statistics_table(catalog)
+    paths = [task.file.file_path for task in tbl.scan().plan_files()]
+    tbl = _add_position_deletes(tbl, {paths[0]: [0, 1]})
+    expected = (
+        pl.scan_iceberg(tbl)
+        .select(max_id)
+        .collect(optimizations=pl.QueryOptFlags.none())
+    )
+    capfd.readouterr()
+    assert_frame_equal(pl.scan_iceberg(tbl).select(max_id).collect(), expected)
+    assert not _answered_from_statistics(capfd)
+
+    # Opted out, or without optimizations
+    tbl = catalog.create_table(
+        ("ns", "o"), IcebergSchema(NestedField(1, "id", LongType()))
+    )
+    pl.DataFrame({"id": [1, 5]}).write_iceberg(tbl, mode="append")
+    tbl = catalog.load_table(("ns", "o"))
+    capfd.readouterr()
+    lf = pl.scan_iceberg(tbl, use_metadata_statistics=False).select(max_id)
+    assert lf.collect().item() == 5
+    assert not _answered_from_statistics(capfd)
+    lf = pl.scan_iceberg(tbl).select(max_id)
+    assert lf.collect(optimizations=pl.QueryOptFlags.none()).item() == 5
+    assert not _answered_from_statistics(capfd)
+    assert lf.collect().item() == 5
+    assert _answered_from_statistics(capfd)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_aggregates_from_statistics_promoted_and_empty(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    catalog = _statistics_catalog(tmp_path)
+    aggs = [
+        pl.col("id").min().alias("min"),
+        pl.col("id").max().alias("max"),
+        pl.col("id").count().alias("count"),
+        pl.len(),
+    ]
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    tbl = catalog.create_table(
+        ("ns", "e"), IcebergSchema(NestedField(1, "id", LongType()))
+    )
+    capfd.readouterr()
+    assert pl.scan_iceberg(tbl).select(aggs).collect().row(0) == (None, None, 0, 0)
+    assert _answered_from_statistics(capfd)
+
+    # Bounds of files written before an int -> long promotion are 4 bytes.
+    tbl = catalog.create_table(
+        ("ns", "p"), IcebergSchema(NestedField(1, "id", IntegerType()))
+    )
+    pl.DataFrame({"id": pl.Series([3, -7], dtype=pl.Int32)}).write_iceberg(
+        tbl, mode="append"
+    )
+    with tbl.update_schema() as update:
+        update.update_column("id", LongType())
+    tbl = catalog.load_table(("ns", "p"))
+    pl.DataFrame({"id": [2**40, 1]}).write_iceberg(tbl, mode="append")
+    tbl = catalog.load_table(("ns", "p"))
+    _remove_data_files(tbl)
+    capfd.readouterr()
+
+    assert pl.scan_iceberg(tbl).select(aggs).collect().row(0) == (-7, 2**40, 4, 4)
+    assert _answered_from_statistics(capfd)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_aggregates_from_statistics_requests(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # Statistics are only asked for when they can answer the whole select.
+    tbl = _statistics_table(_statistics_catalog(tmp_path))
+    requests = []
+    to_dataset_scan = IcebergScanResolver.to_dataset_scan
+
+    def record(self: Any, *args: Any, **kwargs: Any) -> Any:
+        requests.append(kwargs.get("statistics_columns"))
+        return to_dataset_scan(self, *args, **kwargs)
+
+    plmonkeypatch.setattr(IcebergScanResolver, "to_dataset_scan", record)
+    max_id = pl.col("id").max()
+    cases: list[tuple[dict[str, Any], list[pl.Expr], list[str] | None]] = [
+        ({}, [max_id, pl.col("s").count()], ["id", "s"]),
+        ({}, [max_id, pl.col("s").max()], None),
+        ({"use_metadata_statistics": False}, [max_id], None),
+        ({"reader_override": "pyiceberg"}, [max_id], None),
+    ]
+    for scan_kwargs, exprs, statistics_columns in cases:
+        requests.clear()
+        lf = pl.scan_iceberg(tbl, **scan_kwargs).select(exprs)
+        expected = lf.collect(optimizations=pl.QueryOptFlags.none())
+        requests.clear()
+        assert_frame_equal(lf.collect(), expected)
+        assert requests[0] == statistics_columns
+        assert len(requests) == 1
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_aggregates_from_statistics_duplicated_subplan(
+    tmp_path: Path,
+) -> None:
+    tbl = _statistics_table(_statistics_catalog(tmp_path))
+    for expr in [pl.col("id").max(), pl.col("s").max()]:
+        q = pl.scan_iceberg(tbl).select(expr)
+        expected = pl.concat([q, q]).collect(optimizations=pl.QueryOptFlags.none())
+        assert_frame_equal(pl.concat([q, q]).collect(), expected)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_aggregates_from_statistics_empty_keeps_errors(
+    tmp_path: Path,
+) -> None:
+    catalog = _statistics_catalog(tmp_path)
+    tbl = catalog.create_table(
+        ("ns", "l"),
+        IcebergSchema(
+            NestedField(1, "xs", ListType(2, LongType(), element_required=False))
+        ),
+    )
+    lf = pl.scan_iceberg(tbl).select(pl.col("xs").min())
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        lf.collect(optimizations=pl.QueryOptFlags.none())
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        lf.collect()
 
 
 @pytest.mark.write_disk

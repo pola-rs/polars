@@ -58,6 +58,8 @@ class ScanOptions:
     default_values: DefaultFieldValues | None = None
     deletion_files: DeletionFiles | None = None
     table_statistics: DataFrame | None = None
+    # Iceberg: non-string bounds are actual values, so they can answer aggregates.
+    table_statistics_tight: bool = False
     # (physical, deleted)
     row_count: tuple[int, int] | None = None
     source_sizes: Sequence[int] | None = None
