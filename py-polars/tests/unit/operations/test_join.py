@@ -4751,6 +4751,18 @@ def test_join_slice_maintain_order_negative_offset_overshoot_28538() -> None:
     )
 
 
+def test_join_slice_maintain_order_unordered_consumer_30668() -> None:
+    left = pl.LazyFrame({"k": [1, 0]})
+    right = pl.LazyFrame({"k": [0, 1], "w": [1, 2]})
+    q = left.join(right, on="k", maintain_order="left").head(1)
+
+    expected = pl.DataFrame({"k": [1], "w": [2]})
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(q.sort("w").collect(), expected)
+    assert_frame_equal(q.unique().collect(), expected)
+    assert_frame_equal(q.select(pl.col("w").sum()).collect(), pl.DataFrame({"w": [2]}))
+
+
 @pytest.mark.parametrize(
     ("dtype", "present", "missing", "inner_null"),
     [
