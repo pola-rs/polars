@@ -295,7 +295,7 @@ impl SlicePushDown {
             *input = new_input_node;
 
             // Every slice on a column in these expressions is contained in `limit`.
-            let col_slice_nodes: PlHashSet<Node> = expr
+            let col_slice_nodes: PlIndexSet<Node> = expr
                 .iter()
                 .flat_map(|e| expr_arena.iter(e.node()))
                 .filter_map(|(node, ae)| match ae {
