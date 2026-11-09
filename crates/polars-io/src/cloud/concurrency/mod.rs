@@ -514,7 +514,7 @@ impl ConcurrencyController {
                 let head_rtt_window = head_rtt.take();
 
                 // Log snapshot.
-                if std::env::var("POLARS_LOG_CONCURRENCY").is_ok() {
+                if polars_config::config().log_concurrency() {
                     // The tick the knee saw, before this tick's resize.
                     let bound = [
                         ("bytes", knee_tick.bytes_bound()),
