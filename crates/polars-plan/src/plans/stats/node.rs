@@ -492,7 +492,9 @@ fn passed_through_columns(
             kept.insert(e.output_name().clone(), stats);
             continue;
         }
-        let source = into_column(e.node(), expr_arena)?;
+        let Some(source) = into_column(e.node(), expr_arena) else {
+            continue;
+        };
         if let Some(stats) = inner.column(source) {
             kept.insert(e.output_name().clone(), stats.clone());
         }
@@ -1405,6 +1407,35 @@ mod tests {
             &Schema::default(),
         );
         assert!((kept - 200.0).abs() < 1e-9, "got {kept}");
+    }
+
+    #[test]
+    fn a_computed_column_keeps_the_statistics_of_the_others() {
+        let range = ScanColumnStats {
+            int_range: Some((0, 99)),
+            ..Default::default()
+        };
+        let stats = leaf(100.0, 100.0)
+            .with_column("a", range.clone())
+            .with_column("b", range);
+
+        let mut expr_arena = Arena::new();
+        let a = expr_arena.add(AExpr::Column(key("a")));
+        let b = expr_arena.add(AExpr::Column(key("b")));
+        let one = expr_arena.add(AExpr::Literal(Scalar::from(1i64).into()));
+        let b_plus_one = expr_arena.add(AExpr::BinaryExpr {
+            left: b,
+            op: Operator::Plus,
+            right: one,
+        });
+        let exprs = [
+            ExprIR::new(a, crate::plans::OutputName::Alias(key("x"))),
+            ExprIR::new(b_plus_one, crate::plans::OutputName::Alias(key("b"))),
+        ];
+
+        let columns = passed_through_columns(&stats, &exprs, &expr_arena).unwrap();
+        assert_eq!(columns.get("x").unwrap().int_range, Some((0, 99)));
+        assert!(!columns.contains_key("b"));
     }
 
     #[test]
