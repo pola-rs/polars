@@ -164,6 +164,13 @@ impl FileReader for CsvFileReader {
             // Prepare parameters for Prefetch task.
             // TODO REFACTOR: use get_streaming_chunk_size(),
             const DEFAULT_CSV_CHUNK_SIZE: usize = 32 * 1024 * 1024;
+            const SMALL_HEAD_SLICE_MAX_ROWS: usize = 1_000;
+            const SMALL_HEAD_CSV_CHUNK_SIZE: usize = 1024 * 1024;
+            let is_small_head_slice = matches!(
+                pre_slice.as_ref(),
+                Some(Slice::Positive { offset: 0, len })
+                    if *len <= SMALL_HEAD_SLICE_MAX_ROWS
+            );
             let memory_prefetch_func = get_memory_prefetch_func(verbose);
             let chunk_size = std::env::var("POLARS_CSV_CHUNK_SIZE")
                 .map(|x| {
@@ -171,13 +178,24 @@ impl FileReader for CsvFileReader {
                         .unwrap_or_else(|_| panic!("invalid value for POLARS_CSV_CHUNK_SIZE: {x}"))
                         .get()
                 })
-                .unwrap_or(DEFAULT_CSV_CHUNK_SIZE);
+                .unwrap_or(if is_small_head_slice {
+                    SMALL_HEAD_CSV_CHUNK_SIZE
+                } else {
+                    DEFAULT_CSV_CHUNK_SIZE
+                });
 
             let prefetch_limit = self
                 .chunk_prefetch_sync
                 .prefetch_limit
                 .min(file_size.div_ceil(chunk_size))
                 .max(1);
+            let prefetch_limit = if is_small_head_slice
+                && std::env::var_os("POLARS_CSV_CHUNK_PREFETCH_LIMIT").is_none()
+            {
+                1
+            } else {
+                prefetch_limit
+            };
 
             let (prefetch_send, prefetch_recv) = tokio::sync::mpsc::channel(prefetch_limit);
 
