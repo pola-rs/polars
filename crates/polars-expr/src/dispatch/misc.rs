@@ -878,10 +878,13 @@ pub(super) fn log(columns: &[Column]) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "log")]
-pub(super) fn x_log_x(s: &Column, base: f64) -> PolarsResult<Column> {
+pub(super) fn x_log_y(columns: &[Column], base: f64) -> PolarsResult<Column> {
     use polars_ops::series::LogSeries;
 
-    Ok(s.as_materialized_series().x_log_x(base)?.into())
+    assert_eq!(columns.len(), 2);
+    Column::try_apply_broadcasting_binary_elementwise(&columns[0], &columns[1], |x, y| {
+        x.x_log_y(y, base)
+    })
 }
 
 #[cfg(feature = "log")]

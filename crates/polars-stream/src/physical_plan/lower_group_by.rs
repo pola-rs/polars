@@ -575,8 +575,8 @@ fn try_lower_elementwise_scalar_agg_expr(
                 x = x.cast(dtype, expr_arena);
             }
             let sum_x_log_x = AExprBuilder::function(
-                vec![x.expr_ir_unnamed()],
-                IRFunctionExpr::XLogX { base },
+                vec![x.expr_ir_unnamed(), x.expr_ir_unnamed()],
+                IRFunctionExpr::XLogY { base },
                 expr_arena,
             )
             .sum(expr_arena);

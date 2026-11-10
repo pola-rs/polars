@@ -95,4 +95,4 @@ Computation
     Series.sqrt
     Series.tan
     Series.tanh
-    Series.x_log_x
+    Series.x_log_y

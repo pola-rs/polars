@@ -1,6 +1,7 @@
 use num_traits::{Float, NumCast, One, ToPrimitive, Zero};
 use polars_core::prelude::arity::broadcast_binary_elementwise_values;
 use polars_core::prelude::*;
+use polars_core::utils::try_get_supertype;
 use polars_core::{with_match_physical_float_polars_type, with_match_physical_integer_polars_type};
 
 use crate::series::ops::SeriesSealed;
@@ -201,32 +202,41 @@ pub trait LogSeries: SeriesSealed {
         }
     }
 
-    /// Compute `x * log(x, base)` elementwise, with `0 * log(0) = 0` and NaN for negative `x`.
-    fn x_log_x(&self, base: f64) -> PolarsResult<Series> {
-        let s = self.as_series();
-        match s.dtype() {
-            dt if dt.is_float() => {
-                with_match_physical_float_polars_type!(s.dtype(), |$T| {
-                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref();
-                    let base = NumCast::from(base).unwrap();
-                    Ok(ca.apply_values(|x| x_log_x(x, base)).into_series())
-                })
-            },
-            dt if dt.is_integer() || dt.is_decimal() || dt.is_bool() => {
-                s.cast(&DataType::Float64)?.x_log_x(base)
-            },
-            dt => polars_bail!(opq = x_log_x, dt),
+    /// Compute `x * log(y, base)` elementwise, which is 0 where `x` is 0 unless `y` is NaN.
+    fn x_log_y(&self, y: &Series, base: f64) -> PolarsResult<Series> {
+        let x = self.as_series();
+        for s in [x, y] {
+            polars_ensure!(
+                s.dtype().is_numeric() || s.dtype().is_bool(),
+                InvalidOperation: "expected numeric or boolean input for `x_log_y`, got `{}`", s.dtype()
+            );
         }
+
+        let dtype = match (x.dtype().is_float(), y.dtype().is_float()) {
+            (true, true) => try_get_supertype(x.dtype(), y.dtype())?,
+            (true, false) => x.dtype().clone(),
+            (false, true) => y.dtype().clone(),
+            (false, false) => DataType::Float64,
+        };
+        if x.dtype() != &dtype || y.dtype() != &dtype {
+            return x.cast(&dtype)?.x_log_y(&y.cast(&dtype)?, base);
+        }
+        with_match_physical_float_polars_type!(&dtype, |$T| {
+            let x_ca: &ChunkedArray<$T> = x.as_ref().as_ref();
+            let y_ca: &ChunkedArray<$T> = y.as_ref().as_ref();
+            let base = NumCast::from(base).unwrap();
+            let out: ChunkedArray<$T> =
+                broadcast_binary_elementwise_values(x_ca, y_ca, |x, y| x_log_y(x, y, base));
+            Ok(out.into_series())
+        })
     }
 }
 
-fn x_log_x<F: Float>(x: F, base: F) -> F {
-    if x < F::zero() {
-        F::nan()
-    } else if x == F::zero() {
+fn x_log_y<F: Float>(x: F, y: F, base: F) -> F {
+    if x == F::zero() && !y.is_nan() {
         F::zero()
     } else {
-        x * x.log(base)
+        x * y.log(base)
     }
 }
 
@@ -253,7 +263,8 @@ where
         if x < zero {
             T::Native::nan()
         } else {
-            x_log_x(x / total, base)
+            let p = x / total;
+            x_log_y(p, p, base)
         }
     });
     -plogp.sum().map_or(0.0, |t| t.to_f64().unwrap())

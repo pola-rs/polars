@@ -325,9 +325,9 @@ impl IRFunctionExpr {
                 .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "entropy")?
                 .map_to_float_dtype(),
             #[cfg(feature = "log")]
-            XLogX { .. } => mapper
-                .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "x_log_x")?
-                .map_to_float_dtype(),
+            XLogY { .. } => mapper
+                .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "x_log_y")?
+                .x_log_y_dtype(),
             #[cfg(feature = "log")]
             Log1p => mapper
                 .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "log1p")?
@@ -937,6 +937,18 @@ impl<'a> FieldsMapper<'a> {
             &DataType::Float64
         };
         Ok(Field::new(self.fields[0].name().clone(), out_dtype.clone()))
+    }
+
+    pub(super) fn x_log_y_dtype(&self) -> PolarsResult<Field> {
+        let dtype1 = self.fields[0].dtype();
+        let dtype2 = self.fields[1].dtype();
+        let out_dtype = match (dtype1.is_float(), dtype2.is_float()) {
+            (true, true) => try_get_supertype(dtype1, dtype2)?,
+            (true, false) => dtype1.clone(),
+            (false, true) => dtype2.clone(),
+            (false, false) => DataType::Float64,
+        };
+        Ok(Field::new(self.fields[0].name().clone(), out_dtype))
     }
 
     pub fn quantile_dtype(&self) -> PolarsResult<Field> {

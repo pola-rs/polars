@@ -290,7 +290,7 @@ pub enum IRFunctionExpr {
         normalize: bool,
     },
     #[cfg(feature = "log")]
-    XLogX {
+    XLogY {
         base: f64,
     },
     #[cfg(feature = "log")]
@@ -700,7 +700,7 @@ impl Hash for IRFunctionExpr {
                 normalize.hash(state);
             },
             #[cfg(feature = "log")]
-            XLogX { base } => base.to_bits().hash(state),
+            XLogY { base } => base.to_bits().hash(state),
             #[cfg(feature = "log")]
             Log => {},
             #[cfg(feature = "log")]
@@ -1008,7 +1008,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "log")]
             Entropy { .. } => "entropy",
             #[cfg(feature = "log")]
-            XLogX { .. } => "x_log_x",
+            XLogY { .. } => "x_log_y",
             #[cfg(feature = "log")]
             Log => "log",
             #[cfg(feature = "log")]
@@ -1411,7 +1411,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "interpolate_by")]
             F::InterpolateBy => FunctionOptions::length_preserving(),
             #[cfg(feature = "log")]
-            F::Log | F::Log1p | F::Exp | F::Erf | F::Erfc | F::XLogX { .. } => {
+            F::Log | F::Log1p | F::Exp | F::Erf | F::Erfc | F::XLogY { .. } => {
                 FunctionOptions::elementwise()
             },
             #[cfg(feature = "log")]

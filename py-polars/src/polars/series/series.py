@@ -1886,28 +1886,30 @@ class Series(metaclass=_Meta):
         ]
         """
 
-    def x_log_x(self, base: float = math.e) -> Series:
+    def x_log_y(self, y: Series | float, base: float = math.e) -> Series:
         """
-        Compute `x * log(x)` to a given base, element-wise.
+        Compute `x * log(y)` to a given base, where `x` is this Series.
 
-        `0 * log(0)` is taken as 0, and negative values give NaN.
+        The result is 0 where `x` is 0, unless `y` is NaN, so `0 * log(0)` is 0.
 
         Parameters
         ----------
+        y
+            The values to take the logarithm of.
         base
             Given base, defaults to `e`
 
         Examples
         --------
-        >>> s = pl.Series([0, 1, 2, 4])
-        >>> s.x_log_x(base=2)
+        >>> s = pl.Series([0, 1, 2, 3])
+        >>> s.x_log_y(pl.Series([0, 2, 4, 8]), base=2)
         shape: (4,)
         Series: '' [f64]
         [
             0.0
-            0.0
-            2.0
-            8.0
+            1.0
+            4.0
+            9.0
         ]
         """
 

@@ -2313,8 +2313,8 @@ fn lower_exprs_with_ctx(
                     x = x.cast(dtype, ctx.expr_arena);
                 }
                 let sum_x_log_x = AExprBuilder::function(
-                    vec![x.expr_ir_unnamed()],
-                    IRFunctionExpr::XLogX { base },
+                    vec![x.expr_ir_unnamed(), x.expr_ir_unnamed()],
+                    IRFunctionExpr::XLogY { base },
                     ctx.expr_arena,
                 )
                 .sum(ctx.expr_arena);

@@ -255,26 +255,78 @@ def test_entropy_corner_cases_group_by_30688(normalize: bool) -> None:
         assert_entropy_equal(result[i], expected_norm if normalize else expected_raw)
 
 
+X_LOG_Y_CASES = [
+    # (x, y, x * log2(y))
+    (0.0, 0.0, 0.0),
+    (-0.0, 2.0, 0.0),
+    (0.0, -1.0, 0.0),
+    (0.0, INF, 0.0),
+    (0.0, NAN, NAN),
+    (1.0, 1.0, 0.0),
+    (1.0, 2.0, 1.0),
+    (3.0, 8.0, 9.0),
+    (-1.0, 2.0, -1.0),
+    (2.0, -1.0, NAN),
+    (NAN, 2.0, NAN),
+    (INF, 2.0, INF),
+    (1.0, INF, INF),
+    (None, 2.0, None),
+    (1.0, None, None),
+]
+
+
 @pytest.mark.parametrize("dtype", [pl.Float16, pl.Float32, pl.Float64])
-def test_x_log_x(dtype: pl.DataType) -> None:
-    s = pl.Series("a", [0.0, -0.0, 1.0, 2.0, 4.0, None, -1.0, NAN, INF], dtype=dtype)
-    expected = pl.Series(
-        "a", [0.0, 0.0, 0.0, 2.0, 8.0, None, NAN, NAN, INF], dtype=dtype
+def test_x_log_y(dtype: pl.DataType) -> None:
+    df = pl.DataFrame(
+        {
+            "x": [x for x, _, _ in X_LOG_Y_CASES],
+            "y": [y for _, y, _ in X_LOG_Y_CASES],
+        },
+        schema={"x": dtype, "y": dtype},
     )
-    assert_series_equal(s.x_log_x(base=2), expected)
-    assert_series_equal(
-        pl.LazyFrame([s]).select(pl.col("a").x_log_x(base=2)).collect().to_series(),
-        expected,
-    )
+    expected = pl.Series("x", [e for _, _, e in X_LOG_Y_CASES], dtype=dtype)
+    assert_series_equal(df["x"].x_log_y(df["y"], base=2), expected)
+    out = df.lazy().select(pl.col("x").x_log_y("y", base=2)).collect()
+    assert_series_equal(out.to_series(), expected)
 
 
-def test_x_log_x_non_float() -> None:
-    s = pl.Series("a", [0, 1, 4, None])
-    expected = pl.Series("a", [0.0, 0.0, 8.0, None])
-    assert_series_equal(s.x_log_x(base=2), expected)
-    assert_series_equal(
-        pl.Series("a", [False, True]).x_log_x(), pl.Series("a", [0.0, 0.0])
+@pytest.mark.parametrize(
+    ("x_dtype", "y_dtype", "out_dtype"),
+    [
+        (pl.Int64, pl.Int64, pl.Float64),
+        (pl.Boolean, pl.UInt8, pl.Float64),
+        (pl.Float32, pl.Int64, pl.Float32),
+        (pl.Int64, pl.Float32, pl.Float32),
+        (pl.Float32, pl.Float64, pl.Float64),
+        (pl.Float16, pl.Float32, pl.Float32),
+    ],
+)
+def test_x_log_y_dtype(
+    x_dtype: pl.DataType, y_dtype: pl.DataType, out_dtype: pl.DataType
+) -> None:
+    lf = pl.LazyFrame({"x": [0, 1, 1], "y": [0, 1, 4]}).cast(
+        {"x": x_dtype, "y": y_dtype}
     )
+    q = lf.select(pl.col("x").x_log_y("y", base=2))
+    expected = pl.DataFrame({"x": [0.0, 0.0, 2.0]}, schema={"x": out_dtype})
+    assert q.collect_schema() == expected.schema
+    assert_frame_equal(q.collect(), expected)
+
+
+def test_x_log_y_broadcast() -> None:
+    df = pl.DataFrame({"a": [0, 1, 2]})
+    out = df.select(
+        x_scalar=pl.lit(2).x_log_y("a", base=2),
+        y_scalar=pl.col("a").x_log_y(pl.lit(4), base=2),
+    )
+    expected = pl.DataFrame({"x_scalar": [-INF, 0.0, 2.0], "y_scalar": [0.0, 2.0, 4.0]})
+    assert_frame_equal(out, expected)
+
+
+def test_x_log_y_invalid_dtype() -> None:
+    df = pl.DataFrame({"x": [1.0], "s": ["a"]})
+    with pytest.raises(InvalidOperationError, match="x_log_y"):
+        df.select(pl.col("x").x_log_y("s"))
 
 
 @pytest.mark.parametrize(

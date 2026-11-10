@@ -12281,36 +12281,40 @@ class Expr(metaclass=_Meta):
         """
         return wrap_expr(self._pyexpr.log1p())
 
-    def x_log_x(self, base: float = math.e) -> Expr:
+    def x_log_y(self, y: IntoExpr, base: float = math.e) -> Expr:
         """
-        Compute `x * log(x)` to a given base, element-wise.
+        Compute `x * log(y)` to a given base, where `x` is this expression.
 
-        `0 * log(0)` is taken as 0, and negative values give NaN.
+        The result is 0 where `x` is 0, unless `y` is NaN, so `0 * log(0)` is 0.
 
         .. engine-support:: in-memory, streaming
 
         Parameters
         ----------
+        y
+            The expression to take the logarithm of. Accepts expression input;
+            strings are parsed as column names.
         base
             Given base, defaults to `e`
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [0, 1, 2, 4]})
-        >>> df.select(pl.col("a").x_log_x(base=2))
+        >>> df = pl.DataFrame({"x": [0, 1, 2, 3], "y": [0, 2, 4, 8]})
+        >>> df.select(pl.col("x").x_log_y("y", base=2))
         shape: (4, 1)
         ┌─────┐
-        │ a   │
+        │ x   │
         │ --- │
         │ f64 │
         ╞═════╡
         │ 0.0 │
-        │ 0.0 │
-        │ 2.0 │
-        │ 8.0 │
+        │ 1.0 │
+        │ 4.0 │
+        │ 9.0 │
         └─────┘
         """
-        return wrap_expr(self._pyexpr.x_log_x(base))
+        y_pyexpr = parse_into_expression(y)
+        return wrap_expr(self._pyexpr.x_log_y(y_pyexpr, base))
 
     def entropy(self, base: float = math.e, *, normalize: bool = True) -> Expr:
         """
