@@ -155,7 +155,7 @@ pub fn overwrite_schema(schema: &mut Schema, overwriting_schema: &Schema) -> Pol
 polars_utils::regex_cache::cached_regex! {
     pub static FLOAT_RE = r"^[-+]?((\d*\.\d+)([eE][-+]?\d+)?|inf|NaN|(\d+)[eE][-+]?\d+|\d+\.)$";
     pub static FLOAT_RE_DECIMAL = r"^[-+]?((\d*,\d+)([eE][-+]?\d+)?|inf|NaN|(\d+)[eE][-+]?\d+|\d+,)$";
-    pub static INTEGER_RE = r"^-?(\d+)$";
+    pub static INTEGER_RE = r"^-?([0-9]+)$";
     pub static BOOLEAN_RE = r"^(?i:true|false)$";
 }
 
@@ -216,7 +216,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::FLOAT_RE;
+    use super::{FLOAT_RE, INTEGER_RE};
 
     #[test]
     fn test_float_parse() {
@@ -237,5 +237,47 @@ mod tests {
         assert!(FLOAT_RE.is_match("-7e-05"));
         assert!(FLOAT_RE.is_match("7e-05"));
         assert!(FLOAT_RE.is_match("+7e+05"));
+    }
+
+    #[test]
+    fn test_integer_parse() {
+        for valid in ["01", "1234567890"] {
+            assert!(INTEGER_RE.is_match(valid));
+        }
+        for invalid in [
+            // poorly formatted
+            "\"\"1\"\"",
+            "\"33428\"",
+            "45...",
+            // non-numerical characters
+            "NA",
+            "01ü69",
+            "42?530",
+            "Q4558",
+            "48xxx",
+            "Ü8447",
+            // floating point numbers
+            "11.0",
+            // Arabic-Indic
+            "١٢٣٤٥٦٧٨٩٠",
+            // Persian/Farsi
+            "۱۲۳۴۵۶۷۸۹۰",
+            // Devanagari (Hindi):
+            "१२३४५६७८९०",
+            // Bengali:
+            "১২৩৪৫৬৭৮৯০",
+            // Thai:
+            "๑๒๓๔๕๖๗๘๙๐",
+            // Tibetan:
+            "༡༢༣༤༥༦༧༨༩༠",
+            // Chinese/Japanese:
+            "一二三四五六七八九〇",
+        ] {
+            assert!(
+                !INTEGER_RE.is_match(invalid),
+                "'{}' is not an integer",
+                invalid
+            );
+        }
     }
 }
