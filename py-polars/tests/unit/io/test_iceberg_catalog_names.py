@@ -179,8 +179,10 @@ def test_resolver_error_passes_through() -> None:
 
     pl.Config.set_iceberg_catalog_resolver(resolver)
 
-    with pytest.raises(ComputeError, match=r"^not connected$") as excinfo:
+    # pytest matches against the message and its notes, so check each apart.
+    with pytest.raises(ComputeError, match="not connected") as excinfo:
         resolve_catalog("sales")
+    assert str(excinfo.value) == "not connected"
     assert excinfo.value.__notes__ == [
         "raised by the Iceberg catalog resolver for catalog 'sales'"
     ]
@@ -188,7 +190,8 @@ def test_resolver_error_passes_through() -> None:
 
 def test_resolver_error_names_the_catalog() -> None:
     # The documented resolver, a mapping's `__getitem__`.
-    pl.Config.set_iceberg_catalog_resolver({}.__getitem__)
+    catalogs: dict[str, Catalog] = {}
+    pl.Config.set_iceberg_catalog_resolver(catalogs.__getitem__)
 
     with pytest.raises(KeyError) as excinfo:
         resolve_catalog("sale")
@@ -364,8 +367,14 @@ def test_sink_surfaces_resolver_error_after_deserialize(sales: SqlCatalog) -> No
 
     pl.Config.set_iceberg_catalog_resolver(refusing)
 
-    with pytest.raises(ComputeError, match=r"^can only be resolved while planning$"):
+    with pytest.raises(
+        ComputeError, match="can only be resolved while planning"
+    ) as excinfo:
         pl.LazyFrame.deserialize(io.BytesIO(data)).collect()
+    assert str(excinfo.value) == "can only be resolved while planning"
+    assert excinfo.value.__notes__ == [
+        "raised by the Iceberg catalog resolver for catalog 'sales'"
+    ]
     assert_frame_equal(table_rows(sales), pl.DataFrame({"a": [1, 2]}))
 
 
@@ -401,5 +410,11 @@ def test_sink_state_resolves_again_after_pickling(sales: SqlCatalog) -> None:
         raise ComputeError(msg)
 
     pl.Config.set_iceberg_catalog_resolver(refusing)
-    with pytest.raises(ComputeError, match=r"^can only be resolved while planning$"):
+    with pytest.raises(
+        ComputeError, match="can only be resolved while planning"
+    ) as excinfo:
         pickle.loads(data).commit([])
+    assert str(excinfo.value) == "can only be resolved while planning"
+    assert excinfo.value.__notes__ == [
+        "raised by the Iceberg catalog resolver for catalog 'sales'"
+    ]
