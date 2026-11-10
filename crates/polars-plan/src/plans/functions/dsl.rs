@@ -96,17 +96,10 @@ impl DslFunction {
         let function = match self {
             #[cfg(feature = "pivot")]
             DslFunction::Unpivot { args } => {
-                let variable_name = args.variable_name.as_deref().unwrap_or("variable");
-                polars_ensure!(
-                    !input_schema.contains(variable_name),
-                    Duplicate: "duplicate column name '{variable_name}'"
-                );
-
-                let value_name = args.value_name.as_deref().unwrap_or("value");
-                polars_ensure!(
-                    !input_schema.contains(value_name),
-                    Duplicate: "duplicate column name '{value_name}'"
-                );
+                let variable_name = args
+                    .variable_name
+                    .unwrap_or(PlSmallStr::from_static("variable"));
+                let value_name = args.value_name.unwrap_or(PlSmallStr::from_static("value"));
                 polars_ensure!(
                     variable_name != value_name,
                     Duplicate: "duplicate column name '{value_name}'"
@@ -126,12 +119,21 @@ impl DslFunction {
                     .into_columns(input_schema, &Default::default())?
                     .into_vec();
 
+                polars_ensure!(
+                    !index.contains(&value_name),
+                    Duplicate: "duplicate column name '{value_name}'"
+                );
+                polars_ensure!(
+                    !index.contains(&variable_name),
+                    Duplicate: "duplicate column name '{variable_name}'"
+                );
+
                 let args = UnpivotArgsIR::new(
                     input_schema.iter().map(|(name, _)| name.clone()).collect(),
                     on,
                     index,
-                    args.value_name,
-                    args.variable_name,
+                    Some(value_name),
+                    Some(variable_name),
                 );
 
                 FunctionIR::Unpivot {
