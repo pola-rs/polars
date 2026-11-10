@@ -215,10 +215,12 @@ jobs:
         with:
           swap-size-gb: 10
 
+      # Use a mirror for RISCV64 python binaries
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7.1.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+          mirror: ${{ matrix.os == 'ubuntu-24.04-riscv' && 'https://raw.githubusercontent.com/riseproject-dev/python-versions/refs/heads/main/versions-manifest.json' || '' }}
 
       # Otherwise can't find `tomlq` after `pip install yq`
       - name: Add Python scripts folder to GITHUB_PATH (ARM64 Windows)
