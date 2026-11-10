@@ -16,6 +16,7 @@ from polars.lazyframe.opt_flags import QueryOptFlags
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from polars._typing import EngineType
@@ -1169,6 +1170,118 @@ def test_slice_pushdown_expr_window_keeps_frame_height(
 ) -> None:
     q = pl.LazyFrame({"a": [1, 2, 3]}).select(expr.alias("out"))
     assert q.collect(engine=engine).to_series().to_list() == expected
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected"),
+    [
+        (pl.col("l").list.eval(pl.element() + 1).first(), [[2, 3, 4]]),
+        (pl.col("l").list.eval(pl.element() + 1).last(), [[5, 6]]),
+        (pl.col("l").list.agg(pl.element() + 1).first(), [[2, 3, 4]]),
+        (pl.col("l").list.reverse().head(1), [[3, 2, 1]]),
+        (pl.col("l").list.reverse().slice(1, 1), [[5, 4]]),
+    ],
+)
+def test_slice_pushdown_expr_list_eval_30666(
+    expr: pl.Expr, expected: list[list[int]]
+) -> None:
+    lf = pl.LazyFrame({"l": [[1, 2, 3], [4, 5]]})
+    assert_frame_equal(
+        lf.select(expr).collect(),
+        pl.DataFrame({"l": expected}, schema={"l": pl.List(pl.Int64)}),
+    )
+
+
+def test_slice_pushdown_expr_list_eval_group_by_30666() -> None:
+    lf = pl.LazyFrame({"g": [1, 1], "l": [[1, 2, 3], [4, 5]]})
+    q = lf.group_by("g").agg(pl.col("l").list.eval(pl.element() + 1).first())
+    assert_frame_equal(q.collect(), pl.DataFrame({"g": [1], "l": [[2, 3, 4]]}))
+
+
+def test_slice_pushdown_expr_arr_eval_30666() -> None:
+    lf = pl.LazyFrame({"a": [[1, 2], [3, 4]]}, schema={"a": pl.Array(pl.Int64, 2)})
+    assert_frame_equal(
+        lf.select(pl.col("a").arr.eval(pl.element() * 2).first()).collect(),
+        pl.DataFrame({"a": [[2, 4]]}, schema={"a": pl.Array(pl.Int64, 2)}),
+    )
+
+
+def test_slice_pushdown_expr_struct_with_fields_outer_column_30666() -> None:
+    lf = pl.LazyFrame({"s": [{"a": 1}, {"a": 2}, {"a": 3}], "x": [10, 20, 30]})
+    q = lf.select(
+        pl.col("s")
+        .struct.with_fields(pl.col("x"), y=pl.field("a") * pl.col("x"))
+        .slice(1, 1)
+    )
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {"s": [{"a": 2, "x": 20, "y": 40}]},
+            schema={"s": pl.Struct({"a": pl.Int64, "x": pl.Int64, "y": pl.Int64})},
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("agg", "t", "dtype"),
+    [
+        (pl.field("a").sum(), 6, pl.Int64),
+        (pl.field("a").mean(), 2.0, pl.Float64),
+        (pl.field("a").len(), 3, pl.get_index_type()),
+        (pl.field("a").max(), 3, pl.Int64),
+    ],
+)
+@pytest.mark.parametrize(
+    ("take_rows", "a"),
+    [
+        (lambda e: e.first(), [1]),
+        (lambda e: e.last(), [3]),
+        (lambda e: e.head(2), [1, 2]),
+        (lambda e: e.slice(1, 1), [2]),
+    ],
+)
+def test_slice_pushdown_expr_struct_with_fields_agg(
+    agg: pl.Expr,
+    t: float,
+    dtype: pl.DataType,
+    take_rows: Callable[[pl.Expr], pl.Expr],
+    a: list[int],
+) -> None:
+    lf = pl.LazyFrame({"s": [{"a": 1}, {"a": 2}, {"a": 3}]})
+    q = lf.select(take_rows(pl.col("s").struct.with_fields(t=agg)))
+    expected = pl.DataFrame(
+        {"s": [{"a": x, "t": t} for x in a]},
+        schema={"s": pl.Struct({"a": pl.Int64, "t": dtype})},
+    )
+    assert_frame_equal(q.collect(), expected)
+
+
+@pytest.mark.parametrize(
+    ("other", "is_in"),
+    [
+        ([2, 3], [False, True, True, False]),
+        (pl.lit(pl.Series([[2, 3]])), [False, True, True, False]),
+        (pl.lit(pl.Series([[1], [1], [3], [3]])), [True, False, True, False]),
+        (pl.col("b"), [False, True, False, True]),
+    ],
+)
+@pytest.mark.parametrize(
+    ("take_rows", "rows"),
+    [
+        (lambda e: e.first(), slice(0, 1)),
+        (lambda e: e.head(2), slice(0, 2)),
+        (lambda e: e.slice(1, 2), slice(1, 3)),
+    ],
+)
+def test_slice_pushdown_expr_is_in(
+    other: Any,
+    is_in: list[bool],
+    take_rows: Callable[[pl.Expr], pl.Expr],
+    rows: slice,
+) -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3, 4], "b": [[0], [2], [0], [4]]})
+    q = lf.select(take_rows(pl.col("a").is_in(other)))
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": is_in[rows]}))
 
 
 def test_slice_pushdown_joins_27199() -> None:

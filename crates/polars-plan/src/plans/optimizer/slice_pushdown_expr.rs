@@ -332,6 +332,24 @@ fn len_cmp_head_slice(ae: &AExpr, expr_arena: &Arena<AExpr>) -> Option<Extracted
     })
 }
 
+/// The inputs of `ae` that a slice of `ae` can be pushed into. For an elementwise `ae` these are
+/// the inputs [`is_elementwise`] reports: row i of the output depends only on row i of each of
+/// these inputs.
+fn slice_pushdown_inputs(ae: &AExpr, expr_arena: &Arena<AExpr>) -> UnitVec<Node> {
+    let mut inputs = UnitVec::new();
+    match ae {
+        // The offset and length are parameters, the rows come from `input`.
+        AExpr::Slice { input, .. }
+        | AExpr::Agg(IRAggExpr::First(input) | IRAggExpr::Last(input)) => inputs.push(*input),
+        // A field that is not elementwise can read all rows of the struct input through
+        // `pl.field`.
+        #[cfg(feature = "dtype-struct")]
+        AExpr::StructEval { evaluation, .. } if !all_elementwise(evaluation, expr_arena) => {},
+        _ => _ = is_elementwise(&mut inputs, ae, expr_arena),
+    }
+    inputs
+}
+
 fn aexpr_slice_pushdown_top(
     current_ae_node: Node,
     input_states: &mut dyn Collection<State>,
@@ -368,18 +386,21 @@ fn aexpr_slice_pushdown_top(
     //    └──────┘   └──────┘
     //
     // Push candidates are `col(A)` and `col(B)`.
-    let idx = input_states
-        .iter()
-        .position(|s| s.height != H::Scalar)
-        .unwrap_or(input_states.len());
-    let mut state = input_states
-        .get_mut(idx)
-        .map_or(State::default(), |s| State {
-            candidate_push_locations: std::mem::take(&mut s.candidate_push_locations),
-            height: s.height,
+    let slice_inputs = slice_pushdown_inputs(ae, expr_arena);
+    let mut inputs = UnitVec::new();
+    ae.inputs(&mut inputs);
+    let mut slice_input_idxs = (0..inputs.len()).filter(|&i| slice_inputs.contains(&inputs[i]));
+    let mut state = slice_input_idxs
+        .find(|&i| input_states[i].height != H::Scalar)
+        .map_or(State::default(), |i| {
+            let s = &mut input_states[i];
+            State {
+                candidate_push_locations: std::mem::take(&mut s.candidate_push_locations),
+                height: s.height,
+            }
         });
 
-    for remainder in (idx + 1..input_states.len()).map(|i| &input_states[i]) {
+    for remainder in slice_input_idxs.map(|i| &input_states[i]) {
         match (state.height, remainder.height) {
             (_, H::Scalar) => {},
             (H::Column, H::Column) => state
