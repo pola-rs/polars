@@ -231,17 +231,21 @@ jobs:
           swap-size-gb: 10
 
       # Set up before the default Python so that `python` stays the default version.
+      # Use a mirror for RISCV64 python binaries
       - name: Set up free-threaded Python
         id: setup-free-threaded-python
         if: matrix.abi == 'abi3t'
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7.1.0
         with:
           python-version: ${{ env.FREE_THREADED_PYTHON_VERSION }}
+          mirror: ${{ matrix.os == 'ubuntu-24.04-riscv' && 'https://raw.githubusercontent.com/riseproject-dev/python-versions/refs/heads/main/versions-manifest.json' || '' }}
 
+      # Use a mirror for RISCV64 python binaries
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7.1.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+          mirror: ${{ matrix.os == 'ubuntu-24.04-riscv' && 'https://raw.githubusercontent.com/riseproject-dev/python-versions/refs/heads/main/versions-manifest.json' || '' }}
 
       # Otherwise can't find `tomlq` after `pip install yq`
       - name: Add Python scripts folder to GITHUB_PATH (ARM64 Windows)
