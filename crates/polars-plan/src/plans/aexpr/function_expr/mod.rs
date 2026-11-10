@@ -1411,9 +1411,9 @@ impl IRFunctionExpr {
             #[cfg(feature = "interpolate_by")]
             F::InterpolateBy => FunctionOptions::length_preserving(),
             #[cfg(feature = "log")]
-            F::Log | F::Log1p | F::Exp | F::Erf | F::Erfc | F::XLogY { .. } => {
-                FunctionOptions::elementwise()
-            },
+            F::Log | F::Log1p | F::Exp | F::Erf | F::Erfc => FunctionOptions::elementwise(),
+            #[cfg(feature = "log")]
+            F::XLogY { .. } => FunctionOptions::elementwise().with_supertyping(Default::default()),
             #[cfg(feature = "log")]
             F::Entropy { .. } => {
                 FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING)

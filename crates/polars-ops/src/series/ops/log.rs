@@ -1,7 +1,6 @@
 use num_traits::{Float, NumCast, One, ToPrimitive, Zero};
 use polars_core::prelude::arity::broadcast_binary_elementwise_values;
 use polars_core::prelude::*;
-use polars_core::utils::try_get_supertype;
 use polars_core::{with_match_physical_float_polars_type, with_match_physical_integer_polars_type};
 
 use crate::series::ops::SeriesSealed;
@@ -203,32 +202,30 @@ pub trait LogSeries: SeriesSealed {
     }
 
     /// Compute `x * log(y, base)` elementwise, which is 0 where `x` is 0 unless `y` is NaN.
+    ///
+    /// `x` and `y` must have the same dtype; the planner casts them to their supertype.
     fn x_log_y(&self, y: &Series, base: f64) -> PolarsResult<Series> {
         let x = self.as_series();
-        for s in [x, y] {
-            polars_ensure!(
-                s.dtype().is_numeric() || s.dtype().is_bool(),
-                InvalidOperation: "expected numeric or boolean input for `x_log_y`, got `{}`", s.dtype()
-            );
+        polars_ensure!(
+            x.dtype() == y.dtype(),
+            InvalidOperation: "`x_log_y` expects inputs of the same dtype, got `{}` and `{}`",
+            x.dtype(), y.dtype()
+        );
+        match x.dtype() {
+            dt if dt.is_float() => with_match_physical_float_polars_type!(dt, |$T| {
+                let x_ca: &ChunkedArray<$T> = x.as_ref().as_ref();
+                let y_ca: &ChunkedArray<$T> = y.as_ref().as_ref();
+                let base = NumCast::from(base).unwrap();
+                let out: ChunkedArray<$T> =
+                    broadcast_binary_elementwise_values(x_ca, y_ca, |x, y| x_log_y(x, y, base));
+                Ok(out.into_series())
+            }),
+            dt if dt.is_integer() || dt.is_decimal() || dt.is_bool() => {
+                let f64 = DataType::Float64;
+                x.cast(&f64)?.x_log_y(&y.cast(&f64)?, base)
+            },
+            dt => polars_bail!(opq = x_log_y, dt),
         }
-
-        let dtype = match (x.dtype().is_float(), y.dtype().is_float()) {
-            (true, true) => try_get_supertype(x.dtype(), y.dtype())?,
-            (true, false) => x.dtype().clone(),
-            (false, true) => y.dtype().clone(),
-            (false, false) => DataType::Float64,
-        };
-        if x.dtype() != &dtype || y.dtype() != &dtype {
-            return x.cast(&dtype)?.x_log_y(&y.cast(&dtype)?, base);
-        }
-        with_match_physical_float_polars_type!(&dtype, |$T| {
-            let x_ca: &ChunkedArray<$T> = x.as_ref().as_ref();
-            let y_ca: &ChunkedArray<$T> = y.as_ref().as_ref();
-            let base = NumCast::from(base).unwrap();
-            let out: ChunkedArray<$T> =
-                broadcast_binary_elementwise_values(x_ca, y_ca, |x, y| x_log_y(x, y, base));
-            Ok(out.into_series())
-        })
     }
 }
 
