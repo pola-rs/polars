@@ -49,7 +49,9 @@ impl PolarsTruncate for DatetimeChunked {
                     if every == 0 {
                         return Ok(self.clone());
                     }
-                    let mut out = self.physical().apply_values(|t| fast_truncate(t, every));
+                    let mut out = self
+                        .physical()
+                        .apply_nonnull_values_generic(DataType::Int64, |t| fast_truncate(t, every));
                     out.set_sorted_flag(self.physical().is_sorted_flag());
                     return Ok(out.into_datetime(self.time_unit(), time_zone.clone()));
                 } else {

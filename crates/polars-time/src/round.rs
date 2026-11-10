@@ -39,7 +39,7 @@ impl PolarsRound for DatetimeChunked {
                     let every = every_parsed.duration(self.time_unit());
                     return Ok(self
                         .physical()
-                        .apply_values(|t| fast_round(t, every))
+                        .apply_nonnull_values_generic(DataType::Int64, |t| fast_round(t, every))
                         .into_datetime(self.time_unit(), time_zone.clone()));
                 } else {
                     let w = Window::new(every_parsed, every_parsed, offset);
