@@ -357,19 +357,20 @@ def union_bloom_log(
 def test_union_scans_choose_per_row_filtering_each(
     tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    # Five build keys are few against the thousand keys of the first input but
+    # Twenty build keys are few against the thousand keys of the first input but
     # not against the ten of the second: only the first probes the bloom filter.
+    # The build side's filter is estimated to keep a fifth of them.
     n = N_ROW_GROUPS * ROWS_PER_GROUP
     wide = fact_part(tmp_path, "wide", pl.Series(range(n)).shuffle(seed=1))
     fact_part(tmp_path, "narrow", [i % 10 for i in range(n)])
     # Other scan options keep the inputs from being merged into one scan.
     narrow = pl.scan_parquet(tmp_path / "narrow.parquet", low_memory=True)
-    q = pl.concat([wide, narrow]).join(tiny(0, 2, 4, 6, 8), on="k")
+    q = pl.concat([wide, narrow]).join(tiny(*range(0, 40, 2)), on="k")
     out, choices, err = union_bloom_log(q, plmonkeypatch, capfd)
     assert choices == ["false", "true"]
     assert KEY_SET.search(err)
     assert "dropping bloom filter" not in err
-    assert out.height == 5 + 500
+    assert out.height == 20 + 500
     assert_matches_in_memory(q, out)
 
 

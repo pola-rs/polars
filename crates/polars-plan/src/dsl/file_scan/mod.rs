@@ -26,6 +26,9 @@ use super::*;
 use crate::dsl::default_values::DefaultFieldValues;
 pub mod default_values;
 pub mod deletion;
+mod field_selection;
+pub(crate) use field_selection::insert_merged;
+pub use field_selection::{FieldSelection, ScanFieldSelection};
 #[cfg(feature = "python")]
 pub mod python_delta_dv_provider;
 #[cfg(feature = "python")]
@@ -710,6 +713,9 @@ pub struct UnifiedScanArgs {
     pub hidden_file_prefix: Option<Arc<[PlSmallStr]>>,
 
     pub projection: Option<Arc<[PlSmallStr]>>,
+    /// The struct fields to read of the projected columns not read whole. Set by projection
+    /// pushdown; `output_schema` then holds the pruned dtypes.
+    pub field_selection: Option<Arc<ScanFieldSelection>>,
     pub column_mapping: Option<ColumnMapping>,
     /// Default values for missing columns.
     pub default_values: Option<DefaultFieldValues>,
@@ -784,6 +790,7 @@ impl UnifiedScanArgs {
             expand_paths,
             hidden_file_prefix,
             projection,
+            field_selection,
             column_mapping,
             default_values: _,
             row_index: _,
@@ -811,6 +818,7 @@ impl UnifiedScanArgs {
             (
                 hidden_file_prefix,
                 projection,
+                field_selection,
                 column_mapping,
                 cast_columns_policy,
             ),
@@ -859,6 +867,7 @@ impl Default for UnifiedScanArgs {
             expand_paths: true,
             hidden_file_prefix: None,
             projection: None,
+            field_selection: None,
             column_mapping: None,
             default_values: None,
             row_index: None,

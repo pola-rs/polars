@@ -586,7 +586,7 @@ async fn start_reader_impl(
                 ));
                 assert!(matches!(projection_to_post, Projection::Plain(_)));
 
-                ProjectionBuilder::new(projected_schema, None, None).build_projection(
+                ProjectionBuilder::new(projected_schema, None, None, None).build_projection(
                     Some(reader_file_schema.as_ref()),
                     None,
                     cast_columns_policy.clone(),

@@ -13,7 +13,7 @@ use super::common::*;
 use super::schema::fb_to_schema;
 use super::{Dictionaries, OutOfSpecKind, SendableIterator};
 use crate::array::Array;
-use crate::datatypes::{ArrowSchemaRef, Metadata};
+use crate::datatypes::{ArrowDataType, ArrowSchemaRef, Metadata};
 use crate::io::ipc::IpcSchema;
 use crate::record_batch::RecordBatchT;
 
@@ -380,6 +380,38 @@ pub fn read_batch<R: Read + Seek>(
     data_scratch: &mut Vec<u8>,
     checked: UnsafeBool,
 ) -> PolarsResult<RecordBatchT<Box<dyn Array>>> {
+    read_batch_pruned(
+        reader,
+        dictionaries,
+        metadata,
+        projection,
+        None,
+        limit,
+        index,
+        force_zero_offset,
+        message_scratch,
+        data_scratch,
+        checked,
+    )
+}
+
+/// [`read_batch`], reading the columns with a dtype in `pruned_dtypes` (indexed like the
+/// schema) as that dtype: struct columns with only some of their fields.
+#[allow(clippy::too_many_arguments)]
+pub fn read_batch_pruned<R: Read + Seek>(
+    reader: &mut R,
+    dictionaries: &Dictionaries,
+    metadata: &FileMetadata,
+    projection: Option<&[usize]>,
+    pruned_dtypes: Option<&[Option<ArrowDataType>]>,
+    limit: Option<usize>,
+    index: usize,
+    // When true, the reader object is handled as an IPC Block.
+    force_zero_offset: bool,
+    message_scratch: &mut Vec<u8>,
+    data_scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
+) -> PolarsResult<RecordBatchT<Box<dyn Array>>> {
     let block = metadata.blocks[index];
 
     let offset: u64 = if force_zero_offset {
@@ -399,11 +431,12 @@ pub fn read_batch<R: Read + Seek>(
     let message = get_message_from_block_offset(reader, offset, message_scratch)?;
     let batch = get_record_batch(message)?;
 
-    read_record_batch(
+    read_record_batch_pruned(
         batch,
         &metadata.schema,
         &metadata.ipc_schema,
         projection,
+        pruned_dtypes,
         limit,
         dictionaries,
         message

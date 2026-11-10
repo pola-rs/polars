@@ -248,7 +248,7 @@ impl<'a> GroupBy<'a> {
                         GroupsType::Idx(groups) => {
                             // SAFETY: groups are always in bounds.
                             let mut out = unsafe { s.take_slice_unchecked(groups.first()) };
-                            if groups.sorted_by_first_idx {
+                            if groups.groups_sorted_by_first_idx {
                                 out.set_sorted_flag(s.is_sorted_flag());
                             };
                             out

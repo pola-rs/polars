@@ -1479,6 +1479,10 @@ def _capture_plugin_scan_storage_options(
 def test_iceberg_plugin_catalog_storage_options(
     table: Any, plmonkeypatch: PlMonkeyPatch
 ) -> None:
+    # S3 properties apply to a table on S3.
+    plmonkeypatch.setattr(
+        table, "metadata_location", "s3://bucket/t/metadata/v1.metadata.json"
+    )
     plmonkeypatch.setattr(
         table.io,
         "properties",
@@ -1547,10 +1551,8 @@ def test_iceberg_plugin_catalog_storage_options_by_scheme() -> None:
         "aws_region": "us-east-1",
         "aws_skip_signature": "true",
     }
-    # Only for S3.
-    assert _catalog_storage_options(properties, "gs://bucket/t.metadata.json") == {
-        "aws_region": "us-east-1",
-    }
+    # Only for S3: other backends' properties don't apply.
+    assert _catalog_storage_options(properties, "gs://bucket/t.metadata.json") == {}
 
     # As PyIceberg: empty values are unset, booleans as `strtobool`; a signer URI
     # alone does not enable remote signing.

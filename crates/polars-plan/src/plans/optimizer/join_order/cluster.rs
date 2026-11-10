@@ -18,11 +18,12 @@ use recursive::recursive;
 use crate::plans::aexpr::{ExprPushdownGroup, is_inherently_nondeterministic};
 use crate::plans::optimizer::join_utils::plain_inner_equi_join;
 use crate::plans::schema::join_right_output_names;
+use crate::plans::stats::{SharedKeyColumns, StatsCache, node_stats_with_cache};
 use crate::plans::{
     AExpr, ExprIR, IR, JoinOptionsIR, MintermIter, NodeStats, OutputName, ProjectionOptions,
-    aexpr_to_leaf_names_iter, node_stats,
+    aexpr_to_leaf_names_iter,
 };
-use crate::prelude::JoinArgs;
+use crate::prelude::{JoinArgs, Operator};
 use crate::utils::rename_columns;
 
 /// With two leaves there is only one order, so a cluster needs at least three.
@@ -195,6 +196,8 @@ struct RawKey {
     right_key: ExprIR,
     left_origins: PlIndexMap<PlSmallStr, Origin>,
     right_origins: PlIndexMap<PlSmallStr, Origin>,
+    /// Taken from a filter, so its columns may not be keys elsewhere in the plan.
+    from_filter: bool,
 }
 
 /// Extract the cluster rooted at `root`, or `None` if it cannot be reordered.
@@ -202,6 +205,7 @@ pub(super) fn extract(
     root: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
+    key_columns: &SharedKeyColumns,
 ) -> Option<Cluster> {
     let IR::Join { options, .. } = ir_arena.get(root_join(root, ir_arena, expr_arena)?) else {
         return None;
@@ -228,6 +232,13 @@ pub(super) fn extract(
         schemas.push(schema);
         leaf_renames.push(raw.renames);
     }
+
+    let filter_key_columns: Vec<PlSmallStr> = raw_keys
+        .iter()
+        .filter(|raw| raw.from_filter)
+        .flat_map(|raw| raw.left_origins.values().chain(raw.right_origins.values()))
+        .map(|(_, name)| name.clone())
+        .collect();
 
     let mut edges = Vec::with_capacity(raw_keys.len());
     for raw in raw_keys {
@@ -339,8 +350,13 @@ pub(super) fn extract(
     // which leaves happened to be measurable. Taken after renaming so that the
     // per-column statistics are keyed on the names the rebuilt joins use.
     let mut leaves = Vec::with_capacity(nodes.len());
+    let mut stats_cache = if filter_key_columns.is_empty() {
+        StatsCache::with_key_columns(key_columns)
+    } else {
+        StatsCache::with_more_key_columns(filter_key_columns, ir_arena, expr_arena)
+    };
     for (node, schema) in nodes.into_iter().zip(schemas) {
-        let stats = node_stats(node, ir_arena, expr_arena)?;
+        let stats = node_stats_with_cache(node, ir_arena, expr_arena, &mut stats_cache)?;
         leaves.push(Leaf {
             node,
             schema,
@@ -516,6 +532,10 @@ impl<'a> Collector<'a> {
 
             let input_schema = self.ir_arena.get(*input).schema(self.ir_arena);
             for conjunct in conjuncts() {
+                if let Some(key) = self.equality_key(conjunct, &input_schema, &origins) {
+                    self.key_pairs.push(key);
+                    continue;
+                }
                 self.residuals.push(RawResidual {
                     predicate: ExprIR::from_node(conjunct, expr_arena),
                     origins: self.origins_read(conjunct, &input_schema, &origins)?,
@@ -550,6 +570,7 @@ impl<'a> Collector<'a> {
                                     &schema_right,
                                     &right_origins,
                                 )?,
+                                from_filter: false,
                             });
                         }
                     }
@@ -574,6 +595,46 @@ impl<'a> Collector<'a> {
         };
 
         Some(self.project_origins(node, peeled, origins))
+    }
+
+    /// A conjunct `a == b` between plain columns of two leaves, as a join key.
+    ///
+    /// The cluster's joins drop null keys and keep both key columns, so the key
+    /// keeps exactly the rows the predicate keeps.
+    fn equality_key(&self, conjunct: Node, schema: &Schema, origins: &[Origin]) -> Option<RawKey> {
+        let args = &self.root_options.args;
+        if args.nulls_equal || args.should_coalesce() {
+            return None;
+        }
+        let AExpr::BinaryExpr {
+            left,
+            op: Operator::Eq,
+            right,
+        } = self.expr_arena.get(conjunct)
+        else {
+            return None;
+        };
+        let (AExpr::Column(left_name), AExpr::Column(right_name)) =
+            (self.expr_arena.get(*left), self.expr_arena.get(*right))
+        else {
+            return None;
+        };
+        if schema.get(left_name)? != schema.get(right_name)? {
+            return None;
+        }
+        let left_origins = self.origins_read(*left, schema, origins)?;
+        let right_origins = self.origins_read(*right, schema, origins)?;
+        let leaf = |origins: &PlIndexMap<PlSmallStr, Origin>| origins.values().next().map(|o| o.0);
+        if leaf(&left_origins)? == leaf(&right_origins)? {
+            return None;
+        }
+        Some(RawKey {
+            left_key: ExprIR::from_node(*left, self.expr_arena),
+            right_key: ExprIR::from_node(*right, self.expr_arena),
+            left_origins,
+            right_origins,
+            from_filter: true,
+        })
     }
 
     /// The origin of every column `expr` reads, resolved against the schema it is

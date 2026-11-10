@@ -361,6 +361,43 @@ def test_join_multiple_keys_right_chunks_differ_from_key() -> None:
     assert_frame_equal(out, expected)
 
 
+@pytest.mark.parametrize("how", ["left", "right"])
+def test_join_struct_null_count_multi_chunk_side_30672(how: JoinStrategy) -> None:
+    structs = pl.concat(
+        [
+            pl.DataFrame({"k": [0], "s": [{"a": 1}]}),
+            pl.DataFrame({"k": [2], "s": [{"a": 2}]}),
+        ],
+        rechunk=False,
+    )
+    keys = pl.DataFrame({"k": [0, 1]})
+    if how == "left":
+        out = keys.join(structs, on="k", how="left", maintain_order="left")
+    else:
+        out = structs.join(keys, on="k", how="right", maintain_order="right")
+    s = out["s"]
+
+    assert s.null_count() == 1
+    assert s.fill_null(strategy="forward").to_list() == [{"a": 1}, {"a": 1}]
+
+
+def test_left_join_struct_null_count_multi_chunk_left_30672() -> None:
+    dtype = pl.Struct({"a": pl.Int64})
+    left = pl.concat(
+        [
+            pl.DataFrame({"k": [0], "s": pl.Series([None], dtype=dtype)}),
+            pl.DataFrame({"k": [1], "s": pl.Series([{"a": 2}], dtype=dtype)}),
+        ],
+        rechunk=False,
+    )
+    # A duplicate match, so the left side is gathered too.
+    right = pl.DataFrame({"k": [0, 0, 1]})
+    s = left.join(right, on="k", how="left", maintain_order="left_right")["s"]
+
+    assert s.null_count() == 2
+    assert s.drop_nulls().to_list() == [{"a": 2}]
+
+
 def test_join_chunks_alignment_4720() -> None:
     # https://github.com/pola-rs/polars/issues/4720
 
@@ -4748,6 +4785,18 @@ def test_join_slice_maintain_order_negative_offset_overshoot_28538() -> None:
     )
 
 
+def test_join_slice_maintain_order_unordered_consumer_30668() -> None:
+    left = pl.LazyFrame({"k": [1, 0]})
+    right = pl.LazyFrame({"k": [0, 1], "w": [1, 2]})
+    q = left.join(right, on="k", maintain_order="left").head(1)
+
+    expected = pl.DataFrame({"k": [1], "w": [2]})
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(q.sort("w").collect(), expected)
+    assert_frame_equal(q.unique().collect(), expected)
+    assert_frame_equal(q.select(pl.col("w").sum()).collect(), pl.DataFrame({"w": [2]}))
+
+
 @pytest.mark.parametrize(
     ("dtype", "present", "missing", "inner_null"),
     [
@@ -4934,6 +4983,30 @@ def test_join_key_downgrades_outer_join_below(
     else:
         assert "is_not_null" not in plan
 
+    expect = q.collect(optimizations=pl.QueryOptFlags.none())
+    assert_frame_equal(q.collect(), expect, check_row_order=False)
+
+
+@pytest.mark.parametrize(
+    ("predicate", "downgraded"),
+    [
+        (pl.col("name").str.starts_with("A"), True),
+        (pl.col("name").str.ends_with("X"), True),
+        (pl.col("name").str.contains("X", literal=True), True),
+        (pl.col("name").str.contains("A.$"), True),
+        (pl.col("name").str.len_bytes() > 1, True),
+        (pl.col("name").str.to_uppercase() == "AX", True),
+        (pl.col("name").str.slice(0, 1) == "A", True),
+        (pl.col("name").fill_null("A").str.starts_with("A"), False),
+    ],
+)
+def test_null_rejecting_string_filter_downgrades_left_join(
+    predicate: pl.Expr, downgraded: bool
+) -> None:
+    sales = pl.LazyFrame({"k": [1, 2, 3], "amount": [10, 20, 30]})
+    lookup = pl.LazyFrame({"k": [1, 2], "name": ["AX", "BY"]})
+    q = sales.join(lookup, on="k", how="left").filter(predicate)
+    assert ("LEFT JOIN:" in q.explain()) != downgraded
     expect = q.collect(optimizations=pl.QueryOptFlags.none())
     assert_frame_equal(q.collect(), expect, check_row_order=False)
 
