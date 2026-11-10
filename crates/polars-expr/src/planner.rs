@@ -509,6 +509,12 @@ fn create_physical_expr_inner(
             };
             let truthy_filter_columns = filter_columns(truthy);
             let falsy_filter_columns = filter_columns(falsy);
+            // The condition guards against errors in the rows it doesn't select.
+            let always_filter = [truthy, falsy].into_iter().any(|arm| {
+                expr_arena
+                    .iter(arm)
+                    .any(|(_, ae)| ae.is_fallible_top_level(expr_arena))
+            });
 
             // The output dtype is the supertype of the arms, which normally is
             // resolved by the zip. As the ternary may return an arm as-is we
@@ -528,6 +534,7 @@ fn create_physical_expr_inner(
                 is_scalar,
                 truthy_filter_columns,
                 falsy_filter_columns,
+                always_filter,
                 output_dtype,
             )))
         },

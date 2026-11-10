@@ -969,12 +969,11 @@ def test_when_then_filters_multichunk_struct_29799(engine: EngineType) -> None:
     )
     assert_frame_equal(q.collect(engine=engine), expected)
 
-    # The `then` arm selects few enough rows to be evaluated on only those rows, so
-    # the strict cast never sees "bad".
+    # The strict cast only succeeds if the unselected rows are never evaluated.
     df = pl.concat(
         [
             pl.DataFrame({"m": [True], "s": [{"a": "1"}]}),
-            pl.DataFrame({"m": [False] * 3, "s": [{"a": "bad"}] * 3}),
+            pl.DataFrame({"m": [False], "s": [{"a": "bad"}]}),
         ],
         rechunk=False,
     )
@@ -983,29 +982,26 @@ def test_when_then_filters_multichunk_struct_29799(engine: EngineType) -> None:
         .select(pl.when("m").then(pl.col.s.struct.field("a").cast(pl.Int64)))
         .collect(engine=engine)
     )
-    assert out.to_series().to_list() == [1, None, None, None]
+    assert out.to_series().to_list() == [1, None]
 
-    # Three uneven chunks, selected only inside the middle one. Uses vstack, not
+    # Three uneven chunks, unselected only inside the middle one. Uses vstack, not
     # concat: concat can leave a stale null-propagation flag (#29815).
     df = (
-        pl.DataFrame({"m": [False, False], "s": [{"a": "bad"}] * 2})
+        pl.DataFrame({"m": [True, True], "s": [{"a": "0"}, {"a": "1"}]})
         .vstack(
             pl.DataFrame(
-                {
-                    "m": [False, True, False, False],
-                    "s": [{"a": "bad"}, {"a": "3"}] + [{"a": "bad"}] * 2,
-                }
+                {"m": [True, False, True], "s": [{"a": "2"}, {"a": "bad"}, {"a": "4"}]}
             )
         )
-        .vstack(pl.DataFrame({"m": [False], "s": [{"a": "bad"}]}))
+        .vstack(pl.DataFrame({"m": [True], "s": [{"a": "5"}]}))
     )
-    assert [len(c) for c in df["s"].get_chunks()] == [2, 4, 1]
+    assert [len(c) for c in df["s"].get_chunks()] == [2, 3, 1]
     out = (
         df.lazy()
         .select(pl.when("m").then(pl.col.s.struct.field("a").cast(pl.Int64)))
         .collect(engine=engine)
     )
-    assert out.to_series().to_list() == [None, None, None, 3, None, None, None]
+    assert out.to_series().to_list() == [0, 1, 2, None, 4, 5]
 
     # Original reproducer.
     df = pl.DataFrame({"v": [1.0] + [0.0] * 16}).with_columns(
@@ -1140,4 +1136,12 @@ def test_when_then_struct_field_and_column_in_with_fields(
     expected = pl.DataFrame(
         {"s": [{"a": i, "c": 2 * i if i < n_true else 0} for i in range(8)]}
     )
+    assert_frame_equal(q.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_when_then_guards_fallible_arm_on_dense_condition(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"m": [True, False] * 4, "s": ["1", "bad"] * 4})
+    q = lf.select(pl.when("m").then(pl.col("s").cast(pl.Int64)))
+    expected = pl.DataFrame({"s": [1, None] * 4})
     assert_frame_equal(q.collect(engine=engine), expected)

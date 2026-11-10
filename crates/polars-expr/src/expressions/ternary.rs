@@ -20,6 +20,9 @@ pub struct TernaryExpr {
     // must be evaluated on all rows.
     truthy_filter_columns: Vec<PlSmallStr>,
     falsy_filter_columns: Vec<PlSmallStr>,
+    // Evaluate an arm with filter columns on only its selected rows, however
+    // many rows it selects.
+    always_filter: bool,
     // The dtype of this expression, which is the supertype of the arms and thus
     // can differ from the dtype of an individual arm.
     output_dtype: Option<DataType>,
@@ -36,6 +39,7 @@ impl TernaryExpr {
         returns_scalar: bool,
         truthy_filter_columns: Vec<PlSmallStr>,
         falsy_filter_columns: Vec<PlSmallStr>,
+        always_filter: bool,
         output_dtype: Option<DataType>,
     ) -> Self {
         Self {
@@ -47,6 +51,7 @@ impl TernaryExpr {
             returns_scalar,
             truthy_filter_columns,
             falsy_filter_columns,
+            always_filter,
             output_dtype,
         }
     }
@@ -121,11 +126,14 @@ impl PhysicalExpr for TernaryExpr {
         let true_count = mask.num_trues();
         let false_count = mask.len() - true_count;
 
-        // An arm that selects at most a quarter of the rows is evaluated on only
-        // those rows, otherwise it is evaluated on all rows.
-        let is_sparse = |count: usize| count > 0 && count * 4 <= mask.len();
-        let filter_truthy = !self.truthy_filter_columns.is_empty() && is_sparse(true_count);
-        let filter_falsy = !self.falsy_filter_columns.is_empty() && is_sparse(false_count);
+        // An arm that selects some but not all rows is evaluated on only those
+        // rows if it selects at most a quarter of them or `always_filter` is set,
+        // otherwise on all rows.
+        let should_filter = |count: usize| {
+            count > 0 && (count * 4 <= mask.len() || self.always_filter && count < mask.len())
+        };
+        let filter_truthy = !self.truthy_filter_columns.is_empty() && should_filter(true_count);
+        let filter_falsy = !self.falsy_filter_columns.is_empty() && should_filter(false_count);
 
         let evaluate_filtered = |arm: &dyn PhysicalExpr,
                                  names: &[PlSmallStr],
