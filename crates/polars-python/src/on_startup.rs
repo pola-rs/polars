@@ -329,6 +329,7 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
         polars_plan::dsl::DATASET_PROVIDER_VTABLE.get_or_init(|| PythonDatasetProviderVTable {
             name: dataset_provider_funcs::name,
             schema: dataset_provider_funcs::schema,
+            has_tight_statistics: dataset_provider_funcs::has_tight_statistics,
             to_dataset_scan: dataset_provider_funcs::to_dataset_scan,
         });
 
