@@ -6872,22 +6872,34 @@ def test_delta_strings_invalid_utf8_in_prefix() -> None:
     sys.platform == "win32",
     reason="needs unix-only `resource` module to measure memory usage",
 )
-def test_delta_strings_keep_only_selected_values(tmp_path: Path) -> None:
-    # A value that repeats its predecessor is stored as just its prefix length, so this
-    # page of under 100 KB holds 256 MiB of values. Reading one row must not keep the
-    # others in memory.
+@pytest.mark.parametrize("values_per_page", [4096, 1024])
+def test_delta_strings_keep_only_selected_values(
+    tmp_path: Path, values_per_page: int
+) -> None:
+    # A value that repeats its predecessor is stored as just its prefix length, so a
+    # page of under 100 KB holds up to 256 MiB of values. Reading one row must not keep
+    # the others in memory, also from a list, of which a limit selects only the first
+    # values of the first page, and none of the later pages.
     tmp_path.mkdir(exist_ok=True)
     paths = {}
     for name, value in [("small", "x"), ("large", "x" * 65536)]:
+        values = pa.array([value] * 4096)
+        lists = pa.ListArray.from_arrays(pa.array(range(4097), pa.int32()), values)
         paths[name] = tmp_path / f"{name}.parquet"
         pq.write_table(
-            pa.table({"i": range(4096), "s": [value] * 4096}),
+            pa.table({"i": range(4096), "s": values, "l": lists}),
             paths[name],
             use_dictionary=False,
-            column_encoding={"i": "PLAIN", "s": "DELTA_BYTE_ARRAY"},
+            column_encoding={
+                "i": "PLAIN",
+                "s": "DELTA_BYTE_ARRAY",
+                "l.list.element": "DELTA_BYTE_ARRAY",
+            },
             compression="none",
+            data_page_size=1,
+            write_batch_size=values_per_page,
         )
-    assert paths["large"].stat().st_size < 100_000
+    assert paths["large"].stat().st_size < 1_000_000
 
     code = """\
 import resource
@@ -6896,8 +6908,13 @@ import sys
 import polars as pl
 
 lf = pl.scan_parquet(sys.argv[1], parallel="prefiltered")
-assert lf.head(1).collect()["s"].str.len_bytes().to_list() == [int(sys.argv[2])]
-assert lf.filter(pl.col("i") == 7).collect()["s"].str.len_bytes().to_list() == [int(sys.argv[2])]
+expected = [int(sys.argv[2])]
+out = lf.head(1).collect()
+assert out["s"].str.len_bytes().to_list() == expected
+assert out["l"].explode().str.len_bytes().to_list() == expected
+# Nested columns are filtered after they are decoded, so only `s` is read here.
+out = lf.filter(pl.col("i") == 7).select("s").collect()
+assert out["s"].str.len_bytes().to_list() == expected
 print(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
 """
 

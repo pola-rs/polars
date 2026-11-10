@@ -46,16 +46,21 @@ impl Selection {
                 validity.clone().sliced(0, num_rows).set_bits()
             })
         };
+        // The selection of the rows from `start` to `end`.
+        let range = |start, end| {
+            let (start, end) = (num_values_in(start), num_values_in(end));
+            (start > 0 || end < num_values).then_some(Self {
+                start,
+                end,
+                mask: None,
+            })
+        };
         match filter {
-            Some(Filter::Range(rows)) => {
-                let (start, end) = (num_values_in(rows.start), num_values_in(rows.end));
-                (start > 0 || end < num_values).then_some(Self {
-                    start,
-                    end,
-                    mask: None,
-                })
-            },
-            Some(Filter::Mask(rows)) if rows.unset_bits() > 0 => {
+            Some(Filter::Range(rows)) => range(rows.start, rows.end),
+            // A mask without unset bits selects its first rows, which can be fewer than the page
+            // has, or none (as for the leaf values of a nested column read with a limit).
+            Some(Filter::Mask(rows)) if rows.unset_bits() == 0 => range(0, rows.len()),
+            Some(Filter::Mask(rows)) => {
                 // The bits of the rows that hold a value.
                 let mask = page_validity.map_or_else(
                     || rows.clone(),
