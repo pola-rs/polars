@@ -1868,3 +1868,45 @@ def test_simplify_year_comparison_prunes_row_groups(
     out = pl.scan_parquet(path).filter(pl.col("d").dt.year() == 2021).collect()
     assert out.height == 365
     assert "reading 4 / 11 row groups" in capfd.readouterr().err
+
+
+def test_slice_pushdown_list_eval_30666() -> None:
+    lf = pl.LazyFrame(
+        {
+            "l": [[1, 2, 3], [4, 5], [6]],
+            "a": [[1, 2], [3, 4], [5, 6]],
+            "s": [{"x": 1}, {"x": 2}, {"x": 3}],
+        },
+        schema_overrides={"a": pl.Array(pl.Int64, 2)},
+    )
+
+    q = lf.select(pl.col("l").list.eval(pl.element() + 1).first())
+    assert_frame_equal(q.collect(), pl.DataFrame({"l": [[2, 3, 4]]}))
+    assert_frame_equal(q.collect(engine="streaming"), pl.DataFrame({"l": [[2, 3, 4]]}))
+
+    q = lf.select(pl.col("l").list.reverse().tail(2))
+    assert_frame_equal(q.collect(), pl.DataFrame({"l": [[5, 4], [6]]}))
+
+    q = lf.select(pl.col("l").list.agg(pl.element().sum()).slice(1, 1))
+    assert_frame_equal(q.collect(), pl.DataFrame({"l": [9]}))
+
+    q = lf.select(pl.col("a").arr.eval(pl.element() * 2).head(2))
+    expected = pl.DataFrame(
+        {"a": [[2, 4], [6, 8]]}, schema={"a": pl.Array(pl.Int64, 2)}
+    )
+    assert_frame_equal(q.collect(), expected)
+
+    q = lf.select(pl.col("s").struct.with_fields(y=pl.field("x") * 10).last())
+    assert_frame_equal(q.collect(), pl.DataFrame({"s": [{"x": 3, "y": 30}]}))
+
+    q = lf.group_by(pl.lit(1)).agg(pl.col("l").list.eval(pl.element() + 1).first())
+    assert q.collect()["l"].to_list() == [[2, 3, 4]]
+
+    # The slice should still be pushed to the rows.
+    q = lf.filter(pl.col("a").is_not_null()).select(
+        pl.col("l").list.eval(pl.element() + 1).head(2)
+    )
+    plan = q.explain()
+    assert "SLICE[offset: 0, len: 2]" in plan
+    assert "list.eval(element() + 1)" in plan
+    assert_frame_equal(q.collect(), pl.DataFrame({"l": [[2, 3, 4], [5, 6]]}))

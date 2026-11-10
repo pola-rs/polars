@@ -368,8 +368,18 @@ fn aexpr_slice_pushdown_top(
     //    └──────┘   └──────┘
     //
     // Push candidates are `col(A)` and `col(B)`.
+    //
+    // The evaluation of `Eval` and `StructEval` runs on the list elements / struct fields, so
+    // only `expr` can be sliced.
+    let num_row_inputs = match ae {
+        AExpr::Eval { .. } => 1,
+        #[cfg(feature = "dtype-struct")]
+        AExpr::StructEval { .. } => 1,
+        _ => input_states.len(),
+    };
     let idx = input_states
         .iter()
+        .take(num_row_inputs)
         .position(|s| s.height != H::Scalar)
         .unwrap_or(input_states.len());
     let mut state = input_states
@@ -379,7 +389,7 @@ fn aexpr_slice_pushdown_top(
             height: s.height,
         });
 
-    for remainder in (idx + 1..input_states.len()).map(|i| &input_states[i]) {
+    for remainder in (idx + 1..num_row_inputs).map(|i| &input_states[i]) {
         match (state.height, remainder.height) {
             (_, H::Scalar) => {},
             (H::Column, H::Column) => state
