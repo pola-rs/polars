@@ -1886,6 +1886,31 @@ class Series(metaclass=_Meta):
         ]
         """
 
+    def x_log_x(self, base: float = math.e) -> Series:
+        """
+        Compute `x * log(x)` to a given base, element-wise.
+
+        `0 * log(0)` is taken as 0, and negative values give NaN.
+
+        Parameters
+        ----------
+        base
+            Given base, defaults to `e`
+
+        Examples
+        --------
+        >>> s = pl.Series([0, 1, 2, 4])
+        >>> s.x_log_x(base=2)
+        shape: (4,)
+        Series: '' [f64]
+        [
+            0.0
+            0.0
+            2.0
+            8.0
+        ]
+        """
+
     def log10(self) -> Series:
         """
         Compute the base 10 logarithm of the input array, element-wise.

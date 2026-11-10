@@ -1063,12 +1063,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "log")]
         IF::Entropy { base, normalize } => F::Entropy { base, normalize },
         #[cfg(feature = "log")]
-        ref f @ IF::XLogX { .. } => {
-            return Expr::Display {
-                inputs: input,
-                fmt_str: Box::new(format_pl_smallstr!("{f}")),
-            };
-        },
+        IF::XLogX { base } => F::XLogX { base },
         #[cfg(feature = "log")]
         IF::Log => F::Log,
         #[cfg(feature = "log")]

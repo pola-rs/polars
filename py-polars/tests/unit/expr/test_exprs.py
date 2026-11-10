@@ -255,6 +255,28 @@ def test_entropy_corner_cases_group_by_30688(normalize: bool) -> None:
         assert_entropy_equal(result[i], expected_norm if normalize else expected_raw)
 
 
+@pytest.mark.parametrize("dtype", [pl.Float16, pl.Float32, pl.Float64])
+def test_x_log_x(dtype: pl.DataType) -> None:
+    s = pl.Series("a", [0.0, -0.0, 1.0, 2.0, 4.0, None, -1.0, NAN, INF], dtype=dtype)
+    expected = pl.Series(
+        "a", [0.0, 0.0, 0.0, 2.0, 8.0, None, NAN, NAN, INF], dtype=dtype
+    )
+    assert_series_equal(s.x_log_x(base=2), expected)
+    assert_series_equal(
+        pl.LazyFrame([s]).select(pl.col("a").x_log_x(base=2)).collect().to_series(),
+        expected,
+    )
+
+
+def test_x_log_x_non_float() -> None:
+    s = pl.Series("a", [0, 1, 4, None])
+    expected = pl.Series("a", [0.0, 0.0, 8.0, None])
+    assert_series_equal(s.x_log_x(base=2), expected)
+    assert_series_equal(
+        pl.Series("a", [False, True]).x_log_x(), pl.Series("a", [0.0, 0.0])
+    )
+
+
 @pytest.mark.parametrize(
     "s",
     [

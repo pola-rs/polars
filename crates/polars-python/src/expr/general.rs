@@ -1106,6 +1106,10 @@ impl PyExpr {
         self.inner.clone().log1p().into()
     }
 
+    fn x_log_x(&self, base: f64) -> Self {
+        self.inner.clone().x_log_x(base).into()
+    }
+
     fn exp(&self) -> Self {
         self.inner.clone().exp().into()
     }

@@ -12281,6 +12281,37 @@ class Expr(metaclass=_Meta):
         """
         return wrap_expr(self._pyexpr.log1p())
 
+    def x_log_x(self, base: float = math.e) -> Expr:
+        """
+        Compute `x * log(x)` to a given base, element-wise.
+
+        `0 * log(0)` is taken as 0, and negative values give NaN.
+
+        .. engine-support:: in-memory, streaming
+
+        Parameters
+        ----------
+        base
+            Given base, defaults to `e`
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [0, 1, 2, 4]})
+        >>> df.select(pl.col("a").x_log_x(base=2))
+        shape: (4, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 0.0 │
+        │ 0.0 │
+        │ 2.0 │
+        │ 8.0 │
+        └─────┘
+        """
+        return wrap_expr(self._pyexpr.x_log_x(base))
+
     def entropy(self, base: float = math.e, *, normalize: bool = True) -> Expr:
         """
         Computes the entropy.

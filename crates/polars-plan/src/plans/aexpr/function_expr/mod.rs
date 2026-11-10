@@ -289,7 +289,6 @@ pub enum IRFunctionExpr {
         base: f64,
         normalize: bool,
     },
-    /// `x * log(x, base)` with `0 * log(0) = 0`, used to lower `entropy` in streaming.
     #[cfg(feature = "log")]
     XLogX {
         base: f64,

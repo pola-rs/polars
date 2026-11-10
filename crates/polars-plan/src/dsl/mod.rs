@@ -1634,6 +1634,12 @@ impl Expr {
     }
 
     #[cfg(feature = "log")]
+    /// Compute `x * log(x, base)`, with `0 * log(0) = 0` and NaN for negative `x`.
+    pub fn x_log_x(self, base: f64) -> Self {
+        self.map_unary(FunctionExpr::XLogX { base })
+    }
+
+    #[cfg(feature = "log")]
     /// Compute the natural logarithm of all elements plus one in the input array.
     pub fn log1p(self) -> Self {
         self.map_unary(FunctionExpr::Log1p)
