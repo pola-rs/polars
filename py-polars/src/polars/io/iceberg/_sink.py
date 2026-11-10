@@ -403,7 +403,6 @@ def _stage_replace(
         ),
     )
     data_files = _data_files_for_commit(tx, sinked_files, sort_order_id)
-    _ensure_name_mapping(tx)
     with tx.update_snapshot(snapshot_properties=snapshot_properties).overwrite() as ow:
         _set_isolation_operation(ow, Operation.OVERWRITE)
         ow.delete_by_predicate(replace.conflict_filter)
@@ -719,25 +718,11 @@ def _check_dynamic_overwrite_spec(spec: PartitionSpec, schema: Schema) -> None:
             raise NotImplementedError(msg)
 
 
-def _ensure_name_mapping(transaction: Transaction) -> None:
-    """Set the table's default name mapping, if it has none."""
-    from pyiceberg.table import TableProperties
-
-    table_metadata = transaction.table_metadata
-    if table_metadata.name_mapping() is None:
-        transaction.set_properties(
-            {
-                TableProperties.DEFAULT_NAME_MAPPING: table_metadata.schema().name_mapping.model_dump_json()
-            }
-        )
-
-
 def _add_files(
     transaction: Transaction,
     data_files: list[DataFile],
     snapshot_properties: dict[str, str],
 ) -> None:
-    _ensure_name_mapping(transaction)
     with transaction.update_snapshot(
         snapshot_properties=snapshot_properties
     ).fast_append() as append_files:
