@@ -479,13 +479,13 @@ class SQLContext(Generic[FrameType]):
     def _execute_with_catalogs(
         self,
         query: str,
-        resolved: dict[str, pyiceberg.catalog.Catalog] | None = None,
+        resolved: tuple[str, pyiceberg.catalog.Catalog] | None = None,
     ) -> PyLazyFrame:
         """
         Execute `query` with its catalog tables scanned.
 
-        `resolved` holds catalogs already resolved by name for this execution, so
-        that the query of a catalog statement does not resolve them again.
+        `resolved` is the name and instance of a catalog already resolved by name
+        for this execution.
         """
         if (stmt := self._ctxt.catalog_statement(query)) is not None:
             return self._execute_catalog_statement(stmt, query)._ldf
@@ -501,7 +501,7 @@ class SQLContext(Generic[FrameType]):
         self,
         catalog_name: str,
         identifier: list[str],
-        resolved: dict[str, pyiceberg.catalog.Catalog] | None = None,
+        resolved: tuple[str, pyiceberg.catalog.Catalog] | None = None,
     ) -> LazyFrame:
         """
         Lazily scan a catalog table, or a metadata table (`t$snapshots`).
@@ -515,8 +515,8 @@ class SQLContext(Generic[FrameType]):
         from polars.io.iceberg.functions import _scan_catalog_table
 
         config, instance, storage_options = self._catalogs[catalog_name]
-        if instance is None and resolved is not None:
-            instance = resolved.get(catalog_name)
+        if instance is None and resolved and resolved[0] == catalog_name:
+            instance = resolved[1]
         display_name = ".".join([catalog_name, *identifier])
         if (metadata := metadata_table_of(identifier)) is not None:
             table, name = metadata
@@ -538,7 +538,7 @@ class SQLContext(Generic[FrameType]):
         _check_not_metadata_table(stmt)
         config, instance, storage_options = self._catalogs[stmt["catalog"]]
         catalog = instance if instance is not None else catalog_from(config)
-        resolved = {stmt["catalog"]: catalog} if isinstance(config, str) else None
+        resolved = (stmt["catalog"], catalog) if isinstance(config, str) else None
         if stmt["kind"] == "drop_table":
             response = _drop_catalog_table(catalog, stmt)
         elif stmt["kind"] == "create_table":
@@ -600,12 +600,13 @@ class SQLContext(Generic[FrameType]):
         stmt: dict[str, Any],
         query: str,
         storage_options: StorageOptionsDict | None,
-        resolved: dict[str, pyiceberg.catalog.Catalog] | None = None,
+        resolved: tuple[str, pyiceberg.catalog.Catalog] | None = None,
     ) -> str:
         """
         Perform the `MERGE` of `query` on its table, returning the response.
 
-        `resolved` holds catalogs already resolved by name for this statement.
+        `resolved` is the name and instance of a catalog already resolved by name
+        for this statement.
         """
         from polars.io.iceberg.functions import scan_iceberg
 
