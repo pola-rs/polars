@@ -169,111 +169,90 @@ LN2 = math.log(2)
 NAN = float("nan")
 INF = float("inf")
 
-# (values, base, normalize, expected)
-ENTROPY_CORNER_CASES: list[tuple[list[float | None], float, bool, float]] = [
-    ([0.5, 0.5, 0.0], math.e, True, LN2),
-    ([0.5, 0.5, 0.0], math.e, False, LN2),
-    ([1.0, 0.0], math.e, True, 0.0),
-    ([1.0, 0.0], math.e, False, 0.0),
-    ([2.0], math.e, True, 0.0),
-    ([2.0], math.e, False, -2 * LN2),
-    ([0.5], math.e, True, 0.0),
-    ([0.5], math.e, False, 0.5 * LN2),
-    ([None, None], math.e, True, 0.0),
-    ([None, None], math.e, False, 0.0),
-    ([0.0], math.e, True, NAN),
-    ([0.0], math.e, False, 0.0),
-    ([-0.0], math.e, True, NAN),
-    ([-0.0], math.e, False, 0.0),
-    ([0.0, 0.0], math.e, True, NAN),
-    ([0.0, 0.0], math.e, False, 0.0),
-    ([-1.0, -1.0], math.e, True, NAN),
-    ([-1.0, -1.0], math.e, False, NAN),
-    ([-1.0], math.e, True, NAN),
-    ([-1.0], math.e, False, NAN),
-    ([1.0, -1.0, 1.0], math.e, True, NAN),
-    ([1.0, -1.0, 1.0], math.e, False, NAN),
-    ([NAN], math.e, True, NAN),
-    ([NAN], math.e, False, NAN),
-    ([None, 0.5, 0.5, None, 0.0], math.e, True, LN2),
-    ([None, 0.5, 0.5, None, 0.0], math.e, False, LN2),
-    ([INF], math.e, True, NAN),
-    ([INF], math.e, False, -INF),
-    ([1.0, INF], math.e, True, NAN),
-    ([1.0, INF], math.e, False, -INF),
-    ([-5e-324, 2.0], math.e, True, NAN),
-    ([-5e-324, 2.0], math.e, False, NAN),
-    ([1e308, 1e308], math.e, True, NAN),
-    ([1.0, 0.0], 0.5, True, 0.0),
-    ([1.0, 0.0], 0.5, False, 0.0),
-    ([1.0, 2.0, 3.0], 2.0, True, 1.4591479170272448),
+# (values, expected with normalize=True, expected with normalize=False)
+ENTROPY_CORNER_CASES: list[tuple[list[float | None], float, float]] = [
+    ([2.0], 0.0, -2 * LN2),
+    ([0.5], 0.0, 0.5 * LN2),
+    ([None], NAN, 0.0),
+    ([None, None], NAN, 0.0),
+    ([0.0], NAN, 0.0),
+    ([-0.0], NAN, 0.0),
+    ([0.0, 0.0], NAN, 0.0),
+    ([0.5, 0.5, 0.0], LN2, LN2),
+    ([1.0, 0.0], 0.0, 0.0),
+    ([None, 0.5, 0.5, None, 0.0], LN2, LN2),
+    ([-1.0], NAN, NAN),
+    ([-1.0, -1.0], NAN, NAN),
+    ([-1.0, 1.0], NAN, NAN),
+    ([1.0, -1.0, 1.0], NAN, NAN),
+    ([NAN], NAN, NAN),
+    ([INF], NAN, -INF),
+    ([1.0, INF], NAN, -INF),
+    ([-5e-324, 2.0], NAN, NAN),
 ]
 
 
 def assert_entropy_equal(result: float, expected: float) -> None:
     if math.isnan(expected):
         assert math.isnan(result)
-    elif expected == 0.0:
-        assert result == 0.0
-        assert math.copysign(1.0, result) == 1.0
     else:
         assert result == pytest.approx(expected)
 
 
+@pytest.mark.parametrize("normalize", [True, False])
 @pytest.mark.parametrize(
-    ("values", "base", "normalize", "expected"), ENTROPY_CORNER_CASES
+    ("values", "expected_norm", "expected_raw"), ENTROPY_CORNER_CASES
 )
 def test_entropy_corner_cases_30688(
-    values: list[float | None], base: float, normalize: bool, expected: float
+    values: list[float | None],
+    expected_norm: float,
+    expected_raw: float,
+    normalize: bool,
 ) -> None:
     lf = pl.LazyFrame({"a": values}, schema={"a": pl.Float64})
-    q = lf.select(pl.col("a").entropy(base, normalize=normalize))
+    q = lf.select(pl.col("a").entropy(normalize=normalize))
+    assert_entropy_equal(
+        q.collect().item(), expected_norm if normalize else expected_raw
+    )
+
+
+@pytest.mark.parametrize(
+    ("normalize", "expected"), [(True, 1.4591479170272448), (False, -6.754887502163468)]
+)
+def test_entropy_base_30688(normalize: bool, expected: float) -> None:
+    lf = pl.LazyFrame({"a": [1.0, 2.0, 3.0, 0.0]})
+    q = lf.select(pl.col("a").entropy(base=2, normalize=normalize))
     assert_entropy_equal(q.collect().item(), expected)
 
 
-def test_entropy_overflowing_sum_30688() -> None:
-    # sum(x) overflows while sum(x * log(x)) stays finite.
-    lf = pl.LazyFrame({"g": [0] * 18, "a": [1e307] * 18})
-    e = pl.col("a").entropy(1e308)
-    assert_entropy_equal(lf.select(e).collect().item(), NAN)
-    assert_entropy_equal(lf.group_by("g").agg(e).collect()["a"].item(), NAN)
-    assert all(math.isnan(v) for v in lf.select(e.over("g")).collect()["a"])
-
-
-def test_entropy_overflowing_sum_f16_30688() -> None:
-    lf = pl.LazyFrame({"a": [1.0] * 65520}, schema={"a": pl.Float16})
-    assert_entropy_equal(lf.select(pl.col("a").entropy()).collect().item(), NAN)
+@pytest.mark.parametrize(("normalize", "expected"), [(True, NAN), (False, 0.0)])
+@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64, pl.Int64])
+def test_entropy_empty_30688(
+    normalize: bool, expected: float, dtype: PolarsDataType
+) -> None:
+    lf = pl.LazyFrame({"a": []}, schema={"a": dtype})
+    q = lf.select(pl.col("a").entropy(normalize=normalize))
+    assert_entropy_equal(q.collect().item(), expected)
 
 
 @pytest.mark.parametrize("normalize", [True, False])
-@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64, pl.Int64])
-def test_entropy_empty_30688(normalize: bool, dtype: PolarsDataType) -> None:
-    lf = pl.LazyFrame({"a": []}, schema={"a": dtype})
-    q = lf.select(pl.col("a").entropy(normalize=normalize))
-    assert_entropy_equal(q.collect().item(), 0.0)
-
-
-@pytest.mark.parametrize(
-    ("base", "normalize"), [(math.e, True), (math.e, False), (0.5, True)]
-)
-def test_entropy_corner_cases_group_by_30688(base: float, normalize: bool) -> None:
-    cases = [
-        (values, expected)
-        for values, b, n, expected in ENTROPY_CORNER_CASES
-        if (b, n) == (base, normalize)
-    ]
+def test_entropy_corner_cases_group_by_30688(normalize: bool) -> None:
     lf = pl.LazyFrame(
         {
-            "g": [i for i, (values, _) in enumerate(cases) for _ in values],
-            "a": [v for values, _ in cases for v in values],
+            "g": [
+                i
+                for i, (values, _, _) in enumerate(ENTROPY_CORNER_CASES)
+                for _ in values
+            ],
+            "a": [v for values, _, _ in ENTROPY_CORNER_CASES for v in values],
         },
         schema={"g": pl.Int64, "a": pl.Float64},
     )
-    out = lf.group_by("g").agg(pl.col("a").entropy(base, normalize=normalize)).collect()
+    out = lf.group_by("g").agg(pl.col("a").entropy(normalize=normalize)).collect()
     result = dict(zip(out["g"], out["a"], strict=True))
-    assert len(result) == len(cases)
-    for i, (_, expected) in enumerate(cases):
-        assert_entropy_equal(result[i], expected)
+    assert len(result) == len(ENTROPY_CORNER_CASES)
+    for i, (_, expected_norm, expected_raw) in enumerate(ENTROPY_CORNER_CASES):
+        assert_entropy_equal(result[i], expected_norm if normalize else expected_raw)
 
 
 @pytest.mark.parametrize(

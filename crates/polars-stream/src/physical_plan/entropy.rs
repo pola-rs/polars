@@ -46,18 +46,16 @@ pub(crate) fn x_log_x(
     AExprBuilder::when_then_otherwise(is_zero, zero, x_log_x, arena)
 }
 
-/// Combines `sum(x_log_x(x))` and, if normalizing, `(sum(x), count(x))` into the entropy.
+/// Combines `sum(x_log_x(x))` and, if normalizing, `sum(x)` into the entropy.
 pub(crate) fn entropy_from_sums(
     sum_x_log_x: AExprBuilder,
-    normalize: Option<(AExprBuilder, AExprBuilder)>,
+    sum_x: Option<AExprBuilder>,
     base: f64,
     dtype: &DataType,
     arena: &mut Arena<AExpr>,
 ) -> AExprBuilder {
-    let zero = float_lit(0.0, dtype, arena);
-    let Some((sum_x, count)) = normalize else {
-        // `0 - t` instead of `-t`, so that a zero result is `+0.0`.
-        return zero.minus(sum_x_log_x, arena);
+    let Some(sum_x) = sum_x else {
+        return sum_x_log_x.negate(arena);
     };
 
     // -sum(x/s * log(x/s)) = log(s) - sum(x * log(x)) / s, with s = sum(x).
@@ -67,19 +65,6 @@ pub(crate) fn entropy_from_sums(
         IRFunctionExpr::Log,
         arena,
     );
-    let entropy = log_sum_x.minus(sum_x_log_x.true_divide(sum_x, arena), arena);
-    // Like the in-memory kernel, a total that isn't positive and finite gives NaN. An overflowed
-    // total with a finite `sum(x * log(x))` would otherwise give `inf`.
-    let valid_total = sum_x.gt(zero, arena).and(
-        sum_x.lt(float_lit(f64::INFINITY, dtype, arena), arena),
-        arena,
-    );
-    let nan = float_lit(f64::NAN, dtype, arena);
-    let entropy = AExprBuilder::when_then_otherwise(valid_total, entropy, nan, arena);
-    let is_empty = count.eq(
-        AExprBuilder::lit_scalar(Scalar::new_idxsize(0), arena),
-        arena,
-    );
-    // Adding `+0.0` turns `-0.0` (`log(1)` for a base below 1) into `+0.0`.
-    AExprBuilder::when_then_otherwise(is_empty, zero, entropy, arena).plus(zero, arena)
+    // A zero `s` gives NaN, through `0 / 0` or a NaN `sum(x * log(x))` from negative weights.
+    log_sum_x.minus(sum_x_log_x.true_divide(sum_x, arena), arena)
 }

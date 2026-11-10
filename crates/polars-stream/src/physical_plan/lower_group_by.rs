@@ -574,10 +574,8 @@ fn try_lower_elementwise_scalar_agg_expr(
             let x = entropy_input(x, &x_dtype, &dtype, expr_arena);
             let sum_x_log_x = x_log_x(x, base, &dtype, expr_arena).sum(expr_arena);
             // sum(x) is deduplicated by CSE.
-            let normalize =
-                normalize.then(|| (x.sum(expr_arena), x.count_opt_nulls(false, expr_arena)));
-            let lowered =
-                entropy_from_sums(sum_x_log_x, normalize, base, &dtype, expr_arena).node();
+            let sum_x = normalize.then(|| x.sum(expr_arena));
+            let lowered = entropy_from_sums(sum_x_log_x, sum_x, base, &dtype, expr_arena).node();
             lower_rec!(lowered)
         },
 

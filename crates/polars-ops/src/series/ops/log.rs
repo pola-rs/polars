@@ -202,39 +202,33 @@ pub trait LogSeries: SeriesSealed {
     }
 }
 
-/// Entropy with `0 * log(0) = 0`, NaN for negative weights and `+0.0` for a zero result.
+/// Entropy with `0 * log(0) = 0` and NaN for negative weights.
 fn entropy_float<T>(ca: &ChunkedArray<T>, base: f64, normalize: bool) -> f64
 where
     T: PolarsFloatType,
     T::Native: Float,
     ChunkedArray<T>: ChunkAgg<T::Native>,
 {
-    if ca.len() == ca.null_count() {
-        return 0.0;
-    }
+    let zero = T::Native::zero();
     let total = if normalize {
-        let total = ca.sum().unwrap();
-        // Also catches NaN input and a sum that overflowed, which would normalize to zeros.
-        if !(total.is_finite() && total > T::Native::zero()) {
-            return f64::NAN;
-        }
-        total
+        ca.sum().unwrap_or(zero)
     } else {
         T::Native::one()
     };
+    // Also covers empty, all-null and all-zero input.
+    if total == zero {
+        return f64::NAN;
+    }
     let base: T::Native = NumCast::from(base).unwrap();
     let plogp = ca.apply_values(|x| {
-        if x < T::Native::zero() {
+        // Checked before dividing, so that a negative weight can't underflow to `-0.0`.
+        if x < zero {
             return T::Native::nan();
         }
         let p = x / total;
-        if p == T::Native::zero() {
-            T::Native::zero()
-        } else {
-            p * p.log(base)
-        }
+        if p == zero { zero } else { p * p.log(base) }
     });
-    0.0 - plogp.sum().unwrap().to_f64().unwrap()
+    -plogp.sum().map_or(0.0, |t| t.to_f64().unwrap())
 }
 
 impl LogSeries for Series {}

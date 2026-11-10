@@ -2317,13 +2317,8 @@ fn lower_exprs_with_ctx(
                     input_streams.insert(trans_stream);
                     transformed_exprs.push(trans_expr[0]);
                 } else {
-                    // Compute the sums and the count in a single Reduce node, then combine
-                    // them elementwise.
-                    let reductions = [
-                        sum_x_log_x,
-                        x.sum(ctx.expr_arena),
-                        x.count_opt_nulls(false, ctx.expr_arena),
-                    ];
+                    // Compute both sums in a single Reduce node, then combine them elementwise.
+                    let reductions = [sum_x_log_x, x.sum(ctx.expr_arena)];
                     let names = reductions.map(|_| unique_column_name());
                     let reduce_exprs = reductions
                         .iter()
@@ -2338,15 +2333,10 @@ fn lower_exprs_with_ctx(
                             exprs: reduce_exprs,
                         },
                     ));
-                    let [sum_x_log_x, sum_x, count] =
+                    let [sum_x_log_x, sum_x] =
                         names.map(|name| AExprBuilder::col(name, ctx.expr_arena));
-                    let result = entropy_from_sums(
-                        sum_x_log_x,
-                        Some((sum_x, count)),
-                        base,
-                        &dtype,
-                        ctx.expr_arena,
-                    );
+                    let result =
+                        entropy_from_sums(sum_x_log_x, Some(sum_x), base, &dtype, ctx.expr_arena);
 
                     input_streams.insert(PhysStream::first(reduce_key));
                     transformed_exprs.push(result.node());

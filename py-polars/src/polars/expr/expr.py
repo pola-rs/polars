@@ -12287,8 +12287,8 @@ class Expr(metaclass=_Meta):
 
         Uses the formula `-sum(pk * log(pk))` where `pk` are discrete probabilities.
         `0 * log(0)` is taken as 0 and null values are ignored. Negative values give
-        NaN, and empty or all-null input gives 0. With `normalize=True`, input that
-        sums to zero (e.g. all zeros) gives NaN.
+        NaN. With `normalize=True`, input that sums to zero (including empty,
+        all-null and all-zero input) gives NaN; with `normalize=False` it gives 0.
 
         .. engine-support:: in-memory, streaming
 
