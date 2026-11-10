@@ -31,6 +31,8 @@ use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::options::{JoinTypeOptionsIR, RuntimeFilter};
 use polars_plan::plans::{AExpr, DataFrameUdf, DynamicPred, FunctionArgMap, IR};
 
+#[cfg(feature = "log")]
+mod entropy;
 mod fmt;
 mod io;
 mod lower_expr;

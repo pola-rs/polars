@@ -12286,6 +12286,9 @@ class Expr(metaclass=_Meta):
         Computes the entropy.
 
         Uses the formula `-sum(pk * log(pk))` where `pk` are discrete probabilities.
+        `0 * log(0)` is taken as 0 and null values are ignored. Negative values give
+        NaN, and empty or all-null input gives 0. With `normalize=True`, input that
+        sums to zero (e.g. all zeros) gives NaN.
 
         .. engine-support:: in-memory, streaming
 

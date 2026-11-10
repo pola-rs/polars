@@ -5,7 +5,6 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::{
     Field, IDX_DTYPE, InitHashMaps, PlIndexMap, PlIndexSet, SortMultipleOptions,
 };
-use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_defs::join::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_error::{PolarsResult, polars_err};
@@ -565,31 +564,20 @@ fn try_lower_elementwise_scalar_agg_expr(
             function: IRFunctionExpr::Entropy { base, normalize },
             ..
         } => {
-            // x.entropy() ->
-            //   normalize=false: -sum(x * log(x, base))
-            //   normalize=true:  -sum(x/sum(x) * log(x/sum(x), base))
-            //                  = log(sum(x), base) - sum(x * log(x, base)) / sum(x)
+            use super::entropy::{entropy_from_sums, entropy_input, x_log_x};
+
             let (base, normalize) = (*base, *normalize);
+            let to_field_ctx = ToFieldContext::new(expr_arena, input_schema);
+            let dtype = expr_arena.get(expr).to_dtype(&to_field_ctx).ok()?;
+            let x_dtype = inner_exprs[0].dtype(input_schema, expr_arena).ok()?.clone();
             let x = AExprBuilder::new_from_node(inner_exprs[0].node());
-            let base = AExprBuilder::lit_scalar(Scalar::from(base), expr_arena);
-            let log_x = AExprBuilder::function(
-                vec![x.expr_ir_unnamed(), base.expr_ir_unnamed()],
-                IRFunctionExpr::Log,
-                expr_arena,
-            );
-            let x_log_x = x.multiply(log_x, expr_arena);
-            let mut entropy = x_log_x.sum(expr_arena).negate(expr_arena);
-            if normalize {
-                // sum(x) is deduplicated by CSE
-                let sum_x = x.sum(expr_arena);
-                let log_sum_x = AExprBuilder::function(
-                    vec![sum_x.expr_ir_unnamed(), base.expr_ir_unnamed()],
-                    IRFunctionExpr::Log,
-                    expr_arena,
-                );
-                entropy = log_sum_x.plus(entropy.true_divide(sum_x, expr_arena), expr_arena)
-            }
-            let lowered = entropy.node();
+            let x = entropy_input(x, &x_dtype, &dtype, expr_arena);
+            let sum_x_log_x = x_log_x(x, base, &dtype, expr_arena).sum(expr_arena);
+            // sum(x) is deduplicated by CSE.
+            let normalize =
+                normalize.then(|| (x.sum(expr_arena), x.count_opt_nulls(false, expr_arena)));
+            let lowered =
+                entropy_from_sums(sum_x_log_x, normalize, base, &dtype, expr_arena).node();
             lower_rec!(lowered)
         },
 
