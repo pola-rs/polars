@@ -91,9 +91,12 @@ pub struct LoadedFrame {
 }
 
 impl LoadedFrame {
-    /// The rows of partition `p`; `None` for all rows.
+    /// The rows of partition `p`; `None` for all rows, which are then in partition 0.
     pub fn partition_rows(&self, p: usize) -> Option<&[IdxSize]> {
-        self.split.as_ref().map(|split| split.partition(p))
+        match &self.split {
+            Some(split) => Some(split.partition(p)),
+            None => (p != 0).then_some(&[]),
+        }
     }
 }
 

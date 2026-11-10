@@ -471,7 +471,7 @@ impl LocalSink {
 }
 
 /// The node state while it receives its input.
-pub struct GroupBySink {
+pub struct SinkState {
     // Input stream i selects keys with key_selectors_per_input[i].
     key_selectors_per_input: Vec<Vec<StreamExpr>>,
     random_state: PlRandomState,
@@ -481,7 +481,7 @@ pub struct GroupBySink {
     locals: Vec<Option<LocalSink>>,
 }
 
-impl GroupBySink {
+impl SinkState {
     pub fn new(
         key_selectors_per_input: Vec<Vec<StreamExpr>>,
         random_state: PlRandomState,
