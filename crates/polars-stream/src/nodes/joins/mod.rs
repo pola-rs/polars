@@ -278,11 +278,13 @@ impl ProbePeek {
         }
     }
 
-    /// The state of the probe port while building: it is read until it sends rows.
+    /// The state of the probe port while building: it is read until it sends rows. It is only
+    /// opened when its input can send now, so it doesn't make the scheduler run an accumulating
+    /// node feeding it before the build side.
     fn port_state(&self, recv: PortState) -> PortState {
         match recv {
             PortState::Done => PortState::Done,
-            _ if self.len == 0 => PortState::Ready,
+            PortState::Ready if self.len == 0 => PortState::Ready,
             _ => PortState::Blocked,
         }
     }

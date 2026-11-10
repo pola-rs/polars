@@ -5,6 +5,7 @@ use parking_lot::Mutex;
 use polars_core::config;
 use polars_core::prelude::{InitHashMaps, PlHashSet, PlIndexSet, PlRandomState};
 use polars_core::schema::{Schema, SchemaRef};
+use polars_defs::join::JoinValidation;
 use polars_error::{PolarsResult, polars_ensure, polars_err};
 use polars_expr::groups::new_hash_grouper;
 use polars_expr::planner::{ExpressionConversionState, create_physical_expr, create_window_expr};
@@ -1493,10 +1494,15 @@ fn to_graph_rec<'a>(
                 }),
             });
 
-            let empty_input_gives_empty_output = [
-                !args.how.emits_unmatched_right(),
-                !(args.how.emits_unmatched_left() || args.how.is_asof()),
-            ];
+            // Validation has to see both inputs.
+            let empty_input_gives_empty_output = if args.validation == JoinValidation::ManyToMany {
+                [
+                    !args.how.emits_unmatched_right(),
+                    !(args.how.emits_unmatched_left() || args.how.is_asof()),
+                ]
+            } else {
+                [false, false]
+            };
             let executor = Mutex::new(create_physical_plan(
                 join_node,
                 &mut lp_arena,
