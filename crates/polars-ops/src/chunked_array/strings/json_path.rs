@@ -121,7 +121,7 @@ pub trait Utf8JsonPathImpl: AsString {
             ca.len(),
             allow_extra_fields_in_struct,
         )
-        .map_err(|e| polars_err!(ComputeError: "error deserializing JSON: {}", e))?;
+        .map_err(|e| e.context("error deserializing JSON".into()))?;
         let s = Series::try_from((PlSmallStr::EMPTY, array))?;
         match dtype {
             Some(dt) => s.from_json_decoded(&dt, false),
