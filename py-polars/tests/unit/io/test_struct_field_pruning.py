@@ -1134,7 +1134,8 @@ def test_struct_field_pruning_keeps_fields_setting_the_height() -> None:
 
 
 def test_struct_field_pruning_unnest_column_order() -> None:
-    # The input of an unnest is read in its own order, not in that of the other columns first.
+    # The input of an unnest is read in its own order, not in that of the other columns
+    # first.
     lf = pl.LazyFrame({"s": [{"a": 1}], "t": [{"p": 2, "q": 3}]})
     for q in [
         lf.unnest("s").with_columns(t=pl.col("t").struct.field("p")),
