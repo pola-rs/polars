@@ -674,12 +674,18 @@ impl PhysicalExpr for ApplyExpr {
                     } else if elementwise_must_aggregate && has_not_agg_with_overlapping_groups {
                         // Compatible but calling aggregated() is too expensive
                         self.apply_multiple_group_aware(acs, df)
-                    } else if self.is_fallible
-                        && acs.iter_mut().any(|ac| !ac.groups_cover_all_values())
-                    {
-                        // Fallible expression and there are elements that are masked out.
-                        self.apply_multiple_group_aware(acs, df)
                     } else {
+                        let has_masked_out_values = self.is_fallible
+                            && acs.iter_mut().any(|ac| !ac.groups_cover_all_values());
+                        if has_masked_out_values
+                            && (has_not_agg_with_overlapping_groups
+                                || has_large_groups
+                                || has_objects
+                                || has_non_unit_literal)
+                        {
+                            return self.apply_multiple_group_aware(acs, df);
+                        }
+
                         // Broadcast in NotAgg or AggList requires group_aware
                         acs.iter_mut().filter(|ac| !ac.is_literal()).for_each(|ac| {
                             ac.groups();
@@ -703,7 +709,10 @@ impl PhysicalExpr for ApplyExpr {
                             //  Broadcast fall-back.
                             self.apply_multiple_group_aware(acs, df)
                         } else {
-                            self.apply_multiple_elementwise(acs, elementwise_must_aggregate)
+                            self.apply_multiple_elementwise(
+                                acs,
+                                elementwise_must_aggregate || has_masked_out_values,
+                            )
                         }
                     }
                 },
@@ -730,4 +739,65 @@ fn constant_broadcast_len(inputs: &[Column]) -> Option<usize> {
         .iter()
         .all(|c| c.len() == 1 || (c.len() == len && matches!(c, Column::Scalar(_))))
         .then_some(len)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use polars_plan::prelude::col;
+
+    use super::*;
+
+    #[test]
+    fn test_fallible_elementwise_batches_masked_groups() -> PolarsResult<()> {
+        let df = df!["x" => [1i32, -1, 2, -1]]?;
+        let groups = GroupsType::new_slice(vec![[0, 1], [2, 1]], false, true).into_sliceable();
+        let expr = col("x");
+        let input = Arc::new(ColumnExpr::new(
+            "x".into(),
+            expr.clone(),
+            df.schema().clone(),
+        ));
+        let literal = LiteralValue::Scalar(Scalar::new(DataType::Int32, AnyValue::Int32(1)));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let function_calls = calls.clone();
+        let function = move |columns: &mut [Column]| {
+            function_calls.fetch_add(1, Ordering::Relaxed);
+            polars_ensure!(
+                columns[0].i32()?.into_no_null_iter().all(|value| value > 0),
+                ComputeError: "evaluated a masked-out value"
+            );
+            Ok(columns[0].clone())
+        };
+        let apply = ApplyExpr::new(
+            vec![
+                input,
+                Arc::new(LiteralExpr::new(literal.clone(), Expr::Literal(literal))),
+            ],
+            SpecialEq::new(Arc::new(function) as Arc<dyn ColumnsUdf>),
+            None,
+            expr,
+            FunctionOptions::elementwise(),
+            false,
+            df.schema().clone(),
+            Field::new("x".into(), DataType::Int32),
+            false,
+            true,
+            false,
+        );
+
+        let mut ac = apply.evaluate_on_groups(&df, &groups, &ExecutionState::new())?;
+        let out = ac.aggregated();
+        let expected = Series::new(
+            "x".into(),
+            [
+                Series::new("".into(), [1i32]),
+                Series::new("".into(), [2i32]),
+            ],
+        );
+        assert!(out.as_materialized_series().equals(&expected));
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+        Ok(())
+    }
 }
