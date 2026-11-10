@@ -11,9 +11,9 @@ use polars_async::executor::{self, JoinHandle, TaskMetricAggregator, TaskPriorit
 use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_buffer::Buffer;
 use polars_config::config;
-use polars_core::prelude::DataType;
+use polars_core::prelude::{ArrowDataType, ArrowField, ArrowSchema, DataType};
 use polars_core::runtime::ASYNC;
-use polars_core::schema::{Schema, SchemaExt};
+use polars_core::schema::{Schema, SchemaRef};
 use polars_core::utils::polars_arrow::io::ipc::read::{
     BlockReader, FileMetadata, ProjectionInfo, prepare_projection, read_file_metadata,
 };
@@ -25,7 +25,7 @@ use polars_io::ipc::pl_ipc_metadata::{POLARS_IPC_METADATA_KEY, PlIpcMetadata};
 use polars_io::utils::byte_source::{
     BufferByteSource, ByteSource, DynByteSource, DynByteSourceBuilder,
 };
-use polars_plan::dsl::ScanSource;
+use polars_plan::dsl::{MissingColumnsPolicy, ScanFieldSelection, ScanSource};
 use polars_utils::IdxSize;
 use polars_utils::bool::UnsafeBool;
 use polars_utils::mem::prefetch::get_memory_prefetch_func;
@@ -40,6 +40,8 @@ use super::multi_scan::reader_interface::output::FileReaderOutputRecv;
 use crate::metrics::OptIOMetrics;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::ipc::metadata::read_ipc_metadata_bytes;
+use crate::nodes::io_sources::multi_scan::components::column_selector::ColumnSelector;
+use crate::nodes::io_sources::multi_scan::components::column_selector::builder::ColumnSelectorBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
 use crate::nodes::io_sources::multi_scan::reader_interface::{
     FileReader, FileReaderCallbacks, Projection, calc_row_position_after_slice,
@@ -63,6 +65,10 @@ struct IpcFileReader {
     scan_source: ScanSource,
     cloud_options: Option<Arc<CloudOptions>>,
     config: Arc<IpcScanOptions>,
+    /// Struct fields to read of the columns not read whole.
+    field_selection: Option<Arc<ScanFieldSelection>>,
+    /// The full schema of the scan, set with `field_selection`.
+    scan_schema: Option<SchemaRef>,
     metadata: Option<Arc<FileMetadata>>,
     byte_source_builder: DynByteSourceBuilder,
     record_batch_prefetch_sync: RecordBatchPrefetchSync,
@@ -215,7 +221,7 @@ impl FileReader for IpcFileReader {
             row_index,
             pre_slice: pre_slice_arg,
             predicate: None,
-            cast_columns_policy: _,
+            cast_columns_policy,
             extra_columns_policy: _,
             missing_columns_policy: _,
             num_pipelines,
@@ -235,8 +241,88 @@ impl FileReader for IpcFileReader {
 
         debug_assert!(!matches!(pre_slice_arg, Some(Slice::Negative { .. })));
 
+        // The struct columns of which only some fields are read, with the dtypes to read them as.
+        let pruned_dtypes: Option<Arc<[Option<ArrowDataType>]>> =
+            self.field_selection.as_deref().and_then(|field_selection| {
+                resolve_pruned_dtypes(&file_metadata.schema, field_selection)
+            });
+
+        // Check the cast policies on the pruned columns as if they were read whole, so that e.g. a
+        // struct field missing from the file raises as it does without the pruning. Read whole,
+        // the check runs on the file's first non-empty morsel, so the error is raised there too:
+        // a file without rows does not raise.
+        let mut cast_policy_err: Option<PolarsError> = None;
+        if let (Some(field_selection), Some(scan_schema)) =
+            (self.field_selection.as_deref(), &self.scan_schema)
+        {
+            for name in field_selection.0.keys() {
+                let (Some(field), Some(scan_dtype)) =
+                    (file_metadata.schema.get(name), scan_schema.get(name))
+                else {
+                    continue;
+                };
+                if !projected_schema.contains(name) {
+                    continue;
+                }
+                if let Err(err) = (ColumnSelectorBuilder {
+                    cast_columns_policy: cast_columns_policy.clone(),
+                    missing_columns_policy: MissingColumnsPolicy::Raise,
+                })
+                .attach_transforms(
+                    ColumnSelector::Position(0),
+                    &DataType::from_arrow_field(field),
+                    scan_dtype,
+                    name,
+                ) {
+                    cast_policy_err = Some(err);
+                    break;
+                }
+            }
+        }
+
+        // The schema of the file as read: the pruned struct columns with only the fields read.
+        let pl_field = |idx: usize, field: &ArrowField| match pruned_dtypes
+            .as_deref()
+            .and_then(|pruned| pruned[idx].as_ref())
+        {
+            Some(dtype) => DataType::from_arrow_field(&field.with_dtype(dtype.clone())),
+            None => DataType::from_arrow_field(field),
+        };
+
+        // Columns that the above does not prune (e.g. dictionary-encoded structs, maps) are read
+        // whole and narrowed after decoding, to the dtypes here.
+        let narrowed_dtypes: Option<Arc<Schema>> = self
+            .field_selection
+            .as_deref()
+            .map(|field_selection| {
+                field_selection
+                    .0
+                    .iter()
+                    .filter_map(|(name, selection)| {
+                        let (idx, _, field) = file_metadata.schema.get_full(name)?;
+                        let dtype = selection.prune_dtype(&DataType::from_arrow_field(field));
+                        (dtype != pl_field(idx, field)).then(|| (name.clone(), dtype))
+                    })
+                    .collect::<Schema>()
+            })
+            .filter(|schema| !schema.is_empty())
+            .map(Arc::new);
+
         let file_schema_pl = std::cell::LazyCell::new(|| {
-            Arc::new(Schema::from_arrow_schema(file_metadata.schema.as_ref()))
+            Arc::new(
+                file_metadata
+                    .schema
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, (name, field))| {
+                        let dtype = narrowed_dtypes
+                            .as_deref()
+                            .and_then(|narrowed| narrowed.get(name).cloned())
+                            .unwrap_or_else(|| pl_field(idx, field));
+                        (name.clone(), dtype)
+                    })
+                    .collect::<Schema>(),
+            )
         });
 
         // Handle callbacks that are ready now.
@@ -303,7 +389,13 @@ impl FileReader for IpcFileReader {
         let pl_schema = Arc::new(
             schema
                 .iter()
-                .map(|(n, f)| (n.clone(), DataType::from_arrow_field(f)))
+                .map(|(n, f)| {
+                    let dtype = match file_metadata.schema.index_of(n) {
+                        Some(idx) => pl_field(idx, f),
+                        None => DataType::from_arrow_field(f),
+                    };
+                    (n.clone(), dtype)
+                })
                 .collect::<Schema>(),
         );
 
@@ -348,6 +440,8 @@ impl FileReader for IpcFileReader {
             file_metadata: file_metadata.clone(),
             pl_schema,
             projection_info,
+            pruned_dtypes: pruned_dtypes.clone(),
+            narrowed_dtypes,
             dictionaries: dictionaries.clone(),
             row_index,
             read_statistics_flags,
@@ -610,6 +704,9 @@ impl FileReader for IpcFileReader {
                 if df.height() == 0 {
                     continue;
                 }
+                if let Some(err) = cast_policy_err.take() {
+                    return Err(err);
+                }
 
                 if disable_morsel_split {
                     if morsel_send
@@ -691,6 +788,29 @@ impl FileReader for IpcFileReader {
             }),
         ))
     }
+}
+
+/// The dtypes to read the struct columns of `schema` as of which `field_selection` selects only
+/// some fields, indexed like `schema`; `None` if there are none.
+fn resolve_pruned_dtypes(
+    schema: &ArrowSchema,
+    field_selection: &ScanFieldSelection,
+) -> Option<Arc<[Option<ArrowDataType>]>> {
+    let mut out: Vec<Option<ArrowDataType>> = vec![None; schema.len()];
+    let mut any_pruned = false;
+
+    for (name, selection) in field_selection.0.iter() {
+        let Some((idx, _, field)) = schema.get_full(name) else {
+            continue;
+        };
+        let dtype = selection.prune_arrow_dtype(&field.dtype);
+        if dtype != field.dtype {
+            out[idx] = Some(dtype);
+            any_pruned = true;
+        }
+    }
+
+    any_pruned.then(|| out.into())
 }
 
 async fn read_dictionaries(

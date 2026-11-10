@@ -191,7 +191,9 @@ impl PhysicalExpr for RollingExpr {
                     }));
                     i += idx.len();
                 }
-                GroupsType::Idx(nested_groups.into())
+                let mut nested_groups: GroupsIdx = nested_groups.into();
+                nested_groups.set_sorted_idxs_in_groups(idx.has_sorted_idxs_in_groups());
+                GroupsType::Idx(nested_groups)
             },
             GroupsType::Slice {
                 groups,

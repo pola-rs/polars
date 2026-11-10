@@ -5,7 +5,7 @@ use polars_async::executor::{TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::opt_spawned_future::parallelize_first_to_local;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
-    ArrowDataType, ArrowField, BooleanChunked, ChunkFilter, Column, DataType, IDX_DTYPE, IntoColumn,
+    ArrowDataType, BooleanChunked, ChunkFilter, Column, DataType, IDX_DTYPE, IntoColumn,
 };
 use polars_core::scalar::Scalar;
 use polars_core::series::Series;
@@ -15,7 +15,7 @@ use polars_io::RowIndex;
 use polars_io::predicates::{DynamicPredicateSource, PhysicalIoExpr, ScanIOPredicate};
 use polars_io::prelude::_internal::canonicalize_parquet_maps;
 use polars_io::prelude::try_set_sorted_flag;
-use polars_parquet::read::{Filter, PredicateFilter, PrimitiveLogicalType};
+use polars_parquet::read::{ColumnChunkMetadata, Filter, PredicateFilter, PrimitiveLogicalType};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, UnitVec};
 
@@ -349,13 +349,14 @@ impl RowGroupDecoder {
                                         [get_projected_field_at_output_index(i)];
 
                                     let (col, pred_true_mask) = decode_column(
-                                        projection.arrow_field(),
+                                        projection,
                                         &row_group_data,
                                         filter.clone(),
                                         expected_num_rows,
                                     )?;
 
-                                    let col = projection.apply_transform(col)?;
+                                    let col = projection
+                                        .apply_transform(col, row_group_data.row_group_idx)?;
 
                                     Ok((col, pred_true_mask))
                                 })
@@ -387,16 +388,32 @@ fn row_index_column(
     Column::new_row_index(row_index.name.clone(), offset, slice_range.len())
 }
 
+/// The column chunks of the leaves of `projection` to decode: all leaves of the column, or the
+/// selected ones of a pruned struct.
+fn projected_column_chunks<'a>(
+    projection: &'a ArrowFieldProjection,
+    row_group_data: &'a RowGroupData,
+) -> Option<impl Iterator<Item = &'a ColumnChunkMetadata>> {
+    let leaves = projection.leaves(row_group_data.row_group_idx);
+
+    Some(
+        row_group_data
+            .row_group_metadata
+            .columns_under_root_iter(&projection.arrow_field().name)?
+            .enumerate()
+            .filter(move |(i, _)| leaves.is_none_or(|leaves| leaves.binary_search(i).is_ok()))
+            .map(|(_, col_md)| col_md),
+    )
+}
+
 fn decode_column(
-    arrow_field: &ArrowField,
+    projection: &ArrowFieldProjection,
     row_group_data: &RowGroupData,
     filter: Option<polars_parquet::read::Filter>,
     expected_num_rows: usize,
 ) -> PolarsResult<(Column, Bitmap)> {
-    let Some(iter) = row_group_data
-        .row_group_metadata
-        .columns_under_root_iter(&arrow_field.name)
-    else {
+    let arrow_field = projection.decode_field(row_group_data.row_group_idx);
+    let Some(iter) = projected_column_chunks(projection, row_group_data) else {
         return Ok((
             Column::full_null(
                 arrow_field.name.clone(),
@@ -612,7 +629,6 @@ impl Pass {
             },
         };
         let projection = &self.projected_arrow_fields[field_idx];
-        let arrow_field = projection.arrow_field();
 
         if let Some((i, c)) = predicate_column
             && self.mask.is_none()
@@ -620,7 +636,7 @@ impl Pass {
             && let Some(filter) = &c.decode_filter
         {
             let (column, mask) = decode_column(
-                arrow_field,
+                projection,
                 &self.row_group_data,
                 Some(Filter::Predicate(filter.clone())),
                 self.num_rows,
@@ -629,7 +645,8 @@ impl Pass {
                 Some(v) => Column::new_scalar(column.name().clone(), v.clone(), mask.set_bits()),
                 None => column,
             };
-            let mut column = projection.apply_transform(column)?;
+            let mut column =
+                projection.apply_transform(column, self.row_group_data.row_group_idx)?;
             let mut mask = mask;
             if let Some(m) = dynamic_mask(c, &column)?
                 && m.unset_bits() > 0
@@ -647,11 +664,11 @@ impl Pass {
 
         let column = match &self.mask {
             Some(mask) => {
-                decode_column_prefiltered(arrow_field, &self.row_group_data, mask, self.num_rows)?
+                decode_column_prefiltered(projection, &self.row_group_data, mask, self.num_rows)?
             },
-            None => decode_column(arrow_field, &self.row_group_data, None, self.num_rows)?.0,
+            None => decode_column(projection, &self.row_group_data, None, self.num_rows)?.0,
         };
-        let column = projection.apply_transform(column)?;
+        let column = projection.apply_transform(column, self.row_group_data.row_group_idx)?;
         let predicate = evaluate(&column)?;
         Ok(Decoded {
             source,
@@ -977,15 +994,13 @@ fn compose_masks(outer: &Bitmap, inner: &Bitmap) -> Bitmap {
 }
 
 fn decode_column_prefiltered(
-    arrow_field: &ArrowField,
+    projection: &ArrowFieldProjection,
     row_group_data: &RowGroupData,
     mask_bitmap: &Bitmap,
     expected_num_rows: usize,
 ) -> PolarsResult<Column> {
-    let Some(iter) = row_group_data
-        .row_group_metadata
-        .columns_under_root_iter(&arrow_field.name)
-    else {
+    let arrow_field = projection.decode_field(row_group_data.row_group_idx);
+    let Some(iter) = projected_column_chunks(projection, row_group_data) else {
         return Ok(Column::full_null(
             arrow_field.name.clone(),
             expected_num_rows,

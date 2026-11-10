@@ -637,6 +637,7 @@ where
         expand_paths: _,
         hidden_file_prefix: _,
         projection: _,
+        field_selection: _,
         column_mapping: _,
         default_values,
         row_index,

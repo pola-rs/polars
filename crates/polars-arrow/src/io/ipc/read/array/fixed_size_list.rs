@@ -5,7 +5,7 @@ use polars_error::{PolarsResult, polars_ensure, polars_err};
 use polars_utils::bool::UnsafeBool;
 
 use super::super::super::IpcField;
-use super::super::deserialize::{read, skip};
+use super::super::deserialize::{read_pruned, skip};
 use super::super::read_basic::*;
 use super::super::{Compression, Dictionaries, IpcBuffer, Node, Version};
 use crate::array::FixedSizeListArray;
@@ -16,6 +16,45 @@ use crate::io::ipc::read::array::try_get_field_node;
 pub fn read_fixed_size_list<R: Read + Seek>(
     field_nodes: &mut VecDeque<Node>,
     variadic_buffer_counts: &mut VecDeque<usize>,
+    dtype: ArrowDataType,
+    ipc_field: &IpcField,
+    buffers: &mut VecDeque<IpcBuffer>,
+    reader: &mut R,
+    dictionaries: &Dictionaries,
+    block_offset: u64,
+    is_little_endian: bool,
+    compression: Option<Compression>,
+    limit: Option<usize>,
+    version: Version,
+    scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
+) -> PolarsResult<FixedSizeListArray> {
+    read_fixed_size_list_pruned(
+        field_nodes,
+        variadic_buffer_counts,
+        &dtype.clone(),
+        dtype,
+        ipc_field,
+        buffers,
+        reader,
+        dictionaries,
+        block_offset,
+        is_little_endian,
+        compression,
+        limit,
+        version,
+        scratch,
+        checked,
+    )
+}
+
+/// Reads a fixed-size list of dtype `file_dtype` as `dtype`, whose element has a pruned dtype
+/// (see [`read_pruned`]).
+#[allow(clippy::too_many_arguments)]
+pub fn read_fixed_size_list_pruned<R: Read + Seek>(
+    field_nodes: &mut VecDeque<Node>,
+    variadic_buffer_counts: &mut VecDeque<usize>,
+    file_dtype: &ArrowDataType,
     dtype: ArrowDataType,
     ipc_field: &IpcField,
     buffers: &mut VecDeque<IpcBuffer>,
@@ -42,15 +81,17 @@ pub fn read_fixed_size_list<R: Read + Seek>(
         scratch,
     )?;
 
-    let (field, size) = FixedSizeListArray::get_child_and_size(&dtype);
+    let (field, size) = FixedSizeListArray::get_child_and_size(file_dtype);
     polars_ensure!(size > 0, nyi = "Cannot read zero sized arrays from IPC");
+    let pruned_dtype = FixedSizeListArray::get_child_and_size(&dtype).0.dtype();
 
     let limit = limit.map(|x| x.saturating_mul(size));
 
-    let values = read(
+    let values = read_pruned(
         field_nodes,
         variadic_buffer_counts,
         field,
+        pruned_dtype,
         &ipc_field.fields[0],
         buffers,
         reader,

@@ -13,8 +13,8 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::{
     AnyValue, BooleanChunked, ChunkCast, Column, CompatLevel, DataType, ExplodeOptions,
-    Float64Chunked, GroupPositions, GroupsType, IDX_DTYPE, IntoColumn, IntoSeries, LargeListArray,
-    ListChunked, explode_with_row_offsets,
+    Float64Chunked, GroupPositions, GroupsIdx, GroupsType, IDX_DTYPE, IntoColumn, IntoSeries,
+    LargeListArray, ListChunked, explode_with_row_offsets,
 };
 use polars_core::runtime::RAYON;
 use polars_core::scalar::Scalar;
@@ -411,7 +411,8 @@ pub fn drop_items<'a>(
     ac.groups();
     let predicate = BitMask::from_bitmap(predicate);
     RAYON.install(|| {
-        let positions = GroupsType::Idx(match &**ac.groups.as_ref() {
+        let sorted_idxs_in_groups = ac.groups.has_sorted_idxs_in_groups();
+        let mut positions: GroupsIdx = match &**ac.groups.as_ref() {
             GroupsType::Idx(idxs) => idxs
                 .into_par_iter()
                 .map(|(fst, idxs)| {
@@ -458,9 +459,9 @@ pub fn drop_items<'a>(
                     }
                 })
                 .collect(),
-        })
-        .into_sliceable();
-        ac.with_groups(positions);
+        };
+        positions.set_sorted_idxs_in_groups(sorted_idxs_in_groups);
+        ac.with_groups(GroupsType::Idx(positions).into_sliceable());
     });
 
     Ok(ac)
@@ -885,7 +886,8 @@ pub fn unique<'a>(
     }
 
     RAYON.install(|| {
-        let positions = GroupsType::Idx(match &**ac.groups().as_ref() {
+        let sorted_idxs_in_groups = ac.groups().has_sorted_idxs_in_groups();
+        let mut positions: GroupsIdx = match &**ac.groups().as_ref() {
             GroupsType::Idx(idx) => idx
                 .into_par_iter()
                 .map_with(CloneWrapper(state), |state, (first, idx)| {
@@ -906,9 +908,9 @@ pub fn unique<'a>(
                     (idx.first().copied().unwrap_or(*start), idx)
                 })
                 .collect(),
-        })
-        .into_sliceable();
-        ac.with_groups(positions);
+        };
+        positions.set_sorted_idxs_in_groups(sorted_idxs_in_groups);
+        ac.with_groups(GroupsType::Idx(positions).into_sliceable());
     });
 
     Ok(ac)
@@ -943,7 +945,8 @@ fn fw_bw_fill_null<'a>(
 
     let validity = BitMask::from_bitmap(&validity);
     RAYON.install(|| {
-        let positions = GroupsType::Idx(match &**ac.groups().as_ref() {
+        let sorted_idxs_in_groups = ac.groups().has_sorted_idxs_in_groups();
+        let mut positions: GroupsIdx = match &**ac.groups().as_ref() {
             GroupsType::Idx(idx) => idx
                 .into_par_iter()
                 .map(|(first, idx)| {
@@ -962,9 +965,9 @@ fn fw_bw_fill_null<'a>(
                     (idx.first().copied().unwrap_or(*start), idx)
                 })
                 .collect(),
-        })
-        .into_sliceable();
-        ac.with_groups(positions);
+        };
+        positions.set_sorted_idxs_in_groups(sorted_idxs_in_groups);
+        ac.with_groups(GroupsType::Idx(positions).into_sliceable());
     });
 
     Ok(ac)

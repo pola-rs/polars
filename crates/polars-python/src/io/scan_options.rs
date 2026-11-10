@@ -147,6 +147,7 @@ impl PyScanOptions<'_> {
             hidden_file_prefix: hidden_file_prefix
                 .map(|x| x.into_iter().map(|x| (*x).into()).collect()),
             projection: None,
+            field_selection: None,
             column_mapping: column_mapping.map(|x| x.0),
             default_values: default_values
                 .map(|x| x.0)
