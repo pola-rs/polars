@@ -41,7 +41,7 @@ where
     }
 }
 
-pub fn rolling_mean_exact<const FLOOR: bool, const SCALE: i128>(
+pub fn rolling_mean_exact<const FLOOR: bool, const SCALE: i64>(
     values: &[i64],
     window_size: usize,
     min_samples: usize,

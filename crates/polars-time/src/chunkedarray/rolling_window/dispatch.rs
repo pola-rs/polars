@@ -11,11 +11,12 @@ use polars_core::{with_match_physical_float_polars_type, with_match_physical_num
 use polars_defs::time::duration::ensure_duration_matches_dtype;
 use polars_defs::time::group_by::ClosedWindow;
 use polars_ops::series::SeriesMethods;
+use polars_utils::float::IsFloat;
 
 use super::*;
 use crate::series::AsSeries;
 
-const US_IN_DAY: i128 = MICROSECONDS_IN_DAY as i128;
+const US_IN_DAY: i64 = MICROSECONDS_IN_DAY;
 
 #[cfg(feature = "rolling_window")]
 #[allow(clippy::type_complexity)]
@@ -82,7 +83,7 @@ fn rolling_agg_by<T, Out, NoNullsAgg, NullsAgg>(
 ) -> PolarsResult<Series>
 where
     T: PolarsNumericType,
-    T::Native: NativeType,
+    T::Native: NativeType + IsFloat,
     Out: NativeType,
     NoNullsAgg: RollingAggWindowNoNulls<T::Native, Out>,
     NullsAgg: RollingAggWindowNulls<T::Native, Out>,
@@ -255,7 +256,10 @@ pub trait SeriesOpsTime: AsSeries {
             )
         })
     }
-    /// Apply an exact rolling mean to temporal physical values.
+    /// Apply an exact rolling mean to temporal physical values, based on another Series.
+    ///
+    /// The mean is rounded towards zero instead of negative infinity if `floor` is not set. The
+    /// values are days that are returned as microseconds if `date` is set.
     #[cfg(feature = "rolling_window_by")]
     fn rolling_mean_temporal_by(
         &self,
@@ -284,6 +288,9 @@ pub trait SeriesOpsTime: AsSeries {
     }
 
     /// Apply an exact rolling mean to temporal physical values.
+    ///
+    /// The mean is rounded towards zero instead of negative infinity if `floor` is not set. The
+    /// values are days that are returned as microseconds if `date` is set. There are no weights.
     #[cfg(feature = "rolling_window")]
     fn rolling_mean_temporal(
         &self,
