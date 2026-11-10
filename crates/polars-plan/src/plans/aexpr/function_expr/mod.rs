@@ -289,6 +289,11 @@ pub enum IRFunctionExpr {
         base: f64,
         normalize: bool,
     },
+    /// `x * log(x, base)` with `0 * log(0) = 0`, used to lower `entropy` in streaming.
+    #[cfg(feature = "log")]
+    XLogX {
+        base: f64,
+    },
     #[cfg(feature = "log")]
     Log,
     #[cfg(feature = "log")]
@@ -696,6 +701,8 @@ impl Hash for IRFunctionExpr {
                 normalize.hash(state);
             },
             #[cfg(feature = "log")]
+            XLogX { base } => base.to_bits().hash(state),
+            #[cfg(feature = "log")]
             Log => {},
             #[cfg(feature = "log")]
             Log1p => {},
@@ -1001,6 +1008,8 @@ impl IRFunctionExpr {
             InterpolateBy => "interpolate_by",
             #[cfg(feature = "log")]
             Entropy { .. } => "entropy",
+            #[cfg(feature = "log")]
+            XLogX { .. } => "x_log_x",
             #[cfg(feature = "log")]
             Log => "log",
             #[cfg(feature = "log")]
@@ -1403,7 +1412,9 @@ impl IRFunctionExpr {
             #[cfg(feature = "interpolate_by")]
             F::InterpolateBy => FunctionOptions::length_preserving(),
             #[cfg(feature = "log")]
-            F::Log | F::Log1p | F::Exp | F::Erf | F::Erfc => FunctionOptions::elementwise(),
+            F::Log | F::Log1p | F::Exp | F::Erf | F::Erfc | F::XLogX { .. } => {
+                FunctionOptions::elementwise()
+            },
             #[cfg(feature = "log")]
             F::Entropy { .. } => {
                 FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING)

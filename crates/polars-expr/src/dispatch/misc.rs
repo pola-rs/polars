@@ -878,6 +878,13 @@ pub(super) fn log(columns: &[Column]) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "log")]
+pub(super) fn x_log_x(s: &Column, base: f64) -> PolarsResult<Column> {
+    use polars_ops::series::LogSeries;
+
+    Ok(s.as_materialized_series().x_log_x(base)?.into())
+}
+
+#[cfg(feature = "log")]
 pub(super) fn log1p(s: &Column) -> PolarsResult<Column> {
     use polars_ops::series::LogSeries;
 

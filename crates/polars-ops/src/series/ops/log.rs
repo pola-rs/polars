@@ -200,6 +200,34 @@ pub trait LogSeries: SeriesSealed {
             dt => polars_bail!(opq = entropy, dt),
         }
     }
+
+    /// Compute `x * log(x, base)` elementwise, with `0 * log(0) = 0` and NaN for negative `x`.
+    fn x_log_x(&self, base: f64) -> PolarsResult<Series> {
+        let s = self.as_series();
+        match s.dtype() {
+            dt if dt.is_float() => {
+                with_match_physical_float_polars_type!(s.dtype(), |$T| {
+                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref();
+                    let base = NumCast::from(base).unwrap();
+                    Ok(ca.apply_values(|x| x_log_x(x, base)).into_series())
+                })
+            },
+            dt if dt.is_integer() || dt.is_decimal() || dt.is_bool() => {
+                s.cast(&DataType::Float64)?.x_log_x(base)
+            },
+            dt => polars_bail!(opq = x_log_x, dt),
+        }
+    }
+}
+
+fn x_log_x<F: Float>(x: F, base: F) -> F {
+    if x < F::zero() {
+        F::nan()
+    } else if x == F::zero() {
+        F::zero()
+    } else {
+        x * x.log(base)
+    }
 }
 
 /// Entropy with `0 * log(0) = 0` and NaN for negative weights.
@@ -223,10 +251,10 @@ where
     let plogp = ca.apply_values(|x| {
         // Checked before dividing, so that a negative weight can't underflow to `-0.0`.
         if x < zero {
-            return T::Native::nan();
+            T::Native::nan()
+        } else {
+            x_log_x(x / total, base)
         }
-        let p = x / total;
-        if p == zero { zero } else { p * p.log(base) }
     });
     -plogp.sum().map_or(0.0, |t| t.to_f64().unwrap())
 }

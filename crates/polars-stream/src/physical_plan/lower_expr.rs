@@ -2296,8 +2296,10 @@ fn lower_exprs_with_ctx(
                 function: IRFunctionExpr::Entropy { base, normalize },
                 ..
             } => {
-                use super::entropy::{entropy_from_sums, entropy_input, x_log_x};
-
+                // x.entropy() ->
+                //   normalize=false: -sum(x * log(x, base))
+                //   normalize=true:  -sum(x/sum(x) * log(x/sum(x), base))
+                //                  = log(sum(x), base) - sum(x * log(x, base)) / sum(x)
                 let input_schema = input.output_schema(ctx.phys_sm);
                 let to_field_ctx = ToFieldContext::new(ctx.expr_arena, input_schema);
                 let dtype = ctx.expr_arena.get(expr).to_dtype(&to_field_ctx)?;
@@ -2305,13 +2307,20 @@ fn lower_exprs_with_ctx(
 
                 let inner = inner_exprs[0].node();
                 let (trans_input, trans_inner) = lower_exprs_with_ctx(input, &[inner], ctx)?;
-                let x = AExprBuilder::new_from_node(trans_inner[0]);
-                let x = entropy_input(x, &x_dtype, &dtype, ctx.expr_arena);
-                let sum_x_log_x = x_log_x(x, base, &dtype, ctx.expr_arena).sum(ctx.expr_arena);
+                let mut x = AExprBuilder::new_from_node(trans_inner[0]);
+                // Compute in the output float dtype, so that `sum(x)` is a float too.
+                if x_dtype != dtype {
+                    x = x.cast(dtype, ctx.expr_arena);
+                }
+                let sum_x_log_x = AExprBuilder::function(
+                    vec![x.expr_ir_unnamed()],
+                    IRFunctionExpr::XLogX { base },
+                    ctx.expr_arena,
+                )
+                .sum(ctx.expr_arena);
 
                 if !normalize {
-                    let entropy =
-                        entropy_from_sums(sum_x_log_x, None, base, &dtype, ctx.expr_arena);
+                    let entropy = sum_x_log_x.negate(ctx.expr_arena);
                     let (trans_stream, trans_expr) =
                         lower_exprs_with_ctx(trans_input, &[entropy.node()], ctx)?;
                     input_streams.insert(trans_stream);
@@ -2335,8 +2344,17 @@ fn lower_exprs_with_ctx(
                     ));
                     let [sum_x_log_x, sum_x] =
                         names.map(|name| AExprBuilder::col(name, ctx.expr_arena));
-                    let result =
-                        entropy_from_sums(sum_x_log_x, Some(sum_x), base, &dtype, ctx.expr_arena);
+                    let base = AExprBuilder::lit_scalar(Scalar::from(base), ctx.expr_arena);
+                    let log_sum_x = AExprBuilder::function(
+                        vec![sum_x.expr_ir_unnamed(), base.expr_ir_unnamed()],
+                        IRFunctionExpr::Log,
+                        ctx.expr_arena,
+                    );
+                    // A zero sum(x) gives NaN through `0 / 0`.
+                    let result = log_sum_x.minus(
+                        sum_x_log_x.true_divide(sum_x, ctx.expr_arena),
+                        ctx.expr_arena,
+                    );
 
                     input_streams.insert(PhysStream::first(reduce_key));
                     transformed_exprs.push(result.node());

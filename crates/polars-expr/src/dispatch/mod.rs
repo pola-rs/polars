@@ -386,6 +386,8 @@ pub fn function_expr_to_udf(
         #[cfg(feature = "log")]
         F::Entropy { base, normalize } => map!(misc::entropy, base, normalize),
         #[cfg(feature = "log")]
+        F::XLogX { base } => map!(misc::x_log_x, base),
+        #[cfg(feature = "log")]
         F::Log => map_as_slice!(misc::log),
         #[cfg(feature = "log")]
         F::Log1p => map!(misc::log1p),

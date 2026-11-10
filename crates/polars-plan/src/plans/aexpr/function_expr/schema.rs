@@ -325,6 +325,10 @@ impl IRFunctionExpr {
                 .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "entropy")?
                 .map_to_float_dtype(),
             #[cfg(feature = "log")]
+            XLogX { .. } => mapper
+                .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "x_log_x")?
+                .map_to_float_dtype(),
+            #[cfg(feature = "log")]
             Log1p => mapper
                 .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "log1p")?
                 .map_to_float_dtype(),
