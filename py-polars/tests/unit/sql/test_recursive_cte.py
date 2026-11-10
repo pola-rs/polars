@@ -845,3 +845,29 @@ def test_recursive_struct_fields_by_name() -> None:
     )
     with pytest.raises(pl.exceptions.InvalidOperationError):
         ctx.execute(query, eager=True)
+
+
+@pytest.mark.parametrize(
+    ("query", "height"),
+    [
+        ("SELECT * FROM e JOIN t ON e.n = t.n", 0),
+        ("SELECT * FROM t JOIN e ON e.n = t.n", 0),
+        ("SELECT * FROM t LIMIT 5", 5),
+    ],
+)
+def test_recursive_stops_when_its_rows_are_not_read(query: str, height: int) -> None:
+    # The step raises after many rounds, so the loop must stop before that.
+    ctx = pl.SQLContext(e=pl.DataFrame({"n": pl.Series([], dtype=pl.Int64)}))
+    res = ctx.execute(
+        """
+        WITH RECURSIVE t(n) AS (
+          SELECT 1
+          UNION ALL
+          SELECT CAST(CASE WHEN n < 10000 THEN CAST(n + 1 AS VARCHAR) ELSE 'x' END AS BIGINT)
+          FROM t
+        )
+        """
+        + query,
+        eager=True,
+    )
+    assert res.height == height

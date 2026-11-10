@@ -366,8 +366,14 @@ impl SampleState {
 
         let left_is_build = match (left_saturated, right_saturated) {
             // Don't bother estimating cardinality, just choose smaller side as
-            // we have everything in-memory anyway.
-            (false, false) => self.left_len < self.right_len,
+            // we have everything in-memory anyway. An empty left side that ended
+            // is built, as the right side may not have sent anything yet.
+            (false, false) => {
+                self.left_len < self.right_len
+                    || (self.left_len == 0
+                        && recv[0] == PortState::Done
+                        && recv[1] != PortState::Done)
+            },
 
             // Choose the unsaturated side, the saturated side could be
             // arbitrarily big.
