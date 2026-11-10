@@ -129,6 +129,47 @@ def test_streaming_cross_join_empty() -> None:
     assert out.columns == ["col1", "col1_right"]
 
 
+@pytest.mark.parametrize("how", ["cross", "range"])
+def test_streaming_join_empty_build_does_not_read_probe(how: str) -> None:
+    seen = []
+
+    def count(s: pl.Series) -> pl.Series:
+        seen.append(len(s))
+        return s
+
+    probe = (
+        pl.LazyFrame({"x": range(1000)})
+        .with_columns(
+            pl.col("x").map_batches(count, is_elementwise=True, return_dtype=pl.Int64)
+        )
+        .filter(pl.col("x") < 0)
+    )
+    empty = pl.LazyFrame({"a": pl.Series([], dtype=pl.Int64)})
+    if how == "cross":
+        q = empty.join(probe, how="cross")
+    else:
+        q = empty.join_where(probe, pl.col("a") < pl.col("x"))
+    assert q.collect(engine="streaming").height == 0
+    assert seen == []
+
+
+def test_streaming_join_head_does_not_read_later_probe_rows() -> None:
+    # The second input of the probe side raises when it is read.
+    failing = (
+        pl.LazyFrame({"s": ["x"]})
+        .group_by("s")
+        .agg()
+        .select(pl.col("s").cast(pl.Int64).alias("b"))
+    )
+    probe = pl.concat([pl.LazyFrame({"b": [1]}), failing])
+    build = pl.LazyFrame({"a": [1]})
+    for q in [
+        build.join(probe, how="cross", maintain_order="right_left"),
+        build.join_where(probe, pl.col("a") <= pl.col("b")),
+    ]:
+        assert q.head(1).collect(engine="streaming").rows() == [(1, 1)]
+
+
 def test_streaming_cross_join_nullable_struct_probe() -> None:
     # Each probe row is repeated once per build row, its validity included.
     build = pl.LazyFrame({"a": [1, 2, 3]})

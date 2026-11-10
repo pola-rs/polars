@@ -266,6 +266,8 @@ struct ProbePeek {
     len: usize,
     spill_ctx: MostRecentSpillContext,
     task_metrics: Option<Arc<TaskMetricAggregator>>,
+    /// Whether the build side was read in an earlier phase.
+    build_phase_ran: bool,
 }
 
 impl ProbePeek {
@@ -275,16 +277,20 @@ impl ProbePeek {
             len: 0,
             spill_ctx: MostRecentSpillContext::new("join-probe-peek".into(), task_metrics.clone()),
             task_metrics,
+            build_phase_ran: false,
         }
     }
 
-    /// The state of the probe port while building: it is read until it sends rows. It is only
-    /// opened when its input can send now, so it doesn't make the scheduler run an accumulating
-    /// node feeding it before the build side.
-    fn port_state(&self, recv: PortState) -> PortState {
+    /// The state of the probe port while building: it is read until it sends rows. It is opened
+    /// once the build side did not end in its first phase, or can't send now, so a build side
+    /// that ends right away is never slowed down by the probe side. It is also only opened when
+    /// its input can send now, so it doesn't make the scheduler run an accumulating node feeding
+    /// it before the build side.
+    fn port_state(&self, recv: PortState, build_ready: bool) -> PortState {
+        let open = self.build_phase_ran || !build_ready;
         match recv {
             PortState::Done => PortState::Done,
-            PortState::Ready if self.len == 0 => PortState::Ready,
+            PortState::Ready if open && self.len == 0 => PortState::Ready,
             _ => PortState::Blocked,
         }
     }
@@ -312,6 +318,20 @@ impl ProbePeek {
             TaskPriority::High,
             sample_sink(recv.serial(), morsels, len, limit, other_limit, spill_ctx),
         ));
+    }
+
+    /// Sets the probe and output port states while probing. The rows read while building can be
+    /// sent whatever the state of the probe input.
+    fn probe_port_states(probe: &mut PortState, send: &mut PortState, peeked: &BufferedStream) {
+        let downstream = *send;
+        *send = if peeked.is_empty() {
+            *probe
+        } else {
+            PortState::Ready
+        };
+        if *probe != PortState::Done {
+            *probe = downstream;
+        }
     }
 
     /// The rows read, to be probed before the rest of the probe side.

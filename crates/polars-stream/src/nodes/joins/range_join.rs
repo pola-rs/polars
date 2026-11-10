@@ -256,17 +256,12 @@ impl ComputeNode for RangeJoinNode {
             } => {
                 *point_ready = point[0] == PortState::Ready;
                 sink_node.update_state(point, &mut [], state)?;
-                interval[0] = interval_peek.port_state(interval[0]);
+                interval[0] = interval_peek.port_state(interval[0], *point_ready);
                 send[0] = PortState::Blocked;
             },
-            RangeJoinState::Probe(_) => {
+            RangeJoinState::Probe(ref probe_state) => {
                 point[0] = PortState::Done;
-                if interval[0] == PortState::Done {
-                    // Only the interval rows read while building are left.
-                    send[0] = PortState::Ready;
-                } else {
-                    mem::swap(&mut interval[0], &mut send[0]);
-                }
+                ProbePeek::probe_port_states(&mut interval[0], &mut send[0], &probe_state.peeked);
             },
             RangeJoinState::Done => {
                 point[0] = PortState::Done;
@@ -298,6 +293,7 @@ impl ComputeNode for RangeJoinNode {
                 ..
             } => {
                 if let Some(build) = recv_ports[point_idx].take() {
+                    interval_peek.build_phase_ran = true;
                     sink_node.spawn(scope, &mut [Some(build)], &mut [], state, join_handles);
                 }
                 if let Some(recv) = recv_ports[interval_idx].take() {

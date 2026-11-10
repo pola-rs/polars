@@ -163,17 +163,12 @@ impl ComputeNode for CrossJoinNode {
             } => {
                 *build_ready = recv[build_idx] == PortState::Ready;
                 recv[build_idx] = PortState::Ready;
-                recv[probe_idx] = probe_peek.port_state(recv[probe_idx]);
+                recv[probe_idx] = probe_peek.port_state(recv[probe_idx], *build_ready);
                 send[0] = PortState::Blocked;
             },
-            CrossJoinState::Probe { .. } => {
+            CrossJoinState::Probe { peeked, .. } => {
                 recv[build_idx] = PortState::Done;
-                if recv[probe_idx] == PortState::Done {
-                    // Only the probe rows read while building are left.
-                    send[0] = PortState::Ready;
-                } else {
-                    core::mem::swap(&mut recv[probe_idx], &mut send[0]);
-                }
+                ProbePeek::probe_port_states(&mut recv[probe_idx], &mut send[0], peeked);
             },
             CrossJoinState::Done => {
                 recv[0] = PortState::Done;
@@ -203,6 +198,7 @@ impl ComputeNode for CrossJoinNode {
             } => {
                 assert!(send_ports[0].is_none());
                 if recv_ports[build_idx].is_some() {
+                    probe_peek.build_phase_ran = true;
                     sink_node.spawn(
                         scope,
                         &mut recv_ports[build_idx..build_idx + 1],
