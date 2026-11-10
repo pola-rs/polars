@@ -228,7 +228,11 @@ impl ComputeNode for RecursiveNode {
                 .map(|sink| sink.take_spill_frames(&inputs_ctx))
                 .collect();
             self.state = RecursiveState::Source {
-                source: SpillFrameSourceNode::new(vec![anchor.clone()], self.schema.clone()),
+                source: SpillFrameSourceNode::new(
+                    vec![anchor.clone()],
+                    self.schema.clone(),
+                    MorselSeq::default(),
+                ),
                 last: Some(anchor),
                 inputs: self.step.round_inputs(externals),
                 send_interval: FIRST_SEND_INTERVAL,
@@ -261,7 +265,12 @@ impl ComputeNode for RecursiveNode {
                     if rounds.is_empty() {
                         self.state = RecursiveState::Done;
                     } else {
-                        *source = SpillFrameSourceNode::new(rounds, self.schema.clone());
+                        // The rounds follow the rows sent before them.
+                        *source = SpillFrameSourceNode::new(
+                            rounds,
+                            self.schema.clone(),
+                            source.next_seq(),
+                        );
                         send[0] = PortState::Ready;
                         source.update_state(&mut [], send, state)?;
                     }

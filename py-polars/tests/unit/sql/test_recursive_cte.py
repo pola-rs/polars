@@ -871,3 +871,14 @@ def test_recursive_stops_when_its_rows_are_not_read(query: str, height: int) -> 
         eager=True,
     )
     assert res.height == height
+
+
+def test_recursive_rows_keep_round_order(plmonkeypatch: PlMonkeyPatch) -> None:
+    # Every round is sent on its own.
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
+    lf = pl.SQLContext().execute(
+        "WITH RECURSIVE t(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM t WHERE n < 100) "
+        "SELECT * FROM t"
+    )
+    assert lf.collect()["n"].to_list() == list(range(1, 101))
+    assert lf.select(pl.col("n").last()).collect().item() == 100

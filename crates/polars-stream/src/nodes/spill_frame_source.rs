@@ -16,18 +16,26 @@ pub struct SpillFrameSourceNode {
     /// The group, frame, offset and length of every morsel.
     morsels: Vec<(usize, usize, usize, usize)>,
     next_morsel: AtomicU64,
+    /// Added to the sequence of every morsel.
+    seq_offset: MorselSeq,
     started: bool,
 }
 
 impl SpillFrameSourceNode {
-    pub fn new(groups: Vec<Arc<[SpillFrame]>>, schema: SchemaRef) -> Self {
+    pub fn new(groups: Vec<Arc<[SpillFrame]>>, schema: SchemaRef, seq_offset: MorselSeq) -> Self {
         Self {
             groups,
             schema,
             morsels: Vec::new(),
             next_morsel: AtomicU64::new(0),
+            seq_offset,
             started: false,
         }
+    }
+
+    /// A sequence after that of every morsel sent.
+    pub fn next_seq(&self) -> MorselSeq {
+        MorselSeq::new(self.next_morsel.load(Ordering::Relaxed)).offset_by(self.seq_offset)
     }
 
     /// The number of morsels to send. An empty input still sends one empty morsel.
@@ -91,7 +99,7 @@ impl ComputeNode for SpillFrameSourceNode {
             scope,
             senders,
             &slf.next_morsel,
-            MorselSeq::default(),
+            slf.seq_offset,
             move |i| async move {
                 let i = i as usize;
                 if i >= slf.num_morsels() {

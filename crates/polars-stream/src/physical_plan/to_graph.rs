@@ -997,6 +997,7 @@ fn to_graph_rec<'a>(
             nodes::spill_frame_source::SpillFrameSourceNode::new(
                 vec![frames.clone()],
                 schema.clone(),
+                MorselSeq::default(),
             ),
             [],
         ),
