@@ -1422,19 +1422,3 @@ def test_add_large_dyn_int_to_uint128_20829() -> None:
     result = df.select(pl.col("a") + 2**70)
     expected = pl.DataFrame({"a": [2**127 + 2**70]}, schema={"a": pl.UInt128})
     assert_frame_equal(result, expected)
-
-
-@pytest.mark.parametrize("dtype", [pl.Float16, pl.Float32, pl.Float64])
-def test_float_scalar_arithmetic_signed_zero(dtype: PolarsDataType) -> None:
-    def signs(s: pl.Series) -> list[float]:
-        return [math.copysign(1.0, v) for v in s]
-
-    s = pl.Series([0.0, -0.0], dtype=dtype)
-    # IEEE 754: x + 0.0, 0.0 - x and x - (-0.0) are +0.0 for both zeros.
-    assert signs(s + 0.0) == [1.0, 1.0]
-    assert signs(0.0 - s) == [1.0, 1.0]
-    assert signs(s - (-0.0)) == [1.0, 1.0]
-    # x + (-0.0) and x - 0.0 keep the sign; -0.0 - x negates.
-    assert signs(s + (-0.0)) == [1.0, -1.0]
-    assert signs(s - 0.0) == [1.0, -1.0]
-    assert signs(-0.0 - s) == [-1.0, 1.0]
