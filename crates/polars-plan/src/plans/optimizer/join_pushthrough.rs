@@ -1,5 +1,6 @@
 //! Moving inner joins below the preserved side of a left/semi/anti join, pushing a
-//! semi/anti join down to the side of an inner join that holds its keys, and turning the
+//! semi/anti join down to the side of an inner join that holds its keys (or to the
+//! preserved side of a left join), and turning the
 //! `LEFT JOIN … WHERE right_key IS NULL` idiom into an anti join.
 //!
 //! `(A ⟕ B) ⋈ C` equals `(A ⋈ C) ⟕ B` when every key of the inner join comes from
@@ -127,6 +128,28 @@ fn pushable(node: Node, expr_arena: &Arena<AExpr>) -> bool {
             .any(|(_, ae)| matches!(ae, AExpr::AnonymousFunction { .. }))
 }
 
+/// The column of a join key that can be evaluated on fewer rows: a column under any
+/// number of casts that cannot raise.
+fn safe_key_column<'a>(key: &ExprIR, expr_arena: &'a Arena<AExpr>) -> Option<&'a PlSmallStr> {
+    if !pushable(key.node(), expr_arena) {
+        return None;
+    }
+    let mut node = key.node();
+    loop {
+        match expr_arena.get(node) {
+            AExpr::Column(name) => return Some(name),
+            AExpr::Cast { expr, .. } => node = *expr,
+            _ => return None,
+        }
+    }
+}
+
+/// A join key that can be evaluated on fewer rows.
+fn safe_key(key: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
+    matches!(expr_arena.get(key.node()), AExpr::Literal(_))
+        || safe_key_column(key, expr_arena).is_some()
+}
+
 fn all_conjuncts_pushable(predicate: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
     MintermIter::new(predicate.node(), expr_arena).all(|node| pushable(node, expr_arena))
 }
@@ -225,17 +248,28 @@ fn candidate(join: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Opt
     }
     let c = *c;
 
-    // A projection that only reorders columns (the restoring one from an earlier
-    // push, typically) hides nothing.
+    // A projection that only selects columns hides nothing; the rewrite selects the
+    // same columns at the end.
     let mut below = *input_left;
-    while let IR::SimpleProjection { input, columns } = ir_arena.get(below) {
-        let input_schema = ir_arena.get(*input).schema(ir_arena);
-        if columns.len() != input_schema.len()
-            || !columns.iter_names().all(|name| input_schema.contains(name))
-        {
-            break;
-        }
-        below = *input;
+    let mut drops_columns = false;
+    loop {
+        let (input, width) = match ir_arena.get(below) {
+            IR::SimpleProjection { input, columns } => {
+                let input_schema = ir_arena.get(*input).schema(ir_arena);
+                if !columns.iter_names().all(|name| input_schema.contains(name)) {
+                    break;
+                }
+                (*input, columns.len())
+            },
+            IR::Select { input, expr, .. }
+                if expr.iter().all(|e| e.plain_column(expr_arena).is_some()) =>
+            {
+                (*input, expr.len())
+            },
+            _ => break,
+        };
+        drops_columns |= width != ir_arena.get(input).schema(ir_arena).len();
+        below = input;
     }
     // Look through the filter that keeps the outer join's own predicate, if any. It
     // will see fewer rows afterwards, so it must not be one that can raise.
@@ -263,7 +297,7 @@ fn candidate(join: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Opt
     if !outer_options
         .options
         .left_on()
-        .all(|key| pushable(key.node(), expr_arena))
+        .all(|key| safe_key(key, expr_arena))
     {
         return None;
     }
@@ -272,12 +306,12 @@ fn candidate(join: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Opt
     let b_schema = ir_arena.get(b).schema(ir_arena).into_owned();
     let c_schema = ir_arena.get(c).schema(ir_arena).into_owned();
 
-    // The preserved side's columns come first and are never suffixed, so a key name
-    // found in `A` is `A`'s column.
-    let keys_from_a = inner_options.options.left_on().all(|key| {
-        key.plain_column(expr_arena)
-            .is_some_and(|name| a_schema.contains(name))
-    });
+    // The preserved side's columns come first and are never suffixed, so a column
+    // name found in `A` is `A`'s column. A key is then evaluated on `A`'s rows alone.
+    let keys_from_a = inner_options
+        .options
+        .left_on()
+        .all(|key| safe_key_column(key, expr_arena).is_some_and(|name| a_schema.contains(name)));
     if !keys_from_a {
         return None;
     }
@@ -294,10 +328,15 @@ fn candidate(join: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Opt
             .collect()
     };
     let (c_coalesced, b_coalesced) = (coalesced(inner_options), coalesced(outer_options));
+    // A dropped column is no longer there to suffix `C` against, so with one `C` may
+    // not share a name with either side.
     let collides = c_schema
         .iter_names()
         .filter(|name| !c_coalesced.contains(name))
-        .any(|name| b_schema.contains(name) && !b_coalesced.contains(name));
+        .any(|name| {
+            (b_schema.contains(name) && !b_coalesced.contains(name))
+                || (drops_columns && (a_schema.contains(name) || b_schema.contains(name)))
+        });
     if collides {
         return None;
     }
@@ -306,7 +345,14 @@ fn candidate(join: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Opt
     // an error.
     let inner_schema = det_join_schema(&a_schema, &c_schema, inner_options).ok()?;
     let outer_schema = det_join_schema(&inner_schema, &b_schema, outer_options).ok()?;
-    if !same_columns(&outer_schema, output_schema) {
+    let keeps_columns = if drops_columns {
+        output_schema
+            .iter()
+            .all(|(name, dtype)| outer_schema.get(name) == Some(dtype))
+    } else {
+        same_columns(&outer_schema, output_schema)
+    };
+    if !keeps_columns {
         return None;
     }
 
@@ -476,7 +522,17 @@ fn pushdown_semi_anti_with(
     candidate.rebuild(pushed, ir_arena)
 }
 
-/// The parts of a `Semi(T(Inner(A, B)), S)` that passed every check but cost.
+/// A left join on keys alone. `(A ⟕ B) ⋉ S` equals `(A ⋉ S) ⟕ B` when every key of
+/// the semi join comes from `A`, as the left join keeps each `A` row with its values.
+#[cfg(feature = "semi_anti_join")]
+fn plain_left_equi_join(options: &JoinOptionsIR) -> bool {
+    matches!(options.args.how, JoinType::Left)
+        && unconstrained(&options.args)
+        && matches!(&options.options, JoinTypeOptionsIR::Equi { on, .. } if !on.is_empty())
+}
+
+/// The parts of a `Semi(T(Inner(A, B)), S)` (or `Left` in place of `Inner`) that passed
+/// every check but cost.
 #[cfg(feature = "semi_anti_join")]
 struct PushdownCandidate {
     /// The side of the inner join holding the semi join's keys, and the other.
@@ -542,7 +598,9 @@ fn pushdown_candidate(
             IR::Join {
                 options: inner_options,
                 ..
-            } if plain_inner_equi_join(inner_options) => break below,
+            } if plain_inner_equi_join(inner_options) || plain_left_equi_join(inner_options) => {
+                break below;
+            },
             _ => return None,
         }
     };
@@ -560,10 +618,13 @@ fn pushdown_candidate(
     let b_schema = ir_arena.get(b).schema(ir_arena);
 
     // `A`'s columns keep their names through the join; a `B` column may be renamed
-    // or coalesced away.
+    // or coalesced away. A left join keeps every `A` row, so only `A` can take the
+    // semi join.
     let (side, other, side_is_left, side_keys) = if keys.iter().all(|name| a_schema.contains(name))
     {
         (a, b, true, keys)
+    } else if matches!(inner_options.args.how, JoinType::Left) {
+        return None;
     } else {
         let b_output_names = join_right_output_names(&a_schema, &b_schema, &inner_options).ok()?;
         let b_column = |name: &PlSmallStr| -> Option<PlSmallStr> {
@@ -576,6 +637,22 @@ fn pushdown_candidate(
         let columns = keys.iter().map(b_column).collect::<Option<Vec<_>>>()?;
         (b, a, false, columns)
     };
+    // The join's keys on `side` will be evaluated on fewer rows, so they must not be
+    // ones that can raise.
+    let side_keys_safe = if side_is_left {
+        inner_options
+            .options
+            .left_on()
+            .all(|key| safe_key(key, expr_arena))
+    } else {
+        inner_options
+            .options
+            .right_on()
+            .all(|key| safe_key(key, expr_arena))
+    };
+    if !side_keys_safe {
+        return None;
+    }
 
     let mut side_options = (*options).clone();
     if let JoinTypeOptionsIR::Equi { on, .. } = &mut side_options.options {
