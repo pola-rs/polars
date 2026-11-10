@@ -476,28 +476,44 @@ class SQLContext(Generic[FrameType]):
         return res.collect() if eager or self._eager_execution else res
 
     def _execute_with_catalogs(self, query: str) -> PyLazyFrame:
-        from polars.io.iceberg.functions import _scan_catalog_table
-
         if (stmt := self._ctxt.catalog_statement(query)) is not None:
             return self._execute_catalog_statement(stmt, query)._ldf
 
         tables = []
         identifier: list[str]
         for catalog_name, identifier in self._ctxt.catalog_tables(query):
-            config, instance, storage_options = self._catalogs[catalog_name]
-            full_name = [catalog_name, *identifier]
-            lf = _scan_catalog_table(
-                tuple(identifier),
-                config,
-                instance,
-                storage_options=storage_options,
-                display_name=".".join(full_name),
-            )
-            tables.append((full_name, lf._ldf))
+            lf = self._scan_catalog_relation(catalog_name, identifier)
+            tables.append(([catalog_name, *identifier], lf._ldf))
         return self._ctxt.execute_with_catalog_tables(query, tables)
+
+    def _scan_catalog_relation(
+        self, catalog_name: str, identifier: list[str]
+    ) -> LazyFrame:
+        """Lazily scan a catalog table, or a metadata table (`t$snapshots`)."""
+        from polars.io.iceberg._metadata_tables import (
+            metadata_table_of,
+            scan_catalog_metadata_table,
+        )
+        from polars.io.iceberg.functions import _scan_catalog_table
+
+        config, instance, storage_options = self._catalogs[catalog_name]
+        display_name = ".".join([catalog_name, *identifier])
+        if (metadata := metadata_table_of(identifier)) is not None:
+            table, name = metadata
+            return scan_catalog_metadata_table(
+                table, name, config, instance, display_name=display_name
+            )
+        return _scan_catalog_table(
+            tuple(identifier),
+            config,
+            instance,
+            storage_options=storage_options,
+            display_name=display_name,
+        )
 
     def _execute_catalog_statement(self, stmt: dict[str, Any], query: str) -> LazyFrame:
         """Perform the statement of `query` that `catalog_statement` returned."""
+        _check_not_metadata_table(stmt)
         config, instance, storage_options = self._catalogs[stmt["catalog"]]
         catalog = (
             instance
@@ -565,7 +581,7 @@ class SQLContext(Generic[FrameType]):
         storage_options: StorageOptionsDict | None,
     ) -> str:
         """Perform the `MERGE` of `query` on its table, returning the response."""
-        from polars.io.iceberg.functions import _scan_catalog_table, scan_iceberg
+        from polars.io.iceberg.functions import scan_iceberg
 
         full_name = [stmt["catalog"], *stmt["identifier"]]
 
@@ -580,14 +596,7 @@ class SQLContext(Generic[FrameType]):
                 if name == full_name:
                     lf = scan_iceberg(table, storage_options=storage_options)
                 else:
-                    config, instance, options = self._catalogs[catalog_name]
-                    lf = _scan_catalog_table(
-                        tuple(identifier),
-                        config,
-                        instance,
-                        storage_options=options,
-                        display_name=".".join(name),
-                    )
+                    lf = self._scan_catalog_relation(catalog_name, identifier)
                 tables.append((name, lf._ldf))
             source, keys = self._ctxt.catalog_merge_source(query, tables)
             return wrap_ldf(source), [(c, wrap_expr(e)) for c, e in keys]
@@ -1124,6 +1133,22 @@ def _load_catalog_table(
     except (NoSuchTableError, NoSuchNamespaceError) as error:
         msg = f"{missing} ({error}); catalog identifiers are case-sensitive"
         raise NoSuchTableError(msg) from error
+
+
+def _check_not_metadata_table(stmt: dict[str, Any]) -> None:
+    """Refuse a statement whose target table names a metadata table (`t$snapshots`)."""
+    from polars.exceptions import InvalidOperationError
+    from polars.io.iceberg._metadata_tables import metadata_table_of
+
+    if (identifier := stmt.get("identifier")) is None:
+        return
+    if (metadata := metadata_table_of(identifier)) is not None:
+        table = _display_name([stmt["catalog"], *metadata[0]])
+        msg = (
+            f"table '{stmt['name']}' is a metadata table of '{table}', which can "
+            "only be read"
+        )
+        raise InvalidOperationError(msg)
 
 
 def _delete_rows(
