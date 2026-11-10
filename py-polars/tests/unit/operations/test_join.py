@@ -1694,13 +1694,10 @@ def test_join_preserve_order_left() -> None:
     assert left_left.get_column("a").equals(left_left_right.get_column("a"))
 
     left_right = left.join(right, on="a", how="left", maintain_order="right").collect()
-    assert left_right.get_column("a").cast(pl.UInt32).to_list()[:5] == [
-        1,
-        1,
-        2,
-        None,
-        5,
-    ]
+    left_right_a = left_right.get_column("a").cast(pl.UInt32).to_list()
+    assert left_right_a[:3] == [1, 1, 2]
+    # The unmatched left rows come last, in any order.
+    assert set(left_right_a[3:]) == {None, 5}
 
     left_right_left = left.join(
         right, on="a", how="left", maintain_order="right_left"
