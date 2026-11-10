@@ -4990,6 +4990,30 @@ def test_join_key_downgrades_outer_join_below(
     assert_frame_equal(q.collect(), expect, check_row_order=False)
 
 
+@pytest.mark.parametrize(
+    ("predicate", "downgraded"),
+    [
+        (pl.col("name").str.starts_with("A"), True),
+        (pl.col("name").str.ends_with("X"), True),
+        (pl.col("name").str.contains("X", literal=True), True),
+        (pl.col("name").str.contains("A.$"), True),
+        (pl.col("name").str.len_bytes() > 1, True),
+        (pl.col("name").str.to_uppercase() == "AX", True),
+        (pl.col("name").str.slice(0, 1) == "A", True),
+        (pl.col("name").fill_null("A").str.starts_with("A"), False),
+    ],
+)
+def test_null_rejecting_string_filter_downgrades_left_join(
+    predicate: pl.Expr, downgraded: bool
+) -> None:
+    sales = pl.LazyFrame({"k": [1, 2, 3], "amount": [10, 20, 30]})
+    lookup = pl.LazyFrame({"k": [1, 2], "name": ["AX", "BY"]})
+    q = sales.join(lookup, on="k", how="left").filter(predicate)
+    assert ("LEFT JOIN:" in q.explain()) != downgraded
+    expect = q.collect(optimizations=pl.QueryOptFlags.none())
+    assert_frame_equal(q.collect(), expect, check_row_order=False)
+
+
 def test_join_key_downgrade_follows_pushdown_through_projections() -> None:
     sales = pl.LazyFrame({"ticket": [1, 2, 3, 4], "amount": [10, 20, 30, 40]})
     returns = pl.LazyFrame({"ticket": [2, 4, 5], "reason": [7, None, 7]})
