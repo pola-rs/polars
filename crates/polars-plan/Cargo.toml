@@ -50,7 +50,7 @@ recursive = { workspace = true }
 regex = { workspace = true, optional = true }
 schemars = { workspace = true, features = ["either1"], optional = true }
 serde = { workspace = true, features = ["rc"], optional = true }
-serde_json = { workspace = true, optional = true }
+serde_json = { workspace = true, features = ["float_roundtrip", "preserve_order"] }
 sha2 = { workspace = true, optional = true }
 slotmap = { workspace = true }
 strum_macros = { workspace = true }
@@ -70,7 +70,6 @@ debugging = []
 python = ["dep:pyo3", "polars-utils/python", "polars-ffi", "polars-core/object", "serde"]
 serde = [
   "dep:serde",
-  "dep:serde_json",
   "polars-buffer/serde",
   "polars-config/serde",
   "polars-core/serde-lazy",
@@ -140,8 +139,6 @@ extract_jsonpath = []
 dsl-schema = [
   "dep:schemars",
   "dep:sha2",
-  "dep:serde_json",
-  "serde_json/preserve_order",
   "serde",
   "polars-arrow/dsl-schema",
   "polars-buffer/schemars",

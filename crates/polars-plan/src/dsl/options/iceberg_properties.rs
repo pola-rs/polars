@@ -1,186 +1,150 @@
-//! Catalog properties and storage options of an Iceberg sink, as an ordered tree of values.
+//! Catalog properties and storage options of an Iceberg sink.
 
-#[cfg(feature = "serde")]
-use polars_utils::aliases::{InitHashMaps, PlIndexSet};
-use polars_utils::pl_str::PlSmallStr;
-use polars_utils::total_ord::TotalOrdWrap;
+use serde_json::{Map, Value};
 
-/// Deepest nesting of maps and lists. Also stops a structure that contains itself.
-pub const MAX_DEPTH: usize = 128;
+/// Deepest nesting of dicts and lists read from Python, well within what serde_json reads back
+/// (128). Also stops a dict that contains itself.
+pub const MAX_DEPTH: usize = 64;
 
-/// A `dict[str, ...]` of properties, in insertion order.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize), serde(transparent))]
+/// A `dict[str, ...]` of properties.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub enum IcebergProperties {
+    /// A JSON object, in insertion order.
+    Json(JsonProperties),
+    /// A dict that JSON doesn't carry as is (a session object, an int beyond 64 bits, a tuple):
+    /// works within the process, refused when the plan is serialized.
+    #[cfg(feature = "python")]
+    #[cfg_attr(feature = "serde", serde(skip_deserializing))]
+    #[cfg_attr(feature = "dsl-schema", schemars(skip))]
+    Python(PythonProperties),
+}
+
+/// A JSON object, equal to another only with the same keys in the same order: of two aliases,
+/// the later one wins.
+///
+/// Serialized as JSON text: bincode can't read a `serde_json::Value`, and a plan sent between
+/// processes may go through bincode.
+#[derive(Clone, Debug, Default, Eq)]
 #[cfg_attr(
     feature = "dsl-schema",
     derive(schemars::JsonSchema),
     schemars(transparent)
 )]
-pub struct IcebergProperties(pub Vec<(PlSmallStr, IcebergPropertyValue)>);
+pub struct JsonProperties(
+    #[cfg_attr(feature = "dsl-schema", schemars(with = "String"))] pub Map<String, Value>,
+);
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub enum IcebergPropertyValue {
-    Null,
-    Bool(bool),
-    Int(i64),
-    Float(TotalOrdWrap<f64>),
-    Str(PlSmallStr),
-    List(Vec<IcebergPropertyValue>),
-    Map(IcebergProperties),
-    /// A Python value outside this tree, e.g. a session object, an int beyond 64 bits or a
-    /// float that isn't finite.
-    /// It works within the process and is refused when the plan is serialized.
-    // Last, so that the other variants keep their serialized index.
-    #[cfg(feature = "python")]
-    #[cfg_attr(feature = "serde", serde(skip_deserializing))]
-    #[cfg_attr(feature = "dsl-schema", schemars(skip))]
-    Opaque(OpaqueValue),
-}
-
-impl IcebergProperties {
-    /// Refuse nesting deeper than [`MAX_DEPTH`] and duplicate keys. Iterative: a deserialized
-    /// tree can be deeper than the stack.
-    #[cfg(feature = "serde")]
-    fn check(&self) -> Result<(), String> {
-        let mut stack = Vec::new();
-        self.check_keys(1, &mut stack)?;
-        while let Some((value, depth)) = stack.pop() {
-            match value {
-                IcebergPropertyValue::List(values) => {
-                    if depth + 1 > MAX_DEPTH {
-                        return Err(too_deep());
-                    }
-                    stack.extend(values.iter().map(|v| (v, depth + 1)));
-                },
-                IcebergPropertyValue::Map(map) => map.check_keys(depth + 1, &mut stack)?,
-                _ => {},
-            }
-        }
-        Ok(())
-    }
-
-    #[cfg(feature = "serde")]
-    fn check_keys<'a>(
-        &'a self,
-        depth: usize,
-        stack: &mut Vec<(&'a IcebergPropertyValue, usize)>,
-    ) -> Result<(), String> {
-        if depth > MAX_DEPTH {
-            return Err(too_deep());
-        }
-        let mut seen = PlIndexSet::with_capacity(self.0.len());
-        for (key, value) in &self.0 {
-            if !seen.insert(key) {
-                return Err(format!("duplicate Iceberg property key '{key}'"));
-            }
-            stack.push((value, depth));
-        }
-        Ok(())
+#[cfg(feature = "serde")]
+impl serde::Serialize for JsonProperties {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let text = serde_json::to_string(&self.0).map_err(serde::ser::Error::custom)?;
+        serializer.serialize_str(&text)
     }
 }
 
 #[cfg(feature = "serde")]
-fn too_deep() -> String {
-    format!("Iceberg properties nested deeper than {MAX_DEPTH} levels")
-}
-
-// Iterative, as `check` is: dropping a deep tree recursively could overflow the stack.
-impl Drop for IcebergProperties {
-    fn drop(&mut self) {
-        let mut stack: Vec<_> = self.0.drain(..).map(|(_, value)| value).collect();
-        while let Some(value) = stack.pop() {
-            match value {
-                IcebergPropertyValue::List(mut values) => stack.append(&mut values),
-                IcebergPropertyValue::Map(mut map) => {
-                    stack.extend(map.0.drain(..).map(|(_, value)| value))
-                },
-                _ => {},
-            }
-        }
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'de> serde::Deserialize<'de> for IcebergProperties {
+impl<'de> serde::Deserialize<'de> for JsonProperties {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let properties = Self(Vec::deserialize(deserializer)?);
-        properties.check().map_err(serde::de::Error::custom)?;
-        Ok(properties)
+        let text = String::deserialize(deserializer)?;
+        serde_json::from_str(&text)
+            .map(Self)
+            .map_err(|e| serde::de::Error::custom(format!("Iceberg properties: {e}")))
     }
 }
 
-/// A Python value kept as is, for use within the process.
-#[cfg(feature = "python")]
-pub struct OpaqueValue {
-    /// Where the value sits, e.g. `auth.session`, and its Python type, for the error when
-    /// the plan is serialized.
-    pub path: PlSmallStr,
-    pub type_name: PlSmallStr,
-    pub value: pyo3::Py<pyo3::PyAny>,
+impl PartialEq for JsonProperties {
+    fn eq(&self, other: &Self) -> bool {
+        maps_eq_in_order(&self.0, &other.0)
+    }
 }
 
+// Ignores the order, which is consistent with `eq`: equal in order is equal in any order.
+impl std::hash::Hash for JsonProperties {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state)
+    }
+}
+
+fn maps_eq_in_order(a: &Map<String, Value>, b: &Map<String, Value>) -> bool {
+    a.len() == b.len()
+        && a.iter()
+            .zip(b)
+            .all(|((ka, va), (kb, vb))| ka == kb && values_eq_in_order(va, vb))
+}
+
+fn values_eq_in_order(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Object(a), Value::Object(b)) => maps_eq_in_order(a, b),
+        (Value::Array(a), Value::Array(b)) => {
+            a.len() == b.len() && a.iter().zip(b).all(|(a, b)| values_eq_in_order(a, b))
+        },
+        _ => a == b,
+    }
+}
+
+/// A dict kept as the Python object it is.
 #[cfg(feature = "python")]
-mod _opaque_impl {
-    use pyo3::Python;
-
-    use super::OpaqueValue;
-
-    impl Clone for OpaqueValue {
-        fn clone(&self) -> Self {
-            Python::attach(|py| Self {
-                path: self.path.clone(),
-                type_name: self.type_name.clone(),
-                value: self.value.clone_ref(py),
-            })
-        }
-    }
-
-    // Identity, for both equality and hashing.
-    impl PartialEq for OpaqueValue {
-        fn eq(&self, other: &Self) -> bool {
-            self.value.as_ptr() == other.value.as_ptr()
-        }
-    }
-
-    impl Eq for OpaqueValue {}
-
-    impl std::hash::Hash for OpaqueValue {
-        fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-            (self.value.as_ptr() as usize).hash(state)
-        }
-    }
-
-    // The value itself may hold credentials: show where it is and its type only.
-    impl std::fmt::Debug for OpaqueValue {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "Opaque({}: {})", self.path, self.type_name)
-        }
-    }
-
-    impl serde::Serialize for OpaqueValue {
-        fn serialize<S: serde::Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
-            Err(serde::ser::Error::custom(format!(
-                "cannot serialize Iceberg property '{}' of type {}: \
-                 only str, int, float, bool, None, list and dict values can be serialized",
-                self.path, self.type_name
-            )))
-        }
-    }
+pub struct PythonProperties {
+    pub dict: pyo3::Py<pyo3::PyAny>,
+    /// The first value JSON doesn't carry and its type, e.g. `'auth.session' of type Session`,
+    /// for the error when the plan is serialized.
+    pub reason: polars_utils::pl_str::PlSmallStr,
 }
 
 #[cfg(feature = "python")]
 mod _python_impl {
     use polars_utils::aliases::{InitHashMaps, PlIndexSet};
     use polars_utils::pl_str::PlSmallStr;
-    use polars_utils::total_ord::TotalOrdWrap;
-    use pyo3::exceptions::PyTypeError;
+    use pyo3::exceptions::{PyTypeError, PyValueError};
     use pyo3::prelude::*;
-    use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple};
-    use pyo3::{Borrowed, IntoPyObjectExt};
+    use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString};
+    use pyo3::{Borrowed, intern};
+    use serde_json::{Map, Number, Value};
 
-    use super::{IcebergProperties, IcebergPropertyValue, MAX_DEPTH, OpaqueValue};
+    use super::{IcebergProperties, JsonProperties, MAX_DEPTH, PythonProperties};
+
+    impl Clone for PythonProperties {
+        fn clone(&self) -> Self {
+            Python::attach(|py| Self {
+                dict: self.dict.clone_ref(py),
+                reason: self.reason.clone(),
+            })
+        }
+    }
+
+    // Identity, for both equality and hashing.
+    impl PartialEq for PythonProperties {
+        fn eq(&self, other: &Self) -> bool {
+            self.dict.as_ptr() == other.dict.as_ptr()
+        }
+    }
+
+    impl Eq for PythonProperties {}
+
+    impl std::hash::Hash for PythonProperties {
+        fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+            (self.dict.as_ptr() as usize).hash(state)
+        }
+    }
+
+    // The values may hold credentials: show why the dict is kept as is, not what it holds.
+    impl std::fmt::Debug for PythonProperties {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{:?}", self.reason)
+        }
+    }
+
+    impl serde::Serialize for PythonProperties {
+        fn serialize<S: serde::Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
+            Err(serde::ser::Error::custom(format!(
+                "cannot serialize Iceberg property {}: only str, int, float, bool, None, list \
+                 and dict values can be serialized",
+                self.reason
+            )))
+        }
+    }
 
     fn type_name(ob: &Bound<'_, PyAny>) -> String {
         let ty = ob.get_type();
@@ -201,21 +165,33 @@ mod _python_impl {
         }
     }
 
-    fn too_deep(path: &str) -> PyErr {
-        // The path of a structure that contains itself repeats: name its start only.
-        let top = path.split(['.', '[']).next().unwrap_or(path);
-        PyTypeError::new_err(format!(
-            "Iceberg property '{top}' is nested deeper than {MAX_DEPTH} levels, \
-             or contains itself"
-        ))
+    /// Reads a dict as JSON, noting the first value that JSON doesn't carry.
+    #[derive(Default)]
+    struct Reader {
+        reason: Option<String>,
+        /// The top-level key being read: the path of a dict that contains itself repeats.
+        top: String,
     }
 
-    impl IcebergProperties {
-        fn extract_at(dict: &Bound<'_, PyDict>, path: &str, depth: usize) -> PyResult<Self> {
+    impl Reader {
+        fn too_deep(&self) -> PyErr {
+            PyTypeError::new_err(format!(
+                "Iceberg property '{}' is nested deeper than {MAX_DEPTH} levels, \
+                 or contains itself",
+                self.top
+            ))
+        }
+
+        fn map(
+            &mut self,
+            dict: &Bound<'_, PyDict>,
+            path: &str,
+            depth: usize,
+        ) -> PyResult<Map<String, Value>> {
             if depth > MAX_DEPTH {
-                return Err(too_deep(path));
+                return Err(self.too_deep());
             }
-            let mut out = Vec::with_capacity(dict.len());
+            let mut out = Map::with_capacity(dict.len());
             let mut seen = PlIndexSet::with_capacity(dict.len());
             for (key, value) in dict.iter() {
                 let Ok(key) = key.cast::<PyString>() else {
@@ -229,7 +205,10 @@ mod _python_impl {
                         type_name(&key)
                     )));
                 };
-                let key = PlSmallStr::from_str(key.to_str()?);
+                let key = key.to_str()?.to_string();
+                if path.is_empty() {
+                    self.top.clone_from(&key);
+                }
                 // Distinct `str` subclass keys can have equal text.
                 if !seen.insert(key.clone()) {
                     return Err(PyTypeError::new_err(format!(
@@ -237,63 +216,55 @@ mod _python_impl {
                         child_path(path, &key)
                     )));
                 }
-                let value =
-                    IcebergPropertyValue::extract_at(&value, &child_path(path, &key), depth)?;
-                out.push((key, value));
+                let value = self.value(&value, &child_path(path, &key), depth)?;
+                out.insert(key, value);
             }
-            Ok(Self(out))
+            Ok(out)
         }
-    }
 
-    impl IcebergPropertyValue {
-        fn extract_at(ob: &Bound<'_, PyAny>, path: &str, depth: usize) -> PyResult<Self> {
-            // Exact scalar types: `bool` is an `int` subclass, and an `int` or `str` subclass
-            // (e.g. an enum) would come back as a plain `int` or `str`.
+        /// A value of a dict or list at `depth`. Exact types only: `bool` is an `int` subclass,
+        /// and other subclasses (e.g. an enum) or a tuple would come back as another type.
+        fn value(&mut self, ob: &Bound<'_, PyAny>, path: &str, depth: usize) -> PyResult<Value> {
             if ob.is_none() {
-                return Ok(Self::Null);
+                return Ok(Value::Null);
             }
             if let Ok(b) = ob.cast_exact::<PyBool>() {
-                return Ok(Self::Bool(b.is_true()));
+                return Ok(Value::Bool(b.is_true()));
             }
             if ob.is_exact_instance_of::<PyInt>() {
                 if let Ok(i) = ob.extract::<i64>() {
-                    return Ok(Self::Int(i));
+                    return Ok(i.into());
+                }
+                if let Ok(u) = ob.extract::<u64>() {
+                    return Ok(u.into());
                 }
             } else if let Ok(f) = ob.cast_exact::<PyFloat>() {
-                // NaN and infinities can't round-trip through a JSON plan.
-                if f.value().is_finite() {
-                    return Ok(Self::Float(TotalOrdWrap(f.value())));
+                // Not NaN or infinities.
+                if let Some(n) = Number::from_f64(f.value()) {
+                    return Ok(Value::Number(n));
                 }
             } else if let Ok(s) = ob.cast_exact::<PyString>() {
-                return Ok(Self::Str(PlSmallStr::from_str(s.to_str()?)));
-            } else if let Ok(dict) = ob.cast::<PyDict>() {
-                // A mapping comes back as a plain `dict`, e.g. an `OrderedDict`.
-                return IcebergProperties::extract_at(dict, path, depth + 1).map(Self::Map);
+                // Not lone surrogates, which UTF-8 can't hold.
+                if let Ok(s) = s.to_str() {
+                    return Ok(Value::String(s.to_string()));
+                }
+            } else if let Ok(dict) = ob.cast_exact::<PyDict>() {
+                return self.map(dict, path, depth + 1).map(Value::Object);
             } else if let Ok(list) = ob.cast_exact::<PyList>() {
-                return Self::extract_items(list.iter(), path, depth);
-            } else if let Ok(tuple) = ob.cast_exact::<PyTuple>() {
-                return Self::extract_items(tuple.iter(), path, depth);
+                if depth + 1 > MAX_DEPTH {
+                    return Err(self.too_deep());
+                }
+                return list
+                    .iter()
+                    .enumerate()
+                    .map(|(i, item)| self.value(&item, &format!("{path}[{i}]"), depth + 1))
+                    .collect::<PyResult<Vec<_>>>()
+                    .map(Value::Array);
             }
-            Ok(Self::Opaque(OpaqueValue {
-                path: PlSmallStr::from_str(path),
-                type_name: PlSmallStr::from_string(type_name(ob)),
-                value: ob.clone().unbind(),
-            }))
-        }
-
-        fn extract_items<'py>(
-            items: impl Iterator<Item = Bound<'py, PyAny>>,
-            path: &str,
-            depth: usize,
-        ) -> PyResult<Self> {
-            if depth + 1 > MAX_DEPTH {
-                return Err(too_deep(path));
-            }
-            items
-                .enumerate()
-                .map(|(i, item)| Self::extract_at(&item, &format!("{path}[{i}]"), depth + 1))
-                .collect::<PyResult<Vec<_>>>()
-                .map(Self::List)
+            // Keep reading: a bad key or a cycle further on is still an error.
+            self.reason
+                .get_or_insert_with(|| format!("'{path}' of type {}", type_name(ob)));
+            Ok(Value::Null)
         }
     }
 
@@ -308,47 +279,34 @@ mod _python_impl {
                     type_name(&ob)
                 )));
             };
-            Self::extract_at(dict, "", 1)
-        }
-    }
-
-    impl<'py> IntoPyObject<'py> for IcebergPropertyValue {
-        type Target = PyAny;
-        type Output = Bound<'py, PyAny>;
-        type Error = PyErr;
-
-        fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
-            Ok(match self {
-                Self::Null => py.None().into_bound(py),
-                Self::Bool(b) => b.into_bound_py_any(py)?,
-                Self::Int(i) => i.into_bound_py_any(py)?,
-                Self::Float(f) => f.0.into_bound_py_any(py)?,
-                Self::Str(s) => s.as_str().into_bound_py_any(py)?,
-                Self::List(values) => PyList::new(
-                    py,
-                    values
-                        .into_iter()
-                        .map(|v| v.into_pyobject(py))
-                        .collect::<PyResult<Vec<_>>>()?,
-                )?
-                .into_any(),
-                Self::Map(map) => map.into_pyobject(py)?.into_any(),
-                Self::Opaque(opaque) => opaque.value.into_bound(py),
+            let mut reader = Reader::default();
+            let map = reader.map(dict, "", 1)?;
+            Ok(match reader.reason {
+                None => Self::Json(JsonProperties(map)),
+                Some(reason) => Self::Python(PythonProperties {
+                    dict: ob.unbind(),
+                    reason: PlSmallStr::from_string(reason),
+                }),
             })
         }
     }
 
     impl<'py> IntoPyObject<'py> for IcebergProperties {
-        type Target = PyDict;
-        type Output = Bound<'py, PyDict>;
+        type Target = PyAny;
+        type Output = Bound<'py, PyAny>;
         type Error = PyErr;
 
-        fn into_pyobject(mut self, py: Python<'py>) -> PyResult<Self::Output> {
-            let dict = PyDict::new(py);
-            for (key, value) in std::mem::take(&mut self.0) {
-                dict.set_item(key.as_str(), value.into_pyobject(py)?)?;
+        fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+            match self {
+                // `json.loads` keeps the key order and the number types.
+                Self::Json(JsonProperties(map)) => {
+                    let text = serde_json::to_string(&map)
+                        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+                    py.import(intern!(py, "json"))?
+                        .call_method1(intern!(py, "loads"), (text,))
+                },
+                Self::Python(properties) => Ok(properties.dict.into_bound(py)),
             }
-            Ok(dict)
         }
     }
 }
@@ -356,80 +314,125 @@ mod _python_impl {
 #[cfg(all(test, feature = "serde"))]
 mod tests {
     use polars_utils::pl_serialize::{deserialize_from_reader, serialize_to_bytes};
+    use serde_json::json;
 
     use super::*;
 
-    fn round_trip(properties: &IcebergProperties) -> polars_error::PolarsResult<IcebergProperties> {
-        let bytes = serialize_to_bytes::<_, false>(properties)?;
-        deserialize_from_reader::<_, _, false>(bytes.as_slice())
+    fn properties(value: Value) -> IcebergProperties {
+        let Value::Object(map) = value else {
+            unreachable!()
+        };
+        IcebergProperties::Json(JsonProperties(map))
+    }
+
+    /// Round trips through bincode, MessagePack (as plans are) and JSON.
+    fn round_trips(properties: &IcebergProperties) -> [IcebergProperties; 3] {
+        use polars_utils::pl_serialize::{deserialize_dsl, serialize_dsl};
+
+        let bincode = serialize_to_bytes::<_, false>(properties).unwrap();
+        let mut msgpack = vec![];
+        serialize_dsl(&mut msgpack, properties).unwrap();
+        let json = serde_json::to_string(properties).unwrap();
+        [
+            deserialize_from_reader::<_, _, false>(bincode.as_slice()).unwrap(),
+            deserialize_dsl(&mut msgpack.as_slice()).unwrap(),
+            serde_json::from_str(&json).unwrap(),
+        ]
     }
 
     #[test]
     fn test_round_trip_keeps_values_and_order() {
-        use IcebergPropertyValue as V;
-        let properties = IcebergProperties(vec![
-            ("uri".into(), V::Str("http://catalog".into())),
-            (
-                "auth".into(),
-                V::Map(IcebergProperties(vec![
-                    ("type".into(), V::Str("google".into())),
-                    ("scopes".into(), V::List(vec![V::Str("a".into()), V::Null])),
-                ])),
-            ),
-            ("max_retries".into(), V::Int(2)),
-            ("nan".into(), V::Float(TotalOrdWrap(f64::NAN))),
-            ("ratio".into(), V::Float(TotalOrdWrap(-0.5))),
-            ("flag".into(), V::Bool(true)),
-        ]);
-        let back = round_trip(&properties).unwrap();
-        assert_eq!(back, properties);
-        let keys: Vec<_> = back.0.iter().map(|(k, _)| k.as_str()).collect();
-        assert_eq!(keys, ["uri", "auth", "max_retries", "nan", "ratio", "flag"]);
-    }
-
-    #[test]
-    fn test_deserialize_refuses_duplicate_keys() {
-        use IcebergPropertyValue as V;
-        let nested = V::Map(IcebergProperties(vec![
-            ("c".into(), V::Null),
-            ("c".into(), V::Null),
-        ]));
-        let err = round_trip(&IcebergProperties(vec![("b".into(), nested)])).unwrap_err();
-        assert!(err.to_string().contains("duplicate"), "{err}");
-    }
-
-    #[test]
-    fn test_deserialize_refuses_deep_nesting_beyond_the_stack() {
-        use polars_utils::pl_serialize::{deserialize_dsl, serialize_dsl};
-
-        // A crafted plan nesting 100k lists, beyond what is ever serialized: decoded with
-        // stack growth, then checked and dropped iteratively.
-        let shallow = IcebergProperties(vec![(
-            "k".into(),
-            IcebergPropertyValue::List(vec![IcebergPropertyValue::Null]),
-        )]);
-        let mut bytes = vec![];
-        serialize_dsl(&mut bytes, &shallow).unwrap();
-        // MessagePack: {"List": [ ... ]} around the `Null` unit variant.
-        let open = b"\x81\xa4List\x91";
-        let at = bytes.windows(open.len()).position(|w| w == open).unwrap();
-        let mut crafted = bytes[..at].to_vec();
-        for _ in 0..100_000 {
-            crafted.extend_from_slice(open);
+        let properties = properties(json!({
+            "uri": "http://catalog",
+            "auth": {"type": "google", "scopes": ["a", null]},
+            "max_retries": 2,
+            "big": u64::MAX,
+            "small": i64::MIN,
+            "ratio": -0.5,
+            "tenth": 0.1,
+            "zero": -0.0,
+            "flag": true,
+        }));
+        for back in round_trips(&properties) {
+            assert_eq!(back, properties);
+            let IcebergProperties::Json(JsonProperties(map)) = back else {
+                unreachable!()
+            };
+            let keys: Vec<_> = map.keys().map(String::as_str).collect();
+            assert_eq!(
+                keys,
+                [
+                    "uri",
+                    "auth",
+                    "max_retries",
+                    "big",
+                    "small",
+                    "ratio",
+                    "tenth",
+                    "zero",
+                    "flag"
+                ]
+            );
+            assert!(map["zero"].as_f64().unwrap().is_sign_negative());
         }
-        crafted.extend_from_slice(&bytes[at + open.len()..]);
-
-        // Refused by the decoder's own depth limit or by `check`, without a crash.
-        deserialize_dsl::<IcebergProperties>(&mut crafted.as_slice()).unwrap_err();
     }
 
     #[test]
-    fn test_deserialize_refuses_deep_nesting() {
-        let mut value = IcebergPropertyValue::Null;
-        for _ in 0..MAX_DEPTH {
-            value = IcebergPropertyValue::Map(IcebergProperties(vec![("k".into(), value)]));
+    fn test_round_trip_keeps_floats_exact() {
+        let floats = [
+            51.248178375505404,
+            0.30000000000000004,
+            5e-324,
+            2.2250738585072014e-308,
+            1.7976931348623157e308,
+            -1.0000000000000002,
+        ];
+        let properties = properties(json!({ "f": floats }));
+        for back in round_trips(&properties) {
+            let IcebergProperties::Json(JsonProperties(map)) = back else {
+                unreachable!()
+            };
+            let got: Vec<u64> = map["f"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_f64().unwrap().to_bits())
+                .collect();
+            assert_eq!(got, floats.map(f64::to_bits));
         }
-        let err = round_trip(&IcebergProperties(vec![("k".into(), value)])).unwrap_err();
-        assert!(err.to_string().contains("deeper"), "{err}");
+    }
+
+    #[test]
+    fn test_round_trip_at_max_depth() {
+        let mut value = Value::Null;
+        for _ in 1..MAX_DEPTH {
+            value = json!({ "k": value });
+        }
+        let properties = properties(json!({ "k": value }));
+        for back in round_trips(&properties) {
+            assert_eq!(back, properties);
+        }
+    }
+
+    #[test]
+    fn test_deserialize_malformed_text() {
+        let err = serde_json::from_str::<JsonProperties>(r#""{\"a\": ""#).unwrap_err();
+        assert!(err.to_string().starts_with("Iceberg properties: "), "{err}");
+    }
+
+    #[test]
+    fn test_equality_follows_key_order() {
+        use std::hash::BuildHasher;
+
+        let a = properties(json!({"s3.region": "first", "aws_region": "second"}));
+        let b = properties(json!({"aws_region": "second", "s3.region": "first"}));
+        let nested_a = properties(json!({"x": {"a": 1, "b": [{"c": 1, "d": 2}]}}));
+        let nested_b = properties(json!({"x": {"a": 1, "b": [{"d": 2, "c": 1}]}}));
+        assert_ne!(a, b);
+        assert_ne!(nested_a, nested_b);
+        assert_eq!(a, a.clone());
+        // Equal values hash equally, so the order-free hash is consistent.
+        let hasher = std::hash::RandomState::new();
+        assert_eq!(hasher.hash_one(&a), hasher.hash_one(&b));
     }
 }

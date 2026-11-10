@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import Decimal as D
 from functools import partial
+from http import HTTPStatus
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 from unittest.mock import Mock, patch
@@ -3764,6 +3765,7 @@ def test_sink_iceberg_non_string_catalog_properties(
         "f": 2.5,
         "b": True,
         "none": None,
+        "big": 2**64 - 1,
     }
     catalog = _sql_catalog(tmp_path, **properties)
     catalogs = _capture_catalogs(monkeypatch)
@@ -3784,6 +3786,7 @@ def test_sink_iceberg_non_string_catalog_properties(
     assert {k: rebuilt.properties[k] for k in properties} == properties
     assert type(rebuilt.properties["n"]) is int
     assert type(rebuilt.properties["b"]) is bool
+    assert type(rebuilt.properties["big"]) is int
 
     assert sorted(
         pl.scan_iceberg(catalog.load_table("ns.t")).collect()["a"].to_list()
@@ -3806,6 +3809,9 @@ def test_sink_iceberg_sql_non_string_catalog_properties(tmp_path: Path) -> None:
     [
         (object(), "object"),
         (2**70, "int"),
+        ((1, "a"), "tuple"),
+        (HTTPStatus.OK, "http.HTTPStatus"),
+        ("\ud800", "str"),
         (D("1.5"), "decimal.Decimal"),
         (float("nan"), "float"),
         (float("-inf"), "float"),
@@ -3816,8 +3822,8 @@ def test_sink_iceberg_sql_non_string_catalog_properties(tmp_path: Path) -> None:
 def test_sink_iceberg_catalog_property_values_out_of_tree(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: Any, type_name: str
 ) -> None:
-    # Values that a plan can't carry: kept as they are in this process, refused with
-    # their key when the plan is serialized.
+    # Values that JSON can't carry: the dict is kept as it is in this process, and
+    # refused with the key when the plan is serialized.
     catalog = _sql_catalog(tmp_path, nested={"value": value})
     config = IcebergCatalogConfig.from_catalog(catalog)
     q = IcebergSinkState.new("ns.t", catalog=config).attach_sink(
@@ -3848,22 +3854,34 @@ def test_sink_iceberg_property_nesting_limit(tmp_path: Path) -> None:
         pl.LazyFrame({"a": [1]}).sink_iceberg(
             catalog.load_table("ns.t"), mode="append", storage_options={"x": cyclic}
         )
-    assert "'x' is nested deeper than 128 levels" in str(exc.value.__cause__)
+    assert "'x' is nested deeper than 64 levels" in str(exc.value.__cause__)
 
-    # A plan crafted beyond the limit is refused when read, not a crash.
-    config = IcebergCatalogConfig.from_catalog(catalog)
-    config.properties["p"] = [None]
-    q = IcebergSinkState.new("ns.t", catalog=config).attach_sink(
-        pl.LazyFrame({"a": [1]})
-    )
-    plan = q.serialize()
-    marker = b"\x81\xa4List\x91\xa4Null"
-    assert plan.count(marker) == 1
-    plan = plan.replace(marker, b"\x81\xa4List\x91" * 50_000 + b"\xa4Null")
-    with pytest.raises(pl.exceptions.ComputeError, match="nested deeper than 128"):
-        pl.LazyFrame.deserialize(io.BytesIO(plan))
+    # A dotted key is named whole.
+    with pytest.raises(TypeError) as exc:
+        pl.LazyFrame({"a": [1]}).sink_iceberg(
+            catalog.load_table("ns.t"),
+            mode="append",
+            storage_options={"s3.region": cyclic},
+        )
+    assert "'s3.region' is nested" in str(exc.value.__cause__)
 
 
+@pytest.mark.write_disk
+def test_sink_iceberg_table_with_out_of_tree_catalog_property(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The caller's table and catalog are used as they are, in this process.
+    catalog = _sql_catalog(tmp_path, session=object())
+    catalogs = _capture_catalogs(monkeypatch)
+    pl.LazyFrame({"a": [1]}).sink_iceberg(catalog.load_table("ns.t"), mode="append")
+    pl.LazyFrame({"a": [2]}).sink_iceberg("ns.t", catalog=catalog, mode="append")
+    assert catalogs == [catalog]
+    assert sorted(
+        pl.scan_iceberg(catalog.load_table("ns.t")).collect()["a"].to_list()
+    ) == [1, 2]
+
+
+@pytest.mark.write_disk
 def test_sink_iceberg_property_keys_must_be_distinct_str(tmp_path: Path) -> None:
     class Key(str):
         __hash__ = object.__hash__
