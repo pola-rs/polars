@@ -231,6 +231,20 @@ def test_entropy_corner_cases_30688(
     assert_entropy_equal(q.collect().item(), expected)
 
 
+def test_entropy_overflowing_sum_30688() -> None:
+    # sum(x) overflows while sum(x * log(x)) stays finite.
+    lf = pl.LazyFrame({"g": [0] * 18, "a": [1e307] * 18})
+    e = pl.col("a").entropy(1e308)
+    assert_entropy_equal(lf.select(e).collect().item(), NAN)
+    assert_entropy_equal(lf.group_by("g").agg(e).collect()["a"].item(), NAN)
+    assert all(math.isnan(v) for v in lf.select(e.over("g")).collect()["a"])
+
+
+def test_entropy_overflowing_sum_f16_30688() -> None:
+    lf = pl.LazyFrame({"a": [1.0] * 65520}, schema={"a": pl.Float16})
+    assert_entropy_equal(lf.select(pl.col("a").entropy()).collect().item(), NAN)
+
+
 @pytest.mark.parametrize("normalize", [True, False])
 @pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64, pl.Int64])
 def test_entropy_empty_30688(normalize: bool, dtype: PolarsDataType) -> None:

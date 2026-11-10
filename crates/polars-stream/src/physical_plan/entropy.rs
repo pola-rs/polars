@@ -68,6 +68,14 @@ pub(crate) fn entropy_from_sums(
         arena,
     );
     let entropy = log_sum_x.minus(sum_x_log_x.true_divide(sum_x, arena), arena);
+    // Like the in-memory kernel, a total that isn't positive and finite gives NaN. An overflowed
+    // total with a finite `sum(x * log(x))` would otherwise give `inf`.
+    let valid_total = sum_x.gt(zero, arena).and(
+        sum_x.lt(float_lit(f64::INFINITY, dtype, arena), arena),
+        arena,
+    );
+    let nan = float_lit(f64::NAN, dtype, arena);
+    let entropy = AExprBuilder::when_then_otherwise(valid_total, entropy, nan, arena);
     let is_empty = count.eq(
         AExprBuilder::lit_scalar(Scalar::new_idxsize(0), arena),
         arena,
