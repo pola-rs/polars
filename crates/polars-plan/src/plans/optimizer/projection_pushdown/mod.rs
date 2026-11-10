@@ -2342,7 +2342,9 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 names.extend_merged(unnested);
                 names.normalize(&input_schema);
                 // The unnest keeps the order of its input, which the schema above it follows.
-                names.sort_by_cached_key(|name, _| input_schema.index_of(name).unwrap_or(usize::MAX));
+                names.sort_by_cached_key(|name, _| {
+                    input_schema.index_of(name).unwrap_or(usize::MAX)
+                });
                 let names = out_edge.take_names();
 
                 let in_edge = &mut edges.inputs()[0];
