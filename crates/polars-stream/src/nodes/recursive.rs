@@ -15,9 +15,8 @@ use super::in_memory_sink::InMemorySinkNode;
 use super::spill_frame_source::SpillFrameSourceNode;
 use crate::morsel::get_ideal_morsel_size;
 
-/// How long rounds run before their rows are sent. The first rows are sent soon, so a consumer
-/// that needs no more can stop the loop early. Every send has a cost, so the time doubles after
-/// each send, up to the maximum.
+/// How long rounds run before their rows are sent. It doubles after each send, as every send has
+/// a cost.
 const FIRST_SEND_INTERVAL: Duration = Duration::from_millis(1);
 const MAX_SEND_INTERVAL: Duration = Duration::from_millis(100);
 
@@ -99,8 +98,8 @@ impl RecursiveStep {
         inputs
     }
 
-    /// Runs rounds, starting on the rows of `previous`, until they hold a morsel of rows or ran
-    /// for `send_interval`. `previous` becomes the last round, or `None` once a round has no rows.
+    /// Runs rounds on `previous` until they hold a morsel of rows or ran for `send_interval`.
+    /// `previous` becomes the last round, or `None` once a round has no rows.
     fn next_rounds(
         &self,
         inputs: &mut RecursiveInputs,
@@ -110,22 +109,19 @@ impl RecursiveStep {
     ) -> PolarsResult<Vec<Arc<[SpillFrame]>>> {
         let start = Instant::now();
         let morsel_size = get_ideal_morsel_size();
+        // Starting the pipelines of a round has a cost per pipeline, so small rounds use fewer.
+        let max_pipelines = polars_config::config().max_threads();
+        let rows_per_pipeline = morsel_size.min(1000);
         let mut rounds = Vec::new();
         let mut rows = 0;
         while let Some(frames) = previous.take() {
-            if frames.iter().all(|sf| sf.height() == 0) {
-                break;
-            }
             // The loop has no bound, so let a keyboard interrupt stop it.
             polars_error::abort::try_raise_polars_abort();
             let input_rows: usize = frames.iter().map(|sf| sf.height()).sum();
             let round_start = Instant::now();
             inputs.insert(self.id, frames);
-            // Starting the pipelines of a round has a cost per pipeline, so small rounds use
-            // fewer.
-            let max_pipelines = polars_config::config().max_threads();
             let num_pipelines = match self.in_memory_rows(inputs) {
-                Some(rows) => rows.div_ceil(morsel_size.min(1000)).clamp(1, max_pipelines),
+                Some(n) => n.div_ceil(rows_per_pipeline).clamp(1, max_pipelines),
                 None => max_pipelines,
             };
             let df = self.run_round(inputs, num_pipelines)?;
@@ -161,8 +157,8 @@ enum RecursiveState {
         last: Option<Arc<[SpillFrame]>>,
         inputs: RecursiveInputs,
         send_interval: Duration,
-        /// Keep the frames of the rounds and of the inputs spillable.
-        spill_ctxs: [LeastRecentSpillContext; 2],
+        results_ctx: LeastRecentSpillContext,
+        _inputs_ctx: LeastRecentSpillContext,
     },
     Done,
 }
@@ -233,10 +229,12 @@ impl ComputeNode for RecursiveNode {
                     self.schema.clone(),
                     MorselSeq::default(),
                 ),
-                last: Some(anchor),
+                // An empty anchor has no rounds.
+                last: anchor.iter().any(|sf| sf.height() > 0).then_some(anchor),
                 inputs: self.step.round_inputs(externals),
                 send_interval: FIRST_SEND_INTERVAL,
-                spill_ctxs: [results_ctx, inputs_ctx],
+                results_ctx,
+                _inputs_ctx: inputs_ctx,
             };
         }
 
@@ -253,14 +251,15 @@ impl ComputeNode for RecursiveNode {
                 last,
                 inputs,
                 send_interval,
-                spill_ctxs,
+                results_ctx,
+                ..
             } => {
                 recv.fill(PortState::Done);
                 source.update_state(&mut [], send, state)?;
                 if send[0] == PortState::Done {
                     let rounds =
                         self.step
-                            .next_rounds(inputs, last, *send_interval, &spill_ctxs[0])?;
+                            .next_rounds(inputs, last, *send_interval, results_ctx)?;
                     *send_interval = (*send_interval * 2).min(MAX_SEND_INTERVAL);
                     if rounds.is_empty() {
                         self.state = RecursiveState::Done;

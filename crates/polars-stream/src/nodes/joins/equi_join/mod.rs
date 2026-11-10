@@ -366,11 +366,11 @@ impl SampleState {
 
         let left_is_build = match (left_saturated, right_saturated) {
             // Don't bother estimating cardinality, just choose smaller side as
-            // we have everything in-memory anyway. An empty left side that ended
-            // is built, as the right side may not have sent anything yet.
+            // we have everything in-memory anyway. On a tie, a side that ended is
+            // built, as the other side may not end.
             (false, false) => {
                 self.left_len < self.right_len
-                    || (self.left_len == 0
+                    || (self.left_len == self.right_len
                         && recv[0] == PortState::Done
                         && recv[1] != PortState::Done)
             },
