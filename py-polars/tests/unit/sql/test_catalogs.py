@@ -5673,6 +5673,19 @@ def test_register_catalog_by_name_reads(lake: CountingCatalog) -> None:
 
 @pytest.mark.write_disk
 @pytest.mark.usefixtures("_reset_catalog_resolver")
+def test_register_catalog_by_name_reads_metadata_tables(lake: CountingCatalog) -> None:
+    resolver, names = _recording_resolver(lake)
+    pl.Config.set_iceberg_catalog_resolver(resolver)
+    ctx = pl.SQLContext().register_catalog("lake", default_namespace="tpch")
+
+    res = ctx.execute("SELECT * FROM lake.lineitem$snapshots", eager=True)
+
+    assert_frame_equal(res, inspected(lake, "snapshots", "tpch", "lineitem"))
+    assert names == ["lake"]
+
+
+@pytest.mark.write_disk
+@pytest.mark.usefixtures("_reset_catalog_resolver")
 def test_register_catalog_alias_resolves_given_name(lake: CountingCatalog) -> None:
     resolver, names = _recording_resolver(lake)
     pl.Config.set_iceberg_catalog_resolver(resolver)
