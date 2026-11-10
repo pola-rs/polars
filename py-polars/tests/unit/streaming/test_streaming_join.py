@@ -156,18 +156,20 @@ def test_streaming_join_empty_build_does_not_read_probe(how: str) -> None:
 def test_streaming_join_head_does_not_read_later_probe_rows() -> None:
     # The second input of the probe side raises when it is read.
     failing = (
-        pl.LazyFrame({"s": ["x"]})
+        pl.LazyFrame({"s": ["x", "y"]})
         .group_by("s")
         .agg()
         .select(pl.col("s").cast(pl.Int64).alias("b"))
     )
-    probe = pl.concat([pl.LazyFrame({"b": [1]}), failing])
-    build = pl.LazyFrame({"a": [1]})
+    probe = pl.concat([pl.LazyFrame({"b": [2]}), failing])
+    # A build side over several phases, so the probe side is read while building.
+    build = pl.concat([pl.LazyFrame({"a": [2]}), pl.LazyFrame({"a": [1]})])
     for q in [
         build.join(probe, how="cross", maintain_order="right_left"),
         build.join_where(probe, pl.col("a") <= pl.col("b")),
     ]:
-        assert q.head(1).collect(engine="streaming").rows() == [(1, 1)]
+        out = q.head(1).collect(engine="streaming")
+        assert out["b"].to_list() == [2]
 
 
 def test_streaming_cross_join_nullable_struct_probe() -> None:

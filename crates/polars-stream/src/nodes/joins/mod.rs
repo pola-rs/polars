@@ -320,17 +320,16 @@ impl ProbePeek {
         ));
     }
 
-    /// Sets the probe and output port states while probing. The rows read while building can be
-    /// sent whatever the state of the probe input.
+    /// Sets the probe and output port states while probing. The rows read while building are
+    /// sent first, without reading the probe input.
     fn probe_port_states(probe: &mut PortState, send: &mut PortState, peeked: &BufferedStream) {
-        let downstream = *send;
-        *send = if peeked.is_empty() {
-            *probe
+        if peeked.is_empty() {
+            core::mem::swap(probe, send);
         } else {
-            PortState::Ready
-        };
-        if *probe != PortState::Done {
-            *probe = downstream;
+            *send = PortState::Ready;
+            if *probe != PortState::Done {
+                *probe = PortState::Blocked;
+            }
         }
     }
 
