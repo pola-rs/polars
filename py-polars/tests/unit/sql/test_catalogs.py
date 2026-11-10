@@ -2718,6 +2718,19 @@ def test_alter_catalog_table_name_mapping(
 
 
 @pytest.mark.write_disk
+def test_alter_catalog_table_reuses_renamed_name(lake: CountingCatalog) -> None:
+    # Polars writes field IDs and no name mapping, so an old name is free again
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE written (k BIGINT, v VARCHAR)")
+    ctx.execute("INSERT INTO written VALUES (1, 'a')")
+    ctx.execute("ALTER TABLE written RENAME COLUMN v TO w")
+    ctx.execute("ALTER TABLE written ADD COLUMN v VARCHAR")
+    ctx.execute("INSERT INTO written VALUES (2, 'b', 'c')")
+    res = ctx.execute("SELECT * FROM written ORDER BY k", eager=True)
+    assert res.rows() == [(1, "a", None), (2, "b", "c")]
+
+
+@pytest.mark.write_disk
 def test_alter_catalog_table_drop_only_column(lake: CountingCatalog) -> None:
     from polars.exceptions import InvalidOperationError
 
