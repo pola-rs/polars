@@ -33,7 +33,8 @@ pub enum IcebergProperties {
     schemars(transparent)
 )]
 pub struct JsonProperties(
-    #[cfg_attr(feature = "dsl-schema", schemars(with = "String"))] pub Map<String, Value>,
+    // Boxed: an ordered map is large, and the sink state holds two.
+    #[cfg_attr(feature = "dsl-schema", schemars(with = "String"))] pub Box<Map<String, Value>>,
 );
 
 #[cfg(feature = "serde")]
@@ -49,7 +50,7 @@ impl<'de> serde::Deserialize<'de> for JsonProperties {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let text = String::deserialize(deserializer)?;
         serde_json::from_str(&text)
-            .map(Self)
+            .map(|map| Self(Box::new(map)))
             .map_err(|e| serde::de::Error::custom(format!("Iceberg properties: {e}")))
     }
 }
@@ -282,7 +283,7 @@ mod _python_impl {
             let mut reader = Reader::default();
             let map = reader.map(dict, "", 1)?;
             Ok(match reader.reason {
-                None => Self::Json(JsonProperties(map)),
+                None => Self::Json(JsonProperties(Box::new(map))),
                 Some(reason) => Self::Python(PythonProperties {
                     dict: ob.unbind(),
                     reason: PlSmallStr::from_string(reason),
@@ -322,7 +323,7 @@ mod tests {
         let Value::Object(map) = value else {
             unreachable!()
         };
-        IcebergProperties::Json(JsonProperties(map))
+        IcebergProperties::Json(JsonProperties(Box::new(map)))
     }
 
     /// Round trips through bincode, MessagePack (as plans are) and JSON.
