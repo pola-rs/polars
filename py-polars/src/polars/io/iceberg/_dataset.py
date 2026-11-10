@@ -70,8 +70,7 @@ class IcebergScanTableSerializer(IcebergTableSerializer):
 @dataclass(kw_only=True)
 class IcebergCatalogTableDescriptor:
     table_identifier: str | pyiceberg.typedef.Identifier
-    # A catalog name is resolved with the current resolver wherever the table is
-    # loaded, so nothing resolved is pickled.
+    # Either the catalog properties or the unresolved catalog_name
     catalog_config: IcebergCatalogConfig | str
     # Used for table loads when set; `catalog_config` is the fallback after
     # unpickling, and for descriptors pickled without this field.

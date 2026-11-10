@@ -17,8 +17,6 @@ if TYPE_CHECKING:
     IcebergCatalogResolver: TypeAlias = Callable[[str], pyiceberg.catalog.Catalog]
 
 # Set with `pl.Config.set_iceberg_catalog_resolver`; `None` is the default resolver.
-# Read at resolve time, so a plan resolves with whichever resolver is current where
-# it runs.
 ICEBERG_CATALOG_RESOLVER: IcebergCatalogResolver | None = None
 
 

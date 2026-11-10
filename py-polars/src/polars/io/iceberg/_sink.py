@@ -1155,7 +1155,7 @@ def _sink_catalog_fields(
 
 @dataclass(kw_only=True)
 class IcebergSinkState:
-    # Both `None` for a catalog name, which `catalog_name` holds.
+    # `None` means these will be lazily resolved using the catalog_name
     py_catalog_class_module: str | None
     py_catalog_class_qualname: str | None
 

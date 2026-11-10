@@ -12,10 +12,9 @@ use super::iceberg_properties::IcebergProperties;
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "python", derive(pyo3::IntoPyObject, pyo3::FromPyObject))]
 pub struct IcebergSinkState {
-    /// Python class module. `None` (with the qualname) means `catalog_name` is resolved
-    /// by the Iceberg catalog resolver wherever the sink runs.
+    /// Python class module. `None` means it will be lazily resolved using the catalog_name.
     pub py_catalog_class_module: Option<PlSmallStr>,
-    /// Python class qualname
+    /// Python class qualname. `None` means it will be lazily resolved using the catalog_name.
     pub py_catalog_class_qualname: Option<PlSmallStr>,
 
     pub catalog_name: PlSmallStr,
@@ -151,80 +150,5 @@ mod _python_impl {
                 },
             })
         }
-    }
-}
-
-#[cfg(all(test, feature = "serde"))]
-mod tests {
-    use std::collections::BTreeMap;
-
-    use polars_utils::pl_serialize;
-    use polars_utils::pl_str::PlSmallStr;
-
-    use super::super::iceberg_properties::{IcebergProperties, JsonProperties};
-    use super::{IcebergCommitMode, IcebergSinkState};
-
-    fn properties<const N: usize>(entries: [(&str, &str); N]) -> IcebergProperties {
-        IcebergProperties::Json(JsonProperties(Box::new(
-            entries
-                .into_iter()
-                .map(|(k, v)| (k.to_string(), v.into()))
-                .collect(),
-        )))
-    }
-
-    /// The non-optional fields of `IcebergSinkState` before catalog names were accepted.
-    #[derive(serde::Serialize)]
-    struct OldIcebergSinkState {
-        py_catalog_class_module: PlSmallStr,
-        py_catalog_class_qualname: PlSmallStr,
-        catalog_name: PlSmallStr,
-        catalog_properties: IcebergProperties,
-        table_name: PlSmallStr,
-        mode: IcebergCommitMode,
-        dynamic_partition_overwrite: bool,
-        create_if_not_exists: bool,
-        create_namespace_if_not_exists: bool,
-        snapshot_properties: BTreeMap<PlSmallStr, PlSmallStr>,
-        iceberg_storage_properties: IcebergProperties,
-        compression: PlSmallStr,
-        maintain_order: bool,
-        sink_uuid_str: String,
-    }
-
-    #[test]
-    fn test_deserialize_sink_state_from_older_client() {
-        let old = OldIcebergSinkState {
-            py_catalog_class_module: "pyiceberg.catalog.sql".into(),
-            py_catalog_class_qualname: "SqlCatalog".into(),
-            catalog_name: "sales".into(),
-            catalog_properties: properties([("uri", "sqlite://")]),
-            table_name: "ns.orders".into(),
-            mode: IcebergCommitMode::Append,
-            dynamic_partition_overwrite: false,
-            create_if_not_exists: false,
-            create_namespace_if_not_exists: false,
-            snapshot_properties: BTreeMap::new(),
-            iceberg_storage_properties: properties([]),
-            compression: "zstd".into(),
-            maintain_order: true,
-            sink_uuid_str: "uuid".into(),
-        };
-
-        let mut bytes = vec![];
-        pl_serialize::serialize_dsl(&mut bytes, &old).unwrap();
-        let state: IcebergSinkState = pl_serialize::deserialize_dsl(&mut bytes.as_slice()).unwrap();
-
-        assert_eq!(
-            state.py_catalog_class_module.as_deref(),
-            Some("pyiceberg.catalog.sql")
-        );
-        assert_eq!(
-            state.py_catalog_class_qualname.as_deref(),
-            Some("SqlCatalog")
-        );
-        assert_eq!(state.catalog_name, "sales");
-        assert_eq!(state.catalog_properties, old.catalog_properties);
-        assert_eq!(state.table_name, "ns.orders");
     }
 }

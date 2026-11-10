@@ -689,7 +689,7 @@ class SQLContext(Generic[FrameType]):
             differs from an attached catalog's only in case is an error.
         catalog
             A PyIceberg catalog, an `IcebergCatalogConfig`, or a catalog name.
-            Omitted, it is `name`.
+            `None` means use the `name` parameter as a catalog name.
         default_namespace
             The namespace of table names without one: a string (split on ".") or a
             sequence of namespace parts.
