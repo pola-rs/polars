@@ -1493,6 +1493,10 @@ fn to_graph_rec<'a>(
                 }),
             });
 
+            let empty_input_gives_empty_output = [
+                !args.how.emits_unmatched_right(),
+                !(args.how.emits_unmatched_left() || args.how.is_asof()),
+            ];
             let executor = Mutex::new(create_physical_plan(
                 join_node,
                 &mut lp_arena,
@@ -1511,6 +1515,7 @@ fn to_graph_rec<'a>(
                             let mut state = ExecutionState::new();
                             executor.lock().execute(&mut state)
                         }),
+                        empty_input_gives_empty_output,
                         registry.task_metrics(),
                     )
                 },

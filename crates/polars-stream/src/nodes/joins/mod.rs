@@ -15,6 +15,7 @@ use polars_utils::relaxed_cell::RelaxedCell;
 use rayon::prelude::*;
 
 use crate::expression::StreamExpr;
+use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::ExecutionState;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, port_channel};
@@ -255,6 +256,70 @@ impl BufferedStream {
             }));
         }
         Some(out)
+    }
+}
+
+/// The first rows of the probe side of a join, read while the build side is built, so the
+/// join knows early when the probe side has no rows.
+struct ProbePeek {
+    morsels: Vec<Morsel>,
+    len: usize,
+    spill_ctx: MostRecentSpillContext,
+    task_metrics: Option<Arc<TaskMetricAggregator>>,
+}
+
+impl ProbePeek {
+    fn new(task_metrics: Option<Arc<TaskMetricAggregator>>) -> Self {
+        Self {
+            morsels: Vec::new(),
+            len: 0,
+            spill_ctx: MostRecentSpillContext::new("join-probe-peek".into(), task_metrics.clone()),
+            task_metrics,
+        }
+    }
+
+    /// The state of the probe port while building: it is read until it sends rows.
+    fn port_state(&self, recv: PortState) -> PortState {
+        match recv {
+            PortState::Done => PortState::Done,
+            _ if self.len == 0 => PortState::Ready,
+            _ => PortState::Blocked,
+        }
+    }
+
+    /// Whether the probe side ended without rows.
+    fn ended_empty(&self, recv: PortState) -> bool {
+        recv == PortState::Done && self.len == 0
+    }
+
+    fn spawn<'env, 's>(
+        &'s mut self,
+        recv: RecvPort<'_>,
+        scope: &'s TaskScope<'s, 'env>,
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    ) {
+        let Self {
+            morsels,
+            len,
+            spill_ctx,
+            ..
+        } = self;
+        let limit = Arc::new(RelaxedCell::from(1));
+        let other_limit = Arc::new(RelaxedCell::from(usize::MAX));
+        join_handles.push(scope.spawn_task(
+            TaskPriority::High,
+            sample_sink(recv.serial(), morsels, len, limit, other_limit, spill_ctx),
+        ));
+    }
+
+    /// The rows read, to be probed before the rest of the probe side.
+    fn into_stream(self) -> BufferedStream {
+        BufferedStream::new(
+            "join-probe-peek".into(),
+            self.morsels,
+            MorselSeq::default(),
+            self.task_metrics,
+        )
     }
 }
 

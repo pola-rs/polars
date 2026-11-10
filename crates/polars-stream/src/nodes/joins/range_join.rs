@@ -14,6 +14,7 @@ use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::in_memory_sink::InMemorySinkNode;
+use crate::nodes::joins::{BufferedStream, ProbePeek};
 use crate::nodes::{ComputeNode, NodeMemoryUsage};
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
@@ -27,19 +28,23 @@ pub fn left_is_point<T>(left_on: &[T], right_on: &[T], args: &JoinArgs) -> bool 
     }
 }
 
-#[derive(Debug)]
 enum RangeJoinState {
-    Build(InMemorySinkNode),
+    Build {
+        sink_node: InMemorySinkNode,
+        interval_peek: ProbePeek,
+        /// Whether the point side can send rows now.
+        point_ready: bool,
+    },
     Probe(ProbeState),
     Done,
 }
 
-#[derive(Debug)]
 struct ProbeState {
     point_df: DataFrame,
+    /// The interval rows read while building.
+    peeked: Box<BufferedStream>,
 }
 
-#[derive(Debug)]
 pub struct RangeJoinNode {
     state: RangeJoinState,
     params: RangeJoinParams,
@@ -169,7 +174,11 @@ impl RangeJoinNode {
             args,
         };
         RangeJoinNode {
-            state: RangeJoinState::Build(InMemorySinkNode::new(point_schema, task_metrics)),
+            state: RangeJoinState::Build {
+                sink_node: InMemorySinkNode::new(point_schema, task_metrics.clone()),
+                interval_peek: ProbePeek::new(task_metrics),
+                point_ready: true,
+            },
             params,
         }
     }
@@ -182,7 +191,11 @@ impl ComputeNode for RangeJoinNode {
 
     fn memory_usage(&self) -> NodeMemoryUsage {
         match self.state {
-            RangeJoinState::Build(_) => NodeMemoryUsage::Accumulating,
+            // While the point side can't send rows, only the interval side is read.
+            RangeJoinState::Build {
+                point_ready: false, ..
+            } => NodeMemoryUsage::WillAccumulate,
+            RangeJoinState::Build { .. } => NodeMemoryUsage::Accumulating,
             RangeJoinState::Probe(_) => NodeMemoryUsage::HoldingUntilDone,
             RangeJoinState::Done => NodeMemoryUsage::Bounded,
         }
@@ -202,31 +215,58 @@ impl ComputeNode for RangeJoinNode {
             false => (recv1, recv0),
         };
 
-        if send[0] == PortState::Done {
+        // Are we done? Without interval rows there is no output.
+        let interval_done = match &self.state {
+            RangeJoinState::Build { interval_peek, .. } => interval_peek.ended_empty(interval[0]),
+            RangeJoinState::Probe(probe_state) => {
+                interval[0] == PortState::Done && probe_state.peeked.is_empty()
+            },
+            RangeJoinState::Done => true,
+        };
+        if send[0] == PortState::Done || interval_done {
             self.state = RangeJoinState::Done;
         }
 
-        if let RangeJoinState::Build(sink_node) = &mut self.state
-            && point[0] == PortState::Done
+        if point[0] == PortState::Done
+            && let RangeJoinState::Build { .. } = &self.state
         {
-            self.state = RangeJoinState::Probe(transition_to_probe(sink_node, &self.params)?);
-        }
-
-        if let RangeJoinState::Probe(_) = &self.state
-            && interval[0] == PortState::Done
-        {
-            self.state = RangeJoinState::Done;
+            let RangeJoinState::Build {
+                mut sink_node,
+                interval_peek,
+                ..
+            } = mem::replace(&mut self.state, RangeJoinState::Done)
+            else {
+                unreachable!()
+            };
+            let point_df = point_df(&mut sink_node, &self.params)?;
+            // Without point rows there is no output.
+            if point_df.height() > 0 {
+                self.state = RangeJoinState::Probe(ProbeState {
+                    point_df,
+                    peeked: Box::new(interval_peek.into_stream()),
+                });
+            }
         }
 
         match self.state {
-            RangeJoinState::Build(ref mut sink_node) => {
+            RangeJoinState::Build {
+                ref mut sink_node,
+                ref interval_peek,
+                ref mut point_ready,
+            } => {
+                *point_ready = point[0] == PortState::Ready;
                 sink_node.update_state(point, &mut [], state)?;
-                interval[0] = PortState::Blocked;
+                interval[0] = interval_peek.port_state(interval[0]);
                 send[0] = PortState::Blocked;
             },
             RangeJoinState::Probe(_) => {
                 point[0] = PortState::Done;
-                mem::swap(&mut interval[0], &mut send[0]);
+                if interval[0] == PortState::Done {
+                    // Only the interval rows read while building are left.
+                    send[0] = PortState::Ready;
+                } else {
+                    mem::swap(&mut interval[0], &mut send[0]);
+                }
             },
             RangeJoinState::Done => {
                 point[0] = PortState::Done;
@@ -252,15 +292,30 @@ impl ComputeNode for RangeJoinNode {
         let interval_idx = 1 - point_idx;
 
         match &mut self.state {
-            RangeJoinState::Build(sink_node) => {
-                assert!(recv_ports[interval_idx].is_none());
-                let build = recv_ports[point_idx].take().unwrap();
-                sink_node.spawn(scope, &mut [Some(build)], &mut [], state, join_handles)
+            RangeJoinState::Build {
+                sink_node,
+                interval_peek,
+                ..
+            } => {
+                if let Some(build) = recv_ports[point_idx].take() {
+                    sink_node.spawn(scope, &mut [Some(build)], &mut [], state, join_handles);
+                }
+                if let Some(recv) = recv_ports[interval_idx].take() {
+                    interval_peek.spawn(recv, scope, join_handles);
+                }
             },
             RangeJoinState::Probe(probe_state) => {
                 assert!(recv_ports[point_idx].is_none());
                 let probe_state = &*probe_state;
-                let recv = recv_ports[interval_idx].take().unwrap().parallel();
+                let recv = probe_state
+                    .peeked
+                    .reinsert(
+                        state.num_pipelines,
+                        recv_ports[interval_idx].take(),
+                        scope,
+                        join_handles,
+                    )
+                    .unwrap();
                 let send = send_ports[0].take().unwrap().parallel();
                 join_handles.extend(Iterator::zip(recv.into_iter(), send).map(|(recv, send)| {
                     scope.spawn_task(TaskPriority::High, async move {
@@ -273,10 +328,8 @@ impl ComputeNode for RangeJoinNode {
     }
 }
 
-fn transition_to_probe(
-    sink_node: &mut InMemorySinkNode,
-    params: &RangeJoinParams,
-) -> PolarsResult<ProbeState> {
+/// The point rows with a key, sorted.
+fn point_df(sink_node: &mut InMemorySinkNode, params: &RangeJoinParams) -> PolarsResult<DataFrame> {
     let point_df = sink_node.get_output()?.unwrap();
     let key_col = point_df.column(params.point_key_col())?;
     let mut point_df = point_df.filter(&key_col.is_not_null())?;
@@ -291,7 +344,7 @@ fn transition_to_probe(
         "point input to range-join node is not sorted correctly"
     );
     point_df.rechunk_mut_par();
-    Ok(ProbeState { point_df })
+    Ok(point_df)
 }
 
 fn op_to_sss<const IS_LOWER: bool>(op: InequalityOperator) -> SearchSortedSide {
@@ -310,7 +363,7 @@ async fn compute_and_emit_task(
     params: &RangeJoinParams,
 ) -> PolarsResult<()> {
     let ideal_morsel_size = get_ideal_morsel_size();
-    let ProbeState { point_df } = probe_state;
+    let ProbeState { point_df, .. } = probe_state;
 
     let sss_lower = params.lower_op.map(op_to_sss::<true>);
     let sss_upper = params.upper_op.map(op_to_sss::<false>);

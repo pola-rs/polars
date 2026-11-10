@@ -9,6 +9,7 @@ use polars_error::polars_warn;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 
+use super::{BufferedStream, ProbePeek};
 use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::in_memory_sink::InMemorySinkNode;
@@ -52,7 +53,7 @@ impl CrossJoinNode {
         } else {
             &right_input_schema
         };
-        let sink_node = InMemorySinkNode::new(build_input_schema.clone(), task_metrics);
+        let sink_node = InMemorySinkNode::new(build_input_schema.clone(), task_metrics.clone());
         let right_rename = right_input_schema
             .iter_names()
             .map(|rname| {
@@ -69,14 +70,27 @@ impl CrossJoinNode {
             left_input_schema,
             right_input_schema,
             right_rename,
-            state: CrossJoinState::Build(sink_node),
+            state: CrossJoinState::Build {
+                sink_node,
+                probe_peek: ProbePeek::new(task_metrics),
+                build_ready: true,
+            },
         }
     }
 }
 
 enum CrossJoinState {
-    Build(InMemorySinkNode),
-    Probe(DataFrame),
+    Build {
+        sink_node: InMemorySinkNode,
+        probe_peek: ProbePeek,
+        /// Whether the build side can send rows now.
+        build_ready: bool,
+    },
+    Probe {
+        build_df: DataFrame,
+        /// The probe rows read while building.
+        peeked: Box<BufferedStream>,
+    },
     Done,
 }
 
@@ -87,8 +101,12 @@ impl ComputeNode for CrossJoinNode {
 
     fn memory_usage(&self) -> NodeMemoryUsage {
         match self.state {
-            CrossJoinState::Build(_) => NodeMemoryUsage::Accumulating,
-            CrossJoinState::Probe(_) => NodeMemoryUsage::HoldingUntilDone,
+            // While the build side can't send rows, only the probe side is read.
+            CrossJoinState::Build {
+                build_ready: false, ..
+            } => NodeMemoryUsage::WillAccumulate,
+            CrossJoinState::Build { .. } => NodeMemoryUsage::Accumulating,
+            CrossJoinState::Probe { .. } => NodeMemoryUsage::HoldingUntilDone,
             CrossJoinState::Done => NodeMemoryUsage::Bounded,
         }
     }
@@ -104,32 +122,58 @@ impl ComputeNode for CrossJoinNode {
         let build_idx = if self.left_is_build { 0 } else { 1 };
         let probe_idx = 1 - build_idx;
 
-        // Are we done?
-        if send[0] == PortState::Done || recv[probe_idx] == PortState::Done {
+        // Are we done? Without probe rows there is no output.
+        let probe_done = match &self.state {
+            CrossJoinState::Build { probe_peek, .. } => probe_peek.ended_empty(recv[probe_idx]),
+            CrossJoinState::Probe { peeked, .. } => {
+                recv[probe_idx] == PortState::Done && peeked.is_empty()
+            },
+            CrossJoinState::Done => true,
+        };
+        if send[0] == PortState::Done || probe_done {
             self.state = CrossJoinState::Done;
         }
 
-        // Transition to build?
-        if recv[build_idx] == PortState::Done {
-            if let CrossJoinState::Build(sink_node) = &mut self.state {
-                let df = sink_node.get_output()?.unwrap();
-                if df.height() > 0 {
-                    self.state = CrossJoinState::Probe(df);
-                } else {
-                    self.state = CrossJoinState::Done;
-                }
+        // Transition to probe?
+        if recv[build_idx] == PortState::Done
+            && let CrossJoinState::Build { .. } = &self.state
+        {
+            let CrossJoinState::Build {
+                mut sink_node,
+                probe_peek,
+                ..
+            } = core::mem::replace(&mut self.state, CrossJoinState::Done)
+            else {
+                unreachable!()
+            };
+            let build_df = sink_node.get_output()?.unwrap();
+            if build_df.height() > 0 {
+                self.state = CrossJoinState::Probe {
+                    build_df,
+                    peeked: Box::new(probe_peek.into_stream()),
+                };
             }
         }
 
-        match &self.state {
-            CrossJoinState::Build(_) => {
+        match &mut self.state {
+            CrossJoinState::Build {
+                probe_peek,
+                build_ready,
+                ..
+            } => {
+                *build_ready = recv[build_idx] == PortState::Ready;
                 recv[build_idx] = PortState::Ready;
-                recv[probe_idx] = PortState::Blocked;
+                recv[probe_idx] = probe_peek.port_state(recv[probe_idx]);
                 send[0] = PortState::Blocked;
             },
-            CrossJoinState::Probe(_) => {
+            CrossJoinState::Probe { .. } => {
                 recv[build_idx] = PortState::Done;
-                core::mem::swap(&mut recv[probe_idx], &mut send[0]);
+                if recv[probe_idx] == PortState::Done {
+                    // Only the probe rows read while building are left.
+                    send[0] = PortState::Ready;
+                } else {
+                    core::mem::swap(&mut recv[probe_idx], &mut send[0]);
+                }
             },
             CrossJoinState::Done => {
                 recv[0] = PortState::Done;
@@ -152,20 +196,35 @@ impl ComputeNode for CrossJoinNode {
         let build_idx = if self.left_is_build { 0 } else { 1 };
         let probe_idx = 1 - build_idx;
         match &mut self.state {
-            CrossJoinState::Build(sink_node) => {
+            CrossJoinState::Build {
+                sink_node,
+                probe_peek,
+                ..
+            } => {
                 assert!(send_ports[0].is_none());
-                assert!(recv_ports[probe_idx].is_none());
-                sink_node.spawn(
-                    scope,
-                    &mut recv_ports[build_idx..build_idx + 1],
-                    &mut [],
-                    state,
-                    join_handles,
-                );
+                if recv_ports[build_idx].is_some() {
+                    sink_node.spawn(
+                        scope,
+                        &mut recv_ports[build_idx..build_idx + 1],
+                        &mut [],
+                        state,
+                        join_handles,
+                    );
+                }
+                if let Some(recv) = recv_ports[probe_idx].take() {
+                    probe_peek.spawn(recv, scope, join_handles);
+                }
             },
-            CrossJoinState::Probe(build_df) => {
+            CrossJoinState::Probe { build_df, peeked } => {
                 assert!(recv_ports[build_idx].is_none());
-                let receivers = recv_ports[probe_idx].take().unwrap().parallel();
+                let receivers = peeked
+                    .reinsert(
+                        state.num_pipelines,
+                        recv_ports[probe_idx].take(),
+                        scope,
+                        join_handles,
+                    )
+                    .unwrap();
                 let senders = send_ports[0].take().unwrap().parallel();
                 let ideal_morsel_size = get_ideal_morsel_size();
 
