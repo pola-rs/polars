@@ -1,4 +1,4 @@
-use num_traits::{One, Zero};
+use num_traits::{Float, One, Zero};
 use polars_arrow::array::PrimitiveArray as PArr;
 use polars_utils::float16::pf16;
 
@@ -43,21 +43,23 @@ macro_rules! impl_float_arith_kernel {
             }
 
             fn prim_wrapping_add_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
-                if rhs == <$T>::zero() {
+                // Only `-0.0` is an additive identity: `-0.0 + 0.0 == +0.0`.
+                if rhs == <$T>::zero() && rhs.is_sign_negative() {
                     return lhs;
                 }
                 prim_unary_values(lhs, |x| x + rhs)
             }
 
             fn prim_wrapping_sub_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
-                if rhs == <$T>::zero() {
+                if rhs == <$T>::zero() && rhs.is_sign_positive() {
                     return lhs;
                 }
                 Self::prim_wrapping_add_scalar(lhs, -rhs)
             }
 
             fn prim_wrapping_sub_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> PArr<$T> {
-                if lhs == <$T>::zero() {
+                // `0.0 - 0.0 == +0.0`, but `-(0.0) == -0.0`.
+                if lhs == <$T>::zero() && lhs.is_sign_negative() {
                     Self::prim_wrapping_neg(rhs)
                 } else {
                     prim_unary_values(rhs, |x| lhs - x)
