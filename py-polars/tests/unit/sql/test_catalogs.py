@@ -5721,7 +5721,7 @@ def test_register_catalog_by_name_write_statement_resolves_locally(
 
 @pytest.mark.write_disk
 @pytest.mark.usefixtures("_reset_catalog_resolver")
-def test_register_catalog_by_name_statement_query_reuses_catalog(
+def test_register_catalog_by_name_statement_query_resolves_by_name(
     lake: CountingCatalog,
 ) -> None:
     resolver, names = _recording_resolver(lake)
@@ -5736,12 +5736,13 @@ def test_register_catalog_by_name_statement_query_reuses_catalog(
         (11, "a"),
         (12, "b"),
     ]
-    assert names == ["lake"]
+    # once for the statement's table, once for the table its query reads
+    assert names == ["lake", "lake"]
 
 
 @pytest.mark.write_disk
 @pytest.mark.usefixtures("_reset_catalog_resolver")
-def test_register_catalog_by_name_merge_source_reuses_catalog(
+def test_register_catalog_by_name_merge_source_resolves_by_name(
     lake: CountingCatalog,
 ) -> None:
     resolver, names = _recording_resolver(lake)
@@ -5755,7 +5756,8 @@ def test_register_catalog_by_name_merge_source_reuses_catalog(
     )
 
     assert table_rows(lake, "tpch", "lineitem") == [(1, "x"), (2, "x"), (3, "new")]
-    assert names == ["lake"]
+    # once for the statement's table, once for the table its query reads
+    assert names == ["lake", "lake"]
 
 
 def test_register_catalog_empty_catalog_name() -> None:
