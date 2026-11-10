@@ -105,20 +105,10 @@ impl DslFunction {
                     Duplicate: "duplicate column name '{value_name}'"
                 );
 
-                let on = match args.on {
-                    None => None,
-                    Some(on) => Some(
-                        on.into_columns(input_schema, &Default::default())?
-                            .into_iter()
-                            .collect::<Vec<_>>(),
-                    ),
-                };
-
                 let index = args
                     .index
                     .into_columns(input_schema, &Default::default())?
                     .into_vec();
-
                 polars_ensure!(
                     !index.contains(&value_name),
                     Duplicate: "duplicate column name '{value_name}'"
@@ -127,6 +117,15 @@ impl DslFunction {
                     !index.contains(&variable_name),
                     Duplicate: "duplicate column name '{variable_name}'"
                 );
+
+                let on = match args.on {
+                    None => None,
+                    Some(on) => Some(
+                        on.into_columns(input_schema, &Default::default())?
+                            .into_iter()
+                            .collect::<Vec<_>>(),
+                    ),
+                };
 
                 let args = UnpivotArgsIR::new(
                     input_schema.iter().map(|(name, _)| name.clone()).collect(),
