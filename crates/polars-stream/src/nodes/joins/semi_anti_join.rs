@@ -25,14 +25,11 @@ use rayon::prelude::*;
 use super::runtime_filter::{KeyFilterBuilder, RuntimeFilters};
 use super::utils::{JoinSampleStats, LEFT_BUILD_MARGIN, UNIQUE_BUILD_MARGIN};
 use super::{
-    BufferedStream, LOPSIDED_SAMPLE_FACTOR, build_side_left, emit_morsel_size, sample_sink,
-    select_key_columns, send_frames,
+    BufferedStream, LOPSIDED_ESTIMATE_FACTOR, LOPSIDED_SAMPLE_FACTOR, build_side_left,
+    emit_morsel_size, sample_sink, select_key_columns, send_frames,
 };
 use crate::expression::StreamExpr;
 use crate::nodes::compute_node_prelude::*;
-
-/// How many times fewer estimated rows an incomplete left side needs to be built.
-const LOPSIDED_ESTIMATE_FACTOR: usize = 8;
 
 fn hash_keys(keys: &DataFrame, params: &SemiAntiJoinParams, null_is_valid: bool) -> HashKeys {
     HashKeys::from_df(keys, params.random_state.clone(), null_is_valid, false)
