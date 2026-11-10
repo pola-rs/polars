@@ -9960,9 +9960,15 @@ class DataFrame:
 
     def unpivot(
         self,
-        on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        on: Expr
+        | ColumnNameOrSelector
+        | Sequence[Expr | ColumnNameOrSelector]
+        | None = None,
         *,
-        index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        index: Expr
+        | ColumnNameOrSelector
+        | Sequence[Expr | ColumnNameOrSelector]
+        | None = None,
         variable_name: str | None = None,
         value_name: str | None = None,
     ) -> DataFrame:
