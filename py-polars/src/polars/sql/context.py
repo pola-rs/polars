@@ -576,7 +576,9 @@ class SQLContext(Generic[FrameType]):
                 catalog, stmt, update_plan, storage_options
             )
         elif stmt["kind"] == "merge":
-            response = self._merge_catalog_table(catalog, stmt, query, storage_options)
+            response = self._merge_catalog_table(
+                catalog, stmt, query, storage_options, resolved
+            )
         elif stmt["kind"] == "delete":
             full_name = [stmt["catalog"], *stmt["identifier"]]
             response = _delete_catalog_table(
@@ -598,8 +600,13 @@ class SQLContext(Generic[FrameType]):
         stmt: dict[str, Any],
         query: str,
         storage_options: StorageOptionsDict | None,
+        resolved: dict[str, pyiceberg.catalog.Catalog] | None = None,
     ) -> str:
-        """Perform the `MERGE` of `query` on its table, returning the response."""
+        """
+        Perform the `MERGE` of `query` on its table, returning the response.
+
+        `resolved` holds catalogs already resolved by name for this statement.
+        """
         from polars.io.iceberg.functions import scan_iceberg
 
         full_name = [stmt["catalog"], *stmt["identifier"]]
@@ -615,7 +622,9 @@ class SQLContext(Generic[FrameType]):
                 if name == full_name:
                     lf = scan_iceberg(table, storage_options=storage_options)
                 else:
-                    lf = self._scan_catalog_relation(catalog_name, identifier)
+                    lf = self._scan_catalog_relation(
+                        catalog_name, identifier, resolved
+                    )
                 tables.append((name, lf._ldf))
             source, keys = self._ctxt.catalog_merge_source(query, tables)
             return wrap_ldf(source), [(c, wrap_expr(e)) for c, e in keys]

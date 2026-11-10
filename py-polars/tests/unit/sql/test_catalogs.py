@@ -5739,6 +5739,25 @@ def test_register_catalog_by_name_statement_query_reuses_catalog(
     assert names == ["lake"]
 
 
+@pytest.mark.write_disk
+@pytest.mark.usefixtures("_reset_catalog_resolver")
+def test_register_catalog_by_name_merge_source_reuses_catalog(
+    lake: CountingCatalog,
+) -> None:
+    resolver, names = _recording_resolver(lake)
+    pl.Config.set_iceberg_catalog_resolver(resolver)
+    ctx = pl.SQLContext().register_catalog("lake", default_namespace="tpch")
+
+    ctx.execute(
+        "MERGE INTO lake.lineitem USING lake.orders AS o ON lineitem.k = o.k "
+        "WHEN MATCHED THEN UPDATE SET v = 'x' "
+        "WHEN NOT MATCHED THEN INSERT VALUES (o.k, 'new')"
+    )
+
+    assert table_rows(lake, "tpch", "lineitem") == [(1, "x"), (2, "x"), (3, "new")]
+    assert names == ["lake"]
+
+
 def test_register_catalog_empty_catalog_name() -> None:
     with pytest.raises(ValueError, match="must not be empty"):
         pl.SQLContext().register_catalog("x", "")
