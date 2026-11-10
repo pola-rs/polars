@@ -5,7 +5,7 @@ use polars_arrow::array::builder::ShareStrategy;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_expr::hash_keys::HashKeys;
+use polars_expr::hash_keys::KeyEncoder;
 use polars_ooc::{
     MostRecentSpillContext, ParameterFreeSpillContext, SpillFrame, estimate_memory_usage,
     memory_manager,
@@ -158,7 +158,11 @@ impl SinkPartitions {
         df.rechunk_mut();
         let row_bytes = df.estimated_size(false) as f64 / height as f64;
         let keys = df.select(params.partition_by.iter().cloned())?;
-        let keys = HashKeys::from_df(&keys, self.random_state.clone(), true, false);
+        let keys = KeyEncoder::new(keys.schema().clone(), true, &[]).hash_keys(
+            &keys,
+            self.random_state.clone(),
+            true,
+        )?;
         let split = split(&keys, None, &self.partitioner, NullRows::FirstPartition);
         drop(keys);
 

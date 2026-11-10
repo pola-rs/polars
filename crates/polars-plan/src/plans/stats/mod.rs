@@ -8,6 +8,7 @@ mod cost;
 #[cfg(any(feature = "python", test))]
 mod dataset;
 mod node;
+mod value_range;
 
 use std::sync::Arc;
 
@@ -22,6 +23,7 @@ use polars_core::prelude::Scalar;
 #[allow(clippy::disallowed_types)]
 use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_str::PlSmallStr;
+pub use value_range::column_value_range;
 
 use crate::plans::IR;
 
@@ -146,6 +148,9 @@ pub struct ScanColumnStats {
     /// One entry per sampled row group, ordered by source file, and by row group within a
     /// file.
     pub sampled_row_groups: Option<Arc<[RowGroupStats]>>,
+    /// `int_range` was folded over sampled chunks and widened, so it is an estimate.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub int_range_sampled: bool,
 }
 
 /// How many bytes one stored value of a parquet column takes.
@@ -298,6 +303,7 @@ impl ScanStats {
                             |((l_min, l_max), (r_min, r_max))| (l_min.min(r_min), l_max.max(r_max)),
                         );
                         out.int_range_partial |= col.int_range_partial;
+                        out.int_range_sampled |= col.int_range_sampled;
                         width_rows += part_rows;
                     }
                     Some((name.clone(), out))

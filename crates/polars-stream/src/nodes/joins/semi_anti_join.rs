@@ -11,7 +11,7 @@ use polars_core::runtime::{ASYNC, RAYON};
 use polars_core::schema::Schema;
 use polars_defs::join::{JoinArgs, JoinBuildSide, JoinType, MaintainOrderJoin};
 use polars_expr::groups::{Grouper, new_hash_grouper};
-use polars_expr::hash_keys::HashKeys;
+use polars_expr::hash_keys::{HashKeys, KeyEncoder};
 use polars_ooc::{MostRecentSpillContext, SpillFrame};
 use polars_plan::plans::options::RuntimeFilter;
 use polars_utils::IdxSize;
@@ -31,8 +31,14 @@ use super::{
 use crate::expression::StreamExpr;
 use crate::nodes::compute_node_prelude::*;
 
-fn hash_keys(keys: &DataFrame, params: &SemiAntiJoinParams, null_is_valid: bool) -> HashKeys {
-    HashKeys::from_df(keys, params.random_state.clone(), null_is_valid, false)
+fn hash_keys(
+    keys: &DataFrame,
+    params: &SemiAntiJoinParams,
+    null_is_valid: bool,
+) -> PolarsResult<HashKeys> {
+    params
+        .key_encoder
+        .hash_keys(keys, params.random_state.clone(), null_is_valid)
 }
 
 async fn select_keys(
@@ -43,10 +49,11 @@ async fn select_keys(
     state: &ExecutionState,
 ) -> PolarsResult<HashKeys> {
     let keys = select_key_columns(df, key_selectors, state).await?;
-    Ok(hash_keys(&keys, params, null_is_valid))
+    hash_keys(&keys, params, null_is_valid)
 }
 
 struct SemiAntiJoinParams {
+    key_encoder: KeyEncoder,
     left_is_build: Option<bool>,
     left_key_selectors: Vec<StreamExpr>,
     right_key_selectors: Vec<StreamExpr>,
@@ -109,7 +116,7 @@ pub struct SemiAntiJoinNode {
 impl SemiAntiJoinNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        unique_key_schema: Arc<Schema>,
+        key_encoder: KeyEncoder,
         output_schema: Arc<Schema>,
         left_key_selectors: Vec<StreamExpr>,
         right_key_selectors: Vec<StreamExpr>,
@@ -146,7 +153,10 @@ impl SemiAntiJoinNode {
         // A filter is only published for the side the plan named. The keys of
         // both sides have the same dtypes.
         debug_assert!(runtime_filters.is_empty() || args.build_side.is_some());
+        let grouper = new_hash_grouper(&key_encoder);
+        let runtime_filters = RuntimeFilters::new(runtime_filters, key_encoder.schema());
         let params = SemiAntiJoinParams {
+            key_encoder,
             left_is_build,
             left_key_selectors,
             right_key_selectors,
@@ -156,7 +166,7 @@ impl SemiAntiJoinNode {
             return_bool,
             is_anti,
             build_side: args.build_side,
-            runtime_filters: RuntimeFilters::new(runtime_filters, &unique_key_schema),
+            runtime_filters,
             sample_limit,
             estimated_rows,
         };
@@ -182,7 +192,7 @@ impl SemiAntiJoinNode {
         Ok(Self {
             state,
             params,
-            grouper: new_hash_grouper(unique_key_schema),
+            grouper,
             spill_ctx: MostRecentSpillContext::new("semi-anti-join".into(), task_metrics),
         })
     }
@@ -453,6 +463,7 @@ impl SampleState {
             key_selectors,
             None,
             with_min_hash,
+            &params.key_encoder,
             null_is_valid,
             &params.random_state,
             params.sample_limit,
@@ -628,7 +639,7 @@ impl BuildState {
                 &keys,
                 params,
                 params.null_is_valid_when_built(params.left_is_build()),
-            );
+            )?;
 
             hash_keys.gen_idxs_per_partition(
                 &partitioner,

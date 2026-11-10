@@ -23,6 +23,7 @@ use polars_utils::vec::PushUnchecked;
 
 pub use crate::key_rows::KeyRowKeys;
 use crate::key_rows::KeyRowLayout;
+use crate::packed_keys::{PackedKeys, PackedLayout};
 
 /// Keys are hashed and prefetched in blocks of this many.
 pub(crate) const BLOCK_SIZE: usize = 256;
@@ -118,89 +119,154 @@ pub enum HashKeys {
     Single(SingleKeys),
 }
 
-impl HashKeys {
-    pub fn from_df(
-        df: &DataFrame,
-        random_state: PlRandomState,
-        null_is_valid: bool,
-        force_row_encoding: bool,
-    ) -> Self {
-        if !force_row_encoding
-            && let Some(layout) = KeyRowLayout::new(df.columns().iter().map(|c| c.dtype()))
-        {
-            return Self::KeyRows(KeyRowKeys::from_columns(
-                df.columns(),
-                Arc::new(layout),
-                &random_state,
-                null_is_valid,
-            ));
-        }
+/// How the keys of one operation are stored. Every `HashKeys` and every table of an
+/// operation must come from the same encoder, as it decides the key format.
+#[derive(Clone, Debug)]
+pub struct KeyEncoder {
+    schema: Arc<Schema>,
+    kind: KeyKind,
+}
 
-        let first_col_variant = hash_keys_variant_for_dtype(df[0].dtype());
-        let use_row_encoding = force_row_encoding
-            || df.width() > 1
-            || first_col_variant == HashKeysVariant::RowEncoded;
-        if use_row_encoding {
-            let keys = df.columns();
-            let keys_encoded = _get_rows_encoded_unordered(keys, !null_is_valid).unwrap();
+#[derive(Clone, Debug)]
+pub(crate) enum KeyKind {
+    Packed(Arc<PackedKeys>),
+    KeyRows(Arc<KeyRowLayout>),
+    RowEncoded,
+    Binview,
+    Single,
+}
 
-            // TODO: use vechash? Not supported yet for lists.
-            // let mut hashes = Vec::with_capacity(df.height());
-            // columns_to_hashes(df.columns(), Some(random_state), &mut hashes).unwrap();
-
-            let hashes = keys_encoded
-                .values_iter()
-                .map(|k| random_state.hash_one(k))
-                .collect();
-            Self::RowEncoded(RowEncodedKeys {
-                hashes: PrimitiveArray::from_vec(hashes),
-                keys: keys_encoded,
-            })
-        } else if first_col_variant == HashKeysVariant::Binview {
-            let keys = if let Ok(ca_str) = df[0].str() {
-                ca_str.as_binary()
+impl KeyEncoder {
+    /// An encoder for keys of `schema`.
+    ///
+    /// When `nulls_in_key` is false, the keys of this operation are never made with
+    /// `null_is_valid`. `ranges` holds an inclusive range of the values of each key
+    /// column, or is empty; values outside it are still correct.
+    pub fn new(schema: Arc<Schema>, nulls_in_key: bool, ranges: &[Option<(i128, i128)>]) -> Self {
+        assert!(ranges.is_empty() || ranges.len() == schema.len());
+        let kind =
+            if let Some(layout) = PackedLayout::new(schema.iter_values(), nulls_in_key, ranges) {
+                KeyKind::Packed(Arc::new(PackedKeys::new(layout)))
+            } else if let Some(layout) = KeyRowLayout::new(schema.iter_values()) {
+                KeyKind::KeyRows(Arc::new(layout))
+            } else if schema.len() > 1 {
+                KeyKind::RowEncoded
             } else {
-                df[0].binary().unwrap().clone()
-            };
-            let keys = keys.rechunk().downcast_as_array().clone();
-
-            let views = keys.views();
-            let buffers = keys.data_buffers();
-            let hashes = unsafe {
-                if keys.has_nulls() {
-                    views
-                        .iter()
-                        .zip(keys.validity().unwrap())
-                        .map(|(v, is_valid)| {
-                            if is_valid {
-                                v.hash_with_buffers_unchecked(buffers, &random_state)
-                            } else {
-                                0
-                            }
-                        })
-                        .collect()
-                } else {
-                    views
-                        .iter()
-                        .map(|v| v.hash_with_buffers_unchecked(buffers, &random_state))
-                        .collect()
+                match hash_keys_variant_for_dtype(schema.get_at_index(0).unwrap().1) {
+                    HashKeysVariant::RowEncoded => KeyKind::RowEncoded,
+                    HashKeysVariant::Binview => KeyKind::Binview,
+                    HashKeysVariant::Single => KeyKind::Single,
                 }
             };
+        Self { schema, kind }
+    }
 
-            Self::Binview(BinviewKeys {
-                hashes: PrimitiveArray::from_vec(hashes),
-                keys,
-                null_is_valid,
-            })
-        } else {
-            Self::Single(SingleKeys {
-                random_state,
-                keys: df[0].as_materialized_series().rechunk(),
-                null_is_valid,
-            })
+    pub fn schema(&self) -> &Arc<Schema> {
+        &self.schema
+    }
+
+    /// The packed layout, if the keys are packed.
+    pub fn describe_packed(&self) -> Option<String> {
+        match &self.kind {
+            KeyKind::Packed(packed) => Some(packed.describe()),
+            _ => None,
         }
     }
 
+    pub(crate) fn kind(&self) -> &KeyKind {
+        &self.kind
+    }
+
+    /// The hash keys of the key columns `df`. A key with a null is a key of its own
+    /// if `null_is_valid`, else it matches nothing.
+    pub fn hash_keys(
+        &self,
+        df: &DataFrame,
+        random_state: PlRandomState,
+        null_is_valid: bool,
+    ) -> PolarsResult<HashKeys> {
+        debug_assert!(
+            df.columns()
+                .iter()
+                .zip(self.schema.iter_values())
+                .all(|(c, dt)| c.dtype() == dt)
+        );
+        Ok(match &self.kind {
+            KeyKind::Packed(packed) => HashKeys::Single(SingleKeys {
+                random_state,
+                keys: packed.encode(df.columns(), null_is_valid)?,
+                null_is_valid,
+            }),
+            KeyKind::KeyRows(layout) => HashKeys::KeyRows(KeyRowKeys::from_columns(
+                df.columns(),
+                layout.clone(),
+                &random_state,
+                null_is_valid,
+            )),
+            KeyKind::RowEncoded => {
+                let keys = df.columns();
+                let keys_encoded = _get_rows_encoded_unordered(keys, !null_is_valid).unwrap();
+
+                // TODO: use vechash? Not supported yet for lists.
+                // let mut hashes = Vec::with_capacity(df.height());
+                // columns_to_hashes(df.columns(), Some(random_state), &mut hashes).unwrap();
+
+                let hashes = keys_encoded
+                    .values_iter()
+                    .map(|k| random_state.hash_one(k))
+                    .collect();
+                HashKeys::RowEncoded(RowEncodedKeys {
+                    hashes: PrimitiveArray::from_vec(hashes),
+                    keys: keys_encoded,
+                })
+            },
+            KeyKind::Binview => {
+                let keys = if let Ok(ca_str) = df[0].str() {
+                    ca_str.as_binary()
+                } else {
+                    df[0].binary().unwrap().clone()
+                };
+                let keys = keys.rechunk().downcast_as_array().clone();
+
+                let views = keys.views();
+                let buffers = keys.data_buffers();
+                let hashes = unsafe {
+                    if keys.has_nulls() {
+                        views
+                            .iter()
+                            .zip(keys.validity().unwrap())
+                            .map(|(v, is_valid)| {
+                                if is_valid {
+                                    v.hash_with_buffers_unchecked(buffers, &random_state)
+                                } else {
+                                    0
+                                }
+                            })
+                            .collect()
+                    } else {
+                        views
+                            .iter()
+                            .map(|v| v.hash_with_buffers_unchecked(buffers, &random_state))
+                            .collect()
+                    }
+                };
+
+                HashKeys::Binview(BinviewKeys {
+                    hashes: PrimitiveArray::from_vec(hashes),
+                    keys,
+                    null_is_valid,
+                })
+            },
+            KeyKind::Single => HashKeys::Single(SingleKeys {
+                random_state,
+                keys: df[0].as_materialized_series().rechunk(),
+                null_is_valid,
+            }),
+        })
+    }
+}
+
+impl HashKeys {
     pub fn len(&self) -> usize {
         match self {
             HashKeys::RowEncoded(s) => s.keys.len(),

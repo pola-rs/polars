@@ -10,7 +10,7 @@ use polars_core::prelude::*;
 use polars_core::runtime::ASYNC;
 use polars_core::schema::{Schema, SchemaExt};
 use polars_defs::join::{JoinArgs, JoinBuildSide, JoinType, MaintainOrderJoin};
-use polars_expr::hash_keys::HashKeys;
+use polars_expr::hash_keys::{HashKeys, KeyEncoder};
 use polars_expr::idx_table::{IdxTable, new_idx_table};
 use polars_ooc::MostRecentSpillContext;
 use polars_plan::plans::options::RuntimeFilter;
@@ -37,6 +37,7 @@ use crate::nodes::compute_node_prelude::*;
 use crate::nodes::in_memory_source::InMemorySourceNode;
 
 struct EquiJoinParams {
+    key_encoder: KeyEncoder,
     left_is_build: Option<bool>,
     preserve_order_build: bool,
     preserve_order_probe: bool,
@@ -227,12 +228,11 @@ async fn select_keys_with_columns(
     state: &ExecutionState,
 ) -> PolarsResult<(HashKeys, DataFrame)> {
     let keys = select_key_columns(df, key_selectors, state).await?;
-    let hash_keys = HashKeys::from_df(
+    let hash_keys = params.key_encoder.hash_keys(
         &keys,
         params.random_state.clone(),
         params.args.nulls_equal,
-        false,
-    );
+    )?;
     Ok((hash_keys, keys))
 }
 
@@ -386,6 +386,7 @@ impl SampleState {
                             &params.left_key_selectors,
                             Some(&params.left_payload_select),
                             true,
+                            &params.key_encoder,
                             params.args.nulls_equal,
                             &params.random_state,
                             params.sample_limit,
@@ -396,6 +397,7 @@ impl SampleState {
                             &params.right_key_selectors,
                             Some(&params.right_payload_select),
                             true,
+                            &params.key_encoder,
                             params.args.nulls_equal,
                             &params.random_state,
                             params.sample_limit,
@@ -566,7 +568,7 @@ impl EquiJoinNode {
         right_input_schema: Arc<Schema>,
         left_key_schema: Arc<Schema>,
         right_key_schema: Arc<Schema>,
-        unique_key_schema: Arc<Schema>,
+        key_encoder: KeyEncoder,
         output_schema: Arc<Schema>,
         left_key_selectors: Vec<StreamExpr>,
         right_key_selectors: Vec<StreamExpr>,
@@ -634,7 +636,7 @@ impl EquiJoinNode {
 
         // A filter is only published for the side the plan named.
         debug_assert!(runtime_filters.is_empty() || args.build_side.is_some());
-        let runtime_filters = RuntimeFilters::new(runtime_filters, &unique_key_schema);
+        let runtime_filters = RuntimeFilters::new(runtime_filters, key_encoder.schema());
 
         let left_payload_schema = Arc::new(select_schema(&left_input_schema, &left_payload_select));
         let right_payload_schema =
@@ -648,7 +650,9 @@ impl EquiJoinNode {
             })
             .transpose()?;
 
+        let table = new_idx_table(&key_encoder);
         let params = EquiJoinParams {
+            key_encoder,
             left_is_build,
             preserve_order_build,
             preserve_order_probe,
@@ -688,7 +692,7 @@ impl EquiJoinNode {
         Ok(Self {
             state,
             params,
-            table: new_idx_table(unique_key_schema),
+            table,
             spill_ctx: MostRecentSpillContext::new("equi-join".into(), task_metrics),
             tuning: JoinTuning::from_env(),
         })

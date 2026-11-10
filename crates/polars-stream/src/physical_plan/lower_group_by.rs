@@ -785,6 +785,7 @@ fn try_lower_agg_input_expr(
                 phys_sm,
                 expr_cache,
                 ctx,
+                &[],
             )?
             else {
                 return Ok(None);
@@ -996,6 +997,7 @@ pub fn try_build_streaming_group_by(
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
+    key_ranges: &[Option<(i128, i128)>],
 ) -> PolarsResult<Option<PhysStream>> {
     if apply.is_some() {
         return Ok(None); // TODO
@@ -1052,8 +1054,9 @@ pub fn try_build_streaming_group_by(
     let mut key_ids = PlIndexSet::new();
     let mut trans_agg_exprs = Vec::new();
     let mut trans_keys = Vec::new();
+    let mut trans_key_ranges = Vec::new();
     let mut trans_output_exprs = Vec::new();
-    for key in keys {
+    for (i, key) in keys.iter().enumerate() {
         let key_id = canonical_exprs.resolve(key.node(), expr_arena);
         key_ids.insert(key_id);
         let key_name = uniq_input_names
@@ -1061,6 +1064,7 @@ pub fn try_build_streaming_group_by(
             .or_insert_with(|| {
                 let key_name = unique_column_name();
                 trans_keys.push(ExprIR::from_column_name(key_name.clone(), expr_arena));
+                trans_key_ranges.push(key_ranges.get(i).copied().flatten());
                 key_name
             })
             .clone();
@@ -1286,6 +1290,7 @@ pub fn try_build_streaming_group_by(
             key_per_input,
             fused_agg_inputs_per_input,
             aggs_per_input,
+            key_ranges: trans_key_ranges,
         },
     ));
 
@@ -1340,6 +1345,7 @@ pub fn try_build_streaming_group_by(
                 fused_predicate: None,
                 runtime_filters: Vec::new(),
                 estimated_rows: None,
+                key_ranges: Vec::new(),
             },
         ));
         post_select_input = PhysStream::first(join_key);
@@ -1550,6 +1556,7 @@ pub fn build_group_by_stream(
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
     are_keys_sorted: bool,
+    key_ranges: &[Option<(i128, i128)>],
 ) -> PolarsResult<PhysStream> {
     'build_streaming_group_by: {
         // Fallback to in-mem for objects. Otherwise we get an error in CI:
@@ -1643,6 +1650,7 @@ pub fn build_group_by_stream(
             phys_sm,
             expr_cache,
             ctx,
+            key_ranges,
         )? {
             Ok(stream)
         } else {

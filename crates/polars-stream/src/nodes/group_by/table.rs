@@ -5,6 +5,7 @@ use polars_core::prelude::IntoColumn;
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
 use polars_expr::groups::Grouper;
+use polars_expr::hash_keys::KeyEncoder;
 use polars_expr::reduce::GroupedReduction;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -18,6 +19,8 @@ use crate::hash_shuffle::split::rows_or_all;
 /// What the sink and every partition table read.
 pub struct GroupByParams {
     pub key_schema: Arc<Schema>,
+    /// Encodes the keys of the hot tables and of every partition table.
+    pub key_encoder: KeyEncoder,
     pub output_schema: Arc<Schema>,
     /// Input stream i feeds grouped_reductions[k] for each k in reductions_per_input[i].
     pub reductions_per_input: Vec<Vec<usize>>,

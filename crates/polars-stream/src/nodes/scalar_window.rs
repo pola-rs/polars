@@ -8,7 +8,7 @@ use polars_core::runtime::RAYON;
 use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_expr::groups::{Grouper, new_hash_grouper};
-use polars_expr::hash_keys::HashKeys;
+use polars_expr::hash_keys::{HashKeys, KeyEncoder};
 use polars_expr::reduce::GroupedReduction;
 use polars_ooc::{MostRecentSpillContext, ParameterFreeSpillContext, SpillFrame, memory_manager};
 use polars_utils::IdxSize;
@@ -141,7 +141,11 @@ impl PartitionedMorsels {
             }
         }
         let keys = morsel.df().await.select(partition_by)?;
-        let hash_keys = HashKeys::from_df(&keys, random_state.clone(), true, false);
+        let hash_keys = KeyEncoder::new(keys.schema().clone(), true, &[]).hash_keys(
+            &keys,
+            random_state.clone(),
+            true,
+        )?;
         hash_keys.gen_idxs_per_partition(partitioner, &mut self.idxs_per_p, sketches, None, true);
         self.offsets_per_p
             .extend(self.idxs_per_p.iter().map(|idxs| idxs.len()));
@@ -440,7 +444,7 @@ struct Reducer {
 
 impl Reducer {
     fn new(params: &ScalarWindowParams, estimated_groups: usize) -> Self {
-        let mut grouper = new_hash_grouper(params.key_schema.clone());
+        let mut grouper = new_hash_grouper(&KeyEncoder::new(params.key_schema.clone(), true, &[]));
         grouper.reserve(estimated_groups);
         let reductions = params
             .windows
@@ -712,7 +716,11 @@ fn reduce_locally(
     let mut groups = Vec::with_capacity(locals.len());
     for (local, local_morsel_groups) in locals {
         let keys = local.grouper.get_keys_in_group_order(&params.key_schema);
-        let hash_keys = HashKeys::from_df(&keys, random_state.clone(), true, false);
+        let hash_keys = KeyEncoder::new(params.key_schema.clone(), true, &[]).hash_keys(
+            &keys,
+            random_state.clone(),
+            true,
+        )?;
         let local_groups = (0..local.grouper.num_groups()).collect::<Vec<_>>();
         let mut group_of_local_group = Vec::with_capacity(local_groups.len());
         // SAFETY: the local groups are the rows of `keys`.

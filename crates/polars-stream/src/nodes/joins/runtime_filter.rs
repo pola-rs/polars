@@ -12,7 +12,7 @@ use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::prelude::*;
 use polars_core::runtime::{ASYNC, RAYON};
 use polars_core::{config, with_match_physical_integer_polars_type};
-use polars_expr::hash_keys::HashKeys;
+use polars_expr::hash_keys::{HashKeys, KeyEncoder};
 use polars_io::predicates::{RuntimeRange, cast_bound};
 use polars_ooc::memory_manager;
 use polars_plan::plans::options::{MAX_BUILD_PROBE_DISTINCT_RATIO, RuntimeFilter};
@@ -227,12 +227,10 @@ impl KeyFilterSpec {
     }
 
     fn hash_keys(&self, column: &Column) -> HashKeys {
-        HashKeys::from_df(
-            &column.clone().into_frame(),
-            self.random_state.clone(),
-            false,
-            false,
-        )
+        let df = column.clone().into_frame();
+        KeyEncoder::new(df.schema().clone(), false, &[])
+            .hash_keys(&df, self.random_state.clone(), false)
+            .unwrap()
     }
 }
 

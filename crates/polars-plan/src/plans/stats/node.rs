@@ -898,6 +898,7 @@ fn single_key_column(keys: &[&PlSmallStr], rows: f64) -> Option<Arc<ScanColumnSt
             int_range: None,
             int_range_partial: false,
             sampled_row_groups: None,
+            int_range_sampled: false,
         },
     );
     Some(Arc::new(map))
