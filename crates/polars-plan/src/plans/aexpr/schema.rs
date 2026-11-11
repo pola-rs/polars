@@ -263,6 +263,7 @@ impl AExpr {
             },
             Cast { expr, dtype, .. } => {
                 let field = ctx.arena.get(*expr).to_field_impl(ctx)?;
+                field.dtype().ensure_union_cast(dtype)?;
                 Ok(Field::new(field.name().clone(), dtype.clone()))
             },
             Ternary { truthy, falsy, .. } => {

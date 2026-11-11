@@ -413,6 +413,10 @@ impl Series {
 
     /// Cast [`Series`] to another [`DataType`].
     pub fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Self> {
+        // Before the all-null shortcut below, so whether a cast is allowed doesn't depend on the
+        // data.
+        #[cfg(feature = "dtype-union")]
+        self.dtype().ensure_union_cast(dtype)?;
         let slf = self
             .trim_lists_to_normalized_offsets()
             .map_or(Cow::Borrowed(self), Cow::Owned);

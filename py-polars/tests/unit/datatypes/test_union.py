@@ -453,13 +453,6 @@ def test_union_ipc(tmp_path: Path) -> None:
     assert roundtrip.schema == df.schema
 
 
-def test_union_cast_raises() -> None:
-    s = pl.Series(int_str())
-    assert s.cast(INT_STR).to_list() == INT_STR_VALUES
-    with pytest.raises(InvalidOperationError):
-        s.cast(pl.String)
-
-
 def nested_unions() -> list[pl.Series]:
     lists = pa.LargeListArray.from_arrays(pa.array([0, 2, 2, 6]), int_str())
     arrays = pa.FixedSizeListArray.from_arrays(int_str(), 2)
@@ -859,140 +852,153 @@ def test_union_zip_large_child() -> None:
     assert to_pylist(out) == [{}] * 10
 
 
-def test_union_cast_variants_by_name() -> None:
-    s = messy()
-    values = s.to_list()
-    # Reordering the variants only remaps the tags.
-    flipped = s.cast(pl.Union({"s": pl.String, "i": pl.Int64}))
-    assert to_pylist(flipped) == values
-    assert to_pa(flipped).type_codes.to_pylist() == [
-        1 - t for t in to_pa(s).type_codes.to_pylist()
-    ]
-    # A new variant stays empty; a re-cast variant converts its values.
-    wider = s.cast(pl.Union({"i": pl.Float64, "s": pl.String, "b": pl.Boolean}))
-    assert wider.dtype == pl.Union({"i": pl.Float64, "s": pl.String, "b": pl.Boolean})
-    assert to_pylist(wider) == [float(v) if isinstance(v, int) else v for v in values]
-
-    for inp in messy_layouts():
-        out = inp.cast(pl.Union({"i": pl.Int32, "s": pl.Categorical()}))
-        assert to_pylist(out) == inp.to_list()
-
-
-def test_union_cast_nulls() -> None:
-    all_null = pl.Series([None, None], dtype=pl.Union({"i": pl.Int64}))
-    for s in [all_null, all_null.head(1), messy().shift(2), messy().slice(4, 1)]:
-        out = s.cast(pl.Union({"i": pl.Float64, "s": pl.String}))
-        assert to_pylist(out) == s.to_list()
+def test_union_cast_widens() -> None:
+    for s in messy_layouts():
+        values = s.to_list()
+        # Reordering the variants only remaps the tags.
+        flipped = s.cast(pl.Union({"s": pl.String, "i": pl.Int64}))
+        assert to_pylist(flipped) == values
+        assert to_pa(flipped).type_codes.to_pylist() == [
+            1 - t for t in to_pa(s).type_codes.to_pylist()
+        ]
+        # A new variant stays empty.
+        to = pl.Union({"b": pl.Boolean, "i": pl.Int64, "s": pl.String})
+        for strict in [True, False]:
+            wider = s.cast(to, strict=strict)
+            assert wider.dtype == to
+            assert to_pylist(wider) == values
+        lazy = s.to_frame().lazy().select(pl.col("u").cast(to))
+        assert lazy.collect_schema()["u"] == to
+        assert to_pylist(lazy.collect()["u"]) == values
 
 
-def test_union_cast_non_strict_nulls_slot() -> None:
-    s = pl.Series(
-        dense([0, 1, 1], [0, 0, 1], [pa.array([1]), pa.array(["x", "7"])], ["i", "s"])
-    )
-    out = s.cast(pl.Union({"i": pl.Int64, "s": pl.Int64}), strict=False)
-    assert to_pylist(out) == [1, None, 7]
-    assert out.null_count() == 1
-    with pytest.raises(InvalidOperationError):
-        s.cast(pl.Union({"i": pl.Int64, "s": pl.Int64}))
-
-
-def test_union_cast_strict_ignores_unheld_values() -> None:
-    # "bad" is not referenced by any slot.
-    s = pl.Series(
-        dense([0, 1], [0, 1], [pa.array([1]), pa.array(["bad", "42"])], ["i", "s"])
-    )
-    assert s.cast(pl.Union({"i": pl.Int64, "s": pl.Int64})).to_list() == [1, 42]
-
-    # "bad" is under a null slot: the struct null is pushed into the union.
-    u = dense(
-        [0, 1, 1], [0, 0, 1], [pa.array([1]), pa.array(["bad", "42"])], ["i", "s"]
-    )
-    st = pl.Series(
-        pa.StructArray.from_arrays([u], ["u"], mask=pa.array([False, True, False]))
-    )
-    masked = st.struct.field("u")
-    assert masked.to_list() == [1, None, "42"]
-    out = masked.cast(pl.Union({"i": pl.Int64, "s": pl.Int64}))
-    assert to_pylist(out) == [1, None, 42]
-
-
-def test_union_cast_dropped_variant() -> None:
-    s = messy()
-    to = pl.Union({"s": pl.String})
-    with pytest.raises(InvalidOperationError, match="variant `i` is not in the target"):
-        s.cast(to)
-    out = s.cast(to, strict=False)
-    assert to_pylist(out) == [v if isinstance(v, str) else None for v in s.to_list()]
-    # Only null slots hold `i` here, so a strict cast succeeds.
-    strings = s.filter(pl.Series([False, True, False, True, True, True, False]))
-    assert strings.to_list() == ["b", "a", None, "b"]
-    assert to_pylist(strings.cast(to)) == ["b", "a", None, "b"]
-
-    five = pl.concat([pl.Series(big_union())] * 5, rechunk=True)
-    out = five.cast(pl.Union({"x": pl.Int8}), strict=False)
-    assert to_pylist(out) == [None] * 10
-    kept = five.cast(pl.Union({"x": pl.Int8, "e": pl.Struct({})}))
-    assert kept.null_count() == 0
-    assert to_pylist(kept.gather([9, 0])) == [{}, {}]
-
-
-def test_union_cast_resolves_variant_dtypes() -> None:
+def test_union_cast_widens_nulls() -> None:
     s = pl.Series(
         dense(
             [0, 1, 0],
             [0, 0, 1],
-            [pa.array([[1, 2], [3]], pa.large_list(pa.int64())), pa.array([4])],
-            ["l", "i"],
+            [
+                pa.array([[None], []], pa.large_list(pa.null())),
+                pa.array([{"a": None}], pa.struct([("a", pa.null())])),
+            ],
+            ["l", "st"],
         )
     )
-    to = pl.Union({"l": pl.List, "i": pl.Float64})
-    expected = pl.Union({"l": pl.List(pl.Int64), "i": pl.Float64})
-    # The second chunk references only part of `l`, so it is cast after a gather.
-    for inp in [s, pl.concat([s, s.slice(1)], rechunk=False)]:
-        out = inp.cast(to)
-        assert out.dtype == expected
-        assert to_pylist(out) == [
-            float(v) if isinstance(v, int) else v for v in inp.to_list()
-        ]
+    to = pl.Union(
+        {"x": pl.Int8, "st": pl.Struct({"a": pl.Int64}), "l": pl.List(pl.Int64)}
+    )
+    out = s.cast(to)
+    assert out.dtype == to
+    assert to_pylist(out) == [[None], {"a": None}, []]
+
+    inner = dense([0, 0], [0, 1], [pa.array([[None], []], pa.large_list(pa.null()))])
+    nested = pl.Series(dense([0, 0], [0, 1], [inner], ["u"]))
+    to = pl.Union({"u": pl.Union({"m": pl.Int8, "v0": pl.List(pl.String)})})
+    out = nested.cast(to)
+    assert out.dtype == to
+    assert out.to_list() == [[None], []]
+
+    for null in [pl.Series([None, None]), pl.Series([], dtype=pl.Null)]:
+        out = null.cast(INT_STR)
+        assert out.dtype == INT_STR
+        assert out.to_list() == null.to_list()
+    lazy = pl.LazyFrame({"x": [None]}).select(pl.col("x").cast(INT_STR))
+    assert lazy.collect_schema()["x"] == INT_STR
+    assert lazy.collect()["x"].to_list() == [None]
+
+
+def test_union_cast_to_string() -> None:
+    for s in messy_layouts():
+        out = s.cast(pl.String)
+        assert out.dtype == pl.String
+        assert out.to_list() == [None if v is None else str(v) for v in s.to_list()]
+
+    s = pl.Series(
+        dense(
+            [0, 1, 1],
+            [0, 0, 1],
+            [pa.array([{"a": 1}]), pa.array([1.5, None])],
+            ["st", "f"],
+        )
+    )
+    assert s.cast(pl.String).to_list() == ["{1}", "1.5", None]
+
+    # The invalid value is not referenced by any slot.
+    s = pl.Series(
+        dense([0, 1], [0, 1], [pa.array([1]), pa.array([b"\xff", b"ok"])], ["i", "b"])
+    )
+    assert s.cast(pl.String).to_list() == ["1", "ok"]
+    lazy = s.to_frame().lazy().select(pl.col("").cast(pl.String))
+    assert lazy.collect_schema()[""] == pl.String
+    assert lazy.collect()[""].to_list() == ["1", "ok"]
 
 
 @pytest.mark.parametrize(
-    ("values", "to", "expected"),
+    "to",
     [
-        (
-            pa.array([[[1]], [[2, 3]]], pa.large_list(pa.large_list(pa.int64()))),
-            pl.List(pl.List),
-            pl.List(pl.List(pl.Int64)),
-        ),
-        (
-            pa.array(
-                [{"l": [1]}, {"l": None}], pa.struct([("l", pa.large_list(pa.int64()))])
-            ),
-            pl.Struct({"l": pl.List}),
-            pl.Struct({"l": pl.List(pl.Int64)}),
-        ),
+        pl.Union({"i": pl.Int64}),
+        pl.Union({"i": pl.Float64, "s": pl.String}),
+        pl.Union({"i": pl.Int64, "t": pl.String}),
+        pl.Int64,
+        pl.Binary,
+        pl.Struct({"i": pl.Int64, "s": pl.String}),
+        pl.List(INT_STR),
     ],
 )
-def test_union_cast_resolves_nested_variant_dtypes(
-    values: pa.Array, to: pl.DataType, expected: pl.DataType
-) -> None:
-    s = pl.Series(dense([0, 0], [0, 1], [values], ["v"]))
-    # The first chunk holds only nulls, which a cast does not resolve on its own.
-    null = pl.Series([None], dtype=s.dtype)
-    for inp in [s, pl.concat([null, s, s.slice(1)], rechunk=False)]:
-        out = inp.cast(pl.Union({"v": to}))
-        assert out.dtype == pl.Union({"v": expected})
-        assert out.to_list() == inp.to_list()
+@pytest.mark.parametrize("strict", [True, False])
+def test_union_cast_rejected(to: pl.DataType, strict: bool) -> None:
+    # Only null slots hold `i`, so no value would be lost by dropping it.
+    s = pl.Series([None, None], dtype=INT_STR)
+    with pytest.raises(InvalidOperationError, match="cannot cast"):
+        s.cast(to, strict=strict)
+    lazy = s.to_frame().lazy().select(pl.col("").cast(to, strict=strict))
+    with pytest.raises(InvalidOperationError, match="cannot cast"):
+        lazy.collect_schema()
+    with pytest.raises(InvalidOperationError, match="cannot cast"):
+        lazy.collect()
 
 
-def test_union_cast_lazy() -> None:
-    s = messy()
-    to = pl.Union({"s": pl.String, "i": pl.Float64})
-    out = s.to_frame().lazy().select(pl.col("u").cast(to)).collect()["u"]
-    assert to_pylist(out) == [
-        float(v) if isinstance(v, int) else v for v in s.to_list()
-    ]
-    with pytest.raises(InvalidOperationError, match="not in the target"):
-        s.to_frame().lazy().select(
-            pl.col("u").cast(pl.Union({"s": pl.String}))
-        ).collect()
+@pytest.mark.parametrize(
+    "s",
+    [
+        pl.Series([1]),
+        pl.Series([None], dtype=pl.Int64),
+        pl.Series(["a"]),
+        pl.Series([[1]]),
+        pl.Series([{"i": 1}]),
+    ],
+)
+def test_union_cast_into_rejected(s: pl.Series) -> None:
+    with pytest.raises(InvalidOperationError, match="cannot cast"):
+        s.cast(INT_STR)
+    lazy = s.to_frame().lazy().select(pl.col("").cast(INT_STR))
+    with pytest.raises(InvalidOperationError, match="cannot cast"):
+        lazy.collect_schema()
+
+
+def test_union_cast_rejects_placeholders_and_lists() -> None:
+    s = pl.Series(dense([0], [0], [pa.array([[1]], pa.large_list(pa.int64()))], ["l"]))
+    # `pl.List` is `List(Null)`, a list of nulls.
+    with pytest.raises(InvalidOperationError, match="variant `l` has dtype"):
+        s.cast(pl.Union({"l": pl.List}))
+    with pytest.raises(InvalidOperationError, match="cannot be cast to"):
+        s.cast(pl.String)
+    with pytest.raises(InvalidOperationError, match="cannot be cast to"):
+        s.to_frame().lazy().select(pl.col("").cast(pl.String)).collect_schema()
+
+
+def test_union_supertypes() -> None:
+    small = pl.Series([None], dtype=pl.Union({"i": pl.Int64}))
+    big = pl.Series([None], dtype=pl.Union({"s": pl.String, "i": pl.Int64}))
+    for a, b in [(small, big), (big, small)]:
+        out = pl.select(pl.when(True).then(pl.lit(a)).otherwise(pl.lit(b))).to_series()
+        assert out.dtype == big.dtype
+        df = pl.concat([a.to_frame("u"), b.to_frame("u")], how="vertical_relaxed")
+        assert df.schema["u"] == big.dtype
+
+    out = pl.select(pl.when(True).then(pl.lit(small)).otherwise(None)).to_series()
+    assert out.dtype == small.dtype
+    other = pl.Series([None], dtype=pl.Union({"i": pl.Int32}))
+    for o in [pl.lit("s"), pl.lit(1), pl.lit(other)]:
+        with pytest.raises(pl.exceptions.SchemaError, match="supertype"):
+            pl.select(pl.when(True).then(pl.lit(small)).otherwise(o))

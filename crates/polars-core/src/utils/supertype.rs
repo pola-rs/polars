@@ -157,6 +157,17 @@ pub fn get_supertype_with_options(
             return Some(l.clone());
         }
         match (l, r) {
+            // A union is only the supertype of `Null` and of the unions that widen to it.
+            #[cfg(feature = "dtype-union")]
+            (Union(_), _) | (_, Union(_)) => {
+                if l.widens_to(r) {
+                    Some(r.clone())
+                } else if r.widens_to(l) {
+                    Some(l.clone())
+                } else {
+                    None
+                }
+            },
             #[cfg(feature = "dtype-i8")]
             (Int8, Boolean) => Some(Int8),
             //(Int8, Int8) => Some(Int8),

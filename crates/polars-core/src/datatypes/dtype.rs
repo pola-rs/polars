@@ -607,18 +607,8 @@ impl DataType {
                 true
             },
 
-            // Variants are matched by name; the values of a missing one become nulls.
             #[cfg(feature = "dtype-union")]
-            (D::Union(l_fields), D::Union(r_fields)) => {
-                for l in l_fields {
-                    if let Some(r) = r_fields.iter().find(|r| r.name() == l.name())
-                        && !l.dtype().can_cast_to(r.dtype())?
-                    {
-                        return Some(false);
-                    }
-                }
-                true
-            },
+            (D::Union(_), _) | (_, D::Union(_)) => self.ensure_union_cast(to).is_ok(),
 
             // @NOTE: we are being conservative
             _ => return None,
@@ -1280,6 +1270,129 @@ impl DataType {
             }
             Ok(())
         })
+    }
+
+    /// Whether a cast to `to` only retypes nulls: `to` equals `self` except that `Null`s in `self`
+    /// may be any dtype in `to`, and unions may reorder and add variants.
+    pub fn widens_to(&self, to: &DataType) -> bool {
+        use DataType as D;
+        match (self, to) {
+            _ if self == to => true,
+            (D::Null, _) => true,
+            (D::List(l), D::List(r)) => l.widens_to(r),
+            #[cfg(feature = "dtype-array")]
+            (D::Array(l, lw), D::Array(r, rw)) => lw == rw && l.widens_to(r),
+            #[cfg(feature = "dtype-struct")]
+            (D::Struct(l), D::Struct(r)) => {
+                l.len() == r.len()
+                    && l.iter()
+                        .zip(r)
+                        .all(|(l, r)| l.name() == r.name() && l.dtype().widens_to(r.dtype()))
+            },
+            #[cfg(feature = "dtype-map")]
+            (D::Map(lk, lv), D::Map(rk, rv)) => lk.widens_to(rk) && lv.widens_to(rv),
+            #[cfg(feature = "dtype-union")]
+            (D::Union(l), D::Union(r)) => l.iter().all(|l| {
+                r.iter()
+                    .any(|r| r.name() == l.name() && l.dtype().widens_to(r.dtype()))
+            }),
+            _ => false,
+        }
+    }
+
+    /// Errors if a cast from `self` to `to` involves a `Union` and is not allowed.
+    ///
+    /// A union only widens to another union (see [`DataType::widens_to`]), `Null` casts to any
+    /// union, and a union casts to `String` if all its variants do. Nested lists, arrays and
+    /// structs are checked the way `Series::cast` recurses into them.
+    pub fn ensure_union_cast(&self, to: &DataType) -> PolarsResult<()> {
+        if !self.contains_union() && !to.contains_union() {
+            return Ok(());
+        }
+        self.ensure_union_cast_rec(to)
+    }
+
+    fn ensure_union_cast_rec(&self, to: &DataType) -> PolarsResult<()> {
+        use DataType as D;
+        #[cfg(feature = "dtype-union")]
+        let err = |msg: &str| polars_err!(InvalidOperation: "cannot cast `{self}` to `{to}`{msg}");
+        match (self, to) {
+            _ if self == to => Ok(()),
+            #[cfg(feature = "dtype-union")]
+            (D::Null, D::Union(_)) => Ok(()),
+            #[cfg(feature = "dtype-union")]
+            (D::Union(l), D::Union(r)) => {
+                for l in l {
+                    let Some(r) = r.iter().find(|r| r.name() == l.name()) else {
+                        return Err(err(&format!(
+                            ": variant `{}` is not in the target; use `union.match` to drop it",
+                            l.name()
+                        )));
+                    };
+                    if !l.dtype().widens_to(r.dtype()) {
+                        return Err(err(&format!(
+                            ": variant `{}` has dtype `{}`, which only casts to an equal dtype \
+                             (where nulls may become any dtype); use `union.match` to convert it",
+                            l.name(),
+                            l.dtype()
+                        )));
+                    }
+                }
+                Ok(())
+            },
+            #[cfg(feature = "dtype-union")]
+            (D::Union(fields), D::String) => {
+                if let Some(f) = fields.iter().find(|f| !f.dtype().casts_to_string()) {
+                    return Err(err(&format!(
+                        ": variant `{}` of dtype `{}` cannot be cast to `{to}`",
+                        f.name(),
+                        f.dtype()
+                    )));
+                }
+                Ok(())
+            },
+            #[cfg(feature = "dtype-union")]
+            (D::Union(_), _) | (_, D::Union(_)) => Err(err(
+                ": a union only casts to a union with the same variants (or more) or to `String`; \
+                 use `union.field`, `union.match` or `pl.union` to convert values",
+            )),
+            // `Series::cast` keeps the source's inner dtype for a `List(Null)` target.
+            (D::List(_), D::List(r)) if r.is_null() => Ok(()),
+            (D::List(l), D::List(r)) => l.ensure_union_cast_rec(r),
+            #[cfg(feature = "dtype-array")]
+            (D::Array(l, _), D::Array(r, _) | D::List(r)) | (D::List(l), D::Array(r, _)) => {
+                l.ensure_union_cast_rec(r)
+            },
+            #[cfg(feature = "dtype-struct")]
+            (D::Struct(l), D::Struct(r)) => {
+                for r in r {
+                    if let Some(l) = l.iter().find(|l| l.name() == r.name()) {
+                        l.dtype().ensure_union_cast_rec(r.dtype())?;
+                    }
+                }
+                Ok(())
+            },
+            _ => Ok(()),
+        }
+    }
+
+    /// Whether every value of this dtype can be cast to `String`.
+    #[cfg(feature = "dtype-union")]
+    fn casts_to_string(&self) -> bool {
+        use DataType as D;
+        match self {
+            D::List(_) | D::Unknown(_) => false,
+            #[cfg(feature = "dtype-array")]
+            D::Array(..) => false,
+            #[cfg(feature = "dtype-map")]
+            D::Map(..) => false,
+            #[cfg(feature = "object")]
+            D::Object(_) => false,
+            #[cfg(feature = "dtype-extension")]
+            D::Extension(..) => false,
+            D::Union(fields) => fields.iter().all(|f| f.dtype().casts_to_string()),
+            _ => true,
+        }
     }
 
     /// Validate the variants of a `Union`. Errors for any other dtype.
