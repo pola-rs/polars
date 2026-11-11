@@ -40,8 +40,8 @@ impl LargeUnionArray {
     ) -> PolarsResult<Self> {
         let dtype_fields = Self::try_get_fields(&dtype)?;
         polars_ensure!(
-            !dtype_fields.is_empty() && dtype_fields.len() <= MAX_UNION_VARIANTS,
-            ComputeError: "a union must have between 1 and {MAX_UNION_VARIANTS} variants"
+            dtype_fields.len() <= MAX_UNION_VARIANTS,
+            ComputeError: "a union can have at most {MAX_UNION_VARIANTS} variants"
         );
         polars_ensure!(
             dtype_fields.len() == fields.len(),

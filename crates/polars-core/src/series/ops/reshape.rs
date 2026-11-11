@@ -142,10 +142,7 @@ impl Series {
                 format_tuple!(dimensions),
             );
 
-            let mut prev_arrow_dtype = leaf_array
-                .dtype()
-                .to_physical()
-                .to_arrow(CompatLevel::newest());
+            let mut prev_arrow_dtype = leaf_array.dtype().to_physical_arrow(CompatLevel::newest());
             let mut prev_dtype = leaf_array.dtype().clone();
             let mut prev_array = leaf_array.chunks()[0].clone();
 
@@ -193,10 +190,7 @@ impl Series {
         );
 
         let leaf_array = leaf_array.rechunk();
-        let mut prev_arrow_dtype = leaf_array
-            .dtype()
-            .to_physical()
-            .to_arrow(CompatLevel::newest());
+        let mut prev_arrow_dtype = leaf_array.dtype().to_physical_arrow(CompatLevel::newest());
         let mut prev_dtype = leaf_array.dtype().clone();
         let mut prev_array = leaf_array.chunks()[0].clone();
         let inferred_size = (size / total_dim_size) as u64;

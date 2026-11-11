@@ -295,6 +295,28 @@ unsafe impl PolarsDataType for StructType {
     }
 }
 
+#[cfg(feature = "dtype-union")]
+pub struct UnionType {}
+#[cfg(feature = "dtype-union")]
+unsafe impl PolarsDataType for UnionType {
+    // Like structs, unions have no physical value type.
+    type Physical<'a> = ();
+    type OwnedPhysical = ();
+    type ZeroablePhysical<'a> = ();
+    type Array = LargeUnionArray;
+    type IsNested = TrueT;
+    type HasViews = FalseT;
+    type IsStruct = FalseT;
+    type IsObject = FalseT;
+
+    fn get_static_dtype() -> DataType
+    where
+        Self: Sized,
+    {
+        DataType::Union(vec![])
+    }
+}
+
 #[cfg(feature = "dtype-array")]
 pub struct FixedSizeListType {}
 #[cfg(feature = "dtype-array")]
@@ -391,6 +413,9 @@ impl_phys_dtype!(FixedSizeListType);
 #[cfg(feature = "dtype-struct")]
 impl_phys_dtype!(StructType);
 
+#[cfg(feature = "dtype-union")]
+impl_phys_dtype!(UnionType);
+
 #[cfg(feature = "object")]
 impl<T: PolarsObject> PolarsPhysicalType for ObjectType<T> {
     fn ca_into_series(ca: ChunkedArray<Self>) -> Series {
@@ -401,6 +426,8 @@ impl<T: PolarsObject> PolarsPhysicalType for ObjectType<T> {
 #[cfg(feature = "dtype-array")]
 pub type ArrayChunked = ChunkedArray<FixedSizeListType>;
 pub type ListChunked = ChunkedArray<ListType>;
+#[cfg(feature = "dtype-union")]
+pub type UnionChunked = ChunkedArray<UnionType>;
 pub type BooleanChunked = ChunkedArray<BooleanType>;
 pub type UInt8Chunked = ChunkedArray<UInt8Type>;
 pub type UInt16Chunked = ChunkedArray<UInt16Type>;

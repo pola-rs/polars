@@ -47,7 +47,7 @@ impl Series {
         dtype.ensure_valid_map_dtypes()?;
 
         let physical = dtype.to_physical();
-        if &physical.to_arrow(CompatLevel::newest()) != chunk.dtype() {
+        if &dtype.to_physical_arrow(CompatLevel::newest()) != chunk.dtype() {
             polars_bail!(
                 InvalidOperation: "cannot create a series of type '{dtype}' of arrow chunk with type '{:?}'",
                 chunk.dtype()

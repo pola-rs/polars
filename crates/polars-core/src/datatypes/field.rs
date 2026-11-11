@@ -322,6 +322,25 @@ impl DataType {
                 let map: Option<DataType> = None;
                 map.unwrap_or_else(|| DataType::List(entries.boxed()))
             },
+            #[cfg(feature = "dtype-union")]
+            ArrowDataType::Union(u) if u.mode.is_dense() => {
+                // Variants that convert to `Null` hold no values and are dropped on import.
+                let fields: Vec<Field> = u
+                    .fields
+                    .iter()
+                    .map(Field::from)
+                    .filter(|f| !f.dtype().is_null())
+                    .collect();
+                if fields.is_empty() {
+                    DataType::Null
+                } else {
+                    DataType::Union(fields)
+                }
+            },
+            #[cfg(feature = "dtype-union")]
+            ArrowDataType::LargeUnion(fields) => {
+                DataType::Union(fields.iter().map(Field::from).collect())
+            },
             ArrowDataType::Interval(IntervalUnit::MonthDayNano) => {
                 check_allow_importing_interval_as_struct("month_day_nano_interval").unwrap();
                 feature_gated!("dtype-struct", DataType::_month_days_ns_struct_type())

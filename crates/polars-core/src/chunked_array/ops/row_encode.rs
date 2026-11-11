@@ -64,6 +64,9 @@ pub fn get_row_encoding_context(dtype: &DataType) -> Option<RowEncodingContext> 
 
         DataType::Unknown(_) => panic!("Unsupported in row encoding"),
 
+        #[cfg(feature = "dtype-union")]
+        DataType::Union(_) => None,
+
         #[cfg(feature = "object")]
         DataType::Object(_) => panic!("Unsupported in row encoding"),
 
@@ -130,7 +133,7 @@ pub fn get_row_encoding_layout(
         .iter()
         .zip(opts)
         .map(|(dtype, opt)| RowEncodingField {
-            dtype: dtype.to_physical().to_arrow(CompatLevel::newest()),
+            dtype: dtype.to_physical_arrow(CompatLevel::newest()),
             opt: *opt,
             ctx: get_row_encoding_context(dtype),
         })
