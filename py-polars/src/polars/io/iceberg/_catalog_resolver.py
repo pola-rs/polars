@@ -16,8 +16,32 @@ if TYPE_CHECKING:
 
     IcebergCatalogResolver: TypeAlias = Callable[[str], pyiceberg.catalog.Catalog]
 
-# Set with `pl.Config.set_iceberg_catalog_resolver`; `None` is the default resolver.
+# `None` is the default resolver, `pyiceberg.catalog.load_catalog(name)`.
 ICEBERG_CATALOG_RESOLVER: IcebergCatalogResolver | None = None
+
+
+def set_iceberg_catalog_resolver(resolver: IcebergCatalogResolver | None) -> None:
+    """
+    Set the function that turns an Iceberg catalog name into a catalog.
+
+    Not public API: Polars Cloud installs one on its workers.
+
+    A catalog name is resolved with the resolver set in the process that loads
+    the table, which may be another process than the one that built the plan.
+    That process may call it from several threads at once, and more than once
+    for the same name; caching catalogs and refreshing their credentials is up to
+    the resolver. `None` restores the default resolver.
+    """
+    global ICEBERG_CATALOG_RESOLVER
+
+    if resolver is not None and not callable(resolver):
+        msg = (
+            "the Iceberg catalog resolver must be callable or None; found "
+            f"{qualified_type_name(resolver)!r}"
+        )
+        raise TypeError(msg)
+
+    ICEBERG_CATALOG_RESOLVER = resolver
 
 
 def check_catalog_name(name: str) -> str:
@@ -47,8 +71,7 @@ def resolve_catalog(name: str) -> pyiceberg.catalog.Catalog:
             msg = (
                 f"failed to load Iceberg catalog {name!r} ({error = }). "
                 "Configure it for PyIceberg (a .pyiceberg.yaml file or "
-                "PYICEBERG_CATALOG__* environment variables), or install a resolver "
-                "with pl.Config.set_iceberg_catalog_resolver()."
+                "PYICEBERG_CATALOG__* environment variables)."
             )
             raise ComputeError(msg) from error
     else:

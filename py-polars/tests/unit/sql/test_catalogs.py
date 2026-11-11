@@ -15,6 +15,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import SQLInterfaceError, SQLSyntaxError
+from polars.io.iceberg._catalog_resolver import set_iceberg_catalog_resolver
 from polars.testing import assert_frame_equal
 
 pytest.importorskip("pyiceberg.catalog.sql")
@@ -5632,7 +5633,7 @@ def test_catalog_metadata_tables_concurrent_first_load(lake: CountingCatalog) ->
 @pytest.fixture
 def _reset_catalog_resolver() -> Iterator[None]:
     yield
-    pl.Config.set_iceberg_catalog_resolver(None)
+    set_iceberg_catalog_resolver(None)
 
 
 def _recording_resolver(catalog: Any) -> tuple[Callable[[str], Any], list[str]]:
@@ -5652,7 +5653,7 @@ def _fail_resolver(name: str) -> Any:
 @pytest.mark.write_disk
 @pytest.mark.usefixtures("_reset_catalog_resolver")
 def test_register_catalog_by_name_is_lazy(lake: CountingCatalog) -> None:
-    pl.Config.set_iceberg_catalog_resolver(_fail_resolver)
+    set_iceberg_catalog_resolver(_fail_resolver)
     ctx = pl.SQLContext().register_catalog("lake", default_namespace="tpch")
 
     assert isinstance(ctx.execute("SELECT * FROM lake.lineitem"), pl.LazyFrame)
@@ -5662,7 +5663,7 @@ def test_register_catalog_by_name_is_lazy(lake: CountingCatalog) -> None:
 @pytest.mark.usefixtures("_reset_catalog_resolver")
 def test_register_catalog_by_name_reads(lake: CountingCatalog) -> None:
     resolver, names = _recording_resolver(lake)
-    pl.Config.set_iceberg_catalog_resolver(resolver)
+    set_iceberg_catalog_resolver(resolver)
     ctx = pl.SQLContext().register_catalog("lake", default_namespace="tpch")
 
     res = ctx.execute("SELECT * FROM lake.lineitem").collect()
@@ -5675,7 +5676,7 @@ def test_register_catalog_by_name_reads(lake: CountingCatalog) -> None:
 @pytest.mark.usefixtures("_reset_catalog_resolver")
 def test_register_catalog_by_name_reads_metadata_tables(lake: CountingCatalog) -> None:
     resolver, names = _recording_resolver(lake)
-    pl.Config.set_iceberg_catalog_resolver(resolver)
+    set_iceberg_catalog_resolver(resolver)
     ctx = pl.SQLContext().register_catalog("lake", default_namespace="tpch")
 
     res = ctx.execute("SELECT * FROM lake.lineitem$snapshots", eager=True)
@@ -5688,7 +5689,7 @@ def test_register_catalog_by_name_reads_metadata_tables(lake: CountingCatalog) -
 @pytest.mark.usefixtures("_reset_catalog_resolver")
 def test_register_catalog_alias_resolves_given_name(lake: CountingCatalog) -> None:
     resolver, names = _recording_resolver(lake)
-    pl.Config.set_iceberg_catalog_resolver(resolver)
+    set_iceberg_catalog_resolver(resolver)
     ctx = pl.SQLContext().register_catalog("sales", "lake", default_namespace="tpch")
 
     res = ctx.execute("SELECT * FROM SALES.lineitem").collect()
@@ -5702,7 +5703,7 @@ def test_register_catalog_alias_resolves_given_name(lake: CountingCatalog) -> No
 def test_register_catalog_by_name_serializes_only_the_name(
     lake: CountingCatalog,
 ) -> None:
-    pl.Config.set_iceberg_catalog_resolver(_fail_resolver)
+    set_iceberg_catalog_resolver(_fail_resolver)
     ctx = pl.SQLContext().register_catalog("lake", default_namespace="tpch")
     data = ctx.execute("SELECT * FROM lake.lineitem").serialize()
 
@@ -5710,7 +5711,7 @@ def test_register_catalog_by_name_serializes_only_the_name(
     assert b"CountingCatalog" not in data
 
     resolver, names = _recording_resolver(lake)
-    pl.Config.set_iceberg_catalog_resolver(resolver)
+    set_iceberg_catalog_resolver(resolver)
     res = pl.LazyFrame.deserialize(io.BytesIO(data)).collect()
 
     assert_frame_equal(res, LINEITEM, check_row_order=False)
@@ -5723,7 +5724,7 @@ def test_register_catalog_by_name_write_statement_resolves_locally(
     lake: CountingCatalog,
 ) -> None:
     resolver, names = _recording_resolver(lake)
-    pl.Config.set_iceberg_catalog_resolver(resolver)
+    set_iceberg_catalog_resolver(resolver)
     ctx = pl.SQLContext().register_catalog("lake")
 
     ctx.execute("CREATE SCHEMA lake.newns")
@@ -5738,7 +5739,7 @@ def test_register_catalog_by_name_statement_query_resolves_by_name(
     lake: CountingCatalog,
 ) -> None:
     resolver, names = _recording_resolver(lake)
-    pl.Config.set_iceberg_catalog_resolver(resolver)
+    set_iceberg_catalog_resolver(resolver)
     ctx = pl.SQLContext().register_catalog("lake", default_namespace="tpch")
 
     ctx.execute("INSERT INTO lake.lineitem SELECT k + 10, v FROM lake.lineitem")
@@ -5759,7 +5760,7 @@ def test_register_catalog_by_name_merge_source_resolves_by_name(
     lake: CountingCatalog,
 ) -> None:
     resolver, names = _recording_resolver(lake)
-    pl.Config.set_iceberg_catalog_resolver(resolver)
+    set_iceberg_catalog_resolver(resolver)
     ctx = pl.SQLContext().register_catalog("lake", default_namespace="tpch")
 
     ctx.execute(

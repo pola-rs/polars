@@ -73,9 +73,8 @@ def scan_iceberg(
         was a table name.
 
         This can also be a catalog name, which is kept in the query plan and
-        resolved when the table is loaded, by the resolver set with
-        :meth:`Config.set_iceberg_catalog_resolver` where the query runs (by
-        default, `pyiceberg.catalog.load_catalog(name)`).
+        resolved with `pyiceberg.catalog.load_catalog(name)` when the table is
+        loaded, in the process where the query runs.
 
         .. warning::
             Passing a catalog name is considered **unstable**. It may be changed

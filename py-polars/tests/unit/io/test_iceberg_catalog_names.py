@@ -20,7 +20,11 @@ from pyiceberg.catalog.noop import NoopCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 
 from polars.io.iceberg import _catalog_resolver
-from polars.io.iceberg._catalog_resolver import check_catalog_name, resolve_catalog
+from polars.io.iceberg._catalog_resolver import (
+    check_catalog_name,
+    resolve_catalog,
+    set_iceberg_catalog_resolver,
+)
 from polars.io.iceberg._sink import IcebergSinkState
 
 pytestmark = pytest.mark.write_disk
@@ -35,7 +39,7 @@ if TYPE_CHECKING:
 @pytest.fixture(autouse=True)
 def _reset_resolver() -> Iterator[None]:
     yield
-    pl.Config.set_iceberg_catalog_resolver(None)
+    set_iceberg_catalog_resolver(None)
 
 
 @pytest.fixture(autouse=True)
@@ -83,21 +87,17 @@ def fail_resolver(name: str) -> Catalog:
     pytest.fail(f"resolver called for {name!r}")
 
 
-def test_set_resolver_returns_config() -> None:
-    assert pl.Config.set_iceberg_catalog_resolver(fail_resolver) is pl.Config
-
-
 def test_set_resolver_rejects_non_callable() -> None:
-    pl.Config.set_iceberg_catalog_resolver(fail_resolver)
+    set_iceberg_catalog_resolver(fail_resolver)
 
     with pytest.raises(TypeError, match="must be callable or None; found 'dict'"):
-        pl.Config.set_iceberg_catalog_resolver({"sales": None})  # type: ignore[arg-type]
+        set_iceberg_catalog_resolver({"sales": None})  # type: ignore[arg-type]
     assert _catalog_resolver.ICEBERG_CATALOG_RESOLVER is fail_resolver
 
 
 def test_resolve_catalog_uses_installed_resolver(sales: SqlCatalog) -> None:
     resolver, names = recording(sales)
-    pl.Config.set_iceberg_catalog_resolver(resolver)
+    set_iceberg_catalog_resolver(resolver)
 
     assert resolve_catalog("sales") is sales
     assert names == ["sales"]
@@ -113,24 +113,11 @@ def test_resolver_none_restores_default(
         return sales
 
     monkeypatch.setattr(pyiceberg.catalog, "load_catalog", load_catalog)
-    pl.Config.set_iceberg_catalog_resolver(fail_resolver)
-    pl.Config.set_iceberg_catalog_resolver(None)
+    set_iceberg_catalog_resolver(fail_resolver)
+    set_iceberg_catalog_resolver(None)
 
     assert resolve_catalog("sales") is sales
     assert loaded == ["sales"]
-
-
-def test_config_context_restores_resolver(sales: SqlCatalog) -> None:
-    previous, previous_names = recording(sales)
-    inner, inner_names = recording(sales)
-    pl.Config.set_iceberg_catalog_resolver(previous)
-
-    with pl.Config(set_iceberg_catalog_resolver=inner):
-        resolve_catalog("inner")
-    resolve_catalog("outer")
-
-    assert inner_names == ["inner"]
-    assert previous_names == ["outer"]
 
 
 @pytest.mark.slow
@@ -177,7 +164,7 @@ def test_resolver_error_passes_through() -> None:
         msg = "not connected"
         raise ComputeError(msg)
 
-    pl.Config.set_iceberg_catalog_resolver(resolver)
+    set_iceberg_catalog_resolver(resolver)
 
     # pytest matches against the message and its notes, so check each apart.
     with pytest.raises(ComputeError, match="not connected") as excinfo:
@@ -189,9 +176,9 @@ def test_resolver_error_passes_through() -> None:
 
 
 def test_resolver_error_names_the_catalog() -> None:
-    # The documented resolver, a mapping's `__getitem__`.
+    # A mapping's `__getitem__` raises a KeyError naming only the key.
     catalogs: dict[str, Catalog] = {}
-    pl.Config.set_iceberg_catalog_resolver(catalogs.__getitem__)
+    set_iceberg_catalog_resolver(catalogs.__getitem__)
 
     with pytest.raises(KeyError) as excinfo:
         resolve_catalog("sale")
@@ -201,14 +188,14 @@ def test_resolver_error_names_the_catalog() -> None:
 
 
 def test_resolver_returning_non_catalog_is_type_error() -> None:
-    pl.Config.set_iceberg_catalog_resolver(lambda _: object())  # type: ignore[arg-type, return-value]
+    set_iceberg_catalog_resolver(lambda _: object())  # type: ignore[arg-type, return-value]
 
     with pytest.raises(TypeError, match="returned 'object' for catalog 'sales'"):
         resolve_catalog("sales")
 
 
 def test_resolver_returning_noop_catalog_is_type_error() -> None:
-    pl.Config.set_iceberg_catalog_resolver(lambda _: NoopCatalog("x"))
+    set_iceberg_catalog_resolver(lambda _: NoopCatalog("x"))
 
     with pytest.raises(TypeError, match="NoopCatalog for catalog 'sales'"):
         resolve_catalog("sales")
@@ -228,7 +215,7 @@ def _pyiceberg_planner(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.usefixtures("_pyiceberg_planner")
 def test_scan_does_not_resolve_at_build() -> None:
-    pl.Config.set_iceberg_catalog_resolver(fail_resolver)
+    set_iceberg_catalog_resolver(fail_resolver)
 
     assert isinstance(pl.scan_iceberg("ns.t", catalog="sales"), pl.LazyFrame)
 
@@ -236,7 +223,7 @@ def test_scan_does_not_resolve_at_build() -> None:
 @pytest.mark.usefixtures("_pyiceberg_planner")
 def test_scan_resolves_at_collect(sales: SqlCatalog) -> None:
     resolver, names = recording(sales)
-    pl.Config.set_iceberg_catalog_resolver(resolver)
+    set_iceberg_catalog_resolver(resolver)
 
     df = pl.scan_iceberg("ns.t", catalog="sales").collect()
 
@@ -246,7 +233,7 @@ def test_scan_resolves_at_collect(sales: SqlCatalog) -> None:
 
 @pytest.mark.usefixtures("_pyiceberg_planner")
 def test_scan_serializes_only_the_name(sales: SqlCatalog) -> None:
-    pl.Config.set_iceberg_catalog_resolver(fail_resolver)
+    set_iceberg_catalog_resolver(fail_resolver)
     data = pl.scan_iceberg("ns.t", catalog="sales").serialize()
 
     assert b"sales" in data
@@ -254,7 +241,7 @@ def test_scan_serializes_only_the_name(sales: SqlCatalog) -> None:
     assert b"SqlCatalog" not in data
 
     resolver, names = recording(sales)
-    pl.Config.set_iceberg_catalog_resolver(resolver)
+    set_iceberg_catalog_resolver(resolver)
     df = pl.LazyFrame.deserialize(io.BytesIO(data)).collect()
 
     assert_frame_equal(df, pl.DataFrame({"a": [1, 2]}))
@@ -263,11 +250,11 @@ def test_scan_serializes_only_the_name(sales: SqlCatalog) -> None:
 
 @pytest.mark.usefixtures("_pyiceberg_planner")
 def test_scan_uses_resolver_active_at_collect(sales: SqlCatalog) -> None:
-    with pl.Config(set_iceberg_catalog_resolver=fail_resolver):
-        lf = pl.scan_iceberg("ns.t", catalog="sales")
+    set_iceberg_catalog_resolver(fail_resolver)
+    lf = pl.scan_iceberg("ns.t", catalog="sales")
 
     resolver, names = recording(sales)
-    pl.Config.set_iceberg_catalog_resolver(resolver)
+    set_iceberg_catalog_resolver(resolver)
 
     assert_frame_equal(lf.collect(), pl.DataFrame({"a": [1, 2]}))
     assert names == ["sales"]
@@ -285,7 +272,7 @@ def test_scan_two_named_catalogs_in_one_query(
         names.append(name)
         return catalogs[name]
 
-    pl.Config.set_iceberg_catalog_resolver(resolver)
+    set_iceberg_catalog_resolver(resolver)
     df = pl.concat(
         [
             pl.scan_iceberg("ns.t", catalog="sales"),
@@ -319,7 +306,7 @@ def table_rows(catalog: SqlCatalog) -> pl.DataFrame:
 
 
 def test_sink_state_does_not_resolve_at_build() -> None:
-    pl.Config.set_iceberg_catalog_resolver(fail_resolver)
+    set_iceberg_catalog_resolver(fail_resolver)
 
     state = IcebergSinkState.new("ns.t", mode="append", catalog="sales")
 
@@ -329,7 +316,7 @@ def test_sink_state_does_not_resolve_at_build() -> None:
 @pytest.mark.usefixtures("_pyiceberg_planner")
 def test_sink_iceberg_appends_through_resolver(sales: SqlCatalog) -> None:
     resolver, names = recording(sales)
-    pl.Config.set_iceberg_catalog_resolver(resolver)
+    set_iceberg_catalog_resolver(resolver)
 
     pl.LazyFrame({"a": [3]}).sink_iceberg("ns.t", mode="append", catalog="sales")
 
@@ -339,7 +326,7 @@ def test_sink_iceberg_appends_through_resolver(sales: SqlCatalog) -> None:
 
 @pytest.mark.usefixtures("_pyiceberg_planner")
 def test_sink_plan_serializes_only_the_name(sales: SqlCatalog) -> None:
-    pl.Config.set_iceberg_catalog_resolver(fail_resolver)
+    set_iceberg_catalog_resolver(fail_resolver)
     state = IcebergSinkState.new("ns.t", mode="append", catalog="sales")
     data = state.attach_sink(pl.LazyFrame({"a": [3]})).serialize()
 
@@ -348,7 +335,7 @@ def test_sink_plan_serializes_only_the_name(sales: SqlCatalog) -> None:
     assert b"SqlCatalog" not in data
 
     resolver, names = recording(sales)
-    pl.Config.set_iceberg_catalog_resolver(resolver)
+    set_iceberg_catalog_resolver(resolver)
     pl.LazyFrame.deserialize(io.BytesIO(data)).collect()
 
     assert_frame_equal(table_rows(sales), pl.DataFrame({"a": [1, 2, 3]}))
@@ -357,7 +344,7 @@ def test_sink_plan_serializes_only_the_name(sales: SqlCatalog) -> None:
 
 @pytest.mark.usefixtures("_pyiceberg_planner")
 def test_sink_surfaces_resolver_error_after_deserialize(sales: SqlCatalog) -> None:
-    pl.Config.set_iceberg_catalog_resolver(fail_resolver)
+    set_iceberg_catalog_resolver(fail_resolver)
     state = IcebergSinkState.new("ns.t", mode="append", catalog="sales")
     data = state.attach_sink(pl.LazyFrame({"a": [3]})).serialize()
 
@@ -365,7 +352,7 @@ def test_sink_surfaces_resolver_error_after_deserialize(sales: SqlCatalog) -> No
         msg = "can only be resolved while planning"
         raise ComputeError(msg)
 
-    pl.Config.set_iceberg_catalog_resolver(refusing)
+    set_iceberg_catalog_resolver(refusing)
 
     with pytest.raises(
         ComputeError, match="can only be resolved while planning"
@@ -392,7 +379,7 @@ def test_sink_empty_catalog_name() -> None:
 def test_sink_state_resolves_again_after_pickling(sales: SqlCatalog) -> None:
     # What a commit task in another process receives: the state after planning.
     resolver, _ = recording(sales)
-    pl.Config.set_iceberg_catalog_resolver(resolver)
+    set_iceberg_catalog_resolver(resolver)
     state = IcebergSinkState.new("ns.t", mode="append", catalog="sales")
     state._attach_resolved_sink(pl.LazyFrame({"a": [3]})._ldf)
     data = pickle.dumps(state)
@@ -401,7 +388,7 @@ def test_sink_state_resolves_again_after_pickling(sales: SqlCatalog) -> None:
     assert b"SqlCatalog" not in data
 
     resolver, names = recording(sales)
-    pl.Config.set_iceberg_catalog_resolver(resolver)
+    set_iceberg_catalog_resolver(resolver)
     pickle.loads(data).table()
     assert names == ["sales"]
 
@@ -409,7 +396,7 @@ def test_sink_state_resolves_again_after_pickling(sales: SqlCatalog) -> None:
         msg = "can only be resolved while planning"
         raise ComputeError(msg)
 
-    pl.Config.set_iceberg_catalog_resolver(refusing)
+    set_iceberg_catalog_resolver(refusing)
     with pytest.raises(
         ComputeError, match="can only be resolved while planning"
     ) as excinfo:

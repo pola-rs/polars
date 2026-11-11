@@ -3143,13 +3143,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             was a table identifier.
 
             This can also be a catalog name, which is kept in the query plan and
-            resolved by the resolver set with
-            :meth:`Config.set_iceberg_catalog_resolver` (by default,
-            `pyiceberg.catalog.load_catalog(name)`) in each process that loads the
-            table, including the one that commits. With `create_if_not_exists` or
-            `schema_mode`, the schema of the LazyFrame is read when the sink is
-            set up, so catalog names in the LazyFrame's own scans are resolved
-            then, in the calling process.
+            resolved with `pyiceberg.catalog.load_catalog(name)` in each process
+            that loads the table, including the one that commits. With
+            `create_if_not_exists` or `schema_mode`, the schema of the LazyFrame
+            is read when the sink is set up, so catalog names in the LazyFrame's
+            own scans are resolved then, in the calling process.
 
             .. warning::
                 Passing a catalog name is considered **unstable**. It may be
