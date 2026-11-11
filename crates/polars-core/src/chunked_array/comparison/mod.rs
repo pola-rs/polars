@@ -887,6 +887,61 @@ impl ChunkCompareEq<&StructChunked> for StructChunked {
     }
 }
 
+#[cfg(feature = "dtype-union")]
+fn union_helper(a: &UnionChunked, b: &UnionChunked, missing: bool, is_ne: bool) -> BooleanChunked {
+    use std::borrow::Cow;
+
+    use polars_arrow::compute::utils::combine_validities_and;
+
+    use crate::utils::align_chunks_binary;
+
+    // Broadcasting repeats the unit side's value.
+    let (a, b) = match (a.len(), b.len()) {
+        (l, r) if l == r => (Cow::Borrowed(a), Cow::Borrowed(b)),
+        (1, r) => (Cow::Owned(a.new_from_index(0, r)), Cow::Borrowed(b)),
+        (l, 1) => (Cow::Borrowed(a), Cow::Owned(b.new_from_index(0, l))),
+        (l, r) => panic!("cannot compare unions of lengths {l} and {r}"),
+    };
+    let (a, b) = align_chunks_binary(a.as_ref(), b.as_ref());
+    let chunks = a.downcast_iter().zip(b.downcast_iter()).map(|(l, r)| {
+        let (values, validity) = match (missing, is_ne) {
+            (true, false) => (l.tot_eq_missing_kernel(r), None),
+            (true, true) => (l.tot_ne_missing_kernel(r), None),
+            (false, false) => (
+                l.tot_eq_kernel(r),
+                combine_validities_and(l.validity(), r.validity()),
+            ),
+            (false, true) => (
+                l.tot_ne_kernel(r),
+                combine_validities_and(l.validity(), r.validity()),
+            ),
+        };
+        BooleanArray::from_data_default(values, validity)
+    });
+    BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, chunks)
+}
+
+#[cfg(feature = "dtype-union")]
+impl ChunkCompareEq<&UnionChunked> for UnionChunked {
+    type Item = BooleanChunked;
+
+    fn equal(&self, rhs: &UnionChunked) -> BooleanChunked {
+        union_helper(self, rhs, false, false)
+    }
+
+    fn equal_missing(&self, rhs: &UnionChunked) -> BooleanChunked {
+        union_helper(self, rhs, true, false)
+    }
+
+    fn not_equal(&self, rhs: &UnionChunked) -> BooleanChunked {
+        union_helper(self, rhs, false, true)
+    }
+
+    fn not_equal_missing(&self, rhs: &UnionChunked) -> BooleanChunked {
+        union_helper(self, rhs, true, true)
+    }
+}
+
 #[cfg(feature = "dtype-array")]
 fn _array_comparison_helper<F, B>(
     lhs: &ArrayChunked,

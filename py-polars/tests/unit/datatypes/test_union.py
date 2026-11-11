@@ -741,3 +741,72 @@ def test_union_implode_and_repeat() -> None:
     repeated = lists.repeat_by(2)
     expected = lists.to_arrow().to_pylist()
     assert to_pylist(repeated) == [[v, v] for v in expected]
+
+
+def py_eq(a: Any, b: Any) -> bool:
+    return type(a) is type(b) and a == b
+
+
+def test_union_equality() -> None:
+    layouts = messy_layouts()
+    # The same values as `messy()`, with compact children and an explicit null slot.
+    compact = pl.Series(
+        "u",
+        dense(
+            [0, 1, 0, 1, 0, 1, 0],
+            [0, 0, 1, 1, 2, 2, 3],
+            [pa.array([3, 1, None, 1]), pa.array(["b", "a", "b"])],
+            ["i", "s"],
+        ),
+    )
+    for lhs in layouts:
+        for rhs in [*layouts, compact]:
+            if len(lhs) != len(rhs):
+                continue
+            lv, rv = lhs.to_list(), rhs.to_list()
+            eq = [
+                None if a is None or b is None else py_eq(a, b)
+                for a, b in zip(lv, rv, strict=True)
+            ]
+            eq_missing = [
+                (a is None and b is None) or py_eq(a, b)
+                for a, b in zip(lv, rv, strict=True)
+            ]
+            assert (lhs == rhs).to_list() == eq
+            assert (lhs != rhs).to_list() == [None if v is None else not v for v in eq]
+            assert lhs.eq_missing(rhs).to_list() == eq_missing
+            assert lhs.ne_missing(rhs).to_list() == [not v for v in eq_missing]
+
+    pl.testing.assert_series_equal(messy(), compact)
+    pl.testing.assert_series_equal(layouts[4], layouts[0])
+    with pytest.raises(AssertionError):
+        pl.testing.assert_series_equal(messy(), messy().reverse())
+
+
+def test_union_equality_broadcast() -> None:
+    s = messy()
+    values = s.to_list()
+    df = s.to_frame()
+    for i in [0, 1, 4]:
+        out = df.select(
+            eq=pl.col("u") == pl.col("u").gather(i),
+            eq_missing=pl.col("u").eq_missing(pl.col("u").gather(i)),
+            flipped=pl.col("u").gather(i) == pl.col("u"),
+        )
+        v = values[i]
+        eq = [None if a is None or v is None else py_eq(a, v) for a in values]
+        assert out["eq"].to_list() == eq
+        assert out["flipped"].to_list() == eq
+        assert out["eq_missing"].to_list() == [
+            (a is None and v is None) or py_eq(a, v) for a in values
+        ]
+
+
+def test_union_equality_tags_and_large() -> None:
+    df = tagged()
+    assert (df["u"] == df["u"].reverse()).to_list() == [False, False]
+
+    one = pl.Series(big_union())
+    five = pl.concat([one] * 5, rechunk=True)
+    assert (five == five.reverse()).all()
+    assert (five.gather([9, 0]) == five.gather([0, 9])).all()
