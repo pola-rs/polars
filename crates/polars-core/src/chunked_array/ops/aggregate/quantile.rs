@@ -248,11 +248,12 @@ pub fn order_statistics<T: PolarsNumericType>(
     if ranks.is_empty() {
         return;
     }
+    let n_valid = ca.len() - ca.null_count();
     match ca.is_sorted_flag() {
         // Entering the pool costs a thread wake-up, more than a small selection. On one thread,
         // copying and selecting sequentially beats classifying every value against a sampled
         // bracket.
-        IsSorted::Not if ca.len() < SELECT_MIN_PAR_LEN || RAYON.current_num_threads() == 1 => {
+        IsSorted::Not if n_valid < SELECT_MIN_PAR_LEN || RAYON.current_num_threads() == 1 => {
             select_many_seq_by(&mut ca.to_vec_non_null(), ranks, out, TotalOrd::tot_cmp)
         },
         IsSorted::Not => RAYON.install(|| {
@@ -281,7 +282,6 @@ pub fn order_statistics<T: PolarsNumericType>(
                     },
                 }
             }
-            let n_valid = ca.len() - ca.null_count();
             select_many_by(&chunks, n_valid, ranks, out, TotalOrd::tot_cmp)
         }),
         sorted => sorted_order_stats(ca, sorted == IsSorted::Descending, ranks, out),
