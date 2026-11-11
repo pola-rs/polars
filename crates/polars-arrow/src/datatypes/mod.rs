@@ -576,9 +576,9 @@ impl ArrowDataType {
             | D::FixedSizeList(field, _)
             | D::Map(field, _)
             | D::LargeList(field) => field.dtype().contains_interchange_union(),
-            D::Struct(fields) | D::LargeUnion(fields) => {
-                fields.iter().any(|f| f.dtype().contains_interchange_union())
-            },
+            D::Struct(fields) | D::LargeUnion(fields) => fields
+                .iter()
+                .any(|f| f.dtype().contains_interchange_union()),
             D::Dictionary(_, values, _) => values.contains_interchange_union(),
             D::Extension(ext) => ext.inner.contains_interchange_union(),
             _ => false,

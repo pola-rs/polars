@@ -1,6 +1,5 @@
-use polars_arrow::array::builder::StaticArrayBuilder;
+use polars_arrow::array::builder::{ShareStrategy, StaticArrayBuilder};
 use polars_arrow::array::{Array, ChildPositions, LargeUnionArray, LargeUnionArrayBuilder};
-use polars_arrow::array::builder::ShareStrategy;
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 
 use super::TotalEqKernel;
@@ -18,7 +17,8 @@ fn for_each_comparable_slot(
     for i in 0..lhs.len() {
         // SAFETY: `i` is in bounds of both arrays.
         unsafe {
-            if lv.is_some_and(|v| !v.get_bit_unchecked(i)) || rv.is_some_and(|v| !v.get_bit_unchecked(i))
+            if lv.is_some_and(|v| !v.get_bit_unchecked(i))
+                || rv.is_some_and(|v| !v.get_bit_unchecked(i))
             {
                 continue;
             }
@@ -40,7 +40,10 @@ impl TotalEqKernel for LargeUnionArray {
 
         // Align the compared values of each variant and compare them in one pass per child.
         let new_positions = |a: &LargeUnionArray| -> Vec<ChildPositions> {
-            a.fields().iter().map(|c| ChildPositions::new(c.len())).collect()
+            a.fields()
+                .iter()
+                .map(|c| ChildPositions::new(c.len()))
+                .collect()
         };
         let mut lhs_pos = new_positions(self);
         let mut rhs_pos = new_positions(other);
@@ -55,7 +58,8 @@ impl TotalEqKernel for LargeUnionArray {
             .zip(lhs_pos.into_iter().zip(rhs_pos))
             .map(|((l, r), (lp, rp))| {
                 // SAFETY: the positions of valid slots are in bounds.
-                let (l, r) = unsafe { (gather_child(l.as_ref(), lp), gather_child(r.as_ref(), rp)) };
+                let (l, r) =
+                    unsafe { (gather_child(l.as_ref(), lp), gather_child(r.as_ref(), rp)) };
                 array_tot_eq_missing_kernel(l.as_ref(), r.as_ref())
             })
             .collect();

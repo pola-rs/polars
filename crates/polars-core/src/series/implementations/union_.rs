@@ -231,7 +231,10 @@ impl SeriesTrait for SeriesWrap<UnionChunked> {
         }
         let main_thread = RAYON.current_thread_index().is_none();
         let groups = self.group_tuples(main_thread, true)?;
-        Ok(IdxCa::from_vec(self.name().clone(), groups.take_group_firsts()))
+        Ok(IdxCa::from_vec(
+            self.name().clone(),
+            groups.take_group_firsts(),
+        ))
     }
 
     #[cfg(feature = "algorithm_group_by")]

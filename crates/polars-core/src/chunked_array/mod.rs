@@ -205,7 +205,9 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         null_count: usize,
     ) -> Self {
         debug_assert!(
-            chunks.iter().all(|c| !c.dtype().contains_interchange_union()),
+            chunks
+                .iter()
+                .all(|c| !c.dtype().contains_interchange_union()),
             "Polars arrays must hold LargeUnion, not Union; build them from `to_physical_arrow`"
         );
         Self {

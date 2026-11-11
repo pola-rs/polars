@@ -277,23 +277,6 @@ pub fn propagate_nulls_struct(arr: &StructArray) -> Option<StructArray> {
     ))
 }
 
-#[cfg(test)]
-mod tests {
-    use polars_arrow::array::proptest::array;
-    use proptest::proptest;
-
-    use crate::propagate_nulls::propagate_nulls;
-
-    proptest! {
-        #[test]
-        fn test_proptest(array in array(0..100)) {
-            if let Some(p_arr) = propagate_nulls(array.as_ref()) {
-                proptest::prop_assert_eq!(array, p_arr);
-            }
-        }
-    }
-}
-
 /// Propagate nulls inside the children of a union.
 pub fn propagate_nulls_union(arr: &LargeUnionArray) -> Option<LargeUnionArray> {
     let changed: Vec<_> = arr
@@ -319,4 +302,21 @@ pub fn propagate_nulls_union(arr: &LargeUnionArray) -> Option<LargeUnionArray> {
             arr.validity().cloned(),
         )
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_arrow::array::proptest::array;
+    use proptest::proptest;
+
+    use crate::propagate_nulls::propagate_nulls;
+
+    proptest! {
+        #[test]
+        fn test_proptest(array in array(0..100)) {
+            if let Some(p_arr) = propagate_nulls(array.as_ref()) {
+                proptest::prop_assert_eq!(array, p_arr);
+            }
+        }
+    }
 }

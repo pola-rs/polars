@@ -1,7 +1,5 @@
 use polars_arrow::array::builder::{ArrayBuilder, ShareStrategy, make_builder};
-use polars_arrow::array::{
-    Array, ChildPositions, LargeUnionArray, new_null_array,
-};
+use polars_arrow::array::{Array, ChildPositions, LargeUnionArray, new_null_array};
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_arrow::compute::utils::combine_validities_and;
 use polars_arrow::datatypes::{ArrowDataType, IdxArr};
@@ -75,8 +73,10 @@ pub unsafe fn gather_union_slots(
     let len = rows.len();
     let mut out_types = Vec::with_capacity(len);
     let mut out_offsets = Vec::with_capacity(len);
-    let mut positions: Vec<ChildPositions> =
-        fields.iter().map(|c| ChildPositions::new(c.len())).collect();
+    let mut positions: Vec<ChildPositions> = fields
+        .iter()
+        .map(|c| ChildPositions::new(c.len()))
+        .collect();
     let mut counts = vec![0i64; fields.len()];
     for (j, i) in rows.enumerate() {
         // Null slots get a null placeholder in child 0.

@@ -730,7 +730,9 @@ pub use fixed_size_list::{
 pub use fmt::{get_display, get_value_display};
 pub(crate) use iterator::ArrayAccessor;
 pub use iterator::ArrayValuesIter;
-pub use large_union::{ChildPositions, LargeUnionArray, LargeUnionArrayBuilder, MAX_UNION_VARIANTS};
+pub use large_union::{
+    ChildPositions, LargeUnionArray, LargeUnionArrayBuilder, MAX_UNION_VARIANTS,
+};
 pub use list::{ListArray, ListArrayBuilder, ListValuesIter, MutableListArray};
 pub use map::MapArray;
 pub use null::{MutableNullArray, NullArray, NullArrayBuilder};

@@ -619,7 +619,10 @@ pub(crate) fn union_variant_ctx(
 fn for_each_valid_slot(array: &LargeUnionArray, mut f: impl FnMut(usize, usize)) {
     let types = array.types();
     match array.validity() {
-        None => types.iter().enumerate().for_each(|(i, &t)| f(i, t as usize)),
+        None => types
+            .iter()
+            .enumerate()
+            .for_each(|(i, &t)| f(i, t as usize)),
         Some(validity) => validity
             .true_idx_iter()
             .for_each(|i| f(i, types[i] as usize)),
@@ -1090,8 +1093,7 @@ unsafe fn encode_array(
                 child_offsets[t].push(*offset);
                 *offset += child_widths[t].get(k);
             }
-            for (t, (child, child_offsets)) in encoders.iter().zip(&mut child_offsets).enumerate()
-            {
+            for (t, (child, child_offsets)) in encoders.iter().zip(&mut child_offsets).enumerate() {
                 encode_array(
                     buffer,
                     child,

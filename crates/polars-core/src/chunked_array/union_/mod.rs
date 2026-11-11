@@ -11,8 +11,8 @@ use polars_error::constants::LENGTH_LIMIT_MSG;
 
 use crate::chunked_array::ops::append::new_chunks_owned;
 use crate::chunked_array::ops::row_encode::_get_rows_encoded_ca;
-use crate::runtime::RAYON;
 use crate::prelude::*;
+use crate::runtime::RAYON;
 use crate::series::IsSorted;
 
 impl UnionChunked {
@@ -207,7 +207,11 @@ impl ChunkZip<UnionType> for UnionChunked {
 
         // A null mask value selects `other`.
         if mask.len() == 1 {
-            let src = if mask.get(0).unwrap_or(false) { self } else { other };
+            let src = if mask.get(0).unwrap_or(false) {
+                self
+            } else {
+                other
+            };
             extend(src, 0, length);
         } else {
             let mut run: Option<(bool, usize)> = None;

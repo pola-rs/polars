@@ -11,6 +11,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError, InvalidOperationError
+from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -39,7 +40,8 @@ def to_pylist(s: pl.Series) -> list[Any]:
     """Export to Arrow, check that the result is valid and return its values."""
     arr = s.rechunk().to_arrow()
     arr.validate(full=True)
-    return arr.to_pylist()
+    values: list[Any] = arr.to_pylist()
+    return values
 
 
 def to_pa(s: pl.Series) -> pa.UnionArray:
@@ -777,10 +779,10 @@ def test_union_equality() -> None:
             assert lhs.eq_missing(rhs).to_list() == eq_missing
             assert lhs.ne_missing(rhs).to_list() == [not v for v in eq_missing]
 
-    pl.testing.assert_series_equal(messy(), compact)
-    pl.testing.assert_series_equal(layouts[4], layouts[0])
+    assert_series_equal(messy(), compact)
+    assert_series_equal(layouts[4], layouts[0])
     with pytest.raises(AssertionError):
-        pl.testing.assert_series_equal(messy(), messy().reverse())
+        assert_series_equal(messy(), messy().reverse())
 
 
 def test_union_equality_broadcast() -> None:

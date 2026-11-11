@@ -638,7 +638,10 @@ impl Series {
             #[cfg(feature = "dtype-union")]
             ArrowDataType::LargeUnion(_) => {
                 let dtype = DataType::from_arrow_dtype(chunks[0].dtype());
-                Ok(UnionChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype).into_series())
+                Ok(
+                    UnionChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype)
+                        .into_series(),
+                )
             },
             dt => polars_bail!(ComputeError: "cannot create series from {:?}", dt),
         }

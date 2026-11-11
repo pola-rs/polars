@@ -4,9 +4,8 @@ use polars_arrow::datatypes::{ArrowDataType, Field};
 use polars_arrow::offset::OffsetsBuffer;
 use polars_arrow::types::NativeType;
 use polars_buffer::Buffer;
-use polars_dtype::categorical::CatNative;
-
 use polars_compute::gather::gather_child;
+use polars_dtype::categorical::CatNative;
 
 use self::encode::{fixed_size, union_variant_ctx};
 use self::row::{RowEncodingCategoricalContext, RowEncodingOptions};

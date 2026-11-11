@@ -866,7 +866,10 @@ unsafe fn take_opt_chunked_unchecked_union<const B: u64>(
     // Each run takes rows from one chunk; null ids can join any run.
     let mut rest = by;
     while !rest.is_empty() {
-        let chunk = rest.iter().find(|id| !id.is_null()).map(|id| id.extract().0);
+        let chunk = rest
+            .iter()
+            .find(|id| !id.is_null())
+            .map(|id| id.extract().0);
         let Some(chunk) = chunk else {
             StaticArrayBuilder::extend_nulls(&mut builder, rest.len());
             break;

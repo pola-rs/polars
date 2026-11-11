@@ -1,9 +1,8 @@
 //! Casts between unions, matching variants by name.
-use polars_arrow::array::{Array, ChildPositions, LargeUnionArray, new_empty_array};
+use polars_arrow::array::{ChildPositions, LargeUnionArray, new_empty_array};
 use polars_arrow::bitmap::{Bitmap, MutableBitmap};
-use polars_compute::gather::{gather_child, gather_union_slots};
-
 use polars_buffer::Buffer;
+use polars_compute::gather::{gather_child, gather_union_slots};
 
 use crate::chunked_array::cast::CastOptions;
 use crate::prelude::*;
@@ -13,7 +12,11 @@ impl UnionChunked {
     ///
     /// Variants are matched by name. Values of a variant missing from `dtype` become nulls,
     /// or raise if the cast is strict; variants only `dtype` has stay empty.
-    pub fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
+    pub fn cast_with_options(
+        &self,
+        dtype: &DataType,
+        options: CastOptions,
+    ) -> PolarsResult<Series> {
         if dtype == self.dtype() {
             return Ok(self.clone().into_series());
         }
@@ -143,7 +146,8 @@ fn cast_chunk(
     };
 
     if has_dropped_slots {
-        let mut v = validity.map_or_else(|| MutableBitmap::from_len_set(arr.len()), |v| v.make_mut());
+        let mut v =
+            validity.map_or_else(|| MutableBitmap::from_len_set(arr.len()), |v| v.make_mut());
         for (i, &t) in types.iter().enumerate() {
             if target[t as usize].is_none() {
                 v.set(i, false);
