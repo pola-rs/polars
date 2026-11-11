@@ -73,7 +73,6 @@ impl CrossJoinNode {
             state: CrossJoinState::Build {
                 sink_node,
                 probe_peek: ProbePeek::new(task_metrics),
-                build_ready: true,
             },
         }
     }
@@ -83,8 +82,6 @@ enum CrossJoinState {
     Build {
         sink_node: InMemorySinkNode,
         probe_peek: ProbePeek,
-        /// Whether the build side can send rows now.
-        build_ready: bool,
     },
     Probe {
         build_df: DataFrame,
@@ -101,10 +98,6 @@ impl ComputeNode for CrossJoinNode {
 
     fn memory_usage(&self) -> NodeMemoryUsage {
         match self.state {
-            // While the build side can't send rows, only the probe side is read.
-            CrossJoinState::Build {
-                build_ready: false, ..
-            } => NodeMemoryUsage::WillAccumulate,
             CrossJoinState::Build { .. } => NodeMemoryUsage::Accumulating,
             CrossJoinState::Probe { .. } => NodeMemoryUsage::HoldingUntilDone,
             CrossJoinState::Done => NodeMemoryUsage::Bounded,
@@ -157,13 +150,11 @@ impl ComputeNode for CrossJoinNode {
 
         match &mut self.state {
             CrossJoinState::Build {
+                sink_node,
                 probe_peek,
-                build_ready,
-                ..
             } => {
-                *build_ready = recv[build_idx] == PortState::Ready;
                 recv[build_idx] = PortState::Ready;
-                recv[probe_idx] = probe_peek.port_state(recv[probe_idx], *build_ready);
+                recv[probe_idx] = probe_peek.port_state(recv[probe_idx], sink_node);
                 send[0] = PortState::Blocked;
             },
             CrossJoinState::Probe { peeked, .. } => {
@@ -198,7 +189,6 @@ impl ComputeNode for CrossJoinNode {
             } => {
                 assert!(send_ports[0].is_none());
                 if recv_ports[build_idx].is_some() {
-                    probe_peek.build_phase_ran = true;
                     sink_node.spawn(
                         scope,
                         &mut recv_ports[build_idx..build_idx + 1],

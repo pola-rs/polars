@@ -18,6 +18,7 @@ use crate::expression::StreamExpr;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::ExecutionState;
+use crate::nodes::in_memory_sink::InMemorySinkNode;
 use crate::pipe::{PortReceiver, PortSender, RecvPort, port_channel};
 
 #[cfg(feature = "asof_join")]
@@ -266,8 +267,8 @@ struct ProbePeek {
     len: usize,
     spill_ctx: MostRecentSpillContext,
     task_metrics: Option<Arc<TaskMetricAggregator>>,
-    /// Whether the build side was read in an earlier phase.
-    build_phase_ran: bool,
+    /// Whether the build side has sent rows.
+    build_has_rows: bool,
 }
 
 impl ProbePeek {
@@ -277,20 +278,19 @@ impl ProbePeek {
             len: 0,
             spill_ctx: MostRecentSpillContext::new("join-probe-peek".into(), task_metrics.clone()),
             task_metrics,
-            build_phase_ran: false,
+            build_has_rows: false,
         }
     }
 
     /// The state of the probe port while building: it is read until it sends rows. It is opened
-    /// once the build side did not end in its first phase, or can't send now, so a build side
-    /// that ends right away is never slowed down by the probe side. It is also only opened when
-    /// its input can send now, so it doesn't make the scheduler run an accumulating node feeding
-    /// it before the build side.
-    fn port_state(&self, recv: PortState, build_ready: bool) -> PortState {
-        let open = self.build_phase_ran || !build_ready;
+    /// once the build side has rows and is not done, as the probe side is then read anyway. It is
+    /// also only opened when its input can send now, so it doesn't make the scheduler run an
+    /// accumulating node feeding it before the build side.
+    fn port_state(&mut self, recv: PortState, build: &InMemorySinkNode) -> PortState {
+        self.build_has_rows = self.build_has_rows || !build.is_empty();
         match recv {
             PortState::Done => PortState::Done,
-            PortState::Ready if open && self.len == 0 => PortState::Ready,
+            PortState::Ready if self.build_has_rows && self.len == 0 => PortState::Ready,
             _ => PortState::Blocked,
         }
     }

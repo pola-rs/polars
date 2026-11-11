@@ -32,8 +32,6 @@ enum RangeJoinState {
     Build {
         sink_node: InMemorySinkNode,
         interval_peek: ProbePeek,
-        /// Whether the point side can send rows now.
-        point_ready: bool,
     },
     Probe(ProbeState),
     Done,
@@ -177,7 +175,6 @@ impl RangeJoinNode {
             state: RangeJoinState::Build {
                 sink_node: InMemorySinkNode::new(point_schema, task_metrics.clone()),
                 interval_peek: ProbePeek::new(task_metrics),
-                point_ready: true,
             },
             params,
         }
@@ -191,10 +188,6 @@ impl ComputeNode for RangeJoinNode {
 
     fn memory_usage(&self) -> NodeMemoryUsage {
         match self.state {
-            // While the point side can't send rows, only the interval side is read.
-            RangeJoinState::Build {
-                point_ready: false, ..
-            } => NodeMemoryUsage::WillAccumulate,
             RangeJoinState::Build { .. } => NodeMemoryUsage::Accumulating,
             RangeJoinState::Probe(_) => NodeMemoryUsage::HoldingUntilDone,
             RangeJoinState::Done => NodeMemoryUsage::Bounded,
@@ -251,12 +244,10 @@ impl ComputeNode for RangeJoinNode {
         match self.state {
             RangeJoinState::Build {
                 ref mut sink_node,
-                ref interval_peek,
-                ref mut point_ready,
+                ref mut interval_peek,
             } => {
-                *point_ready = point[0] == PortState::Ready;
                 sink_node.update_state(point, &mut [], state)?;
-                interval[0] = interval_peek.port_state(interval[0], *point_ready);
+                interval[0] = interval_peek.port_state(interval[0], sink_node);
                 send[0] = PortState::Blocked;
             },
             RangeJoinState::Probe(ref probe_state) => {
@@ -293,7 +284,6 @@ impl ComputeNode for RangeJoinNode {
                 ..
             } => {
                 if let Some(build) = recv_ports[point_idx].take() {
-                    interval_peek.build_phase_ran = true;
                     sink_node.spawn(scope, &mut [Some(build)], &mut [], state, join_handles);
                 }
                 if let Some(recv) = recv_ports[interval_idx].take() {
