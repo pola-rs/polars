@@ -87,61 +87,76 @@ pub unsafe fn call_plugin(
 
     if major == 0 {
         use polars_ffi::version_0::*;
-        // *const SeriesExport: pointer to Box<SeriesExport>
-        // * usize: length of that pointer
-        // *const u8: pointer to &[u8]
-        // usize: length of the u8 slice
-        // *mut SeriesExport: pointer where return value should be written.
-        // *const CallerContext
-        let symbol: libloading::Symbol<
-            unsafe extern "C" fn(
-                *const SeriesExport,
-                usize,
-                *const u8,
-                usize,
-                *mut SeriesExport,
-                *const CallerContext,
-            ),
-        > = lib
-            .get(format!("_polars_plugin_{symbol}").as_bytes())
-            .unwrap();
 
-        // @scalar-correctness?
-        let input = s.iter().map(export_column).collect::<Vec<_>>();
-        let input_len = s.len();
-        let slice_ptr = input.as_ptr();
-
-        let kwargs_ptr = kwargs.as_ptr();
-        let kwargs_len = kwargs.len();
-
-        let mut return_value = SeriesExport::empty();
-        let return_value_ptr = &mut return_value as *mut SeriesExport;
-        let context = CallerContext::default();
-        let context_ptr = &context as *const CallerContext;
-        symbol(
-            slice_ptr,
-            input_len,
-            kwargs_ptr,
-            kwargs_len,
-            return_value_ptr,
-            context_ptr,
+        // Plugins taking `Column`s export an additional function which preserves scalar columns.
+        let column_fn = lib.get::<PluginFn<ColumnExport>>(
+            format!("_polars_plugin_column_func_{symbol}").as_bytes(),
         );
-
-        // The inputs get dropped when the ffi side calls the drop callback.
-        for e in input {
-            std::mem::forget(e);
-        }
-
-        if !return_value.is_null() {
-            import_series(return_value).map(Column::from)
+        let out = if let Ok(column_fn) = column_fn {
+            let inputs = s.iter().map(export_column).collect();
+            let out = call_plugin_fn(*column_fn, inputs, kwargs, ColumnExport::empty());
+            (!out.is_null()).then(|| import_column(out))
         } else {
-            let msg = retrieve_error_msg(lib);
-            check_panic(msg.as_ref())?;
-            polars_bail!(ComputeError: "the plugin failed with message: {}", msg)
+            let series_fn = lib
+                .get::<PluginFn<SeriesExport>>(format!("_polars_plugin_{symbol}").as_bytes())
+                .unwrap();
+            let inputs = s
+                .iter()
+                .map(|c| export_series(c.as_materialized_series()))
+                .collect();
+            let out = call_plugin_fn(*series_fn, inputs, kwargs, SeriesExport::empty());
+            (!out.is_null()).then(|| import_series(out).map(Column::from))
+        };
+
+        match out {
+            Some(out) => out,
+            None => {
+                let msg = retrieve_error_msg(lib);
+                check_panic(msg.as_ref())?;
+                polars_bail!(ComputeError: "the plugin failed with message: {}", msg)
+            },
         }
     } else {
         polars_bail!(ComputeError: "this polars engine doesn't support plugin version: {}", major)
     }
+}
+
+// *const E: pointer to the exported inputs
+// usize: number of inputs
+// *const u8: pointer to &[u8] (kwargs)
+// usize: length of the u8 slice
+// *mut E: pointer where the return value should be written
+// *const CallerContext
+type PluginFn<E> = unsafe extern "C" fn(
+    *const E,
+    usize,
+    *const u8,
+    usize,
+    *mut E,
+    *const polars_ffi::version_0::CallerContext,
+);
+
+unsafe fn call_plugin_fn<E>(
+    f: PluginFn<E>,
+    inputs: Vec<E>,
+    kwargs: &[u8],
+    mut return_value: E,
+) -> E {
+    let context = polars_ffi::version_0::CallerContext::default();
+    f(
+        inputs.as_ptr(),
+        inputs.len(),
+        kwargs.as_ptr(),
+        kwargs.len(),
+        &mut return_value,
+        &context,
+    );
+
+    // The inputs get dropped when the ffi side calls the drop callback.
+    for e in inputs {
+        std::mem::forget(e);
+    }
+    return_value
 }
 
 pub(super) unsafe fn plugin_field(

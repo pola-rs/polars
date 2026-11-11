@@ -1,5 +1,6 @@
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Column, CompatLevel};
+use polars_core::frame::column::ScalarColumn;
+use polars_core::prelude::{Column, CompatLevel, IntoColumn};
 
 use super::*;
 
@@ -54,8 +55,46 @@ unsafe extern "C" fn c_release_series_export(e: *mut SeriesExport) {
     e.release = None;
 }
 
-pub fn export_column(c: &Column) -> SeriesExport {
-    export_series(c.as_materialized_series())
+/// An FFI exported `Column`.
+#[repr(C)]
+pub struct ColumnExport {
+    /// For a scalar column this holds the single value, or nothing if `len` is zero.
+    series: SeriesExport,
+    len: usize,
+    // Bitflags
+    // 0: IS_SCALAR
+    flags: u64,
+}
+
+impl ColumnExport {
+    const IS_SCALAR: u64 = 1 << 0;
+
+    pub fn empty() -> Self {
+        Self {
+            series: SeriesExport::empty(),
+            len: 0,
+            flags: 0,
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.series.is_null()
+    }
+}
+
+pub fn export_column(c: &Column) -> ColumnExport {
+    let (series, flags) = match c {
+        Column::Scalar(sc) => (
+            export_series(&sc.as_single_value_series()),
+            ColumnExport::IS_SCALAR,
+        ),
+        Column::Series(s) => (export_series(s), 0),
+    };
+    ColumnExport {
+        series,
+        len: c.len(),
+        flags,
+    }
 }
 
 pub fn export_series(s: &Series) -> SeriesExport {
@@ -113,6 +152,28 @@ pub unsafe fn import_series_buffer(e: *mut SeriesExport, len: usize) -> PolarsRe
     for i in 0..len {
         let e = std::ptr::read(e.add(i));
         out.push(import_series(e)?)
+    }
+    Ok(out)
+}
+
+/// # Safety
+/// `ColumnExport` must be valid
+pub unsafe fn import_column(e: ColumnExport) -> PolarsResult<Column> {
+    let s = import_series(e.series)?;
+    Ok(if e.flags & ColumnExport::IS_SCALAR != 0 {
+        ScalarColumn::from_single_value_series(s, e.len).into_column()
+    } else {
+        s.into_column()
+    })
+}
+
+/// # Safety
+/// `ColumnExport` must be valid
+pub unsafe fn import_column_buffer(e: *mut ColumnExport, len: usize) -> PolarsResult<Vec<Column>> {
+    let mut out = Vec::with_capacity(len);
+    for i in 0..len {
+        let e = std::ptr::read(e.add(i));
+        out.push(import_column(e)?)
     }
     Ok(out)
 }
