@@ -5,7 +5,6 @@ use polars_arrow::array::builder::ShareStrategy;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_expr::hash_keys::HashKeys;
 use polars_ooc::{
     MostRecentSpillContext, ParameterFreeSpillContext, SpillFrame, estimate_memory_usage,
     memory_manager,
@@ -15,7 +14,7 @@ use polars_utils::hashing::HashPartitioner;
 
 use super::WindowParams;
 use super::tuning::WindowTuning;
-use crate::hash_shuffle::split::split;
+use crate::hash_shuffle::split::{NullRows, split};
 
 /// A partition merges its small frames once it has this many.
 const MAX_SMALL_FRAMES: usize = 16;
@@ -158,8 +157,10 @@ impl SinkPartitions {
         df.rechunk_mut();
         let row_bytes = df.estimated_size(false) as f64 / height as f64;
         let keys = df.select(params.partition_by.iter().cloned())?;
-        let keys = HashKeys::from_df(&keys, self.random_state.clone(), true, false);
-        let split = split(&keys, None, &self.partitioner);
+        let keys = params
+            .key_encoder
+            .hash_keys(&keys, self.random_state.clone(), true);
+        let split = split(&keys, None, &self.partitioner, NullRows::FirstPartition);
         drop(keys);
 
         for (p, buffer) in self.partitions.iter().enumerate() {

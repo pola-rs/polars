@@ -5,6 +5,7 @@ use polars_core::prelude::IntoColumn;
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
 use polars_expr::groups::Grouper;
+use polars_expr::hash_keys::KeyEncoder;
 use polars_expr::reduce::GroupedReduction;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -13,10 +14,12 @@ use super::InputPayload;
 use super::pre_agg::PreAgg;
 use crate::execute::StreamingExecutionState;
 use crate::hash_shuffle::frame_with_keys::FrameWithKeys;
+use crate::hash_shuffle::split::rows_or_all;
 
 /// What the sink and every partition table read.
 pub struct GroupByParams {
-    pub key_schema: Arc<Schema>,
+    /// Encodes the keys of the hot tables and of every partition table.
+    pub key_encoder: KeyEncoder,
     pub output_schema: Arc<Schema>,
     /// Input stream i feeds grouped_reductions[k] for each k in reductions_per_input[i].
     pub reductions_per_input: Vec<Vec<usize>>,
@@ -30,39 +33,6 @@ pub struct GroupByParams {
     pub has_order_sensitive_agg: bool,
 }
 
-impl GroupByParams {
-    /// Adds the fused columns of the input to a frame of its cold rows, evaluated once on all
-    /// its rows.
-    pub async fn prepare_frame(
-        &self,
-        input: usize,
-        mut frame: FrameWithKeys,
-        state: &StreamingExecutionState,
-    ) -> PolarsResult<FrameWithKeys> {
-        self.payload_per_input[input]
-            .push_fused(&mut frame.frame, &state.in_memory_exec_state)
-            .await?;
-        Ok(frame)
-    }
-}
-
-/// `rows`, or else the first `len` row indices, from `all_rows`.
-fn rows_or_all<'a>(
-    rows: Option<&'a [IdxSize]>,
-    all_rows: &'a mut Vec<IdxSize>,
-    len: usize,
-) -> &'a [IdxSize] {
-    match rows {
-        Some(rows) => rows,
-        None => {
-            if all_rows.len() < len {
-                all_rows.extend(all_rows.len() as IdxSize..len as IdxSize);
-            }
-            &all_rows[..len]
-        },
-    }
-}
-
 /// The groups and reduction states of one partition.
 pub struct PartitionTable {
     params: Arc<GroupByParams>,
@@ -70,6 +40,7 @@ pub struct PartitionTable {
     reductions: Vec<Box<dyn GroupedReduction>>,
     group_idxs: Vec<IdxSize>,
     all_rows: Vec<IdxSize>,
+    identity_idxs: Vec<IdxSize>,
 }
 
 impl PartitionTable {
@@ -91,6 +62,7 @@ impl PartitionTable {
             reductions,
             group_idxs: Vec::new(),
             all_rows: Vec::new(),
+            identity_idxs: Vec::new(),
         }
     }
 
@@ -114,12 +86,14 @@ impl PartitionTable {
         Ok(())
     }
 
-    /// Inserts the rows `rows` (all if `None`) of a prepared frame of `input` into this table.
-    pub fn add_rows(
+    /// Inserts the rows `rows` (all if `None`) of a frame of `input` into this table. The fused
+    /// columns are materialized for this call only.
+    pub async fn add_rows(
         &mut self,
         input: usize,
         frame: &FrameWithKeys,
         rows: Option<&[IdxSize]>,
+        state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
         let rows = rows_or_all(rows, &mut self.all_rows, frame.keys.len());
         self.group_idxs.clear();
@@ -129,27 +103,31 @@ impl PartitionTable {
         }
         let num_groups = self.grouper.num_groups();
         let params = &*self.params;
-        let mut in_cols = Vec::new();
         for r_idx in &params.reductions_per_input[input] {
-            let r = &mut self.reductions[*r_idx];
-            r.resize(num_groups);
-            in_cols.clear();
-            in_cols.extend(
-                params.grouped_reduction_cols[*r_idx]
-                    .iter()
-                    .map(|col| frame.frame.column(col).unwrap()),
-            );
-            // Cold rows only exist without order-sensitive reductions.
-            unsafe { r.update_groups_subset(&in_cols, rows, &self.group_idxs, 0)? };
+            self.reductions[*r_idx].resize(num_groups);
         }
-        Ok(())
+        let group_idxs = &self.group_idxs;
+        params.payload_per_input[input]
+            .update_reductions(
+                &frame.frame,
+                rows,
+                &mut self.identity_idxs,
+                &params.grouped_reduction_cols,
+                &mut self.reductions,
+                &state.in_memory_exec_state,
+                // Cold rows only exist without order-sensitive reductions.
+                |r, in_cols, subset| unsafe {
+                    r.update_groups_subset(in_cols, subset, group_idxs, 0)
+                },
+            )
+            .await
     }
 
     /// The keys in group order followed by the finalized reductions. Leaves the table empty.
     pub fn finish(&mut self) -> PolarsResult<DataFrame> {
         let grouper = std::mem::replace(&mut self.grouper, self.params.grouper.new_empty());
         let num_groups = grouper.num_groups();
-        let mut out = grouper.get_keys_in_group_order(&self.params.key_schema);
+        let mut out = self.params.key_encoder.get_keys_in_group_order(&*grouper);
         drop(grouper);
         let out_names = self.params.output_schema.iter_names().skip(out.width());
         for (r, name) in self.reductions.iter_mut().zip(out_names) {

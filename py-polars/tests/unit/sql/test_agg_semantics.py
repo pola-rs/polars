@@ -248,6 +248,8 @@ def test_sum_avg_distinct_empty_table() -> None:
         "SUM(1 + 1)",
         "COUNT(DISTINCT 1)",
         "QUANTILE_CONT(1, 0.5)",
+        "ARRAY_AGG(DISTINCT 1 ORDER BY 1 + 0)",
+        "STRING_AGG(DISTINCT 'x', ',' ORDER BY LOWER('X'))",
         "STRING_AGG('a', ',')",
         "SUM(-1000000000)",
         "SUM(2000000000)",
@@ -287,6 +289,34 @@ def test_aggregate_of_constant(agg: str, n_rows: int) -> None:
         assert_sql_matches(
             df,
             query=query,
+            compare_with="duckdb",
+            engines=["in-memory", "streaming"],
+        )
+
+
+@pytest.mark.parametrize(
+    "agg",
+    [
+        "STDDEV(1)",
+        "VARIANCE(1)",
+        "ARRAY_AGG(1)",
+        "STRING_AGG('x', ',')",
+        "ARRAY_AGG(1 ORDER BY 1 + 0)",
+        "ARRAY_AGG(DISTINCT 1 ORDER BY 1 + 0)",
+        "STRING_AGG(DISTINCT 'x', ',' ORDER BY LOWER('X'), 2)",
+        "COUNT(1)",
+        "AVG(2)",
+        "MAX(1)",
+        "COUNT(DISTINCT 1)",
+    ],
+)
+def test_window_aggregate_of_constant(agg: str) -> None:
+    # A window aggregate reads a constant once per row of the window.
+    df = pl.DataFrame({"g": [1, 2, 2, 3, 3, 3]})
+    for over in ["PARTITION BY g", ""]:
+        assert_sql_matches(
+            df,
+            query=f"SELECT g, {agg} OVER ({over}) AS a FROM self ORDER BY g",
             compare_with="duckdb",
             engines=["in-memory", "streaming"],
         )

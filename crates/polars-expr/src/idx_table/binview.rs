@@ -393,6 +393,12 @@ impl IdxTable for BinviewKeyIdxTable {
         }
     }
 
+    fn mark_rows(&self, rows: &[IdxSize]) {
+        for row in rows {
+            self.matched.mark(*row);
+        }
+    }
+
     fn unmarked_keys(&self, out: &mut Vec<IdxSize>, offset: IdxSize, limit: IdxSize) -> IdxSize {
         self.matched
             .unmarked_rows(self.idx_offset, out, offset, limit)

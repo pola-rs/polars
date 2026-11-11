@@ -213,7 +213,7 @@ fn test_power_in_agg_list2() -> PolarsResult<()> {
         .agg([col("A")
             .rolling_min(RollingOptionsFixedWindow {
                 window_size: 2,
-                min_periods: 2,
+                min_samples: 2,
                 ..Default::default()
             })
             .pow(2.0)

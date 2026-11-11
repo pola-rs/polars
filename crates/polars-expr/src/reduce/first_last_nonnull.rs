@@ -144,7 +144,7 @@ where
             } else {
                 Some(self.0.index(ca.len()))
             }
-            // SAFETY: idx is vlid.
+            // SAFETY: idx is valid.
             .and_then(|idx| unsafe { ca.get_unchecked(idx) });
 
             if val.is_some() {

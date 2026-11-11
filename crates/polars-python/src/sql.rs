@@ -3,10 +3,10 @@ use polars::sql::{CatalogAlter, CatalogStatement, SQLContext, extract_table_iden
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
-use crate::PyLazyFrame;
 use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::utils::EnterPolarsExt;
+use crate::{PyExpr, PyLazyFrame};
 
 #[pyclass(frozen, skip_from_py_object)]
 #[repr(transparent)]
@@ -208,6 +208,44 @@ impl PySQLContext {
                 dict.set_item("query", query)?;
                 dict.set_item("overwrite", overwrite)?;
             },
+            CatalogStatement::Delete {
+                name,
+                table,
+                condition,
+                subquery,
+                hint_unsupported_part,
+            } => {
+                dict.set_item("kind", "delete")?;
+                dict.set_item("name", name)?;
+                dict.set_item("catalog", table.catalog)?;
+                dict.set_item("identifier", table.identifier)?;
+                dict.set_item("condition", condition)?;
+                dict.set_item("subquery", subquery)?;
+                dict.set_item("hint_unsupported_part", hint_unsupported_part)?;
+            },
+            CatalogStatement::Update {
+                name,
+                table,
+                columns,
+                condition,
+                subquery,
+                hint_unsupported_part,
+            } => {
+                dict.set_item("kind", "update")?;
+                dict.set_item("name", name)?;
+                dict.set_item("catalog", table.catalog)?;
+                dict.set_item("identifier", table.identifier)?;
+                dict.set_item("columns", columns)?;
+                dict.set_item("condition", condition)?;
+                dict.set_item("subquery", subquery)?;
+                dict.set_item("hint_unsupported_part", hint_unsupported_part)?;
+            },
+            CatalogStatement::Merge { name, table } => {
+                dict.set_item("kind", "merge")?;
+                dict.set_item("name", name)?;
+                dict.set_item("catalog", table.catalog)?;
+                dict.set_item("identifier", table.identifier)?;
+            },
             CatalogStatement::Truncate {
                 name,
                 table,
@@ -293,6 +331,104 @@ impl PySQLContext {
                 .execute_with_catalog_tables(query, tables)
         })
         .map(Into::into)
+    }
+
+    /// The predicate of the rows a catalog `DELETE` removes, planned against the scan of its
+    /// table, by full name.
+    pub fn catalog_delete_predicate(
+        &self,
+        py: Python<'_>,
+        query: &str,
+        tables: Vec<(Vec<String>, PyLazyFrame)>,
+    ) -> PyResult<PyExpr> {
+        let tables = tables
+            .into_iter()
+            .map(|(full_name, lf)| (full_name, lf.ldf.into_inner()))
+            .collect();
+        py.enter_polars(|| self.context.write().catalog_delete_predicate(query, tables))
+            .map(Into::into)
+    }
+
+    /// The predicate of the rows a catalog `UPDATE` changes and the value of each `SET` column,
+    /// planned against the scan of its table, by full name.
+    pub fn catalog_update_plan(
+        &self,
+        py: Python<'_>,
+        query: &str,
+        tables: Vec<(Vec<String>, PyLazyFrame)>,
+    ) -> PyResult<(PyExpr, Vec<(String, PyExpr)>)> {
+        let tables = tables
+            .into_iter()
+            .map(|(full_name, lf)| (full_name, lf.ldf.into_inner()))
+            .collect();
+        let (predicate, values) =
+            py.enter_polars(|| self.context.write().catalog_update_plan(query, tables))?;
+        Ok((
+            predicate.into(),
+            values.into_iter().map(|(c, e)| (c, e.into())).collect(),
+        ))
+    }
+
+    /// The source of a catalog `MERGE` (the columns it reads) and the keys of its `ON`, planned
+    /// against the scans of the catalog tables it reads, by full name.
+    pub fn catalog_merge_source(
+        &self,
+        py: Python<'_>,
+        query: &str,
+        tables: Vec<(Vec<String>, PyLazyFrame)>,
+    ) -> PyResult<(PyLazyFrame, Vec<(String, PyExpr)>)> {
+        let tables = tables
+            .into_iter()
+            .map(|(full_name, lf)| (full_name, lf.ldf.into_inner()))
+            .collect();
+        let plan = py.enter_polars(|| self.context.write().catalog_merge_source(query, tables))?;
+        Ok((
+            plan.source.into(),
+            plan.keys.into_iter().map(|(c, e)| (c, e.into())).collect(),
+        ))
+    }
+
+    /// A catalog `MERGE` of `source` into the scan of its target: the frame of matching pairs,
+    /// the frame of source rows to insert, and per `WHEN MATCHED` and `WHEN NOT MATCHED` clause
+    /// its kind and, per column written, the frame column holding the value.
+    #[allow(clippy::type_complexity)]
+    pub fn catalog_merge_plan(
+        &self,
+        py: Python<'_>,
+        query: &str,
+        tables: Vec<(Vec<String>, PyLazyFrame)>,
+        source: PyLazyFrame,
+    ) -> PyResult<(
+        PyLazyFrame,
+        PyLazyFrame,
+        Vec<(String, usize, Vec<(String, PyExpr)>)>,
+        Vec<(String, usize, Vec<(String, PyExpr)>)>,
+    )> {
+        let tables = tables
+            .into_iter()
+            .map(|(full_name, lf)| (full_name, lf.ldf.into_inner()))
+            .collect();
+        let source = source.ldf.into_inner();
+        let plan = py.enter_polars(|| {
+            self.context
+                .write()
+                .catalog_merge_plan(query, tables, source)
+        })?;
+        let clauses = |clauses: Vec<polars::sql::MergeClausePlan>| {
+            clauses
+                .into_iter()
+                .map(|c| {
+                    let columns = c.columns.into_iter().map(|(n, e)| (n, e.into())).collect();
+                    (c.kind.to_string(), c.number, columns)
+                })
+                .collect()
+        };
+        Ok((
+            plan.pairs.into(),
+            plan.inserts.into(),
+            clauses(plan.matched),
+            clauses(plan.not_matched),
+        ))
     }
 
     /// Extract table identifiers from a SQL query string.

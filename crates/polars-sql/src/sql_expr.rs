@@ -582,7 +582,11 @@ impl SQLExprVisitor<'_> {
                     Some(elems) => {
                         let elems = self.cast_array_elements_for(elems, Some(&expr))?;
                         let set_has_null = elems.null_count() > 0;
-                        let membership = sql_is_in(expr, lit(elems.implode()?.into_series()));
+                        // a list scalar, as from the Python API: type coercion gives it
+                        // the column's type, so the filter can be pushed down
+                        let dtype = DataType::List(Box::new(elems.dtype().clone()));
+                        let list = lit(Scalar::new(dtype, AnyValue::List(elems)));
+                        let membership = sql_is_in(expr, list);
                         let is_in = if set_has_null {
                             // Non-match against sets containing NULL is unknown, not FALSE
                             membership.or(sql_unknown())
@@ -720,7 +724,16 @@ impl SQLExprVisitor<'_> {
     fn execute_subquery(&mut self, subquery: &Subquery) -> PolarsResult<LazyFrame> {
         // note: we have to execute subqueries in an isolated scope to prevent
         // propagating any context/arena mutation into the rest of the query
-        self.ctx.execute_isolated(|ctx| ctx.execute_query(subquery))
+        self.ctx
+            .execute_isolated(|ctx| {
+                ctx.nesting += 1;
+                ctx.execute_query(subquery)
+            })
+            .map_err(|e| {
+                self.ctx
+                    .unknown_qualifier_err(subquery, self.active_schema)
+                    .unwrap_or(e)
+            })
     }
 
     /// Visit a `[NOT] EXISTS (subquery)` expression that no earlier rewrite claimed. An
@@ -749,7 +762,11 @@ impl SQLExprVisitor<'_> {
         if is_correlated_subquery(subquery, self.ctx.catalog_spellings())
             || self.has_unnest(subquery)
         {
-            return Err(unsupported());
+            // A name of neither scope is an error of the query, not of this position.
+            return Err(self
+                .ctx
+                .unknown_qualifier_err(subquery, self.active_schema)
+                .unwrap_or_else(unsupported));
         }
         // An unqualified outer column makes the subquery correlated.
         let outer_err = |e, this: &Self| {

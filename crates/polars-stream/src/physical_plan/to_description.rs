@@ -550,6 +550,7 @@ pub fn phys_props(
             key_per_input,
             fused_agg_inputs_per_input,
             aggs_per_input,
+            key_ranges: _,
         } => (
             PhysicalPropsDescription::GroupBy {
                 num_inputs: inputs.len(),
@@ -576,6 +577,8 @@ pub fn phys_props(
             args,
             fused_predicate,
             runtime_filters: _,
+            estimated_rows: _,
+            key_ranges: _,
         } => (
             PhysicalPropsDescription::EquiJoin {
                 how: format!("{}", args.how),
@@ -1007,7 +1010,7 @@ fn ewm_props(options: &polars_ops::series::EWMOptions, variant: &str) -> Physica
         alpha: options.alpha,
         adjust: options.adjust,
         bias: options.bias,
-        min_periods: options.min_periods,
+        min_samples: options.min_samples,
         ignore_nulls: options.ignore_nulls,
     }
 }

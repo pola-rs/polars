@@ -765,7 +765,7 @@ impl DataFrame {
     /// online operations where you add `n` rows and rerun a query.
     ///
     /// Prefer `vstack` over `extend` when you want to append many times before doing a query. For instance
-    /// when you read in multiple files and when to store them in a single `DataFrame`. In the latter case, finish the sequence
+    /// when you read in multiple files and want to store them in a single `DataFrame`. In the latter case, finish the sequence
     /// of `append` operations with a [`rechunk`](Self::align_chunks_par).
     pub fn extend(&mut self, other: &DataFrame) -> PolarsResult<()> {
         polars_ensure!(
@@ -1530,7 +1530,7 @@ impl DataFrame {
             } else {
                 IsSorted::Ascending
             };
-            // If null count is 0 then nulls_last doesnt matter
+            // If null count is 0 then nulls_last doesn't matter
             // Safe to get value at last position since the dataframe is not empty (taken care above)
             let no_sorting_required = (by_column[0].is_sorted_flag() == required_sorting)
                 && ((by_column[0].null_count() == 0)

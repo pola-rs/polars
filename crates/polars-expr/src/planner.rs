@@ -90,7 +90,7 @@ where
 #[derive(Copy, Clone)]
 pub struct ExpressionConversionState {
     // settings per context
-    // they remain activate between
+    // they remain active between
     // expressions
     pub allow_threading: bool,
     pub has_windows: bool,
@@ -490,20 +490,31 @@ fn create_physical_expr_inner(
             let falsy_phys = create_physical_expr_inner(falsy, expr_arena, schema, state)?;
             lit_count += state.local.has_lit as u8;
 
-            let mask_truthy = is_elementwise_rec(truthy, expr_arena)
-                && !matches!(expr_arena.get(truthy), AExpr::Column(_) | AExpr::Literal(_));
-            let mask_falsy = is_elementwise_rec(falsy, expr_arena)
-                && !matches!(expr_arena.get(falsy), AExpr::Column(_) | AExpr::Literal(_));
-            let truthy_mask_columns = if mask_truthy {
-                aexpr_to_leaf_names(truthy, expr_arena)
-            } else {
-                Vec::new()
+            // `StructField` reads the whole struct from the execution state rather
+            // than from the filtered columns.
+            let is_struct_field = |ae: &AExpr| match ae {
+                #[cfg(feature = "dtype-struct")]
+                AExpr::StructField(_) => true,
+                _ => false,
             };
-            let falsy_mask_columns = if mask_falsy {
-                aexpr_to_leaf_names(falsy, expr_arena)
-            } else {
-                Vec::new()
+            let filter_columns = |arm: Node| {
+                let can_filter = is_elementwise_rec(arm, expr_arena)
+                    && !matches!(expr_arena.get(arm), AExpr::Column(_) | AExpr::Literal(_))
+                    && !expr_arena.iter(arm).any(|(_, ae)| is_struct_field(ae));
+                if can_filter {
+                    aexpr_to_leaf_names(arm, expr_arena)
+                } else {
+                    Vec::new()
+                }
             };
+            let truthy_filter_columns = filter_columns(truthy);
+            let falsy_filter_columns = filter_columns(falsy);
+            // The condition guards against errors in the rows it doesn't select.
+            let always_filter = [truthy, falsy].into_iter().any(|arm| {
+                expr_arena
+                    .iter(arm)
+                    .any(|(_, ae)| ae.is_fallible_top_level(expr_arena))
+            });
 
             // The output dtype is the supertype of the arms, which normally is
             // resolved by the zip. As the ternary may return an arm as-is we
@@ -521,8 +532,9 @@ fn create_physical_expr_inner(
                 node_to_expr(expression, expr_arena),
                 state.allow_threading && lit_count < 2,
                 is_scalar,
-                truthy_mask_columns,
-                falsy_mask_columns,
+                truthy_filter_columns,
+                falsy_filter_columns,
+                always_filter,
                 output_dtype,
             )))
         },
@@ -731,8 +743,7 @@ fn create_physical_expr_inner(
 /// - the kernel must give the same values for a unit input as for its repeat (not `pow`);
 /// - a full-length input must cost about as much as a call per group (not `str.contains`).
 ///
-/// TODO: formalize as a `FunctionFlags` bit, see also `is_fake_elementwise_function` in
-/// polars-stream.
+/// TODO: formalize as a `FunctionFlags` bit.
 fn inputs_are_row_wise(function: &IRFunctionExpr) -> bool {
     use IRFunctionExpr as F;
     match function {

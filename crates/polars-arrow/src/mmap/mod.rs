@@ -121,7 +121,7 @@ pub(crate) unsafe fn mmap_record<T: AsRef<[u8]> + Send + Sync + 'static>(
         })
 }
 
-/// Memory maps an record batch from an IPC file into a [`RecordBatchT`].
+/// Memory maps a record batch from an IPC file into a [`RecordBatchT`].
 /// # Errors
 /// This function errors when:
 /// * The IPC file is not valid

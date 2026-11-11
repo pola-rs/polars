@@ -424,7 +424,7 @@ def test_strptime() -> None:
         pl.sql_expr("STRPTIME(s,'%Y.%m.%d',false) AS dt")
 
 
-def test_temporal_stings_to_datetime() -> None:
+def test_temporal_strings_to_datetime() -> None:
     df = pl.DataFrame(
         {
             "s_dt": ["2077-10-10", "1942-01-08", "2000-07-05"],

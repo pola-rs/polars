@@ -23,6 +23,8 @@ Table Operations
      - Returns the Polars execution plan for a given SQL query.
    * - :ref:`INSERT <insert>`
      - Append rows to a table in an attached catalog, or replace its rows.
+   * - :ref:`MERGE <merge>`
+     - Update, delete and insert rows of a table in an attached catalog from a source.
    * - :ref:`SHOW TABLES <show_tables>`
      - Returns a list of all tables registered in the given context.
    * - :ref:`GENERATE_SERIES <generate_series_table_func>`
@@ -33,6 +35,8 @@ Table Operations
      - Unnest one or more arrays as columns in a new table object.
    * - :ref:`TRUNCATE <truncate>`
      - Remove all data from a table without actually deleting it.
+   * - :ref:`UPDATE <update>`
+     - Change rows of a table in an attached catalog.
 
 
 .. _alter_table:
@@ -153,11 +157,26 @@ DELETE
 Remove specific rows from a table using an (optional) constraint.
 Omitting the constraint deletes *all* rows, equivalent to `TRUNCATE`.
 
+On a table of an attached catalog, it deletes the matching rows in one commit. It returns
+the statement, not the remaining rows. Rows where the condition is NULL are kept. The
+condition compares columns with constants (``=``, ``<>``, ``<``, ``<=``, ``>``, ``>=``,
+``IN``, ``BETWEEN``, ``IS [NOT] NULL``, ``LIKE 'prefix%'``), combined with ``AND``, ``OR``
+and ``NOT``. On floating-point columns, ``>``, ``>=`` and ``<>`` are not supported. String
+constants may only contain letters, digits, spaces, ``-`` and ``_`` for now. Decimal
+columns cannot be compared with constants yet. Data
+files whose rows all match are dropped, and the others are rewritten (copy-on-write), also
+on a merge-on-read table.
+
+If another writer commits first, ``DELETE`` retries when that writer's rows cannot match the
+condition. Otherwise it fails, unless the table's ``write.delete.isolation-level`` is
+``snapshot``. The other writer's matching rows are then kept.
+
 **Example:**
 
 .. code-block:: sql
 
     DELETE FROM some_table WHERE value < 0
+    DELETE FROM lake.sales.orders WHERE order_date < DATE '2020-01-01'
 
 .. _drop_schema:
 
@@ -193,7 +212,7 @@ which case the statement is a no-op.
 
 **Catalog tables:** a name that resolves to an attached catalog, and to no registered
 table, drops the table from the catalog, permanently. ``PURGE`` also deletes its data
-files.
+files. Some catalogs drop tables only with ``PURGE``.
 
 .. code-block:: sql
 
@@ -237,6 +256,58 @@ that writer added rows, unless the table's ``write.delete.isolation-level`` is
     INSERT INTO lake.sales.orders VALUES (1, 10), (2, 20)
     INSERT INTO lake.sales.orders (quantity, id) SELECT qty, order_id FROM staged
     INSERT OVERWRITE lake.sales.orders SELECT * FROM staged
+
+.. _merge:
+
+MERGE
+-----
+Update, delete and insert rows of a table of a catalog attached with
+:meth:`SQLContext.register_catalog` from a source, in one commit. ``ON`` pairs target rows
+with source rows. Each target row with a matching source row takes the first
+``WHEN MATCHED`` clause whose condition holds: ``UPDATE SET``, ``DELETE`` or
+``DO NOTHING``. Each source row that matches no target row takes the first
+``WHEN NOT MATCHED`` clause whose condition holds: ``INSERT`` or ``DO NOTHING``. Those
+clauses see the source columns only. A row with no applicable clause is left as it is. It
+returns the statement.
+
+The source can be a catalog table, the target itself, a registered frame, a subquery
+(with an alias), ``VALUES`` with column names or a table function. It is read once, so
+every clause sees the same source rows. The source columns the statement uses are held in
+memory while it runs.
+
+``ON`` must contain a key: ``target_column = source_expression``, alone or joined with
+``AND``. Other conditions of ``ON`` and the ``WHEN`` conditions may use both sides. A
+NULL key matches nothing. A target row may be updated or deleted by one source row at
+most, or the statement fails.
+
+Values convert to the column types as in :ref:`INSERT <insert>`, and only the rows taking
+an action must fit. ``INSERT`` without a column list takes a value for every column.
+``NOT MATCHED BY SOURCE``, ``UPDATE SET *``, ``INSERT *``, ``RETURNING``, ``DEFAULT``,
+subqueries in conditions or values, ``WITH`` before ``MERGE`` and ``ON`` conditions without
+a key are not supported yet. Column names are case-sensitive. Registered tables cannot be
+merged into.
+
+The data files holding a target row to update or delete are read in full and replaced,
+and the inserted rows are added, in one snapshot (copy-on-write). The source's keys select
+the files that are read. A merge that changes nothing commits nothing. Iceberg v3 tables,
+and files whose delete files cannot be read with them (such as equality deletes), are not
+supported yet.
+
+If another writer commits first, ``MERGE`` retries when that writer's rows cannot match
+the source's keys. Otherwise it fails, unless the table's ``write.update.isolation-level``
+is ``snapshot``. It also fails if that writer deleted or replaced rows of the files being
+rewritten, or changed the table's schema or partition spec.
+
+**Example:**
+
+.. code-block:: sql
+
+    MERGE INTO lake.sales.orders AS t
+    USING updates AS s
+    ON t.id = s.id
+    WHEN MATCHED AND s.cancelled THEN DELETE
+    WHEN MATCHED THEN UPDATE SET status = s.status
+    WHEN NOT MATCHED THEN INSERT (id, status) VALUES (s.id, s.status)
 
 .. _show_tables:
 
@@ -312,3 +383,37 @@ it fails if another writer added rows.
 
     TRUNCATE TABLE actual_table
     TRUNCATE TABLE IF EXISTS possible_table
+
+.. _update:
+
+UPDATE
+------
+Change rows of a table of a catalog attached with :meth:`SQLContext.register_catalog`, in
+one commit. ``SET`` gives each column a new value, computed from the row as it was before
+the update. ``SET (a, b) = (x, y)`` sets several columns at once. Without ``WHERE``, every
+row is updated. Rows where the condition is NULL are not updated. The condition has the
+same limits as in :ref:`DELETE <delete_from_table>`. It returns the statement.
+
+Values convert to the column types as in :ref:`INSERT <insert>`, and only the values of
+updated rows must fit. A value comes from its own row, so aggregate, window and
+set-returning functions are not supported. Subqueries, ``FROM``, ``RETURNING`` and
+``DEFAULT`` are not supported either. Column names are case-sensitive. Registered tables
+cannot be updated.
+
+The data files holding a matching row are read in full and replaced in one snapshot
+(copy-on-write). An update that matches no row commits nothing. Iceberg v3 tables, and
+files whose delete files cannot be read with them (such as equality deletes), are not
+supported yet.
+
+If another writer commits first, ``UPDATE`` retries when that writer's rows cannot match the
+condition. Otherwise it fails, unless the table's ``write.update.isolation-level`` is
+``snapshot``. The other writer's matching rows then keep their values. It also fails if that
+writer deleted or replaced rows of the files being rewritten, or changed the table's schema
+or partition spec.
+
+**Example:**
+
+.. code-block:: sql
+
+    UPDATE lake.sales.orders SET status = 'shipped' WHERE id = 42
+    UPDATE lake.sales.orders SET (qty, amount) = (qty + 1, amount * 2) WHERE region = 'EU'

@@ -1,5 +1,6 @@
 from builtins import list as pylist
 from collections.abc import Callable, Sequence
+from datetime import timedelta
 from typing import Any, Literal, TypeAlias, overload
 
 from numpy.typing import NDArray
@@ -889,7 +890,7 @@ class PyLazyFrame:
         parallel: Any,
         low_memory: bool,
         use_statistics: bool,
-        decryption_properties: PyFileDecryptionProperties | None,
+        decryption: PyParquetDecryption | None,
     ) -> PyLazyFrame: ...
     @staticmethod
     def new_from_ipc(
@@ -1006,7 +1007,7 @@ class PyLazyFrame:
         data_page_size: int | None,
         metadata: KeyValueMetadata | None,
         arrow_schema: ArrowSchemaExportable | None = None,
-        encryption_properties: PyFileEncryptionProperties | None = None,
+        encryption: PyParquetEncryption | None = None,
     ) -> PyLazyFrame: ...
     def sink_ipc(
         self,
@@ -1487,9 +1488,9 @@ class PyExpr:
         seed: int | None,
     ) -> PyExpr: ...
     def ewm_mean(
-        self, alpha: float, adjust: bool, min_periods: int, ignore_nulls: bool
+        self, alpha: float, adjust: bool, min_samples: int, ignore_nulls: bool
     ) -> PyExpr: ...
-    def ewm_sum(self, alpha: float, min_periods: int, ignore_nulls: bool) -> PyExpr: ...
+    def ewm_sum(self, alpha: float, min_samples: int, ignore_nulls: bool) -> PyExpr: ...
     def ewm_mean_by(self, times: PyExpr, half_life: str) -> PyExpr: ...
     def ewm_sum_by(self, times: PyExpr, half_life: str) -> PyExpr: ...
     def ewm_std(
@@ -1497,7 +1498,7 @@ class PyExpr:
         alpha: float,
         adjust: bool,
         bias: bool,
-        min_periods: int,
+        min_samples: int,
         ignore_nulls: bool,
     ) -> PyExpr: ...
     def ewm_var(
@@ -1505,7 +1506,7 @@ class PyExpr:
         alpha: float,
         adjust: bool,
         bias: bool,
-        min_periods: int,
+        min_samples: int,
         ignore_nulls: bool,
     ) -> PyExpr: ...
     def extend_constant(self, value: PyExpr, n: PyExpr) -> PyExpr: ...
@@ -1515,6 +1516,7 @@ class PyExpr:
     def has_nulls(self) -> PyExpr: ...
     def log(self, base: PyExpr) -> PyExpr: ...
     def log1p(self) -> PyExpr: ...
+    def x_log_y(self, y: PyExpr, base: float) -> PyExpr: ...
     def exp(self) -> PyExpr: ...
     def erf(self) -> PyExpr: ...
     def erfc(self) -> PyExpr: ...
@@ -1538,7 +1540,9 @@ class PyExpr:
         include_breakpoint: bool,
     ) -> PyExpr: ...
     def skip_batch_predicate(self, schema: Any) -> PyExpr | None: ...
-    def to_pyarrow_predicate(self, schema: Any) -> str | None: ...
+    def to_pyarrow_predicate(
+        self, schema: Any, list_limit: int | None
+    ) -> str | None: ...
     @staticmethod
     def row_encode_unordered(
         exprs: Sequence[PyExpr],
@@ -1759,10 +1763,10 @@ class PyExpr:
     def meta_is_regex_projection(self) -> bool: ...
     def meta_is_column_selection(self, allow_aliasing: bool) -> bool: ...
     def meta_is_literal(self, allow_aliasing: bool) -> bool: ...
-    def meta_is_scalar(self) -> bool: ...
-    def meta_is_row_separable(self) -> bool: ...
-    def meta_is_length_preserving(self) -> bool: ...
-    def meta_is_known_length(self) -> bool: ...
+    def meta_is_scalar(self, schema: Schema | None = None) -> bool: ...
+    def meta_is_row_separable(self, schema: Schema | None = None) -> bool: ...
+    def meta_is_length_preserving(self, schema: Schema | None = None) -> bool: ...
+    def meta_is_known_length(self, schema: Schema | None = None) -> bool: ...
     def compute_tree_format(
         self, display_as_dot: bool, schema: Schema | None
     ) -> str: ...
@@ -1787,63 +1791,63 @@ class PyExpr:
         self,
         window_size: int,
         weights: Sequence[float] | None = None,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> PyExpr: ...
     def rolling_sum_by(
         self,
         by: PyExpr,
         window_size: str,
-        min_periods: int,
+        min_samples: int,
         closed: ClosedWindow,
     ) -> PyExpr: ...
     def rolling_min(
         self,
         window_size: int,
         weights: Sequence[float] | None = None,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> PyExpr: ...
     def rolling_min_by(
         self,
         by: PyExpr,
         window_size: str,
-        min_periods: int,
+        min_samples: int,
         closed: ClosedWindow,
     ) -> PyExpr: ...
     def rolling_max(
         self,
         window_size: int,
         weights: Sequence[float] | None = None,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> PyExpr: ...
     def rolling_max_by(
         self,
         by: PyExpr,
         window_size: str,
-        min_periods: int,
+        min_samples: int,
         closed: ClosedWindow,
     ) -> PyExpr: ...
     def rolling_mean(
         self,
         window_size: int,
         weights: Sequence[float] | None = None,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> PyExpr: ...
     def rolling_mean_by(
         self,
         by: PyExpr,
         window_size: str,
-        min_periods: int,
+        min_samples: int,
         closed: ClosedWindow,
     ) -> PyExpr: ...
     def rolling_std(
         self,
         window_size: int,
         weights: Sequence[float] | None = None,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
         ddof: int = 1,
     ) -> PyExpr: ...
@@ -1851,7 +1855,7 @@ class PyExpr:
         self,
         by: PyExpr,
         window_size: str,
-        min_periods: int,
+        min_samples: int,
         closed: ClosedWindow,
         ddof: int = 1,
     ) -> PyExpr: ...
@@ -1859,7 +1863,7 @@ class PyExpr:
         self,
         window_size: int,
         weights: Sequence[float] | None = None,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
         ddof: int = 1,
     ) -> PyExpr: ...
@@ -1867,7 +1871,7 @@ class PyExpr:
         self,
         by: PyExpr,
         window_size: str,
-        min_periods: int,
+        min_samples: int,
         closed: ClosedWindow,
         ddof: int = 1,
     ) -> PyExpr: ...
@@ -1875,14 +1879,14 @@ class PyExpr:
         self,
         window_size: int,
         weights: Sequence[float] | None = None,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> PyExpr: ...
     def rolling_median_by(
         self,
         by: PyExpr,
         window_size: str,
-        min_periods: int,
+        min_samples: int,
         closed: ClosedWindow,
     ) -> PyExpr: ...
     def rolling_quantile(
@@ -1891,7 +1895,7 @@ class PyExpr:
         interpolation: QuantileMethod,
         window_size: int,
         weights: Sequence[float] | None = None,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> PyExpr: ...
     def rolling_quantile_by(
@@ -1900,7 +1904,7 @@ class PyExpr:
         quantile: float,
         interpolation: QuantileMethod,
         window_size: str,
-        min_periods: int,
+        min_samples: int,
         closed: ClosedWindow,
     ) -> PyExpr: ...
     def rolling_rank(
@@ -1908,7 +1912,7 @@ class PyExpr:
         window_size: int,
         method: RankMethod,
         seed: int | None = None,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> PyExpr: ...
     def rolling_rank_by(
@@ -1924,7 +1928,7 @@ class PyExpr:
         self,
         window_size: int,
         bias: bool,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> PyExpr: ...
     def rolling_kurtosis(
@@ -1932,7 +1936,7 @@ class PyExpr:
         window_size: int,
         fisher: bool,
         bias: bool,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> PyExpr: ...
     def rolling_map(
@@ -1940,7 +1944,7 @@ class PyExpr:
         lambda_function: Any,
         window_size: int,
         weights: Sequence[float] | None = None,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> PyExpr: ...
 
@@ -2182,24 +2186,74 @@ class PySelector:
     def all() -> PySelector: ...
     def hash(self) -> int: ...
 
-class PyFileDecryptionProperties:
+class PyKmsConnectionConfig:
     def __init__(
         self,
+        kms_instance_id: str,
+        kms_instance_url: str,
+        key_access_token: str,
+        custom_kms_conf: pylist[tuple[str, str]],
+    ) -> None: ...
+    @property
+    def kms_instance_id(self) -> str: ...
+    @property
+    def kms_instance_url(self) -> str: ...
+    @property
+    def key_access_token(self) -> str: ...
+    @property
+    def custom_kms_conf(self) -> dict[str, str]: ...
+    def refresh_key_access_token(self, value: str) -> None: ...
+
+class PyCryptoFactory:
+    def __init__(
+        self, kms_client_factory: Callable[[PyKmsConnectionConfig], Any]
+    ) -> None: ...
+
+class PyEncryptionConfiguration:
+    def __init__(
+        self,
+        footer_key: str,
+        column_keys: pylist[tuple[str, pylist[str]]],
+        plaintext_footer: bool,
+        double_wrapping: bool,
+        cache_lifetime: timedelta | None,
+    ) -> None: ...
+
+class PyDecryptionConfiguration:
+    def __init__(
+        self, cache_lifetime: timedelta | None, read_kms_url: bool
+    ) -> None: ...
+
+class PyParquetDecryption:
+    @staticmethod
+    def from_keys(
         footer_key: bytes,
         column_keys: pylist[tuple[str, bytes]],
         aad_prefix: bytes | None,
         verify_footer_signature: bool,
-    ) -> None: ...
+    ) -> PyParquetDecryption: ...
+    @staticmethod
+    def from_kms(
+        crypto_factory: PyCryptoFactory,
+        kms_connection_config: PyKmsConnectionConfig,
+        decryption_config: PyDecryptionConfiguration,
+    ) -> PyParquetDecryption: ...
 
-class PyFileEncryptionProperties:
-    def __init__(
-        self,
+class PyParquetEncryption:
+    @staticmethod
+    def from_keys(
         footer_key: bytes,
         column_keys: pylist[tuple[str, bytes]],
         plaintext_footer: bool,
         aad_prefix: bytes | None,
         store_aad_prefix: bool,
-    ) -> None: ...
+    ) -> PyParquetEncryption: ...
+    @staticmethod
+    def from_kms(
+        crypto_factory: PyCryptoFactory,
+        kms_connection_config: PyKmsConnectionConfig,
+        encryption_config: PyEncryptionConfiguration,
+    ) -> PyParquetEncryption: ...
 
 class PyOptFlags:
     def __init__(self) -> None: ...
@@ -2284,10 +2338,10 @@ class PyOptFlags:
 
 # functions.lazy
 def rolling_corr(
-    x: PyExpr, y: PyExpr, window_size: int, min_periods: int
+    x: PyExpr, y: PyExpr, window_size: int, min_samples: int
 ) -> PyExpr: ...
 def rolling_cov(
-    x: PyExpr, y: PyExpr, window_size: int, min_periods: int, ddof: int
+    x: PyExpr, y: PyExpr, window_size: int, min_samples: int, ddof: int
 ) -> PyExpr: ...
 def arg_sort_by(
     by: Sequence[PyExpr],
@@ -2704,6 +2758,26 @@ class PySQLContext:
     def execute_with_catalog_tables(
         self, query: str, tables: pylist[tuple[pylist[str], PyLazyFrame]]
     ) -> PyLazyFrame: ...
+    def catalog_delete_predicate(
+        self, query: str, tables: pylist[tuple[pylist[str], PyLazyFrame]]
+    ) -> PyExpr: ...
+    def catalog_update_plan(
+        self, query: str, tables: pylist[tuple[pylist[str], PyLazyFrame]]
+    ) -> tuple[PyExpr, pylist[tuple[str, PyExpr]]]: ...
+    def catalog_merge_source(
+        self, query: str, tables: pylist[tuple[pylist[str], PyLazyFrame]]
+    ) -> tuple[PyLazyFrame, pylist[tuple[str, PyExpr]]]: ...
+    def catalog_merge_plan(
+        self,
+        query: str,
+        tables: pylist[tuple[pylist[str], PyLazyFrame]],
+        source: PyLazyFrame,
+    ) -> tuple[
+        PyLazyFrame,
+        PyLazyFrame,
+        pylist[tuple[str, int, pylist[tuple[str, PyExpr]]]],
+        pylist[tuple[str, int, pylist[tuple[str, PyExpr]]]],
+    ]: ...
     @staticmethod
     def table_identifiers(
         query: str,

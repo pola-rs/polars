@@ -7,7 +7,6 @@ use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_expr::groups::new_hash_grouper;
-use polars_expr::hash_keys::HashKeys;
 use polars_expr::state::ExecutionState;
 use polars_ooc::{
     LeastRecentSpillContext, MostRecentSpillContext, ParameterFreeSpillContext, SpillFrame,
@@ -19,11 +18,11 @@ use polars_utils::hashing::HashPartitioner;
 use polars_utils::pl_str::PlSmallStr;
 use rayon::prelude::*;
 
-use super::flush::{Flush, OutputRange, OutputUnit};
+use super::flush::{FlushState, OutputRange, OutputUnit};
 use super::sink_partitions::SinkPartitions;
 use super::tuning::{RowSizes, WindowTuning};
 use super::{StoredMorsel, WindowParams};
-use crate::hash_shuffle::split::{SplitRows, split};
+use crate::hash_shuffle::split::{NullRows, SplitRows, split};
 
 /// The column with the input row of each row in the partitions.
 pub(super) const ROW_ID: PlSmallStr = PlSmallStr::from_static("__POLARS_WINDOW_ROW");
@@ -42,7 +41,7 @@ pub(super) fn evaluate(
     morsels: Vec<Vec<StoredMorsel>>,
     morsel_ctx: LeastRecentSpillContext,
     state: &ExecutionState,
-) -> PolarsResult<Flush> {
+) -> PolarsResult<FlushState> {
     // Morsels can share a sequence number, so ties keep the order of pipelines and arrival.
     let mut morsels: Vec<_> = morsels.into_iter().flatten().collect();
     morsels.sort_by_key(|m| m.seq);
@@ -54,7 +53,7 @@ pub(super) fn evaluate(
     }
     let partition_ctx = MostRecentSpillContext::new("window-partitions".into(), None);
     if num_rows == 0 {
-        return Ok(Flush::new(
+        return Ok(FlushState::new(
             Vec::new(),
             tuning.output_ahead_bytes(),
             (morsel_ctx, partition_ctx),
@@ -180,7 +179,7 @@ pub(super) fn evaluate(
     if keep_morsels {
         outputs = ranges.into_iter().map(OutputUnit::Range).collect();
     }
-    Ok(Flush::new(
+    Ok(FlushState::new(
         outputs,
         tuning.output_ahead_bytes(),
         (morsel_ctx, partition_ctx),
@@ -196,7 +195,7 @@ pub(super) fn evaluate_sink_partitions(
     num_pipelines: usize,
     sink: SinkPartitions,
     state: &ExecutionState,
-) -> PolarsResult<Flush> {
+) -> PolarsResult<FlushState> {
     let (partitions, bytes, partition_ctx) = sink.finish();
     let spill_ctxs = (
         LeastRecentSpillContext::new("window".into(), None),
@@ -204,7 +203,7 @@ pub(super) fn evaluate_sink_partitions(
     );
     let num_rows: usize = partitions.iter().flatten().map(|sf| sf.height()).sum();
     if num_rows == 0 {
-        return Ok(Flush::new(Vec::new(), 0, spill_ctxs));
+        return Ok(FlushState::new(Vec::new(), 0, spill_ctxs));
     }
     let row_sizes = RowSizes {
         read: bytes / num_rows,
@@ -260,7 +259,11 @@ pub(super) fn evaluate_sink_partitions(
     if !frames.is_empty() {
         push_unit(frames, rows);
     }
-    Ok(Flush::new(units, tuning.max_partition_bytes(), spill_ctxs))
+    Ok(FlushState::new(
+        units,
+        tuning.max_partition_bytes(),
+        spill_ctxs,
+    ))
 }
 
 /// What evaluating a unit of [`super::WindowOutput::SinkPartitions`] needs.
@@ -441,8 +444,12 @@ impl Shuffle<'_> {
                             None
                         } else {
                             let keys = df.select(self.params.partition_by.iter().cloned())?;
-                            let keys = HashKeys::from_df(&keys, random_state.clone(), true, false);
-                            split(&keys, None, &partitioner)
+                            let keys = self.params.key_encoder.hash_keys(
+                                &keys,
+                                random_state.clone(),
+                                true,
+                            );
+                            split(&keys, None, &partitioner, NullRows::FirstPartition)
                         };
                         PolarsResult::Ok(LoadedFrame {
                             df,
@@ -763,8 +770,10 @@ fn evaluate_partition(
 
     // Dense partition ids, in order of first occurrence.
     let keys = df.select(params.partition_by.iter().cloned())?;
-    let hash_keys = HashKeys::from_df(&keys, random_state.clone(), true, false);
-    let mut grouper = new_hash_grouper(keys.schema().clone());
+    let hash_keys = params
+        .key_encoder
+        .hash_keys(&keys, random_state.clone(), true);
+    let mut grouper = new_hash_grouper(&params.key_encoder);
     let all_rows = (0..height as IdxSize).collect::<Vec<_>>();
     let mut group_idxs = Vec::with_capacity(height);
     // SAFETY: all indices are in-bounds.

@@ -130,7 +130,7 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
 
     let array = FixedSizeBinaryArray::new(extension_type, buf, validity.into_opt_validity());
 
-    // SAFETY: we just heap allocated the ExtensionSentinel, so its alive.
+    // SAFETY: we just heap allocated the ExtensionSentinel, so it's alive.
     unsafe { PolarsExtension::new(array) }
 }
 

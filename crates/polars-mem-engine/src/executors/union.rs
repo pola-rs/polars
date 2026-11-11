@@ -86,7 +86,7 @@ impl Executor for UnionExec {
             }
 
             // we don't use par_iter directly because the LP may also start threads for every LP (for instance scan_csv)
-            // this might then lead to a rayon SO. So we take a multitude of the threads to keep work stealing
+            // this might then lead to a rayon SO. So we take a multiple of the threads to keep work stealing
             // within bounds
             let out = RAYON.install(|| {
                 inputs

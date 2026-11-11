@@ -141,7 +141,7 @@ impl PageReader {
         }
     }
 
-    /// Returns the reader and this Readers' interval buffer
+    /// Returns the reader and this Reader's internal buffer
     pub fn into_inner(self) -> (Cursor<Buffer<u8>>, Vec<u8>) {
         (self.reader, self.scratch)
     }
@@ -489,7 +489,7 @@ pub(super) fn get_page_num_values(header: &ParquetPageHeader) -> ParquetResult<i
                 .as_ref()
                 .ok_or_else(|| {
                     ParquetError::oos(
-                        "The page header type is a v1 data page but the v1 header is empty",
+                        "The page header type is a v2 data page but the v2 header is empty",
                     )
                 })?
                 .num_values

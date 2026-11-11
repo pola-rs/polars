@@ -5,7 +5,9 @@ use polars_core::prelude::*;
 use polars_core::utils::SuperTypeOptions;
 #[cfg(feature = "iejoin")]
 use polars_defs::join::IEJoinOptions;
-use polars_defs::join::{CrossJoinFilter, CrossJoinOptions, JoinArgs, JoinType, JoinTypeOptions};
+use polars_defs::join::{
+    CrossJoinFilter, CrossJoinOptions, JoinArgs, JoinType, JoinTypeOptions, MaintainOrderJoin,
+};
 #[cfg(feature = "dynamic_group_by")]
 use polars_defs::time::group_by::{DynamicGroupOptionsIR, RollingGroupOptionsIR};
 use polars_utils::bool::UnsafeBool;
@@ -395,8 +397,8 @@ pub struct JoinOptionsIR {
     /// Ranges of build-side keys the join publishes to scans below its probe side once
     /// the build is done. Only set together with a forced `args.build_side`.
     pub runtime_filters: Vec<RuntimeFilter>,
-    /// The estimated rows of the left and right input of a semi or anti join that has
-    /// no `args.build_side`.
+    /// The estimated rows of the left and right input of a join that has no
+    /// `args.build_side`.
     #[cfg_attr(feature = "ir_serde", serde(default))]
     pub estimated_rows: Option<[u64; 2]>,
 }
@@ -445,7 +447,13 @@ impl JoinOptionsIR {
             Equi {
                 on,
                 fused_predicate: Some(_),
-            } => how.is_inner() && !on.is_empty() && self.args.slice.is_none(),
+            } => {
+                !on.is_empty()
+                    && self.args.slice.is_none()
+                    && (how.is_inner()
+                        || (matches!(how, JoinType::Left | JoinType::Right | JoinType::Full)
+                            && self.args.maintain_order == MaintainOrderJoin::None))
+            },
             #[cfg(feature = "asof_join")]
             AsOf { .. } => how.is_asof(),
             #[cfg(feature = "iejoin")]

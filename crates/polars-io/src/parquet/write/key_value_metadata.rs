@@ -16,7 +16,7 @@ pub struct ParquetMetadataContext<'a> {
     pub arrow_schema: &'a str,
 }
 
-/// Key/value pairs that can be attached to a Parquet file as file-level metadtaa.
+/// Key/value pairs that can be attached to a Parquet file as file-level metadata.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]

@@ -2,6 +2,7 @@ use polars_arrow::array::BooleanArray;
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::datatypes::ArrowDataType;
 use polars_error::{PolarsResult, polars_ensure};
+use polars_utils::broadcast::broadcast_len;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::{
@@ -119,11 +120,12 @@ macro_rules! column_element_wise_broadcasting {
             (Column::Series(lhs), Column::Scalar(rhs)) => $op(lhs, &rhs.as_single_value_series()),
             (Column::Scalar(lhs), Column::Series(rhs)) => $op(&lhs.as_single_value_series(), rhs),
             (Column::Scalar(lhs), Column::Scalar(rhs)) => {
+                let length = broadcast_len([lhs, rhs])?;
                 $op(&lhs.as_single_value_series(), &rhs.as_single_value_series()).map(|ca| {
                     if ca.len() == 0 {
                         ca
                     } else {
-                        ca.new_from_index(0, lhs.len())
+                        ca.new_from_index(0, length)
                     }
                 })
             },

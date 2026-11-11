@@ -205,7 +205,7 @@ impl NodeTraverser {
                     let mut ctx = ExprToIRContext::new(&mut expr_arena, &schema);
                     ctx.allow_unknown = true;
                     // NOTE: Probably throwing away the output names here is not okay?
-                    to_expr_ir(e.inner, &mut ctx)
+                    to_expr_ir(&e.inner, &mut ctx)
                         .map_err(PyPolarsErr::from)
                         .map(|v| v.node().0)
                 })
@@ -237,10 +237,13 @@ impl PyLazyFrame {
     fn visit(&self) -> PyResult<NodeTraverser> {
         let mut lp_arena = Arena::with_capacity(16);
         let mut expr_arena = Arena::with_capacity(16);
+        // The visitor serves the GPU engine (cudf-polars), so optimize for it: e.g. without
+        // struct-field pruning, as it ignores the field selection of scans.
         let root = self
             .ldf
             .read()
             .clone()
+            .with_gpu(true)
             .optimize(&mut lp_arena, &mut expr_arena)
             .map_err(PyPolarsErr::from)?;
         Ok(NodeTraverser {

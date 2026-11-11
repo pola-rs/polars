@@ -701,6 +701,7 @@ fn visualize_plan_rec(
             key_per_input,
             fused_agg_inputs_per_input,
             aggs_per_input,
+            key_ranges: _,
         } => {
             let mut out = String::from("group-by");
             for ((key, fused), aggs) in key_per_input
@@ -899,6 +900,7 @@ fn visualize_plan_rec(
             output_bool: _,
             runtime_filters: _,
             estimated_rows: _,
+            key_ranges: _,
         } => {
             let base_label = match phys_sm[node_key].kind {
                 PhysNodeKind::MergeJoin { .. } => "merge-join",

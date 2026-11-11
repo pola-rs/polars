@@ -16,7 +16,7 @@ impl Expr {
         self.map_unary(FunctionExpr::Bitwise(BitwiseFunction::LeadingOnes))
     }
 
-    /// Evaluate the number most-significant unset bits before seeing an set bit.
+    /// Evaluate the number most-significant unset bits before seeing a set bit.
     pub fn bitwise_leading_zeros(self) -> Self {
         self.map_unary(FunctionExpr::Bitwise(BitwiseFunction::LeadingZeros))
     }
@@ -26,7 +26,7 @@ impl Expr {
         self.map_unary(FunctionExpr::Bitwise(BitwiseFunction::TrailingOnes))
     }
 
-    /// Evaluate the number least-significant unset bits before seeing an set bit.
+    /// Evaluate the number least-significant unset bits before seeing a set bit.
     pub fn bitwise_trailing_zeros(self) -> Self {
         self.map_unary(FunctionExpr::Bitwise(BitwiseFunction::TrailingZeros))
     }

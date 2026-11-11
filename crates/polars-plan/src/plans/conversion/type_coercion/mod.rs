@@ -29,8 +29,8 @@ use polars_core::chunked_array::cast::CastOptions;
 ))]
 use polars_core::utils::try_get_supertype;
 use polars_core::utils::{
-    get_numeric_upcast_supertype_lossless, get_supertype, get_supertype_with_options,
-    materialize_dyn_int,
+    check_is_valid_struct_cast, get_numeric_upcast_supertype_lossless, get_supertype,
+    get_supertype_with_options, materialize_dyn_int,
 };
 use polars_utils::format_list;
 use polars_utils::itertools::Itertools;
@@ -38,6 +38,25 @@ use polars_utils::itertools::Itertools;
 use super::*;
 
 pub struct TypeCoercionRule {}
+
+/// The strict casts that type coercion may run non-strict. A `false` or `Raise` field keeps
+/// that kind of cast strict; it does not make the cast raise.
+const RELAXED_CAST_POLICY: CastColumnsPolicy = CastColumnsPolicy {
+    integer_upcast: true,
+    integer_to_float_cast: false,
+    float_upcast: true,
+    float_downcast: true,
+    datetime_nanoseconds_downcast: true,
+    datetime_microseconds_downcast: true,
+    // Increasing the time unit precision can overflow.
+    datetime_milliseconds_upcast: false,
+    datetime_microseconds_upcast: false,
+    datetime_convert_timezone: true,
+    null_upcast: true,
+    categorical_to_string: true,
+    missing_struct_fields: MissingColumnsPolicy::Insert,
+    extra_struct_fields: ExtraColumnsPolicy::Raise,
+};
 
 macro_rules! unpack {
     ($packed:expr) => {
@@ -61,7 +80,7 @@ pub(crate) fn modify_supertype(
     // TODO! This must be removed and dealt properly with dynamic str.
     use DataType::*;
     match (type_left, type_right, left, right) {
-        // if the we compare a categorical to a literal string we want to cast the literal to categorical
+        // if we compare a categorical to a literal string we want to cast the literal to categorical
         #[cfg(feature = "dtype-categorical")]
         (dt @ Categorical(_, _), String | Unknown(UnknownKind::Str), _, AExpr::Literal(_))
         | (String | Unknown(UnknownKind::Str), dt @ Categorical(_, _), AExpr::Literal(_), _)
@@ -139,23 +158,12 @@ impl OptimizationRule for TypeCoercionRule {
                             .dtype;
                         let cast_to = &dtype;
 
-                        let v = CastColumnsPolicy {
-                            integer_upcast: true,
-                            integer_to_float_cast: false,
-                            float_upcast: true,
-                            float_downcast: true,
-                            datetime_nanoseconds_downcast: true,
-                            datetime_microseconds_downcast: true,
-                            // Increasing the time unit precision can overflow.
-                            datetime_milliseconds_upcast: false,
-                            datetime_microseconds_upcast: false,
-                            datetime_convert_timezone: true,
-                            null_upcast: true,
-                            categorical_to_string: true,
-                            missing_struct_fields: MissingColumnsPolicy::Insert,
-                            extra_struct_fields: ExtraColumnsPolicy::Raise,
-                        }
-                        .should_cast_column("", cast_to, &cast_from);
+                        // A cast that changes struct fields stays strict, so it raises as in
+                        // `Series.cast`.
+                        let v = check_is_valid_struct_cast(&cast_from, cast_to, &PlSmallStr::EMPTY)
+                            .and_then(|()| {
+                                RELAXED_CAST_POLICY.should_cast_column("", cast_to, &cast_from)
+                            });
 
                         match v {
                             // No casting needed
@@ -218,17 +226,18 @@ impl OptimizationRule for TypeCoercionRule {
                     expr_arena.add(AExpr::Cast {
                         expr: truthy_node,
                         dtype: st.clone(),
-                        options: CastOptions::Strict,
+                        options: supertype_cast_options(&type_true, &st),
                     })
                 } else {
                     truthy_node
                 };
 
                 let new_node_falsy = if type_false != st {
+                    let options = supertype_cast_options(&type_false, &st);
                     expr_arena.add(AExpr::Cast {
                         expr: falsy_node,
                         dtype: st,
-                        options: CastOptions::Strict,
+                        options,
                     })
                 } else {
                     falsy_node
@@ -901,6 +910,12 @@ impl OptimizationRule for TypeCoercionRule {
                     type_left,
                     type_other
                 );
+                if matches!(
+                    function,
+                    IRFunctionExpr::StringExpr(IRStringFunction::ContainsAny { .. })
+                ) {
+                    ensure_one_list_of_values(input[1].node(), expr_arena, function)?;
+                }
                 None
             },
 
@@ -934,7 +949,8 @@ impl OptimizationRule for TypeCoercionRule {
             )?,
             #[cfg(all(feature = "strings", feature = "find_many"))]
             AExpr::Function {
-                function: IRFunctionExpr::StringExpr(IRStringFunction::ReplaceMany { .. }),
+                function:
+                    ref function @ IRFunctionExpr::StringExpr(IRStringFunction::ReplaceMany { .. }),
                 ref input,
                 ..
             } => {
@@ -961,6 +977,9 @@ impl OptimizationRule for TypeCoercionRule {
                     type_patterns,
                     type_replace_with
                 );
+                for node in [input[1].node(), input[2].node()] {
+                    ensure_one_list_of_values(node, expr_arena, function)?;
+                }
                 None
             },
             #[cfg(feature = "replace")]
@@ -970,6 +989,7 @@ impl OptimizationRule for TypeCoercionRule {
                 ref input,
                 options,
             } => {
+                let (_, type_in) = unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
                 let (_, type_old) =
                     unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
                 let (_, type_new) =
@@ -980,32 +1000,39 @@ impl OptimizationRule for TypeCoercionRule {
                     InvalidOperation: "`replace` does not support `old`/`new` values of object dtype"
                 );
 
-                let (DataType::List(_), DataType::List(_)) = (&type_old, &type_new) else {
-                    let function = function.clone();
-                    let mut input = input.clone();
-
-                    if !type_old.is_list() {
-                        let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
-                            input: input[1].node(),
-                            maintain_order: true,
-                        }));
-                        input[1].set_node(other_input);
-                    }
-                    if !type_new.is_list() {
-                        let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
-                            input: input[2].node(),
-                            maintain_order: true,
-                        }));
-                        input[2].set_node(other_input);
-                    }
-
-                    return Ok(Some(AExpr::Function {
-                        function,
-                        input,
-                        options,
-                    }));
+                let is_list_of = |dtype: &DataType, values_dtype: &DataType| {
+                    dtype.is_list() && dtype != values_dtype
                 };
-                None
+                let old_is_list = is_list_of(&type_old, &type_in);
+                let new_is_list = match function {
+                    IRFunctionExpr::ReplaceStrict {
+                        return_dtype: Some(dtype),
+                    } => is_list_of(&type_new, dtype),
+                    // The output dtype is inferred from `new`, so a list can't be told apart from
+                    // a list of values; it is taken to be the latter.
+                    IRFunctionExpr::ReplaceStrict { return_dtype: None } => type_new.is_list(),
+                    _ => is_list_of(&type_new, &type_in),
+                };
+                let function = function.clone();
+                let mut input = input.clone();
+                let mut changed = false;
+                for (i, is_list) in [(1, old_is_list), (2, new_is_list)] {
+                    if is_list {
+                        ensure_one_list_of_values(input[i].node(), expr_arena, &function)?;
+                    } else {
+                        let imploded = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
+                            input: input[i].node(),
+                            maintain_order: true,
+                        }));
+                        input[i].set_node(imploded);
+                        changed = true;
+                    }
+                }
+                changed.then_some(AExpr::Function {
+                    function,
+                    input,
+                    options,
+                })
             },
             #[cfg(feature = "range")]
             AExpr::Function {
@@ -1403,7 +1430,20 @@ fn try_inline_literal_cast(
     Ok(Some(lv))
 }
 
-/// Cast `e` to `to_dtype`. `options` applies to folding a literal; inserted casts are strict.
+/// Options for a cast to a supertype. It is strict, unless it changes struct fields in a way
+/// [`RELAXED_CAST_POLICY`] allows: the strict cast would reject that change.
+fn supertype_cast_options(from: &DataType, to: &DataType) -> CastOptions {
+    if check_is_valid_struct_cast(from, to, &PlSmallStr::EMPTY).is_err()
+        && RELAXED_CAST_POLICY.should_cast_column("", to, from).is_ok()
+    {
+        CastOptions::NonStrict
+    } else {
+        CastOptions::Strict
+    }
+}
+
+/// Cast `e` to `to_dtype`. `options` applies to folding a literal; inserted casts use
+/// [`supertype_cast_options`].
 fn cast_expr_ir(
     e: &mut ExprIR,
     from_dtype: &DataType,
@@ -1428,7 +1468,7 @@ fn cast_expr_ir(
     e.set_node(expr_arena.add(AExpr::Cast {
         expr: e.node(),
         dtype: to_dtype.clone(),
-        options: CastOptions::Strict,
+        options: supertype_cast_options(from_dtype, to_dtype),
     }));
     e.set_dtype(to_dtype.clone());
 
@@ -1624,7 +1664,7 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
             // of expressible integers:
             let max_int_value = 10i128.pow((*p_to - *s_to) as u32) - 1;
             let min_int_value = -max_int_value;
-            // The datatype's range must fit in the decimal datatypes's range:
+            // The datatype's range must fit in the decimal datatype's range:
             max_int_value >= dt.max().unwrap().value().extract::<i128>().unwrap()
                 && min_int_value <= dt.min().unwrap().value().extract::<i128>().unwrap()
         },
@@ -1672,5 +1712,20 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
     if !can_cast {
         polars_bail!(InvalidOperation: "cannot cast losslessly from {} to {}", from, to)
     }
+    Ok(())
+}
+
+/// Checks that a list argument of `function` holds one list of values for the whole column, as
+/// its kernel doesn't support a list per row.
+#[cfg(any(feature = "replace", all(feature = "strings", feature = "find_many")))]
+fn ensure_one_list_of_values(
+    node: Node,
+    expr_arena: &Arena<AExpr>,
+    function: &IRFunctionExpr,
+) -> PolarsResult<()> {
+    polars_ensure!(
+        is_scalar_ae(node, expr_arena) || is_single_literal_ae(node, expr_arena),
+        InvalidOperation: "`{function}` does not support a list of values per row; the list must be a scalar, e.g. an `implode()` or a literal"
+    );
     Ok(())
 }

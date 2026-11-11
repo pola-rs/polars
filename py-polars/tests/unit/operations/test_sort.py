@@ -1177,7 +1177,7 @@ def test_sort_into_function_into_dynamic_groupby_20715() -> None:
     ) == (90, 3)
 
 
-def test_sort_multicolum_null() -> None:
+def test_sort_multicolumn_null() -> None:
     df = pl.DataFrame({"a": [1], "b": [None]})
     assert df.sort(["a", "b"]).shape == (1, 2)
 
@@ -1432,6 +1432,22 @@ def test_sort_by_sliced_groups_29630() -> None:
         pl.col("a").slice(1, 2).reverse().sort_by(pl.col("b").slice(1, 2))
     )
     assert out["a"].to_list() == [[12, 11], [22, 21]]
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected"),
+    [
+        (pl.col("v").reverse(), [[10], [30]]),
+        (pl.col("v").sort(), [[20], [30]]),
+        (pl.col("v").cum_sum(), [[30], [30]]),
+    ],
+)
+def test_sort_by_head_after_group_op_30551(
+    expr: pl.Expr, expected: list[list[int]]
+) -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 2], "o": [2, 1, 3], "v": [10, 20, 30]})
+    out = lf.group_by("g", maintain_order=True).agg(expr.sort_by("o").head(1))
+    assert_frame_equal(out.collect(), pl.DataFrame({"g": [1, 2], "v": expected}))
 
 
 def test_sort_by_empty_list_eval_25433() -> None:

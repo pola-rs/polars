@@ -74,7 +74,7 @@ encode_unsigned!(4, u32);
 encode_unsigned!(8, u64);
 encode_unsigned!(16, u128);
 
-// toggle the sign bit and then encode as big indian
+// toggle the sign bit and then encode as big endian
 macro_rules! encode_signed {
     ($n:expr, $t:ty) => {
         impl FixedLengthEncoding for $t {

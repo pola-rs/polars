@@ -1271,7 +1271,7 @@ impl Column {
                 return;
             }
 
-            // If we want to maintain order but we also needs to invert, we need to invert
+            // If we want to maintain order but we also need to invert, we need to invert
             // per group of items.
             //
             // @NOTE: Since the column is sorted, arg_unique can also take a fast path and
@@ -2167,7 +2167,7 @@ impl PartialEq for Column {
 impl From<Series> for Column {
     #[inline]
     fn from(series: Series) -> Self {
-        // We instantiate a Scalar Column if the Series is length is 1. This makes it possible for
+        // We instantiate a Scalar Column if the Series length is 1. This makes it possible for
         // future operations to be faster.
         if series.len() == 1 {
             return Self::Scalar(ScalarColumn::unit_scalar_from_series(series));

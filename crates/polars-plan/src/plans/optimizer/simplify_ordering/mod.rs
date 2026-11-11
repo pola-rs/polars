@@ -457,7 +457,9 @@ impl SimplifyIRNodeOrder<'_> {
                 #[cfg(feature = "asof_join")]
                 if let JoinType::AsOf(_) = &options.args.how {
                     if in_edge_lhs.is_unordered()
-                        || (out_edge.is_unordered() && in_edge_rhs.is_unordered())
+                        || (out_edge.is_unordered()
+                            && options.args.slice.is_none()
+                            && in_edge_rhs.is_unordered())
                     {
                         *in_edge_lhs = Edge::Unordered;
                         *in_edge_rhs = Edge::Unordered;
@@ -470,7 +472,9 @@ impl SimplifyIRNodeOrder<'_> {
 
                 use polars_defs::join::MaintainOrderJoin as JO;
 
-                if out_edge.is_unordered() || options.args.maintain_order == JO::None {
+                if (out_edge.is_unordered() && options.args.slice.is_none())
+                    || options.args.maintain_order == JO::None
+                {
                     *out_edge = Edge::Unordered;
                     *in_edge_lhs = Edge::Unordered;
                     *in_edge_rhs = Edge::Unordered;

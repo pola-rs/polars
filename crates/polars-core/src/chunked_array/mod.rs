@@ -540,7 +540,7 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
 {
-    /// Get a single value from this [`ChunkedArray`]. If the return values is `None` this
+    /// Get a single value from this [`ChunkedArray`]. If the return value is `None` this
     /// indicates a NULL value.
     ///
     /// # Panics
@@ -566,7 +566,7 @@ where
         }
     }
 
-    /// Get a single value from this [`ChunkedArray`]. If the return values is `None` this
+    /// Get a single value from this [`ChunkedArray`]. If the return value is `None` this
     /// indicates a NULL value.
     ///
     /// # Safety
@@ -1004,17 +1004,6 @@ where
             ComputeError: "chunked array is not contiguous"
         );
         Ok(self.downcast_iter().next().map(|arr| arr.values()).unwrap())
-    }
-
-    /// Returns the values of the array as a contiguous mutable slice.
-    pub(crate) fn cont_slice_mut(&mut self) -> Option<&mut [T::Native]> {
-        if self.chunks.len() == 1 && self.chunks[0].null_count() == 0 {
-            // SAFETY, we will not swap the PrimitiveArray.
-            let arr = unsafe { self.downcast_iter_mut().next().unwrap() };
-            arr.get_mut_values()
-        } else {
-            None
-        }
     }
 
     /// Get slices of the underlying arrow data.

@@ -4,8 +4,7 @@ use matched_rows::{MARKED, MatchedRows};
 use polars_core::prelude::*;
 use polars_utils::IdxSize;
 
-use crate::hash_keys::HashKeys;
-use crate::key_rows::KeyRowLayout;
+use crate::hash_keys::{HashKeys, KeyEncoder, KeyKind};
 
 mod binview;
 mod key_rows;
@@ -69,60 +68,65 @@ pub trait IdxTable: Any + Send + Sync {
         limit: IdxSize,
     ) -> IdxSize;
 
+    /// Marks the given rows as matched, as `probe` does with `mark_matches`.
+    fn mark_rows(&self, rows: &[IdxSize]);
+
     /// Get the ChunkIds for each key which was never marked during probing.
     fn unmarked_keys(&self, out: &mut Vec<IdxSize>, offset: IdxSize, limit: IdxSize) -> IdxSize;
 }
 
-pub fn new_idx_table(key_schema: Arc<Schema>) -> Box<dyn IdxTable> {
-    if let Some(layout) = KeyRowLayout::new(key_schema.iter_values()) {
-        Box::new(key_rows::KeyRowIdxTable::new(Arc::new(layout)))
-    } else if key_schema.len() > 1 {
-        Box::new(row_encoded::RowEncodedIdxTable::new())
-    } else {
-        use single_key::SingleKeyIdxTable as SKIT;
-        match key_schema.get_at_index(0).unwrap().1 {
-            #[cfg(feature = "dtype-u8")]
-            DataType::UInt8 => Box::new(SKIT::<UInt8Type>::new()),
-            #[cfg(feature = "dtype-u16")]
-            DataType::UInt16 => Box::new(SKIT::<UInt16Type>::new()),
-            DataType::UInt32 => Box::new(SKIT::<UInt32Type>::new()),
-            DataType::UInt64 => Box::new(SKIT::<UInt64Type>::new()),
-            #[cfg(feature = "dtype-u128")]
-            DataType::UInt128 => Box::new(SKIT::<UInt128Type>::new()),
-            #[cfg(feature = "dtype-i8")]
-            DataType::Int8 => Box::new(SKIT::<Int8Type>::new()),
-            #[cfg(feature = "dtype-i16")]
-            DataType::Int16 => Box::new(SKIT::<Int16Type>::new()),
-            DataType::Int32 => Box::new(SKIT::<Int32Type>::new()),
-            DataType::Int64 => Box::new(SKIT::<Int64Type>::new()),
-            #[cfg(feature = "dtype-i128")]
-            DataType::Int128 => Box::new(SKIT::<Int128Type>::new()),
-            #[cfg(feature = "dtype-f16")]
-            DataType::Float16 => Box::new(SKIT::<Float16Type>::new()),
-            DataType::Float32 => Box::new(SKIT::<Float32Type>::new()),
-            DataType::Float64 => Box::new(SKIT::<Float64Type>::new()),
+pub fn new_idx_table(encoder: &KeyEncoder) -> Box<dyn IdxTable> {
+    match encoder.kind() {
+        KeyKind::Packed(packed) => single_key_idx_table(&packed.layout().word_dtype()),
+        KeyKind::KeyRows(layout) => Box::new(key_rows::KeyRowIdxTable::new(layout.clone())),
+        KeyKind::RowEncoded => Box::new(row_encoded::RowEncodedIdxTable::new()),
+        KeyKind::Binview => Box::new(binview::BinviewKeyIdxTable::new()),
+        KeyKind::Single => single_key_idx_table(encoder.schema().get_at_index(0).unwrap().1),
+    }
+}
 
-            #[cfg(feature = "dtype-date")]
-            DataType::Date => Box::new(SKIT::<Int32Type>::new()),
-            #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => Box::new(SKIT::<Int64Type>::new()),
-            #[cfg(feature = "dtype-duration")]
-            DataType::Duration(_) => Box::new(SKIT::<Int64Type>::new()),
-            #[cfg(feature = "dtype-time")]
-            DataType::Time => Box::new(SKIT::<Int64Type>::new()),
+fn single_key_idx_table(dt: &DataType) -> Box<dyn IdxTable> {
+    use single_key::SingleKeyIdxTable as SKIT;
+    match dt {
+        #[cfg(feature = "dtype-u8")]
+        DataType::UInt8 => Box::new(SKIT::<UInt8Type>::new()),
+        #[cfg(feature = "dtype-u16")]
+        DataType::UInt16 => Box::new(SKIT::<UInt16Type>::new()),
+        DataType::UInt32 => Box::new(SKIT::<UInt32Type>::new()),
+        DataType::UInt64 => Box::new(SKIT::<UInt64Type>::new()),
+        #[cfg(feature = "dtype-u128")]
+        DataType::UInt128 => Box::new(SKIT::<UInt128Type>::new()),
+        #[cfg(feature = "dtype-i8")]
+        DataType::Int8 => Box::new(SKIT::<Int8Type>::new()),
+        #[cfg(feature = "dtype-i16")]
+        DataType::Int16 => Box::new(SKIT::<Int16Type>::new()),
+        DataType::Int32 => Box::new(SKIT::<Int32Type>::new()),
+        DataType::Int64 => Box::new(SKIT::<Int64Type>::new()),
+        #[cfg(feature = "dtype-i128")]
+        DataType::Int128 => Box::new(SKIT::<Int128Type>::new()),
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => Box::new(SKIT::<Float16Type>::new()),
+        DataType::Float32 => Box::new(SKIT::<Float32Type>::new()),
+        DataType::Float64 => Box::new(SKIT::<Float64Type>::new()),
 
-            #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(_, _) => Box::new(SKIT::<Int128Type>::new()),
-            #[cfg(feature = "dtype-categorical")]
-            dt @ (DataType::Enum(_, _) | DataType::Categorical(_, _)) => {
-                with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
-                    Box::new(SKIT::<<$C as PolarsCategoricalType>::PolarsPhysical>::new())
-                })
-            },
+        #[cfg(feature = "dtype-date")]
+        DataType::Date => Box::new(SKIT::<Int32Type>::new()),
+        #[cfg(feature = "dtype-datetime")]
+        DataType::Datetime(_, _) => Box::new(SKIT::<Int64Type>::new()),
+        #[cfg(feature = "dtype-duration")]
+        DataType::Duration(_) => Box::new(SKIT::<Int64Type>::new()),
+        #[cfg(feature = "dtype-time")]
+        DataType::Time => Box::new(SKIT::<Int64Type>::new()),
 
-            DataType::String | DataType::Binary => Box::new(binview::BinviewKeyIdxTable::new()),
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(_, _) => Box::new(SKIT::<Int128Type>::new()),
+        #[cfg(feature = "dtype-categorical")]
+        dt @ (DataType::Enum(_, _) | DataType::Categorical(_, _)) => {
+            with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
+                Box::new(SKIT::<<$C as PolarsCategoricalType>::PolarsPhysical>::new())
+            })
+        },
 
-            _ => Box::new(row_encoded::RowEncodedIdxTable::new()),
-        }
+        _ => unreachable!(),
     }
 }

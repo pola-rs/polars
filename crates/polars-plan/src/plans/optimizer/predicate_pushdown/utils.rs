@@ -198,7 +198,7 @@ fn get_maybe_aliased_projection_to_input_name_map(
     }
 }
 
-/// The input `predicate`, on one column, may be pushed to past `node` when that is a filter or
+/// The input `predicate`, on one column, may be pushed past `node` when that is a filter or
 /// projection; the predicate is renamed to the input's column on the way. `None` when the
 /// predicate stays above `node`.
 pub(crate) fn push_past(

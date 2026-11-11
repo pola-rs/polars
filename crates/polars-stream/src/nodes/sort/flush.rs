@@ -93,7 +93,7 @@ impl FlushInner {
 /// emission cursor; a task with nothing to emit sorts a bucket ahead, up to
 /// `max_ahead` buckets and `max_ahead_bytes` sorted or being sorted, and at
 /// least one.
-pub struct Flush {
+pub struct FlushState {
     inner: Mutex<FlushInner>,
     notify: Notify,
     morsel_size: usize,
@@ -110,7 +110,7 @@ enum Step<'a> {
     Stop,
 }
 
-impl Flush {
+impl FlushState {
     pub fn new(
         buckets: Vec<PendingBucket>,
         morsel_size: usize,
@@ -258,7 +258,7 @@ impl Flush {
     }
 }
 
-impl Drop for Flush {
+impl Drop for FlushState {
     fn drop(&mut self) {
         let inner = self.inner.get_mut();
         drop_parallel(
