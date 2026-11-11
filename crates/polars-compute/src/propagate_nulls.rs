@@ -1,4 +1,4 @@
-use polars_arrow::array::{Array, FixedSizeListArray, ListArray, StructArray};
+use polars_arrow::array::{Array, FixedSizeListArray, LargeUnionArray, ListArray, StructArray};
 use polars_arrow::bitmap::BitmapBuilder;
 use polars_arrow::bitmap::bitmask::BitMask;
 use polars_arrow::types::Offset;
@@ -17,6 +17,9 @@ pub fn propagate_nulls(arr: &dyn Array) -> Option<Box<dyn Array>> {
     }
     if let Some(arr) = arr.downcast_ref::<StructArray>() {
         return propagate_nulls_struct(arr).map(|arr| Box::new(arr) as _);
+    }
+    if let Some(arr) = arr.downcast_ref::<LargeUnionArray>() {
+        return propagate_nulls_union(arr).map(|arr| Box::new(arr) as _);
     }
 
     None
@@ -289,4 +292,31 @@ mod tests {
             }
         }
     }
+}
+
+/// Propagate nulls inside the children of a union.
+pub fn propagate_nulls_union(arr: &LargeUnionArray) -> Option<LargeUnionArray> {
+    let changed: Vec<_> = arr
+        .fields()
+        .iter()
+        .map(|child| propagate_nulls(child.as_ref()))
+        .collect();
+    if changed.iter().all(Option::is_none) {
+        return None;
+    }
+    let fields = changed
+        .into_iter()
+        .zip(arr.fields())
+        .map(|(new, old)| new.unwrap_or_else(|| old.clone()))
+        .collect();
+    // SAFETY: only nested values changed; each child keeps its length and its own validity.
+    Some(unsafe {
+        LargeUnionArray::new_unchecked(
+            arr.dtype().clone(),
+            arr.types().clone(),
+            arr.offsets().clone(),
+            fields,
+            arr.validity().cloned(),
+        )
+    })
 }

@@ -1,4 +1,4 @@
-use polars_arrow::array::{Array, FixedSizeListArray, ListArray, StructArray};
+use polars_arrow::array::{Array, FixedSizeListArray, LargeUnionArray, ListArray, StructArray};
 use polars_arrow::types::Offset;
 
 use crate::rebuild_list::rebuild_list_shallow;
@@ -17,6 +17,9 @@ pub fn trim_lists_to_normalized_offsets(arr: &dyn Array) -> Option<Box<dyn Array
     }
     if let Some(arr) = arr.downcast_ref::<StructArray>() {
         return trim_lists_to_normalized_offsets_struct(arr).map(|arr| Box::new(arr) as _);
+    }
+    if let Some(arr) = arr.downcast_ref::<LargeUnionArray>() {
+        return trim_lists_to_normalized_offsets_union(arr).map(|arr| Box::new(arr) as _);
     }
 
     None
@@ -83,4 +86,31 @@ pub fn trim_lists_to_normalized_offsets_struct(arr: &StructArray) -> Option<Stru
         new_values,
         arr.validity().cloned(),
     ))
+}
+
+/// Trim the lists in the children of a union.
+pub fn trim_lists_to_normalized_offsets_union(arr: &LargeUnionArray) -> Option<LargeUnionArray> {
+    let changed: Vec<_> = arr
+        .fields()
+        .iter()
+        .map(|child| trim_lists_to_normalized_offsets(child.as_ref()))
+        .collect();
+    if changed.iter().all(Option::is_none) {
+        return None;
+    }
+    let fields = changed
+        .into_iter()
+        .zip(arr.fields())
+        .map(|(new, old)| new.unwrap_or_else(|| old.clone()))
+        .collect();
+    // SAFETY: only nested values changed; each child keeps its length and its own validity.
+    Some(unsafe {
+        LargeUnionArray::new_unchecked(
+            arr.dtype().clone(),
+            arr.types().clone(),
+            arr.offsets().clone(),
+            fields,
+            arr.validity().cloned(),
+        )
+    })
 }
