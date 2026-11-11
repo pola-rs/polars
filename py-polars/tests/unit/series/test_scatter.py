@@ -6,7 +6,12 @@ import pytest
 
 import polars as pl
 from polars._typing import PolarsDataType, TimeUnit
-from polars.exceptions import ComputeError, InvalidOperationError, OutOfBoundsError, ShapeError
+from polars.exceptions import (
+    ComputeError,
+    InvalidOperationError,
+    OutOfBoundsError,
+    ShapeError,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
