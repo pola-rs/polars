@@ -1292,8 +1292,9 @@ impl DataType {
     /// Errors if a cast from `self` to `to` involves a `Union` and is not allowed.
     ///
     /// A union only widens to another union (see [`DataType::widens_to`]), `Null` casts to any
-    /// union, and a union casts to `String` if all its variants do. Nested lists, arrays and
-    /// structs are checked the way `Series::cast` recurses into them.
+    /// dtype, and a union casts to `String` if all its variants do. Nested dtypes are checked the
+    /// way `Series::cast` recurses into them, and any other cast that reaches a union is rejected,
+    /// so the answer never depends on the data.
     pub fn ensure_union_cast(&self, to: &DataType) -> PolarsResult<()> {
         if !self.contains_union() && !to.contains_union() {
             return Ok(());
@@ -1305,10 +1306,16 @@ impl DataType {
         use DataType as D;
         #[cfg(feature = "dtype-union")]
         let err = |msg: &str| polars_err!(InvalidOperation: "cannot cast `{self}` to `{to}`{msg}");
+        let union_err = || {
+            polars_err!(
+                InvalidOperation: "cannot cast `{self}` to `{to}`: a union only casts to a union \
+                with the same variants (or more) or to `String`; use `union.field`, \
+                `union.match` or `pl.union` to convert values"
+            )
+        };
         match (self, to) {
             _ if self == to => Ok(()),
-            #[cfg(feature = "dtype-union")]
-            (D::Null, D::Union(_)) => Ok(()),
+            (D::Null, _) => Ok(()),
             #[cfg(feature = "dtype-union")]
             (D::Union(l), D::Union(r)) => {
                 for l in l {
@@ -1341,10 +1348,7 @@ impl DataType {
                 Ok(())
             },
             #[cfg(feature = "dtype-union")]
-            (D::Union(_), _) | (_, D::Union(_)) => Err(err(
-                ": a union only casts to a union with the same variants (or more) or to `String`; \
-                 use `union.field`, `union.match` or `pl.union` to convert values",
-            )),
+            (D::Union(_), _) | (_, D::Union(_)) => Err(union_err()),
             // `Series::cast` keeps the source's inner dtype for a `List(Null)` target.
             (D::List(_), D::List(r)) if r.is_null() => Ok(()),
             (D::List(l), D::List(r)) => l.ensure_union_cast_rec(r),
@@ -1361,6 +1365,22 @@ impl DataType {
                 }
                 Ok(())
             },
+            // Formats each row.
+            #[cfg(feature = "dtype-struct")]
+            (D::Struct(_), D::String) => Ok(()),
+            // Casts every field to `to`.
+            #[cfg(feature = "dtype-struct")]
+            (D::Struct(l), _) => l
+                .iter()
+                .try_for_each(|l| l.dtype().ensure_union_cast_rec(to)),
+            // Map casts go through the `List(Struct {key, value})` storage, matching by name.
+            #[cfg(feature = "dtype-map")]
+            (D::Map(..), _) => self.map_storage_dtype().unwrap().ensure_union_cast_rec(to),
+            #[cfg(feature = "dtype-map")]
+            (_, D::Map(..)) => self.ensure_union_cast_rec(&to.map_storage_dtype().unwrap()),
+            #[cfg(feature = "dtype-extension")]
+            (_, D::Extension(_, storage)) => self.ensure_union_cast_rec(storage),
+            _ if self.contains_union() || to.contains_union() => Err(union_err()),
             _ => Ok(()),
         }
     }
@@ -1752,21 +1772,13 @@ impl DataType {
                 Ok(must_cast)
             },
             #[cfg(feature = "dtype-union")]
-            (DataType::Union(l), DataType::Union(r)) => {
+            // Not recursive: a union cast only retypes nulls, so variants must widen.
+            (DataType::Union(_), DataType::Union(_)) => {
                 polars_ensure!(
-                    l.len() == r.len(),
-                    SchemaMismatch: "unions have different number of variants: {} vs {}", l.len(), r.len()
+                    self.widens_to(schema_type),
+                    SchemaMismatch: "union `{self}` does not widen to `{schema_type}`"
                 );
-                let mut must_cast = false;
-                for (l, r) in l.iter().zip(r.iter()) {
-                    polars_ensure!(
-                        l.name() == r.name(),
-                        SchemaMismatch: "union variant names differ: `{}` vs `{}`",
-                        l.name(), r.name(),
-                    );
-                    must_cast |= l.dtype.matches_schema_type(&r.dtype)?;
-                }
-                Ok(must_cast)
+                Ok(self != schema_type)
             },
             #[cfg(feature = "dtype-map")]
             (DataType::Map(lk, lv), DataType::Map(rk, rv)) => {

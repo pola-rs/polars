@@ -976,6 +976,93 @@ def test_union_cast_into_rejected(s: pl.Series) -> None:
         lazy.collect_schema()
 
 
+U_I = pl.Union({"i": pl.Int64})
+MAP_ENTRIES = pl.List(pl.Struct({"key": pl.String, "value": pl.Int64}))
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype", "target"),
+    [
+        ([{"a": 1}], pl.Map(pl.String, pl.Int64), pl.Map(pl.String, U_I)),
+        (
+            [{"a": 1}],
+            pl.Map(pl.String, pl.Int64),
+            pl.List(pl.Struct({"key": pl.String, "value": U_I})),
+        ),
+        ([[{"key": "a", "value": 1}]], MAP_ENTRIES, pl.Map(pl.String, U_I)),
+        ([{"x": 1}], pl.Struct({"x": pl.Int64}), pl.Struct({"x": U_I})),
+        ([1], pl.Int64, pl.Struct({"x": U_I})),
+        ([[1]], pl.List(pl.Int64), pl.Array(U_I, 1)),
+        ([[1]], pl.List(pl.Int64), pl.List(pl.Struct({"x": U_I}))),
+    ],
+)
+@pytest.mark.parametrize("null", [False, True])
+def test_union_cast_nested_rejected(
+    values: list[Any], dtype: pl.DataType, target: pl.DataType, null: bool
+) -> None:
+    # Rejected from the dtypes alone, also when no value reaches the union.
+    s = pl.Series([None] if null else values, dtype=dtype)
+    with pytest.raises(InvalidOperationError, match="cannot cast"):
+        s.cast(target)
+    lazy = s.to_frame().lazy().select(pl.col("").cast(target))
+    with pytest.raises(InvalidOperationError, match="cannot cast"):
+        lazy.collect_schema()
+
+
+def test_union_cast_struct_with_union_to_scalar_rejected() -> None:
+    for values in ([None], [{"x": None}]):
+        s = pl.Series(values, dtype=pl.Struct({"x": U_I}))
+        with pytest.raises(InvalidOperationError, match="cannot cast"):
+            s.cast(pl.Int64)
+        lazy = s.to_frame().lazy().select(pl.col("").cast(pl.Int64))
+        with pytest.raises(InvalidOperationError, match="cannot cast"):
+            lazy.collect_schema()
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        pl.Struct({"x": U_I}),
+        pl.List(pl.Struct({"x": U_I})),
+        pl.Array(U_I, 1),
+        pl.Map(pl.String, U_I),
+    ],
+)
+def test_union_cast_null_to_nested(target: pl.DataType) -> None:
+    s = pl.Series([None, None])
+    assert_series_equal(s.cast(target), pl.Series([None, None], dtype=target))
+    lazy = s.to_frame().lazy().select(pl.col("").cast(target))
+    assert lazy.collect_schema()[""] == target
+
+
+def union_key_map() -> pl.Series:
+    keys = pl.Series(dense([0, 0], [0, 1], [pa.array([1, 2])], ["i"]))
+    entries = pl.struct(
+        pl.lit(keys).alias("key"), pl.lit(pl.Series(["x", "y"])).alias("value")
+    )
+    return pl.select(pl.concat_list(entries)).to_series().cast(pl.Map(U_I, pl.String))
+
+
+def test_union_cast_map_key_widens() -> None:
+    m = union_key_map()
+    target = pl.Map(INT_STR, pl.String)
+    out = m.cast(target)
+    assert out.dtype == target
+    assert to_pylist(out) == [[(1, "x")], [(2, "y")]]
+    lazy = m.to_frame().lazy().select(pl.col("key").cast(target))
+    assert_series_equal(lazy.collect().to_series(), out)
+
+
+def test_union_append_widens() -> None:
+    small = pl.Series(dense([0], [0], [pa.array([1])], ["i"]))
+    big = pl.Series(int_str())
+    out = big.clone().append(small)
+    assert out.dtype == INT_STR
+    assert to_pylist(out) == INT_STR_VALUES + [1]
+    with pytest.raises(pl.exceptions.SchemaError, match="does not widen"):
+        small.clone().append(big)
+
+
 def test_union_cast_rejects_placeholders_and_lists() -> None:
     s = pl.Series(dense([0], [0], [pa.array([[1]], pa.large_list(pa.int64()))], ["l"]))
     # `pl.List` is `List(Null)`, a list of nulls.
