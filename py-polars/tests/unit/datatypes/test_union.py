@@ -1426,3 +1426,34 @@ def test_union_write_parquet_raises(tmp_path: Path) -> None:
         df.write_parquet(tmp_path / "u.parquet")
     with pytest.raises(ComputeError, match="not yet implemented"):
         df.lazy().sink_parquet(tmp_path / "u.parquet")
+
+
+def test_union_by_dtype_selector() -> None:
+    import polars.selectors as cs
+
+    df = match_frame()
+    assert df.select(cs.by_dtype(pl.Union)).columns == ["u"]
+    assert df.select(cs.by_dtype(INT_STR)).columns == ["u"]
+
+
+@pytest.mark.parametrize(
+    ("expr", "op"),
+    [
+        (pl.col("u").min(), "min"),
+        (pl.col("u").max(), "max"),
+        (pl.col("u").sum(), "sum"),
+        (pl.col("u").quantile(0.5), "quantile"),
+        (pl.col("u").arg_min(), "arg_min"),
+        (pl.col("u").arg_max(), "arg_max"),
+    ],
+)
+def test_union_unordered_aggregations_raise(expr: pl.Expr, op: str) -> None:
+    lf = match_frame().lazy()
+    for q in [lf.select(expr), lf.group_by("k").agg(expr)]:
+        with pytest.raises(
+            InvalidOperationError, match=f"`{op}` operation not supported"
+        ):
+            q.collect_schema()
+        for engine in ["in-memory", "streaming"]:
+            with pytest.raises(InvalidOperationError, match=f"`{op}`"):
+                q.collect(engine=engine)  # type: ignore[call-overload]

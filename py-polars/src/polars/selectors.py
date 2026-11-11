@@ -382,6 +382,8 @@ class Selector(Expr):
                     selectors += [struct()]
                 elif dt is pldt.Map:
                     selectors += [map()]
+                elif dt is pldt.Union:
+                    selectors += [union()]
                 elif dt is pldt.Decimal:
                     selectors += [decimal()]
                 else:
@@ -1702,7 +1704,7 @@ def nested() -> Selector:
     """
     Select all nested columns.
 
-    A nested column is a list, array or struct.
+    A nested column is a list, array, struct, map or union.
 
     .. warning::
         This functionality is considered **unstable**. It may be changed
