@@ -10,4 +10,5 @@ The following methods are available under the `Series.union` attribute.
    :template: autosummary/accessor_method.rst
 
     Series.union.field
+    Series.union.match
     Series.union.tag

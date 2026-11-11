@@ -10,4 +10,5 @@ The following methods are available under the `expr.union` attribute.
    :template: autosummary/accessor_method.rst
 
     Expr.union.field
+    Expr.union.match
     Expr.union.tag

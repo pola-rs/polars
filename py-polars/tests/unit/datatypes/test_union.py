@@ -1196,3 +1196,158 @@ def test_union_value_arguments() -> None:
         pl.select(pl.union_value(INT_STR, z=1))
     with pytest.raises(InvalidOperationError, match="requires a Union dtype"):
         pl.select(pl.union_value(pl.Int64, i=1))
+
+
+def match_frame() -> pl.DataFrame:
+    df = pl.DataFrame({"x": [1, None, 3, None], "y": ["a", "bc", "d", None]})
+    return df.with_columns(
+        k=pl.Series([5, 6, 7, 8]),
+        u=pl.when(pl.col("x").is_not_null())
+        .then(pl.union_value(INT_STR, i=pl.col("x")))
+        .otherwise(pl.union_value(INT_STR, s=pl.col("y"))),
+    )
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected", "dtype"),
+    [
+        (
+            pl.col("u").union.match(
+                i=pl.element() * 10, s=pl.element().str.len_chars().cast(pl.Int64)
+            ),
+            [10, 2, 30, None],
+            pl.Int64,
+        ),
+        (pl.col("u").union.match(i=pl.element(), default=0), [1, 0, 3, None], pl.Int64),
+        (
+            pl.col("u").union.match(i=pl.element(), default=None),
+            [1, None, 3, None],
+            pl.Int64,
+        ),
+        (
+            pl.col("u").union.match({"s": pl.element()}, i=pl.lit("int")),
+            ["int", "bc", "int", None],
+            pl.String,
+        ),
+        # Arms can refer to other columns.
+        (
+            pl.col("u").union.match(i=pl.element() + pl.col("k"), s=pl.col("k")),
+            [6, 6, 10, None],
+            pl.Int64,
+        ),
+        # `element()` in a nested `eval` is the list element.
+        (
+            pl.col("u").union.match(
+                i=pl.concat_list(pl.element()).list.eval(pl.element() * 2),
+                default=None,
+            ),
+            [[2], None, [6], None],
+            pl.List(pl.Int64),
+        ),
+    ],
+)
+def test_union_match(expr: pl.Expr, expected: list[Any], dtype: pl.DataType) -> None:
+    df = match_frame()
+    lf = df.lazy().select(expr)
+    assert lf.collect_schema() == {"u": dtype}
+    for engine in ["in-memory", "streaming"]:
+        out = lf.collect(engine=engine).to_series()  # type: ignore[call-overload]
+        assert out.dtype == dtype
+        assert out.to_list() == expected
+
+
+def test_union_match_converts_unions() -> None:
+    to = pl.Union({"n": pl.Int64, "t": pl.String})
+    out = match_frame().select(
+        pl.col("u").union.match(
+            i=pl.union_value(to, n=pl.element()), s=pl.union_value(to, t=pl.element())
+        )
+    )
+    assert out.schema == {"u": to}
+    assert to_pylist(out.to_series()) == [1, "bc", 3, None]
+    assert out.to_series().union.tag().to_list() == ["n", "t", "n", None]
+
+
+def test_union_match_nested() -> None:
+    inner = pl.Union({"a": pl.Int64})
+    df = match_frame()
+    # The inner `element()` is the inner union's variant.
+    out = df.select(
+        pl.col("u").union.match(
+            i=pl.union_value(inner, a=pl.element()).union.match(a=pl.element() + 1),
+            default=None,
+        )
+    )
+    assert out.to_series().to_list() == [2, None, 4, None]
+    out = df.select(
+        pl.concat_list("u").list.eval(
+            pl.element().union.match(i=pl.element(), default=-1)
+        )
+    )
+    assert out.to_series().to_list() == [[1], [-1], [3], [None]]
+
+
+@pytest.mark.parametrize(
+    ("expr", "error", "match"),
+    [
+        (
+            pl.col("u").union.match(i=pl.element()),
+            InvalidOperationError,
+            r"no arm for the variants \[`s`\]",
+        ),
+        (
+            pl.col("u").union.match(i=1, s=1, z=1),
+            pl.exceptions.StructFieldNotFoundError,
+            "no variant `z`",
+        ),
+        (
+            pl.col("u").union.match(i=pl.element(), s=pl.element()),
+            pl.exceptions.SchemaError,
+            "same dtype",
+        ),
+        (
+            pl.col("u").union.match(i=pl.element(), default=1.5),
+            pl.exceptions.SchemaError,
+            "same dtype",
+        ),
+        (
+            pl.col("u").union.match(i=pl.element().sum(), default=0),
+            InvalidOperationError,
+            "must be elementwise",
+        ),
+        (
+            pl.col("u").union.match(i=pl.all(), default=0),
+            InvalidOperationError,
+            "single expression",
+        ),
+        (
+            pl.col("k").union.match(default=1),
+            InvalidOperationError,
+            "requires a Union dtype",
+        ),
+    ],
+)
+def test_union_match_errors(expr: pl.Expr, error: type[Exception], match: str) -> None:
+    with pytest.raises(error, match=match):
+        match_frame().lazy().select(expr).collect_schema()
+
+
+def test_union_match_arguments() -> None:
+    dtype = pl.Union({"a b": pl.Int64, "default": pl.Int64})
+    df = pl.select(u=pl.union_value(dtype, {"a b": pl.Series([1, 2])}))
+    out = df.select(pl.col("u").union.match({"a b": pl.element(), "default": 0}))
+    assert out.to_series().to_list() == [1, 2]
+    with pytest.raises(ValueError, match="more than once"):
+        pl.col("u").union.match({"i": 1}, i=2)
+
+
+def test_union_selector() -> None:
+    import polars.selectors as cs
+
+    df = match_frame()
+    assert df.select(cs.union()).columns == ["u"]
+    assert "u" not in df.select(~cs.union()).columns
+    assert df.select(cs.nested()).columns == ["u"]
+    assert repr(cs.union()) == "cs.union()"
+    out = df.select(cs.union().union.match(i=pl.element(), default=0))
+    assert out.to_series().to_list() == [1, 0, 3, None]

@@ -18,4 +18,17 @@ impl UnionNameSpace {
     pub fn value(self, dtype: DataTypeExpr, variant: PlSmallStr) -> Expr {
         self.0.map_unary(UnionFunction::Value { dtype, variant })
     }
+
+    /// Evaluates the arm of each row's variant, where `pl.element()` is the variant's value.
+    ///
+    /// Variants without an arm give `default`, which is required unless every variant has one.
+    pub fn match_(self, arms: Vec<(PlSmallStr, Expr)>, default: Option<Expr>) -> Expr {
+        let (names, arms): (Vec<_>, Vec<_>) = arms.into_iter().unzip();
+        let has_default = default.is_some();
+        let input = std::iter::once(self.0).chain(arms).chain(default).collect();
+        Expr::Function {
+            input,
+            function: UnionFunction::Match { names, has_default }.into(),
+        }
+    }
 }

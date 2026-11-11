@@ -20,4 +20,17 @@ impl PyExpr {
             .value(dtype.inner, variant.into())
             .into()
     }
+
+    #[pyo3(signature = (arms, default))]
+    fn union_match(&self, arms: Vec<(String, PyExpr)>, default: Option<PyExpr>) -> Self {
+        let arms = arms
+            .into_iter()
+            .map(|(name, arm)| (name.into(), arm.inner))
+            .collect();
+        self.inner
+            .clone()
+            .union()
+            .match_(arms, default.map(|d| d.inner))
+            .into()
+    }
 }

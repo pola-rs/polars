@@ -11,6 +11,13 @@ pub enum UnionFunction {
         dtype: DataTypeExpr,
         variant: PlSmallStr,
     },
+    /// The inputs are the union, an arm per name in `names`, and the default if `has_default`.
+    ///
+    /// `pl.element()` in an arm is the value of its variant. Lowered to `when/then` in the IR.
+    Match {
+        names: Vec<PlSmallStr>,
+        has_default: bool,
+    },
 }
 
 impl Display for UnionFunction {
@@ -19,6 +26,7 @@ impl Display for UnionFunction {
             UnionFunction::Tag => write!(f, "union.tag"),
             UnionFunction::Field(name) => write!(f, "union.field({name})"),
             UnionFunction::Value { variant, .. } => write!(f, "union.value({variant})"),
+            UnionFunction::Match { .. } => write!(f, "union.match"),
         }
     }
 }
