@@ -158,6 +158,11 @@ impl_apply_lambda_generic!(
 );
 
 impl_apply_lambda_generic!(
+    { impl<'py> ApplyLambdaGeneric<'py> for UnionChunked },
+    |ca| (0..ca.len()).map(|i| unsafe { ca.get_any_value_unchecked(i).null_to_none().map(Wrap) })
+);
+
+impl_apply_lambda_generic!(
     { impl<'py> ApplyLambdaGeneric<'py> for StructChunked },
     |ca| (0..ca.len()).map(|i| unsafe { ca.get_any_value_unchecked(i).null_to_none().map(Wrap) })
 );

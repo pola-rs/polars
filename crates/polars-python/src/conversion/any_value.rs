@@ -120,6 +120,8 @@ pub(crate) fn any_value_into_py_object<'py>(
         AnyValue::StructOwned(payload) => {
             Ok(struct_dict(py, payload.0.into_iter(), &payload.1)?.into_any())
         },
+        AnyValue::Union(_, v, _) => any_value_into_py_object(*v, py),
+        AnyValue::UnionOwned(payload) => any_value_into_py_object(payload.1, py),
         #[cfg(feature = "object")]
         AnyValue::Object(v) => {
             let object = v.as_any().downcast_ref::<ObjectValue>().unwrap();

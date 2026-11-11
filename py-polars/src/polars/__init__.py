@@ -110,6 +110,7 @@ from polars.datatypes import (
     UInt32,
     UInt64,
     UInt128,
+    Union,
     Unknown,
     Utf8,
 )
@@ -342,6 +343,7 @@ __all__ = [
     "UInt32",
     "UInt64",
     "UInt128",
+    "Union",
     "Unknown",
     "Utf8",
     # datatypes.extension

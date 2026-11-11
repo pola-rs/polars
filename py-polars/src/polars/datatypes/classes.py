@@ -1408,6 +1408,67 @@ class Struct(NestedType):
         return OrderedDict(self)
 
 
+class Union(NestedType):
+    """
+    Tagged union type: each value belongs to exactly one of the named variants.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed at any
+        point without it being considered a breaking change.
+
+    Parameters
+    ----------
+    fields
+        The variants of the union, with unique names. Can be either a sequence of
+        Field objects or a mapping of variant names to data types.
+
+    Examples
+    --------
+    >>> dtype = pl.Union({"i": pl.Int64, "s": pl.String})
+    >>> dtype
+    Union({'i': Int64, 's': String})
+
+    A union column is read from an Arrow dense union:
+
+    >>> import pyarrow as pa
+    >>> arr = pa.UnionArray.from_dense(
+    ...     pa.array([0, 1, 0], type=pa.int8()),
+    ...     pa.array([0, 0, 1], type=pa.int32()),
+    ...     [pa.array([1, 2]), pa.array(["a"])],
+    ...     ["i", "s"],
+    ... )
+    >>> pl.Series("u", arr).to_list()
+    [1, 'a', 2]
+    """
+
+    fields: list[Field]
+
+    def __init__(self, fields: Sequence[Field] | SchemaDict) -> None:
+        if isinstance(fields, Mapping):
+            self.fields = [Field(name, dtype) for name, dtype in fields.items()]
+        else:
+            self.fields = list(fields)
+
+    def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
+        if isclass(other) and issubclass(other, Union):
+            return True
+        elif isinstance(other, Union):
+            return self.fields == other.fields
+        else:
+            return False
+
+    def __hash__(self) -> int:
+        return hash((self.__class__, tuple(self.fields)))
+
+    def __iter__(self) -> Iterator[tuple[str, PolarsDataType]]:
+        for fld in self.fields:
+            yield fld.name, fld.dtype
+
+    def __repr__(self) -> str:
+        class_name = self.__class__.__name__
+        return f"{class_name}({dict(self)})"
+
+
 class BaseExtension(DataType):
     """
     Base class for extension data types.

@@ -383,6 +383,17 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Null"))?;
                 class.call0()
             },
+            DataType::Union(fields) => {
+                let field_class = pl.getattr(intern!(py, "Field"))?;
+                let iter = fields.iter().map(|fld| {
+                    let name = fld.name().as_str();
+                    let dtype = Wrap(fld.dtype().clone());
+                    field_class.call1((name, &dtype)).unwrap()
+                });
+                let fields = PyList::new(py, iter)?;
+                let union_class = pl.getattr(intern!(py, "Union"))?;
+                union_class.call1((fields,))
+            },
             DataType::Map(key, value) => {
                 let class = pl.getattr(intern!(py, "Map"))?;
                 let key = Wrap(*key.clone());
@@ -480,6 +491,12 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DataType> {
                         // stand-in the way `List` has `List(Null)`.
                         return Err(PyTypeError::new_err(
                             "Map requires a key and a value type, e.g. `pl.Map(pl.String, pl.Int64)`",
+                        ));
+                    },
+                    #[cfg(feature = "dtype-union")]
+                    "Union" => {
+                        return Err(PyTypeError::new_err(
+                            "Union requires its variants, e.g. `pl.Union({\"i\": pl.Int64, \"s\": pl.String})`",
                         ));
                     },
                     "Null" => DataType::Null,
@@ -583,6 +600,20 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DataType> {
                     .map(|f| f.0)
                     .collect::<Vec<Field>>();
                 DataType::Struct(fields)
+            },
+            #[cfg(feature = "dtype-union")]
+            "Union" => {
+                let fields = ob.getattr(intern!(py, "fields"))?;
+                let fields = fields
+                    .extract::<Vec<Wrap<Field>>>()?
+                    .into_iter()
+                    .map(|f| f.0)
+                    .collect::<Vec<Field>>();
+                let dtype = DataType::Union(fields);
+                dtype
+                    .ensure_valid_union_dtype()
+                    .map_err(PyPolarsErr::from)?;
+                dtype
             },
             "Null" => DataType::Null,
             #[cfg(feature = "object")]
