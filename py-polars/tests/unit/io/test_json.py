@@ -1080,3 +1080,11 @@ def test_read_ndjson_small_integers_16167() -> None:
 
     with pytest.raises(ComputeError, match="cannot parse '-1'"):
         pl.read_ndjson(io.BytesIO(b'{"a": -1}\n'), schema={"a": pl.UInt8})
+
+
+def test_json_repeated_nested_key_is_one_field() -> None:
+    expected = pl.DataFrame({"s": [{"b": 1}]})
+    assert_frame_equal(pl.read_json(io.StringIO('[{"s": {"b": 1, "b": 2}}]')), expected)
+    assert_frame_equal(
+        pl.read_ndjson(io.StringIO('{"s": {"b": 1, "b": 2}}\n')), expected
+    )

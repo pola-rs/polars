@@ -30,15 +30,26 @@ pub fn infer(json: &BorrowedValue) -> PolarsResult<ArrowDataType> {
 }
 
 fn infer_object(inner: &Object) -> PolarsResult<ArrowDataType> {
-    let fields = inner
-        .iter()
-        .map(|(key, value)| infer(value).map(|dt| (key, dt)))
-        .map(|maybe_dt| {
-            let (key, dt) = maybe_dt?;
-            Ok(Field::new(key.as_ref().into(), dt, true))
-        })
-        .collect::<PolarsResult<Vec<_>>>()?;
-    Ok(ArrowDataType::Struct(fields))
+    // Objects parsed from a tape keep repeated keys; each key is one field.
+    let mut fields = PlIndexMap::<&str, ArrowDataType>::with_capacity(inner.len());
+    for (key, value) in inner.iter() {
+        let dt = infer(value)?;
+        match fields.entry(key.as_ref()) {
+            Entry::Occupied(mut prev) => {
+                let coerced = coerce_dtype(&[prev.get().clone(), dt]);
+                prev.insert(coerced);
+            },
+            Entry::Vacant(v) => {
+                v.insert(dt);
+            },
+        }
+    }
+    Ok(ArrowDataType::Struct(
+        fields
+            .into_iter()
+            .map(|(key, dt)| Field::new(key.into(), dt, true))
+            .collect(),
+    ))
 }
 
 fn infer_array(values: &[BorrowedValue]) -> PolarsResult<ArrowDataType> {
