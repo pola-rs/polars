@@ -17,7 +17,7 @@ use crate::series::IsSorted;
 
 impl UnionChunked {
     /// The variants of this union.
-    pub fn union_fields(&self) -> &[Field] {
+    pub fn union_fields(&self) -> &UnionFields {
         let DataType::Union(fields) = self.dtype() else {
             unreachable!()
         };

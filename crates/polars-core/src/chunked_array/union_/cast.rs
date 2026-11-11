@@ -156,10 +156,13 @@ mod test {
     use super::*;
 
     fn int_str() -> UnionChunked {
-        let dtype = DataType::Union(vec![
-            Field::new("a".into(), DataType::Int64),
-            Field::new("b".into(), DataType::String),
-        ]);
+        let dtype = DataType::Union(
+            UnionFields::try_new(vec![
+                Field::new("a".into(), DataType::Int64),
+                Field::new("b".into(), DataType::String),
+            ])
+            .unwrap(),
+        );
         let arr = LargeUnionArray::new(
             dtype.to_physical_arrow(CompatLevel::newest()),
             vec![0i8, 1, 0].into(),
@@ -185,9 +188,12 @@ mod test {
 
     #[test]
     fn tag_only_cast_shares_offsets() {
-        assert!(cast_offsets_shared(&DataType::Union(vec![
-            Field::new("b".into(), DataType::String),
-            Field::new("a".into(), DataType::Int64),
-        ])));
+        assert!(cast_offsets_shared(&DataType::Union(
+            UnionFields::try_new(vec![
+                Field::new("b".into(), DataType::String),
+                Field::new("a".into(), DataType::Int64),
+            ])
+            .unwrap()
+        )));
     }
 }

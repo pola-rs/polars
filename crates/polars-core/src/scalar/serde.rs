@@ -1,11 +1,13 @@
 use polars_arrow::array::IntoBoxedArray;
-use polars_error::{PolarsError, PolarsResult, polars_bail};
+use polars_error::{PolarsError, PolarsResult, polars_bail, polars_ensure};
 use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::Scalar;
+#[cfg(feature = "dtype-union")]
+use crate::prelude::UnionFields;
 use crate::prelude::{AnyValue, DataType, Field};
 use crate::series::Series;
 
@@ -139,7 +141,11 @@ pub enum SerializableScalar {
 
     /// The variant index, the variants and the value as a scalar of the variant's dtype.
     #[cfg(feature = "dtype-union")]
-    Union(usize, Vec<Field>, Box<SerializableScalar>),
+    Union(
+        usize,
+        #[cfg_attr(feature = "dsl-schema", schemars(with = "Vec<Field>"))] UnionFields,
+        Box<SerializableScalar>,
+    ),
 }
 
 impl TryFrom<Scalar> for SerializableScalar {
@@ -347,6 +353,10 @@ impl TryFrom<SerializableScalar> for Scalar {
             },
             #[cfg(feature = "dtype-union")]
             S::Union(tag, fields, value) => {
+                polars_ensure!(
+                    tag < fields.len(),
+                    ComputeError: "union scalar variant {tag} is out of range"
+                );
                 let Scalar { value, .. } = Scalar::try_from(*value)?;
                 let dtype = DataType::Union(fields.clone());
                 Self::new(dtype, AnyValue::UnionOwned(Box::new((tag, value, fields))))

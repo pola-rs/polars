@@ -68,8 +68,7 @@ pub(crate) fn union_from_arrow(
             .enumerate()
             .all(|(i, m)| m.is_none_or(|m| m == Some(i)));
 
-    let dtype = DataType::Union(kept_fields);
-    dtype.ensure_valid_union_dtype()?;
+    let dtype = DataType::Union(UnionFields::try_new(kept_fields)?);
     let arrow_dtype = dtype.to_physical_arrow(CompatLevel::newest());
     let n = kept_children.len();
 

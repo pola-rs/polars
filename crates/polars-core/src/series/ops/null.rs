@@ -18,10 +18,6 @@ impl Series {
         dtype
             .ensure_valid_map_dtypes()
             .expect("invalid Map dtype in `Series::full_null`");
-        #[cfg(feature = "dtype-union")]
-        dtype
-            .ensure_valid_union_dtypes()
-            .expect("invalid Union dtype in `Series::full_null`");
 
         // match the logical types and create them
         match dtype {

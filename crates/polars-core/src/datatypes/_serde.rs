@@ -105,7 +105,7 @@ enum SerializableDataType {
         storage: Box<SerializableDataType>,
     },
     #[cfg(feature = "dtype-union")]
-    Union(Vec<Field>),
+    Union(#[cfg_attr(feature = "dsl-schema", schemars(with = "Vec<Field>"))] UnionFields),
 }
 
 impl From<&DataType> for SerializableDataType {

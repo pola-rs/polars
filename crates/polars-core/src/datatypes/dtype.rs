@@ -143,7 +143,7 @@ pub enum DataType {
     Map(Box<DataType>, Box<DataType>),
     /// A tagged union: each value belongs to exactly one of the uniquely named variants.
     #[cfg(feature = "dtype-union")]
-    Union(Vec<Field>),
+    Union(UnionFields),
     #[cfg(feature = "dtype-extension")]
     Extension(ExtensionTypeInstance, Box<DataType>),
     // some logical types we cannot know statically, e.g. Datetime
@@ -401,17 +401,11 @@ impl DataType {
                 Box::new(value.materialize_unknown(allow_unknown)?),
             )),
             #[cfg(feature = "dtype-union")]
-            DataType::Union(fields) => Ok(DataType::Union(
-                fields
-                    .into_iter()
-                    .map(|f| {
-                        PolarsResult::Ok(Field::new(
-                            f.name,
-                            f.dtype.materialize_unknown(allow_unknown)?,
-                        ))
-                    })
-                    .try_collect_vec()?,
-            )),
+            DataType::Union(fields) => {
+                Ok(DataType::Union(fields.try_map_dtypes(|dt| {
+                    dt.clone().materialize_unknown(allow_unknown)
+                })?))
+            },
             _ => Ok(self),
         }
     }
@@ -522,9 +516,8 @@ impl DataType {
             #[cfg(feature = "dtype-union")]
             Union(fields) => Union(
                 fields
-                    .into_iter()
-                    .map(|fld| Field::new(fld.name, fld.dtype.map_leaves(f)))
-                    .collect(),
+                    .try_map_dtypes(|dt| Ok(dt.clone().map_leaves(f)))
+                    .expect("`map_leaves` produced an invalid Union variant"),
             ),
             #[cfg(feature = "dtype-extension")]
             Extension(ext, storage) => Extension(ext, Box::new(storage.map_leaves(f))),
@@ -648,12 +641,8 @@ impl DataType {
             #[cfg(feature = "dtype-map")]
             Map(_, _) => self.map_storage_dtype().unwrap().to_physical(),
             #[cfg(feature = "dtype-union")]
-            Union(fields) => Union(
-                fields
-                    .iter()
-                    .map(|s| Field::new(s.name().clone(), s.dtype().to_physical()))
-                    .collect(),
-            ),
+            // The physical dtype of a valid variant is a valid variant.
+            Union(fields) => Union(fields.try_map_dtypes(|dt| Ok(dt.to_physical())).unwrap()),
             #[cfg(feature = "dtype-extension")]
             Extension(_, storage) => storage.to_physical(),
             _ => self.clone(),
@@ -1395,47 +1384,6 @@ impl DataType {
         }
     }
 
-    /// Validate the variants of a `Union`. Errors for any other dtype.
-    #[cfg(feature = "dtype-union")]
-    pub fn ensure_valid_union_dtype(&self) -> PolarsResult<()> {
-        use polars_arrow::array::MAX_UNION_VARIANTS;
-        let DataType::Union(fields) = self else {
-            polars_bail!(InvalidOperation: "`{self}` is not a Union dtype");
-        };
-        polars_ensure!(
-            !fields.is_empty() && fields.len() <= MAX_UNION_VARIANTS,
-            InvalidOperation: "a Union must have between 1 and {MAX_UNION_VARIANTS} variants, got {}",
-            fields.len()
-        );
-        let mut names = PlHashSet::with_capacity(fields.len());
-        for fld in fields {
-            polars_ensure!(
-                names.insert(fld.name()),
-                Duplicate: "Union variant name `{}` is not unique", fld.name()
-            );
-            polars_ensure!(
-                !(fld.dtype().is_null() || fld.dtype().is_object() || fld.dtype().is_unknown()),
-                InvalidOperation: "`{}` cannot be used as a Union variant dtype", fld.dtype()
-            );
-        }
-        Ok(())
-    }
-
-    /// Validate every `Union` nested in this dtype.
-    #[cfg(feature = "dtype-union")]
-    pub fn ensure_valid_union_dtypes(&self) -> PolarsResult<()> {
-        if !self.contains_union() {
-            return Ok(());
-        }
-
-        self.try_visit_with(|dtype| {
-            if dtype.is_union() {
-                dtype.ensure_valid_union_dtype()?;
-            }
-            Ok(())
-        })
-    }
-
     pub fn contains_union(&self) -> bool {
         use DataType as D;
         match self {
@@ -2119,7 +2067,7 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
                 let merged = merge_dtypes(l.dtype(), r.dtype())?;
                 Ok(Field::new(l.name().clone(), merged))
             }).collect::<PolarsResult<Vec<_>>>()?;
-            Union(fields)
+            Union(UnionFields::try_new(fields)?)
         },
         #[cfg(feature = "dtype-map")]
         (Map(key_l, value_l), Map(key_r, value_r)) => {
@@ -2317,16 +2265,19 @@ impl<'d, 'f> DtypeVisitor<'d, 'f> {
             },
             #[cfg(feature = "dtype-union")]
             DataType::Union(_) => match dtype {
-                Cow::Owned(DataType::Union(mut fields)) => {
+                Cow::Owned(DataType::Union(fields)) => {
+                    let mut fields = fields.into_fields();
                     for f in &mut fields {
                         self.visit_ref_mut(&mut f.dtype)?;
                     }
 
-                    Cow::Owned(DataType::Union(fields))
+                    Cow::Owned(DataType::Union(UnionFields::try_new(fields)?))
                 },
                 Cow::Borrowed(DataType::Union(fields)) => match self.visit_fields(fields)? {
                     None => dtype,
-                    Some(new_fields) => Cow::Owned(DataType::Union(new_fields)),
+                    Some(new_fields) => {
+                        Cow::Owned(DataType::Union(UnionFields::try_new(new_fields)?))
+                    },
                 },
                 _ => unreachable!(),
             },

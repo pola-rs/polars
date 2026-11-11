@@ -334,17 +334,14 @@ impl DataType {
                 if fields.is_empty() {
                     DataType::Null
                 } else {
-                    let dtype = DataType::Union(fields);
-                    if let Err(e) = dtype.ensure_valid_union_dtype() {
-                        panic!("{e}")
-                    }
-                    dtype
+                    DataType::Union(UnionFields::try_new(fields).unwrap_or_else(|e| panic!("{e}")))
                 }
             },
             #[cfg(feature = "dtype-union")]
-            ArrowDataType::LargeUnion(fields) => {
-                DataType::Union(fields.iter().map(Field::from).collect())
-            },
+            ArrowDataType::LargeUnion(fields) => DataType::Union(
+                UnionFields::try_new(fields.iter().map(Field::from).collect())
+                    .unwrap_or_else(|e| panic!("{e}")),
+            ),
             ArrowDataType::Interval(IntervalUnit::MonthDayNano) => {
                 check_allow_importing_interval_as_struct("month_day_nano_interval").unwrap();
                 feature_gated!("dtype-struct", DataType::_month_days_ns_struct_type())

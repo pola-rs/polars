@@ -609,11 +609,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DataType> {
                     .into_iter()
                     .map(|f| f.0)
                     .collect::<Vec<Field>>();
-                let dtype = DataType::Union(fields);
-                dtype
-                    .ensure_valid_union_dtype()
-                    .map_err(PyPolarsErr::from)?;
-                dtype
+                DataType::Union(UnionFields::try_new(fields).map_err(PyPolarsErr::from)?)
             },
             "Null" => DataType::Null,
             #[cfg(feature = "object")]

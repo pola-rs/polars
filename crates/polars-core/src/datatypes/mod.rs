@@ -18,6 +18,8 @@ mod into_scalar;
 #[cfg(feature = "object")]
 mod static_array_collect;
 mod temporal;
+#[cfg(feature = "dtype-union")]
+mod union_fields;
 
 #[cfg(feature = "proptest")]
 pub mod proptest;
@@ -63,6 +65,8 @@ use serde::{Deserialize, Serialize};
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]
 use serde::{Deserializer, Serializer};
 pub use temporal::*;
+#[cfg(feature = "dtype-union")]
+pub use union_fields::UnionFields;
 
 pub use crate::chunked_array::logical::*;
 #[cfg(feature = "object")]
@@ -314,7 +318,7 @@ unsafe impl PolarsDataType for UnionType {
     where
         Self: Sized,
     {
-        DataType::Union(vec![])
+        DataType::Union(UnionFields::placeholder())
     }
 }
 

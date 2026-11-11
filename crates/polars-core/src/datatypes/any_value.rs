@@ -112,9 +112,9 @@ pub enum AnyValue<'a> {
     StructOwned(Box<(Vec<AnyValue<'static>>, Vec<Field>)>),
     /// A union value: the variant index, its value and the variants of the union.
     #[cfg(feature = "dtype-union")]
-    Union(usize, Box<AnyValue<'a>>, &'a [Field]),
+    Union(usize, Box<AnyValue<'a>>, &'a UnionFields),
     #[cfg(feature = "dtype-union")]
-    UnionOwned(Box<(usize, AnyValue<'static>, Vec<Field>)>),
+    UnionOwned(Box<(usize, AnyValue<'static>, UnionFields)>),
     /// An UTF8 encoded string type.
     StringOwned(PlSmallStr),
     Binary(&'a [u8]),
@@ -282,7 +282,7 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-struct")]
             StructOwned(payload) => DataType::Struct(payload.1.clone()),
             #[cfg(feature = "dtype-union")]
-            Union(_, _, fields) => DataType::Union(fields.to_vec()),
+            Union(_, _, fields) => DataType::Union((*fields).clone()),
             #[cfg(feature = "dtype-union")]
             UnionOwned(payload) => DataType::Union(payload.2.clone()),
             #[cfg(feature = "dtype-decimal")]
@@ -788,13 +788,9 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-union")]
             Self::Union(..) | Self::UnionOwned(_) => {
                 let (tag, value, fields) = self.into_static().into_union_owned().unwrap();
-                let fields = fields
-                    .into_iter()
-                    .map(|mut f| {
-                        f.dtype = f.dtype.to_physical();
-                        f
-                    })
-                    .collect();
+                let DataType::Union(fields) = DataType::Union(fields).to_physical() else {
+                    unreachable!()
+                };
                 Self::UnionOwned(Box::new((tag, value.to_physical(), fields)))
             },
 
@@ -1190,7 +1186,7 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-struct")]
             StructOwned(v) => StructOwned(v),
             #[cfg(feature = "dtype-union")]
-            Union(tag, v, fields) => UnionOwned(Box::new((tag, v.into_static(), fields.to_vec()))),
+            Union(tag, v, fields) => UnionOwned(Box::new((tag, v.into_static(), fields.clone()))),
             #[cfg(feature = "dtype-union")]
             UnionOwned(v) => UnionOwned(v),
             #[cfg(feature = "object")]
@@ -1442,7 +1438,7 @@ impl<'a> AnyValue<'a> {
     }
 
     /// Splits an owned union value into its variant index, value and variants.
-    pub fn into_union_owned(self) -> Option<(usize, AnyValue<'static>, Vec<Field>)> {
+    pub fn into_union_owned(self) -> Option<(usize, AnyValue<'static>, UnionFields)> {
         match self.into_static() {
             AnyValue::UnionOwned(v) => Some(*v),
             _ => None,
