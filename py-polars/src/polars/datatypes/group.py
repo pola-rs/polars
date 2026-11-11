@@ -21,13 +21,13 @@ from polars.datatypes.classes import (
     List,
     Map,
     Struct,
-    Union,
     Time,
     UInt8,
     UInt16,
     UInt32,
     UInt64,
     UInt128,
+    Union,
 )
 
 if TYPE_CHECKING:

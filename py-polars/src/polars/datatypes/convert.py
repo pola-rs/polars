@@ -37,13 +37,13 @@ from polars.datatypes.classes import (
     Object,
     String,
     Struct,
-    Union,
     Time,
     UInt8,
     UInt16,
     UInt32,
     UInt64,
     UInt128,
+    Union,
     Unknown,
 )
 
