@@ -448,3 +448,20 @@ def test_union_cast_raises() -> None:
     assert s.cast(INT_STR).to_list() == INT_STR_VALUES
     with pytest.raises(InvalidOperationError):
         s.cast(pl.String)
+
+
+def test_union_import_large_child() -> None:
+    # A child longer than `u32::MAX`, with decreasing offsets and a dropped `Null` variant,
+    # so the import rebuilds the children.
+    child = pa.StructArray.from_buffers(pa.struct([]), 5 * 2**30, [None])
+    arr = dense(
+        [0, 0, 1, 0],
+        [2**31 - 1, 0, 0, 5],
+        [child, pa.nulls(1)],
+        ["e", "n"],
+    )
+    s = pl.Series(arr)
+    assert s.dtype == pl.Union({"e": pl.Struct({})})
+    out = to_pa(s)
+    assert out.to_pylist() == [{}, {}, None, {}]
+    assert [len(out.field(0))] == [4]

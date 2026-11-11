@@ -146,7 +146,7 @@ fn import_chunk(
 
     let out = if rebuild {
         let types: &[i8] = new_types.as_deref().unwrap_or(types);
-        // SAFETY: valid slots were bounds-checked above; Arrow children fit in `IdxSize`.
+        // SAFETY: valid slots were bounds-checked above.
         unsafe { gather_union_slots(arrow_dtype, types, &wide, &children, validity, 0..len) }
     } else {
         let types = match new_types {

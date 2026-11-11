@@ -32,7 +32,7 @@ pub mod boolean;
 pub mod fixed_size_list;
 pub mod generic_binary;
 mod large_union;
-pub use large_union::gather_union_slots;
+pub use large_union::{gather_child, gather_union_slots};
 pub mod list;
 pub mod primitive;
 pub mod structure;

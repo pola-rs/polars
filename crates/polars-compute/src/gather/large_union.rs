@@ -1,25 +1,16 @@
-use polars_arrow::array::builder::{ShareStrategy, StaticArrayBuilder};
-use polars_arrow::array::{Array, LargeUnionArray, LargeUnionArrayBuilder, new_null_array};
+use polars_arrow::array::builder::{ArrayBuilder, ShareStrategy, make_builder};
+use polars_arrow::array::{
+    Array, ChildPositions, LargeUnionArray, new_null_array,
+};
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_arrow::compute::utils::combine_validities_and;
 use polars_arrow::datatypes::{ArrowDataType, IdxArr};
 use polars_utils::IdxSize;
 
 use super::bitmap::take_bitmap_nulls_unchecked;
+use super::has_native_take;
 
 pub(super) unsafe fn take_unchecked(array: &LargeUnionArray, indices: &IdxArr) -> LargeUnionArray {
-    // Child positions must fit in `IdxSize` for the per-child gathers.
-    if array
-        .fields()
-        .iter()
-        .any(|c| c.len() > IdxSize::MAX as usize)
-    {
-        let mut builder = LargeUnionArrayBuilder::new(array.dtype().clone());
-        let rows = indices.iter().map(|i| i.map(|i| *i as usize));
-        builder.extend_rows(array, rows, ShareStrategy::Always);
-        return builder.freeze();
-    }
-
     let validity = array
         .validity()
         .map(|b| take_bitmap_nulls_unchecked(b, indices));
@@ -34,12 +25,45 @@ pub(super) unsafe fn take_unchecked(array: &LargeUnionArray, indices: &IdxArr) -
     )
 }
 
+/// Gathers the queued `positions` of `child` into a dense array, with nulls for `None`.
+///
+/// # Safety
+/// `positions` must have been created for `child.len()`, and every queued position must be in
+/// bounds of `child`.
+pub unsafe fn gather_child(child: &dyn Array, mut positions: ChildPositions) -> Box<dyn Array> {
+    if has_native_take(child.dtype()) {
+        if let ChildPositions::Idxs { idxs, has_none } = &mut positions {
+            let mut idxs = std::mem::take(idxs);
+            let validity = has_none.then(|| {
+                // The native take reads the value under a null index, so it must be in bounds.
+                let mut validity = BitmapBuilder::with_capacity(idxs.len());
+                for i in idxs.iter_mut() {
+                    validity.push(*i != IdxSize::MAX);
+                    if *i == IdxSize::MAX {
+                        *i = 0;
+                    }
+                }
+                validity.freeze()
+            });
+            let idxs = IdxArr::from_vec(idxs).with_validity(validity);
+            if *has_none && child.is_empty() {
+                let placeholder = new_null_array(child.dtype().clone(), 1);
+                return unsafe { super::take_unchecked(placeholder.as_ref(), &idxs) };
+            }
+            return unsafe { super::take_unchecked(child, &idxs) };
+        }
+    }
+    let mut builder = make_builder(child.dtype());
+    unsafe { positions.flush(&mut *builder, child, ShareStrategy::Always) };
+    builder.freeze()
+}
+
 /// Gathers the union slots `rows` of the given parts into a new array whose output row `j` is
 /// null iff `validity[j]` is unset. The parts need not have increasing offsets per child.
 ///
 /// # Safety
 /// Every row must be in bounds, and the `(type, offset)` of every row that is valid in the output
-/// must be in bounds. Every child must be at most `IdxSize::MAX` long.
+/// must be in bounds.
 pub unsafe fn gather_union_slots(
     dtype: &ArrowDataType,
     types: &[i8],
@@ -51,43 +75,27 @@ pub unsafe fn gather_union_slots(
     let len = rows.len();
     let mut out_types = Vec::with_capacity(len);
     let mut out_offsets = Vec::with_capacity(len);
-    let mut child_idxs: Vec<Vec<IdxSize>> = vec![Vec::new(); fields.len()];
-    // Null slots get a null placeholder in child 0, gathered through a null index.
-    let mut child0_validity = BitmapBuilder::new();
+    let mut positions: Vec<ChildPositions> =
+        fields.iter().map(|c| ChildPositions::new(c.len())).collect();
+    let mut counts = vec![0i64; fields.len()];
     for (j, i) in rows.enumerate() {
+        // Null slots get a null placeholder in child 0.
         let (t, pos) = if validity.as_ref().is_none_or(|v| v.get_bit_unchecked(j)) {
             let t = *types.get_unchecked(i) as usize;
-            (t, Some(*offsets.get_unchecked(i)))
+            (t, Some(*offsets.get_unchecked(i) as usize))
         } else {
             (0, None)
         };
         out_types.push(t as i8);
-        out_offsets.push(child_idxs[t].len() as i64);
-        // Checked: a position past `IdxSize::MAX` must take the builder path.
-        child_idxs[t].push(IdxSize::try_from(pos.unwrap_or(0)).unwrap());
-        if t == 0 {
-            child0_validity.push(pos.is_some());
-        }
+        out_offsets.push(counts[t]);
+        counts[t] += 1;
+        positions[t].push(pos);
     }
 
     let fields = fields
         .iter()
-        .zip(child_idxs)
-        .enumerate()
-        .map(|(t, (child, idxs))| {
-            let mut idxs = IdxArr::from_vec(idxs);
-            if t == 0 {
-                let child0_validity = std::mem::take(&mut child0_validity).into_opt_validity();
-                if child0_validity.is_some() {
-                    idxs = idxs.with_validity(child0_validity);
-                    if child.is_empty() {
-                        let placeholder = new_null_array(child.dtype().clone(), 1);
-                        return super::take_unchecked(placeholder.as_ref(), &idxs);
-                    }
-                }
-            }
-            super::take_unchecked(child.as_ref(), &idxs)
-        })
+        .zip(positions)
+        .map(|(child, positions)| gather_child(child.as_ref(), positions))
         .collect();
 
     LargeUnionArray::new_unchecked(

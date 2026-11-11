@@ -6,57 +6,85 @@ use crate::array::builder::{ArrayBuilder, ShareStrategy, StaticArrayBuilder, mak
 use crate::bitmap::OptBitmapBuilder;
 use crate::datatypes::ArrowDataType;
 
-/// Child positions waiting to be gathered from one variant's child.
-enum Pending {
-    Idxs(Vec<IdxSize>),
-    /// `(start, len)` runs, for children too long to be indexed by [`IdxSize`].
+/// Positions in one union child, collected to be appended to a builder of that child's dtype.
+///
+/// Children shorter than `IdxSize::MAX` are gathered by index; longer ones replay runs.
+pub enum ChildPositions {
+    /// `None` is stored as `IdxSize::MAX`, which is out of bounds for a narrow child.
+    Idxs { idxs: Vec<IdxSize>, has_none: bool },
+    /// `(start, len)` runs; a `start` of `usize::MAX` is a run of nulls.
     Runs(Vec<(usize, usize)>),
 }
 
-impl Pending {
-    fn new(child_len: usize) -> Self {
-        if child_len > IdxSize::MAX as usize {
-            Self::Runs(Vec::new())
+impl ChildPositions {
+    pub fn new(child_len: usize) -> Self {
+        if child_len < IdxSize::MAX as usize {
+            Self::Idxs {
+                idxs: Vec::new(),
+                has_none: false,
+            }
         } else {
-            Self::Idxs(Vec::new())
+            Self::Runs(Vec::new())
         }
     }
 
-    fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         match self {
-            Self::Idxs(v) => v.is_empty(),
+            Self::Idxs { idxs, .. } => idxs.is_empty(),
             Self::Runs(v) => v.is_empty(),
         }
     }
 
+    /// Queues `pos`, or a null for `None`.
     #[inline]
-    fn push(&mut self, pos: usize) {
+    pub fn push(&mut self, pos: Option<usize>) {
         match self {
-            // Checked: a child that needs `Runs` must never get here.
-            Self::Idxs(v) => v.push(IdxSize::try_from(pos).unwrap()),
-            Self::Runs(v) => match v.last_mut() {
-                Some((start, len)) if *start + *len == pos => *len += 1,
-                _ => v.push((pos, 1)),
+            Self::Idxs { idxs, has_none } => match pos {
+                Some(pos) => idxs.push(pos as IdxSize),
+                None => {
+                    idxs.push(IdxSize::MAX);
+                    *has_none = true;
+                },
+            },
+            Self::Runs(v) => {
+                let start = pos.unwrap_or(usize::MAX);
+                match v.last_mut() {
+                    Some((s, len)) if *s == usize::MAX && start == usize::MAX => *len += 1,
+                    Some((s, len)) if *s != usize::MAX && *s + *len == start => *len += 1,
+                    _ => v.push((start, 1)),
+                }
             },
         }
     }
 
+    /// Appends the queued positions of `child` to `builder` and clears the queue.
+    ///
     /// # Safety
-    /// All pending positions must be in bounds of `child`.
-    unsafe fn flush(
+    /// Every queued position must be in bounds of `child`, and `child` must have the length this
+    /// buffer was created with.
+    pub unsafe fn flush(
         &mut self,
-        builder: &mut Box<dyn ArrayBuilder>,
+        builder: &mut dyn ArrayBuilder,
         child: &dyn Array,
         share: ShareStrategy,
     ) {
         match self {
-            Self::Idxs(v) => {
-                unsafe { builder.gather_extend(child, v, share) };
-                v.clear();
+            Self::Idxs { idxs, has_none } => {
+                if *has_none {
+                    builder.opt_gather_extend(child, idxs, share);
+                } else {
+                    unsafe { builder.gather_extend(child, idxs, share) };
+                }
+                idxs.clear();
+                *has_none = false;
             },
             Self::Runs(v) => {
                 for (start, len) in v.drain(..) {
-                    builder.subslice_extend(child, start, len, share);
+                    if start == usize::MAX {
+                        builder.extend_nulls(len);
+                    } else {
+                        builder.subslice_extend(child, start, len, share);
+                    }
                 }
             },
         }
@@ -100,41 +128,26 @@ impl LargeUnionArrayBuilder {
         let (lower, _) = rows.size_hint();
         StaticArrayBuilder::reserve(self, lower);
 
-        let mut pending: Vec<Pending> = other
+        let mut pending: Vec<ChildPositions> = other
             .fields()
             .iter()
-            .map(|c| Pending::new(c.len()))
+            .map(|c| ChildPositions::new(c.len()))
             .collect();
         let mut next: Vec<i64> = self.children.iter().map(|b| b.len() as i64).collect();
-        // Nulls waiting to be appended to child 0. Child 0 must stay in slot order, so they and
-        // `pending[0]` are never both non-empty.
-        let mut null_run = 0;
         let validity = other.validity();
 
         for row in rows {
             let row = row.filter(|&i| validity.is_none_or(|v| unsafe { v.get_bit_unchecked(i) }));
-            let t = match row {
+            // Null rows get a null placeholder in child 0.
+            let (t, pos) = match row {
                 Some(i) => {
                     let (t, pos) = unsafe { other.index_unchecked(i) };
-                    if t == 0 && null_run > 0 {
-                        self.children[0].extend_nulls(null_run);
-                        null_run = 0;
-                    }
-                    pending[t].push(pos);
-                    self.validity.extend_constant(1, true);
-                    t
+                    (t, Some(pos))
                 },
-                None => {
-                    if !pending[0].is_empty() {
-                        unsafe {
-                            pending[0].flush(&mut self.children[0], &*other.fields()[0], share)
-                        };
-                    }
-                    null_run += 1;
-                    self.validity.extend_constant(1, false);
-                    0
-                },
+                None => (0, None),
             };
+            pending[t].push(pos);
+            self.validity.extend_constant(1, pos.is_some());
             self.types.push(t as i8);
             self.offsets.push(next[t]);
             next[t] += 1;
@@ -145,9 +158,8 @@ impl LargeUnionArrayBuilder {
             .zip(&mut self.children)
             .zip(other.fields())
         {
-            unsafe { p.flush(b, &**c, share) };
+            unsafe { p.flush(&mut **b, &**c, share) };
         }
-        self.children[0].extend_nulls(null_run);
         debug_assert!(
             self.children
                 .iter()
