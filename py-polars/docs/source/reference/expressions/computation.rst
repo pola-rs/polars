@@ -91,3 +91,4 @@ Computation
     Expr.unique
     Expr.unique_counts
     Expr.value_counts
+    Expr.x_log_y
