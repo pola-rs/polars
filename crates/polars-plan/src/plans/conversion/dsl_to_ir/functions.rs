@@ -534,13 +534,33 @@ pub(super) fn convert_functions(
                     nulls_last,
                 },
                 B::AllHorizontal => {
-                    ensure_horizontal_operands_bool(&e, IB::AllHorizontal, ctx)?;
                     let Some(fst) = e.first() else {
                         return Ok((
                             ctx.arena.add(AExpr::Literal(Scalar::from(true).into())),
                             format_pl_smallstr!("{}", IB::AllHorizontal),
                         ));
                     };
+
+                    if let Some((i, dtype)) = e
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, e)| {
+                            e.dtype(ctx.schema, ctx.arena)
+                                .ok()?
+                                .clone()
+                                .materialize_unknown(false)
+                                .ok()
+                                .filter(|dt| !(dt.is_bool() || dt.is_null()))
+                                .map(|dt| (i, dt))
+                        })
+                        .next()
+                    {
+                        polars_bail!(
+                            SchemaMismatch:
+                            "non-Boolean input passed to `all_horizontal`: \
+                            input at index {i} has dtype {dtype:?}"
+                        );
+                    }
 
                     if e.len() == 1 {
                         return Ok((
@@ -564,7 +584,6 @@ pub(super) fn convert_functions(
                     IB::AllHorizontal
                 },
                 B::AnyHorizontal => {
-                    ensure_horizontal_operands_bool(&e, IB::AnyHorizontal, ctx)?;
                     // This can be created by col(*).is_null() on empty dataframes.
                     let Some(fst) = e.first() else {
                         return Ok((
@@ -572,6 +591,27 @@ pub(super) fn convert_functions(
                             format_pl_smallstr!("{}", IB::AnyHorizontal),
                         ));
                     };
+
+                    if let Some((i, dtype)) = e
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, e)| {
+                            e.dtype(ctx.schema, ctx.arena)
+                                .ok()?
+                                .clone()
+                                .materialize_unknown(false)
+                                .ok()
+                                .filter(|dt| !(dt.is_bool() || dt.is_null()))
+                                .map(|dt| (i, dt))
+                        })
+                        .next()
+                    {
+                        polars_bail!(
+                            SchemaMismatch:
+                            "non-Boolean input passed to `any_horizontal`: \
+                            input at index {i} has dtype {dtype:?}"
+                        );
+                    }
 
                     if e.len() == 1 {
                         return Ok((
@@ -1455,27 +1495,4 @@ pub(super) fn convert_functions(
         options,
     };
     Ok((ctx.arena.add(ae_function), output_name))
-}
-
-/// `any_horizontal`/`all_horizontal` take Boolean operands, like `any`/`all`. The rewrite to
-/// `LogicalAnd`/`LogicalOr` relies on it: splitting predicates and De Morgan assume Boolean
-/// operands. The dtype can be unresolvable here (e.g. `meta` conversion without a schema), so a
-/// failed lookup is let through.
-fn ensure_horizontal_operands_bool(
-    e: &[ExprIR],
-    function: IRBooleanFunction,
-    ctx: &mut ExprToIRContext,
-) -> PolarsResult<()> {
-    for expr in e {
-        if let Ok(dtype) = expr.dtype(ctx.schema, ctx.arena) {
-            polars_ensure!(
-                dtype.is_bool()
-                    || dtype.is_null()
-                    || matches!(dtype, DataType::Unknown(UnknownKind::Any)),
-                SchemaMismatch: "non-Boolean input passed to `{function}`: '{}' has dtype '{dtype}'",
-                expr.output_name()
-            );
-        }
-    }
-    Ok(())
 }
