@@ -3,6 +3,7 @@ use std::ops::Not;
 use polars_arrow::bitmap::Bitmap;
 
 use super::*;
+#[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::aggregations::AggList;
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
