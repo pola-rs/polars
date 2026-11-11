@@ -5,7 +5,7 @@ use std::ops::{Deref, Range};
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, RwLock};
 
-use polars_error::{PolarsResult, polars_bail, polars_err};
+use polars_error::{PolarsError, PolarsResult, polars_bail, polars_err};
 
 use crate::aliases::PlHashSet;
 use crate::format_pl_refstr;
@@ -401,6 +401,22 @@ impl From<&str> for PlRefPath {
     }
 }
 
+impl TryFrom<&Path> for PlRefPath {
+    type Error = PolarsError;
+
+    fn try_from(value: &Path) -> Result<Self, Self::Error> {
+        Self::try_from_path(value)
+    }
+}
+
+impl TryFrom<PathBuf> for PlRefPath {
+    type Error = PolarsError;
+
+    fn try_from(value: PathBuf) -> Result<Self, Self::Error> {
+        Self::try_from_pathbuf(value)
+    }
+}
+
 macro_rules! impl_cloud_scheme {
     ($($t:ident = $n:literal,)+) => {
         #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -677,5 +693,39 @@ mod tests {
 
         assert_eq!(PlRefPath::new("s3://").file_name(), None);
         assert_eq!(PlRefPath::new("").file_name(), None);
+    }
+
+    #[test]
+    fn test_plrefpath_try_from() {
+        let expected = PlRefPath::new("a/b.parquet");
+
+        assert_eq!(
+            PlRefPath::try_from(Path::new("a/b.parquet")).unwrap(),
+            expected
+        );
+        assert_eq!(
+            PlRefPath::try_from(PathBuf::from("a/b.parquet")).unwrap(),
+            expected
+        );
+
+        let p: PlRefPath = PathBuf::from("a/b.parquet").try_into().unwrap();
+        assert_eq!(p, expected);
+
+        assert_eq!(
+            PlRefPath::try_from(Path::new(r#"\\?\C:\Windows\system32"#))
+                .unwrap()
+                .as_str(),
+            "C:/Windows/system32"
+        );
+
+        #[cfg(unix)]
+        {
+            use std::ffi::OsStr;
+            use std::os::unix::ffi::OsStrExt;
+
+            let non_utf8 = Path::new(OsStr::from_bytes(b"a/\xff.parquet"));
+            assert!(PlRefPath::try_from(non_utf8).is_err());
+            assert!(PlRefPath::try_from(non_utf8.to_path_buf()).is_err());
+        }
     }
 }
