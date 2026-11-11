@@ -213,7 +213,7 @@ class IcebergCatalogConfig:
 
     class_: type[pyiceberg.catalog.Catalog]
     name: str
-    properties: dict[str, str]
+    properties: dict[str, Any]
 
     @staticmethod
     def from_catalog(catalog: pyiceberg.catalog.Catalog) -> IcebergCatalogConfig:
@@ -343,6 +343,13 @@ class IcebergScanResolver:
             )
             raise ValueError(msg)
         return schema_to_pyarrow(self.table.get().schemas()[schema_id])
+
+    def has_tight_statistics(self) -> bool:
+        """Whether aggregates may be answered from the statistics. No I/O."""
+        reader_override = self.reader_override or os.getenv(
+            "POLARS_ICEBERG_READER_OVERRIDE"
+        )
+        return self.use_metadata_statistics and reader_override != "pyiceberg"
 
     def to_dataset_scan(
         self,
@@ -1009,6 +1016,7 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
                 (self.position_delete_files, self.deletion_vectors),
             ),
             _table_statistics=self.min_max_statistics,
+            _table_statistics_tight=True,
             _row_count=self.row_count,
             _source_sizes=self.source_sizes,
         )

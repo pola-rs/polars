@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 pub(crate) use cost::subplan_cost;
 #[cfg(feature = "python")]
-pub(crate) use dataset::dataset_scan_stats;
+pub(crate) use dataset::{counts, dataset_scan_stats, sum_if_all_known};
 pub use node::{
     NodeStats, composite_key_domain, join_cardinality, key_domain, node_stats, unique_side_rows,
 };

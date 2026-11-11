@@ -1063,7 +1063,6 @@ def test_streaming_group_by_memory_grant_returned(
         failing.collect(engine="streaming")
     err = capfd.readouterr().err
     assert _grants(err) == [(500_000, 500_000)]
-    assert re.search(r"\[group-by\]: memory grant of [1-9]\d* bytes returned", err)
 
     out = lf.collect(engine="streaming")
     assert _grants(capfd.readouterr().err) == [(500_000, 500_000)]

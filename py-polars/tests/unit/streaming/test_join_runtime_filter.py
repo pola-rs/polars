@@ -422,16 +422,23 @@ def test_empty_build_side_reads_nothing(
     assert_matches_in_memory(q, out)
 
 
+@pytest.mark.parametrize(("how", "height"), [("inner", 0), ("semi", 0), ("right", 2)])
 def test_all_null_build_keys_read_nothing(
-    fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+    fact: pl.LazyFrame,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    how: JoinStrategy,
+    height: int,
 ) -> None:
+    # No build key can match, so the fact side is never read.
     nulls = pl.LazyFrame(
         {"k": [None, None], "d": [1, 2]}, schema={"k": pl.Int64, "d": pl.Int64}
     ).filter(pl.col("d") > 0)
-    q = fact.join(nulls, on="k")
+    q = fact.join(nulls, on="k", how=how)
     out, groups = row_groups_read(q, plmonkeypatch, capfd)
-    assert groups == "0 / 10 row groups"
-    assert out.height == 0
+    assert groups is None
+    assert out.height == height
+    assert_matches_in_memory(q, out)
 
 
 def test_probe_nulls_are_dropped(

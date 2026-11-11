@@ -576,6 +576,7 @@ pub fn phys_props(
             args,
             fused_predicate,
             runtime_filters: _,
+            estimated_rows: _,
         } => (
             PhysicalPropsDescription::EquiJoin {
                 how: format!("{}", args.how),

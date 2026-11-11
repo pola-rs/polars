@@ -186,12 +186,30 @@ impl Reducer for DecimalSumReducer {
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
-        if !is_sum_overflow(*v) {
-            *v = ca
-                .iter()
-                .flatten()
-                .try_fold(*v, i128::checked_add)
-                .unwrap_or(DECIMAL_SUM_OVERFLOW);
+        if is_sum_overflow(*v) {
+            return;
+        }
+        for arr in ca.downcast_iter() {
+            let sum = match arr.validity().filter(|_| arr.has_nulls()) {
+                Some(validity) => arr
+                    .values()
+                    .iter()
+                    .zip(validity)
+                    .try_fold(*v, |acc, (&x, valid)| {
+                        acc.checked_add(if valid { x } else { 0 })
+                    }),
+                None => arr
+                    .values()
+                    .iter()
+                    .try_fold(*v, |acc, &x| acc.checked_add(x)),
+            };
+            match sum {
+                Some(sum) => *v = sum,
+                None => {
+                    *v = DECIMAL_SUM_OVERFLOW;
+                    return;
+                },
+            }
         }
     }
 

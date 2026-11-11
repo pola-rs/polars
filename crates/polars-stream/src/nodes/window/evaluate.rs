@@ -19,7 +19,7 @@ use polars_utils::hashing::HashPartitioner;
 use polars_utils::pl_str::PlSmallStr;
 use rayon::prelude::*;
 
-use super::flush::{Flush, OutputRange, OutputUnit};
+use super::flush::{FlushState, OutputRange, OutputUnit};
 use super::sink_partitions::SinkPartitions;
 use super::tuning::{RowSizes, WindowTuning};
 use super::{StoredMorsel, WindowParams};
@@ -42,7 +42,7 @@ pub(super) fn evaluate(
     morsels: Vec<Vec<StoredMorsel>>,
     morsel_ctx: LeastRecentSpillContext,
     state: &ExecutionState,
-) -> PolarsResult<Flush> {
+) -> PolarsResult<FlushState> {
     // Morsels can share a sequence number, so ties keep the order of pipelines and arrival.
     let mut morsels: Vec<_> = morsels.into_iter().flatten().collect();
     morsels.sort_by_key(|m| m.seq);
@@ -54,7 +54,7 @@ pub(super) fn evaluate(
     }
     let partition_ctx = MostRecentSpillContext::new("window-partitions".into(), None);
     if num_rows == 0 {
-        return Ok(Flush::new(
+        return Ok(FlushState::new(
             Vec::new(),
             tuning.output_ahead_bytes(),
             (morsel_ctx, partition_ctx),
@@ -180,7 +180,7 @@ pub(super) fn evaluate(
     if keep_morsels {
         outputs = ranges.into_iter().map(OutputUnit::Range).collect();
     }
-    Ok(Flush::new(
+    Ok(FlushState::new(
         outputs,
         tuning.output_ahead_bytes(),
         (morsel_ctx, partition_ctx),
@@ -196,7 +196,7 @@ pub(super) fn evaluate_sink_partitions(
     num_pipelines: usize,
     sink: SinkPartitions,
     state: &ExecutionState,
-) -> PolarsResult<Flush> {
+) -> PolarsResult<FlushState> {
     let (partitions, bytes, partition_ctx) = sink.finish();
     let spill_ctxs = (
         LeastRecentSpillContext::new("window".into(), None),
@@ -204,7 +204,7 @@ pub(super) fn evaluate_sink_partitions(
     );
     let num_rows: usize = partitions.iter().flatten().map(|sf| sf.height()).sum();
     if num_rows == 0 {
-        return Ok(Flush::new(Vec::new(), 0, spill_ctxs));
+        return Ok(FlushState::new(Vec::new(), 0, spill_ctxs));
     }
     let row_sizes = RowSizes {
         read: bytes / num_rows,
@@ -260,7 +260,11 @@ pub(super) fn evaluate_sink_partitions(
     if !frames.is_empty() {
         push_unit(frames, rows);
     }
-    Ok(Flush::new(units, tuning.max_partition_bytes(), spill_ctxs))
+    Ok(FlushState::new(
+        units,
+        tuning.max_partition_bytes(),
+        spill_ctxs,
+    ))
 }
 
 /// What evaluating a unit of [`super::WindowOutput::SinkPartitions`] needs.

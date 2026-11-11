@@ -1,4 +1,5 @@
 mod build;
+mod flush;
 mod probe;
 
 use std::sync::Arc;
@@ -14,22 +15,24 @@ use polars_expr::idx_table::{IdxTable, new_idx_table};
 use polars_ooc::MostRecentSpillContext;
 use polars_plan::plans::options::RuntimeFilter;
 use polars_utils::format_pl_smallstr;
-use polars_utils::hashing::HashPartitioner;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::relaxed_cell::RelaxedCell;
 
-use self::build::BuildState;
-use self::probe::{EmitUnmatchedState, FusedPredicate, ProbeState};
+use self::build::{BuildState, PartitionBuilder};
+use self::flush::FlushState;
+use self::probe::{FusedPredicate, ProbeState, ProbeTable};
 use super::runtime_filter::RuntimeFilters;
-use super::tuning::JoinTuning;
+use super::tuning::{BuildStats, JoinTuning};
 use super::utils::{
     JoinSampleStats, LEFT_BUILD_MARGIN, REF_KEY_RATIO, UNIQUE_BUILD_MARGIN, UNIQUE_KEY_RATIO,
 };
 use super::{
-    BufferedStream, LOPSIDED_SAMPLE_FACTOR, build_side_left, sample_sink, select_key_columns,
+    BufferedStream, LOPSIDED_ESTIMATE_FACTOR, LOPSIDED_SAMPLE_FACTOR, build_side_left, sample_sink,
+    select_key_columns,
 };
 use crate::expression::StreamExpr;
+use crate::hash_shuffle::store::StoredPartition;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::in_memory_source::InMemorySourceNode;
 
@@ -49,6 +52,8 @@ struct EquiJoinParams {
     // Key filters for the scans below the planned probe side, set once from a
     // complete sample of the planned build side or from its build.
     runtime_filters: RuntimeFilters,
+    /// See `JoinOptionsIR::estimated_rows`.
+    estimated_rows: Option<[u64; 2]>,
     random_state: PlRandomState,
     sample_limit: usize,
 }
@@ -67,22 +72,60 @@ impl EquiJoinParams {
             && self.left_is_build == self.planned_build_left()
     }
 
+    /// Should we emit unmatched rows from the left side, or else the right side?
+    fn emit_unmatched(&self, left: bool) -> bool {
+        if left {
+            self.args.how.emits_unmatched_left()
+        } else {
+            self.args.how.emits_unmatched_right()
+        }
+    }
+
     /// Should we emit unmatched rows from the build side?
     fn emit_unmatched_build(&self) -> bool {
-        if self.left_is_build.unwrap() {
-            self.args.how == JoinType::Left || self.args.how == JoinType::Full
-        } else {
-            self.args.how == JoinType::Right || self.args.how == JoinType::Full
-        }
+        self.emit_unmatched(self.left_is_build.unwrap())
     }
 
     /// Should we emit unmatched rows from the probe side?
     fn emit_unmatched_probe(&self) -> bool {
-        if self.left_is_build.unwrap() {
-            self.args.how == JoinType::Right || self.args.how == JoinType::Full
+        self.emit_unmatched(!self.left_is_build.unwrap())
+    }
+
+    /// The payload schema of the left side, or else the right side.
+    fn payload_schema(&self, left: bool) -> &Arc<Schema> {
+        if left {
+            &self.left_payload_schema
         } else {
-            self.args.how == JoinType::Left || self.args.how == JoinType::Full
+            &self.right_payload_schema
         }
+    }
+}
+
+/// One hash partition: its stored frames, build frames as input 0 and probe frames as input 1,
+/// and its table while it is in memory.
+struct JoinPartition {
+    stored: StoredPartition,
+    table: Option<ProbeTable>,
+    /// The estimated memory of its table, in bytes.
+    table_bytes: u64,
+}
+
+impl JoinPartition {
+    /// The estimated memory of its table beyond its stored build frames, in bytes.
+    fn net_table_bytes(&self) -> u64 {
+        self.table_bytes.saturating_sub(self.stored.input_size(0))
+    }
+
+    /// Starts building its table from its stored build frames.
+    fn table_builder(
+        &self,
+        table: &dyn IdxTable,
+        params: &EquiJoinParams,
+        stats: &BuildStats,
+    ) -> PartitionBuilder {
+        let schema = params.payload_schema(params.left_is_build.unwrap()).clone();
+        let keys = stats.keys_in(self.stored.num_rows(0)) as usize;
+        PartitionBuilder::new(self.stored.index(), table, schema, keys)
     }
 }
 
@@ -203,6 +246,37 @@ fn select_payload(df: DataFrame, selector: &[Option<PlSmallStr>]) -> DataFrame {
         .collect();
 
     unsafe { DataFrame::new_unchecked(height, new_cols) }
+}
+
+/// The rows of both sides, if one side has many times fewer than the other. A
+/// side that ended has its sampled rows; for the others the estimates are used,
+/// unless one is below the rows sampled, which proves it wrong.
+fn lopsided_estimates(
+    estimated_rows: Option<[u64; 2]>,
+    sampled_rows: [usize; 2],
+    ended: [bool; 2],
+) -> Option<(usize, usize)> {
+    let mut rows = estimated_rows?.map(|rows| usize::try_from(rows).unwrap_or(usize::MAX));
+    for i in 0..2 {
+        if ended[i] {
+            rows[i] = sampled_rows[i];
+        } else if rows[i] < sampled_rows[i] {
+            return None;
+        }
+    }
+    let [left_rows, right_rows] = rows;
+    let lopsided = |small: usize, large: usize| {
+        small
+            .checked_mul(LOPSIDED_ESTIMATE_FACTOR)
+            .is_some_and(|rows| rows <= large)
+    };
+    if config::verbose() {
+        eprintln!(
+            "equi-join sides are incomplete, estimated rows are: {left_rows} vs. {right_rows}"
+        );
+    }
+    (lopsided(left_rows, right_rows) || lopsided(right_rows, left_rows))
+        .then_some((left_rows, right_rows))
 }
 
 struct SampleState {
@@ -328,23 +402,37 @@ impl SampleState {
                             &state.in_memory_exec_state,
                         )?;
 
-                        // Both lengths are unknown and assumed equal, unless one side has
-                        // unique keys and the other repeats them. The other side is then
-                        // taken to reference the unique side's keys, making it longer by
-                        // the number of times it repeats each key, and is penalized by
-                        // `UNIQUE_BUILD_MARGIN`.
-                        let left_unique =
-                            left.min_hash_key_ratio.unwrap_or(0.0) >= UNIQUE_KEY_RATIO;
-                        let right_unique =
-                            right.min_hash_key_ratio.unwrap_or(0.0) >= UNIQUE_KEY_RATIO;
-                        let mut left_score = left.all_rows_build_bytes(params.sample_limit);
-                        let mut right_score = right.all_rows_build_bytes(params.sample_limit);
-                        if left.key_ratio <= REF_KEY_RATIO && right_unique {
-                            left_score *= UNIQUE_BUILD_MARGIN / (left.key_ratio + 1e-6);
-                        }
-                        if right.key_ratio <= REF_KEY_RATIO && left_unique {
-                            right_score *= UNIQUE_BUILD_MARGIN / (right.key_ratio + 1e-6);
-                        }
+                        let (left_score, right_score) = match lopsided_estimates(
+                            params.estimated_rows,
+                            [self.left_len, self.right_len],
+                            [recv[0] == PortState::Done, recv[1] == PortState::Done],
+                        ) {
+                            Some((left_rows, right_rows)) => (
+                                left.all_rows_build_bytes(left_rows),
+                                right.all_rows_build_bytes(right_rows),
+                            ),
+                            // Both lengths are unknown and assumed equal, unless one side
+                            // has unique keys and the other repeats them. The other side is
+                            // then taken to reference the unique side's keys, making it
+                            // longer by the number of times it repeats each key, and is
+                            // penalized by `UNIQUE_BUILD_MARGIN`.
+                            None => {
+                                let left_unique =
+                                    left.min_hash_key_ratio.unwrap_or(0.0) >= UNIQUE_KEY_RATIO;
+                                let right_unique =
+                                    right.min_hash_key_ratio.unwrap_or(0.0) >= UNIQUE_KEY_RATIO;
+                                let mut left_score = left.all_rows_build_bytes(params.sample_limit);
+                                let mut right_score =
+                                    right.all_rows_build_bytes(params.sample_limit);
+                                if left.key_ratio <= REF_KEY_RATIO && right_unique {
+                                    left_score *= UNIQUE_BUILD_MARGIN / (left.key_ratio + 1e-6);
+                                }
+                                if right.key_ratio <= REF_KEY_RATIO && left_unique {
+                                    right_score *= UNIQUE_BUILD_MARGIN / (right.key_ratio + 1e-6);
+                                }
+                                (left_score, right_score)
+                            },
+                        };
                         if config::verbose() {
                             eprintln!(
                                 "estimated build scores are: {left_score:.0} (left, key_ratio={:.4}, min_hash_key_ratio={:?}, key_width={:.1}, row_width={:.1}) vs. {right_score:.0} (right, key_ratio={:.4}, min_hash_key_ratio={:?}, key_width={:.1}, row_width={:.1})",
@@ -458,7 +546,7 @@ enum EquiJoinState {
     Sample(SampleState),
     Build(BuildState),
     Probe(ProbeState),
-    EmitUnmatchedBuild(EmitUnmatchedState),
+    Flush(FlushState),
     EmitUnmatchedBuildInOrder(InMemorySourceNode),
     Done,
 }
@@ -484,6 +572,7 @@ impl EquiJoinNode {
         right_key_selectors: Vec<StreamExpr>,
         fused_predicate: Option<(StreamExpr, Arc<Schema>)>,
         runtime_filters: Vec<RuntimeFilter>,
+        estimated_rows: Option<[u64; 2]>,
         args: JoinArgs,
         num_pipelines: usize,
         task_metrics: Option<Arc<TaskMetricAggregator>>,
@@ -573,6 +662,7 @@ impl EquiJoinNode {
             args,
             fused_predicate,
             runtime_filters,
+            estimated_rows,
             random_state: PlRandomState::default(),
             sample_limit,
         };
@@ -645,52 +735,51 @@ impl ComputeNode for EquiJoinNode {
         // If we are building and the build input is done, transition to probing.
         // An inner join with nothing to probe against is done without reading
         // the probe side.
+        let mut skip_probe = false;
         if let EquiJoinState::Build(build_state) = &mut self.state {
             if recv[build_idx] == PortState::Done {
                 build_state.publish_runtime_filters(&mut self.params);
                 self.state = if self.params.args.how == JoinType::Inner && build_state.is_empty() {
                     EquiJoinState::Done
                 } else {
-                    EquiJoinState::Probe(build_state.finalize(
-                        &self.params,
-                        &*self.table,
-                        self.tuning.batch_bytes(),
-                        state,
-                    )?)
+                    let probe_state =
+                        build_state.finalize(&self.params, &*self.table, &self.tuning, state)?;
+                    // Without a non-null build key no probe row matches, so the probe
+                    // side is only read when its unmatched rows are emitted.
+                    skip_probe = !self.params.emit_unmatched_probe()
+                        && !self.params.args.nulls_equal
+                        && probe_state.partitions.partitions.iter().all(|p| {
+                            p.table
+                                .as_ref()
+                                .is_some_and(|t| t.hash_table.num_keys() == 0)
+                        });
+                    EquiJoinState::Probe(probe_state)
                 };
             }
         }
 
-        // If we are probing and the probe input is done, emit unmatched if
-        // necessary, otherwise we're done.
+        // If we are probing and the probe input is done, emit the unmatched build rows in order
+        // if needed, otherwise flush the partitions.
         if let EquiJoinState::Probe(probe_state) = &mut self.state {
             let samples_consumed = probe_state.sampled_probe_morsels.is_empty();
-            if samples_consumed && recv[probe_idx] == PortState::Done {
-                if self.params.emit_unmatched_build() {
-                    if self.params.preserve_order_build {
-                        let unmatched = probe_state.ordered_unmatched(&self.params);
-                        let src = InMemorySourceNode::new(
-                            Arc::new(unmatched),
-                            probe_state.max_seq_sent.successor(),
-                        );
-                        self.state = EquiJoinState::EmitUnmatchedBuildInOrder(src);
-                    } else {
-                        self.state = EquiJoinState::EmitUnmatchedBuild(EmitUnmatchedState {
-                            partitions: core::mem::take(&mut probe_state.table_per_partition),
-                            active_partition_idx: 0,
-                            offset_in_active_p: 0,
-                            morsel_seq: probe_state.max_seq_sent.successor(),
-                        });
-                    }
+            if skip_probe || (samples_consumed && recv[probe_idx] == PortState::Done) {
+                if self.params.preserve_order_build && self.params.emit_unmatched_build() {
+                    let unmatched = probe_state.ordered_unmatched(&self.params);
+                    let src = InMemorySourceNode::new(
+                        Arc::new(unmatched),
+                        probe_state.max_seq_sent.successor(),
+                    );
+                    self.state = EquiJoinState::EmitUnmatchedBuildInOrder(src);
                 } else {
-                    self.state = EquiJoinState::Done;
+                    let flush = FlushState::new(probe_state, &self.params, &*self.table, state)?;
+                    self.state = EquiJoinState::Flush(flush);
                 }
             }
         }
 
-        // Finally, check if we are done emitting unmatched keys.
-        if let EquiJoinState::EmitUnmatchedBuild(emit_state) = &mut self.state {
-            if emit_state.active_partition_idx >= emit_state.partitions.len() {
+        // Finally, check if we are done flushing.
+        if let EquiJoinState::Flush(flush) = &self.state {
+            if flush.is_finished() {
                 self.state = EquiJoinState::Done;
             }
         }
@@ -745,7 +834,7 @@ impl ComputeNode for EquiJoinNode {
                 }
                 recv[build_idx] = PortState::Done;
             },
-            EquiJoinState::EmitUnmatchedBuild(_) => {
+            EquiJoinState::Flush(_) => {
                 send[0] = PortState::Ready;
                 recv[build_idx] = PortState::Done;
                 recv[probe_idx] = PortState::Done;
@@ -771,9 +860,8 @@ impl ComputeNode for EquiJoinNode {
         match &self.state {
             EquiJoinState::Sample(_) => NodeMemoryUsage::WillAccumulate,
             EquiJoinState::Build(_) => NodeMemoryUsage::Accumulating,
-            EquiJoinState::Probe(_) | EquiJoinState::EmitUnmatchedBuild(_) => {
-                NodeMemoryUsage::HoldingUntilDone
-            },
+            EquiJoinState::Probe(_) => NodeMemoryUsage::HoldingUntilDone,
+            EquiJoinState::Flush(_) => NodeMemoryUsage::Draining,
             EquiJoinState::EmitUnmatchedBuildInOrder(src) => src.memory_usage(),
             EquiJoinState::Done => NodeMemoryUsage::Bounded,
         }
@@ -841,9 +929,15 @@ impl ComputeNode for EquiJoinNode {
             },
             EquiJoinState::Probe(probe_state) => {
                 assert!(recv_ports[build_idx].is_none());
+                let ProbeState {
+                    partitions,
+                    writers,
+                    sampled_probe_morsels,
+                    max_seq_sent,
+                    ..
+                } = probe_state;
                 let senders = send_ports[0].take().unwrap().parallel();
-                let receivers = probe_state
-                    .sampled_probe_morsels
+                let receivers = sampled_probe_morsels
                     .reinsert(
                         state.num_pipelines,
                         recv_ports[probe_idx].take(),
@@ -852,19 +946,18 @@ impl ComputeNode for EquiJoinNode {
                     )
                     .unwrap();
 
-                let partitioner = HashPartitioner::new(state.num_pipelines, 0);
+                let partitions = &*partitions;
+                let mut writers = writers.iter_mut();
                 let probe_tasks = receivers
                     .into_iter()
                     .zip(senders)
                     .map(|(recv, send)| {
                         scope.spawn_task(
                             TaskPriority::High,
-                            ProbeState::partition_and_probe(
+                            partitions.partition_and_probe(
                                 recv,
                                 send,
-                                &probe_state.table_per_partition,
-                                &probe_state.unordered_morsel_seq,
-                                partitioner.clone(),
+                                writers.next(),
                                 &self.params,
                                 state,
                             ),
@@ -872,7 +965,6 @@ impl ComputeNode for EquiJoinNode {
                     })
                     .collect_vec();
 
-                let max_seq_sent = &mut probe_state.max_seq_sent;
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     for probe_task in probe_tasks {
                         *max_seq_sent = (*max_seq_sent).max(probe_task.await?);
@@ -880,14 +972,11 @@ impl ComputeNode for EquiJoinNode {
                     Ok(())
                 }));
             },
-            EquiJoinState::EmitUnmatchedBuild(emit_state) => {
+            EquiJoinState::Flush(flush) => {
                 assert!(recv_ports[build_idx].is_none());
                 assert!(recv_ports[probe_idx].is_none());
-                let send = send_ports[0].take().unwrap().serial();
-                join_handles.push(scope.spawn_task(
-                    TaskPriority::Low,
-                    emit_state.emit_unmatched(send, &self.params, state.num_pipelines),
-                ));
+                let senders = send_ports[0].take().unwrap().parallel();
+                flush.spawn(scope, senders, &self.params, state, join_handles);
             },
             EquiJoinState::EmitUnmatchedBuildInOrder(src_node) => {
                 assert!(recv_ports[build_idx].is_none());
@@ -896,5 +985,50 @@ impl ComputeNode for EquiJoinNode {
             },
             EquiJoinState::Done => unreachable!(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lopsided_estimates_are_used() {
+        let open = [false, false];
+        assert_eq!(
+            lopsided_estimates(Some([800, 100]), [100, 100], open),
+            Some((800, 100))
+        );
+        assert_eq!(lopsided_estimates(Some([100, 799]), [100, 100], open), None);
+        assert_eq!(lopsided_estimates(None, [100, 100], open), None);
+    }
+
+    #[test]
+    fn estimates_below_the_sampled_rows_are_not_used() {
+        let open = [false, false];
+        assert_eq!(
+            lopsided_estimates(Some([10_000, 48]), [100, 100], open),
+            None
+        );
+        assert_eq!(
+            lopsided_estimates(Some([48, 10_000]), [100, 100], open),
+            None
+        );
+    }
+
+    #[test]
+    fn ended_sides_use_their_sampled_rows() {
+        assert_eq!(
+            lopsided_estimates(Some([20_000, 800]), [100, 100], [true, false]),
+            Some((100, 800))
+        );
+        assert_eq!(
+            lopsided_estimates(Some([800, 20_000]), [100, 100], [false, true]),
+            Some((800, 100))
+        );
+        assert_eq!(
+            lopsided_estimates(Some([20, 400]), [100, 100], [true, false]),
+            None
+        );
     }
 }

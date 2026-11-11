@@ -273,6 +273,12 @@ unsafe fn series_get_bypass_validity<'a>(
 /// Bytes a hash table takes per key on top of the key itself.
 const KEY_SLOT_OVERHEAD: f64 = 16.0;
 
+/// Bytes retained by a table of `keys` distinct keys of `key_width` bytes, keeping `rows` rows
+/// of `row_width` bytes.
+pub fn table_bytes(keys: f64, key_width: f64, rows: f64, row_width: f64) -> f64 {
+    keys * (key_width + KEY_SLOT_OVERHEAD) + rows * (row_width + size_of::<IdxSize>() as f64)
+}
+
 /// A side with at least this key ratio is taken to have unique keys, allowing
 /// for some duplicates.
 pub(super) const UNIQUE_KEY_RATIO: f64 = 0.9;
@@ -435,14 +441,14 @@ impl JoinSampleStats {
 
     /// Bytes retained when building a table of the distinct keys of `rows` rows.
     pub fn distinct_keys_build_bytes(&self, rows: usize) -> f64 {
-        rows as f64 * self.key_ratio * (self.key_width + KEY_SLOT_OVERHEAD)
+        table_bytes(rows as f64 * self.key_ratio, self.key_width, 0.0, 0.0)
     }
 
     /// Bytes retained when building the distinct keys of `rows` rows and
     /// keeping every row.
     pub fn all_rows_build_bytes(&self, rows: usize) -> f64 {
-        self.distinct_keys_build_bytes(rows)
-            + rows as f64 * (self.row_width + size_of::<IdxSize>() as f64)
+        let rows = rows as f64;
+        table_bytes(rows * self.key_ratio, self.key_width, rows, self.row_width)
     }
 }
 

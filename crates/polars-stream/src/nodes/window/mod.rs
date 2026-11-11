@@ -12,7 +12,7 @@ use polars_expr::prelude::WindowExpr;
 use polars_ooc::{LeastRecentSpillContext, ParameterFreeSpillContext, SpillFrame, memory_manager};
 use polars_utils::pl_str::PlSmallStr;
 
-use self::flush::Flush;
+use self::flush::FlushState;
 use self::sink_partitions::SinkPartitions;
 use self::tuning::WindowTuning;
 use super::compute_node_prelude::*;
@@ -119,7 +119,7 @@ enum WindowState {
         /// With [`WindowOutput::SinkPartitions`].
         partitions: Option<SinkPartitions>,
     },
-    Flush(Flush),
+    Flush(FlushState),
     Done,
 }
 

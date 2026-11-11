@@ -565,32 +565,34 @@ fn try_lower_elementwise_scalar_agg_expr(
             function: IRFunctionExpr::Entropy { base, normalize },
             ..
         } => {
-            // x.entropy() ->
-            //   normalize=false: -sum(x * log(x, base))
-            //   normalize=true:  -sum(x/sum(x) * log(x/sum(x), base))
-            //                  = log(sum(x), base) - sum(x * log(x, base)) / sum(x)
+            // See the `Entropy` arm in `lower_exprs_with_ctx`.
             let (base, normalize) = (*base, *normalize);
-            let x = AExprBuilder::new_from_node(inner_exprs[0].node());
-            let base = AExprBuilder::lit_scalar(Scalar::from(base), expr_arena);
-            let log_x = AExprBuilder::function(
-                vec![x.expr_ir_unnamed(), base.expr_ir_unnamed()],
-                IRFunctionExpr::Log,
+            let to_field_ctx = ToFieldContext::new(expr_arena, input_schema);
+            let dtype = expr_arena.get(expr).to_dtype(&to_field_ctx).ok()?;
+            let x_dtype = inner_exprs[0].dtype(input_schema, expr_arena).ok()?.clone();
+            let mut x = AExprBuilder::new_from_node(inner_exprs[0].node());
+            if x_dtype != dtype {
+                x = x.cast(dtype, expr_arena);
+            }
+            let sum_x_log_x = AExprBuilder::function(
+                vec![x.expr_ir_unnamed(), x.expr_ir_unnamed()],
+                IRFunctionExpr::XLogY { base },
                 expr_arena,
-            );
-            let x_log_x = x.multiply(log_x, expr_arena);
-            let mut entropy = x_log_x.sum(expr_arena).negate(expr_arena);
+            )
+            .sum(expr_arena);
+            let mut entropy = sum_x_log_x.negate(expr_arena);
             if normalize {
-                // sum(x) is deduplicated by CSE
+                // sum(x) is deduplicated by CSE.
                 let sum_x = x.sum(expr_arena);
+                let base = AExprBuilder::lit_scalar(Scalar::from(base), expr_arena);
                 let log_sum_x = AExprBuilder::function(
                     vec![sum_x.expr_ir_unnamed(), base.expr_ir_unnamed()],
                     IRFunctionExpr::Log,
                     expr_arena,
                 );
-                entropy = log_sum_x.plus(entropy.true_divide(sum_x, expr_arena), expr_arena)
+                entropy = log_sum_x.minus(sum_x_log_x.true_divide(sum_x, expr_arena), expr_arena);
             }
-            let lowered = entropy.node();
-            lower_rec!(lowered)
+            lower_rec!(entropy.node())
         },
 
         AExpr::Function { .. } | AExpr::AnonymousFunction { .. } => None,
@@ -1339,6 +1341,7 @@ pub fn try_build_streaming_group_by(
                 args,
                 fused_predicate: None,
                 runtime_filters: Vec::new(),
+                estimated_rows: None,
             },
         ));
         post_select_input = PhysStream::first(join_key);

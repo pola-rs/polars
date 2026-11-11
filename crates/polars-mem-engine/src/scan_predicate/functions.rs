@@ -707,9 +707,10 @@ where
 
         assert!(selected_path_indices_idxsize.iter().all(|x| *x < df_height));
 
-        TableStatistics(Arc::new(unsafe {
-            x.0.take_slice_unchecked(&selected_path_indices_idxsize)
-        }))
+        TableStatistics(
+            Arc::new(unsafe { x.0.take_slice_unchecked(&selected_path_indices_idxsize) }),
+            x.1,
+        )
     });
 
     let original_sources_len = sources.len();

@@ -25,14 +25,11 @@ use rayon::prelude::*;
 use super::runtime_filter::{KeyFilterBuilder, RuntimeFilters};
 use super::utils::{JoinSampleStats, LEFT_BUILD_MARGIN, UNIQUE_BUILD_MARGIN};
 use super::{
-    BufferedStream, LOPSIDED_SAMPLE_FACTOR, build_side_left, emit_morsel_size, sample_sink,
-    select_key_columns, send_frames,
+    BufferedStream, LOPSIDED_ESTIMATE_FACTOR, LOPSIDED_SAMPLE_FACTOR, build_side_left,
+    emit_morsel_size, sample_sink, select_key_columns, send_frames,
 };
 use crate::expression::StreamExpr;
 use crate::nodes::compute_node_prelude::*;
-
-/// How many times fewer estimated rows an incomplete left side needs to be built.
-const LOPSIDED_ESTIMATE_FACTOR: usize = 8;
 
 fn hash_keys(keys: &DataFrame, params: &SemiAntiJoinParams, null_is_valid: bool) -> HashKeys {
     HashKeys::from_df(keys, params.random_state.clone(), null_is_valid, false)
@@ -1147,10 +1144,20 @@ impl ComputeNode for SemiAntiJoinNode {
                     self.state = SemiAntiJoinState::Done;
                 } else {
                     let mut probe_state = build_state.finalize(&self.params, &*self.grouper, state);
-                    if self.params.left_is_build() {
-                        probe_state.mark_sampled(&self.params, state)?;
+                    // Null keys that can't match get no group, so without groups
+                    // nothing matches.
+                    let no_groups = probe_state
+                        .grouper_per_partition
+                        .iter()
+                        .all(|g| g.num_groups() == 0);
+                    if self.params.empty_build_gives_empty_output() && no_groups {
+                        self.state = SemiAntiJoinState::Done;
+                    } else {
+                        if self.params.left_is_build() {
+                            probe_state.mark_sampled(&self.params, state)?;
+                        }
+                        self.state = SemiAntiJoinState::Probe(probe_state);
                     }
-                    self.state = SemiAntiJoinState::Probe(probe_state);
                 }
             }
         }
