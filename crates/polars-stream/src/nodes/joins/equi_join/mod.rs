@@ -735,18 +735,25 @@ impl ComputeNode for EquiJoinNode {
         // If we are building and the build input is done, transition to probing.
         // An inner join with nothing to probe against is done without reading
         // the probe side.
+        let mut skip_probe = false;
         if let EquiJoinState::Build(build_state) = &mut self.state {
             if recv[build_idx] == PortState::Done {
                 build_state.publish_runtime_filters(&mut self.params);
                 self.state = if self.params.args.how == JoinType::Inner && build_state.is_empty() {
                     EquiJoinState::Done
                 } else {
-                    EquiJoinState::Probe(build_state.finalize(
-                        &self.params,
-                        &*self.table,
-                        &self.tuning,
-                        state,
-                    )?)
+                    let probe_state =
+                        build_state.finalize(&self.params, &*self.table, &self.tuning, state)?;
+                    // Without a non-null build key no probe row matches, so the probe
+                    // side is only read when its unmatched rows are emitted.
+                    skip_probe = !self.params.emit_unmatched_probe()
+                        && !self.params.args.nulls_equal
+                        && probe_state.partitions.partitions.iter().all(|p| {
+                            p.table
+                                .as_ref()
+                                .is_some_and(|t| t.hash_table.num_keys() == 0)
+                        });
+                    EquiJoinState::Probe(probe_state)
                 };
             }
         }
@@ -755,7 +762,7 @@ impl ComputeNode for EquiJoinNode {
         // if needed, otherwise flush the partitions.
         if let EquiJoinState::Probe(probe_state) = &mut self.state {
             let samples_consumed = probe_state.sampled_probe_morsels.is_empty();
-            if samples_consumed && recv[probe_idx] == PortState::Done {
+            if skip_probe || (samples_consumed && recv[probe_idx] == PortState::Done) {
                 if self.params.preserve_order_build && self.params.emit_unmatched_build() {
                     let unmatched = probe_state.ordered_unmatched(&self.params);
                     let src = InMemorySourceNode::new(
