@@ -129,23 +129,20 @@ impl ComputeNode for CrossJoinNode {
 
         // Transition to probe?
         if recv[build_idx] == PortState::Done
-            && let CrossJoinState::Build { .. } = &self.state
-        {
-            let CrossJoinState::Build {
-                mut sink_node,
+            && let CrossJoinState::Build {
+                sink_node,
                 probe_peek,
-                ..
-            } = core::mem::replace(&mut self.state, CrossJoinState::Done)
-            else {
-                unreachable!()
-            };
+            } = &mut self.state
+        {
             let build_df = sink_node.get_output()?.unwrap();
-            if build_df.height() > 0 {
-                self.state = CrossJoinState::Probe {
+            self.state = if build_df.height() > 0 {
+                CrossJoinState::Probe {
                     build_df,
-                    peeked: Box::new(probe_peek.into_stream()),
-                };
-            }
+                    peeked: Box::new(probe_peek.take_stream()),
+                }
+            } else {
+                CrossJoinState::Done
+            };
         }
 
         match &mut self.state {
@@ -186,7 +183,6 @@ impl ComputeNode for CrossJoinNode {
             CrossJoinState::Build {
                 sink_node,
                 probe_peek,
-                ..
             } => {
                 assert!(send_ports[0].is_none());
                 if recv_ports[build_idx].is_some() {

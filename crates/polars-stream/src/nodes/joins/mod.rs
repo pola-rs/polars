@@ -267,11 +267,8 @@ impl BufferedStream {
 /// join knows early when the probe side has no rows.
 struct ProbePeek {
     morsels: Vec<Morsel>,
-    len: usize,
     spill_ctx: MostRecentSpillContext,
     task_metrics: Option<Arc<TaskMetricAggregator>>,
-    /// Whether the build side has sent rows.
-    build_has_rows: bool,
     /// Whether the build side could send rows at the last state update.
     build_ready: bool,
 }
@@ -280,31 +277,25 @@ impl ProbePeek {
     fn new(task_metrics: Option<Arc<TaskMetricAggregator>>) -> Self {
         Self {
             morsels: Vec::new(),
-            len: 0,
             spill_ctx: MostRecentSpillContext::new("join-probe-peek".into(), task_metrics.clone()),
             task_metrics,
-            build_has_rows: false,
             build_ready: true,
         }
     }
 
-    /// The state of the probe port while building: it is read until it sends rows. It is opened
-    /// once the build side has rows, or while the build side can't send, so an empty probe side
-    /// can end the join before a blocked build side is done. It is only opened when its input can
-    /// send now, so it doesn't make the scheduler run an accumulating node feeding it before the
-    /// build side.
+    /// The state of the probe port while building. It is read until it sends rows, once the build
+    /// side has rows or while the build side can't send, and only when its input can send now.
     fn port_state(
         &mut self,
         recv: PortState,
         build: PortState,
         build_sink: &InMemorySinkNode,
     ) -> PortState {
-        self.build_has_rows = self.build_has_rows || !build_sink.is_empty();
         self.build_ready = build == PortState::Ready;
-        let open = self.build_has_rows || !self.build_ready;
+        let open = !self.build_ready || !build_sink.is_empty();
         match recv {
             PortState::Done => PortState::Done,
-            PortState::Ready if open && self.len == 0 => PortState::Ready,
+            PortState::Ready if open && self.morsels.is_empty() => PortState::Ready,
             _ => PortState::Blocked,
         }
     }
@@ -320,7 +311,7 @@ impl ProbePeek {
 
     /// Whether the probe side ended without rows.
     fn ended_empty(&self, recv: PortState) -> bool {
-        recv == PortState::Done && self.len == 0
+        recv == PortState::Done && self.morsels.is_empty()
     }
 
     fn spawn<'env, 's>(
@@ -330,17 +321,15 @@ impl ProbePeek {
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         let Self {
-            morsels,
-            len,
-            spill_ctx,
-            ..
+            morsels, spill_ctx, ..
         } = self;
+        let recv = recv.serial();
         let limit = Arc::new(RelaxedCell::from(1));
         let other_limit = Arc::new(RelaxedCell::from(usize::MAX));
-        join_handles.push(scope.spawn_task(
-            TaskPriority::High,
-            sample_sink(recv.serial(), morsels, len, limit, other_limit, spill_ctx),
-        ));
+        join_handles.push(scope.spawn_task(TaskPriority::High, async move {
+            let mut len = 0;
+            sample_sink(recv, morsels, &mut len, limit, other_limit, spill_ctx).await
+        }));
     }
 
     /// Sets the probe and output port states while probing. The rows read while building are
@@ -356,13 +345,13 @@ impl ProbePeek {
         }
     }
 
-    /// The rows read, to be probed before the rest of the probe side.
-    fn into_stream(self) -> BufferedStream {
+    /// Takes the rows read, to be probed before the rest of the probe side.
+    fn take_stream(&mut self) -> BufferedStream {
         BufferedStream::new(
             "join-probe-peek".into(),
-            self.morsels,
+            core::mem::take(&mut self.morsels),
             MorselSeq::default(),
-            self.task_metrics,
+            self.task_metrics.clone(),
         )
     }
 }

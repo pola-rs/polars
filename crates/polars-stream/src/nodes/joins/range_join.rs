@@ -221,24 +221,21 @@ impl ComputeNode for RangeJoinNode {
         }
 
         if point[0] == PortState::Done
-            && let RangeJoinState::Build { .. } = &self.state
-        {
-            let RangeJoinState::Build {
-                mut sink_node,
+            && let RangeJoinState::Build {
+                sink_node,
                 interval_peek,
-                ..
-            } = mem::replace(&mut self.state, RangeJoinState::Done)
-            else {
-                unreachable!()
-            };
-            let point_df = point_df(&mut sink_node, &self.params)?;
+            } = &mut self.state
+        {
+            let point_df = take_point_df(sink_node, &self.params)?;
             // Without point rows there is no output.
-            if point_df.height() > 0 {
-                self.state = RangeJoinState::Probe(ProbeState {
+            self.state = if point_df.height() > 0 {
+                RangeJoinState::Probe(ProbeState {
                     point_df,
-                    peeked: Box::new(interval_peek.into_stream()),
-                });
-            }
+                    peeked: Box::new(interval_peek.take_stream()),
+                })
+            } else {
+                RangeJoinState::Done
+            };
         }
 
         match self.state {
@@ -281,7 +278,6 @@ impl ComputeNode for RangeJoinNode {
             RangeJoinState::Build {
                 sink_node,
                 interval_peek,
-                ..
             } => {
                 if let Some(build) = recv_ports[point_idx].take() {
                     sink_node.spawn(scope, &mut [Some(build)], &mut [], state, join_handles);
@@ -315,7 +311,10 @@ impl ComputeNode for RangeJoinNode {
 }
 
 /// The point rows with a key, sorted.
-fn point_df(sink_node: &mut InMemorySinkNode, params: &RangeJoinParams) -> PolarsResult<DataFrame> {
+fn take_point_df(
+    sink_node: &mut InMemorySinkNode,
+    params: &RangeJoinParams,
+) -> PolarsResult<DataFrame> {
     let point_df = sink_node.get_output()?.unwrap();
     let key_col = point_df.column(params.point_key_col())?;
     let mut point_df = point_df.filter(&key_col.is_not_null())?;
