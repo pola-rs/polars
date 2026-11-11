@@ -3,7 +3,6 @@ use polars_compute::filter::filter_values;
 use polars_compute::rolling::QuantileMethod;
 use polars_compute::selection::{
     MaskedSlice, SELECT_BLOCK_LEN, SELECT_MIN_PAR_LEN, select_many_by, select_many_seq_by,
-    select_many_unstable_by,
 };
 #[cfg(feature = "dtype-f16")]
 use polars_utils::float16::pf16;
@@ -168,15 +167,15 @@ fn quantiles_with<T: ToPrimitive + Copy + Default>(
         .collect()
 }
 
-/// The `quantile` of `vals`, non-null values in any order, which it reorders; large inputs are
-/// selected in parallel on the current rayon pool.
-pub(crate) fn quantile_of_nonnull<T: ToPrimitive + TotalOrd + Copy + Default + Send + Sync>(
+/// The `quantile` of `vals`, non-null values in any order, which it reorders on the calling
+/// thread, since group-by already runs its groups in parallel.
+pub(crate) fn quantile_of_nonnull<T: ToPrimitive + TotalOrd + Copy + Default>(
     vals: &mut [T],
     quantile: f64,
     method: QuantileMethod,
 ) -> Option<f64> {
     quantile_with(vals.len(), quantile, method, |ranks, out| {
-        select_many_unstable_by(vals, ranks, out, TotalOrd::tot_cmp)
+        select_many_seq_by(vals, ranks, out, TotalOrd::tot_cmp)
     })
 }
 
