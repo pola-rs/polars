@@ -36,6 +36,7 @@ use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
 pub use utils::write_def_levels;
 
+pub use crate::arrow::union::dtype_unions_to_structs;
 pub use crate::parquet::compression::{BrotliLevel, CompressionOptions, GzipLevel, ZstdLevel};
 pub use crate::parquet::encoding::Encoding;
 pub use crate::parquet::metadata::{
@@ -1178,8 +1179,14 @@ fn get_encodings_recursive(dtype: &ArrowDataType, encodings: &mut Vec<Encoding>)
                 unreachable!()
             }
         },
-        // Not writable yet; the schema conversion raises.
-        Union | LargeUnion => {},
+        Union => {
+            let ArrowDataType::Union(u) = dtype.to_storage() else {
+                unreachable!()
+            };
+            get_encodings_recursive(&crate::arrow::union::union_storage_dtype(u), encodings)
+        },
+        // Polars-internal; only the Arrow `Union` reaches the writer.
+        LargeUnion => unreachable!(),
     }
 }
 

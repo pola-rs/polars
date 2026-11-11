@@ -184,6 +184,13 @@ pub fn n_columns(dtype: &ArrowDataType) -> usize {
                 unreachable!()
             }
         },
+        Union => {
+            if let ArrowDataType::Union(u) = dtype.to_storage() {
+                u.fields.iter().map(|inner| n_columns(&inner.dtype)).sum()
+            } else {
+                unreachable!()
+            }
+        },
         _ => todo!(),
     }
 }

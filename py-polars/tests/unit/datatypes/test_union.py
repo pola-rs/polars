@@ -7,10 +7,11 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
@@ -1440,12 +1441,70 @@ def test_union_write_json(s: pl.Series) -> None:
     assert [json.loads(v) for v in encoded] == expected
 
 
-def test_union_write_parquet_raises(tmp_path: Path) -> None:
-    df = messy().to_frame()
-    with pytest.raises(ComputeError, match="not yet implemented"):
-        df.write_parquet(tmp_path / "u.parquet")
-    with pytest.raises(ComputeError, match="not yet implemented"):
-        df.lazy().sink_parquet(tmp_path / "u.parquet")
+def parquet_round_trip(df: pl.DataFrame, *, sink: bool) -> pl.DataFrame:
+    buf = io.BytesIO()
+    if sink:
+        df.lazy().sink_parquet(buf)
+    else:
+        df.write_parquet(buf)
+    return pl.read_parquet(buf.getvalue())
+
+
+@pytest.mark.parametrize("s", messy_layouts())
+@pytest.mark.parametrize("sink", [False, True])
+def test_union_parquet(s: pl.Series, sink: bool) -> None:
+    df = s.to_frame()
+    out = parquet_round_trip(df, sink=sink)
+    assert out.schema == df.schema
+    assert to_pylist(out.to_series()) == to_pylist(s)
+    assert_series_equal(out.to_series().union.tag(), s.union.tag())
+
+
+@pytest.mark.parametrize("sink", [False, True])
+def test_union_parquet_nested(sink: bool) -> None:
+    dtype = pl.Union({"c": pl.Categorical, "l": pl.List(pl.Int32), "s": pl.String})
+    df = pl.DataFrame({"y": ["a", None, "b"]}).with_columns(
+        u=pl.when(pl.col("y") == "a")
+        .then(pl.union_value(dtype, c=pl.col("y").cast(pl.Categorical)))
+        .when(pl.col("y").is_not_null())
+        .then(pl.union_value(dtype, s=pl.col("y")))
+        .otherwise(None)
+    )
+    df = df.with_columns(l=pl.concat_list("u"), st=pl.struct("u", "y"))
+    out = parquet_round_trip(df, sink=sink)
+    assert out.schema == df.schema
+    assert out.equals(df)
+
+
+def test_union_parquet_scan() -> None:
+    dtype = INT_STR
+    df = pl.DataFrame({"k": list(range(10))}).with_columns(
+        u=pl.when(pl.col("k") % 2 == 0)
+        .then(pl.union_value(dtype, i=pl.col("k")))
+        .otherwise(pl.union_value(dtype, s=pl.col("k").cast(pl.String)))
+    )
+    buf = io.BytesIO()
+    df.write_parquet(buf, row_group_size=3)
+    data = buf.getvalue()
+    lf = pl.scan_parquet(io.BytesIO(data))
+    for q, expected in [
+        (lf.filter(pl.col("k") > 6), [7, 8, 9]),
+        (lf.filter(pl.col("u").union.tag() == "i"), [0, 2, 4, 6, 8]),
+        (lf.slice(4, 3), [4, 5, 6]),
+    ]:
+        for engine in ["in-memory", "streaming"]:
+            out = q.collect(engine=engine)  # type: ignore[call-overload]
+            assert out["k"].to_list() == expected
+            assert_series_equal(out["u"], df["u"].gather(expected))
+    # Readers that don't know the union see a struct of the variants.
+    table = pq.read_table(io.BytesIO(data))
+    assert table["u"].to_pylist()[:2] == [{"i": 0, "s": None}, {"i": None, "s": "1"}]
+
+
+def test_union_parquet_in_map_raises() -> None:
+    df = pl.select(u=pl.lit(None).cast(pl.Map(pl.String, INT_STR)))
+    with pytest.raises(InvalidOperationError, match="cannot store a union nested in"):
+        df.write_parquet(io.BytesIO())
 
 
 def test_union_by_dtype_selector() -> None:

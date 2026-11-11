@@ -218,6 +218,27 @@ pub fn columns_to_iter_recursive(
                 }
             },
 
+            ArrowDataType::Union(u) => {
+                let storage = crate::arrow::union::union_storage_dtype(u);
+                let (nested, array, ptm) = columns_to_iter_recursive(
+                    columns,
+                    types,
+                    field.with_dtype(storage),
+                    init,
+                    filter,
+                )?;
+                let array = array
+                    .into_iter()
+                    .map(|arr| {
+                        let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
+                        crate::arrow::union::struct_to_union(arr, u)
+                            .map(|a| a.boxed())
+                            .map_err(|e| ParquetError::oos(e.to_string()))
+                    })
+                    .collect::<ParquetResult<Vec<_>>>()?;
+                Ok((nested, array, ptm))
+            },
+
             ArrowDataType::Extension(ext) => {
                 // Perform deserialization for the storage type.
                 let (nested, mut array, ptm) = columns_to_iter_recursive(

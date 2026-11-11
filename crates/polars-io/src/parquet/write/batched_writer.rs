@@ -72,8 +72,9 @@ impl<W: Write> BatchedWriter<W> {
     /// # Panics
     /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.
     pub fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
+        let df = unions_to_structs(df)?;
         let row_group_iter = prepare_rg_iter(
-            df,
+            &df,
             &self.parquet_schema,
             &self.encodings,
             self.options,
@@ -269,4 +270,30 @@ fn create_eager_serializer(
     let row_group = DynIter::new(columns.into_iter());
 
     Ok(row_group)
+}
+
+/// Stores unions as structs, since Parquet has no union type. The file's Arrow schema keeps the
+/// unions, so they are restored on read.
+pub(crate) fn unions_to_structs(df: &DataFrame) -> PolarsResult<std::borrow::Cow<'_, DataFrame>> {
+    if !df.columns().iter().any(|c| c.dtype().contains_union()) {
+        return Ok(std::borrow::Cow::Borrowed(df));
+    }
+    #[cfg(feature = "dtype-struct")]
+    {
+        let columns = df
+            .columns()
+            .iter()
+            .map(|c| {
+                let s = c.as_materialized_series();
+                Ok(s.unions_to_structs()?
+                    .map_or_else(|| c.clone(), Column::from))
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+        // SAFETY: the conversion keeps the length and name of every column.
+        Ok(std::borrow::Cow::Owned(unsafe {
+            DataFrame::new_unchecked(df.height(), columns)
+        }))
+    }
+    #[cfg(not(feature = "dtype-struct"))]
+    polars_bail!(InvalidOperation: "writing a union to Parquet requires the `dtype-struct` feature")
 }

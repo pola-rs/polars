@@ -110,3 +110,38 @@ impl UnionChunked {
         }
     }
 }
+
+impl Series {
+    /// Replaces every union in this Series by a struct with one nullable member per variant,
+    /// holding each row's value in its variant's member; `None` if it holds no union.
+    ///
+    /// This is how formats without a union type, such as Parquet, store unions.
+    #[cfg(feature = "dtype-struct")]
+    pub fn unions_to_structs(&self) -> PolarsResult<Option<Series>> {
+        if !self.dtype().contains_union() {
+            return Ok(None);
+        }
+        let rec = |s: Series| -> PolarsResult<Series> { Ok(s.unions_to_structs()?.unwrap_or(s)) };
+        let out = match self.dtype() {
+            DataType::Union(fields) => {
+                let ca = self.union()?;
+                let members = (0..fields.len())
+                    .map(|t| rec(ca.variant(t).with_name(fields[t].name().clone())))
+                    .collect::<PolarsResult<Vec<_>>>()?;
+                StructChunked::from_series(self.name().clone(), self.len(), members.iter())?
+                    .into_series()
+            },
+            DataType::List(_) => self.list()?.apply_to_inner(&rec)?.into_series(),
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(..) => self.array()?.apply_to_inner(&rec)?.into_series(),
+            DataType::Struct(_) => self
+                .struct_()?
+                .try_apply_fields(|f| rec(f.clone()))?
+                .into_series(),
+            dt => polars_bail!(
+                InvalidOperation: "cannot store a union nested in `{dt}` as a struct"
+            ),
+        };
+        Ok(Some(out))
+    }
+}
