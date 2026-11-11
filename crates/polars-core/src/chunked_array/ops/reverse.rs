@@ -47,11 +47,14 @@ impl_reverse!(BinaryOffsetType, BinaryOffsetChunked);
 
 impl ChunkReverse for ListChunked {
     fn reverse(&self) -> Self {
-        if self.is_empty() {
+        if self.null_count() == self.len() {
             return self.clone();
         };
-        let ca: Self = self.series_iter().rev().collect_trusted();
-        ca.with_name(self.name().clone())
+        let idx = IdxCa::from_vec(
+            PlSmallStr::EMPTY,
+            (0..self.len() as IdxSize).rev().collect(),
+        );
+        unsafe { self.take_unchecked(&idx) }
     }
 }
 
