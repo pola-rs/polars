@@ -169,6 +169,7 @@ pub(super) unsafe fn plugin_field(
 
     if major == 0 {
         match minor {
+            // The bump from 0 -> 1 was a historic mistake, it should've been a major version.
             0 => {
                 let views = fields.iter().any(|field| field.dtype.contains_views());
                 polars_ensure!(!views, ComputeError: "cannot call plugin\n\nThis Polars' version has a different 'binary/string' layout. Please compile with latest 'pyo3-polars'");
@@ -183,7 +184,8 @@ pub(super) unsafe fn plugin_field(
                     .unwrap();
                 symbol(slice_ptr, n_args, return_value_ptr);
             },
-            1 => {
+            // Minor versions above 1 only add capabilities, so they share this signature.
+            1.. => {
                 // *const ArrowSchema: pointer to heap Box<ArrowSchema>
                 // usize: length of the boxed slice
                 // *mut ArrowSchema: pointer where the return value can be written
@@ -205,9 +207,6 @@ pub(super) unsafe fn plugin_field(
                 let kwargs_len = kwargs.len();
 
                 symbol(slice_ptr, n_args, return_value_ptr, kwargs_ptr, kwargs_len);
-            },
-            _ => {
-                polars_bail!(ComputeError: "this Polars engine doesn't support plugin version: {}-{}", major, minor)
             },
         }
         if !return_value.is_null() {

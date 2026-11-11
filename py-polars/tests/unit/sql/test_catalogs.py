@@ -6,6 +6,7 @@ import re
 import shutil
 import struct
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date
 from pathlib import Path
 from typing import Any
@@ -2717,6 +2718,19 @@ def test_alter_catalog_table_name_mapping(
 
 
 @pytest.mark.write_disk
+def test_alter_catalog_table_reuses_renamed_name(lake: CountingCatalog) -> None:
+    # Polars writes field IDs and no name mapping, so an old name is free again
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE written (k BIGINT, v VARCHAR)")
+    ctx.execute("INSERT INTO written VALUES (1, 'a')")
+    ctx.execute("ALTER TABLE written RENAME COLUMN v TO w")
+    ctx.execute("ALTER TABLE written ADD COLUMN v VARCHAR")
+    ctx.execute("INSERT INTO written VALUES (2, 'b', 'c')")
+    res = ctx.execute("SELECT * FROM written ORDER BY k", eager=True)
+    assert res.rows() == [(1, "a", None), (2, "b", "c")]
+
+
+@pytest.mark.write_disk
 def test_alter_catalog_table_drop_only_column(lake: CountingCatalog) -> None:
     from polars.exceptions import InvalidOperationError
 
@@ -5397,3 +5411,216 @@ def test_alias_in_nested_query_does_not_collide(lake: CountingCatalog) -> None:
         eager=True,
     )
     assert_frame_equal(res, LINEITEM, check_row_order=False)
+
+
+METADATA_TABLES = [
+    "all_data_files",
+    "all_delete_files",
+    "all_files",
+    "all_manifests",
+    "data_files",
+    "delete_files",
+    "entries",
+    "files",
+    "history",
+    "manifests",
+    "metadata_log_entries",
+    "partitions",
+    "refs",
+    "snapshots",
+]
+
+
+def inspected(catalog: CountingCatalog, name: str, *identifier: str) -> pl.DataFrame:
+    table = SqlCatalog.load_table(catalog, identifier)
+    return pl.DataFrame(pl.from_arrow(getattr(table.inspect, name)()))
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("name", METADATA_TABLES)
+def test_catalog_metadata_tables(lake: CountingCatalog, name: str) -> None:
+    res = lake_ctx(lake).execute(f"SELECT * FROM lake.tpch.lineitem${name}", eager=True)
+    assert_frame_equal(res, inspected(lake, name, "tpch", "lineitem"))
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("name", "table"),
+    [
+        ("lineitem$snapshots", ("tpch", "lineitem")),
+        ("tpch.lineitem$snapshots", ("tpch", "lineitem")),
+        ("lake.lineitem$snapshots", ("tpch", "lineitem")),
+        ("LAKE.tpch.lineitem$SNAPSHOTS", ("tpch", "lineitem")),
+        ('"lineitem$Snapshots"', ("tpch", "lineitem")),
+        ("`lineitem$snapshots`", ("tpch", "lineitem")),
+        ('"lake"."tpch"."lineitem$snapshots"', ("tpch", "lineitem")),
+        ("orders$history", ("tpch", "orders")),
+        ("lake.prod.tpch.lineitem$history", ("prod", "tpch", "lineitem")),
+    ],
+)
+def test_catalog_metadata_table_names(
+    lake: CountingCatalog, name: str, table: tuple[str, ...]
+) -> None:
+    res = lake_ctx(lake).execute(f"SELECT snapshot_id FROM {name}", eager=True)
+    expected = inspected(lake, "snapshots", *table).select("snapshot_id")
+    assert_frame_equal(res, expected)
+
+
+@pytest.mark.write_disk
+def test_catalog_metadata_table_names_reserved(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    # a metadata name reads the metadata table, even if a table has that name
+    df = pl.DataFrame({"x": [1]})
+    lake.create_table(("tpch", "lineitem$snapshots"), schema=df.to_arrow().schema)
+    res = ctx.execute("SELECT * FROM lineitem$snapshots", eager=True)
+    assert_frame_equal(res, inspected(lake, "snapshots", "tpch", "lineitem"))
+
+    # split at the last `$`
+    ctx.execute('CREATE TABLE tpch."a$b" AS SELECT 1 AS k')
+    assert ctx.execute("SELECT * FROM a$b$snapshots", eager=True).height == 1
+
+    # a registered frame of the table's name does not shadow it, nor does a CTE
+    ctx.register("lineitem", pl.LazyFrame({"x": [1]}))
+    assert ctx.execute("SELECT * FROM lineitem$refs", eager=True).height == 1
+    query = "WITH s AS (SELECT * FROM lineitem$refs) SELECT count(*) FROM s"
+    assert ctx.execute(query, eager=True).item() == 1
+
+    # other names are plain tables, and the table part is case-sensitive
+    names = ['"$snapshots"', "lineitem$", "lineitem$unknown", "lineitem.snapshots"]
+    for name in [*names, "Lineitem$snapshots"]:
+        with pytest.raises(NoSuchTableError, match="not found"):
+            ctx.execute(f"SELECT * FROM {name}", eager=True)
+
+    with pytest.raises(
+        NoSuchTableError,
+        match=re.escape(
+            "relation 'lake.tpch.missing$snapshots' not found: catalog table "
+            "'tpch.missing' could not be loaded"
+        ),
+    ):
+        ctx.execute("SELECT * FROM missing$snapshots", eager=True)
+
+
+@pytest.mark.write_disk
+def test_catalog_metadata_tables_load_once(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    lf = ctx.execute(
+        "SELECT count(*) AS n FROM lineitem$snapshots AS a "
+        "JOIN lineitem$snapshots AS b USING (snapshot_id)"
+    )
+    assert lake.loads == []
+    assert lf.collect().item() == 1
+    assert lake.loads == [("tpch", "lineitem")]
+
+    # later collects see the first load, like table scans
+    pl.DataFrame({"k": [3], "v": ["c"]}).write_iceberg(
+        lake.load_table(("tpch", "lineitem")), mode="append"
+    )
+    assert lf.collect().item() == 1
+    assert ctx.execute("SELECT * FROM lineitem$snapshots", eager=True).height == 2
+    # two loads are not merged
+    old = lf
+    new = ctx.execute("SELECT count(*) AS n FROM lineitem$snapshots")
+    assert pl.concat([old, new]).collect().to_series().to_list() == [1, 2]
+
+    for res in (
+        pickle.loads(pickle.dumps(lf)),
+        pl.LazyFrame.deserialize(io.BytesIO(lf.serialize())),
+    ):
+        assert res.collect().item() == 2
+
+
+@pytest.mark.write_disk
+def test_catalog_metadata_tables_empty(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE tpch.empty (k INT)")
+    assert ctx.execute("SELECT * FROM empty$snapshots", eager=True).height == 0
+    assert ctx.execute("SELECT * FROM empty$files", eager=True).height == 0
+    for name in ["partitions", "entries"]:
+        with pytest.raises(
+            pl.exceptions.InvalidOperationError, match="has no snapshot"
+        ):
+            ctx.execute(f"SELECT * FROM empty${name}", eager=True)
+
+
+@pytest.mark.write_disk
+def test_catalog_metadata_tables_in_statements(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    snapshot_id = inspected(lake, "snapshots", "tpch", "lineitem").item(
+        0, "snapshot_id"
+    )
+
+    ctx.execute("CREATE TABLE tpch.snaps AS SELECT snapshot_id FROM lineitem$snapshots")
+    ctx.execute("INSERT INTO tpch.snaps SELECT snapshot_id FROM lineitem$history")
+    res = ctx.execute("SELECT * FROM snaps", eager=True)
+    assert res.to_series().to_list() == [snapshot_id, snapshot_id]
+
+    ctx.execute(
+        "MERGE INTO orders USING (SELECT 1 AS k, count(*) AS n FROM lineitem$snapshots) "
+        "AS s ON orders.k = s.k WHEN MATCHED THEN UPDATE SET o = s.n"
+    )
+    res = ctx.execute("SELECT o FROM orders WHERE k = 1", eager=True)
+    assert res.item() == 1
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    "query",
+    [
+        "INSERT INTO lineitem$snapshots VALUES (1)",
+        "DELETE FROM lineitem$snapshots",
+        "UPDATE lineitem$snapshots SET snapshot_id = 1",
+        "TRUNCATE TABLE lineitem$snapshots",
+        "TRUNCATE TABLE IF EXISTS lineitem$snapshots",
+        "MERGE INTO lineitem$snapshots USING orders AS s ON true "
+        "WHEN MATCHED THEN DELETE",
+        "DROP TABLE lineitem$snapshots",
+        "DROP TABLE IF EXISTS lineitem$snapshots",
+        "ALTER TABLE lineitem$snapshots ADD COLUMN w BIGINT",
+        "CREATE TABLE lineitem$files (k INT)",
+        "CREATE TABLE IF NOT EXISTS lineitem$files AS SELECT 1 AS k",
+    ],
+)
+def test_catalog_metadata_tables_read_only(
+    lake: CountingCatalog, query: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # refused by name before any catalog call, even if a table has that name
+    df = pl.DataFrame({"x": [1]})
+    lake.create_table(("tpch", "lineitem$snapshots"), schema=df.to_arrow().schema)
+    ctx = lake_ctx(lake)
+
+    def no_call(*args: Any, **kwargs: Any) -> None:
+        raise AssertionError
+
+    for method in [
+        "load_table",
+        "table_exists",
+        "create_table",
+        "create_table_transaction",
+        "drop_table",
+        "purge_table",
+        "list_tables",
+    ]:
+        monkeypatch.setattr(lake, method, no_call)
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match=r"metadata table of 'lake\.tpch\.lineitem', which can only be read",
+    ):
+        ctx.execute(query, eager=True)
+    monkeypatch.undo()
+    assert lake.table_exists(("tpch", "lineitem$snapshots"))
+    assert not lake.table_exists(("tpch", "lineitem$files"))
+
+
+@pytest.mark.write_disk
+def test_catalog_metadata_tables_concurrent_first_load(lake: CountingCatalog) -> None:
+    lf = lake_ctx(lake).execute("SELECT * FROM lineitem$snapshots")
+    with ThreadPoolExecutor(2) as pool:
+        ids, parents = pool.map(
+            lambda c: lf.select(c).collect().to_series().to_list(),
+            ["snapshot_id", "parent_id"],
+        )
+    expected = inspected(lake, "snapshots", "tpch", "lineitem")
+    assert ids == expected["snapshot_id"].to_list()
+    assert parents == expected["parent_id"].to_list()
+    assert lake.loads == [("tpch", "lineitem")]

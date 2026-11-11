@@ -21,6 +21,8 @@ pub struct PythonDatasetProviderVTable {
         py_scan_resolve_threadpool: &PyScanResolveThreadPool,
     ) -> PolarsResult<SchemaRef>,
 
+    pub has_tight_statistics: fn(dataset_object: &PythonObject) -> PolarsResult<bool>,
+
     #[expect(clippy::type_complexity)]
     pub to_dataset_scan: fn(
         dataset_object: &PythonObject,
@@ -65,6 +67,12 @@ impl PythonDatasetProvider {
             &self.dataset_object,
             py_scan_resolve_threadpool,
         )
+    }
+
+    /// Whether the expansion may have tight statistics, to answer aggregates from. False for
+    /// providers that do not say.
+    pub fn has_tight_statistics(&self) -> PolarsResult<bool> {
+        (dataset_provider_vtable().unwrap().has_tight_statistics)(&self.dataset_object)
     }
 
     #[allow(clippy::too_many_arguments)]

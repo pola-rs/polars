@@ -4,14 +4,14 @@ use polars_arrow::array::BooleanArray;
 use polars_arrow::bitmap::BitmapBuilder;
 use polars_core::prelude::*;
 use polars_expr::groups::{Grouper, new_hash_grouper};
-use polars_expr::hash_keys::HashKeys;
+use polars_expr::hash_keys::KeyEncoder;
 use polars_utils::IdxSize;
 
 use super::compute_node_prelude::*;
 
 /// A node which adds for each row whether it's the first time this row is seen, based on key cols.
 pub struct IsFirstDistinctNode {
-    key_schema: Arc<Schema>,
+    key_encoder: KeyEncoder,
     out_name: PlSmallStr,
     grouper: Box<dyn Grouper>,
     subset: Vec<IdxSize>,
@@ -22,9 +22,10 @@ pub struct IsFirstDistinctNode {
 
 impl IsFirstDistinctNode {
     pub fn new(key_schema: Arc<Schema>, out_name: PlSmallStr, random_state: PlRandomState) -> Self {
-        let grouper = new_hash_grouper(key_schema.clone());
+        let key_encoder = KeyEncoder::new(key_schema, true, &[]);
+        let grouper = new_hash_grouper(&key_encoder);
         Self {
-            key_schema,
+            key_encoder,
             out_name,
             grouper,
             subset: Vec::new(),
@@ -78,9 +79,10 @@ impl ComputeNode for IsFirstDistinctNode {
             while let Ok(morsel) = recv.recv().await {
                 let morsel = morsel
                     .map(|mut df| {
-                        let key_df = df.select(slf.key_schema.iter_names()).unwrap();
+                        let key_df = df.select(slf.key_encoder.schema().iter_names()).unwrap();
                         let hash_keys =
-                            HashKeys::from_df(&key_df, slf.random_state.clone(), true, false);
+                            slf.key_encoder
+                                .hash_keys(&key_df, slf.random_state.clone(), true);
                         let mut distinct = BitmapBuilder::with_capacity(df.height());
                         unsafe {
                             slf.subset

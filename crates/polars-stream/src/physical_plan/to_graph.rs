@@ -6,7 +6,7 @@ use polars_core::config;
 use polars_core::prelude::{InitHashMaps, PlHashSet, PlIndexSet, PlRandomState};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::{PolarsResult, polars_ensure, polars_err};
-use polars_expr::groups::new_hash_grouper;
+use polars_expr::hash_keys::KeyEncoder;
 use polars_expr::planner::{ExpressionConversionState, create_physical_expr, create_window_expr};
 use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
@@ -1233,6 +1233,7 @@ fn to_graph_rec<'a>(
             key_per_input,
             fused_agg_inputs_per_input,
             aggs_per_input,
+            key_ranges,
         } => {
             let mut key_ports = Vec::new();
             let mut key_schema_per_input = Vec::new();
@@ -1353,16 +1354,20 @@ fn to_graph_rec<'a>(
             let key_schema = key_schema_per_input.swap_remove(0);
             assert!(key_schema_per_input.iter().all(|s| **s == *key_schema));
 
-            let grouper = new_hash_grouper(key_schema.clone());
+            let key_encoder = KeyEncoder::new(key_schema, true, key_ranges);
+            if config::verbose()
+                && let Some(layout) = key_encoder.describe_packed()
+            {
+                eprintln!("group-by packed keys: {layout}");
+            }
             let output_schema = node.output_schema(0).clone();
             let num_pipelines = ctx.num_pipelines;
             ctx.add_node_with_metrics(
                 |registry| {
                     nodes::group_by::GroupByNode::new(
-                        key_schema,
+                        key_encoder,
                         key_selectors_per_input,
                         reductions_per_input,
-                        grouper,
                         grouped_reduction_cols,
                         payload_per_input,
                         grouped_reductions,
@@ -1528,6 +1533,8 @@ fn to_graph_rec<'a>(
             args,
             fused_predicate: _,
             runtime_filters: _,
+            estimated_rows: _,
+            key_ranges,
         }
         | SemiAntiJoin {
             input_left,
@@ -1538,6 +1545,7 @@ fn to_graph_rec<'a>(
             output_bool: _,
             runtime_filters: _,
             estimated_rows: _,
+            key_ranges,
         } => {
             let args = args.clone();
             let output_schema = node.output_schema(0).clone();
@@ -1587,6 +1595,14 @@ fn to_graph_rec<'a>(
 
             let unique_key_schema =
                 compute_output_schema(&left_input_schema, &unique_left_on, ctx.expr_arena)?;
+            // An anti join built from its left side keeps the left rows with null keys.
+            let nulls_in_key = args.nulls_equal || args.how.is_anti();
+            let key_encoder = KeyEncoder::new(unique_key_schema, nulls_in_key, key_ranges);
+            if config::verbose()
+                && let Some(layout) = key_encoder.describe_packed()
+            {
+                eprintln!("join packed keys: {layout}");
+            }
             let num_pipelines = ctx.num_pipelines;
 
             match node.kind {
@@ -1599,7 +1615,7 @@ fn to_graph_rec<'a>(
                 } => ctx.try_add_node_with_metrics(
                     |registry| {
                         nodes::joins::semi_anti_join::SemiAntiJoinNode::new(
-                            unique_key_schema,
+                            key_encoder,
                             output_schema,
                             left_key_selectors,
                             right_key_selectors,
@@ -1619,6 +1635,7 @@ fn to_graph_rec<'a>(
                 EquiJoin {
                     ref fused_predicate,
                     ref runtime_filters,
+                    estimated_rows,
                     ..
                 } => {
                     // Compiled against a narrow frame of exactly the columns it reads, in
@@ -1649,12 +1666,13 @@ fn to_graph_rec<'a>(
                                 right_input_schema,
                                 left_key_schema,
                                 right_key_schema,
-                                unique_key_schema,
+                                key_encoder,
                                 output_schema,
                                 left_key_selectors,
                                 right_key_selectors,
                                 fused_predicate,
                                 runtime_filters.clone(),
+                                estimated_rows,
                                 args,
                                 num_pipelines,
                                 registry.task_metrics(),
