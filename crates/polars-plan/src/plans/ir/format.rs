@@ -121,6 +121,7 @@ fn write_scan(
     indent: usize,
     n_columns: usize,
     total_columns: usize,
+    field_selection: Option<&ScanFieldSelection>,
     row_estimation: Option<u64>,
     predicate: &Option<ExprIRDisplay<'_>>,
     pre_slice: Option<Slice>,
@@ -162,6 +163,9 @@ fn write_scan(
         )?;
     } else {
         write!(f, "\n{:indent$}PROJECT */{total_columns} COLUMNS", "")?;
+    }
+    if let Some(field_selection) = field_selection {
+        write!(f, "\n{:indent$}PROJECT FIELDS: {field_selection}", "")?;
     }
     if let Some(predicate) = predicate {
         write!(f, "\n{:indent$}SELECTION: {predicate}", "")?;
@@ -940,6 +944,7 @@ pub fn write_ir_non_recursive(
                 n_columns,
                 total_columns,
                 None,
+                None,
                 &predicate,
                 options
                     .n_rows
@@ -999,6 +1004,7 @@ pub fn write_ir_non_recursive(
                 indent,
                 n_columns,
                 file_info.schema.len(),
+                unified_scan_args.field_selection.as_deref(),
                 row_estimation,
                 &predicate,
                 unified_scan_args.pre_slice.clone(),

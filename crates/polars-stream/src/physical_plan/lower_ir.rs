@@ -13,6 +13,7 @@ use polars_core::{SchemaExtPl, config};
 use polars_defs::join::{JoinType, MaintainOrderJoin};
 use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_expr::dispatch::function_expr_to_udf;
+use polars_expr::hash_keys::KeyRange;
 use polars_expr::state::ExecutionState;
 use polars_io::external_reader::ExternalReaderBuilder;
 use polars_mem_engine::create_physical_plan;
@@ -23,8 +24,8 @@ use polars_plan::dsl::{CallbackSinkType, ExtraColumnsPolicy, FileScanIR, SinkTyp
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::prune::prune_plan;
 use polars_plan::plans::{
-    AExpr, DynamicPred, FunctionIR, IR, IRAggExpr, LiteralValue, window_exprs_match_keys,
-    write_ir_non_recursive,
+    AExpr, DynamicPred, FunctionIR, IR, IRAggExpr, LiteralValue, column_value_range, into_column,
+    window_exprs_match_keys, write_ir_non_recursive,
 };
 use polars_plan::prelude::*;
 use polars_utils::aliases::PlIndexMap;
@@ -56,7 +57,7 @@ use crate::physical_plan::lower_expr::{
     ExprCache, LowerExprContext, build_hstack_stream_with_ctx, build_select_stream,
     input_height_expr, is_elementwise_rec_cached, lower_exprs,
 };
-use crate::physical_plan::lower_group_by::build_group_by_stream;
+use crate::physical_plan::lower_group_by::build_group_by_stream_with_key_ranges;
 use crate::unique_column_name;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
@@ -989,18 +990,35 @@ fn lower_ir_inner(
                         // initial hint.
                         metadata_per_source,
                         bytes_per_source,
-                    } => Arc::new(
-                        crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder {
-                            options: Arc::new(options.clone()),
-                            first_metadata: metadata_per_source.first_metadata().cloned(),
-                            bytes_per_source: bytes_per_source.clone(),
-                            pipeline_budget: std::sync::OnceLock::new(),
-                            shared_prefetch_wait_group_slot: Default::default(),
-                            file_read_context: std::sync::OnceLock::new(),
-                            io_metrics: std::sync::OnceLock::new(),
-                            task_metrics: std::sync::OnceLock::new(),
-                        },
-                    ) as _,
+                    } => {
+                        // With a column mapping, the fields to read are resolved per file from
+                        // the mapped projection instead.
+                        let unmapped = unified_scan_args.column_mapping.is_none();
+                        let prune_to_scan_schema = unmapped
+                            && unified_scan_args.cast_columns_policy.extra_struct_fields
+                                == polars_plan::dsl::ExtraColumnsPolicy::Ignore;
+                        Arc::new(
+                            crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder {
+                                options: Arc::new(options.clone()),
+                                field_selection: unified_scan_args
+                                    .field_selection
+                                    .clone()
+                                    .filter(|_| unmapped),
+                                scan_schema: ((unified_scan_args.field_selection.is_some()
+                                    && unmapped)
+                                    || prune_to_scan_schema)
+                                    .then(|| file_info.schema.clone()),
+                                prune_to_scan_schema,
+                                first_metadata: metadata_per_source.first_metadata().cloned(),
+                                bytes_per_source: bytes_per_source.clone(),
+                                pipeline_budget: std::sync::OnceLock::new(),
+                                shared_prefetch_wait_group_slot: Default::default(),
+                                file_read_context: std::sync::OnceLock::new(),
+                                io_metrics: std::sync::OnceLock::new(),
+                                task_metrics: std::sync::OnceLock::new(),
+                            },
+                        ) as _
+                    },
 
                     #[cfg(feature = "ipc")]
                     FileScanIR::Ipc {
@@ -1008,6 +1026,11 @@ fn lower_ir_inner(
                         metadata: first_metadata,
                     } => Arc::new(crate::nodes::io_sources::ipc::builder::IpcReaderBuilder {
                         options: Arc::new(options.clone()),
+                        field_selection: unified_scan_args.field_selection.clone(),
+                        scan_schema: unified_scan_args
+                            .field_selection
+                            .is_some()
+                            .then(|| file_info.schema.clone()),
                         first_metadata: first_metadata.clone(),
                         pipeline_budget: std::sync::OnceLock::new(),
                         shared_prefetch_wait_group_slot: Default::default(),
@@ -1111,6 +1134,7 @@ fn lower_ir_inner(
                         multi_scan::functions::resolve_projections::resolve_projections(
                             &output_schema,
                             &file_schema,
+                            unified_scan_args.field_selection.as_deref(),
                             &mut hive_parts,
                             unified_scan_args
                                 .row_index
@@ -1129,6 +1153,7 @@ fn lower_ir_inner(
                             .default_values
                             .filter(|DefaultFieldValues::Iceberg(v)| !v.is_empty())
                             .map(|DefaultFieldValues::Iceberg(v)| v),
+                        unified_scan_args.field_selection.as_deref(),
                     );
 
                     // TODO: We ignore the parameter for some scan types to maintain old behavior,
@@ -1295,6 +1320,7 @@ fn lower_ir_inner(
             let apply = apply.clone();
             let maintain_order = *maintain_order;
             let options = options.clone();
+            let key_ranges = key_value_ranges(input, &keys, ir_arena, expr_arena);
 
             let phys_input = lower_ir!(input)?;
 
@@ -1304,7 +1330,7 @@ fn lower_ir_inner(
                 .are_keys_sorted_any(input, &keys, expr_arena, input_schema)
                 .is_some();
 
-            return build_group_by_stream(
+            return build_group_by_stream_with_key_ranges(
                 phys_input,
                 &keys,
                 &aggs,
@@ -1317,6 +1343,7 @@ fn lower_ir_inner(
                 expr_cache,
                 ctx,
                 are_keys_sorted,
+                &key_ranges,
             );
         },
         IR::Join {
@@ -1335,6 +1362,20 @@ fn lower_ir_inner(
             let input_left_schema = IR::schema_with_cache(input_left, ir_arena, schema_cache);
             let input_right_schema = IR::schema_with_cache(input_right, ir_arena, schema_cache);
             let (left_on, right_on) = options.options.key_vecs();
+            // Both sides are packed with one layout, so a range must hold the keys of both.
+            let key_ranges: Vec<_> = key_value_ranges(input_left, &left_on, ir_arena, expr_arena)
+                .into_iter()
+                .zip(key_value_ranges(
+                    input_right,
+                    &right_on,
+                    ir_arena,
+                    expr_arena,
+                ))
+                .map(|(l, r)| {
+                    let ((l_min, l_max), (r_min, r_max)) = (l?, r?);
+                    Some((l_min.min(r_min), l_max.max(r_max)))
+                })
+                .collect();
             let get_expr_name = |e: &ExprIR| e.output_name().clone();
             let left_on_names = left_on.iter().map(get_expr_name).collect_vec();
             let right_on_names = right_on.iter().map(get_expr_name).collect_vec();
@@ -1342,7 +1383,6 @@ fn lower_ir_inner(
             let mut tmp_right_col_names: Vec<Option<PlSmallStr>> = Vec::new();
             let args = options.args.clone();
             let runtime_filters = options.runtime_filters.clone();
-            #[cfg(feature = "semi_anti_join")]
             let estimated_rows = options.estimated_rows;
             let options = options.options.clone();
             // Only the hash equi join evaluates a fused predicate natively; other strategies get
@@ -1458,10 +1498,12 @@ fn lower_ir_inner(
                 .as_ref()
                 .and_then(|v| v.first())
                 .and_then(|s| s.nulls_last);
+            // Only the hash join evaluates the fused predicate of an outer join.
             let use_streaming_merge_join = args.how.is_equi()
                 && join_keys_sorted_together
                 && key_descending.is_some()
-                && key_nulls_last.is_some();
+                && key_nulls_last.is_some()
+                && (fused_predicate.is_none() || args.how.is_inner());
 
             #[cfg(feature = "asof_join")]
             let (mut by_descending, mut by_nulls_last) = (Default::default(), Default::default());
@@ -1678,6 +1720,7 @@ fn lower_ir_inner(
                             output_bool: false,
                             runtime_filters: runtime_filters.clone(),
                             estimated_rows,
+                            key_ranges: key_ranges.clone(),
                         },
                     )),
                     _ if args.how.is_equi() => {
@@ -1696,6 +1739,8 @@ fn lower_ir_inner(
                                 args: args.clone(),
                                 fused_predicate: native,
                                 runtime_filters: runtime_filters.clone(),
+                                estimated_rows,
+                                key_ranges: key_ranges.clone(),
                             },
                         ))
                     },
@@ -1712,8 +1757,9 @@ fn lower_ir_inner(
                 let mut stream = PhysStream::first(node);
                 // Anything the join did not take over is applied as a filter instead.
                 if let Some(fused_predicate) = fused_predicate {
-                    // A fused predicate join never carries a slice.
-                    debug_assert!(args.slice.is_none());
+                    // A fused predicate join never carries a slice, and a filter after the
+                    // join would drop the unmatched rows of an outer join.
+                    debug_assert!(args.slice.is_none() && args.how.is_inner());
                     stream = build_filter_stream(
                         stream,
                         fused_predicate,
@@ -1934,7 +1980,7 @@ fn lower_ir_inner(
                 ));
             }
 
-            let mut stream = build_group_by_stream(
+            let mut stream = build_group_by_stream_with_key_ranges(
                 phys_input,
                 &keys,
                 &aggs,
@@ -1947,6 +1993,7 @@ fn lower_ir_inner(
                 expr_cache,
                 ctx,
                 are_keys_sorted,
+                &key_value_ranges(input, &keys, ir_arena, expr_arena),
             )?;
 
             if options.keep_strategy == UniqueKeepStrategy::None {
@@ -2328,4 +2375,20 @@ fn round_plan(
         ir_arena.replace(node, cache);
     }
     plan
+}
+
+/// The value range of each key that reads a column of `input`, see
+/// `column_value_range`.
+fn key_value_ranges(
+    input: Node,
+    keys: &[ExprIR],
+    ir_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+) -> Vec<KeyRange> {
+    keys.iter()
+        .map(|k| {
+            let name = into_column(k.node(), expr_arena)?;
+            column_value_range(input, name, ir_arena, expr_arena)
+        })
+        .collect()
 }

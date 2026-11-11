@@ -471,7 +471,7 @@ impl LocalSink {
 }
 
 /// The node state while it receives its input.
-pub struct GroupBySink {
+pub struct SinkState {
     // Input stream i selects keys with key_selectors_per_input[i].
     key_selectors_per_input: Vec<Vec<StreamExpr>>,
     random_state: PlRandomState,
@@ -481,7 +481,7 @@ pub struct GroupBySink {
     locals: Vec<Option<LocalSink>>,
 }
 
-impl GroupBySink {
+impl SinkState {
     pub fn new(
         key_selectors_per_input: Vec<Vec<StreamExpr>>,
         random_state: PlRandomState,
@@ -541,7 +541,7 @@ impl GroupBySink {
                     let cold_only = local.growing_states_per_input[input_idx].cold_only;
                     if !cold_only && local.hot_grouper_per_input[input_idx].is_none() {
                         local.hot_grouper_per_input[input_idx] = Some(new_hash_hot_grouper(
-                            params.key_schema.clone(),
+                            &params.key_encoder,
                             min_hot_table_size.min(local.hot_table_size),
                         ));
                     }
@@ -565,7 +565,10 @@ impl GroupBySink {
                     df.rechunk_mut(); // For gathers.
 
                     if cold_only {
-                        let hash_keys = HashKeys::from_df(&keys, random_state.clone(), true, false);
+                        let hash_keys =
+                            params
+                                .key_encoder
+                                .try_hash_keys(&keys, random_state.clone(), true)?;
                         let may_store_whole =
                             df.height() >= local.min_rows_stored_whole(num_pipelines);
                         local
@@ -609,8 +612,11 @@ impl GroupBySink {
                             evictions_before = slice_evictions_before;
                         }
                         let slice_keys = keys.slice(offset as i64, slice_size);
-                        let hash_keys =
-                            HashKeys::from_df(&slice_keys, random_state.clone(), true, false);
+                        let hash_keys = params.key_encoder.try_hash_keys(
+                            &slice_keys,
+                            random_state.clone(),
+                            true,
+                        )?;
                         let hot_start = hot_idxs.len();
                         cold_idxs.clear();
                         hot_grouper.insert_keys(

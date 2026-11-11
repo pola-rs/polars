@@ -1,6 +1,6 @@
 use std::cmp::Reverse;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
 
 use crossbeam_queue::ArrayQueue;
 use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
@@ -26,36 +26,12 @@ enum TaskState {
         table: PartitionTable,
         stored: StoredPartition,
     },
-    /// A result being sent, from row `offset` on. It counts `bytes` towards the unsent bytes of
-    /// the grant.
+    /// A result being sent, from row `offset` on. It counts `bytes` towards the unsent bytes.
     Sending {
         frame: DataFrame,
         offset: usize,
         bytes: u64,
     },
-}
-
-/// The memory grant of the flush, shrunk to the unsent bytes once they fall below half of it.
-struct Grant {
-    grant: MemoryGrant,
-    /// The bytes of the results not yet sent, estimated for the stored partitions.
-    unsent_bytes: u64,
-}
-
-impl Grant {
-    /// Counts `bytes` as sent.
-    fn sent(&mut self, bytes: u64) {
-        self.unsent_bytes -= bytes;
-        if self.unsent_bytes < self.grant.bytes() / 2 {
-            self.grant.shrink_to(self.unsent_bytes);
-            if polars_config::config().verbose() {
-                eprintln!(
-                    "[group-by]: memory grant shrunk to {} bytes",
-                    self.unsent_bytes
-                );
-            }
-        }
-    }
 }
 
 /// What the output tasks share.
@@ -73,7 +49,10 @@ struct Shared {
     /// Set when a task failed, so that the others stop.
     failed: AtomicBool,
     actual_groups: MetricReporter<kind::Sum>,
-    grant: Mutex<Grant>,
+    /// Shrunk to the unsent bytes.
+    grant: MemoryGrant,
+    /// The bytes of the results not yet sent, estimated for the stored partitions.
+    unsent_bytes: AtomicU64,
     /// The estimated bytes of the result of one stored partition.
     partition_bytes: u64,
     /// The number of tasks that build stored partitions: those whose estimated results fit in the
@@ -83,16 +62,16 @@ struct Shared {
 
 /// Sends the results as morsels across execution phases. Each output task builds or sends at
 /// most one partition at a time, keeps it in its state when a phase ends, and resumes it first.
-pub struct Flush {
-    shared: Shared,
+pub struct FlushState {
+    shared: Box<Shared>,
     /// Task i alone touches `tasks[i]`.
     tasks: Vec<TaskState>,
 }
 
-impl Flush {
+impl FlushState {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        outputs: Vec<DataFrame>,
+        outputs: Vec<(DataFrame, u64)>,
         mut partitions: Vec<StoredPartition>,
         pre_aggs: SplitPreAggs,
         num_tasks: usize,
@@ -103,13 +82,6 @@ impl Flush {
         partition_bytes: u64,
     ) -> Self {
         partitions.sort_by_key(|p| Reverse(p.estimated_size()));
-        let outputs: Vec<_> = outputs
-            .into_iter()
-            .map(|frame| {
-                let bytes = frame.estimated_size(false) as u64;
-                (frame, bytes)
-            })
-            .collect();
         let unsent_bytes = outputs.iter().map(|(_, bytes)| bytes).sum::<u64>()
             + partitions.len() as u64 * partition_bytes;
         let num_builders = grant
@@ -120,11 +92,7 @@ impl Flush {
         if !partitions.is_empty() && polars_config::config().verbose() {
             eprintln!("[group-by]: building {num_builders} partitions at a time");
         }
-        let mut grant = Grant {
-            grant,
-            unsent_bytes,
-        };
-        grant.sent(0);
+        grant.shrink_to(unsent_bytes);
         let shared = Shared {
             outputs: ArrayQueue::new(outputs.len().max(1)),
             partitions: ArrayQueue::new(partitions.len().max(1)),
@@ -134,7 +102,8 @@ impl Flush {
             next_seq: AtomicU64::new(0),
             failed: AtomicBool::new(false),
             actual_groups,
-            grant: Mutex::new(grant),
+            grant,
+            unsent_bytes: AtomicU64::new(unsent_bytes),
             partition_bytes,
             num_builders,
         };
@@ -145,7 +114,7 @@ impl Flush {
             shared.partitions.push(partition).ok().unwrap();
         }
         Self {
-            shared,
+            shared: Box::new(shared),
             tasks: (0..num_tasks).map(|_| TaskState::Idle).collect(),
         }
     }
@@ -178,7 +147,7 @@ impl Flush {
         }
 
         let Self { shared, tasks } = self;
-        let shared = &*shared;
+        let shared = &**shared;
         let source_token = SourceToken::new();
         for (task_idx, (send, task)) in senders.into_iter().zip(tasks.iter_mut()).enumerate() {
             let source_token = source_token.clone();
@@ -193,18 +162,11 @@ impl Flush {
     }
 }
 
-impl Drop for Flush {
-    fn drop(&mut self) {
-        let bytes = self.shared.grant.get_mut().unwrap().grant.bytes();
-        if bytes > 0 && polars_config::config().verbose() {
-            eprintln!("[group-by]: memory grant of {bytes} bytes returned");
-        }
-    }
-}
-
 impl Shared {
+    /// Counts `bytes` as sent.
     fn sent(&self, bytes: u64) {
-        self.grant.lock().unwrap().sent(bytes);
+        let unsent = self.unsent_bytes.fetch_sub(bytes, Ordering::Relaxed) - bytes;
+        self.grant.shrink_to(unsent);
     }
 
     /// Works on `task` until no work is left, a stop is requested or another task failed.

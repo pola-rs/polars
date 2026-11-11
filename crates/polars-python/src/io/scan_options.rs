@@ -18,7 +18,7 @@ use pyo3::pybacked::PyBackedStr;
 
 use crate::PyDataFrame;
 use crate::io::cloud_options::OptPyCloudOptions;
-use crate::prelude::Wrap;
+use crate::prelude::{DataFrame, StatisticsBounds, Wrap};
 
 /// Interface to `class ScanOptions` on the Python side
 pub struct PyScanOptions<'py>(Bound<'py, PyAny>);
@@ -31,15 +31,18 @@ impl<'a, 'py> FromPyObject<'a, 'py> for PyScanOptions<'py> {
     }
 }
 
-impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<TableStatistics> {
+/// The frame of [`TableStatistics`], from a Python DataFrame.
+struct StatisticsFrame(Arc<DataFrame>);
+
+impl<'a, 'py> FromPyObject<'a, 'py> for StatisticsFrame {
     type Error = PyErr;
 
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let py = ob.py();
         let attr = ob.getattr(intern!(py, "_df"))?;
-        Ok(Wrap(TableStatistics(Arc::new(
+        Ok(Self(Arc::new(
             PyDataFrame::extract(attr.as_borrowed())?.df.into_inner(),
-        ))))
+        )))
     }
 }
 
@@ -82,7 +85,8 @@ impl PyScanOptions<'_> {
             storage_options: OptPyCloudOptions<'a>,
             credential_provider: Option<Py<PyAny>>,
             deletion_files: Option<Wrap<DeletionFilesList>>,
-            table_statistics: Option<Wrap<TableStatistics>>,
+            table_statistics: Option<StatisticsFrame>,
+            table_statistics_tight: bool,
             row_count: Option<(u64, u64)>,
             source_sizes: Option<Vec<u64>>,
             resolve_heavy_sources: Option<u32>,
@@ -110,6 +114,7 @@ impl PyScanOptions<'_> {
             credential_provider,
             deletion_files,
             table_statistics,
+            table_statistics_tight,
             row_count,
             source_sizes,
             resolve_heavy_sources,
@@ -147,6 +152,7 @@ impl PyScanOptions<'_> {
             hidden_file_prefix: hidden_file_prefix
                 .map(|x| x.into_iter().map(|x| (*x).into()).collect()),
             projection: None,
+            field_selection: None,
             column_mapping: column_mapping.map(|x| x.0),
             default_values: default_values
                 .map(|x| x.0)
@@ -158,7 +164,14 @@ impl PyScanOptions<'_> {
             extra_columns_policy: extra_columns.0,
             include_file_paths: include_file_paths.map(|x| x.0),
             deletion_files,
-            table_statistics: table_statistics.map(|x| x.0),
+            table_statistics: table_statistics.map(|x| {
+                let bounds = if table_statistics_tight {
+                    StatisticsBounds::Tight
+                } else {
+                    StatisticsBounds::Loose
+                };
+                TableStatistics(x.0, bounds)
+            }),
             hive_partitions: hive_partitions.map(|x| x.0),
             row_count,
             source_sizes: source_sizes.map(Buffer::from),

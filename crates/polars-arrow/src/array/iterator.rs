@@ -128,6 +128,17 @@ impl<'a, A: ArrayAccessor<'a> + ?Sized> Iterator for NonNullValuesIter<'a, A> {
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.idxs.size_hint()
     }
+
+    #[inline]
+    fn fold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let accessor = self.accessor;
+        self.idxs.fold(init, |acc, i| {
+            f(acc, unsafe { accessor.value_unchecked(i) })
+        })
+    }
 }
 
 unsafe impl<'a, A: ArrayAccessor<'a> + ?Sized> TrustedLen for NonNullValuesIter<'a, A> {}

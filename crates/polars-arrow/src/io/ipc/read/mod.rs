@@ -25,7 +25,7 @@ pub use common::{ProjectionInfo, prepare_projection};
 pub use error::OutOfSpecKind;
 pub use file::{
     FileMetadata, deserialize_footer, get_row_count, get_row_count_from_blocks, read_batch,
-    read_dictionary_block, read_file_dictionaries, read_file_metadata,
+    read_batch_pruned, read_dictionary_block, read_file_dictionaries, read_file_metadata,
 };
 use polars_utils::aliases::PlHashMap;
 pub use reader::{BlockReader, FileReader};

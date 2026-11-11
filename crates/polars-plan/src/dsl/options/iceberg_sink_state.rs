@@ -4,6 +4,8 @@ use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "python")]
 use polars_utils::python_function::PythonObject;
 
+use super::iceberg_properties::IcebergProperties;
+
 /// `class IcebergSinkState` in Python
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -16,7 +18,7 @@ pub struct IcebergSinkState {
     pub py_catalog_class_qualname: PlSmallStr,
 
     pub catalog_name: PlSmallStr,
-    pub catalog_properties: BTreeMap<PlSmallStr, PlSmallStr>,
+    pub catalog_properties: IcebergProperties,
 
     pub table_name: PlSmallStr,
     pub mode: IcebergCommitMode,
@@ -27,7 +29,7 @@ pub struct IcebergSinkState {
     pub create_if_not_exists: bool,
     pub create_namespace_if_not_exists: bool,
     pub snapshot_properties: BTreeMap<PlSmallStr, PlSmallStr>,
-    pub iceberg_storage_properties: BTreeMap<PlSmallStr, PlSmallStr>,
+    pub iceberg_storage_properties: IcebergProperties,
     pub compression: PlSmallStr,
     pub compression_level: Option<i32>,
     pub row_group_size: Option<usize>,
@@ -39,6 +41,9 @@ pub struct IcebergSinkState {
 
     #[cfg(feature = "python")]
     pub table_: Option<PythonObject>, // NoPickleOption[pyiceberg.table.Table]
+
+    #[cfg(feature = "python")]
+    pub catalog_: Option<PythonObject>, // NoPickleOption[pyiceberg.catalog.Catalog]
 
     #[cfg(feature = "python")]
     pub source_schema: Option<PythonObject>, // pyarrow.Schema

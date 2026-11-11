@@ -64,6 +64,19 @@ where
     fn count(self) -> usize {
         self.iter.count()
     }
+
+    #[inline]
+    fn fold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let mut count = self.count;
+        self.iter.fold(init, |acc, a| {
+            let i = count;
+            count += IdxType::one();
+            f(acc, (i, a))
+        })
+    }
 }
 
 impl<I, IdxType> DoubleEndedIterator for EnumerateIdx<I, IdxType>

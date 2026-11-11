@@ -60,6 +60,9 @@ const DEFAULT_VERBOSE_SENSITIVE: bool = false;
 const FORCE_ASYNC: &str = "POLARS_FORCE_ASYNC";
 const DEFAULT_FORCE_ASYNC: bool = false;
 
+const LOG_CONCURRENCY: &str = "POLARS_LOG_CONCURRENCY";
+const DEFAULT_LOG_CONCURRENCY: bool = false;
+
 const SCAN_CHUNK_STATISTICS: &str = "POLARS_SCAN_CHUNK_STATISTICS";
 const DEFAULT_SCAN_CHUNK_STATISTICS: bool = false;
 
@@ -216,6 +219,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     // Private.
     VERBOSE_SENSITIVE,
     FORCE_ASYNC,
+    LOG_CONCURRENCY,
     SCAN_CHUNK_STATISTICS,
     IMPORT_INTERVAL_AS_STRUCT,
     OOC_DRIFT_THRESHOLD,
@@ -269,6 +273,7 @@ pub struct Config {
     // Private.
     verbose_sensitive: AtomicBool,
     force_async: AtomicBool,
+    log_concurrency: AtomicBool,
     scan_chunk_statistics: AtomicBool,
     import_interval_as_struct: AtomicBool,
     ooc_spill_format: AtomicU8,
@@ -329,6 +334,7 @@ impl Config {
             // Private.
             verbose_sensitive: AtomicBool::new(DEFAULT_VERBOSE_SENSITIVE),
             force_async: AtomicBool::new(DEFAULT_FORCE_ASYNC),
+            log_concurrency: AtomicBool::new(DEFAULT_LOG_CONCURRENCY),
             scan_chunk_statistics: AtomicBool::new(DEFAULT_SCAN_CHUNK_STATISTICS),
             import_interval_as_struct: AtomicBool::new(DEFAULT_IMPORT_INTERVAL_AS_STRUCT),
             ooc_spill_format: AtomicU8::new(DEFAULT_OOC_SPILL_FORMAT as u8),
@@ -512,6 +518,11 @@ impl Config {
             FORCE_ASYNC => self.force_async.store(
                 val.and_then(|x| parse::parse_bool(var, x))
                     .unwrap_or(DEFAULT_FORCE_ASYNC),
+                Ordering::Relaxed,
+            ),
+            LOG_CONCURRENCY => self.log_concurrency.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_LOG_CONCURRENCY),
                 Ordering::Relaxed,
             ),
             SCAN_CHUNK_STATISTICS => self.scan_chunk_statistics.store(
@@ -785,6 +796,12 @@ impl Config {
     #[inline(always)]
     pub fn force_async(&self) -> bool {
         self.force_async.load(Ordering::Relaxed)
+    }
+
+    /// Whether to log the cloud and scan pipeline concurrency state.
+    #[inline(always)]
+    pub fn log_concurrency(&self) -> bool {
+        self.log_concurrency.load(Ordering::Relaxed)
     }
 
     /// Whether a parquet scan, besides its per-column totals, keeps the min, max, null count and

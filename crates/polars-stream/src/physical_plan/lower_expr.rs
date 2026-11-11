@@ -27,7 +27,6 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::scratch_vec::ScratchVec;
-use polars_utils::unitvec;
 use slotmap::DenseSlotMap;
 
 use super::fmt::fmt_exprs;
@@ -96,37 +95,10 @@ pub(crate) fn is_elementwise_rec_cached(
     arena: &Arena<AExpr>,
     cache: &mut ExprCache,
 ) -> bool {
-    if !cache.is_elementwise.contains_key(&expr_key) {
-        cache.is_elementwise.insert(
-            expr_key,
-            (|| {
-                let mut expr_key = expr_key;
-                let mut stack = unitvec![];
-
-                loop {
-                    let ae = arena.get(expr_key);
-
-                    if is_fake_elementwise_function(ae, arena) {
-                        return false;
-                    }
-
-                    if !polars_plan::plans::is_elementwise(&mut stack, ae, arena) {
-                        return false;
-                    }
-
-                    let Some(next_key) = stack.pop() else {
-                        break;
-                    };
-
-                    expr_key = next_key;
-                }
-
-                true
-            })(),
-        );
-    }
-
-    *cache.is_elementwise.get(&expr_key).unwrap()
+    *cache
+        .is_elementwise
+        .entry(expr_key)
+        .or_insert_with(|| is_elementwise_rec(expr_key, arena))
 }
 
 #[recursive::recursive]
@@ -229,10 +201,20 @@ pub fn is_input_independent_rec(
             evaluation,
             variant: _,
         } => {
+            // The `StructField`s of `evaluation` read the struct of `expr`, not the input. The
+            // bodies of `Eval`s are skipped (`inputs_rev`): a `len()` there is a list's length.
             is_input_independent_rec(*expr, arena, cache)
-                && evaluation
-                    .iter()
-                    .all(|expr| is_input_independent_rec(expr.node(), arena, cache))
+                && evaluation.iter().all(|expr| {
+                    let mut stack = vec![expr.node()];
+                    while let Some(node) = stack.pop() {
+                        let ae = arena.get(node);
+                        if matches!(ae, AExpr::Column(_) | AExpr::Len) {
+                            return false;
+                        }
+                        ae.inputs_rev(&mut stack);
+                    }
+                    true
+                })
         },
         #[cfg(feature = "dynamic_group_by")]
         AExpr::Rolling {
@@ -881,24 +863,26 @@ fn lower_exprs_with_ctx(
                 input: ref inner_exprs,
                 function:
                     IRFunctionExpr::ValueCounts {
-                        sort: false,
+                        sort,
                         parallel: _,
                         name: count_name,
-                        normalize: false,
+                        normalize,
                     },
                 options: _,
             } => {
                 // Transform:
                 //    expr.value_counts(
-                //      sort=False,
+                //      sort=sort,
                 //      parallel=_,
                 //      name=count_name,
-                //      normalize=False
+                //      normalize=normalize
                 //    ).alias(name)
                 //      ->
                 //    .select(expr.alias(name))
                 //    .group_by(name)
                 //      .agg(count_name = pl.len())
+                //    [.sort(count_name, descending=True)]
+                //    [.with_columns(count_name / count_name.sum())]
                 //    .select(pl.struct([name, count_name]))
 
                 assert_eq!(inner_exprs.len(), 1);
@@ -939,6 +923,35 @@ fn lower_exprs_with_ctx(
                     },
                     false,
                 )?;
+
+                let stream = if sort {
+                    build_sort_stream_with_ctx(
+                        stream,
+                        vec![
+                            AExprBuilder::col(tmp_count_name.clone(), ctx.expr_arena)
+                                .expr_ir(tmp_count_name.clone()),
+                        ],
+                        None,
+                        SortMultipleOptions::default().with_order_descending(true),
+                        ctx,
+                    )?
+                } else {
+                    stream
+                };
+
+                let stream = if normalize {
+                    let count = AExprBuilder::col(tmp_count_name.clone(), ctx.expr_arena);
+                    let total = count.sum(ctx.expr_arena);
+                    let proportion = count
+                        .cast(DataType::Float64, ctx.expr_arena)
+                        .true_divide(total, ctx.expr_arena)
+                        .expr_ir(tmp_count_name.clone());
+                    let value = AExprBuilder::col(tmp_value_name.clone(), ctx.expr_arena)
+                        .expr_ir(tmp_value_name.clone());
+                    build_select_stream_with_ctx(stream, &[value, proportion], ctx)?
+                } else {
+                    stream
+                };
 
                 let value = ExprIR::new(
                     ctx.expr_arena.add(AExpr::Column(tmp_value_name)),
@@ -1184,6 +1197,7 @@ fn lower_exprs_with_ctx(
                     output_bool: true,
                     runtime_filters: Vec::new(),
                     estimated_rows: None,
+                    key_ranges: Vec::new(),
                 };
 
                 // SemiAntiJoin with output_bool returns a column with the same name as the first
@@ -1597,9 +1611,7 @@ fn lower_exprs_with_ctx(
                 input: ref inner_exprs,
                 options,
                 ..
-            } if options.is_elementwise()
-                && !is_fake_elementwise_function(node, ctx.expr_arena) =>
-            {
+            } if options.is_elementwise() => {
                 let inner_nodes = inner_exprs.iter().map(|expr| expr.node()).collect_vec();
                 let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &inner_nodes, ctx)?;
 
@@ -1627,9 +1639,7 @@ fn lower_exprs_with_ctx(
                 input: ref inner_exprs,
                 ref function,
                 options,
-            } if options.is_row_separable()
-                && !is_fake_elementwise_function(node, ctx.expr_arena) =>
-            {
+            } if options.is_row_separable() => {
                 // While these functions are streamable, they are not elementwise, so we
                 // have to transform them to a select node.
                 let inner_nodes = inner_exprs.iter().map(|x| x.node()).collect_vec();
@@ -2291,17 +2301,24 @@ fn lower_exprs_with_ctx(
                 //   normalize=false: -sum(x * log(x, base))
                 //   normalize=true:  -sum(x/sum(x) * log(x/sum(x), base))
                 //                  = log(sum(x), base) - sum(x * log(x, base)) / sum(x)
+                let input_schema = input.output_schema(ctx.phys_sm);
+                let to_field_ctx = ToFieldContext::new(ctx.expr_arena, input_schema);
+                let dtype = ctx.expr_arena.get(expr).to_dtype(&to_field_ctx)?;
+                let x_dtype = inner_exprs[0].dtype(input_schema, ctx.expr_arena)?.clone();
+
                 let inner = inner_exprs[0].node();
                 let (trans_input, trans_inner) = lower_exprs_with_ctx(input, &[inner], ctx)?;
-                let x = AExprBuilder::new_from_node(trans_inner[0]);
-                let base = AExprBuilder::lit_scalar(Scalar::from(base), ctx.expr_arena);
-                let log_x = AExprBuilder::function(
-                    vec![x.expr_ir_unnamed(), base.expr_ir_unnamed()],
-                    IRFunctionExpr::Log,
+                let mut x = AExprBuilder::new_from_node(trans_inner[0]);
+                // Compute in the output float dtype, so that `sum(x)` is a float too.
+                if x_dtype != dtype {
+                    x = x.cast(dtype, ctx.expr_arena);
+                }
+                let sum_x_log_x = AExprBuilder::function(
+                    vec![x.expr_ir_unnamed(), x.expr_ir_unnamed()],
+                    IRFunctionExpr::XLogY { base },
                     ctx.expr_arena,
-                );
-                let x_log_x = x.multiply(log_x, ctx.expr_arena);
-                let sum_x_log_x = x_log_x.sum(ctx.expr_arena);
+                )
+                .sum(ctx.expr_arena);
 
                 if !normalize {
                     let entropy = sum_x_log_x.negate(ctx.expr_arena);
@@ -2310,49 +2327,38 @@ fn lower_exprs_with_ctx(
                     input_streams.insert(trans_stream);
                     transformed_exprs.push(trans_expr[0]);
                 } else {
-                    // Compute sum(x) and sum(x*log(x, base)) in a single Reduce node,
-                    // then combine elementwise.
-                    let sum_x_name = unique_column_name();
-                    let sum_x_log_x_name = unique_column_name();
-                    let sum_x_expr = ExprIR::new(
-                        x.sum(ctx.expr_arena).node(),
-                        OutputName::Alias(sum_x_name.clone()),
-                    );
-                    let sum_x_log_x_expr = ExprIR::new(
-                        sum_x_log_x.node(),
-                        OutputName::Alias(sum_x_log_x_name.clone()),
-                    );
-                    let output_schema = schema_for_select(
-                        trans_input,
-                        &[sum_x_expr.clone(), sum_x_log_x_expr.clone()],
-                        ctx,
-                    )?;
+                    // Compute both sums in a single Reduce node, then combine them elementwise.
+                    let reductions = [sum_x_log_x, x.sum(ctx.expr_arena)];
+                    let names = reductions.map(|_| unique_column_name());
+                    let reduce_exprs = reductions
+                        .iter()
+                        .zip(&names)
+                        .map(|(e, name)| ExprIR::new(e.node(), OutputName::Alias(name.clone())))
+                        .collect::<Vec<_>>();
+                    let output_schema = schema_for_select(trans_input, &reduce_exprs, ctx)?;
                     let reduce_key = ctx.phys_sm.insert(PhysNode::new(
                         output_schema,
                         PhysNodeKind::Reduce {
                             input: trans_input,
-                            exprs: vec![sum_x_expr, sum_x_log_x_expr],
+                            exprs: reduce_exprs,
                         },
                     ));
-                    let reduce_stream = PhysStream::first(reduce_key);
-
-                    let sum_x = AExprBuilder::col(sum_x_name, ctx.expr_arena);
-                    let sum_x_log_x = AExprBuilder::col(sum_x_log_x_name, ctx.expr_arena);
+                    let [sum_x_log_x, sum_x] =
+                        names.map(|name| AExprBuilder::col(name, ctx.expr_arena));
+                    let base = AExprBuilder::lit_scalar(Scalar::from(base), ctx.expr_arena);
                     let log_sum_x = AExprBuilder::function(
                         vec![sum_x.expr_ir_unnamed(), base.expr_ir_unnamed()],
                         IRFunctionExpr::Log,
                         ctx.expr_arena,
                     );
-                    // log(sum(x), base) - sum(x * log(x, base)) / sum(x)
-                    let result = log_sum_x
-                        .minus(
-                            sum_x_log_x.true_divide(sum_x, ctx.expr_arena),
-                            ctx.expr_arena,
-                        )
-                        .node();
+                    // A zero sum(x) gives NaN through `0 / 0`.
+                    let result = log_sum_x.minus(
+                        sum_x_log_x.true_divide(sum_x, ctx.expr_arena),
+                        ctx.expr_arena,
+                    );
 
-                    input_streams.insert(reduce_stream);
-                    transformed_exprs.push(result);
+                    input_streams.insert(PhysStream::first(reduce_key));
+                    transformed_exprs.push(result.node());
                 }
             },
 

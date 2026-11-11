@@ -6,7 +6,7 @@ use polars_error::{PolarsResult, polars_err};
 use polars_utils::bool::UnsafeBool;
 
 use super::super::super::IpcField;
-use super::super::deserialize::{read, skip};
+use super::super::deserialize::{read_pruned, skip};
 use super::super::read_basic::*;
 use super::super::{Compression, Dictionaries, IpcBuffer, Node, Version};
 use crate::array::ListArray;
@@ -18,6 +18,48 @@ use crate::offset::{Offset, OffsetsBuffer};
 pub fn read_list<O: Offset, R: Read + Seek>(
     field_nodes: &mut VecDeque<Node>,
     variadic_buffer_counts: &mut VecDeque<usize>,
+    dtype: ArrowDataType,
+    ipc_field: &IpcField,
+    buffers: &mut VecDeque<IpcBuffer>,
+    reader: &mut R,
+    dictionaries: &Dictionaries,
+    block_offset: u64,
+    is_little_endian: bool,
+    compression: Option<Compression>,
+    limit: Option<usize>,
+    version: Version,
+    scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
+) -> PolarsResult<ListArray<O>>
+where
+    Vec<u8>: TryInto<O::Bytes>,
+{
+    read_list_pruned(
+        field_nodes,
+        variadic_buffer_counts,
+        &dtype.clone(),
+        dtype,
+        ipc_field,
+        buffers,
+        reader,
+        dictionaries,
+        block_offset,
+        is_little_endian,
+        compression,
+        limit,
+        version,
+        scratch,
+        checked,
+    )
+}
+
+/// Reads a list of dtype `file_dtype` as `dtype`, a list whose element has a pruned dtype (see
+/// [`read_pruned`]).
+#[allow(clippy::too_many_arguments)]
+pub fn read_list_pruned<O: Offset, R: Read + Seek>(
+    field_nodes: &mut VecDeque<Node>,
+    variadic_buffer_counts: &mut VecDeque<usize>,
+    file_dtype: &ArrowDataType,
     dtype: ArrowDataType,
     ipc_field: &IpcField,
     buffers: &mut VecDeque<IpcBuffer>,
@@ -63,12 +105,14 @@ where
 
     let last_offset = offsets.last().unwrap().to_usize();
 
-    let field = ListArray::<O>::get_child_field(&dtype);
+    let field = ListArray::<O>::get_child_field(file_dtype);
+    let pruned_dtype = ListArray::<O>::get_child_type(&dtype);
 
-    let values = read(
+    let values = read_pruned(
         field_nodes,
         variadic_buffer_counts,
         field,
+        pruned_dtype,
         &ipc_field.fields[0],
         buffers,
         reader,

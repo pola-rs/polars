@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import Decimal as D
 from functools import partial
+from http import HTTPStatus
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 from unittest.mock import Mock, patch
@@ -74,6 +75,7 @@ from polars._utils.various import parse_version
 from polars.io._expand_paths import _expand_paths
 from polars.io.cloud._utils import NoPickleOption
 from polars.io.iceberg._dataset import (
+    IcebergCatalogConfig,
     IcebergScanResolver,
     IcebergScanTableSerializer,
     IcebergTableWrap,
@@ -239,7 +241,12 @@ def resolved_table_statistics(
     """Min/max statistics passed to the resolved scan."""
     _, scan_args = resolve_scan(tbl, **kwargs)
     statistics = scan_args["table_statistics"]
-    return None if statistics is None else pl.read_ipc_stream(bytes(statistics))
+    if statistics is None:
+        return None
+    frame, bounds = statistics
+    # Iceberg bounds of non-string types are values of their file.
+    assert bounds == "Tight"
+    return pl.read_ipc_stream(bytes(frame))
 
 
 def new_iceberg_table(
@@ -3727,6 +3734,470 @@ def test_sink_iceberg_pickle(tmp_path: Path) -> None:
     assert new_md_path == tbl.metadata_location
 
 
+def _sql_catalog(tmp_path: Path, **properties: Any) -> SqlCatalog:
+    catalog = SqlCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path / 'iceberg_catalog.sqlite'}",
+        warehouse=format_file_uri_iceberg(tmp_path),
+        **properties,
+    )
+    catalog.create_namespace("ns")
+    catalog.create_table(("ns", "t"), IcebergSchema(NestedField(1, "a", LongType())))
+    return catalog
+
+
+def _capture_catalogs(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+    """The catalogs the sink loads its table from, after the plan round trip."""
+    catalogs = []
+    load_or_create = IcebergSinkState._load_or_create_table
+
+    def capture(self: IcebergSinkState, catalog: Any) -> Any:
+        catalogs.append(catalog)
+        return load_or_create(self, catalog)
+
+    monkeypatch.setattr(IcebergSinkState, "_load_or_create_table", capture)
+    return catalogs
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_non_string_catalog_properties(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # e.g. PyIceberg's `auth` config of a REST catalog (#30671)
+    properties = {
+        "auth": {"type": "noop", "scopes": ["a", None]},
+        "n": 1,
+        "f": 2.5,
+        "b": True,
+        "none": None,
+        "big": 2**64 - 1,
+    }
+    catalog = _sql_catalog(tmp_path, **properties)
+    catalogs = _capture_catalogs(monkeypatch)
+
+    pl.LazyFrame({"a": [1]}).sink_iceberg(catalog.load_table("ns.t"), mode="append")
+    # Locally, the caller's catalog is used.
+    pl.LazyFrame({"a": [2]}).sink_iceberg("ns.t", catalog=catalog, mode="append")
+    assert catalogs == [catalog]
+
+    # A serialized sink rebuilds the catalog, from properties of the same types.
+    q = IcebergSinkState.new("ns.t", catalog=catalog).attach_sink(
+        pl.LazyFrame({"a": [3]})
+    )
+    pickle.loads(pickle.dumps(q)).collect()
+
+    rebuilt = catalogs[1]
+    assert rebuilt is not catalog
+    assert {k: rebuilt.properties[k] for k in properties} == properties
+    assert type(rebuilt.properties["n"]) is int
+    assert type(rebuilt.properties["b"]) is bool
+    assert type(rebuilt.properties["big"]) is int
+
+    assert sorted(
+        pl.scan_iceberg(catalog.load_table("ns.t")).collect()["a"].to_list()
+    ) == [1, 2, 3]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_sql_non_string_catalog_properties(tmp_path: Path) -> None:
+    catalog = _sql_catalog(tmp_path, auth={"type": "noop"})
+    with pl.SQLContext() as ctx:
+        ctx.register_catalog("lake", catalog)
+        ctx.execute("INSERT INTO lake.ns.t VALUES (1), (2)")
+        ctx.execute("UPDATE lake.ns.t SET a = a + 10 WHERE a = 2")
+        out = ctx.execute("SELECT a FROM lake.ns.t ORDER BY a", eager=True)
+    assert out["a"].to_list() == [1, 12]
+
+
+@pytest.mark.parametrize(
+    ("value", "type_name"),
+    [
+        (object(), "object"),
+        (2**70, "int"),
+        ((1, "a"), "tuple"),
+        (HTTPStatus.OK, "http.HTTPStatus"),
+        ("\ud800", "str"),
+        (D("1.5"), "decimal.Decimal"),
+        (float("nan"), "float"),
+        (float("-inf"), "float"),
+        (b"x", "bytes"),
+    ],
+)
+@pytest.mark.write_disk
+def test_sink_iceberg_catalog_property_values_out_of_tree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: Any, type_name: str
+) -> None:
+    # Values that JSON can't carry: the dict is kept as it is in this process, and
+    # refused with the key when the plan is serialized.
+    catalog = _sql_catalog(tmp_path, nested={"value": value})
+    config = IcebergCatalogConfig.from_catalog(catalog)
+    q = IcebergSinkState.new("ns.t", catalog=config).attach_sink(
+        pl.LazyFrame({"a": [1]})
+    )
+
+    for serialize in (q.serialize, partial(pickle.dumps, q)):
+        with pytest.raises(
+            pl.exceptions.ComputeError,
+            match=rf"Iceberg property 'nested\.value' of type {re.escape(type_name)}",
+        ):
+            serialize()
+
+    # Without a catalog instance, the sink rebuilds it from the same objects.
+    catalogs = _capture_catalogs(monkeypatch)
+    q.collect()
+    assert catalogs[0].properties["nested"]["value"] is value
+    assert pl.scan_iceberg(catalog.load_table("ns.t")).collect()["a"].to_list() == [1]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_property_nesting_limit(tmp_path: Path) -> None:
+    catalog = _sql_catalog(tmp_path)
+    cyclic: dict[str, Any] = {}
+    cyclic["self"] = cyclic
+
+    with pytest.raises(TypeError, match="iceberg_storage_properties") as exc:
+        pl.LazyFrame({"a": [1]}).sink_iceberg(
+            catalog.load_table("ns.t"), mode="append", storage_options={"x": cyclic}
+        )
+    assert "'x' is nested deeper than 64 levels" in str(exc.value.__cause__)
+
+    # A dotted key is named whole.
+    with pytest.raises(TypeError) as exc:
+        pl.LazyFrame({"a": [1]}).sink_iceberg(
+            catalog.load_table("ns.t"),
+            mode="append",
+            storage_options={"s3.region": cyclic},
+        )
+    assert "'s3.region' is nested" in str(exc.value.__cause__)
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_table_with_out_of_tree_catalog_property(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The caller's table and catalog are used as they are, in this process.
+    catalog = _sql_catalog(tmp_path, session=object())
+    catalogs = _capture_catalogs(monkeypatch)
+    pl.LazyFrame({"a": [1]}).sink_iceberg(catalog.load_table("ns.t"), mode="append")
+    pl.LazyFrame({"a": [2]}).sink_iceberg("ns.t", catalog=catalog, mode="append")
+    assert catalogs == [catalog]
+    assert sorted(
+        pl.scan_iceberg(catalog.load_table("ns.t")).collect()["a"].to_list()
+    ) == [1, 2]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_property_keys_must_be_distinct_str(tmp_path: Path) -> None:
+    class Key(str):
+        __hash__ = object.__hash__
+
+        def __eq__(self, other: object) -> bool:
+            return self is other
+
+    catalog = _sql_catalog(tmp_path)
+    tbl = catalog.load_table("ns.t")
+    cases: list[tuple[Any, str]] = [
+        ({"a": "1", Key("a"): "2"}, "duplicate Iceberg property key 'a'"),
+        ({"a": {1: "x"}}, r"keys must be str: got int in 'a'"),
+        ({1: "x"}, "keys must be str: got int at the top level"),
+    ]
+    for storage_options, match in cases:
+        with pytest.raises(TypeError) as exc:
+            pl.LazyFrame({"a": [1]}).sink_iceberg(
+                tbl, mode="append", storage_options=storage_options
+            )
+        assert re.search(match, str(exc.value.__cause__)), exc.value.__cause__
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_storage_options_keep_types_and_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    catalog = _sql_catalog(tmp_path)
+    seen = []
+    convert = IcebergSinkState._get_converted_storage_options
+
+    def capture(self: IcebergSinkState) -> dict[str, Any]:
+        seen.append(self.iceberg_storage_properties)
+        return convert(self)
+
+    monkeypatch.setattr(IcebergSinkState, "_get_converted_storage_options", capture)
+
+    # `max_retries` must stay an int; of two aliases, the later one wins.
+    storage_options = {"max_retries": 2, "s3.region": "first", "aws_region": "second"}
+    pl.LazyFrame({"a": [1]}).sink_iceberg(
+        catalog.load_table("ns.t"), mode="append", storage_options=storage_options
+    )
+
+    assert seen
+    assert all(
+        list(options.items()) == list(storage_options.items()) for options in seen
+    )
+    assert type(seen[-1]["max_retries"]) is int
+    assert (
+        convert(
+            IcebergSinkState.new("ns.t", catalog=catalog, storage_options=seen[-1])
+        )["aws_region"]
+        == "second"
+    )
+
+
+@pytest.mark.parametrize(
+    ("snapshot_properties", "match"),
+    [
+        ({"n": 1}, r"snapshot_properties\['n'\] must be a str mapped to a str"),
+        ({1: "x"}, r"snapshot_properties\[1\] must be a str mapped to a str"),
+        ([("n", "1")], "snapshot_properties must be a dict"),
+    ],
+)
+@pytest.mark.write_disk
+def test_sink_iceberg_snapshot_properties_must_be_strings(
+    tmp_path: Path, snapshot_properties: Any, match: str
+) -> None:
+    catalog = _sql_catalog(tmp_path)
+    tbl = catalog.load_table("ns.t")
+
+    with pytest.raises(TypeError, match=match):
+        pl.LazyFrame({"a": [1]}).sink_iceberg(
+            tbl, mode="append", snapshot_properties=snapshot_properties
+        )
+    assert catalog.load_table("ns.t").current_snapshot() is None
+
+
+class _NameMappingRefusingCatalog(SqlCatalog):  # type: ignore[misc]
+    """Refuses to set the default name mapping, as Unity Catalog does."""
+
+    def commit_table(self, table: Any, requirements: Any, updates: Any) -> Any:
+        from pyiceberg.table.update import SetPropertiesUpdate
+
+        for update in updates:
+            if (
+                isinstance(update, SetPropertiesUpdate)
+                and "schema.name-mapping.default" in update.updates
+            ):
+                msg = "Table properties contain prohibited keys"
+                raise pyiceberg.exceptions.BadRequestError(msg)
+        return super().commit_table(table, requirements, updates)
+
+
+def _name_mapping_refusing_catalog(tmp_path: Path) -> SqlCatalog:
+    catalog = _NameMappingRefusingCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path / 'iceberg_catalog.sqlite'}",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    catalog.create_namespace("ns")
+    return catalog
+
+
+def _iceberg_rows(table: pyiceberg.table.Table) -> list[tuple[Any, ...]]:
+    rows = pl.scan_iceberg(table).collect().sort("k").rows()
+    # PyIceberg reads the same rows
+    assert rows == pl.DataFrame(table.scan().to_arrow()).sort("k").rows()
+    return rows
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    "write",
+    [
+        "append",
+        "overwrite",
+        "filtered_overwrite",
+        "partitioned",
+        "dynamic_overwrite",
+        "schema_merge",
+        "schema_overwrite",
+        "empty",
+    ],
+)
+def test_sink_iceberg_leaves_name_mapping_unset(tmp_path: Path, write: str) -> None:
+    # Data files carry field IDs, so a commit doesn't need to add a name mapping
+    catalog = _name_mapping_refusing_catalog(tmp_path)
+    spec = (
+        PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "k"))
+        if write in ("partitioned", "dynamic_overwrite")
+        else PartitionSpec()
+    )
+    table = catalog.create_table(
+        ("ns", "t"),
+        IcebergSchema(
+            NestedField(1, "k", LongType()), NestedField(2, "v", StringType())
+        ),
+        partition_spec=spec,
+    )
+    lf = pl.LazyFrame({"k": [1, 2], "v": ["a", "b"]})
+    expected: list[tuple[Any, ...]] = [(1, "a"), (2, "b")]
+    if write == "filtered_overwrite":
+        # rewrites the file holding k = 2, keeping k = 1
+        lf.sink_iceberg(table, mode="append")
+        pl.LazyFrame({"k": [2], "v": ["c"]}).sink_iceberg(
+            table, mode="overwrite", overwrite_filter=pl.col("k") == 2
+        )
+        expected = [(1, "a"), (2, "c")]
+    elif write == "schema_overwrite":
+        lf.sink_iceberg(table, mode="append")
+        pl.LazyFrame({"k": [3], "w": [True]}).sink_iceberg(
+            table, mode="overwrite", schema_mode="overwrite"
+        )
+        expected = [(3, True)]
+    elif write == "empty":
+        lf.clear().sink_iceberg(table, mode="append")
+        expected = []
+    elif write == "dynamic_overwrite":
+        lf.sink_iceberg(table, mode="append")
+        pl.LazyFrame({"k": [2], "v": ["c"]}).sink_iceberg(
+            table, mode="overwrite", partition_overwrite="dynamic"
+        )
+        expected = [(1, "a"), (2, "c")]
+    elif write == "schema_merge":
+        lf.sink_iceberg(table, mode="append")
+        pl.LazyFrame({"k": [3], "v": ["c"], "w": [True]}).sink_iceberg(
+            table, mode="append", schema_mode="merge"
+        )
+        expected = [(1, "a", None), (2, "b", None), (3, "c", True)]
+    elif write == "overwrite":
+        pl.LazyFrame({"k": [9], "v": ["z"]}).sink_iceberg(table, mode="append")
+        lf.sink_iceberg(table, mode="overwrite")
+    else:
+        lf.sink_iceberg(table, mode="append")
+
+    table = catalog.load_table(("ns", "t"))
+    assert "schema.name-mapping.default" not in table.properties
+    assert _iceberg_rows(table) == expected
+
+
+@pytest.mark.write_disk
+def test_sql_catalog_writes_leave_name_mapping_unset(tmp_path: Path) -> None:
+    catalog = _name_mapping_refusing_catalog(tmp_path)
+    with pl.SQLContext() as ctx:
+        ctx.register_catalog("lake", catalog, default_namespace="ns", default=True)
+        ctx.execute("CREATE TABLE t (k BIGINT, v VARCHAR)")
+        ctx.execute("INSERT INTO t VALUES (1, 'a'), (2, 'b'), (3, 'c')")
+        ctx.execute("UPDATE t SET v = 'B' WHERE k = 2")
+        ctx.execute("DELETE FROM t WHERE k = 3")
+        ctx.execute(
+            "MERGE INTO t USING (SELECT 4 AS k, 'd' AS v) AS s ON t.k = s.k "
+            "WHEN NOT MATCHED THEN INSERT VALUES (s.k, s.v)"
+        )
+        ctx.execute("CREATE TABLE t2 AS SELECT * FROM t")
+    for name in ("t", "t2"):
+        table = catalog.load_table(("ns", name))
+        assert "schema.name-mapping.default" not in table.properties
+        assert _iceberg_rows(table) == [(1, "a"), (2, "B"), (4, "d")]
+
+
+def _arrow_field_ids(schema: pa.Schema) -> dict[str, int]:
+    """Field IDs of an Arrow schema, nested fields included, by path."""
+
+    def walk(field: pa.Field, path: str) -> dict[str, int]:
+        out = {path: int(field.metadata[b"PARQUET:field_id"])}
+        if pa.types.is_struct(field.type):
+            for child in field.type:
+                out |= walk(child, f"{path}.{child.name}")
+        elif pa.types.is_map(field.type):
+            out |= walk(field.type.key_field, f"{path}.key")
+            out |= walk(field.type.item_field, f"{path}.value")
+        elif pa.types.is_list(field.type) or pa.types.is_large_list(field.type):
+            out |= walk(field.type.value_field, f"{path}[]")
+        return out
+
+    return {k: v for f in schema for k, v in walk(f, f.name).items()}
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_data_files_carry_field_ids(tmp_path: Path) -> None:
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+    table, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "k", LongType()),
+            NestedField(
+                2,
+                "s",
+                StructType(
+                    NestedField(3, "a", LongType()), NestedField(4, "b", StringType())
+                ),
+            ),
+            NestedField(5, "l", ListType(6, LongType())),
+            NestedField(7, "m", MapType(8, StringType(), 9, LongType())),
+        ),
+    )
+    entries = pl.List(pl.Struct({"key": pl.String, "value": pl.Int64}))
+    pl.LazyFrame(
+        {
+            "k": [1],
+            "s": [{"a": 1, "b": "x"}],
+            "l": [[1, 2]],
+            "m": [[{"key": "x", "value": 1}]],
+        },
+        schema_overrides={
+            "s": pl.Struct({"a": pl.Int64, "b": pl.String}),
+            "m": entries,
+        },
+    ).sink_iceberg(table, mode="append")
+    # a new column, nested, through schema evolution
+    pl.LazyFrame(
+        {"k": [2], "s": [{"a": 2, "b": "y"}], "l": [[3]], "t": [{"c": 1.5}]}
+    ).sink_iceberg(table, mode="append", schema_mode="merge")
+
+    table = table.refresh()
+    expected = _arrow_field_ids(schema_to_pyarrow(table.schema()))
+    paths = table.inspect.files().column("file_path").to_pylist()
+    got = [_arrow_field_ids(pq.read_schema(p.removeprefix("file://"))) for p in paths]
+    assert len(got) == 2
+    # every column of every file, nested ones included, has the table's field ID
+    for ids in got:
+        assert ids == {k: v for k, v in expected.items() if k in ids}
+    assert any({"m.key", "m.value"} <= ids.keys() for ids in got)
+    assert any({"t", "t.c"} <= ids.keys() for ids in got)
+    assert "schema.name-mapping.default" not in table.properties
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_without_name_mapping_rename_and_reuse(tmp_path: Path) -> None:
+    # Columns resolve by field ID: a renamed column keeps its values, and a new
+    # column reusing the old name doesn't read them
+    table, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "k", LongType()), NestedField(2, "v", StringType())
+        ),
+    )
+    pl.LazyFrame({"k": [1], "v": ["a"]}).sink_iceberg(table, mode="append")
+    with table.update_schema() as update:
+        update.rename_column("v", "w")
+    with table.update_schema() as update:
+        update.add_column("v", StringType())
+    table = table.refresh()
+    pl.LazyFrame({"k": [2], "w": ["b"], "v": ["c"]}).sink_iceberg(table, mode="append")
+    table = table.refresh()
+    assert "schema.name-mapping.default" not in table.properties
+    assert _iceberg_rows(table) == [(1, "a", None), (2, "b", "c")]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_keeps_name_mapping_of_imported_files(tmp_path: Path) -> None:
+    # `add_files` sets a name mapping for files without field IDs; sinks keep it
+    table, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "k", LongType()), NestedField(2, "v", StringType())
+        ),
+    )
+    path = tmp_path / "imported.parquet"
+    pq.write_table(pa.table({"k": [1], "v": ["a"]}), path)
+    table.add_files([format_file_uri_iceberg(path)])
+    table = table.refresh()
+    mapping = table.properties["schema.name-mapping.default"]
+
+    pl.LazyFrame({"k": [2], "v": ["b"]}).sink_iceberg(table, mode="append")
+    table = table.refresh()
+    assert table.properties["schema.name-mapping.default"] == mapping
+    assert _iceberg_rows(table) == [(1, "a"), (2, "b")]
+
+
 @pytest.mark.write_disk
 def test_sink_iceberg__attach_resolved_sink_deferred_to_ir_resolution(
     tmp_path: Path,
@@ -6035,6 +6506,293 @@ def test_scan_iceberg_fast_count(tmp_path: Path, reader_override: Any) -> None:
     )
 
 
+def _statistics_catalog(tmp_path: Path) -> SqlCatalog:
+    catalog = SqlCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path / 'iceberg_catalog.sqlite'}",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    catalog.create_namespace("ns")
+    return catalog
+
+
+def _remove_data_files(tbl: pyiceberg.table.Table) -> None:
+    for task in tbl.scan().plan_files():
+        Path(task.file.file_path.removeprefix("file://")).unlink()
+
+
+def _answered_from_statistics(capfd: pytest.CaptureFixture[str]) -> bool:
+    return "answered from table statistics" in capfd.readouterr().err
+
+
+_STATISTICS_FRAMES = [
+    {
+        "id": [1, 7],
+        "v": [None, None],
+        "d": [date(2026, 1, 1), date(2025, 3, 4)],
+        "ts": [datetime(2026, 1, 1, 12), datetime(2024, 1, 1)],
+        "dec": [D("1.25"), D("-3.50")],
+        "b": [True, True],
+        "t": [time(1, 2), time(23, 59)],
+        "s": ["b", "a"],
+        "f": [1.5, 2.5],
+    },
+    {
+        "id": [-4, 3],
+        "v": [10, None],
+        "d": [date(2020, 1, 1), date(2027, 1, 1)],
+        "ts": [datetime(2030, 1, 1), datetime(2023, 1, 1)],
+        "dec": [D("9.99"), D("0.01")],
+        "b": [False, True],
+        "t": [time(0, 0), time(12, 0)],
+        "s": ["z", "c"],
+        "f": [-1.0, 0.5],
+    },
+]
+_STATISTICS_SCHEMA: dict[str, Any] = {"v": pl.Int64, "dec": pl.Decimal(10, 2)}
+_STATISTICS_COLUMNS = ["id", "v", "d", "dec", "b", "t"]
+
+
+def _statistics_table(catalog: SqlCatalog) -> pyiceberg.table.Table:
+    for frame in _STATISTICS_FRAMES:
+        pl.LazyFrame(frame, schema_overrides=_STATISTICS_SCHEMA).sink_iceberg(
+            "ns.t", catalog=catalog, mode="append", create_if_not_exists=True
+        )
+    return catalog.load_table("ns.t")
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_aggregates_from_statistics(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    catalog = _statistics_catalog(tmp_path)
+    tbl = _statistics_table(catalog)
+    aggs = [
+        *(
+            getattr(pl.col(c), f)().alias(f"{c}_{f}")
+            for c in _STATISTICS_COLUMNS
+            for f in ["min", "max", "count", "null_count"]
+        ),
+        # Timestamps: counts only
+        pl.col("ts").count().alias("ts_count"),
+        pl.col("ts").null_count().alias("ts_null_count"),
+        pl.len(),
+        (pl.col("id").max() - pl.col("id").min()).alias("range"),
+    ]
+    expected = pl.concat(
+        pl.DataFrame(f, schema_overrides=_STATISTICS_SCHEMA) for f in _STATISTICS_FRAMES
+    ).select(aggs)
+
+    # Without data files, only statistics can answer.
+    _remove_data_files(tbl)
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+
+    assert_frame_equal(pl.scan_iceberg(tbl).select(aggs).collect(), expected)
+    assert _answered_from_statistics(capfd)
+
+    with pl.SQLContext() as ctx:
+        ctx.register_catalog("lake", catalog)
+        out = ctx.execute(
+            "SELECT max(id) AS m, min(d) AS n, count(v) AS c, count(*) AS r "
+            "FROM lake.ns.t",
+            eager=True,
+        )
+    assert out.row(0) == (7, date(2020, 1, 1), 1, 4)
+    assert _answered_from_statistics(capfd)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # strings and floats: bounds may be truncated, NaN counts are not known
+        lambda lf: lf.select(pl.col("s").max()),
+        lambda lf: lf.select(pl.col("f").max()),
+        # timestamps: OneLake floors the bounds of Delta tables to milliseconds
+        lambda lf: lf.select(pl.col("ts").max()),
+        # not every row, or not only aggregates the statistics hold
+        lambda lf: lf.filter(pl.col("id") > 1).select(pl.col("id").max()),
+        lambda lf: lf.head(3).select(pl.col("id").max()),
+        lambda lf: lf.with_row_index().select(pl.col("index").max()),
+        lambda lf: lf.select(pl.col("id").max(), pl.col("id").sum().alias("sum")),
+        lambda lf: lf.select(pl.col("id").max() + pl.col("id").first()),
+        lambda lf: lf.select(pl.col("v").max(), pl.col("id")),
+        # nested evaluation contexts: the height or `len()` differ there
+        lambda lf: lf.select(pl.col("id").max().over(pl.lit(1))),
+        lambda lf: lf.select(
+            pl.col("id").max(), pl.lit([10, 20]).list.eval(pl.len()).alias("x")
+        ),
+    ],
+)
+@pytest.mark.write_disk
+def test_scan_iceberg_aggregates_need_exact_statistics(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    query: Callable[[pl.LazyFrame], pl.LazyFrame],
+) -> None:
+    tbl = _statistics_table(_statistics_catalog(tmp_path))
+    expected = query(pl.scan_iceberg(tbl)).collect(
+        optimizations=pl.QueryOptFlags.none()
+    )
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+
+    out = query(pl.scan_iceberg(tbl)).collect()
+
+    assert not _answered_from_statistics(capfd)
+    assert_frame_equal(out, expected, check_row_order=False)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_aggregates_from_statistics_fall_back(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    catalog = _statistics_catalog(tmp_path)
+    # No bounds for `id`
+    tbl = catalog.create_table(
+        ("ns", "counts"),
+        IcebergSchema(NestedField(1, "id", LongType())),
+        properties={"write.metadata.metrics.column.id": "counts"},
+    )
+    pl.DataFrame({"id": [1, 5]}).write_iceberg(tbl, mode="append")
+    tbl = catalog.load_table(("ns", "counts"))
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+
+    max_id = pl.col("id").max()
+    assert pl.scan_iceberg(tbl).select(max_id).collect().item() == 5
+    assert not _answered_from_statistics(capfd)
+
+    # Deleted rows are still in the statistics.
+    tbl = _statistics_table(catalog)
+    paths = [task.file.file_path for task in tbl.scan().plan_files()]
+    tbl = _add_position_deletes(tbl, {paths[0]: [0, 1]})
+    expected = (
+        pl.scan_iceberg(tbl)
+        .select(max_id)
+        .collect(optimizations=pl.QueryOptFlags.none())
+    )
+    capfd.readouterr()
+    assert_frame_equal(pl.scan_iceberg(tbl).select(max_id).collect(), expected)
+    assert not _answered_from_statistics(capfd)
+
+    # Opted out, or without optimizations
+    tbl = catalog.create_table(
+        ("ns", "o"), IcebergSchema(NestedField(1, "id", LongType()))
+    )
+    pl.DataFrame({"id": [1, 5]}).write_iceberg(tbl, mode="append")
+    tbl = catalog.load_table(("ns", "o"))
+    capfd.readouterr()
+    lf = pl.scan_iceberg(tbl, use_metadata_statistics=False).select(max_id)
+    assert lf.collect().item() == 5
+    assert not _answered_from_statistics(capfd)
+    lf = pl.scan_iceberg(tbl).select(max_id)
+    assert lf.collect(optimizations=pl.QueryOptFlags.none()).item() == 5
+    assert not _answered_from_statistics(capfd)
+    assert lf.collect().item() == 5
+    assert _answered_from_statistics(capfd)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_aggregates_from_statistics_promoted_and_empty(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    catalog = _statistics_catalog(tmp_path)
+    aggs = [
+        pl.col("id").min().alias("min"),
+        pl.col("id").max().alias("max"),
+        pl.col("id").count().alias("count"),
+        pl.len(),
+    ]
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    tbl = catalog.create_table(
+        ("ns", "e"), IcebergSchema(NestedField(1, "id", LongType()))
+    )
+    capfd.readouterr()
+    assert pl.scan_iceberg(tbl).select(aggs).collect().row(0) == (None, None, 0, 0)
+    assert _answered_from_statistics(capfd)
+
+    # Bounds of files written before an int -> long promotion are 4 bytes.
+    tbl = catalog.create_table(
+        ("ns", "p"), IcebergSchema(NestedField(1, "id", IntegerType()))
+    )
+    pl.DataFrame({"id": pl.Series([3, -7], dtype=pl.Int32)}).write_iceberg(
+        tbl, mode="append"
+    )
+    with tbl.update_schema() as update:
+        update.update_column("id", LongType())
+    tbl = catalog.load_table(("ns", "p"))
+    pl.DataFrame({"id": [2**40, 1]}).write_iceberg(tbl, mode="append")
+    tbl = catalog.load_table(("ns", "p"))
+    _remove_data_files(tbl)
+    capfd.readouterr()
+
+    assert pl.scan_iceberg(tbl).select(aggs).collect().row(0) == (-7, 2**40, 4, 4)
+    assert _answered_from_statistics(capfd)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_aggregates_from_statistics_requests(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # Statistics are only asked for when they can answer the whole select.
+    tbl = _statistics_table(_statistics_catalog(tmp_path))
+    requests = []
+    to_dataset_scan = IcebergScanResolver.to_dataset_scan
+
+    def record(self: Any, *args: Any, **kwargs: Any) -> Any:
+        requests.append(kwargs.get("statistics_columns"))
+        return to_dataset_scan(self, *args, **kwargs)
+
+    plmonkeypatch.setattr(IcebergScanResolver, "to_dataset_scan", record)
+    max_id = pl.col("id").max()
+    cases: list[tuple[dict[str, Any], list[pl.Expr], list[str] | None]] = [
+        ({}, [max_id, pl.col("s").count()], ["id", "s"]),
+        ({}, [max_id, pl.col("s").max()], None),
+        ({"use_metadata_statistics": False}, [max_id], None),
+        ({"reader_override": "pyiceberg"}, [max_id], None),
+    ]
+    for scan_kwargs, exprs, statistics_columns in cases:
+        requests.clear()
+        lf = pl.scan_iceberg(tbl, **scan_kwargs).select(exprs)
+        expected = lf.collect(optimizations=pl.QueryOptFlags.none())
+        requests.clear()
+        assert_frame_equal(lf.collect(), expected)
+        assert requests[0] == statistics_columns
+        assert len(requests) == 1
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_aggregates_from_statistics_duplicated_subplan(
+    tmp_path: Path,
+) -> None:
+    tbl = _statistics_table(_statistics_catalog(tmp_path))
+    for expr in [pl.col("id").max(), pl.col("s").max()]:
+        q = pl.scan_iceberg(tbl).select(expr)
+        expected = pl.concat([q, q]).collect(optimizations=pl.QueryOptFlags.none())
+        assert_frame_equal(pl.concat([q, q]).collect(), expected)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_aggregates_from_statistics_empty_keeps_errors(
+    tmp_path: Path,
+) -> None:
+    catalog = _statistics_catalog(tmp_path)
+    tbl = catalog.create_table(
+        ("ns", "l"),
+        IcebergSchema(
+            NestedField(1, "xs", ListType(2, LongType(), element_required=False))
+        ),
+    )
+    lf = pl.scan_iceberg(tbl).select(pl.col("xs").min())
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        lf.collect(optimizations=pl.QueryOptFlags.none())
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        lf.collect()
+
+
 @pytest.mark.write_disk
 def test_scan_iceberg_passes_source_sizes(tmp_path: Path) -> None:
     tbl, _ = new_iceberg_table(
@@ -7010,10 +7768,7 @@ def test_scan_iceberg_reuses_catalog(
 
 @pytest.mark.write_disk
 def test_scan_iceberg_catalog_descriptor_without_instance(tmp_path: Path) -> None:
-    from polars.io.iceberg._dataset import (
-        IcebergCatalogConfig,
-        IcebergCatalogTableDescriptor,
-    )
+    from polars.io.iceberg._dataset import IcebergCatalogTableDescriptor
 
     tbl, catalog = new_iceberg_table(
         tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
@@ -9366,3 +10121,107 @@ def _deletion_vector_blob(positions: list[int]) -> bytes:
     )
     body = b"\xd1\xd3\x39\x64" + vector
     return len(body).to_bytes(4, "big") + body + zlib.crc32(body).to_bytes(4, "big")
+
+
+def test_iceberg_native_storage_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    import polars.io.iceberg._plugin as plugin
+
+    class Table:
+        def __init__(
+            self,
+            properties: dict[str, Any],
+            location: str = "s3://bucket/t",
+            table_properties: dict[str, str] | None = None,
+        ) -> None:
+            self.io = type("IO", (), {"properties": properties})()
+            self._location = location
+            self.properties = table_properties or {}
+
+        def location(self) -> str:
+            return self._location
+
+    # Polars' own reads and writes (PyIceberg planner, sink) take them as the plugin
+    table = Table(
+        {"s3.region": "eu-west-1", "s3.access-key-id": "k", "s3.secret-access-key": "s"}
+    )
+    assert plugin._native_storage_options(table, None) == {  # type: ignore[arg-type]
+        "aws_region": "eu-west-1",
+        "aws_access_key_id": "k",
+        "aws_secret_access_key": "s",
+    }
+    # the user's credentials replace the catalog's
+    assert plugin._native_storage_options(table, {"aws_profile": "p"}) == {  # type: ignore[arg-type]
+        "aws_region": "eu-west-1",
+        "aws_profile": "p",
+    }
+    for key in (
+        "aws_container_authorization_token_file",
+        "container_authorization_token_file",
+    ):
+        assert plugin._native_storage_options(table, {key: "/f"}) == {  # type: ignore[arg-type]
+            "aws_region": "eu-west-1",
+            key: "/f",
+        }
+    # remote signing has no object store equivalent: the user's options alone
+    table = Table({"s3.remote-signing-enabled": "true", "s3.region": "eu-west-1"})
+    assert plugin._native_storage_options(table, None) is None  # type: ignore[arg-type]
+    assert plugin._native_storage_options(table, {"s3.region": "us-east-1"}) == {  # type: ignore[arg-type]
+        "aws_region": "us-east-1"
+    }
+    # with empty values unset
+    assert plugin._native_storage_options(table, {"s3.region": ""}) == {}  # type: ignore[arg-type]
+    # properties of other backends don't apply
+    table = Table({"s3.region": "eu-west-1", "adls.account-name": "a"}, "gs://b/t")
+    assert plugin._native_storage_options(table, None) == {}  # type: ignore[arg-type]
+    table = Table({"s3.region": "eu-west-1"}, "file:///tmp/t")
+    assert plugin._native_storage_options(table, None) == {}  # type: ignore[arg-type]
+    # unless the data files are elsewhere
+    table = Table(
+        {"s3.region": "eu-west-1"},
+        "file:///tmp/t",
+        {"write.data.path": "s3://bucket/data"},
+    )
+    assert plugin._native_storage_options(table, None) == {  # type: ignore[arg-type]
+        "aws_region": "eu-west-1"
+    }
+    # files read on another backend than the data path take that backend's
+    table = Table({"s3.region": "eu-west-1"}, "gs://b/t")
+    assert plugin._native_storage_options(table, None, "s3://b/f.parquet") == {  # type: ignore[arg-type]
+        "aws_region": "eu-west-1"
+    }
+    table = Table(
+        {"s3.region": "eu-west-1"}, "s3://b/t", {"write.data.path": "s3://b/d"}
+    )
+    assert plugin._native_storage_options(table, None, "gs://b/f.parquet") == {}  # type: ignore[arg-type]
+    # an alias of the same backend keeps the data path
+    assert plugin._native_storage_options(table, None, "s3a://b/f.parquet") == {  # type: ignore[arg-type]
+        "aws_region": "eu-west-1"
+    }
+    # boolean values, which PyIceberg takes
+    table = Table({"s3.force-virtual-addressing": True})
+    assert plugin._native_storage_options(table, None) == {  # type: ignore[arg-type]
+        "aws_virtual_hosted_style_request": "true"
+    }
+    # the storage host is not the OAuth authority host: the URL gives it
+    table = Table(
+        {"adls.account-host": "h.blob.core.windows.net", "adls.account-name": "a"},
+        "abfss://c@a.dfs.core.windows.net/t",
+    )
+    assert plugin._native_storage_options(table, None) == {  # type: ignore[arg-type]
+        "azure_storage_account_name": "a"
+    }
+    # the user's keys come last, in their order: of two aliases, the later one wins
+    table = Table({"s3.endpoint": "c"})
+    user = {"aws_endpoint": "first", "aws_endpoint_url": "last"}
+    out = plugin._native_storage_options(table, user)  # type: ignore[arg-type]
+    assert out is not None
+    assert list(out.items()) == [
+        ("aws_endpoint", "first"),
+        ("aws_endpoint_url", "last"),
+    ]
+    # empty user values are unset: they keep the catalog's credentials
+    table = Table({"s3.access-key-id": "k", "s3.secret-access-key": "s"})
+    assert plugin._native_storage_options(table, {"aws_session_token": ""}) == {  # type: ignore[arg-type]
+        "aws_access_key_id": "k",
+        "aws_secret_access_key": "s",
+    }

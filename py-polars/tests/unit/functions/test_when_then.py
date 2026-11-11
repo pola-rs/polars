@@ -9,7 +9,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import InvalidOperationError
+from polars.exceptions import InvalidOperationError, ShapeError
 from polars.meta import get_index_type
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -914,7 +914,7 @@ def test_when_then_scalar_condition_with_cse_scalar_branch(height: int) -> None:
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
-def test_when_then_scalar_condition_masks_unselected_branch(engine: EngineType) -> None:
+def test_when_then_scalar_condition_skips_unselected_branch(engine: EngineType) -> None:
     q = pl.LazyFrame({"x": ["bad", "worse"]}).select(
         pl.when(pl.lit(False)).then(pl.col("x").cast(pl.Int64)).otherwise(0)
     )
@@ -922,14 +922,15 @@ def test_when_then_scalar_condition_masks_unselected_branch(engine: EngineType) 
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
-def test_when_then_masked_list_item_struct_30252(engine: EngineType) -> None:
+def test_when_then_filtered_list_item_struct_30252(engine: EngineType) -> None:
     schema = {
         "params": pl.List(
             pl.Struct({"key": pl.String, "value": pl.Struct({"int_value": pl.Int64})})
         )
     }
+    # The `then` arm selects few enough rows to be evaluated on only those rows.
     lf = pl.LazyFrame(
-        {"params": [[{"key": "foo", "value": {"int_value": 42}}], []]},
+        {"params": [[{"key": "foo", "value": {"int_value": 42}}], [], [], []]},
         schema=schema,
     )
     filtered = pl.col.params.list.filter(pl.element().struct.field("key") == "foo")
@@ -940,11 +941,11 @@ def test_when_then_masked_list_item_struct_30252(engine: EngineType) -> None:
             .struct.field("int_value")
         )
     )
-    assert q.collect(engine=engine).to_series().to_list() == [42, None]
+    assert q.collect(engine=engine).to_series().to_list() == [42, None, None, None]
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
-def test_when_then_masks_multichunk_struct_29799(engine: EngineType) -> None:
+def test_when_then_filters_multichunk_struct_29799(engine: EngineType) -> None:
     df = pl.DataFrame(
         {
             "v": [1.0, 0.0, None, 2.0, 0.0],
@@ -968,7 +969,7 @@ def test_when_then_masks_multichunk_struct_29799(engine: EngineType) -> None:
     )
     assert_frame_equal(q.collect(engine=engine), expected)
 
-    # The strict cast only succeeds if masking nulled the field in every chunk.
+    # The strict cast only succeeds if the unselected rows are never evaluated.
     df = pl.concat(
         [
             pl.DataFrame({"m": [True], "s": [{"a": "1"}]}),
@@ -983,7 +984,7 @@ def test_when_then_masks_multichunk_struct_29799(engine: EngineType) -> None:
     )
     assert out.to_series().to_list() == [1, None]
 
-    # Three uneven chunks, masked out only inside the middle one. Uses vstack, not
+    # Three uneven chunks, unselected only inside the middle one. Uses vstack, not
     # concat: concat can leave a stale null-propagation flag (#29815).
     df = (
         pl.DataFrame({"m": [True, True], "s": [{"a": "0"}, {"a": "1"}]})
@@ -1028,3 +1029,119 @@ def test_when_then_string_literal_categorical_join_29816() -> None:
         {"k": [0, 1], "c": ["z", "b"]}, schema_overrides={"c": pl.Categorical}
     )
     assert_frame_equal(q.collect(), expected, check_row_order=False)
+
+
+@pytest.mark.parametrize(
+    ("predicate", "then", "expected"),
+    [
+        (pl.int_range(0, 4) % 3 == 0, None, [None, 2, 4, None]),
+        (pl.int_range(0, 4) != 0, None, [0, None, None, None]),
+        (pl.int_range(0, 4).sum() > 0, 7, [7, 7, 7, 7]),
+    ],
+)
+def test_when_then_filtered_cse_column_on_empty_frame(
+    predicate: pl.Expr, then: int | None, expected: list[int | None]
+) -> None:
+    # The common `int_range` becomes a CSE column longer than the empty frame.
+    q = pl.LazyFrame().select(
+        a=pl.when(predicate).then(then).otherwise(pl.int_range(0, 4) * 2)
+    )
+    assert "__POLARS_CSER" in q.explain()
+    assert_series_equal(q.collect().to_series(), pl.Series("a", expected))
+
+
+# The last case selects as many rows for `otherwise` as the CSE column is long.
+@pytest.mark.parametrize("a", [[1, 2, 3], [1, 2, 3, 4], [0] * 5 + [5] * 15])
+def test_when_then_filtered_cse_column_height_mismatch(a: list[int]) -> None:
+    r = pl.int_range(0, 5)
+    q = pl.LazyFrame({"a": a}).select(
+        x=pl.when(pl.col("a") > 1).then(None).otherwise(r * 2), y=r.sum()
+    )
+    assert "__POLARS_CSER" in q.explain()
+    with pytest.raises(ShapeError):
+        q.collect()
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("n_true", [1, 2, 7, 8])
+def test_when_then_strict_cast_after_fill_null_30663(
+    engine: EngineType, n_true: int
+) -> None:
+    lf = pl.LazyFrame({"a": [True] * n_true + [False] * (8 - n_true), "v": range(8)})
+    q = lf.select(
+        pl.when("a").then(0).otherwise(pl.col("v").fill_null(-1).cast(pl.UInt8))
+    )
+    expected = pl.DataFrame(
+        {"literal": [0] * n_true + list(range(n_true, 8))},
+        schema={"literal": pl.UInt8},
+    )
+    assert_frame_equal(q.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_when_then_nested_strict_enum_cast_30663(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"ts": [5, 5, 5, 5], "v": [1, 9, 2, 8]})
+    v = pl.col("v")
+    flag = (
+        pl.when(v.is_not_null())
+        .then(pl.lit("ok"))
+        .otherwise(pl.lit("BAD"))
+        .cast(pl.Enum(["ok"]))
+    )
+    guarded = pl.when(flag.is_not_null()).then(v)
+    q = lf.select(pl.when(pl.col("ts") < v).then(pl.col("ts")).otherwise(guarded))
+    expected = pl.DataFrame({"ts": [1, 5, 2, 5]})
+    assert_frame_equal(q.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize("n_true", [1, 2, 7])
+def test_when_then_elementwise_udf_gets_no_made_up_nulls_29005(n_true: int) -> None:
+    def strict(s: pl.Series) -> pl.Series:
+        assert s.null_count() == 0
+        return s * 10
+
+    df = pl.DataFrame({"x": range(8)})
+    selected = pl.col("x") < n_true
+    udf = pl.col("x").map_batches(strict, return_dtype=pl.Int64, is_elementwise=True)
+    out = df.select(
+        then=pl.when(selected).then(udf).otherwise(0),
+        otherwise=pl.when(selected).then(0).otherwise(udf),
+    )
+    expected = pl.DataFrame(
+        {
+            "then": [x * 10 if x < n_true else 0 for x in range(8)],
+            "otherwise": [0 if x < n_true else x * 10 for x in range(8)],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("n_true", [1, 2, 5])
+def test_when_then_struct_field_and_column_in_with_fields(
+    engine: EngineType, n_true: int
+) -> None:
+    lf = pl.LazyFrame(
+        {
+            "s": [{"a": i} for i in range(8)],
+            "b": range(8),
+            "m": [True] * n_true + [False] * (8 - n_true),
+        }
+    )
+    q = lf.select(
+        pl.col("s").struct.with_fields(
+            c=pl.when(pl.col("m")).then(pl.field("a") + pl.col("b")).otherwise(0)
+        )
+    )
+    expected = pl.DataFrame(
+        {"s": [{"a": i, "c": 2 * i if i < n_true else 0} for i in range(8)]}
+    )
+    assert_frame_equal(q.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_when_then_guards_fallible_arm_on_dense_condition(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"m": [True, False] * 4, "s": ["1", "bad"] * 4})
+    q = lf.select(pl.when("m").then(pl.col("s").cast(pl.Int64)))
+    expected = pl.DataFrame({"s": [1, None] * 4})
+    assert_frame_equal(q.collect(engine=engine), expected)

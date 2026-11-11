@@ -217,8 +217,32 @@ struct CancelOnDrop(Option<Arc<Reader>>, QueryTasks);
 impl Drop for CancelOnDrop {
     fn drop(&mut self) {
         if let Some(reader) = self.0.take() {
-            // The plugin may block to cancel.
-            drop(Pending::spawn(&self.1, move || reader.cancel()));
+            // The plugin may block to cancel. It cannot use the fetch pool: all of its
+            // threads may be waiting for the very reads this cancellation must stop.
+            let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+            let cancel_reader = reader.clone();
+            let thread = std::thread::Builder::new()
+                .name("polars-io-cancel".into())
+                .spawn(move || {
+                    cancel_reader.cancel();
+                    // Cleanup must finish before the query can return the connection.
+                    drop(cancel_reader);
+                    let _ = done_tx.send(());
+                });
+            if thread.is_err() {
+                // If the OS cannot create a thread, cancel here as a last resort. Queuing
+                // on the fetch pool could leave the query waiting forever.
+                reader.cancel();
+                return;
+            }
+            let wait = async move {
+                let _ = done_rx.await;
+                Ok(())
+            };
+            match &self.1 {
+                Some(state) => state.spawn_query_task(wait),
+                None => drop(ASYNC.spawn(wait)),
+            }
         }
     }
 }

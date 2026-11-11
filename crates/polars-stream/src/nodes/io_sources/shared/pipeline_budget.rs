@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use polars_core::config;
 use polars_io::cloud::concurrency::{InFlightBudget, get_inflight_request_budget};
 use polars_io::cloud::concurrency_config::{FetchConfig, get_download_chunk_size};
+use polars_io::utils::byte_source::DynByteSource;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 // Pipeline window: the bytes and fetches a scan holds between fetch and decode.
@@ -15,14 +16,14 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 // - Ordered scans also hold completed fetches behind the head of line: the target adds the
 //   delivered bandwidth times the slack, and the count limit is 8192 once a file follows a store
 //   (otherwise the default x2, at most 2048).
-// - Local fetches and limits set by env vars keep a fixed window.
+// - Local file fetches grow to as many row groups as it takes to give every decoder a task, plus
+//   one being read.
+// - In-memory sources and limits set by env vars keep a fixed window.
+// - A fetch larger than the window grows it if it can, else runs alone (`OversizedPermit`).
 // - Each scan starts at the default limits. Bytes above them come from one process-wide pool (a
 //   fraction of total memory), first come, first served, and return when the scan ends.
 // - A scan whose output is blocked (e.g. a join's probe side during the build) keeps fetching and
 //   can grow toward its store's budget.
-
-static SHOULD_LOG_CONCURRENCY: LazyLock<bool> =
-    LazyLock::new(|| std::env::var("POLARS_LOG_CONCURRENCY").is_ok());
 
 /// Default of `POLARS_CLOUD_PREFETCH_ORDERED_SLACK_MS`.
 const DEFAULT_ORDERED_SLACK_MS: u64 = 100;
@@ -77,6 +78,9 @@ static WINDOW_POOL_KBYTES: LazyLock<AtomicUsize> = LazyLock::new(|| {
 
 /// Interval at which a parked acquire retries growing the window.
 const GROW_RETRY_INTERVAL: Duration = Duration::from_millis(100);
+
+/// Largest kbytes limit, so that a whole window fits in one permit (`u32` kilobytes, ~4 TiB).
+const MAX_KBYTES_LIMIT: usize = u32::MAX as usize;
 
 /// Value of `env_var` if set; panics if it is not a positive integer.
 pub(crate) fn env_nonzero_usize(env_var: &str) -> Option<usize> {
@@ -186,6 +190,38 @@ struct LogStats {
     grow_cap: AtomicU8,
 }
 
+/// How a scan's window may grow while it fetches.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum WindowGrowth<'a> {
+    /// The window keeps its limits.
+    Fixed,
+    /// As many fetches as it takes to give every decoder a task, plus one being read.
+    Local,
+    /// Derived from the in-flight byte budget of the fetch's store (see `grow_window`).
+    Store(&'a InFlightBudget),
+}
+
+impl<'a> WindowGrowth<'a> {
+    /// Growth for a fetch from `byte_source`, given its `DynByteSource::window_inflight_budget`.
+    pub(crate) fn for_source(
+        byte_source: &DynByteSource,
+        inflight: Option<&'a InFlightBudget>,
+    ) -> Self {
+        match (inflight, byte_source) {
+            (Some(inflight), _) => Self::Store(inflight),
+            (None, DynByteSource::File(_)) => Self::Local,
+            (None, _) => Self::Fixed,
+        }
+    }
+
+    fn inflight(self) -> Option<&'a InFlightBudget> {
+        match self {
+            Self::Store(inflight) => Some(inflight),
+            Self::Fixed | Self::Local => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct PipelineBudget {
     count: Arc<Semaphore>,
@@ -199,6 +235,10 @@ pub struct PipelineBudget {
     /// Set by the first file read in order. The window target then adds the reorder headroom.
     ordered: Arc<AtomicBool>,
     num_pipelines: usize,
+    /// How many `OversizedPermit`s are in flight: 0 or 1.
+    oversized_in_flight: Arc<AtomicUsize>,
+    /// Largest local window target so far, in bytes.
+    local_target: Arc<AtomicUsize>,
     registration: Arc<ScanRegistration>,
     log_stats: Arc<LogStats>,
     last_reported: Arc<Mutex<Instant>>,
@@ -222,6 +262,7 @@ impl PipelineBudget {
         let count_limit = count_limit_env.unwrap_or_else(|| default_prefetch_limit(num_pipelines));
         let kbytes_limit =
             kbytes_limit_env.unwrap_or_else(|| default_prefetch_kbytes_limit(num_pipelines));
+        let kbytes_limit = kbytes_limit.min(MAX_KBYTES_LIMIT);
 
         Self {
             count: Arc::new(Semaphore::new(count_limit)),
@@ -232,6 +273,8 @@ impl PipelineBudget {
             can_grow_kbytes: kbytes_limit_env.is_none(),
             ordered: Arc::new(AtomicBool::new(false)),
             num_pipelines,
+            oversized_in_flight: Arc::default(),
+            local_target: Arc::default(),
             registration: Arc::new(ScanRegistration::new()),
             log_stats: Arc::default(),
             last_reported: Arc::new(Mutex::new(Instant::now())),
@@ -300,26 +343,39 @@ impl PipelineBudget {
         }
     }
 
-    /// Grows the kbytes limit from the pool toward the target: the in-flight byte budget of the
-    /// fetch's store, plus the reorder headroom of an ordered scan, plus one fetch of `n_bytes` per
-    /// decode slot. The target is at most the count limit times `n_bytes`, and growth at most what
-    /// the pool has left. Never shrinks.
-    fn grow_window(&self, n_bytes: usize, inflight: &InFlightBudget) {
-        let headroom = if self.ordered.load(Ordering::Acquire) {
-            (inflight.delivered_bandwidth() as f64 * ORDERED_SLACK.as_secs_f64()) as usize
-        } else {
-            0
+    /// Grows the kbytes limit from the pool toward a target derived from:
+    /// - for a store, its in-flight byte budget;
+    /// - for a local file (`inflight` is `None`), `local_target`.
+    ///
+    /// Never shrinks; paused while an `OversizedPermit` lives.
+    fn grow_window(&self, n_bytes: usize, inflight: Option<&InFlightBudget>) {
+        // TODO: the window can't grow while an oversized fetch is running, even if the pool has
+        // room. Charging each fetch its full size and tracking the overshoot would lift this.
+        if self.oversized_in_flight.load(Ordering::Acquire) > 0 {
+            return;
+        }
+        let headroom = match inflight {
+            Some(inflight) if self.ordered.load(Ordering::Acquire) => {
+                (inflight.delivered_bandwidth() as f64 * ORDERED_SLACK.as_secs_f64()) as usize
+            },
+            _ => 0,
         };
-        let target_bytes = (inflight.current_byte_budget() as usize)
-            .saturating_add(headroom)
-            .saturating_add((self.num_pipelines + 1).saturating_mul(n_bytes));
+        let target_bytes = match inflight {
+            Some(inflight) => (inflight.current_byte_budget() as usize)
+                .saturating_add(headroom)
+                .saturating_add((self.num_pipelines + 1).saturating_mul(n_bytes)),
+            None => self.local_target.load(Ordering::Relaxed),
+        };
         let cap_bytes = self.count_limit().saturating_mul(n_bytes);
         let mut grow_cap = if cap_bytes < target_bytes {
             GrowCap::CountLimit
         } else {
             GrowCap::TargetKbytes
         };
-        let target_kbytes = target_bytes.min(cap_bytes).div_ceil(1 << 10);
+        let target_kbytes = target_bytes
+            .min(cap_bytes)
+            .div_ceil(1 << 10)
+            .min(MAX_KBYTES_LIMIT);
 
         // Held while growing, so that a release after the scan ends returns all drawn kilobytes.
         let mut registration = self
@@ -358,66 +414,87 @@ impl PipelineBudget {
             }
         }
 
-        if *SHOULD_LOG_CONCURRENCY {
+        if polars_config::config().log_concurrency() {
             self.log_stats
                 .grow_cap
                 .store(grow_cap as u8, Ordering::Relaxed);
         }
     }
 
-    /// Acquire permit for a fetch of `n_bytes`. `inflight`: the in-flight budget of the fetch's
-    /// store if its window follows it (`DynByteSource::window_inflight_budget`); the window then
-    /// grows when the fetch finds it short, and again every `GROW_RETRY_INTERVAL` while it waits.
+    /// Acquire permit for a fetch of `n_bytes` that decodes in `decode_tasks` tasks. Unless
+    /// `window` is `WindowGrowth::Fixed`, the window grows when the fetch finds it short, and
+    /// again every `GROW_RETRY_INTERVAL` while it waits (not for an oversized fetch).
     ///
     /// Acquisition order is kbytes-first, then count, so that the count_in_use
     /// value is meaningful. All pipeline paths (parquet, IPC) must acquire
     /// through this method so the order can never diverge.
     ///
-    /// The requested capacity is capped at the kbytes limit, so a fetch larger than the
-    /// limit still proceeds, and any positive limit makes progress. Such a fetch keeps the charge
-    /// of the limit it was sized under, also when the window grows later.
+    /// The requested capacity is capped at the kbytes limit, so at most one fetch larger than the
+    /// limit still proceeds, and any positive limit makes progress (see `OversizedPermit`).
     pub(crate) async fn acquire(
         &self,
         n_bytes: usize,
-        inflight: Option<&InFlightBudget>,
+        window: WindowGrowth<'_>,
+        decode_tasks: usize,
     ) -> PipelinePermit {
-        let inflight = inflight.filter(|_| self.can_grow_kbytes);
-        if let Some(inflight) = inflight
-            && self.kbytes.available_permits() < n_bytes.div_ceil(1 << 10)
-        {
+        let may_grow = self.can_grow_kbytes && !matches!(window, WindowGrowth::Fixed);
+        let inflight = window.inflight();
+        if matches!(window, WindowGrowth::Local) {
+            // Enough fetches to give every decoder a task, plus one being read.
+            let fetches = self.num_pipelines.div_ceil(decode_tasks.max(1)) + 1;
+            self.local_target
+                .fetch_max(fetches.saturating_mul(n_bytes), Ordering::Relaxed);
+        }
+        if may_grow && self.kbytes.available_permits() < n_bytes.div_ceil(1 << 10) {
             self.grow_window(n_bytes, inflight);
         }
 
-        let n_kbytes: u32 = self.permit_kbytes(n_bytes).try_into().unwrap_or(u32::MAX);
+        let mut charged_kbytes: u32 = self.permit_kbytes(n_bytes).try_into().unwrap_or(u32::MAX);
+        let mut oversized = (charged_kbytes as usize) < n_bytes.div_ceil(1 << 10);
 
-        if *SHOULD_LOG_CONCURRENCY && self.kbytes.available_permits() < n_kbytes as usize {
+        if polars_config::config().log_concurrency()
+            && self.kbytes.available_permits() < charged_kbytes as usize
+        {
             self.log_stats.kbytes_waits.fetch_add(1, Ordering::Relaxed);
         }
 
         // Semaphores are never closed, so acquire cannot fail.
-        let kbytes = self.kbytes.clone().acquire_many_owned(n_kbytes);
-        let _kbytes = match inflight {
-            Some(inflight) => {
-                tokio::pin!(kbytes);
-                loop {
-                    tokio::select! {
-                        permit = &mut kbytes => break permit,
-                        _ = tokio::time::sleep(GROW_RETRY_INTERVAL) => {
-                            self.grow_window(n_bytes, inflight)
-                        },
-                    }
+        let kbytes = self.kbytes.clone().acquire_many_owned(charged_kbytes);
+        let mut kbytes_permit = if may_grow && !oversized {
+            tokio::pin!(kbytes);
+            loop {
+                tokio::select! {
+                    permit = &mut kbytes => break permit,
+                    _ = tokio::time::sleep(GROW_RETRY_INTERVAL) => {
+                        self.grow_window(n_bytes, inflight)
+                    },
                 }
-            },
-            None => kbytes.await,
+            }
+        } else {
+            kbytes.await
         }
         .unwrap();
+        // Holding the whole window with nothing else in flight: grow if possible, take what fits.
+        if oversized && may_grow {
+            self.grow_window(n_bytes, inflight);
+            // The limit never shrinks and is at most `MAX_KBYTES_LIMIT`, so this fits a `u32`.
+            let extra = self.permit_kbytes(n_bytes) as u32 - charged_kbytes;
+            if extra > 0
+                && let Ok(more) = self.kbytes.clone().try_acquire_many_owned(extra)
+            {
+                kbytes_permit.merge(more);
+                charged_kbytes += extra;
+                oversized = (charged_kbytes as usize) < n_bytes.div_ceil(1 << 10);
+            }
+        }
+        let _oversized = oversized.then(|| OversizedPermit::new(&self.oversized_in_flight));
 
-        if *SHOULD_LOG_CONCURRENCY && self.count.available_permits() == 0 {
+        if polars_config::config().log_concurrency() && self.count.available_permits() == 0 {
             self.log_stats.count_waits.fetch_add(1, Ordering::Relaxed);
         }
         let _count = self.count.clone().acquire_owned().await.unwrap();
 
-        if *SHOULD_LOG_CONCURRENCY {
+        if polars_config::config().log_concurrency() {
             if let Ok(mut last_log) = self.last_reported.lock() {
                 let count_limit = self.count_limit();
                 let kbytes_limit = self.kbytes_limit();
@@ -459,7 +536,11 @@ impl PipelineBudget {
             }
         }
 
-        PipelinePermit { _count, _kbytes }
+        PipelinePermit {
+            _oversized,
+            _count,
+            _kbytes: kbytes_permit,
+        }
     }
 
     /// Kilobytes taken by the permit for a fetch of `n_bytes`.
@@ -469,8 +550,29 @@ impl PipelineBudget {
     }
 }
 
-/// RAII permit pair; releases both budgets on drop.
+/// RAII permits; released on drop.
 pub(crate) struct PipelinePermit {
+    // Dropped first, so the acquire that `_kbytes` wakes sees no oversized permit.
+    _oversized: Option<OversizedPermit>,
     _count: OwnedSemaphorePermit,
     _kbytes: OwnedSemaphorePermit,
+}
+
+/// Lets up to one oversized row group (larger than the window) through. Its fetch is charged the
+/// whole window and runs alone; while this marker lives the window does not grow, so no other
+/// fetch can start beside it. One counter suffices because a budget's acquires run one at a time.
+struct OversizedPermit(Arc<AtomicUsize>);
+
+impl OversizedPermit {
+    fn new(oversized_in_flight: &Arc<AtomicUsize>) -> Self {
+        let prev = oversized_in_flight.fetch_add(1, Ordering::AcqRel);
+        debug_assert_eq!(prev, 0);
+        Self(oversized_in_flight.clone())
+    }
+}
+
+impl Drop for OversizedPermit {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
 }

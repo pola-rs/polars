@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import subprocess
 import sys
@@ -395,6 +396,26 @@ def test_stop_cancels_a_partition_waiting_for_its_first_rows(
     assert time.monotonic() - start < 4
     time.sleep(0.5)
     assert cancelled.is_set() or not waiting.is_set()
+
+
+@pytest.mark.parametrize("stop", ["head", "error"])
+def test_stop_cancels_with_saturated_blocking_pool(tmp_path: Path, stop: str) -> None:
+    # Set the pool size before Polars initializes its runtime. Cancellation needs its
+    # own thread even when the only fetch worker is blocked inside the database.
+    code = f"""
+import runpy
+from pathlib import Path
+tests = runpy.run_path({__file__!r})
+tests["test_stop_cancels_a_partition_waiting_for_its_first_rows"](
+    Path({str(tmp_path)!r}), {stop!r}
+)
+"""
+    subprocess.run(
+        [sys.executable, "-c", code],
+        env={**os.environ, "POLARS_MAX_BLOCKING_THREAD_COUNT": "1"},
+        check=True,
+        timeout=30,
+    )
 
 
 def test_sqlalchemy_engine_connects_through_its_pool() -> None:

@@ -88,7 +88,7 @@ enum Step<'a> {
 /// Emits the output units in order. The sender tasks share one emission cursor, so every
 /// execution phase emits a prefix of the output. A task with nothing to emit prepares a unit
 /// ahead, up to `max_ahead_bytes` of units prepared or being prepared, and at least one.
-pub struct Flush {
+pub struct FlushState {
     inner: Mutex<FlushInner>,
     notify: Notify,
     max_ahead_bytes: usize,
@@ -96,7 +96,7 @@ pub struct Flush {
     _spill_ctxs: (LeastRecentSpillContext, MostRecentSpillContext),
 }
 
-impl Flush {
+impl FlushState {
     pub fn new(
         units: Vec<OutputUnit>,
         max_ahead_bytes: usize,
@@ -238,7 +238,7 @@ impl Flush {
     }
 }
 
-impl Drop for Flush {
+impl Drop for FlushState {
     fn drop(&mut self) {
         let units: Vec<_> = self.inner.get_mut().pending.drain(..).collect();
         RAYON.install(|| units.into_par_iter().for_each(drop));
