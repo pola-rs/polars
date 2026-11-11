@@ -2595,6 +2595,18 @@ def test_struct_eval_non_elementwise() -> None:
     assert_frame_equal(out, expected)
 
 
+def test_struct_duplicate_field_names_raise() -> None:
+    dtype = pl.Struct([pl.Field("a", pl.Int64), pl.Field("a", pl.String)])
+    with pytest.raises(DuplicateError, match="multiple fields with name 'a'"):
+        pl.Series([None]).cast(dtype)
+
+    lf = pl.LazyFrame({"s": [{"a": 1, "b": 2}]})
+    with pytest.raises(DuplicateError, match="multiple fields with name 'a'"):
+        lf.select(pl.col.s.struct.rename_fields(["a", "a"])).collect_schema()
+    with pytest.raises(DuplicateError, match="multiple fields with name 'z'"):
+        lf.select(pl.col.s.name.map_fields(lambda _: "z")).collect_schema()
+
+
 def test_struct_eval_raises_on_duplicate_field() -> None:
     df = pl.DataFrame({"a": [1], "s": [{"x": 1}]})
     with pytest.raises(DuplicateError):
