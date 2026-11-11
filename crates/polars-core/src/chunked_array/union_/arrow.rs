@@ -1,11 +1,11 @@
-//! Conversion between Arrow's dense `UnionArray` and Polars' `LargeUnionArray`.
+//! Conversion between Arrow's `UnionArray` and Polars' `LargeUnionArray`.
 use polars_arrow::array::{Array, LargeUnionArray, NullArray, UnionArray};
 use polars_arrow::bitmap::{BitmapBuilder, MutableBitmap};
 use polars_compute::gather::gather_union_slots;
 
 use crate::prelude::*;
 
-/// Imports dense Arrow union chunks. Variants whose converted dtype is `Null` are dropped and
+/// Imports Arrow union chunks, dense or sparse. Variants whose converted dtype is `Null` are dropped and
 /// their slots become nulls; with no variant left the result is a `Null` column.
 ///
 /// `convert_children` converts the chunks of one child to physical arrays and their dtype.
@@ -19,10 +19,6 @@ pub(crate) fn union_from_arrow(
     let ArrowDataType::Union(u) = chunks[0].dtype().to_storage() else {
         unreachable!()
     };
-    polars_ensure!(
-        u.mode.is_dense(),
-        ComputeError: "cannot create series from a sparse Union, only dense unions are supported"
-    );
     let arrays: Vec<&UnionArray> = chunks
         .iter()
         .map(|c| c.as_any().downcast_ref::<UnionArray>().unwrap())
@@ -102,16 +98,22 @@ fn import_chunk(
 ) -> PolarsResult<ArrayRef> {
     let len = arr.len();
     let types = arr.types();
-    let offsets = arr.offsets().unwrap();
+    // A sparse union holds row `i` at slot `i` of every child; compacting the children drops the
+    // values of the other variants.
+    let sparse = arr.offsets().is_none();
+    let offsets: Box<dyn Iterator<Item = usize>> = match arr.offsets() {
+        Some(offsets) => Box::new(offsets.iter().map(|&o| o as usize)),
+        None => Box::new((0..len).map(|i| arr.index(i).1)),
+    };
 
     let lift = any_dropped || children.iter().any(|c| c.has_nulls());
     let mut validity = lift.then(|| BitmapBuilder::with_capacity(len));
     let mut new_types = (!types_unchanged).then(|| Vec::with_capacity(len));
     let mut wide = Vec::with_capacity(len);
     let mut next = vec![0i64; n];
-    let mut rebuild = any_dropped;
+    let mut rebuild = any_dropped || sparse;
 
-    for (&id, &o) in types.iter().zip(offsets.iter()) {
+    for (&id, o) in types.iter().zip(offsets) {
         let mapped = usize::try_from(id)
             .ok()
             .and_then(|id| id_map.get(id).copied().flatten());

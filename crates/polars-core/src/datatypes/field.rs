@@ -323,7 +323,7 @@ impl DataType {
                 map.unwrap_or_else(|| DataType::List(entries.boxed()))
             },
             #[cfg(feature = "dtype-union")]
-            ArrowDataType::Union(u) if u.mode.is_dense() => {
+            ArrowDataType::Union(u) => {
                 // Variants that convert to `Null` hold no values and are dropped on import.
                 let fields: Vec<Field> = u
                     .fields

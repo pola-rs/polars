@@ -253,13 +253,52 @@ def test_union_sliced_non_positional_c_interface() -> None:
     assert pl.Series(back).to_list() == [1, "b", 2]
 
 
-def test_union_sparse_raises() -> None:
-    arr = pa.UnionArray.from_sparse(
-        pa.array([0, 1], pa.int8()),
-        [pa.array([1, None], pa.int64()), pa.array([None, "a"])],
+def sparse_int_str() -> pa.UnionArray:
+    # The values of the other variant are arbitrary, including invalid ones.
+    return pa.UnionArray.from_sparse(
+        pa.array([0, 1, 0, 1, 1, 0], pa.int8()),
+        [
+            pa.array([1, -1, 2, -1, None, 3], pa.int64()),
+            pa.array(["x", "a", "y", "b", "c", None]),
+        ],
+        ["i", "s"],
     )
-    with pytest.raises(ComputeError, match="sparse"):
-        pl.Series(arr)
+
+
+def test_union_sparse_import() -> None:
+    arr = sparse_int_str()
+    s = pl.Series("u", arr)
+    assert s.dtype == INT_STR
+    assert to_pylist(s) == [1, "a", 2, "b", "c", 3]
+    assert s.union.tag().to_list() == ["i", "s", "i", "s", "s", "i"]
+    # Compacted: each child holds only its variant's values.
+    assert [len(to_pa(s).field(i)) for i in range(2)] == [3, 3]
+
+    assert to_pylist(pl.Series(arr.slice(1, 4))) == ["a", 2, "b", "c"]
+    table = pa.table({"u": pa.chunked_array([arr, arr.slice(2)])})
+    df = pl.from_arrow(table)
+    assert isinstance(df, pl.DataFrame)
+    assert df.schema == {"u": INT_STR}
+    assert to_pylist(df.to_series()) == [1, "a", 2, "b", "c", 3, 2, "b", "c", 3]
+
+    buf = io.BytesIO()
+    with pa.ipc.new_file(buf, table.schema) as writer:
+        writer.write_table(table)
+    assert_series_equal(pl.read_ipc(buf.getvalue()).to_series(), df.to_series())
+
+
+def test_union_sparse_import_ids_and_nulls() -> None:
+    arr = pa.UnionArray.from_sparse(
+        pa.array([7, 3, 7], pa.int8()),
+        [pa.array([None, None, None], pa.null()), pa.array([1, None, 2], pa.int64())],
+        ["n", "i"],
+        [3, 7],
+    )
+    s = pl.Series(arr)
+    # The `Null` variant is dropped and its rows become null rows.
+    assert s.dtype == pl.Union({"i": pl.Int64})
+    assert to_pylist(s) == [1, None, 2]
+    assert s.null_count() == 1
 
 
 def test_union_export_rebases_children() -> None:
