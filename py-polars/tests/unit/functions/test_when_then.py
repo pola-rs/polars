@@ -1145,3 +1145,64 @@ def test_when_then_guards_fallible_arm_on_dense_condition(engine: EngineType) ->
     q = lf.select(pl.when("m").then(pl.col("s").cast(pl.Int64)))
     expected = pl.DataFrame({"s": [1, None] * 4})
     assert_frame_equal(q.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("dtype", [pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64])
+def test_when_then_signed_literals_times_unsigned_30674(
+    engine: EngineType, dtype: pl.DataType
+) -> None:
+    trades = pl.DataFrame(
+        {
+            "side": ["buy", "sell"],
+            "qty": pl.Series([10, 4], dtype=dtype),
+        }
+    )
+    sign = pl.when(pl.col("side") == "buy").then(1).otherwise(-1)
+    got = trades.lazy().select(sign * pl.col("qty")).collect(engine=engine)
+    assert got.to_series().to_list() == [10, -4]
+    assert (
+        trades.lazy().select((sign * pl.col("qty")).sum()).collect(engine=engine).item()
+        == 6
+    )
+
+    sign_neg_first = pl.when(pl.col("side") == "buy").then(-1).otherwise(1)
+    got = trades.lazy().select(sign_neg_first * pl.col("qty")).collect(engine=engine)
+    assert got.to_series().to_list() == [-10, 4]
+
+    # `pl.lit(-1) * unsigned` already produced the right values; check eagerly
+    # because the lazy schema for this path can disagree with the collected dtype.
+    assert trades.select(pl.lit(-1) * pl.col("qty")).to_series().to_list() == [
+        -10,
+        -4,
+    ]
+
+    signed = trades.with_columns(pl.col("qty").cast(pl.Int64))
+    got = signed.lazy().select(sign * pl.col("qty")).collect(engine=engine)
+    assert got.to_series().to_list() == [10, -4]
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_when_then_mixed_sign_literals_fit_both_values_30674(
+    engine: EngineType,
+) -> None:
+    df = pl.LazyFrame({"flag": [True, False]})
+    pos_first = pl.when(pl.col("flag")).then(128).otherwise(-1)
+    neg_first = pl.when(pl.col("flag")).then(-1).otherwise(128)
+    assert df.select(pos_first).collect(engine=engine).to_series().to_list() == [
+        128,
+        -1,
+    ]
+    assert df.select(neg_first).collect(engine=engine).to_series().to_list() == [
+        -1,
+        128,
+    ]
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_when_then_signed_literals_compare_with_len_30674(engine: EngineType) -> None:
+    df = pl.LazyFrame({"x": [1, 2]})
+    sign = pl.when(pl.col("x") == 1).then(1).otherwise(-1)
+    got = df.select(sign < pl.len()).collect(engine=engine)
+    assert got.to_series().to_list() == [True, True]
+    assert df.filter(sign < pl.len()).collect(engine=engine).height == 2

@@ -154,6 +154,12 @@ pub fn get_supertype_with_options(
     fn inner(l: &DataType, r: &DataType, options: SuperTypeOptions) -> Option<DataType> {
         use DataType::*;
         if l == r {
+            // `DataType` equality ignores the payload of `Unknown(Int(_))`, so
+            // two dynamic ints compare equal even when their values differ.
+            // Combine the values instead of returning the left-hand side.
+            if let (Unknown(UnknownKind::Int(a)), Unknown(UnknownKind::Int(b))) = (l, r) {
+                return Some(Unknown(UnknownKind::Int(combine_dyn_int_literals(*a, *b))));
+            }
             return Some(l.clone());
         }
         match (l, r) {
@@ -537,8 +543,9 @@ pub fn get_supertype_with_options(
                     UnknownKind::Int(v) if dt.is_primitive_numeric() => {
                         // Both dyn int
                         if let Unknown(UnknownKind::Int(v_other)) = dt {
-                            // Take the maximum value to ensure we bubble up the required minimal size.
-                            Some(Unknown(UnknownKind::Int(std::cmp::max(*v, *v_other))))
+                            Some(Unknown(UnknownKind::Int(combine_dyn_int_literals(
+                                *v, *v_other,
+                            ))))
                         }
                         // dyn int vs number
                         else {
@@ -637,6 +644,53 @@ fn super_type_structs(fields_a: &[Field], fields_b: &[Field]) -> Option<DataType
     }
 }
 
+/// Combine two dynamic integer literals into one witness value.
+///
+/// The witness must only be able to shrink to integer dtypes that can hold both
+/// values. If either value is negative the result stays negative so it is not
+/// later materialized as unsigned.
+fn combine_dyn_int_literals(a: i128, b: i128) -> i128 {
+    if a >= 0 && b >= 0 {
+        a.max(b)
+    } else {
+        signed_dyn_int_witness(a.min(b), a.max(b))
+    }
+}
+
+/// Return a negative witness that materializes to a signed dtype holding `[lo, hi]`.
+fn signed_dyn_int_witness(lo: i128, hi: i128) -> i128 {
+    debug_assert!(lo < 0);
+    debug_assert!(lo <= hi);
+
+    let outside_i8 = i8::MIN as i128 - 1;
+    let outside_i16 = i16::MIN as i128 - 1;
+    let outside_i32 = i32::MIN as i128 - 1;
+    let outside_i64 = i64::MIN as i128 - 1;
+
+    let force = if hi <= i8::MAX as i128 && cfg!(feature = "dtype-i8") {
+        lo
+    } else if hi <= i16::MAX as i128 && cfg!(feature = "dtype-i16") {
+        if cfg!(feature = "dtype-i8") {
+            outside_i8
+        } else {
+            lo
+        }
+    } else if hi <= i32::MAX as i128 {
+        if cfg!(feature = "dtype-i16") {
+            outside_i16
+        } else if cfg!(feature = "dtype-i8") {
+            outside_i8
+        } else {
+            lo
+        }
+    } else if hi <= i64::MAX as i128 {
+        outside_i32
+    } else {
+        outside_i64
+    };
+    lo.min(force)
+}
+
 pub fn materialize_dyn_int(v: i128) -> AnyValue<'static> {
     // Try to get the "smallest" fitting value.
     // TODO! next breaking go to true smallest.
@@ -708,4 +762,72 @@ pub fn merge_dtypes_many<I: IntoIterator<Item = D> + Clone, D: AsRef<DataType>>(
     }
 
     Ok(st)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dyn_int_supertype_mixed_sign_keeps_negative_witness() {
+        let pos = DataType::Unknown(UnknownKind::Int(1));
+        let neg = DataType::Unknown(UnknownKind::Int(-1));
+        assert_eq!(
+            get_supertype(&pos, &neg).unwrap(),
+            DataType::Unknown(UnknownKind::Int(-1))
+        );
+        assert_eq!(
+            get_supertype(&neg, &pos).unwrap(),
+            DataType::Unknown(UnknownKind::Int(-1))
+        );
+    }
+
+    #[test]
+    fn dyn_int_supertype_mixed_sign_with_unsigned_is_signed() {
+        let sign = get_supertype(
+            &DataType::Unknown(UnknownKind::Int(1)),
+            &DataType::Unknown(UnknownKind::Int(-1)),
+        )
+        .unwrap();
+        assert_eq!(
+            get_supertype(&sign, &DataType::UInt32).unwrap(),
+            DataType::Int64
+        );
+        assert_eq!(
+            get_supertype(&DataType::UInt32, &sign).unwrap(),
+            DataType::Int64
+        );
+    }
+
+    #[test]
+    fn dyn_int_supertype_both_positive_keeps_larger() {
+        let a = DataType::Unknown(UnknownKind::Int(1));
+        let b = DataType::Unknown(UnknownKind::Int(100));
+        assert_eq!(
+            get_supertype(&a, &b).unwrap(),
+            DataType::Unknown(UnknownKind::Int(100))
+        );
+    }
+
+    #[test]
+    fn dyn_int_supertype_holds_values_that_do_not_fit_int8() {
+        let st = get_supertype(
+            &DataType::Unknown(UnknownKind::Int(128)),
+            &DataType::Unknown(UnknownKind::Int(-1)),
+        )
+        .unwrap();
+        let DataType::Unknown(UnknownKind::Int(w)) = st else {
+            panic!("expected dynamic int, got {st:?}");
+        };
+        assert!(w < 0, "witness should stay signed, got {w}");
+        let dtype = materialize_smallest_dyn_int(w).dtype();
+        assert!(
+            match dtype {
+                #[cfg(feature = "dtype-i8")]
+                DataType::Int8 => false,
+                _ => true,
+            },
+            "materialized {dtype:?} cannot hold 128"
+        );
+    }
 }
