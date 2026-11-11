@@ -728,3 +728,16 @@ def test_union_row_encode_roundtrip(descending: bool, nulls_last: bool) -> None:
     unordered = messy().to_frame()._row_encode(unordered=True)
     assert unordered.n_unique() == 5
 
+
+def test_union_implode_and_repeat() -> None:
+    s = messy()
+    df = pl.DataFrame({"k": [1, 1, 2, 2, 1, 2, 1], "u": s})
+    imploded = df.lazy().select(pl.col("u").implode()).collect()["u"]
+    assert to_pylist(imploded) == [s.to_list()]
+    grouped = df.lazy().group_by("k").agg(pl.col("u")).collect().sort("k")
+    assert to_pylist(grouped["u"]) == [[3, "b", None, 1], [1, "a", "b"]]
+
+    lists = nested_unions()[0]
+    repeated = lists.repeat_by(2)
+    expected = lists.to_arrow().to_pylist()
+    assert to_pylist(repeated) == [[v, v] for v in expected]
