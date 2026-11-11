@@ -89,9 +89,8 @@ pub unsafe fn call_plugin(
         use polars_ffi::version_0::*;
 
         // Plugins taking `Column`s export an additional function which preserves scalar columns.
-        let column_fn = lib.get::<PluginFn<ColumnExport>>(
-            format!("_polars_plugin_column_func_{symbol}").as_bytes(),
-        );
+        let column_fn =
+            lib.get::<PluginFn<ColumnExport>>(format!("_polars_column_plugin_{symbol}").as_bytes());
         let out = if let Ok(column_fn) = column_fn {
             let inputs = s.iter().map(export_column).collect();
             let out = call_plugin_fn(*column_fn, inputs, kwargs, ColumnExport::empty());

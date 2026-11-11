@@ -21,46 +21,28 @@ fn quote_get_kwargs() -> proc_macro2::TokenStream {
     )
 }
 
-fn quote_call_kwargs(
-    ast: &syn::ItemFn,
-    fn_name: &syn::Ident,
-    output_type: &proc_macro2::TokenStream,
-) -> proc_macro2::TokenStream {
+fn quote_call_kwargs(fn_name: &syn::Ident) -> proc_macro2::TokenStream {
     let kwargs = quote_get_kwargs();
     quote!(
             // parse the kwargs and assign to `let kwargs`
             #kwargs
 
-            // define the function
-            #ast
-
             // call the function
-        let result: polars_error::PolarsResult<#output_type> = #fn_name(&inputs, kwargs);
+        let result = #fn_name(&inputs, kwargs);
 
     )
 }
 
-fn quote_call_context(
-    ast: &syn::ItemFn,
-    fn_name: &syn::Ident,
-    output_type: &proc_macro2::TokenStream,
-) -> proc_macro2::TokenStream {
+fn quote_call_context(fn_name: &syn::Ident) -> proc_macro2::TokenStream {
     quote!(
             let context = *context;
 
-            // define the function
-            #ast
-
             // call the function
-        let result: polars_error::PolarsResult<#output_type> = #fn_name(&inputs, context);
+        let result = #fn_name(&inputs, context);
     )
 }
 
-fn quote_call_context_kwargs(
-    ast: &syn::ItemFn,
-    fn_name: &syn::Ident,
-    output_type: &proc_macro2::TokenStream,
-) -> proc_macro2::TokenStream {
+fn quote_call_context_kwargs(fn_name: &syn::Ident) -> proc_macro2::TokenStream {
     quote!(
             let context = *context;
 
@@ -74,24 +56,15 @@ fn quote_call_context_kwargs(
                     }
             };
 
-            // define the function
-            #ast
-
             // call the function
-        let result: polars_error::PolarsResult<#output_type> = #fn_name(&inputs, context, kwargs);
+        let result = #fn_name(&inputs, context, kwargs);
     )
 }
 
-fn quote_call_no_kwargs(
-    ast: &syn::ItemFn,
-    fn_name: &syn::Ident,
-    output_type: &proc_macro2::TokenStream,
-) -> proc_macro2::TokenStream {
+fn quote_call_no_kwargs(fn_name: &syn::Ident) -> proc_macro2::TokenStream {
     quote!(
-            // define the function
-            #ast
             // call the function
-            let result: polars_error::PolarsResult<#output_type> = #fn_name(&inputs);
+            let result = #fn_name(&inputs);
     )
 }
 
@@ -138,19 +111,24 @@ fn create_expression_function(ast: syn::ItemFn) -> proc_macro2::TokenStream {
 
     // Get the tokenstream of the call logic.
     let quote_call = match args.len() {
-        0 => quote_call_no_kwargs(&ast, fn_name, &output_type),
+        0 => quote_call_no_kwargs(fn_name),
         1 => match args[0].as_str() {
-            "kwargs" => quote_call_kwargs(&ast, fn_name, &output_type),
-            "context" => quote_call_context(&ast, fn_name, &output_type),
+            "kwargs" => quote_call_kwargs(fn_name),
+            "context" => quote_call_context(fn_name),
             a => panic!("didn't expect argument {a}"),
         },
         2 => match (args[0].as_str(), args[1].as_str()) {
-            ("context", "kwargs") => quote_call_context_kwargs(&ast, fn_name, &output_type),
+            ("context", "kwargs") => quote_call_context_kwargs(fn_name),
             ("kwargs", "context") => panic!("'kwargs', 'context' order should be reversed"),
             (a, b) => panic!("didn't expect arguments {a}, {b}"),
         },
         _ => panic!("didn't expect so many arguments"),
     };
+    // Functions taking `&[Column]` may return either a `Series` or a `Column`.
+    let quote_call = quote!(
+        #quote_call
+        let result: polars_error::PolarsResult<#output_type> = result.map(<#output_type>::from);
+    );
 
     let import_series = quote!(polars_ffi::version_0::import_series_buffer(e, input_len).unwrap());
     let series_function = if takes_columns {
@@ -185,6 +163,8 @@ fn create_expression_function(ast: syn::ItemFn) -> proc_macro2::TokenStream {
 
     quote!(
         use ::pyo3_polars::export::*;
+
+        #ast
 
         #series_function
 
@@ -255,10 +235,7 @@ fn get_expression_function_name(fn_name: &syn::Ident) -> syn::Ident {
 }
 
 fn get_column_function_name(fn_name: &syn::Ident) -> syn::Ident {
-    syn::Ident::new(
-        &format!("_polars_plugin_column_func_{fn_name}"),
-        fn_name.span(),
-    )
+    syn::Ident::new(&format!("_polars_column_plugin_{fn_name}"), fn_name.span())
 }
 
 fn quote_get_inputs() -> proc_macro2::TokenStream {

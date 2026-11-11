@@ -1,6 +1,6 @@
 import polars as pl
 from datetime import date, datetime, timezone
-from expression_lib import language, dist, date_util
+from expression_lib import column, language, dist, date_util
 
 df = pl.DataFrame(
     {
@@ -79,5 +79,15 @@ try:
     out.with_columns(pl.col("names").panic.panic())
 except pl.exceptions.ComputeError as e:
     assert "the plugin panicked" in str(e)
+
+# Plugins taking `&[Column]` accept both scalar and non-scalar inputs.
+out = df.with_columns(greeting=pl.lit("hello")).select(
+    names=column.pig_latinnify("names"),
+    greeting=column.pig_latinnify("greeting"),
+    materialized=column.materialize("greeting"),
+)
+assert out["names"].to_list() == ["ichardRay", "liceAay", "obBay"]
+assert out["greeting"].to_list() == ["ellohay"] * 3
+assert out["materialized"].to_list() == ["hello"] * 3
 
 print("finished")
