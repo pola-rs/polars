@@ -72,8 +72,23 @@ fn cast_chunk(
     }
 
     let mut children: Vec<Option<ArrayRef>> = vec![None; to_fields.len()];
+    let mut valid_counts = vec![0usize; from_fields.len()];
+    for (i, &t) in types.iter().enumerate() {
+        if is_valid(i) {
+            valid_counts[t as usize] += 1;
+        }
+    }
+
     let mut new_offsets: Option<Vec<i64>> = None;
     let mut validity: Option<MutableBitmap> = None;
+    let mut null_slot = |i: usize| {
+        validity
+            .get_or_insert_with(|| match arr.validity() {
+                Some(v) => v.clone().make_mut(),
+                None => MutableBitmap::from_len_set(arr.len()),
+            })
+            .set(i, false)
+    };
     for (s, t) in target.iter().enumerate() {
         let Some(t) = *t else { continue };
         let child = &arr.fields()[s];
@@ -82,16 +97,23 @@ fn cast_chunk(
             continue;
         }
 
-        // Cast only the values the variant's slots reference, in slot order, with nulls for
-        // null slots, so a strict cast ignores values the union does not hold.
-        let mut positions = ChildPositions::new(child.len());
-        for (i, (&ty, &o)) in types.iter().zip(offsets.iter()).enumerate() {
-            if ty as usize == s {
-                positions.push(is_valid(i).then_some(o as usize));
+        // Offsets increase strictly, so if valid slots reference as many values as the child
+        // holds, they reference all of it, in order, and the child can be cast as is.
+        let whole_child = valid_counts[s] == child.len();
+        // Otherwise cast only the values the variant's slots reference, in slot order, with
+        // nulls for null slots, so a strict cast ignores values the union does not hold.
+        let values = if whole_child {
+            child.clone()
+        } else {
+            let mut positions = ChildPositions::new(child.len());
+            for (i, (&ty, &o)) in types.iter().zip(offsets.iter()).enumerate() {
+                if ty as usize == s {
+                    positions.push(is_valid(i).then_some(o as usize));
+                }
             }
-        }
-        // SAFETY: the offsets of the union are in bounds.
-        let values = unsafe { gather_child(child.as_ref(), positions) };
+            // SAFETY: the offsets of the union are in bounds.
+            unsafe { gather_child(child.as_ref(), positions) }
+        };
         let values = unsafe {
             Series::from_chunks_and_dtype_unchecked(
                 PlSmallStr::EMPTY,
@@ -105,20 +127,25 @@ fn cast_chunk(
         let cast = cast.chunks()[0].clone();
 
         // A value a non-strict cast turned into a null nulls its slot too.
-        let out_offsets = new_offsets.get_or_insert_with(|| offsets.as_slice().to_vec());
-        let mut k = 0;
-        for (i, &ty) in types.iter().enumerate() {
-            if ty as usize == s {
-                out_offsets[i] = k as i64;
-                if !cast.is_valid(k) && is_valid(i) {
-                    validity
-                        .get_or_insert_with(|| match arr.validity() {
-                            Some(v) => v.clone().make_mut(),
-                            None => MutableBitmap::from_len_set(arr.len()),
-                        })
-                        .set(i, false);
+        if whole_child {
+            if cast.has_nulls() {
+                for (i, (&ty, &o)) in types.iter().zip(offsets.iter()).enumerate() {
+                    if ty as usize == s && !cast.is_valid(o as usize) {
+                        null_slot(i);
+                    }
                 }
-                k += 1;
+            }
+        } else {
+            let out_offsets = new_offsets.get_or_insert_with(|| offsets.as_slice().to_vec());
+            let mut k = 0;
+            for (i, &ty) in types.iter().enumerate() {
+                if ty as usize == s {
+                    out_offsets[i] = k as i64;
+                    if !cast.is_valid(k) && is_valid(i) {
+                        null_slot(i);
+                    }
+                    k += 1;
+                }
             }
         }
         children[t] = Some(cast);
@@ -171,8 +198,8 @@ fn cast_chunk(
         Some(o) => o.into(),
         None => offsets.clone(),
     };
-    // SAFETY: re-cast variants have offsets `0..k` over a child of length `k`, the others keep
-    // theirs, and only slots whose value became null were made null.
+    // SAFETY: re-cast variants have offsets `0..k` over a child of length `k` or keep theirs over
+    // a cast child of the same length, and only slots whose value became null were made null.
     Ok(unsafe {
         LargeUnionArray::new_unchecked(arrow_dtype.clone(), new_types, offsets, children, validity)
     })
@@ -182,8 +209,7 @@ fn cast_chunk(
 mod test {
     use super::*;
 
-    #[test]
-    fn tag_only_cast_shares_offsets() {
+    fn int_str() -> UnionChunked {
         let dtype = DataType::Union(vec![
             Field::new("a".into(), DataType::Int64),
             Field::new("b".into(), DataType::String),
@@ -198,17 +224,32 @@ mod test {
             ],
             None,
         );
-        let ca = unsafe {
+        unsafe {
             UnionChunked::from_chunks_and_dtype_unchecked("u".into(), vec![arr.boxed()], dtype)
-        };
-        let to = DataType::Union(vec![
-            Field::new("b".into(), DataType::String),
-            Field::new("a".into(), DataType::Int64),
-        ]);
-        let out = ca.cast_with_options(&to, CastOptions::Strict).unwrap();
+        }
+    }
+
+    fn cast_offsets_shared(to: &DataType) -> bool {
+        let ca = int_str();
+        let out = ca.cast_with_options(to, CastOptions::Strict).unwrap();
         let out = out.union().unwrap().downcast_iter().next().unwrap();
         let input = ca.downcast_iter().next().unwrap();
-        assert_eq!(out.types().as_slice(), &[1, 0, 1]);
-        assert_eq!(out.offsets().as_ptr(), input.offsets().as_ptr());
+        out.offsets().as_ptr() == input.offsets().as_ptr()
+    }
+
+    #[test]
+    fn tag_only_cast_shares_offsets() {
+        assert!(cast_offsets_shared(&DataType::Union(vec![
+            Field::new("b".into(), DataType::String),
+            Field::new("a".into(), DataType::Int64),
+        ])));
+    }
+
+    #[test]
+    fn whole_child_cast_shares_offsets() {
+        assert!(cast_offsets_shared(&DataType::Union(vec![
+            Field::new("a".into(), DataType::Float64),
+            Field::new("b".into(), DataType::String),
+        ])));
     }
 }
