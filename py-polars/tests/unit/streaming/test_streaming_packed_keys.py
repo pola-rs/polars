@@ -197,15 +197,35 @@ def test_join_keys_out_of_stale_range(
     assert_engines_equal(out, q)
 
 
-def test_sampled_range_is_not_used(
+def test_sampled_scan_has_exact_range(
     tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    # More row groups than the planner reads statistics of, so the ranges are
-    # estimates.
+    # More row groups than the planner samples the other statistics of. Every
+    # 11th row group only holds a null `a`.
     lf = scan(tmp_path, "keys", keys(3000), row_group_size=1)
     q = lf.group_by("a", "b").agg(pl.col("v").sum())
     out, layouts = packed_layouts(q, plmonkeypatch, capfd)
-    assert layouts == []
+    assert layouts == ["u32 [0..10) range of 1000 [10..16) range of 37"]
+    assert_engines_equal(out, q)
+
+
+def test_column_missing_from_sampled_row_groups_has_exact_range(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # Only the last row group holds `a`, and the planner doesn't sample it.
+    pl.DataFrame(schema={"a": pl.Int64, "b": pl.Int64}).write_parquet(
+        tmp_path / "0.parquet"
+    )
+    pl.DataFrame({"b": pl.int_range(4097, eager=True) % 7}).write_parquet(
+        tmp_path / "1.parquet", row_group_size=1
+    )
+    pl.DataFrame({"a": [3, 900], "b": [1, 2]}).write_parquet(tmp_path / "2.parquet")
+    lf = pl.scan_parquet(
+        [tmp_path / f"{i}.parquet" for i in range(3)], missing_columns="insert"
+    )
+    q = lf.group_by("a", "b").len()
+    out, layouts = packed_layouts(q, plmonkeypatch, capfd)
+    assert layouts == ["u32 [0..10) range of 898 [10..13) range of 7"]
     assert_engines_equal(out, q)
 
 
