@@ -7,7 +7,7 @@ import math
 import re
 import zlib
 from collections import OrderedDict
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal as D
 from io import BytesIO
 from typing import TYPE_CHECKING, Any
@@ -1080,3 +1080,26 @@ def test_read_ndjson_small_integers_16167() -> None:
 
     with pytest.raises(ComputeError, match="cannot parse '-1'"):
         pl.read_ndjson(io.BytesIO(b'{"a": -1}\n'), schema={"a": pl.UInt8})
+
+
+def test_read_ndjson_time_duration_30017() -> None:
+    data = b'{"t": "12:34:56", "d": 1}\n{"t": 1000000000, "d": null}\n'
+    schema = {"t": pl.Time(), "d": pl.Duration("us")}
+    df = pl.read_ndjson(io.BytesIO(data), schema=schema)
+    expected = pl.DataFrame(
+        {
+            "t": [time(12, 34, 56), time(0, 0, 1)],
+            "d": [timedelta(microseconds=1), None],
+        },
+        schema=schema,
+    )
+    assert_frame_equal(df, expected)
+
+    f = io.BytesIO()
+    df.select("t").write_ndjson(f)
+    f.seek(0)
+    assert_frame_equal(pl.read_ndjson(f, schema={"t": pl.Time}), df.select("t"))
+
+    for dtype in schema.values():
+        with pytest.raises(ComputeError, match="cannot parse 'PT1S'"):
+            pl.read_ndjson(io.BytesIO(b'{"a": "PT1S"}\n'), schema={"a": dtype})
