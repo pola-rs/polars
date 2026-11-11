@@ -6,7 +6,7 @@ import pytest
 
 import polars as pl
 from polars._typing import PolarsDataType, TimeUnit
-from polars.exceptions import ComputeError, InvalidOperationError, OutOfBoundsError
+from polars.exceptions import ComputeError, InvalidOperationError, OutOfBoundsError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -60,6 +60,56 @@ def test_scatter() -> None:
     with pytest.raises(OutOfBoundsError):
         a[-100] = None
     assert_series_equal(a, pl.Series("x", [1, 2]))
+
+
+
+@pytest.mark.parametrize(
+    ("indices", "values"),
+    [
+        ([0, 1, 2], [7, 8]),
+        ([0, 2], [7, 8, 9]),
+        ([0, 2], []),
+        ([0], [7, 8]),
+    ],
+)
+def test_scatter_mismatched_value_lengths_30713(
+    indices: list[int], values: list[int]
+) -> None:
+    s = pl.Series("s", [1, 2, 3, 4])
+    with pytest.raises(ShapeError, match="scatter expects one value or"):
+        s.scatter(indices, values)
+    assert s.to_list() == [1, 2, 3, 4]
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype"),
+    [
+        (["x", "y"], pl.String),
+        ([False, True], pl.Boolean),
+        (["a", "b"], pl.Categorical),
+    ],
+)
+def test_scatter_mismatched_value_lengths_dtypes_30713(
+    values: list[Any], dtype: PolarsDataType
+) -> None:
+    s = pl.Series("s", ["a", "b", "a"] if dtype == pl.Categorical else [None] * 3, dtype=dtype)
+    before = s.to_list()
+    with pytest.raises(ShapeError):
+        s.scatter([0, 1, 2], values)
+    assert s.to_list() == before
+
+
+def test_scatter_mismatched_value_lengths_setitem_30713() -> None:
+    s = pl.Series("s", [1, 2, 3, 4])
+    with pytest.raises(ShapeError):
+        s[[0, 1, 2]] = [7, 8]
+    assert s.to_list() == [1, 2, 3, 4]
+
+    # A single replacement value still broadcasts to multiple indices.
+    assert s.scatter([0, 2], [9]).to_list() == [9, 2, 9, 4]
+
+    # An empty selection remains a no-op even with multiple values.
+    assert s.scatter([], [7, 8]).to_list() == [9, 2, 9, 4]
 
 
 def test_index_with_None_errors_16905() -> None:
