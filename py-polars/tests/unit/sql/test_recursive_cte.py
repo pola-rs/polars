@@ -867,9 +867,8 @@ def test_recursive_stops_when_its_rows_are_not_read(query: str, height: int) -> 
           FROM t
         )
         """
-        + query,
-        eager=True,
-    )
+        + query
+    ).collect(engine="streaming")
     assert res.height == height
 
 
