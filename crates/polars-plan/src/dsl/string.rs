@@ -174,12 +174,11 @@ impl StringNameSpace {
             })
             .collect::<Vec<_>>();
 
-        let dtype = DataType::Struct(
+        let dtype = DataType::Struct(StructFields::try_from_iter(
             names
                 .iter()
-                .map(|name| Field::new(name.clone(), DataType::String))
-                .collect(),
-        );
+                .map(|name| Field::new(name.clone(), DataType::String)),
+        )?);
 
         Ok(self.0.map_unary(StringFunction::ExtractGroups {
             dtype,

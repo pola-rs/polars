@@ -7,6 +7,8 @@ use std::sync::Arc;
 use edge::Edge;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::frame::DataFrame;
+#[cfg(feature = "dtype-struct")]
+use polars_core::prelude::StructFields;
 use polars_core::prelude::{Column, DataType, IdxSize, PlIndexMap, ScratchIndexMap};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
@@ -2773,7 +2775,7 @@ fn small_dummy_column(name: PlSmallStr, height: usize) -> Column {
     // Prefer 0-field struct if possible, as it doesn't need validity allocation when
     // materialized.
     #[cfg(feature = "dtype-struct")]
-    let dtype = DataType::Struct(Vec::new());
+    let dtype = DataType::Struct(StructFields::default());
     #[cfg(not(feature = "dtype-struct"))]
     let dtype = DataType::Null;
 

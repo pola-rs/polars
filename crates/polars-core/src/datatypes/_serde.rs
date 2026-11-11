@@ -79,7 +79,7 @@ enum SerializableDataType {
     Array(Box<SerializableDataType>, usize),
     Null,
     #[cfg(feature = "dtype-struct")]
-    Struct(Vec<Field>),
+    Struct(StructFields),
     #[cfg(feature = "dtype-map")]
     Map(Box<SerializableDataType>, Box<SerializableDataType>),
     // some logical types we cannot know statically, e.g. Datetime

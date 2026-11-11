@@ -554,13 +554,16 @@ impl ColumnSelectorBuilder {
                                 MissingColumnsPolicy::Insert => {
                                     ColumnSelector::Constant(Box::new((
                                         output_column.name.clone(),
-                                        iceberg_default_value_provider
+                                        match iceberg_default_value_provider
                                             .map(|x| build_iceberg_default_value(x, output_column))
                                             .transpose()?
                                             .flatten()
-                                            .unwrap_or_else(|| {
-                                                Scalar::null(output_column.type_.to_polars_dtype())
-                                            }),
+                                        {
+                                            Some(default) => default,
+                                            None => {
+                                                Scalar::null(output_column.type_.to_polars_dtype()?)
+                                            },
+                                        },
                                     )))
                                 },
                                 MissingColumnsPolicy::Raise => {
@@ -664,8 +667,8 @@ impl ColumnSelectorBuilder {
                             return mismatch_err("physical ID mismatch for map values column");
                         }
 
-                        let incoming_key_dtype = incoming_key.type_.to_polars_dtype();
-                        let target_key_dtype = target_key.type_.to_polars_dtype();
+                        let incoming_key_dtype = incoming_key.type_.to_polars_dtype()?;
+                        let target_key_dtype = target_key.type_.to_polars_dtype()?;
 
                         let Ok(cast_key) =
                             incoming_key_dtype.matches_schema_type(&target_key_dtype)
@@ -686,7 +689,7 @@ impl ColumnSelectorBuilder {
 
                         if cast_key {
                             selector = ColumnTransform::Cast {
-                                dtype: target_column.type_.to_polars_dtype(),
+                                dtype: target_column.type_.to_polars_dtype()?,
                                 options: CastOptions::NonStrict,
                             }
                             .into_selector(selector);
@@ -831,7 +834,7 @@ pub fn build_iceberg_default_value_impl(
                     assert_eq!(default.len(), 1);
                     default.with_name(field.name.clone())
                 } else {
-                    Column::full_null(field.name.clone(), 1, &field.type_.to_polars_dtype())
+                    Column::full_null(field.name.clone(), 1, &field.type_.to_polars_dtype()?)
                 });
             }
 

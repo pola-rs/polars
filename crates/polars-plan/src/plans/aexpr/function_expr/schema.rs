@@ -216,7 +216,7 @@ impl IRFunctionExpr {
                     .collect::<PolarsResult<Vec<_>>>()?;
                 Ok(Field::new(
                     fields[0].name().clone(),
-                    DataType::Struct(struct_fields),
+                    DataType::Struct(StructFields::try_new(struct_fields)?),
                 ))
             },
             #[cfg(feature = "top_k")]
@@ -229,16 +229,16 @@ impl IRFunctionExpr {
                 parallel: _,
                 name,
                 normalize,
-            } => mapper.map_dtype(|dt| {
+            } => mapper.try_map_dtype(|dt| {
                 let count_dt = if *normalize {
                     DataType::Float64
                 } else {
                     IDX_DTYPE
                 };
-                DataType::Struct(vec![
+                Ok(DataType::Struct(StructFields::try_new(vec![
                     Field::new(fields[0].name().clone(), dt.clone()),
                     Field::new(name.clone(), count_dt),
-                ])
+                ])?))
             }),
             #[cfg(feature = "unique_counts")]
             UniqueCounts => mapper.with_dtype(IDX_DTYPE),
@@ -286,7 +286,7 @@ impl IRFunctionExpr {
                         ));
                     }
                     fields.push(Field::new(PlSmallStr::from_static("count"), IDX_DTYPE));
-                    mapper.with_dtype(DataType::Struct(fields))
+                    mapper.with_dtype(DataType::Struct(StructFields::try_new(fields)?))
                 } else {
                     mapper.with_dtype(IDX_DTYPE)
                 }
@@ -444,10 +444,10 @@ impl IRFunctionExpr {
                     cut_labels.iter().map(|s| s.as_str()),
                 )?);
                 if *include_breaks {
-                    let struct_dt = DataType::Struct(vec![
+                    let struct_dt = DataType::Struct(StructFields::try_new(vec![
                         Field::new(PlSmallStr::from_static("breakpoint"), DataType::Float64),
                         Field::new(PlSmallStr::from_static("category"), enum_dtype),
-                    ]);
+                    ])?);
                     mapper.with_dtype(struct_dt)
                 } else {
                     mapper.with_dtype(enum_dtype)
@@ -476,13 +476,13 @@ impl IRFunctionExpr {
                 include_breaks: true,
                 ..
             } => {
-                let struct_dt = DataType::Struct(vec![
+                let struct_dt = DataType::Struct(StructFields::try_new(vec![
                     Field::new(PlSmallStr::from_static("breakpoint"), DataType::Float64),
                     Field::new(
                         PlSmallStr::from_static("category"),
                         DataType::from_categories(Categories::global()),
                     ),
-                ]);
+                ])?);
                 mapper.with_dtype(struct_dt)
             },
             #[cfg(feature = "cutqcut")]
@@ -506,18 +506,18 @@ impl IRFunctionExpr {
                 }
                 // The input has been converted to the correct type during DSL -> IR conversion.
                 let bound = mapper.args()[0].dtype().clone();
-                mapper.with_dtype(DataType::Struct(vec![
+                mapper.with_dtype(DataType::Struct(StructFields::try_new(vec![
                     Field::new(PlSmallStr::from_static("bin"), bin_dtype),
                     Field::new(PlSmallStr::from_static("left"), bound.clone()),
                     Field::new(PlSmallStr::from_static("right"), bound),
-                ]))
+                ])?))
             },
             #[cfg(feature = "rle")]
-            RLE => mapper.map_dtype(|dt| {
-                DataType::Struct(vec![
+            RLE => mapper.try_map_dtype(|dt| {
+                Ok(DataType::Struct(StructFields::try_new(vec![
                     Field::new(PlSmallStr::from_static("len"), IDX_DTYPE),
                     Field::new(PlSmallStr::from_static("value"), dt.clone()),
-                ])
+                ])?))
             }),
             #[cfg(feature = "rle")]
             RLEID => mapper.with_dtype(IDX_DTYPE),
@@ -544,13 +544,14 @@ impl IRFunctionExpr {
             },
             #[cfg(feature = "dtype-struct")]
             CumReduceHorizontal { return_dtype, .. } => match return_dtype {
-                None => mapper.with_dtype(DataType::Struct(fields.to_vec())),
-                Some(dtype) => mapper.with_dtype(DataType::Struct(
+                None => {
+                    mapper.with_dtype(DataType::Struct(StructFields::try_new(fields.to_vec())?))
+                },
+                Some(dtype) => mapper.with_dtype(DataType::Struct(StructFields::try_from_iter(
                     fields
                         .iter()
-                        .map(|f| Field::new(f.name().clone(), dtype.clone()))
-                        .collect(),
-                )),
+                        .map(|f| Field::new(f.name().clone(), dtype.clone())),
+                )?)),
             },
             #[cfg(feature = "dtype-struct")]
             CumFoldHorizontal {
@@ -558,20 +559,18 @@ impl IRFunctionExpr {
                 include_init,
                 ..
             } => match return_dtype {
-                None => mapper.with_dtype(DataType::Struct(
+                None => mapper.with_dtype(DataType::Struct(StructFields::try_from_iter(
                     fields
                         .iter()
                         .skip(usize::from(!include_init))
-                        .map(|f| Field::new(f.name().clone(), fields[0].dtype().clone()))
-                        .collect(),
-                )),
-                Some(dtype) => mapper.with_dtype(DataType::Struct(
+                        .map(|f| Field::new(f.name().clone(), fields[0].dtype().clone())),
+                )?)),
+                Some(dtype) => mapper.with_dtype(DataType::Struct(StructFields::try_from_iter(
                     fields
                         .iter()
                         .skip(usize::from(!include_init))
-                        .map(|f| Field::new(f.name().clone(), dtype.clone()))
-                        .collect(),
-                )),
+                        .map(|f| Field::new(f.name().clone(), dtype.clone())),
+                )?)),
             },
 
             MaxHorizontal => mapper.map_to_supertype(),
@@ -624,7 +623,9 @@ impl IRFunctionExpr {
                 Ok(Field::new(PlSmallStr::from_static("row_encoded"), dtype))
             }),
             #[cfg(feature = "dtype-struct")]
-            RowDecode { fields, .. } => mapper.with_dtype(DataType::Struct(fields.to_vec())),
+            RowDecode { fields, .. } => {
+                mapper.with_dtype(DataType::Struct(StructFields::try_new(fields.to_vec())?))
+            },
             DynamicPred { .. } | DynamicSkipBatch { .. } => mapper.with_dtype(DataType::Boolean),
         }
     }

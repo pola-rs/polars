@@ -295,7 +295,7 @@ unsafe impl PolarsDataType for StructType {
     where
         Self: Sized,
     {
-        DataType::Struct(vec![])
+        DataType::Struct(StructFields::default())
     }
 }
 

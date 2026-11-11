@@ -466,10 +466,9 @@ pub fn get_supertype_with_options(
             }
             #[cfg(feature = "dtype-struct")]
             (Struct(fields_a), rhs) if rhs.is_primitive_numeric() => {
-                let mut new_fields = Vec::with_capacity(fields_a.len());
-                for a in fields_a {
-                    let st = get_supertype(&a.dtype, rhs)?;
-                    new_fields.push(Field::new(a.name.clone(), st))
+                let mut new_fields = fields_a.clone();
+                for dtype in new_fields.dtypes_mut() {
+                    *dtype = get_supertype(dtype, rhs)?;
                 }
                 Some(Struct(new_fields))
             }
@@ -617,24 +616,23 @@ fn union_struct_fields(fields_a: &[Field], fields_b: &[Field]) -> Option<DataTyp
         .into_iter()
         .map(|(name, dtype)| Field::new(name.clone(), dtype))
         .collect::<Vec<_>>();
-    Some(DataType::Struct(new_fields))
+    // The names are the keys of `longest_map`.
+    Some(DataType::Struct(StructFields::try_new(new_fields).unwrap()))
 }
 
 #[cfg(feature = "dtype-struct")]
-fn super_type_structs(fields_a: &[Field], fields_b: &[Field]) -> Option<DataType> {
-    if fields_a.len() != fields_b.len() {
-        union_struct_fields(fields_a, fields_b)
-    } else {
-        let mut new_fields = Vec::with_capacity(fields_a.len());
-        for (a, b) in fields_a.iter().zip(fields_b) {
-            if a.name != b.name {
-                return union_struct_fields(fields_a, fields_b);
-            }
-            let st = get_supertype(&a.dtype, &b.dtype)?;
-            new_fields.push(Field::new(a.name.clone(), st))
-        }
-        Some(DataType::Struct(new_fields))
+fn super_type_structs(fields_a: &StructFields, fields_b: &StructFields) -> Option<DataType> {
+    if fields_a.len() != fields_b.len()
+        || fields_a.iter().zip(fields_b).any(|(a, b)| a.name != b.name)
+    {
+        return union_struct_fields(fields_a, fields_b);
     }
+
+    let mut new_fields = fields_a.clone();
+    for (dtype, b) in new_fields.dtypes_mut().zip(fields_b) {
+        *dtype = get_supertype(dtype, &b.dtype)?;
+    }
+    Some(DataType::Struct(new_fields))
 }
 
 pub fn materialize_dyn_int(v: i128) -> AnyValue<'static> {

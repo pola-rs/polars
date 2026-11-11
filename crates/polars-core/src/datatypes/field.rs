@@ -156,11 +156,11 @@ impl DataType {
         Box::new(self)
     }
 
-    pub fn from_arrow_field(field: &ArrowField) -> DataType {
+    pub fn from_arrow_field(field: &ArrowField) -> PolarsResult<DataType> {
         Self::from_arrow(&field.dtype, field.metadata.as_deref())
     }
 
-    pub fn from_arrow_dtype(dt: &ArrowDataType) -> DataType {
+    pub fn from_arrow_dtype(dt: &ArrowDataType) -> PolarsResult<DataType> {
         Self::from_arrow(dt, None)
     }
 
@@ -182,8 +182,9 @@ impl DataType {
         }
     }
 
-    pub fn from_arrow(dt: &ArrowDataType, md: Option<&Metadata>) -> DataType {
-        match dt {
+    /// Errors if a struct has duplicate field names.
+    pub fn from_arrow(dt: &ArrowDataType, md: Option<&Metadata>) -> PolarsResult<DataType> {
+        Ok(match dt {
             ArrowDataType::Null => DataType::Null,
             ArrowDataType::UInt8 => DataType::UInt8,
             ArrowDataType::UInt16 => DataType::UInt16,
@@ -204,10 +205,10 @@ impl DataType {
             ArrowDataType::Float64 => DataType::Float64,
             #[cfg(feature = "dtype-array")]
             ArrowDataType::FixedSizeList(f, size) => {
-                DataType::Array(DataType::from_arrow_field(f).boxed(), *size)
+                DataType::Array(DataType::from_arrow_field(f)?.boxed(), *size)
             },
             ArrowDataType::LargeList(f) | ArrowDataType::List(f) => {
-                DataType::List(DataType::from_arrow_field(f).boxed())
+                DataType::List(DataType::from_arrow_field(f)?.boxed())
             },
             ArrowDataType::Date32 => DataType::Date,
             ArrowDataType::Timestamp(tu, tz) => {
@@ -264,14 +265,17 @@ impl DataType {
                 ) {
                     DataType::from_categories(Categories::global())
                 } else {
-                    Self::from_arrow(value_type, None)
+                    Self::from_arrow(value_type, None)?
                 }
             },
 
             #[cfg(feature = "dtype-struct")]
-            ArrowDataType::Struct(fields) => {
-                DataType::Struct(fields.iter().map(|fld| fld.into()).collect())
-            },
+            ArrowDataType::Struct(fields) => DataType::Struct(StructFields::try_new(
+                fields
+                    .iter()
+                    .map(Field::try_from)
+                    .collect::<PolarsResult<Vec<_>>>()?,
+            )?),
             #[cfg(not(feature = "dtype-struct"))]
             ArrowDataType::Struct(_) => {
                 panic!("activate the 'dtype-struct' feature to handle struct data types")
@@ -289,7 +293,7 @@ impl DataType {
             #[cfg(feature = "dtype-extension")]
             ArrowDataType::Extension(ext) => {
                 use crate::prelude::extension::get_extension_type_or_storage;
-                let storage = DataType::from_arrow(&ext.inner, md);
+                let storage = DataType::from_arrow(&ext.inner, md)?;
                 match get_extension_type_or_storage(&ext.name, &storage, ext.metadata.as_deref()) {
                     Some(typ) => DataType::Extension(typ, Box::new(storage)),
                     None => storage,
@@ -315,7 +319,7 @@ impl DataType {
             ArrowDataType::LargeBinary | ArrowDataType::Binary => DataType::Binary,
             ArrowDataType::FixedSizeBinary(_) => DataType::Binary,
             ArrowDataType::Map(inner, _keys_sorted) => {
-                let entries = Self::from_arrow_field(inner);
+                let entries = Self::from_arrow_field(inner)?;
                 #[cfg(feature = "dtype-map")]
                 let map = entries.map_from_positional_entries_dtype();
                 #[cfg(not(feature = "dtype-map"))]
@@ -334,12 +338,14 @@ impl DataType {
                 "Arrow datatype {dt:?} not supported by Polars. \
                 You probably need to activate that data-type feature."
             ),
-        }
+        })
     }
 }
 
-impl From<&ArrowField> for Field {
-    fn from(f: &ArrowField) -> Self {
-        Field::new(f.name.clone(), DataType::from_arrow_field(f))
+impl TryFrom<&ArrowField> for Field {
+    type Error = PolarsError;
+
+    fn try_from(f: &ArrowField) -> PolarsResult<Self> {
+        Ok(Field::new(f.name.clone(), DataType::from_arrow_field(f)?))
     }
 }

@@ -85,32 +85,33 @@ pub enum IcebergColumnType {
 }
 
 impl IcebergColumnType {
-    pub fn to_polars_dtype(&self) -> DataType {
+    /// Errors if a struct has duplicate field names.
+    pub fn to_polars_dtype(&self) -> PolarsResult<DataType> {
         use IcebergColumnType::*;
 
-        match self {
+        Ok(match self {
             Primitive { dtype } => dtype.clone(),
-            List(inner) => DataType::List(Box::new(inner.type_.to_polars_dtype())),
+            List(inner) => DataType::List(Box::new(inner.type_.to_polars_dtype()?)),
             FixedSizeList(inner, width) => {
                 feature_gated!("dtype-array", {
-                    DataType::Array(Box::new(inner.type_.to_polars_dtype()), *width)
+                    DataType::Array(Box::new(inner.type_.to_polars_dtype()?), *width)
                 })
             },
             Map(key, value) => feature_gated!("dtype-map", {
                 DataType::Map(
-                    Box::new(key.type_.to_polars_dtype()),
-                    Box::new(value.type_.to_polars_dtype()),
+                    Box::new(key.type_.to_polars_dtype()?),
+                    Box::new(value.type_.to_polars_dtype()?),
                 )
             }),
             Struct(fields) => feature_gated!("dtype-struct", {
-                DataType::Struct(
+                DataType::Struct(crate::datatypes::StructFields::try_new(
                     fields
                         .values()
-                        .map(|col| Field::new(col.name.clone(), col.type_.to_polars_dtype()))
-                        .collect(),
-                )
+                        .map(|col| Ok(Field::new(col.name.clone(), col.type_.to_polars_dtype()?)))
+                        .collect::<PolarsResult<_>>()?,
+                )?)
             }),
-        }
+        })
     }
 
     pub fn is_nested(&self) -> bool {
@@ -225,11 +226,11 @@ fn arrow_field_to_iceberg_column_rec(
                 if let Some(metadata) = field.metadata.as_ref() {
                     new_field = new_field.with_metadata((**metadata).clone());
                 }
-                let dtype = DataType::from_arrow_field(&new_field);
+                let dtype = DataType::from_arrow_field(&new_field)?;
 
                 IcebergColumnType::Primitive { dtype }
             } else if let ADT::Extension(ext_type) = dtype
-                && let DataType::Binary = DataType::from_arrow_dtype(&ext_type.inner)
+                && let Ok(DataType::Binary) = DataType::from_arrow_dtype(&ext_type.inner)
             {
                 // Iceberg UUID type will hit this branch.
                 IcebergColumnType::Primitive {
@@ -242,8 +243,11 @@ fn arrow_field_to_iceberg_column_rec(
                     dtype,
                 )
             } else {
-                let dtype =
-                    DataType::from_arrow_field(&ArrowField::new(name.clone(), dtype.clone(), true));
+                let dtype = DataType::from_arrow_field(&ArrowField::new(
+                    name.clone(),
+                    dtype.clone(),
+                    true,
+                ))?;
 
                 IcebergColumnType::Primitive { dtype }
             }

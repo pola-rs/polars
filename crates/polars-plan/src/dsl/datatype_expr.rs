@@ -151,7 +151,7 @@ fn into_datatype_impl(
         D::Struct(dt_expr, f) => {
             let fields: Vec<Field> = match into_datatype_impl(*dt_expr, schema, self_dtype)? {
                 #[cfg(feature = "dtype-struct")]
-                DataType::Struct(fields) => fields,
+                DataType::Struct(fields) => fields.into_vec(),
                 dt => polars_bail!(InvalidOperation: "`{dt}` is not a `struct`"),
             };
             match f {
@@ -196,7 +196,7 @@ fn into_datatype_impl(
             )
         }),
         D::StructWithFields(field_exprs) => feature_gated!("dtype-struct", {
-            use polars_core::prelude::{Field, InitHashMaps, PlIndexSet};
+            use polars_core::prelude::{Field, InitHashMaps, PlIndexSet, StructFields};
             let mut seen = PlIndexSet::with_capacity(field_exprs.len());
             let mut fields = Vec::with_capacity(field_exprs.len());
             for (name, dt_expr) in field_exprs {
@@ -209,7 +209,7 @@ fn into_datatype_impl(
                 }
                 fields.push(Field::new(name, dt));
             }
-            DataType::Struct(fields)
+            DataType::Struct(StructFields::try_new(fields)?)
         }),
     };
 

@@ -1,8 +1,6 @@
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
-#[cfg(feature = "dtype-struct")]
-use polars_core::prelude::Field;
 use polars_core::prelude::{ArrowDataType, ArrowField, DataType, PlIndexMap};
 use polars_utils::pl_str::PlSmallStr;
 
@@ -193,18 +191,12 @@ impl FieldSelection {
     pub fn prune_dtype(&self, dtype: &DataType) -> DataType {
         match (self, dtype) {
             #[cfg(feature = "dtype-struct")]
-            (Self::Fields(fields), DataType::Struct(dtype_fields)) => DataType::Struct(
-                dtype_fields
-                    .iter()
-                    .filter_map(|field| {
-                        let selection = fields.get(field.name())?;
-                        Some(Field::new(
-                            field.name().clone(),
-                            selection.prune_dtype(field.dtype()),
-                        ))
-                    })
-                    .collect(),
-            ),
+            (Self::Fields(fields), DataType::Struct(dtype_fields)) => {
+                DataType::Struct(dtype_fields.filter_map_fields(|field| {
+                    let selection = fields.get(field.name())?;
+                    Some(selection.prune_dtype(field.dtype()))
+                }))
+            },
             (Self::Element(element), DataType::List(inner)) => {
                 DataType::List(Box::new(element.prune_dtype(inner)))
             },
@@ -383,6 +375,8 @@ impl fmt::Display for ScanFieldSelection {
 
 #[cfg(test)]
 mod tests {
+    use polars_core::prelude::{Field, StructFields};
+
     use super::*;
 
     fn fields(names: &[(&str, FieldSelection)]) -> FieldSelection {
@@ -431,22 +425,28 @@ mod tests {
     fn test_normalize_and_prune() {
         use FieldSelection as FS;
 
-        let inner = DataType::Struct(vec![
-            Field::new("x".into(), DataType::Int64),
-            Field::new("y".into(), DataType::String),
-        ]);
-        let dtype = DataType::Struct(vec![
-            Field::new("a".into(), DataType::Int64),
-            Field::new("b".into(), inner.clone()),
-        ]);
+        let inner = DataType::Struct(
+            StructFields::try_new(vec![
+                Field::new("x".into(), DataType::Int64),
+                Field::new("y".into(), DataType::String),
+            ])
+            .unwrap(),
+        );
+        let dtype = DataType::Struct(
+            StructFields::try_new(vec![
+                Field::new("a".into(), DataType::Int64),
+                Field::new("b".into(), inner.clone()),
+            ])
+            .unwrap(),
+        );
 
         let s = fields(&[("b", fields(&[("y", FS::All)]))]);
         assert_eq!(
             s.prune_dtype(&dtype),
-            DataType::Struct(vec![Field::new(
+            DataType::Struct(StructFields::from(Field::new(
                 "b".into(),
-                DataType::Struct(vec![Field::new("y".into(), DataType::String)])
-            )])
+                DataType::Struct(Field::new("y".into(), DataType::String).into())
+            )))
         );
 
         let s = fields(&[
@@ -459,7 +459,7 @@ mod tests {
         assert_eq!(FS::validity_only().normalize(&dtype), FS::validity_only());
         assert_eq!(
             FS::validity_only().prune_dtype(&dtype),
-            DataType::Struct(vec![])
+            DataType::Struct(StructFields::default())
         );
     }
 
@@ -514,10 +514,13 @@ mod tests {
         s.insert_child("b".into(), FS::All);
         assert_eq!(s, FS::All);
 
-        let element = DataType::Struct(vec![
-            Field::new("a".into(), DataType::Int64),
-            Field::new("b".into(), DataType::String),
-        ]);
+        let element = DataType::Struct(
+            StructFields::try_new(vec![
+                Field::new("a".into(), DataType::Int64),
+                Field::new("b".into(), DataType::String),
+            ])
+            .unwrap(),
+        );
         let list = DataType::List(Box::new(element.clone()));
 
         assert_eq!(
@@ -551,15 +554,15 @@ mod tests {
 
         assert_eq!(
             FS::element(b.clone()).prune_dtype(&list),
-            DataType::List(Box::new(DataType::Struct(vec![Field::new(
+            DataType::List(Box::new(DataType::Struct(StructFields::from(Field::new(
                 "b".into(),
                 DataType::String
-            )])))
+            )))))
         );
         #[cfg(feature = "dtype-array")]
         assert_eq!(
             FS::element(FS::validity_only()).prune_dtype(&DataType::Array(Box::new(element), 3)),
-            DataType::Array(Box::new(DataType::Struct(vec![])), 3)
+            DataType::Array(Box::new(DataType::Struct(StructFields::default())), 3)
         );
 
         let outer = FS::element(fields(&[("a", FS::All), ("b", a.clone())]));

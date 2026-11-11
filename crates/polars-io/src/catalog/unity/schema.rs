@@ -1,4 +1,4 @@
-use polars_core::prelude::{DataType, Field};
+use polars_core::prelude::{DataType, Field, StructFields};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::{PolarsResult, polars_bail, polars_err, to_compute_err};
 use polars_utils::error::TruncateErrorDetail;
@@ -124,7 +124,7 @@ pub fn parse_type_json(type_json: &ColumnTypeJson) -> PolarsResult<DataType> {
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                DataType::Struct(fields)
+                DataType::Struct(StructFields::try_new(fields)?)
             },
 
             "map" => {
@@ -142,7 +142,7 @@ pub fn parse_type_json(type_json: &ColumnTypeJson) -> PolarsResult<DataType> {
                     )
                 })?;
 
-                DataType::List(Box::new(DataType::Struct(vec![
+                DataType::List(Box::new(DataType::Struct(StructFields::try_new(vec![
                     Field::new(
                         PlSmallStr::from_static("key"),
                         parse_type_json_type(key_type)?,
@@ -151,7 +151,7 @@ pub fn parse_type_json(type_json: &ColumnTypeJson) -> PolarsResult<DataType> {
                         PlSmallStr::from_static("value"),
                         parse_type_json_type(value_type)?,
                     ),
-                ])))
+                ])?)))
             },
 
             name => parse_type_text(name)?,

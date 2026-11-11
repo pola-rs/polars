@@ -21,7 +21,7 @@ pub fn field_to_rust_arrow(obj: Bound<'_, PyAny>) -> PyResult<ArrowField> {
 }
 
 pub fn field_to_rust(obj: Bound<'_, PyAny>) -> PyResult<Field> {
-    field_to_rust_arrow(obj).map(|f| (&f).into())
+    Ok(Field::try_from(&field_to_rust_arrow(obj)?).map_err(PyPolarsErr::from)?)
 }
 
 // PyList<Field> which you get by calling `list(schema)`
@@ -90,10 +90,10 @@ pub fn to_rust_df(
         let columns = schema
             .iter_values()
             .map(|field| {
-                let field = Field::from(field);
-                Series::new_empty(field.name, &field.dtype).into_column()
+                let field = Field::try_from(field).map_err(PyPolarsErr::from)?;
+                Ok(Series::new_empty(field.name, &field.dtype).into_column())
             })
-            .collect::<Vec<_>>();
+            .collect::<PyResult<Vec<_>>>()?;
 
         // no need to check as a record batch has the same guarantees
         return Ok(unsafe { DataFrame::new_unchecked_infer_height(columns) });

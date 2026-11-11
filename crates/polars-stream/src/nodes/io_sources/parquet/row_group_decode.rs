@@ -185,7 +185,7 @@ impl RowGroupDecoder {
             .chain(
                 self.projected_arrow_fields
                     .iter()
-                    .map(|p| Column::new_empty(p.output_name().clone(), &p.output_dtype())),
+                    .map(|p| Column::new_empty(p.output_name().clone(), p.output_dtype())),
             )
             .collect();
         unsafe { DataFrame::new_unchecked(0, columns) }
@@ -418,7 +418,7 @@ fn decode_column(
             Column::full_null(
                 arrow_field.name.clone(),
                 expected_num_rows,
-                &DataType::from_arrow_field(arrow_field),
+                &DataType::from_arrow_field(arrow_field)?,
             ),
             Bitmap::default(),
         ));
@@ -1004,7 +1004,7 @@ fn decode_column_prefiltered(
         return Ok(Column::full_null(
             arrow_field.name.clone(),
             expected_num_rows,
-            &DataType::from_arrow_field(arrow_field),
+            &DataType::from_arrow_field(arrow_field)?,
         ));
     };
 

@@ -159,7 +159,7 @@ pub(super) async fn dsl_to_ir(
                 unified_scan_args.hive_options.schema.clone(),
                 match file_schema {
                     Either::Left(v) => {
-                        owned = Some(Schema::from_arrow_schema(v.as_ref()));
+                        owned = Some(Schema::from_arrow_schema(v.as_ref())?);
                         owned.as_ref().unwrap()
                     },
                     Either::Right(v) => v.as_ref(),
@@ -577,7 +577,7 @@ pub(super) async fn parquet_file_info(
     };
 
     let schema = prepare_output_schema(
-        Schema::from_arrow_schema(resolved.reader_schema.as_ref()),
+        Schema::from_arrow_schema(resolved.reader_schema.as_ref())?,
         row_index,
     )?;
 
@@ -871,7 +871,7 @@ fn row_group_stats(
         },
         _ => field,
     };
-    let dtype = DataType::from_arrow_field(field);
+    let dtype = DataType::from_arrow_field(field).ok()?;
     let bounds = polars_parquet::read::statistics::deserialize_all(
         field,
         std::slice::from_ref(row_group),
@@ -1254,7 +1254,7 @@ pub(super) async fn ipc_file_info(
 
     let file_info = FileInfo::new(
         prepare_output_schema(
-            Schema::from_arrow_schema(metadata.schema.as_ref()),
+            Schema::from_arrow_schema(metadata.schema.as_ref())?,
             row_index,
         )?,
         Some(Either::Left(Arc::clone(&metadata.schema))),

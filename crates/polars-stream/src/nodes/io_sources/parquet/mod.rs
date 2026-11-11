@@ -127,7 +127,7 @@ struct InitializedState {
     file_metadata: Arc<FileMetadata>,
     file_schema: Arc<ArrowSchema>,
     /// The file schema, with pruned struct columns narrowed to the fields read.
-    file_schema_pl: Option<SchemaRef>,
+    file_schema_pl: SchemaRef,
     /// Struct columns read for some of their fields.
     pruned_fields: Arc<PlHashMap<PlSmallStr, Arc<PrunedField>>>,
     byte_source: Arc<DynByteSource>,
@@ -220,10 +220,17 @@ impl FileReader for ParquetFileReader {
             None => PlHashMap::default(),
         };
 
+        let mut file_schema_pl = Schema::from_arrow_schema(file_schema.as_ref())?;
+        for (name, pruned) in pruned_fields.iter() {
+            if let Some(dtype) = file_schema_pl.get_mut(name) {
+                *dtype = pruned.dtype.clone();
+            }
+        }
+
         self.init_data = Some(InitializedState {
             file_metadata,
             file_schema,
-            file_schema_pl: None,
+            file_schema_pl: Arc::new(file_schema_pl),
             pruned_fields: Arc::new(pruned_fields),
             byte_source,
         });
@@ -506,24 +513,7 @@ impl FileReader for ParquetFileReader {
 
 impl ParquetFileReader {
     fn _file_schema(&mut self) -> &SchemaRef {
-        let InitializedState {
-            file_schema,
-            file_schema_pl,
-            pruned_fields,
-            ..
-        } = self.init_data.as_mut().unwrap();
-
-        if file_schema_pl.is_none() {
-            let mut schema = Schema::from_arrow_schema(file_schema.as_ref());
-            for (name, pruned) in pruned_fields.iter() {
-                if let Some(dtype) = schema.get_mut(name) {
-                    *dtype = pruned.dtype.clone();
-                }
-            }
-            *file_schema_pl = Some(Arc::new(schema))
-        }
-
-        file_schema_pl.as_ref().unwrap()
+        &self.init_data.as_ref().unwrap().file_schema_pl
     }
 
     fn _file_arrow_schema(&mut self) -> &ArrowSchemaRef {

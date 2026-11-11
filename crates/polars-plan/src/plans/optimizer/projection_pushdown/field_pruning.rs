@@ -11,6 +11,8 @@
 use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
+#[cfg(feature = "dtype-struct")]
+use polars_core::prelude::StructFields;
 use polars_core::prelude::{DataType, PlIndexMap, PlIndexSet};
 use polars_core::schema::Schema;
 #[allow(clippy::disallowed_types)]
@@ -739,7 +741,7 @@ impl<'a> SelectionWalker<'a> {
         let pruned_dtype = selection.prune_dtype(dtype);
         // Not to a struct without fields (validity only), which a `struct.eval` would build.
         #[cfg(feature = "dtype-struct")]
-        if pruned_dtype.contains_dtype_recursive(&DataType::Struct(vec![])) {
+        if pruned_dtype.contains_dtype_recursive(&DataType::Struct(StructFields::default())) {
             return None;
         }
 
@@ -1463,18 +1465,10 @@ fn intersect_dtype(a: &DataType, b: &DataType) -> Option<DataType> {
         #[cfg(feature = "dtype-struct")]
         (DataType::Struct(a_fields), DataType::Struct(b_fields)) => {
             let b_fields = fields_by_name(b_fields);
-            DataType::Struct(
-                a_fields
-                    .iter()
-                    .filter_map(|a| {
-                        let b = b_fields.get(a.name().as_str())?;
-                        Some(polars_core::prelude::Field::new(
-                            a.name().clone(),
-                            intersect_dtype(a.dtype(), b.dtype())?,
-                        ))
-                    })
-                    .collect(),
-            )
+            DataType::Struct(a_fields.filter_map_fields(|a| {
+                let b = b_fields.get(a.name().as_str())?;
+                intersect_dtype(a.dtype(), b.dtype())
+            }))
         },
         (DataType::List(a), DataType::List(b)) => DataType::List(Box::new(intersect_dtype(a, b)?)),
         #[cfg(feature = "dtype-array")]

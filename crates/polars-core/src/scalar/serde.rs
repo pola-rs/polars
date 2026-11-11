@@ -6,6 +6,8 @@ use polars_utils::pl_str::PlSmallStr;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::Scalar;
+#[cfg(feature = "dtype-struct")]
+use crate::prelude::StructFields;
 use crate::prelude::{AnyValue, DataType, Field};
 use crate::series::Series;
 
@@ -331,6 +333,7 @@ impl TryFrom<SerializableScalar> for Scalar {
                     })
                     .collect::<PolarsResult<(Vec<AnyValue<'static>>, Vec<Field>)>>()?;
 
+                let fields = StructFields::try_new(fields)?;
                 let dtype = DataType::Struct(fields.clone());
                 Self::new(dtype, AnyValue::StructOwned(Box::new((avs, fields))))
             },

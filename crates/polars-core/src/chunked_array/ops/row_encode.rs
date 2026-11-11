@@ -149,7 +149,7 @@ pub fn get_row_encoding_layout(
 pub fn rows_dtype(layout: &RowEncodingLayout) -> DataType {
     match layout.dtype() {
         ArrowDataType::LargeBinary => DataType::BinaryOffset,
-        dtype => DataType::from_arrow_dtype(dtype),
+        dtype => DataType::from_arrow_dtype(dtype).unwrap(),
     }
 }
 
@@ -392,7 +392,7 @@ pub fn row_encoding_decode(
         StructChunked::from_chunks_and_dtype(
             rows.name().clone(),
             chunks,
-            DataType::Struct(fields.to_vec()),
+            DataType::Struct(StructFields::try_new(fields.to_vec())?),
         )
     })
 }

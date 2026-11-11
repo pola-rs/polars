@@ -159,7 +159,8 @@ pub fn _parquet_metadata_pruned_json(
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 fn fields_to_pydict(schema: &ArrowSchema, dict: &Bound<'_, PyDict>) -> PyResult<()> {
     for field in schema.iter_values() {
-        let dt = Wrap(polars::prelude::DataType::from_arrow_field(field));
+        let dt =
+            Wrap(polars::prelude::DataType::from_arrow_field(field).map_err(PyPolarsErr::from)?);
         dict.set_item(field.name.as_str(), &dt)?;
     }
     Ok(())

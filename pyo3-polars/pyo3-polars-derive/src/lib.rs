@@ -175,7 +175,7 @@ fn quote_get_inputs() -> proc_macro2::TokenStream {
              let inputs = std::slice::from_raw_parts(field, len);
              let inputs = inputs.iter().map(|field| {
                  let field = polars_arrow::ffi::import_field_from_c(field).unwrap();
-                 let out = polars_core::prelude::Field::from(&field);
+                 let out = polars_core::prelude::Field::try_from(&field).unwrap();
                  out
              }).collect::<Vec<_>>();
     )

@@ -21,7 +21,7 @@ impl Series {
             Self::from_chunks_and_dtype_unchecked(
                 name,
                 vec![Box::new(array)],
-                &DataType::from_arrow_dtype(&A::get_dtype()),
+                &DataType::from_arrow_dtype(&A::get_dtype()).unwrap(),
             )
         }
     }
@@ -441,7 +441,7 @@ impl Series {
             },
             #[cfg(feature = "dtype-categorical")]
             ArrowDataType::Dictionary(key_type, _, _) => {
-                let polars_dtype = DataType::from_arrow(chunks[0].dtype(), md);
+                let polars_dtype = DataType::from_arrow(chunks[0].dtype(), md)?;
 
                 let mut series_iter = chunks.into_iter().map(|arr| {
                     import_arrow_dictionary_array(name.clone(), arr, key_type, &polars_dtype)
@@ -832,7 +832,8 @@ unsafe fn to_physical_and_dtype(
                     }
                 }
 
-                Ok((out_arrays, DataType::Struct(pl_fields.unwrap())))
+                let pl_fields = StructFields::try_new(pl_fields.unwrap())?;
+                Ok((out_arrays, DataType::Struct(pl_fields)))
             })
         },
         // Use Series architecture to convert nested logical types to physical.
@@ -853,7 +854,7 @@ unsafe fn to_physical_and_dtype(
             Ok((std::mem::take(s.chunks_mut()), dtype))
         },
         dt => {
-            let dtype = DataType::from_arrow(dt, md);
+            let dtype = DataType::from_arrow(dt, md)?;
             Ok((arrays, dtype))
         },
     }

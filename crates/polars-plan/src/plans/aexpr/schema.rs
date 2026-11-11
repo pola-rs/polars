@@ -370,15 +370,16 @@ impl AExpr {
                         for field in &eval_fields {
                             fields_map.insert(field.name(), field.dtype());
                         }
-                        DataType::Struct(
+                        DataType::Struct(StructFields::try_from_iter(
                             fields_map
                                 .iter()
-                                .map(|(&name, &dtype)| Field::new(name.clone(), dtype.clone()))
-                                .collect(),
-                        )
+                                .map(|(&name, &dtype)| Field::new(name.clone(), dtype.clone())),
+                        )?)
                     },
                     // Drop the fields of the input Struct that are not selected.
-                    StructEvalVariant::Select => DataType::Struct(eval_fields),
+                    StructEvalVariant::Select => {
+                        DataType::Struct(StructFields::try_new(eval_fields)?)
+                    },
                 };
 
                 let mut out = struct_field.clone();
@@ -517,13 +518,12 @@ fn func_args_to_fields(input: &[ExprIR], ctx: &ToFieldContext) -> PolarsResult<V
 
 #[cfg(feature = "dtype-struct")]
 pub(crate) fn get_struct_numeric_dtype(
-    fields: &[Field],
+    fields: &StructFields,
     numeric: &DataType,
     op: Operator,
 ) -> PolarsResult<DataType> {
     fields
-        .iter()
-        .map(|field| {
+        .try_map_fields(|field| {
             let dtype = match field.dtype() {
                 DataType::Struct(fields) => get_struct_numeric_dtype(fields, numeric, op)?,
                 DataType::Duration(_) if op == Operator::Multiply => field.dtype().clone(),
@@ -586,9 +586,8 @@ pub(crate) fn get_struct_numeric_dtype(
                     dtype,
                 ),
             };
-            Ok(Field::new(field.name.clone(), dtype))
+            Ok(dtype)
         })
-        .collect::<PolarsResult<Vec<_>>>()
         .map(DataType::Struct)
 }
 
@@ -938,7 +937,7 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
                 let field = Field::new(name, get_truediv_dtype(left, right)?);
                 fields.push(field);
             }
-            Struct(fields)
+            Struct(StructFields::try_new(fields)?)
         },
         #[cfg(feature = "dtype-struct")]
         (Struct(fields), numeric) | (numeric, Struct(fields)) if numeric.is_primitive_numeric() => {

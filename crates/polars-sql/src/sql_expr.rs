@@ -1706,7 +1706,9 @@ impl SQLExprVisitor<'_> {
         #[cfg(feature = "json")]
         if dtype == &SQLDataType::JSON {
             // @BROKEN: we cannot handle this.
-            return Ok(expr.str().json_decode(DataType::Struct(Vec::new())));
+            return Ok(expr
+                .str()
+                .json_decode(DataType::Struct(StructFields::default())));
         }
         let polars_type = map_sql_dtype_to_polars(dtype)?;
         if nested_target_name(&polars_type).is_some() {

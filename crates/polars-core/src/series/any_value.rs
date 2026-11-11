@@ -1002,7 +1002,8 @@ fn any_values_to_struct(
         _ => false,
     };
     if strict && let Some(av) = values.iter().find(|av| !av.is_null() && !is_valid(av)) {
-        return Err(invalid_value_error(&DataType::Struct(fields.to_vec()), av));
+        let dtype = DataType::Struct(StructFields::try_new(fields.to_vec())?);
+        return Err(invalid_value_error(&dtype, av));
     }
 
     // Empty struct fast path (no fields, but outer validity still required).
