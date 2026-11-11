@@ -371,6 +371,7 @@ impl std::fmt::Debug for dyn Array + '_ {
             FixedSizeList => fmt_dyn!(self, FixedSizeListArray, f),
             Struct => fmt_dyn!(self, StructArray, f),
             Union => fmt_dyn!(self, UnionArray, f),
+            LargeUnion => fmt_dyn!(self, LargeUnionArray, f),
             Dictionary(key_type) => {
                 match_integer_type!(key_type, |$T| {
                     fmt_dyn!(self, DictionaryArray::<$T>, f)
@@ -400,6 +401,7 @@ pub fn new_empty_array(dtype: ArrowDataType) -> Box<dyn Array> {
         FixedSizeList => Box::new(FixedSizeListArray::new_empty(dtype)),
         Struct => Box::new(StructArray::new_empty(dtype)),
         Union => Box::new(UnionArray::new_empty(dtype)),
+        LargeUnion => Box::new(LargeUnionArray::new_empty(dtype)),
         Map => Box::new(MapArray::new_empty(dtype)),
         Utf8View => Box::new(Utf8ViewArray::new_empty(dtype)),
         BinaryView => Box::new(BinaryViewArray::new_empty(dtype)),
@@ -433,6 +435,7 @@ pub fn new_null_array(dtype: ArrowDataType, length: usize) -> Box<dyn Array> {
         FixedSizeList => Box::new(FixedSizeListArray::new_null(dtype, length)),
         Struct => Box::new(StructArray::new_null(dtype, length)),
         Union => Box::new(UnionArray::new_null(dtype, length)),
+        LargeUnion => Box::new(LargeUnionArray::new_null(dtype, length)),
         Map => Box::new(MapArray::new_null(dtype, length)),
         BinaryView => Box::new(BinaryViewArray::new_null(dtype, length)),
         Utf8View => Box::new(Utf8ViewArray::new_null(dtype, length)),
@@ -655,6 +658,7 @@ pub fn clone(array: &dyn Array) -> Box<dyn Array> {
         FixedSizeList => clone_dyn!(array, FixedSizeListArray),
         Struct => clone_dyn!(array, StructArray),
         Union => clone_dyn!(array, UnionArray),
+        LargeUnion => clone_dyn!(array, LargeUnionArray),
         Map => clone_dyn!(array, MapArray),
         BinaryView => clone_dyn!(array, BinaryViewArray),
         Utf8View => clone_dyn!(array, Utf8ViewArray),
@@ -680,6 +684,7 @@ pub mod builder;
 mod dictionary;
 mod fixed_size_binary;
 mod fixed_size_list;
+mod large_union;
 mod list;
 pub use list::LIST_VALUES_NAME;
 pub use map::{MAP_ENTRIES_NAME, MAP_KEY_NAME, MAP_VALUE_NAME};
@@ -725,6 +730,7 @@ pub use fixed_size_list::{
 pub use fmt::{get_display, get_value_display};
 pub(crate) use iterator::ArrayAccessor;
 pub use iterator::ArrayValuesIter;
+pub use large_union::{LargeUnionArray, LargeUnionArrayBuilder, MAX_UNION_VARIANTS};
 pub use list::{ListArray, ListArrayBuilder, ListValuesIter, MutableListArray};
 pub use map::MapArray;
 pub use null::{MutableNullArray, NullArray, NullArrayBuilder};

@@ -112,6 +112,7 @@ pub fn skip_fixed_size_list(
     dtype: &ArrowDataType,
     buffers: &mut VecDeque<IpcBuffer>,
     variadic_buffer_counts: &mut VecDeque<usize>,
+    version: Version,
 ) -> PolarsResult<()> {
     let _ = field_nodes.pop_front().ok_or_else(|| {
         polars_err!(oos =
@@ -125,5 +126,11 @@ pub fn skip_fixed_size_list(
 
     let (field, _) = FixedSizeListArray::get_child_and_size(dtype);
 
-    skip(field_nodes, field.dtype(), buffers, variadic_buffer_counts)
+    skip(
+        field_nodes,
+        field.dtype(),
+        buffers,
+        variadic_buffer_counts,
+        version,
+    )
 }

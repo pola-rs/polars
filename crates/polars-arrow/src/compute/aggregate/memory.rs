@@ -128,6 +128,17 @@ pub fn estimated_bytes_size(array: &dyn Array) -> usize {
                 .sum::<usize>();
             types + offsets + fields
         },
+        LargeUnion => {
+            let array = array.as_any().downcast_ref::<LargeUnionArray>().unwrap();
+            let fields = array
+                .fields()
+                .iter()
+                .map(|x| estimated_bytes_size(x.as_ref()))
+                .sum::<usize>();
+            array.len() * (size_of::<i8>() + size_of::<i64>())
+                + fields
+                + validity_size(array.validity())
+        },
         Dictionary(key_type) => match_integer_type!(key_type, |$T| {
             let array = array
                 .as_any()

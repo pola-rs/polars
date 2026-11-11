@@ -186,6 +186,10 @@ pub enum ArrowDataType {
     /// Third argument represents mode
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Union(Box<UnionType>),
+    /// A dense union with `i64` offsets and its own validity. Not an Arrow type: Polars uses it
+    /// in memory and converts it to [`ArrowDataType::Union`] at the edges.
+    #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
+    LargeUnion(Vec<Field>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -324,6 +328,7 @@ impl ArrowDataType {
             LargeList(_) => PhysicalType::LargeList,
             Struct(_) => PhysicalType::Struct,
             Union(_) => PhysicalType::Union,
+            LargeUnion(_) => PhysicalType::LargeUnion,
             Map(_, _) => PhysicalType::Map,
             Dictionary(key, _, _) => PhysicalType::Dictionary(*key),
             Extension(ext) => ext.inner.to_physical_type(),
@@ -367,6 +372,12 @@ impl ArrowDataType {
             ),
             Dictionary(keys, _, _) => (*keys).into(),
             Union(_) => unimplemented!(),
+            LargeUnion(fields) => LargeUnion(
+                fields
+                    .iter()
+                    .map(|field| field.with_dtype(field.dtype.underlying_physical_type()))
+                    .collect(),
+            ),
             // Polars stores a Map as its entries, with `i64` offsets. This has to agree with
             // `DataType::Map::to_physical`, which reaches the same place through `LargeList`.
             Map(entries, _) => entries.dtype.underlying_physical_type().to_large_list(true),
@@ -419,6 +430,15 @@ impl ArrowDataType {
                 Dictionary(*keys, Box::new(values.to_storage_recursive()), *is_ordered)
             },
             Union(_) => unimplemented!(),
+            LargeUnion(fields) => LargeUnion(
+                fields
+                    .iter()
+                    .map(|field| Field {
+                        dtype: field.dtype.to_storage_recursive(),
+                        ..field.clone()
+                    })
+                    .collect(),
+            ),
             Map(entries, keys_sorted) => Map(
                 Box::new(Field {
                     dtype: entries.dtype.to_storage_recursive(),
@@ -449,6 +469,7 @@ impl ArrowDataType {
                 | D::FixedSizeList(_, _)
                 | D::Struct(_)
                 | D::Union(_)
+                | D::LargeUnion(_)
                 | D::Map(_, _)
                 | D::Dictionary(_, _, _)
                 | D::Extension(_)
@@ -539,6 +560,7 @@ impl ArrowDataType {
             | D::LargeList(field) => field.dtype().contains_dictionary(),
             D::Struct(fields) => fields.iter().any(|f| f.dtype().contains_dictionary()),
             D::Union(union) => union.fields.iter().any(|f| f.dtype().contains_dictionary()),
+            D::LargeUnion(fields) => fields.iter().any(|f| f.dtype().contains_dictionary()),
             D::Dictionary(_, _, _) => true,
             D::Extension(ext) => ext.inner.contains_dictionary(),
         }

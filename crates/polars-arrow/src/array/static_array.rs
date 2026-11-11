@@ -7,8 +7,8 @@ use crate::array::fixed_size_list::FixedSizeListArrayBuilder;
 use crate::array::static_array_collect::ArrayFromIterDtype;
 use crate::array::{
     Array, ArrayValuesIter, BinaryArray, BinaryValueIter, BinaryViewArray, BooleanArray,
-    FixedSizeListArray, ListArray, ListValuesIter, MutableBinaryViewArray, PrimitiveArray,
-    StructArray, Utf8Array, Utf8ValuesIter, Utf8ViewArray,
+    FixedSizeListArray, LargeUnionArray, ListArray, ListValuesIter, MutableBinaryViewArray,
+    PrimitiveArray, StructArray, Utf8Array, Utf8ValuesIter, Utf8ViewArray,
 };
 use crate::bitmap::Bitmap;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
@@ -400,6 +400,20 @@ impl StaticArray for FixedSizeListArray {
         let mut builder = FixedSizeListArrayBuilder::new(dtype.clone(), make_builder(inner_dt));
         builder.subslice_extend_repeated(&singular_arr, 0, 1, length, ShareStrategy::Always);
         builder.freeze()
+    }
+}
+
+impl StaticArray for LargeUnionArray {
+    type ValueT<'a> = ();
+    type ZeroableValueT<'a> = ();
+    type ValueIterT<'a> = std::iter::Repeat<()>;
+
+    fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
+        self.with_validity(validity)
+    }
+
+    fn full_null(length: usize, dtype: ArrowDataType) -> Self {
+        Self::new_null(dtype, length)
     }
 }
 
