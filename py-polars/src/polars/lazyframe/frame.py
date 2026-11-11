@@ -3142,16 +3142,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             PyIceberg catalog to load the table from if the provided `target`
             was a table identifier.
 
-            This can also be a catalog name, which is kept in the query plan and
-            resolved with `pyiceberg.catalog.load_catalog(name)` in each process
-            that loads the table, including the one that commits. With
-            `create_if_not_exists` or `schema_mode`, the schema of the LazyFrame
-            is read when the sink is set up, so catalog names in the LazyFrame's
-            own scans are resolved then, in the calling process.
-
-            .. warning::
-                Passing a catalog name is considered **unstable**. It may be
-                changed at any point without it being considered a breaking change.
+            This can also be a catalog name, which will be resolved at plan and
+            commit time through `pyiceberg.catalog.load_catalog(name)`.
         storage_options
             Extra options for the storage backends supported by `pyiceberg`.
             For cloud storages, this may include configurations for authentication etc.
