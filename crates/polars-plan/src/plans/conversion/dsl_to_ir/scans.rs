@@ -614,10 +614,16 @@ const DISTINCT_COUNT_REL_ERR: f32 = 1.0;
 #[cfg(feature = "parquet")]
 const CHUNK_BUDGET: usize = 8192;
 
+/// Column chunks whose bounds are read at most to get exact integer ranges of a
+/// sampled scan. A scan with more of them gets ranges from its sampled row groups.
+#[cfg(feature = "parquet")]
+const RANGE_CHUNK_BUDGET: usize = 1 << 20;
+
 /// Fold per-column statistics out of the resolved parquet footers.
 ///
 /// Row groups beyond [`CHUNK_BUDGET`] chunks are sampled, which turns the
-/// per-column counts and ranges into estimates.
+/// per-column counts into estimates. Integer ranges are still folded over all row
+/// groups up to [`RANGE_CHUNK_BUDGET`] chunks, and are estimates beyond it.
 ///
 /// `complete` says whether the footers cover every source. With `keep_row_groups`,
 /// each column's stats also hold the statistics of every sampled row group. Their
@@ -640,11 +646,7 @@ fn parquet_column_stats(
         distinct: Option<u64>,
         /// The column is nested, so leaf null counts are not the root's.
         nested: bool,
-        /// Inclusive integer range folded over the chunks read so far.
-        int_range: Option<(i128, i128)>,
-        /// Set once a chunk carried no range, so part of the column is missing
-        /// from the fold.
-        int_range_incomplete: bool,
+        int_range: IntRangeAcc,
         /// The statistics of this column in each sampled row group, in the order the
         /// row groups are visited, collected only with `keep_row_groups`.
         row_groups: Option<Vec<RowGroupStats>>,
@@ -668,6 +670,15 @@ fn parquet_column_stats(
 
     let stride = n_row_groups.div_ceil((CHUNK_BUDGET / n_columns).max(1));
     let sampled = stride > 1;
+    let n_chunks: usize = metadata
+        .iter()
+        .map(|m| {
+            let n_columns = m.row_groups.first().map_or(0, |rg| rg.n_columns());
+            m.row_groups.len().saturating_mul(n_columns)
+        })
+        .fold(0, usize::saturating_add);
+    let exact_int_ranges =
+        (sampled && n_chunks <= RANGE_CHUNK_BUDGET).then(|| exact_int_ranges(metadata));
 
     #[allow(clippy::disallowed_types)]
     let mut acc: PlHashMap<PlSmallStr, Acc> = PlHashMap::default();
@@ -697,13 +708,14 @@ fn parquet_column_stats(
             };
 
             a.nested |= path.len() > 1;
+            a.int_range.incomplete |= is_nested_chunk(chunk);
 
             // Encrypted columns may be missing metadata if their key is unavailable.
             let (Ok(uncompressed_size), Ok(num_values)) =
                 (chunk.uncompressed_size(), chunk.num_values())
             else {
                 a.nulls_unknown = true;
-                a.int_range_incomplete = true;
+                a.int_range.incomplete = true;
                 // Without this row group, the others would no longer stand for the
                 // sample's rows.
                 a.row_groups = None;
@@ -743,16 +755,8 @@ fn parquet_column_stats(
                 a.distinct = Some(a.distinct.unwrap_or(0).max(d as u64));
             }
 
-            if !a.int_range_incomplete {
-                match chunk_int_range(chunk, footer_buf) {
-                    Some((min, max)) => {
-                        a.int_range = Some(match a.int_range {
-                            Some((lo, hi)) => (lo.min(min), hi.max(max)),
-                            None => (min, max),
-                        });
-                    },
-                    None => a.int_range_incomplete = true,
-                }
+            if exact_int_ranges.is_none() {
+                a.int_range.fold(chunk, footer_buf);
             }
         }
     }
@@ -763,8 +767,18 @@ fn parquet_column_stats(
     // One sampled row group says nothing about how far the others reach.
     let widen_range = sampled && sampled_groups > 1;
 
-    acc.into_iter()
+    let mut columns: ScanColumnStatsMap = acc
+        .into_iter()
         .map(|(name, a)| {
+            let int_range = match &exact_int_ranges {
+                Some(ranges) => ranges.get(&name).and_then(IntRangeAcc::range),
+                None if widen_range => a
+                    .int_range
+                    .range()
+                    .map(|r| widen_sampled_range(r, sampled_groups)),
+                None => a.int_range.range(),
+            };
+            let int_range_sampled = sampled && exact_int_ranges.is_none();
             let stats = ScanColumnStats {
                 distinct: match a.distinct {
                     Some(d) => Card::Approx {
@@ -782,20 +796,35 @@ fn parquet_column_stats(
                     Card::Exact(a.nulls)
                 },
                 avg_byte_width: Some(a.uncompressed as f32 / sampled_rows as f32),
-                int_range: if a.int_range_incomplete || a.nested {
-                    None
-                } else if widen_range {
-                    a.int_range.map(|r| widen_sampled_range(r, sampled_groups))
-                } else {
-                    a.int_range
-                },
-                int_range_partial: !complete || (sampled && !widen_range),
+                int_range: if a.nested { None } else { int_range },
+                int_range_partial: !complete || (int_range_sampled && !widen_range),
                 sampled_row_groups: a.row_groups.map(Arc::from),
-                int_range_sampled: sampled,
+                int_range_sampled,
             };
             (name, stats)
         })
-        .collect()
+        .collect();
+
+    // A column missing from the sampled row groups still has its exact range.
+    for (name, range) in exact_int_ranges.into_iter().flatten() {
+        if let Some(range) = range.range()
+            && !columns.contains_key(&name)
+        {
+            columns.insert(
+                name,
+                ScanColumnStats {
+                    distinct: Card::Unknown,
+                    null_count: Card::Unknown,
+                    avg_byte_width: None,
+                    int_range: Some(range),
+                    int_range_partial: !complete,
+                    sampled_row_groups: None,
+                    int_range_sampled: false,
+                },
+            );
+        }
+    }
+    columns
 }
 
 /// The statistics of one column in one sampled row group, or `None` if the footer
@@ -910,6 +939,113 @@ fn widen_sampled_range((min, max): (i128, i128), groups: u64) -> (i128, i128) {
     (min.saturating_sub(gap), max.saturating_add(gap))
 }
 
+/// An inclusive integer range folded over column chunks.
+#[cfg(feature = "parquet")]
+#[derive(Default, Clone, Copy)]
+struct IntRangeAcc {
+    range: Option<(i128, i128)>,
+    /// Set once a chunk with values carried no range, so part of the column is
+    /// missing from the fold.
+    incomplete: bool,
+}
+
+#[cfg(feature = "parquet")]
+impl IntRangeAcc {
+    fn fold(
+        &mut self,
+        chunk: &polars_parquet::parquet::metadata::ColumnChunkMetadata,
+        footer_buf: &[u8],
+    ) {
+        if self.incomplete {
+            return;
+        }
+        match chunk_int_range(chunk, footer_buf) {
+            Some((min, max)) => {
+                self.range = Some(match self.range {
+                    Some((lo, hi)) => (lo.min(min), hi.max(max)),
+                    None => (min, max),
+                });
+            },
+            None => self.incomplete = !chunk_has_no_values(chunk),
+        }
+    }
+
+    fn merge(&mut self, other: &Self) {
+        self.incomplete |= other.incomplete;
+        self.range = match (self.range, other.range) {
+            (Some((lo, hi)), Some((min, max))) => Some((lo.min(min), hi.max(max))),
+            (a, b) => a.or(b),
+        };
+    }
+
+    fn range(&self) -> Option<(i128, i128)> {
+        self.range.filter(|_| !self.incomplete)
+    }
+}
+
+/// The integer range of each root column, folded over every row group. Nested
+/// columns and columns that are not integers in every file get no range.
+#[cfg(feature = "parquet")]
+#[allow(clippy::disallowed_types)]
+fn exact_int_ranges(
+    metadata: &[polars_io::parquet::metadata::FileMetadataRef],
+) -> PlHashMap<PlSmallStr, IntRangeAcc> {
+    use polars_parquet::parquet::schema::types::PhysicalType;
+
+    let mut ranges: PlHashMap<PlSmallStr, IntRangeAcc> = PlHashMap::default();
+    let mut file_ranges: Vec<IntRangeAcc> = Vec::new();
+    for m in metadata {
+        let Some(first) = m.row_groups.first() else {
+            continue;
+        };
+        let columns = first.parquet_columns();
+        // A column that is no integer here gets no range at all.
+        file_ranges.clear();
+        file_ranges.extend(columns.iter().map(|chunk| IntRangeAcc {
+            range: None,
+            incomplete: is_nested_chunk(chunk)
+                || !matches!(
+                    chunk.physical_type(),
+                    PhysicalType::Int32 | PhysicalType::Int64
+                ),
+        }));
+        for rg in m.row_groups.iter() {
+            for (acc, chunk) in file_ranges.iter_mut().zip(rg.parquet_columns()) {
+                acc.fold(chunk, &m.footer_buf);
+            }
+        }
+        for (acc, chunk) in file_ranges.iter().zip(columns) {
+            let Some(root) = chunk.descriptor().path_in_schema.first() else {
+                continue;
+            };
+            match ranges.get_mut(root) {
+                Some(r) => r.merge(acc),
+                None => {
+                    ranges.insert(root.clone(), *acc);
+                },
+            }
+        }
+    }
+    ranges
+}
+
+/// Whether the chunk is one of several leaves of its column, or holds lists.
+#[cfg(feature = "parquet")]
+fn is_nested_chunk(chunk: &polars_parquet::parquet::metadata::ColumnChunkMetadata) -> bool {
+    let descriptor = chunk.descriptor();
+    descriptor.path_in_schema.len() > 1 || descriptor.descriptor.max_rep_level > 0
+}
+
+/// Whether the footer shows the chunk holds no values, or only nulls.
+#[cfg(feature = "parquet")]
+fn chunk_has_no_values(chunk: &polars_parquet::parquet::metadata::ColumnChunkMetadata) -> bool {
+    match chunk.num_values() {
+        Ok(0) => true,
+        Ok(n) => chunk.null_count().is_some_and(|nulls| nulls >= n),
+        Err(_) => false,
+    }
+}
+
 /// Inclusive integer range of one column chunk, or `None` if it is not an integer
 /// column or carries no usable min/max.
 ///
@@ -921,24 +1057,32 @@ fn chunk_int_range(
     footer_buf: &[u8],
 ) -> Option<(i128, i128)> {
     use polars_parquet::parquet::schema::types::PhysicalType;
-    use polars_parquet::parquet::statistics::Statistics;
 
-    if !matches!(
-        chunk.physical_type(),
-        PhysicalType::Int32 | PhysicalType::Int64
-    ) {
+    let bounds = chunk.raw_bounds(footer_buf)?;
+    if !(bounds.min_is_exact && bounds.max_is_exact) {
         return None;
     }
-    let unsigned = is_unsigned_int(&chunk.descriptor().descriptor.primitive_type);
-    match chunk.statistics(footer_buf)?.ok()? {
-        Statistics::Int32(s) if unsigned => {
-            Some((s.min_value? as u32 as i128, s.max_value? as u32 as i128))
+    let (min, max) = (bounds.min?, bounds.max?);
+    let unsigned = || is_unsigned_int(&chunk.descriptor().descriptor.primitive_type);
+    match chunk.physical_type() {
+        PhysicalType::Int32 => {
+            let min = i32::from_le_bytes(min.try_into().ok()?);
+            let max = i32::from_le_bytes(max.try_into().ok()?);
+            Some(if unsigned() {
+                (min as u32 as i128, max as u32 as i128)
+            } else {
+                (min as i128, max as i128)
+            })
         },
-        Statistics::Int32(s) => Some((s.min_value? as i128, s.max_value? as i128)),
-        Statistics::Int64(s) if unsigned => {
-            Some((s.min_value? as u64 as i128, s.max_value? as u64 as i128))
+        PhysicalType::Int64 => {
+            let min = i64::from_le_bytes(min.try_into().ok()?);
+            let max = i64::from_le_bytes(max.try_into().ok()?);
+            Some(if unsigned() {
+                (min as u64 as i128, max as u64 as i128)
+            } else {
+                (min as i128, max as i128)
+            })
         },
-        Statistics::Int64(s) => Some((s.min_value? as i128, s.max_value? as i128)),
         _ => None,
     }
 }

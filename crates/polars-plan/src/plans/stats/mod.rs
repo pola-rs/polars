@@ -133,8 +133,8 @@ pub struct ScanColumnStats {
     /// Average width of one value in the source, in bytes.
     pub avg_byte_width: Option<f32>,
     /// Inclusive value range of an integer column, folded over the chunks that were
-    /// read. When the chunks were sampled, it is widened by the mean gap between
-    /// them and is an estimate.
+    /// read. When a large scan was sampled, it is widened by the mean gap between
+    /// the samples and is an estimate.
     #[cfg_attr(feature = "serde", serde(default))]
     pub int_range: Option<(i128, i128)>,
     /// `int_range` misses sources whose statistics were not read, or comes from a
