@@ -76,12 +76,12 @@ async fn sample_sink(
     spill_ctx: &MostRecentSpillContext,
 ) -> PolarsResult<()> {
     while let Ok(mut morsel) = recv.recv().await {
-        if morsel.height() == 0 {
-            continue;
-        }
         *len += morsel.height();
         if *len >= limit.load() {
             morsel.source_token().stop();
+        }
+        if morsel.height() == 0 {
+            continue;
         }
 
         drop(morsel.take_consume_token());
