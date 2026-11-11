@@ -147,6 +147,7 @@ dtype-union = [
   "polars-ops/dtype-union",
   "polars-expr/dtype-union",
   "polars-plan/dtype-union",
+  "dtype-categorical",
 ]
 ewma = ["polars-expr/ewma", "polars-plan/ewma"]
 mode = ["polars-expr/mode", "polars-plan/mode"]

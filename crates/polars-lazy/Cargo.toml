@@ -183,6 +183,7 @@ dtype-union = [
   "polars-plan/dtype-union",
   "polars-expr/dtype-union",
   "polars-stream?/dtype-union",
+  "dtype-categorical",
 ]
 dtype-struct = [
   "polars-plan/dtype-struct",
