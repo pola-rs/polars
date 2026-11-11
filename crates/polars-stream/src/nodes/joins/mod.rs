@@ -63,9 +63,9 @@ async fn select_key_columns(
     unsafe { DataFrame::new_unchecked_with_broadcast(df.height(), key_columns) }
 }
 
-/// Buffers the morsels of one side of a join, registered in `spill_ctx`, until its
-/// stream ends or it has `limit` rows. When its stream ends, the other side is
-/// limited to `LOPSIDED_SAMPLE_FACTOR` times its rows: if this input is done,
+/// Buffers the non-empty morsels of one side of a join, registered in `spill_ctx`,
+/// until its stream ends or it has `limit` rows. When its stream ends, the other side
+/// is limited to `LOPSIDED_SAMPLE_FACTOR` times its rows: if this input is done,
 /// sampling ends there, and otherwise it continues in the next phase.
 async fn sample_sink(
     mut recv: PortReceiver,
@@ -76,6 +76,9 @@ async fn sample_sink(
     spill_ctx: &MostRecentSpillContext,
 ) -> PolarsResult<()> {
     while let Ok(mut morsel) = recv.recv().await {
+        if morsel.height() == 0 {
+            continue;
+        }
         *len += morsel.height();
         if *len >= limit.load() {
             morsel.source_token().stop();
