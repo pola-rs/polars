@@ -53,6 +53,8 @@ mod struct_;
 pub mod temporal;
 mod to_vec;
 mod trusted_len;
+#[cfg(feature = "dtype-union")]
+mod union_;
 pub(crate) use arg_min_max::*;
 #[cfg(feature = "dtype-struct")]
 pub use struct_::StructChunked;

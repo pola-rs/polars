@@ -136,6 +136,10 @@ pub enum SerializableScalar {
 
     #[cfg(feature = "dtype-struct")]
     Struct(Vec<(PlSmallStr, SerializableScalar)>),
+
+    /// The variant index, the variants and the value as a scalar of the variant's dtype.
+    #[cfg(feature = "dtype-union")]
+    Union(usize, Vec<Field>, Box<SerializableScalar>),
 }
 
 impl TryFrom<Scalar> for SerializableScalar {
@@ -213,6 +217,13 @@ impl TryFrom<Scalar> for SerializableScalar {
 
             #[cfg(feature = "dtype-array")]
             AnyValue::Array(v, width) => Self::Array(v, width),
+
+            #[cfg(feature = "dtype-union")]
+            av @ (AnyValue::Union(..) | AnyValue::UnionOwned(_)) => {
+                let (tag, value, fields) = av.into_union_owned().unwrap();
+                let inner = Scalar::new(fields[tag].dtype().clone(), value);
+                Self::Union(tag, fields, Box::new(Self::try_from(inner)?))
+            },
 
             #[cfg(feature = "object")]
             AnyValue::Object(..) | AnyValue::ObjectOwned(..) => {
@@ -333,6 +344,12 @@ impl TryFrom<SerializableScalar> for Scalar {
 
                 let dtype = DataType::Struct(fields.clone());
                 Self::new(dtype, AnyValue::StructOwned(Box::new((avs, fields))))
+            },
+            #[cfg(feature = "dtype-union")]
+            S::Union(tag, fields, value) => {
+                let Scalar { value, .. } = Scalar::try_from(*value)?;
+                let dtype = DataType::Union(fields.clone());
+                Self::new(dtype, AnyValue::UnionOwned(Box::new((tag, value, fields))))
             },
         })
     }

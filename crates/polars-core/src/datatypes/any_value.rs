@@ -110,6 +110,11 @@ pub enum AnyValue<'a> {
     Struct(usize, &'a StructArray, &'a [Field]),
     #[cfg(feature = "dtype-struct")]
     StructOwned(Box<(Vec<AnyValue<'static>>, Vec<Field>)>),
+    /// A union value: the variant index, its value and the variants of the union.
+    #[cfg(feature = "dtype-union")]
+    Union(usize, Box<AnyValue<'a>>, &'a [Field]),
+    #[cfg(feature = "dtype-union")]
+    UnionOwned(Box<(usize, AnyValue<'static>, Vec<Field>)>),
     /// An UTF8 encoded string type.
     StringOwned(PlSmallStr),
     Binary(&'a [u8]),
@@ -196,6 +201,12 @@ impl AnyValue<'static> {
                     .collect(),
                 fields.clone(),
             ))),
+            #[cfg(feature = "dtype-union")]
+            DT::Union(fields) => AV::UnionOwned(Box::new((
+                0,
+                AnyValue::default_value(fields[0].dtype(), numeric_to_one, num_list_values),
+                fields.clone(),
+            ))),
             #[cfg(feature = "dtype-map")]
             DT::Map(_, _) => AV::Map(Series::new_empty(
                 PlSmallStr::EMPTY,
@@ -270,6 +281,10 @@ impl<'a> AnyValue<'a> {
             Struct(_, _, fields) => DataType::Struct(fields.to_vec()),
             #[cfg(feature = "dtype-struct")]
             StructOwned(payload) => DataType::Struct(payload.1.clone()),
+            #[cfg(feature = "dtype-union")]
+            Union(_, _, fields) => DataType::Union(fields.to_vec()),
+            #[cfg(feature = "dtype-union")]
+            UnionOwned(payload) => DataType::Union(payload.2.clone()),
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, p, s) => DataType::Decimal(*p, *s),
             #[cfg(feature = "object")]
@@ -405,6 +420,10 @@ impl<'a> AnyValue<'a> {
             AnyValue::Array(s, _) => s.null_count() == s.len(),
             #[cfg(feature = "dtype-struct")]
             AnyValue::Struct(_, _, _) => self._iter_struct_av().all(|av| av.is_nested_null()),
+            #[cfg(feature = "dtype-union")]
+            AnyValue::Union(_, v, _) => v.is_nested_null(),
+            #[cfg(feature = "dtype-union")]
+            AnyValue::UnionOwned(v) => v.1.is_nested_null(),
             _ => false,
         }
     }
@@ -766,6 +785,19 @@ impl<'a> AnyValue<'a> {
                     .collect(),
             ))),
 
+            #[cfg(feature = "dtype-union")]
+            Self::Union(..) | Self::UnionOwned(_) => {
+                let (tag, value, fields) = self.into_static().into_union_owned().unwrap();
+                let fields = fields
+                    .into_iter()
+                    .map(|mut f| {
+                        f.dtype = f.dtype.to_physical();
+                        f
+                    })
+                    .collect();
+                Self::UnionOwned(Box::new((tag, value.to_physical(), fields)))
+            },
+
             #[cfg(feature = "dtype-decimal")]
             Self::Decimal(v, _, _) => Self::Int128(v),
         }
@@ -853,6 +885,8 @@ impl AnyValue<'_> {
         match self {
             #[cfg(feature = "dtype-struct")]
             Struct(..) | StructOwned(..) => 0.hash(state),
+            #[cfg(feature = "dtype-union")]
+            Union(..) | UnionOwned(..) => 1.hash(state),
             StringOwned(v) => std::mem::discriminant(&String(v)).hash(state),
             BinaryOwned(v) => std::mem::discriminant(&Binary(v)).hash(state),
             _ => std::mem::discriminant(self).hash(state),
@@ -927,6 +961,16 @@ impl AnyValue<'_> {
                 if !cheap {
                     v.0.hash(state);
                 }
+            },
+            #[cfg(feature = "dtype-union")]
+            Union(tag, v, _) => {
+                tag.hash(state);
+                v.hash_impl(state, cheap);
+            },
+            #[cfg(feature = "dtype-union")]
+            UnionOwned(v) => {
+                v.0.hash(state);
+                v.1.hash_impl(state, cheap);
             },
             #[cfg(feature = "dtype-decimal")]
             Decimal(v, s, p) => {
@@ -1145,6 +1189,10 @@ impl<'a> AnyValue<'a> {
             },
             #[cfg(feature = "dtype-struct")]
             StructOwned(v) => StructOwned(v),
+            #[cfg(feature = "dtype-union")]
+            Union(tag, v, fields) => UnionOwned(Box::new((tag, v.into_static(), fields.to_vec()))),
+            #[cfg(feature = "dtype-union")]
+            UnionOwned(v) => UnionOwned(v),
             #[cfg(feature = "object")]
             ObjectOwned(v) => ObjectOwned(v),
             #[cfg(feature = "dtype-decimal")]
@@ -1343,6 +1391,12 @@ impl AnyValue<'_> {
                 struct_value_iter(*r_idx, r_arr, r_fields),
                 null_equal,
             ),
+            #[cfg(feature = "dtype-union")]
+            (Union(..) | UnionOwned(_), Union(..) | UnionOwned(_)) => {
+                let (lt, lv) = self.union_parts().unwrap();
+                let (rt, rv) = other.union_parts().unwrap();
+                lt == rt && lv.eq_missing(rv, null_equal)
+            },
             #[cfg(feature = "dtype-decimal")]
             (Decimal(lv, _lp, ls), Decimal(rv, _rp, rs)) => dec128_eq(*lv, *ls, *rv, *rs),
             #[cfg(feature = "object")]
@@ -1372,6 +1426,26 @@ impl AnyValue<'_> {
             },
 
             (_, _) => false,
+        }
+    }
+}
+
+#[cfg(feature = "dtype-union")]
+impl<'a> AnyValue<'a> {
+    /// The variant index and value of a union value.
+    pub fn union_parts(&self) -> Option<(usize, &AnyValue<'_>)> {
+        match self {
+            AnyValue::Union(tag, v, _) => Some((*tag, v.as_ref())),
+            AnyValue::UnionOwned(v) => Some((v.0, &v.1)),
+            _ => None,
+        }
+    }
+
+    /// Splits an owned union value into its variant index, value and variants.
+    pub fn into_union_owned(self) -> Option<(usize, AnyValue<'static>, Vec<Field>)> {
+        match self.into_static() {
+            AnyValue::UnionOwned(v) => Some(*v),
+            _ => None,
         }
     }
 }

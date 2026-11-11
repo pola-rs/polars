@@ -150,6 +150,9 @@ impl Series {
                 );
                 MapChunked::from_storage_unchecked(dtype.clone(), storage).into_series()
             },
+            #[cfg(feature = "dtype-union")]
+            Union(_) => UnionChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype.clone())
+                .into_series(),
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
                 let mut ca =

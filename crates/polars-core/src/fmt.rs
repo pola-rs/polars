@@ -460,6 +460,11 @@ impl Debug for Series {
                 let dt = format!("{}", self.dtype());
                 format_array!(f, self.ext().unwrap(), &dt, self.name(), "Series")
             },
+            #[cfg(feature = "dtype-union")]
+            DataType::Union(_) => {
+                let dt = format!("{}", self.dtype());
+                format_array!(f, self.union().unwrap(), &dt, self.name(), "Series")
+            },
             dt => panic!("{dt:?} not impl"),
         }
     }
@@ -1227,6 +1232,10 @@ impl Display for AnyValue<'_> {
             },
             #[cfg(feature = "dtype-struct")]
             AnyValue::StructOwned(payload) => fmt_struct(f, &payload.0),
+            #[cfg(feature = "dtype-union")]
+            AnyValue::Union(_, v, _) => Display::fmt(v, f),
+            #[cfg(feature = "dtype-union")]
+            AnyValue::UnionOwned(v) => Display::fmt(&v.1, f),
             #[cfg(feature = "dtype-decimal")]
             AnyValue::Decimal(v, _prec, scale) => fmt_decimal(f, *v, *scale),
         }

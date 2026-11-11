@@ -200,6 +200,8 @@ impl Series {
                 .cast(&DataType::Array(inner.clone(), *size))?,
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => any_values_to_struct(values, Some(fields), strict)?,
+            #[cfg(feature = "dtype-union")]
+            DataType::Union(fields) => any_values_to_union(values, dtype, fields, strict)?,
             #[cfg(feature = "object")]
             DataType::Object(_) => any_values_to_object(values)?,
             DataType::Null => Series::new_null(PlSmallStr::EMPTY, values.len()),
@@ -1085,6 +1087,68 @@ fn any_values_to_object(values: &[AnyValue]) -> PolarsResult<Series> {
     }
 
     Ok(builder.to_series())
+}
+
+#[cfg(feature = "dtype-union")]
+fn any_values_to_union(
+    values: &[AnyValue],
+    dtype: &DataType,
+    fields: &[Field],
+    strict: bool,
+) -> PolarsResult<Series> {
+    use polars_arrow::array::LargeUnionArray;
+
+    let mut types = Vec::with_capacity(values.len());
+    let mut offsets = Vec::with_capacity(values.len());
+    let mut child_values: Vec<Vec<AnyValue>> = vec![Vec::new(); fields.len()];
+    for av in values {
+        let av_fields: &[Field] = match av {
+            AnyValue::Union(_, _, f) => f,
+            AnyValue::UnionOwned(payload) => &payload.2,
+            _ => &[],
+        };
+        let same_variants = av_fields
+            .iter()
+            .map(Field::name)
+            .eq(fields.iter().map(Field::name));
+        let (tag, value) = match av.union_parts() {
+            Some((tag, value)) if same_variants => (tag, value.clone()),
+            _ if av.is_null() || !strict => (0, AnyValue::Null),
+            _ => return Err(invalid_value_error(dtype, av)),
+        };
+        types.push(tag as i8);
+        offsets.push(child_values[tag].len() as i64);
+        child_values[tag].push(value);
+    }
+
+    let children = child_values
+        .iter()
+        .zip(fields)
+        .map(|(values, field)| {
+            let s = Series::from_any_values_and_dtype_unnamed(values, field.dtype(), strict)?;
+            Ok(s.to_physical_repr().rechunk().chunks()[0].clone())
+        })
+        .collect::<PolarsResult<Vec<_>>>()?;
+
+    // A slot is valid iff its child value is: that covers nulls and failed non-strict casts.
+    let validity: Bitmap = types
+        .iter()
+        .zip(&offsets)
+        .map(|(&t, &o)| children[t as usize].is_valid(o as usize))
+        .collect();
+    let validity = (validity.unset_bits() > 0).then_some(validity);
+
+    let arr = LargeUnionArray::try_new(
+        dtype.to_physical_arrow(CompatLevel::newest()),
+        types.into(),
+        offsets.into(),
+        children,
+        validity,
+    )?;
+    // SAFETY: the chunk has the physical arrow dtype of `dtype`.
+    Ok(unsafe {
+        Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![arr.boxed()], dtype)
+    })
 }
 
 fn invalid_value_error(dtype: &DataType, value: &AnyValue) -> PolarsError {

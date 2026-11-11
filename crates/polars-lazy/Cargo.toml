@@ -177,7 +177,7 @@ dtype-map = [
   "polars-stream?/dtype-map",
   "polars-expr/dtype-map",
 ]
-dtype-union = ["polars-core/dtype-union", "polars-stream?/dtype-union"]
+dtype-union = ["polars-core/dtype-union", "polars-ops/dtype-union", "polars-stream?/dtype-union"]
 dtype-struct = [
   "polars-plan/dtype-struct",
   "polars-ops/dtype-struct",

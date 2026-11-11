@@ -152,6 +152,9 @@ pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> 
         | DT::Float32
         | DT::Float64 => unreachable!("primitive numeric"),
 
+        #[cfg(feature = "dtype-union")]
+        DT::Union(_) => polars_bail!(opq = index_of, series.dtype()),
+
         // to_physical
         #[cfg(feature = "dtype-map")]
         DT::Map(..) => unreachable!(),
