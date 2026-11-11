@@ -118,6 +118,14 @@ where
                 fields: vec![self.dtype_to_ipc_field(inner)],
                 dictionary_id: None,
             },
+            #[cfg(feature = "dtype-union")]
+            Union(fields) => IpcField {
+                fields: fields
+                    .iter()
+                    .map(|x| self.dtype_to_ipc_field(x.dtype()))
+                    .collect(),
+                dictionary_id: None,
+            },
             Struct(fields) => IpcField {
                 fields: fields
                     .iter()

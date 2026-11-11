@@ -1,3 +1,6 @@
+mod arrow;
+
+pub(crate) use arrow::{union_array_to_arrow, union_from_arrow};
 use polars_arrow::array::builder::{ShareStrategy, StaticArrayBuilder};
 use polars_arrow::array::{LargeUnionArray, LargeUnionArrayBuilder};
 use polars_compute::gather::take_unchecked;

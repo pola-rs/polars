@@ -624,6 +624,16 @@ impl Series {
                 })
             },
 
+            #[cfg(feature = "dtype-union")]
+            ArrowDataType::Union(_) => {
+                let (chunks, dtype) =
+                    crate::chunked_array::union_::union_from_arrow(chunks, |children, field| {
+                        to_physical_and_dtype(children, field.metadata.as_deref())
+                    })?;
+                Ok(Series::from_chunks_and_dtype_unchecked(
+                    name, chunks, &dtype,
+                ))
+            },
             dt => polars_bail!(ComputeError: "cannot create series from {:?}", dt),
         }
     }
@@ -849,6 +859,7 @@ unsafe fn to_physical_and_dtype(
         | ArrowDataType::Decimal(_, _)
         | ArrowDataType::Decimal256(_, _)
         | ArrowDataType::Date64
+        | ArrowDataType::Union(_)
         | ArrowDataType::Map(_, _)) => {
             let dt = dt.clone();
             let mut s = Series::_try_from_arrow_unchecked(PlSmallStr::EMPTY, arrays, &dt)?;
