@@ -86,11 +86,12 @@ impl LargeUnionArrayBuilder {
         }
     }
 
-    /// Appends the given rows of `other`; `None` appends a null.
+    /// Appends the given rows of `other`; `None` appends a null. Works for children of any
+    /// length.
     ///
     /// # Safety
     /// Every `Some(row)` must be in bounds of `other`.
-    unsafe fn extend_rows<I: Iterator<Item = Option<usize>>>(
+    pub unsafe fn extend_rows<I: Iterator<Item = Option<usize>>>(
         &mut self,
         other: &LargeUnionArray,
         rows: I,

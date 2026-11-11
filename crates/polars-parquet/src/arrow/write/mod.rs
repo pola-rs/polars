@@ -1178,7 +1178,7 @@ fn get_encodings_recursive(dtype: &ArrowDataType, encodings: &mut Vec<Encoding>)
                 unreachable!()
             }
         },
-        Union => todo!(),
+        Union | LargeUnion => todo!(),
     }
 }
 

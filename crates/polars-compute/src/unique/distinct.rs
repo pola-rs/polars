@@ -92,7 +92,7 @@ pub fn amortized_unique_from_dtype(dtype: &ArrowDataType) -> Box<dyn AmortizedUn
         P::Utf8 => unreachable!(),
         P::LargeUtf8 => unreachable!(),
         P::List => unreachable!(),
-        P::Union => unreachable!(),
+        P::Union | P::LargeUnion => unreachable!(),
         P::Map => unreachable!(),
 
         // Should be handled through BinaryView.

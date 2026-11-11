@@ -31,6 +31,7 @@ pub mod bitmap;
 pub mod boolean;
 pub mod fixed_size_list;
 pub mod generic_binary;
+mod large_union;
 pub mod list;
 pub mod primitive;
 pub mod structure;
@@ -71,6 +72,10 @@ pub unsafe fn take_unchecked(values: &dyn Array, indices: &IdxArr) -> Box<dyn Ar
             let array = values.as_any().downcast_ref().unwrap();
             Box::new(list::take_unchecked::<i64>(array, indices))
         },
+        LargeUnion => {
+            let array = values.as_any().downcast_ref().unwrap();
+            large_union::take_unchecked(array, indices).boxed()
+        },
         FixedSizeList => {
             let array = values.as_any().downcast_ref().unwrap();
             fixed_size_list::take_unchecked(array, indices)
@@ -103,7 +108,9 @@ pub(crate) fn has_native_take(dtype: &ArrowDataType) -> bool {
     match dtype {
         D::Extension(_) => false,
         D::LargeList(field) | D::FixedSizeList(field, _) => has_native_take(field.dtype()),
-        D::Struct(fields) => fields.iter().all(|f| has_native_take(f.dtype())),
+        D::Struct(fields) | D::LargeUnion(fields) => {
+            fields.iter().all(|f| has_native_take(f.dtype()))
+        },
         // Exhaustive, so new physical types must be classified here.
         dt => match dt.to_physical_type() {
             T::Null | T::Boolean | T::BinaryView | T::Utf8View | T::LargeBinary => true,
@@ -132,6 +139,7 @@ pub(crate) fn has_native_take(dtype: &ArrowDataType) -> bool {
             | T::LargeList
             | T::Struct
             | T::Union
+            | T::LargeUnion
             | T::Map
             | T::Dictionary(_) => false,
         },
