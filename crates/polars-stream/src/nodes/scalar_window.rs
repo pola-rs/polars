@@ -8,7 +8,7 @@ use polars_core::runtime::RAYON;
 use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_expr::groups::{Grouper, new_hash_grouper};
-use polars_expr::hash_keys::HashKeys;
+use polars_expr::hash_keys::{HashKeys, KeyEncoder};
 use polars_expr::reduce::GroupedReduction;
 use polars_ooc::{MostRecentSpillContext, ParameterFreeSpillContext, SpillFrame, memory_manager};
 use polars_utils::IdxSize;
@@ -44,8 +44,8 @@ pub struct ScalarWindowParams {
     pub windows: Vec<ScalarWindow>,
     /// The partition keys and the columns the reductions read.
     pub read_schema: Arc<Schema>,
-    /// The partition keys.
-    pub key_schema: Arc<Schema>,
+    /// Encodes the partition keys.
+    pub key_encoder: KeyEncoder,
     pub output_schema: Arc<Schema>,
 }
 
@@ -117,7 +117,7 @@ impl PartitionedMorsels {
     pub async fn push<C: ParameterFreeSpillContext>(
         &mut self,
         mut morsel: Morsel,
-        partition_by: impl IntoIterator<Item = impl AsRef<str>>,
+        key_encoder: &KeyEncoder,
         read_schema: &Schema,
         partitioner: &HashPartitioner,
         random_state: &PlRandomState,
@@ -140,8 +140,11 @@ impl PartitionedMorsels {
                 self.morsel_bytes.push(df.estimated_size(false));
             }
         }
-        let keys = morsel.df().await.select(partition_by)?;
-        let hash_keys = HashKeys::from_df(&keys, random_state.clone(), true, false);
+        let keys = morsel
+            .df()
+            .await
+            .select(key_encoder.schema().iter_names())?;
+        let hash_keys = key_encoder.hash_keys(&keys, random_state.clone(), true);
         hash_keys.gen_idxs_per_partition(partitioner, &mut self.idxs_per_p, sketches, None, true);
         self.offsets_per_p
             .extend(self.idxs_per_p.iter().map(|idxs| idxs.len()));
@@ -279,7 +282,7 @@ impl ComputeNode for ScalarWindowNode {
                                 .input
                                 .push(
                                     morsel,
-                                    params.key_schema.iter_names(),
+                                    &params.key_encoder,
                                     &params.read_schema,
                                     partitioner,
                                     random_state,
@@ -440,7 +443,7 @@ struct Reducer {
 
 impl Reducer {
     fn new(params: &ScalarWindowParams, estimated_groups: usize) -> Self {
-        let mut grouper = new_hash_grouper(params.key_schema.clone());
+        let mut grouper = new_hash_grouper(&params.key_encoder);
         grouper.reserve(estimated_groups);
         let reductions = params
             .windows
@@ -711,8 +714,10 @@ fn reduce_locally(
     let mut merged = Reducer::new(params, estimated_groups);
     let mut groups = Vec::with_capacity(locals.len());
     for (local, local_morsel_groups) in locals {
-        let keys = local.grouper.get_keys_in_group_order(&params.key_schema);
-        let hash_keys = HashKeys::from_df(&keys, random_state.clone(), true, false);
+        let keys = params.key_encoder.get_keys_in_group_order(&*local.grouper);
+        let hash_keys = params
+            .key_encoder
+            .hash_keys(&keys, random_state.clone(), true);
         let local_groups = (0..local.grouper.num_groups()).collect::<Vec<_>>();
         let mut group_of_local_group = Vec::with_capacity(local_groups.len());
         // SAFETY: the local groups are the rows of `keys`.
