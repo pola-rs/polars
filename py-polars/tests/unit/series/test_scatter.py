@@ -82,17 +82,17 @@ def test_scatter_mismatched_value_lengths_30713(
 
 
 @pytest.mark.parametrize(
-    ("values", "dtype"),
+    ("data", "values", "dtype"),
     [
-        (["x", "y"], pl.String),
-        ([False, True], pl.Boolean),
-        (["a", "b"], pl.Categorical),
+        (["a", "b", "c"], ["x", "y"], pl.String),
+        ([True, False, True], [False, True], pl.Boolean),
+        (["a", "b", "a"], ["a", "b"], pl.Categorical),
     ],
 )
 def test_scatter_mismatched_value_lengths_dtypes_30713(
-    values: list[Any], dtype: PolarsDataType
+    data: list[Any], values: list[Any], dtype: PolarsDataType
 ) -> None:
-    s = pl.Series("s", ["a", "b", "a"] if dtype == pl.Categorical else [None] * 3, dtype=dtype)
+    s = pl.Series("s", data, dtype=dtype)
     before = s.to_list()
     with pytest.raises(ShapeError):
         s.scatter([0, 1, 2], values)
