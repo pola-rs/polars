@@ -97,6 +97,8 @@ pub struct LargeUnionArrayBuilder {
     offsets: Vec<i64>,
     children: Vec<Box<dyn ArrayBuilder>>,
     validity: OptBitmapBuilder,
+    /// Per-variant `(first, last, count)` of a `subslice_extend`, kept to avoid reallocating.
+    ranges: Vec<(i64, i64, i64)>,
 }
 
 impl LargeUnionArrayBuilder {
@@ -111,6 +113,7 @@ impl LargeUnionArrayBuilder {
             offsets: Vec::new(),
             children,
             validity: OptBitmapBuilder::default(),
+            ranges: Vec::new(),
         }
     }
 
@@ -233,41 +236,48 @@ impl StaticArrayBuilder for LargeUnionArrayBuilder {
 
         // Copy each child's referenced range as one subslice if no position in it is skipped.
         let n = other.fields().len();
-        let mut first = vec![i64::MAX; n];
-        let mut last = vec![-1i64; n];
-        let mut count = vec![0i64; n];
+        let mut ranges = std::mem::take(&mut self.ranges);
+        ranges.clear();
+        ranges.resize(n, (i64::MAX, -1, 0));
         for (&t, &o) in types.iter().zip(offsets) {
-            let t = t as usize;
-            first[t] = first[t].min(o);
-            last[t] = o;
-            count[t] += 1;
+            let (first, last, count) = &mut ranges[t as usize];
+            *first = (*first).min(o);
+            *last = o;
+            *count += 1;
         }
-        let contiguous = (0..n).all(|t| count[t] == 0 || last[t] - first[t] + 1 == count[t]);
+        let contiguous = ranges
+            .iter()
+            .all(|&(first, last, count)| count == 0 || last - first + 1 == count);
         if !contiguous {
+            self.ranges = ranges;
             unsafe { self.extend_rows(other, (start..start + length).map(Some), share) };
             return;
         }
 
-        let base: Vec<i64> = (0..n)
-            .map(|t| self.children[t].len() as i64 - first[t].min(last[t]).max(0))
-            .collect();
+        // `last` becomes the shift from positions in `other` to positions in this builder.
+        for (t, (first, last, count)) in ranges.iter_mut().enumerate() {
+            if *count > 0 {
+                *last = self.children[t].len() as i64 - *first;
+            }
+        }
         self.types.extend_from_slice(types);
         self.offsets.extend(
             types
                 .iter()
                 .zip(offsets)
-                .map(|(&t, &o)| o + base[t as usize]),
+                .map(|(&t, &o)| o + ranges[t as usize].1),
         );
-        for t in 0..n {
-            if count[t] > 0 {
+        for (t, &(first, _, count)) in ranges.iter().enumerate() {
+            if count > 0 {
                 self.children[t].subslice_extend(
                     &*other.fields()[t],
-                    first[t] as usize,
-                    count[t] as usize,
+                    first as usize,
+                    count as usize,
                     share,
                 );
             }
         }
+        self.ranges = ranges;
         self.validity
             .subslice_extend_from_opt_validity(other.validity(), start, length);
     }
