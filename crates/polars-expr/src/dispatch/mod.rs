@@ -139,6 +139,8 @@ pub(crate) mod struct_;
 mod temporal;
 #[cfg(feature = "trigonometry")]
 mod trigonometry;
+#[cfg(feature = "dtype-union")]
+mod union_;
 
 pub use groups_dispatch::drop_items;
 
@@ -162,6 +164,8 @@ pub fn function_expr_to_udf(
         F::ListExpr(func) => list::function_expr_to_udf(func),
         #[cfg(feature = "dtype-map")]
         F::MapExpr(func) => map::function_expr_to_udf(func),
+        #[cfg(feature = "dtype-union")]
+        F::UnionExpr(func) => union_::function_expr_to_udf(func),
         #[cfg(feature = "strings")]
         F::StringExpr(func) => strings::function_expr_to_udf(func),
         #[cfg(feature = "dtype-struct")]

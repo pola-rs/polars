@@ -1089,3 +1089,110 @@ def test_union_supertypes() -> None:
     for o in [pl.lit("s"), pl.lit(1), pl.lit(other)]:
         with pytest.raises(pl.exceptions.SchemaError, match="supertype"):
             pl.select(pl.when(True).then(pl.lit(small)).otherwise(o))
+
+
+def variant_of(v: Any) -> str | None:
+    return None if v is None else "s" if isinstance(v, str) else "i"
+
+
+@pytest.mark.parametrize("s", messy_layouts())
+def test_union_tag_and_field(s: pl.Series) -> None:
+    values = to_pylist(s)
+    tag_dtype = pl.Enum(["i", "s"])
+    tags = [variant_of(v) for v in values]
+    assert_series_equal(s.union.tag(), pl.Series("u", tags, dtype=tag_dtype))
+    for name, dtype in [("i", pl.Int64), ("s", pl.String)]:
+        expected = [v if variant_of(v) == name else None for v in values]
+        assert_series_equal(s.union.field(name), pl.Series("u", expected, dtype=dtype))
+
+    lf = (
+        s.to_frame()
+        .lazy()
+        .select(t=pl.col("u").union.tag(), i=pl.col("u").union.field("i"))
+    )
+    assert lf.collect_schema() == {"t": tag_dtype, "i": pl.Int64}
+    for engine in ["in-memory", "streaming"]:
+        out = lf.collect(engine=engine)  # type: ignore[call-overload]
+        assert out["t"].to_list() == tags
+        assert out["i"].to_list() == [
+            v if variant_of(v) == "i" else None for v in values
+        ]
+
+
+def test_union_tag_and_field_errors() -> None:
+    s = messy()
+    with pytest.raises(pl.exceptions.StructFieldNotFoundError, match="no variant `z`"):
+        s.union.field("z")
+    with pytest.raises(InvalidOperationError, match="requires a Union dtype"):
+        pl.Series([1]).union.tag()
+    with pytest.raises(pl.exceptions.StructFieldNotFoundError, match="no variant `z`"):
+        s.to_frame().lazy().select(pl.col("u").union.field("z")).collect_schema()
+
+
+def test_union_value() -> None:
+    df = pl.DataFrame({"x": [1, None, 3], "y": ["a", "b", None]})
+    u = df.select(
+        pl.when(pl.col("x").is_not_null())
+        .then(pl.union_value(INT_STR, i=pl.col("x")))
+        .otherwise(pl.union_value(INT_STR, s=pl.col("y")))
+    ).to_series()
+    assert u.dtype == INT_STR
+    assert to_pylist(u) == [1, "b", 3]
+    assert u.union.tag().to_list() == ["i", "s", "i"]
+
+    # A null value gives a null row.
+    out = df.select(pl.union_value(INT_STR, s=pl.col("y"))).to_series()
+    assert out.null_count() == 1
+    assert out.union.tag().to_list() == ["s", "s", None]
+
+    # Multiple chunks, eager and streaming.
+    x = pl.concat([pl.Series("x", [1, 2]), pl.Series("x", [None, 4])], rechunk=False)
+    lf = x.to_frame().lazy().select(pl.union_value(INT_STR, i=pl.col("x")))
+    for engine in ["in-memory", "streaming"]:
+        out = lf.collect(engine=engine).to_series()  # type: ignore[call-overload]
+        assert to_pylist(out) == [1, 2, None, 4]
+        assert out.union.tag().to_list() == ["i", "i", None, "i"]
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(1, 1), (None, None), (pl.lit(1, pl.Int64), 1)],
+)
+def test_union_value_literals(value: Any, expected: Any) -> None:
+    out = pl.select(pl.union_value(INT_STR, i=value)).to_series()
+    assert out.dtype == INT_STR
+    assert to_pylist(out) == [expected]
+    out = pl.select(pl.union_value(INT_STR, {"s": "a"})).to_series()
+    assert to_pylist(out) == ["a"]
+
+
+@pytest.mark.parametrize(
+    "variant",
+    [
+        {"i": pl.lit(1, pl.Int32)},
+        {"i": 1.5},
+        {"i": "a"},
+        {"s": 1},
+    ],
+)
+def test_union_value_dtype_mismatch(variant: dict[str, Any]) -> None:
+    with pytest.raises(pl.exceptions.SchemaError, match="cast the value first"):
+        pl.select(pl.union_value(INT_STR, variant))
+
+
+def test_union_value_arguments() -> None:
+    dtype = pl.Union({"a b": pl.Int64, "default": pl.String})
+    out = pl.select(
+        pl.union_value(dtype, {"a b": 1}), pl.union_value(dtype, default="x").alias("d")
+    )
+    assert out.dtypes == [dtype, dtype]
+    with pytest.raises(TypeError, match="exactly one variant, got 0"):
+        pl.union_value(INT_STR)
+    with pytest.raises(TypeError, match="exactly one variant, got 2"):
+        pl.union_value(INT_STR, i=1, s="a")
+    with pytest.raises(ValueError, match="more than once"):
+        pl.union_value(INT_STR, {"i": 1}, i=2)
+    with pytest.raises(pl.exceptions.StructFieldNotFoundError, match="no variant `z`"):
+        pl.select(pl.union_value(INT_STR, z=1))
+    with pytest.raises(InvalidOperationError, match="requires a Union dtype"):
+        pl.select(pl.union_value(pl.Int64, i=1))

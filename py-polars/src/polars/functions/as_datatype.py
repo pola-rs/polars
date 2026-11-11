@@ -10,18 +10,25 @@ from polars._utils.parse import (
 )
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.wrap import wrap_expr
-from polars.datatypes import Date, Struct, Time
+from polars.datatypes import Date, Struct, Time, parse_into_datatype_expr
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars._plr as plr
 
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Mapping
     from typing import Literal
 
+    import polars as pl
     from polars import Expr, Series
-    from polars._typing import Ambiguous, IntoExpr, SchemaDict, TimeUnit
+    from polars._typing import (
+        Ambiguous,
+        IntoExpr,
+        PolarsDataType,
+        SchemaDict,
+        TimeUnit,
+    )
 
 
 def datetime_(
@@ -784,6 +791,68 @@ def struct(
         return F.select(expr).to_series()
     else:
         return expr
+
+
+def union_value(
+    dtype: PolarsDataType | pl.DataTypeExpr,
+    variant: Mapping[str, IntoExpr] | None = None,
+    /,
+    **named_variant: IntoExpr,
+) -> Expr:
+    """
+    Build a union in which every row holds the given variant.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed at any
+        point without it being considered a breaking change.
+
+    .. engine-support:: in-memory, streaming
+
+    Parameters
+    ----------
+    dtype
+        The :class:`Union` data type of the result.
+    variant
+        A mapping from one variant name to its value, for names that are not valid
+        keyword arguments.
+    **named_variant
+        The variant name and its value, as one keyword argument.
+
+    Notes
+    -----
+    The value must have the variant's data type, or be null or a literal such as
+    `1`, which takes the variant's data type. Cast other values first. A null
+    value gives a null row.
+
+    Combine constructors with :func:`when` to mix variants.
+
+    Examples
+    --------
+    >>> dtype = pl.Union({"i": pl.Int64, "s": pl.String})
+    >>> df = pl.DataFrame({"x": [1, None, 3], "y": ["a", "b", "c"]})
+    >>> df.select(
+    ...     pl.when(pl.col("x").is_not_null())
+    ...     .then(pl.union_value(dtype, i=pl.col("x")))
+    ...     .otherwise(pl.union_value(dtype, s=pl.col("y")))
+    ... ).to_series().to_list()
+    [1, 'b', 3]
+
+    A variant name that is not a valid keyword argument goes in a mapping:
+
+    >>> dtype = pl.Union({"an int": pl.Int64})
+    >>> pl.select(pl.union_value(dtype, {"an int": 1})).to_series().to_list()
+    [1]
+    """
+    from polars.expr.union import _parse_variant_entries
+
+    entries = _parse_variant_entries(variant, named_variant)
+    if len(entries) != 1:
+        msg = f"`pl.union_value` takes exactly one variant, got {len(entries)}"
+        raise TypeError(msg)
+    ((name, value),) = entries.items()
+    value = parse_into_expression(value, str_as_lit=True)
+    dtype_expr = parse_into_datatype_expr(dtype)._pydatatype_expr
+    return wrap_expr(value.union_value(dtype_expr, name))
 
 
 def concat_str(

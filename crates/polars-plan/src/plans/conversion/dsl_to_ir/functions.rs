@@ -166,6 +166,19 @@ pub(super) fn convert_functions(
                 M::Get => IM::Get { needle_cast: None },
             })
         },
+        #[cfg(feature = "dtype-union")]
+        F::UnionExpr(f) => I::UnionExpr(match f {
+            UnionFunction::Tag => IRUnionFunction::Tag,
+            UnionFunction::Field(name) => IRUnionFunction::Field(name),
+            UnionFunction::Value { dtype, variant } => {
+                let dtype = dtype.into_datatype(ctx.schema)?;
+                let DataType::Union(fields) = &dtype else {
+                    polars_bail!(InvalidOperation: "`pl.union_value` requires a Union dtype, got `{dtype}`");
+                };
+                fields.try_index_of(&variant)?;
+                IRUnionFunction::Value { dtype, variant }
+            },
+        }),
         #[cfg(feature = "dtype-extension")]
         F::Extension(extension_function) => {
             use ExtensionFunction as E;

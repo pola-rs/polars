@@ -97,6 +97,8 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::Extension(_) => false,
         #[cfg(feature = "dtype-map")]
         F::MapExpr(_) => false,
+        #[cfg(feature = "dtype-union")]
+        F::UnionExpr(_) => false,
         F::ListExpr(l) => is_inherently_nondeterministic_list_fn(l),
         #[cfg(feature = "strings")]
         F::StringExpr(_) => false,

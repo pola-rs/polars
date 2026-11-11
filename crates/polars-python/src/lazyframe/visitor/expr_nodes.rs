@@ -1151,6 +1151,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::MapExpr(f) => {
                     return Err(PyNotImplementedError::new_err(format!("{f}")));
                 },
+                IRFunctionExpr::UnionExpr(f) => {
+                    return Err(PyNotImplementedError::new_err(format!("{f}")));
+                },
                 IRFunctionExpr::ListExpr(listfun) => match listfun {
                     IRListFunction::Concat => (PyListFunction::Concat,).into_py_any(py),
                     #[cfg(feature = "is_in")]

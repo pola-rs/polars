@@ -432,6 +432,15 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IM::Get { .. } => M::Get,
             })
         },
+        #[cfg(feature = "dtype-union")]
+        IF::UnionExpr(f) => F::UnionExpr(match f {
+            IRUnionFunction::Tag => UnionFunction::Tag,
+            IRUnionFunction::Field(name) => UnionFunction::Field(name),
+            IRUnionFunction::Value { dtype, variant } => UnionFunction::Value {
+                dtype: DataTypeExpr::Literal(dtype),
+                variant,
+            },
+        }),
         #[cfg(feature = "dtype-extension")]
         IF::Extension(f) => {
             use ExtensionFunction as E;
