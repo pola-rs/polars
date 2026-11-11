@@ -362,7 +362,7 @@ where
         sorted: IsSorted,
         _allow_sharing: bool,
     ) -> Self {
-        let arrow_dtype = self.dtype().to_arrow(CompatLevel::newest());
+        let arrow_dtype = self.dtype().to_physical_arrow(CompatLevel::newest());
 
         let mut out = if !self.has_nulls() {
             let iter = by.iter().map(|chunk_id| {
@@ -402,7 +402,7 @@ where
         by: &[ChunkId<B>],
         _allow_sharing: bool,
     ) -> Self {
-        let arrow_dtype = self.dtype().to_arrow(CompatLevel::newest());
+        let arrow_dtype = self.dtype().to_physical_arrow(CompatLevel::newest());
 
         if !self.has_nulls() {
             let arr = by
