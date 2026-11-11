@@ -189,12 +189,8 @@ impl SeriesTrait for SeriesWrap<UnionChunked> {
         self.0.propagate_nulls().map(IntoSeries::into_series)
     }
 
-    fn cast(&self, dtype: &DataType, _cast_options: CastOptions) -> PolarsResult<Series> {
-        polars_ensure!(
-            dtype == self.dtype(),
-            InvalidOperation: "casting from {} to {} is not supported", self.dtype(), dtype
-        );
-        Ok(self.0.clone().into_series())
+    fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+        self.0.cast_with_options(dtype, cast_options)
     }
 
     unsafe fn get_unchecked(&self, index: usize) -> AnyValue<'_> {

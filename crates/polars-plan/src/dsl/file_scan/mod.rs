@@ -1206,6 +1206,15 @@ impl CastColumnsPolicy {
             return Ok(cast_key || cast_value);
         }
 
+        // Unions are never relaxed: a cast between different unions stays strict.
+        if target_dtype.is_union() {
+            return if incoming_dtype == target_dtype {
+                Ok(false)
+            } else {
+                mismatch_err("")
+            };
+        }
+
         // Eq here should be cheap as we have intercepted all nested types above.
 
         debug_assert!(!target_dtype.is_nested());

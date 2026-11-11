@@ -53,6 +53,15 @@ pub fn check_is_valid_struct_cast(
         (D::List(input_dtype), D::List(output_dtype)) => {
             check_is_valid_struct_cast(input_dtype, output_dtype, output_name)
         },
+        #[cfg(feature = "dtype-union")]
+        (D::Union(l_fields), D::Union(r_fields)) => {
+            for l in l_fields {
+                if let Some(r) = r_fields.iter().find(|r| r.name() == l.name()) {
+                    check_is_valid_struct_cast(l.dtype(), r.dtype(), output_name)?;
+                }
+            }
+            Ok(())
+        },
         #[cfg(feature = "dtype-array")]
         (D::Array(input_dtype, _), D::Array(output_dtype, _)) => {
             check_is_valid_struct_cast(input_dtype, output_dtype, output_name)

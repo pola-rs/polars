@@ -607,6 +607,19 @@ impl DataType {
                 true
             },
 
+            // Variants are matched by name; the values of a missing one become nulls.
+            #[cfg(feature = "dtype-union")]
+            (D::Union(l_fields), D::Union(r_fields)) => {
+                for l in l_fields {
+                    if let Some(r) = r_fields.iter().find(|r| r.name() == l.name())
+                        && !l.dtype().can_cast_to(r.dtype())?
+                    {
+                        return Some(false);
+                    }
+                }
+                true
+            },
+
             // @NOTE: we are being conservative
             _ => return None,
         })

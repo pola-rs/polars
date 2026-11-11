@@ -855,3 +855,93 @@ def test_union_zip_large_child() -> None:
     mask = pl.Series([i % 3 == 0 for i in range(10)])
     out = five.zip_with(mask, five.reverse())
     assert to_pylist(out) == [{}] * 10
+
+
+def test_union_cast_variants_by_name() -> None:
+    s = messy()
+    values = s.to_list()
+    # Reordering the variants only remaps the tags.
+    flipped = s.cast(pl.Union({"s": pl.String, "i": pl.Int64}))
+    assert to_pylist(flipped) == values
+    assert to_pa(flipped).type_codes.to_pylist() == [
+        1 - t for t in to_pa(s).type_codes.to_pylist()
+    ]
+    # A new variant stays empty; a re-cast variant converts its values.
+    wider = s.cast(pl.Union({"i": pl.Float64, "s": pl.String, "b": pl.Boolean}))
+    assert wider.dtype == pl.Union({"i": pl.Float64, "s": pl.String, "b": pl.Boolean})
+    assert to_pylist(wider) == [float(v) if isinstance(v, int) else v for v in values]
+
+    for inp in messy_layouts():
+        out = inp.cast(pl.Union({"i": pl.Int32, "s": pl.Categorical()}))
+        assert to_pylist(out) == inp.to_list()
+
+
+def test_union_cast_nulls() -> None:
+    all_null = pl.Series([None, None], dtype=pl.Union({"i": pl.Int64}))
+    for s in [all_null, all_null.head(1), messy().shift(2), messy().slice(4, 1)]:
+        out = s.cast(pl.Union({"i": pl.Float64, "s": pl.String}))
+        assert to_pylist(out) == s.to_list()
+
+
+def test_union_cast_non_strict_nulls_slot() -> None:
+    s = pl.Series(
+        dense([0, 1, 1], [0, 0, 1], [pa.array([1]), pa.array(["x", "7"])], ["i", "s"])
+    )
+    out = s.cast(pl.Union({"i": pl.Int64, "s": pl.Int64}), strict=False)
+    assert to_pylist(out) == [1, None, 7]
+    assert out.null_count() == 1
+    with pytest.raises(InvalidOperationError):
+        s.cast(pl.Union({"i": pl.Int64, "s": pl.Int64}))
+
+
+def test_union_cast_strict_ignores_unheld_values() -> None:
+    # "bad" is not referenced by any slot.
+    s = pl.Series(
+        dense([0, 1], [0, 1], [pa.array([1]), pa.array(["bad", "42"])], ["i", "s"])
+    )
+    assert s.cast(pl.Union({"i": pl.Int64, "s": pl.Int64})).to_list() == [1, 42]
+
+    # "bad" is under a null slot: the struct null is pushed into the union.
+    u = dense(
+        [0, 1, 1], [0, 0, 1], [pa.array([1]), pa.array(["bad", "42"])], ["i", "s"]
+    )
+    st = pl.Series(
+        pa.StructArray.from_arrays([u], ["u"], mask=pa.array([False, True, False]))
+    )
+    masked = st.struct.field("u")
+    assert masked.to_list() == [1, None, "42"]
+    out = masked.cast(pl.Union({"i": pl.Int64, "s": pl.Int64}))
+    assert to_pylist(out) == [1, None, 42]
+
+
+def test_union_cast_dropped_variant() -> None:
+    s = messy()
+    to = pl.Union({"s": pl.String})
+    with pytest.raises(InvalidOperationError, match="variant `i` is not in the target"):
+        s.cast(to)
+    out = s.cast(to, strict=False)
+    assert to_pylist(out) == [v if isinstance(v, str) else None for v in s.to_list()]
+    # Only null slots hold `i` here, so a strict cast succeeds.
+    strings = s.filter(pl.Series([False, True, False, True, True, True, False]))
+    assert strings.to_list() == ["b", "a", None, "b"]
+    assert to_pylist(strings.cast(to)) == ["b", "a", None, "b"]
+
+    five = pl.concat([pl.Series(big_union())] * 5, rechunk=True)
+    out = five.cast(pl.Union({"x": pl.Int8}), strict=False)
+    assert to_pylist(out) == [None] * 10
+    kept = five.cast(pl.Union({"x": pl.Int8, "e": pl.Struct({})}))
+    assert kept.null_count() == 0
+    assert to_pylist(kept.gather([9, 0])) == [{}, {}]
+
+
+def test_union_cast_lazy() -> None:
+    s = messy()
+    to = pl.Union({"s": pl.String, "i": pl.Float64})
+    out = s.to_frame().lazy().select(pl.col("u").cast(to)).collect()["u"]
+    assert to_pylist(out) == [
+        float(v) if isinstance(v, int) else v for v in s.to_list()
+    ]
+    with pytest.raises(InvalidOperationError, match="not in the target"):
+        s.to_frame().lazy().select(
+            pl.col("u").cast(pl.Union({"s": pl.String}))
+        ).collect()

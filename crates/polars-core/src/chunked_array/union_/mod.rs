@@ -1,4 +1,5 @@
 mod arrow;
+mod cast;
 
 pub(crate) use arrow::{union_array_to_arrow, union_from_arrow};
 use polars_arrow::array::builder::{ShareStrategy, StaticArrayBuilder};
