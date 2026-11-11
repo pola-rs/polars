@@ -67,7 +67,7 @@ def test_scatter() -> None:
     assert_series_equal(a, pl.Series("x", [1, 2]))
 
 
-@pytest.mark.parametrize
+@pytest.mark.parametrize(
     ("indices", "values"),
     [
         ([0, 1, 2], [7, 8]),
