@@ -9,7 +9,7 @@ import warnings
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import pytest
 
@@ -23,8 +23,14 @@ pytest.importorskip("pyiceberg.catalog.sql")
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchTableError, ServerError
 
-if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
+from tests.unit.io.conftest import (
+    failing_catalog_resolver,
+    recording_catalog_resolver,
+    reset_iceberg_catalog_resolver,  # noqa: F401
+)
+
+# No test leaves a catalog resolver installed for the next one.
+pytestmark = pytest.mark.usefixtures("reset_iceberg_catalog_resolver")
 
 
 class CountingCatalog(SqlCatalog):  # type: ignore[misc]
@@ -5630,39 +5636,17 @@ def test_catalog_metadata_tables_concurrent_first_load(lake: CountingCatalog) ->
     assert lake.loads == [("tpch", "lineitem")]
 
 
-@pytest.fixture
-def _reset_catalog_resolver() -> Iterator[None]:
-    yield
-    set_iceberg_catalog_resolver(None)
-
-
-def _recording_resolver(catalog: Any) -> tuple[Callable[[str], Any], list[str]]:
-    names: list[str] = []
-
-    def resolve(name: str) -> Any:
-        names.append(name)
-        return catalog
-
-    return resolve, names
-
-
-def _fail_resolver(name: str) -> Any:
-    pytest.fail(f"resolver called for {name!r}")
-
-
 @pytest.mark.write_disk
-@pytest.mark.usefixtures("_reset_catalog_resolver")
 def test_register_catalog_by_name_is_lazy(lake: CountingCatalog) -> None:
-    set_iceberg_catalog_resolver(_fail_resolver)
+    set_iceberg_catalog_resolver(failing_catalog_resolver)
     ctx = pl.SQLContext().register_catalog("lake", default_namespace="tpch")
 
     assert isinstance(ctx.execute("SELECT * FROM lake.lineitem"), pl.LazyFrame)
 
 
 @pytest.mark.write_disk
-@pytest.mark.usefixtures("_reset_catalog_resolver")
 def test_register_catalog_by_name_reads(lake: CountingCatalog) -> None:
-    resolver, names = _recording_resolver(lake)
+    resolver, names = recording_catalog_resolver(lake)
     set_iceberg_catalog_resolver(resolver)
     ctx = pl.SQLContext().register_catalog("lake", default_namespace="tpch")
 
@@ -5673,9 +5657,8 @@ def test_register_catalog_by_name_reads(lake: CountingCatalog) -> None:
 
 
 @pytest.mark.write_disk
-@pytest.mark.usefixtures("_reset_catalog_resolver")
 def test_register_catalog_by_name_reads_metadata_tables(lake: CountingCatalog) -> None:
-    resolver, names = _recording_resolver(lake)
+    resolver, names = recording_catalog_resolver(lake)
     set_iceberg_catalog_resolver(resolver)
     ctx = pl.SQLContext().register_catalog("lake", default_namespace="tpch")
 
@@ -5686,9 +5669,8 @@ def test_register_catalog_by_name_reads_metadata_tables(lake: CountingCatalog) -
 
 
 @pytest.mark.write_disk
-@pytest.mark.usefixtures("_reset_catalog_resolver")
 def test_register_catalog_alias_resolves_given_name(lake: CountingCatalog) -> None:
-    resolver, names = _recording_resolver(lake)
+    resolver, names = recording_catalog_resolver(lake)
     set_iceberg_catalog_resolver(resolver)
     ctx = pl.SQLContext().register_catalog("sales", "lake", default_namespace="tpch")
 
@@ -5699,18 +5681,17 @@ def test_register_catalog_alias_resolves_given_name(lake: CountingCatalog) -> No
 
 
 @pytest.mark.write_disk
-@pytest.mark.usefixtures("_reset_catalog_resolver")
 def test_register_catalog_by_name_serializes_only_the_name(
     lake: CountingCatalog,
 ) -> None:
-    set_iceberg_catalog_resolver(_fail_resolver)
+    set_iceberg_catalog_resolver(failing_catalog_resolver)
     ctx = pl.SQLContext().register_catalog("lake", default_namespace="tpch")
     data = ctx.execute("SELECT * FROM lake.lineitem").serialize()
 
     assert b"sqlite" not in data
     assert b"CountingCatalog" not in data
 
-    resolver, names = _recording_resolver(lake)
+    resolver, names = recording_catalog_resolver(lake)
     set_iceberg_catalog_resolver(resolver)
     res = pl.LazyFrame.deserialize(io.BytesIO(data)).collect()
 
@@ -5719,11 +5700,10 @@ def test_register_catalog_by_name_serializes_only_the_name(
 
 
 @pytest.mark.write_disk
-@pytest.mark.usefixtures("_reset_catalog_resolver")
 def test_register_catalog_by_name_write_statement_resolves_locally(
     lake: CountingCatalog,
 ) -> None:
-    resolver, names = _recording_resolver(lake)
+    resolver, names = recording_catalog_resolver(lake)
     set_iceberg_catalog_resolver(resolver)
     ctx = pl.SQLContext().register_catalog("lake")
 
@@ -5734,11 +5714,10 @@ def test_register_catalog_by_name_write_statement_resolves_locally(
 
 
 @pytest.mark.write_disk
-@pytest.mark.usefixtures("_reset_catalog_resolver")
 def test_register_catalog_by_name_statement_query_resolves_by_name(
     lake: CountingCatalog,
 ) -> None:
-    resolver, names = _recording_resolver(lake)
+    resolver, names = recording_catalog_resolver(lake)
     set_iceberg_catalog_resolver(resolver)
     ctx = pl.SQLContext().register_catalog("lake", default_namespace="tpch")
 
@@ -5755,11 +5734,10 @@ def test_register_catalog_by_name_statement_query_resolves_by_name(
 
 
 @pytest.mark.write_disk
-@pytest.mark.usefixtures("_reset_catalog_resolver")
 def test_register_catalog_by_name_merge_source_resolves_by_name(
     lake: CountingCatalog,
 ) -> None:
-    resolver, names = _recording_resolver(lake)
+    resolver, names = recording_catalog_resolver(lake)
     set_iceberg_catalog_resolver(resolver)
     ctx = pl.SQLContext().register_catalog("lake", default_namespace="tpch")
 

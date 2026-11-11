@@ -191,7 +191,14 @@ class IcebergTableWrap:
         return schema_to_pyarrow(self.get().schema())
 
     def __getstate__(self) -> dict[str, Any]:
-        if (table := self.table_.get()) is not None:
+        descriptor = self.table_descriptor_
+        by_name = isinstance(descriptor, IcebergCatalogTableDescriptor) and isinstance(
+            descriptor.catalog_config, str
+        )
+
+        # A catalog name stays a name: the table loaded here is not pinned, so the
+        # process that unpickles this loads it through its own resolver.
+        if not by_name and (table := self.table_.get()) is not None:
             self.table_descriptor_ = self.serializer.serialize_table(table)
 
         assert self.table_descriptor_ is not None

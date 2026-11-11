@@ -5,6 +5,7 @@ import os
 import pickle
 import subprocess
 import sys
+import warnings
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -26,20 +27,21 @@ from polars.io.iceberg._catalog_resolver import (
     set_iceberg_catalog_resolver,
 )
 from polars.io.iceberg._sink import IcebergSinkState
+from tests.unit.io.conftest import (
+    failing_catalog_resolver,
+    recording_catalog_resolver,
+)
 
-pytestmark = pytest.mark.write_disk
+pytestmark = [
+    pytest.mark.write_disk,
+    pytest.mark.usefixtures("reset_iceberg_catalog_resolver"),
+]
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
+    from collections.abc import Callable
     from pathlib import Path
 
     from pyiceberg.catalog import Catalog
-
-
-@pytest.fixture(autouse=True)
-def _reset_resolver() -> Iterator[None]:
-    yield
-    set_iceberg_catalog_resolver(None)
 
 
 @pytest.fixture(autouse=True)
@@ -73,30 +75,16 @@ def sales(tmp_path: Path) -> SqlCatalog:
     return new_catalog(tmp_path, "sales", pl.DataFrame({"a": [1, 2]}))
 
 
-def recording(catalog: Catalog) -> tuple[Callable[[str], Catalog], list[str]]:
-    names: list[str] = []
-
-    def resolve(name: str) -> Catalog:
-        names.append(name)
-        return catalog
-
-    return resolve, names
-
-
-def fail_resolver(name: str) -> Catalog:
-    pytest.fail(f"resolver called for {name!r}")
-
-
 def test_set_resolver_rejects_non_callable() -> None:
-    set_iceberg_catalog_resolver(fail_resolver)
+    set_iceberg_catalog_resolver(failing_catalog_resolver)
 
     with pytest.raises(TypeError, match="must be callable or None; found 'dict'"):
         set_iceberg_catalog_resolver({"sales": None})  # type: ignore[arg-type]
-    assert _catalog_resolver.ICEBERG_CATALOG_RESOLVER is fail_resolver
+    assert _catalog_resolver.ICEBERG_CATALOG_RESOLVER is failing_catalog_resolver
 
 
 def test_resolve_catalog_uses_installed_resolver(sales: SqlCatalog) -> None:
-    resolver, names = recording(sales)
+    resolver, names = recording_catalog_resolver(sales)
     set_iceberg_catalog_resolver(resolver)
 
     assert resolve_catalog("sales") is sales
@@ -113,7 +101,7 @@ def test_resolver_none_restores_default(
         return sales
 
     monkeypatch.setattr(pyiceberg.catalog, "load_catalog", load_catalog)
-    set_iceberg_catalog_resolver(fail_resolver)
+    set_iceberg_catalog_resolver(failing_catalog_resolver)
     set_iceberg_catalog_resolver(None)
 
     assert resolve_catalog("sales") is sales
@@ -215,14 +203,14 @@ def _pyiceberg_planner(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.usefixtures("_pyiceberg_planner")
 def test_scan_does_not_resolve_at_build() -> None:
-    set_iceberg_catalog_resolver(fail_resolver)
+    set_iceberg_catalog_resolver(failing_catalog_resolver)
 
     assert isinstance(pl.scan_iceberg("ns.t", catalog="sales"), pl.LazyFrame)
 
 
 @pytest.mark.usefixtures("_pyiceberg_planner")
 def test_scan_resolves_at_collect(sales: SqlCatalog) -> None:
-    resolver, names = recording(sales)
+    resolver, names = recording_catalog_resolver(sales)
     set_iceberg_catalog_resolver(resolver)
 
     df = pl.scan_iceberg("ns.t", catalog="sales").collect()
@@ -233,14 +221,14 @@ def test_scan_resolves_at_collect(sales: SqlCatalog) -> None:
 
 @pytest.mark.usefixtures("_pyiceberg_planner")
 def test_scan_serializes_only_the_name(sales: SqlCatalog) -> None:
-    set_iceberg_catalog_resolver(fail_resolver)
+    set_iceberg_catalog_resolver(failing_catalog_resolver)
     data = pl.scan_iceberg("ns.t", catalog="sales").serialize()
 
     assert b"sales" in data
     assert b"sqlite" not in data
     assert b"SqlCatalog" not in data
 
-    resolver, names = recording(sales)
+    resolver, names = recording_catalog_resolver(sales)
     set_iceberg_catalog_resolver(resolver)
     df = pl.LazyFrame.deserialize(io.BytesIO(data)).collect()
 
@@ -250,10 +238,10 @@ def test_scan_serializes_only_the_name(sales: SqlCatalog) -> None:
 
 @pytest.mark.usefixtures("_pyiceberg_planner")
 def test_scan_uses_resolver_active_at_collect(sales: SqlCatalog) -> None:
-    set_iceberg_catalog_resolver(fail_resolver)
+    set_iceberg_catalog_resolver(failing_catalog_resolver)
     lf = pl.scan_iceberg("ns.t", catalog="sales")
 
-    resolver, names = recording(sales)
+    resolver, names = recording_catalog_resolver(sales)
     set_iceberg_catalog_resolver(resolver)
 
     assert_frame_equal(lf.collect(), pl.DataFrame({"a": [1, 2]}))
@@ -284,6 +272,34 @@ def test_scan_two_named_catalogs_in_one_query(
     assert set(names) == {"sales", "east"}
 
 
+@pytest.mark.usefixtures("_pyiceberg_planner")
+@pytest.mark.parametrize(
+    "load",
+    [pl.LazyFrame.collect_schema, pl.LazyFrame.explain, pl.LazyFrame.collect],
+    ids=["collect_schema", "explain", "collect"],
+)
+def test_scan_serializes_only_the_name_after_loading_the_table(
+    sales: SqlCatalog, load: Callable[[pl.LazyFrame], Any]
+) -> None:
+    resolver, names = recording_catalog_resolver(sales)
+    set_iceberg_catalog_resolver(resolver)
+    lf = pl.scan_iceberg("ns.t", catalog="sales")
+    load(lf)
+    assert names == ["sales"]
+
+    # The table loaded here is not pinned: no metadata path replaces the name.
+    data = lf.serialize()
+    assert b"metadata.json" not in data
+    assert b"sqlite" not in data
+
+    resolver, names = recording_catalog_resolver(sales)
+    set_iceberg_catalog_resolver(resolver)
+    df = pl.LazyFrame.deserialize(io.BytesIO(data)).collect()
+
+    assert_frame_equal(df, pl.DataFrame({"a": [1, 2]}))
+    assert names == ["sales"]
+
+
 def test_scan_empty_catalog_name() -> None:
     with pytest.raises(ValueError, match="must not be empty"):
         pl.scan_iceberg("ns.t", catalog="")
@@ -306,7 +322,7 @@ def table_rows(catalog: SqlCatalog) -> pl.DataFrame:
 
 
 def test_sink_state_does_not_resolve_at_build() -> None:
-    set_iceberg_catalog_resolver(fail_resolver)
+    set_iceberg_catalog_resolver(failing_catalog_resolver)
 
     state = IcebergSinkState.new("ns.t", mode="append", catalog="sales")
 
@@ -315,7 +331,7 @@ def test_sink_state_does_not_resolve_at_build() -> None:
 
 @pytest.mark.usefixtures("_pyiceberg_planner")
 def test_sink_iceberg_appends_through_resolver(sales: SqlCatalog) -> None:
-    resolver, names = recording(sales)
+    resolver, names = recording_catalog_resolver(sales)
     set_iceberg_catalog_resolver(resolver)
 
     pl.LazyFrame({"a": [3]}).sink_iceberg("ns.t", mode="append", catalog="sales")
@@ -326,7 +342,7 @@ def test_sink_iceberg_appends_through_resolver(sales: SqlCatalog) -> None:
 
 @pytest.mark.usefixtures("_pyiceberg_planner")
 def test_sink_plan_serializes_only_the_name(sales: SqlCatalog) -> None:
-    set_iceberg_catalog_resolver(fail_resolver)
+    set_iceberg_catalog_resolver(failing_catalog_resolver)
     state = IcebergSinkState.new("ns.t", mode="append", catalog="sales")
     data = state.attach_sink(pl.LazyFrame({"a": [3]})).serialize()
 
@@ -334,7 +350,7 @@ def test_sink_plan_serializes_only_the_name(sales: SqlCatalog) -> None:
     assert b"sqlite" not in data
     assert b"SqlCatalog" not in data
 
-    resolver, names = recording(sales)
+    resolver, names = recording_catalog_resolver(sales)
     set_iceberg_catalog_resolver(resolver)
     pl.LazyFrame.deserialize(io.BytesIO(data)).collect()
 
@@ -344,7 +360,7 @@ def test_sink_plan_serializes_only_the_name(sales: SqlCatalog) -> None:
 
 @pytest.mark.usefixtures("_pyiceberg_planner")
 def test_sink_surfaces_resolver_error_after_deserialize(sales: SqlCatalog) -> None:
-    set_iceberg_catalog_resolver(fail_resolver)
+    set_iceberg_catalog_resolver(failing_catalog_resolver)
     state = IcebergSinkState.new("ns.t", mode="append", catalog="sales")
     data = state.attach_sink(pl.LazyFrame({"a": [3]})).serialize()
 
@@ -365,6 +381,29 @@ def test_sink_surfaces_resolver_error_after_deserialize(sales: SqlCatalog) -> No
     assert_frame_equal(table_rows(sales), pl.DataFrame({"a": [1, 2]}))
 
 
+def test_sink_state_for_catalog_name_does_not_warn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # `sink_iceberg` is unstable as a whole and warns so itself.
+    monkeypatch.setenv("POLARS_WARN_UNSTABLE", "1")
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        IcebergSinkState.new("ns.t", mode="append", catalog="sales")
+
+
+@pytest.mark.parametrize(
+    "field", ["py_catalog_class_module", "py_catalog_class_qualname"]
+)
+def test_sink_state_rejects_half_set_catalog_class(field: str) -> None:
+    set_iceberg_catalog_resolver(failing_catalog_resolver)
+    state = IcebergSinkState.new("ns.t", mode="append", catalog="sales")
+    setattr(state, field, "SqlCatalog")
+
+    with pytest.raises(ValueError, match="must both be set, or both be None"):
+        state.table()
+
+
 def test_sink_catalog_name_with_table_target(sales: SqlCatalog) -> None:
     with pytest.raises(TypeError, match="requires a table identifier"):
         IcebergSinkState.new(sales.load_table("ns.t"), catalog="sales")
@@ -378,7 +417,7 @@ def test_sink_empty_catalog_name() -> None:
 @pytest.mark.usefixtures("_pyiceberg_planner")
 def test_sink_state_resolves_again_after_pickling(sales: SqlCatalog) -> None:
     # What a commit task in another process receives: the state after planning.
-    resolver, _ = recording(sales)
+    resolver, _ = recording_catalog_resolver(sales)
     set_iceberg_catalog_resolver(resolver)
     state = IcebergSinkState.new("ns.t", mode="append", catalog="sales")
     state._attach_resolved_sink(pl.LazyFrame({"a": [3]})._ldf)
@@ -387,7 +426,7 @@ def test_sink_state_resolves_again_after_pickling(sales: SqlCatalog) -> None:
     assert b"sqlite" not in data
     assert b"SqlCatalog" not in data
 
-    resolver, names = recording(sales)
+    resolver, names = recording_catalog_resolver(sales)
     set_iceberg_catalog_resolver(resolver)
     pickle.loads(data).table()
     assert names == ["sales"]
