@@ -325,12 +325,32 @@ def test_union_i32_boundary() -> None:
     out = to_pa(two)
     assert out.offsets.to_pylist() == [0, 2**30 - 1, 2**30, 2**31 - 1]
 
+    # The used range of the child overflows `i32`, so export compacts it.
     three = pl.concat([one, one, one], rechunk=True)
-    with pytest.raises(InvalidOperationError, match="i32 offsets"):
-        three.to_arrow()
+    out = to_pa(three)
+    assert out.offsets.to_pylist() == list(range(6))
+    assert len(out.field(0)) == 6
 
     late = three.slice(5, 1)
     assert to_pa(late).offsets.to_pylist() == [0]
+
+
+def test_union_export_overflowing_range() -> None:
+    one = pl.Series(big_union())
+    df = pl.concat([one, one, one], rechunk=True).to_frame("u")
+    expected: list[dict[str, Any]] = [{}] * 6
+    assert pa.table(df)["u"].to_pylist() == expected
+    assert df.to_arrow()["u"].to_pylist() == expected
+    assert pickle.loads(pickle.dumps(df)).equals(df)
+    buf = io.BytesIO()
+    df.write_ipc(buf)
+    assert to_pylist(pl.read_ipc(buf.getvalue()).to_series()) == expected
+    buf = io.BytesIO()
+    df.write_ipc_stream(buf)
+    assert to_pylist(pl.read_ipc_stream(buf.getvalue()).to_series()) == expected
+    buf = io.BytesIO()
+    df.lazy().sink_ipc(buf)
+    assert to_pylist(pl.read_ipc(buf.getvalue()).to_series()) == expected
 
 
 def test_union_gather_large_child() -> None:

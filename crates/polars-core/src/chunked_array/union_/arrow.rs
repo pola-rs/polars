@@ -1,7 +1,7 @@
 //! Conversion between Arrow's `UnionArray` and Polars' `LargeUnionArray`.
-use polars_arrow::array::{Array, LargeUnionArray, NullArray, UnionArray};
+use polars_arrow::array::{Array, ChildPositions, LargeUnionArray, NullArray, UnionArray};
 use polars_arrow::bitmap::{BitmapBuilder, MutableBitmap};
-use polars_compute::gather::gather_union_slots;
+use polars_compute::gather::{gather_child, gather_union_slots};
 
 use crate::prelude::*;
 
@@ -207,37 +207,58 @@ pub(crate) fn union_array_to_arrow(
     let n = children.len();
     let mut first = vec![-1i64; n];
     let mut last = vec![-1i64; n];
+    let mut counts = vec![0i64; n];
     for (&t, &o) in arr.types().iter().zip(arr.offsets().iter()) {
         let t = t as usize;
         if first[t] < 0 {
             first[t] = o;
         }
         last[t] = o;
+        counts[t] += 1;
     }
-    for t in 0..n {
+    for (t, &count) in counts.iter().enumerate() {
         polars_ensure!(
-            last[t] - first[t] <= i32::MAX as i64,
+            count <= i32::MAX as i64,
             InvalidOperation:
-            "to_arrow() conversion failed: variant {t} of the union spans {} values, which \
+            "to_arrow() conversion failed: variant {t} has {count} values in one chunk, which \
             overflows the i32 offsets of the arrow Union type",
-            last[t] - first[t] + 1,
         );
     }
+    // A child whose used range overflows `i32` is compacted to the values the slots point at;
+    // the others are sliced to their range.
+    let mut compacted: Vec<Option<ChildPositions>> = (0..n)
+        .map(|t| {
+            (last[t] - first[t] > i32::MAX as i64).then(|| ChildPositions::new(children[t].len()))
+        })
+        .collect();
+    let mut ranks = vec![0i32; n];
     let offsets: Vec<i32> = arr
         .types()
         .iter()
         .zip(arr.offsets().iter())
-        .map(|(&t, &o)| (o - first[t as usize]) as i32)
+        .map(|(&t, &o)| {
+            let t = t as usize;
+            match &mut compacted[t] {
+                Some(positions) => {
+                    positions.push(Some(o as usize));
+                    ranks[t] += 1;
+                    ranks[t] - 1
+                },
+                None => (o - first[t]) as i32,
+            }
+        })
         .collect();
 
     let children = children
         .into_iter()
+        .zip(compacted)
         .enumerate()
-        .map(|(t, child)| {
-            let child = if first[t] < 0 {
-                child.sliced(0, 0)
-            } else {
-                child.sliced(first[t] as usize, (last[t] - first[t] + 1) as usize)
+        .map(|(t, (child, compacted))| {
+            let child = match compacted {
+                // SAFETY: the offsets of the union are in bounds of its children.
+                Some(positions) => unsafe { gather_child(child.as_ref(), positions) },
+                None if first[t] < 0 => child.sliced(0, 0),
+                None => child.sliced(first[t] as usize, (last[t] - first[t] + 1) as usize),
             };
             convert_child(t, child.as_ref())
         })
