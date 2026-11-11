@@ -798,7 +798,6 @@ fn lower_exprs_with_ctx(
                         ctx.cache,
                         StreamingLowerIRContext::from(&*ctx),
                         false,
-                        &[],
                     )?;
                     input_streams.insert(group_by_stream);
                 }
@@ -856,7 +855,6 @@ fn lower_exprs_with_ctx(
                         recursive_inputs: None,
                     },
                     false,
-                    &[],
                 )?;
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(tmp_count_name)));
                 input_streams.insert(stream);
@@ -924,7 +922,6 @@ fn lower_exprs_with_ctx(
                         recursive_inputs: None,
                     },
                     false,
-                    &[],
                 )?;
 
                 let stream = if sort {
@@ -1024,7 +1021,6 @@ fn lower_exprs_with_ctx(
                     ctx.cache,
                     StreamingLowerIRContext::from(&*ctx),
                     false,
-                    &[],
                 )?;
 
                 let stream = build_select_stream_with_ctx(
@@ -1122,7 +1118,6 @@ fn lower_exprs_with_ctx(
                     ctx.cache,
                     StreamingLowerIRContext::from(&*ctx),
                     false,
-                    &[],
                 )?;
 
                 let expr = AExprBuilder::col(idx_name.clone(), ctx.expr_arena)
@@ -2196,7 +2191,6 @@ fn lower_exprs_with_ctx(
                         ctx.cache,
                         StreamingLowerIRContext::from(&*ctx),
                         false,
-                        &[],
                     )?;
 
                     let len_node = ctx.expr_arena.add(AExpr::Len);
@@ -2715,7 +2709,6 @@ fn lower_exprs_with_ctx(
                     ctx.phys_sm,
                     ctx.cache,
                     StreamingLowerIRContext::from(&*ctx),
-                    &[],
                 )? {
                     input_streams.insert(gb);
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));

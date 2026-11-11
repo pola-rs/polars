@@ -18,7 +18,6 @@ use crate::hash_shuffle::split::rows_or_all;
 
 /// What the sink and every partition table read.
 pub struct GroupByParams {
-    pub key_schema: Arc<Schema>,
     /// Encodes the keys of the hot tables and of every partition table.
     pub key_encoder: KeyEncoder,
     pub output_schema: Arc<Schema>,
@@ -128,7 +127,7 @@ impl PartitionTable {
     pub fn finish(&mut self) -> PolarsResult<DataFrame> {
         let grouper = std::mem::replace(&mut self.grouper, self.params.grouper.new_empty());
         let num_groups = grouper.num_groups();
-        let mut out = grouper.get_keys_in_group_order(&self.params.key_schema);
+        let mut out = self.params.key_encoder.get_keys_in_group_order(&*grouper);
         drop(grouper);
         let out_names = self.params.output_schema.iter_names().skip(out.width());
         for (r, name) in self.reductions.iter_mut().zip(out_names) {

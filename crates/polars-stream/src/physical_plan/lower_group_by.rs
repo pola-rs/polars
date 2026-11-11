@@ -9,6 +9,7 @@ use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_defs::join::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_error::{PolarsResult, polars_err};
+use polars_expr::hash_keys::KeyRange;
 use polars_expr::reduce::{supports_unique_reduction, unordered_unique_input};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
@@ -785,7 +786,6 @@ fn try_lower_agg_input_expr(
                 phys_sm,
                 expr_cache,
                 ctx,
-                &[],
             )?
             else {
                 return Ok(None);
@@ -986,6 +986,37 @@ fn merge_min_max_by(
 
 #[allow(clippy::too_many_arguments)]
 pub fn try_build_streaming_group_by(
+    input: PhysStream,
+    keys: &[ExprIR],
+    aggs: &[ExprIR],
+    maintain_order: bool,
+    options: Arc<GroupbyOptionsIR>,
+    apply: Option<PlanCallback<DataFrame, DataFrame>>,
+    gbl_kind: GroupByLowerKind,
+    expr_arena: &mut Arena<AExpr>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
+    expr_cache: &mut ExprCache,
+    ctx: StreamingLowerIRContext<'_>,
+) -> PolarsResult<Option<PhysStream>> {
+    try_build_streaming_group_by_with_key_ranges(
+        input,
+        keys,
+        aggs,
+        maintain_order,
+        options,
+        apply,
+        gbl_kind,
+        expr_arena,
+        phys_sm,
+        expr_cache,
+        ctx,
+        &[],
+    )
+}
+
+/// `key_ranges` holds an inclusive value range per key, or is empty.
+#[allow(clippy::too_many_arguments)]
+fn try_build_streaming_group_by_with_key_ranges(
     mut input: PhysStream,
     keys: &[ExprIR],
     aggs: &[ExprIR],
@@ -997,7 +1028,7 @@ pub fn try_build_streaming_group_by(
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
-    key_ranges: &[Option<(i128, i128)>],
+    key_ranges: &[KeyRange],
 ) -> PolarsResult<Option<PhysStream>> {
     if apply.is_some() {
         return Ok(None); // TODO
@@ -1556,7 +1587,40 @@ pub fn build_group_by_stream(
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
     are_keys_sorted: bool,
-    key_ranges: &[Option<(i128, i128)>],
+) -> PolarsResult<PhysStream> {
+    build_group_by_stream_with_key_ranges(
+        input,
+        keys,
+        aggs,
+        output_schema,
+        maintain_order,
+        options,
+        apply,
+        expr_arena,
+        phys_sm,
+        expr_cache,
+        ctx,
+        are_keys_sorted,
+        &[],
+    )
+}
+
+/// `key_ranges` holds an inclusive value range per key, or is empty.
+#[allow(clippy::too_many_arguments)]
+pub fn build_group_by_stream_with_key_ranges(
+    input: PhysStream,
+    keys: &[ExprIR],
+    aggs: &[ExprIR],
+    output_schema: Arc<Schema>,
+    maintain_order: bool,
+    options: Arc<GroupbyOptionsIR>,
+    apply: Option<PlanCallback<DataFrame, DataFrame>>,
+    expr_arena: &mut Arena<AExpr>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
+    expr_cache: &mut ExprCache,
+    ctx: StreamingLowerIRContext<'_>,
+    are_keys_sorted: bool,
+    key_ranges: &[KeyRange],
 ) -> PolarsResult<PhysStream> {
     'build_streaming_group_by: {
         // Fallback to in-mem for objects. Otherwise we get an error in CI:
@@ -1638,7 +1702,7 @@ pub fn build_group_by_stream(
                 are_keys_sorted,
             )? {
             Ok(stream)
-        } else if let Some(stream) = try_build_streaming_group_by(
+        } else if let Some(stream) = try_build_streaming_group_by_with_key_ranges(
             input,
             keys,
             aggs,

@@ -9,7 +9,6 @@ use polars_utils::vec::PushUnchecked;
 
 use super::*;
 use crate::hash_keys::{BLOCK_SIZE, HashKeys, MIN_PREFETCH_BUCKETS};
-use crate::packed_keys::PackedKeys;
 
 pub struct SingleKeyHashGrouper<T: PolarsDataType> {
     /// Each key with its group.
@@ -18,8 +17,6 @@ pub struct SingleKeyHashGrouper<T: PolarsDataType> {
     /// The group of the null key, IdxSize::MAX if there is none.
     null_idx: IdxSize,
     random_state: PlRandomState,
-    /// Set when the keys are packed keys of several columns.
-    packed: Option<Arc<PackedKeys>>,
 }
 
 impl<K, T: PolarsDataType> SingleKeyHashGrouper<T>
@@ -33,14 +30,6 @@ where
             num_groups: 0,
             null_idx: IdxSize::MAX,
             random_state: PlRandomState::default(),
-            packed: None,
-        }
-    }
-
-    pub fn new_packed(packed: Arc<PackedKeys>) -> Self {
-        Self {
-            packed: Some(packed),
-            ..Self::new()
         }
     }
 
@@ -177,11 +166,6 @@ where
     }
 
     fn finalize_keys(&self, schema: &Schema, keys: Vec<K>) -> DataFrame {
-        if let Some(packed) = &self.packed {
-            // Packed keys are never null, a null in a key column is part of the word.
-            assert_eq!(self.null_idx, IdxSize::MAX);
-            return decode_packed(packed, schema, keys);
-        }
         let (name, dtype) = schema.get_at_index(0).unwrap();
         let mut keys =
             T::Array::from_vec(keys, dtype.to_physical().to_arrow(CompatLevel::newest()));
@@ -205,10 +189,7 @@ where
     K: Default + TotalHash + TotalEq + Copy + Send + Sync + 'static,
 {
     fn new_empty(&self) -> Box<dyn Grouper> {
-        Box::new(Self {
-            packed: self.packed.clone(),
-            ..Self::new()
-        })
+        Box::new(Self::new())
     }
 
     fn reserve(&mut self, additional: usize) {
@@ -305,30 +286,5 @@ where
 
     fn as_any(&self) -> &dyn Any {
         self
-    }
-}
-
-fn decode_packed<K: 'static>(packed: &PackedKeys, schema: &Schema, keys: Vec<K>) -> DataFrame {
-    let keys: &dyn Any = &keys;
-    match () {
-        #[cfg(feature = "dtype-u8")]
-        _ if keys.is::<Vec<u8>>() => {
-            packed.decode::<u8>(schema, keys.downcast_ref::<Vec<u8>>().unwrap())
-        },
-        #[cfg(feature = "dtype-u16")]
-        _ if keys.is::<Vec<u16>>() => {
-            packed.decode::<u16>(schema, keys.downcast_ref::<Vec<u16>>().unwrap())
-        },
-        _ if keys.is::<Vec<u32>>() => {
-            packed.decode::<u32>(schema, keys.downcast_ref::<Vec<u32>>().unwrap())
-        },
-        _ if keys.is::<Vec<u64>>() => {
-            packed.decode::<u64>(schema, keys.downcast_ref::<Vec<u64>>().unwrap())
-        },
-        #[cfg(feature = "dtype-u128")]
-        _ if keys.is::<Vec<u128>>() => {
-            packed.decode::<u128>(schema, keys.downcast_ref::<Vec<u128>>().unwrap())
-        },
-        _ => unreachable!("packed keys are unsigned integers"),
     }
 }

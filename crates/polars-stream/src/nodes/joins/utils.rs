@@ -365,7 +365,7 @@ impl JoinSampleStats {
                  df| {
                     let keys = ASYNC.block_on(select_key_columns(df, key_selectors, state))?;
                     let hash_keys =
-                        key_encoder.hash_keys(&keys, random_state.clone(), null_is_valid)?;
+                        key_encoder.try_hash_keys(&keys, random_state.clone(), null_is_valid)?;
                     match &mut min_hash {
                         Some(min_hash) => hash_keys.for_each_hash(|_, opt_h| {
                             sketch.insert(opt_h.unwrap_or(0));

@@ -21,6 +21,8 @@ use polars_utils::IdxSize;
 use polars_utils::index::idxsize_to_u64;
 use polars_utils::total_ord::{canonical_f32, canonical_f64};
 
+use crate::hash_keys::KeyRange;
+
 /// A column value or a packed word, as an unsigned integer.
 pub(crate) trait Bits:
     PrimInt + WrappingAdd + WrappingSub + NativeType + Send + Sync + 'static
@@ -175,7 +177,7 @@ impl PackedLayout {
     pub(crate) fn new<'a>(
         dtypes: impl IntoIterator<Item = &'a DataType>,
         nulls_in_key: bool,
-        ranges: &[Option<(i128, i128)>],
+        ranges: &[KeyRange],
     ) -> Option<Self> {
         let physicals: Vec<DataType> = dtypes.into_iter().map(|dt| dt.to_physical()).collect();
         if !(physicals.len() >= 2
@@ -199,7 +201,7 @@ impl PackedLayout {
     fn with_ranges(
         physicals: &[DataType],
         nulls_in_key: bool,
-        ranges: &[Option<(i128, i128)>],
+        ranges: &[KeyRange],
     ) -> Option<Self> {
         let mut cols = Vec::with_capacity(physicals.len());
         let mut shift = 0;
@@ -231,6 +233,11 @@ impl PackedLayout {
             word_bits,
             escape_shift: has_range.then_some(word_bits - 1),
         })
+    }
+
+    /// Whether a key can be out of the range of a column.
+    pub(crate) fn can_escape(&self) -> bool {
+        self.escape_shift.is_some()
     }
 
     /// The dtype of the packed keys.
@@ -297,44 +304,43 @@ impl std::fmt::Debug for PackedKeys {
     }
 }
 
-/// The values of a physical integer or float column as unsigned bits, floats
-/// canonicalized so that equal floats have equal bits.
+/// The values of a physical boolean, integer or float column as an iterator of
+/// unsigned bits, floats canonicalized so that equal floats have equal bits.
 macro_rules! with_column_bits {
     ($s:expr, |$values:ident, $C:ident| $body:expr) => {{
         let s: &Series = $s;
         match s.dtype() {
+            DataType::Boolean => {
+                type $C = u8;
+                let $values = s
+                    .bool()
+                    .unwrap()
+                    .downcast_as_array()
+                    .values()
+                    .iter()
+                    .map(u8::from);
+                $body
+            },
             #[cfg(feature = "dtype-f16")]
             DataType::Float16 => {
                 type $C = u16;
                 let arr = s.f16().unwrap().downcast_as_array();
-                let bits: Vec<u16> = arr
+                let $values = arr
                     .values()
                     .iter()
-                    .map(|x| polars_utils::total_ord::canonical_f16(*x).to_bits())
-                    .collect();
-                let $values: &[u16] = &bits;
+                    .map(|x| polars_utils::total_ord::canonical_f16(*x).to_bits());
                 $body
             },
             DataType::Float32 => {
                 type $C = u32;
                 let arr = s.f32().unwrap().downcast_as_array();
-                let bits: Vec<u32> = arr
-                    .values()
-                    .iter()
-                    .map(|x| canonical_f32(*x).to_bits())
-                    .collect();
-                let $values: &[u32] = &bits;
+                let $values = arr.values().iter().map(|x| canonical_f32(*x).to_bits());
                 $body
             },
             DataType::Float64 => {
                 type $C = u64;
                 let arr = s.f64().unwrap().downcast_as_array();
-                let bits: Vec<u64> = arr
-                    .values()
-                    .iter()
-                    .map(|x| canonical_f64(*x).to_bits())
-                    .collect();
-                let $values: &[u64] = &bits;
+                let $values = arr.values().iter().map(|x| canonical_f64(*x).to_bits());
                 $body
             },
             dt => with_match_physical_integer_polars_type!(dt, |$T| {
@@ -343,27 +349,27 @@ macro_rules! with_column_bits {
                 match size_of::<<$T as PolarsNumericType>::Native>() {
                     1 => {
                         type $C = u8;
-                        let $values: &[u8] = bytemuck_cast(native);
+                        let $values = bytemuck_cast::<_, u8>(native).iter().copied();
                         $body
                     },
                     2 => {
                         type $C = u16;
-                        let $values: &[u16] = bytemuck_cast(native);
+                        let $values = bytemuck_cast::<_, u16>(native).iter().copied();
                         $body
                     },
                     4 => {
                         type $C = u32;
-                        let $values: &[u32] = bytemuck_cast(native);
+                        let $values = bytemuck_cast::<_, u32>(native).iter().copied();
                         $body
                     },
                     8 => {
                         type $C = u64;
-                        let $values: &[u64] = bytemuck_cast(native);
+                        let $values = bytemuck_cast::<_, u64>(native).iter().copied();
                         $body
                     },
                     _ => {
                         type $C = u128;
-                        let $values: &[u128] = bytemuck_cast(native);
+                        let $values = bytemuck_cast::<_, u128>(native).iter().copied();
                         $body
                     },
                 }
@@ -384,7 +390,7 @@ fn bytemuck_cast<T: NativeType, U: Bits>(values: &[T]) -> &[U] {
 #[inline(always)]
 fn encode_column<U: Bits, C: Bits>(
     out: &mut [U],
-    values: &[C],
+    values: impl Iterator<Item = C>,
     validity: Option<&Bitmap>,
     col: &PackedCol,
     nulls_in_key: bool,
@@ -396,7 +402,7 @@ fn encode_column<U: Bits, C: Bits>(
                 Some(validity) if nulls_in_key => {
                     let null_shift = shift + col.value_bits as usize;
                     for ((o, x), valid) in out.iter_mut().zip(values).zip(validity.iter()) {
-                        let x = *x & C::mask(valid);
+                        let x = x & C::mask(valid);
                         *o = *o
                             | (U::from_bits(x) << shift)
                             | (U::from_u128(!valid as u128) << null_shift);
@@ -404,7 +410,7 @@ fn encode_column<U: Bits, C: Bits>(
                 },
                 _ => {
                     for (o, x) in out.iter_mut().zip(values) {
-                        *o = *o | (U::from_bits(*x) << shift);
+                        *o = *o | (U::from_bits(x) << shift);
                     }
                 },
             }
@@ -443,7 +449,7 @@ fn encode_column<U: Bits, C: Bits>(
 
 /// Sets the rows whose valid value is out of the column's range.
 fn mark_out_of_range<C: Bits>(
-    values: &[C],
+    values: impl Iterator<Item = C>,
     validity: Option<&Bitmap>,
     min: u128,
     span: u128,
@@ -451,7 +457,7 @@ fn mark_out_of_range<C: Bits>(
 ) {
     let min = C::from_u128(min);
     let span = C::from_u128(span);
-    for (i, x) in values.iter().enumerate() {
+    for (i, x) in values.enumerate() {
         if x.wrapping_sub(&min) > span && validity.is_none_or(|v| v.get_bit(i)) {
             marks.set(i, true);
         }
@@ -589,22 +595,12 @@ impl PackedKeys {
         let mut any_out_of_range = false;
         for ((s, col), validity) in physicals.iter().zip(&self.layout.cols).zip(&validities) {
             let validity = validity.as_ref();
-            match &col.physical {
-                DataType::Null => {},
-                DataType::Boolean => {
-                    let values = s.bool().unwrap().downcast_as_array().values();
-                    let values: Vec<u8> = values.iter().map(|b| b as u8).collect();
-                    encode_column(&mut out, &values, validity, col, nulls_in_key);
-                },
-                _ => with_column_bits!(s, |values, C| {
+            if col.physical != DataType::Null {
+                with_column_bits!(s, |values, C| {
                     any_out_of_range |=
                         encode_column::<U, C>(&mut out, values, validity, col, nulls_in_key);
-                }),
+                });
             }
-        }
-
-        if any_out_of_range {
-            self.escape(keys, &physicals, &validities, &mut out)?;
         }
 
         let validity = if null_is_valid {
@@ -612,6 +608,9 @@ impl PackedKeys {
         } else {
             combine_validities_and_many(&validities.iter().map(|v| v.as_ref()).collect::<Vec<_>>())
         };
+        if any_out_of_range {
+            self.escape(keys, &physicals, &validities, validity.as_ref(), &mut out)?;
+        }
         let word_dtype = self.layout.word_dtype();
         let arr = PrimitiveArray::<U>::new(
             word_dtype.to_arrow(CompatLevel::newest()),
@@ -627,13 +626,15 @@ impl PackedKeys {
         })
     }
 
-    /// Gives every key with a value out of its range the word of its escape id.
+    /// Gives every key with a value out of its range the word of its escape id. Rows
+    /// unset in `row_validity` are null keys, which match nothing and are skipped.
     #[cold]
     fn escape<U: Bits>(
         &self,
         keys: &[Column],
         physicals: &[Series],
         validities: &[Option<Bitmap>],
+        row_validity: Option<&Bitmap>,
         out: &mut [U],
     ) -> PolarsResult<()> {
         let mut marks = MutableBitmap::from_len_zeroed(out.len());
@@ -644,7 +645,10 @@ impl PackedKeys {
                 });
             }
         }
-        let marks: Bitmap = marks.freeze();
+        let mut marks: Bitmap = marks.freeze();
+        if let Some(row_validity) = row_validity {
+            marks = &marks & row_validity;
+        }
         let rows: Vec<IdxSize> = marks.true_idx_iter().map(|i| i as IdxSize).collect();
         let idx = IdxCa::from_vec(PlSmallStr::EMPTY, rows.clone());
         let escaped: Vec<Column> = keys
@@ -698,9 +702,26 @@ impl PackedKeys {
         }
         polars_ensure!(
             !full,
-            ComputeError: "too many join or group-by keys are outside the min/max of their column statistics; the statistics do not match the data"
+            ComputeError: "too many join or group-by keys are outside the min/max of their column statistics; the statistics do not match the data\n\nHint: scanning with `use_statistics=False` does not use the statistics"
         );
         Ok(())
+    }
+
+    /// The key columns of `schema` for a column of packed words.
+    pub(crate) fn decode_words(&self, schema: &Schema, words: &Series) -> DataFrame {
+        assert!(!words.has_nulls(), "packed keys of groups are never null");
+        let words = words.rechunk();
+        match self.layout.word_bits {
+            #[cfg(feature = "dtype-u8")]
+            8 => self.decode::<u8>(schema, words.u8().unwrap().downcast_as_array().values()),
+            #[cfg(feature = "dtype-u16")]
+            16 => self.decode::<u16>(schema, words.u16().unwrap().downcast_as_array().values()),
+            32 => self.decode::<u32>(schema, words.u32().unwrap().downcast_as_array().values()),
+            64 => self.decode::<u64>(schema, words.u64().unwrap().downcast_as_array().values()),
+            #[cfg(feature = "dtype-u128")]
+            128 => self.decode::<u128>(schema, words.u128().unwrap().downcast_as_array().values()),
+            _ => unreachable!(),
+        }
     }
 
     /// The key columns of `schema` for packed `words`. The bits of a null word are
@@ -854,15 +875,12 @@ mod tests {
         let mid = df.height() / 2;
         for part in [df.slice(0, mid), df.slice(mid as i64, df.height() - mid)] {
             let keys = encoder
-                .hash_keys(&part, random_state.clone(), true)
+                .try_hash_keys(&part, random_state.clone(), true)
                 .unwrap();
             let rows: Vec<IdxSize> = (0..part.height() as IdxSize).collect();
             unsafe { grouper.insert_keys_subset(&keys, &rows, Some(&mut group_idxs)) };
         }
-        (
-            group_idxs,
-            grouper.get_keys_in_group_order(encoder.schema()),
-        )
+        (group_idxs, encoder.get_keys_in_group_order(&*grouper))
     }
 
     #[test]
@@ -910,12 +928,12 @@ mod tests {
         let mut table = new_idx_table(encoder);
         let random_state = PlRandomState::default();
         let build_keys = encoder
-            .hash_keys(build, random_state.clone(), false)
+            .try_hash_keys(build, random_state.clone(), false)
             .unwrap();
         let rows: Vec<IdxSize> = (0..build.height() as IdxSize).collect();
         unsafe { table.insert_keys_subset(&build_keys, &rows, false) };
         let (mut table_match, mut probe_match) = (Vec::new(), Vec::new());
-        let probe_keys = encoder.hash_keys(probe, random_state, false).unwrap();
+        let probe_keys = encoder.try_hash_keys(probe, random_state, false).unwrap();
         let rows: Vec<IdxSize> = (0..probe.height() as IdxSize).collect();
         unsafe {
             table.probe_subset(
@@ -966,5 +984,25 @@ mod tests {
         let map = packed.escaped.lock().unwrap();
         assert!(map.len > 0);
         assert_eq!(map.len as usize, map.keys.as_ref().unwrap().height());
+    }
+
+    #[test]
+    fn null_keys_are_not_escaped() {
+        // `a` is in range, `b` is not; a null `a` makes the key match nothing.
+        let df = df!(
+            "a" => [Some(1i64), None],
+            "b" => [Some(100i64), Some(100)]
+        )
+        .unwrap();
+        let layout = PackedLayout::new(
+            df.schema().iter_values(),
+            false,
+            &[Some((0, 2)), Some((1, 3))],
+        )
+        .unwrap();
+        let packed = PackedKeys::new(layout);
+        let words = packed.encode(df.columns(), false).unwrap();
+        assert_eq!(words.null_count(), 1);
+        assert_eq!(packed.escaped.lock().unwrap().len, 1);
     }
 }

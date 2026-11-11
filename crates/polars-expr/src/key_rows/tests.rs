@@ -210,9 +210,7 @@ fn two_i64_encoder() -> KeyEncoder {
 }
 
 fn hash_keys(df: DataFrame) -> HashKeys {
-    KeyEncoder::new(df.schema().clone(), true, &[])
-        .hash_keys(&df, PlRandomState::default(), true)
-        .unwrap()
+    KeyEncoder::new(df.schema().clone(), true, &[]).hash_keys(&df, PlRandomState::default(), true)
 }
 
 /// Key rows of another layout than `two_i64_schema`.

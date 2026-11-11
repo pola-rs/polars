@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
+import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
@@ -146,6 +147,53 @@ def test_computed_key_has_no_range(
     out, layouts = packed_layouts(q, plmonkeypatch, capfd)
     # The null bit of `a` follows its 64 bits.
     assert layouts == ["u128 [0..64) [65..71) range of 37"]
+    assert_engines_equal(out, q)
+
+
+def write_plain(df: pl.DataFrame, path: Path) -> None:
+    # Values of one width without compression, so frames with the same nulls give
+    # files with the same layout.
+    pq.write_table(df.to_arrow(), path, compression="none", use_dictionary=False)
+
+
+def test_group_by_keys_out_of_stale_range(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "2")
+    plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "2")
+    plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", "2")
+    path = tmp_path / "keys.parquet"
+    write_plain(keys(200), path)
+    q = pl.scan_parquet(path).group_by("a", "b").agg(pl.len(), pl.col("v").sum())
+    # The scan keeps the footer it read on the first collect, so the statistics no
+    # longer match the new values of `b`. Some keys are null in `a`.
+    q.collect(engine="streaming")
+    write_plain(keys(200, b_offset=100), path)
+    out, layouts = packed_layouts(q, plmonkeypatch, capfd)
+    assert layouts == ["u32 [0..8) range of 199 [8..14) range of 37"]
+    assert_engines_equal(out, q)
+
+
+@pytest.mark.parametrize("how", ["inner", "left", "full", "semi", "anti"])
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_join_keys_out_of_stale_range(
+    how: JoinStrategy,
+    nulls_equal: bool,
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    left_path, right_path = tmp_path / "left.parquet", tmp_path / "right.parquet"
+    write_plain(keys(600), left_path)
+    write_plain(keys(400, offset=500), right_path)
+    q = pl.scan_parquet(left_path).join(
+        pl.scan_parquet(right_path), on=["a", "b"], how=how, nulls_equal=nulls_equal
+    )
+    q.collect(engine="streaming")
+    write_plain(keys(600, b_offset=100), left_path)
+    write_plain(keys(400, offset=500, b_offset=100), right_path)
+    out, layouts = packed_layouts(q, plmonkeypatch, capfd)
+    assert layouts == ["u32 [0..10) range of 899 [10..16) range of 37"]
     assert_engines_equal(out, q)
 
 

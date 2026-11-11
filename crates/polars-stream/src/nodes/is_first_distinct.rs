@@ -80,10 +80,9 @@ impl ComputeNode for IsFirstDistinctNode {
                 let morsel = morsel
                     .map(|mut df| {
                         let key_df = df.select(slf.key_encoder.schema().iter_names()).unwrap();
-                        let hash_keys = slf
-                            .key_encoder
-                            .hash_keys(&key_df, slf.random_state.clone(), true)
-                            .unwrap();
+                        let hash_keys =
+                            slf.key_encoder
+                                .hash_keys(&key_df, slf.random_state.clone(), true);
                         let mut distinct = BitmapBuilder::with_capacity(df.height());
                         unsafe {
                             slf.subset

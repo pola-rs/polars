@@ -21,6 +21,7 @@ use polars_utils::itertools::Itertools;
 use polars_utils::total_ord::{BuildHasherTotalExt, TotalHash};
 use polars_utils::vec::PushUnchecked;
 
+use crate::groups::Grouper;
 pub use crate::key_rows::KeyRowKeys;
 use crate::key_rows::KeyRowLayout;
 use crate::packed_keys::{PackedKeys, PackedLayout};
@@ -119,6 +120,9 @@ pub enum HashKeys {
     Single(SingleKeys),
 }
 
+/// An inclusive range of the values of a key column, when it is known.
+pub type KeyRange = Option<(i128, i128)>;
+
 /// How the keys of one operation are stored. Every `HashKeys` and every table of an
 /// operation must come from the same encoder, as it decides the key format.
 #[derive(Clone, Debug)]
@@ -142,7 +146,7 @@ impl KeyEncoder {
     /// When `nulls_in_key` is false, the keys of this operation are never made with
     /// `null_is_valid`. `ranges` holds an inclusive range of the values of each key
     /// column, or is empty; values outside it are still correct.
-    pub fn new(schema: Arc<Schema>, nulls_in_key: bool, ranges: &[Option<(i128, i128)>]) -> Self {
+    pub fn new(schema: Arc<Schema>, nulls_in_key: bool, ranges: &[KeyRange]) -> Self {
         assert!(ranges.is_empty() || ranges.len() == schema.len());
         let kind =
             if let Some(layout) = PackedLayout::new(schema.iter_values(), nulls_in_key, ranges) {
@@ -177,9 +181,40 @@ impl KeyEncoder {
         &self.kind
     }
 
-    /// The hash keys of the key columns `df`. A key with a null is a key of its own
-    /// if `null_is_valid`, else it matches nothing.
+    /// The keys of each group of `grouper`, which holds keys of this encoder, in group
+    /// order.
+    pub fn get_keys_in_group_order(&self, grouper: &dyn Grouper) -> DataFrame {
+        match &self.kind {
+            KeyKind::Packed(packed) => {
+                let word_schema =
+                    Schema::from_iter([(PlSmallStr::EMPTY, packed.layout().word_dtype())]);
+                let words = grouper.get_keys_in_group_order(&word_schema);
+                packed.decode_words(&self.schema, words[0].as_materialized_series())
+            },
+            _ => grouper.get_keys_in_group_order(&self.schema),
+        }
+    }
+
+    /// The hash keys of the key columns `df`, for an encoder made without ranges. A
+    /// key with a null is a key of its own if `null_is_valid`, else it matches
+    /// nothing.
     pub fn hash_keys(
+        &self,
+        df: &DataFrame,
+        random_state: PlRandomState,
+        null_is_valid: bool,
+    ) -> HashKeys {
+        assert!(
+            !matches!(&self.kind, KeyKind::Packed(packed) if packed.layout().can_escape()),
+            "keys with ranges can fail to encode"
+        );
+        self.try_hash_keys(df, random_state, null_is_valid).unwrap()
+    }
+
+    /// The hash keys of the key columns `df`. Fails when too many keys are out of
+    /// their range. A key with a null is a key of its own if `null_is_valid`, else it
+    /// matches nothing.
+    pub fn try_hash_keys(
         &self,
         df: &DataFrame,
         random_state: PlRandomState,

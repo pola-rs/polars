@@ -13,6 +13,7 @@ use polars_core::{SchemaExtPl, config};
 use polars_defs::join::{JoinType, MaintainOrderJoin};
 use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_expr::dispatch::function_expr_to_udf;
+use polars_expr::hash_keys::KeyRange;
 use polars_expr::state::ExecutionState;
 use polars_io::external_reader::ExternalReaderBuilder;
 use polars_mem_engine::create_physical_plan;
@@ -56,7 +57,7 @@ use crate::physical_plan::lower_expr::{
     ExprCache, LowerExprContext, build_hstack_stream_with_ctx, build_select_stream,
     input_height_expr, is_elementwise_rec_cached, lower_exprs,
 };
-use crate::physical_plan::lower_group_by::build_group_by_stream;
+use crate::physical_plan::lower_group_by::build_group_by_stream_with_key_ranges;
 use crate::unique_column_name;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
@@ -1325,7 +1326,7 @@ fn lower_ir_inner(
                 .are_keys_sorted_any(input, &keys, expr_arena, input_schema)
                 .is_some();
 
-            return build_group_by_stream(
+            return build_group_by_stream_with_key_ranges(
                 phys_input,
                 &keys,
                 &aggs,
@@ -1975,7 +1976,7 @@ fn lower_ir_inner(
                 ));
             }
 
-            let mut stream = build_group_by_stream(
+            let mut stream = build_group_by_stream_with_key_ranges(
                 phys_input,
                 &keys,
                 &aggs,
@@ -2379,7 +2380,7 @@ fn key_value_ranges(
     keys: &[ExprIR],
     ir_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
-) -> Vec<Option<(i128, i128)>> {
+) -> Vec<KeyRange> {
     keys.iter()
         .map(|k| {
             let name = into_column(k.node(), expr_arena)?;

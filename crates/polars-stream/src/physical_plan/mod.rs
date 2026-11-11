@@ -13,6 +13,7 @@ use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, PlIndexMap, SortMul
 use polars_core::schema::{Schema, SchemaRef};
 use polars_defs::join::JoinArgs;
 use polars_error::PolarsResult;
+use polars_expr::hash_keys::KeyRange;
 use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 #[cfg(any(
@@ -472,8 +473,8 @@ pub enum PhysNodeKind {
         // Must be a 'simple' expression, a singular column (of the input or of
         // `fused_agg_inputs_per_input`) feeding into a single aggregate, or Len.
         aggs_per_input: Vec<Vec<ExprIR>>,
-        /// See `KeyEncoder::new`.
-        key_ranges: Vec<Option<(i128, i128)>>,
+        /// The value range of each key column, empty or `None` where unknown.
+        key_ranges: Vec<KeyRange>,
     },
 
     #[cfg(feature = "dynamic_group_by")]
@@ -516,8 +517,8 @@ pub enum PhysNodeKind {
         runtime_filters: Vec<RuntimeFilter>,
         /// See `JoinOptionsIR::estimated_rows`.
         estimated_rows: Option<[u64; 2]>,
-        /// See `KeyEncoder::new`.
-        key_ranges: Vec<Option<(i128, i128)>>,
+        /// The value range of each key column, empty or `None` where unknown.
+        key_ranges: Vec<KeyRange>,
     },
 
     MergeJoin {
@@ -544,8 +545,8 @@ pub enum PhysNodeKind {
         runtime_filters: Vec<RuntimeFilter>,
         /// See `JoinOptionsIR::estimated_rows`.
         estimated_rows: Option<[u64; 2]>,
-        /// See `KeyEncoder::new`.
-        key_ranges: Vec<Option<(i128, i128)>>,
+        /// The value range of each key column, empty or `None` where unknown.
+        key_ranges: Vec<KeyRange>,
     },
 
     CrossJoin {

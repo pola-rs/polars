@@ -149,7 +149,8 @@ pub struct ScanColumnStats {
     /// file.
     pub sampled_row_groups: Option<Arc<[RowGroupStats]>>,
     /// `int_range` was folded over sampled chunks and widened, so it is an estimate.
-    #[cfg_attr(feature = "serde", serde(default))]
+    /// Missing in older serialized plans, which are read as sampled.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub int_range_sampled: bool,
 }
 
@@ -209,6 +210,11 @@ pub(crate) fn range_width(min: i128, max: i128) -> f64 {
     max.checked_sub(min)
         .and_then(|width| width.checked_add(1))
         .map_or(max as f64 - min as f64 + 1.0, |width| width as f64)
+}
+
+#[cfg(feature = "serde")]
+fn default_true() -> bool {
+    true
 }
 
 // We don't index

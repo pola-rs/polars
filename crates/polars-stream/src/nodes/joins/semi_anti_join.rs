@@ -38,7 +38,7 @@ fn hash_keys(
 ) -> PolarsResult<HashKeys> {
     params
         .key_encoder
-        .hash_keys(keys, params.random_state.clone(), null_is_valid)
+        .try_hash_keys(keys, params.random_state.clone(), null_is_valid)
 }
 
 async fn select_keys(

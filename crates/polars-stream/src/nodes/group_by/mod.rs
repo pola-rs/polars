@@ -200,7 +200,6 @@ impl GroupByNode {
         );
         let grouper = new_hash_grouper(&key_encoder);
         let params = GroupByParams {
-            key_schema: key_encoder.schema().clone(),
             key_encoder,
             output_schema,
             reductions_per_input,

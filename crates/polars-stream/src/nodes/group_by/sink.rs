@@ -568,7 +568,7 @@ impl SinkState {
                         let hash_keys =
                             params
                                 .key_encoder
-                                .hash_keys(&keys, random_state.clone(), true)?;
+                                .try_hash_keys(&keys, random_state.clone(), true)?;
                         let may_store_whole =
                             df.height() >= local.min_rows_stored_whole(num_pipelines);
                         local
@@ -612,7 +612,7 @@ impl SinkState {
                             evictions_before = slice_evictions_before;
                         }
                         let slice_keys = keys.slice(offset as i64, slice_size);
-                        let hash_keys = params.key_encoder.hash_keys(
+                        let hash_keys = params.key_encoder.try_hash_keys(
                             &slice_keys,
                             random_state.clone(),
                             true,

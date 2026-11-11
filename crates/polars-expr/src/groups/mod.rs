@@ -92,7 +92,7 @@ pub fn new_hash_grouper(encoder: &KeyEncoder) -> Box<dyn Grouper> {
     match encoder.kind() {
         KeyKind::Packed(packed) => {
             with_match_physical_numeric_polars_type!(packed.layout().word_dtype(), |$T| {
-                Box::new(single_key::SingleKeyHashGrouper::<$T>::new_packed(packed.clone()))
+                Box::new(single_key::SingleKeyHashGrouper::<$T>::new())
             })
         },
         KeyKind::KeyRows(layout) => Box::new(key_rows::KeyRowHashGrouper::new(layout.clone())),

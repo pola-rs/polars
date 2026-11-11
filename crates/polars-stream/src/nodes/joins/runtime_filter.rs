@@ -170,6 +170,7 @@ struct KeyFilterSpec {
     probe_distinct: Option<usize>,
     /// Shared by the build and probe sides.
     random_state: PlRandomState,
+    key_encoder: KeyEncoder,
     /// Integer keys, which can get a bitset.
     int_keys: bool,
     shared: Arc<SharedBloom>,
@@ -185,10 +186,16 @@ struct SharedBloom {
     planned: Mutex<Option<Arc<AtomicSplitBlockBloom>>>,
 }
 
+fn key_encoder(name: PlSmallStr, dtype: DataType) -> KeyEncoder {
+    KeyEncoder::new(Arc::new(Schema::from_iter([(name, dtype)])), false, &[])
+}
+
 impl KeyFilterSpec {
     fn new(filter: &RuntimeFilter, key_schema: &Schema) -> Self {
-        let dtype = key_schema.get_at_index(filter.key_idx).unwrap().1.clone();
+        let (name, dtype) = key_schema.get_at_index(filter.key_idx).unwrap();
+        let dtype = dtype.clone();
         Self {
+            key_encoder: key_encoder(name.clone(), dtype.clone()),
             int_keys: dtype.is_integer(),
             dtype,
             bloom_keys: filter.bloom_keys,
@@ -228,9 +235,8 @@ impl KeyFilterSpec {
 
     fn hash_keys(&self, column: &Column) -> HashKeys {
         let df = column.clone().into_frame();
-        KeyEncoder::new(df.schema().clone(), false, &[])
+        self.key_encoder
             .hash_keys(&df, self.random_state.clone(), false)
-            .unwrap()
     }
 }
 
@@ -750,6 +756,7 @@ mod tests {
     ) -> KeyFilterSpec {
         KeyFilterSpec {
             dtype: DataType::Int64,
+            key_encoder: key_encoder("k".into(), DataType::Int64),
             bloom_keys: Some(bloom_keys),
             probe_distinct: None,
             random_state,
@@ -896,6 +903,7 @@ mod tests {
     /// A spec for integer keys of `dtype`, which can get a bitset.
     fn int_spec(dtype: DataType, rows_left: usize) -> KeyFilterSpec {
         KeyFilterSpec {
+            key_encoder: key_encoder("k".into(), dtype.clone()),
             dtype,
             int_keys: true,
             ..spec(1000, rows_left)

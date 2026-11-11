@@ -228,7 +228,7 @@ async fn select_keys_with_columns(
     state: &ExecutionState,
 ) -> PolarsResult<(HashKeys, DataFrame)> {
     let keys = select_key_columns(df, key_selectors, state).await?;
-    let hash_keys = params.key_encoder.hash_keys(
+    let hash_keys = params.key_encoder.try_hash_keys(
         &keys,
         params.random_state.clone(),
         params.args.nulls_equal,
