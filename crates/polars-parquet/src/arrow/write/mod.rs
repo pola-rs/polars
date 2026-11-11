@@ -1178,7 +1178,8 @@ fn get_encodings_recursive(dtype: &ArrowDataType, encodings: &mut Vec<Encoding>)
                 unreachable!()
             }
         },
-        Union | LargeUnion => todo!(),
+        // Not writable yet; the schema conversion raises.
+        Union | LargeUnion => {},
     }
 }
 

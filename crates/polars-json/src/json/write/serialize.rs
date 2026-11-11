@@ -268,6 +268,37 @@ fn struct_serializer<'a>(
     materialize_serializer(f, iter, offset, take)
 }
 
+/// Writes each value as the value of its variant.
+fn union_serializer<'a>(
+    array: &'a UnionArray,
+    offset: usize,
+    take: usize,
+) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync> {
+    // Serialize every child once; a row copies the bytes of its slot. A null row points at a
+    // null child value, which serializes as `null`.
+    let children: Vec<(Vec<u8>, Vec<usize>)> = array
+        .fields()
+        .iter()
+        .map(|child| {
+            let mut bytes = vec![];
+            let mut ends = vec![0];
+            let mut serializer = new_serializer(child.as_ref(), 0, usize::MAX);
+            while let Some(value) = serializer.next() {
+                bytes.extend_from_slice(value);
+                ends.push(bytes.len());
+            }
+            (bytes, ends)
+        })
+        .collect();
+
+    let f = move |i: usize, buf: &mut Vec<u8>| {
+        let (t, slot) = array.index(i);
+        let (bytes, ends) = &children[t];
+        buf.extend_from_slice(&bytes[ends[slot]..ends[slot + 1]]);
+    };
+    materialize_serializer(f, 0..array.len(), offset, take)
+}
+
 fn list_serializer<'a, O: Offset>(
     array: &'a ListArray<O>,
     offset: usize,
@@ -689,6 +720,9 @@ pub fn new_serializer<'a>(
             )
         },
         ArrowDataType::Null => null_serializer(array.len(), offset, take),
+        ArrowDataType::Union(_) => {
+            union_serializer(array.as_any().downcast_ref().unwrap(), offset, take)
+        },
         other => todo!("Writing {:?} to JSON", other),
     }
 }

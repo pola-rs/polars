@@ -1351,3 +1351,39 @@ def test_union_selector() -> None:
     assert repr(cs.union()) == "cs.union()"
     out = df.select(cs.union().union.match(i=pl.element(), default=0))
     assert out.to_series().to_list() == [1, 0, 3, None]
+
+
+@pytest.mark.parametrize("s", messy_layouts())
+def test_union_distinct_flags(s: pl.Series) -> None:
+    values = to_pylist(s)
+    keys = [(variant_of(v), v) for v in values]
+    first = [keys.index(k) == i for i, k in enumerate(keys)]
+    last = [len(keys) - 1 - keys[::-1].index(k) == i for i, k in enumerate(keys)]
+    unique = [keys.count(k) == 1 for k in keys]
+    assert s.is_first_distinct().to_list() == first
+    assert s.is_last_distinct().to_list() == last
+    assert s.is_unique().to_list() == unique
+    assert s.is_duplicated().to_list() == [not u for u in unique]
+
+
+@pytest.mark.parametrize("s", messy_layouts())
+def test_union_write_json(s: pl.Series) -> None:
+    import json
+
+    df = s.to_frame()
+    expected = [{"u": v} for v in to_pylist(s)]
+    assert json.loads(df.write_json()) == expected
+    assert [json.loads(line) for line in df.write_ndjson().splitlines()] == expected
+    buf = io.BytesIO()
+    df.lazy().sink_ndjson(buf)
+    assert [json.loads(line) for line in buf.getvalue().splitlines()] == expected
+    encoded = df.select(pl.struct("u").struct.json_encode()).to_series()
+    assert [json.loads(v) for v in encoded] == expected
+
+
+def test_union_write_parquet_raises(tmp_path: Path) -> None:
+    df = messy().to_frame()
+    with pytest.raises(ComputeError, match="not yet implemented"):
+        df.write_parquet(tmp_path / "u.parquet")
+    with pytest.raises(ComputeError, match="not yet implemented"):
+        df.lazy().sink_parquet(tmp_path / "u.parquet")
