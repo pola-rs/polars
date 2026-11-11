@@ -457,6 +457,25 @@ def test_union_cast_raises() -> None:
         s.cast(pl.String)
 
 
+def nested_unions() -> list[pl.Series]:
+    lists = pa.LargeListArray.from_arrays(pa.array([0, 2, 2, 6]), int_str())
+    arrays = pa.FixedSizeListArray.from_arrays(int_str(), 2)
+    return [pl.Series("l", lists), pl.Series("a", arrays)]
+
+
+def test_union_nested_chunked_gather() -> None:
+    for s in nested_unions():
+        chunked = pl.concat([s.slice(1), s], rechunk=False)
+        assert chunked.n_chunks() == 2
+        values = s.to_arrow().to_pylist()
+        combined = values[1:] + values
+        idx = [1, len(s) - 1, len(combined) - 1, 0]
+        assert to_pylist(chunked.gather(idx)) == [combined[i] for i in idx]
+
+        broadcast = s.to_frame().with_columns(v=pl.col(s.name).first())["v"]
+        assert to_pylist(broadcast) == [values[0]] * len(s)
+
+
 def test_union_join_chunked_payload() -> None:
     lists = pa.LargeListArray.from_arrays(pa.array(range(7)), int_str())
     right = pl.DataFrame({"k": range(6), "u": pl.Series(int_str()), "l": lists})
