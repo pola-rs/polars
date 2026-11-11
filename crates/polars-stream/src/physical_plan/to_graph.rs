@@ -402,6 +402,7 @@ fn to_graph_rec<'a>(
             function,
             maintain_order,
             chunk_size,
+            split_by,
         } => {
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.graph.add_node(
@@ -409,6 +410,7 @@ fn to_graph_rec<'a>(
                     function.clone(),
                     *maintain_order,
                     *chunk_size,
+                    split_by.clone(),
                 ),
                 [(input_key, input.port)],
             )

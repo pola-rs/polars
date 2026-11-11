@@ -158,6 +158,7 @@ class Engine(ABC):
         optimizations: QueryOptFlags,
         maintain_order: bool = True,
         chunk_size: int | None = None,
+        split_by: str | None = None,
         lazy: bool = False,
     ) -> _CollectBatches:
         """Execute `lf`, yielding its result in batches."""
@@ -286,6 +287,7 @@ class Engine(ABC):
         function: Callable[[DataFrame], bool | None],
         *,
         chunk_size: int | None,
+        split_by: str | None,
         maintain_order: bool,
         optimizations: QueryOptFlags,
     ) -> None:
@@ -434,6 +436,7 @@ class _LocalEngine(Engine):
         optimizations: QueryOptFlags,
         maintain_order: bool = True,
         chunk_size: int | None = None,
+        split_by: str | None = None,
         lazy: bool = False,
     ) -> _CollectBatches:
         optimizations = self._with_monitoring(optimizations)
@@ -443,6 +446,7 @@ class _LocalEngine(Engine):
                 engine=self.name,
                 maintain_order=maintain_order,
                 chunk_size=chunk_size,
+                split_by=split_by,
                 lazy=lazy,
             )
         )
@@ -661,6 +665,7 @@ class _LocalEngine(Engine):
         function: Callable[[DataFrame], bool | None],
         *,
         chunk_size: int | None,
+        split_by: str | None,
         maintain_order: bool,
         optimizations: QueryOptFlags,
     ) -> None:
@@ -670,6 +675,7 @@ class _LocalEngine(Engine):
                 lf,
                 function,
                 chunk_size=chunk_size,
+                split_by=split_by,
                 maintain_order=maintain_order,
             ),
             optimizations=optimizations,

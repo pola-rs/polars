@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
 import pytest
@@ -153,3 +154,211 @@ print("OK", end="")
     )
 
     assert out == b"OK"
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_collect_batches_split_by(engine: EngineType) -> None:
+    df = pl.DataFrame({"ts": [1, 1, 2, 2, 2, 3], "x": range(6)})
+
+    frames = list(df.lazy().collect_batches(split_by="ts", engine=engine))
+
+    assert [f["ts"].to_list() for f in frames] == [[1, 1], [2, 2, 2], [3]]
+    assert all(f["ts"].n_unique() == 1 for f in frames)
+    assert_frame_equal(pl.concat(frames), df)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_collect_batches_split_by_many_groups(engine: EngineType) -> None:
+    n = 100_000
+    df = pl.DataFrame({"ts": [i // 1000 for i in range(n)], "x": range(n)})
+
+    frames = list(df.lazy().collect_batches(split_by="ts", engine=engine))
+
+    assert len(frames) == 100
+    assert all(f["ts"].n_unique() == 1 for f in frames)
+    assert_frame_equal(pl.concat(frames), df)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_collect_batches_split_by_across_morsels(engine: EngineType) -> None:
+    n = 200_000
+    df = pl.DataFrame({"ts": [0] * (n - 1) + [1], "x": range(n)})
+
+    frames = list(df.lazy().collect_batches(split_by="ts", engine=engine))
+
+    assert [f.height for f in frames] == [n - 1, 1]
+    assert all(f["ts"].n_unique() == 1 for f in frames)
+    assert_frame_equal(pl.concat(frames), df)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_sink_batches_split_by(engine: EngineType) -> None:
+    df = pl.DataFrame({"ts": [1, 1, 2, 2, 2, 3], "x": range(6)})
+    frames: list[pl.DataFrame] = []
+
+    df.lazy().sink_batches(lambda f: frames.append(f), split_by="ts", engine=engine)
+
+    assert [f["ts"].to_list() for f in frames] == [[1, 1], [2, 2, 2], [3]]
+    assert_frame_equal(pl.concat(frames), df)
+
+
+def test_split_by_validation() -> None:
+    lf = pl.DataFrame({"ts": [1, 1, 2], "x": range(3)}).lazy()
+
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="maintain_order"):
+        lf.collect_batches(split_by="ts", maintain_order=False)
+
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="combined"):
+        lf.collect_batches(split_by="ts", chunk_size=2)
+
+    with pytest.raises(pl.exceptions.ColumnNotFoundError):
+        list(lf.collect_batches(split_by="missing"))
+
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="maintain_order"):
+        lf.sink_batches(lambda _: None, split_by="ts", maintain_order=False)
+
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="combined"):
+        lf.sink_batches(lambda _: None, split_by="ts", chunk_size=2)
+
+    with pytest.raises(pl.exceptions.ColumnNotFoundError):
+        lf.sink_batches(lambda _: None, split_by="missing")
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_collect_batches_split_by_single_key_across_morsels(engine: EngineType) -> None:
+    n = 200_000
+    df = pl.DataFrame({"ts": [1] * n, "x": range(n)})
+
+    frames = list(df.lazy().collect_batches(split_by="ts", engine=engine))
+
+    assert len(frames) == 1
+    assert frames[0].height == n
+    assert_frame_equal(frames[0], df)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_split_by_empty(engine: EngineType) -> None:
+    df = pl.DataFrame(schema={"ts": pl.Int64, "x": pl.Int64})
+
+    assert list(df.lazy().collect_batches(split_by="ts", engine=engine)) == []
+
+    frames: list[pl.DataFrame] = []
+    df.lazy().sink_batches(lambda f: frames.append(f), split_by="ts", engine=engine)
+    assert frames == []
+
+
+@pytest.mark.parametrize(
+    ("dtype", "values", "expected"),
+    [
+        (pl.Int64, [1, 1, 2, 2, 2, 3], [[1, 1], [2, 2, 2], [3]]),
+        (pl.UInt32, [1, 1, 2, 2, 2, 3], [[1, 1], [2, 2, 2], [3]]),
+        (
+            pl.String,
+            ["a", "a", "b", "b", "b", "c"],
+            [["a", "a"], ["b", "b", "b"], ["c"]],
+        ),
+        (
+            pl.Boolean,
+            [True, True, False, False, False, True],
+            [[True, True], [False, False, False], [True]],
+        ),
+        (
+            pl.Categorical,
+            ["a", "a", "b", "b", "b", "c"],
+            [["a", "a"], ["b", "b", "b"], ["c"]],
+        ),
+        (
+            pl.Date,
+            [
+                date(2020, 1, 1),
+                date(2020, 1, 1),
+                date(2020, 1, 2),
+                date(2020, 1, 2),
+                date(2020, 1, 2),
+                date(2020, 1, 3),
+            ],
+            [
+                [date(2020, 1, 1), date(2020, 1, 1)],
+                [date(2020, 1, 2), date(2020, 1, 2), date(2020, 1, 2)],
+                [date(2020, 1, 3)],
+            ],
+        ),
+        (
+            pl.Datetime,
+            [
+                datetime(2020, 1, 1),
+                datetime(2020, 1, 1),
+                datetime(2020, 1, 2),
+                datetime(2020, 1, 2),
+                datetime(2020, 1, 2),
+                datetime(2020, 1, 3),
+            ],
+            [
+                [datetime(2020, 1, 1), datetime(2020, 1, 1)],
+                [
+                    datetime(2020, 1, 2),
+                    datetime(2020, 1, 2),
+                    datetime(2020, 1, 2),
+                ],
+                [datetime(2020, 1, 3)],
+            ],
+        ),
+    ],
+)
+def test_split_by_dtypes(
+    dtype: pl.DataType, values: list[object], expected: list[list[object]]
+) -> None:
+    df = pl.DataFrame({"key": pl.Series(values, dtype=dtype), "x": range(6)})
+
+    frames = list(df.lazy().collect_batches(split_by="key"))
+
+    assert [f["key"].to_list() for f in frames] == expected
+    assert_frame_equal(pl.concat(frames), df)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_sink_batches_split_by_early_stop(engine: EngineType) -> None:
+    df = pl.DataFrame({"ts": [1, 1, 2, 2, 2, 3], "x": range(6)})
+    seen: list[int] = []
+
+    def callback(frame: pl.DataFrame) -> bool:
+        seen.append(frame["ts"][0])
+        return True
+
+    df.lazy().sink_batches(callback, split_by="ts", engine=engine)  # type: ignore[call-overload]
+
+    assert seen == [1]
+
+
+def test_sink_batches_split_by_lazy() -> None:
+    df = pl.DataFrame({"ts": [1, 1, 2, 2, 2, 3], "x": range(6)})
+    frames: list[pl.DataFrame] = []
+
+    out = df.lazy().sink_batches(  # type: ignore[call-overload]
+        lambda f: frames.append(f), split_by="ts", lazy=True
+    )
+
+    assert isinstance(out, pl.LazyFrame)
+    out.collect()
+    assert [f["ts"].to_list() for f in frames] == [[1, 1], [2, 2, 2], [3]]
+    assert_frame_equal(pl.concat(frames), df)
+
+
+def test_split_by_null_keys() -> None:
+    df = pl.DataFrame({"ts": [1, None, None, 2], "x": range(4)})
+
+    frames = list(df.lazy().collect_batches(split_by="ts"))
+
+    assert [f["ts"].to_list() for f in frames] == [[1], [None, None], [2]]
+    assert_frame_equal(pl.concat(frames), df)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_split_by_null_keys_across_morsels(engine: EngineType) -> None:
+    n = 200_000
+    df = pl.DataFrame({"ts": [None] * (n - 1) + [1], "x": range(n)})
+
+    frames = list(df.lazy().collect_batches(split_by="ts", engine=engine))
+
+    assert [f.height for f in frames] == [n - 1, 1]
+    assert_frame_equal(pl.concat(frames), df)

@@ -461,17 +461,22 @@ fn lower_ir_inner(
                 function,
                 maintain_order,
                 chunk_size,
+                split_by,
             }) => {
-                disable_morsel_split.get_or_insert(true);
+                if split_by.is_none() {
+                    disable_morsel_split.get_or_insert(true);
+                }
                 let function = function.clone();
                 let maintain_order = *maintain_order;
                 let chunk_size = *chunk_size;
+                let split_by = split_by.clone();
                 let phys_input = lower_ir!(*input)?;
                 PhysNodeKind::CallbackSink {
                     input: phys_input,
                     function,
                     maintain_order,
                     chunk_size,
+                    split_by,
                 }
             },
 

@@ -20,7 +20,7 @@ polars-error = { workspace = true }
 polars-expr = { workspace = true }
 polars-io = { workspace = true, features = ["lazy"] }
 polars-json = { workspace = true, optional = true }
-polars-ops = { workspace = true, features = ["chunked_ids"] }
+polars-ops = { workspace = true, features = ["chunked_ids", "rle"] }
 polars-plan = { workspace = true }
 polars-time = { workspace = true, optional = true }
 polars-utils = { workspace = true }

@@ -760,6 +760,9 @@ impl LazyFrame {
 
     /// Collect the query in batches.
     ///
+    /// If `split_by` is set, batches are split at every change of that column
+    /// instead of by row count.
+    ///
     /// If lazy is true the query will not start until the first poll (or until
     /// start is called on CollectBatches).
     #[cfg(feature = "async")]
@@ -769,6 +772,7 @@ impl LazyFrame {
         maintain_order: bool,
         chunk_size: Option<NonZeroUsize>,
         lazy: bool,
+        split_by: Option<PlSmallStr>,
     ) -> PolarsResult<CollectBatches> {
         let (send, recv) = sync_channel(1);
         let runner_send = send.clone();
@@ -780,6 +784,7 @@ impl LazyFrame {
             }),
             maintain_order,
             chunk_size,
+            split_by,
         )?;
         let runner = move || {
             // We use spawn_blocking here as it has a high blocking thread pool limit.
@@ -805,6 +810,7 @@ impl LazyFrame {
         function: PlanCallback<DataFrame, bool>,
         maintain_order: bool,
         chunk_size: Option<NonZeroUsize>,
+        split_by: Option<PlSmallStr>,
     ) -> PolarsResult<Self> {
         use polars_plan::prelude::sink::CallbackSinkType;
 
@@ -812,6 +818,16 @@ impl LazyFrame {
             !matches!(self.logical_plan, DslPlan::Sink { .. }),
             InvalidOperation: "cannot create a sink on top of another sink"
         );
+        if split_by.is_some() {
+            polars_ensure!(
+                maintain_order,
+                InvalidOperation: "split_by requires maintain_order=true"
+            );
+            polars_ensure!(
+                chunk_size.is_none(),
+                InvalidOperation: "split_by cannot be combined with chunk_size"
+            );
+        }
 
         self.logical_plan = DslPlan::Sink {
             input: Arc::new(self.logical_plan),
@@ -819,6 +835,7 @@ impl LazyFrame {
                 function,
                 maintain_order,
                 chunk_size,
+                split_by,
             }),
         };
 

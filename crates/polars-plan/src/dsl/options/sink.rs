@@ -242,6 +242,8 @@ pub struct CallbackSinkType {
     pub function: PlanCallback<DataFrame, bool>,
     pub maintain_order: bool,
     pub chunk_size: Option<NonZeroUsize>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub split_by: Option<PlSmallStr>,
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
