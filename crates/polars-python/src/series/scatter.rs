@@ -30,6 +30,21 @@ impl PySeries {
 }
 
 fn scatter(s: Series, idx: &Series, values: &Series) -> Result<Series, (Series, PolarsError)> {
+    // A single value is broadcast to all indices. Other values must match
+    // the number of indices; the scatter kernels zip and would drop extras.
+    // Reject mismatches before changing the series.
+    if !idx.is_empty() && values.len() != 1 && values.len() != idx.len() {
+        return Err((
+            s,
+            polars_err!(
+                ShapeMismatch:
+                "scatter expects one value or {} values for the given indices, got {}",
+                idx.len(),
+                values.len(),
+            ),
+        ));
+    }
+
     let logical_dtype = s.dtype().clone();
     let is_categorical = logical_dtype.is_categorical() || logical_dtype.is_enum();
     let valid_values = if is_categorical {
