@@ -25,6 +25,15 @@ impl InMemorySinkNode {
         }
     }
 
+    /// Whether no rows were collected.
+    pub fn is_empty(&self) -> bool {
+        self.morsels_per_pipe
+            .lock()
+            .iter()
+            .flatten()
+            .all(|morsel| morsel.height() == 0)
+    }
+
     /// Takes the collected morsels in order, as frames registered in `spill_ctx`. They can be
     /// spilled while `spill_ctx` lives.
     pub fn take_spill_frames(&mut self, spill_ctx: &LeastRecentSpillContext) -> Arc<[SpillFrame]> {
