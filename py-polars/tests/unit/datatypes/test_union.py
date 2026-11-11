@@ -34,6 +34,13 @@ def dense(
     )
 
 
+def to_pylist(s: pl.Series) -> list[Any]:
+    """Export to Arrow, check that the result is valid and return its values."""
+    arr = s.rechunk().to_arrow()
+    arr.validate(full=True)
+    return arr.to_pylist()
+
+
 def to_pa(s: pl.Series) -> pa.UnionArray:
     """Export to Arrow and check that the result is a valid dense union."""
     arr = s.rechunk().to_arrow()
@@ -448,6 +455,28 @@ def test_union_cast_raises() -> None:
     assert s.cast(INT_STR).to_list() == INT_STR_VALUES
     with pytest.raises(InvalidOperationError):
         s.cast(pl.String)
+
+
+def test_union_join_chunked_payload() -> None:
+    lists = pa.LargeListArray.from_arrays(pa.array(range(7)), int_str())
+    right = pl.DataFrame({"k": range(6), "u": pl.Series(int_str()), "l": lists})
+    right = pl.concat([right, right.with_columns(pl.col("k") + 6)], rechunk=False)
+    assert right.n_chunks() == 2
+    left = pl.DataFrame({"k": [7, 0, 99, 11]})
+
+    out = left.join(right, on="k", how="left")
+    assert to_pa(out["u"]).to_pylist() == [
+        INT_STR_VALUES[1],
+        INT_STR_VALUES[0],
+        None,
+        INT_STR_VALUES[5],
+    ]
+    assert to_pylist(out["l"]) == [
+        [INT_STR_VALUES[1]],
+        [INT_STR_VALUES[0]],
+        None,
+        [INT_STR_VALUES[5]],
+    ]
 
 
 def test_union_import_large_child() -> None:
