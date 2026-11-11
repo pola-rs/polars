@@ -187,8 +187,8 @@ impl ComputeNode for RangeJoinNode {
     }
 
     fn memory_usage(&self) -> NodeMemoryUsage {
-        match self.state {
-            RangeJoinState::Build { .. } => NodeMemoryUsage::Accumulating,
+        match &self.state {
+            RangeJoinState::Build { interval_peek, .. } => interval_peek.build_memory_usage(),
             RangeJoinState::Probe(_) => NodeMemoryUsage::HoldingUntilDone,
             RangeJoinState::Done => NodeMemoryUsage::Bounded,
         }
@@ -246,8 +246,8 @@ impl ComputeNode for RangeJoinNode {
                 ref mut sink_node,
                 ref mut interval_peek,
             } => {
+                interval[0] = interval_peek.port_state(interval[0], point[0], sink_node);
                 sink_node.update_state(point, &mut [], state)?;
-                interval[0] = interval_peek.port_state(interval[0], sink_node);
                 send[0] = PortState::Blocked;
             },
             RangeJoinState::Probe(ref probe_state) => {

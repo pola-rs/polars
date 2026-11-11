@@ -17,8 +17,8 @@ use rayon::prelude::*;
 use crate::expression::StreamExpr;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
-use crate::nodes::ExecutionState;
 use crate::nodes::in_memory_sink::InMemorySinkNode;
+use crate::nodes::{ExecutionState, NodeMemoryUsage};
 use crate::pipe::{PortReceiver, PortSender, RecvPort, port_channel};
 
 #[cfg(feature = "asof_join")]
@@ -269,6 +269,8 @@ struct ProbePeek {
     task_metrics: Option<Arc<TaskMetricAggregator>>,
     /// Whether the build side has sent rows.
     build_has_rows: bool,
+    /// Whether the build side could send rows at the last state update.
+    build_ready: bool,
 }
 
 impl ProbePeek {
@@ -279,19 +281,37 @@ impl ProbePeek {
             spill_ctx: MostRecentSpillContext::new("join-probe-peek".into(), task_metrics.clone()),
             task_metrics,
             build_has_rows: false,
+            build_ready: true,
         }
     }
 
     /// The state of the probe port while building: it is read until it sends rows. It is opened
-    /// once the build side has rows and is not done, as the probe side is then read anyway. It is
-    /// also only opened when its input can send now, so it doesn't make the scheduler run an
-    /// accumulating node feeding it before the build side.
-    fn port_state(&mut self, recv: PortState, build: &InMemorySinkNode) -> PortState {
-        self.build_has_rows = self.build_has_rows || !build.is_empty();
+    /// once the build side has rows, or while the build side can't send, so an empty probe side
+    /// can end the join before a blocked build side is done. It is only opened when its input can
+    /// send now, so it doesn't make the scheduler run an accumulating node feeding it before the
+    /// build side.
+    fn port_state(
+        &mut self,
+        recv: PortState,
+        build: PortState,
+        build_sink: &InMemorySinkNode,
+    ) -> PortState {
+        self.build_has_rows = self.build_has_rows || !build_sink.is_empty();
+        self.build_ready = build == PortState::Ready;
+        let open = self.build_has_rows || !self.build_ready;
         match recv {
             PortState::Done => PortState::Done,
-            PortState::Ready if self.build_has_rows && self.len == 0 => PortState::Ready,
+            PortState::Ready if open && self.len == 0 => PortState::Ready,
             _ => PortState::Blocked,
+        }
+    }
+
+    /// While the build side can't send, only the probe side is read.
+    fn build_memory_usage(&self) -> NodeMemoryUsage {
+        if self.build_ready {
+            NodeMemoryUsage::Accumulating
+        } else {
+            NodeMemoryUsage::WillAccumulate
         }
     }
 

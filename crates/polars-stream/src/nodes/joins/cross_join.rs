@@ -97,8 +97,8 @@ impl ComputeNode for CrossJoinNode {
     }
 
     fn memory_usage(&self) -> NodeMemoryUsage {
-        match self.state {
-            CrossJoinState::Build { .. } => NodeMemoryUsage::Accumulating,
+        match &self.state {
+            CrossJoinState::Build { probe_peek, .. } => probe_peek.build_memory_usage(),
             CrossJoinState::Probe { .. } => NodeMemoryUsage::HoldingUntilDone,
             CrossJoinState::Done => NodeMemoryUsage::Bounded,
         }
@@ -153,8 +153,9 @@ impl ComputeNode for CrossJoinNode {
                 sink_node,
                 probe_peek,
             } => {
+                recv[probe_idx] =
+                    probe_peek.port_state(recv[probe_idx], recv[build_idx], sink_node);
                 recv[build_idx] = PortState::Ready;
-                recv[probe_idx] = probe_peek.port_state(recv[probe_idx], sink_node);
                 send[0] = PortState::Blocked;
             },
             CrossJoinState::Probe { peeked, .. } => {

@@ -857,6 +857,7 @@ def test_recursive_struct_fields_by_name() -> None:
         ("SELECT * FROM e CROSS JOIN (SELECT n FROM t GROUP BY n) g", 0),
         ("SELECT * FROM e JOIN t ON e.n < t.n", 0),
         ("SELECT * FROM e JOIN (SELECT n FROM t GROUP BY n) g ON e.n < g.n", 0),
+        ("SELECT * FROM t JOIN e ON e.n < t.n", 0),
         ("SELECT * FROM e LEFT JOIN t ON e.n < t.n", 0),
         ("SELECT * FROM t RIGHT JOIN e ON e.n < t.n", 0),
         ("SELECT * FROM t LIMIT 5", 5),
