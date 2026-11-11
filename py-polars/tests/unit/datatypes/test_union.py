@@ -498,6 +498,12 @@ def test_union_join_chunked_payload() -> None:
     ]
 
 
+def test_union_duplicate_names_raise() -> None:
+    arr = dense([0, 1], [0, 0], [pa.array([1]), pa.array(["a"])], ["x", "x"])
+    with pytest.raises(pl.exceptions.DuplicateError, match="not unique"):
+        pl.Series(arr)
+
+
 def test_union_import_large_child() -> None:
     # A child longer than `u32::MAX`, with decreasing offsets and a dropped `Null` variant,
     # so the import rebuilds the children.

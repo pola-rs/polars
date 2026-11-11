@@ -334,7 +334,11 @@ impl DataType {
                 if fields.is_empty() {
                     DataType::Null
                 } else {
-                    DataType::Union(fields)
+                    let dtype = DataType::Union(fields);
+                    if let Err(e) = dtype.ensure_valid_union_dtype() {
+                        panic!("{e}")
+                    }
+                    dtype
                 }
             },
             #[cfg(feature = "dtype-union")]
