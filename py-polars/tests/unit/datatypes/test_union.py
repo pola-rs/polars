@@ -956,6 +956,35 @@ def test_union_cast_resolves_variant_dtypes() -> None:
         ]
 
 
+@pytest.mark.parametrize(
+    ("values", "to", "expected"),
+    [
+        (
+            pa.array([[[1]], [[2, 3]]], pa.large_list(pa.large_list(pa.int64()))),
+            pl.List(pl.List),
+            pl.List(pl.List(pl.Int64)),
+        ),
+        (
+            pa.array(
+                [{"l": [1]}, {"l": None}], pa.struct([("l", pa.large_list(pa.int64()))])
+            ),
+            pl.Struct({"l": pl.List}),
+            pl.Struct({"l": pl.List(pl.Int64)}),
+        ),
+    ],
+)
+def test_union_cast_resolves_nested_variant_dtypes(
+    values: pa.Array, to: pl.DataType, expected: pl.DataType
+) -> None:
+    s = pl.Series(dense([0, 0], [0, 1], [values], ["v"]))
+    # The first chunk holds only nulls, which a cast does not resolve on its own.
+    null = pl.Series([None], dtype=s.dtype)
+    for inp in [s, pl.concat([null, s, s.slice(1)], rechunk=False)]:
+        out = inp.cast(pl.Union({"v": to}))
+        assert out.dtype == pl.Union({"v": expected})
+        assert out.to_list() == inp.to_list()
+
+
 def test_union_cast_lazy() -> None:
     s = messy()
     to = pl.Union({"s": pl.String, "i": pl.Float64})
