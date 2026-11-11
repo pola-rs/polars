@@ -702,7 +702,7 @@ impl PackedKeys {
         }
         polars_ensure!(
             !full,
-            ComputeError: "too many join or group-by keys are outside the min/max of their column statistics; the statistics do not match the data\n\nHint: scanning with `use_statistics=False` does not use the statistics"
+            ComputeError: "too many join or group-by keys are outside the min/max of their column statistics; the statistics do not match the data\n\nHint: a parquet scan with `use_statistics=False` does not use them"
         );
         Ok(())
     }

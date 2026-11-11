@@ -12,6 +12,9 @@ use crate::plans::{AExpr, IR, JoinTypeOptionsIR, into_column};
 /// cover all of its data. Filters, slices, sorts, group-by keys and joins only drop or
 /// repeat values, so the range of the scan still holds above them. A computed column
 /// has no range.
+///
+/// This doesn't use `node_stats`, whose ranges may be estimates. A range here must
+/// hold every value, as packed keys rely on it.
 #[recursive]
 pub fn column_value_range(
     node: Node,
