@@ -810,3 +810,48 @@ def test_union_equality_tags_and_large() -> None:
     five = pl.concat([one] * 5, rechunk=True)
     assert (five == five.reverse()).all()
     assert (five.gather([9, 0]) == five.gather([0, 9])).all()
+
+
+def test_union_zip() -> None:
+    a = messy()
+    b = pl.concat([a.slice(3), a.slice(0, 3)], rechunk=False)
+    mask = [True, None, False, True, False, False, True]
+    av, bv = a.to_list(), b.to_list()
+    df = pl.DataFrame({"a": a, "b": b, "m": pl.Series(mask, dtype=pl.Boolean)})
+    cases = {
+        "both": (pl.col("a"), pl.col("b"), av, bv),
+        "scalar_true": (pl.col("a").gather(1), pl.col("b"), [av[1]] * 7, bv),
+        "scalar_false": (pl.col("a"), pl.col("b").gather(4), av, [bv[4]] * 7),
+        "scalar_both": (
+            pl.col("a").gather(0),
+            pl.col("b").gather(2),
+            [av[0]] * 7,
+            [bv[2]] * 7,
+        ),
+    }
+    for name, (t, f, tv, fv) in cases.items():
+        out = (
+            df.lazy()
+            .select(pl.when("m").then(t).otherwise(f).alias(name))
+            .collect()[name]
+        )
+        expected = [x if m else y for m, x, y in zip(mask, tv, fv, strict=True)]
+        assert to_pylist(out) == expected
+        # Every child value of the output belongs to one of its slots.
+        arr = out.to_arrow()
+        assert sum(len(arr.field(i)) for i in range(2)) == len(arr)
+
+    assert to_pylist(a.zip_with(pl.Series(mask), b)) == [
+        x if m else y for m, x, y in zip(mask, av, bv, strict=True)
+    ]
+    other = pl.Series([None] * 7, dtype=pl.Union({"x": pl.Int8}))
+    with pytest.raises(pl.exceptions.SchemaError):
+        a.zip_with(pl.Series(mask), other)
+
+
+def test_union_zip_large_child() -> None:
+    one = pl.Series(big_union())
+    five = pl.concat([one] * 5, rechunk=True)
+    mask = pl.Series([i % 3 == 0 for i in range(10)])
+    out = five.zip_with(mask, five.reverse())
+    assert to_pylist(out) == [{}] * 10

@@ -168,3 +168,72 @@ impl ChunkShift<UnionType> for UnionChunked {
         }
     }
 }
+
+#[cfg(feature = "zip_with")]
+impl ChunkZip<UnionType> for UnionChunked {
+    fn zip_with(&self, mask: &BooleanChunked, other: &UnionChunked) -> PolarsResult<UnionChunked> {
+        use polars_error::PolarsContext;
+        use polars_utils::broadcast::broadcast_len;
+
+        polars_ensure!(
+            self.dtype() == other.dtype(),
+            SchemaMismatch: "cannot zip unions of dtypes {} and {}", self.dtype(), other.dtype()
+        );
+        let length = broadcast_len([self.len(), mask.len(), other.len()])
+            .context("shapes of `self`, `mask` and `other` are not suitable for `zip_with`")?;
+
+        let mut builder =
+            LargeUnionArrayBuilder::new(self.dtype().to_physical_arrow(CompatLevel::newest()));
+        StaticArrayBuilder::reserve(&mut builder, length);
+        let share = ShareStrategy::Always;
+        let mut extend = |ca: &UnionChunked, start: usize, len: usize| {
+            if ca.len() == 1 {
+                let arr = ca.downcast_iter().find(|a| !a.is_empty()).unwrap();
+                builder.subslice_extend_each_repeated(arr, 0, 1, len, share);
+                return;
+            }
+            let (mut chunk, mut offset) = ca.index_to_chunked_index(start);
+            let mut remaining = len;
+            while remaining > 0 {
+                let arr = ca.downcast_get(chunk).unwrap();
+                let n = remaining.min(arr.len() - offset);
+                builder.subslice_extend(arr, offset, n, share);
+                remaining -= n;
+                chunk += 1;
+                offset = 0;
+            }
+        };
+
+        // A null mask value selects `other`.
+        if mask.len() == 1 {
+            let src = if mask.get(0).unwrap_or(false) { self } else { other };
+            extend(src, 0, length);
+        } else {
+            let mut run: Option<(bool, usize)> = None;
+            let mut i = 0;
+            for arr in mask.downcast_iter() {
+                let selected = match arr.validity() {
+                    Some(v) => arr.values() & v,
+                    None => arr.values().clone(),
+                };
+                for is_true in selected.iter() {
+                    match run {
+                        Some((v, _)) if v == is_true => {},
+                        Some((v, start)) => {
+                            extend(if v { self } else { other }, start, i - start);
+                            run = Some((is_true, i));
+                        },
+                        None => run = Some((is_true, i)),
+                    }
+                    i += 1;
+                }
+            }
+            if let Some((v, start)) = run {
+                extend(if v { self } else { other }, start, i - start);
+            }
+        }
+
+        // SAFETY: the builder has the physical dtype of `self`.
+        Ok(unsafe { self.with_chunks(vec![StaticArrayBuilder::freeze(builder).boxed()]) })
+    }
+}

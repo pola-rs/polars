@@ -70,6 +70,13 @@ impl PrivateSeries for SeriesWrap<UnionChunked> {
         self.hash_rows()?.vec_hash_combine(build_hasher, hashes)
     }
 
+    #[cfg(feature = "zip_with")]
+    fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
+        self.0
+            .zip_with(mask, other.union()?)
+            .map(|ca| ca.into_series())
+    }
+
     #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
         self.0

@@ -306,7 +306,8 @@ unsafe impl PolarsDataType for UnionType {
     type Array = LargeUnionArray;
     type IsNested = TrueT;
     type HasViews = FalseT;
-    type IsStruct = FalseT;
+    // Keeps unions out of the generic kernels that need a physical value, as for structs.
+    type IsStruct = TrueT;
     type IsObject = FalseT;
 
     fn get_static_dtype() -> DataType
