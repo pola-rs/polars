@@ -1,5 +1,5 @@
 use polars_core::chunked_array::cast::CastOptions;
-use polars_core::prelude::{Column, DataType, InitHashMaps, IntoColumn as _, PlHashMap, PlHashSet};
+use polars_core::prelude::{Column, DataType, IntoColumn as _, PlHashMap, PlHashSet};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_core::schema::iceberg::{IcebergColumn, IcebergColumnType, LIST_ELEMENT_DEFAULT_ID};
@@ -91,34 +91,16 @@ impl ColumnSelectorBuilder {
 
             // Construct index lookups. We don't construct a full schema here to avoid recursive
             // cloning of nested DataTypes.
-            let mut target_fields_lookup: PlHashMap<&str, usize> =
-                PlHashMap::with_capacity(target_fields.len());
-            let mut incoming_fields_lookup: PlHashMap<&str, usize> =
-                PlHashMap::with_capacity(target_fields.len());
-
-            for (i, field) in target_fields.iter().enumerate() {
-                if target_fields_lookup.contains_key(field.name.as_str()) {
-                    polars_bail!(
-                        ComputeError:
-                        "duplicate struct field '{}'",
-                        &field.name,
-                    )
-                }
-
-                target_fields_lookup.insert(field.name.as_str(), i);
-            }
-
-            for (i, field) in incoming_fields.iter().enumerate() {
-                if incoming_fields_lookup.contains_key(field.name.as_str()) {
-                    polars_bail!(
-                        ComputeError:
-                        "duplicate struct field '{}'",
-                        &field.name,
-                    )
-                }
-
-                incoming_fields_lookup.insert(field.name.as_str(), i);
-            }
+            let target_fields_lookup: PlHashMap<&str, usize> = target_fields
+                .iter()
+                .enumerate()
+                .map(|(i, field)| (field.name.as_str(), i))
+                .collect();
+            let incoming_fields_lookup: PlHashMap<&str, usize> = incoming_fields
+                .iter()
+                .enumerate()
+                .map(|(i, field)| (field.name.as_str(), i))
+                .collect();
 
             if matches!(
                 &self.cast_columns_policy.extra_struct_fields,

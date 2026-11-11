@@ -196,19 +196,16 @@ fn into_datatype_impl(
             )
         }),
         D::StructWithFields(field_exprs) => feature_gated!("dtype-struct", {
-            use polars_core::prelude::{Field, InitHashMaps, PlIndexSet, StructFields};
-            let mut seen = PlIndexSet::with_capacity(field_exprs.len());
-            let mut fields = Vec::with_capacity(field_exprs.len());
-            for (name, dt_expr) in field_exprs {
-                let dt = into_datatype_impl(dt_expr, schema, self_dtype)?;
-                if !seen.insert(name.clone()) {
-                    polars_bail!(
-                        InvalidOperation:
-                        "`struct` cannot have duplicate field name `{name}`"
-                    );
-                }
-                fields.push(Field::new(name, dt));
-            }
+            use polars_core::prelude::{Field, StructFields};
+            let fields = field_exprs
+                .into_iter()
+                .map(|(name, dt_expr)| {
+                    Ok(Field::new(
+                        name,
+                        into_datatype_impl(dt_expr, schema, self_dtype)?,
+                    ))
+                })
+                .collect::<PolarsResult<Vec<_>>>()?;
             DataType::Struct(StructFields::try_new(fields)?)
         }),
     };

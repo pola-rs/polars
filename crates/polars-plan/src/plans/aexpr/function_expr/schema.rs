@@ -202,23 +202,10 @@ impl IRFunctionExpr {
             }),
             AsList => mapper.map_to_list_of_dtypes(),
             #[cfg(feature = "dtype-struct")]
-            AsStruct => {
-                let mut field_names = PlIndexSet::with_capacity(fields.len() - 1);
-                let struct_fields = fields
-                    .iter()
-                    .map(|f| {
-                        polars_ensure!(
-                            field_names.insert(f.name.as_str()),
-                            duplicate_field = f.name()
-                        );
-                        Ok(f.clone())
-                    })
-                    .collect::<PolarsResult<Vec<_>>>()?;
-                Ok(Field::new(
-                    fields[0].name().clone(),
-                    DataType::Struct(StructFields::try_new(struct_fields)?),
-                ))
-            },
+            AsStruct => Ok(Field::new(
+                fields[0].name().clone(),
+                DataType::Struct(StructFields::try_new(fields.to_vec())?),
+            )),
             #[cfg(feature = "top_k")]
             TopK { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "top_k")]
