@@ -185,18 +185,20 @@ async fn static_skip_mask(
 
             // Note: Order is important here. We re-use the transform for the output column, meaning
             // that it may set the column name.
-            statistics.min = projection.apply_transform(statistics.min)?;
-            statistics.max = projection.apply_transform(statistics.max)?;
+            statistics.min = projection.apply_transform(statistics.min, 0)?;
+            statistics.max = projection.apply_transform(statistics.max, 0)?;
             // The null counts of struct fields have the file's field layout. The transform may
             // reorder, rename or insert fields (e.g. by field ID), and casts the leaves, so it
             // does not apply to them: use unknown null counts.
-            if let ArrowFieldProjection::Mapped { output_dtype, .. } = projection
+            // The same holds for a pruned struct decoded with a leaf read only for its validity.
+            if (matches!(projection, ArrowFieldProjection::Mapped { .. })
+                || projection.pruned().is_some_and(|p| p.narrows()))
                 && matches!(projection.arrow_field().dtype(), ArrowDataType::Struct(_))
             {
                 statistics.null_count = Column::full_null(
                     PlSmallStr::EMPTY,
                     statistics.null_count.len(),
-                    &null_count_dtype(output_dtype),
+                    &null_count_dtype(&projection.output_dtype()),
                 );
             }
 
@@ -384,7 +386,7 @@ fn order_keeping_bounds(
         let values = Series::new(projection.output_name().clone(), values)
             .strict_cast(&file_dtype.to_physical())?
             .strict_cast(&file_dtype)?;
-        let column = projection.apply_transform(values.into_column())?;
+        let column = projection.apply_transform(values.into_column(), 0)?;
         let df = DataFrame::new(column.len(), vec![column])?;
         Ok(expr
             .evaluate_io(&df)?
@@ -769,6 +771,17 @@ fn load_parquet_column_statistics(
     // This can be None in the allow_missing_columns case.
     let Some(idxs) = row_groups[0].columns_idxs_under_root_iter(&arrow_field.name) else {
         return null_statistics();
+    };
+
+    // A pruned struct pairs its fields with the selected leaves, indexed into all leaves.
+    let pruned_idxs: Vec<usize>;
+    // Statistics are read as the first row group is decoded.
+    let idxs = match projection.leaves(0) {
+        Some(leaves) => {
+            pruned_idxs = leaves.iter().map(|&i| idxs[i]).collect();
+            pruned_idxs.as_slice()
+        },
+        None => idxs,
     };
 
     // Structs span multiple parquet leaf columns; assemble per-field statistics so the

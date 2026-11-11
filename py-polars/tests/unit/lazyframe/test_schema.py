@@ -186,7 +186,7 @@ def test_lazy_collect_schema_matches_computed_schema(
         expected_schema = lazy_df.collect().schema
     except (
         # Applying the operator to these dtypes will result in an error,
-        # so they their output dtype is undefined
+        # so their output dtype is undefined
         pl.exceptions.InvalidOperationError,
         pl.exceptions.SchemaError,
         pl.exceptions.ComputeError,
@@ -404,7 +404,7 @@ def test_lazy_explode_schema() -> None:
     q = lf.select(pl.col("x").list.explode(empty_as_null=True))
     assert q.collect_schema() == {"x": pl.Int64}
 
-    # `LazyFrame.explode()` goes through a different codepath than `Expr.expode`
+    # `LazyFrame.explode()` goes through a different codepath than `Expr.explode`
     lf = pl.LazyFrame().with_columns(
         pl.Series([[1]], dtype=pl.List(pl.Int64)).alias("list"),
         pl.Series([[1]], dtype=pl.Array(pl.Int64, 1)).alias("array"),

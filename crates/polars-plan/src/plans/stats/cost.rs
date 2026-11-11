@@ -27,7 +27,7 @@ pub(crate) fn subplan_cost(
 ) -> Option<SubplanCost> {
     // One cache for the whole walk: every node here is an ancestor or a descendant of
     // the others, so estimating them one at a time would re-walk the same subtrees.
-    let cache = &mut StatsCache::new();
+    let cache = &mut StatsCache::default();
     let rows = node_stats_with_cache(node, ir_arena, expr_arena, cache)?.filtered;
     let mut work = 0.0;
     let mut stack = vec![node];

@@ -4,6 +4,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 pub mod file_provider;
+pub mod iceberg_properties;
 pub mod iceberg_sink_state;
 pub mod sink;
 pub use polars_config::Engine;
@@ -40,7 +41,7 @@ use crate::dsl::Selector;
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct RollingCovOptions {
     pub window_size: IdxSize,
-    pub min_periods: IdxSize,
+    pub min_samples: IdxSize,
     pub ddof: Option<u8>,
 }
 

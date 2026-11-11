@@ -19,6 +19,7 @@ use polars_io::HiveOptions;
 use polars_io::cloud::CloudOptions;
 use polars_io_ext_ffi::common::{ArrowArrayStream, ArrowSchema};
 use polars_io_ext_ffi::iceberg_v1::{Output, OutputHeader};
+use polars_plan::dsl::StatisticsBounds;
 use polars_plan::dsl::default_values::IcebergDefaultFieldValues;
 use polars_plan::dsl::deletion::IcebergDeletes;
 use polars_utils::aliases::{PlHashMap, PlIndexMapHashable};
@@ -227,7 +228,10 @@ pub(super) fn import_output(output: Output) -> PolarsResult<ResolvedScan> {
                 columns.push(field.into_column());
             }
         }
-        Some(TableStatistics(Arc::new(DataFrame::new(n, columns)?)))
+        Some(TableStatistics(
+            Arc::new(DataFrame::new(n, columns)?),
+            StatisticsBounds::Tight,
+        ))
     } else {
         None
     };

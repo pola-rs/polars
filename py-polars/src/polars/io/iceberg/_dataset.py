@@ -20,6 +20,7 @@ from polars.io.iceberg._cache import (
     load_static_table,
 )
 from polars.io.iceberg._plugin import (
+    _native_storage_options,
     plugin_planner_required,
     plugin_scan,
     use_plugin_planner,
@@ -46,6 +47,7 @@ if TYPE_CHECKING:
     import pyiceberg.schema
     import pyiceberg.table
     import pyiceberg.typedef
+    from pyiceberg.table import FileScanTask
 
     from polars._typing import StorageOptionsDict
     from polars.io.cloud._utils import NoPickleOption
@@ -211,7 +213,7 @@ class IcebergCatalogConfig:
 
     class_: type[pyiceberg.catalog.Catalog]
     name: str
-    properties: dict[str, str]
+    properties: dict[str, Any]
 
     @staticmethod
     def from_catalog(catalog: pyiceberg.catalog.Catalog) -> IcebergCatalogConfig:
@@ -309,6 +311,8 @@ class IcebergScanResolver:
     schema_at_creation: pyiceberg.schema.Schema | None = field(
         default=None, init=False, repr=False
     )
+    # The files to read, as planned by the caller: each is read in full.
+    file_tasks: list[FileScanTask] | None = field(default=None, repr=False)
 
     #
     # PythonDatasetProvider interface functions
@@ -339,6 +343,13 @@ class IcebergScanResolver:
             )
             raise ValueError(msg)
         return schema_to_pyarrow(self.table.get().schemas()[schema_id])
+
+    def has_tight_statistics(self) -> bool:
+        """Whether aggregates may be answered from the statistics. No I/O."""
+        reader_override = self.reader_override or os.getenv(
+            "POLARS_ICEBERG_READER_OVERRIDE"
+        )
+        return self.use_metadata_statistics and reader_override != "pyiceberg"
 
     def to_dataset_scan(
         self,
@@ -514,7 +525,12 @@ class IcebergScanResolver:
             )
             raise ValueError(msg)
 
-        if reader_override != "pyiceberg" and use_plugin_planner():
+        # checked first: `use_plugin_planner` warns when the plugin is missing
+        if (
+            self.file_tasks is None
+            and reader_override != "pyiceberg"
+            and use_plugin_planner()
+        ):
             if verbose:
                 eprint(
                     "IcebergScanResolver: to_dataset_scan(): "
@@ -653,7 +669,9 @@ class IcebergScanResolver:
                 selected_fields=selected_fields,
             )
 
-            if iceberg_table_filter is not None:
+            if self.file_tasks is not None:
+                file_infos = self.file_tasks
+            elif iceberg_table_filter is not None:
                 try:
                     file_infos = list(
                         scan.filter(
@@ -860,12 +878,11 @@ class IcebergScanResolver:
                 else None
             )
 
-            storage_options = (
-                _convert_iceberg_to_object_store_storage_options(
-                    self.table.iceberg_storage_properties
-                )
-                if self.table.iceberg_storage_properties is not None
-                else None
+            # The table's FileIO properties, as for the plugin's scans
+            storage_options = _native_storage_options(
+                tbl,
+                self.table.iceberg_storage_properties,
+                sources[0] if sources else None,
             )
 
             return _NativeIcebergScanData(
@@ -999,6 +1016,7 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
                 (self.position_delete_files, self.deletion_vectors),
             ),
             _table_statistics=self.min_max_statistics,
+            _table_statistics_tight=True,
             _row_count=self.row_count,
             _source_sizes=self.source_sizes,
         )
@@ -1156,6 +1174,9 @@ def _convert_iceberg_property_value(object_store_key: str, value: Any) -> Any:
         except (TypeError, ValueError):
             return value
         return f"{round(seconds * 1000)}ms"
+    # PyIceberg also takes booleans, object store parses strings.
+    if isinstance(value, bool):
+        return "true" if value else "false"
 
     return value
 
@@ -1180,7 +1201,6 @@ ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP: Final[dict[str, str]] = {
     "adls.tenant-id": "azure_storage_tenant_id",
     "adls.client-id": "azure_storage_client_id",
     "adls.client-secret": "azure_storage_client_secret",
-    "adls.account-host": "azure_storage_authority_host",
     "adls.token": "azure_storage_token",
     # Google storage
     "gcs.oauth2.token": "bearer_token",

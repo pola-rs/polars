@@ -192,6 +192,11 @@ pub fn extract_many(
                 Ok(builder.finish())
             },
         },
+        (_, 1) if patterns.has_nulls() => Ok(ListChunked::full_null_with_dtype(
+            ca.name().clone(),
+            ca.len(),
+            &DataType::String,
+        )),
         (_, 1) => {
             let patterns = patterns.explode(ExplodeOptions {
                 empty_as_null: false,
@@ -288,6 +293,11 @@ pub fn find_many(
                 Ok(builder.finish())
             },
         },
+        (_, 1) if patterns.has_nulls() => Ok(ListChunked::full_null_with_dtype(
+            ca.name().clone(),
+            ca.len(),
+            &DataType::UInt32,
+        )),
         (_, 1) => {
             let patterns = patterns.explode(ExplodeOptions {
                 empty_as_null: false,

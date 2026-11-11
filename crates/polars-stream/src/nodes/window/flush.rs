@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::sync::Arc;
 
 use futures::future::join_all;
 use parking_lot::Mutex;
@@ -13,7 +14,7 @@ use polars_utils::IdxSize;
 use rayon::prelude::*;
 use tokio::sync::Notify;
 
-use super::evaluate::ROW_ID;
+use super::evaluate::{PartitionEval, ROW_ID};
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::pipe::PortSender;
 
@@ -35,6 +36,13 @@ pub enum OutputUnit {
     /// The sorted rows of a partition, with the window columns appended, and their estimated
     /// size.
     Frame(SpillFrame, usize),
+    /// Whole rows of one or more partitions, evaluated when the unit is prepared, with the
+    /// estimated working memory of the evaluation.
+    Partition {
+        frames: Vec<SpillFrame>,
+        work: usize,
+        eval: Arc<PartitionEval>,
+    },
 }
 
 impl OutputUnit {
@@ -42,6 +50,7 @@ impl OutputUnit {
         match self {
             Self::Range(range) => range.bytes,
             Self::Frame(_, bytes) => *bytes,
+            Self::Partition { work, .. } => *work,
         }
     }
 }
@@ -79,7 +88,7 @@ enum Step<'a> {
 /// Emits the output units in order. The sender tasks share one emission cursor, so every
 /// execution phase emits a prefix of the output. A task with nothing to emit prepares a unit
 /// ahead, up to `max_ahead_bytes` of units prepared or being prepared, and at least one.
-pub struct Flush {
+pub struct FlushState {
     inner: Mutex<FlushInner>,
     notify: Notify,
     max_ahead_bytes: usize,
@@ -87,7 +96,7 @@ pub struct Flush {
     _spill_ctxs: (LeastRecentSpillContext, MostRecentSpillContext),
 }
 
-impl Flush {
+impl FlushState {
     pub fn new(
         units: Vec<OutputUnit>,
         max_ahead_bytes: usize,
@@ -157,17 +166,26 @@ impl Flush {
         Step::Wait(self.notify.notified())
     }
 
+    /// Stores the output morsels of unit `idx`. If `prepared` has the size of the output, it
+    /// replaces the estimate `bytes` the unit was admitted with.
     fn finish_prepare(
         &self,
         idx: usize,
         bytes: usize,
-        prepared: PolarsResult<VecDeque<DataFrame>>,
+        prepared: PolarsResult<(VecDeque<DataFrame>, Option<usize>)>,
     ) -> PolarsResult<()> {
         let result = {
             let mut inner = self.inner.lock();
             inner.num_preparing -= 1;
             match prepared {
-                Ok(dfs) => {
+                Ok((dfs, out_bytes)) => {
+                    let bytes = match out_bytes {
+                        Some(out_bytes) => {
+                            inner.ahead_bytes = inner.ahead_bytes - bytes + out_bytes;
+                            out_bytes
+                        },
+                        None => bytes,
+                    };
                     inner.prepared.insert(idx, (dfs, bytes));
                     Ok(())
                 },
@@ -220,29 +238,38 @@ impl Flush {
     }
 }
 
-impl Drop for Flush {
+impl Drop for FlushState {
     fn drop(&mut self) {
         let units: Vec<_> = self.inner.get_mut().pending.drain(..).collect();
         RAYON.install(|| units.into_par_iter().for_each(drop));
     }
 }
 
-/// Loads a unit and returns its output morsels.
-async fn prepare(unit: OutputUnit) -> PolarsResult<VecDeque<DataFrame>> {
+fn into_morsels(df: DataFrame) -> VecDeque<DataFrame> {
+    let morsel_size = get_ideal_morsel_size();
+    (0..df.height())
+        .step_by(morsel_size)
+        .map(|offset| df.slice(offset as i64, morsel_size))
+        .collect()
+}
+
+/// Loads a unit and returns its output morsels, and for an evaluated unit the size of the
+/// output.
+async fn prepare(unit: OutputUnit) -> PolarsResult<(VecDeque<DataFrame>, Option<usize>)> {
     let range = match unit {
         OutputUnit::Range(range) => range,
-        OutputUnit::Frame(sf, _) => {
-            let df = sf.into_df().await;
-            let morsel_size = get_ideal_morsel_size();
-            return Ok((0..df.height())
-                .step_by(morsel_size)
-                .map(|offset| df.slice(offset as i64, morsel_size))
-                .collect());
+        OutputUnit::Frame(sf, _) => return Ok((into_morsels(sf.into_df().await), None)),
+        OutputUnit::Partition { frames, work, eval } => {
+            let _reservation = memory_manager().reserve(work as u64).await;
+            let dfs = join_all(frames.into_iter().map(SpillFrame::into_df)).await;
+            let df = eval.evaluate(accumulate_dataframes_vertical_unchecked(dfs))?;
+            let bytes = df.estimated_size(false);
+            return Ok((into_morsels(df), Some(bytes)));
         },
     };
 
     if range.num_rows == 0 {
-        return Ok(VecDeque::new());
+        return Ok((VecDeque::new(), None));
     }
     let _reservation = memory_manager().reserve(range.bytes as u64).await;
     let dfs = join_all(range.window_frames.into_iter().map(SpillFrame::into_df)).await;
@@ -281,5 +308,5 @@ async fn prepare(unit: OutputUnit) -> PolarsResult<VecDeque<DataFrame>> {
         offset += height;
         out.push_back(df);
     }
-    Ok(out)
+    Ok((out, None))
 }

@@ -76,7 +76,7 @@ pub fn encode_bool<W: Write, I: Iterator<Item = bool>>(
     let length = iterator.size_hint().1.unwrap();
 
     let chunks = length / 8;
-    let reminder = length % 8;
+    let remainder = length % 8;
 
     (0..chunks).try_for_each(|_| {
         let mut byte = 0u8;
@@ -88,7 +88,7 @@ pub fn encode_bool<W: Write, I: Iterator<Item = bool>>(
         writer.write_all(&[byte])
     })?;
 
-    if reminder != 0 {
+    if remainder != 0 {
         let mut last = 0u8;
         iterator.enumerate().for_each(|(i, value)| {
             if value {

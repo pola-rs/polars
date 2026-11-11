@@ -55,7 +55,7 @@ pub fn par_iter_bounded<T: Sync>(items: &[T]) -> rayon::iter::MinLen<rayon::slic
 
 /// Just a wrapper structure which is useful for certain impl specializations.
 ///
-/// This is for instance use to implement
+/// This is for instance used to implement
 /// `impl<T> FromIterator<T::Native> for NoNull<ChunkedArray<T>>`
 /// as `Option<T::Native>` was already implemented:
 /// `impl<T> FromIterator<Option<T::Native>> for ChunkedArray<T>`
@@ -723,7 +723,7 @@ macro_rules! apply_method_all_arrow_series {
             DataType::UInt32 => $self.u32().unwrap().$method($($args),*),
             DataType::UInt64 => $self.u64().unwrap().$method($($args),*),
             #[cfg(feature = "dtype-u128")]
-            DataType::UInt128 => $self.u128().unwrap().$medthod($($args),*),
+            DataType::UInt128 => $self.u128().unwrap().$method($($args),*),
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => $self.i8().unwrap().$method($($args),*),
             #[cfg(feature = "dtype-i16")]

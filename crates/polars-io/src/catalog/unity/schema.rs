@@ -489,7 +489,7 @@ fn dtype_to_type_json(dtype: &DataType) -> PolarsResult<ColumnTypeJsonType> {
 }
 
 /// Tries to interpret the List type as a `map` field, which is essentially
-/// List(Struct(("key", <dtype>), ("value", <dtyoe>))).
+/// List(Struct(("key", <dtype>), ("value", <dtype>))).
 ///
 /// Returns `Option<(key_type, value_type)>`
 fn get_list_map_type(list_inner_dtype: &DataType) -> Option<(&DataType, &DataType)> {

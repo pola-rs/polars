@@ -39,6 +39,13 @@ mod inner {
             Some((self.v.get_unchecked(..idx), need_escaping))
         }
 
+        /// Start splitting the next line.
+        #[inline]
+        pub(crate) fn next_line(&mut self, slice: &'a [u8]) {
+            self.v = slice;
+            self.finished = false;
+        }
+
         fn finish(&mut self, need_escaping: bool) -> Option<(&'a [u8], bool)> {
             self.finished = true;
             Some((self.v, need_escaping))
@@ -141,6 +148,17 @@ mod inner {
 
     use polars_utils::clmul::prefix_xorsum_inclusive;
 
+    /// Returns the field ends that a field by field scan from bit 0 finds, where bit 0
+    /// starts a field outside of quotes and `in_quotes` is `prefix_xorsum_inclusive(quotes)`.
+    /// Stops before the first quote char that opens a quoted part but neither starts a field
+    /// nor follows a quote char (an escaped quote), as the scan ignores quotes in such a field.
+    #[inline]
+    fn valid_field_ends(ends: u64, quotes: u64, in_quotes: u64) -> u64 {
+        let valid_opens = ((ends | quotes) << 1) | 1;
+        let stray_quotes = quotes & in_quotes & !valid_opens;
+        ends & !in_quotes & stray_quotes.isolate_lowest_one().wrapping_sub(1)
+    }
+
     const SIMD_SIZE: usize = 64;
     type SimdVec = u8x64;
 
@@ -196,6 +214,14 @@ mod inner {
             Some((self.v.get_unchecked(..pos), need_escaping))
         }
 
+        /// Start splitting the next line.
+        #[inline]
+        pub(crate) fn next_line(&mut self, slice: &'a [u8]) {
+            self.v = slice;
+            self.finished = false;
+            self.previous_valid_ends = 0;
+        }
+
         #[inline]
         fn finish(&mut self, need_escaping: bool) -> Option<(&'a [u8], bool)> {
             self.finished = true;
@@ -211,7 +237,7 @@ mod inner {
         // the bool is used to indicate that it requires escaping
         type Item = (&'a [u8], bool);
 
-        #[inline]
+        #[inline(always)]
         fn next(&mut self) -> Option<(&'a [u8], bool)> {
             // This must be before we check the cached value
             if self.finished {
@@ -274,7 +300,8 @@ mod inner {
                         let has_eol = simd_bytes.simd_eq(self.simd_eol_char);
                         let has_sep = simd_bytes.simd_eq(self.simd_separator);
                         let quote_mask = simd_bytes.simd_eq(self.simd_quote_char).to_bitmask();
-                        let mut end_mask = (has_sep | has_eol).to_bitmask();
+                        let any_end_mask = (has_sep | has_eol).to_bitmask();
+                        let mut end_mask = any_end_mask;
 
                         let mut not_in_quote_field = prefix_xorsum_inclusive(quote_mask);
 
@@ -293,12 +320,13 @@ mod inner {
                                     || self.v[total_idx] == self.separator
                             );
 
-                            if pos == SIMD_SIZE - 1 {
-                                self.previous_valid_ends = 0;
-                            } else {
-                                self.previous_valid_ends = end_mask >> (pos + 1) as u64;
-                            }
-
+                            // The scan is outside of quotes at `pos`, so the block parity
+                            // after it equals the parity of the later quote chars alone.
+                            self.previous_valid_ends = valid_field_ends(
+                                any_end_mask >> pos >> 1,
+                                quote_mask >> pos >> 1,
+                                !not_in_quote_field >> pos >> 1,
+                            );
                             break;
                         } else {
                             total_idx += SIMD_SIZE;
@@ -365,7 +393,21 @@ mod inner {
                         let has_any_mask = (has_separator | has_eol_char).to_bitmask();
 
                         if has_any_mask != 0 {
-                            total_idx += has_any_mask.trailing_zeros() as usize;
+                            let pos = has_any_mask.trailing_zeros() as usize;
+                            let later_ends = has_any_mask >> pos >> 1;
+                            self.previous_valid_ends = if self.quoting && later_ends != 0 {
+                                let quote_mask =
+                                    simd_bytes.simd_eq(self.simd_quote_char).to_bitmask();
+                                let later_quotes = quote_mask >> pos >> 1;
+                                valid_field_ends(
+                                    later_ends,
+                                    later_quotes,
+                                    prefix_xorsum_inclusive(later_quotes),
+                                )
+                            } else {
+                                later_ends
+                            };
+                            total_idx += pos;
                             break;
                         } else {
                             total_idx += SIMD_SIZE;

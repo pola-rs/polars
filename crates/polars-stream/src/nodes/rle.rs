@@ -96,7 +96,7 @@ impl ComputeNode for RleNode {
 
         match recv {
             None => {
-                // This happens when we have received out last morsel and we need to return one
+                // This happens when we have received our last morsel and we need to return one
                 // more value.
                 let last = self.last.take().unwrap();
                 if self.last_length > 0 {

@@ -61,7 +61,7 @@ where
     let mut rev_idx: Vec<IdxSize> = Vec::with_capacity(len);
     let mut i: IdxSize;
     // We traverse the array, comparing consecutive elements.
-    // We maintain the start and end indice of elements with same value.
+    // We maintain the start and end indices of elements with same value.
     // When we see a new element we push the previous indices in reverse order.
     // We do a final reverse to get stable reverse index.
     // Example -
@@ -78,7 +78,7 @@ where
         for current_element in arr_iter {
             match &previous_element {
                 None => {
-                    //There is atleast one element
+                    //There is at least one element
                     current_end = 1;
                 },
                 Some(prev) => {
@@ -129,7 +129,7 @@ where
     let null_cap = if nulls_last { null_count } else { len };
 
     // Fast path
-    // Only if array is already sorted in the required ordered and
+    // Only if array is already sorted in the required order and
     // nulls are also in the correct position
     if ((options.descending && is_sorted_flag == IsSorted::Descending)
         || (!options.descending && is_sorted_flag == IsSorted::Ascending))
@@ -217,7 +217,7 @@ where
     T: TotalOrd + Send + Sync,
 {
     // Fast path
-    // 1) If array is already sorted in the required ordered .
+    // 1) If array is already sorted in the required order.
     // 2) If array is reverse sorted -> we do a stable reverse.
     if is_sorted_flag != IsSorted::Not {
         let len_final = options

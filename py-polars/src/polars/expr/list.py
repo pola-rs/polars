@@ -1436,7 +1436,7 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
             Parallelism is worth it if there is enough work to do per thread.
 
             This likely should not be used in the group by context, because we already
-            parallel execution per group
+            parallelize execution per group
 
         Examples
         --------

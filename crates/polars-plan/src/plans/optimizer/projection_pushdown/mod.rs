@@ -1,4 +1,5 @@
 pub mod edge;
+mod field_pruning;
 
 use std::ops::ControlFlow;
 use std::sync::Arc;
@@ -6,9 +7,7 @@ use std::sync::Arc;
 use edge::Edge;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{
-    Column, DataType, IdxSize, PlIndexMap, ScratchIndexMap, ScratchIndexSet,
-};
+use polars_core::prelude::{Column, DataType, IdxSize, PlIndexMap, ScratchIndexMap};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_defs::join::{JoinCoalesce, JoinType};
@@ -24,10 +23,13 @@ use polars_utils::unique_id::UniqueId;
 use polars_utils::{UnitVec, format_pl_smallstr, unitvec};
 
 use crate::constants::get_len_name;
-use crate::dsl::{FileScanIR, PredicateFileSkip, UnionOptions};
+use crate::dsl::{FieldSelection, FileScanIR, PredicateFileSkip, ScanFieldSelection, UnionOptions};
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
 use crate::plans::optimizer::projection_pushdown::edge::{
     GetParentKeyAndPort as _, GetProjectionState, ParentKeyAndPort, Projection, ProjectionState,
+};
+use crate::plans::optimizer::projection_pushdown::field_pruning::{
+    ColumnSelection, ColumnSelectionExt, SelectionWalker, pruning_select, refresh_schemas,
 };
 use crate::plans::optimizer::recursive_caches::caches_shared_across_rounds;
 use crate::plans::options::JoinTypeOptionsIR;
@@ -39,15 +41,18 @@ use crate::plans::{
 use crate::prelude::{DistinctOptionsIR, Operator, ProjectionOptions};
 use crate::traversal::edge_provider::NodeEdgesProvider;
 use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
-use crate::utils::{aexpr_to_leaf_names_iter, rename_columns};
+use crate::utils::rename_columns;
 
 pub fn projection_pushdown(
     root: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     has_recursive: bool,
+    prune_struct_fields: bool,
 ) {
     let schema_cache = &mut Default::default();
+    #[allow(clippy::disallowed_types)]
+    let mut dtypes_changed_nodes = PlHashSet::default();
 
     // Put a simple projection on top so that the root node has a valid ParentKeyAndPort to point to.
     let root_ir = ir_arena.take(root);
@@ -76,9 +81,9 @@ pub fn projection_pushdown(
             schema_cache,
             ae_nodes_scratch: &mut ScratchVec::default(),
             ae_height_scratch: &mut ScratchVec::default(),
-            names_set_scratch: &mut ScratchIndexSet::default(),
-            names_set_scratch2: &mut ScratchIndexSet::default(),
-            names_set_scratch3: &mut ScratchIndexSet::default(),
+            names_set_scratch: &mut ScratchIndexMap::default(),
+            names_set_scratch2: &mut ScratchIndexMap::default(),
+            names_set_scratch3: &mut ScratchIndexMap::default(),
             names_vec_scratch: &mut ScratchVec::default(),
             rename_map: &mut ScratchIndexMap::default(),
             optimized_cache_nodes: &mut optimized_cache_nodes,
@@ -89,6 +94,8 @@ pub fn projection_pushdown(
                 ParentKeyAndPort { node: root, idx: 0 },
             ),
             maintain_errors: false,
+            prune_struct_fields,
+            dtypes_changed_nodes: &mut dtypes_changed_nodes,
         },
         &mut vec![],
         &mut vec![],
@@ -126,6 +133,11 @@ pub fn projection_pushdown(
     };
 
     ir_arena.swap(root, input);
+
+    // Pruned struct fields narrowed the dtypes of some nodes: update the schemas above them.
+    if !dtypes_changed_nodes.is_empty() {
+        refresh_schemas(root, ir_arena, expr_arena, &dtypes_changed_nodes);
+    }
 }
 
 pub struct ProjectionPushdownVisitor<'a, 'arena> {
@@ -134,9 +146,9 @@ pub struct ProjectionPushdownVisitor<'a, 'arena> {
     schema_cache: &'a mut PlHashMap<Node, Arc<Schema>>,
     ae_nodes_scratch: &'a mut ScratchVec<Node>,
     ae_height_scratch: &'a mut ScratchVec<ExprProjectionHeight>,
-    names_set_scratch: &'a mut ScratchIndexSet<PlSmallStr>,
-    names_set_scratch2: &'a mut ScratchIndexSet<PlSmallStr>,
-    names_set_scratch3: &'a mut ScratchIndexSet<PlSmallStr>,
+    names_set_scratch: &'a mut ScratchIndexMap<PlSmallStr, FieldSelection>,
+    names_set_scratch2: &'a mut ScratchIndexMap<PlSmallStr, FieldSelection>,
+    names_set_scratch3: &'a mut ScratchIndexMap<PlSmallStr, FieldSelection>,
     names_vec_scratch: &'a mut ScratchVec<PlSmallStr>,
     rename_map: &'a mut ScratchIndexMap<PlSmallStr, PlSmallStr>,
     #[allow(clippy::disallowed_types)] // We don't iterate over cache.
@@ -145,6 +157,11 @@ pub struct ProjectionPushdownVisitor<'a, 'arena> {
     caches_shared_across_rounds: &'a PlHashSet<UniqueId>,
     default_edge: Edge,
     maintain_errors: bool,
+    /// Whether to prune struct fields, at scans and in expressions.
+    prune_struct_fields: bool,
+    /// Nodes whose output dtypes narrowed because of pruned struct fields.
+    #[allow(clippy::disallowed_types)] // We don't iterate over it.
+    dtypes_changed_nodes: &'a mut PlHashSet<Node>,
 }
 
 impl<'a, 'arena> NodeVisitor for ProjectionPushdownVisitor<'a, 'arena> {
@@ -307,7 +324,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
             if projected_names.len() != len_before_added_names {
                 let schema = Arc::new(
                     compute_simple_projection_schema(
-                        &projected_names[..len_before_added_names],
+                        &projected_names.as_slice()[..len_before_added_names],
                         current_node_schema,
                         false,
                     )
@@ -331,7 +348,8 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 }
                 .unwrap();
 
-                names.retain(|name| input_schema.contains(name));
+                names.retain(|name, _| input_schema.contains(name));
+                names.normalize(&input_schema);
 
                 *edges.inputs()[i].projection_state_mut() = ProjectionState {
                     projection: Projection::Names,
@@ -388,12 +406,14 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     Projection::All => {
                         let names = out_edge.names_mut();
                         names.clear();
-                        names.extend(columns.iter_names_cloned());
+                        names.extend_whole(columns.iter_names_cloned());
                         *out_edge.projection_mut() = Projection::Names;
                     },
                     Projection::Names => {
                         let initial_len = out_edge.names().len();
-                        out_edge.names_mut().retain(|name| columns.contains(name));
+                        out_edge
+                            .names_mut()
+                            .retain(|name, _| columns.contains(name));
                         // We should raise ColumnNotFound if this fails, but this should already
                         // be checked in DSL->IR.
                         assert_eq!(out_edge.names().len(), initial_len);
@@ -611,6 +631,8 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     return;
                 }
 
+                let input_schema = IR::schema_with_cache(input_node, storage, self.schema_cache);
+
                 let IR::Select { expr: exprs, .. } = storage.get_mut(key) else {
                     unreachable!()
                 };
@@ -619,36 +641,49 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 let input_names_projection = self.names_set_scratch.get();
                 let mut has_non_simple_projection = false;
                 let mut has_window_expr = false;
+                let mut walker = SelectionWalker::new(
+                    self.expr_arena,
+                    self.prune_struct_fields,
+                    Some(input_schema.as_ref()),
+                );
 
                 for e in exprs {
-                    input_names_projection
-                        .extend(aexpr_to_leaf_names_iter(e.node(), self.expr_arena).cloned());
+                    let selection = output_selection(out_edge, e.output_name());
+                    walker.walk_expr_ir(e, &selection, input_names_projection, false);
 
                     has_window_expr = has_window_expr
-                        || self
+                        || walker
                             .expr_arena
                             .iter(e.node())
                             .any(|(_, e)| matches!(e, AExpr::Over { .. }));
 
-                    match self.expr_arena.get(e.node()) {
+                    match walker.expr_arena.get(e.node()) {
                         AExpr::Column(name) if name == e.output_name() => {},
                         _ => has_non_simple_projection = true,
                     }
                 }
 
-                let input_schema = IR::schema_with_cache(input_node, storage, self.schema_cache);
+                if walker.rewrote {
+                    self.dtypes_changed_nodes.insert(key);
+                }
 
                 // E.g. `select(<literal>.sum().over(<literal>))`, we must project at least 1 input
                 // column for height.
                 if has_window_expr && input_names_projection.is_empty() {
-                    input_names_projection.extend(min_dtype_size_col(input_schema.iter()).cloned())
+                    input_names_projection
+                        .extend_whole(min_dtype_size_col(input_schema.iter()).cloned())
                 }
 
                 let prune = !has_non_simple_projection;
+                input_names_projection.normalize(&input_schema);
+                if !prune {
+                    sort_full_projection(input_names_projection, &input_schema);
+                }
 
                 if input_names_projection.len() != input_schema.len()
+                    || input_names_projection.has_field_selections()
                     || (prune
-                        && !iters_eq(input_names_projection.iter(), input_schema.iter_names()))
+                        && !iters_eq(input_names_projection.keys(), input_schema.iter_names()))
                 {
                     mem::swap(out_edge.names_mut(), input_names_projection);
                     let names = out_edge.take_names();
@@ -670,6 +705,12 @@ impl ProjectionPushdownVisitor<'_, '_> {
                         .inputs_mut()
                         .nth(parent_key_and_port.idx)
                         .unwrap() = input_node;
+
+                    // A rewrite made it a projection of columns (a `with_fields` whose new fields
+                    // nobody reads): its consumer now sees the narrowed dtype.
+                    if self.dtypes_changed_nodes.remove(&key) {
+                        self.dtypes_changed_nodes.insert(parent_key_and_port.node);
+                    }
 
                     let in_edge = &mut edges.inputs()[0];
                     *in_edge.parent_key_and_port_mut() = parent_key_and_port;
@@ -710,7 +751,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                 if let Some(projected_names) = &opt_projected_names {
                     exprs.retain(|e| {
-                        projected_names.contains(e.output_name())
+                        projected_names.contains_key(e.output_name())
                             || (self.maintain_errors
                                 && matches!(
                                     aexpr_projection_height_rec(
@@ -732,51 +773,66 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                 // * Add all column names referenced by projected exprs
                 // * At the same time, build a hashset lookup for all expr output names.
-                for e in exprs.iter() {
-                    expr_output_names.insert(e.output_name().clone());
-                    input_names_projection
-                        .extend(aexpr_to_leaf_names_iter(e.node(), self.expr_arena).cloned());
+                let mut walker = SelectionWalker::new(
+                    self.expr_arena,
+                    self.prune_struct_fields,
+                    Some(input_schema.as_ref()),
+                );
+                for e in exprs.iter_mut() {
+                    expr_output_names.insert_whole(e.output_name().clone());
+                    let selection = opt_projected_names
+                        .and_then(|names| names.get(e.output_name()))
+                        .cloned()
+                        .unwrap_or_default();
+                    walker.walk_expr_ir(e, &selection, input_names_projection, true);
+                }
+                if walker.rewrote {
+                    self.dtypes_changed_nodes.insert(key);
                 }
 
                 // Directly passed to output (i.e. do not originate from exprs) that are being
                 // referenced. These do not exist in the expr output names hashset.
                 if let Some(projected_names) = &opt_projected_names {
-                    for name in projected_names.iter() {
-                        if !expr_output_names.contains(name) {
-                            input_names_projection.insert(name.clone());
+                    for (name, selection) in projected_names.iter() {
+                        if !expr_output_names.contains_key(name) {
+                            input_names_projection.insert_merged(name.clone(), selection.clone());
                         }
                     }
                 } else {
                     for name in output_schema.iter_names() {
-                        if !expr_output_names.contains(name) {
-                            input_names_projection.insert(name.clone());
+                        if !expr_output_names.contains_key(name) {
+                            input_names_projection.insert_whole(name.clone());
                         }
                     }
                 }
 
                 // Must project at least 1 column for height.
                 if input_names_projection.is_empty() {
-                    input_names_projection.extend(min_dtype_size_col(input_schema.iter()).cloned());
+                    input_names_projection
+                        .extend_whole(min_dtype_size_col(input_schema.iter()).cloned());
                 }
+
+                input_names_projection.normalize(&input_schema);
+                let has_field_selections = input_names_projection.has_field_selections();
 
                 let output_schema_arc = output_schema;
 
                 let has_dropped_input_column = input_names_projection.len() != input_schema.len();
 
                 if exprs.len() != orig_exprs_len || has_dropped_input_column {
-                    input_names_projection.sort_by_cached_key(|name| {
+                    input_names_projection.sort_by_cached_key(|name, _| {
                         input_schema.index_of(name).unwrap_or(usize::MAX)
                     });
 
                     let output_schema = Arc::make_mut(output_schema_arc);
                     let mut orig_schema = mem::take(output_schema);
 
-                    for name in input_names_projection.iter() {
+                    for name in input_names_projection.keys() {
                         output_schema
                             .extend(orig_schema.remove(name).map(|dtype| (name.clone(), dtype)));
                     }
 
-                    for name in expr_output_names.iter() {
+                    for name in expr_output_names.keys() {
                         output_schema
                             .extend(orig_schema.remove(name).map(|dtype| (name.clone(), dtype)));
                     }
@@ -804,7 +860,10 @@ impl ProjectionPushdownVisitor<'_, '_> {
                         .attach_simple_projection(schema, storage);
                 }
 
-                if has_dropped_input_column {
+                if has_dropped_input_column || has_field_selections {
+                    // Every column, pushed for its field selections: keep the input order, which
+                    // the output schema assumes.
+                    sort_full_projection(input_names_projection, &input_schema);
                     mem::swap(out_edge.names_mut(), input_names_projection);
                     let names = out_edge.take_names();
                     *edges.inputs()[0].projection_state_mut() = ProjectionState {
@@ -858,8 +917,13 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     *out_edge.projection_mut() = Projection::Names;
                     let names = out_edge.names_mut();
                     names.clear();
-                    names
-                        .extend(aexpr_to_leaf_names_iter(predicate_node, self.expr_arena).cloned());
+                    SelectionWalker::collect(
+                        self.expr_arena,
+                        self.prune_struct_fields,
+                        predicate_node,
+                        names,
+                    );
+                    names.normalize(&current_node_schema);
 
                     unlink_current_node_and_return!(input)
                 }
@@ -867,8 +931,12 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 let (projected_names, _) = projected_names_subset_or_return!();
                 let len_before_added_names = projected_names.len();
 
-                projected_names
-                    .extend(aexpr_to_leaf_names_iter(predicate_node, self.expr_arena).cloned());
+                SelectionWalker::collect(
+                    self.expr_arena,
+                    self.prune_struct_fields,
+                    predicate_node,
+                    projected_names,
+                );
 
                 pushdown_with_added_names!(len_before_added_names)
             },
@@ -931,7 +999,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                 let is_projected_in_output = |name: &str| {
                     if let Some(projected_names) = &opt_projected_names {
-                        projected_names.contains(name)
+                        projected_names.contains_key(name)
                     } else {
                         output_schema_arc.contains(name)
                     }
@@ -948,7 +1016,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 if options.args.should_coalesce()
                     && let JoinType::Right = &options.args.how
                 {
-                    coalesced_to_right.extend(options.options.left_on().map(|expr| {
+                    coalesced_to_right.extend_whole(options.options.left_on().map(|expr| {
                         let node = match self.expr_arena.get(expr.node()) {
                             AExpr::Cast {
                                 expr,
@@ -972,17 +1040,33 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     matches!(options.options, JoinTypeOptionsIR::CrossAndFilter { .. });
 
                 // A join predicate reads output columns the final projection may not ask for.
-                let predicate_names: Vec<PlSmallStr> = match &options.options {
+                let mut predicate_names = ColumnSelection::default();
+                if let Some(predicate) = match &options.options {
                     JoinTypeOptionsIR::CrossAndFilter { predicate } => Some(predicate),
                     options => options.fused_predicate(),
+                } {
+                    SelectionWalker::collect(
+                        self.expr_arena,
+                        self.prune_struct_fields,
+                        predicate.node(),
+                        &mut predicate_names,
+                    );
                 }
-                .map(|predicate| {
-                    aexpr_to_leaf_names_iter(predicate.node(), self.expr_arena)
-                        .cloned()
-                        .collect()
-                })
-                .unwrap_or_default();
-                let reads_in_predicate = |name: &PlSmallStr| predicate_names.contains(name);
+                let reads_in_predicate = |name: &PlSmallStr| predicate_names.contains_key(name);
+                // What is needed of an output column, by the consumers and the predicate.
+                let output_selection_of = |name: &str| {
+                    let mut selection = match &opt_projected_names {
+                        Some(projected_names) => projected_names
+                            .get(name)
+                            .cloned()
+                            .unwrap_or_else(FieldSelection::validity_only),
+                        None => FieldSelection::All,
+                    };
+                    if let Some(predicate_selection) = predicate_names.get(name) {
+                        selection.union(predicate_selection.clone());
+                    }
+                    selection
+                };
 
                 // Add accumulated projections
                 for output_name in output_schema_arc
@@ -994,13 +1078,16 @@ impl ProjectionPushdownVisitor<'_, '_> {
                         &input_schema_left,
                         &input_schema_right,
                         options.args.suffix(),
-                        Some(&|name| coalesced_to_right.contains(name)),
+                        Some(&|name| coalesced_to_right.contains_key(name)),
                     )
                     .unwrap()
                     {
                         ExprOrigin::None => {},
                         ExprOrigin::Left => {
-                            project_left.insert(output_name.clone());
+                            project_left.insert_merged(
+                                output_name.clone(),
+                                output_selection_of(output_name),
+                            );
                         },
                         ExprOrigin::Right => {
                             let name = if !input_schema_right.contains(output_name.as_str()) {
@@ -1015,7 +1102,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                             debug_assert!(input_schema_right.contains(name.as_str()));
 
-                            project_right.insert(name);
+                            project_right.insert_merged(name, output_selection_of(output_name));
                         },
                         ExprOrigin::Both => unreachable!(),
                     }
@@ -1023,26 +1110,34 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                 // Add projections required by the join itself
                 for expr_ir in options.options.left_on() {
-                    project_left
-                        .extend(aexpr_to_leaf_names_iter(expr_ir.node(), self.expr_arena).cloned())
+                    SelectionWalker::collect(
+                        self.expr_arena,
+                        self.prune_struct_fields,
+                        expr_ir.node(),
+                        project_left,
+                    );
                 }
 
                 for expr_ir in options.options.right_on() {
-                    project_right
-                        .extend(aexpr_to_leaf_names_iter(expr_ir.node(), self.expr_arena).cloned())
+                    SelectionWalker::collect(
+                        self.expr_arena,
+                        self.prune_struct_fields,
+                        expr_ir.node(),
+                        project_right,
+                    );
                 }
 
                 #[cfg(feature = "asof_join")]
                 if let JoinType::AsOf(asof_options) = &options.args.how {
                     if let Some(left_by) = asof_options.left_by.as_deref() {
                         for name in left_by {
-                            project_left.insert(name.clone());
+                            project_left.insert_whole(name.clone());
                         }
                     }
 
                     if let Some(right_by) = asof_options.right_by.as_deref() {
                         for name in right_by {
-                            project_right.insert(name.clone());
+                            project_right.insert_whole(name.clone());
                         }
                     }
                 }
@@ -1050,6 +1145,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 // Turn on coalesce if non-coalesced keys are not included in projection. Reduces materialization.
                 if !options.args.should_coalesce()
                     && matches!(options.args.how, JoinType::Inner | JoinType::Left)
+                    && matches!(options.options, JoinTypeOptionsIR::Equi { .. })
                     && options
                         .options
                         .left_on()
@@ -1074,10 +1170,18 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     Arc::make_mut(options).args.coalesce = JoinCoalesce::CoalesceColumns;
                 }
 
+                project_left.normalize(&input_schema_left);
+                project_right.normalize(&input_schema_right);
+
+                // Every column, pushed for its field selections: keep the input order, which the
+                // join schema assumes below.
+                sort_full_projection(project_left, &input_schema_left);
+                sort_full_projection(project_right, &input_schema_right);
+
                 let new_input_schema_left = if project_left.len() == input_schema_left.len() {
                     input_schema_left.clone()
                 } else {
-                    Arc::new(input_schema_left.try_project(project_left.iter()).unwrap())
+                    Arc::new(input_schema_left.try_project(project_left.keys()).unwrap())
                 };
 
                 let new_input_schema_right = if project_right.len() == input_schema_right.len() {
@@ -1085,7 +1189,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 } else {
                     Arc::new(
                         input_schema_right
-                            .try_project(project_right.iter())
+                            .try_project(project_right.keys())
                             .unwrap(),
                     )
                 };
@@ -1094,14 +1198,18 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     det_join_schema(&new_input_schema_left, &new_input_schema_right, options)
                         .unwrap();
 
-                if project_left.len() != input_schema_left.len() {
+                if project_left.len() != input_schema_left.len()
+                    || project_left.has_field_selections()
+                {
                     *edges.inputs()[0].projection_state_mut() = ProjectionState {
                         projection: Projection::Names,
                         names: Some(Box::new(mem::take(project_left))),
                     };
                 }
 
-                if project_right.len() != input_schema_right.len() {
+                if project_right.len() != input_schema_right.len()
+                    || project_right.has_field_selections()
+                {
                     *edges.inputs()[1].projection_state_mut() = ProjectionState {
                         projection: Projection::Names,
                         names: Some(Box::new(mem::take(project_right))),
@@ -1119,7 +1227,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 if !predicate_names.is_empty() {
                     let mut renames: PlIndexMap<PlSmallStr, PlSmallStr> = PlIndexMap::default();
 
-                    for name in predicate_names.iter() {
+                    for name in predicate_names.keys() {
                         if output_schema_arc.contains(name) {
                             continue;
                         }
@@ -1151,7 +1259,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 if let Some(projected_names) = &opt_projected_names {
                     let orig_to_new_name_map = self.rename_map.get();
 
-                    for name in projected_names.iter() {
+                    for name in projected_names.keys() {
                         if !output_schema_arc.contains(name) {
                             let new_output_name = PlSmallStr::from_str(
                                 name.strip_suffix(options.args.suffix().as_str()).unwrap(),
@@ -1178,7 +1286,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                         let post_project = opt_projected_names
                             .unwrap()
-                            .iter()
+                            .keys()
                             .map(|name| {
                                 if let Some(new_name) = orig_to_new_name_map.get(name) {
                                     ExprIR::new(
@@ -1257,7 +1365,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     let removed_names = if is_len {
                         let removed_names = self.names_set_scratch.get();
 
-                        removed_names.extend(
+                        removed_names.extend_whole(
                             aggs.drain(..)
                                 .map(|eir| eir.into_inner().1.into_inner().unwrap()),
                         );
@@ -1269,9 +1377,9 @@ impl ProjectionPushdownVisitor<'_, '_> {
                         let removed_names = self.names_set_scratch.get();
 
                         aggs.retain(|e| {
-                            let keep = projected_names.contains(e.output_name());
+                            let keep = projected_names.contains_key(e.output_name());
                             if !keep {
-                                removed_names.insert(e.output_name().clone());
+                                removed_names.insert_whole(e.output_name().clone());
                             }
                             keep
                         });
@@ -1283,7 +1391,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                     if !removed_names.is_empty() {
                         Arc::make_mut(output_schema_arc)
-                            .retain(|name, _| !removed_names.contains(name))
+                            .retain(|name, _| !removed_names.contains_key(name))
                     }
                 }
 
@@ -1301,9 +1409,26 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                 let input_names_projection = self.names_set_scratch.get();
 
-                for e in storage.get(key).exprs() {
-                    input_names_projection
-                        .extend(aexpr_to_leaf_names_iter(e.node(), self.expr_arena).cloned())
+                // The keys are needed whole. The aggregations are walked with what is needed of
+                // their outputs, unrewritten: a narrowed input narrows their dtypes only, which
+                // `refresh_schemas` recomputes.
+                let IR::GroupBy { keys, aggs, .. } = storage.get(key) else {
+                    unreachable!()
+                };
+                for e in keys {
+                    SelectionWalker::collect(
+                        self.expr_arena,
+                        self.prune_struct_fields,
+                        e.node(),
+                        input_names_projection,
+                    );
+                }
+                let mut walker =
+                    SelectionWalker::new(self.expr_arena, self.prune_struct_fields, None);
+                for e in aggs {
+                    let selection = output_selection(out_edge, e.output_name());
+                    let new_node = walker.walk(e.node(), &selection, input_names_projection);
+                    debug_assert_eq!(new_node, e.node());
                 }
 
                 let IR::GroupBy { options, .. } = storage.get(key) else {
@@ -1312,15 +1437,20 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                 #[cfg(feature = "dynamic_group_by")]
                 if let Some(options) = &options.dynamic {
-                    input_names_projection.insert(options.index_column.clone());
+                    input_names_projection.insert_whole(options.index_column.clone());
                 }
 
                 #[cfg(feature = "dynamic_group_by")]
                 if let Some(options) = &options.rolling {
-                    input_names_projection.insert(options.index_column.clone());
+                    input_names_projection.insert_whole(options.index_column.clone());
                 }
 
-                if input_names_projection.len() != input_schema.len() {
+                input_names_projection.normalize(&input_schema);
+                sort_full_projection(input_names_projection, &input_schema);
+
+                if input_names_projection.len() != input_schema.len()
+                    || input_names_projection.has_field_selections()
+                {
                     mem::swap(out_edge.names_mut(), input_names_projection);
                     let names = out_edge.take_names();
 
@@ -1350,7 +1480,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
             } => {
                 let (projected_names, _) = projected_names_subset_or_return!();
                 let len_before_added_names = projected_names.len();
-                projected_names.extend(subset.iter().cloned());
+                projected_names.extend_whole(subset.iter().cloned());
                 pushdown_with_added_names!(len_before_added_names)
             },
 
@@ -1488,8 +1618,12 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 let (projected_names, _) = projected_names_subset_or_return!();
                 let len_before_added_names = projected_names.len();
                 for e in ir.exprs() {
-                    projected_names
-                        .extend(aexpr_to_leaf_names_iter(e.node(), self.expr_arena).cloned())
+                    SelectionWalker::collect(
+                        self.expr_arena,
+                        self.prune_struct_fields,
+                        e.node(),
+                        projected_names,
+                    );
                 }
                 pushdown_with_added_names!(len_before_added_names)
             },
@@ -1499,7 +1633,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 let (projected_names, _) = projected_names_subset_or_return!();
                 let len_before_added_names = projected_names.len();
                 for key in key.iter() {
-                    projected_names.insert(key.clone());
+                    projected_names.insert_whole(key.clone());
                 }
                 pushdown_with_added_names!(len_before_added_names)
             },
@@ -1634,7 +1768,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                         hconcat_projected_names.extend(
                             input_schema_arc
                                 .iter_names()
-                                .filter(|name| projected_names.contains(*name))
+                                .filter(|name| projected_names.contains_key(*name))
                                 .cloned(),
                         );
 
@@ -1658,9 +1792,21 @@ impl ProjectionPushdownVisitor<'_, '_> {
                             projected_names.get_index_of(name).unwrap_or(usize::MAX)
                         });
 
-                        if !iters_eq(names_this_input.iter(), input_schema_arc.iter_names()) {
+                        let has_field_selections = names_this_input
+                            .iter()
+                            .any(|name| projected_names.get(name).is_some_and(|s| !s.is_all()));
+
+                        if has_field_selections
+                            || !iters_eq(names_this_input.iter(), input_schema_arc.iter_names())
+                        {
                             let mut names = mem::take(self.names_set_scratch2.get());
-                            names.extend(names_this_input.iter().cloned());
+                            names.extend_merged(names_this_input.iter().map(|name| {
+                                (
+                                    name.clone(),
+                                    projected_names.get(name).cloned().unwrap_or_default(),
+                                )
+                            }));
+                            names.normalize(&input_schema_arc);
 
                             *in_edge.projection_state_mut() = ProjectionState {
                                 projection: Projection::Names,
@@ -1746,6 +1892,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                         predicate,
                         predicate_file_skip_applied,
                         unified_scan_args,
+                        file_info,
                         ..
                     },
                     parent_ir,
@@ -1812,6 +1959,12 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     return;
                 }
 
+                // The columns read, with what is needed of each: only collected if the scan
+                // can read a field selection.
+                let select_fields = self.prune_struct_fields
+                    && scan_supports_field_selection(scan_type, unified_scan_args);
+                let scan_selection = self.names_set_scratch3.get();
+
                 let projected_schema = if out_edge.projection() == Projection::Len
                     && !matches!(scan_type.as_ref(), FileScanIR::Anonymous { .. })
                 {
@@ -1822,11 +1975,21 @@ impl ProjectionPushdownVisitor<'_, '_> {
                         return;
                     };
 
-                    let Some(projected_schema) =
-                        compute_simple_projection_schema(names.as_slice(), &scan_schema, false)
-                    else {
-                        return;
+                    let projected_schema = match compute_simple_projection_schema(
+                        names.as_slice(),
+                        &scan_schema,
+                        false,
+                    ) {
+                        Some(projected_schema) => projected_schema,
+                        // Every column, but not every struct field.
+                        None if names.has_field_selections() => scan_schema.as_ref().clone(),
+                        None => return,
                     };
+
+                    if select_fields {
+                        scan_selection
+                            .extend_merged(names.iter().map(|(n, s)| (n.clone(), s.clone())));
+                    }
 
                     projected_schema
                 };
@@ -1843,9 +2006,20 @@ impl ProjectionPushdownVisitor<'_, '_> {
                         })
                     )
                 {
-                    for name in aexpr_to_leaf_names_iter(predicate.node(), self.expr_arena) {
+                    let predicate_selection = self.names_set_scratch.get();
+                    SelectionWalker::collect(
+                        self.expr_arena,
+                        self.prune_struct_fields,
+                        predicate.node(),
+                        predicate_selection,
+                    );
+
+                    for (name, selection) in predicate_selection.drain(..) {
                         Arc::make_mut(&mut scan_projected_schema)
-                            .insert(name.clone(), scan_schema.get(name).unwrap().clone());
+                            .insert(name.clone(), scan_schema.get(&name).unwrap().clone());
+                        if select_fields {
+                            scan_selection.insert_merged(name, selection);
+                        }
                     }
                 }
 
@@ -1868,6 +2042,26 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     schema.insert_at_index(0, entry_name, dtype).unwrap();
                 }
 
+                let field_selection = select_fields
+                    .then(|| {
+                        scan_field_selection(
+                            scan_selection,
+                            &file_info.schema,
+                            unified_scan_args.field_selection.as_deref(),
+                        )
+                    })
+                    .flatten();
+
+                if let Some(field_selection) = &field_selection {
+                    let schema = Arc::make_mut(&mut scan_projected_schema);
+                    for (name, selection) in field_selection.0.iter() {
+                        if let Some(dtype) = schema.get_mut(name) {
+                            *dtype = selection.prune_dtype(file_info.schema.get(name).unwrap());
+                        }
+                    }
+                    self.dtypes_changed_nodes.insert(key);
+                }
+
                 if !iters_eq(
                     scan_projected_schema.iter_names(),
                     projected_schema.iter_names(),
@@ -1877,7 +2071,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                         .attach_simple_projection(projected_schema, storage);
                 }
 
-                set_scan_projection(storage.get_mut(key), scan_projected_schema);
+                set_scan_projection(storage.get_mut(key), scan_projected_schema, field_selection);
             },
 
             IR::DataFrameScan {
@@ -1918,7 +2112,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                             df.columns()
                                 .iter()
                                 .map(|c| {
-                                    if projected_names.contains(c.name()) {
+                                    if projected_names.contains_key(c.name()) {
                                         c.clone()
                                     } else {
                                         small_dummy_column(c.name().clone(), c.len())
@@ -1943,8 +2137,12 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 let len_before_predicate_names = projected_names.len();
 
                 if let PythonPredicate::Polars(pred) = &options.predicate {
-                    projected_names
-                        .extend(aexpr_to_leaf_names_iter(pred.node(), self.expr_arena).cloned())
+                    SelectionWalker::collect(
+                        self.expr_arena,
+                        self.prune_struct_fields,
+                        pred.node(),
+                        projected_names,
+                    );
                 };
 
                 let mut new_output_schema = current_node_schema.as_ref();
@@ -1953,7 +2151,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     let with_columns: Arc<[_]> = options
                         .schema
                         .iter_names()
-                        .filter(|name| projected_names.contains(*name))
+                        .filter(|name| projected_names.contains_key(*name))
                         .cloned()
                         .collect();
 
@@ -2005,7 +2203,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     unreachable!()
                 };
 
-                if !hint.retain_names(|name| projected_names.contains(name)) {
+                if !hint.retain_names(|name| projected_names.contains_key(name)) {
                     unlink_current_node_and_return!(input)
                 }
 
@@ -2079,8 +2277,8 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                 let names = out_edge.names_mut();
                 names.clear();
-                names.extend(args.index.iter().cloned());
-                names.extend(args.on.iter().cloned());
+                names.extend_whole(args.index.iter().cloned());
+                names.extend_whole(args.on.iter().cloned());
 
                 let [in_edge, out_edge] = edges.get_input_output_mut(0, 0);
                 *in_edge.projection_state_mut() = ProjectionState {
@@ -2113,16 +2311,40 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 }
 
                 let IR::MapFunction {
-                    function: FunctionIR::Unnest { columns, .. },
+                    function: FunctionIR::Unnest { columns, separator },
                     ..
                 } = storage.get_mut(key)
                 else {
                     unreachable!()
                 };
 
+                // Each struct is needed for the fields that are needed of its unnested columns.
+                let unnested: Vec<(PlSmallStr, FieldSelection)> = columns
+                    .iter()
+                    .map(|column| {
+                        let selection = match input_schema.get(column) {
+                            Some(dtype) if self.prune_struct_fields => {
+                                field_pruning::unnested_struct_selection(
+                                    column,
+                                    dtype,
+                                    separator.as_ref(),
+                                    out_edge.names(),
+                                )
+                            },
+                            _ => FieldSelection::All,
+                        };
+                        (column.clone(), selection)
+                    })
+                    .collect();
+
                 let names = out_edge.names_mut();
-                names.retain(|name| input_schema.contains(name));
-                names.extend(columns.iter().cloned());
+                names.retain(|name, _| input_schema.contains(name) && !columns.contains(name));
+                names.extend_merged(unnested);
+                names.normalize(&input_schema);
+                // The unnest keeps the order of its input, which the schema above it follows.
+                names.sort_by_cached_key(|name, _| {
+                    input_schema.index_of(name).unwrap_or(usize::MAX)
+                });
                 let names = out_edge.take_names();
 
                 let in_edge = &mut edges.inputs()[0];
@@ -2140,6 +2362,20 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 }
 
                 let input = *input;
+
+                // The row count of an explode is that of an exploded column, read for its offsets
+                // and validity: count with it rather than with another column, or with it whole
+                // when it is the only one.
+                if out_edge.projection() == Projection::Len
+                    && let FunctionIR::Explode { columns, .. } = function
+                    && let Some(name) = columns.first()
+                {
+                    *out_edge.projection_mut() = Projection::Names;
+                    out_edge
+                        .names_mut()
+                        .insert_merged(name.clone(), FieldSelection::validity_only());
+                }
+
                 let (projected_names, _) = projected_names_subset_or_return!();
                 let input_schema = IR::schema_with_cache(input, storage, self.schema_cache);
 
@@ -2151,16 +2387,47 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                 let input_projected_names = self.names_set_scratch.get();
 
-                input_projected_names.extend(
+                // Only these pass the values of the other columns through unchanged.
+                let keep_selections =
+                    matches!(function, FunctionIR::Rechunk | FunctionIR::Explode { .. });
+
+                input_projected_names.extend_merged(
                     projected_names
                         .iter()
-                        .filter(|name| input_schema.contains(name))
-                        .cloned(),
+                        .filter(|(name, _)| input_schema.contains(name))
+                        .map(|(name, selection)| {
+                            let selection = if keep_selections {
+                                selection.clone()
+                            } else {
+                                FieldSelection::All
+                            };
+                            (name.clone(), selection)
+                        }),
                 );
 
-                for name in function.additional_projection_pd_columns().as_ref() {
-                    input_projected_names.insert(name.clone());
+                if let FunctionIR::Explode { columns, .. } = function {
+                    // An exploded column is needed for the selection of its element, plus its
+                    // offsets and validity.
+                    for name in columns.iter() {
+                        let element = projected_names
+                            .get(name)
+                            .cloned()
+                            .unwrap_or_else(FieldSelection::validity_only);
+                        match input_projected_names.get_mut(name) {
+                            Some(selection) => *selection = FieldSelection::element(element),
+                            None => {
+                                input_projected_names
+                                    .insert(name.clone(), FieldSelection::element(element));
+                            },
+                        }
+                    }
+                } else {
+                    for name in function.additional_projection_pd_columns().as_ref() {
+                        input_projected_names.insert_whole(name.clone());
+                    }
                 }
+
+                input_projected_names.normalize(&input_schema);
 
                 if let Some(schema) = compute_simple_projection_schema(
                     projected_names.as_slice(),
@@ -2202,14 +2469,18 @@ impl ProjectionPushdownVisitor<'_, '_> {
                             break 'push_common_subset;
                         };
 
-                        projected_names.extend(names.iter().cloned());
+                        projected_names
+                            .extend_merged(names.iter().map(|(n, s)| (n.clone(), s.clone())));
 
-                        if projected_names.len() == schema.len() {
+                        if projected_names.len() == schema.len()
+                            && !projected_names.has_field_selections()
+                        {
                             break 'push_common_subset;
                         }
                     }
 
-                    updated_schema = Some(schema.try_project(projected_names.iter()).unwrap());
+                    projected_names.normalize(schema);
+                    updated_schema = Some(schema.try_project(projected_names.keys()).unwrap());
                     schema = updated_schema.as_ref().unwrap();
 
                     *edges.inputs()[0].projection_state_mut() = ProjectionState {
@@ -2262,12 +2533,17 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 *filter_drop_columns_idx = Some(len_before_added_names);
 
                 for eir in filters.iter() {
-                    for name in aexpr_to_leaf_names_iter(eir.node(), self.expr_arena) {
-                        projected_names.insert(name.clone());
-                    }
+                    SelectionWalker::collect(
+                        self.expr_arena,
+                        self.prune_struct_fields,
+                        eir.node(),
+                        projected_names,
+                    );
                 }
 
-                *projection = Some(projected_names.iter().cloned().collect());
+                // The plan is resolved later: its columns are read whole.
+                projected_names.select_all_whole();
+                *projection = Some(projected_names.keys().cloned().collect());
 
                 reuse_names_alloc(edges);
             },
@@ -2292,20 +2568,37 @@ where
         .map(|(k, _)| k)
 }
 
+/// Sorts `names` in the order of `schema` if they are all of its columns. A projection of every
+/// column is only pushed down for its field selections, and must not reorder the columns.
+fn sort_full_projection(names: &mut ColumnSelection, schema: &Schema) {
+    if names.len() == schema.len() && !iters_eq(names.keys(), schema.iter_names()) {
+        names.sort_by_cached_key(|name, _| schema.index_of(name).unwrap_or(usize::MAX));
+    }
+}
+
+/// What is needed of output column `name` of the node of `edge`.
+fn output_selection(edge: &Edge, name: &str) -> FieldSelection {
+    if edge.projection() == Projection::All {
+        return FieldSelection::All;
+    }
+
+    edge.names().get(name).cloned().unwrap_or_default()
+}
+
 /// Returns `None` if `projected_names` match `input_schema`.
 fn compute_simple_projection_schema(
-    projected_names: &indexmap::set::Slice<PlSmallStr>,
+    projected_names: &indexmap::map::Slice<PlSmallStr, FieldSelection>,
     input_schema: &Schema,
     allow_order_mismatch: bool,
 ) -> Option<Schema> {
     if projected_names.len() == input_schema.len() && {
         if allow_order_mismatch {
             projected_names
-                .iter()
+                .keys()
                 .all(|name| input_schema.contains(name))
         } else {
             projected_names
-                .iter()
+                .keys()
                 .zip(input_schema.iter_names())
                 .all(|(l, r)| l == r)
         }
@@ -2313,13 +2606,113 @@ fn compute_simple_projection_schema(
         return None;
     }
 
-    Some(Schema::from_iter(projected_names.iter().map(|name| {
+    Some(Schema::from_iter(projected_names.keys().map(|name| {
         let dtype = input_schema.get(name).unwrap().clone();
         (name.clone(), dtype)
     })))
 }
 
-fn set_scan_projection(scan_ir: &mut IR, projection_schema: Arc<Schema>) {
+/// Whether the scan reads only the selected struct fields when given a field selection.
+fn scan_supports_field_selection(
+    scan_type: &FileScanIR,
+    unified_scan_args: &crate::dsl::UnifiedScanArgs,
+) -> bool {
+    match scan_type {
+        // Also with a column mapping (Iceberg field IDs): the selection, made on the names of the
+        // table, is mapped to the fields of each file by ID.
+        #[cfg(feature = "parquet")]
+        FileScanIR::Parquet { .. } => true,
+        // Skips the buffers of unselected fields.
+        #[cfg(feature = "ipc")]
+        FileScanIR::Ipc { .. } => unified_scan_args.column_mapping.is_none(),
+        // Parses with the pruned schema.
+        #[cfg(feature = "json")]
+        FileScanIR::NDJson { .. } => unified_scan_args.column_mapping.is_none(),
+        // Expanded after projection pushdown (`pl.scan_delta`, `pl.scan_iceberg`), keeping the
+        // field selection; an expansion that can't read it is narrowed after the scan
+        // (`narrow_expanded_dataset_scan`).
+        #[cfg(feature = "python")]
+        FileScanIR::PythonDataset { .. } => true,
+        _ => false,
+    }
+}
+
+/// After a dataset scan at `node` is expanded: if the expanded source can't read the field
+/// selection made for it (e.g. a Python scan fallback), the selection is cleared and the scan's
+/// output narrowed by a `select` above it, keeping the pruned dtypes the plan was made with.
+#[cfg(feature = "python")]
+pub(super) fn narrow_expanded_dataset_scan(
+    node: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) {
+    let IR::Scan {
+        scan_type,
+        unified_scan_args,
+        file_info,
+        output_schema,
+        ..
+    } = ir_arena.get_mut(node)
+    else {
+        return;
+    };
+    if unified_scan_args.field_selection.is_none()
+        || (!matches!(scan_type.as_ref(), FileScanIR::PythonDataset { .. })
+            && scan_supports_field_selection(scan_type, unified_scan_args))
+    {
+        return;
+    }
+
+    let field_selection = unified_scan_args.field_selection.take().unwrap();
+    let pruned_schema = output_schema.clone().unwrap();
+    let mut full_schema = pruned_schema.as_ref().clone();
+    for name in field_selection.0.keys() {
+        if let (Some(dtype), Some(full)) = (full_schema.get_mut(name), file_info.schema.get(name)) {
+            *dtype = full.clone();
+        }
+    }
+    let full_schema = Arc::new(full_schema);
+    *output_schema = Some(full_schema.clone());
+
+    let scan = ir_arena.take(node);
+    let scan = ir_arena.add(scan);
+    let select = pruning_select(scan, &full_schema, pruned_schema, expr_arena);
+    ir_arena.replace(node, select);
+}
+
+/// The field selection of a scan: the columns of `selection` that are not read whole, relative to
+/// the dtypes of `file_schema`. `previous`: the field selection the scan already has, within which
+/// `selection` was made.
+fn scan_field_selection(
+    selection: &ColumnSelection,
+    file_schema: &Schema,
+    previous: Option<&ScanFieldSelection>,
+) -> Option<ScanFieldSelection> {
+    let mut out = PlIndexMap::default();
+
+    for (name, selection) in selection.iter() {
+        let previous = previous.map_or(&FieldSelection::All, |p| p.get(name));
+        if selection.is_all() && previous.is_all() {
+            continue;
+        }
+        let Some(dtype) = file_schema.get(name) else {
+            continue;
+        };
+
+        let selection = previous.intersect(selection).normalize(dtype);
+        if !selection.is_all() {
+            out.insert(name.clone(), selection);
+        }
+    }
+
+    (!out.is_empty()).then_some(ScanFieldSelection(out))
+}
+
+fn set_scan_projection(
+    scan_ir: &mut IR,
+    projection_schema: Arc<Schema>,
+    field_selection: Option<ScanFieldSelection>,
+) {
     let IR::Scan {
         file_info,
         output_schema,
@@ -2369,6 +2762,8 @@ fn set_scan_projection(scan_ir: &mut IR, projection_schema: Arc<Schema>) {
             .cloned()
             .collect(),
     );
+
+    unified_scan_args.field_selection = field_selection.map(Arc::new);
 
     *output_schema = Some(projection_schema);
 }

@@ -116,6 +116,36 @@ def test_numeric_decimal_type(
 
 
 @pytest.mark.parametrize(
+    ("sqltype", "error"),
+    [
+        ("DECIMAL(2, 3)", r"invalid DECIMAL scale \(expected 0-2, found 3\)"),
+        ("NUMERIC(10, 2147483648)", r"invalid DECIMAL scale \(expected 0-10"),
+        ("DECIMAL(39, 2)", r"invalid DECIMAL precision \(expected 1-38, found 39\)"),
+        ("DECIMAL(0)", r"invalid DECIMAL precision \(expected 1-38, found 0\)"),
+        ("DECIMAL(10, -1)", r"invalid DECIMAL scale \(expected 0-10, found -1\)"),
+        ("DEC(5, 6)", r"invalid DECIMAL scale \(expected 0-5, found 6\)"),
+        ("DECIMAL(2, 3)[]", r"invalid DECIMAL scale \(expected 0-2, found 3\)"),
+    ],
+)
+def test_numeric_decimal_type_invalid(sqltype: str, error: str) -> None:
+    # an error, not a panic in the cast
+    for query in (
+        f"SELECT CAST(1 AS {sqltype})",
+        f"SELECT TRY_CAST(1 AS {sqltype})",
+        f"SELECT 1::{sqltype}",
+    ):
+        with pytest.raises(SQLSyntaxError, match=error):
+            pl.sql(query, eager=True)
+
+
+@pytest.mark.parametrize("prec_scale", [(1, 0), (1, 1), (38, 0), (38, 38)])
+def test_numeric_decimal_type_bounds(prec_scale: tuple[int, int]) -> None:
+    precision, scale = prec_scale
+    res = pl.sql(f"SELECT CAST(0 AS DECIMAL({precision}, {scale})) AS d", eager=True)
+    assert res.schema["d"] == pl.Decimal(precision, scale)
+
+
+@pytest.mark.parametrize(
     ("decimals", "expected"),
     [
         (0, [-8192.0, -4.0, -2.0, 2.0, 4.0, 8193.0]),
@@ -452,6 +482,19 @@ def test_decimal_mul_div_out_of_range() -> None:
     # 10^33 at scale 6 loses leading digits
     with pytest.raises(pl.exceptions.ComputeError, match="overflow in decimal"):
         df.sql("SELECT big / 1 FROM self")
+
+
+def test_decimal_mul_skips_values_under_null_lists() -> None:
+    # The masked first row would overflow.
+    mask = pl.Series([False, True])
+    df = pl.DataFrame(
+        {"a": [[D(10**37)], [D(1)]]}, schema={"a": pl.List(pl.Decimal(38, 0))}
+    ).with_columns(b=pl.col("a").list.to_array(1))
+    out = df.select(
+        pl.when(mask).then("a").list.eval(pl.sql_expr('"" * 100')),
+        pl.when(mask).then("b").arr.eval(pl.sql_expr('"" * 100')),
+    )
+    assert out.rows() == [(None, None), ([D(100)], [D(100)])]
 
 
 def test_decimal_mul_div_float_and_int_unchanged() -> None:

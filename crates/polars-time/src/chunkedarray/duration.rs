@@ -74,7 +74,7 @@ impl DurationMethods for DurationChunked {
         num_of_unit_fractional(self, t as f64 * SECONDS_IN_DAY as f64)
     }
 
-    /// Extract the seconds from a `Duration`
+    /// Extract the minutes from a `Duration`
     fn minutes(&self) -> Int64Chunked {
         let t = time_units_in_second(self.time_unit());
         (&self.phys).wrapping_trunc_div_scalar(t * 60)

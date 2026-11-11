@@ -16,7 +16,7 @@ from polars._utils.expired import RenamedParameter, removed_parameters
 from polars._utils.pycapsule import is_pycapsule
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import _get_stack_locals, qualified_type_name
-from polars._utils.wrap import wrap_ldf
+from polars._utils.wrap import wrap_expr, wrap_ldf
 from polars.convert import from_pandas
 from polars.dataframe import DataFrame
 from polars.exceptions import SQLInterfaceError
@@ -32,14 +32,18 @@ if TYPE_CHECKING:
     from typing import Any, Final, Literal, Self, TypeAlias
 
     import pyiceberg.catalog
+    import pyiceberg.expressions
     import pyiceberg.partitioning
     import pyiceberg.schema
     import pyiceberg.table
+    from pyiceberg.table import FileScanTask
 
     from polars._plr import PyLazyFrame
     from polars._typing import PolarsDataType, StorageOptionsDict
     from polars.expr import Expr
     from polars.io.iceberg import IcebergCatalogConfig
+    from polars.io.iceberg._sink import _ReplaceFiles
+    from polars.schema import Schema
 
     CompatibleFrameType: TypeAlias = (
         DataFrame
@@ -472,60 +476,152 @@ class SQLContext(Generic[FrameType]):
         return res.collect() if eager or self._eager_execution else res
 
     def _execute_with_catalogs(self, query: str) -> PyLazyFrame:
-        from polars.io.iceberg.functions import _scan_catalog_table
-
-        if (ddl := self._ctxt.catalog_ddl(query)) is not None:
-            return self._execute_catalog_ddl(ddl)._ldf
+        if (stmt := self._ctxt.catalog_statement(query)) is not None:
+            return self._execute_catalog_statement(stmt, query)._ldf
 
         tables = []
         identifier: list[str]
         for catalog_name, identifier in self._ctxt.catalog_tables(query):
-            config, instance, storage_options = self._catalogs[catalog_name]
-            full_name = [catalog_name, *identifier]
-            lf = _scan_catalog_table(
-                tuple(identifier),
-                config,
-                instance,
-                storage_options=storage_options,
-                display_name=".".join(full_name),
-            )
-            tables.append((full_name, lf._ldf))
+            lf = self._scan_catalog_relation(catalog_name, identifier)
+            tables.append(([catalog_name, *identifier], lf._ldf))
         return self._ctxt.execute_with_catalog_tables(query, tables)
 
-    def _execute_catalog_ddl(self, ddl: dict[str, Any]) -> LazyFrame:
-        """Perform the catalog DDL that `catalog_ddl` returned."""
-        config, instance, storage_options = self._catalogs[ddl["catalog"]]
+    def _scan_catalog_relation(
+        self, catalog_name: str, identifier: list[str]
+    ) -> LazyFrame:
+        """Lazily scan a catalog table, or a metadata table (`t$snapshots`)."""
+        from polars.io.iceberg._metadata_tables import (
+            metadata_table_of,
+            scan_catalog_metadata_table,
+        )
+        from polars.io.iceberg.functions import _scan_catalog_table
+
+        config, instance, storage_options = self._catalogs[catalog_name]
+        display_name = ".".join([catalog_name, *identifier])
+        if (metadata := metadata_table_of(identifier)) is not None:
+            table, name = metadata
+            return scan_catalog_metadata_table(
+                table, name, config, instance, display_name=display_name
+            )
+        return _scan_catalog_table(
+            tuple(identifier),
+            config,
+            instance,
+            storage_options=storage_options,
+            display_name=display_name,
+        )
+
+    def _execute_catalog_statement(self, stmt: dict[str, Any], query: str) -> LazyFrame:
+        """Perform the statement of `query` that `catalog_statement` returned."""
+        _check_not_metadata_table(stmt)
+        config, instance, storage_options = self._catalogs[stmt["catalog"]]
         catalog = (
             instance
             if instance is not None
             else config.class_(config.name, **config.properties)
         )
-        if ddl["kind"] == "drop_table":
-            response = _drop_catalog_table(catalog, ddl)
-        elif ddl["kind"] == "create_table":
+        if stmt["kind"] == "drop_table":
+            response = _drop_catalog_table(catalog, stmt)
+        elif stmt["kind"] == "create_table":
             response = _create_catalog_table(
                 catalog,
-                ddl,
+                stmt,
                 lambda query: wrap_ldf(self._execute_with_catalogs(query)),
                 storage_options,
             )
-        elif ddl["kind"] == "create_schema":
-            response = _create_catalog_namespace(catalog, ddl)
-        elif ddl["kind"] == "drop_schema":
-            response = _drop_catalog_namespace(catalog, ddl)
-        elif ddl["kind"] == "alter_table":
-            response = _alter_catalog_table(catalog, ddl)
-        elif ddl["kind"] == "insert":
+        elif stmt["kind"] == "create_schema":
+            response = _create_catalog_namespace(catalog, stmt)
+        elif stmt["kind"] == "drop_schema":
+            response = _drop_catalog_namespace(catalog, stmt)
+        elif stmt["kind"] == "alter_table":
+            response = _alter_catalog_table(catalog, stmt)
+        elif stmt["kind"] == "insert":
             response = _insert_catalog_table(
                 catalog,
-                ddl,
+                stmt,
                 lambda query: wrap_ldf(self._execute_with_catalogs(query)),
+                storage_options,
+            )
+        elif stmt["kind"] == "truncate":
+            response = _truncate_catalog_table(catalog, stmt)
+        elif stmt["kind"] == "update":
+            full_name = [stmt["catalog"], *stmt["identifier"]]
+
+            def update_plan(scan: LazyFrame) -> tuple[Expr, list[tuple[str, Expr]]]:
+                predicate, values = self._ctxt.catalog_update_plan(
+                    query, [(full_name, scan._ldf)]
+                )
+                return wrap_expr(predicate), [(c, wrap_expr(e)) for c, e in values]
+
+            response = _update_catalog_table(
+                catalog, stmt, update_plan, storage_options
+            )
+        elif stmt["kind"] == "merge":
+            response = self._merge_catalog_table(catalog, stmt, query, storage_options)
+        elif stmt["kind"] == "delete":
+            full_name = [stmt["catalog"], *stmt["identifier"]]
+            response = _delete_catalog_table(
+                catalog,
+                stmt,
+                lambda scan: wrap_expr(
+                    self._ctxt.catalog_delete_predicate(query, [(full_name, scan._ldf)])
+                ),
                 storage_options,
             )
         else:
-            msg = f"unsupported catalog statement {ddl['kind']!r}"
+            msg = f"unsupported catalog statement {stmt['kind']!r}"
             raise NotImplementedError(msg)
         return DataFrame({"Response": [response]}).lazy()
+
+    def _merge_catalog_table(
+        self,
+        catalog: pyiceberg.catalog.Catalog,
+        stmt: dict[str, Any],
+        query: str,
+        storage_options: StorageOptionsDict | None,
+    ) -> str:
+        """Perform the `MERGE` of `query` on its table, returning the response."""
+        from polars.io.iceberg.functions import scan_iceberg
+
+        full_name = [stmt["catalog"], *stmt["identifier"]]
+
+        def source_of(
+            table: pyiceberg.table.Table,
+        ) -> tuple[LazyFrame, list[tuple[str, Expr]]]:
+            # every reference to the target reads the table loaded for the statement
+            tables = []
+            identifier: list[str]
+            for catalog_name, identifier in self._ctxt.catalog_tables(query):
+                name = [catalog_name, *identifier]
+                if name == full_name:
+                    lf = scan_iceberg(table, storage_options=storage_options)
+                else:
+                    lf = self._scan_catalog_relation(catalog_name, identifier)
+                tables.append((name, lf._ldf))
+            source, keys = self._ctxt.catalog_merge_source(query, tables)
+            return wrap_ldf(source), [(c, wrap_expr(e)) for c, e in keys]
+
+        def plan_of(target: LazyFrame, source: LazyFrame) -> _MergePlan:
+            pairs, inserts, matched, not_matched = self._ctxt.catalog_merge_plan(
+                query, [(full_name, target._ldf)], source._ldf
+            )
+
+            def clauses(
+                planned: list[tuple[str, int, list[tuple[str, Any]]]],
+            ) -> _MergeClauses:
+                return [
+                    (kind, number, [(c, wrap_expr(e)) for c, e in columns])
+                    for kind, number, columns in planned
+                ]
+
+            return (
+                wrap_ldf(pairs),
+                wrap_ldf(inserts),
+                clauses(matched),
+                clauses(not_matched),
+            )
+
+        return _merge_catalog_table(catalog, stmt, source_of, plan_of, storage_options)
 
     def register_catalog(
         self,
@@ -615,7 +711,16 @@ class SQLContext(Generic[FrameType]):
           `VALUES` list or a query in one commit, and `INSERT OVERWRITE` replaces
           all of the table's rows. Values convert to the column types as described
           in :ref:`INSERT <insert>`.
-        * `TRUNCATE` and `DELETE` are not supported on catalog tables.
+        * `TRUNCATE [TABLE] [IF EXISTS] <name>` deletes all of a catalog table's
+          rows in one commit, without writing data files.
+        * `DELETE FROM <name> [WHERE <condition>]` deletes the matching rows in one
+          commit, keeping rows where the condition is NULL. The condition compares
+          columns with constants. It returns the statement, not the remaining rows.
+          See :ref:`DELETE FROM <delete_from_table>`.
+        * `UPDATE <name> SET <column> = <value>, ... [WHERE <condition>]` changes the
+          matching rows in one commit, with the condition limited as for `DELETE`.
+          Values convert to the column types as for `INSERT`. See
+          :ref:`UPDATE <update>`.
 
         Catalogs attached inside a `with SQLContext()` block are detached on exit,
         like the tables registered there. If that detaches the default catalog, the
@@ -754,7 +859,7 @@ class SQLContext(Generic[FrameType]):
         >>> ctx.tables()
         ['df1', 'df2']
 
-        Query using the register variable/frame names
+        Query using the registered variable/frame names
 
         >>> ctx.execute(
         ...     "SELECT a, b, c FROM df1 LEFT JOIN df2 USING (a) ORDER BY a DESC"
@@ -930,7 +1035,11 @@ def _pyiceberg_catalog_class() -> type | None:
 
 def _drop_catalog_table(catalog: pyiceberg.catalog.Catalog, ddl: dict[str, Any]) -> str:
     """Drop the catalog table of a `DROP TABLE`, returning the response."""
-    from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
+    from pyiceberg.exceptions import (
+        BadRequestError,
+        NoSuchNamespaceError,
+        NoSuchTableError,
+    )
 
     identifier: tuple[str, ...] = tuple(ddl["identifier"])
     purge = ddl["purge"]
@@ -957,13 +1066,834 @@ def _drop_catalog_table(catalog: pyiceberg.catalog.Catalog, ddl: dict[str, Any])
         msg = f"{missing} ({error}); catalog identifiers are case-sensitive"
         raise NoSuchTableError(msg) from error
     except Exception as error:
+        # a purge-only catalog may refuse a plain drop (400) before looking for it
+        refused = not purge and isinstance(error, BadRequestError)
+        if refused and not _table_exists(catalog, identifier):
+            if ddl["if_exists"]:
+                return response
+            msg = f"{missing} ({error}); catalog identifiers are case-sensitive"
+            raise NoSuchTableError(msg) from error
         # it may have dropped the table before failing (a purge deletes files last)
         error.add_note(
             f"dropping table '{ddl['name']}' failed: catalog table "
             f"'{_display_name(identifier)}' of catalog '{ddl['catalog']}'"
         )
+        if refused:
+            error.add_note(
+                "some catalogs drop tables only with `PURGE`, which also deletes "
+                "the data files"
+            )
         raise
     return response
+
+
+def _truncate_catalog_table(
+    catalog: pyiceberg.catalog.Catalog, stmt: dict[str, Any]
+) -> str:
+    """Delete all rows of the catalog table of a `TRUNCATE`, returning the response."""
+    from pyiceberg.exceptions import NoSuchTableError
+
+    identifier: tuple[str, ...] = tuple(stmt["identifier"])
+    name, full_name = stmt["name"], _display_name([stmt["catalog"], *identifier])
+    response = f"TRUNCATE TABLE {full_name}"
+    missing = (
+        f"table '{name}' does not exist: catalog table "
+        f"'{_display_name(identifier)}' could not be truncated"
+    )
+    try:
+        table = _load_catalog_table(catalog, identifier, missing)
+    except NoSuchTableError:
+        if stmt["if_exists"]:
+            return response
+        raise
+    where = (
+        f"catalog table '{_display_name(identifier)}' of catalog '{stmt['catalog']}'"
+    )
+    _delete_rows(
+        table,
+        None,
+        refused=f"table '{name}' could not be truncated: {where}",
+        unknown=f"table '{name}' may have been truncated (commit state unknown): {where}",
+    )
+    return response
+
+
+def _load_catalog_table(
+    catalog: pyiceberg.catalog.Catalog, identifier: tuple[str, ...], missing: str
+) -> pyiceberg.table.Table:
+    """Load the table a statement changes, raising `missing` if it does not exist."""
+    from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
+
+    # checked first, as not every catalog reports a missing table as one on load
+    if not _table_exists(catalog, identifier):
+        msg = f"{missing}; catalog identifiers are case-sensitive"
+        raise NoSuchTableError(msg)
+    try:
+        return catalog.load_table(identifier)
+    except (NoSuchTableError, NoSuchNamespaceError) as error:
+        msg = f"{missing} ({error}); catalog identifiers are case-sensitive"
+        raise NoSuchTableError(msg) from error
+
+
+def _check_not_metadata_table(stmt: dict[str, Any]) -> None:
+    """Refuse a statement whose target table names a metadata table (`t$snapshots`)."""
+    from polars.exceptions import InvalidOperationError
+    from polars.io.iceberg._metadata_tables import metadata_table_of
+
+    if (identifier := stmt.get("identifier")) is None:
+        return
+    if (metadata := metadata_table_of(identifier)) is not None:
+        table = _display_name([stmt["catalog"], *metadata[0]])
+        msg = (
+            f"table '{stmt['name']}' is a metadata table of '{table}', which can "
+            "only be read"
+        )
+        raise InvalidOperationError(msg)
+
+
+def _delete_rows(
+    table: pyiceberg.table.Table,
+    delete_filter: pyiceberg.expressions.BooleanExpression | None,
+    *,
+    refused: str,
+    unknown: str,
+) -> None:
+    """
+    Delete the rows of `table` matching `delete_filter` (or all) in one commit.
+
+    On failure, the note `refused` if nothing was committed, else `unknown`.
+    """
+    import uuid
+
+    from pyiceberg.exceptions import (
+        CommitStateUnknownException,
+        ValidationException,
+    )
+    from pyiceberg.expressions import AlwaysTrue
+    from pyiceberg.table import Table
+
+    from polars.io.iceberg._sink import (
+        _SINK_UUID_PROPERTY,
+        _AlreadyCommitted,
+        _sink_transaction,
+        _SinkCatalog,
+    )
+
+    delete_filter = AlwaysTrue() if delete_filter is None else delete_filter
+    # as a sink's commit: a failed commit is checked for having landed before
+    # PyIceberg retries it or deletes its manifests
+    commit_uuid = str(uuid.uuid4())
+    properties = {_SINK_UUID_PROPERTY: commit_uuid}
+
+    catalog = _SinkCatalog(table.catalog, commit_uuid, verbose=False)
+    wrapped = Table(
+        table.name(),
+        table.metadata,
+        table.metadata_location,
+        table.io,
+        catalog,  # type: ignore[arg-type]
+        table.config,
+    )
+    location = table.location_provider().data_path
+    rewrite = False
+    try:
+        try:
+            with _sink_transaction(wrapped, commit_uuid) as tx:
+                # data files whose rows all match are dropped whole, without reading any
+                update = tx.update_snapshot(snapshot_properties=properties)
+                with update.delete() as delete:
+                    delete.delete_by_predicate(delete_filter)
+                    rewrite = delete.rewrites_needed
+                if rewrite:
+                    # other files that may match are rewritten without those rows
+                    tx.delete(delete_filter, snapshot_properties=properties)
+        except (_AlreadyCommitted, CommitStateUnknownException, ValidationException):
+            raise
+        except Exception as error:
+            # a failure after a commit request, not of it: did the commit land?
+            catalog.landed_after(table, error)
+            return
+    except _AlreadyCommitted:
+        return
+    except CommitStateUnknownException as error:
+        if rewrite:
+            error.add_note(f"rewritten data files kept under '{location}'")
+        error.add_note(unknown)
+        raise
+    except Exception as error:
+        if rewrite:
+            error.add_note(f"rewritten data files may remain under '{location}'")
+        error.add_note(refused)
+        raise
+
+
+def _condition_error(
+    full_name: str, condition: str, reason: str, *, statement: str, hint: bool
+) -> SQLInterfaceError:
+    if len(condition) > 200:
+        condition = f"{condition[:200]}..."
+    msg = f"{statement} on catalog table '{full_name}' cannot apply `{condition}`: {reason}"
+    if hint:
+        msg += (
+            "\n\nHint: compare columns with constants, combined with AND, OR, NOT. "
+            f"Or select the matching keys first, then {statement.lower()} with "
+            "`WHERE id IN (...)`."
+        )
+    return SQLInterfaceError(msg)
+
+
+def _exact_row_filter(
+    predicate: Expr,
+    table: pyiceberg.table.Table,
+    stmt: dict[str, Any],
+    statement: str,
+    full_name: str,
+) -> pyiceberg.expressions.BooleanExpression:
+    """The PyIceberg filter of a `DELETE` or `UPDATE` matching exactly `predicate`."""
+    from polars.io.iceberg._utils import (
+        UnconvertiblePredicateError,
+        predicate_to_pyiceberg_delete_filter,
+    )
+
+    try:
+        return predicate_to_pyiceberg_delete_filter(predicate, table)
+    except UnconvertiblePredicateError as error:
+        if error.reason is not None:
+            reason, hint = error.reason, False
+        elif stmt["hint_unsupported_part"] is not None:
+            reason, hint = stmt["hint_unsupported_part"], True
+        elif error.likely is not None:
+            reason, hint = error.likely, False
+        else:
+            reason, hint = "unsupported expression", True
+        raise _condition_error(
+            full_name, stmt["condition"], reason, statement=statement, hint=hint
+        ) from error
+
+
+def _delete_catalog_table(
+    catalog: pyiceberg.catalog.Catalog,
+    stmt: dict[str, Any],
+    predicate_of: Callable[[LazyFrame], Expr],
+    storage_options: StorageOptionsDict | None,
+) -> str:
+    """Delete the rows of a `DELETE` from its catalog table, returning the response."""
+    from polars.io.iceberg.functions import scan_iceberg
+
+    identifier: tuple[str, ...] = tuple(stmt["identifier"])
+    name, table_name = stmt["name"], _display_name(identifier)
+    full_name = _display_name([stmt["catalog"], *identifier])
+    if stmt["subquery"]:
+        raise _condition_error(
+            full_name, stmt["condition"], "subquery", statement="DELETE", hint=True
+        )
+    missing = (
+        f"table '{name}' does not exist: no rows of catalog table '{table_name}' "
+        "could be deleted"
+    )
+    table = _load_catalog_table(catalog, identifier, missing)
+    # planned against this load, so that the filter binds the same columns
+    predicate = predicate_of(scan_iceberg(table, storage_options=storage_options))
+    delete_filter = _exact_row_filter(predicate, table, stmt, "DELETE", full_name)
+    where = f"catalog table '{table_name}' of catalog '{stmt['catalog']}'"
+    _delete_rows(
+        table,
+        delete_filter,
+        refused=f"no rows of table '{name}' were deleted: {where}",
+        unknown=f"rows of table '{name}' may have been deleted (commit state unknown): {where}",
+    )
+    return f"DELETE FROM {full_name}"
+
+
+def _update_catalog_table(
+    catalog: pyiceberg.catalog.Catalog,
+    stmt: dict[str, Any],
+    plan_of: Callable[[LazyFrame], tuple[Expr, list[tuple[str, Expr]]]],
+    storage_options: StorageOptionsDict | None,
+) -> str:
+    """Update the rows of an `UPDATE` in its catalog table, returning the response.
+
+    The data files holding a matching row are read in full and replaced, in one commit,
+    by files with the rows updated (copy-on-write).
+    """
+    from pyiceberg.exceptions import CommitStateUnknownException
+    from pyiceberg.expressions import AlwaysFalse
+
+    from polars.exceptions import ColumnNotFoundError
+    from polars.functions import collect_all
+    from polars.functions import len as count
+    from polars.io.iceberg._sink import _ReplaceFiles
+    from polars.io.iceberg.functions import _scan_iceberg_files, scan_iceberg
+
+    identifier: tuple[str, ...] = tuple(stmt["identifier"])
+    name, table_name = stmt["name"], _display_name(identifier)
+    full_name = _display_name([stmt["catalog"], *identifier])
+    response = f"UPDATE {full_name}"
+    if stmt["subquery"]:
+        raise _condition_error(
+            full_name, stmt["condition"], "subquery", statement="UPDATE", hint=True
+        )
+    missing = (
+        f"table '{name}' does not exist: no rows of catalog table '{table_name}' "
+        "could be updated"
+    )
+    table = _load_catalog_table(catalog, identifier, missing)
+    if table.format_version > 2:
+        msg = (
+            f"UPDATE of an Iceberg v{table.format_version} table is not supported yet: "
+            f"catalog table '{table_name}'"
+        )
+        raise NotImplementedError(msg)
+    # planned against this load: the rows read and the files replaced are its snapshot's
+    scan = scan_iceberg(table, storage_options=storage_options)
+    target = scan.collect_schema()
+    for column in stmt["columns"]:
+        if column not in target:
+            msg = f"column '{column}' not found in table '{name}'; column names are case-sensitive"
+            raise ColumnNotFoundError(msg)
+    predicate, values = plan_of(scan)
+    row_filter = _exact_row_filter(predicate, table, stmt, "UPDATE", full_name)
+    updated_rows = _updated_rows(table, target, predicate, values, name)
+
+    where = f"catalog table '{table_name}' of catalog '{stmt['catalog']}'"
+    refused = f"no rows of table '{name}' were updated: {where}"
+    if row_filter == AlwaysFalse():
+        return response
+    tasks = _candidate_tasks(table, row_filter)
+    try:
+        # pass 1: the files with a matching row, from the condition's columns
+        counts = collect_all(
+            _scan_iceberg_files(table, [task], storage_options)
+            .filter(predicate)
+            .select(count())
+            for task in tasks
+        )
+    except Exception as error:
+        error.add_note(refused)
+        raise
+    replaced = [t for t, n in zip(tasks, counts, strict=True) if n.item() > 0]
+    if not replaced:
+        return response
+    # pass 2: every row of those files, the matching ones updated
+    rows = updated_rows(_scan_iceberg_files(table, replaced, storage_options))
+    replace = _ReplaceFiles(
+        data_files=[t.file for t in replaced],
+        conflict_filter=row_filter,
+        schema_id=table.metadata.current_schema_id,
+        spec_id=table.metadata.default_spec_id,
+    )
+    try:
+        _write_rows(table, rows, "append", storage_options, replace=replace)
+    except CommitStateUnknownException as error:
+        error.add_note(
+            f"rows of table '{name}' may have been updated (commit state unknown): {where}"
+        )
+        raise
+    except Exception as error:
+        error.add_note(refused)
+        raise
+    return response
+
+
+# Columns of a `MERGE`'s frames; the Rust side uses the same names.
+_MERGE_FILE: Final = "__polars_merge_file"
+_MERGE_POS: Final = "__polars_merge_pos"
+_MERGE_SOURCE_ROW: Final = "__polars_merge_s"
+_MERGE_ACTION: Final = "__polars_merge_action"
+# PyIceberg's `IN_PREDICATE_LIMIT`: above it, an IN prunes nothing
+_MERGE_IN_LIMIT: Final = 200
+
+if TYPE_CHECKING:
+    # pairs, inserts, and per WHEN MATCHED / NOT MATCHED clause its kind and values
+    _MergeClauses: TypeAlias = "list[tuple[str, int, list[tuple[str, Expr]]]]"
+    _MergePlan: TypeAlias = "tuple[LazyFrame, LazyFrame, _MergeClauses, _MergeClauses]"
+
+
+def _merge_catalog_table(
+    catalog: pyiceberg.catalog.Catalog,
+    stmt: dict[str, Any],
+    source_of: Callable[
+        [pyiceberg.table.Table], tuple[LazyFrame, list[tuple[str, Expr]]]
+    ],
+    plan_of: Callable[[LazyFrame, LazyFrame], _MergePlan],
+    storage_options: StorageOptionsDict | None,
+) -> str:
+    """Merge the source rows of a `MERGE` into its catalog table; returns the response.
+
+    The source is read once. A first execution finds the data files with a row to update
+    or delete and the source rows to insert. A second rewrites those files with the
+    clauses applied (copy-on-write) and adds the inserted rows, in one commit.
+    """
+    from pyiceberg.exceptions import CommitStateUnknownException
+    from pyiceberg.expressions import AlwaysFalse
+
+    from polars.functions import col, collect_all, concat
+    from polars.functions import len as count
+    from polars.io.iceberg._sink import _ReplaceFiles
+    from polars.io.iceberg.functions import scan_iceberg
+
+    identifier: tuple[str, ...] = tuple(stmt["identifier"])
+    name, table_name = stmt["name"], _display_name(identifier)
+    full_name = _display_name([stmt["catalog"], *identifier])
+    response = f"MERGE INTO {full_name}"
+    where = f"catalog table '{table_name}' of catalog '{stmt['catalog']}'"
+    refused = f"no rows of table '{name}' were merged: {where}"
+    missing = (
+        f"table '{name}' does not exist: no rows of catalog table '{table_name}' "
+        "could be merged"
+    )
+    table = _load_catalog_table(catalog, identifier, missing)
+    if table.format_version > 2:
+        msg = (
+            f"MERGE into an Iceberg v{table.format_version} table is not yet supported: "
+            f"catalog table '{table_name}'"
+        )
+        raise NotImplementedError(msg)
+    try:
+        target = scan_iceberg(table, storage_options=storage_options).collect_schema()
+        source_plan, keys = source_of(table)
+        # every clause binds and its values convert, before the source is read
+        empty = LazyFrame(schema=source_plan.collect_schema())
+        _merge_check(
+            plan_of(
+                _merge_target(table, [], target, storage_options),
+                empty.with_row_index(_MERGE_SOURCE_ROW),
+            ),
+            table,
+            target,
+            name,
+        )
+        # read once, so that every step below sees the same source rows
+        source = source_plan.collect().with_row_index(_MERGE_SOURCE_ROW)
+        row_filter = _merge_key_filter(source, keys, table, target)
+        tasks = (
+            [] if row_filter == AlwaysFalse() else _candidate_tasks(table, row_filter)
+        )
+
+        # execution A: the files to rewrite and the rows to insert
+        pairs, inserts, matched, not_matched = plan_of(
+            _merge_target(table, tasks, target, storage_options), source.lazy()
+        )
+        modifying = [k for k, (kind, _, _) in enumerate(matched) if kind != "nothing"]
+        changed = pairs.filter(col(_MERGE_ACTION).is_in(modifying))
+        twice = (
+            changed.group_by(_MERGE_FILE, _MERGE_POS)
+            .agg(count().alias("n"))
+            .filter(col("n") > 1)
+            .select(count())
+        )
+        files = changed.select(col(_MERGE_FILE).unique())
+        unmatched = inserts.join(
+            pairs.select(_MERGE_SOURCE_ROW).unique(), on=_MERGE_SOURCE_ROW, how="anti"
+        )
+        inserted = _merge_inserted_rows(unmatched, not_matched, table, target, name)
+        twice_df, files_df, inserted_df = collect_all([twice, files, inserted])
+        _check_changed_once(twice_df.item(), name)
+        _check_not_null(inserted_df, table, name)
+        affected = set(files_df[_MERGE_FILE])
+        replaced = [t for t in tasks if t.file.file_path in affected]
+        if not replaced and inserted_df.is_empty():
+            return response
+
+        # execution B: rewrite the files, with the same source
+        rows = [inserted_df.lazy()]
+        if replaced:
+            rows.insert(
+                0,
+                _merge_rewritten_rows(
+                    _merge_target(table, replaced, target, storage_options),
+                    plan_of,
+                    source.lazy(),
+                    table,
+                    target,
+                    name,
+                ),
+            )
+        replace = _ReplaceFiles(
+            data_files=[t.file for t in replaced],
+            conflict_filter=row_filter,
+            schema_id=table.metadata.current_schema_id,
+            spec_id=table.metadata.default_spec_id,
+        )
+    except Exception as error:
+        error.add_note(refused)
+        raise
+    try:
+        _write_rows(table, concat(rows), "append", storage_options, replace=replace)
+    except CommitStateUnknownException as error:
+        error.add_note(
+            f"rows of table '{name}' may have been merged (commit state unknown): {where}"
+        )
+        raise
+    except Exception as error:
+        error.add_note(refused)
+        raise
+    return response
+
+
+def _check_changed_once(count: int, name: str) -> None:
+    """Refuse a `MERGE` that changes `count` > 0 target rows more than once."""
+    if count > 0:
+        msg = (
+            f"MERGE into table '{name}': more than one source row would update or "
+            "delete the same target row; make ON and the WHEN conditions select at "
+            "most one changing source row per target row"
+        )
+        raise SQLInterfaceError(msg)
+
+
+def _merge_target(
+    table: pyiceberg.table.Table,
+    tasks: list[FileScanTask],
+    schema: Schema,
+    storage_options: StorageOptionsDict | None,
+) -> LazyFrame:
+    """The rows of the files of `tasks`, each with its file and position in it."""
+    from polars.datatypes import String
+    from polars.functions import concat, lit
+    from polars.io.iceberg.functions import _scan_iceberg_files
+    from polars.meta.index_type import get_index_type
+
+    parts = [
+        # directly on the scan, so that the reader numbers the rows and still prunes
+        _scan_iceberg_files(table, [task], storage_options)
+        .with_row_index(_MERGE_POS)
+        .with_columns(lit(task.file.file_path).alias(_MERGE_FILE))
+        for task in tasks
+    ]
+    if not parts:
+        return LazyFrame(
+            schema={_MERGE_POS: get_index_type(), **schema, _MERGE_FILE: String}
+        )
+    return concat(parts)
+
+
+def _merge_key_filter(
+    source: DataFrame,
+    keys: list[tuple[str, Expr]],
+    table: pyiceberg.table.Table,
+    target: Schema,
+) -> pyiceberg.expressions.BooleanExpression:
+    """A filter of `table` covering every row that a source row can match on the keys.
+
+    Only a key compared without loss narrows it: integers of the same signedness, or
+    strings, dates or timestamps of the same type. Another, or one PyIceberg can't
+    express, leaves it as is.
+    """
+    from pyiceberg.expressions import AlwaysFalse, AlwaysTrue, And
+
+    from polars.functions import col, lit
+    from polars.io.iceberg._utils import (
+        UnconvertiblePredicateError,
+        predicate_to_pyiceberg_delete_filter,
+    )
+
+    filters = []
+    for column, key in keys:
+        values = source.select(key.alias("key")).to_series()
+        dtype = target[column]
+        # a name that `col` reads as a pattern can't be filtered by
+        if not _merge_key_prunes(values.dtype, dtype) or _is_pattern(column):
+            continue
+        values = values.drop_nulls().unique()
+        if values.is_empty():
+            # a NULL key matches no row
+            return AlwaysFalse()
+        if values.dtype != dtype:
+            # a value out of the column's range equals none of its values
+            values = values.cast(dtype, strict=False).drop_nulls()
+            if values.is_empty():
+                return AlwaysFalse()
+        try:
+            # PyIceberg prunes no file by an IN of more values: their range does
+            predicate = (
+                col(column).is_in(values.implode())
+                if len(values) <= _MERGE_IN_LIMIT
+                else col(column).is_between(lit(values.min()), lit(values.max()))
+            )
+            filters.append(predicate_to_pyiceberg_delete_filter(predicate, table))
+        except (UnconvertiblePredicateError, ValueError, OverflowError):
+            continue
+    if not filters:
+        return AlwaysTrue()
+    return filters[0] if len(filters) == 1 else And(*filters)
+
+
+def _merge_key_prunes(source: PolarsDataType, target: PolarsDataType) -> bool:
+    """Whether a key of type `source` compares exactly with a `target` column."""
+    from polars.datatypes import Date, Datetime, String
+
+    if source.is_integer() and target.is_integer():
+        return source.is_signed_integer() == target.is_signed_integer()
+    return source == target and isinstance(source, (String, Date, Datetime))
+
+
+def _is_pattern(name: str) -> bool:
+    """Whether `col(name)` selects columns by a pattern rather than by name."""
+    return name == "*" or (name.startswith("^") and name.endswith("$"))
+
+
+def _merge_values(
+    rows: LazyFrame,
+    columns: list[tuple[str, Expr]],
+    table: pyiceberg.table.Table,
+    target: Schema,
+    name: str,
+    action: str,
+    *,
+    keep: bool,
+) -> LazyFrame:
+    """The rows of a `MERGE` action, with its values cast to the target as for `INSERT`.
+
+    A column the action does not write keeps its value with `keep`, else is NULL.
+    """
+    from polars.datatypes import Null
+    from polars.exceptions import InvalidOperationError, SchemaError
+    from polars.functions import col, lit, nth
+
+    required = {f.name for f in table.schema().fields if f.required}
+    written = dict(columns)
+    sources = rows.select(
+        [e.alias(f"v{i}") for i, e in enumerate(written.values())]
+    ).collect_schema()
+    names = rows.collect_schema().names()
+    rounded, casts = [], []
+    for i, (column, dtype) in enumerate(target.items()):
+        if column not in written:
+            if keep:
+                # by position: a column name such as "*" is a pattern to `col`
+                rounded.append(nth(names.index(column)).alias(column))
+            elif column in required:
+                msg = (
+                    f"column '{column}' of table '{name}' is NOT NULL and has no value "
+                    f"in {action}"
+                )
+                raise InvalidOperationError(msg)
+            else:
+                rounded.append(lit(None, dtype=dtype).alias(column))
+            casts.append(nth(i))
+            continue
+        source = sources[f"v{list(written).index(column)}"]
+        if column in required and source == Null:
+            msg = f"column '{column}' of table '{name}' is NOT NULL ({action})"
+            raise InvalidOperationError(msg)
+        if (expr := _rounded(written[column], source, dtype)) is None:
+            msg = (
+                f"column '{column}' of table '{name}' has type {dtype}, but {action} "
+                f"gives {source}; convert it with CAST"
+            )
+            raise SchemaError(msg)
+        rounded.append(expr.alias(column))
+        # by position: a column name such as "*" is a pattern to `col`
+        casts.append(nth(i).cast(dtype, strict=True))
+    # keeps the height of `rows` when every value is a literal
+    anchor = col(_MERGE_ACTION).alias(_unused_name("__polars_merge_rows", target))
+    # cast in a step of its own, so that a value that does not fit is reported by column
+    return rows.select([*rounded, anchor]).select(casts)
+
+
+def _merge_inserted_rows(
+    unmatched: LazyFrame,
+    not_matched: _MergeClauses,
+    table: pyiceberg.table.Table,
+    target: Schema,
+    name: str,
+) -> LazyFrame:
+    """The rows a `MERGE` inserts: per unmatched source row, its clause's values."""
+    from polars.functions import col, concat
+
+    parts = []
+    for k, (kind, number, columns) in enumerate(not_matched):
+        if kind != "insert":
+            continue
+        rows = unmatched.filter(col(_MERGE_ACTION) == k)
+        action = f"the INSERT of WHEN clause {number}"
+        parts.append(
+            _merge_values(rows, columns, table, target, name, action, keep=False)
+        )
+    if not parts:
+        return LazyFrame(schema=target)
+    return concat(parts)
+
+
+def _merge_rewritten_rows(
+    files: LazyFrame,
+    plan_of: Callable[[LazyFrame, LazyFrame], _MergePlan],
+    source: LazyFrame,
+    table: pyiceberg.table.Table,
+    target: Schema,
+    name: str,
+) -> LazyFrame:
+    """Every row of `files`, with the `MERGE`'s updates and deletes applied."""
+    from polars.functions import col, concat
+
+    pairs, _, matched, _ = plan_of(files, source)
+    position = [_MERGE_FILE, _MERGE_POS]
+    modifying = [k for k, (kind, _, _) in enumerate(matched) if kind != "nothing"]
+    changed = pairs.filter(col(_MERGE_ACTION).is_in(modifying)).select(position)
+    parts = [files.join(changed, on=position, how="anti").drop(position)]
+    parts.extend(_merge_updated_rows(pairs, matched, table, target, name))
+    return concat(parts)
+
+
+def _merge_updated_rows(
+    pairs: LazyFrame,
+    matched: _MergeClauses,
+    table: pyiceberg.table.Table,
+    target: Schema,
+    name: str,
+) -> list[LazyFrame]:
+    """Per `UPDATE` clause of a `MERGE`, the target rows it updates."""
+    from polars.functions import col
+
+    parts = []
+    for k, (kind, number, columns) in enumerate(matched):
+        if kind != "update":
+            continue
+        rows = pairs.filter(col(_MERGE_ACTION) == k)
+        action = f"the UPDATE of WHEN clause {number}"
+        parts.append(
+            _merge_values(rows, columns, table, target, name, action, keep=True)
+        )
+    return parts
+
+
+def _merge_check(
+    plan: _MergePlan,
+    table: pyiceberg.table.Table,
+    target: Schema,
+    name: str,
+) -> None:
+    """Check the values of every action of a `MERGE` planned on empty frames."""
+    pairs, inserts, matched, not_matched = plan
+    _merge_updated_rows(pairs, matched, table, target, name)
+    _merge_inserted_rows(inserts, not_matched, table, target, name)
+
+
+def _check_not_null(rows: DataFrame, table: pyiceberg.table.Table, name: str) -> None:
+    """Refuse a NULL in a NOT NULL column of the rows a `MERGE` inserts."""
+    from polars.exceptions import InvalidOperationError
+
+    for field in table.schema().fields:
+        if field.required and rows[field.name].null_count() > 0:
+            msg = (
+                f"column '{field.name}' of table '{name}' is NOT NULL, but the MERGE "
+                "inserts a NULL into it"
+            )
+            raise InvalidOperationError(msg)
+
+
+def _updated_rows(
+    table: pyiceberg.table.Table,
+    target: Schema,
+    predicate: Expr,
+    values: list[tuple[str, Expr]],
+    name: str,
+) -> Callable[[LazyFrame], LazyFrame]:
+    """The rows of an `UPDATE` from those of the files it replaces.
+
+    The `SET` values' types are checked here, before any file is read.
+    """
+    from polars.datatypes import Null
+    from polars.exceptions import InvalidOperationError, SchemaError
+    from polars.functions import col, nth, when
+
+    required = {f.name for f in table.schema().fields if f.required}
+    sources = (
+        LazyFrame(schema=target)
+        .select([value.alias(column) for column, value in values])
+        .collect_schema()
+    )
+    position = {column: i for i, column in enumerate(target)}
+    match = _unused_name("__polars_match", target)
+    old = [_unused_name(f"__polars_old_{i}", target) for i in range(len(values))]
+    new_values, casts, restores = [], [], []
+    for (column, value), saved in zip(values, old, strict=True):
+        dtype, source = target[column], sources[column]
+        if column in required and source == Null:
+            msg = f"column '{column}' of table '{name}' is NOT NULL"
+            raise InvalidOperationError(msg)
+        if (rounded := _rounded(value, source, dtype)) is None:
+            msg = (
+                f"column '{column}' of table '{name}' has type {dtype}, but the value "
+                f"has type {source}; convert it with CAST"
+            )
+            raise SchemaError(msg)
+        # by position: a column name such as "*" is a pattern to `col`
+        i = position[column]
+        new_values.append(when(col(match)).then(rounded).alias(column))
+        casts.append(nth(i).cast(dtype, strict=True))
+        restores.append(
+            when(col(match)).then(nth(i)).otherwise(col(saved)).alias(column)
+        )
+    saves = [nth(position[c]).alias(o) for (c, _), o in zip(values, old, strict=True)]
+
+    def rows(lf: LazyFrame) -> LazyFrame:
+        # values of the original row; casts per column, of the updated rows only
+        return (
+            lf.with_columns(predicate.alias(match), *saves)
+            .with_columns(new_values)
+            .with_columns(casts)
+            .with_columns(restores)
+            .drop(match, *old)
+        )
+
+    return rows
+
+
+def _candidate_tasks(
+    table: pyiceberg.table.Table, row_filter: pyiceberg.expressions.BooleanExpression
+) -> list[FileScanTask]:
+    """The scan tasks of `table`'s files that may hold a row matching `row_filter`.
+
+    Each with all its delete files: planning with a filter also drops the delete files
+    whose rows can't match it, which a rewrite of the whole file needs.
+    """
+    from pyiceberg.manifest import ManifestContent
+
+    tasks = _filtered_tasks(table, row_filter)
+    snapshot = table.current_snapshot()
+    if not tasks or snapshot is None:
+        return tasks
+    # delete files are in delete manifests (spec), the summary's totals can be wrong
+    manifests = snapshot.manifests(table.io)
+    if all(m.content != ManifestContent.DELETES for m in manifests):
+        return tasks
+    complete = {t.file.file_path: t for t in table.scan().plan_files()}
+    return [complete[t.file.file_path] for t in tasks]
+
+
+def _filtered_tasks(
+    table: pyiceberg.table.Table, row_filter: pyiceberg.expressions.BooleanExpression
+) -> list[FileScanTask]:
+    """`table`'s scan tasks pruned by `row_filter`, where PyIceberg can do that."""
+    from pyiceberg.transforms import IdentityTransform
+    from pyiceberg.types import DoubleType, FloatType
+
+    schema = table.schema()
+    for spec in table.metadata.partition_specs:
+        for field in spec.fields:
+            try:
+                source = schema.find_field(field.source_id).field_type
+            except ValueError:
+                continue
+            # PyIceberg reads these partition values as float32: it would prune wrongly
+            if isinstance(field.transform, IdentityTransform) and isinstance(
+                source, (FloatType, DoubleType)
+            ):
+                return list(table.scan().plan_files())
+    try:
+        return list(table.scan(row_filter=row_filter).plan_files())
+    except TypeError:
+        # PyIceberg's residual evaluator compares null partition values (eg: under OR)
+        return list(table.scan().plan_files())
+
+
+def _unused_name(name: str, schema: Any) -> str:
+    """`name`, prefixed with `_` until no column of `schema` has it."""
+    while name in schema:
+        name = f"_{name}"
+    return name
 
 
 def _create_catalog_namespace(
@@ -1447,15 +2377,22 @@ def _write_rows(
     lf: LazyFrame,
     mode: Literal["append", "overwrite"],
     storage_options: StorageOptionsDict | None,
+    *,
+    replace: _ReplaceFiles | None = None,
 ) -> None:
-    """Write the rows of `lf` to `table` in one commit, leaving no files on failure."""
+    """Write the rows of `lf` to `table` in one commit, leaving no files on failure.
+
+    With `replace`, the commit replaces those data files with the written ones.
+    """
     from pyiceberg.exceptions import CommitStateUnknownException
 
     from polars.io.iceberg._sink import IcebergSinkState
 
     state = None
     try:
-        state = IcebergSinkState.new(table, mode=mode, storage_options=storage_options)
+        state = IcebergSinkState.new(
+            table, mode=mode, storage_options=storage_options, replace_files=replace
+        )
         state.attach_sink(lf).collect()
     except CommitStateUnknownException as error:
         assert state is not None
@@ -1470,12 +2407,12 @@ def _write_rows(
 
 def _insert_catalog_table(
     catalog: pyiceberg.catalog.Catalog,
-    ddl: dict[str, Any],
+    stmt: dict[str, Any],
     query_frame: Callable[[str], LazyFrame],
     storage_options: StorageOptionsDict | None,
 ) -> str:
     """Write the rows of an `INSERT` to its catalog table, returning the response."""
-    from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
+    from pyiceberg.exceptions import CommitStateUnknownException
 
     from polars.datatypes import Null
     from polars.exceptions import (
@@ -1487,29 +2424,21 @@ def _insert_catalog_table(
     from polars.functions import lit, nth
     from polars.io.iceberg.functions import scan_iceberg
 
-    identifier: tuple[str, ...] = tuple(ddl["identifier"])
-    name, table_name = ddl["name"], _display_name(identifier)
-    statement = "INSERT OVERWRITE" if ddl["overwrite"] else "INSERT INTO"
-    response = f"{statement} {_display_name([ddl['catalog'], *identifier])}"
+    identifier: tuple[str, ...] = tuple(stmt["identifier"])
+    name, table_name = stmt["name"], _display_name(identifier)
+    statement = "INSERT OVERWRITE" if stmt["overwrite"] else "INSERT INTO"
+    response = f"{statement} {_display_name([stmt['catalog'], *identifier])}"
     missing = (
         f"table '{name}' does not exist: catalog table '{table_name}' could not be "
         "written"
     )
-    # checked first, as not every catalog reports a missing table as one on load
-    if not _table_exists(catalog, identifier):
-        msg = f"{missing}; catalog identifiers are case-sensitive"
-        raise NoSuchTableError(msg)
-    try:
-        table = catalog.load_table(identifier)
-    except (NoSuchTableError, NoSuchNamespaceError) as error:
-        msg = f"{missing} ({error}); catalog identifiers are case-sensitive"
-        raise NoSuchTableError(msg) from error
+    table = _load_catalog_table(catalog, identifier, missing)
 
-    lf = query_frame(ddl["query"])
+    lf = query_frame(stmt["query"])
     source = lf.collect_schema()
     target = scan_iceberg(table).collect_schema()
     required = {f.name for f in table.schema().fields if f.required}
-    columns = ddl["columns"] or list(target)
+    columns = stmt["columns"] or list(target)
     for i, column in enumerate(columns):
         if column not in target:
             msg = f"column '{column}' not found in table '{name}'; column names are case-sensitive"
@@ -1554,13 +2483,20 @@ def _insert_catalog_table(
         _write_rows(
             table,
             rows.select(exprs),
-            "overwrite" if ddl["overwrite"] else "append",
+            "overwrite" if stmt["overwrite"] else "append",
             storage_options,
         )
+    except CommitStateUnknownException as error:
+        error.add_note(
+            f"rows of table '{name}' may have been written by {statement} (commit "
+            f"state unknown): catalog table '{table_name}' of catalog "
+            f"'{stmt['catalog']}'"
+        )
+        raise
     except Exception as error:
         error.add_note(
             f"table '{name}' could not be written by {statement}: catalog table "
-            f"'{table_name}' of catalog '{ddl['catalog']}'"
+            f"'{table_name}' of catalog '{stmt['catalog']}'"
         )
         raise
     return response
@@ -1647,16 +2583,30 @@ def _drop_if_unchanged(
 ) -> bool:
     """Drop a table only if no other writer changed it since `metadata_location`.
 
-    Iceberg has no conditional drop: a write landing just before the drop is lost.
+    A drop refused as a bad request (400) is retried as a purge. Iceberg has no
+    conditional drop: a write landing just before the drop is lost.
     """
-    try:
+    from pyiceberg.exceptions import BadRequestError, NoSuchTableError
+
+    def unchanged() -> bool:
         current = catalog.load_table(identifier)
-        if (
-            current.metadata_location != metadata_location
-            or current.current_snapshot() is not None
-        ):
+        return (
+            current.metadata_location == metadata_location
+            and current.current_snapshot() is None
+        )
+
+    try:
+        if not unchanged():
             return False
-        catalog.drop_table(identifier)
+        try:
+            catalog.drop_table(identifier)
+        except BadRequestError:
+            # a catalog that drops only with a purge refuses a plain drop
+            if not unchanged():
+                return False
+            catalog.purge_table(identifier)
+    except NoSuchTableError:
+        return True
     except Exception:
         return False
     return True

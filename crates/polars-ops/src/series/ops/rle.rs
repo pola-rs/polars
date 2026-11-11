@@ -80,7 +80,7 @@ pub fn rle_lengths(s: &Column, lengths: &mut Vec<IdxSize>) -> PolarsResult<()> {
     for arr in s_neq.downcast_iter() {
         let mut values = arr.values().clone();
         while !values.is_empty() {
-            // @NOTE: This `as IdxSize` is safe because it is less than or equal to the a ChunkedArray
+            // @NOTE: This `as IdxSize` is safe because it is less than or equal to a ChunkedArray
             // length.
             *lengths.last_mut().unwrap() += values.take_leading_zeros() as IdxSize;
 

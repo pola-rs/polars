@@ -727,10 +727,12 @@ def test_approx_quantile_merged_rank_error(method: ApproxQuantileMethod) -> None
 
 def test_approx_quantile_small_morsels(plmonkeypatch: PlMonkeyPatch) -> None:
     plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
-    n, error, quantile = 100_000, 0.01, 0.5
+    # Large enough for KLL to switch to its sampler.
+    n, error, quantile = 400_000, 0.01, 0.5
     values = _shuffled(n)
+    with_nulls = [v for pair in zip(values, [None] * n, strict=True) for v in pair]
     got = (
-        pl.LazyFrame({"a": values})
+        pl.LazyFrame({"a": with_nulls})
         .select(pl.col("a").approx_quantile(quantile, error=error, method="kll"))
         .collect()
         .item()
@@ -1530,7 +1532,6 @@ def test_agg_with_slice_then_cast_23682(
     ],
 )
 @pytest.mark.parametrize("grouped", [False, True])
-@pytest.mark.may_fail_lazy_schema  # TODO: uint128
 def test_agg_invalid_same_engines_behavior(
     op: str, expr: pl.Expr, df: pl.DataFrame, grouped: bool
 ) -> None:
@@ -1910,6 +1911,90 @@ def test_grouped_minmax_after_reverse_on_sorted_column_26141(
         }
     )
     assert_frame_equal(out, expected_df)
+
+
+@pytest.mark.parametrize(
+    ("values", "aggs"),
+    [
+        (list(range(6)), ["min", "max", "arg_min", "arg_max"]),
+        ([float(i) for i in range(6)], ["min", "max", "arg_min", "arg_max"]),
+        ([None, 1, 2, 3, 4, 5], ["min", "max", "arg_min", "arg_max"]),
+        (list("abcdef"), ["min", "max", "arg_min", "arg_max"]),
+        # Every group has ties,
+        # and `arg_min`/`arg_max` leave unspecified which tie they return.
+        ([False] * 3 + [True] * 3, ["min", "max"]),
+    ],
+)
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("sorted_key", [False, True])
+def test_grouped_minmax_after_in_group_reorder_on_sorted_column_30550(
+    values: list[Any], aggs: list[str], descending: bool, sorted_key: bool
+) -> None:
+    if descending:
+        values = values[::-1]
+    # A sorted key gives slice groups instead of hashed index groups.
+    keys = [1, 1, 1, 2, 2, 2] if sorted_key else [1, 2] * 3
+    unflagged = pl.DataFrame({"g": keys, "x": values})
+    df = unflagged.with_columns(pl.col("x").set_sorted(descending=descending))
+    if sorted_key:
+        df = df.with_columns(pl.col("g").set_sorted())
+
+    reversed_x = pl.col("x").reverse()
+    reorders = [
+        pl.col("x"),
+        reversed_x,
+        pl.col("x").sort(descending=not descending),
+        pl.col("x").sort_by("x", descending=not descending).head(2),
+        # These rebuild the reversed groups,
+        # and must not mark them as having sorted indices.
+        reversed_x.filter(reversed_x.is_not_null()),
+        reversed_x.unique(maintain_order=True),
+        reversed_x.slice(0, 2),
+        reversed_x.forward_fill(),
+    ]
+    exprs = [
+        getattr(reorder, agg)().alias(f"{i}_{agg}")
+        for i, reorder in enumerate(reorders)
+        for agg in aggs
+    ]
+    assert_frame_equal(
+        df.group_by("g").agg(exprs),
+        unflagged.group_by("g").agg(exprs),
+        check_row_order=False,
+    )
+
+
+def test_window_min_with_order_by_on_sorted_column_30550() -> None:
+    df = pl.DataFrame({"g": [1, 1, 1], "x": [1, 2, 3]}).sort("x")
+    out = df.select(pl.col("x").min().over("g", order_by=-pl.col("x")))
+    assert out["x"].to_list() == [1, 1, 1]
+
+
+def test_grouped_window_min_with_order_by_on_sorted_column_30550() -> None:
+    unflagged = pl.DataFrame({"g": [1, 2] * 3, "x": list(range(6))})
+    df = unflagged.with_columns(pl.col("x").set_sorted())
+
+    expr = pl.col("x").min().over(pl.lit(1), order_by=-pl.col("x"))
+    assert_frame_equal(
+        df.group_by("g").agg(expr),
+        unflagged.group_by("g").agg(expr),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("agg_by", [pl.Expr.min_by, pl.Expr.max_by])
+def test_grouped_min_max_by_after_reverse_on_sorted_column_30550(
+    agg_by: Callable[[pl.Expr, pl.Expr], pl.Expr],
+) -> None:
+    unflagged = pl.DataFrame({"g": [1, 2] * 3, "x": list(range(6))})
+    df = unflagged.with_columns(pl.col("x").set_sorted())
+
+    expr = agg_by(pl.col("x").reverse(), pl.col("x").reverse())
+    assert_frame_equal(
+        df.group_by("g").agg(expr),
+        unflagged.group_by("g").agg(expr),
+        check_row_order=False,
+    )
 
 
 @pytest.mark.parametrize("agg_by", [pl.Expr.min_by, pl.Expr.max_by])

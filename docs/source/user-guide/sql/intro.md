@@ -4,7 +4,7 @@ While Polars supports interaction with SQL, it's recommended that users familiar
 the [expression syntax](../concepts/expressions-and-contexts.md#expressions) to produce more
 readable and expressive code. As the DataFrame interface is primary, new features are typically
 added to the expression API first. However, if you already have an existing SQL codebase or prefer
-the use of SQL, Polars does offers support for this.
+the use of SQL, Polars does offer support for this.
 
 !!! note Execution
 
@@ -90,6 +90,12 @@ catalog, so a misspelled name is too: a missing table raises `NoSuchTableError` 
 can be as late as `collect()`. Writing the full name, such as `lake.tpch.lineitem`, makes the
 catalog explicit.
 
+A table name followed by `$` and the name of a metadata table, such as `lineitem$snapshots` or
+`lake.tpch.lineitem$files`, reads that metadata table of the table: `snapshots`, `history`, `refs`,
+`manifests`, `files`, `partitions`, `entries` and the other tables of PyIceberg's `Table.inspect`.
+Quotes are optional. Metadata tables can only be read, and a catalog table named like one cannot be
+read or written in SQL.
+
 Catalogs attached inside a `with SQLContext()` block are detached on exit, like the tables
 registered there.
 
@@ -114,7 +120,6 @@ ctx.execute("DROP TABLE big_orders")  # dropped from the catalog
 - `CREATE TEMP TABLE` always creates a registered table instead.
 - `DROP TABLE` drops a registered table of that name first, else the catalog table, permanently.
   `DROP TABLE ... PURGE` also deletes the table's data files.
-- `TRUNCATE` and `DELETE` are not supported on catalog tables.
 
 `CREATE SCHEMA` and `DROP SCHEMA` create and drop a namespace. A name that starts with an attached
 catalog is a namespace of it, any other name one of the default catalog (not under
@@ -132,12 +137,17 @@ ctx.execute("ALTER TABLE lake.sales.orders ADD COLUMN discount DOUBLE")
 ctx.execute("ALTER TABLE lake.sales.orders RENAME COLUMN qty TO quantity")
 ```
 
-`INSERT INTO` appends rows to a catalog table, and `INSERT OVERWRITE` replaces all of its rows, in
-every partition (a `WHERE` in the query selects the new rows, not the ones replaced):
+`INSERT INTO` appends rows to a catalog table. `INSERT OVERWRITE` replaces all of its rows, in every
+partition. A `WHERE` in its query selects the new rows, not the ones replaced. `DELETE` deletes the
+rows matching a condition that compares columns with constants. `UPDATE` changes the rows matching
+such a condition. `TRUNCATE` deletes all rows:
 
 ```python
 ctx.execute("INSERT INTO lake.sales.orders (id, quantity) VALUES (1, 10), (2, 20)")
 ctx.execute("INSERT OVERWRITE lake.sales.orders SELECT * FROM staged_orders")
+ctx.execute("DELETE FROM lake.sales.orders WHERE quantity = 0")
+ctx.execute("UPDATE lake.sales.orders SET quantity = quantity + 1 WHERE id = 2")
+ctx.execute("TRUNCATE TABLE lake.sales.orders")
 ```
 
 See `SQLContext.register_catalog` for the details.
@@ -211,7 +221,7 @@ For example, here is a non-exhaustive list of some of the supported functionalit
 
 The following are some features that are not yet supported:
 
-- `INSERT`, `UPDATE` or `DELETE` statements
+- `INSERT` and `UPDATE` on registered tables (both work on tables of an attached catalog)
 - Meta queries such as `ANALYZE`
 
 In the upcoming sections we will cover each of the statements in more detail.

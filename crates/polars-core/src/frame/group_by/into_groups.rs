@@ -16,7 +16,7 @@ use crate::utils::flatten::flatten_par;
 
 /// Used to create the tuples for a group_by operation.
 pub trait IntoGroupsType {
-    /// Create the tuples need for a group_by operation.
+    /// Create the tuples needed for a group_by operation.
     ///     * The first value in the tuple is the first index of the group.
     ///     * The second value in the tuple is the indexes of the groups including the first value.
     fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsType> {

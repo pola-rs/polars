@@ -540,7 +540,7 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
 {
-    /// Get a single value from this [`ChunkedArray`]. If the return values is `None` this
+    /// Get a single value from this [`ChunkedArray`]. If the return value is `None` this
     /// indicates a NULL value.
     ///
     /// # Panics
@@ -566,7 +566,7 @@ where
         }
     }
 
-    /// Get a single value from this [`ChunkedArray`]. If the return values is `None` this
+    /// Get a single value from this [`ChunkedArray`]. If the return value is `None` this
     /// indicates a NULL value.
     ///
     /// # Safety

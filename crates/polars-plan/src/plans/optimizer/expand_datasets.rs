@@ -33,6 +33,8 @@ use crate::plans::iterator::ArenaLpIter;
 use crate::plans::optimizer::ApplyScanPredicateFn;
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
 #[cfg(feature = "python")]
+use crate::plans::optimizer::projection_pushdown::narrow_expanded_dataset_scan;
+#[cfg(feature = "python")]
 use crate::plans::stats::dataset_scan_stats;
 use crate::plans::{AExpr, Card, IR, is_elementwise_rec, is_inherently_nondeterministic};
 use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
@@ -107,6 +109,8 @@ pub(super) fn expand_datasets(
             while let Some((node, ir)) = expansion_tasks.next().await {
                 ir_arena.replace(node, ir?);
                 apply_scan_predicate_to_scan_ir(node, ir_arena, expr_arena)?;
+                #[cfg(feature = "python")]
+                narrow_expanded_dataset_scan(node, ir_arena, expr_arena);
             }
 
             PolarsResult::Ok(())
@@ -207,15 +211,89 @@ pub(super) fn expand_datasets_early(
         return Ok(());
     }
 
+    let scans = dataset_scans
+        .into_iter()
+        .map(|node| {
+            let columns = statistics_columns(ir_arena.get(node), &key_and_filter_names);
+            (node, columns)
+        })
+        .collect();
+
+    expand_concurrently(scans, ir_arena, expr_arena, |ir_arena, node, ir| {
+        let ir = match ir {
+            Ok(ir) => ir,
+            Err(err) if statistics_only => {
+                if config::verbose() {
+                    eprintln!("expand_datasets_early(): no statistics: {err}");
+                }
+                return Ok(());
+            },
+            Err(err) => return Err(err),
+        };
+        if is_python_dataset(&ir) {
+            return Ok(());
+        }
+        match mode {
+            EarlyExpansion::ForJoinOrder => {
+                ir_arena.replace(node, ir);
+            },
+            EarlyExpansion::StatisticsOnly => {
+                let IR::Scan { file_info, .. } = ir else {
+                    unreachable!()
+                };
+                let IR::Scan {
+                    file_info: dataset_file_info,
+                    ..
+                } = ir_arena.get_mut(node)
+                else {
+                    unreachable!()
+                };
+                dataset_file_info.stats = file_info.stats;
+            },
+        }
+        Ok(())
+    })
+}
+
+/// Expands the dataset scans at the given nodes in place, each with statistics for its
+/// columns. A scan that falls back to a Python scan stays as it was.
+#[cfg(feature = "python")]
+pub(super) fn expand_dataset_scans_with_statistics(
+    scans: Vec<(Node, Arc<[PlSmallStr]>)>,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+) -> PolarsResult<()> {
+    let scans = scans
+        .into_iter()
+        .map(|(node, columns)| (node, Some(columns)))
+        .collect();
+    expand_concurrently(scans, ir_arena, expr_arena, |ir_arena, node, ir| {
+        let ir = ir?;
+        if !is_python_dataset(&ir) {
+            ir_arena.replace(node, ir);
+        }
+        Ok(())
+    })
+}
+
+/// Expands the dataset scans at the given nodes concurrently, each with statistics for
+/// its columns, and passes each result to `on_expanded`.
+#[cfg(feature = "python")]
+fn expand_concurrently(
+    scans: Vec<(Node, Option<Arc<[PlSmallStr]>>)>,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+    mut on_expanded: impl FnMut(&mut Arena<IR>, Node, PolarsResult<IR>) -> PolarsResult<()>,
+) -> PolarsResult<()> {
     let py_scan_resolve_threadpool =
         Arc::new(PyScanResolveThreadPool::new_scan_resolve_thread_pool());
     let mut expansion_tasks: FuturesUnordered<LocalBoxFuture<'static, (Node, PolarsResult<IR>)>> =
         FuturesUnordered::new();
 
-    for node in dataset_scans {
+    for (node, columns) in scans {
         let ir = ir_arena.get(node).clone();
         let mut args = DatasetScanArgs::new(&ir, expr_arena);
-        args.request.statistics_columns = statistics_columns(&ir, &key_and_filter_names);
+        args.request.statistics_columns = columns;
         args.derive_stats = true;
 
         expansion_tasks.push(spawn_expansion(
@@ -228,45 +306,18 @@ pub(super) fn expand_datasets_early(
 
     ASYNC.block_in_place_on(async {
         while let Some((node, ir)) = expansion_tasks.next().await {
-            let ir = match ir {
-                Ok(ir) => ir,
-                Err(err) if statistics_only => {
-                    if config::verbose() {
-                        eprintln!("expand_datasets_early(): no statistics: {err}");
-                    }
-                    continue;
-                },
-                Err(err) => return Err(err),
-            };
-            let IR::Scan { scan_type, .. } = &ir else {
-                unreachable!()
-            };
-
-            if matches!(scan_type.as_ref(), FileScanIR::PythonDataset { .. }) {
-                continue;
-            }
-            match mode {
-                EarlyExpansion::ForJoinOrder => {
-                    ir_arena.replace(node, ir);
-                },
-                EarlyExpansion::StatisticsOnly => {
-                    let IR::Scan { file_info, .. } = ir else {
-                        unreachable!()
-                    };
-                    let IR::Scan {
-                        file_info: dataset_file_info,
-                        ..
-                    } = ir_arena.get_mut(node)
-                    else {
-                        unreachable!()
-                    };
-                    dataset_file_info.stats = file_info.stats;
-                },
-            }
+            on_expanded(ir_arena, node, ir)?;
         }
-
-        PolarsResult::Ok(())
+        Ok(())
     })
+}
+
+#[cfg(feature = "python")]
+fn is_python_dataset(ir: &IR) -> bool {
+    let IR::Scan { scan_type, .. } = ir else {
+        unreachable!()
+    };
+    matches!(scan_type.as_ref(), FileScanIR::PythonDataset { .. })
 }
 
 /// The join keys and filtered columns of a dataset scan, to ask its provider for
@@ -301,8 +352,7 @@ fn statistics_columns(
     (!columns.is_empty()).then_some(columns)
 }
 
-/// What a dataset provider is asked to expand. A cached expansion is reused only for
-/// an equal request.
+/// What a dataset provider is asked to expand. A cached expansion serves requests it covers.
 #[derive(Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -313,6 +363,24 @@ struct DatasetScanRequest {
     /// Columns to load statistics for, in addition to `live_filter_columns`.
     statistics_columns: Option<Arc<[PlSmallStr]>>,
     pyarrow_predicate: Option<String>,
+}
+
+#[cfg(feature = "python")]
+impl DatasetScanRequest {
+    /// Whether an expansion for `self` serves `other`.
+    /// Same request, but `self` may have statistics for more columns.
+    fn covers(&self, other: &Self) -> bool {
+        let statistics_cover = match (&self.statistics_columns, &other.statistics_columns) {
+            (_, None) => true,
+            (None, Some(_)) => false,
+            (Some(have), Some(want)) => want.iter().all(|c| have.contains(c)),
+        };
+        statistics_cover
+            && self.limit == other.limit
+            && self.projection == other.projection
+            && self.live_filter_columns == other.live_filter_columns
+            && self.pyarrow_predicate == other.pyarrow_predicate
+    }
 }
 
 #[cfg(feature = "python")]
@@ -565,7 +633,7 @@ async fn resolve_heavy_footers(scan_ir: &mut IR) -> PolarsResult<()> {
         bytes,
         n_parts,
         cloud_options,
-        options.decryption_properties.as_ref(),
+        options.decryption.as_ref(),
     )
     .await;
 
@@ -622,6 +690,7 @@ fn rebuild_scan_from_expanded(
         expand_paths: _,
         hidden_file_prefix: _hidden_file_prefix @ None,
         projection: _projection @ None,
+        field_selection: _field_selection @ None,
         column_mapping,
         default_values,
         row_index: _row_index @ None,
@@ -818,7 +887,7 @@ fn expand_python_dataset(
 
     let existing_resolved_version_key = guard
         .as_ref()
-        .filter(|resolved| resolved.request == request)
+        .filter(|resolved| resolved.request.covers(&request))
         .map(|resolved| resolved.version.as_str());
 
     if let Some((expanded_dsl, version)) = dataset_object.to_dataset_scan(

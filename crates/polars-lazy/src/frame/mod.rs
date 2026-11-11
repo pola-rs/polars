@@ -612,11 +612,17 @@ impl LazyFrame {
     }
 
     // post_opt: A function that is called after optimization. This can be used to modify the IR jit.
+    //
+    // The plan is optimized as for the GPU engine, the one consumer of such callbacks
+    // (cudf-polars): it does not support every optimization (e.g. struct-field pruning, as it
+    // ignores the field selection of scans).
     pub fn _collect_post_opt<P>(self, post_opt: P) -> PolarsResult<DataFrame>
     where
         P: FnOnce(Node, &mut Arena<IR>, &mut Arena<AExpr>) -> PolarsResult<()>,
     {
-        let (mut state, mut physical_plan, _) = self.prepare_collect_post_opt(false, post_opt)?;
+        let (mut state, mut physical_plan, _) = self
+            .with_gpu(true)
+            .prepare_collect_post_opt(false, post_opt)?;
         physical_plan.execute(&mut state)
     }
 

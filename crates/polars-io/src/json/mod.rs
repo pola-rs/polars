@@ -263,7 +263,7 @@ where
     /// Take the SerReader and return a parsed DataFrame.
     ///
     /// Because JSON values specify their types (number, string, etc), no upcasting or conversion is performed between
-    /// incompatible types in the input. In the event that a column contains mixed dtypes, is it unspecified whether an
+    /// incompatible types in the input. In the event that a column contains mixed dtypes, it is unspecified whether an
     /// error is returned or whether elements of incompatible dtypes are replaced with `null`.
     fn finish(mut self) -> PolarsResult<DataFrame> {
         let pre_rb: ReaderBytes = (&mut self.reader).into();

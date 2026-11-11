@@ -503,8 +503,8 @@ pub trait AsofJoinBy: IntoDf {
             right_key = right_on;
         }
 
-        let left_asof = left_key.to_physical_repr();
-        let right_asof = right_key.to_physical_repr();
+        let left_asof = _asof_key_to_physical(left_key)?;
+        let right_asof = _asof_key_to_physical(right_key)?;
         let right_asof_name = right_asof.name();
         let left_asof_name = left_asof.name();
         _check_asof_columns(

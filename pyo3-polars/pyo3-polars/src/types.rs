@@ -44,7 +44,7 @@ pub struct PyDataFrame(pub DataFrame);
 #[cfg(feature = "lazy")]
 #[repr(transparent)]
 #[derive(Clone)]
-/// A wrapper around a [`DataFrame`] that can be converted to and from python with `pyo3`.
+/// A wrapper around a [`LazyFrame`] that can be converted to and from python with `pyo3`.
 /// # Warning
 /// If the [`LazyFrame`] contains in memory data,
 /// such as a [`DataFrame`] this will be serialized/deserialized.

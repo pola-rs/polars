@@ -57,10 +57,7 @@ impl<'a> AnyValueBuffer<'a> {
         match (self, val) {
             (Boolean(builder), AnyValue::Null) => builder.append_null(),
             (Boolean(builder), AnyValue::Boolean(v)) => builder.append_value(v),
-            (Boolean(builder), val) => {
-                let v = val.extract::<u8>()?;
-                builder.append_value(v == 1)
-            },
+            (Boolean(builder), val) => builder.append_value(val.extract_bool()?),
             (Int32(builder), AnyValue::Null) => builder.append_null(),
             (Int32(builder), val) => builder.append_value(val.extract()?),
             (Int64(builder), AnyValue::Null) => builder.append_null(),
@@ -742,11 +739,15 @@ impl<'a> AnyValueBufferTrusted<'a> {
             },
             #[cfg(feature = "dtype-struct")]
             Struct(outer_validity, b) => {
-                // @Q? Maybe we need to add a length parameter here for ZFS's. I am not very happy
-                // with just setting the length to zero for that case.
+                // Without fields, the outer validity has the length.
                 if b.is_empty() {
+                    let old_outer_validity = core::mem::take(outer_validity);
+                    outer_validity.reserve(capacity);
+                    let length = old_outer_validity.len();
                     return Ok(
-                        StructChunked::from_series(PlSmallStr::EMPTY, 0, [].iter())?.into_series()
+                        StructChunked::from_series(PlSmallStr::EMPTY, length, [].iter())?
+                            .with_outer_validity(Some(old_outer_validity.freeze()))
+                            .into_series(),
                     );
                 }
 

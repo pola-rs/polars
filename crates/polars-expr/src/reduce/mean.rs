@@ -170,8 +170,20 @@ impl Reducer for DecimalMeanReducer {
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
-        for x in ca.iter().flatten() {
-            self.reduce_one(v, Some(x), 0);
+        for arr in ca.downcast_iter() {
+            match arr.validity().filter(|_| arr.has_nulls()) {
+                Some(validity) => {
+                    for (&x, valid) in arr.values().iter().zip(validity) {
+                        add_to_sum(v, if valid { x } else { 0 });
+                    }
+                },
+                None => {
+                    for &x in arr.values().iter() {
+                        add_to_sum(v, x);
+                    }
+                },
+            }
+            v.2 += arr.len() - arr.null_count();
         }
     }
 

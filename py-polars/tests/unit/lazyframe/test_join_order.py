@@ -547,6 +547,62 @@ def test_union_leaf_is_estimated(tmp_path: Path) -> None:
     )
 
 
+def test_hconcat_leaf_is_estimated(tmp_path: Path) -> None:
+    # As tall as the tallest input.
+    frames = star_frames(tmp_path)
+    extra = pl.LazyFrame({"s": range(50)})
+    frames["dim_a"] = pl.concat([frames["dim_a"], extra], how="horizontal")
+    lf = star_query(frames)
+
+    assert_reordered(lf, ["fact", "dim_b", "dim_a"], ["fact", "dim_a", "dim_b"])
+
+
+def test_hconcat_padding_hides_null_counts(tmp_path: Path) -> None:
+    # `s` has no nulls in its file, but padding to the taller input fills it with
+    # them, so the filter keeps all but one row.
+    frames = star_frames(tmp_path)
+    frames |= write_scans(
+        tmp_path,
+        tall=pl.DataFrame({"t_key": [i % 50 for i in range(10_000)]}),
+        short=pl.DataFrame({"s": [1]}),
+    )
+    padded = pl.concat(
+        [frames["tall"], frames["short"]], how="horizontal_extend"
+    ).filter(pl.col("s").is_null())
+    lf = (
+        frames["fact"]
+        .join(padded, left_on="f_dim_a", right_on="t_key", coalesce=False)
+        .join(
+            frames["dim_a"].filter(pl.col("a_flag")),
+            left_on="f_dim_a",
+            right_on="a_key",
+            coalesce=False,
+        )
+    )
+
+    assert_reordered(
+        lf, ["fact", "tall", "short", "dim_a"], ["fact", "dim_a", "tall", "short"]
+    )
+
+
+def test_join_on_a_literal_key_is_a_cross_product(tmp_path: Path) -> None:
+    frames = write_scans(
+        tmp_path,
+        fact=pl.DataFrame({"f_b": [i % 20 for i in range(1000)]}),
+        # Repeats each key three times, so it fans out.
+        dim_b=pl.DataFrame({"b_key": [i % 20 for i in range(60)]}),
+        dim_c=pl.DataFrame({"c_val": list(range(5))}),
+    )
+    lf = (
+        frames["fact"]
+        .with_columns(c=pl.lit(True))
+        .join(frames["dim_c"].with_columns(c=pl.lit(True)), on="c", coalesce=False)
+        .join(frames["dim_b"], left_on="f_b", right_on="b_key", coalesce=False)
+    )
+
+    assert_reordered(lf, ["fact", "dim_c", "dim_b"], ["fact", "dim_b", "dim_c"])
+
+
 def test_gather_leaf_is_estimated(tmp_path: Path) -> None:
     # The indices are a frame of their own, so the gather's height is that frame's.
     frames = star_frames(tmp_path)
@@ -1318,5 +1374,177 @@ def test_transitive_keys_with_multiple_columns_per_leaf(
     assert_frame_equal(
         query.collect(optimizations=ON),
         query.collect(optimizations=OFF),
+        check_row_order=False,
+    )
+
+
+def test_in_memory_key_repeated_on_both_sides_is_not_joined_first() -> None:
+    # `rows` holds each `t` once per `n` and `var` once per `f`, so joining them on
+    # `t` alone fans out. Only the distinct counts of the frames show that.
+    n_t, n_f, n_n = 200, 20, 10
+    time = pl.DataFrame({"t": range(n_t)})
+    flows = pl.DataFrame({"f": range(n_f)})
+    var = flows.join(time, how="cross").with_row_index("col_id").lazy()
+    fmap = flows.with_columns(n=pl.col("f") % n_n).lazy()
+    rows = (
+        pl.DataFrame({"n": range(n_n)})
+        .join(time, how="cross")
+        .with_row_index("rid")
+        .lazy()
+    )
+    q = rows.join(var.join(fmap, on="f"), on=["t", "n"]).select("rid", "col_id")
+    assert 'ON: [col("t")]' not in q.explain(optimizations=ON)
+    assert_frame_equal(
+        q.collect(optimizations=ON),
+        q.collect(optimizations=OFF),
+        check_row_order=False,
+    )
+
+
+def test_group_by_keeps_the_distinct_counts_of_its_keys() -> None:
+    # `ts` and `day` repeat once per entity, so the aggregate must not be joined to
+    # `skel` on them before the entity key links the two.
+    ent = pl.int_range(50, eager=True)
+    skel = (
+        pl.DataFrame({"day": pl.int_range(20, eager=True)})
+        .with_columns(ts=pl.col("day"))
+        .join(pl.DataFrame({"id": ent}), how="cross")
+    )
+    id_map = pl.DataFrame({"id": ent, "tk": ent, "known_from": 0, "valid_from": 0})
+    ents = pl.DataFrame({"ent": ent, "tk": ent})
+
+    def chain() -> pl.LazyFrame:
+        return (
+            skel.lazy()
+            .join(id_map.lazy(), on="id")
+            .filter(pl.col("known_from") <= pl.col("ts"))
+            .filter(pl.col("valid_from") <= pl.col("day"))
+            .join(ents.lazy(), on="tk")
+        )
+
+    per = (
+        chain()
+        .group_by(pl.col("ent").alias("id"), "ts", "day")
+        .agg(v=pl.len())
+        .rename({"id": "ent"})
+    )
+    q = chain().select("id", "ts", "day", "ent").join(per, on=["ent", "ts", "day"])
+    assert 'ON: [col("ts"), col("day")]' not in q.explain(optimizations=ON)
+    assert_frame_equal(
+        q.collect(optimizations=ON),
+        q.collect(optimizations=OFF),
+        check_row_order=False,
+    )
+
+
+def weekly_stock_frames(
+    tmp_path: Path, *, week_dtype: PolarsDataType = pl.Int64
+) -> dict[str, pl.LazyFrame]:
+    """Sales per week, stock per item per week, and a calendar of days."""
+    sales = pl.DataFrame(
+        {
+            "item": [i % 100 for i in range(2000)],
+            "week": pl.Series([i % 10 for i in range(2000)], dtype=week_dtype),
+        }
+    ).with_columns(
+        pl.when(pl.int_range(pl.len()) % 97 == 0)
+        .then(None)
+        .otherwise("week")
+        .alias("week")
+    )
+    stock = pl.DataFrame(
+        {
+            "s_item": [i % 100 for i in range(5000)],
+            "s_date": [(i // 500) * 7 for i in range(5000)],
+        }
+    )
+    calendar = pl.DataFrame(
+        {"c_date": list(range(70)), "c_week": [d // 7 for d in range(70)]}
+    ).with_columns(
+        pl.when(pl.col("c_date") == 0).then(None).otherwise("c_week").alias("c_week")
+    )
+    return write_scans(tmp_path, sales=sales, stock=stock, calendar=calendar)
+
+
+def weekly_stock_query(frames: dict[str, pl.LazyFrame]) -> pl.LazyFrame:
+    # The calendar is only reachable through the stock dates, except for the
+    # equality of weeks, which is a filter on top of the joins.
+    return (
+        frames["sales"]
+        .filter(pl.col("item") < 2)
+        .join(frames["stock"], left_on="item", right_on="s_item", coalesce=False)
+        .join(frames["calendar"], left_on="s_date", right_on="c_date", coalesce=False)
+        .filter(pl.col("week") == pl.col("c_week"))
+    )
+
+
+def test_equality_filter_between_relations_is_a_join_key(tmp_path: Path) -> None:
+    # Joined on the weeks, the calendar narrows the sales before the stock fans
+    # them out.
+    lf = weekly_stock_query(weekly_stock_frames(tmp_path))
+    plan = lf.explain(optimizations=ON)
+    assert scan_order(plan) == ["sales", "calendar", "stock"], plan
+
+    expected = lf.collect(optimizations=OFF)
+    assert expected.height == 100
+    assert_frame_equal(lf.collect(optimizations=ON), expected, check_row_order=False)
+
+
+def test_equality_filter_on_different_dtypes_stays_a_filter(tmp_path: Path) -> None:
+    lf = weekly_stock_query(weekly_stock_frames(tmp_path, week_dtype=pl.Int32))
+    assert scan_order(lf.explain(optimizations=ON)) == ["sales", "stock", "calendar"]
+    assert_frame_equal(
+        lf.collect(optimizations=ON),
+        lf.collect(optimizations=OFF),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize(
+    "join_args", [{"coalesce": True}, {"coalesce": False, "nulls_equal": True}]
+)
+def test_equality_filter_stays_a_filter_on_joins_unlike_it(
+    tmp_path: Path, join_args: dict[str, Any]
+) -> None:
+    # As a key, the weeks would be coalesced into one column or match null to
+    # null. The joins are still reordered, but the calendar is not joined on weeks.
+    frames = weekly_stock_frames(tmp_path)
+    stock = frames["stock"].rename({"s_item": "item", "s_date": "date"})
+    calendar = frames["calendar"].rename({"c_date": "date"})
+    lf = (
+        stock.join(calendar, on="date", **join_args)
+        .join(frames["sales"].filter(pl.col("item") < 2), on="item", **join_args)
+        .filter(pl.col("week") == pl.col("c_week"))
+    )
+    plan = lf.explain(optimizations=ON)
+    assert scan_order(plan) == ["stock", "sales", "calendar"], plan
+    assert_frame_equal(
+        lf.collect(optimizations=ON),
+        lf.collect(optimizations=OFF),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("suffixed", [False, True])
+def test_equality_filter_key_has_in_memory_distinct_counts(suffixed: bool) -> None:
+    # `ax` and `bx` hold one value, so joining on them first is a cross join. Only
+    # the distinct counts of the frames show that.
+    a = pl.LazyFrame({"a": [i % 100 for i in range(1000)], "ax": [1] * 1000})
+    b = pl.LazyFrame({"b": range(1000), "bx": [1] * 1000})
+    c = {"ca": [i % 100 for i in range(5000)], "cb": [i % 500 for i in range(5000)]}
+    if suffixed:
+        # The filter reads the `bx` of `c` under its suffixed name.
+        c["bx"] = [1] * 5000
+    q = (
+        b.join(pl.LazyFrame(c), left_on="b", right_on="cb", coalesce=False)
+        .join(a, left_on="ca", right_on="a", coalesce=False)
+        .filter(pl.col("ax") == pl.col("bx_right" if suffixed else "bx"))
+    )
+    # `a` is joined last, on both of its keys.
+    plan = q.explain(optimizations=ON)
+    assert 'RIGHT PLAN ON: [col("a"), col("ax")]' in plan, plan
+    assert_frame_equal(
+        q.collect(optimizations=ON),
+        q.collect(optimizations=OFF),
         check_row_order=False,
     )

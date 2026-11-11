@@ -250,7 +250,7 @@ impl TakeChunked for Series {
         }
     }
 
-    /// Take function that checks of null state in `ChunkIdx`.
+    /// Take function that checks for null state in `ChunkIdx`.
     unsafe fn take_opt_chunked_unchecked<const B: u64>(
         &self,
         by: &[ChunkId<B>],
@@ -396,7 +396,7 @@ where
         out
     }
 
-    // Take function that checks of null state in `ChunkIdx`.
+    // Take function that checks for null state in `ChunkIdx`.
     unsafe fn take_opt_chunked_unchecked<const B: u64>(
         &self,
         by: &[ChunkId<B>],
@@ -658,7 +658,7 @@ where
     T: PolarsDataType<Array = BinaryViewArrayGeneric<V>>,
     V: ViewType + ?Sized,
 {
-    // Dedup buffers up front. Note: don't do this during view update, as this is often is much
+    // Dedup buffers up front. Note: don't do this during view update, as this is often much
     // more costly.
     let mut buffers = Vec::with_capacity(ca.chunks().len());
     // Dont need to include the length, as we look at the arc pointers, which are immutable.
@@ -852,7 +852,7 @@ unsafe fn take_chunked_unchecked_struct<const B: u64>(
         .iter()
         .map(|s| s.take_chunked_unchecked(by, sorted, avoid_sharing))
         .collect::<Vec<_>>();
-    let mut out = StructChunked::from_series(ca.name().clone(), by.len(), fields.iter()).unwrap();
+    let out = StructChunked::from_series(ca.name().clone(), by.len(), fields.iter()).unwrap();
 
     if !ca.has_nulls() {
         return out;
@@ -879,12 +879,7 @@ unsafe fn take_chunked_unchecked_struct<const B: u64>(
         }
     }
 
-    out.rechunk_mut(); // Should be a no-op.
-    out.downcast_iter_mut()
-        .next()
-        .unwrap()
-        .set_validity(validity.into_opt_validity());
-    out
+    out.with_outer_validity(validity.into_opt_validity())
 }
 
 #[cfg(feature = "dtype-struct")]
@@ -898,7 +893,7 @@ unsafe fn take_opt_chunked_unchecked_struct<const B: u64>(
         .iter()
         .map(|s| s.take_opt_chunked_unchecked(by, avoid_sharing))
         .collect::<Vec<_>>();
-    let mut out = StructChunked::from_series(ca.name().clone(), by.len(), fields.iter()).unwrap();
+    let out = StructChunked::from_series(ca.name().clone(), by.len(), fields.iter()).unwrap();
 
     let mut validity = BitmapBuilder::with_capacity(by.len());
     if ca.n_chunks() == 1 {
@@ -934,12 +929,7 @@ unsafe fn take_opt_chunked_unchecked_struct<const B: u64>(
         }
     }
 
-    out.rechunk_mut(); // Should be a no-op.
-    out.downcast_iter_mut()
-        .next()
-        .unwrap()
-        .set_validity(validity.into_opt_validity());
-    out
+    out.with_outer_validity(validity.into_opt_validity())
 }
 
 #[cfg(test)]
