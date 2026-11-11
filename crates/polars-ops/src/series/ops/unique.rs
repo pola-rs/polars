@@ -129,7 +129,7 @@ pub fn unique_counts(s: &Series) -> PolarsResult<Series> {
         #[cfg(feature = "dtype-extension")]
         DataType::Extension(_, _) => unique_counts(s.ext().unwrap().storage()),
         #[cfg(feature = "dtype-union")]
-        DataType::Union(_) => polars_bail!(opq = unique_counts, s.dtype()),
+        DataType::Union(_) => unreachable!("row encoded"),
 
         DataType::UInt8
         | DataType::UInt16

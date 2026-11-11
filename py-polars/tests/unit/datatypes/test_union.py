@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import pickle
 from datetime import datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
@@ -505,8 +506,8 @@ def test_union_duplicate_names_raise() -> None:
 
 
 def test_union_import_large_child() -> None:
-    # A child longer than `u32::MAX`, with decreasing offsets and a dropped `Null` variant,
-    # so the import rebuilds the children.
+    # A child longer than `u32::MAX`, with decreasing offsets and a dropped `Null`
+    # variant, so the import rebuilds the children.
     child = pa.StructArray.from_buffers(pa.struct([]), 5 * 2**30, [None])
     arr = dense(
         [0, 0, 1, 0],
@@ -519,3 +520,211 @@ def test_union_import_large_child() -> None:
     out = to_pa(s)
     assert out.to_pylist() == [{}, {}, None, {}]
     assert [len(out.field(0))] == [4]
+
+
+def messy() -> pl.Series:
+    """`[3, "b", 1, "a", None, "b", 1]`, with unreferenced values and a null slot."""
+    arr = dense(
+        [0, 1, 0, 1, 0, 1, 0],
+        [1, 1, 2, 2, 3, 3, 4],
+        [pa.array([99, 3, 1, None, 1]), pa.array(["zz", "b", "a", "b"])],
+        ["i", "s"],
+    )
+    return pl.Series("u", arr)
+
+
+def messy_layouts() -> list[pl.Series]:
+    s = messy()
+    return [
+        s,
+        s.slice(1, 5),
+        s.filter(pl.Series([True, False, True, True, True, False, True])),
+        # A null slot with a placeholder in child 0.
+        s.shift(1),
+        pl.concat([s.slice(0, 3), s.slice(3)], rechunk=True),
+        pl.concat([s.slice(0, 3), s.slice(3)], rechunk=False),
+    ]
+
+
+def union_key(v: Any) -> tuple[bool, Any]:
+    """Unions order by variant, then by value."""
+    return (isinstance(v, str), v)
+
+
+def sorted_union(values: list[Any], *, descending: bool, nulls_last: bool) -> list[Any]:
+    nulls = [v for v in values if v is None]
+    rest = sorted(
+        (v for v in values if v is not None), key=union_key, reverse=descending
+    )
+    return rest + nulls if nulls_last else nulls + rest
+
+
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+def test_union_sort(descending: bool, nulls_last: bool) -> None:
+    for s in messy_layouts():
+        expected = sorted_union(
+            s.to_list(), descending=descending, nulls_last=nulls_last
+        )
+        out = s.sort(descending=descending, nulls_last=nulls_last)
+        assert to_pylist(out) == expected
+
+        df = pl.DataFrame({"u": s, "x": range(len(s))})
+        out_df = (
+            df.lazy()
+            .sort("u", "x", descending=descending, nulls_last=nulls_last)
+            .collect()
+        )
+        assert to_pylist(out_df["u"]) == expected
+
+
+def test_union_group_by_unique() -> None:
+    for s in messy_layouts():
+        values = s.to_list()
+        firsts = list(dict.fromkeys(values))
+        assert to_pylist(s.unique(maintain_order=True)) == firsts
+        assert s.n_unique() == len(firsts)
+        assert sorted(map(repr, to_pylist(s.unique()))) == sorted(map(repr, firsts))
+
+        df = pl.DataFrame({"u": s, "x": range(len(s))})
+        out = df.lazy().group_by("u").agg(pl.col("x").sum()).collect()
+        expected: dict[Any, int] = {}
+        for x, v in enumerate(values):
+            expected[v] = expected.get(v, 0) + x
+        assert dict(zip(to_pylist(out["u"]), out["x"], strict=True)) == expected
+
+
+def test_union_group_by_tag() -> None:
+    # Equal values of different variants are different keys.
+    df = tagged().vstack(tagged())
+    assert df["u"].n_unique() == 2
+    out = df.lazy().group_by("u").agg(pl.len()).collect()
+    assert sorted(out["len"].to_list()) == [2, 2]
+    assert to_pa(out["u"].sort()).type_codes.to_pylist() == [0, 1]
+
+
+def test_union_join_on_union() -> None:
+    left = pl.DataFrame({"u": messy(), "l": range(7)})
+    for right_u in messy_layouts():
+        right = pl.DataFrame({"u": right_u, "r": range(len(right_u))})
+        out = left.lazy().join(right.lazy(), on="u").collect()
+        expected = [
+            (lv, i, j)
+            for i, lv in enumerate(messy().to_list())
+            for j, rv in enumerate(right_u.to_list())
+            if lv is not None and lv == rv and type(lv) is type(rv)
+        ]
+        got = list(zip(to_pylist(out["u"]), out["l"], out["r"], strict=True))
+        assert sorted(got, key=repr) == sorted(expected, key=repr)
+
+        matched = {i for _, i, _ in expected}
+        semi = left.lazy().join(right.lazy(), on="u", how="semi").collect()
+        assert semi["l"].to_list() == sorted(matched)
+        anti = left.lazy().join(right.lazy(), on="u", how="anti").collect()
+        assert anti["l"].to_list() == sorted(set(range(7)) - matched)
+        lj = left.lazy().join(right.lazy(), on="u", how="left").collect()
+        assert lj.height == len(expected) + 7 - len(matched)
+
+
+def test_union_key_variants() -> None:
+    cats = pa.DictionaryArray.from_arrays(
+        pa.array([1, 0, 1, 2], pa.uint32()), pa.array(["x", "y", "unused"])
+    )
+    dec = pa.array([Decimal("1.50"), Decimal("-2.25")], pa.decimal128(10, 2))
+    lists = pa.array([[2, 1], [1, 2, 3], []], pa.large_list(pa.int64()))
+    arr = dense(
+        [0, 1, 2, 0, 1, 2, 0, 2],
+        [0, 0, 0, 1, 1, 1, 2, 2],
+        [cats, dec, lists],
+        ["c", "d", "l"],
+    )
+    s = pl.Series("u", arr)
+    assert s.dtype == pl.Union(
+        {"c": pl.Categorical(), "d": pl.Decimal(10, 2), "l": pl.List(pl.Int64)}
+    )
+    values = s.to_list()
+    assert values == [
+        "y",
+        Decimal("1.50"),
+        [2, 1],
+        "x",
+        Decimal("-2.25"),
+        [1, 2, 3],
+        "y",
+        [],
+    ]
+    assert to_pylist(s.sort()) == [
+        "x",
+        "y",
+        "y",
+        Decimal("-2.25"),
+        Decimal("1.50"),
+        [],
+        [1, 2, 3],
+        [2, 1],
+    ]
+    assert to_pylist(s.unique(maintain_order=True)) == values[:6] + [[]]
+    out = s.to_frame().lazy().group_by("u").agg(pl.len()).collect()
+    assert sorted(out["len"].to_list()) == [1, 1, 1, 1, 1, 1, 2]
+
+
+def test_union_nested_keys() -> None:
+    u = messy()
+    values = u.to_list()
+    lists = pl.Series(
+        "l", pa.LargeListArray.from_arrays(pa.array([0, 2, 4, 7]), u.to_arrow())
+    )
+    arrays = pl.Series("a", pa.FixedSizeListArray.from_arrays(u.slice(1).to_arrow(), 2))
+    # Row 1 is a null struct over a valid union value.
+    structs = pl.Series(
+        "st",
+        pa.StructArray.from_arrays(
+            [u.to_arrow()], ["u"], mask=pa.array([False, True] * 3 + [False])
+        ),
+    )
+    for s in [lists, arrays, structs]:
+        assert to_pylist(s.unique(maintain_order=True)) == list(
+            {repr(v): v for v in s.to_list()}.values()
+        )
+        assert to_pylist(s.sort())[::-1] == to_pylist(
+            s.sort(descending=True, nulls_last=True)
+        )
+    assert to_pylist(lists.sort()) == [[None, "b", 1], [1, "a"], [3, "b"]]
+
+    # The struct nulls hide different union values, so they are one group.
+    st_values = structs.to_list()
+    assert st_values[1] is None
+    assert structs.n_unique() == len({repr(v) for v in st_values})
+    out = structs.to_frame().lazy().group_by("st").agg(pl.len()).collect()
+    assert dict(zip(map(repr, out["st"].to_list()), out["len"], strict=True))[
+        "None"
+    ] == st_values.count(None)
+    assert values == [3, "b", 1, "a", None, "b", 1]
+
+
+def test_union_large_child_keys() -> None:
+    one = pl.Series(big_union())
+    five = pl.concat([one] * 5, rechunk=True)
+    for s in [one, five]:
+        assert s.n_unique() == 1
+        assert to_pylist(s.unique()) == [{}]
+        assert to_pylist(s.sort()) == [{}] * len(s)
+        out = s.to_frame().lazy().group_by(s.name).agg(pl.len()).collect()
+        assert out["len"].to_list() == [len(s)]
+
+
+@pytest.mark.parametrize(
+    ("descending", "nulls_last"),
+    [(False, False), (False, True), (True, False), (True, True)],
+)
+def test_union_row_encode_roundtrip(descending: bool, nulls_last: bool) -> None:
+    for s in messy_layouts():
+        df = s.to_frame()
+        encoded = df._row_encode(descending=[descending], nulls_last=[nulls_last])
+        decoded = encoded._row_decode(
+            ["u"], [s.dtype], descending=[descending], nulls_last=[nulls_last]
+        ).struct.unnest()
+        assert to_pylist(decoded["u"]) == s.to_list()
+    unordered = messy().to_frame()._row_encode(unordered=True)
+    assert unordered.n_unique() == 5
+

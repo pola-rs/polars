@@ -65,7 +65,16 @@ pub fn get_row_encoding_context(dtype: &DataType) -> Option<RowEncodingContext> 
         DataType::Unknown(_) => panic!("Unsupported in row encoding"),
 
         #[cfg(feature = "dtype-union")]
-        DataType::Union(_) => None,
+        DataType::Union(fs) => {
+            let ctxts: Vec<_> = fs
+                .iter()
+                .map(|f| get_row_encoding_context(f.dtype()))
+                .collect();
+            ctxts
+                .iter()
+                .any(Option::is_some)
+                .then_some(RowEncodingContext::Union(ctxts))
+        },
 
         #[cfg(feature = "object")]
         DataType::Object(_) => panic!("Unsupported in row encoding"),
@@ -369,7 +378,13 @@ pub fn row_encoding_decode(
     let struct_arrow_dtype = ArrowDataType::Struct(
         fields
             .iter()
-            .map(|v| v.to_physical().to_arrow(CompatLevel::newest()))
+            .map(|v| {
+                ArrowField::new(
+                    v.name().clone(),
+                    v.dtype().to_physical_arrow(CompatLevel::newest()),
+                    true,
+                )
+            })
             .collect(),
     );
 

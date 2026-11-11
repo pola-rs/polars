@@ -5,13 +5,31 @@ use polars_arrow::bitmap::Bitmap;
 use super::*;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::aggregations::AggList;
+use crate::prelude::row_encode::{
+    _get_rows_encoded_ca, _get_rows_encoded_ca_unordered, encode_rows_unordered,
+};
 use crate::prelude::*;
+use crate::runtime::RAYON;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 use crate::utils::align_chunks_binary_ca_series;
 
 impl PrivateSeriesNumeric for SeriesWrap<UnionChunked> {
     fn bit_repr(&self) -> Option<BitRepr> {
         None
+    }
+}
+
+impl SeriesWrap<UnionChunked> {
+    /// Rows to hash, equal iff the values are equal.
+    fn hash_rows(&self) -> PolarsResult<BinaryOffsetChunked> {
+        let c = [self.0.clone().into_column()];
+        // The unordered encoding of a categorical is its physical, which depends on the
+        // insertion order, so use the ordered one.
+        if self.0.dtype().contains_categoricals() {
+            _get_rows_encoded_ca(PlSmallStr::EMPTY, &c, &[false], &[false], true)
+        } else {
+            _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, &c)
+        }
     }
 }
 
@@ -38,18 +56,25 @@ impl PrivateSeries for SeriesWrap<UnionChunked> {
 
     fn vec_hash(
         &self,
-        _build_hasher: PlSeedableRandomStateQuality,
-        _buf: &mut Vec<u64>,
+        build_hasher: PlSeedableRandomStateQuality,
+        buf: &mut Vec<u64>,
     ) -> PolarsResult<()> {
-        polars_bail!(opq = vec_hash, self.dtype())
+        self.hash_rows()?.vec_hash(build_hasher, buf)
     }
 
     fn vec_hash_combine(
         &self,
-        _build_hasher: PlSeedableRandomStateQuality,
-        _hashes: &mut [u64],
+        build_hasher: PlSeedableRandomStateQuality,
+        hashes: &mut [u64],
     ) -> PolarsResult<()> {
-        polars_bail!(opq = vec_hash_combine, self.dtype())
+        self.hash_rows()?.vec_hash_combine(build_hasher, hashes)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
+        self.0
+            .get_row_encoded(Default::default())?
+            .group_tuples(multithreaded, sorted)
     }
 
     fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
@@ -147,6 +172,16 @@ impl SeriesTrait for SeriesWrap<UnionChunked> {
         self.0.new_from_index(index, length).into_series()
     }
 
+    fn trim_lists_to_normalized_offsets(&self) -> Option<Series> {
+        self.0
+            .trim_lists_to_normalized_offsets()
+            .map(IntoSeries::into_series)
+    }
+
+    fn propagate_nulls(&self) -> Option<Series> {
+        self.0.propagate_nulls().map(IntoSeries::into_series)
+    }
+
     fn cast(&self, dtype: &DataType, _cast_options: CastOptions) -> PolarsResult<Series> {
         polars_ensure!(
             dtype == self.dtype(),
@@ -161,6 +196,52 @@ impl SeriesTrait for SeriesWrap<UnionChunked> {
 
     fn null_count(&self) -> usize {
         self.0.null_count()
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    fn unique(&self) -> PolarsResult<Series> {
+        if self.len() < 2 {
+            return Ok(self.0.clone().into_series());
+        }
+        let main_thread = RAYON.current_thread_index().is_none();
+        let groups = self.group_tuples(main_thread, false)?;
+        // SAFETY: the groups are in bounds.
+        Ok(unsafe { self.0.clone().into_series().agg_first(&groups) })
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    fn n_unique(&self) -> PolarsResult<usize> {
+        match self.len() {
+            0 => Ok(0),
+            1 => Ok(1),
+            _ => {
+                let main_thread = RAYON.current_thread_index().is_none();
+                Ok(self.group_tuples(main_thread, false)?.len())
+            },
+        }
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    fn arg_unique(&self) -> PolarsResult<IdxCa> {
+        if self.len() == 1 {
+            return Ok(IdxCa::new_vec(self.name().clone(), vec![0 as IdxSize]));
+        }
+        let main_thread = RAYON.current_thread_index().is_none();
+        let groups = self.group_tuples(main_thread, true)?;
+        Ok(IdxCa::from_vec(self.name().clone(), groups.take_group_firsts()))
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        ChunkUnique::unique_id(&encode_rows_unordered(&[self.0.clone().into_column()])?)
+    }
+
+    fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
+        Ok(self.0.sort_with(options).into_series())
+    }
+
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        self.0.arg_sort(options)
     }
 
     fn has_nulls(&self) -> bool {

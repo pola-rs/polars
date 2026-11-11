@@ -4,9 +4,13 @@ pub(crate) use arrow::{union_array_to_arrow, union_from_arrow};
 use polars_arrow::array::builder::{ShareStrategy, StaticArrayBuilder};
 use polars_arrow::array::{LargeUnionArray, LargeUnionArrayBuilder};
 use polars_compute::gather::take_unchecked;
+use polars_compute::propagate_nulls::propagate_nulls_union;
+use polars_compute::trim_lists_to_normalized_offsets::trim_lists_to_normalized_offsets_union;
 use polars_error::constants::LENGTH_LIMIT_MSG;
 
 use crate::chunked_array::ops::append::new_chunks_owned;
+use crate::chunked_array::ops::row_encode::_get_rows_encoded_ca;
+use crate::runtime::RAYON;
 use crate::prelude::*;
 use crate::series::IsSorted;
 
@@ -47,6 +51,71 @@ impl UnionChunked {
         self.append(other)?;
         self.rechunk_mut();
         Ok(())
+    }
+
+    /// Applies `f` to every chunk, or returns `None` if it changed none.
+    fn map_chunks_opt(
+        &self,
+        f: impl Fn(&LargeUnionArray) -> Option<LargeUnionArray>,
+    ) -> Option<Self> {
+        let mapped: Vec<_> = self.downcast_iter().map(&f).collect();
+        if mapped.iter().all(Option::is_none) {
+            return None;
+        }
+        let chunks = mapped
+            .into_iter()
+            .zip(self.downcast_iter())
+            .map(|(new, old)| new.map_or_else(|| old.to_boxed(), |a| a.boxed()))
+            .collect();
+        // SAFETY: `f` keeps the length, the validity and the dtype.
+        Some(unsafe {
+            Self::new_with_dims(self.field.clone(), chunks, self.length, self.null_count)
+        })
+    }
+
+    pub(crate) fn trim_lists_to_normalized_offsets(&self) -> Option<Self> {
+        self.map_chunks_opt(trim_lists_to_normalized_offsets_union)
+    }
+
+    pub(crate) fn propagate_nulls(&self) -> Option<Self> {
+        self.map_chunks_opt(propagate_nulls_union)
+    }
+
+    pub fn get_row_encoded(&self, options: SortOptions) -> PolarsResult<BinaryOffsetChunked> {
+        _get_rows_encoded_ca(
+            self.name().clone(),
+            &[self.clone().into_column()],
+            &[options.descending],
+            &[options.nulls_last],
+            false,
+        )
+    }
+}
+
+impl ChunkSort<UnionType> for UnionChunked {
+    fn sort_with(&self, mut options: SortOptions) -> UnionChunked {
+        options.multithreaded &= RAYON.current_num_threads() > 1;
+        let idx = self.arg_sort(options);
+        let mut out = unsafe { self.take_unchecked(&idx) };
+        out.set_sorted_flag(if options.descending {
+            IsSorted::Descending
+        } else {
+            IsSorted::Ascending
+        });
+        out
+    }
+
+    fn sort(&self, descending: bool) -> UnionChunked {
+        self.sort_with(SortOptions::new().with_order_descending(descending))
+    }
+
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        let bin = self.get_row_encoded(options).unwrap();
+        bin.arg_sort(SortOptions {
+            maintain_order: options.maintain_order,
+            multithreaded: options.multithreaded,
+            ..Default::default()
+        })
     }
 }
 
