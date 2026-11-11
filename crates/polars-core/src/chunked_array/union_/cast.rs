@@ -31,6 +31,20 @@ impl UnionChunked {
             .iter()
             .map(|f| to_fields.iter().position(|g| g.name() == f.name()))
             .collect();
+        // A cast can resolve parts of the requested dtype (e.g. the inner dtype of a bare `List`),
+        // so take each variant's dtype from casting an empty series of its source dtype.
+        let mut to_fields = to_fields.clone();
+        for (s, t) in target.iter().enumerate() {
+            if let Some(t) = *t {
+                let resolved = Series::new_empty(PlSmallStr::EMPTY, from_fields[s].dtype())
+                    .cast_with_options(to_fields[t].dtype(), options)?
+                    .dtype()
+                    .clone();
+                to_fields[t].dtype = resolved;
+            }
+        }
+        let to_fields = &to_fields;
+        let dtype = DataType::Union(to_fields.clone());
         let arrow_dtype = dtype.to_physical_arrow(CompatLevel::newest());
 
         let chunks = self
@@ -41,7 +55,7 @@ impl UnionChunked {
             })
             .collect::<PolarsResult<Vec<_>>>()?;
         // SAFETY: the chunks have the physical dtype of `dtype`.
-        Ok(unsafe { Series::from_chunks_and_dtype_unchecked(self.name().clone(), chunks, dtype) })
+        Ok(unsafe { Series::from_chunks_and_dtype_unchecked(self.name().clone(), chunks, &dtype) })
     }
 }
 
@@ -124,6 +138,11 @@ fn cast_chunk(
         let cast = values
             .cast_with_options(to_fields[t].dtype(), options)?
             .rechunk();
+        polars_ensure!(
+            cast.dtype() == to_fields[t].dtype(),
+            ComputeError: "union variant `{}` was cast to {} instead of {}",
+            to_fields[t].name(), cast.dtype(), to_fields[t].dtype()
+        );
         let cast = cast.chunks()[0].clone();
 
         // A value a non-strict cast turned into a null nulls its slot too.

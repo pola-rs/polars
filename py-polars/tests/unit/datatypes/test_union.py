@@ -936,6 +936,26 @@ def test_union_cast_dropped_variant() -> None:
     assert to_pylist(kept.gather([9, 0])) == [{}, {}]
 
 
+def test_union_cast_resolves_variant_dtypes() -> None:
+    s = pl.Series(
+        dense(
+            [0, 1, 0],
+            [0, 0, 1],
+            [pa.array([[1, 2], [3]], pa.large_list(pa.int64())), pa.array([4])],
+            ["l", "i"],
+        )
+    )
+    to = pl.Union({"l": pl.List, "i": pl.Float64})
+    expected = pl.Union({"l": pl.List(pl.Int64), "i": pl.Float64})
+    # The second chunk references only part of `l`, so it is cast after a gather.
+    for inp in [s, pl.concat([s, s.slice(1)], rechunk=False)]:
+        out = inp.cast(to)
+        assert out.dtype == expected
+        assert to_pylist(out) == [
+            float(v) if isinstance(v, int) else v for v in inp.to_list()
+        ]
+
+
 def test_union_cast_lazy() -> None:
     s = messy()
     to = pl.Union({"s": pl.String, "i": pl.Float64})
