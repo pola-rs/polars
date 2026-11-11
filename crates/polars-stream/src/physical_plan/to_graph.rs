@@ -1528,6 +1528,7 @@ fn to_graph_rec<'a>(
             args,
             fused_predicate: _,
             runtime_filters: _,
+            estimated_rows: _,
         }
         | SemiAntiJoin {
             input_left,
@@ -1619,6 +1620,7 @@ fn to_graph_rec<'a>(
                 EquiJoin {
                     ref fused_predicate,
                     ref runtime_filters,
+                    estimated_rows,
                     ..
                 } => {
                     // Compiled against a narrow frame of exactly the columns it reads, in
@@ -1655,6 +1657,7 @@ fn to_graph_rec<'a>(
                                 right_key_selectors,
                                 fused_predicate,
                                 runtime_filters.clone(),
+                                estimated_rows,
                                 args,
                                 num_pipelines,
                                 registry.task_metrics(),
@@ -2031,7 +2034,7 @@ fn to_graph_rec<'a>(
             let sources = ScanSources::Paths(Buffer::from_iter([PlRefPath::new("python-scan-0")]));
             let cloud_options = None;
             let final_output_schema = output_schema.clone();
-            let file_projection_builder = ProjectionBuilder::new(output_schema, None, None);
+            let file_projection_builder = ProjectionBuilder::new(output_schema, None, None, None);
             let row_index = None;
             let pre_slice = None;
             let predicate = None;
@@ -2107,7 +2110,7 @@ fn to_graph_rec<'a>(
                         let state: EwmMeanState<$T> = EwmMeanState::new(
                             AsPrimitive::<$T>::as_(options.alpha),
                             options.adjust,
-                            options.min_periods,
+                            options.min_samples,
                             options.ignore_nulls,
                         );
 
@@ -2118,7 +2121,7 @@ fn to_graph_rec<'a>(
                     with_match_physical_float_type!(dtype, |$T| {
                         let state: EwmSumState<$T> = EwmSumState::new(
                             AsPrimitive::<$T>::as_(options.alpha),
-                            options.min_periods,
+                            options.min_samples,
                             options.ignore_nulls,
                         );
 
@@ -2130,7 +2133,7 @@ fn to_graph_rec<'a>(
                         AsPrimitive::<$T>::as_(options.alpha),
                         options.adjust,
                         options.bias,
-                        options.min_periods,
+                        options.min_samples,
                         options.ignore_nulls,
                     );
 

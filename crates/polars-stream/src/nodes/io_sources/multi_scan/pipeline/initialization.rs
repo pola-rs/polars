@@ -69,8 +69,15 @@ pub fn initialize_multi_scan_pipeline(
     let (bridge_handle, bridge_recv_port_tx, phase_channel_tx) =
         spawn_bridge(bridge_state.clone(), execution_state.task_metrics());
 
+    #[cfg(any(feature = "parquet", feature = "ipc"))]
+    let active_scan = config.file_reader_builder.active_scan();
+
     let task_metrics = execution_state.task_metrics.clone();
     let task_handle = executor::spawn(TaskPriority::Low, task_metrics.as_deref(), async move {
+        // Dropped when the scan ends or is aborted.
+        #[cfg(any(feature = "parquet", feature = "ipc"))]
+        let _active_scan = active_scan;
+
         finish_initialize_multi_scan_pipeline(
             config,
             bridge_recv_port_tx,

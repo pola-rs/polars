@@ -108,7 +108,7 @@ class DataFramePlot:
 
         `df.plot.line(**kwargs)` is shorthand for
         `alt.Chart(df).mark_line().encode(**kwargs).interactive()`,
-        and is provided for convenience - for full customisatibility, use a plotting
+        and is provided for convenience - for full customisability, use a plotting
         library directly.
 
         .. versionchanged:: 1.6.0
@@ -174,7 +174,7 @@ class DataFramePlot:
 
         `df.plot.point(**kwargs)` is shorthand for
         `alt.Chart(df).mark_point().encode(**kwargs).interactive()`,
-        and is provided for convenience - for full customisatibility, use a plotting
+        and is provided for convenience - for full customisability, use a plotting
         library directly.
 
         .. versionchanged:: 1.6.0

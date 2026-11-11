@@ -29,7 +29,8 @@ use sqlparser::ast::{
 use crate::catalog::CatalogSpellings;
 use crate::context::{
     CORRELATED_COL_PREFIX, FilterMode, RelationName, TableInfo, combine_conditions,
-    declared_relations, flatten_and_conditions, get_table_name, match_qualifier, relation_name,
+    declared_relations, flatten_and_conditions, get_table_name, join_idents, match_qualifier,
+    relation_name,
 };
 use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::functions::PolarsSQLFunctions;
@@ -42,8 +43,8 @@ use crate::sql_visitors::{
     contains_random, expr_contains_subquery, expr_has_window_functions, has_column_selector,
     is_subquery_expr,
 };
-use crate::subquery_outer_select::{reads_inner_column, when_then};
-use crate::subquery_pull_up::ScopeColumns;
+use crate::subquery_outer_select::{calls_query_function, reads_inner_column, when_then};
+use crate::subquery_pull_up::{ReadAs, ScopeColumns, has_aggregate};
 use crate::{SQLContext, col, unique_column_name};
 
 impl SQLContext {
@@ -205,14 +206,34 @@ impl SQLContext {
         {
             return Ok(None);
         }
-        let Some(left_key) = self.try_parse_outer_only_expr(lhs, outer_schema)? else {
-            return Ok(None);
+        // A row value `(a, b) IN (SELECT x, y ...)` matches on every column. With
+        // NOT IN, a NULL in one column does not make the whole row unknown.
+        let lhs = match unwrap_nested(lhs) {
+            SQLExpr::Tuple(items) if !scalar && !negated => items.as_slice(),
+            SQLExpr::Tuple(_) => return Ok(None),
+            _ => std::slice::from_ref(lhs),
         };
+        let mut left_keys = Vec::with_capacity(lhs.len());
+        for e in lhs {
+            let Some(key) = self.try_parse_outer_only_expr(e, outer_schema)? else {
+                return Ok(None);
+            };
+            left_keys.push(key);
+        }
 
-        let mut inner_lf = self.execute_isolated(|ctx| ctx.execute_query(subquery))?;
+        let mut inner_lf = self.execute_isolated(|ctx| {
+            ctx.nesting += 1;
+            ctx.execute_query(subquery)
+        })?;
         let inner_schema = self.get_frame_schema(&mut inner_lf)?;
-        polars_ensure!(inner_schema.len() == 1, SQLSyntax: "SQL subquery returns more than one column");
-        let right_key = col(inner_schema.get_at_index(0).unwrap().0.clone());
+        if left_keys.len() == 1 {
+            polars_ensure!(inner_schema.len() == 1, SQLSyntax: "SQL subquery returns more than one column");
+        }
+        polars_ensure!(
+            inner_schema.len() == left_keys.len(),
+            SQLSyntax: "SQL subquery returns {} columns for a row value of {}", inner_schema.len(), left_keys.len()
+        );
+        let right_keys = inner_schema.iter_names().cloned().map(col).collect();
         if scalar {
             inner_lf = inner_lf.select([first().as_expr().item(true)]);
         }
@@ -222,8 +243,8 @@ impl SQLContext {
             inner_lf,
             outer_schema,
             &inner_schema,
-            vec![left_key],
-            vec![right_key],
+            left_keys,
+            right_keys,
             anti,
             // Only `KeepTrue` "NOT IN" needs 3VL correction.
             anti && !scalar && filter_mode == FilterMode::KeepTrue,
@@ -342,7 +363,6 @@ impl SQLContext {
             return Ok(None);
         }
 
-        let idx_name = format_pl_smallstr!("{prefix}idx");
         let count_name = format_pl_smallstr!("{prefix}cnt");
 
         // Apply inner-only filters, then rename inner columns to collision-free
@@ -357,34 +377,18 @@ impl SQLContext {
         let inner_renamed = inner_filtered.rename(&rename_from, &rename_to, true);
         inner_renamed.set_cached_arena(self.lp_arena, self.expr_arena);
 
-        let join_preds = correlated_join_predicates(
-            corr_preds.iter().map(|p| p.to_expr(&prefix)).chain(general),
+        let joined = non_equi_correlated_aggregate(
+            lf.clone(),
+            inner_renamed,
+            &corr_preds,
+            general,
+            vec![len().alias(count_name.clone())],
             outer_schema,
             inner_schema,
             &prefix,
-        );
-
-        let outer_indexed = row_indexed_once(lf.clone(), idx_name.clone());
-        let matched = outer_indexed
-            .clone()
-            .join_builder()
-            .with(inner_renamed)
-            .how(JoinType::Inner)
-            .join_where(join_preds);
-        let grouped = matched
-            .group_by([col(idx_name.clone())])
-            .agg([len().alias(count_name.clone())]);
-
-        let joined = outer_indexed
-            .join_builder()
-            .with(grouped)
-            .left_on([col(idx_name.clone())])
-            .right_on([col(idx_name.clone())])
-            .how(JoinType::Left)
-            .coalesce(JoinCoalesce::CoalesceColumns)
-            .maintain_order(MaintainOrderJoin::Left)
-            .finish()?
-            .with_columns([col(count_name.clone()).fill_null(lit(0))]);
+            MaintainOrderJoin::Left,
+        )?
+        .with_columns([col(count_name.clone()).fill_null(lit(0))]);
 
         let matches = if negated {
             col(count_name.clone()).eq(lit(0))
@@ -392,7 +396,7 @@ impl SQLContext {
             col(count_name.clone()).gt(lit(0))
         };
         Ok(Some(joined.filter(matches).drop(Selector::ByName {
-            names: Arc::from([idx_name, count_name]),
+            names: Arc::from([count_name]),
             strict: true,
         })))
     }
@@ -576,9 +580,66 @@ impl SQLContext {
             )?;
         }
         self.set_join_base(&select.from);
-        self.check_select_column_refs(select)?;
         let inner_schema = self.get_frame_schema(&mut inner_lf)?;
+        self.check_select_column_refs(select, &inner_schema)?;
         Ok(Some((inner_names, inner_lf, inner_schema)))
+    }
+
+    /// The error for a dotted name of `subquery` whose first part names no relation or
+    /// column of the subquery, nor of this query (`outer_schema`), as this query reports
+    /// it. Only for a subquery that no other subquery encloses, whose names can't read a
+    /// scope further out; names in nested subqueries are not checked.
+    pub(crate) fn unknown_qualifier_err(
+        &self,
+        subquery: &Query,
+        outer_schema: Option<&Schema>,
+    ) -> Option<PolarsError> {
+        let SetExpr::Select(select) = subquery.body.as_ref() else {
+            return None;
+        };
+        if self.nesting > 0 {
+            return None;
+        }
+        let mut inner = self.isolated();
+        let (inner_names, _, inner_schema) = inner.resolve_subquery_from(select).ok()??;
+        let known = |parts: &[Ident]| {
+            match_qualifier(parts, inner_names.iter()).is_some()
+                || inner_schema.contains(&parts[0].value)
+                // An ambiguous qualifier is an error of its own, raised elsewhere.
+                || !matches!(self.resolve_qualifier(parts), Ok(None))
+                || outer_schema.is_some_and(|schema| schema.contains(&parts[0].value))
+        };
+        let projection = select.projection.iter().filter_map(|item| match item {
+            SelectItem::UnnamedExpr(e) | SelectItem::ExprWithAlias { expr: e, .. } => Some(e),
+            _ => None,
+        });
+        let mut unknown = None;
+        for expr in projection.chain(&select.selection).chain(&select.having) {
+            let _ = visit_top_level_compound_idents(expr, |parts| {
+                if known(parts) {
+                    return ControlFlow::Continue(());
+                }
+                unknown = Some(parts.to_vec());
+                ControlFlow::Break(())
+            });
+            if unknown.is_some() {
+                break;
+            }
+        }
+        let parts = unknown?;
+        let hint = (1..parts.len())
+            .rev()
+            .find_map(|len| {
+                let qualifier = join_idents(&parts[..len]);
+                inner
+                    .hidden_by_alias_hint(&qualifier)
+                    .or_else(|| self.hidden_by_alias_hint(&qualifier))
+            })
+            .unwrap_or_default();
+        Some(polars_err!(
+            SQLInterface: "no table or struct column named '{}' found{}",
+            parts[0], hint
+        ))
     }
 
     // Split a subquery's WHERE conjuncts into a `SubqueryConjuncts`, or `None`
@@ -747,7 +808,7 @@ impl SQLContext {
         }
         let mut arena = Arena::new();
         let mut ctx = ExprToIRContext::new(&mut arena, join_schema);
-        let Ok(ir) = to_expr_ir(expr.clone(), &mut ctx) else {
+        let Ok(ir) = to_expr_ir(&expr, &mut ctx) else {
             return Ok(None);
         };
         if !is_elementwise_rec(ir.node(), &arena)
@@ -1585,10 +1646,10 @@ impl SQLContext {
     // A projection without an aggregate is taken as the `item` of its values,
     // which raises when an outer row matches more than one inner row.
     // Equality-only correlation: `inner GROUP BY <corr cols>` once, joined onto
-    // the outer frame on those columns directly. Otherwise: row-index the outer
-    // frame, inner-join outer × inner on the correlation predicates (`join_where`
-    // handles inequality), aggregate per outer row, then left-join back on the
-    // row index. Either way, `COUNT` over no matches is 0, every other aggregate
+    // the outer frame on those columns directly. Otherwise: inner-join the outer
+    // keys × inner on the correlation predicates (`join_where` handles inequality),
+    // aggregate per key, then left-join back (see `non_equi_correlated_aggregate`).
+    // Either way, `COUNT` over no matches is 0, every other aggregate
     // is NULL. Returns `None` when uncorrelated or not a supported shape.
     // When `join_tree` describes the outer frame and the subquery repeats a part
     // of it, the aggregate is taken over the outer frame itself instead.
@@ -1808,36 +1869,17 @@ impl SQLContext {
             return Ok(Some((drop_added_keys(joined, added), result_name)));
         }
 
-        let join_preds = correlated_join_predicates(
-            corr_preds.iter().map(|p| p.to_expr(&prefix)).chain(general),
+        let joined = aggregate.finish(non_equi_correlated_aggregate(
+            lf,
+            inner_renamed,
+            &corr_preds,
+            general,
+            aggregate.aggs.clone(),
             outer_schema,
             &inner_schema,
             &prefix,
-        );
-        let idx_name = format_pl_smallstr!("{prefix}idx");
-
-        let outer_indexed = row_indexed_once(lf, idx_name.clone());
-        let matched = outer_indexed
-            .clone()
-            .join_builder()
-            .with(inner_renamed)
-            .how(JoinType::Inner)
-            .join_where(join_preds);
-        let grouped = matched
-            .group_by([col(idx_name.clone())])
-            .agg(aggregate.aggs.clone());
-
-        let joined = aggregate
-            .finish(left_join_aggregate(
-                outer_indexed,
-                grouped,
-                vec![col(idx_name.clone())],
-                vec![col(idx_name.clone())],
-            )?)
-            .drop(Selector::ByName {
-                names: Arc::from([idx_name]),
-                strict: true,
-            });
+            MaintainOrderJoin::None,
+        )?);
         Ok(Some((joined, result_name)))
     }
 
@@ -2009,33 +2051,17 @@ impl SQLContext {
                 .agg([value.alias(set_name.clone())]);
             drop_added_keys(left_join_aggregate(lf, grouped, outer_on, inner_on)?, added)
         } else {
-            let join_preds = correlated_join_predicates(
-                corr_preds.iter().map(|p| p.to_expr(&prefix)).chain(general),
+            non_equi_correlated_aggregate(
+                lf,
+                inner_renamed,
+                &corr_preds,
+                general,
+                vec![value.alias(set_name.clone())],
                 outer_schema,
                 &inner_schema,
                 &prefix,
-            );
-            let idx_name = format_pl_smallstr!("{prefix}idx");
-            let outer_indexed = row_indexed_once(lf, idx_name.clone());
-            let matched = outer_indexed
-                .clone()
-                .join_builder()
-                .with(inner_renamed)
-                .how(JoinType::Inner)
-                .join_where(join_preds);
-            let grouped = matched
-                .group_by([col(idx_name.clone())])
-                .agg([value.alias(set_name.clone())]);
-            left_join_aggregate(
-                outer_indexed,
-                grouped,
-                vec![col(idx_name.clone())],
-                vec![col(idx_name.clone())],
+                MaintainOrderJoin::None,
             )?
-            .drop(Selector::ByName {
-                names: Arc::from([idx_name]),
-                strict: true,
-            })
         };
 
         // An outer row with no matching inner rows joins to null, which is the
@@ -2320,34 +2346,40 @@ impl SQLContext {
 
         let flag_name = format_pl_smallstr!("{prefix}exists");
         let uncorrelated_where = corr_preds.is_empty() && general.is_empty();
+        let Some(aggregates) =
+            exists_aggregates(&ctx, subquery, select, &inner_names, &inner_schema)
+        else {
+            return Ok(None);
+        };
+        if aggregates {
+            // The rows are not read, but the inner filters must still be valid.
+            let mut filtered = local_filters
+                .iter()
+                .cloned()
+                .fold(inner_lf.clone(), LazyFrame::filter);
+            ctx.get_frame_schema(&mut filtered)?;
+        }
         // An uncorrelated subquery is one value, which `visit_exists` takes.
         if uncorrelated_where && !is_correlated_subquery(subquery, self.catalog_spellings()) {
-            let exists =
-                match exists_aggregates(&ctx, subquery, select, &inner_names, &inner_schema) {
-                    None => return Ok(None),
-                    Some(true) => lit(true),
-                    Some(false) => {
-                        let inner = local_filters
-                            .into_iter()
-                            .fold(inner_lf, LazyFrame::filter)
-                            .select([len().gt(lit(0))]);
-                        inner.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
-                        reduced_subquery(inner, first().as_expr().item(true))
-                    },
-                };
+            let exists = if aggregates {
+                lit(true)
+            } else {
+                let inner = local_filters
+                    .into_iter()
+                    .fold(inner_lf, LazyFrame::filter)
+                    .select([len().gt(lit(0))]);
+                inner.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
+                reduced_subquery(inner, first().as_expr().item(true))
+            };
             self.exists_values.push((subquery.clone(), exists));
             return Ok(None);
         }
-        match exists_aggregates(&ctx, subquery, select, &inner_names, &inner_schema) {
-            None => return Ok(None),
-            // An aggregate without GROUP BY returns one row, even over no rows.
-            Some(true) => {
-                return Ok(Some((
-                    lf.with_column(lit(true).alias(flag_name.clone())),
-                    flag_name,
-                )));
-            },
-            Some(false) => {},
+        // An aggregate without GROUP BY returns one row, even over no rows.
+        if aggregates {
+            return Ok(Some((
+                lf.with_column(lit(true).alias(flag_name.clone())),
+                flag_name,
+            )));
         }
         let inner_filtered = local_filters.into_iter().fold(inner_lf, LazyFrame::filter);
 
@@ -2366,7 +2398,6 @@ impl SQLContext {
             return Ok(Some((joined, flag_name)));
         }
 
-        let idx_name = format_pl_smallstr!("{prefix}idx");
         let count_name = format_pl_smallstr!("{prefix}cnt");
 
         // Rename inner columns to collision-free names so they can't clash
@@ -2380,41 +2411,25 @@ impl SQLContext {
         let inner_renamed = inner_filtered.rename(&rename_from, &rename_to, true);
         inner_renamed.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
 
-        let join_preds = correlated_join_predicates(
-            corr_preds.iter().map(|p| p.to_expr(&prefix)).chain(general),
+        let joined = non_equi_correlated_aggregate(
+            lf,
+            inner_renamed,
+            &corr_preds,
+            general,
+            vec![len().alias(count_name.clone())],
             outer_schema,
             &inner_schema,
             &prefix,
-        );
-
-        let outer_indexed = row_indexed_once(lf, idx_name.clone());
-        let matched = outer_indexed
-            .clone()
-            .join_builder()
-            .with(inner_renamed)
-            .how(JoinType::Inner)
-            .join_where(join_preds);
-        let grouped = matched
-            .group_by([col(idx_name.clone())])
-            .agg([len().alias(count_name.clone())]);
-
-        let joined = outer_indexed
-            .join_builder()
-            .with(grouped)
-            .left_on([col(idx_name.clone())])
-            .right_on([col(idx_name.clone())])
-            .how(JoinType::Left)
-            .coalesce(JoinCoalesce::CoalesceColumns)
-            .maintain_order(MaintainOrderJoin::Left)
-            .finish()?
-            .with_columns([col(count_name.clone())
-                .fill_null(lit(0))
-                .gt(lit(0))
-                .alias(flag_name.clone())])
-            .drop(Selector::ByName {
-                names: Arc::from([idx_name, count_name]),
-                strict: true,
-            });
+            MaintainOrderJoin::Left,
+        )?
+        .with_columns([col(count_name.clone())
+            .fill_null(lit(0))
+            .gt(lit(0))
+            .alias(flag_name.clone())])
+        .drop(Selector::ByName {
+            names: Arc::from([count_name]),
+            strict: true,
+        });
         Ok(Some((joined, flag_name)))
     }
 
@@ -2513,7 +2528,7 @@ fn unwrap_nested(mut expr: &SQLExpr) -> &SQLExpr {
 fn harmless_on_every_row(expr: &Expr, schema: &Schema) -> bool {
     let mut arena = Arena::new();
     let mut ctx = ExprToIRContext::new(&mut arena, schema);
-    let Ok(expr) = to_expr_ir(expr.clone(), &mut ctx) else {
+    let Ok(expr) = to_expr_ir(expr, &mut ctx) else {
         return false;
     };
     let mut group = ExprPushdownGroup::Pushable;
@@ -2876,7 +2891,8 @@ fn correlation_key_pair(
 
 // Whether every column the expression references resolves to the inner relation,
 // so it can be evaluated against the inner frame alone. A qualified name resolves
-// through its qualifier: only an inner relation's name or alias counts as inner.
+// through its qualifier: an inner relation's name or alias, or an inner struct
+// column, counts as inner.
 // An unqualified name binds to the innermost scope that has it, so the inner
 // schema wins over the outer one.
 fn binds_to_inner_relation(
@@ -2950,8 +2966,12 @@ fn binds_to_inner_column(
 ) -> bool {
     match expr {
         SQLExpr::Identifier(ident) => inner_schema.contains(&ident.value),
-        SQLExpr::CompoundIdentifier(parts) => match_qualifier(parts, inner_names.iter())
-            .is_some_and(|(_, len)| inner_schema.contains(&parts[len].value)),
+        SQLExpr::CompoundIdentifier(parts) => match match_qualifier(parts, inner_names.iter()) {
+            Some((_, len)) => inner_schema.contains(&parts[len].value),
+            // A field of an inner struct column (`s.f`), which an outer relation `s`
+            // doesn't hide.
+            None => matches!(inner_schema.get(&parts[0].value), Some(DataType::Struct(_))),
+        },
         _ => true,
     }
 }
@@ -3536,6 +3556,139 @@ fn declared_anywhere(query: &Query, spellings: &CatalogSpellings) -> Vec<Relatio
     declared.0
 }
 
+/// `x <op> ANY (SELECT e FROM .. WHERE p)` over a correlated subquery as
+/// `EXISTS (SELECT 1 FROM .. WHERE p AND x <op> e)`, and `x <op> ALL (..)` as
+/// `NOT EXISTS (SELECT 1 FROM .. WHERE p AND (x <op> e) IS NOT TRUE)`. These differ
+/// only where the comparison is NULL, so they hold for a WHERE conjunct, which keeps
+/// the rows where it is true. `x` must name only relations the subquery does not
+/// declare, so moving it into the subquery does not change what it reads.
+pub(crate) fn quantified_as_exists(ctx: &SQLContext, conj: &SQLExpr) -> Option<SQLExpr> {
+    let (left, compare_op, right, all) = match conj {
+        SQLExpr::AnyOp {
+            left,
+            compare_op,
+            right,
+            ..
+        } => (left, compare_op, right, false),
+        SQLExpr::AllOp {
+            left,
+            compare_op,
+            right,
+        } => (left, compare_op, right, true),
+        _ => return None,
+    };
+    let SQLExpr::Subquery(subquery) = right.as_ref() else {
+        return None;
+    };
+    let spellings = ctx.catalog_spellings();
+    // `x` is evaluated per pair of rows after the move, so it must give the same value
+    // for each of them.
+    if !is_correlated_subquery(subquery, spellings)
+        || expr_contains_subquery(left)
+        || contains_random(left.as_ref(), true)
+        || has_column_selector(left)
+        || calls_query_function(ctx, left)
+    {
+        return None;
+    }
+    let select = eligible_subquery_select(subquery)?;
+    let [SelectItem::UnnamedExpr(value) | SelectItem::ExprWithAlias { expr: value, .. }] =
+        select.projection.as_slice()
+    else {
+        return None;
+    };
+    // An aggregate anywhere makes the subquery give one row.
+    if matches!(select.distinct, Some(Distinct::On(_)))
+        || has_aggregate(ctx, select)
+        || subquery
+            .order_by
+            .as_ref()
+            .is_some_and(|o| has_aggregate(ctx, o))
+        || expr_has_window_functions(value)
+        || calls_query_function(ctx, value)
+    {
+        return None;
+    }
+    let declared = declared_anywhere(subquery, spellings);
+    let mut reads_inner = false;
+    let _ = visit_expressions(left.as_ref(), |e: &SQLExpr| {
+        reads_inner |= match e {
+            SQLExpr::Identifier(_) => true,
+            SQLExpr::CompoundIdentifier(parts) => match_qualifier(parts, declared.iter()).is_some(),
+            _ => false,
+        };
+        ControlFlow::<()>::Continue(())
+    });
+    if reads_inner {
+        return None;
+    }
+    let compare = SQLExpr::Nested(Box::new(SQLExpr::BinaryOp {
+        left: left.clone(),
+        op: compare_op.clone(),
+        right: Box::new(value.clone()),
+    }));
+    let condition = if all {
+        SQLExpr::IsNotTrue(Box::new(compare))
+    } else {
+        compare
+    };
+    let mut select = select.clone();
+    select.projection = vec![SelectItem::UnnamedExpr(SQLExpr::value(SQLValue::Number(
+        "1".into(),
+        false,
+    )))];
+    select.selection = combine_conditions(
+        select
+            .selection
+            .take()
+            .into_iter()
+            .chain([condition])
+            .collect(),
+        SQLBinaryOperator::And,
+    );
+    let mut subquery = subquery.as_ref().clone();
+    subquery.body = Box::new(SetExpr::Select(Box::new(select)));
+    subquery.order_by = None;
+    Some(SQLExpr::Exists {
+        subquery: Box::new(subquery),
+        negated: all,
+    })
+}
+
+/// Visit the dotted names of `expr` outside its nested subqueries.
+fn visit_top_level_compound_idents(
+    expr: &SQLExpr,
+    f: impl FnMut(&[Ident]) -> ControlFlow<()>,
+) -> ControlFlow<()> {
+    struct TopLevel<F> {
+        query_depth: usize,
+        f: F,
+    }
+
+    impl<F: FnMut(&[Ident]) -> ControlFlow<()>> Visitor for TopLevel<F> {
+        type Break = ();
+
+        fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth += 1;
+            ControlFlow::Continue(())
+        }
+
+        fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth -= 1;
+            ControlFlow::Continue(())
+        }
+
+        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+            match expr {
+                SQLExpr::CompoundIdentifier(parts) if self.query_depth == 0 => (self.f)(parts),
+                _ => ControlFlow::Continue(()),
+            }
+        }
+    }
+
+    dyn_visit::visit(expr, &mut TopLevel { query_depth: 0, f })
+}
+
 /// Rewrite `x = ANY (subquery)` to `x IN (subquery)` and `x <> ALL (subquery)`
 /// to `x NOT IN (subquery)`, which they are equivalent to.
 struct DesugarQuantified;
@@ -3624,9 +3777,13 @@ impl CorrelatedLowering<'_> {
         {
             return Ok(Some(name.clone()));
         }
-        let prepared = self
-            .ctx
-            .pull_up_nested(ScopeColumns::Frame(self.outer_schema), subquery);
+        let read_as = match kind {
+            SubqueryKind::Scalar => ReadAs::Value,
+            SubqueryKind::Exists | SubqueryKind::In(_) => ReadAs::Set,
+        };
+        let prepared =
+            self.ctx
+                .pull_up_nested(ScopeColumns::Frame(self.outer_schema), subquery, read_as);
         let original = subquery;
         let subquery = prepared.as_ref().unwrap_or(subquery);
         let grouped = self
@@ -3779,6 +3936,108 @@ fn is_elementwise(expr: &Expr) -> bool {
 // materialisation.
 pub(crate) fn row_indexed_once(lf: LazyFrame, name: PlSmallStr) -> LazyFrame {
     lf.with_row_index(name, None).cache()
+}
+
+// Joins the outer rows to the inner rows that match the correlation predicates and
+// aggregates the matches with `aggs`. An outer row without matches gets NULL
+// aggregates.
+//
+// Without an equality correlation, the join pairs every outer row with many inner
+// rows, so the subquery is evaluated once per distinct value of the outer columns
+// that the predicates and aggregates read, and joined back on those columns. It is
+// evaluated per outer row when a column can't be a join key, or when a float column
+// is read by more than a plain comparison, which could tell -0.0 from 0.0.
+#[expect(clippy::too_many_arguments)]
+fn non_equi_correlated_aggregate(
+    outer: LazyFrame,
+    inner: LazyFrame,
+    corr_preds: &[CorrPredicate],
+    general: Vec<Expr>,
+    aggs: Vec<Expr>,
+    outer_schema: &Schema,
+    inner_schema: &Schema,
+    prefix: &str,
+    maintain_order: MaintainOrderJoin,
+) -> PolarsResult<LazyFrame> {
+    let has_equality = corr_preds.iter().any(|p| p.op == SQLBinaryOperator::Eq)
+        || general.iter().any(|e| {
+            matches!(
+                e,
+                Expr::BinaryExpr {
+                    op: Operator::Eq | Operator::EqValidity,
+                    ..
+                }
+            )
+        });
+    let has_general = !general.is_empty();
+    let join_preds = correlated_join_predicates(
+        corr_preds.iter().map(|p| p.to_expr(prefix)).chain(general),
+        outer_schema,
+        inner_schema,
+        prefix,
+    );
+    let reads_outer = |exprs: &[Expr]| -> PlHashSet<PlSmallStr> {
+        exprs
+            .iter()
+            .flat_map(expr_to_leaf_column_names_iter)
+            .filter(|name| outer_schema.contains(name))
+            .collect()
+    };
+    let agg_reads = reads_outer(&aggs);
+    let mut read = reads_outer(&join_preds);
+    let exact_floats = has_general || !agg_reads.is_empty();
+    read.extend(agg_reads);
+    let keys: Vec<Expr> = outer_schema
+        .iter_names()
+        .filter(|name| read.contains(*name))
+        .map(|name| col(name.clone()))
+        .collect();
+    let per_row = has_equality
+        || keys.is_empty()
+        || outer_schema
+            .iter()
+            .filter(|(name, _)| read.contains(*name))
+            .any(|(_, dtype)| {
+                dtype.is_nested() || dtype.is_object() || (exact_floats && dtype.is_float())
+            });
+
+    let (outer, domain, keys) = if per_row {
+        let idx_name = format_pl_smallstr!("{prefix}idx");
+        let outer = row_indexed_once(outer, idx_name.clone());
+        (outer.clone(), outer, vec![col(idx_name)])
+    } else {
+        let outer = outer.cache();
+        let domain = outer
+            .clone()
+            .select(keys.clone())
+            .unique(None, UniqueKeepStrategy::Any);
+        (outer, domain, keys)
+    };
+    let grouped = domain
+        .join_builder()
+        .with(inner)
+        .how(JoinType::Inner)
+        .join_where(join_preds)
+        .group_by(keys.clone())
+        .agg(aggs);
+    let joined = outer
+        .join_builder()
+        .with(grouped)
+        .left_on(keys.clone())
+        .right_on(keys)
+        .how(JoinType::Left)
+        .join_nulls(true)
+        .coalesce(JoinCoalesce::CoalesceColumns)
+        .maintain_order(maintain_order)
+        .finish()?;
+    Ok(if per_row {
+        joined.drop(Selector::ByName {
+            names: Arc::from([format_pl_smallstr!("{prefix}idx")]),
+            strict: true,
+        })
+    } else {
+        joined
+    })
 }
 
 fn prefixed_inner(prefix: &str, name: &str) -> PlSmallStr {
@@ -4326,7 +4585,7 @@ fn null_over_no_rows(combine: &Expr, agg_schema: &Schema, fill: &[(PlSmallStr, E
 fn is_scalar_over(expr: &Expr, schema: &Schema) -> bool {
     let mut arena = Arena::new();
     let mut ctx = ExprToIRContext::new(&mut arena, schema);
-    let Ok(expr) = to_expr_ir(expr.clone(), &mut ctx) else {
+    let Ok(expr) = to_expr_ir(expr, &mut ctx) else {
         return false;
     };
     expr.is_scalar(&arena)
@@ -4336,7 +4595,7 @@ fn is_scalar_over(expr: &Expr, schema: &Schema) -> bool {
 fn is_elementwise_over(combine: &Expr, agg_schema: &Schema) -> bool {
     let mut arena = Arena::new();
     let mut ctx = ExprToIRContext::new(&mut arena, agg_schema);
-    let Ok(combine) = to_expr_ir(combine.clone(), &mut ctx) else {
+    let Ok(combine) = to_expr_ir(combine, &mut ctx) else {
         return false;
     };
     is_elementwise_rec(combine.node(), &arena)

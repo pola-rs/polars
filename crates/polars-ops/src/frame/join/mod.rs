@@ -17,7 +17,9 @@ use std::hash::Hash;
 
 pub use args::*;
 #[cfg(feature = "asof_join")]
-pub use asof::{_check_asof_columns, _join_asof_dispatch, AsofJoin, AsofJoinBy};
+pub use asof::{
+    _asof_key_to_physical, _check_asof_columns, _join_asof_dispatch, AsofJoin, AsofJoinBy,
+};
 pub use cross_join::CrossJoin;
 #[cfg(feature = "chunked_ids")]
 use either::Either;
@@ -142,6 +144,11 @@ pub trait DataFrameJoinOps: IntoDf {
         // This join has no per-candidate match condition, so it filters after the fact.
         if let Some(JoinTypeOptions::FusedPredicate(fused_options)) = &options {
             debug_assert!(args.slice.is_none());
+            // Filtering after an outer join would drop its unmatched rows.
+            polars_ensure!(
+                args.how.is_inner(),
+                InvalidOperation: "a fused join predicate is only supported for inner joins on the in-memory engine"
+            );
             let predicate = fused_options.predicate.clone();
             let joined = self._join_impl(
                 other,

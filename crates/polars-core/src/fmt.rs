@@ -886,7 +886,7 @@ fn fmt_float_string_custom(
         num.to_string()
     } else {
         // Take existing numeric string and apply digit grouping & separator/decimal chars
-        // e.g. "1000000" → "1_000_000", "-123456.798" → "-123,456.789", etc
+        // e.g. "1000000" → "1_000_000", "-123456.789" → "-123,456.789", etc
         let (idx, has_fractional) = match num.find('.') {
             Some(i) => (i, true),
             None => (num.len(), false),

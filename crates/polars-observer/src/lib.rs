@@ -38,7 +38,7 @@ pub fn register_query_observer_factory(factory: Option<Arc<dyn QueryObserverFact
     *QUERY_OBSERVER_FACTORY.write() = factory;
 }
 
-/// Creates a 'unique' instances of the [QueryObserver] for each query.
+/// Creates a 'unique' instance of the [QueryObserver] for each query.
 pub fn new_query_observer() -> Option<Box<dyn QueryObserver>> {
     QUERY_OBSERVER_FACTORY
         .read()

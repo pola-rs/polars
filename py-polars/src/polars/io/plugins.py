@@ -99,7 +99,7 @@ def register_io_source(
                 A hint of the ideal batch size the reader's
                 generator must produce.
 
-        The function should return a an iterator/generator
+        The function should return an iterator/generator
         that produces DataFrames.
     schema
         Schema or function that when called produces the schema that the reader

@@ -255,7 +255,7 @@ pub(crate) fn try_build_http_header_map_from_items_slice<S: AsRef<str>>(
 }
 
 #[allow(dead_code)]
-/// Parse an untype configuration hashmap to a typed configuration for the given configuration key type.
+/// Parse an untyped configuration hashmap to a typed configuration for the given configuration key type.
 fn parse_untyped_config<T, I: IntoIterator<Item = (impl AsRef<str>, impl Into<String>)>>(
     config: I,
 ) -> PolarsResult<Configs<T>>

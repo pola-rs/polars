@@ -22,6 +22,18 @@ fn array() -> BinaryViewArrayGeneric<str> {
 }
 
 #[test]
+fn inline_view_from_block_matches_inline_view_of_its_prefix() {
+    // The view of the first `len` bytes of a block holds them, and only them, in memory order.
+    let block: [u8; 16] = std::array::from_fn(|i| i as u8 + 1);
+    for len in 0..=View::MAX_INLINE_SIZE as usize {
+        let view = View::new_inline_from_block(block, len);
+        assert_eq!(view, View::new_inline(&block[..len]));
+        assert_eq!(view.length as usize, len);
+        assert_eq!(view.get_inlined_slice(), Some(&block[..len]));
+    }
+}
+
+#[test]
 fn split_at() {
     let (lhs, rhs) = array().split_at(2);
 

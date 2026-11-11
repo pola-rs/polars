@@ -82,7 +82,7 @@ pub(crate) fn sql_join_where_predicate(
     // expressions or functions.
     let mut arena = Arena::new();
     let mut ctx = ExprToIRContext::new(&mut arena, joined_schema);
-    let Ok(ir) = to_expr_ir(predicate.clone(), &mut ctx) else {
+    let Ok(ir) = to_expr_ir(&predicate, &mut ctx) else {
         return predicate;
     };
     let mut casts = Vec::new();

@@ -93,7 +93,7 @@ pub enum QuoteStyle {
     ///
     /// Quotes are necessary when fields contain a quote, separator or record terminator.
     /// Quotes are also necessary when writing an empty record (which is indistinguishable
-    /// from arecord with one empty field).
+    /// from a record with one empty field).
     /// This is the default.
     #[default]
     Necessary,

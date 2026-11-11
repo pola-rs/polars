@@ -215,7 +215,9 @@ class Series(metaclass=_Meta):
         on the `strict` parameter:
 
         - If `strict` is set to True (default), the inferred data type is equal to the
-          first non-null value, or `Null` if all values are null.
+          first non-null value, or `Null` if all values are null. If that value is a
+          struct (eg: a dict), the inferred :class:`Struct` has the fields of all the
+          struct values (in first-seen order).
         - If `strict` is set to False, the inferred data type is the supertype of the
           values, or :class:`Object` if no supertype can be found. **WARNING**: A full
           pass over the values is required to determine the supertype.
@@ -1126,7 +1128,7 @@ class Series(metaclass=_Meta):
 
     def _recursive_cast_to_dtype(self, leaf_dtype: PolarsDataType) -> Series:
         """
-        Convert leaf dtype the to given primitive datatype.
+        Convert leaf dtype to the given primitive datatype.
 
         This is equivalent to logic in DataType::cast_leaf() in Rust.
         """
@@ -2319,7 +2321,7 @@ class Series(metaclass=_Meta):
         """
         Get minimum value, but propagate/poison encountered NaN values.
 
-        This differs from numpy's `nanmax` as numpy defaults to propagating NaN values,
+        This differs from numpy's `nanmin` as numpy defaults to propagating NaN values,
         whereas polars defaults to ignoring them.
 
         Examples
@@ -3745,7 +3747,7 @@ class Series(metaclass=_Meta):
         ┌──────┬─────┬─────┐
         │ y    ┆ m   ┆ d   │
         │ ---  ┆ --- ┆ --- │
-        │ i32  ┆ i8  ┆ i8  │
+        │ i64  ┆ i64 ┆ i64 │
         ╞══════╪═════╪═════╡
         │ 2099 ┆ 2   ┆ 14  │
         │ 2026 ┆ 3   ┆ 5   │
@@ -3970,7 +3972,7 @@ class Series(metaclass=_Meta):
         k
             Number of elements to return.
         reverse
-            Consider the `k` largest elements of the `by` column( (instead of the `k`
+            Consider the `k` largest elements of the `by` column (instead of the `k`
             smallest). This can be specified per column by passing a sequence of
             booleans.
 
@@ -7209,7 +7211,7 @@ class Series(metaclass=_Meta):
             2001-01-02 00:00:00
         ]
 
-        Compute the rolling mean with the temporal windows
+        Compute the rolling sum with the temporal windows
         from the second series closed on the right:
 
         >>> s.rolling_sum_by(d, "3h")
@@ -9803,7 +9805,7 @@ class Series(metaclass=_Meta):
         """
         Flags the Series as 'sorted'.
 
-        Enables downstream code to user fast paths for sorted arrays.
+        Enables downstream code to use fast paths for sorted arrays.
 
         Parameters
         ----------
@@ -10178,5 +10180,5 @@ def _resolve_temporal_dtype(
         elif time_unit == "ms":
             dtype = PolarsType("ms")
         elif time_unit == "D" and ndtype.type == np.datetime64:
-            dtype = Date
+            dtype = Date if dtype is None else Datetime("us")
     return dtype

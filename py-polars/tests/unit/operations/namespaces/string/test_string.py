@@ -685,7 +685,7 @@ def test_str_strip_chars_expr() -> None:
         pl.col("s").str.strip_chars_end(None).alias("strip_chars_end"),
     )
 
-    # only whitespace are striped.
+    # only whitespace are stripped.
     expected = pl.DataFrame(
         {
             "strip_chars": ["hello", "^^world^^", "&&hi&&", "polars", None],
@@ -2616,3 +2616,47 @@ def test_str_concat_removed() -> None:
         AttributeRemovedError, match=re.escape("use `str.join` instead")
     ):
         s.to_frame().select(pl.all().str.concat())  # type: ignore[attr-defined]
+
+
+def test_contains_any_replace_many_imploded_patterns() -> None:
+    # More rows than threads, so that a streaming morsel holds several rows.
+    df = pl.DataFrame({"s": ["ab", "cd", "xy"] * 100, "p": ["a", "c", "q"] * 100})
+    patterns = pl.col("p").unique(maintain_order=True).implode()
+    out = df.lazy().select(
+        pl.col("s").str.contains_any(patterns),
+        r=pl.col("s").str.replace_many(patterns, pl.lit(["A", "C", "Q"])),
+    )
+    expected = pl.DataFrame(
+        {"s": [True, True, False] * 100, "r": ["Ab", "Cd", "xy"] * 100}
+    )
+    assert_frame_equal(out.collect(), expected)
+
+
+@pytest.mark.parametrize("height", [1, 3])
+def test_contains_any_replace_many_patterns_per_row_raises(height: int) -> None:
+    df = pl.DataFrame({"s": ["ab"] * height, "p": [["a"]] * height})
+    with pytest.raises(InvalidOperationError, match="per row"):
+        df.lazy().select(pl.col("s").str.contains_any(pl.col("p"))).collect()
+    with pytest.raises(InvalidOperationError, match="per row"):
+        df.lazy().select(pl.col("s").str.replace_many(pl.col("p"), ["b"])).collect()
+
+
+def test_find_many_null_patterns_broadcast() -> None:
+    null = pl.lit(None, dtype=pl.List(pl.String))
+    df = pl.DataFrame({"s": ["ab", "cd"]}).with_columns(p=null)
+    out = df.lazy().select(
+        e=pl.col("s").str.extract_many("p"),
+        f=pl.col("s").str.find_many("p"),
+        c=pl.col("s").str.contains_any(null),
+        r=pl.col("s").str.replace_many(null, ["x"]),
+    )
+    expected = pl.DataFrame(
+        {"e": [None, None], "f": [None, None], "c": [None, None], "r": [None, None]},
+        schema={
+            "e": pl.List(pl.String),
+            "f": pl.List(pl.UInt32),
+            "c": pl.Boolean,
+            "r": pl.String,
+        },
+    )
+    assert_frame_equal(out.collect(), expected)

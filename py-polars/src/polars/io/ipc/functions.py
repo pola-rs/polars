@@ -426,7 +426,7 @@ def scan_ipc(
     n_rows
         Stop reading from IPC file after reading `n_rows`.
     row_index_name
-        If not None, this will insert a row index column with give name into the
+        If not None, this will insert a row index column with given name into the
         DataFrame
     row_index_offset
         Offset to start the row index column (only use if the name is set)

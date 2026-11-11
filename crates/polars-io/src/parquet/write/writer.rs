@@ -4,7 +4,6 @@ use std::sync::Mutex;
 use polars_buffer::Buffer;
 use polars_core::frame::chunk_df_for_writing;
 use polars_core::prelude::*;
-use polars_parquet::parquet::encryption::encrypt::FileEncryptionProperties;
 use polars_parquet::write::{
     CompressionOptions, Encoding, FileWriter, StatisticsOptions, Version, WriteOptions,
     get_dtype_encoding, to_parquet_schema,
@@ -13,6 +12,7 @@ use polars_parquet::write::{
 use super::batched_writer::BatchedWriter;
 use super::options::ParquetCompression;
 use super::{KeyValueMetadata, ParquetWriteOptions};
+use crate::parquet::encryption::ParquetEncryption;
 use crate::shared::schema_to_arrow_checked;
 
 impl ParquetWriteOptions {
@@ -26,11 +26,7 @@ impl ParquetWriteOptions {
             .with_row_group_size(self.row_group_size)
             .with_data_page_size(self.data_page_size)
             .with_key_value_metadata(self.key_value_metadata.clone())
-            .with_encryption_properties(
-                self.encryption_properties
-                    .as_ref()
-                    .map(|properties| Arc::clone(&properties.0)),
-            )
+            .with_encryption(self.encryption.clone())
     }
 }
 
@@ -52,8 +48,8 @@ pub struct ParquetWriter<W> {
     key_value_metadata: Option<KeyValueMetadata>,
     /// Context info for the Parquet file being written.
     context_info: Option<PlHashMap<String, String>>,
-    /// Properties for writing files encrypted with Parquet modular encryption
-    encryption_properties: Option<Arc<FileEncryptionProperties>>,
+    /// How to encrypt the file with Parquet modular encryption
+    encryption: Option<ParquetEncryption>,
 }
 
 impl<W> ParquetWriter<W>
@@ -74,7 +70,7 @@ where
             parallel: true,
             key_value_metadata: None,
             context_info: None,
-            encryption_properties: None,
+            encryption: None,
         }
     }
 
@@ -124,12 +120,9 @@ where
         self
     }
 
-    /// Set the properties for encrypting the file with Parquet modular encryption.
-    pub fn with_encryption_properties(
-        mut self,
-        encryption_properties: Option<Arc<FileEncryptionProperties>>,
-    ) -> Self {
-        self.encryption_properties = encryption_properties;
+    /// Set how to encrypt the file with Parquet modular encryption.
+    pub fn with_encryption(mut self, encryption: Option<ParquetEncryption>) -> Self {
+        self.encryption = encryption;
         self
     }
 
@@ -138,11 +131,16 @@ where
         let parquet_schema = to_parquet_schema(&schema)?;
         let encodings = get_encodings(&schema);
         let options = self.materialize_options();
+        let encryption_properties = self
+            .encryption
+            .as_ref()
+            .map(ParquetEncryption::file_properties)
+            .transpose()?;
         let writer = Mutex::new(FileWriter::try_new(
             self.writer,
             schema,
             options,
-            self.encryption_properties,
+            encryption_properties,
         )?);
 
         Ok(BatchedWriter {

@@ -1,4 +1,4 @@
-/// Utility that allows use to send pointers to another thread.
+/// Utility that allows us to send pointers to another thread.
 /// This is better than going through `usize` as MIRI can follow these.
 #[derive(Debug, PartialEq, Eq)]
 #[repr(transparent)]

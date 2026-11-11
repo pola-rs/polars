@@ -416,6 +416,7 @@ impl ExprOrderSimplifier<'_> {
                     partition_by,
                     order_by,
                     mapping: _,
+                    may_reorder: _,
                 } = self.expr_arena.get(current_ae_node)
                 else {
                     unreachable!()
@@ -776,6 +777,7 @@ pub(crate) fn is_order_insensitive_window(node: Node, arena: &Arena<AExpr>) -> b
         partition_by,
         order_by,
         mapping,
+        may_reorder: _,
     } = arena.get(node)
     else {
         return false;
@@ -880,8 +882,10 @@ fn drop_scalar_order_keys(node: Node, arena: &mut Arena<AExpr>) -> Option<AExpr>
             partition_by,
             order_by: Some((order_by, options)),
             mapping,
+            may_reorder,
         } => {
-            let (function, partition_by, mapping) = (*function, partition_by.clone(), *mapping);
+            let (function, partition_by, mapping, may_reorder) =
+                (*function, partition_by.clone(), *mapping, *may_reorder);
             let order_by = if is_scalar_ae(*order_by, arena) {
                 None
             } else {
@@ -897,6 +901,7 @@ fn drop_scalar_order_keys(node: Node, arena: &mut Arena<AExpr>) -> Option<AExpr>
                 partition_by,
                 order_by,
                 mapping,
+                may_reorder,
             })
         },
         _ => None,

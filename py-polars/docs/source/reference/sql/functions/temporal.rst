@@ -121,7 +121,7 @@ Extracts a part of a date (or datetime) such as 'year', 'month', etc.
    * - 'isodow'
      - ISO day of the week (1:Monday – 7:Sunday)
      - Int8
-   * - 'day', 'days', 'dayofmonth', d'
+   * - 'day', 'days', 'dayofmonth', 'd'
      - Day of the month (1–31)
      - Int8
    * - 'hour', 'hours', 'h'
@@ -262,7 +262,7 @@ Extracts a part of a date (or datetime) such as 'year', 'month', etc.
    * - 'isodow'
      - ISO day of the week (1:Monday – 7:Sunday)
      - Int8
-   * - 'day', 'days', 'dayofmonth', d'
+   * - 'day', 'days', 'dayofmonth', 'd'
      - Day of the month (1–31)
      - Int8
    * - 'hour', 'hours', 'h'

@@ -19,8 +19,8 @@ use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use polars_core::config::verbose;
 use polars_core::error::{PolarsResult, feature_gated};
+use polars_io::parquet::encryption::{ParquetDecryption, file_decryption_properties};
 use polars_io::parquet::metadata::FileMetadataRef;
-use polars_io::parquet::read::PlFileDecryptionProperties;
 
 use crate::dsl::MetadataPerSource;
 use crate::prelude::{ScanSourceRef, ScanSources};
@@ -146,14 +146,14 @@ pub(crate) async fn read_footers(
     sources: &ScanSources,
     indices: &[usize],
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
-    decryption_properties: Option<&PlFileDecryptionProperties>,
+    decryption: Option<&ParquetDecryption>,
 ) -> Vec<(usize, FileMetadataRef)> {
     let mut futures = indices
         .iter()
         .map(|&i| async move {
             (
                 i,
-                read_parquet_metadata(sources.at(i), cloud_options, decryption_properties)
+                read_parquet_metadata(sources.at(i), cloud_options, decryption)
                     .await
                     .ok(),
             )
@@ -175,7 +175,7 @@ pub(crate) async fn resolve_for_splitting(
     bytes: &[u64],
     n_parts: NonZeroU32,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
-    decryption_properties: Option<&PlFileDecryptionProperties>,
+    decryption: Option<&ParquetDecryption>,
 ) -> MetadataPerSource {
     use polars_config::ResolveMode;
 
@@ -204,7 +204,7 @@ pub(crate) async fn resolve_for_splitting(
         .collect();
 
     MetadataPerSource::new(
-        read_footers(sources, &indices, cloud_options, decryption_properties).await,
+        read_footers(sources, &indices, cloud_options, decryption).await,
         n_sources,
     )
 }
@@ -213,7 +213,7 @@ pub(crate) async fn resolve_for_splitting(
 pub(crate) async fn read_parquet_metadata(
     source: ScanSourceRef<'_>,
     #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
-    decryption_properties: Option<&PlFileDecryptionProperties>,
+    decryption: Option<&ParquetDecryption>,
 ) -> PolarsResult<FileMetadataRef> {
     if source.is_cloud_url() {
         #[allow(unused)]
@@ -222,7 +222,7 @@ pub(crate) async fn read_parquet_metadata(
             let mut reader =
                 polars_io::prelude::ParquetObjectStore::from_uri(path.clone(), cloud_options, None)
                     .await?
-                    .with_decryption_properties(decryption_properties.cloned());
+                    .with_decryption(decryption)?;
             reader.get_metadata().await.cloned()
         })
     } else {
@@ -230,7 +230,7 @@ pub(crate) async fn read_parquet_metadata(
         let mut cursor = Cursor::new(memslice);
         let md = polars_parquet::parquet::read::read_metadata_with_decryption(
             &mut cursor,
-            decryption_properties.map(|p| &p.0),
+            file_decryption_properties(decryption)?.as_ref(),
             None,
         )?;
         Ok(std::sync::Arc::new(md))
@@ -241,7 +241,7 @@ pub(crate) async fn read_parquet_metadata(
 pub(crate) async fn read_parquet_num_rows(
     source: ScanSourceRef<'_>,
     #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
-    decryption_properties: Option<&PlFileDecryptionProperties>,
+    decryption: Option<&ParquetDecryption>,
 ) -> PolarsResult<i64> {
     if source.is_cloud_url() {
         #[allow(unused)]
@@ -250,7 +250,7 @@ pub(crate) async fn read_parquet_num_rows(
             let mut reader =
                 polars_io::prelude::ParquetObjectStore::from_uri(path.clone(), cloud_options, None)
                     .await?
-                    .with_decryption_properties(decryption_properties.cloned());
+                    .with_decryption(decryption)?;
             reader.num_rows_only().await
         })
     } else {
@@ -258,7 +258,7 @@ pub(crate) async fn read_parquet_num_rows(
         let mut cursor = Cursor::new(memslice);
         polars_parquet::parquet::read::read_num_rows(
             &mut cursor,
-            decryption_properties.map(|p| &p.0),
+            file_decryption_properties(decryption)?.as_ref(),
         )
         .map_err(Into::into)
     }

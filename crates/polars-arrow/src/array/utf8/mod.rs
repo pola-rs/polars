@@ -350,7 +350,7 @@ impl<O: Offset> Utf8Array<O> {
         }
     }
 
-    /// Creates a new [`Utf8Array`] without checking for offsets monotinicity nor utf8-validity
+    /// Creates a new [`Utf8Array`] without checking for offsets monotonicity nor utf8-validity
     ///
     /// # Panic
     /// This function panics (in debug mode only) iff:
@@ -449,7 +449,7 @@ impl<O: Offset> Utf8Array<O> {
         MutableUtf8Array::<O>::from_trusted_len_iter(iterator).into()
     }
 
-    /// Creates a [`Utf8Array`] from an falible iterator of trusted length.
+    /// Creates a [`Utf8Array`] from a fallible iterator of trusted length.
     ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
@@ -465,7 +465,7 @@ impl<O: Offset> Utf8Array<O> {
         MutableUtf8Array::<O>::try_from_trusted_len_iter_unchecked(iterator).map(|x| x.into())
     }
 
-    /// Creates a [`Utf8Array`] from an fallible iterator of trusted length.
+    /// Creates a [`Utf8Array`] from a fallible iterator of trusted length.
     #[inline]
     pub fn try_from_trusted_len_iter<E, I, P>(iter: I) -> std::result::Result<Self, E>
     where

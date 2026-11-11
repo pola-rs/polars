@@ -89,7 +89,7 @@ pub fn build_slice_stream(
     }
 }
 
-/// Creates a new PhysStream which is filters the input stream.
+/// Creates a new PhysStream which filters the input stream.
 pub fn build_filter_stream(
     input: PhysStream,
     predicate: ExprIR,
@@ -989,18 +989,35 @@ fn lower_ir_inner(
                         // initial hint.
                         metadata_per_source,
                         bytes_per_source,
-                    } => Arc::new(
-                        crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder {
-                            options: Arc::new(options.clone()),
-                            first_metadata: metadata_per_source.first_metadata().cloned(),
-                            bytes_per_source: bytes_per_source.clone(),
-                            pipeline_budget: std::sync::OnceLock::new(),
-                            shared_prefetch_wait_group_slot: Default::default(),
-                            file_read_context: std::sync::OnceLock::new(),
-                            io_metrics: std::sync::OnceLock::new(),
-                            task_metrics: std::sync::OnceLock::new(),
-                        },
-                    ) as _,
+                    } => {
+                        // With a column mapping, the fields to read are resolved per file from
+                        // the mapped projection instead.
+                        let unmapped = unified_scan_args.column_mapping.is_none();
+                        let prune_to_scan_schema = unmapped
+                            && unified_scan_args.cast_columns_policy.extra_struct_fields
+                                == polars_plan::dsl::ExtraColumnsPolicy::Ignore;
+                        Arc::new(
+                            crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder {
+                                options: Arc::new(options.clone()),
+                                field_selection: unified_scan_args
+                                    .field_selection
+                                    .clone()
+                                    .filter(|_| unmapped),
+                                scan_schema: ((unified_scan_args.field_selection.is_some()
+                                    && unmapped)
+                                    || prune_to_scan_schema)
+                                    .then(|| file_info.schema.clone()),
+                                prune_to_scan_schema,
+                                first_metadata: metadata_per_source.first_metadata().cloned(),
+                                bytes_per_source: bytes_per_source.clone(),
+                                pipeline_budget: std::sync::OnceLock::new(),
+                                shared_prefetch_wait_group_slot: Default::default(),
+                                file_read_context: std::sync::OnceLock::new(),
+                                io_metrics: std::sync::OnceLock::new(),
+                                task_metrics: std::sync::OnceLock::new(),
+                            },
+                        ) as _
+                    },
 
                     #[cfg(feature = "ipc")]
                     FileScanIR::Ipc {
@@ -1008,6 +1025,11 @@ fn lower_ir_inner(
                         metadata: first_metadata,
                     } => Arc::new(crate::nodes::io_sources::ipc::builder::IpcReaderBuilder {
                         options: Arc::new(options.clone()),
+                        field_selection: unified_scan_args.field_selection.clone(),
+                        scan_schema: unified_scan_args
+                            .field_selection
+                            .is_some()
+                            .then(|| file_info.schema.clone()),
                         first_metadata: first_metadata.clone(),
                         pipeline_budget: std::sync::OnceLock::new(),
                         shared_prefetch_wait_group_slot: Default::default(),
@@ -1107,6 +1129,7 @@ fn lower_ir_inner(
                         multi_scan::functions::resolve_projections::resolve_projections(
                             &output_schema,
                             &file_schema,
+                            unified_scan_args.field_selection.as_deref(),
                             &mut hive_parts,
                             unified_scan_args
                                 .row_index
@@ -1125,6 +1148,7 @@ fn lower_ir_inner(
                             .default_values
                             .filter(|DefaultFieldValues::Iceberg(v)| !v.is_empty())
                             .map(|DefaultFieldValues::Iceberg(v)| v),
+                        unified_scan_args.field_selection.as_deref(),
                     );
 
                     // TODO: We ignore the parameter for some scan types to maintain old behavior,
@@ -1338,7 +1362,6 @@ fn lower_ir_inner(
             let mut tmp_right_col_names: Vec<Option<PlSmallStr>> = Vec::new();
             let args = options.args.clone();
             let runtime_filters = options.runtime_filters.clone();
-            #[cfg(feature = "semi_anti_join")]
             let estimated_rows = options.estimated_rows;
             let options = options.options.clone();
             // Only the hash equi join evaluates a fused predicate natively; other strategies get
@@ -1454,10 +1477,12 @@ fn lower_ir_inner(
                 .as_ref()
                 .and_then(|v| v.first())
                 .and_then(|s| s.nulls_last);
+            // Only the hash join evaluates the fused predicate of an outer join.
             let use_streaming_merge_join = args.how.is_equi()
                 && join_keys_sorted_together
                 && key_descending.is_some()
-                && key_nulls_last.is_some();
+                && key_nulls_last.is_some()
+                && (fused_predicate.is_none() || args.how.is_inner());
 
             #[cfg(feature = "asof_join")]
             let (mut by_descending, mut by_nulls_last) = (Default::default(), Default::default());
@@ -1692,6 +1717,7 @@ fn lower_ir_inner(
                                 args: args.clone(),
                                 fused_predicate: native,
                                 runtime_filters: runtime_filters.clone(),
+                                estimated_rows,
                             },
                         ))
                     },
@@ -1708,8 +1734,9 @@ fn lower_ir_inner(
                 let mut stream = PhysStream::first(node);
                 // Anything the join did not take over is applied as a filter instead.
                 if let Some(fused_predicate) = fused_predicate {
-                    // A fused predicate join never carries a slice.
-                    debug_assert!(args.slice.is_none());
+                    // A fused predicate join never carries a slice, and a filter after the
+                    // join would drop the unmatched rows of an outer join.
+                    debug_assert!(args.slice.is_none() && args.how.is_inner());
                     stream = build_filter_stream(
                         stream,
                         fused_predicate,

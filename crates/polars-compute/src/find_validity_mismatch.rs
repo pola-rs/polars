@@ -167,7 +167,7 @@ fn find_validity_mismatch_list_list_nested<O: Offset>(
     assert_eq!(left.offsets().first().to_usize(), 0);
     assert_eq!(left.offsets().range().to_usize(), left.values().len());
 
-    // @TODO: Optimize. This is only used on the error path so it is find, right?
+    // @TODO: Optimize. This is only used on the error path so it is fine, right?
     let mut j = 0;
     for (i, (start, length)) in left.offsets().offset_and_length_iter().enumerate_idx() {
         if j < nested_idxs.len() && (nested_idxs[j] as usize) < start + length {

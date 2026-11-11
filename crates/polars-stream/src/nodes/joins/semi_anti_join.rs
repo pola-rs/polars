@@ -25,14 +25,11 @@ use rayon::prelude::*;
 use super::runtime_filter::{KeyFilterBuilder, RuntimeFilters};
 use super::utils::{JoinSampleStats, LEFT_BUILD_MARGIN, UNIQUE_BUILD_MARGIN};
 use super::{
-    BufferedStream, LOPSIDED_SAMPLE_FACTOR, build_side_left, emit_morsel_size, sample_sink,
-    select_key_columns, send_frames,
+    BufferedStream, LOPSIDED_ESTIMATE_FACTOR, LOPSIDED_SAMPLE_FACTOR, build_side_left,
+    emit_morsel_size, sample_sink, select_key_columns, send_frames,
 };
 use crate::expression::StreamExpr;
 use crate::nodes::compute_node_prelude::*;
-
-/// How many times fewer estimated rows an incomplete left side needs to be built.
-const LOPSIDED_ESTIMATE_FACTOR: usize = 8;
 
 fn hash_keys(keys: &DataFrame, params: &SemiAntiJoinParams, null_is_valid: bool) -> HashKeys {
     HashKeys::from_df(keys, params.random_state.clone(), null_is_valid, false)
@@ -177,10 +174,9 @@ impl SemiAntiJoinNode {
             } else {
                 params.planned_build_left()
             };
-            SemiAntiJoinState::Sample(SampleState {
-                only_side,
-                ..Default::default()
-            })
+            let spill_ctx =
+                MostRecentSpillContext::new("semi-anti-join-sample".into(), task_metrics.clone());
+            SemiAntiJoinState::Sample(SampleState::new(only_side, spill_ctx))
         };
 
         Ok(Self {
@@ -200,7 +196,6 @@ enum SemiAntiJoinState {
     Done,
 }
 
-#[derive(Default)]
 struct SampleState {
     left: Vec<Morsel>,
     left_len: usize,
@@ -212,9 +207,23 @@ struct SampleState {
     /// filters, until it ends or reaches the sample limit. A side that ends is
     /// complete, so its keys are published before the other side is read.
     only_side: Option<bool>,
+    /// Keeps the sampled morsels spillable.
+    spill_ctx: MostRecentSpillContext,
 }
 
 impl SampleState {
+    fn new(only_side: Option<bool>, spill_ctx: MostRecentSpillContext) -> Self {
+        Self {
+            left: Vec::new(),
+            left_len: 0,
+            right: Vec::new(),
+            right_len: 0,
+            limits: Default::default(),
+            only_side,
+            spill_ctx,
+        }
+    }
+
     fn len(&self, left: bool) -> usize {
         if left { self.left_len } else { self.right_len }
     }
@@ -1135,10 +1144,20 @@ impl ComputeNode for SemiAntiJoinNode {
                     self.state = SemiAntiJoinState::Done;
                 } else {
                     let mut probe_state = build_state.finalize(&self.params, &*self.grouper, state);
-                    if self.params.left_is_build() {
-                        probe_state.mark_sampled(&self.params, state)?;
+                    // Null keys that can't match get no group, so without groups
+                    // nothing matches.
+                    let no_groups = probe_state
+                        .grouper_per_partition
+                        .iter()
+                        .all(|g| g.num_groups() == 0);
+                    if self.params.empty_build_gives_empty_output() && no_groups {
+                        self.state = SemiAntiJoinState::Done;
+                    } else {
+                        if self.params.left_is_build() {
+                            probe_state.mark_sampled(&self.params, state)?;
+                        }
+                        self.state = SemiAntiJoinState::Probe(probe_state);
                     }
-                    self.state = SemiAntiJoinState::Probe(probe_state);
                 }
             }
         }
@@ -1283,6 +1302,7 @@ impl ComputeNode for SemiAntiJoinNode {
                             &mut sample_state.left_len,
                             sample_state.limits[0].clone(),
                             sample_state.limits[1].clone(),
+                            &sample_state.spill_ctx,
                         ),
                     ));
                 }
@@ -1295,6 +1315,7 @@ impl ComputeNode for SemiAntiJoinNode {
                             &mut sample_state.right_len,
                             sample_state.limits[1].clone(),
                             sample_state.limits[0].clone(),
+                            &sample_state.spill_ctx,
                         ),
                     ));
                 }

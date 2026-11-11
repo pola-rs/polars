@@ -5,9 +5,7 @@ use polars_error::PolarsResult;
 use polars_utils::aliases::PlIndexSet;
 
 use super::dictionary_encoded::{append_validity, constrain_page_validity};
-use super::utils::{
-    dict_indices_decoder, filter_from_range, freeze_validity, unspecialized_decode,
-};
+use super::utils::{dict_indices_decoder, filter_from_range, freeze_validity};
 use super::{Filter, PredicateFilter, dictionary_encoded};
 use crate::parquet::encoding::{Encoding, delta_byte_array, delta_length_byte_array, hybrid_rle};
 use crate::parquet::error::{ParquetError, ParquetResult};
@@ -15,6 +13,7 @@ use crate::parquet::page::{DataPage, DictPage, SharedPageBuffer, split_buffer};
 use crate::read::deserialize::utils::{self, Decoded};
 use crate::read::expr::{ParquetScalar, SpecializedParquetColumnExpr};
 
+mod delta;
 mod optional;
 mod optional_masked;
 mod predicate;
@@ -56,7 +55,6 @@ impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
                 let values = split_buffer(page)?.values;
                 Ok(Self::DeltaLengthByteArray(
                     delta_length_byte_array::Decoder::try_new(values)?,
-                    Vec::new(),
                 ))
             },
             (Encoding::DeltaByteArray, _) => {
@@ -73,7 +71,7 @@ impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
         match self {
             StateTranslation::Plain(i) => i.max_num_values,
             StateTranslation::Dictionary(i) => i.len(),
-            StateTranslation::DeltaLengthByteArray(i, _) => i.len(),
+            StateTranslation::DeltaLengthByteArray(i) => i.len(),
             StateTranslation::DeltaBytes(i) => i.len(),
         }
     }
@@ -170,7 +168,7 @@ impl BinViewDecoder {
 pub(crate) enum StateTranslation<'a> {
     Plain(BinaryIter<'a>),
     Dictionary(hybrid_rle::HybridRleDecoder<'a>),
-    DeltaLengthByteArray(delta_length_byte_array::Decoder<'a>, Vec<u32>),
+    DeltaLengthByteArray(delta_length_byte_array::Decoder<'a>),
     DeltaBytes(delta_byte_array::Decoder<'a>),
 }
 
@@ -336,6 +334,23 @@ fn invalid_utf8_err() -> ParquetError {
     ParquetError::oos("String data contained invalid UTF-8")
 }
 
+/// Sets `view` to an inline view of the first `len` bytes of `bytes`, cut from a block of its first
+/// 16 bytes unless it is shorter, e.g. at the end of a page.
+#[inline(always)]
+fn set_inline_view(view: &mut View, bytes: &[u8], len: usize) {
+    // Inlining the rare fallback into the decoding loops spills their registers.
+    #[cold]
+    #[inline(never)]
+    fn set_inline_view_cold(view: &mut View, value: &[u8]) {
+        *view = View::new_inline(value);
+    }
+
+    match bytes.first_chunk::<16>() {
+        Some(block) => *view = View::new_inline_from_block(*block, len),
+        None => set_inline_view_cold(view, &bytes[..len]),
+    }
+}
+
 /// Checks that the inlined values of `views` are valid UTF-8.
 fn inlined_are_valid_utf8(views: &[View]) -> bool {
     let mut all_inlined_are_ascii = true;
@@ -415,11 +430,11 @@ pub fn decode_plain_generic(
             continue;
         }
 
-        let Some((length, rest)) = remaining.split_first_chunk::<4>() else {
+        let Some((length, value_and_rest)) = remaining.split_first_chunk::<4>() else {
             return Err(invalid_input_err());
         };
         let length = u32::from_le_bytes(*length);
-        let Some((value, rest)) = rest.split_at_checked(length as usize) else {
+        let Some((value, rest)) = value_and_rest.split_at_checked(length as usize) else {
             return Err(invalid_input_err());
         };
 
@@ -440,8 +455,14 @@ pub fn decode_plain_generic(
             continue;
         }
 
+        // SAFETY: The empty inline view pushed here is set to the value's view below, which is
+        // inline or refers to the buffer pushed after the loop, and the total length is updated
+        // after the loop.
+        let views = unsafe { target.views_mut() };
+        views.push(View::default());
+        let view = views.last_mut().unwrap();
         if length <= View::MAX_INLINE_SIZE {
-            unsafe { target.views_mut() }.push(unsafe { View::new_inline_unchecked(value) });
+            set_inline_view(view, value_and_rest, length as usize);
         } else {
             let offset = match &mut buffer {
                 Some(buffer) => {
@@ -453,8 +474,7 @@ pub fn decode_plain_generic(
                 },
                 None => (value.as_ptr() as usize - page_start) as u32,
             };
-            unsafe { target.views_mut() }
-                .push(unsafe { View::new_noninline_unchecked(value, buffer_idx, offset) });
+            *view = View::new_from_bytes(value, buffer_idx, offset);
             noninlined_bytes_len += length as usize;
         }
         total_bytes_len += length as usize;
@@ -760,70 +780,22 @@ impl utils::Decoder for BinViewDecoder {
 
                 Ok(())
             },
-            StateTranslation::DeltaLengthByteArray(decoder, _vec) => {
-                let values = decoder.values;
-                let lengths = decoder.lengths.collect::<Vec<i64>>()?;
-
-                if self.is_string {
-                    let mut none_starting_with_continuation_byte = true;
-                    let mut offset = 0;
-                    for length in &lengths {
-                        none_starting_with_continuation_byte &=
-                            *length == 0 || values[offset] & 0xC0 != 0x80;
-                        offset += *length as usize;
-                    }
-
-                    if !none_starting_with_continuation_byte {
-                        return Err(invalid_utf8_err());
-                    }
-
-                    if simdutf8::basic::from_utf8(&values[..offset]).is_err() {
-                        return Err(invalid_utf8_err());
-                    }
-                }
-
-                let mut i = 0;
-                let mut offset = 0;
-                unspecialized_decode(
-                    lengths.len(),
-                    || {
-                        let length = lengths[i] as usize;
-
-                        let value = &values[offset..offset + length];
-
-                        i += 1;
-                        offset += length;
-
-                        Ok(value)
-                    },
-                    filter,
-                    state.page_validity,
-                    state.is_optional,
-                    &mut decoded.validity,
-                    &mut decoded.binview,
-                )
-            },
-            StateTranslation::DeltaBytes(mut decoder) => {
-                let check_utf8 = self.is_string;
-
-                unspecialized_decode(
-                    decoder.len(),
-                    || {
-                        let value = decoder.next().unwrap()?;
-
-                        if check_utf8 && simdutf8::basic::from_utf8(&value[..]).is_err() {
-                            return Err(invalid_utf8_err());
-                        }
-
-                        Ok(value)
-                    },
-                    filter,
-                    state.page_validity,
-                    state.is_optional,
-                    &mut decoded.validity,
-                    &mut decoded.binview,
-                )
-            },
+            StateTranslation::DeltaLengthByteArray(decoder) => delta::decode_delta_length(
+                decoder,
+                is_string,
+                decoded,
+                state.is_optional,
+                state.page_validity.as_ref(),
+                filter,
+            ),
+            StateTranslation::DeltaBytes(decoder) => delta::decode_delta_bytes(
+                decoder,
+                is_string,
+                decoded,
+                state.is_optional,
+                state.page_validity.as_ref(),
+                filter,
+            ),
         }
     }
 

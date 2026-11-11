@@ -20,7 +20,7 @@ pub fn python_df_to_rust(py: Python, df: Bound<PyAny>) -> PolarsResult<DataFrame
     let width = pydf.call_method0(intern!(py, "width")).unwrap();
     let width = width.extract::<usize>().unwrap();
 
-    // Don't resize the Vec<> so that the drop of the SeriesExport will not be caleld.
+    // Don't resize the Vec<> so that the drop of the SeriesExport will not be called.
     let mut export: Vec<SeriesExport> = Vec::with_capacity(width);
     let location = export.as_mut_ptr();
 

@@ -483,7 +483,7 @@ impl Aggregate {
             let window_size = n.saturating_add(1);
             let options = RollingOptionsFixedWindow {
                 window_size,
-                min_periods: 1,
+                min_samples: 1,
                 ..Default::default()
             };
             Ok(match self {
