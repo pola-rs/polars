@@ -5,10 +5,11 @@ use polars_arrow::bitmap::Bitmap;
 use super::*;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::aggregations::AggList;
-use crate::prelude::row_encode::{
-    _get_rows_encoded_ca, _get_rows_encoded_ca_unordered, encode_rows_unordered,
-};
+#[cfg(feature = "algorithm_group_by")]
+use crate::prelude::row_encode::encode_rows_unordered;
+use crate::prelude::row_encode::{_get_rows_encoded_ca, _get_rows_encoded_ca_unordered};
 use crate::prelude::*;
+#[cfg(feature = "algorithm_group_by")]
 use crate::runtime::RAYON;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 use crate::utils::align_chunks_binary_ca_series;
