@@ -507,6 +507,29 @@ c
     assert_frame_equal(out, expect)
 
 
+@pytest.mark.parametrize("empty_first", [True, False])
+def test_file_list_header_only_file_schema_22820(
+    tmp_path: Path, empty_first: bool
+) -> None:
+    data_path = tmp_path / "data.csv"
+    empty_path = tmp_path / "empty.csv"
+    data_path.write_text("a,b\n1,x\n2,y\n")
+    empty_path.write_text("a,b\n")
+    paths = [empty_path, data_path] if empty_first else [data_path, empty_path]
+
+    expect = pl.DataFrame({"a": [1, 2], "b": ["x", "y"]})
+    assert_frame_equal(pl.scan_csv(paths).collect(), expect)
+
+    # 'c' has no values in any file, so it falls back to String.
+    empty_path.write_text("a,b,c\n")
+    out = pl.scan_csv(paths, missing_columns="insert").collect()
+    assert out.schema == pl.Schema({"a": pl.Int64, "b": pl.String, "c": pl.String})
+
+    # Every file is header-only.
+    out = pl.scan_csv([empty_path, empty_path]).collect()
+    assert out.schema == pl.Schema({"a": pl.String, "b": pl.String, "c": pl.String})
+
+
 @pytest.mark.parametrize("streaming", [True, False])
 def test_file_list_comment_skip_rows_16327(tmp_path: Path, streaming: bool) -> None:
     tmp_path.mkdir(exist_ok=True)
