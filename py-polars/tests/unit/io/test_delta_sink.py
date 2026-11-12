@@ -1073,6 +1073,24 @@ def test_delta_write_null_removes_files(tmp_path: Path, write: Any) -> None:
 
 
 @_public_writers
+def test_delta_write_null_partition_removes_files(tmp_path: Path, write: Any) -> None:
+    schema = pa.schema(
+        [pa.field("k", pa.string(), nullable=False), pa.field("v", pa.int64())]
+    )
+    write_deltalake(
+        str(tmp_path), pa.table({"k": ["a"], "v": [1]}, schema=schema), partition_by="k"
+    )
+    entries = set(tmp_path.rglob("*"))
+
+    # The data files don't hold partition values, so the commit checks them.
+    with pytest.raises(ComputeError, match="non-nullable partition column 'k'"):
+        write(pl.DataFrame({"k": ["b", None], "v": [2, 3]}), tmp_path, mode="append")
+
+    assert set(tmp_path.rglob("*")) == entries
+    assert DeltaTable(str(tmp_path)).version() == 0
+
+
+@_public_writers
 def test_delta_write_unsupported_scheme(
     tmp_path: Path, write: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
