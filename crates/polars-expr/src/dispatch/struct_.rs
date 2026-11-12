@@ -114,10 +114,11 @@ pub(super) fn to_json(col: &Column) -> PolarsResult<Column> {
     let s = col.as_materialized_series();
     s.dtype().ensure_json_map_keys()?;
     let iter = (0..s.n_chunks()).map(|i| {
-        polars_json::json::write::serialize_to_utf8(&*s.to_arrow(i, CompatLevel::newest()))
+        let arr = s.try_to_arrow(i, CompatLevel::newest())?;
+        PolarsResult::Ok(polars_json::json::write::serialize_to_utf8(&*arr))
     });
 
-    Ok(StringChunked::from_chunk_iter(s.name().clone(), iter).into_column())
+    Ok(StringChunked::try_from_chunk_iter(s.name().clone(), iter)?.into_column())
 }
 
 /// Merge the evaluated fields in `args[1..]` into the input struct `args[0]`.
