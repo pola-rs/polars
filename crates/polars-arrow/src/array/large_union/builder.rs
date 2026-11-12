@@ -28,6 +28,15 @@ impl ChildPositions {
         }
     }
 
+    /// Makes this buffer, which must be empty, fit a child of `child_len`.
+    fn reset(&mut self, child_len: usize) {
+        debug_assert!(self.is_empty());
+        let wants_idxs = child_len < IdxSize::MAX as usize;
+        if wants_idxs != matches!(self, Self::Idxs { .. }) {
+            *self = Self::new(child_len);
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         match self {
             Self::Idxs { idxs, .. } => idxs.is_empty(),
@@ -68,6 +77,9 @@ impl ChildPositions {
         child: &dyn Array,
         share: ShareStrategy,
     ) {
+        if self.is_empty() {
+            return;
+        }
         match self {
             Self::Idxs { idxs, has_none } => {
                 if *has_none {
@@ -99,6 +111,9 @@ pub struct LargeUnionArrayBuilder {
     validity: OptBitmapBuilder,
     /// Per-variant `(first, last, count)` of a `subslice_extend`, kept to avoid reallocating.
     ranges: Vec<(i64, i64, i64)>,
+    /// Per-variant positions and next offsets of `extend_rows`, kept to avoid reallocating.
+    pending: Vec<ChildPositions>,
+    next: Vec<i64>,
 }
 
 impl LargeUnionArrayBuilder {
@@ -114,6 +129,8 @@ impl LargeUnionArrayBuilder {
             children,
             validity: OptBitmapBuilder::default(),
             ranges: Vec::new(),
+            pending: Vec::new(),
+            next: Vec::new(),
         }
     }
 
@@ -131,12 +148,14 @@ impl LargeUnionArrayBuilder {
         let (lower, _) = rows.size_hint();
         StaticArrayBuilder::reserve(self, lower);
 
-        let mut pending: Vec<ChildPositions> = other
-            .fields()
-            .iter()
-            .map(|c| ChildPositions::new(c.len()))
-            .collect();
-        let mut next: Vec<i64> = self.children.iter().map(|b| b.len() as i64).collect();
+        let mut pending = std::mem::take(&mut self.pending);
+        pending.resize_with(other.fields().len(), || ChildPositions::new(0));
+        for (p, c) in pending.iter_mut().zip(other.fields()) {
+            p.reset(c.len());
+        }
+        let mut next = std::mem::take(&mut self.next);
+        next.clear();
+        next.extend(self.children.iter().map(|b| b.len() as i64));
         let validity = other.validity();
 
         for row in rows {
@@ -169,6 +188,8 @@ impl LargeUnionArrayBuilder {
                 .zip(&next)
                 .all(|(b, n)| b.len() as i64 == *n)
         );
+        self.pending = pending;
+        self.next = next;
     }
 }
 
