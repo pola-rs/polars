@@ -30,18 +30,12 @@ pub fn infer(json: &BorrowedValue) -> PolarsResult<ArrowDataType> {
 }
 
 fn infer_object(inner: &Object) -> PolarsResult<ArrowDataType> {
-    // Objects parsed from a tape keep repeated keys; each key is one field.
+    // simd-json keeps repeated keys, and which of their values a reader sees is unspecified
+    // (#29476). Keep one field per key, inferred from its first value.
     let mut fields = PlIndexMap::<&str, ArrowDataType>::with_capacity(inner.len());
     for (key, value) in inner.iter() {
-        let dt = infer(value)?;
-        match fields.entry(key.as_ref()) {
-            Entry::Occupied(mut prev) => {
-                let coerced = coerce_dtype(&[prev.get().clone(), dt]);
-                prev.insert(coerced);
-            },
-            Entry::Vacant(v) => {
-                v.insert(dt);
-            },
+        if let Entry::Vacant(v) = fields.entry(key.as_ref()) {
+            v.insert(infer(value)?);
         }
     }
     Ok(ArrowDataType::Struct(
