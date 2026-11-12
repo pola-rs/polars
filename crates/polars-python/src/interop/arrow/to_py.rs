@@ -71,7 +71,7 @@ pub(crate) fn series_to_stream<'py>(
     let field = series.field().to_arrow(CompatLevel::newest());
     let series = series.clone();
     let iter = Box::new(
-        (0..series.n_chunks()).map(move |i| Ok(series.to_arrow(i, CompatLevel::newest()))),
+        (0..series.n_chunks()).map(move |i| series.try_to_arrow(i, CompatLevel::newest())),
     ) as _;
 
     let stream = ffi::export_iterator(iter, field);
@@ -158,9 +158,13 @@ impl Iterator for DataFrameStreamIterator {
             let batch_cols = self
                 .columns
                 .iter()
-                .map(|s| s.to_arrow(self.idx, CompatLevel::newest()))
-                .collect::<Vec<_>>();
+                .map(|s| s.try_to_arrow(self.idx, CompatLevel::newest()))
+                .collect::<PolarsResult<Vec<_>>>();
             self.idx += 1;
+            let batch_cols = match batch_cols {
+                Ok(cols) => cols,
+                Err(err) => return Some(Err(err)),
+            };
 
             let col_len = batch_cols.first().map_or(self.height, |c| c.len());
             let array = polars_arrow::array::StructArray::new(
