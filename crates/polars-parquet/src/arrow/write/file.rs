@@ -9,7 +9,7 @@ use polars_utils::version::{
 
 use super::schema::schema_to_metadata_key;
 use super::{ThriftFileMetadata, WriteOptions, to_parquet_schema};
-use crate::arrow::geo::geo_key_value;
+use crate::arrow::geo::{GEO_KEY, geo_key_value};
 use crate::parquet::encryption::encrypt::FileEncryptionProperties;
 use crate::parquet::metadata::{KeyValue, SchemaDescriptor};
 use crate::parquet::write::{RowGroupIterColumns, WriteOptions as FileWriteOptions};
@@ -116,8 +116,8 @@ impl<W: Write> FileWriter<W> {
     pub fn end(&mut self, key_value_metadata: Option<Vec<KeyValue>>) -> PolarsResult<u64> {
         let mut key_value_metadata =
             key_value_metadata.unwrap_or_else(|| vec![schema_to_metadata_key(&self.schema)]);
-        if let Some(geo) = geo_key_value(&self.schema)?
-            && !key_value_metadata.iter().any(|kv| kv.key == geo.key)
+        if !key_value_metadata.iter().any(|kv| kv.key == GEO_KEY)
+            && let Some(geo) = geo_key_value(&self.schema)?
         {
             key_value_metadata.push(geo);
         }
