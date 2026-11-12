@@ -801,7 +801,7 @@ fn to_graph_rec<'a>(
             let input_schema = input.output_schema(ctx.phys_sm).clone();
             let projection = projection
                 .as_ref()
-                .map(|(names, _)| names.iter().cloned().collect::<Vec<_>>());
+                .map(|(names, _)| names.to_vec());
             let [by] = by_column.as_slice() else {
                 unreachable!()
             };
