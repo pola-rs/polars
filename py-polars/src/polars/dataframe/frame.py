@@ -5136,7 +5136,7 @@ class DataFrame:
             else None
         )
 
-        from polars.io.delta._sink import _native_sink_state
+        from polars.io.delta._sink import _native_sink_state, _write_native
 
         if (
             sink_state := _native_sink_state(
@@ -5147,7 +5147,7 @@ class DataFrame:
                 schema=self.schema,
             )
         ) is not None:
-            sink_state.attach_sink(self.lazy()).collect()
+            _write_native(sink_state, self.lazy())
             return None
 
         if mode == "merge":

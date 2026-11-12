@@ -108,6 +108,14 @@ pub fn deregister_object_store_builder(scheme: &str) {
         .remove(scheme);
 }
 
+/// Whether an object_store builder is registered for a given cloud scheme, e.g. "hdfs".
+pub fn has_object_store_builder(scheme: &str) -> bool {
+    EXT_OBJECT_STORE_BUILDER_REGISTRY
+        .read()
+        .unwrap()
+        .contains_key(scheme)
+}
+
 #[allow(dead_code)]
 fn err_missing_feature(
     feature: &str,

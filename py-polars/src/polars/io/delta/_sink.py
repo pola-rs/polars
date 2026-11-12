@@ -4,10 +4,10 @@ import contextlib
 import json
 import math
 import os
+import re
 import struct
 import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta
 from decimal import Decimal
 from time import perf_counter
 from typing import TYPE_CHECKING, Any, Literal
@@ -16,7 +16,11 @@ from urllib.parse import quote, urlparse
 from polars._utils.logging import eprint, verbose
 from polars._utils.wrap import wrap_ldf
 from polars.exceptions import ComputeError, SchemaError
-from polars.io.cloud._utils import POLARS_STORAGE_CONFIG_KEYS, NoPickleOption
+from polars.io.cloud._utils import (
+    POLARS_STORAGE_CONFIG_KEYS,
+    NoPickleOption,
+    _get_path_scheme,
+)
 from polars.io.delta._utils import (
     _check_if_delta_available,
     _resolve_delta_lake_uri,
@@ -25,7 +29,7 @@ from polars.io.iceberg._sink import PlIcebergPathProviderConfig
 from polars.io.iceberg._utils import _normalize_windows_iceberg_file_uri
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars._plr import _delta_file_stats, gen_uuid_v7
+    from polars._plr import _delta_file_stats, _has_writable_scheme, gen_uuid_v7
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
@@ -82,8 +86,6 @@ _VARIANT_WRITER_FEATURES = frozenset({"variantType", "variantType-preview"})
 
 # Same default as delta-rs and Spark.
 _DEFAULT_NUM_INDEXED_COLS = 32
-
-_UNIX_EPOCH = datetime(1970, 1, 1)
 
 
 def _delta_dtype(dtype: PolarsDataType) -> PolarsDataType:
@@ -365,11 +367,7 @@ def _stats_leaf_paths(
             leaves.append(path)
 
     if stats_columns := configuration.get("delta.dataSkippingStatsColumns"):
-        selected = [
-            tuple(part.strip("`") for part in name.strip().split("."))
-            for name in stats_columns.split(",")
-            if name.strip()
-        ]
+        selected = _stats_column_paths(stats_columns)
         for field in schema.fields:
             visit(field.type, (field.name,))
         return {
@@ -388,6 +386,36 @@ def _stats_leaf_paths(
     for field in fields:
         visit(field.type, (field.name,))
     return set(leaves)
+
+
+# A name in backticks, an unquoted name, or a separator.
+_STATS_COLUMN_TOKEN = re.compile(r"`((?:[^`]|``)*)`|([^`.,]+)|([.,])")
+
+
+def _stats_column_paths(stats_columns: str) -> list[tuple[str, ...]]:
+    """The column paths that `delta.dataSkippingStatsColumns` lists.
+
+    Commas separate the columns, and dots separate the fields of a nested column,
+    e.g. `a, s.x`. A name in backticks may contain dots and commas, e.g. `` `a.b` ``.
+    Two backticks inside backticks stand for one.
+    """
+    paths: list[tuple[str, ...]] = []
+    path: list[str] = []
+    name = ""
+    for m in _STATS_COLUMN_TOKEN.finditer(stats_columns + ","):
+        quoted, unquoted, separator = m.groups()
+        if quoted is not None:
+            name += quoted.replace("``", "`")
+        elif unquoted is not None:
+            name += unquoted.strip()
+        else:
+            path.append(name)
+            name = ""
+            if separator == ",":
+                if any(path):
+                    paths.append(tuple(path))
+                path = []
+    return paths
 
 
 def _format_float(value: float, *, f32: bool) -> str:
@@ -425,9 +453,17 @@ def _partition_value(series: pl.Series) -> str | None:
     import polars as pl
 
     dtype = series.dtype
-    value = series[0]
-    if value is None:
+    if series.null_count() > 0:
         return None
+    # Formatted like delta-rs, with chrono. Python dates have no year above 9999.
+    if isinstance(dtype, pl.Date):
+        return series.dt.to_string("%Y-%m-%d")[0]
+    if isinstance(dtype, pl.Datetime):
+        if dtype.time_zone is not None:
+            series = series.dt.convert_time_zone("UTC").dt.replace_time_zone(None)
+        return series.dt.to_string("%Y-%m-%d %H:%M:%S%.6f")[0]
+
+    value = series[0]
     if isinstance(dtype, pl.String):
         return value
     if isinstance(dtype, pl.Boolean):
@@ -438,12 +474,6 @@ def _partition_value(series: pl.Series) -> str | None:
         return _format_float(value, f32=isinstance(dtype, pl.Float32))
     if isinstance(dtype, pl.Decimal):
         return f"{value:.{dtype.scale}f}"
-    if isinstance(dtype, pl.Date):
-        return value.isoformat()
-    if isinstance(dtype, pl.Datetime):
-        micros = series.dt.cast_time_unit("us").to_physical()[0]
-        value = _UNIX_EPOCH + timedelta(microseconds=micros)
-        return f"{value:%Y-%m-%d %H:%M:%S.%f}"
     if isinstance(dtype, pl.Binary):
         # The Delta protocol escapes every byte, e.g. `\u0001ÿ`.
         return "".join(f"\\u{b:04X}" for b in value)
@@ -473,6 +503,15 @@ def _is_local_uri(uri: str) -> bool:
     scheme = urlparse(uri).scheme
     # A single letter is a Windows drive.
     return scheme in ("", "file") or len(scheme) == 1
+
+
+def _is_native_uri(uri: str) -> bool:
+    """Whether the Parquet sink writes to `uri`.
+
+    That is a local path, or a URI with a scheme that Polars writes to. deltalake
+    writes to other schemes, e.g. `memory://`.
+    """
+    return _get_path_scheme(uri) is None or _has_writable_scheme(uri)
 
 
 def _local_path(uri: str) -> str:
@@ -511,6 +550,10 @@ class DeltaSinkState:
 
     `commit()` can run in another process, and can be called again for the same sink
     (e.g. after a lost response): it commits the files at most once.
+
+    `new()` gets the credentials of the credential provider once, and adds them to
+    `storage_options`. They are stored in the plan and in the pickled state. They
+    are not refreshed, so they can expire during a long sink.
 
     With a `DeltaTable` as target, the table object is reused to load the table, but
     its storage options are not known here. The data files are written with
@@ -927,6 +970,10 @@ class DeltaSinkState:
             if self.mode == "ignore":
                 if verbose:
                     eprint("DeltaSinkState[commit]: table exists, ignoring")
+                # There are files only if the table was created after the sink was
+                # resolved. They are not committed.
+                if sinked_files:
+                    self.remove_written_files()
                 return None
             # The table was created after the sink was resolved.
             msg = f"Delta table already exists at '{self.table_uri}'"
@@ -1059,27 +1106,26 @@ class DeltaSinkState:
     def remove_written_files(self) -> str | None:
         """Delete the data files of a sink whose commit did not land, best effort.
 
-        Only local tables are supported. Returns the directory where data files may
-        remain, or None if they were removed.
+        Returns the directory where data files may remain, or None if they were
+        removed.
         """
         import shutil
+
+        from deltalake.fs import DeltaStorageHandler
 
         location = self.sink_base_path()
         try:
             table = self._load_table()
             if table is not None and self._landed(table):
                 return location
+            storage = DeltaStorageHandler(self.table_uri, self._delta_storage_options())
+            storage.delete_dir(self.sink_uuid_str)
         except Exception:
             return location
 
-        if not _is_local_uri(location):
-            return location
-        try:
-            shutil.rmtree(_local_path(location), ignore_errors=False)
-        except FileNotFoundError:
-            pass
-        except Exception:
-            return location
+        if _is_local_uri(location):
+            # deltalake deletes the files of a local table, but not the directories.
+            shutil.rmtree(_local_path(location), ignore_errors=True)
         return None
 
 
@@ -1121,6 +1167,8 @@ def _native_sink_state(
         reason = f"delta_write_options are given: {sorted(delta_write_options)}"
     elif missing := _missing_deltalake_apis():
         reason = f"deltalake lacks {', '.join(missing)}"
+    elif isinstance(target, str) and not _is_native_uri(target):
+        reason = f"the Parquet sink does not write to '{_get_path_scheme(target)}://'"
     elif isinstance(target, DeltaTable) and not _is_local_uri(target.table_uri):
         # The sink would write the data files without the table's storage options.
         reason = "the target is a DeltaTable of a remote table"
@@ -1145,3 +1193,18 @@ def _native_sink_state(
     if verbose():
         eprint(f"Delta write uses deltalake, as {reason}")
     return None
+
+
+def _write_native(
+    state: DeltaSinkState, lf: pl.LazyFrame, **collect_kwargs: Any
+) -> None:
+    """Write `lf` with the sink of `state`, and remove the written files on failure.
+
+    `collect_kwargs` are passed to `LazyFrame.collect`.
+    """
+    try:
+        state.attach_sink(lf).collect(**collect_kwargs)
+    except Exception as error:
+        if (remaining := state.remove_written_files()) is not None:
+            error.add_note(f"data files may remain under '{remaining}'")
+        raise

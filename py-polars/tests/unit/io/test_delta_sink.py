@@ -18,8 +18,10 @@ from polars.io.delta._sink import (
     _SINK_UUID_PROPERTY,
     DeltaSinkState,
     _format_float,
+    _is_native_uri,
     _partition_value,
     _relative_data_path,
+    _stats_column_paths,
 )
 from polars.testing import assert_frame_equal
 
@@ -220,7 +222,9 @@ def test_delta_sink_partitioned_types(tmp_path: Path) -> None:
         (Decimal("-0.05"), pl.Decimal(5, 2), "-0.05"),
         (Decimal("1.5"), pl.Decimal(5, 2), "1.50"),
         (date(2026, 1, 1), pl.Date, "2026-01-01"),
+        (date(5, 1, 1), pl.Date, "0005-01-01"),
         (datetime(2026, 1, 1, 12), pl.Datetime("us"), "2026-01-01 12:00:00.000000"),
+        (datetime(5, 1, 1, 12), pl.Datetime("us"), "0005-01-01 12:00:00.000000"),
         (
             datetime(2026, 1, 1, 13, tzinfo=timezone(timedelta(hours=1))),
             pl.Datetime("us", "UTC"),
@@ -234,6 +238,12 @@ def test_delta_sink_partition_value(
     value: Any, dtype: pl.DataType, expected: str | None
 ) -> None:
     assert _partition_value(pl.Series([value], dtype=dtype)) == expected
+
+
+def test_delta_sink_partition_value_year_10000() -> None:
+    # Python datetimes end at year 9999.
+    value = pl.Series([253402300800000000]).cast(pl.Datetime("us"))
+    assert _partition_value(value) == "+10000-01-01 00:00:00.000000"
 
 
 def test_delta_sink_format_float_f32() -> None:
@@ -259,6 +269,25 @@ def test_delta_sink_relative_path(path: str) -> None:
 def test_delta_sink_relative_path_outside_sink() -> None:
     with pytest.raises(ComputeError, match="not in the sink directory"):
         _relative_data_path("/tmp/t/other/a.parquet", "0123abcd")
+
+
+@pytest.mark.parametrize(
+    ("uri", "native"),
+    [
+        ("/tmp/t", True),
+        ("C:\\t", True),
+        ("file:///tmp/t", True),
+        ("s3://bucket/t", True),
+        ("abfss://container@account.dfs.core.windows.net/t", True),
+        ("memory:///t", False),
+        ("lakefs://repo/main/t", False),
+        # No object store builder is registered for hdfs.
+        ("hdfs://namenode/t", False),
+        ("hf://datasets/org/t", False),
+    ],
+)
+def test_delta_sink_native_uri(uri: str, native: bool) -> None:
+    assert _is_native_uri(uri) == native
 
 
 def test_delta_sink_mode_error_existing(tmp_path: Path) -> None:
@@ -402,6 +431,17 @@ def test_delta_sink_table_created_concurrently(tmp_path: Path) -> None:
 
     assert DeltaTable(str(tmp_path)).version() == 1
     assert _read(tmp_path, "a")["a"].to_list() == [1, 2]
+
+
+def test_delta_sink_ignore_created_concurrently(tmp_path: Path) -> None:
+    state = DeltaSinkState.new(str(tmp_path), mode="ignore")
+    files = _resolve_and_write(state, pl.LazyFrame({"a": [2]}))
+
+    write_deltalake(str(tmp_path), pa.table({"a": [1]}))
+    assert state.commit(files)["version"].to_list() == [None]
+
+    assert not Path(state.sink_base_path()).exists()
+    assert _read(tmp_path, "a")["a"].to_list() == [1]
 
 
 def test_delta_sink_table_changed_concurrently(tmp_path: Path) -> None:
@@ -599,6 +639,31 @@ def test_delta_sink_non_nullable(tmp_path: Path) -> None:
         _sink(pl.LazyFrame({"a": [3, None]}), tmp_path, "append")
 
     assert _read(tmp_path, "a")["a"].to_list() == [1, 2]
+
+
+@pytest.mark.parametrize(
+    ("dtype", "valid", "invalid"),
+    [
+        (pa.struct([pa.field("x", pa.int64(), nullable=False)]), {"x": 1}, {"x": None}),
+        (pa.list_(pa.field("element", pa.int64(), nullable=False)), [1], [1, None]),
+    ],
+    ids=["struct", "list"],
+)
+def test_delta_sink_nested_non_nullable(
+    tmp_path: Path, dtype: pa.DataType, valid: Any, invalid: Any
+) -> None:
+    schema = pa.schema([pa.field("c", dtype)])
+    write_deltalake(str(tmp_path), pa.table({"c": [valid]}, schema=schema))
+    polars_dtype = pl.Schema(schema)["c"]
+
+    with pytest.raises(SchemaError, match="nullable is false"):
+        _sink(
+            pl.LazyFrame({"c": [invalid]}, schema={"c": polars_dtype}),
+            tmp_path,
+            "append",
+        )
+
+    assert DeltaTable(str(tmp_path)).version() == 0
 
 
 def test_delta_sink_type_casts(tmp_path: Path) -> None:
@@ -840,6 +905,37 @@ def test_delta_sink_stats_columns_parity(
     assert _stats(target, 1) == _stats(reference, 0)
 
 
+@pytest.mark.parametrize(
+    ("stats_columns", "expected"),
+    [
+        ("a, s.x", [("a",), ("s", "x")]),
+        ("`a.b`", [("a.b",)]),
+        ("`a,b`,c", [("a,b",), ("c",)]),
+        ("s.`x.y`", [("s", "x.y")]),
+        ("`a``b`", [("a`b",)]),
+        ("a,,b,", [("a",), ("b",)]),
+    ],
+)
+def test_delta_sink_stats_column_paths(
+    stats_columns: str, expected: list[tuple[str, ...]]
+) -> None:
+    assert _stats_column_paths(stats_columns) == expected
+
+
+def test_delta_sink_stats_dotted_column(tmp_path: Path) -> None:
+    df = pl.DataFrame({"a.b": [1, 2], "a": [{"b": 3}, {"b": 4}]})
+    cases = [("`a.b`", {"a.b": 1}), ("a.b", {"a": {"b": 3}})]
+    for i, (stats_columns, expected) in enumerate(cases):
+        path = tmp_path / str(i)
+        write_deltalake(
+            str(path),
+            df.clear().to_arrow(),
+            configuration={"delta.dataSkippingStatsColumns": stats_columns},
+        )
+        _sink(df.lazy(), path, "append")
+        assert _stats(path, 1)["minValues"] == expected
+
+
 def test_delta_sink_deltalake_api_missing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -962,6 +1058,34 @@ def test_delta_write_error_existing_deltalake(tmp_path: Path, write: Any) -> Non
     write_deltalake(str(tmp_path), pa.table({"a": [1]}))
     with pytest.raises(DeltaError, match="already exists"):
         write(pl.DataFrame({"a": [2]}), tmp_path)
+
+
+@_public_writers
+def test_delta_write_null_removes_files(tmp_path: Path, write: Any) -> None:
+    schema = pa.schema([pa.field("a", pa.int64(), nullable=False)])
+    write_deltalake(str(tmp_path), pa.table({"a": [1]}, schema=schema))
+    entries = set(tmp_path.iterdir())
+
+    with pytest.raises(SchemaError, match="nullable is false"):
+        write(pl.DataFrame({"a": [2, None]}), tmp_path, mode="append")
+
+    assert set(tmp_path.iterdir()) == entries
+
+
+@_public_writers
+def test_delta_write_unsupported_scheme(
+    tmp_path: Path, write: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The Parquet sink would write the files to the local directory `memory:`.
+    monkeypatch.chdir(tmp_path)
+    write(pl.DataFrame({"a": [1]}), "memory:///table")
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_delta_write_in_memory_engine(tmp_path: Path) -> None:
+    pl.LazyFrame({"a": [1, 2]}).sink_delta(str(tmp_path), engine="in-memory")
+    assert _native_commit(tmp_path, 0)
+    assert _read(tmp_path, "a")["a"].to_list() == [1, 2]
 
 
 def _count_log_reads(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:

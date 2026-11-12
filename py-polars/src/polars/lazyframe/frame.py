@@ -2959,7 +2959,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         from deltalake import DeltaTable, write_deltalake
 
-        from polars.io.delta._sink import _native_sink_state
+        from polars.io.delta._sink import _native_sink_state, _write_native
 
         schema = self.collect_schema()
         _check_for_unsupported_types(schema.dtypes())
@@ -3012,9 +3012,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 schema=schema,
             )
         ) is not None:
-            sink_state.attach_sink(self).collect(
-                engine=engine, optimizations=optimizations
-            )
+            _write_native(sink_state, self, engine=engine, optimizations=optimizations)
             return None
 
         stream = self.collect_batches(

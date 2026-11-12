@@ -293,6 +293,8 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
 
     // Functions - I/O
+    m.add_wrapped(wrap_pyfunction!(functions::_has_writable_scheme))
+        .unwrap();
     #[cfg(feature = "ipc")]
     m.add_wrapped(wrap_pyfunction!(functions::read_ipc_schema))
         .unwrap();
