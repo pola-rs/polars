@@ -36,6 +36,7 @@ def datetime_(
     time_unit: TimeUnit = "us",
     time_zone: str | None = None,
     ambiguous: Ambiguous | Expr = "raise",
+    strict: bool = True,
 ) -> Expr:
     """
     Create a Polars literal expression of type Datetime.
@@ -69,6 +70,10 @@ def datetime_(
         - 'latest': use the latest datetime
         - 'raise': raise an error
         - 'null': set to null
+
+    strict
+        If ``True`` (default), invalid time components raise a ``ComputeError``.
+        If ``False``, rows with invalid time components produce ``null`` instead.
 
     Returns
     -------
@@ -133,6 +138,35 @@ def datetime_(
     │ 2024-01-01 00:00:00 ┆ 2024-07-01 21:25:20 │
     │ 2024-01-01 00:00:00 ┆ 2024-09-01 22:35:30 │
     └─────────────────────┴─────────────────────┘
+
+    Use ``strict=False`` to silently produce ``null`` for invalid components:
+
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "year": [2024, 2024],
+    ...         "month": [1, 1],
+    ...         "day": [1, 1],
+    ...         "hour": [1, 1],
+    ...         "minute": [1, 1],
+    ...         "second": [1, 63],
+    ...     }
+    ... )
+    >>> df.select(
+    ...     pl.datetime(
+    ...         "year", "month", "day",
+    ...         "hour", "minute", "second",
+    ...         strict=False,
+    ...     ).alias("dt")
+    ... )
+    shape: (2, 1)
+    ┌─────────────────────┐
+    │ dt                  │
+    │ ---                 │
+    │ datetime[μs]        │
+    ╞═════════════════════╪
+    │ 2024-01-01 01:01:01 │
+    │ null                │
+    └─────────────────────┴─────────────────────┘
     """
     ambiguous_expr = parse_into_expression(ambiguous, str_as_lit=True)
     year_expr = parse_into_expression(year)
@@ -146,7 +180,7 @@ def datetime_(
         parse_into_expression(microsecond) if microsecond is not None else None
     )
 
-    return wrap_expr(
+    result_expr = wrap_expr(
         plr.datetime(
             year_expr,
             month_expr,
@@ -160,6 +194,24 @@ def datetime_(
             ambiguous_expr,
         )
     )
+
+    if strict:
+        return result_expr
+
+    # Build a validity check for time components.
+    # Invalid rows (e.g. second=63) will produce null instead of raising.
+    validity = (month_expr >= 1) & (month_expr <= 12)
+    validity &= (day_expr >= 1) & (day_expr <= 31)
+    if hour_expr is not None:
+        validity &= (hour_expr >= 0) & (hour_expr <= 23)
+    if minute_expr is not None:
+        validity &= (minute_expr >= 0) & (minute_expr <= 59)
+    if second_expr is not None:
+        validity &= (second_expr >= 0) & (second_expr <= 59)
+    if microsecond_expr is not None:
+        validity &= (microsecond_expr >= 0) & (microsecond_expr <= 999_999)
+
+    return F.when(validity).then(result_expr).otherwise(None)  # type: ignore[return-value]
 
 
 def date_(
