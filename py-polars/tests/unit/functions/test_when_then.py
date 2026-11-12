@@ -1145,3 +1145,26 @@ def test_when_then_guards_fallible_arm_on_dense_condition(engine: EngineType) ->
     q = lf.select(pl.when("m").then(pl.col("s").cast(pl.Int64)))
     expected = pl.DataFrame({"s": [1, None] * 4})
     assert_frame_equal(q.collect(engine=engine), expected)
+
+
+def test_when_then_mixed_sign_literals_with_unsigned_30674() -> None:
+    df = pl.DataFrame(
+        {"side": ["buy", "sell"], "qty": pl.Series([10, 4], dtype=pl.UInt32)}
+    )
+    sign = pl.when(pl.col("side") == "buy").then(1).otherwise(-1)
+
+    assert df.select(sign * pl.col("qty")).to_series().to_list() == [10, -4]
+    assert df.select((sign * pl.col("qty")).sum()).item() == 6
+
+    # The result must not depend on which branch comes first.
+    flipped = pl.when(pl.col("side") == "buy").then(-1).otherwise(1)
+    assert df.select(flipped * pl.col("qty")).to_series().to_list() == [-10, 4]
+
+    # Comparisons against the unsigned length must not go null either.
+    assert df.select(sign < pl.len()).to_series().to_list() == [True, True]
+
+    # Literals on the same side of zero keep working as before.
+    positive = pl.when(pl.col("side") == "buy").then(1).otherwise(2)
+    assert df.select(positive * pl.col("qty")).to_series().to_list() == [10, 8]
+    negative = pl.when(pl.col("side") == "buy").then(-1).otherwise(-2)
+    assert df.select(negative * pl.col("qty")).to_series().to_list() == [-10, -8]

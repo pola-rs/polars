@@ -153,7 +153,14 @@ pub fn get_supertype_with_options(
 ) -> Option<DataType> {
     fn inner(l: &DataType, r: &DataType, options: SuperTypeOptions) -> Option<DataType> {
         use DataType::*;
-        if l == r {
+        // Dynamic integer literals compare equal regardless of their value, so
+        // differing ones are merged below instead of returning `l` as-is.
+        if l == r
+            && !matches!(
+                (l, r),
+                (Unknown(UnknownKind::Int(a)), Unknown(UnknownKind::Int(b))) if a != b
+            )
+        {
             return Some(l.clone());
         }
         match (l, r) {
@@ -537,8 +544,17 @@ pub fn get_supertype_with_options(
                     UnknownKind::Int(v) if dt.is_primitive_numeric() => {
                         // Both dyn int
                         if let Unknown(UnknownKind::Int(v_other)) = dt {
-                            // Take the maximum value to ensure we bubble up the required minimal size.
-                            Some(Unknown(UnknownKind::Int(std::cmp::max(*v, *v_other))))
+                            if v.is_negative() == v_other.is_negative() {
+                                // Take the maximum value to ensure we bubble up the required minimal size.
+                                Some(Unknown(UnknownKind::Int(std::cmp::max(*v, *v_other))))
+                            } else {
+                                // A dynamic integer tracks a single value, so it cannot
+                                // represent literals on both sides of zero. Materialize
+                                // to a dtype that can hold both.
+                                let this = materialize_dyn_int(*v).dtype();
+                                let other = materialize_dyn_int(*v_other).dtype();
+                                get_supertype(&this, &other)
+                            }
                         }
                         // dyn int vs number
                         else {
