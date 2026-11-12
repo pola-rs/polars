@@ -8,6 +8,7 @@ use std::sync::Arc;
 use polars_async::executor::TaskMetricAggregator;
 use polars_core::prelude::*;
 use polars_core::schema::Schema;
+use polars_expr::hash_keys::KeyEncoder;
 use polars_expr::prelude::WindowExpr;
 use polars_ooc::{LeastRecentSpillContext, ParameterFreeSpillContext, SpillFrame, memory_manager};
 use polars_utils::pl_str::PlSmallStr;
@@ -41,6 +42,8 @@ pub struct WindowParams {
     exprs: Vec<(PlSmallStr, WindowExpr)>,
     /// The input columns the window expressions read, including the keys.
     read_schema: Arc<Schema>,
+    /// Encodes the partition keys.
+    key_encoder: KeyEncoder,
     reads_all_columns: bool,
     output_schema: Arc<Schema>,
     /// Evaluate the rows of a partition in input order.
@@ -70,7 +73,11 @@ impl WindowParams {
         } else {
             WindowOutput::UnorderedMorsels
         };
+        let key_schema = read_schema
+            .try_project(&partition_by)
+            .expect("the partition keys are read");
         Self {
+            key_encoder: KeyEncoder::new(Arc::new(key_schema), true, &[]),
             partition_by,
             order_by,
             exprs,

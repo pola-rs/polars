@@ -17,7 +17,6 @@ use polars_arrow::legacy::trusted_len::TrustedLenPush;
 use polars_arrow::types::NativeType;
 use polars_compute::rolling::no_nulls::{MomentWindow, QuantileWindow, RollingAggWindowNoNulls};
 use polars_compute::rolling::nulls::{RollingAggWindowNulls, VarianceMoment};
-use polars_compute::rolling::quantile_filter::SealedRolling;
 use polars_compute::rolling::{
     self, ArgMinMaxWindow, MeanWindow, MinMaxWindow, QuantileMethod, RollingFnParams,
     RollingQuantileParams, RollingVarParams, SumWindow, quantile_filter, rolling_argmax_by,
@@ -25,17 +24,19 @@ use polars_compute::rolling::{
 };
 use polars_utils::arg_min_max::ArgMinMax;
 use polars_utils::float::IsFloat;
-#[cfg(feature = "dtype-f16")]
-use polars_utils::float16::pf16;
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::kahan_sum::KahanSum;
 use polars_utils::min_max::{MaxIgnoreNan, MinIgnoreNan, MinMax};
+use polars_utils::scratch_vec::ScratchVec;
 use rayon::prelude::*;
 
 use crate::chunked_array::cast::CastOptions;
-use crate::chunked_array::from_iterator_par::collect_primitive_opt_par;
+use crate::chunked_array::from_iterator_par::{
+    collect_primitive_opt_par, collect_primitive_opt_par_with_scratch,
+};
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::create_extension;
+use crate::chunked_array::ops::aggregate::{quantile_of_nonnull, sorted_quantile};
 use crate::chunked_array::{arg_max_numeric, arg_min_numeric};
 #[cfg(feature = "object")]
 use crate::frame::group_by::GroupsIndicator;
@@ -215,11 +216,7 @@ where
     F: Fn(&IdxVec) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
 {
-    let ca: ChunkedArray<T> = RAYON.install(|| {
-        let all = groups.all();
-        collect_primitive_opt_par(groups.len(), |g| f(&all[g]))
-    });
-    ca.into_series()
+    agg_helper_idx_on_all_with_scratch::<T, (), _>(groups, |_, idx| f(idx))
 }
 
 pub fn _agg_helper_slice<T, F>(groups: &[[IdxSize; 2]], f: F) -> Series
@@ -227,9 +224,7 @@ where
     F: Fn([IdxSize; 2]) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
 {
-    let ca: ChunkedArray<T> =
-        RAYON.install(|| collect_primitive_opt_par(groups.len(), |g| f(groups[g])));
-    ca.into_series()
+    agg_helper_slice_with_scratch::<T, (), _>(groups, |_, g| f(g))
 }
 
 pub fn _agg_helper_idx_idx<'a, F>(groups: &'a GroupsIdx, f: F) -> Series
@@ -260,53 +255,62 @@ where
     ca.into_inner().into_series()
 }
 
-/// Intermediate helper trait so we can have a single generic implementation
-/// This trait will ensure the specific dispatch works without complicating
-/// the trait bounds.
-trait QuantileDispatcher<K> {
-    fn _quantile(self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<K>>;
-
-    fn _median(self) -> Option<K>;
-}
-
-impl<T> QuantileDispatcher<f64> for ChunkedArray<T>
+/// [`agg_helper_idx_on_all`] for an `f` that reuses a scratch value across groups.
+fn agg_helper_idx_on_all_with_scratch<T, S, F>(groups: &GroupsIdx, f: F) -> Series
 where
-    T: PolarsIntegerType,
-    T::Native: Ord,
+    F: Fn(&mut S, &IdxVec) -> Option<T::Native> + Send + Sync,
+    T: PolarsNumericType,
+    S: Default,
 {
-    fn _quantile(self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<f64>> {
-        self.quantile_faster(quantile, method)
-    }
-    fn _median(self) -> Option<f64> {
-        self.median_faster()
-    }
+    let ca: ChunkedArray<T> = RAYON.install(|| {
+        let all = groups.all();
+        collect_primitive_opt_par_with_scratch(groups.len(), S::default, |scratch, g| {
+            f(scratch, &all[g])
+        })
+    });
+    ca.into_series()
 }
 
-#[cfg(feature = "dtype-f16")]
-impl QuantileDispatcher<pf16> for Float16Chunked {
-    fn _quantile(self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<pf16>> {
-        self.quantile_faster(quantile, method)
-    }
-    fn _median(self) -> Option<pf16> {
-        self.median_faster()
-    }
+/// [`_agg_helper_slice`] for an `f` that reuses a scratch value across groups.
+fn agg_helper_slice_with_scratch<T, S, F>(groups: &[[IdxSize; 2]], f: F) -> Series
+where
+    F: Fn(&mut S, [IdxSize; 2]) -> Option<T::Native> + Send + Sync,
+    T: PolarsNumericType,
+    S: Default,
+{
+    let ca: ChunkedArray<T> = RAYON.install(|| {
+        collect_primitive_opt_par_with_scratch(groups.len(), S::default, |scratch, g| {
+            f(scratch, groups[g])
+        })
+    });
+    ca.into_series()
 }
 
-impl QuantileDispatcher<f32> for Float32Chunked {
-    fn _quantile(self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<f32>> {
-        self.quantile_faster(quantile, method)
+/// The `quantile` of the non-null values at `rows`, gathered into `scratch`.
+///
+/// # Safety
+/// Every row is in bounds of `values` and `validity`.
+unsafe fn quantile_of_rows<N: NumericNative>(
+    scratch: &mut ScratchVec<N>,
+    values: &[N],
+    validity: Option<&Bitmap>,
+    mut rows: impl ExactSizeIterator<Item = usize>,
+    quantile: f64,
+    method: QuantileMethod,
+) -> Option<f64> {
+    let is_valid = |i: usize| validity.is_none_or(|v| unsafe { v.get_bit_unchecked(i) });
+    let value = |i: usize| unsafe { *values.get_unchecked(i) };
+    if rows.len() == 1 {
+        let i = rows.next().unwrap();
+        return is_valid(i).then(|| value(i).to_f64().unwrap());
     }
-    fn _median(self) -> Option<f32> {
-        self.median_faster()
+    let vals = scratch.get();
+    // Without a validity the rows keep their exact length, so the copy is a single sized extend.
+    match validity {
+        None => vals.extend(rows.map(value)),
+        Some(_) => vals.extend(rows.filter(|&i| is_valid(i)).map(value)),
     }
-}
-impl QuantileDispatcher<f64> for Float64Chunked {
-    fn _quantile(self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<f64>> {
-        self.quantile_faster(quantile, method)
-    }
-    fn _median(self) -> Option<f64> {
-        self.median_faster()
-    }
+    quantile_of_nonnull(vals, quantile, method)
 }
 
 unsafe fn agg_quantile_generic<T, K>(
@@ -317,7 +321,6 @@ unsafe fn agg_quantile_generic<T, K>(
 ) -> Series
 where
     T: PolarsNumericType,
-    ChunkedArray<T>: QuantileDispatcher<K::Native>,
     K: PolarsNumericType,
     <K as datatypes::PolarsNumericType>::Native: num_traits::Float + quantile_filter::SealedRolling,
 {
@@ -325,17 +328,17 @@ where
     if invalid_quantile {
         return Series::full_null(ca.name().clone(), groups.len(), ca.dtype());
     }
+    let to_out = |v: f64| -> K::Native { NumCast::from(v).unwrap() };
     match groups {
         GroupsType::Idx(groups) => {
             let ca = ca.rechunk();
-            agg_helper_idx_on_all::<K, _>(groups, |idx| {
-                debug_assert!(idx.len() <= ca.len());
-                if idx.is_empty() {
-                    return None;
-                }
-                let take = { ca.take_unchecked(idx) };
-                // checked with invalid quantile check
-                take._quantile(quantile, method).unwrap_unchecked()
+            let arr = ca.downcast_as_array();
+            let values = arr.values().as_slice();
+            let validity = arr.validity();
+            agg_helper_idx_on_all_with_scratch::<K, ScratchVec<_>, _>(groups, |scratch, idx| {
+                debug_assert!(idx.iter().all(|&i| (i as usize) < values.len()));
+                let rows = idx.iter().map(|&i| i as usize);
+                quantile_of_rows(scratch, values, validity, rows, quantile, method).map(to_out)
             })
         },
         GroupsType::Slice {
@@ -376,48 +379,39 @@ where
                 // The rolling kernels works on the dtype, this is not yet the
                 // float output type we need.
                 ChunkedArray::<K>::with_chunk(PlSmallStr::EMPTY, arr).into_series()
-            } else {
+            } else if let sorted @ (IsSorted::Ascending | IsSorted::Descending) =
+                ca.is_sorted_flag()
+            {
+                // A contiguous slice of a sorted column is itself sorted, with its nulls at one end,
+                // so each group reads its order statistics directly.
+                let descending = sorted == IsSorted::Descending;
                 _agg_helper_slice::<K, _>(groups, |[first, len]| {
                     debug_assert!(first + len <= ca.len() as IdxSize);
                     match len {
                         0 => None,
                         1 => ca.get(first as usize).map(|v| NumCast::from(v).unwrap()),
                         _ => {
-                            let arr_group = _slice_from_offsets(ca, first, len);
-                            // unwrap checked with invalid quantile check
-                            arr_group
-                                ._quantile(quantile, method)
-                                .unwrap_unchecked()
-                                .map(|flt| NumCast::from(flt).unwrap_unchecked())
+                            let group = _slice_from_offsets(ca, first, len);
+                            sorted_quantile(&group, descending, quantile, method).map(to_out)
                         },
                     }
                 })
+            } else {
+                let ca = ca.rechunk();
+                let arr = ca.downcast_as_array();
+                let values = arr.values().as_slice();
+                let validity = arr.validity();
+                agg_helper_slice_with_scratch::<K, ScratchVec<_>, _>(
+                    groups,
+                    |scratch, [first, len]| {
+                        let (first, len) = (first as usize, len as usize);
+                        debug_assert!(first + len <= values.len());
+                        let rows = first..first + len;
+                        quantile_of_rows(scratch, values, validity, rows, quantile, method)
+                            .map(to_out)
+                    },
+                )
             }
-        },
-    }
-}
-
-unsafe fn agg_median_generic<T, K>(ca: &ChunkedArray<T>, groups: &GroupsType) -> Series
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: QuantileDispatcher<K::Native>,
-    K: PolarsNumericType,
-    <K as datatypes::PolarsNumericType>::Native: num_traits::Float + SealedRolling,
-{
-    match groups {
-        GroupsType::Idx(groups) => {
-            let ca = ca.rechunk();
-            agg_helper_idx_on_all::<K, _>(groups, |idx| {
-                debug_assert!(idx.len() <= ca.len());
-                if idx.is_empty() {
-                    return None;
-                }
-                let take = { ca.take_unchecked(idx) };
-                take._median()
-            })
-        },
-        GroupsType::Slice { .. } => {
-            agg_quantile_generic::<T, K>(ca, groups, 0.5, QuantileMethod::Linear)
         },
     }
 }
@@ -1198,7 +1192,7 @@ impl Float16Chunked {
         agg_quantile_generic::<_, Float16Type>(self, groups, quantile, method)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
-        agg_median_generic::<_, Float16Type>(self, groups)
+        agg_quantile_generic::<_, Float16Type>(self, groups, 0.5, QuantileMethod::Linear)
     }
 }
 impl Float32Chunked {
@@ -1211,7 +1205,7 @@ impl Float32Chunked {
         agg_quantile_generic::<_, Float32Type>(self, groups, quantile, method)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
-        agg_median_generic::<_, Float32Type>(self, groups)
+        agg_quantile_generic::<_, Float32Type>(self, groups, 0.5, QuantileMethod::Linear)
     }
 }
 impl Float64Chunked {
@@ -1224,7 +1218,7 @@ impl Float64Chunked {
         agg_quantile_generic::<_, Float64Type>(self, groups, quantile, method)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
-        agg_median_generic::<_, Float64Type>(self, groups)
+        agg_quantile_generic::<_, Float64Type>(self, groups, 0.5, QuantileMethod::Linear)
     }
 }
 
@@ -1416,6 +1410,6 @@ where
         agg_quantile_generic::<_, Float64Type>(self, groups, quantile, method)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
-        agg_median_generic::<_, Float64Type>(self, groups)
+        agg_quantile_generic::<_, Float64Type>(self, groups, 0.5, QuantileMethod::Linear)
     }
 }

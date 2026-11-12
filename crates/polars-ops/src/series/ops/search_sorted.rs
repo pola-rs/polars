@@ -1,4 +1,6 @@
-use polars_core::chunked_array::ops::search_sorted::{SearchSortedSide, binary_search_ca};
+use polars_core::chunked_array::ops::search_sorted::{
+    SearchSortedSide, binary_search_ca, search_sorted_numeric,
+};
 use polars_core::prelude::row_encode::_get_rows_encoded_ca;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
@@ -89,7 +91,7 @@ pub fn search_sorted(
             let idx = with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 let search_values: &ChunkedArray<$T> = search_values.as_ref().as_ref().as_ref();
-                binary_search_ca(ca, search_values.iter(), side, descending)
+                search_sorted_numeric(ca, search_values, side, descending)
             });
             Ok(IdxCa::new_vec(s.name().clone(), idx))
         },
