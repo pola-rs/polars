@@ -24,6 +24,7 @@ from polars.datatypes import (
     Duration,
     Map,
     Object,
+    Union,
     Unknown,
 )
 from polars.datatypes.convert import DataTypeMappings
@@ -101,6 +102,14 @@ def lit(
         value_s = pl.Series("literal", [value], dtype=dtype)
         return wrap_expr(plr.lit(value_s._s, allow_object, is_scalar=True))
     elif dtype == Map:
+        value_s = pl.Series("literal", [value], dtype=dtype)
+        return wrap_expr(plr.lit(value_s._s, allow_object, is_scalar=True))
+    elif dtype == Union and not (
+        isinstance(value, pl.Series)
+        or (_check_for_numpy(value) and isinstance(value, np.ndarray))
+        or (_check_for_torch(value) and isinstance(value, torch.Tensor))
+    ):
+        # A value can't be cast into a union, so the variant is picked when building.
         value_s = pl.Series("literal", [value], dtype=dtype)
         return wrap_expr(plr.lit(value_s._s, allow_object, is_scalar=True))
     elif dtype == Unknown:

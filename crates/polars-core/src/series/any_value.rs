@@ -1113,8 +1113,14 @@ fn any_values_to_union(
             .eq(fields.iter().map(Field::name));
         let (tag, value) = match av.union_parts() {
             Some((tag, value)) if same_variants => (tag, value.clone()),
-            _ if av.is_null() || !strict => (0, AnyValue::Null),
-            _ => return Err(invalid_value_error(dtype, av)),
+            _ if av.is_null() => (0, AnyValue::Null),
+            Some(_) if strict => return Err(invalid_value_error(dtype, av)),
+            Some(_) => (0, AnyValue::Null),
+            None => match union_variant_of_kind(dtype, fields, av) {
+                Ok(tag) => (tag, av.clone()),
+                Err(e) if strict => return Err(e),
+                Err(_) => (0, AnyValue::Null),
+            },
         };
         types.push(tag as i8);
         offsets.push(child_values[tag].len() as i64);
@@ -1125,7 +1131,20 @@ fn any_values_to_union(
         .iter()
         .zip(fields)
         .map(|(values, field)| {
-            let s = Series::from_any_values_and_dtype_unnamed(values, field.dtype(), strict)?;
+            // Built leniently, so that values convert as in a Series of the variant's dtype
+            // (`datetime` to milliseconds, say); one that doesn't fit becomes null.
+            let s = Series::from_any_values_and_dtype_unnamed(values, field.dtype(), false)?;
+            if strict && s.null_count() > values.iter().filter(|v| v.is_null()).count() {
+                let (value, _) = values
+                    .iter()
+                    .zip(s.iter())
+                    .find(|(v, out)| !v.is_null() && out.is_null())
+                    .unwrap();
+                polars_bail!(
+                    SchemaMismatch: "the value {value} does not fit variant `{}` of `{dtype}`",
+                    field.name()
+                );
+            }
             Ok(s.to_physical_repr().rechunk().chunks()[0].clone())
         })
         .collect::<PolarsResult<Vec<_>>>()?;
@@ -1149,6 +1168,46 @@ fn any_values_to_union(
     Ok(unsafe {
         Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![arr.boxed()], dtype)
     })
+}
+
+/// The variant that takes a value without a variant: the only one of the value's kind, so that
+/// integers go to the integer variant and strings to the string-like one.
+#[cfg(feature = "dtype-union")]
+fn union_variant_of_kind(dtype: &DataType, fields: &[Field], av: &AnyValue) -> PolarsResult<usize> {
+    use DataType as D;
+    let value = av.dtype();
+    let same_kind = |variant: &DataType| match &value {
+        v if v.is_integer() => variant.is_integer(),
+        v if v.is_float() => variant.is_float(),
+        D::String => variant.is_string() || variant.is_categorical() || variant.is_enum(),
+        D::List(_) => variant.is_list() || variant.is_array(),
+        v => std::mem::discriminant(v) == std::mem::discriminant(variant),
+    };
+    let mut matches = fields
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| same_kind(f.dtype()));
+    match (matches.next(), matches.next()) {
+        (Some((tag, _)), None) => Ok(tag),
+        (first, second) => {
+            let names = first
+                .into_iter()
+                .chain(second)
+                .chain(matches)
+                .map(|(_, f)| format!("`{}`", f.name()))
+                .collect::<Vec<_>>();
+            let which = if names.is_empty() {
+                "none of its variants".to_string()
+            } else {
+                format!("more than one of its variants ({})", names.join(", "))
+            };
+            polars_bail!(
+                SchemaMismatch:
+                "cannot tell which variant of `{dtype}` the value {av} of type `{value}` belongs \
+                to: {which} take values of that kind; use `union_value` to pick one"
+            )
+        },
+    }
 }
 
 fn invalid_value_error(dtype: &DataType, value: &AnyValue) -> PolarsError {

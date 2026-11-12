@@ -1310,7 +1310,7 @@ impl DataType {
             polars_err!(
                 InvalidOperation: "cannot cast `{self}` to `{to}`: a union only casts to a union \
                 with the same variants (or more) or to `String`; use `union.field`, \
-                `union.match` or `pl.union` to convert values"
+                `union.match` or `pl.union_value` to convert values"
             )
         };
         match (self, to) {

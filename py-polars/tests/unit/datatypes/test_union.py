@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 import pickle
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -11,7 +11,7 @@ import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
+from polars.exceptions import InvalidOperationError, SchemaError
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
@@ -93,6 +93,93 @@ def test_union_dtype() -> None:
 def test_union_dtype_invalid(fields: Any) -> None:
     with pytest.raises((InvalidOperationError, pl.exceptions.DuplicateError)):
         pl.Series([], dtype=pl.Union(fields))
+
+
+def test_union_from_python_values() -> None:
+    s = pl.Series("u", [1, "a", None], dtype=INT_STR)
+    assert s.dtype == INT_STR
+    assert s.union.tag().to_list() == ["i", "s", None]
+    assert s.null_count() == 1
+    assert_series_equal(pl.Series("u", s.to_list(), dtype=INT_STR), s)
+
+    df = pl.DataFrame({"u": [1, "a"]}, schema={"u": INT_STR})
+    assert df["u"].union.tag().to_list() == ["i", "s"]
+    assert pl.select(pl.lit(1, dtype=INT_STR)).item() == 1
+    assert pl.select(pl.lit("a", dtype=INT_STR).union.tag()).item() == "s"
+    assert pl.select(pl.lit(None, dtype=INT_STR)).item() is None
+
+    out = pl.Series([[1, "a"], None], dtype=pl.List(INT_STR))
+    assert out.list.explode().union.tag().to_list() == ["i", "s", None]
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype", "field", "expected"),
+    [
+        ([3, "x"], pl.Union({"a": pl.Int8, "s": pl.String}), "a", [3, None]),
+        ([1.5, 1], pl.Union({"f": pl.Float32, "i": pl.Int64}), "f", [1.5, None]),
+        ([True, 1], pl.Union({"b": pl.Boolean, "i": pl.Int64}), "b", [True, None]),
+        (["x"], pl.Union({"e": pl.Enum(["x"]), "i": pl.Int8}), "e", ["x"]),
+        (["x"], pl.Union({"c": pl.Categorical, "i": pl.Int8}), "c", ["x"]),
+        (
+            [[1, 2]],
+            pl.Union({"a": pl.Array(pl.Int32, 2), "s": pl.String}),
+            "a",
+            [[1, 2]],
+        ),
+        (
+            [{"x": 1}],
+            pl.Union({"st": pl.Struct({"x": pl.Int8}), "s": pl.String}),
+            "st",
+            [{"x": 1}],
+        ),
+        (
+            [Decimal("1.5")],
+            pl.Union({"d": pl.Decimal(10, 2), "s": pl.String}),
+            "d",
+            [Decimal("1.50")],
+        ),
+        (
+            [datetime(2020, 1, 1, 0, 0, 0, 1500), date(2020, 1, 2)],
+            pl.Union({"d": pl.Datetime("ms"), "dd": pl.Date}),
+            "d",
+            [datetime(2020, 1, 1, 0, 0, 0, 1000), None],
+        ),
+    ],
+)
+def test_union_from_python_values_by_kind(
+    values: list[Any], dtype: pl.Union, field: str, expected: list[Any]
+) -> None:
+    assert pl.Series(values, dtype=dtype).union.field(field).to_list() == expected
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype", "match"),
+    [
+        ([1.5], INT_STR, "none of its variants"),
+        ([1], pl.Union({"a": pl.Int8, "b": pl.Int64}), r"more than one .*`a`, `b`"),
+        (["x"], pl.Union({"s": pl.String, "c": pl.Categorical}), "more than one"),
+        (
+            [300],
+            pl.Union({"a": pl.Int8, "s": pl.String}),
+            "300 does not fit variant `a`",
+        ),
+        (
+            ["y"],
+            pl.Union({"e": pl.Enum(["x"]), "i": pl.Int8}),
+            "does not fit variant `e`",
+        ),
+        # A value is not routed into a nested union.
+        ([1], pl.Union({"n": INT_STR, "f": pl.Float64}), "none of its variants"),
+    ],
+)
+def test_union_from_python_values_raises(
+    values: list[Any], dtype: pl.Union, match: str
+) -> None:
+    with pytest.raises(TypeError, match=match):
+        pl.Series(values, dtype=dtype)
+    with pytest.raises((TypeError, SchemaError), match=match):
+        pl.lit(values[0], dtype=dtype)
+    assert pl.Series(values, dtype=dtype, strict=False).to_list() == [None]
 
 
 def test_union_import() -> None:

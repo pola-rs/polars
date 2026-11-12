@@ -216,7 +216,7 @@ def sequence_to_pyseries(
         raise TypeError(msg)
 
     elif isinstance(dtype, Union):
-        # Only nulls convert for now; Python values carry no variant tag.
+        # Python values carry no variant; each goes to the only variant of its kind.
         return PySeries.new_from_any_values_and_dtype(
             name, values, dtype, strict=strict
         )

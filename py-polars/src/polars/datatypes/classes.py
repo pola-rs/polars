@@ -1428,7 +1428,14 @@ class Union(NestedType):
     >>> dtype
     Union({'i': Int64, 's': String})
 
-    A union column is read from an Arrow dense union:
+    A Python value goes to the only variant of its kind, such as the integer
+    variant for an `int`. When there is none or more than one, build the union
+    with :func:`union_value`.
+
+    >>> pl.Series("u", [1, "a", None], dtype=dtype).union.tag().to_list()
+    ['i', 's', None]
+
+    A union column is also read from an Arrow dense union:
 
     >>> import pyarrow as pa
     >>> arr = pa.UnionArray.from_dense(
