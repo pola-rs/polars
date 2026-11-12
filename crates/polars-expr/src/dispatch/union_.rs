@@ -10,6 +10,7 @@ pub fn function_expr_to_udf(func: IRUnionFunction) -> SpecialEq<Arc<dyn ColumnsU
         IRUnionFunction::Tag => map!(tag),
         IRUnionFunction::Field(name) => map!(field, &name),
         IRUnionFunction::Value { dtype, variant } => map!(value, &dtype, &variant),
+        IRUnionFunction::Match { .. } => unreachable!("planned as `UnionMatchExpr`"),
     }
 }
 

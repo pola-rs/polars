@@ -10,10 +10,23 @@ pub enum IRUnionFunction {
         dtype: DataType,
         variant: PlSmallStr,
     },
+    /// The inputs are the union, an arm per name in `names`, and the default if `has_default`;
+    /// the output has dtype `dtype`.
+    ///
+    /// An arm reads its variant's value as `input.union.field(name)`, so it is valid in the outer
+    /// frame. The kernel evaluates each arm only on the rows of its variant.
+    Match {
+        names: Vec<PlSmallStr>,
+        has_default: bool,
+        dtype: DataType,
+    },
 }
 
 impl IRUnionFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
+        if let Self::Match { dtype, .. } = self {
+            return Ok(Field::new(mapper.args()[0].name().clone(), dtype.clone()));
+        }
         if let Self::Value { dtype, variant } = self {
             return mapper.try_map_dtype(|input| {
                 let DataType::Union(fields) = dtype else {
@@ -36,7 +49,7 @@ impl IRUnionFunction {
             Ok(match self {
                 Self::Tag => fields.tag_dtype(),
                 Self::Field(name) => fields[fields.try_index_of(name)?].dtype().clone(),
-                Self::Value { .. } => unreachable!(),
+                Self::Value { .. } | Self::Match { .. } => unreachable!(),
             })
         })
     }
@@ -52,6 +65,21 @@ impl Display for IRUnionFunction {
             Self::Tag => write!(f, "union.tag"),
             Self::Field(name) => write!(f, "union.field({name})"),
             Self::Value { variant, .. } => write!(f, "union.value({variant})"),
+            Self::Match {
+                names, has_default, ..
+            } => {
+                write!(f, "union.match(")?;
+                for (i, name) in names.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{name}")?;
+                }
+                if *has_default {
+                    write!(f, "{}default", if names.is_empty() { "" } else { ", " })?;
+                }
+                write!(f, ")")
+            },
         }
     }
 }

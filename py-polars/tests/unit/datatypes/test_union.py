@@ -1510,6 +1510,173 @@ def test_union_match_arguments() -> None:
         pl.col("u").union.match({"i": 1}, i=2)
 
 
+def test_union_match_plan() -> None:
+    lf = (
+        match_frame()
+        .lazy()
+        .select(pl.col("u").union.match(i=pl.element() + pl.col("k"), default=0))
+    )
+    plan = lf.explain()
+    assert "union.match" in plan
+    assert "when" not in plan
+    assert lf.collect().to_series().to_list() == [6, 0, 10, None]
+    # `pl.field` reads the struct at every row, so this stays a `when/then` chain.
+    lf = (
+        match_frame()
+        .lazy()
+        .select(
+            pl.struct("u", "k").struct.with_fields(
+                m=pl.field("u").union.match(i=pl.element() + pl.field("k"), default=0)
+            )
+        )
+    )
+    assert "when" in lf.explain()
+    assert lf.collect().to_series().struct.field("m").to_list() == [6, 0, 10, None]
+
+
+def test_union_match_arms_see_their_rows() -> None:
+    seen: dict[str, list[int]] = {"i": [], "s": [], "default": []}
+
+    def record(name: str) -> pl.Expr:
+        def f(s: pl.Series) -> pl.Series:
+            seen[name].append(len(s))
+            return s.cast(pl.String).str.len_bytes().cast(pl.Int64)
+
+        return pl.element().map_batches(f, pl.Int64, is_elementwise=True)
+
+    def default(s: pl.Series) -> pl.Series:
+        seen["default"].append(len(s))
+        return s
+
+    dtype = pl.Union({"i": pl.Int64, "s": pl.String, "f": pl.Float64})
+    df = pl.select(
+        u=pl.union_value(dtype, i=pl.Series([1, 22, 333, 4444]))
+        .append(pl.union_value(dtype, s=pl.Series(["a", "bb"])))
+        .append(pl.union_value(dtype, f=pl.Series([1.0, 2.0, 3.0])))
+        .append(pl.lit(None, dtype=dtype)),
+        k=pl.int_range(10),
+    )
+    out = (
+        df.lazy()
+        .select(
+            pl.col("u").union.match(
+                i=record("i"),
+                s=record("s"),
+                default=pl.col("k").map_batches(default, pl.Int64, is_elementwise=True),
+            )
+        )
+        .collect()
+    )
+    assert out.to_series().to_list() == [1, 2, 3, 4, 1, 2, 6, 7, 8, None]
+    assert sum(seen["i"]) == 4
+    assert sum(seen["s"]) == 2
+    assert sum(seen["default"]) == 3
+
+
+@pytest.mark.parametrize("s", messy_layouts())
+def test_union_match_layouts(s: pl.Series) -> None:
+    df = pl.DataFrame({"u": s, "k": range(len(s))})
+    tags = s.union.tag().to_list()
+    ints = s.union.field("i").to_list()
+    strs = s.union.field("s").to_list()
+    out = df.lazy().select(
+        a=pl.col("u").union.match(
+            i=pl.element() * 10 + pl.col("k"),
+            s=pl.element().str.len_bytes().cast(pl.Int64),
+        ),
+        b=pl.col("u").union.match(s=pl.element() + "!", default=pl.lit("int")),
+        c=pl.col("u").union.match(i=pl.element(), default=pl.col("k")),
+    )
+    expected = {
+        "a": [
+            None if t is None else w if t == "s" else None if v is None else v * 10 + k
+            for k, (t, v, w) in enumerate(
+                zip(
+                    tags,
+                    ints,
+                    [None if x is None else len(x) for x in strs],
+                    strict=True,
+                )
+            )
+        ],
+        "b": [
+            None if t is None else "int" if t == "i" else None if w is None else w + "!"
+            for t, w in zip(tags, strs, strict=True)
+        ],
+        "c": [
+            None if t is None else v if t == "i" else k
+            for k, (t, v) in enumerate(zip(tags, ints, strict=True))
+        ],
+    }
+    assert out.collect().to_dict(as_series=False) == expected
+
+
+def test_union_match_scalar_union() -> None:
+    df = match_frame()
+    u = pl.union_value(INT_STR, i=pl.lit(2))
+    out = df.lazy().select(
+        a=u.union.match(i=pl.element() + pl.col("k"), default=0),
+        b=u.union.match(i=pl.element() + 1, default=0),
+    )
+    assert out.collect().to_dict(as_series=False) == {
+        "a": [7, 8, 9, 10],
+        "b": [3, 3, 3, 3],
+    }
+
+
+def test_union_match_group_by_and_over() -> None:
+    df = match_frame().with_columns(g=pl.Series([0, 1, 0, 1]))
+    m = pl.col("u").union.match(i=pl.element() + pl.col("k"), s=pl.col("k"))
+    out = (
+        df.lazy()
+        .group_by("g", maintain_order=True)
+        .agg(m.alias("m"), m.sum().alias("sum"), m.first().alias("first"))
+        .collect()
+    )
+    assert out.to_dict(as_series=False) == {
+        "g": [0, 1],
+        "m": [[6, 10], [6, None]],
+        "sum": [16, 6],
+        "first": [6, 6],
+    }
+    out = (
+        df.lazy()
+        .select(
+            m.over("g").alias("m"),
+            m.sum().over("g").alias("sum"),
+            m.cum_sum().over("g").alias("cum_sum"),
+        )
+        .collect()
+    )
+    assert out.to_dict(as_series=False) == {
+        "m": [6, 6, 10, None],
+        "sum": [16, 6, 16, 6],
+        "cum_sum": [6, 6, 16, None],
+    }
+
+
+def test_union_match_in_eval_reads_list_element() -> None:
+    out = (
+        match_frame()
+        .lazy()
+        .select(
+            pl.col("u")
+            .implode()
+            .list.eval(
+                pl.element().union.match(
+                    i=pl.element(),
+                    default=pl.element()
+                    .union.field("s")
+                    .str.len_bytes()
+                    .cast(pl.Int64),
+                )
+            )
+        )
+        .collect()
+    )
+    assert out.to_series().to_list() == [[1, 2, 3, None]]
+
+
 def test_union_selector() -> None:
     import polars.selectors as cs
 

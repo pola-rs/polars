@@ -1,4 +1,5 @@
-//! Lowers `union.match` to a `when/then` chain over the variants.
+//! Lowers `union.match` to [`IRUnionFunction::Match`], or to a `when/then` chain over the
+//! variants where that kernel can't run.
 use std::sync::Arc;
 
 use super::expr_to_ir::{ExprToIRContext, to_aexpr_impl};
@@ -51,7 +52,10 @@ pub(super) fn lower_union_match(
         .zip(arms)
         .map(|(name, arm)| {
             let value = union.clone().union().field(name.clone());
-            (name, replace_element(arm.clone(), &value))
+            (
+                name,
+                replace_in_match_arm(arm.clone(), &Expr::Element, &value),
+            )
         })
         .collect();
 
@@ -61,8 +65,15 @@ pub(super) fn lower_union_match(
         .iter()
         .map(|(name, value)| (format!("variant `{name}`"), value))
         .chain(default.map(|d| ("`default`".to_string(), d)));
+    let with_fields = ctx.with_fields.clone();
+    let mut inputs = vec![ExprIR::new(
+        union_node,
+        OutputName::Alias(output_name.clone()),
+    )];
     for (what, value) in checked {
-        let (node, _) = to_aexpr_impl(value, ctx)?;
+        let (node, name) = to_aexpr_impl(value, ctx)?;
+        ctx.with_fields = with_fields.clone();
+        inputs.push(ExprIR::new(node, OutputName::Alias(name)));
         polars_ensure!(
             is_elementwise_rec(node, ctx.arena),
             InvalidOperation: "the arm for {what} in `union.match` must be elementwise"
@@ -96,24 +107,46 @@ pub(super) fn lower_union_match(
             chain.otherwise(default)
         },
     };
-    let out = out.alias(output_name);
+    let out = out.alias(output_name.clone());
     let (node, name) = to_aexpr_impl(&out, ctx)?;
+    ctx.with_fields = with_fields;
+    let dt = ctx.arena.get(node).to_dtype(&ctx.to_field_ctx())?;
     if let Some((first, c)) = common {
-        let dt = ctx.arena.get(node).to_dtype(&ctx.to_field_ctx())?;
         polars_ensure!(
             dt == c,
             SchemaMismatch: "the arms of `union.match` must have the same dtype, but the arm for \
             {first} gives `{c}` and a literal arm makes it `{dt}`"
         );
     }
-    Ok((node, name))
+
+    // The kernel evaluates the arms on a subset of the rows, and in aggregations on the flat
+    // values, so it needs the whole match to be elementwise. `pl.field` reads the struct of
+    // `with_fields` at every row, which the kernel would not subset.
+    if ctx.with_fields.is_some() || !is_elementwise_rec(union_node, ctx.arena) {
+        return Ok((node, name));
+    }
+    let function = IRFunctionExpr::UnionExpr(IRUnionFunction::Match {
+        names: names.to_vec(),
+        has_default,
+        dtype: dt,
+    });
+    let options = function.function_options();
+    let node = ctx.arena.add(AExpr::Function {
+        input: inputs,
+        function,
+        options,
+    });
+    Ok((node, output_name))
 }
 
-/// Replaces `pl.element()` in `expr` by `with`, except where a nested scope rebinds it.
-fn replace_element(expr: Expr, with: &Expr) -> Expr {
-    let rec = |e: Arc<Expr>| Arc::new(replace_element(Arc::unwrap_or_clone(e), with));
+/// Replaces `from` in an arm of `union.match` by `to`, except where a nested scope rebinds
+/// `pl.element()`.
+pub(crate) fn replace_in_match_arm(expr: Expr, from: &Expr, to: &Expr) -> Expr {
+    let rec = |e: Arc<Expr>| Arc::new(replace_in_match_arm(Arc::unwrap_or_clone(e), from, to));
+    if &expr == from {
+        return to.clone();
+    }
     match expr {
-        Expr::Element => with.clone(),
         Expr::Eval {
             expr,
             evaluation,
@@ -127,11 +160,11 @@ fn replace_element(expr: Expr, with: &Expr) -> Expr {
             mut input,
             function: function @ FunctionExpr::UnionExpr(UnionFunction::Match { .. }),
         } => {
-            input[0] = replace_element(input[0].clone(), with);
+            input[0] = replace_in_match_arm(input[0].clone(), from, to);
             Expr::Function { input, function }
         },
         e => e
-            .map_children(&mut |c, _| Ok(replace_element(c, with)), &mut ())
+            .map_children(&mut |c, _| Ok(replace_in_match_arm(c, from, to)), &mut ())
             .unwrap(),
     }
 }

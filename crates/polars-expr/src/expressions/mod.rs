@@ -22,6 +22,8 @@ mod sortby;
 #[cfg(feature = "dtype-struct")]
 mod structeval;
 mod ternary;
+#[cfg(feature = "dtype-union")]
+mod union_match;
 mod window;
 
 use std::borrow::Cow;
@@ -57,6 +59,8 @@ pub(crate) use sortby::*;
 #[cfg(feature = "dtype-struct")]
 pub(crate) use structeval::*;
 pub(crate) use ternary::*;
+#[cfg(feature = "dtype-union")]
+pub(crate) use union_match::*;
 pub use window::{WindowExpr, window_function_format_order_by};
 
 use crate::state::ExecutionState;
