@@ -1174,19 +1174,11 @@ fn any_values_to_union(
 /// integers go to the integer variant and strings to the string-like one.
 #[cfg(feature = "dtype-union")]
 fn union_variant_of_kind(dtype: &DataType, fields: &[Field], av: &AnyValue) -> PolarsResult<usize> {
-    use DataType as D;
     let value = av.dtype();
-    let same_kind = |variant: &DataType| match &value {
-        v if v.is_integer() => variant.is_integer(),
-        v if v.is_float() => variant.is_float(),
-        D::String => variant.is_string() || variant.is_categorical() || variant.is_enum(),
-        D::List(_) => variant.is_list() || variant.is_array(),
-        v => std::mem::discriminant(v) == std::mem::discriminant(variant),
-    };
     let mut matches = fields
         .iter()
         .enumerate()
-        .filter(|(_, f)| same_kind(f.dtype()));
+        .filter(|(_, f)| takes_kind_of(f.dtype(), &value));
     match (matches.next(), matches.next()) {
         (Some((tag, _)), None) => Ok(tag),
         (first, second) => {
@@ -1207,6 +1199,26 @@ fn union_variant_of_kind(dtype: &DataType, fields: &[Field], av: &AnyValue) -> P
                 to: {which} take values of that kind; use `union_value` to pick one"
             )
         },
+    }
+}
+
+/// Whether a variant of dtype `variant` takes values of dtype `value`; a nested union takes them
+/// if exactly one of its variants does.
+fn takes_kind_of(variant: &DataType, value: &DataType) -> bool {
+    use DataType as D;
+    match (variant, value) {
+        (D::Union(fields), v) if !matches!(v, D::Union(_)) => {
+            fields
+                .iter()
+                .filter(|f| takes_kind_of(f.dtype(), v))
+                .count()
+                == 1
+        },
+        (_, v) if v.is_integer() => variant.is_integer(),
+        (_, v) if v.is_float() => variant.is_float(),
+        (_, D::String) => variant.is_string() || variant.is_categorical() || variant.is_enum(),
+        (_, D::List(_)) => variant.is_list() || variant.is_array(),
+        (_, v) => std::mem::discriminant(v) == std::mem::discriminant(variant),
     }
 }
 

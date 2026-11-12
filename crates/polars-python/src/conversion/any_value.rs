@@ -244,6 +244,55 @@ fn get_container_of_map(
     Ok(s.get(0).map_err(PyPolarsErr::from)?.into_static())
 }
 
+/// Converts a sequence whose target dtype holds a union, so that its elements are routed to
+/// variants; the untargeted conversion infers one dtype for all of them. `None` if `dtype` is not
+/// a List or Array, or a union whose only List or Array variant holds a union.
+#[cfg(feature = "dtype-union")]
+fn get_sequence_with_unions(
+    ob: &Bound<'_, PyAny>,
+    strict: bool,
+    allow_object: bool,
+    dtype: &DataType,
+) -> PyResult<Option<AnyValue<'static>>> {
+    if !(ob.is_instance_of::<PyList>() || ob.is_instance_of::<PyTuple>()) {
+        return Ok(None);
+    }
+    let elements = |inner: &DataType| -> PyResult<Series> {
+        let avs = ob
+            .try_iter()?
+            .map(|v| py_object_to_any_value(&v?, strict, allow_object, Some(inner)))
+            .collect::<PyResult<Vec<_>>>()?;
+        Ok(
+            Series::from_any_values_and_dtype(PlSmallStr::EMPTY, &avs, inner, strict)
+                .map_err(PyPolarsErr::from)?,
+        )
+    };
+    match dtype {
+        DataType::List(inner) => Ok(Some(AnyValue::List(elements(inner)?))),
+        #[cfg(feature = "dtype-array")]
+        DataType::Array(inner, width) => Ok(Some(AnyValue::Array(elements(inner)?, *width))),
+        // As in `any_values_to_union`, a sequence goes to the only variant that takes one.
+        DataType::Union(fields) => {
+            let mut seqs = fields.iter().filter(|f| takes_sequence(f.dtype()));
+            match (seqs.next(), seqs.next()) {
+                (Some(f), None) if f.dtype().contains_union() => {
+                    get_sequence_with_unions(ob, strict, allow_object, f.dtype())
+                },
+                _ => Ok(None),
+            }
+        },
+        _ => Ok(None),
+    }
+}
+
+#[cfg(feature = "dtype-union")]
+fn takes_sequence(dtype: &DataType) -> bool {
+    match dtype {
+        DataType::Union(fields) => fields.iter().filter(|f| takes_sequence(f.dtype())).count() == 1,
+        dt => dt.is_list() || dt.is_array(),
+    }
+}
+
 /// Whether `ob` is the entries form of a `Map`: a sequence of `{key, value}` mappings.
 #[cfg(feature = "dtype-map")]
 fn is_map_entries(ob: &Bound<'_, PyAny>) -> PyResult<bool> {
@@ -727,6 +776,13 @@ pub(crate) fn py_object_to_any_value(
             } else {
                 Err(PyValueError::new_err(format!("Cannot convert {ob}")))
             }
+        }
+    }
+
+    #[cfg(feature = "dtype-union")]
+    if let Some(dtype) = dtype.filter(|dt| dt.contains_union()) {
+        if let Some(av) = get_sequence_with_unions(ob, strict, allow_object, dtype)? {
+            return Ok(av);
         }
     }
 

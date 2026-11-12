@@ -144,6 +144,25 @@ def test_union_from_python_values() -> None:
             "d",
             [datetime(2020, 1, 1, 0, 0, 0, 1000), None],
         ),
+        ([1, 1.5], pl.Union({"n": INT_STR, "f": pl.Float64}), "n", [1, None]),
+        (
+            [[1, "a"], "b"],
+            pl.Union({"l": pl.List(INT_STR), "s": pl.String}),
+            "l",
+            [[1, "a"], None],
+        ),
+        (
+            [[1, "a"]],
+            pl.Union({"a": pl.Array(INT_STR, 2), "f": pl.Float64}),
+            "a",
+            [[1, "a"]],
+        ),
+        (
+            [[1, "a"]],
+            pl.Union({"n": pl.Union({"l": pl.List(INT_STR)}), "f": pl.Float64}),
+            "n",
+            [[1, "a"]],
+        ),
     ],
 )
 def test_union_from_python_values_by_kind(
@@ -168,8 +187,8 @@ def test_union_from_python_values_by_kind(
             pl.Union({"e": pl.Enum(["x"]), "i": pl.Int8}),
             "does not fit variant `e`",
         ),
-        # A value is not routed into a nested union.
-        ([1], pl.Union({"n": INT_STR, "f": pl.Float64}), "none of its variants"),
+        # A nested union takes the values one of its variants takes.
+        ([1], pl.Union({"n": INT_STR, "i": pl.Int8}), r"more than one .*`n`, `i`"),
     ],
 )
 def test_union_from_python_values_raises(
