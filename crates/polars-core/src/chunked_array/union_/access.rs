@@ -109,6 +109,89 @@ impl UnionChunked {
             Series::from_chunks_and_dtype_unchecked(self.name().clone(), chunks, field.dtype())
         }
     }
+
+    /// Splits the non-null rows into `n_groups` groups, sending the rows of variant `t` to group
+    /// `group_of[t]` and dropping them for `None`.
+    ///
+    /// Returns the rows of every group in row order, and for every variant `t` with
+    /// `values_of[t]` its values at its rows, in row order.
+    pub fn split_by_variant(
+        &self,
+        group_of: &[Option<usize>],
+        n_groups: usize,
+        values_of: &[bool],
+    ) -> (Vec<Vec<IdxSize>>, Vec<Option<Series>>) {
+        const NONE: u8 = u8::MAX;
+        let fields = self.union_fields();
+        let n_variants = fields.len();
+        assert!(group_of.len() == n_variants && values_of.len() == n_variants);
+        assert!(n_groups < NONE as usize);
+        let group: Vec<u8> = group_of
+            .iter()
+            .map(|g| g.map_or(NONE, |g| g as u8))
+            .collect();
+
+        let mut rows: Vec<Vec<IdxSize>> = vec![Vec::new(); n_groups];
+        let mut chunks: Vec<Vec<ArrayRef>> = vec![Vec::new(); n_variants];
+        let mut base = 0 as IdxSize;
+        for arr in self.downcast_iter() {
+            // Until a variant's rows stop pointing at its child's slots in order, its values are a
+            // prefix of the child and need no gather.
+            let mut next = vec![0usize; n_variants];
+            let mut positions: Vec<Option<ChildPositions>> =
+                (0..n_variants).map(|_| None).collect();
+            let mut visit = |i: usize| {
+                let t = arr.types()[i] as usize;
+                let g = group[t];
+                if g != NONE {
+                    rows[g as usize].push(base + i as IdxSize);
+                }
+                if values_of[t] {
+                    let o = arr.offsets()[i] as usize;
+                    if positions[t].is_none() && o != next[t] {
+                        let mut p = ChildPositions::new(arr.fields()[t].len());
+                        (0..next[t]).for_each(|j| p.push(Some(j)));
+                        positions[t] = Some(p);
+                    }
+                    if let Some(p) = &mut positions[t] {
+                        p.push(Some(o));
+                    }
+                    next[t] += 1;
+                }
+            };
+            match arr.validity() {
+                None => (0..arr.len()).for_each(&mut visit),
+                Some(v) => v.true_idx_iter().for_each(&mut visit),
+            }
+            for t in (0..n_variants).filter(|&t| values_of[t]) {
+                let child = arr.fields()[t].as_ref();
+                chunks[t].push(match positions[t].take() {
+                    None if next[t] == child.len() => child.to_boxed(),
+                    None => child.sliced(0, next[t]),
+                    // SAFETY: the offsets of the union are in bounds of its children.
+                    Some(p) => unsafe { gather_child(child, p) },
+                });
+            }
+            base += arr.len() as IdxSize;
+        }
+
+        let values = chunks
+            .into_iter()
+            .zip(fields.iter())
+            .zip(values_of)
+            .map(|((chunks, field), &wanted)| {
+                // SAFETY: the chunks have the physical dtype of the variant.
+                wanted.then(|| unsafe {
+                    Series::from_chunks_and_dtype_unchecked(
+                        self.name().clone(),
+                        chunks,
+                        field.dtype(),
+                    )
+                })
+            })
+            .collect();
+        (rows, values)
+    }
 }
 
 impl Series {
