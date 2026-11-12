@@ -174,8 +174,12 @@ impl ChunkShift<UnionType> for UnionChunked {
 #[cfg(feature = "zip_with")]
 impl ChunkZip<UnionType> for UnionChunked {
     fn zip_with(&self, mask: &BooleanChunked, other: &UnionChunked) -> PolarsResult<UnionChunked> {
+        use std::borrow::Cow;
+
         use polars_error::PolarsContext;
         use polars_utils::broadcast::broadcast_len;
+
+        use crate::utils::{align_chunks_binary, align_chunks_ternary};
 
         polars_ensure!(
             self.dtype() == other.dtype(),
@@ -184,28 +188,6 @@ impl ChunkZip<UnionType> for UnionChunked {
         let length = broadcast_len([self.len(), mask.len(), other.len()])
             .context("shapes of `self`, `mask` and `other` are not suitable for `zip_with`")?;
 
-        let mut builder =
-            LargeUnionArrayBuilder::new(self.dtype().to_physical_arrow(CompatLevel::newest()));
-        StaticArrayBuilder::reserve(&mut builder, length);
-        let share = ShareStrategy::Always;
-        let mut extend = |ca: &UnionChunked, start: usize, len: usize| {
-            if ca.len() == 1 {
-                let arr = ca.downcast_iter().find(|a| !a.is_empty()).unwrap();
-                builder.subslice_extend_each_repeated(arr, 0, 1, len, share);
-                return;
-            }
-            let (mut chunk, mut offset) = ca.index_to_chunked_index(start);
-            let mut remaining = len;
-            while remaining > 0 {
-                let arr = ca.downcast_get(chunk).unwrap();
-                let n = remaining.min(arr.len() - offset);
-                builder.subslice_extend(arr, offset, n, share);
-                remaining -= n;
-                chunk += 1;
-                offset = 0;
-            }
-        };
-
         // A null mask value selects `other`.
         if mask.len() == 1 {
             let src = if mask.get(0).unwrap_or(false) {
@@ -213,33 +195,172 @@ impl ChunkZip<UnionType> for UnionChunked {
             } else {
                 other
             };
-            extend(src, 0, length);
-        } else {
-            let mut run: Option<(bool, usize)> = None;
-            let mut i = 0;
-            for arr in mask.downcast_iter() {
-                let selected = match arr.validity() {
-                    Some(v) => arr.values() & v,
-                    None => arr.values().clone(),
-                };
-                for is_true in selected.iter() {
-                    match run {
-                        Some((v, _)) if v == is_true => {},
-                        Some((v, start)) => {
-                            extend(if v { self } else { other }, start, i - start);
-                            run = Some((is_true, i));
-                        },
-                        None => run = Some((is_true, i)),
-                    }
-                    i += 1;
-                }
-            }
-            if let Some((v, start)) = run {
-                extend(if v { self } else { other }, start, i - start);
-            }
+            return Ok(if src.len() == length {
+                src.clone()
+            } else {
+                src.new_from_index(0, length)
+            });
         }
 
-        // SAFETY: the builder has the physical dtype of `self`.
-        Ok(unsafe { self.with_chunks(vec![StaticArrayBuilder::freeze(builder).boxed()]) })
+        let l_scalar = (self.len() == 1 && length != 1).then_some(self);
+        let r_scalar = (other.len() == 1 && length != 1).then_some(other);
+        let (mask, l, r) = match (l_scalar, r_scalar) {
+            (None, None) => {
+                let (m, l, r) = align_chunks_ternary(mask, self, other);
+                (m, Some(l), Some(r))
+            },
+            (None, Some(_)) => {
+                let (m, l) = align_chunks_binary(mask, self);
+                (m, Some(l), None)
+            },
+            (Some(_), None) => {
+                let (m, r) = align_chunks_binary(mask, other);
+                (m, None, Some(r))
+            },
+            (Some(_), Some(_)) => (Cow::Borrowed(mask), None, None),
+        };
+        fn side<'a>(
+            col: Option<&'a UnionChunked>,
+            scalar: Option<&'a UnionChunked>,
+            c: usize,
+        ) -> ZipSide<'a> {
+            match col {
+                Some(col) => ZipSide::Column(col.downcast_get(c).unwrap()),
+                None => {
+                    let scalar = scalar.unwrap();
+                    ZipSide::Scalar(scalar.downcast_iter().find(|a| !a.is_empty()).unwrap())
+                },
+            }
+        }
+        let arrow_dtype = self.dtype().to_physical_arrow(CompatLevel::newest());
+        let chunks = mask
+            .downcast_iter()
+            .enumerate()
+            .map(|(c, m)| {
+                let selected = match m.validity() {
+                    Some(v) => m.values() & v,
+                    None => m.values().clone(),
+                };
+                let sides = [
+                    side(l.as_deref(), l_scalar, c),
+                    side(r.as_deref(), r_scalar, c),
+                ];
+                zip_chunk(&arrow_dtype, &selected, sides).boxed()
+            })
+            .collect();
+        // SAFETY: the chunks have the physical dtype of `self`.
+        Ok(unsafe { self.copy_with_chunks(chunks) })
+    }
+}
+
+/// One input of [`zip_chunk`]: a chunk aligned with the mask, or a single row for every row.
+#[derive(Clone, Copy)]
+enum ZipSide<'a> {
+    Column(&'a LargeUnionArray),
+    Scalar(&'a LargeUnionArray),
+}
+
+impl<'a> ZipSide<'a> {
+    fn array(self) -> &'a LargeUnionArray {
+        match self {
+            Self::Column(a) | Self::Scalar(a) => a,
+        }
+    }
+}
+
+/// Takes each row from `sides[0]` where `selected` is set and from `sides[1]` elsewhere.
+///
+/// Each output child is built from bulk gathers: the values each side contributes, then their
+/// interleaving in row order, instead of one copy per run of the mask.
+fn zip_chunk(
+    dtype: &ArrowDataType,
+    selected: &polars_arrow::bitmap::Bitmap,
+    sides: [ZipSide<'_>; 2],
+) -> LargeUnionArray {
+    use polars_arrow::array::ChildPositions;
+    use polars_arrow::bitmap::BitmapBuilder;
+    use polars_compute::gather::gather_child;
+
+    let n = selected.len();
+    let n_fields = sides[0].array().fields().len();
+    let mut positions: [Vec<ChildPositions>; 2] = sides.map(|s| {
+        s.array()
+            .fields()
+            .iter()
+            .map(|c| ChildPositions::new(c.len()))
+            .collect()
+    });
+    // The side of every value of every output child, in row order.
+    let mut from_second: Vec<BitmapBuilder> = (0..n_fields).map(|_| BitmapBuilder::new()).collect();
+    let mut types = Vec::with_capacity(n);
+    let mut offsets = Vec::with_capacity(n);
+    let mut validity = BitmapBuilder::with_capacity(n);
+    for r in 0..n {
+        let s = usize::from(!unsafe { selected.get_bit_unchecked(r) });
+        let (arr, i) = match sides[s] {
+            ZipSide::Column(arr) => (arr, r),
+            ZipSide::Scalar(arr) => (arr, 0),
+        };
+        let (t, pos, valid) = if arr.is_valid(i) {
+            let (t, pos) = unsafe { arr.index_unchecked(i) };
+            (t, Some(pos), true)
+        } else {
+            // Null rows get a null placeholder in child 0.
+            (0, None, false)
+        };
+        positions[s][t].push(pos);
+        types.push(t as i8);
+        offsets.push(from_second[t].len() as i64);
+        from_second[t].push(s == 1);
+        validity.push(valid);
+    }
+
+    let children = (0..n_fields)
+        .map(|t| {
+            let from_second = std::mem::take(&mut from_second[t]).freeze();
+            let [first, second] = &mut positions;
+            let take = |side: ZipSide<'_>, positions: &mut ChildPositions| {
+                // SAFETY: the positions are those of valid rows of `side`, so in bounds.
+                unsafe {
+                    gather_child(
+                        side.array().fields()[t].as_ref(),
+                        std::mem::replace(positions, ChildPositions::new(0)),
+                    )
+                }
+            };
+            match from_second.set_bits() {
+                0 => take(sides[0], &mut first[t]),
+                k if k == from_second.len() => take(sides[1], &mut second[t]),
+                _ => {
+                    let a = take(sides[0], &mut first[t]);
+                    let b = take(sides[1], &mut second[t]);
+                    let both =
+                        polars_arrow::compute::concatenate::concatenate(&[a.as_ref(), b.as_ref()])
+                            .unwrap();
+                    let mut order = ChildPositions::new(both.len());
+                    let (mut next_a, mut next_b) = (0, a.len());
+                    for second in from_second.iter() {
+                        let next = if second { &mut next_b } else { &mut next_a };
+                        order.push(Some(*next));
+                        *next += 1;
+                    }
+                    // SAFETY: every position is below `a.len() + b.len()`.
+                    unsafe { gather_child(both.as_ref(), order) }
+                },
+            }
+        })
+        .collect();
+    let validity = validity.freeze();
+    let validity = (validity.unset_bits() > 0).then_some(validity);
+    // SAFETY: every row's slot points at its value, or a null for a null row, in its variant's
+    // child, and the slots of each child are increasing.
+    unsafe {
+        LargeUnionArray::new_unchecked(
+            dtype.clone(),
+            types.into(),
+            offsets.into(),
+            children,
+            validity,
+        )
     }
 }
