@@ -167,7 +167,10 @@ impl ColumnSelectorBuilder {
 
         if let DataType::List(target_inner) = target_dtype {
             #[cfg(feature = "dtype-map")]
-            if let Some(incoming_entries) = incoming_dtype.map_entries_dtype() {
+            if let Some(incoming_entries) = incoming_dtype
+                .as_map()
+                .map(polars_core::datatypes::MapDtype::entries_dtype)
+            {
                 self.attach_transforms(
                     ColumnSelector::Position(0),
                     &incoming_entries,
@@ -227,9 +230,10 @@ impl ColumnSelectorBuilder {
         }
 
         #[cfg(feature = "dtype-map")]
-        if let DataType::Map(target_key, target_value) = target_dtype {
+        if let DataType::Map(target) = target_dtype {
+            let (target_key, target_value) = (target.key(), target.value());
             if let DataType::List(incoming_inner) = incoming_dtype {
-                let target_entries = target_dtype.map_entries_dtype().unwrap();
+                let target_entries = target.entries_dtype();
                 self.attach_transforms(
                     ColumnSelector::Position(0),
                     incoming_inner,
@@ -244,9 +248,10 @@ impl ColumnSelectorBuilder {
                 .into_selector(input_selector));
             }
 
-            let DataType::Map(incoming_key, incoming_value) = incoming_dtype else {
+            let DataType::Map(incoming) = incoming_dtype else {
                 return mismatch_err("");
             };
+            let (incoming_key, incoming_value) = (incoming.key(), incoming.value());
 
             // Mirrors what `should_cast_column` does for non-streaming scans.
             let Ok(cast_key) = incoming_key.matches_schema_type(target_key) else {

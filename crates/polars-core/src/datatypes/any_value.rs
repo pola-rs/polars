@@ -197,10 +197,7 @@ impl AnyValue<'static> {
                 fields.clone(),
             ))),
             #[cfg(feature = "dtype-map")]
-            DT::Map(_, _) => AV::Map(Series::new_empty(
-                PlSmallStr::EMPTY,
-                &dtype.map_entries_dtype().unwrap(),
-            )),
+            DT::Map(map) => AV::Map(Series::new_empty(PlSmallStr::EMPTY, &map.entries_dtype())),
             #[cfg(feature = "dtype-extension")]
             DT::Extension(_typ, storage) => {
                 AnyValue::default_value(storage, numeric_to_one, num_list_values)
@@ -260,8 +257,8 @@ impl<'a> AnyValue<'a> {
                     unimplemented!("Map AnyValue payload must be a Struct")
                 };
                 DataType::Map(
-                    Box::new(fields[0].dtype().clone()),
-                    Box::new(fields[1].dtype().clone()),
+                    MapDtype::try_new(fields[0].dtype().clone(), fields[1].dtype().clone())
+                        .expect("Map AnyValue entries come from a valid Map"),
                 )
             },
             #[cfg(feature = "dtype-array")]

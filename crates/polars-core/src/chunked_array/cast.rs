@@ -501,10 +501,11 @@ impl ChunkCast for ListChunked {
                 }
             },
             #[cfg(feature = "dtype-map")]
-            Map(to_key, to_value) => {
+            Map(map) => {
+                let (to_key, to_value) = (map.key(), map.value());
                 let storage = if ca.inner_dtype().is_nested_null() {
                     // Every row is empty, so there are no entry children to transform.
-                    ca.cast_with_options(&dtype.map_storage_dtype().unwrap(), options)?
+                    ca.cast_with_options(&map.storage_dtype(), options)?
                 } else {
                     try_apply_map_entries(ca.as_ref(), |key, value| {
                         Ok((
@@ -515,7 +516,7 @@ impl ChunkCast for ListChunked {
                     .into_series()
                 };
 
-                Ok(MapChunked::try_from_storage(dtype.clone(), storage)?.into_series())
+                Ok(MapChunked::try_from_storage(map.clone(), storage)?.into_series())
             },
             _ => {
                 polars_bail!(

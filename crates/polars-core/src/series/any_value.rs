@@ -168,8 +168,8 @@ impl Series {
                 any_values_to_decimal(values, *precision, *scale, strict)?.into_series()
             },
             #[cfg(feature = "dtype-map")]
-            DataType::Map(_, _) => {
-                let entries_dtype = dtype.map_entries_dtype().unwrap();
+            DataType::Map(map) => {
+                let entries_dtype = map.entries_dtype();
                 let entries = values
                     .iter()
                     .map(|av| match av {
@@ -186,7 +186,7 @@ impl Series {
                     })
                     .collect::<PolarsResult<Vec<AnyValue>>>()?;
                 let storage = any_values_to_list(&entries, &entries_dtype, strict)?.into_series();
-                MapChunked::try_from_storage(dtype.clone(), storage)?.into_series()
+                MapChunked::try_from_storage(map.clone(), storage)?.into_series()
             },
             #[cfg(feature = "dtype-extension")]
             DataType::Extension(typ, storage) => {

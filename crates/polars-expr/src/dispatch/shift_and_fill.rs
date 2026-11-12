@@ -94,7 +94,7 @@ pub(super) fn shift_and_fill(args: &[Column]) -> PolarsResult<Column> {
         #[cfg(feature = "dtype-struct")]
         Struct(_) => shift_and_fill_with_mask(s, n, fill_value_s),
         #[cfg(feature = "dtype-map")]
-        Map(_, _) => shift_and_fill_with_mask(s, n, fill_value_s),
+        Map(_) => shift_and_fill_with_mask(s, n, fill_value_s),
         #[cfg(feature = "dtype-categorical")]
         Categorical(_, _) | Enum(_, _) => shift_and_fill_with_mask(s, n, fill_value_s),
         // Not `is_logical`: a nested logical dtype has no primitive physical downcast.

@@ -609,14 +609,14 @@ impl Series {
             },
 
             #[cfg(feature = "dtype-map")]
-            (D::List(_), D::Map(_, _)) => {
+            (D::List(_), D::Map(map)) => {
                 use crate::chunked_array::logical::ensure_live_entries_non_null;
 
-                let storage = self.from_physical_unchecked(&dtype.map_storage_dtype().unwrap())?;
+                let storage = self.from_physical_unchecked(&map.storage_dtype())?;
                 // Nulls that propagation left under null rows are legal; only live rows
                 // must own no null entry or key.
                 ensure_live_entries_non_null(storage.list().unwrap())?;
-                Ok(MapChunked::from_storage_unchecked(dtype.clone(), storage).into_series())
+                Ok(MapChunked::from_storage_unchecked(map.clone(), storage).into_series())
             },
             #[cfg(feature = "dtype-extension")]
             (_, D::Extension(typ, storage)) => {
@@ -818,7 +818,7 @@ impl Series {
                 Cow::Owned(ca) => Cow::Owned(ca.into_series()),
             },
             #[cfg(feature = "dtype-map")]
-            Map(_, _) => match self.map().unwrap().storage().to_physical_repr() {
+            Map(_) => match self.map().unwrap().storage().to_physical_repr() {
                 Cow::Borrowed(storage) => Cow::Owned(storage.clone()),
                 Cow::Owned(storage) => Cow::Owned(storage),
             },

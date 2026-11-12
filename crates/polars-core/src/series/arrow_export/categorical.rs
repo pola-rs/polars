@@ -137,9 +137,9 @@ impl CategoricalToArrowConverter {
                 }
             },
             #[cfg(feature = "dtype-map")]
-            Map(key, value) => {
-                self.initialize(key);
-                self.initialize(value);
+            Map(map) => {
+                self.initialize(map.key());
+                self.initialize(map.value());
             },
             #[cfg(feature = "dtype-extension")]
             Extension(_, inner) => self.initialize(inner),
