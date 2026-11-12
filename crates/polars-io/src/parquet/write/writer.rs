@@ -129,7 +129,7 @@ where
 
     pub fn batched(self, schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
         let schema = schema_to_arrow_checked(schema, CompatLevel::newest(), "parquet")?;
-        // Metadata that may set its own `geo` key skips the early checks.
+        // Metadata that may set its own `geo` key skips the early checks and warnings.
         // errors are only emitted at file end, because that's when the callable's keys are known.
         if !self
             .key_value_metadata
