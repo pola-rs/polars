@@ -4,6 +4,7 @@ use clap::Parser;
 #[derive(Debug, Parser)]
 #[command(
     name = "polars",
+    bin_name = "polars",
     version,
     about = "Run SQL with Polars",
     after_help = "This command is unstable: its options and output can change in any release."
