@@ -12,8 +12,6 @@ use crate::schema::{Schema, SchemaExt};
     any(feature = "serde", feature = "serde-lazy"),
     derive(serde::Serialize)
 )]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[cfg_attr(feature = "dsl-schema", schemars(transparent))]
 #[cfg_attr(any(feature = "serde", feature = "serde-lazy"), serde(transparent))]
 pub struct StructFields(Vec<Field>);
 

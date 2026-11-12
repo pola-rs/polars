@@ -79,7 +79,10 @@ enum SerializableDataType {
     Array(Box<SerializableDataType>, usize),
     Null,
     #[cfg(feature = "dtype-struct")]
-    Struct(StructFields),
+    Struct(
+        // Keep the DSL schema of the wire format, a plain list of fields.
+        #[cfg_attr(feature = "dsl-schema", schemars(with = "Vec<Field>"))] StructFields,
+    ),
     #[cfg(feature = "dtype-map")]
     Map(Box<SerializableDataType>, Box<SerializableDataType>),
     // some logical types we cannot know statically, e.g. Datetime
