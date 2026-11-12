@@ -102,12 +102,14 @@ impl SortNode {
                     columns.push(key.clone());
                     drop_key = true;
                 }
-                work_idxs = Some(
-                    columns
-                        .iter()
-                        .map(|name| input_schema.index_of(name).unwrap())
-                        .collect(),
-                );
+                let idxs: Vec<usize> = columns
+                    .iter()
+                    .map(|name| input_schema.index_of(name).unwrap())
+                    .collect();
+                // Keeping every column in order needs no rebuilding of the morsels.
+                let is_identity = idxs.len() == input_schema.len()
+                    && idxs.iter().enumerate().all(|(i, &idx)| i == idx);
+                work_idxs = (!is_identity).then_some(idxs);
                 Arc::new(input_schema.try_project(&columns).unwrap())
             },
         };
@@ -344,12 +346,20 @@ impl SortNode {
         }
         drop_parallel(dropped);
 
+        // Rounded up, so that no bucket with rows is free.
+        let mut row_bytes = total_bytes.div_ceil(total_rows.max(1) as u64).max(1);
+        if self.drop_key
+            && let Some(width) = self.key_dtype.to_physical().byte_width()
+        {
+            // The dropped key is not gathered into the output. (Only estimated for fixed-width keys.)
+            row_bytes = row_bytes.saturating_sub(width.ceil() as u64).max(1);
+        }
+
         Ok(FlushState::new(
             pending,
             get_ideal_morsel_size().max(1),
             self.tuning.flush_ahead(num_tasks),
-            // Rounded up, so that no bucket with rows is free.
-            total_bytes.div_ceil(total_rows.max(1) as u64).max(1),
+            row_bytes,
             sort_index_row_bytes(&self.key_dtype),
             spill_ctx,
         ))
@@ -443,6 +453,7 @@ impl ComputeNode for SortNode {
             tuning,
             work_idxs,
             drop_key,
+            input_schema,
             ..
         } = self;
 
@@ -463,6 +474,7 @@ impl ComputeNode for SortNode {
                 for (mut recv, sample) in receivers.into_iter().zip(samples.iter_mut()) {
                     let key = &*key;
                     let work_idxs = work_idxs.as_deref();
+                    let work_schema = &*input_schema;
                     join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                         let mut pipe_morsels = Vec::new();
                         while let Ok(mut morsel) = recv.recv().await {
@@ -470,6 +482,11 @@ impl ComputeNode for SortNode {
                             if let Some(idxs) = work_idxs {
                                 morsel = morsel
                                     .map(|df| {
+                                        debug_assert!(
+                                            idxs.iter()
+                                                .zip(work_schema.iter_names())
+                                                .all(|(&i, name)| df.columns()[i].name() == name)
+                                        );
                                         let columns =
                                             idxs.iter().map(|&i| df.columns()[i].clone()).collect();
                                         // SAFETY: the columns are a subset of the frame's.
