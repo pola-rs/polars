@@ -147,6 +147,22 @@ impl Series {
                 .struct_()?
                 .try_apply_fields(|f| rec(f.clone()))?
                 .into_series(),
+            #[cfg(feature = "dtype-map")]
+            DataType::Map(..) => {
+                let storage = rec(self.map()?.storage().clone())?;
+                let DataType::List(entries) = storage.dtype() else {
+                    unreachable!()
+                };
+                let DataType::Struct(kv) = entries.as_ref() else {
+                    unreachable!()
+                };
+                let dtype = DataType::Map(
+                    Box::new(kv[0].dtype().clone()),
+                    Box::new(kv[1].dtype().clone()),
+                );
+                // SAFETY: replacing unions by structs keeps the entries, and with them the keys.
+                unsafe { MapChunked::from_storage_unchecked(dtype, storage) }.into_series()
+            },
             dt => polars_bail!(
                 InvalidOperation: "cannot store a union nested in `{dt}` as a struct"
             ),

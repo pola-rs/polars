@@ -1622,10 +1622,36 @@ def test_union_parquet_scan() -> None:
     assert table["u"].to_pylist()[:2] == [{"i": 0, "s": None}, {"i": None, "s": "1"}]
 
 
-def test_union_parquet_in_map_raises() -> None:
-    df = pl.select(u=pl.lit(None).cast(pl.Map(pl.String, INT_STR)))
-    with pytest.raises(InvalidOperationError, match="cannot store a union nested in"):
-        df.write_parquet(io.BytesIO())
+@pytest.mark.parametrize("sink", [False, True])
+def test_union_parquet_in_map(sink: bool) -> None:
+    df = pl.DataFrame(
+        {
+            "v": pl.Series(
+                [{"a": 1, "b": "x", "c": None}, None, {}],
+                dtype=pl.Map(pl.String, INT_STR),
+            ),
+            "k": pl.Series(
+                [{1: "x", "a": "y"}, None, {}], dtype=pl.Map(INT_STR, pl.String)
+            ),
+        }
+    )
+    out = parquet_round_trip(df, sink=sink)
+    assert out.schema == df.schema
+    assert out.equals(df)
+
+    # Other readers see a struct of the variants in the map's entries.
+    buf = io.BytesIO()
+    df.write_parquet(buf)
+    table = pq.read_table(buf)
+    assert table["v"].to_pylist()[0] == [
+        ("a", {"i": 1, "s": None}),
+        ("b", {"i": None, "s": "x"}),
+        ("c", None),
+    ]
+    assert table["k"].to_pylist()[0] == [
+        ({"i": 1, "s": None}, "x"),
+        ({"i": None, "s": "a"}, "y"),
+    ]
 
 
 def test_union_by_dtype_selector() -> None:
