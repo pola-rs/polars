@@ -1,0 +1,7 @@
+exit: 2
+--- stdout ---
+--- stderr ---
+error: unknown option '--unknown'
+
+Usage: polars -c <SQL>
+Try 'polars --help'.

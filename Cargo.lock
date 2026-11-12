@@ -3041,6 +3041,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-cli"
+version = "0.55.1"
+dependencies = [
+ "polars",
+ "polars-ooc",
+]
+
+[[package]]
 name = "polars-compute"
 version = "0.55.1"
 dependencies = [

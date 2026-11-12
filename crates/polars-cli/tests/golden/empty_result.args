@@ -1,0 +1,2 @@
+-c
+SELECT 1 AS a WHERE false

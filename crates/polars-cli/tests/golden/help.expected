@@ -1,0 +1,13 @@
+exit: 0
+--- stdout ---
+Run SQL with Polars.
+
+This command is unstable: its options and output can change in any release.
+
+Usage: polars -c <SQL>
+
+Options:
+  -c <SQL>       Run the SQL statement and print its result
+  -h, --help     Print this help
+  -V, --version  Print the version
+--- stderr ---

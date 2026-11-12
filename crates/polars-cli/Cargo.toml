@@ -1,0 +1,149 @@
+[package]
+name = "polars-cli"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+publish = false
+repository = { workspace = true }
+description = "Command-line SQL engine for Polars (unstable)"
+
+[[bin]]
+name = "polars"
+path = "src/main.rs"
+# The binary shares its name with the `polars` library crate.
+doc = false
+test = false
+
+[dependencies]
+polars-ooc = { workspace = true, features = ["fast_alloc"] }
+
+[dependencies.polars]
+workspace = true
+features = [
+  # Engine and SQL.
+  "lazy",
+  "sql",
+  "streaming",
+  "cse",
+  "fused",
+  "performant",
+  # 64-bit row index.
+  "bigidx",
+  # File formats and storage.
+  "csv",
+  "ipc",
+  "json",
+  "parquet",
+  "aws",
+  "azure",
+  "gcp",
+  "http",
+  # Output. `fmt_no_tty` keeps the table independent of the terminal.
+  "fmt_no_tty",
+  # Data types.
+  "dtype-array",
+  "dtype-categorical",
+  "dtype-extension",
+  "dtype-full",
+  "dtype-map",
+  "temporal",
+  "timezones",
+  # Operations, following the Python runtime so that SQL behaves as `pl.sql` does.
+  "abs",
+  "approx_quantile",
+  "approx_unique",
+  "arg_where",
+  "array_arithmetic",
+  "array_count",
+  "array_to_struct",
+  "asof_join",
+  "binary_encoding",
+  "bitwise",
+  "business",
+  "concat_str",
+  "cov",
+  "cross_join",
+  "cum_agg",
+  "cumulative_eval",
+  "cutqcut",
+  "dataframe_arithmetic",
+  "diagonal_concat",
+  "diff",
+  "dot_product",
+  "dynamic_group_by",
+  "ewma",
+  "ewma_by",
+  "extract_groups",
+  "extract_jsonpath",
+  "find_many",
+  "hist",
+  "iejoin",
+  "index_of",
+  "interpolate",
+  "interpolate_by",
+  "is_between",
+  "is_close",
+  "is_first_distinct",
+  "is_in",
+  "is_last_distinct",
+  "is_unique",
+  "list_arithmetic",
+  "list_count",
+  "list_drop_nulls",
+  "list_eval",
+  "list_filter",
+  "list_gather",
+  "list_sample",
+  "list_to_struct",
+  "log",
+  "merge_sorted",
+  "mode",
+  "moment",
+  "month_end",
+  "month_start",
+  "offset_by",
+  "partition_by",
+  "pct_change",
+  "peaks",
+  "pivot",
+  "product",
+  "propagate_nans",
+  "random",
+  "range",
+  "rank",
+  "regex",
+  "reinterpret",
+  "repeat_by",
+  "replace",
+  "rle",
+  "rolling_window",
+  "rolling_window_by",
+  "round_series",
+  "row_hash",
+  "rows",
+  "search_sorted",
+  "semi_anti_join",
+  "sign",
+  "string_encoding",
+  "string_normalize",
+  "string_pad",
+  "string_reverse",
+  "string_to_integer",
+  "strings",
+  "to_dummies",
+  "top_k",
+  "trigonometry",
+  "true_div",
+  "unique_counts",
+  "zip_with",
+]
+
+[features]
+# The Python runtime builds with `nightly` too; some SQL functions need it.
+default = ["nightly"]
+nightly = ["polars/nightly"]
+
+[lints]
+workspace = true
