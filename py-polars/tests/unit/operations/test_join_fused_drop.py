@@ -266,8 +266,8 @@ def test_full_join_coalesce_key_dropped_and_kept(
     q = left.join(right, left_on="k", right_on="k_r", how="full", coalesce=True).select(
         columns
     )
-    # The final select is gone when the drop was fused into the join (not checked for `k`: an
-    # input select of that name exists too).
+    # The final select is gone when the drop was fused into the join (not checked for
+    # `k`: an input select of that name exists too).
     final_select = 'label="select\\n' + ", ".join(columns) + '"'
     if fused is not None:
         assert (final_select not in physical_plan(q)) == fused
