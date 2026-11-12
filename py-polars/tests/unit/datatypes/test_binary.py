@@ -1,3 +1,8 @@
+import operator
+from collections.abc import Callable
+
+import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal
 
@@ -37,3 +42,42 @@ def test_string_to_binary() -> None:
 
     assert s.cast(pl.Binary).to_list() == [b"", None, b"\x01\x02"]
     assert s.cast(pl.Binary).cast(pl.Utf8).to_list() == ["", None, "\x01\x02"]
+
+
+@pytest.mark.parametrize(
+    "op",
+    [
+        operator.add,
+        operator.sub,
+        operator.mul,
+        operator.truediv,
+        operator.floordiv,
+        operator.mod,
+        operator.and_,
+        operator.or_,
+        operator.xor,
+    ],
+    ids=["add", "sub", "mul", "truediv", "floordiv", "mod", "and", "or", "xor"],
+)
+@pytest.mark.parametrize("other", ["b", "i", "lit"])
+def test_binary_arithmetic_raises_in_schema_30621(
+    op: Callable[[pl.Expr, pl.Expr], pl.Expr], other: str
+) -> None:
+    if op is operator.add and other == "b":
+        pytest.skip("Binary + Binary is concatenation")
+
+    lf = pl.LazyFrame({"b": [b"x"], "i": [2]})
+    b = pl.col("b")
+    rhs = pl.lit(2) if other == "lit" else pl.col(other)
+
+    for expr in (op(b, rhs), op(rhs, b)):
+        with pytest.raises(
+            (pl.exceptions.InvalidOperationError, pl.exceptions.SchemaError)
+        ):
+            lf.select(expr).collect_schema()
+
+
+def test_binary_add_binary_schema_30621() -> None:
+    lf = pl.LazyFrame({"b": [b"x"]}).select(pl.col("b") + pl.col("b"))
+    assert lf.collect_schema()["b"] == pl.Binary
+    assert lf.collect()["b"].to_list() == [b"xx"]
