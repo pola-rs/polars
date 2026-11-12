@@ -17,6 +17,7 @@ fn main() -> ExitCode {
         // Help and version requests arrive here too, with exit code 0.
         Err(error) => return report(error),
     };
+    let format = args.format();
     let script = match read_script(args.input()) {
         Ok(script) => script,
         Err(error) => return report(error),
@@ -25,7 +26,7 @@ fn main() -> ExitCode {
     let interrupted = handle_interrupts();
     // Not locked: Polars and the panic hook write to these streams from other threads.
     let stdout = BufWriter::new(io::stdout());
-    let code = run(&script, &mut Printer::new(stdout, io::stderr()));
+    let code = run(&script, &mut Printer::new(stdout, io::stderr(), format));
     // An interrupt that arrived while the last result was printed stopped nothing.
     if code == exit_code::OK && interrupted.load(Ordering::SeqCst) {
         ExitCode::from(exit_code::INTERRUPTED)

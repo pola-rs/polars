@@ -1,0 +1,8 @@
+exit: 0
+--- stdout ---
+category,n,calories
+fruit,7,410
+meat,5,540
+seafood,8,1250
+vegetables,7,192
+--- stderr ---

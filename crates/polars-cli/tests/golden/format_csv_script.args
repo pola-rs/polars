@@ -1,0 +1,4 @@
+--format
+csv
+-f
+tests/golden/session.sql

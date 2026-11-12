@@ -1,0 +1,4 @@
+--format
+ndjson
+-c
+SELECT category, calories, sugars_g FROM read_csv('../../examples/datasets/foods1.csv') ORDER BY calories DESC, category, sugars_g LIMIT 3

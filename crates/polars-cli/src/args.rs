@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
+use crate::printer::Format;
+
 const AFTER_HELP: &str = "\
 A script can hold several statements, separated by ';'. They run in order and
 share one session. The run stops at the first statement that fails.
@@ -34,6 +36,10 @@ pub struct Args {
     /// Run the SQL script in FILE
     #[arg(short = 'f', long, value_name = "FILE")]
     file: Option<PathBuf>,
+
+    /// How results are written
+    #[arg(long, value_enum, value_name = "FMT", default_value_t)]
+    format: Format,
 }
 
 /// Where the SQL script comes from.
@@ -47,6 +53,10 @@ pub enum Input {
 }
 
 impl Args {
+    pub fn format(&self) -> Format {
+        self.format
+    }
+
     pub fn input(self) -> Input {
         match (self.command, self.file) {
             (Some(sql), _) => Input::Command(sql),
@@ -84,6 +94,19 @@ mod tests {
     }
 
     #[test]
+    fn formats() {
+        assert_eq!(parse(&[]).unwrap().format(), Format::Table);
+        for (name, format) in [
+            ("table", Format::Table),
+            ("csv", Format::Csv),
+            ("ndjson", Format::Ndjson),
+        ] {
+            assert_eq!(parse(&["--format", name]).unwrap().format(), format);
+            assert_eq!(format.to_string(), name);
+        }
+    }
+
+    #[test]
     fn help_and_version() {
         for (flag, kind) in [
             ("-h", ErrorKind::DisplayHelp),
@@ -104,6 +127,7 @@ mod tests {
             &["-c", "SELECT 1", "-f", "query.sql"],
             &["-c", "SELECT 1", "-c", "SELECT 2"],
             &["--unknown"],
+            &["--format", "parquet"],
             &["query.sql"],
         ] {
             assert_eq!(parse(args).unwrap_err().exit_code(), 2, "{args:?}");

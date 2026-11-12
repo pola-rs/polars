@@ -5,10 +5,27 @@ Run SQL with Polars
 Usage: polars [OPTIONS]
 
 Options:
-  -c, --command <SQL>  Run the SQL given on the command line
-  -f, --file <FILE>    Run the SQL script in FILE
-  -h, --help           Print help
-  -V, --version        Print version
+  -c, --command <SQL>
+          Run the SQL given on the command line
+
+  -f, --file <FILE>
+          Run the SQL script in FILE
+
+      --format <FMT>
+          How results are written
+
+          Possible values:
+          - table:  A table for reading; a long result is cut to its first and last rows
+          - csv:    Every row, with a header line
+          - ndjson: Every row, one JSON object per line
+          
+          [default: table]
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
 
 A script can hold several statements, separated by ';'. They run in order and
 share one session. The run stops at the first statement that fails.
