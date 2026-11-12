@@ -16,6 +16,7 @@ use sqlparser::tokenizer::{Location, Span};
 
 use crate::dyn_visit;
 use crate::sql_visitors::expr_references_any_column;
+use crate::time_travel::{VersionSpec, is_version_part, split_version, with_version};
 use crate::types::map_sql_dtype_to_polars;
 
 /// A table of an attached catalog that a statement reads.
@@ -25,6 +26,18 @@ pub struct CatalogTable {
     pub catalog: String,
     /// The table's identifier in the catalog: namespace parts, then the table name.
     pub identifier: Vec<String>,
+}
+
+/// A catalog table that a query reads, at a version or as it is now.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CatalogRead {
+    /// The table read.
+    pub table: CatalogTable,
+    /// The version read; `None` for the current snapshot.
+    pub version: Option<VersionSpec>,
+    /// The name to pass the scan of this read back under (see
+    /// `SQLContext::execute_with_catalog_tables`): the full name, then the version if any.
+    pub key: Vec<String>,
 }
 
 /// A namespace of an attached catalog.
@@ -640,7 +653,10 @@ where
     fn pre_visit_table_factor(&mut self, factor: &mut TableFactor) -> ControlFlow<PolarsError> {
         // A name with arguments is a table function.
         let TableFactor::Table {
-            name, args: None, ..
+            name,
+            args: None,
+            version,
+            ..
         } = factor
         else {
             return ControlFlow::Continue(());
@@ -648,8 +664,28 @@ where
         let Some(parts) = name_parts(name) else {
             return ControlFlow::Continue(());
         };
-        if let Some(full) = self.resolve_name(&parts) {
-            if let Err(err) = self.record(&parts, &full) {
+        if parts.iter().any(|part| is_version_part(part)) {
+            return ControlFlow::Break(polars_err!(
+                SQLInterface: "invalid table name {}", name
+            ));
+        }
+        let written = parts.join(".");
+        if self.is_cte(&written) || (self.is_local)(&written) {
+            // a time travel clause is refused where the table is read
+            return ControlFlow::Continue(());
+        }
+        let spec = match version
+            .as_ref()
+            .map(VersionSpec::from_table_version)
+            .transpose()
+        {
+            Ok(spec) => spec,
+            Err(err) => return ControlFlow::Break(err),
+        };
+        // A versioned read is its own relation, known by the name and the version.
+        let key = with_version(parts.clone(), spec.as_ref());
+        if let Some(full) = (self.resolve)(&key) {
+            if let Err(err) = self.record(&key, &full) {
                 return ControlFlow::Break(err);
             }
             let span = name.0[0]
@@ -659,6 +695,7 @@ where
                 self.spellings.insert(position, parts);
             }
             *name = object_name(&full, span);
+            *version = None;
         }
         ControlFlow::Continue(())
     }
@@ -1087,6 +1124,7 @@ fn is_absolute_location(location: &str) -> bool {
 
 /// A table name for messages, with parts containing dots quoted.
 pub(crate) fn display_name(parts: &[String]) -> String {
+    let (parts, version) = split_version(parts);
     let parts: Vec<String> = parts
         .iter()
         .map(|part| match part.contains('.') {
@@ -1094,7 +1132,10 @@ pub(crate) fn display_name(parts: &[String]) -> String {
             false => part.clone(),
         })
         .collect();
-    parts.join(".")
+    match version {
+        Some(version) => format!("{} {}", parts.join("."), version),
+        None => parts.join("."),
+    }
 }
 
 /// The first part of a `DELETE` condition that a catalog filter can't express, described for a
