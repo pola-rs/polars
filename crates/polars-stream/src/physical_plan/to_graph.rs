@@ -1535,6 +1535,7 @@ fn to_graph_rec<'a>(
             runtime_filters: _,
             estimated_rows: _,
             key_ranges,
+            pre_drop_schema: _,
         }
         | SemiAntiJoin {
             input_left,
@@ -1636,8 +1637,16 @@ fn to_graph_rec<'a>(
                     ref fused_predicate,
                     ref runtime_filters,
                     estimated_rows,
+                    ref pre_drop_schema,
                     ..
                 } => {
+                    // The predicate reads columns a fused drop does not output.
+                    let candidate_schema = pre_drop_schema
+                        .clone()
+                        .filter(|_| fused_predicate.is_some());
+                    let predicate_input_schema =
+                        candidate_schema.as_ref().unwrap_or(&output_schema);
+
                     // Compiled against a narrow frame of exactly the columns it reads, in
                     // the order the node gathers them.
                     let fused_predicate = fused_predicate
@@ -1651,7 +1660,7 @@ fn to_graph_rec<'a>(
                             names.dedup();
 
                             let fused_predicate_schema =
-                                Arc::new(output_schema.try_project(names.iter())?);
+                                Arc::new(predicate_input_schema.try_project(names.iter())?);
                             PolarsResult::Ok((
                                 create_stream_expr(fused_predicate, ctx, &fused_predicate_schema)?,
                                 fused_predicate_schema,
@@ -1668,6 +1677,7 @@ fn to_graph_rec<'a>(
                                 right_key_schema,
                                 key_encoder,
                                 output_schema,
+                                candidate_schema,
                                 left_key_selectors,
                                 right_key_selectors,
                                 fused_predicate,

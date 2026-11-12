@@ -519,6 +519,10 @@ pub enum PhysNodeKind {
         estimated_rows: Option<[u64; 2]>,
         /// The value range of each key column, empty or `None` where unknown.
         key_ranges: Vec<KeyRange>,
+        /// The output schema before a following drop of columns was fused into this join, if
+        /// one was. With a fused predicate, the columns dropped are still gathered to evaluate it
+        /// but are not output.
+        pre_drop_schema: Option<SchemaRef>,
     },
 
     MergeJoin {
@@ -979,6 +983,49 @@ fn split_multiplexers(
     });
 }
 
+/// Fuses a drop of columns (without renames) into the equi or semi/anti join `node` it reads, by
+/// narrowing the join's output schema, so the join does not gather the dropped columns. A join
+/// with a fused predicate still gathers the columns the predicate reads to evaluate it, but does
+/// not output them. Returns whether it was fused.
+fn fuse_drop_into_join<'a>(
+    node: &mut PhysNode,
+    columns: impl Iterator<Item = &'a PlSmallStr> + Clone,
+) -> bool {
+    let kept = Vec::from_iter(columns);
+    // A frame without columns has no height.
+    if kept.is_empty() {
+        return false;
+    }
+
+    // The join outputs its columns in a fixed order.
+    let schema = node.output_schema(0);
+    let in_order = schema
+        .iter_names()
+        .filter(|name| kept.contains(name))
+        .eq(kept.iter().copied());
+    if !in_order || kept.len() == schema.len() {
+        return false;
+    }
+
+    let schema = node.output_schema(0).clone();
+    match node.kind_mut() {
+        // Only the first drop's input schema matters: what the predicate reads is in it.
+        PhysNodeKind::EquiJoin {
+            pre_drop_schema, ..
+        } => {
+            pre_drop_schema.get_or_insert(schema);
+        },
+        PhysNodeKind::SemiAntiJoin {
+            output_bool: false, ..
+        } => {},
+        _ => return false,
+    }
+
+    let schema = node.output_schema_mut(0);
+    *schema = Arc::new(schema.try_project(kept).unwrap());
+    true
+}
+
 fn fuse_drops(
     roots: Vec<PhysNodeKey>,
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
@@ -1020,14 +1067,17 @@ fn fuse_drops(
             continue;
         }
 
-        let PhysNodeKind::Filter { projection, .. } = input_node.kind_mut() else {
-            continue;
-        };
-        let len_before_drop = projection.as_ref().map_or(len_before_drop, |(_, len)| *len);
-        *projection = Some((Vec::from_iter(columns.keys().cloned()), len_before_drop));
+        if fuse_drop_into_join(input_node, columns.keys()) {
+            // The join drops the columns itself.
+        } else if let PhysNodeKind::Filter { projection, .. } = input_node.kind_mut() {
+            let len_before_drop = projection.as_ref().map_or(len_before_drop, |(_, len)| *len);
+            *projection = Some((Vec::from_iter(columns.keys().cloned()), len_before_drop));
 
-        let input_schema = input_node.output_schema_mut(0);
-        *input_schema = Arc::new(input_schema.try_project(columns.keys()).unwrap());
+            let input_schema = input_node.output_schema_mut(0);
+            *input_schema = Arc::new(input_schema.try_project(columns.keys()).unwrap());
+        } else {
+            continue;
+        }
 
         if simple_proj_node.output_schemas.len() == 1 {
             std::mem::swap(simple_proj_node, input_node);

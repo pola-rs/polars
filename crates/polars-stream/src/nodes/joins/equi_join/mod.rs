@@ -48,6 +48,13 @@ struct EquiJoinParams {
     right_payload_select: Vec<Option<PlSmallStr>>,
     left_payload_schema: Arc<Schema>,
     right_payload_schema: Arc<Schema>,
+    /// The payload columns that are output, as indices into the payload, if only some are: the
+    /// others are only read by the fused predicate and are never gathered into the output.
+    left_output_idx: Option<Arc<[usize]>>,
+    right_output_idx: Option<Arc<[usize]>>,
+    /// The schema of the output columns of each side.
+    left_output_schema: Arc<Schema>,
+    right_output_schema: Arc<Schema>,
     args: JoinArgs,
     fused_predicate: Option<FusedPredicate>,
     // Key filters for the scans below the planned probe side, set once from a
@@ -90,6 +97,25 @@ impl EquiJoinParams {
     /// Should we emit unmatched rows from the probe side?
     fn emit_unmatched_probe(&self) -> bool {
         self.emit_unmatched(!self.left_is_build.unwrap())
+    }
+
+    /// The output schema of the left side, or else the right side.
+    fn output_side_schema(&self, left: bool) -> &Arc<Schema> {
+        if left {
+            &self.left_output_schema
+        } else {
+            &self.right_output_schema
+        }
+    }
+
+    /// The payload columns of the left side, or else the right side, that are output, if only
+    /// some are.
+    fn output_idx(&self, left: bool) -> Option<&[usize]> {
+        if left {
+            self.left_output_idx.as_deref()
+        } else {
+            self.right_output_idx.as_deref()
+        }
     }
 
     /// The payload schema of the left side, or else the right side.
@@ -197,7 +223,8 @@ fn compute_payload_selector(
                 )
             }
 
-            Ok(Some(suffixed))
+            // A column that collides is suffixed, so it is only output where the plan kept it.
+            Ok(Some(suffixed).filter(|name| output_schema.contains(name.as_str())))
         })
         .collect()
 }
@@ -570,6 +597,9 @@ impl EquiJoinNode {
         right_key_schema: Arc<Schema>,
         key_encoder: KeyEncoder,
         output_schema: Arc<Schema>,
+        // The output schema before a fused drop: what the fused predicate is compiled against.
+        // Columns missing from `output_schema` are only used for the predicate.
+        candidate_schema: Option<Arc<Schema>>,
         left_key_selectors: Vec<StreamExpr>,
         right_key_selectors: Vec<StreamExpr>,
         fused_predicate: Option<(StreamExpr, Arc<Schema>)>,
@@ -615,12 +645,15 @@ impl EquiJoinNode {
             MaintainOrderJoin::LeftRight | MaintainOrderJoin::RightLeft
         );
 
+        // Only a fused predicate reads columns the output does not have.
+        debug_assert!(candidate_schema.is_none() || fused_predicate.is_some());
+        let payload_output_schema = candidate_schema.as_ref().unwrap_or(&output_schema);
         let left_payload_select = compute_payload_selector(
             &left_input_schema,
             &right_input_schema,
             &left_key_schema,
             &right_key_schema,
-            &output_schema,
+            payload_output_schema,
             true,
             &args,
         )?;
@@ -629,7 +662,7 @@ impl EquiJoinNode {
             &left_input_schema,
             &right_key_schema,
             &left_key_schema,
-            &output_schema,
+            payload_output_schema,
             false,
             &args,
         )?;
@@ -641,6 +674,39 @@ impl EquiJoinNode {
         let left_payload_schema = Arc::new(select_schema(&left_input_schema, &left_payload_select));
         let right_payload_schema =
             Arc::new(select_schema(&right_input_schema, &right_payload_select));
+
+        let output_idx = |payload_schema: &Schema| {
+            let idx: Vec<usize> = payload_schema
+                .iter_names()
+                .enumerate()
+                // The postprocessing of a full join needs the right keys to coalesce.
+                .filter(|(_, name)| {
+                    output_schema.contains(name.as_str())
+                        || name.starts_with("__POLARS_COALESCE_KEYCOL")
+                })
+                .map(|(i, _)| i)
+                .collect();
+            (idx.len() != payload_schema.len()).then(|| Arc::from(idx))
+        };
+        let (left_output_idx, right_output_idx) = if candidate_schema.is_some() {
+            (
+                output_idx(&left_payload_schema),
+                output_idx(&right_payload_schema),
+            )
+        } else {
+            (None, None)
+        };
+        let output_side_schema = |schema: &Arc<Schema>, idx: &Option<Arc<[usize]>>| match idx {
+            Some(idx) => Arc::new(
+                idx.iter()
+                    .map(|i| schema.get_at_index(*i).unwrap())
+                    .map(|(name, dtype)| Field::new(name.clone(), dtype.clone()))
+                    .collect::<Schema>(),
+            ),
+            None => schema.clone(),
+        };
+        let left_output_schema = output_side_schema(&left_payload_schema, &left_output_idx);
+        let right_output_schema = output_side_schema(&right_payload_schema, &right_output_idx);
 
         // The ordered probe would evaluate the fused predicate a partition group at a time.
         assert!(fused_predicate.is_none() || args.maintain_order == MaintainOrderJoin::None);
@@ -663,6 +729,10 @@ impl EquiJoinNode {
             right_payload_select,
             left_payload_schema,
             right_payload_schema,
+            left_output_idx,
+            right_output_idx,
+            left_output_schema,
+            right_output_schema,
             args,
             fused_predicate,
             runtime_filters,
