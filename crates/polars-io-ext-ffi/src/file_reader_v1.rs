@@ -22,8 +22,10 @@
 //! holding the GIL; they may block. Batches are read from the stream returned by
 //! [`Plugin::reader_begin_read`], also from a blocking thread. The others (`builder_*`, `scan_*`,
 //! `reader_new` and the releases) are called from any thread, also from async executor threads
-//! and while planning, and must not block: open connections lazily, in the functions that may. After a `get_next` failure, [`Plugin::reader_take_error`] returns the error
-//! with its kind.
+//! and while planning, and must not block: open connections lazily, in the functions that may.
+//! The one exception: if the host cannot create a thread for a cancellation, it may call
+//! `reader_cancel` from any thread (an async executor thread too) as a last resort. After a
+//! `get_next` failure, [`Plugin::reader_take_error`] returns the error with its kind.
 use std::ffi::{CStr, c_void};
 
 use crate::common::{
@@ -108,7 +110,9 @@ pub struct Plugin {
         args: *const BeginReadArgs<'_>,
     ) -> FfiResult<ArrowArrayStream>,
     /// Stops a running read: a blocked `get_next` returns an error soon after. May be called
-    /// from any thread, also when no read runs.
+    /// from any thread, also when no read runs. A cancel is sticky: afterwards `begin_read` and
+    /// `get_next` of the reader fail (or end) instead of starting work, as the host may cancel a
+    /// reader whose read has not begun.
     pub reader_cancel: unsafe extern "C" fn(reader: ReaderHandle),
     /// The error of the last failed `get_next` of the reader's stream, if any.
     pub reader_take_error: unsafe extern "C" fn(reader: ReaderHandle) -> FfiResult<()>,

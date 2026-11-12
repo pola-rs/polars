@@ -398,17 +398,14 @@ def test_stop_cancels_a_partition_waiting_for_its_first_rows(
     assert cancelled.is_set() or not waiting.is_set()
 
 
-@pytest.mark.parametrize("stop", ["head", "error"])
-def test_stop_cancels_with_saturated_blocking_pool(tmp_path: Path, stop: str) -> None:
+def test_stop_cancels_with_saturated_blocking_pool(tmp_path: Path) -> None:
     # Set the pool size before Polars initializes its runtime. Cancellation needs its
     # own thread even when the only fetch worker is blocked inside the database.
     code = f"""
 import runpy
 from pathlib import Path
 tests = runpy.run_path({__file__!r})
-tests["test_stop_cancels_a_partition_waiting_for_its_first_rows"](
-    Path({str(tmp_path)!r}), {stop!r}
-)
+tests["_stop_with_saturated_blocking_pool"](Path({str(tmp_path)!r}))
 """
     subprocess.run(
         [sys.executable, "-c", code],
@@ -416,6 +413,61 @@ tests["test_stop_cancels_a_partition_waiting_for_its_first_rows"](
         check=True,
         timeout=30,
     )
+
+
+def _stop_with_saturated_blocking_pool(tmp_path: Path) -> None:
+    path = tmp_path / "t.db"
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY)")
+        conn.executemany("INSERT INTO t VALUES (?)", [(i,) for i in range(1, 1001)])
+        conn.commit()
+
+    cancelled = threading.Event()
+
+    class Connection(sqlite3.Connection):
+        def interrupt(self) -> None:
+            cancelled.set()
+            super().interrupt()
+
+    # read as a `sqlite3` connection
+    Connection.__module__ = "sqlite3"
+
+    rows = 0
+    blocked_at = 0.0
+
+    def first_rows(_: int) -> int:
+        # The first partition fails the query with its first batch, but its read blocks
+        # in the database on a later row (the driver hands a batch over once it has read
+        # the next row), holding the only fetch thread.
+        nonlocal rows, blocked_at
+        rows += 1
+        if rows > 6:
+            blocked_at = blocked_at or time.monotonic()
+            cancelled.wait(5)
+        return 1
+
+    def factory() -> sqlite3.Connection:
+        conn = sqlite3.connect(path, factory=Connection, check_same_thread=False)
+        conn.create_function("first_rows", 1, first_rows)
+        return conn
+
+    lf = pl.scan_database(
+        "t",
+        factory,
+        schema={"id": pl.Int64},
+        partition_predicates=["first_rows(id) = 1 AND id <= 500", "id > 500"],
+        # one read at a time: the second partition waits for the first
+        max_connections=1,
+        batch_size=5,
+    )
+    q = lf.select((pl.col("id") * 100).cast(pl.UInt8, strict=True))
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="conversion"):
+        q.collect(engine="streaming")
+    # The only fetch thread is blocked in the database: only the cancellation, which
+    # cannot run on that pool, lets the query return.
+    assert blocked_at
+    assert cancelled.is_set()
+    assert time.monotonic() - blocked_at < 3
 
 
 def test_sqlalchemy_engine_connects_through_its_pool() -> None:

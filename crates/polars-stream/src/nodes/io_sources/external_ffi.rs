@@ -164,6 +164,11 @@ impl Reader {
 
     /// Reads `columns` and sends every batch to `tx`, until the end, an error, or `tx` closes.
     fn fetch(&self, columns: Vec<String>, tx: tokio::sync::mpsc::Sender<PolarsResult<DataFrame>>) {
+        // The task may have been dropped (and the reader cancelled) while this waited for a
+        // pool thread: do not start a read nobody consumes.
+        if tx.is_closed() {
+            return;
+        }
         let begin = BeginRead {
             columns,
             verbose: polars_core::config::verbose(),
@@ -230,8 +235,9 @@ impl Drop for CancelOnDrop {
                     let _ = done_tx.send(());
                 });
             if thread.is_err() {
-                // If the OS cannot create a thread, cancel here as a last resort. Queuing
-                // on the fetch pool could leave the query waiting forever.
+                // If the OS cannot create a thread, cancel here as a last resort, though this
+                // may be an async executor thread (the contract allows it as its one
+                // exception). Queuing on the fetch pool could leave the query waiting forever.
                 reader.cancel();
                 return;
             }
