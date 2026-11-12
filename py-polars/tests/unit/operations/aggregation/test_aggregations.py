@@ -2448,6 +2448,13 @@ def test_ordering_aggs_object_raise(expr: pl.Expr) -> None:
         df.select(expr.over("g"))
 
 
+@pytest.mark.parametrize("method", [pl.Series.arg_min, pl.Series.arg_max])
+def test_arg_min_max_object_series_raise(method: Callable[[pl.Series], Any]) -> None:
+    o = pl.Series([object(), None, object()], dtype=pl.Object)
+    with pytest.raises(InvalidOperationError, match="not supported for dtype `object`"):
+        method(o)
+
+
 @pytest.mark.parametrize(
     ("dtype", "input", "expect"),
     [
