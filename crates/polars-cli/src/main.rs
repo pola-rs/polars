@@ -20,11 +20,11 @@ fn main() -> ExitCode {
         },
     };
 
-    let stdout = BufWriter::new(io::stdout().lock());
+    let stdout = BufWriter::new(io::stdout());
     let code = match invocation {
         Invocation::Help => print(stdout, HELP),
         Invocation::Version => print(stdout, concat!("polars ", env!("CARGO_PKG_VERSION"), "\n")),
-        Invocation::Command(sql) => run(&sql, &mut Printer::new(stdout, io::stderr().lock())),
+        Invocation::Command(sql) => run(&sql, &mut Printer::new(stdout, io::stderr())),
     };
     ExitCode::from(code)
 }
