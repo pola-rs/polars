@@ -15,6 +15,7 @@ use polars_error::PolarsResult;
 use polars_mem_engine::scan_predicate::skip_files_mask::SkipFilesMask;
 use polars_plan::dsl::{MissingColumnsPolicy, ScanSource};
 use polars_utils::IdxSize;
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 
@@ -447,6 +448,7 @@ async fn start_reader_impl(
     let StartReaderArgsConstant {
         hive_parts,
         final_output_schema,
+        output_schema_after_predicate,
         reader_capabilities,
         file_projection_builder,
         cast_columns_policy,
@@ -516,6 +518,38 @@ async fn start_reader_impl(
         extra_ops_post: &mut extra_ops_post,
     }
     .push_operations();
+
+    // Columns that are only read to evaluate the predicate.
+    //
+    // * If the predicate is not evaluated in post, the reader (which evaluates it) need not emit
+    //   them, and the post-applied operations produce the narrowed schema directly.
+    // * Otherwise the post-applied predicate needs them, and drops them once evaluated.
+    let mut final_output_schema = final_output_schema;
+    let mut output_schema_after_predicate = output_schema_after_predicate;
+    let mut drop_columns_after_predicate: Vec<PlSmallStr> = vec![];
+
+    if extra_ops_post.predicate.is_none()
+        && let Some(narrow) = output_schema_after_predicate.take()
+    {
+        let remap_idx = |idx: usize| {
+            final_output_schema
+                .get_at_index(idx)
+                .and_then(|(name, _)| narrow.index_of(name))
+                .unwrap_or(usize::MAX)
+        };
+        extra_ops_post.row_index_col_idx = remap_idx(extra_ops_post.row_index_col_idx);
+        extra_ops_post.file_path_col_idx = remap_idx(extra_ops_post.file_path_col_idx);
+
+        if predicate.is_some() {
+            drop_columns_after_predicate = final_output_schema
+                .iter_names()
+                .filter(|name| !narrow.contains(name))
+                .cloned()
+                .collect();
+        }
+
+        final_output_schema = narrow;
+    }
 
     // Position of the first morsel sent by the reader.
     let first_morsel_position = if pre_slice.is_some() {
@@ -669,6 +703,7 @@ async fn start_reader_impl(
         row_index,
         pre_slice,
         predicate,
+        drop_columns_after_predicate,
         cast_columns_policy: cast_columns_policy.clone(),
         missing_columns_policy,
         extra_columns_policy,
@@ -715,6 +750,7 @@ async fn start_reader_impl(
             projection: projection_to_post,
             cast_columns_policy,
             missing_columns_policy,
+            output_schema_after_predicate,
             extra_ops,
             scan_source: scan_source.clone(),
             scan_source_idx,

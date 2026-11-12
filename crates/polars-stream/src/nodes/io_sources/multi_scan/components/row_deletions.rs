@@ -230,6 +230,7 @@ impl DeletionFilesProvider {
                                     row_index: None,
                                     pre_slice: None,
                                     predicate: None,
+                                    drop_columns_after_predicate: Vec::new(),
                                     cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
                                     extra_columns_policy: ExtraColumnsPolicy::Raise,
                                     missing_columns_policy: MissingColumnsPolicy::Raise,

@@ -14,6 +14,7 @@ use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_plan::dsl::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy};
 use polars_utils::IdxSize;
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 
 use crate::nodes::io_sources::multi_scan::components::predicate::Predicate;
@@ -146,6 +147,11 @@ pub struct BeginReadArgs {
     pub row_index: Option<RowIndex>,
     pub pre_slice: Option<Slice>,
     pub predicate: Option<Predicate>,
+    /// Columns that are only in `projection` to evaluate `predicate`, which the reader fully
+    /// applies. The reader may omit them from the morsels it emits (they are not read by
+    /// anything after the predicate), and need not gather them. It may also ignore this, as
+    /// anything emitted for them is dropped in post.
+    pub drop_columns_after_predicate: Vec<PlSmallStr>,
 
     /// User-configured policy for when datatypes do not match.
     ///
@@ -180,6 +186,7 @@ impl Default for BeginReadArgs {
             row_index: None,
             pre_slice: None,
             predicate: None,
+            drop_columns_after_predicate: Vec::new(),
             // TODO: Use less restrictive default
             cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
             extra_columns_policy: ExtraColumnsPolicy::Raise,

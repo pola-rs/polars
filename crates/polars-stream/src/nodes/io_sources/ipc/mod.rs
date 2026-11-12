@@ -221,6 +221,7 @@ impl FileReader for IpcFileReader {
             row_index,
             pre_slice: pre_slice_arg,
             predicate: None,
+            drop_columns_after_predicate: _,
             cast_columns_policy,
             extra_columns_policy: _,
             missing_columns_policy: _,

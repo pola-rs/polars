@@ -1776,3 +1776,226 @@ def test_multiscan_max_concurrent_scan_bytes(
                 assert active == 1
             elif "releasing read bytes" in line:
                 active -= 1
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
+@pytest.mark.parametrize("force_post_apply", [False, True])
+def test_multiscan_predicate_only_columns_not_emitted(
+    tmp_path: Path,
+    scan: Any,
+    write: Any,
+    force_post_apply: bool,
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    if force_post_apply:
+        plmonkeypatch.setenv("POLARS_FORCE_EMPTY_READER_CAPABILITIES", "1")
+
+    dfs = [
+        pl.DataFrame(
+            {
+                "a": range(i * 10, i * 10 + 10),
+                "b": [x % 3 for x in range(10)],
+                "c": [f"s{x}" for x in range(10)],
+            }
+        )
+        for i in range(3)
+    ]
+    paths = [tmp_path / f"{i}" for i in range(3)]
+    for df, path in zip(dfs, paths, strict=True):
+        write(df, path)
+    df = pl.concat(dfs)
+
+    lf = scan(paths)
+    pred = pl.col("b") == 1
+
+    def check(q: pl.LazyFrame, expected: pl.DataFrame) -> None:
+        assert_frame_equal(q.collect(engine="streaming"), expected)
+
+    check(lf.filter(pred).select("a", "c"), df.filter(pred).select("a", "c"))
+    # Reordered
+    check(lf.filter(pred).select("c", "a"), df.filter(pred).select("c", "a"))
+    check(lf.filter(pred).select("c"), df.filter(pred).select("c"))
+    # Predicate on several columns, some of them selected.
+    p2 = (pl.col("b") == 1) & (pl.col("a") > 5)
+    check(lf.filter(p2).select("c"), df.filter(p2).select("c"))
+    # Predicate that is not a conjunction of single-column predicates.
+    p4 = (pl.col("b") == 1) | (pl.col("a") > 25)
+    check(lf.filter(p4).select("c"), df.filter(p4).select("c"))
+    p5 = pl.col("a") % 2 == pl.col("b")
+    check(lf.filter(p5).select("c"), df.filter(p5).select("c"))
+    check(lf.filter(pred).select("a"), df.filter(pred).select("a"))
+    # Predicate that no row passes
+    p3 = pl.col("b") > 5
+    check(lf.filter(p3).select("a"), df.filter(p3).select("a"))
+
+    # Slices after the filter, and before.
+    check(
+        lf.filter(pred).select("a", "c").slice(2, 3),
+        df.filter(pred).select("a", "c").slice(2, 3),
+    )
+    check(
+        lf.filter(pred).select("a", "c").tail(4),
+        df.filter(pred).select("a", "c").tail(4),
+    )
+    check(
+        lf.head(15).filter(pred).select("a", "c"),
+        df.head(15).filter(pred).select("a", "c"),
+    )
+    check(
+        lf.slice(-12, 7).filter(pred).select("a", "c"),
+        df.slice(-12, 7).filter(pred).select("a", "c"),
+    )
+
+    # Row index
+    check(
+        lf.with_row_index("i").filter(pred).select("c", "a"),
+        df.with_row_index("i").filter(pred).select("c", "a"),
+    )
+    check(
+        lf.with_row_index("i").filter(pred).select("i", "a"),
+        df.with_row_index("i").filter(pred).select("i", "a"),
+    )
+    pi = pl.col("i") % 4 == 0
+    check(
+        lf.with_row_index("i").filter(pi).select("c", "a"),
+        df.with_row_index("i").filter(pi).select("c", "a"),
+    )
+    check(
+        lf.with_row_index("i", offset=5).filter(pi & pred).select("a"),
+        df.with_row_index("i", offset=5).filter(pi & pred).select("a"),
+    )
+
+    # File paths
+    lf_fp = scan(paths, include_file_paths="f")
+    df_fp = pl.concat(
+        [
+            d.with_columns(pl.lit(str(p)).alias("f"))
+            for d, p in zip(dfs, paths, strict=True)
+        ]
+    ).with_columns(normalize_path_separator_pl(pl.col("f")))
+    pf = pl.col("f").str.ends_with("1")
+    check(lf_fp.filter(pf).select("a", "c"), df_fp.filter(pf).select("a", "c"))
+    check(
+        lf_fp.filter(pf & pred).select("c", "f"),
+        df_fp.filter(pf & pred).select("c", "f"),
+    )
+    check(
+        lf_fp.with_row_index("i").filter(pf & pred).select("c", "f"),
+        df_fp.with_row_index("i").filter(pf & pred).select("c", "f"),
+    )
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("scan", "write"),
+    [
+        (pl.scan_parquet, pl.DataFrame.write_parquet),
+        (pl.scan_ipc, pl.DataFrame.write_ipc),
+    ],
+)
+@pytest.mark.parametrize("force_post_apply", [False, True])
+def test_multiscan_predicate_only_columns_hive(
+    tmp_path: Path,
+    scan: Any,
+    write: Any,
+    force_post_apply: bool,
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    if force_post_apply:
+        plmonkeypatch.setenv("POLARS_FORCE_EMPTY_READER_CAPABILITIES", "1")
+
+    dfs = []
+    for h in range(3):
+        d = tmp_path / f"h={h}"
+        d.mkdir()
+        df = pl.DataFrame({"a": [h * 10 + x for x in range(6)], "b": [0, 1] * 3})
+        write(df, d / "0")
+        dfs.append(df.with_columns(h=pl.lit(h, dtype=pl.Int64)))
+    df = pl.concat(dfs)
+
+    lf = scan(tmp_path, hive_partitioning=True)
+
+    h_gt0 = pl.col("h") > 0
+    b1 = pl.col("b") == 1
+    for q, e in [
+        (lf.filter(h_gt0).select("a", "b"), df.filter(h_gt0).select("a", "b")),
+        (lf.filter(h_gt0 & b1).select("a"), df.filter(h_gt0 & b1).select("a")),
+        (
+            lf.filter((pl.col("h") != 1) | b1).select("a"),
+            df.filter((pl.col("h") != 1) | b1).select("a"),
+        ),
+        (lf.filter(b1).select("h", "a"), df.filter(b1).select("h", "a")),
+        (
+            lf.with_row_index().filter(pl.col("h") == 2).select("a", "index"),
+            df.with_row_index().filter(pl.col("h") == 2).select("a", "index"),
+        ),
+    ]:
+        assert_frame_equal(q.collect(engine="streaming"), e, check_row_order=False)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("scan", "write"),
+    [
+        (pl.scan_parquet, pl.DataFrame.write_parquet),
+        (pl.scan_ipc, pl.DataFrame.write_ipc),
+    ],
+)
+@pytest.mark.parametrize("force_post_apply", [False, True])
+def test_multiscan_predicate_only_columns_differing_schemas(
+    tmp_path: Path,
+    scan: Any,
+    write: Any,
+    force_post_apply: bool,
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    if force_post_apply:
+        plmonkeypatch.setenv("POLARS_FORCE_EMPTY_READER_CAPABILITIES", "1")
+
+    b_dtype = pl.Int8 if scan is pl.scan_parquet else pl.Int64
+    dfs = [
+        pl.DataFrame({"a": [1, 2, 3, 4], "b": [1, 0, 1, 0], "c": ["w", "x", "y", "z"]}),
+        # Columns in a different order, and `b` has another (castable) dtype.
+        pl.DataFrame(
+            {
+                "c": ["p", "q", "r"],
+                "b": pl.Series([1, 1, 0], dtype=b_dtype),
+                "a": [5, 6, 7],
+            }
+        ),
+    ]
+    paths = [tmp_path / "0", tmp_path / "1"]
+    for df, path in zip(dfs, paths, strict=True):
+        write(df, path)
+
+    cast_options = pl.ScanCastOptions(integer_cast="upcast")
+    is_parquet = scan is pl.scan_parquet
+    lf = scan(paths, **({"cast_options": cast_options} if is_parquet else {}))
+    expected = pl.concat([d.select("a", "b", "c").cast({"b": pl.Int64}) for d in dfs])
+    pred = pl.col("b") == 1
+
+    assert_frame_equal(
+        lf.filter(pred).select("c", "a").collect(engine="streaming"),
+        expected.filter(pred).select("c", "a"),
+    )
+
+    if scan is pl.scan_parquet:
+        # Column `c` is missing from the second file.
+        write(dfs[1].drop("c"), paths[1])
+        lf = scan(paths, missing_columns="insert", cast_options=cast_options)
+        expected = pl.concat(
+            [
+                d.select("a", "b", "c").cast({"b": pl.Int64})
+                for d in [dfs[0], dfs[1].with_columns(c=pl.lit(None, dtype=pl.String))]
+            ]
+        )
+        for p in [pl.col("c").is_null(), pl.col("c").is_null() | (pl.col("b") == 1)]:
+            assert_frame_equal(
+                lf.filter(p).select("a").collect(engine="streaming"),
+                expected.filter(p).select("a"),
+            )
+            assert_frame_equal(
+                lf.filter(p).select("b", "a").collect(engine="streaming"),
+                expected.filter(p).select("b", "a"),
+            )

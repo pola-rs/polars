@@ -592,6 +592,15 @@ impl ParquetReadImpl {
             )
         }
 
+        // Only if the decoder evaluates the predicate, so that nothing needs these columns after.
+        let dropped_fields: Arc<[bool]> = projected_arrow_fields
+            .iter()
+            .map(|f| {
+                predicate.as_ref().is_some_and(|p| p.filters_rows)
+                    && self.drop_columns_after_predicate.contains(f.output_name())
+            })
+            .collect();
+
         RowGroupDecoder {
             num_pipelines: self.config.num_pipelines,
             task_metrics: self.task_metrics.clone(),
@@ -605,6 +614,7 @@ impl ParquetReadImpl {
             rest_field_indices,
             passes: Mutex::new(Arc::new(passes)),
             non_predicate_field_indices,
+            dropped_fields,
             target_values_per_thread,
             runtime_range_skipper,
         }

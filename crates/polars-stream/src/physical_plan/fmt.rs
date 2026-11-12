@@ -603,6 +603,7 @@ fn visualize_plan_rec(
             cloud_options: _,
             file_projection_builder,
             output_schema,
+            output_schema_after_predicate,
             row_index,
             pre_slice,
             predicate,
@@ -680,6 +681,21 @@ fn visualize_plan_rec(
 
             if let Some(predicate) = predicate {
                 write!(f, "\nfilter: {}", predicate.display(expr_arena)).unwrap();
+            }
+
+            if let Some(after) = output_schema_after_predicate {
+                write!(
+                    f,
+                    "\nproject after filter: {} / {}: {}",
+                    after.len(),
+                    output_schema.len(),
+                    after
+                        .iter_names()
+                        .map(|x| x.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+                .unwrap();
             }
 
             if let Some(v) = hive_parts.as_ref().map(|h| h.df().width()) {
