@@ -3,7 +3,6 @@ from __future__ import annotations
 import io
 import json
 import struct
-import warnings
 from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
@@ -244,7 +243,7 @@ def test_write_geoparquet(plmonkeypatch: PlMonkeyPatch) -> None:
     ]
 
 
-def test_write_geoparquet_warns_unclaimed_box(
+def test_write_geoparquet_unclaimed_box(
     plmonkeypatch: PlMonkeyPatch, tmp_path: Path
 ) -> None:
     # GeoPandas names its covering `bbox` whatever the geometry is called,
@@ -263,25 +262,28 @@ def test_write_geoparquet_warns_unclaimed_box(
     assert _ext(df.schema["bbox"])[0] == "geoarrow.box"
 
     match = (
-        "'bbox' as a plain struct, not as a GeoParquet covering: "
+        "box column 'bbox' as GeoParquet: "
         "no geometry column has it as its covering name; name it '<geometry>_bbox'"
     )
-    out = io.BytesIO()
-    with pytest.warns(UserWarning, match=match):
-        df.write_parquet(out)
-    geo = _read_geo(out)
-    assert "covering" not in geo["columns"]["geom"]
-    assert pl.read_parquet(out.getvalue())["bbox"].ext.storage().to_list() == [
-        XY_BOUNDS
-    ]
+    with pytest.raises(pl.exceptions.InvalidOperationError, match=match):
+        df.write_parquet(io.BytesIO())
 
-    # Once per write, not once per file.
+    # The error comes before any file is opened.
     partitioned = pl.concat([df, df]).with_columns(p=pl.Series([1, 2]))
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
+    with pytest.raises(pl.exceptions.InvalidOperationError, match=match):
         partitioned.lazy().sink_parquet(pl.PartitionBy(tmp_path, key="p"), mkdir=True)
-    assert len(list(tmp_path.rglob("*.parquet"))) == 2
-    assert sum("plain struct" in str(w.message) for w in caught) == 1
+    assert list(tmp_path.rglob("*.parquet")) == []
+
+    out = io.BytesIO()
+    df.with_columns(pl.col("bbox").ext.storage()).write_parquet(out)
+    assert "covering" not in _read_geo(out)["columns"]["geom"]
+    assert pl.read_parquet(out.getvalue())["bbox"].to_list() == [XY_BOUNDS]
+
+    # With its own `geo` key, the user decides what the box means.
+    geo = {"version": "1.1.0", "primary_column": "geom", "columns": {"geom": wkb}}
+    out = io.BytesIO()
+    df.write_parquet(out, metadata={"geo": json.dumps(geo)})
+    assert _read_geo(out) == geo
 
 
 @pytest.mark.parametrize("box_name", ["bbox", "other"])
@@ -299,18 +301,9 @@ def test_write_geoparquet_box_not_a_covering(
     )
     plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.1")
 
-    buf = io.BytesIO()
-    match = f"'{box_name}' as a plain struct.*must be Float64 xmin, ymin"
-    with pytest.warns(UserWarning, match=match):
-        df.write_parquet(buf)
-    geo = _read_geo(buf)
-    assert list(geo["columns"]) == ["geometry"]
-    assert "covering" not in geo["columns"]["geometry"]
-
-    plmonkeypatch.setenv("POLARS_GEOPARQUET_READ", "1")
-    out = pl.read_parquet(buf.getvalue())
-    assert _ext(out.schema[box_name]) == _ext(df.schema[box_name])
-    assert out[box_name].ext.storage().to_list() == [bounds]
+    match = f"box column '{box_name}' as GeoParquet: .*must be Float64 xmin, ymin"
+    with pytest.raises(pl.exceptions.InvalidOperationError, match=match):
+        df.write_parquet(io.BytesIO())
 
 
 def test_write_geoparquet_ambiguous_bbox(plmonkeypatch: PlMonkeyPatch) -> None:
@@ -332,15 +325,9 @@ def test_write_geoparquet_ambiguous_bbox(plmonkeypatch: PlMonkeyPatch) -> None:
     df = pl.read_parquet(buf)
     assert _ext(df.schema["bbox"])[0] == "geoarrow.box"
 
-    out = io.BytesIO()
-    match = "'bbox' as a plain struct.*could cover both 'geometry' and 'geography'"
-    with pytest.warns(UserWarning, match=match):
-        df.write_parquet(out)
-    geo = _read_geo(out)
-    assert all("covering" not in c for c in geo["columns"].values())
-    assert pl.read_parquet(out.getvalue())["bbox"].ext.storage().to_list() == [
-        XY_BOUNDS
-    ]
+    match = "box column 'bbox' as GeoParquet: it could cover both 'geometry' and 'geography'"
+    with pytest.raises(pl.exceptions.InvalidOperationError, match=match):
+        df.write_parquet(io.BytesIO())
 
 
 def test_write_geoparquet_covering(plmonkeypatch: PlMonkeyPatch) -> None:
@@ -388,9 +375,12 @@ def test_write_geoparquet_covering(plmonkeypatch: PlMonkeyPatch) -> None:
     ]
 
     plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.0")
-    geometry = _geo_metadata(df.select("geometry", "bbox"))["columns"]["geometry"]
-    assert "covering" not in geometry
-    assert _geo_metadata(df.select("bbox")) is None
+    for columns in [["geometry", "bbox"], ["bbox"]]:
+        with pytest.raises(
+            pl.exceptions.InvalidOperationError,
+            match=r"GeoParquet 1\.0 has no coverings",
+        ):
+            df.select(columns).write_parquet(io.BytesIO())
 
 
 @pytest.mark.parametrize(

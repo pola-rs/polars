@@ -279,66 +279,19 @@ pub(crate) struct FileStatistics<'a> {
     pub(crate) row_groups: &'a [RowGroup],
 }
 
+/// Checks that `schema` can be written as GeoParquet, so that a write fails before any file is opened.
+pub fn validate_geo_schema(schema: &ArrowSchema) -> PolarsResult<()> {
+    geo_key_value(schema, None).map(|_| ())
+}
+
 /// Builds the GeoParquet `geo` metadata for the GeoArrow columns in `schema` if
 /// `POLARS_GEOPARQUET_WRITE` is set to `1.0` or `1.1`.
 /// The `bbox` of each geometry column is only filled in if `statistics` are given.
+/// A `geoarrow.box` column that covers no geometry column is an error.
 pub(crate) fn geo_key_value(
     schema: &ArrowSchema,
     statistics: Option<&FileStatistics<'_>>,
 ) -> PolarsResult<Option<KeyValue>> {
-    Ok(build_geo(schema, statistics)?.and_then(|geo| geo.key_value))
-}
-
-/// Called once per write, before any file is opened.
-pub fn validate_geo_schema(schema: &ArrowSchema) -> PolarsResult<()> {
-    let Some(geo) = build_geo(schema, None)? else {
-        return Ok(());
-    };
-    // GeoParquet 1.0 has no coverings, so there is no name to suggest.
-    if geo.version == "1.0.0" {
-        return Ok(());
-    }
-    for field in schema.iter_values() {
-        if let ArrowDataType::Extension(ext) = &field.dtype
-            && ext.name == BOX_EXTENSION_NAME
-            && !geo
-                .covering_columns
-                .iter()
-                .any(|c| c == field.name.as_str())
-        {
-            // A box that can't be a covering under any name should not be told to rename.
-            let reason = if box_layout(&ext.inner).is_none() {
-                "its fields must be Float64 xmin, ymin, [zmin,] xmax, ymax, [zmax] in that order"
-            } else if field.name == "bbox" && bbox_is_ambiguous(schema) {
-                "it could cover both 'geometry' and 'geography'; rename one of them"
-            } else {
-                "no geometry column has it as its covering name; \
-                name it '<geometry>_bbox', or 'bbox' for a column named 'geometry' or 'geography'"
-            };
-            // [`geo_key_value`] runs once per file, so warning there would repeat if we write to
-            // multiple files
-            polars_warn!(
-                "writing column '{}' as a plain struct, not as a GeoParquet covering: {}",
-                field.name,
-                reason
-            );
-        }
-    }
-    Ok(())
-}
-
-struct GeoParquet {
-    version: &'static str,
-    /// `None` if the schema has no geometry columns.
-    key_value: Option<KeyValue>,
-    covering_columns: Vec<String>,
-}
-
-/// Returns `None` if `POLARS_GEOPARQUET_WRITE` is not set.
-fn build_geo(
-    schema: &ArrowSchema,
-    statistics: Option<&FileStatistics<'_>>,
-) -> PolarsResult<Option<GeoParquet>> {
     let version = match std::env::var("POLARS_GEOPARQUET_WRITE").as_deref() {
         Err(_) | Ok("") => return Ok(None),
         Ok("1.0") => "1.0.0",
@@ -436,8 +389,9 @@ fn build_geo(
         primary_column.get_or_insert(name.as_str());
         columns.insert(name.to_string(), Value::Object(column));
     }
+    check_boxes_are_coverings(schema, version, &covering_columns)?;
 
-    let key_value = primary_column.map(|primary_column| {
+    Ok(primary_column.map(|primary_column| {
         let geo = json!({
             "version": version,
             "primary_column": primary_column,
@@ -447,12 +401,42 @@ fn build_geo(
             key: GEO_KEY.to_string(),
             value: Some(geo.to_string()),
         }
-    });
-    Ok(Some(GeoParquet {
-        version,
-        key_value,
-        covering_columns,
     }))
+}
+
+fn check_boxes_are_coverings(
+    schema: &ArrowSchema,
+    version: &str,
+    covering_columns: &[String],
+) -> PolarsResult<()> {
+    for field in schema.iter_values() {
+        let ArrowDataType::Extension(ext) = &field.dtype else {
+            continue;
+        };
+        if ext.name != BOX_EXTENSION_NAME
+            || covering_columns.iter().any(|c| c == field.name.as_str())
+        {
+            continue;
+        }
+        // A box that can't be a covering under any name should not be told to rename.
+        let reason = if version == "1.0.0" {
+            "GeoParquet 1.0 has no coverings; write GeoParquet 1.1 instead"
+        } else if box_layout(&ext.inner).is_none() {
+            "a covering's fields must be Float64 xmin, ymin, [zmin,] xmax, ymax, [zmax] in that order"
+        } else if field.name == "bbox" && bbox_is_ambiguous(schema) {
+            "it could cover both 'geometry' and 'geography'; rename one of them"
+        } else {
+            "no geometry column has it as its covering name; \
+            name it '<geometry>_bbox', or 'bbox' for a column named 'geometry' or 'geography'"
+        };
+        // Writing it as a plain struct would silently drop what it means, so the user has to opt in.
+        polars_bail!(
+            InvalidOperation: "cannot write box column '{}' as GeoParquet: {}; \
+            to write it as a plain struct, convert it with `.ext.storage()`",
+            field.name, reason
+        );
+    }
+    Ok(())
 }
 
 fn extension_metadata(name: &str, ext: &ExtensionType) -> PolarsResult<Map<String, Value>> {
@@ -534,7 +518,7 @@ fn bbox_covering(
     geometry_crs: Option<&Value>,
 ) -> PolarsResult<Option<(String, Value)>> {
     let box_name = covering_name(geometry);
-    // Written as a plain struct, gives warning
+    // [`check_boxes_are_coverings`] errors on a box that covers nothing.
     if box_name == "bbox" && bbox_is_ambiguous(schema) {
         return Ok(None);
     }
@@ -546,7 +530,6 @@ fn bbox_covering(
         return Ok(None);
     }
 
-    // Written as a plain struct; [`validate_geo_schema`] warns about it.
     let Some(layout) = box_layout(&ext.inner) else {
         return Ok(None);
     };
