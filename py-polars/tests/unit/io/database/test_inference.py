@@ -93,6 +93,13 @@ def test_dtype_inference_from_string(
         "MISSING",
         "XML",  # note: we deliberately exclude "number" as it is ambiguous.
         "Number",  # (could refer to any size of int, float, or decimal dtype)
+        # composite struct/map types are inferred from the data instead
+        "row(b1 double, b2 varchar)",
+        "array(row(b1 double, b2 varchar))",
+        "row(c1 row(x integer), integer)",
+        "map(varchar, integer)",
+        "array(map(varchar, double))",
+        "struct<a: int, b: string>",
     ],
 )
 def test_dtype_inference_from_invalid_string(value: str) -> None:
