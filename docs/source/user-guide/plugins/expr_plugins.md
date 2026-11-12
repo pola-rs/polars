@@ -51,7 +51,7 @@ serde = { version = "*", features = ["derive"] }
 In this library we create a helper function that converts a `&str` to pig-latin, and we create the
 function that we will expose as an expression. To expose a function we must add the
 `#[polars_expr(output_type=DataType)]` attribute and the function must always accept
-`inputs: &[Series]` as its first argument.
+`inputs: &[Series]` or `inputs: &[Column]` as its first argument.
 
 ```rust
 // src/expressions.rs
@@ -77,6 +77,19 @@ Note that we use `apply_into_string_amortized`, as opposed to `apply_values`, to
 new string for each row. If your plugin takes in multiple inputs, operates elementwise, and produces
 a `String` output, then you may want to look at the `binary_elementwise_into_string_amortized`
 utility function in `polars::prelude::arity`.
+
+With `inputs: &[Column]`, inputs that hold a single repeated value, such as literals, could be
+passed without expanding them, so they only need to be processed once. Such a function may return
+either a `Series` or a `Column`.
+
+```rust
+#[polars_expr(output_type=String)]
+fn pig_latinnify(inputs: &[Column]) -> PolarsResult<Column> {
+    inputs[0].try_apply_unary_elementwise(|s| {
+        Ok(s.str()?.apply_into_string_amortized(pig_latin_str).into_series())
+    })
+}
+```
 
 This is all that is needed on the Rust side. On the Python side we must setup a folder with the same
 name as defined in the `Cargo.toml`, in this case "expression_lib". We will create a folder in the
