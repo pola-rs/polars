@@ -2959,7 +2959,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         from deltalake import DeltaTable, write_deltalake
 
-        _check_for_unsupported_types(self.collect_schema().dtypes())
+        from polars.io.delta._sink import _native_sink_state, _write_native
+
+        schema = self.collect_schema()
+        _check_for_unsupported_types(schema.dtypes())
 
         if isinstance(target, (str, Path)):
             target = _resolve_delta_lake_uri(str(target), strict=False)
@@ -2992,13 +2995,29 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 _get_credentials_from_provider_expiry_aware(provider) or {}
             )
 
-        # We aren't calling into polars-native write functions so we just update
-        # the storage_options here.
+        # The credentials are passed as storage options, to deltalake or to the
+        # native sink.
         storage_options = (
             {**(storage_options or {}), **credential_provider_creds}
             if storage_options is not None or credential_provider_builder is not None
             else None
         )
+
+        if (
+            sink_state := _native_sink_state(
+                target,
+                mode=mode,
+                storage_options=storage_options,
+                delta_write_options=delta_write_options,
+                schema=schema,
+            )
+        ) is not None:
+            _write_native(sink_state, self, engine=engine, optimizations=optimizations)
+            if isinstance(target, DeltaTable):
+                # `write_deltalake` also leaves the table object at the new version.
+                target.update_incremental()
+            return None
+
         stream = self.collect_batches(
             engine=engine,
             maintain_order=False,

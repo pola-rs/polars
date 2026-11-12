@@ -1398,14 +1398,20 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 *ctxt.opt_flags = orig_opt_flags;
             });
 
-            if let SinkType::Iceberg(state) = payload {
+            // Sinks to table formats resolve into a partitioned Parquet sink, and commit the
+            // sinked files with a callback to the same Python sink state.
+            if matches!(payload, SinkType::Iceberg(_) | SinkType::Delta(_)) {
                 feature_gated!("python", {
                     use polars_utils::python_convert_registry::get_python_convert_registry;
-                    use pyo3::{Python, intern};
+                    use pyo3::{PyResult, Python, intern};
 
                     use crate::dsl::sink::SinkedPathsCallback;
 
-                    let py_sink_state = state.clone().into_sink_state_obj()?;
+                    let py_sink_state = match &payload {
+                        SinkType::Iceberg(state) => state.clone().into_sink_state_obj()?,
+                        SinkType::Delta(state) => state.clone().into_sink_state_obj()?,
+                        _ => unreachable!(),
+                    };
 
                     let reg = get_python_convert_registry();
 
@@ -1419,7 +1425,17 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         )
                     })?;
 
-                    let state = Python::attach(|py| py_sink_state.extract(py))?;
+                    let callback = Python::attach(|py| {
+                        PyResult::Ok(match &payload {
+                            SinkType::Iceberg(_) => SinkedPathsCallback::IcebergCommit(Box::new(
+                                py_sink_state.extract(py)?,
+                            )),
+                            SinkType::Delta(_) => SinkedPathsCallback::DeltaCommit(Box::new(
+                                py_sink_state.extract(py)?,
+                            )),
+                            _ => unreachable!(),
+                        })
+                    })?;
 
                     let mut plan: Box<DslPlan> = (reg.from_py.dsl_plan)(out)?.downcast().unwrap();
 
@@ -1436,8 +1452,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
                     debug_assert!(unified_sink_args.sinked_paths_callback.is_none());
 
-                    unified_sink_args.sinked_paths_callback =
-                        Some(SinkedPathsCallback::IcebergCommit(Box::new(state)));
+                    unified_sink_args.sinked_paths_callback = Some(callback);
 
                     return to_alp_impl(*plan, &mut ctxt);
                 })
@@ -1446,7 +1461,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let input = to_alp_impl(owned(input), &mut ctxt).context(failed_here!(sink))?;
             let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena).into_owned();
             let payload = match payload {
-                SinkType::Iceberg(_) => unreachable!(),
+                SinkType::Iceberg(_) | SinkType::Delta(_) => unreachable!(),
                 SinkType::Memory => SinkTypeIR::Memory,
                 SinkType::Callback(f) => SinkTypeIR::Callback(f),
                 SinkType::File(mut options) => {
