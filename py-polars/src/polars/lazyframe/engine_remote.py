@@ -1,7 +1,7 @@
 """
-Remote query execution through Polars Cloud.
+Remote query execution through Polars Nanook.
 
-Cloud integration is isolated here; the optional `polars_cloud` dependency is
+Nanook integration is isolated here; the optional `polars_nanook` dependency is
 loaded when a `RemoteEngine` is constructed.
 """
 
@@ -47,16 +47,16 @@ _WORKER_ENGINE_NAMES = get_args(EngineTypeName)
 
 class RemoteEngine(Engine):
     """
-    Execute queries remotely on Polars Cloud.
+    Execute queries remotely on Polars Nanook.
 
     Use this engine with :meth:`LazyFrame.collect`, :meth:`LazyFrame.execute`, a
     `LazyFrame.sink_*` method, or as the default through
     :meth:`Config.set_engine_affinity`.
 
-    Requires the `polars_cloud` package.
+    Requires the `polars_nanook` package.
 
     :meth:`LazyFrame.collect` and :meth:`LazyFrame.collect_batches` stream the result
-    back to this machine, which Polars Cloud only supports on a cluster context.
+    back to this machine, which Polars Nanook only supports on a cluster context.
 
     .. warning::
         This functionality is considered **unstable**. It may be changed
@@ -65,7 +65,7 @@ class RemoteEngine(Engine):
     Parameters
     ----------
     context
-        Compute context. Defaults to the current `polars_cloud` session.
+        Compute context. Defaults to the current `polars_nanook` session.
     scaling_mode : {'auto', 'single-node', 'distributed'}
         Whether to run the query on a single node or distributed over the cluster.
         If `'auto'`, a query runs distributed if the cluster has more than one node.
@@ -84,7 +84,7 @@ class RemoteEngine(Engine):
 
     Examples
     --------
-    >>> import polars_cloud as pc  # doctest: +SKIP
+    >>> import polars_nanook as pc  # doctest: +SKIP
     >>> engine = pl.RemoteEngine(  # doctest: +SKIP
     ...     pc.ComputeContext(cpus=16, memory=64),
     ...     scaling_mode="distributed",
@@ -141,7 +141,7 @@ class RemoteEngine(Engine):
         import_optional(
             polars_cloud.__name__,
             err_prefix="remote engine requested, but required package",
-            install_message="Please install using the command `pip install polars-cloud`",
+            install_message="Please install using the command `pip install polars-nanook`",
         )
 
         self.context = context
@@ -163,7 +163,7 @@ class RemoteEngine(Engine):
         return self.engine
 
     def _target(self, lf: LazyFrame) -> pc.LazyFrameRemote | pc.ExecuteRemote:
-        """Return the `polars_cloud` object that executes `lf`."""
+        """Return the `polars_nanook` object that executes `lf`."""
         remote = lf.remote(
             self.context,
             plan_type=self.plan_type,
@@ -175,7 +175,7 @@ class RemoteEngine(Engine):
             remote = remote.labels(self.labels)
         if self.config:
             return remote.distributed(**self.config)
-        return remote  # let `polars_cloud` resolve the scaling mode
+        return remote  # let `polars_nanook` resolve the scaling mode
 
     # -- Execution ----------------------------------------------------------------
 
@@ -206,7 +206,7 @@ class RemoteEngine(Engine):
     ) -> _CollectBatches:
         """See :meth:`polars.LazyFrame.collect_batches`."""
         self._reject_if_set(chunk_size=chunk_size, lazy=lazy)
-        # Polars Cloud streams the result back through `scan_arrow_c_stream`, so this
+        # Polars Nanook streams the result back through `scan_arrow_c_stream`, so this
         # really is a `_CollectBatches`; its stubs just type it as a plain iterator.
         return self._target(lf).collect_batches(  # type: ignore[return-value]
             maintain_order=maintain_order, optimizations=optimizations
@@ -216,7 +216,7 @@ class RemoteEngine(Engine):
 
     @staticmethod
     def _sink_uri(path: Any) -> str | PartitionBy:
-        """Validate a Polars Cloud sink target."""
+        """Validate a Polars Nanook sink target."""
         from polars.io.partition import PartitionBy
 
         if not isinstance(path, (str, PartitionBy)):
@@ -229,7 +229,7 @@ class RemoteEngine(Engine):
 
     @staticmethod
     def _reject_if_set(**kwargs: Any) -> None:
-        """Reject options unsupported by Polars Cloud."""
+        """Reject options unsupported by Polars Nanook."""
         for name, value in kwargs.items():
             if value:
                 msg = f"`{name}` is not supported by the remote engine"
@@ -303,7 +303,7 @@ class RemoteEngine(Engine):
             record_batch_size=record_batch_size,
             _record_batch_statistics=_record_batch_statistics,
             sinked_paths_callback=sinked_paths_callback,
-            # Polars Cloud only supports `maintain_order=True`.
+            # Polars Nanook only supports `maintain_order=True`.
             maintain_order=not maintain_order,
         )
         self._target(lf).sink_ipc(
@@ -352,7 +352,7 @@ class RemoteEngine(Engine):
             compression=compression != "uncompressed",
             compression_level=compression_level,
             check_extension=not check_extension,
-            # Polars Cloud only supports `maintain_order=True`.
+            # Polars Nanook only supports `maintain_order=True`.
             maintain_order=not maintain_order,
         )
         self._target(lf).sink_csv(

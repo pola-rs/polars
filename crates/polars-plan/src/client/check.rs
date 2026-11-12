@@ -2,7 +2,7 @@ use polars_core::error::{PolarsResult, polars_err};
 
 use crate::dsl::{DslPlan, FileScanDsl, ScanSources, SinkType};
 
-/// Assert that the given [`DslPlan`] is eligible to be executed on Polars Cloud.
+/// Assert that the given [`DslPlan`] is eligible to be executed on Polars Nanook.
 pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
     if std::env::var("POLARS_SKIP_CLIENT_CHECK").as_deref() == Ok("1") {
         return Ok(());
@@ -56,6 +56,6 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
 fn ineligible_error(message: &str) -> PolarsResult<()> {
     Err(polars_err!(
         InvalidOperation:
-        "logical plan ineligible for execution on Polars Cloud: {message}"
+        "logical plan ineligible for execution on Polars Nanook: {message}"
     ))
 }
