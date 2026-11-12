@@ -79,7 +79,7 @@ impl PhysicalExpr for AggregationExpr {
             return Ok(Column::full_null(s.name().clone(), 1, s.dtype()));
         }
 
-        let is_float = s.dtype().is_float();
+        let is_float = s.dtype().to_storage().is_float();
         let group_by = match groupby {
             GroupByMethod::NanMin if !is_float => GroupByMethod::Min,
             GroupByMethod::NanMax if !is_float => GroupByMethod::Max,
@@ -373,7 +373,7 @@ impl PhysicalExpr for AggregationExpr {
                     #[cfg(feature = "propagate_nans")]
                     {
                         let (c, groups) = ac.get_final_aggregation();
-                        let agg_c = if c.dtype().is_float() {
+                        let agg_c = if c.dtype().to_storage().is_float() {
                             nan_propagating_aggregate::group_agg_nan_min_s(
                                 c.as_materialized_series(),
                                 &groups,
@@ -394,7 +394,7 @@ impl PhysicalExpr for AggregationExpr {
                     #[cfg(feature = "propagate_nans")]
                     {
                         let (c, groups) = ac.get_final_aggregation();
-                        let agg_c = if c.dtype().is_float() {
+                        let agg_c = if c.dtype().to_storage().is_float() {
                             nan_propagating_aggregate::group_agg_nan_max_s(
                                 c.as_materialized_series(),
                                 &groups,
@@ -600,7 +600,7 @@ impl PhysicalExpr for AggMinMaxByExpr {
         {
             let by_phys = by_col.as_materialized_series().to_physical_repr();
             if by_phys.dtype().is_primitive_numeric()
-                && !by_col.dtype().is_categorical()
+                && !by_col.dtype().to_storage().is_categorical()
                 && _use_rolling_kernels(slices, *overlapping, *monotonic, by_phys.chunks())
             {
                 let gather_idxs = rolling_numeric_minmax_by(&by_col, slices, self.is_max_by);

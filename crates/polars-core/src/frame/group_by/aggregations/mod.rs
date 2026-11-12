@@ -86,7 +86,7 @@ pub fn rolling_numeric_minmax_by(by_col: &Column, slices: &GroupsSlice, is_max_b
     let phys_dtype = by_phys.dtype();
 
     assert!(
-        phys_dtype.is_primitive_numeric() && !dtype.is_categorical(),
+        phys_dtype.is_primitive_numeric() && !dtype.to_storage().is_categorical(),
         "rolling_numeric_minmax_by requires a numeric by column, got {dtype}",
     );
 
