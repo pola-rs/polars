@@ -347,19 +347,21 @@ impl SortNode {
         drop_parallel(dropped);
 
         // Rounded up, so that no bucket with rows is free.
-        let mut row_bytes = total_bytes.div_ceil(total_rows.max(1) as u64).max(1);
+        let in_row_bytes = total_bytes.div_ceil(total_rows.max(1) as u64).max(1);
+        let mut out_row_bytes = in_row_bytes;
         if self.drop_key
             && let Some(width) = self.key_dtype.to_physical().byte_width()
         {
-            // The dropped key is not gathered into the output. (Only estimated for fixed-width keys.)
-            row_bytes = row_bytes.saturating_sub(width.ceil() as u64).max(1);
+            // The dropped key is loaded, but not gathered into the output. (Only estimated for
+            // fixed-width keys.)
+            out_row_bytes = in_row_bytes.saturating_sub(width.ceil() as u64).max(1);
         }
 
         Ok(FlushState::new(
             pending,
             get_ideal_morsel_size().max(1),
             self.tuning.flush_ahead(num_tasks),
-            row_bytes,
+            (in_row_bytes, out_row_bytes),
             sort_index_row_bytes(&self.key_dtype),
             spill_ctx,
         ))

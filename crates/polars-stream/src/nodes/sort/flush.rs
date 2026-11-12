@@ -53,13 +53,16 @@ struct BucketMemory {
 }
 
 impl PendingBucket {
-    fn memory(&self, row_bytes: u64, index_row_bytes: u64) -> BucketMemory {
+    /// `in_row_bytes` is per row of the loaded frames, `out_row_bytes` per row of the output,
+    /// which lacks the key if it is dropped.
+    fn memory(&self, in_row_bytes: u64, out_row_bytes: u64, index_row_bytes: u64) -> BucketMemory {
         let rows = self.frames.iter().map(SpillFrame::height).sum::<usize>() as u64;
-        let kept = rows * row_bytes;
+        let kept = rows * out_row_bytes;
         let sort = if self.needs_sort {
-            2 * kept + rows * index_row_bytes
+            // The loaded rows (with the key) and the gathered output are alive together.
+            rows * (in_row_bytes + out_row_bytes) + rows * index_row_bytes
         } else {
-            kept
+            rows * in_row_bytes
         };
         BucketMemory { sort, kept }
     }
@@ -115,7 +118,7 @@ impl FlushState {
         buckets: Vec<PendingBucket>,
         morsel_size: usize,
         (max_ahead, max_ahead_bytes): (usize, u64),
-        row_bytes: u64,
+        (in_row_bytes, out_row_bytes): (u64, u64),
         index_row_bytes: u64,
         spill_ctx: MostRecentSpillContext,
     ) -> Self {
@@ -123,7 +126,7 @@ impl FlushState {
         let mut unsorted = VecDeque::with_capacity(buckets.len());
         for bucket in buckets {
             let num_morsels = bucket.local.1.div_ceil(morsel_size) as u64;
-            let memory = bucket.memory(row_bytes, index_row_bytes);
+            let memory = bucket.memory(in_row_bytes, out_row_bytes, index_row_bytes);
             unsorted.push_back((bucket, seq, memory));
             seq += num_morsels;
         }
