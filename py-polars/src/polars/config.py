@@ -1618,14 +1618,14 @@ class Config(contextlib.ContextDecorator, metaclass=_Meta):
         """
         Enable runtime monitoring of query execution.
 
-        Query metrics are collected and sent to Polars Cloud, letting you inspect
+        Query metrics are collected and sent to Polars Nanook, letting you inspect
         the performance of your queries from the dashboard. This requires:
 
-        - A Polars Cloud account. Sign up at https://cloud.pola.rs/ (calling this
+        - A Polars Nanook account. Sign up at https://pola.rs/nanook/ (calling this
           method triggers a browser-based login if you are not already
           authenticated).
-        - The ``polars-cloud`` package installed in this environment
-          (``pip install polars-cloud``).
+        - The ``polars-nanook`` package installed in this environment
+          (``pip install polars-nanook``).
 
         Monitoring is supported by the in-memory and streaming engines, but only
         the streaming engine collects per-node metrics. Enabling monitoring therefore
@@ -1639,11 +1639,11 @@ class Config(contextlib.ContextDecorator, metaclass=_Meta):
         active
             Enable monitoring when True (the default), disable it when False.
         workspace
-            Name or id of the Polars Cloud workspace the metrics are sent to; defaults
+            Name or id of the Polars Nanook workspace the metrics are sent to; defaults
             to the default workspace of your account. Ignored when disabling
             monitoring.
         organization
-            Name or id of the Polars Cloud organization the workspace belongs to;
+            Name or id of the Polars Nanook organization the workspace belongs to;
             defaults to the default organization of your account. Use it to
             disambiguate a workspace name that exists in several organizations.
             Ignored when disabling monitoring.

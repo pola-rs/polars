@@ -9221,7 +9221,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         scaling_mode: pc._typing.ScalingMode = "auto",
     ) -> pc.LazyFrameRemote:
         """
-        Run a query remotely on Polars Cloud.
+        Run a query remotely on Polars Nanook.
 
         This allows you to run Polars remotely on
         one or more workers via several strategies
