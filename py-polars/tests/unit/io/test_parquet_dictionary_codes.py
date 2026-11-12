@@ -348,28 +348,83 @@ def test_dictionary_codes_sink_parquet_writes_used_values(
         assert col.statistics.max <= LONG[4]
 
 
-@pytest.mark.parametrize("duplicate_values", [False, True])
-def test_dictionary_codes_sink_large_distinct_code_slices(
-    tmp_path: Path, duplicate_values: bool
+def _write_duplicate_dictionary(path: Path, distinct: int) -> pa.Table:
+    # pyarrow canonicalizes a dictionary with equal values, so write a unique one
+    # uncompressed and overwrite its entries in place with equal-length values that
+    # repeat every 8 codes. The writer holds no statistics or checksums to update.
+    def value(i: int) -> str:
+        return f"{LONG[0]}/{i:05d}"
+
+    codes = pa.array(list(range(distinct)) * 8, type=pa.int32())
+    unique = pa.array([value(i) for i in range(distinct)])
+    table = pa.table({"k": pa.DictionaryArray.from_arrays(codes, unique)})
+    pq.write_table(
+        table,
+        path,
+        row_group_size=len(table),
+        store_schema=False,
+        compression=None,
+        write_statistics=False,
+        dictionary_pagesize_limit=1 << 24,
+    )
+    column = pq.ParquetFile(path).metadata.row_group(0).column(0)
+    # The dictionary page directly precedes the first data page; its payload is PLAIN
+    # byte arrays (a 4-byte length each) at the end of the page.
+    size = distinct * (4 + len(value(0)))
+    start = column.data_page_offset - size
+    # Only the page header lies between the dictionary page's start and its payload.
+    assert 0 < start - column.dictionary_page_offset < 64
+    step = 4 + len(value(0))
+    with path.open("r+b") as f:
+        f.seek(start)
+        payload = bytearray(f.read(size))
+        for i in range(distinct):
+            at = i * step
+            assert payload[at + 4 : at + step] == value(i).encode()
+            payload[at + 4 : at + step] = value(i % 8).encode()
+        f.seek(start)
+        f.write(payload)
+
+    # The file's dictionary page really holds duplicate values (pyarrow's reader
+    # would deduplicate them, so inspect the bytes).
+    written = path.read_bytes()[start : start + size]
+    entries = [written[i * step + 4 : (i + 1) * step] for i in range(distinct)]
+    assert len(entries) == distinct
+    assert len(set(entries)) == 8
+    return pa.table({"k": pa.array([value(i % 8) for i in codes.to_pylist()])})
+
+
+def test_dictionary_codes_sink_large_distinct_code_slices_unique(
+    tmp_path: Path,
 ) -> None:
     # The source dictionary pays off for its whole row group, but each output row
-    # group visits every code once. Different codes may still represent equal values.
+    # group visits every code once.
     distinct = 32_768
-    values = pa.array(
-        [LONG[i % 8] if duplicate_values else f"{LONG[0]}/{i}" for i in range(distinct)]
-    )
+    values = pa.array([f"{LONG[0]}/{i}" for i in range(distinct)])
     codes = pa.array(list(range(distinct)) * 8, type=pa.int32())
     table = pa.table({"k": pa.DictionaryArray.from_arrays(codes, values)})
     source = tmp_path / "source.parquet"
     pq.write_table(table, source, row_group_size=len(table), store_schema=False)
     target = tmp_path / "target.parquet"
     pl.scan_parquet(source).sink_parquet(target, row_group_size=distinct)
-    expected = pl.from_arrow(table).with_columns(pl.col("k").cast(pl.String))
+    expected = pl.DataFrame(table).with_columns(pl.col("k").cast(pl.String))
     assert_frame_equal(pl.read_parquet(target), expected)
-    if duplicate_values:
-        metadata = pq.ParquetFile(target).metadata
-        for i in range(metadata.num_row_groups):
-            assert "RLE_DICTIONARY" in metadata.row_group(i).column(0).encodings
+
+
+def test_dictionary_codes_sink_large_distinct_code_slices_equal_values(
+    tmp_path: Path,
+) -> None:
+    # Different codes of the source dictionary hold equal values, so the sink must
+    # write the few values it has, not one per code.
+    distinct = 32_768
+    source = tmp_path / "source.parquet"
+    table = _write_duplicate_dictionary(source, distinct)
+    target = tmp_path / "target.parquet"
+    pl.scan_parquet(source).sink_parquet(target, row_group_size=distinct)
+    assert_frame_equal(pl.read_parquet(target), pl.DataFrame(table))
+    metadata = pq.ParquetFile(target).metadata
+    for i in range(metadata.num_row_groups):
+        assert "RLE_DICTIONARY" in metadata.row_group(i).column(0).encodings
 
 
 OVERSIZED_QUERIES: dict[str, Callable[[pl.LazyFrame], pl.LazyFrame]] = {

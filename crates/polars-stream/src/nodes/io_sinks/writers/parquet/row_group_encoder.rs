@@ -47,49 +47,76 @@ fn estimate_dictionary_code_cardinality(d: &DictionaryColumn) -> usize {
     cardinality.count()
 }
 
-/// A bounded sample can veto early rejection when different codes contain equal strings.
-fn dictionary_sample_has_unique_mapping(d: &DictionaryColumn) -> bool {
-    use polars_core::prelude::{InitHashMaps, PlHashMap};
-
-    const SAMPLE_SIZE: usize = 2_048;
-    if d.is_empty() {
-        return false;
-    }
-    // SplitMix64 with a fixed seed spreads global positions across clustered code layouts.
-    let mut state = 0x243f_6a88_85a3_08d3_u64;
-    let mut positions = Vec::with_capacity(SAMPLE_SIZE);
-    for _ in 0..SAMPLE_SIZE {
-        state = state.wrapping_add(0x9e37_79b9_7f4a_7c15);
-        let mut z = state;
-        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-        positions.push(((z ^ (z >> 31)) % d.len() as u64) as usize);
-    }
-    positions.sort_unstable();
-    let values = d.dict().values();
-    let mut first_of: PlHashMap<&str, u32> = PlHashMap::with_capacity(SAMPLE_SIZE);
-    let mut positions = positions.into_iter().peekable();
+/// The valid codes at the sorted, distinct `positions`, in position order.
+fn sampled_codes(d: &DictionaryColumn, positions: &[usize]) -> Vec<u32> {
+    let mut codes_out = Vec::with_capacity(positions.len());
+    let mut positions = positions.iter().copied().peekable();
     let mut offset = 0;
     for codes in d.codes().downcast_iter() {
         let end = offset + codes.len();
-        while let Some(&position) = positions.peek().filter(|&&p| p < end) {
-            positions.next();
+        while let Some(position) = positions.next_if(|&p| p < end) {
             let index = position - offset;
             // Check validity before reading a code: null payloads may be out of bounds.
             if codes.is_valid(index) {
-                let code = codes.values()[index];
-                // SAFETY: valid codes are in bounds for the dictionary.
-                let value = unsafe { values.value_unchecked(code as usize) };
-                if let Some(first) = first_of.insert(value, code) {
-                    if first != code {
-                        return false;
-                    }
-                }
+                codes_out.push(codes.values()[index]);
             }
         }
         offset = end;
     }
-    !first_of.is_empty()
+    codes_out
+}
+
+/// A bounded sample of rows can veto early rejection when different codes contain equal strings
+/// (or when it holds no valid row). A sample cannot find every duplicate, so a miss only costs the
+/// exact path's work, which the ordinary writer's final check still decides on. Samples rows at a
+/// fixed seed, so decisions are deterministic per build, though not across `rand` versions or
+/// pointer widths.
+fn dictionary_sample_has_unique_mapping(d: &DictionaryColumn) -> bool {
+    use polars_core::prelude::{InitHashMaps, PlHashMap};
+    use rand::rngs::SmallRng;
+    use rand::{RngExt, SeedableRng};
+
+    let n = d.len();
+    if n == 0 {
+        return false;
+    }
+    // A string under two codes is found only if both rows are drawn: with p such pairs per row,
+    // about p * s^2 / n pairs are. 4 * sqrt(n) rows give about 4 at p = 1/4 (the boundary of the
+    // final check) however large the group is.
+    let sample_size = (4.0 * (n as f64).sqrt()).ceil().max(2_048.0) as usize;
+    let sample_size = sample_size.min(n);
+    // Draws with replacement cost O(s), unlike `index::sample`, which may allocate n entries.
+    // Repeated positions are dropped, so the sample can be up to about s^2 / (2 * n) rows short.
+    let mut rng = SmallRng::seed_from_u64(0x243f_6a88_85a3_08d3);
+    let mut positions: Vec<usize> = (0..sample_size).map(|_| rng.random_range(0..n)).collect();
+    positions.sort_unstable();
+    positions.dedup();
+    let codes = sampled_codes(d, &positions);
+    if codes.is_empty() {
+        return false;
+    }
+
+    let values = d.dict().values();
+    let mut first_of: PlHashMap<&str, u32> = PlHashMap::with_capacity(codes.len());
+    for code in codes {
+        // SAFETY: valid codes are in bounds for the dictionary.
+        let value = unsafe { values.value_unchecked(code as usize) };
+        if let Some(first) = first_of.insert(value, code) {
+            if first != code {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Whether the group is certainly or likely mostly distinct values: the rows hold almost as many
+/// distinct codes as `max_dictionary_values` and the sample found no equal strings under
+/// different codes. The estimate comes first, so the sample (random reads of the dictionary and
+/// string hashing) only runs for groups whose codes look nearly distinct.
+fn rejects_dictionary(d: &DictionaryColumn, max_dictionary_values: usize) -> bool {
+    estimate_dictionary_code_cardinality(d) > max_dictionary_values
+        && dictionary_sample_has_unique_mapping(d)
 }
 
 /// A dictionary-coded column as an arrow dictionary array, so that the writer writes its
@@ -116,16 +143,15 @@ fn dictionary_array(
 
     // Output row groups can use almost as many codes as rows while retaining a much larger
     // source dictionary. Avoid compacting their codes and building a string lookup table only
-    // to discard the result below. A bounded string sample vetoes early rejection if it finds
-    // duplicate mappings; it cannot guarantee finding every duplicate. The ordinary writer
-    // still makes the final encoding decision.
+    // to discard the result below. A bounded sample of rows vetoes early rejection if it finds
+    // duplicate mappings; it cannot guarantee finding every duplicate. The ordinary writer still
+    // makes the final encoding decision.
     const MIN_CARDINALITY_PREFLIGHT_ROWS: usize = 16_384;
     let max_dictionary_values = d.len() - d.len().div_ceil(4);
     if d.len() >= MIN_CARDINALITY_PREFLIGHT_ROWS
         && d.dict().len() > max_dictionary_values
         && d.len() - d.null_count() > max_dictionary_values
-        && estimate_dictionary_code_cardinality(d) > max_dictionary_values
-        && dictionary_sample_has_unique_mapping(d)
+        && rejects_dictionary(d, max_dictionary_values)
     {
         return None;
     }
@@ -539,10 +565,12 @@ mod tests {
             let column =
                 DictionaryColumn::try_new("s".into(), SharedDictionary::new(values), codes)
                     .unwrap();
+            // Layout 3 has one hot code, so the sample finds no duplicate string.
             assert_eq!(
                 dictionary_sample_has_unique_mapping(&column),
                 layout == 0 || layout == 3
             );
+            assert_eq!(rejects_dictionary(&column, 24_576), layout == 0);
         }
     }
 
@@ -553,6 +581,81 @@ mod tests {
         let column =
             DictionaryColumn::try_new("s".into(), SharedDictionary::new(values), codes).unwrap();
         assert!(!dictionary_sample_has_unique_mapping(&column));
+    }
+
+    #[test]
+    fn dictionary_sink_sample_finds_sparse_duplicate_pairs_in_large_groups() {
+        // Every code is used once and every second code holds the string of the one before it,
+        // so half a pair per row. A 2,048-row sample draws both rows of a pair about twice in
+        // 1M rows; scaled to the row count it does about eight times.
+        let n: u32 = 1 << 20;
+        let values: Vec<_> = (0..n)
+            .map(|i| format!("value-{}", if i % 2 == 1 { i - 1 } else { i }))
+            .collect();
+        let codes = UInt32Chunked::from_vec(PlSmallStr::EMPTY, (0..n).collect());
+        let values_array = polars_arrow::array::Utf8ViewArray::from_slice_values(&values);
+        let column = DictionaryColumn::try_new(
+            "s".into(),
+            SharedDictionary::new(values_array),
+            codes.clone(),
+        )
+        .unwrap();
+        assert!(!dictionary_sample_has_unique_mapping(&column));
+        assert!(!rejects_dictionary(
+            &column,
+            n as usize - (n as usize).div_ceil(4)
+        ));
+        assert!(encode_dictionary(values, codes).is_some());
+    }
+
+    #[test]
+    fn dictionary_sink_rejects_skewed_near_distinct_codes() {
+        // More than 0.75 * n distinct codes, with the surplus rows in codes of a few copies or
+        // of about n / s copies: the estimate and the sample still reject early.
+        let n: u32 = 1 << 19;
+        let max = n as usize - (n as usize).div_ceil(4);
+        let values: Vec<_> = (0..n).map(|i| format!("value-{i}")).collect();
+        let values = polars_arrow::array::Utf8ViewArray::from_slice_values(&values);
+        for (copies, heavy) in [(20_u32, 5_243_u32), (181, 580)] {
+            // `heavy` codes of `copies` rows, the rest distinct: C is about 0.8 * n.
+            let heavy_rows = copies * heavy;
+            let codes: Vec<u32> = (0..n)
+                .map(|i| {
+                    if i < heavy_rows {
+                        i / copies
+                    } else {
+                        i - heavy_rows + heavy
+                    }
+                })
+                .collect();
+            let distinct = codes
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len();
+            assert!(distinct > max);
+            let codes = UInt32Chunked::from_vec(PlSmallStr::EMPTY, codes);
+            let column =
+                DictionaryColumn::try_new("s".into(), SharedDictionary::new(values.clone()), codes)
+                    .unwrap();
+            assert!(
+                dictionary_sample_has_unique_mapping(&column),
+                "{copies} copies"
+            );
+            assert!(rejects_dictionary(&column, max), "{copies} copies");
+        }
+    }
+
+    #[test]
+    fn dictionary_sink_keeps_hot_codes_of_a_large_dictionary() {
+        // Two hot codes of a large dictionary, as in a filtered sink: the estimate keeps them
+        // without a sample.
+        let values: Vec<_> = (0..262_144).map(|i| format!("value-{i}")).collect();
+        let values = polars_arrow::array::Utf8ViewArray::from_slice_values(&values);
+        let codes =
+            UInt32Chunked::from_vec(PlSmallStr::EMPTY, (0..16_384).map(|i| i % 2).collect());
+        let column =
+            DictionaryColumn::try_new("s".into(), SharedDictionary::new(values), codes).unwrap();
+        assert!(!rejects_dictionary(&column, 12_288));
     }
 
     #[test]
