@@ -12,6 +12,7 @@ mod join_keys;
 pub mod keywords;
 mod lateral;
 mod literal_folding;
+mod partition_alter;
 mod resolver;
 mod sql_expr;
 mod sql_visitors;

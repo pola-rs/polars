@@ -3087,6 +3087,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         target
             A PyIceberg Table object, or a 'namespace.table_name' identifier string.
+            The data is partitioned by the table's partition spec as loaded. If the
+            table's partition spec changes before the commit, the sink fails.
         mode : {'append', 'overwrite'}
             How to handle existing data.
 

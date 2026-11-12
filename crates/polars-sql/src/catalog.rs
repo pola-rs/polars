@@ -207,7 +207,7 @@ pub struct MergePlan {
     pub not_matched: Vec<MergeClausePlan>,
 }
 
-/// A change to a catalog table's top-level columns or properties, by an `ALTER TABLE`.
+/// A change to a catalog table's top-level columns, properties or partitioning, by an `ALTER TABLE`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CatalogAlter {
     /// `ADD [COLUMN] [IF NOT EXISTS] <name> <type>`: a nullable column.
@@ -249,6 +249,12 @@ pub enum CatalogAlter {
     SetProperties {
         /// The properties, in the order written.
         properties: Vec<(String, String)>,
+    },
+    /// `SET PARTITIONED BY (...)`, or `RESET PARTITIONED BY` (no fields): the table's partition
+    /// spec from now on.
+    SetPartitioning {
+        /// The partition fields, in the order written.
+        fields: Vec<CatalogPartitionField>,
     },
 }
 
@@ -897,10 +903,7 @@ pub(crate) fn create_table_partitioning(
                 Expr::Tuple(exprs) => exprs.as_slice(),
                 expr => std::slice::from_ref(expr),
             };
-            exprs
-                .iter()
-                .map(|expr| Ok((partition_field(expr)?, expr.to_string())))
-                .collect::<PolarsResult<_>>()?
+            partition_fields(exprs, "PARTITION BY")?
         },
         (None, HiveDistributionStyle::PARTITIONED { columns }) => columns
             .iter()
@@ -920,13 +923,13 @@ pub(crate) fn create_table_partitioning(
             .collect::<PolarsResult<_>>()?,
         (None, _) => Vec::new(),
     };
-    // Iceberg allows one time transform per column.
+    ensure_unique_fields(&fields)?;
+    // A new spec takes one time transform per column, as Iceberg's spec builders do.
     let is_time = |f: &CatalogPartitionField| {
         matches!(f.transform.as_str(), "year" | "month" | "day" | "hour")
     };
     for (i, (field, sql)) in fields.iter().enumerate() {
         for (earlier, earlier_sql) in &fields[..i] {
-            polars_ensure!(earlier != field, SQLInterface: "duplicate partition field `{}`", sql);
             polars_ensure!(
                 earlier.column != field.column || !is_time(earlier) || !is_time(field),
                 SQLInterface: "partition fields `{}` and `{}` both partition column '{}' by time; use one of them",
@@ -937,9 +940,38 @@ pub(crate) fn create_table_partitioning(
     Ok(fields.into_iter().map(|(field, _)| field).collect())
 }
 
+/// The partition fields of `SET PARTITIONED BY (...)`. Which time transforms may share a column
+/// depends on the table's current spec, so that is checked with the table.
+pub(crate) fn set_partitioning(exprs: &[Expr]) -> PolarsResult<Vec<CatalogPartitionField>> {
+    let fields = partition_fields(exprs, "SET PARTITIONED BY")?;
+    ensure_unique_fields(&fields)?;
+    Ok(fields.into_iter().map(|(field, _)| field).collect())
+}
+
+/// The partition fields of `exprs`, each with its SQL, for messages.
+fn partition_fields(
+    exprs: &[Expr],
+    clause: &str,
+) -> PolarsResult<Vec<(CatalogPartitionField, String)>> {
+    exprs
+        .iter()
+        .map(|expr| Ok((partition_field(expr, clause)?, expr.to_string())))
+        .collect()
+}
+
+fn ensure_unique_fields(fields: &[(CatalogPartitionField, String)]) -> PolarsResult<()> {
+    for (i, (field, sql)) in fields.iter().enumerate() {
+        polars_ensure!(
+            fields[..i].iter().all(|(earlier, _)| earlier != field),
+            SQLInterface: "duplicate partition field `{}`", sql
+        );
+    }
+    Ok(())
+}
+
 /// A partition field: a column, `year|month|day|hour(column)` (with Iceberg's aliases), or
-/// `bucket|truncate(N, column)`.
-fn partition_field(expr: &Expr) -> PolarsResult<CatalogPartitionField> {
+/// `bucket|truncate(N, column)`. `clause` names the clause in messages.
+fn partition_field(expr: &Expr, clause: &str) -> PolarsResult<CatalogPartitionField> {
     let unsupported = || {
         polars_err!(
             SQLInterface: "unsupported partition field `{}`; expected a column, or year, month, day, hour, bucket(N, column) or truncate(W, column) of a column",
@@ -954,8 +986,8 @@ fn partition_field(expr: &Expr) -> PolarsResult<CatalogPartitionField> {
     let is_compound = |expr: &Expr| matches!(unparenthesized(expr), Expr::CompoundIdentifier(_));
     let compound = |expr: &Expr| {
         polars_err!(
-            SQLInterface: "`PARTITION BY` takes unqualified column names; found `{}`; partitioning by a nested field is not yet supported",
-            unparenthesized(expr)
+            SQLInterface: "`{}` takes unqualified column names; found `{}`; partitioning by a nested field is not yet supported",
+            clause, unparenthesized(expr)
         )
     };
     if let Some(column) = column(expr) {

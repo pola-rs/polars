@@ -307,8 +307,32 @@ class _SinkCatalog:
             raise CommitStateUnknownException(msg) from e
 
 
-def _sink_transaction(table: pyiceberg.table.Table, sink_uuid: str) -> Transaction:
+_SPEC_CHANGED = "the partition spec changed during the write"
+
+
+def _raise_if_spec_changed(
+    table: pyiceberg.table.Table, spec_id: int | None, error: Exception
+) -> None:
+    """After a rejected commit, raise if `spec_id` is no longer the default spec."""
+    from pyiceberg.exceptions import ValidationException
+
+    if spec_id is None:
+        return
+    try:
+        current = table.catalog.load_table(table.name())
+    except Exception:
+        return
+    if current.metadata.default_spec_id != spec_id:
+        raise ValidationException(_SPEC_CHANGED) from error
+
+
+def _sink_transaction(
+    table: pyiceberg.table.Table, sink_uuid: str, spec_id: int | None
+) -> Transaction:
+    """A transaction that commits only while `spec_id` (written for) is the default."""
+    from pyiceberg.exceptions import ValidationException
     from pyiceberg.table import Transaction
+    from pyiceberg.table.update import AssertDefaultSpecId
 
     class _SinkTransaction(Transaction):  # type: ignore[misc]
         # pyiceberg calls this after refreshing the table for a retry, before it
@@ -317,9 +341,18 @@ def _sink_transaction(table: pyiceberg.table.Table, sink_uuid: str) -> Transacti
         def _rebuild_snapshot_updates(self) -> None:
             if _already_committed(self._table.metadata, sink_uuid):
                 raise _AlreadyCommitted(self._table)
+            # pyiceberg would write the files' partition values under the new spec
+            if spec_id is not None and self._table.metadata.default_spec_id != spec_id:
+                raise ValidationException(_SPEC_CHANGED)
             super()._rebuild_snapshot_updates()
 
-    return _SinkTransaction(table)
+    if spec_id is None:
+        return _SinkTransaction(table)
+    if table.metadata.default_spec_id != spec_id:
+        raise ValidationException(_SPEC_CHANGED)
+    tx = _SinkTransaction(table)
+    tx._stage((), (AssertDefaultSpecId(default_spec_id=spec_id),))  # type: ignore[call-arg]
+    return tx
 
 
 def _replace_transaction(
@@ -1631,6 +1664,7 @@ class IcebergSinkState:
         verbose: bool,
     ) -> None:
         from pyiceberg.exceptions import (
+            CommitFailedException,
             CommitStateUnknownException,
             ValidationException,
         )
@@ -1672,7 +1706,7 @@ class IcebergSinkState:
         )
         replace = self.replace_files
         transaction = (
-            _sink_transaction(wrapped, self.sink_uuid_str)
+            _sink_transaction(wrapped, self.sink_uuid_str, self.partition_spec_id)
             if replace is None
             else _replace_transaction(wrapped, self.sink_uuid_str, replace)
         )
@@ -1713,6 +1747,9 @@ class IcebergSinkState:
         except (CommitStateUnknownException, ValidationException):
             raise
         except Exception as e:
+            if isinstance(e, CommitFailedException):
+                spec_id = self.partition_spec_id if replace is None else replace.spec_id
+                _raise_if_spec_changed(table, spec_id, e)
             _copy_table_state(sink_catalog.landed_after(table, e), table)
             return
 
@@ -1774,21 +1811,12 @@ class IcebergSinkState:
         return start_instant
 
     def _check_layout(self, metadata: TableMetadata) -> None:
-        """Raise if the sort order or partition spec written for is gone."""
+        """Raise if the sort order written for is gone."""
         if (
             self.sort_order_id is not None
             and metadata.sort_order_by_id(self.sort_order_id) is None
         ):
             msg = f"Iceberg sort order {self.sort_order_id} is no longer available"
-            raise ValueError(msg)
-        if (
-            self.partition_spec_id is not None
-            and metadata.default_spec_id != self.partition_spec_id
-        ):
-            msg = (
-                f"Iceberg partition spec changed during the sink "
-                f"({self.partition_spec_id} -> {metadata.default_spec_id})"
-            )
             raise ValueError(msg)
 
     def _commit_create(
