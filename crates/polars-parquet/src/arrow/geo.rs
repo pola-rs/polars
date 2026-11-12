@@ -1,9 +1,11 @@
 //! Conversion between GeoParquet `geo` file metadata and GeoArrow extension types.
 use polars_arrow::datatypes::{ArrowDataType, ArrowSchema, ExtensionType, Field, Metadata};
 use polars_error::{PolarsResult, polars_bail, polars_err, polars_warn};
+use polars_parquet_format::RowGroup;
 use serde_json::{Map, Value, json};
 
-use crate::parquet::metadata::KeyValue;
+use crate::parquet::metadata::{ColumnDescriptor, KeyValue};
+use crate::parquet::types::decode;
 
 pub const GEO_KEY: &str = "geo";
 
@@ -165,15 +167,25 @@ pub fn apply_geo_metadata(metadata: &Metadata, schema: &mut ArrowSchema) {
     }
 }
 
+/// The statistics of a written file, to fill in the `bbox` of each geometry column.
+pub(crate) struct FileStatistics<'a> {
+    pub(crate) columns: &'a [ColumnDescriptor],
+    pub(crate) row_groups: &'a [RowGroup],
+}
+
 /// Called once per write, before any file is opened.
 pub fn validate_geo_schema(schema: &ArrowSchema) -> PolarsResult<()> {
-    geo_key_value(schema)?;
+    geo_key_value(schema, None)?;
     Ok(())
 }
 
 /// Builds the GeoParquet `geo` metadata for the GeoArrow columns in `schema` if
 /// `POLARS_GEOPARQUET_WRITE` is set to `1.0` or `1.1`.
-pub(crate) fn geo_key_value(schema: &ArrowSchema) -> PolarsResult<Option<KeyValue>> {
+/// The `bbox` of each geometry column is only filled in if `statistics` are given.
+pub(crate) fn geo_key_value(
+    schema: &ArrowSchema,
+    statistics: Option<&FileStatistics<'_>>,
+) -> PolarsResult<Option<KeyValue>> {
     let version = match std::env::var("POLARS_GEOPARQUET_WRITE").as_deref() {
         Err(_) | Ok("") => return Ok(None),
         Ok("1.0") => "1.0.0",
@@ -244,6 +256,19 @@ pub(crate) fn geo_key_value(schema: &ArrowSchema) -> PolarsResult<Option<KeyValu
             column.insert("epoch".into(), epoch.clone());
         }
 
+        // WKB has no statistics of its coordinates, so it gets no `bbox`.
+        let is_native = encoding.list_depth.is_some();
+        // A spherical edge can bulge beyond its vertices.
+        let spherical = ext_metadata.get("edges").is_some_and(|e| e == "spherical");
+        let axes = &["x", "y", "z"][..2 + has_z as usize];
+        if let Some(statistics) = statistics
+            && is_native
+            && !spherical
+            && let Some(bbox) = bbox_from_leaf_statistics(statistics, name, axes)
+        {
+            column.insert("bbox".into(), bbox.into());
+        }
+
         primary_column.get_or_insert(name.as_str());
         columns.insert(name.to_string(), Value::Object(column));
     }
@@ -303,6 +328,56 @@ fn geoparquet_crs(name: &str, ext_metadata: &Map<String, Value>) -> PolarsResult
             )
         },
     }
+}
+
+/// Returns `[mins..., maxs...]`, or `None` if the statistics can't tell.
+fn bbox_from_leaf_statistics(
+    statistics: &FileStatistics,
+    column: &str,
+    axes: &[&str],
+) -> Option<Vec<f64>> {
+    let mut mins = Vec::with_capacity(axes.len());
+    let mut maxs = Vec::with_capacity(axes.len());
+    for axis in axes {
+        let (min, max) = leaf_min_max_over_row_groups(statistics, column, axis)?;
+        mins.push(min);
+        maxs.push(max);
+    }
+    mins.extend(maxs);
+    // JSON can't hold infinities.
+    mins.iter().all(|v| v.is_finite()).then_some(mins)
+}
+
+/// Returns `None` if the statistics are missing or encrypted, or the leaf only holds nulls and NaNs.
+fn leaf_min_max_over_row_groups(
+    statistics: &FileStatistics,
+    column: &str,
+    leaf: &str,
+) -> Option<(f64, f64)> {
+    let leaf_index = statistics.columns.iter().position(|c| {
+        let path = &c.path_in_schema;
+        path.first().is_some_and(|p| p.as_str() == column)
+            && path.last().is_some_and(|p| p.as_str() == leaf)
+    })?;
+    let mut bounds: Option<(f64, f64)> = None;
+    for row_group in statistics.row_groups {
+        let chunk = &row_group.columns[leaf_index];
+        // Hidden statistics must not leak through the `bbox`.
+        if chunk.crypto_metadata.is_some() {
+            return None;
+        }
+        let stats = chunk.meta_data.as_ref()?.statistics.as_ref()?;
+        // Row groups of only nulls and NaNs have no minimum and maximum.
+        let (Some(min), Some(max)) = (&stats.min_value, &stats.max_value) else {
+            continue;
+        };
+        let (min, max) = (decode::<f64>(min), decode::<f64>(max));
+        bounds = Some(match bounds {
+            None => (min, max),
+            Some((lo, hi)) => (lo.min(min), hi.max(max)),
+        });
+    }
+    bounds
 }
 
 /// Whether a PROJJSON CRS is OGC:CRS84, by its `id` as the GeoParquet spec suggests.
