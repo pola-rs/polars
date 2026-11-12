@@ -13,7 +13,7 @@ def prepare_cloud_plan(
     lf: LazyFrame,
     *,
     optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
-) -> bytes:
+) -> tuple[bytes, int]:
     """
     Prepare the given LazyFrame for execution on Polars Cloud.
 
@@ -23,6 +23,11 @@ def prepare_cloud_plan(
         The LazyFrame to prepare.
     optimizations
         Optimizations to enable or disable in the query optimizer.
+
+    Returns
+    -------
+    tuple[bytes, int]
+        The serialized plan, and the bits of the optimization flags it carries.
 
     Raises
     ------
