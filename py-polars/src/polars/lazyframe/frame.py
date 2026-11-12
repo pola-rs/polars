@@ -3013,6 +3013,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
         ) is not None:
             _write_native(sink_state, self, engine=engine, optimizations=optimizations)
+            if isinstance(target, DeltaTable):
+                # `write_deltalake` also leaves the table object at the new version.
+                target.update_incremental()
             return None
 
         stream = self.collect_batches(

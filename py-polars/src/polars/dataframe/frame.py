@@ -5148,6 +5148,9 @@ class DataFrame:
             )
         ) is not None:
             _write_native(sink_state, self.lazy())
+            if isinstance(target, DeltaTable):
+                # `write_deltalake` also leaves the table object at the new version.
+                target.update_incremental()
             return None
 
         if mode == "merge":

@@ -3,6 +3,7 @@ use std::io::BufReader;
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 use polars::prelude::ArrowSchema;
 use polars::prelude::CloudScheme;
+use polars_io::cloud::CloudType;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
@@ -31,21 +32,10 @@ pub fn read_ipc_schema(py: Python<'_>, py_f: Py<PyAny>) -> PyResult<Bound<'_, Py
 ///
 /// False for a path without a scheme, and for a scheme that Polars doesn't know.
 /// Polars takes an unknown scheme as part of a local path, e.g. `memory:///t`.
-/// An external scheme, e.g. `hdfs://`, needs a registered object store builder.
 #[pyfunction]
 pub fn _has_writable_scheme(path: &str) -> bool {
-    match CloudScheme::from_path(path) {
-        None => false,
-        Some(scheme) if scheme.is_file() => true,
-        // Hugging Face paths are read-only.
-        Some(CloudScheme::Hf) => false,
-        #[cfg(feature = "cloud")]
-        Some(CloudScheme::Ext(scheme)) => polars_io::cloud::has_object_store_builder(scheme),
-        #[cfg(feature = "cloud")]
-        Some(_) => true,
-        #[cfg(not(feature = "cloud"))]
-        Some(_) => false,
-    }
+    CloudScheme::from_path(path)
+        .is_some_and(|scheme| CloudType::from_cloud_scheme(scheme).is_writable())
 }
 
 #[cfg(feature = "parquet")]

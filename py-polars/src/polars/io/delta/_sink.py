@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from time import perf_counter
 from typing import TYPE_CHECKING, Any, Literal
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, unquote, urlparse
 
 from polars._utils.logging import eprint, verbose
 from polars._utils.wrap import wrap_ldf
@@ -120,6 +120,8 @@ def _delta_dtype(dtype: PolarsDataType) -> PolarsDataType:
         return pl.String()
     if isinstance(dtype, (pl.List, pl.Array)):
         return pl.List(_delta_dtype(dtype.inner))
+    if isinstance(dtype, pl.Map):
+        return pl.Map(_delta_dtype(dtype.key), _delta_dtype(dtype.value))
     if isinstance(dtype, pl.Struct):
         return pl.Struct({f.name: _delta_dtype(f.dtype) for f in dtype.fields})
     return dtype
@@ -131,6 +133,46 @@ def _is_delta_type(dtype: PolarsDataType) -> bool:
         return _delta_dtype(dtype) == dtype
     except TypeError:
         return False
+
+
+def _has_ntz_in_map(dtype: PolarsDataType, *, in_map: bool = False) -> bool:
+    """Whether `dtype` has a timestamp without a time zone inside a map."""
+    import polars as pl
+
+    if isinstance(dtype, pl.Datetime):
+        return in_map and dtype.time_zone is None
+    if isinstance(dtype, pl.Map):
+        return _has_ntz_in_map(dtype.key, in_map=True) or _has_ntz_in_map(
+            dtype.value, in_map=True
+        )
+    if isinstance(dtype, (pl.List, pl.Array)):
+        return _has_ntz_in_map(dtype.inner, in_map=in_map)
+    if isinstance(dtype, pl.Struct):
+        return any(_has_ntz_in_map(f.dtype, in_map=in_map) for f in dtype.fields)
+    return False
+
+
+def _new_table_rejection(schema: pl.Schema) -> str | None:
+    """Why the sink can't create a table for data of `schema`, or None.
+
+    deltalake 1.6.6 doesn't add the timestampNtz feature for a timestamp without a
+    time zone inside a map. The table would lack the feature, and no reader would
+    open it. `write_deltalake` rejects such data.
+    """
+    for name, dtype in schema.items():
+        if _has_ntz_in_map(dtype):
+            return f"column {name!r} has a timestamp without a time zone in a map"
+    return None
+
+
+def _schema_mismatch(schema: pl.Schema, expected: pl.Schema) -> str | None:
+    """How data of `schema` differs from the table schema `expected`, or None."""
+    if set(schema.names()) != set(expected.names()):
+        return "the data has other columns than the table"
+    for name, dtype in expected.items():
+        if schema[name] != dtype:
+            return f"column {name!r} is {schema[name]}, and the table's is {dtype}"
+    return None
 
 
 def _check_deltalake_apis() -> None:
@@ -321,9 +363,11 @@ def _file_schema(schema_json: str, partition_columns: list[str]) -> deltalake.Sc
 
 
 def _non_nullable_leaf_paths(schema: deltalake.Schema) -> list[tuple[str, ...]]:
-    """Parquet paths of the leaves that are non-nullable along their whole path.
+    """Parquet paths of the leaves whose null count must be 0.
 
-    The null count of other leaves also counts nulls of a nullable parent.
+    A leaf counts only if it and every struct above it are non-nullable, because
+    a null parent also adds to the null count of the leaf. Leaves in a list or map
+    don't count: an empty list also adds to the null count of the leaf.
     """
     from deltalake.schema import ArrayType, MapType, StructType
 
@@ -350,10 +394,11 @@ def _stats_leaf_paths(
 
     `delta.dataSkippingStatsColumns` lists the columns by name, where a struct
     selects all of its fields. Otherwise `delta.dataSkippingNumIndexedCols` selects
-    the first columns of the table, counting top-level columns like delta-rs, or
-    all columns when it is -1.
+    the first top-level columns of `schema`, or all of them when it is negative.
+    `schema` is the schema of the data files, so partition columns don't count,
+    like in delta-rs.
 
-    Statistics are only collected for leaves that are not in a list or map.
+    Leaves in a list or map, and binary leaves, get no statistics, like in delta-rs.
     """
     from deltalake.schema import ArrayType, MapType, StructType
 
@@ -505,19 +550,31 @@ def _is_local_uri(uri: str) -> bool:
     return scheme in ("", "file") or len(scheme) == 1
 
 
-def _is_native_uri(uri: str) -> bool:
-    """Whether the Parquet sink writes to `uri`.
+def _native_path(uri: str) -> str | None:
+    """Where the Parquet sink writes the table at `uri`, or None if it can't.
 
-    That is a local path, or a URI with a scheme that Polars writes to. deltalake
-    writes to other schemes, e.g. `memory://`.
+    A `file://` URI becomes a local path. deltalake decodes the URI, e.g.
+    `file:///tmp/my%20table` to `/tmp/my table`, and the Parquet sink doesn't, so
+    they would write to different directories. The Parquet sink can't write to a
+    `file://` URI with a host, or to a URI with a scheme that Polars doesn't write
+    to, e.g. `memory://`.
     """
-    return _get_path_scheme(uri) is None or _has_writable_scheme(uri)
+    scheme = _get_path_scheme(uri)
+    if scheme == "file":
+        host = urlparse(uri).netloc
+        return _local_path(uri) if host in ("", "localhost") else None
+    if scheme is None or _has_writable_scheme(uri):
+        return uri
+    return None
 
 
 def _local_path(uri: str) -> str:
+    """`uri` as a local path, e.g. `/tmp/my table` for `file:///tmp/my%20table`.
+
+    A path without the `file://` scheme is returned as it is.
+    """
     if uri.startswith("file://"):
-        parsed = urlparse(uri)
-        path = parsed.path
+        path = unquote(urlparse(uri).path)
         if os.name == "nt" and path.startswith("/") and path[2:3] == ":":
             path = path[1:]
         return path
@@ -534,13 +591,13 @@ class _LoadedTable:
 
     # None if the table didn't exist.
     table: deltalake.DeltaTable | None
-    # `_native_sink_state` created the sink for `write_delta` or `sink_delta`, and
-    # its commit hasn't started. No commit of the sink can exist yet, so the checks
-    # for one are skipped. Its files are written with the credentials in the storage
-    # options, which these functions resolved.
+    # Set by `_native_sink_state`, for `write_delta` and `sink_delta`, and cleared
+    # when the commit starts. Until then no commit of the sink can exist, so the
+    # checks for one are skipped. The files are written with the credentials in
+    # the storage options, which these functions resolved.
     routed: bool = False
-    # `_native_sink_state` loaded the table just before the sink is resolved, so
-    # resolving uses it without reloading it.
+    # Set by `_native_sink_state`, which loaded the table just before, and cleared
+    # when the sink is resolved. Resolving then uses the table without reloading it.
     fresh: bool = False
 
 
@@ -618,6 +675,11 @@ class DeltaSinkState:
                 credential_provider, table_uri, storage_options, "sink_delta"
             )
 
+        if (native_path := _native_path(table_uri)) is None:
+            msg = f"the Parquet sink can't write to the Delta table at '{table_uri}'"
+            raise ValueError(msg)
+        table_uri = native_path
+
         credential_provider_creds = {}
 
         if credential_provider_builder and (
@@ -692,7 +754,7 @@ class DeltaSinkState:
         """
         table = self._load_table()
         if table is None:
-            return None
+            return _new_table_rejection(schema)
 
         if self.mode in ("error", "ignore"):
             # deltalake raises its own error, or writes nothing.
@@ -703,13 +765,7 @@ class DeltaSinkState:
         except (NotImplementedError, ValueError) as e:
             return str(e)
 
-        expected = _polars_schema(_table_schema(table))
-        if set(schema.names()) != set(expected.names()):
-            return "the data has other columns than the table"
-        for name, dtype in expected.items():
-            if schema[name] != dtype:
-                return f"column {name!r} is {schema[name]}, and the table's is {dtype}"
-        return None
+        return _schema_mismatch(schema, _polars_schema(_table_schema(table)))
 
     def attach_sink(self, lf: pl.LazyFrame) -> pl.LazyFrame:
         return wrap_ldf(lf._ldf.sink_delta(self))
@@ -778,11 +834,10 @@ class DeltaSinkState:
             table_schema = _table_schema(table)
             expected = _polars_schema(table_schema)
 
-            if set(input_schema.names()) != set(expected.names()) or any(
-                input_schema[name] != dtype for name, dtype in expected.items()
-            ):
+            if (mismatch := _schema_mismatch(input_schema, expected)) is not None:
                 msg = (
-                    "schema of the data does not match the Delta table schema\n"
+                    f"schema of the data does not match the Delta table schema: "
+                    f"{mismatch}\n"
                     f"data: {input_schema}\n"
                     f"table: {expected}"
                 )
@@ -791,6 +846,10 @@ class DeltaSinkState:
             lf = lf.select(expected.names())
         else:
             from deltalake import Schema
+
+            if (rejection := _new_table_rejection(input_schema)) is not None:
+                msg = f"sink to a new Delta table: {rejection}"
+                raise NotImplementedError(msg)
 
             # A new table is not partitioned.
             partition_columns = []
@@ -1050,6 +1109,11 @@ class DeltaSinkState:
             raise e from None
 
     def _landed(self, table: deltalake.DeltaTable) -> bool:
+        """Whether the log of `table` has the commit of this sink.
+
+        The commit records the sink uuid as an app transaction. The log keeps it
+        until `delta.setTransactionRetentionDuration` expires it.
+        """
         return table.transaction_version(self.sink_uuid_str) is not None
 
     def _landed_version(
@@ -1104,10 +1168,11 @@ class DeltaSinkState:
         _check_writable(table, self.mode)
 
     def remove_written_files(self) -> str | None:
-        """Delete the data files of a sink whose commit did not land, best effort.
+        """Delete the data files of this sink, best effort.
 
-        Returns the directory where data files may remain, or None if they were
-        removed.
+        Nothing is deleted when the commit of the sink is in the table log, because
+        the files are then part of the table. Returns the sink directory if files may
+        remain in it, or None if they were removed.
         """
         import shutil
 
@@ -1159,6 +1224,7 @@ def _native_sink_state(
     """
     from deltalake import DeltaTable
 
+    uri = target.table_uri if isinstance(target, DeltaTable) else target
     state = None
     reason: str | None
     if mode not in ("error", "append", "overwrite", "ignore"):
@@ -1167,11 +1233,11 @@ def _native_sink_state(
         reason = f"delta_write_options are given: {sorted(delta_write_options)}"
     elif missing := _missing_deltalake_apis():
         reason = f"deltalake lacks {', '.join(missing)}"
-    elif isinstance(target, str) and not _is_native_uri(target):
-        reason = f"the Parquet sink does not write to '{_get_path_scheme(target)}://'"
-    elif isinstance(target, DeltaTable) and not _is_local_uri(target.table_uri):
+    elif isinstance(target, DeltaTable) and not _is_local_uri(uri):
         # The sink would write the data files without the table's storage options.
         reason = "the target is a DeltaTable of a remote table"
+    elif _native_path(uri) is None:
+        reason = f"the Parquet sink can't write to '{uri}'"
     elif casts := [name for name, dtype in schema.items() if not _is_delta_type(dtype)]:
         reason = f"column {casts[0]!r} of type {schema[casts[0]]} needs a cast"
     else:

@@ -18,7 +18,8 @@ from polars.io.delta._sink import (
     _SINK_UUID_PROPERTY,
     DeltaSinkState,
     _format_float,
-    _is_native_uri,
+    _is_delta_type,
+    _native_path,
     _partition_value,
     _relative_data_path,
     _stats_column_paths,
@@ -122,6 +123,8 @@ def test_delta_sink_empty_append(tmp_path: Path) -> None:
     _sink(pl.LazyFrame({"a": [1]}).clear(), tmp_path, "append")
 
     assert DeltaTable(str(tmp_path)).version() == 1
+    # The empty file is committed, so no written file is left unreferenced.
+    assert [json.loads(add["stats"])["numRecords"] for add in _adds(tmp_path, 1)] == [0]
     assert _read(tmp_path, "a")["a"].to_list() == [1, 2]
 
 
@@ -131,6 +134,14 @@ def test_delta_sink_empty_overwrite(tmp_path: Path) -> None:
     _sink(pl.LazyFrame({"a": [1]}).clear(), tmp_path, "overwrite")
 
     assert DeltaTable(str(tmp_path)).version() == 1
+    assert [json.loads(add["stats"])["numRecords"] for add in _adds(tmp_path, 1)] == [0]
+    assert _read(tmp_path).height == 0
+
+
+def test_delta_sink_empty_new_table(tmp_path: Path) -> None:
+    _sink(pl.LazyFrame({"a": [1]}).clear(), tmp_path, "error")
+
+    assert [json.loads(add["stats"])["numRecords"] for add in _adds(tmp_path, 0)] == [0]
     assert _read(tmp_path).height == 0
 
 
@@ -272,22 +283,35 @@ def test_delta_sink_relative_path_outside_sink() -> None:
 
 
 @pytest.mark.parametrize(
-    ("uri", "native"),
+    ("uri", "path"),
     [
-        ("/tmp/t", True),
-        ("C:\\t", True),
-        ("file:///tmp/t", True),
-        ("s3://bucket/t", True),
-        ("abfss://container@account.dfs.core.windows.net/t", True),
-        ("memory:///t", False),
-        ("lakefs://repo/main/t", False),
+        ("/tmp/t", "/tmp/t"),
+        ("C:\\t", "C:\\t"),
+        ("file:///tmp/my%20table", "/tmp/my table"),
+        ("file://localhost/tmp/t", "/tmp/t"),
+        ("file://server/share/t", None),
+        ("s3://bucket/t", "s3://bucket/t"),
+        (
+            "abfss://container@account.dfs.core.windows.net/t",
+            "abfss://container@account.dfs.core.windows.net/t",
+        ),
+        ("memory:///t", None),
+        ("lakefs://repo/main/t", None),
         # No object store builder is registered for hdfs.
-        ("hdfs://namenode/t", False),
-        ("hf://datasets/org/t", False),
+        ("hdfs://namenode/t", None),
+        ("hf://datasets/org/t", None),
     ],
 )
-def test_delta_sink_native_uri(uri: str, native: bool) -> None:
-    assert _is_native_uri(uri) == native
+def test_delta_sink_native_path(uri: str, path: str | None) -> None:
+    assert _native_path(uri) == path
+
+
+def test_delta_sink_map_cast() -> None:
+    # Schemas of data hold type instances.
+    assert _is_delta_type(pl.Map(pl.String(), pl.Int64()))
+    assert not _is_delta_type(pl.Map(pl.String(), pl.UInt8()))
+    assert not _is_delta_type(pl.Map(pl.UInt8(), pl.String()))
+    assert not _is_delta_type(pl.Map(pl.String(), pl.Datetime("ns")))
 
 
 def test_delta_sink_mode_error_existing(tmp_path: Path) -> None:
@@ -666,6 +690,23 @@ def test_delta_sink_nested_non_nullable(
     assert DeltaTable(str(tmp_path)).version() == 0
 
 
+def _ntz_map_frame() -> pl.DataFrame:
+    arr = pa.array(
+        [[("a", datetime(2026, 1, 1))]], pa.map_(pa.string(), pa.timestamp("us"))
+    )
+    df = pl.from_arrow(pa.table({"m": arr}))
+    assert isinstance(df, pl.DataFrame)
+    return df
+
+
+def test_delta_sink_new_table_ntz_in_map(tmp_path: Path) -> None:
+    # deltalake would create the table without the timestampNtz feature.
+    with pytest.raises(NotImplementedError, match="without a time zone in a map"):
+        _sink(_ntz_map_frame().lazy(), tmp_path, "error")
+
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_delta_sink_type_casts(tmp_path: Path) -> None:
     ts = datetime(2026, 1, 1, 12, 0, 0, 123456)
     df = pl.DataFrame(
@@ -964,12 +1005,12 @@ def test_delta_sink_no_credential_provider(monkeypatch: pytest.MonkeyPatch) -> N
     assert state.storage_options == {"aws_region": "eu-west-1"}
 
 
-def _write_delta(df: pl.DataFrame, path: Path, **kwargs: Any) -> None:
-    df.write_delta(str(path), **kwargs)
+def _write_delta(df: pl.DataFrame, path: Path | DeltaTable, **kwargs: Any) -> None:
+    df.write_delta(path if isinstance(path, DeltaTable) else str(path), **kwargs)
 
 
-def _sink_delta(df: pl.DataFrame, path: Path, **kwargs: Any) -> None:
-    df.lazy().sink_delta(str(path), **kwargs)
+def _sink_delta(df: pl.DataFrame, path: Path | DeltaTable, **kwargs: Any) -> None:
+    df.lazy().sink_delta(path if isinstance(path, DeltaTable) else str(path), **kwargs)
 
 
 _public_writers = pytest.mark.parametrize(
@@ -1021,8 +1062,23 @@ def test_delta_write_cast_deltalake(
     [
         pl.DataFrame({"a": pl.Series([1], dtype=pl.UInt32)}),
         pl.DataFrame({"a": [datetime(2026, 1, 1)]}, schema={"a": pl.Datetime("ns")}),
+        pl.from_arrow(
+            pa.table({"a": pa.array([[("k", 5)]], pa.map_(pa.string(), pa.uint8()))})
+        ),
+        pl.from_arrow(
+            pa.table({"a": pa.array([[(5, "v")]], pa.map_(pa.uint8(), pa.string()))})
+        ),
+        pl.from_arrow(
+            pa.table(
+                {
+                    "a": pa.array(
+                        [[("k", [5])]], pa.map_(pa.string(), pa.list_(pa.uint8()))
+                    )
+                }
+            )
+        ),
     ],
-    ids=["uint32", "datetime_ns"],
+    ids=["uint32", "datetime_ns", "map_value", "map_key", "map_list_value"],
 )
 def test_delta_write_new_table_cast_deltalake(
     tmp_path: Path, write: Any, df: pl.DataFrame
@@ -1088,6 +1144,73 @@ def test_delta_write_null_partition_removes_files(tmp_path: Path, write: Any) ->
 
     assert set(tmp_path.rglob("*")) == entries
     assert DeltaTable(str(tmp_path)).version() == 0
+
+
+@_public_writers
+def test_delta_write_file_uri_percent_encoded(tmp_path: Path, write: Any) -> None:
+    table = tmp_path / "my table"
+    uri = table.as_uri()
+    assert uri.endswith("my%20table")
+
+    write(pl.DataFrame({"a": [1]}), uri)
+    write(pl.DataFrame({"a": [2]}), uri, mode="append")
+
+    assert _native_commit(table, 1)
+    # deltalake decodes the URI, so the data files must go to `my table` too.
+    assert [p.name for p in tmp_path.iterdir()] == ["my table"]
+    assert sorted(DeltaTable(uri).to_pyarrow_table()["a"].to_pylist()) == [1, 2]
+
+
+@_public_writers
+def test_delta_write_delta_table_target(tmp_path: Path, write: Any) -> None:
+    # The table URI of a DeltaTable is percent-encoded: `my%20table`.
+    table = tmp_path / "my table"
+    write_deltalake(str(table), pa.table({"a": [1]}))
+    dt = DeltaTable(str(table))
+
+    write(pl.DataFrame({"a": [2]}), dt, mode="append")
+
+    assert _native_commit(table, 1)
+    assert [p.name for p in tmp_path.iterdir()] == ["my table"]
+    # Like `write_deltalake`, the write leaves the object at the new version.
+    assert dt.version() == 1
+    assert sorted(dt.to_pyarrow_table()["a"].to_pylist()) == [1, 2]
+
+
+@_public_writers
+def test_delta_write_new_table_ntz_in_map(tmp_path: Path, write: Any) -> None:
+    from deltalake.exceptions import DeltaError
+
+    # deltalake rejects the data before writing anything.
+    with pytest.raises(DeltaError):
+        write(_ntz_map_frame(), tmp_path)
+
+    assert list(tmp_path.iterdir()) == []
+
+
+@_public_writers
+def test_delta_write_deltalake_api_missing(
+    tmp_path: Path, write: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delattr(DeltaTable, "transaction_version")
+
+    write(pl.DataFrame({"a": [1]}), tmp_path)
+
+    assert not _native_commit(tmp_path, 0)
+    assert _read(tmp_path, "a")["a"].to_list() == [1]
+
+
+@_public_writers
+def test_delta_write_ignore(tmp_path: Path, write: Any) -> None:
+    write(pl.DataFrame({"a": [1]}), tmp_path, mode="ignore")
+    assert _native_commit(tmp_path, 0)
+    entries = set(tmp_path.rglob("*"))
+
+    write(pl.DataFrame({"a": [2]}), tmp_path, mode="ignore")
+
+    assert DeltaTable(str(tmp_path)).version() == 0
+    assert set(tmp_path.rglob("*")) == entries
+    assert _read(tmp_path, "a")["a"].to_list() == [1]
 
 
 @_public_writers
@@ -1210,10 +1333,13 @@ def test_delta_write_append_concurrent_schema_change(
         ),
     )
 
+    entries = set(tmp_path.iterdir())
+
     with pytest.raises(CommitFailedError, match="Metadata changed"):
         write(pl.DataFrame({"a": [2]}), tmp_path, mode="append")
 
     assert DeltaTable(str(tmp_path)).version() == 1
+    assert set(tmp_path.iterdir()) == entries
 
 
 def _record_credential_providers(monkeypatch: pytest.MonkeyPatch) -> list[Any]:

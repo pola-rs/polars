@@ -310,6 +310,25 @@ impl CloudType {
             CloudScheme::Ext(scheme) => Self::Ext(scheme),
         }
     }
+
+    /// Whether Polars writes to paths of this type.
+    ///
+    /// Hugging Face paths are read-only. An external scheme needs a registered object
+    /// store builder.
+    pub fn is_writable(&self) -> bool {
+        match self {
+            Self::Aws => cfg!(feature = "aws"),
+            Self::Azure => cfg!(feature = "azure"),
+            Self::Gcp => cfg!(feature = "gcp"),
+            Self::Http => cfg!(feature = "http"),
+            Self::File => true,
+            Self::Hf => false,
+            #[cfg(feature = "cloud")]
+            Self::Ext(scheme) => super::has_object_store_builder(scheme),
+            #[cfg(not(feature = "cloud"))]
+            Self::Ext(_) => false,
+        }
+    }
 }
 
 pub static USER_AGENT: &str = concat!("polars", "/", env!("CARGO_PKG_VERSION"),);

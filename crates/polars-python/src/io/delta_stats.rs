@@ -172,7 +172,8 @@ impl Extreme {
 }
 
 /// Orders the values of a leaf. Dates, timestamps and decimals order by their
-/// physical value, as their Delta values are text or rounded.
+/// physical value: their `StatValue` is text or a raw JSON number, which don't
+/// compare by value.
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 enum SortKey {
     Bool(bool),
