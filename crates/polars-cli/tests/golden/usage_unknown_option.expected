@@ -1,7 +1,8 @@
 exit: 2
 --- stdout ---
 --- stderr ---
-error: unknown option '--unknown'
+error: unexpected argument '--unknown' found
 
 Usage: polars -c <SQL>
-Try 'polars --help'.
+
+For more information, try '--help'.

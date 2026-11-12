@@ -1,7 +1,9 @@
 exit: 2
 --- stdout ---
 --- stderr ---
-error: no SQL was given
+error: the following required arguments were not provided:
+  -c <SQL>
 
 Usage: polars -c <SQL>
-Try 'polars --help'.
+
+For more information, try '--help'.

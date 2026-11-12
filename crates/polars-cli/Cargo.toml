@@ -19,6 +19,8 @@ test = false
 [dependencies]
 polars-ooc = { workspace = true, features = ["fast_alloc"] }
 
+clap = { workspace = true }
+
 [dependencies.polars]
 workspace = true
 features = [

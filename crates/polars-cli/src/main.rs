@@ -1,37 +1,26 @@
-use std::io::{self, BufWriter, Write};
+use std::io::{self, BufWriter};
 use std::process::ExitCode;
 
-use polars_cli::{HELP, Invocation, Printer, exit_code, parse_args, run};
+use clap::Parser;
+use polars_cli::{Args, Printer, run};
 
 // The allocator of the Python runtime, so that both perform alike.
 #[global_allocator]
 static ALLOC: polars_ooc::Allocator = polars_ooc::Allocator;
 
 fn main() -> ExitCode {
-    let invocation = match parse_args(std::env::args_os().skip(1)) {
-        Ok(invocation) => invocation,
+    let args = match Args::try_parse() {
+        Ok(args) => args,
+        // Help and version requests arrive here too, with exit code 0.
         Err(error) => {
-            // The exit code stands also when stderr cannot be written to.
-            let _ = writeln!(
-                io::stderr(),
-                "error: {error}\n\nUsage: polars -c <SQL>\nTry 'polars --help'."
-            );
-            return ExitCode::from(exit_code::USAGE);
+            // The exit code stands also when the message cannot be written.
+            let _ = error.print();
+            return ExitCode::from(error.exit_code() as u8);
         },
     };
 
+    // Not locked: Polars and the panic hook write to these streams from other threads.
     let stdout = BufWriter::new(io::stdout());
-    let code = match invocation {
-        Invocation::Help => print(stdout, HELP),
-        Invocation::Version => print(stdout, concat!("polars ", env!("CARGO_PKG_VERSION"), "\n")),
-        Invocation::Command(sql) => run(&sql, &mut Printer::new(stdout, io::stderr())),
-    };
+    let code = run(&args.command, &mut Printer::new(stdout, io::stderr()));
     ExitCode::from(code)
-}
-
-fn print(mut out: impl Write, text: &str) -> u8 {
-    match out.write_all(text.as_bytes()).and_then(|()| out.flush()) {
-        Ok(()) => exit_code::OK,
-        Err(_) => exit_code::FAILURE,
-    }
 }
