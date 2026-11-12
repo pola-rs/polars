@@ -348,6 +348,30 @@ def test_dictionary_codes_sink_parquet_writes_used_values(
         assert col.statistics.max <= LONG[4]
 
 
+@pytest.mark.parametrize("duplicate_values", [False, True])
+def test_dictionary_codes_sink_large_distinct_code_slices(
+    tmp_path: Path, duplicate_values: bool
+) -> None:
+    # The source dictionary pays off for its whole row group, but each output row
+    # group visits every code once. Different codes may still represent equal values.
+    distinct = 32_768
+    values = pa.array(
+        [LONG[i % 8] if duplicate_values else f"{LONG[0]}/{i}" for i in range(distinct)]
+    )
+    codes = pa.array(list(range(distinct)) * 8, type=pa.int32())
+    table = pa.table({"k": pa.DictionaryArray.from_arrays(codes, values)})
+    source = tmp_path / "source.parquet"
+    pq.write_table(table, source, row_group_size=len(table), store_schema=False)
+    target = tmp_path / "target.parquet"
+    pl.scan_parquet(source).sink_parquet(target, row_group_size=distinct)
+    expected = pl.from_arrow(table).with_columns(pl.col("k").cast(pl.String))
+    assert_frame_equal(pl.read_parquet(target), expected)
+    if duplicate_values:
+        metadata = pq.ParquetFile(target).metadata
+        for i in range(metadata.num_row_groups):
+            assert "RLE_DICTIONARY" in metadata.row_group(i).column(0).encodings
+
+
 OVERSIZED_QUERIES: dict[str, Callable[[pl.LazyFrame], pl.LazyFrame]] = {
     "group_by": lambda lf: lf.group_by("k").agg(pl.len(), pl.sum("v")),
     "group_by_two": lambda lf: lf.group_by("k", "s").agg(pl.sum("v")),
