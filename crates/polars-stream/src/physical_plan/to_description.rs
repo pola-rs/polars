@@ -550,6 +550,7 @@ pub fn phys_props(
             key_per_input,
             fused_agg_inputs_per_input,
             aggs_per_input,
+            key_ranges: _,
         } => (
             PhysicalPropsDescription::GroupBy {
                 num_inputs: inputs.len(),
@@ -577,6 +578,7 @@ pub fn phys_props(
             fused_predicate,
             runtime_filters: _,
             estimated_rows: _,
+            key_ranges: _,
         } => (
             PhysicalPropsDescription::EquiJoin {
                 how: format!("{}", args.how),
