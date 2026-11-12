@@ -496,17 +496,9 @@ pub(crate) unsafe fn agg_arg_min_max_row_encoded(
     groups: &GroupsType,
     is_max: bool,
 ) -> Series {
-    // With `propagate_nulls` the encoding cannot fail.
-    let encoded = row_encode::_get_rows_encoded_ca(
-        s.name().clone(),
-        &[s.clone().into_column()],
-        &[false],
-        &[false],
-        true,
-    )
-    .unwrap()
-    .cast(&DataType::Binary)
-    .unwrap();
+    let encoded = row_encode::row_encode_ordered_propagate_nulls(s)
+        .cast(&DataType::Binary)
+        .unwrap();
     let encoded = encoded.binary().unwrap();
     unsafe {
         if is_max {

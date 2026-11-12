@@ -4,7 +4,7 @@ use polars_core::chunked_array::arg_min_max::{
 };
 #[cfg(feature = "dtype-categorical")]
 use polars_core::chunked_array::arg_min_max::{arg_max_cat, arg_min_cat};
-use polars_core::chunked_array::ops::row_encode::_get_rows_encoded_ca;
+use polars_core::chunked_array::ops::row_encode::row_encode_ordered_propagate_nulls;
 #[cfg(feature = "dtype-categorical")]
 use polars_core::with_match_categorical_physical_type;
 
@@ -48,20 +48,6 @@ macro_rules! with_match_physical_numeric_polars_type {(
     }
 })}
 
-/// The row encoding of `s` in sort order, null where `s` is null.
-fn row_encode_propagate_nulls(s: &Series) -> Series {
-    // With `propagate_nulls` the encoding cannot fail.
-    _get_rows_encoded_ca(
-        s.name().clone(),
-        &[s.clone().into_column()],
-        &[false],
-        &[false],
-        true,
-    )
-    .unwrap()
-    .into_series()
-}
-
 impl ArgAgg for Series {
     fn arg_min(&self) -> Option<usize> {
         use DataType::*;
@@ -88,7 +74,9 @@ impl ArgAgg for Series {
                     arg_min_numeric(ca)
                 })
             },
-            dt if dt.is_nested() => row_encode_propagate_nulls(self).arg_min(),
+            dt if dt.is_nested() => row_encode_ordered_propagate_nulls(self)
+                .into_series()
+                .arg_min(),
             _ => None,
         }
     }
@@ -118,7 +106,9 @@ impl ArgAgg for Series {
                     arg_max_numeric(ca)
                 })
             },
-            dt if dt.is_nested() => row_encode_propagate_nulls(self).arg_max(),
+            dt if dt.is_nested() => row_encode_ordered_propagate_nulls(self)
+                .into_series()
+                .arg_max(),
             _ => None,
         }
     }

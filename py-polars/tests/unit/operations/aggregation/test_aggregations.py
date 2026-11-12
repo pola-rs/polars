@@ -2262,17 +2262,18 @@ def test_arg_min_max_nested_skips_nulls_30734(kind: str) -> None:
         }
     )
     aggs = [pl.col("s").arg_min().alias("min"), pl.col("s").arg_max().alias("max")]
+    idx = {"min": pl.get_index_type(), "max": pl.get_index_type()}
 
     expected = pl.DataFrame(
         {"min": [2], "max": [4]},
-        schema_overrides={"min": pl.get_index_type(), "max": pl.get_index_type()},
+        schema_overrides=idx,
     )
     assert_frame_equal(df.select(aggs), expected)
     assert_frame_equal(df.lazy().select(aggs).collect(), expected)
 
     expected = pl.DataFrame(
         {"g": [1, 2, 3], "min": [2, 0, None], "max": [0, 1, None]},
-        schema_overrides={"min": pl.get_index_type(), "max": pl.get_index_type()},
+        schema_overrides=idx,
     )
     assert_frame_equal(df.group_by("g", maintain_order=True).agg(aggs), expected)
     q = df.lazy().group_by("g").agg(aggs)
@@ -2280,7 +2281,7 @@ def test_arg_min_max_nested_skips_nulls_30734(kind: str) -> None:
 
     expected = pl.DataFrame(
         {"min": [2, 2, 2, 0, 0, None, None], "max": [0, 0, 0, 1, 1, None, None]},
-        schema_overrides={"min": pl.get_index_type(), "max": pl.get_index_type()},
+        schema_overrides=idx,
     )
     over = [a.over("g") for a in aggs]
     assert_frame_equal(df.select(over), expected)
