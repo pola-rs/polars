@@ -2328,6 +2328,39 @@ def test_min_max_sum_nested_raise_30734(
 
 
 @pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("o").min(),
+        pl.col("o").max(),
+        pl.col("o").sum(),
+        pl.col("o").arg_min(),
+        pl.col("o").arg_max(),
+        pl.col("i").min_by("o"),
+        pl.col("i").max_by("o"),
+    ],
+)
+def test_ordering_aggs_object_raise(expr: pl.Expr) -> None:
+    o = pl.Series([object(), None, object()], dtype=pl.Object)
+    df = pl.DataFrame({"g": [1, 1, 1], "i": [0, 1, 2], "o": o})
+    msg = "operation not supported for (by )?dtype `object`"
+    for q in [
+        df.lazy().select(expr),
+        df.lazy().group_by("g").agg(expr),
+        df.lazy().select(expr.over("g")),
+    ]:
+        with pytest.raises(InvalidOperationError, match=msg):
+            q.collect_schema()
+        with pytest.raises(InvalidOperationError, match=msg):
+            q.collect()
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.select(expr)
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.group_by("g").agg(expr)
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.select(expr.over("g"))
+
+
+@pytest.mark.parametrize(
     ("dtype", "input", "expect"),
     [
         (pl.Int32, [1, 2, 2], [[1, 2], [2]]),

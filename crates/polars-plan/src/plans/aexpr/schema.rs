@@ -180,7 +180,7 @@ impl AExpr {
                             "max"
                         };
                         polars_ensure!(
-                            !field.dtype().is_nested(),
+                            !field.dtype().is_nested() && !field.dtype().is_object(),
                             InvalidOperation: "`{op}` operation not supported for dtype `{}`",
                             field.dtype()
                         );
@@ -194,7 +194,8 @@ impl AExpr {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
                         let dt = match field.dtype() {
                             dt if matches!(dt, String | Binary | BinaryOffset)
-                                || dt.is_nested() =>
+                                || dt.is_nested()
+                                || dt.is_object() =>
                             {
                                 polars_bail!(
                                     InvalidOperation: "`sum` operation not supported for dtype `{dt}`"
