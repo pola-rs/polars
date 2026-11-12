@@ -99,12 +99,14 @@ impl MorselSerializer {
             .into_iter()
             .map(|c| {
                 let name = c.name().clone();
-                let arr = c.rechunk_to_arrow(CompatLevel::newest());
+                let arr = c.try_rechunk_to_arrow(CompatLevel::newest())?;
 
                 let field = ArrowField::new(name, arr.dtype().clone(), true);
 
-                (arr, field)
+                PolarsResult::Ok((arr, field))
             })
+            .collect::<PolarsResult<Vec<_>>>()?
+            .into_iter()
             .unzip();
 
         let array = StructArray::new(ArrowDataType::Struct(fields), height, arrays, None);

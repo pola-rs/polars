@@ -173,10 +173,10 @@ where
         } else {
             df.align_chunks();
         }
-        let iter = df.iter_chunks(self.compat_level, true);
+        let iter = df.try_iter_chunks(self.compat_level, true);
 
         for batch in iter {
-            ipc_writer.write(&batch, None)?
+            ipc_writer.write(&batch?, None)?
         }
         ipc_writer.finish()?;
         Ok(())
@@ -194,9 +194,9 @@ impl<W: Write> BatchedWriter<W> {
     /// # Panics
     /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.
     pub fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
-        let iter = df.iter_chunks(self.compat_level, true);
+        let iter = df.try_iter_chunks(self.compat_level, true);
         for batch in iter {
-            self.writer.write(&batch, None)?
+            self.writer.write(&batch?, None)?
         }
         Ok(())
     }
