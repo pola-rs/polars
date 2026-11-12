@@ -68,8 +68,8 @@ pub struct SortNode {
     input_schema: Arc<Schema>,
     /// Whether the key is only a helper that is dropped from the output.
     drop_key: bool,
-    /// The columns to keep from the input, if projecting.
-    projection: Option<Vec<PlSmallStr>>,
+    /// The indices of the columns to buffer in the input, if projecting.
+    work_idxs: Option<Vec<usize>>,
     slice: Option<(i64, usize)>,
     limit: Option<IdxSize>,
     sort_options: SortMultipleOptions,
@@ -93,6 +93,7 @@ impl SortNode {
             dt => dt,
         };
         let mut drop_key = false;
+        let mut work_idxs = None;
         let input_schema = match projection.as_deref() {
             None => input_schema,
             Some(names) => {
@@ -101,6 +102,12 @@ impl SortNode {
                     columns.push(key.clone());
                     drop_key = true;
                 }
+                work_idxs = Some(
+                    columns
+                        .iter()
+                        .map(|name| input_schema.index_of(name).unwrap())
+                        .collect(),
+                );
                 Arc::new(input_schema.try_project(&columns).unwrap())
             },
         };
@@ -116,7 +123,7 @@ impl SortNode {
             key_dtype,
             input_schema,
             drop_key,
-            projection,
+            work_idxs,
             slice,
             limit,
             sort_options,
@@ -138,12 +145,13 @@ impl SortNode {
 
     fn sort_in_memory(&self, df: DataFrame) -> PolarsResult<DataFrame> {
         let range = self.output_range(df.height());
-        let df = sort_range(df, &self.key, self.sort_options.clone(), range)?;
-        Ok(if self.drop_key {
-            df.drop(&self.key)?
-        } else {
-            df
-        })
+        sort_range(
+            df,
+            &self.key,
+            self.drop_key,
+            self.sort_options.clone(),
+            range,
+        )
     }
 
     /// Turns the buffered input into the state that emits the sorted output.
@@ -433,7 +441,7 @@ impl ComputeNode for SortNode {
             key,
             sort_options,
             tuning,
-            projection,
+            work_idxs,
             drop_key,
             ..
         } = self;
@@ -454,21 +462,20 @@ impl ComputeNode for SortNode {
 
                 for (mut recv, sample) in receivers.into_iter().zip(samples.iter_mut()) {
                     let key = &*key;
-                    let work_columns = projection.as_ref().map(|names| {
-                        let mut columns = names.clone();
-                        if *drop_key {
-                            columns.push(key.clone());
-                        }
-                        columns
-                    });
+                    let work_idxs = work_idxs.as_deref();
                     join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                         let mut pipe_morsels = Vec::new();
                         while let Ok(mut morsel) = recv.recv().await {
                             morsel.take_consume_token();
-                            if let Some(columns) = &work_columns {
+                            if let Some(idxs) = work_idxs {
                                 morsel = morsel
-                                    .try_map(|df| df.select(columns.iter().cloned()))
-                                    .await?;
+                                    .map(|df| {
+                                        let columns =
+                                            idxs.iter().map(|&i| df.columns()[i].clone()).collect();
+                                        // SAFETY: the columns are a subset of the frame's.
+                                        unsafe { DataFrame::new_unchecked(df.height(), columns) }
+                                    })
+                                    .await;
                             }
                             {
                                 let df = morsel.sf().get().await;
@@ -513,14 +520,25 @@ fn key_series(df: &DataFrame, key: &str) -> PolarsResult<Series> {
     })
 }
 
-/// Sorts `df` and restricts it to the `(offset, len)` row range of the result.
+/// Sorts `df` and restricts it to the `(offset, len)` row range of the result. With `drop_key`,
+/// the key is removed from the result, before gathering the other columns.
 fn sort_range(
-    df: DataFrame,
+    mut df: DataFrame,
     key: &str,
+    drop_key: bool,
     sort_options: SortMultipleOptions,
     (offset, len): (usize, usize),
 ) -> PolarsResult<DataFrame> {
     let by_column = vec![df.column(key)?.clone()];
+    if drop_key {
+        df = df.drop(key)?;
+        if df.width() == 0 {
+            // A frame without columns is not sorted or sliced.
+            let height = len.min(df.height().saturating_sub(offset));
+            // SAFETY: no columns.
+            return Ok(unsafe { DataFrame::new_unchecked(height, Vec::new()) });
+        }
+    }
     if offset == 0 {
         // A `(0, len)` slice would send `sort_impl` down the bottom-k path,
         // which row-encodes the key.

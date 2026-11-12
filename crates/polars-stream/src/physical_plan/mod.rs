@@ -1034,6 +1034,11 @@ fn fuse_drops(
             continue;
         }
 
+        // Nothing is dropped, e.g. a pure reorder: fusing would only add a per-morsel select.
+        if columns.len() == len_before_drop {
+            continue;
+        }
+
         let Some(projection) = fusable_projection_mut(input_node.kind_mut()) else {
             continue;
         };

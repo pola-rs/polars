@@ -234,10 +234,7 @@ impl FlushState {
                 let wait_group = WaitGroup::default();
                 loop {
                     match self.next_step(&source_token) {
-                        Step::Emit(mut df, seq) => {
-                            if drop_key {
-                                df = df.drop(key)?;
-                            }
+                        Step::Emit(df, seq) => {
                             let mut morsel = Morsel::new_unregistered(
                                 df,
                                 MorselSeq::new(seq),
@@ -250,7 +247,9 @@ impl FlushState {
                             wait_group.wait().await;
                         },
                         Step::Sort(bucket, seq, memory) => {
-                            let sorted = sort_bucket(bucket, memory.sort, key, &sort_options).await;
+                            let sorted =
+                                sort_bucket(bucket, memory.sort, key, drop_key, &sort_options)
+                                    .await;
                             self.finish_sort(seq, memory, sorted)?;
                         },
                         Step::Wait(notified) => notified.await,
@@ -279,6 +278,7 @@ async fn sort_bucket(
     bucket: PendingBucket,
     bytes: u64,
     key: &PlSmallStr,
+    drop_key: bool,
     sort_options: &SortMultipleOptions,
 ) -> PolarsResult<DataFrame> {
     let _reservation = memory_manager().reserve(bytes).await;
@@ -286,11 +286,14 @@ async fn sort_bucket(
     let df = accumulate_dataframes_vertical_unchecked(dfs);
     let (offset, len) = bucket.local;
     if bucket.needs_sort {
-        return sort_range(df, key, sort_options.clone(), bucket.local);
+        return sort_range(df, key, drop_key, sort_options.clone(), bucket.local);
     }
     // The bucket holds a single key value or only nulls, so it is sorted
     // already, but its frames don't carry the flag.
     let mut df = df.slice(offset as i64, len);
+    if drop_key {
+        return df.drop(key);
+    }
     let sorted = if sort_options.descending[0] {
         IsSorted::Descending
     } else {

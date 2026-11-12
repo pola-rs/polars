@@ -2042,9 +2042,11 @@ def test_streaming_engine_fused_sort_drop_matches_in_memory(
     keys: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Force the partitioned (multi-bucket) path for the large frame.
-    monkeypatch.setenv("POLARS_SORT_PARTITION_THRESHOLD_BYTES", "1")
-    monkeypatch.setenv("POLARS_SORT_TARGET_BUCKET_BYTES", "200000")
+    if n > 5:
+        # Force the partitioned (multi-bucket) path for the large frame; the small one
+        # runs the in-memory sort.
+        monkeypatch.setenv("POLARS_SORT_PARTITION_THRESHOLD_BYTES", "1")
+        monkeypatch.setenv("POLARS_SORT_TARGET_BUCKET_BYTES", "200000")
     if n > 5 and (descending or nulls_last or slice_ or limit) and keys != "col":
         pytest.skip("keep the large cases few")
 
@@ -2072,8 +2074,8 @@ def test_streaming_engine_fused_sort_drop_matches_in_memory(
     else:
         by = [pl.col("c"), pl.col("payload")]
 
-    # All keys end in a unique column, so the order is fully determined; `maintain_order`
-    # is exercised separately below on single keys.
+    # All keys end in a unique column, so the order is fully determined.
+    # `maintain_order` is exercised separately below on single keys.
     q = (
         df.lazy()
         .sort(by, descending=descending, nulls_last=nulls_last)
@@ -2104,11 +2106,50 @@ def test_streaming_engine_fused_sort_drop_maintain_order(
             "payload": idx,
         }
     )
-    q = (
-        df.lazy()
-        .sort(key, maintain_order=True)
-        .select("payload")
-    )
+    q = df.lazy().sort(key, maintain_order=True).select("payload")
     if limit is not None:
         q = q.head(limit)
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+@pytest.mark.parametrize("n", [5, 200_000])
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+@pytest.mark.parametrize("slice_", [None, (3, 10), (-7, 4)])
+@pytest.mark.parametrize(
+    "select", [["payload"], ["payload", "a"], ["a", "payload"], []]
+)
+def test_streaming_engine_fused_sort_drop_plain_key(
+    n: int,
+    descending: bool,
+    nulls_last: bool,
+    slice_: tuple[int, int] | None,
+    select: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if n > 5:
+        monkeypatch.setenv("POLARS_SORT_PARTITION_THRESHOLD_BYTES", "1")
+        monkeypatch.setenv("POLARS_SORT_TARGET_BUCKET_BYTES", "200000")
+
+    idx = pl.int_range(n, eager=True)
+    df = pl.DataFrame(
+        {
+            "a": pl.select(
+                pl.when(idx % 11 == 0).then(None).otherwise(idx * 7919 % 101)
+            ).to_series(),
+            "payload": idx,
+            "other": pl.select(pl.format("p{}", idx)).to_series(),
+        }
+    )
+    q = (
+        df.lazy()
+        .sort("a", descending=descending, nulls_last=nulls_last, maintain_order=True)
+        .select(select)
+    )
+    if slice_ is not None:
+        q = q.slice(*slice_)
+
+    expected = q.collect(engine="in-memory")
+    actual = q.collect(engine="streaming")
+    assert actual.shape == expected.shape
+    assert_frame_equal(actual, expected)
