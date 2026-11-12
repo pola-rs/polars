@@ -2304,6 +2304,29 @@ def test_min_max_by_nested_key_skips_nulls_30734(kind: str) -> None:
 
 
 @pytest.mark.parametrize(
+    ("kind", "agg"),
+    [(kind, agg) for kind in NESTED_KINDS for agg in [pl.Expr.min, pl.Expr.max]]
+    + [("map", pl.Expr.sum)],
+)
+def test_min_max_sum_nested_raise_30734(
+    kind: str, agg: Callable[[pl.Expr], pl.Expr]
+) -> None:
+    df = pl.DataFrame({"g": [1, 1, 1], "s": _nested_series([2, None, 1], kind)})
+    expr = agg(pl.col("s"))
+    msg = "operation not supported for dtype"
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.select(expr)
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.group_by("g").agg(expr)
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.select(expr.over("g"))
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.lazy().group_by("g").agg(expr).collect_schema()
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.lazy().select(expr.over("g")).collect_schema()
+
+
+@pytest.mark.parametrize(
     ("dtype", "input", "expect"),
     [
         (pl.Int32, [1, 2, 2], [[1, 2], [2]]),
