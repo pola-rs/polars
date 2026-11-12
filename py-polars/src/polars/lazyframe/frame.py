@@ -3048,6 +3048,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         snapshot_properties: dict[str, str] | None = None,
         catalog: pyiceberg.catalog.Catalog
         | polars.io.iceberg.IcebergCatalogConfig
+        | str
         | None = None,
         storage_options: StorageOptionsDict | None = None,
         compression: ParquetCompression = "zstd",
@@ -3140,6 +3141,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         catalog
             PyIceberg catalog to load the table from if the provided `target`
             was a table identifier.
+
+            This can also be a catalog name, which will be resolved at plan and
+            commit time through `pyiceberg.catalog.load_catalog(name)`.
         storage_options
             Extra options for the storage backends supported by `pyiceberg`.
             For cloud storages, this may include configurations for authentication etc.
