@@ -15,6 +15,8 @@ use crate::reduce::bitwise::{
 use crate::reduce::count::{CountReduce, NullCountReduce};
 #[cfg(feature = "cov")]
 use crate::reduce::cov::{new_cov_reduction, new_pearson_corr_reduction};
+#[cfg(feature = "dtype-extension")]
+use crate::reduce::extension::new_storage_reduction;
 use crate::reduce::first_last::{new_first_reduction, new_item_reduction, new_last_reduction};
 use crate::reduce::first_last_nonnull::{new_first_nonnull_reduction, new_last_nonnull_reduction};
 use crate::reduce::has_nulls::HasNullsReduce;
@@ -103,10 +105,19 @@ pub fn into_reduction(
                     };
                     return Ok((null_if_has_nulls(gr, propagate_nulls), vec![input, by]));
                 }
-                let gr = if is_max {
-                    new_max_reduction(dtype, propagate_nans)?
-                } else {
-                    new_min_reduction(dtype, propagate_nans)?
+                let new_reduction = |dtype| {
+                    if is_max {
+                        new_max_reduction(dtype, propagate_nans)
+                    } else {
+                        new_min_reduction(dtype, propagate_nans)
+                    }
+                };
+                let gr = match dtype {
+                    #[cfg(feature = "dtype-extension")]
+                    DataType::Extension(..) => {
+                        new_storage_reduction(new_reduction(dtype.to_storage())?, dtype)
+                    },
+                    dtype => new_reduction(dtype)?,
                 };
                 (null_if_has_nulls(gr, propagate_nulls), input)
             },
@@ -283,6 +294,13 @@ pub fn into_reduction(
                 // All keys are null, so they tie.
                 return Ok((new_first_reduction(input_dtype), vec![input]));
             }
+            #[cfg(feature = "dtype-extension")]
+            if by_dtype.is_extension() {
+                let storage =
+                    new_min_by_reduction(input_dtype.to_storage(), by_dtype.to_storage(), order)?;
+                let gr = new_storage_reduction(storage, input_dtype);
+                return Ok((gr, vec![input, by]));
+            }
             let gr = new_min_by_reduction(input_dtype, by_dtype, order)?;
             return Ok((gr, vec![input, by]));
         },
@@ -305,6 +323,13 @@ pub fn into_reduction(
             if by_dtype.is_null() && order != MinMaxByOrder::SkipNulls {
                 // All keys are null, so they tie.
                 return Ok((new_first_reduction(input_dtype), vec![input]));
+            }
+            #[cfg(feature = "dtype-extension")]
+            if by_dtype.is_extension() {
+                let storage =
+                    new_max_by_reduction(input_dtype.to_storage(), by_dtype.to_storage(), order)?;
+                let gr = new_storage_reduction(storage, input_dtype);
+                return Ok((gr, vec![input, by]));
             }
             let gr = new_max_by_reduction(input_dtype, by_dtype, order)?;
             return Ok((gr, vec![input, by]));

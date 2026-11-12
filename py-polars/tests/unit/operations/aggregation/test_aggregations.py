@@ -2364,6 +2364,57 @@ def test_sum_map_raise_30734() -> None:
         df.lazy().select(expr.over("g")).collect_schema()
 
 
+class _AggExtension(pl.datatypes.BaseExtension):
+    def __init__(self, storage: pl.DataType) -> None:
+        super().__init__(name="testing.aggregations_extension", storage=storage)
+
+
+pl.register_extension_type("testing.aggregations_extension", _AggExtension)
+
+
+@pytest.mark.parametrize(
+    "storage", [pl.Int64(), pl.String(), pl.Struct({"a": pl.Int64})]
+)
+def test_ordering_aggs_extension(storage: pl.DataType) -> None:
+    keys = [2, None, 1, 3, 4, None, None]
+    if storage == pl.String:
+        values: list[Any] = [None if k is None else str(k) for k in keys]
+    elif storage == pl.Struct:
+        values = [None if k is None else {"a": k} for k in keys]
+    else:
+        values = keys
+    dtype = _AggExtension(storage)
+    s = pl.Series("s", values, dtype=storage).ext.to(dtype)
+    df = pl.DataFrame({"g": [1, 1, 1, 2, 2, 3, 3], "i": range(7), "s": s})
+    aggs = [
+        pl.col("s").min().alias("min"),
+        pl.col("s").max().alias("max"),
+        pl.col("s").arg_min().alias("arg_min"),
+        pl.col("s").arg_max().alias("arg_max"),
+        pl.col("i").min_by("s").alias("min_by"),
+        pl.col("i").max_by("s").alias("max_by"),
+    ]
+    storage_df = df.with_columns(pl.col("s").ext.storage())
+    to_ext = pl.col("min", "max").ext.to(dtype)
+
+    def check(q: Callable[[Any], Any], ordered: bool) -> None:
+        expected = q(storage_df).with_columns(to_ext)
+        assert expected["min"].null_count() < expected.height
+        assert_frame_equal(q(df), expected, check_row_order=ordered)
+        assert_frame_equal(q(df.lazy()).collect(), expected, check_row_order=ordered)
+
+    check(lambda df: df.select(aggs), True)
+    check(lambda df: df.group_by("g").agg(aggs), False)
+    check(lambda df: df.select(a.over("g") for a in aggs), True)
+
+    assert s.arg_min() == 2
+    assert s.arg_max() == 4
+    expected = df.select(pl.col("s").min()).to_series()
+    assert_series_equal(pl.Series("s", [s.min()], dtype=dtype), expected)
+    expected = df.select(pl.col("s").max()).to_series()
+    assert_series_equal(pl.Series("s", [s.max()], dtype=dtype), expected)
+
+
 @pytest.mark.parametrize(
     "expr",
     [

@@ -53,6 +53,8 @@ impl ArgAgg for Series {
         use DataType::*;
         let phys_s = self.to_physical_repr();
         match self.dtype() {
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, _) => self.to_storage().arg_min(),
             #[cfg(feature = "dtype-categorical")]
             Categorical(cats, _) => {
                 with_match_categorical_physical_type!(cats.physical(), |$C| {
@@ -83,6 +85,8 @@ impl ArgAgg for Series {
         use DataType::*;
         let phys_s = self.to_physical_repr();
         match self.dtype() {
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, _) => self.to_storage().arg_max(),
             #[cfg(feature = "dtype-categorical")]
             Categorical(cats, _) => {
                 with_match_categorical_physical_type!(cats.physical(), |$C| {
