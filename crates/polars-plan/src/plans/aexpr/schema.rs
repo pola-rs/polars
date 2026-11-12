@@ -180,7 +180,7 @@ impl AExpr {
                             "max"
                         };
                         polars_ensure!(
-                            !field.dtype().is_nested() && !field.dtype().is_object(),
+                            !field.dtype().is_object(),
                             InvalidOperation: "`{op}` operation not supported for dtype `{}`",
                             field.dtype()
                         );

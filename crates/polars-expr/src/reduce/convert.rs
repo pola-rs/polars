@@ -1,3 +1,4 @@
+use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
@@ -42,6 +43,21 @@ pub fn unordered_unique_input(node: Node, expr_arena: &Arena<AExpr>) -> Option<N
     }
 }
 
+/// The ascending row encoding of `node`, null where it is null.
+fn row_encode_key(node: Node, dtype: DataType, expr_arena: &mut Arena<AExpr>) -> Node {
+    AExprBuilder::row_encode(
+        vec![ExprIR::from_node(node, expr_arena)],
+        vec![dtype],
+        RowEncodingVariant::Ordered {
+            descending: None,
+            nulls_last: None,
+        },
+        true,
+        expr_arena,
+    )
+    .node()
+}
+
 /// Converts a node into a reduction + its associated selector expression.
 pub fn into_reduction(
     node: Node,
@@ -66,17 +82,33 @@ pub fn into_reduction(
                 propagate_nans,
                 propagate_nulls,
                 input,
-            } => {
-                let min = new_min_reduction(get_dt(*input)?, *propagate_nans)?;
-                (null_if_has_nulls(min, *propagate_nulls), *input)
-            },
-            IRAggExpr::Max {
+            }
+            | IRAggExpr::Max {
                 propagate_nans,
                 propagate_nulls,
                 input,
             } => {
-                let max = new_max_reduction(get_dt(*input)?, *propagate_nans)?;
-                (null_if_has_nulls(max, *propagate_nulls), *input)
+                let is_max = matches!(agg, IRAggExpr::Max { .. });
+                let (input, propagate_nans, propagate_nulls) =
+                    (*input, *propagate_nans, *propagate_nulls);
+                let dtype = get_dt(input)?;
+                if dtype.is_nested() {
+                    // The value at the arg min (max) of the sort order.
+                    let by = row_encode_key(input, dtype.clone(), expr_arena);
+                    let (by_dtype, order) = (DataType::BinaryOffset, MinMaxByOrder::SkipNulls);
+                    let gr = if is_max {
+                        new_max_by_reduction(dtype, by_dtype, order)?
+                    } else {
+                        new_min_by_reduction(dtype, by_dtype, order)?
+                    };
+                    return Ok((null_if_has_nulls(gr, propagate_nulls), vec![input, by]));
+                }
+                let gr = if is_max {
+                    new_max_reduction(dtype, propagate_nans)?
+                } else {
+                    new_min_reduction(dtype, propagate_nans)?
+                };
+                (null_if_has_nulls(gr, propagate_nulls), input)
             },
             IRAggExpr::Var(input, ddof) => (
                 new_var_std_reduction(get_dt(*input)?, false, *ddof)?,
@@ -244,17 +276,7 @@ pub fn into_reduction(
             let input_dtype = get_dt(input)?;
             let mut by_dtype = get_dt(by)?;
             if by_dtype.is_nested() {
-                by = AExprBuilder::row_encode(
-                    vec![inner_exprs[1].clone()],
-                    vec![by_dtype.clone()],
-                    RowEncodingVariant::Ordered {
-                        descending: None,
-                        nulls_last: None,
-                    },
-                    true,
-                    expr_arena,
-                )
-                .node();
+                by = row_encode_key(by, by_dtype, expr_arena);
                 by_dtype = DataType::BinaryOffset;
             }
             if by_dtype.is_null() && order != MinMaxByOrder::SkipNulls {
@@ -277,17 +299,7 @@ pub fn into_reduction(
             let input_dtype = get_dt(input)?;
             let mut by_dtype = get_dt(by)?;
             if by_dtype.is_nested() {
-                by = AExprBuilder::row_encode(
-                    vec![inner_exprs[1].clone()],
-                    vec![by_dtype.clone()],
-                    RowEncodingVariant::Ordered {
-                        descending: None,
-                        nulls_last: None,
-                    },
-                    true,
-                    expr_arena,
-                )
-                .node();
+                by = row_encode_key(by, by_dtype, expr_arena);
                 by_dtype = DataType::BinaryOffset;
             }
             if by_dtype.is_null() && order != MinMaxByOrder::SkipNulls {

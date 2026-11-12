@@ -509,6 +509,33 @@ pub(crate) unsafe fn agg_arg_min_max_row_encoded(
     }
 }
 
+/// Group-wise min or max of `s` in its row-encoding (sort) order, skipping null rows.
+///
+/// # Safety
+///
+/// No bounds checks on `groups`.
+pub(crate) unsafe fn agg_min_max_row_encoded(
+    s: &Series,
+    groups: &GroupsType,
+    is_max: bool,
+) -> Series {
+    let idx_in_group = unsafe { agg_arg_min_max_row_encoded(s, groups, is_max) };
+    let idx_in_group = idx_in_group.idx().unwrap();
+    let idx: IdxCa = match groups {
+        GroupsType::Idx(g) => idx_in_group
+            .iter()
+            .zip(g.all())
+            .map(|(i, g)| i.map(|i| unsafe { *g.get_unchecked(i as usize) }))
+            .collect(),
+        GroupsType::Slice { groups, .. } => idx_in_group
+            .iter()
+            .zip(groups)
+            .map(|(i, [first, _])| i.map(|i| first + i))
+            .collect(),
+    };
+    unsafe { s.take_unchecked(&idx) }
+}
+
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType + Sync,

@@ -6,12 +6,14 @@ use crate::chunked_array::ChunkedArray;
 use crate::chunked_array::ops::float_sorted_arg_max::{
     float_arg_max_sorted_ascending, float_arg_max_sorted_descending,
 };
+use crate::chunked_array::ops::row_encode::row_encode_ordered_propagate_nulls;
 use crate::datatypes::{
     BinaryChunked, BinaryOffsetChunked, BooleanChunked, PolarsDataType, PolarsNumericType,
     StringChunked,
 };
 #[cfg(feature = "dtype-categorical")]
 use crate::datatypes::{CategoricalChunked, PolarsCategoricalType};
+use crate::prelude::{AnyValue, Scalar, Series};
 use crate::series::IsSorted;
 
 pub fn arg_min_opt_iter<T, I>(iter: I) -> Option<usize>
@@ -128,6 +130,25 @@ pub fn arg_min_binary_offset(ca: &BinaryOffsetChunked) -> Option<usize> {
 
 pub fn arg_max_binary_offset(ca: &BinaryOffsetChunked) -> Option<usize> {
     arg_max_physical_generic(ca)
+}
+
+/// The arg min or arg max of `s` in its sort order, skipping nulls.
+pub fn arg_min_max_row_encoded(s: &Series, is_max: bool) -> Option<usize> {
+    let encoded = row_encode_ordered_propagate_nulls(s);
+    if is_max {
+        arg_max_binary_offset(&encoded)
+    } else {
+        arg_min_binary_offset(&encoded)
+    }
+}
+
+/// The min or max of `s` in its sort order, skipping nulls.
+pub(crate) fn min_max_reduce_row_encoded(s: &Series, is_max: bool) -> Scalar {
+    let value = match arg_min_max_row_encoded(s, is_max) {
+        Some(idx) => s.get(idx).unwrap().into_static(),
+        None => AnyValue::Null,
+    };
+    Scalar::new(s.dtype().clone(), value)
 }
 
 fn arg_min_physical_generic<T>(ca: &ChunkedArray<T>) -> Option<usize>

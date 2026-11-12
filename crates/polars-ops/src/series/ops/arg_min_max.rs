@@ -1,10 +1,10 @@
 use polars_core::chunked_array::arg_min_max::{
     arg_max_binary, arg_max_binary_offset, arg_max_bool, arg_max_numeric, arg_max_str,
-    arg_min_binary, arg_min_binary_offset, arg_min_bool, arg_min_numeric, arg_min_str,
+    arg_min_binary, arg_min_binary_offset, arg_min_bool, arg_min_max_row_encoded, arg_min_numeric,
+    arg_min_str,
 };
 #[cfg(feature = "dtype-categorical")]
 use polars_core::chunked_array::arg_min_max::{arg_max_cat, arg_min_cat};
-use polars_core::chunked_array::ops::row_encode::row_encode_ordered_propagate_nulls;
 #[cfg(feature = "dtype-categorical")]
 use polars_core::with_match_categorical_physical_type;
 
@@ -74,9 +74,7 @@ impl ArgAgg for Series {
                     arg_min_numeric(ca)
                 })
             },
-            dt if dt.is_nested() => row_encode_ordered_propagate_nulls(self)
-                .into_series()
-                .arg_min(),
+            dt if dt.is_nested() => arg_min_max_row_encoded(self, false),
             _ => None,
         }
     }
@@ -106,9 +104,7 @@ impl ArgAgg for Series {
                     arg_max_numeric(ca)
                 })
             },
-            dt if dt.is_nested() => row_encode_ordered_propagate_nulls(self)
-                .into_series()
-                .arg_max(),
+            dt if dt.is_nested() => arg_min_max_row_encoded(self, true),
             _ => None,
         }
     }

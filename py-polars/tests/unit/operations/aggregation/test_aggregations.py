@@ -13,7 +13,7 @@ from hypothesis import strategies as st
 
 import polars as pl
 from polars.exceptions import ComputeError, InvalidOperationError
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import dataframes
 
 if TYPE_CHECKING:
@@ -2304,16 +2304,53 @@ def test_min_max_by_nested_key_skips_nulls_30734(kind: str) -> None:
     assert_frame_equal(df.lazy().select(aggs).collect(), expected)
 
 
-@pytest.mark.parametrize(
-    ("kind", "agg"),
-    [(kind, agg) for kind in NESTED_KINDS for agg in [pl.Expr.min, pl.Expr.max]]
-    + [("map", pl.Expr.sum)],
-)
-def test_min_max_sum_nested_raise_30734(
-    kind: str, agg: Callable[[pl.Expr], pl.Expr]
-) -> None:
-    df = pl.DataFrame({"g": [1, 1, 1], "s": _nested_series([2, None, 1], kind)})
-    expr = agg(pl.col("s"))
+def _sorted_min_max(s: pl.Series) -> tuple[pl.Series, pl.Series]:
+    """The first value of `s` in ascending and descending sort order, skipping nulls."""
+    null = pl.Series([None], dtype=s.dtype)
+    lo = pl.concat([s.drop_nulls().sort(), null]).head(1)
+    hi = pl.concat([s.drop_nulls().sort(descending=True), null]).head(1)
+    return lo, hi
+
+
+@pytest.mark.parametrize("kind", NESTED_KINDS)
+def test_min_max_nested(kind: str) -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 2, 2, 3, 3],
+            "s": _nested_series([2, None, 1, 3, 4, None, None], kind),
+        }
+    )
+    aggs = [pl.col("s").min().alias("min"), pl.col("s").max().alias("max")]
+
+    lo, hi = _sorted_min_max(df["s"])
+    lo, hi = lo.alias("min"), hi.alias("max")
+    expected = pl.DataFrame([lo, hi])
+    assert_frame_equal(df.select(aggs), expected)
+    assert_frame_equal(df.lazy().select(aggs).collect(), expected)
+    assert_series_equal(pl.Series("min", [df["s"].min()], dtype=lo.dtype), lo)
+    assert_series_equal(pl.Series("max", [df["s"].max()], dtype=hi.dtype), hi)
+
+    per_group = [_sorted_min_max(df.filter(g=g)["s"]) for g in [1, 2, 3]]
+    expected = pl.DataFrame(
+        [
+            pl.Series("g", [1, 2, 3]),
+            pl.concat([lo for lo, _ in per_group]).alias("min"),
+            pl.concat([hi for _, hi in per_group]).alias("max"),
+        ]
+    )
+    assert_frame_equal(df.group_by("g", maintain_order=True).agg(aggs), expected)
+    q = df.lazy().group_by("g").agg(aggs)
+    assert_frame_equal(q.collect(), expected, check_row_order=False)
+
+    expected = df.select("g").join(expected, on="g", maintain_order="left").drop("g")
+    over = [a.over("g") for a in aggs]
+    assert_frame_equal(df.select(over), expected)
+    assert_frame_equal(df.lazy().select(over).collect(), expected)
+
+
+def test_sum_map_raise_30734() -> None:
+    df = pl.DataFrame({"g": [1, 1, 1], "s": _nested_series([2, None, 1], "map")})
+    expr = pl.col("s").sum()
     msg = "operation not supported for dtype"
     with pytest.raises(InvalidOperationError, match=msg):
         df.select(expr)
