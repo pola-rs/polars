@@ -12,6 +12,7 @@ use polars_io::predicates::{ColumnPredicateExpr, SpecializedColumnPredicate};
 use polars_io::prelude::ParallelStrategy;
 use polars_parquet::read::PredicateFilter;
 use polars_utils::IdxSize;
+use polars_utils::pl_str::PlSmallStr;
 use tokio::sync::Semaphore;
 
 use super::row_group_data_fetch::{ReadStats, RowGroupDataFetcher, row_groups_to_read};
@@ -601,6 +602,20 @@ impl ParquetReadImpl {
             })
             .collect();
 
+        // The columns the rest predicate reads, `None` if unknown.
+        let rest_columns: Option<&[PlSmallStr]> = match staged {
+            _ if rest_predicate.is_none() => Some(&[]),
+            Some(staged) if use_prefiltered => Some(staged.rest_columns.as_slice()),
+            _ => None,
+        };
+        let early_dropped_fields: Arc<[bool]> = projected_arrow_fields
+            .iter()
+            .zip(dropped_fields.iter())
+            .map(|(f, dropped)| {
+                *dropped && rest_columns.is_some_and(|c| !c.contains(f.output_name()))
+            })
+            .collect();
+
         RowGroupDecoder {
             num_pipelines: self.config.num_pipelines,
             task_metrics: self.task_metrics.clone(),
@@ -615,6 +630,7 @@ impl ParquetReadImpl {
             passes: Mutex::new(Arc::new(passes)),
             non_predicate_field_indices,
             dropped_fields,
+            early_dropped_fields,
             target_values_per_thread,
             runtime_range_skipper,
         }

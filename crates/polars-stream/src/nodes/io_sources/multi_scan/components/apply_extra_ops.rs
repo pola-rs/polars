@@ -33,8 +33,7 @@ pub enum ApplyExtraOps {
         cast_columns_policy: CastColumnsPolicy,
         missing_columns_policy: MissingColumnsPolicy,
         extra_ops: ExtraOperations,
-        /// If set (and there is a predicate), the schema to narrow the output to after the
-        /// predicate was evaluated. Must be a subset of `final_output_schema`.
+        /// If set, the schema to narrow the output to after the predicate (if any) was evaluated. Must be a subset of `final_output_schema`.
         output_schema_after_predicate: Option<SchemaRef>,
         /// This here so that we can get the include file path name if needed.
         scan_source: ScanSource,
@@ -54,8 +53,8 @@ pub enum ApplyExtraOps {
         /// This will have include_file_paths, hive columns, missing columns.
         column_selectors: Option<Vec<ColumnSelector>>,
         predicate: Option<ScanIOPredicate>,
-        /// Indices of the columns to keep after evaluating the predicate, before it filters the
-        /// rows (so that columns only needed by the predicate are not gathered).
+        /// Indices of the columns to keep, applied after evaluating the predicate and before it
+        /// filters the rows (so that columns only needed by the predicate are not gathered).
         output_projection_after_predicate: Option<Vec<usize>>,
     },
 
@@ -210,7 +209,6 @@ impl ApplyExtraOps {
                 };
 
                 let output_projection_after_predicate = output_schema_after_predicate
-                    .filter(|_| predicate.is_some())
                     .map(|narrow| {
                         narrow
                             .iter_names()
@@ -240,7 +238,7 @@ impl ApplyExtraOps {
                         row_index: None,
                         column_selectors: None,
                         predicate: None,
-                        output_projection_after_predicate: _,
+                        output_projection_after_predicate: None,
                     } => Self::Noop,
 
                     Initialized { .. } => out,
@@ -354,16 +352,19 @@ impl ApplyExtraOps {
             unsafe { *df.columns_mut().get_mut(*col_idx).unwrap() = row_index_col }
         }
 
-        if let Some(predicate) = predicate {
-            let mask = predicate.predicate.evaluate_io(df)?;
-            let mask = mask.bool().expect("predicate not boolean");
+        let mask = predicate
+            .as_ref()
+            .map(|predicate| predicate.predicate.evaluate_io(df))
+            .transpose()?;
 
-            if let Some(idxs) = output_projection_after_predicate {
-                let columns = idxs.iter().map(|&i| df.columns()[i].clone()).collect();
-                *df = unsafe { DataFrame::new_unchecked(df.height(), columns) };
-            }
+        // Narrow before filtering, so that columns only needed by the predicate are not gathered.
+        if let Some(idxs) = output_projection_after_predicate {
+            let columns = idxs.iter().map(|&i| df.columns()[i].clone()).collect();
+            *df = unsafe { DataFrame::new_unchecked(df.height(), columns) };
+        }
 
-            *df = df.filter_seq(mask)?;
+        if let Some(mask) = mask {
+            *df = df.filter_seq(mask.bool().expect("predicate not boolean"))?;
         }
 
         Ok(())

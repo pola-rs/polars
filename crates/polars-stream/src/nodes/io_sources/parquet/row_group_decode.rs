@@ -126,6 +126,9 @@ pub(super) struct RowGroupDecoder {
     /// Per projected field: whether it is only read to evaluate the predicate, so that it is not
     /// part of the output. All false if the predicate is not (fully) evaluated by the decoder.
     pub(super) dropped_fields: Arc<[bool]>,
+    /// Per projected field: whether it is dropped (see `dropped_fields`) and not read by
+    /// `rest_predicate`, so that it can be dropped right after its own evaluation.
+    pub(super) early_dropped_fields: Arc<[bool]>,
     pub(super) target_values_per_thread: usize,
     pub(super) runtime_range_skipper: Option<Arc<RuntimeRangeSkipper>>,
 }
@@ -139,6 +142,13 @@ impl RowGroupDecoder {
             n_cols.min(self.num_pipelines)
         } else {
             n_cols.div_ceil(calc_cols_per_thread(n_rows, self.target_values_per_thread))
+        }
+    }
+
+    fn is_dropped_early(&self, source: Source) -> bool {
+        match source {
+            Source::Field(i) => self.early_dropped_fields[i],
+            Source::RowIndex => false,
         }
     }
 
@@ -814,11 +824,11 @@ impl RowGroupDecoder {
 
             let mut pass_mask: Option<Bitmap> = None;
             let mut filtered = Vec::new();
-            // Without a rest predicate, a dropped column is not read after its own evaluation.
-            let drop_early = self.rest_predicate.is_none();
+            // A dropped column the rest predicate does not read is not needed after its own
+            // evaluation.
             for d in decoded {
                 let Some((c, kept_rows)) = d.predicate else {
-                    if !(drop_early && self.is_dropped(d.source)) {
+                    if !self.is_dropped_early(d.source) {
                         live_columns.push((d.source, d.column));
                     }
                     continue;
@@ -834,7 +844,7 @@ impl RowGroupDecoder {
                 if let Some(m) = m {
                     pass_mask = Some(and_masks(pass_mask, m.clone()));
                 }
-                if drop_early && self.is_dropped(d.source) {
+                if self.is_dropped_early(d.source) {
                     continue;
                 }
                 match kept_rows {

@@ -1999,3 +1999,55 @@ def test_multiscan_predicate_only_columns_differing_schemas(
                 lf.filter(p).select("b", "a").collect(engine="streaming"),
                 expected.filter(p).select("b", "a"),
             )
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("force_post_apply", [False, True])
+def test_multiscan_predicate_only_columns_parquet_rest_predicate(
+    tmp_path: Path,
+    force_post_apply: bool,
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    if force_post_apply:
+        plmonkeypatch.setenv("POLARS_FORCE_EMPTY_READER_CAPABILITIES", "1")
+
+    n = 1000
+    df = pl.DataFrame(
+        {
+            "a": range(n),
+            "b": [x % 7 for x in range(n)],
+            "c": [f"s{x}" for x in range(n)],
+            "d": [x % 5 for x in range(n)],
+            "e": [x * 2 for x in range(n)],
+        }
+    )
+    path = tmp_path / "data.parquet"
+    df.write_parquet(path, row_group_size=100)
+    lf = pl.scan_parquet(path)
+
+    # `b`: column predicate only; `d`: rest predicate only; `a`: both.
+    preds = [
+        (pl.col("b") == 1)
+        & (pl.col("a") > 50)
+        & ((pl.col("a") + pl.col("d")) % 3 == 0),
+        (pl.col("b") < 3) & ((pl.col("d") == pl.col("b")) | (pl.col("a") < 10)),
+        (pl.col("b") == 2) & (pl.col("d") + pl.col("e") > 100),
+    ]
+    for p in preds:
+        for cols in [["c"], ["c", "e"], ["e", "a"], ["c", "a"]]:
+            assert_frame_equal(
+                lf.filter(p).select(cols).collect(engine="streaming"),
+                df.filter(p).select(cols),
+            )
+
+
+@pytest.mark.write_disk
+def test_multiscan_predicate_only_columns_missing_column_raises(
+    tmp_path: Path,
+) -> None:
+    pl.DataFrame({"a": [1, 2], "b": [1, 2]}).write_parquet(tmp_path / "0")
+    pl.DataFrame({"a": [3, 4]}).write_parquet(tmp_path / "1")
+
+    lf = pl.scan_parquet([tmp_path / "0", tmp_path / "1"])
+    with pytest.raises(pl.exceptions.ColumnNotFoundError):
+        lf.filter(pl.col("b") > 1).select("a").collect(engine="streaming")

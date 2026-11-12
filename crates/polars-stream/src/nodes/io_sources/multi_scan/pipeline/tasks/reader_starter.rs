@@ -521,34 +521,43 @@ async fn start_reader_impl(
 
     // Columns that are only read to evaluate the predicate.
     //
-    // * If the predicate is not evaluated in post, the reader (which evaluates it) need not emit
-    //   them, and the post-applied operations produce the narrowed schema directly.
-    // * Otherwise the post-applied predicate needs them, and drops them once evaluated.
+    // * If the reader got the predicate and it is not evaluated in post, the reader (which
+    //   evaluates it, and has checked the predicate columns exist) need not emit them, and the
+    //   post-applied operations produce the narrowed schema directly. This needs the row index
+    //   and file path columns, if any, to still be in the narrow schema.
+    // * Otherwise the post-applied operations keep the wide schema (so that a post-applied
+    //   predicate has its columns, and missing columns are still reported), and narrow it after.
     let mut final_output_schema = final_output_schema;
     let mut output_schema_after_predicate = output_schema_after_predicate;
     let mut drop_columns_after_predicate: Vec<PlSmallStr> = vec![];
 
     if extra_ops_post.predicate.is_none()
-        && let Some(narrow) = output_schema_after_predicate.take()
+        && predicate.is_some()
+        && let Some(narrow) = output_schema_after_predicate.as_ref()
     {
+        // `usize::MAX` means the column does not exist.
         let remap_idx = |idx: usize| {
-            final_output_schema
-                .get_at_index(idx)
-                .and_then(|(name, _)| narrow.index_of(name))
-                .unwrap_or(usize::MAX)
+            if idx == usize::MAX {
+                return Some(usize::MAX);
+            }
+            let (name, _) = final_output_schema.get_at_index(idx)?;
+            narrow.index_of(name)
         };
-        extra_ops_post.row_index_col_idx = remap_idx(extra_ops_post.row_index_col_idx);
-        extra_ops_post.file_path_col_idx = remap_idx(extra_ops_post.file_path_col_idx);
 
-        if predicate.is_some() {
+        if let Some(row_index_col_idx) = remap_idx(extra_ops_post.row_index_col_idx)
+            && let Some(file_path_col_idx) = remap_idx(extra_ops_post.file_path_col_idx)
+        {
+            extra_ops_post.row_index_col_idx = row_index_col_idx;
+            extra_ops_post.file_path_col_idx = file_path_col_idx;
+
             drop_columns_after_predicate = final_output_schema
                 .iter_names()
                 .filter(|name| !narrow.contains(name))
                 .cloned()
                 .collect();
-        }
 
-        final_output_schema = narrow;
+            final_output_schema = output_schema_after_predicate.take().unwrap();
+        }
     }
 
     // Position of the first morsel sent by the reader.

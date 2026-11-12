@@ -24,6 +24,8 @@ use polars_utils::pl_str::PlSmallStr;
 pub struct StagedScanPredicate {
     pub column_predicates: PlIndexMap<PlSmallStr, PhysicalColumnPredicate>,
     pub rest: Option<Arc<dyn PhysicalExpr>>,
+    /// The columns `rest` reads.
+    pub rest_columns: Arc<Vec<PlSmallStr>>,
 }
 
 #[derive(Clone)]
@@ -59,6 +61,7 @@ impl StagedScanPredicate {
                     .collect(),
             ),
             rest: self.rest.clone().map(phys_expr_to_io_expr),
+            rest_columns: self.rest_columns.clone(),
         }
     }
 }
