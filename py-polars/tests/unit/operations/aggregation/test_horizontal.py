@@ -914,7 +914,7 @@ def test_horizontal_non_boolean_operand_raises(
         }
     )
     expr = horizontal(pl.col("c0"), *[pl.col("b")] * (n_operands - 1))
-    msg = "non-Boolean input passed to `(all|any)_horizontal`: 'c0' has dtype 'i8'"
+    msg = "non-Boolean input passed to `(all|any)_horizontal`: input at index 0 has dtype Int8"
 
     with pytest.raises(SchemaError, match=msg):
         df.select(expr)
