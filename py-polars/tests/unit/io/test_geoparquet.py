@@ -53,9 +53,9 @@ def _read_geo(source: io.BytesIO | Path) -> Any:
     return json.loads(metadata[b"geo"]) if b"geo" in metadata else None
 
 
-def _geo_metadata(df: pl.DataFrame) -> Any:
+def _geo_metadata(df: pl.DataFrame, **kwargs: Any) -> Any:
     buf = io.BytesIO()
-    df.write_parquet(buf)
+    df.write_parquet(buf, **kwargs)
     return _read_geo(buf)
 
 
@@ -129,6 +129,7 @@ def test_write_geoparquet(plmonkeypatch: PlMonkeyPatch) -> None:
                 "encoding": "multipoint",
                 "geometry_types": ["MultiPoint Z"],
                 "crs": None,
+                "bbox": [1.0, 2.0, 3.0, 1.0, 2.0, 3.0],
             },
         },
     }
@@ -144,6 +145,142 @@ def test_write_geoparquet(plmonkeypatch: PlMonkeyPatch) -> None:
     assert out.select(pl.all().ext.storage()).rows() == [
         (POINT_WKB, POINT_WKB, [{"x": 1.0, "y": 2.0, "z": 3.0}])
     ]
+
+
+def _bbox_frame() -> pl.DataFrame:
+    nan = float("nan")
+    return pl.DataFrame(
+        {
+            "a": [
+                {"x": 1.0, "y": 2.0},
+                None,
+                {"x": nan, "y": -4.0},
+                {"x": 3.0, "y": 0.0},
+            ],
+            "b": [
+                [{"x": 0.0, "y": 0.0, "z": 0.0}, {"x": 1.0, "y": 1.0, "z": 1.0}],
+                [{"x": -1.0, "y": 5.0, "z": 2.0}],
+                [],
+                None,
+            ],
+            "geometry": [POINT_WKB] * 4,
+            "c": [POINT_WKB] * 4,
+        },
+        schema={
+            "a": pl.Extension("geoarrow.point", XY, None),
+            "b": pl.Extension("geoarrow.linestring", pl.List(XYZ), None),
+            "geometry": pl.Extension("geoarrow.wkb", pl.Binary, None),
+            "c": pl.Extension("geoarrow.wkb", pl.Binary, None),
+        },
+    )
+
+
+def test_write_geoparquet_bbox(plmonkeypatch: PlMonkeyPatch, tmp_path: Path) -> None:
+    df = _bbox_frame()
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.1")
+    expected = {
+        # Nulls and NaNs are left out of the bounds.
+        "a": [1.0, -4.0, 3.0, 2.0],
+        "b": [-1.0, 0.0, 0.0, 1.0, 5.0, 2.0],
+    }
+    columns = _geo_metadata(df, row_group_size=1)["columns"]
+    assert {name: c["bbox"] for name, c in columns.items() if "bbox" in c} == expected
+
+    path = tmp_path / "a.parquet"
+    df.lazy().sink_parquet(path, row_group_size=1)
+    assert pq.read_metadata(path).num_row_groups == 4
+    columns = _read_geo(path)["columns"]
+    assert {name: c["bbox"] for name, c in columns.items() if "bbox" in c} == expected
+
+
+def _spherical(df: pl.DataFrame) -> pl.DataFrame:
+    def dtype(name: str) -> pl.Extension:
+        ext = df.schema[name]
+        assert isinstance(ext, pl.Extension)
+        md = '{"edges": "spherical"}'
+        return pl.Extension(ext.ext_name(), ext.ext_storage(), md)
+
+    return df.with_columns(
+        pl.col(name).ext.storage().ext.to(dtype(name)) for name in ["a", "b"]
+    )
+
+
+@pytest.mark.parametrize(
+    ("df", "kwargs"),
+    [
+        (_bbox_frame(), {"statistics": False}),
+        (_bbox_frame(), {"statistics": {"min": False}}),
+        (_bbox_frame().clear(4), {}),
+        (_spherical(_bbox_frame()), {}),
+    ],
+    ids=["no-statistics", "no-min", "all-null", "spherical"],
+)
+def test_write_geoparquet_no_bbox(
+    plmonkeypatch: PlMonkeyPatch, df: pl.DataFrame, kwargs: dict[str, Any]
+) -> None:
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.1")
+    columns = _geo_metadata(df, row_group_size=1, **kwargs)["columns"]
+    assert set(columns) == {"a", "b", "geometry", "c"}
+    assert all("bbox" not in c for c in columns.values())
+
+
+def test_write_geoparquet_no_bbox_infinite(plmonkeypatch: PlMonkeyPatch) -> None:
+    inf = float("inf")
+    df = pl.DataFrame(
+        {
+            "a": [{"x": inf, "y": 1.0}, {"x": 1.0, "y": 2.0}],
+            "b": [{"x": 1.0, "y": 2.0}, {"x": 3.0, "y": 4.0}],
+        },
+        schema={
+            "a": pl.Extension("geoarrow.point", XY, None),
+            "b": pl.Extension("geoarrow.point", XY, None),
+        },
+    )
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.1")
+    columns = _geo_metadata(df)["columns"]
+    # JSON can't hold an infinite bound.
+    assert "bbox" not in columns["a"]
+    assert columns["b"]["bbox"] == [1.0, 2.0, 3.0, 4.0]
+
+
+def test_write_geoparquet_bbox_encrypted(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path
+) -> None:
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.1")
+    df = _bbox_frame().select("a")
+    path = tmp_path / "a.parquet"
+    df.write_parquet(path)
+    assert b'"bbox"' in path.read_bytes()
+
+    # The plaintext footer holds the `geo` metadata, but not the encrypted statistics.
+    encryption = pl.ParquetEncryptionProperties(
+        footer_key=b"0123456789012345", plaintext_footer=True
+    )
+    df.write_parquet(path, encryption=encryption)
+    data = path.read_bytes()
+    assert b'"encoding":"point"' in data
+    assert b'"bbox"' not in data
+
+
+def test_write_geoparquet_bbox_column_key_encrypted(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path
+) -> None:
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.1")
+    df = _bbox_frame().select(
+        "a",
+        b=pl.lit({"x": 3.0, "y": 4.0}).ext.to(pl.Extension("geoarrow.point", XY, None)),
+    )
+    encryption = pl.ParquetEncryptionProperties(
+        footer_key=b"0123456789012345",
+        column_keys={"a.y": b"1234567890123450"},
+        plaintext_footer=True,
+    )
+    path = tmp_path / "a.parquet"
+    df.write_parquet(path, encryption=encryption)
+    columns = _read_geo(path)["columns"]
+    # One encrypted leaf hides the whole `bbox` of its column, but no other.
+    assert "bbox" not in columns["a"]
+    assert columns["b"]["bbox"] == [3.0, 4.0, 3.0, 4.0]
 
 
 @pytest.mark.parametrize(
@@ -274,4 +411,4 @@ def test_write_geoparquet_callable_metadata_derives_geo(
     df.write_parquet(buf, metadata=lambda _: {"k": "v"})
     written = _metadata(buf)
     assert written[b"k"] == b"v"
-    assert "a" in json.loads(written[b"geo"])["columns"]
+    assert json.loads(written[b"geo"])["columns"]["a"]["bbox"] == [1.0, 2.0, 1.0, 2.0]
