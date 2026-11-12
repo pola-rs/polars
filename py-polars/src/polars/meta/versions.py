@@ -121,12 +121,12 @@ def _get_dependency_version(dep_name: str) -> str:
     except ImportError:
         return "<not installed>"
 
-    # TODO: At the time of writing, polars_cloud fails to parse version numbers
-    # that contain alpha or rc versions, and crashes. However, polars_cloud will
-    # always pin to a specific polars-oss version anyway, so for now we ignore this
-    # error.
+    # TODO: At the time of writing, polars_nanook (formerly polars_cloud) fails to
+    # parse version numbers that contain alpha or rc versions, and crashes. However,
+    # polars_nanook will always pin to a specific polars-oss version anyway, so for
+    # now we ignore this error.
     except RuntimeError as e:
-        if dep_name == "polars_cloud" and re.match(
+        if dep_name in ("polars_cloud", "polars_nanook") and re.match(
             r"^Unsupported version of polars: 2.0.0rc\d+$", e.args[0]
         ):
             return "<runtime error>"

@@ -37,7 +37,6 @@ pub fn read_parquet_metadata(
 ) -> PyResult<Py<PyDict>> {
     use std::io::Cursor;
 
-    use polars_error::feature_gated;
     use polars_parquet::read::read_metadata;
     use polars_parquet::read::schema::read_custom_key_value_metadata;
 
@@ -54,7 +53,12 @@ pub fn read_parquet_metadata(
             )?;
 
             if p.has_scheme() {
-                feature_gated!("cloud", {
+                #[cfg(not(feature = "cloud"))]
+                return Err(pyo3::exceptions::PyNotImplementedError::new_err(
+                    "cloud support is not enabled",
+                ));
+                #[cfg(feature = "cloud")]
+                {
                     use polars::prelude::ParquetObjectStore;
                     use polars_error::PolarsResult;
 
@@ -67,8 +71,8 @@ pub fn read_parquet_metadata(
                             PolarsResult::Ok((**result).clone())
                         })
                     })
-                })
-                .map_err(PyPolarsErr::from)?
+                    .map_err(PyPolarsErr::from)?
+                }
             } else {
                 let file =
                     polars_utils::io::open_file(p.as_std_path()).map_err(PyPolarsErr::from)?;

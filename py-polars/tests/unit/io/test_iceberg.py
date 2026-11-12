@@ -3087,7 +3087,7 @@ def _sink_uncommitted(
     return state, sinked_files
 
 
-# A re-execution of the same sink invocation, as polars-cloud does when a
+# A re-execution of the same sink invocation, as polars-nanook does when a
 # committing worker dies. Pickling drops the loaded table.
 def _twin(state: IcebergSinkState) -> IcebergSinkState:
     twin: IcebergSinkState = pickle.loads(pickle.dumps(state))
@@ -3962,6 +3962,240 @@ def test_sink_iceberg_snapshot_properties_must_be_strings(
             tbl, mode="append", snapshot_properties=snapshot_properties
         )
     assert catalog.load_table("ns.t").current_snapshot() is None
+
+
+class _NameMappingRefusingCatalog(SqlCatalog):  # type: ignore[misc]
+    """Refuses to set the default name mapping, as Unity Catalog does."""
+
+    def commit_table(self, table: Any, requirements: Any, updates: Any) -> Any:
+        from pyiceberg.table.update import SetPropertiesUpdate
+
+        for update in updates:
+            if (
+                isinstance(update, SetPropertiesUpdate)
+                and "schema.name-mapping.default" in update.updates
+            ):
+                msg = "Table properties contain prohibited keys"
+                raise pyiceberg.exceptions.BadRequestError(msg)
+        return super().commit_table(table, requirements, updates)
+
+
+def _name_mapping_refusing_catalog(tmp_path: Path) -> SqlCatalog:
+    catalog = _NameMappingRefusingCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path / 'iceberg_catalog.sqlite'}",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    catalog.create_namespace("ns")
+    return catalog
+
+
+def _iceberg_rows(table: pyiceberg.table.Table) -> list[tuple[Any, ...]]:
+    rows = pl.scan_iceberg(table).collect().sort("k").rows()
+    # PyIceberg reads the same rows
+    assert rows == pl.DataFrame(table.scan().to_arrow()).sort("k").rows()
+    return rows
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    "write",
+    [
+        "append",
+        "overwrite",
+        "filtered_overwrite",
+        "partitioned",
+        "dynamic_overwrite",
+        "schema_merge",
+        "schema_overwrite",
+        "empty",
+    ],
+)
+def test_sink_iceberg_leaves_name_mapping_unset(tmp_path: Path, write: str) -> None:
+    # Data files carry field IDs, so a commit doesn't need to add a name mapping
+    catalog = _name_mapping_refusing_catalog(tmp_path)
+    spec = (
+        PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "k"))
+        if write in ("partitioned", "dynamic_overwrite")
+        else PartitionSpec()
+    )
+    table = catalog.create_table(
+        ("ns", "t"),
+        IcebergSchema(
+            NestedField(1, "k", LongType()), NestedField(2, "v", StringType())
+        ),
+        partition_spec=spec,
+    )
+    lf = pl.LazyFrame({"k": [1, 2], "v": ["a", "b"]})
+    expected: list[tuple[Any, ...]] = [(1, "a"), (2, "b")]
+    if write == "filtered_overwrite":
+        # rewrites the file holding k = 2, keeping k = 1
+        lf.sink_iceberg(table, mode="append")
+        pl.LazyFrame({"k": [2], "v": ["c"]}).sink_iceberg(
+            table, mode="overwrite", overwrite_filter=pl.col("k") == 2
+        )
+        expected = [(1, "a"), (2, "c")]
+    elif write == "schema_overwrite":
+        lf.sink_iceberg(table, mode="append")
+        pl.LazyFrame({"k": [3], "w": [True]}).sink_iceberg(
+            table, mode="overwrite", schema_mode="overwrite"
+        )
+        expected = [(3, True)]
+    elif write == "empty":
+        lf.clear().sink_iceberg(table, mode="append")
+        expected = []
+    elif write == "dynamic_overwrite":
+        lf.sink_iceberg(table, mode="append")
+        pl.LazyFrame({"k": [2], "v": ["c"]}).sink_iceberg(
+            table, mode="overwrite", partition_overwrite="dynamic"
+        )
+        expected = [(1, "a"), (2, "c")]
+    elif write == "schema_merge":
+        lf.sink_iceberg(table, mode="append")
+        pl.LazyFrame({"k": [3], "v": ["c"], "w": [True]}).sink_iceberg(
+            table, mode="append", schema_mode="merge"
+        )
+        expected = [(1, "a", None), (2, "b", None), (3, "c", True)]
+    elif write == "overwrite":
+        pl.LazyFrame({"k": [9], "v": ["z"]}).sink_iceberg(table, mode="append")
+        lf.sink_iceberg(table, mode="overwrite")
+    else:
+        lf.sink_iceberg(table, mode="append")
+
+    table = catalog.load_table(("ns", "t"))
+    assert "schema.name-mapping.default" not in table.properties
+    assert _iceberg_rows(table) == expected
+
+
+@pytest.mark.write_disk
+def test_sql_catalog_writes_leave_name_mapping_unset(tmp_path: Path) -> None:
+    catalog = _name_mapping_refusing_catalog(tmp_path)
+    with pl.SQLContext() as ctx:
+        ctx.register_catalog("lake", catalog, default_namespace="ns", default=True)
+        ctx.execute("CREATE TABLE t (k BIGINT, v VARCHAR)")
+        ctx.execute("INSERT INTO t VALUES (1, 'a'), (2, 'b'), (3, 'c')")
+        ctx.execute("UPDATE t SET v = 'B' WHERE k = 2")
+        ctx.execute("DELETE FROM t WHERE k = 3")
+        ctx.execute(
+            "MERGE INTO t USING (SELECT 4 AS k, 'd' AS v) AS s ON t.k = s.k "
+            "WHEN NOT MATCHED THEN INSERT VALUES (s.k, s.v)"
+        )
+        ctx.execute("CREATE TABLE t2 AS SELECT * FROM t")
+    for name in ("t", "t2"):
+        table = catalog.load_table(("ns", name))
+        assert "schema.name-mapping.default" not in table.properties
+        assert _iceberg_rows(table) == [(1, "a"), (2, "B"), (4, "d")]
+
+
+def _arrow_field_ids(schema: pa.Schema) -> dict[str, int]:
+    """Field IDs of an Arrow schema, nested fields included, by path."""
+
+    def walk(field: pa.Field, path: str) -> dict[str, int]:
+        out = {path: int(field.metadata[b"PARQUET:field_id"])}
+        if pa.types.is_struct(field.type):
+            for child in field.type:
+                out |= walk(child, f"{path}.{child.name}")
+        elif pa.types.is_map(field.type):
+            out |= walk(field.type.key_field, f"{path}.key")
+            out |= walk(field.type.item_field, f"{path}.value")
+        elif pa.types.is_list(field.type) or pa.types.is_large_list(field.type):
+            out |= walk(field.type.value_field, f"{path}[]")
+        return out
+
+    return {k: v for f in schema for k, v in walk(f, f.name).items()}
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_data_files_carry_field_ids(tmp_path: Path) -> None:
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+    table, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "k", LongType()),
+            NestedField(
+                2,
+                "s",
+                StructType(
+                    NestedField(3, "a", LongType()), NestedField(4, "b", StringType())
+                ),
+            ),
+            NestedField(5, "l", ListType(6, LongType())),
+            NestedField(7, "m", MapType(8, StringType(), 9, LongType())),
+        ),
+    )
+    entries = pl.List(pl.Struct({"key": pl.String, "value": pl.Int64}))
+    pl.LazyFrame(
+        {
+            "k": [1],
+            "s": [{"a": 1, "b": "x"}],
+            "l": [[1, 2]],
+            "m": [[{"key": "x", "value": 1}]],
+        },
+        schema_overrides={
+            "s": pl.Struct({"a": pl.Int64, "b": pl.String}),
+            "m": entries,
+        },
+    ).sink_iceberg(table, mode="append")
+    # a new column, nested, through schema evolution
+    pl.LazyFrame(
+        {"k": [2], "s": [{"a": 2, "b": "y"}], "l": [[3]], "t": [{"c": 1.5}]}
+    ).sink_iceberg(table, mode="append", schema_mode="merge")
+
+    table = table.refresh()
+    expected = _arrow_field_ids(schema_to_pyarrow(table.schema()))
+    paths = table.inspect.files().column("file_path").to_pylist()
+    got = [_arrow_field_ids(pq.read_schema(p.removeprefix("file://"))) for p in paths]
+    assert len(got) == 2
+    # every column of every file, nested ones included, has the table's field ID
+    for ids in got:
+        assert ids == {k: v for k, v in expected.items() if k in ids}
+    assert any({"m.key", "m.value"} <= ids.keys() for ids in got)
+    assert any({"t", "t.c"} <= ids.keys() for ids in got)
+    assert "schema.name-mapping.default" not in table.properties
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_without_name_mapping_rename_and_reuse(tmp_path: Path) -> None:
+    # Columns resolve by field ID: a renamed column keeps its values, and a new
+    # column reusing the old name doesn't read them
+    table, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "k", LongType()), NestedField(2, "v", StringType())
+        ),
+    )
+    pl.LazyFrame({"k": [1], "v": ["a"]}).sink_iceberg(table, mode="append")
+    with table.update_schema() as update:
+        update.rename_column("v", "w")
+    with table.update_schema() as update:
+        update.add_column("v", StringType())
+    table = table.refresh()
+    pl.LazyFrame({"k": [2], "w": ["b"], "v": ["c"]}).sink_iceberg(table, mode="append")
+    table = table.refresh()
+    assert "schema.name-mapping.default" not in table.properties
+    assert _iceberg_rows(table) == [(1, "a", None), (2, "b", "c")]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_keeps_name_mapping_of_imported_files(tmp_path: Path) -> None:
+    # `add_files` sets a name mapping for files without field IDs; sinks keep it
+    table, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "k", LongType()), NestedField(2, "v", StringType())
+        ),
+    )
+    path = tmp_path / "imported.parquet"
+    pq.write_table(pa.table({"k": [1], "v": ["a"]}), path)
+    table.add_files([format_file_uri_iceberg(path)])
+    table = table.refresh()
+    mapping = table.properties["schema.name-mapping.default"]
+
+    pl.LazyFrame({"k": [2], "v": ["b"]}).sink_iceberg(table, mode="append")
+    table = table.refresh()
+    assert table.properties["schema.name-mapping.default"] == mapping
+    assert _iceberg_rows(table) == [(1, "a"), (2, "b")]
 
 
 @pytest.mark.write_disk
