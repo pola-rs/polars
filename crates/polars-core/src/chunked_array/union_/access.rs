@@ -128,7 +128,16 @@ impl Series {
                 let members = (0..fields.len())
                     .map(|t| rec(ca.variant(t).with_name(fields[t].name().clone())))
                     .collect::<PolarsResult<Vec<_>>>()?;
+                // A null row is a null struct rather than one with null members, so that readers
+                // that see the struct see a null member for every variant but the row's.
+                let validity = self
+                    .is_not_null()
+                    .rechunk()
+                    .downcast_as_array()
+                    .values()
+                    .clone();
                 StructChunked::from_series(self.name().clone(), self.len(), members.iter())?
+                    .with_outer_validity(Some(validity))
                     .into_series()
             },
             DataType::List(_) => self.list()?.apply_to_inner(&rec)?.into_series(),

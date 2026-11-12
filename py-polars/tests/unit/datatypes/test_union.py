@@ -1476,6 +1476,40 @@ def test_union_parquet_nested(sink: bool) -> None:
     assert out.equals(df)
 
 
+@pytest.mark.parametrize("sink", [False, True])
+def test_union_parquet_union_in_union(sink: bool) -> None:
+    inner = pa.UnionArray.from_dense(
+        pa.array([0, 0, 1], pa.int8()),
+        pa.array([0, 1, 0], pa.int32()),
+        [pa.array([1, None], pa.int64()), pa.array(["b"])],
+        ["x", "y"],
+    )
+    outer = pa.UnionArray.from_dense(
+        pa.array([0, 0, 0, 1, 1], pa.int8()),
+        pa.array([0, 1, 2, 0, 1], pa.int32()),
+        [inner, pa.array(["z", None])],
+        ["n", "s"],
+    )
+    df = pl.DataFrame({"u": pl.from_arrow(outer)})
+    out = parquet_round_trip(df, sink=sink)
+    assert out.schema == df.schema
+    assert out.equals(df)
+    assert out["u"].union.tag().to_list() == ["n", None, "n", "s", None]
+    inner_tags = out["u"].union.field("n").union.tag().to_list()
+    assert inner_tags == ["x", None, "y", None, None]
+
+    # Other readers see a null struct for the variants a row doesn't hold.
+    buf = io.BytesIO()
+    df.write_parquet(buf)
+    assert pq.read_table(buf)["u"].to_pylist() == [
+        {"n": {"x": 1, "y": None}, "s": None},
+        None,
+        {"n": {"x": None, "y": "b"}, "s": None},
+        {"n": None, "s": "z"},
+        None,
+    ]
+
+
 def test_union_parquet_scan() -> None:
     dtype = INT_STR
     df = pl.DataFrame({"k": list(range(10))}).with_columns(

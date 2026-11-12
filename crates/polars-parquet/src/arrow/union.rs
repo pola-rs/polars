@@ -4,7 +4,7 @@
 //!
 //! Writers convert the arrays (`Series::unions_to_structs` in polars-core); this module maps the
 //! dtypes and converts back on read.
-use polars_arrow::array::{StructArray, UnionArray};
+use polars_arrow::array::{Array, StructArray, UnionArray};
 use polars_arrow::datatypes::{ArrowDataType, Field, UnionMode, UnionType};
 use polars_error::{PolarsResult, polars_ensure};
 
@@ -52,12 +52,27 @@ pub fn contains_union(dtype: &ArrowDataType) -> bool {
     }
 }
 
+/// Whether slot `i` of `arr` holds a value; an Arrow union has no validity of its own, so a slot
+/// of one is null when the value it points at is.
+fn is_valid(arr: &dyn Array, i: usize) -> bool {
+    match arr.as_any().downcast_ref::<UnionArray>() {
+        Some(u) => {
+            let (field, offset) = u.index(i);
+            is_valid(u.fields()[field].as_ref(), offset)
+        },
+        None => arr.is_valid(i),
+    }
+}
+
 /// Converts the storage struct of a union back to a union of `u`, which is sparse.
 pub fn struct_to_union(arr: &StructArray, u: &UnionType) -> PolarsResult<UnionArray> {
     let members = arr.values();
     let mut types = Vec::with_capacity(arr.len());
     for i in 0..arr.len() {
-        let mut valid = members.iter().enumerate().filter(|(_, m)| m.is_valid(i));
+        let mut valid = members
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| is_valid(m.as_ref(), i));
         // A null row has no value; its slot in the first member is null.
         let t = valid.next().map_or(0, |(t, _)| t);
         polars_ensure!(
