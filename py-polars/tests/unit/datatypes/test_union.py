@@ -20,7 +20,7 @@ from polars.testing.parametric import dtypes, series
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars._typing import PolarsDataType
+    from polars._typing import EngineTypeName, PolarsDataType
 
 
 def dense(
@@ -1911,3 +1911,41 @@ def test_union_parametric_round_trip(data: st.DataObject) -> None:
     assert_series_equal(out.sort(), out)
     assert s.unique().len() == s.n_unique()
     assert (s == s).fill_null(True).all()
+
+
+def test_union_concat_list_and_arr() -> None:
+    a = pl.Series("a", [1, "x", None], dtype=INT_STR)
+    b = pl.Series("b", ["y", 2, 3], dtype=INT_STR)
+    df = pl.DataFrame({"a": a, "b": b})
+    expected: list[list[Any]] = [[1, "y"], ["x", 2], [None, 3]]
+    engines: list[EngineTypeName] = ["in-memory", "streaming"]
+    for engine in engines:
+        out = (
+            df.lazy()
+            .select(
+                l=pl.concat_list("a", "b"),
+                arr=pl.concat_arr("a", "b"),
+                lit=pl.concat_list("a", pl.lit("z", dtype=INT_STR)),
+            )
+            .collect(engine=engine)
+        )
+        assert out["l"].to_list() == expected
+        assert out["arr"].to_list() == expected
+        assert out["lit"].to_list() == [[1, "z"], ["x", "z"], [None, "z"]]
+        assert_series_equal(
+            out["l"].list.explode(),
+            pl.concat([a, b]).gather([0, 3, 1, 4, 2, 5]),
+            check_names=False,
+        )
+
+        out = (
+            out.lazy()
+            .select(
+                to_array=pl.col("l").list.to_array(2),
+                reversed=pl.col("arr").arr.reverse(),
+            )
+            .collect(engine=engine)
+        )
+        assert out["to_array"].dtype == pl.Array(INT_STR, 2)
+        assert out["to_array"].to_list() == expected
+        assert out["reversed"].to_list() == [r[::-1] for r in expected]
