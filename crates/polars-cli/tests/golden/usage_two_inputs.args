@@ -1,0 +1,4 @@
+-c
+SELECT 1
+-f
+tests/golden/session.sql

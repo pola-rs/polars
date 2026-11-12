@@ -1,0 +1,12 @@
+exit: 1
+--- stdout ---
+shape: (1, 1)
+┌─────┐
+│ a   │
+│ --- │
+│ i32 │
+╞═════╡
+│ 1   │
+└─────┘
+--- stderr ---
+statement 2: SQLInterfaceError: relation 'missing' was not found

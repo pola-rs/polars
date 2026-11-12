@@ -29,6 +29,30 @@ impl ErrorRecord {
             statement,
         }
     }
+
+    /// A statement that panicked.
+    pub(crate) fn internal(panic_message: &str, statement: usize) -> Self {
+        Self {
+            class: "InternalError",
+            message: format!("{panic_message} (this is a bug in Polars, please report it)"),
+            hint: None,
+            location: None,
+            statement,
+        }
+    }
+
+    /// A statement that was stopped because its spilled data did not fit on disk.
+    pub(crate) fn out_of_disk(statement: usize) -> Self {
+        Self {
+            class: "ComputeError",
+            message: "query aborted: spilled data exceeded the out-of-core disk budget, \
+                      increase POLARS_OOC_DISK_BUDGET_MB"
+                .to_string(),
+            hint: None,
+            location: None,
+            statement,
+        }
+    }
 }
 
 /// The class name of an error, named as the exceptions of Python Polars are.

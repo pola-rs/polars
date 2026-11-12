@@ -2,12 +2,25 @@ exit: 0
 --- stdout ---
 Run SQL with Polars
 
-Usage: polars -c <SQL>
+Usage: polars [OPTIONS]
 
 Options:
-  -c <SQL>       Run the SQL statement and print its result
-  -h, --help     Print help
-  -V, --version  Print version
+  -c, --command <SQL>  Run the SQL given on the command line
+  -f, --file <FILE>    Run the SQL script in FILE
+  -h, --help           Print help
+  -V, --version        Print version
+
+A script can hold several statements, separated by ';'. They run in order and
+share one session. The run stops at the first statement that fails.
+
+Without -c or -f, the script is read from standard input.
+
+Exit codes:
+  0    every statement succeeded
+  1    a statement failed
+  2    the command line could not be used
+  101  internal error (a bug)
+  130  interrupted
 
 This command is unstable: its options and output can change in any release.
 --- stderr ---
