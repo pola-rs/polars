@@ -171,7 +171,7 @@ fn rechunk_once(payload: &mut DataFrame, rechunked: &mut bool) {
 
 /// The columns `idx` of `payload`, or all of them: the columns only the fused predicate reads are
 /// left out, as they are not gathered.
-fn output_columns<'a>(payload: &'a DataFrame, idx: Option<&[usize]>) -> Cow<'a, DataFrame> {
+pub fn output_columns<'a>(payload: &'a DataFrame, idx: Option<&[usize]>) -> Cow<'a, DataFrame> {
     match idx {
         None => Cow::Borrowed(payload),
         Some(idx) => {
@@ -221,6 +221,15 @@ pub fn with_nulls_for_other_side(
         Some(_) => output_columns(&df, params.output_idx(df_is_left)).into_owned(),
         None => df,
     };
+    with_nulls_for_other_side_projected(df, df_is_left, params)
+}
+
+/// Like `with_nulls_for_other_side`, but `df` has only the output columns of its side.
+pub fn with_nulls_for_other_side_projected(
+    df: DataFrame,
+    df_is_left: bool,
+    params: &EquiJoinParams,
+) -> DataFrame {
     let nulls = DataFrame::full_null(params.output_side_schema(!df_is_left), df.height());
     let (mut left, right) = if df_is_left { (df, nulls) } else { (nulls, df) };
     unsafe { left.hstack_mut_unchecked(right.columns()) };

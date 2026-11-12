@@ -679,10 +679,15 @@ impl EquiJoinNode {
             let idx: Vec<usize> = payload_schema
                 .iter_names()
                 .enumerate()
-                // The postprocessing of a full join needs the right keys to coalesce.
+                // The postprocessing of a full join needs the right keys to coalesce, but only
+                // those whose coalesced key is output.
                 .filter(|(_, name)| {
                     output_schema.contains(name.as_str())
-                        || name.starts_with("__POLARS_COALESCE_KEYCOL")
+                        || name
+                            .strip_prefix("__POLARS_COALESCE_KEYCOL_")
+                            .and_then(|i| i.parse::<usize>().ok())
+                            .and_then(|i| left_key_schema.get_at_index(i))
+                            .is_some_and(|(k, _)| output_schema.contains(k.as_str()))
                 })
                 .map(|(i, _)| i)
                 .collect();

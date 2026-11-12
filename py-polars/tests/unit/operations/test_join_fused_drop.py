@@ -207,3 +207,61 @@ def test_outer_join_where_predicate_columns_dropped(
         how=how,  # type: ignore[arg-type]
     ).select(columns)
     check(q)
+
+
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
+@pytest.mark.parametrize("morsel_size", [2, 100_000])
+@pytest.mark.parametrize(
+    "columns", [["v"], ["k"], ["k", "v"], ["k_r"], ["w"], ["k", "k_r", "w"]]
+)
+def test_coalesced_join_key_dropped_and_kept(
+    how: str, morsel_size: int, columns: list[str], plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", str(morsel_size))
+    left = pl.LazyFrame({"k": [1, 1, 2, 3, 6, None], "v": [1, 5, 4, 2, 9, 1]})
+    right = pl.LazyFrame({"k_r": [1, 2, 2, 4, 5, None], "w": [3, 0, 7, 1, 0, 2]})
+    q = left.join(
+        right,
+        left_on="k",
+        right_on="k_r",
+        how=how,  # type: ignore[arg-type]
+        coalesce=True,
+    )
+    # A coalesced right join outputs the right key only.
+    names = q.collect_schema().names()
+    q = q.select([c for c in columns if c in names] or ["v"])
+    check(q)
+    q = left.join(
+        right,
+        left_on="k",
+        right_on="k_r",
+        how=how,  # type: ignore[arg-type]
+        coalesce=False,
+    ).select(columns)
+    check(q)
+
+
+@pytest.mark.parametrize("how", ["left", "right", "full"])
+@pytest.mark.parametrize("columns", [["v"], ["k", "w"], ["w"], ["v", "w"]])
+def test_fused_predicate_many_unmatched_build_rows(
+    how: str, columns: list[str], plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "16")
+    n = 1000
+    left = pl.LazyFrame(
+        {"k": [i % 500 for i in range(n)], "v": list(range(n)), "p": list(range(n))}
+    )
+    right = pl.LazyFrame(
+        {
+            "k": [i % 500 + (i % 3) * 400 for i in range(n)],
+            "w": list(range(n)),
+            "q": [i * 3 % 7 for i in range(n)],
+        }
+    )
+    q = left.join_where(
+        right,
+        pl.col("k") == pl.col("k_right"),
+        pl.col("p") < pl.col("q") * 100,
+        how=how,  # type: ignore[arg-type]
+    ).select(columns)
+    check(q)
