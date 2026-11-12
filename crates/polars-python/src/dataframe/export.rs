@@ -91,11 +91,11 @@ impl PyDataFrame {
 
         let pyarrow = py.import("pyarrow")?;
 
-        let mut chunks = df.iter_chunks(compat_level.0, true);
+        let mut chunks = df.try_iter_chunks(compat_level.0, true);
         let mut rbs = Vec::with_capacity(chunks.size_hint().0);
-        // df.iter_chunks() iteration could internally try to acquire the GIL on another thread,
+        // df.try_iter_chunks() iteration could internally try to acquire the GIL on another thread,
         // so we make sure to run chunks.next() within enter_polars().
-        while let Some(rb) = py.enter_polars_ok(|| chunks.next())? {
+        while let Some(rb) = py.enter_polars(|| chunks.next().transpose())? {
             let rb = interop::arrow::to_py::to_py_rb(&rb, py, &pyarrow)?;
             rbs.push(rb);
         }
@@ -141,9 +141,9 @@ impl PyDataFrame {
             false,
         );
 
-        let rbs = py.enter_polars_ok(|| {
-            df.iter_chunks(CompatLevel::oldest(), true)
-                .collect::<Vec<_>>()
+        let rbs = py.enter_polars(|| {
+            df.try_iter_chunks(CompatLevel::oldest(), true)
+                .collect::<PolarsResult<Vec<_>>>()
         })?;
         let mut replaced_schema = None;
         rbs.into_iter()

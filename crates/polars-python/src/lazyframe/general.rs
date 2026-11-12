@@ -1780,12 +1780,14 @@ impl Iterator for ArrowStreamIterator {
             Some(Ok(df)) => {
                 let height = df.height();
                 let arrays = df.rechunk_into_arrow(CompatLevel::newest());
-                Some(Ok(Box::new(polars_arrow::array::StructArray::new(
-                    self.dtype.clone(),
-                    height,
-                    arrays,
-                    None,
-                ))))
+                Some(arrays.map(|arrays| {
+                    Box::new(polars_arrow::array::StructArray::new(
+                        self.dtype.clone(),
+                        height,
+                        arrays,
+                        None,
+                    )) as ArrayRef
+                }))
             },
         }
     }
