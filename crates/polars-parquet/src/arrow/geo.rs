@@ -1,4 +1,23 @@
 //! Conversion between GeoParquet `geo` file metadata and GeoArrow extension types.
+//!
+//! # Bounding box coverings
+//!
+//! GeoParquet 1.1 lets a geometry column have a bounding box per-row in another column.
+//! This column is stored simply as a struct. We are kind enough to write the `geoarrow.box` datatype,
+//! but that is not required for the GeoParquet spec of course.
+//! Which bbox links to which geometry column lives only in the metadata (they can have any name).
+//! Upon reading, that column becomes a `geoarrow.box` with the extension metadata of its geometry,
+//! if its fields match one of the [`BOX_LAYOUTS`].
+//!
+//! On the GeoArrow side though, there is no 'relating'.
+//! We still have to somehow indicate an intention of this.
+//! In GeoPandas and geoarrow-rs, this is done by naming.
+//! We match per-column bounding boxes based on the names, which is the same way GeoPandas/geoarrow-rs does it.
+//! E.g. a column called `"foo"` will have a bounding box in `"foo_bbox"`.
+//! GeoPandas and `geoarrow-rs` also allow a simplified form if you only have a single column called `"geometry"` or `"geography"`.
+//! For those, you can use `"bbox"` instead of a full `"geometry_bbox"`.
+//! When both `geometry` and `geography` exist and are geometry columns, `bbox` covers neither.
+//! Writing any other box is an error, as a plain struct would silently drop what it means.
 use polars_arrow::datatypes::{ArrowDataType, ArrowSchema, ExtensionType, Field, Metadata};
 use polars_error::{PolarsResult, polars_bail, polars_err, polars_warn};
 use polars_parquet_format::RowGroup;
@@ -365,7 +384,8 @@ pub(crate) fn geo_key_value(
         }
 
         if version != "1.0.0"
-            && let Some((box_name, covering)) = bbox_covering(schema, name, crs.as_ref())?
+            && let Some((box_name, covering)) =
+                bbox_covering_col_of_geometry(schema, name, crs.as_ref())?
         {
             column.insert("covering".into(), covering);
             covering_columns.push(box_name);
@@ -482,8 +502,8 @@ fn geoparquet_crs(name: &str, ext_metadata: &Map<String, Value>) -> PolarsResult
     }
 }
 
-/// GeoParquet has no box encoding, so a box is written as a plain struct column.
 fn is_geometry_extension(ext: &ExtensionType) -> bool {
+    // GeoParquet has no box encoding, so a box is written as a plain struct column.
     ext.name.starts_with("geoarrow.") && ext.name != BOX_EXTENSION_NAME
 }
 
@@ -498,10 +518,6 @@ fn bbox_is_ambiguous(schema: &ArrowSchema) -> bool {
     is_geometry_column(schema, "geometry") && is_geometry_column(schema, "geography")
 }
 
-/// The geoarrow-rs naming scheme for the bbox column of a geometry column.
-/// The writer links a box to a geometry column by this name only.
-/// Only `geometry` and `geography` share a name;
-/// when both are geometry columns, `bbox` covers neither, as it can't tell which one it bounds.
 fn covering_name(geometry: &str) -> String {
     match geometry {
         "geometry" | "geography" => "bbox".into(),
@@ -512,7 +528,7 @@ fn covering_name(geometry: &str) -> String {
 /// Returns the name of the box column that covers `geometry`, and its `covering` metadata.
 /// Returns `None` if there is no `geoarrow.box` column named after [`covering_name`],
 /// or if its fields can't form a covering.
-fn bbox_covering(
+fn bbox_covering_col_of_geometry(
     schema: &ArrowSchema,
     geometry: &str,
     geometry_crs: Option<&Value>,
@@ -552,7 +568,6 @@ fn bbox_covering(
     Ok(Some((box_name, json!({ "bbox": bbox }))))
 }
 
-/// Returns `[mins..., maxs...]`, or `None` if the statistics can't tell.
 fn bbox_from_leaf_statistics(
     statistics: &FileStatistics,
     column: &str,
