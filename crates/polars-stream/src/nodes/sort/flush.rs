@@ -219,6 +219,7 @@ impl FlushState {
         scope: &'s TaskScope<'s, 'env>,
         senders: Vec<PortSender>,
         key: &'env PlSmallStr,
+        drop_key: bool,
         sort_options: &SortMultipleOptions,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
@@ -233,7 +234,10 @@ impl FlushState {
                 let wait_group = WaitGroup::default();
                 loop {
                     match self.next_step(&source_token) {
-                        Step::Emit(df, seq) => {
+                        Step::Emit(mut df, seq) => {
+                            if drop_key {
+                                df = df.drop(key)?;
+                            }
                             let mut morsel = Morsel::new_unregistered(
                                 df,
                                 MorselSeq::new(seq),

@@ -796,8 +796,12 @@ fn to_graph_rec<'a>(
             by_column,
             slice,
             sort_options,
+            projection,
         } => {
             let input_schema = input.output_schema(ctx.phys_sm).clone();
+            let projection = projection
+                .as_ref()
+                .map(|(names, _)| names.iter().cloned().collect::<Vec<_>>());
             let [by] = by_column.as_slice() else {
                 unreachable!()
             };
@@ -812,6 +816,7 @@ fn to_graph_rec<'a>(
                     nodes::sort::SortNode::new(
                         key,
                         input_schema,
+                        projection,
                         *slice,
                         sort_options.clone(),
                         registry.task_metrics(),

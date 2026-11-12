@@ -56,11 +56,20 @@ enum SortState {
 }
 
 /// Sorts its input on a single directly sortable key column.
+///
+/// With a projection, only the projected columns and the key are buffered, spilled and gathered,
+/// and the key is dropped when emitting unless it is projected.
 pub struct SortNode {
     state: SortState,
     key: PlSmallStr,
     key_dtype: DataType,
+    /// The schema of the buffered frames: the projected columns, followed by the key if it is
+    /// not projected.
     input_schema: Arc<Schema>,
+    /// Whether the key is only a helper that is dropped from the output.
+    drop_key: bool,
+    /// The columns to keep from the input, if projecting.
+    projection: Option<Vec<PlSmallStr>>,
     slice: Option<(i64, usize)>,
     limit: Option<IdxSize>,
     sort_options: SortMultipleOptions,
@@ -71,6 +80,7 @@ impl SortNode {
     pub fn new(
         key: PlSmallStr,
         input_schema: Arc<Schema>,
+        projection: Option<Vec<PlSmallStr>>,
         slice: Option<(i64, usize)>,
         mut sort_options: SortMultipleOptions,
         task_metrics: Option<Arc<TaskMetricAggregator>>,
@@ -81,6 +91,18 @@ impl SortNode {
         let key_dtype = match input_schema.get(&key).unwrap().to_physical() {
             DataType::String => DataType::Binary,
             dt => dt,
+        };
+        let mut drop_key = false;
+        let input_schema = match projection.as_deref() {
+            None => input_schema,
+            Some(names) => {
+                let mut columns: Vec<PlSmallStr> = names.to_vec();
+                if !columns.contains(&key) {
+                    columns.push(key.clone());
+                    drop_key = true;
+                }
+                Arc::new(input_schema.try_project(&columns).unwrap())
+            },
         };
 
         Self {
@@ -93,6 +115,8 @@ impl SortNode {
             key,
             key_dtype,
             input_schema,
+            drop_key,
+            projection,
             slice,
             limit,
             sort_options,
@@ -114,7 +138,12 @@ impl SortNode {
 
     fn sort_in_memory(&self, df: DataFrame) -> PolarsResult<DataFrame> {
         let range = self.output_range(df.height());
-        sort_range(df, &self.key, self.sort_options.clone(), range)
+        let df = sort_range(df, &self.key, self.sort_options.clone(), range)?;
+        Ok(if self.drop_key {
+            df.drop(&self.key)?
+        } else {
+            df
+        })
     }
 
     /// Turns the buffered input into the state that emits the sorted output.
@@ -404,6 +433,8 @@ impl ComputeNode for SortNode {
             key,
             sort_options,
             tuning,
+            projection,
+            drop_key,
             ..
         } = self;
 
@@ -423,10 +454,22 @@ impl ComputeNode for SortNode {
 
                 for (mut recv, sample) in receivers.into_iter().zip(samples.iter_mut()) {
                     let key = &*key;
+                    let work_columns = projection.as_ref().map(|names| {
+                        let mut columns = names.clone();
+                        if *drop_key {
+                            columns.push(key.clone());
+                        }
+                        columns
+                    });
                     join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                         let mut pipe_morsels = Vec::new();
                         while let Ok(mut morsel) = recv.recv().await {
                             morsel.take_consume_token();
+                            if let Some(columns) = &work_columns {
+                                morsel = morsel
+                                    .try_map(|df| df.select(columns.iter().cloned()))
+                                    .await?;
+                            }
                             {
                                 let df = morsel.sf().get().await;
                                 bytes.fetch_add(df.estimated_size(false) as u64, Ordering::Relaxed);
@@ -449,7 +492,7 @@ impl ComputeNode for SortNode {
             SortState::Flush(flush) => {
                 assert!(recv_ports[0].is_none());
                 let senders = send_ports[0].take().unwrap().parallel();
-                flush.spawn(scope, senders, key, sort_options, join_handles);
+                flush.spawn(scope, senders, key, *drop_key, sort_options, join_handles);
             },
             SortState::Done => unreachable!(),
         }
