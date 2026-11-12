@@ -106,11 +106,8 @@ const DEFAULT_OOC_MAX_PARALLEL_PREFETCH_TASKS: u64 = 64;
 const OOC_LOG_METRICS: &str = "POLARS_OOC_LOG_METRICS";
 const DEFAULT_OOC_LOG_METRICS: bool = false;
 
-const OOC_PRESSURE_DECAY: &str = "POLARS_OOC_PRESSURE_DECAY";
-const DEFAULT_OOC_PRESSURE_DECAY: bool = true;
-
-const OOC_PRESSURE_DECAY_GRACE_MS: &str = "POLARS_OOC_PRESSURE_DECAY_GRACE_MS";
-const DEFAULT_OOC_PRESSURE_DECAY_GRACE_MS: u64 = 1000;
+const OOC_DIRTY_LIMIT_FRACTION: &str = "POLARS_OOC_DIRTY_LIMIT_FRACTION";
+const DEFAULT_OOC_DIRTY_LIMIT_FRACTION: f64 = 0.9;
 
 const OOMKILL_THRESHOLD_FRACTION: &str = "POLARS_OOMKILL_THRESHOLD_FRACTION";
 const DEFAULT_OOMKILL_THRESHOLD_FRACTION: f64 = f64::INFINITY;
@@ -234,8 +231,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     OOC_MAX_PARALLEL_SPILL_TASKS,
     OOC_MAX_PARALLEL_PREFETCH_TASKS,
     OOC_LOG_METRICS,
-    OOC_PRESSURE_DECAY,
-    OOC_PRESSURE_DECAY_GRACE_MS,
+    OOC_DIRTY_LIMIT_FRACTION,
     OOMKILL_THRESHOLD_FRACTION,
     OOMKILL_THRESHOLD_MB,
     JOIN_SAMPLE_LIMIT,
@@ -287,8 +283,7 @@ pub struct Config {
     ooc_max_parallel_spill_tasks: AtomicU64,
     ooc_max_parallel_prefetch_tasks: AtomicU64,
     ooc_log_metrics: AtomicBool,
-    ooc_pressure_decay: AtomicBool,
-    ooc_pressure_decay_grace_ms: AtomicU64,
+    ooc_dirty_limit_fraction: AtomicU64,
     oomkill_threshold_fraction: AtomicU64,
     oomkill_threshold_bytes: AtomicU64,
     join_sample_limit: AtomicU64,
@@ -358,8 +353,7 @@ impl Config {
                 DEFAULT_OOC_MAX_PARALLEL_PREFETCH_TASKS,
             ),
             ooc_log_metrics: AtomicBool::new(false),
-            ooc_pressure_decay: AtomicBool::new(DEFAULT_OOC_PRESSURE_DECAY),
-            ooc_pressure_decay_grace_ms: AtomicU64::new(DEFAULT_OOC_PRESSURE_DECAY_GRACE_MS),
+            ooc_dirty_limit_fraction: AtomicU64::new(DEFAULT_OOC_DIRTY_LIMIT_FRACTION.to_bits()),
             oomkill_threshold_fraction: AtomicU64::new(
                 DEFAULT_OOMKILL_THRESHOLD_FRACTION.to_bits(),
             ),
@@ -434,6 +428,17 @@ impl Config {
         let grant_frac = f64::from_bits(self.ooc_memory_grant_fraction.load(Ordering::Relaxed));
         self.ooc_memory_grant_budget_bytes
             .store((bytes as f64 * grant_frac) as u64, Ordering::Relaxed);
+
+        let dirty_limit_frac =
+            f64::from_bits(self.ooc_dirty_limit_fraction.load(Ordering::Relaxed));
+        OOC_DIRTY_LIMIT_BYTES_ATOMIC.store(
+            if dirty_limit_frac.is_finite() {
+                (total_memory() as f64 * dirty_limit_frac) as u64
+            } else {
+                u64::MAX
+            },
+            Ordering::Relaxed,
+        );
 
         let oomkill_frac = f64::from_bits(self.oomkill_threshold_fraction.load(Ordering::Relaxed));
         let oomkill_frac_bytes = if oomkill_frac.is_finite() {
@@ -602,14 +607,10 @@ impl Config {
                     .unwrap_or(DEFAULT_OOC_LOG_METRICS),
                 Ordering::Relaxed,
             ),
-            OOC_PRESSURE_DECAY => self.ooc_pressure_decay.store(
-                val.and_then(|x| parse::parse_bool(var, x))
-                    .unwrap_or(DEFAULT_OOC_PRESSURE_DECAY),
-                Ordering::Relaxed,
-            ),
-            OOC_PRESSURE_DECAY_GRACE_MS => self.ooc_pressure_decay_grace_ms.store(
-                val.and_then(|x| parse::parse_u64(var, x))
-                    .unwrap_or(DEFAULT_OOC_PRESSURE_DECAY_GRACE_MS),
+            OOC_DIRTY_LIMIT_FRACTION => self.ooc_dirty_limit_fraction.store(
+                val.and_then(|x| parse::parse_f64(var, x))
+                    .unwrap_or(DEFAULT_OOC_DIRTY_LIMIT_FRACTION)
+                    .to_bits(),
                 Ordering::Relaxed,
             ),
             OOMKILL_THRESHOLD_FRACTION => self.oomkill_threshold_fraction.store(
@@ -892,18 +893,6 @@ impl Config {
         self.ooc_log_metrics.load(Ordering::Relaxed)
     }
 
-    /// Whether the allocator returns freed memory right away while out-of-core
-    /// data is being spilled or is spilled.
-    #[inline(always)]
-    pub fn ooc_pressure_decay(&self) -> bool {
-        self.ooc_pressure_decay.load(Ordering::Relaxed)
-    }
-
-    #[inline(always)]
-    pub fn ooc_pressure_decay_grace_ms(&self) -> u64 {
-        self.ooc_pressure_decay_grace_ms.load(Ordering::Relaxed)
-    }
-
     pub fn ooc_spill_dir(&self) -> std::path::PathBuf {
         if let Ok(dir) = std::env::var("POLARS_OOC_SPILL_DIR") {
             std::path::PathBuf::from(dir)
@@ -1046,6 +1035,7 @@ pub fn total_memory() -> u64 {
 static OOC_DRIFT_THRESHOLD_ATOMIC: AtomicU64 = AtomicU64::new(DEFAULT_OOC_DRIFT_THRESHOLD);
 static OOMKILL_THRESHOLD_BYTES_ATOMIC: AtomicU64 =
     AtomicU64::new(DEFAULT_OOMKILL_THRESHOLD_MB.saturating_mul(1_000_000));
+static OOC_DIRTY_LIMIT_BYTES_ATOMIC: AtomicU64 = AtomicU64::new(u64::MAX);
 
 #[inline(always)]
 pub fn get_ooc_drift_threshold() -> u64 {
@@ -1055,4 +1045,11 @@ pub fn get_ooc_drift_threshold() -> u64 {
 #[inline(always)]
 pub fn get_oomkill_threshold_bytes() -> u64 {
     OOMKILL_THRESHOLD_BYTES_ATOMIC.load(Ordering::Relaxed)
+}
+
+/// `POLARS_OOC_DIRTY_LIMIT_FRACTION` times the total memory: the allocator frees
+/// unused pages before the tracked memory plus those pages would exceed it.
+#[inline(always)]
+pub fn get_ooc_dirty_limit_bytes() -> u64 {
+    OOC_DIRTY_LIMIT_BYTES_ATOMIC.load(Ordering::Relaxed)
 }
