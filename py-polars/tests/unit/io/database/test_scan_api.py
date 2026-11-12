@@ -663,8 +663,9 @@ def test_count_of_a_slice_of_a_source_beyond_idxsize(
 )
 def test_object_dtype_is_refused(uri: str, name: str, dtype: Any) -> None:
     # Nested Objects used to read silently as Binary, or panic during Arrow export.
+    kwargs: dict[str, Any] = {name: {"s": dtype}}
     with pytest.raises(TypeError, match=f"{name}: column 's' can't be read as") as exc:
-        pl.scan_database("t", uri, **{name: {"s": dtype}})
+        pl.scan_database("t", uri, **kwargs)
     assert str(dtype) in str(exc.value)
 
 
@@ -679,7 +680,7 @@ def test_object_dtype_is_refused(uri: str, name: str, dtype: Any) -> None:
 def test_valid_nested_scan_dtype(name: str, dtype: Any) -> None:
     # Constructing a lazy scan with both schemas avoids DB I/O while still exporting
     # the requested nested dtype to Arrow, and preserves it in the output schema.
-    kwargs = {"schema": {"s": dtype}, name: {"s": dtype}}
+    kwargs: dict[str, Any] = {"schema": {"s": dtype}, name: {"s": dtype}}
     lf = pl.scan_database("t", "sqlite:///unused-nested-schema.db", **kwargs)
     assert lf.collect_schema() == {"s": dtype}
 
