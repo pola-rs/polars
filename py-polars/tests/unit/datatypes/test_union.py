@@ -9,10 +9,13 @@ from typing import TYPE_CHECKING, Any
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 import polars as pl
 from polars.exceptions import InvalidOperationError, SchemaError
 from polars.testing import assert_series_equal
+from polars.testing.parametric import dtypes, series
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -1702,3 +1705,42 @@ def test_union_unordered_aggregations_raise(expr: pl.Expr, op: str) -> None:
         for engine in ["in-memory", "streaming"]:
             with pytest.raises(InvalidOperationError, match=f"`{op}`"):
                 q.collect(engine=engine)  # type: ignore[call-overload]
+
+
+UNION_PARAMETRIC_DTYPES = [
+    pl.Union,
+    pl.Int32,
+    pl.Float64,
+    pl.String,
+    pl.Boolean,
+    pl.Date,
+    pl.Datetime,
+    pl.Decimal,
+    pl.Binary,
+    pl.List,
+    pl.Struct,
+]
+
+
+@given(st.data())
+def test_union_parametric_round_trip(data: st.DataObject) -> None:
+    dtype = data.draw(
+        dtypes(allowed_dtypes=UNION_PARAMETRIC_DTYPES, nesting_level=2).filter(
+            lambda dt: isinstance(dt, pl.Union)
+        )
+    )
+    s = data.draw(series(name="u", dtype=dtype))
+
+    assert_series_equal(pl.Series("u", s.to_list(), dtype=dtype), s)
+    assert_series_equal(pickle.loads(pickle.dumps(s)), s)
+    df = s.to_frame()
+    buf = io.BytesIO()
+    df.write_ipc(buf)
+    assert_series_equal(pl.read_ipc(buf.getvalue())["u"], s)
+    assert_series_equal(parquet_round_trip(df, sink=False)["u"], s)
+    assert_series_equal(parquet_round_trip(df, sink=True)["u"], s)
+
+    out = s.sort()
+    assert_series_equal(out.sort(), out)
+    assert s.unique().len() == s.n_unique()
+    assert (s == s).fill_null(True).all()

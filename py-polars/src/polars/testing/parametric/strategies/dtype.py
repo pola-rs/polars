@@ -8,6 +8,7 @@ from hypothesis.errors import InvalidArgument
 from polars import register_extension_type
 from polars.datatypes import (
     Array,
+    BaseExtension,
     Binary,
     Boolean,
     Categorical,
@@ -30,6 +31,7 @@ from polars.datatypes import (
     List,
     Map,
     Null,
+    Object,
     String,
     Struct,
     Time,
@@ -38,6 +40,7 @@ from polars.datatypes import (
     UInt32,
     UInt64,
     UInt128,
+    Union,
 )
 
 if TYPE_CHECKING:
@@ -106,6 +109,7 @@ _DEFAULT_ARRAY_WIDTH_LIMIT = 3
 _DEFAULT_STRUCT_FIELDS_LIMIT = 3
 _DEFAULT_MAP_SIZE_LIMIT = 3
 _DEFAULT_ENUM_CATEGORIES_LIMIT = 3
+_DEFAULT_UNION_VARIANTS_LIMIT = 3
 
 
 def dtypes(
@@ -338,6 +342,13 @@ def _instantiate_nested_dtype(
             else draw(_instantiate_flat_dtype(draw(_map_key_dtypes()))),
             instantiate_inner(getattr(dtype, "value", None)),
         )
+    elif dtype == Union:
+        if isinstance(dtype, Union):
+            fields = [Field(f.name, instantiate_inner(f.dtype)) for f in dtype.fields]
+        else:
+            variants = draw(_union_variants(inner))
+            fields = [Field(f"v{i}", dt) for i, dt in enumerate(variants)]
+        return Union(fields)
     elif dtype == Struct:
         if isinstance(dtype, Struct):
             fields = [Field(f.name, instantiate_inner(f.dtype)) for f in dtype.fields]
@@ -350,6 +361,35 @@ def _instantiate_nested_dtype(
     else:
         msg = f"unsupported data type: {dtype}"
         raise InvalidArgument(msg)
+
+
+def _union_kind(dtype: DataType) -> object:
+    """The kind of Python values a variant of this dtype takes when building a union."""
+    if dtype.is_integer():
+        return "int"
+    elif dtype.is_float():
+        return "float"
+    elif dtype in (String, Categorical, Enum):
+        return "str"
+    elif dtype in (List, Array):
+        return "list"
+    return dtype.base_type()
+
+
+def _is_union_variant(dtype: DataType) -> bool:
+    # Python values can't pick a Map, Null or nested union variant, and objects and
+    # extensions have no kind.
+    return not (dtype in (Map, Null, Union, Object) or isinstance(dtype, BaseExtension))
+
+
+def _union_variants(inner: SearchStrategy[DataType]) -> SearchStrategy[list[DataType]]:
+    """Variants of distinct kinds, so that every generated Python value picks one."""
+    return st.lists(
+        inner.filter(_is_union_variant),
+        min_size=1,
+        max_size=_DEFAULT_UNION_VARIANTS_LIMIT,
+        unique_by=_union_kind,
+    )
 
 
 def _map_key_dtypes() -> SearchStrategy[DataTypeClass]:
@@ -448,6 +488,19 @@ def _instantiate_dtype(
             else draw(_instantiate_flat_dtype(draw(_map_key_dtypes()))),
             draw_inner(getattr(dtype, "value", None)),
         )
+    elif dtype == Union:
+        if isinstance(dtype, Union):
+            fields = [Field(f.name, draw_inner(f.dtype)) for f in dtype.fields]
+        else:
+            inner_strategy = dtypes(
+                allowed_dtypes=allowed_dtypes,
+                excluded_dtypes=excluded_dtypes,
+                nesting_level=nesting_level - 1,
+                allow_time_zones=allow_time_zones,
+            )
+            variants = draw(_union_variants(inner_strategy))
+            fields = [Field(f"v{i}", dt) for i, dt in enumerate(variants)]
+        return Union(fields)
     elif dtype == Struct:
         if isinstance(dtype, Struct):
             fields = [
