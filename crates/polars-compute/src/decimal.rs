@@ -30,6 +30,9 @@
 
 use std::cmp::Ordering;
 
+use polars_arrow::array::PrimitiveArray;
+use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::types::i256;
 use polars_error::{PolarsResult, polars_ensure};
 
 use crate::arithmetic::DivRounding;
@@ -488,6 +491,31 @@ fn divrem_256_128(lo: u128, hi: u128, d: u128) -> Option<(u128, u128)> {
 #[inline]
 pub fn dec128_fits(x: i128, p: usize) -> bool {
     (-POW10_I128[p] < x) & (x < POW10_I128[p])
+}
+
+/// Returns whether the given Decimal256 fits in a Decimal128 of the given precision.
+#[inline(always)]
+fn dec256_fits(x: i256, p: usize) -> bool {
+    let (hi, lo) = x.0.into_words();
+    (hi == lo >> 127) & dec128_fits(lo, p)
+}
+
+/// Converts a Decimal256 array to a Decimal128 array of the given precision.
+/// Returns `None` if a valid value doesn't fit.
+pub fn dec256_to_dec128(arr: &PrimitiveArray<i256>, p: usize) -> Option<PrimitiveArray<i128>> {
+    let xs = arr.values().as_slice();
+    let mut out = Vec::with_capacity(xs.len());
+    let mut all_fit = true;
+    for (o, x) in out.spare_capacity_mut().iter_mut().zip(xs) {
+        all_fit &= dec256_fits(*x, p);
+        o.write(x.0.as_i128());
+    }
+    // SAFETY: the loop wrote xs.len() values
+    unsafe { out.set_len(xs.len()) };
+
+    // Note: null slots may hold arbitrary values
+    let all_fit = all_fit || arr.iter().flatten().all(|x| dec256_fits(*x, p));
+    all_fit.then(|| PrimitiveArray::new(ArrowDataType::Int128, out.into(), arr.validity().cloned()))
 }
 
 /// Returns zero if x fits in an i64.
