@@ -2237,6 +2237,72 @@ def test_min_max_by_row_encoded_value(
     assert_frame_equal(q.collect(), expected_df)
 
 
+def _nested_series(keys: list[int | None], kind: str) -> pl.Series:
+    """Nested values that sort like `keys`."""
+    if kind == "list":
+        return pl.Series([None if k is None else [k] for k in keys])
+    if kind == "array":
+        values = [None if k is None else [k] for k in keys]
+        return pl.Series(values, dtype=pl.Array(pl.Int64, 1))
+    if kind == "struct":
+        return pl.Series([None if k is None else {"a": k} for k in keys])
+    entries = [None if k is None else [{"key": k, "value": 0}] for k in keys]
+    return pl.Series(entries).cast(pl.Map(pl.Int64, pl.Int64))
+
+
+NESTED_KINDS = ["list", "array", "struct", "map"]
+
+
+@pytest.mark.parametrize("kind", NESTED_KINDS)
+def test_arg_min_max_nested_skips_nulls_30734(kind: str) -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 2, 2, 3, 3],
+            "s": _nested_series([2, None, 1, 3, 4, None, None], kind),
+        }
+    )
+    aggs = [pl.col("s").arg_min().alias("min"), pl.col("s").arg_max().alias("max")]
+
+    expected = pl.DataFrame(
+        {"min": [2], "max": [4]},
+        schema_overrides={"min": pl.get_index_type(), "max": pl.get_index_type()},
+    )
+    assert_frame_equal(df.select(aggs), expected)
+    assert_frame_equal(df.lazy().select(aggs).collect(), expected)
+
+    expected = pl.DataFrame(
+        {"g": [1, 2, 3], "min": [2, 0, None], "max": [0, 1, None]},
+        schema_overrides={"min": pl.get_index_type(), "max": pl.get_index_type()},
+    )
+    assert_frame_equal(df.group_by("g", maintain_order=True).agg(aggs), expected)
+    q = df.lazy().group_by("g").agg(aggs)
+    assert_frame_equal(q.collect(), expected, check_row_order=False)
+
+    expected = pl.DataFrame(
+        {"min": [2, 2, 2, 0, 0, None, None], "max": [0, 0, 0, 1, 1, None, None]},
+        schema_overrides={"min": pl.get_index_type(), "max": pl.get_index_type()},
+    )
+    over = [a.over("g") for a in aggs]
+    assert_frame_equal(df.select(over), expected)
+    assert_frame_equal(df.lazy().select(over).collect(), expected)
+
+
+@pytest.mark.parametrize("kind", NESTED_KINDS)
+def test_min_max_by_nested_key_skips_nulls_30734(kind: str) -> None:
+    df = pl.DataFrame({"i": [0, 1, 2], "s": _nested_series([2, None, 1], kind)})
+    aggs = [pl.col("i").min_by("s").alias("min"), pl.col("i").max_by("s").alias("max")]
+    expected = pl.DataFrame({"min": [2], "max": [0]})
+    assert_frame_equal(df.select(aggs), expected)
+    assert_frame_equal(df.lazy().select(aggs).collect(), expected)
+
+    df = pl.DataFrame({"i": [0, 1], "s": _nested_series([None, None], kind)})
+    expected = pl.DataFrame(
+        {"min": [None], "max": [None]}, schema={"min": pl.Int64, "max": pl.Int64}
+    )
+    assert_frame_equal(df.select(aggs), expected)
+    assert_frame_equal(df.lazy().select(aggs).collect(), expected)
+
+
 @pytest.mark.parametrize(
     ("dtype", "input", "expect"),
     [

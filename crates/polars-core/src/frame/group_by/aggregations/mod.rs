@@ -486,6 +486,37 @@ where
     }
 }
 
+/// Group-wise arg min or arg max of `s` in its row-encoding (sort) order, skipping null rows.
+///
+/// # Safety
+///
+/// No bounds checks on `groups`.
+pub(crate) unsafe fn agg_arg_min_max_row_encoded(
+    s: &Series,
+    groups: &GroupsType,
+    is_max: bool,
+) -> Series {
+    // With `propagate_nulls` the encoding cannot fail.
+    let encoded = row_encode::_get_rows_encoded_ca(
+        s.name().clone(),
+        &[s.clone().into_column()],
+        &[false],
+        &[false],
+        true,
+    )
+    .unwrap()
+    .cast(&DataType::Binary)
+    .unwrap();
+    let encoded = encoded.binary().unwrap();
+    unsafe {
+        if is_max {
+            encoded.agg_arg_max(groups)
+        } else {
+            encoded.agg_arg_min(groups)
+        }
+    }
+}
+
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType + Sync,

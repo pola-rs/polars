@@ -251,7 +251,7 @@ pub fn into_reduction(
                         descending: None,
                         nulls_last: None,
                     },
-                    false,
+                    true,
                     expr_arena,
                 )
                 .node();
@@ -284,7 +284,7 @@ pub fn into_reduction(
                         descending: None,
                         nulls_last: None,
                     },
-                    false,
+                    true,
                     expr_arena,
                 )
                 .node();

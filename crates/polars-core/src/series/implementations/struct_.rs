@@ -130,6 +130,22 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
     unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         self.0.agg_list(groups)
     }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+        let s = self.0.clone().into_series();
+        unsafe {
+            crate::frame::group_by::aggregations::agg_arg_min_max_row_encoded(&s, groups, false)
+        }
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+        let s = self.0.clone().into_series();
+        unsafe {
+            crate::frame::group_by::aggregations::agg_arg_min_max_row_encoded(&s, groups, true)
+        }
+    }
 }
 
 impl SeriesTrait for SeriesWrap<StructChunked> {
