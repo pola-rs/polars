@@ -192,9 +192,13 @@ fn compute_payload_selector(
                         Some(c.clone())
                     } else if args.how == JoinType::Full {
                         // We must keep the right-hand side keycols around for
-                        // coalescing. Note that this bypasses the filter below because of the
-                        // early return.
+                        // coalescing, whenever the paired left key is kept. Note that this
+                        // bypasses the filter below because of the early return.
                         let key_idx = this_key_schema.index_of(c).unwrap();
+                        let (left_key, _) = other_key_schema.get_at_index(key_idx).unwrap();
+                        if !output_schema.contains(left_key.as_str()) {
+                            return Ok(None);
+                        }
                         let name = format_pl_smallstr!("__POLARS_COALESCE_KEYCOL_{key_idx}");
                         return Ok(Some(name));
                     } else {
@@ -679,16 +683,7 @@ impl EquiJoinNode {
             let idx: Vec<usize> = payload_schema
                 .iter_names()
                 .enumerate()
-                // The postprocessing of a full join needs the right keys to coalesce, but only
-                // those whose coalesced key is output.
-                .filter(|(_, name)| {
-                    output_schema.contains(name.as_str())
-                        || name
-                            .strip_prefix("__POLARS_COALESCE_KEYCOL_")
-                            .and_then(|i| i.parse::<usize>().ok())
-                            .and_then(|i| left_key_schema.get_at_index(i))
-                            .is_some_and(|(k, _)| output_schema.contains(k.as_str()))
-                })
+                .filter(|(_, name)| output_schema.contains(name.as_str()))
                 .map(|(i, _)| i)
                 .collect();
             (idx.len() != payload_schema.len()).then(|| Arc::from(idx))

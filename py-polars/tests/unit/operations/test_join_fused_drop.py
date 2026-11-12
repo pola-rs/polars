@@ -241,6 +241,39 @@ def test_coalesced_join_key_dropped_and_kept(
     check(q)
 
 
+@pytest.mark.parametrize("morsel_size", [2, 100_000])
+@pytest.mark.parametrize(
+    ("columns", "fused"),
+    [
+        (["v"], True),
+        (["w"], True),
+        (["v", "w"], True),
+        (["k"], None),
+        (["k", "v"], True),
+        (["w", "k"], False),
+    ],
+)
+def test_full_join_coalesce_key_dropped_and_kept(
+    morsel_size: int,
+    columns: list[str],
+    fused: bool | None,
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", str(morsel_size))
+    n = 50
+    left = pl.LazyFrame({"k": [i % 7 for i in range(n)], "v": list(range(n))})
+    right = pl.LazyFrame({"k_r": [i % 5 + 3 for i in range(n)], "w": list(range(n))})
+    q = left.join(right, left_on="k", right_on="k_r", how="full", coalesce=True).select(
+        columns
+    )
+    # The final select is gone when the drop was fused into the join (not checked for `k`: an
+    # input select of that name exists too).
+    final_select = 'label="select\\n' + ", ".join(columns) + '"'
+    if fused is not None:
+        assert (final_select not in physical_plan(q)) == fused
+    check(q)
+
+
 @pytest.mark.parametrize("how", ["left", "right", "full"])
 @pytest.mark.parametrize("columns", [["v"], ["k", "w"], ["w"], ["v", "w"]])
 def test_fused_predicate_many_unmatched_build_rows(
