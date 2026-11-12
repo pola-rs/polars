@@ -646,14 +646,42 @@ def test_count_of_a_slice_of_a_source_beyond_idxsize(
     assert out.rows() == [(3, 3), (4, 4)]
 
 
-def test_object_dtype_is_refused(uri: str) -> None:
-    # read as Binary, silently
-    for kwargs in [
-        {"schema_overrides": {"s": pl.Object}},
-        {"schema": {"s": pl.Object}},
-    ]:
-        with pytest.raises(TypeError, match="column 's' can't be read as"):
-            pl.scan_database("t", uri, **kwargs)  # type: ignore[arg-type]
+@pytest.mark.parametrize("name", ["schema", "schema_overrides"])
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Object,
+        pl.List(pl.Object),
+        pl.Array(pl.Object, 2),
+        pl.Struct({"child": pl.Object}),
+        pl.List(pl.Array(pl.Struct({"child": pl.List(pl.Object)}), 2)),
+        pl.Map(pl.String, pl.Object),
+        pl.Map(pl.Object, pl.String),
+        pl.Struct({"child": pl.Map(pl.String, pl.List(pl.Object))}),
+        pl.Map(pl.Struct({"child": pl.Object}), pl.String),
+    ],
+)
+def test_object_dtype_is_refused(uri: str, name: str, dtype: Any) -> None:
+    # Nested Objects used to read silently as Binary, or panic during Arrow export.
+    with pytest.raises(TypeError, match=f"{name}: column 's' can't be read as") as exc:
+        pl.scan_database("t", uri, **{name: {"s": dtype}})
+    assert str(dtype) in str(exc.value)
+
+
+@pytest.mark.parametrize("name", ["schema", "schema_overrides"])
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.List(pl.Array(pl.Struct({"child": pl.List(pl.String)}), 2)),
+        pl.Map(pl.String, pl.List(pl.Int64)),
+    ],
+)
+def test_valid_nested_scan_dtype(name: str, dtype: Any) -> None:
+    # Constructing a lazy scan with both schemas avoids DB I/O while still exporting
+    # the requested nested dtype to Arrow, and preserves it in the output schema.
+    kwargs = {"schema": {"s": dtype}, name: {"s": dtype}}
+    lf = pl.scan_database("t", "sqlite:///unused-nested-schema.db", **kwargs)
+    assert lf.collect_schema() == {"s": dtype}
 
 
 @pytest.mark.parametrize(

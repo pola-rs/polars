@@ -230,10 +230,21 @@ def _copy_containers(value: Any) -> Any:
 
 def _check_dtypes(name: str, schema: SchemaDict) -> None:
     """Refuse `Object`: no database column reads as one (Arrow carries bytes)."""
-    from polars.datatypes import Object
+    from polars.datatypes import Array, List, Map, Object, Struct
+
+    def contains_object(dtype: Any) -> bool:
+        if dtype == Object:
+            return True
+        if isinstance(dtype, (List, Array)):
+            return contains_object(dtype.inner)
+        if isinstance(dtype, Struct):
+            return any(contains_object(field.dtype) for field in dtype.fields)
+        if isinstance(dtype, Map):
+            return contains_object(dtype.key) or contains_object(dtype.value)
+        return False
 
     for column, dtype in Schema(schema).items():
-        if isinstance(dtype, Object):
+        if contains_object(dtype):
             msg = f"{name}: column {column!r} can't be read as {dtype}"
             raise TypeError(msg)
 
