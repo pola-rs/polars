@@ -839,9 +839,7 @@ pub(super) fn convert_functions(
         F::DropNulls => I::DropNulls,
         F::Quantile { method } => {
             // Checking a literal fraction here makes every engine raise, even on empty input.
-            if let Some(quantiles) = literal_quantiles(ctx.arena.get(e[1].node())) {
-                check_quantiles(&quantiles)?;
-            }
+            literal_quantiles(ctx.arena.get(e[1].node()))?;
             I::Quantile { method }
         },
         #[cfg(feature = "mode")]
@@ -931,7 +929,7 @@ pub(super) fn convert_functions(
             let quantile_input = e.get(1).ok_or_else(
                 || polars_err!(InvalidOperation: "missing argument 'quantile' in `approx_quantile`"),
             )?;
-            let quantiles = literal_quantiles(ctx.arena.get(quantile_input.node()));
+            let quantiles = literal_quantiles(ctx.arena.get(quantile_input.node()))?;
             let method = method.resolve(quantiles.as_deref());
             let error = match use_formal_bound {
                 true => error,
@@ -1415,8 +1413,9 @@ pub(super) fn convert_functions(
 
 /// Returns the fractions given to `quantile` or `approx_quantile` if that input is a literal: one
 /// number or a list of numbers. Null elements of a list are left out, since a null fraction gives
-/// a null result. Returns `None` for any other input.
-fn literal_quantiles(fraction: &AExpr) -> Option<Vec<f64>> {
+/// a null result. Returns `None` for any other input. Returns an error if a literal fraction is NaN
+/// or outside `0.0..=1.0`.
+fn literal_quantiles(fraction: &AExpr) -> PolarsResult<Option<Vec<f64>>> {
     let value = match fraction {
         AExpr::Literal(
             lv @ (LiteralValue::Scalar(_)
@@ -1424,11 +1423,15 @@ fn literal_quantiles(fraction: &AExpr) -> Option<Vec<f64>> {
         ) => lv.to_any_value(),
         _ => None,
     };
-    match value? {
+    let quantiles = value.and_then(|value| match value {
         AnyValue::List(s) => s
             .strict_cast(&DataType::Float64)
             .ok()
             .map(|s| s.iter().filter_map(|v| v.extract()).collect()),
         av => av.extract().map(|q| vec![q]),
+    });
+    if let Some(quantiles) = &quantiles {
+        check_quantiles(quantiles)?;
     }
+    Ok(quantiles)
 }
