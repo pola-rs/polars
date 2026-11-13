@@ -646,6 +646,10 @@ def test_count_of_a_slice_of_a_source_beyond_idxsize(
     assert out.rows() == [(3, 3), (4, 4)]
 
 
+class ScanTestExtension(pl.datatypes.BaseExtension):
+    """A custom extension dtype for testing scan schemas."""
+
+
 @pytest.mark.parametrize("name", ["schema", "schema_overrides"])
 @pytest.mark.parametrize(
     "dtype",
@@ -659,6 +663,9 @@ def test_count_of_a_slice_of_a_source_beyond_idxsize(
         pl.Map(pl.Object, pl.String),
         pl.Struct({"child": pl.Map(pl.String, pl.List(pl.Object))}),
         pl.Map(pl.Struct({"child": pl.Object}), pl.String),
+        pl.Extension("testing.scan_object", pl.Object),
+        pl.Extension("testing.scan_struct_object", pl.Struct({"child": pl.Object})),
+        pl.List(ScanTestExtension("testing.scan_list_object", pl.Object)),
     ],
 )
 def test_object_dtype_is_refused(uri: str, name: str, dtype: Any) -> None:
@@ -683,6 +690,18 @@ def test_valid_nested_scan_dtype(name: str, dtype: Any) -> None:
     kwargs: dict[str, Any] = {"schema": {"s": dtype}, name: {"s": dtype}}
     lf = pl.scan_database("t", "sqlite:///unused-nested-schema.db", **kwargs)
     assert lf.collect_schema() == {"s": dtype}
+
+
+@pytest.mark.parametrize("name", ["schema", "schema_overrides"])
+def test_valid_scan_extension_dtype(name: str) -> None:
+    dtype = ScanTestExtension("testing.scan_extension", pl.String)
+    pl.register_extension_type(dtype.ext_name(), ScanTestExtension)
+    try:
+        kwargs: dict[str, Any] = {"schema": {"s": pl.String}, name: {"s": dtype}}
+        lf = pl.scan_database("t", "sqlite:///unused-extension-schema.db", **kwargs)
+        assert lf.collect_schema() == {"s": dtype}
+    finally:
+        pl.unregister_extension_type(dtype.ext_name())
 
 
 @pytest.mark.parametrize(
