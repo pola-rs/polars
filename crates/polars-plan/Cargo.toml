@@ -34,11 +34,11 @@ bytemuck = { workspace = true }
 bytes = { workspace = true, features = ["serde"] }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
-digest-io = { workspace = true }
+digest-io = { workspace = true, optional = true }
 either = { workspace = true }
 futures = { workspace = true }
 hashbrown = { workspace = true }
-hex = { workspace = true }
+hex = { workspace = true, optional = true }
 indexmap = { workspace = true }
 memmap = { workspace = true }
 murmur3 = { workspace = true }
@@ -137,6 +137,8 @@ true_div = []
 nightly = ["polars-utils/nightly"]
 extract_jsonpath = []
 dsl-schema = [
+  "dep:digest-io",
+  "dep:hex",
   "dep:schemars",
   "dep:sha2",
   "serde",

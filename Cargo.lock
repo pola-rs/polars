@@ -2963,7 +2963,6 @@ name = "polars-arrow"
 version = "0.55.1"
 dependencies = [
  "async-stream",
- "atoi_simd",
  "avro-schema",
  "bitflags",
  "bytemuck",
@@ -3196,7 +3195,6 @@ name = "polars-error"
 version = "0.55.1"
 dependencies = [
  "avro-schema",
- "object_store",
  "parking_lot",
  "polars-arrow-format",
  "pyo3",
