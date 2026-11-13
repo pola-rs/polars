@@ -143,7 +143,7 @@ impl BooleanChunked {
         let no_nulls = arr.null_count() == 0;
         match groups {
             GroupsType::Idx(groups) => _agg_helper_idx_bool(groups, |(first, idx)| {
-                debug_assert!(idx.len() <= self.len());
+                debug_assert!(_idx_in_bounds(idx, self.len()));
                 if idx.is_empty() {
                     None
                 } else if idx.len() == 1 {
@@ -189,7 +189,7 @@ impl BooleanChunked {
         let no_nulls = arr.null_count() == 0;
         match groups {
             GroupsType::Idx(groups) => _agg_helper_idx_bool(groups, |(first, idx)| {
-                debug_assert!(idx.len() <= self.len());
+                debug_assert!(_idx_in_bounds(idx, self.len()));
                 if idx.is_empty() {
                     None
                 } else if idx.len() == 1 {
@@ -238,7 +238,7 @@ impl BooleanChunked {
         let no_nulls = arr.null_count() == 0;
         match groups {
             GroupsType::Idx(groups) => agg_helper_idx_on_all::<IdxType, _>(groups, |idx| {
-                debug_assert!(idx.len() <= ca_self.len());
+                debug_assert!(_idx_in_bounds(idx, ca_self.len()));
                 if idx.is_empty() {
                     None
                 } else if idx.len() == 1 {
@@ -277,7 +277,7 @@ impl BooleanChunked {
         let no_nulls = arr.null_count() == 0;
         match groups {
             GroupsType::Idx(groups) => agg_helper_idx_on_all::<IdxType, _>(groups, |idx| {
-                debug_assert!(idx.len() <= ca_self.len());
+                debug_assert!(_idx_in_bounds(idx, ca_self.len()));
                 if idx.is_empty() {
                     None
                 } else if idx.len() == 1 {

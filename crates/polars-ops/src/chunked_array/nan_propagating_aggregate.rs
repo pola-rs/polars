@@ -6,7 +6,7 @@ use polars_arrow::legacy::kernels::take_agg::{
 use polars_compute::rolling;
 use polars_compute::rolling::no_nulls::{MaxWindow, MinWindow};
 use polars_core::frame::group_by::aggregations::{
-    _agg_helper_idx, _agg_helper_slice, _rolling_apply_agg_window_no_nulls,
+    _agg_helper_idx, _agg_helper_slice, _idx_in_bounds, _rolling_apply_agg_window_no_nulls,
     _rolling_apply_agg_window_nulls, _slice_from_offsets, _use_rolling_kernels,
 };
 use polars_core::prelude::*;
@@ -72,7 +72,7 @@ pub fn nan_max_s(s: &Series, name: PlSmallStr) -> Series {
 unsafe fn group_nan_max<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &GroupsType) -> Series {
     match groups {
         GroupsType::Idx(groups) => _agg_helper_idx::<T, _>(groups, |(first, idx)| {
-            debug_assert!(idx.len() <= ca.len());
+            debug_assert!(_idx_in_bounds(idx, ca.len()));
             if idx.is_empty() {
                 None
             } else if idx.len() == 1 {
@@ -139,7 +139,7 @@ unsafe fn group_nan_max<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
 unsafe fn group_nan_min<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &GroupsType) -> Series {
     match groups {
         GroupsType::Idx(groups) => _agg_helper_idx::<T, _>(groups, |(first, idx)| {
-            debug_assert!(idx.len() <= ca.len());
+            debug_assert!(_idx_in_bounds(idx, ca.len()));
             if idx.is_empty() {
                 None
             } else if idx.len() == 1 {
