@@ -212,10 +212,12 @@ def test_regexp_replace_errors() -> None:
         r"REGEXP_EXTRACT(s, '\d+')",
         r"REGEXP_EXTRACT(s, '(z)(q)?', 2)",
         r"REGEXP_EXTRACT(s, NULL)",
+        r"REGEXP_EXTRACT(NULL, 'a')",
+        r"REGEXP_EXTRACT(n, 'a')",
     ],
 )
 def test_regexp_extract(func: str) -> None:
-    df = pl.DataFrame({"s": ["ab12-34", "x", None, "zz"]})
+    df = pl.DataFrame({"s": ["ab12-34", "x", None, "zz"], "n": [None] * 4})
     assert_sql_matches(
         df,
         query=f"SELECT {func} AS r FROM self",

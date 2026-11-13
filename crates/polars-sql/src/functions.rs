@@ -2,7 +2,7 @@ use chrono::Timelike;
 use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
 use polars_core::prelude::{
     AnyValue, DataType, ExplodeOptions, PolarsResult, QuantileMethod, Scalar, Schema, TimeUnit,
-    datetime_to_timestamp_us, polars_bail, polars_ensure, polars_err,
+    UnknownKind, datetime_to_timestamp_us, polars_bail, polars_ensure, polars_err,
 };
 use polars_core::utils::try_get_supertype;
 use polars_defs::expr::UnicodeForm;
@@ -3053,10 +3053,12 @@ impl SQLFunctionVisitor<'_> {
     pub(crate) fn boolean_arg(&self, e: Expr) -> PolarsResult<Expr> {
         match self.ctx.expr_dtype(&e, self.active_schema) {
             Some(DataType::Boolean) => Ok(e),
-            Some(dtype) if dtype.is_known() && !dtype.is_null() => polars_bail!(
+            None | Some(DataType::Null | DataType::Unknown(UnknownKind::Any)) => {
+                Ok(e.cast(DataType::Boolean))
+            },
+            Some(dtype) => polars_bail!(
                 InvalidOperation: "{} expects a boolean argument, got `{}`", self.func.name, dtype
             ),
-            _ => Ok(e.cast(DataType::Boolean)),
         }
     }
 
@@ -3080,11 +3082,10 @@ impl SQLFunctionVisitor<'_> {
         let [FunctionArgExpr::Expr(sql_expr)] = args.as_slice() else {
             return self.not_supported_error();
         };
-        let approx_count = |e: Expr| e.drop_nulls().approx_n_unique();
         let count = match self.parse_value_arg(sql_expr)? {
-            ValueArg::Rows(e) => approx_count(e),
-            ValueArg::Constant(c) => when(self.rows_read().gt(lit(0)))
-                .then(approx_count(c))
+            ValueArg::Rows(e) => e.drop_nulls().approx_n_unique(),
+            ValueArg::Constant(c) => when(self.rows_read().gt(lit(0)).and(c.is_not_null()))
+                .then(lit(1))
                 .otherwise(lit(0)),
         };
         self.apply_window_spec(count.cast(DataType::Int64))
@@ -3119,8 +3120,16 @@ impl SQLFunctionVisitor<'_> {
                 polars_bail!(SQLSyntax: "REGEXP_EXTRACT expects 2-3 arguments (found {})", args.len())
             },
         };
-        let value = self.parse_sql_arg(value)?;
-        let pattern = self.parse_sql_arg(pattern)?;
+        // A NULL is a string NULL.
+        let mut string_arg = |e: &SQLExpr| -> PolarsResult<Expr> {
+            let e = self.parse_sql_arg(e)?;
+            Ok(match self.ctx.expr_dtype(&e, self.active_schema) {
+                Some(DataType::Null) => e.cast(DataType::String),
+                _ => e,
+            })
+        };
+        let value = string_arg(value)?;
+        let pattern = string_arg(pattern)?;
         let extracted = value.clone().str().extract(pattern.clone(), group);
         let e = when(value.is_not_null().and(pattern.is_not_null()))
             .then(extracted.fill_null(lit("")))

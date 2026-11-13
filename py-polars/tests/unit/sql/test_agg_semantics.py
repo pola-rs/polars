@@ -281,6 +281,7 @@ def test_sum_avg_distinct_empty_table() -> None:
         "ANY_VALUE(1)",
         "MAX_BY(1, 2)",
         "APPROX_COUNT_DISTINCT(1)",
+        "APPROX_COUNT_DISTINCT(NULL)",
     ],
 )
 @pytest.mark.parametrize("n_rows", [0, 3])
@@ -534,9 +535,44 @@ def test_bool_and_count_if_over(over: str) -> None:
 
 def test_bool_and_count_if_errors() -> None:
     df = pl.DataFrame({"x": [1, 2], "s": ["a", "b"]})
-    with pytest.raises(InvalidOperationError, match="expects a boolean argument"):
-        df.sql("SELECT BOOL_AND(x) FROM self")
-    with pytest.raises(InvalidOperationError, match="expects a boolean argument"):
-        df.sql("SELECT COUNT_IF(s) OVER (ORDER BY x) FROM self")
+    for agg in [
+        "BOOL_AND(x)",
+        "BOOL_OR('t')",
+        "COUNT_IF(1)",
+        "BOOL_AND(1) OVER ()",
+        "COUNT_IF(s) OVER (ORDER BY x)",
+    ]:
+        with pytest.raises(InvalidOperationError, match="expects a boolean argument"):
+            df.sql(f"SELECT {agg} FROM self")
     with pytest.raises(pl.exceptions.SQLInterfaceError, match="ORDER BY in OVER"):
         df.sql("SELECT MAX_BY(s, x) OVER (ORDER BY x) FROM self")
+
+
+def test_approx_count_distinct_of_no_values() -> None:
+    df = pl.DataFrame({"a": [1, 2], "n": [None, None]})
+    for query in [
+        "SELECT APPROX_COUNT_DISTINCT(a) AS d FROM self WHERE FALSE",
+        "SELECT APPROX_COUNT_DISTINCT(n) AS d FROM self",
+    ]:
+        assert_sql_matches(
+            df,
+            query=query,
+            compare_with="duckdb",
+            engines=["in-memory", "streaming"],
+        )
+
+
+def test_correlated_approx_count_distinct_of_constant() -> None:
+    frames = {
+        "p": pl.DataFrame({"id": [1, 2]}),
+        "c": pl.DataFrame({"g": [1, 1], "x": [3, 4]}),
+    }
+    assert_sql_matches(
+        frames,
+        query="""
+          SELECT id, (SELECT APPROX_COUNT_DISTINCT(1) FROM c WHERE c.g = p.id) AS d
+          FROM p ORDER BY id
+        """,
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
