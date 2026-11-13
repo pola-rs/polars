@@ -631,16 +631,19 @@ def test_create_view(eager_path: bool, temp: str) -> None:
     with pl.SQLContext(t=pl.LazyFrame({"a": [1, 2, 3], "g": ["x", "x", "y"]})) as ctx:
         ctx.execute(f"CREATE {temp}VIEW v AS SELECT a * 10 AS b, g FROM t WHERE a > 1")
         ctx.execute(f"CREATE {temp}VIEW w (n, total) AS SELECT COUNT(*), SUM(b) FROM v")
-        assert ctx.tables() == ["t", "v", "w"]
+        ctx.execute(f"CREATE {temp}VIEW u AS TABLE w")
+        assert ctx.tables() == ["t", "u", "v", "w"]
         for query, expected in (
             ("SELECT b FROM v ORDER BY b", [20, 30]),
             ("SELECT v.b FROM v JOIN t ON v.g = t.g WHERE t.a = 3", [30]),
             ("SELECT a FROM t WHERE a * 10 IN (SELECT b FROM v) ORDER BY a", [2, 3]),
             ("SELECT x.b + w.total FROM v AS x, w WHERE x.g = 'y'", [80]),
             ("WITH v AS (SELECT 1 AS b) SELECT b FROM v", [1]),
+            ("SELECT 0, 0 UNION ALL TABLE w", [0, 2]),
+            ("SELECT n FROM u", [2]),
         ):
             res = _execute(ctx, query, eager_path=eager_path)
-            assert res.to_series().to_list() == expected
+            assert sorted(res.to_series().to_list()) == expected
 
         # a view reads the tables as they are when a query is executed
         lf = ctx.execute("SELECT n FROM w")
@@ -667,9 +670,30 @@ def test_create_view_replace() -> None:
             3,
         ]
 
-        # registering a frame replaces a view of the same name
-        ctx.register("v", pl.LazyFrame({"c": [0]}))
+        # registering a frame replaces a view of the same name (ignoring case)
+        ctx.register("V", pl.LazyFrame({"c": [0]}))
+        assert ctx.tables() == ["V", "t"]
         assert ctx.execute("SELECT c FROM v", eager=True).item() == 0
+        ctx.unregister("V")
+        with pytest.raises(SQLInterfaceError, match="relation 'v' was not found"):
+            ctx.execute("SELECT * FROM v", eager=True)
+
+
+def test_view_planned_with_statement() -> None:
+    with pl.SQLContext(t=pl.LazyFrame({"a": [1]})) as ctx:
+        ctx.execute("CREATE VIEW v AS SELECT a FROM t")
+        ctx.execute("CREATE VIEW clock AS SELECT CURRENT_TIMESTAMP AS ts")
+        ctx.unregister("t")
+
+        # a CTE hides the view of its name, which is then not planned
+        res = ctx.execute("WITH v AS (SELECT 2 AS a) SELECT a FROM v", eager=True)
+        assert res.item() == 2
+        with pytest.raises(SQLInterfaceError, match="relation 't' was not found"):
+            ctx.execute("SELECT a FROM v", eager=True)
+
+        # a view reads the time of the statement that reads it
+        res = ctx.execute("SELECT ts = CURRENT_TIMESTAMP FROM clock", eager=True)
+        assert res.item() is True
 
 
 @pytest.mark.parametrize(

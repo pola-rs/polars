@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::ops::{ControlFlow, Deref};
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 use chrono::{NaiveDateTime, SubsecRound};
 use polars_core::prelude::*;
@@ -316,8 +316,8 @@ pub struct SQLContext {
     pub(crate) table_map: Arc<RwLock<PlHashMap<String, LazyFrame>>>,
     /// The views, by name. A view is planned again by each statement that reads it.
     views: Arc<RwLock<PlHashMap<String, Arc<View>>>>,
-    /// The plans of the views the current statement reads.
-    view_frames: PlHashMap<String, LazyFrame>,
+    /// The plans of the views the current statement reads, shared by all its contexts.
+    view_frames: Arc<Mutex<PlHashMap<String, LazyFrame>>>,
     /// The views being planned, outermost first.
     views_in_progress: Vec<String>,
     pub(crate) function_registry: Arc<dyn FunctionRegistry>,
@@ -463,7 +463,8 @@ impl SQLContext {
         tables
     }
 
-    /// Register a [`LazyFrame`] as a table in the SQLContext, replacing a view of the same name.
+    /// Register a [`LazyFrame`] as a table in the SQLContext, replacing the views of the same name
+    /// ignoring case.
     /// ```rust
     /// # use polars_sql::SQLContext;
     /// # use polars_core::prelude::*;
@@ -479,7 +480,10 @@ impl SQLContext {
     /// # }
     ///```
     pub fn register(&self, name: &str, lf: LazyFrame) {
-        self.views.write().unwrap().remove(name);
+        self.views
+            .write()
+            .unwrap()
+            .retain(|key, _| !key.eq_ignore_ascii_case(name));
         self.table_map.write().unwrap().insert(name.to_owned(), lf);
     }
 
@@ -1351,7 +1355,7 @@ impl SQLContext {
                 query,
                 stmt,
                 &catalog_names,
-            )?));
+            )));
         }
 
         let (_, catalog_spellings) = self.rewrite_catalog_names(&mut stmt)?;
@@ -1374,13 +1378,22 @@ impl SQLContext {
 
     /// Whether resolving `stmt` can be deferred to the DSL -> IR conversion.
     ///
-    /// A user-defined function does not survive the round trip through the DSL.
+    /// A user-defined function does not survive the round trip through the DSL, and the views
+    /// a statement reads are planned with it.
     fn can_defer(&self, stmt: &Statement) -> bool {
-        !self.custom_function_registry && is_read_only_query(stmt)
+        !self.custom_function_registry && is_read_only_query(stmt) && !self.reads_view(stmt)
+    }
+
+    /// Whether `stmt` names a view.
+    fn reads_view(&self, stmt: &Statement) -> bool {
+        let views = self.views.read().unwrap();
+        !views.is_empty()
+            && statement_table_identifiers(stmt, true, true)
+                .iter()
+                .any(|name| !matches!(key_ignoring_case(&views, name), Ok(None)))
     }
 
     /// Build a [`DslPlan::SQL`] holding `query` and a snapshot of the relations it references.
-    /// Views are planned now.
     ///
     /// `stmt` is kept alongside so that resolving does not parse `query` again.
     fn defer_query(
@@ -1388,37 +1401,23 @@ impl SQLContext {
         query: &str,
         mut stmt: Statement,
         catalog_names: &[RewrittenName],
-    ) -> PolarsResult<DslPlan> {
-        // Only registered tables and views: catalog tables travel separately, with their full
-        // names.
-        let mut other_names = Vec::new();
-        let mut relations: Vec<_> = {
-            let table_map = self.table_map.read().unwrap();
-            statement_table_identifiers(&stmt, true, true)
-                .into_iter()
-                .flat_map(|name| {
-                    if let Ok(Some(lf)) = get_ignoring_case(&table_map, &name) {
-                        return vec![(PlSmallStr::from_string(name), lf.logical_plan.clone())];
-                    }
-                    // Tables matching only ignoring case are all kept, so resolving reports them.
-                    let tables: Vec<_> = table_map
-                        .iter()
-                        .filter(|(key, _)| key.eq_ignore_ascii_case(&name))
-                        .map(|(key, lf)| (PlSmallStr::from_str(key), lf.logical_plan.clone()))
-                        .collect();
-                    if tables.is_empty() {
-                        other_names.push(name);
-                    }
-                    tables
-                })
-                .collect()
-        };
-        for name in other_names {
-            if let Some((key, view)) = self.find_view(&name)? {
-                let lf = self.plan_view(&key, &view)?;
-                relations.push((PlSmallStr::from_string(name), lf.logical_plan));
-            }
-        }
+    ) -> DslPlan {
+        // Only registered tables: catalog tables travel separately, with their full names.
+        let table_map = self.table_map.read().unwrap();
+        let relations = statement_table_identifiers(&stmt, true, true)
+            .into_iter()
+            .flat_map(|name| {
+                if let Ok(Some(lf)) = get_ignoring_case(&table_map, &name) {
+                    return vec![(PlSmallStr::from_string(name), lf.logical_plan.clone())];
+                }
+                // Tables matching only ignoring case are all kept, so resolving reports them.
+                table_map
+                    .iter()
+                    .filter(|(key, _)| key.eq_ignore_ascii_case(&name))
+                    .map(|(key, lf)| (PlSmallStr::from_str(key), lf.logical_plan.clone()))
+                    .collect()
+            })
+            .collect();
 
         // Catalog tables keep their full names, so parsing `query` again can rewrite it.
         let to_parts = |parts: &[String]| parts.iter().map(|p| PlSmallStr::from_str(p)).collect();
@@ -1431,12 +1430,12 @@ impl SQLContext {
             .collect();
 
         desugar_quantified_subqueries(&mut stmt);
-        Ok(DslPlan::SQL {
+        DslPlan::SQL {
             query: Arc::new(query.to_owned()),
             relations,
             catalog_tables,
             cached_stmt: CachedSqlStatement::new(Arc::new(stmt)),
-        })
+        }
     }
 
     /// Execute `query` eagerly against the given arenas, returning the resulting DSL.
@@ -1482,7 +1481,7 @@ impl SQLContext {
 
     fn clear_statement_state(&mut self) {
         self.cte_map.clear();
-        self.view_frames.clear();
+        self.view_frames.lock().unwrap().clear();
         self.catalog_tables.clear();
         self.catalog_names.clear();
         self.catalog_spellings.clear();
@@ -1724,22 +1723,17 @@ impl SQLContext {
         if let Some(lf) = get_ignoring_case(&self.table_map.read().unwrap(), name)? {
             return Ok(Some(lf.clone()));
         }
-        if let Some(lf) = get_ignoring_case(&self.view_frames, name)? {
-            return Ok(Some(lf.clone()));
+        if let Some(lf) = self.get_view(name)? {
+            return Ok(Some(lf));
         }
         Ok(get_ignoring_case(&self.catalog_tables, name)?.cloned())
     }
 
     /// The frame of the CTE, registered table, view or catalog table `name`, with its name as
     /// written.
-    fn get_named_table(&mut self, name: &ObjectName) -> PolarsResult<(String, LazyFrame)> {
+    fn get_named_table(&self, name: &ObjectName) -> PolarsResult<(String, LazyFrame)> {
         let tbl_name = object_name_to_string(name);
         if let Some(lf) = self.get_table_unaliased(&tbl_name)? {
-            return Ok((tbl_name, lf));
-        }
-        if let Some((key, view)) = self.find_view(&tbl_name)? {
-            let lf = self.plan_view(&key, &view)?;
-            self.view_frames.insert(key, lf.clone());
             return Ok((tbl_name, lf));
         }
         let hint = name_parts(name)
@@ -1754,12 +1748,25 @@ impl SQLContext {
         Ok(key_ignoring_case(&views, name)?.map(|key| (key.clone(), views[key].clone())))
     }
 
-    /// Plan the view `key` against the current tables, in a context of its own.
-    fn plan_view(&self, key: &str, view: &View) -> PolarsResult<LazyFrame> {
+    /// The plan of the view `name` refers to, planned once per statement.
+    fn get_view(&self, name: &str) -> PolarsResult<Option<LazyFrame>> {
+        let Some((key, view)) = self.find_view(name)? else {
+            return Ok(None);
+        };
         polars_ensure!(
-            !self.views_in_progress.iter().any(|name| name == key),
+            !self.views_in_progress.contains(&key),
             SQLInterface: "view '{}' reads itself", key
         );
+        if let Some(lf) = self.view_frames.lock().unwrap().get(&key) {
+            return Ok(Some(lf.clone()));
+        }
+        let lf = self.plan_view(&key, &view)?;
+        self.view_frames.lock().unwrap().insert(key, lf.clone());
+        Ok(Some(lf))
+    }
+
+    /// Plan the view `key` against the current tables, in a context of its own.
+    fn plan_view(&self, key: &str, view: &View) -> PolarsResult<LazyFrame> {
         let mut ctx = self.view_context(key);
         let lf = ctx.execute_query(&view.query)?;
         let lf = ctx.rename_columns_from_table_alias(lf, &view.alias)?;
@@ -1775,6 +1782,7 @@ impl SQLContext {
         Self {
             table_map: self.table_map.clone(),
             views: self.views.clone(),
+            view_frames: self.view_frames.clone(),
             views_in_progress,
             function_registry: self.function_registry.clone(),
             custom_function_registry: self.custom_function_registry,
@@ -3081,13 +3089,14 @@ impl SQLContext {
         .into())
     }
 
-    /// The ids of the caches in the registered tables, catalog tables and CTEs.
+    /// The ids of the caches in the registered tables, views, catalog tables and CTEs.
     fn cache_ids(&self) -> PlHashSet<UniqueId> {
         let table_map = self.table_map.read().unwrap();
+        let view_frames = self.view_frames.lock().unwrap();
         table_map
             .values()
+            .chain(view_frames.values())
             .chain(self.catalog_tables.values())
-            .chain(self.view_frames.values())
             .chain(self.cte_map.values())
             .flat_map(|lf| &lf.logical_plan)
             .filter_map(|plan| match plan {

@@ -2860,7 +2860,7 @@ def test_alter_table_without_catalog(lake: CountingCatalog) -> None:
 
 
 @pytest.mark.write_disk
-def test_view_with_catalog(lake: CountingCatalog) -> None:
+def test_view_and_describe_with_catalog(lake: CountingCatalog) -> None:
     ctx = lake_ctx(lake)
     ctx.register("frame", pl.LazyFrame({"k": [1, 5]}))
     # a view is not a catalog table name, and hides the catalog table of its name
@@ -2876,6 +2876,9 @@ def test_view_with_catalog(lake: CountingCatalog) -> None:
     with pytest.raises(SQLInterfaceError, match="cannot be created in catalog 'lake'"):
         ctx.execute("CREATE VIEW lake.tpch.w AS SELECT 1 AS x")
     assert ctx.tables() == ["frame", "orders", "v"]
+    for table in ("lineitem", "lake.tpch.lineitem"):
+        res = ctx.execute(f"DESCRIBE {table}", eager=True)
+        assert res.rows() == [("k", "i64"), ("v", "str")]
 
 
 def forbid_sink(monkeypatch: pytest.MonkeyPatch) -> None:
