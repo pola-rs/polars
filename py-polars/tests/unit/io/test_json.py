@@ -1080,3 +1080,23 @@ def test_read_ndjson_small_integers_16167() -> None:
 
     with pytest.raises(ComputeError, match="cannot parse '-1'"):
         pl.read_ndjson(io.BytesIO(b'{"a": -1}\n'), schema={"a": pl.UInt8})
+
+
+@pytest.mark.parametrize(
+    ("row", "schema"),
+    [
+        ('{"s": {"b": 1, "b": 2}}', {"s": pl.Struct({"b": pl.Int64})}),
+        (
+            '{"s": {"b": {"c": 1}, "b": 2}}',
+            {"s": pl.Struct({"b": pl.Struct({"c": pl.Int64})})},
+        ),
+        ('{"s": {"b": 1, "b": [2]}}', {"s": pl.Struct({"b": pl.Int64})}),
+        ('{"a": 2.5, "a": 1}', {"a": pl.Float64}),
+        ('{"a": "x", "a": 1}', {"a": pl.String}),
+    ],
+)
+def test_json_repeated_key_infers_first_value(row: str, schema: Any) -> None:
+    # Which value of a repeated key is read is unspecified (#29476).
+    assert pl.read_json(io.StringIO(f"[{row}]")).schema == schema
+    assert pl.scan_ndjson(io.BytesIO(f"{row}\n".encode())).collect_schema() == schema
+    assert pl.Series([row]).str.json_decode().dtype == pl.Struct(schema)
