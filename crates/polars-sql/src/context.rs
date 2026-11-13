@@ -41,7 +41,7 @@ use crate::catalog::{
     CatalogStatement, CatalogTable, MergeClausePlan, MergePlan, MergeSourcePlan, RewrittenName,
     alter_table_column, alter_table_properties, create_schema_options, create_table_columns,
     create_table_options, create_table_partitioning, display_name, hint_unsupported_part,
-    name_parts, name_position, rewrite_catalog_names,
+    name_parts, name_position, rewrite_catalog_names, set_partitioning,
 };
 use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
@@ -57,6 +57,7 @@ use crate::grouping_sets::{
     expand_grouping_sets, new_placeholder,
 };
 use crate::join_keys::{sql_join_key_pair, sql_join_where_predicate};
+use crate::partition_alter::{self, PartitionAlter};
 use crate::sql_expr::{
     convert_int_literal_for_string, is_string_expr, order_by_sort_options, parse_sql_array,
     parse_sql_expr, resolve_compound_identifier, resolve_expr_dtype, series_from_literals,
@@ -506,7 +507,10 @@ impl SQLContext {
 
     /// The catalog tables that `query` reads, once per table and version.
     pub fn catalog_tables(&self, query: &str) -> PolarsResult<Vec<CatalogRead>> {
-        let mut stmt = parse_single_statement(query)?;
+        // a partition change reads no table
+        let Ok(mut stmt) = partition_alter::parse_single_statement_or_alter(query)? else {
+            return Ok(Vec::new());
+        };
         let mut reads = Vec::new();
         for (_, key) in self.rewrite_catalog_names(&mut stmt)?.0 {
             let (full_name, version) = split_version(&key);
@@ -528,7 +532,10 @@ impl SQLContext {
     /// The catalog statement of `query`, if any, for the caller to perform:
     /// [`SQLContext::execute`] rejects it.
     pub fn catalog_statement(&self, query: &str) -> PolarsResult<Option<CatalogStatement>> {
-        let stmt = parse_single_statement(query)?;
+        let stmt = match partition_alter::parse_single_statement_or_alter(query)? {
+            Ok(stmt) => stmt,
+            Err(alter) => return self.catalog_partition_alter(&alter).map(Some),
+        };
         match &stmt {
             Statement::Drop {
                 object_type: ObjectType::Table,
@@ -1316,7 +1323,10 @@ impl SQLContext {
     /// # }
     ///```
     pub fn execute(&mut self, query: &str) -> PolarsResult<LazyFrame> {
-        let mut stmt = parse_single_statement(query)?;
+        let mut stmt = match partition_alter::parse_single_statement_or_alter(query)? {
+            Ok(stmt) => stmt,
+            Err(alter) => return Err(self.alter_table_error(&alter.name)),
+        };
 
         if self.can_defer(&stmt) {
             // The plan keeps the statement as written: translating it rewrites the names of its
@@ -1535,7 +1545,7 @@ impl SQLContext {
                 let (name, _) = drop_schema_parts(stmt)?;
                 self.execute_schema_ddl("DROP SCHEMA", name)?
             },
-            Statement::AlterTable(alter) => self.execute_alter_table(alter)?,
+            Statement::AlterTable(alter) => return Err(self.alter_table_error(&alter.name)),
             Statement::Insert(insert) => self.execute_insert(insert)?,
             stmt @ Statement::Explain { .. } => self.execute_explain(stmt)?,
             Statement::Truncate(truncate) => self.execute_truncate_table(truncate)?,
@@ -2440,15 +2450,32 @@ impl SQLContext {
         }))
     }
 
-    // ALTER TABLE, which only a catalog table has
-    fn execute_alter_table(&self, alter: &AlterTable) -> PolarsResult<LazyFrame> {
-        if let Some((name, table)) = self.catalog_change_target(&alter.name)? {
-            polars_bail!(
+    /// The catalog statement of `ALTER TABLE ... SET | RESET PARTITIONED BY`; only a catalog
+    /// table has a partitioning to change.
+    fn catalog_partition_alter(&self, alter: &PartitionAlter) -> PolarsResult<CatalogStatement> {
+        let Some((name, table)) = self.catalog_change_target(&alter.name)? else {
+            return Err(self.catalog_tables_only("ALTER TABLE", &alter.name));
+        };
+        Ok(CatalogStatement::AlterTable {
+            name,
+            table,
+            if_exists: alter.if_exists,
+            operation: CatalogAlter::SetPartitioning {
+                fields: set_partitioning(&alter.fields)?,
+            },
+        })
+    }
+
+    /// The error of executing an `ALTER TABLE` of `name`, which only a catalog performs.
+    fn alter_table_error(&self, name: &ObjectName) -> PolarsError {
+        match self.catalog_change_target(name) {
+            Ok(Some((name, table))) => polars_err!(
                 SQLInterface: "ALTER TABLE of catalog table '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_statement`)",
                 name, display_name(&table.full_name())
-            );
+            ),
+            Ok(None) => self.catalog_tables_only("ALTER TABLE", name),
+            Err(err) => err,
         }
-        Err(self.catalog_tables_only("ALTER TABLE", &alter.name))
     }
 
     /// The error of `statement` on `name`, which is not a catalog table.
@@ -8089,10 +8116,21 @@ pub fn extract_table_identifiers(
     include_schema: bool,
     unique: bool,
 ) -> PolarsResult<Vec<String>> {
-    let ast = parse_sql(query)?;
     let mut tables = Vec::new();
-    for stmt in &ast {
-        tables.extend(statement_table_identifiers(stmt, include_schema, false));
+    match partition_alter::parse_statements_or_alter(query)? {
+        Ok(ast) => {
+            for stmt in &ast {
+                tables.extend(statement_table_identifiers(stmt, include_schema, false));
+            }
+        },
+        Err(alter) => {
+            let mut collector = TableIdentifierCollector {
+                include_schema,
+                ..Default::default()
+            };
+            let _ = collector.pre_visit_relation(&alter.name);
+            tables = collector.tables;
+        },
     }
     Ok(if unique {
         tables

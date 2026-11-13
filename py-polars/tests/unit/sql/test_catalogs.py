@@ -2624,15 +2624,16 @@ def test_alter_catalog_table_catalog_errors(lake: CountingCatalog) -> None:
         InvalidOperationError, match="'id' of table 'keyed' is an identifier"
     ):
         ctx.execute("ALTER TABLE keyed ALTER COLUMN id DROP NOT NULL")
+    with pytest.raises(
+        InvalidOperationError, match="partition spec 0 partitions by it"
+    ):
+        ctx.execute("ALTER TABLE parted DROP COLUMN p")
     # what the catalog refuses passes through, with a note naming the statement
-    for statement in ["parted DROP COLUMN p", "keyed DROP COLUMN id"]:
-        table = statement.split()[0]
-        with pytest.raises(Exception) as exc:
-            ctx.execute(f"ALTER TABLE {statement}")
-        assert exc.value.__notes__ == [
-            f"table '{table}' could not be altered: catalog table 'tpch.{table}' of "
-            "catalog 'lake'"
-        ]
+    with pytest.raises(Exception) as exc:
+        ctx.execute("ALTER TABLE keyed DROP COLUMN id")
+    assert exc.value.__notes__ == [
+        "table 'keyed' could not be altered: catalog table 'tpch.keyed' of catalog 'lake'"
+    ]
     assert iceberg_columns(lake, "tpch", "parted") == [("id", "long"), ("p", "string")]
 
 
@@ -2868,6 +2869,372 @@ def forbid_sink(monkeypatch: pytest.MonkeyPatch) -> None:
         raise AssertionError(msg)
 
     monkeypatch.setattr(IcebergSinkState, "attach_sink", fail)
+
+
+EVENTS = pl.DataFrame(
+    {
+        "id": [1, 2, 3, 4],
+        "ts": [
+            datetime(2024, 1, 1, 10),
+            datetime(2024, 1, 2, 11),
+            datetime(2024, 2, 1, 12),
+            None,
+        ],
+        "s": ["a", "b", "a", None],
+    }
+)
+
+
+def events_ctx(lake: CountingCatalog) -> pl.SQLContext[pl.LazyFrame]:
+    ctx = lake_ctx(lake)
+    ctx.register("src", EVENTS)
+    ctx.execute("CREATE TABLE ev (id BIGINT, ts TIMESTAMP, s VARCHAR)")
+    ctx.execute("INSERT INTO ev SELECT * FROM src")
+    return ctx
+
+
+def spec_of(catalog: CountingCatalog, name: str = "ev") -> tuple[int, list[Any]]:
+    """The default spec's id and fields (field id, name, transform, column)."""
+    table = catalog.load_table(("tpch", name))
+    schema = table.schema()
+    spec = table.spec()
+    return spec.spec_id, [
+        (f.field_id, f.name, str(f.transform), schema.find_column_name(f.source_id))
+        for f in spec.fields
+    ]
+
+
+def file_spec_ids(catalog: CountingCatalog, name: str = "ev") -> set[int]:
+    table = catalog.load_table(("tpch", name))
+    return {task.file.spec_id for task in table.scan().plan_files()}
+
+
+def with_specs(
+    catalog: CountingCatalog, name: str, schema: Any, *specs: Any, default: int
+) -> None:
+    """A table with partition specs `specs`, as another engine left them."""
+    from pyiceberg.table.update import AddPartitionSpecUpdate, SetDefaultSpecUpdate
+
+    tx = catalog.create_table(("tpch", name), schema=schema).transaction()
+    set_default = SetDefaultSpecUpdate(spec_id=default)  # type: ignore[call-arg]
+    tx._stage((*(AddPartitionSpecUpdate(spec=s) for s in specs), set_default))
+    tx.commit_transaction()
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_partitioning(lake: CountingCatalog) -> None:
+    ctx = events_ctx(lake)
+    res = ctx.execute("ALTER TABLE ev SET PARTITIONED BY (day(ts))", eager=True)
+    assert res.item() == "ALTER TABLE lake.tpch.ev"
+    assert spec_of(lake) == (1, [(1000, "ts_day", "day", "ts")])
+    ctx.execute("ALTER TABLE ev SET PARTITIONED BY (bucket(4, id), s)")
+    # the written order is the spec's order, the fields keep their ids
+    ctx.execute("ALTER TABLE ev SET PARTITIONED BY (s, bucket(4, id))")
+    assert spec_of(lake) == (
+        3,
+        [(1002, "s", "identity", "s"), (1001, "id_bucket_4", "bucket[4]", "id")],
+    )
+    # the same spec again: nothing to commit
+    location = lake.load_table(("tpch", "ev")).metadata_location
+    ctx.execute("ALTER TABLE ev SET PARTITIONED BY (s, bucket(4, id))")
+    assert lake.load_table(("tpch", "ev")).metadata_location == location
+    # an older spec with the same fields is used again
+    ctx.execute("ALTER TABLE ev SET PARTITIONED BY (day(ts))")
+    assert spec_of(lake)[0] == 1
+    ctx.execute("ALTER TABLE ev RESET PARTITIONED BY")
+    assert spec_of(lake) == (0, [])
+    # a field of an older spec comes back with its id and name
+    ctx.execute("ALTER TABLE ev SET PARTITIONED BY (s, day(ts))")
+    assert spec_of(lake) == (
+        4,
+        [(1002, "s", "identity", "s"), (1000, "ts_day", "day", "ts")],
+    )
+    # later writes use the new spec, older files keep theirs
+    ctx.execute("INSERT INTO ev SELECT * FROM src")
+    assert file_spec_ids(lake) == {0, 4}
+
+    # no empty spec to use again: RESET adds one
+    ctx.execute("CREATE TABLE parted (id BIGINT) PARTITION BY (id)")
+    ctx.execute("ALTER TABLE parted RESET PARTITIONED BY")
+    assert spec_of(lake, "parted") == (1, [])
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("planner", ["pyiceberg", "plugin"])
+def test_alter_catalog_table_partitioning_reads_and_writes(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch, planner: str
+) -> None:
+    if planner == "plugin":
+        pytest.importorskip("polars_iceberg")
+    monkeypatch.setenv("POLARS_ICEBERG_PLANNER", planner)
+    ctx = events_ctx(lake)
+    ctx.execute("ALTER TABLE ev SET PARTITIONED BY (id)")
+    ctx.execute("INSERT INTO ev SELECT * FROM src")
+    ctx.execute("ALTER TABLE ev SET PARTITIONED BY (bucket(4, id), month(ts))")
+    ctx.execute("INSERT INTO ev SELECT * FROM src")
+    # filters on the columns of old and new partition fields
+    for where, n in [("id = 1", 3), ("ts >= '2024-02-01'", 3), ("ts IS NULL", 3)]:
+        query = f"SELECT count(*) FROM ev WHERE {where}"
+        assert ctx.execute(query, eager=True).item() == n
+    # files of older specs are rewritten under the current one
+    ctx.execute("DELETE FROM ev WHERE id = 1")
+    ctx.execute("UPDATE ev SET s = 'u' WHERE id = 2")
+    res = ctx.execute("SELECT id, s FROM ev ORDER BY id, s", eager=True)
+    assert res.rows() == [(2, "u")] * 3 + [(3, "a")] * 3 + [(4, None)] * 3
+    table = lake.load_table(("tpch", "ev"))
+    rewritten = table.scan(row_filter="id = 2").plan_files()
+    assert {t.file.spec_id for t in rewritten} == {2}
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_partitioning_names(lake: CountingCatalog) -> None:
+    from pyiceberg.partitioning import PartitionField, PartitionSpec
+    from pyiceberg.schema import Schema
+    from pyiceberg.transforms import BucketTransform, DayTransform, IdentityTransform
+    from pyiceberg.types import LongType, NestedField, StringType, TimestampType
+
+    schema = Schema(
+        NestedField(1, "id", LongType()),
+        NestedField(2, "ts", TimestampType()),
+        NestedField(3, "ts_day", StringType()),
+    )
+    ctx = lake_ctx(lake)
+    # `ts_day` is a column: the new day field takes another name
+    lake.create_table(("tpch", "a"), schema=schema)
+    ctx.execute("ALTER TABLE a SET PARTITIONED BY (day(ts))")
+    assert spec_of(lake, "a")[1] == [(1000, "ts_day_1000", "day", "ts")]
+
+    # names from another engine: `p` was the name of two field ids, the kept one stays
+    with_specs(
+        lake,
+        "b",
+        schema,
+        PartitionSpec(PartitionField(1, 1000, BucketTransform(4), "p"), spec_id=1),
+        PartitionSpec(PartitionField(2, 1001, DayTransform(), "p"), spec_id=2),
+        default=1,
+    )
+    ctx.execute("ALTER TABLE b SET PARTITIONED BY (bucket(4, id), id)")
+    assert spec_of(lake, "b")[1] == [
+        (1000, "p", "bucket[4]", "id"),
+        (1002, "id", "identity", "id"),
+    ]
+
+    # a v1 history: field id 1000 partitioned by `ts_day`, later by `id`
+    with_specs(
+        lake,
+        "c",
+        schema,
+        PartitionSpec(
+            PartitionField(3, 1000, IdentityTransform(), "ts_day"), spec_id=1
+        ),
+        PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "id"), spec_id=2),
+        default=2,
+    )
+    # `ts_day` comes back with a new id
+    ctx.execute("ALTER TABLE c SET PARTITIONED BY (id, ts_day)")
+    assert spec_of(lake, "c")[1] == [
+        (1000, "id", "identity", "id"),
+        (1001, "ts_day", "identity", "ts_day"),
+    ]
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_partitioning_errors(lake: CountingCatalog) -> None:
+    from polars.exceptions import InvalidOperationError
+
+    ctx = events_ctx(lake)
+    location = lake.load_table(("tpch", "ev")).metadata_location
+    # one new time transform per column
+    with pytest.raises(SQLInterfaceError, match="both newly partition column 'ts'"):
+        ctx.execute("ALTER TABLE ev SET PARTITIONED BY (day(ts), hour(ts))")
+    with pytest.raises(SQLInterfaceError, match="RESET PARTITIONED BY"):
+        ctx.execute("ALTER TABLE ev SET PARTITIONED BY ()")
+    with pytest.raises(SQLInterfaceError, match="one operation per statement"):
+        ctx.execute("ALTER TABLE ev SET PARTITIONED BY (s), ADD COLUMN x INT")
+    assert lake.load_table(("tpch", "ev")).metadata_location == location
+    # next to a kept day field, a new hour field is fine
+    ctx.execute("ALTER TABLE ev SET PARTITIONED BY (day(ts))")
+    ctx.execute("ALTER TABLE ev SET PARTITIONED BY (day(ts), hour(ts))")
+    assert [f[1] for f in spec_of(lake)[1]] == ["ts_day", "ts_hour"]
+
+    lake.create_table(
+        ("tpch", "v1"),
+        schema=pl.Schema({"id": pl.Int64}).to_arrow(),
+        properties={"format-version": "1"},
+    )
+    with pytest.raises(InvalidOperationError, match="upgrade_table_version"):
+        ctx.execute("ALTER TABLE v1 SET PARTITIONED BY (id)")
+
+    df = pl.DataFrame({"a": [1]})
+    with pytest.raises(SQLInterfaceError, match="supported only for catalog tables"):
+        pl.sql("ALTER TABLE df SET PARTITIONED BY (a)")
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_partitioning_parse(lake: CountingCatalog) -> None:
+    ctx = events_ctx(lake)
+    ctx.execute(
+        '; /* c */ ALTER TABLE IF EXISTS "lake"."tpch".ev -- why\n'
+        'SET PARTITIONED BY ( Bucket ( 4 , "id" ) ) ;;'
+    )
+    assert spec_of(lake)[1] == [(1000, "id_bucket_4", "bucket[4]", "id")]
+    res = ctx.execute("ALTER TABLE IF EXISTS nope RESET PARTITIONED BY", eager=True)
+    assert res.item() == "ALTER TABLE lake.tpch.nope"
+    assert ctx._ctxt.catalog_tables("ALTER TABLE ev RESET PARTITIONED BY") == []
+    with pytest.raises(SQLInterfaceError, match="`ALTER TABLE ONLY` is not supported"):
+        ctx.execute("ALTER TABLE ONLY ev SET PARTITIONED BY (s)")
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_partitioning_upgraded_v1(lake: CountingCatalog) -> None:
+    from pyiceberg.partitioning import PartitionField, PartitionSpec
+    from pyiceberg.schema import Schema
+    from pyiceberg.transforms import IdentityTransform
+    from pyiceberg.types import LongType, NestedField, StringType
+
+    schema = Schema(NestedField(1, "id", LongType()), NestedField(2, "s", StringType()))
+    spec = PartitionSpec(PartitionField(2, 1000, IdentityTransform(), "s"))
+    table = lake.create_table(
+        ("tpch", "ev"),
+        schema=schema,
+        partition_spec=spec,
+        properties={"format-version": "1"},
+    )
+    # removed and added again in v1: a void field, then `s` with a new id
+    with table.update_spec() as update:
+        update.remove_field("s")
+    with table.update_spec() as update:
+        update.add_identity("s")
+    with table.transaction() as tx:
+        tx.upgrade_table_version(2)
+    # the void is dropped, and the first spec has the same fields: used again
+    ctx = lake_ctx(lake)
+    ctx.execute("ALTER TABLE ev SET PARTITIONED BY (s)")
+    assert spec_of(lake) == (0, [(1000, "s", "identity", "s")])
+    ctx.execute("INSERT INTO ev VALUES (1, 'a'), (2, NULL)")
+    assert ctx.execute("SELECT count(*) FROM ev", eager=True).item() == 2
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_partitioning_concurrent(lake: CountingCatalog) -> None:
+    from pyiceberg.exceptions import CommitFailedException
+
+    from polars.io.iceberg._partition_evolution import (
+        commit_spec_change,
+        spec_change,
+    )
+
+    ctx = events_ctx(lake)
+    stale = lake.load_table(("tpch", "ev"))
+    change = spec_change(stale.metadata, [("id", "identity")], "ev")
+    assert change is not None
+    ctx.execute("ALTER TABLE ev SET PARTITIONED BY (s)")
+    # planned against the table before the change: refused, nothing changes
+    with pytest.raises(CommitFailedException):
+        commit_spec_change(stale, stale.metadata, change)
+    assert spec_of(lake) == (1, [(1000, "s", "identity", "s")])
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("mode", "append_first", "retries"),
+    [
+        # the retry after the append rebuilds against the new spec
+        ("append", True, None),
+        # only the spec changed: the commit's own check
+        ("append", False, None),
+        ("overwrite", False, "0"),
+    ],
+)
+def test_sink_after_partition_change(
+    lake: CountingCatalog,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    append_first: bool,
+    retries: str | None,
+) -> None:
+    from pyiceberg.exceptions import ValidationException
+
+    ctx = events_ctx(lake)
+    ctx.execute("ALTER TABLE ev SET PARTITIONED BY (id)")
+    if retries is not None:
+        ctx.execute(
+            f"ALTER TABLE ev SET TBLPROPERTIES ('commit.retry.num-retries' = {retries})"
+        )
+    stale = lake.load_table(("tpch", "ev"))
+    if append_first:
+        ctx.execute("INSERT INTO ev SELECT * FROM src")
+    # a change that writes the same values to other partitions
+    ctx.execute("ALTER TABLE ev SET PARTITIONED BY (bucket(4, id))")
+    location = lake.load_table(("tpch", "ev")).metadata_location
+    commits: list[None] = []
+    commit_table = lake.commit_table
+
+    def counted(*args: Any) -> Any:
+        commits.append(None)
+        return commit_table(*args)
+
+    monkeypatch.setattr(lake, "commit_table", counted)
+    # written for the old spec: refused at the first attempt, nothing changes
+    with pytest.raises(ValidationException, match="partition spec changed"):
+        EVENTS.lazy().sink_iceberg(stale, mode=mode)  # type: ignore[arg-type]
+    assert len(commits) == 1
+    assert lake.load_table(("tpch", "ev")).metadata_location == location
+
+
+@pytest.mark.write_disk
+def test_delete_after_partition_change(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import ValidationException
+
+    import polars.io.iceberg._sink as sink
+
+    ctx = events_ctx(lake)
+    ctx.execute("ALTER TABLE ev SET PARTITIONED BY (bucket(4, id))")
+    old_spec_id = lake.load_table(("tpch", "ev")).spec().spec_id
+    sink_transaction = sink._sink_transaction
+
+    def changed_meanwhile(table: Any, sink_uuid: str, spec_id: int | None) -> Any:
+        # another writer changes the spec after the DELETE planned its commit
+        lake_ctx(lake).execute("ALTER TABLE ev SET PARTITIONED BY (id)")
+        return sink_transaction(table, sink_uuid, spec_id)
+
+    monkeypatch.setattr(sink, "_sink_transaction", changed_meanwhile)
+    with pytest.raises(ValidationException, match="partition spec changed"):
+        ctx.execute("DELETE FROM ev WHERE s = 'a'")
+    monkeypatch.setattr(sink, "_sink_transaction", sink_transaction)
+    assert ctx.execute("SELECT count(*) FROM ev WHERE s = 'a'", eager=True).item() == 2
+    # a write for the old spec, on the table as it is now
+    with pytest.raises(ValidationException, match="partition spec changed"):
+        sink._sink_transaction(lake.load_table(("tpch", "ev")), "x", old_spec_id)
+
+
+@pytest.mark.write_disk
+def test_drop_column_of_older_partition_spec(lake: CountingCatalog) -> None:
+    from pyiceberg.partitioning import PartitionField, PartitionSpec
+    from pyiceberg.schema import Schema
+    from pyiceberg.transforms import DayTransform
+    from pyiceberg.types import LongType, NestedField, StructType, TimestampType
+
+    from polars.exceptions import InvalidOperationError
+
+    schema = Schema(
+        NestedField(1, "id", LongType()),
+        NestedField(2, "ts", TimestampType()),
+        NestedField(3, "s", StructType(NestedField(4, "t", TimestampType()))),
+    )
+    spec = PartitionSpec(
+        PartitionField(2, 1000, DayTransform(), "ts_day"),
+        PartitionField(4, 1001, DayTransform(), "s_t_day"),
+    )
+    lake.create_table(("tpch", "ev"), schema=schema, partition_spec=spec)
+    ctx = lake_ctx(lake)
+    ctx.execute("ALTER TABLE ev RESET PARTITIONED BY")
+    # spec 0 still partitions by them; a struct takes its fields with it
+    for column in ["ts", "s"]:
+        with pytest.raises(InvalidOperationError, match="spec 0 partitions by it"):
+            ctx.execute(f"ALTER TABLE ev DROP COLUMN {column}")
 
 
 def table_rows(catalog: CountingCatalog, *identifier: str) -> list[tuple[Any, ...]]:

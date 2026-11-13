@@ -339,6 +339,14 @@ impl PySQLContext {
                         }
                         op.set_item("properties", props)?;
                     },
+                    CatalogAlter::SetPartitioning { fields } => {
+                        op.set_item("op", "set_partitioning")?;
+                        let fields: Vec<(String, String)> = fields
+                            .into_iter()
+                            .map(|field| (field.column, field.transform))
+                            .collect();
+                        op.set_item("fields", fields)?;
+                    },
                 }
                 dict.set_item("operation", op)?;
             },
