@@ -190,7 +190,7 @@ def test_drop_strict() -> None:
     df.drop("a")
 
     with pytest.raises(pl.exceptions.ColumnNotFoundError, match="b"):
-        df.drop("b")
+        df.drop("b")  # pyrefly: ignore[unknown-column]
 
     df.drop("a", strict=False)
     df.drop("b", strict=False)
