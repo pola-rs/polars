@@ -3587,6 +3587,11 @@ def test_join_where_number_with_string_raises(condition: str) -> None:
             [(10, 101), (20, None), (30, None)],
         ),
         (
+            "SELECT a.x, d.n FROM a, LATERAL (SELECT COUNT(*) AS n FROM b "
+            "WHERE b.k = a.k HAVING n > 1) d ORDER BY a.x",
+            [(10, 2)],
+        ),
+        (
             "SELECT a.x, d.s FROM a, LATERAL (SELECT SUM(b.v * a.x) AS s FROM b "
             "WHERE b.k = a.k) d ORDER BY a.x",
             [(10, 2010), (20, 4000), (30, None)],

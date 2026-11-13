@@ -170,12 +170,13 @@ impl VisitorMut for ReadDomain<'_> {
 }
 
 /// Replaces each aggregate by a column of the domain table, and collects the aggregates,
-/// named after those columns.
+/// named after those columns. A name in `aliases` is replaced by the SELECT item it names.
 struct AggregateColumns<'a> {
     ctx: &'a SQLContext,
     domain_name: &'a Ident,
     prefix: &'a str,
     aggregates: Vec<SelectItem>,
+    aliases: Vec<(String, SQLExpr)>,
     query_depth: usize,
 }
 
@@ -193,7 +194,14 @@ impl VisitorMut for AggregateColumns<'_> {
     }
 
     fn post_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<()> {
-        if self.query_depth == 0 && is_aggregate_call(self.ctx, expr) {
+        if self.query_depth > 0 {
+            return ControlFlow::Continue(());
+        }
+        if let SQLExpr::Identifier(ident) = expr
+            && let Some((_, item)) = self.aliases.iter().find(|(name, _)| *name == ident.value)
+        {
+            *expr = SQLExpr::Nested(Box::new(item.clone()));
+        } else if is_aggregate_call(self.ctx, expr) {
             let name = Ident::new(format!("{}_A{}", self.prefix, self.aggregates.len()));
             let column = SQLExpr::CompoundIdentifier(vec![self.domain_name.clone(), name.clone()]);
             self.aggregates.push(SelectItem::ExprWithAlias {
@@ -293,6 +301,7 @@ impl SQLContext {
             domain_name,
             prefix,
             aggregates: Vec::new(),
+            aliases: Vec::new(),
             query_depth: 0,
         };
         for item in &mut select.projection {
@@ -304,6 +313,17 @@ impl SQLContext {
                 _ => {},
             }
         }
+        // HAVING may name a SELECT item.
+        columns.aliases = select
+            .projection
+            .iter()
+            .filter_map(|item| match item {
+                SelectItem::ExprWithAlias { expr, alias } => {
+                    Some((alias.value.clone(), expr.clone()))
+                },
+                _ => None,
+            })
+            .collect();
         let mut having = select.having.take();
         let _ = dyn_visit::visit_mut(&mut having, &mut columns);
         let aggregates = columns.aggregates;
