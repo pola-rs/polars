@@ -203,6 +203,29 @@ Using ``FROM`` as the leading clause, with ``SELECT``:
     # │ xx  ┆ 3   │
     # └─────┴─────┘
 
+**Time travel:** a table of an attached catalog (see
+:meth:`SQLContext.register_catalog`) can be read as of a snapshot, a branch or tag, or
+a time. The clause follows the table name or its alias, and takes a literal.
+
+* ``[FOR] VERSION AS OF <version>`` or ``AT (VERSION => <version>)``: an integer is a
+  snapshot id, a string a branch or tag.
+* ``[FOR] TIMESTAMP AS OF <ts>``, ``FOR SYSTEM_TIME AS OF <ts>`` or
+  ``AT (TIMESTAMP => <ts>)``: the snapshot current on the main branch at that time, by
+  the commit times in the table's metadata log. A time without a time zone is UTC. For
+  a UTC offset, use ``TIMESTAMPTZ '...'`` or a string.
+
+Every spelling means the same. The snapshot's schema is used. A time is refused when
+its snapshot has expired, or when it is older than the metadata log
+(``write.metadata.previous-versions-max``). Only reads can travel: a ``MERGE`` that
+reads its own table as of a version uses those rows as they were, so it can bring back
+deleted rows or overwrite newer values.
+
+.. code-block:: sql
+
+    SELECT * FROM lake.sales.orders FOR VERSION AS OF 4348393417211393838
+    SELECT * FROM lake.sales.orders FOR VERSION AS OF 'end-of-quarter'
+    SELECT * FROM lake.sales.orders o AT (TIMESTAMP => TIMESTAMP '2026-01-01 00:00:00')
+
 .. _join:
 
 JOIN
