@@ -85,6 +85,7 @@ pub fn skip_map(
     dtype: &ArrowDataType,
     buffers: &mut VecDeque<IpcBuffer>,
     variadic_buffer_counts: &mut VecDeque<usize>,
+    version: Version,
 ) -> PolarsResult<()> {
     let _ = field_nodes.pop_front().ok_or_else(|| {
         polars_err!(
@@ -101,5 +102,5 @@ pub fn skip_map(
 
     let dtype = MapArray::get_field(dtype).dtype();
 
-    skip(field_nodes, dtype, buffers, variadic_buffer_counts)
+    skip(field_nodes, dtype, buffers, variadic_buffer_counts, version)
 }

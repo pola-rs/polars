@@ -9,7 +9,7 @@ use super::super::deserialize::{read, skip};
 use super::super::read_basic::*;
 use super::super::{Compression, Dictionaries, IpcBuffer, Node, Version};
 use crate::array::UnionArray;
-use crate::datatypes::{ArrowDataType, UnionMode};
+use crate::datatypes::ArrowDataType;
 use crate::io::ipc::read::array::{try_get_array_length, try_get_field_node};
 
 #[allow(clippy::too_many_arguments)]
@@ -100,6 +100,7 @@ pub fn skip_union(
     dtype: &ArrowDataType,
     buffers: &mut VecDeque<IpcBuffer>,
     variadic_buffer_counts: &mut VecDeque<usize>,
+    version: Version,
 ) -> PolarsResult<()> {
     let _ = field_nodes.pop_front().ok_or_else(|| {
         polars_err!(
@@ -107,21 +108,29 @@ pub fn skip_union(
         )
     })?;
 
+    if version != Version::V5 {
+        let _ = buffers
+            .pop_front()
+            .ok_or_else(|| polars_err!(oos = "IPC: missing validity buffer."))?;
+    }
     let _ = buffers
         .pop_front()
-        .ok_or_else(|| polars_err!(oos = "IPC: missing validity buffer."))?;
-    if let ArrowDataType::Union(u) = dtype {
-        assert!(u.mode == UnionMode::Dense);
+        .ok_or_else(|| polars_err!(oos = "IPC: missing types buffer."))?;
+    if !UnionArray::is_sparse(dtype) {
         let _ = buffers
             .pop_front()
             .ok_or_else(|| polars_err!(oos = "IPC: missing offsets buffer."))?;
-    } else {
-        unreachable!()
-    };
+    }
 
     let fields = UnionArray::get_fields(dtype);
 
-    fields
-        .iter()
-        .try_for_each(|field| skip(field_nodes, field.dtype(), buffers, variadic_buffer_counts))
+    fields.iter().try_for_each(|field| {
+        skip(
+            field_nodes,
+            field.dtype(),
+            buffers,
+            variadic_buffer_counts,
+            version,
+        )
+    })
 }

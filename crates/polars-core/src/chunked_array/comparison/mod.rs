@@ -887,6 +887,112 @@ impl ChunkCompareEq<&StructChunked> for StructChunked {
     }
 }
 
+#[cfg(feature = "dtype-union")]
+fn union_helper(a: &UnionChunked, b: &UnionChunked, missing: bool, is_ne: bool) -> BooleanChunked {
+    use std::borrow::Cow;
+
+    use polars_arrow::compute::utils::combine_validities_and;
+
+    use crate::utils::align_chunks_binary;
+
+    let (a, b) = match (a.len(), b.len()) {
+        (l, r) if l == r => (Cow::Borrowed(a), Cow::Borrowed(b)),
+        (1, _) => return union_scalar_helper(b, a, missing, is_ne),
+        (_, 1) => return union_scalar_helper(a, b, missing, is_ne),
+        (l, r) => panic!("cannot compare unions of lengths {l} and {r}"),
+    };
+    let (a, b) = align_chunks_binary(a.as_ref(), b.as_ref());
+    let chunks = a.downcast_iter().zip(b.downcast_iter()).map(|(l, r)| {
+        let (values, validity) = match (missing, is_ne) {
+            (true, false) => (l.tot_eq_missing_kernel(r), None),
+            (true, true) => (l.tot_ne_missing_kernel(r), None),
+            (false, false) => (
+                l.tot_eq_kernel(r),
+                combine_validities_and(l.validity(), r.validity()),
+            ),
+            (false, true) => (
+                l.tot_ne_kernel(r),
+                combine_validities_and(l.validity(), r.validity()),
+            ),
+        };
+        BooleanArray::from_data_default(values, validity)
+    });
+    BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, chunks)
+}
+
+/// Compares every row of `a` with the single row of `scalar`: a row is equal when it has the
+/// scalar's variant and its value equals the scalar's, which compares only that variant's child.
+#[cfg(feature = "dtype-union")]
+fn union_scalar_helper(
+    a: &UnionChunked,
+    scalar: &UnionChunked,
+    missing: bool,
+    is_ne: bool,
+) -> BooleanChunked {
+    use polars_arrow::bitmap::BitmapBuilder;
+
+    let (ci, i) = scalar.index_to_chunked_index(0);
+    let scalar_arr = scalar.downcast_get(ci).unwrap();
+    if !scalar_arr.is_valid(i) {
+        return match (missing, is_ne) {
+            (true, false) => a.is_null(),
+            (true, true) => a.is_not_null(),
+            (false, _) => BooleanChunked::full_null(PlSmallStr::EMPTY, a.len()),
+        };
+    }
+    let (t, pos) = scalar_arr.index(i);
+    let dtype = a.union_fields()[t].dtype();
+    let child = |arr: &dyn Array, offset: usize, len: usize| {
+        // SAFETY: the children of a union have the physical dtypes of its variants.
+        unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                PlSmallStr::EMPTY,
+                vec![arr.sliced(offset, len)],
+                dtype,
+            )
+        }
+    };
+    let value = child(scalar_arr.fields()[t].as_ref(), pos, 1);
+
+    let chunks = a.downcast_iter().map(|arr| {
+        let values = child(arr.fields()[t].as_ref(), 0, arr.fields()[t].len());
+        // Valid rows hold valid values, so a null here is an unused slot or a null row.
+        let hits = values.equal_missing(&value).unwrap().rechunk().into_owned();
+        let hits = hits.downcast_as_array().values();
+        let validity = arr.validity();
+        let mut out = BitmapBuilder::with_capacity(arr.len());
+        for (r, (&rt, &o)) in arr.types().iter().zip(arr.offsets().iter()).enumerate() {
+            let valid = validity.is_none_or(|v| unsafe { v.get_bit_unchecked(r) });
+            let eq = valid && rt as usize == t && unsafe { hits.get_bit_unchecked(o as usize) };
+            out.push(eq != is_ne && (valid || missing));
+        }
+        let validity = if missing { None } else { validity.cloned() };
+        BooleanArray::from_data_default(out.freeze(), validity)
+    });
+    BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, chunks)
+}
+
+#[cfg(feature = "dtype-union")]
+impl ChunkCompareEq<&UnionChunked> for UnionChunked {
+    type Item = BooleanChunked;
+
+    fn equal(&self, rhs: &UnionChunked) -> BooleanChunked {
+        union_helper(self, rhs, false, false)
+    }
+
+    fn equal_missing(&self, rhs: &UnionChunked) -> BooleanChunked {
+        union_helper(self, rhs, true, false)
+    }
+
+    fn not_equal(&self, rhs: &UnionChunked) -> BooleanChunked {
+        union_helper(self, rhs, false, true)
+    }
+
+    fn not_equal_missing(&self, rhs: &UnionChunked) -> BooleanChunked {
+        union_helper(self, rhs, true, true)
+    }
+}
+
 #[cfg(feature = "dtype-array")]
 fn _array_comparison_helper<F, B>(
     lhs: &ArrayChunked,

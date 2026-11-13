@@ -210,6 +210,43 @@ impl ToArrowConverter {
 
                 Box::new(arr)
             },
+            #[cfg(feature = "dtype-union")]
+            (DataType::Union(union_fields), ArrowDataType::Union(u))
+                if u.mode.is_dense()
+                    && u.ids.is_none()
+                    && u.fields.len() == union_fields.len()
+                    && u.fields
+                        .iter()
+                        .zip(union_fields)
+                        .all(|(a, p)| a.name == *p.name()) =>
+            {
+                use polars_arrow::array::LargeUnionArray;
+                let arr: &LargeUnionArray = array.as_any().downcast_ref().unwrap();
+
+                let mut arrow_dtype = to_owned_dtype(arrow_field);
+                let ArrowDataType::Union(u) = &mut arrow_dtype else {
+                    unreachable!()
+                };
+                self.attach_pl_field_metadata(
+                    union_fields
+                        .iter()
+                        .map(|f| f.dtype())
+                        .zip(u.fields.iter_mut()),
+                );
+                let arrow_fields = u.fields.clone();
+
+                Box::new(crate::chunked_array::union_::union_array_to_arrow(
+                    arr,
+                    arrow_dtype,
+                    |t, child| {
+                        self.array_to_arrow(
+                            child,
+                            union_fields[t].dtype(),
+                            Cow::Borrowed(&arrow_fields[t]),
+                        )
+                    },
+                )?)
+            },
             (DataType::List(item_dtype), ArrowDataType::LargeList(_)) => {
                 let arr: &ListArray<i64> = array.as_any().downcast_ref().unwrap();
 

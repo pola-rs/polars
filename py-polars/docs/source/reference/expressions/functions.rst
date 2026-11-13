@@ -88,6 +88,7 @@ These functions are available from the Polars module root and can be used as exp
    time
    time_range
    time_ranges
+   union_value
    var
    when
    zeros

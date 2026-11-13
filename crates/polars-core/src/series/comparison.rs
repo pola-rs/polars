@@ -118,6 +118,8 @@ macro_rules! impl_eq_compare {
             Array(_, _) => lhs.array().unwrap().$method(rhs.array().unwrap()),
             #[cfg(feature = "dtype-struct")]
             Struct(_) => lhs.struct_().unwrap().$method(rhs.struct_().unwrap()),
+            #[cfg(feature = "dtype-union")]
+            Union(_) => lhs.union().unwrap().$method(rhs.union().unwrap()),
 
             dt => polars_bail!(InvalidOperation: "could not apply comparison on series of dtype '{}; operand names: '{}', '{}'", dt, lhs.name(), rhs.name()),
         };

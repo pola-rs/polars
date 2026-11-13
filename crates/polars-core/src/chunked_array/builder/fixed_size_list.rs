@@ -127,7 +127,7 @@ impl FixedSizeListBuilder for AnonymousOwnedFixedSizeListBuilder {
 
     fn finish(&mut self) -> ArrayChunked {
         let arr = std::mem::take(&mut self.inner)
-            .finish(&self.inner_dtype.to_arrow(CompatLevel::newest()))
+            .finish(&self.inner_dtype.to_physical_arrow(CompatLevel::newest()))
             .unwrap();
         ChunkedArray::with_chunk(self.name.clone(), arr)
     }

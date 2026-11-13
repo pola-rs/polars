@@ -27,6 +27,7 @@ from polars.datatypes.classes import (
     UInt32,
     UInt64,
     UInt128,
+    Union,
 )
 
 if TYPE_CHECKING:
@@ -127,5 +128,5 @@ TEMPORAL_DTYPES: Final[frozenset[PolarsTemporalType]] = DataTypeGroup(
 )
 
 NESTED_DTYPES: Final[frozenset[PolarsDataType]] = DataTypeGroup(
-    [List, Struct, Array, Map]
+    [List, Struct, Array, Map, Union]
 )

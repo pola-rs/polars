@@ -2169,6 +2169,13 @@ impl DataFrame {
             cursor: ChunkCursor::new(self),
             compat_level,
             parallel,
+            // Arrow union offsets are `i32`, so a batch with more rows may not export.
+            max_rows: if self.columns().iter().any(|c| c.dtype().contains_union()) {
+                i32::MAX as usize
+            } else {
+                usize::MAX
+            },
+            piece: None,
         })
     }
 
@@ -2713,16 +2720,42 @@ pub struct RecordBatchIter<'a> {
     cursor: ChunkCursor<'a>,
     compat_level: CompatLevel,
     parallel: bool,
+    max_rows: usize,
+    /// The chunk being split into batches of `max_rows`: its index, the next row and its length.
+    piece: Option<(usize, usize, usize)>,
 }
 
 impl Iterator for RecordBatchIter<'_> {
     type Item = RecordBatch;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (idx, length) = self.cursor.next()?;
+        let (idx, start, chunk_len) = match self.piece.take() {
+            Some(piece) => piece,
+            None => {
+                let (idx, len) = self.cursor.next()?;
+                (idx, 0, len)
+            },
+        };
+        let length = (chunk_len - start).min(self.max_rows);
+        if start + length < chunk_len {
+            self.piece = Some((idx, start + length, chunk_len));
+        }
+        let whole = length == chunk_len;
 
         let to_arrow = |c: &Column| match c.as_series() {
-            Some(s) => s.to_arrow(idx, self.compat_level),
+            Some(s) if whole => s.to_arrow(idx, self.compat_level),
+            Some(s) => {
+                let chunk = s.chunks()[idx].sliced(start, length);
+                // SAFETY: the chunk comes from `s`, so it has its dtype.
+                unsafe {
+                    Series::from_chunks_and_dtype_unchecked(
+                        s.name().clone(),
+                        vec![chunk],
+                        s.dtype(),
+                    )
+                }
+                .to_arrow(0, self.compat_level)
+            },
             None => c.slice(0, length).rechunk_to_arrow(self.compat_level),
         };
 
@@ -2737,7 +2770,12 @@ impl Iterator for RecordBatchIter<'_> {
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        self.cursor.size_hint()
+        let (n, upper) = self.cursor.size_hint();
+        if self.max_rows == usize::MAX {
+            (n, upper)
+        } else {
+            (n + usize::from(self.piece.is_some()), None)
+        }
     }
 }
 

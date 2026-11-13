@@ -2,8 +2,9 @@
 use std::mem::MaybeUninit;
 
 use polars_arrow::array::{
-    Array, BinaryArray, BinaryViewArray, BooleanArray, FixedSizeListArray, ListArray,
-    PrimitiveArray, StructArray, UInt8Array, UInt16Array, UInt32Array, Utf8Array, Utf8ViewArray,
+    Array, BinaryArray, BinaryViewArray, BooleanArray, ChildPositions, FixedSizeListArray,
+    LargeUnionArray, ListArray, PrimitiveArray, StructArray, UInt8Array, UInt16Array, UInt32Array,
+    Utf8Array, Utf8ViewArray,
 };
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::compute::utils::combine_validities_and_many;
@@ -11,6 +12,7 @@ use polars_arrow::datatypes::ArrowDataType;
 use polars_arrow::offset::Offsets;
 use polars_arrow::types::{NativeType, Offset};
 use polars_compute::cast::binary_to_binview;
+use polars_compute::gather::gather_child;
 use polars_dtype::categorical::CatNative;
 use polars_utils::float16::pf16;
 
@@ -572,6 +574,11 @@ fn get_encoder(
             )
         },
 
+        D::LargeUnion(_) => {
+            let array = array.as_any().downcast_ref::<LargeUnionArray>().unwrap();
+            union_num_column_bytes(array, opt, dict, row_widths, masked_out_max_width)
+        },
+
         D::Union(_) => unreachable!(),
         D::Map(_, _) => unreachable!(),
         D::Extension(_) => unreachable!(),
@@ -596,6 +603,109 @@ fn get_encoder(
     }
 }
 
+/// The context of variant `t` of a union with context `dict`.
+pub(crate) fn union_variant_ctx(
+    dict: Option<&RowEncodingContext>,
+    t: usize,
+) -> Option<&RowEncodingContext> {
+    match dict {
+        None => None,
+        Some(RowEncodingContext::Union(dicts)) => dicts[t].as_ref(),
+        Some(_) => unreachable!(),
+    }
+}
+
+/// Calls `f(slot, variant)` for every valid slot of `array`, in order.
+fn for_each_valid_slot(array: &LargeUnionArray, mut f: impl FnMut(usize, usize)) {
+    let types = array.types();
+    match array.validity() {
+        None => types
+            .iter()
+            .enumerate()
+            .for_each(|(i, &t)| f(i, t as usize)),
+        Some(validity) => validity
+            .true_idx_iter()
+            .for_each(|i| f(i, types[i] as usize)),
+    }
+}
+
+/// The children of `array` reduced to the values valid slots reference, in slot order. The
+/// `k`-th valid slot of a variant then refers to value `k` of its child.
+fn referenced_union_children(array: &LargeUnionArray) -> Vec<Box<dyn Array>> {
+    let fields = array.fields();
+    let mut counts = vec![0usize; fields.len()];
+    for_each_valid_slot(array, |_, t| counts[t] += 1);
+
+    // Offsets increase strictly per child, so a child is fully referenced iff the counts match.
+    let mut positions: Vec<Option<ChildPositions>> = fields
+        .iter()
+        .zip(&counts)
+        .map(|(c, &n)| (n != c.len()).then(|| ChildPositions::new(c.len())))
+        .collect();
+    if positions.iter().all(Option::is_none) {
+        return fields.to_vec();
+    }
+    let offsets = array.offsets();
+    for_each_valid_slot(array, |i, t| {
+        if let Some(p) = &mut positions[t] {
+            p.push(Some(offsets[i] as usize));
+        }
+    });
+    fields
+        .iter()
+        .zip(positions)
+        .map(|(child, positions)| match positions {
+            None => child.clone(),
+            // SAFETY: the positions of valid slots are in bounds.
+            Some(positions) => unsafe { gather_child(child.as_ref(), positions) },
+        })
+        .collect()
+}
+
+/// A valid union value is its variant's tag followed by the value; a null is the null sentinel.
+fn union_num_column_bytes(
+    array: &LargeUnionArray,
+    opt: RowEncodingOptions,
+    dict: Option<&RowEncodingContext>,
+    row_widths: &mut RowWidths,
+    masked_out_max_width: &mut usize,
+) -> Encoder {
+    let children = referenced_union_children(array);
+    let mut child_widths = Vec::with_capacity(children.len());
+    let encoders = children
+        .iter()
+        .enumerate()
+        .map(|(t, child)| {
+            let mut widths = RowWidths::new(child.len());
+            let encoder = get_encoder(
+                child.as_ref(),
+                opt.into_nested(),
+                union_variant_ctx(dict, t),
+                &mut widths,
+                masked_out_max_width,
+            );
+            child_widths.push(widths);
+            encoder
+        })
+        .collect();
+
+    let mut next = vec![0usize; children.len()];
+    let validity = array.validity();
+    row_widths.push_iter(array.types().iter().enumerate().map(|(i, &t)| {
+        if validity.is_some_and(|v| !unsafe { v.get_bit_unchecked(i) }) {
+            return 1;
+        }
+        let t = t as usize;
+        next[t] += 1;
+        1 + child_widths[t].get(next[t] - 1)
+    }));
+
+    Encoder {
+        array: array.to_boxed(),
+        state: Some(Box::new(EncoderState::Union(encoders, child_widths))),
+    }
+}
+
 struct Encoder {
     array: Box<dyn Array>,
 
@@ -607,6 +717,8 @@ enum EncoderState {
     List(Box<Encoder>, RowWidths),
     FixedSizeList(Box<Encoder>, usize, RowWidths),
     Struct(Vec<Encoder>),
+    /// The encoders of the referenced children and their widths.
+    Union(Vec<Encoder>, Vec<RowWidths>),
 }
 
 unsafe fn encode_strs<'a>(
@@ -766,7 +878,7 @@ unsafe fn encode_flat_array(
         D::Decimal64(_, _) => todo!(),
         D::Decimal256(_, _) => todo!(),
 
-        D::Union(_) => todo!(),
+        D::Union(_) | D::LargeUnion(_) => unreachable!(),
         D::Map(_, _) => todo!(),
         D::Extension(_) => todo!(),
         D::Unknown => todo!(),
@@ -955,6 +1067,42 @@ unsafe fn encode_array(
                     }
                 },
                 _ => unreachable!(),
+            }
+        },
+        EncoderState::Union(encoders, child_widths) => {
+            let array = encoder
+                .array
+                .as_any()
+                .downcast_ref::<LargeUnionArray>()
+                .unwrap();
+            let mut child_offsets: Vec<Vec<usize>> = child_widths
+                .iter()
+                .map(|w| Vec::with_capacity(w.num_rows()))
+                .collect();
+            let validity = array.validity();
+            for (i, (&t, offset)) in array.types().iter().zip(offsets.iter_mut()).enumerate() {
+                if validity.is_some_and(|v| !v.get_bit_unchecked(i)) {
+                    buffer[*offset] = MaybeUninit::new(opt.null_sentinel());
+                    *offset += 1;
+                    continue;
+                }
+                let t = t as usize;
+                buffer[*offset] = MaybeUninit::new(opt.union_tag(t));
+                *offset += 1;
+                let k = child_offsets[t].len();
+                child_offsets[t].push(*offset);
+                *offset += child_widths[t].get(k);
+            }
+            for (t, (child, child_offsets)) in encoders.iter().zip(&mut child_offsets).enumerate() {
+                encode_array(
+                    buffer,
+                    child,
+                    opt.into_nested(),
+                    union_variant_ctx(dict, t),
+                    child_offsets,
+                    masked_out_write_offset,
+                    scratches,
+                );
             }
         },
     }

@@ -482,6 +482,37 @@ impl OptimizationRule for TypeCoercionRule {
 
                 Some(out)
             },
+            // `Null`s and dynamic literals take the variant's dtype; other values must match it.
+            #[cfg(feature = "dtype-union")]
+            AExpr::Function {
+                function:
+                    IRFunctionExpr::UnionExpr(IRUnionFunction::Value {
+                        ref dtype,
+                        ref variant,
+                    }),
+                ref input,
+                options,
+            } => {
+                let DataType::Union(fields) = dtype else {
+                    unreachable!()
+                };
+                let to = fields[fields.try_index_of(variant)?].dtype().clone();
+                let from = try_get_dtype(expr_arena, input[0].node(), schema)?;
+                if from == to || !(from.is_null() || union_literal_fits(&from, &to)) {
+                    return Ok(None);
+                }
+                let function = IRFunctionExpr::UnionExpr(IRUnionFunction::Value {
+                    dtype: dtype.clone(),
+                    variant: variant.clone(),
+                });
+                let mut input = input.clone();
+                cast_expr_ir(&mut input[0], &from, &to, expr_arena, CastOptions::Strict)?;
+                Some(AExpr::Function {
+                    function,
+                    input,
+                    options,
+                })
+            },
             // Map lookup must work without the `is_in` feature.
             #[cfg(feature = "dtype-map")]
             AExpr::Function {

@@ -141,6 +141,9 @@ pub enum DataType {
     /// A map from keys to values, keys are unique and non-null.
     #[cfg(feature = "dtype-map")]
     Map(Box<DataType>, Box<DataType>),
+    /// A tagged union: each value belongs to exactly one of the uniquely named variants.
+    #[cfg(feature = "dtype-union")]
+    Union(UnionFields),
     #[cfg(feature = "dtype-extension")]
     Extension(ExtensionTypeInstance, Box<DataType>),
     // some logical types we cannot know statically, e.g. Datetime
@@ -192,6 +195,8 @@ impl DataType {
             Struct(..) => true,
             #[cfg(feature = "dtype-map")]
             Map(..) => true,
+            #[cfg(feature = "dtype-union")]
+            Union(..) => true,
             #[cfg(feature = "dtype-categorical")]
             Categorical(..) | Enum(..) => true,
             #[cfg(feature = "object")]
@@ -226,6 +231,8 @@ impl DataType {
             #[cfg(feature = "dtype-struct")]
             Struct(fields_l) => matches!(other, Struct(fields_r) if
                 std::ptr::eq(fields_l.as_ptr(), fields_r.as_ptr()) || fields_l == fields_r),
+            #[cfg(feature = "dtype-union")]
+            Union(fields_l) => matches!(other, Union(fields_r) if fields_l == fields_r),
             #[cfg(feature = "dtype-categorical")]
             Categorical(cats_l, _) => {
                 matches!(other, Categorical(cats_r, _) if Arc::ptr_eq(cats_l, cats_r))
@@ -287,6 +294,15 @@ impl DataType {
             Self::Map(key, value) => {
                 format!("map[{}, {}]", key.pretty_format(), value.pretty_format())
             },
+            #[cfg(feature = "dtype-union")]
+            Self::Union(fields) => {
+                let formatted_fields = fields
+                    .iter()
+                    .map(|field| format!("{}: {}", field.name, field.dtype.pretty_format()))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                format!("union[{}]", formatted_fields)
+            },
             _ => {
                 format!("{}", self)
             },
@@ -338,6 +354,8 @@ impl DataType {
             DataType::Struct(fields) => fields.iter().all(|fld| fld.dtype.is_known()),
             #[cfg(feature = "dtype-map")]
             DataType::Map(key, value) => key.is_known() && value.is_known(),
+            #[cfg(feature = "dtype-union")]
+            DataType::Union(fields) => fields.iter().all(|fld| fld.dtype.is_known()),
             DataType::Unknown(_) => false,
             _ => true,
         }
@@ -382,6 +400,12 @@ impl DataType {
                 Box::new(key.materialize_unknown(allow_unknown)?),
                 Box::new(value.materialize_unknown(allow_unknown)?),
             )),
+            #[cfg(feature = "dtype-union")]
+            DataType::Union(fields) => {
+                Ok(DataType::Union(fields.try_map_dtypes(|dt| {
+                    dt.clone().materialize_unknown(allow_unknown)
+                })?))
+            },
             _ => Ok(self),
         }
     }
@@ -489,6 +513,12 @@ impl DataType {
             },
             #[cfg(feature = "dtype-map")]
             Map(key, value) => Map(Box::new(key.map_leaves(f)), Box::new(value.map_leaves(f))),
+            #[cfg(feature = "dtype-union")]
+            Union(fields) => Union(
+                fields
+                    .try_map_dtypes(|dt| Ok(dt.clone().map_leaves(f)))
+                    .expect("`map_leaves` produced an invalid Union variant"),
+            ),
             #[cfg(feature = "dtype-extension")]
             Extension(ext, storage) => Extension(ext, Box::new(storage.map_leaves(f))),
             _ => f(self),
@@ -570,6 +600,9 @@ impl DataType {
                 true
             },
 
+            #[cfg(feature = "dtype-union")]
+            (D::Union(_), _) | (_, D::Union(_)) => self.ensure_union_cast(to).is_ok(),
+
             // @NOTE: we are being conservative
             _ => return None,
         })
@@ -607,6 +640,9 @@ impl DataType {
             },
             #[cfg(feature = "dtype-map")]
             Map(_, _) => self.map_storage_dtype().unwrap().to_physical(),
+            #[cfg(feature = "dtype-union")]
+            // The physical dtype of a valid variant is a valid variant.
+            Union(fields) => Union(fields.try_map_dtypes(|dt| Ok(dt.to_physical())).unwrap()),
             #[cfg(feature = "dtype-extension")]
             Extension(_, storage) => storage.to_physical(),
             _ => self.clone(),
@@ -732,6 +768,8 @@ impl DataType {
             DataType::Struct(_) => true,
             #[cfg(feature = "dtype-map")]
             DataType::Map(_, _) => true,
+            #[cfg(feature = "dtype-union")]
+            DataType::Union(_) => true,
             #[cfg(feature = "dtype-extension")]
             DataType::Extension(_, storage) => storage.is_nested(),
             _ => false,
@@ -757,6 +795,18 @@ impl DataType {
             matches!(self, DataType::Map(_, _))
         }
         #[cfg(not(feature = "dtype-map"))]
+        {
+            false
+        }
+    }
+
+    /// Check if this [`DataType`] is a union
+    pub fn is_union(&self) -> bool {
+        #[cfg(feature = "dtype-union")]
+        {
+            matches!(self, DataType::Union(_))
+        }
+        #[cfg(not(feature = "dtype-union"))]
         {
             false
         }
@@ -803,6 +853,8 @@ impl DataType {
             Struct(fields) => fields.iter().any(|field| field.dtype.contains_views()),
             #[cfg(feature = "dtype-map")]
             Map(key, value) => key.contains_views() || value.contains_views(),
+            #[cfg(feature = "dtype-union")]
+            Union(fields) => fields.iter().any(|field| field.dtype.contains_views()),
             #[cfg(feature = "dtype-extension")]
             Extension(_, storage) => storage.contains_views(),
             _ => false,
@@ -823,6 +875,10 @@ impl DataType {
                 .any(|field| field.dtype.contains_categoricals()),
             #[cfg(feature = "dtype-map")]
             Map(key, value) => key.contains_categoricals() || value.contains_categoricals(),
+            #[cfg(feature = "dtype-union")]
+            Union(fields) => fields
+                .iter()
+                .any(|field| field.dtype.contains_categoricals()),
             #[cfg(feature = "dtype-extension")]
             Extension(_, storage) => storage.contains_categoricals(),
             _ => false,
@@ -841,6 +897,8 @@ impl DataType {
             Struct(fields) => fields.iter().any(|field| field.dtype.contains_enums()),
             #[cfg(feature = "dtype-map")]
             Map(key, value) => key.contains_enums() || value.contains_enums(),
+            #[cfg(feature = "dtype-union")]
+            Union(fields) => fields.iter().any(|field| field.dtype.contains_enums()),
             #[cfg(feature = "dtype-extension")]
             Extension(_, storage) => storage.contains_enums(),
             _ => false,
@@ -859,6 +917,8 @@ impl DataType {
             Struct(fields) => fields.iter().any(|field| field.dtype.contains_objects()),
             #[cfg(feature = "dtype-map")]
             Map(key, value) => key.contains_objects() || value.contains_objects(),
+            #[cfg(feature = "dtype-union")]
+            Union(fields) => fields.iter().any(|field| field.dtype.contains_objects()),
             #[cfg(feature = "dtype-extension")]
             Extension(_, storage) => storage.contains_objects(),
             _ => false,
@@ -875,6 +935,8 @@ impl DataType {
             D::Array(inner, _) => inner.contains_map(),
             #[cfg(feature = "dtype-struct")]
             D::Struct(fields) => fields.iter().any(|field| field.dtype.contains_map()),
+            #[cfg(feature = "dtype-union")]
+            D::Union(fields) => fields.iter().any(|field| field.dtype.contains_map()),
             #[cfg(feature = "dtype-extension")]
             D::Extension(_, storage) => storage.contains_map(),
             _ => false,
@@ -895,6 +957,10 @@ impl DataType {
             // normalization a `List` needs.
             #[cfg(feature = "dtype-map")]
             D::Map(_, _) => true,
+            #[cfg(feature = "dtype-union")]
+            D::Union(fields) => fields
+                .iter()
+                .any(|field| field.dtype.contains_list_recursive()),
             #[cfg(feature = "dtype-extension")]
             D::Extension(_, storage) => storage.contains_list_recursive(),
             _ => false,
@@ -912,6 +978,8 @@ impl DataType {
             D::Struct(fields) => fields.iter().any(|field| field.dtype.contains_unknown()),
             #[cfg(feature = "dtype-map")]
             D::Map(key, value) => key.contains_unknown() || value.contains_unknown(),
+            #[cfg(feature = "dtype-union")]
+            D::Union(fields) => fields.iter().any(|field| field.dtype.contains_unknown()),
             #[cfg(feature = "dtype-extension")]
             D::Extension(_, storage) => storage.contains_unknown(),
             _ => false,
@@ -935,6 +1003,10 @@ impl DataType {
             D::Map(key, value) => {
                 key.contains_dtype_recursive(dtype) || value.contains_dtype_recursive(dtype)
             },
+            #[cfg(feature = "dtype-union")]
+            D::Union(fields) => fields
+                .iter()
+                .any(|field| field.dtype.contains_dtype_recursive(dtype)),
             #[cfg(feature = "dtype-extension")]
             D::Extension(_, storage) => storage.contains_dtype_recursive(dtype),
             _ => false,
@@ -1189,6 +1261,207 @@ impl DataType {
         })
     }
 
+    /// Whether a cast to `to` only retypes nulls: `to` equals `self` except that `Null`s in `self`
+    /// may be any dtype in `to`, and unions may reorder and add variants.
+    pub fn widens_to(&self, to: &DataType) -> bool {
+        use DataType as D;
+        match (self, to) {
+            _ if self == to => true,
+            (D::Null, _) => true,
+            (D::List(l), D::List(r)) => l.widens_to(r),
+            #[cfg(feature = "dtype-array")]
+            (D::Array(l, lw), D::Array(r, rw)) => lw == rw && l.widens_to(r),
+            #[cfg(feature = "dtype-struct")]
+            (D::Struct(l), D::Struct(r)) => {
+                l.len() == r.len()
+                    && l.iter()
+                        .zip(r)
+                        .all(|(l, r)| l.name() == r.name() && l.dtype().widens_to(r.dtype()))
+            },
+            #[cfg(feature = "dtype-map")]
+            (D::Map(lk, lv), D::Map(rk, rv)) => lk.widens_to(rk) && lv.widens_to(rv),
+            #[cfg(feature = "dtype-union")]
+            (D::Union(l), D::Union(r)) => l.iter().all(|l| {
+                r.iter()
+                    .any(|r| r.name() == l.name() && l.dtype().widens_to(r.dtype()))
+            }),
+            _ => false,
+        }
+    }
+
+    /// Errors if a cast from `self` to `to` involves a `Union` and is not allowed.
+    ///
+    /// A union only widens to another union (see [`DataType::widens_to`]), `Null` casts to any
+    /// dtype, and a union casts to `String` if all its variants do. Nested dtypes are checked the
+    /// way `Series::cast` recurses into them, and any other cast that reaches a union is rejected,
+    /// so the answer never depends on the data.
+    pub fn ensure_union_cast(&self, to: &DataType) -> PolarsResult<()> {
+        if !self.contains_union() && !to.contains_union() {
+            return Ok(());
+        }
+        self.ensure_union_cast_rec(to)
+    }
+
+    fn ensure_union_cast_rec(&self, to: &DataType) -> PolarsResult<()> {
+        use DataType as D;
+        #[cfg(feature = "dtype-union")]
+        let err = |msg: &str| polars_err!(InvalidOperation: "cannot cast `{self}` to `{to}`{msg}");
+        let union_err = || {
+            polars_err!(
+                InvalidOperation: "cannot cast `{self}` to `{to}`: a union only casts to a union \
+                with the same variants (or more) or to `String`; use `union.field`, \
+                `union.match` or `pl.union_value` to convert values"
+            )
+        };
+        match (self, to) {
+            _ if self == to => Ok(()),
+            (D::Null, _) => Ok(()),
+            #[cfg(feature = "dtype-union")]
+            (D::Union(l), D::Union(r)) => {
+                for l in l {
+                    let Some(r) = r.iter().find(|r| r.name() == l.name()) else {
+                        return Err(err(&format!(
+                            ": variant `{}` is not in the target; use `union.match` to drop it",
+                            l.name()
+                        )));
+                    };
+                    if !l.dtype().widens_to(r.dtype()) {
+                        return Err(err(&format!(
+                            ": variant `{}` has dtype `{}`, which only casts to an equal dtype \
+                             (where nulls may become any dtype); use `union.match` to convert it",
+                            l.name(),
+                            l.dtype()
+                        )));
+                    }
+                }
+                Ok(())
+            },
+            #[cfg(feature = "dtype-union")]
+            (D::Union(fields), D::String) => {
+                if let Some(f) = fields.iter().find(|f| !f.dtype().casts_to_string()) {
+                    return Err(err(&format!(
+                        ": variant `{}` of dtype `{}` cannot be cast to `{to}`",
+                        f.name(),
+                        f.dtype()
+                    )));
+                }
+                Ok(())
+            },
+            #[cfg(feature = "dtype-union")]
+            (D::Union(_), _) | (_, D::Union(_)) => Err(union_err()),
+            // `Series::cast` keeps the source's inner dtype for a `List(Null)` target.
+            (D::List(_), D::List(r)) if r.is_null() => Ok(()),
+            (D::List(l), D::List(r)) => l.ensure_union_cast_rec(r),
+            #[cfg(feature = "dtype-array")]
+            (D::Array(l, _), D::Array(r, _) | D::List(r)) | (D::List(l), D::Array(r, _)) => {
+                l.ensure_union_cast_rec(r)
+            },
+            #[cfg(feature = "dtype-struct")]
+            (D::Struct(l), D::Struct(r)) => {
+                for r in r {
+                    if let Some(l) = l.iter().find(|l| l.name() == r.name()) {
+                        l.dtype().ensure_union_cast_rec(r.dtype())?;
+                    }
+                }
+                Ok(())
+            },
+            // Formats each row.
+            #[cfg(feature = "dtype-struct")]
+            (D::Struct(_), D::String) => Ok(()),
+            // Casts every field to `to`.
+            #[cfg(feature = "dtype-struct")]
+            (D::Struct(l), _) => l
+                .iter()
+                .try_for_each(|l| l.dtype().ensure_union_cast_rec(to)),
+            // Map casts go through the `List(Struct {key, value})` storage, matching by name.
+            #[cfg(feature = "dtype-map")]
+            (D::Map(..), _) => self.map_storage_dtype().unwrap().ensure_union_cast_rec(to),
+            #[cfg(feature = "dtype-map")]
+            (_, D::Map(..)) => self.ensure_union_cast_rec(&to.map_storage_dtype().unwrap()),
+            #[cfg(feature = "dtype-extension")]
+            (_, D::Extension(_, storage)) => self.ensure_union_cast_rec(storage),
+            _ if self.contains_union() || to.contains_union() => Err(union_err()),
+            _ => Ok(()),
+        }
+    }
+
+    /// Whether every value of this dtype can be cast to `String`.
+    #[cfg(feature = "dtype-union")]
+    fn casts_to_string(&self) -> bool {
+        use DataType as D;
+        match self {
+            D::List(_) | D::Unknown(_) => false,
+            #[cfg(feature = "dtype-array")]
+            D::Array(..) => false,
+            #[cfg(feature = "dtype-map")]
+            D::Map(..) => false,
+            #[cfg(feature = "object")]
+            D::Object(_) => false,
+            #[cfg(feature = "dtype-extension")]
+            D::Extension(..) => false,
+            D::Union(fields) => fields.iter().all(|f| f.dtype().casts_to_string()),
+            _ => true,
+        }
+    }
+
+    pub fn contains_union(&self) -> bool {
+        use DataType as D;
+        match self {
+            #[cfg(feature = "dtype-union")]
+            D::Union(_) => true,
+            D::List(inner) => inner.contains_union(),
+            #[cfg(feature = "dtype-array")]
+            D::Array(inner, _) => inner.contains_union(),
+            #[cfg(feature = "dtype-struct")]
+            D::Struct(fields) => fields.iter().any(|field| field.dtype.contains_union()),
+            #[cfg(feature = "dtype-map")]
+            D::Map(key, value) => key.contains_union() || value.contains_union(),
+            #[cfg(feature = "dtype-extension")]
+            D::Extension(_, storage) => storage.contains_union(),
+            _ => false,
+        }
+    }
+
+    /// The Arrow dtype of the arrays Polars holds in memory for this dtype: like
+    /// `self.to_physical().to_arrow(..)`, but every union is an [`ArrowDataType::LargeUnion`].
+    pub fn to_physical_arrow(&self, compat_level: CompatLevel) -> ArrowDataType {
+        let physical = self.to_physical();
+        if !physical.contains_union() {
+            return physical.to_arrow(compat_level);
+        }
+
+        fn convert(dtype: &DataType, compat_level: CompatLevel) -> ArrowDataType {
+            let field = |name: PlSmallStr, dtype: &DataType| {
+                ArrowField::new(name, convert(dtype, compat_level), true)
+            };
+            match dtype {
+                #[cfg(feature = "dtype-union")]
+                DataType::Union(fields) => ArrowDataType::LargeUnion(
+                    fields
+                        .iter()
+                        .map(|f| field(f.name().clone(), f.dtype()))
+                        .collect(),
+                ),
+                DataType::List(inner) => {
+                    ArrowDataType::LargeList(Box::new(field(LIST_VALUES_NAME, inner)))
+                },
+                #[cfg(feature = "dtype-array")]
+                DataType::Array(inner, width) => {
+                    ArrowDataType::FixedSizeList(Box::new(field(LIST_VALUES_NAME, inner)), *width)
+                },
+                #[cfg(feature = "dtype-struct")]
+                DataType::Struct(fields) => ArrowDataType::Struct(
+                    fields
+                        .iter()
+                        .map(|f| field(f.name().clone(), f.dtype()))
+                        .collect(),
+                ),
+                dt => dt.to_arrow(compat_level),
+            }
+        }
+        convert(&physical, compat_level)
+    }
+
     pub fn is_extension(&self) -> bool {
         #[cfg(feature = "dtype-extension")]
         {
@@ -1398,6 +1671,20 @@ impl DataType {
                 Ok(ArrowDataType::Struct(fields))
             },
             BinaryOffset => Ok(ArrowDataType::LargeBinary),
+            #[cfg(feature = "dtype-union")]
+            Union(fields) => {
+                let fields = fields
+                    .iter()
+                    .map(|fld| fld.to_arrow(compat_level))
+                    .collect();
+                Ok(ArrowDataType::Union(Box::new(
+                    polars_arrow::datatypes::UnionType {
+                        fields,
+                        ids: None,
+                        mode: polars_arrow::datatypes::UnionMode::Dense,
+                    },
+                )))
+            },
             #[cfg(feature = "dtype-map")]
             Map(_, _) => {
                 let entries = self.map_entries_dtype().unwrap();
@@ -1442,6 +1729,8 @@ impl DataType {
             Struct(fields) => fields.iter().all(|fld| fld.dtype.is_nested_null()),
             #[cfg(feature = "dtype-map")]
             Map(key, value) => key.is_nested_null() && value.is_nested_null(),
+            #[cfg(feature = "dtype-union")]
+            Union(fields) => fields.iter().all(|fld| fld.dtype.is_nested_null()),
             #[cfg(feature = "dtype-extension")]
             Extension(_, storage) => storage.is_nested_null(),
             _ => false,
@@ -1481,6 +1770,15 @@ impl DataType {
                     must_cast |= l.dtype.matches_schema_type(&r.dtype)?;
                 }
                 Ok(must_cast)
+            },
+            #[cfg(feature = "dtype-union")]
+            // Not recursive: a union cast only retypes nulls, so variants must widen.
+            (DataType::Union(_), DataType::Union(_)) => {
+                polars_ensure!(
+                    self.widens_to(schema_type),
+                    SchemaMismatch: "union `{self}` does not widen to `{schema_type}`"
+                );
+                Ok(self != schema_type)
             },
             #[cfg(feature = "dtype-map")]
             (DataType::Map(lk, lv), DataType::Map(rk, rv)) => {
@@ -1631,6 +1929,17 @@ impl Display for DataType {
             DataType::Struct(fields) => return write!(f, "struct[{}]", fields.len()),
             #[cfg(feature = "dtype-map")]
             DataType::Map(key, value) => return write!(f, "map[{key}, {value}]"),
+            #[cfg(feature = "dtype-union")]
+            DataType::Union(fields) => {
+                f.write_str("union[")?;
+                for (i, fld) in fields.iter().enumerate() {
+                    if i > 0 {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "{}: {}", fld.name(), fld.dtype())?;
+                }
+                return f.write_str("]");
+            },
             #[cfg(feature = "dtype-extension")]
             DataType::Extension(typ, _) => return write!(f, "ext[{}]", typ.0.dyn_display()),
             DataType::Unknown(kind) => match kind {
@@ -1717,6 +2026,17 @@ impl std::fmt::Debug for DataType {
             Null => write!(f, "Null"),
             #[cfg(feature = "dtype-map")]
             Map(key, value) => write!(f, "Map({key:?}, {value:?})"),
+            #[cfg(feature = "dtype-union")]
+            Union(fields) => {
+                write!(f, "Union({{")?;
+                for (i, field) in fields.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "'{}': {:?}", field.name(), field.dtype())?;
+                }
+                write!(f, "}})")
+            },
             #[cfg(feature = "dtype-extension")]
             Extension(typ, inner) => write!(f, "Extension({}, {inner:?})", typ.0.dyn_debug()),
             Unknown(kind) => write!(f, "Unknown({kind:?})"),
@@ -1750,6 +2070,16 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
                 Ok(Field::new(l.name().clone(), merged))
             }).collect::<PolarsResult<Vec<_>>>()?;
             Struct(fields)
+        },
+        #[cfg(feature = "dtype-union")]
+        (Union(inner_l), Union(inner_r)) => {
+            polars_ensure!(inner_l.len() == inner_r.len(), ComputeError: "cannot combine unions with differing amounts of variants ({} != {})", inner_l.len(), inner_r.len());
+            let fields = inner_l.iter().zip(inner_r.iter()).map(|(l, r)| {
+                polars_ensure!(l.name() == r.name(), ComputeError: "cannot combine unions with different variants ({} != {})", l.name(), r.name());
+                let merged = merge_dtypes(l.dtype(), r.dtype())?;
+                Ok(Field::new(l.name().clone(), merged))
+            }).collect::<PolarsResult<Vec<_>>>()?;
+            Union(UnionFields::try_new(fields)?)
         },
         #[cfg(feature = "dtype-map")]
         (Map(key_l, value_l), Map(key_r, value_r)) => {
@@ -1788,6 +2118,15 @@ fn collect_nested_types(
         },
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(fields) => {
+            if include_compound_types {
+                result.insert(dtype.clone());
+            }
+            for field in fields {
+                collect_nested_types(field.dtype(), result, include_compound_types);
+            }
+        },
+        #[cfg(feature = "dtype-union")]
+        DataType::Union(fields) => {
             if include_compound_types {
                 result.insert(dtype.clone());
             }
@@ -1930,30 +2269,27 @@ impl<'d, 'f> DtypeVisitor<'d, 'f> {
 
                     Cow::Owned(DataType::Struct(fields))
                 },
-                Cow::Borrowed(DataType::Struct(fields)) => {
-                    let mut new_fields = vec![];
-
-                    for (i, f) in fields.iter().enumerate() {
-                        let ret = self.visit_rec(Cow::Borrowed(f.dtype()))?;
-
-                        if std::ptr::eq(ret.as_ref(), f.dtype()) && new_fields.is_empty() {
-                            continue;
-                        }
-
-                        if new_fields.is_empty() {
-                            new_fields.reserve_exact(fields.len());
-                            new_fields.extend(fields.iter().take(i).cloned());
-                        }
-
-                        new_fields.push(Field::new(f.name().clone(), ret.into_owned()));
+                Cow::Borrowed(DataType::Struct(fields)) => match self.visit_fields(fields)? {
+                    None => dtype,
+                    Some(new_fields) => Cow::Owned(DataType::Struct(new_fields)),
+                },
+                _ => unreachable!(),
+            },
+            #[cfg(feature = "dtype-union")]
+            DataType::Union(_) => match dtype {
+                Cow::Owned(DataType::Union(fields)) => {
+                    let mut fields = fields.into_fields();
+                    for f in &mut fields {
+                        self.visit_ref_mut(&mut f.dtype)?;
                     }
 
-                    if new_fields.is_empty() {
-                        dtype
-                    } else {
-                        assert_eq!(new_fields.len(), fields.len());
-                        Cow::Owned(DataType::Struct(new_fields))
-                    }
+                    Cow::Owned(DataType::Union(UnionFields::try_new(fields)?))
+                },
+                Cow::Borrowed(DataType::Union(fields)) => match self.visit_fields(fields)? {
+                    None => dtype,
+                    Some(new_fields) => {
+                        Cow::Owned(DataType::Union(UnionFields::try_new(new_fields)?))
+                    },
                 },
                 _ => unreachable!(),
             },
@@ -2005,6 +2341,34 @@ impl<'d, 'f> DtypeVisitor<'d, 'f> {
         };
 
         (self.visitor_fn)(dtype)
+    }
+
+    /// Visits borrowed fields; returns `None` if no field dtype changed.
+    #[cfg(any(feature = "dtype-struct", feature = "dtype-union"))]
+    fn visit_fields(&mut self, fields: &'d [Field]) -> PolarsResult<Option<Vec<Field>>> {
+        let mut new_fields = vec![];
+
+        for (i, f) in fields.iter().enumerate() {
+            let ret = self.visit_rec(Cow::Borrowed(f.dtype()))?;
+
+            if std::ptr::eq(ret.as_ref(), f.dtype()) && new_fields.is_empty() {
+                continue;
+            }
+
+            if new_fields.is_empty() {
+                new_fields.reserve_exact(fields.len());
+                new_fields.extend(fields.iter().take(i).cloned());
+            }
+
+            new_fields.push(Field::new(f.name().clone(), ret.into_owned()));
+        }
+
+        if new_fields.is_empty() {
+            Ok(None)
+        } else {
+            assert_eq!(new_fields.len(), fields.len());
+            Ok(Some(new_fields))
+        }
     }
 
     /// `dtype` will be set to an unspecified value if this returns an error.

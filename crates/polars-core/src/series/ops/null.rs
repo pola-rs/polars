@@ -39,6 +39,10 @@ impl Series {
                         .into_series()
                 })
             },
+            #[cfg(feature = "dtype-union")]
+            DataType::Union(_) => {
+                UnionChunked::full_null_with_dtype(name, size, dtype).into_series()
+            },
             #[cfg(feature = "dtype-date")]
             DataType::Date => Int32Chunked::full_null(name, size)
                 .into_date()

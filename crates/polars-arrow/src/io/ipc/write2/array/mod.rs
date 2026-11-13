@@ -5,7 +5,7 @@ use std::borrow::Cow;
 use polars_arrow_format::ipc;
 use polars_arrow_format::ipc::FieldNode;
 use polars_buffer::Buffer;
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_bail};
 use polars_utils::scratch_vec::ScratchVec;
 use primitive::{write_native_type_buffer, write_primitive};
 
@@ -143,6 +143,9 @@ pub fn write_array(
                     )
                     .as_ref(),
             )?;
+        },
+        LargeUnion => {
+            polars_bail!(InvalidOperation: "LargeUnion is not an Arrow type; convert it to a Union first")
         },
         Union => {
             let array: &UnionArray = array.as_any().downcast_ref().unwrap();

@@ -11,6 +11,7 @@ use polars_parquet::parquet::error::ParquetResult;
 use polars_parquet::read::ParquetError;
 use polars_parquet::write::{
     CompressedPage, Compressor, Encoding, SchemaDescriptor, WriteOptions, array_to_columns,
+    dtype_unions_to_structs,
 };
 use polars_utils::UnitVec;
 
@@ -70,12 +71,24 @@ impl RowGroupEncoder {
                             async move {
                                 let parquet_type = &schema_descriptor.fields()[i];
                                 let encodings = encodings[i].as_slice();
-                                let array =
-                                    c.as_materialized_series().rechunk().to_arrow_with_field(
+                                let series = c.as_materialized_series().rechunk();
+                                let field = arrow_schema.get_at_index(i).unwrap().1;
+                                // Parquet has no union type; the file's Arrow schema keeps the
+                                // unions so they are restored on read.
+                                let array = match series.unions_to_structs()? {
+                                    Some(series) => series.to_arrow_with_field(
                                         0,
-                                        Cow::Borrowed(arrow_schema.get_at_index(i).unwrap().1),
+                                        Cow::Owned(
+                                            field
+                                                .clone()
+                                                .with_dtype(dtype_unions_to_structs(&field.dtype)),
+                                        ),
                                         true,
-                                    )?;
+                                    )?,
+                                    None => {
+                                        series.to_arrow_with_field(0, Cow::Borrowed(field), true)?
+                                    },
+                                };
 
                                 let encode_page_iters = array_to_columns(
                                     array,

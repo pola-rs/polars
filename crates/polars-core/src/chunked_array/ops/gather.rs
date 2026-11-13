@@ -148,7 +148,7 @@ where
         let ca = self;
         let targets: Vec<_> = ca.downcast_iter().collect();
         let arr = gather_idx_array_unchecked(
-            ca.dtype().to_arrow(CompatLevel::newest()),
+            ca.dtype().to_physical_arrow(CompatLevel::newest()),
             &targets,
             ca.null_count() > 0,
             indices.as_ref(),
@@ -203,7 +203,7 @@ where
         let targets: Vec<_> = ca.downcast_iter().collect();
 
         let chunks = indices.downcast_iter().map(|idx_arr| {
-            let dtype = ca.dtype().to_arrow(CompatLevel::newest());
+            let dtype = ca.dtype().to_physical_arrow(CompatLevel::newest());
             if idx_arr.null_count() == 0 {
                 gather_idx_array_unchecked(dtype, &targets, targets_have_nulls, idx_arr.values())
             } else if targets.len() == 1 {
@@ -251,7 +251,7 @@ impl ChunkTakeUnchecked<IdxCa> for BinaryChunked {
         let targets: Vec<_> = ca.downcast_iter().collect();
 
         let chunks = indices.downcast_iter().map(|idx_arr| {
-            let dtype = ca.dtype().to_arrow(CompatLevel::newest());
+            let dtype = ca.dtype().to_physical_arrow(CompatLevel::newest());
             if targets.len() == 1 {
                 let target = targets.first().unwrap();
                 take_unchecked(&**target, idx_arr)
@@ -287,7 +287,7 @@ impl ChunkTakeUnchecked<IdxCa> for StringChunked {
         let targets: Vec<_> = ca.downcast_iter().collect();
 
         let chunks = indices.downcast_iter().map(|idx_arr| {
-            let dtype = ca.dtype().to_arrow(CompatLevel::newest());
+            let dtype = ca.dtype().to_physical_arrow(CompatLevel::newest());
             if targets.len() == 1 {
                 let target = targets.first().unwrap();
                 take_unchecked(&**target, idx_arr)
@@ -384,7 +384,7 @@ impl ChunkTakeUnchecked<IdxCa> for ArrayChunked {
         let targets: Vec<_> = ca.downcast_iter().collect();
 
         let chunks = indices.downcast_iter().map(|idx_arr| {
-            let dtype = ca.dtype().to_arrow(CompatLevel::newest());
+            let dtype = ca.dtype().to_physical_arrow(CompatLevel::newest());
             if targets.len() == 1 {
                 let target = targets.first().unwrap();
                 take_unchecked(&**target, idx_arr)
@@ -437,7 +437,7 @@ impl ChunkTakeUnchecked<IdxCa> for ListChunked {
         let targets: Vec<_> = ca.downcast_iter().collect();
 
         let chunks = indices.downcast_iter().map(|idx_arr| {
-            let dtype = ca.dtype().to_arrow(CompatLevel::newest());
+            let dtype = ca.dtype().to_physical_arrow(CompatLevel::newest());
             if targets.len() == 1 {
                 let target = targets.first().unwrap();
                 take_unchecked(&**target, idx_arr)

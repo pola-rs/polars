@@ -45,6 +45,7 @@ from polars.datatypes import (
     String,
     Struct,
     Time,
+    Union,
     Unknown,
     dtype_to_py_type,
     is_polars_dtype,
@@ -212,6 +213,16 @@ def sequence_to_pyseries(
 
     elif dtype == Map:
         msg = "Map requires a key and a value type, e.g. `pl.Map(pl.String, pl.Int64)`"
+        raise TypeError(msg)
+
+    elif isinstance(dtype, Union):
+        # Python values carry no variant; each goes to the only variant of its kind.
+        return PySeries.new_from_any_values_and_dtype(
+            name, values, dtype, strict=strict
+        )
+
+    elif dtype == Union:
+        msg = 'Union requires its variants, e.g. `pl.Union({"i": pl.Int64, "s": pl.String})`'
         raise TypeError(msg)
 
     elif dtype == Struct:

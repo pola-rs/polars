@@ -106,6 +106,7 @@ pub fn concatenate_unchecked<A: AsRef<dyn Array>>(arrays: &[A]) -> PolarsResult<
         FixedSizeList => Ok(Box::new(concatenate_fixed_size_list(arrays)?)),
         Struct => Ok(Box::new(concatenate_struct(arrays)?)),
         Union => unimplemented!(),
+        LargeUnion => Ok(Box::new(concatenate_large_union(arrays)?)),
         Map => unimplemented!(),
         Dictionary(_) => unimplemented!(),
     }
@@ -432,6 +433,67 @@ fn concatenate_fixed_size_list<A: AsRef<dyn Array>>(
     let values = concatenate_unchecked(&inner_arrays)?;
     let validity = concatenate_validities_with_len_null_count(arrays, total_len, null_count);
     Ok(FixedSizeListArray::new(dtype, total_len, values, validity))
+}
+
+/// Each chunk contributes only the child ranges it references, so slices of one array that share
+/// whole children don't duplicate them.
+fn concatenate_large_union<A: AsRef<dyn Array>>(arrays: &[A]) -> PolarsResult<LargeUnionArray> {
+    let dtype = arrays[0].as_ref().dtype().clone();
+    let (total_len, null_count) = len_null_count(arrays);
+    let validity = concatenate_validities_with_len_null_count(arrays, total_len, null_count);
+
+    let n = LargeUnionArray::get_fields(&dtype).len();
+    let mut types = Vec::with_capacity(total_len);
+    let mut offsets = Vec::with_capacity(total_len);
+    let mut parts: Vec<Vec<Box<dyn Array>>> = (0..n).map(|_| Vec::new()).collect();
+    let mut base = vec![0i64; n];
+    let mut first = vec![-1i64; n];
+    let mut last = vec![-1i64; n];
+    for arr in arrays {
+        let arr: &LargeUnionArray = arr.as_ref().as_any().downcast_ref().unwrap();
+        first.fill(-1);
+        for (&t, &o) in arr.types().iter().zip(arr.offsets().iter()) {
+            let t = t as usize;
+            if first[t] < 0 {
+                first[t] = o;
+            }
+            last[t] = o;
+        }
+        types.extend_from_slice(arr.types());
+        offsets.extend(
+            arr.types()
+                .iter()
+                .zip(arr.offsets().iter())
+                .map(|(&t, &o)| o - first[t as usize] + base[t as usize]),
+        );
+        for t in 0..n {
+            if first[t] >= 0 {
+                let len = last[t] - first[t] + 1;
+                parts[t].push(
+                    arr.fields()[t]
+                        .clone()
+                        .sliced(first[t] as usize, len as usize),
+                );
+                base[t] += len;
+            }
+        }
+    }
+
+    let fields = parts
+        .into_iter()
+        .zip(LargeUnionArray::get_fields(&dtype))
+        .map(|(parts, field)| {
+            if parts.is_empty() {
+                Ok(new_empty_array(field.dtype().clone()))
+            } else {
+                concatenate_unchecked(&parts)
+            }
+        })
+        .try_collect_vec()?;
+
+    Ok(unsafe {
+        LargeUnionArray::new_unchecked(dtype, types.into(), offsets.into(), fields, validity)
+    })
 }
 
 fn concatenate_struct<A: AsRef<dyn Array>>(arrays: &[A]) -> PolarsResult<StructArray> {

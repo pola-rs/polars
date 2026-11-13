@@ -110,6 +110,7 @@ dtype-full = [
   "dtype-u128",
   "dtype-u8",
   "dtype-f16",
+  "dtype-union",
 ]
 dtype-array = [
   "polars-plan/dtype-array",
@@ -175,6 +176,14 @@ dtype-map = [
   "polars-plan/dtype-map",
   "polars-stream?/dtype-map",
   "polars-expr/dtype-map",
+]
+dtype-union = [
+  "polars-core/dtype-union",
+  "polars-ops/dtype-union",
+  "polars-plan/dtype-union",
+  "polars-expr/dtype-union",
+  "polars-stream?/dtype-union",
+  "dtype-categorical",
 ]
 dtype-struct = [
   "polars-plan/dtype-struct",

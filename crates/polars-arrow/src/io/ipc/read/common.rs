@@ -181,6 +181,7 @@ pub fn read_record_batch_pruned<R: Read + Seek>(
                         &field.dtype,
                         &mut buffers,
                         &mut variadic_buffer_counts,
+                        version,
                     )?;
                     Ok(None)
                 },

@@ -400,6 +400,7 @@ dtype-full = [
   "dtype-categorical",
   "dtype-struct",
   "dtype-map",
+  "dtype-union",
 ]
 
 # sensible minimal set of opt-in datatypes
@@ -515,6 +516,7 @@ dtype-extension = [
   "polars-ops/dtype-extension",
   "polars-plan?/dtype-extension",
 ]
+dtype-union = ["polars-core/dtype-union", "polars-lazy?/dtype-union", "polars-ops/dtype-union"]
 dtype-map = [
   "polars-core/dtype-map",
   "polars-expr?/dtype-map",

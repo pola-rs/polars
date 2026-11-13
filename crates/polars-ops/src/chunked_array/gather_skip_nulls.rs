@@ -94,8 +94,10 @@ where
             .collect();
         let gathered =
             unsafe { gather_skip_nulls_idx_pairs_unchecked(self, index_pairs, indices.len()) };
-        let arr =
-            T::Array::from_zeroable_vec(gathered, self.dtype().to_arrow(CompatLevel::newest()));
+        let arr = T::Array::from_zeroable_vec(
+            gathered,
+            self.dtype().to_physical_arrow(CompatLevel::newest()),
+        );
         Ok(ChunkedArray::from_chunk_iter_like(self, [arr]))
     }
 }
@@ -141,8 +143,10 @@ where
             gather_skip_nulls_idx_pairs_unchecked(self, index_pairs, indices.as_ref().len())
         };
 
-        let mut arr =
-            T::Array::from_zeroable_vec(gathered, self.dtype().to_arrow(CompatLevel::newest()));
+        let mut arr = T::Array::from_zeroable_vec(
+            gathered,
+            self.dtype().to_physical_arrow(CompatLevel::newest()),
+        );
         if indices.null_count() > 0 {
             arr = arr.with_validity_typed(concatenate_validities(indices.chunks()));
         }

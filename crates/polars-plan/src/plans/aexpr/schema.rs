@@ -172,12 +172,20 @@ impl AExpr {
             Agg(agg) => {
                 use IRAggExpr::*;
                 match agg {
-                    Max { input: expr, .. }
-                    | Min { input: expr, .. }
-                    | First(expr)
-                    | FirstNonNull(expr)
-                    | Last(expr)
-                    | LastNonNull(expr) => ctx.arena.get(*expr).to_field_impl(ctx),
+                    // Unions have no order, and grouped kernels would give nulls instead of raising.
+                    Max { input: expr, .. } | Min { input: expr, .. } => {
+                        let field = ctx.arena.get(*expr).to_field_impl(ctx)?;
+                        polars_ensure!(
+                            !field.dtype().is_union(),
+                            InvalidOperation: "`{}` operation not supported for dtype `{}`",
+                            if matches!(agg, Max { .. }) { "max" } else { "min" },
+                            field.dtype()
+                        );
+                        Ok(field)
+                    },
+                    First(expr) | FirstNonNull(expr) | Last(expr) | LastNonNull(expr) => {
+                        ctx.arena.get(*expr).to_field_impl(ctx)
+                    },
                     Item { input: expr, .. } => ctx.arena.get(*expr).to_field_impl(ctx),
                     Sum { input: expr, .. } => {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
@@ -197,6 +205,13 @@ impl AExpr {
                             },
                             #[cfg(feature = "dtype-struct")]
                             Struct(_) => {
+                                polars_bail!(
+                                    InvalidOperation: "`sum` operation not supported for dtype `{}`",
+                                    field.dtype()
+                                )
+                            },
+                            #[cfg(feature = "dtype-union")]
+                            Union(_) => {
                                 polars_bail!(
                                     InvalidOperation: "`sum` operation not supported for dtype `{}`",
                                     field.dtype()
@@ -263,6 +278,7 @@ impl AExpr {
             },
             Cast { expr, dtype, .. } => {
                 let field = ctx.arena.get(*expr).to_field_impl(ctx)?;
+                field.dtype().ensure_union_cast(dtype)?;
                 Ok(Field::new(field.name().clone(), dtype.clone()))
             },
             Ternary { truthy, falsy, .. } => {

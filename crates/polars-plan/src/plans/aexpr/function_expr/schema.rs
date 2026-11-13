@@ -22,6 +22,8 @@ impl IRFunctionExpr {
             ListExpr(func) => func.get_field(mapper),
             #[cfg(feature = "dtype-map")]
             MapExpr(func) => func.get_field(mapper),
+            #[cfg(feature = "dtype-union")]
+            UnionExpr(func) => func.get_field(mapper),
             #[cfg(feature = "strings")]
             StringExpr(s) => s.get_field(mapper),
             #[cfg(feature = "dtype-struct")]
@@ -168,13 +170,26 @@ impl IRFunctionExpr {
                 has_min: _,
                 has_max: _,
             } => mapper.with_same_dtype(),
-            Quantile { method: _ } => mapper.quantile_dtype(),
+            Quantile { method: _ } => {
+                // Unions have no order, and grouped kernels would give nulls instead of raising.
+                polars_ensure!(
+                    !mapper.fields[0].dtype().is_union(),
+                    InvalidOperation: "`quantile` operation not supported for dtype `{}`",
+                    mapper.fields[0].dtype()
+                );
+                mapper.quantile_dtype()
+            },
             #[cfg(feature = "mode")]
             Mode { maintain_order: _ } => mapper.with_same_dtype(),
             #[cfg(feature = "moment")]
             Skew(_) => mapper.with_dtype(DataType::Float64),
             #[cfg(feature = "moment")]
             Kurtosis(..) => mapper.with_dtype(DataType::Float64),
+            ArgMin | ArgMax if mapper.fields[0].dtype().is_union() => polars_bail!(
+                InvalidOperation: "`{}` operation not supported for dtype `{}`",
+                if matches!(self, ArgMin) { "arg_min" } else { "arg_max" },
+                mapper.fields[0].dtype()
+            ),
             ArgUnique | ArgMin | ArgMax | ArgSort { .. } => mapper.with_dtype(IDX_DTYPE),
             MinBy { .. } | MaxBy { .. } => mapper.with_same_dtype(),
             Product => mapper.map_dtype(|dtype| {

@@ -53,6 +53,8 @@ mod struct_;
 pub mod temporal;
 mod to_vec;
 mod trusted_len;
+#[cfg(feature = "dtype-union")]
+pub(crate) mod union_;
 pub(crate) use arg_min_max::*;
 #[cfg(feature = "dtype-struct")]
 pub use struct_::StructChunked;
@@ -202,6 +204,12 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         length: usize,
         null_count: usize,
     ) -> Self {
+        debug_assert!(
+            chunks
+                .iter()
+                .all(|c| !c.dtype().contains_interchange_union()),
+            "Polars arrays must hold LargeUnion, not Union; build them from `to_physical_arrow`"
+        );
         Self {
             field,
             chunks,
@@ -811,13 +819,13 @@ impl ArrayChunked {
     ) -> Self {
         let dtype = DataType::Array(Box::new(inner_dtype.clone()), width);
         let arrow_dtype = inner_dtype
-            .to_physical()
-            .to_arrow(CompatLevel::newest())
+            .to_physical_arrow(CompatLevel::newest())
             .to_fixed_size_list(width, true);
         let field = Arc::new(Field::new(name, dtype));
         if width == 0 {
             use polars_arrow::array::builder::{ArrayBuilder, make_builder};
-            let values = make_builder(&inner_dtype.to_arrow(CompatLevel::newest())).freeze();
+            let values =
+                make_builder(&inner_dtype.to_physical_arrow(CompatLevel::newest())).freeze();
             return ArrayChunked::new_with_compute_len(
                 field,
                 vec![FixedSizeListArray::new(arrow_dtype, length, values, None).into_boxed()],
@@ -1150,7 +1158,7 @@ pub(crate) fn to_array<T: PolarsNumericType>(
 impl<T: PolarsDataType> Default for ChunkedArray<T> {
     fn default() -> Self {
         let dtype = T::get_static_dtype();
-        let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
+        let arrow_dtype = dtype.to_physical_arrow(CompatLevel::newest());
         ChunkedArray {
             field: Arc::new(Field::new(PlSmallStr::EMPTY, dtype)),
             // Invariant: always has 1 chunk.

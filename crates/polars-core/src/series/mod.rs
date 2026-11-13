@@ -413,6 +413,10 @@ impl Series {
 
     /// Cast [`Series`] to another [`DataType`].
     pub fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Self> {
+        // Before the all-null shortcut below, so whether a cast is allowed doesn't depend on the
+        // data.
+        #[cfg(feature = "dtype-union")]
+        self.dtype().ensure_union_cast(dtype)?;
         let slf = self
             .trim_lists_to_normalized_offsets()
             .map_or(Cow::Borrowed(self), Cow::Owned);
@@ -618,6 +622,12 @@ impl Series {
                     .map(|ca| ca.into_series())
             },
 
+            #[cfg(feature = "dtype-union")]
+            (D::Union(_), D::Union(_)) => {
+                let mut ca = self.union().unwrap().clone();
+                unsafe { ca.set_dtype(dtype.clone()) };
+                Ok(ca.into_series())
+            },
             #[cfg(feature = "dtype-map")]
             (D::List(_), D::Map(_, _)) => {
                 use crate::chunked_array::logical::ensure_live_entries_non_null;
@@ -826,6 +836,18 @@ impl Series {
             Struct(_) => match self.struct_().unwrap().to_physical_repr() {
                 Cow::Borrowed(_) => Cow::Borrowed(self),
                 Cow::Owned(ca) => Cow::Owned(ca.into_series()),
+            },
+            // Variant children are stored physical, so only the dtype changes.
+            #[cfg(feature = "dtype-union")]
+            Union(_) => {
+                let physical = self.dtype().to_physical();
+                if &physical == self.dtype() {
+                    Cow::Borrowed(self)
+                } else {
+                    let mut ca = self.union().unwrap().clone();
+                    unsafe { ca.set_dtype(physical) };
+                    Cow::Owned(ca.into_series())
+                }
             },
             #[cfg(feature = "dtype-map")]
             Map(_, _) => match self.map().unwrap().storage().to_physical_repr() {

@@ -27,7 +27,7 @@ fn constructor<'a, I: ExactSizeIterator<Item = &'a Series> + Clone>(
 ) -> StructChunked {
     if fields.len() == 0 {
         let dtype = DataType::Struct(Vec::new());
-        let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
+        let arrow_dtype = dtype.to_physical_arrow(CompatLevel::newest());
         let chunks = vec![StructArray::new(arrow_dtype, length, Vec::new(), None).boxed()];
 
         // SAFETY: We construct each chunk above to have the `Struct` data type.
@@ -42,7 +42,7 @@ fn constructor<'a, I: ExactSizeIterator<Item = &'a Series> + Clone>(
 
     let n_chunks = fields.clone().next().unwrap().n_chunks();
     let dtype = DataType::Struct(fields.clone().map(|s| s.field().into_owned()).collect());
-    let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
+    let arrow_dtype = dtype.to_physical_arrow(CompatLevel::newest());
 
     let chunks = (0..n_chunks)
         .map(|c_i| {

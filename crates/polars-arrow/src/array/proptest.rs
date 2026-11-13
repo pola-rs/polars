@@ -256,7 +256,8 @@ pub fn array_with_dtype(
         | ArrowDataType::Decimal256(..)
         | ArrowDataType::Extension(..)
         | ArrowDataType::Unknown
-        | ArrowDataType::Union(..) => unimplemented!(),
+        | ArrowDataType::Union(..)
+        | ArrowDataType::LargeUnion(..) => unimplemented!(),
     }
 }
 

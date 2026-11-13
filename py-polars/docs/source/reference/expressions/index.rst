@@ -27,6 +27,7 @@ This page gives an overview of all public Polars expressions.
    string
    struct
    temporal
+   union
    window
 
 .. currentmodule:: polars

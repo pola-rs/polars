@@ -87,6 +87,7 @@ __all__ = [
     "struct",
     "temporal",
     "time",
+    "union",
     "unsigned_integer",
 ]
 
@@ -381,6 +382,8 @@ class Selector(Expr):
                     selectors += [struct()]
                 elif dt is pldt.Map:
                     selectors += [map()]
+                elif dt is pldt.Union:
+                    selectors += [union()]
                 elif dt is pldt.Decimal:
                     selectors += [decimal()]
                 else:
@@ -1645,11 +1648,63 @@ def map() -> Selector:
 
 
 @unstable()
+def union() -> Selector:
+    """
+    Select all union columns.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+
+    See Also
+    --------
+    by_dtype : Select all columns matching the given dtype(s).
+    nested : Select all nested columns.
+
+    Examples
+    --------
+    >>> import polars.selectors as cs
+    >>> dtype = pl.Union({"i": pl.Int64, "s": pl.String})
+    >>> df = pl.select(
+    ...     foo=pl.union_value(dtype, i=pl.Series([1, 2])),
+    ...     bar=pl.Series([123, 456]),
+    ... )
+
+    Select all union columns:
+
+    >>> df.select(cs.union())
+    shape: (2, 1)
+    ┌───────────────────────┐
+    │ foo                   │
+    │ ---                   │
+    │ union[i: i64, s: str] │
+    ╞═══════════════════════╡
+    │ 1                     │
+    │ 2                     │
+    └───────────────────────┘
+
+    Select all columns *except* for those that are unions:
+
+    >>> df.select(~cs.union())
+    shape: (2, 1)
+    ┌─────┐
+    │ bar │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 123 │
+    │ 456 │
+    └─────┘
+    """
+    return Selector._from_pyselector(PySelector.union_dtype())
+
+
+@unstable()
 def nested() -> Selector:
     """
     Select all nested columns.
 
-    A nested column is a list, array or struct.
+    A nested column is a list, array, struct, map or union.
 
     .. warning::
         This functionality is considered **unstable**. It may be changed

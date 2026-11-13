@@ -223,6 +223,9 @@ pub fn read<R: Read + Seek>(
                 .map(|x| x.boxed())
             })
         },
+        LargeUnion => {
+            polars_bail!(ComputeError: "LargeUnion is not an Arrow type; convert it to a Union first")
+        },
         Union => read_union(
             field_nodes,
             variadic_buffer_counts,
@@ -412,6 +415,7 @@ pub fn skip(
     dtype: &ArrowDataType,
     buffers: &mut VecDeque<IpcBuffer>,
     variadic_buffer_counts: &mut VecDeque<usize>,
+    version: MetadataVersion,
 ) -> PolarsResult<()> {
     use PhysicalType::*;
     match dtype.to_physical_type() {
@@ -421,13 +425,18 @@ pub fn skip(
         LargeBinary | Binary => skip_binary(field_nodes, buffers),
         LargeUtf8 | Utf8 => skip_utf8(field_nodes, buffers),
         FixedSizeBinary => skip_fixed_size_binary(field_nodes, buffers),
-        List => skip_list::<i32>(field_nodes, dtype, buffers, variadic_buffer_counts),
-        LargeList => skip_list::<i64>(field_nodes, dtype, buffers, variadic_buffer_counts),
-        FixedSizeList => skip_fixed_size_list(field_nodes, dtype, buffers, variadic_buffer_counts),
-        Struct => skip_struct(field_nodes, dtype, buffers, variadic_buffer_counts),
+        List => skip_list::<i32>(field_nodes, dtype, buffers, variadic_buffer_counts, version),
+        LargeList => skip_list::<i64>(field_nodes, dtype, buffers, variadic_buffer_counts, version),
+        FixedSizeList => {
+            skip_fixed_size_list(field_nodes, dtype, buffers, variadic_buffer_counts, version)
+        },
+        Struct => skip_struct(field_nodes, dtype, buffers, variadic_buffer_counts, version),
         Dictionary(_) => skip_dictionary(field_nodes, buffers),
-        Union => skip_union(field_nodes, dtype, buffers, variadic_buffer_counts),
-        Map => skip_map(field_nodes, dtype, buffers, variadic_buffer_counts),
+        Union => skip_union(field_nodes, dtype, buffers, variadic_buffer_counts, version),
+        LargeUnion => {
+            polars_bail!(ComputeError: "LargeUnion is not an Arrow type; convert it to a Union first")
+        },
+        Map => skip_map(field_nodes, dtype, buffers, variadic_buffer_counts, version),
         BinaryView | Utf8View => skip_binview(field_nodes, buffers, variadic_buffer_counts),
     }
 }

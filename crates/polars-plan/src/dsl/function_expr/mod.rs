@@ -35,6 +35,8 @@ mod strings;
 mod struct_;
 #[cfg(feature = "trigonometry")]
 mod trigonometry;
+#[cfg(feature = "dtype-union")]
+mod union_;
 
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
@@ -83,6 +85,8 @@ pub use self::strings::StringFunction;
 pub use self::struct_::StructFunction;
 #[cfg(feature = "trigonometry")]
 pub use self::trigonometry::TrigonometricFunction;
+#[cfg(feature = "dtype-union")]
+pub use self::union_::UnionFunction;
 use super::*;
 
 #[cfg(feature = "dtype-decimal")]
@@ -146,6 +150,8 @@ pub enum FunctionExpr {
     ListExpr(ListFunction),
     #[cfg(feature = "dtype-map")]
     MapExpr(MapFunction),
+    #[cfg(feature = "dtype-union")]
+    UnionExpr(UnionFunction),
     #[cfg(feature = "strings")]
     StringExpr(StringFunction),
     #[cfg(feature = "dtype-struct")]
@@ -511,6 +517,8 @@ impl Hash for FunctionExpr {
             ListExpr(f) => f.hash(state),
             #[cfg(feature = "dtype-map")]
             MapExpr(f) => f.hash(state),
+            #[cfg(feature = "dtype-union")]
+            UnionExpr(f) => f.hash(state),
             #[cfg(feature = "strings")]
             StringExpr(f) => f.hash(state),
             #[cfg(feature = "dtype-struct")]
@@ -867,6 +875,8 @@ impl Display for FunctionExpr {
             ListExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "dtype-map")]
             MapExpr(func) => return write!(f, "{func}"),
+            #[cfg(feature = "dtype-union")]
+            UnionExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "strings")]
             StringExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "dtype-struct")]

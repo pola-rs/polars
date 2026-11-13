@@ -337,7 +337,7 @@ fn total_min_max_by_to_dsl(input: Vec<Expr>, nulls_largest: bool, is_max: bool) 
     }
 }
 
-pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
+pub fn ir_function_to_dsl(mut input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
     use FunctionExpr as F;
     use IRFunctionExpr as IF;
 
@@ -432,6 +432,27 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IM::Get { .. } => M::Get,
             })
         },
+        #[cfg(feature = "dtype-union")]
+        IF::UnionExpr(f) => F::UnionExpr(match f {
+            IRUnionFunction::Tag => UnionFunction::Tag,
+            IRUnionFunction::Field(name) => UnionFunction::Field(name),
+            IRUnionFunction::Value { dtype, variant } => UnionFunction::Value {
+                dtype: DataTypeExpr::Literal(dtype),
+                variant,
+            },
+            IRUnionFunction::Match {
+                names,
+                has_default,
+                dtype: _,
+            } => {
+                let union = input[0].clone();
+                for (arm, name) in input[1..].iter_mut().zip(&names) {
+                    let field = union.clone().union().field(name.clone());
+                    *arm = dsl_to_ir::replace_in_match_arm(arm.clone(), &field, &Expr::Element);
+                }
+                UnionFunction::Match { names, has_default }
+            },
+        }),
         #[cfg(feature = "dtype-extension")]
         IF::Extension(f) => {
             use ExtensionFunction as E;

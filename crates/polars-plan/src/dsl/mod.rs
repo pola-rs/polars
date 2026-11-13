@@ -47,6 +47,8 @@ pub mod string;
 #[cfg(feature = "dtype-struct")]
 mod struct_;
 pub mod udf;
+#[cfg(feature = "dtype-union")]
+mod union_;
 
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -1763,6 +1765,12 @@ impl Expr {
     #[cfg(feature = "dtype-map")]
     pub fn map_(self) -> map::MapNameSpace {
         map::MapNameSpace(self)
+    }
+
+    /// Get the [`union_::UnionNameSpace`].
+    #[cfg(feature = "dtype-union")]
+    pub fn union(self) -> union_::UnionNameSpace {
+        union_::UnionNameSpace(self)
     }
 
     /// Get the [`struct_::StructNameSpace`].

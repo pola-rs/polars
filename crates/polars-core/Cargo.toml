@@ -138,6 +138,7 @@ dtype-u128 = ["polars-compute/dtype-u128"]
 dtype-f16 = ["polars-compute/dtype-f16"]
 dtype-categorical = ["polars-dtype/dtype-categorical"]
 dtype-struct = []
+dtype-union = []
 
 # scale to terabytes?
 bigidx = ["polars-arrow/bigidx", "polars-utils/bigidx", "dtype-i128"]

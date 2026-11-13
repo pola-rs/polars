@@ -38,6 +38,10 @@ mod join;
 mod scans;
 mod sinks;
 mod sql;
+#[cfg(feature = "dtype-union")]
+mod union_match;
+#[cfg(feature = "dtype-union")]
+pub(crate) use union_match::replace_in_match_arm;
 mod utils;
 pub(crate) use expr_expansion::needs_expansion;
 pub use expr_expansion::{expand_expression, is_regex_projection, prepare_projection};

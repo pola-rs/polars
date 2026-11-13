@@ -12,6 +12,8 @@ const BOOLEAN_FALSE_SENTINEL: u8 = 0x02;
 #[derive(Debug, Clone)]
 pub enum RowEncodingContext {
     Struct(Vec<Option<RowEncodingContext>>),
+    /// One context per union variant.
+    Union(Vec<Option<RowEncodingContext>>),
     /// Categorical / Enum
     Categorical(RowEncodingCategoricalContext),
     /// Decimal with given precision
@@ -96,6 +98,26 @@ impl RowEncodingOptions {
         } else {
             BOOLEAN_FALSE_SENTINEL
         }
+    }
+
+    /// The byte that starts a valid union value of variant `t`.
+    pub(crate) fn union_tag(self, t: usize) -> u8 {
+        let tag = t as u8 + 1;
+        if self.contains(Self::DESCENDING) {
+            !tag
+        } else {
+            tag
+        }
+    }
+
+    /// The variant of a valid union value starting with `byte`.
+    pub(crate) fn union_variant(self, byte: u8) -> usize {
+        let tag = if self.contains(Self::DESCENDING) {
+            !byte
+        } else {
+            byte
+        };
+        tag as usize - 1
     }
 
     pub fn list_null_sentinel(self) -> u8 {

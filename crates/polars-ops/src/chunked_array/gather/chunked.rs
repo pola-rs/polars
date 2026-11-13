@@ -193,6 +193,9 @@ impl TakeChunked for Series {
                 let ca = self.struct_().unwrap();
                 take_chunked_unchecked_struct(ca, by, sorted, avoid_sharing).into_series()
             },
+            #[cfg(feature = "dtype-union")]
+            Union(_) => take_opt_chunked_unchecked_union(self.union().unwrap(), by, avoid_sharing)
+                .into_series(),
             #[cfg(feature = "object")]
             Object(_) => take_unchecked_object(self, by, sorted),
             #[cfg(feature = "dtype-decimal")]
@@ -293,6 +296,9 @@ impl TakeChunked for Series {
                 let ca = self.struct_().unwrap();
                 take_opt_chunked_unchecked_struct(ca, by, avoid_sharing).into_series()
             },
+            #[cfg(feature = "dtype-union")]
+            Union(_) => take_opt_chunked_unchecked_union(self.union().unwrap(), by, avoid_sharing)
+                .into_series(),
             #[cfg(feature = "object")]
             Object(_) => take_opt_unchecked_object(self, by, avoid_sharing),
             #[cfg(feature = "dtype-decimal")]
@@ -362,7 +368,7 @@ where
         sorted: IsSorted,
         _allow_sharing: bool,
     ) -> Self {
-        let arrow_dtype = self.dtype().to_arrow(CompatLevel::newest());
+        let arrow_dtype = self.dtype().to_physical_arrow(CompatLevel::newest());
 
         let mut out = if !self.has_nulls() {
             let iter = by.iter().map(|chunk_id| {
@@ -402,7 +408,7 @@ where
         by: &[ChunkId<B>],
         _allow_sharing: bool,
     ) -> Self {
-        let arrow_dtype = self.dtype().to_arrow(CompatLevel::newest());
+        let arrow_dtype = self.dtype().to_physical_arrow(CompatLevel::newest());
 
         if !self.has_nulls() {
             let arr = by
@@ -838,6 +844,49 @@ where
     );
 
     ChunkedArray::with_chunk(ca.name().clone(), arr.maybe_gc())
+}
+
+#[cfg(feature = "dtype-union")]
+unsafe fn take_opt_chunked_unchecked_union<const B: u64>(
+    ca: &UnionChunked,
+    by: &[ChunkId<B>],
+    avoid_sharing: bool,
+) -> UnionChunked {
+    use polars_arrow::array::LargeUnionArrayBuilder;
+    use polars_arrow::array::builder::{ShareStrategy, StaticArrayBuilder};
+
+    let share = if avoid_sharing {
+        ShareStrategy::Never
+    } else {
+        ShareStrategy::Always
+    };
+    let mut builder =
+        LargeUnionArrayBuilder::new(ca.dtype().to_physical_arrow(CompatLevel::newest()));
+    StaticArrayBuilder::reserve(&mut builder, by.len());
+    // Each run takes rows from one chunk; null ids can join any run.
+    let mut rest = by;
+    while !rest.is_empty() {
+        let chunk = rest
+            .iter()
+            .find(|id| !id.is_null())
+            .map(|id| id.extract().0);
+        let Some(chunk) = chunk else {
+            StaticArrayBuilder::extend_nulls(&mut builder, rest.len());
+            break;
+        };
+        let run_len = rest
+            .iter()
+            .position(|id| !id.is_null() && id.extract().0 != chunk)
+            .unwrap_or(rest.len());
+        let (run, tail) = rest.split_at(run_len);
+        let arr = ca.downcast_get_unchecked(chunk as usize);
+        let rows = run
+            .iter()
+            .map(|id| (!id.is_null()).then(|| id.extract().1 as usize));
+        builder.extend_rows(arr, rows, share);
+        rest = tail;
+    }
+    ca.with_chunks(vec![StaticArrayBuilder::freeze(builder).boxed()])
 }
 
 #[cfg(feature = "dtype-struct")]

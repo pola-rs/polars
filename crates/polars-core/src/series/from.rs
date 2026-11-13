@@ -47,7 +47,7 @@ impl Series {
         dtype.ensure_valid_map_dtypes()?;
 
         let physical = dtype.to_physical();
-        if &physical.to_arrow(CompatLevel::newest()) != chunk.dtype() {
+        if &dtype.to_physical_arrow(CompatLevel::newest()) != chunk.dtype() {
             polars_bail!(
                 InvalidOperation: "cannot create a series of type '{dtype}' of arrow chunk with type '{:?}'",
                 chunk.dtype()
@@ -150,6 +150,9 @@ impl Series {
                 );
                 MapChunked::from_storage_unchecked(dtype.clone(), storage).into_series()
             },
+            #[cfg(feature = "dtype-union")]
+            Union(_) => UnionChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype.clone())
+                .into_series(),
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
                 let mut ca =
@@ -621,6 +624,25 @@ impl Series {
                 })
             },
 
+            #[cfg(feature = "dtype-union")]
+            ArrowDataType::Union(_) => {
+                let (chunks, dtype) =
+                    crate::chunked_array::union_::union_from_arrow(chunks, |children, field| {
+                        to_physical_and_dtype(children, field.metadata.as_deref())
+                    })?;
+                Ok(Series::from_chunks_and_dtype_unchecked(
+                    name, chunks, &dtype,
+                ))
+            },
+            // Polars' own physical arrays, e.g. decoded rows.
+            #[cfg(feature = "dtype-union")]
+            ArrowDataType::LargeUnion(_) => {
+                let dtype = DataType::from_arrow_dtype(chunks[0].dtype());
+                Ok(
+                    UnionChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype)
+                        .into_series(),
+                )
+            },
             dt => polars_bail!(ComputeError: "cannot create series from {:?}", dt),
         }
     }
@@ -846,6 +868,7 @@ unsafe fn to_physical_and_dtype(
         | ArrowDataType::Decimal(_, _)
         | ArrowDataType::Decimal256(_, _)
         | ArrowDataType::Date64
+        | ArrowDataType::Union(_)
         | ArrowDataType::Map(_, _)) => {
             let dt = dt.clone();
             let mut s = Series::_try_from_arrow_unchecked(PlSmallStr::EMPTY, arrays, &dt)?;

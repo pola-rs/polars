@@ -110,6 +110,9 @@ pub fn dictionaries_to_encode(
             let field = field.fields.first().ok_or_else(|| polars_err!(ComputeError: "Invalid IPC field structure: expected nested field but fields vector is empty"))?;
             dictionaries_to_encode(field, values.as_ref(), dictionary_tracker, dicts_to_encode)
         },
+        LargeUnion => {
+            polars_bail!(InvalidOperation: "LargeUnion is not an Arrow type; convert it to a Union first")
+        },
         Union => {
             let values = array
                 .as_any()
@@ -263,6 +266,12 @@ fn set_variadic_buffer_counts(counts: &mut Vec<i64>, array: &dyn Array) {
                 .values()
                 .sliced(first.to_usize(), last.to_usize() - first.to_usize());
             set_variadic_buffer_counts(counts, &*subslice)
+        },
+        ArrowDataType::Union(_) => {
+            let array = array.as_any().downcast_ref::<UnionArray>().unwrap();
+            for array in array.fields() {
+                set_variadic_buffer_counts(counts, array.as_ref())
+            }
         },
         ArrowDataType::FixedSizeList(_, _) => {
             let array = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();

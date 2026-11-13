@@ -1,5 +1,6 @@
 pub mod geo;
 pub mod read;
+pub(crate) mod union;
 pub mod write;
 
 #[cfg(feature = "bloom_filter")]

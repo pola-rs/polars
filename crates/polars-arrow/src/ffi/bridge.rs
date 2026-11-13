@@ -30,6 +30,7 @@ pub fn align_to_c_data_interface(array: Box<dyn Array>) -> Box<dyn Array> {
         FixedSizeList => ffi_dyn!(array, FixedSizeListArray),
         Struct => ffi_dyn!(array, StructArray),
         Union => ffi_dyn!(array, UnionArray),
+        LargeUnion => panic!("LargeUnion is not an Arrow type; convert it to a Union first"),
         Map => ffi_dyn!(array, MapArray),
         Dictionary(key_type) => {
             match_integer_type!(key_type, |$T| {

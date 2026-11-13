@@ -11,6 +11,8 @@ use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
 use pyo3::types::PyCapsule;
 
+use crate::error::PyPolarsErr;
+
 /// Arrow array to Python.
 pub(crate) fn to_py_array(
     array: ArrayRef,
@@ -69,7 +71,9 @@ pub(crate) fn series_to_stream<'py>(
     py: Python<'py>,
 ) -> PyResult<Bound<'py, PyCapsule>> {
     let field = series.field().to_arrow(CompatLevel::newest());
-    let series = series.clone();
+    let series = split_unions_for_export(&series.clone().into_frame())?.columns()[0]
+        .as_materialized_series()
+        .clone();
     let iter = Box::new(
         (0..series.n_chunks()).map(move |i| Ok(series.to_arrow(i, CompatLevel::newest()))),
     ) as _;
@@ -82,10 +86,29 @@ pub(crate) fn dataframe_to_stream<'py>(
     df: &DataFrame,
     py: Python<'py>,
 ) -> PyResult<Bound<'py, PyCapsule>> {
-    let iter = Box::new(DataFrameStreamIterator::new(df));
+    let df = split_unions_for_export(df)?;
+    let iter = Box::new(DataFrameStreamIterator::new(&df));
     let field = iter.field();
     let stream = ffi::export_iterator(iter, field);
     PyCapsule::new_with_value(py, stream, c"arrow_array_stream")
+}
+
+/// Arrow union offsets are `i32`, so a chunk with more rows of one variant can't be exported.
+fn split_unions_for_export(df: &DataFrame) -> PyResult<DataFrame> {
+    let mut df = df.clone();
+    if df.columns().iter().any(|c| c.dtype().contains_union()) {
+        // Splitting a scalar column gives scalar columns, which are stacked back into one.
+        let columns = df
+            .materialized_column_iter()
+            .map(|s| polars::prelude::Column::from(s.clone()))
+            .collect();
+        // SAFETY: the columns are those of `df`, materialized.
+        df = unsafe { DataFrame::new_unchecked(df.height(), columns) };
+        df = polars_core::frame::chunk_df_for_writing(&mut df, 512 * 512)
+            .map_err(PyPolarsErr::from)?
+            .into_owned();
+    }
+    Ok(df)
 }
 
 #[cfg(feature = "c_api")]

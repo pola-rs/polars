@@ -42,6 +42,8 @@ mod strings;
 mod struct_;
 #[cfg(feature = "trigonometry")]
 mod trigonometry;
+#[cfg(feature = "dtype-union")]
+mod union_;
 
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
@@ -95,6 +97,10 @@ pub use self::strings::TZ_AWARE_RE;
 pub use self::struct_::IRStructFunction;
 #[cfg(feature = "trigonometry")]
 pub use self::trigonometry::IRTrigonometricFunction;
+#[cfg(feature = "dtype-union")]
+pub use self::union_::IRUnionFunction;
+#[cfg(feature = "dtype-union")]
+pub(crate) use self::union_::literal_fits as union_literal_fits;
 use super::*;
 
 /// How `min_by` and `max_by` order the `by` values.
@@ -122,6 +128,8 @@ pub enum IRFunctionExpr {
     ListExpr(IRListFunction),
     #[cfg(feature = "dtype-map")]
     MapExpr(IRMapFunction),
+    #[cfg(feature = "dtype-union")]
+    UnionExpr(IRUnionFunction),
     #[cfg(feature = "strings")]
     StringExpr(IRStringFunction),
     #[cfg(feature = "dtype-struct")]
@@ -495,6 +503,8 @@ impl Hash for IRFunctionExpr {
             ListExpr(f) => f.hash(state),
             #[cfg(feature = "dtype-map")]
             MapExpr(f) => f.hash(state),
+            #[cfg(feature = "dtype-union")]
+            UnionExpr(f) => f.hash(state),
             #[cfg(feature = "strings")]
             StringExpr(f) => f.hash(state),
             #[cfg(feature = "dtype-struct")]
@@ -888,6 +898,8 @@ impl IRFunctionExpr {
             ListExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "dtype-map")]
             MapExpr(func) => return write!(f, "{func}"),
+            #[cfg(feature = "dtype-union")]
+            UnionExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "strings")]
             StringExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "dtype-struct")]
@@ -1255,6 +1267,8 @@ impl IRFunctionExpr {
             F::ListExpr(e) => e.function_options(),
             #[cfg(feature = "dtype-map")]
             F::MapExpr(e) => e.function_options(),
+            #[cfg(feature = "dtype-union")]
+            F::UnionExpr(e) => e.function_options(),
             #[cfg(feature = "strings")]
             F::StringExpr(e) => e.function_options(),
             #[cfg(feature = "dtype-struct")]
