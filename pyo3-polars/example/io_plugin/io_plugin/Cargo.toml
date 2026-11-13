@@ -16,3 +16,6 @@ polars-python = { workspace = true, features = ["full", "allow_unused"] }
 pyo3 = { workspace = true, features = [] }
 pyo3-polars = { workspace = true, features = ["derive", "lazy"] }
 rand = { version = "0.10.1", features = [] }
+
+[lints]
+workspace = true
