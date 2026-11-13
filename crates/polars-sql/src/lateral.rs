@@ -8,7 +8,14 @@
 //! ```
 //!
 //! `dom` holds each distinct value `v` of `l.k` with an `id`, and `l'` is `l` with the `id` of
-//! its value as `lid`. A GROUP BY of the derived table also groups by `dom.id`.
+//! its value as `lid`. A GROUP BY of the derived table also groups by `dom.id`. An aggregate
+//! without GROUP BY gives a row for every outer row, so it becomes a scalar subquery:
+//!
+//! ```sql
+//! l JOIN (SELECT MAX(p) AS m FROM r WHERE r.k = l.k) d ON c
+//! -- l' JOIN (SELECT (SELECT MAX(p) FROM r WHERE r.k = dom.v) AS m, dom.id AS rid FROM dom) d
+//! --   ON c AND l'.lid = d.rid
+//! ```
 use std::ops::ControlFlow;
 
 use polars_core::prelude::*;
@@ -157,6 +164,74 @@ impl VisitorMut for ReadDomain<'_> {
     }
 }
 
+/// Replaces each aggregate by a scalar subquery that computes it over `scope`.
+struct AggregateSubqueries<'a> {
+    ctx: &'a SQLContext,
+    scope: Query,
+    query_depth: usize,
+}
+
+impl VisitorMut for AggregateSubqueries<'_> {
+    type Break = ();
+
+    fn pre_visit_query(&mut self, _query: &mut Query) -> ControlFlow<()> {
+        self.query_depth += 1;
+        ControlFlow::Continue(())
+    }
+
+    fn post_visit_query(&mut self, _query: &mut Query) -> ControlFlow<()> {
+        self.query_depth -= 1;
+        ControlFlow::Continue(())
+    }
+
+    fn post_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<()> {
+        if self.query_depth == 0 && is_aggregate_call(self.ctx, expr) {
+            let mut subquery = self.scope.clone();
+            let SetExpr::Select(select) = subquery.body.as_mut() else {
+                unreachable!()
+            };
+            select.projection = vec![SelectItem::UnnamedExpr(expr.clone())];
+            *expr = SQLExpr::Subquery(Box::new(subquery));
+        }
+        ControlFlow::Continue(())
+    }
+}
+
+/// Rewrites an aggregate query without GROUP BY to give its one row for each row of the
+/// domain table, also when no inner row matches it: each aggregate becomes a scalar subquery
+/// over the FROM and WHERE, and HAVING becomes the WHERE. `None` if an unnamed SELECT item
+/// aggregates, as its name would change.
+fn aggregates_as_subqueries(ctx: &SQLContext, query: &mut Query) -> Option<()> {
+    query.order_by = None;
+    let mut scope = query.clone();
+    let SetExpr::Select(inner) = scope.body.as_mut() else {
+        unreachable!()
+    };
+    inner.distinct = None;
+    inner.having = None;
+    let mut subqueries = AggregateSubqueries {
+        ctx,
+        scope,
+        query_depth: 0,
+    };
+    let SetExpr::Select(select) = query.body.as_mut() else {
+        unreachable!()
+    };
+    select.from.clear();
+    select.selection = select.having.take();
+    for item in &mut select.projection {
+        match item {
+            SelectItem::UnnamedExpr(expr) if has_aggregate(ctx, expr) => return None,
+            SelectItem::UnnamedExpr(expr) | SelectItem::ExprWithAlias { expr, .. } => {
+                let _ = dyn_visit::visit_mut(expr, &mut subqueries);
+            },
+            _ => {},
+        }
+    }
+    let _ = dyn_visit::visit_mut(&mut select.selection, &mut subqueries);
+    Some(())
+}
+
 fn table(name: &Ident) -> TableFactor {
     TableFactor::Table {
         name: ObjectName::from(vec![name.clone()]),
@@ -240,8 +315,7 @@ impl SQLContext {
             && (select.having.is_some()
                 || has_aggregate(self, &select.projection)
                 || has_aggregate(self, &subquery.order_by));
-        if empty_group
-            || !modifiers.is_empty()
+        if !modifiers.is_empty()
             || group_by.iter().any(|key| {
                 matches!(
                     strip_nested(key),
@@ -476,6 +550,9 @@ impl SQLContext {
                 query_depth: 0,
             },
         );
+        if empty_group {
+            aggregates_as_subqueries(self, &mut query)?;
+        }
         let SetExpr::Select(select) = query.body.as_mut() else {
             unreachable!()
         };

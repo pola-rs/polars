@@ -3561,6 +3561,41 @@ def test_join_where_number_with_string_raises(condition: str) -> None:
             "GROUP BY k) d ON d.k = a.k ORDER BY a.x",
             [(10, 12), (20, 21)],
         ),
+        (
+            "SELECT a.x, d.v FROM a, LATERAL (SELECT b.v FROM b WHERE b.k = a.k) d "
+            "ORDER BY a.x, d.v",
+            [(10, 100), (10, 101), (20, 200)],
+        ),
+        (
+            "SELECT a.x, d.v, e.w FROM a, (SELECT b.v FROM b WHERE b.k = a.k) d, "
+            "LATERAL (SELECT d.v + a.x AS w) e WHERE e.w > 120 ORDER BY a.x, d.v",
+            [(20, 200, 220)],
+        ),
+        (
+            "SELECT a.x, d.m, d.n FROM a, LATERAL (SELECT MAX(b.v) AS m, "
+            "COUNT(*) AS n FROM b WHERE b.k = a.k) d ORDER BY a.x",
+            [(10, 101, 2), (20, 200, 1), (30, None, 0)],
+        ),
+        (
+            "SELECT a.x, d.m FROM a CROSS JOIN LATERAL (SELECT "
+            "COALESCE(MAX(b.v), 0) + a.x AS m FROM b WHERE b.k = a.k) d ORDER BY a.x",
+            [(10, 111), (20, 220), (30, 30)],
+        ),
+        (
+            "SELECT a.x, d.m FROM a LEFT JOIN LATERAL (SELECT MAX(b.v) AS m FROM b "
+            "WHERE b.k = a.k HAVING COUNT(*) > 1) d ON TRUE ORDER BY a.x",
+            [(10, 101), (20, None), (30, None)],
+        ),
+        (
+            "SELECT a.x, d.z FROM a CROSS JOIN (SELECT a.k AS z FROM b "
+            "ORDER BY SUM(b.v)) d ORDER BY a.x",
+            [(10, 1), (20, 2), (30, None)],
+        ),
+        (
+            "SELECT a.x, d.n FROM a, LATERAL (SELECT COUNT(*) AS n FROM b) d "
+            "ORDER BY a.x",
+            [(10, 4), (20, 4), (30, 4)],
+        ),
     ],
 )
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
@@ -3608,7 +3643,7 @@ def test_lateral_derived_table_reads_left_input_once(
     [
         "SELECT a.x, c.v FROM b RIGHT JOIN c ON b.v = c.v",
         "SELECT COUNT(*) AS n FROM b WHERE b.v = a.k GROUP BY ()",
-        "SELECT a.k AS z FROM b ORDER BY SUM(b.v)",
+        "SELECT MAX(b.v) FROM b WHERE b.v > a.k",
         "SELECT SUM(a.x) AS s FROM b GROUP BY b.v",
         "SELECT a.k FROM b GROUP BY 2",
         "WITH b AS (SELECT 100 AS x) SELECT a.k AS ak, x AS z FROM b",
