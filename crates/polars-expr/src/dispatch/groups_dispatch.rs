@@ -15,7 +15,7 @@ use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::{
     AnyValue, BooleanChunked, ChunkCast, Column, CompatLevel, DataType, ExplodeOptions,
     Float64Chunked, GroupPositions, GroupsIdx, GroupsType, IDX_DTYPE, IntoColumn, IntoSeries,
-    LargeListArray, ListChunked, check_quantiles, explode_with_row_offsets,
+    LargeListArray, ListChunked, check_quantiles, explode_with_row_offsets, extract_quantiles,
 };
 use polars_core::runtime::RAYON;
 use polars_core::scalar::Scalar;
@@ -748,8 +748,7 @@ pub fn quantile<'a>(
         }
         GroupQuantile::PerGroup(quantiles)
     } else {
-        let quantile: f64 = quantile_column.get(0).unwrap().try_extract()?;
-        check_quantiles(&[quantile])?;
+        let quantile = extract_quantiles(quantile_column.as_materialized_series())?[0];
         if let AggState::LiteralScalar(c) = &mut ac.state {
             *c = c.quantile_reduce(quantile, method)?.into_column(keep_name);
             return Ok(ac);
