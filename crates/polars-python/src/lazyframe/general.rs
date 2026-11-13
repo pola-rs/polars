@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::num::NonZeroUsize;
 
 use either::Either;
@@ -32,6 +32,7 @@ use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::expr::datatype::PyDataTypeExpr;
 use crate::expr::selector::PySelector;
+use crate::interop::arrow::to_py::dataframe_to_struct_arrays;
 use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
 #[cfg(feature = "json")]
 use crate::io::cloud_options::OptPyCloudOptions;
@@ -1771,6 +1772,7 @@ impl PyCollectBatches {
 pub struct ArrowStreamIterator {
     inner: Arc<Mutex<CollectBatches>>,
     dtype: ArrowDataType,
+    arrays: VecDeque<ArrayRef>,
 }
 
 impl ArrowStreamIterator {
@@ -1778,6 +1780,7 @@ impl ArrowStreamIterator {
         Self {
             inner,
             dtype: schema,
+            arrays: VecDeque::new(),
         }
     }
 }
@@ -1786,22 +1789,19 @@ impl Iterator for ArrowStreamIterator {
     type Item = PolarsResult<ArrayRef>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let next = self.inner.lock().next();
-        match next {
-            None => None,
-            Some(Err(err)) => Some(Err(err)),
-            Some(Ok(df)) => {
-                let height = df.height();
-                let arrays = df.rechunk_into_arrow(CompatLevel::newest());
-                Some(arrays.map(|arrays| {
-                    Box::new(polars_arrow::array::StructArray::new(
-                        self.dtype.clone(),
-                        height,
-                        arrays,
-                        None,
-                    )) as ArrayRef
-                }))
-            },
+        while self.arrays.is_empty() {
+            let next = self.inner.lock().next();
+            match next? {
+                Err(err) => return Some(Err(err)),
+                Ok(mut df) => {
+                    df.rechunk_mut();
+                    match dataframe_to_struct_arrays(&df, &self.dtype) {
+                        Ok(arrays) => self.arrays = arrays,
+                        Err(err) => return Some(Err(err)),
+                    }
+                },
+            }
         }
+        self.arrays.pop_front().map(Ok)
     }
 }

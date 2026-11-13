@@ -11,8 +11,11 @@ use polars_async::executor::{self, TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::connector;
 use polars_async::primitives::opt_spawned_future::parallelize_first_to_local;
 use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
-use polars_core::prelude::CompatLevel;
-use polars_core::series::arrow_export::ToArrowConverter;
+use polars_core::frame::DataFrame;
+use polars_core::prelude::{CompatLevel, IntoColumn};
+use polars_core::series::arrow_export::{
+    ToArrowConverter, arrow_export_row_bounds, contains_arrow_map,
+};
 use polars_core::utils::polars_arrow;
 use polars_core::utils::polars_arrow::io::ipc::write::{WriteOptions, schema};
 use polars_error::PolarsResult;
@@ -59,101 +62,114 @@ impl RecordBatchEncoder {
 
         while let Ok(morsel) = morsel_rx.recv().await {
             let (df, permit) = morsel.into_inner();
-            let height = df.height();
-            let columns = df.into_columns();
-            let flags = write_statistics_flags.then(|| {
-                columns
-                    .iter()
-                    .map(|c| c.get_flags().bits())
-                    .collect::<Vec<_>>()
-            });
-            let custom_metadata = flags.map(|flags| {
-                vec![schema::key_value(
-                    IPC_RW_RECORD_BATCH_FLAGS_KEY,
-                    serde_json::to_string(&flags).unwrap(),
-                )]
-            });
+            let pieces = split_at_arrow_map_limits(df, &arrow_converters)?;
+            let mut permit = Some(permit);
+            let num_pieces = pieces.len();
 
-            assert_eq!(arrow_converters.len(), columns.len());
+            for (i, df) in pieces.into_iter().enumerate() {
+                // The morsel's memory is released once its last batch is written.
+                let permit = if i + 1 == num_pieces {
+                    permit.take()
+                } else {
+                    None
+                };
 
-            let mut record_batch_arrow_arrays: Vec<Box<dyn Array>> =
-                Vec::with_capacity(arrow_converters.len());
+                let height = df.height();
+                let columns = df.into_columns();
+                let flags = write_statistics_flags.then(|| {
+                    columns
+                        .iter()
+                        .map(|c| c.get_flags().bits())
+                        .collect::<Vec<_>>()
+                });
+                let custom_metadata = flags.map(|flags| {
+                    vec![schema::key_value(
+                        IPC_RW_RECORD_BATCH_FLAGS_KEY,
+                        serde_json::to_string(&flags).unwrap(),
+                    )]
+                });
 
-            // Rechunk and convert to arrow in parallel.
-            for fut in parallelize_first_to_local(
-                TaskPriority::High,
-                task_metrics.as_deref(),
-                columns.into_iter().zip(arrow_converters.drain(..)).map(
-                    |(column, (mut arrow_converter, arrow_field))| async move {
-                        let rechunked = column.as_materialized_series().rechunk();
-                        let dtype = rechunked.dtype();
+                assert_eq!(arrow_converters.len(), columns.len());
 
-                        let array = arrow_converter.array_to_arrow(
-                            rechunked.chunks()[0].as_ref(),
-                            dtype,
-                            Cow::Borrowed(&arrow_field),
+                let mut record_batch_arrow_arrays: Vec<Box<dyn Array>> =
+                    Vec::with_capacity(arrow_converters.len());
+
+                // Rechunk and convert to arrow in parallel.
+                for fut in parallelize_first_to_local(
+                    TaskPriority::High,
+                    task_metrics.as_deref(),
+                    columns.into_iter().zip(arrow_converters.drain(..)).map(
+                        |(column, (mut arrow_converter, arrow_field))| async move {
+                            let rechunked = column.as_materialized_series().rechunk();
+                            let dtype = rechunked.dtype();
+
+                            let array = arrow_converter.array_to_arrow(
+                                rechunked.chunks()[0].as_ref(),
+                                dtype,
+                                Cow::Borrowed(&arrow_field),
+                            );
+
+                            (array, (arrow_converter, arrow_field))
+                        },
+                    ),
+                ) {
+                    let (array, arrow_converter_and_field) = fut.await;
+                    arrow_converters.push(arrow_converter_and_field);
+                    record_batch_arrow_arrays.push(array?);
+                }
+
+                let bytes_bufferer_config = bytes_bufferer_config.clone();
+
+                let serialize_handle = executor::AbortOnDropHandle::new(executor::spawn(
+                    TaskPriority::High,
+                    task_metrics.as_deref(),
+                    async move {
+                        let mut arrow_data = BytesBufferer::new(&bytes_bufferer_config);
+                        let mut ipc_message = BytesBufferer::new(&bytes_bufferer_config);
+                        let mut ctx = IpcBatchSerializationContext::new(
+                            &mut ipc_message,
+                            &mut arrow_data,
+                            compression,
                         );
 
-                        (array, (arrow_converter, arrow_field))
+                        for array in record_batch_arrow_arrays {
+                            write_array(&mut ctx, array.as_ref())?;
+                        }
+
+                        let continuation_bytes =
+                            finish_encode_ipc_record_batch(&mut ctx, height, custom_metadata)?;
+
+                        let message_num_bytes = ipc_message.len();
+                        let arrow_data_num_bytes = arrow_data.len();
+
+                        Ok(IpcBatch {
+                            batch_type: IpcBatchType::Record,
+                            num_rows: height as IdxSize,
+                            continuation_bytes,
+                            message_bytes: ipc_message.into_iter(),
+                            message_num_bytes,
+                            arrow_data_bytes: arrow_data.into_iter(),
+                            arrow_data_num_bytes,
+                            morsel_permit: permit,
+                        })
                     },
-                ),
-            ) {
-                let (array, arrow_converter_and_field) = fut.await;
-                arrow_converters.push(arrow_converter_and_field);
-                record_batch_arrow_arrays.push(array?);
-            }
+                ));
 
-            let bytes_bufferer_config = bytes_bufferer_config.clone();
+                // Wait -> acquire here applies backpressure from slow I/O.
+                // However, if I/O is faster than record batch encoding, then acquiring a token here
+                // will unnecessarily restrict record batch encoding parallelism to 2 threads.
+                let token = if compression.is_none() {
+                    // Uncompressed: Encoding should be 0-copy and complete instantly.
+                    finish_record_batch_write_wg.wait().await;
+                    Some(finish_record_batch_write_wg.token())
+                } else {
+                    // Compressed: Encoding will require CPU effort, allow parallelism across all threads.
+                    None
+                };
 
-            let serialize_handle = executor::AbortOnDropHandle::new(executor::spawn(
-                TaskPriority::High,
-                task_metrics.as_deref(),
-                async move {
-                    let mut arrow_data = BytesBufferer::new(&bytes_bufferer_config);
-                    let mut ipc_message = BytesBufferer::new(&bytes_bufferer_config);
-                    let mut ctx = IpcBatchSerializationContext::new(
-                        &mut ipc_message,
-                        &mut arrow_data,
-                        compression,
-                    );
-
-                    for array in record_batch_arrow_arrays {
-                        write_array(&mut ctx, array.as_ref())?;
-                    }
-
-                    let continuation_bytes =
-                        finish_encode_ipc_record_batch(&mut ctx, height, custom_metadata)?;
-
-                    let message_num_bytes = ipc_message.len();
-                    let arrow_data_num_bytes = arrow_data.len();
-
-                    Ok(IpcBatch {
-                        batch_type: IpcBatchType::Record,
-                        num_rows: height as IdxSize,
-                        continuation_bytes,
-                        message_bytes: ipc_message.into_iter(),
-                        message_num_bytes,
-                        arrow_data_bytes: arrow_data.into_iter(),
-                        arrow_data_num_bytes,
-                        morsel_permit: Some(permit),
-                    })
-                },
-            ));
-
-            // Wait -> acquire here applies backpressure from slow I/O.
-            // However, if I/O is faster than record batch encoding, then acquiring a token here
-            // will unnecessarily restrict record batch encoding parallelism to 2 threads.
-            let token = if compression.is_none() {
-                // Uncompressed: Encoding should be 0-copy and complete instantly.
-                finish_record_batch_write_wg.wait().await;
-                Some(finish_record_batch_write_wg.token())
-            } else {
-                // Compressed: Encoding will require CPU effort, allow parallelism across all threads.
-                None
-            };
-
-            if ipc_batch_tx.send((serialize_handle, token)).await.is_err() {
-                return Ok(());
+                if ipc_batch_tx.send((serialize_handle, token)).await.is_err() {
+                    return Ok(());
+                }
             }
         }
 
@@ -224,4 +240,39 @@ impl RecordBatchEncoder {
 
         Ok(())
     }
+}
+
+/// Split `df` into row ranges whose arrow MAP arrays each fit in `i32` offsets.
+fn split_at_arrow_map_limits(
+    mut df: DataFrame,
+    arrow_converters: &[(ToArrowConverter, ArrowField)],
+) -> PolarsResult<Vec<DataFrame>> {
+    let map_columns: Vec<usize> = arrow_converters
+        .iter()
+        .enumerate()
+        .filter(|(_, (_, field))| contains_arrow_map(field.dtype()))
+        .map(|(i, _)| i)
+        .collect();
+    if map_columns.is_empty() {
+        return Ok(vec![df]);
+    }
+
+    let height = df.height();
+    // SAFETY: rechunking keeps the name and dtype of each column.
+    let columns = unsafe { df.columns_mut_retain_schema() };
+    for &i in &map_columns {
+        columns[i] = columns[i].as_materialized_series().rechunk().into_column();
+    }
+    let bounds = arrow_export_row_bounds(
+        map_columns.iter().map(|&i| {
+            let s = columns[i].as_materialized_series();
+            (s.chunks()[0].as_ref(), arrow_converters[i].1.dtype())
+        }),
+        height,
+    )?;
+
+    Ok(bounds
+        .windows(2)
+        .map(|w| df.slice(w[0] as i64, w[1] - w[0]))
+        .collect())
 }

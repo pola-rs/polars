@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_arrow::array::{Array, StructArray};
+use polars_arrow::array::StructArray;
 use polars_arrow::datatypes::{ArrowDataType, Field as ArrowField};
 use polars_async::executor::{self, TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::connector;
@@ -92,27 +92,21 @@ impl MorselSerializer {
         serialized_data.clear();
         serialized_data.reserve_exact(*allocation_size);
 
-        let height = df.height();
+        // A batch per row range whose arrow MAP arrays fit in `i32` offsets.
+        for batch in df.try_iter_chunks(CompatLevel::newest(), false) {
+            let batch = batch?;
+            let height = batch.len();
+            let (schema, arrays) = batch.into_schema_and_arrays();
+            let fields = schema
+                .iter_values()
+                .zip(&arrays)
+                .map(|(f, a)| ArrowField::new(f.name.clone(), a.dtype().clone(), true))
+                .collect();
 
-        let (arrays, fields): (Vec<Box<dyn Array>>, Vec<ArrowField>) = df
-            .into_columns()
-            .into_iter()
-            .map(|c| {
-                let name = c.name().clone();
-                let arr = c.try_rechunk_to_arrow(CompatLevel::newest())?;
-
-                let field = ArrowField::new(name, arr.dtype().clone(), true);
-
-                PolarsResult::Ok((arr, field))
-            })
-            .collect::<PolarsResult<Vec<_>>>()?
-            .into_iter()
-            .unzip();
-
-        let array = StructArray::new(ArrowDataType::Struct(fields), height, arrays, None);
-        let serializer = polars_json::json::write::new_serializer(&array, 0, usize::MAX);
-
-        serializer.serialize_json_lines_to_vec(serialized_data, height);
+            let array = StructArray::new(ArrowDataType::Struct(fields), height, arrays, None);
+            let serializer = polars_json::json::write::new_serializer(&array, 0, usize::MAX);
+            serializer.serialize_json_lines_to_vec(serialized_data, height);
+        }
         *allocation_size = usize::max(*allocation_size, serialized_data.capacity());
 
         Ok(self)
