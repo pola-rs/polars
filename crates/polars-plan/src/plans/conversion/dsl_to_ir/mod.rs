@@ -1270,12 +1270,12 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             &input_schema,
                         ),
                         StatsFunction::Min => stats_helper(
-                            |dt| dt.is_ord(),
+                            |dt| dt.is_ord() || dt.is_nested(),
                             |name| col(name.clone()).min(),
                             &input_schema,
                         ),
                         StatsFunction::Max => stats_helper(
-                            |dt| dt.is_ord(),
+                            |dt| dt.is_ord() || dt.is_nested(),
                             |name| col(name.clone()).max(),
                             &input_schema,
                         ),

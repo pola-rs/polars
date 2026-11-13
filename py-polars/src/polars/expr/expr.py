@@ -2805,6 +2805,10 @@ class Expr(metaclass=_Meta):
         """
         Get an index of a maximal value.
 
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
+
         When multiple values are equal to the maximum, this function may arbitrarily
         return the index of any of the maximum values. In this case, the returned index
         is not guaranteed to be the same across multiple runs.
@@ -2833,6 +2837,10 @@ class Expr(metaclass=_Meta):
     def arg_min(self) -> Expr:
         """
         Get an index of a minimal value.
+
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
 
         When multiple values are equal to the minimum, this function may arbitrarily
         return the index of any of the minimum values. In this case, the returned index
@@ -3612,6 +3620,10 @@ class Expr(metaclass=_Meta):
         """
         Get maximum value.
 
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
+
         .. engine-support:: in-memory, streaming, distributed
 
         Examples
@@ -3633,6 +3645,10 @@ class Expr(metaclass=_Meta):
     def max_by(self, by: IntoExpr) -> Expr:
         """
         Get maximum value, ordered by another expression.
+
+        Null values of `by` are ignored, and so are NaN values of a float `by`. A `by`
+        of a nested dtype (List, Array, Struct and Map) compares in the order
+        :meth:`sort` puts it in, where NaN is larger than any other number.
 
         If the by expression has multiple values equal to the maximum it is not
         defined which value will be chosen.
@@ -3669,6 +3685,10 @@ class Expr(metaclass=_Meta):
         """
         Get minimum value.
 
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
+
         .. engine-support:: in-memory, streaming, distributed
 
         Examples
@@ -3690,6 +3710,10 @@ class Expr(metaclass=_Meta):
     def min_by(self, by: IntoExpr) -> Expr:
         """
         Get minimum value, ordered by another expression.
+
+        Null values of `by` are ignored, and so are NaN values of a float `by`. A `by`
+        of a nested dtype (List, Array, Struct and Map) compares in the order
+        :meth:`sort` puts it in, where NaN is larger than any other number.
 
         If the by expression has multiple values equal to the minimum it is not
         defined which value will be chosen.

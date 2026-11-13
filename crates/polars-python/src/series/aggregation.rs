@@ -48,11 +48,27 @@ impl PySeries {
     }
 
     fn arg_max(&self, py: Python) -> PyResult<Option<usize>> {
-        py.enter_polars_ok(|| self.series.read().arg_max())
+        py.enter_polars(|| {
+            let s = self.series.read();
+            polars_ensure!(
+                !s.dtype().is_object(),
+                InvalidOperation: "`arg_max` operation not supported for dtype `{}`",
+                s.dtype()
+            );
+            PolarsResult::Ok(s.arg_max())
+        })
     }
 
     fn arg_min(&self, py: Python) -> PyResult<Option<usize>> {
-        py.enter_polars_ok(|| self.series.read().arg_min())
+        py.enter_polars(|| {
+            let s = self.series.read();
+            polars_ensure!(
+                !s.dtype().is_object(),
+                InvalidOperation: "`arg_min` operation not supported for dtype `{}`",
+                s.dtype()
+            );
+            PolarsResult::Ok(s.arg_min())
+        })
     }
 
     fn min<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {

@@ -1,3 +1,4 @@
+use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
@@ -14,6 +15,8 @@ use crate::reduce::bitwise::{
 use crate::reduce::count::{CountReduce, NullCountReduce};
 #[cfg(feature = "cov")]
 use crate::reduce::cov::{new_cov_reduction, new_pearson_corr_reduction};
+#[cfg(feature = "dtype-extension")]
+use crate::reduce::extension::new_storage_reduction;
 use crate::reduce::first_last::{new_first_reduction, new_item_reduction, new_last_reduction};
 use crate::reduce::first_last_nonnull::{new_first_nonnull_reduction, new_last_nonnull_reduction};
 use crate::reduce::has_nulls::HasNullsReduce;
@@ -42,6 +45,21 @@ pub fn unordered_unique_input(node: Node, expr_arena: &Arena<AExpr>) -> Option<N
     }
 }
 
+/// The ascending row encoding of `node`, null where it is null.
+fn row_encode_key(node: Node, dtype: DataType, expr_arena: &mut Arena<AExpr>) -> Node {
+    AExprBuilder::row_encode(
+        vec![ExprIR::from_node(node, expr_arena)],
+        vec![dtype],
+        RowEncodingVariant::Ordered {
+            descending: None,
+            nulls_last: None,
+        },
+        true,
+        expr_arena,
+    )
+    .node()
+}
+
 /// Converts a node into a reduction + its associated selector expression.
 pub fn into_reduction(
     node: Node,
@@ -66,17 +84,42 @@ pub fn into_reduction(
                 propagate_nans,
                 propagate_nulls,
                 input,
-            } => {
-                let min = new_min_reduction(get_dt(*input)?, *propagate_nans)?;
-                (null_if_has_nulls(min, *propagate_nulls), *input)
-            },
-            IRAggExpr::Max {
+            }
+            | IRAggExpr::Max {
                 propagate_nans,
                 propagate_nulls,
                 input,
             } => {
-                let max = new_max_reduction(get_dt(*input)?, *propagate_nans)?;
-                (null_if_has_nulls(max, *propagate_nulls), *input)
+                let is_max = matches!(agg, IRAggExpr::Max { .. });
+                let (input, propagate_nans, propagate_nulls) =
+                    (*input, *propagate_nans, *propagate_nulls);
+                let dtype = get_dt(input)?;
+                if dtype.is_nested() {
+                    // The value at the arg min (max) of the sort order.
+                    let by = row_encode_key(input, dtype.clone(), expr_arena);
+                    let (by_dtype, order) = (DataType::BinaryOffset, MinMaxByOrder::SkipNulls);
+                    let gr = if is_max {
+                        new_max_by_reduction(dtype, by_dtype, order)?
+                    } else {
+                        new_min_by_reduction(dtype, by_dtype, order)?
+                    };
+                    return Ok((null_if_has_nulls(gr, propagate_nulls), vec![input, by]));
+                }
+                let new_reduction = |dtype| {
+                    if is_max {
+                        new_max_reduction(dtype, propagate_nans)
+                    } else {
+                        new_min_reduction(dtype, propagate_nans)
+                    }
+                };
+                let gr = match dtype {
+                    #[cfg(feature = "dtype-extension")]
+                    DataType::Extension(..) => {
+                        new_storage_reduction(new_reduction(dtype.to_storage())?, dtype)
+                    },
+                    dtype => new_reduction(dtype)?,
+                };
+                (null_if_has_nulls(gr, propagate_nulls), input)
             },
             IRAggExpr::Var(input, ddof) => (
                 new_var_std_reduction(get_dt(*input)?, false, *ddof)?,
@@ -244,22 +287,19 @@ pub fn into_reduction(
             let input_dtype = get_dt(input)?;
             let mut by_dtype = get_dt(by)?;
             if by_dtype.is_nested() {
-                by = AExprBuilder::row_encode(
-                    vec![inner_exprs[1].clone()],
-                    vec![by_dtype.clone()],
-                    RowEncodingVariant::Ordered {
-                        descending: None,
-                        nulls_last: None,
-                    },
-                    false,
-                    expr_arena,
-                )
-                .node();
+                by = row_encode_key(by, by_dtype, expr_arena);
                 by_dtype = DataType::BinaryOffset;
             }
             if by_dtype.is_null() && order != MinMaxByOrder::SkipNulls {
                 // All keys are null, so they tie.
                 return Ok((new_first_reduction(input_dtype), vec![input]));
+            }
+            #[cfg(feature = "dtype-extension")]
+            if by_dtype.is_extension() {
+                let storage =
+                    new_min_by_reduction(input_dtype.to_storage(), by_dtype.to_storage(), order)?;
+                let gr = new_storage_reduction(storage, input_dtype);
+                return Ok((gr, vec![input, by]));
             }
             let gr = new_min_by_reduction(input_dtype, by_dtype, order)?;
             return Ok((gr, vec![input, by]));
@@ -277,22 +317,19 @@ pub fn into_reduction(
             let input_dtype = get_dt(input)?;
             let mut by_dtype = get_dt(by)?;
             if by_dtype.is_nested() {
-                by = AExprBuilder::row_encode(
-                    vec![inner_exprs[1].clone()],
-                    vec![by_dtype.clone()],
-                    RowEncodingVariant::Ordered {
-                        descending: None,
-                        nulls_last: None,
-                    },
-                    false,
-                    expr_arena,
-                )
-                .node();
+                by = row_encode_key(by, by_dtype, expr_arena);
                 by_dtype = DataType::BinaryOffset;
             }
             if by_dtype.is_null() && order != MinMaxByOrder::SkipNulls {
                 // All keys are null, so they tie.
                 return Ok((new_first_reduction(input_dtype), vec![input]));
+            }
+            #[cfg(feature = "dtype-extension")]
+            if by_dtype.is_extension() {
+                let storage =
+                    new_max_by_reduction(input_dtype.to_storage(), by_dtype.to_storage(), order)?;
+                let gr = new_storage_reduction(storage, input_dtype);
+                return Ok((gr, vec![input, by]));
             }
             let gr = new_max_by_reduction(input_dtype, by_dtype, order)?;
             return Ok((gr, vec![input, by]));

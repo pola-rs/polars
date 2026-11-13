@@ -6776,9 +6776,7 @@ def test_scan_iceberg_aggregates_from_statistics_duplicated_subplan(
 
 
 @pytest.mark.write_disk
-def test_scan_iceberg_aggregates_from_statistics_empty_keeps_errors(
-    tmp_path: Path,
-) -> None:
+def test_scan_iceberg_aggregates_from_statistics_empty_nested(tmp_path: Path) -> None:
     catalog = _statistics_catalog(tmp_path)
     tbl = catalog.create_table(
         ("ns", "l"),
@@ -6787,10 +6785,9 @@ def test_scan_iceberg_aggregates_from_statistics_empty_keeps_errors(
         ),
     )
     lf = pl.scan_iceberg(tbl).select(pl.col("xs").min())
-    with pytest.raises(pl.exceptions.InvalidOperationError):
-        lf.collect(optimizations=pl.QueryOptFlags.none())
-    with pytest.raises(pl.exceptions.InvalidOperationError):
-        lf.collect()
+    expected = pl.DataFrame({"xs": [None]}, schema={"xs": pl.List(pl.Int64)})
+    assert_frame_equal(lf.collect(optimizations=pl.QueryOptFlags.none()), expected)
+    assert_frame_equal(lf.collect(), expected)
 
 
 @pytest.mark.write_disk

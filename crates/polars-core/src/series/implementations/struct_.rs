@@ -130,6 +130,34 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
     unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         self.0.agg_list(groups)
     }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+        let s = self.0.clone().into_series();
+        unsafe {
+            crate::frame::group_by::aggregations::agg_arg_min_max_row_encoded(&s, groups, false)
+        }
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+        let s = self.0.clone().into_series();
+        unsafe {
+            crate::frame::group_by::aggregations::agg_arg_min_max_row_encoded(&s, groups, true)
+        }
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
+        let s = self.0.clone().into_series();
+        unsafe { crate::frame::group_by::aggregations::agg_min_max_row_encoded(&s, groups, false) }
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
+        let s = self.0.clone().into_series();
+        unsafe { crate::frame::group_by::aggregations::agg_min_max_row_encoded(&s, groups, true) }
+    }
 }
 
 impl SeriesTrait for SeriesWrap<StructChunked> {
@@ -357,6 +385,16 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
 
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
         Ok(self.0.sort_with(options).into_series())
+    }
+
+    fn min_reduce(&self) -> PolarsResult<Scalar> {
+        let s = self.0.clone().into_series();
+        Ok(crate::chunked_array::arg_min_max::min_max_reduce_row_encoded(&s, false))
+    }
+
+    fn max_reduce(&self) -> PolarsResult<Scalar> {
+        let s = self.0.clone().into_series();
+        Ok(crate::chunked_array::arg_min_max::min_max_reduce_row_encoded(&s, true))
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {

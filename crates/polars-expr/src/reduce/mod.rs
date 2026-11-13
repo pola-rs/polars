@@ -10,6 +10,8 @@ mod convert;
 mod count;
 #[cfg(feature = "cov")]
 mod cov;
+#[cfg(feature = "dtype-extension")]
+mod extension;
 mod first_last;
 mod first_last_nonnull;
 mod has_nulls;
