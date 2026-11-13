@@ -12,7 +12,12 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 import polars as pl
-from polars.exceptions import ComputeError, InvalidOperationError, ShapeError
+from polars.exceptions import (
+    ComputeError,
+    InvalidOperationError,
+    SchemaError,
+    ShapeError,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import dataframes
 
@@ -804,6 +809,15 @@ def test_quantile_out_of_range_literal_empty(
     for q in [lf.select(expr), lf.select(expr.over("g")), lf.group_by("g").agg(expr)]:
         with pytest.raises(ComputeError, match=r"between 0\.0 and 1\.0"):
             q.collect_schema()
+
+
+@pytest.mark.parametrize("quantile", [pl.lit(True), pl.lit("0.5")])
+def test_quantile_non_numeric_fraction_grouped(quantile: pl.Expr) -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 2], "a": [1, 2, 3]})
+    expr = pl.col("a").quantile(quantile)
+    for q in [lf.select(expr.over("g")), lf.group_by("g").agg(expr)]:
+        with pytest.raises(SchemaError, match="expected expression of dtype 'numeric'"):
+            q.collect()
 
 
 @pytest.mark.parametrize(
