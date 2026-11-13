@@ -214,6 +214,7 @@ def test_regexp_replace_errors() -> None:
         r"REGEXP_EXTRACT(s, NULL)",
         r"REGEXP_EXTRACT(NULL, 'a')",
         r"REGEXP_EXTRACT(n, 'a')",
+        r"REGEXP_EXTRACT((SELECT NULL), 'a')",
     ],
 )
 def test_regexp_extract(func: str) -> None:

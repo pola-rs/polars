@@ -3050,8 +3050,8 @@ impl SQLFunctionVisitor<'_> {
     }
 
     /// `e` as a boolean: a NULL is a boolean NULL, and other types raise.
-    pub(crate) fn boolean_arg(&self, e: Expr) -> PolarsResult<Expr> {
-        match self.ctx.expr_dtype(&e, self.active_schema) {
+    pub(crate) fn boolean_arg(&mut self, e: Expr) -> PolarsResult<Expr> {
+        match self.arg_dtype(&e)? {
             Some(DataType::Boolean) => Ok(e),
             None | Some(DataType::Null | DataType::Unknown(UnknownKind::Any)) => {
                 Ok(e.cast(DataType::Boolean))
@@ -3060,6 +3060,12 @@ impl SQLFunctionVisitor<'_> {
                 InvalidOperation: "{} expects a boolean argument, got `{}`", self.func.name, dtype
             ),
         }
+    }
+
+    /// The dtype of `e`, with each subquery typed by its result.
+    fn arg_dtype(&mut self, e: &Expr) -> PolarsResult<Option<DataType>> {
+        let typed = self.ctx.with_typed_subqueries(e)?;
+        Ok(self.ctx.expr_dtype(&typed, self.active_schema))
     }
 
     fn visit_count_if(&mut self) -> PolarsResult<Expr> {
@@ -3123,7 +3129,7 @@ impl SQLFunctionVisitor<'_> {
         // A NULL is a string NULL.
         let mut string_arg = |e: &SQLExpr| -> PolarsResult<Expr> {
             let e = self.parse_sql_arg(e)?;
-            Ok(match self.ctx.expr_dtype(&e, self.active_schema) {
+            Ok(match self.arg_dtype(&e)? {
                 Some(DataType::Null) => e.cast(DataType::String),
                 _ => e,
             })

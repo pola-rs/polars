@@ -459,6 +459,7 @@ def test_group_concat_distinct_with_separator_errors() -> None:
         "ANY_VALUE(s)",
         "COUNT_IF(x > 1)",
         "COUNT_IF(b) FILTER (WHERE x > 1)",
+        "COUNT_IF(x > (SELECT 1))",
         "APPROX_COUNT_DISTINCT(s)",
         "MAX_BY(x, y)",
         "MIN_BY(s, y)",
@@ -539,7 +540,9 @@ def test_bool_and_count_if_errors() -> None:
         "BOOL_AND(x)",
         "BOOL_OR('t')",
         "COUNT_IF(1)",
+        "COUNT_IF((SELECT 1))",
         "BOOL_AND(1) OVER ()",
+        "BOOL_AND((SELECT 1)) OVER ()",
         "COUNT_IF(s) OVER (ORDER BY x)",
     ]:
         with pytest.raises(InvalidOperationError, match="expects a boolean argument"):
