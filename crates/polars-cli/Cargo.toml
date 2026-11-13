@@ -20,6 +20,8 @@ test = false
 polars-ooc = { workspace = true, features = ["fast_alloc"] }
 
 clap = { workspace = true }
+signal-hook = "0.4"
+sqlparser = { workspace = true }
 
 [dependencies.polars]
 workspace = true

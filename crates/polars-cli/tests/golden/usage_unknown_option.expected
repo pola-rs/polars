@@ -3,6 +3,6 @@ exit: 2
 --- stderr ---
 error: unexpected argument '--unknown' found
 
-Usage: polars -c <SQL>
+Usage: polars [OPTIONS]
 
 For more information, try '--help'.

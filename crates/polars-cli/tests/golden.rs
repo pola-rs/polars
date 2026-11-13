@@ -1,6 +1,7 @@
 //! Golden tests of the command-line contract: stdout, stderr and the exit code.
 //!
-//! A case is a pair of files in `tests/golden`. `<name>.args` holds the arguments, one per line.
+//! A case is a set of files in `tests/golden`. `<name>.args` holds the arguments, one per line.
+//! `<name>.stdin`, when present, is the standard input; otherwise that is empty.
 //! `<name>.expected` holds what the command must produce. The command runs in the crate
 //! directory, so paths in the arguments are relative to it.
 //!
@@ -8,26 +9,20 @@
 
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::{env, fs};
+use std::process::Stdio;
+use std::{env, fs, io};
+
+mod common;
 
 fn run_case(args_path: &Path) -> String {
     let args = fs::read_to_string(args_path).unwrap();
-    let mut command = Command::new(env!("CARGO_BIN_EXE_polars"));
-    command
-        .args(args.lines())
-        .current_dir(env!("CARGO_MANIFEST_DIR"));
-    // Settings of the environment must not leak into the expected output.
-    for (name, _) in env::vars_os() {
-        // Names of environment variables are case-insensitive on Windows.
-        if name
-            .to_string_lossy()
-            .to_ascii_uppercase()
-            .starts_with("POLARS_")
-        {
-            command.env_remove(name);
-        }
-    }
+    let stdin = match fs::File::open(args_path.with_extension("stdin")) {
+        Ok(file) => Stdio::from(file),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Stdio::null(),
+        Err(error) => panic!("cannot open the standard input of {args_path:?}: {error}"),
+    };
+    let mut command = common::polars();
+    command.args(args.lines()).stdin(stdin);
     let output = command.output().unwrap();
 
     let mut actual = String::new();
@@ -92,13 +87,26 @@ fn golden() {
     );
 }
 
+/// The reason is worded by the operating system, so this is not a golden case.
+#[test]
+fn unreadable_script() {
+    let output = common::polars()
+        .args(["-f", "tests/golden/no-such-file.sql"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.starts_with("error: cannot read 'tests/golden/no-such-file.sql': "),
+        "{stderr}"
+    );
+}
+
 /// The version changes with every release, so it is not a golden case.
 #[test]
 fn version() {
-    let output = Command::new(env!("CARGO_BIN_EXE_polars"))
-        .arg("--version")
-        .output()
-        .unwrap();
+    let output = common::polars().arg("--version").output().unwrap();
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),

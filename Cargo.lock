@@ -3155,6 +3155,8 @@ dependencies = [
  "clap",
  "polars",
  "polars-ooc",
+ "signal-hook",
+ "sqlparser",
 ]
 
 [[package]]
