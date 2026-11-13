@@ -5178,6 +5178,7 @@ dependencies = [
 [[package]]
 name = "tikv-jemalloc-sys"
 version = "0.7.1+5.4.0-0-g7a34f18502e7b222724097cdcd499b437d189acc"
+source = "git+https://github.com/pola-rs/jemallocator?rev=e947a0d1a786e221ac1c14ba1566b55151e61ec9#e947a0d1a786e221ac1c14ba1566b55151e61ec9"
 dependencies = [
  "cc",
  "libc",
