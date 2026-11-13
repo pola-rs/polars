@@ -1082,13 +1082,13 @@ where
                         debug_assert!(len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => {
-                                if ddof == 0 {
-                                    NumCast::from(0)
+                            1 => self.get(first as usize).filter(|_| ddof == 0).map(|x| {
+                                if Float::is_finite(x) {
+                                    T::Native::zero()
                                 } else {
-                                    None
+                                    Float::nan()
                                 }
-                            },
+                            }),
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.var(ddof).map(|flt| NumCast::from(flt).unwrap())
@@ -1162,13 +1162,13 @@ where
                         debug_assert!(len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => {
-                                if ddof == 0 {
-                                    NumCast::from(0)
+                            1 => self.get(first as usize).filter(|_| ddof == 0).map(|x| {
+                                if Float::is_finite(x) {
+                                    T::Native::zero()
                                 } else {
-                                    None
+                                    Float::nan()
                                 }
-                            },
+                            }),
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.std(ddof).map(|flt| NumCast::from(flt).unwrap())
@@ -1332,13 +1332,7 @@ where
                         debug_assert!(first + len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => {
-                                if ddof == 0 {
-                                    NumCast::from(0)
-                                } else {
-                                    None
-                                }
-                            },
+                            1 => self.get(first as usize).filter(|_| ddof == 0).map(|_| 0.0),
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.var(ddof)
@@ -1383,13 +1377,7 @@ where
                         debug_assert!(first + len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => {
-                                if ddof == 0 {
-                                    NumCast::from(0)
-                                } else {
-                                    None
-                                }
-                            },
+                            1 => self.get(first as usize).filter(|_| ddof == 0).map(|_| 0.0),
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.std(ddof)
