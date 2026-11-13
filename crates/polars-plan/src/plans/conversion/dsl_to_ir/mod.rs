@@ -1044,14 +1044,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     let replacement = col(value.clone()).filter(predicate);
 
                     aggs_dsl.push(
-                        agg_dsl
-                            .clone()
-                            .map_expr(|e| match e {
-                                Expr::Element => replacement.clone(),
-                                Expr::Len => replacement.clone().len(),
-                                other => other,
-                            })
-                            .alias(name.as_str()),
+                        replace_pivot_values(agg_dsl.clone(), &replacement).alias(name.as_str()),
                     );
                 }
             }
@@ -1944,4 +1937,27 @@ fn validate_encrypted_partition_keys<'a>(
         }
     }
     Ok(())
+}
+
+/// Replaces `pl.element()` and `pl.len()` in a pivot aggregation with the pivoted values, except
+/// in an `eval`, where they refer to the evaluated values.
+fn replace_pivot_values(expr: Expr, values: &Expr) -> Expr {
+    use crate::plans::visitor::TreeWalker;
+
+    match expr {
+        Expr::Element => values.clone(),
+        Expr::Len => values.clone().len(),
+        Expr::Eval {
+            expr,
+            evaluation,
+            variant,
+        } => Expr::Eval {
+            expr: Arc::new(replace_pivot_values(Arc::unwrap_or_clone(expr), values)),
+            evaluation,
+            variant,
+        },
+        e => e
+            .map_children(&mut |c, _| Ok(replace_pivot_values(c, values)), &mut ())
+            .unwrap(),
+    }
 }
