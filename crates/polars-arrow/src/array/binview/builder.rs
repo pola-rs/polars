@@ -165,64 +165,79 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
             self.buffer_set_translation_idxs
                 .resize(buffer_set.len(), (0, old_gen));
         }
+        self.last_buffer_set_stolen_from = Some(buffer_set.clone());
     }
 
+    #[inline(always)]
     unsafe fn translate_view(
         &mut self,
         mut view: View,
         other_bufferset: &Buffer<Buffer<u8>>,
     ) -> View {
         // Translate from old array-local buffer idx to global stolen buffer idx.
-        let (mut new_buffer_idx, gen_) = *self
+        let (new_buffer_idx, gen_) = *self
             .buffer_set_translation_idxs
             .get_unchecked(view.buffer_idx as usize);
-        if gen_ != self.buffer_set_translation_generation {
-            // This buffer index wasn't seen before for this array, do a dedup lookup.
-            // Since we map by starting pointer and different subslices may have different lengths, we expand
-            // the buffer to the maximum it could be.
-            let buffer = other_bufferset
-                .get_unchecked(view.buffer_idx as usize)
-                .clone()
-                .expand_end_to_storage();
-            let buf_id = buffer.as_slice().as_ptr().addr();
-            let idx = match self.stolen_buffers.entry(buf_id) {
-                Entry::Occupied(o) => *o.get(),
-                Entry::Vacant(v) => {
-                    let idx = self.buffer_set.len() as u32;
-                    self.total_buffer_len += buffer.len();
-                    self.buffer_set.push(buffer);
-                    v.insert(idx);
-                    idx
-                },
-            };
-
-            // Cache result for future lookups.
-            *self
-                .buffer_set_translation_idxs
-                .get_unchecked_mut(view.buffer_idx as usize) =
-                (idx, self.buffer_set_translation_generation);
-            new_buffer_idx = idx;
-        }
-        view.buffer_idx = new_buffer_idx;
+        view.buffer_idx = if gen_ == self.buffer_set_translation_generation {
+            new_buffer_idx
+        } else {
+            self.steal_buffer(view.buffer_idx, other_bufferset)
+        };
         view
     }
 
+    #[inline(never)]
+    unsafe fn steal_buffer(
+        &mut self,
+        buffer_idx: u32,
+        other_bufferset: &Buffer<Buffer<u8>>,
+    ) -> u32 {
+        // This buffer index wasn't seen before for this array, do a dedup lookup.
+        // Since we map by starting pointer and different subslices may have different lengths, we expand
+        // the buffer to the maximum it could be.
+        let buffer = other_bufferset
+            .get_unchecked(buffer_idx as usize)
+            .clone()
+            .expand_end_to_storage();
+        let buf_id = buffer.as_slice().as_ptr().addr();
+        let idx = match self.stolen_buffers.entry(buf_id) {
+            Entry::Occupied(o) => *o.get(),
+            Entry::Vacant(v) => {
+                let idx = self.buffer_set.len() as u32;
+                self.total_buffer_len += buffer.len();
+                self.buffer_set.push(buffer);
+                v.insert(idx);
+                idx
+            },
+        };
+
+        // Cache result for future lookups.
+        *self
+            .buffer_set_translation_idxs
+            .get_unchecked_mut(buffer_idx as usize) = (idx, self.buffer_set_translation_generation);
+        idx
+    }
+
+    /// The views are first copied as they are, so that a gather can have many loads in flight,
+    /// and then translated to buffers of this builder.
     unsafe fn extend_views_dedup_ignore_validity(
         &mut self,
         views: impl IntoIterator<Item = View>,
         other_bufferset: &Buffer<Buffer<u8>>,
     ) {
-        // TODO: if there are way more buffers than length translate per-view
-        // rather than all at once.
         self.switch_active_stealing_bufferset_to(other_bufferset);
 
-        for mut view in views {
+        let start = self.views.len();
+        self.views.extend(views);
+        let mut total_bytes_len = 0;
+        for i in start..self.views.len() {
+            let view = *self.views.get_unchecked(i);
+            total_bytes_len += view.length as usize;
             if view.length > View::MAX_INLINE_SIZE {
-                view = self.translate_view(view, other_bufferset);
+                *self.views.get_unchecked_mut(i) = self.translate_view(view, other_bufferset);
             }
-            self.total_bytes_len += view.length as usize;
-            self.views.push(view);
         }
+        self.total_bytes_len += total_bytes_len;
     }
 
     unsafe fn extend_views_each_repeated_dedup_ignore_validity(
