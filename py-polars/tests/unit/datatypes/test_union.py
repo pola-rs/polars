@@ -1854,15 +1854,11 @@ def test_union_by_dtype_selector() -> None:
 @pytest.mark.parametrize(
     ("expr", "op"),
     [
-        (pl.col("u").min(), "min"),
-        (pl.col("u").max(), "max"),
         (pl.col("u").sum(), "sum"),
         (pl.col("u").quantile(0.5), "quantile"),
-        (pl.col("u").arg_min(), "arg_min"),
-        (pl.col("u").arg_max(), "arg_max"),
     ],
 )
-def test_union_unordered_aggregations_raise(expr: pl.Expr, op: str) -> None:
+def test_union_numeric_aggregations_raise(expr: pl.Expr, op: str) -> None:
     lf = match_frame().lazy()
     for q in [lf.select(expr), lf.group_by("k").agg(expr)]:
         with pytest.raises(
@@ -1872,6 +1868,41 @@ def test_union_unordered_aggregations_raise(expr: pl.Expr, op: str) -> None:
         for engine in ["in-memory", "streaming"]:
             with pytest.raises(InvalidOperationError, match=f"`{op}`"):
                 q.collect(engine=engine)  # type: ignore[call-overload]
+
+
+@pytest.mark.parametrize("op", ["min", "max", "arg_min", "arg_max"])
+def test_union_ordering_aggregations(op: str) -> None:
+    pick = min if op.endswith("min") else max
+
+    def extreme(values: list[Any]) -> Any:
+        valid = [v for v in values if v is not None]
+        return pick(valid, key=union_key) if valid else None
+
+    def check(out: Any, values: list[Any]) -> None:
+        if op.startswith("arg"):
+            # Which of several equal values is picked is unspecified.
+            out = None if out is None else values[out]
+        assert out == extreme(values)
+
+    s = messy()
+    layouts = [*messy_layouts(), s.clear(), pl.Series("u", [None, None], s.dtype)]
+    expr = getattr(pl.col("u"), op)()
+    for s in layouts:
+        values = s.to_list()
+        groups = [values[g::2] for g in (0, 1)]
+        df = pl.DataFrame({"u": s, "g": [i % 2 for i in range(len(s))]})
+
+        check(getattr(s, op)(), values)
+        (out,) = to_pylist(df.lazy().select(expr).collect().to_series())
+        check(out, values)
+
+        out_df = df.lazy().group_by("g").agg(expr).sort("g").collect()
+        for g, out in zip(out_df["g"], to_pylist(out_df["u"]), strict=True):
+            check(out, groups[g])
+
+        out_s = df.lazy().select(expr.over("g")).collect().to_series()
+        for i, out in enumerate(to_pylist(out_s)):
+            check(out, groups[i % 2])
 
 
 UNION_PARAMETRIC_DTYPES = [
