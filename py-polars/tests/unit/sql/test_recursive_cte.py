@@ -845,3 +845,41 @@ def test_recursive_struct_fields_by_name() -> None:
     )
     with pytest.raises(pl.exceptions.InvalidOperationError):
         ctx.execute(query, eager=True)
+
+
+@pytest.mark.parametrize(
+    ("query", "height"),
+    [
+        ("SELECT * FROM e JOIN t ON e.n = t.n", 0),
+        ("SELECT * FROM t JOIN e ON e.n = t.n", 0),
+        ("SELECT * FROM e LEFT JOIN t ON e.n < t.n", 0),
+        ("SELECT * FROM t RIGHT JOIN e ON e.n < t.n", 0),
+        ("SELECT * FROM t LIMIT 5", 5),
+    ],
+)
+def test_recursive_stops_when_its_rows_are_not_read(query: str, height: int) -> None:
+    # The step raises after many rounds, so the loop must stop before that.
+    ctx = pl.SQLContext(e=pl.DataFrame({"n": pl.Series([], dtype=pl.Int64)}))
+    res = ctx.execute(
+        """
+        WITH RECURSIVE t(n) AS (
+          SELECT 1
+          UNION ALL
+          SELECT CAST(CASE WHEN n < 10000 THEN CAST(n + 1 AS VARCHAR) ELSE 'x' END AS BIGINT)
+          FROM t
+        )
+        """
+        + query
+    ).collect(engine="streaming")
+    assert res.height == height
+
+
+def test_recursive_rows_keep_round_order(plmonkeypatch: PlMonkeyPatch) -> None:
+    # Every round is sent on its own.
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
+    lf = pl.SQLContext().execute(
+        "WITH RECURSIVE t(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM t WHERE n < 100) "
+        "SELECT * FROM t"
+    )
+    assert lf.collect()["n"].to_list() == list(range(1, 101))
+    assert lf.select(pl.col("n").last()).collect().item() == 100
