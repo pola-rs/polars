@@ -199,14 +199,17 @@ impl VisitorMut for AggregateSubqueries<'_> {
 
 /// Rewrites an aggregate query without GROUP BY to give its one row for each row of the
 /// domain table, also when no inner row matches it: each aggregate becomes a scalar subquery
-/// over the FROM and WHERE, and HAVING becomes the WHERE. `None` if an unnamed SELECT item
-/// aggregates, as its name would change.
+/// over the FROM and WHERE, and HAVING becomes the WHERE. `None` without a FROM, or if an
+/// unnamed SELECT item aggregates, as its name would change.
 fn aggregates_as_subqueries(ctx: &SQLContext, query: &mut Query) -> Option<()> {
     query.order_by = None;
     let mut scope = query.clone();
     let SetExpr::Select(inner) = scope.body.as_mut() else {
         unreachable!()
     };
+    if inner.from.is_empty() {
+        return None;
+    }
     inner.distinct = None;
     inner.having = None;
     let mut subqueries = AggregateSubqueries {

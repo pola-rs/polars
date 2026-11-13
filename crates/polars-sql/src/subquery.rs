@@ -4069,6 +4069,14 @@ fn correlation_keys(
             _ => None,
         };
         let Some((outer_cast, inner_cast)) = cast else {
+            // Group-by keys need distinct names, so a repeated inner column is copied.
+            let inner_key = if inner_on.contains(&inner_key) {
+                let inner_name = format_pl_smallstr!("{prefix}ikey{i}");
+                *inner = std::mem::take(inner).with_column(inner_key.alias(inner_name.clone()));
+                col(inner_name)
+            } else {
+                inner_key
+            };
             outer_on.push(outer_key);
             inner_on.push(inner_key);
             continue;

@@ -3661,6 +3661,20 @@ def test_lateral_derived_table_unsupported(derived: str) -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT a.k FROM a, LATERAL (SELECT c.k AS v) d, c",
+        "SELECT a.k FROM a, LATERAL (SELECT COUNT(*) AS n WHERE a.k > 1) d",
+    ],
+)
+def test_lateral_comma_form_raises(query: str) -> None:
+    a = pl.DataFrame({"k": [1, 2]})
+    c = pl.DataFrame({"k": [9]})
+    with pytest.raises(ColumnNotFoundError):
+        pl.SQLContext(a=a, c=c).execute(query, eager=True)
+
+
 def test_lateral_derived_table_ambiguous_outer_column() -> None:
     a = pl.DataFrame({"k": [1]})
     b = pl.DataFrame({"v": [3]})

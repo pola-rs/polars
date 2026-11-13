@@ -5481,7 +5481,7 @@ impl SQLContext {
         // mid-probe while picking a join order below. A derived table that fails to resolve
         // may read the relations before it; it is joined as a LATERAL join after them.
         let mut pending = Vec::with_capacity(from.len() - 1);
-        for tbl_expr in from.iter().skip(1) {
+        for (index, tbl_expr) in from.iter().enumerate().skip(1) {
             let r_name = kept_factors(tbl_expr)
                 .into_iter()
                 .next()
@@ -5504,7 +5504,7 @@ impl SQLContext {
                 },
                 Err(err) => return Err(err),
             };
-            pending.push((tbl_expr, right, r_name));
+            pending.push((tbl_expr, right, r_name, index));
         }
 
         // Each round takes the first pending relation with a join predicate against the
@@ -5533,11 +5533,11 @@ impl SQLContext {
             };
             let resolved = pending
                 .iter()
-                .position(|(_, right, _)| right.is_err())
+                .position(|(_, right, ..)| right.is_err())
                 .unwrap_or(pending.len());
             let next = (0..resolved)
                 .find(|&i| {
-                    let (_, Ok((_, right_schema)), r_name) = &pending[i] else {
+                    let (_, Ok((_, right_schema)), r_name, _) = &pending[i] else {
                         unreachable!()
                     };
                     extract_join_predicates(
@@ -5554,16 +5554,23 @@ impl SQLContext {
                 })
                 .unwrap_or(0);
             let deferred = deferred_tables(next);
-            let (tbl_expr, right, r_name) = pending.remove(next);
+            let (tbl_expr, right, r_name, index) = pending.remove(next);
             let mut lateral_keys = None;
             let (rf, right_schema) = match right {
                 Ok(right) => right,
                 Err(err) => {
-                    let Some(lateral) = self.lateral_join(
+                    // It only sees the relations before it, which are all joined.
+                    let scope = std::mem::replace(
+                        &mut self.active_relations,
+                        declared_relations(&from[..=index], &self.catalog_spellings),
+                    );
+                    let lateral = self.lateral_join(
                         &tbl_expr.relation,
                         &JoinOperator::CrossJoin(JoinConstraint::None),
                         lf,
-                    ) else {
+                    );
+                    self.active_relations = scope;
+                    let Some(lateral) = lateral else {
                         return Err(err);
                     };
                     *lf = lateral.left;
