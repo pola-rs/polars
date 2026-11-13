@@ -289,6 +289,7 @@ impl SQLContext {
         domain_name: &Ident,
         id: &PlSmallStr,
         prefix: &str,
+        inner_schema: &Schema,
     ) -> Option<LazyFrame> {
         if query.order_by.is_some() {
             return None;
@@ -313,12 +314,14 @@ impl SQLContext {
                 _ => {},
             }
         }
-        // HAVING may name a SELECT item.
+        // HAVING may name a SELECT item, if no input column has that name.
         columns.aliases = select
             .projection
             .iter()
             .filter_map(|item| match item {
-                SelectItem::ExprWithAlias { expr, alias } => {
+                SelectItem::ExprWithAlias { expr, alias }
+                    if !inner_schema.contains(&alias.value) =>
+                {
                     Some((alias.value.clone(), expr.clone()))
                 },
                 _ => None,
@@ -666,7 +669,7 @@ impl SQLContext {
             },
         );
         let domain = if empty_group {
-            self.aggregate_per_domain_row(&mut query, domain, &domain_name, &id, &prefix)?
+            self.aggregate_per_domain_row(&mut query, domain, &domain_name, &id, &prefix, &schema)?
         } else {
             domain
         };

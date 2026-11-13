@@ -3592,6 +3592,11 @@ def test_join_where_number_with_string_raises(condition: str) -> None:
             [(10, 2)],
         ),
         (
+            "SELECT a.x, d.v FROM a, LATERAL (SELECT 0 AS v FROM b "
+            "WHERE b.k = a.k HAVING MAX(v) > 100) d ORDER BY a.x",
+            [(10, 0), (20, 0)],
+        ),
+        (
             "SELECT a.x, d.s FROM a, LATERAL (SELECT SUM(b.v * a.x) AS s FROM b "
             "WHERE b.k = a.k) d ORDER BY a.x",
             [(10, 2010), (20, 4000), (30, None)],
