@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::{fmt, mem, slice};
 
 pub use kll::KLLSketch;
-use polars_error::{PolarsError, PolarsResult, polars_bail, polars_ensure};
+use polars_error::{PolarsError, PolarsResult, polars_bail};
 use polars_utils::itertools::Itertools;
 use polars_utils::total_ord::TotalOrd;
 use rand::RngExt;
@@ -128,14 +128,13 @@ impl<T: fmt::Debug + Clone + TotalOrd> FinalizedSketch<T> {
         }
     }
 
-    pub fn estimate_quantile(&self, quantile: f64) -> PolarsResult<Option<&T>> {
-        polars_ensure!(
-            (0.0..=1.0).contains(&quantile),
-            ComputeError: "`quantile` should be between 0.0 and 1.0, got {}", quantile,
-        );
+    /// Estimates the item at fraction `quantile` of the ingested items, `None` if there are none.
+    /// `quantile` must be in `0.0..=1.0`. Callers check it with `check_quantiles` from polars-core.
+    pub fn estimate_quantile(&self, quantile: f64) -> Option<&T> {
+        debug_assert!((0.0..=1.0).contains(&quantile));
         // We round with ties toward ∞ for consistency with the regular quantile.
         let rank = (quantile * self.num_items().saturating_sub(1) as f64).round();
-        Ok(self.estimate_at_rank(rank as u64))
+        self.estimate_at_rank(rank as u64)
     }
 
     /// Estimates the item at 0-based `rank` among the ingested items, `None` if out of range.
@@ -1016,7 +1015,7 @@ pub mod kll {
             assert!(height(&merged) >= height_for_count(k, N / 2));
             let finalized = merged.finalize();
             assert_eq!(finalized.num_items(), N);
-            let median = *finalized.estimate_quantile(0.5).unwrap().unwrap();
+            let median = *finalized.estimate_quantile(0.5).unwrap();
             assert!(median.abs_diff(N / 2) as f64 <= ERROR * N as f64);
         }
 
@@ -1046,7 +1045,7 @@ pub mod kll {
             early.merge(&late);
             let finalized = early.finalize();
             assert_eq!(finalized.num_items(), 110_000);
-            let median = *finalized.estimate_quantile(0.5).unwrap().unwrap();
+            let median = *finalized.estimate_quantile(0.5).unwrap();
             assert!(median.abs_diff(55_000) as f64 <= ERROR * 110_000.0);
         }
 
@@ -1750,7 +1749,7 @@ mod tests {
                 let finalized = sketch.finalize();
                 assert_eq!(finalized.num_items(), N);
                 for q in [0.1, 0.5, 0.9] {
-                    let estimate = *finalized.estimate_quantile(q).unwrap().unwrap();
+                    let estimate = *finalized.estimate_quantile(q).unwrap();
                     let rank_error = estimate.abs_diff((q * (N - 1) as f64) as u64) as f64;
                     assert!(
                         rank_error <= ERROR * N as f64,

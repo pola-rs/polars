@@ -269,8 +269,9 @@ fn approx_quantile_estimate_inner<
             .map(pl_serialize::deserialize_from_reader::<_, _, false>)
             .transpose()?;
         for quantile in values.by_ref().take(len) {
+            check_quantiles(&[quantile])?;
             let estimate = match &sketch {
-                Some(sketch) => sketch.estimate_quantile(quantile)?.cloned(),
+                Some(sketch) => sketch.estimate_quantile(quantile).cloned(),
                 None => None,
             };
             out.push(estimate);
