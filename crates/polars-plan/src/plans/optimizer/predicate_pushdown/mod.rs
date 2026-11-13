@@ -370,20 +370,6 @@ impl PredicatePushDown {
                 output_schema,
                 maintain_order,
             } => {
-                let mut blocked_names = Vec::with_capacity(2);
-
-                // TODO: Allow predicates on file names, this should be supported by new-streaming.
-                if let Some(col) = unified_scan_args.include_file_paths.as_deref() {
-                    blocked_names.push(col);
-                }
-
-                let local_predicates = if blocked_names.is_empty() {
-                    vec![]
-                } else {
-                    transfer_to_local_by_name(expr_arena, &mut acc_predicates, |name| {
-                        blocked_names.contains(&name.as_ref())
-                    })
-                };
                 let predicate = combine_predicates(
                     Option::into_iter(predicate.clone()).chain(acc_predicates.into_values()),
                     expr_arena,
@@ -435,7 +421,7 @@ impl PredicatePushDown {
                     }
                 };
 
-                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+                Ok(lp)
             },
             Distinct { input, options } => {
                 if options.slice.is_some() {
