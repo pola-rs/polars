@@ -1,5 +1,3 @@
-use std::io::{Read, Seek};
-
 use polars_buffer::Buffer;
 use polars_error::polars_err;
 use polars_utils::bool::UnsafeBool;
@@ -7,14 +5,15 @@ use polars_utils::bool::UnsafeBool;
 use super::super::read_basic::*;
 use super::*;
 use crate::array::Utf8Array;
+use crate::io::ipc::read::ReadSeek;
 use crate::offset::Offset;
 
 #[allow(clippy::too_many_arguments)]
-pub fn read_utf8<O: Offset, R: Read + Seek>(
+pub fn read_utf8<O: Offset>(
     field_nodes: &mut VecDeque<Node>,
     dtype: ArrowDataType,
     buffers: &mut VecDeque<IpcBuffer>,
-    reader: &mut R,
+    reader: &mut dyn ReadSeek,
     block_offset: u64,
     is_little_endian: bool,
     compression: Option<Compression>,

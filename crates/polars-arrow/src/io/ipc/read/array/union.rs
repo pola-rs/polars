@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-use std::io::{Read, Seek};
 
 use polars_error::{PolarsResult, polars_err};
 use polars_utils::bool::UnsafeBool;
@@ -10,16 +9,17 @@ use super::super::read_basic::*;
 use super::super::{Compression, Dictionaries, IpcBuffer, Node, Version};
 use crate::array::UnionArray;
 use crate::datatypes::{ArrowDataType, UnionMode};
+use crate::io::ipc::read::ReadSeek;
 use crate::io::ipc::read::array::{try_get_array_length, try_get_field_node};
 
 #[allow(clippy::too_many_arguments)]
-pub fn read_union<R: Read + Seek>(
+pub fn read_union(
     field_nodes: &mut VecDeque<Node>,
     variadic_buffer_counts: &mut VecDeque<usize>,
     dtype: ArrowDataType,
     ipc_field: &IpcField,
     buffers: &mut VecDeque<IpcBuffer>,
-    reader: &mut R,
+    reader: &mut dyn ReadSeek,
     dictionaries: &Dictionaries,
     block_offset: u64,
     is_little_endian: bool,

@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-use std::io::{Read, Seek};
 
 use polars_error::{PolarsResult, polars_err};
 
@@ -7,14 +6,15 @@ use super::super::read_basic::*;
 use super::super::{Compression, IpcBuffer, Node};
 use crate::array::BooleanArray;
 use crate::datatypes::ArrowDataType;
+use crate::io::ipc::read::ReadSeek;
 use crate::io::ipc::read::array::{try_get_array_length, try_get_field_node};
 
 #[allow(clippy::too_many_arguments)]
-pub fn read_boolean<R: Read + Seek>(
+pub fn read_boolean(
     field_nodes: &mut VecDeque<Node>,
     dtype: ArrowDataType,
     buffers: &mut VecDeque<IpcBuffer>,
-    reader: &mut R,
+    reader: &mut dyn ReadSeek,
     block_offset: u64,
     is_little_endian: bool,
     compression: Option<Compression>,

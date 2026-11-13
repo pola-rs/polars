@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-use std::io::{Read, Seek};
 
 use polars_error::{PolarsResult, polars_ensure, polars_err};
 use polars_utils::bool::UnsafeBool;
@@ -11,16 +10,17 @@ use super::super::{Compression, Dictionaries, IpcBuffer, Node, Version};
 use super::try_get_array_length;
 use crate::array::StructArray;
 use crate::datatypes::{ArrowDataType, Field};
+use crate::io::ipc::read::ReadSeek;
 use crate::io::ipc::read::array::try_get_field_node;
 
 #[allow(clippy::too_many_arguments)]
-pub fn read_struct<R: Read + Seek>(
+pub fn read_struct(
     field_nodes: &mut VecDeque<Node>,
     variadic_buffer_counts: &mut VecDeque<usize>,
     dtype: ArrowDataType,
     ipc_field: &IpcField,
     buffers: &mut VecDeque<IpcBuffer>,
-    reader: &mut R,
+    reader: &mut dyn ReadSeek,
     dictionaries: &Dictionaries,
     block_offset: u64,
     is_little_endian: bool,
@@ -76,14 +76,14 @@ pub fn read_struct<R: Read + Seek>(
 /// struct dtype, in the same order (and recursively so for struct fields): the buffers of the
 /// other fields are skipped.
 #[allow(clippy::too_many_arguments)]
-pub fn read_struct_pruned<R: Read + Seek>(
+pub fn read_struct_pruned(
     field_nodes: &mut VecDeque<Node>,
     variadic_buffer_counts: &mut VecDeque<usize>,
     field: &Field,
     pruned_dtype: &ArrowDataType,
     ipc_field: &IpcField,
     buffers: &mut VecDeque<IpcBuffer>,
-    reader: &mut R,
+    reader: &mut dyn ReadSeek,
     dictionaries: &Dictionaries,
     block_offset: u64,
     is_little_endian: bool,

@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, SeekFrom};
 
 use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
@@ -8,10 +8,11 @@ use super::super::compression;
 use super::super::endianness::is_native_little_endian;
 use super::{Compression, IpcBuffer, Node, OutOfSpecKind};
 use crate::bitmap::Bitmap;
+use crate::io::ipc::read::ReadSeek;
 use crate::types::NativeType;
 
-fn read_swapped<T: NativeType, R: Read + Seek>(
-    reader: &mut R,
+fn read_swapped<T: NativeType>(
+    reader: &mut dyn ReadSeek,
     length: usize,
     buffer: &mut Vec<T>,
     is_little_endian: bool,
@@ -46,8 +47,8 @@ fn read_swapped<T: NativeType, R: Read + Seek>(
     Ok(())
 }
 
-fn read_uncompressed_bytes<R: Read + Seek>(
-    reader: &mut R,
+fn read_uncompressed_bytes(
+    reader: &mut dyn ReadSeek,
     buffer_length: usize,
     is_little_endian: bool,
 ) -> PolarsResult<Vec<u8>> {
@@ -66,8 +67,8 @@ fn read_uncompressed_bytes<R: Read + Seek>(
     }
 }
 
-fn read_uncompressed_buffer<T: NativeType, R: Read + Seek>(
-    reader: &mut R,
+fn read_uncompressed_buffer<T: NativeType>(
+    reader: &mut dyn ReadSeek,
     buffer_length: usize,
     length: usize,
     is_little_endian: bool,
@@ -121,8 +122,8 @@ fn decompress(
 
 /// Reads a compressed buffer of `T` values and returns the bytes of its first
 /// values.
-fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
-    reader: &mut R,
+fn read_compressed_buffer<T: NativeType>(
+    reader: &mut dyn ReadSeek,
     buffer_length: usize,
     // Upper bound for the number of rows to be returned.
     row_limit: Option<usize>,
@@ -143,8 +144,7 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
     // Decompress first.
     scratch.clear();
     scratch.try_reserve(buffer_length)?;
-    reader
-        .by_ref()
+    (&mut *reader)
         .take(buffer_length as u64)
         .read_to_end(scratch)?;
 
@@ -178,14 +178,14 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
     Ok(buffer)
 }
 
-fn read_compressed_bytes<R: Read + Seek>(
-    reader: &mut R,
+fn read_compressed_bytes(
+    reader: &mut dyn ReadSeek,
     buffer_length: usize,
     is_little_endian: bool,
     compression: Compression,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<Vec<u8>> {
-    read_compressed_buffer::<u8, _>(
+    read_compressed_buffer::<u8>(
         reader,
         buffer_length,
         None,
@@ -195,9 +195,9 @@ fn read_compressed_bytes<R: Read + Seek>(
     )
 }
 
-pub fn read_bytes<R: Read + Seek>(
+pub fn read_bytes(
     buf: &mut VecDeque<IpcBuffer>,
-    reader: &mut R,
+    reader: &mut dyn ReadSeek,
     block_offset: u64,
     is_little_endian: bool,
     compression: Option<Compression>,
@@ -233,10 +233,10 @@ pub fn read_bytes<R: Read + Seek>(
     }
 }
 
-pub fn read_buffer<T: NativeType, R: Read + Seek>(
+pub fn read_buffer<T: NativeType>(
     buf: &mut VecDeque<IpcBuffer>,
     length: usize, // in slots
-    reader: &mut R,
+    reader: &mut dyn ReadSeek,
     block_offset: u64,
     is_little_endian: bool,
     compression: Option<Compression>,
@@ -259,7 +259,7 @@ pub fn read_buffer<T: NativeType, R: Read + Seek>(
     reader.seek(SeekFrom::Start(block_offset + offset))?;
 
     if let Some(compression) = compression {
-        let bytes = read_compressed_buffer::<T, _>(
+        let bytes = read_compressed_buffer::<T>(
             reader,
             buffer_length,
             Some(length),
@@ -276,10 +276,10 @@ pub fn read_buffer<T: NativeType, R: Read + Seek>(
     }
 }
 
-fn read_uncompressed_bitmap<R: Read + Seek>(
+fn read_uncompressed_bitmap(
     row_limit: usize,
     bytes: usize,
-    reader: &mut R,
+    reader: &mut dyn ReadSeek,
 ) -> PolarsResult<Vec<u8>> {
     if row_limit > bytes * 8 {
         polars_bail!(
@@ -292,21 +292,18 @@ fn read_uncompressed_bitmap<R: Read + Seek>(
 
     let mut buffer = vec![];
     buffer.try_reserve(bytes)?;
-    reader
-        .by_ref()
-        .take(bytes as u64)
-        .read_to_end(&mut buffer)?;
+    (&mut *reader).take(bytes as u64).read_to_end(&mut buffer)?;
 
     polars_ensure!(buffer.len() == bytes, ComputeError: "Malformed IPC file: expected compressed buffer of len {bytes}, got {}", buffer.len());
 
     Ok(buffer)
 }
 
-fn read_compressed_bitmap<R: Read + Seek>(
+fn read_compressed_bitmap(
     row_limit: usize,
     bytes: usize,
     compression: Compression,
-    reader: &mut R,
+    reader: &mut dyn ReadSeek,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<Vec<u8>> {
     if row_limit == 0 {
@@ -315,7 +312,7 @@ fn read_compressed_bitmap<R: Read + Seek>(
 
     scratch.clear();
     scratch.try_reserve(bytes)?;
-    reader.by_ref().take(bytes as u64).read_to_end(scratch)?;
+    (&mut *reader).take(bytes as u64).read_to_end(scratch)?;
     if scratch.len() != bytes {
         polars_bail!(ComputeError: "Malformed IPC file: expected compressed buffer of len {bytes}, got {}", scratch.len());
     }
@@ -344,10 +341,10 @@ fn read_compressed_bitmap<R: Read + Seek>(
     Ok(buffer)
 }
 
-pub fn read_bitmap<R: Read + Seek>(
+pub fn read_bitmap(
     buf: &mut VecDeque<IpcBuffer>,
     row_limit: usize,
-    reader: &mut R,
+    reader: &mut dyn ReadSeek,
     block_offset: u64,
     _: bool,
     compression: Option<Compression>,
@@ -379,10 +376,10 @@ pub fn read_bitmap<R: Read + Seek>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn read_validity<R: Read + Seek>(
+pub fn read_validity(
     buffers: &mut VecDeque<IpcBuffer>,
     field_node: Node,
-    reader: &mut R,
+    reader: &mut dyn ReadSeek,
     block_offset: u64,
     is_little_endian: bool,
     compression: Option<Compression>,
@@ -447,7 +444,7 @@ mod tests {
             (Some(2), &values[..2]),
             (Some(10), &values[..]),
         ] {
-            let out = read_compressed_buffer::<i128, _>(
+            let out = read_compressed_buffer::<i128>(
                 &mut Cursor::new(&data),
                 data.len(),
                 row_limit,

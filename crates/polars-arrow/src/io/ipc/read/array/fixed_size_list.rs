@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-use std::io::{Read, Seek};
 
 use polars_error::{PolarsResult, polars_ensure, polars_err};
 use polars_utils::bool::UnsafeBool;
@@ -10,16 +9,17 @@ use super::super::read_basic::*;
 use super::super::{Compression, Dictionaries, IpcBuffer, Node, Version};
 use crate::array::FixedSizeListArray;
 use crate::datatypes::ArrowDataType;
+use crate::io::ipc::read::ReadSeek;
 use crate::io::ipc::read::array::try_get_field_node;
 
 #[allow(clippy::too_many_arguments)]
-pub fn read_fixed_size_list<R: Read + Seek>(
+pub fn read_fixed_size_list(
     field_nodes: &mut VecDeque<Node>,
     variadic_buffer_counts: &mut VecDeque<usize>,
     dtype: ArrowDataType,
     ipc_field: &IpcField,
     buffers: &mut VecDeque<IpcBuffer>,
-    reader: &mut R,
+    reader: &mut dyn ReadSeek,
     dictionaries: &Dictionaries,
     block_offset: u64,
     is_little_endian: bool,
@@ -51,14 +51,14 @@ pub fn read_fixed_size_list<R: Read + Seek>(
 /// Reads a fixed-size list of dtype `file_dtype` as `dtype`, whose element has a pruned dtype
 /// (see [`read_pruned`]).
 #[allow(clippy::too_many_arguments)]
-pub fn read_fixed_size_list_pruned<R: Read + Seek>(
+pub fn read_fixed_size_list_pruned(
     field_nodes: &mut VecDeque<Node>,
     variadic_buffer_counts: &mut VecDeque<usize>,
     file_dtype: &ArrowDataType,
     dtype: ArrowDataType,
     ipc_field: &IpcField,
     buffers: &mut VecDeque<IpcBuffer>,
-    reader: &mut R,
+    reader: &mut dyn ReadSeek,
     dictionaries: &Dictionaries,
     block_offset: u64,
     is_little_endian: bool,

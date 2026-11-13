@@ -11,6 +11,7 @@ use super::{Dictionaries, OutOfSpecKind};
 use crate::array::Array;
 use crate::datatypes::{ArrowSchema, Metadata};
 use crate::io::ipc::IpcSchema;
+use crate::io::ipc::read::ReadSeek;
 use crate::record_batch::RecordBatchT;
 
 /// Metadata of an Arrow IPC stream, written at the start of the stream
@@ -87,8 +88,8 @@ impl StreamState {
 
 /// Reads the next item, yielding `None` if the stream is done,
 /// and a [`StreamState`] otherwise.
-fn read_next<R: Read + Seek>(
-    reader: &mut R,
+fn read_next(
+    reader: &mut dyn ReadSeek,
     metadata: &StreamMetadata,
     dictionaries: &mut Dictionaries,
     message_buffer: &mut Vec<u8>,
@@ -133,8 +134,7 @@ fn read_next<R: Read + Seek>(
 
     message_buffer.clear();
     message_buffer.try_reserve(meta_length)?;
-    reader
-        .by_ref()
+    (&mut *reader)
         .take(meta_length as u64)
         .read_to_end(message_buffer)?;
 
