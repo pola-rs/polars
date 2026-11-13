@@ -436,7 +436,7 @@ def test_create_catalog_table_options(lake: CountingCatalog, tmp_path: Path) -> 
         ("CREATE TABLE t (x INT NULL NOT NULL)", "conflicting NULL/NOT NULL"),
         (
             "CREATE TABLE t (x INT) PARTITION BY RANGE (x)",
-            r"unsupported partition field `RANGE\(x\)`; expected a column, or year",
+            r"unsupported partition field `RANGE\(x\)`; expected a column or struct field",
         ),
         ("CREATE TABLE t (x INT) PARTITION BY (x + 1)", "unsupported partition field"),
         (
@@ -444,17 +444,21 @@ def test_create_catalog_table_options(lake: CountingCatalog, tmp_path: Path) -> 
             "unsupported partition field",
         ),
         (
-            "CREATE TABLE t (s STRUCT<a INT>) PARTITION BY (s.a)",
-            r"`PARTITION BY` takes unqualified column names; found `s\.a`; "
-            "partitioning by a nested field is not yet supported",
-        ),
-        (
-            "CREATE TABLE t (s STRUCT<a INT>) PARTITION BY (bucket(4, s.a))",
-            r"`PARTITION BY` takes unqualified column names; found `s\.a`",
-        ),
-        (
             "CREATE TABLE t (f INT) PARTITION BY (t.f)",
-            r"`PARTITION BY` takes unqualified column names; found `t\.f`",
+            "'t.f' is not a column of table 't'; table-qualified names are not supported",
+        ),
+        (
+            # a path, not the column named `s.b`
+            'CREATE TABLE t (s STRUCT<a INT>, "s.b" INT) PARTITION BY (s.b)',
+            "struct 's' has no field 'b'; for the column named 's.b', quote it",
+        ),
+        (
+            "CREATE TABLE t (s STRUCT<d DATE>) PARTITION BY (day(s.d), month(s.d))",
+            "both partition column 's.d' by time",
+        ),
+        (
+            "CREATE TABLE t (l STRUCT<a INT>[]) PARTITION BY (l.a)",
+            "only struct fields can be partition sources",
         ),
         (
             "CREATE TABLE t (s STRUCT<a INT>) PARTITION BY (bucket(s.a, 4))",
@@ -700,6 +704,11 @@ def partition_fields(catalog: CountingCatalog, *identifier: str) -> list[Any]:
         # a quoted name with a dot is a top-level column
         ('PARTITION BY ("s.f")', [("s.f", "identity", "s.f")]),
         ('PARTITION BY (bucket(4, "s.f"))', [("s.f_bucket_4", "bucket[4]", "s.f")]),
+        # a struct field, also with quoted parts
+        (
+            'PARTITION BY (s.a, bucket(4, "s"."b"))',
+            [("s.a", "identity", "s.a"), ("s.b_bucket_4", "bucket[4]", "s.b")],
+        ),
     ],
 )
 def test_create_partitioned_catalog_table(
@@ -755,6 +764,26 @@ def test_create_partitioned_catalog_table_as_select(
 
 
 @pytest.mark.write_disk
+def test_create_partitioned_catalog_table_nested(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    src = pl.DataFrame(
+        {"id": [1, 2, 3], "s": [{"d": date(2024, 1, 1)}, None, {"d": date(2024, 1, 2)}]}
+    )
+    ctx.register("src", src)
+    ctx.execute("CREATE TABLE t PARTITION BY (day(s.d)) AS SELECT * FROM src")
+    assert partition_fields(lake, "tpch", "t") == [("s.d_day", "day", "s.d")]
+    # a NULL struct gives a NULL partition value
+    partitions = lake.load_table(("tpch", "t")).inspect.files().column("partition")
+    assert sorted(partitions.to_pylist(), key=str) == [
+        {"s.d_day": None},
+        {"s.d_day": date(2024, 1, 1)},
+        {"s.d_day": date(2024, 1, 2)},
+    ]
+    res = ctx.execute("SELECT * FROM t", eager=True)
+    assert_frame_equal(res, src, check_row_order=False)
+
+
+@pytest.mark.write_disk
 def test_create_partitioned_catalog_table_checks(lake: CountingCatalog) -> None:
     ctx = lake_ctx(lake)
     with pytest.raises(
@@ -799,7 +828,9 @@ def test_create_partition_spec_duplicate_name() -> None:
         SQLInterfaceError,
         match="duplicate partition field name 'id_bucket_4' in table 't'",
     ):
-        _create_partition_spec(schema, [("id", "bucket[4]"), ("id", "bucket[4]")], "t")
+        _create_partition_spec(
+            schema, [(["id"], "bucket[4]"), (["id"], "bucket[4]")], "t"
+        )
 
 
 def table_files(tmp_path: Path, *identifier: str) -> set[Path]:
@@ -2987,6 +3018,27 @@ def test_alter_catalog_table_partitioning_reads_and_writes(
 
 
 @pytest.mark.write_disk
+def test_alter_catalog_table_partitioning_nested(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute(
+        "CREATE TABLE n (id BIGINT, s STRUCT<f VARCHAR, g INT> NOT NULL) "
+        "PARTITION BY (s.f)"
+    )
+    # a kept struct field keeps its id and name, a new one is named by its path
+    ctx.execute("ALTER TABLE n SET PARTITIONED BY (s.f, bucket(2, s.g))")
+    assert spec_of(lake, "n")[1] == [
+        (1000, "s.f", "identity", "s.f"),
+        (1001, "s.g_bucket_2", "bucket[2]", "s.g"),
+    ]
+    ctx.register("src", pl.DataFrame({"id": [1, 2], "s": [{"f": "a", "g": 1}] * 2}))
+    ctx.execute("INSERT INTO n SELECT * FROM src")
+    assert file_spec_ids(lake, "n") == {spec_of(lake, "n")[0]}
+    # the struct is NOT NULL: a condition on its field can delete
+    ctx.execute("DELETE FROM n WHERE s.f = 'a' AND id = 1")
+    assert table_rows(lake, "tpch", "n") == [(2, {"f": "a", "g": 1})]
+
+
+@pytest.mark.write_disk
 def test_alter_catalog_table_partitioning_names(lake: CountingCatalog) -> None:
     from pyiceberg.partitioning import PartitionField, PartitionSpec
     from pyiceberg.schema import Schema
@@ -3126,7 +3178,7 @@ def test_alter_catalog_table_partitioning_concurrent(lake: CountingCatalog) -> N
 
     ctx = events_ctx(lake)
     stale = lake.load_table(("tpch", "ev"))
-    change = spec_change(stale.metadata, [("id", "identity")], "ev")
+    change = spec_change(stale.metadata, [(["id"], "identity")], "ev")
     assert change is not None
     ctx.execute("ALTER TABLE ev SET PARTITIONED BY (s)")
     # planned against the table before the change: refused, nothing changes
