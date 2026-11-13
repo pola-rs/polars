@@ -87,10 +87,10 @@ impl DataFrame {
     }
 
     /// Convert the columns of this [DataFrame] to arrow arrays.
-    pub fn rechunk_into_arrow(self, compat_level: CompatLevel) -> PolarsResult<Vec<ArrayRef>> {
+    pub fn rechunk_into_arrow(self, compat_level: CompatLevel) -> Vec<ArrayRef> {
         self.into_columns()
             .into_iter()
-            .map(|c| c.try_rechunk_to_arrow(compat_level))
+            .map(|c| c.rechunk_to_arrow(compat_level))
             .collect()
     }
 }
