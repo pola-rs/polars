@@ -31,13 +31,16 @@ from typing import TYPE_CHECKING, Any
 import polars._reexport as pl
 from polars._utils.convert import to_py_date, to_py_datetime
 from polars._utils.logging import eprint
-from polars._utils.wrap import wrap_s
+from polars._utils.wrap import wrap_expr, wrap_s
 from polars.datatypes import Boolean, Decimal
 from polars.exceptions import ComputeError, InvalidOperationError, SchemaError
 from polars.io._utils import null_count_dtype
 
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    import polars._plr as plr
+
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Sequence
+    from collections.abc import Callable, Iterable, Mapping, Sequence
     from datetime import date, datetime
 
     import pyarrow as pa
@@ -50,6 +53,23 @@ if TYPE_CHECKING:
     from polars import DataFrame
 else:
     from polars._dependencies import pyiceberg
+
+
+def _exact_col(name: str) -> pl.Expr:
+    """The column `name`; unlike `pl.col`, `^a$` or `*` is a name, not a selector."""
+    return wrap_expr(plr.col_exact(name))
+
+
+def _exact_field(expr: pl.Expr, name: str) -> pl.Expr:
+    """The field `name` of struct `expr`, by exact name as `_exact_col`."""
+    return wrap_expr(expr._pyexpr.struct_field_exact(name))
+
+
+def _cast_columns(lf: pl.LazyFrame, casts: Mapping[str, pl.DataType]) -> pl.LazyFrame:
+    """Cast columns of `lf` strictly, by exact name: `LazyFrame.cast` takes patterns."""
+    return lf.with_columns(
+        _exact_col(name).cast(dtype) for name, dtype in casts.items()
+    )
 
 
 def _to_py_datetime_exact(value: int, time_unit: str, *args: Any) -> datetime:

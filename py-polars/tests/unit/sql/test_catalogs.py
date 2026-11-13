@@ -870,6 +870,22 @@ def test_create_catalog_table_as_select(lake: CountingCatalog, name: str) -> Non
 
 
 @pytest.mark.write_disk
+def test_create_catalog_table_as_select_pattern_like_name(
+    lake: CountingCatalog,
+) -> None:
+    # `^.$` names a column, not the one-letter columns it would match
+    lake_ctx(lake).execute(
+        'CREATE TABLE t AS SELECT k, v, CAST(k AS UTINYINT) AS "^.$" FROM lineitem'
+    )
+    assert table_fields(lake, "tpch", "t") == [
+        ("k", "long", False),
+        ("v", "string", False),
+        ("^.$", "int", False),
+    ]
+    assert table_rows(lake, "tpch", "t") == [(1, "a", 1), (2, "b", 2)]
+
+
+@pytest.mark.write_disk
 def test_create_catalog_table_as_select_existing(
     lake: CountingCatalog, tmp_path: Path
 ) -> None:

@@ -2346,6 +2346,7 @@ def _create_catalog_table(
     )
 
     from polars.io.iceberg._sink import _create_table_schema
+    from polars.io.iceberg._utils import _cast_columns
     from polars.schema import Schema
 
     identifier: tuple[str, ...] = tuple(ddl["identifier"])
@@ -2370,7 +2371,7 @@ def _create_catalog_table(
         raise TableAlreadyExistsError(msg)
     namespace = identifier[:-1]
     if lf is not None and casts:
-        lf = lf.cast(casts)  # type: ignore[arg-type]
+        lf = _cast_columns(lf, casts)
     created = None
     try:
         if lf is None:
