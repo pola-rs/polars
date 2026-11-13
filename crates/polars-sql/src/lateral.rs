@@ -30,7 +30,7 @@ use sqlparser::ast::{
 };
 
 use crate::context::{RelationName, match_qualifier, relation_name};
-use crate::sql_visitors::{expr_contains_subquery, is_column_selector};
+use crate::sql_visitors::{contains_random, expr_contains_subquery, is_column_selector};
 use crate::subquery::{row_indexed_once, strip_nested};
 use crate::subquery_group_by::{is_aggregate_call, is_count_star};
 use crate::subquery_outer_select::calls_query_function;
@@ -199,15 +199,19 @@ impl VisitorMut for AggregateSubqueries<'_> {
 
 /// Rewrites an aggregate query without GROUP BY to give its one row for each row of the
 /// domain table, also when no inner row matches it: each aggregate becomes a scalar subquery
-/// over the FROM and WHERE, and HAVING becomes the WHERE. `None` without a FROM, or if an
-/// unnamed SELECT item aggregates, as its name would change.
+/// over the FROM and WHERE, and HAVING becomes the WHERE. `None` without a FROM, if the FROM
+/// or WHERE calls `RANDOM()`, as each subquery would read other rows, or if an unnamed SELECT
+/// item aggregates, as its name would change.
 fn aggregates_as_subqueries(ctx: &SQLContext, query: &mut Query) -> Option<()> {
     query.order_by = None;
     let mut scope = query.clone();
     let SetExpr::Select(inner) = scope.body.as_mut() else {
         unreachable!()
     };
-    if inner.from.is_empty() {
+    if inner.from.is_empty()
+        || contains_random(&inner.from, true)
+        || contains_random(&inner.selection, true)
+    {
         return None;
     }
     inner.distinct = None;

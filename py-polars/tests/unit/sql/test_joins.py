@@ -3644,6 +3644,7 @@ def test_lateral_derived_table_reads_left_input_once(
         "SELECT a.x, c.v FROM b RIGHT JOIN c ON b.v = c.v",
         "SELECT COUNT(*) AS n FROM b WHERE b.v = a.k GROUP BY ()",
         "SELECT MAX(b.v) FROM b WHERE b.v > a.k",
+        "SELECT COUNT(*) AS n FROM b WHERE b.v > a.k AND RANDOM() > 0.5",
         "SELECT SUM(a.x) AS s FROM b GROUP BY b.v",
         "SELECT a.k FROM b GROUP BY 2",
         "WITH b AS (SELECT 100 AS x) SELECT a.k AS ak, x AS z FROM b",
