@@ -80,10 +80,11 @@ pub fn extract_quantiles(quantile: &Series) -> PolarsResult<Vec<f64>> {
     Ok(quantiles)
 }
 
-fn check_quantiles(quantiles: &[f64]) -> PolarsResult<()> {
-    for &q in quantiles {
+/// Returns an error if a quantile is NaN or outside `0.0..=1.0`.
+pub fn check_quantiles<'a>(quantiles: impl IntoIterator<Item = &'a f64>) -> PolarsResult<()> {
+    for q in quantiles {
         polars_ensure!(
-            (0.0..=1.0).contains(&q),
+            (0.0..=1.0).contains(q),
             ComputeError: "`quantile` should be between 0.0 and 1.0, got {}", q,
         );
     }
