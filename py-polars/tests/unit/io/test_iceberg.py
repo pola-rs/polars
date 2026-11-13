@@ -3087,7 +3087,7 @@ def _sink_uncommitted(
     return state, sinked_files
 
 
-# A re-execution of the same sink invocation, as polars-cloud does when a
+# A re-execution of the same sink invocation, as polars-nanook does when a
 # committing worker dies. Pickling drops the loaded table.
 def _twin(state: IcebergSinkState) -> IcebergSinkState:
     twin: IcebergSinkState = pickle.loads(pickle.dumps(state))

@@ -15,12 +15,22 @@ import pytest
 
 import polars as pl
 from polars.exceptions import SQLInterfaceError, SQLSyntaxError
+from polars.io.iceberg._catalog_resolver import set_iceberg_catalog_resolver
 from polars.testing import assert_frame_equal
 
 pytest.importorskip("pyiceberg.catalog.sql")
 
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchTableError, ServerError
+
+from tests.unit.io.conftest import (
+    failing_catalog_resolver,
+    recording_catalog_resolver,
+    reset_iceberg_catalog_resolver,  # noqa: F401
+)
+
+# No test leaves a catalog resolver installed for the next one.
+pytestmark = pytest.mark.usefixtures("reset_iceberg_catalog_resolver")
 
 
 class CountingCatalog(SqlCatalog):  # type: ignore[misc]
@@ -5624,3 +5634,124 @@ def test_catalog_metadata_tables_concurrent_first_load(lake: CountingCatalog) ->
     assert ids == expected["snapshot_id"].to_list()
     assert parents == expected["parent_id"].to_list()
     assert lake.loads == [("tpch", "lineitem")]
+
+
+@pytest.mark.write_disk
+def test_register_catalog_by_name_is_lazy(lake: CountingCatalog) -> None:
+    set_iceberg_catalog_resolver(failing_catalog_resolver)
+    ctx = pl.SQLContext().register_catalog("lake", default_namespace="tpch")
+
+    assert isinstance(ctx.execute("SELECT * FROM lake.lineitem"), pl.LazyFrame)
+
+
+@pytest.mark.write_disk
+def test_register_catalog_by_name_reads(lake: CountingCatalog) -> None:
+    resolver, names = recording_catalog_resolver(lake)
+    set_iceberg_catalog_resolver(resolver)
+    ctx = pl.SQLContext().register_catalog("lake", default_namespace="tpch")
+
+    res = ctx.execute("SELECT * FROM lake.lineitem").collect()
+
+    assert_frame_equal(res, LINEITEM, check_row_order=False)
+    assert names == ["lake"]
+
+
+@pytest.mark.write_disk
+def test_register_catalog_by_name_reads_metadata_tables(lake: CountingCatalog) -> None:
+    resolver, names = recording_catalog_resolver(lake)
+    set_iceberg_catalog_resolver(resolver)
+    ctx = pl.SQLContext().register_catalog("lake", default_namespace="tpch")
+
+    res = ctx.execute("SELECT * FROM lake.lineitem$snapshots", eager=True)
+
+    assert_frame_equal(res, inspected(lake, "snapshots", "tpch", "lineitem"))
+    assert names == ["lake"]
+
+
+@pytest.mark.write_disk
+def test_register_catalog_alias_resolves_given_name(lake: CountingCatalog) -> None:
+    resolver, names = recording_catalog_resolver(lake)
+    set_iceberg_catalog_resolver(resolver)
+    ctx = pl.SQLContext().register_catalog("sales", "lake", default_namespace="tpch")
+
+    res = ctx.execute("SELECT * FROM SALES.lineitem").collect()
+
+    assert_frame_equal(res, LINEITEM, check_row_order=False)
+    assert names == ["lake"]
+
+
+@pytest.mark.write_disk
+def test_register_catalog_by_name_serializes_only_the_name(
+    lake: CountingCatalog,
+) -> None:
+    set_iceberg_catalog_resolver(failing_catalog_resolver)
+    ctx = pl.SQLContext().register_catalog("lake", default_namespace="tpch")
+    data = ctx.execute("SELECT * FROM lake.lineitem").serialize()
+
+    assert b"sqlite" not in data
+    assert b"CountingCatalog" not in data
+
+    resolver, names = recording_catalog_resolver(lake)
+    set_iceberg_catalog_resolver(resolver)
+    res = pl.LazyFrame.deserialize(io.BytesIO(data)).collect()
+
+    assert_frame_equal(res, LINEITEM, check_row_order=False)
+    assert names == ["lake"]
+
+
+@pytest.mark.write_disk
+def test_register_catalog_by_name_write_statement_resolves_locally(
+    lake: CountingCatalog,
+) -> None:
+    resolver, names = recording_catalog_resolver(lake)
+    set_iceberg_catalog_resolver(resolver)
+    ctx = pl.SQLContext().register_catalog("lake")
+
+    ctx.execute("CREATE SCHEMA lake.newns")
+
+    assert ("newns",) in lake.list_namespaces()
+    assert names == ["lake"]
+
+
+@pytest.mark.write_disk
+def test_register_catalog_by_name_statement_query_resolves_by_name(
+    lake: CountingCatalog,
+) -> None:
+    resolver, names = recording_catalog_resolver(lake)
+    set_iceberg_catalog_resolver(resolver)
+    ctx = pl.SQLContext().register_catalog("lake", default_namespace="tpch")
+
+    ctx.execute("INSERT INTO lake.lineitem SELECT k + 10, v FROM lake.lineitem")
+
+    assert table_rows(lake, "tpch", "lineitem") == [
+        (1, "a"),
+        (2, "b"),
+        (11, "a"),
+        (12, "b"),
+    ]
+    # once for the statement's table, once for the table its query reads
+    assert names == ["lake", "lake"]
+
+
+@pytest.mark.write_disk
+def test_register_catalog_by_name_merge_source_resolves_by_name(
+    lake: CountingCatalog,
+) -> None:
+    resolver, names = recording_catalog_resolver(lake)
+    set_iceberg_catalog_resolver(resolver)
+    ctx = pl.SQLContext().register_catalog("lake", default_namespace="tpch")
+
+    ctx.execute(
+        "MERGE INTO lake.lineitem USING lake.orders AS o ON lineitem.k = o.k "
+        "WHEN MATCHED THEN UPDATE SET v = 'x' "
+        "WHEN NOT MATCHED THEN INSERT VALUES (o.k, 'new')"
+    )
+
+    assert table_rows(lake, "tpch", "lineitem") == [(1, "x"), (2, "x"), (3, "new")]
+    # once for the statement's table, once for the table its query reads
+    assert names == ["lake", "lake"]
+
+
+def test_register_catalog_empty_catalog_name() -> None:
+    with pytest.raises(ValueError, match="must not be empty"):
+        pl.SQLContext().register_catalog("x", "")

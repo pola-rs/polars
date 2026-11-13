@@ -147,6 +147,43 @@ def test_single_element_std() -> None:
     assert s.std(ddof=0) == 0.0
 
 
+@pytest.mark.parametrize(
+    ("dtype", "out_dtype", "values", "expected"),
+    [
+        (
+            pl.Float64,
+            pl.Float64,
+            [None, 5.0, float("nan"), float("inf")],
+            [None, 0.0, float("nan"), float("nan")],
+        ),
+        (
+            pl.Float32,
+            pl.Float32,
+            [None, 5.0, float("nan"), float("-inf")],
+            [None, 0.0, float("nan"), float("nan")],
+        ),
+        (pl.Int64, pl.Float64, [None, 5, None, 7], [None, 0.0, None, 0.0]),
+    ],
+)
+def test_group_by_single_value_var_std_30712(
+    dtype: PolarsDataType,
+    out_dtype: PolarsDataType,
+    values: list[Any],
+    expected: list[float | None],
+) -> None:
+    df = pl.DataFrame(
+        {"g": [1, 2, 3, 4], "x": values}, schema={"g": pl.Int64, "x": dtype}
+    ).sort("g")
+    out = df.group_by("g", maintain_order=True).agg(
+        v=pl.col("x").var(ddof=0), s=pl.col("x").std(ddof=0)
+    )
+    expected_df = pl.DataFrame(
+        {"g": [1, 2, 3, 4], "v": expected, "s": expected},
+        schema={"g": pl.Int64, "v": out_dtype, "s": out_dtype},
+    )
+    assert_frame_equal(out, expected_df)
+
+
 def test_quantile() -> None:
     s = pl.Series([1, 2, 3])
     assert s.quantile(0.5, "nearest") == 2
