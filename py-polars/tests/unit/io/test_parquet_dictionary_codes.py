@@ -234,6 +234,28 @@ def test_dictionary_codes_length_one_arguments(tmp_path: Path) -> None:
         assert_frame_equal(pl.scan_parquet(path).select(e).collect(), df.select(e))
 
 
+@pytest.mark.parametrize("length", [0, 1, 2, 256, 257])
+@pytest.mark.parametrize("dictionary_first", [False, True])
+def test_dictionary_codes_apply_scalar_length(
+    tmp_path: Path, length: int, dictionary_first: bool
+) -> None:
+    df = pl.DataFrame({"s": ["a", "b", None, "c"] * 64})
+    path = _write(df, tmp_path / "f.parquet")
+    # Collect one batch so the scan's morsel size cannot affect expression lengths.
+    (coded,) = pl.scan_parquet(path).collect_batches(chunk_size=df.height)
+    repeated = pl.repeat("x", length)
+    args = [pl.col("s"), repeated] if dictionary_first else [repeated, pl.col("s")]
+    expr = pl.concat_str(args, separator=":")
+    if length in (1, 256):
+        assert_frame_equal(coded.select(expr), df.select(expr))
+    else:
+        with pytest.raises(pl.exceptions.ShapeError) as expected:
+            df.select(expr)
+        with pytest.raises(pl.exceptions.ShapeError) as actual:
+            coded.select(expr)
+        assert str(actual.value) == str(expected.value)
+
+
 def test_dictionary_codes_batches_with_chunked_columns(tmp_path: Path) -> None:
     df = pl.DataFrame({"k": [LONG[i % 7] for i in range(4000)], "v": range(4000)})
     path = _write(df, tmp_path / "f.parquet", row_group_size=4000)

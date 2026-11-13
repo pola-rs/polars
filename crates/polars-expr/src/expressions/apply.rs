@@ -475,16 +475,36 @@ fn check_map_output_len(input_len: usize, output_len: usize, expr: &Expr) -> Pol
     Ok(())
 }
 
-/// The index of the only dictionary-coded input, when every other input is constant.
+/// The index of the only dictionary-coded input, when every other input is a constant
+/// that can broadcast to the dictionary column's length.
 fn single_dictionary_input(inputs: &[Column]) -> Option<usize> {
     let idx = inputs
         .iter()
         .position(|c| c.as_dictionary_column().is_some())?;
+    let len = inputs[idx].len();
     inputs
         .iter()
         .enumerate()
-        .all(|(i, c)| i == idx || c.len() == 1 || c.as_scalar_column().is_some())
+        .all(|(i, c)| {
+            i == idx || c.len() == 1 || (c.len() == len && c.as_scalar_column().is_some())
+        })
         .then_some(idx)
+}
+
+fn can_evaluate_on_dictionary(expr: &Expr) -> bool {
+    match expr {
+        Expr::AnonymousFunction { .. }
+        | Expr::Function {
+            function: FunctionExpr::SetSortedFlag(_),
+            ..
+        } => false,
+        #[cfg(feature = "ffi_plugin")]
+        Expr::Function {
+            function: FunctionExpr::FfiPlugin { .. },
+            ..
+        } => false,
+        _ => true,
+    }
 }
 
 impl PhysicalExpr for ApplyExpr {
@@ -521,18 +541,11 @@ impl PhysicalExpr for ApplyExpr {
         }
 
         // An elementwise function of one dictionary-coded column (and constants) is evaluated once
-        // per dictionary value the rows use. Not for user functions, which may be impure, nor for
-        // `set_sorted`, whose flag is about the rows, not the values.
+        // per dictionary value the rows use. User functions (including plugins) may depend on
+        // row order or count, and `set_sorted` describes the order of the rows.
         if constant_len.is_none()
             && self.flags.is_elementwise()
-            && !matches!(
-                self.expr,
-                Expr::AnonymousFunction { .. }
-                    | Expr::Function {
-                        function: FunctionExpr::SetSortedFlag(_),
-                        ..
-                    }
-            )
+            && can_evaluate_on_dictionary(&self.expr)
             && let Some(dict_idx) = single_dictionary_input(&inputs)
         {
             let dict_col = inputs[dict_idx].as_dictionary_column().unwrap().clone();
@@ -790,4 +803,56 @@ fn constant_broadcast_len(inputs: &[Column]) -> Option<usize> {
         .iter()
         .all(|c| c.len() == 1 || (c.len() == len && matches!(c, Column::Scalar(_))))
         .then_some(len)
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_arrow::array::Utf8ViewArray;
+    use polars_core::frame::column::{DictionaryColumn, SharedDictionary};
+
+    use super::*;
+
+    #[test]
+    fn dictionary_apply_accepts_only_broadcastable_scalar_lengths() {
+        let dict = SharedDictionary::new(Utf8ViewArray::from_slice_values(["a", "b"]));
+        let codes = UInt32Chunked::from_vec(PlSmallStr::EMPTY, [0, 1].repeat(128));
+        let coded: Column = DictionaryColumn::try_new("s".into(), dict, codes)
+            .unwrap()
+            .into();
+        for len in [0, 1, 2, 256, 257] {
+            let scalar = Column::new_scalar(
+                "constant".into(),
+                Scalar::new(DataType::String, AnyValue::StringOwned("x".into())),
+                len,
+            );
+            assert!(scalar.as_scalar_column().is_some());
+            for dict_idx in [0, 1] {
+                let mut inputs = [coded.clone(), scalar.clone()];
+                inputs.swap(0, dict_idx);
+                assert!(inputs[dict_idx].as_dictionary_column().is_some());
+                assert_eq!(
+                    single_dictionary_input(&inputs),
+                    matches!(len, 1 | 256).then_some(dict_idx)
+                );
+            }
+        }
+    }
+
+    #[cfg(feature = "ffi_plugin")]
+    #[test]
+    fn dictionary_apply_excludes_all_ffi_plugins() {
+        for is_deterministic in [false, true] {
+            let expr = Expr::Function {
+                input: vec![Expr::Column("s".into())],
+                function: FunctionExpr::FfiPlugin {
+                    flags: FunctionOptions::elementwise(),
+                    is_deterministic,
+                    lib: "test-plugin".into(),
+                    symbol: "test-function".into(),
+                    kwargs: Arc::default(),
+                },
+            };
+            assert!(!can_evaluate_on_dictionary(&expr));
+        }
+    }
 }

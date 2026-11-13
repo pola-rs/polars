@@ -448,9 +448,10 @@ impl DictionaryColumn {
     /// it costs more than materializing; returns false then.
     ///
     /// Values are matched by value, so appending the chunks of many row groups whose dictionaries
-    /// share their values keeps one dictionary of the distinct values rather than growing it by
-    /// each chunk's dictionary. The dictionary's lookup table is kept with it and carried into an
-    /// extended one, so each append costs the size of `other`'s dictionary, not this one's.
+    /// share their values keeps one dictionary of the distinct values. Once the lookup table
+    /// exists, remapping costs the size of `other`'s dictionary and codes. Extending also copies
+    /// the existing dictionary's views, lookup and cached hashes, so this method returns false
+    /// when that extension would copy more existing entries than `other` has rows.
     pub fn try_append(&mut self, other: &DictionaryColumn) -> bool {
         if self.dict.id != other.dict.id {
             let max_len = (self.len() + other.len()).min(u32::MAX as usize);
@@ -475,6 +476,9 @@ impl DictionaryColumn {
                 if self.dict.len() + added.len() > max_len {
                     return false;
                 }
+            }
+            if !added.is_empty() && self.dict.len() > other.len() {
+                return false;
             }
             // Null slots may hold any value, out of bounds too.
             let other_codes = other
@@ -895,6 +899,56 @@ mod test {
         assert!(!a.try_append(&b));
         assert_eq!(a.len(), 2);
         assert_eq!(a.dict().len(), 2);
+    }
+
+    #[test]
+    fn try_append_bounds_dictionary_extension() {
+        let a = dict_column(&["a", "b", "c"], &[Some(0), Some(1), Some(2)]);
+        let b = dict_column(&["d"], &[Some(0), None, Some(0)]);
+        let mut at_limit = a.clone();
+        assert!(at_limit.try_append(&b));
+        assert_eq!(at_limit.dict().len(), 4);
+        let expected = values(&at_limit);
+
+        let mut above_limit = a.clone();
+        above_limit.set_sorted_flag(IsSorted::Ascending);
+        above_limit.as_materialized_series();
+        let smaller_b = b.slice(0, 2);
+        assert!(!above_limit.try_append(&smaller_b));
+        assert_eq!(above_limit.dict().id(), a.dict().id());
+        assert_eq!(values(&above_limit), values(&a));
+        assert_eq!(above_limit.is_sorted_flag(), IsSorted::Ascending);
+        assert!(above_limit.lazy_as_materialized_series().is_some());
+
+        let mut col = Column::from(above_limit);
+        col.append(&Column::from(smaller_b)).unwrap();
+        assert!(col.as_dictionary_column().is_none());
+        assert_eq!(
+            col.str().unwrap().iter().collect::<Vec<_>>(),
+            expected[..5]
+                .iter()
+                .map(Option::as_deref)
+                .collect::<Vec<_>>(),
+        );
+    }
+
+    #[test]
+    fn try_append_reuses_dictionary_above_extension_bound() {
+        let mut a = dict_column(&["a", "b", "c"], &[Some(0), Some(1), Some(2)]);
+        let same_dict = a.slice(1, 1);
+        let overlapping = dict_column(&["c"], &[Some(0)]);
+        let id = a.dict().id();
+        assert!(a.try_append(&same_dict));
+        assert!(a.try_append(&overlapping));
+        assert_eq!(a.dict().id(), id);
+        assert_eq!(
+            a.as_materialized_series()
+                .str()
+                .unwrap()
+                .iter()
+                .collect::<Vec<_>>(),
+            [Some("a"), Some("b"), Some("c"), Some("b"), Some("c")],
+        );
     }
 
     #[test]
