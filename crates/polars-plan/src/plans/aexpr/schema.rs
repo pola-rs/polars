@@ -172,13 +172,16 @@ impl AExpr {
             Agg(agg) => {
                 use IRAggExpr::*;
                 match agg {
-                    // Unions have no order, and grouped kernels would give nulls instead of raising.
                     Max { input: expr, .. } | Min { input: expr, .. } => {
                         let field = ctx.arena.get(*expr).to_field_impl(ctx)?;
+                        let op = if matches!(agg, Min { .. }) {
+                            "min"
+                        } else {
+                            "max"
+                        };
                         polars_ensure!(
-                            !field.dtype().is_union(),
-                            InvalidOperation: "`{}` operation not supported for dtype `{}`",
-                            if matches!(agg, Max { .. }) { "max" } else { "min" },
+                            !field.dtype().is_object(),
+                            InvalidOperation: "`{op}` operation not supported for dtype `{}`",
                             field.dtype()
                         );
                         Ok(field)
@@ -190,24 +193,12 @@ impl AExpr {
                     Sum { input: expr, .. } => {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
                         let dt = match field.dtype() {
-                            String | Binary | BinaryOffset | List(_) => {
+                            dt if matches!(dt, String | Binary | BinaryOffset)
+                                || dt.is_nested()
+                                || dt.is_object() =>
+                            {
                                 polars_bail!(
-                                    InvalidOperation: "`sum` operation not supported for dtype `{}`",
-                                    field.dtype()
-                                )
-                            },
-                            #[cfg(feature = "dtype-array")]
-                            Array(_, _) => {
-                                polars_bail!(
-                                    InvalidOperation: "`sum` operation not supported for dtype `{}`",
-                                    field.dtype()
-                                )
-                            },
-                            #[cfg(feature = "dtype-struct")]
-                            Struct(_) => {
-                                polars_bail!(
-                                    InvalidOperation: "`sum` operation not supported for dtype `{}`",
-                                    field.dtype()
+                                    InvalidOperation: "`sum` operation not supported for dtype `{dt}`"
                                 )
                             },
                             #[cfg(feature = "dtype-union")]

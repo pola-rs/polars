@@ -13,7 +13,7 @@ from hypothesis import strategies as st
 
 import polars as pl
 from polars.exceptions import ComputeError, InvalidOperationError
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import dataframes
 
 if TYPE_CHECKING:
@@ -2272,6 +2272,333 @@ def test_min_max_by_row_encoded_value(
         {"g": [1, 2, 3], "x": pl.Series(expected_x, dtype=pl.Binary)}
     )
     assert_frame_equal(q.collect(), expected_df)
+
+
+def _nested_series(keys: list[int | None], kind: str) -> pl.Series:
+    """Nested values that sort like `keys`."""
+    if kind == "list":
+        return pl.Series([None if k is None else [k] for k in keys])
+    if kind == "array":
+        values = [None if k is None else [k] for k in keys]
+        return pl.Series(values, dtype=pl.Array(pl.Int64, 1))
+    if kind == "struct":
+        return pl.Series([None if k is None else {"a": k} for k in keys])
+    entries = [None if k is None else [{"key": k, "value": 0}] for k in keys]
+    return pl.Series(entries).cast(pl.Map(pl.Int64, pl.Int64))
+
+
+NESTED_KINDS = ["list", "array", "struct", "map"]
+
+
+@pytest.mark.parametrize("kind", NESTED_KINDS)
+def test_arg_min_max_nested_skips_nulls_30734(kind: str) -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 2, 2, 3, 3],
+            "s": _nested_series([2, None, 1, 3, 4, None, None], kind),
+        }
+    )
+    aggs = [pl.col("s").arg_min().alias("min"), pl.col("s").arg_max().alias("max")]
+    idx = {"min": pl.get_index_type(), "max": pl.get_index_type()}
+
+    expected = pl.DataFrame(
+        {"min": [2], "max": [4]},
+        schema_overrides=idx,
+    )
+    assert_frame_equal(df.select(aggs), expected)
+    assert_frame_equal(df.lazy().select(aggs).collect(), expected)
+
+    expected = pl.DataFrame(
+        {"g": [1, 2, 3], "min": [2, 0, None], "max": [0, 1, None]},
+        schema_overrides=idx,
+    )
+    assert_frame_equal(df.group_by("g", maintain_order=True).agg(aggs), expected)
+    q = df.lazy().group_by("g").agg(aggs)
+    assert_frame_equal(q.collect(), expected, check_row_order=False)
+
+    expected = pl.DataFrame(
+        {"min": [2, 2, 2, 0, 0, None, None], "max": [0, 0, 0, 1, 1, None, None]},
+        schema_overrides=idx,
+    )
+    over = [a.over("g") for a in aggs]
+    assert_frame_equal(df.select(over), expected)
+    assert_frame_equal(df.lazy().select(over).collect(), expected)
+
+
+@pytest.mark.parametrize("kind", NESTED_KINDS)
+def test_min_max_by_nested_key_skips_nulls_30734(kind: str) -> None:
+    df = pl.DataFrame({"i": [0, 1, 2], "s": _nested_series([2, None, 1], kind)})
+    aggs = [pl.col("i").min_by("s").alias("min"), pl.col("i").max_by("s").alias("max")]
+    expected = pl.DataFrame({"min": [2], "max": [0]})
+    assert_frame_equal(df.select(aggs), expected)
+    assert_frame_equal(df.lazy().select(aggs).collect(), expected)
+
+    df = pl.DataFrame({"i": [0, 1], "s": _nested_series([None, None], kind)})
+    expected = pl.DataFrame(
+        {"min": [None], "max": [None]}, schema={"min": pl.Int64, "max": pl.Int64}
+    )
+    assert_frame_equal(df.select(aggs), expected)
+    assert_frame_equal(df.lazy().select(aggs).collect(), expected)
+
+
+@pytest.mark.parametrize("kind", NESTED_KINDS)
+def test_min_max_nested(kind: str) -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 2, 2, 3, 3],
+            "s": _nested_series([2, None, 1, 3, 4, None, None], kind),
+        }
+    )
+    aggs = [pl.col("s").min().alias("min"), pl.col("s").max().alias("max")]
+
+    lo = _nested_series([1], kind).alias("min")
+    hi = _nested_series([4], kind).alias("max")
+    expected = pl.DataFrame([lo, hi])
+    assert_frame_equal(df.select(aggs), expected)
+    assert_frame_equal(df.lazy().select(aggs).collect(), expected)
+    assert_series_equal(pl.Series("min", [df["s"].min()], dtype=lo.dtype), lo)
+    assert_series_equal(pl.Series("max", [df["s"].max()], dtype=hi.dtype), hi)
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("g", [1, 2, 3]),
+            _nested_series([1, 3, None], kind).alias("min"),
+            _nested_series([2, 4, None], kind).alias("max"),
+        ]
+    )
+    assert_frame_equal(df.group_by("g", maintain_order=True).agg(aggs), expected)
+    q = df.lazy().group_by("g").agg(aggs)
+    assert_frame_equal(q.collect(), expected, check_row_order=False)
+
+    expected = df.select("g").join(expected, on="g", maintain_order="left").drop("g")
+    over = [a.over("g") for a in aggs]
+    assert_frame_equal(df.select(over), expected)
+    assert_frame_equal(df.lazy().select(over).collect(), expected)
+
+
+def test_frame_min_max_nested() -> None:
+    df = pl.DataFrame({"x": [2, 1], "l": [[2], [1]], "s": [{"a": 1}, {"a": 2}]})
+    expected = pl.DataFrame({"x": [1], "l": [[1]], "s": [{"a": 1}]})
+    assert_frame_equal(df.min(), expected)
+    assert_frame_equal(df.lazy().min().collect(), expected)
+    expected = pl.DataFrame({"x": [2], "l": [[2]], "s": [{"a": 2}]})
+    assert_frame_equal(df.max(), expected)
+    assert_frame_equal(df.lazy().max().collect(), expected)
+
+
+@pytest.mark.parametrize(
+    ("values", "lo", "hi"),
+    [
+        # A null element or field is a value; a list sorts after its prefixes.
+        ([[None], None, [1], [], [1, 0]], 3, 4),
+        ([{"a": None, "b": 5}, None, {"a": 1, "b": 0}, {"a": 1, "b": -1}], 0, 2),
+        # NaN is larger than any other number.
+        ([[float("nan")], None, [1.0], [1.0, float("nan")]], 2, 0),
+        ([{"a": float("nan")}, None, {"a": 1.0}], 2, 0),
+        # Categoricals compare lexically, unlike the order they were first seen in.
+        (
+            pl.Series(
+                [{"c": "agg_nested_b"}, {"c": "agg_nested_a"}, None, {"c": "c"}],
+                dtype=pl.Struct({"c": pl.Categorical()}),
+            ),
+            1,
+            3,
+        ),
+    ],
+)
+def test_ordering_aggs_nested_values(values: Any, lo: int, hi: int) -> None:
+    s = pl.Series("s", values)
+    df = pl.DataFrame({"g": [1] * len(s), "i": range(len(s)), "s": s})
+    aggs = [
+        pl.col("s").min().alias("min"),
+        pl.col("s").max().alias("max"),
+        pl.col("s").arg_min().alias("arg_min"),
+        pl.col("s").arg_max().alias("arg_max"),
+        pl.col("i").min_by("s").alias("min_by"),
+        pl.col("i").max_by("s").alias("max_by"),
+    ]
+    expected = pl.DataFrame(
+        [
+            s.gather([lo]).alias("min"),
+            s.gather([hi]).alias("max"),
+            pl.Series("arg_min", [lo], dtype=pl.get_index_type()),
+            pl.Series("arg_max", [hi], dtype=pl.get_index_type()),
+            pl.Series("min_by", [lo]),
+            pl.Series("max_by", [hi]),
+        ]
+    )
+    assert_frame_equal(df.select(aggs), expected)
+    assert_frame_equal(df.lazy().select(aggs).collect(), expected)
+    assert_frame_equal(df.group_by("g").agg(aggs).drop("g"), expected)
+    assert_frame_equal(df.lazy().group_by("g").agg(aggs).collect().drop("g"), expected)
+    # Without `arg_min`/`arg_max`, which have no streaming grouped reduction.
+    streamable = aggs[:2] + aggs[4:]
+    q = df.lazy().group_by("g").agg(streamable)
+    expected = expected.select("min", "max", "min_by", "max_by")
+    assert_frame_equal(q.collect().drop("g"), expected)
+
+
+def test_ordering_aggs_nested_rolling() -> None:
+    s = pl.Series([{"a": 3}, None, {"a": 1}, {"a": 2}, None, {"a": 5}, {"a": 4}])
+    df = pl.DataFrame({"i": range(len(s)), "s": s})
+    aggs = [
+        pl.col("s").min().alias("min"),
+        pl.col("s").max().alias("max"),
+        pl.col("s").arg_min().alias("arg_min"),
+        pl.col("s").arg_max().alias("arg_max"),
+        pl.col("i").min_by("s").alias("min_by"),
+        pl.col("i").max_by("s").alias("max_by"),
+    ]
+    out = df.rolling("i", period="3i").agg(aggs)
+    expected = pl.concat(
+        [df.slice(max(i - 2, 0), min(i, 2) + 1).select(aggs) for i in range(len(s))]
+    )
+    assert_frame_equal(out.drop("i"), expected)
+    assert out["min"].to_list()[2:] == [
+        {"a": 1},
+        {"a": 1},
+        {"a": 1},
+        {"a": 2},
+        {"a": 4},
+    ]
+
+
+def test_sum_map_raise_30734() -> None:
+    df = pl.DataFrame({"g": [1, 1, 1], "s": _nested_series([2, None, 1], "map")})
+    expr = pl.col("s").sum()
+    msg = "operation not supported for dtype"
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.select(expr)
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.group_by("g").agg(expr)
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.select(expr.over("g"))
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.lazy().group_by("g").agg(expr).collect_schema()
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.lazy().select(expr.over("g")).collect_schema()
+
+
+class _AggExtension(pl.datatypes.BaseExtension):
+    def __init__(self, storage: pl.DataType) -> None:
+        super().__init__(name="testing.aggregations_extension", storage=storage)
+
+
+pl.register_extension_type("testing.aggregations_extension", _AggExtension)
+
+
+def _check_extension_aggs(
+    df: pl.DataFrame,
+    q: Callable[[Any], Any],
+    ordered: bool,
+) -> None:
+    """Check that `q` on `df` gives what it gives on the storage of column `s`."""
+    dtype = df.schema["s"]
+    storage_df = df.with_columns(pl.col("s").ext.storage())
+    expected = q(storage_df)
+    to_ext = [c for c in ["min", "max"] if c in expected.columns]
+    expected = expected.with_columns(pl.col(to_ext).ext.to(dtype))
+    assert expected["min"].null_count() < expected.height
+    assert_frame_equal(q(df), expected, check_row_order=ordered)
+    assert_frame_equal(q(df.lazy()).collect(), expected, check_row_order=ordered)
+
+
+@pytest.mark.parametrize(
+    "storage",
+    [pl.Int64(), pl.String(), pl.Categorical(), pl.Struct({"a": pl.Int64})],
+)
+def test_ordering_aggs_extension(storage: pl.DataType) -> None:
+    keys = [2, None, 1, 3, 4, None, None]
+    if storage == pl.String:
+        values: list[Any] = [None if k is None else str(k) for k in keys]
+    elif storage == pl.Categorical:
+        # First seen out of lexical order, so that physical and lexical order differ.
+        values = [None if k is None else f"agg_ext_{k}" for k in keys]
+    elif storage == pl.Struct:
+        values = [None if k is None else {"a": k} for k in keys]
+    else:
+        values = keys
+    dtype = _AggExtension(storage)
+    s = pl.Series("s", values, dtype=storage).ext.to(dtype)
+    df = pl.DataFrame({"g": [1, 1, 1, 2, 2, 3, 3], "i": range(7), "s": s})
+    aggs = [
+        pl.col("s").min().alias("min"),
+        pl.col("s").max().alias("max"),
+        pl.col("s").arg_min().alias("arg_min"),
+        pl.col("s").arg_max().alias("arg_max"),
+        pl.col("i").min_by("s").alias("min_by"),
+        pl.col("i").max_by("s").alias("max_by"),
+    ]
+    # Without `arg_min`/`arg_max`, which have no streaming grouped reduction.
+    streamable = aggs[:2] + aggs[4:]
+
+    _check_extension_aggs(df, lambda df: df.select(aggs), True)
+    _check_extension_aggs(df, lambda df: df.group_by("g").agg(aggs), False)
+    _check_extension_aggs(df, lambda df: df.group_by("g").agg(streamable), False)
+    _check_extension_aggs(df, lambda df: df.select(a.over("g") for a in aggs), True)
+    _check_extension_aggs(df, lambda df: df.rolling("i", period="3i").agg(aggs), True)
+
+    assert s.arg_min() == 2
+    assert s.arg_max() == 4
+    expected = df.select(pl.col("s").min()).to_series()
+    assert_series_equal(pl.Series("s", [s.min()], dtype=dtype), expected)
+    expected = df.select(pl.col("s").max()).to_series()
+    assert_series_equal(pl.Series("s", [s.max()], dtype=dtype), expected)
+
+
+def test_nan_min_max_extension() -> None:
+    f = pl.Series("s", [1.0, float("nan"), None, 2.0, 3.0, None])
+    df = pl.DataFrame(
+        {"g": [1, 1, 1, 2, 2, 3], "s": f.ext.to(_AggExtension(pl.Float64()))}
+    )
+    aggs = [pl.col("s").nan_min().alias("min"), pl.col("s").nan_max().alias("max")]
+
+    _check_extension_aggs(df, lambda df: df.select(aggs), True)
+    _check_extension_aggs(df, lambda df: df.group_by("g").agg(aggs), False)
+    _check_extension_aggs(df, lambda df: df.select(a.over("g") for a in aggs), True)
+    out = df.select(aggs).select(pl.all().ext.storage())
+    assert math.isnan(out["min"].item())
+    assert math.isnan(out["max"].item())
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("o").min(),
+        pl.col("o").max(),
+        pl.col("o").sum(),
+        pl.col("o").arg_min(),
+        pl.col("o").arg_max(),
+        pl.col("i").min_by("o"),
+        pl.col("i").max_by("o"),
+    ],
+)
+def test_ordering_aggs_object_raise(expr: pl.Expr) -> None:
+    o = pl.Series([object(), None, object()], dtype=pl.Object)
+    df = pl.DataFrame({"g": [1, 1, 1], "i": [0, 1, 2], "o": o})
+    msg = "operation not supported for (by )?dtype `object`"
+    for q in [
+        df.lazy().select(expr),
+        df.lazy().group_by("g").agg(expr),
+        df.lazy().select(expr.over("g")),
+    ]:
+        with pytest.raises(InvalidOperationError, match=msg):
+            q.collect_schema()
+        with pytest.raises(InvalidOperationError, match=msg):
+            q.collect()
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.select(expr)
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.group_by("g").agg(expr)
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.select(expr.over("g"))
+
+
+@pytest.mark.parametrize("method", [pl.Series.arg_min, pl.Series.arg_max])
+def test_arg_min_max_object_series_raise(method: Callable[[pl.Series], Any]) -> None:
+    o = pl.Series([object(), None, object()], dtype=pl.Object)
+    with pytest.raises(InvalidOperationError, match="not supported for dtype `object`"):
+        method(o)
 
 
 @pytest.mark.parametrize(

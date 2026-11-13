@@ -335,6 +335,13 @@ fn try_lower_elementwise_scalar_agg_expr(
                 .is_ok_and(|dtype| supports_unique_reduction(&dtype))
     };
 
+    let input_dtype = |x: Node| {
+        expr_arena
+            .get(x)
+            .to_dtype(&ToFieldContext::new(expr_arena, input_schema))
+            .ok()
+    };
+
     match expr_arena.get(expr) {
         // Should be handled separately in `Eval`.
         AExpr::Element => unreachable!(),
@@ -621,6 +628,29 @@ fn try_lower_elementwise_scalar_agg_expr(
                     && unique_reducible(x, expr_arena) =>
                 {
                     Some(replace_agg_uniq!(expr, unique_of = Some(x)))
+                },
+                IRAggExpr::Min {
+                    input,
+                    propagate_nulls,
+                    ..
+                }
+                | IRAggExpr::Max {
+                    input,
+                    propagate_nulls,
+                    ..
+                } if input_dtype(*input)?.is_nested() => {
+                    if *propagate_nulls {
+                        return None;
+                    }
+                    // Grouped reductions only take columns, so this goes through `min_by`, whose
+                    // lowering row-encodes the key.
+                    let x = AExprBuilder::new_from_node(*input);
+                    let by = if matches!(agg, IRAggExpr::Max { .. }) {
+                        x.max_by(x, MinMaxByOrder::SkipNulls, expr_arena)
+                    } else {
+                        x.min_by(x, MinMaxByOrder::SkipNulls, expr_arena)
+                    };
+                    lower_rec!(by.node())
                 },
                 IRAggExpr::Min { .. }
                 | IRAggExpr::Max { .. }

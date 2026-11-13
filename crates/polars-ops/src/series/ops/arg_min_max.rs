@@ -1,6 +1,7 @@
 use polars_core::chunked_array::arg_min_max::{
     arg_max_binary, arg_max_binary_offset, arg_max_bool, arg_max_numeric, arg_max_str,
-    arg_min_binary, arg_min_binary_offset, arg_min_bool, arg_min_numeric, arg_min_str,
+    arg_min_binary, arg_min_binary_offset, arg_min_bool, arg_min_max_row_encoded, arg_min_numeric,
+    arg_min_str,
 };
 #[cfg(feature = "dtype-categorical")]
 use polars_core::chunked_array::arg_min_max::{arg_max_cat, arg_min_cat};
@@ -52,6 +53,8 @@ impl ArgAgg for Series {
         use DataType::*;
         let phys_s = self.to_physical_repr();
         match self.dtype() {
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, _) => self.to_storage().arg_min(),
             #[cfg(feature = "dtype-categorical")]
             Categorical(cats, _) => {
                 with_match_categorical_physical_type!(cats.physical(), |$C| {
@@ -73,11 +76,7 @@ impl ArgAgg for Series {
                     arg_min_numeric(ca)
                 })
             },
-            dt if dt.is_nested() => self
-                .row_encode_ordered(false, false)
-                .ok()?
-                .into_series()
-                .arg_min(),
+            dt if dt.is_nested() => arg_min_max_row_encoded(self, false),
             _ => None,
         }
     }
@@ -86,6 +85,8 @@ impl ArgAgg for Series {
         use DataType::*;
         let phys_s = self.to_physical_repr();
         match self.dtype() {
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, _) => self.to_storage().arg_max(),
             #[cfg(feature = "dtype-categorical")]
             Categorical(cats, _) => {
                 with_match_categorical_physical_type!(cats.physical(), |$C| {
@@ -107,11 +108,7 @@ impl ArgAgg for Series {
                     arg_max_numeric(ca)
                 })
             },
-            dt if dt.is_nested() => self
-                .row_encode_ordered(false, false)
-                .ok()?
-                .into_series()
-                .arg_max(),
+            dt if dt.is_nested() => arg_min_max_row_encoded(self, true),
             _ => None,
         }
     }
