@@ -361,3 +361,86 @@ def test_over_object_with_per_group_scalar(engine: EngineType) -> None:
     q = lf.select((lit == v.first()).over("g"))
     with pytest.raises(pl.exceptions.InvalidOperationError, match="comparison"):
         q.collect(engine=engine)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_agg_after_scalar_over(engine: EngineType) -> None:
+    # Inside an aggregation, `max().over("g")` computes one value per partition, and
+    # each row of a partition gets the index of that value. A group can then hold more
+    # indices than the column has values.
+    lf = pl.LazyFrame(
+        {
+            "g": [1, 1, 1, 1, 1, 2],
+            "h": [0] * 6,
+            "k": range(6),
+            "b": [1.0, 2, 3, 4, 5, 6],
+        }
+    )
+    b_max = pl.col.b.max().over("g")
+
+    q = lf.select(o=pl.lit(2).over("g").sum().over("g"))
+    assert q.collect(engine=engine)["o"].to_list() == [10, 10, 10, 10, 10, 2]
+
+    q = lf.select(o=b_max.std().over("g"))
+    assert q.collect(engine=engine)["o"].to_list() == [0.0, 0.0, 0.0, 0.0, 0.0, None]
+
+    q = lf.group_by("h").agg(o=b_max.sum())
+    assert q.collect(engine=engine)["o"].to_list() == [31.0]
+
+    q = lf.select(o=b_max.sum().rolling(index_column="k", period="3i"))
+    assert q.collect(engine=engine)["o"].to_list() == [1.0, 4.0, 9.0, 12.0, 15.0, 16.0]
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_agg_kernels_after_scalar_over(engine: EngineType) -> None:
+    # One aggregation per kernel family. The window column holds one value per
+    # partition, 4 in all, and the group `h == 0` holds 5 indices.
+    lf = pl.LazyFrame(
+        {"h": [0, 0, 0, 0, 0, 1], "g": [1, 2, 3, 3, 3, 4], "x": [1, 5, 2, 3, 4, 7]}
+    )
+    w = pl.col.x.max().over("g")  # [1, 5, 4, 4, 4] and [7]
+    f = w.cast(pl.Float64)
+    s = w.cast(pl.String)
+    q = lf.group_by("h", maintain_order=True).agg(
+        sum=w.sum(),
+        min=w.min(),
+        max=w.max(),
+        mean=w.mean(),
+        var=w.var(),
+        bit_or=w.bitwise_or(),
+        f_mean=f.mean(),
+        f_std=f.std(),
+        nan_min=f.nan_min(),
+        nan_max=f.nan_max(),
+        b_min=(w > 3).min(),
+        b_max=(w > 3).max(),
+        b_sum=(w > 3).sum(),
+        s_min=s.min(),
+        s_max=s.max(),
+        s_arg_min=s.arg_min(),
+        s_arg_max=s.arg_max(),
+    )
+    idx = pl.get_index_type()
+    expected = pl.DataFrame(
+        {
+            "h": [0, 1],
+            "sum": [18, 7],
+            "min": [1, 7],
+            "max": [5, 7],
+            "mean": [3.6, 7.0],
+            "var": [2.3, None],
+            "bit_or": [5, 7],
+            "f_mean": [3.6, 7.0],
+            "f_std": [2.3**0.5, None],
+            "nan_min": [1.0, 7.0],
+            "nan_max": [5.0, 7.0],
+            "b_min": [False, True],
+            "b_max": [True, True],
+            "b_sum": pl.Series([4, 1], dtype=idx),
+            "s_min": ["1", "7"],
+            "s_max": ["5", "7"],
+            "s_arg_min": pl.Series([0, 0], dtype=idx),
+            "s_arg_max": pl.Series([1, 0], dtype=idx),
+        }
+    )
+    assert_frame_equal(q.collect(engine=engine), expected)

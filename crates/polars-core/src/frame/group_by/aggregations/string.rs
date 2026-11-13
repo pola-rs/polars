@@ -38,7 +38,7 @@ impl BinaryChunked {
                 let arr = ca_self.downcast_as_array();
                 let no_nulls = arr.null_count() == 0;
                 _agg_helper_idx_bin(groups, |(first, idx)| {
-                    debug_assert!(idx.len() <= ca_self.len());
+                    debug_assert!(_idx_in_bounds(idx, ca_self.len()));
                     if idx.is_empty() {
                         None
                     } else if idx.len() == 1 {
@@ -100,7 +100,7 @@ impl BinaryChunked {
                 let arr = ca_self.downcast_as_array();
                 let no_nulls = arr.null_count() == 0;
                 _agg_helper_idx_bin(groups, |(first, idx)| {
-                    debug_assert!(idx.len() <= self.len());
+                    debug_assert!(_idx_in_bounds(idx, self.len()));
                     if idx.is_empty() {
                         None
                     } else if idx.len() == 1 {
@@ -162,7 +162,7 @@ impl BinaryChunked {
         let no_nulls = arr.null_count() == 0;
         match groups {
             GroupsType::Idx(groups) => _agg_helper_idx_idx(groups, |(first, idx)| {
-                debug_assert!(idx.len() <= ca_self.len());
+                debug_assert!(_idx_in_bounds(idx, ca_self.len()));
 
                 if idx.is_empty() {
                     None
@@ -218,7 +218,7 @@ impl BinaryChunked {
 
         match groups {
             GroupsType::Idx(groups) => _agg_helper_idx_idx(groups, |(first, idx)| {
-                debug_assert!(idx.len() <= ca_self.len());
+                debug_assert!(_idx_in_bounds(idx, ca_self.len()));
 
                 if idx.is_empty() {
                     None

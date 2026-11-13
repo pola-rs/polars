@@ -23,6 +23,10 @@ pub struct GroupsIdx {
     /// Positions of the start of each group.
     first: Vec<IdxSize>,
     /// Global positions of all elements of all groups.
+    ///
+    /// A group can hold the same position more than once. For example, `max().over("g")`
+    /// inside `agg` computes one value per partition, and each row of a partition gets the
+    /// position of that value.
     all: Vec<IdxVec>,
 }
 
