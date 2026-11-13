@@ -1,12 +1,17 @@
 use std::cmp::Ordering;
 use std::mem::MaybeUninit;
 
+use bytemuck::Pod;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::utils::count_zeros;
 #[cfg(feature = "dtype-f16")]
 use polars_utils::float16::pf16;
 use polars_utils::total_ord::TotalOrd;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use rayon::prelude::*;
+
+use crate::filter::filter_values;
 
 /// The unit of parallel work: 256 KiB of `f64` fits a core's L2 cache, and a fixed length makes
 /// which of several equal values is selected the same on every machine and thread count.
@@ -25,7 +30,7 @@ const SELECT_SLACK: usize = 3 * SELECT_SAMPLE_LEN.isqrt() / 2;
 
 /// A value with an unsigned integer key that orders like the value under `TotalOrd`, breaking
 /// some of its ties.
-pub trait SelectKey: TotalOrd + Copy + Send + Sync {
+pub trait SelectKey: TotalOrd + Pod + Send + Sync {
     type Key: SelectKey<Key = Self::Key> + Ord + Default;
 
     fn to_key(self) -> Self::Key;
@@ -162,7 +167,7 @@ pub fn select_many_by<T: SelectKey>(
     out: &mut [T],
 ) {
     let mut keys = vec![T::Key::default(); out.len()];
-    select_keys(&Blocks::new(chunks), n_valid, ranks, &mut keys);
+    select_filtered(&Blocks::new(chunks), n_valid, ranks, &mut keys);
     for (o, k) in out.iter_mut().zip(keys) {
         *o = T::from_key(k);
     }
@@ -172,11 +177,13 @@ pub fn select_many_by<T: SelectKey>(
 trait KeyBlocks<K>: Sync {
     fn n_blocks(&self) -> usize;
 
-    /// The number of values, whether they count or not.
-    fn raw_len(&self) -> usize;
+    /// The number of values in `block`, whether they count or not.
+    fn block_len(&self, block: usize) -> usize;
 
-    /// See [`draw_sample`].
-    fn draw_sample(&self) -> Vec<K>;
+    fn null_count(&self, block: usize) -> usize;
+
+    /// The key of value `i` of `block`, if it counts.
+    fn key_at(&self, block: usize, i: usize) -> Option<K>;
 
     /// See [`copy_between`].
     fn copy_between(
@@ -214,12 +221,20 @@ impl<T: SelectKey> KeyBlocks<T::Key> for Blocks<'_, T> {
         self.0.len()
     }
 
-    fn raw_len(&self) -> usize {
-        self.0.iter().map(|b| b.values.len()).sum()
+    fn block_len(&self, block: usize) -> usize {
+        self.0[block].values.len()
     }
 
-    fn draw_sample(&self) -> Vec<T::Key> {
-        draw_sample(&self.0, 0)
+    fn null_count(&self, block: usize) -> usize {
+        let block = &self.0[block];
+        block.validity.map_or(0, |(bytes, offset)| {
+            count_zeros(bytes, offset, block.values.len())
+        })
+    }
+
+    fn key_at(&self, block: usize, i: usize) -> Option<T::Key> {
+        let block = &self.0[block];
+        block.is_valid(i).then(|| block.values[i].to_key())
     }
 
     fn copy_between(
@@ -236,6 +251,99 @@ impl<T: SelectKey> KeyBlocks<T::Key> for Blocks<'_, T> {
     fn copy_valid(&self, block: usize, out: &mut Vec<T::Key>) {
         copy_valid(&self.0[block], out)
     }
+}
+
+/// [`KeyBlocks`] of which some are replaced by copies of the keys that count in them.
+struct Filtered<'a, K> {
+    blocks: &'a dyn KeyBlocks<K>,
+    copies: Vec<Option<Vec<K>>>,
+}
+
+impl<K: Key> KeyBlocks<K> for Filtered<'_, K> {
+    fn n_blocks(&self) -> usize {
+        self.blocks.n_blocks()
+    }
+
+    fn block_len(&self, block: usize) -> usize {
+        match &self.copies[block] {
+            Some(copy) => copy.len(),
+            None => self.blocks.block_len(block),
+        }
+    }
+
+    fn null_count(&self, block: usize) -> usize {
+        match &self.copies[block] {
+            Some(_) => 0,
+            None => self.blocks.null_count(block),
+        }
+    }
+
+    fn key_at(&self, block: usize, i: usize) -> Option<K> {
+        match &self.copies[block] {
+            Some(copy) => Some(copy[i]),
+            None => self.blocks.key_at(block, i),
+        }
+    }
+
+    fn copy_between(
+        &self,
+        block: usize,
+        lo: K,
+        hi: K,
+        exact: bool,
+        scratch: &mut Vec<K>,
+    ) -> [usize; 5] {
+        match &self.copies[block] {
+            Some(copy) => {
+                let copy = MaskedSlice {
+                    values: &copy[..],
+                    validity: None,
+                };
+                copy_between(&copy, lo, hi, exact, scratch)
+            },
+            None => self.blocks.copy_between(block, lo, hi, exact, scratch),
+        }
+    }
+
+    fn copy_valid(&self, block: usize, out: &mut Vec<K>) {
+        match &self.copies[block] {
+            Some(copy) => out.extend_from_slice(copy),
+            None => self.blocks.copy_valid(block, out),
+        }
+    }
+}
+
+/// [`select_keys`], after copying the keys that count in mostly-null blocks: their copy is small,
+/// while masking them would make the sampling reject most values.
+fn select_filtered<K: Key>(
+    blocks: &dyn KeyBlocks<K>,
+    n_valid: usize,
+    ranks: &[usize],
+    out: &mut [K],
+) -> SelectPath {
+    let n_blocks = blocks.n_blocks();
+    if ranks.is_empty() || raw_len(blocks) < SELECT_MIN_PAR_LEN {
+        return select_keys(blocks, n_valid, ranks, out);
+    }
+    let copies: Vec<Option<Vec<K>>> = (0..n_blocks)
+        .into_par_iter()
+        .map(|block| {
+            (2 * blocks.null_count(block) > blocks.block_len(block)).then(|| {
+                let mut copy = Vec::new();
+                blocks.copy_valid(block, &mut copy);
+                copy
+            })
+        })
+        .collect();
+    if copies.iter().all(Option::is_none) {
+        return select_keys(blocks, n_valid, ranks, out);
+    }
+    select_keys(&Filtered { blocks, copies }, n_valid, ranks, out)
+}
+
+/// The number of values in `blocks`, whether they count or not.
+fn raw_len<K>(blocks: &dyn KeyBlocks<K>) -> usize {
+    (0..blocks.n_blocks()).map(|b| blocks.block_len(b)).sum()
 }
 
 /// How [`select_keys`] started the selection, which lets tests check that each path runs.
@@ -259,7 +367,7 @@ fn select_keys<K: Key>(
     out: &mut [K],
 ) -> SelectPath {
     check_ranks(n_valid, ranks, out);
-    if ranks.is_empty() || blocks.raw_len() < SELECT_MIN_PAR_LEN {
+    if ranks.is_empty() || raw_len(blocks) < SELECT_MIN_PAR_LEN {
         let mut valid = Vec::with_capacity(n_valid);
         for block in 0..blocks.n_blocks() {
             blocks.copy_valid(block, &mut valid);
@@ -269,7 +377,7 @@ fn select_keys<K: Key>(
         return SelectPath::Sequential;
     }
     let rank = ranks[ranks.len() / 2];
-    if let Some(bracket) = sample_bracket(blocks.draw_sample(), n_valid, rank) {
+    if let Some(bracket) = sample_bracket(draw_sample(blocks, 0), n_valid, rank) {
         return select_blocks(blocks, bracket, n_valid, ranks, out);
     }
     // Too few of the drawn values counted, so select from a copy of only those that do.
@@ -397,13 +505,14 @@ fn select_many_rec<K: Key>(
         return select_many_gathered(segs, ranks, offset, out);
     }
     let mid = ranks.len() / 2;
-    let shared: Vec<MaskedSlice<'_, K>> = segs
-        .iter()
-        .map(|s| MaskedSlice {
-            values: s,
-            validity: None,
-        })
-        .collect();
+    let shared = Blocks(
+        segs.iter()
+            .map(|s| MaskedSlice {
+                values: s,
+                validity: None,
+            })
+            .collect(),
+    );
     let (lo, hi, _) = sample_bracket(draw_sample(&shared, offset), len, ranks[mid] - offset)
         .expect("every drawn value counts");
     let split: Vec<(&mut [K], [usize; 3])> = segs
@@ -566,18 +675,16 @@ fn read_ranks<T: Copy>(v: &[T], ranks: &[usize], offset: usize, out: &mut [T]) {
 }
 
 /// The keys of up to [`SELECT_SAMPLE_LEN`] values that count, drawn at random from the
-/// concatenated `parts`, with at most [`SELECT_MAX_DRAWS`] draws.
-fn draw_sample<T: SelectKey>(parts: &[MaskedSlice<'_, T>], seed: usize) -> Vec<T::Key> {
-    let starts: Vec<usize> = parts
-        .iter()
-        .scan(0, |end, p| {
-            *end += p.values.len();
-            Some(*end - p.values.len())
+/// concatenated `blocks`, with at most [`SELECT_MAX_DRAWS`] draws.
+fn draw_sample<K: Key>(blocks: &dyn KeyBlocks<K>, seed: usize) -> Vec<K> {
+    let starts: Vec<usize> = (0..blocks.n_blocks())
+        .scan(0, |end, b| {
+            let len = blocks.block_len(b);
+            *end += len;
+            Some(*end - len)
         })
         .collect();
-    let raw_len = starts
-        .last()
-        .map_or(0, |s| s + parts[parts.len() - 1].values.len());
+    let raw_len = raw_len(blocks);
     // A fixed seed per part keeps which of several equal values lands at a rank deterministic.
     let mut rng = SmallRng::seed_from_u64(seed as u64);
     let mut sample = Vec::with_capacity(SELECT_SAMPLE_LEN);
@@ -586,9 +693,9 @@ fn draw_sample<T: SelectKey>(parts: &[MaskedSlice<'_, T>], seed: usize) -> Vec<T
             break;
         }
         let i = rng.random_range(0..raw_len);
-        let p = starts.partition_point(|&s| s <= i) - 1;
-        if parts[p].is_valid(i - starts[p]) {
-            sample.push(parts[p].values[i - starts[p]].to_key());
+        let b = starts.partition_point(|&s| s <= i) - 1;
+        if let Some(key) = blocks.key_at(b, i - starts[b]) {
+            sample.push(key);
         }
     }
     sample
@@ -702,8 +809,12 @@ fn copy_classified<T: SelectKey>(
 fn copy_valid<T: SelectKey>(block: &MaskedSlice<'_, T>, out: &mut Vec<T::Key>) {
     match block.validity {
         None => out.extend(block.values.iter().map(|x| x.to_key())),
-        Some(_) => {
-            copy_where(block.values, out, |i, _| (block.is_valid(i), []));
+        Some((bytes, offset)) => {
+            let len = block.values.len();
+            let bytes = &bytes[offset / 8..(offset + len).div_ceil(8)];
+            let mask = Bitmap::from_u8_slice(bytes, offset % 8 + len).sliced(offset % 8, len);
+            let valid = filter_values(block.values, &mask);
+            out.extend(valid.iter().map(|x| x.to_key()));
         },
     }
 }
@@ -831,7 +942,7 @@ mod tests {
             },
         ];
         let mut out = vec![0; ranks.len()];
-        let path = select_keys(&Blocks::new(&chunks), valid.len(), &ranks, &mut out);
+        let path = select_filtered(&Blocks::new(&chunks), valid.len(), &ranks, &mut out);
         let out: Vec<i64> = out.into_iter().map(i64::from_key).collect();
         assert_eq!(out, expected);
         path
