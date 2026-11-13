@@ -9,13 +9,17 @@
 //!
 //! `dom` holds each distinct value `v` of `l.k` with an `id`, and `l'` is `l` with the `id` of
 //! its value as `lid`. A GROUP BY of the derived table also groups by `dom.id`. An aggregate
-//! without GROUP BY gives a row for every outer row, so it becomes a scalar subquery:
+//! without GROUP BY gives a row for every outer row, also one without inner rows, so its
+//! aggregates are computed per `dom.id` and joined onto `dom` first:
 //!
 //! ```sql
-//! l JOIN (SELECT MAX(p) AS m FROM r WHERE r.k = l.k) d ON c
-//! -- l' JOIN (SELECT (SELECT MAX(p) FROM r WHERE r.k = dom.v) AS m, dom.id AS rid FROM dom) d
-//! --   ON c AND l'.lid = d.rid
+//! l JOIN (SELECT MAX(p) + 1 AS m FROM r WHERE r.k = l.k) d ON c
+//! -- dom' = dom LEFT JOIN (SELECT MAX(p) AS a0, dom.id FROM dom CROSS JOIN r
+//! --   WHERE r.k = dom.v GROUP BY dom.id) USING (id)
+//! -- l' JOIN (SELECT dom'.a0 + 1 AS m, dom'.id AS rid FROM dom') d ON c AND l'.lid = d.rid
 //! ```
+//!
+//! A count over no rows is 0, so a NULL count after that join becomes 0.
 use std::ops::ControlFlow;
 
 use polars_core::prelude::*;
@@ -30,7 +34,8 @@ use sqlparser::ast::{
 };
 
 use crate::context::{RelationName, match_qualifier, relation_name};
-use crate::sql_visitors::{contains_random, expr_contains_subquery, is_column_selector};
+use crate::functions::PolarsSQLFunctions;
+use crate::sql_visitors::{expr_contains_subquery, is_column_selector};
 use crate::subquery::{row_indexed_once, strip_nested};
 use crate::subquery_group_by::{is_aggregate_call, is_count_star};
 use crate::subquery_outer_select::calls_query_function;
@@ -164,14 +169,17 @@ impl VisitorMut for ReadDomain<'_> {
     }
 }
 
-/// Replaces each aggregate by a scalar subquery that computes it over `scope`.
-struct AggregateSubqueries<'a> {
+/// Replaces each aggregate by a column of the domain table, and collects the aggregates,
+/// named after those columns.
+struct AggregateColumns<'a> {
     ctx: &'a SQLContext,
-    scope: Query,
+    domain_name: &'a Ident,
+    prefix: &'a str,
+    aggregates: Vec<SelectItem>,
     query_depth: usize,
 }
 
-impl VisitorMut for AggregateSubqueries<'_> {
+impl VisitorMut for AggregateColumns<'_> {
     type Break = ();
 
     fn pre_visit_query(&mut self, _query: &mut Query) -> ControlFlow<()> {
@@ -186,57 +194,50 @@ impl VisitorMut for AggregateSubqueries<'_> {
 
     fn post_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<()> {
         if self.query_depth == 0 && is_aggregate_call(self.ctx, expr) {
-            let mut subquery = self.scope.clone();
-            let SetExpr::Select(select) = subquery.body.as_mut() else {
-                unreachable!()
-            };
-            select.projection = vec![SelectItem::UnnamedExpr(expr.clone())];
-            *expr = SQLExpr::Subquery(Box::new(subquery));
+            let name = Ident::new(format!("{}_A{}", self.prefix, self.aggregates.len()));
+            let column = SQLExpr::CompoundIdentifier(vec![self.domain_name.clone(), name.clone()]);
+            self.aggregates.push(SelectItem::ExprWithAlias {
+                expr: std::mem::replace(expr, column),
+                alias: name,
+            });
         }
         ControlFlow::Continue(())
     }
 }
 
-/// Rewrites an aggregate query without GROUP BY to give its one row for each row of the
-/// domain table, also when no inner row matches it: each aggregate becomes a scalar subquery
-/// over the FROM and WHERE, and HAVING becomes the WHERE. `None` without a FROM, if the FROM
-/// or WHERE calls `RANDOM()`, as each subquery would read other rows, or if an unnamed SELECT
-/// item aggregates, as its name would change.
-fn aggregates_as_subqueries(ctx: &SQLContext, query: &mut Query) -> Option<()> {
-    query.order_by = None;
-    let mut scope = query.clone();
-    let SetExpr::Select(inner) = scope.body.as_mut() else {
-        unreachable!()
+/// Whether an aggregate is 0 over no rows rather than NULL.
+fn zero_over_no_rows(ctx: &SQLContext, aggregate: &SQLExpr) -> bool {
+    use PolarsSQLFunctions::*;
+    let SQLExpr::Function(function) = aggregate else {
+        return false;
     };
-    if inner.from.is_empty()
-        || contains_random(&inner.from, true)
-        || contains_random(&inner.selection, true)
-    {
-        return None;
+    match PolarsSQLFunctions::try_from_sql(function, ctx) {
+        Ok(Count | CountIf | Total) => true,
+        #[cfg(feature = "approx_unique")]
+        Ok(ApproxCountDistinct) => true,
+        _ => false,
     }
-    inner.distinct = None;
-    inner.having = None;
-    let mut subqueries = AggregateSubqueries {
-        ctx,
-        scope,
-        query_depth: 0,
-    };
-    let SetExpr::Select(select) = query.body.as_mut() else {
-        unreachable!()
-    };
-    select.from.clear();
-    select.selection = select.having.take();
-    for item in &mut select.projection {
-        match item {
-            SelectItem::UnnamedExpr(expr) if has_aggregate(ctx, expr) => return None,
-            SelectItem::UnnamedExpr(expr) | SelectItem::ExprWithAlias { expr, .. } => {
-                let _ = dyn_visit::visit_mut(expr, &mut subqueries);
-            },
-            _ => {},
-        }
+}
+
+/// Puts the domain table in front of the first FROM item.
+fn read_domain(from: &mut Vec<TableWithJoins>, domain_name: &Ident) {
+    match from.first_mut() {
+        None => from.push(TableWithJoins {
+            relation: table(domain_name),
+            joins: vec![],
+        }),
+        Some(first) => {
+            let relation = std::mem::replace(&mut first.relation, table(domain_name));
+            first.joins.insert(
+                0,
+                Join {
+                    relation,
+                    global: false,
+                    join_operator: JoinOperator::CrossJoin(JoinConstraint::None),
+                },
+            );
+        },
     }
-    let _ = dyn_visit::visit_mut(&mut select.selection, &mut subqueries);
-    Some(())
 }
 
 fn table(name: &Ident) -> TableFactor {
@@ -269,6 +270,93 @@ fn with_constraint(op: &JoinOperator, constraint: JoinConstraint) -> Option<Join
 }
 
 impl SQLContext {
+    /// Computes the aggregates of `query`, an aggregate query without GROUP BY, for each row
+    /// of the domain table as columns of it, and rewrites `query` to read those columns. A row
+    /// without inner rows gets each aggregate's value over no rows. Returns the domain table
+    /// with the columns, or `None` if the query has an ORDER BY or an unnamed aggregate item.
+    fn aggregate_per_domain_row(
+        &mut self,
+        query: &mut Query,
+        domain: LazyFrame,
+        domain_name: &Ident,
+        id: &PlSmallStr,
+        prefix: &str,
+    ) -> Option<LazyFrame> {
+        if query.order_by.is_some() {
+            return None;
+        }
+        let SetExpr::Select(select) = query.body.as_mut() else {
+            unreachable!()
+        };
+        let mut columns = AggregateColumns {
+            ctx: self,
+            domain_name,
+            prefix,
+            aggregates: Vec::new(),
+            query_depth: 0,
+        };
+        for item in &mut select.projection {
+            match item {
+                SelectItem::UnnamedExpr(expr) if has_aggregate(self, expr) => return None,
+                SelectItem::UnnamedExpr(expr) | SelectItem::ExprWithAlias { expr, .. } => {
+                    let _ = dyn_visit::visit_mut(expr, &mut columns);
+                },
+                _ => {},
+            }
+        }
+        let mut having = select.having.take();
+        let _ = dyn_visit::visit_mut(&mut having, &mut columns);
+        let aggregates = columns.aggregates;
+        let fills: Vec<Expr> = aggregates
+            .iter()
+            .filter_map(|item| match item {
+                SelectItem::ExprWithAlias { expr, alias } if zero_over_no_rows(self, expr) => {
+                    Some(col(alias.value.as_str()).fill_null(lit(0)))
+                },
+                _ => None,
+            })
+            .collect();
+
+        let id_column =
+            SQLExpr::CompoundIdentifier(vec![domain_name.clone(), Ident::new(id.as_str())]);
+        let mut grouped = query.clone();
+        let SetExpr::Select(grouped_select) = grouped.body.as_mut() else {
+            unreachable!()
+        };
+        grouped_select.distinct = None;
+        grouped_select.projection = aggregates;
+        grouped_select
+            .projection
+            .push(SelectItem::UnnamedExpr(id_column.clone()));
+        grouped_select.group_by = GroupByExpr::Expressions(vec![id_column], vec![]);
+        read_domain(&mut grouped_select.from, domain_name);
+        let grouped = self
+            .execute_isolated(|ctx| {
+                ctx.table_map
+                    .write()
+                    .unwrap()
+                    .insert(domain_name.value.clone(), domain.clone());
+                ctx.execute_query(&grouped)
+            })
+            .ok()?;
+
+        let SetExpr::Select(select) = query.body.as_mut() else {
+            unreachable!()
+        };
+        select.from.clear();
+        select.selection = having;
+        domain
+            .join_builder()
+            .with(grouped)
+            .left_on([col(id.clone())])
+            .right_on([col(id.clone())])
+            .how(JoinType::Left)
+            .coalesce(JoinCoalesce::CoalesceColumns)
+            .finish()
+            .ok()
+            .map(|lf| lf.with_columns(fills))
+    }
+
     /// The inputs of the join of `lf` with `relation`, a derived table that reads columns of
     /// `lf` (see the module docs), or `None` if it has another shape.
     pub(crate) fn lateral_join(
@@ -557,31 +645,17 @@ impl SQLContext {
                 query_depth: 0,
             },
         );
-        if empty_group {
-            aggregates_as_subqueries(self, &mut query)?;
-        }
+        let domain = if empty_group {
+            self.aggregate_per_domain_row(&mut query, domain, &domain_name, &id, &prefix)?
+        } else {
+            domain
+        };
         let SetExpr::Select(select) = query.body.as_mut() else {
             unreachable!()
         };
         let domain_column =
             |name: &str| SQLExpr::CompoundIdentifier(vec![domain_name.clone(), Ident::new(name)]);
-        match select.from.first_mut() {
-            None => select.from.push(TableWithJoins {
-                relation: table(&domain_name),
-                joins: vec![],
-            }),
-            Some(first) => {
-                let relation = std::mem::replace(&mut first.relation, table(&domain_name));
-                first.joins.insert(
-                    0,
-                    Join {
-                        relation,
-                        global: false,
-                        join_operator: JoinOperator::CrossJoin(JoinConstraint::None),
-                    },
-                );
-            },
-        }
+        read_domain(&mut select.from, &domain_name);
         select.projection.push(SelectItem::ExprWithAlias {
             expr: domain_column(&id),
             alias: Ident::new(right_key.as_str()),
