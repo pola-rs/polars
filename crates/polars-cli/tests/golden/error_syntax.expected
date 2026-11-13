@@ -1,0 +1,4 @@
+exit: 1
+--- stdout ---
+--- stderr ---
+SQLInterfaceError: sql parser error: Expected: an expression, found: EOF
