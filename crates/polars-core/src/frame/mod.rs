@@ -2141,6 +2141,21 @@ impl DataFrame {
         compat_level: CompatLevel,
         parallel: bool,
     ) -> impl Iterator<Item = RecordBatch> + '_ {
+        self.try_iter_chunks(compat_level, parallel)
+            .map(|batch| batch.unwrap())
+    }
+
+    /// Like [`DataFrame::iter_chunks`], but yields an error for a chunk that cannot be
+    /// exported to arrow, e.g. a Map chunk with more than `i32::MAX` entries.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the [`DataFrame`] that is passed is not rechunked.
+    pub fn try_iter_chunks(
+        &self,
+        compat_level: CompatLevel,
+        parallel: bool,
+    ) -> impl Iterator<Item = PolarsResult<RecordBatch>> + '_ {
         debug_assert!(!self.should_rechunk(), "expected equal chunks");
 
         if self.width() == 0 {
@@ -2184,20 +2199,21 @@ impl DataFrame {
     pub fn iter_chunks_physical(&self) -> impl Iterator<Item = RecordBatch> + '_ {
         debug_assert!(!self.should_rechunk());
 
-        if self.width() == 0 {
-            return RecordBatchIterWrap::new_zero_width(self.height());
-        }
-
-        RecordBatchIterWrap::PhysicalBatches(PhysRecordBatchIter {
-            df: self,
-            schema: Arc::new(
-                self.columns()
-                    .iter()
-                    .map(|c| c.field().to_arrow(CompatLevel::newest()))
-                    .collect(),
-            ),
-            cursor: ChunkCursor::new(self),
-        })
+        let iter = if self.width() == 0 {
+            RecordBatchIterWrap::new_zero_width(self.height())
+        } else {
+            RecordBatchIterWrap::PhysicalBatches(PhysRecordBatchIter {
+                df: self,
+                schema: Arc::new(
+                    self.columns()
+                        .iter()
+                        .map(|c| c.field().to_arrow(CompatLevel::newest()))
+                        .collect(),
+                ),
+                cursor: ChunkCursor::new(self),
+            })
+        };
+        iter.map(|batch| batch.unwrap())
     }
 
     /// Get a [`DataFrame`] with all the columns in reversed order.
@@ -2716,24 +2732,24 @@ pub struct RecordBatchIter<'a> {
 }
 
 impl Iterator for RecordBatchIter<'_> {
-    type Item = RecordBatch;
+    type Item = PolarsResult<RecordBatch>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let (idx, length) = self.cursor.next()?;
 
         let to_arrow = |c: &Column| match c.as_series() {
-            Some(s) => s.to_arrow(idx, self.compat_level),
-            None => c.slice(0, length).rechunk_to_arrow(self.compat_level),
+            Some(s) => s.try_to_arrow(idx, self.compat_level),
+            None => c.slice(0, length).try_rechunk_to_arrow(self.compat_level),
         };
 
-        let batch_cols: Vec<ArrayRef> = if self.parallel {
+        let batch_cols = if self.parallel {
             let iter = self.df.columns().par_iter().map(to_arrow);
-            RAYON.install(|| iter.collect())
+            RAYON.install(|| iter.collect::<PolarsResult<Vec<ArrayRef>>>())
         } else {
             self.df.columns().iter().map(to_arrow).collect()
         };
 
-        Some(RecordBatch::new(length, self.schema.clone(), batch_cols))
+        Some(batch_cols.map(|cols| RecordBatch::new(length, self.schema.clone(), cols)))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -2795,7 +2811,7 @@ impl<'a> RecordBatchIterWrap<'a> {
 }
 
 impl Iterator for RecordBatchIterWrap<'_> {
-    type Item = RecordBatch;
+    type Item = PolarsResult<RecordBatch>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
@@ -2806,10 +2822,10 @@ impl Iterator for RecordBatchIterWrap<'_> {
                 let n = usize::min(*remaining_height, *chunk_size);
                 *remaining_height -= n;
 
-                (n > 0).then(|| RecordBatch::new(n, ArrowSchemaRef::default(), vec![]))
+                (n > 0).then(|| Ok(RecordBatch::new(n, ArrowSchemaRef::default(), vec![])))
             },
             Self::Batches(v) => v.next(),
-            Self::PhysicalBatches(v) => v.next(),
+            Self::PhysicalBatches(v) => v.next().map(Ok),
         }
     }
 

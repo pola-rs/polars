@@ -78,7 +78,20 @@ fn ensure_no_nulls(array: &dyn Array) -> PolarsResult<()> {
 impl Series {
     /// Export this Series to an arrow array. The dtype of the returned array will be chosen
     /// according to the provided `compat_level`.
+    ///
+    /// # Panics
+    /// Panics if the chunk cannot be exported, see [`Series::try_to_arrow`].
     pub fn to_arrow(&self, chunk_idx: usize, compat_level: CompatLevel) -> ArrayRef {
+        self.try_to_arrow(chunk_idx, compat_level).unwrap()
+    }
+
+    /// Export this Series to an arrow array, or error if the chunk does not fit the arrow
+    /// type, e.g. a Map chunk with more than `i32::MAX` entries.
+    pub fn try_to_arrow(
+        &self,
+        chunk_idx: usize,
+        compat_level: CompatLevel,
+    ) -> PolarsResult<ArrayRef> {
         self.to_arrow_with_field(
             chunk_idx,
             Cow::Owned(
@@ -87,7 +100,6 @@ impl Series {
             ),
             true,
         )
-        .unwrap()
     }
 
     /// Export this Series to an arrow array. The dtype of the returned array will match the

@@ -1912,12 +1912,15 @@ impl Column {
     }
 
     pub fn rechunk_to_arrow(self, compat_level: CompatLevel) -> Box<dyn Array> {
-        // Rechunk to one chunk if necessary
+        self.try_rechunk_to_arrow(compat_level).unwrap()
+    }
+
+    pub fn try_rechunk_to_arrow(self, compat_level: CompatLevel) -> PolarsResult<Box<dyn Array>> {
         let mut series = self.take_materialized_series();
         if series.n_chunks() > 1 {
             series = series.rechunk();
         }
-        series.to_arrow(0, compat_level)
+        series.try_to_arrow(0, compat_level)
     }
 
     pub fn trim_lists_to_normalized_offsets(&self) -> Option<Column> {
