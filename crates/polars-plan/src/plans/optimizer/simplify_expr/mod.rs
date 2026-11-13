@@ -8,10 +8,14 @@ use polars_utils::float16::pf16;
 use polars_utils::floor_divmod::FloorDivMod;
 use polars_utils::total_ord::ToTotalOrd;
 use simplify_functions::optimize_functions;
+use sort_lowering::has_total_min_max;
 pub(super) use sort_lowering::lower_sort_reads;
 mod arity;
 
 use crate::plans::*;
+use crate::prelude::projection_height::{
+    ExprHeightOptions, ExprProjectionHeight, aexpr_projection_height_rec_with,
+};
 
 fn new_null_count(input: &[ExprIR]) -> AExpr {
     let function = IRFunctionExpr::NullCount;
@@ -142,6 +146,64 @@ fn count_of_column_with_literal(
         input: column,
         include_nulls: *include_nulls,
     }))
+}
+
+/// `x.get(y.arg_max())` -> `x.max_by(y)` and `x.get(y.arg_min())` -> `x.min_by(y)`.
+fn get_arg_min_max_to_min_max_by(
+    node: Node,
+    arena: &mut Arena<AExpr>,
+    schema: &Schema,
+) -> Option<AExpr> {
+    let AExpr::Gather {
+        expr,
+        idx,
+        returns_scalar: true,
+        ..
+    } = arena.get(node)
+    else {
+        return None;
+    };
+    let AExpr::Function {
+        input,
+        function: function @ (IRFunctionExpr::ArgMin | IRFunctionExpr::ArgMax),
+        ..
+    } = arena.get(*idx)
+    else {
+        return None;
+    };
+    let is_max = matches!(function, IRFunctionExpr::ArgMax);
+    let (expr, by) = (*expr, input[0].node());
+    let has_input_height = |node| {
+        let options = ExprHeightOptions {
+            range_is_unknown: true,
+            ..Default::default()
+        };
+        aexpr_projection_height_rec_with(
+            node,
+            arena,
+            &mut Default::default(),
+            &mut Default::default(),
+            options,
+        ) == ExprProjectionHeight::Column
+    };
+    if !has_input_height(expr) || !has_input_height(by) {
+        return None;
+    }
+    let by_dtype = arena
+        .get(by)
+        .to_dtype(&ToFieldContext::new(arena, schema))
+        .ok()?;
+    if !has_total_min_max(&by_dtype) {
+        return None;
+    }
+
+    let expr = AExprBuilder::new_from_node(expr);
+    let out = if is_max {
+        expr.max_by(by, MinMaxByOrder::SkipNulls, arena)
+    } else {
+        expr.min_by(by, MinMaxByOrder::SkipNulls, arena)
+    };
+    Some(arena.get(out.node()).clone())
 }
 
 /// `(x + c).sum()` -> `x.sum() + c * x.count()` for an integer column `x` and a literal `c`, so
@@ -709,7 +771,8 @@ impl OptimizationRule for SimplifyExprRule {
             return Ok(Some(out));
         }
 
-        if let Some(out) = sum_of_column_with_literal(expr_node, expr_arena, schema)
+        if let Some(out) = get_arg_min_max_to_min_max_by(expr_node, expr_arena, schema)
+            .or_else(|| sum_of_column_with_literal(expr_node, expr_arena, schema))
             .or_else(|| count_of_column_with_literal(expr_node, expr_arena, schema))
         {
             return Ok(Some(out));
