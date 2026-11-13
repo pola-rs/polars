@@ -69,6 +69,14 @@ def scan_iceberg(
         For cloud storages, this may include configurations for authentication etc.
 
         More info is available `here <https://py.iceberg.apache.org/configuration/>`__.
+
+        Storage credentials vended by the table's catalog are used by default, and
+        renewed from the catalog before they expire, so the catalog's own
+        authentication must outlive the scan (e.g. PyIceberg's ``auth.type`` rather
+        than a static ``token``). Credentials given here replace them.
+
+        Not renewed: credentials vended without an expiry, per-account ADLS
+        credentials, and those of files on another cloud than the table's.
     catalog
         PyIceberg catalog to load the table from if the provided `target`
         was a table name.
@@ -179,10 +187,10 @@ def scan_iceberg(
     Supported options for GCS are available `here
     <https://py.iceberg.apache.org/configuration/#google-cloud-storage>`__.
 
-    >>> table_path = "s3://bucket/path/to/iceberg-table/metadata.json"
+    >>> table_path = "gs://bucket/path/to/iceberg-table/metadata.json"
     >>> storage_options = {
     ...     "gcs.project-id": "my-gcp-project",
-    ...     "gcs.oauth.token": "ya29.dr.AfM...",
+    ...     "gcs.oauth2.token": "ya29.dr.AfM...",
     ... }
     >>> pl.scan_iceberg(
     ...     table_path, storage_options=storage_options
