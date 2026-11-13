@@ -256,7 +256,8 @@ pub fn order_statistics<T: PolarsNumericType>(
     }
 }
 
-/// [`order_statistics`] of the physical values of the numeric `s`, as a [`Series`] of them.
+/// The values at the strictly ascending `ranks` of the sorted non-null physical values of the
+/// numeric `s`, as a [`Series`] of them.
 pub fn order_statistics_physical(s: &Series, ranks: &[usize]) -> Series {
     let phys = s.to_physical_repr();
     with_match_physical_numeric_polars_type!(phys.dtype(), |$T| {
