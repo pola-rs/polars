@@ -860,23 +860,7 @@ fn get_arithmetic_field(
                     left_field.set_dtype(dtype);
                     return Ok(left_field);
                 },
-                _ => {
-                    // Avoid needlessly type casting numeric columns during arithmetic
-                    // with literals.
-                    if (left_field.dtype.is_integer() && right_field.dtype.is_integer())
-                        || (left_field.dtype.is_float() && right_field.dtype.is_float())
-                    {
-                        match (left_ae, right_ae) {
-                            (AExpr::Literal(_), AExpr::Literal(_)) => {},
-                            (AExpr::Literal(_), _) if left_field.dtype.is_unknown() => {
-                                // literal will be coerced to match right type
-                                left_field.set_dtype(right_field.dtype);
-                                return Ok(left_field);
-                            },
-                            _ => {},
-                        }
-                    }
-                },
+                _ => {},
             }
 
             try_get_supertype(&left_field.dtype, &right_field.dtype)?
