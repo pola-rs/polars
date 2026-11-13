@@ -63,15 +63,13 @@ type ArgMaxWindow<'a, T> = ArgMinMaxWindow<'a, T, MaxIgnoreNan>;
 //
 // if the windows don't overlap, we should not use these kernels as they are single threaded, so
 // we miss out on easy parallelization.
-pub fn _use_rolling_kernels(
-    groups: &GroupsSlice,
-    overlapping: bool,
-    monotonic: bool,
-    chunks: &[ArrayRef],
-) -> bool {
+//
+// The kernels need one chunk, so callers rechunk the values first. A rechunk costs one pass over
+// the values, the per-window fallback a pass per window.
+pub fn _use_rolling_kernels(groups: &GroupsSlice, overlapping: bool, monotonic: bool) -> bool {
     match groups.len() {
         0 | 1 => false,
-        _ => overlapping && monotonic && chunks.len() == 1,
+        _ => overlapping && monotonic,
     }
 }
 
@@ -122,6 +120,8 @@ where
     // This iterators length can be trusted
     // these represent the number of groups in the group_by operation
     let output_len = offsets.size_hint().0;
+    // The kernels read the validity unchecked at the same indices as the values.
+    assert_eq!(validity.len(), values.len());
     // start with a dummy index, will be overwritten on first iteration.
     let mut agg_window = Agg::new(values, validity, 0, 0, params, None);
 
@@ -131,11 +131,12 @@ where
     let out = offsets
         .enumerate()
         .map(|(idx, (start, len))| {
-            let end = start + len;
+            let (start, len) = (start as usize, len as usize);
+            // The windows must lie within the values. Chunked input has to be rechunked first.
+            assert!(start <= values.len() && len <= values.len() - start);
 
-            // SAFETY:
-            // we are in bounds
-            unsafe { agg_window.update(start as usize, end as usize) };
+            // SAFETY: checked above.
+            unsafe { agg_window.update(start, start + len) };
             match agg_window.get_agg(idx) {
                 Some(val) => val,
                 None => {
@@ -169,10 +170,12 @@ where
     offsets
         .enumerate()
         .map(|(idx, (start, len))| {
-            let end = start + len;
+            let (start, len) = (start as usize, len as usize);
+            // The windows must lie within the values. Chunked input has to be rechunked first.
+            assert!(start <= values.len() && len <= values.len() - start);
 
-            // SAFETY: we are in bounds.
-            unsafe { agg_window.update(start as usize, end as usize) };
+            // SAFETY: checked above.
+            unsafe { agg_window.update(start, start + len) };
             agg_window.get_agg(idx)
         })
         .collect::<PrimitiveArray<Out>>()
@@ -346,13 +349,14 @@ where
             overlapping,
             monotonic,
         } => {
-            if _use_rolling_kernels(groups, *overlapping, *monotonic, ca.chunks()) {
+            if _use_rolling_kernels(groups, *overlapping, *monotonic) {
                 // this cast is a no-op for floats
                 let s = ca
                     .cast_with_options(&K::get_static_dtype(), CastOptions::Overflowing)
                     .unwrap();
                 let ca: &ChunkedArray<K> = s.as_ref().as_ref();
-                let arr = ca.downcast_iter().next().unwrap();
+                let ca = ca.rechunk();
+                let arr = ca.downcast_as_array();
                 let values = arr.values().as_slice();
                 let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                 let arr = match arr.validity() {
@@ -531,8 +535,9 @@ where
                 overlapping,
                 monotonic,
             } => {
-                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_iter().next().unwrap();
+                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic) {
+                    let ca = self.rechunk();
+                    let arr = ca.downcast_as_array();
                     let values = arr.values().as_slice();
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
@@ -632,8 +637,9 @@ where
                 overlapping,
                 monotonic,
             } => {
-                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_as_array();
+                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic) {
+                    let ca = self.rechunk();
+                    let arr = ca.downcast_as_array();
                     let values = arr.values().as_slice();
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                     let idx_arr = match arr.validity() {
@@ -712,8 +718,9 @@ where
                 overlapping,
                 monotonic,
             } => {
-                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_iter().next().unwrap();
+                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic) {
+                    let ca = self.rechunk();
+                    let arr = ca.downcast_as_array();
                     let values = arr.values().as_slice();
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
@@ -816,8 +823,9 @@ where
                 overlapping,
                 monotonic,
             } => {
-                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_iter().next().unwrap();
+                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic) {
+                    let ca = self.rechunk();
+                    let arr = ca.downcast_as_array();
                     let values = arr.values().as_slice();
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                     let idx_arr = match arr.validity() {
@@ -891,8 +899,9 @@ where
                 overlapping,
                 monotonic,
             } => {
-                if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_iter().next().unwrap();
+                if _use_rolling_kernels(groups, *overlapping, *monotonic) {
+                    let ca = self.rechunk();
+                    let arr = ca.downcast_as_array();
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
@@ -984,8 +993,9 @@ where
                 overlapping,
                 monotonic,
             } => {
-                if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_iter().next().unwrap();
+                if _use_rolling_kernels(groups, *overlapping, *monotonic) {
+                    let ca = self.rechunk();
+                    let arr = ca.downcast_as_array();
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
@@ -1049,8 +1059,8 @@ where
                 overlapping,
                 monotonic,
             } => {
-                if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_iter().next().unwrap();
+                if _use_rolling_kernels(groups, *overlapping, *monotonic) {
+                    let arr = ca.downcast_as_array();
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
@@ -1126,8 +1136,8 @@ where
                 overlapping,
                 monotonic,
             } => {
-                if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
-                    let arr = ca.downcast_iter().next().unwrap();
+                if _use_rolling_kernels(groups, *overlapping, *monotonic) {
+                    let arr = ca.downcast_as_array();
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
@@ -1277,7 +1287,7 @@ where
                 overlapping,
                 monotonic,
             } => {
-                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
+                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic) {
                     let ca = self
                         .cast_with_options(&DataType::Float64, CastOptions::Overflowing)
                         .unwrap();
@@ -1322,7 +1332,7 @@ where
                 overlapping,
                 monotonic,
             } => {
-                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
+                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic) {
                     let ca = self
                         .cast_with_options(&DataType::Float64, CastOptions::Overflowing)
                         .unwrap();
@@ -1373,7 +1383,7 @@ where
                 overlapping,
                 monotonic,
             } => {
-                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
+                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic) {
                     let ca = self
                         .cast_with_options(&DataType::Float64, CastOptions::Overflowing)
                         .unwrap();
