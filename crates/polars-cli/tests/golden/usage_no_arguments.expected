@@ -1,8 +1,0 @@
-exit: 2
---- stdout ---
---- stderr ---
-error: no SQL was given
-
-Usage: polars [OPTIONS]
-
-For more information, try '--help'.

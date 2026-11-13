@@ -1,4 +1,4 @@
-//! Tests of how the command behaves as a process, which the golden cases cannot express.
+//! Tests that need more than the text the command writes and its exit code.
 
 use std::process::{Child, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
