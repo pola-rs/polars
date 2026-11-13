@@ -604,6 +604,16 @@ def test_quantile_out_of_range_grouped(quantile: float | pl.Expr) -> None:
             q.collect()
 
 
+@pytest.mark.parametrize("quantile", [float("nan"), -0.1, 1.1, [0.5, 1.1]])
+def test_quantile_out_of_range_literal_empty(quantile: float | list[float]) -> None:
+    # Planning checks a literal fraction, so every engine raises without any rows.
+    lf = pl.LazyFrame(schema={"g": pl.Int64, "a": pl.Int64})
+    expr = pl.col("a").quantile(quantile)
+    for q in [lf.select(expr), lf.select(expr.over("g")), lf.group_by("g").agg(expr)]:
+        with pytest.raises(ComputeError, match=r"between 0\.0 and 1\.0"):
+            q.collect_schema()
+
+
 @pytest.mark.parametrize(
     "values", [pl.Series([True, False, True, None]), pl.Series([None] * 4)]
 )

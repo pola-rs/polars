@@ -876,7 +876,13 @@ pub(super) fn convert_functions(
         },
         F::DropNans => I::DropNans,
         F::DropNulls => I::DropNulls,
-        F::Quantile { method } => I::Quantile { method },
+        F::Quantile { method } => {
+            // Checking a literal fraction here makes every engine raise, even on empty input.
+            if let Some(quantiles) = literal_quantiles(ctx.arena.get(e[1].node())) {
+                check_quantiles(&quantiles)?;
+            }
+            I::Quantile { method }
+        },
         #[cfg(feature = "mode")]
         F::Mode { maintain_order } => I::Mode { maintain_order },
         #[cfg(feature = "moment")]
@@ -965,22 +971,7 @@ pub(super) fn convert_functions(
                 (polars_compute::approx_quantile::MIN_ERROR..1.0).contains(&error),
                 InvalidOperation: "`error` must be in the range [2^-32, 1) (got: {error})"
             );
-            let quantile = match ctx.arena.get(e[1].node()) {
-                AExpr::Literal(LiteralValue::Series(s)) if s.len() == 1 => s.get(0).ok(),
-                AExpr::Literal(
-                    lv @ (LiteralValue::Scalar(_)
-                    | LiteralValue::Dyn(DynLiteralValue::Int(_) | DynLiteralValue::Float(_))),
-                ) => lv.to_any_value(),
-                _ => None,
-            };
-            let quantiles: Option<Vec<f64>> = match quantile {
-                Some(AnyValue::List(s)) => s
-                    .strict_cast(&DataType::Float64)
-                    .ok()
-                    .and_then(|s| s.iter().map(|v| v.extract()).collect()),
-                Some(av) => av.extract().map(|q| vec![q]),
-                None => None,
-            };
+            let quantiles = literal_quantiles(ctx.arena.get(e[1].node()));
             let method = method.resolve(quantiles.as_deref());
             let error = match use_formal_bound {
                 true => error,
@@ -1464,4 +1455,24 @@ pub(super) fn convert_functions(
         options,
     };
     Ok((ctx.arena.add(ae_function), output_name))
+}
+
+/// Returns the fractions given to `quantile` or `approx_quantile` if that input is a literal: one
+/// number or a list of numbers. Returns `None` for any other input.
+fn literal_quantiles(fraction: &AExpr) -> Option<Vec<f64>> {
+    let value = match fraction {
+        AExpr::Literal(LiteralValue::Series(s)) if s.len() == 1 => s.get(0).ok(),
+        AExpr::Literal(
+            lv @ (LiteralValue::Scalar(_)
+            | LiteralValue::Dyn(DynLiteralValue::Int(_) | DynLiteralValue::Float(_))),
+        ) => lv.to_any_value(),
+        _ => None,
+    };
+    match value? {
+        AnyValue::List(s) => s
+            .strict_cast(&DataType::Float64)
+            .ok()
+            .and_then(|s| s.iter().map(|v| v.extract()).collect()),
+        av => av.extract().map(|q| vec![q]),
+    }
 }
