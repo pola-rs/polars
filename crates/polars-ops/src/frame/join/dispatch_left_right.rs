@@ -65,7 +65,16 @@ pub fn materialize_left_join_from_series(
         MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft
     );
     let chunks_match_key = |df: &DataFrame, s: &Series| {
-        !df.should_rechunk() && df.chunk_lengths().eq(s.chunk_lengths())
+        // Dictionary columns are ignored by the frame's chunk-alignment checks, but their
+        // materialized chunks must also match the key before gathering by chunk-local ids.
+        df.columns()
+            .iter()
+            .filter(|c| c.as_scalar_column().is_none())
+            .all(|c| {
+                c.as_materialized_series()
+                    .chunk_lengths()
+                    .eq(s.chunk_lengths())
+            })
     };
 
     let mut right = Cow::Borrowed(right_);

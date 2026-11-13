@@ -246,6 +246,45 @@ def test_dictionary_codes_batches_with_chunked_columns(tmp_path: Path) -> None:
     assert_frame_equal(pl.read_ipc(tmp_path / "o.ipc"), df)
 
 
+@pytest.mark.parametrize("how", ["left", "right"])
+@pytest.mark.parametrize("dictionary_on_left", [False, True])
+@pytest.mark.parametrize("split_payload", [False, True])
+@pytest.mark.parametrize("with_nulls", [False, True])
+def test_dictionary_codes_join_with_unaligned_chunks(
+    tmp_path: Path,
+    how: str,
+    dictionary_on_left: bool,
+    split_payload: bool,
+    with_nulls: bool,
+) -> None:
+    values = ["a"] * 128 + ["b"] * 128
+    payload = pl.Series("payload", values)
+    if with_nulls:
+        payload = payload.scatter([1, 129], None)
+    plain = payload.to_frame()
+    path = _write(plain, tmp_path / "f.parquet", row_group_size=256)
+    coded = next(pl.scan_parquet(path).collect_batches(chunk_size=256)).rechunk()
+    if split_payload:
+        # Two payload chunks whose boundaries differ from the key's two chunks.
+        coded = pl.concat([coded.head(64), coded.slice(64)], rechunk=False)
+
+    key = pl.concat(
+        [pl.Series("key", range(128, 256)), pl.Series("key", range(128))],
+        rechunk=False,
+    )
+    coded.insert_column(0, key)
+    plain.insert_column(0, key)
+    # Duplicate matches force gathering the preserved side too; 300 has no match.
+    other = pl.DataFrame({"key": [0, 0, 1, 128, 129, 300]})
+    left, right = (coded, other) if dictionary_on_left else (other, coded)
+    expected_left, expected_right = (
+        (plain, other) if dictionary_on_left else (other, plain)
+    )
+    expected = expected_left.join(expected_right, on="key", how=how)  # type: ignore[arg-type]
+    out = left.join(right, on="key", how=how)  # type: ignore[arg-type]
+    assert_frame_equal(out, expected, check_row_order=False)
+
+
 def test_dictionary_codes_group_by_mixed_sources_with_evictions(tmp_path: Path) -> None:
     # Small enough for CI's 4-row morsels; far more keys than a hot table holds.
     low = pl.DataFrame({"s": [LONG[i % 20] for i in range(20_000)], "v": 1})
