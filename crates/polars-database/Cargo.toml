@@ -25,27 +25,7 @@ chrono = { workspace = true }
 # documents cross the plugin boundary, so this does not couple the plugin to the host's Polars
 # version.
 polars-arrow = { workspace = true }
-polars-core = { workspace = true, features = [
-  "serde",
-  "dtype-array",
-  "dtype-date",
-  "dtype-datetime",
-  "dtype-time",
-  "dtype-duration",
-  "dtype-decimal",
-  "dtype-extension",
-  "dtype-categorical",
-  "timezones",
-  "dtype-struct",
-  "dtype-i8",
-  "dtype-i16",
-  "dtype-i128",
-  "dtype-u8",
-  "dtype-u16",
-  "dtype-u128",
-  "dtype-f16",
-  "dtype-map",
-] }
+polars-core = { workspace = true, features = ["serde", "dtype-array", "dtype-date", "dtype-datetime", "dtype-time", "dtype-duration", "dtype-decimal", "dtype-extension", "dtype-categorical", "timezones", "dtype-struct", "dtype-i8", "dtype-i16", "dtype-i128", "dtype-u8", "dtype-u16", "dtype-u128", "dtype-f16", "dtype-map"] }
 polars-config = { workspace = true }
 polars-error = { workspace = true }
 polars-io-ext-ffi = { workspace = true, features = ["lazyframe_resolver"] }

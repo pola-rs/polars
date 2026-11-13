@@ -4528,9 +4528,11 @@ def test_mysql_high_not_precedence(server: str) -> None:
         ],
     )
 
+    parts = _parts(uri)
+
     def connect() -> Any:
         return pymysql.connect(
-            **_parts(uri),
+            **parts,
             init_command="SET SESSION sql_mode = "
             "CONCAT(@@sql_mode, ',HIGH_NOT_PRECEDENCE')",
         )

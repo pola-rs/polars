@@ -2313,6 +2313,7 @@ def test_scan_sqlite_temporary_table_hiding_a_table(
         conn.execute("CREATE TABLE t (id INTEGER, s TEXT)")
         conn.execute("INSERT INTO t VALUES (1, 'zzz')")
         conn.commit()
+    engine: Any = None
     if driver == "sqlalchemy":
         sqlalchemy = pytest.importorskip("sqlalchemy")
         engine = sqlalchemy.create_engine(f"sqlite:///{path}")
@@ -2329,7 +2330,7 @@ def test_scan_sqlite_temporary_table_hiding_a_table(
         assert lf.filter(pl.col("s") != "abc").collect()["id"].to_list() == [2]
     finally:
         live.close()
-        if driver == "sqlalchemy":
+        if engine is not None:
             engine.dispose()
 
 
@@ -2616,18 +2617,19 @@ def test_scan_sqlite_params_dont_hide_volatile_views(tmp_path: Path) -> None:
     uri = f"sqlite:///{path}"
     query = "SELECT * FROM vr WHERE id > ?"
     with closing(sqlite3.connect(path, check_same_thread=False)) as live:
-        for connection, kwargs in [
+        cases: list[tuple[Any, dict[str, Any]]] = [
             (uri, {"driver": "sqlite3", "params": [0]}),
             (uri, {"driver": "sqlite3", "execute_options": {"parameters": [0]}}),
             (live, {"params": [0]}),
-        ]:
-            lf = pl.scan_database(query, connection, **kwargs)  # type: ignore[arg-type]
+        ]
+        for connection, kwargs in cases:
+            lf = pl.scan_database(query, connection, **kwargs)
             df = lf.filter(pl.col("r") < 0).collect()
             assert df.height > 0
             assert (df["r"] < 0).all(), kwargs
             lf = pl.scan_database(
                 query,
-                connection,  # type: ignore[arg-type]
+                connection,
                 partition_on="id",
                 partition_num=4,
                 **kwargs,
@@ -3777,7 +3779,7 @@ def test_duckdb_dropped_batches_dont_abort_the_exit(tmp_path: Path) -> None:
             partition_predicates={preds!r},
             max_connections=4,
         )
-        it = lf.collect_batches()
+        it = lf.collect_batches(engine="streaming")
         next(it)
         del it
         """
