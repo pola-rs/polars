@@ -12292,11 +12292,49 @@ class Expr(metaclass=_Meta):
         """
         return wrap_expr(self._pyexpr.log1p())
 
+    def x_log_y(self, y: IntoExpr, base: float = math.e) -> Expr:
+        """
+        Compute `x * log(y)` to a given base, where `x` is this expression.
+
+        The result is 0 where `x` is 0, unless `y` is NaN, so `0 * log(0)` is 0.
+
+        .. engine-support:: in-memory, streaming
+
+        Parameters
+        ----------
+        y
+            The expression to take the logarithm of. Accepts expression input;
+            strings are parsed as column names.
+        base
+            Given base, defaults to `e`
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [0, 1, 2, 3], "y": [0, 2, 4, 8]})
+        >>> df.select(pl.col("x").x_log_y("y", base=2))
+        shape: (4, 1)
+        ┌─────┐
+        │ x   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 0.0 │
+        │ 1.0 │
+        │ 4.0 │
+        │ 9.0 │
+        └─────┘
+        """
+        y_pyexpr = parse_into_expression(y)
+        return wrap_expr(self._pyexpr.x_log_y(y_pyexpr, base))
+
     def entropy(self, base: float = math.e, *, normalize: bool = True) -> Expr:
         """
         Computes the entropy.
 
         Uses the formula `-sum(pk * log(pk))` where `pk` are discrete probabilities.
+        `0 * log(0)` is taken as 0 and null values are ignored. Negative values give
+        NaN. With `normalize=True`, input that sums to zero (including empty,
+        all-null and all-zero input) gives NaN; with `normalize=False` it gives 0.
 
         .. engine-support:: in-memory, streaming
 

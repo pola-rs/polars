@@ -77,10 +77,10 @@ class FakeExecuteRemote:
             raise TypeError(msg)
         return self._sink("sink_ipc", uri, kwargs)
 
-    # `collect` and `collect_batches` mirror the signatures of their Polars Cloud
+    # `collect` and `collect_batches` mirror the signatures of their Polars Nanook
     # counterparts exactly, so that a drifting keyword fails here rather than against a
-    # cluster. See `polars_cloud/query/ext.py` (`LazyFrameRemote.collect` and
-    # `.collect_batches`, added in polars-cloud `9649f1d4c`).
+    # cluster. See `polars_nanook/query/ext.py` (`LazyFrameRemote.collect` and
+    # `.collect_batches`, added in polars-nanook `9649f1d4c`).
     def collect(self, *, ttl: Any = None, optimizations: Any = None) -> pl.DataFrame:
         self._calls.append((self.tag, "collect", {"ttl": ttl}))
         # `_collect_eager` keeps the stub local even under a remote affinity
@@ -104,7 +104,7 @@ class FakeExecuteRemote:
 
 
 class FakeQueryResult:
-    """Stands in for the `QueryResult` that Polars Cloud hands back."""
+    """Stands in for the `QueryResult` that Polars Nanook hands back."""
 
     def __init__(self, lf: pl.LazyFrame) -> None:
         self._lf = lf
@@ -256,7 +256,7 @@ def test_collect_batches_dispatches(
 ) -> None:
     batches = list(lf.collect_batches(engine=pl.RemoteEngine()))
     assert_frame_equal(pl.concat(batches), pl.DataFrame({"a": [1, 2, 3]}))
-    # Polars Cloud defaults `maintain_order` to `False`; the Polars default wins
+    # Polars Nanook defaults `maintain_order` to `False`; the Polars default wins
     assert calls[1] == (
         "auto",
         "collect_batches",
@@ -350,7 +350,7 @@ def test_sink_rejects_unsupported_options(
 @pytest.mark.usefixtures("_stub_cloud")
 def test_lazy_sink_builds_a_plan_locally(lf: pl.LazyFrame) -> None:
     # `LazyFrame.remote` is not stubbed here, so any dispatch would fail on the missing
-    # `pc.LazyFrameRemote`. This is how Polars Cloud builds the plan it ships.
+    # `pc.LazyFrameRemote`. This is how Polars Nanook builds the plan it ships.
     out = io.BytesIO()
     with pl.Config(engine_affinity=pl.RemoteEngine()):
         plan = lf.sink_parquet(out, lazy=True)
@@ -377,7 +377,7 @@ def test_sink_rejects_non_uri_target(
         ("collect_all", lambda lf, e: pl.collect_all([lf], engine=e)),
         # a Python callback cannot run on a worker
         ("sink_batches", lambda lf, e: lf.sink_batches(print, engine=e)),
-        # Polars Cloud exposes no NDJSON sink
+        # Polars Nanook exposes no NDJSON sink
         (
             "sink_ndjson",
             lambda lf, e: lf.sink_ndjson("s3://bucket/out.ndjson", engine=e),

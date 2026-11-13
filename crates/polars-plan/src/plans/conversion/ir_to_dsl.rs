@@ -1084,6 +1084,8 @@ pub fn ir_function_to_dsl(mut input: Vec<Expr>, function: IRFunctionExpr) -> Exp
         #[cfg(feature = "log")]
         IF::Entropy { base, normalize } => F::Entropy { base, normalize },
         #[cfg(feature = "log")]
+        IF::XLogY { base } => F::XLogY { base },
+        #[cfg(feature = "log")]
         IF::Log => F::Log,
         #[cfg(feature = "log")]
         IF::Log1p => F::Log1p,

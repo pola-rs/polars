@@ -27,16 +27,18 @@ mod subquery_pull_up;
 ))]
 mod table_function_args;
 mod table_functions;
+mod time_travel;
 mod types;
 mod window_frames;
 
 pub use catalog::{
-    CatalogAlter, CatalogNamespace, CatalogPartitionField, CatalogStatement, CatalogTable,
-    MergeClausePlan, MergePlan, MergeSourcePlan,
+    CatalogAlter, CatalogNamespace, CatalogPartitionField, CatalogRead, CatalogStatement,
+    CatalogTable, MergeClausePlan, MergePlan, MergeSourcePlan,
 };
 pub use context::{SQLContext, extract_table_identifiers};
 pub use resolver::register_sql_resolver;
 pub use sql_expr::sql_expr;
+pub use time_travel::VersionSpec;
 
 polars_utils::define_unique_column_name!("SQL");
 

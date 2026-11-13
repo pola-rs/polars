@@ -42,7 +42,9 @@ if TYPE_CHECKING:
     from polars._typing import PolarsDataType, StorageOptionsDict
     from polars.expr import Expr
     from polars.io.iceberg import IcebergCatalogConfig
+    from polars.io.iceberg._dataset import IcebergTableWrap
     from polars.io.iceberg._sink import _ReplaceFiles
+    from polars.io.iceberg._time_travel import TableVersion
     from polars.schema import Schema
 
     CompatibleFrameType: TypeAlias = (
@@ -113,11 +115,12 @@ class SQLContext(Generic[FrameType]):
     _tables_scope_stack: list[set[str]]
     # Attached catalogs and the default catalog on scope entry.
     _catalogs_scope_stack: list[tuple[set[str], str | None]]
-    # Attached catalogs by name: config, instance (if known) and storage options.
+    # Attached catalogs by name: config (or the catalog name to resolve), instance
+    # (if known) and storage options.
     _catalogs: dict[
         str,
         tuple[
-            IcebergCatalogConfig,
+            IcebergCatalogConfig | str,
             pyiceberg.catalog.Catalog | None,
             StorageOptionsDict | None,
         ],
@@ -476,50 +479,96 @@ class SQLContext(Generic[FrameType]):
         return res.collect() if eager or self._eager_execution else res
 
     def _execute_with_catalogs(self, query: str) -> PyLazyFrame:
+        """Execute `query` with its catalog tables scanned."""
         if (stmt := self._ctxt.catalog_statement(query)) is not None:
             return self._execute_catalog_statement(stmt, query)._ldf
 
-        tables = []
-        identifier: list[str]
-        for catalog_name, identifier in self._ctxt.catalog_tables(query):
-            lf = self._scan_catalog_relation(catalog_name, identifier)
-            tables.append(([catalog_name, *identifier], lf._ldf))
-        return self._ctxt.execute_with_catalog_tables(query, tables)
+        return self._ctxt.execute_with_catalog_tables(query, self._catalog_scans(query))
+
+    def _catalog_scans(
+        self, query: str, target: tuple[list[str], pyiceberg.table.Table] | None = None
+    ) -> list[tuple[list[str], PyLazyFrame]]:
+        """
+        Scans of the catalog tables `query` reads, by the key each goes back under.
+
+        Reads of one table share its loaded metadata, so a statement sees one state of
+        it within a process. `target` is the table a `MERGE` loaded.
+        """
+        from polars.io.iceberg._time_travel import resolve_version
+        from polars.io.iceberg.functions import scan_iceberg
+
+        tables: dict[tuple[str, ...], IcebergTableWrap] = {}
+        scans = []
+        for read in self._ctxt.catalog_tables(query):
+            catalog_name, version = read.catalog, read.version
+            identifier: list[str] = read.identifier
+            if target is not None and [catalog_name, *identifier] == target[0]:
+                # every reference to a MERGE target reads the table loaded for it
+                table = target[1]
+                snapshot_id = (
+                    None if version is None else resolve_version(table, version)
+                )
+                lf = scan_iceberg(
+                    table,
+                    snapshot_id=snapshot_id,
+                    storage_options=self._catalogs[catalog_name][2],
+                )
+            else:
+                lf = self._scan_catalog_relation(
+                    catalog_name, identifier, version, tables
+                )
+            scans.append((read.key, lf._ldf))
+        return scans
 
     def _scan_catalog_relation(
-        self, catalog_name: str, identifier: list[str]
+        self,
+        catalog_name: str,
+        identifier: list[str],
+        version: TableVersion | None = None,
+        tables: dict[tuple[str, ...], IcebergTableWrap] | None = None,
     ) -> LazyFrame:
-        """Lazily scan a catalog table, or a metadata table (`t$snapshots`)."""
+        """
+        Lazily scan a catalog table as of `version`, or a metadata table.
+
+        Scans of one table share its entry in `tables`.
+        """
         from polars.io.iceberg._metadata_tables import (
             metadata_table_of,
             scan_catalog_metadata_table,
         )
-        from polars.io.iceberg.functions import _scan_catalog_table
+        from polars.io.iceberg.functions import _catalog_table_wrap, _scan_catalog_table
 
         config, instance, storage_options = self._catalogs[catalog_name]
         display_name = ".".join([catalog_name, *identifier])
         if (metadata := metadata_table_of(identifier)) is not None:
+            if version is not None:
+                msg = f"metadata table '{display_name}' cannot be read as of a version"
+                raise SQLInterfaceError(msg)
             table, name = metadata
             return scan_catalog_metadata_table(
                 table, name, config, instance, display_name=display_name
             )
-        return _scan_catalog_table(
-            tuple(identifier),
-            config,
-            instance,
-            storage_options=storage_options,
-            display_name=display_name,
-        )
+        key = (catalog_name, *identifier)
+        wrap = tables.get(key) if tables is not None else None
+        if wrap is None:
+            wrap = _catalog_table_wrap(
+                tuple(identifier),
+                config,
+                instance,
+                storage_options=storage_options,
+                display_name=display_name,
+            )
+            if tables is not None:
+                tables[key] = wrap
+        return _scan_catalog_table(wrap, version)
 
     def _execute_catalog_statement(self, stmt: dict[str, Any], query: str) -> LazyFrame:
         """Perform the statement of `query` that `catalog_statement` returned."""
+        from polars.io.iceberg._catalog_resolver import catalog_from
+
         _check_not_metadata_table(stmt)
         config, instance, storage_options = self._catalogs[stmt["catalog"]]
-        catalog = (
-            instance
-            if instance is not None
-            else config.class_(config.name, **config.properties)
-        )
+        catalog = instance if instance is not None else catalog_from(config)
         if stmt["kind"] == "drop_table":
             response = _drop_catalog_table(catalog, stmt)
         elif stmt["kind"] == "create_table":
@@ -581,23 +630,12 @@ class SQLContext(Generic[FrameType]):
         storage_options: StorageOptionsDict | None,
     ) -> str:
         """Perform the `MERGE` of `query` on its table, returning the response."""
-        from polars.io.iceberg.functions import scan_iceberg
-
         full_name = [stmt["catalog"], *stmt["identifier"]]
 
         def source_of(
             table: pyiceberg.table.Table,
         ) -> tuple[LazyFrame, list[tuple[str, Expr]]]:
-            # every reference to the target reads the table loaded for the statement
-            tables = []
-            identifier: list[str]
-            for catalog_name, identifier in self._ctxt.catalog_tables(query):
-                name = [catalog_name, *identifier]
-                if name == full_name:
-                    lf = scan_iceberg(table, storage_options=storage_options)
-                else:
-                    lf = self._scan_catalog_relation(catalog_name, identifier)
-                tables.append((name, lf._ldf))
+            tables = self._catalog_scans(query, target=(full_name, table))
             source, keys = self._ctxt.catalog_merge_source(query, tables)
             return wrap_ldf(source), [(c, wrap_expr(e)) for c, e in keys]
 
@@ -626,7 +664,7 @@ class SQLContext(Generic[FrameType]):
     def register_catalog(
         self,
         name: str,
-        catalog: pyiceberg.catalog.Catalog | IcebergCatalogConfig,
+        catalog: pyiceberg.catalog.Catalog | IcebergCatalogConfig | str | None = None,
         *,
         default_namespace: str | Sequence[str] | None = None,
         default: bool = False,
@@ -660,7 +698,8 @@ class SQLContext(Generic[FrameType]):
             catalog stays the default if it was (see `default`). A name that
             differs from an attached catalog's only in case is an error.
         catalog
-            A PyIceberg catalog, or an `IcebergCatalogConfig`.
+            A PyIceberg catalog, an `IcebergCatalogConfig`, or a catalog name.
+            `None` means use the `name` parameter as a catalog name.
         default_namespace
             The namespace of table names without one: a string (split on ".") or a
             sequence of namespace parts.
@@ -722,6 +761,10 @@ class SQLContext(Generic[FrameType]):
           Values convert to the column types as for `INSERT`. See
           :ref:`UPDATE <update>`.
 
+        A catalog table can be read as of a snapshot, a branch or tag, or a point
+        in time: `FROM <name> FOR VERSION AS OF <id or 'ref'>`, `FOR TIMESTAMP AS OF
+        <timestamp>`, or `AT (VERSION => ...)`. See :ref:`FROM <from>`.
+
         Catalogs attached inside a `with SQLContext()` block are detached on exit,
         like the tables registered there. If that detaches the default catalog, the
         default catalog on entry is restored.
@@ -750,22 +793,32 @@ class SQLContext(Generic[FrameType]):
         >>> ctx.execute("DROP TABLE big_orders")  # doctest: +SKIP
         """
         from polars.io.iceberg import IcebergCatalogConfig
+        from polars.io.iceberg._catalog_resolver import check_catalog_name
 
         issue_unstable_warning("`SQLContext.register_catalog` is considered unstable.")
-        pyiceberg_catalog = _pyiceberg_catalog_class()
-        if not isinstance(catalog, IcebergCatalogConfig) and not (
-            pyiceberg_catalog is not None and isinstance(catalog, pyiceberg_catalog)
-        ):
-            msg = (
-                "`register_catalog` takes a PyIceberg catalog or an "
-                f"`IcebergCatalogConfig`; found {qualified_type_name(catalog)!r}"
+        if catalog is None:
+            catalog = name
+
+        config: IcebergCatalogConfig | str
+        instance: pyiceberg.catalog.Catalog | None
+        if isinstance(catalog, str):
+            config, instance = check_catalog_name(catalog), None
+        else:
+            pyiceberg_catalog = _pyiceberg_catalog_class()
+            if not isinstance(catalog, IcebergCatalogConfig) and not (
+                pyiceberg_catalog is not None and isinstance(catalog, pyiceberg_catalog)
+            ):
+                msg = (
+                    "`register_catalog` takes a PyIceberg catalog, an "
+                    "`IcebergCatalogConfig` or a catalog name; found "
+                    f"{qualified_type_name(catalog)!r}"
+                )
+                raise TypeError(msg)
+            config, instance = (
+                IcebergCatalogConfig._from_api_parameter_or_environment_default(
+                    catalog, fn_name="register_catalog"
+                )
             )
-            raise TypeError(msg)
-        config, instance = (
-            IcebergCatalogConfig._from_api_parameter_or_environment_default(
-                catalog, fn_name="register_catalog"
-            )
-        )
         self._ctxt.register_catalog(name, _namespace_parts(default_namespace), default)
         self._catalogs[name] = (config, instance, storage_options)
         return self

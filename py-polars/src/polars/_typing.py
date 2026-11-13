@@ -471,7 +471,7 @@ AsyncResult: TypeAlias = Union[
     "_GeventDataFrameResult[AsyncResultT]", "_AioDataFrameResult[AsyncResultT]"
 ]
 
-# Remote execution on Polars Cloud; mirrors `polars_cloud._typing`
+# Remote execution on Polars Nanook; mirrors `polars_nanook._typing`
 ScalingMode: TypeAlias = Literal["auto", "single-node", "distributed"]
 PlanTypePreference: TypeAlias = Literal["dot", "plain"]
 

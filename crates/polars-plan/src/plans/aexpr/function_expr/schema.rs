@@ -340,6 +340,16 @@ impl IRFunctionExpr {
                 .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "entropy")?
                 .map_to_float_dtype(),
             #[cfg(feature = "log")]
+            XLogY { .. } => {
+                let mut field = mapper
+                    .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "x_log_y")?
+                    .map_to_supertype()?;
+                if !field.dtype().is_float() {
+                    field.set_dtype(DataType::Float64);
+                }
+                Ok(field)
+            },
+            #[cfg(feature = "log")]
             Log1p => mapper
                 .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "log1p")?
                 .map_to_float_dtype(),

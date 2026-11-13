@@ -7,14 +7,24 @@ Aggregate
 
    * - Function
      - Description
+   * - :ref:`ANY_VALUE <any_value>`
+     - Returns a non-null element of the grouping.
+   * - :ref:`APPROX_COUNT_DISTINCT <approx_count_distinct>`
+     - Returns an approximation of the number of distinct non-null elements in the grouping.
    * - :ref:`APPROX_QUANTILE <approx_quantile>`
      - Returns an approximation of the given quantile of the grouping.
    * - :ref:`AVG <avg>`
      - Returns the average (mean) of all the elements in the grouping.
+   * - :ref:`BOOL_AND <bool_and>`
+     - Returns true if all non-null elements of the grouping are true.
+   * - :ref:`BOOL_OR <bool_or>`
+     - Returns true if any non-null element of the grouping is true.
    * - :ref:`CORR <corr>`
      - Returns the Pearson correlation coefficient between two columns.
    * - :ref:`COUNT <count>`
      - Returns the amount of elements in the grouping.
+   * - :ref:`COUNT_IF <count_if>`
+     - Returns the number of elements in the grouping for which the condition is true.
    * - :ref:`COVAR <covar>`
      - Returns the covariance between two columns.
    * - :ref:`FIRST <first>`
@@ -23,10 +33,14 @@ Aggregate
      - Returns the last element of the grouping.
    * - :ref:`MAX <max>`
      - Returns the greatest (maximum) of all the elements in the grouping.
+   * - :ref:`MAX_BY <max_by>`
+     - Returns the value of the first expression at the row where the second is greatest.
    * - :ref:`MEDIAN <median>`
      - Returns the median element from the grouping.
    * - :ref:`MIN <min>`
      - Returns the smallest (minimum) of all the elements in the grouping.
+   * - :ref:`MIN_BY <min_by>`
+     - Returns the value of the first expression at the row where the second is smallest.
    * - :ref:`QUANTILE_CONT <quantile_cont>`
      - Returns the continuous quantile element from the grouping (interpolated value between two closest values).
    * - :ref:`QUANTILE_DISC <quantile_disc>`
@@ -55,8 +69,8 @@ so multiple aggregates in the same ``SELECT`` can see different row sets.
 
 .. note::
 
-   ``FILTER`` can be combined with ``OVER`` only for ``SUM``, ``COUNT``, ``MIN``, ``MAX``,
-   ``AVG`` and ``TOTAL``.
+   ``FILTER`` can be combined with ``OVER`` only for ``SUM``, ``COUNT``, ``COUNT_IF``, ``MIN``,
+   ``MAX``, ``BOOL_AND``, ``BOOL_OR``, ``AVG`` and ``TOTAL``.
 
 **Example:**
 
@@ -89,6 +103,53 @@ so multiple aggregates in the same ``SELECT`` can see different row sets.
     # │ B        ┆ 120   ┆ 100        ┆ 20        ┆ 2     │
     # └──────────┴───────┴────────────┴───────────┴───────┘
 
+
+.. _any_value:
+
+ANY_VALUE
+---------
+Returns a non-null element of the grouping, or null if there is none.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": ["a", "b", "a", "b"], "bar": [None, 20, 30, 40]})
+    df.sql("""
+      SELECT foo, ANY_VALUE(bar) AS any_bar FROM self GROUP BY foo ORDER BY foo
+    """)
+    # shape: (2, 2)
+    # ┌─────┬─────────┐
+    # │ foo ┆ any_bar │
+    # │ --- ┆ ---     │
+    # │ str ┆ i64     │
+    # ╞═════╪═════════╡
+    # │ a   ┆ 30      │
+    # │ b   ┆ 20      │
+    # └─────┴─────────┘
+
+.. _approx_count_distinct:
+
+APPROX_COUNT_DISTINCT
+---------------------
+Returns an approximation of the number of distinct non-null elements in the grouping.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": ["a", "b", "a", "c", None]})
+    df.sql("""
+      SELECT APPROX_COUNT_DISTINCT(foo) AS n_foo FROM self
+    """)
+    # shape: (1, 1)
+    # ┌───────┐
+    # │ n_foo │
+    # │ ---   │
+    # │ i64   │
+    # ╞═══════╡
+    # │ 3     │
+    # └───────┘
 
 .. _approx_quantile:
 
@@ -147,6 +208,54 @@ Returns the average (mean) of all the elements in the grouping.
     # │ 25.0    │
     # └─────────┘
 
+.. _bool_and:
+
+BOOL_AND
+--------
+Returns true if all non-null elements of the grouping are true (alias: ``EVERY``).
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": ["a", "a", "b", "b"], "bar": [True, False, True, None]})
+    df.sql("""
+      SELECT foo, BOOL_AND(bar) AS all_bar FROM self GROUP BY foo ORDER BY foo
+    """)
+    # shape: (2, 2)
+    # ┌─────┬─────────┐
+    # │ foo ┆ all_bar │
+    # │ --- ┆ ---     │
+    # │ str ┆ bool    │
+    # ╞═════╪═════════╡
+    # │ a   ┆ false   │
+    # │ b   ┆ true    │
+    # └─────┴─────────┘
+
+.. _bool_or:
+
+BOOL_OR
+-------
+Returns true if any non-null element of the grouping is true.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": ["a", "a", "b", "b"], "bar": [False, False, True, None]})
+    df.sql("""
+      SELECT foo, BOOL_OR(bar) AS any_bar FROM self GROUP BY foo ORDER BY foo
+    """)
+    # shape: (2, 2)
+    # ┌─────┬─────────┐
+    # │ foo ┆ any_bar │
+    # │ --- ┆ ---     │
+    # │ str ┆ bool    │
+    # ╞═════╪═════════╡
+    # │ a   ┆ false   │
+    # │ b   ┆ true    │
+    # └─────┴─────────┘
+
 .. _corr:
 
 CORR
@@ -202,6 +311,30 @@ Returns the amount of elements in the grouping.
     # ╞═══════╪══════════════╡
     # │ 4     ┆ 3            │
     # └───────┴──────────────┘
+
+.. _count_if:
+
+COUNT_IF
+--------
+Returns the number of elements in the grouping for which the condition is true.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": ["a", "a", "b", "b"], "bar": [10, 20, 30, 40]})
+    df.sql("""
+      SELECT foo, COUNT_IF(bar > 15) AS n_big FROM self GROUP BY foo ORDER BY foo
+    """)
+    # shape: (2, 2)
+    # ┌─────┬───────┐
+    # │ foo ┆ n_big │
+    # │ --- ┆ ---   │
+    # │ str ┆ i64   │
+    # ╞═════╪═══════╡
+    # │ a   ┆ 1     │
+    # │ b   ┆ 2     │
+    # └─────┴───────┘
 
 .. _covar:
 
@@ -301,6 +434,30 @@ Returns the greatest (maximum) of all the elements in the grouping.
     # │ 40      │
     # └─────────┘
 
+.. _max_by:
+
+MAX_BY
+------
+Returns the value of the first expression at the row where the second expression is greatest
+(alias: ``ARG_MAX``).
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"name": ["x", "y", "z"], "price": [10, 30, 20]})
+    df.sql("""
+      SELECT MAX_BY(name, price) AS most_expensive FROM self
+    """)
+    # shape: (1, 1)
+    # ┌────────────────┐
+    # │ most_expensive │
+    # │ ---            │
+    # │ str            │
+    # ╞════════════════╡
+    # │ y              │
+    # └────────────────┘
+
 .. _median:
 
 MEDIAN
@@ -347,6 +504,30 @@ Returns the smallest (minimum) of all the elements in the grouping.
     # │ 10      │
     # └─────────┘
 
+
+.. _min_by:
+
+MIN_BY
+------
+Returns the value of the first expression at the row where the second expression is smallest
+(alias: ``ARG_MIN``).
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"name": ["x", "y", "z"], "price": [10, 30, 20]})
+    df.sql("""
+      SELECT MIN_BY(name, price) AS cheapest FROM self
+    """)
+    # shape: (1, 1)
+    # ┌──────────┐
+    # │ cheapest │
+    # │ ---      │
+    # │ str      │
+    # ╞══════════╡
+    # │ x        │
+    # └──────────┘
 
 .. _quantile_cont:
 

@@ -785,7 +785,7 @@ def test_scan_delta_nanosecond_timestamp_nested(tmp_path: Path) -> None:
     df.write_delta(root)
 
     # Manually overwrite the file with one that has nanosecond timestamps.
-    parquet_files = [x for x in root.iterdir() if x.suffix == ".parquet"]
+    parquet_files = [x for x in root.rglob("*.parquet") if "_delta_log" not in x.parts]
     assert len(parquet_files) == 1
     parquet_file_path = parquet_files[0]
 

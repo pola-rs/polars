@@ -6,15 +6,17 @@ import importlib.util
 import sys
 from dataclasses import dataclass
 from time import perf_counter
-from typing import TYPE_CHECKING, Any, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeAlias
 from urllib.parse import urlparse
 
 from polars._utils.logging import eprint
 from polars._utils.wrap import wrap_ldf
 from polars.exceptions import ComputeError
 from polars.io.cloud._utils import NoPickleOption
+from polars.io.iceberg._catalog_resolver import check_catalog_name, resolve_catalog
 from polars.io.iceberg._dataset import (
     IcebergCatalogConfig,
+    _reusable_catalog,
 )
 from polars.io.iceberg._utils import (
     _is_null_pushdown_safe,
@@ -402,7 +404,6 @@ def _stage_replace(
         ),
     )
     data_files = _data_files_for_commit(tx, sinked_files, sort_order_id)
-    _ensure_name_mapping(tx)
     with tx.update_snapshot(snapshot_properties=snapshot_properties).overwrite() as ow:
         _set_isolation_operation(ow, Operation.OVERWRITE)
         ow.delete_by_predicate(replace.conflict_filter)
@@ -718,25 +719,11 @@ def _check_dynamic_overwrite_spec(spec: PartitionSpec, schema: Schema) -> None:
             raise NotImplementedError(msg)
 
 
-def _ensure_name_mapping(transaction: Transaction) -> None:
-    """Set the table's default name mapping, if it has none."""
-    from pyiceberg.table import TableProperties
-
-    table_metadata = transaction.table_metadata
-    if table_metadata.name_mapping() is None:
-        transaction.set_properties(
-            {
-                TableProperties.DEFAULT_NAME_MAPPING: table_metadata.schema().name_mapping.model_dump_json()
-            }
-        )
-
-
 def _add_files(
     transaction: Transaction,
     data_files: list[DataFile],
     snapshot_properties: dict[str, str],
 ) -> None:
-    _ensure_name_mapping(transaction)
     with transaction.update_snapshot(
         snapshot_properties=snapshot_properties
     ).fast_append() as append_files:
@@ -1104,13 +1091,75 @@ def _sort_key_exprs(
     return exprs, descending, nulls_last
 
 
+def _check_snapshot_properties(snapshot_properties: Any) -> None:
+    # Snapshot summary values are strings in the Iceberg spec.
+    if snapshot_properties is None:
+        return
+    if not isinstance(snapshot_properties, dict):
+        msg = (
+            "snapshot_properties must be a dict, "
+            f"got {type(snapshot_properties).__name__}"
+        )
+        raise TypeError(msg)
+    for key, value in snapshot_properties.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            msg = (
+                f"snapshot_properties[{key!r}] must be a str mapped to a str, "
+                f"got {type(key).__name__}: {type(value).__name__}"
+            )
+            raise TypeError(msg)
+
+
+# A sink state's catalog class module and qualname, catalog name and properties, and
+# the caller's catalog, if any.
+_SinkCatalogFields: TypeAlias = tuple[
+    str | None, str | None, str, dict[str, Any], "pyiceberg.catalog.Catalog | None"
+]
+
+
+def _sink_catalog_fields(
+    target: str | pyiceberg.table.Table,
+    catalog: pyiceberg.catalog.Catalog | IcebergCatalogConfig | None,
+) -> _SinkCatalogFields:
+    """The catalog fields of a sink to `target` through `catalog`, or its catalog."""
+    catalog_instance: pyiceberg.catalog.Catalog | None
+    if isinstance(target, str):
+        catalog_config, catalog_instance = (
+            IcebergCatalogConfig._from_api_parameter_or_environment_default(
+                catalog,
+                fn_name="sink_iceberg",
+            )
+        )
+    else:
+        catalog_config = IcebergCatalogConfig.from_catalog(target.catalog)
+        catalog_instance = target.catalog
+
+    from pyiceberg.catalog.noop import NoopCatalog
+
+    if catalog_config.class_ is NoopCatalog:
+        msg = (
+            "cannot sink to static Iceberg table: "
+            f"{type(target) = }, {getattr(target, 'catalog', None) = }"
+        )
+        raise TypeError(msg)
+
+    return (
+        catalog_config.class_.__module__,
+        catalog_config.class_.__qualname__,
+        catalog_config.name,
+        dict(catalog_config.properties),
+        catalog_instance,
+    )
+
+
 @dataclass(kw_only=True)
 class IcebergSinkState:
-    py_catalog_class_module: str
-    py_catalog_class_qualname: str
+    # `None` means these will be lazily resolved using the catalog_name
+    py_catalog_class_module: str | None
+    py_catalog_class_qualname: str | None
 
     catalog_name: str
-    catalog_properties: dict[str, str]
+    catalog_properties: dict[str, Any]
 
     table_name: str
     mode: Literal["append", "overwrite"]
@@ -1132,6 +1181,8 @@ class IcebergSinkState:
 
     # A `StagedTable` is created by the commit, with the written data.
     table_: NoPickleOption[pyiceberg.table.Table]
+    # The caller's catalog, used before rebuilding one from the properties.
+    catalog_: NoPickleOption[pyiceberg.catalog.Catalog]
     source_schema: pa.Schema | None
     sort_order_id: int | None
     # The partition spec of the partition keys.
@@ -1151,7 +1202,7 @@ class IcebergSinkState:
         create_if_not_exists: bool = False,
         create_namespace_if_not_exists: bool = False,
         snapshot_properties: dict[str, str] | None = None,
-        catalog: pyiceberg.catalog.Catalog | IcebergCatalogConfig | None = None,
+        catalog: pyiceberg.catalog.Catalog | IcebergCatalogConfig | str | None = None,
         storage_options: StorageOptionsDict | None = None,
         compression: ParquetCompression = "zstd",
         compression_level: int | None = None,
@@ -1206,37 +1257,36 @@ class IcebergSinkState:
             )
             raise ValueError(msg)
 
-        catalog_config = (
-            (
-                IcebergCatalogConfig._from_api_parameter_or_environment_default(
-                    catalog,
-                    fn_name="sink_iceberg",
-                )[0]
-            )
-            if isinstance(target, str)
-            else (
-                IcebergCatalogConfig(
-                    class_=type(target.catalog),
-                    name=target.catalog.name,
-                    properties=target.catalog.properties,
-                )
-            )
-        )
+        _check_snapshot_properties(snapshot_properties)
 
-        from pyiceberg.catalog.noop import NoopCatalog
-
-        if catalog_config.class_ is NoopCatalog:
-            msg = (
-                "cannot sink to static Iceberg table: "
-                f"{type(target) = }, {getattr(target, 'catalog', None) = }"
+        if isinstance(catalog, str):
+            if not isinstance(target, str):
+                msg = "a catalog name requires a table identifier as `target`"
+                raise TypeError(msg)
+            # Only the name is kept: each process that loads the table, including
+            # one that only commits, resolves it with its own resolver.
+            catalog_fields: _SinkCatalogFields = (
+                None,
+                None,
+                check_catalog_name(catalog),
+                {},
+                None,
             )
-            raise TypeError(msg)
+        else:
+            catalog_fields = _sink_catalog_fields(target, catalog)
+        (
+            catalog_class_module,
+            catalog_class_qualname,
+            catalog_name,
+            catalog_properties,
+            catalog_instance,
+        ) = catalog_fields
 
         return IcebergSinkState(
-            py_catalog_class_module=catalog_config.class_.__module__,
-            py_catalog_class_qualname=catalog_config.class_.__qualname__,
-            catalog_name=catalog_config.name,
-            catalog_properties=catalog_config.properties,
+            py_catalog_class_module=catalog_class_module,
+            py_catalog_class_qualname=catalog_class_qualname,
+            catalog_name=catalog_name,
+            catalog_properties=catalog_properties,
             table_name=target if isinstance(target, str) else ".".join(target.name()),
             mode=mode,
             schema_mode=schema_mode,
@@ -1244,14 +1294,15 @@ class IcebergSinkState:
             dynamic_partition_overwrite=partition_overwrite == "dynamic",
             create_if_not_exists=create_if_not_exists,
             create_namespace_if_not_exists=create_namespace_if_not_exists,
-            snapshot_properties=snapshot_properties or {},
-            iceberg_storage_properties=storage_options or {},
+            snapshot_properties=dict(snapshot_properties or {}),
+            iceberg_storage_properties=dict(storage_options or {}),
             compression=compression,
             compression_level=compression_level,
             row_group_size=row_group_size,
             maintain_order=maintain_order,
             sink_uuid_str=gen_uuid_v7().hex(),
             table_=NoPickleOption(target if not isinstance(target, str) else None),
+            catalog_=NoPickleOption(_reusable_catalog(catalog_instance)),
             source_schema=None,
             sort_order_id=None,
             partition_spec_id=None,
@@ -1278,17 +1329,36 @@ class IcebergSinkState:
 
     def table(self) -> pyiceberg.table.Table:
         if self.table_.get() is None:
-            module = importlib.import_module(self.py_catalog_class_module)
-            qualname_split = self.py_catalog_class_qualname.split(".")
+            catalog = self.catalog_.get()
+            if catalog is None:
+                class_module = self.py_catalog_class_module
+                class_qualname = self.py_catalog_class_qualname
 
-            catalog_class: type[pyiceberg.catalog.Catalog] = getattr(
-                module, qualname_split[0]
-            )
+                if class_module is None and class_qualname is None:
+                    # Only the catalog's name was kept: resolve it in this process.
+                    catalog = resolve_catalog(self.catalog_name)
+                elif class_module is None or class_qualname is None:
+                    msg = (
+                        "invalid Iceberg sink state: the catalog class module and "
+                        "qualname must both be set, or both be None to resolve the "
+                        f"catalog by name; found {class_module = }, {class_qualname = }"
+                    )
+                    raise ValueError(msg)
+                else:
+                    # The state was serialized: rebuild with the captured class.
+                    module = importlib.import_module(class_module)
+                    qualname_split = class_qualname.split(".")
 
-            for part in qualname_split[1:]:
-                catalog_class = getattr(catalog_class, part)
+                    catalog_class: type[pyiceberg.catalog.Catalog] = getattr(
+                        module, qualname_split[0]
+                    )
 
-            catalog = catalog_class(self.catalog_name, **self.catalog_properties)
+                    for part in qualname_split[1:]:
+                        catalog_class = getattr(catalog_class, part)
+
+                    catalog = catalog_class(
+                        self.catalog_name, **self.catalog_properties
+                    )
             self.table_.set(self._load_or_create_table(catalog))
 
         return self.table_.get()  # type: ignore[return-value]

@@ -1042,6 +1042,8 @@ pub(super) fn convert_functions(
         #[cfg(feature = "log")]
         F::Entropy { base, normalize } => I::Entropy { base, normalize },
         #[cfg(feature = "log")]
+        F::XLogY { base } => I::XLogY { base },
+        #[cfg(feature = "log")]
         F::Log => I::Log,
         #[cfg(feature = "log")]
         F::Log1p => I::Log1p,

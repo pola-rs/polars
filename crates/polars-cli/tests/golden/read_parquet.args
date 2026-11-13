@@ -1,0 +1,2 @@
+-c
+SELECT category, COUNT(*) AS n, SUM(calories) AS calories FROM read_parquet('../../py-polars/tests/unit/io/files/foods1.parquet') GROUP BY category ORDER BY category

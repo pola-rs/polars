@@ -1002,7 +1002,9 @@ def test_scan_delta_dv_delta_sink_mock(
     # therefore: we track file and row mapping explicitly by index inside the dataframe,
     # and extract this from the file as written to stub the right deletion_vectors
     path_to_dv: dict[str, list[int]] = {}
-    for p in tmp_path.glob("*.parquet"):
+    for p in tmp_path.rglob("*.parquet"):
+        if "_delta_log" in p.parts:
+            continue
         file_idx = pl.read_parquet(p, columns=["file"])["file"][0]
         path_to_dv[str(p)] = dvs[file_idx]
 
@@ -1031,7 +1033,7 @@ def test_scan_delta_dv_delta_sink_mock(
         )
 
     out = pl.scan_parquet(
-        tmp_path / "*.parquet",
+        list(path_to_dv),
         _deletion_files=("delta-deletion-vector", _callback),
     ).collect()
 

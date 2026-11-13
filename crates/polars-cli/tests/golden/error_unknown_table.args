@@ -1,0 +1,2 @@
+-c
+SELECT * FROM missing

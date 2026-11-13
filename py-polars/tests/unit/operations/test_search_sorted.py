@@ -1,8 +1,15 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Literal
+
 import numpy as np
 import pytest
 
 import polars as pl
 from polars.testing import assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import SearchSortedSide
 
 
 def test_search_sorted() -> None:
@@ -102,3 +109,59 @@ def test_search_sorted_list_ambiguous_22058() -> None:
 
     with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.DataFrame({"a": [1, 2, 3]}).select(pl.col("a").search_sorted([1, 2]))
+
+
+@pytest.mark.parametrize("wrap", [pl.concat_list, pl.struct])
+@pytest.mark.parametrize("nulls_last", [False, True])
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_search_sorted_nested_nulls(
+    wrap: Any, nulls_last: bool, descending: bool, side: SearchSortedSide
+) -> None:
+    # A nested value orders as the integer it wraps, nulls included.
+    ints = pl.Series("a", [2, None, 1, 3, 2, None]).sort(
+        descending=descending, nulls_last=nulls_last
+    )
+    values = pl.Series("a", [0, 1, 2, 3, 4, None])
+
+    def nest(s: pl.Series) -> pl.Series:
+        a = pl.col("a")
+        return s.to_frame().select(pl.when(a.is_not_null()).then(wrap(a))).to_series()
+
+    assert_series_equal(
+        nest(ints).search_sorted(nest(values), side, descending=descending),
+        ints.search_sorted(values, side, descending=descending),
+    )
+
+
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("side", ["any", "left", "right"])
+def test_search_sorted_needle_blocks(
+    descending: bool, side: Literal["any", "left", "right"]
+) -> None:
+    # Sorted and shuffled runs of needles, with nulls and NaN, past the parallel
+    # threshold. A haystack in two chunks takes the per-needle search, which
+    # serves as the reference.
+    rng = np.random.default_rng(0)
+    hay = np.concatenate(
+        [rng.integers(-50, 50, 1000).astype(float), [np.nan] * 5, [-0.0, 0.0]]
+    )
+    haystack = pl.Series(hay).sort(descending=descending)
+    # One chunk without nulls takes the slice search.
+    assert haystack.n_chunks() == 1
+    assert not haystack.has_nulls()
+    split = pl.concat([haystack[:500], haystack[500:]], rechunk=False)
+    assert split.n_chunks() == 2
+
+    n = 200_000
+    vals = rng.integers(-60, 60, n).astype(float)
+    vals[rng.random(n) < 0.05] = np.nan
+    for run in [slice(0, 70_000), slice(130_000, n)]:
+        vals[run] = np.sort(vals[run])
+        if descending:
+            vals[run] = vals[run][::-1]
+    needles = pl.Series(vals).set(pl.Series(rng.random(n) < 0.02), None)
+
+    result = haystack.search_sorted(needles, side=side, descending=descending)
+    expected = split.search_sorted(needles, side=side, descending=descending)
+    assert_series_equal(result, expected)

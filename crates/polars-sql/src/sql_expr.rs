@@ -47,6 +47,7 @@ use crate::literal_folding::{
 };
 use crate::sql_visitors::expr_references_any_column;
 use crate::subquery::is_correlated_subquery;
+use crate::time_travel::{TableVersions, extract_table_versions};
 use crate::types::{
     bitstring_to_bytes_literal, is_iso_date, is_iso_datetime, is_iso_time, map_sql_dtype_to_polars,
     strip_utc_offset,
@@ -62,8 +63,9 @@ pub fn to_sql_interface_err(err: impl Display) -> PolarsError {
 }
 
 /// A parser of `sql`. `TOP` is only a keyword in `SELECT TOP n`, so that it can also name a
-/// relation or a column.
-pub(crate) fn sql_parser(sql: &str) -> PolarsResult<Parser<'static>> {
+/// relation or a column. Time travel clauses are taken out first (see [`TableVersions`]): the
+/// caller attaches them to its statements or refuses them.
+pub(crate) fn sql_parser(sql: &str) -> PolarsResult<(Parser<'static>, TableVersions)> {
     let options = ParserOptions {
         trailing_commas: true,
         ..Default::default()
@@ -73,9 +75,11 @@ pub(crate) fn sql_parser(sql: &str) -> PolarsResult<Parser<'static>> {
         .tokenize_with_location()
         .map_err(to_sql_interface_err)?;
     demote_top_keyword(&mut tokens);
-    Ok(Parser::new(&GenericDialect)
+    let versions = extract_table_versions(&mut tokens)?;
+    let parser = Parser::new(&GenericDialect)
         .with_options(options)
-        .with_tokens_with_locations(tokens))
+        .with_tokens_with_locations(tokens);
+    Ok((parser, versions))
 }
 
 fn demote_top_keyword(tokens: &mut [TokenWithSpan]) {
@@ -2179,7 +2183,8 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
     let s = s.as_ref();
 
     // `sql_expr` should only translate expressions, not statements or clauses
-    let mut ast = sql_parser(s)?;
+    let (mut ast, versions) = sql_parser(s)?;
+    versions.refuse()?;
     if let Token::Word(word) = &ast.peek_token().token {
         if keywords::RESERVED_FOR_COLUMN_ALIAS.contains(&word.keyword) {
             polars_bail!(SQLInterface: "expected an expression (found '{}' clause)", word.value)

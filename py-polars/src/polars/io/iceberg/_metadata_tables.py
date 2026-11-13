@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from polars._utils.logging import eprint, verbose
 from polars.exceptions import InvalidOperationError
 from polars.io.cloud._utils import NoPickleOption
+from polars.io.iceberg._catalog_resolver import catalog_from
 from polars.io.iceberg._dataset import _load_catalog_table, _reusable_catalog
 from polars.lazyframe.resolver._resolver import LazyFrameResolver
 
@@ -76,7 +77,8 @@ class IcebergMetadataTableResolver(LazyFrameResolver):
 
     table_identifier: tuple[str, ...]
     metadata_table: str
-    catalog_config: IcebergCatalogConfig
+    # Either the catalog properties or the unresolved catalog name
+    catalog_config: IcebergCatalogConfig | str
     catalog_: NoPickleOption[pyiceberg.catalog.Catalog]
     display_name: str
     # Loaded once, shared by schema() and resolve_lazyframe()
@@ -135,9 +137,7 @@ class IcebergMetadataTableResolver(LazyFrameResolver):
 
         catalog = self.catalog_.get()
         if catalog is None:
-            catalog = self.catalog_config.class_(
-                self.catalog_config.name, **self.catalog_config.properties
-            )
+            catalog = catalog_from(self.catalog_config)
         descriptor = IcebergCatalogTableDescriptor(
             table_identifier=self.table_identifier,
             catalog_config=self.catalog_config,
@@ -171,7 +171,7 @@ def _metadata_frame(
 def scan_catalog_metadata_table(
     table_identifier: tuple[str, ...],
     metadata_table: str,
-    catalog_config: IcebergCatalogConfig,
+    catalog_config: IcebergCatalogConfig | str,
     catalog_instance: pyiceberg.catalog.Catalog | None,
     *,
     display_name: str,

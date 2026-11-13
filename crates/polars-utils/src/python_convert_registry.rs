@@ -103,6 +103,18 @@ impl PythonConvertRegistry {
                 .unbind()
         })
     }
+
+    pub fn py_delta_sink_state_class(&self, py: Python<'_>) -> &'static Py<PyAny> {
+        static CLS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+
+        CLS.get_or_init(py, || {
+            py.import("polars.io.delta._sink")
+                .unwrap()
+                .getattr("DeltaSinkState")
+                .unwrap()
+                .unbind()
+        })
+    }
 }
 
 static PYTHON_CONVERT_REGISTRY: LazyLock<RwLock<Option<PythonConvertRegistry>>> =
