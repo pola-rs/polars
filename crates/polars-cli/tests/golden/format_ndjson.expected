@@ -1,0 +1,6 @@
+exit: 0
+--- stdout ---
+{"category":"seafood","calories":200,"sugars_g":0}
+{"category":"seafood","calories":200,"sugars_g":2}
+{"category":"seafood","calories":200,"sugars_g":2}
+--- stderr ---

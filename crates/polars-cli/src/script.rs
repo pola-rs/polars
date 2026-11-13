@@ -84,7 +84,7 @@ impl Script {
     }
 
     /// The number of statements, counting the one that cannot be split.
-    pub(crate) fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.statements.len() + usize::from(self.error.is_some())
     }
 

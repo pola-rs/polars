@@ -1,0 +1,7 @@
+exit: 2
+--- stdout ---
+--- stderr ---
+error: invalid value 'xml' for '--format <FMT>'
+  [possible values: table, csv, ndjson, parquet, arrow-stream]
+
+For more information, try '--help'.
