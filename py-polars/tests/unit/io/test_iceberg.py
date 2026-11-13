@@ -4843,8 +4843,7 @@ def test_scan_iceberg_renews_vended_credentials_by_catalog_name(
     assert b"SqlCatalog" not in pickled
 
     # Renewals resolve it.
-    provider = builder.build_credential_provider()
-    assert provider is not None
+    provider: Any = builder.build_credential_provider()
     catalog.properties.update(_gcs_vended_properties("t2", now + 7200))
     provider.clear_cached_credentials()
     assert provider() == ({"bearer_token": "t2"}, now + 7200 - 60)
