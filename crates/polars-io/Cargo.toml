@@ -40,6 +40,7 @@ memmap = { workspace = true }
 num-traits = { workspace = true }
 object_store = { workspace = true, optional = true }
 parking_lot = { workspace = true, optional = true }
+parquet-key-management = { workspace = true, optional = true }
 percent-encoding = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
@@ -131,6 +132,8 @@ dtype-decimal = ["polars-core/dtype-decimal", "polars-json?/dtype-decimal"]
 fmt = ["polars-core/fmt"]
 lazy = []
 parquet = ["polars-parquet", "polars-parquet/compression", "polars-core/partition_by"]
+# Parquet encryption with keys managed by a KMS, using a KMS client implemented in Python
+parquet_kms = ["parquet", "python", "dep:parquet-key-management"]
 async = [
   "async-trait",
   "futures",

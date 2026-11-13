@@ -1,5 +1,8 @@
 //! Configuration for reading and writing files encrypted with Parquet modular encryption.
 
+#[cfg(feature = "parquet_kms")]
+pub mod kms;
+
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::sync::Arc;
