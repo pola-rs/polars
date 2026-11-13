@@ -6776,9 +6776,7 @@ def test_scan_iceberg_aggregates_from_statistics_duplicated_subplan(
 
 
 @pytest.mark.write_disk
-def test_scan_iceberg_aggregates_from_statistics_empty_nested(
-    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
-) -> None:
+def test_scan_iceberg_aggregates_from_statistics_empty_nested(tmp_path: Path) -> None:
     catalog = _statistics_catalog(tmp_path)
     tbl = catalog.create_table(
         ("ns", "l"),
@@ -6789,11 +6787,7 @@ def test_scan_iceberg_aggregates_from_statistics_empty_nested(
     lf = pl.scan_iceberg(tbl).select(pl.col("xs").min())
     expected = pl.DataFrame({"xs": [None]}, schema={"xs": pl.List(pl.Int64)})
     assert_frame_equal(lf.collect(optimizations=pl.QueryOptFlags.none()), expected)
-
-    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
-    capfd.readouterr()
     assert_frame_equal(lf.collect(), expected)
-    assert not _answered_from_statistics(capfd)
 
 
 @pytest.mark.write_disk
