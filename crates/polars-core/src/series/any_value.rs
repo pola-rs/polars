@@ -1204,6 +1204,7 @@ fn union_variant_of_kind(dtype: &DataType, fields: &[Field], av: &AnyValue) -> P
 
 /// Whether a variant of dtype `variant` takes values of dtype `value`; a nested union takes them
 /// if exactly one of its variants does.
+#[cfg(feature = "dtype-union")]
 fn takes_kind_of(variant: &DataType, value: &DataType) -> bool {
     use DataType as D;
     match (variant, value) {
