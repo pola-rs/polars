@@ -250,9 +250,41 @@ jobs:
             fi
           done
 
+      # A moved tag releases the same version again: with `skip-existing` alone that went
+      # green while PyPI kept the old files. The version may be on PyPI only as files of
+      # these very builds (a rerun after some were uploaded): each file PyPI lists must
+      # match one of `dist/` by SHA-256, or the release fails. After a partial upload, use
+      # "Re-run failed jobs": "Re-run all jobs" rebuilds `dist/`, which won't match.
+      - name: Check the version is not on PyPI with other files
+        if: inputs.dry-run == false
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          status=$(curl -s -o pypi.json -w '%{http_code}' "https://pypi.org/pypi/polars-database/$VERSION/json")
+          case "$status" in
+            404) echo "polars-database $VERSION is not on PyPI yet" ;;
+            200)
+              python3 - <<'PY'
+          import hashlib, json, pathlib, sys
+          listed = {u["filename"]: u["digests"]["sha256"] for u in json.load(open("pypi.json"))["urls"]}
+          local = {f.name: hashlib.sha256(f.read_bytes()).hexdigest() for f in pathlib.Path("dist").iterdir()}
+          bad = sorted(n for n, d in listed.items() if local.get(n) != d)
+          if bad:
+              print(f"::error::polars-database is already on PyPI with files that differ from this build: {bad}. Bump the version in Cargo.toml and pyproject.toml, and release a new tag")
+              sys.exit(1)
+          print(f"PyPI holds {len(listed)} file(s) of this build already")
+          PY
+              ;;
+            *)
+              echo "::error::PyPI answered HTTP $status for polars-database $VERSION"
+              exit 1
+              ;;
+          esac
+
       - name: Publish to PyPI
         if: inputs.dry-run == false
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
+          # the check above made sure what exists is this build's
           skip-existing: true
           verbose: true

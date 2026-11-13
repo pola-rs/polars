@@ -589,6 +589,53 @@ def test_params_are_taken_when_the_scan_is_built(uri: str) -> None:
         )
 
 
+def test_driver_options_are_copied_when_the_scan_is_built(
+    uri: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # a list or dict inside the options, changed after the call, changed later collects
+    import polars_database
+
+    seen: list[Any] = []
+    real = polars_database.scan_resolver
+
+    def spy(**kwargs: Any) -> Any:
+        seen.append(kwargs["python_options"])
+        return real(**kwargs)
+
+    monkeypatch.setattr(polars_database, "scan_resolver", spy)
+    connect: dict[str, Any] = {"nested": {"a": [1]}}
+    execute: dict[str, Any] = {"nested": [{"b": 1}]}
+    pl.scan_database(
+        "t",
+        uri,
+        driver="sqlite3",
+        connect_options=connect,
+        execute_options=execute,
+    )
+    connect["nested"]["a"].append(2)
+    execute["nested"][0]["b"] = 2
+    assert seen == [({"nested": {"a": [1]}}, {"nested": [{"b": 1}]})]
+
+
+class _Row(list):  # type: ignore[type-arg]
+    """A list whose constructor takes something else."""
+
+    def __init__(self, a: int, b: int) -> None:
+        super().__init__([a, b])
+
+
+def test_params_with_container_subclasses_are_left_as_they_are(uri: str) -> None:
+    row = _Row(1, 2)
+    lf = pl.scan_database(
+        "SELECT id FROM t WHERE id IN (?, ?)", uri, params=row, driver="sqlite3"
+    )
+    assert sorted(lf.collect()["id"].to_list()) == [1, 2]
+    lf = pl.scan_database(
+        "SELECT id FROM t WHERE id = ?", uri, params=[_Row(1, 2)[0]], driver="sqlite3"
+    )
+    assert lf.collect()["id"].to_list() == [1]
+
+
 def test_params_keep_percent_literals_in_polars(uri: str) -> None:
     lf = pl.scan_database(
         "SELECT id, s FROM t WHERE id < ?", uri, params=[50], driver="sqlite3"

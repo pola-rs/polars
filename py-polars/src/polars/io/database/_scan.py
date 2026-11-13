@@ -220,11 +220,19 @@ def _materialize(name: str, value: Any) -> Any:
 
 
 def _copy_containers(value: Any) -> Any:
-    """`value` with its lists, tuples and mappings copied, their values as they are."""
-    if isinstance(value, Mapping):
+    """
+    `value` with its plain dicts, lists, tuples and sets copied, their values kept.
+
+    Anything else (a subclass, a custom mapping) is left as it is: it may not be
+    rebuilt from its items.
+    """
+    cls = type(value)
+    if cls is dict:
         return {k: _copy_containers(v) for k, v in value.items()}
-    if isinstance(value, list) or type(value) is tuple:
-        return type(value)(_copy_containers(v) for v in value)
+    if cls is list or cls is tuple:
+        return cls(_copy_containers(v) for v in value)
+    if cls is set:
+        return set(value)
     return value
 
 
@@ -522,6 +530,9 @@ def scan_database(
             execute_options = {k: v for k, v in execute_options.items() if k != key}
     if params is not None:
         # the values when the scan is built, also those the plugin keys by identity
+        # (a mapping of any kind is a plain dict for the driver)
+        if isinstance(params, Mapping):
+            params = dict(params)
         params = _copy_containers(params)
     _positive_int("partition_num", partition_num, _MAX_PARTITION_NUM)
     _positive_int("max_connections", max_connections)
@@ -637,7 +648,11 @@ def scan_database(
         connect_options=_string_options(connect_options),
         execute_options=_string_options(execute_options),
         # Python drivers take the values as given (ints, bools, dicts)
-        python_options=(dict(connect_options or {}), dict(execute_options or {})),
+        # (nested containers copied now, as `params` are)
+        python_options=(
+            _copy_containers(dict(connect_options or {})),
+            _copy_containers(dict(execute_options or {})),
+        ),
         credential_provider=credential_provider,
         params=params,
         # schemas and values cross as Arrow C streams

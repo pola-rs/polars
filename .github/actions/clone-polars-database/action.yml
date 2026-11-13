@@ -7,7 +7,7 @@ inputs:
   ref:
     description: Commit SHA, tag or branch of polars-database to clone
     # Pinned polars-database revision that CI tests against. Bump this to pick up polars-database changes.
-    default: 754c0a7be25f34126c6ce0022218524498e7bce2
+    default: c03129466549c1aee714d2f8bf6ec1bd3bc3c7a2
 
 runs:
   using: composite

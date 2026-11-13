@@ -227,7 +227,7 @@ jobs:
         run: >
           pytest tests
           -n auto
-          --cov=polars --cov-branch --cov-report xml:../../py-polars/database.xml --cov-fail-under=0
+          --cov=polars --cov=polars_database --cov-branch --cov-report xml:../../py-polars/database.xml --cov-fail-under=0
 
       - name: Report Rust coverage
         run: cargo llvm-cov report --lcov --output-path coverage-python.lcov
