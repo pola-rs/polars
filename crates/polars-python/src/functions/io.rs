@@ -3,6 +3,7 @@ use std::io::BufReader;
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 use polars::prelude::ArrowSchema;
 use polars::prelude::CloudScheme;
+use polars_io::cloud::CloudType;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
@@ -27,6 +28,16 @@ pub fn read_ipc_schema(py: Python<'_>, py_f: Py<PyAny>) -> PyResult<Bound<'_, Py
     Ok(dict)
 }
 
+/// Whether `path` has a URI scheme that Polars writes to, e.g. `s3://` or `file://`.
+///
+/// False for a path without a scheme, and for a scheme that Polars doesn't know.
+/// Polars takes an unknown scheme as part of a local path, e.g. `memory:///t`.
+#[pyfunction]
+pub fn _has_writable_scheme(path: &str) -> bool {
+    CloudScheme::from_path(path)
+        .is_some_and(|scheme| CloudType::from_cloud_scheme(scheme).is_writable())
+}
+
 #[cfg(feature = "parquet")]
 #[pyfunction]
 pub fn read_parquet_metadata(
@@ -37,7 +48,6 @@ pub fn read_parquet_metadata(
 ) -> PyResult<Py<PyDict>> {
     use std::io::Cursor;
 
-    use polars_error::feature_gated;
     use polars_parquet::read::read_metadata;
     use polars_parquet::read::schema::read_custom_key_value_metadata;
 
@@ -54,7 +64,12 @@ pub fn read_parquet_metadata(
             )?;
 
             if p.has_scheme() {
-                feature_gated!("cloud", {
+                #[cfg(not(feature = "cloud"))]
+                return Err(pyo3::exceptions::PyNotImplementedError::new_err(
+                    "cloud support is not enabled",
+                ));
+                #[cfg(feature = "cloud")]
+                {
                     use polars::prelude::ParquetObjectStore;
                     use polars_error::PolarsResult;
 
@@ -67,8 +82,8 @@ pub fn read_parquet_metadata(
                             PolarsResult::Ok((**result).clone())
                         })
                     })
-                })
-                .map_err(PyPolarsErr::from)?
+                    .map_err(PyPolarsErr::from)?
+                }
             } else {
                 let file =
                     polars_utils::io::open_file(p.as_std_path()).map_err(PyPolarsErr::from)?;

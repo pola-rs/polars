@@ -1,10 +1,13 @@
 use num_traits::AsPrimitive;
 use polars_compute::rolling::QuantileMethod;
+use polars_compute::selection::{
+    MaskedSlice, SELECT_MIN_PAR_LEN, select_many_by, select_many_seq_by,
+};
 #[cfg(feature = "dtype-f16")]
 use polars_utils::float16::pf16;
-use polars_utils::selection::select_many_unstable_by;
 
 use super::*;
+use crate::runtime::RAYON;
 
 pub trait QuantileAggSeries {
     /// Get the median of the [`ChunkedArray`] as a new [`Series`] of length 1.
@@ -162,14 +165,15 @@ fn quantiles_with<T: ToPrimitive + Copy + Default>(
         .collect()
 }
 
-/// The `quantile` of `vals`, non-null values in any order, which it reorders.
+/// The `quantile` of `vals`, non-null values in any order, which it reorders on the calling
+/// thread, since group-by already runs its groups in parallel.
 pub(crate) fn quantile_of_nonnull<T: ToPrimitive + TotalOrd + Copy + Default>(
     vals: &mut [T],
     quantile: f64,
     method: QuantileMethod,
 ) -> Option<f64> {
     quantile_with(vals.len(), quantile, method, |ranks, out| {
-        select_many_unstable_by(vals, ranks, out, TotalOrd::tot_cmp)
+        select_many_seq_by(vals, ranks, out, TotalOrd::tot_cmp)
     })
 }
 
@@ -227,12 +231,41 @@ pub fn order_statistics<T: PolarsNumericType>(
     if ranks.is_empty() {
         return;
     }
+    let n_valid = ca.len() - ca.null_count();
     match ca.is_sorted_flag() {
+        // Entering the pool costs a thread wake-up, more than a small selection. On one thread,
+        // copying and selecting sequentially beats classifying every value against a sampled
+        // bracket.
+        IsSorted::Not if n_valid < SELECT_MIN_PAR_LEN || RAYON.current_num_threads() == 1 => {
+            select_many_seq_by(&mut ca.to_vec_non_null(), ranks, out, TotalOrd::tot_cmp)
+        },
         IsSorted::Not => {
-            select_many_unstable_by(&mut ca.to_vec_non_null(), ranks, out, TotalOrd::tot_cmp)
+            let chunks: Vec<MaskedSlice<'_, T::Native>> = ca
+                .downcast_iter()
+                .map(|arr| MaskedSlice {
+                    values: arr.values(),
+                    validity: arr.validity().filter(|v| v.unset_bits() > 0).map(|v| {
+                        let (bytes, offset, _) = v.as_slice();
+                        (bytes, offset)
+                    }),
+                })
+                .collect();
+            RAYON.install(|| select_many_by(&chunks, n_valid, ranks, out))
         },
         sorted => sorted_order_stats(ca, sorted == IsSorted::Descending, ranks, out),
     }
+}
+
+/// The values at the strictly ascending `ranks` of the sorted non-null physical values of the
+/// numeric `s`, as a [`Series`] of them.
+pub fn order_statistics_physical(s: &Series, ranks: &[usize]) -> Series {
+    let phys = s.to_physical_repr();
+    with_match_physical_numeric_polars_type!(phys.dtype(), |$T| {
+        let ca: &ChunkedArray<$T> = phys.as_ref().as_ref().as_ref();
+        let mut out = vec![Default::default(); ranks.len()];
+        order_statistics(ca, ranks, &mut out);
+        ChunkedArray::<$T>::from_vec(s.name().clone(), out).into_series()
+    })
 }
 
 /// The `quantile` of `ca`, after validating it.

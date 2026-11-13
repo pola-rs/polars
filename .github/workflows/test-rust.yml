@@ -7,7 +7,6 @@ on:
       - examples/**
       - Cargo.toml
       - .github/workflows/test-rust.yml
-      - .github/actions/clone-polars-database/**
   push:
     branches:
       - main
@@ -17,7 +16,6 @@ on:
       - examples/**
       - Cargo.toml
       - .github/workflows/test-rust.yml
-      - .github/actions/clone-polars-database/**
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -41,9 +39,6 @@ jobs:
       - name: Clone polars-iceberg
         uses: ./.github/actions/clone-polars-iceberg
 
-      - name: Clone polars-database
-        uses: ./.github/actions/clone-polars-database
-
       - name: Free some disk space (remove unused packages)
         uses: jlumbroso/free-disk-space@v1.3.1
         if: ${{ runner.os == 'Linux' }}
@@ -63,6 +58,7 @@ jobs:
         run: >
           cargo test --lib --tests --bins --all-features --no-run
           -p polars-arrow
+          -p polars-cli
           -p polars-compute
           -p polars-core
           -p polars-defs
@@ -83,6 +79,7 @@ jobs:
         run: >
           cargo test --lib --tests --bins --all-features
           -p polars-arrow
+          -p polars-cli
           -p polars-compute
           -p polars-core
           -p polars-defs

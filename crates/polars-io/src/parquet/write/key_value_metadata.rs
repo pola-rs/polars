@@ -99,6 +99,16 @@ impl KeyValueMetadata {
             Self::DynamicPython(py_func) => py_func.call(ctx),
         }
     }
+
+    /// Whether the metadata may set `key`; dynamic metadata is only known when the file is finished.
+    pub fn may_contain(&self, key: &str) -> bool {
+        match self {
+            Self::Static(kv) => kv.iter().any(|kv| kv.key == key),
+            Self::DynamicRust(_) => true,
+            #[cfg(feature = "python")]
+            Self::DynamicPython(_) => true,
+        }
+    }
 }
 
 #[derive(Clone)]

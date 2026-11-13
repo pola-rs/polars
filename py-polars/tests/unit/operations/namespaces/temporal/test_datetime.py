@@ -432,6 +432,26 @@ def test_duration_extract_times(
     assert_series_equal(getattr(duration.dt, unit_attr)(), expected)
 
 
+def test_duration_extract_times_overflow_16057() -> None:
+    s_us = pl.Series(
+        [timedelta(days=106752), timedelta(days=1), timedelta(days=-106752)],
+        dtype=pl.Duration("us"),
+    )
+    assert_series_equal(
+        s_us.dt.total_nanoseconds(),
+        pl.Series([None, 86400 * 10**9, None], dtype=pl.Int64),
+    )
+
+    s_ms = pl.Series([2**62, 1, -(2**62)], dtype=pl.Int64).cast(pl.Duration("ms"))
+    assert_series_equal(
+        s_ms.dt.total_microseconds(), pl.Series([None, 1000, None], dtype=pl.Int64)
+    )
+    assert_series_equal(
+        s_ms.dt.total_nanoseconds(),
+        pl.Series([None, 1_000_000, None], dtype=pl.Int64),
+    )
+
+
 @pytest.mark.parametrize(
     ("time_unit", "every"),
     [
@@ -1414,41 +1434,6 @@ def test_agg_median_expr() -> None:
     )
 
     assert_frame_equal(df.select(pl.all().median()), expected)
-
-
-@given(
-    s=series(min_size=1, max_size=10, dtype=pl.Duration),
-)
-@pytest.mark.skip(
-    "These functions are currently bugged for large values: "
-    "https://github.com/pola-rs/polars/issues/16057"
-)
-def test_series_duration_timeunits(
-    s: pl.Series,
-) -> None:
-    nanos = s.dt.total_nanoseconds().to_list()
-    micros = s.dt.total_microseconds().to_list()
-    millis = s.dt.total_milliseconds().to_list()
-
-    scale = {
-        "ns": 1,
-        "us": 1_000,
-        "ms": 1_000_000,
-    }
-    assert nanos == [v * scale[s.dtype.time_unit] for v in s.to_physical()]  # type: ignore[attr-defined]
-    assert micros == [int(v / 1_000) for v in nanos]
-    assert millis == [int(v / 1_000) for v in micros]
-
-    # special handling for ns timeunit (as we may generate a microsecs-based
-    # timedelta that results in 64bit overflow on conversion to nanosecs)
-    lower_bound, upper_bound = -(2**63), (2**63) - 1
-    if all(
-        (lower_bound <= (us * 1000) <= upper_bound)
-        for us in micros
-        if isinstance(us, int)
-    ):
-        for ns, us in zip(s.dt.total_nanoseconds(), micros, strict=True):
-            assert ns == (us * 1000)
 
 
 @given(

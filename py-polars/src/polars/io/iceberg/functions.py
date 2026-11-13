@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Literal
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.wrap import wrap_ldf
 from polars.io.cloud._utils import NoPickleOption
+from polars.io.iceberg._catalog_resolver import check_catalog_name
 from polars.io.iceberg._dataset import (
     IcebergCatalogConfig,
     IcebergCatalogTableDescriptor,
@@ -23,6 +24,7 @@ if TYPE_CHECKING:
     import polars.io.iceberg
     from polars._typing import StorageOptionsDict
     from polars.expr.expr import Expr
+    from polars.io.iceberg._time_travel import TableVersion
     from polars.lazyframe.frame import LazyFrame
 
 
@@ -35,6 +37,7 @@ def scan_iceberg(
     storage_options: StorageOptionsDict | None = None,
     catalog: pyiceberg.catalog.Catalog
     | polars.io.iceberg.IcebergCatalogConfig
+    | str
     | None = None,
     reader_override: Literal["native", "pyiceberg"] | None = None,
     use_metadata_statistics: bool = True,
@@ -69,6 +72,14 @@ def scan_iceberg(
     catalog
         PyIceberg catalog to load the table from if the provided `target`
         was a table name.
+
+        This can also be a catalog name, which is kept in the query plan and
+        resolved with `pyiceberg.catalog.load_catalog(name)` when the table is
+        loaded, in the process where the query runs.
+
+        .. warning::
+            Passing a catalog name is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
     reader_override
         Overrides the reader used to read the data.
 
@@ -230,6 +241,12 @@ def scan_iceberg(
         if isinstance(source, pyiceberg.table.Table):
             table = source
 
+    if isinstance(catalog, str) and (
+        table is not None or "/" in str(source) or "\\" in str(source)
+    ):
+        msg = "a catalog name requires a table identifier as `source`"
+        raise TypeError(msg)
+
     table_descriptor_: str | IcebergCatalogTableDescriptor | None = None
 
     if table is None:
@@ -237,6 +254,15 @@ def scan_iceberg(
 
         if "/" in source or "\\" in source:
             table_descriptor_ = source  # Inferred as static metadata path
+        elif isinstance(catalog, str):
+            issue_unstable_warning(
+                "passing a catalog name to `scan_iceberg` is considered unstable."
+            )
+            # Resolved where the table is loaded, which may be another process.
+            table_descriptor_ = IcebergCatalogTableDescriptor(
+                table_identifier=source,
+                catalog_config=check_catalog_name(catalog),
+            )
         else:
             catalog_config, catalog_instance = (
                 IcebergCatalogConfig._from_api_parameter_or_environment_default(
@@ -336,29 +362,40 @@ def delete_iceberg(
     table.delete(predicate_to_pyiceberg_delete_filter(predicate, table))
 
 
-def _scan_catalog_table(
+def _catalog_table_wrap(
     identifier: tuple[str, ...],
-    catalog_config: IcebergCatalogConfig,
+    catalog: IcebergCatalogConfig | str,
     catalog_instance: pyiceberg.catalog.Catalog | None,
     *,
     storage_options: StorageOptionsDict | None,
     display_name: str,
+) -> IcebergTableWrap:
+    """
+    The not yet loaded catalog table, for SQL catalogs; scans may share it.
+
+    `catalog` is the catalog's config, or the name to resolve it by.
+    """
+    return IcebergTableWrap(
+        table_=NoPickleOption(None),
+        table_descriptor_=IcebergCatalogTableDescriptor(
+            table_identifier=identifier,
+            catalog_config=catalog,
+            catalog_=NoPickleOption(_reusable_catalog(catalog_instance)),
+            display_name=display_name,
+        ),
+        serializer=IcebergScanTableSerializer(),
+        iceberg_storage_properties=storage_options,
+    )
+
+
+def _scan_catalog_table(
+    table: IcebergTableWrap, version: TableVersion | None = None
 ) -> LazyFrame:
-    """Lazily scan a catalog table by its identifier parts, for SQL catalogs."""
+    """Lazily scan a catalog table, as of `version` (resolved where the table loads)."""
     from polars._plr import PyLazyFrame
 
     dataset = IcebergScanResolver(
-        table=IcebergTableWrap(
-            table_=NoPickleOption(None),
-            table_descriptor_=IcebergCatalogTableDescriptor(
-                table_identifier=identifier,
-                catalog_config=catalog_config,
-                catalog_=NoPickleOption(_reusable_catalog(catalog_instance)),
-                display_name=display_name,
-            ),
-            serializer=IcebergScanTableSerializer(),
-            iceberg_storage_properties=storage_options,
-        ),
+        table=table,
         snapshot_id=None,
         from_snapshot_id_exclusive=None,
         to_snapshot_id_inclusive=None,
@@ -366,5 +403,6 @@ def _scan_catalog_table(
         use_metadata_statistics=True,
         fast_deletion_count=False,
         use_pyiceberg_filter=True,
+        version=version,
     )
     return wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset))

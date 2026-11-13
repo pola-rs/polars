@@ -1892,7 +1892,7 @@ impl Column {
             Column::Scalar(s) => {
                 // @NOTE: We do this for the error handling.
                 s.as_single_value_series().approx_n_unique()?;
-                Ok(1)
+                Ok(if s.is_empty() { 0 } else { 1 })
             },
         }
     }

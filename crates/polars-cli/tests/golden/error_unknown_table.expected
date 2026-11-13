@@ -1,0 +1,4 @@
+exit: 1
+--- stdout ---
+--- stderr ---
+SQLInterfaceError: relation 'missing' was not found

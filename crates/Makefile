@@ -54,6 +54,7 @@ miri:  ## Run miri
 .PHONY: test
 test:  ## Run tests
 	cargo test --all-features \
+		-p polars-cli \
 		-p polars-compute \
 		-p polars-core \
 		-p polars-defs \
@@ -72,6 +73,7 @@ test:  ## Run tests
 .PHONY: nextest
 nextest:  ## Run tests with nextest
 	cargo nextest run --all-features \
+		-p polars-cli \
 		-p polars-compute \
 		-p polars-core \
 		-p polars-defs \
@@ -124,21 +126,9 @@ build-polars-iceberg:  ## Compile and install the `polars_iceberg` I/O plugin (c
 	fi
 
 .PHONY: build-polars-database
-build-polars-database:  ## Compile and install the `polars_database` I/O plugin (crates/polars-database) into the venv
-	@if [ ! -f polars-database/Cargo.toml ]; then \
-		echo "Skipping polars_database: crates/polars-database not found. Clone it with e.g." >&2; \
-		echo "  git clone -b dev https://github.com/pola-rs/polars-database crates/polars-database" >&2; \
-		echo "or, for a local clone, add a worktree of it:" >&2; \
-		echo "  git -C /path/to/polars-database worktree add $(CURDIR)/polars-database dev" >&2; \
-	elif [ -L polars-database ]; then \
-		echo "crates/polars-database must not be a symlink (maturin resolves it to outside the workspace)." >&2; \
-		echo "Replace it with a worktree of your local clone:" >&2; \
-		echo "  rm $(CURDIR)/polars-database && git -C /path/to/polars-database worktree add $(CURDIR)/polars-database dev" >&2; \
-		exit 1; \
-	else \
-		unset CONDA_PREFIX \
-		&& $(VENV_BIN)/maturin develop -m polars-database/Cargo.toml --release $(ARGS) --uv; \
-	fi
+build-polars-database:  ## Compile and install the `polars_database` I/O plugin (py-polars/polars-database) into the venv
+	@unset CONDA_PREFIX \
+	&& $(VENV_BIN)/maturin develop -m ../py-polars/polars-database/Cargo.toml $(ARGS) --uv
 
 .PHONY: doctest
 doctest:  ## Check that documentation builds

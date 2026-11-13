@@ -1,0 +1,66 @@
+[package]
+name = "polars-database"
+# Released independently of Polars; compatibility is decided by the plugin IDs it exports (see
+# `polars-io-ext-ffi`), not by this version.
+version = "0.1.0"
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+publish = false
+repository = "https://github.com/pola-rs/polars"
+description = "Native database scan plugin for Polars (`scan_database`)."
+
+# The Rust side of the PyPI package `polars-database`. The Python extension module (feature
+# `python`) is built into a cdylib by `py-polars/polars-database`, the maturin project.
+
+[lib]
+name = "polars_database"
+crate-type = ["rlib"]
+
+[dependencies]
+bitflags = { workspace = true }
+chrono = { workspace = true }
+# A private copy of Polars, statically linked: only Arrow C data, the contract structs and JSON
+# documents cross the plugin boundary, so this does not couple the plugin to the host's Polars
+# version.
+polars-arrow = { workspace = true }
+polars-core = { workspace = true, features = [
+  "serde",
+  "dtype-array",
+  "dtype-date",
+  "dtype-datetime",
+  "dtype-time",
+  "dtype-duration",
+  "dtype-decimal",
+  "dtype-extension",
+  "dtype-categorical",
+  "timezones",
+  "dtype-struct",
+  "dtype-i8",
+  "dtype-i16",
+  "dtype-i128",
+  "dtype-u8",
+  "dtype-u16",
+  "dtype-u128",
+  "dtype-f16",
+  "dtype-map",
+] }
+polars-config = { workspace = true }
+polars-error = { workspace = true }
+polars-io-ext-ffi = { workspace = true, features = ["lazyframe_resolver"] }
+polars-utils = { workspace = true, features = ["serde"] }
+pyo3 = { workspace = true, optional = true, features = ["abi3-py310", "extension-module"] }
+serde = { workspace = true, features = ["derive", "rc"] }
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+strum = { workspace = true }
+strum_macros = { workspace = true }
+
+[features]
+default = []
+# Python extension module `polars_database._lib`: the plugin contracts as PyCapsules, the
+# `scan_database` entry point, and the Python driver backends.
+python = ["dep:pyo3", "polars-utils/python", "polars-error/python"]
+
+[lints]
+workspace = true

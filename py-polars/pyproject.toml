@@ -49,7 +49,7 @@ rtcompat = ["polars-runtime-compat == 2.1.0"]
 
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
 polars_cloud = ["polars_cloud >= 0.13.0"]
-polars_nanook = ["polars_nanook"]
+polars_nanook = ["polars_nanook >= 0.13.0"]
 # Interop
 numpy = ["numpy >= 1.16.0"]
 pandas = ["pandas", "polars[pyarrow]"]
@@ -140,7 +140,7 @@ matches = "src/polars/**"
 bad-return = false
 
 [tool.mypy]
-files = ["src/polars", "tests"]
+files = ["src/polars", "tests", "polars-database/polars_database"]
 num_workers = 4
 strict = true
 enable_error_code = [
@@ -277,6 +277,19 @@ allowed-confusables = ["µ"]
 "_dependencies.py" = ["ICN001"]
 "config.py" = ["FBT001"]
 "tests/**/*.py" = ["ARG", "D100", "D102", "D103", "B018", "F841", "FBT001"]
+# The `polars-database` plugin's Python sources. Docstrings there start with a multi-line
+# summary (D205); unused arguments and positional booleans are callback signatures (ARG, FBT001);
+# `os.path` is monkeypatched by the tests (PTH100, PTH113); `raise` in a helper's `try` is
+# deliberate (TRY301).
+"polars-database/polars_database/*.py" = [
+  "ARG001",
+  "ARG002",
+  "D205",
+  "FBT001",
+  "PTH100",
+  "PTH113",
+  "TRY301",
+]
 
 [tool.ruff.lint.pycodestyle]
 max-doc-length = 88

@@ -1,30 +1,25 @@
 name: Release polars-database
 
-# Releases the `polars-database` I/O plugin (https://github.com/pola-rs/polars-database) to
+# Releases the `polars-database` I/O plugin (`py-polars/polars-database` in this repository) to
 # PyPI.
 #
-# The version is the `package.version` in Cargo.toml of polars-database at the given tag, which must
-# be `py-<version>`. Its pyproject.toml sets the version too: the wheels take theirs from there, so
-# both must agree. The tag is cloned to
-# `crates/polars-database` (a workspace member) of this Polars checkout. The plugin is an abi3
-# wheel, so one wheel per target covers every supported Python version.
+# The version is the `version` of the wrapper crate `py-polars/polars-database/Cargo.toml`, which
+# must be the one in its `pyproject.toml` (the wheels take theirs from there) and in
+# `crates/polars-database/Cargo.toml` (the module's `__version__`), and the tag must be
+# `polars-database-<version>`. The plugin is an abi3 wheel, so one wheel per target covers every
+# supported Python version.
 #
-# The `version` job resolves the tag and the Polars ref to commits once; the other jobs build those
-# commits, so a tag or branch that moves during the run can't mix two revisions in one release.
+# The `version` job resolves the tag to a commit once; the other jobs build that commit, so a tag
+# that moves during the run can't mix two revisions in one release.
 
 on:
   workflow_dispatch:
     inputs:
-      # Tag `py-<version>` of polars-database to release. Its Cargo.toml gives the version.
+      # Tag `polars-database-<version>` of this repository to release.
       tag:
-        description: polars-database tag
+        description: Tag polars-database-<version>
         type: string
         required: true
-      # Polars commit providing the workspace (and `polars-io-ext-ffi`). If omitted, use the latest
-      # commit on the main branch.
-      sha:
-        description: Polars commit SHA
-        type: string
       # Create the sdist and build the wheels, but do not publish to PyPI.
       dry-run:
         description: Dry run
@@ -39,7 +34,7 @@ concurrency:
 env:
   PYTHON_VERSION: '3.10'
   PYTHON_VERSION_WIN_ARM64: '3.11' # ARM64 Windows doesn't have older versions
-  MANIFEST_PATH: crates/polars-database/Cargo.toml
+  MANIFEST_PATH: py-polars/polars-database/Cargo.toml
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
   RUSTUP_MAX_RETRIES: 10
@@ -53,55 +48,53 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
-      # The commits every job builds: of polars-database (the tag) and of Polars.
-      commit: ${{ steps.commits.outputs.commit }}
+      # The commit every job builds: the tag's.
       sha: ${{ steps.commits.outputs.sha }}
     steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.sha }}
-
-      # `git clone -b` also accepts a branch, so make sure the release is built from a tag.
-      - name: Check polars-database tag exists
+      # A branch name would be accepted as a ref too, so make sure the release is built from a tag.
+      - name: Check the tag exists
         env:
           TAG: ${{ inputs.tag }}
         run: |
-          if ! git ls-remote --exit-code --tags https://github.com/pola-rs/polars-database "refs/tags/$TAG"; then
-            echo "::error::polars-database has no tag $TAG"
+          if ! git ls-remote --exit-code --tags "https://github.com/${{ github.repository }}" "refs/tags/$TAG"; then
+            echo "::error::${{ github.repository }} has no tag $TAG"
             exit 1
           fi
 
-      - name: Clone polars-database
-        uses: ./.github/actions/clone-polars-database
+      - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.tag }}
+          ref: refs/tags/${{ inputs.tag }}
 
       - name: Read polars-database version
         id: version
         env:
           TAG: ${{ inputs.tag }}
         run: |
-          VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("crates/polars-database/Cargo.toml", "rb"))["package"]["version"])')
+          VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("py-polars/polars-database/Cargo.toml", "rb"))["package"]["version"])')
           echo "polars-database version: $VERSION"
           # A static pyproject version is what maturin builds the wheels with.
-          PY_VERSION=$(python3 -c 'import tomllib; p = tomllib.load(open("crates/polars-database/pyproject.toml", "rb"))["project"]; print("" if "version" in p.get("dynamic", []) else p.get("version", ""))')
-          if [[ -n "$PY_VERSION" && "$PY_VERSION" != "$VERSION" ]]; then
-            echo "::error::polars-database pyproject.toml version $PY_VERSION does not match Cargo.toml version $VERSION"
+          PY_VERSION=$(python3 -c 'import tomllib; p = tomllib.load(open("py-polars/polars-database/pyproject.toml", "rb"))["project"]; print("" if "version" in p.get("dynamic", []) else p.get("version", ""))')
+          if [[ "$PY_VERSION" != "$VERSION" ]]; then
+            echo "::error::polars-database pyproject.toml version '$PY_VERSION' does not match Cargo.toml version $VERSION"
             exit 1
           fi
-          if [[ "$TAG" != "py-$VERSION" ]]; then
-            echo "::error::tag $TAG does not match polars-database version $VERSION (expected py-$VERSION)"
+          # The module's `__version__` comes from the plugin crate.
+          LIB_VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("crates/polars-database/Cargo.toml", "rb"))["package"]["version"])')
+          if [[ "$LIB_VERSION" != "$VERSION" ]]; then
+            echo "::error::crates/polars-database version $LIB_VERSION does not match $VERSION"
+            exit 1
+          fi
+          if [[ "$TAG" != "polars-database-$VERSION" ]]; then
+            echo "::error::tag $TAG does not match polars-database version $VERSION (expected polars-database-$VERSION)"
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Resolve commits
+      - name: Resolve commit
         id: commits
         run: |
-          COMMIT=$(git -C crates/polars-database rev-parse HEAD)
           SHA=$(git rev-parse HEAD)
-          echo "polars-database commit: $COMMIT, Polars commit: $SHA"
-          echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
+          echo "commit: $SHA"
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
   create-sdist:
@@ -111,11 +104,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.version.outputs.sha }}
-
-      - name: Clone polars-database
-        uses: ./.github/actions/clone-polars-database
-        with:
-          ref: ${{ needs.version.outputs.commit }}
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -180,15 +168,10 @@ jobs:
         with:
           ref: ${{ needs.version.outputs.sha }}
 
-      # After the checkout, which the local action needs, and before cloning, which needs git.
+      # After the checkout, which the local action needs.
       - name: Setup build environment (ARM64 Windows)
         if: matrix.os == 'windows-11-arm'
         uses: ./.github/actions/setup-windows-arm64
-
-      - name: Clone polars-database
-        uses: ./.github/actions/clone-polars-database
-        with:
-          ref: ${{ needs.version.outputs.commit }}
 
       # The wheel is abi3 for Python 3.10+ whichever Python builds it.
       - name: Set up Python

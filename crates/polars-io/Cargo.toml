@@ -52,7 +52,7 @@ serde = { workspace = true, features = ["rc"], optional = true }
 serde_json = { version = "1", optional = true }
 simd-json = { workspace = true, optional = true }
 simdutf8 = { workspace = true, optional = true }
-strum = { workspace = true }
+strum = { workspace = true, optional = true }
 strum_macros = { workspace = true }
 tokio = { workspace = true }
 zmij = { workspace = true, optional = true }
@@ -65,7 +65,7 @@ fs4 = { version = "1.1", features = ["sync"], optional = true }
 tempfile = "3"
 
 [features]
-catalog = ["cloud", "serde", "reqwest", "futures", "chrono"]
+catalog = ["cloud", "serde", "reqwest", "futures", "chrono", "strum"]
 default = ["decompress"]
 # support for arrows json parsing
 json = [
@@ -142,7 +142,6 @@ async = [
 cloud = [
   "object_store",
   "async",
-  "polars-error/object_store",
   "serde_json",
   "serde",
   "file_cache",

@@ -160,7 +160,7 @@ build-polars-iceberg: .venv  ## Compile and install the `polars_iceberg` I/O plu
 	@$(MAKE) -s -C crates $@ VENV=$(abspath $(VENV))
 
 .PHONY: build-polars-database
-build-polars-database: .venv  ## Compile and install the `polars_database` I/O plugin (crates/polars-database)
+build-polars-database: .venv  ## Compile and install the `polars_database` I/O plugin (py-polars/polars-database)
 	@$(MAKE) -s -C crates $@ VENV=$(abspath $(VENV))
 
 .PHONY: check

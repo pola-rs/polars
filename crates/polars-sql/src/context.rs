@@ -37,11 +37,11 @@ use sqlparser::ast::{
 };
 
 use crate::catalog::{
-    CatalogAlter, CatalogNamespace, CatalogRegistry, CatalogSpellings, CatalogStatement,
-    CatalogTable, MergeClausePlan, MergePlan, MergeSourcePlan, RewrittenName, alter_table_column,
-    alter_table_properties, create_schema_options, create_table_columns, create_table_options,
-    create_table_partitioning, display_name, hint_unsupported_part, name_parts, name_position,
-    rewrite_catalog_names,
+    CatalogAlter, CatalogNamespace, CatalogRead, CatalogRegistry, CatalogSpellings,
+    CatalogStatement, CatalogTable, MergeClausePlan, MergePlan, MergeSourcePlan, RewrittenName,
+    alter_table_column, alter_table_properties, create_schema_options, create_table_columns,
+    create_table_options, create_table_partitioning, display_name, hint_unsupported_part,
+    name_parts, name_position, rewrite_catalog_names,
 };
 use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
@@ -74,6 +74,7 @@ use crate::subquery::{
 };
 use crate::subquery_pull_up::NESTED_PREFIX;
 use crate::table_functions::PolarsTableFunctions;
+use crate::time_travel::{split_version, unversioned_key, with_version};
 use crate::types::map_sql_dtype_to_polars;
 use crate::{col, unique_column_name};
 
@@ -503,20 +504,25 @@ impl SQLContext {
         self.catalogs.unregister(name)
     }
 
-    /// The catalog tables that `query` reads, once each.
-    pub fn catalog_tables(&self, query: &str) -> PolarsResult<Vec<CatalogTable>> {
+    /// The catalog tables that `query` reads, once per table and version.
+    pub fn catalog_tables(&self, query: &str) -> PolarsResult<Vec<CatalogRead>> {
         let mut stmt = parse_single_statement(query)?;
-        let mut tables = Vec::new();
-        for (_, full_name) in self.rewrite_catalog_names(&mut stmt)?.0 {
-            let table = CatalogTable {
-                catalog: full_name[0].clone(),
-                identifier: full_name[1..].to_vec(),
+        let mut reads = Vec::new();
+        for (_, key) in self.rewrite_catalog_names(&mut stmt)?.0 {
+            let (full_name, version) = split_version(&key);
+            let read = CatalogRead {
+                table: CatalogTable {
+                    catalog: full_name[0].clone(),
+                    identifier: full_name[1..].to_vec(),
+                },
+                version,
+                key: key.clone(),
             };
-            if !tables.contains(&table) {
-                tables.push(table);
+            if !reads.contains(&read) {
+                reads.push(read);
             }
         }
-        Ok(tables)
+        Ok(reads)
     }
 
     /// The catalog statement of `query`, if any, for the caller to perform:
@@ -1251,7 +1257,12 @@ impl SQLContext {
             };
             rewrite_catalog_names(stmt, recorded, is_local)
         } else {
-            let resolve = |parts: &[String]| self.catalogs.resolve(parts).map(|t| t.full_name());
+            // a versioned key resolves as its name, keeping the version
+            let resolve = |key: &[String]| {
+                let (parts, version) = split_version(key);
+                let full = self.catalogs.resolve(parts)?.full_name();
+                Some(with_version(full, version.as_ref()))
+            };
             rewrite_catalog_names(stmt, resolve, is_local)
         }
     }
@@ -2546,6 +2557,7 @@ impl SQLContext {
     /// The catalog statement of a `DELETE`, if its table resolves to a catalog table.
     fn catalog_delete(&self, delete: &Delete) -> PolarsResult<Option<CatalogStatement>> {
         let (from, selection) = delete_parts(delete)?;
+        ensure_no_version(&from.relation, "DELETE")?;
         let TableFactor::Table { name, .. } = &from.relation else {
             return Ok(None);
         };
@@ -2564,6 +2576,7 @@ impl SQLContext {
     /// The catalog statement of an `UPDATE`, if its table resolves to a catalog table.
     fn catalog_update(&self, update: &Update) -> PolarsResult<Option<CatalogStatement>> {
         let (target, assignments, selection) = update_parts(update)?;
+        ensure_no_version(&target.relation, "UPDATE")?;
         let TableFactor::Table { name, .. } = &target.relation else {
             return Ok(None);
         };
@@ -2598,6 +2611,7 @@ impl SQLContext {
     /// The catalog statement of a `MERGE`, if its target resolves to a catalog table.
     fn catalog_merge(&self, merge: &Merge) -> PolarsResult<Option<CatalogStatement>> {
         let parts = merge_parts(merge)?;
+        ensure_no_version(parts.target, "MERGE")?;
         let TableFactor::Table { name, .. } = parts.target else {
             return Ok(None);
         };
@@ -3213,7 +3227,7 @@ impl SQLContext {
         polars_ensure!(json_path.is_none(), SQLInterface: "table JSON path access is not supported");
         polars_ensure!(partitions.is_empty(), SQLInterface: "table `PARTITION` selection is not supported");
         polars_ensure!(sample.is_none(), SQLInterface: "table `SAMPLE` clause is not supported");
-        polars_ensure!(version.is_none(), SQLInterface: "table version (time-travel) qualifiers are not supported");
+        polars_ensure!(version.is_none(), SQLInterface: "time travel (`VERSION AS OF`, `TIMESTAMP AS OF`) is only supported on tables of an attached catalog");
         polars_ensure!(with_hints.is_empty(), SQLInterface: "table `WITH (...)` hints are not supported");
 
         Ok(())
@@ -5464,10 +5478,10 @@ impl SQLContext {
             .filter_map(get_table_name)
             .collect();
         // Resolving is `&mut self`, so all relations must be resolved up-front rather than
-        // mid-probe while picking a join order below.
+        // mid-probe while picking a join order below. A derived table that fails to resolve
+        // may read the relations before it; it is joined as a LATERAL join after them.
         let mut pending = Vec::with_capacity(from.len() - 1);
-        for tbl_expr in from.iter().skip(1) {
-            let mut rf = self.execute_from_statement(tbl_expr)?;
+        for (index, tbl_expr) in from.iter().enumerate().skip(1) {
             let r_name = kept_factors(tbl_expr)
                 .into_iter()
                 .next()
@@ -5477,15 +5491,28 @@ impl SQLContext {
                 !r_name.is_empty(),
                 SQLInterface: "implicit joins require named tables; please provide an alias"
             );
-            let right_schema = self.get_frame_schema(&mut rf)?;
-            pending.push((tbl_expr, rf, r_name, right_schema));
+            let right = match self.execute_from_statement(tbl_expr) {
+                Ok(mut rf) => {
+                    let right_schema = self.get_frame_schema(&mut rf)?;
+                    Ok((rf, right_schema))
+                },
+                Err(err)
+                    if tbl_expr.joins.is_empty()
+                        && matches!(tbl_expr.relation, TableFactor::Derived { .. }) =>
+                {
+                    Err(err)
+                },
+                Err(err) => return Err(err),
+            };
+            pending.push((tbl_expr, right, r_name, index));
         }
 
         // Each round takes the first pending relation with a join predicate against the
         // tables joined so far; relations with no predicate yet are deferred. Genuinely
-        // disconnected relations fall through to a cross join, in source order.
+        // disconnected relations fall through to a cross join, in source order. A LATERAL
+        // join waits for the relations before it.
         while !pending.is_empty() {
-            let left_schema = self.get_frame_schema(lf)?;
+            let mut left_schema = self.get_frame_schema(lf)?;
             // Relations each pending entry brings into scope.
             let pending_relations: Vec<Vec<String>> = pending
                 .iter()
@@ -5504,9 +5531,15 @@ impl SQLContext {
                     .flat_map(|(_, names)| names.iter().cloned())
                     .collect()
             };
-            let next = (0..pending.len())
+            let resolved = pending
+                .iter()
+                .position(|(_, right, ..)| right.is_err())
+                .unwrap_or(pending.len());
+            let next = (0..resolved)
                 .find(|&i| {
-                    let (_, _, r_name, right_schema) = &pending[i];
+                    let (_, Ok((_, right_schema)), r_name, _) = &pending[i] else {
+                        unreachable!()
+                    };
                     extract_join_predicates(
                         &remaining_where,
                         &joined_table_names,
@@ -5521,7 +5554,38 @@ impl SQLContext {
                 })
                 .unwrap_or(0);
             let deferred = deferred_tables(next);
-            let (tbl_expr, rf, r_name, right_schema) = pending.remove(next);
+            let (tbl_expr, right, r_name, index) = pending.remove(next);
+            let mut lateral_keys = None;
+            let (rf, right_schema) = match right {
+                Ok(right) => right,
+                Err(err) => {
+                    // It only sees the relations before it, which are all joined.
+                    let scope = std::mem::replace(
+                        &mut self.active_relations,
+                        declared_relations(&from[..=index], &self.catalog_spellings),
+                    );
+                    let lateral = self.lateral_join(
+                        &tbl_expr.relation,
+                        &JoinOperator::CrossJoin(JoinConstraint::None),
+                        lf,
+                    );
+                    self.active_relations = scope;
+                    let Some(lateral) = lateral else {
+                        return Err(err);
+                    };
+                    *lf = lateral.left;
+                    left_schema = self.get_frame_schema(lf)?;
+                    let JoinOperator::Inner(JoinConstraint::On(key_condition)) =
+                        lateral.join_operator
+                    else {
+                        unreachable!()
+                    };
+                    lateral_keys = Some((lateral.keys, key_condition));
+                    let mut rf = lateral.right;
+                    let right_schema = self.get_frame_schema(&mut rf)?;
+                    (rf, right_schema)
+                },
+            };
             let (join_expr, residual) = extract_join_predicates(
                 &remaining_where,
                 &joined_table_names,
@@ -5531,6 +5595,15 @@ impl SQLContext {
                 &left_schema,
                 &right_schema,
             );
+            let join_expr = match (join_expr, &lateral_keys) {
+                (Some(join_expr), Some((_, key_condition))) => Some(SQLExpr::BinaryOp {
+                    left: Box::new(join_expr),
+                    op: SQLBinaryOperator::And,
+                    right: Box::new(key_condition.clone()),
+                }),
+                (None, Some((_, key_condition))) => Some(key_condition.clone()),
+                (join_expr, None) => join_expr,
+            };
 
             *lf = if let Some(on_expr) = join_expr {
                 self.process_join(
@@ -5559,6 +5632,12 @@ impl SQLContext {
                 lf.clone()
                     .cross_join(rf, Some(format_pl_smallstr!(":{}", r_name)))
             };
+            if let Some((keys, _)) = lateral_keys {
+                *lf = lf.clone().drop(Selector::ByName {
+                    names: keys.into(),
+                    strict: false,
+                });
+            }
             remaining_where = residual;
 
             let joined_schema = self.get_frame_schema(lf)?;
@@ -5777,13 +5856,14 @@ impl SQLContext {
                     polars_bail!(SQLInterface: "relation '{}' was not found{}", tbl_name, hint);
                 }
             },
+            // A LATERAL derived table that reads the relations before it fails here, and the
+            // join plans it (see `lateral_join`).
             TableFactor::Derived {
-                lateral,
+                lateral: _,
                 subquery,
                 alias,
                 sample,
             } => {
-                polars_ensure!(!(*lateral), SQLInterface: "`LATERAL` clause is not supported");
                 polars_ensure!(sample.is_none(), SQLInterface: "table `SAMPLE` clause is not supported");
 
                 // Execute the subquery in isolation so that outer join state
@@ -6912,6 +6992,7 @@ pub(crate) fn join_idents(idents: &[Ident]) -> String {
 /// Whether `qualifier` names `relation`: the whole name or a trailing run of its dot-separated
 /// parts (`lineitem` and `tpch.lineitem` both name `tpch.lineitem`), ignoring case.
 fn qualifier_names(relation: &str, qualifier: &str) -> bool {
+    let relation = unversioned_key(relation);
     let Some(start) = relation.len().checked_sub(qualifier.len()) else {
         return false;
     };
@@ -6975,7 +7056,8 @@ impl RelationName {
                 }
             })
         };
-        ends_with(&self.parts) || self.written.as_deref().is_some_and(ends_with)
+        // a versioned table is qualified by its name alone
+        ends_with(split_version(&self.parts).0) || self.written.as_deref().is_some_and(ends_with)
     }
 }
 
@@ -7006,7 +7088,11 @@ pub(crate) fn match_qualifier<'a>(
 
 /// Error for a qualifier naming several relations in scope.
 fn ambiguous_relation_err(qualifier: &str, relations: &[&RelationName]) -> PolarsError {
-    let distinct: PlIndexSet<String> = relations.iter().map(|r| r.key()).collect();
+    // versions of one table share a name, which only aliases tell apart
+    let distinct: PlIndexSet<String> = relations
+        .iter()
+        .map(|r| unversioned_key(&r.key()).to_owned())
+        .collect();
     if distinct.len() < relations.len() {
         polars_err!(
             SQLInterface: "ambiguous reference to table \"{}\" (it appears more than once in FROM; give each an alias)",
@@ -9197,6 +9283,22 @@ fn insert_source(insert: &Insert, outer: Option<&Query>) -> PolarsResult<Option<
     Ok(Some(source))
 }
 
+/// An error for a time travel clause on the table a statement changes: only reads can travel.
+fn ensure_no_version(target: &TableFactor, statement: &str) -> PolarsResult<()> {
+    if let TableFactor::Table {
+        name,
+        version: Some(version),
+        ..
+    } = target
+    {
+        polars_bail!(
+            SQLInterface: "{} cannot change table '{}' as of a version (`{}`): time travel is for reads only",
+            statement, name, version
+        );
+    }
+    Ok(())
+}
+
 fn parse_single_statement(query: &str) -> PolarsResult<Statement> {
     let ast = parse_sql(query)?;
     polars_ensure!(ast.len() == 1, SQLInterface: "one (and only one) statement can be parsed at a time");
@@ -9204,9 +9306,10 @@ fn parse_single_statement(query: &str) -> PolarsResult<Statement> {
 }
 
 fn parse_sql(query: &str) -> PolarsResult<Vec<Statement>> {
-    sql_parser(query)?
-        .parse_statements()
-        .map_err(to_sql_interface_err)
+    let (mut parser, versions) = sql_parser(query)?;
+    let mut stmts = parser.parse_statements().map_err(to_sql_interface_err)?;
+    versions.attach(&mut stmts)?;
+    Ok(stmts)
 }
 
 bitflags::bitflags! {

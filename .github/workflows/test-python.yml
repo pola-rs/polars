@@ -8,7 +8,6 @@ on:
       - docs/source/src/python/**
       - crates/**
       - .github/workflows/test-python.yml
-      - .github/actions/clone-polars-database/**
   push:
     branches:
       - main
@@ -19,7 +18,6 @@ on:
       - docs/source/src/python/**
       - py-polars/**
       - .github/workflows/test-python.yml
-      - .github/actions/clone-polars-database/**
   # Called by the release workflow, which tests against the released polars-iceberg and
   # polars-database from PyPI.
   workflow_call:
@@ -35,7 +33,7 @@ on:
       polars-database-version:
         description: >
           Version of polars-database to install from PyPI. If omitted, build polars-database from
-          the revision pinned in the clone-polars-database action.
+          this checkout.
         type: string
 
 concurrency:
@@ -93,10 +91,6 @@ jobs:
       - name: Clone polars-iceberg
         if: ${{ !inputs.polars-iceberg-version }}
         uses: ./.github/actions/clone-polars-iceberg
-
-      - name: Clone polars-database
-        if: ${{ !inputs.polars-database-version }}
-        uses: ./.github/actions/clone-polars-database
 
       - name: Free some disk space (remove unused packages)
         uses: jlumbroso/free-disk-space@v1.3.1
@@ -181,7 +175,7 @@ jobs:
             # `--no-deps` skips its `sqlglot` dependency, which requirements-dev.txt installs.
             uv pip install --no-deps "polars-database==$POLARS_DATABASE_VERSION"
           else
-            maturin develop --manifest-path ../crates/polars-database/Cargo.toml
+            maturin develop --manifest-path polars-database/Cargo.toml
           fi
           # The plugin tests skip when the module is missing; fail here instead.
           python -c 'import polars_database'
@@ -197,16 +191,6 @@ jobs:
         env:
           POLARS_TIMEOUT_MS: 60000
         run: pytest -n auto -m "not release and not benchmark and not docs$EXTRA_PYTEST_MARKERS"
-
-      # The polars-database tests live in its repository, with their own pytest settings, so they
-      # only run against a clone. Tests needing a database server skip when their
-      # `POLARS_TEST_*_URI` variable is unset.
-      - name: Run polars-database plugin tests
-        if: github.event_name != 'push' && matrix.python-version != '3.14t' && !matrix.variant && !inputs.polars-database-version
-        working-directory: crates/polars-database
-        env:
-          POLARS_TIMEOUT_MS: 60000
-        run: pytest tests -n auto
 
       - name: Run Python tests - POLARS_ENGINE_AFFINITY=in-memory
         if: github.event_name != 'push' && matrix.python-version != '3.14t' && matrix.variant == 'engine_affinity_in_memory'

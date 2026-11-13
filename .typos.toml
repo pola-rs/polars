@@ -33,7 +33,15 @@ AKS = "AKS"
 ba_field = "ba_field"
 
 [type.py]
-extend-ignore-re = ['\.flags\.writeable\b']
+extend-ignore-re = [
+  '\.flags\.writeable\b',
+  # Test data in the `scan_database` tests.
+  'rvc_pg_nd',
+  "'ABD'",
+  "'abd'",
+  '"abd"',
+  'Pr0v1ded',
+]
 
 [type.py.extend-identifiers]
 ba = "ba"
@@ -41,6 +49,10 @@ ody = "ody"
 ND = "ND"
 nd = "nd"
 NDArray1D = "NDArray1D"
+
+[type.rust.extend-words]
+# Prefix of DOUBLE in `polars-database`'s type matching (substring match).
+DOUB = "DOUB"
 
 [type.rust.extend-identifiers]
 ANDed = "ANDed"

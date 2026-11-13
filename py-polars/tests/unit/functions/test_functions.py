@@ -660,6 +660,29 @@ def test_approx_n_unique_null() -> None:
     assert cardinality == 1
 
 
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_approx_n_unique_empty(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 2], "a": [None, None, None], "b": [1, 2, 3]})
+    out = (
+        lf.group_by("g")
+        .agg(
+            pl.col("a").approx_n_unique().alias("all"),
+            pl.col("a").drop_nulls().approx_n_unique().alias("non_null"),
+        )
+        .sort("g")
+        .collect(engine=engine)
+    )
+    assert out.to_dict(as_series=False) == {
+        "g": [1, 2],
+        "all": [1, 1],
+        "non_null": [0, 0],
+    }
+    empty = lf.filter(False).select(
+        pl.col("a").approx_n_unique(), pl.col("b").approx_n_unique()
+    )
+    assert empty.collect(engine=engine).rows() == [(0, 0)]
+
+
 def test_lazy_functions() -> None:
     df = pl.DataFrame(
         {

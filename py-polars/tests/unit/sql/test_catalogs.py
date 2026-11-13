@@ -7,7 +7,7 @@ import shutil
 import struct
 import warnings
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -15,12 +15,22 @@ import pytest
 
 import polars as pl
 from polars.exceptions import SQLInterfaceError, SQLSyntaxError
+from polars.io.iceberg._catalog_resolver import set_iceberg_catalog_resolver
 from polars.testing import assert_frame_equal
 
 pytest.importorskip("pyiceberg.catalog.sql")
 
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchTableError, ServerError
+
+from tests.unit.io.conftest import (
+    failing_catalog_resolver,
+    recording_catalog_resolver,
+    reset_iceberg_catalog_resolver,  # noqa: F401
+)
+
+# No test leaves a catalog resolver installed for the next one.
+pytestmark = pytest.mark.usefixtures("reset_iceberg_catalog_resolver")
 
 
 class CountingCatalog(SqlCatalog):  # type: ignore[misc]
@@ -2849,6 +2859,17 @@ def test_alter_table_without_catalog(lake: CountingCatalog) -> None:
         lake_ctx(lake).execute("ALTER TABLE ONLY lineitem ADD COLUMN b BIGINT")
 
 
+def forbid_sink(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fail a statement that writes a data file."""
+    from polars.io.iceberg._sink import IcebergSinkState
+
+    def fail(*args: Any) -> None:
+        msg = "a data file was written"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(IcebergSinkState, "attach_sink", fail)
+
+
 def table_rows(catalog: CountingCatalog, *identifier: str) -> list[tuple[Any, ...]]:
     rows = catalog.load_table(identifier).scan().to_arrow().to_pylist()
     # NULLs last within a column
@@ -2999,7 +3020,6 @@ def test_insert_catalog_table_casts(lake: CountingCatalog) -> None:
 
 @pytest.mark.write_disk
 def test_insert_catalog_table_conversions(lake: CountingCatalog) -> None:
-    from datetime import datetime
 
     from polars.exceptions import InvalidOperationError, SchemaError
 
@@ -3246,12 +3266,14 @@ def test_truncate_catalog_table_empty_or_partitioned(lake: CountingCatalog) -> N
 @pytest.mark.write_disk
 @pytest.mark.parametrize("with_counted_file", [False, True])
 def test_truncate_catalog_table_without_record_count(
-    lake: CountingCatalog, with_counted_file: bool
+    lake: CountingCatalog, with_counted_file: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from pyiceberg.manifest import DataFile, DataFileContent
     from pyiceberg.table.snapshots import Operation
 
-    # a data file whose writer did not record its row count is read to drop its rows
+    import polars.io.iceberg.functions
+
+    # a data file whose writer did not record its row count is dropped too
     file = next(iter(lake.load_table(("tpch", "lineitem")).scan().plan_files())).file
     uncounted = f"{file.file_path.removesuffix('.parquet')}-uncounted.parquet"
     shutil.copy(
@@ -3272,13 +3294,14 @@ def test_truncate_catalog_table_without_record_count(
             )
         )
     assert len(table_rows(lake, "tpch", "legacy")) == 2 * (1 + with_counted_file)
+    # without reading or writing a data file
+    forbid_sink(monkeypatch)
+    monkeypatch.setattr(polars.io.iceberg.functions, "_scan_iceberg_files", None)
     lake_ctx(lake).execute("TRUNCATE TABLE legacy")
     assert table_rows(lake, "tpch", "legacy") == []
     snapshots = lake.load_table(("tpch", "legacy")).metadata.snapshots
-    # one commit: the counted file dropped whole, the other one read
     assert [s.summary.operation for s in snapshots] == [
         Operation.APPEND,
-        *([Operation.DELETE] if with_counted_file else []),
         Operation.OVERWRITE,
     ]
 
@@ -3412,7 +3435,7 @@ def test_delete_catalog_table_files(lake: CountingCatalog, tmp_path: Path) -> No
     assert operations() == [Operation.DELETE]
     # a file with some matching rows is rewritten, both in one commit
     ctx.execute("DELETE FROM t WHERE k = 2 OR k >= 4")
-    assert operations() == [Operation.DELETE, Operation.DELETE, Operation.OVERWRITE]
+    assert operations() == [Operation.DELETE, Operation.OVERWRITE]
     assert table_rows(lake, "tpch", "t") == [(3, "c")]
     assert len(set(tmp_path.rglob("*.parquet")) - files) == 1
     # an IN list on an INT column; a value it can't hold matches nothing
@@ -3424,7 +3447,6 @@ def test_delete_catalog_table_files(lake: CountingCatalog, tmp_path: Path) -> No
 
 @pytest.mark.write_disk
 def test_delete_catalog_table_types(lake: CountingCatalog) -> None:
-    from datetime import datetime
 
     df = pl.DataFrame(
         {
@@ -3758,18 +3780,113 @@ def test_delete_catalog_table_sql_errors(
 
 
 @pytest.mark.write_disk
+def test_delete_catalog_table_two_fields_on_one_column(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute(
+        "CREATE TABLE t (k BIGINT, v VARCHAR) PARTITION BY (bucket(2, k), bucket(3, k))"
+    )
+    ctx.execute("INSERT INTO t VALUES (1, 'a'), (1, NULL), (2, 'b')")
+    ctx.execute("DELETE FROM t WHERE v IS NULL")
+    assert table_rows(lake, "tpch", "t") == [(1, "a"), (2, "b")]
+
+
+@pytest.mark.write_disk
+def test_delete_catalog_table_rewrite(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE t (k INT, v VARCHAR)")
+    ctx.execute("INSERT INTO t VALUES (1, 'a'), (2, NULL), (3, 'b')")
+    # a NULL condition keeps the row
+    ctx.execute("DELETE FROM t WHERE v <> 'b'")
+    assert table_rows(lake, "tpch", "t") == [(2, None), (3, "b")]
+    # every row of a file matches, which its statistics cannot show: the file is
+    # dropped and nothing is written
+    ctx.execute("INSERT INTO t VALUES (7, 'x'), (9, 'y')")
+    forbid_sink(monkeypatch)
+    ctx.execute("DELETE FROM t WHERE k IN (7, 9)")
+    summary = lake.load_table(("tpch", "t")).current_snapshot().summary
+    assert summary.get("added-data-files") is None
+    assert summary["deleted-data-files"] == "1"
+    assert table_rows(lake, "tpch", "t") == [(2, None), (3, "b")]
+
+
+@pytest.mark.write_disk
+def test_delete_catalog_table_cleans_metadata_check(
+    lake: CountingCatalog, tmp_path: Path
+) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE t (k INT, g VARCHAR) PARTITION BY (g)")
+    # one manifest: a file that matches whole and one that matches partly
+    ctx.execute("INSERT INTO t VALUES (1, 'a'), (2, 'b'), (3, 'b')")
+    ctx.execute("DELETE FROM t WHERE k <= 2")
+    assert table_rows(lake, "tpch", "t") == [(3, "b")]
+    # the manifests written by the discarded metadata-only check are removed
+    table = lake.load_table(("tpch", "t"))
+    snapshots = table.metadata.snapshots
+    referenced = {Path(s.manifest_list).name for s in snapshots} | {
+        Path(m.manifest_path).name for s in snapshots for m in s.manifests(table.io)
+    }
+    written = {p.name for p in tmp_path.rglob("t/metadata/*.avro")}
+    assert written == referenced
+
+
+@pytest.mark.write_disk
+def test_delete_catalog_table_position_deletes(lake: CountingCatalog) -> None:
+    from tests.unit.io.test_iceberg import _add_position_deletes
+
+    def data_file() -> str:
+        table = lake.load_table(("tpch", "d"))
+        return str(next(iter(table.scan().plan_files())).file.file_path)
+
+    table = lake.create_table(("tpch", "d"), schema=LINEITEM.to_arrow().schema)
+    df = pl.DataFrame({"k": [1, 2, 3, 4], "v": ["a", "b", "c", "d"]})
+    df.write_iceberg(table, mode="append")
+    _add_position_deletes(lake.load_table(("tpch", "d")), {data_file(): [1]})
+    # a row deleted before stays deleted in the rewritten file
+    ctx = lake_ctx(lake)
+    ctx.execute("DELETE FROM d WHERE k = 1")
+    assert table_rows(lake, "tpch", "d") == [(3, "c"), (4, "d")]
+    # a delete file not scoped to one data file can't be read natively: refused
+    _add_position_deletes(
+        lake.load_table(("tpch", "d")), {data_file(): [0]}, path_bounds=False
+    )
+    current = lake.load_table(("tpch", "d")).current_snapshot()
+    with pytest.raises(pl.exceptions.ComputeError, match="not limited to one") as exc:
+        ctx.execute("DELETE FROM d WHERE k = 4")
+    assert "no rows of table 'd' were deleted" in exc.value.__notes__[-1]
+    assert lake.load_table(("tpch", "d")).current_snapshot() == current
+
+
+@pytest.mark.write_disk
+def test_merge_catalog_table_deletes_whole_file(
+    lake: CountingCatalog, tmp_path: Path
+) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE t (k INT, v VARCHAR)")
+    ctx.execute("INSERT INTO t VALUES (1, 'a'), (2, 'b')")
+    files = set(tmp_path.rglob("*.parquet"))
+    ctx.execute(
+        "MERGE INTO t USING (SELECT 1 AS k UNION ALL SELECT 2) AS s ON t.k = s.k "
+        "WHEN MATCHED THEN DELETE"
+    )
+    summary = lake.load_table(("tpch", "t")).current_snapshot().summary
+    assert summary["total-data-files"] == "0"
+    assert set(tmp_path.rglob("*.parquet")) == files
+
+
+@pytest.mark.write_disk
 def test_delete_catalog_table_merge_on_read(lake: CountingCatalog) -> None:
     ctx = lake_ctx(lake)
     ctx.execute(
         "ALTER TABLE orders SET TBLPROPERTIES ('write.delete.mode' = 'merge-on-read')"
     )
-    # rewriting a file falls back to copy-on-write, as PyIceberg warns
+    # copy-on-write, as UPDATE: no delete files
     with warnings.catch_warnings(record=True) as record:
         warnings.simplefilter("always")
         ctx.execute("DELETE FROM orders WHERE k = 1")
-    assert [w.category for w in record] == [UserWarning]
-    # dropping whole files needs no delete files: no warning
-    ctx.execute("DELETE FROM orders WHERE k > 1")
+        ctx.execute("DELETE FROM orders WHERE k > 1")
+    assert [w.category for w in record] == []
     assert table_rows(lake, "tpch", "orders") == []
 
 
@@ -3794,7 +3911,6 @@ def test_delete_catalog_table_concurrent(tmp_path: Path) -> None:
     with pytest.raises(ValidationException) as exc:
         ctx.execute("DELETE FROM lineitem WHERE k > 3")
     notes = exc.value.__notes__
-    assert any("rewritten data files may remain under" in n for n in notes)
     assert any("no rows of table 'lineitem'" in n for n in notes)
     rows = [(2, "b"), (3, "c"), (4, "d"), (99, "raced"), (99, "raced")]
     assert table_rows(lake, "tpch", "lineitem") == rows
@@ -3802,8 +3918,8 @@ def test_delete_catalog_table_concurrent(tmp_path: Path) -> None:
     with lake.load_table(("tpch", "lineitem")).transaction() as tx:
         tx.set_properties({"write.delete.isolation-level": "snapshot"})
     lake.race = ("tpch", "lineitem")
-    ctx.execute("DELETE FROM lineitem WHERE k > 1")
-    assert table_rows(lake, "tpch", "lineitem") == [(99, "raced")]
+    ctx.execute("DELETE FROM lineitem WHERE k > 3")
+    assert table_rows(lake, "tpch", "lineitem") == [(2, "b"), (3, "c"), (99, "raced")]
 
 
 def update_ctx(lake: CountingCatalog) -> pl.SQLContext[pl.LazyFrame]:
@@ -4081,15 +4197,23 @@ def test_update_catalog_table_resolution(lake: CountingCatalog) -> None:
 
 
 @pytest.mark.write_disk
-def test_update_catalog_table_v3_refused(
-    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "UPDATE orders SET o = 0",
+        "DELETE FROM orders WHERE false",
+        "TRUNCATE TABLE orders",
+    ],
+)
+def test_write_catalog_table_v3_refused(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch, statement: str
 ) -> None:
     from pyiceberg.table import Table
 
     # PyIceberg can't write a v3 table yet
     monkeypatch.setattr(Table, "format_version", property(lambda self: 3))
     with pytest.raises(NotImplementedError, match="Iceberg v3 table"):
-        lake_ctx(lake).execute("UPDATE orders SET o = 0")
+        lake_ctx(lake).execute(statement)
     monkeypatch.undo()
     assert table_rows(lake, "tpch", "orders") == ORDERS
 
@@ -5624,3 +5748,706 @@ def test_catalog_metadata_tables_concurrent_first_load(lake: CountingCatalog) ->
     assert ids == expected["snapshot_id"].to_list()
     assert parents == expected["parent_id"].to_list()
     assert lake.loads == [("tpch", "lineitem")]
+
+
+@pytest.mark.write_disk
+def test_register_catalog_by_name_is_lazy(lake: CountingCatalog) -> None:
+    set_iceberg_catalog_resolver(failing_catalog_resolver)
+    ctx = pl.SQLContext().register_catalog("lake", default_namespace="tpch")
+
+    assert isinstance(ctx.execute("SELECT * FROM lake.lineitem"), pl.LazyFrame)
+
+
+@pytest.mark.write_disk
+def test_register_catalog_by_name_reads(lake: CountingCatalog) -> None:
+    resolver, names = recording_catalog_resolver(lake)
+    set_iceberg_catalog_resolver(resolver)
+    ctx = pl.SQLContext().register_catalog("lake", default_namespace="tpch")
+
+    res = ctx.execute("SELECT * FROM lake.lineitem").collect()
+
+    assert_frame_equal(res, LINEITEM, check_row_order=False)
+    assert names == ["lake"]
+
+
+@pytest.mark.write_disk
+def test_register_catalog_by_name_reads_metadata_tables(lake: CountingCatalog) -> None:
+    resolver, names = recording_catalog_resolver(lake)
+    set_iceberg_catalog_resolver(resolver)
+    ctx = pl.SQLContext().register_catalog("lake", default_namespace="tpch")
+
+    res = ctx.execute("SELECT * FROM lake.lineitem$snapshots", eager=True)
+
+    assert_frame_equal(res, inspected(lake, "snapshots", "tpch", "lineitem"))
+    assert names == ["lake"]
+
+
+@pytest.mark.write_disk
+def test_register_catalog_alias_resolves_given_name(lake: CountingCatalog) -> None:
+    resolver, names = recording_catalog_resolver(lake)
+    set_iceberg_catalog_resolver(resolver)
+    ctx = pl.SQLContext().register_catalog("sales", "lake", default_namespace="tpch")
+
+    res = ctx.execute("SELECT * FROM SALES.lineitem").collect()
+
+    assert_frame_equal(res, LINEITEM, check_row_order=False)
+    assert names == ["lake"]
+
+
+@pytest.mark.write_disk
+def test_register_catalog_by_name_serializes_only_the_name(
+    lake: CountingCatalog,
+) -> None:
+    set_iceberg_catalog_resolver(failing_catalog_resolver)
+    ctx = pl.SQLContext().register_catalog("lake", default_namespace="tpch")
+    data = ctx.execute("SELECT * FROM lake.lineitem").serialize()
+
+    assert b"sqlite" not in data
+    assert b"CountingCatalog" not in data
+
+    resolver, names = recording_catalog_resolver(lake)
+    set_iceberg_catalog_resolver(resolver)
+    res = pl.LazyFrame.deserialize(io.BytesIO(data)).collect()
+
+    assert_frame_equal(res, LINEITEM, check_row_order=False)
+    assert names == ["lake"]
+
+
+@pytest.mark.write_disk
+def test_register_catalog_by_name_write_statement_resolves_locally(
+    lake: CountingCatalog,
+) -> None:
+    resolver, names = recording_catalog_resolver(lake)
+    set_iceberg_catalog_resolver(resolver)
+    ctx = pl.SQLContext().register_catalog("lake")
+
+    ctx.execute("CREATE SCHEMA lake.newns")
+
+    assert ("newns",) in lake.list_namespaces()
+    assert names == ["lake"]
+
+
+@pytest.mark.write_disk
+def test_register_catalog_by_name_statement_query_resolves_by_name(
+    lake: CountingCatalog,
+) -> None:
+    resolver, names = recording_catalog_resolver(lake)
+    set_iceberg_catalog_resolver(resolver)
+    ctx = pl.SQLContext().register_catalog("lake", default_namespace="tpch")
+
+    ctx.execute("INSERT INTO lake.lineitem SELECT k + 10, v FROM lake.lineitem")
+
+    assert table_rows(lake, "tpch", "lineitem") == [
+        (1, "a"),
+        (2, "b"),
+        (11, "a"),
+        (12, "b"),
+    ]
+    # once for the statement's table, once for the table its query reads
+    assert names == ["lake", "lake"]
+
+
+@pytest.mark.write_disk
+def test_register_catalog_by_name_merge_source_resolves_by_name(
+    lake: CountingCatalog,
+) -> None:
+    resolver, names = recording_catalog_resolver(lake)
+    set_iceberg_catalog_resolver(resolver)
+    ctx = pl.SQLContext().register_catalog("lake", default_namespace="tpch")
+
+    ctx.execute(
+        "MERGE INTO lake.lineitem USING lake.orders AS o ON lineitem.k = o.k "
+        "WHEN MATCHED THEN UPDATE SET v = 'x' "
+        "WHEN NOT MATCHED THEN INSERT VALUES (o.k, 'new')"
+    )
+
+    assert table_rows(lake, "tpch", "lineitem") == [(1, "x"), (2, "x"), (3, "new")]
+    # once for the statement's table, once for the table its query reads
+    assert names == ["lake", "lake"]
+
+
+def test_register_catalog_empty_catalog_name() -> None:
+    with pytest.raises(ValueError, match="must not be empty"):
+        pl.SQLContext().register_catalog("x", "")
+
+
+# -- time travel ---------------------------------------------------------------------
+
+# Commit times of the history: 2024-01-01 00:00, 01:00 and 02:00 UTC.
+HOUR_MS = 3_600_000
+T0_MS = 1_704_067_200_000
+
+
+@pytest.fixture
+def clock(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
+    """PyIceberg's clocks for snapshot, commit and table creation times, in ms."""
+    import types
+
+    import pyiceberg.table.metadata as metadata
+    import pyiceberg.table.snapshots as snapshots
+    import pyiceberg.table.update as update
+
+    now = {"ms": T0_MS}
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz: Any = None) -> Any:
+            return datetime.fromtimestamp(now["ms"] / 1000, UTC)
+
+    monkeypatch.setattr(
+        snapshots, "time", types.SimpleNamespace(time=lambda: now["ms"] / 1000)
+    )
+    monkeypatch.setattr(update, "datetime", Clock)
+    monkeypatch.setattr(metadata, "datetime", types.SimpleNamespace(datetime=Clock))
+    return now
+
+
+@pytest.fixture
+def history(
+    lake: CountingCatalog, clock: dict[str, int]
+) -> tuple[pl.SQLContext[pl.LazyFrame], list[int]]:
+    """Table `hist`: three snapshots an hour apart, tag `v1`, branch `b1`."""
+    clock["ms"] = T0_MS - HOUR_MS
+    table = lake.create_table(
+        ("tpch", "hist"), schema=pl.Schema({"k": pl.Int64}).to_arrow()
+    )
+    ids = []
+    for i in range(3):
+        clock["ms"] = T0_MS + i * HOUR_MS
+        pl.DataFrame({"k": [i]}).write_iceberg(table, mode="append")
+        snapshot = table.current_snapshot()
+        assert snapshot is not None
+        ids.append(snapshot.snapshot_id)
+    clock["ms"] = T0_MS + 3 * HOUR_MS
+    table.manage_snapshots().create_tag(ids[0], "v1").create_branch(
+        ids[1], "b1"
+    ).commit()
+    lake.loads.clear()
+    return lake_ctx(lake), ids
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("clause", "rows"),
+    [
+        ("FOR VERSION AS OF {0}", [0]),
+        ("VERSION AS OF {1}", [0, 1]),
+        ("AS h FOR VERSION AS OF {0}", [0]),
+        ("h FOR VERSION AS OF {0}", [0]),
+        ("FOR VERSION AS OF {0} h", [0]),
+        ("h AT (VERSION => {1})", [0, 1]),
+        ("AS h AT (VERSION => {1})", [0, 1]),
+        ("AT (VERSION => {1})", [0, 1]),
+        ("FOR VERSION AS OF 'v1'", [0]),
+        ("VERSION AS OF 'b1'", [0, 1]),
+        ("AT (VERSION => 'v1')", [0]),
+        ("/* c */ FOR /* c */ VERSION AS OF {0}", [0]),
+        ("FOR TIMESTAMP AS OF TIMESTAMP '2024-01-01 01:30:00'", [0, 1]),
+        ("TIMESTAMP AS OF TIMESTAMP '2024-01-01 01:00:00'", [0, 1]),
+        ("FOR TIMESTAMP AS OF TIMESTAMP '2024-01-01 00:59:59.999'", [0]),
+        ("AT (TIMESTAMP => TIMESTAMPTZ '2024-01-01 03:30:00+02:00')", [0, 1]),
+        ("FOR TIMESTAMP AS OF '2024-01-01T02:00:00Z'", [0, 1, 2]),
+        ("FOR TIMESTAMP AS OF DATE '2024-01-02'", [0, 1, 2]),
+        ("FOR TIMESTAMP AS OF TIMESTAMPTZ '2024-01-01 03:30:00+02:00'", [0, 1]),
+        (
+            "FOR TIMESTAMP AS OF TIMESTAMP WITH TIME ZONE '2024-01-01 03:30:00+02:00'",
+            [0, 1],
+        ),
+        ("FOR SYSTEM_TIME AS OF TIMESTAMP '2024-01-01 01:30:00'", [0, 1]),
+        ("h FOR SYSTEM_TIME AS OF '2024-01-01T02:00:00Z'", [0, 1, 2]),
+        ("AS join VERSION AS OF {0}", [0]),
+        ("VERSION AS OF {0} div", [0]),
+        ("FOR TIMESTAMP AS OF '2024-01-01 03:30:00+02:00'", [0, 1]),
+    ],
+)
+def test_catalog_time_travel(
+    history: tuple[pl.SQLContext[pl.LazyFrame], list[int]], clause: str, rows: list[int]
+) -> None:
+    ctx, ids = history
+    query = f"SELECT * FROM hist {clause.format(*ids)}"
+    assert sorted(ctx.execute(query, eager=True)["k"]) == rows
+    assert sorted(ctx.execute(query).collect()["k"]) == rows
+    assert ctx.execute(f"EXPLAIN {query}", eager=True).height > 0
+
+
+@pytest.mark.write_disk
+def test_catalog_time_travel_two_versions(
+    lake: CountingCatalog,
+    history: tuple[pl.SQLContext[pl.LazyFrame], list[int]],
+) -> None:
+    ctx, ids = history
+    table = lake.load_table(("tpch", "hist"))
+    with table.update_schema() as schema:
+        schema.add_column("note", pyiceberg_string())
+    pl.DataFrame({"k": [3], "note": ["new"]}).write_iceberg(table, mode="append")
+    lake.loads.clear()
+
+    # one table at two versions, with qualified columns and different schemas
+    query = (
+        f"SELECT now.k, now.note, old.k AS old_k FROM hist AS now "
+        f"LEFT JOIN hist FOR VERSION AS OF {ids[1]} AS old ON now.k = old.k ORDER BY now.k"
+    )
+    expected = [(0, None, 0), (1, None, 1), (2, None, None), (3, "new", None)]
+    lf = ctx.execute(query)
+    assert lake.loads == []
+    assert lf.collect().rows() == expected
+    # both reads share one load, so they see one state
+    assert lake.loads == [("tpch", "hist")]
+    for res in (
+        pickle.loads(pickle.dumps(lf)),
+        pl.LazyFrame.deserialize(io.BytesIO(lf.serialize())),
+    ):
+        assert res.collect().rows() == expected
+
+    union = (
+        f"SELECT k FROM hist UNION ALL SELECT k FROM hist VERSION AS OF {ids[0]} "
+        "UNION ALL SELECT k FROM hist VERSION AS OF 'v1'"
+    )
+    assert sorted(ctx.execute(union, eager=True)["k"]) == [0, 0, 0, 1, 2, 3]
+    old = ctx.execute(f"SELECT * FROM hist FOR VERSION AS OF {ids[0]}", eager=True)
+    assert old.columns == ["k"]
+
+
+def pyiceberg_string() -> Any:
+    from pyiceberg.types import StringType
+
+    return StringType()
+
+
+@pytest.mark.write_disk
+def test_catalog_time_travel_in_statements(
+    lake: CountingCatalog, history: tuple[pl.SQLContext[pl.LazyFrame], list[int]]
+) -> None:
+    ctx, ids = history
+    ctx.execute(f"CREATE TABLE copy AS SELECT * FROM hist VERSION AS OF {ids[0]}")
+    assert ctx.execute("SELECT k FROM copy", eager=True)["k"].to_list() == [0]
+    ctx.execute(
+        f"INSERT INTO copy SELECT k FROM hist h VERSION AS OF {ids[1]} WHERE k > 0"
+    )
+    assert sorted(ctx.execute("SELECT k FROM copy", eager=True)["k"]) == [0, 1]
+
+    # restore the table as it was at the tag, reading its own target at that version
+    ctx.execute(
+        "MERGE INTO hist USING (SELECT k FROM hist FOR VERSION AS OF 'v1') AS s "
+        "ON hist.k = s.k WHEN NOT MATCHED THEN INSERT (k) VALUES (s.k)"
+    )
+    assert sorted(ctx.execute("SELECT k FROM hist", eager=True)["k"]) == [0, 1, 2]
+    merged = ctx.execute(
+        "MERGE INTO hist USING hist FOR VERSION AS OF 'v1' AS s ON hist.k = s.k + 10 "
+        "WHEN NOT MATCHED THEN INSERT (k) VALUES (s.k + 10)",
+        eager=True,
+    )
+    assert merged.item() == "MERGE INTO lake.tpch.hist"
+    assert sorted(ctx.execute("SELECT k FROM hist", eager=True)["k"]) == [0, 1, 2, 10]
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("query", "error", "match"),
+    [
+        ("SELECT * FROM hist VERSION AS OF 'nope'", ValueError, "not found: 'nope'"),
+        (
+            "SELECT * FROM hist FOR TIMESTAMP AS OF TIMESTAMP '2023-12-31 23:59:59'",
+            ValueError,
+            "no snapshot at or before",
+        ),
+        (
+            "SELECT * FROM hist FOR TIMESTAMP AS OF 1704067200",
+            SQLInterfaceError,
+            "not the number",
+        ),
+        (
+            "SELECT * FROM hist FOR TIMESTAMP AS OF TIMESTAMP '2024-01-01 03:30:00+02:00'",
+            SQLInterfaceError,
+            "has a UTC offset but no time zone type",
+        ),
+        (
+            "SELECT * FROM hist FOR TIMESTAMP AS OF '01/02/2024'",
+            SQLInterfaceError,
+            "takes an ISO timestamp",
+        ),
+        (
+            "SELECT * FROM hist FOR TIMESTAMP AS OF now() - INTERVAL '1 hour'",
+            SQLInterfaceError,
+            "takes a literal value",
+        ),
+        (
+            "SELECT * FROM local FOR VERSION AS OF 1",
+            SQLInterfaceError,
+            "attached catalog",
+        ),
+        (
+            "SELECT * FROM hist$snapshots FOR VERSION AS OF 1",
+            SQLInterfaceError,
+            "cannot be read as of a version",
+        ),
+        (
+            "DELETE FROM hist FOR VERSION AS OF {0} WHERE k = 0",
+            SQLInterfaceError,
+            "time travel is for reads only",
+        ),
+        (
+            "SELECT substring(v FROM k FOR VERSION AS OF 1) FROM local",
+            SQLInterfaceError,
+            "must follow the name of a table",
+        ),
+    ],
+)
+def test_catalog_time_travel_errors(
+    history: tuple[pl.SQLContext[pl.LazyFrame], list[int]],
+    query: str,
+    error: type[Exception],
+    match: str | None,
+) -> None:
+    ctx, ids = history
+    ctx.register("local", pl.DataFrame({"k": [1], "v": ["a"]}))
+    with pytest.raises(error, match=match):
+        ctx.execute(query.format(*ids), eager=True)
+
+
+def test_time_travel_without_catalog() -> None:
+    df = pl.DataFrame({"k": [1]})
+    with pytest.raises(SQLInterfaceError, match="attached catalog"):
+        pl.SQLContext(df=df).execute("SELECT * FROM df FOR VERSION AS OF 1", eager=True)
+    with pytest.raises(SQLInterfaceError, match="must follow the name of a table"):
+        pl.sql_expr("(SELECT max(k) FROM df FOR VERSION AS OF 1)")
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT at.k FROM df at",
+        "SELECT before.k FROM df before",
+        "SELECT changes.k FROM df changes",
+        "SELECT version.k FROM df version",
+        "SELECT timestamp.k FROM df timestamp",
+        "SELECT version.k FROM df AS version (k)",
+        "SELECT at.k FROM df at (k)",
+        "SELECT k AS of FROM df",
+        'SELECT k AS "version" FROM df',
+        "SELECT CAST(k AS TIMESTAMP) AS of FROM df",
+        "SELECT k::TIMESTAMP AS of FROM df",
+        "SELECT substring('abc' FROM 1 FOR 2) AS s",
+        "SELECT k IS DISTINCT FROM k AS of FROM df",
+        "SELECT of.k FROM version AS of",
+        "SELECT of.k FROM df JOIN timestamp AS of USING (k)",
+        "SELECT * FROM df AS where, df AS x",
+        "SELECT * FROM df JOIN version ON CASE WHEN df.k = version.k THEN TRUE END",
+    ],
+)
+def test_time_travel_keywords_keep_their_meaning(query: str) -> None:
+    df = pl.DataFrame({"k": [1]})
+    ctx = pl.SQLContext(df=df, version=df, timestamp=df)
+    assert ctx.execute(query, eager=True).height == 1
+
+
+@pytest.mark.write_disk
+def test_catalog_time_travel_expired_history(
+    lake: CountingCatalog, history: tuple[pl.SQLContext[pl.LazyFrame], list[int]]
+) -> None:
+    ctx, ids = history
+    table = lake.load_table(("tpch", "hist"))
+    table.manage_snapshots().remove_branch("b1").commit()
+    # the snapshot current from 01:00 to 02:00 expires
+    table.maintenance.expire_snapshots().by_id(ids[1]).commit()
+
+    def at(ts: str) -> list[int]:
+        query = f"SELECT k FROM hist FOR TIMESTAMP AS OF TIMESTAMP '{ts}'"
+        return sorted(ctx.execute(query, eager=True)["k"])
+
+    assert at("2024-01-01 02:30:00") == [0, 1, 2]
+    with pytest.raises(ValueError, match=r"snapshot .*, current then, has expired"):
+        at("2024-01-01 01:30:00")
+    # the metadata file of the time names the snapshot current then
+    assert at("2024-01-01 00:30:00") == [0]
+    # expiry also removed it from the snapshot log: no trace of it is left
+    with pytest.raises(ValueError, match=r"snapshot ID not found: \d+\n"):
+        ctx.execute(f"SELECT k FROM hist FOR VERSION AS OF {ids[1]}", eager=True)
+
+
+@pytest.mark.write_disk
+def test_catalog_time_travel_statistics(
+    lake: CountingCatalog, history: tuple[pl.SQLContext[pl.LazyFrame], list[int]]
+) -> None:
+    ctx, ids = history
+    lake.load_table(("tpch", "hist")).delete("k = 0")
+    query = (
+        "SELECT count(*) AS n, min(k) AS lo, max(k) AS hi FROM hist VERSION AS OF {}"
+    )
+    assert ctx.execute(query.format(ids[2]), eager=True).rows() == [(3, 0, 2)]
+    assert ctx.execute(query.format(ids[0]), eager=True).rows() == [(1, 0, 0)]
+    current = "SELECT count(*) AS n, min(k) AS lo, max(k) AS hi FROM hist"
+    assert ctx.execute(current, eager=True).rows() == [(2, 1, 2)]
+
+
+@pytest.mark.write_disk
+def test_catalog_time_travel_rollback_then_expiry(
+    lake: CountingCatalog, history: tuple[pl.SQLContext[pl.LazyFrame], list[int]]
+) -> None:
+    ctx, ids = history
+    table = lake.load_table(("tpch", "hist"))
+    table.manage_snapshots().rollback_to_snapshot(ids[0]).commit()
+    query = "SELECT k FROM hist FOR TIMESTAMP AS OF TIMESTAMP '2024-01-01 02:30:00'"
+    # the third snapshot was current until the rollback
+    assert sorted(ctx.execute(query, eager=True)["k"]) == [0, 1, 2]
+    table = lake.load_table(("tpch", "hist"))
+    table.maintenance.expire_snapshots().by_id(ids[2]).commit()
+    with pytest.raises(ValueError, match=r"history at .* is not available"):
+        ctx.execute(query, eager=True)
+
+
+@pytest.mark.write_disk
+def test_catalog_time_travel_qualified_columns(
+    history: tuple[pl.SQLContext[pl.LazyFrame], list[int]],
+) -> None:
+    ctx, _ = history
+    for qualifier in ("hist", "tpch.hist", "lake.tpch.hist"):
+        query = f"SELECT {qualifier}.k FROM hist VERSION AS OF 'v1'"
+        assert ctx.execute(query, eager=True).rows() == [(0,)]
+    # the versioned and the current read share the name
+    with pytest.raises(SQLInterfaceError, match="ambiguous"):
+        ctx.execute(
+            "SELECT lake.tpch.hist.k FROM hist VERSION AS OF 'v1' CROSS JOIN hist",
+            eager=True,
+        )
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    "source",
+    [
+        "hist VERSION AS OF 'v1' AS at",
+        "hist at AT (VERSION => 'v1')",
+        "hist AS at FOR VERSION AS OF 'v1'",
+        "hist AS at FOR TIMESTAMP AS OF TIMESTAMP '2024-01-01 00:30:00'",
+        "hist at AT (TIMESTAMP => DATE '2024-01-01')",
+        "hist AS at FOR TIMESTAMP AS OF '2024-01-01 02:30:00+02:00'",
+    ],
+)
+def test_catalog_time_travel_alias_round_trip(
+    history: tuple[pl.SQLContext[pl.LazyFrame], list[int]], source: str
+) -> None:
+    # INSERT and CREATE TABLE AS run their query again from its text
+    ctx, _ = history
+    ctx.execute(f"CREATE TABLE copy AS SELECT at.k FROM {source}")
+    ctx.execute(f"INSERT INTO copy SELECT at.k + 1 FROM {source}")
+    assert sorted(ctx.execute("SELECT k FROM copy", eager=True)["k"]) == [0, 1]
+
+
+@pytest.mark.write_disk
+def test_catalog_time_travel_serialized_before_resolving(
+    lake: CountingCatalog, history: tuple[pl.SQLContext[pl.LazyFrame], list[int]]
+) -> None:
+    ctx, ids = history
+    lf = ctx.execute(f"SELECT k FROM hist FOR VERSION AS OF {ids[1]}")
+    assert lake.loads == []
+    for res in (
+        pickle.loads(pickle.dumps(lf)),
+        pl.LazyFrame.deserialize(io.BytesIO(lf.serialize())),
+    ):
+        assert sorted(res.collect()["k"]) == [0, 1]
+
+
+@pytest.mark.write_disk
+def test_catalog_time_travel_set_current_then_expiry(
+    lake: CountingCatalog, history: tuple[pl.SQLContext[pl.LazyFrame], list[int]]
+) -> None:
+    import pyarrow as pa
+
+    ctx, ids = history
+    table = lake.load_table(("tpch", "hist"))
+    # a commit on a branch from the first snapshot, made current on main later
+    table.manage_snapshots().create_branch(ids[0], "side").commit()
+    table.append(pa.table({"k": pa.array([9], pa.int64())}), branch="side")
+    side = table.refs()["side"].snapshot_id
+    table.manage_snapshots().remove_branch("b1").set_current_snapshot(side).commit()
+    query = "SELECT k FROM hist FOR TIMESTAMP AS OF TIMESTAMP '2024-01-01 01:30:00'"
+    assert sorted(ctx.execute(query, eager=True)["k"]) == [0, 1]
+    table.maintenance.expire_snapshots().by_ids(ids[1:]).commit()
+    # the first snapshot is the parent of the one made current, but was not current
+    # until then
+    with pytest.raises(ValueError, match=r"history at .* is not available"):
+        ctx.execute(query, eager=True)
+
+
+@pytest.mark.write_disk
+def test_catalog_time_travel_reads(
+    history: tuple[pl.SQLContext[pl.LazyFrame], list[int]],
+) -> None:
+    ctx, ids = history
+    cte = f"WITH c AS (SELECT k FROM hist VERSION AS OF {ids[0]}) SELECT k FROM c"
+    assert ctx.execute(cte, eager=True)["k"].to_list() == [0]
+    sub = "SELECT k FROM hist WHERE k IN (SELECT k FROM hist FOR VERSION AS OF 'b1')"
+    assert sorted(ctx.execute(sub, eager=True)["k"]) == [0, 1]
+    using = (
+        f"SELECT k FROM hist VERSION AS OF {ids[1]} AS a "
+        f"JOIN hist VERSION AS OF {ids[2]} AS b USING (k)"
+    )
+    assert sorted(ctx.execute(using, eager=True)["k"]) == [0, 1]
+    stats = "SELECT count(*) AS n, max(k) AS hi FROM hist {}"
+    assert ctx.execute(stats.format("VERSION AS OF 'b1'"), eager=True).rows() == [
+        (2, 1)
+    ]
+    at = "FOR TIMESTAMP AS OF TIMESTAMP '2024-01-01 00:30:00'"
+    assert ctx.execute(stats.format(at), eager=True).rows() == [(1, 0)]
+
+
+@pytest.mark.write_disk
+def test_catalog_time_travel_table_without_snapshots(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE empty (k BIGINT)")
+    query = "SELECT * FROM empty FOR TIMESTAMP AS OF TIMESTAMP '2024-01-01 00:00:00'"
+    with pytest.raises(ValueError, match="has no snapshots"):
+        ctx.execute(query, eager=True)
+    with pytest.raises(SQLInterfaceError, match="invalid table name"):
+        ctx.execute('SELECT * FROM lineitem."\x00snapshot:1"', eager=True)
+
+
+@pytest.mark.write_disk
+def test_catalog_time_travel_rollback_commit_then_age_expiry(
+    lake: CountingCatalog,
+    clock: dict[str, int],
+    history: tuple[pl.SQLContext[pl.LazyFrame], list[int]],
+) -> None:
+    ctx, ids = history
+    table = lake.load_table(("tpch", "hist"))
+    table.manage_snapshots().remove_tag("v1").remove_branch("b1").commit()
+    clock["ms"] = T0_MS + 4 * HOUR_MS
+    table.manage_snapshots().rollback_to_snapshot(ids[0]).commit()
+    clock["ms"] = T0_MS + 5 * HOUR_MS
+    pl.DataFrame({"k": [7]}).write_iceberg(table, mode="append")
+    query = "SELECT k FROM hist FOR TIMESTAMP AS OF TIMESTAMP '2024-01-01 04:30:00'"
+    # the first snapshot was current again after the rollback
+    assert sorted(ctx.execute(query, eager=True)["k"]) == [0]
+    clock["ms"] = T0_MS + 6 * HOUR_MS
+    table.maintenance.expire_snapshots().older_than(
+        datetime(2024, 1, 1, 0, 30, tzinfo=UTC)
+    ).commit()
+    with pytest.raises(ValueError, match=r"snapshot .*, current then, has expired"):
+        ctx.execute(query, eager=True)
+
+
+@pytest.mark.write_disk
+def test_catalog_time_travel_metadata_log_limits(
+    lake: CountingCatalog,
+    clock: dict[str, int],
+    history: tuple[pl.SQLContext[pl.LazyFrame], list[int]],
+) -> None:
+    ctx, _ = history
+
+    def at(ts: str) -> list[int]:
+        query = f"SELECT k FROM hist FOR TIMESTAMP AS OF TIMESTAMP '{ts}'"
+        return sorted(ctx.execute(query, eager=True)["k"])
+
+    # a commit without a new snapshot keeps the answers
+    clock["ms"] = T0_MS + 4 * HOUR_MS
+    ctx.execute("ALTER TABLE hist SET TBLPROPERTIES ('owner' = 'x')")
+    assert at("2024-01-01 01:30:00") == [0, 1]
+    # older than the metadata log
+    ctx.execute(
+        "ALTER TABLE hist SET TBLPROPERTIES ('write.metadata.previous-versions-max' = '2')"
+    )
+    clock["ms"] = T0_MS + 5 * HOUR_MS
+    ctx.execute("INSERT INTO hist VALUES (3)")
+    assert at("2024-01-01 05:30:00") == [0, 1, 2, 3]
+    with pytest.raises(ValueError, match="oldest recorded metadata file is from"):
+        at("2024-01-01 01:30:00")
+
+
+@pytest.mark.write_disk
+def test_catalog_time_travel_metadata_files(
+    lake: CountingCatalog,
+    clock: dict[str, int],
+    history: tuple[pl.SQLContext[pl.LazyFrame], list[int]],
+) -> None:
+    import gzip
+
+    from polars.io.iceberg._time_travel import _read_metadata
+
+    ctx, _ = history
+    table = lake.load_table(("tpch", "hist"))
+    logged = [e.metadata_file for e in table.metadata.metadata_log]
+
+    # older writers name gzipped metadata files `*.metadata.json.gz`
+    path = Path(logged[-1].removeprefix("file://"))
+    with gzip.open(f"{path}.gz", "wb") as g:
+        g.write(path.read_bytes())
+    old = _read_metadata(table, logged[-1] + ".gz", "")
+    assert old.table_uuid == table.metadata.table_uuid
+
+    # a logged file that is gone
+    query = "SELECT k FROM hist FOR TIMESTAMP AS OF TIMESTAMP '2024-01-01 01:30:00'"
+    Path(logged[2].removeprefix("file://")).unlink()
+    with pytest.raises(ValueError, match="could not be read"):
+        ctx.execute(query, eager=True)
+
+
+@pytest.mark.write_disk
+def test_catalog_time_travel_commit_times(
+    lake: CountingCatalog,
+    clock: dict[str, int],
+    history: tuple[pl.SQLContext[pl.LazyFrame], list[int]],
+) -> None:
+    import pyarrow as pa
+
+    ctx, ids = history
+    table = lake.load_table(("tpch", "hist"))
+
+    def at(ts: str) -> list[int]:
+        query = f"SELECT k FROM hist FOR TIMESTAMP AS OF TIMESTAMP '{ts}'"
+        return sorted(ctx.execute(query, eager=True)["k"])
+
+    def row(k: int) -> pa.Table:
+        return pa.table({"k": pa.array([k], pa.int64())})
+
+    # one transaction adding two snapshots: only its end state was ever current
+    clock["ms"] = T0_MS + 4 * HOUR_MS
+    with table.transaction() as tx:
+        tx.append(row(3))
+        clock["ms"] = T0_MS + 5 * HOUR_MS
+        tx.append(row(4))
+    assert at("2024-01-01 04:30:00") == [0, 1, 2]
+    assert at("2024-01-01 05:00:00") == [0, 1, 2, 3, 4]
+
+    # a commit on a branch, made current later
+    table = lake.load_table(("tpch", "hist"))
+    table.append(row(5), branch="b1")
+    clock["ms"] = T0_MS + 7 * HOUR_MS
+    side = table.refs()["b1"].snapshot_id
+    table.manage_snapshots().set_current_snapshot(side).commit()
+    assert at("2024-01-01 06:59:59") == [0, 1, 2, 3, 4]
+    assert at("2024-01-01 07:00:00") == [0, 1, 5]
+
+    # two commits in one millisecond: the later one
+    clock["ms"] = T0_MS + 8 * HOUR_MS
+    table = lake.load_table(("tpch", "hist"))
+    table.manage_snapshots().set_current_snapshot(ids[0]).commit()
+    table.manage_snapshots().set_current_snapshot(ids[2]).commit()
+    assert at("2024-01-01 08:00:00") == [0, 1, 2]
+
+    # a commit stamped before its predecessor
+    clock["ms"] = T0_MS + 10 * HOUR_MS
+    ctx.execute("ALTER TABLE hist SET TBLPROPERTIES ('a' = '1')")
+    clock["ms"] = T0_MS + 9 * HOUR_MS
+    ctx.execute("ALTER TABLE hist SET TBLPROPERTIES ('b' = '1')")
+    with pytest.raises(ValueError, match="out of order"):
+        at("2024-01-01 09:30:00")
+
+
+@pytest.mark.write_disk
+def test_catalog_time_travel_catalog_by_name(
+    lake: CountingCatalog, history: tuple[pl.SQLContext[pl.LazyFrame], list[int]]
+) -> None:
+    _, ids = history
+    resolver, names = recording_catalog_resolver(lake)
+    set_iceberg_catalog_resolver(resolver)
+    ctx = pl.SQLContext().register_catalog(
+        "lake", default_namespace="tpch", default=True
+    )
+    query = (
+        f"SELECT a.k, b.k AS b FROM hist VERSION AS OF {ids[0]} AS a "
+        "FULL JOIN hist FOR TIMESTAMP AS OF TIMESTAMP '2024-01-01 01:30:00' AS b "
+        "ON a.k = b.k ORDER BY b.k"
+    )
+    assert ctx.execute(query, eager=True).rows() == [(0, 0), (None, 1)]
+    assert names

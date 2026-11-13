@@ -1,5 +1,6 @@
 //! SQL window functions that read the window frame of their OVER clause: the aggregates SUM,
-//! COUNT, MIN, MAX, AVG and TOTAL, and FIRST_VALUE, LAST_VALUE and NTH_VALUE.
+//! COUNT, COUNT_IF, MIN, MAX, BOOL_AND, BOOL_OR, AVG and TOTAL, and FIRST_VALUE, LAST_VALUE and
+//! NTH_VALUE.
 
 use polars_core::chunked_array::ops::FillNullStrategy;
 #[cfg(feature = "rolling_window")]
@@ -75,7 +76,7 @@ enum Aggregate {
 pub(crate) fn is_frame_aggregate(function: &PolarsSQLFunctions, is_distinct: bool) -> bool {
     use PolarsSQLFunctions::*;
     match function {
-        Avg | Max | Min | Sum | Total => true,
+        Avg | BoolAnd | BoolOr | CountIf | Max | Min | Sum | Total => true,
         Count => !is_distinct,
         _ => false,
     }
@@ -109,6 +110,10 @@ impl SQLFunctionVisitor<'_> {
             ),
             (None, value) => value,
         };
+        let value = match function {
+            BoolAnd | BoolOr | CountIf => value.map(|v| self.boolean_arg(v)).transpose()?,
+            _ => value,
+        };
         // A scalar counts once per row, as in `SUM(1)`.
         let is_scalar = value.as_ref().is_some_and(is_constant_key);
         let value = value.map(|value| match frame {
@@ -119,7 +124,7 @@ impl SQLFunctionVisitor<'_> {
 
         // DISTINCT doesn't change MIN and MAX.
         let distinct_supported = match function {
-            Max | Min => true,
+            BoolAnd | BoolOr | Max | Min => true,
             Avg => matches!(frame, FrameShape::Partition),
             _ => false,
         };
@@ -134,8 +139,13 @@ impl SQLFunctionVisitor<'_> {
             (Count, Some(value)) => Aggregate::Count(value),
             (Avg, Some(value)) if is_distinct => Aggregate::Avg(value.unique()),
             (Avg, Some(value)) => Aggregate::Avg(value),
-            (Max, Some(value)) => Aggregate::Max(value),
-            (Min, Some(value)) => Aggregate::Min(value),
+            (CountIf, Some(value)) => Aggregate::Count(
+                when(value)
+                    .then(lit(true))
+                    .otherwise(Expr::Literal(LiteralValue::untyped_null())),
+            ),
+            (BoolOr | Max, Some(value)) => Aggregate::Max(value),
+            (BoolAnd | Min, Some(value)) => Aggregate::Min(value),
             (Sum | Total, Some(value)) => Aggregate::Sum(value),
             _ => return self.not_supported_error(),
         };

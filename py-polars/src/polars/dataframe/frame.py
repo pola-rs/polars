@@ -5133,13 +5133,30 @@ class DataFrame:
                 _get_credentials_from_provider_expiry_aware(provider) or {}
             )
 
-        # We aren't calling into polars-native write functions so we just update
-        # the storage_options here.
+        # The credentials are passed as storage options, to deltalake or to the
+        # native sink.
         storage_options = (
             {**(storage_options or {}), **credential_provider_creds}
             if storage_options is not None or credential_provider_builder is not None
             else None
         )
+
+        from polars.io.delta._sink import _native_sink_state, _write_native
+
+        if (
+            sink_state := _native_sink_state(
+                target,
+                mode=mode,
+                storage_options=storage_options,
+                delta_write_options=delta_write_options,
+                schema=self.schema,
+            )
+        ) is not None:
+            _write_native(sink_state, self.lazy())
+            if isinstance(target, DeltaTable):
+                # `write_deltalake` also leaves the table object at the new version.
+                target.update_incremental()
+            return None
 
         if mode == "merge":
             if delta_merge_options is None:
