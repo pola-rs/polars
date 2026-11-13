@@ -614,6 +614,18 @@ def test_quantile_out_of_range_literal_empty(quantile: float | list[float]) -> N
             q.collect_schema()
 
 
+def test_quantile_bool_fraction_grouped() -> None:
+    # `select` reads a Boolean fraction as 0 or 1, so group contexts do too.
+    lf = pl.LazyFrame({"g": [1, 1, 2], "a": [1, 2, 3]})
+    contexts: list[Callable[[pl.Expr], pl.LazyFrame]] = [
+        lambda e: lf.select(e.over("g")),
+        lambda e: lf.group_by("g", maintain_order=True).agg(e),
+    ]
+    for f in contexts:
+        result = f(pl.col("a").quantile(True)).collect()
+        assert_frame_equal(result, f(pl.col("a").quantile(1.0)).collect())
+
+
 @pytest.mark.parametrize(
     "values", [pl.Series([True, False, True, None]), pl.Series([None] * 4)]
 )

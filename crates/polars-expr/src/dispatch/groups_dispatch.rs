@@ -14,7 +14,7 @@ use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::{
     AnyValue, BooleanChunked, ChunkCast, Column, CompatLevel, DataType, ExplodeOptions,
     Float64Chunked, GroupPositions, GroupsIdx, GroupsType, IDX_DTYPE, IntoColumn, IntoSeries,
-    LargeListArray, ListChunked, check_quantiles, explode_with_row_offsets,
+    LargeListArray, ListChunked, explode_with_row_offsets, extract_quantiles,
 };
 use polars_core::runtime::RAYON;
 use polars_core::scalar::Scalar;
@@ -684,23 +684,12 @@ pub fn quantile<'a>(
 
     let quantile_column = inputs[1].evaluate(df, state)?;
     polars_ensure!(
-        !quantile_column.is_empty(),
-        ComputeError:
-            "the 'quantile' expression input should produce a single quantile, got an empty input"
-    );
-    polars_ensure!(
-        quantile_column.len() == 1,
-        ComputeError:
-            "polars only supports computing a single quantile in a groupby aggregation context"
-    );
-    polars_ensure!(
-        quantile_column.dtype().is_numeric(),
+        !quantile_column.dtype().is_list(),
         SchemaMismatch:
             "expected expression of dtype 'numeric' for quantile, got '{}'",
         quantile_column.dtype()
     );
-    let quantile: f64 = quantile_column.get(0).unwrap().try_extract()?;
-    check_quantiles(&[quantile])?;
+    let quantile = extract_quantiles(quantile_column.as_materialized_series())?[0];
 
     if let AggState::LiteralScalar(c) = &mut ac.state {
         *c = c.quantile_reduce(quantile, method)?.into_column(keep_name);
