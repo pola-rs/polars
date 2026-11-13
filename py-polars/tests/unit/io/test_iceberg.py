@@ -5241,7 +5241,7 @@ def test_sink_iceberg_commit_renews_file_io(
     assert tbl.io.properties["gcs.oauth2.token"] == "t3"
 
     # The sink does so before it commits: manifests are written with the FileIO.
-    refreshed = []
+    refreshed: list[pyiceberg.table.Table] = []
     plmonkeypatch.setattr(credentials, "refresh_file_io", refreshed.append)
     tbl, _ = new_iceberg_table(
         tmp_path / "b", schema=IcebergSchema(NestedField(1, "a", LongType()))
