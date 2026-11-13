@@ -49,8 +49,9 @@ fn expected_row_bits(dtype: &DataType) -> u64 {
                 .map(|f| expected_row_bits(f.dtype()))
                 .fold(0, u64::saturating_add),
             #[cfg(feature = "dtype-map")]
-            D::Map(key, value) => {
-                64 + ESTIMATED_LIST_LEN * (expected_row_bits(key) + expected_row_bits(value))
+            D::Map(map) => {
+                64 + ESTIMATED_LIST_LEN
+                    * (expected_row_bits(map.key()) + expected_row_bits(map.value()))
             },
             #[cfg(feature = "dtype-extension")]
             D::Extension(_, storage) => expected_row_bits(storage),

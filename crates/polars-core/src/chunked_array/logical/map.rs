@@ -18,8 +18,7 @@ use crate::prelude::*;
 ///
 /// Every `MapChunked` must satisfy:
 ///
-/// 1. The storage dtype is the [`DataType::map_storage_dtype`] of a Map dtype that passes
-///    [`DataType::ensure_valid_map_dtype`].
+/// 1. The storage dtype is the [`MapDtype::storage_dtype`] of the Map dtype.
 /// 2. Child arrays are valid over their entire extent, including outside the list offsets:
 ///    categorical codes in range for every non-null slot, no `Object`.
 /// 3. Entries and keys are non-null within the offset window of every non-null row of every
@@ -48,31 +47,32 @@ pub struct MapChunked {
 impl MapChunked {
     /// # Safety
     /// `storage` must satisfy the [`MapChunked`] storage safety contract for `dtype`.
-    pub unsafe fn from_storage_unchecked(dtype: DataType, storage: Series) -> Self {
-        debug_assert_eq!(dtype.map_storage_dtype().as_ref(), Some(storage.dtype()));
-        debug_assert!(
-            dtype.ensure_valid_map_dtype().is_ok(),
-            "invalid Map dtype: {dtype}"
-        );
-        Self { dtype, storage }
+    pub unsafe fn from_storage_unchecked(dtype: MapDtype, storage: Series) -> Self {
+        debug_assert_eq!(&dtype.storage_dtype(), storage.dtype());
+        Self {
+            dtype: DataType::Map(dtype),
+            storage,
+        }
     }
 
     /// Validate map storage and canonicalize duplicate keys.
     ///
     /// Rejects null entries or keys that a live row owns. Duplicate keys keep their first
     /// position and last value.
-    pub fn try_from_storage(dtype: DataType, storage: Series) -> PolarsResult<Self> {
-        dtype.ensure_valid_map_dtype()?;
-
-        let storage_dtype = dtype.map_storage_dtype().unwrap();
+    pub fn try_from_storage(dtype: MapDtype, storage: Series) -> PolarsResult<Self> {
+        let storage_dtype = dtype.storage_dtype();
         polars_ensure!(
             storage.dtype() == &storage_dtype,
-            InvalidOperation: "expected `{storage_dtype}` storage for `{dtype}`, got `{}`",
+            InvalidOperation: "expected `{storage_dtype}` storage for `{}`, got `{}`",
+            DataType::Map(dtype),
             storage.dtype()
         );
 
         let storage = canonicalize_map_storage(&storage)?.unwrap_or(storage);
-        Ok(Self { dtype, storage })
+        Ok(Self {
+            dtype: DataType::Map(dtype),
+            storage,
+        })
     }
 
     pub fn name(&self) -> &PlSmallStr {
@@ -91,12 +91,16 @@ impl MapChunked {
         &self.dtype
     }
 
+    pub fn map_dtype(&self) -> &MapDtype {
+        self.dtype.as_map().unwrap()
+    }
+
     pub fn key_dtype(&self) -> &DataType {
-        self.dtype.as_map().unwrap().0
+        self.map_dtype().key()
     }
 
     pub fn value_dtype(&self) -> &DataType {
-        self.dtype.as_map().unwrap().1
+        self.map_dtype().value()
     }
 
     /// The raw `List(Struct {key, value})` storage, including entries that no live row owns.
@@ -266,11 +270,7 @@ impl MapChunked {
     /// Preserves row count, validity, live keys and entry order. Drops entries that no live
     /// row owns and may rebase offsets.
     pub fn with_values(&self, values: &Series) -> PolarsResult<Self> {
-        let dtype = DataType::Map(
-            Box::new(self.key_dtype().clone()),
-            Box::new(values.dtype().clone()),
-        );
-        dtype.ensure_valid_map_dtype()?;
+        let dtype = MapDtype::try_new(self.key_dtype().clone(), values.dtype().clone())?;
 
         let storage = try_apply_map_entries(&self.live_storage(), |keys, _| {
             polars_ensure!(
@@ -349,7 +349,7 @@ impl MapChunked {
         }
 
         match dtype {
-            DataType::Map(key, value) => self.cast_entries(key, value, options),
+            DataType::Map(map) => self.cast_entries(map, options),
             DataType::List(_) => self.live_storage().cast_with_options(dtype, options),
             _ => polars_bail!(InvalidOperation: "cannot cast `{}` to `{dtype}`", self.dtype),
         }
@@ -359,12 +359,8 @@ impl MapChunked {
     ///
     /// Drops entries that no live row owns and may rebase offsets. Key casts may merge
     /// duplicate keys.
-    fn cast_entries(
-        &self,
-        to_key: &DataType,
-        to_value: &DataType,
-        options: CastOptions,
-    ) -> PolarsResult<Series> {
+    fn cast_entries(&self, dtype: &MapDtype, options: CastOptions) -> PolarsResult<Series> {
+        let (to_key, to_value) = (dtype.key(), dtype.value());
         let cast_key = self
             .key_dtype()
             .matches_schema_type(to_key)
@@ -372,8 +368,6 @@ impl MapChunked {
                 polars_err!(InvalidOperation: "cannot cast Map key `{}` to `{to_key}`", self.key_dtype())
             })?;
 
-        let dtype = DataType::Map(Box::new(to_key.clone()), Box::new(to_value.clone()));
-        dtype.ensure_valid_map_dtype()?;
         let storage = try_apply_map_entries(&self.live_storage(), |key, value| {
             // `Series::cast_with_options` only short-circuits an identity cast for
             // primitives, so a nested key or value would be rebuilt for nothing.
@@ -391,7 +385,7 @@ impl MapChunked {
         })?
         .into_series();
 
-        let storage_dtype = dtype.map_storage_dtype().unwrap();
+        let storage_dtype = dtype.storage_dtype();
         polars_ensure!(
             storage.dtype() == &storage_dtype,
             ComputeError: "Map entry transform produced `{}` storage instead of `{storage_dtype}`",
@@ -400,10 +394,10 @@ impl MapChunked {
 
         if cast_key {
             // Decimal rescaling can merge distinct keys even when schemas match.
-            Ok(Self::try_from_storage(dtype, storage)?.into_series())
+            Ok(Self::try_from_storage(dtype.clone(), storage)?.into_series())
         } else {
             // SAFETY: keys and row assignments are preserved; cast values remain valid.
-            Ok(unsafe { Self::from_storage_unchecked(dtype, storage) }.into_series())
+            Ok(unsafe { Self::from_storage_unchecked(dtype.clone(), storage) }.into_series())
         }
     }
 }
@@ -932,7 +926,7 @@ mod test {
     use crate::scalar::Scalar;
 
     fn map_dtype(key: DataType, value: DataType) -> DataType {
-        DataType::Map(Box::new(key), Box::new(value))
+        DataType::Map(MapDtype::try_new(key, value).unwrap())
     }
 
     fn str_keys(keys: &[Option<&str>]) -> Series {
@@ -989,7 +983,11 @@ mod test {
         let keys = str_keys(&[Some("a"), Some("b"), Some("c"), Some("d"), Some("e")]);
         let values = i64_values(&[Some(1), Some(2), Some(3), Some(4), Some(5)]);
         let storage = storage(&pack_map_entries(&keys, &values), &[0, 2, 3, 5], None);
-        MapChunked::try_from_storage(map_dtype(DataType::String, DataType::Int64), storage).unwrap()
+        MapChunked::try_from_storage(
+            MapDtype::try_new(DataType::String, DataType::Int64).unwrap(),
+            storage,
+        )
+        .unwrap()
     }
 
     fn str_values(s: &Series) -> Vec<Option<String>> {
@@ -1014,7 +1012,7 @@ mod test {
         let storage = storage(&pack_map_entries(&keys, &values), &[0, 1], Some(&[false]));
 
         let dtype = map_dtype(enum_dtype, DataType::Int64);
-        let map = MapChunked::try_from_storage(dtype, storage).unwrap();
+        let map = MapChunked::try_from_storage(dtype.as_map().unwrap().clone(), storage).unwrap();
         assert_eq!(map.keys().len(), 0);
         assert_no_live_null_entries_or_keys(&map);
         // Formatting resolves all reachable codes.
@@ -1053,9 +1051,13 @@ mod test {
         let values = i64_values(&[Some(1), Some(2), Some(3)]);
         let storage = storage(&pack_map_entries(&keys, &values), &[0, 1, 2, 3], None);
         let dtype = map_dtype(DataType::String, DataType::Int64);
-        assert!(MapChunked::try_from_storage(dtype.clone(), storage.clone()).is_err());
+        assert!(
+            MapChunked::try_from_storage(dtype.as_map().unwrap().clone(), storage.clone()).is_err()
+        );
 
-        let map = MapChunked::try_from_storage(dtype, storage.slice(1, 2)).unwrap();
+        let map =
+            MapChunked::try_from_storage(dtype.as_map().unwrap().clone(), storage.slice(1, 2))
+                .unwrap();
         assert_eq!(map.len(), 2);
         assert_no_live_null_entries_or_keys(&map);
         assert_eq!(
@@ -1099,7 +1101,7 @@ mod test {
             Some(&[false, true]),
         );
         let dtype = map_dtype(DataType::String, DataType::Int64);
-        let map = MapChunked::try_from_storage(dtype, storage).unwrap();
+        let map = MapChunked::try_from_storage(dtype.as_map().unwrap().clone(), storage).unwrap();
 
         // The storage keeps `a` where it was; only the accessors hide it.
         assert_eq!(list_offsets(map.storage()), [0, 1, 2]);

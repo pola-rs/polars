@@ -2780,19 +2780,21 @@ fn nested_cast_mismatch(target: &DataType, source: &DataType) -> Option<NestedCa
             })
         },
         #[cfg(feature = "dtype-map")]
-        (DataType::Map(key, value), DataType::Map(source_key, source_value)) => {
-            within("map key".into(), nested_cast_mismatch(key, source_key)).or_else(|| {
-                within(
-                    "map value".into(),
-                    nested_cast_mismatch(value, source_value),
-                )
-            })
-        },
+        (DataType::Map(target), DataType::Map(source)) => within(
+            "map key".into(),
+            nested_cast_mismatch(target.key(), source.key()),
+        )
+        .or_else(|| {
+            within(
+                "map value".into(),
+                nested_cast_mismatch(target.value(), source.value()),
+            )
+        }),
         // A map is stored as a list of `{key, value}` structs, which a list target can take.
         #[cfg(feature = "dtype-map")]
-        (DataType::List(target) | DataType::Array(target, _), DataType::Map(..)) => within(
+        (DataType::List(target) | DataType::Array(target, _), DataType::Map(source)) => within(
             "map entry".into(),
-            nested_cast_mismatch(target, &source.map_entries_dtype()?),
+            nested_cast_mismatch(target, &source.entries_dtype()),
         ),
         _ => nested_target_name(target).map(|target| NestedCastMismatch {
             source: source.clone(),

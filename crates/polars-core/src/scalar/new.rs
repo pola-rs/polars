@@ -44,26 +44,25 @@ impl Scalar {
 
     /// One `Map` row from its flat key and value fields.
     ///
-    /// Validation is deferred to `Series::from_any_values_and_dtype`, which calls
+    /// Entry validation is deferred to `Series::from_any_values_and_dtype`, which calls
     /// `MapChunked::try_from_storage`. Other consumers only read the entries.
     #[cfg(feature = "dtype-map")]
-    pub fn new_map(keys: &Series, values: &Series) -> Self {
-        Scalar::new(
-            DataType::Map(
-                Box::new(keys.dtype().clone()),
-                Box::new(values.dtype().clone()),
-            ),
+    pub fn new_map(keys: &Series, values: &Series) -> PolarsResult<Self> {
+        let dtype =
+            crate::datatypes::MapDtype::try_new(keys.dtype().clone(), values.dtype().clone())?;
+        Ok(Scalar::new(
+            DataType::Map(dtype),
             AnyValue::Map(crate::chunked_array::logical::pack_map_entries(
                 keys, values,
             )),
-        )
+        ))
     }
 
     /// For callers that already hold one row's entries, such as deserialization.
     #[cfg(feature = "dtype-map")]
-    pub(crate) fn map_from_entries(entries: Series) -> Self {
-        let value = AnyValue::Map(entries);
-        Scalar::new(value.dtype(), value)
+    pub(crate) fn map_from_entries(entries: Series) -> PolarsResult<Self> {
+        let dtype = crate::datatypes::MapDtype::try_from_named_entries(entries.dtype())?;
+        Ok(Scalar::new(DataType::Map(dtype), AnyValue::Map(entries)))
     }
 
     #[cfg(feature = "dtype-array")]

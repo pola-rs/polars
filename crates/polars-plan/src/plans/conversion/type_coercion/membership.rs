@@ -93,7 +93,7 @@ pub(super) fn resolve_map_key(
         input[0].node(),
         input_schema
     ));
-    let DataType::Map(key, _) = &map else {
+    let Some(key) = map.as_map().map(MapDtype::key) else {
         // Output field resolution rejects non-Map inputs.
         return Ok(None);
     };

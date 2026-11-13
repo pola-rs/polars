@@ -383,10 +383,10 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Null"))?;
                 class.call0()
             },
-            DataType::Map(key, value) => {
+            DataType::Map(map) => {
                 let class = pl.getattr(intern!(py, "Map"))?;
-                let key = Wrap(*key.clone());
-                let value = Wrap(*value.clone());
+                let key = Wrap(map.key().clone());
+                let value = Wrap(map.value().clone());
                 class.call1((&key, &value))
             },
             DataType::Extension(typ, storage) => {
@@ -571,9 +571,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DataType> {
                 let value = ob.getattr(intern!(py, "value"))?;
                 let key = key.extract::<Wrap<DataType>>()?;
                 let value = value.extract::<Wrap<DataType>>()?;
-                let dtype = DataType::Map(Box::new(key.0), Box::new(value.0));
-                dtype.ensure_valid_map_dtype().map_err(PyPolarsErr::from)?;
-                dtype
+                DataType::Map(MapDtype::try_new(key.0, value.0).map_err(PyPolarsErr::from)?)
             },
             "Struct" => {
                 let fields = ob.getattr(intern!(py, "fields"))?;
