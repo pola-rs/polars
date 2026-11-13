@@ -3168,6 +3168,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             For cloud storages, this may include configurations for authentication etc.
 
             More info is available `here <https://py.iceberg.apache.org/configuration/>`__.
+
+            Storage credentials vended by the table's catalog are used by default,
+            and renewed from the catalog before they expire, so the catalog's own
+            authentication must outlive the sink (e.g. PyIceberg's ``auth.type``
+            rather than a static ``token``). Credentials given here replace them.
+
+            Not renewed: credentials vended without an expiry, per-account ADLS
+            credentials, and those of a table created by SQL ``CREATE TABLE AS``.
         compression
             Parquet compression codec.
         compression_level

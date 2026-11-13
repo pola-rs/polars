@@ -1536,6 +1536,54 @@ def test_iceberg_plugin_catalog_storage_options(
     }
 
 
+def test_iceberg_plugin_renews_vended_credentials(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    from datetime import datetime
+
+    expires_at = int(datetime.now().timestamp()) + 3600
+    tbl, catalog = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "a", LongType())),
+        catalog_properties={
+            "gcs.oauth2.token": "vended-token",
+            "gcs.oauth2.token-expires-at": str(expires_at * 1000),
+        },
+    )
+    tbl.metadata_location = "gs://bucket/t/metadata/v1.metadata.json"
+    tbl.metadata = tbl.metadata.model_copy(update={"location": "gs://bucket/t"})
+
+    def capture(*args: Any, **kwargs: Any) -> Any:
+        raise _ScanArgs(kwargs)
+
+    plmonkeypatch.setattr(plr, "_iceberg_plugin_scan", capture)
+    with pytest.raises(_ScanArgs) as e:
+        pl.scan_iceberg(tbl).collect()
+    kwargs = e.value.args[0]
+
+    # Passed by a provider renewing it, not as a fixed value.
+    assert kwargs["storage_options"] is None
+    provider = kwargs["credential_provider"].build_credential_provider()
+    assert provider() == ({"bearer_token": "vended-token"}, expires_at - 60)
+    # For the table's location, which the metadata and the data files are under.
+    assert provider._location == "gs://bucket/t/"
+
+    # A scan by catalog name carries only the name.
+    import pickle
+
+    from polars.io.iceberg import _catalog_resolver
+
+    plmonkeypatch.setattr(catalog, "load_table", lambda identifier: tbl)
+    plmonkeypatch.setattr(
+        _catalog_resolver, "ICEBERG_CATALOG_RESOLVER", lambda name: catalog
+    )
+    with pytest.raises(_ScanArgs) as e:
+        pl.scan_iceberg("ns.t", catalog="sales").collect()
+    pickled = pickle.dumps(e.value.args[0]["credential_provider"])
+    assert b"sales" in pickled
+    assert b"SqlCatalog" not in pickled
+
+
 def test_iceberg_plugin_catalog_storage_options_by_scheme() -> None:
     from polars.io.iceberg._plugin import _catalog_storage_options
 

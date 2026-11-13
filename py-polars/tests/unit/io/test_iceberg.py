@@ -74,6 +74,7 @@ import polars as pl
 from polars._utils.various import parse_version
 from polars.io._expand_paths import _expand_paths
 from polars.io.cloud._utils import NoPickleOption
+from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
 from polars.io.iceberg._dataset import (
     IcebergCatalogConfig,
     IcebergScanResolver,
@@ -257,11 +258,14 @@ def new_iceberg_table(
     sort_order: SortOrder | None = None,
     name: str = "table",
     properties: dict[str, str] | None = None,
+    catalog_properties: dict[str, str] | None = None,
 ) -> tuple[pyiceberg.table.Table, SqlCatalog]:
+    # `catalog_properties` are passed to the tables' FileIO, as vended credentials.
     catalog = SqlCatalog(
         "default",
         uri=f"sqlite:///{tmp_path / 'iceberg_catalog.sqlite'}",
         warehouse=format_file_uri_iceberg(tmp_path),
+        **(catalog_properties or {}),
     )
     namespace = uuid.uuid4().bytes.hex()
     catalog.create_namespace(namespace)
@@ -4649,6 +4653,601 @@ retry_max_backoff: Some(9.875s), \
 retry_base_multiplier: Some(TotalOrdWrap(3.14159)) }"""
         in capture
     )
+
+
+def _vended_table(
+    tmp_path: Path, catalog_properties: dict[str, str], scheme: str
+) -> tuple[pyiceberg.table.Table, SqlCatalog]:
+    tbl, catalog = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "a", LongType())),
+        catalog_properties=catalog_properties,
+    )
+    # Credentials are renewed for the cloud of the table's location only.
+    tbl.metadata_location = f"{scheme}://bucket/t.metadata.json"
+    tbl.metadata = tbl.metadata.model_copy(update={"location": f"{scheme}://bucket/t"})
+    return tbl, catalog
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_native_unsupported_io_properties(tmp_path: Path) -> None:
+    # Remote signing is unsupported by object store, for tables on S3.
+    tbl, _ = _vended_table(
+        tmp_path, {"s3.signer": "S3V4RestSigner", "s3.region": "eu-west-1"}, "s3"
+    )
+    resolver = new_iceberg_scan_resolver(tbl)
+
+    # The catalog's FileIO properties are ignored; the user's options are used alone.
+    scan_data = resolver._to_dataset_scan_impl()
+    assert isinstance(scan_data, _NativeIcebergScanData)
+    assert scan_data.storage_options is None
+    assert scan_data.credential_provider == "auto"
+
+    resolver.table.iceberg_storage_properties = {"s3.region": "us-east-1"}
+    scan_data = resolver._to_dataset_scan_impl()
+    assert isinstance(scan_data, _NativeIcebergScanData)
+    assert scan_data.storage_options == {"aws_region": "us-east-1"}
+
+    # Forcing the native reader is not an error either.
+    resolver.reader_override = "native"
+    assert isinstance(resolver._to_dataset_scan_impl(), _NativeIcebergScanData)
+
+
+def _gcs_vended_properties(token: str, expires_at: int) -> dict[str, str]:
+    return {
+        "gcs.oauth2.token": token,
+        "gcs.oauth2.token-expires-at": str(expires_at * 1000),
+    }
+
+
+def _native_credential_provider(tbl: pyiceberg.table.Table) -> Any:
+    scan_data = new_iceberg_scan_resolver(tbl)._to_dataset_scan_impl()
+    assert isinstance(scan_data, _NativeIcebergScanData)
+    # Renewed credentials are not passed as fixed values.
+    assert scan_data.storage_options is None
+    assert isinstance(scan_data.credential_provider, CredentialProviderBuilder)
+    return scan_data.credential_provider.build_credential_provider()
+
+
+class _Clock:
+    def __init__(self, now: int) -> None:
+        self.now = now
+
+    def __call__(self) -> int:
+        return self.now
+
+
+def _fixed_clock(plmonkeypatch: PlMonkeyPatch, now: int) -> _Clock:
+    """Stop the clock of the credential renewals at `now`."""
+    import polars.io.iceberg._credentials as credentials
+
+    clock = _Clock(now)
+    plmonkeypatch.setattr(credentials, "_now", clock)
+    return clock
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_renews_vended_credentials(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    now = int(datetime.now().timestamp())
+    clock = _fixed_clock(plmonkeypatch, now)
+    tbl, catalog = _vended_table(
+        tmp_path, _gcs_vended_properties("t1", now + 3600), "gs"
+    )
+    provider = _native_credential_provider(tbl)
+
+    # Renewed a minute before they expire.
+    assert provider() == ({"bearer_token": "t1"}, now + 3600 - 60)
+
+    # By reloading the table from the catalog.
+    catalog.properties.update(_gcs_vended_properties("t2", now + 7200))
+    provider.clear_cached_credentials()
+    assert provider() == ({"bearer_token": "t2"}, now + 7200 - 60)
+
+    # Credentials expiring within the minute are used until they expire.
+    clock.now += 60
+    catalog.properties.update(_gcs_vended_properties("t3", clock.now + 30))
+    provider.clear_cached_credentials()
+    assert provider() == ({"bearer_token": "t3"}, clock.now + 30)
+
+    # Any object store error clears them: those just renewed are kept.
+    catalog.properties.update(_gcs_vended_properties("t4", now + 7200))
+    provider.clear_cached_credentials()
+    assert provider() == ({"bearer_token": "t3"}, clock.now + 30)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_pickled_vended_credential_provider(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    now = int(datetime.now().timestamp())
+    _fixed_clock(plmonkeypatch, now)
+    tbl, catalog = _vended_table(
+        tmp_path, _gcs_vended_properties("t1", now + 3600), "gs"
+    )
+    scan_data = new_iceberg_scan_resolver(tbl)._to_dataset_scan_impl()
+    assert isinstance(scan_data, _NativeIcebergScanData)
+    catalog.properties.update(_gcs_vended_properties("t2", now + 7200))
+
+    # Other processes start with the scan's credentials, without a catalog request.
+    builder = pickle.loads(pickle.dumps(scan_data.credential_provider))
+    provider = builder.build_credential_provider()
+    assert provider() == ({"bearer_token": "t1"}, now + 3600 - 60)
+
+    # They renew them with a catalog created from its configuration.
+    provider.clear_cached_credentials()
+    assert provider() == ({"bearer_token": "t2"}, now + 7200 - 60)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_vended_credentials_renewal_error(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    now = int(datetime.now().timestamp())
+    clock = _fixed_clock(plmonkeypatch, now)
+    tbl, catalog = _vended_table(
+        tmp_path, _gcs_vended_properties("t1", now + 3600), "gs"
+    )
+    provider = _native_credential_provider(tbl)
+
+    def unreachable(identifier: Any) -> Any:
+        msg = "catalog unreachable"
+        raise ConnectionError(msg)
+
+    plmonkeypatch.setattr(catalog, "load_table", unreachable)
+
+    # The last credentials are used while they are valid, and the renewal retried.
+    provider.clear_cached_credentials()
+    assert provider() == ({"bearer_token": "t1"}, now + 10)
+
+    clock.now = now + 3600
+    provider.clear_cached_credentials()
+    with pytest.raises(ConnectionError, match="catalog unreachable"):
+        provider()
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_renews_vended_credentials_by_catalog_name(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    from polars.io.iceberg import _catalog_resolver
+    from polars.io.iceberg._dataset import IcebergCatalogTableDescriptor
+
+    now = int(datetime.now().timestamp())
+    _fixed_clock(plmonkeypatch, now)
+    tbl, catalog = _vended_table(
+        tmp_path, _gcs_vended_properties("t1", now + 3600), "gs"
+    )
+    names = []
+
+    def resolve(name: str) -> SqlCatalog:
+        names.append(name)
+        return catalog
+
+    plmonkeypatch.setattr(_catalog_resolver, "ICEBERG_CATALOG_RESOLVER", resolve)
+
+    resolver = new_iceberg_scan_resolver(tbl)
+    resolver.table.table_descriptor_ = IcebergCatalogTableDescriptor(
+        table_identifier=tbl.name(), catalog_config="sales"
+    )
+    scan_data = resolver._to_dataset_scan_impl()
+    assert isinstance(scan_data, _NativeIcebergScanData)
+    builder = scan_data.credential_provider
+    assert isinstance(builder, CredentialProviderBuilder)
+
+    # Only the catalog's name is carried, as by the scan.
+    pickled = pickle.dumps(builder)
+    assert b"sales" in pickled
+    assert b"sqlite" not in pickled
+    assert b"SqlCatalog" not in pickled
+
+    # Renewals resolve it.
+    provider = builder.build_credential_provider()
+    assert provider is not None
+    catalog.properties.update(_gcs_vended_properties("t2", now + 7200))
+    provider.clear_cached_credentials()
+    assert provider() == ({"bearer_token": "t2"}, now + 7200 - 60)
+    assert names == ["sales"]
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("scheme", "properties", "credentials"),
+    [
+        (
+            "s3",
+            {
+                "s3.access-key-id": "key",
+                "s3.secret-access-key": "secret",
+                "s3.session-token": "session",
+                "s3.session-token-expires-at-ms": "{expires_at_ms}",
+            },
+            {
+                "aws_access_key_id": "key",
+                "aws_secret_access_key": "secret",
+                "aws_session_token": "session",
+            },
+        ),
+        (
+            "abfss",
+            {
+                "adls.sas-token": "sas",
+                "adls.sas-token-expires-at-ms": "{expires_at_ms}",
+            },
+            {"sas_token": "sas"},
+        ),
+        (
+            "gs",
+            {
+                "gcs.oauth2.token": "t1",
+                "gcs.oauth2.token-expires-at": "{expires_at_ms}",
+                # Another cloud's, expired.
+                "s3.session-token-expires-at-ms": "1000",
+            },
+            {"bearer_token": "t1"},
+        ),
+    ],
+)
+def test_scan_iceberg_renews_vended_credentials_of_any_storage(
+    tmp_path: Path, scheme: str, properties: dict[str, str], credentials: dict[str, str]
+) -> None:
+    now = int(datetime.now().timestamp())
+    tbl, _ = _vended_table(
+        tmp_path,
+        {k: v.format(expires_at_ms=(now + 3600) * 1000) for k, v in properties.items()},
+        scheme,
+    )
+
+    assert _native_credential_provider(tbl)() == (credentials, now + 3600 - 60)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_renews_expired_vended_credentials(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    now = int(datetime.now().timestamp())
+    clock = _fixed_clock(plmonkeypatch, now)
+    tbl, catalog = _vended_table(tmp_path, _gcs_vended_properties("t1", now - 1), "gs")
+    catalog.properties.update(_gcs_vended_properties("t2", now + 3600))
+
+    provider = _native_credential_provider(tbl)
+    assert provider() == ({"bearer_token": "t2"}, now + 3600 - 60)
+
+    # Vended expired again: retried a while later, not on every request.
+    clock.now += 10
+    catalog.properties.update(_gcs_vended_properties("t3", now - 1))
+    provider.clear_cached_credentials()
+    assert provider() == ({"bearer_token": "t3"}, clock.now + 10)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_renews_vended_credentials_with_load_credentials(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    now = int(datetime.now().timestamp())
+    clock = _fixed_clock(plmonkeypatch, now)
+    tbl, catalog = _vended_table(
+        tmp_path, _gcs_vended_properties("t1", now + 3600), "gs"
+    )
+    calls = []
+
+    def load_credentials(identifier: Any, location: str) -> dict[str, str]:
+        calls.append((identifier, location))
+        return _gcs_vended_properties("t2", now + 7200)
+
+    plmonkeypatch.setattr(catalog, "load_credentials", load_credentials, raising=False)
+    provider = _native_credential_provider(tbl)
+    provider.clear_cached_credentials()
+
+    assert provider() == ({"bearer_token": "t2"}, now + 7200 - 60)
+    # For the data path: catalogs match the location by prefix.
+    assert calls == [(tbl.name(), "gs://bucket/t/data/")]
+
+    # Catalogs whose server does not support the endpoint reload the table.
+    def unsupported(identifier: Any, location: str) -> dict[str, str]:
+        raise NotImplementedError
+
+    plmonkeypatch.setattr(catalog, "load_credentials", unsupported)
+    clock.now += 10
+    catalog.properties.update(_gcs_vended_properties("t3", now + 3600))
+    provider.clear_cached_credentials()
+    assert provider() == ({"bearer_token": "t3"}, now + 3600 - 60)
+
+    # As do credentials vended without an expiry, which could not be renewed.
+    def without_expiry(identifier: Any, location: str) -> dict[str, str]:
+        return {"gcs.oauth2.token": "no-expiry"}
+
+    plmonkeypatch.setattr(catalog, "load_credentials", without_expiry)
+    clock.now += 10
+    catalog.properties.update(_gcs_vended_properties("t4", now + 7200))
+    provider.clear_cached_credentials()
+    assert provider() == ({"bearer_token": "t4"}, now + 7200 - 60)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_fixed_vended_credentials(tmp_path: Path) -> None:
+    now = int(datetime.now().timestamp())
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    (tmp_path / "c").mkdir()
+    (tmp_path / "d").mkdir()
+
+    # Without an expiry.
+    tbl, _ = _vended_table(tmp_path / "a", {"gcs.oauth2.token": "t1"}, "gs")
+    scan_data = new_iceberg_scan_resolver(tbl)._to_dataset_scan_impl()
+    assert isinstance(scan_data, _NativeIcebergScanData)
+    assert scan_data.storage_options == {"bearer_token": "t1"}
+    assert scan_data.credential_provider == "auto"
+
+    # Replaced by the user's.
+    tbl, catalog = _vended_table(
+        tmp_path / "b", _gcs_vended_properties("t1", now + 3600), "gs"
+    )
+    resolver = new_iceberg_scan_resolver(tbl)
+    resolver.table.iceberg_storage_properties = {"gcs.oauth2.token": "user-token"}
+    scan_data = resolver._to_dataset_scan_impl()
+    assert isinstance(scan_data, _NativeIcebergScanData)
+    assert scan_data.storage_options == {"bearer_token": "user-token"}
+    assert scan_data.credential_provider == "auto"
+
+    # Of a table without a catalog.
+    static_table = StaticTable.from_metadata(
+        catalog.load_table(tbl.name()).metadata_location,
+        _gcs_vended_properties("t1", now + 3600),
+    )
+    static_table.metadata_location = "gs://bucket/t.metadata.json"
+    static_table.metadata = tbl.metadata
+    scan_data = new_iceberg_scan_resolver(static_table)._to_dataset_scan_impl()
+    assert isinstance(scan_data, _NativeIcebergScanData)
+    assert scan_data.storage_options == {"bearer_token": "t1"}
+    assert scan_data.credential_provider == "auto"
+
+    # Of another cloud than the table's: not used at all.
+    tbl, _ = _vended_table(
+        tmp_path / "c", _gcs_vended_properties("t1", now + 3600), "s3"
+    )
+    scan_data = new_iceberg_scan_resolver(tbl)._to_dataset_scan_impl()
+    assert isinstance(scan_data, _NativeIcebergScanData)
+    assert scan_data.storage_options is None
+    assert scan_data.credential_provider == "auto"
+
+    # With an expiry that is not a timestamp.
+    tbl, _ = _vended_table(
+        tmp_path / "d",
+        {"gcs.oauth2.token": "t1", "gcs.oauth2.token-expires-at": "soon"},
+        "gs",
+    )
+    scan_data = new_iceberg_scan_resolver(tbl)._to_dataset_scan_impl()
+    assert isinstance(scan_data, _NativeIcebergScanData)
+    assert scan_data.storage_options == {"bearer_token": "t1"}
+    assert scan_data.credential_provider == "auto"
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_vended_credential_provider_cache_key(tmp_path: Path) -> None:
+    now = int(datetime.now().timestamp())
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    tbl, _ = _vended_table(
+        tmp_path / "a", _gcs_vended_properties("t1", now + 3600), "gs"
+    )
+    other, _ = _vended_table(
+        tmp_path / "b", _gcs_vended_properties("t1", now + 3600), "gs"
+    )
+
+    def cache_key(tbl: pyiceberg.table.Table) -> bytes:
+        scan_data = new_iceberg_scan_resolver(tbl)._to_dataset_scan_impl()
+        assert isinstance(scan_data, _NativeIcebergScanData)
+        assert isinstance(scan_data.credential_provider, CredentialProviderBuilder)
+        return scan_data.credential_provider.stable_cache_key()
+
+    # Scans of the same table share the object store (and its credentials).
+    assert cache_key(tbl) == cache_key(tbl)
+    assert cache_key(tbl) != cache_key(other)
+
+    # Keyed on the table, not on the scan's first data file (which pruning changes).
+    from polars.io.iceberg._credentials import renewing_credential_provider
+    from polars.io.iceberg._plugin import _data_location
+
+    _, builder = renewing_credential_provider(
+        tbl, {"bearer_token": "t1"}, None, _data_location(tbl)
+    )
+    assert isinstance(builder, CredentialProviderBuilder)
+    assert cache_key(tbl) == builder.stable_cache_key()
+
+
+@pytest.mark.write_disk
+def test_iceberg_catalog_table_descriptor_reuses_catalog(tmp_path: Path) -> None:
+    from pyiceberg.catalog.noop import NoopCatalog
+
+    from polars.io.iceberg._dataset import (
+        IcebergCatalogConfig,
+        IcebergCatalogTableDescriptor,
+    )
+
+    tbl, catalog = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+
+    # Constructed from the configuration, then reused: SqlCatalog is thread-safe.
+    descriptor = IcebergCatalogTableDescriptor(
+        table_identifier=tbl.name(),
+        catalog_config=IcebergCatalogConfig.from_catalog(catalog),
+    )
+    constructed = descriptor.catalog()
+    assert isinstance(constructed, SqlCatalog)
+    assert constructed is not catalog
+    assert descriptor.catalog() is constructed
+
+    # A given instance is used as is.
+    descriptor = IcebergCatalogTableDescriptor(
+        table_identifier=tbl.name(),
+        catalog_config=IcebergCatalogConfig.from_catalog(catalog),
+        catalog_=NoPickleOption(catalog),
+    )
+    assert descriptor.catalog() is catalog
+
+    # Catalogs that are not thread-safe are constructed per use.
+    descriptor = IcebergCatalogTableDescriptor(
+        table_identifier=tbl.name(),
+        catalog_config=IcebergCatalogConfig.from_catalog(NoopCatalog("noop")),
+    )
+    assert descriptor.catalog() is not descriptor.catalog()
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_renews_only_provider_credentials(tmp_path: Path) -> None:
+    now = int(datetime.now().timestamp())
+    tbl, _ = _vended_table(
+        tmp_path,
+        {
+            "adls.sas-token": "sas",
+            "adls.sas-token-expires-at-ms": str((now + 3600) * 1000),
+            # Not renewed: the credential provider cannot return it.
+            "adls.client-secret": "secret",
+        },
+        "abfss",
+    )
+    scan_data = new_iceberg_scan_resolver(tbl)._to_dataset_scan_impl()
+    assert isinstance(scan_data, _NativeIcebergScanData)
+    assert scan_data.storage_options == {"azure_storage_client_secret": "secret"}
+    assert isinstance(scan_data.credential_provider, CredentialProviderBuilder)
+    provider = scan_data.credential_provider.build_credential_provider()
+    assert provider is not None
+    assert provider() == ({"sas_token": "sas"}, now + 3600 - 60)
+
+
+class _SinkArgs(Exception):
+    pass
+
+
+def _sink_parquet_kwargs(
+    tbl: pyiceberg.table.Table | str, plmonkeypatch: PlMonkeyPatch, **sink_kwargs: Any
+) -> dict[str, Any]:
+    """Keyword arguments `sink_iceberg` passes to `sink_parquet` for `tbl`."""
+
+    def capture(self: pl.LazyFrame, *args: Any, **kwargs: Any) -> Any:
+        raise _SinkArgs(kwargs)
+
+    plmonkeypatch.setattr(pl.LazyFrame, "sink_parquet", capture)
+    with pytest.raises(_SinkArgs) as e:
+        pl.DataFrame({"a": [1]}).lazy().sink_iceberg(tbl, mode="append", **sink_kwargs)
+    kwargs: dict[str, Any] = e.value.args[0]
+    return kwargs
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_catalog_storage_options(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    tbl, _ = _vended_table(
+        tmp_path,
+        {
+            "s3.region": "eu-west-1",
+            "s3.access-key-id": "vended-key",
+            "s3.secret-access-key": "vended-secret",
+        },
+        "s3",
+    )
+
+    kwargs = _sink_parquet_kwargs(tbl, plmonkeypatch)
+    assert kwargs["storage_options"] == {
+        "aws_region": "eu-west-1",
+        "aws_access_key_id": "vended-key",
+        "aws_secret_access_key": "vended-secret",
+    }
+    assert kwargs["credential_provider"] == "auto"
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_renews_vended_credentials(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    from polars.io.iceberg._credentials import renewing_credential_provider
+    from polars.io.iceberg._plugin import _native_storage_options
+
+    now = int(datetime.now().timestamp())
+    tbl, catalog = _vended_table(
+        tmp_path, _gcs_vended_properties("t1", now + 3600), "gs"
+    )
+
+    kwargs = _sink_parquet_kwargs(tbl, plmonkeypatch)
+    assert kwargs["storage_options"] == {}
+    provider = kwargs["credential_provider"].build_credential_provider()
+    assert provider() == ({"bearer_token": "t1"}, now + 3600 - 60)
+
+    # A sink by catalog name carries only the name, as its state does.
+    from polars.io.iceberg import _catalog_resolver
+
+    plmonkeypatch.setattr(catalog, "load_table", lambda identifier: tbl)
+    plmonkeypatch.setattr(
+        _catalog_resolver, "ICEBERG_CATALOG_RESOLVER", lambda name: catalog
+    )
+    kwargs = _sink_parquet_kwargs("ns.t", plmonkeypatch, catalog="sales")
+    pickled = pickle.dumps(kwargs["credential_provider"])
+    assert b"sales" in pickled
+    assert b"SqlCatalog" not in pickled
+    plmonkeypatch.undo()
+
+    # A table staged by `CREATE TABLE AS` cannot be loaded before its commit.
+    staged = catalog.create_table_transaction(
+        (*tbl.name()[:-1], "staged"), tbl.schema()
+    )._table
+    location = "gs://bucket/staged/data"
+    storage_options = _native_storage_options(staged, None, location)
+    assert storage_options == {"bearer_token": "t1"}
+    assert renewing_credential_provider(staged, storage_options, None, location) == (
+        storage_options,
+        "auto",
+    )
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_commit_renews_file_io(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    import polars.io.iceberg._credentials as credentials
+
+    now = int(datetime.now().timestamp())
+    clock = _fixed_clock(plmonkeypatch, now)
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    tbl, catalog = _vended_table(
+        tmp_path / "a", _gcs_vended_properties("t1", now + 3600), "gs"
+    )
+
+    # The table's FileIO is kept while its credentials are valid.
+    file_io = tbl.io
+    credentials.refresh_file_io(tbl)
+    assert tbl.io is file_io
+
+    # A catalog that cannot be reached leaves it as it is.
+    clock.now = now + 3600
+    load_table = catalog.load_table
+    plmonkeypatch.setattr(catalog, "load_table", lambda identifier: 1 / 0)
+    credentials.refresh_file_io(tbl)
+    assert tbl.io is file_io
+
+    # A table the caller loaded already is not loaded again.
+    catalog.properties.update(_gcs_vended_properties("t2", now + 7200))
+    credentials.refresh_file_io(tbl, load_table(tbl.name()))
+    assert tbl.io.properties["gcs.oauth2.token"] == "t2"
+
+    plmonkeypatch.setattr(catalog, "load_table", load_table)
+    clock.now = now + 7200
+    catalog.properties.update(_gcs_vended_properties("t3", now + 9000))
+    credentials.refresh_file_io(tbl)
+    assert tbl.io.properties["gcs.oauth2.token"] == "t3"
+
+    # The sink does so before it commits: manifests are written with the FileIO.
+    refreshed = []
+    plmonkeypatch.setattr(credentials, "refresh_file_io", refreshed.append)
+    tbl, _ = new_iceberg_table(
+        tmp_path / "b", schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    pl.LazyFrame({"a": [1]}).sink_iceberg(tbl, mode="append")
+    assert [t is tbl for t in refreshed] == [True]
 
 
 @pytest.mark.write_disk
