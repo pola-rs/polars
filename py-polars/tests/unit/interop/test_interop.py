@@ -1861,3 +1861,23 @@ def test_series_from_arrow_large_list_keeps_fast_explode_28626(
     assert imported.to_list() == values
     assert imported.flags["FAST_EXPLODE"] is fast_explode
     assert imported.explode(empty_as_null=True, keep_nulls=True).to_list() == exploded
+
+
+@pytest.mark.parametrize(
+    "s",
+    [
+        pl.Series("a", ["x", "y", None, "x"], dtype=pl.Categorical),
+        pl.Series("a", ["x", "y", None, "x"], dtype=pl.Enum(["x", "y"])),
+        pl.Series("a", [["x", "y"], None], dtype=pl.List(pl.Categorical)),
+    ],
+)
+def test_export_arrow_to_c_logical_dtype(s: pl.Series) -> None:
+    import ctypes
+
+    # sizeof(struct ArrowArray) and sizeof(struct ArrowSchema) on 64-bit platforms.
+    c_array = ctypes.create_string_buffer(80)
+    c_schema = ctypes.create_string_buffer(72)
+    s._export_arrow_to_c(ctypes.addressof(c_array), ctypes.addressof(c_schema))
+    arr = pa.Array._import_from_c(ctypes.addressof(c_array), ctypes.addressof(c_schema))
+    arr.validate(full=True)
+    assert arr.equals(s.to_arrow(compat_level=CompatLevel.newest()))
