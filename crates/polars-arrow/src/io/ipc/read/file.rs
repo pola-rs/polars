@@ -11,11 +11,10 @@ use polars_utils::bool::UnsafeBool;
 use super::super::{ARROW_MAGIC_V1, ARROW_MAGIC_V2, CONTINUATION_MARKER};
 use super::common::*;
 use super::schema::fb_to_schema;
-use super::{Dictionaries, OutOfSpecKind, SendableIterator};
+use super::{Dictionaries, OutOfSpecKind, ReadSeek, SendableIterator};
 use crate::array::Array;
 use crate::datatypes::{ArrowDataType, ArrowSchemaRef, Metadata};
 use crate::io::ipc::IpcSchema;
-use crate::io::ipc::read::ReadSeek;
 use crate::record_batch::RecordBatchT;
 
 /// Metadata of an Arrow IPC file, written in the footer of the file.

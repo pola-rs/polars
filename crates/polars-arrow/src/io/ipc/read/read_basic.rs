@@ -6,9 +6,8 @@ use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 
 use super::super::compression;
 use super::super::endianness::is_native_little_endian;
-use super::{Compression, IpcBuffer, Node, OutOfSpecKind};
+use super::{Compression, IpcBuffer, Node, OutOfSpecKind, ReadSeek};
 use crate::bitmap::Bitmap;
-use crate::io::ipc::read::ReadSeek;
 use crate::types::NativeType;
 
 fn read_swapped<T: NativeType>(

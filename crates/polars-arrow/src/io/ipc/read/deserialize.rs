@@ -5,11 +5,10 @@ use polars_error::{PolarsResult, polars_bail};
 use polars_utils::bool::UnsafeBool;
 
 use super::array::*;
-use super::{Dictionaries, IpcBuffer, Node};
+use super::{Dictionaries, IpcBuffer, Node, ReadSeek};
 use crate::array::*;
 use crate::datatypes::{ArrowDataType, Field, PhysicalType};
 use crate::io::ipc::IpcField;
-use crate::io::ipc::read::ReadSeek;
 use crate::types::{PrimitiveType, months_days_ns};
 use crate::{match_integer_type, with_match_primitive_type_full};
 

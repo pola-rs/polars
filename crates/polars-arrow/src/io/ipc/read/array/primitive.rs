@@ -3,10 +3,9 @@ use std::collections::VecDeque;
 use polars_error::{PolarsResult, polars_err};
 
 use super::super::read_basic::*;
-use super::super::{Compression, IpcBuffer, Node};
+use super::super::{Compression, IpcBuffer, Node, ReadSeek};
 use crate::array::PrimitiveArray;
 use crate::datatypes::ArrowDataType;
-use crate::io::ipc::read::ReadSeek;
 use crate::io::ipc::read::array::{try_get_array_length, try_get_field_node};
 use crate::types::NativeType;
 

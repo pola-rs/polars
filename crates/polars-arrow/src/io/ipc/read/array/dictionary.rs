@@ -3,11 +3,10 @@ use std::collections::VecDeque;
 use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::aliases::PlHashSet;
 
-use super::super::{Compression, Dictionaries, IpcBuffer, Node};
+use super::super::{Compression, Dictionaries, IpcBuffer, Node, ReadSeek};
 use super::{read_primitive, skip_primitive};
 use crate::array::{DictionaryArray, DictionaryKey};
 use crate::datatypes::ArrowDataType;
-use crate::io::ipc::read::ReadSeek;
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_dictionary<T: DictionaryKey>(

@@ -7,10 +7,9 @@ use polars_utils::bool::UnsafeBool;
 use super::super::super::IpcField;
 use super::super::deserialize::{read_pruned, skip};
 use super::super::read_basic::*;
-use super::super::{Compression, Dictionaries, IpcBuffer, Node, Version};
+use super::super::{Compression, Dictionaries, IpcBuffer, Node, ReadSeek, Version};
 use crate::array::ListArray;
 use crate::datatypes::ArrowDataType;
-use crate::io::ipc::read::ReadSeek;
 use crate::io::ipc::read::array::{try_get_array_length, try_get_field_node};
 use crate::offset::{Offset, OffsetsBuffer};
 

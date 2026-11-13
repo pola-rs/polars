@@ -7,11 +7,10 @@ use polars_utils::bool::UnsafeBool;
 use super::super::CONTINUATION_MARKER;
 use super::common::*;
 use super::schema::deserialize_stream_metadata;
-use super::{Dictionaries, OutOfSpecKind};
+use super::{Dictionaries, OutOfSpecKind, ReadSeek};
 use crate::array::Array;
 use crate::datatypes::{ArrowSchema, Metadata};
 use crate::io::ipc::IpcSchema;
-use crate::io::ipc::read::ReadSeek;
 use crate::record_batch::RecordBatchT;
 
 /// Metadata of an Arrow IPC stream, written at the start of the stream

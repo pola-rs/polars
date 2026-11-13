@@ -5,10 +5,9 @@ use polars_error::{PolarsResult, polars_err};
 use polars_utils::bool::UnsafeBool;
 
 use super::super::read_basic::*;
-use super::super::{Compression, IpcBuffer, Node};
+use super::super::{Compression, IpcBuffer, Node, ReadSeek};
 use crate::array::BinaryArray;
 use crate::datatypes::ArrowDataType;
-use crate::io::ipc::read::ReadSeek;
 use crate::io::ipc::read::array::{try_get_array_length, try_get_field_node};
 use crate::offset::{Offset, OffsetsBuffer};
 
