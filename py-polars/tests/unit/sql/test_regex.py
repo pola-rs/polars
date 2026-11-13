@@ -203,3 +203,29 @@ def test_regexp_replace_errors() -> None:
         df.sql("SELECT REGEXP_REPLACE(s, 'x', 'y', t) FROM self")
     with pytest.raises(SQLSyntaxError, match="string literal pattern"):
         df.sql("SELECT REGEXP_REPLACE(s, t, 'y') FROM self")
+
+
+@pytest.mark.parametrize(
+    "func",
+    [
+        r"REGEXP_EXTRACT(s, '(\d+)-(\d+)', 2)",
+        r"REGEXP_EXTRACT(s, '\d+')",
+        r"REGEXP_EXTRACT(s, '(z)(q)?', 2)",
+        r"REGEXP_EXTRACT(s, NULL)",
+    ],
+)
+def test_regexp_extract(func: str) -> None:
+    df = pl.DataFrame({"s": ["ab12-34", "x", None, "zz"]})
+    assert_sql_matches(
+        df,
+        query=f"SELECT {func} AS r FROM self",
+        compare_with="duckdb",
+    )
+
+
+def test_regexp_extract_errors() -> None:
+    df = pl.DataFrame({"s": ["xyz"]})
+    with pytest.raises(SQLSyntaxError, match="REGEXP_EXTRACT expects 2-3 arguments"):
+        df.sql("SELECT REGEXP_EXTRACT(s) FROM self")
+    with pytest.raises(SQLSyntaxError, match="non-negative integer literal"):
+        df.sql("SELECT REGEXP_EXTRACT(s, 'x', -1) FROM self")
