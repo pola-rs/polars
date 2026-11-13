@@ -195,8 +195,8 @@ question_mark = "allow" # https://github.com/rust-lang/rust-clippy/issues/17384
 # simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }
 color-backtrace = { git = "https://github.com/orlp/color-backtrace", rev = "20f5eea183563bb4cfac9a4d65901d4a1002cde2" }
 
-# The dirty-reclaim branch.
-tikv-jemalloc-sys = { git = "https://github.com/pola-rs/jemallocator", rev = "3e5cc17f8a3a6a237a97a9c0bdf22590c88baa6c" }
+# The dirty-reclaim branch with moving reallocations. Local until it is published.
+tikv-jemalloc-sys = { path = "/tmp/polars-30749-claude/jemallocator/jemalloc-sys" }
 
 # https://github.com/rust-lang/hashbrown/pull/727
 hashbrown = { git = "https://github.com/pola-rs/hashbrown", rev = "d76a6f81abd8f388676aff15068236a8d21c7e1a" }

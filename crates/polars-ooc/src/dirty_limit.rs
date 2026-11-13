@@ -1,7 +1,9 @@
 //! Keeps the tracked memory plus jemalloc's unused (dirty) pages under
 //! [`polars_config::get_ooc_dirty_limit_bytes`]. jemalloc calls the hook before
 //! an allocation takes pages that are not resident, and purges the returned
-//! number of bytes of dirty pages first.
+//! number of bytes of dirty pages first. The tracked memory counts a reallocation
+//! at its new size, so the old allocations that moving reallocations still hold
+//! are added separately.
 
 #[cfg(all(
     feature = "fast_alloc",
@@ -24,13 +26,17 @@ mod jemalloc {
 
     static INSTALLED: AtomicBool = AtomicBool::new(false);
 
-    type PurgeBeforeGrowHook = extern "C" fn(usize, usize) -> usize;
+    type PurgeBeforeGrowHook = extern "C" fn(usize, usize, usize) -> usize;
 
     /// Runs inside malloc, so it must not allocate. The allocator counts an allocation
     /// before calling jemalloc, so the usage already includes it.
-    extern "C" fn purge_before_grow(_size: usize, dirty_bytes: usize) -> usize {
+    extern "C" fn purge_before_grow(
+        _size: usize,
+        dirty_bytes: usize,
+        ralloc_move_bytes: usize,
+    ) -> usize {
         let dirty_bytes = dirty_bytes as u64;
-        let usage = estimate_memory_usage() + dirty_bytes;
+        let usage = estimate_memory_usage() + dirty_bytes + ralloc_move_bytes as u64;
         let excess = usage.saturating_sub(polars_config::get_ooc_dirty_limit_bytes());
         let purge = (excess + SLACK_BYTES).min(dirty_bytes);
         if excess == 0 || purge < MIN_PURGE_BYTES {
