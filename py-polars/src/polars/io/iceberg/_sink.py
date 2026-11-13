@@ -89,7 +89,7 @@ class _AlreadyCommitted(Exception):
 
 @dataclass(kw_only=True)
 class _ReplaceFiles:
-    """Data files a sink's commit replaces by the files it wrote (SQL `UPDATE`).
+    """Data files a sink's commit replaces by the files it wrote (`UPDATE`, `DELETE`).
 
     A commit is refused once the table's schema or partition spec is no longer the one
     the files were read with.
@@ -100,6 +100,8 @@ class _ReplaceFiles:
     conflict_filter: BooleanExpression
     schema_id: int
     spec_id: int
+    # The table property that sets the isolation level: of a delete or an update.
+    isolation: Literal["delete", "update"] = "update"
 
 
 def _create_namespace_if_not_exists(
@@ -405,12 +407,22 @@ def _stage_replace(
     )
     data_files = _data_files_for_commit(tx, sinked_files, sort_order_id)
     with tx.update_snapshot(snapshot_properties=snapshot_properties).overwrite() as ow:
-        _set_isolation_operation(ow, Operation.OVERWRITE)
+        _set_isolation_operation(
+            ow,
+            Operation.DELETE if replace.isolation == "delete" else Operation.OVERWRITE,
+        )
         ow.delete_by_predicate(replace.conflict_filter)
         for data_file in replace.data_files:
             ow.delete_data_file(data_file)
         for data_file in data_files:
             ow.append_data_file(data_file)
+
+
+def _remove_files(io: FileIO, paths: list[str]) -> None:
+    """Remove files this sink wrote and will not commit; best effort."""
+    for path in paths:
+        with contextlib.suppress(Exception):
+            io.delete(path)
 
 
 def _set_isolation_operation(producer: Any, operation: Any) -> None:
@@ -1673,10 +1685,14 @@ class IcebergSinkState:
                     )
                 else:
                     start_instant = perf_counter()
+                    # a rewritten file whose rows were all removed leaves no file
+                    empty = [path for path, rows, *_ in sinked_files if rows == 0]
+                    if empty:
+                        _remove_files(self.storage_file_io(), empty)
                     _stage_replace(
                         tx,
                         replace,
-                        sinked_files,
+                        [f for f in sinked_files if f[1] > 0],
                         snapshot_properties,
                         self.sort_order_id,
                     )

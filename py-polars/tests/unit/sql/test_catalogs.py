@@ -2859,6 +2859,17 @@ def test_alter_table_without_catalog(lake: CountingCatalog) -> None:
         lake_ctx(lake).execute("ALTER TABLE ONLY lineitem ADD COLUMN b BIGINT")
 
 
+def forbid_sink(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fail a statement that writes a data file."""
+    from polars.io.iceberg._sink import IcebergSinkState
+
+    def fail(*args: Any) -> None:
+        msg = "a data file was written"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(IcebergSinkState, "attach_sink", fail)
+
+
 def table_rows(catalog: CountingCatalog, *identifier: str) -> list[tuple[Any, ...]]:
     rows = catalog.load_table(identifier).scan().to_arrow().to_pylist()
     # NULLs last within a column
@@ -3256,12 +3267,14 @@ def test_truncate_catalog_table_empty_or_partitioned(lake: CountingCatalog) -> N
 @pytest.mark.write_disk
 @pytest.mark.parametrize("with_counted_file", [False, True])
 def test_truncate_catalog_table_without_record_count(
-    lake: CountingCatalog, with_counted_file: bool
+    lake: CountingCatalog, with_counted_file: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from pyiceberg.manifest import DataFile, DataFileContent
     from pyiceberg.table.snapshots import Operation
 
-    # a data file whose writer did not record its row count is read to drop its rows
+    import polars.io.iceberg.functions
+
+    # a data file whose writer did not record its row count is dropped too
     file = next(iter(lake.load_table(("tpch", "lineitem")).scan().plan_files())).file
     uncounted = f"{file.file_path.removesuffix('.parquet')}-uncounted.parquet"
     shutil.copy(
@@ -3282,13 +3295,14 @@ def test_truncate_catalog_table_without_record_count(
             )
         )
     assert len(table_rows(lake, "tpch", "legacy")) == 2 * (1 + with_counted_file)
+    # without reading or writing a data file
+    forbid_sink(monkeypatch)
+    monkeypatch.setattr(polars.io.iceberg.functions, "_scan_iceberg_files", None)
     lake_ctx(lake).execute("TRUNCATE TABLE legacy")
     assert table_rows(lake, "tpch", "legacy") == []
     snapshots = lake.load_table(("tpch", "legacy")).metadata.snapshots
-    # one commit: the counted file dropped whole, the other one read
     assert [s.summary.operation for s in snapshots] == [
         Operation.APPEND,
-        *([Operation.DELETE] if with_counted_file else []),
         Operation.OVERWRITE,
     ]
 
@@ -3422,7 +3436,7 @@ def test_delete_catalog_table_files(lake: CountingCatalog, tmp_path: Path) -> No
     assert operations() == [Operation.DELETE]
     # a file with some matching rows is rewritten, both in one commit
     ctx.execute("DELETE FROM t WHERE k = 2 OR k >= 4")
-    assert operations() == [Operation.DELETE, Operation.DELETE, Operation.OVERWRITE]
+    assert operations() == [Operation.DELETE, Operation.OVERWRITE]
     assert table_rows(lake, "tpch", "t") == [(3, "c")]
     assert len(set(tmp_path.rglob("*.parquet")) - files) == 1
     # an IN list on an INT column; a value it can't hold matches nothing
@@ -3768,18 +3782,113 @@ def test_delete_catalog_table_sql_errors(
 
 
 @pytest.mark.write_disk
+def test_delete_catalog_table_two_fields_on_one_column(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute(
+        "CREATE TABLE t (k BIGINT, v VARCHAR) PARTITION BY (bucket(2, k), bucket(3, k))"
+    )
+    ctx.execute("INSERT INTO t VALUES (1, 'a'), (1, NULL), (2, 'b')")
+    ctx.execute("DELETE FROM t WHERE v IS NULL")
+    assert table_rows(lake, "tpch", "t") == [(1, "a"), (2, "b")]
+
+
+@pytest.mark.write_disk
+def test_delete_catalog_table_rewrite(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE t (k INT, v VARCHAR)")
+    ctx.execute("INSERT INTO t VALUES (1, 'a'), (2, NULL), (3, 'b')")
+    # a NULL condition keeps the row
+    ctx.execute("DELETE FROM t WHERE v <> 'b'")
+    assert table_rows(lake, "tpch", "t") == [(2, None), (3, "b")]
+    # every row of a file matches, which its statistics cannot show: the file is
+    # dropped and nothing is written
+    ctx.execute("INSERT INTO t VALUES (7, 'x'), (9, 'y')")
+    forbid_sink(monkeypatch)
+    ctx.execute("DELETE FROM t WHERE k IN (7, 9)")
+    summary = lake.load_table(("tpch", "t")).current_snapshot().summary
+    assert summary.get("added-data-files") is None
+    assert summary["deleted-data-files"] == "1"
+    assert table_rows(lake, "tpch", "t") == [(2, None), (3, "b")]
+
+
+@pytest.mark.write_disk
+def test_delete_catalog_table_cleans_metadata_check(
+    lake: CountingCatalog, tmp_path: Path
+) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE t (k INT, g VARCHAR) PARTITION BY (g)")
+    # one manifest: a file that matches whole and one that matches partly
+    ctx.execute("INSERT INTO t VALUES (1, 'a'), (2, 'b'), (3, 'b')")
+    ctx.execute("DELETE FROM t WHERE k <= 2")
+    assert table_rows(lake, "tpch", "t") == [(3, "b")]
+    # the manifests written by the discarded metadata-only check are removed
+    table = lake.load_table(("tpch", "t"))
+    snapshots = table.metadata.snapshots
+    referenced = {Path(s.manifest_list).name for s in snapshots} | {
+        Path(m.manifest_path).name for s in snapshots for m in s.manifests(table.io)
+    }
+    written = {p.name for p in tmp_path.rglob("t/metadata/*.avro")}
+    assert written == referenced
+
+
+@pytest.mark.write_disk
+def test_delete_catalog_table_position_deletes(lake: CountingCatalog) -> None:
+    from tests.unit.io.test_iceberg import _add_position_deletes
+
+    def data_file() -> str:
+        table = lake.load_table(("tpch", "d"))
+        return str(next(iter(table.scan().plan_files())).file.file_path)
+
+    table = lake.create_table(("tpch", "d"), schema=LINEITEM.to_arrow().schema)
+    df = pl.DataFrame({"k": [1, 2, 3, 4], "v": ["a", "b", "c", "d"]})
+    df.write_iceberg(table, mode="append")
+    _add_position_deletes(lake.load_table(("tpch", "d")), {data_file(): [1]})
+    # a row deleted before stays deleted in the rewritten file
+    ctx = lake_ctx(lake)
+    ctx.execute("DELETE FROM d WHERE k = 1")
+    assert table_rows(lake, "tpch", "d") == [(3, "c"), (4, "d")]
+    # a delete file not scoped to one data file can't be read natively: refused
+    _add_position_deletes(
+        lake.load_table(("tpch", "d")), {data_file(): [0]}, path_bounds=False
+    )
+    current = lake.load_table(("tpch", "d")).current_snapshot()
+    with pytest.raises(pl.exceptions.ComputeError, match="not limited to one") as exc:
+        ctx.execute("DELETE FROM d WHERE k = 4")
+    assert "no rows of table 'd' were deleted" in exc.value.__notes__[-1]
+    assert lake.load_table(("tpch", "d")).current_snapshot() == current
+
+
+@pytest.mark.write_disk
+def test_merge_catalog_table_deletes_whole_file(
+    lake: CountingCatalog, tmp_path: Path
+) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE t (k INT, v VARCHAR)")
+    ctx.execute("INSERT INTO t VALUES (1, 'a'), (2, 'b')")
+    files = set(tmp_path.rglob("*.parquet"))
+    ctx.execute(
+        "MERGE INTO t USING (SELECT 1 AS k UNION ALL SELECT 2) AS s ON t.k = s.k "
+        "WHEN MATCHED THEN DELETE"
+    )
+    summary = lake.load_table(("tpch", "t")).current_snapshot().summary
+    assert summary["total-data-files"] == "0"
+    assert set(tmp_path.rglob("*.parquet")) == files
+
+
+@pytest.mark.write_disk
 def test_delete_catalog_table_merge_on_read(lake: CountingCatalog) -> None:
     ctx = lake_ctx(lake)
     ctx.execute(
         "ALTER TABLE orders SET TBLPROPERTIES ('write.delete.mode' = 'merge-on-read')"
     )
-    # rewriting a file falls back to copy-on-write, as PyIceberg warns
+    # copy-on-write, as UPDATE: no delete files
     with warnings.catch_warnings(record=True) as record:
         warnings.simplefilter("always")
         ctx.execute("DELETE FROM orders WHERE k = 1")
-    assert [w.category for w in record] == [UserWarning]
-    # dropping whole files needs no delete files: no warning
-    ctx.execute("DELETE FROM orders WHERE k > 1")
+        ctx.execute("DELETE FROM orders WHERE k > 1")
+    assert [w.category for w in record] == []
     assert table_rows(lake, "tpch", "orders") == []
 
 
@@ -3804,7 +3913,6 @@ def test_delete_catalog_table_concurrent(tmp_path: Path) -> None:
     with pytest.raises(ValidationException) as exc:
         ctx.execute("DELETE FROM lineitem WHERE k > 3")
     notes = exc.value.__notes__
-    assert any("rewritten data files may remain under" in n for n in notes)
     assert any("no rows of table 'lineitem'" in n for n in notes)
     rows = [(2, "b"), (3, "c"), (4, "d"), (99, "raced"), (99, "raced")]
     assert table_rows(lake, "tpch", "lineitem") == rows
@@ -3812,8 +3920,8 @@ def test_delete_catalog_table_concurrent(tmp_path: Path) -> None:
     with lake.load_table(("tpch", "lineitem")).transaction() as tx:
         tx.set_properties({"write.delete.isolation-level": "snapshot"})
     lake.race = ("tpch", "lineitem")
-    ctx.execute("DELETE FROM lineitem WHERE k > 1")
-    assert table_rows(lake, "tpch", "lineitem") == [(99, "raced")]
+    ctx.execute("DELETE FROM lineitem WHERE k > 3")
+    assert table_rows(lake, "tpch", "lineitem") == [(2, "b"), (3, "c"), (99, "raced")]
 
 
 def update_ctx(lake: CountingCatalog) -> pl.SQLContext[pl.LazyFrame]:
@@ -4091,15 +4199,23 @@ def test_update_catalog_table_resolution(lake: CountingCatalog) -> None:
 
 
 @pytest.mark.write_disk
-def test_update_catalog_table_v3_refused(
-    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "UPDATE orders SET o = 0",
+        "DELETE FROM orders WHERE false",
+        "TRUNCATE TABLE orders",
+    ],
+)
+def test_write_catalog_table_v3_refused(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch, statement: str
 ) -> None:
     from pyiceberg.table import Table
 
     # PyIceberg can't write a v3 table yet
     monkeypatch.setattr(Table, "format_version", property(lambda self: 3))
     with pytest.raises(NotImplementedError, match="Iceberg v3 table"):
-        lake_ctx(lake).execute("UPDATE orders SET o = 0")
+        lake_ctx(lake).execute(statement)
     monkeypatch.undo()
     assert table_rows(lake, "tpch", "orders") == ORDERS
 
