@@ -203,7 +203,7 @@ fn moving_realloc_counts_old_allocation_for_dirty_limit_only() {
     ]);
     let mut polars_hook = 0usize;
     ctl(
-        "experimental.hooks.purge_before_grow",
+        "experimental.hooks.purge_before_grow_v2",
         Some(&mut polars_hook),
         None,
     );
@@ -211,7 +211,7 @@ fn moving_realloc_counts_old_allocation_for_dirty_limit_only() {
     POLARS_HOOK.store(polars_hook, Ordering::SeqCst);
     let mut hook = record_hook as Hook;
     ctl(
-        "experimental.hooks.purge_before_grow",
+        "experimental.hooks.purge_before_grow_v2",
         None,
         Some(&mut hook),
     );

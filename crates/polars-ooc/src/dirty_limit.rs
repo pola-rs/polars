@@ -54,7 +54,7 @@ mod jemalloc {
         // Without the hook, dirty pages are only returned by decay.
         unsafe {
             jemalloc_sys::mallctl(
-                c"experimental.hooks.purge_before_grow".as_ptr(),
+                c"experimental.hooks.purge_before_grow_v2".as_ptr(),
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
                 (&raw mut hook).cast::<c_void>(),
