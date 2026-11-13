@@ -200,10 +200,10 @@ def test_not_found_on_rename() -> None:
 
     err_type = (SchemaFieldNotFoundError, ColumnNotFoundError)
     with pytest.raises(err_type):
-        df.rename({"does_not_exist": "exists"})
+        df.rename({"does_not_exist": "exists"})  # pyrefly: ignore[unknown-column]
 
     with pytest.raises(err_type):
-        df.select(pl.col("does_not_exist").alias("new_name"))
+        df.select(pl.col("does_not_exist").alias("new_name"))  # pyrefly: ignore[unknown-column]
 
 
 def test_getitem_errs() -> None:
@@ -700,7 +700,7 @@ def test_raise_column_not_found_in_join_arg() -> None:
     a = pl.DataFrame({"x": [1, 2, 3]})
     b = pl.DataFrame({"y": [1, 2, 3]})
     with pytest.raises(pl.exceptions.ColumnNotFoundError):
-        a.join(b, on="y")
+        a.join(b, on="y")  # pyrefly: ignore[unknown-column]
 
 
 def test_raise_on_different_results_20104() -> None:
@@ -769,13 +769,13 @@ def test_raise_on_mismatch_column_length_binary_expr() -> None:
 def test_column_not_found_lists_available() -> None:
     df = pl.DataFrame({"foo": [1, 2], "bar": [3, 4], "baz": [5, 6]})
     with pytest.raises(ColumnNotFoundError, match=r"(?s).*foo.*bar.*baz.*"):
-        df.select("missing")
+        df.select("missing")  # pyrefly: ignore[unknown-column]
 
 
 def test_column_not_found_suggests_similar() -> None:
     df = pl.DataFrame({"alpha": [1, 2], "beta": [3, 4]})
     with pytest.raises(ColumnNotFoundError, match=r"Did you mean \"alpha\""):
-        df.select("alphe")
+        df.select("alphe")  # pyrefly: ignore[unknown-column]
 
 
 def test_str_namespace_typo_suggests() -> None:

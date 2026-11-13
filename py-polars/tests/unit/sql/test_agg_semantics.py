@@ -276,6 +276,12 @@ def test_sum_avg_distinct_empty_table() -> None:
         "COUNT(*) FILTER (WHERE NULL)",
         "SUM(DISTINCT CAST(20000 AS SMALLINT)) * 2",
         "SUM(DISTINCT TRUE)",
+        "BOOL_AND(TRUE)",
+        "BOOL_OR(NULL)",
+        "ANY_VALUE(1)",
+        "MAX_BY(1, 2)",
+        "APPROX_COUNT_DISTINCT(1)",
+        "APPROX_COUNT_DISTINCT(NULL)",
     ],
 )
 @pytest.mark.parametrize("n_rows", [0, 3])
@@ -440,4 +446,136 @@ def test_group_concat_distinct_with_separator_errors() -> None:
         query="SELECT GROUP_CONCAT(a, ':') AS s FROM self",
         compare_with="duckdb",
         expected={"s": ["1:1:2"]},
+    )
+
+
+@pytest.mark.parametrize(
+    "agg",
+    [
+        "BOOL_AND(b)",
+        "BOOL_OR(b)",
+        "BOOL_AND(x > 1)",
+        "BOOL_AND(DISTINCT b)",
+        "ANY_VALUE(s)",
+        "COUNT_IF(x > 1)",
+        "COUNT_IF(b) FILTER (WHERE x > 1)",
+        "COUNT_IF(x > (SELECT 1))",
+        "APPROX_COUNT_DISTINCT(s)",
+        "MAX_BY(x, y)",
+        "MIN_BY(s, y)",
+        "ARG_MAX(x, y) FILTER (WHERE x < 3)",
+    ],
+)
+def test_bool_any_value_and_by_aggregates(agg: str) -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 2, 2, 3],
+            "s": ["b", None, "c", "a", "a", None],
+            "x": [1, 2, 3, 4, None, 5],
+            "y": [2, 5, 1, 3, None, 7],
+            "b": [True, None, False, True, None, True],
+        }
+    )
+    for query in [
+        f"SELECT {agg} AS a FROM self",
+        f"SELECT g, {agg} AS a FROM self GROUP BY g ORDER BY g",
+    ]:
+        assert_sql_matches(
+            df,
+            query=query,
+            compare_with="duckdb",
+            engines=["in-memory", "streaming"],
+        )
+
+
+def test_count_if_of_no_rows() -> None:
+    # As COUNT, COUNT_IF is 0 when it reads no row where the condition is true.
+    df = pl.DataFrame({"g": [1, 2], "b": [True, None]})
+    assert_sql_matches(
+        df,
+        query="""
+          SELECT g, COUNT_IF(b) AS c, COUNT_IF(b) FILTER (WHERE g > 5) AS f
+          FROM self GROUP BY g ORDER BY g
+        """,
+        compare_with=None,
+        expected={"g": [1, 2], "c": [1, 0], "f": [0, 0]},
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "over",
+    [
+        "PARTITION BY g",
+        "ORDER BY x",
+        "PARTITION BY g ORDER BY x ROWS BETWEEN 1 PRECEDING AND CURRENT ROW",
+        "ORDER BY x ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING",
+    ],
+)
+def test_bool_and_count_if_over(over: str) -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 2, 2],
+            "x": [1, 2, 3, 4, 5],
+            "b": [True, None, False, True, True],
+        }
+    )
+    assert_sql_matches(
+        df,
+        query=f"""
+          SELECT x,
+            BOOL_AND(b) OVER ({over}) AS a,
+            BOOL_OR(b) FILTER (WHERE x > 1) OVER ({over}) AS o,
+            COUNT_IF(b) OVER ({over}) AS c
+          FROM self ORDER BY x
+        """,
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+def test_bool_and_count_if_errors() -> None:
+    df = pl.DataFrame({"x": [1, 2], "s": ["a", "b"]})
+    for agg in [
+        "BOOL_AND(x)",
+        "BOOL_OR('t')",
+        "COUNT_IF(1)",
+        "COUNT_IF((SELECT 1))",
+        "BOOL_AND(1) OVER ()",
+        "BOOL_AND((SELECT 1)) OVER ()",
+        "COUNT_IF(s) OVER (ORDER BY x)",
+    ]:
+        with pytest.raises(InvalidOperationError, match="expects a boolean argument"):
+            df.sql(f"SELECT {agg} FROM self")
+    with pytest.raises(pl.exceptions.SQLInterfaceError, match="ORDER BY in OVER"):
+        df.sql("SELECT MAX_BY(s, x) OVER (ORDER BY x) FROM self")
+
+
+def test_approx_count_distinct_of_no_values() -> None:
+    df = pl.DataFrame({"a": [1, 2], "n": [None, None]})
+    for query in [
+        "SELECT APPROX_COUNT_DISTINCT(a) AS d FROM self WHERE FALSE",
+        "SELECT APPROX_COUNT_DISTINCT(n) AS d FROM self",
+    ]:
+        assert_sql_matches(
+            df,
+            query=query,
+            compare_with="duckdb",
+            engines=["in-memory", "streaming"],
+        )
+
+
+def test_correlated_approx_count_distinct_of_constant() -> None:
+    frames = {
+        "p": pl.DataFrame({"id": [1, 2]}),
+        "c": pl.DataFrame({"g": [1, 1], "x": [3, 4]}),
+    }
+    assert_sql_matches(
+        frames,
+        query="""
+          SELECT id, (SELECT APPROX_COUNT_DISTINCT(1) FROM c WHERE c.g = p.id) AS d
+          FROM p ORDER BY id
+        """,
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
     )

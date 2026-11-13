@@ -17,3 +17,6 @@ pyo3 = { workspace = true }
 pyo3-polars = { workspace = true, features = ["derive"] }
 rayon = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+
+[lints]
+workspace = true

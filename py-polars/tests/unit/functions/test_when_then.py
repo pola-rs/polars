@@ -665,6 +665,30 @@ def test_when_then_supertype_15975_comment() -> None:
     assert q.collect()["val"].to_list() == [1.0, 1.5, 16.0]
 
 
+def test_when_then_supertype_dyn_int_unsigned_30674() -> None:
+    df = pl.DataFrame(
+        {"side": ["buy", "sell"], "qty": pl.Series([10, 4], dtype=pl.UInt32)}
+    )
+    is_buy = pl.col("side") == "buy"
+    out = df.select(
+        a=pl.when(is_buy).then(1).otherwise(-1) * pl.col("qty"),
+        b=pl.when(is_buy).then(200).otherwise(-1) * pl.col("qty").cast(pl.UInt8),
+        c=pl.when(is_buy).then(-1).otherwise(200) * pl.col("qty").cast(pl.UInt8),
+        d=pl.when(is_buy).then(1).otherwise(300) * pl.col("qty").cast(pl.UInt8),
+        e=pl.when(is_buy).then(1).otherwise(-1) < pl.len(),
+    )
+    expected = pl.DataFrame(
+        {
+            "a": pl.Series([10, -4], dtype=pl.Int64),
+            "b": pl.Series([2000, -4], dtype=pl.Int16),
+            "c": pl.Series([-10, 800], dtype=pl.Int16),
+            "d": pl.Series([10, 1200], dtype=pl.UInt16),
+            "e": [True, True],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
 def test_chained_when_no_subclass_17142() -> None:
     # https://github.com/pola-rs/polars/pull/17142
     when = pl.when(True).then(1).when(True)

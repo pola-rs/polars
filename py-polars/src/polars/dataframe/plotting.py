@@ -7,20 +7,16 @@ from polars._dependencies import altair as alt
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from typing import TypeAlias, Unpack
+    from typing import Unpack
 
     from altair.typing import ChannelColor as Color
     from altair.typing import ChannelOrder as Order
     from altair.typing import ChannelSize as Size
-    from altair.typing import ChannelTooltip as Tooltip
     from altair.typing import ChannelX as X
     from altair.typing import ChannelY as Y
     from altair.typing import EncodeKwds
 
     from polars import DataFrame
-
-    Encoding: TypeAlias = X | Y | Color | Order | Size | Tooltip
-    Encodings: TypeAlias = dict[str, Encoding]
 
 
 class DataFramePlot:
@@ -78,7 +74,7 @@ class DataFramePlot:
         ...     x="day", y="value", color="day", column="group"
         ... )  # doctest: +SKIP
         """
-        encodings: Encodings = {}
+        encodings: EncodeKwds = {}
         if x is not None:
             encodings["x"] = x
         if y is not None:
@@ -142,7 +138,7 @@ class DataFramePlot:
         ... )
         >>> df.plot.line(x="date", y="price", color="stock")  # doctest: +SKIP
         """
-        encodings: Encodings = {}
+        encodings: EncodeKwds = {}
         if x is not None:
             encodings["x"] = x
         if y is not None:
@@ -207,7 +203,7 @@ class DataFramePlot:
         ... )
         >>> df.plot.point(x="length", y="width", color="species")  # doctest: +SKIP
         """
-        encodings: Encodings = {}
+        encodings: EncodeKwds = {}
         if x is not None:
             encodings["x"] = x
         if y is not None:

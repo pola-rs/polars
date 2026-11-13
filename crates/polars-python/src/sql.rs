@@ -1,12 +1,31 @@
 use parking_lot::RwLock;
-use polars::sql::{CatalogAlter, CatalogStatement, SQLContext, extract_table_identifiers};
+use polars::sql::{
+    CatalogAlter, CatalogStatement, SQLContext, VersionSpec, extract_table_identifiers,
+};
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyTuple};
 
 use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::utils::EnterPolarsExt;
 use crate::{PyExpr, PyLazyFrame};
+
+/// A catalog table that a query reads (see `PySQLContext::catalog_tables`).
+#[pyclass(frozen)]
+pub struct PyCatalogRead {
+    /// The name the catalog was attached under.
+    #[pyo3(get)]
+    catalog: String,
+    /// Namespace parts, then the table name.
+    #[pyo3(get)]
+    identifier: Vec<String>,
+    /// None, ("snapshot", id), ("ref", name) or ("timestamp", microseconds since the epoch).
+    #[pyo3(get)]
+    version: Option<Py<PyTuple>>,
+    /// The name to pass the scan of this read back under.
+    #[pyo3(get)]
+    key: Vec<String>,
+}
 
 #[pyclass(frozen, skip_from_py_object)]
 #[repr(transparent)]
@@ -92,17 +111,30 @@ impl PySQLContext {
         self.context.write().unregister_catalog(name)
     }
 
-    /// The catalog tables a query reads, as (catalog, identifier parts).
-    pub fn catalog_tables(&self, query: &str) -> PyResult<Vec<(String, Vec<String>)>> {
-        let tables = self
+    /// The catalog tables a query reads, once per table and version.
+    pub fn catalog_tables(&self, py: Python<'_>, query: &str) -> PyResult<Vec<PyCatalogRead>> {
+        let reads = self
             .context
             .read()
             .catalog_tables(query)
             .map_err(PyPolarsErr::from)?;
-        Ok(tables
+        reads
             .into_iter()
-            .map(|t| (t.catalog, t.identifier))
-            .collect())
+            .map(|read| {
+                let version = match read.version {
+                    None => None,
+                    Some(VersionSpec::Snapshot(id)) => Some(("snapshot", id).into_pyobject(py)?),
+                    Some(VersionSpec::Ref(name)) => Some(("ref", name).into_pyobject(py)?),
+                    Some(VersionSpec::Timestamp(us)) => Some(("timestamp", us).into_pyobject(py)?),
+                };
+                Ok(PyCatalogRead {
+                    catalog: read.table.catalog,
+                    identifier: read.table.identifier,
+                    version: version.map(Bound::unbind),
+                    key: read.key,
+                })
+            })
+            .collect()
     }
 
     /// The catalog statement of a query, as a dict keyed by `kind`, or None.
@@ -159,9 +191,9 @@ impl PySQLContext {
                     props.set_item(key, value)?;
                 }
                 dict.set_item("properties", props)?;
-                let partition_by: Vec<(String, String)> = partition_by
+                let partition_by: Vec<(Vec<String>, String)> = partition_by
                     .into_iter()
-                    .map(|field| (field.column, field.transform))
+                    .map(|field| (field.path, field.transform))
                     .collect();
                 dict.set_item("partition_by", partition_by)?;
             },
@@ -306,6 +338,14 @@ impl PySQLContext {
                             props.set_item(key, value)?;
                         }
                         op.set_item("properties", props)?;
+                    },
+                    CatalogAlter::SetPartitioning { fields } => {
+                        op.set_item("op", "set_partitioning")?;
+                        let fields: Vec<(Vec<String>, String)> = fields
+                            .into_iter()
+                            .map(|field| (field.path, field.transform))
+                            .collect();
+                        op.set_item("fields", fields)?;
                     },
                 }
                 dict.set_item("operation", op)?;

@@ -35,6 +35,8 @@ String
      - Returns the length of a given string in bytes.
    * - :ref:`POSITION <position>`
      - Returns the position of a substring within a string.
+   * - :ref:`REGEXP_EXTRACT <regexp_extract>`
+     - Returns the given capture group of the first match of `pattern` (optional: `group`, 0 for the whole match).
    * - :ref:`REGEXP_LIKE <regexp_like>`
      - Returns True if `pattern` matches the value (optional: `flags`).
    * - :ref:`REGEXP_REPLACE <regexp_replace>`
@@ -515,6 +517,32 @@ returning 0 if the substring is not found.
     # │ orange ┆ 3   │
     # │ grape  ┆ 0   │
     # └────────┴─────┘
+
+.. _regexp_extract:
+
+REGEXP_EXTRACT
+--------------
+Returns the given capture group of the first match of `pattern` (optional: `group`, 0 for the
+whole match), or an empty string if there is no match.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": ["ab12-34", "x56-78", "abc"]})
+    df.sql(r"""
+      SELECT foo, REGEXP_EXTRACT(foo, '(\d+)-(\d+)', 2) AS second FROM self
+    """)
+    # shape: (3, 2)
+    # ┌─────────┬────────┐
+    # │ foo     ┆ second │
+    # │ ---     ┆ ---    │
+    # │ str     ┆ str    │
+    # ╞═════════╪════════╡
+    # │ ab12-34 ┆ 34     │
+    # │ x56-78  ┆ 78     │
+    # │ abc     ┆        │
+    # └─────────┴────────┘
 
 .. _regexp_like:
 

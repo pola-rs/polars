@@ -1,12 +1,11 @@
 use std::collections::VecDeque;
-use std::io::{Read, Seek};
 
 use polars_arrow_format::ipc::{BodyCompressionRef, MetadataVersion};
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::bool::UnsafeBool;
 
 use super::array::*;
-use super::{Dictionaries, IpcBuffer, Node};
+use super::{Dictionaries, IpcBuffer, Node, ReadSeek};
 use crate::array::*;
 use crate::datatypes::{ArrowDataType, Field, PhysicalType};
 use crate::io::ipc::IpcField;
@@ -14,13 +13,13 @@ use crate::types::{PrimitiveType, months_days_ns};
 use crate::{match_integer_type, with_match_primitive_type_full};
 
 #[allow(clippy::too_many_arguments)]
-pub fn read<R: Read + Seek>(
+pub fn read(
     field_nodes: &mut VecDeque<Node>,
     variadic_buffer_counts: &mut VecDeque<usize>,
     field: &Field,
     ipc_field: &IpcField,
     buffers: &mut VecDeque<IpcBuffer>,
-    reader: &mut R,
+    reader: &mut dyn ReadSeek,
     dictionaries: &Dictionaries,
     block_offset: u64,
     is_little_endian: bool,
@@ -47,7 +46,7 @@ pub fn read<R: Read + Seek>(
             scratch,
         )
         .map(|x| x.boxed()),
-        Primitive(PrimitiveType::MonthDayNano) => read_primitive::<months_days_ns, _>(
+        Primitive(PrimitiveType::MonthDayNano) => read_primitive::<months_days_ns>(
             field_nodes,
             dtype,
             buffers,
@@ -60,7 +59,7 @@ pub fn read<R: Read + Seek>(
         )
         .map(|x| x.boxed()),
         Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
-            read_primitive::<$T, _>(
+            read_primitive::<$T>(
                 field_nodes,
                 dtype,
                 buffers,
@@ -73,7 +72,7 @@ pub fn read<R: Read + Seek>(
             )
             .map(|x| x.boxed())
         }),
-        Binary => read_binary::<i32, _>(
+        Binary => read_binary::<i32>(
             field_nodes,
             dtype,
             buffers,
@@ -86,7 +85,7 @@ pub fn read<R: Read + Seek>(
             checked,
         )
         .map(|x| x.boxed()),
-        LargeBinary => read_binary::<i64, _>(
+        LargeBinary => read_binary::<i64>(
             field_nodes,
             dtype,
             buffers,
@@ -111,7 +110,7 @@ pub fn read<R: Read + Seek>(
             scratch,
         )
         .map(|x| x.boxed()),
-        Utf8 => read_utf8::<i32, _>(
+        Utf8 => read_utf8::<i32>(
             field_nodes,
             dtype,
             buffers,
@@ -124,7 +123,7 @@ pub fn read<R: Read + Seek>(
             checked,
         )
         .map(|x| x.boxed()),
-        LargeUtf8 => read_utf8::<i64, _>(
+        LargeUtf8 => read_utf8::<i64>(
             field_nodes,
             dtype,
             buffers,
@@ -137,7 +136,7 @@ pub fn read<R: Read + Seek>(
             checked,
         )
         .map(|x| x.boxed()),
-        List => read_list::<i32, _>(
+        List => read_list::<i32>(
             field_nodes,
             variadic_buffer_counts,
             dtype,
@@ -154,7 +153,7 @@ pub fn read<R: Read + Seek>(
             checked,
         )
         .map(|x| x.boxed()),
-        LargeList => read_list::<i64, _>(
+        LargeList => read_list::<i64>(
             field_nodes,
             variadic_buffer_counts,
             dtype,
@@ -207,7 +206,7 @@ pub fn read<R: Read + Seek>(
         .map(|x| x.boxed()),
         Dictionary(key_type) => {
             match_integer_type!(key_type, |$T| {
-                read_dictionary::<$T, _>(
+                read_dictionary::<$T>(
                     field_nodes,
                     dtype,
                     ipc_field.dictionary_id,
@@ -257,7 +256,7 @@ pub fn read<R: Read + Seek>(
             checked,
         )
         .map(|x| x.boxed()),
-        Utf8View => read_binview::<str, _>(
+        Utf8View => read_binview::<str>(
             field_nodes,
             variadic_buffer_counts,
             dtype,
@@ -270,7 +269,7 @@ pub fn read<R: Read + Seek>(
             scratch,
             checked,
         ),
-        BinaryView => read_binview::<[u8], _>(
+        BinaryView => read_binview::<[u8]>(
             field_nodes,
             variadic_buffer_counts,
             dtype,
@@ -289,14 +288,14 @@ pub fn read<R: Read + Seek>(
 /// Reads `field` as `pruned_dtype`: its own dtype, or for a struct a struct dtype with some of
 /// its fields (see [`read_struct_pruned`]), or for a list a list of such an element.
 #[allow(clippy::too_many_arguments)]
-pub fn read_pruned<R: Read + Seek>(
+pub fn read_pruned(
     field_nodes: &mut VecDeque<Node>,
     variadic_buffer_counts: &mut VecDeque<usize>,
     field: &Field,
     pruned_dtype: &ArrowDataType,
     ipc_field: &IpcField,
     buffers: &mut VecDeque<IpcBuffer>,
-    reader: &mut R,
+    reader: &mut dyn ReadSeek,
     dictionaries: &Dictionaries,
     block_offset: u64,
     is_little_endian: bool,
@@ -326,7 +325,7 @@ pub fn read_pruned<R: Read + Seek>(
     }
 
     match (&field.dtype, pruned_dtype) {
-        (ArrowDataType::List(_), ArrowDataType::List(_)) => read_list_pruned::<i32, _>(
+        (ArrowDataType::List(_), ArrowDataType::List(_)) => read_list_pruned::<i32>(
             field_nodes,
             variadic_buffer_counts,
             &field.dtype,
@@ -344,7 +343,7 @@ pub fn read_pruned<R: Read + Seek>(
             checked,
         )
         .map(|x| x.boxed()),
-        (ArrowDataType::LargeList(_), ArrowDataType::LargeList(_)) => read_list_pruned::<i64, _>(
+        (ArrowDataType::LargeList(_), ArrowDataType::LargeList(_)) => read_list_pruned::<i64>(
             field_nodes,
             variadic_buffer_counts,
             &field.dtype,

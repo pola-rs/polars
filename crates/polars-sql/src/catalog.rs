@@ -16,6 +16,7 @@ use sqlparser::tokenizer::{Location, Span};
 
 use crate::dyn_visit;
 use crate::sql_visitors::expr_references_any_column;
+use crate::time_travel::{VersionSpec, is_version_part, split_version, with_version};
 use crate::types::map_sql_dtype_to_polars;
 
 /// A table of an attached catalog that a statement reads.
@@ -25,6 +26,18 @@ pub struct CatalogTable {
     pub catalog: String,
     /// The table's identifier in the catalog: namespace parts, then the table name.
     pub identifier: Vec<String>,
+}
+
+/// A catalog table that a query reads, at a version or as it is now.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CatalogRead {
+    /// The table read.
+    pub table: CatalogTable,
+    /// The version read; `None` for the current snapshot.
+    pub version: Option<VersionSpec>,
+    /// The name to pass the scan of this read back under (see
+    /// `SQLContext::execute_with_catalog_tables`): the full name, then the version if any.
+    pub key: Vec<String>,
 }
 
 /// A namespace of an attached catalog.
@@ -194,7 +207,7 @@ pub struct MergePlan {
     pub not_matched: Vec<MergeClausePlan>,
 }
 
-/// A change to a catalog table's top-level columns or properties, by an `ALTER TABLE`.
+/// A change to a catalog table's top-level columns, properties or partitioning, by an `ALTER TABLE`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CatalogAlter {
     /// `ADD [COLUMN] [IF NOT EXISTS] <name> <type>`: a nullable column.
@@ -237,13 +250,19 @@ pub enum CatalogAlter {
         /// The properties, in the order written.
         properties: Vec<(String, String)>,
     },
+    /// `SET PARTITIONED BY (...)`, or `RESET PARTITIONED BY` (no fields): the table's partition
+    /// spec from now on.
+    SetPartitioning {
+        /// The partition fields, in the order written.
+        fields: Vec<CatalogPartitionField>,
+    },
 }
 
-/// A partition field of a catalog table: an Iceberg transform of a top-level column.
+/// A partition field of a catalog table: an Iceberg transform of a column or a struct field.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CatalogPartitionField {
-    /// The source column, as written.
-    pub column: String,
+    /// The source as written: a column, then the struct fields down to the source (`s.f`).
+    pub path: Vec<String>,
     /// The transform in Iceberg's notation: `identity`, `year`, `month`, `day`, `hour`,
     /// `bucket[N]` or `truncate[W]`.
     pub transform: String,
@@ -640,7 +659,10 @@ where
     fn pre_visit_table_factor(&mut self, factor: &mut TableFactor) -> ControlFlow<PolarsError> {
         // A name with arguments is a table function.
         let TableFactor::Table {
-            name, args: None, ..
+            name,
+            args: None,
+            version,
+            ..
         } = factor
         else {
             return ControlFlow::Continue(());
@@ -648,8 +670,28 @@ where
         let Some(parts) = name_parts(name) else {
             return ControlFlow::Continue(());
         };
-        if let Some(full) = self.resolve_name(&parts) {
-            if let Err(err) = self.record(&parts, &full) {
+        if parts.iter().any(|part| is_version_part(part)) {
+            return ControlFlow::Break(polars_err!(
+                SQLInterface: "invalid table name {}", name
+            ));
+        }
+        let written = parts.join(".");
+        if self.is_cte(&written) || (self.is_local)(&written) {
+            // a time travel clause is refused where the table is read
+            return ControlFlow::Continue(());
+        }
+        let spec = match version
+            .as_ref()
+            .map(VersionSpec::from_table_version)
+            .transpose()
+        {
+            Ok(spec) => spec,
+            Err(err) => return ControlFlow::Break(err),
+        };
+        // A versioned read is its own relation, known by the name and the version.
+        let key = with_version(parts.clone(), spec.as_ref());
+        if let Some(full) = (self.resolve)(&key) {
+            if let Err(err) = self.record(&key, &full) {
                 return ControlFlow::Break(err);
             }
             let span = name.0[0]
@@ -659,6 +701,7 @@ where
                 self.spellings.insert(position, parts);
             }
             *name = object_name(&full, span);
+            *version = None;
         }
         ControlFlow::Continue(())
     }
@@ -860,10 +903,7 @@ pub(crate) fn create_table_partitioning(
                 Expr::Tuple(exprs) => exprs.as_slice(),
                 expr => std::slice::from_ref(expr),
             };
-            exprs
-                .iter()
-                .map(|expr| Ok((partition_field(expr)?, expr.to_string())))
-                .collect::<PolarsResult<_>>()?
+            partition_fields(exprs)?
         },
         (None, HiveDistributionStyle::PARTITIONED { columns }) => columns
             .iter()
@@ -875,7 +915,7 @@ pub(crate) fn create_table_partitioning(
                     col
                 );
                 let field = CatalogPartitionField {
-                    column: col.name.value.clone(),
+                    path: vec![col.name.value.clone()],
                     transform: "identity".to_string(),
                 };
                 Ok((field, col.name.value.clone()))
@@ -883,52 +923,69 @@ pub(crate) fn create_table_partitioning(
             .collect::<PolarsResult<_>>()?,
         (None, _) => Vec::new(),
     };
-    // Iceberg allows one time transform per column.
+    ensure_unique_fields(&fields)?;
+    // A new spec takes one time transform per column, as Iceberg's spec builders do.
     let is_time = |f: &CatalogPartitionField| {
         matches!(f.transform.as_str(), "year" | "month" | "day" | "hour")
     };
     for (i, (field, sql)) in fields.iter().enumerate() {
         for (earlier, earlier_sql) in &fields[..i] {
-            polars_ensure!(earlier != field, SQLInterface: "duplicate partition field `{}`", sql);
             polars_ensure!(
-                earlier.column != field.column || !is_time(earlier) || !is_time(field),
+                earlier.path != field.path || !is_time(earlier) || !is_time(field),
                 SQLInterface: "partition fields `{}` and `{}` both partition column '{}' by time; use one of them",
-                earlier_sql, sql, field.column
+                earlier_sql, sql, field.path.join(".")
             );
         }
     }
     Ok(fields.into_iter().map(|(field, _)| field).collect())
 }
 
-/// A partition field: a column, `year|month|day|hour(column)` (with Iceberg's aliases), or
-/// `bucket|truncate(N, column)`.
+/// The partition fields of `SET PARTITIONED BY (...)`. Which time transforms may share a column
+/// depends on the table's current spec, so that is checked with the table.
+pub(crate) fn set_partitioning(exprs: &[Expr]) -> PolarsResult<Vec<CatalogPartitionField>> {
+    let fields = partition_fields(exprs)?;
+    ensure_unique_fields(&fields)?;
+    Ok(fields.into_iter().map(|(field, _)| field).collect())
+}
+
+/// The partition fields of `exprs`, each with its SQL, for messages.
+fn partition_fields(exprs: &[Expr]) -> PolarsResult<Vec<(CatalogPartitionField, String)>> {
+    exprs
+        .iter()
+        .map(|expr| Ok((partition_field(expr)?, expr.to_string())))
+        .collect()
+}
+
+fn ensure_unique_fields(fields: &[(CatalogPartitionField, String)]) -> PolarsResult<()> {
+    for (i, (field, sql)) in fields.iter().enumerate() {
+        polars_ensure!(
+            fields[..i].iter().all(|(earlier, _)| earlier != field),
+            SQLInterface: "duplicate partition field `{}`", sql
+        );
+    }
+    Ok(())
+}
+
+/// A partition field: a source, `year|month|day|hour(source)` (with Iceberg's aliases), or
+/// `bucket|truncate(N, source)`. A source is a column or a struct field (`s.f`).
 fn partition_field(expr: &Expr) -> PolarsResult<CatalogPartitionField> {
     let unsupported = || {
         polars_err!(
-            SQLInterface: "unsupported partition field `{}`; expected a column, or year, month, day, hour, bucket(N, column) or truncate(W, column) of a column",
+            SQLInterface: "unsupported partition field `{}`; expected a column or struct field (`s.f`), or year, month, day, hour, bucket(N, ...) or truncate(W, ...) of one",
             expr
         )
     };
-    let column = |expr: &Expr| match unparenthesized(expr) {
-        Expr::Identifier(ident) => Some(ident.value.clone()),
+    // Checked against the schema later: a struct field, never a table-qualified column.
+    let source_of = |expr: &Expr| match unparenthesized(expr) {
+        Expr::Identifier(ident) => Some(vec![ident.value.clone()]),
+        Expr::CompoundIdentifier(idents) => Some(idents.iter().map(|i| i.value.clone()).collect()),
         _ => None,
     };
-    // A qualified column or a struct field: without the schema, these look the same.
-    let is_compound = |expr: &Expr| matches!(unparenthesized(expr), Expr::CompoundIdentifier(_));
-    let compound = |expr: &Expr| {
-        polars_err!(
-            SQLInterface: "`PARTITION BY` takes unqualified column names; found `{}`; partitioning by a nested field is not yet supported",
-            unparenthesized(expr)
-        )
-    };
-    if let Some(column) = column(expr) {
+    if let Some(path) = source_of(expr) {
         return Ok(CatalogPartitionField {
-            column,
+            path,
             transform: "identity".to_string(),
         });
-    }
-    if is_compound(expr) {
-        return Err(compound(expr));
     }
     let Expr::Function(Function {
         name,
@@ -976,7 +1033,7 @@ fn partition_field(expr: &Expr) -> PolarsResult<CatalogPartitionField> {
         ("hour" | "hours", [source]) => ("hour".to_string(), source),
         ("bucket" | "truncate", [n, source]) => {
             let Some(n) = positive_int(n) else {
-                if (column(n).is_some() || is_compound(n)) && positive_int(source).is_some() {
+                if source_of(n).is_some() && positive_int(source).is_some() {
                     polars_bail!(SQLInterface: "`{}` takes the number first, as in `{}({}, {})`", expr, fname, source, n)
                 }
                 polars_bail!(SQLInterface: "the first argument of `{}` must be an integer from 1 to {}", expr, i32::MAX)
@@ -985,12 +1042,8 @@ fn partition_field(expr: &Expr) -> PolarsResult<CatalogPartitionField> {
         },
         _ => return Err(unsupported()),
     };
-    let column = match column(source) {
-        Some(column) => column,
-        None if is_compound(source) => return Err(compound(source)),
-        None => return Err(unsupported()),
-    };
-    Ok(CatalogPartitionField { column, transform })
+    let path = source_of(source).ok_or_else(unsupported)?;
+    Ok(CatalogPartitionField { path, transform })
 }
 
 /// `expr` without enclosing parentheses.
@@ -1087,6 +1140,7 @@ fn is_absolute_location(location: &str) -> bool {
 
 /// A table name for messages, with parts containing dots quoted.
 pub(crate) fn display_name(parts: &[String]) -> String {
+    let (parts, version) = split_version(parts);
     let parts: Vec<String> = parts
         .iter()
         .map(|part| match part.contains('.') {
@@ -1094,7 +1148,10 @@ pub(crate) fn display_name(parts: &[String]) -> String {
             false => part.clone(),
         })
         .collect();
-    parts.join(".")
+    match version {
+        Some(version) => format!("{} {}", parts.join("."), version),
+        None => parts.join("."),
+    }
 }
 
 /// The first part of a `DELETE` condition that a catalog filter can't express, described for a

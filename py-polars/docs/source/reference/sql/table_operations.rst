@@ -8,7 +8,7 @@ Table Operations
    * - Function
      - Description
    * - :ref:`ALTER TABLE <alter_table>`
-     - Change the columns or properties of a table in an attached catalog.
+     - Change the columns, properties or partitioning of a table in an attached catalog.
    * - :ref:`CREATE SCHEMA <create_schema>`
      - Create a namespace in an attached catalog.
    * - :ref:`CREATE TABLE <create_table>`
@@ -48,15 +48,27 @@ name resolved as in a query. Each statement makes one change, in one commit:
 
 * ``ADD [COLUMN] [IF NOT EXISTS] <name> <type>`` adds a nullable column (``NOT NULL`` is not
   supported, as the existing rows have no value for it);
-* ``DROP [COLUMN] [IF EXISTS] <name>`` drops a column;
+* ``DROP [COLUMN] [IF EXISTS] <name>`` drops a column (not one that a partition spec of
+  the table partitions by, also an older one);
 * ``RENAME COLUMN <name> TO <new_name>`` renames a column, keeping its data;
 * ``ALTER COLUMN <name> [SET DATA] TYPE <type>`` changes a column's type, as the catalog
   allows (such as ``INT`` to ``BIGINT``, ``FLOAT`` to ``DOUBLE``, or a wider ``DECIMAL``);
 * ``ALTER COLUMN <name> DROP NOT NULL`` makes a column nullable;
-* ``SET TBLPROPERTIES ('key' = value, ...)`` sets table properties.
+* ``SET TBLPROPERTIES ('key' = value, ...)`` sets table properties;
+* ``SET PARTITIONED BY (<field>, ...)`` sets how new data is partitioned, with the fields of
+  ``CREATE TABLE ... PARTITION BY``, in the order written;
+* ``RESET PARTITIONED BY`` stops partitioning new data.
 
-Column names are case-sensitive and name top-level columns. ``ALTER TABLE IF EXISTS`` does
-nothing if the table does not exist.
+Changing the partitioning only changes the table's metadata. Existing data files keep the
+partitioning they were written with, and later writes use the new one. A field that the
+table had before keeps its name, and an older spec with the same fields is used again. A
+statement adds at most one time transform (``year``, ``month``, ``day`` or ``hour``) per
+column. Time fields the table has can stay.
+Iceberg v1 tables are not supported: upgrade them to v2 first.
+
+Column names are case-sensitive and name top-level columns. ``SET PARTITIONED BY`` also
+takes fields of struct columns (``s.f``), as ``CREATE TABLE ... PARTITION BY`` does.
+``ALTER TABLE IF EXISTS`` does nothing if the table does not exist.
 
 **Example:**
 
@@ -66,6 +78,8 @@ nothing if the table does not exist.
     ALTER TABLE lake.sales.orders RENAME COLUMN qty TO quantity
     ALTER TABLE lake.sales.orders ALTER COLUMN quantity SET DATA TYPE BIGINT
     ALTER TABLE lake.sales.orders SET TBLPROPERTIES ('owner' = 'finance')
+    ALTER TABLE lake.sales.orders SET PARTITIONED BY (month(ordered_at), bucket(16, id))
+    ALTER TABLE lake.sales.orders RESET PARTITIONED BY
 
 .. _create_schema:
 
@@ -139,7 +153,12 @@ creates the table in the catalog.
 - ``NOT NULL`` makes a column a required field; other constraints are not supported.
 - ``PARTITION BY (...)`` sets the partition spec: a column (identity), ``year``,
   ``month``, ``day`` or ``hour`` of a column, ``bucket(N, column)`` or
-  ``truncate(W, column)``. ``PARTITIONED BY (column, ...)`` takes column names only.
+  ``truncate(W, column)``. A column can also be a field of a struct column: ``s.f`` or
+  ``"s"."f"`` is field ``f`` of struct ``s``, never a table-qualified column, and
+  ``"s.f"`` is a column named ``s.f``. ``DELETE`` and ``UPDATE`` conditions can use such a
+  field only when its struct column is ``NOT NULL``, so not one level deeper, and not in a
+  table created with ``AS SELECT``. ``PARTITIONED BY (column, ...)`` takes top-level column
+  names only.
 - ``LOCATION`` (or the ``'location'`` option) sets the table location; the other
   ``WITH`` options become table properties.
 - ``AS SELECT`` commits the rows together with the create, so a failed query creates
@@ -157,19 +176,32 @@ DELETE
 Remove specific rows from a table using an (optional) constraint.
 Omitting the constraint deletes *all* rows, equivalent to `TRUNCATE`.
 
-On a table of an attached catalog, it deletes the matching rows in one commit. It returns
-the statement, not the remaining rows. Rows where the condition is NULL are kept. The
-condition compares columns with constants (``=``, ``<>``, ``<``, ``<=``, ``>``, ``>=``,
+On a table of an attached catalog, it deletes the matching rows in one commit, as one
+snapshot. It returns the statement, not the remaining rows. Rows where the condition is NULL
+are kept.
+
+The condition compares columns with constants (``=``, ``<>``, ``<``, ``<=``, ``>``, ``>=``,
 ``IN``, ``BETWEEN``, ``IS [NOT] NULL``, ``LIKE 'prefix%'``), combined with ``AND``, ``OR``
 and ``NOT``. On floating-point columns, ``>``, ``>=`` and ``<>`` are not supported. String
 constants may only contain letters, digits, spaces, ``-`` and ``_`` for now. Decimal
-columns cannot be compared with constants yet. Data
-files whose rows all match are dropped, and the others are rewritten (copy-on-write), also
-on a merge-on-read table.
+columns cannot be compared with constants yet.
 
-If another writer commits first, ``DELETE`` retries when that writer's rows cannot match the
-condition. Otherwise it fails, unless the table's ``write.delete.isolation-level`` is
-``snapshot``. The other writer's matching rows are then kept.
+Data files whose rows all match are dropped. If other files match only partly, the files
+that may match are read, and the partly matching ones are rewritten without the deleted
+rows (copy-on-write), also on a merge-on-read table. Not supported yet:
+
+- Iceberg v3 tables.
+- Reading a data file that is not Parquet.
+- Reading a data file whose delete files cannot be applied, such as equality deletes or
+  position deletes that cover several data files.
+
+If another writer commits first:
+
+- ``DELETE`` retries when that writer's rows cannot match the condition.
+- Otherwise it fails, unless the table's ``write.delete.isolation-level`` is ``snapshot``.
+  The other writer's matching rows are then kept.
+- A ``DELETE`` that reads files fails at any isolation level if that writer deleted or
+  replaced rows of those files, or changed the table's schema or partition spec.
 
 **Example:**
 

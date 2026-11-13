@@ -3223,6 +3223,60 @@ def test_sink_iceberg_commit_twin_lands_during_retry_backoff(
         in capfd.readouterr().err
     )
     assert _tagged_snapshots(tbl, state) == [_landed_snapshot(tbl)]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_commit_twin_lands_before_partition_change(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    state, sinked_files = _sink_uncommitted(monkeypatch, tbl)
+    twin = _twin(state)
+    twin_catalog = twin.table().catalog
+
+    commit_table = twin_catalog.commit_table
+    calls = 0
+
+    def commit_table_after_foreign_append(*args: Any) -> Any:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            _foreign_append(tbl, [7])
+        return commit_table(*args)
+
+    monkeypatch.setattr(twin_catalog, "commit_table", commit_table_after_foreign_append)
+
+    sleep = pyiceberg.table.time.sleep
+    slept = False
+
+    def sleep_while_original_commits_then_spec_changes(seconds: float) -> None:
+        nonlocal slept
+        if not slept:
+            slept = True
+            state.commit(sinked_files)
+            with tbl.catalog.load_table(tbl.name()).update_spec() as update:
+                update.add_identity("a")
+        sleep(0)
+
+    monkeypatch.setattr(
+        pyiceberg.table.time, "sleep", sleep_while_original_commits_then_spec_changes
+    )
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    # the twin's write landed before the spec changed: found, not refused
+    twin.commit(sinked_files)
+
+    assert slept
+    assert (
+        "IcebergSinkState[commit]: already committed, skipping"
+        in capfd.readouterr().err
+    )
+    assert _tagged_snapshots(tbl, state) == [_landed_snapshot(tbl)]
     assert _rows(tbl) == [7, 42]
 
 

@@ -317,7 +317,7 @@ def test_struct_field_pruning_delta(
 
 
 def test_struct_field_pruning_delta_skips_unselected_leaves(delta_path: Path) -> None:
-    _corrupt_unselected(list(delta_path.glob("*.parquet")))
+    _corrupt_unselected(list(delta_path.rglob("*.parquet")))
     q = pl.scan_delta(delta_path).select(
         a, s.is_null().alias("n"), l.list.first().struct.field("p")
     )

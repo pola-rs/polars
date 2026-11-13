@@ -117,7 +117,7 @@ impl DurationMethods for DurationChunked {
     /// Extract the microseconds from a `Duration`
     fn microseconds(&self) -> Int64Chunked {
         match self.time_unit() {
-            TimeUnit::Milliseconds => &self.phys * 1000,
+            TimeUnit::Milliseconds => (&self.phys).checked_mul_scalar(1000),
             TimeUnit::Microseconds => self.phys.clone(),
             TimeUnit::Nanoseconds => (&self.phys).wrapping_trunc_div_scalar(1000),
         }
@@ -132,8 +132,8 @@ impl DurationMethods for DurationChunked {
     /// Extract the nanoseconds from a `Duration`
     fn nanoseconds(&self) -> Int64Chunked {
         match self.time_unit() {
-            TimeUnit::Milliseconds => &self.phys * NANOSECONDS_IN_MILLISECOND,
-            TimeUnit::Microseconds => &self.phys * 1000,
+            TimeUnit::Milliseconds => (&self.phys).checked_mul_scalar(NANOSECONDS_IN_MILLISECOND),
+            TimeUnit::Microseconds => (&self.phys).checked_mul_scalar(1000),
             TimeUnit::Nanoseconds => self.phys.clone(),
         }
     }

@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, SeekFrom};
 use std::sync::Arc;
 
 use polars_arrow_format::ipc::FooterRef;
@@ -11,7 +11,7 @@ use polars_utils::bool::UnsafeBool;
 use super::super::{ARROW_MAGIC_V1, ARROW_MAGIC_V2, CONTINUATION_MARKER};
 use super::common::*;
 use super::schema::fb_to_schema;
-use super::{Dictionaries, OutOfSpecKind, SendableIterator};
+use super::{Dictionaries, OutOfSpecKind, ReadSeek, SendableIterator};
 use crate::array::Array;
 use crate::datatypes::{ArrowDataType, ArrowSchemaRef, Metadata};
 use crate::io::ipc::IpcSchema;
@@ -45,7 +45,7 @@ pub struct FileMetadata {
 }
 
 /// Read the row count by summing the length of the record batches
-pub fn get_row_count<R: Read + Seek>(reader: &mut R) -> PolarsResult<i64> {
+pub fn get_row_count(reader: &mut dyn ReadSeek) -> PolarsResult<i64> {
     let (_, footer_len) = read_footer_len(reader)?;
     let footer = read_footer(reader, footer_len)?;
     let (_, blocks) = deserialize_footer_blocks(&footer)?;
@@ -54,8 +54,8 @@ pub fn get_row_count<R: Read + Seek>(reader: &mut R) -> PolarsResult<i64> {
 }
 
 ///  Read the row count by summing the length of the record batches in blocks
-pub fn get_row_count_from_blocks<R: Read + Seek>(
-    reader: &mut R,
+pub fn get_row_count_from_blocks(
+    reader: &mut dyn ReadSeek,
     blocks: &[polars_arrow_format::ipc::Block],
 ) -> PolarsResult<i64> {
     let mut message_scratch: Vec<u8> = Default::default();
@@ -84,8 +84,8 @@ pub(crate) fn get_dictionary_batch<'a>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn read_dictionary_block<R: Read + Seek>(
-    reader: &mut R,
+pub fn read_dictionary_block(
+    reader: &mut dyn ReadSeek,
     metadata: &FileMetadata,
     block: &polars_arrow_format::ipc::Block,
     // When true, the underlying reader bytestream represents a standalone IPC Block
@@ -127,8 +127,8 @@ pub fn read_dictionary_block<R: Read + Seek>(
 
 /// Reads all file's dictionaries, if any
 /// This function is IO-bounded
-pub fn read_file_dictionaries<R: Read + Seek>(
-    reader: &mut R,
+pub fn read_file_dictionaries(
+    reader: &mut dyn ReadSeek,
     metadata: &FileMetadata,
     scratch: &mut Vec<u8>,
     checked: UnsafeBool,
@@ -175,7 +175,7 @@ pub(super) fn decode_footer_len(footer: [u8; 10], end: u64) -> PolarsResult<(u64
 }
 
 /// Reads the footer's length and magic number in footer
-fn read_footer_len<R: Read + Seek>(reader: &mut R) -> PolarsResult<(u64, usize)> {
+fn read_footer_len(reader: &mut dyn ReadSeek) -> PolarsResult<(u64, usize)> {
     // read footer length and magic number in footer
     let end = reader.seek(SeekFrom::End(-10))? + 10;
 
@@ -185,14 +185,13 @@ fn read_footer_len<R: Read + Seek>(reader: &mut R) -> PolarsResult<(u64, usize)>
     decode_footer_len(footer, end)
 }
 
-fn read_footer<R: Read + Seek>(reader: &mut R, footer_len: usize) -> PolarsResult<Vec<u8>> {
+fn read_footer(reader: &mut dyn ReadSeek, footer_len: usize) -> PolarsResult<Vec<u8>> {
     // read footer
     reader.seek(SeekFrom::End(-10 - footer_len as i64))?;
 
     let mut serialized_footer = vec![];
     serialized_footer.try_reserve(footer_len)?;
-    reader
-        .by_ref()
+    (&mut *reader)
         .take(footer_len as u64)
         .read_to_end(&mut serialized_footer)?;
     Ok(serialized_footer)
@@ -298,7 +297,7 @@ pub fn deserialize_footer(footer_data: &[u8], size: u64) -> PolarsResult<FileMet
 }
 
 /// Read the Arrow IPC file's metadata
-pub fn read_file_metadata<R: Read + Seek>(reader: &mut R) -> PolarsResult<FileMetadata> {
+pub fn read_file_metadata(reader: &mut dyn ReadSeek) -> PolarsResult<FileMetadata> {
     let start = reader.stream_position()?;
     let (end, footer_len) = read_footer_len(reader)?;
     let serialized_footer = read_footer(reader, footer_len)?;
@@ -318,8 +317,8 @@ pub(crate) fn get_record_batch(
     }
 }
 
-pub fn get_message_from_block_offset<'a, R: Read + Seek>(
-    reader: &mut R,
+pub fn get_message_from_block_offset<'a>(
+    reader: &mut dyn ReadSeek,
     offset: u64,
     message_scratch: &'a mut Vec<u8>,
 ) -> PolarsResult<polars_arrow_format::ipc::MessageRef<'a>> {
@@ -337,8 +336,7 @@ pub fn get_message_from_block_offset<'a, R: Read + Seek>(
 
     message_scratch.clear();
     message_scratch.try_reserve(meta_len)?;
-    reader
-        .by_ref()
+    (&mut *reader)
         .take(meta_len as u64)
         .read_to_end(message_scratch)?;
 
@@ -346,8 +344,8 @@ pub fn get_message_from_block_offset<'a, R: Read + Seek>(
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferMessage(err)))
 }
 
-pub(super) fn get_message_from_block<'a, R: Read + Seek>(
-    reader: &mut R,
+pub(super) fn get_message_from_block<'a>(
+    reader: &mut dyn ReadSeek,
     block: &polars_arrow_format::ipc::Block,
     message_scratch: &'a mut Vec<u8>,
 ) -> PolarsResult<polars_arrow_format::ipc::MessageRef<'a>> {
@@ -367,8 +365,8 @@ pub(super) fn get_message_from_block<'a, R: Read + Seek>(
 /// # Panics
 /// This function panics iff `index >= metadata.blocks.len()`
 #[allow(clippy::too_many_arguments)]
-pub fn read_batch<R: Read + Seek>(
-    reader: &mut R,
+pub fn read_batch(
+    reader: &mut dyn ReadSeek,
     dictionaries: &Dictionaries,
     metadata: &FileMetadata,
     projection: Option<&[usize]>,
@@ -398,8 +396,8 @@ pub fn read_batch<R: Read + Seek>(
 /// [`read_batch`], reading the columns with a dtype in `pruned_dtypes` (indexed like the
 /// schema) as that dtype: struct columns with only some of their fields.
 #[allow(clippy::too_many_arguments)]
-pub fn read_batch_pruned<R: Read + Seek>(
-    reader: &mut R,
+pub fn read_batch_pruned(
+    reader: &mut dyn ReadSeek,
     dictionaries: &Dictionaries,
     metadata: &FileMetadata,
     projection: Option<&[usize]>,

@@ -32,6 +32,11 @@ pub use reader::{BlockReader, FileReader};
 pub use schema::deserialize_schema;
 pub use stream::{StreamMetadata, StreamReader, StreamState, read_stream_metadata};
 
+/// A reader that can also seek.
+pub trait ReadSeek: std::io::Read + std::io::Seek {}
+
+impl<T: std::io::Read + std::io::Seek + ?Sized> ReadSeek for T {}
+
 /// how dictionaries are tracked in this crate
 pub type Dictionaries = PlHashMap<i64, Box<dyn Array>>;
 
