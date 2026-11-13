@@ -677,10 +677,10 @@ def test_approx_n_unique_empty(engine: EngineType) -> None:
         "all": [1, 1],
         "non_null": [0, 0],
     }
-    out = lf.filter(False).select(
+    empty = lf.filter(False).select(
         pl.col("a").approx_n_unique(), pl.col("b").approx_n_unique()
     )
-    assert out.collect(engine=engine).rows() == [(0, 0)]
+    assert empty.collect(engine=engine).rows() == [(0, 0)]
 
 
 def test_lazy_functions() -> None:
