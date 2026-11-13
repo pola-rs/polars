@@ -5478,10 +5478,10 @@ impl SQLContext {
             .filter_map(get_table_name)
             .collect();
         // Resolving is `&mut self`, so all relations must be resolved up-front rather than
-        // mid-probe while picking a join order below.
+        // mid-probe while picking a join order below. A derived table that fails to resolve
+        // may read the relations before it; it is joined as a LATERAL join after them.
         let mut pending = Vec::with_capacity(from.len() - 1);
-        for tbl_expr in from.iter().skip(1) {
-            let mut rf = self.execute_from_statement(tbl_expr)?;
+        for (index, tbl_expr) in from.iter().enumerate().skip(1) {
             let r_name = kept_factors(tbl_expr)
                 .into_iter()
                 .next()
@@ -5491,15 +5491,28 @@ impl SQLContext {
                 !r_name.is_empty(),
                 SQLInterface: "implicit joins require named tables; please provide an alias"
             );
-            let right_schema = self.get_frame_schema(&mut rf)?;
-            pending.push((tbl_expr, rf, r_name, right_schema));
+            let right = match self.execute_from_statement(tbl_expr) {
+                Ok(mut rf) => {
+                    let right_schema = self.get_frame_schema(&mut rf)?;
+                    Ok((rf, right_schema))
+                },
+                Err(err)
+                    if tbl_expr.joins.is_empty()
+                        && matches!(tbl_expr.relation, TableFactor::Derived { .. }) =>
+                {
+                    Err(err)
+                },
+                Err(err) => return Err(err),
+            };
+            pending.push((tbl_expr, right, r_name, index));
         }
 
         // Each round takes the first pending relation with a join predicate against the
         // tables joined so far; relations with no predicate yet are deferred. Genuinely
-        // disconnected relations fall through to a cross join, in source order.
+        // disconnected relations fall through to a cross join, in source order. A LATERAL
+        // join waits for the relations before it.
         while !pending.is_empty() {
-            let left_schema = self.get_frame_schema(lf)?;
+            let mut left_schema = self.get_frame_schema(lf)?;
             // Relations each pending entry brings into scope.
             let pending_relations: Vec<Vec<String>> = pending
                 .iter()
@@ -5518,9 +5531,15 @@ impl SQLContext {
                     .flat_map(|(_, names)| names.iter().cloned())
                     .collect()
             };
-            let next = (0..pending.len())
+            let resolved = pending
+                .iter()
+                .position(|(_, right, ..)| right.is_err())
+                .unwrap_or(pending.len());
+            let next = (0..resolved)
                 .find(|&i| {
-                    let (_, _, r_name, right_schema) = &pending[i];
+                    let (_, Ok((_, right_schema)), r_name, _) = &pending[i] else {
+                        unreachable!()
+                    };
                     extract_join_predicates(
                         &remaining_where,
                         &joined_table_names,
@@ -5535,7 +5554,38 @@ impl SQLContext {
                 })
                 .unwrap_or(0);
             let deferred = deferred_tables(next);
-            let (tbl_expr, rf, r_name, right_schema) = pending.remove(next);
+            let (tbl_expr, right, r_name, index) = pending.remove(next);
+            let mut lateral_keys = None;
+            let (rf, right_schema) = match right {
+                Ok(right) => right,
+                Err(err) => {
+                    // It only sees the relations before it, which are all joined.
+                    let scope = std::mem::replace(
+                        &mut self.active_relations,
+                        declared_relations(&from[..=index], &self.catalog_spellings),
+                    );
+                    let lateral = self.lateral_join(
+                        &tbl_expr.relation,
+                        &JoinOperator::CrossJoin(JoinConstraint::None),
+                        lf,
+                    );
+                    self.active_relations = scope;
+                    let Some(lateral) = lateral else {
+                        return Err(err);
+                    };
+                    *lf = lateral.left;
+                    left_schema = self.get_frame_schema(lf)?;
+                    let JoinOperator::Inner(JoinConstraint::On(key_condition)) =
+                        lateral.join_operator
+                    else {
+                        unreachable!()
+                    };
+                    lateral_keys = Some((lateral.keys, key_condition));
+                    let mut rf = lateral.right;
+                    let right_schema = self.get_frame_schema(&mut rf)?;
+                    (rf, right_schema)
+                },
+            };
             let (join_expr, residual) = extract_join_predicates(
                 &remaining_where,
                 &joined_table_names,
@@ -5545,6 +5595,15 @@ impl SQLContext {
                 &left_schema,
                 &right_schema,
             );
+            let join_expr = match (join_expr, &lateral_keys) {
+                (Some(join_expr), Some((_, key_condition))) => Some(SQLExpr::BinaryOp {
+                    left: Box::new(join_expr),
+                    op: SQLBinaryOperator::And,
+                    right: Box::new(key_condition.clone()),
+                }),
+                (None, Some((_, key_condition))) => Some(key_condition.clone()),
+                (join_expr, None) => join_expr,
+            };
 
             *lf = if let Some(on_expr) = join_expr {
                 self.process_join(
@@ -5573,6 +5632,12 @@ impl SQLContext {
                 lf.clone()
                     .cross_join(rf, Some(format_pl_smallstr!(":{}", r_name)))
             };
+            if let Some((keys, _)) = lateral_keys {
+                *lf = lf.clone().drop(Selector::ByName {
+                    names: keys.into(),
+                    strict: false,
+                });
+            }
             remaining_where = residual;
 
             let joined_schema = self.get_frame_schema(lf)?;
@@ -5791,13 +5856,14 @@ impl SQLContext {
                     polars_bail!(SQLInterface: "relation '{}' was not found{}", tbl_name, hint);
                 }
             },
+            // A LATERAL derived table that reads the relations before it fails here, and the
+            // join plans it (see `lateral_join`).
             TableFactor::Derived {
-                lateral,
+                lateral: _,
                 subquery,
                 alias,
                 sample,
             } => {
-                polars_ensure!(!(*lateral), SQLInterface: "`LATERAL` clause is not supported");
                 polars_ensure!(sample.is_none(), SQLInterface: "table `SAMPLE` clause is not supported");
 
                 // Execute the subquery in isolation so that outer join state
