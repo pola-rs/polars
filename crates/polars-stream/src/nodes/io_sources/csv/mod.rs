@@ -173,11 +173,12 @@ impl FileReader for CsvFileReader {
                 })
                 .unwrap_or(DEFAULT_CSV_CHUNK_SIZE);
 
-            let prefetch_limit = self
-                .chunk_prefetch_sync
-                .prefetch_limit
-                .min(file_size.div_ceil(chunk_size))
-                .max(1);
+            let prefetch_limit = ChunkDataFetcher::prefetch_depth(
+                &byte_source,
+                self.chunk_prefetch_sync.prefetch_limit,
+                file_size,
+                chunk_size,
+            );
 
             let (prefetch_send, prefetch_recv) = tokio::sync::mpsc::channel(prefetch_limit);
 
