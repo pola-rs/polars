@@ -3470,7 +3470,7 @@ def test_group_by_arg_min_max_by_scalar_column_29504() -> None:
     ("op", "dtype"),
     [
         (op, dtype)
-        for op in ["mean", "median", "std", "var"]
+        for op in ["mean", "median", "quantile", "std", "var"]
         for dtype in [
             pl.String,
             pl.Binary,
@@ -3493,8 +3493,8 @@ def test_moment_agg_unsupported_dtype_raises_27309(
         {"a": [1, 1, 2], "b": [None, None, None]},
         schema={"a": pl.Int64, "b": dtype},
     )
-    expr = getattr(pl.col("b"), op)()
-    for q in [lf.group_by("a").agg(expr), lf.select(expr)]:
+    expr = pl.col("b").quantile(0.5) if op == "quantile" else getattr(pl.col("b"), op)()
+    for q in [lf.group_by("a").agg(expr), lf.select(expr), lf.select(expr.over("a"))]:
         with pytest.raises(
             InvalidOperationError, match=f"`{op}` operation not supported"
         ):

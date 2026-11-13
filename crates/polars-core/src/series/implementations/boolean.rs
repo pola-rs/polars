@@ -299,6 +299,20 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         let v = sc.value().cast(&DataType::Float64);
         Ok(Scalar::new(DataType::Float64, v))
     }
+    fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
+        let ca = self
+            .0
+            .cast_with_options(&DataType::Int8, CastOptions::Overflowing)
+            .unwrap();
+        ca.quantile_reduce(quantile, method)
+    }
+    fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+        let ca = self
+            .0
+            .cast_with_options(&DataType::Int8, CastOptions::Overflowing)
+            .unwrap();
+        ca.quantiles_reduce(quantiles, method)
+    }
     /// Get the variance of the Series as a new Series of length 1.
     fn var_reduce(&self, _ddof: u8) -> PolarsResult<Scalar> {
         let ca = self

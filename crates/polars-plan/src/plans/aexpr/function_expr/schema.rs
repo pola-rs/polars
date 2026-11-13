@@ -701,6 +701,26 @@ impl<'a> FieldsMapper<'a> {
         self.moment_dtype()
     }
 
+    /// Returns an error if the operation `op` (e.g. "median") doesn't support the input dtype.
+    /// It supports null, Boolean, numeric and Decimal input, and temporal input if
+    /// `allow_temporal`. An unknown dtype passes, since it can't be checked yet.
+    pub fn ensure_moment_input(&self, op: &str, allow_temporal: bool) -> PolarsResult<()> {
+        let dt = self.fields[0].dtype();
+        let supported = match dt {
+            DataType::Null | DataType::Unknown(_) | DataType::Boolean => true,
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(_, _) => true,
+            dt if dt.is_primitive_numeric() => true,
+            dt if dt.is_temporal() => allow_temporal,
+            _ => false,
+        };
+        polars_ensure!(
+            supported,
+            InvalidOperation: "`{op}` operation not supported for dtype `{dt}`"
+        );
+        Ok(())
+    }
+
     pub fn moment_dtype(&self) -> PolarsResult<Field> {
         let map_inner = |dt: &DataType| match dt {
             DataType::Boolean => DataType::Float64,
@@ -946,6 +966,7 @@ impl<'a> FieldsMapper<'a> {
     }
 
     pub fn quantile_dtype(&self) -> PolarsResult<Field> {
+        self.ensure_moment_input("quantile", true)?;
         let mut out = self.moment_dtype()?;
         if matches!(self.fields[1].dtype(), DataType::List(_)) {
             out.set_dtype(DataType::List(Box::new(out.dtype().clone())));

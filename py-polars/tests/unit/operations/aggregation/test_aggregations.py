@@ -604,6 +604,22 @@ def test_quantile_out_of_range_grouped(quantile: float | pl.Expr) -> None:
             q.collect()
 
 
+@pytest.mark.parametrize(
+    "values", [pl.Series([True, False, True, None]), pl.Series([None] * 4)]
+)
+def test_quantile_bool_null_like_median(values: pl.Series) -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 1, 2], "b": values})
+    contexts: list[Callable[[pl.Expr], pl.LazyFrame]] = [
+        lambda e: lf.select(e),
+        lambda e: lf.select(e.over("g")),
+        lambda e: lf.group_by("g", maintain_order=True).agg(e),
+    ]
+    for f in contexts:
+        q = f(pl.col("b").quantile(0.5, "linear"))
+        assert_frame_equal(q.collect(), f(pl.col("b").median()).collect())
+        assert q.collect_schema() == q.collect().schema
+
+
 @pytest.mark.parametrize("quantile", [-0.1, 1.1])
 def test_approx_quantile_out_of_range(quantile: float) -> None:
     s = pl.Series("a", [1.0, 2.0, 3.0])
