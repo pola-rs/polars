@@ -695,6 +695,16 @@ def test_view_planned_with_statement() -> None:
         res = ctx.execute("SELECT ts = CURRENT_TIMESTAMP FROM clock", eager=True)
         assert res.item() is True
 
+        # each read of a view draws its own random values, also through another view
+        ctx.execute("CREATE VIEW r AS SELECT RANDOM() AS x")
+        ctx.execute("CREATE VIEW r2 AS SELECT x FROM r")
+        for view in ("r", "r2"):
+            res = ctx.execute(
+                f"SELECT a.x = b.x AS same FROM {view} a CROSS JOIN {view} b",
+                eager=True,
+            )
+            assert res.item() is False
+
 
 @pytest.mark.parametrize(
     ("sql", "error"),

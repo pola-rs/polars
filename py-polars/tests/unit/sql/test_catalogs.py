@@ -2873,6 +2873,7 @@ def test_view_and_describe_with_catalog(lake: CountingCatalog) -> None:
     assert res.rows() == [(1, "a", 0)]
     with pytest.raises(SQLInterfaceError, match="a view cannot read catalog tables"):
         ctx.execute("CREATE VIEW w AS SELECT * FROM lineitem")
+    ctx.execute("CREATE VIEW IF NOT EXISTS v AS SELECT * FROM lineitem")
     with pytest.raises(SQLInterfaceError, match="cannot be created in catalog 'lake'"):
         ctx.execute("CREATE VIEW lake.tpch.w AS SELECT 1 AS x")
     assert ctx.tables() == ["frame", "orders", "v"]

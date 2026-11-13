@@ -1152,7 +1152,7 @@ impl SQLContext {
     }
 
     fn parse_catalog_dml(&mut self, query: &str) -> PolarsResult<Statement> {
-        self.statement_time = Default::default();
+        self.start_statement();
         self.parse_catalog_dml_keeping_clock(query)
     }
 
@@ -1361,7 +1361,7 @@ impl SQLContext {
         let (_, catalog_spellings) = self.rewrite_catalog_names(&mut stmt)?;
         desugar_quantified_subqueries(&mut stmt);
         self.catalog_spellings = catalog_spellings;
-        self.statement_time = Default::default();
+        self.start_statement();
         let res = self.execute_statement(&stmt).inspect_err(|_| {
             self.clear_statement_state();
         })?;
@@ -1468,7 +1468,7 @@ impl SQLContext {
             },
         };
 
-        self.statement_time = Default::default();
+        self.start_statement();
         std::mem::swap(&mut self.lp_arena, lp_arena);
         std::mem::swap(&mut self.expr_arena, expr_arena);
         let res = self.execute_statement(stmt);
@@ -1479,9 +1479,16 @@ impl SQLContext {
         Ok(res?.logical_plan)
     }
 
+    /// Give the statement about to be planned its own clock and view plans, which its nested
+    /// contexts share.
+    fn start_statement(&mut self) {
+        self.statement_time = Default::default();
+        self.view_frames = Default::default();
+    }
+
     fn clear_statement_state(&mut self) {
         self.cte_map.clear();
-        self.view_frames.lock().unwrap().clear();
+        self.view_frames = Default::default();
         self.catalog_tables.clear();
         self.catalog_names.clear();
         self.catalog_spellings.clear();
@@ -1748,7 +1755,8 @@ impl SQLContext {
         Ok(key_ignoring_case(&views, name)?.map(|key| (key.clone(), views[key].clone())))
     }
 
-    /// The plan of the view `name` refers to, planned once per statement.
+    /// The plan of the view `name` refers to, planned once per statement unless it reads
+    /// `RANDOM()`, so that each read of such a view draws its own values.
     fn get_view(&self, name: &str) -> PolarsResult<Option<LazyFrame>> {
         let Some((key, view)) = self.find_view(name)? else {
             return Ok(None);
@@ -1761,8 +1769,30 @@ impl SQLContext {
             return Ok(Some(lf.clone()));
         }
         let lf = self.plan_view(&key, &view)?;
-        self.view_frames.lock().unwrap().insert(key, lf.clone());
+        if !self.reads_random(&view, &mut PlHashSet::new()) {
+            self.view_frames.lock().unwrap().insert(key, lf.clone());
+        }
         Ok(Some(lf))
+    }
+
+    /// Whether the query of `view`, or of a view it reads, calls `RANDOM()`. `seen` holds the
+    /// views checked so far.
+    fn reads_random(&self, view: &View, seen: &mut PlHashSet<String>) -> bool {
+        if contains_random(&view.query, true) {
+            return true;
+        }
+        let mut collector = TableIdentifierCollector {
+            include_schema: true,
+            ..Default::default()
+        };
+        let _ = dyn_visit::visit(&view.query, &mut collector);
+        collector
+            .tables
+            .iter()
+            .any(|name| match self.find_view(name) {
+                Ok(Some((key, view))) => seen.insert(key) && self.reads_random(&view, seen),
+                _ => false,
+            })
     }
 
     /// Plan the view `key` against the current tables, in a context of its own.
@@ -2482,11 +2512,6 @@ impl SQLContext {
         {
             polars_bail!(SQLInterface: "views cannot be created in catalog '{}'", catalog);
         }
-        polars_ensure!(
-            self.catalog_tables.is_empty(),
-            SQLInterface: "a view cannot read catalog tables"
-        );
-
         let view_name = object_name_to_string(name);
         let response =
             |name: &str| Ok(df! { "Response" => [format!("CREATE VIEW {name}")] }?.lazy());
@@ -2507,6 +2532,10 @@ impl SQLContext {
                 existing
             );
         }
+        polars_ensure!(
+            self.catalog_tables.is_empty(),
+            SQLInterface: "a view cannot read catalog tables"
+        );
         // A view matching ignoring case is replaced under its existing name.
         let key = existing.unwrap_or(view_name);
         let view = View {
