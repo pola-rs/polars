@@ -68,9 +68,14 @@ def elem_order_sign(
         return 0
     elif isinstance(lhs, bool) and isinstance(rhs, bool):
         return -1 if (lhs < rhs) ^ descending else 1
-    elif isinstance(lhs, datetime.date) and isinstance(rhs, datetime.date):
-        return -1 if (lhs < rhs) ^ descending else 1
     elif isinstance(lhs, datetime.datetime) and isinstance(rhs, datetime.datetime):
+        return -1 if (lhs < rhs) ^ descending else 1
+    elif (
+        isinstance(lhs, datetime.date)
+        and not isinstance(lhs, datetime.datetime)
+        and isinstance(rhs, datetime.date)
+        and not isinstance(rhs, datetime.datetime)
+    ):
         return -1 if (lhs < rhs) ^ descending else 1
     elif isinstance(lhs, datetime.time) and isinstance(rhs, datetime.time):
         return -1 if (lhs < rhs) ^ descending else 1
