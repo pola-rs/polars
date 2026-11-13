@@ -12,7 +12,10 @@ use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::sync::mpsc::sync_channel;
 
 use polars::error::abort::{QueryAborted, catch_polars_abort};
-use polars::prelude::{DataFrame, Engine, LazyFrame, PlanCallback, PolarsError, PolarsResult};
+use polars::prelude::{
+    DataFrame, Engine, LazyFrame, PlanCallback, PolarsError, PolarsResult, SinkDestination,
+    UnifiedSinkArgs,
+};
 use polars::sql::SQLContext;
 
 mod args;
@@ -39,7 +42,11 @@ pub mod exit_code {
 
 /// Runs the statements of `script` in order, in one session, and reports the outcome to
 /// `printer`. Stops at the first statement that fails. Returns the exit code.
-pub fn run<O: Write, E: Write>(script: &Script, printer: &mut Printer<O, E>) -> u8 {
+pub fn run<O, E>(script: &Script, printer: &mut Printer<O, E>) -> u8
+where
+    O: Write + Send + 'static,
+    E: Write,
+{
     let mut context = SQLContext::new();
     let code = run_statements(script, printer, |sql| context.execute(sql));
     drop(context);
@@ -61,11 +68,15 @@ impl From<PolarsError> for Stop {
 }
 
 /// `plan` turns a statement into the plan of its result.
-fn run_statements<O: Write, E: Write>(
+fn run_statements<O, E>(
     script: &Script,
     printer: &mut Printer<O, E>,
     mut plan: impl FnMut(&str) -> PolarsResult<LazyFrame>,
-) -> u8 {
+) -> u8
+where
+    O: Write + Send + 'static,
+    E: Write,
+{
     // An interrupt is only recorded while something catches it. Catching around the whole run
     // also records one that arrives between statements; the next statement then stops at once.
     let outcome = catch_polars_abort(AssertUnwindSafe(|| {
@@ -81,11 +92,15 @@ fn run_statements<O: Write, E: Write>(
     }
 }
 
-fn run_until_failure<O: Write, E: Write>(
+fn run_until_failure<O, E>(
     script: &Script,
     printer: &mut Printer<O, E>,
     plan: &mut impl FnMut(&str) -> PolarsResult<LazyFrame>,
-) -> u8 {
+) -> u8
+where
+    O: Write + Send + 'static,
+    E: Write,
+{
     if printer
         .event(Event::Start {
             statements: script.len(),
@@ -138,9 +153,26 @@ fn run_until_failure<O: Write, E: Write>(
     exit_code::OK
 }
 
-/// Runs `plan` on the streaming engine and hands its result to `printer` batch by batch, in
+/// Runs `plan` on the streaming engine. A format that the engine has a sink for goes from the
+/// engine straight to the output. Any other result is handed to `printer` batch by batch, in
 /// order, so that the whole result is never held here.
-fn stream<O: Write, E: Write>(plan: LazyFrame, printer: &mut Printer<O, E>) -> Result<(), Stop> {
+fn stream<O, E>(plan: LazyFrame, printer: &mut Printer<O, E>) -> Result<(), Stop>
+where
+    O: Write + Send + 'static,
+    E: Write,
+{
+    if let Some((target, format)) = printer.engine_sink() {
+        let sink_args = UnifiedSinkArgs {
+            maintain_order: true,
+            ..Default::default()
+        };
+        plan.sink(SinkDestination::File { target }, format, sink_args)?
+            .collect_with_engine(Engine::Streaming)
+            .map_err(without_sink_context)?;
+        printer.event(Event::StatementEnd)?;
+        return Ok(());
+    }
+
     let mut unsunk = plan.clone();
     // One batch in flight: the engine waits while a batch is being written.
     let (send, receive) = sync_channel::<DataFrame>(1);
@@ -217,21 +249,39 @@ fn panic_message(panic: &(dyn Any + Send)) -> &str {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Mutex};
+
     use polars::prelude::{DataType, IDX_DTYPE, IntoLazy, df, polars_bail};
 
     use super::*;
 
+    /// An output that the test still reads after the printer, which owns its output, is gone.
+    #[derive(Clone, Default)]
+    struct Output(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for Output {
+        fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().write(buffer)
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl Output {
+        fn text(&self) -> String {
+            String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
+        }
+    }
+
     fn captured(
         format: Format,
-        run: impl FnOnce(&mut Printer<&mut Vec<u8>, &mut Vec<u8>>) -> u8,
+        run: impl FnOnce(&mut Printer<Output, &mut Vec<u8>>) -> u8,
     ) -> (u8, String, String) {
-        let (mut out, mut err) = (Vec::new(), Vec::new());
-        let code = run(&mut Printer::new(&mut out, &mut err, format));
-        (
-            code,
-            String::from_utf8(out).unwrap(),
-            String::from_utf8(err).unwrap(),
-        )
+        let (out, mut err) = (Output::default(), Vec::new());
+        let code = run(&mut Printer::new(out.clone(), &mut err, format));
+        (code, out.text(), String::from_utf8(err).unwrap())
     }
 
     fn run_captured(sql: &str) -> (u8, String, String) {

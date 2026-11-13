@@ -3,9 +3,12 @@ use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use polars::io::csv::write::{BatchedWriter as CsvBatches, CsvWriter};
-use polars::io::json::BatchedWriter as NdjsonBatches;
-use polars::prelude::{DataFrame, PolarsResult, SchemaRef, SerWriter};
+use polars::io::utils::file::{Writable, WritableTrait};
+use polars::prelude::{
+    CompatLevel, CsvWriterOptions, DataFrame, FileWriteFormat, NDJsonWriterOptions,
+    ParquetWriteOptions, PolarsResult, SchemaExt, SchemaRef, SinkTarget, SpecialEq, polars_bail,
+};
+use polars_arrow::io::ipc::write::{StreamWriter as ArrowStream, WriteOptions};
 
 use crate::error::ErrorRecord;
 
@@ -19,6 +22,17 @@ pub enum Format {
     Csv,
     /// Every row, one JSON object per line
     Ndjson,
+    /// Every row, as one Parquet file; for a script of one statement
+    Parquet,
+    /// Every row, in the Arrow IPC stream format; for a script of one statement
+    ArrowStream,
+}
+
+impl Format {
+    /// Whether the output is one binary file, which cannot hold a second result.
+    pub fn is_one_file(self) -> bool {
+        matches!(self, Self::Parquet | Self::ArrowStream)
+    }
 }
 
 impl fmt::Display for Format {
@@ -27,6 +41,8 @@ impl fmt::Display for Format {
             Self::Table => "table",
             Self::Csv => "csv",
             Self::Ndjson => "ndjson",
+            Self::Parquet => "parquet",
+            Self::ArrowStream => "arrow-stream",
         })
     }
 }
@@ -55,13 +71,13 @@ pub enum Event {
 /// Renders events: results to `out`, errors to `err`.
 ///
 /// A table is printed when its statement ends, so rows that were sent before a failure never
-/// read as a complete result. The other formats are written batch by batch, to keep a large
-/// result out of memory; what was written before a failure stays written.
+/// read as a complete result. The other formats are written while the statement runs, to keep
+/// a large result out of memory; what was written before a failure stays written. Where the
+/// engine has a sink for the format, the engine writes it: see [`Printer::engine_sink`].
 pub struct Printer<O: Write, E> {
     out: Shared<O>,
     err: E,
     format: Format,
-    /// The result of the statement that is running.
     result: Option<ResultWriter<O>>,
     /// Whether errors name their statement: only when the script has several.
     number_statements: bool,
@@ -69,9 +85,11 @@ pub struct Printer<O: Write, E> {
 
 enum ResultWriter<O: Write> {
     Table(DataFrame),
-    Csv(Box<CsvBatches<Shared<O>>>),
-    Ndjson(NdjsonBatches<Shared<O>>),
+    ArrowStream(Box<ArrowStream<Shared<O>>>),
 }
+
+/// The Arrow types that older readers know, as Polars' own stream writer uses.
+const ARROW_COMPAT: CompatLevel = CompatLevel::oldest();
 
 impl<O: Write, E: Write> Printer<O, E> {
     pub fn new(out: O, err: E, format: Format) -> Self {
@@ -92,6 +110,24 @@ impl<O: Write, E: Write> Printer<O, E> {
         self.out.closed.load(Ordering::Relaxed)
     }
 
+    /// For a format that the engine writes itself: the format, and the output as the target of
+    /// a sink. The output is then what `sink_csv`, `sink_ndjson` or `sink_parquet` writes. The
+    /// engine has no sink for the Arrow IPC stream format.
+    pub(crate) fn engine_sink(&self) -> Option<(SinkTarget, FileWriteFormat)>
+    where
+        O: Send + 'static,
+    {
+        let format = match self.format {
+            Format::Csv => FileWriteFormat::Csv(CsvWriterOptions::default()),
+            Format::Ndjson => FileWriteFormat::NDJson(NDJsonWriterOptions::default()),
+            Format::Parquet => FileWriteFormat::Parquet(Arc::new(ParquetWriteOptions::default())),
+            Format::Table | Format::ArrowStream => return None,
+        };
+        let writer = Writable::Dyn(Box::new(self.out.clone()));
+        let target = SinkTarget::Dyn(SpecialEq::new(Arc::new(Mutex::new(Some(writer)))));
+        Some((target, format))
+    }
+
     pub fn event(&mut self, event: Event) -> PolarsResult<()> {
         match event {
             Event::Start { statements } => self.number_statements = statements > 1,
@@ -106,15 +142,18 @@ impl<O: Write, E: Write> Printer<O, E> {
                     ResultWriter::Table(table) => {
                         table.vstack_mut(&rows)?;
                     },
-                    ResultWriter::Csv(writer) => writer.write_batch(&rows)?,
-                    ResultWriter::Ndjson(writer) => writer.write_batch(&rows)?,
+                    ResultWriter::ArrowStream(writer) => {
+                        for batch in rows.iter_chunks(ARROW_COMPAT, true) {
+                            writer.write(&batch, None)?;
+                        }
+                    },
                 }
             },
             Event::StatementEnd => {
                 match self.result.take() {
                     Some(ResultWriter::Table(table)) => writeln!(self.out, "{table}")?,
-                    Some(ResultWriter::Csv(mut writer)) => writer.finish()?,
-                    Some(ResultWriter::Ndjson(_)) | None => {},
+                    Some(ResultWriter::ArrowStream(mut writer)) => writer.finish()?,
+                    None => {},
                 }
                 self.out.flush()?;
             },
@@ -143,8 +182,14 @@ impl<O: Write, E: Write> Printer<O, E> {
         let out = self.out.clone();
         Ok(match self.format {
             Format::Table => ResultWriter::Table(DataFrame::empty_with_schema(schema)),
-            Format::Csv => ResultWriter::Csv(Box::new(CsvWriter::new(out).batched(schema)?)),
-            Format::Ndjson => ResultWriter::Ndjson(NdjsonBatches::new(out)),
+            Format::ArrowStream => {
+                let mut writer = ArrowStream::new(out, WriteOptions { compression: None });
+                writer.start(&schema.to_arrow(ARROW_COMPAT), None)?;
+                ResultWriter::ArrowStream(Box::new(writer))
+            },
+            Format::Csv | Format::Ndjson | Format::Parquet => {
+                polars_bail!(InvalidOperation: "the engine writes format '{}'", self.format)
+            },
         })
     }
 }
@@ -173,6 +218,21 @@ impl<W: Write> Shared<W> {
             self.closed.store(true, Ordering::Relaxed);
         }
         result
+    }
+}
+
+/// The engine closes the file it wrote. The output stays open for the printer.
+impl<W: Write> WritableTrait for Shared<W> {
+    fn close(&mut self) -> io::Result<()> {
+        self.flush()
+    }
+
+    fn sync_all(&self) -> io::Result<()> {
+        Ok(())
+    }
+
+    fn sync_data(&self) -> io::Result<()> {
+        Ok(())
     }
 }
 

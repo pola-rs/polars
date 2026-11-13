@@ -100,6 +100,8 @@ mod tests {
             ("table", Format::Table),
             ("csv", Format::Csv),
             ("ndjson", Format::Ndjson),
+            ("parquet", Format::Parquet),
+            ("arrow-stream", Format::ArrowStream),
         ] {
             assert_eq!(parse(&["--format", name]).unwrap().format(), format);
             assert_eq!(format.to_string(), name);
@@ -127,7 +129,7 @@ mod tests {
             &["-c", "SELECT 1", "-f", "query.sql"],
             &["-c", "SELECT 1", "-c", "SELECT 2"],
             &["--unknown"],
-            &["--format", "parquet"],
+            &["--format", "xml"],
             &["query.sql"],
         ] {
             assert_eq!(parse(args).unwrap_err().exit_code(), 2, "{args:?}");

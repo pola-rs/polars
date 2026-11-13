@@ -1,0 +1,8 @@
+exit: 2
+--- stdout ---
+--- stderr ---
+error: format 'parquet' writes one file, so it takes a script of one statement
+
+Usage: polars [OPTIONS]
+
+For more information, try '--help'.

@@ -15,9 +15,11 @@ Options:
           How results are written
 
           Possible values:
-          - table:  A table for reading; a long result is cut to its first and last rows
-          - csv:    Every row, with a header line
-          - ndjson: Every row, one JSON object per line
+          - table:        A table for reading; a long result is cut to its first and last rows
+          - csv:          Every row, with a header line
+          - ndjson:       Every row, one JSON object per line
+          - parquet:      Every row, as one Parquet file; for a script of one statement
+          - arrow-stream: Every row, in the Arrow IPC stream format; for a script of one statement
           
           [default: table]
 

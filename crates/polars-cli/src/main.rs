@@ -18,10 +18,23 @@ fn main() -> ExitCode {
         Err(error) => return report(error),
     };
     let format = args.format();
+    // Checked before the script is read, which can wait for standard input.
+    if format.is_one_file() && io::stdout().is_terminal() {
+        return report(usage_error(
+            ErrorKind::InvalidValue,
+            format!("format '{format}' is binary; send the output to a file or a pipe"),
+        ));
+    }
     let script = match read_script(args.input()) {
         Ok(script) => script,
         Err(error) => return report(error),
     };
+    if format.is_one_file() && script.len() != 1 {
+        return report(usage_error(
+            ErrorKind::InvalidValue,
+            format!("format '{format}' writes one file, so it takes a script of one statement"),
+        ));
+    }
 
     let interrupted = handle_interrupts();
     // Not locked: Polars and the panic hook write to these streams from other threads.
