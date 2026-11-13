@@ -5489,6 +5489,16 @@ def test_parquet_duplicate_column_names_27393(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
+def test_parquet_duplicate_struct_field_names(tmp_path: Path) -> None:
+    dtype = pa.list_(pa.struct([("a", pa.int64()), ("a", pa.int64())]))
+    path = tmp_path / "duplicated.parquet"
+    pq.write_table(pa.table({"x": pa.array([[{"a": 1}]], type=dtype)}), path)
+
+    with pytest.raises(pl.exceptions.DuplicateError):
+        pl.scan_parquet(path).collect_schema()
+
+
+@pytest.mark.write_disk
 def test_read_parquet_use_pyarrow_int_columns_27389(tmp_path: Path) -> None:
     path = tmp_path / "test.parquet"
     pl.DataFrame({"h1": [1, 2], "h2": [2, 3]}).write_parquet(path)

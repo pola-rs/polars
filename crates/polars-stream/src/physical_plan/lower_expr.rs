@@ -2,7 +2,7 @@ use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use polars_core::chunked_array::cast::CastOptions;
-use polars_core::datatypes::AnyValue;
+use polars_core::datatypes::{AnyValue, StructFields};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
     DataType, Field, IDX_DTYPE, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap, PlIndexSet,
@@ -1411,13 +1411,13 @@ fn lower_exprs_with_ctx(
 
                 let output_schema = Schema::from_iter([(
                     value_key.clone(),
-                    DataType::Struct(vec![
+                    DataType::Struct(StructFields::try_new(vec![
                         Field::new(
                             PlSmallStr::from_static(RLE_VALUE_COLUMN_NAME),
                             value_dtype.clone(),
                         ),
                         Field::new(PlSmallStr::from_static(RLE_LENGTH_COLUMN_NAME), IDX_DTYPE),
-                    ]),
+                    ])?),
                 )]);
                 let node_key = ctx
                     .phys_sm
@@ -1714,7 +1714,7 @@ fn lower_exprs_with_ctx(
                 let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[inner], ctx)?;
                 let cast = ctx.expr_arena.add(AExpr::Cast {
                     expr: trans_exprs[0],
-                    dtype: DataType::Struct(Vec::new()),
+                    dtype: DataType::Struct(StructFields::default()),
                     options: CastOptions::NonStrict,
                 });
                 input_streams.insert(trans_input);
@@ -3068,8 +3068,8 @@ pub(crate) fn input_height_expr(input_schema: &Schema, expr_arena: &mut Arena<AE
 
         // repeat(lit({}), len()), where len() counts all rows of the input.
         let value = expr_arena.add(AExpr::Literal(LiteralValue::Scalar(Scalar::new(
-            DataType::Struct(vec![]),
-            AnyValue::StructOwned(Box::new((vec![], vec![]))),
+            DataType::Struct(StructFields::default()),
+            AnyValue::StructOwned(Box::new((vec![], StructFields::default()))),
         ))));
         let n = expr_arena.add(AExpr::Len);
         AExpr::Function {

@@ -215,17 +215,16 @@ impl IRStringFunction {
             #[cfg(feature = "string_pad")]
             PadStart { .. } | PadEnd { .. } | ZFill => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-struct")]
-            SplitExact { n, .. } => mapper.with_dtype(DataType::Struct(
-                (0..n + 1)
-                    .map(|i| Field::new(format_pl_smallstr!("field_{i}"), DataType::String))
-                    .collect(),
-            )),
+            SplitExact { n, .. } => {
+                mapper.with_dtype(DataType::Struct(StructFields::try_from_iter(
+                    (0..n + 1)
+                        .map(|i| Field::new(format_pl_smallstr!("field_{i}"), DataType::String)),
+                )?))
+            },
             #[cfg(feature = "dtype-struct")]
-            SplitN(n) => mapper.with_dtype(DataType::Struct(
-                (0..*n)
-                    .map(|i| Field::new(format_pl_smallstr!("field_{i}"), DataType::String))
-                    .collect(),
-            )),
+            SplitN(n) => mapper.with_dtype(DataType::Struct(StructFields::try_from_iter(
+                (0..*n).map(|i| Field::new(format_pl_smallstr!("field_{i}"), DataType::String)),
+            )?)),
             #[cfg(feature = "find_many")]
             ContainsAny { .. } => mapper.with_dtype(DataType::Boolean),
             #[cfg(feature = "find_many")]

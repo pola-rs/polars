@@ -446,29 +446,19 @@ impl Series {
                 #[cfg(feature = "dtype-struct")]
                 D::Struct(fields) => {
                     // @NOTE: We only allocate if we really need to.
+                    let (i, first) = fields
+                        .iter()
+                        .enumerate()
+                        .find_map(|(i, f)| Some((i, cast_dtype(&f.dtype)?)))?;
 
-                    let mut field_iter = fields.iter().enumerate();
-                    let mut new_fields = loop {
-                        let (i, field) = field_iter.next()?;
-
-                        if let Some(dtype) = cast_dtype(&field.dtype) {
-                            let mut new_fields = Vec::with_capacity(fields.len());
-                            new_fields.extend(fields.iter().take(i).cloned());
-                            new_fields.push(Field {
-                                name: field.name.clone(),
-                                dtype,
-                            });
-                            break new_fields;
+                    let mut new_fields = fields.clone();
+                    let mut dtypes = new_fields.dtypes_mut().skip(i);
+                    *dtypes.next().unwrap() = first;
+                    for dtype in dtypes {
+                        if let Some(new_dtype) = cast_dtype(dtype) {
+                            *dtype = new_dtype;
                         }
-                    };
-
-                    new_fields.extend(fields.iter().skip(new_fields.len()).cloned().map(|field| {
-                        let dtype = cast_dtype(&field.dtype).unwrap_or(field.dtype);
-                        Field {
-                            name: field.name,
-                            dtype,
-                        }
-                    }));
+                    }
 
                     Some(D::Struct(new_fields))
                 },
@@ -1266,8 +1256,8 @@ mod test {
     #[test]
     #[cfg(feature = "dtype-struct")]
     fn new_series_from_empty_structs() {
-        let dtype = DataType::Struct(vec![]);
-        let empties = vec![AnyValue::StructOwned(Box::new((vec![], vec![]))); 3];
+        let dtype = DataType::Struct(StructFields::default());
+        let empties = vec![AnyValue::StructOwned(Box::new((vec![], StructFields::default()))); 3];
         let s = Series::from_any_values_and_dtype("".into(), &empties, &dtype, false).unwrap();
         assert_eq!(s.len(), 3);
     }

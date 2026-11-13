@@ -138,12 +138,11 @@ impl IRArrayFunction {
                     polars_bail!(InvalidOperation: "expected Array type, got: {dtype}")
                 };
 
-                Ok(DataType::Struct(
+                Ok(DataType::Struct(StructFields::try_from_iter(
                     fields
                         .iter()
-                        .map(|name| Field::new(name.clone(), inner.as_ref().clone()))
-                        .collect(),
-                ))
+                        .map(|name| Field::new(name.clone(), inner.as_ref().clone())),
+                )?))
             }),
         }
     }

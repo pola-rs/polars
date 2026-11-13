@@ -211,7 +211,7 @@ pub(super) unsafe fn plugin_field(
         }
         if !return_value.is_null() {
             let arrow_field = import_field_from_c(&return_value)?;
-            let out = Field::from(&arrow_field);
+            let out = Field::try_from(&arrow_field)?;
             Ok(out)
         } else {
             let msg = retrieve_error_msg(lib);

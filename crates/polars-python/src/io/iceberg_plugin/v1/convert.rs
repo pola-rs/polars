@@ -73,7 +73,10 @@ pub(super) fn import_output(output: Output) -> PolarsResult<ResolvedScan> {
     } = header;
 
     let arrow_schema = import_arrow_schema(schema)?;
-    let schema: Schema = arrow_schema.iter_values().map(Field::from).collect();
+    let schema = arrow_schema
+        .iter_values()
+        .map(Field::try_from)
+        .collect::<PolarsResult<Schema>>()?;
 
     let files = import_struct_stream(files)?;
     let table_values = import_struct_stream(table_values)?;
@@ -256,12 +259,9 @@ fn parse_field_id(name: &str) -> PolarsResult<u32> {
 /// Null counts use the index type (per leaf for structs).
 fn idx_null_count_dtype(dtype: &DataType) -> DataType {
     match dtype {
-        DataType::Struct(fields) => DataType::Struct(
-            fields
-                .iter()
-                .map(|f| Field::new(f.name().clone(), idx_null_count_dtype(f.dtype())))
-                .collect(),
-        ),
+        DataType::Struct(fields) => {
+            DataType::Struct(fields.map_fields(|f| idx_null_count_dtype(f.dtype())))
+        },
         _ => IDX_DTYPE,
     }
 }

@@ -835,7 +835,7 @@ fn rebuild_scan_from_expanded(
                 Either::Left(v) => {
                     use polars_core::schema::{Schema, SchemaExt as _};
 
-                    owned = Some(Schema::from_arrow_schema(v.as_ref()));
+                    owned = Some(Schema::from_arrow_schema(v.as_ref())?);
                     owned.as_ref().unwrap()
                 },
                 Either::Right(v) => v.as_ref(),

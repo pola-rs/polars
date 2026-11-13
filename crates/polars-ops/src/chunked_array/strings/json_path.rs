@@ -87,8 +87,8 @@ pub trait Utf8JsonPathImpl: AsString {
             .take(number_of_rows.unwrap_or(ca.len()));
 
         polars_json::ndjson::infer_iter(values_iter)
-            .map(|d| DataType::from_arrow_dtype(&d))
             .map_err(|e| polars_err!(ComputeError: "error inferring JSON: {}", e))
+            .and_then(|d| DataType::from_arrow_dtype(&d))
     }
 
     /// Extracts a typed-JSON value for each row in the StringChunked
@@ -193,11 +193,14 @@ mod tests {
         );
         let ca = s.str().unwrap();
 
-        let inner_dtype = DataType::Struct(vec![Field::new("c".into(), DataType::Int64)]);
-        let expected_dtype = DataType::Struct(vec![
-            Field::new("a".into(), DataType::Int64),
-            Field::new("b".into(), DataType::List(Box::new(inner_dtype))),
-        ]);
+        let inner_dtype = DataType::Struct(Field::new("c".into(), DataType::Int64).into());
+        let expected_dtype = DataType::Struct(
+            StructFields::try_new(vec![
+                Field::new("a".into(), DataType::Int64),
+                Field::new("b".into(), DataType::List(Box::new(inner_dtype))),
+            ])
+            .unwrap(),
+        );
 
         assert_eq!(ca.json_infer(None).unwrap(), expected_dtype);
         // Inferring with the first row will only see None

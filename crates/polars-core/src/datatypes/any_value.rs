@@ -107,9 +107,9 @@ pub enum AnyValue<'a> {
     // - The array itself
     // - The fields
     #[cfg(feature = "dtype-struct")]
-    Struct(usize, &'a StructArray, &'a [Field]),
+    Struct(usize, &'a StructArray, &'a StructFields),
     #[cfg(feature = "dtype-struct")]
-    StructOwned(Box<(Vec<AnyValue<'static>>, Vec<Field>)>),
+    StructOwned(Box<(Vec<AnyValue<'static>>, StructFields)>),
     /// An UTF8 encoded string type.
     StringOwned(PlSmallStr),
     Binary(&'a [u8]),
@@ -267,7 +267,7 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-array")]
             Array(s, size) => DataType::Array(Box::new(s.dtype().clone()), *size),
             #[cfg(feature = "dtype-struct")]
-            Struct(_, _, fields) => DataType::Struct(fields.to_vec()),
+            Struct(_, _, fields) => DataType::Struct((*fields).clone()),
             #[cfg(feature = "dtype-struct")]
             StructOwned(payload) => DataType::Struct(payload.1.clone()),
             #[cfg(feature = "dtype-decimal")]
@@ -756,14 +756,7 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-struct")]
             Self::StructOwned(values) => Self::StructOwned(Box::new((
                 values.0.into_iter().map(|v| v.to_physical()).collect(),
-                values
-                    .1
-                    .into_iter()
-                    .map(|mut f| {
-                        f.dtype = f.dtype.to_physical();
-                        f
-                    })
-                    .collect(),
+                values.1.map_fields(|f| f.dtype().to_physical()),
             ))),
 
             #[cfg(feature = "dtype-decimal")]
@@ -1141,7 +1134,7 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-struct")]
             Struct(idx, arr, fields) => {
                 let avs = struct_to_avs_static(idx, arr, fields);
-                StructOwned(Box::new((avs, fields.to_vec())))
+                StructOwned(Box::new((avs, fields.clone())))
             },
             #[cfg(feature = "dtype-struct")]
             StructOwned(v) => StructOwned(v),
@@ -1194,8 +1187,9 @@ impl<'a> From<AnyValue<'a>> for Option<i64> {
 impl AnyValue<'_> {
     #[inline]
     pub fn eq_missing(&self, other: &Self, null_equal: bool) -> bool {
+        #[cfg(feature = "dtype-struct")]
         fn struct_owned_value_iter<'a>(
-            v: &'a (Vec<AnyValue<'_>>, Vec<Field>),
+            v: &'a (Vec<AnyValue<'_>>, StructFields),
         ) -> impl ExactSizeIterator<Item = AnyValue<'a>> {
             v.0.iter().map(|v| v.as_borrowed())
         }
@@ -1671,7 +1665,7 @@ mod test {
         ];
 
         for (dt_a, dt_p) in dtypes {
-            let dt = DataType::from_arrow_dtype(&dt_a);
+            let dt = DataType::from_arrow_dtype(&dt_a).unwrap();
 
             assert_eq!(dt_p, dt);
         }

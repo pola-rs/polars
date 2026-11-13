@@ -80,7 +80,7 @@ impl DataFrame {
 
     pub fn deserialize_from_reader<T: Read + Seek>(reader: &mut T) -> PolarsResult<Self> {
         let mut md = read_stream_metadata(reader)?;
-        let pl_schema = Schema::from_arrow_schema(&md.schema);
+        let pl_schema = Schema::from_arrow_schema(&md.schema)?;
 
         let custom_metadata = md.custom_schema_metadata.take();
 

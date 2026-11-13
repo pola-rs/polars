@@ -11,7 +11,7 @@ use polars_async::executor::{self, JoinHandle, TaskMetricAggregator, TaskPriorit
 use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_buffer::Buffer;
 use polars_config::config;
-use polars_core::prelude::{ArrowDataType, ArrowField, ArrowSchema, DataType};
+use polars_core::prelude::{ArrowDataType, ArrowSchema, DataType};
 use polars_core::runtime::ASYNC;
 use polars_core::schema::{Schema, SchemaRef};
 use polars_core::utils::polars_arrow::io::ipc::read::{
@@ -247,6 +247,26 @@ impl FileReader for IpcFileReader {
                 resolve_pruned_dtypes(&file_metadata.schema, field_selection)
             });
 
+        let full_dtypes = file_metadata
+            .schema
+            .iter_values()
+            .map(DataType::from_arrow_field)
+            .collect::<PolarsResult<Vec<_>>>()?;
+        // The dtypes of the file as read: the pruned struct columns with only the fields read.
+        let read_dtypes = match pruned_dtypes.as_deref() {
+            None => full_dtypes.clone(),
+            Some(pruned) => file_metadata
+                .schema
+                .iter_values()
+                .zip(pruned)
+                .zip(&full_dtypes)
+                .map(|((field, pruned), full)| match pruned {
+                    Some(dtype) => DataType::from_arrow_field(&field.with_dtype(dtype.clone())),
+                    None => Ok(full.clone()),
+                })
+                .collect::<PolarsResult<Vec<_>>>()?,
+        };
+
         // Check the cast policies on the pruned columns as if they were read whole, so that e.g. a
         // struct field missing from the file raises as it does without the pruning. Read whole,
         // the check runs on the file's first non-empty morsel, so the error is raised there too:
@@ -256,8 +276,8 @@ impl FileReader for IpcFileReader {
             (self.field_selection.as_deref(), &self.scan_schema)
         {
             for name in field_selection.0.keys() {
-                let (Some(field), Some(scan_dtype)) =
-                    (file_metadata.schema.get(name), scan_schema.get(name))
+                let (Some(idx), Some(scan_dtype)) =
+                    (file_metadata.schema.index_of(name), scan_schema.get(name))
                 else {
                     continue;
                 };
@@ -270,7 +290,7 @@ impl FileReader for IpcFileReader {
                 })
                 .attach_transforms(
                     ColumnSelector::Position(0),
-                    &DataType::from_arrow_field(field),
+                    &full_dtypes[idx],
                     scan_dtype,
                     name,
                 ) {
@@ -279,15 +299,6 @@ impl FileReader for IpcFileReader {
                 }
             }
         }
-
-        // The schema of the file as read: the pruned struct columns with only the fields read.
-        let pl_field = |idx: usize, field: &ArrowField| match pruned_dtypes
-            .as_deref()
-            .and_then(|pruned| pruned[idx].as_ref())
-        {
-            Some(dtype) => DataType::from_arrow_field(&field.with_dtype(dtype.clone())),
-            None => DataType::from_arrow_field(field),
-        };
 
         // Columns that the above does not prune (e.g. dictionary-encoded structs, maps) are read
         // whole and narrowed after decoding, to the dtypes here.
@@ -299,9 +310,9 @@ impl FileReader for IpcFileReader {
                     .0
                     .iter()
                     .filter_map(|(name, selection)| {
-                        let (idx, _, field) = file_metadata.schema.get_full(name)?;
-                        let dtype = selection.prune_dtype(&DataType::from_arrow_field(field));
-                        (dtype != pl_field(idx, field)).then(|| (name.clone(), dtype))
+                        let idx = file_metadata.schema.index_of(name)?;
+                        let dtype = selection.prune_dtype(&full_dtypes[idx]);
+                        (dtype != read_dtypes[idx]).then(|| (name.clone(), dtype))
                     })
                     .collect::<Schema>()
             })
@@ -312,13 +323,13 @@ impl FileReader for IpcFileReader {
             Arc::new(
                 file_metadata
                     .schema
-                    .iter()
+                    .iter_names()
                     .enumerate()
-                    .map(|(idx, (name, field))| {
+                    .map(|(idx, name)| {
                         let dtype = narrowed_dtypes
                             .as_deref()
                             .and_then(|narrowed| narrowed.get(name).cloned())
-                            .unwrap_or_else(|| pl_field(idx, field));
+                            .unwrap_or_else(|| read_dtypes[idx].clone());
                         (name.clone(), dtype)
                     })
                     .collect::<Schema>(),
@@ -391,12 +402,12 @@ impl FileReader for IpcFileReader {
                 .iter()
                 .map(|(n, f)| {
                     let dtype = match file_metadata.schema.index_of(n) {
-                        Some(idx) => pl_field(idx, f),
-                        None => DataType::from_arrow_field(f),
+                        Some(idx) => read_dtypes[idx].clone(),
+                        None => DataType::from_arrow_field(f)?,
                     };
-                    (n.clone(), dtype)
+                    Ok((n.clone(), dtype))
                 })
-                .collect::<Schema>(),
+                .collect::<PolarsResult<Schema>>()?,
         );
 
         // Prepare parameters for Prefetch

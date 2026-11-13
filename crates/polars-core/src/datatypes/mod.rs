@@ -17,6 +17,8 @@ mod field;
 mod into_scalar;
 #[cfg(feature = "object")]
 mod static_array_collect;
+#[cfg(feature = "dtype-struct")]
+mod struct_fields;
 mod temporal;
 
 #[cfg(feature = "proptest")]
@@ -62,6 +64,8 @@ pub use schema::SchemaExtPl;
 use serde::{Deserialize, Serialize};
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]
 use serde::{Deserializer, Serializer};
+#[cfg(feature = "dtype-struct")]
+pub use struct_fields::StructFields;
 pub use temporal::*;
 
 pub use crate::chunked_array::logical::*;
@@ -291,7 +295,7 @@ unsafe impl PolarsDataType for StructType {
     where
         Self: Sized,
     {
-        DataType::Struct(vec![])
+        DataType::Struct(StructFields::default())
     }
 }
 

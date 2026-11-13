@@ -320,7 +320,7 @@ where
                                 .unwrap_or(NonZeroUsize::new(usize::MAX).unwrap()),
                         )?
                     } else {
-                        DataType::from_arrow_dtype(&polars_json::json::infer(json_value)?)
+                        DataType::from_arrow_dtype(&polars_json::json::infer(json_value)?)?
                     };
 
                     let DataType::Struct(fields) = inner_dtype else {
@@ -349,7 +349,7 @@ where
                     }
                 };
                 let arrow_dtype = as_document_dtype(
-                    DataType::Struct(deserialize_schema.iter_fields().collect())
+                    DataType::Struct(StructFields::from(&deserialize_schema))
                         .to_arrow(CompatLevel::newest()),
                 );
 
@@ -357,7 +357,7 @@ where
                 let json_value = match &tape {
                     Some(tape) => {
                         let guide = as_document_dtype(
-                            DataType::Struct(schema.iter_fields().collect())
+                            DataType::Struct(StructFields::from(&schema))
                                 .to_arrow(CompatLevel::newest()),
                         );
                         let guide = polars_json::json::ordered::TapeGuide::new(&guide);

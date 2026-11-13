@@ -95,7 +95,7 @@ impl ProjectionBuilder {
                             let selection = field_selection
                                 .map_or(&FieldSelection::All, |s| s.get(output_name));
                             assert_eq!(
-                                &selection.prune_dtype(&column.type_.to_polars_dtype()),
+                                &selection.prune_dtype(&column.type_.to_polars_dtype().unwrap()),
                                 output_dtype
                             );
 
@@ -309,7 +309,7 @@ impl ProjectionBuilder {
                                 index,
                                 ProjectionTransform {
                                     source_name: incoming_column.name.clone(),
-                                    source_dtype: incoming_column.type_.to_polars_dtype(),
+                                    source_dtype: incoming_column.type_.to_polars_dtype()?,
                                     transform,
                                 },
                             );
@@ -336,7 +336,7 @@ impl ProjectionBuilder {
                                         source_name: incoming_iceberg_column.name.clone(),
                                         source_dtype: incoming_iceberg_column
                                             .type_
-                                            .to_polars_dtype(),
+                                            .to_polars_dtype()?,
                                         transform: selector,
                                     },
                                 );

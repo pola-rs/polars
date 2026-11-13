@@ -1368,6 +1368,14 @@ def test_schema_constructor_from_schema_capsule() -> None:
         pl.Schema([pa.field("a", pa.int32()), pa.field("a", pa.int64())])
 
 
+def test_from_arrow_struct_duplicate_field_names() -> None:
+    dtype = pa.struct([("a", pa.int64()), ("a", pa.int64())])
+    with pytest.raises(DuplicateError, match="multiple fields with name 'a'"):
+        pl.from_arrow(pa.array([{"a": 1}], type=dtype))
+    with pytest.raises(DuplicateError, match="multiple fields with name 'a'"):
+        pl.from_arrow(pa.array([[{"a": 1}]], type=pa.list_(dtype)))
+
+
 def test_to_arrow_24142() -> None:
     df = pl.DataFrame({"a": object(), "b": "any string or bytes"})
     df.to_arrow(compat_level=CompatLevel.oldest())

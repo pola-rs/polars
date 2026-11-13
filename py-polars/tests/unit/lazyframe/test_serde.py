@@ -49,6 +49,14 @@ def test_lf_serde_roundtrip_json(lf: pl.LazyFrame) -> None:
     assert_frame_equal(result, lf, categorical_as_str=True)
 
 
+@pytest.mark.filterwarnings("ignore")
+def test_lf_deserialize_struct_duplicate_field_names() -> None:
+    lf = pl.LazyFrame({"x": [1]}).cast({"x": pl.Struct({"a": pl.Int64, "b": pl.Int64})})
+    serialized = lf.serialize(format="json").replace('"b"', '"a"')
+    with pytest.raises(ComputeError, match="multiple fields with name 'a'"):
+        pl.LazyFrame.deserialize(io.StringIO(serialized), format="json")
+
+
 @pytest.fixture
 def lf() -> pl.LazyFrame:
     """Sample LazyFrame for testing serialization/deserialization."""

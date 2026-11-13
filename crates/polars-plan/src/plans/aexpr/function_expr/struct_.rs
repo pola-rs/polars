@@ -46,8 +46,8 @@ impl IRStructFunction {
                         .iter()
                         .zip(names.as_ref())
                         .map(|(fld, name)| Field::new(name.clone(), fld.dtype().clone()))
-                        .collect();
-                    Ok(DataType::Struct(fields))
+                        .collect::<Vec<_>>();
+                    Ok(DataType::Struct(StructFields::try_new(fields)?))
                 },
                 _ => polars_bail!(op = "rename_fields", got = dt, expected = "Struct"),
             }),
@@ -61,8 +61,9 @@ impl IRStructFunction {
                         }
                     }
                     let names_set = PlIndexSet::from_iter(names.iter());
-                    let fields = fields.iter().filter(|fld| !names_set.contains(fld.name())).cloned().collect();
-                    Ok(DataType::Struct(fields))
+                    Ok(DataType::Struct(fields.filter_map_fields(|fld| {
+                        (!names_set.contains(fld.name())).then(|| fld.dtype().clone())
+                    })))
                 },
                 _ => polars_bail!(op = "struct.drop", got = dt, expected = "Struct"),
             }),
@@ -74,8 +75,8 @@ impl IRStructFunction {
                             let name = fld.name();
                             Field::new(format_pl_smallstr!("{prefix}{name}"), fld.dtype().clone())
                         })
-                        .collect();
-                    Ok(DataType::Struct(fields))
+                        .collect::<Vec<_>>();
+                    Ok(DataType::Struct(StructFields::try_new(fields)?))
                 },
                 _ => polars_bail!(op = "prefix_fields", got = dt, expected = "Struct"),
             }),
@@ -87,8 +88,8 @@ impl IRStructFunction {
                             let name = fld.name();
                             Field::new(format_pl_smallstr!("{name}{suffix}"), fld.dtype().clone())
                         })
-                        .collect();
-                    Ok(DataType::Struct(fields))
+                        .collect::<Vec<_>>();
+                    Ok(DataType::Struct(StructFields::try_new(fields)?))
                 },
                 _ => polars_bail!(op = "suffix_fields", got = dt, expected = "Struct"),
             }),
@@ -103,8 +104,8 @@ impl IRStructFunction {
                             let new_name = function.call(name.clone()).map_err(|e| polars_err!(ComputeError: "'name.map_fields' produced an error: {e}."))?;
                             Ok(Field::new(new_name, fld.dtype().clone()))
                         })
-                        .collect::<PolarsResult<_>>()?;
-                    Ok(DataType::Struct(fields))
+                        .collect::<PolarsResult<Vec<_>>>()?;
+                    Ok(DataType::Struct(StructFields::try_new(fields)?))
                 },
                 _ => polars_bail!(op = "prefix_fields", got = dt, expected = "Struct"),
             }),

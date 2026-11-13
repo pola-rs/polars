@@ -1,5 +1,6 @@
 use polars_arrow::array::builder::ShareStrategy;
 use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
+use polars_core::datatypes::StructFields;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
     AnyValue, DataType, Field, IDX_DTYPE, IntoColumn, NamedFrom, StructChunked,
@@ -85,13 +86,14 @@ impl ComputeNode for RleNode {
         let recv = recv_ports[0].take();
         let mut send = send_ports[0].take().unwrap().serial();
 
-        let fields = vec![
+        let fields = StructFields::try_new(vec![
             Field::new(PlSmallStr::from_static(RLE_LENGTH_COLUMN_NAME), IDX_DTYPE),
             Field::new(
                 PlSmallStr::from_static(RLE_VALUE_COLUMN_NAME),
                 self.dtype.clone(),
             ),
-        ];
+        ])
+        .expect("distinct static names");
         let output_dtype = DataType::Struct(fields.clone());
 
         match recv {

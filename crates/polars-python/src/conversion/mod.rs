@@ -473,7 +473,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DataType> {
                     "Duration" => DataType::Duration(TimeUnit::Microseconds),
                     "List" => DataType::List(Box::new(DataType::Null)),
                     "Array" => DataType::Array(Box::new(DataType::Null), 0),
-                    "Struct" => DataType::Struct(vec![]),
+                    "Struct" => DataType::Struct(StructFields::default()),
                     #[cfg(feature = "dtype-map")]
                     "Map" => {
                         // `Map(Null, _)` is not a valid dtype, so there is no bare
@@ -582,7 +582,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DataType> {
                     .into_iter()
                     .map(|f| f.0)
                     .collect::<Vec<Field>>();
-                DataType::Struct(fields)
+                DataType::Struct(StructFields::try_new(fields).map_err(PyPolarsErr::from)?)
             },
             "Null" => DataType::Null,
             #[cfg(feature = "object")]

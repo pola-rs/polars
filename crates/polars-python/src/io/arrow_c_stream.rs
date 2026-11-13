@@ -36,7 +36,11 @@ impl PyArrowCStreamReader {
                 "Arrow C Stream schema must be a struct type",
             ));
         };
-        let schema = Schema::from_iter(fields.iter().map(Field::from));
+        let schema = fields
+            .iter()
+            .map(Field::try_from)
+            .collect::<PolarsResult<Schema>>()
+            .map_err(PyPolarsErr::from)?;
 
         Ok(Self {
             state: Mutex::new(ReaderState {

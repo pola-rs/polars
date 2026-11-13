@@ -94,7 +94,7 @@ fn test_borrowed_struct_values_fields_merged() -> PolarsResult<()> {
         "b" => [None, Some("x"), None, Some("y"), None],
         "c" => [None::<i32>, None, None, None, None],
     )?;
-    let expected_dtype = DataType::Struct(expected.schema().iter_fields().collect());
+    let expected_dtype = DataType::Struct(StructFields::from(expected.schema().as_ref()));
     assert_eq!(s.dtype(), &expected_dtype);
     assert!(s.struct_()?.clone().unnest().equals_missing(&expected));
     assert_eq!(s.null_count(), 1);
