@@ -13,6 +13,9 @@ pub(super) use sort_lowering::lower_sort_reads;
 mod arity;
 
 use crate::plans::*;
+use crate::prelude::projection_height::{
+    ExprHeightOptions, ExprProjectionHeight, aexpr_projection_height_rec_with,
+};
 
 fn new_null_count(input: &[ExprIR]) -> AExpr {
     let function = IRFunctionExpr::NullCount;
@@ -170,7 +173,20 @@ fn get_arg_min_max_to_min_max_by(
     };
     let is_max = matches!(function, IRFunctionExpr::ArgMax);
     let (expr, by) = (*expr, input[0].node());
-    if !has_input_height_ae(expr, arena) || !has_input_height_ae(by, arena) {
+    let has_input_height = |node| {
+        let options = ExprHeightOptions {
+            range_is_unknown: true,
+            ..Default::default()
+        };
+        aexpr_projection_height_rec_with(
+            node,
+            arena,
+            &mut Default::default(),
+            &mut Default::default(),
+            options,
+        ) == ExprProjectionHeight::Column
+    };
+    if !has_input_height(expr) || !has_input_height(by) {
         return None;
     }
     let by_dtype = arena

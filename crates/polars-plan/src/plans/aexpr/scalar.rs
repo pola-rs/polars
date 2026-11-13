@@ -1,8 +1,5 @@
 use super::*;
-use crate::plans::projection_height::{
-    ExprHeightOptions, ExprProjectionHeight, aexpr_projection_height_rec,
-    aexpr_projection_height_rec_with,
-};
+use crate::plans::projection_height::{ExprProjectionHeight, aexpr_projection_height_rec};
 
 pub fn is_scalar_ae(node: Node, arena: &Arena<AExpr>) -> bool {
     use ExprProjectionHeight as H;
@@ -35,22 +32,6 @@ pub fn is_length_preserving_ae(node: Node, arena: &Arena<AExpr>) -> bool {
         H::Column => true,
         H::Scalar | H::Unknown | H::Range => false,
     }
-}
-
-/// Whether `node` has the height of its input. Unlike [`is_length_preserving_ae`], a column that a
-/// literal `Series` or range broadcasts to its own length does not count.
-pub fn has_input_height_ae(node: Node, arena: &Arena<AExpr>) -> bool {
-    let options = ExprHeightOptions {
-        range_is_unknown: true,
-        ..Default::default()
-    };
-    aexpr_projection_height_rec_with(
-        node,
-        arena,
-        &mut Default::default(),
-        &mut Default::default(),
-        options,
-    ) == ExprProjectionHeight::Column
 }
 
 pub fn is_known_length_ae(node: Node, arena: &Arena<AExpr>) -> bool {
