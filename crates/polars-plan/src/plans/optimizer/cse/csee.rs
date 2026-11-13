@@ -8,7 +8,9 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::scratch_vec::ScratchVec;
 
 use crate::constants::CSE_REPLACED;
-use crate::plans::aexpr::is_inherently_nondeterministic_excluding_udfs_top_level;
+use crate::plans::aexpr::{
+    has_input_height_ae, is_inherently_nondeterministic_excluding_udfs_top_level,
+};
 use crate::plans::projection_height::{
     ExprHeightOptions, ExprProjectionHeight, aexpr_projection_height_rec,
     aexpr_projection_height_rec_with,
@@ -18,8 +20,8 @@ use crate::plans::visitor::{
     Visitor,
 };
 use crate::plans::{
-    AExpr, CanonicalExprId, CanonicalExprMap, ExprIR, IR, IRBuilder, IRFunctionExpr, LiteralValue,
-    OutputName,
+    AExpr, AExprBuilder, CanonicalExprId, CanonicalExprMap, ExprIR, IR, IRBuilder, IRFunctionExpr,
+    LiteralValue, MinMaxByOrder, OutputName,
 };
 use crate::prelude::ProjectionOptions;
 use crate::prelude::visitor::AexprNode;
@@ -92,6 +94,125 @@ fn skip_pre_visit(ae: &AExpr, is_groupby: bool, element_wise_select_only: bool) 
             }
         },
     }
+}
+
+/// Whether a `min_by` or `max_by` is a `max_by`, and the id of its `by` input.
+type MinMaxByKey = (bool, CanonicalExprId);
+
+/// The key of a `min_by` or `max_by` that skips nulls, with a deterministic `by` and inputs of the
+/// input height, which equals `x.get(by.arg_min())` or `x.get(by.arg_max())`.
+fn min_max_by_key(
+    node: Node,
+    canonical_map: &mut CanonicalExprMap,
+    arena: &Arena<AExpr>,
+) -> Option<MinMaxByKey> {
+    let AExpr::Function {
+        input, function, ..
+    } = arena.get(node)
+    else {
+        return None;
+    };
+    let is_max = match function {
+        IRFunctionExpr::MinBy {
+            order: MinMaxByOrder::SkipNulls,
+        } => false,
+        IRFunctionExpr::MaxBy {
+            order: MinMaxByOrder::SkipNulls,
+        } => true,
+        _ => return None,
+    };
+    if !has_input_height_ae(input[0].node(), arena) || !has_input_height_ae(input[1].node(), arena)
+    {
+        return None;
+    }
+    let id = canonical_map.resolve(input[1].node(), arena);
+    (!canonical_map.is_nondeterministic(id)).then_some((is_max, id))
+}
+
+/// Rewrites `min_by` and `max_by` that share their `by` with another one in the same projection
+/// to `x.get(by.arg_min())` and `x.get(by.arg_max())`, so CSE computes the index once.
+struct MinMaxByToGather<'a> {
+    canonical_map: &'a mut CanonicalExprMap,
+    counts: &'a PlIndexMap<MinMaxByKey, u32>,
+}
+
+impl MinMaxByToGather<'_> {
+    fn is_shared(&mut self, node: Node, arena: &Arena<AExpr>) -> bool {
+        min_max_by_key(node, self.canonical_map, arena)
+            .is_some_and(|key| self.counts.get(&key).is_some_and(|&count| count > 1))
+    }
+}
+
+impl RewritingVisitor for MinMaxByToGather<'_> {
+    type Node = AexprNode;
+    type Arena = Arena<AExpr>;
+
+    fn pre_visit(
+        &mut self,
+        node: &Self::Node,
+        arena: &mut Self::Arena,
+    ) -> PolarsResult<RewriteRecursion> {
+        Ok(if skip_pre_visit(node.to_aexpr(arena), false, false) {
+            RewriteRecursion::Stop
+        } else if self.is_shared(node.node(), arena) {
+            RewriteRecursion::MutateAndStop
+        } else if node.is_leaf(arena) {
+            RewriteRecursion::Stop
+        } else {
+            RewriteRecursion::NoMutateAndContinue
+        })
+    }
+
+    fn mutate(
+        &mut self,
+        mut node: Self::Node,
+        arena: &mut Self::Arena,
+    ) -> PolarsResult<Self::Node> {
+        let AExpr::Function {
+            input, function, ..
+        } = arena.get(node.node())
+        else {
+            unreachable!()
+        };
+        let arg_function = match function {
+            IRFunctionExpr::MaxBy { .. } => IRFunctionExpr::ArgMax,
+            _ => IRFunctionExpr::ArgMin,
+        };
+        let (expr, by) = (input[0].node(), input[1].clone());
+        let idx = AExprBuilder::function(vec![by], arg_function, arena).node();
+        node.assign(
+            AExpr::Gather {
+                expr,
+                idx,
+                returns_scalar: true,
+                null_on_oob: false,
+            },
+            arena,
+        );
+        Ok(node)
+    }
+}
+
+/// Counts the `min_by` and `max_by` keys in `exprs`, outside of the nodes that CSE skips.
+fn count_min_max_by(
+    exprs: &[ExprIR],
+    canonical_map: &mut CanonicalExprMap,
+    arena: &Arena<AExpr>,
+) -> PlIndexMap<MinMaxByKey, u32> {
+    let mut counts = PlIndexMap::default();
+    let mut stack: Vec<Node> = exprs.iter().map(|e| e.node()).collect();
+    while let Some(node) = stack.pop() {
+        let ae = arena.get(node);
+        if skip_pre_visit(ae, false, false) {
+            continue;
+        }
+        if let Some(key) = min_max_by_key(node, canonical_map, arena) {
+            *counts.entry(key).or_insert(0) += 1;
+            continue;
+        }
+        ae.inputs_rev(&mut stack);
+    }
+    counts
 }
 
 /// Counts valid CSE candidates while propagating subtree validity to their ancestors.
@@ -444,6 +565,31 @@ impl CommonSubExprOptimizer {
         is_group_by: bool,
         schema: &Schema,
     ) -> PolarsResult<Option<ProjectionExprs>> {
+        let shared_min_max_by;
+        let expr = if !is_group_by && !self.element_wise_select_only {
+            let counts = count_min_max_by(expr, &mut self.canonical_map, expr_arena);
+            if counts.values().any(|&count| count > 1) {
+                let mut rewriter = MinMaxByToGather {
+                    canonical_map: &mut self.canonical_map,
+                    counts: &counts,
+                };
+                shared_min_max_by = expr
+                    .iter()
+                    .map(|e| {
+                        let node = AexprNode::new(e.node()).rewrite(&mut rewriter, expr_arena)?;
+                        let mut e = e.clone();
+                        e.set_node(node.node());
+                        Ok(e)
+                    })
+                    .collect::<PolarsResult<Vec<_>>>()?;
+                shared_min_max_by.as_slice()
+            } else {
+                expr
+            }
+        } else {
+            expr
+        };
+
         // First get all cse's.
         for e in expr {
             // A balanced traversal leaves the stack empty, but an early return from a
