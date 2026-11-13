@@ -207,6 +207,7 @@ fn float_serializer_no_precision_scientific_decimal_comma<I: NativeType + LowerE
     let mut scratch = Vec::new();
 
     let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+        scratch.clear();
         // Float writing into a buffer of `Vec<u8>` cannot fail.
         let _ = write!(&mut scratch, "{item:.e}");
         for c in &mut scratch {
