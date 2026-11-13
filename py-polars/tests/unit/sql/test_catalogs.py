@@ -2859,6 +2859,25 @@ def test_alter_table_without_catalog(lake: CountingCatalog) -> None:
         lake_ctx(lake).execute("ALTER TABLE ONLY lineitem ADD COLUMN b BIGINT")
 
 
+@pytest.mark.write_disk
+def test_view_with_catalog(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.register("frame", pl.LazyFrame({"k": [1, 5]}))
+    # a view is not a catalog table name, and hides the catalog table of its name
+    ctx.execute("CREATE VIEW v AS SELECT k FROM frame")
+    ctx.execute("CREATE VIEW orders AS SELECT 0 AS o")
+    res = ctx.execute(
+        "SELECT v.k, lineitem.v, orders.o FROM v JOIN lineitem USING (k), orders",
+        eager=True,
+    )
+    assert res.rows() == [(1, "a", 0)]
+    with pytest.raises(SQLInterfaceError, match="a view cannot read catalog tables"):
+        ctx.execute("CREATE VIEW w AS SELECT * FROM lineitem")
+    with pytest.raises(SQLInterfaceError, match="cannot be created in catalog 'lake'"):
+        ctx.execute("CREATE VIEW lake.tpch.w AS SELECT 1 AS x")
+    assert ctx.tables() == ["frame", "orders", "v"]
+
+
 def forbid_sink(monkeypatch: pytest.MonkeyPatch) -> None:
     """Fail a statement that writes a data file."""
     from polars.io.iceberg._sink import IcebergSinkState

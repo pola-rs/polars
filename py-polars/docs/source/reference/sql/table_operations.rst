@@ -13,12 +13,18 @@ Table Operations
      - Create a namespace in an attached catalog.
    * - :ref:`CREATE TABLE <create_table>`
      - Create a new table and its columns from a SQL query executed against an existing table.
+   * - :ref:`CREATE VIEW <create_view>`
+     - Create a named query that is run each time it is read.
    * - :ref:`DELETE FROM <delete_from_table>`
      - Remove specific rows of data from a table using an (optional) constraint.
+   * - :ref:`DESCRIBE <describe>`
+     - Returns the column names and types of a table or view.
    * - :ref:`DROP SCHEMA <drop_schema>`
      - Drop an empty namespace of an attached catalog.
    * - :ref:`DROP TABLES <drop_tables>`
      - Deletes the specified table, unregistering it.
+   * - :ref:`DROP VIEW <drop_view>`
+     - Deletes the specified view.
    * - :ref:`EXPLAIN <explain>`
      - Returns the Polars execution plan for a given SQL query.
    * - :ref:`INSERT <insert>`
@@ -26,7 +32,7 @@ Table Operations
    * - :ref:`MERGE <merge>`
      - Update, delete and insert rows of a table in an attached catalog from a source.
    * - :ref:`SHOW TABLES <show_tables>`
-     - Returns a list of all tables registered in the given context.
+     - Returns a list of all tables and views registered in the given context.
    * - :ref:`GENERATE_SERIES <generate_series_table_func>`
      - Create a table with one column of values from start to stop, stop included.
    * - :ref:`RANGE <range_table_func>`
@@ -150,6 +156,28 @@ creates the table in the catalog.
 - ``IF NOT EXISTS`` leaves an existing table as it is; its query is checked, but not run.
 - ``LIKE`` and ``OR REPLACE`` are not supported for catalog tables.
 
+.. _create_view:
+
+CREATE VIEW
+-----------
+Create a view: a named query that is planned again each time a statement reads it, so it
+reads the tables as they are then. Use ``CREATE TABLE ... AS`` to keep the result of a
+query as it is now.
+
+- ``OR REPLACE`` replaces an existing view; ``IF NOT EXISTS`` leaves it as it is.
+- A list of column names after the view name renames the columns of the query.
+- ``TEMP``/``TEMPORARY`` is accepted; every view lives in its context.
+- Tables and views share names, a view cannot read itself, and a view cannot read the
+  tables of an attached catalog.
+
+**Example:**
+
+.. code-block:: sql
+
+    CREATE VIEW recent_orders AS SELECT * FROM orders WHERE order_date >= '2024-01-01'
+    CREATE OR REPLACE VIEW order_totals (customer, total) AS
+      SELECT customer_id, SUM(amount) FROM orders GROUP BY customer_id
+
 .. _delete_from_table:
 
 DELETE
@@ -191,6 +219,19 @@ If another writer commits first:
     DELETE FROM some_table WHERE value < 0
     DELETE FROM lake.sales.orders WHERE order_date < DATE '2020-01-01'
 
+.. _describe:
+
+DESCRIBE
+--------
+Returns the column names and Polars data types of a table or view, as the columns
+``column_name`` and ``column_type``. ``DESC`` is the same.
+
+**Example:**
+
+.. code-block:: sql
+
+    DESCRIBE some_table
+
 .. _drop_schema:
 
 DROP SCHEMA
@@ -230,6 +271,20 @@ files. Some catalogs drop tables only with ``PURGE``.
 .. code-block:: sql
 
     DROP TABLE lake.sales.orders_old PURGE
+
+.. _drop_view:
+
+DROP VIEW
+---------
+Deletes the specified views. Dropping a view that does not exist raises an error unless
+the optional ``IF EXISTS`` clause is given.
+
+**Example:**
+
+.. code-block:: sql
+
+    DROP VIEW recent_orders
+    DROP VIEW IF EXISTS order_totals
 
 .. _explain:
 
@@ -326,7 +381,7 @@ rewritten, or changed the table's schema or partition spec.
 
 SHOW TABLES
 -----------
-Returns a list of all tables registered in the given context.
+Returns a list of all tables and views registered in the given context.
 
 **Example:**
 

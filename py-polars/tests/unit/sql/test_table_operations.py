@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError
+from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
 
@@ -623,3 +623,108 @@ def test_ambiguous_column_hint_quotes_dotted_alias() -> None:
         pytest.raises(SQLInterfaceError, match=r'use one of: "a\.b"\.k, z\.k'),
     ):
         ctx.execute('SELECT k FROM u AS "a.b" CROSS JOIN v AS z', eager=True)
+
+
+@pytest.mark.parametrize("eager_path", [False, True])
+@pytest.mark.parametrize("temp", ["", "TEMP ", "TEMPORARY "])
+def test_create_view(eager_path: bool, temp: str) -> None:
+    with pl.SQLContext(t=pl.LazyFrame({"a": [1, 2, 3], "g": ["x", "x", "y"]})) as ctx:
+        ctx.execute(f"CREATE {temp}VIEW v AS SELECT a * 10 AS b, g FROM t WHERE a > 1")
+        ctx.execute(f"CREATE {temp}VIEW w (n, total) AS SELECT COUNT(*), SUM(b) FROM v")
+        assert ctx.tables() == ["t", "v", "w"]
+        for query, expected in (
+            ("SELECT b FROM v ORDER BY b", [20, 30]),
+            ("SELECT v.b FROM v JOIN t ON v.g = t.g WHERE t.a = 3", [30]),
+            ("SELECT a FROM t WHERE a * 10 IN (SELECT b FROM v) ORDER BY a", [2, 3]),
+            ("SELECT x.b + w.total FROM v AS x, w WHERE x.g = 'y'", [80]),
+            ("WITH v AS (SELECT 1 AS b) SELECT b FROM v", [1]),
+        ):
+            res = _execute(ctx, query, eager_path=eager_path)
+            assert res.to_series().to_list() == expected
+
+        # a view reads the tables as they are when a query is executed
+        lf = ctx.execute("SELECT n FROM w")
+        ctx.register("t", pl.LazyFrame({"a": [4, 5, 6, 7], "g": ["x"] * 4}))
+        assert ctx.execute("SELECT n FROM w", eager=True).item() == 4
+        assert lf.collect().item() == 2
+
+
+def test_create_view_replace() -> None:
+    with pl.SQLContext(t=pl.LazyFrame({"a": [1, 2]})) as ctx:
+        ctx.execute("CREATE VIEW v AS SELECT a FROM t")
+        with pytest.raises(SQLInterfaceError, match="view 'v' already exists"):
+            ctx.execute("CREATE VIEW v AS SELECT 1 AS a")
+
+        # an existing view (matched ignoring case) is left as it is, and the query of a
+        # no-op does not run
+        ctx.execute("CREATE VIEW IF NOT EXISTS V AS SELECT * FROM nosuch")
+        assert ctx.execute("SELECT COUNT(*) FROM v", eager=True).item() == 2
+
+        ctx.execute("CREATE OR REPLACE VIEW V AS SELECT a + 1 AS b FROM t")
+        assert ctx.tables() == ["t", "v"]
+        assert ctx.execute("SELECT b FROM v", eager=True).to_series().to_list() == [
+            2,
+            3,
+        ]
+
+        # registering a frame replaces a view of the same name
+        ctx.register("v", pl.LazyFrame({"c": [0]}))
+        assert ctx.execute("SELECT c FROM v", eager=True).item() == 0
+
+
+@pytest.mark.parametrize(
+    ("sql", "error"),
+    [
+        ("CREATE VIEW t AS SELECT 1 AS x", "'t' is a table, not a view"),
+        ("CREATE OR REPLACE VIEW T AS SELECT 1 AS x", "'t' is a table, not a view"),
+        ("CREATE TABLE v AS SELECT 1 AS x", "'v' is a view, not a table"),
+        ("CREATE OR REPLACE VIEW v AS SELECT * FROM v", "view 'v' reads itself"),
+        ("CREATE OR REPLACE VIEW v AS SELECT * FROM w", "view 'v' reads itself"),
+        ("CREATE VIEW x AS SELECT * FROM nosuch", "relation 'nosuch' was not found"),
+        ("CREATE VIEW x (p, q) AS SELECT a FROM t", "number of columns"),
+        ("CREATE MATERIALIZED VIEW x AS SELECT 1", "MATERIALIZED VIEW"),
+        ("CREATE VIEW x COMMENT = 'c' AS SELECT 1", "CREATE VIEW supports only"),
+        ("DROP VIEW t", "view 't' does not exist"),
+        ("DROP VIEW v, nosuch", "view 'nosuch' does not exist"),
+    ],
+)
+def test_create_view_errors(sql: str, error: str) -> None:
+    with pl.SQLContext(t=pl.LazyFrame({"a": [1]})) as ctx:
+        ctx.execute("CREATE VIEW v AS SELECT a FROM t")
+        ctx.execute("CREATE VIEW w AS SELECT a FROM v")
+        with pytest.raises((SQLInterfaceError, SQLSyntaxError), match=error):
+            ctx.execute(sql)
+        # a failed statement changes nothing
+        assert ctx.tables() == ["t", "v", "w"]
+        assert ctx.execute("SELECT a FROM w", eager=True).item() == 1
+
+
+def test_drop_view() -> None:
+    with pl.SQLContext(t=pl.LazyFrame({"a": [1]})) as ctx:
+        for name in ("u", "v", "w"):
+            ctx.execute(f"CREATE VIEW {name} AS SELECT a FROM t")
+        ctx.execute("DROP VIEW U, v")
+        ctx.execute("DROP VIEW IF EXISTS v, nosuch")
+        assert ctx.tables() == ["t", "w"]
+        ctx.unregister("w")
+        assert ctx.tables() == ["t"]
+        with pytest.raises(SQLInterfaceError, match="relation 'w' was not found"):
+            ctx.execute("SELECT * FROM w", eager=True)
+
+
+@pytest.mark.parametrize("describe", ["DESCRIBE", "DESC"])
+def test_describe(describe: str, test_frame: pl.LazyFrame) -> None:
+    with pl.SQLContext(frame=test_frame) as ctx:
+        ctx.execute("CREATE VIEW v AS SELECT x * 2 AS x2, y FROM frame")
+        assert_frame_equal(
+            ctx.execute(f"{describe} frame", eager=True),
+            pl.DataFrame(
+                {"column_name": ["x", "y", "z"], "column_type": ["u8", "str", "date"]}
+            ),
+        )
+        assert ctx.execute(f"{describe} V", eager=True).rows() == [
+            ("x2", "u8"),
+            ("y", "str"),
+        ]
+        with pytest.raises(SQLInterfaceError, match="relation 'nosuch' was not found"):
+            ctx.execute(f"{describe} nosuch")
