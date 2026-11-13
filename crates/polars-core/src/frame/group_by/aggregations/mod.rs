@@ -326,7 +326,7 @@ where
 {
     let invalid_quantile = !(0.0..=1.0).contains(&quantile);
     if invalid_quantile {
-        return Series::full_null(ca.name().clone(), groups.len(), ca.dtype());
+        return Series::full_null(ca.name().clone(), groups.len(), &K::get_static_dtype());
     }
     let to_out = |v: f64| -> K::Native { NumCast::from(v).unwrap() };
     match groups {

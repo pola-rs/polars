@@ -595,6 +595,15 @@ def test_quantile_empty_quantile_group_by() -> None:
         df.group_by("g").agg(pl.col("a").quantile(pl.col("q")))
 
 
+@pytest.mark.parametrize("quantile", [float("nan"), -0.1, 1.1, pl.col("q").first()])
+def test_quantile_out_of_range_grouped(quantile: float | pl.Expr) -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 2], "a": [1, 2, 3], "q": [1.5, 0.5, 0.5]})
+    expr = pl.col("a").quantile(quantile, "nearest")
+    for q in [lf.select(expr.over("g")), lf.group_by("g").agg(expr)]:
+        with pytest.raises(ComputeError, match=r"between 0\.0 and 1\.0"):
+            q.collect()
+
+
 @pytest.mark.parametrize("quantile", [-0.1, 1.1])
 def test_approx_quantile_out_of_range(quantile: float) -> None:
     s = pl.Series("a", [1.0, 2.0, 3.0])
