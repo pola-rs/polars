@@ -592,7 +592,7 @@ class SQLContext(Generic[FrameType]):
                 storage_options,
             )
         elif stmt["kind"] == "truncate":
-            response = _truncate_catalog_table(catalog, stmt)
+            response = _truncate_catalog_table(catalog, stmt, storage_options)
         elif stmt["kind"] == "update":
             full_name = [stmt["catalog"], *stmt["identifier"]]
 
@@ -1141,10 +1141,15 @@ def _drop_catalog_table(catalog: pyiceberg.catalog.Catalog, ddl: dict[str, Any])
 
 
 def _truncate_catalog_table(
-    catalog: pyiceberg.catalog.Catalog, stmt: dict[str, Any]
+    catalog: pyiceberg.catalog.Catalog,
+    stmt: dict[str, Any],
+    storage_options: StorageOptionsDict | None,
 ) -> str:
     """Delete all rows of the catalog table of a `TRUNCATE`, returning the response."""
     from pyiceberg.exceptions import NoSuchTableError
+    from pyiceberg.expressions import AlwaysTrue
+
+    from polars.functions import lit
 
     identifier: tuple[str, ...] = tuple(stmt["identifier"])
     name, full_name = stmt["name"], _display_name([stmt["catalog"], *identifier])
@@ -1159,12 +1164,20 @@ def _truncate_catalog_table(
         if stmt["if_exists"]:
             return response
         raise
+    if table.format_version > 2:
+        msg = (
+            f"TRUNCATE of an Iceberg v{table.format_version} table is not supported "
+            f"yet: catalog table '{_display_name(identifier)}'"
+        )
+        raise NotImplementedError(msg)
     where = (
         f"catalog table '{_display_name(identifier)}' of catalog '{stmt['catalog']}'"
     )
     _delete_rows(
         table,
-        None,
+        AlwaysTrue(),
+        lit(True),
+        storage_options,
         refused=f"table '{name}' could not be truncated: {where}",
         unknown=f"table '{name}' may have been truncated (commit state unknown): {where}",
     )
@@ -1204,17 +1217,19 @@ def _check_not_metadata_table(stmt: dict[str, Any]) -> None:
         raise InvalidOperationError(msg)
 
 
-def _delete_rows(
+def _delete_whole_files(
     table: pyiceberg.table.Table,
-    delete_filter: pyiceberg.expressions.BooleanExpression | None,
+    delete_filter: pyiceberg.expressions.BooleanExpression,
     *,
     refused: str,
     unknown: str,
-) -> None:
+) -> bool:
     """
-    Delete the rows of `table` matching `delete_filter` (or all) in one commit.
+    Delete the rows of `table` matching `delete_filter` by dropping data files.
 
-    On failure, the note `refused` if nothing was committed, else `unknown`.
+    One commit, from metadata only, if every file with a matching row matches whole.
+    Returns False, committing nothing, if a file needs a rewrite. On failure, the note
+    `refused` if nothing was committed, else `unknown`.
     """
     import uuid
 
@@ -1222,7 +1237,6 @@ def _delete_rows(
         CommitStateUnknownException,
         ValidationException,
     )
-    from pyiceberg.expressions import AlwaysTrue
     from pyiceberg.table import Table
 
     from polars.io.iceberg._sink import (
@@ -1232,7 +1246,6 @@ def _delete_rows(
         _SinkCatalog,
     )
 
-    delete_filter = AlwaysTrue() if delete_filter is None else delete_filter
     # as a sink's commit: a failed commit is checked for having landed before
     # PyIceberg retries it or deletes its manifests
     commit_uuid = str(uuid.uuid4())
@@ -1247,35 +1260,113 @@ def _delete_rows(
         catalog,  # type: ignore[arg-type]
         table.config,
     )
-    location = table.location_provider().data_path
-    rewrite = False
     try:
         try:
             with _sink_transaction(wrapped, commit_uuid) as tx:
-                # data files whose rows all match are dropped whole, without reading any
-                update = tx.update_snapshot(snapshot_properties=properties)
-                with update.delete() as delete:
-                    delete.delete_by_predicate(delete_filter)
+                # files whose rows all match, from column statistics; not a `with`:
+                # committed only if no file needs a rewrite
+                delete = tx.update_snapshot(snapshot_properties=properties).delete()
+                delete.delete_by_predicate(delete_filter)
+                try:
                     rewrite = delete.rewrites_needed
+                except Exception:
+                    with contextlib.suppress(Exception):
+                        delete._clean_all_uncommitted()
+                    raise
                 if rewrite:
-                    # other files that may match are rewritten without those rows
-                    tx.delete(delete_filter, snapshot_properties=properties)
+                    # computing that wrote manifests the commit will not use
+                    delete._clean_all_uncommitted()
+                    return False
+                delete.commit()
         except (_AlreadyCommitted, CommitStateUnknownException, ValidationException):
             raise
         except Exception as error:
             # a failure after a commit request, not of it: did the commit land?
             catalog.landed_after(table, error)
-            return
+            return True
     except _AlreadyCommitted:
-        return
+        return True
     except CommitStateUnknownException as error:
-        if rewrite:
-            error.add_note(f"rewritten data files kept under '{location}'")
         error.add_note(unknown)
         raise
     except Exception as error:
-        if rewrite:
-            error.add_note(f"rewritten data files may remain under '{location}'")
+        error.add_note(refused)
+        raise
+    return True
+
+
+def _delete_rows(
+    table: pyiceberg.table.Table,
+    delete_filter: pyiceberg.expressions.BooleanExpression,
+    predicate: Expr,
+    storage_options: StorageOptionsDict | None,
+    *,
+    refused: str,
+    unknown: str,
+) -> None:
+    """
+    Delete the rows of `table` matching `delete_filter` (`predicate`) in one commit.
+
+    Data files whose rows all match are dropped. If a file matches only partly, the
+    candidate files are read and those with a match replaced by files with the other
+    rows (copy-on-write, as `UPDATE`). On failure, the note `refused` if nothing was
+    committed, else `unknown`.
+    """
+    from pyiceberg.exceptions import CommitStateUnknownException
+    from pyiceberg.expressions import AlwaysTrue
+
+    from polars.functions import collect_all
+    from polars.functions import len as count
+    from polars.io.iceberg._sink import _ReplaceFiles
+    from polars.io.iceberg.functions import _scan_iceberg_files
+
+    if _delete_whole_files(table, delete_filter, refused=refused, unknown=unknown):
+        return
+
+    whole, partial = [], []
+    try:
+        tasks = _candidate_tasks(table, delete_filter)
+        if delete_filter == AlwaysTrue():
+            # every file goes, also one whose row count was not recorded
+            whole = tasks
+        else:
+            # a file matches whole if all of its live rows match; a NULL condition
+            # keeps a row
+            counts = collect_all(
+                _scan_iceberg_files(table, [task], storage_options).select(
+                    matched=predicate.fill_null(False).sum(), total=count()
+                )
+                for task in tasks
+            )
+            for task, n in zip(tasks, counts, strict=True):
+                matched, total = n.row(0)
+                if matched == total and matched > 0:
+                    whole.append(task)
+                elif matched > 0:
+                    partial.append(task)
+    except Exception as error:
+        error.add_note(refused)
+        raise
+    if not whole and not partial:
+        return
+    replace = _ReplaceFiles(
+        data_files=[t.file for t in whole + partial],
+        conflict_filter=delete_filter,
+        schema_id=table.metadata.current_schema_id,
+        spec_id=table.metadata.default_spec_id,
+        isolation="delete",
+    )
+    rows = (
+        _scan_iceberg_files(table, partial, storage_options).remove(predicate)
+        if partial
+        else None
+    )
+    try:
+        _write_rows(table, rows, "append", storage_options, replace=replace)
+    except CommitStateUnknownException as error:
+        error.add_note(unknown)
+        raise
+    except Exception as error:
         error.add_note(refused)
         raise
 
@@ -1330,7 +1421,14 @@ def _delete_catalog_table(
     predicate_of: Callable[[LazyFrame], Expr],
     storage_options: StorageOptionsDict | None,
 ) -> str:
-    """Delete the rows of a `DELETE` from its catalog table, returning the response."""
+    """Delete the rows of a `DELETE` from its catalog table, returning the response.
+
+    Data files whose rows all match are dropped. If a file matches only partly, the
+    candidate files are read and those with a match replaced, in one commit, by files
+    with the other rows (copy-on-write, as `UPDATE`).
+    """
+    from pyiceberg.expressions import AlwaysFalse
+
     from polars.io.iceberg.functions import scan_iceberg
 
     identifier: tuple[str, ...] = tuple(stmt["identifier"])
@@ -1345,17 +1443,31 @@ def _delete_catalog_table(
         "could be deleted"
     )
     table = _load_catalog_table(catalog, identifier, missing)
+    if table.format_version > 2:
+        msg = (
+            f"DELETE from an Iceberg v{table.format_version} table is not supported "
+            f"yet: catalog table '{table_name}'"
+        )
+        raise NotImplementedError(msg)
+    response = f"DELETE FROM {full_name}"
     # planned against this load, so that the filter binds the same columns
     predicate = predicate_of(scan_iceberg(table, storage_options=storage_options))
     delete_filter = _exact_row_filter(predicate, table, stmt, "DELETE", full_name)
     where = f"catalog table '{table_name}' of catalog '{stmt['catalog']}'"
-    _delete_rows(
-        table,
-        delete_filter,
-        refused=f"no rows of table '{name}' were deleted: {where}",
-        unknown=f"rows of table '{name}' may have been deleted (commit state unknown): {where}",
+    refused = f"no rows of table '{name}' were deleted: {where}"
+    unknown = (
+        f"rows of table '{name}' may have been deleted (commit state unknown): {where}"
     )
-    return f"DELETE FROM {full_name}"
+    if delete_filter != AlwaysFalse():
+        _delete_rows(
+            table,
+            delete_filter,
+            predicate,
+            storage_options,
+            refused=refused,
+            unknown=unknown,
+        )
+    return response
 
 
 def _update_catalog_table(
@@ -2427,7 +2539,7 @@ def _fill_created_table(
 
 def _write_rows(
     table: pyiceberg.table.Table,
-    lf: LazyFrame,
+    lf: LazyFrame | None,
     mode: Literal["append", "overwrite"],
     storage_options: StorageOptionsDict | None,
     *,
@@ -2435,7 +2547,8 @@ def _write_rows(
 ) -> None:
     """Write the rows of `lf` to `table` in one commit, leaving no files on failure.
 
-    With `replace`, the commit replaces those data files with the written ones.
+    With `replace`, the commit replaces those data files with the written ones; with no
+    `lf`, it only removes them.
     """
     from pyiceberg.exceptions import CommitStateUnknownException
 
@@ -2446,11 +2559,17 @@ def _write_rows(
         state = IcebergSinkState.new(
             table, mode=mode, storage_options=storage_options, replace_files=replace
         )
-        state.attach_sink(lf).collect()
+        if lf is None:
+            state.commit([])
+        else:
+            state.attach_sink(lf).collect()
     except CommitStateUnknownException as error:
         assert state is not None
-        location, _ = state.written_files_dir()
-        error.add_note(f"the rows may have landed; data files kept under '{location}'")
+        if lf is not None:
+            location, _ = state.written_files_dir()
+            error.add_note(
+                f"the rows may have landed; data files kept under '{location}'"
+            )
         raise
     except Exception as error:
         if state is not None and (remaining := state.remove_written_files()):

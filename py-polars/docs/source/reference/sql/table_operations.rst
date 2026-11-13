@@ -157,19 +157,32 @@ DELETE
 Remove specific rows from a table using an (optional) constraint.
 Omitting the constraint deletes *all* rows, equivalent to `TRUNCATE`.
 
-On a table of an attached catalog, it deletes the matching rows in one commit. It returns
-the statement, not the remaining rows. Rows where the condition is NULL are kept. The
-condition compares columns with constants (``=``, ``<>``, ``<``, ``<=``, ``>``, ``>=``,
+On a table of an attached catalog, it deletes the matching rows in one commit, as one
+snapshot. It returns the statement, not the remaining rows. Rows where the condition is NULL
+are kept.
+
+The condition compares columns with constants (``=``, ``<>``, ``<``, ``<=``, ``>``, ``>=``,
 ``IN``, ``BETWEEN``, ``IS [NOT] NULL``, ``LIKE 'prefix%'``), combined with ``AND``, ``OR``
 and ``NOT``. On floating-point columns, ``>``, ``>=`` and ``<>`` are not supported. String
 constants may only contain letters, digits, spaces, ``-`` and ``_`` for now. Decimal
-columns cannot be compared with constants yet. Data
-files whose rows all match are dropped, and the others are rewritten (copy-on-write), also
-on a merge-on-read table.
+columns cannot be compared with constants yet.
 
-If another writer commits first, ``DELETE`` retries when that writer's rows cannot match the
-condition. Otherwise it fails, unless the table's ``write.delete.isolation-level`` is
-``snapshot``. The other writer's matching rows are then kept.
+Data files whose rows all match are dropped. If other files match only partly, the files
+that may match are read, and the partly matching ones are rewritten without the deleted
+rows (copy-on-write), also on a merge-on-read table. Not supported yet:
+
+- Iceberg v3 tables.
+- Reading a data file that is not Parquet.
+- Reading a data file whose delete files cannot be applied, such as equality deletes or
+  position deletes that cover several data files.
+
+If another writer commits first:
+
+- ``DELETE`` retries when that writer's rows cannot match the condition.
+- Otherwise it fails, unless the table's ``write.delete.isolation-level`` is ``snapshot``.
+  The other writer's matching rows are then kept.
+- A ``DELETE`` that reads files fails at any isolation level if that writer deleted or
+  replaced rows of those files, or changed the table's schema or partition spec.
 
 **Example:**
 
