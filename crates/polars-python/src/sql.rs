@@ -191,9 +191,9 @@ impl PySQLContext {
                     props.set_item(key, value)?;
                 }
                 dict.set_item("properties", props)?;
-                let partition_by: Vec<(String, String)> = partition_by
+                let partition_by: Vec<(Vec<String>, String)> = partition_by
                     .into_iter()
-                    .map(|field| (field.column, field.transform))
+                    .map(|field| (field.path, field.transform))
                     .collect();
                 dict.set_item("partition_by", partition_by)?;
             },
@@ -341,9 +341,9 @@ impl PySQLContext {
                     },
                     CatalogAlter::SetPartitioning { fields } => {
                         op.set_item("op", "set_partitioning")?;
-                        let fields: Vec<(String, String)> = fields
+                        let fields: Vec<(Vec<String>, String)> = fields
                             .into_iter()
-                            .map(|field| (field.column, field.transform))
+                            .map(|field| (field.path, field.transform))
                             .collect();
                         op.set_item("fields", fields)?;
                     },

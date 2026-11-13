@@ -66,8 +66,9 @@ statement adds at most one time transform (``year``, ``month``, ``day`` or ``hou
 column. Time fields the table has can stay.
 Iceberg v1 tables are not supported: upgrade them to v2 first.
 
-Column names are case-sensitive and name top-level columns. ``ALTER TABLE IF EXISTS`` does
-nothing if the table does not exist.
+Column names are case-sensitive and name top-level columns. ``SET PARTITIONED BY`` also
+takes fields of struct columns (``s.f``), as ``CREATE TABLE ... PARTITION BY`` does.
+``ALTER TABLE IF EXISTS`` does nothing if the table does not exist.
 
 **Example:**
 
@@ -152,7 +153,12 @@ creates the table in the catalog.
 - ``NOT NULL`` makes a column a required field; other constraints are not supported.
 - ``PARTITION BY (...)`` sets the partition spec: a column (identity), ``year``,
   ``month``, ``day`` or ``hour`` of a column, ``bucket(N, column)`` or
-  ``truncate(W, column)``. ``PARTITIONED BY (column, ...)`` takes column names only.
+  ``truncate(W, column)``. A column can also be a field of a struct column: ``s.f`` or
+  ``"s"."f"`` is field ``f`` of struct ``s``, never a table-qualified column, and
+  ``"s.f"`` is a column named ``s.f``. ``DELETE`` and ``UPDATE`` conditions can use such a
+  field only when its struct column is ``NOT NULL``, so not one level deeper, and not in a
+  table created with ``AS SELECT``. ``PARTITIONED BY (column, ...)`` takes top-level column
+  names only.
 - ``LOCATION`` (or the ``'location'`` option) sets the table location; the other
   ``WITH`` options become table properties.
 - ``AS SELECT`` commits the rows together with the create, so a failed query creates

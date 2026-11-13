@@ -2420,7 +2420,9 @@ def _create_catalog_table(
 
 
 def _create_partition_spec(
-    schema: pyiceberg.schema.Schema, partition_by: list[tuple[str, str]], name: str
+    schema: pyiceberg.schema.Schema,
+    partition_by: list[tuple[list[str], str]],
+    name: str,
 ) -> pyiceberg.partitioning.PartitionSpec:
     """The partition spec of the new table `name`, checked against its `schema`."""
     from pyiceberg.partitioning import (
@@ -2438,10 +2440,10 @@ def _create_partition_spec(
 
     names = index_by_name(schema)
     fields: list[PartitionField] = []
-    for column, transform_name in partition_by:
+    for path, transform_name in partition_by:
         transform = parse_transform(transform_name)
-        source = partition_source(schema, column, transform, name)
-        field_name = partition_field_name(column, transform)
+        source = partition_source(schema, path, transform, name)
+        field_name = partition_field_name(".".join(path), transform)
         # PyIceberg checks the name against nested fields too (`s.f_day`)
         if names.get(field_name, source.field_id) != source.field_id:
             msg = (

@@ -40,22 +40,52 @@ def partition_field_name(
 
 def partition_source(
     schema: pyiceberg.schema.Schema,
-    column: str,
+    path: list[str],
     transform: pyiceberg.transforms.Transform[Any, Any],
     name: str,
 ) -> Any:
-    """The top-level field of `schema` that partitions table `name` (`column`)."""
+    """The field at `path` (a column, then struct fields) that partitions `name`."""
     from pyiceberg.transforms import TruncateTransform
-    from pyiceberg.types import DecimalType
+    from pyiceberg.types import DecimalType, StructType
 
-    # top-level columns only: `find_field` resolves dotted names into structs
-    columns = {field.name: field for field in schema.fields}
-    if (source := columns.get(column)) is None:
-        msg = (
-            f"partition column '{column}' is not a column of table '{name}'; "
-            f"valid columns: {list(columns)}"
-        )
-        raise SQLInterfaceError(msg)
+    column = ".".join(path)
+    top = [f.name for f in schema.fields]
+    if path[1:] and column in top:
+        hint = f"; for the column named '{column}', quote it: \"{column}\""
+    elif not path[1:] and "." in column and column.split(".")[0] in top:
+        hint = f"; for a struct field, leave the dots unquoted: {column}"
+    elif path[1:] and path[0] == name.split(".")[-1]:
+        hint = "; table-qualified names are not supported"
+    else:
+        hint = ""
+    # part by part: `find_field` would also take a column named `s.f` for `s`, `f`
+    fields, source = schema.fields, None
+    for i, part in enumerate(path):
+        if (source := next((f for f in fields if f.name == part), None)) is None:
+            if i == 0:
+                msg = (
+                    f"partition column '{column}' is not a column of table '{name}'"
+                    f"{hint}; valid columns: {top}"
+                )
+            else:
+                msg = (
+                    f"partition column '{column}' is not a column of table '{name}': "
+                    f"struct '{'.'.join(path[:i])}' has no field '{part}'"
+                    f"{hint if column in top else ''}; its fields: "
+                    f"{[f.name for f in fields]}"
+                )
+            raise SQLInterfaceError(msg)
+        if path[i + 1 :]:
+            # Iceberg nests partition sources in structs only, not in lists or maps
+            if not isinstance(source.field_type, StructType):
+                msg = (
+                    f"cannot partition table '{name}' by '{column}': "
+                    f"'{'.'.join(path[: i + 1])}' has type {source.field_type}, and "
+                    "only struct fields can be partition sources"
+                )
+                raise SQLInterfaceError(msg)
+            fields = source.field_type.fields
+    assert source is not None  # the parser gives at least one part
     source_type = source.field_type
     if not source_type.is_primitive or not transform.can_transform(source_type):
         msg = (
@@ -72,10 +102,10 @@ def partition_source(
 
 
 def spec_change(
-    metadata: TableMetadata, fields: list[tuple[str, str]], name: str
+    metadata: TableMetadata, fields: list[tuple[list[str], str]], name: str
 ) -> pyiceberg.partitioning.PartitionSpec | int | None:
     """
-    The change that makes `fields` (column, transform) the default spec of table `name`.
+    The change that makes `fields` (source path, transform) the default spec of `name`.
 
     A new spec, the id of an existing spec, or `None` if the default spec has them.
     """
@@ -99,10 +129,10 @@ def spec_change(
 
     schema = metadata.schema()
     targets: list[tuple[_Identity, str]] = []
-    for column, transform_name in fields:
+    for path, transform_name in fields:
         transform = parse_transform(transform_name)
-        source = partition_source(schema, column, transform, name)
-        targets.append(((source.field_id, transform), column))
+        source = partition_source(schema, path, transform, name)
+        targets.append(((source.field_id, transform), ".".join(path)))
 
     current = metadata.spec()
     kept = {_identity(f): f for f in current.fields if _is_active(f)}
@@ -124,10 +154,11 @@ def spec_change(
     for i, (identity, _) in enumerate(targets):
         if identity not in kept and isinstance(identity[1], TimeTransform):
             if (earlier := new_time.setdefault(identity[0], i)) != i:
+                column = targets[i][1]
                 msg = (
-                    f"partition fields `{fields[earlier][1]}({fields[earlier][0]})` and "
-                    f"`{fields[i][1]}({fields[i][0]})` both newly partition column "
-                    f"'{fields[i][0]}' of table '{name}' by time; add one of them at a time"
+                    f"partition fields `{fields[earlier][1]}({column})` and "
+                    f"`{fields[i][1]}({column})` both newly partition column "
+                    f"'{column}' of table '{name}' by time; add one of them at a time"
                 )
                 raise SQLInterfaceError(msg)
 
