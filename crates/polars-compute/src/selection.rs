@@ -1,5 +1,9 @@
 use std::cmp::Ordering;
+use std::mem::MaybeUninit;
 
+#[cfg(feature = "dtype-f16")]
+use polars_utils::float16::pf16;
+use polars_utils::total_ord::TotalOrd;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use rayon::prelude::*;
@@ -19,26 +23,99 @@ const SELECT_MAX_DRAWS: usize = 64 * SELECT_SAMPLE_LEN;
 /// `sqrt(SELECT_SAMPLE_LEN) / 2` each.
 const SELECT_SLACK: usize = 3 * SELECT_SAMPLE_LEN.isqrt() / 2;
 
-/// Writes the value at each of the `k` strictly ascending `ranks` (all below `v.len()`) of `v`
-/// sorted by `cmp` to `out`, reordering `v`, in O(n log k).
-///
-/// Large inputs run in parallel on the current rayon pool, so call it inside polars' `RAYON.install`.
-pub fn select_many_unstable_by<T, F>(v: &mut [T], ranks: &[usize], out: &mut [T], cmp: F)
-where
-    T: Copy + Send + Sync,
-    F: Fn(&T, &T) -> Ordering + Sync,
-{
-    check_ranks(v.len(), ranks, out);
-    if v.len() < SELECT_MIN_PAR_LEN {
-        select_many_seq(v, ranks, 0, out, &cmp);
-        return;
+/// A value with an unsigned integer key that orders like the value under `TotalOrd`, breaking
+/// some of its ties.
+pub trait SelectKey: TotalOrd + Copy + Send + Sync {
+    type Key: SelectKey<Key = Self::Key> + Ord + Default;
+
+    fn to_key(self) -> Self::Key;
+    fn from_key(key: Self::Key) -> Self;
+
+    /// Whether a value with another key equals this one under `TotalOrd`.
+    #[inline(always)]
+    fn has_tied_keys(self) -> bool {
+        false
     }
-    let len = v.len();
-    let segs = v.chunks_mut(SELECT_BLOCK_LEN).collect();
-    select_many_rec(segs, len, ranks, 0, out, &cmp);
 }
 
-/// [`select_many_unstable_by`] on the calling thread, whatever the length of `v`.
+/// The key types the selection runs on.
+trait Key: SelectKey<Key = Self> + Ord + Default {}
+
+impl<K: SelectKey<Key = K> + Ord + Default> Key for K {}
+
+macro_rules! impl_unsigned_key {
+    ($($T:ty => $K:ty),*) => {$(
+        impl SelectKey for $T {
+            type Key = $K;
+
+            #[inline(always)]
+            fn to_key(self) -> $K {
+                self as $K
+            }
+
+            #[inline(always)]
+            fn from_key(key: $K) -> Self {
+                key as $T
+            }
+        }
+    )*};
+}
+
+macro_rules! impl_signed_key {
+    ($($T:ty, $U:ty => $K:ty),*) => {$(
+        impl SelectKey for $T {
+            type Key = $K;
+
+            #[inline(always)]
+            fn to_key(self) -> $K {
+                ((self as $U) ^ (1 << (<$U>::BITS - 1))) as $K
+            }
+
+            #[inline(always)]
+            fn from_key(key: $K) -> Self {
+                ((key as $U) ^ (1 << (<$U>::BITS - 1))) as $T
+            }
+        }
+    )*};
+}
+
+macro_rules! impl_float_key {
+    ($($T:ty, $U:ty => $K:ty),*) => {$(
+        impl SelectKey for $T {
+            type Key = $K;
+
+            #[inline(always)]
+            fn to_key(self) -> $K {
+                const SIGN: $U = 1 << (<$U>::BITS - 1);
+                // A NaN without its sign bit orders above infinity.
+                let bits = if self.is_nan() { self.to_bits() & !SIGN } else { self.to_bits() };
+                (if bits & SIGN != 0 { !bits } else { bits | SIGN }) as $K
+            }
+
+            #[inline(always)]
+            fn from_key(key: $K) -> Self {
+                const SIGN: $U = 1 << (<$U>::BITS - 1);
+                let key = key as $U;
+                <$T>::from_bits(if key & SIGN != 0 { key ^ SIGN } else { !key })
+            }
+
+            #[inline(always)]
+            fn has_tied_keys(self) -> bool {
+                const SIGN: $U = 1 << (<$U>::BITS - 1);
+                self.to_bits() & !SIGN == 0 || self.is_nan()
+            }
+        }
+    )*};
+}
+
+impl_unsigned_key!(u8 => u32, u16 => u32, u32 => u32, u64 => u64, u128 => u128);
+impl_signed_key!(i8, u8 => u32, i16, u16 => u32, i32, u32 => u32, i64, u64 => u64, i128, u128 => u128);
+impl_float_key!(f32, u32 => u32, f64, u64 => u64);
+#[cfg(feature = "dtype-f16")]
+impl_float_key!(pf16, u16 => u32);
+
+/// Writes the value at each of the `k` strictly ascending `ranks` (all below `v.len()`) of `v`
+/// sorted by `cmp` to `out`, reordering `v`, on the calling thread in O(n log k).
 pub fn select_many_seq_by<T, F>(v: &mut [T], ranks: &[usize], out: &mut [T], cmp: F)
 where
     T: Copy,
@@ -73,22 +150,95 @@ impl<'a, T> MaskedSlice<'a, T> {
     }
 }
 
-/// [`select_many_unstable_by`] on the `n_valid` values that count in the concatenation of
-/// `chunks`, which it leaves untouched.
-pub fn select_many_by<T, F>(
+/// Writes the value at each of the `k` strictly ascending `ranks` (all below `n_valid`) of the
+/// `n_valid` values that count in the concatenation of `chunks`, sorted by `TotalOrd`, to `out`,
+/// in O(n log k).
+///
+/// Large inputs run in parallel on the current rayon pool, so call it inside polars' `RAYON.install`.
+pub fn select_many_by<T: SelectKey>(
     chunks: &[MaskedSlice<'_, T>],
     n_valid: usize,
     ranks: &[usize],
     out: &mut [T],
-    cmp: F,
-) where
-    T: Copy + Send + Sync,
-    F: Fn(&T, &T) -> Ordering + Sync,
-{
-    select_many_by_path(chunks, n_valid, ranks, out, cmp);
+) {
+    let mut keys = vec![T::Key::default(); out.len()];
+    select_keys(&Blocks::new(chunks), n_valid, ranks, &mut keys);
+    for (o, k) in out.iter_mut().zip(keys) {
+        *o = T::from_key(k);
+    }
 }
 
-/// How [`select_many_by`] started the selection, which lets tests check that each path runs.
+/// Blocks of at most [`SELECT_BLOCK_LEN`] values, read as keys.
+trait KeyBlocks<K>: Sync {
+    fn n_blocks(&self) -> usize;
+
+    /// The number of values, whether they count or not.
+    fn raw_len(&self) -> usize;
+
+    /// See [`draw_sample`].
+    fn draw_sample(&self) -> Vec<K>;
+
+    /// See [`copy_between`].
+    fn copy_between(
+        &self,
+        block: usize,
+        lo: K,
+        hi: K,
+        exact: bool,
+        scratch: &mut Vec<K>,
+    ) -> [usize; 5];
+
+    /// Appends the values that count in `block` to `out`.
+    fn copy_valid(&self, block: usize, out: &mut Vec<K>);
+}
+
+struct Blocks<'a, T>(Vec<MaskedSlice<'a, T>>);
+
+impl<'a, T> Blocks<'a, T> {
+    fn new(chunks: &[MaskedSlice<'a, T>]) -> Self {
+        Self(
+            chunks
+                .iter()
+                .flat_map(|c| {
+                    (0..c.values.len())
+                        .step_by(SELECT_BLOCK_LEN)
+                        .map(|start| c.slice(start, SELECT_BLOCK_LEN.min(c.values.len() - start)))
+                })
+                .collect(),
+        )
+    }
+}
+
+impl<T: SelectKey> KeyBlocks<T::Key> for Blocks<'_, T> {
+    fn n_blocks(&self) -> usize {
+        self.0.len()
+    }
+
+    fn raw_len(&self) -> usize {
+        self.0.iter().map(|b| b.values.len()).sum()
+    }
+
+    fn draw_sample(&self) -> Vec<T::Key> {
+        draw_sample(&self.0, 0)
+    }
+
+    fn copy_between(
+        &self,
+        block: usize,
+        lo: T::Key,
+        hi: T::Key,
+        exact: bool,
+        scratch: &mut Vec<T::Key>,
+    ) -> [usize; 5] {
+        copy_between(&self.0[block], lo, hi, exact, scratch)
+    }
+
+    fn copy_valid(&self, block: usize, out: &mut Vec<T::Key>) {
+        copy_valid(&self.0[block], out)
+    }
+}
+
+/// How [`select_keys`] started the selection, which lets tests check that each path runs.
 #[derive(Debug, PartialEq, Eq)]
 enum SelectPath {
     /// Too few values to select in parallel.
@@ -101,63 +251,50 @@ enum SelectPath {
     Unsampled,
 }
 
-/// [`select_many_by`], returning the path it took.
-fn select_many_by_path<T, F>(
-    chunks: &[MaskedSlice<'_, T>],
+/// [`select_many_by`] on keys, returning the path it took.
+fn select_keys<K: Key>(
+    blocks: &dyn KeyBlocks<K>,
     n_valid: usize,
     ranks: &[usize],
-    out: &mut [T],
-    cmp: F,
-) -> SelectPath
-where
-    T: Copy + Send + Sync,
-    F: Fn(&T, &T) -> Ordering + Sync,
-{
+    out: &mut [K],
+) -> SelectPath {
     check_ranks(n_valid, ranks, out);
-    let raw_len: usize = chunks.iter().map(|c| c.values.len()).sum();
-    if ranks.is_empty() || raw_len < SELECT_MIN_PAR_LEN {
+    if ranks.is_empty() || blocks.raw_len() < SELECT_MIN_PAR_LEN {
         let mut valid = Vec::with_capacity(n_valid);
-        for chunk in chunks {
-            valid.extend(copy_valid(chunk));
+        for block in 0..blocks.n_blocks() {
+            blocks.copy_valid(block, &mut valid);
         }
         assert_eq!(valid.len(), n_valid);
-        select_many_unstable_by(&mut valid, ranks, out, cmp);
+        select_many_unstable(&mut valid, ranks, out);
         return SelectPath::Sequential;
     }
-    let blocks: Vec<MaskedSlice<'_, T>> = chunks
-        .iter()
-        .flat_map(|c| {
-            (0..c.values.len())
-                .step_by(SELECT_BLOCK_LEN)
-                .map(|start| c.slice(start, SELECT_BLOCK_LEN.min(c.values.len() - start)))
-        })
-        .collect();
     let rank = ranks[ranks.len() / 2];
-    if let Some(bracket) = sample_bracket(&blocks, n_valid, rank, 0, &cmp) {
-        return select_blocks(&blocks, bracket, n_valid, ranks, out, &cmp);
+    if let Some(bracket) = sample_bracket(blocks.draw_sample(), n_valid, rank) {
+        return select_blocks(blocks, bracket, n_valid, ranks, out);
     }
     // Too few of the drawn values counted, so select from a copy of only those that do.
-    let mut valid: Vec<Vec<T>> = blocks.par_iter().map(copy_valid).collect();
+    let mut valid: Vec<Vec<K>> = (0..blocks.n_blocks())
+        .into_par_iter()
+        .map(|block| {
+            let mut valid = Vec::new();
+            blocks.copy_valid(block, &mut valid);
+            valid
+        })
+        .collect();
     assert_eq!(valid.iter().map(Vec::len).sum::<usize>(), n_valid);
     let segs = valid.iter_mut().map(|v| &mut v[..]).collect();
-    select_many_rec(segs, n_valid, ranks, 0, out, &cmp);
+    select_many_rec(segs, n_valid, ranks, 0, out);
     SelectPath::Unsampled
 }
 
-/// [`select_many_by`] on `blocks` of at most [`SELECT_BLOCK_LEN`] values, given the
-/// [`sample_bracket`] of their middle rank.
-fn select_blocks<T, F>(
-    blocks: &[MaskedSlice<'_, T>],
-    (lo, hi, repeats): (T, T, bool),
+/// [`select_keys`] on `blocks`, given the [`sample_bracket`] of their middle rank.
+fn select_blocks<K: Key>(
+    blocks: &dyn KeyBlocks<K>,
+    (lo, hi, repeats): (K, K, bool),
     n_valid: usize,
     ranks: &[usize],
-    out: &mut [T],
-    cmp: &F,
-) -> SelectPath
-where
-    T: Copy + Send + Sync,
-    F: Fn(&T, &T) -> Ordering + Sync,
-{
+    out: &mut [K],
+) -> SelectPath {
     let len = n_valid;
     let mid = ranks.len() / 2;
 
@@ -171,11 +308,14 @@ where
             <= len as u64 * SELECT_SLACK as u64
     };
     if near(ranks[0]) && near(ranks[ranks.len() - 1]) {
-        let mut between: Vec<(Vec<T>, [usize; 5])> = blocks
-            .par_iter()
+        let mut between: Vec<(Vec<K>, [usize; 5])> = (0..blocks.n_blocks())
+            .into_par_iter()
             .map_init(
                 || Vec::with_capacity(SELECT_BLOCK_LEN),
-                |scratch, block| copy_between(block, &lo, &hi, repeats, scratch, cmp),
+                |scratch, block| {
+                    let counts = blocks.copy_between(block, lo, hi, repeats, scratch);
+                    (scratch.clone(), counts)
+                },
             )
             .collect();
         let [below, eq_lo, n_between, eq_hi, valid] = between
@@ -205,89 +345,93 @@ where
                 k,
                 to_between,
                 out_between,
-                cmp,
             );
             return SelectPath::Bracket;
         }
     }
 
-    let mut copies: Vec<(Vec<T>, [usize; 3])> = blocks
-        .par_iter()
+    let mut copies: Vec<(Vec<K>, [usize; 3])> = (0..blocks.n_blocks())
+        .into_par_iter()
         .map(|block| {
-            let mut copy = copy_valid(block);
-            let sizes = split_block(&mut copy, &lo, &hi, cmp);
+            let mut copy = Vec::new();
+            blocks.copy_valid(block, &mut copy);
+            let sizes = split_block(&mut copy, lo, hi);
             (copy, sizes)
         })
         .collect();
     assert_eq!(copies.iter().map(|(c, _)| c.len()).sum::<usize>(), len);
-    let mut parts: [Vec<&mut [T]>; 3] = Default::default();
+    let mut parts: [Vec<&mut [K]>; 3] = Default::default();
     for (copy, sizes) in &mut copies {
         push_split(&mut parts, copy, *sizes);
     }
-    select_split(parts, &lo, &hi, len, ranks, 0, out, cmp);
+    select_split(parts, lo, hi, len, ranks, 0, out);
     SelectPath::Split
 }
 
-/// [`select_many_unstable_by`] on the concatenated `segs`, which hold `len` values whose sorted
-/// order starts at rank `offset`.
-fn select_many_rec<T, F>(
-    segs: Vec<&mut [T]>,
+/// Writes the value at each of the `k` strictly ascending `ranks` (all below `v.len()`) of `v`
+/// sorted to `out`, reordering `v`, in O(n log k).
+fn select_many_unstable<K: Key>(v: &mut [K], ranks: &[usize], out: &mut [K]) {
+    check_ranks(v.len(), ranks, out);
+    if v.len() < SELECT_MIN_PAR_LEN {
+        select_many_seq(v, ranks, 0, out, &K::cmp);
+        return;
+    }
+    let len = v.len();
+    let segs = v.chunks_mut(SELECT_BLOCK_LEN).collect();
+    select_many_rec(segs, len, ranks, 0, out);
+}
+
+/// [`select_many_unstable`] on the concatenated `segs`, which hold `len` values whose sorted order
+/// starts at rank `offset`.
+fn select_many_rec<K: Key>(
+    segs: Vec<&mut [K]>,
     len: usize,
     ranks: &[usize],
     offset: usize,
-    out: &mut [T],
-    cmp: &F,
-) where
-    T: Copy + Send + Sync,
-    F: Fn(&T, &T) -> Ordering + Sync,
-{
+    out: &mut [K],
+) {
     if ranks.is_empty() {
         return;
     }
     if len < SELECT_MIN_PAR_LEN {
-        return select_many_gathered(segs, ranks, offset, out, cmp);
+        return select_many_gathered(segs, ranks, offset, out);
     }
     let mid = ranks.len() / 2;
-    let shared: Vec<MaskedSlice<'_, T>> = segs
+    let shared: Vec<MaskedSlice<'_, K>> = segs
         .iter()
         .map(|s| MaskedSlice {
             values: s,
             validity: None,
         })
         .collect();
-    let (lo, hi, _) = sample_bracket(&shared, len, ranks[mid] - offset, offset, cmp)
+    let (lo, hi, _) = sample_bracket(draw_sample(&shared, offset), len, ranks[mid] - offset)
         .expect("every drawn value counts");
-    let split: Vec<(&mut [T], [usize; 3])> = segs
+    let split: Vec<(&mut [K], [usize; 3])> = segs
         .into_par_iter()
         .map(|seg| {
-            let sizes = split_block(seg, &lo, &hi, cmp);
+            let sizes = split_block(seg, lo, hi);
             (seg, sizes)
         })
         .collect();
-    let mut parts: [Vec<&mut [T]>; 3] = Default::default();
+    let mut parts: [Vec<&mut [K]>; 3] = Default::default();
     for (seg, sizes) in split {
         push_split(&mut parts, seg, sizes);
     }
-    select_split(parts, &lo, &hi, len, ranks, offset, out, cmp);
+    select_split(parts, lo, hi, len, ranks, offset, out);
 }
 
 /// Selects `ranks` from the values below, inside and above the bracket of `lo` and `hi` (see
 /// [`below_hi`]) in `parts`, which together hold the `len` values whose sorted order starts at
 /// rank `offset`.
-#[allow(clippy::too_many_arguments)]
-fn select_split<T, F>(
-    parts: [Vec<&mut [T]>; 3],
-    lo: &T,
-    hi: &T,
+fn select_split<K: Key>(
+    parts: [Vec<&mut [K]>; 3],
+    lo: K,
+    hi: K,
     len: usize,
     ranks: &[usize],
     offset: usize,
-    out: &mut [T],
-    cmp: &F,
-) where
-    T: Copy + Send + Sync,
-    F: Fn(&T, &T) -> Ordering + Sync,
-{
+    out: &mut [K],
+) {
     let sizes = parts
         .each_ref()
         .map(|p| p.iter().map(|s| s.len()).sum::<usize>());
@@ -300,21 +444,21 @@ fn select_split<T, F>(
     let [a, b, c] = parts;
     let k = ranks.len();
     rayon::join(
-        || select_part(a, sizes[0], len, ranks_a, k, offset, out_a, cmp),
+        || select_part(a, sizes[0], len, ranks_a, k, offset, out_a),
         || {
             rayon::join(
                 || {
                     // Values between equal bounds all equal them.
-                    if cmp(lo, hi).is_eq() {
-                        out_b.fill(*lo)
+                    if lo == hi {
+                        out_b.fill(lo)
                     } else {
                         let b_offset = offset + sizes[0];
-                        select_part(b, sizes[1], len, ranks_b, k, b_offset, out_b, cmp)
+                        select_part(b, sizes[1], len, ranks_b, k, b_offset, out_b)
                     }
                 },
                 || {
                     let c_offset = offset + sizes[0] + sizes[1];
-                    select_part(c, sizes[2], len, ranks_c, k, c_offset, out_c, cmp)
+                    select_part(c, sizes[2], len, ranks_c, k, c_offset, out_c)
                 },
             )
         },
@@ -323,44 +467,35 @@ fn select_split<T, F>(
 
 /// Selects `ranks` from a part of `len` values split off from `parent_len` values with
 /// `parent_ranks` ranks.
-#[allow(clippy::too_many_arguments)]
-fn select_part<T, F>(
-    segs: Vec<&mut [T]>,
+fn select_part<K: Key>(
+    segs: Vec<&mut [K]>,
     len: usize,
     parent_len: usize,
     ranks: &[usize],
     parent_ranks: usize,
     offset: usize,
-    out: &mut [T],
-    cmp: &F,
-) where
-    T: Copy + Send + Sync,
-    F: Fn(&T, &T) -> Ordering + Sync,
-{
+    out: &mut [K],
+) {
     // A split that shrinks neither the part nor its ranks by a constant factor came from an
     // unlucky sample; finishing that part sequentially keeps the worst case at O(n log k).
     if 4 * len <= 3 * parent_len || 4 * ranks.len() <= 3 * parent_ranks {
-        select_many_rec(segs, len, ranks, offset, out, cmp)
+        select_many_rec(segs, len, ranks, offset, out)
     } else {
-        select_many_gathered(segs, ranks, offset, out, cmp)
+        select_many_gathered(segs, ranks, offset, out)
     }
 }
 
 /// [`select_many_rec`] sequentially, on a copy of `segs` unless there is only one.
-fn select_many_gathered<T, F>(
-    mut segs: Vec<&mut [T]>,
+fn select_many_gathered<K: Key>(
+    mut segs: Vec<&mut [K]>,
     ranks: &[usize],
     offset: usize,
-    out: &mut [T],
-    cmp: &F,
-) where
-    T: Copy,
-    F: Fn(&T, &T) -> Ordering,
-{
+    out: &mut [K],
+) {
     match segs.as_mut_slice() {
         _ if ranks.is_empty() => {},
-        [seg] => select_many_seq(seg, ranks, offset, out, cmp),
-        _ => select_many_seq(&mut segs.concat(), ranks, offset, out, cmp),
+        [seg] => select_many_seq(seg, ranks, offset, out, &K::cmp),
+        _ => select_many_seq(&mut segs.concat(), ranks, offset, out, &K::cmp),
     }
 }
 
@@ -430,20 +565,9 @@ fn read_ranks<T: Copy>(v: &[T], ranks: &[usize], offset: usize, out: &mut [T]) {
     }
 }
 
-/// Two values of the `len` that count in the concatenated `parts` whose ranks a sample estimates
-/// to lie on either side of `rank`, close to it, and whether the sample holds either more than
-/// once; or `None` if too few drawn values count to fill the sample.
-fn sample_bracket<T, F>(
-    parts: &[MaskedSlice<'_, T>],
-    len: usize,
-    rank: usize,
-    seed: usize,
-    cmp: &F,
-) -> Option<(T, T, bool)>
-where
-    T: Copy,
-    F: Fn(&T, &T) -> Ordering,
-{
+/// The keys of up to [`SELECT_SAMPLE_LEN`] values that count, drawn at random from the
+/// concatenated `parts`, with at most [`SELECT_MAX_DRAWS`] draws.
+fn draw_sample<T: SelectKey>(parts: &[MaskedSlice<'_, T>], seed: usize) -> Vec<T::Key> {
     let starts: Vec<usize> = parts
         .iter()
         .scan(0, |end, p| {
@@ -456,7 +580,7 @@ where
         .map_or(0, |s| s + parts[parts.len() - 1].values.len());
     // A fixed seed per part keeps which of several equal values lands at a rank deterministic.
     let mut rng = SmallRng::seed_from_u64(seed as u64);
-    let mut sample: Vec<T> = Vec::with_capacity(SELECT_SAMPLE_LEN);
+    let mut sample = Vec::with_capacity(SELECT_SAMPLE_LEN);
     for _ in 0..SELECT_MAX_DRAWS {
         if sample.len() == SELECT_SAMPLE_LEN {
             break;
@@ -464,13 +588,20 @@ where
         let i = rng.random_range(0..raw_len);
         let p = starts.partition_point(|&s| s <= i) - 1;
         if parts[p].is_valid(i - starts[p]) {
-            sample.push(parts[p].values[i - starts[p]]);
+            sample.push(parts[p].values[i - starts[p]].to_key());
         }
     }
+    sample
+}
+
+/// Two keys of `sample`, drawn from `len` values, whose ranks it estimates to lie on either side
+/// of `rank`, close to it, and whether the sample holds either more than once; or `None` if the
+/// sample is not full.
+fn sample_bracket<K: Key>(mut sample: Vec<K>, len: usize, rank: usize) -> Option<(K, K, bool)> {
     if sample.len() < SELECT_SAMPLE_LEN {
         return None;
     }
-    sample.sort_unstable_by(cmp);
+    sample.sort_unstable();
     let pos = (rank as u64 * SELECT_SAMPLE_LEN as u64 / len as u64) as usize;
     let (lo_pos, hi_pos) = (
         pos.saturating_sub(SELECT_SLACK),
@@ -479,7 +610,7 @@ where
     let repeated = |i: usize| {
         [i.wrapping_sub(1), i + 1]
             .iter()
-            .any(|&j| sample.get(j).is_some_and(|x| cmp(x, &sample[i]).is_eq()))
+            .any(|&j| sample.get(j) == Some(&sample[i]))
     };
     let repeats = repeated(lo_pos) || repeated(hi_pos);
     Some((sample[lo_pos], sample[hi_pos], repeats))
@@ -489,72 +620,70 @@ where
 /// `[lo, lo]` if `lo` equals `hi` (`hi_inclusive`).
 ///
 /// Excluding `hi` keeps a bracket over two distinct values from holding all of them.
-fn below_hi<T, F: Fn(&T, &T) -> Ordering>(x: &T, hi: &T, hi_inclusive: bool, cmp: &F) -> bool {
-    if hi_inclusive {
-        cmp(x, hi).is_le()
-    } else {
-        cmp(x, hi).is_lt()
-    }
+fn below_hi<K: Ord>(x: &K, hi: &K, hi_inclusive: bool) -> bool {
+    if hi_inclusive { x <= hi } else { x < hi }
 }
 
 /// Partitions `v` into its values below the bracket of `lo` and `hi` (see [`below_hi`]), inside
 /// it and above it, and returns their counts.
-fn split_block<T, F>(v: &mut [T], lo: &T, hi: &T, cmp: &F) -> [usize; 3]
-where
-    F: Fn(&T, &T) -> Ordering,
-{
-    let hi_inclusive = cmp(lo, hi).is_eq();
-    let below = partition_block(v, &|x| cmp(x, lo).is_lt());
-    let inside = partition_block(&mut v[below..], &|x| below_hi(x, hi, hi_inclusive, cmp));
+fn split_block<K: Ord>(v: &mut [K], lo: K, hi: K) -> [usize; 3] {
+    let hi_inclusive = lo == hi;
+    let below = partition_block(v, &|x| *x < lo);
+    let inside = partition_block(&mut v[below..], &|x| below_hi(x, &hi, hi_inclusive));
     [below, inside, v.len() - below - inside]
 }
 
-/// Copies the values that count in `block` and lie between `lo` and `hi`, and returns them with
-/// the counts of those below `lo`, equal to `lo`, between, equal to `hi` (unless it equals `lo`),
-/// and of all that count.
+/// Copies the keys of the values that count in `block` and lie between `lo` and `hi` into
+/// `scratch`, and returns the counts of those below `lo`, equal to `lo`, between, equal to `hi`
+/// (unless it equals `lo`), and of all that count.
 ///
 /// Only with `exact` are values equal to `lo` or `hi` counted apart, which costs more work per
 /// value; without it, those equal to `lo` are between and those equal to `hi` above. It is
 /// required if `lo` equals `hi`.
-fn copy_between<T, F>(
+fn copy_between<T: SelectKey>(
     block: &MaskedSlice<'_, T>,
-    lo: &T,
-    hi: &T,
+    lo: T::Key,
+    hi: T::Key,
     exact: bool,
-    scratch: &mut Vec<T>,
-    cmp: &F,
-) -> (Vec<T>, [usize; 5])
-where
-    T: Copy,
-    F: Fn(&T, &T) -> Ordering,
-{
-    let counts = if exact {
-        copy_classified(block, scratch, |x| {
-            let (to_lo, to_hi) = (cmp(x, lo), cmp(x, hi));
-            let eq_lo = to_lo.is_eq();
+    scratch: &mut Vec<T::Key>,
+) -> [usize; 5] {
+    scratch.clear();
+    debug_assert!(exact || lo < hi);
+    let (lo_v, hi_v) = (T::from_key(lo), T::from_key(hi));
+    // Without ties at the bounds, comparing values classifies them as comparing keys does.
+    match (exact, lo_v.has_tied_keys() || hi_v.has_tied_keys()) {
+        (true, false) => copy_classified(block, scratch, |x| {
+            let eq_lo = x.tot_eq(&lo_v);
             [
-                to_lo.is_lt(),
+                x.tot_lt(&lo_v),
                 eq_lo,
-                to_lo.is_gt() & to_hi.is_lt(),
-                to_hi.is_eq() & !eq_lo,
+                x.tot_gt(&lo_v) & x.tot_lt(&hi_v),
+                x.tot_eq(&hi_v) & !eq_lo,
             ]
-        })
-    } else {
-        debug_assert!(cmp(lo, hi).is_lt());
-        copy_classified(block, scratch, |x| {
-            let lt = cmp(x, lo).is_lt();
-            [lt, false, !lt & cmp(x, hi).is_lt(), false]
-        })
-    };
-    (scratch.clone(), counts)
+        }),
+        (false, false) => copy_classified(block, scratch, |x| {
+            let lt = x.tot_lt(&lo_v);
+            [lt, false, !lt & x.tot_lt(&hi_v), false]
+        }),
+        (true, true) => copy_classified(block, scratch, |x| {
+            let x = x.to_key();
+            let eq_lo = x == lo;
+            [x < lo, eq_lo, (x > lo) & (x < hi), (x == hi) & !eq_lo]
+        }),
+        (false, true) => copy_classified(block, scratch, |x| {
+            let x = x.to_key();
+            let lt = x < lo;
+            [lt, false, !lt & (x < hi), false]
+        }),
+    }
 }
 
-/// Copies the values that count in `block` and whose third `classify` flag is set into `scratch`,
-/// and returns how often each flag was set among them, and how many count.
-fn copy_classified<T: Copy>(
+/// Appends the keys of the values that count in `block` and whose third `classify` flag is set to
+/// `scratch`, and returns how often each flag was set among them, and how many count.
+fn copy_classified<T: SelectKey>(
     block: &MaskedSlice<'_, T>,
-    scratch: &mut Vec<T>,
-    classify: impl Fn(&T) -> [bool; 4],
+    scratch: &mut Vec<T::Key>,
+    classify: impl Fn(T) -> [bool; 4],
 ) -> [usize; 5] {
     match block.validity {
         None => copy_where(block.values, scratch, |_, x| {
@@ -569,41 +698,54 @@ fn copy_classified<T: Copy>(
     }
 }
 
-/// A copy of the values that count in `block`.
-fn copy_valid<T: Copy>(block: &MaskedSlice<'_, T>) -> Vec<T> {
-    let mut valid = Vec::new();
+/// Appends the keys of the values that count in `block` to `out`.
+fn copy_valid<T: SelectKey>(block: &MaskedSlice<'_, T>, out: &mut Vec<T::Key>) {
     match block.validity {
-        None => valid.extend_from_slice(block.values),
+        None => out.extend(block.values.iter().map(|x| x.to_key())),
         Some(_) => {
-            copy_where(block.values, &mut valid, |i, _| (block.is_valid(i), []));
+            copy_where(block.values, out, |i, _| (block.is_valid(i), []));
         },
     }
-    valid
 }
 
-/// Copies the values of `v` for which `class(i, x)` says they're kept into `scratch`, and returns
-/// how often each of the flags it also returns was set.
-fn copy_where<T: Copy, const N: usize>(
+/// Appends the keys of the values of `v` for which `class(i, x)` says they're kept to `out`, and
+/// returns how often each of the flags it also returns was set.
+fn copy_where<T: SelectKey, const N: usize>(
     v: &[T],
-    scratch: &mut Vec<T>,
-    class: impl Fn(usize, &T) -> (bool, [bool; N]),
+    out: &mut Vec<T::Key>,
+    class: impl Fn(usize, T) -> (bool, [bool; N]),
 ) -> [usize; N] {
-    scratch.clear();
-    scratch.reserve(v.len());
-    let dst = scratch.spare_capacity_mut().as_mut_ptr();
+    const {
+        assert!(size_of::<T>() <= size_of::<T::Key>());
+        assert!(align_of::<T>() <= align_of::<T::Key>());
+    }
+    out.reserve(v.len());
+    let keys: *mut MaybeUninit<T::Key> = out.spare_capacity_mut().as_mut_ptr();
+    // The kept values are packed at the start of the spare capacity, and only they are turned into
+    // keys afterwards.
+    let values = keys as *mut T;
     let (mut kept, mut counts) = (0, [0; N]);
     for (i, x) in v.iter().enumerate() {
-        let (keep, flags) = class(i, x);
+        let (keep, flags) = class(i, *x);
         // Writing every value and keeping only some avoids branching on them.
-        // SAFETY: `kept <= i < v.len()`, within the reserved capacity.
-        unsafe { (*dst.add(kept)).write(*x) };
+        // SAFETY: `kept <= i < v.len()`, within the reserved capacity, which is aligned for `T`.
+        unsafe { values.add(kept).write(*x) };
         kept += keep as usize;
         for (count, flag) in counts.iter_mut().zip(flags) {
             *count += flag as usize;
         }
     }
-    // SAFETY: the loop wrote the first `kept` values.
-    unsafe { scratch.set_len(kept) };
+    // Going backwards, key `i` only overwrites values at `i` or later, as a key is at least as
+    // large as a value, and those were already read.
+    for i in (0..kept).rev() {
+        // SAFETY: the loop above wrote value `i`, and key `i` is within the reserved capacity.
+        unsafe {
+            keys.add(i)
+                .write(MaybeUninit::new(values.add(i).read().to_key()))
+        };
+    }
+    // SAFETY: the keys after the old length were written.
+    unsafe { out.set_len(out.len() + kept) };
     counts
 }
 
@@ -648,13 +790,15 @@ mod tests {
                 values,
                 validity: None,
             });
-        select_many_by(&chunks, v.len(), ranks, &mut out, Ord::cmp);
+        select_many_by(&chunks, v.len(), ranks, &mut out);
         assert_eq!(out, expected);
 
-        let mut reordered = v.to_vec();
-        out.fill(0);
-        select_many_unstable_by(&mut reordered, ranks, &mut out, Ord::cmp);
+        let mut keys: Vec<u64> = v.iter().map(|x| x.to_key()).collect();
+        let mut out_keys = vec![0; ranks.len()];
+        select_many_unstable(&mut keys, ranks, &mut out_keys);
+        let out: Vec<i64> = out_keys.into_iter().map(i64::from_key).collect();
         assert_eq!(out, expected);
+        let mut reordered: Vec<i64> = keys.into_iter().map(i64::from_key).collect();
         reordered.sort();
         assert_eq!(reordered, sorted);
     }
@@ -687,9 +831,38 @@ mod tests {
             },
         ];
         let mut out = vec![0; ranks.len()];
-        let path = select_many_by_path(&chunks, valid.len(), &ranks, &mut out, Ord::cmp);
+        let path = select_keys(&Blocks::new(&chunks), valid.len(), &ranks, &mut out);
+        let out: Vec<i64> = out.into_iter().map(i64::from_key).collect();
         assert_eq!(out, expected);
         path
+    }
+
+    #[test]
+    fn test_keys_order() {
+        let floats = [
+            f64::NEG_INFINITY,
+            -1.5,
+            -0.0,
+            0.0,
+            f64::MIN_POSITIVE,
+            2.0,
+            f64::INFINITY,
+            f64::NAN,
+        ];
+        let keys: Vec<u64> = floats.iter().map(|x| x.to_key()).collect();
+        assert!(keys.is_sorted_by(|a, b| a < b));
+        assert_eq!((-f64::NAN).to_key(), f64::NAN.to_key());
+        for x in &floats[..floats.len() - 1] {
+            assert_eq!(f64::from_key(x.to_key()).to_bits(), x.to_bits());
+        }
+        assert!(f64::from_key(f64::NAN.to_key()).is_nan());
+
+        let ints = [i8::MIN, -1, 0, 1, i8::MAX];
+        let keys: Vec<u32> = ints.iter().map(|x| x.to_key()).collect();
+        assert!(keys.is_sorted_by(|a, b| a < b));
+        for x in ints {
+            assert_eq!(i8::from_key(x.to_key()), x);
+        }
     }
 
     #[test]

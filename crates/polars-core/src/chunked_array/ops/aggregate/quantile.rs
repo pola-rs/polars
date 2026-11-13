@@ -281,7 +281,7 @@ pub fn order_statistics<T: PolarsNumericType>(
                     },
                 }
             }
-            select_many_by(&chunks, n_valid, ranks, out, TotalOrd::tot_cmp)
+            select_many_by(&chunks, n_valid, ranks, out)
         }),
         sorted => sorted_order_stats(ca, sorted == IsSorted::Descending, ranks, out),
     }
