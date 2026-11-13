@@ -81,8 +81,10 @@ fn dictionary_sample_has_unique_mapping(d: &DictionaryColumn) -> bool {
         return false;
     }
     // A string under two codes is found only if both rows are drawn: with p such pairs per row,
-    // about p * s^2 / n pairs are. 4 * sqrt(n) rows give about 4 at p = 1/4 (the boundary of the
-    // final check) however large the group is.
+    // about p * s^2 / n pairs are. 4 * sqrt(n) rows give about 4 at p = 1/4, which is the density
+    // when the codes are nearly all distinct. Near the boundary (codes C minus unique strings U
+    // below about n / 16) p is lower and the veto may be missed: that costs speed and dictionary
+    // reuse, never values.
     let sample_size = (4.0 * (n as f64).sqrt()).ceil().max(2_048.0) as usize;
     let sample_size = sample_size.min(n);
     // Draws with replacement cost O(s), unlike `index::sample`, which may allocate n entries.
@@ -119,6 +121,20 @@ fn rejects_dictionary(d: &DictionaryColumn, max_dictionary_values: usize) -> boo
         && dictionary_sample_has_unique_mapping(d)
 }
 
+/// Whether `dictionary_array` skips preparing the group: it is large, its dictionary and its
+/// valid rows both exceed the most dictionary values that are worth writing, and
+/// `rejects_dictionary` finds its codes nearly distinct with no duplicate mapping in the sample.
+/// A bounded sample of rows vetoes the rejection if it finds duplicate mappings; it cannot
+/// guarantee finding every duplicate.
+fn preflight_rejects(d: &DictionaryColumn) -> bool {
+    const MIN_CARDINALITY_PREFLIGHT_ROWS: usize = 16_384;
+    let max_dictionary_values = d.len() - d.len().div_ceil(4);
+    d.len() >= MIN_CARDINALITY_PREFLIGHT_ROWS
+        && d.dict().len() > max_dictionary_values
+        && d.len() - d.null_count() > max_dictionary_values
+        && rejects_dictionary(d, max_dictionary_values)
+}
+
 /// A dictionary-coded column as an arrow dictionary array, so that the writer writes its
 /// dictionary as is rather than building one by hashing the values. Only the dictionary values
 /// that rows use are kept. `None` if the column is not dictionary-coded or not written as a flat,
@@ -143,16 +159,8 @@ fn dictionary_array(
 
     // Output row groups can use almost as many codes as rows while retaining a much larger
     // source dictionary. Avoid compacting their codes and building a string lookup table only
-    // to discard the result below. A bounded sample of rows vetoes early rejection if it finds
-    // duplicate mappings; it cannot guarantee finding every duplicate. The ordinary writer still
-    // makes the final encoding decision.
-    const MIN_CARDINALITY_PREFLIGHT_ROWS: usize = 16_384;
-    let max_dictionary_values = d.len() - d.len().div_ceil(4);
-    if d.len() >= MIN_CARDINALITY_PREFLIGHT_ROWS
-        && d.dict().len() > max_dictionary_values
-        && d.len() - d.null_count() > max_dictionary_values
-        && rejects_dictionary(d, max_dictionary_values)
-    {
+    // to discard the result below. The ordinary writer still makes the final encoding decision.
+    if preflight_rejects(d) {
         return None;
     }
 
@@ -656,6 +664,59 @@ mod tests {
         let column =
             DictionaryColumn::try_new("s".into(), SharedDictionary::new(values), codes).unwrap();
         assert!(!rejects_dictionary(&column, 12_288));
+    }
+
+    fn near_distinct_column(
+        n: u32,
+        dict_len: u32,
+        code: impl Fn(u32) -> Option<u32>,
+        string: impl Fn(u32) -> u32,
+    ) -> DictionaryColumn {
+        let values: Vec<_> = (0..dict_len)
+            .map(|i| format!("value-{}", string(i)))
+            .collect();
+        let values = polars_arrow::array::Utf8ViewArray::from_slice_values(&values);
+        let codes = UInt32Chunked::from_iter_options(PlSmallStr::EMPTY, (0..n).map(code));
+        DictionaryColumn::try_new("s".into(), SharedDictionary::new(values), codes).unwrap()
+    }
+
+    #[test]
+    fn dictionary_sink_preflight_predicate_row_boundary() {
+        for (n, expected) in [(16_384, true), (16_383, false)] {
+            let d = near_distinct_column(n, 32_768, Some, |i| i);
+            assert_eq!(preflight_rejects(&d), expected, "{n} rows");
+        }
+    }
+
+    #[test]
+    fn dictionary_sink_preflight_predicate_keeps_few_codes_or_small_dictionary() {
+        let n = 16_384;
+        // Large dictionary, two hot codes.
+        let d = near_distinct_column(n, 262_144, |i| Some(i % 2), |i| i);
+        assert!(!preflight_rejects(&d));
+        // Dictionary no larger than the most worth writing: 12,288 for 16,384 rows.
+        let d = near_distinct_column(n, 12_288, |i| Some(i % 12_288), |i| i);
+        assert!(!preflight_rejects(&d));
+    }
+
+    #[test]
+    fn dictionary_sink_preflight_predicate_keeps_mostly_null_groups() {
+        // 12,288 valid rows, all distinct codes, in a large dictionary: not above the maximum.
+        let d = near_distinct_column(16_384, 32_768, |i| (i % 4 != 0).then_some(i), |i| i);
+        assert!(!preflight_rejects(&d));
+        // Many more nulls.
+        let d = near_distinct_column(16_384, 32_768, |i| (i % 2 == 0).then_some(i), |i| i);
+        assert!(!preflight_rejects(&d));
+    }
+
+    #[test]
+    fn dictionary_sink_preflight_predicate_is_vetoed_by_duplicate_mapping() {
+        // Distinct codes everywhere, but eight distinct strings.
+        let d = near_distinct_column(32_768, 32_768, Some, |i| i % 8);
+        assert!(!preflight_rejects(&d));
+        // The same layout without duplicates qualifies.
+        let d = near_distinct_column(32_768, 32_768, Some, |i| i);
+        assert!(preflight_rejects(&d));
     }
 
     #[test]
