@@ -1647,3 +1647,91 @@ def test_offset_by_boundary_value_succeeds_series_29017() -> None:
     assert result.dt.year().item() == 262142
     assert result.dt.month().item() == 1
     assert result.dt.day().item() == 1
+
+
+def _date_parts(s: pl.Series) -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "year": s.dt.year(),
+            "month": s.dt.month(),
+            "day": s.dt.day(),
+            "ordinal_day": s.dt.ordinal_day(),
+            "is_leap_year": s.dt.is_leap_year(),
+            "days_in_month": s.dt.days_in_month(),
+            "quarter": s.dt.quarter(),
+        }
+    )
+
+
+def _expected_date_parts(dates: list[date]) -> pl.DataFrame:
+    def days_in_month(d: date) -> int:
+        if d.month == 12:
+            return 31
+        return (date(d.year, d.month + 1, 1) - timedelta(days=1)).day
+
+    return pl.DataFrame(
+        {
+            "year": [d.year for d in dates],
+            "month": [d.month for d in dates],
+            "day": [d.day for d in dates],
+            "ordinal_day": [d.timetuple().tm_yday for d in dates],
+            "is_leap_year": [
+                d.year % 4 == 0 and (d.year % 100 != 0 or d.year % 400 == 0)
+                for d in dates
+            ],
+            "days_in_month": [days_in_month(d) for d in dates],
+            "quarter": [(d.month + 2) // 3 for d in dates],
+        },
+        schema=_date_parts(pl.Series([date(2000, 1, 1)])).schema,
+    )
+
+
+@pytest.mark.parametrize("time_unit", [None, "ms", "us", "ns"])
+def test_date_parts_match_python(time_unit: TimeUnit | None) -> None:
+    first, last = (date(1, 1, 1), date(9999, 12, 31))
+    if time_unit == "ns":
+        first, last = (date(1677, 9, 22), date(2262, 4, 10))
+    step = 97 if time_unit != "ns" else 7
+    dates = [
+        first + timedelta(days=i) for i in range(0, (last - first).days + 1, step)
+    ] + [last, date(1969, 12, 31), date(1970, 1, 1), date(2000, 2, 29)]
+
+    if time_unit is None:
+        s = pl.Series(dates, dtype=pl.Date)
+    else:
+        # A time of day before the epoch must not move the date.
+        s = pl.Series(
+            [datetime(d.year, d.month, d.day, 23, 59, 59) for d in dates],
+            dtype=pl.Datetime(time_unit),
+        )
+    assert_frame_equal(_date_parts(s), _expected_date_parts(dates))
+
+
+def test_date_parts_out_of_range() -> None:
+    s = pl.Series(
+        [-(2**31), -95_000_000, 95_000_000, 96_000_000, 2**31 - 1, None, 0],
+        dtype=pl.Int32,
+    ).cast(pl.Date)
+    expected = pl.DataFrame(
+        {
+            "year": [None, -258132, 262071, None, None, None, 1970],
+            "month": [None, 11, 3, None, None, None, 1],
+            "day": [None, 1, 2, None, None, None, 1],
+            "ordinal_day": [None, 306, 61, None, None, None, 1],
+            "is_leap_year": [None, True, False, None, None, None, False],
+            "days_in_month": [None, 30, 31, None, None, None, 31],
+            "quarter": [None, 4, 1, None, None, None, 1],
+        },
+        schema=_date_parts(s).schema,
+    )
+    assert_frame_equal(_date_parts(s), expected)
+
+    t = pl.Series([-(2**63), 2**63 - 1, None, 0], dtype=pl.Int64)
+    for time_unit in ["ms", "us"]:
+        out = _date_parts(t.cast(pl.Datetime(time_unit)))  # type: ignore[arg-type]
+        assert out["year"].to_list() == [None, None, None, 1970]
+        assert out["ordinal_day"].to_list() == [None, None, None, 1]
+    out = _date_parts(t.cast(pl.Datetime("ns")))
+    assert out["year"].to_list() == [1677, 2262, None, 1970]
+    assert out["month"].to_list() == [9, 4, None, 1]
+    assert out["ordinal_day"].to_list() == [264, 101, None, 1]
