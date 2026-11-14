@@ -34,7 +34,6 @@
   <a href="https://docs.pola.rs/api/python/stable/reference/sql/index.html">SQL</a>
   |
   <b>Agents</b>:
-  <a href="https://github.com/polars-inc/skills/tree/main/polars">Skill</a>
   -
   <a href="https://docs.pola.rs/user-guide/misc/polars_llms/">MCP</a>
   |
