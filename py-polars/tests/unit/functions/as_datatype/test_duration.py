@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -209,3 +210,80 @@ def test_duration_from_i128_23050() -> None:
             )
         ),
     )
+
+
+def test_duration_overflow() -> None:
+    # ~300 years cannot be represented with "ns" precision
+    days = 300 * 365
+    df = pl.DataFrame({"days": [days, 1], "weeks": [0, 1]})
+    for d in (days, pl.col("days")):  # (literals are not folded, so also raise)
+        with pytest.raises(
+            InvalidOperationError, match=r"conversion from `i128` to `duration\[ns\]`"
+        ):
+            df.select(pl.duration(days=d, time_unit="ns"))
+
+    result = df.select(pl.duration(days="days", time_unit="us")).to_series()
+    assert result.to_list() == [timedelta(days=days), timedelta(days=1)]
+
+    # the inputs can exceed the "ns" range if the result does not
+    result = df.select(
+        pl.duration(weeks=pl.col("weeks") + 50_000, days=-350_000, time_unit="ns")
+    ).to_series()
+    assert result.to_list() == [timedelta(0), timedelta(days=7)]
+
+    # (unsigned) values outside the i64 range raise
+    with pytest.raises(InvalidOperationError, match=r"conversion from `u64` to `i64`"):
+        pl.select(pl.duration(seconds=pl.lit(pl.Series([2**63], dtype=pl.UInt64))))
+
+
+def test_duration_multiple_chunks_and_null_scalar() -> None:
+    df = pl.concat(
+        [pl.DataFrame({"d": [1, None]}), pl.DataFrame({"d": [3]})], rechunk=False
+    )
+    result = df.select(pl.duration(days="d", hours=1)).to_series()
+    assert result.to_list() == [
+        timedelta(days=1, hours=1),
+        None,
+        timedelta(days=3, hours=1),
+    ]
+
+    result = df.select(
+        pl.duration(days="d", hours=pl.lit(None, dtype=pl.Int64))
+    ).to_series()
+    assert result.to_list() == [None, None, None]
+
+
+def test_duration_mixed_int_float() -> None:
+    # float results become null when non-finite or out of range (however large the
+    # integer inputs are), while integer overflow is computed exactly
+    df = pl.DataFrame(
+        {"f": [1.0, float("nan"), 1.0], "d": [1, 1, 300 * 365], "h": [0, 2_000_000, 0]}
+    )
+    result = df.select(pl.duration(seconds="f", days="d", hours="h", time_unit="ns"))
+    assert result.to_series().to_list() == [timedelta(days=1, seconds=1), None, None]
+
+    result = df.select(pl.duration(seconds="f", days="d", hours="h", time_unit="ms"))
+    assert result.to_series().to_list()[2] == timedelta(days=300 * 365, seconds=1)
+
+
+@pytest.mark.parametrize("time_unit", ["ns", "us", "ms"])
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"nanoseconds": 999_999, "microseconds": 1},
+        {"milliseconds": 2, "microseconds": -1, "nanoseconds": -1_999_999},
+        {"weeks": 1, "days": -3, "hours": 25, "seconds": -1, "nanoseconds": 1_500},
+        {"nanoseconds": 1.5e6, "microseconds": 500.0},
+        {"days": 2, "hours": 1.5, "milliseconds": -0.75, "nanoseconds": 7},
+        {"days": 1e20},  # (out of range: not folded, and null)
+    ],
+)
+def test_duration_literals_match_columns(
+    kwargs: dict[str, float], time_unit: TimeUnit
+) -> None:
+    # constant folding must give the same result as evaluating the expression
+    df = pl.DataFrame({k: [v] for k, v in kwargs.items()})
+    expected = df.select(
+        pl.duration(**{k: pl.col(k) for k in kwargs}, time_unit=time_unit)  # type: ignore[arg-type]
+    ).item()
+    assert pl.select(pl.duration(**kwargs, time_unit=time_unit)).item() == expected  # type: ignore[arg-type]

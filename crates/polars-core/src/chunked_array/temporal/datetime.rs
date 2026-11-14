@@ -108,7 +108,8 @@ impl DatetimeChunked {
         Int64Chunked::from_iter_options(name, vals).into_datetime(tu, None)
     }
 
-    /// Change the underlying [`TimeUnit`]. And update the data accordingly.
+    /// Change the underlying [`TimeUnit`]. And update the data accordingly
+    /// (values that overflow the new time unit become null).
     #[must_use]
     pub fn cast_time_unit(&self, tu: TimeUnit) -> Self {
         let current_unit = self.time_unit();
@@ -117,8 +118,8 @@ impl DatetimeChunked {
 
         match current_unit.rescale_to(tu) {
             TimeUnitRescale::Unchanged => {},
-            TimeUnitRescale::Multiply(k) => out.phys = &self.phys * k,
-            TimeUnitRescale::Divide(k) => out.phys = (&self.phys).wrapping_floor_div_scalar(k),
+            TimeUnitRescale::Multiply(k) => out.phys = (&self.phys).checked_mul_scalar(k),
+            TimeUnitRescale::Divide(k) => out.phys = self.phys.apply_values(|v| v.div_euclid(k)),
         }
         out
     }
