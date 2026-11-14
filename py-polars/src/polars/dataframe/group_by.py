@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from itertools import chain
 from typing import TYPE_CHECKING, Any
 
 from polars import functions as F
@@ -1317,9 +1316,6 @@ class DynamicGroupBy:
 
 def _chain_predicates(
     lhs: Iterable[IntoExpr] | None, rhs: tuple[IntoExpr | Iterable[IntoExpr], ...]
-) -> Iterable[Any]:
-    return (
-        chain(lhs, _parse_inputs_as_iterable(rhs))
-        if lhs is not None
-        else _parse_inputs_as_iterable(rhs)
-    )
+) -> tuple[Any, ...]:
+    parsed = tuple(_parse_inputs_as_iterable(rhs))
+    return (*lhs, *parsed) if lhs is not None else parsed
