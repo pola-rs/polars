@@ -1,19 +1,11 @@
 //! This module implements logic shared between nulls and no_nulls.
 
-use bytemuck::allocation::zeroed_vec;
-#[cfg(feature = "timezones")]
-use chrono_tz::Tz;
 use polars_arrow::array::{ArrayRef, PrimitiveArray};
 use polars_arrow::bitmap::MutableBitmap;
-use polars_arrow::trusted_len::TrustedLen;
 use polars_arrow::types::NativeType;
 use polars_compute::rolling::no_nulls::RollingAggWindowNoNulls;
 use polars_compute::rolling::nulls::RollingAggWindowNulls;
 use polars_core::prelude::*;
-use polars_defs::time::duration::Duration;
-use polars_defs::time::group_by::ClosedWindow;
-
-use crate::windows::group_by::group_by_values_iter;
 
 pub(crate) trait RollingAggWindow<T: NativeType, Out: NativeType> {
     /// # Safety
@@ -22,9 +14,6 @@ pub(crate) trait RollingAggWindow<T: NativeType, Out: NativeType> {
 
     /// Get the aggregate of the current window relative to the value at `idx`.
     fn get_agg(&self, idx: usize) -> Option<Out>;
-
-    /// Returns the length of the underlying input.
-    fn slice_len(&self) -> usize;
 
     fn is_valid(&self, min_samples: usize) -> bool;
 }
@@ -46,10 +35,6 @@ impl<T: NativeType, Out: NativeType, Agg: RollingAggWindowNoNulls<T, Out>> Rolli
         self.0.get_agg(idx)
     }
 
-    fn slice_len(&self) -> usize {
-        self.0.slice_len()
-    }
-
     fn is_valid(&self, _min_samples: usize) -> bool {
         true
     }
@@ -67,143 +52,54 @@ impl<T: NativeType, Out: NativeType, Agg: RollingAggWindowNulls<T, Out>> Rolling
         self.0.get_agg(idx)
     }
 
-    fn slice_len(&self) -> usize {
-        self.0.slice_len()
-    }
-
     fn is_valid(&self, min_samples: usize) -> bool {
         self.0.is_valid(min_samples)
     }
 }
 
-#[expect(clippy::too_many_arguments)]
+/// Aggregates each window `[start, len]`.
 pub(crate) fn rolling_apply_agg<T, Out, Agg>(
     agg_window: &mut Agg,
-    period: Duration,
-    time: &[i64],
-    closed_window: ClosedWindow,
+    windows: &[[IdxSize; 2]],
     min_samples: usize,
-    tu: TimeUnit,
-    tz: Option<&TimeZone>,
-    sorting_indices: Option<&[IdxSize]>,
-) -> PolarsResult<ArrayRef>
+) -> ArrayRef
 where
     T: NativeType,
     Out: NativeType,
     Agg: RollingAggWindow<T, Out>,
 {
-    let offset_iter = match tz {
-        #[cfg(feature = "timezones")]
-        Some(tz) => group_by_values_iter(period, time, closed_window, tu, tz.parse::<Tz>().ok()),
-        _ => group_by_values_iter(period, time, closed_window, tu, None),
-    }?;
-
-    if let Some(indices) = sorting_indices {
-        rolling_apply_agg_window(agg_window, offset_iter, min_samples, indices)
-    } else {
-        rolling_apply_agg_window_sorted(agg_window, offset_iter, min_samples)
-    }
-}
-
-// Use an aggregation window that maintains the state.
-// Fastpath if values were known to already be sorted by time.
-fn rolling_apply_agg_window_sorted<Agg, O, T, Out>(
-    agg_window: &mut Agg,
-    offsets: O,
-    min_samples: usize,
-) -> PolarsResult<ArrayRef>
-where
-    Agg: RollingAggWindow<T, Out>,
-    O: Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen,
-    T: NativeType,
-    Out: NativeType,
-{
-    let out = offsets
-        .enumerate()
-        .map(|(idx, result)| {
-            result.map(|(start, len)| {
-                let end = start + len;
-
-                // On the Python side, if `min_samples` wasn't specified, it is set to
-                // `1`. In that case, this condition is the same as checking
-                // `if start == end`.
-                if len < (min_samples as IdxSize) {
-                    None
-                } else {
-                    // SAFETY: we are in bounds
-                    unsafe { agg_window.update(start as usize, end as usize) }
-                    if agg_window.is_valid(min_samples) {
-                        agg_window.get_agg(idx)
-                    } else {
-                        None
-                    }
-                }
-            })
-        })
-        .collect::<PolarsResult<PrimitiveArray<Out>>>()?;
-
-    Ok(Box::new(out))
-}
-
-// Use an aggregation window that maintains the state
-fn rolling_apply_agg_window<Agg, O, T, Out>(
-    agg_window: &mut Agg,
-    offsets: O,
-    min_samples: usize,
-    sorting_indices: &[IdxSize],
-) -> PolarsResult<ArrayRef>
-where
-    Agg: RollingAggWindow<T, Out>,
-    O: Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen,
-    T: NativeType,
-    Out: NativeType,
-{
-    let mut out = zeroed_vec(agg_window.slice_len());
+    let len = windows.len();
+    let mut out = Vec::with_capacity(len);
     let mut validity: Option<MutableBitmap> = None;
-    offsets.enumerate().try_for_each(|(idx, result)| {
-        let (start, len) = result?;
-        let end = start + len;
-        let out_idx = unsafe { sorting_indices.get_unchecked(idx) };
-
+    for (idx, &[start, window_len]) in windows.iter().enumerate() {
         // On the Python side, if `min_samples` wasn't specified, it is set to
         // `1`. In that case, this condition is the same as checking
         // `if start == end`.
-        if len >= (min_samples as IdxSize) {
-            // SAFETY:
-            // we are in bound
-            unsafe { agg_window.update(start as usize, end as usize) };
-            // idx is the position of the current element in the window,
-            // because the values were sorted by 'by' before.
-            let res = if agg_window.is_valid(min_samples) {
+        let res = if window_len >= min_samples as IdxSize {
+            // SAFETY: the windows are in bounds of the values.
+            unsafe { agg_window.update(start as usize, (start + window_len) as usize) };
+            // idx is the position of the current element in the window, because the values
+            // were sorted by 'by' before.
+            if agg_window.is_valid(min_samples) {
                 agg_window.get_agg(idx)
             } else {
                 None
-            };
-
-            if let Some(res) = res {
-                // SAFETY: `idx` is in bounds because `sorting_indices` was just taken from
-                // `by`, which has already been checked to be the same length as the values.
-                unsafe { *out.get_unchecked_mut(*out_idx as usize) = res };
-            } else {
-                instantiate_bitmap_if_null_and_set_false_at_idx(
-                    &mut validity,
-                    agg_window.slice_len(),
-                    *out_idx as usize,
-                )
             }
         } else {
-            instantiate_bitmap_if_null_and_set_false_at_idx(
-                &mut validity,
-                agg_window.slice_len(),
-                *out_idx as usize,
-            )
+            None
+        };
+
+        match res {
+            Some(res) => out.push(res),
+            None => {
+                out.push(Out::default());
+                instantiate_bitmap_if_null_and_set_false_at_idx(&mut validity, len, idx)
+            },
         }
-        Ok::<(), PolarsError>(())
-    })?;
+    }
 
     let out = PrimitiveArray::<Out>::from_vec(out).with_validity(validity.map(|x| x.into()));
-
-    Ok(Box::new(out))
+    Box::new(out)
 }
 
 // Instantiate a bitmap when the first null value is encountered.
