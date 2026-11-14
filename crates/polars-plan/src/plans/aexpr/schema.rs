@@ -222,20 +222,9 @@ impl AExpr {
                             _ => unreachable!(),
                         };
                         let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
-                        let dt = field[0].dtype();
-                        let supported = match dt {
-                            Null | Unknown(_) | Boolean => true,
-                            #[cfg(feature = "dtype-decimal")]
-                            Decimal(_, _) => true,
-                            dt if dt.is_primitive_numeric() => true,
-                            dt if dt.is_temporal() => allow_temporal,
-                            _ => false,
-                        };
-                        polars_ensure!(
-                            supported,
-                            InvalidOperation: "`{op}` operation not supported for dtype `{dt}`"
-                        );
-                        FieldsMapper::new(&field).moment_dtype()
+                        let mapper = FieldsMapper::new(&field);
+                        mapper.ensure_moment_input(op, allow_temporal)?;
+                        mapper.moment_dtype()
                     },
                     Implode {
                         input,

@@ -596,6 +596,56 @@ def test_quantile_empty_quantile_group_by() -> None:
         df.group_by("g").agg(pl.col("a").quantile(pl.col("q")))
 
 
+@pytest.mark.parametrize("quantile", [float("nan"), -0.1, 1.1, pl.col("q").first()])
+def test_quantile_out_of_range_grouped(quantile: float | pl.Expr) -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 2], "a": [1, 2, 3], "q": [1.5, 0.5, 0.5]})
+    expr = pl.col("a").quantile(quantile, "nearest")
+    for q in [lf.select(expr.over("g")), lf.group_by("g").agg(expr)]:
+        with pytest.raises(ComputeError, match=r"between 0\.0 and 1\.0"):
+            q.collect()
+
+
+@pytest.mark.parametrize("op", ["quantile", "approx_quantile"])
+@pytest.mark.parametrize("quantile", [float("nan"), -0.1, 1.1, [0.5, 1.1]])
+def test_quantile_out_of_range_literal_empty(
+    op: str, quantile: float | list[float]
+) -> None:
+    # Planning checks a literal fraction, so every engine raises without any rows.
+    lf = pl.LazyFrame(schema={"g": pl.Int64, "a": pl.Int64})
+    expr = getattr(pl.col("a"), op)(quantile)
+    for q in [lf.select(expr), lf.select(expr.over("g")), lf.group_by("g").agg(expr)]:
+        with pytest.raises(ComputeError, match=r"between 0\.0 and 1\.0"):
+            q.collect_schema()
+
+
+def test_quantile_bool_fraction_grouped() -> None:
+    # `select` reads a Boolean fraction as 0 or 1, so group contexts do too.
+    lf = pl.LazyFrame({"g": [1, 1, 2], "a": [1, 2, 3]})
+    contexts: list[Callable[[pl.Expr], pl.LazyFrame]] = [
+        lambda e: lf.select(e.over("g")),
+        lambda e: lf.group_by("g", maintain_order=True).agg(e),
+    ]
+    for f in contexts:
+        result = f(pl.col("a").quantile(True)).collect()
+        assert_frame_equal(result, f(pl.col("a").quantile(1.0)).collect())
+
+
+@pytest.mark.parametrize(
+    "values", [pl.Series([True, False, True, None]), pl.Series([None] * 4)]
+)
+def test_quantile_bool_null_like_median(values: pl.Series) -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 1, 2], "b": values})
+    contexts: list[Callable[[pl.Expr], pl.LazyFrame]] = [
+        lambda e: lf.select(e),
+        lambda e: lf.select(e.over("g")),
+        lambda e: lf.group_by("g", maintain_order=True).agg(e),
+    ]
+    for f in contexts:
+        q = f(pl.col("b").quantile(0.5, "linear"))
+        assert_frame_equal(q.collect(), f(pl.col("b").median()).collect())
+        assert q.collect_schema() == q.collect().schema
+
+
 @pytest.mark.parametrize("quantile", [-0.1, 1.1])
 def test_approx_quantile_out_of_range(quantile: float) -> None:
     s = pl.Series("a", [1.0, 2.0, 3.0])

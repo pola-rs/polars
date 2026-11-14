@@ -332,9 +332,8 @@ where
     K: PolarsNumericType,
     <K as datatypes::PolarsNumericType>::Native: num_traits::Float + quantile_filter::SealedRolling,
 {
-    let invalid_quantile = !(0.0..=1.0).contains(&quantile);
-    if invalid_quantile {
-        return Series::full_null(ca.name().clone(), groups.len(), ca.dtype());
+    if check_quantiles(&[quantile]).is_err() {
+        return Series::full_null(ca.name().clone(), groups.len(), &K::get_static_dtype());
     }
     let to_out = |v: f64| -> K::Native { NumCast::from(v).unwrap() };
     match groups {
