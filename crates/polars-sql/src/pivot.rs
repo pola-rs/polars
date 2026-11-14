@@ -10,15 +10,15 @@ use polars_utils::format_pl_smallstr;
 use sqlparser::ast::NullInclusion;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, Expr as SQLExpr, ExprWithAlias, GroupByExpr, Ident,
-    PivotValueSource, Query, SelectItem, SetExpr, Statement, TableAlias, TableFactor, VisitorMut,
+    PivotValueSource, Query, SelectItem, SetExpr, Statement, TableFactor, VisitorMut,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
-use crate::SQLContext;
-use crate::dyn_visit::{self, visit_expressions};
+use crate::context::relation_name;
 use crate::subquery_group_by::is_aggregate_call;
 use crate::subquery_pull_up::has_aggregate;
+use crate::{SQLContext, dyn_visit};
 
 /// The name the input of a `PIVOT` is registered under while it is aggregated.
 const PIVOT_INPUT: &str = "__POLARS_PIVOT_INPUT";
@@ -44,28 +44,29 @@ impl SQLContext {
             !has_aggregate(self, column),
             SQLInterface: "PIVOT does not support an aggregate after FOR, found `{}`", column
         );
-        if let Some(value) = values.iter().find(|value| !is_constant(self, &value.expr)) {
+        if let Some(value) = values.iter().find(|value| !is_constant(&value.expr)) {
             polars_bail!(SQLInterface: "PIVOT values must be constants, found `{}`", value.expr)
         }
-        self.execute_isolated(|ctx| {
-            let (name, mut lf) = ctx.get_table(table)?;
-            let schema = ctx.get_frame_schema(&mut lf)?;
+        // The input is read without its name, so its qualifier is taken off column references.
+        let relation = relation_name(table);
+        let mut input = InputColumns {
+            relation: relation.as_ref().map_or(&[], |name| name.parts()),
+            read: PlHashSet::new(),
+            window: false,
+            query_depth: 0,
+        };
+        let mut column = column.clone();
+        let _ = dyn_visit::visit_mut(&mut column, &mut input);
+        let mut exprs: Vec<SQLExpr> = aggregates.iter().map(|a| a.expr.clone()).collect();
+        for expr in &mut exprs {
+            let _ = dyn_visit::visit_mut(expr, &mut input);
+        }
+        polars_ensure!(!input.window, SQLInterface: "PIVOT does not support window functions");
+        let read = input.read;
 
-            let mut read = PlHashSet::new();
-            for expr in aggregates.iter().map(|a| &a.expr).chain([column]) {
-                let _ = visit_expressions(expr, |e| {
-                    match e {
-                        SQLExpr::Identifier(ident) => {
-                            read.insert(ident.value.clone());
-                        },
-                        SQLExpr::CompoundIdentifier(parts) => {
-                            read.insert(unqualified(parts, &name)[0].value.clone());
-                        },
-                        _ => {},
-                    }
-                    ControlFlow::<()>::Continue(())
-                });
-            }
+        self.execute_isolated(|ctx| {
+            let (_, mut lf) = ctx.get_table(table)?;
+            let schema = ctx.get_frame_schema(&mut lf)?;
             let group_by: Vec<SQLExpr> = schema
                 .iter_names()
                 .filter(|name| !read.contains(name.as_str()))
@@ -84,8 +85,8 @@ impl SQLContext {
                 };
                 let matches =
                     SQLExpr::IsNotDistinctFrom(Box::new(column.clone()), Box::new(value.expr.clone()));
-                for aggregate in aggregates {
-                    let mut expr = aggregate.expr.clone();
+                for (aggregate, expr) in aggregates.iter().zip(&exprs) {
+                    let mut expr = expr.clone();
                     let mut filter = FilterAggregates {
                         ctx,
                         matches: &matches,
@@ -115,16 +116,6 @@ impl SQLContext {
             };
             select.projection = projection;
             select.group_by = GroupByExpr::Expressions(group_by, vec![]);
-            if let TableFactor::Table { alias, .. } = &mut select.from[0].relation
-                && !name.is_empty()
-            {
-                *alias = Some(TableAlias {
-                    explicit: true,
-                    name: Ident::new(name),
-                    columns: vec![],
-                    at: None,
-                });
-            }
             ctx.register_cte(PIVOT_INPUT, lf);
             ctx.execute_query(&query)
         })
@@ -146,22 +137,21 @@ impl SQLContext {
         let SQLExpr::Identifier(value_name) = value else {
             polars_bail!(SQLInterface: "UNPIVOT supports a single value column, found `{}`", value)
         };
-        let mut relation = String::new();
-        let mut lf = self.execute_isolated(|ctx| {
-            let (name, lf) = ctx.get_table(table)?;
-            relation = name;
-            Ok(lf)
-        })?;
+        let mut lf = self.execute_isolated(|ctx| Ok(ctx.get_table(table)?.1))?;
         let schema = self.get_frame_schema(&mut lf)?;
+        let relation = relation_name(table);
+        let relation = relation.as_ref().map_or(&[][..], |name| name.parts());
 
         let mut sources: Vec<PlSmallStr> = Vec::with_capacity(columns.len());
         let mut labels: Vec<PlSmallStr> = Vec::with_capacity(columns.len());
         for column in columns {
             let source = match &column.expr {
                 SQLExpr::Identifier(ident) => Some(ident),
-                SQLExpr::CompoundIdentifier(parts) => match unqualified(parts, &relation) {
-                    [ident] => Some(ident),
-                    _ => None,
+                SQLExpr::CompoundIdentifier(parts) => {
+                    match &parts[qualifier_len(parts, relation)..] {
+                        [ident] => Some(ident),
+                        _ => None,
+                    }
                 },
                 expr => {
                     polars_bail!(SQLInterface: "UNPIVOT expects column names, found `{}`", expr)
@@ -259,37 +249,79 @@ impl VisitorMut for FilterAggregates<'_> {
     }
 }
 
-/// The parts of a column reference after a qualifier that names `relation` (`t` or `ns.t` for
-/// a relation `ns.t`), if it has one.
-fn unqualified<'a>(parts: &'a [Ident], relation: &str) -> &'a [Ident] {
-    if !relation.is_empty() {
-        let relation: Vec<&str> = relation.split('.').collect();
-        for n in (1..=relation.len()).rev() {
-            if parts.len() > n
+/// Takes the qualifier naming the PIVOT input off column references outside of subqueries,
+/// and collects the columns they read.
+struct InputColumns<'a> {
+    relation: &'a [String],
+    read: PlHashSet<String>,
+    window: bool,
+    query_depth: usize,
+}
+
+impl VisitorMut for InputColumns<'_> {
+    type Break = ();
+
+    fn pre_visit_query(&mut self, _query: &mut Query) -> ControlFlow<()> {
+        self.query_depth += 1;
+        ControlFlow::Continue(())
+    }
+
+    fn post_visit_query(&mut self, _query: &mut Query) -> ControlFlow<()> {
+        self.query_depth -= 1;
+        ControlFlow::Continue(())
+    }
+
+    fn pre_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<()> {
+        if self.query_depth > 0 {
+            return ControlFlow::Continue(());
+        }
+        if let SQLExpr::CompoundIdentifier(parts) = expr {
+            let n = qualifier_len(parts, self.relation);
+            if n > 0 {
+                let mut rest = parts.split_off(n);
+                *expr = match rest.len() {
+                    1 => SQLExpr::Identifier(rest.pop().unwrap()),
+                    _ => SQLExpr::CompoundIdentifier(rest),
+                };
+            }
+        }
+        match expr {
+            SQLExpr::Identifier(ident) => {
+                self.read.insert(ident.value.clone());
+            },
+            SQLExpr::CompoundIdentifier(parts) => {
+                self.read.insert(parts[0].value.clone());
+            },
+            SQLExpr::Function(function) if function.over.is_some() => self.window = true,
+            _ => {},
+        }
+        ControlFlow::Continue(())
+    }
+}
+
+/// The number of leading `parts` that name `relation`: `t` or `ns.t` for a relation `ns.t`.
+fn qualifier_len(parts: &[Ident], relation: &[String]) -> usize {
+    (1..=relation.len())
+        .rev()
+        .find(|&n| {
+            parts.len() > n
                 && parts[..n]
                     .iter()
                     .zip(&relation[relation.len() - n..])
                     .all(|(part, name)| part.value.eq_ignore_ascii_case(name))
-            {
-                return &parts[n..];
-            }
-        }
-    }
-    parts
+        })
+        .unwrap_or(0)
 }
 
-/// Whether `expr` reads no column, subquery or aggregate.
-fn is_constant(ctx: &SQLContext, expr: &SQLExpr) -> bool {
-    visit_expressions(expr, |e| match e {
-        SQLExpr::Identifier(_)
-        | SQLExpr::CompoundIdentifier(_)
-        | SQLExpr::Subquery(_)
-        | SQLExpr::Exists { .. }
-        | SQLExpr::InSubquery { .. } => ControlFlow::Break(()),
-        e if is_aggregate_call(ctx, e) => ControlFlow::Break(()),
-        _ => ControlFlow::Continue(()),
-    })
-    .is_continue()
+/// Whether `expr` is a literal, possibly negated or cast.
+fn is_constant(expr: &SQLExpr) -> bool {
+    match expr {
+        SQLExpr::Value(_) | SQLExpr::TypedString(_) | SQLExpr::Interval(_) => true,
+        SQLExpr::UnaryOp { expr, .. } | SQLExpr::Nested(expr) | SQLExpr::Cast { expr, .. } => {
+            is_constant(expr)
+        },
+        _ => false,
+    }
 }
 
 /// The column name a PIVOT value gives: a string as is, else the value as written.

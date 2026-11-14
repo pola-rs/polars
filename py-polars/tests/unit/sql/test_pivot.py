@@ -111,13 +111,19 @@ def test_pivot_names(sales: pl.DataFrame) -> None:
     assert res.columns == ["a", "b", "c"]
 
 
-def test_pivot_qualified_columns() -> None:
-    # the qualifier `t` is not the column `t`
+def test_pivot_column_references() -> None:
     df = pl.DataFrame({"t": ["a", "b"], "k": ["x", "x"], "v": [1, 2]})
-    res = pl.sql(
-        "SELECT * FROM df AS t PIVOT (SUM(t.v) FOR t.k IN ('x')) ORDER BY t", eager=True
-    )
-    assert res.rows() == [("a", 1), ("b", 2)]
+    expected = [("a", 1), ("b", 2)]
+    with pl.SQLContext({"df": df, "ns.t": df}) as ctx:
+        for query in [
+            # the qualifier `t` is not the column `t`
+            "SELECT * FROM df AS t PIVOT (SUM(t.v) FOR t.k IN ('x'))",
+            'SELECT * FROM df AS "a.b" PIVOT (SUM("a.b".v) FOR k IN (\'x\'))',
+            "SELECT * FROM ns.t PIVOT (SUM(ns.t.v) FOR k IN ('x'))",
+            # a subquery's own columns are not read from the input
+            "SELECT * FROM df PIVOT (SUM(v) FOR COALESCE(k, (SELECT MIN(t) FROM df)) IN ('x'))",
+        ]:
+            assert sorted(ctx.execute(query, eager=True).rows()) == expected
 
 
 @pytest.mark.parametrize(
@@ -129,6 +135,12 @@ def test_pivot_qualified_columns() -> None:
         ("PIVOT (SUM(amount) FOR MAX(rep) IN ('a'))", "an aggregate after FOR"),
         ("PIVOT (SUM(amount) FOR quarter IN (q1))", "values must be constants"),
         ("PIVOT (SUM(amount) FOR quarter IN ((SELECT 'q1')))", "must be constants"),
+        (
+            "PIVOT (SUM(amount) FOR quarter IN (COLUMNS('quarter')))",
+            "must be constants",
+        ),
+        ("PIVOT (SUM(amount) FOR quarter IN (RANDOM()))", "must be constants"),
+        ("PIVOT (SUM(SUM(amount)) OVER () FOR quarter IN ('q1'))", "window functions"),
         (
             "PIVOT (SUM(amount) FOR quarter IN ('q1') DEFAULT ON NULL (0))",
             "DEFAULT ON NULL",
