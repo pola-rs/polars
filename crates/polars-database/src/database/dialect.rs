@@ -195,43 +195,25 @@ impl DialectName {
         })
     }
 
-    /// ADBC driver name (manifest slug and URI scheme) for this dialect.
-    pub fn adbc_driver(self) -> Option<&'static str> {
-        Some(match self {
-            Self::Postgresql => "postgresql",
-            Self::Redshift => "redshift",
-            Self::Mysql => "mysql",
-            Self::Mssql => "mssql",
-            Self::Oracle => "oracle",
-            Self::Sqlite => "sqlite",
-            Self::Duckdb => "duckdb",
-            Self::Snowflake => "snowflake",
-            Self::Bigquery => "bigquery",
-            Self::Databricks => "databricks",
-            Self::Clickhouse => "clickhouse",
-            Self::Trino => "trino",
-            Self::Flightsql => "flightsql",
-            Self::Exasol => "exasol",
-            Self::Singlestore => "singlestore",
-            Self::Teradata => "teradata",
-            Self::Generic => return None,
-        })
+    /// Concurrent connections of a scan when `max_connections` is not set.
+    pub fn default_max_connections(self) -> usize {
+        match self {
+            Self::Sqlite | Self::Duckdb => 1,
+            Self::Snowflake
+            | Self::Bigquery
+            | Self::Databricks
+            | Self::Trino
+            | Self::Clickhouse => 8,
+            _ => 4,
+        }
     }
 
-    /// Whether ConnectorX can read this dialect.
-    pub fn connectorx_supported(self) -> bool {
-        matches!(
-            self,
-            Self::Postgresql
-                | Self::Redshift
-                | Self::Mysql
-                | Self::Mssql
-                | Self::Oracle
-                | Self::Sqlite
-                | Self::Bigquery
-                | Self::Clickhouse
-                | Self::Trino
-        )
+    /// ADBC driver name (manifest slug and URI scheme) for this dialect.
+    pub fn adbc_driver(self) -> Option<&'static str> {
+        match self {
+            Self::Generic => None,
+            dialect => Some(dialect.into()),
+        }
     }
 
     /// Whether float comparisons agree with Polars. Polars uses a total order (NaN equals NaN
@@ -404,21 +386,6 @@ impl DialectName {
     /// Whether a `TIME` type (and literal) exists.
     pub fn supports_time(self) -> bool {
         self.temporal_comparisons_exact() && !matches!(self, Self::Oracle)
-    }
-
-    /// Whether `IS [NOT] DISTINCT FROM` is available. Otherwise it is emulated.
-    pub fn supports_is_distinct_from(self) -> bool {
-        matches!(
-            self,
-            Self::Postgresql
-                | Self::Redshift
-                | Self::Duckdb
-                | Self::Snowflake
-                | Self::Bigquery
-                | Self::Databricks
-                | Self::Trino
-                | Self::Sqlite
-        )
     }
 
     /// Whether boolean literals and columns exist. MSSQL uses `BIT`, older Oracle `NUMBER(1)`.

@@ -23,6 +23,8 @@ from importlib.metadata import version as _dist_version
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import parse_qsl, quote, unquote, urlencode, urlsplit
 
+from polars_database import _lib
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
@@ -245,65 +247,9 @@ def credentials(provider: Callable[[], Any]) -> tuple[str | None, str | None] | 
     raise TypeError(msg)
 
 
-# A host, `host:port` or `[v6]:port`
-_HOST = re.compile(r"(?:\[[^\]]+\]|[A-Za-z0-9._%-]+)(?::\d+)?")
-
-
 def _delimiter(s: str) -> int:
     """The index of the first `/`, `?` or `#` (the end of a URI's authority)."""
     return min((i for i in map(s.find, "/?#") if i >= 0), default=len(s))
-
-
-def _later_userinfo_end(
-    rest: str, end: int, *, routing: bool, query_guard: bool
-) -> int | None:
-    """
-    The last `@` after the authority's end that can end a userinfo.
-
-    For `routing`, `host:port/` ends the authority: `localhost:5432/my@db` has no
-    userinfo (a password like `12/x` is then only hidden). With `query_guard`, what
-    lies between mustn't look like a query (`=`, `&`); hiding a password that the
-    authority doesn't already end drops it, as the password may be base64.
-    """
-    fragment = rest[end : end + 1] == "#"
-    if routing and rest[end : end + 1] == "/":
-        _, colon, port = rest[:end].rpartition(":")
-        if colon and port.isdigit():
-            return None
-    at = len(rest)
-    while (at := rest.rfind("@", 0, at)) > end:
-        after = rest[at + 1 :]
-        hosts = after[: _delimiter(after)].split(",")
-        if all(_HOST.fullmatch(h) for h in hosts) and (
-            not query_guard or fragment or not re.search("[=&]", rest[end:at])
-        ):
-            return at
-    return None
-
-
-def _userinfo_end(rest: str, *, secret: bool = False) -> int | None:
-    """
-    The index of the `@` that ends the userinfo of `rest` (a URI after `scheme://`).
-
-    As `userinfo_end` in Rust (`connection.rs`): the last `@` before the first `/`, `?`
-    or `#`. Otherwise a password may hold one of them unencoded (`u:pa/ss@host`): a
-    later `@` followed by a host ends the userinfo, unless what lies between looks like
-    a query (`h:5432/db?x=a@b`). A `#` before a later `@` is in the password: database
-    URIs have no fragments. With `secret`, for hiding the password, a password holding
-    both an `@` and a `/` (`u:p@ss/w@host`) is taken whole.
-    """
-    end = _delimiter(rest)
-    at = rest.rfind("@", 0, end)
-    if at >= 0:
-        later = (
-            _later_userinfo_end(rest, end, routing=False, query_guard=True)
-            if secret
-            else None
-        )
-        return at if later is None else max(at, later)
-    if ":" not in rest[:end] or rest.startswith("["):
-        return None
-    return _later_userinfo_end(rest, end, routing=not secret, query_guard=not secret)
 
 
 def _split_authority(uri: str) -> tuple[str, str | None, str, str, bool] | None:
@@ -311,12 +257,12 @@ def _split_authority(uri: str) -> tuple[str, str | None, str, str, bool] | None:
     `(scheme, userinfo, host[:port], rest, unencoded)` of a `scheme://` URI, or None.
 
     `unencoded` marks a password holding an unencoded `/`, `?` or `#` (see
-    `_userinfo_end`).
+    `userinfo_end` in Rust, `connection.rs`).
     """
     scheme, sep, rest = uri.partition("://")
     if not sep:
         return None
-    at = _userinfo_end(rest)
+    at = _lib.userinfo_end(rest)
     unencoded = at is not None and at > _delimiter(rest)
     userinfo = rest[:at] if at is not None else None
     rest = rest[at + 1 :] if at is not None else rest
@@ -432,23 +378,8 @@ def _file_target(uri: str) -> tuple[str, dict[str, str]]:
     `sqlite:///rel.db` is relative, `sqlite:////abs.db` absolute; `sqlite://` is
     ':memory:'. A `file:` URI (`sqlite:///file:a.db?mode=ro`) is returned whole.
     """
-    rest = re.sub(r"^\w+(\+\w+)?:", "", uri, count=1)
-    if rest.startswith("//"):
-        # an authority (`sqlite://rel.db`, ConnectorX's form) is read as part of the
-        # path
-        rest = rest[2:]
-        rest = rest.removeprefix("/")
-    if rest.startswith("file:"):
-        return rest, {}
-    path, _, query = rest.partition("?")
-    params = dict(parse_qsl(query, keep_blank_values=True))
-    path = unquote(path)
-    if path in ("", ":memory:", "/:memory:"):
-        return ":memory:", params
-    # `sqlite:////C:/path` -> `C:/path`: on Windows, `/C:/path` is a network path
-    if re.match(r"^/[A-Za-z]:[\\/]", path):
-        path = path[1:]
-    return path, params
+    path, params = _lib.file_target(uri)
+    return path, dict(params)
 
 
 def _file_path(uri: str) -> str:
@@ -1042,6 +973,24 @@ def _query_kwargs(module: str, uri: str, port: int | None = None) -> dict[str, A
     return kw
 
 
+# The keyword arguments that drivers name differently for the parts of a URI: `host`,
+# `port`, `user`, `password` and `database` keep their names unless renamed here
+_URI_PART_KWARGS: dict[str, dict[str, str]] = {
+    "pg8000": {},
+    "pymysql": {},
+    "mysql.connector": {},
+    "mariadb": {},
+    "redshift_connector": {},
+    "MySQLdb": {"password": "passwd", "database": "db"},
+    "pymssql": {"host": "server"},
+}
+
+
+def _uri_part_kwargs(parts: dict[str, Any], renames: dict[str, str]) -> dict[str, Any]:
+    """The URI's parts, as the driver's keyword arguments."""
+    return {renames.get(k, k): v for k, v in parts.items() if v is not None}
+
+
 def _connect_uri(module: str, uri: str, options: dict[str, Any]) -> Any:
     """A DB-API connection to a URI through a driver module."""
     mod = importlib.import_module(module)
@@ -1062,24 +1011,8 @@ def _connect_uri(module: str, uri: str, options: dict[str, Any]) -> Any:
 
     # the driver's keyword arguments: the URI's parts, its query, then `connect_options`
     kw = _query_kwargs(module, uri, p["port"])
-    if module in (
-        "pg8000",
-        "pymysql",
-        "mysql.connector",
-        "mariadb",
-        "redshift_connector",
-    ):
-        kw = {**_drop_none(**p), **kw}
-    elif module == "MySQLdb":
-        base = _drop_none(host=p["host"], port=p["port"], user=p["user"])
-        kw = {**base, **_drop_none(passwd=p["password"], db=p["database"]), **kw}
-    elif module == "pymssql":
-        base = _drop_none(server=p["host"], port=p["port"], user=p["user"])
-        kw = {
-            **base,
-            **_drop_none(password=p["password"], database=p["database"]),
-            **kw,
-        }
+    if (renames := _URI_PART_KWARGS.get(module)) is not None:
+        kw = {**_uri_part_kwargs(p, renames), **kw}
     elif module == "oracledb":
         # `/name` is the service name, as is `?service_name=name` (SQLAlchemy's form)
         if "sid" not in kw:
@@ -1102,8 +1035,7 @@ def _connect_uri(module: str, uri: str, options: dict[str, Any]) -> Any:
     elif module == "clickhouse_connect":
         from clickhouse_connect.dbapi import connect  # type: ignore[import-not-found]
 
-        base = _drop_none(host=p["host"], port=p["port"], username=p["user"])
-        base.update(_drop_none(password=p["password"], database=p["database"]))
+        base = _uri_part_kwargs(p, {"user": "username"})
         return connect(**{**base, **kw, **options})
     else:
         msg = (
@@ -1125,97 +1057,25 @@ def _connect_uri(module: str, uri: str, options: dict[str, Any]) -> Any:
     return conn
 
 
-# Connect options holding a secret, by a part of their name (as `is_secret_key` in
-# Rust), compared without `_` and `-`
-_SECRET_OPTIONS = (
-    "password",
-    "passwd",
-    "pwd",
-    "passphrase",
-    "secret",
-    "token",
-    "credential",
-    "apikey",
-    "accesskey",
-    "privatekey",
-    "accountkey",
-    "encryptionkey",
-    "masterkey",
-    # DuckDB's `azure_storage_connection_string` holds an `AccountKey=`
-    "connectionstring",
-)
-
-
-def _is_secret_option(key: str) -> bool:
-    key = key.lower().replace("_", "").replace("-", "")
-    # SQLCipher's `?key=`
-    return key == "key" or any(s in key for s in _SECRET_OPTIONS)
-
-
 def _secrets(
-    target: Any,
+    target: str,
     creds: tuple[str | None, str | None] | None,
     options: dict[str, Any],
 ) -> list[str]:
-    """The secrets of a connection, to scrub from driver errors: longest first."""
-    out: list[str] = []
-    if isinstance(target, str):
-        _scheme, sep, rest = target.partition("://")
-        at = _userinfo_end(rest, secret=True) if sep else None
-        if at is not None and ":" in rest[:at]:
-            password = rest[:at].partition(":")[2]
-            out += [password, unquote(password)]
-            # a driver that misreads the URI echoes a piece (`invalid port "kq7"`)
-            out += [p for p in re.split("[/?#@]", password) if p != password]
-        if sep:
-            query = rest[at + 1 if at is not None else 0 :].partition("?")[2]
-            for k, v in parse_qsl(query):
-                if _is_secret_option(k):
-                    out.append(v)
-                elif k.lower() in ("odbc_connect", "odbc_connect_string"):
-                    # SQLAlchemy's `mssql+pyodbc://?odbc_connect=…%3BPWD%3D…`
-                    odbc = _odbc_secrets(v)
-                    out += odbc + [quote(s, safe="") for s in odbc]
-        else:
-            out += _odbc_secrets(target)
-    if creds and creds[1]:
-        out += [creds[1], quote(creds[1], safe="")]
-    for key, value in options.items():
-        if isinstance(value, str) and _is_secret_option(key):
-            out.append(value)
-    return sorted({s for s in out if s}, key=len, reverse=True)
+    """
+    The secrets of a connection (a URI or an ODBC connection string), to scrub from
+    driver errors: longest first. Found by Rust (`ConnectionSpec::secrets`), which
+    scrubs the messages of its own errors with them.
+    """
+    return _lib.connection_secrets(
+        target,
+        "uri" if "://" in target else "odbc",
+        creds[1] if creds else None,
+        [(k, v) for k, v in options.items() if isinstance(v, str)],
+    )
 
 
-def _odbc_secrets(conn_str: str) -> list[str]:
-    """The secret values of an ODBC connection string: `PWD=…` or `PWD={…;…}`."""
-    out = []
-    for m in re.finditer(
-        r"(?i)(?:^|;)\s*([^=;]*)=\s*(\{(?:[^}]|\}\})*\}|[^;]*)",
-        conn_str,
-    ):
-        if not _is_secret_option(m.group(1)):
-            continue
-        value = m.group(2).strip()
-        out.append(value)
-        if value.startswith("{"):
-            out.append(value[1:-1].replace("}}", "}"))
-    return out
-
-
-# Secrets shorter than this are only replaced where they stand as a value (`:pw@`,
-# `=pw`): as bare substrings they would garble the message
-_MIN_BARE_SECRET_LEN = 4
-
-
-def _scrub(text: str, secrets: list[str]) -> str:
-    for secret in secrets:
-        if len(secret) >= _MIN_BARE_SECRET_LEN:
-            text = text.replace(secret, "***")
-        else:
-            text = re.sub(
-                rf"(?<=[:='\"]){re.escape(secret)}(?=$|[@;&\s'\"}},)])", "***", text
-            )
-    return text
+_scrub = _lib.scrub
 
 
 @contextlib.contextmanager

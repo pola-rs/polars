@@ -10,10 +10,12 @@ use polars_core::prelude::*;
 use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_utils::pl_str::PlSmallStr;
 
-use super::backend::resolve::{detect_dialect, resolve_backend};
+use super::backend::resolve::{detect_dialect, object_info, resolve_backend};
 use super::backend::{BackendKind, DatabaseSession, open_backend, open_session_with_retries};
 use super::catalog::{self, CatalogInfo};
-use super::config::{ColumnMeta, CompiledPartition, CompiledScan, DatabaseScanConfig, TableStats};
+use super::config::{
+    ColumnMeta, CompiledPartition, CompiledScan, DatabaseScanConfig, TableStats, session_setup_runs,
+};
 use super::dialect::DialectName;
 use super::options::{Consistency, DatabaseRelation, DatabaseScanOptions, PartitionSpec};
 use super::partition::{self, Partition};
@@ -278,7 +280,8 @@ pub fn resolve_scan(
     options: Arc<DatabaseScanOptions>,
     user_schema: Option<SchemaRef>,
 ) -> PolarsResult<DatabaseScanConfig> {
-    let dialect = detect_dialect(&options.connection, options.dialect)?;
+    let object = object_info(&options.connection)?;
+    let dialect = detect_dialect(&options.connection, options.dialect, object.as_ref())?;
     // `orders` names `ORDERS` on Oracle, as it would in SQL. A table that exists only as
     // written (created quoted, `"Orders"`) is still found: see the schema discovery below.
     // A user schema means no I/O, so nothing could check the folded name: the name is used as
@@ -290,12 +293,19 @@ pub fn resolve_scan(
         options
     };
     let as_written = (!Arc::ptr_eq(&written, &options)).then_some(written);
-    let backend = resolve_backend(&options.connection, dialect, options.driver.as_deref())?;
+    let backend = resolve_backend(
+        &options.connection,
+        dialect,
+        options.driver.as_deref(),
+        object.as_ref(),
+    )?;
     // The session setup (UTC, …) runs on every session of the scan.
-    let setup_runs = !options.connection.is_live() && backend.kind.has_sessions();
+    let setup_runs = session_setup_runs(&options.connection, &backend.kind);
+    // (the relation stays a query or a table below)
+    let is_query = matches!(options.relation, DatabaseRelation::Query { .. });
     if options.connection.has_query_params() {
         polars_ensure!(
-            matches!(options.relation, DatabaseRelation::Query { .. }),
+            is_query,
             InvalidOperation: "params can only be used with a query source"
         );
         polars_ensure!(
@@ -567,9 +577,7 @@ pub fn resolve_scan(
         // the query is wrapped to read columns through their conversions; also without
         // pushdown, so that the values don't depend on it. (MariaDB would drop the
         // `ORDER BY` of a wrapped query.)
-        if matches!(options.relation, DatabaseRelation::Query { .. })
-            && read_wrapped(&options, &pushdown_disabled, &query)
-        {
+        if is_query && read_wrapped(&options, &pushdown_disabled, &query) {
             let names = discovered.iter_names().cloned().collect::<Vec<_>>();
             let from = quoted_relation(dialect, &options.relation);
             // Python drivers refuse DDL, ConnectorX runs each statement on its own connection.
@@ -609,7 +617,6 @@ pub fn resolve_scan(
             }
         }
         // A declared type fixes the dtype, whichever driver read it.
-        let is_query = matches!(options.relation, DatabaseRelation::Query { .. });
         for (name, dtype) in discovered.iter_mut() {
             let Some(t) = info.declared_type(name) else {
                 continue;
@@ -705,14 +712,12 @@ pub fn resolve_scan(
                     }),
             })
             .collect();
-        if matches!(options.relation, DatabaseRelation::Query { .. })
-            && dialect == DialectName::Oracle
-        {
+        if is_query && dialect == DialectName::Oracle {
             oracle_query_timestamps(&info, &mut columns, &mut discovered);
         }
         // A MySQL query's `FLOAT` (planned by its result type on row drivers, without a
         // declared type) is read exactly too, where the query is wrapped.
-        if matches!(options.relation, DatabaseRelation::Query { .. })
+        if is_query
             && matches!(dialect, DialectName::Mysql | DialectName::Singlestore)
             && read_wrapped(&options, &pushdown_disabled, &query)
         {
@@ -731,8 +736,7 @@ pub fn resolve_scan(
     // decimal columns are read as text too, which needs the query wrapped. On ClickHouse
     // it reads no rows at all from a table with a decimal column: those are text too.
     if matches!(backend.kind, BackendKind::ConnectorX)
-        && (matches!(options.relation, DatabaseRelation::Query { .. })
-            || dialect == DialectName::Clickhouse)
+        && (is_query || dialect == DialectName::Clickhouse)
     {
         let wrapped = read_wrapped(&options, &pushdown_disabled, &query);
         for c in columns.iter_mut().filter(|c| c.dtype.is_decimal()) {
@@ -1206,23 +1210,27 @@ fn ldexp(mut x: f64, mut k: i32) -> f64 {
     x * pow2(k)
 }
 
-/// A SQLite [`SQLITE_TEXT`] column's batch with its reals (`sqlite_real_exact`) written as
-/// Polars writes a Float64, and escaped text unescaped.
-pub(crate) fn decode_sqlite_reals(
-    mut df: DataFrame,
-    config: &DatabaseScanConfig,
-) -> PolarsResult<DataFrame> {
+/// The columns of a SQLite scan that [`decode_sqlite_reals`] decodes.
+pub(crate) fn sqlite_text_columns(config: &DatabaseScanConfig) -> Vec<PlSmallStr> {
     if config.dialect != DialectName::Sqlite {
-        return Ok(df);
+        return vec![];
     }
-    let names: Vec<PlSmallStr> = config
+    config
         .columns
         .iter()
         .filter(|c| c.db_type.as_deref() == Some(SQLITE_TEXT))
         .map(|c| c.name.clone())
-        .collect();
+        .collect()
+}
+
+/// A SQLite [`SQLITE_TEXT`] column's batch with its reals (`sqlite_real_exact`) written as
+/// Polars writes a Float64, and escaped text unescaped.
+pub(crate) fn decode_sqlite_reals(
+    mut df: DataFrame,
+    names: &[PlSmallStr],
+) -> PolarsResult<DataFrame> {
     for name in names {
-        let Ok(col) = df.column(&name) else {
+        let Ok(col) = df.column(name) else {
             continue;
         };
         let Ok(ca) = col.str() else {
@@ -1274,7 +1282,7 @@ pub(crate) fn decode_sqlite_reals(
             .zip(texts)
             .map(|(real, text)| real.or(text))
             .collect();
-        df.replace(&name, decoded.with_name(name.clone()).into_column())?;
+        df.replace(name, decoded.with_name(name.clone()).into_column())?;
     }
     Ok(df)
 }

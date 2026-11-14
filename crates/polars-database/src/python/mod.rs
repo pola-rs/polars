@@ -25,9 +25,13 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyCapsule, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple};
 
+use crate::database::backend::adbc::{file_path_params, file_rest};
 use crate::database::backend::resolve::{candidate_statuses, install_hint, probe};
 use crate::database::backend::{BackendKind, adbc, register_python_bridge};
-use crate::database::connection::{ConnectionSpec, ConnectionTarget, LiveConnection};
+use crate::database::connection::{
+    ConnectionSpec, ConnectionTarget, LiveConnection, percent_encode, scrub_secrets,
+    secret_userinfo_end, userinfo_end as userinfo_end_of,
+};
 use crate::database::sql::register_sql_renderer;
 use crate::database::{
     Consistency, DatabaseRelation, DatabaseScanOptions, DialectName, FetchOptions, PartitionSpec,
@@ -374,6 +378,101 @@ fn find_adbc_driver(py: Python<'_>, name: &str) -> PyResult<Option<(String, Opti
     })
 }
 
+/// The index (in characters) of the `@` that ends the userinfo of `rest`, the part of a URI
+/// after `scheme://`; with `secret`, for hiding the password (see `userinfo_end` and
+/// `secret_userinfo_end`).
+#[pyfunction]
+#[pyo3(signature = (rest, secret=false))]
+fn userinfo_end(rest: &str, secret: bool) -> Option<usize> {
+    let at = if secret {
+        secret_userinfo_end(rest)
+    } else {
+        userinfo_end_of(rest)
+    }?;
+    Some(rest[..at].chars().count())
+}
+
+/// The secrets of a connection (`kind`: `"uri"` or `"odbc"`), for scrubbing driver messages:
+/// see [`ConnectionSpec::secrets`]. `password`: one a credential provider gave. `options`:
+/// the string values of the connect options.
+#[pyfunction]
+#[pyo3(signature = (target, kind, password, options))]
+fn connection_secrets(
+    target: &str,
+    kind: &str,
+    password: Option<&str>,
+    options: Vec<(String, String)>,
+) -> PyResult<Vec<String>> {
+    let target = match kind {
+        "uri" => ConnectionTarget::Uri(target.into()),
+        "odbc" => ConnectionTarget::Odbc(target.into()),
+        k => return Err(value_err(format!("invalid connection kind: {k}"))),
+    };
+    let mut spec = ConnectionSpec::new(target);
+    spec.connect_options = options
+        .into_iter()
+        .map(|(k, v)| (k.into(), v.into()))
+        .collect();
+    let mut out = spec.secrets();
+    if let Some(p) = password.filter(|p| !p.is_empty()) {
+        out.push(p.to_string());
+        out.push(percent_encode(p));
+        out.sort_by_key(|s| std::cmp::Reverse(s.len()));
+        out.dedup();
+    }
+    Ok(out)
+}
+
+/// `message` with every secret (from `connection_secrets`) replaced by `***`.
+#[pyfunction]
+fn scrub(message: &Bound<'_, PyString>, secrets: Vec<String>) -> String {
+    // (lossy: a message may hold surrogates, from a non-UTF-8 name echoed by a driver)
+    scrub_secrets(&message.to_string_lossy(), &secrets)
+}
+
+/// The path and the parameters of a `sqlite:` or `duckdb:` URI (any `scheme[+driver]:`), as
+/// SQLAlchemy reads it. A `file:` URI is returned whole as the path.
+#[pyfunction]
+fn file_target(uri: &str) -> (String, Vec<(String, String)>) {
+    // `^\w+(\+\w+)?:`
+    let word = |s: &str| {
+        let n = s
+            .find(|c: char| !(c.is_alphanumeric() || c == '_'))
+            .unwrap_or(s.len());
+        (n > 0).then_some(n)
+    };
+    let scheme_end = word(uri).and_then(|n| {
+        let after = &uri[n..];
+        let n = match after.strip_prefix('+') {
+            Some(driver) => n + 1 + word(driver)?,
+            None => n,
+        };
+        uri[n..].starts_with(':').then_some(n + 1)
+    });
+    let rest = file_rest(&uri[scheme_end.unwrap_or(0)..]);
+    if rest.starts_with("file:") {
+        return (rest.to_string(), vec![]);
+    }
+    let (path, params) = file_path_params(rest);
+    (path, params)
+}
+
+/// The ADBC database options of a URI for a driver loaded through the generic driver manager,
+/// as `scan_database` passes them; `None` if the driver takes the URI as it is.
+#[pyfunction]
+fn adbc_db_kwargs(driver: &str, uri: &str) -> Option<Vec<(String, String)>> {
+    adbc::driver_db_kwargs(driver, uri)
+}
+
+/// The default `max_connections` of a scan for a dialect named as SQLAlchemy names it.
+#[pyfunction]
+fn default_max_connections(dialect: &str) -> usize {
+    DialectName::all()
+        .find(|d| dialect.starts_with(<&str>::from(*d)))
+        .unwrap_or(DialectName::Generic)
+        .default_max_connections()
+}
+
 /// The module name must match `module-name` of the wheel (see `pyproject.toml`).
 /// Registered with `atexit` on import: waits a moment for queries still running (a
 /// `collect_batches()` iterator dropped just before exit stops its query only when the query
@@ -418,6 +517,12 @@ fn _lib(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(driver_statuses, m)?)?;
     m.add_function(wrap_pyfunction!(dialect_from_scheme, m)?)?;
     m.add_function(wrap_pyfunction!(find_adbc_driver, m)?)?;
+    m.add_function(wrap_pyfunction!(userinfo_end, m)?)?;
+    m.add_function(wrap_pyfunction!(connection_secrets, m)?)?;
+    m.add_function(wrap_pyfunction!(scrub, m)?)?;
+    m.add_function(wrap_pyfunction!(file_target, m)?)?;
+    m.add_function(wrap_pyfunction!(adbc_db_kwargs, m)?)?;
+    m.add_function(wrap_pyfunction!(default_max_connections, m)?)?;
     m.add_function(wrap_pyfunction!(_at_exit, m)?)?;
     Ok(())
 }

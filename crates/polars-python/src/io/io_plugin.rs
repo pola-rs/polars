@@ -18,11 +18,14 @@ use crate::error::PyPolarsErr;
 use crate::lazyframe::PyLazyFrame;
 use crate::prelude::*;
 
+/// Plugin packages whose install command isn't `pip install <package with '-'>`.
+const INSTALL_HINTS: &[(&str, &str)] = &[("polars_database", "pip install 'polars[database]'")];
+
 /// The pip requirement that installs a plugin package.
 fn install_hint(package: &str) -> String {
-    match package {
-        "polars_database" => "pip install 'polars[database]'".to_string(),
-        p => format!("pip install {}", p.replace('_', "-")),
+    match INSTALL_HINTS.iter().find(|(p, _)| *p == package) {
+        Some((_, hint)) => hint.to_string(),
+        None => format!("pip install {}", package.replace('_', "-")),
     }
 }
 

@@ -23,8 +23,8 @@ use super::{
     PythonDriverBridge,
 };
 use crate::database::connection::{
-    ConnectionSpec, ConnectionTarget, password_secrets, percent_decode, scrub_secrets,
-    secret_userinfo_end, userinfo_end,
+    ConnectionSpec, ConnectionTarget, password_secrets, percent_decode, percent_encode,
+    scrub_secrets, secret_userinfo_end, userinfo_end,
 };
 use crate::database::dialect::DialectName;
 
@@ -350,17 +350,27 @@ fn clickhouse_http_uri(uri: &str) -> Option<ClickhouseHttp> {
 /// Python backends, `_file_target`) read it: `sqlite:///rel.db` → `rel.db`,
 /// `sqlite:////abs.db` → `/abs.db`, `sqlite://` → `:memory:`. `None` for a `file:` URI after
 /// the scheme, or a string without the scheme, which pass through.
-fn file_target<'a>(uri: &'a str, schemes: &[&str]) -> Option<(String, Vec<(&'a str, String)>)> {
+fn file_target(uri: &str, schemes: &[&str]) -> Option<(String, Vec<(String, String)>)> {
     let lower = uri.to_ascii_lowercase();
     let prefix = schemes.iter().find(|p| lower.starts_with(*p))?;
-    let mut rest = &uri[prefix.len()..];
-    if let Some(r) = rest.strip_prefix("//") {
-        // An authority (`sqlite://rel.db`, ConnectorX's form) is read as part of the path.
-        rest = r.strip_prefix('/').unwrap_or(r);
-    }
+    let rest = file_rest(&uri[prefix.len()..]);
     if rest.starts_with("file:") {
         return None;
     }
+    Some(file_path_params(rest))
+}
+
+/// What follows a file URI's scheme, without the `//` (and the `/` after it) that starts an
+/// authority: `sqlite://rel.db`, ConnectorX's form, is read as part of the path.
+pub(crate) fn file_rest(rest: &str) -> &str {
+    match rest.strip_prefix("//") {
+        Some(r) => r.strip_prefix('/').unwrap_or(r),
+        None => rest,
+    }
+}
+
+/// The path and the parameters of a [`file_rest`] that isn't a `file:` URI.
+pub(crate) fn file_path_params(rest: &str) -> (String, Vec<(String, String)>) {
     let (path, query) = rest.split_once('?').unwrap_or((rest, ""));
     let mut path = match percent_decode(path) {
         p if matches!(p.as_str(), "" | ":memory:" | "/:memory:") => ":memory:".to_string(),
@@ -381,10 +391,13 @@ fn file_target<'a>(uri: &'a str, schemes: &[&str]) -> Option<(String, Vec<(&'a s
         .filter(|kv| !kv.is_empty())
         .map(|kv| {
             let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
-            (k, percent_decode(&v.replace('+', " ")))
+            (
+                percent_decode(&k.replace('+', " ")),
+                percent_decode(&v.replace('+', " ")),
+            )
         })
         .collect();
-    Some((path, params))
+    (path, params)
 }
 
 /// SQLite URI filename parameters: they make the path a `file:` URI.
@@ -417,12 +430,12 @@ fn sqlite_path(uri: &str) -> PolarsResult<String> {
     let mut file_params = vec![];
     let mut unknown = vec![];
     for (k, v) in &params {
-        if SQLITE_URI_PARAMS.contains(k) {
+        if SQLITE_URI_PARAMS.contains(&k.as_str()) {
             file_params.push(format!("{k}={}", percent_encode(v)));
-        } else if !matches!(*k, "uri" | "check_same_thread") {
+        } else if !matches!(k.as_str(), "uri" | "check_same_thread") {
             // `uri=true` is implied by the file parameters (SQLAlchemy's form); the thread
             // check is a Python `sqlite3` option.
-            unknown.push(*k);
+            unknown.push(k.as_str());
         }
     }
     polars_ensure!(
@@ -453,6 +466,11 @@ fn duckdb_options(uri: &str) -> Vec<(String, String)> {
     let Some((path, params)) = file_target(uri, &["duckdb:"]) else {
         return vec![("path".into(), uri.to_string())];
     };
+    duckdb_settings(path, params)
+}
+
+/// `path` and the URI parameters as DuckDB settings.
+fn duckdb_settings(path: String, params: Vec<(String, String)>) -> Vec<(String, String)> {
     let mut out = vec![("path".to_string(), path)];
     for (k, v) in params {
         if k == "read_only" {
@@ -469,6 +487,27 @@ fn duckdb_options(uri: &str) -> Vec<(String, String)> {
         }
     }
     out
+}
+
+/// The database options a URI gives for a driver that the generic driver manager loads (see
+/// `read_database`): DuckDB's `path` and settings, ClickHouse's HTTP endpoint and credentials.
+/// `None` for the others, which take the URI as it is. DuckDB's `uri` is what follows the
+/// scheme (`read_database` strips it).
+pub fn driver_db_kwargs(driver: &str, uri: &str) -> Option<Vec<(String, String)>> {
+    match driver {
+        "duckdb" => {
+            let (path, params) = file_path_params(file_rest(uri));
+            Some(duckdb_settings(path, params))
+        },
+        "clickhouse" => {
+            let http = clickhouse_http_uri(uri)?;
+            let mut out = vec![("uri".to_string(), http.uri)];
+            out.extend(http.user.map(|u| ("username".to_string(), u)));
+            out.extend(http.password.map(|p| ("password".to_string(), p)));
+            Some(out)
+        },
+        _ => None,
+    }
 }
 
 /// `username` / `password` database options from the connection's credential provider.
@@ -559,18 +598,6 @@ fn encoded_userinfo(uri: &str) -> Option<String> {
     }
     let (_, password) = rest[..at].split_once(':')?;
     with_userinfo(uri, None, Some(&percent_decode(password)))
-}
-
-fn percent_encode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for b in s.bytes() {
-        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~') {
-            out.push(b as char);
-        } else {
-            out.push_str(&format!("%{b:02X}"));
-        }
-    }
-    out
 }
 
 /// The statement option that bounds the batch size, for drivers known to have one. A hint:
@@ -801,6 +828,18 @@ fn batch_to_df(array: Box<dyn Array>) -> PolarsResult<DataFrame> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn query_keys_are_decoded() {
+        let (_, params) = file_path_params("a.db?read%5Fonly=1&x+y=a%20b");
+        assert_eq!(
+            params,
+            vec![
+                ("read_only".to_string(), "1".to_string()),
+                ("x y".to_string(), "a b".to_string())
+            ]
+        );
+    }
 
     #[test]
     fn redacts_credentials() {

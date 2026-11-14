@@ -47,6 +47,7 @@ from tests.unit.io.database._scan_corpus import (
     CorpusPlans,
     cell_predicates,
     check_corpus,
+    check_filter_ids,
     corpus_for_mode,
     expected_ids,
     ids,
@@ -662,14 +663,6 @@ def _execute(name: str, statements: list[str]) -> None:
         conn.close()
 
 
-def _check_filters(lf: pl.LazyFrame, predicates: list[pl.Expr]) -> None:
-    table = lf.collect()
-    for p in predicates:
-        got = lf.filter(p).collect().sort("id")
-        expected = table.filter(p).sort("id")
-        assert got["id"].to_list() == expected["id"].to_list(), str(p)
-
-
 @needs_postgres
 def test_postgres_converted_and_padded_columns() -> None:
     from decimal import Decimal
@@ -692,7 +685,7 @@ def test_postgres_converted_and_padded_columns() -> None:
     )
     for driver in ["adbc", "psycopg"]:
         lf = _scan("postgres17", driver, "review_pg")
-        _check_filters(
+        check_filter_ids(
             lf,
             [
                 pl.col("u") == "A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11",
@@ -829,7 +822,7 @@ def test_mysql_far_date_literals() -> None:
     lf = _scan("mysql", "adbc", "edge")
     far = pl.lit(2_933_897).cast(pl.Date)
     old = pl.lit(date(1, 6, 1))
-    _check_filters(lf, [pl.col("d") < far, pl.col("d") != far, pl.col("d") > old])
+    check_filter_ids(lf, [pl.col("d") < far, pl.col("d") != far, pl.col("d") > old])
 
 
 @pytest.mark.skipif(SERVERS["oracle"].uri is None, reason="no Oracle URI")
@@ -847,7 +840,7 @@ def test_oracle_char_and_float_columns() -> None:
         ],
     )
     lf = _scan("oracle", "oracledb", "REVIEW_ORA")
-    _check_filters(
+    check_filter_ids(
         lf,
         [
             pl.col("CH") == "a",
@@ -881,7 +874,7 @@ def test_clickhouse_datetime_and_enum(driver: str) -> None:
     df = lf.collect().sort("id")
     assert df["dt"][0] == datetime(2020, 1, 2, 3, 4, 5, tzinfo=UTC)
     assert df["e"].to_list() == ["a", "b"]
-    _check_filters(
+    check_filter_ids(
         lf,
         [
             pl.col("dt") > datetime(2020, 6, 1, tzinfo=UTC),
@@ -1204,11 +1197,11 @@ def test_mysql_year_literals(name: str) -> None:
         pl.col("y").is_between(100, 1950),
         pl.col("y").is_in([0, 1970]),
     ]
-    _check_filters(_scan(name, "pymysql", "review_year"), predicates)
+    check_filter_ids(_scan(name, "pymysql", "review_year"), predicates)
     # a query's columns read by a row driver have no type: any integer may be a YEAR,
     # so only literals 1-99 are kept from the database
     query = _scan(name, "pymysql", "SELECT id, y FROM review_year")
-    _check_filters(query, predicates)
+    check_filter_ids(query, predicates)
     assert "filters 1/1 (1 exact)" in query.filter(pl.col("id") == 500).explain()
     assert "filters 0/1" in query.filter(pl.col("id") == 50).explain()
 
@@ -1247,7 +1240,7 @@ def test_postgres_literals_without_standard_conforming_strings(driver: str) -> N
         uri = f"{POSTGRES}?options={quote(off)}"
         lf = pl.scan_database(table, uri, driver=driver)
     try:
-        _check_filters(
+        check_filter_ids(
             lf,
             [
                 pl.col("s") == "a\\b",
@@ -1318,7 +1311,7 @@ def test_oracle_linguistic_session(connection: str) -> None:
     # a live session keeps its settings; a factory's sessions get the setup
     source = linguistic() if connection == "live" else linguistic
     lf = pl.scan_database(table.upper(), source)
-    _check_filters(
+    check_filter_ids(
         lf,
         [
             pl.col("S") == "abc",
@@ -1409,7 +1402,7 @@ def test_mysql_unsigned_decimals_and_zero_dates(driver: str) -> None:
         ], kwargs
         ids = ordered.select("id").collect()["id"].to_list()
         assert ids[2:] == [3, 4], kwargs
-    _check_filters(
+    check_filter_ids(
         lf,
         [
             pl.col("d").is_null(),
@@ -1496,7 +1489,7 @@ def test_postgres_query_columns_compare_by_their_type(driver: str) -> None:
             pl.col("u") < "b",
             pl.col("ip") == "10.0.0.1/32",
         ]
-    _check_filters(lf, predicates)
+    check_filter_ids(lf, predicates)
     # text and numbers are still compared in the database
     for p in [pl.col("v") == "x", pl.col("n") > 1]:
         assert "filters 1/1 (1 exact)" in lf.filter(p).explain(), str(p)
@@ -1521,7 +1514,7 @@ def test_oracle_integer_is_a_38_digit_integer() -> None:
     assert lf.collect_schema()["S"] == pl.Decimal(38, 2)
     df = lf.collect().sort("id")
     assert df["I"].to_list() == [Decimal(12345678901234567890123456789012345), 7]
-    _check_filters(lf, [pl.col("I") > 7, pl.col("S") == Decimal("1.25")])
+    check_filter_ids(lf, [pl.col("I") > 7, pl.col("S") == Decimal("1.25")])
 
 
 @pytest.mark.skipif(SERVERS["clickhouse"].uri is None, reason="no ClickHouse URI")
@@ -1536,7 +1529,7 @@ def test_clickhouse_query_columns_compare_by_their_type(driver: str) -> None:
     )
     if lf.collect_schema()["e"] == pl.String:
         # the database casts the literal to the enum
-        _check_filters(lf, [pl.col("e") == "nope", pl.col("e") > "a"])
+        check_filter_ids(lf, [pl.col("e") == "nope", pl.col("e") > "a"])
         assert "filters 0/1" in lf.filter(pl.col("e") == "b").explain()
     assert "filters 1/1 (1 exact)" in lf.filter(pl.col("s") == "1").explain()
 
@@ -2103,7 +2096,7 @@ def test_mysql_query_year_and_json_columns(name: str, driver: str) -> None:
         if "j" in lf.collect_schema():
             predicates += [pl.col("j") == '{"a": 1}', pl.col("j") == "x"]
             predicates += [pl.col("s") == "x"]
-        _check_filters(lf, predicates)
+        check_filter_ids(lf, predicates)
 
 
 @pytest.mark.skipif(SERVERS["oracle"].uri is None, reason="no Oracle URI")
@@ -2127,7 +2120,7 @@ def test_oracle_query_types_and_collations() -> None:
     )
     lf = _scan("oracle", "oracledb", 'SELECT "id", ts, s, cl FROM review_ora_q')
     utc = datetime(2024, 1, 1, 7)
-    _check_filters(
+    check_filter_ids(
         lf,
         [
             pl.col("TS") == pl.lit(utc).dt.replace_time_zone("UTC"),
@@ -2187,7 +2180,7 @@ def test_mysql_nul_literal_without_backslash_escapes() -> None:
                 "SET SESSION sql_mode = "
                 "CONCAT(@@SESSION.sql_mode, ',NO_BACKSLASH_ESCAPES')"
             )
-        _check_filters(
+        check_filter_ids(
             pl.scan_database("review_nul", conn),
             [
                 pl.col("s") == "a\0b",
@@ -2221,7 +2214,7 @@ def test_postgres_domains_compare_as_their_base_type(driver: str) -> None:
     )
     for source in [table, f"SELECT * FROM {table}"]:
         lf = _scan("postgres17", driver, source)
-        _check_filters(lf, [pl.col("a") == "x", pl.col("b") == "y"])
+        check_filter_ids(lf, [pl.col("a") == "x", pl.col("b") == "y"])
         # a domain over a domain over varchar: compared as text
         assert "(1 exact)" in lf.filter(pl.col("b") == "y").explain(), source
 
@@ -2446,7 +2439,7 @@ def test_mysql_float_with_digits_and_integer_booleans(name: str) -> None:
                     [1234.567, 0.1, None, 99.9995, 1.5], dtype=pl.Float32
                 )
                 assert f.to_list() == stored.to_list()
-                _check_filters(
+                check_filter_ids(
                     lf,
                     [
                         pl.col("f2").is_in([1.234, 3.3]),
@@ -2466,7 +2459,7 @@ def test_mysql_float_with_digits_and_integer_booleans(name: str) -> None:
                     "f": pl.Float32,
                 }
                 lf = _scan(name, driver, source, schema=schema)
-                _check_filters(
+                check_filter_ids(
                     lf,
                     [
                         pl.col("b"),
@@ -3305,7 +3298,7 @@ def test_mysql_time_is_a_duration(name: str) -> None:
                 assert lf.collect_schema()["t"] == pl.Duration("us")
                 assert df["t"].to_list() == expected, (driver, source)
                 assert df["t0"][1] == timedelta(hours=838, minutes=59, seconds=59)
-                _check_filters(
+                check_filter_ids(
                     lf,
                     [
                         pl.col("t") > timedelta(hours=1),
@@ -3790,7 +3783,7 @@ def test_clickhouse_negated_filters_on_nullable_columns() -> None:
     )
     try:
         lf = _scan("clickhouse", "clickhouse_connect", table)
-        _check_filters(
+        check_filter_ids(
             lf,
             [
                 ~pl.col("x").is_in([1]),
@@ -3835,7 +3828,7 @@ def test_clickhouse_backslashes_in_names() -> None:
             df = lf.collect().sort("id")
             assert df["x\\"].to_list() == [10, 20]
             assert df["s\\"].to_list() == ["a", "b"]
-            _check_filters(lf, [pl.col("x\\") > 10, pl.col("s\\") == "a"])
+            check_filter_ids(lf, [pl.col("x\\") > 10, pl.col("s\\") == "a"])
     finally:
         _execute("clickhouse", [f"DROP TABLE IF EXISTS {table}"])
 
@@ -3891,7 +3884,7 @@ def test_postgres_user_float_schema_over_real_and_numeric(driver: str) -> None:
     )
     schema = {"id": pl.Int32, "r": pl.Float64, "n": pl.Float64, "d": pl.Float64}
     lf = _scan("postgres17", driver, table, schema=schema)
-    _check_filters(
+    check_filter_ids(
         lf,
         [
             pl.col("r") == 0.1,
@@ -3961,7 +3954,7 @@ def test_oracle_like_under_a_collation_with_contractions() -> None:
             "ALTER SESSION SET NLS_COMP = LINGUISTIC NLS_SORT = XCZECH"
         )
         lf = pl.scan_database("R7_CZECH", conn)
-        _check_filters(
+        check_filter_ids(
             lf,
             [
                 pl.col("S").str.starts_with("c"),
@@ -4112,7 +4105,7 @@ def test_postgres_c_collation_in_another_server_encoding() -> None:
             )
         for source in ["t", "SELECT id, s FROM t"]:
             lf = pl.scan_database(source, uri, driver="psycopg")
-            _check_filters(
+            check_filter_ids(
                 lf,
                 [
                     pl.col("s") > "А",  # noqa: RUF001
@@ -4179,7 +4172,7 @@ def test_mysql_query_decimal_literals_finer_than_the_scale(name: str) -> None:
         ],
     )
     lf = _scan(name, "pymysql", "SELECT id, x FROM r9_dec")
-    _check_filters(
+    check_filter_ids(
         lf,
         [
             pl.col("x") < Decimal("-0.005"),
@@ -4509,7 +4502,7 @@ def test_mysql_indexed_columns_round_literals(server: str) -> None:
         pl.col("s").str.starts_with("a"),
         pl.col("s").str.ends_with("b"),
     ]
-    _check_filters(_scan(server, "pymysql", "r11_indexed"), predicates)
+    check_filter_ids(_scan(server, "pymysql", "r11_indexed"), predicates)
 
 
 @pytest.mark.parametrize("server", ["mysql", "mariadb"])
@@ -4537,7 +4530,7 @@ def test_mysql_high_not_precedence(server: str) -> None:
             "CONCAT(@@sql_mode, ',HIGH_NOT_PRECEDENCE')",
         )
 
-    _check_filters(
+    check_filter_ids(
         pl.scan_database("r11_not_prec", connect),
         [
             pl.col("n").is_not_null(),
@@ -4569,7 +4562,7 @@ def test_postgres_extra_float_digits(driver: str) -> None:
     lf = pl.scan_database("r11_float_digits", uri, driver=driver)
     out = lf.collect().sort("id")
     assert out["d"].to_list() == [0.1 + 0.2, 0.3]
-    _check_filters(lf, [pl.col("d") == 0.1 + 0.2, pl.col("d") == 0.3])
+    check_filter_ids(lf, [pl.col("d") == 0.1 + 0.2, pl.col("d") == 0.3])
 
 
 @needs_clickhouse
@@ -4588,7 +4581,7 @@ def test_clickhouse_like_patterns_with_nul() -> None:
     )
     try:
         lf = _scan("clickhouse", "clickhouse_connect", table)
-        _check_filters(
+        check_filter_ids(
             lf,
             [
                 pl.col("s").str.ends_with("\x00"),

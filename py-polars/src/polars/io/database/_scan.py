@@ -172,18 +172,6 @@ def _engine_pool_capacity(engine: Any) -> int | None:
     return None
 
 
-def _default_max_connections(dialect: str) -> int:
-    """The plugin's default `max_connections` for a SQLAlchemy dialect name."""
-    # as `DatabaseScanConfig::max_connections` (polars-database)
-    if dialect in ("sqlite", "duckdb"):
-        return 1
-    if dialect.startswith(
-        ("snowflake", "bigquery", "databricks", "trino", "clickhouse")
-    ):
-        return 8
-    return 4
-
-
 def _string_options(options: Mapping[str, Any] | None) -> list[tuple[str, str]]:
     return [(str(k), str(v)) for k, v in (options or {}).items()]
 
@@ -607,7 +595,7 @@ def scan_database(
         # an Engine: no more partitions read at once than its pool has connections
         if max_connections is None:
             engine_dialect = getattr(getattr(engine, "dialect", None), "name", "")
-            max_connections = _default_max_connections(
+            max_connections = _plugin().default_max_connections(
                 str(dialect or engine_dialect).lower()
             )
         max_connections = min(max_connections, capacity)

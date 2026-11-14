@@ -255,30 +255,13 @@ mod _serde {
 
     use super::*;
 
-    #[derive(Serialize, Deserialize)]
-    struct Serialized {
-        package: PlSmallStr,
-        #[serde(with = "bytes")]
-        bytes: Vec<u8>,
-    }
-
-    mod bytes {
-        use serde::{Deserializer, Serializer};
-
-        pub fn serialize<S: Serializer>(v: &[u8], s: S) -> Result<S::Ok, S::Error> {
-            s.serialize_bytes(v)
-        }
-
-        pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
-            polars_utils::pl_serialize::deserialize_map_bytes(d, |b| b.into_owned())
-        }
-    }
+    use polars_utils::pl_serialize::PackageBytes;
 
     impl Serialize for FfiDslResolver {
         fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
             use serde::ser::Error;
             let bytes = self.serialize_bytes().map_err(S::Error::custom)?;
-            Serialized {
+            PackageBytes {
                 package: self.package.clone(),
                 bytes: bytes.to_vec(),
             }
@@ -289,7 +272,7 @@ mod _serde {
     impl<'de> Deserialize<'de> for FfiDslResolver {
         fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
             use serde::de::Error;
-            let s = Serialized::deserialize(deserializer)?;
+            let s = PackageBytes::deserialize(deserializer)?;
             Self::deserialize_bytes(s.package, &s.bytes).map_err(D::Error::custom)
         }
     }

@@ -199,18 +199,26 @@ impl ConnectionSpec {
                 if let Some(range) = uri_password_range(uri) {
                     out.extend(password_secrets(&uri[range]));
                 }
-                if let Some((_, query)) = uri.split_once('?') {
+                // The query starts after the userinfo: an unencoded `?` in the password isn't it.
+                let after_scheme = uri.find("://").map_or(0, |i| i + 3);
+                let rest = &uri[after_scheme..];
+                let userinfo = secret_userinfo_end(rest).map_or(0, |at| at + 1);
+                if let Some((_, query)) = rest[userinfo..].split_once('?') {
                     for kv in query.split(['&', '#']) {
                         let Some((k, v)) = kv.split_once('=') else {
                             continue;
                         };
+                        let k = percent_decode(&k.replace('+', " "));
+                        let k = k.as_str();
                         if is_secret_key(k) {
                             out.push(v.to_string());
+                            // (a query writes a space as `+`)
+                            out.push(v.replace('+', " "));
                         } else if k.eq_ignore_ascii_case("odbc_connect")
                             || k.eq_ignore_ascii_case("odbc_connect_string")
                         {
                             for secret in odbc_secrets(&percent_decode(&v.replace('+', " "))) {
-                                out.push(percent_encode_all(&secret));
+                                out.push(percent_encode(&secret));
                                 out.push(secret);
                             }
                         }
@@ -265,10 +273,9 @@ pub fn scrub_secrets(message: &str, secrets: &[String]) -> String {
         while let Some(i) = rest.find(s.as_str()) {
             let (before, after) = (&rest[..i], &rest[i + s.len()..]);
             let opens = before.ends_with([':', '=', '"', '\'']);
-            let closes = after
-                .chars()
-                .next()
-                .is_none_or(|c| matches!(c, '@' | ';' | '&' | ' ' | '\'' | '"' | '}' | ',' | ')'));
+            let closes = after.chars().next().is_none_or(|c| {
+                c.is_whitespace() || matches!(c, '@' | ';' | '&' | '\'' | '"' | '}' | ',' | ')')
+            });
             out.push_str(before);
             out.push_str(if opens && closes { "***" } else { s });
             rest = after;
@@ -471,17 +478,16 @@ fn odbc_secrets(s: &str) -> Vec<String> {
     out
 }
 
+/// Everything but the unreserved ASCII characters.
+const ENCODE_SET: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'.')
+    .remove(b'_')
+    .remove(b'~');
+
 /// Encodes every byte but unreserved ASCII as `%XX`, as a URI query value is often written.
-fn percent_encode_all(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for b in s.bytes() {
-        if b.is_ascii_alphanumeric() || b"-._~".contains(&b) {
-            out.push(b as char);
-        } else {
-            out.push_str(&format!("%{b:02X}"));
-        }
-    }
-    out
+pub(crate) fn percent_encode(s: &str) -> String {
+    percent_encoding::utf8_percent_encode(s, ENCODE_SET).to_string()
 }
 
 pub fn redact_odbc(s: &str) -> String {
@@ -524,24 +530,9 @@ fn is_secret_key(k: &str) -> bool {
 
 /// Decodes `%XX` escapes; others are kept as they are.
 pub fn percent_decode(s: &str) -> String {
-    let hex = |b: u8| (b as char).to_digit(16).map(|d| d as u8);
-    let bytes = s.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        // Bytes, not `&s[..]`: the byte after `%` may start a multi-byte character.
-        if bytes[i] == b'%'
-            && let Some(hi) = bytes.get(i + 1).copied().and_then(hex)
-            && let Some(lo) = bytes.get(i + 2).copied().and_then(hex)
-        {
-            out.push(hi << 4 | lo);
-            i += 3;
-        } else {
-            out.push(bytes[i]);
-            i += 1;
-        }
-    }
-    String::from_utf8_lossy(&out).into_owned()
+    percent_encoding::percent_decode_str(s)
+        .decode_utf8_lossy()
+        .into_owned()
 }
 
 impl fmt::Debug for ConnectionTarget {
@@ -591,6 +582,21 @@ mod tests {
     use std::hash::BuildHasher;
 
     use super::*;
+
+    #[test]
+    fn secrets_after_a_password_with_a_question_mark() {
+        let secrets = |uri: &str| ConnectionSpec::new(ConnectionTarget::Uri(uri.into())).secrets();
+        let s = secrets("postgresql://u:ab?c=d@db.example.com/app?sslpassword=s3cr3tpw");
+        assert!(s.contains(&"s3cr3tpw".to_string()), "{s:?}");
+        assert!(s.contains(&"ab?c=d".to_string()), "{s:?}");
+        let s = secrets(
+            "mssql://u:ab?c=d@h/db?odbc_connect=Driver%3D%7BX%7D%3BPWD%3Dodbcsecret%3BUID%3Du",
+        );
+        assert!(s.contains(&"odbcsecret".to_string()), "{s:?}");
+        // an encoded key
+        let s = secrets("postgresql://u@h/db?ssl%50assword=encodedkey");
+        assert!(s.contains(&"encodedkey".to_string()), "{s:?}");
+    }
 
     #[test]
     fn redacts_passwords() {

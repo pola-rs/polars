@@ -91,12 +91,6 @@ impl DatabaseRelation {
             .and_then(|p| p.last())
             .map(|s| s.as_str())
     }
-
-    /// The table's schema (namespace), if qualified.
-    pub fn table_schema(&self) -> Option<&str> {
-        let parts = self.table_parts()?;
-        (parts.len() >= 2).then(|| parts[parts.len() - 2].as_str())
-    }
 }
 
 /// Splits `a.b.c`, honouring quotes, into `(part, quoted)`. `None` if the string is not a table

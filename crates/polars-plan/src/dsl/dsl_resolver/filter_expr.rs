@@ -163,14 +163,6 @@ fn is_in_values(node: Node, arena: &Arena<AExpr>) -> Option<Value> {
     Some(json!({ "dtype": dtype, "values": values }))
 }
 
-fn time_unit(tu: &TimeUnit) -> &'static str {
-    match tu {
-        TimeUnit::Nanoseconds => "ns",
-        TimeUnit::Microseconds => "us",
-        TimeUnit::Milliseconds => "ms",
-    }
-}
-
 /// The dtype's name in the document, if it has one.
 fn dtype_name(dtype: &DataType) -> Option<String> {
     Some(match dtype {
@@ -194,11 +186,11 @@ fn dtype_name(dtype: &DataType) -> Option<String> {
         #[cfg(feature = "dtype-time")]
         DataType::Time => "time".into(),
         #[cfg(feature = "dtype-datetime")]
-        DataType::Datetime(tu, None) => format!("datetime[{}]", time_unit(tu)),
+        DataType::Datetime(tu, None) => format!("datetime[{}]", tu.to_ascii()),
         #[cfg(feature = "dtype-datetime")]
-        DataType::Datetime(tu, Some(tz)) => format!("datetime[{}, {tz}]", time_unit(tu)),
+        DataType::Datetime(tu, Some(tz)) => format!("datetime[{}, {tz}]", tu.to_ascii()),
         #[cfg(feature = "dtype-duration")]
-        DataType::Duration(tu) => format!("duration[{}]", time_unit(tu)),
+        DataType::Duration(tu) => format!("duration[{}]", tu.to_ascii()),
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(p, s) => format!("decimal[{p}, {s}]"),
         _ => return None,

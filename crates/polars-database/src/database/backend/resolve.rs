@@ -13,28 +13,20 @@ use crate::database::dialect::DialectName;
 /// bounded memory, then throughput.
 pub fn candidates(dialect: DialectName) -> Vec<BackendKind> {
     use BackendKind as K;
-    let adbc = |d: &str| K::Adbc { driver: d.into() };
+    // every dialect's ADBC driver is named like it
+    let adbc = || K::Adbc {
+        driver: <&str>::from(dialect).into(),
+    };
     let py = |m: &str| K::Python { module: m.into() };
     let cx = K::ConnectorX;
     let sa = K::Sqlalchemy;
     match dialect {
-        DialectName::Postgresql => vec![
-            adbc("postgresql"),
-            cx,
-            py("psycopg"),
-            py("psycopg2"),
-            py("pg8000"),
-            sa,
-        ],
-        DialectName::Redshift => vec![
-            adbc("redshift"),
-            cx,
-            py("redshift_connector"),
-            py("psycopg2"),
-            sa,
-        ],
+        DialectName::Postgresql => {
+            vec![adbc(), cx, py("psycopg"), py("psycopg2"), py("pg8000"), sa]
+        },
+        DialectName::Redshift => vec![adbc(), cx, py("redshift_connector"), py("psycopg2"), sa],
         DialectName::Mysql => vec![
-            adbc("mysql"),
+            adbc(),
             cx,
             py("MySQLdb"),
             py("mysql.connector"),
@@ -43,7 +35,7 @@ pub fn candidates(dialect: DialectName) -> Vec<BackendKind> {
             sa,
         ],
         DialectName::Mssql => vec![
-            adbc("mssql"),
+            adbc(),
             py("mssql_python"),
             cx,
             K::Odbc {
@@ -58,24 +50,24 @@ pub fn candidates(dialect: DialectName) -> Vec<BackendKind> {
             py("pymssql"),
             sa,
         ],
-        DialectName::Oracle => vec![adbc("oracle"), py("oracledb"), cx, sa],
-        DialectName::Sqlite => vec![adbc("sqlite"), cx, py("sqlite3"), sa],
-        DialectName::Duckdb => vec![py("duckdb"), adbc("duckdb"), sa],
-        DialectName::Snowflake => vec![adbc("snowflake"), py("snowflake.connector"), sa],
-        DialectName::Bigquery => vec![adbc("bigquery"), py("google.cloud.bigquery"), cx, sa],
-        DialectName::Databricks => vec![adbc("databricks"), py("databricks.sql"), sa],
+        DialectName::Oracle => vec![adbc(), py("oracledb"), cx, sa],
+        DialectName::Sqlite => vec![adbc(), cx, py("sqlite3"), sa],
+        DialectName::Duckdb => vec![py("duckdb"), adbc(), sa],
+        DialectName::Snowflake => vec![adbc(), py("snowflake.connector"), sa],
+        DialectName::Bigquery => vec![adbc(), py("google.cloud.bigquery"), cx, sa],
+        DialectName::Databricks => vec![adbc(), py("databricks.sql"), sa],
         DialectName::Clickhouse => vec![
-            adbc("clickhouse"),
+            adbc(),
             py("clickhouse_connect"),
             cx,
             py("clickhouse_driver"),
             sa,
         ],
-        DialectName::Trino => vec![adbc("trino"), cx, py("trino"), sa],
-        DialectName::Flightsql => vec![adbc("flightsql")],
-        DialectName::Exasol => vec![adbc("exasol"), py("pyexasol"), sa],
-        DialectName::Singlestore => vec![adbc("singlestore"), py("pymysql"), sa],
-        DialectName::Teradata => vec![adbc("teradata"), py("teradatasql"), sa],
+        DialectName::Trino => vec![adbc(), cx, py("trino"), sa],
+        DialectName::Flightsql => vec![adbc()],
+        DialectName::Exasol => vec![adbc(), py("pyexasol"), sa],
+        DialectName::Singlestore => vec![adbc(), py("pymysql"), sa],
+        DialectName::Teradata => vec![adbc(), py("teradatasql"), sa],
         DialectName::Generic => vec![sa],
     }
 }
@@ -209,10 +201,41 @@ pub fn candidate_statuses(dialect: DialectName) -> Vec<CandidateStatus> {
         .collect()
 }
 
+/// The dialect and the Python module of a factory or live connection object (`None` for other
+/// targets). Asked once per scan: a factory is called for it.
+#[cfg(feature = "python")]
+pub fn object_info(spec: &ConnectionSpec) -> PolarsResult<Option<ObjectInfo>> {
+    if !matches!(
+        spec.target,
+        ConnectionTarget::Factory(_) | ConnectionTarget::Live(_)
+    ) {
+        return Ok(None);
+    }
+    let Some(bridge) = python_bridge() else {
+        return Ok(None);
+    };
+    let (dialect, module) = bridge.connection_info(spec)?;
+    Ok(Some(ObjectInfo { dialect, module }))
+}
+
+#[cfg(not(feature = "python"))]
+pub fn object_info(_spec: &ConnectionSpec) -> PolarsResult<Option<ObjectInfo>> {
+    Ok(None)
+}
+
+/// What [`object_info`] found out about a connection object.
+#[cfg_attr(not(feature = "python"), allow(dead_code))]
+pub struct ObjectInfo {
+    pub dialect: DialectName,
+    pub module: PlSmallStr,
+}
+
 /// Determines the dialect of a connection.
+#[cfg_attr(not(feature = "python"), allow(unused_variables))]
 pub fn detect_dialect(
     spec: &ConnectionSpec,
     user: Option<DialectName>,
+    object: Option<&ObjectInfo>,
 ) -> PolarsResult<DialectName> {
     if let Some(d) = user {
         return Ok(d);
@@ -231,9 +254,8 @@ pub fn detect_dialect(
             .odbc_driver_name()
             .map_or(DialectName::Generic, |n| DialectName::from_odbc_driver(&n)),
         #[cfg(feature = "python")]
-        ConnectionTarget::Factory(_) | ConnectionTarget::Live(_) => match python_bridge() {
-            Some(b) => b.connection_dialect(spec)?,
-            None => DialectName::Generic,
+        ConnectionTarget::Factory(_) | ConnectionTarget::Live(_) => {
+            object.map_or(DialectName::Generic, |o| o.dialect)
         },
     })
 }
@@ -366,10 +388,12 @@ fn python_module_alias(name: &str) -> &str {
 }
 
 /// Picks the backend for a scan on this (the planning) machine.
+#[cfg_attr(not(feature = "python"), allow(unused_variables))]
 pub fn resolve_backend(
     spec: &ConnectionSpec,
     dialect: DialectName,
     driver_pin: Option<&str>,
+    object: Option<&ObjectInfo>,
 ) -> PolarsResult<BackendChoice> {
     #[cfg(feature = "python")]
     if matches!(
@@ -377,12 +401,13 @@ pub fn resolve_backend(
         ConnectionTarget::Factory(_) | ConnectionTarget::Live(_)
     ) {
         // A Python connection object is served by its own module, whatever its dialect.
-        let Some(bridge) = python_bridge() else {
+        let Some(object) = object else {
             polars_bail!(ComputeError: "connection objects need Python")
         };
-        let module = bridge.connection_module(spec)?;
         return Ok(BackendChoice {
-            kind: BackendKind::Python { module },
+            kind: BackendKind::Python {
+                module: object.module.clone(),
+            },
             version: None,
             location: None,
             reason: "connection object".into(),

@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from importlib import import_module
 from typing import TYPE_CHECKING, Any
-from urllib.parse import unquote, urlsplit
 
 from polars._dependencies import _PYARROW_AVAILABLE, import_optional
 from polars._utils.various import parse_version
@@ -262,33 +261,14 @@ def _adbc_db_kwargs(driver_name: str, connection_uri: str) -> dict[str, str]:
     """
     Database options for a driver loaded through the generic driver manager.
 
-    Mirrors what the driver's own Python package (and `scan_database`) passes: DuckDB
-    takes a `path`, and ClickHouse its HTTP endpoint, with the credentials as options.
+    As `scan_database` passes them (`polars-database` builds both): DuckDB takes a
+    `path` (the scheme is already stripped), and ClickHouse its HTTP endpoint, with the
+    credentials as options.
     """
-    if driver_name == "duckdb":
-        # (the scheme is already stripped)
-        path, _, _ = connection_uri.partition("?")
-        return {"path": unquote(path) or ":memory:"}
-    if driver_name == "clickhouse" and "://" in connection_uri:
-        parts = urlsplit(connection_uri)
-        kvs = [kv for kv in parts.query.split("&") if kv]
-        secure = parts.scheme.lower().endswith("s") or any(
-            kv.lower() in ("secure=true", "secure=1") for kv in kvs
-        )
-        query = [kv for kv in kvs if not kv.lower().startswith("secure=")]
-        if database := parts.path.strip("/"):
-            query.insert(0, f"database={database}")
-        host = parts.netloc.rpartition("@")[2]
-        uri = f"{'https' if secure else 'http'}://{host}"
-        if query:
-            uri += "/?" + "&".join(query)
-        kwargs = {"uri": uri}
-        if parts.username is not None:
-            kwargs["username"] = unquote(parts.username)
-        if parts.password is not None:
-            kwargs["password"] = unquote(parts.password)
-        return kwargs
-    return {"uri": connection_uri}
+    from polars_database import adbc_db_kwargs
+
+    kwargs = adbc_db_kwargs(driver_name, connection_uri)
+    return dict(kwargs) if kwargs is not None else {"uri": connection_uri}
 
 
 def _is_adbc_snowflake_conn(conn: Any) -> bool:

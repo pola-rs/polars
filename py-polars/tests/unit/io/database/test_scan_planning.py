@@ -24,7 +24,7 @@ from typing import Any
 import pytest
 
 import polars as pl
-from tests.unit.io.database._scan_corpus import EDGE_SCHEMA
+from tests.unit.io.database._scan_corpus import EDGE_SCHEMA, planned_sql
 
 pytest.importorskip("polars_database")
 pytest.importorskip("sqlglot")
@@ -1361,7 +1361,7 @@ def test_order_by_puts_nulls_first_where_the_database_is_unknown() -> None:
         driver="sqlalchemy",
         partition_on=None,
     )
-    sql = next(line for line in lf.explain().splitlines() if "sql[0]:" in line)
+    sql = planned_sql(lf)
     assert 'ORDER BY CASE WHEN "id" IS NULL THEN 0 ELSE 1 END ASC, "id" ASC' in sql
     assert "NULLS" not in sql
 
@@ -1561,3 +1561,23 @@ def test_bigquery_decimal_literals_are_typed(value: str, sql: str) -> None:
 
     assert _sqlglot._literal({"Decimal": value}, "bigquery").sql("bigquery") == sql
     assert _sqlglot._literal({"Decimal": value}, "postgres").sql("postgres") == value
+
+
+def test_scrub_query_after_a_password_with_a_question_mark() -> None:
+    from polars_database._bridge import _scrub, _secrets
+
+    uri = "postgresql://u:ab?c=d@db.example.com/app?sslpassword=s3cr3tpw"
+    secrets = _secrets(uri, None, {})
+    assert "s3cr3tpw" in secrets
+    assert "s3cr3tpw" not in _scrub(f"failed: {uri}", secrets)
+    assert "s3cr3tpw" in _secrets(
+        "postgresql://u@h/db?ssl%50assword=s3cr3tpw", None, {}
+    )
+
+
+def test_scrub_message_with_lone_surrogate() -> None:
+    from polars_database._bridge import _scrub
+
+    message = _scrub("no such file \udcff pw=hunter2hunter2", ["hunter2hunter2"])
+    assert message.startswith("no such file ")
+    assert message.endswith(" pw=***")

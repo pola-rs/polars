@@ -212,25 +212,18 @@ impl MultiScanState {
 
         let reader_max_concurrent = config.file_reader_builder.max_concurrent_scans();
 
-        let mut n_readers_pre_init = calc_n_readers_pre_init(
+        let n_readers_pre_init = calc_n_readers_pre_init(
             num_pipelines,
             config.sources.len(),
             config.pre_slice.as_ref(),
             preferred_remote_pre_init,
+            reader_max_concurrent,
         );
-        let mut max_concurrent_scans =
-            calc_max_concurrent_scans(num_pipelines, config.sources.len());
-
-        if let Some(cap) = reader_max_concurrent {
-            // The pre-init env override still wins, for debugging.
-            if std::env::var("POLARS_NUM_READERS_PRE_INIT").is_err() {
-                n_readers_pre_init = n_readers_pre_init.min(cap.max(1));
-            }
-            // A hard cap: `POLARS_MAX_CONCURRENT_SCANS` may lower it, not raise it. More
-            // readers than e.g. a database scan's sessions can deadlock an ordered read: a
-            // later reader holds the last session while its output waits behind the first.
-            max_concurrent_scans = max_concurrent_scans.min(cap.max(1));
-        }
+        let max_concurrent_scans = calc_max_concurrent_scans(
+            num_pipelines,
+            config.sources.len(),
+            reader_max_concurrent,
+        );
 
         config.n_readers_pre_init.store(n_readers_pre_init);
         config.max_concurrent_scans.store(max_concurrent_scans);

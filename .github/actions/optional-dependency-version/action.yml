@@ -1,0 +1,68 @@
+name: Optional dependency version
+description: >
+  Read the version of a plugin package from the lower bound of its
+  `<package> >= <version>, < <next major version>` requirement in an optional dependency group
+  (extra) of py-polars/pyproject.toml, to install from PyPI and test against. Checks the upper
+  bound is the next major version. Requires a checkout of Polars.
+
+inputs:
+  package:
+    description: Package name, e.g. polars-iceberg
+    required: true
+  extra:
+    description: Name of the optional dependency group listing the package, e.g. iceberg
+    required: true
+
+outputs:
+  version:
+    description: Version of the package
+    value: ${{ steps.version.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Read ${{ inputs.package }} version
+      id: version
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        PACKAGE: ${{ inputs.package }}
+        EXTRA: ${{ inputs.extra }}
+      run: |
+        VERSION=$(python3 - <<'EOF'
+        import os, re, tomllib
+
+        package, extra = os.environ["PACKAGE"], os.environ["EXTRA"]
+
+        with open("py-polars/pyproject.toml", "rb") as f:
+            deps = tomllib.load(f)["project"]["optional-dependencies"][extra]
+        bounds = [
+            m.groups()
+            for d in deps
+            if (
+                m := re.fullmatch(
+                    rf"{re.escape(package)}\s*>=\s*([^\s,;]+)\s*,\s*<\s*([^\s,;]+)", d.strip()
+                )
+            )
+        ]
+        if len(bounds) != 1:
+            raise SystemExit(
+                f"expected one '{package} >= <version>, < <next major version>' "
+                f"requirement, found {deps}"
+            )
+        lower, upper = bounds[0]
+
+        m = re.match(r"\d+", lower)
+        if m is None:
+            raise SystemExit(f"cannot parse {package} version {lower}")
+        expected = f"{int(m.group()) + 1}.0.0"
+        if upper != expected:
+            raise SystemExit(
+                f"{package} upper bound {upper} is not the next major version {expected} "
+                f"of {lower}"
+            )
+        print(lower)
+        EOF
+        )
+        echo "$PACKAGE version: $VERSION"
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"

@@ -186,11 +186,9 @@ pub trait PythonDriverBridge: Send + Sync {
     /// `adbc_driver_<name>` pip package is installed, with its library path.
     fn probe(&self, kind: &BackendKind) -> Option<ProbeResult>;
 
-    /// The dialect of a factory or live connection object.
-    fn connection_dialect(&self, spec: &ConnectionSpec) -> PolarsResult<DialectName>;
-
-    /// The Python module that implements a factory or live connection object.
-    fn connection_module(&self, spec: &ConnectionSpec) -> PolarsResult<PlSmallStr>;
+    /// The dialect and the Python module of a factory or live connection object. A factory is
+    /// called for it, so ask once per scan.
+    fn connection_info(&self, spec: &ConnectionSpec) -> PolarsResult<(DialectName, PlSmallStr)>;
 
     /// Opens a session with a Python-side backend.
     fn connect(

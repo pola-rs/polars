@@ -3249,6 +3249,7 @@ version = "0.1.0"
 dependencies = [
  "bitflags",
  "chrono",
+ "percent-encoding",
  "polars-arrow",
  "polars-config",
  "polars-core",

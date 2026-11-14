@@ -124,7 +124,7 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
         set_polars_allow_extension(true);
 
         // I/O plugins are found through their Python packages, also in deserialized plans.
-        #[cfg(feature = "database")]
+        #[cfg(feature = "io_plugin_ffi")]
         crate::io::io_plugin::install_locator();
 
         // Stack frames can get really large in debug mode.

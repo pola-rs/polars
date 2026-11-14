@@ -539,3 +539,17 @@ def predicate_strategy(*, boolean_column: bool = True) -> Any:
         ),
         max_leaves=6,
     )
+
+
+def check_filter_ids(lf: pl.LazyFrame, predicates: list[pl.Expr]) -> None:
+    """Each pushed filter keeps the rows Polars keeps on the whole table."""
+    table = lf.collect()
+    for p in predicates:
+        got = sorted(lf.filter(p).collect()["id"].to_list())
+        assert got == sorted(table.filter(p)["id"].to_list()), str(p)
+
+
+def planned_sql(lf: pl.LazyFrame) -> str:
+    """The SQL of the scan's first partition, as `explain()` shows it."""
+    plan = lf.explain()
+    return next(line for line in plan.splitlines() if "sql[0]:" in line)

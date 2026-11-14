@@ -86,6 +86,9 @@ pub struct ReaderBuilder {
     config: Arc<DatabaseScanConfig>,
     /// The columns of the scan: the projected ones of the planned schema.
     schema: SchemaRef,
+    /// [`Self::compute_fingerprint`], taken once: it hashes every partition's SQL, and is asked
+    /// on every comparison of plans.
+    fingerprint: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -96,16 +99,25 @@ struct SerializedBuilder {
 
 impl ReaderBuilder {
     pub fn new(config: Arc<DatabaseScanConfig>, schema: SchemaRef) -> Self {
-        Self { config, schema }
+        let fingerprint = Self::compute_fingerprint(&config, &schema);
+        Self {
+            config,
+            schema,
+            fingerprint,
+        }
     }
 
-    fn fingerprint(&self) -> u64 {
+    fn compute_fingerprint(config: &DatabaseScanConfig, schema: &SchemaRef) -> u64 {
         let mut h = polars_utils::aliases::PlFixedStateQuality::default().build_hasher();
-        self.config.hash(&mut h);
-        for name in self.schema.iter_names() {
+        config.hash(&mut h);
+        for name in schema.iter_names() {
             name.hash(&mut h);
         }
         h.finish()
+    }
+
+    fn fingerprint(&self) -> u64 {
+        self.fingerprint
     }
 
     fn serialize(&self) -> PolarsResult<Vec<u8>> {
@@ -129,10 +141,7 @@ impl ReaderBuilder {
         })?;
         let s: SerializedBuilder =
             polars_utils::pl_serialize::deserialize_from_reader::<_, _, false>(bytes)?;
-        Ok(Self {
-            config: s.config,
-            schema: s.schema,
-        })
+        Ok(Self::new(s.config, s.schema))
     }
 
     fn name(&self) -> String {
@@ -205,6 +214,9 @@ struct Pool {
 /// State shared by the readers of one scan execution.
 pub struct Shared {
     config: Arc<DatabaseScanConfig>,
+    /// The columns that [`decode_sqlite_reals`](crate::database::planner::decode_sqlite_reals)
+    /// decodes.
+    sqlite_text_columns: Vec<PlSmallStr>,
     /// Instantiated once per execution: re-checks that the planned backend exists here.
     backend: OnceLock<Arc<dyn DatabaseBackend>>,
     /// The outcome of [`check_unplanned_volatility`], run on the first session opened:
@@ -221,6 +233,7 @@ impl Shared {
     fn new(config: Arc<DatabaseScanConfig>) -> Self {
         *LIVE_SCANS.lock().unwrap() += 1;
         Self {
+            sqlite_text_columns: crate::database::planner::sqlite_text_columns(&config),
             config,
             backend: OnceLock::new(),
             volatility: OnceLock::new(),
@@ -442,7 +455,10 @@ impl PartitionReader {
                 .filter(|n| config.schema.contains(n))
                 .cloned()
                 .collect::<Vec<_>>();
-            let batch = crate::database::planner::decode_sqlite_reals(batch, config)?;
+            let batch = crate::database::planner::decode_sqlite_reals(
+                batch,
+                &self.shared.sqlite_text_columns,
+            )?;
             let batch = cast_to_schema(&batch, &config.schema.try_project(&names)?, overrides)?;
             match &mut out {
                 None => out = Some(batch),
@@ -604,10 +620,11 @@ impl PartitionStream {
         self.check_cancelled()
     }
 
-    fn cast(&self, df: &DataFrame) -> PolarsResult<DataFrame> {
+    fn cast(&self, df: DataFrame) -> PolarsResult<DataFrame> {
         let config = &self.shared.config;
         let overrides = config.options.schema_overrides.as_deref();
-        let df = crate::database::planner::decode_sqlite_reals(df.clone(), config)?;
+        let df =
+            crate::database::planner::decode_sqlite_reals(df, &self.shared.sqlite_text_columns)?;
         cast_to_schema(&df, &self.projected, overrides)
     }
 
@@ -621,7 +638,9 @@ impl PartitionStream {
             if df.height() == 0 {
                 return Ok(None);
             }
-            return self.cast(&df).map(Some);
+            // (decoded by `read_counted` already: decoding twice would unescape twice)
+            let overrides = self.shared.config.options.schema_overrides.as_deref();
+            return cast_to_schema(&df, &self.projected, overrides).map(Some);
         }
         if self.complete {
             return Ok(None);
@@ -656,7 +675,7 @@ impl PartitionStream {
             if batch.height() == 0 {
                 continue;
             }
-            return self.cast(&batch).map(Some);
+            return self.cast(batch).map(Some);
         }
     }
 
@@ -681,9 +700,13 @@ impl PartitionStream {
                 }
                 return Ok(None);
             };
-            df.rechunk_mut();
+            // (no copy where the columns' chunks already line up)
+            df.align_chunks();
             for batch in df.iter_chunks(CompatLevel::newest(), false) {
                 let len = batch.height();
+                if len == 0 {
+                    continue;
+                }
                 let arrays = batch.into_arrays();
                 self.pending
                     .push_back(StructArray::new(self.dtype.clone(), len, arrays, None).to_boxed());

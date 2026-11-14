@@ -267,7 +267,6 @@ pub struct FfiFileReaderBuilder {
     flags: u32,
     max_concurrent_scans: Option<usize>,
     preferred_remote_pre_init: Option<usize>,
-    task_metrics: OnceLock<Arc<TaskMetricAggregator>>,
     execution_state: OnceLock<Arc<StreamingExecutionState>>,
 }
 
@@ -293,7 +292,6 @@ impl FfiFileReaderBuilder {
             max_concurrent_scans: to_usize(caps.max_concurrent_scans.into_option()),
             preferred_remote_pre_init: to_usize(caps.preferred_remote_pre_init.into_option()),
             builder,
-            task_metrics: OnceLock::new(),
             execution_state: OnceLock::new(),
         })
     }
@@ -328,9 +326,6 @@ impl FileReaderBuilder for FfiFileReaderBuilder {
     }
 
     fn set_execution_state(&self, execution_state: &StreamingExecutionState) {
-        if let Some(task_metrics) = execution_state.task_metrics.clone() {
-            let _ = self.task_metrics.set(task_metrics);
-        }
         let _ = self.execution_state.set(Arc::new(execution_state.clone()));
     }
 
@@ -368,7 +363,10 @@ impl FileReaderBuilder for FfiFileReaderBuilder {
             }),
             schema: None,
             n_rows: None,
-            task_metrics: self.task_metrics.get().cloned(),
+            task_metrics: self
+                .execution_state
+                .get()
+                .and_then(|s| s.task_metrics.clone()),
             query_tasks: self.execution_state.get().cloned(),
         }))
     }
@@ -413,41 +411,29 @@ impl FfiFileReader {
 }
 
 /// Positive-slice state over the stream of rows of one source.
-struct SliceState {
-    skip: usize,
-    remaining: usize,
-}
+struct SliceState(Slice);
 
 impl SliceState {
     /// `pre_slice` is positive.
     fn new(pre_slice: Option<&Slice>) -> Self {
-        match pre_slice {
-            None => Self {
-                skip: 0,
-                remaining: usize::MAX,
-            },
-            Some(slice) => Self {
-                skip: slice.positive_offset(),
-                remaining: slice.len(),
-            },
-        }
+        Self(pre_slice.cloned().unwrap_or(Slice::Positive {
+            offset: 0,
+            len: usize::MAX,
+        }))
     }
 
     fn done(&self) -> bool {
-        self.remaining == 0
+        self.0.len() == 0
     }
 
     /// Moves past `h` more rows: the offset and length of the part of them in the slice.
     fn advance(&mut self, h: u64) -> (u64, u64) {
-        let skip = self.skip as u64;
-        if skip >= h {
-            self.skip -= h as usize;
-            return (0, 0);
-        }
-        let take = (h - skip).min(self.remaining as u64);
-        self.skip = 0;
-        self.remaining -= take as usize;
-        (skip, take)
+        let h = usize::try_from(h).unwrap_or(usize::MAX);
+        let Slice::Positive { offset, len } = self.0.clone().restrict_to_bounds(h) else {
+            unreachable!()
+        };
+        self.0 = self.0.clone().offsetted(h);
+        (offset as u64, len as u64)
     }
 
     fn apply(&mut self, df: DataFrame) -> DataFrame {

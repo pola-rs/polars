@@ -314,41 +314,39 @@ jobs:
           name: wheel-${{ matrix.package }}-${{ matrix.job_config }}
           path: dist/*.whl
 
-  polars-iceberg-version:
+  plugin-versions:
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.version.outputs.version }}
+      iceberg: ${{ steps.iceberg.outputs.version }}
+      database: ${{ steps.database.outputs.version }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.sha }}
 
       - name: Get polars-iceberg version
-        id: version
-        uses: ./.github/actions/polars-iceberg-version
-
-  polars-database-version:
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-    steps:
-      - uses: actions/checkout@v7
+        id: iceberg
+        uses: ./.github/actions/optional-dependency-version
         with:
-          ref: ${{ inputs.sha }}
+          package: polars-iceberg
+          extra: iceberg
 
       - name: Get polars-database version
-        id: version
-        uses: ./.github/actions/polars-database-version
+        id: database
+        uses: ./.github/actions/optional-dependency-version
+        with:
+          package: polars-database
+          extra: database
 
   # Full Python test suite, with the polars-iceberg and polars-database plugins installed from PyPI
   # at the versions required in pyproject.toml.
   test-python:
-    needs: [polars-iceberg-version, polars-database-version]
+    needs: [plugin-versions]
     uses: ./.github/workflows/test-python.yml
     with:
       sha: ${{ inputs.sha }}
-      polars-iceberg-version: ${{ needs.polars-iceberg-version.outputs.version }}
-      polars-database-version: ${{ needs.polars-database-version.outputs.version }}
+      polars-iceberg-version: ${{ needs.plugin-versions.outputs.iceberg }}
+      polars-database-version: ${{ needs.plugin-versions.outputs.database }}
 
   publish-to-pypi:
     needs: [base-package, create-sdist, build-wheels, test-python]

@@ -18,6 +18,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from tests.unit.io.database._scan_corpus import check_filter_ids, planned_sql
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -70,11 +71,6 @@ def expected(shop_db: Path) -> pl.DataFrame:
         return pl.read_database("SELECT * FROM orders", conn)
     finally:
         conn.close()
-
-
-def _sql(lf: pl.LazyFrame) -> str:
-    plan = lf.explain()
-    return next(line for line in plan.splitlines() if "sql[0]:" in line)
 
 
 def _sorted(df: pl.DataFrame) -> pl.DataFrame:
@@ -134,7 +130,7 @@ def test_scan_filter_pushdown(
     assert_frame_equal(_sorted(out), _sorted(expected.filter(predicate)))
     plan = lf.explain()
     if exact:
-        assert "WHERE" in _sql(lf)
+        assert "WHERE" in planned_sql(lf)
         assert "(1 exact)" in plan or "exact)" in plan
 
 
@@ -194,14 +190,14 @@ def test_scan_order_by(shop_uri: str, expected: pl.DataFrame) -> None:
     lf = pl.scan_database(
         "orders", shop_uri, order_by="id", partition_on="id", partition_num=4
     )
-    assert "ORDER BY" in _sql(lf)
+    assert "ORDER BY" in planned_sql(lf)
     assert_frame_equal(lf.collect(), expected.sort("id"))
 
 
 def test_scan_slice_and_count(shop_uri: str) -> None:
     pytest.importorskip("adbc_driver_sqlite")
     lf = pl.scan_database("orders", shop_uri)
-    assert "LIMIT 5" in _sql(lf.head(5))
+    assert "LIMIT 5" in planned_sql(lf.head(5))
     assert lf.head(5).collect().height == 5
     assert lf.slice(10, 5).collect().height == 5
     assert lf.select(pl.len()).collect().item() == N_ROWS
@@ -230,7 +226,7 @@ def test_scan_query(shop_uri: str, expected: pl.DataFrame) -> None:
     ).filter(pl.col("id") < 50)
     assert (
         "FROM (SELECT id, customer, amount FROM orders WHERE status = 'paid')"
-        in _sql(lf)
+        in planned_sql(lf)
     )
     exp = expected.filter(pl.col("status") == "paid", pl.col("id") < 50).select(
         "id", "customer", "amount"
@@ -1074,9 +1070,9 @@ def test_scan_sqlite_filter_on_large_integers_read_as_floats(
         (pl.col("x") < 2, [2]),
     ]:
         assert lf.filter(predicate).collect()["id"].to_list() == expected, predicate
-    assert "WHERE" in _sql(lf.filter(pl.col("x") == big))
+    assert "WHERE" in planned_sql(lf.filter(pl.col("x") == big))
     # a REAL column holds no integers: compared as it is (an index on it serves)
-    assert 'WHERE "t"."r" > 2.0' in _sql(lf.filter(pl.col("r") > 2.0))
+    assert 'WHERE "t"."r" > 2.0' in planned_sql(lf.filter(pl.col("r") > 2.0))
 
 
 @pytest.mark.parametrize("driver", _SQLITE_DRIVERS)
@@ -1145,7 +1141,7 @@ def test_scan_sqlite_blobs_in_a_text_column(tmp_path: Path, driver: str) -> None
             .collect()
             .item()
         ), predicate
-    assert "(CAST(\"s\" AS TEXT)) = 'v1'" in _sql(lf.filter(pl.col("s") == "v1"))
+    assert "(CAST(\"s\" AS TEXT)) = 'v1'" in planned_sql(lf.filter(pl.col("s") == "v1"))
 
 
 def test_scan_sqlite_connectorx_quotes_and_backslashes(tmp_path: Path) -> None:
@@ -1233,10 +1229,10 @@ def test_scan_sqlite_filter_on_a_volatile_column(tmp_path: Path, driver: str) ->
     assert (df["r"] > 0).all()
     assert (df["id"] < 100).all()
     # the filter on `id` is still pushed (through the conversion of a number's text)
-    assert 'ELSE "id" END) < 100' in _sql(
+    assert 'ELSE "id" END) < 100' in planned_sql(
         lf.filter(pl.col("r") > 0, pl.col("id") < 100)
     )
-    assert "WHERE" not in _sql(lf.filter(pl.col("r") > 0))
+    assert "WHERE" not in planned_sql(lf.filter(pl.col("r") > 0))
 
 
 def test_scan_sqlite_filter_on_a_user_function_column(tmp_path: Path) -> None:
@@ -1251,7 +1247,7 @@ def test_scan_sqlite_filter_on_a_user_function_column(tmp_path: Path) -> None:
     with closing(sqlite3.connect(path, check_same_thread=False)) as live:
         live.create_function("myrand", 0, random.random)
         lf = pl.scan_database("SELECT id, myrand() AS r FROM t", live)
-        assert "WHERE" not in _sql(lf.filter(pl.col("r") > 0.5))
+        assert "WHERE" not in planned_sql(lf.filter(pl.col("r") > 0.5))
         assert (lf.filter(pl.col("r") > 0.5).collect()["r"] > 0.5).all()
 
 
@@ -1276,7 +1272,7 @@ def test_scan_sqlite_volatile_views(tmp_path: Path, driver: str, source: str) ->
     if source == "v":
         # the filter on `id` is still pushed (through the conversion of a number's
         # text: a view's column may hold one)
-        sql = _sql(lf.filter(pl.col("r") > 0, pl.col("id") < 200))
+        sql = planned_sql(lf.filter(pl.col("r") > 0, pl.col("id") < 200))
         assert 'ELSE "id" END) < 200' in sql
     with pytest.raises(pl.exceptions.InvalidOperationError, match="partitioned"):
         pl.scan_database(
@@ -1303,7 +1299,7 @@ def test_scan_sqlite_views_without_volatile_functions() -> None:
             "v", f"sqlite:///{path}", partition_on="a", partition_num=4
         )
         assert sorted(lf.collect()["a"].to_list()) == list(range(50))
-        assert 'ELSE "a" END) < 5' in _sql(lf.filter(pl.col("a") < 5))
+        assert 'ELSE "a" END) < 5' in planned_sql(lf.filter(pl.col("a") < 5))
 
 
 def test_scan_sqlite_partition_over_a_user_function(tmp_path: Path) -> None:
@@ -2153,14 +2149,6 @@ def test_scan_duckdb_nested_values_arrow_cant_carry(tmp_path: Path) -> None:
         assert lf.select("id").collect().height == 1 + len(values)
 
 
-def _check_ids(lf: pl.LazyFrame, predicates: list[pl.Expr]) -> None:
-    """Each pushed filter keeps the rows Polars keeps on the whole table."""
-    table = lf.collect()
-    for p in predicates:
-        got = sorted(lf.filter(p).collect()["id"].to_list())
-        assert got == sorted(table.filter(p)["id"].to_list()), str(p)
-
-
 def test_scan_duckdb_nanosecond_timestamps_compare_at_nanoseconds(
     tmp_path: Path,
 ) -> None:
@@ -2179,7 +2167,7 @@ def test_scan_duckdb_nanosecond_timestamps_compare_at_nanoseconds(
     assert lf.collect_schema()["ts"] == pl.Datetime("ns")
     t0 = datetime(2020, 1, 1)
     t1 = datetime(2020, 1, 1, 0, 0, 0, 1)
-    _check_ids(
+    check_filter_ids(
         lf,
         [
             pl.col("ts") == t0,
@@ -2229,7 +2217,7 @@ def test_scan_sqlite_utf16_text_is_not_ordered_in_the_database(
         conn.commit()
         assert conn.execute("PRAGMA encoding").fetchone()[0] == "UTF-16le"
     lf = pl.scan_database("t", f"sqlite:///{path}")
-    _check_ids(
+    check_filter_ids(
         lf,
         [
             pl.col("s") > "a",
@@ -2253,7 +2241,7 @@ def test_scan_duckdb_negative_wide_decimal_literals(tmp_path: Path) -> None:
         )
     lf = pl.scan_database("t", f"duckdb:///{path}")
     neg = Decimal("-" + v)
-    _check_ids(
+    check_filter_ids(
         lf,
         [
             pl.col("d") == neg,
@@ -2290,7 +2278,7 @@ def test_scan_sqlite_numbers_text_in_a_query_or_under_schema(
         pl.scan_database("t", uri, driver=driver, schema=schema),
         pl.scan_database("SELECT id, a, b FROM t", uri, driver=driver),
     ]:
-        _check_ids(
+        check_filter_ids(
             lf,
             [
                 pl.col("a") == pl.col("b"),
@@ -2414,7 +2402,7 @@ def test_scan_sqlite_override_cuts_reals_as_compared(
     lf = pl.scan_database(
         "t", f"sqlite:///{path}", driver=driver, schema_overrides={"i": pl.Int64}
     )
-    _check_ids(lf, [pl.col("i") == 1, pl.col("i") < 2, pl.col("i").is_in([1, 3])])
+    check_filter_ids(lf, [pl.col("i") == 1, pl.col("i") < 2, pl.col("i").is_in([1, 3])])
 
 
 def test_scan_duckdb_volatility_through_ctes_and_macros(tmp_path: Path) -> None:
@@ -2566,7 +2554,7 @@ def test_scan_sqlite_override_reads_integer_text(
         3001,
         3002,
     ]
-    _check_ids(
+    check_filter_ids(
         lf,
         [
             pl.col("i") < 8,

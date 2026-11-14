@@ -6,7 +6,8 @@ use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_str::PlSmallStr;
 use serde::{Deserialize, Serialize};
 
-use super::backend::BackendChoice;
+use super::backend::{BackendChoice, BackendKind};
+use super::connection::ConnectionSpec;
 use super::dialect::{DialectName, StringSemantics};
 use super::options::DatabaseScanOptions;
 
@@ -106,6 +107,11 @@ pub struct DatabaseScanConfig {
     pub bounds_cache: BoundsCache,
 }
 
+/// [`DatabaseScanConfig::session_setup_runs`], before the config exists.
+pub(crate) fn session_setup_runs(connection: &ConnectionSpec, kind: &BackendKind) -> bool {
+    !connection.is_live() && kind.has_sessions()
+}
+
 pub type BoundsCache = Arc<Mutex<PlHashMap<String, (Option<f64>, Option<f64>)>>>;
 
 impl DatabaseScanConfig {
@@ -136,15 +142,7 @@ impl DatabaseScanConfig {
         }
         self.connection_share
             .or(self.options.fetch.max_connections)
-            .unwrap_or(match self.dialect {
-                DialectName::Sqlite | DialectName::Duckdb => 1,
-                DialectName::Snowflake
-                | DialectName::Bigquery
-                | DialectName::Databricks
-                | DialectName::Trino
-                | DialectName::Clickhouse => 8,
-                _ => 4,
-            })
+            .unwrap_or(self.dialect.default_max_connections())
             .max(1)
     }
 
@@ -193,11 +191,7 @@ impl DatabaseScanConfig {
     /// connection, which is the user's session, nor on ConnectorX or arrow-odbc, which have no
     /// sessions.
     pub fn session_setup_runs(&self) -> bool {
-        !self.options.connection.is_live() && self.backend.kind.has_sessions()
-    }
-
-    pub fn n_partitions(&self) -> usize {
-        self.compiled.as_ref().map_or(1, |c| c.partitions.len())
+        session_setup_runs(&self.options.connection, &self.backend.kind)
     }
 }
 

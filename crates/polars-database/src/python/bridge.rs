@@ -197,26 +197,6 @@ fn c_options(opts: &[(CString, CString)]) -> Vec<(String, String)> {
 
 pub struct PyDriverBridge;
 
-impl PyDriverBridge {
-    fn connection_info(&self, spec: &ConnectionSpec) -> PolarsResult<(DialectName, PlSmallStr)> {
-        Python::attach(|py| {
-            let (kind, obj) = target(py, spec)?;
-            let (dialect, module): (String, String) = bridge_module(py)?
-                .call_method1("connection_info", (obj, kind))?
-                .extract()?;
-            PyResult::Ok((dialect, module))
-        })
-        .map_err(err)
-        .map(|(dialect, module)| {
-            (
-                DialectName::parse(&dialect)
-                    .unwrap_or_else(|_| DialectName::from_python_module(&module)),
-                module.into(),
-            )
-        })
-    }
-}
-
 impl PythonDriverBridge for PyDriverBridge {
     fn probe(&self, kind: &BackendKind) -> Option<ProbeResult> {
         Python::attach(|py| {
@@ -235,12 +215,22 @@ impl PythonDriverBridge for PyDriverBridge {
         })
     }
 
-    fn connection_dialect(&self, spec: &ConnectionSpec) -> PolarsResult<DialectName> {
-        Ok(self.connection_info(spec)?.0)
-    }
-
-    fn connection_module(&self, spec: &ConnectionSpec) -> PolarsResult<PlSmallStr> {
-        Ok(self.connection_info(spec)?.1)
+    fn connection_info(&self, spec: &ConnectionSpec) -> PolarsResult<(DialectName, PlSmallStr)> {
+        Python::attach(|py| {
+            let (kind, obj) = target(py, spec)?;
+            let (dialect, module): (String, String) = bridge_module(py)?
+                .call_method1("connection_info", (obj, kind))?
+                .extract()?;
+            PyResult::Ok((dialect, module))
+        })
+        .map_err(err)
+        .map(|(dialect, module)| {
+            (
+                DialectName::parse(&dialect)
+                    .unwrap_or_else(|_| DialectName::from_python_module(&module)),
+                module.into(),
+            )
+        })
     }
 
     fn connect(
