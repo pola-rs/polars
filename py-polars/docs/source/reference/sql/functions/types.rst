@@ -80,10 +80,11 @@ written as `DATETIME64(3, 'Europe/Amsterdam')`, with the precision (1 to 9) firs
 
 Struct values are written as `{'a': 1, 'b': 'x'}` and map values as `MAP {'k': 1}`. Their
 entries can be any expression. The field names of a struct must differ. A map key cannot be
-`NULL`. Constant map keys must differ once converted to the map's key type. A key repeated at run
-time keeps its first position and its last value. An empty map needs a type:
-`CAST(MAP {} AS MAP(VARCHAR, INT))`. Casting a map value written this way casts its keys and
-values. `TRY_CAST` still raises when a key does not convert, as a key cannot be `NULL`.
+`NULL`. Constant map keys must differ once converted to the map's key type. Keys from columns can
+still be equal in a row. The map then keeps one entry for that key, where the key first appears,
+with the last value given for it. An empty map needs a type: `CAST(MAP {} AS MAP(VARCHAR, INT))`.
+Casting a map value written this way casts its keys and values. `TRY_CAST` still raises when a key
+does not convert, as a key cannot be `NULL`.
 
 **Example:**
 
