@@ -3762,17 +3762,7 @@ def test_join_untyped_literal_keys(on: str, how: str) -> None:
         "SELECT x.k, y.k AS k2 FROM a AS x POSITIONAL JOIN a y",
         "SELECT * FROM a POSITIONAL JOIN (SELECT v FROM b WHERE v > 7) AS c",
         "SELECT a.k, b.v, c.s FROM a POSITIONAL JOIN b JOIN a AS c ON c.k = b.v - 7",
-        # in a correlated LATERAL, rows are paired before the outer values are read
-        """
-        SELECT o.k, p.s, p.v FROM a AS o CROSS JOIN LATERAL (
-          SELECT a.s, b.v FROM a POSITIONAL JOIN b WHERE a.k = o.k
-        ) AS p
-        """,
-        """
-        SELECT o.k, p.n FROM a AS o CROSS JOIN LATERAL (
-          SELECT COUNT(*) AS n FROM a POSITIONAL JOIN b WHERE b.v > o.k + 7
-        ) AS p
-        """,
+        "SELECT o.k, p.v FROM a AS o CROSS JOIN LATERAL (SELECT b.v FROM a POSITIONAL JOIN b) AS p",
     ],
 )
 def test_positional_join(query: str) -> None:
@@ -3844,6 +3834,13 @@ def test_positional_join_names_and_errors() -> None:
             assert sorted(ctx.execute(query, eager=True).rows()) == [(1,), (2,)]
         ctx.execute("CREATE VIEW v AS SELECT * FROM a POSITIONAL JOIN b")
         assert ctx.execute("SELECT count(*) AS n FROM v", eager=True).item() == 3
+        # a correlated LATERAL would pair the rows of the outer values
+        with pytest.raises(SQLInterfaceError):
+            ctx.execute(
+                "SELECT o.k, p.k FROM a AS o CROSS JOIN LATERAL "
+                "(SELECT b.k FROM a POSITIONAL JOIN b WHERE a.k = o.k) AS p",
+                eager=True,
+            )
         for constraint in ["ON a.k = b.k", "USING (k)"]:
             with pytest.raises(
                 SQLInterfaceError, match="does not take a join condition"

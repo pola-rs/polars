@@ -29,8 +29,8 @@ use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, Distinct, Expr as SQLExpr, GroupByExpr, Ident, Join,
     JoinConstraint, JoinOperator, ObjectName, OrderBy, OrderByKind, Query, SelectItem,
-    SelectItemQualifiedWildcardKind, SetExpr, TableAlias, TableFactor, TableWithJoins,
-    Value as SQLValue, ValueWithSpan, Visitor, VisitorMut,
+    SelectItemQualifiedWildcardKind, SetExpr, TableFactor, TableWithJoins, Value as SQLValue,
+    ValueWithSpan, Visitor, VisitorMut,
 };
 
 use crate::context::{RelationName, match_qualifier, relation_name};
@@ -228,41 +228,13 @@ fn zero_over_no_rows(ctx: &SQLContext, aggregate: &SQLExpr) -> bool {
     }
 }
 
-/// Puts the domain table in front of the first FROM item. Positional joins pair the rows of
-/// their inputs, so a first item with one is joined to the domain as a whole.
+/// Puts the domain table in front of the first FROM item.
 fn read_domain(from: &mut Vec<TableWithJoins>, domain_name: &Ident) {
     match from.first_mut() {
         None => from.push(TableWithJoins {
             relation: table(domain_name),
             joins: vec![],
         }),
-        Some(first)
-            if first
-                .joins
-                .iter()
-                .any(|join| is_positional_join(&join.join_operator)) =>
-        {
-            let item = std::mem::replace(
-                first,
-                TableWithJoins {
-                    relation: table(domain_name),
-                    joins: vec![],
-                },
-            );
-            first.joins.push(Join {
-                relation: TableFactor::NestedJoin {
-                    table_with_joins: Box::new(item),
-                    alias: Some(TableAlias {
-                        explicit: true,
-                        name: Ident::new(format!("{}_FROM", domain_name.value)),
-                        columns: vec![],
-                        at: None,
-                    }),
-                },
-                global: false,
-                join_operator: JoinOperator::CrossJoin(JoinConstraint::None),
-            });
-        },
         Some(first) => {
             let relation = std::mem::replace(&mut first.relation, table(domain_name));
             first.joins.insert(
@@ -480,17 +452,19 @@ impl SQLContext {
             return None;
         }
         // The domain table joins before the first FROM item, so a RIGHT or FULL join would
-        // add rows without an outer value.
+        // add rows without an outer value, and a positional join would pair the rows of the
+        // domain.
         if select.from.first().is_some_and(|tbl| {
             tbl.joins.iter().any(|join| {
-                matches!(
-                    join.join_operator,
-                    JoinOperator::Right(_)
-                        | JoinOperator::RightOuter(_)
-                        | JoinOperator::FullOuter(_)
-                        | JoinOperator::RightSemi(_)
-                        | JoinOperator::RightAnti(_)
-                )
+                is_positional_join(&join.join_operator)
+                    || matches!(
+                        join.join_operator,
+                        JoinOperator::Right(_)
+                            | JoinOperator::RightOuter(_)
+                            | JoinOperator::FullOuter(_)
+                            | JoinOperator::RightSemi(_)
+                            | JoinOperator::RightAnti(_)
+                    )
             })
         }) {
             return None;
