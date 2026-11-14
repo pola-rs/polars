@@ -55,7 +55,7 @@ name resolved as in a query. Each statement makes one change, in one commit:
 * ``ADD [COLUMN] [IF NOT EXISTS] <name> <type>`` adds a nullable column (``NOT NULL`` is not
   supported, as the existing rows have no value for it);
 * ``DROP [COLUMN] [IF EXISTS] <name>`` drops a column (not one that a partition spec of
-  the table partitions by, also an older one);
+  the table partitions by, also an older one, nor one that the table's sort order sorts by);
 * ``RENAME COLUMN <name> TO <new_name>`` renames a column, keeping its data;
 * ``ALTER COLUMN <name> [SET DATA] TYPE <type>`` changes a column's type, as the catalog
   allows (such as ``INT`` to ``BIGINT``, ``FLOAT`` to ``DOUBLE``, or a wider ``DECIMAL``);
@@ -63,7 +63,11 @@ name resolved as in a query. Each statement makes one change, in one commit:
 * ``SET TBLPROPERTIES ('key' = value, ...)`` sets table properties;
 * ``SET PARTITIONED BY (<field>, ...)`` sets how new data is partitioned, with the fields of
   ``CREATE TABLE ... PARTITION BY``, in the order written;
-* ``RESET PARTITIONED BY`` stops partitioning new data.
+* ``RESET PARTITIONED BY`` stops partitioning new data;
+* ``SET SORTED BY (<field> [ASC | DESC] [NULLS FIRST | LAST], ...)`` sets how new data is
+  sorted, with fields as in ``PARTITION BY``, in the order written (``truncate`` also takes
+  decimals);
+* ``RESET SORTED BY`` stops sorting new data.
 
 Changing the partitioning only changes the table's metadata. Existing data files keep the
 partitioning they were written with, and later writes use the new one. A field that the
@@ -72,8 +76,16 @@ statement adds at most one time transform (``year``, ``month``, ``day`` or ``hou
 column. Time fields the table has can stay.
 Iceberg v1 tables are not supported: upgrade them to v2 first.
 
-Column names are case-sensitive and name top-level columns. ``SET PARTITIONED BY`` also
-takes fields of struct columns (``s.f``), as ``CREATE TABLE ... PARTITION BY`` does.
+Changing the sort order also only changes the table's metadata. Later SQL writes (also
+``DELETE``, ``UPDATE`` and ``MERGE``, which rewrite data files) and ``sink_iceberg`` sort
+their data by the new order. A field without ``NULLS FIRST`` or ``NULLS LAST`` takes the null order of
+``ORDER BY``: nulls last for ``ASC``, first for ``DESC``. Engines differ in this default, so
+state the null order in statements that other engines also run. An older sort order with the
+same fields is used again.
+
+Column names are case-sensitive and name top-level columns. ``SET PARTITIONED BY`` and
+``SET SORTED BY`` also take fields of struct columns (``s.f``), as
+``CREATE TABLE ... PARTITION BY`` does.
 ``ALTER TABLE IF EXISTS`` does nothing if the table does not exist.
 
 **Example:**
@@ -86,6 +98,8 @@ takes fields of struct columns (``s.f``), as ``CREATE TABLE ... PARTITION BY`` d
     ALTER TABLE lake.sales.orders SET TBLPROPERTIES ('owner' = 'finance')
     ALTER TABLE lake.sales.orders SET PARTITIONED BY (month(ordered_at), bucket(16, id))
     ALTER TABLE lake.sales.orders RESET PARTITIONED BY
+    ALTER TABLE lake.sales.orders SET SORTED BY (customer_id, ordered_at DESC NULLS LAST)
+    ALTER TABLE lake.sales.orders RESET SORTED BY
 
 .. _create_schema:
 

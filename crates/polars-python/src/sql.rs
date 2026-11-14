@@ -347,6 +347,14 @@ impl PySQLContext {
                             .collect();
                         op.set_item("fields", fields)?;
                     },
+                    CatalogAlter::SetSortOrder { fields } => {
+                        op.set_item("op", "set_sort_order")?;
+                        let fields: Vec<(Vec<String>, String, bool, bool)> = fields
+                            .into_iter()
+                            .map(|f| (f.path, f.transform, f.descending, f.nulls_first))
+                            .collect();
+                        op.set_item("fields", fields)?;
+                    },
                 }
                 dict.set_item("operation", op)?;
             },

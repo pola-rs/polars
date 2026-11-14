@@ -2174,6 +2174,7 @@ def _alter_catalog_table(
 ) -> str:
     """Change the catalog table of an `ALTER TABLE`, returning the response."""
     from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
+    from pyiceberg.table.update import AssertDefaultSortOrderId, AssertDefaultSpecId
 
     from polars.exceptions import (
         ColumnNotFoundError,
@@ -2205,18 +2206,29 @@ def _alter_catalog_table(
         raise NoSuchTableError(msg) from error
 
     kind, column = op["op"], op.get("column")
-    if kind == "set_partitioning":
+    if kind in ("set_partitioning", "set_sort_order"):
         from polars.io.iceberg._partition_evolution import (
             commit_spec_change,
             spec_change,
         )
+        from polars.io.iceberg._sort_order import (
+            commit_sort_order_change,
+            sort_order_change,
+        )
 
         metadata = table.metadata
-        change = spec_change(metadata, [tuple(f) for f in op["fields"]], name)
+        fields = [tuple(f) for f in op["fields"]]
+        change: Any
+        commit: Callable[..., None]
+        if kind == "set_partitioning":
+            change, commit = spec_change(metadata, fields, name), commit_spec_change
+        else:
+            change = sort_order_change(metadata, fields, name)
+            commit = commit_sort_order_change
         if change is None:
             return response
         try:
-            commit_spec_change(table, metadata, change)
+            commit(table, metadata, change)
         except Exception as error:
             error.add_note(
                 f"table '{name}' could not be altered: catalog table "
@@ -2258,6 +2270,7 @@ def _alter_catalog_table(
         check_free(op["new_name"], columns[column].field_id)
     if kind == "drop_column":
         _check_not_partition_source(table, columns[column], name)
+        _check_not_sort_source(table, columns[column], name)
     if kind == "drop_column" and len(columns) == 1:
         msg = f"column '{column}' is the only column of table '{name}'"
         raise InvalidOperationError(msg)
@@ -2287,7 +2300,8 @@ def _alter_catalog_table(
         if kind == "set_properties":
             table.transaction().set_properties(op["properties"]).commit_transaction()
         else:
-            update = table.update_schema()
+            tx = table.transaction()
+            update = tx.update_schema()
             path = (column,)
             if kind == "add_column":
                 update.add_column(path, field_type)
@@ -2300,6 +2314,17 @@ def _alter_catalog_table(
             else:
                 update.update_column(path, required=False)
             update.commit()
+            if kind == "drop_column":
+                # the checks above read the partitioning and the sort order
+                metadata = table.metadata
+                requirements = (
+                    AssertDefaultSpecId(default_spec_id=metadata.default_spec_id),  # type: ignore[call-arg]
+                    AssertDefaultSortOrderId(
+                        default_sort_order_id=metadata.default_sort_order_id  # type: ignore[call-arg]
+                    ),
+                )
+                tx._stage((), requirements)
+            tx.commit_transaction()
     except Exception as error:
         error.add_note(
             f"table '{name}' could not be altered: catalog table "
@@ -2330,6 +2355,26 @@ def _check_not_partition_source(
                     "PyIceberg fail once a partition spec's column is gone"
                 )
                 raise InvalidOperationError(msg)
+
+
+def _check_not_sort_source(
+    table: pyiceberg.table.Table, column: Any, name: str
+) -> None:
+    """Raise if the default sort order of `table` uses `column`; older ones may."""
+    from pyiceberg.schema import Schema
+
+    from polars.exceptions import InvalidOperationError
+
+    # a struct column also takes its nested fields with it
+    ids = set(Schema(column).field_ids)
+    order = table.sort_order()
+    if any(field.source_id in ids for field in order.fields):
+        msg = (
+            f"column '{column.name}' of table '{name}' cannot be dropped: sort order "
+            f"{order.order_id} sorts by it; change the sort order first, e.g. with "
+            "`ALTER TABLE ... RESET SORTED BY`"
+        )
+        raise InvalidOperationError(msg)
 
 
 def _create_catalog_table(

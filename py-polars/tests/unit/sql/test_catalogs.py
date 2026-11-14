@@ -3312,6 +3312,218 @@ def test_drop_column_of_older_partition_spec(lake: CountingCatalog) -> None:
             ctx.execute(f"ALTER TABLE ev DROP COLUMN {column}")
 
 
+def order_of(catalog: CountingCatalog, name: str) -> tuple[int, list[Any]]:
+    """The default sort order's id and fields (path, transform, direction, nulls)."""
+    table = catalog.load_table(("tpch", name))
+    schema = table.schema()
+    order = table.sort_order()
+    return order.order_id, [
+        (
+            schema.find_column_name(f.source_id),
+            str(f.transform),
+            f.direction.name,
+            f.null_order.name,
+        )
+        for f in order.fields
+    ]
+
+
+def file_column(catalog: CountingCatalog, name: str, column: str) -> list[Any]:
+    """The values of `column` in the table's only data file, in file order."""
+    [task] = catalog.load_table(("tpch", name)).scan().plan_files()
+    return pl.read_parquet(task.file.file_path)[column].to_list()
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_sort_order(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute(
+        "CREATE TABLE so (id BIGINT, ts TIMESTAMP, d DECIMAL(10, 2), s VARCHAR)"
+    )
+    res = ctx.execute(
+        "ALTER TABLE so SET SORTED BY "
+        "(s DESC, truncate(10, d), id ASC NULLS FIRST, day(ts), id)",
+        eager=True,
+    )
+    assert res.item() == "ALTER TABLE lake.tpch.so"
+    # without NULLS FIRST | LAST, the null order of ORDER BY; a repeated field is kept
+    assert order_of(lake, "so") == (
+        1,
+        [
+            ("s", "identity", "DESC", "NULLS_FIRST"),
+            ("d", "truncate[10]", "ASC", "NULLS_LAST"),
+            ("id", "identity", "ASC", "NULLS_FIRST"),
+            ("ts", "day", "ASC", "NULLS_LAST"),
+            ("id", "identity", "ASC", "NULLS_LAST"),
+        ],
+    )
+    # later writes are sorted by it and record its id
+    src = pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4],
+            "ts": [datetime(2024, 1, 1)] * 4,
+            "d": pl.Series([4, 2, 3, 1], dtype=pl.Decimal(10, 2)),
+            "s": ["a", None, "b", "a"],
+        }
+    )
+    ctx.register("src", src)
+    ctx.execute("INSERT INTO so SELECT * FROM src")
+    [task] = lake.load_table(("tpch", "so")).scan().plan_files()
+    assert task.file.sort_order_id == 1
+    assert file_column(lake, "so", "id") == [2, 3, 4, 1]
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_sort_order_reuse(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.schema import Schema
+    from pyiceberg.table.sorting import SortField, SortOrder
+    from pyiceberg.transforms import IdentityTransform
+    from pyiceberg.types import LongType, NestedField
+
+    ctx = events_ctx(lake)
+    commits: list[None] = []
+    commit_table = lake.commit_table
+
+    def counted(*args: Any) -> Any:
+        commits.append(None)
+        return commit_table(*args)
+
+    monkeypatch.setattr(lake, "commit_table", counted)
+    ctx.execute("ALTER TABLE ev SET SORTED BY (id)")
+    # the same order again: nothing to commit
+    ctx.execute("ALTER TABLE ev SET SORTED BY (id ASC NULLS LAST)")
+    assert len(commits) == 1
+    ctx.execute("ALTER TABLE ev SET SORTED BY (s DESC)")
+    assert order_of(lake, "ev")[0] == 2
+    # an older order with the same fields is used again
+    ctx.execute("ALTER TABLE ev SET SORTED BY (id)")
+    assert order_of(lake, "ev")[0] == 1
+    ctx.execute("ALTER TABLE ev RESET SORTED BY")
+    ctx.execute("ALTER TABLE ev RESET SORTED BY")
+    assert order_of(lake, "ev") == (0, [])
+    assert len(commits) == 4
+    table = lake.load_table(("tpch", "ev"))
+    assert [order.order_id for order in table.metadata.sort_orders] == [0, 1, 2]
+
+    # created with a sort order, so without the unsorted order: RESET adds it
+    lake.create_table(
+        ("tpch", "sorted"),
+        schema=Schema(NestedField(1, "id", LongType())),
+        sort_order=SortOrder(SortField(source_id=1, transform=IdentityTransform())),
+    )
+    ctx.execute("ALTER TABLE sorted RESET SORTED BY")
+    assert order_of(lake, "sorted") == (0, [])
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_sort_order_concurrent(lake: CountingCatalog) -> None:
+    from pyiceberg.exceptions import CommitFailedException
+
+    from polars.io.iceberg._sort_order import (
+        commit_sort_order_change,
+        sort_order_change,
+    )
+
+    ctx = events_ctx(lake)
+    ctx.execute("ALTER TABLE ev SET SORTED BY (id)")
+    ctx.execute("ALTER TABLE ev SET SORTED BY (s)")
+    # planned before another change of the sort order, then of the schema: refused
+    for meanwhile in ["RESET SORTED BY", "ADD COLUMN x INT"]:
+        stale = lake.load_table(("tpch", "ev"))
+        change = sort_order_change(
+            stale.metadata, [(["id"], "identity", False, False)], "ev"
+        )
+        assert change == 1
+        ctx.execute(f"ALTER TABLE ev {meanwhile}")
+        with pytest.raises(CommitFailedException):
+            commit_sort_order_change(stale, stale.metadata, change)
+    assert order_of(lake, "ev") == (0, [])
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_sort_order_nested(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE n (id BIGINT, s STRUCT<f VARCHAR, g INT>)")
+    ctx.execute("ALTER TABLE n SET SORTED BY (s.f DESC NULLS LAST, bucket(2, s.g))")
+    assert order_of(lake, "n")[1] == [
+        ("s.f", "identity", "DESC", "NULLS_LAST"),
+        ("s.g", "bucket[2]", "ASC", "NULLS_LAST"),
+    ]
+    src = pl.DataFrame({"id": [1, 2, 3], "s": [{"f": "a", "g": 1}, {"f": "c"}, None]})
+    ctx.register("src", src)
+    ctx.execute("INSERT INTO n SELECT * FROM src")
+    assert file_column(lake, "n", "id") == [2, 1, 3]
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_sort_order_errors(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE e (id BIGINT, ts TIMESTAMP, st STRUCT<f INT>, l INT[])")
+    location = lake.load_table(("tpch", "e")).metadata_location
+    for fields, match in [
+        ("(nope)", "sort column 'nope' is not a column of table 'e'"),
+        ("(lower(id))", r"unsupported sort field `lower\(id\)`"),
+        ("(id WITH FILL)", "unsupported sort field `id WITH FILL`"),
+        ("(truncate(2, ts))", r"cannot sort table 'e' by truncate\[2\] of column 'ts'"),
+        ("(st)", "cannot sort table 'e' by identity of column 'st'"),
+        ("(l.f)", "only struct fields can be sort sources"),
+        ("()", "RESET SORTED BY"),
+    ]:
+        with pytest.raises(SQLInterfaceError, match=match):
+            ctx.execute(f"ALTER TABLE e SET SORTED BY {fields}")
+    assert lake.load_table(("tpch", "e")).metadata_location == location
+
+    df = pl.DataFrame({"a": [1]})
+    with pytest.raises(SQLInterfaceError, match="supported only for catalog tables"):
+        pl.sql("ALTER TABLE df SET SORTED BY (a)")
+
+
+@pytest.mark.write_disk
+def test_drop_column_of_sort_order(lake: CountingCatalog) -> None:
+    from polars.exceptions import InvalidOperationError
+
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE d (id BIGINT, s STRUCT<f INT>, x INT)")
+    ctx.execute("ALTER TABLE d SET SORTED BY (s.f, x)")
+    # a struct takes its fields with it
+    for column in ["x", "s"]:
+        with pytest.raises(InvalidOperationError, match="sort order 1 sorts by it"):
+            ctx.execute(f"ALTER TABLE d DROP COLUMN {column}")
+    # an older sort order may lose its column
+    ctx.execute("ALTER TABLE d SET SORTED BY (id)")
+    ctx.execute("ALTER TABLE d DROP COLUMN x")
+    ctx.execute("INSERT INTO d VALUES (1, NULL)")
+    assert ctx.execute("SELECT count(*) FROM d", eager=True).item() == 1
+
+
+@pytest.mark.write_disk
+def test_drop_column_concurrent(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import CommitFailedException
+
+    from polars.sql import context as sql_context
+
+    ctx, other = lake_ctx(lake), lake_ctx(lake)
+    ctx.execute("CREATE TABLE d (id BIGINT, x INT)")
+    check = sql_context._check_not_sort_source
+    # the column becomes a sort or partition source after the checks: refused
+    for meanwhile in ["SET SORTED BY (x)", "SET PARTITIONED BY (x)"]:
+
+        def check_then_change(*args: Any, meanwhile: str = meanwhile) -> None:
+            check(*args)
+            other.execute(f"ALTER TABLE d {meanwhile}")
+
+        monkeypatch.setattr(sql_context, "_check_not_sort_source", check_then_change)
+        with pytest.raises(CommitFailedException):
+            ctx.execute("ALTER TABLE d DROP COLUMN x")
+        assert lake.load_table(("tpch", "d")).schema().find_field("x")
+        monkeypatch.undo()
+        ctx.execute("ALTER TABLE d RESET SORTED BY")
+
+
 def table_rows(catalog: CountingCatalog, *identifier: str) -> list[tuple[Any, ...]]:
     rows = catalog.load_table(identifier).scan().to_arrow().to_pylist()
     # NULLs last within a column

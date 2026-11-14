@@ -11,8 +11,8 @@ mod grouping_sets;
 mod join_keys;
 pub mod keywords;
 mod lateral;
+mod layout_alter;
 mod literal_folding;
-mod partition_alter;
 mod resolver;
 mod sql_expr;
 mod sql_visitors;
@@ -33,8 +33,8 @@ mod types;
 mod window_frames;
 
 pub use catalog::{
-    CatalogAlter, CatalogNamespace, CatalogPartitionField, CatalogRead, CatalogStatement,
-    CatalogTable, MergeClausePlan, MergePlan, MergeSourcePlan,
+    CatalogAlter, CatalogNamespace, CatalogPartitionField, CatalogRead, CatalogSortField,
+    CatalogStatement, CatalogTable, MergeClausePlan, MergePlan, MergeSourcePlan,
 };
 pub use context::{SQLContext, extract_table_identifiers};
 pub use resolver::register_sql_resolver;
