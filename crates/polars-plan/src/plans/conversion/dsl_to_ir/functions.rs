@@ -550,6 +550,27 @@ pub(super) fn convert_functions(
                         ));
                     };
 
+                    if let Some((i, dtype)) = e
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, e)| {
+                            e.dtype(ctx.schema, ctx.arena)
+                                .ok()?
+                                .clone()
+                                .materialize_unknown(false)
+                                .ok()
+                                .filter(|dt| !(dt.is_bool() || dt.is_null()))
+                                .map(|dt| (i, dt))
+                        })
+                        .next()
+                    {
+                        polars_bail!(
+                            SchemaMismatch:
+                            "non-Boolean input passed to `all_horizontal`: \
+                            input at index {i} has dtype {dtype:?}"
+                        );
+                    }
+
                     if e.len() == 1 {
                         return Ok((
                             AExprBuilder::new_from_node(fst.node())
@@ -579,6 +600,27 @@ pub(super) fn convert_functions(
                             format_pl_smallstr!("{}", IB::AnyHorizontal),
                         ));
                     };
+
+                    if let Some((i, dtype)) = e
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, e)| {
+                            e.dtype(ctx.schema, ctx.arena)
+                                .ok()?
+                                .clone()
+                                .materialize_unknown(false)
+                                .ok()
+                                .filter(|dt| !(dt.is_bool() || dt.is_null()))
+                                .map(|dt| (i, dt))
+                        })
+                        .next()
+                    {
+                        polars_bail!(
+                            SchemaMismatch:
+                            "non-Boolean input passed to `any_horizontal`: \
+                            input at index {i} has dtype {dtype:?}"
+                        );
+                    }
 
                     if e.len() == 1 {
                         return Ok((
