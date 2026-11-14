@@ -16,6 +16,8 @@ use sqlparser::ast::{
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
+#[cfg(feature = "pivot")]
+use crate::col;
 use crate::context::{RelationName, factor_relations, match_qualifier};
 use crate::functions::reads_no_input;
 use crate::sql_expr::parse_sql_expr;

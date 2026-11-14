@@ -233,6 +233,16 @@ def test_unpivot(wide: pl.DataFrame, query: str, expected: dict[str, Any]) -> No
     )
 
 
+def test_unpivot_names_are_not_patterns() -> None:
+    df = pl.DataFrame({"^v$": [1, 2], "v": [30, 40]})
+    res = pl.sql(
+        'SELECT * FROM df UNPIVOT (val FOR "^name$" IN ("^v$")) ORDER BY val',
+        eager=True,
+    )
+    assert res.columns == ["v", "^name$", "val"]
+    assert res.rows() == [(30, "^v$", 1), (40, "^v$", 2)]
+
+
 def test_unpivot_errors(wide: pl.DataFrame) -> None:
     with pytest.raises(SQLInterfaceError, match="a single value column"):
         pl.sql("SELECT * FROM wide UNPIVOT ((a, b) FOR k IN ((q1, q2)))", eager=True)
