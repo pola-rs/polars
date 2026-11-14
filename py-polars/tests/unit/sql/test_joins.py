@@ -3780,14 +3780,29 @@ def test_positional_join(query: str) -> None:
 def test_positional_join_names_and_errors() -> None:
     a = pl.DataFrame({"k": [1, 2]})
     b = pl.DataFrame({"k": [7, 8, 9]})
-    tables = {"a": a, "b": b, "positional": a, "ns.positional": a, "ns.table": a}
+    tables = {
+        "a": a,
+        "b": b,
+        "positional": a,
+        "update": a,
+        "ns.positional": a,
+        "ns.table": a,
+    }
     with pl.SQLContext(tables) as ctx:
         # names that are keywords
-        for left in ["a", "a AS update", "ns.table"]:
+        for left in ["a", "a AS update", "ns.table", "update"]:
             assert_frame_equal(
                 ctx.execute(f"SELECT * FROM {left} POSITIONAL JOIN b", eager=True),
                 pl.DataFrame({"k": [1, 2, None], "k:b": [7, 8, 9]}),
             )
+        assert_frame_equal(
+            ctx.execute(
+                "SELECT * FROM b POSITIONAL JOIN update POSITIONAL JOIN a", eager=True
+            ),
+            pl.DataFrame(
+                {"k": [7, 8, 9], "k:update": [1, 2, None], "k:a": [1, 2, None]}
+            ),
+        )
         # where a name goes, the word is a name
         for query in [
             "SELECT positional.k FROM a AS positional JOIN b ON positional.k = b.k - 6",

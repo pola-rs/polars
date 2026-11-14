@@ -154,28 +154,30 @@ fn is_keyword(token: &TokenWithSpan, keyword: Keyword) -> bool {
 }
 
 /// Whether a name goes right after `tokens`: after `.`, `,`, `(`, or a keyword such as `FROM`
-/// or `AS` that is not itself a name.
+/// or `AS`. In a run of such keywords, like `FROM update`, every other one is a name.
 fn name_follows(tokens: &[TokenWithSpan]) -> bool {
-    let mut before = tokens.iter().rev().filter(|t| significant(t));
-    match before.next().map(|t| &t.token) {
-        Some(Token::Period | Token::Comma | Token::LParen) => true,
-        Some(Token::Word(w)) => {
-            w.quote_style.is_none()
-                && matches!(
-                    w.keyword,
-                    Keyword::AS
-                        | Keyword::FROM
-                        | Keyword::JOIN
-                        | Keyword::LATERAL
-                        | Keyword::TABLE
-                        | Keyword::INTO
-                        | Keyword::UPDATE
-                        | Keyword::USING
-                )
-                && !before
-                    .next()
-                    .is_some_and(|t| t.token == Token::Period || is_keyword(t, Keyword::AS))
-        },
-        _ => false,
+    let mut keywords = 0;
+    for token in tokens.iter().rev().filter(|t| significant(t)) {
+        match &token.token {
+            Token::Word(w)
+                if w.quote_style.is_none()
+                    && matches!(
+                        w.keyword,
+                        Keyword::AS
+                            | Keyword::FROM
+                            | Keyword::JOIN
+                            | Keyword::LATERAL
+                            | Keyword::TABLE
+                            | Keyword::INTO
+                            | Keyword::UPDATE
+                            | Keyword::USING
+                    ) =>
+            {
+                keywords += 1
+            },
+            Token::Period | Token::Comma | Token::LParen => return keywords % 2 == 0,
+            _ => break,
+        }
     }
+    keywords % 2 == 1
 }
