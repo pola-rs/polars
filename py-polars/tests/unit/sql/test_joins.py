@@ -3792,6 +3792,9 @@ def test_positional_join_names_and_errors() -> None:
         # names that are keywords
         for left in [
             "a",
+            "a AS x",
+            "a x",
+            "(SELECT * FROM a) AS s",
             "a AS update",
             "a update",
             "ns.table",
@@ -3810,7 +3813,12 @@ def test_positional_join_names_and_errors() -> None:
                 {"k": [7, 8, 9], "k:update": [1, 2, None], "k:a": [1, 2, None]}
             ),
         )
-        # where a name goes, the word is a name
+        # where a name or a column goes, the word is a name
+        assert ctx.execute(
+            "SELECT b.k FROM b JOIN (SELECT 8 AS positional) AS p ON b.k = positional "
+            "JOIN a ON a.k = 1",
+            eager=True,
+        ).rows() == [(8,)]
         for query in [
             "SELECT positional.k FROM a AS positional JOIN b ON positional.k = b.k - 6",
             "SELECT positional.k FROM positional JOIN b ON positional.k = b.k - 6",

@@ -62,7 +62,7 @@ use crate::positional_join::{has_positional_join, is_positional_join};
 use crate::sql_expr::{
     convert_int_literal_for_string, is_string_expr, order_by_sort_options, parse_sql_array,
     parse_sql_expr, resolve_compound_identifier, resolve_expr_dtype, series_from_literals,
-    sql_parser, to_sql_interface_err,
+    sql_parser,
 };
 use crate::sql_visitors::{
     QualifyExpression, TableIdentifierCollector, check_ambiguous_column,
@@ -9698,9 +9698,7 @@ fn catalog_query_sql(query: &Query) -> PolarsResult<String> {
 
 fn parse_sql(query: &str) -> PolarsResult<Vec<Statement>> {
     let (mut parser, taken) = sql_parser(query)?;
-    let mut stmts = parser.parse_statements().map_err(to_sql_interface_err)?;
-    taken.attach(&mut stmts)?;
-    Ok(stmts)
+    taken.attach(query, parser.parse_statements())
 }
 
 bitflags::bitflags! {

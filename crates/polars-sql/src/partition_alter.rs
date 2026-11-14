@@ -31,9 +31,7 @@ pub(crate) fn parse_statements_or_alter(
         taken.refuse()?;
         return Ok(Err(alter));
     }
-    let mut stmts = parser.parse_statements().map_err(to_sql_interface_err)?;
-    taken.attach(&mut stmts)?;
-    Ok(Ok(stmts))
+    Ok(Ok(taken.attach(query, parser.parse_statements())?))
 }
 
 /// The single statement of `query`, or its partition change.

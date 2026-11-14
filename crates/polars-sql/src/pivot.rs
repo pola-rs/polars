@@ -17,7 +17,6 @@ use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
 use crate::context::{RelationName, factor_relations, match_qualifier};
-use crate::sql_visitors::expr_references_any_column;
 use crate::subquery_group_by::is_aggregate_call;
 use crate::subquery_pull_up::has_aggregate;
 use crate::{SQLContext, dyn_visit};
@@ -241,9 +240,9 @@ impl VisitorMut for FilterAggregates<'_> {
     }
 }
 
-/// A FILTER condition, cast to boolean if it reads no column, as FILTER takes it on its own.
+/// A FILTER condition, cast to boolean if it is a literal, as FILTER takes it on its own.
 fn filter_as_boolean(filter: SQLExpr) -> SQLExpr {
-    if expr_references_any_column(&filter) {
+    if !is_constant(&filter) {
         return filter;
     }
     SQLExpr::Cast {

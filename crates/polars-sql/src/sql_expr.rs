@@ -36,7 +36,7 @@ use sqlparser::ast::{
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::keywords::{self, Keyword};
-use sqlparser::parser::{Parser, ParserOptions};
+use sqlparser::parser::{Parser, ParserError, ParserOptions};
 use sqlparser::tokenizer::{Token, TokenWithSpan, Tokenizer};
 
 use crate::context::join_idents;
@@ -46,7 +46,7 @@ use crate::group_context::{has_marked_aggregate, mark_aggregate};
 use crate::literal_folding::{
     decimal_lit, fold_scalar, parse_exact_literal, try_fold_decimal_arithmetic,
 };
-use crate::positional_join::{PositionalJoins, extract_positional_joins};
+use crate::positional_join::{attach_positional_aliases, extract_positional_joins};
 use crate::sql_visitors::expr_references_any_column;
 use crate::subquery::is_correlated_subquery;
 use crate::time_travel::{TableVersions, extract_table_versions};
@@ -64,51 +64,74 @@ pub fn to_sql_interface_err(err: impl Display) -> PolarsError {
     PolarsError::SQLInterface(err.to_string().into())
 }
 
-/// The clauses taken out of a query before it is parsed, which sqlparser does not parse.
+/// The time travel clauses taken out of a query before it is parsed, which sqlparser does not
+/// parse.
 #[must_use]
-pub(crate) struct TakenClauses {
-    versions: TableVersions,
-    positional_joins: PositionalJoins,
-}
+pub(crate) struct TakenClauses(TableVersions);
 
 impl TakenClauses {
-    pub(crate) fn attach(self, stmts: &mut [Statement]) -> PolarsResult<()> {
-        self.versions.attach(stmts)?;
-        self.positional_joins.attach(stmts)
+    /// The statements `parsed` from `sql`, with the taken clauses attached. A `POSITIONAL JOIN`
+    /// parses as a `JOIN` after an alias `positional` (see [`attach_positional_aliases`]). Where
+    /// it doesn't, as after another alias, the statements are parsed again with the word
+    /// `POSITIONAL` taken out (see [`extract_positional_joins`]).
+    pub(crate) fn attach(
+        self,
+        sql: &str,
+        parsed: Result<Vec<Statement>, ParserError>,
+    ) -> PolarsResult<Vec<Statement>> {
+        let (mut stmts, versions) = match parsed {
+            Ok(mut stmts) => {
+                attach_positional_aliases(&mut stmts)?;
+                (stmts, self.0)
+            },
+            Err(err) => {
+                let (mut tokens, versions) = tokenize(sql)?;
+                let positional_joins = extract_positional_joins(&mut tokens);
+                if positional_joins.is_empty() {
+                    return Err(to_sql_interface_err(err));
+                }
+                let mut stmts = parser_of(tokens)
+                    .parse_statements()
+                    .map_err(|_| to_sql_interface_err(err))?;
+                positional_joins.attach(&mut stmts)?;
+                (stmts, versions)
+            },
+        };
+        versions.attach(&mut stmts)?;
+        Ok(stmts)
     }
 
     pub(crate) fn refuse(self) -> PolarsResult<()> {
-        self.versions.refuse()?;
-        self.positional_joins.refuse()
+        self.0.refuse()
     }
 }
 
 /// A parser of `sql`. `TOP` is only a keyword in `SELECT TOP n`, so that it can also name a
-/// relation or a column. Time travel clauses (see [`TableVersions`]) and the `POSITIONAL` of
-/// `POSITIONAL JOIN` (see [`PositionalJoins`]) are taken out first: the caller attaches them
-/// to its statements or refuses them.
+/// relation or a column. Time travel clauses (see [`TableVersions`]) are taken out first: the
+/// caller attaches them to its statements or refuses them.
 pub(crate) fn sql_parser(sql: &str) -> PolarsResult<(Parser<'static>, TakenClauses)> {
-    let options = ParserOptions {
-        trailing_commas: true,
-        ..Default::default()
-    };
+    let (tokens, versions) = tokenize(sql)?;
+    Ok((parser_of(tokens), TakenClauses(versions)))
+}
+
+fn tokenize(sql: &str) -> PolarsResult<(Vec<TokenWithSpan>, TableVersions)> {
     let mut tokens = Tokenizer::new(&GenericDialect, sql)
-        .with_unescape(options.unescape)
+        .with_unescape(ParserOptions::default().unescape)
         .tokenize_with_location()
         .map_err(to_sql_interface_err)?;
     demote_top_keyword(&mut tokens);
     let versions = extract_table_versions(&mut tokens)?;
-    let positional_joins = extract_positional_joins(&mut tokens);
-    let parser = Parser::new(&GenericDialect)
+    Ok((tokens, versions))
+}
+
+fn parser_of(tokens: Vec<TokenWithSpan>) -> Parser<'static> {
+    let options = ParserOptions {
+        trailing_commas: true,
+        ..Default::default()
+    };
+    Parser::new(&GenericDialect)
         .with_options(options)
-        .with_tokens_with_locations(tokens);
-    Ok((
-        parser,
-        TakenClauses {
-            versions,
-            positional_joins,
-        },
-    ))
+        .with_tokens_with_locations(tokens)
 }
 
 fn demote_top_keyword(tokens: &mut [TokenWithSpan]) {
