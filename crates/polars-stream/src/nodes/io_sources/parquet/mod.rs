@@ -269,6 +269,7 @@ impl FileReader for ParquetFileReader {
             row_index: None,
             pre_slice,
             predicate: None,
+            drop_columns_after_predicate: _,
             cast_columns_policy: _,
             extra_columns_policy: _,
             missing_columns_policy: _,
@@ -301,6 +302,7 @@ impl FileReader for ParquetFileReader {
             row_index,
             pre_slice: pre_slice_arg,
             predicate,
+            drop_columns_after_predicate,
             cast_columns_policy,
             extra_columns_policy: _,
             missing_columns_policy: _,
@@ -441,6 +443,7 @@ impl FileReader for ParquetFileReader {
             projected_arrow_fields,
             is_full_projection,
             predicate: predicate.map(|x| x.scan_io_predicate),
+            drop_columns_after_predicate,
             // TODO: Refactor to avoid full clone
             options: Arc::unwrap_or_clone(self.config.clone()),
             byte_source,
@@ -553,6 +556,8 @@ struct ParquetReadImpl {
     projected_arrow_fields: Arc<[ArrowFieldProjection]>,
     is_full_projection: bool,
     predicate: Option<ScanIOPredicate>,
+    /// See `BeginReadArgs::drop_columns_after_predicate`.
+    drop_columns_after_predicate: Vec<PlSmallStr>,
     options: ParquetOptions,
     byte_source: Arc<DynByteSource>,
     normalized_pre_slice: Option<(usize, usize)>,

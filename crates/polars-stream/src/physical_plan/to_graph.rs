@@ -1085,6 +1085,7 @@ fn to_graph_rec<'a>(
             cloud_options,
             file_projection_builder,
             output_schema,
+            output_schema_after_predicate,
             row_index,
             pre_slice,
             predicate,
@@ -1173,6 +1174,7 @@ fn to_graph_rec<'a>(
             let cloud_options = cloud_options.clone();
 
             let final_output_schema = output_schema.clone();
+            let output_schema_after_predicate = output_schema_after_predicate.clone();
             let file_projection_builder = file_projection_builder.clone();
 
             let row_index = row_index.clone();
@@ -1199,6 +1201,7 @@ fn to_graph_rec<'a>(
                             file_reader_builder,
                             cloud_options,
                             final_output_schema,
+                            output_schema_after_predicate,
                             file_projection_builder,
                             row_index,
                             pre_slice,
@@ -2049,6 +2052,7 @@ fn to_graph_rec<'a>(
             let sources = ScanSources::Paths(Buffer::from_iter([PlRefPath::new("python-scan-0")]));
             let cloud_options = None;
             let final_output_schema = output_schema.clone();
+            let output_schema_after_predicate = None;
             let file_projection_builder = ProjectionBuilder::new(output_schema, None, None, None);
             let row_index = None;
             let pre_slice = None;
@@ -2075,6 +2079,7 @@ fn to_graph_rec<'a>(
                             file_reader_builder,
                             cloud_options,
                             final_output_schema,
+                            output_schema_after_predicate,
                             file_projection_builder,
                             row_index,
                             pre_slice,

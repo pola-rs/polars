@@ -433,8 +433,12 @@ pub enum PhysNodeKind {
 
         /// Columns to project from the file.
         file_projection_builder: ProjectionBuilder,
-        /// Final output schema of morsels being sent out of MultiScan.
+        /// Final output schema of morsels being sent out of MultiScan, as seen by the predicate.
         output_schema: SchemaRef,
+        /// If set, the schema of the morsels actually sent out of MultiScan: `output_schema`
+        /// without the columns that are only read to evaluate `predicate`. Set by
+        /// `fuse_scan_drops`.
+        output_schema_after_predicate: Option<SchemaRef>,
 
         row_index: Option<RowIndex>,
         pre_slice: Option<Slice>,
@@ -1041,6 +1045,94 @@ fn fuse_drops(
     }
 }
 
+/// Fuses a no-rename `SimpleProjection` into the `MultiScan` below it, when the scan has a
+/// predicate: the scan then evaluates the predicate on the columns it reads, but does not
+/// emit (or gather the filtered rows of) the columns that were only read for the predicate.
+fn fuse_scan_drops(
+    roots: Vec<PhysNodeKey>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
+    phys_to_ir: &mut SecondaryMap<PhysNodeKey, Node>,
+) {
+    // Collect first: fusing swaps nodes, which would stop the traversal from reaching the
+    // inputs of the fused scan.
+    let mut projection_keys = Vec::new();
+    visit_nodes_mut(roots, phys_sm, |key, phys_sm| {
+        if let PhysNodeKind::SimpleProjection { .. } = phys_sm[key].kind() {
+            projection_keys.push(key);
+        }
+    });
+
+    for key in projection_keys {
+        let PhysNodeKind::SimpleProjection { input, .. } = phys_sm[key].kind() else {
+            continue;
+        };
+        let input = input.node;
+
+        let Some([simple_proj_node, input_node]) = phys_sm.get_disjoint_mut([key, input]) else {
+            continue;
+        };
+
+        if input_node.output_schemas.len() != 1 || simple_proj_node.output_schemas.len() != 1 {
+            continue;
+        }
+
+        let PhysNodeKind::SimpleProjection { input: _, columns } = simple_proj_node.kind() else {
+            unreachable!()
+        };
+
+        if columns.iter().any(|(k, v)| k != v) {
+            continue;
+        }
+
+        // Keep at least one column, so that the morsels still carry their height.
+        if columns.is_empty() {
+            continue;
+        }
+
+        let PhysNodeKind::MultiScan {
+            predicate: Some(_),
+            output_schema_after_predicate,
+            ..
+        } = input_node.kind_mut()
+        else {
+            continue;
+        };
+
+        // Already fused.
+        if output_schema_after_predicate.is_some() {
+            continue;
+        }
+
+        let input_schema = input_node.output_schema(0).clone();
+
+        if columns.len() >= input_schema.len() {
+            continue;
+        }
+
+        let Ok(narrowed) = input_schema.try_project(columns.keys()) else {
+            continue;
+        };
+        let narrowed = Arc::new(narrowed);
+
+        let PhysNodeKind::MultiScan {
+            output_schema_after_predicate,
+            ..
+        } = input_node.kind_mut()
+        else {
+            unreachable!()
+        };
+        *output_schema_after_predicate = Some(narrowed.clone());
+        *input_node.output_schema_mut(0) = narrowed;
+
+        std::mem::swap(simple_proj_node, input_node);
+        // The scan now lives in the projection's slot; move the attribution with it.
+        let proj_ir_node = phys_to_ir[key];
+        let scan_ir_node = phys_to_ir[input];
+        phys_to_ir.insert(key, scan_ir_node);
+        phys_to_ir.insert(input, proj_ir_node);
+    }
+}
+
 /// Sets `rechunk_input` on any `Select` node directly feeding into a `GroupBy`.
 ///
 /// The group-by consumes the selected key/aggregation columns in bulk, so it is
@@ -1092,6 +1184,7 @@ pub fn build_physical_plan(
     insert_multiplexers(vec![phys_root.node], phys_sm, &mut phys_to_ir);
     split_multiplexers(vec![phys_root.node], phys_sm, &mut phys_to_ir);
     fuse_drops(vec![phys_root.node], phys_sm, &mut phys_to_ir);
+    fuse_scan_drops(vec![phys_root.node], phys_sm, &mut phys_to_ir);
 
     // TODO: remove this after fusing pre-select into group-by node.
     rechunk_group_by_inputs(vec![phys_root.node], phys_sm);

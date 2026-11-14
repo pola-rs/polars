@@ -33,6 +33,8 @@ pub enum ApplyExtraOps {
         cast_columns_policy: CastColumnsPolicy,
         missing_columns_policy: MissingColumnsPolicy,
         extra_ops: ExtraOperations,
+        /// If set, the schema to narrow the output to after the predicate (if any) was evaluated. Must be a subset of `final_output_schema`.
+        output_schema_after_predicate: Option<SchemaRef>,
         /// This here so that we can get the include file path name if needed.
         scan_source: ScanSource,
         scan_source_idx: usize,
@@ -51,6 +53,9 @@ pub enum ApplyExtraOps {
         /// This will have include_file_paths, hive columns, missing columns.
         column_selectors: Option<Vec<ColumnSelector>>,
         predicate: Option<ScanIOPredicate>,
+        /// Indices of the columns to keep, applied after evaluating the predicate and before it
+        /// filters the rows (so that columns only needed by the predicate are not gathered).
+        output_projection_after_predicate: Option<Vec<usize>>,
     },
 
     /// No-op.
@@ -81,6 +86,7 @@ impl ApplyExtraOps {
                 projection,
                 cast_columns_policy,
                 missing_columns_policy,
+                output_schema_after_predicate,
                 extra_ops:
                     ExtraOperations {
                         row_index,
@@ -202,12 +208,25 @@ impl ApplyExtraOps {
                     Some(column_selectors)
                 };
 
+                let output_projection_after_predicate = output_schema_after_predicate
+                    .map(|narrow| {
+                        narrow
+                            .iter_names()
+                            .map(|name| final_output_schema.index_of(name).unwrap())
+                            .collect::<Vec<_>>()
+                    })
+                    .filter(|idxs| {
+                        !(idxs.len() == final_output_schema.len()
+                            && idxs.iter().enumerate().all(|(i, x)| i == *x))
+                    });
+
                 let out = Self::Initialized {
                     physical_pre_slice: pre_slice,
                     external_filter_mask,
                     row_index: row_index.map(|ri| (ri, row_index_col_idx)),
                     column_selectors,
                     predicate: predicate.map(|x| x.scan_io_predicate),
+                    output_projection_after_predicate,
                 };
 
                 // Return a `Noop` if our initialized state does not have any operations. Downstream
@@ -219,6 +238,7 @@ impl ApplyExtraOps {
                         row_index: None,
                         column_selectors: None,
                         predicate: None,
+                        output_projection_after_predicate: None,
                     } => Self::Noop,
 
                     Initialized { .. } => out,
@@ -245,6 +265,7 @@ impl ApplyExtraOps {
             row_index,
             column_selectors,
             predicate,
+            output_projection_after_predicate,
         } = ({
             use ApplyExtraOps::*;
 
@@ -331,8 +352,18 @@ impl ApplyExtraOps {
             unsafe { *df.columns_mut().get_mut(*col_idx).unwrap() = row_index_col }
         }
 
-        if let Some(predicate) = predicate {
-            let mask = predicate.predicate.evaluate_io(df)?;
+        let mask = predicate
+            .as_ref()
+            .map(|predicate| predicate.predicate.evaluate_io(df))
+            .transpose()?;
+
+        // Narrow before filtering, so that columns only needed by the predicate are not gathered.
+        if let Some(idxs) = output_projection_after_predicate {
+            let columns = idxs.iter().map(|&i| df.columns()[i].clone()).collect();
+            *df = unsafe { DataFrame::new_unchecked(df.height(), columns) };
+        }
+
+        if let Some(mask) = mask {
             *df = df.filter_seq(mask.bool().expect("predicate not boolean"))?;
         }
 

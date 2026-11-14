@@ -2009,3 +2009,34 @@ def test_simplify_year_comparison_prunes_row_groups(
     out = pl.scan_parquet(path).filter(pl.col("d").dt.year() == 2021).collect()
     assert out.height == 365
     assert "reading 4 / 11 row groups" in capfd.readouterr().err
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("scan", "write"),
+    [
+        (pl.scan_parquet, pl.DataFrame.write_parquet),
+        (pl.scan_ipc, pl.DataFrame.write_ipc),
+        (pl.scan_csv, pl.DataFrame.write_csv),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
+    ],
+)
+def test_streaming_engine_fused_scan_drop(
+    tmp_path: Path, scan: Any, write: Any
+) -> None:
+    path = tmp_path / "data"
+    write(pl.DataFrame({"x": [0, 1, 2], "y": [0, 1, 1], "z": ["a", "b", "c"]}), path)
+
+    q = scan(path).filter(pl.col("y") == 1).select("x", "z")
+
+    phys_plan = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+
+    assert "project after filter: 2 / 3: x, z" in phys_plan
+    assert_frame_equal(
+        q.collect(engine="streaming"), pl.DataFrame({"x": [1, 2], "z": ["b", "c"]})
+    )
+
+    # Not fused when nothing is dropped.
+    q = scan(path).filter(pl.col("y") == 1).select("x", "y", "z")
+    phys_plan = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "project after filter" not in phys_plan

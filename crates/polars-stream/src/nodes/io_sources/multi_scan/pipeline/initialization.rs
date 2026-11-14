@@ -487,6 +487,7 @@ async fn finish_initialize_multi_scan_pipeline(
     let sources = config.sources.clone();
     let hive_parts = config.hive_parts.clone();
     let final_output_schema = config.final_output_schema.clone();
+    let output_schema_after_predicate = config.output_schema_after_predicate.clone();
     let file_projection_builder = config.file_projection_builder.clone();
     let disable_morsel_split = config.disable_morsel_split;
 
@@ -529,6 +530,7 @@ async fn finish_initialize_multi_scan_pipeline(
             constant_args: StartReaderArgsConstant {
                 hive_parts,
                 final_output_schema,
+                output_schema_after_predicate,
                 reader_capabilities,
                 file_projection_builder,
                 cast_columns_policy,
