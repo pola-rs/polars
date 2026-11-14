@@ -1090,3 +1090,25 @@ print("OK", end="")
     )
 
     assert out == b"OK"
+
+
+@pytest.mark.parametrize("bom", [b"", b"\xef\xbb\xbf"])
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"\na\nb\nc",
+        b"\na,a\nb,b\nc,c",
+    ],
+)
+def test_scan_csv_len_leading_blank_line_matches_read(
+    tmp_path: Path, bom: bytes, body: bytes
+) -> None:
+    # https://github.com/pola-rs/polars/issues/22975
+    data = bom + body
+    file_path = tmp_path / "data.csv"
+    file_path.write_bytes(data)
+
+    expected = pl.read_csv(data).height
+    assert pl.scan_csv(data).select(pl.len()).collect().item() == expected
+    assert pl.scan_csv(file_path).select(pl.len()).collect().item() == expected
+    assert pl.scan_csv(file_path).collect().height == expected
