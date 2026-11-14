@@ -150,6 +150,7 @@ def test_pivot_column_references() -> None:
             "must be constants",
         ),
         ("PIVOT (SUM(SUM(amount)) OVER () FOR quarter IN ('q1'))", "window functions"),
+        ("PIVOT (SUM((SELECT 1)) FOR quarter IN ('q1'))", "cannot contain subqueries"),
         (
             "PIVOT (SUM(amount) FOR quarter IN ('q1') DEFAULT ON NULL (0))",
             "DEFAULT ON NULL",

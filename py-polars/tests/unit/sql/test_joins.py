@@ -3780,14 +3780,16 @@ def test_positional_join(query: str) -> None:
 def test_positional_join_names_and_errors() -> None:
     a = pl.DataFrame({"k": [1, 2]})
     b = pl.DataFrame({"k": [7, 8, 9]})
-    with pl.SQLContext({"a": a, "b": b, "ns.positional": a}) as ctx:
+    with pl.SQLContext({"a": a, "b": b, "positional": a, "ns.positional": a}) as ctx:
         assert_frame_equal(
             ctx.execute("SELECT * FROM a POSITIONAL JOIN b", eager=True),
             pl.DataFrame({"k": [1, 2, None], "k:b": [7, 8, 9]}),
         )
-        # after AS or in a qualified name, the word is a name
+        # where a name goes, the word is a name
         for query in [
             "SELECT positional.k FROM a AS positional JOIN b ON positional.k = b.k - 6",
+            "SELECT positional.k FROM positional JOIN b ON positional.k = b.k - 6",
+            "SELECT p.k FROM (positional AS p JOIN b ON p.k = b.k - 6)",
             "SELECT ns.positional.k FROM ns.positional JOIN b ON ns.positional.k = b.k - 6",
         ]:
             assert sorted(ctx.execute(query, eager=True).rows()) == [(1,), (2,)]

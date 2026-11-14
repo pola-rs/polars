@@ -337,6 +337,8 @@ pub struct SQLContext {
     joined_aliases: PlHashMap<String, PlHashMap<String, String>>,
     /// The current statement's FROM items that are not tables, read only by qualified columns.
     pub(crate) from_item_frames: PlHashMap<String, LazyFrame>,
+    /// A FROM item planned ahead with its plan, which the next `get_table` of that item takes.
+    pub(crate) planned_from_item: Option<(TableFactor, (String, LazyFrame))>,
     join_base: Option<JoinBase>,
     /// The (joined table, column) pairs of the USING clauses of the joins processed so far in
     /// the current join chain.
@@ -427,6 +429,7 @@ impl Default for SQLContext {
             active_relations: Default::default(),
             joined_aliases: Default::default(),
             from_item_frames: Default::default(),
+            planned_from_item: None,
             join_base: None,
             join_using_cols: Default::default(),
             exists_values: Default::default(),
@@ -6133,6 +6136,11 @@ impl SQLContext {
         &mut self,
         relation: &TableFactor,
     ) -> PolarsResult<(String, LazyFrame)> {
+        if let Some((factor, _)) = &self.planned_from_item
+            && factor == relation
+        {
+            return Ok(self.planned_from_item.take().unwrap().1);
+        }
         if let Some(name) = get_table_name(relation) {
             self.from_item_frames.remove(&name);
         }

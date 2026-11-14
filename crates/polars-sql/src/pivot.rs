@@ -49,62 +49,66 @@ impl SQLContext {
             relations: &relations,
             read: PlHashSet::new(),
             window: false,
+            subquery: false,
             query_depth: 0,
         };
-        let _ = dyn_visit::visit(column, &mut input);
         for aggregate in aggregates {
             let _ = dyn_visit::visit(&aggregate.expr, &mut input);
         }
+        polars_ensure!(!input.subquery, SQLInterface: "PIVOT aggregates cannot contain subqueries");
+        let _ = dyn_visit::visit(column, &mut input);
         polars_ensure!(!input.window, SQLInterface: "PIVOT does not support window functions");
         let read = input.read;
 
-        let mut lf = self.execute_isolated(|ctx| Ok(ctx.get_table(table)?.1))?;
-        let schema = self.get_frame_schema(&mut lf)?;
-        let group_by: Vec<SQLExpr> = schema
-            .iter_names()
-            .filter(|name| !read.contains(name.as_str()))
-            .map(|name| SQLExpr::Identifier(Ident::with_quote('"', name.as_str())))
-            .collect();
+        self.execute_isolated(|ctx| {
+            let (name, mut lf) = ctx.get_table(table)?;
+            let schema = ctx.get_frame_schema(&mut lf)?;
+            let group_by: Vec<SQLExpr> = schema
+                .iter_names()
+                .filter(|name| !read.contains(name.as_str()))
+                .map(|name| SQLExpr::Identifier(Ident::with_quote('"', name.as_str())))
+                .collect();
 
-        let mut projection: Vec<SelectItem> = group_by
-            .iter()
-            .cloned()
-            .map(SelectItem::UnnamedExpr)
-            .collect();
-        for value in values {
-            let value_name = match &value.alias {
-                Some(alias) => alias.value.clone(),
-                None => pivot_value_name(&value.expr),
-            };
-            let matches =
-                SQLExpr::IsNotDistinctFrom(Box::new(column.clone()), Box::new(value.expr.clone()));
-            for aggregate in aggregates {
-                let mut expr = aggregate.expr.clone();
-                let mut filter = FilterAggregates {
-                    ctx: self,
-                    matches: &matches,
-                    found: false,
-                    query_depth: 0,
+            let mut projection: Vec<SelectItem> = group_by
+                .iter()
+                .cloned()
+                .map(SelectItem::UnnamedExpr)
+                .collect();
+            for value in values {
+                let value_name = match &value.alias {
+                    Some(alias) => alias.value.clone(),
+                    None => pivot_value_name(&value.expr),
                 };
-                let _ = dyn_visit::visit_mut(&mut expr, &mut filter);
-                polars_ensure!(
-                    filter.found,
-                    SQLInterface: "PIVOT expects aggregate functions, found `{}`", aggregate.expr
-                );
-                let name = match (&aggregate.alias, aggregates.len()) {
-                    (None, 1) => value_name.clone(),
-                    (Some(alias), _) => format!("{value_name}_{}", alias.value),
-                    (None, _) => format!("{value_name}_{}", aggregate.expr),
-                };
-                projection.push(SelectItem::ExprWithAlias {
-                    expr,
-                    alias: Ident::with_quote('"', name),
-                });
+                let matches =
+                    SQLExpr::IsNotDistinctFrom(Box::new(column.clone()), Box::new(value.expr.clone()));
+                for aggregate in aggregates {
+                    let mut expr = aggregate.expr.clone();
+                    let mut filter = FilterAggregates {
+                        ctx,
+                        matches: &matches,
+                        found: false,
+                        query_depth: 0,
+                    };
+                    let _ = dyn_visit::visit_mut(&mut expr, &mut filter);
+                    polars_ensure!(
+                        filter.found,
+                        SQLInterface: "PIVOT expects aggregate functions, found `{}`", aggregate.expr
+                    );
+                    let name = match (&aggregate.alias, aggregates.len()) {
+                        (None, 1) => value_name.clone(),
+                        (Some(alias), _) => format!("{value_name}_{}", alias.value),
+                        (None, _) => format!("{value_name}_{}", aggregate.expr),
+                    };
+                    projection.push(SelectItem::ExprWithAlias {
+                        expr,
+                        alias: Ident::with_quote('"', name),
+                    });
+                }
             }
-        }
 
-        let query = aggregate_query(table, projection, group_by);
-        self.execute_isolated(|ctx| ctx.execute_query(&query))
+            ctx.planned_from_item = Some((table.clone(), (name, lf)));
+            ctx.execute_query(&aggregate_query(table, projection, group_by))
+        })
     }
 
     /// `<table> UNPIVOT [INCLUDE | EXCLUDE NULLS] (<value> FOR <name> IN (<columns>))`: per input
@@ -235,11 +239,13 @@ impl VisitorMut for FilterAggregates<'_> {
     }
 }
 
-/// Collects the input columns read outside of subqueries, and whether a window function is used.
+/// Collects the input columns read outside of subqueries, and whether a window function or a
+/// subquery is used.
 struct InputColumns<'a> {
     relations: &'a [RelationName],
     read: PlHashSet<String>,
     window: bool,
+    subquery: bool,
     query_depth: usize,
 }
 
@@ -248,6 +254,7 @@ impl Visitor for InputColumns<'_> {
 
     fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
         self.query_depth += 1;
+        self.subquery = true;
         ControlFlow::Continue(())
     }
 
