@@ -2430,7 +2430,25 @@ impl SQLContext {
     fn execute_explain(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
         match stmt {
             Statement::Explain { statement, .. } => {
-                let lf = self.execute_statement(statement)?;
+                // Any other statement would be run to get a plan: its table created,
+                // dropped or changed.
+                let query = match statement.as_ref() {
+                    Statement::Query(query)
+                        if !matches!(
+                            query.body.as_ref(),
+                            SetExpr::Insert(_)
+                                | SetExpr::Update(_)
+                                | SetExpr::Delete(_)
+                                | SetExpr::Merge(_)
+                        ) =>
+                    {
+                        query
+                    },
+                    _ => polars_bail!(
+                        SQLInterface: "EXPLAIN supports queries only; found:\n{}", statement,
+                    ),
+                };
+                let lf = self.execute_query(query)?;
                 let plan = lf.describe_optimized_plan()?;
                 let plan = plan
                     .split('\n')
