@@ -53,6 +53,66 @@ def test_include_file_paths(tmp_path: Path, scan: Any, write: Any) -> None:
     )
 
 
+@pytest.mark.write_disk
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
+def test_include_file_paths_predicate_pushdown_22413(
+    tmp_path: Path, scan: Any, write: Any
+) -> None:
+    a_path = tmp_path / "a"
+    b_path = tmp_path / "b"
+
+    write(pl.DataFrame({"a": [5, 10]}), a_path)
+    write(pl.DataFrame({"a": [1996]}), b_path)
+
+    lf = scan([a_path, b_path], include_file_paths="f")
+    expected = pl.DataFrame(
+        {
+            "a": [5, 10, 1996],
+            "f": [str(a_path), str(a_path), str(b_path)],
+        }
+    ).with_columns(normalize_path_separator_pl(pl.col("f")))
+
+    a_path_lit = normalize_path_separator_pl(pl.lit(str(a_path)))
+    for predicate in [
+        pl.col("f") == a_path_lit,
+        pl.col("f") != a_path_lit,
+        pl.col("f").str.ends_with("b"),
+        (pl.col("f") == a_path_lit) & (pl.col("a") > 5),
+    ]:
+        q = lf.filter(predicate)
+        plan = q.explain()
+        assert "FILTER" not in plan
+        assert "SELECTION" in plan
+        assert plan.index("SELECTION") > plan.index("SCAN")
+
+        assert_frame_equal(q.collect(), expected.filter(predicate))
+
+
+@pytest.mark.write_disk
+@pytest.mark.may_fail_cloud  # reason: inspects logs
+def test_include_file_paths_predicate_skips_row_groups_22413(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    a_path = tmp_path / "a"
+    b_path = tmp_path / "b"
+
+    pl.DataFrame({"a": range(10)}).write_parquet(a_path, row_group_size=5)
+    pl.DataFrame({"a": range(10, 20)}).write_parquet(b_path, row_group_size=5)
+
+    q = pl.scan_parquet([a_path, b_path], include_file_paths="f").filter(
+        pl.col("f") == normalize_path_separator_pl(pl.lit(str(a_path)))
+    )
+    # The reader prunes row groups only with its capabilities.
+    plmonkeypatch.setenv("POLARS_FORCE_EMPTY_READER_CAPABILITIES", "0")
+    out, capture = _collect_verbose(q, plmonkeypatch, capfd)
+
+    assert out["a"].to_list() == list(range(10))
+    # The path column is not stored in the files, so the reader uses the path as its
+    # min / max statistics.
+    assert "Predicate pushdown: reading 2 / 2 row groups" in capture
+    assert "Predicate pushdown: reading 0 / 2 row groups" in capture
+
+
 @pytest.mark.parametrize(
     ("scan", "write", "ext", "supports_missing_columns", "supports_hive_partitioning"),
     [
