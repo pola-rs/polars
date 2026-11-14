@@ -53,13 +53,16 @@ struct BucketMemory {
 }
 
 impl PendingBucket {
-    fn memory(&self, row_bytes: u64, index_row_bytes: u64) -> BucketMemory {
+    /// `in_row_bytes` is per row of the loaded frames, `out_row_bytes` per row of the output,
+    /// which lacks the key if it is dropped.
+    fn memory(&self, in_row_bytes: u64, out_row_bytes: u64, index_row_bytes: u64) -> BucketMemory {
         let rows = self.frames.iter().map(SpillFrame::height).sum::<usize>() as u64;
-        let kept = rows * row_bytes;
+        let kept = rows * out_row_bytes;
         let sort = if self.needs_sort {
-            2 * kept + rows * index_row_bytes
+            // The loaded rows (with the key) and the gathered output are alive together.
+            rows * (in_row_bytes + out_row_bytes) + rows * index_row_bytes
         } else {
-            kept
+            rows * in_row_bytes
         };
         BucketMemory { sort, kept }
     }
@@ -115,7 +118,7 @@ impl FlushState {
         buckets: Vec<PendingBucket>,
         morsel_size: usize,
         (max_ahead, max_ahead_bytes): (usize, u64),
-        row_bytes: u64,
+        (in_row_bytes, out_row_bytes): (u64, u64),
         index_row_bytes: u64,
         spill_ctx: MostRecentSpillContext,
     ) -> Self {
@@ -123,7 +126,7 @@ impl FlushState {
         let mut unsorted = VecDeque::with_capacity(buckets.len());
         for bucket in buckets {
             let num_morsels = bucket.local.1.div_ceil(morsel_size) as u64;
-            let memory = bucket.memory(row_bytes, index_row_bytes);
+            let memory = bucket.memory(in_row_bytes, out_row_bytes, index_row_bytes);
             unsorted.push_back((bucket, seq, memory));
             seq += num_morsels;
         }
@@ -219,6 +222,7 @@ impl FlushState {
         scope: &'s TaskScope<'s, 'env>,
         senders: Vec<PortSender>,
         key: &'env PlSmallStr,
+        drop_key: bool,
         sort_options: &SortMultipleOptions,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
@@ -246,7 +250,9 @@ impl FlushState {
                             wait_group.wait().await;
                         },
                         Step::Sort(bucket, seq, memory) => {
-                            let sorted = sort_bucket(bucket, memory.sort, key, &sort_options).await;
+                            let sorted =
+                                sort_bucket(bucket, memory.sort, key, drop_key, &sort_options)
+                                    .await;
                             self.finish_sort(seq, memory, sorted)?;
                         },
                         Step::Wait(notified) => notified.await,
@@ -275,6 +281,7 @@ async fn sort_bucket(
     bucket: PendingBucket,
     bytes: u64,
     key: &PlSmallStr,
+    drop_key: bool,
     sort_options: &SortMultipleOptions,
 ) -> PolarsResult<DataFrame> {
     let _reservation = memory_manager().reserve(bytes).await;
@@ -282,11 +289,14 @@ async fn sort_bucket(
     let df = accumulate_dataframes_vertical_unchecked(dfs);
     let (offset, len) = bucket.local;
     if bucket.needs_sort {
-        return sort_range(df, key, sort_options.clone(), bucket.local);
+        return sort_range(df, key, drop_key, sort_options.clone(), bucket.local);
     }
     // The bucket holds a single key value or only nulls, so it is sorted
     // already, but its frames don't carry the flag.
     let mut df = df.slice(offset as i64, len);
+    if drop_key {
+        return df.drop(key);
+    }
     let sorted = if sort_options.descending[0] {
         IsSorted::Descending
     } else {
