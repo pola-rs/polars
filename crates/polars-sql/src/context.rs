@@ -58,7 +58,7 @@ use crate::grouping_sets::{
 };
 use crate::join_keys::{sql_join_key_pair, sql_join_where_predicate};
 use crate::partition_alter::{self, PartitionAlter};
-use crate::positional_join::is_positional_join;
+use crate::positional_join::{has_positional_join, is_positional_join};
 use crate::sql_expr::{
     convert_int_literal_for_string, is_string_expr, order_by_sort_options, parse_sql_array,
     parse_sql_expr, resolve_compound_identifier, resolve_expr_dtype, series_from_literals,
@@ -676,7 +676,7 @@ impl SQLContext {
         polars_ensure!(query.is_none() || columns.is_empty(), SQLInterface: "`CREATE TABLE ... AS SELECT` does not take column definitions");
         polars_ensure!(query.is_some() || !columns.is_empty(), SQLInterface: "CREATE TABLE expected a query, column definitions, or LIKE clause");
         let (schema, required) = create_table_columns(columns)?;
-        let query = query.as_ref().map(|q| q.to_string());
+        let query = query.as_deref().map(catalog_query_sql).transpose()?;
         let location = hive_formats.as_ref().and_then(|f| f.location.as_deref());
         let (location, properties) = create_table_options(table_options, location)?;
         let partition_by = create_table_partitioning(partition_by.as_deref(), hive_distribution)?;
@@ -2790,7 +2790,7 @@ impl SQLContext {
             name: tbl,
             table,
             columns,
-            query: source.to_string(),
+            query: catalog_query_sql(&source)?,
             overwrite: insert.overwrite,
         }))
     }
@@ -9677,6 +9677,15 @@ fn parse_single_statement(query: &str) -> PolarsResult<Statement> {
     let ast = parse_sql(query)?;
     polars_ensure!(ast.len() == 1, SQLInterface: "one (and only one) statement can be parsed at a time");
     Ok(ast.into_iter().next().unwrap())
+}
+
+/// `query` as the SQL that a catalog write runs. A positional join would print as a CROSS JOIN.
+fn catalog_query_sql(query: &Query) -> PolarsResult<String> {
+    polars_ensure!(
+        !has_positional_join(query),
+        SQLInterface: "POSITIONAL JOIN is not supported in a query that writes a catalog table"
+    );
+    Ok(query.to_string())
 }
 
 fn parse_sql(query: &str) -> PolarsResult<Vec<Statement>> {

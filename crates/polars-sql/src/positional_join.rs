@@ -5,8 +5,8 @@ use std::ops::ControlFlow;
 
 use polars_core::prelude::*;
 use sqlparser::ast::{
-    JoinConstraint, JoinOperator, Select, Spanned, Statement, TableFactor, TableWithJoins,
-    VisitorMut,
+    JoinConstraint, JoinOperator, Select, Spanned, Statement, TableFactor, TableWithJoins, Visit,
+    Visitor, VisitorMut,
 };
 use sqlparser::keywords::Keyword;
 use sqlparser::tokenizer::{Location, Token, TokenWithSpan};
@@ -26,6 +26,41 @@ pub(crate) fn positional_join() -> JoinOperator {
 
 pub(crate) fn is_positional_join(op: &JoinOperator) -> bool {
     matches!(op, JoinOperator::CrossJoin(JoinConstraint::Natural))
+}
+
+/// Whether `node` holds a positional join.
+pub(crate) fn has_positional_join(node: &(impl Visit + ?Sized)) -> bool {
+    struct Find;
+
+    impl Visitor for Find {
+        type Break = ();
+
+        fn pre_visit_select(&mut self, select: &Select) -> ControlFlow<()> {
+            find_in(&select.from)
+        }
+
+        fn pre_visit_table_factor(&mut self, factor: &TableFactor) -> ControlFlow<()> {
+            match factor {
+                TableFactor::NestedJoin {
+                    table_with_joins, ..
+                } => find_in(std::slice::from_ref(table_with_joins)),
+                _ => ControlFlow::Continue(()),
+            }
+        }
+    }
+
+    fn find_in(items: &[TableWithJoins]) -> ControlFlow<()> {
+        match items
+            .iter()
+            .flat_map(|item| &item.joins)
+            .any(|join| is_positional_join(&join.join_operator))
+        {
+            true => ControlFlow::Break(()),
+            false => ControlFlow::Continue(()),
+        }
+    }
+
+    dyn_visit::visit(node, &mut Find).is_break()
 }
 
 impl PositionalJoins {

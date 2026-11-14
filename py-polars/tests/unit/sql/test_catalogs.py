@@ -414,6 +414,10 @@ def test_create_catalog_table_options(lake: CountingCatalog, tmp_path: Path) -> 
             r"`CREATE TABLE \.\.\. AS SELECT` does not take column definitions",
         ),
         (
+            "CREATE TABLE t AS SELECT * FROM lineitem POSITIONAL JOIN orders",
+            "POSITIONAL JOIN is not supported in a query that writes a catalog table",
+        ),
+        (
             "CREATE TABLE t LIKE lineitem",
             r"`CREATE TABLE \.\.\. LIKE` is not supported for catalog tables",
         ),
@@ -3568,6 +3572,10 @@ def test_insert_catalog_table_required(lake: CountingCatalog) -> None:
         (
             "INSERT INTO lineitem DEFAULT VALUES",
             "`INSERT ... DEFAULT VALUES` is not supported",
+        ),
+        (
+            "INSERT INTO lineitem SELECT * FROM (SELECT 3 AS k) POSITIONAL JOIN (SELECT 'c' AS v) AS b",
+            "POSITIONAL JOIN is not supported in a query that writes a catalog table",
         ),
         (
             "WITH s AS (SELECT 1, 'a') INSERT INTO lineitem WITH t AS (SELECT 2, 'b') SELECT * FROM t",

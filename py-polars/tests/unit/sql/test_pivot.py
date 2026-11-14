@@ -111,12 +111,24 @@ def test_pivot_names(sales: pl.DataFrame) -> None:
     assert res.columns == ["a", "b", "c"]
 
 
+def test_pivot_qualified_columns() -> None:
+    # the qualifier `t` is not the column `t`
+    df = pl.DataFrame({"t": ["a", "b"], "k": ["x", "x"], "v": [1, 2]})
+    res = pl.sql(
+        "SELECT * FROM df AS t PIVOT (SUM(t.v) FOR t.k IN ('x')) ORDER BY t", eager=True
+    )
+    assert res.rows() == [("a", 1), ("b", 2)]
+
+
 @pytest.mark.parametrize(
     ("query", "error"),
     [
         ("PIVOT (SUM(amount) FOR quarter IN (ANY))", "requires a list of values"),
         ("PIVOT (SUM(amount) FOR (quarter, rep) IN (('q1', 'a')))", "a single column"),
         ("PIVOT (ABS(amount) FOR quarter IN ('q1'))", "expects aggregate functions"),
+        ("PIVOT (SUM(amount) FOR MAX(rep) IN ('a'))", "an aggregate after FOR"),
+        ("PIVOT (SUM(amount) FOR quarter IN (q1))", "values must be constants"),
+        ("PIVOT (SUM(amount) FOR quarter IN ((SELECT 'q1')))", "must be constants"),
         (
             "PIVOT (SUM(amount) FOR quarter IN ('q1') DEFAULT ON NULL (0))",
             "DEFAULT ON NULL",
@@ -151,6 +163,16 @@ def test_pivot_errors(sales: pl.DataFrame, query: str, error: str) -> None:
             "SELECT u.k, u.v FROM wide UNPIVOT (v FOR k IN (q2)) AS u",
             {"k": ["q2"], "v": [40]},
         ),
+        (
+            # a column listed twice, and labels that name other columns
+            "SELECT * FROM wide UNPIVOT (v FOR k IN (q1 AS id, q1 AS q2, q1))",
+            {
+                "id": [1, 1, 1, 2, 2, 2],
+                "q2": [None, None, None, 40, 40, 40],
+                "k": ["id", "q2", "q1", "id", "q2", "q1"],
+                "v": [10, 10, 10, 30, 30, 30],
+            },
+        ),
     ],
 )
 def test_unpivot(wide: pl.DataFrame, query: str, expected: dict[str, Any]) -> None:
@@ -171,6 +193,8 @@ def test_unpivot_errors(wide: pl.DataFrame) -> None:
         pl.sql("SELECT * FROM wide UNPIVOT (v FOR k IN (q1 + 1))", eager=True)
     with pytest.raises(ColumnNotFoundError, match="'nosuch' was not found"):
         pl.sql("SELECT * FROM wide UNPIVOT (v FOR k IN (nosuch))", eager=True)
+    with pytest.raises(ColumnNotFoundError, match=r"'nosuch\.q1' was not found"):
+        pl.sql("SELECT * FROM wide UNPIVOT (v FOR k IN (nosuch.q1))", eager=True)
 
 
 def test_pivot_unpivot_round_trip(wide: pl.DataFrame) -> None:

@@ -5,6 +5,8 @@ use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_utils::aliases::PlHashSet;
 #[cfg(feature = "pivot")]
+use polars_utils::format_pl_smallstr;
+#[cfg(feature = "pivot")]
 use sqlparser::ast::NullInclusion;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, Expr as SQLExpr, ExprWithAlias, GroupByExpr, Ident,
@@ -16,6 +18,7 @@ use sqlparser::parser::Parser;
 use crate::SQLContext;
 use crate::dyn_visit::{self, visit_expressions};
 use crate::subquery_group_by::is_aggregate_call;
+use crate::subquery_pull_up::has_aggregate;
 
 /// The name the input of a `PIVOT` is registered under while it is aggregated.
 const PIVOT_INPUT: &str = "__POLARS_PIVOT_INPUT";
@@ -37,6 +40,13 @@ impl SQLContext {
         let PivotValueSource::List(values) = value_source else {
             polars_bail!(SQLInterface: "PIVOT requires a list of values: `IN (<value>, ...)`")
         };
+        polars_ensure!(
+            !has_aggregate(self, column),
+            SQLInterface: "PIVOT does not support an aggregate after FOR, found `{}`", column
+        );
+        if let Some(value) = values.iter().find(|value| !is_constant(self, &value.expr)) {
+            polars_bail!(SQLInterface: "PIVOT values must be constants, found `{}`", value.expr)
+        }
         self.execute_isolated(|ctx| {
             let (name, mut lf) = ctx.get_table(table)?;
             let schema = ctx.get_frame_schema(&mut lf)?;
@@ -49,7 +59,7 @@ impl SQLContext {
                             read.insert(ident.value.clone());
                         },
                         SQLExpr::CompoundIdentifier(parts) => {
-                            read.extend(parts.iter().map(|ident| ident.value.clone()));
+                            read.insert(unqualified(parts, &name)[0].value.clone());
                         },
                         _ => {},
                     }
@@ -136,49 +146,72 @@ impl SQLContext {
         let SQLExpr::Identifier(value_name) = value else {
             polars_bail!(SQLInterface: "UNPIVOT supports a single value column, found `{}`", value)
         };
-        let mut lf = self.execute_isolated(|ctx| Ok(ctx.get_table(table)?.1))?;
+        let mut relation = String::new();
+        let mut lf = self.execute_isolated(|ctx| {
+            let (name, lf) = ctx.get_table(table)?;
+            relation = name;
+            Ok(lf)
+        })?;
         let schema = self.get_frame_schema(&mut lf)?;
 
-        let mut on: Vec<PlSmallStr> = Vec::with_capacity(columns.len());
+        let mut sources: Vec<PlSmallStr> = Vec::with_capacity(columns.len());
         let mut labels: Vec<PlSmallStr> = Vec::with_capacity(columns.len());
         for column in columns {
-            let column_name = match &column.expr {
-                SQLExpr::Identifier(ident) => &ident.value,
-                SQLExpr::CompoundIdentifier(parts) => &parts.last().unwrap().value,
+            let source = match &column.expr {
+                SQLExpr::Identifier(ident) => Some(ident),
+                SQLExpr::CompoundIdentifier(parts) => match unqualified(parts, &relation) {
+                    [ident] => Some(ident),
+                    _ => None,
+                },
                 expr => {
                     polars_bail!(SQLInterface: "UNPIVOT expects column names, found `{}`", expr)
                 },
             };
-            polars_ensure!(
-                schema.contains(column_name),
-                ColumnNotFound: "UNPIVOT column '{}' was not found", column_name
-            );
-            on.push(column_name.into());
-            labels.push(
-                column
-                    .alias
-                    .as_ref()
-                    .map_or(column_name, |a| &a.value)
-                    .into(),
-            );
+            let source = source
+                .map(|ident| ident.value.as_str())
+                .filter(|name| schema.contains(name))
+                .ok_or_else(
+                    || polars_err!(ColumnNotFound: "UNPIVOT column '{}' was not found", column.expr),
+                )?;
+            sources.push(source.into());
+            labels.push(column.alias.as_ref().map_or(source, |a| &a.value).into());
         }
+        // A column can be listed more than once and a label can be any name, so the listed
+        // columns are unpivoted as copies with names of their own.
+        let copies: Vec<PlSmallStr> = (0..sources.len())
+            .map(|i| format_pl_smallstr!("__POLARS_UNPIVOT_{i}"))
+            .collect();
         let index: Vec<PlSmallStr> = schema
             .iter_names()
-            .filter(|name| !on.contains(name))
+            .filter(|name| !sources.contains(name))
             .cloned()
             .collect();
-        let lf = lf.rename(&on, &labels, true).unpivot(UnpivotArgsDSL {
-            on: Some(Selector::ByName {
-                names: labels.into(),
-                strict: true,
-            }),
-            index: Selector::ByName {
-                names: index.into(),
-                strict: true,
-            },
-            variable_name: Some(name.value.as_str().into()),
-            value_name: Some(value_name.value.as_str().into()),
-        });
+        let select = index.iter().map(|name| col(name.clone())).chain(
+            sources
+                .iter()
+                .zip(&copies)
+                .map(|(source, copy)| col(source.clone()).alias(copy.clone())),
+        );
+        let strings = |names: &[PlSmallStr]| {
+            let names: Vec<&str> = names.iter().map(PlSmallStr::as_str).collect();
+            lit(Series::new(PlSmallStr::EMPTY, names))
+        };
+        let variable = col(name.value.as_str()).replace(strings(&copies), strings(&labels));
+        let lf = lf
+            .select(select.collect::<Vec<_>>())
+            .unpivot(UnpivotArgsDSL {
+                on: Some(Selector::ByName {
+                    names: copies.into(),
+                    strict: true,
+                }),
+                index: Selector::ByName {
+                    names: index.into(),
+                    strict: true,
+                },
+                variable_name: Some(name.value.as_str().into()),
+                value_name: Some(value_name.value.as_str().into()),
+            })
+            .with_column(variable);
         Ok(match null_inclusion {
             Some(NullInclusion::IncludeNulls) => lf,
             _ => lf.filter(col(value_name.value.as_str()).is_not_null()),
@@ -224,6 +257,39 @@ impl VisitorMut for FilterAggregates<'_> {
         }
         ControlFlow::Continue(())
     }
+}
+
+/// The parts of a column reference after a qualifier that names `relation` (`t` or `ns.t` for
+/// a relation `ns.t`), if it has one.
+fn unqualified<'a>(parts: &'a [Ident], relation: &str) -> &'a [Ident] {
+    if !relation.is_empty() {
+        let relation: Vec<&str> = relation.split('.').collect();
+        for n in (1..=relation.len()).rev() {
+            if parts.len() > n
+                && parts[..n]
+                    .iter()
+                    .zip(&relation[relation.len() - n..])
+                    .all(|(part, name)| part.value.eq_ignore_ascii_case(name))
+            {
+                return &parts[n..];
+            }
+        }
+    }
+    parts
+}
+
+/// Whether `expr` reads no column, subquery or aggregate.
+fn is_constant(ctx: &SQLContext, expr: &SQLExpr) -> bool {
+    visit_expressions(expr, |e| match e {
+        SQLExpr::Identifier(_)
+        | SQLExpr::CompoundIdentifier(_)
+        | SQLExpr::Subquery(_)
+        | SQLExpr::Exists { .. }
+        | SQLExpr::InSubquery { .. } => ControlFlow::Break(()),
+        e if is_aggregate_call(ctx, e) => ControlFlow::Break(()),
+        _ => ControlFlow::Continue(()),
+    })
+    .is_continue()
 }
 
 /// The column name a PIVOT value gives: a string as is, else the value as written.
