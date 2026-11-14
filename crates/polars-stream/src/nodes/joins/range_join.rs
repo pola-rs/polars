@@ -36,7 +36,9 @@ enum RangeJoinState {
 
 #[derive(Debug)]
 struct ProbeState {
+    /// The point rows, without the temporary key column.
     point_df: DataFrame,
+    point_key: Series,
 }
 
 #[derive(Debug)]
@@ -47,6 +49,8 @@ pub struct RangeJoinNode {
 
 #[derive(Debug)]
 struct RangeJoinParams {
+    /// The schemas of the columns that are output: without the temporary key columns, which are
+    /// never gathered.
     point_schema: SchemaRef,
     interval_schema: SchemaRef,
     point_on: PlSmallStr,
@@ -153,8 +157,19 @@ impl RangeJoinNode {
                     unreachable!("range-join operator1 bound must be lower bound ")
                 },
             };
+        let without_tmp = |schema: SchemaRef, tmp_cols: &[&Option<PlSmallStr>]| {
+            let mut schema = (*schema).clone();
+            for col in tmp_cols.iter().copied().flatten() {
+                schema.shift_remove(col);
+            }
+            Arc::new(schema)
+        };
+        let input_point_schema = point_schema.clone();
+        let point_schema = without_tmp(point_schema, &[&point_tmp_key_col]);
+        let interval_schema =
+            without_tmp(interval_schema, &[&lower_tmp_key_col, &upper_tmp_key_col]);
         let params = RangeJoinParams {
-            point_schema: point_schema.clone(),
+            point_schema,
             interval_schema,
             point_on,
             point_tmp_key_col,
@@ -169,7 +184,7 @@ impl RangeJoinNode {
             args,
         };
         RangeJoinNode {
-            state: RangeJoinState::Build(InMemorySinkNode::new(point_schema, task_metrics)),
+            state: RangeJoinState::Build(InMemorySinkNode::new(input_point_schema, task_metrics)),
             params,
         }
     }
@@ -291,7 +306,17 @@ fn transition_to_probe(
         "point input to range-join node is not sorted correctly"
     );
     point_df.rechunk_mut_par();
-    Ok(ProbeState { point_df })
+    let point_key = point_df
+        .column(params.point_key_col())?
+        .as_materialized_series()
+        .clone();
+    if let Some(col) = &params.point_tmp_key_col {
+        point_df.drop_in_place(col)?;
+    }
+    Ok(ProbeState {
+        point_df,
+        point_key,
+    })
 }
 
 fn op_to_sss<const IS_LOWER: bool>(op: InequalityOperator) -> SearchSortedSide {
@@ -310,7 +335,10 @@ async fn compute_and_emit_task(
     params: &RangeJoinParams,
 ) -> PolarsResult<()> {
     let ideal_morsel_size = get_ideal_morsel_size();
-    let ProbeState { point_df } = probe_state;
+    let ProbeState {
+        point_df,
+        point_key,
+    } = probe_state;
 
     let sss_lower = params.lower_op.map(op_to_sss::<true>);
     let sss_upper = params.upper_op.map(op_to_sss::<false>);
@@ -327,10 +355,6 @@ async fn compute_and_emit_task(
         sss_start = sss_lower;
         sss_end = sss_upper;
     }
-
-    let point_key = point_df
-        .column(params.point_key_col())?
-        .as_materialized_series();
 
     let wait_group = WaitGroup::default();
     let mut builder_point = DataFrameBuilder::new(params.point_schema.clone());
@@ -378,6 +402,15 @@ async fn compute_and_emit_task(
             ),
         };
 
+        // The temporary key columns are only read for the bounds above.
+        let mut interval_payload = interval_df.clone();
+        for col in [&params.lower_tmp_key_col, &params.upper_tmp_key_col]
+            .into_iter()
+            .flatten()
+        {
+            interval_payload.drop_in_place(col)?;
+        }
+
         for (row_idx, (start, end)) in
             Iterator::zip(starts.into_no_null_iter(), ends.into_no_null_iter()).enumerate()
         {
@@ -393,7 +426,7 @@ async fn compute_and_emit_task(
                 ShareStrategy::Never,
             );
             builder_interval.subslice_extend_repeated(
-                &interval_df,
+                &interval_payload,
                 row_idx,
                 1,
                 match_len,
@@ -444,13 +477,12 @@ async fn freeze_builders_and_emit(
     let results_point = builder_point.freeze_reset();
     let results_interval = builder_interval.freeze_reset();
 
-    let mut output = if params.left_is_point {
+    let output = if params.left_is_point {
         _finish_join(results_point, results_interval, params.args.suffix.clone())?
     } else {
         _finish_join(results_interval, results_point, params.args.suffix.clone())?
     };
 
-    drop_key_columns(&mut output, params);
     let mut morsel = Morsel::new_unregistered(output, seq, st);
     if let Some(wt) = wt {
         morsel.set_consume_token(wt);
@@ -459,18 +491,4 @@ async fn freeze_builders_and_emit(
         return Ok(());
     }
     Ok(())
-}
-
-fn drop_key_columns(df: &mut DataFrame, params: &RangeJoinParams) {
-    for col in [
-        &params.point_tmp_key_col,
-        &params.lower_tmp_key_col,
-        &params.upper_tmp_key_col,
-    ] {
-        if let Some(col) = col
-            && df.schema().contains(col)
-        {
-            df.drop_in_place(col).unwrap();
-        }
-    }
 }

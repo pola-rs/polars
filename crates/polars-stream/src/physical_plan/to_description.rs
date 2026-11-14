@@ -579,6 +579,7 @@ pub fn phys_props(
             runtime_filters: _,
             estimated_rows: _,
             key_ranges: _,
+            pre_drop_schema: _,
         } => (
             PhysicalPropsDescription::EquiJoin {
                 how: format!("{}", args.how),

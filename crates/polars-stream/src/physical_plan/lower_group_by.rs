@@ -1379,6 +1379,7 @@ fn try_build_streaming_group_by_with_key_ranges(
                 runtime_filters: Vec::new(),
                 estimated_rows: None,
                 key_ranges: Vec::new(),
+                pre_drop_schema: None,
             },
         ));
         post_select_input = PhysStream::first(join_key);

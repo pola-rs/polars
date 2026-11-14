@@ -11,7 +11,10 @@ use polars_ooc::{MemoryGrant, MemoryReservation, memory_manager};
 use polars_utils::IdxSize;
 
 use super::build::PartitionBuilder;
-use super::probe::{ProbeOutput, ProbeState, ProbeTable, with_nulls_for_other_side};
+use super::probe::{
+    ProbeOutput, ProbeState, ProbeTable, output_columns, with_nulls_for_other_side,
+    with_nulls_for_other_side_projected,
+};
 use super::{EquiJoinParams, JoinPartition};
 use crate::hash_shuffle::frame_with_keys::FrameWithKeys;
 use crate::hash_shuffle::split::rows_or_all;
@@ -419,12 +422,16 @@ impl Shared {
                         task.state = TaskState::Idle;
                         self.release(bytes);
                     } else {
-                        let df = unsafe {
-                            table
-                                .payload
-                                .take_slice_unchecked_impl(&task.unmarked, false)
-                        };
-                        output = Some(with_nulls_for_other_side(df, left_is_build, params));
+                        // Gather only the output columns, not those only a fused predicate reads.
+                        let payload =
+                            output_columns(&table.payload, params.output_idx(left_is_build));
+                        let df =
+                            unsafe { payload.take_slice_unchecked_impl(&task.unmarked, false) };
+                        output = Some(with_nulls_for_other_side_projected(
+                            df,
+                            left_is_build,
+                            params,
+                        ));
                     }
                 },
                 TaskState::EmitFrames {
