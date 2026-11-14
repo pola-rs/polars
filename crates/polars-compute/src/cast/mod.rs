@@ -1273,4 +1273,31 @@ mod tests {
             vec![vec![10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10],]
         );
     }
+
+    #[test]
+    fn cast_to_dictionary_with_narrow_keys() {
+        let ext = ArrowDataType::Extension(Box::new(ExtensionType {
+            name: "e".into(),
+            inner: ArrowDataType::LargeUtf8,
+            metadata: None,
+        }));
+        let base = Utf8Array::<i64>::from([Some("x"), Some("y"), Some("x")]);
+        let values = Utf8Array::<i64>::new(
+            ext.clone(),
+            base.offsets().clone(),
+            base.values().clone(),
+            None,
+        );
+        let to = ArrowDataType::Dictionary(IntegerType::Int8, Box::new(ext), false);
+        let out = cast(&values, &to, CastOptionsImpl::default()).unwrap();
+        let out = out.as_any().downcast_ref::<DictionaryArray<i8>>().unwrap();
+        assert_eq!(out.dtype(), &to);
+        assert_eq!(out.keys(), &PrimitiveArray::<i8>::from_slice([0, 1, 0]));
+
+        let distinct = PrimitiveArray::<i32>::from_vec((0..300).collect());
+        let to =
+            ArrowDataType::Dictionary(IntegerType::UInt8, Box::new(ArrowDataType::Int32), false);
+        let err = cast(&distinct, &to, CastOptionsImpl::default()).unwrap_err();
+        assert!(err.to_string().contains("overflow"));
+    }
 }
