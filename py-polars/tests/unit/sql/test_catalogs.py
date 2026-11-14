@@ -3715,6 +3715,35 @@ def test_insert_catalog_table_casts(lake: CountingCatalog) -> None:
 
 
 @pytest.mark.write_disk
+def test_insert_catalog_table_nested_literals(lake: CountingCatalog) -> None:
+    from pyiceberg.schema import Schema
+    from pyiceberg.types import LongType, MapType, NestedField, StringType, StructType
+
+    from polars.exceptions import SchemaError
+
+    schema = Schema(
+        NestedField(1, "id", LongType()),
+        NestedField(2, "s", StructType(NestedField(3, "a", LongType()))),
+        NestedField(4, "m", MapType(5, StringType(), 6, LongType(), False)),
+        NestedField(7, "mi", MapType(8, LongType(), 9, StringType(), False)),
+    )
+    lake.create_table(("tpch", "nested"), schema=schema)
+    ctx = lake_ctx(lake)
+    # INT values widen to BIGINT
+    ctx.execute("INSERT INTO nested VALUES (1, {'a': 1}, MAP {'k': 1}, NULL)")
+    # map keys keep their type: an INT key is cast to the BIGINT key explicitly
+    with pytest.raises(SchemaError, match="convert it with CAST"):
+        ctx.execute("INSERT INTO nested (id, mi) SELECT 2, MAP {1: 'x'}")
+    ctx.execute(
+        "INSERT INTO nested (id, mi) SELECT 2, CAST(MAP {1: 'x'} AS MAP(BIGINT, VARCHAR))"
+    )
+    assert table_rows(lake, "tpch", "nested") == [
+        (1, {"a": 1}, [("k", 1)], None),
+        (2, None, None, [(1, "x")]),
+    ]
+
+
+@pytest.mark.write_disk
 def test_insert_catalog_table_conversions(lake: CountingCatalog) -> None:
 
     from polars.exceptions import InvalidOperationError, SchemaError

@@ -918,7 +918,7 @@ Indexing
    * - :ref:`#>, #>> <op_hash_arrow>`
      - Access a struct field by path, returning the native type or a string.
    * - :ref:`[n] <op_subscript>`
-     - Access an array element by index (1-indexed).
+     - Access an array element by index (1-indexed), or a map value by key.
 
 
 .. _op_arrow:
@@ -993,7 +993,8 @@ Indexing
 
 .. _op_subscript:
 
-``[n]``: Access an array element by index. SQL array indices are 1-based.
+``[n]``: Access an array element by index. SQL array indices are 1-based. On a map, ``m[k]``
+gives the value of key ``k``, or ``NULL`` if the map does not have it.
 
 **Example:**
 
