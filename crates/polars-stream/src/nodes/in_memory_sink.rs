@@ -83,6 +83,8 @@ impl ComputeNode for InMemorySinkNode {
                 let mut morsels = Vec::new();
                 while let Ok(mut morsel) = recv.recv().await {
                     morsel.take_consume_token();
+                    // Materialize here, in parallel, rather than when the output is assembled.
+                    morsel.df_mut().await.materialize_dictionary_columns();
                     slf.spill_ctx.register(morsel.sf()).await;
                     morsels.push(morsel);
                 }
@@ -94,6 +96,12 @@ impl ComputeNode for InMemorySinkNode {
     }
 
     fn get_output(&mut self) -> PolarsResult<Option<DataFrame>> {
+        if polars_core::frame::column::dictionary_stats::enabled() {
+            eprint!(
+                "{}",
+                polars_core::frame::column::dictionary_stats::report_and_reset()
+            );
+        }
         let morsels_per_pipe = core::mem::take(&mut *self.morsels_per_pipe.get_mut());
         let spillframes = linearize(morsels_per_pipe);
         if spillframes.is_empty() {

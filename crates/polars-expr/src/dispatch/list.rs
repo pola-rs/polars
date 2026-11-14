@@ -213,7 +213,7 @@ pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Column> {
 fn slice_arg(c: &Column) -> PolarsResult<Int64Chunked> {
     let s = match c {
         Column::Scalar(sc) => sc.as_single_value_series(),
-        Column::Series(_) => c.as_materialized_series().clone(),
+        Column::Series(_) | Column::Dictionary(_) => c.as_materialized_series().clone(),
     };
     Ok(s.cast(&DataType::Int64)?.i64()?.clone())
 }

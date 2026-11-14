@@ -15,7 +15,7 @@ pub(super) fn cast_needle(
         ._cast_reporting_inexact(dtype)?;
     let casted = match needle {
         Column::Scalar(_) => ScalarColumn::from_single_value_series(casted, needle.len()).into(),
-        Column::Series(_) => casted.into(),
+        Column::Series(_) | Column::Dictionary(_) => casted.into(),
     };
     Ok((casted, inexact))
 }

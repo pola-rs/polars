@@ -475,6 +475,38 @@ fn check_map_output_len(input_len: usize, output_len: usize, expr: &Expr) -> Pol
     Ok(())
 }
 
+/// The index of the only dictionary-coded input, when every other input is a constant
+/// that can broadcast to the dictionary column's length.
+fn single_dictionary_input(inputs: &[Column]) -> Option<usize> {
+    let idx = inputs
+        .iter()
+        .position(|c| c.as_dictionary_column().is_some())?;
+    let len = inputs[idx].len();
+    inputs
+        .iter()
+        .enumerate()
+        .all(|(i, c)| {
+            i == idx || c.len() == 1 || (c.len() == len && c.as_scalar_column().is_some())
+        })
+        .then_some(idx)
+}
+
+fn can_evaluate_on_dictionary(expr: &Expr) -> bool {
+    match expr {
+        Expr::AnonymousFunction { .. }
+        | Expr::Function {
+            function: FunctionExpr::SetSortedFlag(_),
+            ..
+        } => false,
+        #[cfg(feature = "ffi_plugin")]
+        Expr::Function {
+            function: FunctionExpr::FfiPlugin { .. },
+            ..
+        } => false,
+        _ => true,
+    }
+}
+
 impl PhysicalExpr for ApplyExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
@@ -505,6 +537,47 @@ impl PhysicalExpr for ApplyExpr {
                 if c.len() > 1 {
                     *c = c.new_from_index(0, 1);
                 }
+            }
+        }
+
+        // An elementwise function of one dictionary-coded column (and constants) is evaluated once
+        // per dictionary value the rows use. User functions (including plugins) may depend on
+        // row order or count, and `set_sorted` describes the order of the rows.
+        if constant_len.is_none()
+            && self.flags.is_elementwise()
+            && can_evaluate_on_dictionary(&self.expr)
+            && let Some(dict_idx) = single_dictionary_input(&inputs)
+        {
+            let dict_col = inputs[dict_idx].as_dictionary_column().unwrap().clone();
+            let in_name = inputs[0].name().clone();
+            let out = dict_col.apply_elementwise(|values| {
+                let n = values.len();
+                let mut value_inputs = inputs
+                    .iter()
+                    .enumerate()
+                    .map(|(i, c)| {
+                        if i == dict_idx {
+                            values.clone().into_column()
+                        } else if c.len() == 1 {
+                            // Some kernels require a length-1 argument, e.g. `replace`'s mapping.
+                            c.clone()
+                        } else {
+                            c.new_from_index(0, n)
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                Ok(self
+                    .eval_and_flatten(&mut value_inputs)?
+                    .take_materialized_series())
+            })?;
+            // A function that infers its output dtype from the values (e.g. `str.to_decimal`)
+            // may infer another one from the distinct values; then evaluate it per row.
+            if out.dtype() == self.output_field.dtype() {
+                return Ok(if self.flags.contains(FunctionFlags::ALLOW_RENAME) {
+                    out
+                } else {
+                    out.with_name(in_name)
+                });
             }
         }
 
@@ -730,4 +803,56 @@ fn constant_broadcast_len(inputs: &[Column]) -> Option<usize> {
         .iter()
         .all(|c| c.len() == 1 || (c.len() == len && matches!(c, Column::Scalar(_))))
         .then_some(len)
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_arrow::array::Utf8ViewArray;
+    use polars_core::frame::column::{DictionaryColumn, SharedDictionary};
+
+    use super::*;
+
+    #[test]
+    fn dictionary_apply_accepts_only_broadcastable_scalar_lengths() {
+        let dict = SharedDictionary::new(Utf8ViewArray::from_slice_values(["a", "b"]));
+        let codes = UInt32Chunked::from_vec(PlSmallStr::EMPTY, [0, 1].repeat(128));
+        let coded: Column = DictionaryColumn::try_new("s".into(), dict, codes)
+            .unwrap()
+            .into();
+        for len in [0, 1, 2, 256, 257] {
+            let scalar = Column::new_scalar(
+                "constant".into(),
+                Scalar::new(DataType::String, AnyValue::StringOwned("x".into())),
+                len,
+            );
+            assert!(scalar.as_scalar_column().is_some());
+            for dict_idx in [0, 1] {
+                let mut inputs = [coded.clone(), scalar.clone()];
+                inputs.swap(0, dict_idx);
+                assert!(inputs[dict_idx].as_dictionary_column().is_some());
+                assert_eq!(
+                    single_dictionary_input(&inputs),
+                    matches!(len, 1 | 256).then_some(dict_idx)
+                );
+            }
+        }
+    }
+
+    #[cfg(feature = "ffi_plugin")]
+    #[test]
+    fn dictionary_apply_excludes_all_ffi_plugins() {
+        for is_deterministic in [false, true] {
+            let expr = Expr::Function {
+                input: vec![Expr::Column("s".into())],
+                function: FunctionExpr::FfiPlugin {
+                    flags: FunctionOptions::elementwise(),
+                    is_deterministic,
+                    lib: "test-plugin".into(),
+                    symbol: "test-function".into(),
+                    kwargs: Arc::default(),
+                },
+            };
+            assert!(!can_evaluate_on_dictionary(&expr));
+        }
+    }
 }

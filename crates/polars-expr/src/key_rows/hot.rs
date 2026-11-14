@@ -74,6 +74,32 @@ impl HotKeyRows {
         });
     }
 
+    /// As [`Self::verify`], for the keys `start + r` of the rows `r` in `subset` only: clears
+    /// `ok[j]` when key `start + subset[j]` is not hot key `hot_key_idxs[subset[j]]`.
+    ///
+    /// # Safety
+    /// As for [`Self::verify`].
+    pub(crate) unsafe fn verify_subset(
+        &self,
+        keys: &KeyRowKeys,
+        start: usize,
+        subset: &[usize],
+        hot_key_idxs: &[IdxSize],
+        rows: &mut Vec<*const u64>,
+        ok: &mut [bool],
+    ) {
+        let stride_words = self.layout.stride_words;
+        rows.clear();
+        rows.extend(subset.iter().map(|r| {
+            self.rows
+                .as_ptr()
+                .add(*hot_key_idxs.get_unchecked(*r) as usize * stride_words)
+        }));
+        keys.verify(subset.iter().map(|r| start + r), rows, ok, |view| {
+            view.get_external_slice_unchecked(&self.long)
+        });
+    }
+
     /// Adds key `i` of `keys`, returning its index.
     ///
     /// # Safety

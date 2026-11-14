@@ -7,8 +7,10 @@ use polars_arrow::array::{
 };
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::compute::aggregate::estimated_bytes_size;
+use polars_buffer::Buffer;
 use polars_core::frame::DataFrame;
 use polars_core::frame::builder::DataFrameBuilder;
+use polars_core::frame::column::{DictionaryColumn, SharedDictionary};
 use polars_core::prelude::row_encode::_get_rows_encoded_unordered;
 use polars_core::prelude::{ChunkedArray, DataType, PlRandomState, PolarsDataType, *};
 use polars_core::series::Series;
@@ -256,17 +258,42 @@ impl KeyEncoder {
                 })
             },
             KeyKind::Binview => {
-                let keys = if let Ok(ca_str) = df[0].str() {
+                let keys = if let Some(d) = df[0]
+                    .as_dictionary_column()
+                    .filter(|d| d.lazy_as_materialized_series().is_none())
+                {
+                    // The rows' views into the dictionary's buffers, without caching them as the
+                    // column's materialized values (which would keep them alive with the column).
+                    d.to_series().str().unwrap().as_binary()
+                } else if let Ok(ca_str) = df[0].str() {
                     ca_str.as_binary()
                 } else {
                     df[0].binary().unwrap().clone()
                 };
                 let keys = keys.rechunk().downcast_as_array().clone();
 
+                let dict_codes = df[0]
+                    .as_dictionary_column()
+                    .and_then(|d| DictCodes::try_new(d, &random_state));
                 let views = keys.views();
                 let buffers = keys.data_buffers();
                 let hashes = unsafe {
-                    if keys.has_nulls() {
+                    if let Some(dc) = &dict_codes {
+                        polars_core::frame::column::dictionary_stats::add(
+                            polars_core::frame::column::dictionary_stats::Counter::BinviewHashRows,
+                            dc.codes.len(),
+                        );
+                        let hash = |c: &u32| *dc.hashes.get_unchecked(*c as usize);
+                        match keys.validity().filter(|v| v.unset_bits() > 0) {
+                            Some(validity) => dc
+                                .codes
+                                .iter()
+                                .zip(validity)
+                                .map(|(c, is_valid)| if is_valid { hash(c) } else { 0 })
+                                .collect(),
+                            None => dc.codes.iter().map(hash).collect(),
+                        }
+                    } else if keys.has_nulls() {
                         views
                             .iter()
                             .zip(keys.validity().unwrap())
@@ -290,6 +317,7 @@ impl KeyEncoder {
                     hashes: PrimitiveArray::from_vec(hashes),
                     keys,
                     null_is_valid,
+                    dict_codes,
                 })
             },
             KeyKind::Single => HashKeys::Single(SingleKeys {
@@ -647,6 +675,7 @@ impl HashKeys {
                 hashes: column_array(df, "hashes"),
                 keys: column_array(df, "keys"),
                 null_is_valid: *null_is_valid,
+                dict_codes: None,
             }),
         }
     }
@@ -834,12 +863,58 @@ impl SingleKeys {
     }
 }
 
+/// The codes of keys that come from a [`DictionaryColumn`], with the hash of each dictionary value.
+#[derive(Clone, Debug)]
+pub struct DictCodes {
+    pub dict: Arc<SharedDictionary>,
+    /// The code of each key; arbitrary for a null key.
+    pub codes: Buffer<u32>,
+    /// The hash of each dictionary value under the keys' hasher.
+    pub hashes: Buffer<u64>,
+}
+
+impl DictCodes {
+    /// `None` when the dictionary has more values than the column has rows and their hashes
+    /// aren't cached yet: hashing the rows is then cheaper, e.g. after a selective filter.
+    pub fn try_new(column: &DictionaryColumn, random_state: &PlRandomState) -> Option<Self> {
+        let mut hashes = match column.dict().cached_hashes(random_state) {
+            Some(hashes) => hashes,
+            None if column.dict().len() <= column.len() => column.dict().hashes(random_state),
+            None => return None,
+        };
+        let codes = column.codes().rechunk();
+        let codes = codes.downcast_as_array();
+        let codes = if codes.has_nulls() {
+            // Null slots may hold any value; make them a valid index.
+            let validity = codes.validity().unwrap();
+            codes
+                .values_iter()
+                .zip(validity.iter())
+                .map(|(c, v)| if v { *c } else { 0 })
+                .collect()
+        } else {
+            codes.values().clone()
+        };
+        if hashes.is_empty() {
+            // Every key is null; give the null codes a hash to point at.
+            hashes = Buffer::from(vec![0]);
+        }
+        Some(Self {
+            dict: column.dict().clone(),
+            codes,
+            hashes,
+        })
+    }
+}
+
 /// Pre-hashed binary view keys with prehashing.
 #[derive(Clone, Debug)]
 pub struct BinviewKeys {
     pub hashes: UInt64Array,
     pub keys: BinaryViewArray,
     pub null_is_valid: bool,
+    /// Set when the keys come from a dictionary-coded column.
+    pub dict_codes: Option<DictCodes>,
 }
 
 impl BinviewKeys {
@@ -873,6 +948,14 @@ impl BinviewKeys {
             ),
             keys: polars_compute::gather::binview::take_binview_unchecked(&self.keys, &idx_arr),
             null_is_valid: self.null_is_valid,
+            dict_codes: self.dict_codes.as_ref().map(|dc| DictCodes {
+                dict: dc.dict.clone(),
+                codes: idxs
+                    .iter()
+                    .map(|i| *dc.codes.get_unchecked(*i as usize))
+                    .collect(),
+                hashes: dc.hashes.clone(),
+            }),
         }
     }
 }
@@ -969,6 +1052,139 @@ unsafe fn for_each_hash_subset_single<T, F>(
         for idx in subset {
             let k = keys_arr.value_unchecked(*idx as usize);
             f(*idx, Some(random_state.tot_hash_one(k)));
+        }
+    }
+}
+
+/// Dictionaries with more values than this are not cached by code.
+pub(crate) const MAX_DICT_CODE_CACHE_LEN: usize = 1 << 16;
+
+/// An operator's cache from the codes of one dictionary (or a combination of dictionaries) to a
+/// result for each code's value, such as its group. Entries are `IdxSize::MAX` until filled.
+#[derive(Default)]
+pub(crate) struct DictCodeCache {
+    /// The ids of the dictionaries the entries are for; empty when there are none.
+    dict_ids: Vec<u64>,
+    entries: Vec<IdxSize>,
+    /// Rows declined since the entries were last emptied, see [`may_refill`].
+    declined_rows: usize,
+}
+
+/// Whether a cache of `len` entries may be emptied for other dictionaries, given `rows` more keys
+/// and the keys `declined_rows` declined before. Emptying is allowed once the keys add up to the
+/// entries, so that it costs no more than the keys do (e.g. after a selective filter, or for many
+/// small partitions of morsels from row groups that alternate).
+fn may_refill(declined_rows: &mut usize, len: usize, rows: usize) -> bool {
+    *declined_rows = declined_rows.saturating_add(rows);
+    if len > *declined_rows {
+        return false;
+    }
+    *declined_rows = 0;
+    true
+}
+
+impl DictCodeCache {
+    /// The entries for `dict` to look up `rows` keys, emptied when it is another dictionary than
+    /// last time. `None` if the dictionary is too large to cache, or if emptying the entries
+    /// would cost more than the keys so far (see [`may_refill`]).
+    pub(crate) fn entries_for(
+        &mut self,
+        dict: &SharedDictionary,
+        rows: usize,
+    ) -> Option<&mut [IdxSize]> {
+        self.entries_for_ids(&[dict.id()], dict.len(), rows)
+    }
+
+    /// The `len` entries for the combined codes of the dictionaries `dict_ids`, emptied when
+    /// these are other dictionaries than last time. `None` as for [`Self::entries_for`].
+    pub(crate) fn entries_for_ids(
+        &mut self,
+        dict_ids: &[u64],
+        len: usize,
+        rows: usize,
+    ) -> Option<&mut [IdxSize]> {
+        if len > MAX_DICT_CODE_CACHE_LEN {
+            return None;
+        }
+        if self.dict_ids != dict_ids {
+            if !may_refill(&mut self.declined_rows, len, rows) {
+                return None;
+            }
+            self.dict_ids.clear();
+            self.dict_ids.extend_from_slice(dict_ids);
+            self.entries.clear();
+            self.entries.resize(len, IdxSize::MAX);
+        }
+        Some(&mut self.entries)
+    }
+
+    /// The number of entries, see [`Self::entries_for`].
+    pub(crate) fn len(&self) -> usize {
+        self.entries.len()
+    }
+}
+
+/// A [`DictCodeCache`] for tables that reuse a key slot for another key, such as hot groupers
+/// that evict keys. Each entry holds a slot and the slot's generation when the entry was made;
+/// it is only valid while the slot's generation is unchanged.
+#[derive(Default)]
+pub(crate) struct DictSlotCache {
+    dict_ids: Vec<u64>,
+    entries: Vec<(IdxSize, u64)>,
+    /// The generation of each slot, bumped when the slot gets another key.
+    slot_gens: Vec<u64>,
+    /// Rows declined since the entries were last emptied, see [`may_refill`].
+    declined_rows: usize,
+}
+
+impl DictSlotCache {
+    /// Starts caching the `len` combined codes of the dictionaries `dict_ids` for `rows` keys,
+    /// emptying the cache when these are other dictionaries than last time. False if too large to
+    /// cache, or if emptying it would cost more than the keys so far (see [`may_refill`]).
+    pub(crate) fn prepare(&mut self, dict_ids: &[u64], len: usize, rows: usize) -> bool {
+        if len > MAX_DICT_CODE_CACHE_LEN {
+            return false;
+        }
+        if self.dict_ids != dict_ids {
+            if !may_refill(&mut self.declined_rows, len, rows) {
+                return false;
+            }
+            self.dict_ids.clear();
+            self.dict_ids.extend_from_slice(dict_ids);
+            self.entries.clear();
+            self.entries.resize(len, (IdxSize::MAX, 0));
+        }
+        true
+    }
+
+    /// The slot that `code` was found in, if it still holds that key.
+    ///
+    /// # Safety
+    /// `code` must be in bounds for the prepared dictionaries.
+    #[inline(always)]
+    pub(crate) unsafe fn get(&self, code: usize) -> Option<IdxSize> {
+        let (slot, gen_) = *self.entries.get_unchecked(code);
+        (slot != IdxSize::MAX && self.slot_gens.get(slot as usize) == Some(&gen_)).then_some(slot)
+    }
+
+    /// Records that `code` is in `slot`.
+    ///
+    /// # Safety
+    /// `code` must be in bounds for the prepared dictionaries.
+    #[inline(always)]
+    pub(crate) unsafe fn set(&mut self, code: usize, slot: IdxSize) {
+        if self.slot_gens.len() <= slot as usize {
+            self.slot_gens.resize(slot as usize + 1, 0);
+        }
+        *self.entries.get_unchecked_mut(code) =
+            (slot, *self.slot_gens.get_unchecked(slot as usize));
+    }
+
+    /// Records that `slot` now holds another key.
+    #[inline(always)]
+    pub(crate) fn invalidate_slot(&mut self, slot: IdxSize) {
+        if let Some(g) = self.slot_gens.get_mut(slot as usize) {
+            *g = g.wrapping_add(1);
         }
     }
 }
