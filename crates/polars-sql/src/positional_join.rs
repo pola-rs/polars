@@ -163,7 +163,10 @@ fn mark_aliased(item: &mut TableWithJoins) -> PolarsResult<()> {
         };
         let left = match i {
             0 => &mut item.relation,
-            _ => &mut item.joins[i - 1].relation,
+            _ if ends_with_relation(&item.joins[i - 1].join_operator) => {
+                &mut item.joins[i - 1].relation
+            },
+            _ => continue,
         };
         if take_positional_alias(left) {
             polars_ensure!(!has_condition, SQLInterface: "{}", JOIN_CONDITION);
@@ -171,6 +174,30 @@ fn mark_aliased(item: &mut TableWithJoins) -> PolarsResult<()> {
         }
     }
     Ok(())
+}
+
+/// Whether nothing is written after the relation of a join with operator `op`.
+fn ends_with_relation(op: &JoinOperator) -> bool {
+    use JoinOperator::*;
+    let (Join(constraint)
+    | Inner(constraint)
+    | Left(constraint)
+    | LeftOuter(constraint)
+    | Right(constraint)
+    | RightOuter(constraint)
+    | FullOuter(constraint)
+    | CrossJoin(constraint)
+    | Semi(constraint)
+    | LeftSemi(constraint)
+    | RightSemi(constraint)
+    | Anti(constraint)
+    | LeftAnti(constraint)
+    | RightAnti(constraint)
+    | StraightJoin(constraint)) = op
+    else {
+        return matches!(op, CrossApply | OuterApply);
+    };
+    matches!(constraint, JoinConstraint::None | JoinConstraint::Natural)
 }
 
 /// Take an alias `positional`, written without `AS` or quotes, off `factor`.

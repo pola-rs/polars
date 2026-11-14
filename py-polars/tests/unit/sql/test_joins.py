@@ -3820,6 +3820,11 @@ def test_positional_join_names_and_errors() -> None:
             eager=True,
         ).rows() == [(8,)]
         for query in [
+            # an alias followed by its join condition
+            "SELECT positional.k FROM b JOIN a positional ON positional.k = b.k - 6 "
+            "JOIN a ON a.k = positional.k",
+            "SELECT positional.k FROM a JOIN a positional USING (k) "
+            "JOIN b ON b.k - 6 = positional.k",
             "SELECT positional.k FROM a AS positional JOIN b ON positional.k = b.k - 6",
             "SELECT positional.k FROM positional JOIN b ON positional.k = b.k - 6",
             "SELECT p.k FROM (positional AS p JOIN b ON p.k = b.k - 6)",
