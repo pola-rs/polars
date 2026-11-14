@@ -513,7 +513,9 @@ impl Visitor for RegisteredAliases {
                 ..
             }
             | TableFactor::Derived { alias, .. }
-            | TableFactor::UNNEST { alias, .. } => alias.as_ref(),
+            | TableFactor::UNNEST { alias, .. }
+            | TableFactor::Pivot { alias, .. }
+            | TableFactor::Unpivot { alias, .. } => alias.as_ref(),
             _ => None,
         };
         self.0.extend(alias.map(|alias| alias.name.value.clone()));

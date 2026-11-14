@@ -3752,3 +3752,49 @@ def test_join_untyped_literal_keys(on: str, how: str) -> None:
         check_dtypes=False,
         engines=["in-memory", "streaming"],
     )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT * FROM a POSITIONAL JOIN b",
+        "SELECT * FROM b POSITIONAL JOIN a",
+        "SELECT x.k, y.k AS k2 FROM a AS x POSITIONAL JOIN a y",
+        "SELECT * FROM a POSITIONAL JOIN (SELECT v FROM b WHERE v > 7) AS c",
+        "SELECT a.k, b.v, c.s FROM a POSITIONAL JOIN b JOIN a AS c ON c.k = b.v - 7",
+    ],
+)
+def test_positional_join(query: str) -> None:
+    assert_sql_matches(
+        {
+            "a": pl.LazyFrame({"k": [1, 2], "s": ["x", "y"]}),
+            "b": pl.LazyFrame({"v": [7, 8, 9]}),
+        },
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=["in-memory", "streaming"],
+    )
+
+
+def test_positional_join_names_and_errors() -> None:
+    a = pl.DataFrame({"k": [1, 2]})
+    b = pl.DataFrame({"k": [7, 8, 9]})
+    with pl.SQLContext(a=a, b=b) as ctx:
+        assert_frame_equal(
+            ctx.execute("SELECT * FROM a POSITIONAL JOIN b", eager=True),
+            pl.DataFrame({"k": [1, 2, None], "k:b": [7, 8, 9]}),
+        )
+        # without POSITIONAL right before JOIN, the word is an alias
+        assert ctx.execute(
+            "SELECT positional.k FROM a AS positional JOIN b ON positional.k = b.k - 6 "
+            "ORDER BY positional.k",
+            eager=True,
+        ).rows() == [(1,), (2,)]
+        ctx.execute("CREATE VIEW v AS SELECT * FROM a POSITIONAL JOIN b")
+        assert ctx.execute("SELECT count(*) AS n FROM v", eager=True).item() == 3
+        for constraint in ["ON a.k = b.k", "USING (k)"]:
+            with pytest.raises(
+                SQLInterfaceError, match="does not take a join condition"
+            ):
+                ctx.execute(f"SELECT * FROM a POSITIONAL JOIN b {constraint}")

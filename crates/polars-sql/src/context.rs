@@ -58,6 +58,7 @@ use crate::grouping_sets::{
 };
 use crate::join_keys::{sql_join_key_pair, sql_join_where_predicate};
 use crate::partition_alter::{self, PartitionAlter};
+use crate::positional_join::is_positional_join;
 use crate::sql_expr::{
     convert_int_literal_for_string, is_string_expr, order_by_sort_options, parse_sql_array,
     parse_sql_expr, resolve_compound_identifier, resolve_expr_dtype, series_from_literals,
@@ -2959,7 +2960,7 @@ impl SQLContext {
             }))
     }
 
-    fn register_cte(&mut self, name: &str, lf: LazyFrame) {
+    pub(crate) fn register_cte(&mut self, name: &str, lf: LazyFrame) {
         // Lookups ignore case, so a new name must replace an outer one that differs only in case.
         self.cte_map
             .retain(|key, _| !key.eq_ignore_ascii_case(name));
@@ -3399,6 +3400,17 @@ impl SQLContext {
                         match_condition,
                         constraint,
                     )?,
+                    op if is_positional_join(op) => {
+                        // As in a CROSS JOIN, right columns the left has are suffixed.
+                        let shared: Vec<PlSmallStr> = right_schema
+                            .iter_names()
+                            .filter(|name| left_schema.contains(name))
+                            .cloned()
+                            .collect();
+                        let suffixed = shared.iter().map(|name| format!("{name}:{r_name}"));
+                        let rf = rf.rename(&shared, suffixed, true);
+                        concat_lf_horizontal([lf, rf], HConcatOptions::default())?
+                    },
                     JoinOperator::CrossJoin(JoinConstraint::None) => {
                         lf.cross_join(rf, Some(format_pl_smallstr!(":{}", r_name)))
                     },
@@ -6164,14 +6176,36 @@ impl SQLContext {
                     ctx.strict_relations |= strict;
                     ctx.execute_query(subquery)
                 })?;
-                if let Some(alias) = alias {
-                    let lf = self.rename_columns_from_table_alias(lf, alias)?;
-                    let name = alias.name.value.clone();
-                    self.from_item_frames.insert(name.clone(), lf.clone());
-                    Ok((name, lf))
-                } else {
-                    Ok(("".to_string(), lf))
-                }
+                self.derived_from_item(lf, alias.as_ref())
+            },
+            TableFactor::Pivot {
+                table,
+                aggregate_functions,
+                value_column,
+                value_source,
+                default_on_null,
+                alias,
+            } => {
+                polars_ensure!(
+                    default_on_null.is_none(),
+                    SQLInterface: "PIVOT does not support `DEFAULT ON NULL`"
+                );
+                let lf =
+                    self.execute_pivot(table, aggregate_functions, value_column, value_source)?;
+                self.derived_from_item(lf, alias.as_ref())
+            },
+            #[cfg(feature = "pivot")]
+            TableFactor::Unpivot {
+                table,
+                value,
+                name,
+                columns,
+                null_inclusion,
+                alias,
+            } => {
+                let lf =
+                    self.execute_unpivot(table, value, name, columns, null_inclusion.as_ref())?;
+                self.derived_from_item(lf, alias.as_ref())
             },
             TableFactor::UNNEST {
                 alias,
@@ -6259,6 +6293,21 @@ impl SQLContext {
             // Support bare table, optionally with an alias, for now
             _ => polars_bail!(SQLInterface: "not yet implemented: {}", relation),
         }
+    }
+
+    /// A FROM item computed from other relations, known by its alias, if any.
+    fn derived_from_item(
+        &mut self,
+        lf: LazyFrame,
+        alias: Option<&TableAlias>,
+    ) -> PolarsResult<(String, LazyFrame)> {
+        let Some(alias) = alias else {
+            return Ok((String::new(), lf));
+        };
+        let lf = self.rename_columns_from_table_alias(lf, alias)?;
+        let name = alias.name.value.clone();
+        self.from_item_frames.insert(name.clone(), lf.clone());
+        Ok((name, lf))
     }
 
     fn execute_table_function(
@@ -7601,7 +7650,9 @@ pub(crate) fn relation_name(factor: &TableFactor) -> Option<RelationName> {
         TableFactor::Derived { alias: a, .. }
         | TableFactor::NestedJoin { alias: a, .. }
         | TableFactor::TableFunction { alias: a, .. }
-        | TableFactor::UNNEST { alias: a, .. } => alias(a),
+        | TableFactor::UNNEST { alias: a, .. }
+        | TableFactor::Pivot { alias: a, .. }
+        | TableFactor::Unpivot { alias: a, .. } => alias(a),
         _ => None,
     }
 }
@@ -9629,9 +9680,9 @@ fn parse_single_statement(query: &str) -> PolarsResult<Statement> {
 }
 
 fn parse_sql(query: &str) -> PolarsResult<Vec<Statement>> {
-    let (mut parser, versions) = sql_parser(query)?;
+    let (mut parser, taken) = sql_parser(query)?;
     let mut stmts = parser.parse_statements().map_err(to_sql_interface_err)?;
-    versions.attach(&mut stmts)?;
+    taken.attach(&mut stmts)?;
     Ok(stmts)
 }
 
