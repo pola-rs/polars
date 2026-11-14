@@ -19,6 +19,9 @@ from polars.io.iceberg._dataset import (
     _reusable_catalog,
 )
 from polars.io.iceberg._utils import (
+    _cast_columns,
+    _exact_col,
+    _exact_field,
     _is_null_pushdown_safe,
     _normalize_windows_iceberg_file_uri,
     predicate_to_pyiceberg_delete_filter,
@@ -470,11 +473,9 @@ def _set_isolation_operation(producer: Any, operation: Any) -> None:
 def _iceberg_source_expr(schema: Schema, source_id: int) -> pl.Expr:
     from pyiceberg.types import StructType
 
-    import polars as pl
-
     accessor = schema.accessor_for_field(source_id)
     source_field = schema.fields[accessor.position]
-    expr = pl.col(source_field.name)
+    expr = _exact_col(source_field.name)
 
     while accessor.inner is not None:
         accessor = accessor.inner
@@ -483,7 +484,7 @@ def _iceberg_source_expr(schema: Schema, source_id: int) -> pl.Expr:
             msg = f"Iceberg source field {source_id} has non-struct parent"
             raise TypeError(msg)
         source_field = source_type.fields[accessor.position]
-        expr = expr.struct.field(source_field.name)
+        expr = _exact_field(expr, source_field.name)
 
     return expr
 
@@ -1469,7 +1470,7 @@ class IcebergSinkState:
             # Iceberg types.
             table_schema, casts = _create_table_schema(lf.collect_schema())
             if casts:
-                lf = lf.cast(casts)  # type: ignore[arg-type]
+                lf = _cast_columns(lf, casts)
             self.source_schema = schema_to_pyarrow(
                 table_schema, include_field_ids=False
             )

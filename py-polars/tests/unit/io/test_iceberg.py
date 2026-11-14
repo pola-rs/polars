@@ -2599,6 +2599,94 @@ def test_sink_iceberg_partition_key_name_collision_schema_merge(
     )
 
 
+def _pattern_like_names_table(
+    tmp_path: Path,
+    *,
+    partition_spec: PartitionSpec | None = None,
+    sort_order: SortOrder | None = None,
+) -> tuple[pyiceberg.table.Table, pl.DataFrame]:
+    # `ab` and `s.ab` match the patterns `^a.$` and `*`
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "ab", LongType()),
+            NestedField(2, "^a.$", LongType()),
+            NestedField(3, "*", LongType()),
+            NestedField(
+                4,
+                "s",
+                StructType(
+                    NestedField(5, "ab", LongType()), NestedField(6, "^a.$", LongType())
+                ),
+            ),
+        ),
+        partition_spec=partition_spec,
+        sort_order=sort_order,
+    )
+    df = pl.DataFrame(
+        {
+            "ab": [1, 1, 1],
+            "^a.$": [3, 1, 2],
+            "*": [4, 5, 6],
+            "s": [{"ab": 1, "^a.$": v} for v in [7, 8, 9]],
+        }
+    )
+    return tbl, df
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("source_id", "values"), [(2, [1, 2, 3]), (3, [4, 5, 6]), (6, [7, 8, 9])]
+)
+def test_sink_iceberg_partition_source_pattern_like_name(
+    tmp_path: Path, source_id: int, values: list[int]
+) -> None:
+    # a name such as `^a.$` or `*` is a column name, not a pattern
+    tbl, df = _pattern_like_names_table(
+        tmp_path,
+        partition_spec=PartitionSpec(
+            PartitionField(source_id, 1000, IdentityTransform(), "p")
+        ),
+    )
+    df.lazy().sink_iceberg(tbl, mode="append")
+    tbl.refresh()
+    partitions = sorted(task.file.partition[0] for task in tbl.scan().plan_files())
+    assert partitions == values
+    assert_frame_equal(pl.scan_iceberg(tbl).collect(), df, check_row_order=False)
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_sort_key_pattern_like_name(tmp_path: Path) -> None:
+    tbl, df = _pattern_like_names_table(
+        tmp_path,
+        sort_order=SortOrder(SortField(source_id=2, transform=IdentityTransform())),
+    )
+    df.lazy().sink_iceberg(tbl, mode="append")
+    tbl.refresh()
+    [task] = tbl.scan().plan_files()
+    assert task.file.sort_order_id == tbl.sort_order().order_id
+    assert pl.scan_iceberg(tbl).collect()["^a.$"].to_list() == [1, 2, 3]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_create_if_not_exists_pattern_like_name(tmp_path: Path) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path / 'iceberg_catalog.sqlite'}",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    catalog.create_namespace("ns")
+    # only `^a.$` is cast to an Iceberg type, not the columns it would match
+    df = pl.DataFrame(
+        {"ab": [1], "^a.$": [2]}, schema={"ab": pl.Int64, "^a.$": pl.UInt8}
+    )
+    df.lazy().sink_iceberg(
+        "ns.t", mode="append", catalog=catalog, create_if_not_exists=True
+    )
+    result = pl.scan_iceberg(catalog.load_table("ns.t")).collect()
+    assert_frame_equal(result, df.with_columns(pl.nth(1).cast(pl.Int32)))
+
+
 @pytest.mark.parametrize("metrics_mode", ["none", "counts"])
 @pytest.mark.parametrize("column_override", [False, True])
 @pytest.mark.write_disk
