@@ -1,7 +1,10 @@
+use std::collections::VecDeque;
+
 use polars::datatypes::CompatLevel;
 use polars::frame::DataFrame;
 use polars::prelude::{ArrayRef, ArrowField, PlSmallStr, SchemaExt};
 use polars::series::Series;
+use polars_arrow::array::StructArray;
 use polars_arrow::datatypes::ArrowDataType;
 use polars_arrow::ffi;
 use polars_arrow::record_batch::RecordBatch;
@@ -70,9 +73,12 @@ pub(crate) fn series_to_stream<'py>(
 ) -> PyResult<Bound<'py, PyCapsule>> {
     let field = series.field().to_arrow(CompatLevel::newest());
     let series = series.clone();
-    let iter = Box::new(
-        (0..series.n_chunks()).map(move |i| Ok(series.to_arrow(i, CompatLevel::newest()))),
-    ) as _;
+    let iter = Box::new((0..series.n_chunks()).flat_map(move |i| {
+        match series.try_to_arrow_split(i, CompatLevel::newest()) {
+            Ok(arrays) => arrays.into_iter().map(Ok).collect(),
+            Err(err) => vec![Err(err)],
+        }
+    })) as _;
 
     let stream = ffi::export_iterator(iter, field);
     PyCapsule::new_with_value(py, stream, c"arrow_array_stream")
@@ -111,34 +117,35 @@ pub(crate) fn polars_schema_to_pycapsule<'py>(
     PyCapsule::new_with_value(py, schema, c"arrow_schema")
 }
 
+/// Export a [`DataFrame`] with aligned chunks as arrow struct arrays of `dtype`.
+pub(crate) fn dataframe_to_struct_arrays(
+    df: &DataFrame,
+    dtype: &ArrowDataType,
+) -> PolarsResult<VecDeque<ArrayRef>> {
+    df.try_iter_chunks(CompatLevel::newest(), false)
+        .map(|batch| {
+            let batch = batch?;
+            let array = StructArray::new(dtype.clone(), batch.len(), batch.into_arrays(), None);
+            Ok(Box::new(array) as ArrayRef)
+        })
+        .collect()
+}
+
 pub struct DataFrameStreamIterator {
-    columns: Vec<Series>,
+    df: Option<DataFrame>,
     dtype: ArrowDataType,
-    idx: usize,
-    n_chunks: usize,
-    height: usize,
+    arrays: VecDeque<ArrayRef>,
 }
 
 impl DataFrameStreamIterator {
     fn new(df: &DataFrame) -> Self {
         let schema = df.schema().to_arrow(CompatLevel::newest());
         let dtype = ArrowDataType::Struct(schema.into_iter_values().collect());
-        let n_chunks = if df.width() == 0 {
-            usize::from(df.height() > 0)
-        } else {
-            df.first_col_n_chunks()
-        };
 
         Self {
-            columns: df
-                .columns()
-                .iter()
-                .map(|v| v.as_materialized_series().clone())
-                .collect(),
+            df: Some(df.clone()),
             dtype,
-            idx: 0,
-            n_chunks,
-            height: df.height(),
+            arrays: VecDeque::new(),
         }
     }
 
@@ -151,25 +158,12 @@ impl Iterator for DataFrameStreamIterator {
     type Item = PolarsResult<ArrayRef>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.idx >= self.n_chunks {
-            None
-        } else {
-            // create a batch of the columns with the same chunk no.
-            let batch_cols = self
-                .columns
-                .iter()
-                .map(|s| s.to_arrow(self.idx, CompatLevel::newest()))
-                .collect::<Vec<_>>();
-            self.idx += 1;
-
-            let col_len = batch_cols.first().map_or(self.height, |c| c.len());
-            let array = polars_arrow::array::StructArray::new(
-                self.dtype.clone(),
-                col_len,
-                batch_cols,
-                None,
-            );
-            Some(Ok(Box::new(array)))
+        if let Some(df) = self.df.take() {
+            match dataframe_to_struct_arrays(&df, &self.dtype) {
+                Ok(arrays) => self.arrays = arrays,
+                Err(err) => return Some(Err(err)),
+            }
         }
+        self.arrays.pop_front().map(Ok)
     }
 }

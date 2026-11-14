@@ -55,6 +55,7 @@ use crate::hashing::_df_rows_to_hashes_threaded_vertical;
 use crate::prelude::sort::arg_sort;
 use crate::runtime::RAYON;
 use crate::series::IsSorted;
+use crate::series::arrow_export::{arrow_export_row_bounds, contains_arrow_map};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -2129,6 +2130,9 @@ impl DataFrame {
 
     /// Iterator over the rows in this [`DataFrame`] as Arrow RecordBatches.
     ///
+    /// A chunk is split into several batches where its arrow MAP arrays would overflow
+    /// their `i32` offsets.
+    ///
     /// # Panics
     ///
     /// Panics if the [`DataFrame`] that is passed is not rechunked.
@@ -2141,6 +2145,21 @@ impl DataFrame {
         compat_level: CompatLevel,
         parallel: bool,
     ) -> impl Iterator<Item = RecordBatch> + '_ {
+        self.try_iter_chunks(compat_level, parallel)
+            .map(|batch| batch.unwrap())
+    }
+
+    /// Like [`DataFrame::iter_chunks`], but yields an error for a row with more map entries
+    /// than the `i32` offsets of an arrow MAP can hold.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the [`DataFrame`] that is passed is not rechunked.
+    pub fn try_iter_chunks(
+        &self,
+        compat_level: CompatLevel,
+        parallel: bool,
+    ) -> impl Iterator<Item = PolarsResult<RecordBatch>> + '_ {
         debug_assert!(!self.should_rechunk(), "expected equal chunks");
 
         if self.width() == 0 {
@@ -2158,17 +2177,22 @@ impl DataFrame {
                 .iter()
                 .any(|s| matches!(s.dtype(), DataType::String | DataType::Binary));
 
+        let schema: ArrowSchemaRef = Arc::new(
+            self.columns()
+                .iter()
+                .map(|c| c.field().to_arrow(compat_level))
+                .collect(),
+        );
+        let has_arrow_map = schema.iter_values().any(|f| contains_arrow_map(f.dtype()));
+
         RecordBatchIterWrap::Batches(RecordBatchIter {
             df: self,
-            schema: Arc::new(
-                self.columns()
-                    .iter()
-                    .map(|c| c.field().to_arrow(compat_level))
-                    .collect(),
-            ),
+            schema,
             cursor: ChunkCursor::new(self),
             compat_level,
             parallel,
+            has_arrow_map,
+            split_chunk: None,
         })
     }
 
@@ -2184,20 +2208,21 @@ impl DataFrame {
     pub fn iter_chunks_physical(&self) -> impl Iterator<Item = RecordBatch> + '_ {
         debug_assert!(!self.should_rechunk());
 
-        if self.width() == 0 {
-            return RecordBatchIterWrap::new_zero_width(self.height());
-        }
-
-        RecordBatchIterWrap::PhysicalBatches(PhysRecordBatchIter {
-            df: self,
-            schema: Arc::new(
-                self.columns()
-                    .iter()
-                    .map(|c| c.field().to_arrow(CompatLevel::newest()))
-                    .collect(),
-            ),
-            cursor: ChunkCursor::new(self),
-        })
+        let iter = if self.width() == 0 {
+            RecordBatchIterWrap::new_zero_width(self.height())
+        } else {
+            RecordBatchIterWrap::PhysicalBatches(PhysRecordBatchIter {
+                df: self,
+                schema: Arc::new(
+                    self.columns()
+                        .iter()
+                        .map(|c| c.field().to_arrow(CompatLevel::newest()))
+                        .collect(),
+                ),
+                cursor: ChunkCursor::new(self),
+            })
+        };
+        iter.map(|batch| batch.unwrap())
     }
 
     /// Get a [`DataFrame`] with all the columns in reversed order.
@@ -2713,31 +2738,106 @@ pub struct RecordBatchIter<'a> {
     cursor: ChunkCursor<'a>,
     compat_level: CompatLevel,
     parallel: bool,
+    /// Whether some column exports to an arrow MAP, whose `i32` offsets may force a chunk to
+    /// be split into several batches.
+    has_arrow_map: bool,
+    split_chunk: Option<SplitChunk>,
+}
+
+/// The single-chunk columns of a chunk, exported one row range at a time.
+struct SplitChunk {
+    columns: Vec<Series>,
+    bounds: Vec<usize>,
+    next: usize,
+}
+
+impl RecordBatchIter<'_> {
+    fn export_columns<T: Sync>(
+        &self,
+        columns: &[T],
+        to_arrow: impl Fn(&T) -> PolarsResult<ArrayRef> + Send + Sync,
+    ) -> PolarsResult<Vec<ArrayRef>> {
+        if self.parallel {
+            let iter = columns.par_iter().map(to_arrow);
+            RAYON.install(|| iter.collect())
+        } else {
+            columns.iter().map(to_arrow).collect()
+        }
+    }
+
+    fn next_split_batch(&mut self, mut split: SplitChunk) -> PolarsResult<RecordBatch> {
+        let start = split.bounds[split.next];
+        let length = split.bounds[split.next + 1] - start;
+        split.next += 1;
+
+        let cols = self.export_columns(&split.columns, |s| {
+            if length == s.len() {
+                s.try_to_arrow(0, self.compat_level)
+            } else {
+                s.slice(start as i64, length)
+                    .try_to_arrow(0, self.compat_level)
+            }
+        })?;
+
+        if split.next + 1 < split.bounds.len() {
+            self.split_chunk = Some(split);
+        }
+        Ok(RecordBatch::new(length, self.schema.clone(), cols))
+    }
 }
 
 impl Iterator for RecordBatchIter<'_> {
-    type Item = RecordBatch;
+    type Item = PolarsResult<RecordBatch>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if let Some(split) = self.split_chunk.take() {
+            return Some(self.next_split_batch(split));
+        }
+
         let (idx, length) = self.cursor.next()?;
 
-        let to_arrow = |c: &Column| match c.as_series() {
-            Some(s) => s.to_arrow(idx, self.compat_level),
-            None => c.slice(0, length).rechunk_to_arrow(self.compat_level),
-        };
+        if self.has_arrow_map {
+            let columns: Vec<Series> = self
+                .df
+                .columns()
+                .iter()
+                .map(|c| match c.as_series() {
+                    Some(s) => s.select_chunk(idx),
+                    None => c.slice(0, length).take_materialized_series().rechunk(),
+                })
+                .collect();
+            let bounds = arrow_export_row_bounds(
+                columns
+                    .iter()
+                    .zip(self.schema.iter_values())
+                    .map(|(s, f)| (s.chunks()[0].as_ref(), f.dtype())),
+                length,
+            );
+            return Some(bounds.and_then(|bounds| {
+                self.next_split_batch(SplitChunk {
+                    columns,
+                    bounds,
+                    next: 0,
+                })
+            }));
+        }
 
-        let batch_cols: Vec<ArrayRef> = if self.parallel {
-            let iter = self.df.columns().par_iter().map(to_arrow);
-            RAYON.install(|| iter.collect())
-        } else {
-            self.df.columns().iter().map(to_arrow).collect()
-        };
+        let batch_cols = self.export_columns(self.df.columns(), |c| match c.as_series() {
+            Some(s) => s.try_to_arrow(idx, self.compat_level),
+            None => Ok(c.slice(0, length).rechunk_to_arrow(self.compat_level)),
+        });
 
-        Some(RecordBatch::new(length, self.schema.clone(), batch_cols))
+        Some(batch_cols.map(|cols| RecordBatch::new(length, self.schema.clone(), cols)))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        self.cursor.size_hint()
+        let (chunks, _) = self.cursor.size_hint();
+        let split = self
+            .split_chunk
+            .as_ref()
+            .map_or(0, |split| split.bounds.len() - 1 - split.next);
+        let lower = chunks + split;
+        (lower, (!self.has_arrow_map).then_some(lower))
     }
 }
 
@@ -2795,7 +2895,7 @@ impl<'a> RecordBatchIterWrap<'a> {
 }
 
 impl Iterator for RecordBatchIterWrap<'_> {
-    type Item = RecordBatch;
+    type Item = PolarsResult<RecordBatch>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
@@ -2806,10 +2906,10 @@ impl Iterator for RecordBatchIterWrap<'_> {
                 let n = usize::min(*remaining_height, *chunk_size);
                 *remaining_height -= n;
 
-                (n > 0).then(|| RecordBatch::new(n, ArrowSchemaRef::default(), vec![]))
+                (n > 0).then(|| Ok(RecordBatch::new(n, ArrowSchemaRef::default(), vec![])))
             },
             Self::Batches(v) => v.next(),
-            Self::PhysicalBatches(v) => v.next(),
+            Self::PhysicalBatches(v) => v.next().map(Ok),
         }
     }
 
