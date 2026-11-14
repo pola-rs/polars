@@ -461,9 +461,13 @@ def _stop_with_saturated_blocking_pool(tmp_path: Path) -> None:
         batch_size=5,
     )
     # Delay the failure, so the first partition's read reaches the blocking row first.
+    def delayed(s: pl.Series) -> pl.Series:
+        time.sleep(0.5)
+        return s
+
     q = lf.select(
         pl.col("id")
-        .map_batches(lambda s: (time.sleep(0.5), s)[1], return_dtype=pl.Int64)
+        .map_batches(delayed, return_dtype=pl.Int64)
         .mul(100)
         .cast(pl.UInt8, strict=True)
     )
