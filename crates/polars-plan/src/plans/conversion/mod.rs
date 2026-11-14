@@ -14,6 +14,8 @@ use recursive::recursive;
 pub(crate) mod type_check;
 pub(crate) mod type_coercion;
 
+#[cfg(feature = "dtype-struct")]
+pub(crate) use dsl_to_ir::field_path_names;
 pub use dsl_to_ir::{is_regex_projection, prepare_projection};
 pub(crate) use stack_opt::ConversionOptimizer;
 

@@ -45,7 +45,7 @@ impl TreeWalker for Expr {
             Literal(_) => self,
             DataTypeFunction(_) => self,
             #[cfg(feature = "dtype-struct")]
-            Field(_) => self,
+            Field(_) | Path(_) => self,
             BinaryExpr { left, op, right } => {
                 BinaryExpr { left: am(left, &mut f)? , op, right: am(right, f)?}
             },
