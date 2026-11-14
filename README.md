@@ -5,7 +5,6 @@
 </h1>
 
 <div align="center">
-  <a href="https://crates.io/crates/polars">
     <img src="https://img.shields.io/crates/v/polars.svg" alt="crates.io Latest Release"/>
   </a>
   <a href="https://pypi.org/project/polars/">
