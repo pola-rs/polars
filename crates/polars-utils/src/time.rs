@@ -7,7 +7,7 @@ pub const DAYS_PER_MONTH: [[i64; 12]; 2] = [
 ];
 
 pub const fn is_leap_year(year: i32) -> bool {
-    year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
+    (year % 4 == 0) & ((year % 100 != 0) | (year % 400 == 0))
 }
 
 /// Get the number of days in the given month of the given year
