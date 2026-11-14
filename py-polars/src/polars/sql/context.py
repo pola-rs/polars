@@ -1040,7 +1040,7 @@ class SQLContext(Generic[FrameType]):
 
     def tables(self) -> list[str]:
         """
-        Return a list of the registered table names.
+        Return a list of the registered table and view names.
 
         Notes
         -----

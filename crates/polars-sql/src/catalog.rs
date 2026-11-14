@@ -656,6 +656,21 @@ where
         ControlFlow::Continue(())
     }
 
+    fn pre_visit_statement(&mut self, stmt: &mut Statement) -> ControlFlow<PolarsError> {
+        // `DESCRIBE <table>` names its table as `FROM` does.
+        if let Statement::ExplainTable { table_name, .. } = stmt
+            && let SetExpr::Select(mut select) = select_star_from(&[], Span::empty())
+            && let TableFactor::Table { name, .. } = &mut select.from[0].relation
+        {
+            *name = table_name.clone();
+            self.pre_visit_table_factor(&mut select.from[0].relation)?;
+            if let TableFactor::Table { name, .. } = &select.from[0].relation {
+                *table_name = name.clone();
+            }
+        }
+        ControlFlow::Continue(())
+    }
+
     fn pre_visit_table_factor(&mut self, factor: &mut TableFactor) -> ControlFlow<PolarsError> {
         // A name with arguments is a table function.
         let TableFactor::Table {

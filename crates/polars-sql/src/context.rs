@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::ops::{ControlFlow, Deref};
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 use chrono::{NaiveDateTime, SubsecRound};
 use polars_core::prelude::*;
@@ -22,18 +22,18 @@ use polars_utils::format_pl_smallstr;
 use polars_utils::unique_id::UniqueId;
 use sqlparser::ast::{
     AlterColumnOperation, AlterTable, AlterTableOperation, Assignment, AssignmentTarget,
-    BinaryOperator as SQLBinaryOperator, CreateTable, CreateTableLikeKind, CreateTableOptions, Cte,
-    Delete, Distinct, DropBehavior, ExcludeSelectItem, Expr as SQLExpr, Fetch, FromTable,
-    FunctionArg, FunctionArgExpr, FunctionArguments, GroupByExpr, HiveDistributionStyle,
+    BinaryOperator as SQLBinaryOperator, CreateTable, CreateTableLikeKind, CreateTableOptions,
+    CreateView, Cte, Delete, Distinct, DropBehavior, ExcludeSelectItem, Expr as SQLExpr, Fetch,
+    FromTable, FunctionArg, FunctionArgExpr, FunctionArguments, GroupByExpr, HiveDistributionStyle,
     HiveFormat, Ident, Insert, Join, JoinConstraint, JoinOperator, LimitClause, Merge, MergeAction,
     MergeClause, MergeClauseKind, MergeInsertExpr, MergeInsertKind, MergeUpdateExpr,
     MergeUpdateKind, NamedWindowDefinition, NamedWindowExpr, ObjectName, ObjectNamePart,
     ObjectType, OrderBy, OrderByKind, OutputClause, Query, RenameSelectItem, SchemaName, Select,
     SelectFlavor, SelectItem, SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier,
-    SqlOption, Statement, TableAlias, TableFactor, TableObject, TableWithJoins, Truncate,
-    TruncateTableTarget, UnaryOperator as SQLUnaryOperator, Update, Value as SQLValue,
-    ValueWithSpan, Values, Visitor, VisitorMut, WildcardAdditionalOptions, WindowSpec, WindowType,
-    With,
+    SqlOption, Statement, TableAlias, TableAliasColumnDef, TableFactor, TableObject,
+    TableWithJoins, Truncate, TruncateTableTarget, UnaryOperator as SQLUnaryOperator, Update,
+    Value as SQLValue, ValueWithSpan, Values, Visitor, VisitorMut, WildcardAdditionalOptions,
+    WindowSpec, WindowType, With,
 };
 
 use crate::catalog::{
@@ -315,6 +315,12 @@ pub(crate) enum FilterMode {
 #[derive(Clone)]
 pub struct SQLContext {
     pub(crate) table_map: Arc<RwLock<PlHashMap<String, LazyFrame>>>,
+    /// The views, by name. A view is planned again by each statement that reads it.
+    views: Arc<RwLock<PlHashMap<String, Arc<View>>>>,
+    /// The plans of the views the current statement reads, shared by all its contexts.
+    view_frames: Arc<Mutex<PlHashMap<String, LazyFrame>>>,
+    /// The views being planned, outermost first.
+    views_in_progress: Vec<String>,
     pub(crate) function_registry: Arc<dyn FunctionRegistry>,
     /// Set once a caller installs their own registry; user-defined functions cannot be
     /// carried in the DSL, so such a context resolves its queries eagerly.
@@ -358,6 +364,12 @@ pub struct SQLContext {
     /// How many subqueries enclose this scope. CTEs, derived tables and set operands don't
     /// count: they read no enclosing scope.
     pub(crate) nesting: usize,
+}
+
+/// The query of a view and the names it gives the query's columns.
+struct View {
+    query: Query,
+    alias: TableAlias,
 }
 
 /// The first relation of the current `FROM` and the (joined table, column) pairs
@@ -406,6 +418,9 @@ impl Default for SQLContext {
             function_registry: Arc::new(DefaultFunctionRegistry {}),
             custom_function_registry: false,
             table_map: Default::default(),
+            views: Default::default(),
+            view_frames: Default::default(),
+            views_in_progress: Default::default(),
             cte_map: Default::default(),
             table_aliases: Default::default(),
             active_relations: Default::default(),
@@ -441,14 +456,16 @@ impl SQLContext {
         Self::default()
     }
 
-    /// Get the names of all registered tables, in sorted order.
+    /// Get the names of all registered tables and views, in sorted order.
     pub fn get_tables(&self) -> Vec<String> {
         let mut tables = Vec::from_iter(self.table_map.read().unwrap().keys().cloned());
+        tables.extend(self.views.read().unwrap().keys().cloned());
         tables.sort_unstable();
         tables
     }
 
-    /// Register a [`LazyFrame`] as a table in the SQLContext.
+    /// Register a [`LazyFrame`] as a table in the SQLContext, replacing the views of the same name
+    /// ignoring case.
     /// ```rust
     /// # use polars_sql::SQLContext;
     /// # use polars_core::prelude::*;
@@ -464,12 +481,17 @@ impl SQLContext {
     /// # }
     ///```
     pub fn register(&self, name: &str, lf: LazyFrame) {
+        self.views
+            .write()
+            .unwrap()
+            .retain(|key, _| !key.eq_ignore_ascii_case(name));
         self.table_map.write().unwrap().insert(name.to_owned(), lf);
     }
 
-    /// Unregister a [`LazyFrame`] table from the [`SQLContext`].
+    /// Unregister a [`LazyFrame`] table or a view from the [`SQLContext`].
     pub fn unregister(&self, name: &str) {
-        self.table_map.write().unwrap().remove(&name.to_owned());
+        self.table_map.write().unwrap().remove(name);
+        self.views.write().unwrap().remove(name);
     }
 
     /// Attach a catalog under `name`. A table name starting with `name` refers to a table of
@@ -1137,7 +1159,7 @@ impl SQLContext {
     }
 
     fn parse_catalog_dml(&mut self, query: &str) -> PolarsResult<Statement> {
-        self.statement_time = Default::default();
+        self.start_statement();
         self.parse_catalog_dml_keeping_clock(query)
     }
 
@@ -1255,8 +1277,12 @@ impl SQLContext {
             return Ok(Default::default());
         }
         let table_map = self.table_map.read().unwrap();
+        let views = self.views.read().unwrap();
         // A name matching several tables ignoring case is left for the lookup to report.
-        let is_local = |name: &str| !matches!(key_ignoring_case(&table_map, name), Ok(None));
+        let is_local = |name: &str| {
+            !matches!(key_ignoring_case(&table_map, name), Ok(None))
+                || !matches!(key_ignoring_case(&views, name), Ok(None))
+        };
         if self.catalogs.is_empty() {
             let recorded = |parts: &[String]| {
                 let (_, full) = self.catalog_names.iter().find(|(w, _)| w == parts)?;
@@ -1345,7 +1371,7 @@ impl SQLContext {
         let (_, catalog_spellings) = self.rewrite_catalog_names(&mut stmt)?;
         desugar_quantified_subqueries(&mut stmt);
         self.catalog_spellings = catalog_spellings;
-        self.statement_time = Default::default();
+        self.start_statement();
         let res = self.execute_statement(&stmt).inspect_err(|_| {
             self.clear_statement_state();
         })?;
@@ -1362,9 +1388,19 @@ impl SQLContext {
 
     /// Whether resolving `stmt` can be deferred to the DSL -> IR conversion.
     ///
-    /// A user-defined function does not survive the round trip through the DSL.
+    /// A user-defined function does not survive the round trip through the DSL, and the views
+    /// a statement reads are planned with it.
     fn can_defer(&self, stmt: &Statement) -> bool {
-        !self.custom_function_registry && is_read_only_query(stmt)
+        !self.custom_function_registry && is_read_only_query(stmt) && !self.reads_view(stmt)
+    }
+
+    /// Whether `stmt` names a view.
+    fn reads_view(&self, stmt: &Statement) -> bool {
+        let views = self.views.read().unwrap();
+        !views.is_empty()
+            && statement_table_identifiers(stmt, true, true)
+                .iter()
+                .any(|name| !matches!(key_ignoring_case(&views, name), Ok(None)))
     }
 
     /// Build a [`DslPlan::SQL`] holding `query` and a snapshot of the relations it references.
@@ -1442,7 +1478,7 @@ impl SQLContext {
             },
         };
 
-        self.statement_time = Default::default();
+        self.start_statement();
         std::mem::swap(&mut self.lp_arena, lp_arena);
         std::mem::swap(&mut self.expr_arena, expr_arena);
         let res = self.execute_statement(stmt);
@@ -1453,8 +1489,16 @@ impl SQLContext {
         Ok(res?.logical_plan)
     }
 
+    /// Give the statement about to be planned its own clock and view plans, which its nested
+    /// contexts share.
+    fn start_statement(&mut self) {
+        self.statement_time = Default::default();
+        self.view_frames = Default::default();
+    }
+
     fn clear_statement_state(&mut self) {
         self.cte_map.clear();
+        self.view_frames = Default::default();
         self.catalog_tables.clear();
         self.catalog_names.clear();
         self.catalog_spellings.clear();
@@ -1501,6 +1545,9 @@ impl SQLContext {
         Self {
             // Deep-copy/clone to isolate
             table_map: Arc::new(RwLock::new(self.table_map.read().unwrap().clone())),
+            views: self.views.clone(),
+            view_frames: self.view_frames.clone(),
+            views_in_progress: self.views_in_progress.clone(),
             named_windows: self.named_windows.clone(),
             cte_map: self.cte_map.clone(),
             from_item_frames: self.from_item_frames.clone(),
@@ -1534,6 +1581,16 @@ impl SQLContext {
                 object_type: ObjectType::Table,
                 ..
             } => self.execute_drop_table(stmt)?,
+            Statement::CreateView(create_view) => self.execute_create_view(create_view)?,
+            stmt @ Statement::Drop {
+                object_type: ObjectType::View,
+                ..
+            } => self.execute_drop_view(stmt)?,
+            Statement::ExplainTable {
+                table_name,
+                hive_format: None,
+                ..
+            } => self.execute_describe(table_name)?,
             stmt @ Statement::CreateSchema { .. } => {
                 let (name, ..) = create_schema_parts(stmt)?;
                 self.execute_schema_ddl("CREATE SCHEMA", name)?
@@ -1683,7 +1740,95 @@ impl SQLContext {
         if let Some(lf) = get_ignoring_case(&self.table_map.read().unwrap(), name)? {
             return Ok(Some(lf.clone()));
         }
+        if let Some(lf) = self.get_view(name)? {
+            return Ok(Some(lf));
+        }
         Ok(get_ignoring_case(&self.catalog_tables, name)?.cloned())
+    }
+
+    /// The frame of the CTE, registered table, view or catalog table `name`, with its name as
+    /// written.
+    fn get_named_table(&self, name: &ObjectName) -> PolarsResult<(String, LazyFrame)> {
+        let tbl_name = object_name_to_string(name);
+        if let Some(lf) = self.get_table_unaliased(&tbl_name)? {
+            return Ok((tbl_name, lf));
+        }
+        let hint = name_parts(name)
+            .and_then(|parts| self.catalogs.unresolved_hint(&parts))
+            .unwrap_or_default();
+        polars_bail!(SQLInterface: "relation '{}' was not found{}", tbl_name, hint);
+    }
+
+    /// The view `name` refers to (ignoring case, as in `FROM`), with its name.
+    fn find_view(&self, name: &str) -> PolarsResult<Option<(String, Arc<View>)>> {
+        let views = self.views.read().unwrap();
+        Ok(key_ignoring_case(&views, name)?.map(|key| (key.clone(), views[key].clone())))
+    }
+
+    /// The plan of the view `name` refers to, planned once per statement unless it reads
+    /// `RANDOM()`, so that each read of such a view draws its own values.
+    fn get_view(&self, name: &str) -> PolarsResult<Option<LazyFrame>> {
+        let Some((key, view)) = self.find_view(name)? else {
+            return Ok(None);
+        };
+        polars_ensure!(
+            !self.views_in_progress.contains(&key),
+            SQLInterface: "view '{}' reads itself", key
+        );
+        if let Some(lf) = self.view_frames.lock().unwrap().get(&key) {
+            return Ok(Some(lf.clone()));
+        }
+        let lf = self.plan_view(&key, &view)?;
+        if !self.reads_random(&view, &mut PlHashSet::new()) {
+            self.view_frames.lock().unwrap().insert(key, lf.clone());
+        }
+        Ok(Some(lf))
+    }
+
+    /// Whether the query of `view`, or of a view it reads, calls `RANDOM()`. `seen` holds the
+    /// views checked so far.
+    fn reads_random(&self, view: &View, seen: &mut PlHashSet<String>) -> bool {
+        if contains_random(&view.query, true) {
+            return true;
+        }
+        let mut collector = TableIdentifierCollector {
+            include_schema: true,
+            ..Default::default()
+        };
+        let _ = dyn_visit::visit(&view.query, &mut collector);
+        collector
+            .tables
+            .iter()
+            .any(|name| match self.find_view(name) {
+                Ok(Some((key, view))) => seen.insert(key) && self.reads_random(&view, seen),
+                _ => false,
+            })
+    }
+
+    /// Plan the view `key` against the current tables, in a context of its own.
+    fn plan_view(&self, key: &str, view: &View) -> PolarsResult<LazyFrame> {
+        let mut ctx = self.view_context(key);
+        let lf = ctx.execute_query(&view.query)?;
+        let lf = ctx.rename_columns_from_table_alias(lf, &view.alias)?;
+        lf.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
+        Ok(lf)
+    }
+
+    /// A context to plan the query of view `key` in, which sees the tables and views but no
+    /// state of the current statement.
+    fn view_context(&self, key: &str) -> Self {
+        let mut views_in_progress = self.views_in_progress.clone();
+        views_in_progress.push(key.to_owned());
+        Self {
+            table_map: self.table_map.clone(),
+            views: self.views.clone(),
+            view_frames: self.view_frames.clone(),
+            views_in_progress,
+            function_registry: self.function_registry.clone(),
+            custom_function_registry: self.custom_function_registry,
+            statement_time: self.statement_time.clone(),
+            ..Default::default()
+        }
     }
 
     /// Restore the catalog tables of a deferred statement: (name as written, full name, plan).
@@ -1697,9 +1842,12 @@ impl SQLContext {
         }
     }
 
-    /// The registered table `name` refers to (ignoring case, as in `FROM`).
+    /// The registered table or view `name` refers to (ignoring case, as in `FROM`).
     fn registered_table_key(&self, name: &str) -> PolarsResult<Option<String>> {
-        Ok(key_ignoring_case(&self.table_map.read().unwrap(), name)?.cloned())
+        if let Some(key) = key_ignoring_case(&self.table_map.read().unwrap(), name)? {
+            return Ok(Some(key.clone()));
+        }
+        Ok(self.find_view(name)?.map(|(key, _)| key))
     }
 
     /// Execute a query in an isolated context. This prevents subqueries from mutating
@@ -2313,23 +2461,137 @@ impl SQLContext {
             );
         }
 
-        let mut table_map = self.table_map.write().unwrap();
-        // Resolve every name before dropping any, so an error drops nothing.
-        let mut keys = Vec::with_capacity(names.len());
-        for name in names {
-            let tbl = object_name_to_string(name);
-            // `DROP TABLE IF EXISTS <tbl>` is a no-op on a missing table;
-            // otherwise dropping a table that doesn't exist is an error.
-            match key_ignoring_case(&table_map, &tbl)?.cloned() {
-                Some(key) => keys.push(key),
-                None if if_exists => {},
-                None => polars_bail!(SQLInterface: "table '{}' does not exist", tbl),
+        drop_names(
+            &mut self.table_map.write().unwrap(),
+            names,
+            if_exists,
+            "table",
+        )
+    }
+
+    // DROP VIEW <view>
+    fn execute_drop_view(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
+        let (names, if_exists, purge) = drop_table_parts(stmt)?;
+        polars_ensure!(!purge, SQLInterface: "`DROP VIEW ... PURGE` is not supported");
+        drop_names(&mut self.views.write().unwrap(), names, if_exists, "view")
+    }
+
+    // CREATE [OR REPLACE] [TEMPORARY] VIEW [IF NOT EXISTS] <name> [(<columns>)] AS <query>
+    fn execute_create_view(&mut self, create_view: &CreateView) -> PolarsResult<LazyFrame> {
+        // Destructure exhaustively so new sqlparser fields surface as compile errors.
+        let CreateView {
+            or_replace,
+            name,
+            name_before_not_exists: _,
+            columns,
+            query,
+            if_not_exists,
+            temporary: _,
+
+            // Unsupported modifiers
+            or_alter,
+            materialized,
+            secure,
+            options,
+            cluster_by,
+            comment,
+            with_no_schema_binding,
+            copy_grants,
+            to,
+            params,
+        } = create_view;
+        polars_ensure!(!materialized, SQLInterface: "`CREATE MATERIALIZED VIEW` is not supported; use `CREATE TABLE ... AS`");
+        let unsupported = *or_alter
+            || *secure
+            || !matches!(options, CreateTableOptions::None)
+            || !cluster_by.is_empty()
+            || comment.is_some()
+            || *with_no_schema_binding
+            || *copy_grants
+            || to.is_some()
+            || params.is_some()
+            || columns
+                .iter()
+                .any(|col| col.data_type.is_some() || col.options.is_some());
+        polars_ensure!(
+            !unsupported,
+            SQLInterface: "CREATE VIEW supports only `CREATE [OR REPLACE] [TEMPORARY] VIEW [IF NOT EXISTS] <name> [(<column names>)] AS <query>`"
+        );
+        if let Some(catalog) =
+            name_parts(name).and_then(|parts| self.catalogs.named_catalog(&parts))
+        {
+            polars_bail!(SQLInterface: "views cannot be created in catalog '{}'", catalog);
+        }
+        let view_name = object_name_to_string(name);
+        let response =
+            |name: &str| Ok(df! { "Response" => [format!("CREATE VIEW {name}")] }?.lazy());
+        if let Some(table) = key_ignoring_case(&self.table_map.read().unwrap(), &view_name)? {
+            if *if_not_exists {
+                return response(table);
             }
+            polars_bail!(SQLInterface: "'{}' is a table, not a view", table);
         }
-        for key in keys {
-            table_map.remove(&key);
+        let existing = self.find_view(&view_name)?.map(|(key, _)| key);
+        if let Some(existing) = &existing {
+            if *if_not_exists {
+                return response(existing);
+            }
+            polars_ensure!(
+                *or_replace,
+                SQLInterface: "view '{}' already exists; use `CREATE OR REPLACE VIEW`, or `IF NOT EXISTS`",
+                existing
+            );
         }
-        Ok(DataFrame::empty().lazy())
+        polars_ensure!(
+            self.catalog_tables.is_empty(),
+            SQLInterface: "a view cannot read catalog tables"
+        );
+        // A view matching ignoring case is replaced under its existing name.
+        let key = existing.unwrap_or(view_name);
+        let view = View {
+            query: (**query).clone(),
+            alias: TableAlias {
+                explicit: false,
+                name: Ident::new(key.clone()),
+                columns: columns
+                    .iter()
+                    .map(|col| TableAliasColumnDef {
+                        name: col.name.clone(),
+                        data_type: None,
+                    })
+                    .collect(),
+                at: None,
+            },
+        };
+        // Plan the query once, so that a view that cannot be read is not created.
+        let mut lf = self.plan_view(&key, &view)?;
+        self.get_frame_schema(&mut lf)?;
+        self.views
+            .write()
+            .unwrap()
+            .insert(key.clone(), Arc::new(view));
+        response(&key)
+    }
+
+    // DESCRIBE <table>
+    fn execute_describe(&mut self, name: &ObjectName) -> PolarsResult<LazyFrame> {
+        let (_, mut lf) = self.get_named_table(name)?;
+        let schema = self.get_frame_schema(&mut lf)?;
+        let column_names = Column::new(
+            PlSmallStr::from_static("column_name"),
+            schema
+                .iter_names()
+                .map(|name| name.as_str())
+                .collect::<Vec<_>>(),
+        );
+        let column_types = Column::new(
+            PlSmallStr::from_static("column_type"),
+            schema
+                .iter_values()
+                .map(|dtype| dtype.to_string())
+                .collect::<Vec<_>>(),
+        );
+        Ok(DataFrame::new_infer_height(vec![column_names, column_types])?.lazy())
     }
 
     /// The catalog table a `DROP TABLE` targets, with its name as written. A registered table
@@ -2883,11 +3145,13 @@ impl SQLContext {
         .into())
     }
 
-    /// The ids of the caches in the registered tables, catalog tables and CTEs.
+    /// The ids of the caches in the registered tables, views, catalog tables and CTEs.
     fn cache_ids(&self) -> PlHashSet<UniqueId> {
         let table_map = self.table_map.read().unwrap();
+        let view_frames = self.view_frames.lock().unwrap();
         table_map
             .values()
+            .chain(view_frames.values())
             .chain(self.catalog_tables.values())
             .chain(self.cte_map.values())
             .flat_map(|lf| &lf.logical_plan)
@@ -5780,6 +6044,10 @@ impl SQLContext {
                     return Ok(df! { "Response" => [format!("CREATE TABLE {existing}")] }?.lazy());
                 }
                 polars_ensure!(
+                    !self.views.read().unwrap().contains_key(existing),
+                    SQLInterface: "'{}' is a view, not a table", existing
+                );
+                polars_ensure!(
                     !*temporary || *or_replace,
                     SQLInterface: "table '{}' already exists; use `CREATE OR REPLACE TEMP TABLE`, or `IF NOT EXISTS`",
                     existing
@@ -5865,22 +6133,16 @@ impl SQLContext {
                     return self.execute_table_function(name, alias, &args.args);
                 }
                 // A qualified name (`schema.table`) is looked up as a whole, among CTEs,
-                // registered and catalog tables: the alias of another FROM item is not a table.
-                let tbl_name = object_name_to_string(name);
-                if let Some(lf) = self.get_table_unaliased(&tbl_name)? {
-                    match alias {
-                        Some(alias) => {
-                            self.table_aliases
-                                .insert(alias.name.value.clone(), tbl_name);
-                            Ok((alias.name.value.clone(), lf))
-                        },
-                        None => Ok((tbl_name, lf)),
-                    }
-                } else {
-                    let hint = name_parts(name)
-                        .and_then(|parts| self.catalogs.unresolved_hint(&parts))
-                        .unwrap_or_default();
-                    polars_bail!(SQLInterface: "relation '{}' was not found{}", tbl_name, hint);
+                // registered tables, views and catalog tables: the alias of another FROM item is
+                // not a table.
+                let (tbl_name, lf) = self.get_named_table(name)?;
+                match alias {
+                    Some(alias) => {
+                        self.table_aliases
+                            .insert(alias.name.value.clone(), tbl_name);
+                        Ok((alias.name.value.clone(), lf))
+                    },
+                    None => Ok((tbl_name, lf)),
                 }
             },
             // A LATERAL derived table that reads the relations before it fails here, and the
@@ -8233,6 +8495,29 @@ fn is_read_only_query(stmt: &Statement) -> bool {
         },
         _ => false,
     }
+}
+
+/// Remove the entries of `map` that `names` refer to (ignoring case, as in `FROM`). A missing
+/// name is an error unless `if_exists`; an error removes nothing.
+fn drop_names<V>(
+    map: &mut PlHashMap<String, V>,
+    names: &[ObjectName],
+    if_exists: bool,
+    kind: &str,
+) -> PolarsResult<LazyFrame> {
+    let mut keys = Vec::with_capacity(names.len());
+    for name in names {
+        let name = object_name_to_string(name);
+        match key_ignoring_case(map, &name)?.cloned() {
+            Some(key) => keys.push(key),
+            None if if_exists => {},
+            None => polars_bail!(SQLInterface: "{} '{}' does not exist", kind, name),
+        }
+    }
+    for key in keys {
+        map.remove(&key);
+    }
+    Ok(DataFrame::empty().lazy())
 }
 
 /// The names, `IF EXISTS` and `PURGE` of a `DROP` statement, rejecting unsupported modifiers.
