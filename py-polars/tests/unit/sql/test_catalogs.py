@@ -3331,7 +3331,8 @@ def order_of(catalog: CountingCatalog, name: str) -> tuple[int, list[Any]]:
 def file_column(catalog: CountingCatalog, name: str, column: str) -> list[Any]:
     """The values of `column` in the table's only data file, in file order."""
     [task] = catalog.load_table(("tpch", name)).scan().plan_files()
-    return pl.read_parquet(task.file.file_path)[column].to_list()
+    path = task.file.file_path.removeprefix("file://")
+    return pl.read_parquet(path)[column].to_list()
 
 
 @pytest.mark.write_disk
