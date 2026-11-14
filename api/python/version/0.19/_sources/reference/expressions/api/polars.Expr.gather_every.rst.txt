@@ -1,0 +1,6 @@
+﻿polars.Expr.gather\_every
+=========================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.gather_every

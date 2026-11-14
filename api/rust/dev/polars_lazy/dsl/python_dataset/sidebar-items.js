@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["dataset_provider_vtable"],"static":["DATASET_PROVIDER_VTABLE"],"struct":["PythonDatasetProvider","PythonDatasetProviderVTable"]};

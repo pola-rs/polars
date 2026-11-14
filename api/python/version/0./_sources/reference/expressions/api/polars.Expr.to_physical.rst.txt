@@ -1,0 +1,6 @@
+﻿polars.Expr.to\_physical
+========================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.to_physical

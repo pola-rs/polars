@@ -1,0 +1,6 @@
+﻿polars.Series.bin\_ranks
+========================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.bin_ranks

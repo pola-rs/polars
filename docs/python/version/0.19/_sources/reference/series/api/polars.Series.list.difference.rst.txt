@@ -1,0 +1,6 @@
+﻿polars.Series.list.difference
+=============================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.list.difference

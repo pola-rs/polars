@@ -1,0 +1,37 @@
+﻿polars.Time
+===========
+
+.. currentmodule:: polars
+
+.. autoclass:: Time
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Time.__init__
+      ~Time.base_type
+      ~Time.is_
+      ~Time.is_float
+      ~Time.is_integer
+      ~Time.is_not
+      ~Time.is_numeric
+      ~Time.is_signed_integer
+      ~Time.is_temporal
+      ~Time.is_unsigned_integer
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~Time.is_nested
+   
+   

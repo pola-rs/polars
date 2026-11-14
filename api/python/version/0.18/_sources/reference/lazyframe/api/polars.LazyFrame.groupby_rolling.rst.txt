@@ -1,0 +1,6 @@
+﻿polars.LazyFrame.groupby\_rolling
+=================================
+
+.. currentmodule:: polars
+
+.. automethod:: LazyFrame.groupby_rolling

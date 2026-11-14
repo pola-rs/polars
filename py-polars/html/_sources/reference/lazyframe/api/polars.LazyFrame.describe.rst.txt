@@ -1,0 +1,6 @@
+﻿polars.LazyFrame.describe
+=========================
+
+.. currentmodule:: polars
+
+.. automethod:: LazyFrame.describe

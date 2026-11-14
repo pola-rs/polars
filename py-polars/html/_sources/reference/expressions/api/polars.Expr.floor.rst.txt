@@ -1,0 +1,6 @@
+﻿polars.Expr.floor
+=================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.floor

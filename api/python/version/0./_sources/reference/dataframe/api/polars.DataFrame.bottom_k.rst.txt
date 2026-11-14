@@ -1,0 +1,6 @@
+﻿polars.DataFrame.bottom\_k
+==========================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.bottom_k

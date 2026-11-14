@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["FloatFmt"],"fn":["get_decimal_separator","get_float_fmt","get_float_precision","get_thousands_separator","get_trim_decimal_zeros","set_decimal_separator","set_float_fmt","set_float_precision","set_thousands_separator","set_trim_decimal_zeros"]};

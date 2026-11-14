@@ -1,0 +1,6 @@
+﻿polars.Expr.meta.is_known_length
+================================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.meta.is_known_length

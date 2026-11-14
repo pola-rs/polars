@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["delta_dv_provider_vtable"],"static":["DELTA_DV_PROVIDER_VTABLE"],"struct":["DeltaDeletionVectorProvider","DeltaDeletionVectorProviderVTable"]};

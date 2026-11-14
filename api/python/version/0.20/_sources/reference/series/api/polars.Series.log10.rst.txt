@@ -1,0 +1,6 @@
+﻿polars.Series.log10
+===================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.log10

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["get_env_file_cache_ttl","init_entries_from_uri_list"],"static":["FILE_CACHE","FILE_CACHE_PREFIX"],"struct":["FileCacheEntry"]};

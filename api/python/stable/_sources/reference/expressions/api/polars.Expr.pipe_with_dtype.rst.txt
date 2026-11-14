@@ -1,0 +1,6 @@
+﻿polars.Expr.pipe\_with\_dtype
+=============================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.pipe_with_dtype

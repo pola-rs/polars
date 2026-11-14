@@ -1,0 +1,6 @@
+﻿polars.Series.rolling\_max\_by
+==============================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.rolling_max_by

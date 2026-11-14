@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PolarsUtilsError"],"struct":["TruncateErrorDetail"],"type":["Result"]};

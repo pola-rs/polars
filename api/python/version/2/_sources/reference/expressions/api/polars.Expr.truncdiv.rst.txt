@@ -1,0 +1,6 @@
+﻿polars.Expr.truncdiv
+====================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.truncdiv

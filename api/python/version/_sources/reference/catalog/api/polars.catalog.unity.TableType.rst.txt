@@ -1,0 +1,6 @@
+﻿polars.catalog.unity.TableType
+==============================
+
+.. currentmodule:: polars.catalog.unity
+
+.. autodata:: TableType

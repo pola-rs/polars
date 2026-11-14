@@ -1,0 +1,41 @@
+﻿polars.StreamingEngine
+======================
+
+.. currentmodule:: polars
+
+.. autoclass:: StreamingEngine
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~StreamingEngine.__init__
+      ~StreamingEngine.collect
+      ~StreamingEngine.collect_all
+      ~StreamingEngine.collect_all_async
+      ~StreamingEngine.collect_async
+      ~StreamingEngine.collect_batches
+      ~StreamingEngine.execute
+      ~StreamingEngine.sink_batches
+      ~StreamingEngine.sink_csv
+      ~StreamingEngine.sink_ipc
+      ~StreamingEngine.sink_ndjson
+      ~StreamingEngine.sink_parquet
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~StreamingEngine.monitoring
+      ~StreamingEngine.name
+      ~StreamingEngine.plan_engine
+   
+   

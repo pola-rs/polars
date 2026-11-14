@@ -1,0 +1,6 @@
+﻿polars.Series.x\_log\_y
+=======================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.x_log_y

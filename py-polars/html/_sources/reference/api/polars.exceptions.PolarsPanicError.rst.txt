@@ -1,0 +1,6 @@
+﻿polars.exceptions.PolarsPanicError
+==================================
+
+.. currentmodule:: polars.exceptions
+
+.. autoexception:: PolarsPanicError
