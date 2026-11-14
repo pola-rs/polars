@@ -2356,3 +2356,57 @@ def test_cse_group_by_scalar_28653() -> None:
     q = lf.group_by("g", maintain_order=True).agg(c=pl.col("j") + lit, d=lit)
     expected = pl.DataFrame({"g": [1, 2], "c": [[2.5, 3.5], [4.5]], "d": [1.5, 1.5]})
     assert_frame_equal(q.collect(), expected)
+
+
+@pytest.mark.parametrize("method", ["select", "with_columns"])
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("x").sum().max_by("y"),
+        pl.col("y").min_by(pl.col("x").sum()),
+        pl.col("y").sort_by(pl.col("x").sum()),
+        pl.arg_sort_by(pl.col("x").sum(), pl.col("y")),
+    ],
+)
+def test_cse_shared_scalar_broadcasts(expr: pl.Expr, method: str) -> None:
+    lf = pl.LazyFrame({"x": [10, 20, 30], "y": [1, 3, 2]})
+    exprs = {"a": expr, "b": pl.col("x").sum() * 2}
+    q = lf.select(**exprs) if method == "select" else lf.with_columns(**exprs)
+    assert "__POLARS_CSER" in q.explain(engine="in-memory")
+    assert_frame_equal(
+        q.collect(engine="in-memory"),
+        q.collect(
+            engine="in-memory",
+            optimizations=pl.QueryOptFlags(comm_subexpr_elim=False),
+        ),
+    )
+
+
+@pytest.mark.parametrize("x", [[1, 2, 3], []])
+def test_cse_shared_scalar_sink_in_memory(x: list[int], tmp_path: Path) -> None:
+    s = pl.col("x").sum()
+    lf = pl.LazyFrame({"x": x}, schema={"x": pl.Int64})
+    q = lf.select(a=s.null_count(), b=s.sum(), c=s * 2)
+    path = tmp_path / "out.parquet"
+    q.sink_parquet(path, engine="in-memory")
+    assert_frame_equal(pl.read_parquet(path), q.collect(engine="in-memory"))
+
+
+def test_cse_shared_scalar_allows_sort_removal() -> None:
+    s = pl.col("x").sum()
+    lf = pl.LazyFrame({"x": [1, 2, 3], "y": [3, 1, 2]})
+    q = lf.sort("y").select(a=s + 1, b=s * 2)
+    plan = q.explain(engine="in-memory")
+    assert "__POLARS_CSER" in plan
+    assert "SORT" not in plan
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [7], "b": [12]}))
+
+
+def test_cse_shared_scalar_collect_all_with_file_sink(tmp_path: Path) -> None:
+    s = pl.col("x").sum()
+    q = pl.LazyFrame({"x": [1, 2, 3]}).select(a=s.min(), b=s.max())
+    path = tmp_path / "out.parquet"
+    (out, _) = pl.collect_all([q, q.sink_parquet(path, lazy=True)], engine="in-memory")
+    expected = pl.DataFrame({"a": [6], "b": [6]})
+    assert_frame_equal(out, expected)
+    assert_frame_equal(pl.read_parquet(path), expected)

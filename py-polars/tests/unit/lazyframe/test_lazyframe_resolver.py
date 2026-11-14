@@ -570,3 +570,20 @@ def test_lazyframe_resolver_returns_sink_29910(engine: Any) -> None:
             match="resolver cannot return a sink",
         ):
             q.collect(engine=engine)
+
+
+def test_lazyframe_resolver_shared_scalar_sink_in_memory(tmp_path: Path) -> None:
+    s = pl.col("x").sum()
+    q = pl.LazyFrame({"x": [1, 2, 3]}).select(a=s.min(), b=s.max())
+    path = tmp_path / "out.parquet"
+    InMemoryLazyFrameResolver(q).lazy().sink_parquet(path, engine="in-memory")
+    assert_frame_equal(pl.read_parquet(path), pl.DataFrame({"a": [6], "b": [6]}))
+
+
+def test_lazyframe_resolver_shared_scalar_collect_all_sinks(tmp_path: Path) -> None:
+    s = pl.col("x").sum()
+    q = pl.LazyFrame({"x": [1, 2, 3]}).select(a=s.min(), b=s.max())
+    path = tmp_path / "out.parquet"
+    lf = InMemoryLazyFrameResolver(q).lazy()
+    pl.collect_all([lf.sink_parquet(path, lazy=True)], engine="in-memory")
+    assert_frame_equal(pl.read_parquet(path), pl.DataFrame({"a": [6], "b": [6]}))
