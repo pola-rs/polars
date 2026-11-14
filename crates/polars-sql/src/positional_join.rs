@@ -153,8 +153,9 @@ fn is_keyword(token: &TokenWithSpan, keyword: Keyword) -> bool {
     matches!(&token.token, Token::Word(w) if w.keyword == keyword && w.quote_style.is_none())
 }
 
-/// Whether a name goes right after `tokens`: after `.`, `,`, `(`, or a keyword such as `FROM`
-/// or `AS`. In a run of such keywords, like `FROM update`, every other one is a name.
+/// Whether a name goes right after `tokens` in a FROM: after `.`, `,`, `(`, `AS`, `FROM`,
+/// `JOIN`, `LATERAL` or `USING`. In a run of these keywords, like `FROM using`, every other one
+/// is a name.
 fn name_follows(tokens: &[TokenWithSpan]) -> bool {
     let mut keywords = 0;
     for token in tokens.iter().rev().filter(|t| significant(t)) {
@@ -167,9 +168,6 @@ fn name_follows(tokens: &[TokenWithSpan]) -> bool {
                             | Keyword::FROM
                             | Keyword::JOIN
                             | Keyword::LATERAL
-                            | Keyword::TABLE
-                            | Keyword::INTO
-                            | Keyword::UPDATE
                             | Keyword::USING
                     ) =>
             {

@@ -3790,7 +3790,14 @@ def test_positional_join_names_and_errors() -> None:
     }
     with pl.SQLContext(tables) as ctx:
         # names that are keywords
-        for left in ["a", "a AS update", "ns.table", "update"]:
+        for left in [
+            "a",
+            "a AS update",
+            "a update",
+            "ns.table",
+            "update",
+            "a AS using",
+        ]:
             assert_frame_equal(
                 ctx.execute(f"SELECT * FROM {left} POSITIONAL JOIN b", eager=True),
                 pl.DataFrame({"k": [1, 2, None], "k:b": [7, 8, 9]}),
