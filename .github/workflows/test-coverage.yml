@@ -163,6 +163,11 @@ jobs:
           make -C crates build-polars-iceberg
           .venv/bin/python -c 'import polars_iceberg'
 
+      - name: Install polars_database plugin
+        run: |
+          make -C crates build-polars-database
+          .venv/bin/python -c 'import polars_database'
+
       - name: Run Python tests
         working-directory: py-polars
         env:
@@ -172,7 +177,7 @@ jobs:
           -n auto
           -m "not release and not benchmark and not docs"
           -k 'not test_polars_import'
-          --cov --cov-report xml:main.xml --cov-fail-under=0
+          --cov=polars --cov=polars_database --cov-report xml:main.xml --cov-fail-under=0
 
       - name: Run Python tests - POLARS_ENGINE_AFFINITY=in-memory
         working-directory: py-polars

@@ -75,29 +75,47 @@ impl Bridge {
     async fn run_impl(
         &mut self,
         mut rx: BridgeRecvPort,
-        mut tx: PortSender,
-        mut current_phase_wait_token: WaitToken,
+        tx: PortSender,
+        current_phase_wait_token: WaitToken,
     ) -> (StopReason, Option<WaitToken>) {
+        // The current phase's port and wait token.
+        let mut phase = Some((tx, current_phase_wait_token));
         let mut morsel_seq: u64 = 0;
 
         loop {
-            let mut morsel = match rx.recv().await {
-                Ok(v) => v,
-                Err(_) => {
+            let recv = recv_or_stop(
+                rx.recv(),
+                &mut self.outgoing,
+                &mut self.source_token,
+                &mut phase,
+            )
+            .await;
+            let mut morsel = match recv {
+                Ok(Ok(v)) => v,
+                Ok(Err(_)) => {
                     drop(rx);
 
-                    rx = match self.incoming.recv().await {
-                        Ok(v) => v,
-                        Err(_) => {
+                    let recv = recv_or_stop(
+                        self.incoming.recv(),
+                        &mut self.outgoing,
+                        &mut self.source_token,
+                        &mut phase,
+                    )
+                    .await;
+                    rx = match recv {
+                        Ok(Ok(v)) => v,
+                        Ok(Err(_)) => {
                             return (
                                 StopReason::ReadersDisconnected,
-                                Some(current_phase_wait_token),
+                                phase.map(|(_, wait_token)| wait_token),
                             );
                         },
+                        Err(reason) => return (reason, None),
                     };
 
                     continue;
                 },
+                Err(reason) => return (reason, None),
             };
 
             morsel.replace_source_token(self.source_token.clone());
@@ -107,29 +125,62 @@ impl Bridge {
 
             morsel_seq = morsel_seq.saturating_add(1);
 
-            while let Err(v) = tx.send(morsel).await {
-                drop(tx);
-                drop(current_phase_wait_token);
-
-                (tx, current_phase_wait_token) = match self.outgoing.recv().await {
-                    Ok(v) => v,
-                    Err(_) => return (StopReason::ComputeNodeDisconnected, None),
-                };
+            while let Err(v) = phase.as_mut().unwrap().0.send(morsel).await {
+                if let Err(reason) =
+                    next_phase(&mut self.outgoing, &mut self.source_token, &mut phase).await
+                {
+                    return (reason, None);
+                }
 
                 morsel = v;
+                // the new phase has a new token: a stop on this morsel must reach it
+                morsel.replace_source_token(self.source_token.clone());
             }
 
             if self.source_token.stop_requested() {
-                drop(tx);
-                drop(current_phase_wait_token);
-
-                (tx, current_phase_wait_token) = match self.outgoing.recv().await {
-                    Ok(v) => v,
-                    Err(_) => return (StopReason::ComputeNodeDisconnected, None),
-                };
-
-                self.source_token = SourceToken::new();
+                if let Err(reason) =
+                    next_phase(&mut self.outgoing, &mut self.source_token, &mut phase).await
+                {
+                    return (reason, None);
+                }
             }
         }
     }
+}
+
+/// Waits for `recv`. A stop requested meanwhile ends the phase at once, instead of after the next
+/// morsel: a reader can wait long for its first rows (e.g. a slow database partition) while the
+/// output already has all it needs. `recv` is not cancelled, but carries over into the next phase.
+async fn recv_or_stop<T>(
+    recv: impl Future<Output = T>,
+    outgoing: &mut connector::Receiver<(PortSender, WaitToken)>,
+    source_token: &mut SourceToken,
+    phase: &mut Option<(PortSender, WaitToken)>,
+) -> Result<T, StopReason> {
+    let mut recv = std::pin::pin!(recv);
+    loop {
+        tokio::select! {
+            biased;
+            v = &mut recv => return Ok(v),
+            _ = source_token.stop_requested_wait() => {},
+        }
+        next_phase(outgoing, source_token, phase).await?;
+    }
+}
+
+/// Ends the current phase and waits for the next one.
+async fn next_phase(
+    outgoing: &mut connector::Receiver<(PortSender, WaitToken)>,
+    source_token: &mut SourceToken,
+    phase: &mut Option<(PortSender, WaitToken)>,
+) -> Result<(), StopReason> {
+    drop(phase.take());
+    *phase = Some(
+        outgoing
+            .recv()
+            .await
+            .map_err(|_| StopReason::ComputeNodeDisconnected)?,
+    );
+    *source_token = SourceToken::new();
+    Ok(())
 }

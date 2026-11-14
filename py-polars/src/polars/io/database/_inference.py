@@ -64,6 +64,18 @@ def dtype_from_database_typename(
     original_value = value
     value = value.upper().replace("TYPE", "")
 
+    # unwrap ClickHouse wrappers (eg: 'Nullable(Decimal(18, 4))' -> 'DECIMAL(18, 4)')
+    while m := re.fullmatch(r"(?:NULLABLE|LOWCARDINALITY)\((.+)\)", value):
+        value = m.group(1)
+
+    # a quoted type argument (eg: ClickHouse "DATETIME64(3, 'UTC')") names a time
+    # zone or an enum's values, which aren't read here: infer from the values instead
+    if "'" in value:
+        if raise_unmatched:
+            msg = f"cannot infer dtype from {original_value!r} string value"
+            raise ValueError(msg)
+        return None
+
     # extract optional type modifier (eg: 'VARCHAR(64)' -> '64')
     if re.search(r"\([\w,: ]+\)$", value):
         modifier = value[value.find("(") + 1 : -1]
@@ -89,9 +101,11 @@ def dtype_from_database_typename(
                 raise_unmatched=False,
             )
         else:
+            # an element type in brackets keeps its own modifiers
+            # (eg: ClickHouse 'Array(Decimal(10, 2))')
             if inner_value := dtype_from_database_typename(
                 value[1:-1]
-                if (value[0], value[-1]) == ("<", ">")
+                if (value[0], value[-1]) in (("<", ">"), ("(", ")"))
                 else re.sub(r"\W", "", re.sub(r"\WOF\W", "", value)),
                 raise_unmatched=False,
             ):
@@ -158,8 +172,9 @@ def dtype_from_database_typename(
     # decimal dtypes
     elif (is_dec := ("DECIMAL" in value)) or ("NUMERIC" in value):
         if "," in modifier:
-            prec, scale = modifier.split(",")
-            dtype = Decimal(int(prec), int(scale))
+            prec, scale = (int(n) for n in modifier.split(",")[:2])
+            # wider than a Polars Decimal: its precision comes from the values
+            dtype = Decimal(prec, scale) if prec <= 38 else Decimal
         else:
             dtype = Decimal if is_dec else Float64
 

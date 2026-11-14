@@ -134,10 +134,24 @@ impl IR {
             Resolver {
                 resolver_schema,
                 resolved_ir,
+                projection,
+                filter_drop_columns_idx,
                 ..
             } => {
                 if let Some(node) = *resolved_ir {
                     return arena.get(node).schema(arena);
+                }
+
+                // The resolved plan outputs the projected columns in projection order (see
+                // `call_dsl_resolvers`), so nodes above that cache a schema must see that.
+                if let Some(projection) = projection.as_deref() {
+                    let projection = match filter_drop_columns_idx {
+                        Some(i) => &projection[..*i],
+                        None => projection,
+                    };
+                    if let Ok(schema) = resolver_schema.try_project(projection) {
+                        return Cow::Owned(Arc::new(schema));
+                    }
                 }
 
                 resolver_schema

@@ -201,24 +201,29 @@ impl MultiScanState {
 
         config.num_pipelines.store(num_pipelines);
 
-        let preferred_remote_pre_init = config
-            .sources
-            .first()
-            .is_some_and(|x| x.run_async())
+        let sources_remote = config
+            .file_reader_builder
+            .sources_are_remote()
+            .unwrap_or_else(|| config.sources.first().is_some_and(|x| x.run_async()));
+
+        let preferred_remote_pre_init = sources_remote
             .then(|| config.file_reader_builder.preferred_remote_pre_init())
             .flatten();
 
-        config.n_readers_pre_init.store(calc_n_readers_pre_init(
+        let reader_max_concurrent = config.file_reader_builder.max_concurrent_scans();
+
+        let n_readers_pre_init = calc_n_readers_pre_init(
             num_pipelines,
             config.sources.len(),
             config.pre_slice.as_ref(),
             preferred_remote_pre_init,
-        ));
+            reader_max_concurrent,
+        );
+        let max_concurrent_scans =
+            calc_max_concurrent_scans(num_pipelines, config.sources.len(), reader_max_concurrent);
 
-        config.max_concurrent_scans.store(calc_max_concurrent_scans(
-            num_pipelines,
-            config.sources.len(),
-        ));
+        config.n_readers_pre_init.store(n_readers_pre_init);
+        config.max_concurrent_scans.store(max_concurrent_scans);
 
         let InitializedPipelineState {
             task_handle,

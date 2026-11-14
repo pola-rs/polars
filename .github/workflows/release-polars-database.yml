@@ -1,0 +1,273 @@
+name: Release polars-database
+
+# Releases the `polars-database` I/O plugin (`py-polars/polars-database` in this repository) to
+# PyPI.
+#
+# The version is the `version` of the wrapper crate `py-polars/polars-database/Cargo.toml`, which
+# must be the one in its `pyproject.toml` (the wheels take theirs from there) and in
+# `crates/polars-database/Cargo.toml` (the module's `__version__`), and the tag must be
+# `polars-database-<version>`. The plugin is an abi3 wheel, so one wheel per target covers every
+# supported Python version.
+#
+# The `version` job resolves the tag to a commit once; the other jobs build that commit, so a tag
+# that moves during the run can't mix two revisions in one release.
+
+on:
+  workflow_dispatch:
+    inputs:
+      # Tag `polars-database-<version>` of this repository to release.
+      tag:
+        description: Tag polars-database-<version>
+        type: string
+        required: true
+      # Create the sdist and build the wheels, but do not publish to PyPI.
+      dry-run:
+        description: Dry run
+        type: boolean
+        default: false
+
+# Releases queue rather than cancel each other: a cancelled run may have uploaded part of a release.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: '3.10'
+  PYTHON_VERSION_WIN_ARM64: '3.11' # ARM64 Windows doesn't have older versions
+  MANIFEST_PATH: py-polars/polars-database/Cargo.toml
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUSTUP_MAX_RETRIES: 10
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      # The commit every job builds: the tag's.
+      sha: ${{ steps.commits.outputs.sha }}
+    steps:
+      # A branch name would be accepted as a ref too, so make sure the release is built from a tag.
+      - name: Check the tag exists
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          if ! git ls-remote --exit-code --tags "https://github.com/${{ github.repository }}" "refs/tags/$TAG"; then
+            echo "::error::${{ github.repository }} has no tag $TAG"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+
+      - name: Read polars-database version
+        id: version
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("py-polars/polars-database/Cargo.toml", "rb"))["package"]["version"])')
+          echo "polars-database version: $VERSION"
+          # A static pyproject version is what maturin builds the wheels with.
+          PY_VERSION=$(python3 -c 'import tomllib; p = tomllib.load(open("py-polars/polars-database/pyproject.toml", "rb"))["project"]; print("" if "version" in p.get("dynamic", []) else p.get("version", ""))')
+          if [[ "$PY_VERSION" != "$VERSION" ]]; then
+            echo "::error::polars-database pyproject.toml version '$PY_VERSION' does not match Cargo.toml version $VERSION"
+            exit 1
+          fi
+          # The module's `__version__` comes from the plugin crate.
+          LIB_VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("crates/polars-database/Cargo.toml", "rb"))["package"]["version"])')
+          if [[ "$LIB_VERSION" != "$VERSION" ]]; then
+            echo "::error::crates/polars-database version $LIB_VERSION does not match $VERSION"
+            exit 1
+          fi
+          if [[ "$TAG" != "polars-database-$VERSION" ]]; then
+            echo "::error::tag $TAG does not match polars-database version $VERSION (expected polars-database-$VERSION)"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve commit
+        id: commits
+        run: |
+          SHA=$(git rev-parse HEAD)
+          echo "commit: $SHA"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+  create-sdist:
+    needs: [version]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Create source distribution
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: >
+            --manifest-path ${{ env.MANIFEST_PATH }}
+            --out dist
+          maturin-version: 1.15.0
+
+      - name: Test sdist
+        run: |
+          pip install --force-reinstall --verbose dist/*.tar.gz
+          python -c 'import polars_database'
+
+      - name: Upload sdist
+        uses: actions/upload-artifact@v7
+        with:
+          name: sdist-polars-database
+          path: dist/*.tar.gz
+
+  build-wheels:
+    needs: [version]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        job_config: [linux-x64, linux-arm64, linux-musl-x64, linux-musl-arm64, macos-x64, macos-arm64, win-x64, win-arm64]
+        include:
+          - job_config: linux-x64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - job_config: linux-arm64
+            os: linux-arm-large
+            target: aarch64-unknown-linux-gnu
+          - job_config: linux-musl-x64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - job_config: linux-musl-arm64
+            os: linux-arm-large
+            target: aarch64-unknown-linux-musl
+          - job_config: macos-x64
+            os: macos-15-intel
+            target: x86_64-apple-darwin
+          - job_config: macos-arm64
+            os: macos-15
+            target: aarch64-apple-darwin
+          - job_config: win-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - job_config: win-arm64
+            os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+
+      # After the checkout, which the local action needs.
+      - name: Setup build environment (ARM64 Windows)
+        if: matrix.os == 'windows-11-arm'
+        uses: ./.github/actions/setup-windows-arm64
+
+      # The wheel is abi3 for Python 3.10+ whichever Python builds it.
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.os == 'windows-11-arm' && env.PYTHON_VERSION_WIN_ARM64 || env.PYTHON_VERSION }}
+
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          target: ${{ matrix.target }}
+          args: >
+            --profile ${{ inputs.dry-run == true && 'dev' || 'dist-release' }}
+            --manifest-path ${{ env.MANIFEST_PATH }}
+            --out dist
+          manylinux: auto
+          maturin-version: 1.15.0
+
+      - name: Test wheel
+        # musl wheels cannot be installed on the glibc runners.
+        if: endsWith(matrix.target, '-musl') == false
+        run: |
+          pip install --force-reinstall --verbose dist/*.whl
+          python -c 'import polars_database'
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v7
+        with:
+          name: wheel-polars-database-${{ matrix.job_config }}
+          path: dist/*.whl
+
+  publish-to-pypi:
+    needs: [version, create-sdist, build-wheels]
+    environment:
+      name: release-polars-database
+      url: https://pypi.org/project/polars-database
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download sdist and wheels
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Check sdist and wheel versions match Cargo.toml
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          ls dist
+          for f in dist/*; do
+            name=$(basename "$f")
+            if [[ "$name" != "polars_database-$VERSION.tar.gz" && "$name" != "polars_database-$VERSION-"*.whl ]]; then
+              echo "::error::$name does not have polars-database version $VERSION"
+              exit 1
+            fi
+          done
+
+      # A moved tag releases the same version again: with `skip-existing` alone that went
+      # green while PyPI kept the old files. The version may be on PyPI only as files of
+      # these very builds (a rerun after some were uploaded): each file PyPI lists must
+      # match one of `dist/` by SHA-256, or the release fails. After a partial upload, use
+      # "Re-run failed jobs": "Re-run all jobs" rebuilds `dist/`, which won't match.
+      - name: Check the version is not on PyPI with other files
+        if: inputs.dry-run == false
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          status=$(curl -s -o pypi.json -w '%{http_code}' "https://pypi.org/pypi/polars-database/$VERSION/json")
+          case "$status" in
+            404) echo "polars-database $VERSION is not on PyPI yet" ;;
+            200)
+              python3 - <<'PY'
+          import hashlib, json, pathlib, sys
+          listed = {u["filename"]: u["digests"]["sha256"] for u in json.load(open("pypi.json"))["urls"]}
+          local = {f.name: hashlib.sha256(f.read_bytes()).hexdigest() for f in pathlib.Path("dist").iterdir()}
+          bad = sorted(n for n, d in listed.items() if local.get(n) != d)
+          if bad:
+              print(f"::error::polars-database is already on PyPI with files that differ from this build: {bad}. Bump the version in Cargo.toml and pyproject.toml, and release a new tag")
+              sys.exit(1)
+          print(f"PyPI holds {len(listed)} file(s) of this build already")
+          PY
+              ;;
+            *)
+              echo "::error::PyPI answered HTTP $status for polars-database $VERSION"
+              exit 1
+              ;;
+          esac
+
+      - name: Publish to PyPI
+        if: inputs.dry-run == false
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # the check above made sure what exists is this build's
+          skip-existing: true
+          verbose: true

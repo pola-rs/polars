@@ -10,6 +10,7 @@ on:
       - pyo3-polars/Cargo.toml
       - py-polars/src/**
       - py-polars/Cargo.toml
+      - py-polars/polars-database/**
       - deny.toml
       - Cargo.toml
       - .github/workflows/lint-rust.yml
@@ -25,6 +26,7 @@ on:
       - pyo3-polars/Cargo.toml
       - py-polars/src/**
       - py-polars/Cargo.toml
+      - py-polars/polars-database/**
       - deny.toml
       - Cargo.toml
       - .github/workflows/lint-rust.yml
@@ -48,8 +50,9 @@ jobs:
       - name: Set up Rust
         run: rustup component add clippy
 
-      # Add polars-iceberg to Cargo.lock so `--locked` passes. `--workspace` only touches workspace
-      # members; fail if any existing lock entry changed (i.e. anything other than an addition).
+      # Add polars-iceberg to Cargo.lock so `--locked` passes. `--workspace` only
+      # touches workspace members; fail if any existing lock entry changed (i.e. anything other than
+      # an addition).
       - name: Add polars-iceberg to Cargo.lock
         run: |
           cargo update --workspace

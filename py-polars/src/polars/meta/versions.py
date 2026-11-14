@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import sys
+from typing import Any
 
 from polars._cpu_check import get_runtime_repr
 from polars._utils.polars_version import get_polars_build_commit, get_polars_version
@@ -39,9 +40,14 @@ def show_versions() -> None:
     pydantic:             2.7.1
     pyiceberg:            0.7.1
     sqlalchemy:           2.0.29
+    sqlglot:              30.24.0
     torch:                2.2.2
     xlsx2csv:             0.8.2
     xlsxwriter:           3.2.0
+    <BLANKLINE>
+    ------Database drivers-------
+    ADBC:                 postgresql 1.12.0 (pip), sqlite 1.12.0 (dbc)
+    Python:               psycopg 3.3.6, sqlite3 3.46.1
     """  # noqa: W505
     # Note: we import 'platform' here (rather than at the top of the
     # module) as a micro-optimization for polars' initial import
@@ -77,6 +83,45 @@ def show_versions() -> None:
         print(f"{name:{keylen}s} ", end="", flush=True)
         print(_get_dependency_version(name))
 
+    adbc, python = _get_database_drivers()
+    print("\n------Database drivers-------")
+    print(f"{'ADBC:':{keylen}s} {adbc}")
+    print(f"{'Python:':{keylen}s} {python}")
+
+
+def _get_database_drivers() -> tuple[str, str]:
+    """
+    The drivers `scan_database` finds on this machine: ADBC and Python DB-API modules.
+
+    ConnectorX and SQLAlchemy are listed with the optional dependencies. Heavy
+    modules (SQLAlchemy, pyarrow, the DB-API drivers of server databases) are not
+    imported to find them; `sqlite3`, the ADBC driver packages and a dotted driver
+    name's parent package (`mysql` of `mysql.connector`) may be.
+    """
+    try:
+        from polars_database import driver_statuses
+
+        # (dialect, backend, available, version, location, install)
+        rows: Any = driver_statuses(None)
+    except Exception:
+        return "<unavailable>", "<unavailable>"
+    adbc: dict[str, str] = {}
+    python: dict[str, str] = {}
+    for _dialect, backend, available, version, location, _install in rows:
+        if not available:
+            continue
+        kind, _, name = backend.partition(":")
+        if kind == "adbc":
+            # where it was found: a pip package, or a manifest (`dbc install`)
+            source = "dbc" if (location or "").endswith(".toml") else "pip"
+            adbc[name] = f"{name} {version or '?'} ({source})"
+        elif kind in ("python", "odbc"):
+            python[name] = f"{name} {version}" if version else name
+    return (
+        ", ".join(adbc[k] for k in sorted(adbc)) or "<none>",
+        ", ".join(python[k] for k in sorted(python)) or "<none>",
+    )
+
 
 # See the list of dependencies in pyproject.toml.
 def _get_dependency_list() -> list[str]:
@@ -98,12 +143,14 @@ def _get_dependency_list() -> list[str]:
         "openpyxl",
         "pandas",
         "polars_cloud",
+        "polars_database",
         "polars_iceberg",
         "polars_nanook",
         "pyarrow",
         "pydantic",
         "pyiceberg",
         "sqlalchemy",
+        "sqlglot",
         "torch",
         "xlsx2csv",
         "xlsxwriter",

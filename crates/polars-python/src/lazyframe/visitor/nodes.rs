@@ -67,6 +67,8 @@ fn scan_type_to_pyobject(
             ExternalReaderBuilder::Python(object) => {
                 Ok(("external-reader", object).into_py_any(py)?)
             },
+            #[cfg(feature = "io_plugin_ffi")]
+            ExternalReaderBuilder::Ffi(_) => Err(PyNotImplementedError::new_err("I/O plugin scan")),
             ExternalReaderBuilder::Rust(()) => unreachable!(),
         },
         FileScanIR::PythonDataset { .. } => {

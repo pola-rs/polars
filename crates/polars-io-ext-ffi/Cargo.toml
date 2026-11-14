@@ -15,6 +15,10 @@ default = []
 # Contract `polars.io_plugin.iceberg.v1` (`iceberg_v1`). Features only control what is compiled;
 # they never change a plugin ID or layout.
 iceberg = []
+# Contract `polars.io_plugin.file_reader.v1` (`file_reader_v1`).
+file_reader = []
+# Contract `polars.io_plugin.lazyframe_resolver.v1` (`lazyframe_resolver_v1`).
+lazyframe_resolver = ["file_reader"]
 
 [dependencies]
 async-ffi = { workspace = true }
