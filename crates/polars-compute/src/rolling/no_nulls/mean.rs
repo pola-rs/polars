@@ -40,3 +40,26 @@ where
         },
     }
 }
+
+pub fn rolling_mean_exact<const FLOOR: bool, const SCALE: i64>(
+    values: &[i64],
+    window_size: usize,
+    min_samples: usize,
+    center: bool,
+    weights: Option<&[f64]>,
+    _params: Option<RollingFnParams>,
+) -> PolarsResult<ArrayRef> {
+    assert!(weights.is_none());
+    let offset_fn = if center {
+        det_offsets_center
+    } else {
+        det_offsets
+    };
+    rolling_apply_agg_window::<super::super::ExactMeanWindow<'_, FLOOR, SCALE>, _, _, _>(
+        values,
+        window_size,
+        min_samples,
+        offset_fn,
+        None,
+    )
+}
