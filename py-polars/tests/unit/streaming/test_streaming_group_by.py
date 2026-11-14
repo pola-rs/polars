@@ -1144,3 +1144,27 @@ def test_streaming_group_by_unique_hot_table_switch(
         x.sort("k").with_columns(pl.col("v").list.sort()) for x in (out, expected)
     )
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("prefix", ["", "a-long-string-key-"])
+@pytest.mark.parametrize("with_nulls", [False, True])
+def test_streaming_group_by_string_key_runs(
+    prefix: str, with_nulls: bool, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "4")
+    plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "2")
+    plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", "2")
+    # Gathering keeps equal keys as equal views, also for long strings.
+    uniq = pl.Series("k", [f"{prefix}{c}" for c in "abcde"] + [""])
+    idx: list[int | None] = [0, 0, 0, 1, 1, 1, 2, 2, 2, 0, 0, 3, 3, 3, 1, 1, 4, 4, 4]
+    idx = idx * 3 + [5, 5, 5, 0, 5, 0]
+    if with_nulls:
+        idx = [i if j % 7 != 3 else None for j, i in enumerate(idx)]
+    lf = pl.LazyFrame({"k": uniq.gather(pl.Series(idx, dtype=pl.UInt32))})
+    lf = lf.with_row_index("v")
+    q = lf.group_by("k").agg(pl.len(), s=pl.col("v").sum(), m=pl.col("v").min())
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
