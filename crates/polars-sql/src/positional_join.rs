@@ -123,26 +123,6 @@ impl VisitorMut for PositionalJoins {
 /// Take each unquoted `POSITIONAL` that comes right before `JOIN` out of `tokens`, unless it
 /// stands where a name goes.
 pub(crate) fn extract_positional_joins(tokens: &mut Vec<TokenWithSpan>) -> PositionalJoins {
-    let significant = |token: &TokenWithSpan| !matches!(token.token, Token::Whitespace(_));
-    let is_keyword = |token: &TokenWithSpan, keyword| matches!(&token.token, Token::Word(w) if w.keyword == keyword && w.quote_style.is_none());
-    let comes_before_name = |token: &TokenWithSpan| match &token.token {
-        Token::Period | Token::Comma | Token::LParen => true,
-        Token::Word(w) => {
-            w.quote_style.is_none()
-                && matches!(
-                    w.keyword,
-                    Keyword::AS
-                        | Keyword::FROM
-                        | Keyword::JOIN
-                        | Keyword::LATERAL
-                        | Keyword::TABLE
-                        | Keyword::INTO
-                        | Keyword::UPDATE
-                        | Keyword::USING
-                )
-        },
-        _ => false,
-    };
     let mut found = Vec::new();
     let mut i = 0;
     while i < tokens.len() {
@@ -155,11 +135,7 @@ pub(crate) fn extract_positional_joins(tokens: &mut Vec<TokenWithSpan>) -> Posit
                 .iter()
                 .find(|t| significant(t))
                 .is_some_and(|t| is_keyword(t, Keyword::JOIN))
-            && !tokens[..i]
-                .iter()
-                .rev()
-                .find(|t| significant(t))
-                .is_some_and(comes_before_name)
+            && !name_follows(&tokens[..i])
         {
             found.push(tokens.remove(i).span.start);
         } else {
@@ -167,4 +143,39 @@ pub(crate) fn extract_positional_joins(tokens: &mut Vec<TokenWithSpan>) -> Posit
         }
     }
     PositionalJoins(found)
+}
+
+fn significant(token: &TokenWithSpan) -> bool {
+    !matches!(token.token, Token::Whitespace(_))
+}
+
+fn is_keyword(token: &TokenWithSpan, keyword: Keyword) -> bool {
+    matches!(&token.token, Token::Word(w) if w.keyword == keyword && w.quote_style.is_none())
+}
+
+/// Whether a name goes right after `tokens`: after `.`, `,`, `(`, or a keyword such as `FROM`
+/// or `AS` that is not itself a name.
+fn name_follows(tokens: &[TokenWithSpan]) -> bool {
+    let mut before = tokens.iter().rev().filter(|t| significant(t));
+    match before.next().map(|t| &t.token) {
+        Some(Token::Period | Token::Comma | Token::LParen) => true,
+        Some(Token::Word(w)) => {
+            w.quote_style.is_none()
+                && matches!(
+                    w.keyword,
+                    Keyword::AS
+                        | Keyword::FROM
+                        | Keyword::JOIN
+                        | Keyword::LATERAL
+                        | Keyword::TABLE
+                        | Keyword::INTO
+                        | Keyword::UPDATE
+                        | Keyword::USING
+                )
+                && !before
+                    .next()
+                    .is_some_and(|t| t.token == Token::Period || is_keyword(t, Keyword::AS))
+        },
+        _ => false,
+    }
 }

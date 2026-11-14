@@ -101,6 +101,11 @@ def test_is_distinct_from_precedence(predicate: str, expected: list[bool]) -> No
         ("d IS NOT DISTINCT FROM '2024-01-03'", [False, True, False]),
         ("'2024-01-03' IS DISTINCT FROM d", [True, False, True]),
         ("s IS NOT DISTINCT FROM 22", [False, True, False]),
+        # intervals compare by length
+        ("INTERVAL '24 hours' IS NOT DISTINCT FROM INTERVAL '1 day'", [True] * 3),
+        ("INTERVAL '24 hours' IS DISTINCT FROM INTERVAL '1 day'", [False] * 3),
+        ("INTERVAL '24 hours' = INTERVAL '1 day'", [True] * 3),
+        ("INTERVAL '24 hours' <> INTERVAL '1 day'", [False] * 3),
     ],
 )
 def test_is_distinct_from_literal_coercion(

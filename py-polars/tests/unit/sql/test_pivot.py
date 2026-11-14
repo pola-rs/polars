@@ -74,6 +74,14 @@ def wide() -> pl.DataFrame:
             "SELECT p.rep, p.q1 FROM sales PIVOT (SUM(amount) FOR quarter IN ('q1')) AS p",
             {"rep": ["a", "b", "c"], "q1": [10, 30, None]},
         ),
+        (
+            # the columns a subquery reads are not read by the PIVOT
+            """
+            SELECT * FROM (SELECT rep, amount FROM sales)
+            PIVOT (SUM(amount) FOR COALESCE((SELECT rep), '') IN ('a', 'b'))
+            """,
+            {"rep": ["a", "b", "c"], "a": [30, None, None], "b": [None, 30, None]},
+        ),
     ],
 )
 def test_pivot(sales: pl.DataFrame, query: str, expected: dict[str, Any]) -> None:
