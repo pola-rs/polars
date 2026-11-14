@@ -2280,7 +2280,7 @@ def _alter_catalog_table(
     field_type: Any = None
     if "dtype" in op:
         schema, _ = _create_table_schema(
-            Schema({column: op["dtype"]}), context="ALTER TABLE"
+            Schema({column: op["dtype"]}), context="ALTER TABLE", with_data=False
         )
         field_type = schema.fields[0].field_type
     if kind == "set_data_type":
@@ -2403,6 +2403,7 @@ def _create_catalog_table(
         Schema(ddl["schema"]) if lf is None else lf.collect_schema(),
         required=ddl["required"],
         context="CREATE TABLE",
+        with_data=lf is not None,
     )
     spec = _create_partition_spec(schema, ddl["partition_by"], name)
     # checked first, as some catalogs report other errors before an existing table

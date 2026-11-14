@@ -918,13 +918,14 @@ def _create_table_schema(
     *,
     required: Collection[str] = (),
     context: str = "create_if_not_exists",
+    with_data: bool = True,
 ) -> tuple[Schema, dict[str, pl.DataType]]:
     """Iceberg schema of a table created from `schema`.
 
     Also returns the casts that make the data match the table schema, all of which
     are lossless. Raises if a column has no lossless Iceberg equivalent. The
     top-level columns in `required` become required fields; `context` starts the
-    error message.
+    error message. Without data (`with_data=False`), map keys may widen too.
     """
     from itertools import count
 
@@ -939,6 +940,7 @@ def _create_table_schema(
         IntegerType,
         ListType,
         LongType,
+        MapType,
         NestedField,
         StringType,
         StructType,
@@ -951,6 +953,17 @@ def _create_table_schema(
 
     field_ids = count(1)
     unsupported: list[str] = []
+
+    def contains_time(dtype: PolarsDataType) -> bool:
+        if dtype == pl.Time:
+            return True
+        if isinstance(dtype, (pl.List, pl.Array)):
+            return contains_time(dtype.inner)
+        if isinstance(dtype, pl.Struct):
+            return any(contains_time(field.dtype) for field in dtype.fields)
+        if isinstance(dtype, pl.Map):
+            return contains_time(dtype.key) or contains_time(dtype.value)
+        return False
 
     def convert(
         dtype: PolarsDataType, path: str
@@ -1001,6 +1014,29 @@ def _create_table_schema(
             return (
                 ListType(element_id, element_type, element_required=False),
                 pl.List(element_dtype),
+            )
+        if isinstance(dtype, pl.Map):
+            key_id, value_id = next(field_ids), next(field_ids)
+            key = convert(dtype.key, f"{path}.key")
+            value = convert(dtype.value, f"{path}.value")
+            if key is None or value is None:
+                return None
+            if with_data and key[1] != dtype.key:
+                unsupported.append(
+                    f"'{path}' ({dtype}): Polars cannot cast map keys to {key[1]}; "
+                    "convert them with `map.entries()`, a cast and `list.to_map()`"
+                )
+                return None
+            if with_data and contains_time(dtype.key):
+                # Iceberg stores times in microseconds: keys could merge
+                unsupported.append(
+                    f"'{path}' ({dtype}): the keys hold nanosecond times, which "
+                    "Iceberg stores in microseconds, so distinct keys could merge"
+                )
+                return None
+            return (
+                MapType(key_id, key[0], value_id, value[0], value_required=False),
+                pl.Map(key[1], value[1]),
             )
         if isinstance(dtype, pl.Struct):
             fields, struct_fields = [], []

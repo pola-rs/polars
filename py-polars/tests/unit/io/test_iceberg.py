@@ -1467,6 +1467,18 @@ def test_sink_iceberg_create_if_not_exists_dtypes(
             "struct<x: long, y: string, z: list<list<int>>>",
             pl.Struct({"x": pl.Int64, "y": pl.String, "z": pl.List(pl.List(pl.Int32))}),
         ),
+        "map": (
+            [{"a": {"x": 1}, "b": None}],
+            pl.Map(pl.String, pl.Struct({"x": pl.UInt8})),
+            "map<string, struct<x: int>>",
+            pl.Map(pl.String, pl.Struct({"x": pl.Int32})),
+        ),
+        "list_map": (
+            [[{"a": 255}, {}]],
+            pl.List(pl.Map(pl.String, pl.UInt8)),
+            "list<map<string, int>>",
+            pl.List(pl.Map(pl.String, pl.Int32)),
+        ),
     }
 
     df = pl.DataFrame(
@@ -1603,6 +1615,11 @@ def test_sink_iceberg_overwrite_filter_validation(tmp_path: Path) -> None:
         (pl.Object(), r"'c' \(Object\)"),
         (pl.List(pl.UInt64), r"'c\[\]' \(UInt64\)"),
         (pl.Struct({"x": pl.Int64, "y": pl.Duration("ms")}), r"'c.y' \(Duration"),
+        # Polars cannot cast map keys
+        (pl.Map(pl.Int8, pl.String), r"'c' \(Map\(Int8, String\)\): .* keys to Int32"),
+        (pl.List(pl.Map(pl.Struct({"x": pl.Int8}), pl.String)), r"'c\[\]' \(Map.*cast"),
+        # Iceberg times are microseconds: nanosecond keys could merge
+        (pl.Map(pl.Time, pl.String), r"'c' \(Map\(Time, String\)\): .* microseconds"),
     ],
 )
 def test_sink_iceberg_create_if_not_exists_unsupported_dtypes(

@@ -317,14 +317,14 @@ def test_create_catalog_table(lake: CountingCatalog, name: str) -> None:
     ctx = lake_ctx(lake)
     res = ctx.execute(
         f"CREATE TABLE {name} (id BIGINT NOT NULL, v VARCHAR NULL, d DATE, "
-        "s STRUCT<a INT, b VARCHAR>, l INT[])",
+        "s STRUCT<a INT, b VARCHAR>, l INT[], m MAP(SMALLINT, BIGINT) NOT NULL)",
         eager=True,
     )
     assert res.item() == "CREATE TABLE lake.tpch.t"
     assert ctx.tables() == []
     fields = table_fields(lake, "tpch", "t")
-    assert [f[0] for f in fields] == ["id", "v", "d", "s", "l"]
-    assert [f[2] for f in fields] == [True, False, False, False, False]
+    assert [f[0] for f in fields] == ["id", "v", "d", "s", "l", "m"]
+    assert [f[2] for f in fields] == [True, False, False, False, False, True]
     assert fields[:3] == [
         ("id", "long", True),
         ("v", "string", False),
@@ -339,11 +339,20 @@ def test_create_catalog_table(lake: CountingCatalog, name: str) -> None:
             "d": pl.Date(),
             "s": pl.Struct({"a": pl.Int32, "b": pl.String}),
             "l": pl.List(pl.Int32),
+            # no data to cast: map keys widen like columns
+            "m": pl.Map(pl.Int32, pl.Int64),
         }
     )
     assert ctx.execute("SELECT * FROM t", eager=True).schema == schema
     df = pl.DataFrame(
-        {"id": [1], "v": ["x"], "d": [None], "s": [None], "l": [[1, 2]]},
+        {
+            "id": [1],
+            "v": ["x"],
+            "d": [None],
+            "s": [None],
+            "l": [[1, 2]],
+            "m": [{1: None}],
+        },
         schema=schema,
     )
     df.lazy().sink_iceberg(lake.load_table(("tpch", "t")), mode="append")
@@ -2556,6 +2565,18 @@ def test_alter_catalog_table_columns(lake: CountingCatalog, name: str) -> None:
         LINEITEM.rename({"v": "v2"}),
         check_row_order=False,
     )
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_add_map_column(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("ALTER TABLE lineitem ADD COLUMN m MAP(TINYINT, BIGINT)")
+    assert iceberg_columns(lake, "tpch", "lineitem")[-1] == ("m", "map<int, long>")
+    m = pl.Series("m", [{1: 1, 2: None}], dtype=pl.Map(pl.Int32, pl.Int64))
+    ctx.register("src", pl.DataFrame({"k": [9], "v": ["z"]}).with_columns(m))
+    ctx.execute("INSERT INTO lineitem SELECT * FROM src")
+    res = ctx.execute("SELECT m FROM lineitem WHERE k = 9", eager=True)
+    assert res["m"].to_list() == [{1: 1, 2: None}]
 
 
 @pytest.mark.write_disk
