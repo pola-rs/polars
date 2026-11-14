@@ -9,13 +9,15 @@ use polars_utils::format_pl_smallstr;
 #[cfg(feature = "pivot")]
 use sqlparser::ast::NullInclusion;
 use sqlparser::ast::{
-    BinaryOperator as SQLBinaryOperator, Expr as SQLExpr, ExprWithAlias, GroupByExpr, Ident,
-    PivotValueSource, Query, SelectItem, SetExpr, Statement, TableFactor, Visitor, VisitorMut,
+    BinaryOperator as SQLBinaryOperator, CastKind, DataType as SQLDataType, Expr as SQLExpr,
+    ExprWithAlias, GroupByExpr, Ident, PivotValueSource, Query, SelectItem, SetExpr, Statement,
+    TableFactor, Visitor, VisitorMut,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
 use crate::context::{RelationName, factor_relations, match_qualifier};
+use crate::sql_visitors::expr_references_any_column;
 use crate::subquery_group_by::is_aggregate_call;
 use crate::subquery_pull_up::has_aggregate;
 use crate::{SQLContext, dyn_visit};
@@ -228,7 +230,7 @@ impl VisitorMut for FilterAggregates<'_> {
             self.found = true;
             function.filter = Some(Box::new(match function.filter.take() {
                 Some(filter) => SQLExpr::BinaryOp {
-                    left: filter,
+                    left: Box::new(filter_as_boolean(*filter)),
                     op: SQLBinaryOperator::And,
                     right: Box::new(self.matches.clone()),
                 },
@@ -236,6 +238,19 @@ impl VisitorMut for FilterAggregates<'_> {
             }));
         }
         ControlFlow::Continue(())
+    }
+}
+
+/// A FILTER condition, cast to boolean if it reads no column, as FILTER takes it on its own.
+fn filter_as_boolean(filter: SQLExpr) -> SQLExpr {
+    if expr_references_any_column(&filter) {
+        return filter;
+    }
+    SQLExpr::Cast {
+        kind: CastKind::Cast,
+        expr: Box::new(filter),
+        data_type: SQLDataType::Boolean,
+        format: None,
     }
 }
 

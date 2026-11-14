@@ -119,6 +119,17 @@ def test_pivot_names(sales: pl.DataFrame) -> None:
     assert res.columns == ["a", "b", "c"]
 
 
+def test_pivot_aggregate_filter() -> None:
+    df = pl.DataFrame({"k": ["x", "x", "y"], "v": [1, 2, 3]})
+    for condition, expected in [
+        ("1", [(3, 3)]),
+        ("v > 1", [(2, 3)]),
+        ("0", [(None, None)]),
+    ]:
+        query = f"SELECT * FROM df PIVOT (SUM(v) FILTER (WHERE {condition}) FOR k IN ('x', 'y'))"
+        assert pl.sql(query, eager=True).rows() == expected
+
+
 def test_pivot_column_references() -> None:
     df = pl.DataFrame({"t": ["a", "b"], "k": ["x", "x"], "v": [1, 2]})
     expected = [("a", 1), ("b", 2)]
