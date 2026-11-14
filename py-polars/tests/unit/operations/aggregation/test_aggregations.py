@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 
     from polars._typing import (
         ApproxQuantileMethod,
+        EngineType,
         PolarsDataType,
         QuantileMethod,
         TimeUnit,
@@ -145,6 +146,43 @@ def test_single_element_std() -> None:
     s = pl.Series([1])
     assert s.std(ddof=1) is None
     assert s.std(ddof=0) == 0.0
+
+
+@pytest.mark.parametrize(
+    ("dtype", "out_dtype", "values", "expected"),
+    [
+        (
+            pl.Float64,
+            pl.Float64,
+            [None, 5.0, float("nan"), float("inf")],
+            [None, 0.0, float("nan"), float("nan")],
+        ),
+        (
+            pl.Float32,
+            pl.Float32,
+            [None, 5.0, float("nan"), float("-inf")],
+            [None, 0.0, float("nan"), float("nan")],
+        ),
+        (pl.Int64, pl.Float64, [None, 5, None, 7], [None, 0.0, None, 0.0]),
+    ],
+)
+def test_group_by_single_value_var_std_30712(
+    dtype: PolarsDataType,
+    out_dtype: PolarsDataType,
+    values: list[Any],
+    expected: list[float | None],
+) -> None:
+    df = pl.DataFrame(
+        {"g": [1, 2, 3, 4], "x": values}, schema={"g": pl.Int64, "x": dtype}
+    ).sort("g")
+    out = df.group_by("g", maintain_order=True).agg(
+        v=pl.col("x").var(ddof=0), s=pl.col("x").std(ddof=0)
+    )
+    expected_df = pl.DataFrame(
+        {"g": [1, 2, 3, 4], "v": expected, "s": expected},
+        schema={"g": pl.Int64, "v": out_dtype, "s": out_dtype},
+    )
+    assert_frame_equal(out, expected_df)
 
 
 def test_quantile() -> None:
@@ -2235,6 +2273,98 @@ def test_min_max_by_row_encoded_value(
         {"g": [1, 2, 3], "x": pl.Series(expected_x, dtype=pl.Binary)}
     )
     assert_frame_equal(q.collect(), expected_df)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_get_arg_min_max_to_min_max_by(engine: EngineType) -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 2, 2, 3, 3],
+            "x": [1, 2, 3, 4, 5, 6, 7],
+            "s": ["a", "b", "c", "d", "e", "f", "g"],
+            "y": [2.0, None, 5.0, None, None, float("nan"), 3.0],
+        }
+    )
+    exprs = {
+        "x_max": pl.col("x").get(pl.col("y").arg_max()),
+        "s_max": pl.col("s").get(pl.col("y").arg_max()),
+        "x_min": pl.col("x").get(pl.col("y").arg_min()),
+    }
+    expected = pl.DataFrame(
+        {
+            "g": [1, 2, 3],
+            "x_max": [3, None, 7],
+            "s_max": ["c", None, "g"],
+            "x_min": [1, None, 7],
+        }
+    )
+
+    q = df.lazy().group_by("g").agg(**exprs)
+    plan = q.explain()
+    assert "max_by" in plan
+    assert "min_by" in plan
+    assert ".get(" not in plan
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "in-memory-map" not in dot
+    assert_frame_equal(q.collect(engine=engine), expected, check_row_order=False)
+
+    q = df.lazy().select(**exprs)
+    assert_frame_equal(q.collect(engine=engine), expected.drop("g").head(1))
+
+    q = df.lazy().select(**{k: v.over("g") for k, v in exprs.items()})
+    assert_frame_equal(
+        q.collect(engine=engine),
+        df.select("g").join(expected, on="g", maintain_order="left").drop("g"),
+    )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_get_arg_max_not_length_preserving(engine: EngineType) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3], "y": [9, 1, 2]})
+    q = df.lazy().select(pl.col("x").get(pl.col("y").filter(pl.col("y") < 5).arg_max()))
+    assert "max_by" not in q.explain()
+    assert q.collect(engine=engine).item() == 2
+
+    # A Series broadcasts a one-row column to its own length.
+    df = pl.DataFrame({"x": [10], "y": [2]})
+    two = pl.Series([0, 1])
+    for e, expected in [
+        (pl.col("x").get((pl.col("y") + two).arg_max(), null_on_oob=True), None),
+        ((pl.col("x") + two).get(pl.col("y").arg_max()), 10),
+    ]:
+        q = df.lazy().select(e)
+        assert "max_by" not in q.explain()
+        assert q.collect(engine=engine).item() == expected
+
+
+@pytest.mark.parametrize("evict", [False, True])
+def test_get_shared_arg_max_same_row_streaming(
+    evict: bool, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    if evict:
+        plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "2")
+        plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "2")
+        plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", "2")
+    n = 100
+    # Every row of a group has the same `y`, so any row may be picked, but `x` and `s`
+    # must come from the same one.
+    df = pl.DataFrame(
+        {
+            "g": [i % 5 for i in range(n)],
+            "x": list(range(n)),
+            "s": [str(i) for i in range(n)],
+            "y": [i % 5 for i in range(n)],
+        }
+    )
+    best = pl.col("y").arg_max()
+    out = (
+        df.lazy()
+        .group_by("g")
+        .agg(x=pl.col("x").get(best), s=pl.col("s").get(best))
+        .collect(engine="streaming")
+    )
+    assert out.height == 5
+    assert out["s"].to_list() == [str(x) for x in out["x"]]
 
 
 @pytest.mark.parametrize(

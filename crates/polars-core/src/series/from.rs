@@ -859,6 +859,54 @@ unsafe fn to_physical_and_dtype(
     }
 }
 
+/// Negative keys become null and keys that don't fit in `O` become its maximum.
+#[cfg(feature = "dtype-categorical")]
+fn unsigned_dictionary_keys<K: DictionaryKey, O: DictionaryKey>(
+    keys: &PrimitiveArray<K>,
+) -> PrimitiveArray<O> {
+    if let Some(keys) = (keys as &dyn std::any::Any).downcast_ref::<PrimitiveArray<O>>() {
+        return keys.clone();
+    }
+    // SAFETY: MAX_USIZE_VALUE fits in O.
+    let max = unsafe { O::from_usize_unchecked(O::MAX_USIZE_VALUE) };
+    let mut has_negative = false;
+    let values: Vec<O> = keys
+        .values()
+        .iter()
+        .map(|k| {
+            let k: Result<usize, _> = (*k).try_into();
+            has_negative |= k.is_err();
+            k.map_or(O::default(), |k| O::try_from(k).unwrap_or(max))
+        })
+        .collect_trusted();
+    let mut validity = keys.validity().cloned();
+    if has_negative {
+        let is_non_negative: polars_arrow::bitmap::Bitmap = keys
+            .values()
+            .iter()
+            .map(|k| TryInto::<usize>::try_into(*k).is_ok())
+            .collect_trusted();
+        validity = polars_arrow::compute::utils::combine_validities_and(
+            validity.as_ref(),
+            Some(&is_non_negative),
+        );
+    }
+    PrimitiveArray::from_vec(values).with_validity(validity)
+}
+
+#[cfg(feature = "dtype-categorical")]
+fn import_str_dictionary<O: DictionaryKey>(
+    name: PlSmallStr,
+    keys: &PrimitiveArray<O>,
+    values: &dyn Array,
+    dtype: &DataType,
+) -> PolarsResult<Series> {
+    with_match_categorical_physical_type!(dtype.cat_physical().unwrap(), |$C| {
+        let ca = CategoricalChunked::<$C>::from_str_dictionary(name, dtype.clone(), keys, values)?;
+        Ok(ca.into_series())
+    })
+}
+
 #[cfg(feature = "dtype-categorical")]
 unsafe fn import_arrow_dictionary_array(
     name: PlSmallStr,
@@ -875,14 +923,15 @@ unsafe fn import_arrow_dictionary_array(
         macro_rules! unpack_categorical_chunked {
             ($dt:ty) => {{
                 let arr = arr.as_any().downcast_ref::<DictionaryArray<$dt>>().unwrap();
-                with_match_categorical_physical_type!(polars_dtype.cat_physical().unwrap(), |$C| {
-                    let ca = CategoricalChunked::<$C>::from_str_dictionary(
-                        name,
-                        polars_dtype.clone(),
-                        arr,
-                    )?;
-                    Ok(ca.into_series())
-                })
+                let values = arr.values().as_ref();
+                // Keys that saturate to u32::MAX must stay out of bounds.
+                if values.len() <= u32::MAX as usize {
+                    let keys = unsigned_dictionary_keys::<$dt, u32>(arr.keys());
+                    import_str_dictionary(name, &keys, values, polars_dtype)
+                } else {
+                    let keys = unsigned_dictionary_keys::<$dt, u64>(arr.keys());
+                    import_str_dictionary(name, &keys, values, polars_dtype)
+                }
             }};
         }
 

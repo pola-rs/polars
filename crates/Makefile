@@ -54,6 +54,7 @@ miri:  ## Run miri
 .PHONY: test
 test:  ## Run tests
 	cargo test --all-features \
+		-p polars-cli \
 		-p polars-compute \
 		-p polars-core \
 		-p polars-defs \
@@ -72,6 +73,7 @@ test:  ## Run tests
 .PHONY: nextest
 nextest:  ## Run tests with nextest
 	cargo nextest run --all-features \
+		-p polars-cli \
 		-p polars-compute \
 		-p polars-core \
 		-p polars-defs \

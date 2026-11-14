@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::ops::{ControlFlow, Deref};
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 use chrono::{NaiveDateTime, SubsecRound};
 use polars_core::prelude::*;
@@ -22,26 +22,26 @@ use polars_utils::format_pl_smallstr;
 use polars_utils::unique_id::UniqueId;
 use sqlparser::ast::{
     AlterColumnOperation, AlterTable, AlterTableOperation, Assignment, AssignmentTarget,
-    BinaryOperator as SQLBinaryOperator, CreateTable, CreateTableLikeKind, CreateTableOptions, Cte,
-    Delete, Distinct, DropBehavior, ExcludeSelectItem, Expr as SQLExpr, Fetch, FromTable,
-    FunctionArg, FunctionArgExpr, FunctionArguments, GroupByExpr, HiveDistributionStyle,
+    BinaryOperator as SQLBinaryOperator, CreateTable, CreateTableLikeKind, CreateTableOptions,
+    CreateView, Cte, Delete, Distinct, DropBehavior, ExcludeSelectItem, Expr as SQLExpr, Fetch,
+    FromTable, FunctionArg, FunctionArgExpr, FunctionArguments, GroupByExpr, HiveDistributionStyle,
     HiveFormat, Ident, Insert, Join, JoinConstraint, JoinOperator, LimitClause, Merge, MergeAction,
     MergeClause, MergeClauseKind, MergeInsertExpr, MergeInsertKind, MergeUpdateExpr,
     MergeUpdateKind, NamedWindowDefinition, NamedWindowExpr, ObjectName, ObjectNamePart,
     ObjectType, OrderBy, OrderByKind, OutputClause, Query, RenameSelectItem, SchemaName, Select,
     SelectFlavor, SelectItem, SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier,
-    SqlOption, Statement, TableAlias, TableFactor, TableObject, TableWithJoins, Truncate,
-    TruncateTableTarget, UnaryOperator as SQLUnaryOperator, Update, Value as SQLValue,
-    ValueWithSpan, Values, Visitor, VisitorMut, WildcardAdditionalOptions, WindowSpec, WindowType,
-    With,
+    SqlOption, Statement, TableAlias, TableAliasColumnDef, TableFactor, TableObject,
+    TableWithJoins, Truncate, TruncateTableTarget, UnaryOperator as SQLUnaryOperator, Update,
+    Value as SQLValue, ValueWithSpan, Values, Visitor, VisitorMut, WildcardAdditionalOptions,
+    WindowSpec, WindowType, With,
 };
 
 use crate::catalog::{
-    CatalogAlter, CatalogNamespace, CatalogRegistry, CatalogSpellings, CatalogStatement,
-    CatalogTable, MergeClausePlan, MergePlan, MergeSourcePlan, RewrittenName, alter_table_column,
-    alter_table_properties, create_schema_options, create_table_columns, create_table_options,
-    create_table_partitioning, display_name, hint_unsupported_part, name_parts, name_position,
-    rewrite_catalog_names,
+    CatalogAlter, CatalogNamespace, CatalogRead, CatalogRegistry, CatalogSpellings,
+    CatalogStatement, CatalogTable, MergeClausePlan, MergePlan, MergeSourcePlan, RewrittenName,
+    alter_table_column, alter_table_properties, create_schema_options, create_table_columns,
+    create_table_options, create_table_partitioning, display_name, hint_unsupported_part,
+    name_parts, name_position, rewrite_catalog_names, set_partitioning, set_sort_order,
 };
 use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
@@ -57,6 +57,7 @@ use crate::grouping_sets::{
     expand_grouping_sets, new_placeholder,
 };
 use crate::join_keys::{sql_join_key_pair, sql_join_where_predicate};
+use crate::layout_alter::{self, Layout, LayoutAlter};
 use crate::sql_expr::{
     convert_int_literal_for_string, is_string_expr, order_by_sort_options, parse_sql_array,
     parse_sql_expr, resolve_compound_identifier, resolve_expr_dtype, series_from_literals,
@@ -74,6 +75,7 @@ use crate::subquery::{
 };
 use crate::subquery_pull_up::NESTED_PREFIX;
 use crate::table_functions::PolarsTableFunctions;
+use crate::time_travel::{split_version, unversioned_key, with_version};
 use crate::types::map_sql_dtype_to_polars;
 use crate::{col, unique_column_name};
 
@@ -313,6 +315,12 @@ pub(crate) enum FilterMode {
 #[derive(Clone)]
 pub struct SQLContext {
     pub(crate) table_map: Arc<RwLock<PlHashMap<String, LazyFrame>>>,
+    /// The views, by name. A view is planned again by each statement that reads it.
+    views: Arc<RwLock<PlHashMap<String, Arc<View>>>>,
+    /// The plans of the views the current statement reads, shared by all its contexts.
+    view_frames: Arc<Mutex<PlHashMap<String, LazyFrame>>>,
+    /// The views being planned, outermost first.
+    views_in_progress: Vec<String>,
     pub(crate) function_registry: Arc<dyn FunctionRegistry>,
     /// Set once a caller installs their own registry; user-defined functions cannot be
     /// carried in the DSL, so such a context resolves its queries eagerly.
@@ -356,6 +364,12 @@ pub struct SQLContext {
     /// How many subqueries enclose this scope. CTEs, derived tables and set operands don't
     /// count: they read no enclosing scope.
     pub(crate) nesting: usize,
+}
+
+/// The query of a view and the names it gives the query's columns.
+struct View {
+    query: Query,
+    alias: TableAlias,
 }
 
 /// The first relation of the current `FROM` and the (joined table, column) pairs
@@ -404,6 +418,9 @@ impl Default for SQLContext {
             function_registry: Arc::new(DefaultFunctionRegistry {}),
             custom_function_registry: false,
             table_map: Default::default(),
+            views: Default::default(),
+            view_frames: Default::default(),
+            views_in_progress: Default::default(),
             cte_map: Default::default(),
             table_aliases: Default::default(),
             active_relations: Default::default(),
@@ -439,14 +456,16 @@ impl SQLContext {
         Self::default()
     }
 
-    /// Get the names of all registered tables, in sorted order.
+    /// Get the names of all registered tables and views, in sorted order.
     pub fn get_tables(&self) -> Vec<String> {
         let mut tables = Vec::from_iter(self.table_map.read().unwrap().keys().cloned());
+        tables.extend(self.views.read().unwrap().keys().cloned());
         tables.sort_unstable();
         tables
     }
 
-    /// Register a [`LazyFrame`] as a table in the SQLContext.
+    /// Register a [`LazyFrame`] as a table in the SQLContext, replacing the views of the same name
+    /// ignoring case.
     /// ```rust
     /// # use polars_sql::SQLContext;
     /// # use polars_core::prelude::*;
@@ -462,12 +481,17 @@ impl SQLContext {
     /// # }
     ///```
     pub fn register(&self, name: &str, lf: LazyFrame) {
+        self.views
+            .write()
+            .unwrap()
+            .retain(|key, _| !key.eq_ignore_ascii_case(name));
         self.table_map.write().unwrap().insert(name.to_owned(), lf);
     }
 
-    /// Unregister a [`LazyFrame`] table from the [`SQLContext`].
+    /// Unregister a [`LazyFrame`] table or a view from the [`SQLContext`].
     pub fn unregister(&self, name: &str) {
-        self.table_map.write().unwrap().remove(&name.to_owned());
+        self.table_map.write().unwrap().remove(name);
+        self.views.write().unwrap().remove(name);
     }
 
     /// Attach a catalog under `name`. A table name starting with `name` refers to a table of
@@ -503,26 +527,37 @@ impl SQLContext {
         self.catalogs.unregister(name)
     }
 
-    /// The catalog tables that `query` reads, once each.
-    pub fn catalog_tables(&self, query: &str) -> PolarsResult<Vec<CatalogTable>> {
-        let mut stmt = parse_single_statement(query)?;
-        let mut tables = Vec::new();
-        for (_, full_name) in self.rewrite_catalog_names(&mut stmt)?.0 {
-            let table = CatalogTable {
-                catalog: full_name[0].clone(),
-                identifier: full_name[1..].to_vec(),
+    /// The catalog tables that `query` reads, once per table and version.
+    pub fn catalog_tables(&self, query: &str) -> PolarsResult<Vec<CatalogRead>> {
+        // a layout change reads no table
+        let Ok(mut stmt) = layout_alter::parse_single_statement_or_alter(query)? else {
+            return Ok(Vec::new());
+        };
+        let mut reads = Vec::new();
+        for (_, key) in self.rewrite_catalog_names(&mut stmt)?.0 {
+            let (full_name, version) = split_version(&key);
+            let read = CatalogRead {
+                table: CatalogTable {
+                    catalog: full_name[0].clone(),
+                    identifier: full_name[1..].to_vec(),
+                },
+                version,
+                key: key.clone(),
             };
-            if !tables.contains(&table) {
-                tables.push(table);
+            if !reads.contains(&read) {
+                reads.push(read);
             }
         }
-        Ok(tables)
+        Ok(reads)
     }
 
     /// The catalog statement of `query`, if any, for the caller to perform:
     /// [`SQLContext::execute`] rejects it.
     pub fn catalog_statement(&self, query: &str) -> PolarsResult<Option<CatalogStatement>> {
-        let stmt = parse_single_statement(query)?;
+        let stmt = match layout_alter::parse_single_statement_or_alter(query)? {
+            Ok(stmt) => stmt,
+            Err(alter) => return self.catalog_layout_alter(&alter).map(Some),
+        };
         match &stmt {
             Statement::Drop {
                 object_type: ObjectType::Table,
@@ -1124,7 +1159,7 @@ impl SQLContext {
     }
 
     fn parse_catalog_dml(&mut self, query: &str) -> PolarsResult<Statement> {
-        self.statement_time = Default::default();
+        self.start_statement();
         self.parse_catalog_dml_keeping_clock(query)
     }
 
@@ -1242,8 +1277,12 @@ impl SQLContext {
             return Ok(Default::default());
         }
         let table_map = self.table_map.read().unwrap();
+        let views = self.views.read().unwrap();
         // A name matching several tables ignoring case is left for the lookup to report.
-        let is_local = |name: &str| !matches!(key_ignoring_case(&table_map, name), Ok(None));
+        let is_local = |name: &str| {
+            !matches!(key_ignoring_case(&table_map, name), Ok(None))
+                || !matches!(key_ignoring_case(&views, name), Ok(None))
+        };
         if self.catalogs.is_empty() {
             let recorded = |parts: &[String]| {
                 let (_, full) = self.catalog_names.iter().find(|(w, _)| w == parts)?;
@@ -1251,7 +1290,12 @@ impl SQLContext {
             };
             rewrite_catalog_names(stmt, recorded, is_local)
         } else {
-            let resolve = |parts: &[String]| self.catalogs.resolve(parts).map(|t| t.full_name());
+            // a versioned key resolves as its name, keeping the version
+            let resolve = |key: &[String]| {
+                let (parts, version) = split_version(key);
+                let full = self.catalogs.resolve(parts)?.full_name();
+                Some(with_version(full, version.as_ref()))
+            };
             rewrite_catalog_names(stmt, resolve, is_local)
         }
     }
@@ -1305,7 +1349,10 @@ impl SQLContext {
     /// # }
     ///```
     pub fn execute(&mut self, query: &str) -> PolarsResult<LazyFrame> {
-        let mut stmt = parse_single_statement(query)?;
+        let mut stmt = match layout_alter::parse_single_statement_or_alter(query)? {
+            Ok(stmt) => stmt,
+            Err(alter) => return Err(self.alter_table_error(&alter.name)),
+        };
 
         if self.can_defer(&stmt) {
             // The plan keeps the statement as written: translating it rewrites the names of its
@@ -1324,7 +1371,7 @@ impl SQLContext {
         let (_, catalog_spellings) = self.rewrite_catalog_names(&mut stmt)?;
         desugar_quantified_subqueries(&mut stmt);
         self.catalog_spellings = catalog_spellings;
-        self.statement_time = Default::default();
+        self.start_statement();
         let res = self.execute_statement(&stmt).inspect_err(|_| {
             self.clear_statement_state();
         })?;
@@ -1341,9 +1388,19 @@ impl SQLContext {
 
     /// Whether resolving `stmt` can be deferred to the DSL -> IR conversion.
     ///
-    /// A user-defined function does not survive the round trip through the DSL.
+    /// A user-defined function does not survive the round trip through the DSL, and the views
+    /// a statement reads are planned with it.
     fn can_defer(&self, stmt: &Statement) -> bool {
-        !self.custom_function_registry && is_read_only_query(stmt)
+        !self.custom_function_registry && is_read_only_query(stmt) && !self.reads_view(stmt)
+    }
+
+    /// Whether `stmt` names a view.
+    fn reads_view(&self, stmt: &Statement) -> bool {
+        let views = self.views.read().unwrap();
+        !views.is_empty()
+            && statement_table_identifiers(stmt, true, true)
+                .iter()
+                .any(|name| !matches!(key_ignoring_case(&views, name), Ok(None)))
     }
 
     /// Build a [`DslPlan::SQL`] holding `query` and a snapshot of the relations it references.
@@ -1421,7 +1478,7 @@ impl SQLContext {
             },
         };
 
-        self.statement_time = Default::default();
+        self.start_statement();
         std::mem::swap(&mut self.lp_arena, lp_arena);
         std::mem::swap(&mut self.expr_arena, expr_arena);
         let res = self.execute_statement(stmt);
@@ -1432,8 +1489,16 @@ impl SQLContext {
         Ok(res?.logical_plan)
     }
 
+    /// Give the statement about to be planned its own clock and view plans, which its nested
+    /// contexts share.
+    fn start_statement(&mut self) {
+        self.statement_time = Default::default();
+        self.view_frames = Default::default();
+    }
+
     fn clear_statement_state(&mut self) {
         self.cte_map.clear();
+        self.view_frames = Default::default();
         self.catalog_tables.clear();
         self.catalog_names.clear();
         self.catalog_spellings.clear();
@@ -1480,6 +1545,9 @@ impl SQLContext {
         Self {
             // Deep-copy/clone to isolate
             table_map: Arc::new(RwLock::new(self.table_map.read().unwrap().clone())),
+            views: self.views.clone(),
+            view_frames: self.view_frames.clone(),
+            views_in_progress: self.views_in_progress.clone(),
             named_windows: self.named_windows.clone(),
             cte_map: self.cte_map.clone(),
             from_item_frames: self.from_item_frames.clone(),
@@ -1513,6 +1581,16 @@ impl SQLContext {
                 object_type: ObjectType::Table,
                 ..
             } => self.execute_drop_table(stmt)?,
+            Statement::CreateView(create_view) => self.execute_create_view(create_view)?,
+            stmt @ Statement::Drop {
+                object_type: ObjectType::View,
+                ..
+            } => self.execute_drop_view(stmt)?,
+            Statement::ExplainTable {
+                table_name,
+                hive_format: None,
+                ..
+            } => self.execute_describe(table_name)?,
             stmt @ Statement::CreateSchema { .. } => {
                 let (name, ..) = create_schema_parts(stmt)?;
                 self.execute_schema_ddl("CREATE SCHEMA", name)?
@@ -1524,7 +1602,7 @@ impl SQLContext {
                 let (name, _) = drop_schema_parts(stmt)?;
                 self.execute_schema_ddl("DROP SCHEMA", name)?
             },
-            Statement::AlterTable(alter) => self.execute_alter_table(alter)?,
+            Statement::AlterTable(alter) => return Err(self.alter_table_error(&alter.name)),
             Statement::Insert(insert) => self.execute_insert(insert)?,
             stmt @ Statement::Explain { .. } => self.execute_explain(stmt)?,
             Statement::Truncate(truncate) => self.execute_truncate_table(truncate)?,
@@ -1662,7 +1740,95 @@ impl SQLContext {
         if let Some(lf) = get_ignoring_case(&self.table_map.read().unwrap(), name)? {
             return Ok(Some(lf.clone()));
         }
+        if let Some(lf) = self.get_view(name)? {
+            return Ok(Some(lf));
+        }
         Ok(get_ignoring_case(&self.catalog_tables, name)?.cloned())
+    }
+
+    /// The frame of the CTE, registered table, view or catalog table `name`, with its name as
+    /// written.
+    fn get_named_table(&self, name: &ObjectName) -> PolarsResult<(String, LazyFrame)> {
+        let tbl_name = object_name_to_string(name);
+        if let Some(lf) = self.get_table_unaliased(&tbl_name)? {
+            return Ok((tbl_name, lf));
+        }
+        let hint = name_parts(name)
+            .and_then(|parts| self.catalogs.unresolved_hint(&parts))
+            .unwrap_or_default();
+        polars_bail!(SQLInterface: "relation '{}' was not found{}", tbl_name, hint);
+    }
+
+    /// The view `name` refers to (ignoring case, as in `FROM`), with its name.
+    fn find_view(&self, name: &str) -> PolarsResult<Option<(String, Arc<View>)>> {
+        let views = self.views.read().unwrap();
+        Ok(key_ignoring_case(&views, name)?.map(|key| (key.clone(), views[key].clone())))
+    }
+
+    /// The plan of the view `name` refers to, planned once per statement unless it reads
+    /// `RANDOM()`, so that each read of such a view draws its own values.
+    fn get_view(&self, name: &str) -> PolarsResult<Option<LazyFrame>> {
+        let Some((key, view)) = self.find_view(name)? else {
+            return Ok(None);
+        };
+        polars_ensure!(
+            !self.views_in_progress.contains(&key),
+            SQLInterface: "view '{}' reads itself", key
+        );
+        if let Some(lf) = self.view_frames.lock().unwrap().get(&key) {
+            return Ok(Some(lf.clone()));
+        }
+        let lf = self.plan_view(&key, &view)?;
+        if !self.reads_random(&view, &mut PlHashSet::new()) {
+            self.view_frames.lock().unwrap().insert(key, lf.clone());
+        }
+        Ok(Some(lf))
+    }
+
+    /// Whether the query of `view`, or of a view it reads, calls `RANDOM()`. `seen` holds the
+    /// views checked so far.
+    fn reads_random(&self, view: &View, seen: &mut PlHashSet<String>) -> bool {
+        if contains_random(&view.query, true) {
+            return true;
+        }
+        let mut collector = TableIdentifierCollector {
+            include_schema: true,
+            ..Default::default()
+        };
+        let _ = dyn_visit::visit(&view.query, &mut collector);
+        collector
+            .tables
+            .iter()
+            .any(|name| match self.find_view(name) {
+                Ok(Some((key, view))) => seen.insert(key) && self.reads_random(&view, seen),
+                _ => false,
+            })
+    }
+
+    /// Plan the view `key` against the current tables, in a context of its own.
+    fn plan_view(&self, key: &str, view: &View) -> PolarsResult<LazyFrame> {
+        let mut ctx = self.view_context(key);
+        let lf = ctx.execute_query(&view.query)?;
+        let lf = ctx.rename_columns_from_table_alias(lf, &view.alias)?;
+        lf.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
+        Ok(lf)
+    }
+
+    /// A context to plan the query of view `key` in, which sees the tables and views but no
+    /// state of the current statement.
+    fn view_context(&self, key: &str) -> Self {
+        let mut views_in_progress = self.views_in_progress.clone();
+        views_in_progress.push(key.to_owned());
+        Self {
+            table_map: self.table_map.clone(),
+            views: self.views.clone(),
+            view_frames: self.view_frames.clone(),
+            views_in_progress,
+            function_registry: self.function_registry.clone(),
+            custom_function_registry: self.custom_function_registry,
+            statement_time: self.statement_time.clone(),
+            ..Default::default()
+        }
     }
 
     /// Restore the catalog tables of a deferred statement: (name as written, full name, plan).
@@ -1676,9 +1842,12 @@ impl SQLContext {
         }
     }
 
-    /// The registered table `name` refers to (ignoring case, as in `FROM`).
+    /// The registered table or view `name` refers to (ignoring case, as in `FROM`).
     fn registered_table_key(&self, name: &str) -> PolarsResult<Option<String>> {
-        Ok(key_ignoring_case(&self.table_map.read().unwrap(), name)?.cloned())
+        if let Some(key) = key_ignoring_case(&self.table_map.read().unwrap(), name)? {
+            return Ok(Some(key.clone()));
+        }
+        Ok(self.find_view(name)?.map(|(key, _)| key))
     }
 
     /// Execute a query in an isolated context. This prevents subqueries from mutating
@@ -2261,7 +2430,25 @@ impl SQLContext {
     fn execute_explain(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
         match stmt {
             Statement::Explain { statement, .. } => {
-                let lf = self.execute_statement(statement)?;
+                // Any other statement would be run to get a plan: its table created,
+                // dropped or changed.
+                let query = match statement.as_ref() {
+                    Statement::Query(query)
+                        if !matches!(
+                            query.body.as_ref(),
+                            SetExpr::Insert(_)
+                                | SetExpr::Update(_)
+                                | SetExpr::Delete(_)
+                                | SetExpr::Merge(_)
+                        ) =>
+                    {
+                        query
+                    },
+                    _ => polars_bail!(
+                        SQLInterface: "EXPLAIN supports queries only; found:\n{}", statement,
+                    ),
+                };
+                let lf = self.execute_query(query)?;
                 let plan = lf.describe_optimized_plan()?;
                 let plan = plan
                     .split('\n')
@@ -2292,23 +2479,137 @@ impl SQLContext {
             );
         }
 
-        let mut table_map = self.table_map.write().unwrap();
-        // Resolve every name before dropping any, so an error drops nothing.
-        let mut keys = Vec::with_capacity(names.len());
-        for name in names {
-            let tbl = object_name_to_string(name);
-            // `DROP TABLE IF EXISTS <tbl>` is a no-op on a missing table;
-            // otherwise dropping a table that doesn't exist is an error.
-            match key_ignoring_case(&table_map, &tbl)?.cloned() {
-                Some(key) => keys.push(key),
-                None if if_exists => {},
-                None => polars_bail!(SQLInterface: "table '{}' does not exist", tbl),
+        drop_names(
+            &mut self.table_map.write().unwrap(),
+            names,
+            if_exists,
+            "table",
+        )
+    }
+
+    // DROP VIEW <view>
+    fn execute_drop_view(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
+        let (names, if_exists, purge) = drop_table_parts(stmt)?;
+        polars_ensure!(!purge, SQLInterface: "`DROP VIEW ... PURGE` is not supported");
+        drop_names(&mut self.views.write().unwrap(), names, if_exists, "view")
+    }
+
+    // CREATE [OR REPLACE] [TEMPORARY] VIEW [IF NOT EXISTS] <name> [(<columns>)] AS <query>
+    fn execute_create_view(&mut self, create_view: &CreateView) -> PolarsResult<LazyFrame> {
+        // Destructure exhaustively so new sqlparser fields surface as compile errors.
+        let CreateView {
+            or_replace,
+            name,
+            name_before_not_exists: _,
+            columns,
+            query,
+            if_not_exists,
+            temporary: _,
+
+            // Unsupported modifiers
+            or_alter,
+            materialized,
+            secure,
+            options,
+            cluster_by,
+            comment,
+            with_no_schema_binding,
+            copy_grants,
+            to,
+            params,
+        } = create_view;
+        polars_ensure!(!materialized, SQLInterface: "`CREATE MATERIALIZED VIEW` is not supported; use `CREATE TABLE ... AS`");
+        let unsupported = *or_alter
+            || *secure
+            || !matches!(options, CreateTableOptions::None)
+            || !cluster_by.is_empty()
+            || comment.is_some()
+            || *with_no_schema_binding
+            || *copy_grants
+            || to.is_some()
+            || params.is_some()
+            || columns
+                .iter()
+                .any(|col| col.data_type.is_some() || col.options.is_some());
+        polars_ensure!(
+            !unsupported,
+            SQLInterface: "CREATE VIEW supports only `CREATE [OR REPLACE] [TEMPORARY] VIEW [IF NOT EXISTS] <name> [(<column names>)] AS <query>`"
+        );
+        if let Some(catalog) =
+            name_parts(name).and_then(|parts| self.catalogs.named_catalog(&parts))
+        {
+            polars_bail!(SQLInterface: "views cannot be created in catalog '{}'", catalog);
+        }
+        let view_name = object_name_to_string(name);
+        let response =
+            |name: &str| Ok(df! { "Response" => [format!("CREATE VIEW {name}")] }?.lazy());
+        if let Some(table) = key_ignoring_case(&self.table_map.read().unwrap(), &view_name)? {
+            if *if_not_exists {
+                return response(table);
             }
+            polars_bail!(SQLInterface: "'{}' is a table, not a view", table);
         }
-        for key in keys {
-            table_map.remove(&key);
+        let existing = self.find_view(&view_name)?.map(|(key, _)| key);
+        if let Some(existing) = &existing {
+            if *if_not_exists {
+                return response(existing);
+            }
+            polars_ensure!(
+                *or_replace,
+                SQLInterface: "view '{}' already exists; use `CREATE OR REPLACE VIEW`, or `IF NOT EXISTS`",
+                existing
+            );
         }
-        Ok(DataFrame::empty().lazy())
+        polars_ensure!(
+            self.catalog_tables.is_empty(),
+            SQLInterface: "a view cannot read catalog tables"
+        );
+        // A view matching ignoring case is replaced under its existing name.
+        let key = existing.unwrap_or(view_name);
+        let view = View {
+            query: (**query).clone(),
+            alias: TableAlias {
+                explicit: false,
+                name: Ident::new(key.clone()),
+                columns: columns
+                    .iter()
+                    .map(|col| TableAliasColumnDef {
+                        name: col.name.clone(),
+                        data_type: None,
+                    })
+                    .collect(),
+                at: None,
+            },
+        };
+        // Plan the query once, so that a view that cannot be read is not created.
+        let mut lf = self.plan_view(&key, &view)?;
+        self.get_frame_schema(&mut lf)?;
+        self.views
+            .write()
+            .unwrap()
+            .insert(key.clone(), Arc::new(view));
+        response(&key)
+    }
+
+    // DESCRIBE <table>
+    fn execute_describe(&mut self, name: &ObjectName) -> PolarsResult<LazyFrame> {
+        let (_, mut lf) = self.get_named_table(name)?;
+        let schema = self.get_frame_schema(&mut lf)?;
+        let column_names = Column::new(
+            PlSmallStr::from_static("column_name"),
+            schema
+                .iter_names()
+                .map(|name| name.as_str())
+                .collect::<Vec<_>>(),
+        );
+        let column_types = Column::new(
+            PlSmallStr::from_static("column_type"),
+            schema
+                .iter_values()
+                .map(|dtype| dtype.to_string())
+                .collect::<Vec<_>>(),
+        );
+        Ok(DataFrame::new_infer_height(vec![column_names, column_types])?.lazy())
     }
 
     /// The catalog table a `DROP TABLE` targets, with its name as written. A registered table
@@ -2429,15 +2730,38 @@ impl SQLContext {
         }))
     }
 
-    // ALTER TABLE, which only a catalog table has
-    fn execute_alter_table(&self, alter: &AlterTable) -> PolarsResult<LazyFrame> {
-        if let Some((name, table)) = self.catalog_change_target(&alter.name)? {
-            polars_bail!(
+    /// The catalog statement of `ALTER TABLE ... SET | RESET PARTITIONED BY` or
+    /// `... SET | RESET SORTED BY`; only a catalog table has a layout to change.
+    fn catalog_layout_alter(&self, alter: &LayoutAlter) -> PolarsResult<CatalogStatement> {
+        let Some((name, table)) = self.catalog_change_target(&alter.name)? else {
+            return Err(self.catalog_tables_only("ALTER TABLE", &alter.name));
+        };
+        let operation = match &alter.layout {
+            Layout::Partitioning(fields) => CatalogAlter::SetPartitioning {
+                fields: set_partitioning(fields)?,
+            },
+            Layout::SortOrder(fields) => CatalogAlter::SetSortOrder {
+                fields: set_sort_order(fields)?,
+            },
+        };
+        Ok(CatalogStatement::AlterTable {
+            name,
+            table,
+            if_exists: alter.if_exists,
+            operation,
+        })
+    }
+
+    /// The error of executing an `ALTER TABLE` of `name`, which only a catalog performs.
+    fn alter_table_error(&self, name: &ObjectName) -> PolarsError {
+        match self.catalog_change_target(name) {
+            Ok(Some((name, table))) => polars_err!(
                 SQLInterface: "ALTER TABLE of catalog table '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_statement`)",
                 name, display_name(&table.full_name())
-            );
+            ),
+            Ok(None) => self.catalog_tables_only("ALTER TABLE", name),
+            Err(err) => err,
         }
-        Err(self.catalog_tables_only("ALTER TABLE", &alter.name))
     }
 
     /// The error of `statement` on `name`, which is not a catalog table.
@@ -2546,6 +2870,7 @@ impl SQLContext {
     /// The catalog statement of a `DELETE`, if its table resolves to a catalog table.
     fn catalog_delete(&self, delete: &Delete) -> PolarsResult<Option<CatalogStatement>> {
         let (from, selection) = delete_parts(delete)?;
+        ensure_no_version(&from.relation, "DELETE")?;
         let TableFactor::Table { name, .. } = &from.relation else {
             return Ok(None);
         };
@@ -2564,6 +2889,7 @@ impl SQLContext {
     /// The catalog statement of an `UPDATE`, if its table resolves to a catalog table.
     fn catalog_update(&self, update: &Update) -> PolarsResult<Option<CatalogStatement>> {
         let (target, assignments, selection) = update_parts(update)?;
+        ensure_no_version(&target.relation, "UPDATE")?;
         let TableFactor::Table { name, .. } = &target.relation else {
             return Ok(None);
         };
@@ -2598,6 +2924,7 @@ impl SQLContext {
     /// The catalog statement of a `MERGE`, if its target resolves to a catalog table.
     fn catalog_merge(&self, merge: &Merge) -> PolarsResult<Option<CatalogStatement>> {
         let parts = merge_parts(merge)?;
+        ensure_no_version(parts.target, "MERGE")?;
         let TableFactor::Table { name, .. } = parts.target else {
             return Ok(None);
         };
@@ -2842,11 +3169,13 @@ impl SQLContext {
         .into())
     }
 
-    /// The ids of the caches in the registered tables, catalog tables and CTEs.
+    /// The ids of the caches in the registered tables, views, catalog tables and CTEs.
     fn cache_ids(&self) -> PlHashSet<UniqueId> {
         let table_map = self.table_map.read().unwrap();
+        let view_frames = self.view_frames.lock().unwrap();
         table_map
             .values()
+            .chain(view_frames.values())
             .chain(self.catalog_tables.values())
             .chain(self.cte_map.values())
             .flat_map(|lf| &lf.logical_plan)
@@ -3213,7 +3542,7 @@ impl SQLContext {
         polars_ensure!(json_path.is_none(), SQLInterface: "table JSON path access is not supported");
         polars_ensure!(partitions.is_empty(), SQLInterface: "table `PARTITION` selection is not supported");
         polars_ensure!(sample.is_none(), SQLInterface: "table `SAMPLE` clause is not supported");
-        polars_ensure!(version.is_none(), SQLInterface: "table version (time-travel) qualifiers are not supported");
+        polars_ensure!(version.is_none(), SQLInterface: "time travel (`VERSION AS OF`, `TIMESTAMP AS OF`) is only supported on tables of an attached catalog");
         polars_ensure!(with_hints.is_empty(), SQLInterface: "table `WITH (...)` hints are not supported");
 
         Ok(())
@@ -5464,10 +5793,10 @@ impl SQLContext {
             .filter_map(get_table_name)
             .collect();
         // Resolving is `&mut self`, so all relations must be resolved up-front rather than
-        // mid-probe while picking a join order below.
+        // mid-probe while picking a join order below. A derived table that fails to resolve
+        // may read the relations before it; it is joined as a LATERAL join after them.
         let mut pending = Vec::with_capacity(from.len() - 1);
-        for tbl_expr in from.iter().skip(1) {
-            let mut rf = self.execute_from_statement(tbl_expr)?;
+        for (index, tbl_expr) in from.iter().enumerate().skip(1) {
             let r_name = kept_factors(tbl_expr)
                 .into_iter()
                 .next()
@@ -5477,15 +5806,28 @@ impl SQLContext {
                 !r_name.is_empty(),
                 SQLInterface: "implicit joins require named tables; please provide an alias"
             );
-            let right_schema = self.get_frame_schema(&mut rf)?;
-            pending.push((tbl_expr, rf, r_name, right_schema));
+            let right = match self.execute_from_statement(tbl_expr) {
+                Ok(mut rf) => {
+                    let right_schema = self.get_frame_schema(&mut rf)?;
+                    Ok((rf, right_schema))
+                },
+                Err(err)
+                    if tbl_expr.joins.is_empty()
+                        && matches!(tbl_expr.relation, TableFactor::Derived { .. }) =>
+                {
+                    Err(err)
+                },
+                Err(err) => return Err(err),
+            };
+            pending.push((tbl_expr, right, r_name, index));
         }
 
         // Each round takes the first pending relation with a join predicate against the
         // tables joined so far; relations with no predicate yet are deferred. Genuinely
-        // disconnected relations fall through to a cross join, in source order.
+        // disconnected relations fall through to a cross join, in source order. A LATERAL
+        // join waits for the relations before it.
         while !pending.is_empty() {
-            let left_schema = self.get_frame_schema(lf)?;
+            let mut left_schema = self.get_frame_schema(lf)?;
             // Relations each pending entry brings into scope.
             let pending_relations: Vec<Vec<String>> = pending
                 .iter()
@@ -5504,9 +5846,15 @@ impl SQLContext {
                     .flat_map(|(_, names)| names.iter().cloned())
                     .collect()
             };
-            let next = (0..pending.len())
+            let resolved = pending
+                .iter()
+                .position(|(_, right, ..)| right.is_err())
+                .unwrap_or(pending.len());
+            let next = (0..resolved)
                 .find(|&i| {
-                    let (_, _, r_name, right_schema) = &pending[i];
+                    let (_, Ok((_, right_schema)), r_name, _) = &pending[i] else {
+                        unreachable!()
+                    };
                     extract_join_predicates(
                         &remaining_where,
                         &joined_table_names,
@@ -5521,7 +5869,38 @@ impl SQLContext {
                 })
                 .unwrap_or(0);
             let deferred = deferred_tables(next);
-            let (tbl_expr, rf, r_name, right_schema) = pending.remove(next);
+            let (tbl_expr, right, r_name, index) = pending.remove(next);
+            let mut lateral_keys = None;
+            let (rf, right_schema) = match right {
+                Ok(right) => right,
+                Err(err) => {
+                    // It only sees the relations before it, which are all joined.
+                    let scope = std::mem::replace(
+                        &mut self.active_relations,
+                        declared_relations(&from[..=index], &self.catalog_spellings),
+                    );
+                    let lateral = self.lateral_join(
+                        &tbl_expr.relation,
+                        &JoinOperator::CrossJoin(JoinConstraint::None),
+                        lf,
+                    );
+                    self.active_relations = scope;
+                    let Some(lateral) = lateral else {
+                        return Err(err);
+                    };
+                    *lf = lateral.left;
+                    left_schema = self.get_frame_schema(lf)?;
+                    let JoinOperator::Inner(JoinConstraint::On(key_condition)) =
+                        lateral.join_operator
+                    else {
+                        unreachable!()
+                    };
+                    lateral_keys = Some((lateral.keys, key_condition));
+                    let mut rf = lateral.right;
+                    let right_schema = self.get_frame_schema(&mut rf)?;
+                    (rf, right_schema)
+                },
+            };
             let (join_expr, residual) = extract_join_predicates(
                 &remaining_where,
                 &joined_table_names,
@@ -5531,6 +5910,15 @@ impl SQLContext {
                 &left_schema,
                 &right_schema,
             );
+            let join_expr = match (join_expr, &lateral_keys) {
+                (Some(join_expr), Some((_, key_condition))) => Some(SQLExpr::BinaryOp {
+                    left: Box::new(join_expr),
+                    op: SQLBinaryOperator::And,
+                    right: Box::new(key_condition.clone()),
+                }),
+                (None, Some((_, key_condition))) => Some(key_condition.clone()),
+                (join_expr, None) => join_expr,
+            };
 
             *lf = if let Some(on_expr) = join_expr {
                 self.process_join(
@@ -5559,6 +5947,12 @@ impl SQLContext {
                 lf.clone()
                     .cross_join(rf, Some(format_pl_smallstr!(":{}", r_name)))
             };
+            if let Some((keys, _)) = lateral_keys {
+                *lf = lf.clone().drop(Selector::ByName {
+                    names: keys.into(),
+                    strict: false,
+                });
+            }
             remaining_where = residual;
 
             let joined_schema = self.get_frame_schema(lf)?;
@@ -5674,6 +6068,10 @@ impl SQLContext {
                     return Ok(df! { "Response" => [format!("CREATE TABLE {existing}")] }?.lazy());
                 }
                 polars_ensure!(
+                    !self.views.read().unwrap().contains_key(existing),
+                    SQLInterface: "'{}' is a view, not a table", existing
+                );
+                polars_ensure!(
                     !*temporary || *or_replace,
                     SQLInterface: "table '{}' already exists; use `CREATE OR REPLACE TEMP TABLE`, or `IF NOT EXISTS`",
                     existing
@@ -5759,31 +6157,26 @@ impl SQLContext {
                     return self.execute_table_function(name, alias, &args.args);
                 }
                 // A qualified name (`schema.table`) is looked up as a whole, among CTEs,
-                // registered and catalog tables: the alias of another FROM item is not a table.
-                let tbl_name = object_name_to_string(name);
-                if let Some(lf) = self.get_table_unaliased(&tbl_name)? {
-                    match alias {
-                        Some(alias) => {
-                            self.table_aliases
-                                .insert(alias.name.value.clone(), tbl_name);
-                            Ok((alias.name.value.clone(), lf))
-                        },
-                        None => Ok((tbl_name, lf)),
-                    }
-                } else {
-                    let hint = name_parts(name)
-                        .and_then(|parts| self.catalogs.unresolved_hint(&parts))
-                        .unwrap_or_default();
-                    polars_bail!(SQLInterface: "relation '{}' was not found{}", tbl_name, hint);
+                // registered tables, views and catalog tables: the alias of another FROM item is
+                // not a table.
+                let (tbl_name, lf) = self.get_named_table(name)?;
+                match alias {
+                    Some(alias) => {
+                        self.table_aliases
+                            .insert(alias.name.value.clone(), tbl_name);
+                        Ok((alias.name.value.clone(), lf))
+                    },
+                    None => Ok((tbl_name, lf)),
                 }
             },
+            // A LATERAL derived table that reads the relations before it fails here, and the
+            // join plans it (see `lateral_join`).
             TableFactor::Derived {
-                lateral,
+                lateral: _,
                 subquery,
                 alias,
                 sample,
             } => {
-                polars_ensure!(!(*lateral), SQLInterface: "`LATERAL` clause is not supported");
                 polars_ensure!(sample.is_none(), SQLInterface: "table `SAMPLE` clause is not supported");
 
                 // Execute the subquery in isolation so that outer join state
@@ -6912,6 +7305,7 @@ pub(crate) fn join_idents(idents: &[Ident]) -> String {
 /// Whether `qualifier` names `relation`: the whole name or a trailing run of its dot-separated
 /// parts (`lineitem` and `tpch.lineitem` both name `tpch.lineitem`), ignoring case.
 fn qualifier_names(relation: &str, qualifier: &str) -> bool {
+    let relation = unversioned_key(relation);
     let Some(start) = relation.len().checked_sub(qualifier.len()) else {
         return false;
     };
@@ -6975,7 +7369,8 @@ impl RelationName {
                 }
             })
         };
-        ends_with(&self.parts) || self.written.as_deref().is_some_and(ends_with)
+        // a versioned table is qualified by its name alone
+        ends_with(split_version(&self.parts).0) || self.written.as_deref().is_some_and(ends_with)
     }
 }
 
@@ -7006,7 +7401,11 @@ pub(crate) fn match_qualifier<'a>(
 
 /// Error for a qualifier naming several relations in scope.
 fn ambiguous_relation_err(qualifier: &str, relations: &[&RelationName]) -> PolarsError {
-    let distinct: PlIndexSet<String> = relations.iter().map(|r| r.key()).collect();
+    // versions of one table share a name, which only aliases tell apart
+    let distinct: PlIndexSet<String> = relations
+        .iter()
+        .map(|r| unversioned_key(&r.key()).to_owned())
+        .collect();
     if distinct.len() < relations.len() {
         polars_err!(
             SQLInterface: "ambiguous reference to table \"{}\" (it appears more than once in FROM; give each an alias)",
@@ -8003,10 +8402,21 @@ pub fn extract_table_identifiers(
     include_schema: bool,
     unique: bool,
 ) -> PolarsResult<Vec<String>> {
-    let ast = parse_sql(query)?;
     let mut tables = Vec::new();
-    for stmt in &ast {
-        tables.extend(statement_table_identifiers(stmt, include_schema, false));
+    match layout_alter::parse_statements_or_alter(query)? {
+        Ok(ast) => {
+            for stmt in &ast {
+                tables.extend(statement_table_identifiers(stmt, include_schema, false));
+            }
+        },
+        Err(alter) => {
+            let mut collector = TableIdentifierCollector {
+                include_schema,
+                ..Default::default()
+            };
+            let _ = collector.pre_visit_relation(&alter.name);
+            tables = collector.tables;
+        },
     }
     Ok(if unique {
         tables
@@ -8109,6 +8519,29 @@ fn is_read_only_query(stmt: &Statement) -> bool {
         },
         _ => false,
     }
+}
+
+/// Remove the entries of `map` that `names` refer to (ignoring case, as in `FROM`). A missing
+/// name is an error unless `if_exists`; an error removes nothing.
+fn drop_names<V>(
+    map: &mut PlHashMap<String, V>,
+    names: &[ObjectName],
+    if_exists: bool,
+    kind: &str,
+) -> PolarsResult<LazyFrame> {
+    let mut keys = Vec::with_capacity(names.len());
+    for name in names {
+        let name = object_name_to_string(name);
+        match key_ignoring_case(map, &name)?.cloned() {
+            Some(key) => keys.push(key),
+            None if if_exists => {},
+            None => polars_bail!(SQLInterface: "{} '{}' does not exist", kind, name),
+        }
+    }
+    for key in keys {
+        map.remove(&key);
+    }
+    Ok(DataFrame::empty().lazy())
 }
 
 /// The names, `IF EXISTS` and `PURGE` of a `DROP` statement, rejecting unsupported modifiers.
@@ -9197,6 +9630,22 @@ fn insert_source(insert: &Insert, outer: Option<&Query>) -> PolarsResult<Option<
     Ok(Some(source))
 }
 
+/// An error for a time travel clause on the table a statement changes: only reads can travel.
+fn ensure_no_version(target: &TableFactor, statement: &str) -> PolarsResult<()> {
+    if let TableFactor::Table {
+        name,
+        version: Some(version),
+        ..
+    } = target
+    {
+        polars_bail!(
+            SQLInterface: "{} cannot change table '{}' as of a version (`{}`): time travel is for reads only",
+            statement, name, version
+        );
+    }
+    Ok(())
+}
+
 fn parse_single_statement(query: &str) -> PolarsResult<Statement> {
     let ast = parse_sql(query)?;
     polars_ensure!(ast.len() == 1, SQLInterface: "one (and only one) statement can be parsed at a time");
@@ -9204,9 +9653,10 @@ fn parse_single_statement(query: &str) -> PolarsResult<Statement> {
 }
 
 fn parse_sql(query: &str) -> PolarsResult<Vec<Statement>> {
-    sql_parser(query)?
-        .parse_statements()
-        .map_err(to_sql_interface_err)
+    let (mut parser, versions) = sql_parser(query)?;
+    let mut stmts = parser.parse_statements().map_err(to_sql_interface_err)?;
+    versions.attach(&mut stmts)?;
+    Ok(stmts)
 }
 
 bitflags::bitflags! {

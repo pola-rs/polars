@@ -8,7 +8,18 @@
 //! ```
 //!
 //! `dom` holds each distinct value `v` of `l.k` with an `id`, and `l'` is `l` with the `id` of
-//! its value as `lid`. A GROUP BY of the derived table also groups by `dom.id`.
+//! its value as `lid`. A GROUP BY of the derived table also groups by `dom.id`. An aggregate
+//! without GROUP BY gives a row for every outer row, also one without inner rows, so its
+//! aggregates are computed per `dom.id` and joined onto `dom` first:
+//!
+//! ```sql
+//! l JOIN (SELECT MAX(p) + 1 AS m FROM r WHERE r.k = l.k) d ON c
+//! -- dom' = dom LEFT JOIN (SELECT MAX(p) AS a0, dom.id FROM dom CROSS JOIN r
+//! --   WHERE r.k = dom.v GROUP BY dom.id) USING (id)
+//! -- l' JOIN (SELECT dom'.a0 + 1 AS m, dom'.id AS rid FROM dom') d ON c AND l'.lid = d.rid
+//! ```
+//!
+//! A count over no rows is 0, so a NULL count after that join becomes 0.
 use std::ops::ControlFlow;
 
 use polars_core::prelude::*;
@@ -23,6 +34,7 @@ use sqlparser::ast::{
 };
 
 use crate::context::{RelationName, match_qualifier, relation_name};
+use crate::functions::PolarsSQLFunctions;
 use crate::sql_visitors::{expr_contains_subquery, is_column_selector};
 use crate::subquery::{row_indexed_once, strip_nested};
 use crate::subquery_group_by::{is_aggregate_call, is_count_star};
@@ -157,6 +169,85 @@ impl VisitorMut for ReadDomain<'_> {
     }
 }
 
+/// Replaces each aggregate by a column of the domain table, and collects the aggregates,
+/// named after those columns. A name in `aliases` is replaced by the SELECT item it names.
+struct AggregateColumns<'a> {
+    ctx: &'a SQLContext,
+    domain_name: &'a Ident,
+    prefix: &'a str,
+    aggregates: Vec<SelectItem>,
+    aliases: Vec<(String, SQLExpr)>,
+    query_depth: usize,
+}
+
+impl VisitorMut for AggregateColumns<'_> {
+    type Break = ();
+
+    fn pre_visit_query(&mut self, _query: &mut Query) -> ControlFlow<()> {
+        self.query_depth += 1;
+        ControlFlow::Continue(())
+    }
+
+    fn post_visit_query(&mut self, _query: &mut Query) -> ControlFlow<()> {
+        self.query_depth -= 1;
+        ControlFlow::Continue(())
+    }
+
+    fn post_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<()> {
+        if self.query_depth > 0 {
+            return ControlFlow::Continue(());
+        }
+        if let SQLExpr::Identifier(ident) = expr
+            && let Some((_, item)) = self.aliases.iter().find(|(name, _)| *name == ident.value)
+        {
+            *expr = SQLExpr::Nested(Box::new(item.clone()));
+        } else if is_aggregate_call(self.ctx, expr) {
+            let name = Ident::new(format!("{}_A{}", self.prefix, self.aggregates.len()));
+            let column = SQLExpr::CompoundIdentifier(vec![self.domain_name.clone(), name.clone()]);
+            self.aggregates.push(SelectItem::ExprWithAlias {
+                expr: std::mem::replace(expr, column),
+                alias: name,
+            });
+        }
+        ControlFlow::Continue(())
+    }
+}
+
+/// Whether an aggregate is 0 over no rows rather than NULL.
+fn zero_over_no_rows(ctx: &SQLContext, aggregate: &SQLExpr) -> bool {
+    use PolarsSQLFunctions::*;
+    let SQLExpr::Function(function) = aggregate else {
+        return false;
+    };
+    match PolarsSQLFunctions::try_from_sql(function, ctx) {
+        Ok(Count | CountIf | Total) => true,
+        #[cfg(feature = "approx_unique")]
+        Ok(ApproxCountDistinct) => true,
+        _ => false,
+    }
+}
+
+/// Puts the domain table in front of the first FROM item.
+fn read_domain(from: &mut Vec<TableWithJoins>, domain_name: &Ident) {
+    match from.first_mut() {
+        None => from.push(TableWithJoins {
+            relation: table(domain_name),
+            joins: vec![],
+        }),
+        Some(first) => {
+            let relation = std::mem::replace(&mut first.relation, table(domain_name));
+            first.joins.insert(
+                0,
+                Join {
+                    relation,
+                    global: false,
+                    join_operator: JoinOperator::CrossJoin(JoinConstraint::None),
+                },
+            );
+        },
+    }
+}
+
 fn table(name: &Ident) -> TableFactor {
     TableFactor::Table {
         name: ObjectName::from(vec![name.clone()]),
@@ -187,6 +278,108 @@ fn with_constraint(op: &JoinOperator, constraint: JoinConstraint) -> Option<Join
 }
 
 impl SQLContext {
+    /// Computes the aggregates of `query`, an aggregate query without GROUP BY, for each row
+    /// of the domain table as columns of it, and rewrites `query` to read those columns. A row
+    /// without inner rows gets each aggregate's value over no rows. Returns the domain table
+    /// with the columns, or `None` if the query has an ORDER BY or an unnamed aggregate item.
+    fn aggregate_per_domain_row(
+        &mut self,
+        query: &mut Query,
+        domain: LazyFrame,
+        domain_name: &Ident,
+        id: &PlSmallStr,
+        prefix: &str,
+        inner_schema: &Schema,
+    ) -> Option<LazyFrame> {
+        if query.order_by.is_some() {
+            return None;
+        }
+        let SetExpr::Select(select) = query.body.as_mut() else {
+            unreachable!()
+        };
+        let mut columns = AggregateColumns {
+            ctx: self,
+            domain_name,
+            prefix,
+            aggregates: Vec::new(),
+            aliases: Vec::new(),
+            query_depth: 0,
+        };
+        for item in &mut select.projection {
+            match item {
+                SelectItem::UnnamedExpr(expr) if has_aggregate(self, expr) => return None,
+                SelectItem::UnnamedExpr(expr) | SelectItem::ExprWithAlias { expr, .. } => {
+                    let _ = dyn_visit::visit_mut(expr, &mut columns);
+                },
+                _ => {},
+            }
+        }
+        // HAVING may name a SELECT item, if no input column has that name.
+        columns.aliases = select
+            .projection
+            .iter()
+            .filter_map(|item| match item {
+                SelectItem::ExprWithAlias { expr, alias }
+                    if !inner_schema.contains(&alias.value) =>
+                {
+                    Some((alias.value.clone(), expr.clone()))
+                },
+                _ => None,
+            })
+            .collect();
+        let mut having = select.having.take();
+        let _ = dyn_visit::visit_mut(&mut having, &mut columns);
+        let aggregates = columns.aggregates;
+        let fills: Vec<Expr> = aggregates
+            .iter()
+            .filter_map(|item| match item {
+                SelectItem::ExprWithAlias { expr, alias } if zero_over_no_rows(self, expr) => {
+                    Some(col(alias.value.as_str()).fill_null(lit(0)))
+                },
+                _ => None,
+            })
+            .collect();
+
+        let id_column =
+            SQLExpr::CompoundIdentifier(vec![domain_name.clone(), Ident::new(id.as_str())]);
+        let mut grouped = query.clone();
+        let SetExpr::Select(grouped_select) = grouped.body.as_mut() else {
+            unreachable!()
+        };
+        grouped_select.distinct = None;
+        grouped_select.projection = aggregates;
+        grouped_select
+            .projection
+            .push(SelectItem::UnnamedExpr(id_column.clone()));
+        grouped_select.group_by = GroupByExpr::Expressions(vec![id_column], vec![]);
+        read_domain(&mut grouped_select.from, domain_name);
+        let grouped = self
+            .execute_isolated(|ctx| {
+                ctx.table_map
+                    .write()
+                    .unwrap()
+                    .insert(domain_name.value.clone(), domain.clone());
+                ctx.execute_query(&grouped)
+            })
+            .ok()?;
+
+        let SetExpr::Select(select) = query.body.as_mut() else {
+            unreachable!()
+        };
+        select.from.clear();
+        select.selection = having;
+        domain
+            .join_builder()
+            .with(grouped)
+            .left_on([col(id.clone())])
+            .right_on([col(id.clone())])
+            .how(JoinType::Left)
+            .coalesce(JoinCoalesce::CoalesceColumns)
+            .finish()
+            .ok()
+            .map(|lf| lf.with_columns(fills))
+    }
+
     /// The inputs of the join of `lf` with `relation`, a derived table that reads columns of
     /// `lf` (see the module docs), or `None` if it has another shape.
     pub(crate) fn lateral_join(
@@ -240,8 +433,7 @@ impl SQLContext {
             && (select.having.is_some()
                 || has_aggregate(self, &select.projection)
                 || has_aggregate(self, &subquery.order_by));
-        if empty_group
-            || !modifiers.is_empty()
+        if !modifiers.is_empty()
             || group_by.iter().any(|key| {
                 matches!(
                     strip_nested(key),
@@ -476,28 +668,17 @@ impl SQLContext {
                 query_depth: 0,
             },
         );
+        let domain = if empty_group {
+            self.aggregate_per_domain_row(&mut query, domain, &domain_name, &id, &prefix, &schema)?
+        } else {
+            domain
+        };
         let SetExpr::Select(select) = query.body.as_mut() else {
             unreachable!()
         };
         let domain_column =
             |name: &str| SQLExpr::CompoundIdentifier(vec![domain_name.clone(), Ident::new(name)]);
-        match select.from.first_mut() {
-            None => select.from.push(TableWithJoins {
-                relation: table(&domain_name),
-                joins: vec![],
-            }),
-            Some(first) => {
-                let relation = std::mem::replace(&mut first.relation, table(&domain_name));
-                first.joins.insert(
-                    0,
-                    Join {
-                        relation,
-                        global: false,
-                        join_operator: JoinOperator::CrossJoin(JoinConstraint::None),
-                    },
-                );
-            },
-        }
+        read_domain(&mut select.from, &domain_name);
         select.projection.push(SelectItem::ExprWithAlias {
             expr: domain_column(&id),
             alias: Ident::new(right_key.as_str()),

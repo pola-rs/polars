@@ -472,10 +472,14 @@ impl PolarsTableFunctions {
             );
         };
         if let Some(path) = path(expr) {
-            return Ok((path.to_string(), vec![path]));
+            return Ok((path.to_string(), vec![expand_home_dir(path)?]));
         }
         if let SQLExpr::Array(SQLArray { elem, .. }) = expr {
             if let Some(paths) = elem.iter().map(path).collect::<Option<Vec<_>>>() {
+                let paths = paths
+                    .into_iter()
+                    .map(expand_home_dir)
+                    .collect::<PolarsResult<_>>()?;
                 return Ok((function.to_string(), paths));
             }
         }
@@ -483,6 +487,16 @@ impl PolarsTableFunctions {
             SQLSyntax:
             "expected a valid file path as a single-quoted string, or a list of them; found: {}", arg,
         )
+    }
+}
+
+/// The path with a leading `~` replaced by the home directory. The Python API does this before
+/// a path reaches Rust; a path in SQL text does not pass through there.
+#[allow(dead_code)]
+fn expand_home_dir(path: PlRefPath) -> PolarsResult<PlRefPath> {
+    match polars_io::resolve_homedir(path.as_str()) {
+        std::borrow::Cow::Owned(expanded) => PlRefPath::try_from_path(&expanded),
+        std::borrow::Cow::Borrowed(_) => Ok(path),
     }
 }
 
@@ -675,5 +689,50 @@ impl PolarsTableFunctions {
             "generate_series",
             "range",
         ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn string(path: &str) -> SQLExpr {
+        SQLExpr::Value(SQLValue::SingleQuotedString(path.to_string()).with_empty_span())
+    }
+
+    fn paths(expr: SQLExpr) -> (String, Vec<PlRefPath>) {
+        let arg = SQLFunctionArg::Unnamed(SQLFunctionArgExpr::Expr(expr));
+        PolarsTableFunctions::Range
+            .get_file_paths_from_arg("read_csv", &arg)
+            .unwrap()
+    }
+
+    #[test]
+    fn home_dir_is_expanded_in_file_paths() {
+        let Some(home) = std::env::home_dir() else {
+            return;
+        };
+        let in_home = |path: &str| PlRefPath::try_from_path(&home.join(path)).unwrap();
+
+        // The table keeps the name it was given.
+        assert_eq!(
+            paths(string("~/data/x.csv")),
+            ("~/data/x.csv".to_string(), vec![in_home("data/x.csv")])
+        );
+
+        let list = SQLExpr::Array(SQLArray {
+            elem: vec![string("~/a.csv"), string("~/data/*.csv")],
+            named: false,
+        });
+        assert_eq!(paths(list).1, [in_home("a.csv"), in_home("data/*.csv")]);
+
+        for path in [
+            "data/x.csv",
+            "/data/~/x.csv",
+            "~user/x.csv",
+            "s3://bucket/~/x.csv",
+        ] {
+            assert_eq!(paths(string(path)).1, [PlRefPath::new(path)]);
+        }
     }
 }
