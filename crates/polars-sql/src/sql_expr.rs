@@ -24,6 +24,7 @@ use polars_plan::dsl::functions::{DurationArgs, duration};
 use polars_plan::dsl::string::StringNameSpace;
 use polars_plan::plans::DynLiteralValue;
 use polars_plan::prelude::{has_expr, typed_lit};
+use polars_utils::time::NS_DAY;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
@@ -1199,13 +1200,20 @@ impl SQLExprVisitor<'_> {
                 // shortcut interval comparison evaluation (-> bool)
                 let d1 = interval_to_duration(v1, false)?;
                 let d2 = interval_to_duration(v2, false)?;
-                // Months have no fixed length, so equal intervals have equal months and lengths.
-                let equal = d1.months() == d2.months() && d1.cmp(&d2).is_eq();
+                // Months have no fixed length: they are ordered as 28 days, but equal intervals
+                // have equal months.
+                let length = |d: &Duration| {
+                    (d.months() as i128 * 28 + d.weeks() as i128 * 7 + d.days() as i128)
+                        * NS_DAY as i128
+                        + d.nanoseconds() as i128
+                };
+                let order = length(&d1).cmp(&length(&d2));
+                let equal = d1.months() == d2.months() && order.is_eq();
                 let res = match op {
-                    SQLBinaryOperator::Gt => Ok(lit(d1 > d2)),
-                    SQLBinaryOperator::Lt => Ok(lit(d1 < d2)),
-                    SQLBinaryOperator::GtEq => Ok(lit(d1 >= d2)),
-                    SQLBinaryOperator::LtEq => Ok(lit(d1 <= d2)),
+                    SQLBinaryOperator::Gt => Ok(lit(order.is_gt())),
+                    SQLBinaryOperator::Lt => Ok(lit(order.is_lt())),
+                    SQLBinaryOperator::GtEq => Ok(lit(order.is_ge())),
+                    SQLBinaryOperator::LtEq => Ok(lit(order.is_le())),
                     SQLBinaryOperator::NotEq => Ok(lit(!equal)),
                     SQLBinaryOperator::Eq | SQLBinaryOperator::Spaceship => Ok(lit(equal)),
                     _ => polars_bail!(SQLInterface: "invalid interval comparison operator"),

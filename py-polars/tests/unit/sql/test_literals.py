@@ -227,6 +227,8 @@ def test_interval_offsets() -> None:
         ("INTERVAL '1 year' = INTERVAL '1 year'", True),
         ("INTERVAL '24 hours' = INTERVAL '1 day'", True),
         ("INTERVAL '1 month, 24 hours' = INTERVAL '1 month, 1 day'", True),
+        ("INTERVAL '400 years' = INTERVAL '400 years'", True),
+        ("INTERVAL '400 years' > INTERVAL '1 day'", True),
     ],
 )
 def test_interval_comparisons(interval_comparison: str, expected_result: bool) -> None:
