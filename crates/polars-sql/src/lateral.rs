@@ -29,12 +29,13 @@ use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, Distinct, Expr as SQLExpr, GroupByExpr, Ident, Join,
     JoinConstraint, JoinOperator, ObjectName, OrderBy, OrderByKind, Query, SelectItem,
-    SelectItemQualifiedWildcardKind, SetExpr, TableFactor, TableWithJoins, Value as SQLValue,
-    ValueWithSpan, Visitor, VisitorMut,
+    SelectItemQualifiedWildcardKind, SetExpr, TableAlias, TableFactor, TableWithJoins,
+    Value as SQLValue, ValueWithSpan, Visitor, VisitorMut,
 };
 
 use crate::context::{RelationName, match_qualifier, relation_name};
 use crate::functions::PolarsSQLFunctions;
+use crate::positional_join::is_positional_join;
 use crate::sql_visitors::{expr_contains_subquery, is_column_selector};
 use crate::subquery::{row_indexed_once, strip_nested};
 use crate::subquery_group_by::{is_aggregate_call, is_count_star};
@@ -227,13 +228,41 @@ fn zero_over_no_rows(ctx: &SQLContext, aggregate: &SQLExpr) -> bool {
     }
 }
 
-/// Puts the domain table in front of the first FROM item.
+/// Puts the domain table in front of the first FROM item. Positional joins pair the rows of
+/// their inputs, so a first item with one is joined to the domain as a whole.
 fn read_domain(from: &mut Vec<TableWithJoins>, domain_name: &Ident) {
     match from.first_mut() {
         None => from.push(TableWithJoins {
             relation: table(domain_name),
             joins: vec![],
         }),
+        Some(first)
+            if first
+                .joins
+                .iter()
+                .any(|join| is_positional_join(&join.join_operator)) =>
+        {
+            let item = std::mem::replace(
+                first,
+                TableWithJoins {
+                    relation: table(domain_name),
+                    joins: vec![],
+                },
+            );
+            first.joins.push(Join {
+                relation: TableFactor::NestedJoin {
+                    table_with_joins: Box::new(item),
+                    alias: Some(TableAlias {
+                        explicit: true,
+                        name: Ident::new(format!("{}_FROM", domain_name.value)),
+                        columns: vec![],
+                        at: None,
+                    }),
+                },
+                global: false,
+                join_operator: JoinOperator::CrossJoin(JoinConstraint::None),
+            });
+        },
         Some(first) => {
             let relation = std::mem::replace(&mut first.relation, table(domain_name));
             first.joins.insert(

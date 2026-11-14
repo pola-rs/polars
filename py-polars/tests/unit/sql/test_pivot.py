@@ -123,12 +123,14 @@ def test_pivot_aggregate_filter() -> None:
     df = pl.DataFrame({"k": ["x", "x", "y"], "v": [1, 2, 3]})
     for condition, expected in [
         ("1", [(3, 3)]),
+        ("1 + 0", [(3, 3)]),
+        ("COALESCE(NULL, 1)", [(3, 3)]),
         ("v > 1", [(2, 3)]),
         ("0", [(None, None)]),
     ]:
         query = f"SELECT * FROM df PIVOT (SUM(v) FILTER (WHERE {condition}) FOR k IN ('x', 'y'))"
         assert pl.sql(query, eager=True).rows() == expected
-    # only a literal is taken as a boolean
+    # only a condition that reads no input is taken as a boolean
     query = "SELECT * FROM df PIVOT (SUM(v) FILTER (WHERE COLUMNS('v')) FOR k IN ('x'))"
     with pytest.raises(pl.exceptions.SchemaError):
         pl.sql(query).collect(engine="in-memory")

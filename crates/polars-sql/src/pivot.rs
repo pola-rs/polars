@@ -11,12 +11,14 @@ use sqlparser::ast::NullInclusion;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, CastKind, DataType as SQLDataType, Expr as SQLExpr,
     ExprWithAlias, GroupByExpr, Ident, PivotValueSource, Query, SelectItem, SetExpr, Statement,
-    TableFactor, Visitor, VisitorMut,
+    TableFactor, Value as SQLValue, Visitor, VisitorMut,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
 use crate::context::{RelationName, factor_relations, match_qualifier};
+use crate::functions::reads_no_input;
+use crate::sql_expr::parse_sql_expr;
 use crate::subquery_group_by::is_aggregate_call;
 use crate::subquery_pull_up::has_aggregate;
 use crate::{SQLContext, dyn_visit};
@@ -75,6 +77,19 @@ impl SQLContext {
                 .cloned()
                 .map(SelectItem::UnnamedExpr)
                 .collect();
+            let mut filters = BooleanFilters {
+                ctx: ctx.isolated(),
+                schema: &schema,
+                query_depth: 0,
+            };
+            let exprs: Vec<SQLExpr> = aggregates
+                .iter()
+                .map(|aggregate| {
+                    let mut expr = aggregate.expr.clone();
+                    let _ = dyn_visit::visit_mut(&mut expr, &mut filters);
+                    expr
+                })
+                .collect();
             for value in values {
                 let value_name = match &value.alias {
                     Some(alias) => alias.value.clone(),
@@ -82,8 +97,8 @@ impl SQLContext {
                 };
                 let matches =
                     SQLExpr::IsNotDistinctFrom(Box::new(column.clone()), Box::new(value.expr.clone()));
-                for aggregate in aggregates {
-                    let mut expr = aggregate.expr.clone();
+                for (aggregate, expr) in aggregates.iter().zip(&exprs) {
+                    let mut expr = expr.clone();
                     let mut filter = FilterAggregates {
                         ctx,
                         matches: &matches,
@@ -229,7 +244,7 @@ impl VisitorMut for FilterAggregates<'_> {
             self.found = true;
             function.filter = Some(Box::new(match function.filter.take() {
                 Some(filter) => SQLExpr::BinaryOp {
-                    left: Box::new(filter_as_boolean(*filter)),
+                    left: filter,
                     op: SQLBinaryOperator::And,
                     right: Box::new(self.matches.clone()),
                 },
@@ -240,16 +255,45 @@ impl VisitorMut for FilterAggregates<'_> {
     }
 }
 
-/// A FILTER condition, cast to boolean if it is a literal, as FILTER takes it on its own.
-fn filter_as_boolean(filter: SQLExpr) -> SQLExpr {
-    if !is_constant(&filter) {
-        return filter;
+/// Casts the FILTER of each aggregate call outside of subqueries to boolean when it reads no
+/// input, as FILTER does on its own; the PIVOT adds a condition to it.
+struct BooleanFilters<'a> {
+    ctx: SQLContext,
+    schema: &'a Schema,
+    query_depth: usize,
+}
+
+impl VisitorMut for BooleanFilters<'_> {
+    type Break = ();
+
+    fn pre_visit_query(&mut self, _query: &mut Query) -> ControlFlow<()> {
+        self.query_depth += 1;
+        ControlFlow::Continue(())
     }
-    SQLExpr::Cast {
-        kind: CastKind::Cast,
-        expr: Box::new(filter),
-        data_type: SQLDataType::Boolean,
-        format: None,
+
+    fn post_visit_query(&mut self, _query: &mut Query) -> ControlFlow<()> {
+        self.query_depth -= 1;
+        ControlFlow::Continue(())
+    }
+
+    fn pre_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<()> {
+        if self.query_depth == 0
+            && is_aggregate_call(&self.ctx, expr)
+            && let SQLExpr::Function(function) = expr
+            && let Some(filter) = &mut function.filter
+            && parse_sql_expr(filter, &mut self.ctx, Some(self.schema))
+                .and_then(|pred| self.ctx.with_typed_subqueries(&pred))
+                .is_ok_and(|pred| reads_no_input(&pred))
+        {
+            let filter = filter.as_mut();
+            *filter = SQLExpr::Cast {
+                kind: CastKind::Cast,
+                expr: Box::new(std::mem::replace(filter, SQLExpr::value(SQLValue::Null))),
+                data_type: SQLDataType::Boolean,
+                format: None,
+            };
+        }
+        ControlFlow::Continue(())
     }
 }
 

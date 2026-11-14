@@ -3762,6 +3762,17 @@ def test_join_untyped_literal_keys(on: str, how: str) -> None:
         "SELECT x.k, y.k AS k2 FROM a AS x POSITIONAL JOIN a y",
         "SELECT * FROM a POSITIONAL JOIN (SELECT v FROM b WHERE v > 7) AS c",
         "SELECT a.k, b.v, c.s FROM a POSITIONAL JOIN b JOIN a AS c ON c.k = b.v - 7",
+        # in a correlated LATERAL, rows are paired before the outer values are read
+        """
+        SELECT o.k, p.s, p.v FROM a AS o CROSS JOIN LATERAL (
+          SELECT a.s, b.v FROM a POSITIONAL JOIN b WHERE a.k = o.k
+        ) AS p
+        """,
+        """
+        SELECT o.k, p.n FROM a AS o CROSS JOIN LATERAL (
+          SELECT COUNT(*) AS n FROM a POSITIONAL JOIN b WHERE b.v > o.k + 7
+        ) AS p
+        """,
     ],
 )
 def test_positional_join(query: str) -> None:
