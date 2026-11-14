@@ -10,18 +10,15 @@ use polars_utils::format_pl_smallstr;
 use sqlparser::ast::NullInclusion;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, Expr as SQLExpr, ExprWithAlias, GroupByExpr, Ident,
-    PivotValueSource, Query, SelectItem, SetExpr, Statement, TableFactor, VisitorMut,
+    PivotValueSource, Query, SelectItem, SetExpr, Statement, TableFactor, Visitor, VisitorMut,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
-use crate::context::relation_name;
+use crate::context::{RelationName, factor_relations, match_qualifier};
 use crate::subquery_group_by::is_aggregate_call;
 use crate::subquery_pull_up::has_aggregate;
 use crate::{SQLContext, dyn_visit};
-
-/// The name the input of a `PIVOT` is registered under while it is aggregated.
-const PIVOT_INPUT: &str = "__POLARS_PIVOT_INPUT";
 
 impl SQLContext {
     /// `<table> PIVOT (<aggregates> FOR <column> IN (<values>))`: a row per group of the input
@@ -47,78 +44,67 @@ impl SQLContext {
         if let Some(value) = values.iter().find(|value| !is_constant(&value.expr)) {
             polars_bail!(SQLInterface: "PIVOT values must be constants, found `{}`", value.expr)
         }
-        // The input is read without its name, so its qualifier is taken off column references.
-        let relation = relation_name(table);
+        let relations = factor_relations(std::iter::once(table), self.catalog_spellings());
         let mut input = InputColumns {
-            relation: relation.as_ref().map_or(&[], |name| name.parts()),
+            relations: &relations,
             read: PlHashSet::new(),
             window: false,
             query_depth: 0,
         };
-        let mut column = column.clone();
-        let _ = dyn_visit::visit_mut(&mut column, &mut input);
-        let mut exprs: Vec<SQLExpr> = aggregates.iter().map(|a| a.expr.clone()).collect();
-        for expr in &mut exprs {
-            let _ = dyn_visit::visit_mut(expr, &mut input);
+        let _ = dyn_visit::visit(column, &mut input);
+        for aggregate in aggregates {
+            let _ = dyn_visit::visit(&aggregate.expr, &mut input);
         }
         polars_ensure!(!input.window, SQLInterface: "PIVOT does not support window functions");
         let read = input.read;
 
-        self.execute_isolated(|ctx| {
-            let (_, mut lf) = ctx.get_table(table)?;
-            let schema = ctx.get_frame_schema(&mut lf)?;
-            let group_by: Vec<SQLExpr> = schema
-                .iter_names()
-                .filter(|name| !read.contains(name.as_str()))
-                .map(|name| SQLExpr::Identifier(Ident::with_quote('"', name.as_str())))
-                .collect();
+        let mut lf = self.execute_isolated(|ctx| Ok(ctx.get_table(table)?.1))?;
+        let schema = self.get_frame_schema(&mut lf)?;
+        let group_by: Vec<SQLExpr> = schema
+            .iter_names()
+            .filter(|name| !read.contains(name.as_str()))
+            .map(|name| SQLExpr::Identifier(Ident::with_quote('"', name.as_str())))
+            .collect();
 
-            let mut projection: Vec<SelectItem> = group_by
-                .iter()
-                .cloned()
-                .map(SelectItem::UnnamedExpr)
-                .collect();
-            for value in values {
-                let value_name = match &value.alias {
-                    Some(alias) => alias.value.clone(),
-                    None => pivot_value_name(&value.expr),
-                };
-                let matches =
-                    SQLExpr::IsNotDistinctFrom(Box::new(column.clone()), Box::new(value.expr.clone()));
-                for (aggregate, expr) in aggregates.iter().zip(&exprs) {
-                    let mut expr = expr.clone();
-                    let mut filter = FilterAggregates {
-                        ctx,
-                        matches: &matches,
-                        found: false,
-                        query_depth: 0,
-                    };
-                    let _ = dyn_visit::visit_mut(&mut expr, &mut filter);
-                    polars_ensure!(
-                        filter.found,
-                        SQLInterface: "PIVOT expects aggregate functions, found `{}`", aggregate.expr
-                    );
-                    let name = match (&aggregate.alias, aggregates.len()) {
-                        (None, 1) => value_name.clone(),
-                        (Some(alias), _) => format!("{value_name}_{}", alias.value),
-                        (None, _) => format!("{value_name}_{}", aggregate.expr),
-                    };
-                    projection.push(SelectItem::ExprWithAlias {
-                        expr,
-                        alias: Ident::with_quote('"', name),
-                    });
-                }
-            }
-
-            let mut query = select_from_pivot_input();
-            let SetExpr::Select(select) = query.body.as_mut() else {
-                unreachable!()
+        let mut projection: Vec<SelectItem> = group_by
+            .iter()
+            .cloned()
+            .map(SelectItem::UnnamedExpr)
+            .collect();
+        for value in values {
+            let value_name = match &value.alias {
+                Some(alias) => alias.value.clone(),
+                None => pivot_value_name(&value.expr),
             };
-            select.projection = projection;
-            select.group_by = GroupByExpr::Expressions(group_by, vec![]);
-            ctx.register_cte(PIVOT_INPUT, lf);
-            ctx.execute_query(&query)
-        })
+            let matches =
+                SQLExpr::IsNotDistinctFrom(Box::new(column.clone()), Box::new(value.expr.clone()));
+            for aggregate in aggregates {
+                let mut expr = aggregate.expr.clone();
+                let mut filter = FilterAggregates {
+                    ctx: self,
+                    matches: &matches,
+                    found: false,
+                    query_depth: 0,
+                };
+                let _ = dyn_visit::visit_mut(&mut expr, &mut filter);
+                polars_ensure!(
+                    filter.found,
+                    SQLInterface: "PIVOT expects aggregate functions, found `{}`", aggregate.expr
+                );
+                let name = match (&aggregate.alias, aggregates.len()) {
+                    (None, 1) => value_name.clone(),
+                    (Some(alias), _) => format!("{value_name}_{}", alias.value),
+                    (None, _) => format!("{value_name}_{}", aggregate.expr),
+                };
+                projection.push(SelectItem::ExprWithAlias {
+                    expr,
+                    alias: Ident::with_quote('"', name),
+                });
+            }
+        }
+
+        let query = aggregate_query(table, projection, group_by);
+        self.execute_isolated(|ctx| ctx.execute_query(&query))
     }
 
     /// `<table> UNPIVOT [INCLUDE | EXCLUDE NULLS] (<value> FOR <name> IN (<columns>))`: per input
@@ -139,8 +125,7 @@ impl SQLContext {
         };
         let mut lf = self.execute_isolated(|ctx| Ok(ctx.get_table(table)?.1))?;
         let schema = self.get_frame_schema(&mut lf)?;
-        let relation = relation_name(table);
-        let relation = relation.as_ref().map_or(&[][..], |name| name.parts());
+        let relations = factor_relations(std::iter::once(table), self.catalog_spellings());
 
         let mut sources: Vec<PlSmallStr> = Vec::with_capacity(columns.len());
         let mut labels: Vec<PlSmallStr> = Vec::with_capacity(columns.len());
@@ -148,7 +133,7 @@ impl SQLContext {
             let source = match &column.expr {
                 SQLExpr::Identifier(ident) => Some(ident),
                 SQLExpr::CompoundIdentifier(parts) => {
-                    match &parts[qualifier_len(parts, relation)..] {
+                    match &parts[qualifier_len(parts, &relations)..] {
                         [ident] => Some(ident),
                         _ => None,
                     }
@@ -209,7 +194,8 @@ impl SQLContext {
     }
 }
 
-/// Adds the condition `matches` to the FILTER of each aggregate call outside of subqueries.
+/// Adds the condition `matches` to the FILTER of each aggregate call outside of subqueries. It
+/// does so after visiting the call, so the added condition itself is not visited.
 struct FilterAggregates<'a> {
     ctx: &'a SQLContext,
     matches: &'a SQLExpr,
@@ -230,7 +216,7 @@ impl VisitorMut for FilterAggregates<'_> {
         ControlFlow::Continue(())
     }
 
-    fn pre_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<()> {
+    fn post_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<()> {
         if self.query_depth == 0
             && is_aggregate_call(self.ctx, expr)
             && let SQLExpr::Function(function) = expr
@@ -249,48 +235,38 @@ impl VisitorMut for FilterAggregates<'_> {
     }
 }
 
-/// Takes the qualifier naming the PIVOT input off column references outside of subqueries,
-/// and collects the columns they read.
+/// Collects the input columns read outside of subqueries, and whether a window function is used.
 struct InputColumns<'a> {
-    relation: &'a [String],
+    relations: &'a [RelationName],
     read: PlHashSet<String>,
     window: bool,
     query_depth: usize,
 }
 
-impl VisitorMut for InputColumns<'_> {
+impl Visitor for InputColumns<'_> {
     type Break = ();
 
-    fn pre_visit_query(&mut self, _query: &mut Query) -> ControlFlow<()> {
+    fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
         self.query_depth += 1;
         ControlFlow::Continue(())
     }
 
-    fn post_visit_query(&mut self, _query: &mut Query) -> ControlFlow<()> {
+    fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
         self.query_depth -= 1;
         ControlFlow::Continue(())
     }
 
-    fn pre_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<()> {
+    fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
         if self.query_depth > 0 {
             return ControlFlow::Continue(());
-        }
-        if let SQLExpr::CompoundIdentifier(parts) = expr {
-            let n = qualifier_len(parts, self.relation);
-            if n > 0 {
-                let mut rest = parts.split_off(n);
-                *expr = match rest.len() {
-                    1 => SQLExpr::Identifier(rest.pop().unwrap()),
-                    _ => SQLExpr::CompoundIdentifier(rest),
-                };
-            }
         }
         match expr {
             SQLExpr::Identifier(ident) => {
                 self.read.insert(ident.value.clone());
             },
             SQLExpr::CompoundIdentifier(parts) => {
-                self.read.insert(parts[0].value.clone());
+                let column = &parts[qualifier_len(parts, self.relations)];
+                self.read.insert(column.value.clone());
             },
             SQLExpr::Function(function) if function.over.is_some() => self.window = true,
             _ => {},
@@ -299,24 +275,16 @@ impl VisitorMut for InputColumns<'_> {
     }
 }
 
-/// The number of leading `parts` that name `relation`: `t` or `ns.t` for a relation `ns.t`.
-fn qualifier_len(parts: &[Ident], relation: &[String]) -> usize {
-    (1..=relation.len())
-        .rev()
-        .find(|&n| {
-            parts.len() > n
-                && parts[..n]
-                    .iter()
-                    .zip(&relation[relation.len() - n..])
-                    .all(|(part, name)| part.value.eq_ignore_ascii_case(name))
-        })
-        .unwrap_or(0)
+/// The number of leading `parts` that name one of `relations`.
+fn qualifier_len(parts: &[Ident], relations: &[RelationName]) -> usize {
+    match_qualifier(parts, relations.iter()).map_or(0, |(_, len)| len)
 }
 
 /// Whether `expr` is a literal, possibly negated or cast.
 fn is_constant(expr: &SQLExpr) -> bool {
     match expr {
-        SQLExpr::Value(_) | SQLExpr::TypedString(_) | SQLExpr::Interval(_) => true,
+        SQLExpr::Value(_) | SQLExpr::TypedString(_) => true,
+        SQLExpr::Interval(interval) => is_constant(&interval.value),
         SQLExpr::UnaryOp { expr, .. } | SQLExpr::Nested(expr) | SQLExpr::Cast { expr, .. } => {
             is_constant(expr)
         },
@@ -342,12 +310,23 @@ fn pivot_value_name(expr: &SQLExpr) -> String {
     }
 }
 
-/// `SELECT * FROM <PIVOT_INPUT>`.
-fn select_from_pivot_input() -> Query {
-    let sql = format!("SELECT * FROM {PIVOT_INPUT}");
-    let Statement::Query(query) = Parser::parse_sql(&GenericDialect, &sql).unwrap().remove(0)
+/// `SELECT <projection> FROM <table> GROUP BY <group_by>`.
+fn aggregate_query(
+    table: &TableFactor,
+    projection: Vec<SelectItem>,
+    group_by: Vec<SQLExpr>,
+) -> Query {
+    let Statement::Query(mut query) = Parser::parse_sql(&GenericDialect, "SELECT * FROM t")
+        .unwrap()
+        .remove(0)
     else {
         unreachable!()
     };
+    let SetExpr::Select(select) = query.body.as_mut() else {
+        unreachable!()
+    };
+    select.from[0].relation = table.clone();
+    select.projection = projection;
+    select.group_by = GroupByExpr::Expressions(group_by, vec![]);
     *query
 }

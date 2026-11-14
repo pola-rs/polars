@@ -122,6 +122,11 @@ def test_pivot_column_references() -> None:
             "SELECT * FROM ns.t PIVOT (SUM(ns.t.v) FOR k IN ('x'))",
             # a subquery's own columns are not read from the input
             "SELECT * FROM df PIVOT (SUM(v) FOR COALESCE(k, (SELECT MIN(t) FROM df)) IN ('x'))",
+            # a correlated subquery can name the input
+            """
+            SELECT * FROM df AS t
+            PIVOT (SUM(v) FOR COALESCE((SELECT s.k FROM df AS s WHERE s.v = t.v), k) IN ('x'))
+            """,
         ]:
             assert sorted(ctx.execute(query, eager=True).rows()) == expected
 
@@ -140,6 +145,10 @@ def test_pivot_column_references() -> None:
             "must be constants",
         ),
         ("PIVOT (SUM(amount) FOR quarter IN (RANDOM()))", "must be constants"),
+        (
+            "PIVOT (SUM(amount) FOR quarter IN (INTERVAL (SUM(amount)) DAY))",
+            "must be constants",
+        ),
         ("PIVOT (SUM(SUM(amount)) OVER () FOR quarter IN ('q1'))", "window functions"),
         (
             "PIVOT (SUM(amount) FOR quarter IN ('q1') DEFAULT ON NULL (0))",

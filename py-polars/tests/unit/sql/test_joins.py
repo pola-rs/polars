@@ -3780,17 +3780,17 @@ def test_positional_join(query: str) -> None:
 def test_positional_join_names_and_errors() -> None:
     a = pl.DataFrame({"k": [1, 2]})
     b = pl.DataFrame({"k": [7, 8, 9]})
-    with pl.SQLContext(a=a, b=b) as ctx:
+    with pl.SQLContext({"a": a, "b": b, "ns.positional": a}) as ctx:
         assert_frame_equal(
             ctx.execute("SELECT * FROM a POSITIONAL JOIN b", eager=True),
             pl.DataFrame({"k": [1, 2, None], "k:b": [7, 8, 9]}),
         )
-        # without POSITIONAL right before JOIN, the word is an alias
-        assert ctx.execute(
-            "SELECT positional.k FROM a AS positional JOIN b ON positional.k = b.k - 6 "
-            "ORDER BY positional.k",
-            eager=True,
-        ).rows() == [(1,), (2,)]
+        # after AS or in a qualified name, the word is a name
+        for query in [
+            "SELECT positional.k FROM a AS positional JOIN b ON positional.k = b.k - 6",
+            "SELECT ns.positional.k FROM ns.positional JOIN b ON ns.positional.k = b.k - 6",
+        ]:
+            assert sorted(ctx.execute(query, eager=True).rows()) == [(1,), (2,)]
         ctx.execute("CREATE VIEW v AS SELECT * FROM a POSITIONAL JOIN b")
         assert ctx.execute("SELECT count(*) AS n FROM v", eager=True).item() == 3
         for constraint in ["ON a.k = b.k", "USING (k)"]:

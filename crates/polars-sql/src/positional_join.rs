@@ -121,7 +121,7 @@ impl VisitorMut for PositionalJoins {
 }
 
 /// Take each unquoted `POSITIONAL` that comes right before `JOIN` out of `tokens`, unless it
-/// follows `AS`.
+/// follows `AS` or `.`.
 pub(crate) fn extract_positional_joins(tokens: &mut Vec<TokenWithSpan>) -> PositionalJoins {
     let significant = |token: &TokenWithSpan| !matches!(token.token, Token::Whitespace(_));
     let is_keyword = |token: &TokenWithSpan, keyword| matches!(&token.token, Token::Word(w) if w.keyword == keyword && w.quote_style.is_none());
@@ -141,7 +141,7 @@ pub(crate) fn extract_positional_joins(tokens: &mut Vec<TokenWithSpan>) -> Posit
                 .iter()
                 .rev()
                 .find(|t| significant(t))
-                .is_some_and(|t| is_keyword(t, Keyword::AS))
+                .is_some_and(|t| is_keyword(t, Keyword::AS) || t.token == Token::Period)
         {
             found.push(tokens.remove(i).span.start);
         } else {

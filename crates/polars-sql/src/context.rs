@@ -2960,7 +2960,7 @@ impl SQLContext {
             }))
     }
 
-    pub(crate) fn register_cte(&mut self, name: &str, lf: LazyFrame) {
+    fn register_cte(&mut self, name: &str, lf: LazyFrame) {
         // Lookups ignore case, so a new name must replace an outer one that differs only in case.
         self.cte_map
             .retain(|key, _| !key.eq_ignore_ascii_case(name));
@@ -7606,7 +7606,7 @@ fn kept_factors(tbl: &TableWithJoins) -> Vec<&TableFactor> {
 
 /// The relations that table factors bring into scope. A nested join is flattened rather than
 /// bound to its alias, so its own relations are declared too.
-fn factor_relations<'a>(
+pub(crate) fn factor_relations<'a>(
     factors: impl Iterator<Item = &'a TableFactor>,
     spellings: &CatalogSpellings,
 ) -> Vec<RelationName> {
