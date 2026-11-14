@@ -7,14 +7,15 @@ use polars_utils::aliases::PlHashMap;
 use sqlparser::ast::{
     BinaryOperator, ColumnDef, ColumnOption, CreateTableOptions, DataType as SQLDataType, Expr,
     Function, FunctionArg, FunctionArgExpr, FunctionArguments, HiveDistributionStyle, Ident,
-    ObjectName, ObjectNamePart, Query, SetExpr, SqlOption, Statement, TableFactor, UnaryOperator,
-    Value, ValueWithSpan, Visitor, VisitorMut, With,
+    ObjectName, ObjectNamePart, OrderByExpr, OrderBySort, Query, SetExpr, SqlOption, Statement,
+    TableFactor, UnaryOperator, Value, ValueWithSpan, Visitor, VisitorMut, With,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 use sqlparser::tokenizer::{Location, Span};
 
 use crate::dyn_visit;
+use crate::sql_expr::order_by_sort_options;
 use crate::sql_visitors::expr_references_any_column;
 use crate::time_travel::{VersionSpec, is_version_part, split_version, with_version};
 use crate::types::map_sql_dtype_to_polars;
@@ -256,6 +257,11 @@ pub enum CatalogAlter {
         /// The partition fields, in the order written.
         fields: Vec<CatalogPartitionField>,
     },
+    /// `SET SORTED BY (...)`, or `RESET SORTED BY` (no fields): the table's sort order from now on.
+    SetSortOrder {
+        /// The sort fields, in the order written.
+        fields: Vec<CatalogSortField>,
+    },
 }
 
 /// A partition field of a catalog table: an Iceberg transform of a column or a struct field.
@@ -266,6 +272,20 @@ pub struct CatalogPartitionField {
     /// The transform in Iceberg's notation: `identity`, `year`, `month`, `day`, `hour`,
     /// `bucket[N]` or `truncate[W]`.
     pub transform: String,
+}
+
+/// A sort field of a catalog table: an Iceberg transform of a column or a struct field, and its
+/// direction and null order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CatalogSortField {
+    /// The source as written: a column, then the struct fields down to the source (`s.f`).
+    pub path: Vec<String>,
+    /// The transform, as [`CatalogPartitionField::transform`].
+    pub transform: String,
+    /// `DESC` rather than `ASC`.
+    pub descending: bool,
+    /// `NULLS FIRST` rather than `NULLS LAST`.
+    pub nulls_first: bool,
 }
 
 impl CatalogTable {
@@ -967,7 +987,10 @@ pub(crate) fn set_partitioning(exprs: &[Expr]) -> PolarsResult<Vec<CatalogPartit
 fn partition_fields(exprs: &[Expr]) -> PolarsResult<Vec<(CatalogPartitionField, String)>> {
     exprs
         .iter()
-        .map(|expr| Ok((partition_field(expr)?, expr.to_string())))
+        .map(|expr| {
+            let (path, transform) = layout_field(expr, "partition")?;
+            Ok((CatalogPartitionField { path, transform }, expr.to_string()))
+        })
         .collect()
 }
 
@@ -981,13 +1004,38 @@ fn ensure_unique_fields(fields: &[(CatalogPartitionField, String)]) -> PolarsRes
     Ok(())
 }
 
-/// A partition field: a source, `year|month|day|hour(source)` (with Iceberg's aliases), or
-/// `bucket|truncate(N, source)`. A source is a column or a struct field (`s.f`).
-fn partition_field(expr: &Expr) -> PolarsResult<CatalogPartitionField> {
+/// The sort fields of `SET SORTED BY (...)`. A field without `NULLS FIRST | LAST` takes the null
+/// order of `ORDER BY`. A repeated field is kept, as `ORDER BY` keeps it.
+pub(crate) fn set_sort_order(items: &[OrderByExpr]) -> PolarsResult<Vec<CatalogSortField>> {
+    items
+        .iter()
+        .map(|item| {
+            polars_ensure!(
+                item.with_fill.is_none()
+                    && !matches!(item.options.sort, Some(OrderBySort::Using(_))),
+                SQLInterface: "unsupported sort field `{}`; expected a source with ASC or DESC and NULLS FIRST or LAST",
+                item
+            );
+            let (path, transform) = layout_field(&item.expr, "sort")?;
+            let options = order_by_sort_options(&item.options);
+            Ok(CatalogSortField {
+                path,
+                transform,
+                descending: options.descending,
+                nulls_first: !options.nulls_last,
+            })
+        })
+        .collect()
+}
+
+/// The source path and transform of a partition or sort field (`kind`): a source,
+/// `year|month|day|hour(source)` (with Iceberg's aliases), or `bucket|truncate(N, source)`. A
+/// source is a column or a struct field (`s.f`).
+fn layout_field(expr: &Expr, kind: &str) -> PolarsResult<(Vec<String>, String)> {
     let unsupported = || {
         polars_err!(
-            SQLInterface: "unsupported partition field `{}`; expected a column or struct field (`s.f`), or year, month, day, hour, bucket(N, ...) or truncate(W, ...) of one",
-            expr
+            SQLInterface: "unsupported {} field `{}`; expected a column or struct field (`s.f`), or year, month, day, hour, bucket(N, ...) or truncate(W, ...) of one",
+            kind, expr
         )
     };
     // Checked against the schema later: a struct field, never a table-qualified column.
@@ -997,10 +1045,7 @@ fn partition_field(expr: &Expr) -> PolarsResult<CatalogPartitionField> {
         _ => None,
     };
     if let Some(path) = source_of(expr) {
-        return Ok(CatalogPartitionField {
-            path,
-            transform: "identity".to_string(),
-        });
+        return Ok((path, "identity".to_string()));
     }
     let Expr::Function(Function {
         name,
@@ -1058,7 +1103,7 @@ fn partition_field(expr: &Expr) -> PolarsResult<CatalogPartitionField> {
         _ => return Err(unsupported()),
     };
     let path = source_of(source).ok_or_else(unsupported)?;
-    Ok(CatalogPartitionField { path, transform })
+    Ok((path, transform))
 }
 
 /// `expr` without enclosing parentheses.

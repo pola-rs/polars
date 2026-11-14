@@ -41,7 +41,7 @@ use crate::catalog::{
     CatalogStatement, CatalogTable, MergeClausePlan, MergePlan, MergeSourcePlan, RewrittenName,
     alter_table_column, alter_table_properties, create_schema_options, create_table_columns,
     create_table_options, create_table_partitioning, display_name, hint_unsupported_part,
-    name_parts, name_position, rewrite_catalog_names, set_partitioning,
+    name_parts, name_position, rewrite_catalog_names, set_partitioning, set_sort_order,
 };
 use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
@@ -57,7 +57,7 @@ use crate::grouping_sets::{
     expand_grouping_sets, new_placeholder,
 };
 use crate::join_keys::{sql_join_key_pair, sql_join_where_predicate};
-use crate::partition_alter::{self, PartitionAlter};
+use crate::layout_alter::{self, Layout, LayoutAlter};
 use crate::sql_expr::{
     convert_int_literal_for_string, is_string_expr, order_by_sort_options, parse_sql_array,
     parse_sql_expr, resolve_compound_identifier, resolve_expr_dtype, series_from_literals,
@@ -529,8 +529,8 @@ impl SQLContext {
 
     /// The catalog tables that `query` reads, once per table and version.
     pub fn catalog_tables(&self, query: &str) -> PolarsResult<Vec<CatalogRead>> {
-        // a partition change reads no table
-        let Ok(mut stmt) = partition_alter::parse_single_statement_or_alter(query)? else {
+        // a layout change reads no table
+        let Ok(mut stmt) = layout_alter::parse_single_statement_or_alter(query)? else {
             return Ok(Vec::new());
         };
         let mut reads = Vec::new();
@@ -554,9 +554,9 @@ impl SQLContext {
     /// The catalog statement of `query`, if any, for the caller to perform:
     /// [`SQLContext::execute`] rejects it.
     pub fn catalog_statement(&self, query: &str) -> PolarsResult<Option<CatalogStatement>> {
-        let stmt = match partition_alter::parse_single_statement_or_alter(query)? {
+        let stmt = match layout_alter::parse_single_statement_or_alter(query)? {
             Ok(stmt) => stmt,
-            Err(alter) => return self.catalog_partition_alter(&alter).map(Some),
+            Err(alter) => return self.catalog_layout_alter(&alter).map(Some),
         };
         match &stmt {
             Statement::Drop {
@@ -1349,7 +1349,7 @@ impl SQLContext {
     /// # }
     ///```
     pub fn execute(&mut self, query: &str) -> PolarsResult<LazyFrame> {
-        let mut stmt = match partition_alter::parse_single_statement_or_alter(query)? {
+        let mut stmt = match layout_alter::parse_single_statement_or_alter(query)? {
             Ok(stmt) => stmt,
             Err(alter) => return Err(self.alter_table_error(&alter.name)),
         };
@@ -2712,19 +2712,25 @@ impl SQLContext {
         }))
     }
 
-    /// The catalog statement of `ALTER TABLE ... SET | RESET PARTITIONED BY`; only a catalog
-    /// table has a partitioning to change.
-    fn catalog_partition_alter(&self, alter: &PartitionAlter) -> PolarsResult<CatalogStatement> {
+    /// The catalog statement of `ALTER TABLE ... SET | RESET PARTITIONED BY` or
+    /// `... SET | RESET SORTED BY`; only a catalog table has a layout to change.
+    fn catalog_layout_alter(&self, alter: &LayoutAlter) -> PolarsResult<CatalogStatement> {
         let Some((name, table)) = self.catalog_change_target(&alter.name)? else {
             return Err(self.catalog_tables_only("ALTER TABLE", &alter.name));
+        };
+        let operation = match &alter.layout {
+            Layout::Partitioning(fields) => CatalogAlter::SetPartitioning {
+                fields: set_partitioning(fields)?,
+            },
+            Layout::SortOrder(fields) => CatalogAlter::SetSortOrder {
+                fields: set_sort_order(fields)?,
+            },
         };
         Ok(CatalogStatement::AlterTable {
             name,
             table,
             if_exists: alter.if_exists,
-            operation: CatalogAlter::SetPartitioning {
-                fields: set_partitioning(&alter.fields)?,
-            },
+            operation,
         })
     }
 
@@ -8379,7 +8385,7 @@ pub fn extract_table_identifiers(
     unique: bool,
 ) -> PolarsResult<Vec<String>> {
     let mut tables = Vec::new();
-    match partition_alter::parse_statements_or_alter(query)? {
+    match layout_alter::parse_statements_or_alter(query)? {
         Ok(ast) => {
             for stmt in &ast {
                 tables.extend(statement_table_identifiers(stmt, include_schema, false));

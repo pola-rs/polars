@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, NoReturn
+from typing import TYPE_CHECKING, Any, Literal, NoReturn
 
 from polars.exceptions import InvalidOperationError, SQLInterfaceError
 
@@ -43,8 +43,10 @@ def partition_source(
     path: list[str],
     transform: pyiceberg.transforms.Transform[Any, Any],
     name: str,
+    *,
+    kind: Literal["partition", "sort"] = "partition",
 ) -> Any:
-    """The field at `path` (a column, then struct fields) that partitions `name`."""
+    """The field at `path` (a column, then struct fields) that partitions or sorts."""
     from pyiceberg.transforms import TruncateTransform
     from pyiceberg.types import DecimalType, StructType
 
@@ -64,24 +66,24 @@ def partition_source(
         if (source := next((f for f in fields if f.name == part), None)) is None:
             if i == 0:
                 msg = (
-                    f"partition column '{column}' is not a column of table '{name}'"
+                    f"{kind} column '{column}' is not a column of table '{name}'"
                     f"{hint}; valid columns: {top}"
                 )
             else:
                 msg = (
-                    f"partition column '{column}' is not a column of table '{name}': "
+                    f"{kind} column '{column}' is not a column of table '{name}': "
                     f"struct '{'.'.join(path[:i])}' has no field '{part}'"
                     f"{hint if column in top else ''}; its fields: "
                     f"{[f.name for f in fields]}"
                 )
             raise SQLInterfaceError(msg)
         if path[i + 1 :]:
-            # Iceberg nests partition sources in structs only, not in lists or maps
+            # Iceberg nests partition and sort sources in structs, not lists or maps
             if not isinstance(source.field_type, StructType):
                 msg = (
-                    f"cannot partition table '{name}' by '{column}': "
+                    f"cannot {kind} table '{name}' by '{column}': "
                     f"'{'.'.join(path[: i + 1])}' has type {source.field_type}, and "
-                    "only struct fields can be partition sources"
+                    f"only struct fields can be {kind} sources"
                 )
                 raise SQLInterfaceError(msg)
             fields = source.field_type.fields
@@ -89,12 +91,15 @@ def partition_source(
     source_type = source.field_type
     if not source_type.is_primitive or not transform.can_transform(source_type):
         msg = (
-            f"cannot partition table '{name}' by {transform} of column "
+            f"cannot {kind} table '{name}' by {transform} of column "
             f"'{column}' with type {source_type}"
         )
         raise SQLInterfaceError(msg)
-    if isinstance(transform, TruncateTransform) and isinstance(
-        source_type, DecimalType
+    # the sink sorts by it, but does not write it as a partition value
+    if (
+        kind == "partition"
+        and isinstance(transform, TruncateTransform)
+        and isinstance(source_type, DecimalType)
     ):
         msg = f"partitioning by {transform} of a decimal column ('{column}')"
         raise NotImplementedError(msg)
