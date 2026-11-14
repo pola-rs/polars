@@ -163,79 +163,19 @@ where
         }
     } as IdxSize;
 
-    if !descending {
-        if !has_nulls {
-            if side == SearchSortedSide::Right {
-                lower_bound_chunks::<T, _>(
-                    &chunks,
-                    search_values,
-                    null_idx,
-                    |chunk, i, sv| unsafe { chunk.value_unchecked(i).tot_gt(sv) },
-                )
-            } else {
-                lower_bound_chunks::<T, _>(
-                    &chunks,
-                    search_values,
-                    null_idx,
-                    |chunk, i, sv| unsafe { chunk.value_unchecked(i).tot_ge(sv) },
-                )
-            }
-        } else {
-            if side == SearchSortedSide::Right {
-                lower_bound_chunks::<T, _>(&chunks, search_values, null_idx, |chunk, i, sv| {
-                    if let Some(v) = unsafe { chunk.get_unchecked(i) } {
-                        v.tot_gt(sv)
-                    } else {
-                        nulls_last
-                    }
-                })
-            } else {
-                lower_bound_chunks::<T, _>(&chunks, search_values, null_idx, |chunk, i, sv| {
-                    if let Some(v) = unsafe { chunk.get_unchecked(i) } {
-                        v.tot_ge(sv)
-                    } else {
-                        nulls_last
-                    }
-                })
-            }
+    // A value v is past the needle sv when, ascending, v > sv (right side) or !(sv > v) (left
+    // side). Descending swaps v and sv.
+    let right = side == SearchSortedSide::Right;
+    let swap = descending == right;
+    lower_bound_chunks::<T, _>(&chunks, search_values, null_idx, |chunk, i, sv| {
+        match unsafe { chunk.get_unchecked(i) } {
+            Some(v) => {
+                let (a, b) = if swap { (sv, &v) } else { (&v, sv) };
+                a.tot_gt(b) == right
+            },
+            None => nulls_last,
         }
-    } else {
-        if !has_nulls {
-            if side == SearchSortedSide::Right {
-                lower_bound_chunks::<T, _>(
-                    &chunks,
-                    search_values,
-                    null_idx,
-                    |chunk, i, sv| unsafe { chunk.value_unchecked(i).tot_lt(sv) },
-                )
-            } else {
-                lower_bound_chunks::<T, _>(
-                    &chunks,
-                    search_values,
-                    null_idx,
-                    |chunk, i, sv| unsafe { chunk.value_unchecked(i).tot_le(sv) },
-                )
-            }
-        } else {
-            if side == SearchSortedSide::Right {
-                lower_bound_chunks::<T, _>(&chunks, search_values, null_idx, |chunk, i, sv| {
-                    if let Some(v) = unsafe { chunk.get_unchecked(i) } {
-                        v.tot_lt(sv)
-                    } else {
-                        nulls_last
-                    }
-                })
-            } else {
-                lower_bound_chunks::<T, _>(&chunks, search_values, null_idx, |chunk, i, sv| {
-                    if let Some(v) = unsafe { chunk.get_unchecked(i) } {
-                        v.tot_le(sv)
-                    } else {
-                        nulls_last
-                    }
-                })
-            }
-        }
-    }
+    })
 }
 
 /// [`binary_search_ca`] for numeric `needles`, faster if `ca` is one chunk without nulls.

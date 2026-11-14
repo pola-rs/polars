@@ -203,14 +203,16 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
         Ok(unsafe { Self::from_cats_and_dtype_unchecked(phys, dtype) })
     }
 
-    /// Converts a dictionary array of strings to this CategoricalChunked.
+    /// Converts the keys and string values of a dictionary array to this CategoricalChunked.
     ///
-    /// Gives the same result as [`Self::from_str_iter`] over the strings of `arr`. When there
-    /// are at least as many keys as values, each used value is looked up only once.
+    /// Gives the same result as [`Self::from_str_iter`] over the strings the keys point to. When
+    /// there are at least as many keys as values, each used value is looked up only once.
+    /// Negative keys map to null, keys out of bounds panic.
     pub fn from_str_dictionary<K: DictionaryKey>(
         name: PlSmallStr,
         dtype: DataType,
-        arr: &DictionaryArray<K>,
+        keys: &PrimitiveArray<K>,
+        values: &dyn Array,
     ) -> PolarsResult<Self> {
         let (DataType::Enum(_, mapping) | DataType::Categorical(_, mapping)) = &dtype else {
             panic!("from_str_dictionary called on non-categorical type")
@@ -218,11 +220,9 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
         assert!(dtype.cat_physical().ok() == Some(T::physical()));
         let is_enum = dtype.is_enum();
 
-        let values = cast_unchecked(&**arr.values(), &ArrowDataType::Utf8View)?;
+        let values = cast_unchecked(values, &ArrowDataType::Utf8View)?;
         let values = values.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
-        let keys = arr.keys();
 
-        // Keys from FFI are not validated: negative keys map to null, keys out of bounds panic.
         let per_row = || {
             let strings = keys.iter().map(|k| values.get((*k?).try_into().ok()?));
             Self::from_str_iter(name.clone(), dtype.clone(), strings)
@@ -276,18 +276,18 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
                 .map(|k| unsafe { *value_cats.get_unchecked(k.as_usize()) })
                 .collect_trusted()
         } else {
-            arr.keys_iter()
+            keys.iter()
                 .map(|k| {
                     k.map_or(T::Native::zero(), |k| unsafe {
-                        *value_cats.get_unchecked(k)
+                        *value_cats.get_unchecked(k.as_usize())
                     })
                 })
                 .collect_trusted()
         };
         let validity = if let Some(value_is_valid) = value_is_valid {
-            let validity: Bitmap = arr
-                .keys_iter()
-                .map(|k| k.is_some_and(|k| unsafe { value_is_valid.get_unchecked(k) }))
+            let validity: Bitmap = keys
+                .iter()
+                .map(|k| k.is_some_and(|k| unsafe { value_is_valid.get_unchecked(k.as_usize()) }))
                 .collect_trusted();
             Some(validity)
         } else {
