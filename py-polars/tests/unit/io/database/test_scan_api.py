@@ -460,7 +460,13 @@ def _stop_with_saturated_blocking_pool(tmp_path: Path) -> None:
         max_connections=1,
         batch_size=5,
     )
-    q = lf.select((pl.col("id") * 100).cast(pl.UInt8, strict=True))
+    # Delay the failure, so the first partition's read reaches the blocking row first.
+    q = lf.select(
+        pl.col("id")
+        .map_batches(lambda s: (time.sleep(0.5), s)[1], return_dtype=pl.Int64)
+        .mul(100)
+        .cast(pl.UInt8, strict=True)
+    )
     with pytest.raises(pl.exceptions.InvalidOperationError, match="conversion"):
         q.collect(engine="streaming")
     # The only fetch thread is blocked in the database: only the cancellation, which

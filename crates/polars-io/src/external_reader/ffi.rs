@@ -143,11 +143,10 @@ impl Hash for FfiFileReaderBuilder {
 
 #[cfg(feature = "serde")]
 mod _serde {
+    use polars_utils::pl_serialize::PackageBytes;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     use super::*;
-
-    use polars_utils::pl_serialize::PackageBytes;
 
     impl Serialize for FfiFileReaderBuilder {
         fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {

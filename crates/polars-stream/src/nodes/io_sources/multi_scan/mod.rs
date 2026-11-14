@@ -219,11 +219,8 @@ impl MultiScanState {
             preferred_remote_pre_init,
             reader_max_concurrent,
         );
-        let max_concurrent_scans = calc_max_concurrent_scans(
-            num_pipelines,
-            config.sources.len(),
-            reader_max_concurrent,
-        );
+        let max_concurrent_scans =
+            calc_max_concurrent_scans(num_pipelines, config.sources.len(), reader_max_concurrent);
 
         config.n_readers_pre_init.store(n_readers_pre_init);
         config.max_concurrent_scans.store(max_concurrent_scans);
