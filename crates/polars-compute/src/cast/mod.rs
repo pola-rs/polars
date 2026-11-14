@@ -445,9 +445,9 @@ pub fn cast(
             if dict.dtype() == to_type {
                 Ok(dict)
             } else if narrow {
-                dictionary_cast_dyn::<u32>(dict.as_ref(), to_type, options)
+                dictionary_cast_keys_dyn::<u32>(dict.as_ref(), to_type)
             } else {
-                dictionary_cast_dyn::<u64>(dict.as_ref(), to_type, options)
+                dictionary_cast_keys_dyn::<u64>(dict.as_ref(), to_type)
             }
         },
         // not supported by polars

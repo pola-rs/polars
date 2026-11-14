@@ -47,3 +47,18 @@ pub(super) fn dictionary_cast_dyn<K: DictionaryKey + num_traits::NumCast>(
         _ => unimplemented!(),
     }
 }
+
+/// Casts the keys of a dictionary array to the key type of `to_type`, keeping its values.
+pub(super) fn dictionary_cast_keys_dyn<K: DictionaryKey + num_traits::NumCast>(
+    array: &dyn Array,
+    to_type: &ArrowDataType,
+) -> PolarsResult<Box<dyn Array>> {
+    let array = array.as_any().downcast_ref::<DictionaryArray<K>>().unwrap();
+    let ArrowDataType::Dictionary(to_keys_type, _, _) = to_type else {
+        unreachable!()
+    };
+    let to_key_type = (*to_keys_type).into();
+    match_integer_type!(to_keys_type, |$T| {
+        key_cast!(array.keys(), array.values(), array, &to_key_type, $T, to_type.clone())
+    })
+}
