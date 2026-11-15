@@ -33,7 +33,7 @@ use sqlparser::ast::{
 use sqlparser::tokenizer::Span;
 
 use crate::datetime_template::{ParseFormat, format_with_template, parse_format};
-use crate::group_context::{has_marked_aggregate, mark_aggregate};
+use crate::group_context::{has_column_outside_aggregates, has_marked_aggregate, mark_aggregate};
 use crate::grouping_sets::MAX_GROUPING_ARGS;
 use crate::sql_expr::{
     adjust_one_indexed_param, approximate_literal, clip_substring_length, decimal_literal,
@@ -3311,10 +3311,14 @@ impl SQLFunctionVisitor<'_> {
         };
         let name = lit(dtype.materialize_unknown(true)?.to_string());
         // Over an aggregate, the type is an aggregate too, so that the query has one row per group.
-        let e = if has_marked_aggregate(&e) {
-            mark_aggregate(name.first())
-        } else {
+        // A column read outside the aggregates is kept, so that it is still checked against the
+        // GROUP BY.
+        let e = if !has_marked_aggregate(&e) {
             name
+        } else if has_column_outside_aggregates(&e) {
+            when(e.is_null()).then(name.clone()).otherwise(name)
+        } else {
+            mark_aggregate(name.first())
         };
         self.apply_window_spec(e)
     }

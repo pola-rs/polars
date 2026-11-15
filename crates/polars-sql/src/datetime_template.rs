@@ -125,7 +125,10 @@ fn match_pattern(rest: &str) -> Option<(usize, Item, Case)> {
 #[derive(Default)]
 struct Template {
     parts: Vec<Part>,
+    hour: bool,
     hour12: bool,
+    minute: bool,
+    second: bool,
     meridian: bool,
     iso_week: bool,
     iso_weekday: bool,
@@ -193,8 +196,14 @@ fn template_parts(template: &str, function: &str, output: bool) -> PolarsResult<
         };
         match item {
             Item::Number(spec) => {
-                out.hour12 |= spec == 'I';
-                out.iso_week |= spec == 'V';
+                match spec {
+                    'H' => out.hour = true,
+                    'I' => (out.hour, out.hour12) = (true, true),
+                    'M' => out.minute = true,
+                    'S' => out.second = true,
+                    'V' => out.iso_week = true,
+                    _ => {},
+                }
                 if fill {
                     push_str(parts, &format!("%-{spec}"))
                 } else {
@@ -207,6 +216,7 @@ fn template_parts(template: &str, function: &str, output: bool) -> PolarsResult<
             },
             Item::Fraction(spec) if output => push_str(parts, spec),
             Item::Fraction(spec) => {
+                out.second = true;
                 fractions += 1;
                 polars_ensure!(
                     fractions == 1,
@@ -251,7 +261,7 @@ fn template_parts(template: &str, function: &str, output: bool) -> PolarsResult<
 pub(crate) struct ParseFormat {
     pub(crate) format: String,
     /// Text to add to each value for the fields that PostgreSQL fills in when the template has
-    /// none: AM for a 12-hour clock and Monday for an ISO week.
+    /// none: AM for a 12-hour clock, Monday for an ISO week, and hour or minute 0 for a time.
     pub(crate) defaults: String,
 }
 
@@ -281,6 +291,16 @@ pub(crate) fn parse_format(template: &str, function: &str) -> PolarsResult<Parse
     if template.iso_week && !template.iso_weekday {
         out.format.push_str(" %u");
         out.defaults.push_str(" 1");
+    }
+    // Parsing a time needs both its hour and its minute.
+    let time = template.hour || template.minute || template.second;
+    if time && !template.hour {
+        out.format.push_str(" %H");
+        out.defaults.push_str(" 00");
+    }
+    if time && !template.minute {
+        out.format.push_str(" %M");
+        out.defaults.push_str(" 00");
     }
     Ok(out)
 }

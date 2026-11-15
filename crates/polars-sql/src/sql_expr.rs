@@ -1082,19 +1082,19 @@ impl SQLExprVisitor<'_> {
         Ok(expr)
     }
 
-    /// The JSONPath that a JSON operator reads with `rhs` from `lhs`, if `lhs` is JSON text.
+    /// What a JSON operator reads with `rhs` from `lhs`, if `lhs` is JSON text.
     #[cfg(feature = "json")]
-    fn json_text_path(
+    fn json_text_access(
         &mut self,
         lhs: &Expr,
         rhs: &Expr,
         path_array: bool,
-    ) -> PolarsResult<Option<String>> {
+    ) -> PolarsResult<Option<Expr>> {
         let typed = self.ctx.with_typed_subqueries(lhs)?;
         if self.cast_or_expr_dtype(&typed) != Some(DataType::String) {
             return Ok(None);
         }
-        crate::json_text::json_path(rhs, path_array)
+        crate::json_text::json_text_access(lhs.clone(), rhs, path_array)
     }
 
     /// Best-effort dtype for an expression; `None` if it cannot be resolved.
@@ -1417,8 +1417,8 @@ impl SQLExprVisitor<'_> {
             SQLBinaryOperator::Arrow | SQLBinaryOperator::LongArrow => {
                 // "x -> y", "x ->> y"
                 #[cfg(feature = "json")]
-                if let Some(path) = self.json_text_path(&lhs, &rhs, false)? {
-                    return Ok(lhs.str().json_path_match(lit(path)));
+                if let Some(e) = self.json_text_access(&lhs, &rhs, false)? {
+                    return Ok(e);
                 }
                 match rhs {
                     Expr::Literal(lv) if lv.extract_str().is_some() => {
@@ -1445,8 +1445,8 @@ impl SQLExprVisitor<'_> {
             SQLBinaryOperator::HashArrow | SQLBinaryOperator::HashLongArrow => {
                 // "x #> y", "x #>> y"
                 #[cfg(feature = "json")]
-                if let Some(path) = self.json_text_path(&lhs, &rhs, true)? {
-                    return Ok(lhs.str().json_path_match(lit(path)));
+                if let Some(e) = self.json_text_access(&lhs, &rhs, true)? {
+                    return Ok(e);
                 }
                 match rhs {
                     Expr::Literal(lv) if lv.extract_str().is_some() => {

@@ -859,5 +859,11 @@ def test_typeof() -> None:
         ("a", "str"),
         ("b", "str"),
     ]
+    assert df.sql("SELECT TYPEOF(SUM(i) + i) AS t FROM self GROUP BY i").rows() == [
+        ("i64",),
+        ("i64",),
+    ]
+    with pytest.raises(SQLSyntaxError, match="'i' should participate in the GROUP BY"):
+        df.sql("SELECT TYPEOF(SUM(i) + i) FROM self")
     with pytest.raises(SQLSyntaxError, match=r"TYPEOF expects 1 argument \(found 2\)"):
         df.sql("SELECT TYPEOF(i, s) FROM self")

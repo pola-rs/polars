@@ -197,11 +197,15 @@ def test_json_string_operator_access() -> None:
         """
         SELECT
           '{"a,b": {"c": 1}}' #>> '{"a,b", c}' AS quoted,
-          '{"a": 1}' #>> '{}' AS whole
+          '{"a": 1}' #>> '{}' AS whole,
+          '{"a ": 1, "a": 2}' #>> '{a\\ }' AS escaped_space,
+          '{"NULL": 1}' #>> '{NULL}' AS null_step,
+          '{"NULL": 1}' #>> '{"NULL"}' AS null_key,
+          '{"a\\"b": 1}' ->> '$."a\\"b"' AS escaped_quote
         """,
         eager=True,
     )
-    assert res.row(0) == ("1", '{"a":1}')
+    assert res.row(0) == ("1", '{"a":1}', "1", None, "1", "1")
     with pytest.raises(SQLInterfaceError, match="unsupported JSON path"):
         df.sql("SELECT j ->> '$[*]' FROM self")
     with pytest.raises(SQLInterfaceError, match="JSON keys with a backslash"):

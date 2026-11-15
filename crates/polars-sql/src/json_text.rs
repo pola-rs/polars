@@ -3,13 +3,17 @@
 use std::fmt::Write;
 
 use polars_core::prelude::*;
-use polars_lazy::dsl::Expr;
+use polars_lazy::dsl::{Expr, lit};
 use polars_plan::plans::{DynLiteralValue, LiteralValue};
 
-/// The JSONPath that `->` or `->>` (or with `path_array`, `#>` or `#>>`) reads with `rhs`;
-/// `None` if `rhs` is not a literal path. A key that starts with `$` is a JSONPath, as in DuckDB,
-/// and an integer is an array index.
-pub(crate) fn json_path(rhs: &Expr, path_array: bool) -> PolarsResult<Option<String>> {
+/// The value that `->` or `->>` (or with `path_array`, `#>` or `#>>`) reads with `rhs` from
+/// `lhs`, JSON text; `None` if `rhs` is not a literal path. A key that starts with `$` is a
+/// JSONPath, as in DuckDB, and an integer is an array index.
+pub(crate) fn json_text_access(
+    lhs: Expr,
+    rhs: &Expr,
+    path_array: bool,
+) -> PolarsResult<Option<Expr>> {
     let Expr::Literal(lv) = rhs else {
         return Ok(None);
     };
@@ -18,24 +22,29 @@ pub(crate) fn json_path(rhs: &Expr, path_array: bool) -> PolarsResult<Option<Str
         && !path_array
     {
         write!(path, "[{idx}]").unwrap();
-        return Ok(Some(path));
-    }
-    let Some(key) = lv.extract_str() else {
-        return Ok(None);
-    };
-    if path_array {
-        for elem in text_array_elements(key) {
-            match elem.parse::<i64>() {
-                Ok(idx) => write!(path, "[{idx}]").unwrap(),
-                Err(_) => push_key(&mut path, &elem)?,
-            }
-        }
-    } else if let Some(rest) = key.strip_prefix('$') {
-        push_duckdb_path(&mut path, rest, key)?;
     } else {
-        push_key(&mut path, key)?;
+        let Some(key) = lv.extract_str() else {
+            return Ok(None);
+        };
+        if path_array {
+            for elem in text_array_elements(key) {
+                // A NULL step reads nothing, as in PostgreSQL.
+                let Some(elem) = elem else {
+                    let null = Expr::Literal(LiteralValue::untyped_null());
+                    return Ok(Some(null.cast(DataType::String)));
+                };
+                match elem.parse::<i64>() {
+                    Ok(idx) => write!(path, "[{idx}]").unwrap(),
+                    Err(_) => push_key(&mut path, &elem)?,
+                }
+            }
+        } else if let Some(rest) = key.strip_prefix('$') {
+            push_duckdb_path(&mut path, rest, key)?;
+        } else {
+            push_key(&mut path, key)?;
+        }
     }
-    Ok(Some(path))
+    Ok(Some(lhs.str().json_path_match(lit(path))))
 }
 
 fn push_key(path: &mut String, key: &str) -> PolarsResult<()> {
@@ -54,18 +63,28 @@ fn push_duckdb_path(path: &mut String, mut rest: &str, full: &str) -> PolarsResu
         if let Some(step) = rest.strip_prefix('.') {
             let (key, next) = match step.strip_prefix('"') {
                 Some(quoted) => {
-                    let end = quoted.find('"').ok_or_else(unsupported)?;
-                    (&quoted[..end], &quoted[end + 1..])
+                    // A backslash takes the next character as is.
+                    let mut key = String::new();
+                    let mut chars = quoted.char_indices();
+                    let end = loop {
+                        match chars.next() {
+                            Some((i, '"')) => break i,
+                            Some((_, '\\')) => key.extend(chars.next().map(|(_, c)| c)),
+                            Some((_, c)) => key.push(c),
+                            None => return Err(unsupported()),
+                        }
+                    };
+                    (key, &quoted[end + 1..])
                 },
                 None => {
                     let end = step.find(['.', '[']).unwrap_or(step.len());
-                    (&step[..end], &step[end..])
+                    (step[..end].to_string(), &step[end..])
                 },
             };
             if key.is_empty() || key == "*" {
                 return Err(unsupported());
             }
-            push_key(path, key)?;
+            push_key(path, &key)?;
             rest = next;
         } else if let Some(step) = rest.strip_prefix('[') {
             let end = step.find(']').ok_or_else(unsupported)?;
@@ -83,8 +102,15 @@ fn push_duckdb_path(path: &mut String, mut rest: &str, full: &str) -> PolarsResu
     Ok(())
 }
 
-/// The elements of a PostgreSQL text array literal such as `{a,"b,c"}`; the braces are optional.
-fn text_array_elements(s: &str) -> Vec<String> {
+/// The elements of a PostgreSQL text array literal such as `{a,"b,c",NULL}`, where an unquoted
+/// NULL is `None`; the braces are optional.
+fn text_array_elements(s: &str) -> Vec<Option<String>> {
+    fn finish(mut elem: String, kept: usize, literal: bool) -> Option<String> {
+        let len = elem.trim_end().len().max(kept);
+        elem.truncate(len);
+        (literal || !elem.eq_ignore_ascii_case("NULL")).then_some(elem)
+    }
+
     let s = s.trim();
     let inner = s
         .strip_prefix('{')
@@ -95,36 +121,37 @@ fn text_array_elements(s: &str) -> Vec<String> {
     }
     let mut out = vec![];
     let mut elem = String::new();
+    // The length of `elem` that ends in quoted or escaped text, which is not trimmed.
+    let mut kept = 0;
+    let mut literal = false;
     let mut in_quotes = false;
-    let mut quoted = false;
     let mut chars = inner.chars();
     loop {
         match chars.next() {
             Some('"') => {
                 in_quotes = !in_quotes;
-                quoted = true;
+                literal = true;
+                kept = elem.len();
             },
-            Some('\\') => elem.extend(chars.next()),
-            Some(c) if c.is_whitespace() && !in_quotes && (quoted || elem.is_empty()) => {},
+            Some('\\') => {
+                elem.extend(chars.next());
+                literal = true;
+                kept = elem.len();
+            },
+            Some(c) if c.is_whitespace() && !in_quotes && elem.is_empty() => {},
             Some(',') if !in_quotes => {
-                let len = if quoted {
-                    elem.len()
-                } else {
-                    elem.trim_end().len()
-                };
-                elem.truncate(len);
-                out.push(std::mem::take(&mut elem));
-                quoted = false;
+                out.push(finish(std::mem::take(&mut elem), kept, literal));
+                kept = 0;
+                literal = false;
             },
-            Some(c) => elem.push(c),
+            Some(c) => {
+                elem.push(c);
+                if in_quotes {
+                    kept = elem.len();
+                }
+            },
             None => {
-                let len = if quoted {
-                    elem.len()
-                } else {
-                    elem.trim_end().len()
-                };
-                elem.truncate(len);
-                out.push(elem);
+                out.push(finish(elem, kept, literal));
                 return out;
             },
         }

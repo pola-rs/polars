@@ -501,6 +501,18 @@ pub(crate) fn has_marked_aggregate(expr: &Expr) -> bool {
     has_expr(expr, is_marked_aggregate)
 }
 
+/// Whether `expr` reads a column outside its marked aggregates.
+pub(crate) fn has_column_outside_aggregates(expr: &Expr) -> bool {
+    let outside = expr.clone().map_expr(|e| {
+        if is_marked_aggregate(&e) {
+            Expr::Literal(LiteralValue::untyped_null())
+        } else {
+            e
+        }
+    });
+    has_expr(&outside, |e| matches!(e, Expr::Column(_)))
+}
+
 /// `expr` without aggregate marks.
 pub(crate) fn strip_aggregate_marks(expr: Expr) -> Expr {
     expr.map_expr(|e| match e {
