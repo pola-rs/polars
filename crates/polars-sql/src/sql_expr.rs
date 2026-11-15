@@ -24,18 +24,19 @@ use polars_plan::dsl::functions::{DurationArgs, duration};
 use polars_plan::dsl::string::StringNameSpace;
 use polars_plan::plans::DynLiteralValue;
 use polars_plan::prelude::{has_expr, typed_lit};
+use polars_utils::time::NS_DAY;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
     AccessExpr, BinaryOperator as SQLBinaryOperator, CastFormat, CastKind, DataType as SQLDataType,
     DateTimeField, Expr as SQLExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr,
     FunctionArgumentList, FunctionArguments, Ident, Interval, OrderByOptions, OrderBySort,
-    Query as Subquery, SelectItem, Subscript, TimezoneInfo, TrimWhereField, TypedString,
+    Query as Subquery, SelectItem, Statement, Subscript, TimezoneInfo, TrimWhereField, TypedString,
     UnaryOperator as SQLUnaryOperator, Value as SQLValue, ValueWithSpan,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::keywords::{self, Keyword};
-use sqlparser::parser::{Parser, ParserOptions};
+use sqlparser::parser::{Parser, ParserError, ParserOptions};
 use sqlparser::tokenizer::{Token, TokenWithSpan, Tokenizer};
 
 use crate::context::join_idents;
@@ -45,6 +46,7 @@ use crate::group_context::{has_marked_aggregate, mark_aggregate};
 use crate::literal_folding::{
     decimal_lit, fold_scalar, parse_exact_literal, try_fold_decimal_arithmetic,
 };
+use crate::positional_join::{attach_positional_aliases, extract_positional_joins};
 use crate::sql_visitors::expr_references_any_column;
 use crate::subquery::is_correlated_subquery;
 use crate::time_travel::{TableVersions, extract_table_versions};
@@ -62,24 +64,74 @@ pub fn to_sql_interface_err(err: impl Display) -> PolarsError {
     PolarsError::SQLInterface(err.to_string().into())
 }
 
+/// The time travel clauses taken out of a query before it is parsed, which sqlparser does not
+/// parse.
+#[must_use]
+pub(crate) struct TakenClauses(TableVersions);
+
+impl TakenClauses {
+    /// The statements `parsed` from `sql`, with the taken clauses attached. A `POSITIONAL JOIN`
+    /// parses as a `JOIN` after an alias `positional` (see [`attach_positional_aliases`]). Where
+    /// it doesn't, as after another alias, the statements are parsed again with the word
+    /// `POSITIONAL` taken out (see [`extract_positional_joins`]).
+    pub(crate) fn attach(
+        self,
+        sql: &str,
+        parsed: Result<Vec<Statement>, ParserError>,
+    ) -> PolarsResult<Vec<Statement>> {
+        let (mut stmts, versions) = match parsed {
+            Ok(mut stmts) => {
+                attach_positional_aliases(&mut stmts)?;
+                (stmts, self.0)
+            },
+            Err(err) => {
+                let (mut tokens, versions) = tokenize(sql)?;
+                let positional_joins = extract_positional_joins(&mut tokens);
+                if positional_joins.is_empty() {
+                    return Err(to_sql_interface_err(err));
+                }
+                let mut stmts = parser_of(tokens)
+                    .parse_statements()
+                    .map_err(|_| to_sql_interface_err(err))?;
+                positional_joins.attach(&mut stmts)?;
+                (stmts, versions)
+            },
+        };
+        versions.attach(&mut stmts)?;
+        Ok(stmts)
+    }
+
+    pub(crate) fn refuse(self) -> PolarsResult<()> {
+        self.0.refuse()
+    }
+}
+
 /// A parser of `sql`. `TOP` is only a keyword in `SELECT TOP n`, so that it can also name a
-/// relation or a column. Time travel clauses are taken out first (see [`TableVersions`]): the
+/// relation or a column. Time travel clauses (see [`TableVersions`]) are taken out first: the
 /// caller attaches them to its statements or refuses them.
-pub(crate) fn sql_parser(sql: &str) -> PolarsResult<(Parser<'static>, TableVersions)> {
-    let options = ParserOptions {
-        trailing_commas: true,
-        ..Default::default()
-    };
+pub(crate) fn sql_parser(sql: &str) -> PolarsResult<(Parser<'static>, TakenClauses)> {
+    let (tokens, versions) = tokenize(sql)?;
+    Ok((parser_of(tokens), TakenClauses(versions)))
+}
+
+fn tokenize(sql: &str) -> PolarsResult<(Vec<TokenWithSpan>, TableVersions)> {
     let mut tokens = Tokenizer::new(&GenericDialect, sql)
-        .with_unescape(options.unescape)
+        .with_unescape(ParserOptions::default().unescape)
         .tokenize_with_location()
         .map_err(to_sql_interface_err)?;
     demote_top_keyword(&mut tokens);
     let versions = extract_table_versions(&mut tokens)?;
-    let parser = Parser::new(&GenericDialect)
+    Ok((tokens, versions))
+}
+
+fn parser_of(tokens: Vec<TokenWithSpan>) -> Parser<'static> {
+    let options = ParserOptions {
+        trailing_commas: true,
+        ..Default::default()
+    };
+    Parser::new(&GenericDialect)
         .with_options(options)
-        .with_tokens_with_locations(tokens);
-    Ok((parser, versions))
+        .with_tokens_with_locations(tokens)
 }
 
 fn demote_top_keyword(tokens: &mut [TokenWithSpan]) {
@@ -608,12 +660,12 @@ impl SQLExprVisitor<'_> {
                 negated,
             } => self.visit_in_subquery(expr, subquery, *negated),
             SQLExpr::Interval(interval) => Ok(lit(interval_to_duration(interval, true)?)),
-            SQLExpr::IsDistinctFrom(e1, e2) => {
-                Ok(self.visit_expr(e1)?.neq_missing(self.visit_expr(e2)?))
-            },
+            SQLExpr::IsDistinctFrom(e1, e2) => Ok(self
+                .visit_binary_op(e1, &SQLBinaryOperator::Spaceship, e2)?
+                .not()),
             SQLExpr::IsFalse(expr) => Ok(self.visit_truth_value(expr)?.eq_missing(lit(false))),
             SQLExpr::IsNotDistinctFrom(e1, e2) => {
-                Ok(self.visit_expr(e1)?.eq_missing(self.visit_expr(e2)?))
+                self.visit_binary_op(e1, &SQLBinaryOperator::Spaceship, e2)
             },
             SQLExpr::IsNotFalse(expr) => Ok(self.visit_truth_value(expr)?.neq_missing(lit(false))),
             SQLExpr::IsNotNull(expr) => Ok(self.visit_expr(expr)?.is_not_null()),
@@ -1171,13 +1223,22 @@ impl SQLExprVisitor<'_> {
                 // shortcut interval comparison evaluation (-> bool)
                 let d1 = interval_to_duration(v1, false)?;
                 let d2 = interval_to_duration(v2, false)?;
+                // Months have no fixed length: they are ordered as 28 days, but equal intervals
+                // have equal months.
+                let length = |d: &Duration| {
+                    (d.months() as i128 * 28 + d.weeks() as i128 * 7 + d.days() as i128)
+                        * NS_DAY as i128
+                        + d.nanoseconds() as i128
+                };
+                let order = length(&d1).cmp(&length(&d2));
+                let equal = d1.months() == d2.months() && order.is_eq();
                 let res = match op {
-                    SQLBinaryOperator::Gt => Ok(lit(d1 > d2)),
-                    SQLBinaryOperator::Lt => Ok(lit(d1 < d2)),
-                    SQLBinaryOperator::GtEq => Ok(lit(d1 >= d2)),
-                    SQLBinaryOperator::LtEq => Ok(lit(d1 <= d2)),
-                    SQLBinaryOperator::NotEq => Ok(lit(d1 != d2)),
-                    SQLBinaryOperator::Eq | SQLBinaryOperator::Spaceship => Ok(lit(d1 == d2)),
+                    SQLBinaryOperator::Gt => Ok(lit(order.is_gt())),
+                    SQLBinaryOperator::Lt => Ok(lit(order.is_lt())),
+                    SQLBinaryOperator::GtEq => Ok(lit(order.is_ge())),
+                    SQLBinaryOperator::LtEq => Ok(lit(order.is_le())),
+                    SQLBinaryOperator::NotEq => Ok(lit(!equal)),
+                    SQLBinaryOperator::Eq | SQLBinaryOperator::Spaceship => Ok(lit(equal)),
                     _ => polars_bail!(SQLInterface: "invalid interval comparison operator"),
                 };
                 if res.is_ok() {
@@ -2183,8 +2244,8 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
     let s = s.as_ref();
 
     // `sql_expr` should only translate expressions, not statements or clauses
-    let (mut ast, versions) = sql_parser(s)?;
-    versions.refuse()?;
+    let (mut ast, taken) = sql_parser(s)?;
+    taken.refuse()?;
     if let Token::Word(word) = &ast.peek_token().token {
         if keywords::RESERVED_FOR_COLUMN_ALIAS.contains(&word.keyword) {
             polars_bail!(SQLInterface: "expected an expression (found '{}' clause)", word.value)

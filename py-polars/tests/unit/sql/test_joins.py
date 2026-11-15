@@ -3752,3 +3752,97 @@ def test_join_untyped_literal_keys(on: str, how: str) -> None:
         check_dtypes=False,
         engines=["in-memory", "streaming"],
     )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT * FROM a POSITIONAL JOIN b",
+        "SELECT * FROM b POSITIONAL JOIN a",
+        "SELECT x.k, y.k AS k2 FROM a AS x POSITIONAL JOIN a y",
+        "SELECT * FROM a POSITIONAL JOIN (SELECT v FROM b WHERE v > 7) AS c",
+        "SELECT a.k, b.v, c.s FROM a POSITIONAL JOIN b JOIN a AS c ON c.k = b.v - 7",
+        "SELECT o.k, p.v FROM a AS o CROSS JOIN LATERAL (SELECT b.v FROM a POSITIONAL JOIN b) AS p",
+    ],
+)
+def test_positional_join(query: str) -> None:
+    assert_sql_matches(
+        {
+            "a": pl.LazyFrame({"k": [1, 2], "s": ["x", "y"]}),
+            "b": pl.LazyFrame({"v": [7, 8, 9]}),
+        },
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=["in-memory", "streaming"],
+    )
+
+
+def test_positional_join_names_and_errors() -> None:
+    a = pl.DataFrame({"k": [1, 2]})
+    b = pl.DataFrame({"k": [7, 8, 9]})
+    tables = {
+        "a": a,
+        "b": b,
+        "positional": a,
+        "update": a,
+        "ns.positional": a,
+        "ns.table": a,
+    }
+    with pl.SQLContext(tables) as ctx:
+        # names that are keywords
+        for left in [
+            "a",
+            "a AS x",
+            "a x",
+            "(SELECT * FROM a) AS s",
+            "a AS update",
+            "a update",
+            "ns.table",
+            "update",
+            "a AS using",
+        ]:
+            assert_frame_equal(
+                ctx.execute(f"SELECT * FROM {left} POSITIONAL JOIN b", eager=True),
+                pl.DataFrame({"k": [1, 2, None], "k:b": [7, 8, 9]}),
+            )
+        assert_frame_equal(
+            ctx.execute(
+                "SELECT * FROM b POSITIONAL JOIN update POSITIONAL JOIN a", eager=True
+            ),
+            pl.DataFrame(
+                {"k": [7, 8, 9], "k:update": [1, 2, None], "k:a": [1, 2, None]}
+            ),
+        )
+        # where a name or a column goes, the word is a name
+        assert ctx.execute(
+            "SELECT b.k FROM b JOIN (SELECT 8 AS positional) AS p ON b.k = positional "
+            "JOIN a ON a.k = 1",
+            eager=True,
+        ).rows() == [(8,)]
+        for query in [
+            # an alias followed by its join condition
+            "SELECT positional.k FROM b JOIN a positional ON positional.k = b.k - 6 "
+            "JOIN a ON a.k = positional.k",
+            "SELECT positional.k FROM a JOIN a positional USING (k) "
+            "JOIN b ON b.k - 6 = positional.k",
+            "SELECT positional.k FROM a AS positional JOIN b ON positional.k = b.k - 6",
+            "SELECT positional.k FROM positional JOIN b ON positional.k = b.k - 6",
+            "SELECT p.k FROM (positional AS p JOIN b ON p.k = b.k - 6)",
+            "SELECT ns.positional.k FROM ns.positional JOIN b ON ns.positional.k = b.k - 6",
+        ]:
+            assert sorted(ctx.execute(query, eager=True).rows()) == [(1,), (2,)]
+        ctx.execute("CREATE VIEW v AS SELECT * FROM a POSITIONAL JOIN b")
+        assert ctx.execute("SELECT count(*) AS n FROM v", eager=True).item() == 3
+        # a correlated LATERAL would pair the rows of the outer values
+        with pytest.raises(SQLInterfaceError):
+            ctx.execute(
+                "SELECT o.k, p.k FROM a AS o CROSS JOIN LATERAL "
+                "(SELECT b.k FROM a POSITIONAL JOIN b WHERE a.k = o.k) AS p",
+                eager=True,
+            )
+        for constraint in ["ON a.k = b.k", "USING (k)"]:
+            with pytest.raises(
+                SQLInterfaceError, match="does not take a join condition"
+            ):
+                ctx.execute(f"SELECT * FROM a POSITIONAL JOIN b {constraint}")

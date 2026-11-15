@@ -3404,7 +3404,7 @@ pub(crate) fn is_constant_key(key: &Expr) -> bool {
 
 /// Whether `expr` reads no column of the input. Unlike [`is_constant_key`], this also holds for
 /// an aggregate or membership test of constants, as `MAX(1)` or `1 IN (1, 2)`.
-fn reads_no_input(expr: &Expr) -> bool {
+pub(crate) fn reads_no_input(expr: &Expr) -> bool {
     !expr
         .into_iter()
         .any(|e| matches!(e, Expr::Column(_) | Expr::Selector(_) | Expr::Len))

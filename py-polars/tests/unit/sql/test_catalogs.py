@@ -423,6 +423,10 @@ def test_create_catalog_table_options(lake: CountingCatalog, tmp_path: Path) -> 
             r"`CREATE TABLE \.\.\. AS SELECT` does not take column definitions",
         ),
         (
+            "CREATE TABLE t AS SELECT * FROM lineitem POSITIONAL JOIN orders",
+            "POSITIONAL JOIN is not supported in a query that writes a catalog table",
+        ),
+        (
             "CREATE TABLE t LIKE lineitem",
             r"`CREATE TABLE \.\.\. LIKE` is not supported for catalog tables",
         ),
@@ -3820,6 +3824,10 @@ def test_insert_catalog_table_required(lake: CountingCatalog) -> None:
             "`INSERT ... DEFAULT VALUES` is not supported",
         ),
         (
+            "INSERT INTO lineitem SELECT * FROM (SELECT 3 AS k) POSITIONAL JOIN (SELECT 'c' AS v) AS b",
+            "POSITIONAL JOIN is not supported in a query that writes a catalog table",
+        ),
+        (
             "WITH s AS (SELECT 1, 'a') INSERT INTO lineitem WITH t AS (SELECT 2, 'b') SELECT * FROM t",
             "takes one WITH",
         ),
@@ -6660,6 +6668,35 @@ def test_catalog_time_travel(
     assert sorted(ctx.execute(query, eager=True)["k"]) == rows
     assert sorted(ctx.execute(query).collect()["k"]) == rows
     assert ctx.execute(f"EXPLAIN {query}", eager=True).height > 0
+
+
+@pytest.mark.write_disk
+def test_catalog_pivot_qualifiers(
+    lake: CountingCatalog,
+    history: tuple[pl.SQLContext[pl.LazyFrame], list[int]],
+) -> None:
+    ctx, ids = history
+    # a column named with the table's written or versioned name is not a group column
+    for query, expected in [
+        (
+            "SELECT * FROM lake.lineitem PIVOT (MAX(lake.lineitem.v) FOR k IN (1, 2))",
+            [("a", "b")],
+        ),
+        (
+            f"SELECT * FROM hist VERSION AS OF {ids[1]} "
+            "PIVOT (SUM(hist.k) FOR hist.k IN (0, 1))",
+            [(0, 1)],
+        ),
+        (
+            "SELECT * FROM lake.lineitem UNPIVOT (x FOR name IN (lake.lineitem.v))",
+            [(1, "v", "a"), (2, "v", "b")],
+        ),
+        (
+            f"SELECT * FROM hist VERSION AS OF {ids[1]} UNPIVOT (x FOR name IN (hist.k))",
+            [("k", 0), ("k", 1)],
+        ),
+    ]:
+        assert sorted(ctx.execute(query, eager=True).rows()) == expected
 
 
 @pytest.mark.write_disk

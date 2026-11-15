@@ -13,6 +13,8 @@ pub mod keywords;
 mod lateral;
 mod layout_alter;
 mod literal_folding;
+mod pivot;
+mod positional_join;
 mod resolver;
 mod sql_expr;
 mod sql_visitors;
