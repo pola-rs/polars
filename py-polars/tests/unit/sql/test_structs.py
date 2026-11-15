@@ -10,6 +10,7 @@ from polars.exceptions import (
     StructFieldNotFoundError,
 )
 from polars.testing import assert_frame_equal
+from tests.unit.sql import assert_sql_matches
 
 
 @pytest.fixture
@@ -153,6 +154,42 @@ def test_struct_field_operator_access(expr: str, expected: int | str) -> None:
         },
     )
     assert df.sql(f"SELECT {expr} FROM self").item() == expected
+
+
+def test_json_string_operator_access() -> None:
+    df = pl.DataFrame(
+        {
+            "j": [
+                '{"a": {"b": "x", "c": [1, 2, 3]}, "k": "v", "n": null, "it\'s": 1}',
+                '{"k": 7}',
+                None,
+            ]
+        }
+    )
+    assert_sql_matches(
+        df,
+        query="""
+        SELECT
+          j ->> 'k' AS k,
+          j -> 'a' ->> 'b' AS b,
+          j -> 'a' -> 'c' ->> -1 AS c_last,
+          j -> 'a' -> 'c' ->> 0 AS c_first,
+          j ->> '$.a.c[1]' AS c_path,
+          j ->> 'n' AS n,
+          j ->> 'missing' AS missing,
+          j ->> 'it''s' AS quoted,
+          '{"z": [true]}' ->> 'z' AS lit
+        FROM self
+        """,
+        compare_with="duckdb",
+    )
+    # `->` returns text, so a string value has no quotes.
+    res = df.sql(
+        """
+        SELECT j -> 'k' AS k, j #> '{a,b}' AS b, j #>> '{a,c,2}' AS c FROM self
+        """
+    )
+    assert res.rows() == [("v", "x", "3"), ("7", None, None), (None, None, None)]
 
 
 @pytest.mark.parametrize(

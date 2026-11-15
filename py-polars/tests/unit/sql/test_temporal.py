@@ -1224,3 +1224,92 @@ def test_current_date_arithmetic() -> None:
 def test_current_timestamp_precision_unsupported() -> None:
     with pytest.raises(SQLInterfaceError):
         pl.sql("SELECT CURRENT_TIMESTAMP(3)", eager=True)
+
+
+@pytest.mark.parametrize(
+    ("template", "expected"),
+    [
+        ("YYYY-MM-DD HH24:MI:SS", "2024-01-02 15:04:05"),
+        ("yyyy-mm-dd hh24:mi:ss.us", "2024-01-02 15:04:05.123456"),
+        ("HH12:MI:SS.MS AM", "03:04:05.123 PM"),
+        ("FMHH:MI am", "3:04 pm"),
+        ("Month|MONTH|month|FMMonth", "January  |JANUARY  |january  |January"),
+        ("Mon MON mon Dy DY dy", "Jan JAN jan Tue TUE tue"),
+        ("Day|FMDAY", "Tuesday  |TUESDAY"),
+        ("FMDD/FMMM/YY DDD IYYY-IW-ID", "2/1/24 002 2024-01-2"),
+        ('"Year" YYYY, "MM" MM', "Year 2024, MM 01"),
+        ("%d.%m.%Y", "02.01.2024"),
+    ],
+)
+def test_to_char(template: str, expected: str) -> None:
+    df = pl.DataFrame({"dt": [datetime(2024, 1, 2, 15, 4, 5, 123456), None]})
+    res = df.sql(f"SELECT TO_CHAR(dt, '{template}') AS s FROM self")
+    assert res["s"].to_list() == [expected, None]
+
+
+def test_to_char_date_and_time() -> None:
+    df = pl.DataFrame({"d": [date(2024, 3, 9)], "t": [time(7, 8, 9)]})
+    res = df.sql(
+        """
+        SELECT
+          TO_CHAR(d, 'DD Mon YYYY HH24:MI') AS d,
+          TO_CHAR(t, 'HH12.MI.SS am') AS t,
+          TO_CHAR(NULL, 'YYYY') AS n
+        FROM self
+        """
+    )
+    assert res.row(0) == ("09 Mar 2024 00:00", "07.08.09 am", None)
+
+
+def test_to_char_errors() -> None:
+    df = pl.DataFrame({"dt": [datetime(2024, 1, 2)], "n": [1]})
+    with pytest.raises(SQLInterfaceError, match="template pattern 'Q'"):
+        df.sql("SELECT TO_CHAR(dt, 'YYYY-Q') FROM self")
+    with pytest.raises(SQLInterfaceError, match="template pattern 'TH'"):
+        df.sql("SELECT TO_CHAR(dt, 'DDTH') FROM self")
+    with pytest.raises(SQLInterfaceError, match="TO_CHAR does not support numbers"):
+        df.sql("SELECT TO_CHAR(n, '999') FROM self")
+    with pytest.raises(
+        SQLSyntaxError, match=r"TO_CHAR expects 2 arguments \(found 1\)"
+    ):
+        df.sql("SELECT TO_CHAR(dt) FROM self")
+
+
+@pytest.mark.parametrize(
+    ("func", "expected"),
+    [
+        ("TO_DATE(s, 'DD Mon YYYY')", date(2024, 1, 2)),
+        ("TO_DATE(UPPER(s), 'dd mon yyyy')", date(2024, 1, 2)),
+        ("TO_DATE('January 2, 2024', 'FMMonth DD, YYYY')", date(2024, 1, 2)),
+        ("TO_DATE('2024-002', 'YYYY-DDD')", date(2024, 1, 2)),
+        ("TO_DATE('2024/01/02', '%Y/%m/%d')", date(2024, 1, 2)),
+        ("TO_DATE('2024-01-02')", date(2024, 1, 2)),
+        (
+            "TO_TIMESTAMP('2024-01-02 03:04:05 PM', 'YYYY-MM-DD HH12:MI:SS AM')",
+            datetime(2024, 1, 2, 15, 4, 5),
+        ),
+        (
+            "TO_TIMESTAMP('02.01.2024 15:04:05.123', 'DD.MM.YYYY HH24:MI:SS.MS')",
+            datetime(2024, 1, 2, 15, 4, 5, 123000),
+        ),
+        ("TO_TIMESTAMP('2024-01-02 15:04:05')", datetime(2024, 1, 2, 15, 4, 5)),
+    ],
+)
+def test_to_date_to_timestamp(func: str, expected: date | datetime) -> None:
+    df = pl.DataFrame({"s": ["02 Jan 2024", None]})
+    res = df.sql(f"SELECT {func} AS v FROM self")
+    dtype = pl.Date if type(expected) is date else pl.Datetime("us")
+    assert res.schema["v"] == dtype
+    assert res["v"].to_list()[0] == expected
+
+
+def test_to_date_errors() -> None:
+    df = pl.DataFrame({"s": ["2024-01-02"]})
+    with pytest.raises(
+        SQLInterfaceError, match="TO_DATE does not support the template pattern 'J'"
+    ):
+        df.sql("SELECT TO_DATE(s, 'J') FROM self")
+    with pytest.raises(InvalidOperationError):
+        df.sql("SELECT TO_DATE(s, 'DD-MM-YYYY') FROM self")
+    with pytest.raises(SQLSyntaxError, match=r"TO_TIMESTAMP expects 1-2 arguments"):
+        df.sql("SELECT TO_TIMESTAMP(s, 'YYYY', 'x') FROM self")

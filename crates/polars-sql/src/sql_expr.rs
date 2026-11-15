@@ -1082,6 +1082,51 @@ impl SQLExprVisitor<'_> {
         Ok(expr)
     }
 
+    /// The JSONPath that `->`, `->>` (or with `path_array`, `#>`, `#>>`) reads with `rhs` from
+    /// `lhs`, if `lhs` is JSON text. A key starting with `$` is already a JSONPath, as in DuckDB;
+    /// an integer is an array index.
+    #[cfg(feature = "json")]
+    fn json_text_path(&self, lhs: &Expr, rhs: &Expr, path_array: bool) -> Option<String> {
+        use std::fmt::Write;
+
+        if self.cast_or_expr_dtype(lhs) != Some(DataType::String) {
+            return None;
+        }
+        let push_key = |path: &mut String, key: &str| {
+            let key = key.replace('\\', "\\\\").replace('\'', "\\'");
+            write!(path, "['{key}']").unwrap();
+        };
+        let Expr::Literal(lv) = rhs else {
+            return None;
+        };
+        let mut path = String::from("$");
+        if let LiteralValue::Dyn(DynLiteralValue::Int(idx)) = lv
+            && !path_array
+        {
+            write!(path, "[{idx}]").unwrap();
+            return Some(path);
+        }
+        let key = lv.extract_str()?;
+        if !path_array {
+            if key.starts_with('$') {
+                return Some(key.to_string());
+            }
+            push_key(&mut path, key);
+            return Some(path);
+        }
+        let elems = key
+            .strip_prefix('{')
+            .and_then(|k| k.strip_suffix('}'))
+            .unwrap_or(key);
+        for elem in elems.split(',').map(str::trim) {
+            match elem.parse::<i64>() {
+                Ok(idx) => write!(path, "[{idx}]").unwrap(),
+                Err(_) => push_key(&mut path, elem),
+            }
+        }
+        Some(path)
+    }
+
     /// Best-effort dtype for an expression; `None` if it cannot be resolved.
     /// `expr` as a truth value, where a number is true when it isn't zero.
     fn visit_truth_value(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
@@ -1399,29 +1444,40 @@ impl SQLExprVisitor<'_> {
             // ----
             // Nested (JSON) field access operators
             // ----
-            SQLBinaryOperator::Arrow | SQLBinaryOperator::LongArrow => match rhs {
+            SQLBinaryOperator::Arrow | SQLBinaryOperator::LongArrow => {
                 // "x -> y", "x ->> y"
-                Expr::Literal(lv) if lv.extract_str().is_some() => {
-                    let path = lv.extract_str().unwrap();
-                    let mut expr = self.struct_field_access_expr(&lhs, path, false)?;
-                    if let SQLBinaryOperator::LongArrow = op {
-                        expr = expr.cast(DataType::String);
-                    }
-                    expr
-                },
-                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(idx))) => {
-                    let mut expr = self.struct_field_access_expr(&lhs, &idx.to_string(), true)?;
-                    if let SQLBinaryOperator::LongArrow = op {
-                        expr = expr.cast(DataType::String);
-                    }
-                    expr
-                },
-                _ => {
-                    polars_bail!(SQLSyntax: "invalid json/struct path-extract definition: {:?}", right)
-                },
+                #[cfg(feature = "json")]
+                if let Some(path) = self.json_text_path(&lhs, &rhs, false) {
+                    return Ok(lhs.str().json_path_match(lit(path)));
+                }
+                match rhs {
+                    Expr::Literal(lv) if lv.extract_str().is_some() => {
+                        let path = lv.extract_str().unwrap();
+                        let mut expr = self.struct_field_access_expr(&lhs, path, false)?;
+                        if let SQLBinaryOperator::LongArrow = op {
+                            expr = expr.cast(DataType::String);
+                        }
+                        expr
+                    },
+                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(idx))) => {
+                        let mut expr =
+                            self.struct_field_access_expr(&lhs, &idx.to_string(), true)?;
+                        if let SQLBinaryOperator::LongArrow = op {
+                            expr = expr.cast(DataType::String);
+                        }
+                        expr
+                    },
+                    _ => {
+                        polars_bail!(SQLSyntax: "invalid json/struct path-extract definition: {:?}", right)
+                    },
+                }
             },
             SQLBinaryOperator::HashArrow | SQLBinaryOperator::HashLongArrow => {
                 // "x #> y", "x #>> y"
+                #[cfg(feature = "json")]
+                if let Some(path) = self.json_text_path(&lhs, &rhs, true) {
+                    return Ok(lhs.str().json_path_match(lit(path)));
+                }
                 match rhs {
                     Expr::Literal(lv) if lv.extract_str().is_some() => {
                         let path = lv.extract_str().unwrap();
