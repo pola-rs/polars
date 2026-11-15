@@ -1310,6 +1310,10 @@ def test_to_char_errors() -> None:
         ("TO_TIMESTAMP('2024-01-02 15', 'YYYY-MM-DD HH24')", datetime(2024, 1, 2, 15)),
         ("TO_TIMESTAMP('2024-01-02 03', 'YYYY-MM-DD HH')", datetime(2024, 1, 2, 3)),
         ("TO_TIMESTAMP('2024-01-02 30', 'YYYY-MM-DD MI')", datetime(2024, 1, 2, 0, 30)),
+        (
+            "TO_TIMESTAMP('2024-01-02 15:04.123', 'YYYY-MM-DD HH24:MI.MS')",
+            datetime(2024, 1, 2, 15, 4, 0, 123000),
+        ),
         ("TO_DATE(NULL, 'YYYY-MM-DD')", None),
         ("TO_TIMESTAMP(NULL)", None),
     ],

@@ -17,6 +17,11 @@ pub(crate) fn json_text_access(
     let Expr::Literal(lv) = rhs else {
         return Ok(None);
     };
+    // A NULL path reads nothing, as in PostgreSQL; `lhs` is kept for its number of rows.
+    let null_path = || Expr::Literal(LiteralValue::untyped_null()).cast(DataType::String);
+    if lv.is_null() {
+        return Ok(Some(lhs.str().json_path_match(null_path())));
+    }
     let mut path = String::from("$");
     if let LiteralValue::Dyn(DynLiteralValue::Int(idx)) = lv
         && !path_array
@@ -28,10 +33,8 @@ pub(crate) fn json_text_access(
         };
         if path_array {
             for elem in text_array_elements(key) {
-                // A NULL step reads nothing, as in PostgreSQL.
                 let Some(elem) = elem else {
-                    let null = Expr::Literal(LiteralValue::untyped_null());
-                    return Ok(Some(null.cast(DataType::String)));
+                    return Ok(Some(lhs.str().json_path_match(null_path())));
                 };
                 match elem.parse::<i64>() {
                     Ok(idx) => write!(path, "[{idx}]").unwrap(),

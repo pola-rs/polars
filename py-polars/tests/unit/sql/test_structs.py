@@ -206,6 +206,9 @@ def test_json_string_operator_access() -> None:
         eager=True,
     )
     assert res.row(0) == ("1", '{"a":1}', "1", None, "1", "1")
+    # A NULL path gives NULL, with the rows of the left side.
+    assert df.sql("SELECT j ->> NULL AS a FROM self").rows() == [(None,)] * 3
+    assert df.sql("SELECT MAX(j) #>> '{NULL}' AS a FROM self").rows() == [(None,)]
     with pytest.raises(SQLInterfaceError, match="unsupported JSON path"):
         df.sql("SELECT j ->> '$[*]' FROM self")
     with pytest.raises(SQLInterfaceError, match="JSON keys with a backslash"):

@@ -129,6 +129,7 @@ struct Template {
     hour12: bool,
     minute: bool,
     second: bool,
+    fraction: bool,
     meridian: bool,
     iso_week: bool,
     iso_weekday: bool,
@@ -216,7 +217,7 @@ fn template_parts(template: &str, function: &str, output: bool) -> PolarsResult<
             },
             Item::Fraction(spec) if output => push_str(parts, spec),
             Item::Fraction(spec) => {
-                out.second = true;
+                out.fraction = true;
                 fractions += 1;
                 polars_ensure!(
                     fractions == 1,
@@ -261,7 +262,8 @@ fn template_parts(template: &str, function: &str, output: bool) -> PolarsResult<
 pub(crate) struct ParseFormat {
     pub(crate) format: String,
     /// Text to add to each value for the fields that PostgreSQL fills in when the template has
-    /// none: AM for a 12-hour clock, Monday for an ISO week, and hour or minute 0 for a time.
+    /// none: AM for a 12-hour clock, Monday for an ISO week, and 0 for the hour, minute or
+    /// second of a time.
     pub(crate) defaults: String,
 }
 
@@ -292,8 +294,12 @@ pub(crate) fn parse_format(template: &str, function: &str) -> PolarsResult<Parse
         out.format.push_str(" %u");
         out.defaults.push_str(" 1");
     }
-    // Parsing a time needs both its hour and its minute.
-    let time = template.hour || template.minute || template.second;
+    // Parsing a time needs its hour and minute, and a fraction needs its second.
+    let time = template.hour || template.minute || template.second || template.fraction;
+    if template.fraction && !template.second {
+        out.format.push_str(" %S");
+        out.defaults.push_str(" 00");
+    }
     if time && !template.hour {
         out.format.push_str(" %H");
         out.defaults.push_str(" 00");

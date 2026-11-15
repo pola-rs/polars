@@ -3310,15 +3310,14 @@ impl SQLFunctionVisitor<'_> {
             polars_bail!(SQLInterface: "TYPEOF cannot determine the type of {}", arg)
         };
         let name = lit(dtype.materialize_unknown(true)?.to_string());
-        // Over an aggregate, the type is an aggregate too, so that the query has one row per group.
-        // A column read outside the aggregates is kept, so that it is still checked against the
-        // GROUP BY.
-        let e = if !has_marked_aggregate(&e) {
-            name
-        } else if has_column_outside_aggregates(&e) {
-            when(e.is_null()).then(name.clone()).otherwise(name)
-        } else {
-            mark_aggregate(name.first())
+        // The argument is kept for its number of rows and its checks against the GROUP BY, except
+        // when it is an aggregate of the input, whose value need not be computed.
+        let e = match e {
+            Expr::Literal(_) => name,
+            e if has_marked_aggregate(&e) && !has_column_outside_aggregates(&e) => {
+                mark_aggregate(name.first())
+            },
+            e => when(e.is_null()).then(name.clone()).otherwise(name),
         };
         self.apply_window_spec(e)
     }
