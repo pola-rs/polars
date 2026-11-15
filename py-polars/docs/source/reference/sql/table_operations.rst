@@ -256,14 +256,20 @@ If another writer commits first:
 
 DESCRIBE
 --------
-Returns the column names and Polars data types of a table or view, as the columns
-``column_name`` and ``column_type``. ``DESC`` is the same.
+Returns the column names and data types of a table, a view or the result of a query, as the
+columns ``column_name`` and ``column_type``. ``DESC`` is the same. A query is not run.
+
+A type is given by the SQL name that :ref:`CAST <cast>` reads back as that type, with a nested
+type in full, such as ``STRUCT<lat DOUBLE PRECISION, lon DOUBLE PRECISION>``. A type that has
+no SQL name, such as a fixed-size array, is given by its Polars name in lower case, also inside
+a nested type; such a name cannot be used in ``CAST``.
 
 **Example:**
 
 .. code-block:: sql
 
     DESCRIBE some_table
+    DESCRIBE SELECT a, b * 2 AS c FROM some_table
 
 .. _drop_schema:
 

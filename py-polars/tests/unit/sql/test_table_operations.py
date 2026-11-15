@@ -753,12 +753,28 @@ def test_describe(describe: str, test_frame: pl.LazyFrame) -> None:
         assert_frame_equal(
             ctx.execute(f"{describe} frame", eager=True),
             pl.DataFrame(
-                {"column_name": ["x", "y", "z"], "column_type": ["u8", "str", "date"]}
+                {
+                    "column_name": ["x", "y", "z"],
+                    "column_type": ["UTINYINT", "VARCHAR", "DATE"],
+                }
             ),
         )
         assert ctx.execute(f"{describe} V", eager=True).rows() == [
-            ("x2", "u8"),
-            ("y", "str"),
+            ("x2", "UTINYINT"),
+            ("y", "VARCHAR"),
         ]
+        # a query is described by the columns of its result
+        res = ctx.execute(
+            f"{describe} SELECT y, z, x::double precision AS f FROM frame WHERE x > 1",
+            eager=True,
+        )
+        assert res.rows() == [
+            ("y", "VARCHAR"),
+            ("z", "DATE"),
+            ("f", "DOUBLE PRECISION"),
+        ]
+        with pytest.raises(SQLInterfaceError, match="tables and queries only"):
+            ctx.execute(f"{describe} DROP TABLE frame")
+        assert ctx.tables() == ["frame", "v"]
         with pytest.raises(SQLInterfaceError, match="relation 'nosuch' was not found"):
             ctx.execute(f"{describe} nosuch")

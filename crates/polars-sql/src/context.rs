@@ -77,7 +77,7 @@ use crate::subquery::{
 use crate::subquery_pull_up::NESTED_PREFIX;
 use crate::table_functions::PolarsTableFunctions;
 use crate::time_travel::{split_version, unversioned_key, with_version};
-use crate::types::map_sql_dtype_to_polars;
+use crate::types::{map_sql_dtype_to_polars, sql_type_name};
 use crate::{col, unique_column_name};
 
 #[derive(Clone)]
@@ -1608,6 +1608,12 @@ impl SQLContext {
             },
             Statement::AlterTable(alter) => return Err(self.alter_table_error(&alter.name)),
             Statement::Insert(insert) => self.execute_insert(insert)?,
+            Statement::Explain {
+                describe_alias:
+                    sqlparser::ast::DescribeAlias::Describe | sqlparser::ast::DescribeAlias::Desc,
+                statement,
+                ..
+            } => self.execute_describe_query(statement)?,
             stmt @ Statement::Explain { .. } => self.execute_explain(stmt)?,
             Statement::Truncate(truncate) => self.execute_truncate_table(truncate)?,
             stmt @ Statement::Delete { .. } => self.execute_delete_from_table(stmt)?,
@@ -2597,7 +2603,35 @@ impl SQLContext {
 
     // DESCRIBE <table>
     fn execute_describe(&mut self, name: &ObjectName) -> PolarsResult<LazyFrame> {
-        let (_, mut lf) = self.get_named_table(name)?;
+        let (_, lf) = self.get_named_table(name)?;
+        self.describe_columns(lf)
+    }
+
+    // DESCRIBE <query>
+    fn execute_describe_query(&mut self, statement: &Statement) -> PolarsResult<LazyFrame> {
+        // Any other statement would be run to get its columns.
+        let query = match statement {
+            Statement::Query(query)
+                if !matches!(
+                    query.body.as_ref(),
+                    SetExpr::Insert(_)
+                        | SetExpr::Update(_)
+                        | SetExpr::Delete(_)
+                        | SetExpr::Merge(_)
+                ) =>
+            {
+                query
+            },
+            _ => polars_bail!(
+                SQLInterface: "DESCRIBE supports tables and queries only; found:\n{}", statement,
+            ),
+        };
+        let lf = self.execute_query(query)?;
+        self.describe_columns(lf)
+    }
+
+    /// The columns of `lf`, one per row, with their SQL type names.
+    fn describe_columns(&mut self, mut lf: LazyFrame) -> PolarsResult<LazyFrame> {
         let schema = self.get_frame_schema(&mut lf)?;
         let column_names = Column::new(
             PlSmallStr::from_static("column_name"),
@@ -2608,10 +2642,7 @@ impl SQLContext {
         );
         let column_types = Column::new(
             PlSmallStr::from_static("column_type"),
-            schema
-                .iter_values()
-                .map(|dtype| dtype.to_string())
-                .collect::<Vec<_>>(),
+            schema.iter_values().map(sql_type_name).collect::<Vec<_>>(),
         );
         Ok(DataFrame::new_infer_height(vec![column_names, column_types])?.lazy())
     }
