@@ -564,10 +564,6 @@ fn try_decode_dictionary_column(
         dictionary_pays_off,
     )?
     else {
-        polars_core::frame::column::dictionary_stats::add(
-            polars_core::frame::column::dictionary_stats::Counter::UncodedStringChunks,
-            1,
-        );
         return Ok(None);
     };
 
@@ -598,14 +594,6 @@ fn try_decode_dictionary_column(
         );
         return Ok(Some((ca.into_column(), pred_true_mask)));
     }
-    polars_core::frame::column::dictionary_stats::add(
-        polars_core::frame::column::dictionary_stats::Counter::CodedChunks,
-        1,
-    );
-    polars_core::frame::column::dictionary_stats::add(
-        polars_core::frame::column::dictionary_stats::Counter::CodedRows,
-        column.len(),
-    );
     Ok(Some((column.into_column(), pred_true_mask)))
 }
 

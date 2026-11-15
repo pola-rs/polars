@@ -96,12 +96,6 @@ impl ComputeNode for InMemorySinkNode {
     }
 
     fn get_output(&mut self) -> PolarsResult<Option<DataFrame>> {
-        if polars_core::frame::column::dictionary_stats::enabled() {
-            eprint!(
-                "{}",
-                polars_core::frame::column::dictionary_stats::report_and_reset()
-            );
-        }
         let morsels_per_pipe = core::mem::take(&mut *self.morsels_per_pipe.get_mut());
         let spillframes = linearize(morsels_per_pipe);
         if spillframes.is_empty() {

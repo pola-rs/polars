@@ -142,7 +142,6 @@ impl Grouper for BinviewHashGrouper {
                 if let Some(g) = group_idxs.as_deref_mut() {
                     g.reserve(subset.len());
                 }
-                let mut misses = 0;
                 for idx in subset {
                     let idx = *idx as usize;
                     // SAFETY: the subset indices are in bounds, and so are valid codes.
@@ -153,7 +152,6 @@ impl Grouper for BinviewHashGrouper {
                             let code = *codes.get_unchecked(idx) as usize;
                             let cached = cache.get_unchecked_mut(code);
                             if *cached == IdxSize::MAX {
-                                misses += 1;
                                 let hash = hash_keys.hashes.value_unchecked(idx);
                                 *cached = self.insert_key(hash, *views.get_unchecked(idx), buffers);
                             }
@@ -165,14 +163,6 @@ impl Grouper for BinviewHashGrouper {
                         g.push(group);
                     }
                 }
-                polars_core::frame::column::dictionary_stats::add(
-                    polars_core::frame::column::dictionary_stats::Counter::GroupCacheMisses,
-                    misses,
-                );
-                polars_core::frame::column::dictionary_stats::add(
-                    polars_core::frame::column::dictionary_stats::Counter::GroupCacheHits,
-                    subset.len() - misses,
-                );
                 true
             } else {
                 false

@@ -379,29 +379,19 @@ impl DictionaryColumn {
     /// Get the [`DictionaryColumn`] as [`Series`]
     ///
     /// This needs to materialize upon the first call. Afterwards, this is cached.
-    #[track_caller]
     pub fn as_materialized_series(&self) -> &Series {
-        let caller = std::panic::Location::caller();
-        self.materialized.get_or_init(|| {
-            stats::record_materialize(caller, self.len());
-            self.to_series()
-        })
+        self.materialized.get_or_init(|| self.to_series())
     }
 
     /// Take the [`DictionaryColumn`] and materialize as a [`Series`] if not already done.
-    #[track_caller]
     pub fn take_materialized_series(self) -> Series {
-        let caller = std::panic::Location::caller();
         match self.materialized.into_inner() {
             Some(s) => s,
-            None => {
-                stats::record_materialize(caller, self.codes.len());
-                Self {
-                    materialized: OnceLock::new(),
-                    ..self
-                }
-                .to_series()
-            },
+            None => Self {
+                materialized: OnceLock::new(),
+                ..self
+            }
+            .to_series(),
         }
     }
 
@@ -588,12 +578,9 @@ impl DictionaryColumn {
     ) -> PolarsResult<Column> {
         let max_evaluated = self.len() / 2;
         let Some((used, mut row_slots)) = self.used_codes(max_evaluated) else {
-            stats::add(stats::Counter::ElementwiseFallbackRows, self.len());
             return f(self.as_materialized_series()).map(Column::from);
         };
         let null_slot = used.len() as u32;
-        stats::add(stats::Counter::ElementwiseRows, self.len());
-        stats::add(stats::Counter::ElementwiseValues, used.len());
 
         let codes = self.codes.rechunk();
         let validity = codes
@@ -688,100 +675,6 @@ impl From<DictionaryColumn> for Column {
 pub fn dictionary_codes_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| std::env::var("POLARS_DICT_CODES").as_deref() != Ok("0"))
-}
-
-/// Counters of how often each dictionary-code path is taken, for checking that they fire. Enabled by
-/// `POLARS_DICT_CODES_REPORT=1`; `report_and_reset` returns and clears them.
-pub mod stats {
-    use std::panic::Location;
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use std::sync::{LazyLock, Mutex};
-
-    use polars_utils::aliases::{InitHashMaps, PlHashMap};
-
-    static ENABLED: LazyLock<bool> =
-        LazyLock::new(|| std::env::var("POLARS_DICT_CODES_REPORT").as_deref() == Ok("1"));
-
-    #[derive(Clone, Copy)]
-    pub enum Counter {
-        CodedChunks,
-        CodedRows,
-        UncodedStringChunks,
-        BinviewHashRows,
-        KeyRowsHashRows,
-        GroupCacheHits,
-        GroupCacheMisses,
-        HotGroupCacheHits,
-        HotGroupCacheMisses,
-        HotVerifySkippedRows,
-        HotVerifiedRows,
-        ProbeCacheHits,
-        ProbeCacheMisses,
-        ElementwiseRows,
-        ElementwiseValues,
-        ElementwiseFallbackRows,
-    }
-
-    const NAMES: [&str; 16] = [
-        "reader: coded column chunks",
-        "reader: coded rows",
-        "reader: String chunks not coded",
-        "a: single-key rows hashed from the dictionary",
-        "a: multi-key rows hashed from the dictionary",
-        "b: partition grouper cache hits",
-        "b: partition grouper cache misses",
-        "b: hot grouper cache hits",
-        "b: hot grouper cache misses",
-        "c: multi-key hot rows that skipped verify",
-        "c: multi-key hot rows verified (codes present)",
-        "d: probe cache hits",
-        "d: probe cache misses",
-        "e/f: elementwise rows",
-        "e/f: elementwise values evaluated",
-        "e/f: elementwise rows evaluated per row (fallback)",
-    ];
-
-    static COUNTERS: [AtomicU64; 16] = [const { AtomicU64::new(0) }; 16];
-    static MATERIALIZED: LazyLock<Mutex<PlHashMap<&'static Location<'static>, (u64, u64)>>> =
-        LazyLock::new(|| Mutex::new(PlHashMap::new()));
-
-    #[inline(always)]
-    pub fn enabled() -> bool {
-        *ENABLED
-    }
-
-    #[inline(always)]
-    pub fn add(counter: Counter, n: usize) {
-        if enabled() {
-            COUNTERS[counter as usize].fetch_add(n as u64, Ordering::Relaxed);
-        }
-    }
-
-    pub fn record_materialize(caller: &'static Location<'static>, rows: usize) {
-        if enabled() {
-            let mut m = MATERIALIZED.lock().unwrap();
-            let e = m.entry(caller).or_insert((0, 0));
-            e.0 += 1;
-            e.1 += rows as u64;
-        }
-    }
-
-    /// The counters and materialization sites since the last call, which clears them.
-    pub fn report_and_reset() -> String {
-        let mut out = String::from("dictionary codes report:\n");
-        for (name, c) in NAMES.iter().zip(&COUNTERS) {
-            let v = c.swap(0, Ordering::Relaxed);
-            if v > 0 {
-                out += &format!("  {name}: {v}\n");
-            }
-        }
-        let mut m: Vec<_> = MATERIALIZED.lock().unwrap().drain().collect();
-        m.sort_by_key(|(_, (_, rows))| std::cmp::Reverse(*rows));
-        for (loc, (n, rows)) in m {
-            out += &format!("  materialized {rows} rows ({n} times) at {loc}\n");
-        }
-        out
-    }
 }
 
 #[cfg(test)]

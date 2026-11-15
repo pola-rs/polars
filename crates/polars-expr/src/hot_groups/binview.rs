@@ -172,7 +172,6 @@ impl HotGrouper for BinviewHashHotGrouper {
                 let codes = dc.codes.as_slice();
                 let views = hash_keys.keys.views().as_slice();
                 let buffers = hash_keys.keys.data_buffers();
-                let (mut hits, mut misses) = (0, 0);
                 hash_keys.for_each_hash(|idx, opt_h| unsafe {
                     let Some(h) = opt_h else {
                         if hash_keys.null_is_valid {
@@ -182,7 +181,6 @@ impl HotGrouper for BinviewHashHotGrouper {
                     };
                     let code = *codes.get_unchecked(idx as usize) as usize;
                     if let Some(g) = groups.get(code) {
-                        hits += 1;
                         // Mark the key as accessed, as a hit in the table does, so that a colder
                         // key sharing its slot doesn't evict it.
                         let (slot, k) = self.table.find_hash(h);
@@ -192,7 +190,6 @@ impl HotGrouper for BinviewHashHotGrouper {
                         push_g(idx as usize, Some(EvictIdx::new(g, false)));
                         return;
                     }
-                    misses += 1;
                     let view = views.get_unchecked(idx as usize);
                     let next_h = *hashes.get(idx as usize + 1).unwrap_or(&u64::MAX);
                     let opt_g = self.insert_key(h, *view, force_hot, next_h, buffers);
@@ -206,14 +203,6 @@ impl HotGrouper for BinviewHashHotGrouper {
                     }
                     push_g(idx as usize, opt_g);
                 });
-                polars_core::frame::column::dictionary_stats::add(
-                    polars_core::frame::column::dictionary_stats::Counter::HotGroupCacheHits,
-                    hits,
-                );
-                polars_core::frame::column::dictionary_stats::add(
-                    polars_core::frame::column::dictionary_stats::Counter::HotGroupCacheMisses,
-                    misses,
-                );
                 self.dict_groups = groups;
                 return;
             }

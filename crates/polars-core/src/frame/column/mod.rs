@@ -1,8 +1,6 @@
 use std::borrow::Cow;
 
-pub use dictionary::{
-    DictionaryColumn, SharedDictionary, dictionary_codes_enabled, stats as dictionary_stats,
-};
+pub use dictionary::{DictionaryColumn, SharedDictionary, dictionary_codes_enabled};
 use num_traits::{Num, NumCast};
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_arrow::trusted_len::TrustMyLength;
@@ -134,7 +132,6 @@ impl Column {
     ///
     /// This may need to materialize the [`Series`] on the first invocation for a specific column.
     #[inline]
-    #[track_caller]
     pub fn as_materialized_series(&self) -> &Series {
         match self {
             Column::Series(s) => s,
@@ -196,7 +193,6 @@ impl Column {
     ///
     /// This may need to materialize the [`Series`] on the first invocation for a specific column.
     #[inline]
-    #[track_caller]
     pub fn into_materialized_series(&mut self) -> &mut Series {
         match self {
             Column::Series(s) => s,
@@ -226,7 +222,6 @@ impl Column {
     ///
     /// This may need to materialize the [`Series`] on the first invocation for a specific column.
     #[inline]
-    #[track_caller]
     pub fn take_materialized_series(self) -> Series {
         match self {
             Column::Series(s) => s.take(),
@@ -362,7 +357,6 @@ impl Column {
     pub fn try_f64(&self) -> Option<&Float64Chunked> {
         self.as_materialized_series().try_f64()
     }
-    #[track_caller]
     pub fn try_str(&self) -> Option<&StringChunked> {
         self.as_materialized_series().try_str()
     }
@@ -465,7 +459,6 @@ impl Column {
     pub fn f64(&self) -> PolarsResult<&Float64Chunked> {
         self.as_materialized_series().f64()
     }
-    #[track_caller]
     pub fn str(&self) -> PolarsResult<&StringChunked> {
         self.as_materialized_series().str()
     }
@@ -1194,10 +1187,11 @@ impl Column {
             .vec_hash_combine(build_hasher, hashes)
     }
 
-    /// Try to append `other` to `self` without materializing, when both are scalar columns.
+    /// Try to append `other` to `self` without materializing, when both are scalar or both are
+    /// dictionary columns.
     ///
     /// Returns whether that was possible.
-    fn try_append_scalar(&mut self, other: &Column) -> bool {
+    fn try_append_unmaterialized(&mut self, other: &Column) -> bool {
         match (&mut *self, other) {
             (Column::Scalar(lhs), Column::Scalar(rhs)) => lhs.try_append(rhs),
             (Column::Dictionary(lhs), Column::Dictionary(rhs)) => lhs.try_append(rhs),
@@ -1206,7 +1200,7 @@ impl Column {
     }
 
     pub fn append(&mut self, other: &Column) -> PolarsResult<&mut Self> {
-        if self.try_append_scalar(other) {
+        if self.try_append_unmaterialized(other) {
             return Ok(self);
         }
 
@@ -1215,7 +1209,7 @@ impl Column {
         Ok(self)
     }
     pub fn append_owned(&mut self, other: Column) -> PolarsResult<&mut Self> {
-        if self.try_append_scalar(&other) {
+        if self.try_append_unmaterialized(&other) {
             return Ok(self);
         }
 
@@ -1391,7 +1385,7 @@ impl Column {
     pub fn extend(&mut self, other: &Column) -> PolarsResult<&mut Self> {
         // `extend` only differs from `append` in the chunk layout of the result, and a
         // `ScalarColumn` has no chunks to lay out.
-        if self.try_append_scalar(other) {
+        if self.try_append_unmaterialized(other) {
             return Ok(self);
         }
 

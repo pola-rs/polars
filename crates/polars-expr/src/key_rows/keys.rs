@@ -266,10 +266,6 @@ impl KeyColumn {
                     })
                 },
                 ColValues::View(views, _) if let Some(dc) = dict_codes => {
-                    polars_core::frame::column::dictionary_stats::add(
-                        polars_core::frame::column::dictionary_stats::Counter::KeyRowsHashRows,
-                        views.len(),
-                    );
                     let views = views.as_slice();
                     let codes = dc.codes.as_slice();
                     let dict_hashes = dc.hashes.as_slice();

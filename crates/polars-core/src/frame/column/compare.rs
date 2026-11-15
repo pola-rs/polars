@@ -55,43 +55,33 @@ fn dictionary_lookup_mask(
 
     let codes = column.codes().rechunk();
     let codes = codes.downcast_as_array();
-    // Null rows look up the last entry, the result for a null.
-    let slots = codes.values().iter().enumerate().map(|(i, c)| {
-        // SAFETY: valid codes are below `n` (invariant).
-        if codes
-            .validity()
-            .is_none_or(|v| unsafe { v.get_bit_unchecked(i) })
-        {
-            *c as usize
-        } else {
-            n
-        }
-    });
-    let (values, validity) = match &valid {
-        None if codes.validity().is_none() => (
-            // SAFETY: every code is below `n` (invariant) and `bits` has `n + 1` entries.
-            Bitmap::from_trusted_len_iter(
-                codes
-                    .values()
-                    .iter()
-                    .map(|c| unsafe { *bits.get_unchecked(*c as usize) }),
-            ),
-            None,
-        ),
-        None => (
-            Bitmap::from_trusted_len_iter(slots.map(|s| unsafe { *bits.get_unchecked(s) })),
-            None,
-        ),
-        Some(valid) => {
-            let slots: Vec<usize> = slots.collect();
-            (
+    // SAFETY: valid codes are below `n` (invariant) and the tables have `n + 1` entries.
+    let (values, validity) = match codes.validity().filter(|v| v.unset_bits() > 0) {
+        None => {
+            let gather = |table: &[bool]| {
                 Bitmap::from_trusted_len_iter(
-                    slots.iter().map(|s| unsafe { *bits.get_unchecked(*s) }),
-                ),
-                Some(Bitmap::from_trusted_len_iter(
-                    slots.iter().map(|s| unsafe { *valid.get_unchecked(*s) }),
-                )),
-            )
+                    codes
+                        .values()
+                        .iter()
+                        .map(|c| unsafe { *table.get_unchecked(*c as usize) }),
+                )
+            };
+            let validity = valid
+                .as_deref()
+                .filter(|valid| !valid[..n].iter().all(|v| *v))
+                .map(gather);
+            (gather(&bits), validity)
+        },
+        Some(code_validity) => {
+            // Null rows look up the last entry, the result for a null.
+            let gather = |table: &[bool]| {
+                Bitmap::from_trusted_len_iter(codes.values().iter().zip(code_validity).map(
+                    |(c, is_valid)| unsafe {
+                        *table.get_unchecked(if is_valid { *c as usize } else { n })
+                    },
+                ))
+            };
+            (gather(&bits), valid.as_deref().map(gather))
         },
     };
     let arr = BooleanArray::new(ArrowDataType::Boolean, values, validity);

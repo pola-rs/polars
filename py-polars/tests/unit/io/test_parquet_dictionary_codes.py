@@ -87,6 +87,16 @@ QUERIES: dict[str, Callable[[pl.LazyFrame], pl.LazyFrame]] = {
     "hash": lambda lf: lf.select(pl.col("k").hash(5)),
 }
 
+UNORDERED_QUERIES = {
+    "group_by_long",
+    "group_by_two",
+    "group_by_three",
+    "unique",
+    "upper_then_group",
+    "cast_cat_group",
+    "agg_in_group",
+}
+
 
 @pytest.mark.parametrize("name", sorted(QUERIES))
 @pytest.mark.parametrize("with_nulls", [False, True])
@@ -97,10 +107,34 @@ def test_dictionary_codes_queries(tmp_path: Path, name: str, with_nulls: bool) -
     expected = q(df.lazy()).collect()
     for engine in ["streaming", "in-memory"]:
         out = q(pl.scan_parquet(path)).collect(engine=engine)  # type: ignore[call-overload]
-        ordered = name in {"slice", "head", "sort", "filter_eq", "filter_is_in"}
+        ordered = name not in UNORDERED_QUERIES
         assert_frame_equal(
             out, expected, check_row_order=ordered, categorical_as_str=True
         )
+
+
+@pytest.mark.parametrize(
+    "f",
+    [
+        lambda: pl.lit("abc").str.replace(pl.col("s"), "X"),
+        lambda: pl.lit("abc").replace_strict("x", "y", default=pl.col("s")),
+        lambda: pl.lit("abc").str.contains(pl.col("s"), literal=True),
+        lambda: pl.concat_str(pl.lit("x"), pl.col("s")),
+    ],
+)
+def test_dictionary_codes_not_first_input(
+    tmp_path: Path, f: Callable[[], pl.Expr]
+) -> None:
+    df = pl.DataFrame({"s": ["a"] * 256})
+    path = _write(df, tmp_path / "f.parquet")
+    try:
+        expected = df.select(f())
+    except pl.exceptions.PolarsError as e:
+        with pytest.raises(type(e)):
+            pl.scan_parquet(path).select(f()).collect()
+    else:
+        out = pl.scan_parquet(path).select(f()).collect()
+        assert_frame_equal(out, expected)
 
 
 @pytest.mark.parametrize("how", ["inner", "left", "semi", "anti", "full"])

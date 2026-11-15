@@ -169,12 +169,14 @@ impl BinviewKeyIdxTable {
         const MAX_CACHED_TABLES: usize = 64;
         const MAX_CACHED_ENTRIES: usize = 1 << 20;
         CACHES.with_borrow_mut(|caches| {
-            if !caches.contains_key(&self.uid)
-                && (caches.len() >= MAX_CACHED_TABLES
-                    || caches.values().map(DictCodeCache::len).sum::<usize>()
-                        + dc.dict.len().min(MAX_DICT_CODE_CACHE_LEN)
-                        > MAX_CACHED_ENTRIES)
-            {
+            let own = caches.get(&self.uid).map(DictCodeCache::capacity);
+            let others =
+                caches.values().map(DictCodeCache::capacity).sum::<usize>() - own.unwrap_or(0);
+            let own_needed = own
+                .unwrap_or(0)
+                .max(dc.dict.len().min(MAX_DICT_CODE_CACHE_LEN));
+            let too_many_tables = own.is_none() && caches.len() >= MAX_CACHED_TABLES;
+            if too_many_tables || others + own_needed > MAX_CACHED_ENTRIES {
                 *caches = PlHashMap::new();
             }
             let cache = caches.entry(self.uid).or_default();
@@ -191,20 +193,11 @@ impl BinviewKeyIdxTable {
                 let code = *codes.get_unchecked(i) as usize;
                 let entry = entries.get_unchecked_mut(code);
                 if *entry == IdxSize::MAX {
-                    polars_core::frame::column::dictionary_stats::add(
-                        polars_core::frame::column::dictionary_stats::Counter::ProbeCacheMisses,
-                        1,
-                    );
                     let hash = hash_keys.hashes.value_unchecked(i);
                     *entry = self
                         .idx_map
                         .get_index_of_view(hash, views.get_unchecked(i), buffers)
                         .unwrap_or(NO_ENTRY);
-                } else {
-                    polars_core::frame::column::dictionary_stats::add(
-                        polars_core::frame::column::dictionary_stats::Counter::ProbeCacheHits,
-                        1,
-                    );
                 }
                 let idxs =
                     (*entry != NO_ENTRY).then(|| self.idx_map.get_index_view_unchecked(*entry).2);

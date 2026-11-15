@@ -475,20 +475,16 @@ fn check_map_output_len(input_len: usize, output_len: usize, expr: &Expr) -> Pol
     Ok(())
 }
 
-/// The index of the only dictionary-coded input, when every other input is a constant
-/// that can broadcast to the dictionary column's length.
-fn single_dictionary_input(inputs: &[Column]) -> Option<usize> {
-    let idx = inputs
-        .iter()
-        .position(|c| c.as_dictionary_column().is_some())?;
-    let len = inputs[idx].len();
-    inputs
-        .iter()
-        .enumerate()
-        .all(|(i, c)| {
-            i == idx || c.len() == 1 || (c.len() == len && c.as_scalar_column().is_some())
-        })
-        .then_some(idx)
+/// Whether the first input is dictionary-coded and every other input is a constant that can
+/// broadcast to its length.
+fn first_input_is_dictionary(inputs: &[Column]) -> bool {
+    let Some((first, rest)) = inputs.split_first() else {
+        return false;
+    };
+    first.as_dictionary_column().is_some()
+        && rest
+            .iter()
+            .all(|c| c.len() == 1 || (c.len() == first.len() && c.as_scalar_column().is_some()))
 }
 
 fn can_evaluate_on_dictionary(expr: &Expr) -> bool {
@@ -540,15 +536,15 @@ impl PhysicalExpr for ApplyExpr {
             }
         }
 
-        // An elementwise function of one dictionary-coded column (and constants) is evaluated once
+        // An elementwise function of a dictionary-coded column (and constants) is evaluated once
         // per dictionary value the rows use. User functions (including plugins) may depend on
         // row order or count, and `set_sorted` describes the order of the rows.
         if constant_len.is_none()
             && self.flags.is_elementwise()
             && can_evaluate_on_dictionary(&self.expr)
-            && let Some(dict_idx) = single_dictionary_input(&inputs)
+            && first_input_is_dictionary(&inputs)
         {
-            let dict_col = inputs[dict_idx].as_dictionary_column().unwrap().clone();
+            let dict_col = inputs[0].as_dictionary_column().unwrap().clone();
             let in_name = inputs[0].name().clone();
             let out = dict_col.apply_elementwise(|values| {
                 let n = values.len();
@@ -556,7 +552,7 @@ impl PhysicalExpr for ApplyExpr {
                     .iter()
                     .enumerate()
                     .map(|(i, c)| {
-                        if i == dict_idx {
+                        if i == 0 {
                             values.clone().into_column()
                         } else if c.len() == 1 {
                             // Some kernels require a length-1 argument, e.g. `replace`'s mapping.
@@ -831,8 +827,8 @@ mod tests {
                 inputs.swap(0, dict_idx);
                 assert!(inputs[dict_idx].as_dictionary_column().is_some());
                 assert_eq!(
-                    single_dictionary_input(&inputs),
-                    matches!(len, 1 | 256).then_some(dict_idx)
+                    first_input_is_dictionary(&inputs),
+                    dict_idx == 0 && matches!(len, 1 | 256)
                 );
             }
         }

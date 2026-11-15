@@ -279,10 +279,6 @@ impl KeyEncoder {
                 let buffers = keys.data_buffers();
                 let hashes = unsafe {
                     if let Some(dc) = &dict_codes {
-                        polars_core::frame::column::dictionary_stats::add(
-                            polars_core::frame::column::dictionary_stats::Counter::BinviewHashRows,
-                            dc.codes.len(),
-                        );
                         let hash = |c: &u32| *dc.hashes.get_unchecked(*c as usize);
                         match keys.validity().filter(|v| v.unset_bits() > 0) {
                             Some(validity) => dc
@@ -1124,14 +1120,15 @@ impl DictCodeCache {
             self.dict_ids.clear();
             self.dict_ids.extend_from_slice(dict_ids);
             self.entries.clear();
+            self.entries.reserve_exact(len);
             self.entries.resize(len, IdxSize::MAX);
         }
         Some(&mut self.entries)
     }
 
-    /// The number of entries, see [`Self::entries_for`].
-    pub(crate) fn len(&self) -> usize {
-        self.entries.len()
+    /// The number of entries the cache holds memory for.
+    pub(crate) fn capacity(&self) -> usize {
+        self.entries.capacity()
     }
 }
 

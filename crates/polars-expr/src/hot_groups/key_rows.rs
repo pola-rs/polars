@@ -124,14 +124,6 @@ impl HotGrouper for KeyRowHashHotGrouper {
                     known[r] = is_known;
                     num_known += is_known as usize;
                 }
-                polars_core::frame::column::dictionary_stats::add(
-                    polars_core::frame::column::dictionary_stats::Counter::HotVerifySkippedRows,
-                    num_known,
-                );
-                polars_core::frame::column::dictionary_stats::add(
-                    polars_core::frame::column::dictionary_stats::Counter::HotVerifiedRows,
-                    n - num_known,
-                );
             }
             if num_found > num_known {
                 unsafe {
