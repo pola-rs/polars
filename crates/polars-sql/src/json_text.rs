@@ -26,7 +26,7 @@ pub(crate) fn json_text_access(
     if let LiteralValue::Dyn(DynLiteralValue::Int(idx)) = lv
         && !path_array
     {
-        write!(path, "[{idx}]").unwrap();
+        push_index(&mut path, *idx);
     } else {
         let Some(key) = lv.extract_str() else {
             return Ok(None);
@@ -37,7 +37,7 @@ pub(crate) fn json_text_access(
                     return Ok(Some(lhs.str().json_path_match(null_path())));
                 };
                 match elem.parse::<i64>() {
-                    Ok(idx) => write!(path, "[{idx}]").unwrap(),
+                    Ok(idx) => push_index(&mut path, idx.into()),
                     Err(_) => push_key(&mut path, &elem)?,
                 }
             }
@@ -50,12 +50,30 @@ pub(crate) fn json_text_access(
     Ok(Some(lhs.str().json_path_match(lit(path))))
 }
 
+/// A negative index counts from the end. It is written as a slice, which, unlike an index, reads
+/// nothing when it is out of range.
+fn push_index(path: &mut String, idx: i128) {
+    match idx {
+        -1 => path.push_str("[-1:]"),
+        i128::MIN..=-2 => write!(path, "[{idx}:{}]", idx + 1).unwrap(),
+        _ => write!(path, "[{idx}]").unwrap(),
+    }
+}
+
 fn push_key(path: &mut String, key: &str) -> PolarsResult<()> {
+    // The JSONPath backend reads at most one escaped quote in a key, so the key is quoted with
+    // the quote it has the fewest of.
+    let quote = if key.matches('"').count() < key.matches('\'').count() {
+        '"'
+    } else {
+        '\''
+    };
     polars_ensure!(
-        !key.contains('\\'),
-        SQLInterface: "JSON keys with a backslash are not supported (found '{}')", key
+        !key.contains('\\') && key.matches(quote).count() <= 1,
+        SQLInterface: "unsupported JSON key '{}'; keys with a backslash or with both quotes more than once are not supported", key
     );
-    write!(path, "['{}']", key.replace('\'', "\\'")).unwrap();
+    let escaped = key.replace(quote, &format!("\\{quote}"));
+    write!(path, "[{quote}{escaped}{quote}]").unwrap();
     Ok(())
 }
 
@@ -96,7 +114,7 @@ fn push_duckdb_path(path: &mut String, mut rest: &str, full: &str) -> PolarsResu
                 Some(from_end) => from_end.parse::<i64>().ok().filter(|idx| *idx < 0),
                 None => step[..end].parse::<i64>().ok().filter(|idx| *idx >= 0),
             };
-            write!(path, "[{}]", idx.ok_or_else(unsupported)?).unwrap();
+            push_index(path, idx.ok_or_else(unsupported)?.into());
             rest = &step[end + 1..];
         } else {
             return Err(unsupported());
