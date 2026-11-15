@@ -1280,26 +1280,17 @@ def test_scan_sqlite_volatile_views(tmp_path: Path, driver: str, source: str) ->
         ).collect()
 
 
-def test_scan_sqlite_views_without_volatile_functions() -> None:
-    import tempfile
-
-    with tempfile.TemporaryDirectory() as d:
-        path = f"{d}/t.db"
-        with closing(sqlite3.connect(path)) as conn:
-            conn.execute("CREATE TABLE ids (id INTEGER PRIMARY KEY, x)")
-            conn.executemany(
-                "INSERT INTO ids VALUES (?, ?)", [(i, i) for i in range(50)]
-            )
-            # `abs` and `printf` are deterministic; `(a, b)` names the columns
-            conn.execute(
-                "CREATE VIEW v (a, b) AS SELECT id, printf('%d', abs(x)) FROM ids"
-            )
-            conn.commit()
-        lf = pl.scan_database(
-            "v", f"sqlite:///{path}", partition_on="a", partition_num=4
-        )
-        assert sorted(lf.collect()["a"].to_list()) == list(range(50))
-        assert 'ELSE "a" END) < 5' in planned_sql(lf.filter(pl.col("a") < 5))
+def test_scan_sqlite_views_without_volatile_functions(tmp_path: Path) -> None:
+    path = tmp_path / "t.db"
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute("CREATE TABLE ids (id INTEGER PRIMARY KEY, x)")
+        conn.executemany("INSERT INTO ids VALUES (?, ?)", [(i, i) for i in range(50)])
+        # `abs` and `printf` are deterministic; `(a, b)` names the columns
+        conn.execute("CREATE VIEW v (a, b) AS SELECT id, printf('%d', abs(x)) FROM ids")
+        conn.commit()
+    lf = pl.scan_database("v", f"sqlite:///{path}", partition_on="a", partition_num=4)
+    assert sorted(lf.collect()["a"].to_list()) == list(range(50))
+    assert 'ELSE "a" END) < 5' in planned_sql(lf.filter(pl.col("a") < 5))
 
 
 def test_scan_sqlite_partition_over_a_user_function(tmp_path: Path) -> None:
