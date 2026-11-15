@@ -912,3 +912,42 @@ def test_read_ipc_option_errors(
     pl.DataFrame({"a": [1]}).write_ipc(path)
     with pytest.raises(error, match=match):
         _read_ipc_sql(path, options)
+
+
+@pytest.mark.parametrize(
+    ("ext", "write"),
+    [
+        ("csv", pl.DataFrame.write_csv),
+        ("parquet", pl.DataFrame.write_parquet),
+        ("PARQUET", pl.DataFrame.write_parquet),
+        ("ipc", pl.DataFrame.write_ipc),
+        ("arrow", pl.DataFrame.write_ipc),
+        ("feather", pl.DataFrame.write_ipc),
+        ("ndjson", pl.DataFrame.write_ndjson),
+        ("jsonl", pl.DataFrame.write_ndjson),
+    ],
+)
+def test_from_quoted_path(tmp_path: Path, ext: str, write: Any) -> None:
+    df = pl.DataFrame({"x": [1, 2], "s": ["a", "b"]})
+    path = (tmp_path / f"data.{ext}").as_posix()
+    write(df, path)
+
+    with pl.SQLContext() as ctx:
+        assert_frame_equal(ctx.execute(f"SELECT * FROM '{path}'", eager=True), df)
+        res = ctx.execute(f"SELECT t.s FROM '{path}' AS t WHERE t.x > 1", eager=True)
+        assert res.rows() == [("b",)]
+        res = ctx.execute(f"DESCRIBE '{path}'", eager=True)
+        assert res.rows() == [("x", "BIGINT"), ("s", "VARCHAR")]
+
+
+def test_from_quoted_name_that_is_not_a_path() -> None:
+    with pl.SQLContext(t=pl.DataFrame({"a": [1]})) as ctx:
+        # a name in quotes is a table first
+        assert ctx.execute("SELECT * FROM 't'", eager=True).rows() == [(1,)]
+        # so is a name without the extension of a file format
+        for name in ("data", "data.txt", "data.json"):
+            with pytest.raises(
+                SQLInterfaceError,
+                match=rf"relation '{name}' was not found.*read_csv",
+            ):
+                ctx.execute(f"SELECT * FROM '{name}'", eager=True)

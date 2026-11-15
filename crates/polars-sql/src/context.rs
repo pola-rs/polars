@@ -863,6 +863,7 @@ impl SQLContext {
 
     /// The schema and relation name of a `MERGE`'s target, resolved as a table read.
     fn merge_target(&mut self, target: &TableFactor) -> PolarsResult<(SchemaRef, RelationName)> {
+        self.check_target_is_no_file(target, "MERGE")?;
         let twj = TableWithJoins {
             relation: target.clone(),
             joins: vec![],
@@ -1756,6 +1757,38 @@ impl SQLContext {
         Ok(get_ignoring_case(&self.catalog_tables, name)?.cloned())
     }
 
+    /// The file at the path that a name in single quotes gives, unless it is read as a table.
+    fn read_quoted_path(&mut self, name: &ObjectName) -> PolarsResult<Option<(String, LazyFrame)>> {
+        match self.quoted_file_path(name)? {
+            Some(path) => PolarsTableFunctions::read_path(path, self),
+            None => Ok(None),
+        }
+    }
+
+    /// A file is only read; it is no target of a statement that changes a table.
+    fn check_target_is_no_file(&self, target: &TableFactor, statement: &str) -> PolarsResult<()> {
+        if let TableFactor::Table { name, .. } = target {
+            polars_ensure!(
+                self.quoted_file_path(name)?.is_none(),
+                SQLInterface: "{} of a file is not supported", statement
+            );
+        }
+        Ok(())
+    }
+
+    /// The path of `name`, if `FROM` reads it as a file and not as a table.
+    fn quoted_file_path<'a>(&self, name: &'a ObjectName) -> PolarsResult<Option<&'a str>> {
+        Ok(match quoted_path(name) {
+            Some(path)
+                if PolarsTableFunctions::reads_path(path)
+                    && self.get_table_unaliased(path)?.is_none() =>
+            {
+                Some(path)
+            },
+            _ => None,
+        })
+    }
+
     /// The frame of the CTE, registered table, view or catalog table `name`, with its name as
     /// written.
     fn get_named_table(&self, name: &ObjectName) -> PolarsResult<(String, LazyFrame)> {
@@ -1766,6 +1799,21 @@ impl SQLContext {
         let hint = name_parts(name)
             .and_then(|parts| self.catalogs.unresolved_hint(&parts))
             .unwrap_or_default();
+        // A name in single quotes may have been meant as a path.
+        let read_fns = PolarsTableFunctions::keywords()
+            .iter()
+            .copied()
+            .filter(|name| name.starts_with("read_"))
+            .collect::<Vec<_>>();
+        let hint = match quoted_path(name) {
+            Some(_) if hint.is_empty() && !read_fns.is_empty() => {
+                format!(
+                    "; to read it as a file, use one of: {}",
+                    read_fns.join(", ")
+                )
+            },
+            _ => hint,
+        };
         polars_bail!(SQLInterface: "relation '{}' was not found{}", tbl_name, hint);
     }
 
@@ -2601,9 +2649,12 @@ impl SQLContext {
         response(&key)
     }
 
-    // DESCRIBE <table>
+    // DESCRIBE <table>, DESCRIBE '<path>'
     fn execute_describe(&mut self, name: &ObjectName) -> PolarsResult<LazyFrame> {
-        let (_, lf) = self.get_named_table(name)?;
+        let (_, lf) = match self.read_quoted_path(name)? {
+            Some(from_item) => from_item,
+            None => self.get_named_table(name)?,
+        };
         self.describe_columns(lf)
     }
 
@@ -2898,6 +2949,7 @@ impl SQLContext {
     }
 
     fn delete_target(&mut self, from: &TableWithJoins) -> PolarsResult<LazyFrame> {
+        self.check_target_is_no_file(&from.relation, "DELETE")?;
         self.set_active_relations(std::slice::from_ref(from));
         Ok(self.get_table(&from.relation)?.1)
     }
@@ -6207,6 +6259,9 @@ impl SQLContext {
                 if let Some(args) = args {
                     return self.execute_table_function(name, alias, &args.args);
                 }
+                if let Some(from_item) = self.read_quoted_path(name)? {
+                    return self.table_function_item(from_item, alias);
+                }
                 // A qualified name (`schema.table`) is looked up as a whole, among CTEs,
                 // registered tables, views and catalog tables: the alias of another FROM item is
                 // not a table.
@@ -6382,7 +6437,16 @@ impl SQLContext {
         let tbl_fn = object_name_to_string(name);
         let tbl_fn = tbl_fn.as_str();
         let read_fn = tbl_fn.parse::<PolarsTableFunctions>()?;
-        let (tbl_name, mut lf) = read_fn.execute(args, self)?;
+        let from_item = read_fn.execute(args, self)?;
+        self.table_function_item(from_item, alias)
+    }
+
+    /// The FROM item of what a table function or a quoted path reads.
+    fn table_function_item(
+        &mut self,
+        (tbl_name, mut lf): (String, LazyFrame),
+        alias: &Option<TableAlias>,
+    ) -> PolarsResult<(String, LazyFrame)> {
         let tbl_name = match alias {
             Some(alias) => {
                 lf = self.rename_columns_from_table_alias(lf, alias)?;
@@ -7372,6 +7436,17 @@ fn expand_exprs(expr: Expr, schema: &SchemaRef) -> Vec<Expr> {
 }
 
 /// Render an `ObjectName` (dot-separated identifier parts) back to a string.
+/// The text of a name that is one part in single quotes.
+fn quoted_path(name: &ObjectName) -> Option<&str> {
+    match name.0.as_slice() {
+        [part] => part
+            .as_ident()
+            .filter(|ident| ident.quote_style == Some('\''))
+            .map(|ident| ident.value.as_str()),
+        _ => None,
+    }
+}
+
 pub(crate) fn object_name_to_string(name: &ObjectName) -> String {
     name.0
         .iter()
