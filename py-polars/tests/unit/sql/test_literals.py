@@ -6,7 +6,7 @@ from decimal import Decimal as D
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError, SQLSyntaxError
+from polars.exceptions import InvalidOperationError, SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
 
@@ -464,3 +464,157 @@ def test_numeric_typed_literals() -> None:
         pl.sql("SELECT SMALLINT 'abc' AS v", eager=True)
     with pytest.raises(SQLInterfaceError, match="typed literal should be"):
         pl.sql("SELECT BOOLEAN 'true' AS v", eager=True)
+
+
+def test_struct_literal() -> None:
+    res = pl.sql(
+        """SELECT {'a': 1, b: 'x', "C": {'d': [1, 2]}, 'n': NULL} AS s""", eager=True
+    )
+    assert res.schema == {
+        "s": pl.Struct(
+            {
+                "a": pl.Int32,
+                "b": pl.String,
+                "C": pl.Struct({"d": pl.List(pl.Int64)}),
+                "n": pl.Null,
+            }
+        )
+    }
+    assert res.item() == {"a": 1, "b": "x", "C": {"d": [1, 2]}, "n": None}
+    # built from literals: one literal, which VALUES takes
+    res = pl.sql("SELECT * FROM (VALUES ({'a': 1 + 1})) AS v(s)", eager=True)
+    assert res.item() == {"a": 2}
+    assert pl.sql("SELECT {'a': 1}, MAP {'k': 1}", eager=True).columns == [
+        "literal",
+        "literal:1",
+    ]
+
+
+def test_struct_literal_from_columns() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": ["x", "y"]})
+    res = df.sql("SELECT {'x': a, 'y': b || 'z'} FROM self")
+    # named after its first entry, as an expression is named after its first input
+    assert res.to_dict(as_series=False) == {
+        "a": [{"x": 1, "y": "xz"}, {"x": 2, "y": "yz"}]
+    }
+
+
+def test_map_literal() -> None:
+    res = pl.sql(
+        "SELECT MAP {'k': 1, 'j': 10000000000} AS m, MAP {1: [1, 2]} AS n, "
+        "MAP {100000 * 100000: 'a'} AS c",
+        eager=True,
+    )
+    assert res.schema == {
+        "m": pl.Map(pl.String, pl.Int64),
+        "n": pl.Map(pl.Int32, pl.List(pl.Int64)),
+        "c": pl.Map(pl.Int64, pl.String),
+    }
+    assert res.row(0) == (
+        {"k": 1, "j": 10000000000},
+        {1: [1, 2]},
+        {10000000000: "a"},
+    )
+
+
+def test_map_literal_from_columns() -> None:
+    df = pl.DataFrame({"k": ["a"], "j": ["b"], "l": ["a"], "v": [1]})
+    res = df.sql("SELECT MAP {k: v, j: 0, l: 2} FROM self")
+    assert res.columns == ["k"]
+    # a key repeated at run time keeps its first position and its last value
+    assert list(res.item().items()) == [("a", 2), ("b", 0)]
+
+
+def test_map_literal_null_key_at_run_time() -> None:
+    df = pl.DataFrame({"k": ["a", None], "v": [1, 2]})
+    with pytest.raises(InvalidOperationError, match="cannot be null"):
+        df.sql("SELECT MAP {k: v} FROM self")
+
+
+def test_map_literal_mixed_keys() -> None:
+    df = pl.DataFrame({"k": ["x"], "i": [5]})
+    # constant keys compare in the type of all keys: '1' and '1.0' differ
+    res = df.sql("SELECT MAP {1: 'a', 1.0: 'b', k: 'c'} AS m FROM self")
+    assert res.item() == {"1": "a", "1.0": "b", "x": "c"}
+    with pytest.raises(SQLInterfaceError, match="duplicate key 1"):
+        df.sql("SELECT MAP {1: 'a', 1: 'b', i: 'c'} AS m FROM self")
+
+
+def test_map_literal_cast() -> None:
+    res = pl.sql(
+        """
+        SELECT
+          CAST(MAP {1: '2'} AS MAP(BIGINT, INT)) AS m,
+          CAST((MAP {'k': '2020-01-02'}) AS MAP(VARCHAR, DATE)) AS d,
+          TRY_CAST(MAP {1: 'x'} AS MAP(BIGINT, INT)) AS t,
+          MAP {}::MAP(VARCHAR, INT) AS e,
+          CAST(MAP {'a': MAP {1: 2}} AS MAP(VARCHAR, MAP(BIGINT, BIGINT))) AS n
+        """,
+        eager=True,
+    )
+    assert res.schema == {
+        "m": pl.Map(pl.Int64, pl.Int32),
+        "d": pl.Map(pl.String, pl.Date),
+        "t": pl.Map(pl.Int64, pl.Int32),
+        "e": pl.Map(pl.String, pl.Int32),
+        "n": pl.Map(pl.String, pl.Map(pl.Int64, pl.Int64)),
+    }
+    assert res.row(0) == (
+        {1: 2},
+        {"k": date(2020, 1, 2)},
+        {1: None},
+        {},
+        {"a": {1: 2}},
+    )
+
+
+@pytest.mark.parametrize(
+    ("sql", "exc", "error"),
+    [
+        ("SELECT {} AS s", SQLSyntaxError, "needs at least one field"),
+        ("SELECT {'a': 1, 'a': 2} AS s", SQLInterfaceError, "duplicate field name 'a'"),
+        # compared in the keys' common type, or once converted
+        ("SELECT MAP {1: 'a', 1.0: 'b'} AS m", SQLInterfaceError, "duplicate key 1.0"),
+        (
+            "SELECT CAST(MAP {'1': 'a', '01': 'b'} AS MAP(INT, VARCHAR)) AS m",
+            SQLInterfaceError,
+            "duplicate key 1",
+        ),
+        ("SELECT MAP {NULL: 1} AS m", SQLInterfaceError, "cannot be NULL"),
+        ("SELECT MAP {} AS m", SQLInterfaceError, r"CAST\(MAP \{\} AS MAP"),
+    ],
+)
+def test_nested_literal_errors(sql: str, exc: type[Exception], error: str) -> None:
+    with pytest.raises(exc, match=error):
+        pl.sql(sql, eager=True)
+
+
+def test_nested_literals_in_values() -> None:
+    res = pl.sql(
+        "SELECT * FROM (VALUES (1, {'a': 1}, MAP {'k': 1}), (2, {'a': 5}, MAP {'j': 2}))"
+        " AS v(i, s, m)",
+        eager=True,
+    )
+    assert res.schema == {
+        "i": pl.Int32,
+        "s": pl.Struct({"a": pl.Int32}),
+        "m": pl.Map(pl.String, pl.Int32),
+    }
+    assert res.rows() == [(1, {"a": 1}, {"k": 1}), (2, {"a": 5}, {"j": 2})]
+
+
+def test_map_subscript() -> None:
+    df = pl.DataFrame(
+        {"m": [{"a": 1, "b": 2}, {"c": 3}]}, schema={"m": pl.Map(pl.String, pl.Int64)}
+    )
+    res = df.sql("SELECT m['a'] AS a, m['c'] AS c FROM self")
+    assert res.rows() == [(1, None), (None, 3)]
+    # by key, not by position
+    df = pl.DataFrame(
+        {"m": [{2: "x", 1: "y"}]}, schema={"m": pl.Map(pl.Int64, pl.String)}
+    )
+    assert df.sql("SELECT m[1] FROM self").item() == "y"
+
+
+def test_odbc_escape_is_not_a_struct_literal() -> None:
+    assert pl.sql("SELECT {d '2024-01-01'} AS d", eager=True).item() == date(2024, 1, 1)
