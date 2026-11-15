@@ -1708,3 +1708,17 @@ def test_percentile_within_group_errors(clause: str, err: str) -> None:
     t = pl.DataFrame({"g": [1, 2], "x": [1, 2]})
     with pytest.raises(Exception, match=err):
         pl.SQLContext(t=t).execute(f"SELECT {clause} AS p FROM t", eager=True)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT g AS k, UPPER(g) AS u, SUM(a) AS s FROM self GROUP BY k ORDER BY k",
+        "SELECT g AS k, g || '!' AS e FROM self GROUP BY 1 ORDER BY k",
+        "SELECT a AS k, COUNT(*) AS n, k * 10 AS k10 FROM self GROUP BY k ORDER BY k",
+        "SELECT a AS b, b AS c, COUNT(*) AS n FROM self GROUP BY 1, 2 ORDER BY 1, 2",
+    ],
+)
+def test_group_by_renamed_column(query: str) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 3], "b": [1, 1, 2, 3], "g": ["x", "x", "y", "y"]})
+    assert_sql_matches(df, query=query, compare_with="duckdb")

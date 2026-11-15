@@ -358,6 +358,67 @@ impl OutputNames {
     }
 }
 
+/// The aliases of the SELECT items before the current one, which it can read in place of
+/// their expressions. An input column comes before an alias of the same name.
+#[derive(Default)]
+pub(crate) struct SelectAliases {
+    exprs: PlHashMap<PlSmallStr, Expr>,
+    /// The typed input schema with the aliases of a known type, made when an item first reads
+    /// an alias.
+    schema: Option<SchemaRef>,
+}
+
+impl SelectAliases {
+    pub(crate) fn contains(&self, name: &str) -> bool {
+        self.exprs.contains_key(name)
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.exprs.is_empty()
+    }
+
+    pub(crate) fn insert(&mut self, name: PlSmallStr, expr: Expr, input_schema: &Schema) {
+        if input_schema.contains(&name) {
+            return;
+        }
+        if let Some(schema) = &mut self.schema
+            && let Ok(field) = expr.to_field(schema)
+        {
+            Arc::make_mut(schema).with_column(name.clone(), field.dtype);
+        }
+        self.exprs.insert(name, expr);
+    }
+
+    /// `typed_schema` with the aliases of a known type, to parse an item that reads them.
+    pub(crate) fn schema(&mut self, typed_schema: impl FnOnce() -> Schema) -> SchemaRef {
+        let exprs = &self.exprs;
+        self.schema
+            .get_or_insert_with(|| {
+                let mut schema = typed_schema();
+                let fields: Vec<_> = exprs
+                    .iter()
+                    .filter_map(|(name, expr)| Some((name.clone(), expr.to_field(&schema).ok()?)))
+                    .collect();
+                for (name, field) in fields {
+                    schema.with_column(name, field.dtype);
+                }
+                Arc::new(schema)
+            })
+            .clone()
+    }
+
+    /// Replace the aliases in `expr` by their expressions.
+    pub(crate) fn resolve(&self, expr: Expr) -> Expr {
+        expr.map_expr(|e| match e {
+            Expr::Column(name) => match self.exprs.get(&name) {
+                Some(expr) => expr.clone(),
+                None => Expr::Column(name),
+            },
+            e => e,
+        })
+    }
+}
+
 /// Whether a block without GROUP BY has both windows and aggregates, as in
 /// `SELECT SUM(x), COUNT(*) OVER () FROM t`.
 pub(crate) fn has_windows_over_aggregates(projections: &[Expr]) -> bool {

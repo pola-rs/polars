@@ -157,3 +157,43 @@ def test_unaliased_scalar_subquery_name_is_stable() -> None:
         assert ctx.execute("SELECT (SELECT MAX(v) FROM t) AS mx FROM t").columns == [
             "mx"
         ]
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT a * 2 AS x, x + 1 AS y, y * x AS z FROM self ORDER BY a",
+        # an input column comes before an alias of the same name
+        "SELECT a * 2 AS b, b + 1 AS y FROM self ORDER BY a",
+        "SELECT a AS x, x AS a, a + 1 AS c FROM self ORDER BY x",
+        "SELECT a * 2 AS x, CASE WHEN x > 3 THEN 'big' END AS size FROM self ORDER BY a",
+        "SELECT MAX(a) AS m, MIN(a) AS n, m - n AS spread FROM self",
+        "SELECT g, MAX(a) AS m, MIN(a) AS n, m - n AS d FROM self GROUP BY g HAVING d > 0",
+        "SELECT g AS k, k || '!' AS k2, COUNT(*) AS n FROM self GROUP BY k ORDER BY k",
+        "SELECT a % 2 AS x, x * 10 AS y, COUNT(*) AS n FROM self GROUP BY x ORDER BY x",
+        "SELECT g AS p, MAX(b) OVER (PARTITION BY p) AS m FROM self ORDER BY a",
+        "SELECT a, ROW_NUMBER() OVER (ORDER BY a) AS rn, rn * 10 AS r10 FROM self "
+        "QUALIFY r10 > 10 ORDER BY a",
+        "SELECT DISTINCT a % 2 AS x, x + 1 AS y FROM self ORDER BY x",
+    ],
+)
+def test_select_alias_reuse(query: str) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 5], "g": ["x", "x", "y"]})
+    assert_sql_matches(df, query=query, compare_with="duckdb")
+
+
+def test_select_alias_reuse_random() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    res = df.sql("SELECT RANDOM() AS r, r AS r2, a * 2 AS x, x FROM self")
+    assert res.columns == ["r", "r2", "x", "x:1"]
+    assert res["r"].to_list() == res["r2"].to_list()
+    assert res["x:1"].to_list() == [2, 4, 6]
+
+
+def test_select_alias_reuse_errors() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    # an alias is read by the items after it only
+    with pytest.raises(pl.exceptions.ColumnNotFoundError, match='"x"'):
+        df.sql("SELECT x + 1 AS y, a * 2 AS x FROM self")
+    with pytest.raises(pl.exceptions.ColumnNotFoundError, match='"x"'):
+        df.sql("SELECT a * 2 AS x FROM self WHERE x > 2")

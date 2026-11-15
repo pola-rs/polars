@@ -1341,6 +1341,38 @@ def test_to_date_to_timestamp(func: str, expected: date | datetime | None) -> No
     assert res["v"].to_list()[0] == expected
 
 
+def test_to_timestamp_epoch() -> None:
+    df = pl.DataFrame({"i": [0, -86400, None], "f": [1.5, 1700000000.1234567, -0.25]})
+    res = df.sql(
+        """
+        SELECT
+          TO_TIMESTAMP(i) AS ti,
+          TO_TIMESTAMP(f) AS tf,
+          TO_TIMESTAMP(CAST(f AS DECIMAL(20, 3))) AS td
+        FROM self
+        """
+    )
+    utc = pl.Datetime("us", "UTC")
+    assert res.schema == pl.Schema({"ti": utc, "tf": utc, "td": utc})
+    assert res.rows() == [
+        (
+            datetime(1970, 1, 1, tzinfo=UTC),
+            datetime(1970, 1, 1, 0, 0, 1, 500000, tzinfo=UTC),
+            datetime(1970, 1, 1, 0, 0, 1, 500000, tzinfo=UTC),
+        ),
+        (
+            datetime(1969, 12, 31, tzinfo=UTC),
+            datetime(2023, 11, 14, 22, 13, 20, 123457, tzinfo=UTC),
+            datetime(2023, 11, 14, 22, 13, 20, 123000, tzinfo=UTC),
+        ),
+        (
+            None,
+            datetime(1969, 12, 31, 23, 59, 59, 750000, tzinfo=UTC),
+            datetime(1969, 12, 31, 23, 59, 59, 750000, tzinfo=UTC),
+        ),
+    ]
+
+
 def test_to_date_errors() -> None:
     df = pl.DataFrame({"s": ["2024-01-02"]})
     with pytest.raises(

@@ -762,3 +762,34 @@ def test_describe(describe: str, test_frame: pl.LazyFrame) -> None:
         ]
         with pytest.raises(SQLInterfaceError, match="relation 'nosuch' was not found"):
             ctx.execute(f"{describe} nosuch")
+
+
+def test_information_schema_columns(test_frame: pl.LazyFrame) -> None:
+    with pl.SQLContext(frame=test_frame, df=pl.DataFrame({"a": [1]})) as ctx:
+        ctx.execute("CREATE VIEW v AS SELECT x * 2 AS x2, y FROM frame")
+        assert_frame_equal(
+            ctx.execute("SELECT * FROM information_schema.columns", eager=True),
+            pl.DataFrame(
+                {
+                    "table_name": ["df", "frame", "frame", "frame", "v", "v"],
+                    "column_name": ["a", "x", "y", "z", "x2", "y"],
+                    "ordinal_position": pl.Series([1, 1, 2, 3, 1, 2], dtype=pl.Int32),
+                    "data_type": ["i64", "u8", "str", "date", "u8", "str"],
+                    "is_nullable": ["YES"] * 6,
+                }
+            ),
+        )
+        res = ctx.execute(
+            """
+            SELECT c.column_name, c.data_type
+            FROM INFORMATION_SCHEMA.COLUMNS AS c
+            WHERE c.table_name = 'frame' AND c.ordinal_position > 1
+            """,
+            eager=True,
+        )
+        assert res.rows() == [("y", "str"), ("z", "date")]
+
+        # the context's tables are read when the query is planned
+        lf = ctx.execute("SELECT column_name FROM information_schema.columns")
+        ctx.unregister("df")
+        assert lf.collect()["column_name"].to_list() == ["a", "x", "y", "z", "x2", "y"]

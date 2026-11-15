@@ -75,6 +75,25 @@ Select the columns to be returned by the query.
     # │ 3   ┆ xx  │
     # └─────┴─────┘
 
+A SELECT item can read the alias of an item before it. An input column of the same name
+comes before the alias.
+
+.. code-block:: python
+
+    df.sql("""
+      SELECT a * 2 AS x, x + 1 AS y FROM self
+    """)
+    # shape: (3, 2)
+    # ┌─────┬─────┐
+    # │ x   ┆ y   │
+    # │ --- ┆ --- │
+    # │ i64 ┆ i64 │
+    # ╞═════╪═════╡
+    # │ 2   ┆ 3   │
+    # │ 4   ┆ 5   │
+    # │ 6   ┆ 7   │
+    # └─────┴─────┘
+
 .. note::
 
    Use of bare ``FROM tbl`` is also supported, as shorthand for ``SELECT * FROM tbl``;

@@ -47,7 +47,7 @@ use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
 use crate::functions::{PolarsSQLFunctions, is_random};
 use crate::group_context::{
-    AggregateOutputs, GroupContextSplitter, OutputNames, assume_groups_have_rows,
+    AggregateOutputs, GroupContextSplitter, OutputNames, SelectAliases, assume_groups_have_rows,
     check_columns_in_aggregates, has_marked_aggregate, has_random_outside_aggregates,
     has_subquery_outside_aggregates, has_windows_over_aggregates, is_marked_aggregate,
     strip_aggregate_marks,
@@ -1395,16 +1395,19 @@ impl SQLContext {
     /// A user-defined function does not survive the round trip through the DSL, and the views
     /// a statement reads are planned with it.
     fn can_defer(&self, stmt: &Statement) -> bool {
-        !self.custom_function_registry && is_read_only_query(stmt) && !self.reads_view(stmt)
+        !self.custom_function_registry && is_read_only_query(stmt) && !self.reads_context(stmt)
     }
 
-    /// Whether `stmt` names a view.
-    fn reads_view(&self, stmt: &Statement) -> bool {
+    /// Whether `stmt` names a view or `information_schema.columns`, which are planned
+    /// from the tables and views of the context.
+    fn reads_context(&self, stmt: &Statement) -> bool {
         let views = self.views.read().unwrap();
-        !views.is_empty()
-            && statement_table_identifiers(stmt, true, true)
-                .iter()
-                .any(|name| !matches!(key_ignoring_case(&views, name), Ok(None)))
+        statement_table_identifiers(stmt, true, true)
+            .iter()
+            .any(|name| {
+                is_information_schema_columns(name)
+                    || !matches!(key_ignoring_case(&views, name), Ok(None))
+            })
     }
 
     /// Build a [`DslPlan::SQL`] holding `query` and a snapshot of the relations it references.
@@ -1757,10 +1760,48 @@ impl SQLContext {
         if let Some(lf) = self.get_table_unaliased(&tbl_name)? {
             return Ok((tbl_name, lf));
         }
+        if is_information_schema_columns(&tbl_name) {
+            return Ok((tbl_name, self.information_schema_columns()?));
+        }
         let hint = name_parts(name)
             .and_then(|parts| self.catalogs.unresolved_hint(&parts))
             .unwrap_or_default();
         polars_bail!(SQLInterface: "relation '{}' was not found{}", tbl_name, hint);
+    }
+
+    /// A row per column of each registered table and view, in the order of their names.
+    fn information_schema_columns(&self) -> PolarsResult<LazyFrame> {
+        let mut table_names = Vec::new();
+        let mut column_names = Vec::new();
+        let mut positions = Vec::new();
+        let mut data_types = Vec::new();
+        for name in self.get_tables() {
+            let table = self.table_map.read().unwrap().get(&name).cloned();
+            let Some(mut lf) = table.map_or_else(|| self.get_view(&name), |lf| Ok(Some(lf)))?
+            else {
+                continue;
+            };
+            let schema = lf.collect_schema()?;
+            for (position, (column, dtype)) in schema.iter().enumerate() {
+                table_names.push(name.clone());
+                column_names.push(column.to_string());
+                positions.push(position as i32 + 1);
+                data_types.push(dtype.to_string());
+            }
+        }
+        let n_rows = table_names.len();
+        let columns = vec![
+            Column::new(PlSmallStr::from_static("table_name"), table_names),
+            Column::new(PlSmallStr::from_static("column_name"), column_names),
+            Column::new(PlSmallStr::from_static("ordinal_position"), positions),
+            Column::new(PlSmallStr::from_static("data_type"), data_types),
+            Column::new_scalar(
+                PlSmallStr::from_static("is_nullable"),
+                Scalar::from(PlSmallStr::from_static("YES")),
+                n_rows,
+            ),
+        ];
+        Ok(DataFrame::new(n_rows, columns)?.lazy())
     }
 
     /// The view `name` refers to (ignoring case, as in `FROM`), with its name.
@@ -4471,21 +4512,21 @@ impl SQLContext {
         }
         let mut items: Vec<ProjectionItem> = Vec::with_capacity(projection.len());
         let mut has_qualified_wildcard = false;
+        let mut aliases = SelectAliases::default();
 
         for select_item in projection {
             match select_item {
                 SelectItem::UnnamedExpr(expr) => {
                     items.push(ProjectionItem::Exprs(
-                        vec![parse_sql_expr(expr, self, Some(schema))?],
+                        vec![self.parse_select_item(expr, schema, &mut aliases, true)?],
                         false,
                     ));
                 },
                 SelectItem::ExprWithAlias { expr, alias } => {
-                    let expr = parse_sql_expr(expr, self, Some(schema))?;
-                    items.push(ProjectionItem::Exprs(
-                        vec![expr.alias(PlSmallStr::from_str(alias.value.as_str()))],
-                        true,
-                    ));
+                    let expr = self.parse_select_item(expr, schema, &mut aliases, false)?;
+                    let name = PlSmallStr::from_str(alias.value.as_str());
+                    aliases.insert(name.clone(), expr.clone(), schema);
+                    items.push(ProjectionItem::Exprs(vec![expr.alias(name)], true));
                 },
                 SelectItem::ExprWithAliases { .. } => {
                     polars_bail!(SQLSyntax: "multiple aliases per expression are not supported: {:?}", select_item)
@@ -4546,6 +4587,38 @@ impl SQLContext {
                     .map(move |e| (e, is_explicit_alias))
             })
             .collect())
+    }
+
+    /// Parse the SELECT item `expr`, which can read the aliases of the items before it. With
+    /// `keep_name`, it keeps the name it has when it reads an alias.
+    fn parse_select_item(
+        &mut self,
+        expr: &SQLExpr,
+        schema: &Schema,
+        aliases: &mut SelectAliases,
+        keep_name: bool,
+    ) -> PolarsResult<Expr> {
+        let reads_alias = !aliases.is_empty()
+            && visit_expressions(expr, |e| match e {
+                SQLExpr::Identifier(ident) if aliases.contains(&ident.value) => {
+                    ControlFlow::Break(())
+                },
+                _ => ControlFlow::Continue(()),
+            })
+            .is_break();
+        if !reads_alias {
+            return parse_sql_expr(expr, self, Some(schema));
+        }
+        let alias_schema = aliases.schema(|| self.with_placeholder_columns(schema));
+        let parsed = parse_sql_expr(expr, self, Some(&alias_schema))?;
+        let resolved = aliases.resolve(parsed.clone());
+        if keep_name
+            && let Ok(name) = parsed.meta().output_name()
+            && resolved.clone().meta().output_name().ok().as_ref() != Some(&name)
+        {
+            return Ok(resolved.alias(name));
+        }
+        Ok(resolved)
     }
 
     /// Filter `lf`, whose schema is `schema`, on the WHERE condition `where_expr`, lowering
@@ -6180,14 +6253,20 @@ impl SQLContext {
                 // registered tables, views and catalog tables: the alias of another FROM item is
                 // not a table.
                 let (tbl_name, lf) = self.get_named_table(name)?;
-                match alias {
+                let is_columns_table = is_information_schema_columns(&tbl_name);
+                let name = match alias {
                     Some(alias) => {
                         self.table_aliases
                             .insert(alias.name.value.clone(), tbl_name);
-                        Ok((alias.name.value.clone(), lf))
+                        alias.name.value.clone()
                     },
-                    None => Ok((tbl_name, lf)),
+                    None => tbl_name,
+                };
+                // Qualified columns read the frame from here, as no table holds it.
+                if is_columns_table {
+                    self.from_item_frames.insert(name.clone(), lf.clone());
                 }
+                Ok((name, lf))
             },
             // A LATERAL derived table that reads the relations before it fails here, and the
             // join plans it (see `lateral_join`).
@@ -6634,7 +6713,12 @@ impl SQLContext {
                 .iter()
                 .map(|key| {
                     let stripped = strip_outer_alias(key);
-                    if matches!(stripped, Expr::Column(_)) || is_constant(&stripped) {
+                    // A renamed column is stored too, so that other expressions can read it.
+                    let is_column = match (key, &stripped) {
+                        (Expr::Alias(_, alias), Expr::Column(name)) => alias == name,
+                        (_, stripped) => matches!(stripped, Expr::Column(_)),
+                    };
+                    if is_column || is_constant(&stripped) {
                         return key.clone();
                     }
                     let name = unique_column_name();
@@ -7348,6 +7432,10 @@ pub(crate) fn object_name_to_string(name: &ObjectName) -> String {
         .map(|i| i.value.as_str())
         .collect::<Vec<_>>()
         .join(".")
+}
+
+fn is_information_schema_columns(name: &str) -> bool {
+    name.eq_ignore_ascii_case("information_schema.columns")
 }
 
 /// Join identifier parts with dots, as relation names are spelled.
@@ -8181,13 +8269,23 @@ fn process_join_predicate(
 }
 
 /// Check that a QUALIFY predicate reads a window function, directly or through a SELECT
-/// alias.
+/// alias. An alias holds a window when its item has one or reads an alias that holds one.
 fn check_qualify(qualify: &SQLExpr, projection: &[SelectItem]) -> PolarsResult<()> {
     let (has_window_fns, column_refs) = QualifyExpression::analyze(qualify);
-    let references_window_alias = projection.iter().any(|item| {
-        matches!(item, SelectItem::ExprWithAlias { expr, alias }
-            if expr_has_window_functions(expr) && column_refs.contains(&alias.value))
-    });
+    let mut window_aliases = PlHashSet::new();
+    for item in projection {
+        if let SelectItem::ExprWithAlias { expr, alias } = item
+            && (expr_has_window_functions(expr)
+                || (!window_aliases.is_empty()
+                    && QualifyExpression::analyze(expr)
+                        .1
+                        .iter()
+                        .any(|name| window_aliases.contains(name))))
+        {
+            window_aliases.insert(alias.value.clone());
+        }
+    }
+    let references_window_alias = column_refs.iter().any(|name| window_aliases.contains(name));
     polars_ensure!(
         has_window_fns || references_window_alias,
         SQLSyntax: "QUALIFY clause must reference window functions either explicitly or via SELECT aliases"

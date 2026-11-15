@@ -2,12 +2,12 @@ use chrono::Timelike;
 use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
 use polars_core::prelude::{
     AnyValue, DataType, ExplodeOptions, PolarsResult, QuantileMethod, Scalar, Schema, TimeUnit,
-    UnknownKind, datetime_to_timestamp_us, polars_bail, polars_ensure, polars_err,
+    TimeZone, UnknownKind, datetime_to_timestamp_us, polars_bail, polars_ensure, polars_err,
 };
 use polars_core::utils::try_get_supertype;
-use polars_defs::expr::UnicodeForm;
 #[cfg(feature = "rank")]
 use polars_defs::expr::{RankMethod, RankOptions};
+use polars_defs::expr::{RoundMode, UnicodeForm};
 use polars_defs::time::group_by::ClosedWindow;
 use polars_lazy::dsl::Expr;
 #[cfg(feature = "approx_quantile")]
@@ -1736,8 +1736,10 @@ impl SQLFunctionVisitor<'_> {
                 }
             },
             ToChar => self.visit_to_char(),
-            ToDate => self.visit_parse_template("TO_DATE", |e, options| e.str().to_date(options)),
-            ToTimestamp => self.visit_parse_template("TO_TIMESTAMP", |e, options| {
+            ToDate => {
+                self.visit_parse_template("TO_DATE", false, |e, options| e.str().to_date(options))
+            },
+            ToTimestamp => self.visit_parse_template("TO_TIMESTAMP", true, |e, options| {
                 e.str().to_datetime(
                     Some(TimeUnit::Microseconds),
                     None,
@@ -3245,10 +3247,12 @@ impl SQLFunctionVisitor<'_> {
         self.apply_window_spec(e)
     }
 
-    /// TO_DATE or TO_TIMESTAMP, where `parse` converts the string.
+    /// TO_DATE or TO_TIMESTAMP, where `parse` converts the string. With `from_epoch`, a
+    /// number is the seconds since the Unix epoch, giving a UTC datetime.
     fn visit_parse_template(
         &mut self,
         function: &str,
+        from_epoch: bool,
         parse: impl Fn(Expr, StrptimeOptions) -> Expr,
     ) -> PolarsResult<Expr> {
         let args = extract_args(self.func)?;
@@ -3262,7 +3266,22 @@ impl SQLFunctionVisitor<'_> {
                 polars_bail!(SQLSyntax: "{} expects 1-2 arguments (found {})", function, args.len())
             },
         };
-        let mut value = self.string_arg(value)?;
+        let value = self.parse_sql_arg(value)?;
+        let mut value = match self.arg_dtype(&value)? {
+            Some(DataType::Null) => value.cast(DataType::String),
+            Some(dtype)
+                if from_epoch
+                    && template.is_none()
+                    && (dtype.is_primitive_numeric() || dtype.is_decimal()) =>
+            {
+                let micros = (value.cast(DataType::Float64) * lit(1_000_000.0))
+                    .round(0, RoundMode::HalfToEven)
+                    .cast(DataType::Int64);
+                let dtype = DataType::Datetime(TimeUnit::Microseconds, Some(TimeZone::UTC));
+                return self.apply_window_spec(micros.cast(dtype));
+            },
+            _ => value,
+        };
         let mut options = StrptimeOptions::default();
         if let Some(template) = template {
             let ParseFormat { format, defaults } = parse_format(&template, function)?;
