@@ -209,6 +209,16 @@ def test_select_alias_reuse_types() -> None:
     ]
     assert res["ts"].dtype == pl.Datetime("us", "UTC")
 
+    res = df.sql(
+        """
+        SELECT
+          FIRST_VALUE(s) OVER () AS x, x.* EXCLUDE (c),
+          (SELECT s FROM self LIMIT 1) AS y, y.* RENAME (c AS yc)
+        FROM self
+        """
+    )
+    assert res.columns == ["x", "b", "y", "b:1", "yc"]
+
 
 def test_select_alias_reuse_errors() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})

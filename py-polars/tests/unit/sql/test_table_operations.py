@@ -789,13 +789,17 @@ def test_information_schema_columns(test_frame: pl.LazyFrame) -> None:
         )
         assert res.rows() == [("y", "str"), ("z", "date")]
 
+        # in a view, the views reading the metadata are not listed
         ctx.execute("CREATE VIEW meta AS SELECT * FROM information_schema.columns")
-        assert ctx.execute("SELECT COUNT(*) FROM meta", eager=True).item() == 6
+        ctx.execute("CREATE VIEW meta2 AS SELECT * FROM meta")
+        assert ctx.execute("SELECT COUNT(*) FROM meta2", eager=True).item() == 6
         res = ctx.execute(
-            "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'meta'",
+            "SELECT table_name, COUNT(*) FROM information_schema.columns "
+            "WHERE table_name LIKE 'meta%' GROUP BY 1 ORDER BY 1",
             eager=True,
         )
-        assert res.item() == 5
+        assert res.rows() == [("meta", 5), ("meta2", 5)]
+        ctx.execute("DROP VIEW meta2")
         ctx.execute("DROP VIEW meta")
 
         # the context's tables are read when the query is planned

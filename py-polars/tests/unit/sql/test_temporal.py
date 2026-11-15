@@ -1347,6 +1347,7 @@ def test_to_timestamp_epoch() -> None:
             "i": [0, -86400, None],
             "f": [1.5, 1700000000.1234567, -0.25],
             "d": ["1.5", "1700000000.1234506", "-0.25"],
+            "big": [1, 18446744073710, None],
         }
     )
     res = df.sql(
@@ -1354,13 +1355,20 @@ def test_to_timestamp_epoch() -> None:
         SELECT
           TO_TIMESTAMP(i) AS ti,
           TO_TIMESTAMP(f) AS tf,
-          TO_TIMESTAMP(CAST(d AS DECIMAL(20, 7))) AS td
+          TO_TIMESTAMP(CAST(d AS DECIMAL(20, 7))) AS td,
+          TO_TIMESTAMP(CAST(1 AS DECIMAL(38, 36))) AS tone,
+          TO_TIMESTAMP(big) AS tbig
         FROM self
         """
     )
     utc = pl.Datetime("us", "UTC")
-    assert res.schema == pl.Schema({"ti": utc, "tf": utc, "td": utc})
-    assert res.rows() == [
+    assert res.schema == pl.Schema(
+        {"ti": utc, "tf": utc, "td": utc, "tone": utc, "tbig": utc}
+    )
+    assert res["tone"].to_list() == [datetime(1970, 1, 1, 0, 0, 1, tzinfo=UTC)] * 3
+    # out of the range of a datetime
+    assert res["tbig"].to_list()[1:] == [None, None]
+    assert res.drop("tone", "tbig").rows() == [
         (
             datetime(1970, 1, 1, tzinfo=UTC),
             datetime(1970, 1, 1, 0, 0, 1, 500000, tzinfo=UTC),

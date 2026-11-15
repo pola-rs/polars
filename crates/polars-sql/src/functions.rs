@@ -3274,16 +3274,19 @@ impl SQLFunctionVisitor<'_> {
                     && template.is_none()
                     && (dtype.is_primitive_numeric() || dtype.is_decimal()) =>
             {
-                let micros = if dtype.is_integer() {
-                    value.cast(DataType::Int64) * lit(1_000_000i64)
+                let micros = if dtype.is_float() {
+                    (value.cast(DataType::Float64) * lit(1_000_000.0))
+                        .round(0, RoundMode::HalfToEven)
                 } else {
-                    let micros = if dtype.is_decimal() {
-                        value * lit(1_000_000i64)
+                    // Exact in a decimal with six places; a value out of range becomes null.
+                    let seconds = if dtype.is_decimal() {
+                        value.round(6, RoundMode::HalfToEven)
                     } else {
-                        value.cast(DataType::Float64) * lit(1_000_000.0)
+                        value
                     };
-                    micros.round(0, RoundMode::HalfToEven).cast(DataType::Int64)
+                    seconds.cast(DataType::Decimal(38, 6)) * lit(1_000_000i64)
                 };
+                let micros = micros.cast(DataType::Int64);
                 let dtype = DataType::Datetime(TimeUnit::Microseconds, Some(TimeZone::UTC));
                 return self.apply_window_spec(micros.cast(dtype));
             },

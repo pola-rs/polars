@@ -1787,15 +1787,28 @@ impl SQLContext {
         let mut column_names = Vec::new();
         let mut positions = Vec::new();
         let mut data_types = Vec::new();
+        // In a view, the views that read this table are not listed, as that plans them again.
+        let in_view = !self.views_in_progress.is_empty();
+        let reads_columns_table =
+            |_: &View, tables: &[String]| tables.iter().any(|t| is_information_schema_columns(t));
         for name in self.get_tables() {
-            // A view being planned is not listed, as listing it would plan it again.
-            if self.views_in_progress.contains(&name) {
-                continue;
-            }
             let table = self.table_map.read().unwrap().get(&name).cloned();
-            let Some(mut lf) = table.map_or_else(|| self.get_view(&name), |lf| Ok(Some(lf)))?
-            else {
-                continue;
+            let mut lf = match table {
+                Some(lf) => lf,
+                None => {
+                    let Some((_, view)) = self.find_view(&name)? else {
+                        continue;
+                    };
+                    if in_view
+                        && self.view_reads(&view, &reads_columns_table, &mut PlHashSet::new())
+                    {
+                        continue;
+                    }
+                    match self.get_view(&name)? {
+                        Some(lf) => lf,
+                        None => continue,
+                    }
+                },
             };
             let schema = lf.collect_schema()?;
             for (position, (column, dtype)) in schema.iter().enumerate() {
@@ -1840,28 +1853,34 @@ impl SQLContext {
             return Ok(Some(lf.clone()));
         }
         let lf = self.plan_view(&key, &view)?;
-        if !self.reads_random(&view, &mut PlHashSet::new()) {
+        let reads_random = |view: &View, _: &[String]| contains_random(&view.query, true);
+        if !self.view_reads(&view, &reads_random, &mut PlHashSet::new()) {
             self.view_frames.lock().unwrap().insert(key, lf.clone());
         }
         Ok(Some(lf))
     }
 
-    /// Whether the query of `view`, or of a view it reads, calls `RANDOM()`. `seen` holds the
-    /// views checked so far.
-    fn reads_random(&self, view: &View, seen: &mut PlHashSet<String>) -> bool {
-        if contains_random(&view.query, true) {
-            return true;
-        }
+    /// Whether `view`, or a view it reads, is matched by `matches`, which gets a view and the
+    /// relations its query names. `seen` holds the views checked so far.
+    fn view_reads(
+        &self,
+        view: &View,
+        matches: &impl Fn(&View, &[String]) -> bool,
+        seen: &mut PlHashSet<String>,
+    ) -> bool {
         let mut collector = TableIdentifierCollector {
             include_schema: true,
             ..Default::default()
         };
         let _ = dyn_visit::visit(&view.query, &mut collector);
+        if matches(view, &collector.tables) {
+            return true;
+        }
         collector
             .tables
             .iter()
             .any(|name| match self.find_view(name) {
-                Ok(Some((key, view))) => seen.insert(key) && self.reads_random(&view, seen),
+                Ok(Some((key, view))) => seen.insert(key) && self.view_reads(&view, matches, seen),
                 _ => false,
             })
     }
@@ -7346,7 +7365,15 @@ impl SQLContext {
         // `RENAME (a AS b, b AS c)` renames the input `b` and not the renamed `a`.
         let mut named_exprs = Vec::with_capacity(exprs.len());
         for expr in exprs {
-            let name = expr.to_field(schema)?.name;
+            let name = match expr.to_field(schema) {
+                Ok(field) => field.name,
+                // A field of a SELECT alias can read a subquery or a window placeholder.
+                Err(err) => {
+                    let typed = self.with_typed_subqueries(&expr)?;
+                    let schema = self.with_placeholder_columns(schema);
+                    typed.to_field(&schema).map_err(|_| err)?.name
+                },
+            };
             if !exclude.contains(name.as_str())
                 && ilike.as_ref().is_none_or(|rx| rx.is_match(&name))
             {

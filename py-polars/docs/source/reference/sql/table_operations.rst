@@ -431,7 +431,7 @@ INFORMATION_SCHEMA.COLUMNS
 A table with a row per column of each table and view registered in the given context, in the
 order of their names. Its columns are ``table_name``, ``column_name``, ``ordinal_position``
 (starting at 1), ``data_type`` (the Polars data type, as in :ref:`DESCRIBE <describe>`) and
-``is_nullable`` (always ``'YES'``).
+``is_nullable`` (always ``'YES'``). Read in a view, it does not list the views that read it.
 
 **Example:**
 
