@@ -912,11 +912,11 @@ Indexing
    * - Operator
      - Description
    * - :ref:`-> <op_arrow>`
-     - Access a struct field by name or index, returning the native type.
+     - Access a struct field by name or index, returning the native type (or a JSON string value).
    * - :ref:`->> <op_long_arrow>`
-     - Access a struct field by name or index, returning a string.
+     - Access a struct field (or a JSON string value) by name or index, returning a string.
    * - :ref:`#>, #>> <op_hash_arrow>`
-     - Access a struct field by path, returning the native type or a string.
+     - Access a struct field (or a JSON string value) by path, returning the native type or a string.
    * - :ref:`[n] <op_subscript>`
      - Access an array element by index (1-indexed), or a map value by key.
 
@@ -965,6 +965,26 @@ Indexing
     # │ 30  │
     # │ 25  │
     # └─────┘
+
+On a string column the operators read JSON text: a name is an object key, an integer is an array
+index (negative from the end) and a name that starts with `$` is a JSONPath. Both `->` and `->>`
+return the value as a string, without the quotes of a JSON string.
+
+.. code-block:: python
+
+    df = pl.DataFrame(
+        {"data": ['{"name": "Alice", "tags": ["a", "b"]}', '{"name": "Bob", "tags": []}']}
+    )
+    df.sql("SELECT data ->> 'name' AS name, data -> 'tags' ->> 0 AS first_tag FROM self")
+    # shape: (2, 2)
+    # ┌───────┬───────────┐
+    # │ name  ┆ first_tag │
+    # │ ---   ┆ ---       │
+    # │ str   ┆ str       │
+    # ╞═══════╪═══════════╡
+    # │ Alice ┆ a         │
+    # │ Bob   ┆ null      │
+    # └───────┴───────────┘
 
 
 .. _op_hash_arrow:

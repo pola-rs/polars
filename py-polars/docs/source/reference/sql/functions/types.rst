@@ -11,6 +11,8 @@ Types
      - Convert a value to a different datatype.
    * - :ref:`TRY_CAST <try_cast>`
      - Convert a value to a different datatype, returning NULL if the conversion fails.
+   * - :ref:`TYPEOF <typeof>`
+     - Returns the name of the datatype of a value.
 
 
 .. _cast:
@@ -142,3 +144,26 @@ Note that with a regular `CAST` this would fail with the following error:
 
     InvalidOperationError:
       conversion from `i64` to `u16` failed in column 'foo' for 1 out of 3 values: [-33333]
+
+.. _typeof:
+
+TYPEOF
+------
+Returns the name of the datatype of a value, as Polars names it (the names that `DESCRIBE`
+shows).
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"i": [1, 2], "s": ["a", "b"]})
+    df.sql("SELECT TYPEOF(i) AS i, TYPEOF(s) AS s, TYPEOF(i / 2) AS x FROM self")
+    # shape: (2, 3)
+    # ┌─────┬─────┬─────┐
+    # │ i   ┆ s   ┆ x   │
+    # │ --- ┆ --- ┆ --- │
+    # │ str ┆ str ┆ str │
+    # ╞═════╪═════╪═════╡
+    # │ i64 ┆ str ┆ f64 │
+    # │ i64 ┆ str ┆ f64 │
+    # └─────┴─────┴─────┘

@@ -1094,6 +1094,21 @@ impl SQLExprVisitor<'_> {
         Ok(expr)
     }
 
+    /// What a JSON operator reads with `rhs` from `lhs`, if `lhs` is JSON text.
+    #[cfg(feature = "json")]
+    fn json_text_access(
+        &mut self,
+        lhs: &Expr,
+        rhs: &Expr,
+        path_array: bool,
+    ) -> PolarsResult<Option<Expr>> {
+        let typed = self.ctx.with_typed_subqueries(lhs)?;
+        if self.cast_or_expr_dtype(&typed) != Some(DataType::String) {
+            return Ok(None);
+        }
+        crate::json_text::json_text_access(lhs.clone(), rhs, path_array)
+    }
+
     /// Best-effort dtype for an expression; `None` if it cannot be resolved.
     /// `expr` as a truth value, where a number is true when it isn't zero.
     fn visit_truth_value(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
@@ -1411,29 +1426,40 @@ impl SQLExprVisitor<'_> {
             // ----
             // Nested (JSON) field access operators
             // ----
-            SQLBinaryOperator::Arrow | SQLBinaryOperator::LongArrow => match rhs {
+            SQLBinaryOperator::Arrow | SQLBinaryOperator::LongArrow => {
                 // "x -> y", "x ->> y"
-                Expr::Literal(lv) if lv.extract_str().is_some() => {
-                    let path = lv.extract_str().unwrap();
-                    let mut expr = self.struct_field_access_expr(&lhs, path, false)?;
-                    if let SQLBinaryOperator::LongArrow = op {
-                        expr = expr.cast(DataType::String);
-                    }
-                    expr
-                },
-                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(idx))) => {
-                    let mut expr = self.struct_field_access_expr(&lhs, &idx.to_string(), true)?;
-                    if let SQLBinaryOperator::LongArrow = op {
-                        expr = expr.cast(DataType::String);
-                    }
-                    expr
-                },
-                _ => {
-                    polars_bail!(SQLSyntax: "invalid json/struct path-extract definition: {:?}", right)
-                },
+                #[cfg(feature = "json")]
+                if let Some(e) = self.json_text_access(&lhs, &rhs, false)? {
+                    return Ok(e);
+                }
+                match rhs {
+                    Expr::Literal(lv) if lv.extract_str().is_some() => {
+                        let path = lv.extract_str().unwrap();
+                        let mut expr = self.struct_field_access_expr(&lhs, path, false)?;
+                        if let SQLBinaryOperator::LongArrow = op {
+                            expr = expr.cast(DataType::String);
+                        }
+                        expr
+                    },
+                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(idx))) => {
+                        let mut expr =
+                            self.struct_field_access_expr(&lhs, &idx.to_string(), true)?;
+                        if let SQLBinaryOperator::LongArrow = op {
+                            expr = expr.cast(DataType::String);
+                        }
+                        expr
+                    },
+                    _ => {
+                        polars_bail!(SQLSyntax: "invalid json/struct path-extract definition: {:?}", right)
+                    },
+                }
             },
             SQLBinaryOperator::HashArrow | SQLBinaryOperator::HashLongArrow => {
                 // "x #> y", "x #>> y"
+                #[cfg(feature = "json")]
+                if let Some(e) = self.json_text_access(&lhs, &rhs, true)? {
+                    return Ok(e);
+                }
                 match rhs {
                     Expr::Literal(lv) if lv.extract_str().is_some() => {
                         let path = lv.extract_str().unwrap();
