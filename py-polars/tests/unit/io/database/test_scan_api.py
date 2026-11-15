@@ -460,17 +460,13 @@ def _stop_with_saturated_blocking_pool(tmp_path: Path) -> None:
         max_connections=1,
         batch_size=5,
     )
-    # Delay the failure, so the first partition's read reaches the blocking row first.
-    def delayed(s: pl.Series) -> pl.Series:
-        time.sleep(0.5)
-        return s
 
-    q = lf.select(
-        pl.col("id")
-        .map_batches(delayed, return_dtype=pl.Int64)
-        .mul(100)
-        .cast(pl.UInt8, strict=True)
-    )
+    # Fail the query natively (a Python callback or UDF would itself need a thread of
+    # the saturated pool), but late: the first partition's read must reach its blocking
+    # row first, as it does right after handing the first batch over. The failing cast
+    # comes after a per-row sum over millions of values, which takes much longer.
+    heavy = pl.col("id").repeat_by(2_000_000).list.sum()
+    q = lf.select(heavy.cast(pl.UInt8, strict=True))
     with pytest.raises(pl.exceptions.InvalidOperationError, match="conversion"):
         q.collect(engine="streaming")
     # The only fetch thread is blocked in the database: only the cancellation, which
