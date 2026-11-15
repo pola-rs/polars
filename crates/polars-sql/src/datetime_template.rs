@@ -243,7 +243,13 @@ fn template_parts(template: &str, function: &str, output: bool) -> PolarsResult<
             Item::Name(spec, padded) => {
                 out.iso_weekday |= matches!(spec, "%A" | "%a");
                 let pad = padded && !fill;
-                if !output || (case == Case::Title && !pad) {
+                if !output {
+                    push_str(parts, spec);
+                    // A space reads the padding, if any.
+                    if pad {
+                        push_str(parts, " ");
+                    }
+                } else if case == Case::Title && !pad {
                     push_str(parts, spec);
                 } else {
                     parts.push(Part::Name { spec, case, pad });
