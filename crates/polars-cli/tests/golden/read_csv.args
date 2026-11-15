@@ -1,2 +1,0 @@
--c
-SELECT category, COUNT(*) AS n, SUM(calories) AS calories FROM read_csv('../../examples/datasets/foods1.csv') GROUP BY category ORDER BY category

@@ -11,7 +11,7 @@ use std::io::{Read, Seek};
 pub(crate) use deserialize::convert_i128;
 pub use deserialize::{
     Filter, InitNested, NestedState, PredicateFilter, column_iter_to_arrays, create_list,
-    create_map, init_nested, n_columns,
+    create_map, decode_dictionary_codes, init_nested, n_columns,
 };
 use polars_arrow::types::{NativeType, i256};
 use polars_error::PolarsResult;

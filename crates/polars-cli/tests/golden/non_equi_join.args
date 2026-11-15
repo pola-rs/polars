@@ -1,2 +1,0 @@
--c
-WITH a AS (SELECT * FROM (VALUES (1), (5)) AS t (x)), b AS (SELECT * FROM (VALUES (2), (4), (6)) AS t (y)) SELECT x, y FROM a JOIN b ON a.x < b.y ORDER BY x, y

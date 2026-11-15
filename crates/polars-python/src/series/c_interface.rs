@@ -50,15 +50,11 @@ unsafe fn export_chunk(
 ) -> PolarsResult<()> {
     polars_ensure!(s.chunks().len() == 1, InvalidOperation: "expect a single chunk");
 
-    let c_array = polars_arrow::ffi::export_array_to_c(s.chunks()[0].clone());
+    let c_array = polars_arrow::ffi::export_array_to_c(s.to_arrow(0, CompatLevel::newest()));
     let out_ptr = out_ptr as *mut polars_arrow::ffi::ArrowArray;
     *out_ptr = c_array;
 
-    let field = ArrowField::new(
-        s.name().clone(),
-        s.dtype().to_arrow(CompatLevel::newest()),
-        true,
-    );
+    let field = s.field().to_arrow(CompatLevel::newest());
     let c_schema = polars_arrow::ffi::export_field_to_c(&field);
 
     let out_schema_ptr = out_schema_ptr as *mut polars_arrow::ffi::ArrowSchema;

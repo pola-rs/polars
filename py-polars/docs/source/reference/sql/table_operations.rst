@@ -13,12 +13,18 @@ Table Operations
      - Create a namespace in an attached catalog.
    * - :ref:`CREATE TABLE <create_table>`
      - Create a new table and its columns from a SQL query executed against an existing table.
+   * - :ref:`CREATE VIEW <create_view>`
+     - Create a named query that is run each time it is read.
    * - :ref:`DELETE FROM <delete_from_table>`
      - Remove specific rows of data from a table using an (optional) constraint.
+   * - :ref:`DESCRIBE <describe>`
+     - Returns the column names and types of a table or view.
    * - :ref:`DROP SCHEMA <drop_schema>`
      - Drop an empty namespace of an attached catalog.
    * - :ref:`DROP TABLES <drop_tables>`
      - Deletes the specified table, unregistering it.
+   * - :ref:`DROP VIEW <drop_view>`
+     - Deletes the specified view.
    * - :ref:`EXPLAIN <explain>`
      - Returns the Polars execution plan for a given SQL query.
    * - :ref:`INSERT <insert>`
@@ -26,7 +32,7 @@ Table Operations
    * - :ref:`MERGE <merge>`
      - Update, delete and insert rows of a table in an attached catalog from a source.
    * - :ref:`SHOW TABLES <show_tables>`
-     - Returns a list of all tables registered in the given context.
+     - Returns a list of all tables and views registered in the given context.
    * - :ref:`GENERATE_SERIES <generate_series_table_func>`
      - Create a table with one column of values from start to stop, stop included.
    * - :ref:`RANGE <range_table_func>`
@@ -49,7 +55,7 @@ name resolved as in a query. Each statement makes one change, in one commit:
 * ``ADD [COLUMN] [IF NOT EXISTS] <name> <type>`` adds a nullable column (``NOT NULL`` is not
   supported, as the existing rows have no value for it);
 * ``DROP [COLUMN] [IF EXISTS] <name>`` drops a column (not one that a partition spec of
-  the table partitions by, also an older one);
+  the table partitions by, also an older one, nor one that the table's sort order sorts by);
 * ``RENAME COLUMN <name> TO <new_name>`` renames a column, keeping its data;
 * ``ALTER COLUMN <name> [SET DATA] TYPE <type>`` changes a column's type, as the catalog
   allows (such as ``INT`` to ``BIGINT``, ``FLOAT`` to ``DOUBLE``, or a wider ``DECIMAL``);
@@ -57,7 +63,11 @@ name resolved as in a query. Each statement makes one change, in one commit:
 * ``SET TBLPROPERTIES ('key' = value, ...)`` sets table properties;
 * ``SET PARTITIONED BY (<field>, ...)`` sets how new data is partitioned, with the fields of
   ``CREATE TABLE ... PARTITION BY``, in the order written;
-* ``RESET PARTITIONED BY`` stops partitioning new data.
+* ``RESET PARTITIONED BY`` stops partitioning new data;
+* ``SET SORTED BY (<field> [ASC | DESC] [NULLS FIRST | LAST], ...)`` sets how new data is
+  sorted, with fields as in ``PARTITION BY``, in the order written (``truncate`` also takes
+  decimals);
+* ``RESET SORTED BY`` stops sorting new data.
 
 Changing the partitioning only changes the table's metadata. Existing data files keep the
 partitioning they were written with, and later writes use the new one. A field that the
@@ -66,8 +76,17 @@ statement adds at most one time transform (``year``, ``month``, ``day`` or ``hou
 column. Time fields the table has can stay.
 Iceberg v1 tables are not supported: upgrade them to v2 first.
 
-Column names are case-sensitive and name top-level columns. ``ALTER TABLE IF EXISTS`` does
-nothing if the table does not exist.
+Changing the sort order also only changes the table's metadata. Later SQL writes (also
+``DELETE``, ``UPDATE`` and ``MERGE``, which rewrite data files) and ``sink_iceberg`` sort
+their data by the new order. A field without ``NULLS FIRST`` or ``NULLS LAST`` takes the null order of
+``ORDER BY``: nulls last for ``ASC``, first for ``DESC``. Engines differ in this default, so
+state the null order in statements that other engines also run. An older sort order with the
+same fields is used again.
+
+Column names are case-sensitive and name top-level columns. ``SET PARTITIONED BY`` and
+``SET SORTED BY`` also take fields of struct columns (``s.f``), as
+``CREATE TABLE ... PARTITION BY`` does.
+``ALTER TABLE IF EXISTS`` does nothing if the table does not exist.
 
 **Example:**
 
@@ -79,6 +98,8 @@ nothing if the table does not exist.
     ALTER TABLE lake.sales.orders SET TBLPROPERTIES ('owner' = 'finance')
     ALTER TABLE lake.sales.orders SET PARTITIONED BY (month(ordered_at), bucket(16, id))
     ALTER TABLE lake.sales.orders RESET PARTITIONED BY
+    ALTER TABLE lake.sales.orders SET SORTED BY (customer_id, ordered_at DESC NULLS LAST)
+    ALTER TABLE lake.sales.orders RESET SORTED BY
 
 .. _create_schema:
 
@@ -152,7 +173,12 @@ creates the table in the catalog.
 - ``NOT NULL`` makes a column a required field; other constraints are not supported.
 - ``PARTITION BY (...)`` sets the partition spec: a column (identity), ``year``,
   ``month``, ``day`` or ``hour`` of a column, ``bucket(N, column)`` or
-  ``truncate(W, column)``. ``PARTITIONED BY (column, ...)`` takes column names only.
+  ``truncate(W, column)``. A column can also be a field of a struct column: ``s.f`` or
+  ``"s"."f"`` is field ``f`` of struct ``s``, never a table-qualified column, and
+  ``"s.f"`` is a column named ``s.f``. ``DELETE`` and ``UPDATE`` conditions can use such a
+  field only when its struct column is ``NOT NULL``, so not one level deeper, and not in a
+  table created with ``AS SELECT``. ``PARTITIONED BY (column, ...)`` takes top-level column
+  names only.
 - ``LOCATION`` (or the ``'location'`` option) sets the table location; the other
   ``WITH`` options become table properties.
 - ``AS SELECT`` commits the rows together with the create, so a failed query creates
@@ -162,6 +188,28 @@ creates the table in the catalog.
   ``write.parquet.compression-codec`` are stored, but not applied to them.
 - ``IF NOT EXISTS`` leaves an existing table as it is; its query is checked, but not run.
 - ``LIKE`` and ``OR REPLACE`` are not supported for catalog tables.
+
+.. _create_view:
+
+CREATE VIEW
+-----------
+Create a view: a named query that is planned again each time a statement reads it, so it
+reads the tables as they are then. Use ``CREATE TABLE ... AS`` to keep the result of a
+query as it is now.
+
+- ``OR REPLACE`` replaces an existing view; ``IF NOT EXISTS`` leaves it as it is.
+- A list of column names after the view name renames the columns of the query.
+- ``TEMP``/``TEMPORARY`` is accepted; every view lives in its context.
+- Tables and views share names, a view cannot read itself, and a view cannot read the
+  tables of an attached catalog.
+
+**Example:**
+
+.. code-block:: sql
+
+    CREATE VIEW recent_orders AS SELECT * FROM orders WHERE order_date >= '2024-01-01'
+    CREATE OR REPLACE VIEW order_totals (customer, total) AS
+      SELECT customer_id, SUM(amount) FROM orders GROUP BY customer_id
 
 .. _delete_from_table:
 
@@ -204,6 +252,19 @@ If another writer commits first:
     DELETE FROM some_table WHERE value < 0
     DELETE FROM lake.sales.orders WHERE order_date < DATE '2020-01-01'
 
+.. _describe:
+
+DESCRIBE
+--------
+Returns the column names and Polars data types of a table or view, as the columns
+``column_name`` and ``column_type``. ``DESC`` is the same.
+
+**Example:**
+
+.. code-block:: sql
+
+    DESCRIBE some_table
+
 .. _drop_schema:
 
 DROP SCHEMA
@@ -243,6 +304,20 @@ files. Some catalogs drop tables only with ``PURGE``.
 .. code-block:: sql
 
     DROP TABLE lake.sales.orders_old PURGE
+
+.. _drop_view:
+
+DROP VIEW
+---------
+Deletes the specified views. Dropping a view that does not exist raises an error unless
+the optional ``IF EXISTS`` clause is given.
+
+**Example:**
+
+.. code-block:: sql
+
+    DROP VIEW recent_orders
+    DROP VIEW IF EXISTS order_totals
 
 .. _explain:
 
@@ -339,7 +414,7 @@ rewritten, or changed the table's schema or partition spec.
 
 SHOW TABLES
 -----------
-Returns a list of all tables registered in the given context.
+Returns a list of all tables and views registered in the given context.
 
 **Example:**
 

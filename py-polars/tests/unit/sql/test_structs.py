@@ -10,6 +10,7 @@ from polars.exceptions import (
     StructFieldNotFoundError,
 )
 from polars.testing import assert_frame_equal
+from tests.unit.sql import assert_sql_matches
 
 
 @pytest.fixture
@@ -153,6 +154,70 @@ def test_struct_field_operator_access(expr: str, expected: int | str) -> None:
         },
     )
     assert df.sql(f"SELECT {expr} FROM self").item() == expected
+
+
+def test_json_string_operator_access() -> None:
+    df = pl.DataFrame(
+        {
+            "j": [
+                '{"a": {"b": "x", "c": [1, 2, 3]}, "k": "v", "n": null, "it\'s": 1}',
+                '{"k": 7}',
+                None,
+            ]
+        }
+    )
+    assert_sql_matches(
+        df,
+        query="""
+        SELECT
+          j ->> 'k' AS k,
+          j -> 'a' ->> 'b' AS b,
+          j -> 'a' -> 'c' ->> -1 AS c_last,
+          j -> 'a' -> 'c' ->> 0 AS c_first,
+          j ->> '$.a.c[1]' AS c_path,
+          j ->> 'n' AS n,
+          j ->> 'missing' AS missing,
+          j ->> 'it''s' AS quoted,
+          j ->> '$.a.c[#-1]' AS from_end,
+          j -> 'a' -> 'c' ->> -3 AS c_neg,
+          j -> 'a' -> 'c' ->> -4 AS c_out,
+          j ->> '$.a.c[#-4]' AS from_end_out,
+          '{"a''b''c": 7}' ->> 'a''b''c' AS quotes,
+          '{"a.b": 1}' ->> '$."a.b"' AS dotted,
+          '{"z": [true]}' ->> 'z' AS lit,
+          (SELECT '{"s": 2}') ->> 's' AS sub
+        FROM self
+        """,
+        compare_with="duckdb",
+    )
+    # `->` returns text, so a string value has no quotes.
+    res = df.sql(
+        """
+        SELECT j -> 'k' AS k, j #> '{a,b}' AS b, j #>> '{a,c,2}' AS c FROM self
+        """
+    )
+    assert res.rows() == [("v", "x", "3"), ("7", None, None), (None, None, None)]
+    res = pl.sql(
+        """
+        SELECT
+          '{"a,b": {"c": 1}}' #>> '{"a,b", c}' AS quoted,
+          '{"a": 1}' #>> '{}' AS whole,
+          '{"a ": 1, "a": 2}' #>> '{a\\ }' AS escaped_space,
+          '{"NULL": 1}' #>> '{NULL}' AS null_step,
+          '{"NULL": 1}' #>> '{"NULL"}' AS null_key,
+          '{"a\\"b": 1}' ->> '$."a\\"b"' AS escaped_quote
+        """,
+        eager=True,
+    )
+    assert res.row(0) == ("1", '{"a":1}', "1", None, "1", "1")
+    # A NULL path gives NULL, with the rows of the left side.
+    assert df.sql("SELECT j ->> NULL AS a FROM self").rows() == [(None,)] * 3
+    assert df.sql("SELECT MAX(j) #>> '{NULL}' AS a FROM self").rows() == [(None,)]
+    with pytest.raises(SQLInterfaceError, match="unsupported JSON path"):
+        df.sql("SELECT j ->> '$[*]' FROM self")
+    assert df.sql("SELECT j #>> '{a,c,-4}' AS a FROM self").rows() == [(None,)] * 3
+    with pytest.raises(SQLInterfaceError, match="unsupported JSON key"):
+        df.sql(r"SELECT j ->> 'a\b' FROM self")
 
 
 @pytest.mark.parametrize(

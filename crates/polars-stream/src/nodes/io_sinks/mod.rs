@@ -236,7 +236,7 @@ impl IOSinkNodeState {
                     morsel_seq = morsel_seq.saturating_add(1);
 
                     if multi_phase_tx.send(morsel).await.is_err() {
-                        break;
+                        return;
                     }
                 }
             }

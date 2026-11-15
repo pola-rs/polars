@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use polars::io::utils::file::{Writable, WritableTrait};
 use polars::prelude::{
-    CompatLevel, CsvWriterOptions, DataFrame, FileWriteFormat, NDJsonWriterOptions,
+    CompatLevel, CsvWriterOptions, DataFrame, DataType, FileWriteFormat, NDJsonWriterOptions,
     ParquetWriteOptions, PolarsResult, SchemaExt, SchemaRef, SinkTarget, SpecialEq, polars_bail,
 };
 use polars_arrow::io::ipc::write::{StreamWriter as ArrowStream, WriteOptions};
@@ -15,7 +15,8 @@ use crate::error::ErrorRecord;
 /// How results are written to the output.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
 pub enum Format {
-    /// A table for reading; a long result is cut to its first and last rows
+    /// A table for reading; a long result is cut to its first and last rows. The result of
+    /// DESCRIBE or EXPLAIN is printed in full, as plain text
     #[default]
     Table,
     /// Every row, with a header line
@@ -49,13 +50,16 @@ impl fmt::Display for Format {
 
 /// What happens while a script runs.
 ///
-/// A run begins with `Start`. A statement that returns rows sends `Schema`, then any number of
-/// `Rows`. Every statement ends with `StatementEnd`, `Error` or `Interrupted`. Nothing follows
-/// `Error` or `Interrupted`.
+/// A run begins with `Start`. A statement begins with `Statement`. One that returns rows
+/// sends `Schema`, then any number of `Rows`. Every statement ends with `StatementEnd`,
+/// `Error` or `Interrupted`. Nothing follows `Error` or `Interrupted`.
 #[derive(Debug)]
 pub enum Event {
     /// The run begins. `statements` is how many statements the script holds.
     Start { statements: usize },
+    /// A statement begins. `describes` tells that its result describes a table, a query or a
+    /// plan: the table format prints such a result in full.
+    Statement { describes: bool },
     /// The columns of the result.
     Schema(SchemaRef),
     /// A batch of result rows.
@@ -81,6 +85,8 @@ pub struct Printer<O: Write, E> {
     result: Option<ResultWriter<O>>,
     /// Whether errors name their statement: only when the script has several.
     number_statements: bool,
+    /// Whether the table format prints the result of the current statement in full.
+    in_full: bool,
 }
 
 enum ResultWriter<O: Write> {
@@ -102,6 +108,7 @@ impl<O: Write, E: Write> Printer<O, E> {
             format,
             result: None,
             number_statements: false,
+            in_full: false,
         }
     }
 
@@ -131,6 +138,7 @@ impl<O: Write, E: Write> Printer<O, E> {
     pub fn event(&mut self, event: Event) -> PolarsResult<()> {
         match event {
             Event::Start { statements } => self.number_statements = statements > 1,
+            Event::Statement { describes } => self.in_full = describes,
             Event::Schema(schema) => self.result = Some(self.start_result(&schema)?),
             Event::Rows(mut rows) => {
                 if self.result.is_none() {
@@ -151,6 +159,9 @@ impl<O: Write, E: Write> Printer<O, E> {
             },
             Event::StatementEnd => {
                 match self.result.take() {
+                    Some(ResultWriter::Table(table)) if self.in_full => {
+                        write_in_full(&mut self.out, &table)?
+                    },
                     Some(ResultWriter::Table(table)) => writeln!(self.out, "{table}")?,
                     Some(ResultWriter::ArrowStream(mut writer)) => writer.finish()?,
                     None => {},
@@ -192,6 +203,35 @@ impl<O: Write, E: Write> Printer<O, E> {
             },
         })
     }
+}
+
+/// Writes every row of `table` as plain text, where the table format cuts rows and long
+/// values. One column is written as its values, one per line. Several columns get a header
+/// line and are padded to line up.
+fn write_in_full(out: &mut impl Write, table: &DataFrame) -> PolarsResult<()> {
+    let mut columns = Vec::with_capacity(table.width());
+    for column in table.columns() {
+        let text = column.cast(&DataType::String)?;
+        let mut cells = Vec::with_capacity(table.height() + 1);
+        if table.width() > 1 {
+            cells.push(column.name().to_string());
+        }
+        cells.extend(text.str()?.iter().map(|v| v.unwrap_or("null").to_string()));
+        let width = cells.iter().map(|cell| cell.chars().count()).max();
+        columns.push((cells, width.unwrap_or(0)));
+    }
+
+    let lines = columns.first().map_or(0, |(cells, _)| cells.len());
+    for line in 0..lines {
+        for (index, (cells, width)) in columns.iter().enumerate() {
+            match index + 1 == columns.len() {
+                // Nothing follows the last column, so it needs no padding.
+                true => writeln!(out, "{}", cells[line])?,
+                false => write!(out, "{:width$}  ", cells[line])?,
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The output, shared between the printer and the writer of the result that is in progress.

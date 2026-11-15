@@ -25,6 +25,8 @@ typ = "typ"
 aimd = "aimd"
 # `flate2` crate.
 flate = "flate"
+# ISO year pattern in SQL date templates.
+iy = "iy"
 
 [default.extend-identifiers]
 AKS = "AKS"

@@ -1,2 +1,0 @@
-SELECT 1 AS a;
-SELECT 'x;y' AS b;

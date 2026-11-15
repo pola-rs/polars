@@ -3148,7 +3148,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             `Float32`, `Categorical` and `Enum` to `String`, `Array` to `List`, and
             `Datetime` to microseconds, with time zones converted to UTC. Columns
             without a lossless Iceberg type (e.g. `UInt64`, nanosecond `Datetime`,
-            `Duration`) raise an error before the table is created.
+            `Duration`) raise an error before the table is created. `Map` keys are
+            not cast, so a `Map` whose keys need a cast (e.g. `Int8`) or hold times
+            (nanoseconds in Polars, microseconds in Iceberg) raises too.
 
             The table is created before the query runs, so it remains (empty)
             if the query fails.
