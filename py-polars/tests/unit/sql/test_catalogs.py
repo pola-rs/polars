@@ -2952,7 +2952,7 @@ def test_view_and_describe_with_catalog(lake: CountingCatalog) -> None:
     assert ctx.tables() == ["frame", "orders", "v"]
     for table in ("lineitem", "lake.tpch.lineitem"):
         res = ctx.execute(f"DESCRIBE {table}", eager=True)
-        assert res.rows() == [("k", "i64"), ("v", "str")]
+        assert res.rows() == [("k", "BIGINT"), ("v", "VARCHAR")]
 
 
 def forbid_sink(monkeypatch: pytest.MonkeyPatch) -> None:

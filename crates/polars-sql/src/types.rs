@@ -333,3 +333,112 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
         },
     })
 }
+
+/// The SQL name of `dtype`: the name that [`map_sql_dtype_to_polars`] reads back as `dtype`.
+/// A type that has no such name is given by its Polars name, also inside a nested type.
+pub(crate) fn sql_type_name(dtype: &DataType) -> String {
+    let precision = |time_unit: &TimeUnit| match time_unit {
+        TimeUnit::Milliseconds => 3,
+        TimeUnit::Microseconds => 6,
+        TimeUnit::Nanoseconds => 9,
+    };
+    // Microseconds are what a name without a precision stands for.
+    let with_precision = |name: &str, time_unit: &TimeUnit| match time_unit {
+        TimeUnit::Microseconds => name.to_string(),
+        _ => format!("{name}({})", precision(time_unit)),
+    };
+    match dtype {
+        DataType::Boolean => "BOOLEAN".to_string(),
+        DataType::Int8 => "TINYINT".to_string(),
+        DataType::Int16 => "SMALLINT".to_string(),
+        DataType::Int32 => "INTEGER".to_string(),
+        DataType::Int64 => "BIGINT".to_string(),
+        DataType::Int128 => "HUGEINT".to_string(),
+        DataType::UInt8 => "UTINYINT".to_string(),
+        DataType::UInt16 => "USMALLINT".to_string(),
+        DataType::UInt32 => "UINTEGER".to_string(),
+        DataType::UInt64 => "UBIGINT".to_string(),
+        DataType::UInt128 => "UHUGEINT".to_string(),
+        DataType::Float32 => "REAL".to_string(),
+        DataType::Float64 => "DOUBLE PRECISION".to_string(),
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(precision, scale) => format!("DECIMAL({precision},{scale})"),
+        DataType::String => "VARCHAR".to_string(),
+        DataType::Binary => "BYTEA".to_string(),
+        DataType::Date => "DATE".to_string(),
+        DataType::Time => "TIME".to_string(),
+        DataType::Datetime(time_unit, None) => with_precision("TIMESTAMP", time_unit),
+        DataType::Datetime(time_unit, Some(time_zone)) if *time_zone == TimeZone::UTC => {
+            with_precision("TIMESTAMP", time_unit) + " WITH TIME ZONE"
+        },
+        DataType::Datetime(time_unit, Some(time_zone)) => format!(
+            "DATETIME64({}, {})",
+            precision(time_unit),
+            quoted(time_zone, '\'')
+        ),
+        DataType::Duration(time_unit) => with_precision("INTERVAL", time_unit),
+        DataType::List(inner) => format!("{}[]", sql_type_name(inner)),
+        // `STRUCT<>` does not parse.
+        DataType::Struct(fields) if !fields.is_empty() => {
+            let fields = fields
+                .iter()
+                .map(|field| {
+                    let name = field.name().as_str();
+                    let is_plain = name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+                        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+                    let name = match is_plain {
+                        true => name.to_string(),
+                        false => quoted(name, '"'),
+                    };
+                    format!("{name} {}", sql_type_name(field.dtype()))
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            // The parser reads `>>` as one token where a `[]` follows.
+            match fields.ends_with('>') {
+                true => format!("STRUCT<{fields} >"),
+                false => format!("STRUCT<{fields}>"),
+            }
+        },
+        #[cfg(feature = "dtype-map")]
+        DataType::Map(key, value) => {
+            format!("MAP({}, {})", sql_type_name(key), sql_type_name(value))
+        },
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Categorical(categories, _) if categories.is_global() => "CATEGORICAL".to_string(),
+        // Only the categories that `CATEGORICAL('name')` gives.
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Categorical(categories, _)
+            if categories.namespace().is_empty()
+                && categories.physical() == CategoricalPhysical::U32 =>
+        {
+            format!("CATEGORICAL({})", quoted(categories.name(), '\''))
+        },
+        // `ENUM()` does not parse.
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Enum(categories, _) if categories.categories().len() > 0 => {
+            let values = categories
+                .categories()
+                .values_iter()
+                .map(|value| quoted(value, '\''))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("ENUM({values})")
+        },
+        _ => dtype.to_string(),
+    }
+}
+
+/// `text` between two `quote`s, with each `quote` inside it doubled.
+fn quoted(text: &str, quote: char) -> String {
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push(quote);
+    for c in text.chars() {
+        if c == quote {
+            out.push(quote);
+        }
+        out.push(c);
+    }
+    out.push(quote);
+    out
+}
