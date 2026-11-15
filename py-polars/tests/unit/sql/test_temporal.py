@@ -1238,6 +1238,7 @@ def test_current_timestamp_precision_unsupported() -> None:
         ("Day|FMDAY", "Tuesday  |TUESDAY"),
         ("FMDD/FMMM/YY DDD IYYY-IW-ID", "2/1/24 002 2024-01-2"),
         ('"Year" YYYY, "MM" MM', "Year 2024, MM 01"),
+        ('"a\\qb\\"" YYYY', 'aqb" 2024'),
         ("%d.%m.%Y", "02.01.2024"),
     ],
 )
@@ -1293,12 +1294,27 @@ def test_to_char_errors() -> None:
             datetime(2024, 1, 2, 15, 4, 5, 123000),
         ),
         ("TO_TIMESTAMP('2024-01-02 15:04:05')", datetime(2024, 1, 2, 15, 4, 5)),
+        (
+            "TO_TIMESTAMP('2024-01-02 15:04:05.3', 'YYYY-MM-DD HH24:MI:SS.MS')",
+            datetime(2024, 1, 2, 15, 4, 5, 300000),
+        ),
+        (
+            "TO_TIMESTAMP('2024-01-02 03:04:05', 'YYYY-MM-DD HH:MI:SS')",
+            datetime(2024, 1, 2, 3, 4, 5),
+        ),
+        (
+            "TO_TIMESTAMP('12:30 01/02/2024', 'HH12:MI MM/DD/YYYY')",
+            datetime(2024, 1, 2, 0, 30),
+        ),
+        ("TO_DATE('2024-02', 'IYYY-IW')", date(2024, 1, 8)),
+        ("TO_DATE(NULL, 'YYYY-MM-DD')", None),
+        ("TO_TIMESTAMP(NULL)", None),
     ],
 )
-def test_to_date_to_timestamp(func: str, expected: date | datetime) -> None:
+def test_to_date_to_timestamp(func: str, expected: date | datetime | None) -> None:
     df = pl.DataFrame({"s": ["02 Jan 2024", None]})
     res = df.sql(f"SELECT {func} AS v FROM self")
-    dtype = pl.Date if type(expected) is date else pl.Datetime("us")
+    dtype = pl.Date if func.startswith("TO_DATE") else pl.Datetime("us")
     assert res.schema["v"] == dtype
     assert res["v"].to_list()[0] == expected
 
@@ -1311,5 +1327,7 @@ def test_to_date_errors() -> None:
         df.sql("SELECT TO_DATE(s, 'J') FROM self")
     with pytest.raises(InvalidOperationError):
         df.sql("SELECT TO_DATE(s, 'DD-MM-YYYY') FROM self")
+    with pytest.raises(SQLInterfaceError, match="more than one fraction of a second"):
+        df.sql("SELECT TO_TIMESTAMP(s, 'SS.MS.US') FROM self")
     with pytest.raises(SQLSyntaxError, match=r"TO_TIMESTAMP expects 1-2 arguments"):
         df.sql("SELECT TO_TIMESTAMP(s, 'YYYY', 'x') FROM self")

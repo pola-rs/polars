@@ -32,8 +32,8 @@ use sqlparser::ast::{
 };
 use sqlparser::tokenizer::Span;
 
-use crate::datetime_template::{format_with_template, parse_format};
-use crate::group_context::has_marked_aggregate;
+use crate::datetime_template::{ParseFormat, format_with_template, parse_format};
+use crate::group_context::{has_marked_aggregate, mark_aggregate};
 use crate::grouping_sets::MAX_GROUPING_ARGS;
 use crate::sql_expr::{
     adjust_one_indexed_param, approximate_literal, clip_substring_length, decimal_literal,
@@ -1736,44 +1736,15 @@ impl SQLFunctionVisitor<'_> {
                 }
             },
             ToChar => self.visit_to_char(),
-            ToDate => {
-                let args = extract_args(function)?;
-                match args.len() {
-                    1 => self.visit_unary(|e| e.str().to_date(StrptimeOptions::default())),
-                    2 => self.try_visit_binary(|e, template: String| {
-                        Ok(e.str().to_date(StrptimeOptions {
-                            format: Some(parse_format(&template, "TO_DATE")?.into()),
-                            ..Default::default()
-                        }))
-                    }),
-                    _ => {
-                        polars_bail!(SQLSyntax: "TO_DATE expects 1-2 arguments (found {})", args.len())
-                    },
-                }
-            },
-            ToTimestamp => {
-                let args = extract_args(function)?;
-                let to_datetime = |e: Expr, format: Option<String>| {
-                    e.str().to_datetime(
-                        Some(TimeUnit::Microseconds),
-                        None,
-                        StrptimeOptions {
-                            format: format.map(Into::into),
-                            ..Default::default()
-                        },
-                        lit("latest"),
-                    )
-                };
-                match args.len() {
-                    1 => self.visit_unary(|e| to_datetime(e, None)),
-                    2 => self.try_visit_binary(|e, template: String| {
-                        Ok(to_datetime(e, Some(parse_format(&template, "TO_TIMESTAMP")?)))
-                    }),
-                    _ => {
-                        polars_bail!(SQLSyntax: "TO_TIMESTAMP expects 1-2 arguments (found {})", args.len())
-                    },
-                }
-            },
+            ToDate => self.visit_parse_template("TO_DATE", |e, options| e.str().to_date(options)),
+            ToTimestamp => self.visit_parse_template("TO_TIMESTAMP", |e, options| {
+                e.str().to_datetime(
+                    Some(TimeUnit::Microseconds),
+                    None,
+                    options,
+                    lit("latest"),
+                )
+            }),
 
             // ----
             // String functions
@@ -1940,24 +1911,7 @@ impl SQLFunctionVisitor<'_> {
                 }
             },
             RegexpExtract => self.visit_regexp_extract(),
-            RegexpMatches => {
-                let args = extract_args(function)?;
-                match args.len() {
-                    2 => self.visit_binary(|e, pat| e.str().contains(pat, true)),
-                    3 => self.try_visit_ternary(|e, pat, options| {
-                        let options = match options {
-                            Expr::Literal(lv) if lv.extract_str().is_some() => {
-                                RegexpOptions::new(lv.extract_str().unwrap())?
-                            },
-                            _ => {
-                                polars_bail!(SQLSyntax: "REGEXP_MATCHES expects a string literal as the options (found {})", args[2])
-                            },
-                        };
-                        Ok(options.contains(e, pat))
-                    }),
-                    _ => polars_bail!(SQLSyntax: "REGEXP_MATCHES expects 2-3 arguments (found {})", args.len()),
-                }
-            },
+            RegexpMatches => self.visit_regexp_matches(),
             RegexpReplace => self.try_visit_variadic(|args| match args {
                 [e, pat, replacement] => regexp_replace(e, pat, replacement, None),
                 [e, pat, replacement, flags] => regexp_replace(e, pat, replacement, Some(flags)),
@@ -3241,20 +3195,83 @@ impl SQLFunctionVisitor<'_> {
                 polars_bail!(SQLSyntax: "REGEXP_EXTRACT expects 2-3 arguments (found {})", args.len())
             },
         };
-        // A NULL is a string NULL.
-        let mut string_arg = |e: &SQLExpr| -> PolarsResult<Expr> {
-            let e = self.parse_sql_arg(e)?;
-            Ok(match self.arg_dtype(&e)? {
-                Some(DataType::Null) => e.cast(DataType::String),
-                _ => e,
-            })
-        };
-        let value = string_arg(value)?;
-        let pattern = string_arg(pattern)?;
+        let value = self.string_arg(value)?;
+        let pattern = self.string_arg(pattern)?;
         let extracted = value.clone().str().extract(pattern.clone(), group);
         let e = when(value.is_not_null().and(pattern.is_not_null()))
             .then(extracted.fill_null(lit("")))
             .otherwise(Expr::Literal(LiteralValue::untyped_null()));
+        self.apply_window_spec(e)
+    }
+
+    /// A string argument, where a NULL is a string NULL.
+    fn string_arg(&mut self, e: &SQLExpr) -> PolarsResult<Expr> {
+        let e = self.parse_sql_arg(e)?;
+        Ok(match self.arg_dtype(&e)? {
+            Some(DataType::Null) => e.cast(DataType::String),
+            _ => e,
+        })
+    }
+
+    fn visit_regexp_matches(&mut self) -> PolarsResult<Expr> {
+        let args = extract_args(self.func)?;
+        let (value, pattern, options) = match args.as_slice() {
+            [FunctionArgExpr::Expr(value), FunctionArgExpr::Expr(pattern)] => {
+                (value, pattern, None)
+            },
+            [
+                FunctionArgExpr::Expr(value),
+                FunctionArgExpr::Expr(pattern),
+                FunctionArgExpr::Expr(options),
+            ] => (value, pattern, Some(options)),
+            _ => {
+                polars_bail!(SQLSyntax: "REGEXP_MATCHES expects 2-3 arguments (found {})", args.len())
+            },
+        };
+        let options = match options {
+            None => RegexpOptions::default(),
+            Some(options) => match self.parse_sql_arg(options)? {
+                Expr::Literal(lv) if lv.extract_str().is_some() => {
+                    RegexpOptions::new(lv.extract_str().unwrap())?
+                },
+                _ => {
+                    polars_bail!(SQLSyntax: "REGEXP_MATCHES expects a string literal as the options (found {})", options)
+                },
+            },
+        };
+        let value = self.string_arg(value)?;
+        let pattern = self.string_arg(pattern)?;
+        let e = options.contains(value, pattern);
+        self.apply_window_spec(e)
+    }
+
+    /// TO_DATE or TO_TIMESTAMP, where `parse` converts the string.
+    fn visit_parse_template(
+        &mut self,
+        function: &str,
+        parse: impl Fn(Expr, StrptimeOptions) -> Expr,
+    ) -> PolarsResult<Expr> {
+        let args = extract_args(self.func)?;
+        let (value, template) = match args.as_slice() {
+            [FunctionArgExpr::Expr(value)] => (value, None),
+            [
+                FunctionArgExpr::Expr(value),
+                FunctionArgExpr::Expr(template),
+            ] => (value, Some(String::from_sql_arg(template, self)?)),
+            _ => {
+                polars_bail!(SQLSyntax: "{} expects 1-2 arguments (found {})", function, args.len())
+            },
+        };
+        let mut value = self.string_arg(value)?;
+        let mut options = StrptimeOptions::default();
+        if let Some(template) = template {
+            let ParseFormat { format, defaults } = parse_format(&template, function)?;
+            if !defaults.is_empty() {
+                value = concat_str([value, lit(defaults)], "", false);
+            }
+            options.format = Some(format.into());
+        }
+        let e = parse(value, options);
         self.apply_window_spec(e)
     }
 
@@ -3293,9 +3310,9 @@ impl SQLFunctionVisitor<'_> {
             polars_bail!(SQLInterface: "TYPEOF cannot determine the type of {}", arg)
         };
         let name = lit(dtype.materialize_unknown(true)?.to_string());
-        // An aggregate argument is kept, so that the query still has one row per group.
+        // Over an aggregate, the type is an aggregate too, so that the query has one row per group.
         let e = if has_marked_aggregate(&e) {
-            when(e.is_null()).then(name.clone()).otherwise(name)
+            mark_aggregate(name.first())
         } else {
             name
         };
@@ -3986,6 +4003,7 @@ impl FromSQLExpr for bool {
 }
 
 /// The options of `REGEXP_MATCHES`, as in DuckDB.
+#[derive(Default)]
 struct RegexpOptions {
     case_insensitive: bool,
     dot_matches_new_line: bool,
@@ -3994,11 +4012,7 @@ struct RegexpOptions {
 
 impl RegexpOptions {
     fn new(options: &str) -> PolarsResult<Self> {
-        let mut out = Self {
-            case_insensitive: false,
-            dot_matches_new_line: false,
-            literal: false,
-        };
+        let mut out = Self::default();
         for c in options.chars() {
             match c {
                 'c' => out.case_insensitive = false,

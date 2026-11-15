@@ -10,6 +10,8 @@ enum Item {
     Number(char),
     /// A strftime spec that `FM` does not change.
     Fixed(&'static str),
+    /// A fraction of a second, with its strftime spec for writing.
+    Fraction(&'static str),
     /// A day or month name; `true` if it is padded to 9 characters unless after `FM`.
     Name(&'static str, bool),
     Meridian,
@@ -38,17 +40,17 @@ const PATTERNS: &[(&str, Item)] = &[
     ("MON", Item::Name("%b", false)),
     ("FF1", Item::Unsupported),
     ("FF2", Item::Unsupported),
-    ("FF3", Item::Fixed("%3f")),
+    ("FF3", Item::Fraction("%3f")),
     ("FF4", Item::Unsupported),
     ("FF5", Item::Unsupported),
-    ("FF6", Item::Fixed("%6f")),
+    ("FF6", Item::Fraction("%6f")),
     ("TZH", Item::Unsupported),
     ("TZM", Item::Unsupported),
     ("HH", Item::Number('I')),
     ("MI", Item::Number('M')),
     ("SS", Item::Number('S')),
-    ("MS", Item::Fixed("%3f")),
-    ("US", Item::Fixed("%6f")),
+    ("MS", Item::Fraction("%3f")),
+    ("US", Item::Fraction("%6f")),
     ("AM", Item::Meridian),
     ("PM", Item::Meridian),
     ("YY", Item::Number('y')),
@@ -119,8 +121,18 @@ fn match_pattern(rest: &str) -> Option<(usize, Item, Case)> {
     })
 }
 
+/// A template as strftime parts, with the fields that parsing needs to know about.
+#[derive(Default)]
+struct Template {
+    parts: Vec<Part>,
+    hour12: bool,
+    meridian: bool,
+    iso_week: bool,
+    iso_weekday: bool,
+}
+
 /// The parts of `template`; `output` is true for `TO_CHAR` and false for parsing.
-fn template_parts(template: &str, function: &str, output: bool) -> PolarsResult<Vec<Part>> {
+fn template_parts(template: &str, function: &str, output: bool) -> PolarsResult<Template> {
     fn push_str(parts: &mut Vec<Part>, s: &str) {
         match parts.last_mut() {
             Some(Part::Strftime(fmt)) => fmt.push_str(s),
@@ -134,12 +146,14 @@ fn template_parts(template: &str, function: &str, output: bool) -> PolarsResult<
         }
     }
 
-    let mut parts = vec![];
+    let mut out = Template::default();
+    let parts = &mut out.parts;
+    let mut fractions = 0;
     let mut fill = false;
     let mut rest = template;
     while let Some(c) = rest.chars().next() {
         if c == '"' {
-            // Quoted text is copied; `\"` is a quote.
+            // Quoted text is copied; a backslash takes the next character as is.
             let mut chars = rest[1..].char_indices();
             let mut end = rest.len();
             while let Some((i, c)) = chars.next() {
@@ -148,11 +162,12 @@ fn template_parts(template: &str, function: &str, output: bool) -> PolarsResult<
                         end = i + 2;
                         break;
                     },
-                    '\\' if rest[1 + i + 1..].starts_with('"') => {
-                        push_literal(&mut parts, '"');
-                        chars.next();
+                    '\\' => {
+                        if let Some((_, c)) = chars.next() {
+                            push_literal(parts, c);
+                        }
                     },
-                    c => push_literal(&mut parts, c),
+                    c => push_literal(parts, c),
                 }
             }
             rest = &rest[end..];
@@ -160,7 +175,7 @@ fn template_parts(template: &str, function: &str, output: bool) -> PolarsResult<
             continue;
         }
         if rest.starts_with("\\\"") {
-            push_literal(&mut parts, '"');
+            push_literal(parts, '"');
             rest = &rest[2..];
             fill = false;
             continue;
@@ -171,21 +186,53 @@ fn template_parts(template: &str, function: &str, output: bool) -> PolarsResult<
             continue;
         }
         let Some((len, item, case)) = match_pattern(rest) else {
-            push_literal(&mut parts, c);
+            push_literal(parts, c);
             rest = &rest[c.len_utf8()..];
             fill = false;
             continue;
         };
         match item {
-            Item::Number(spec) if fill => push_str(&mut parts, &format!("%-{spec}")),
-            Item::Number(spec) => push_str(&mut parts, &format!("%{spec}")),
-            Item::Fixed(spec) => push_str(&mut parts, spec),
-            Item::Meridian if output && case == Case::Lower => push_str(&mut parts, "%P"),
-            Item::Meridian => push_str(&mut parts, "%p"),
+            Item::Number(spec) => {
+                out.hour12 |= spec == 'I';
+                out.iso_week |= spec == 'V';
+                if fill {
+                    push_str(parts, &format!("%-{spec}"))
+                } else {
+                    push_str(parts, &format!("%{spec}"))
+                }
+            },
+            Item::Fixed(spec) => {
+                out.iso_weekday |= spec == "%u";
+                push_str(parts, spec)
+            },
+            Item::Fraction(spec) if output => push_str(parts, spec),
+            Item::Fraction(spec) => {
+                fractions += 1;
+                polars_ensure!(
+                    fractions == 1,
+                    SQLInterface: "{} does not support more than one fraction of a second", function
+                );
+                // After a dot, any number of digits is a fraction, as in PostgreSQL.
+                match parts.last_mut() {
+                    Some(Part::Strftime(fmt)) if fmt.ends_with('.') => {
+                        fmt.pop();
+                        fmt.push_str("%.f");
+                    },
+                    _ => push_str(parts, spec),
+                }
+            },
+            Item::Meridian => {
+                out.meridian = true;
+                if output && case == Case::Lower {
+                    push_str(parts, "%P")
+                } else {
+                    push_str(parts, "%p")
+                }
+            },
             Item::Name(spec, padded) => {
                 let pad = padded && !fill;
                 if !output || (case == Case::Title && !pad) {
-                    push_str(&mut parts, spec);
+                    push_str(parts, spec);
                 } else {
                     parts.push(Part::Name { spec, case, pad });
                 }
@@ -197,22 +244,45 @@ fn template_parts(template: &str, function: &str, output: bool) -> PolarsResult<
         rest = &rest[len..];
         fill = false;
     }
-    Ok(parts)
+    Ok(out)
+}
+
+/// How to parse text written with a PostgreSQL template.
+pub(crate) struct ParseFormat {
+    pub(crate) format: String,
+    /// Text to add to each value for the fields that PostgreSQL fills in when the template has
+    /// none: AM for a 12-hour clock and Monday for an ISO week.
+    pub(crate) defaults: String,
 }
 
 /// The strftime format that parses text written with a PostgreSQL `template`. A template with
 /// `%` in it is already a strftime format.
-pub(crate) fn parse_format(template: &str, function: &str) -> PolarsResult<String> {
+pub(crate) fn parse_format(template: &str, function: &str) -> PolarsResult<ParseFormat> {
+    let mut out = ParseFormat {
+        format: template.to_string(),
+        defaults: String::new(),
+    };
     if template.contains('%') {
-        return Ok(template.to_string());
+        return Ok(out);
     }
-    Ok(template_parts(template, function, false)?
+    let template = template_parts(template, function, false)?;
+    out.format = template
+        .parts
         .into_iter()
         .map(|part| match part {
             Part::Strftime(fmt) => fmt,
             Part::Name { spec, .. } => spec.to_string(),
         })
-        .collect())
+        .collect();
+    if template.hour12 && !template.meridian {
+        out.format.push_str(" %p");
+        out.defaults.push_str(" AM");
+    }
+    if template.iso_week && !template.iso_weekday {
+        out.format.push_str(" %u");
+        out.defaults.push_str(" 1");
+    }
+    Ok(out)
 }
 
 /// `expr` (a date, datetime or time) written as text with a PostgreSQL `template`. A template
@@ -222,6 +292,7 @@ pub(crate) fn format_with_template(expr: Expr, template: &str) -> PolarsResult<E
         return Ok(expr.dt().strftime(template));
     }
     let mut pieces = template_parts(template, "TO_CHAR", true)?
+        .parts
         .into_iter()
         .map(|part| match part {
             Part::Strftime(fmt) => expr.clone().dt().strftime(&fmt),

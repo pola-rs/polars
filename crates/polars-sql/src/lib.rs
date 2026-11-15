@@ -10,6 +10,8 @@ mod functions;
 mod group_context;
 mod grouping_sets;
 mod join_keys;
+#[cfg(feature = "json")]
+mod json_text;
 pub mod keywords;
 mod lateral;
 mod layout_alter;

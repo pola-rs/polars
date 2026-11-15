@@ -849,6 +849,10 @@ def test_typeof() -> None:
         == [("i64", "str", "date", "list[i64]", "f64", "i32", "null", "str")] * 2
     )
     assert df.sql("SELECT TYPEOF(SUM(i)) AS t FROM self").rows() == [("i64",)]
+    # The aggregate is not computed, so a value that would fail does not matter.
+    assert df.sql("SELECT TYPEOF(SUM(CAST(s AS INT))) AS t FROM self").rows() == [
+        ("i32",)
+    ]
     assert df.sql(
         "SELECT s, TYPEOF(s) AS t FROM self GROUP BY s ORDER BY s"
     ).rows() == [

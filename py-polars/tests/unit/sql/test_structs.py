@@ -178,7 +178,10 @@ def test_json_string_operator_access() -> None:
           j ->> 'n' AS n,
           j ->> 'missing' AS missing,
           j ->> 'it''s' AS quoted,
-          '{"z": [true]}' ->> 'z' AS lit
+          j ->> '$.a.c[#-1]' AS from_end,
+          '{"a.b": 1}' ->> '$."a.b"' AS dotted,
+          '{"z": [true]}' ->> 'z' AS lit,
+          (SELECT '{"s": 2}') ->> 's' AS sub
         FROM self
         """,
         compare_with="duckdb",
@@ -190,6 +193,19 @@ def test_json_string_operator_access() -> None:
         """
     )
     assert res.rows() == [("v", "x", "3"), ("7", None, None), (None, None, None)]
+    res = pl.sql(
+        """
+        SELECT
+          '{"a,b": {"c": 1}}' #>> '{"a,b", c}' AS quoted,
+          '{"a": 1}' #>> '{}' AS whole
+        """,
+        eager=True,
+    )
+    assert res.row(0) == ("1", '{"a":1}')
+    with pytest.raises(SQLInterfaceError, match="unsupported JSON path"):
+        df.sql("SELECT j ->> '$[*]' FROM self")
+    with pytest.raises(SQLInterfaceError, match="JSON keys with a backslash"):
+        df.sql(r"SELECT j ->> 'a\b' FROM self")
 
 
 @pytest.mark.parametrize(

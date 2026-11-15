@@ -1082,49 +1082,19 @@ impl SQLExprVisitor<'_> {
         Ok(expr)
     }
 
-    /// The JSONPath that `->`, `->>` (or with `path_array`, `#>`, `#>>`) reads with `rhs` from
-    /// `lhs`, if `lhs` is JSON text. A key starting with `$` is already a JSONPath, as in DuckDB;
-    /// an integer is an array index.
+    /// The JSONPath that a JSON operator reads with `rhs` from `lhs`, if `lhs` is JSON text.
     #[cfg(feature = "json")]
-    fn json_text_path(&self, lhs: &Expr, rhs: &Expr, path_array: bool) -> Option<String> {
-        use std::fmt::Write;
-
-        if self.cast_or_expr_dtype(lhs) != Some(DataType::String) {
-            return None;
+    fn json_text_path(
+        &mut self,
+        lhs: &Expr,
+        rhs: &Expr,
+        path_array: bool,
+    ) -> PolarsResult<Option<String>> {
+        let typed = self.ctx.with_typed_subqueries(lhs)?;
+        if self.cast_or_expr_dtype(&typed) != Some(DataType::String) {
+            return Ok(None);
         }
-        let push_key = |path: &mut String, key: &str| {
-            let key = key.replace('\\', "\\\\").replace('\'', "\\'");
-            write!(path, "['{key}']").unwrap();
-        };
-        let Expr::Literal(lv) = rhs else {
-            return None;
-        };
-        let mut path = String::from("$");
-        if let LiteralValue::Dyn(DynLiteralValue::Int(idx)) = lv
-            && !path_array
-        {
-            write!(path, "[{idx}]").unwrap();
-            return Some(path);
-        }
-        let key = lv.extract_str()?;
-        if !path_array {
-            if key.starts_with('$') {
-                return Some(key.to_string());
-            }
-            push_key(&mut path, key);
-            return Some(path);
-        }
-        let elems = key
-            .strip_prefix('{')
-            .and_then(|k| k.strip_suffix('}'))
-            .unwrap_or(key);
-        for elem in elems.split(',').map(str::trim) {
-            match elem.parse::<i64>() {
-                Ok(idx) => write!(path, "[{idx}]").unwrap(),
-                Err(_) => push_key(&mut path, elem),
-            }
-        }
-        Some(path)
+        crate::json_text::json_path(rhs, path_array)
     }
 
     /// Best-effort dtype for an expression; `None` if it cannot be resolved.
@@ -1447,7 +1417,7 @@ impl SQLExprVisitor<'_> {
             SQLBinaryOperator::Arrow | SQLBinaryOperator::LongArrow => {
                 // "x -> y", "x ->> y"
                 #[cfg(feature = "json")]
-                if let Some(path) = self.json_text_path(&lhs, &rhs, false) {
+                if let Some(path) = self.json_text_path(&lhs, &rhs, false)? {
                     return Ok(lhs.str().json_path_match(lit(path)));
                 }
                 match rhs {
@@ -1475,7 +1445,7 @@ impl SQLExprVisitor<'_> {
             SQLBinaryOperator::HashArrow | SQLBinaryOperator::HashLongArrow => {
                 // "x #> y", "x #>> y"
                 #[cfg(feature = "json")]
-                if let Some(path) = self.json_text_path(&lhs, &rhs, true) {
+                if let Some(path) = self.json_text_path(&lhs, &rhs, true)? {
                     return Ok(lhs.str().json_path_match(lit(path)));
                 }
                 match rhs {

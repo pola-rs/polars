@@ -259,6 +259,19 @@ def test_regexp_matches() -> None:
     )
 
 
+def test_regexp_matches_null() -> None:
+    res = pl.sql(
+        """
+        SELECT
+          REGEXP_MATCHES(NULL, 'x') AS a,
+          REGEXP_MATCHES('x', NULL) AS b,
+          REGEXP_MATCHES('x', NULL, 'li') AS c
+        """,
+        eager=True,
+    )
+    assert res.row(0) == (None, None, None)
+
+
 def test_regexp_matches_errors() -> None:
     df = pl.DataFrame({"s": ["xyz"]})
     with pytest.raises(SQLSyntaxError, match="does not take the 'g' option"):
