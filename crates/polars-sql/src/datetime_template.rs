@@ -241,6 +241,7 @@ fn template_parts(template: &str, function: &str, output: bool) -> PolarsResult<
                 }
             },
             Item::Name(spec, padded) => {
+                out.iso_weekday |= matches!(spec, "%A" | "%a");
                 let pad = padded && !fill;
                 if !output || (case == Case::Title && !pad) {
                     push_str(parts, spec);
