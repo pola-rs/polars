@@ -1308,6 +1308,12 @@ def test_to_char_errors() -> None:
         ),
         ("TO_DATE('2024-02', 'IYYY-IW')", date(2024, 1, 8)),
         ("TO_DATE('2024-01 Tue', 'IYYY-IW Dy')", date(2024, 1, 2)),
+        ("TO_DATE('2024 May', 'YYYY Month')", date(2024, 5, 1)),
+        ("TO_DATE('2024', 'YYYY')", date(2024, 1, 1)),
+        (
+            "TO_TIMESTAMP('2024-05 10:30', 'YYYY-MM HH24:MI')",
+            datetime(2024, 5, 1, 10, 30),
+        ),
         (
             "TO_DATE(TO_CHAR(DATE '2024-01-02', 'IYYY-IW DAY'), 'IYYY-IW DAY')",
             date(2024, 1, 2),

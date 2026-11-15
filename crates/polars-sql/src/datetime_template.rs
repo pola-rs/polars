@@ -125,6 +125,10 @@ fn match_pattern(rest: &str) -> Option<(usize, Item, Case)> {
 #[derive(Default)]
 struct Template {
     parts: Vec<Part>,
+    year: bool,
+    month: bool,
+    day: bool,
+    day_of_year: bool,
     hour: bool,
     hour12: bool,
     minute: bool,
@@ -198,6 +202,10 @@ fn template_parts(template: &str, function: &str, output: bool) -> PolarsResult<
         match item {
             Item::Number(spec) => {
                 match spec {
+                    'Y' | 'y' => out.year = true,
+                    'm' => out.month = true,
+                    'd' => out.day = true,
+                    'j' => out.day_of_year = true,
                     'H' => out.hour = true,
                     'I' => (out.hour, out.hour12) = (true, true),
                     'M' => out.minute = true,
@@ -242,6 +250,7 @@ fn template_parts(template: &str, function: &str, output: bool) -> PolarsResult<
             },
             Item::Name(spec, padded) => {
                 out.iso_weekday |= matches!(spec, "%A" | "%a");
+                out.month |= matches!(spec, "%B" | "%b");
                 let pad = padded && !fill;
                 if !output {
                     push_str(parts, spec);
@@ -269,8 +278,8 @@ fn template_parts(template: &str, function: &str, output: bool) -> PolarsResult<
 pub(crate) struct ParseFormat {
     pub(crate) format: String,
     /// Text to add to each value for the fields that PostgreSQL fills in when the template has
-    /// none: AM for a 12-hour clock, Monday for an ISO week, and 0 for the hour, minute or
-    /// second of a time.
+    /// none: AM for a 12-hour clock, Monday for an ISO week, 1 for the month or day of a date,
+    /// and 0 for the hour, minute or second of a time.
     pub(crate) defaults: String,
 }
 
@@ -300,6 +309,17 @@ pub(crate) fn parse_format(template: &str, function: &str) -> PolarsResult<Parse
     if template.iso_week && !template.iso_weekday {
         out.format.push_str(" %u");
         out.defaults.push_str(" 1");
+    }
+    let date = template.year || template.month || template.day;
+    if date && !template.iso_week && !template.day_of_year {
+        if !template.month {
+            out.format.push_str(" %m");
+            out.defaults.push_str(" 01");
+        }
+        if !template.day {
+            out.format.push_str(" %d");
+            out.defaults.push_str(" 01");
+        }
     }
     // Parsing a time needs its hour and minute, and a fraction needs its second.
     let time = template.hour || template.minute || template.second || template.fraction;
