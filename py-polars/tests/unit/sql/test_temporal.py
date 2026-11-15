@@ -1349,6 +1349,8 @@ def test_to_date_errors() -> None:
         df.sql("SELECT TO_DATE(s, 'J') FROM self")
     with pytest.raises(InvalidOperationError):
         df.sql("SELECT TO_DATE(s, 'DD-MM-YYYY') FROM self")
+    with pytest.raises(SQLInterfaceError, match="TO_DATE needs IW to parse IYYY or IY"):
+        df.sql("SELECT TO_DATE(s, 'IYYY') FROM self")
     with pytest.raises(SQLInterfaceError, match="more than one fraction of a second"):
         df.sql("SELECT TO_TIMESTAMP(s, 'SS.MS.US') FROM self")
     with pytest.raises(SQLSyntaxError, match=r"TO_TIMESTAMP expects 1-2 arguments"):

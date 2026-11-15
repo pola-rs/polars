@@ -135,6 +135,7 @@ struct Template {
     second: bool,
     fraction: bool,
     meridian: bool,
+    iso_year: bool,
     iso_week: bool,
     iso_weekday: bool,
 }
@@ -210,6 +211,7 @@ fn template_parts(template: &str, function: &str, output: bool) -> PolarsResult<
                     'I' => (out.hour, out.hour12) = (true, true),
                     'M' => out.minute = true,
                     'S' => out.second = true,
+                    'G' | 'g' => out.iso_year = true,
                     'V' => out.iso_week = true,
                     _ => {},
                 }
@@ -294,6 +296,10 @@ pub(crate) fn parse_format(template: &str, function: &str) -> PolarsResult<Parse
         return Ok(out);
     }
     let template = template_parts(template, function, false)?;
+    polars_ensure!(
+        !template.iso_year || template.iso_week,
+        SQLInterface: "{} needs IW to parse IYYY or IY", function
+    );
     out.format = template
         .parts
         .into_iter()
