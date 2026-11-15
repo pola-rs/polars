@@ -12,7 +12,6 @@ if TYPE_CHECKING:
     from altair.typing import EncodeKwds
 
     from polars import Series
-    from polars.dataframe.plotting import Encodings
 
 
 class SeriesPlot:
@@ -60,7 +59,7 @@ class SeriesPlot:
         if self._series_name == "count()":
             msg = "cannot use `plot.hist` when Series name is `'count()'`"
             raise ValueError(msg)
-        encodings: Encodings = {
+        encodings: EncodeKwds = {
             "x": alt.X(f"{self._series_name}:Q", bin=True),
             "y": "count()",
         }
@@ -106,7 +105,7 @@ class SeriesPlot:
         if self._series_name == "density":
             msg = "cannot use `plot.kde` when Series name is `'density'`"
             raise ValueError(msg)
-        encodings: Encodings = {"x": self._series_name, "y": "density:Q"}
+        encodings: EncodeKwds = {"x": self._series_name, "y": "density:Q"}
         return (
             alt.Chart(self._df)
             .transform_density(self._series_name, as_=[self._series_name, "density"])
@@ -150,7 +149,7 @@ class SeriesPlot:
         if self._series_name == "index":
             msg = "cannot call `plot.line` when Series name is 'index'"
             raise ValueError(msg)
-        encodings: Encodings = {"x": "index", "y": self._series_name}
+        encodings: EncodeKwds = {"x": "index", "y": self._series_name}
         return (
             alt.Chart(self._df.with_row_index())
             .mark_line(tooltip=True)
@@ -169,7 +168,7 @@ class SeriesPlot:
         if method is None:
             msg = f"Altair has no method 'mark_{attr}'"
             raise AttributeError(msg)
-        encodings: Encodings = {"x": "index", "y": self._series_name}
+        encodings: EncodeKwds = {"x": "index", "y": self._series_name}
 
         accepts_tooltip_argument = "tooltip" in {
             value.name for value in inspect.signature(method).parameters.values()

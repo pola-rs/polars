@@ -3,7 +3,7 @@ use std::hash::BuildHasher;
 
 use polars_arrow::array::builder::ShareStrategy;
 use polars_arrow::array::{
-    Array, BinaryArray, BinaryViewArray, PrimitiveArray, StaticArray, UInt64Array,
+    Array, BinaryArray, BinaryViewArray, PrimitiveArray, StaticArray, UInt64Array, View,
 };
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::compute::aggregate::estimated_bytes_size;
@@ -306,9 +306,20 @@ impl KeyEncoder {
                             })
                             .collect()
                     } else {
+                        // Sorted or clustered keys have runs of equal views.
+                        let mut prev_view = View::default();
+                        let mut prev_hash =
+                            prev_view.hash_with_buffers_unchecked(buffers, &random_state);
                         views
                             .iter()
-                            .map(|v| v.hash_with_buffers_unchecked(buffers, &random_state))
+                            .map(move |v| {
+                                if *v != prev_view {
+                                    prev_view = *v;
+                                    prev_hash =
+                                        v.hash_with_buffers_unchecked(buffers, &random_state);
+                                }
+                                prev_hash
+                            })
                             .collect()
                     }
                 };

@@ -24,18 +24,21 @@ use polars_plan::dsl::functions::{DurationArgs, duration};
 use polars_plan::dsl::string::StringNameSpace;
 use polars_plan::plans::DynLiteralValue;
 use polars_plan::prelude::{has_expr, typed_lit};
+use polars_plan::utils::expr_output_name;
+use polars_utils::time::NS_DAY;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
     AccessExpr, BinaryOperator as SQLBinaryOperator, CastFormat, CastKind, DataType as SQLDataType,
-    DateTimeField, Expr as SQLExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr,
-    FunctionArgumentList, FunctionArguments, Ident, Interval, OrderByOptions, OrderBySort,
-    Query as Subquery, SelectItem, Subscript, TimezoneInfo, TrimWhereField, TypedString,
-    UnaryOperator as SQLUnaryOperator, Value as SQLValue, ValueWithSpan,
+    DateTimeField, DictionaryField, Expr as SQLExpr, Function as SQLFunction, FunctionArg,
+    FunctionArgExpr, FunctionArgumentList, FunctionArguments, Ident, Interval, MapEntry,
+    OrderByOptions, OrderBySort, Query as Subquery, SelectItem, Statement, Subscript, TimezoneInfo,
+    TrimWhereField, TypedString, UnaryOperator as SQLUnaryOperator, Value as SQLValue,
+    ValueWithSpan,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::keywords::{self, Keyword};
-use sqlparser::parser::{Parser, ParserOptions};
+use sqlparser::parser::{Parser, ParserError, ParserOptions};
 use sqlparser::tokenizer::{Token, TokenWithSpan, Tokenizer};
 
 use crate::context::join_idents;
@@ -45,8 +48,10 @@ use crate::group_context::{has_marked_aggregate, mark_aggregate};
 use crate::literal_folding::{
     decimal_lit, fold_scalar, parse_exact_literal, try_fold_decimal_arithmetic,
 };
+use crate::positional_join::{attach_positional_aliases, extract_positional_joins};
 use crate::sql_visitors::expr_references_any_column;
 use crate::subquery::is_correlated_subquery;
+use crate::time_travel::{TableVersions, extract_table_versions};
 use crate::types::{
     bitstring_to_bytes_literal, is_iso_date, is_iso_datetime, is_iso_time, map_sql_dtype_to_polars,
     strip_utc_offset,
@@ -61,21 +66,74 @@ pub fn to_sql_interface_err(err: impl Display) -> PolarsError {
     PolarsError::SQLInterface(err.to_string().into())
 }
 
+/// The time travel clauses taken out of a query before it is parsed, which sqlparser does not
+/// parse.
+#[must_use]
+pub(crate) struct TakenClauses(TableVersions);
+
+impl TakenClauses {
+    /// The statements `parsed` from `sql`, with the taken clauses attached. A `POSITIONAL JOIN`
+    /// parses as a `JOIN` after an alias `positional` (see [`attach_positional_aliases`]). Where
+    /// it doesn't, as after another alias, the statements are parsed again with the word
+    /// `POSITIONAL` taken out (see [`extract_positional_joins`]).
+    pub(crate) fn attach(
+        self,
+        sql: &str,
+        parsed: Result<Vec<Statement>, ParserError>,
+    ) -> PolarsResult<Vec<Statement>> {
+        let (mut stmts, versions) = match parsed {
+            Ok(mut stmts) => {
+                attach_positional_aliases(&mut stmts)?;
+                (stmts, self.0)
+            },
+            Err(err) => {
+                let (mut tokens, versions) = tokenize(sql)?;
+                let positional_joins = extract_positional_joins(&mut tokens);
+                if positional_joins.is_empty() {
+                    return Err(to_sql_interface_err(err));
+                }
+                let mut stmts = parser_of(tokens)
+                    .parse_statements()
+                    .map_err(|_| to_sql_interface_err(err))?;
+                positional_joins.attach(&mut stmts)?;
+                (stmts, versions)
+            },
+        };
+        versions.attach(&mut stmts)?;
+        Ok(stmts)
+    }
+
+    pub(crate) fn refuse(self) -> PolarsResult<()> {
+        self.0.refuse()
+    }
+}
+
 /// A parser of `sql`. `TOP` is only a keyword in `SELECT TOP n`, so that it can also name a
-/// relation or a column.
-pub(crate) fn sql_parser(sql: &str) -> PolarsResult<Parser<'static>> {
+/// relation or a column. Time travel clauses (see [`TableVersions`]) are taken out first: the
+/// caller attaches them to its statements or refuses them.
+pub(crate) fn sql_parser(sql: &str) -> PolarsResult<(Parser<'static>, TakenClauses)> {
+    let (tokens, versions) = tokenize(sql)?;
+    Ok((parser_of(tokens), TakenClauses(versions)))
+}
+
+fn tokenize(sql: &str) -> PolarsResult<(Vec<TokenWithSpan>, TableVersions)> {
+    let mut tokens = Tokenizer::new(&GenericDialect, sql)
+        .with_unescape(ParserOptions::default().unescape)
+        .tokenize_with_location()
+        .map_err(to_sql_interface_err)?;
+    demote_top_keyword(&mut tokens);
+    let versions = extract_table_versions(&mut tokens)?;
+    Ok((tokens, versions))
+}
+
+fn parser_of(tokens: Vec<TokenWithSpan>) -> Parser<'static> {
     let options = ParserOptions {
         trailing_commas: true,
         ..Default::default()
     };
-    let mut tokens = Tokenizer::new(&GenericDialect, sql)
-        .with_unescape(options.unescape)
-        .tokenize_with_location()
-        .map_err(to_sql_interface_err)?;
-    demote_top_keyword(&mut tokens);
-    Ok(Parser::new(&GenericDialect)
+    Parser::new(&GenericDialect)
         .with_options(options)
-        .with_tokens_with_locations(tokens))
+        .with_tokens_with_locations(tokens)
 }
 
 fn demote_top_keyword(tokens: &mut [TokenWithSpan]) {
@@ -546,6 +604,7 @@ impl SQLExprVisitor<'_> {
                 polars_bail!(SQLSyntax: "complex field access chains are currently unsupported: {:?}", access_chain[0])
             },
             SQLExpr::CompoundIdentifier(idents) => self.visit_compound_identifier(idents),
+            SQLExpr::Dictionary(fields) => self.visit_struct_literal(fields),
             SQLExpr::Exists { subquery, negated } => self.visit_exists(subquery, *negated),
             SQLExpr::Extract {
                 field,
@@ -604,18 +663,19 @@ impl SQLExprVisitor<'_> {
                 negated,
             } => self.visit_in_subquery(expr, subquery, *negated),
             SQLExpr::Interval(interval) => Ok(lit(interval_to_duration(interval, true)?)),
-            SQLExpr::IsDistinctFrom(e1, e2) => {
-                Ok(self.visit_expr(e1)?.neq_missing(self.visit_expr(e2)?))
-            },
+            SQLExpr::IsDistinctFrom(e1, e2) => Ok(self
+                .visit_binary_op(e1, &SQLBinaryOperator::Spaceship, e2)?
+                .not()),
             SQLExpr::IsFalse(expr) => Ok(self.visit_truth_value(expr)?.eq_missing(lit(false))),
             SQLExpr::IsNotDistinctFrom(e1, e2) => {
-                Ok(self.visit_expr(e1)?.eq_missing(self.visit_expr(e2)?))
+                self.visit_binary_op(e1, &SQLBinaryOperator::Spaceship, e2)
             },
             SQLExpr::IsNotFalse(expr) => Ok(self.visit_truth_value(expr)?.neq_missing(lit(false))),
             SQLExpr::IsNotNull(expr) => Ok(self.visit_expr(expr)?.is_not_null()),
             SQLExpr::IsNotTrue(expr) => Ok(self.visit_truth_value(expr)?.neq_missing(lit(true))),
             SQLExpr::IsNull(expr) => Ok(self.visit_expr(expr)?.is_null()),
             SQLExpr::IsTrue(expr) => Ok(self.visit_truth_value(expr)?.eq_missing(lit(true))),
+            SQLExpr::Map(map) => self.visit_map_literal(&map.entries, None),
             SQLExpr::Like {
                 negated,
                 any,
@@ -979,6 +1039,14 @@ impl SQLExprVisitor<'_> {
         let expr = self.visit_expr(expr)?;
         Ok(match subscript {
             Subscript::Index { index } => {
+                // a map is looked up by key, not by position
+                #[cfg(feature = "dtype-map")]
+                {
+                    let typed = self.ctx.with_typed_subqueries(&expr)?;
+                    if self.expr_dtype(&typed).is_some_and(|dtype| dtype.is_map()) {
+                        return Ok(expr.map_().get(self.visit_expr(index)?));
+                    }
+                }
                 let idx = adjust_one_indexed_param(self.visit_expr(index)?, true);
                 expr.list().get(idx, true)
             },
@@ -1167,13 +1235,22 @@ impl SQLExprVisitor<'_> {
                 // shortcut interval comparison evaluation (-> bool)
                 let d1 = interval_to_duration(v1, false)?;
                 let d2 = interval_to_duration(v2, false)?;
+                // Months have no fixed length: they are ordered as 28 days, but equal intervals
+                // have equal months.
+                let length = |d: &Duration| {
+                    (d.months() as i128 * 28 + d.weeks() as i128 * 7 + d.days() as i128)
+                        * NS_DAY as i128
+                        + d.nanoseconds() as i128
+                };
+                let order = length(&d1).cmp(&length(&d2));
+                let equal = d1.months() == d2.months() && order.is_eq();
                 let res = match op {
-                    SQLBinaryOperator::Gt => Ok(lit(d1 > d2)),
-                    SQLBinaryOperator::Lt => Ok(lit(d1 < d2)),
-                    SQLBinaryOperator::GtEq => Ok(lit(d1 >= d2)),
-                    SQLBinaryOperator::LtEq => Ok(lit(d1 <= d2)),
-                    SQLBinaryOperator::NotEq => Ok(lit(d1 != d2)),
-                    SQLBinaryOperator::Eq | SQLBinaryOperator::Spaceship => Ok(lit(d1 == d2)),
+                    SQLBinaryOperator::Gt => Ok(lit(order.is_gt())),
+                    SQLBinaryOperator::Lt => Ok(lit(order.is_lt())),
+                    SQLBinaryOperator::GtEq => Ok(lit(order.is_ge())),
+                    SQLBinaryOperator::LtEq => Ok(lit(order.is_le())),
+                    SQLBinaryOperator::NotEq => Ok(lit(!equal)),
+                    SQLBinaryOperator::Eq | SQLBinaryOperator::Spaceship => Ok(lit(equal)),
                     _ => polars_bail!(SQLInterface: "invalid interval comparison operator"),
                 };
                 if res.is_ok() {
@@ -1686,6 +1763,182 @@ impl SQLExprVisitor<'_> {
         })
     }
 
+    /// Visit a struct literal, e.g. `{'a': 1, 'b': x}`.
+    fn visit_struct_literal(&mut self, fields: &[DictionaryField]) -> PolarsResult<Expr> {
+        polars_ensure!(!fields.is_empty(), SQLSyntax: "a struct literal needs at least one field");
+        let mut names = PlHashSet::with_capacity(fields.len());
+        let mut values = Vec::with_capacity(fields.len());
+        for field in fields {
+            let name = field.key.value.as_str();
+            polars_ensure!(
+                names.insert(name),
+                SQLInterface: "struct literal has a duplicate field name '{}'", name
+            );
+            values.push(self.visit_literal_entry(&field.value)?);
+        }
+        // built from literals: one literal, which VALUES takes
+        if let Some(values) = values.iter().map(literal_value).collect::<Option<Vec<_>>>() {
+            let (dtypes, values): (Vec<_>, Vec<_>) = values.into_iter().unzip();
+            let fields: Vec<Field> = fields
+                .iter()
+                .zip(dtypes)
+                .map(|(field, dtype)| Field::new(field.key.value.as_str().into(), dtype))
+                .collect();
+            let dtype = DataType::Struct(fields.clone());
+            return Ok(lit(Scalar::new(
+                dtype,
+                AnyValue::StructOwned(Box::new((values, fields))),
+            )));
+        }
+        let name = entry_name(&values[0]);
+        let expr = as_struct(
+            values
+                .into_iter()
+                .zip(fields)
+                .map(|(value, field)| value.alias(field.key.value.as_str()))
+                .collect(),
+        );
+        Ok(named(expr, name))
+    }
+
+    /// Visit a map literal, e.g. `MAP {'k': 1, 'j': x}`, cast to `target` (a `Map` type)
+    /// if given. Keys cast strictly, as a key cannot be NULL; values per `cast_kind`.
+    #[cfg(feature = "dtype-map")]
+    fn visit_map_literal(
+        &mut self,
+        entries: &[MapEntry],
+        target: Option<(&DataType, &CastKind)>,
+    ) -> PolarsResult<Expr> {
+        if entries.is_empty() {
+            let Some((dtype, _)) = target else {
+                polars_bail!(
+                    SQLInterface: "an empty map literal has no type; give it one with CAST(MAP {{}} AS MAP(<key type>, <value type>))"
+                )
+            };
+            let entries = Series::new_empty(PlSmallStr::EMPTY, &dtype.map_entries_dtype().unwrap());
+            return Ok(lit(Scalar::new(dtype.clone(), AnyValue::Map(entries))));
+        }
+        let target = target.map(|(dtype, cast_kind)| (dtype.as_map().unwrap(), cast_kind));
+        let mut keys = Vec::with_capacity(entries.len());
+        let mut values = Vec::with_capacity(entries.len());
+        for entry in entries {
+            let key = self.visit_literal_entry(&entry.key)?;
+            polars_ensure!(
+                !literal_value(&key).is_some_and(|(_, value)| value.is_null()),
+                SQLInterface: "map keys cannot be NULL"
+            );
+            let value = match (target, strip_parentheses(&entry.value)) {
+                // a nested map literal takes its type from the target as well
+                (Some(((_, value_dtype), cast_kind)), SQLExpr::Map(inner))
+                    if value_dtype.is_map() =>
+                {
+                    self.visit_map_literal(&inner.entries, Some((value_dtype, cast_kind)))?
+                },
+                (Some(((_, value_dtype), cast_kind)), _) => {
+                    let value = self.visit_literal_entry(&entry.value)?;
+                    self.cast_entry(value, value_dtype, cast_kind)?
+                },
+                (None, _) => self.visit_literal_entry(&entry.value)?,
+            };
+            keys.push(match target {
+                Some(((key_dtype, _), _)) => self.cast_entry(key, key_dtype, &CastKind::Cast)?,
+                None => self.materialized_key(key),
+            });
+            values.push(value);
+        }
+        // built from literals: one literal, which VALUES takes
+        if let (Some(keys), Some(values)) = (
+            keys.iter().map(literal_value).collect::<Option<Vec<_>>>(),
+            values.iter().map(literal_value).collect::<Option<Vec<_>>>(),
+        ) {
+            let keys = series_of_literals("key", keys)?;
+            let values = series_of_literals("value", values)?;
+            ensure_unique_keys(&keys)?;
+            let dtype = DataType::Map(
+                Box::new(keys.dtype().clone()),
+                Box::new(values.dtype().clone()),
+            );
+            let entries =
+                StructChunked::from_series(PlSmallStr::EMPTY, keys.len(), [keys, values].iter())?;
+            return Ok(lit(Scalar::new(
+                dtype,
+                AnyValue::Map(entries.into_series()),
+            )));
+        }
+        let name = entry_name(&keys[0]);
+        let constant_keys: Vec<_> = keys.iter().filter_map(literal_value).collect();
+        let list = concat_list(
+            keys.into_iter()
+                .zip(values)
+                .map(|(key, value)| as_struct(vec![key.alias("key"), value.alias("value")]))
+                .collect::<Vec<_>>(),
+        )?;
+        // constant keys among computed ones compare in the type of all keys, when known
+        if constant_keys.len() > 1
+            && let Some(DataType::List(entry)) = self.expr_dtype(&list)
+            && let DataType::Struct(fields) = entry.as_ref()
+        {
+            // each converted from its own type, as the map converts it
+            let mut keys = Series::new_empty("key".into(), fields[0].dtype());
+            for (dtype, value) in constant_keys {
+                let key = Series::from_any_values_and_dtype("key".into(), &[value], &dtype, true)?;
+                keys.append(&key.strict_cast(fields[0].dtype())?)?;
+            }
+            ensure_unique_keys(&keys)?;
+        }
+        Ok(named(list.list().to_map(), name))
+    }
+
+    #[cfg(not(feature = "dtype-map"))]
+    fn visit_map_literal(
+        &mut self,
+        _entries: &[MapEntry],
+        _target: Option<(&DataType, &CastKind)>,
+    ) -> PolarsResult<Expr> {
+        polars_bail!(SQLInterface: "MAP requires the `dtype-map` feature")
+    }
+
+    /// Visit an entry of a struct or map literal, evaluating it if it is built from literals.
+    fn visit_literal_entry(&mut self, entry: &SQLExpr) -> PolarsResult<Expr> {
+        let expr = self.visit_expr(entry)?;
+        if !is_literal(&expr) && is_constant(&expr) {
+            fold_scalar(expr)
+        } else {
+            Ok(expr)
+        }
+    }
+
+    /// A map literal's entry cast as SQL casts, evaluated if it is a literal.
+    #[cfg(feature = "dtype-map")]
+    fn cast_entry(
+        &mut self,
+        entry: Expr,
+        dtype: &DataType,
+        cast_kind: &CastKind,
+    ) -> PolarsResult<Expr> {
+        let constant = is_literal(&entry);
+        let cast = self.cast_to(entry, dtype.clone(), cast_kind)?;
+        if constant {
+            fold_scalar(cast)
+        } else {
+            Ok(cast)
+        }
+    }
+
+    /// A map key with a concrete type, as a map needs: a literal takes its own (`1` is
+    /// `Int32`), a computed dynamic one the widest of its kind.
+    #[cfg(feature = "dtype-map")]
+    fn materialized_key(&self, key: Expr) -> Expr {
+        if let Expr::Literal(lv) = key {
+            return Expr::Literal(lv.materialize());
+        }
+        match self.expr_dtype(&key) {
+            Some(DataType::Unknown(UnknownKind::Int(_))) => key.strict_cast(DataType::Int64),
+            Some(DataType::Unknown(UnknownKind::Float)) => key.strict_cast(DataType::Float64),
+            _ => key,
+        }
+    }
+
     /// Visit a SQL `CAST` or `TRY_CAST` expression.
     ///
     /// e.g. `CAST(col AS INT)`, `col::int4`, or `TRY_CAST(col AS VARCHAR)`,
@@ -1701,6 +1954,14 @@ impl SQLExprVisitor<'_> {
                 polars_err!(SQLInterface: "use of FORMAT is not currently supported in CAST"),
             );
         }
+        // a map literal casts its entries, as Polars cannot cast map keys
+        #[cfg(feature = "dtype-map")]
+        if let SQLExpr::Map(map) = strip_parentheses(expr) {
+            let target = map_sql_dtype_to_polars(dtype)?;
+            if target.is_map() {
+                return self.visit_map_literal(&map.entries, Some((&target, cast_kind)));
+            }
+        }
         let expr = self.visit_expr(expr)?;
 
         #[cfg(feature = "json")]
@@ -1708,7 +1969,17 @@ impl SQLExprVisitor<'_> {
             // @BROKEN: we cannot handle this.
             return Ok(expr.str().json_decode(DataType::Struct(Vec::new())));
         }
-        let polars_type = map_sql_dtype_to_polars(dtype)?;
+        self.cast_to(expr, map_sql_dtype_to_polars(dtype)?, cast_kind)
+    }
+
+    /// `expr` cast to `polars_type` as SQL casts: a string parses into a temporal type, and
+    /// only a nested value casts to a nested type.
+    fn cast_to(
+        &mut self,
+        expr: Expr,
+        polars_type: DataType,
+        cast_kind: &CastKind,
+    ) -> PolarsResult<Expr> {
         if nested_target_name(&polars_type).is_some() {
             // A scalar subquery only gets a type from its plan, and a window has the type of its
             // function (`OVER ()` partitions by a column that isn't in the schema).
@@ -2179,7 +2450,8 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
     let s = s.as_ref();
 
     // `sql_expr` should only translate expressions, not statements or clauses
-    let mut ast = sql_parser(s)?;
+    let (mut ast, taken) = sql_parser(s)?;
+    taken.refuse()?;
     if let Token::Word(word) = &ast.peek_token().token {
         if keywords::RESERVED_FOR_COLUMN_ALIAS.contains(&word.keyword) {
             polars_bail!(SQLInterface: "expected an expression (found '{}' clause)", word.value)
@@ -2697,6 +2969,102 @@ pub(crate) fn decimal_literal_to_f64(expr: &Expr) -> Option<f64> {
 /// A decimal literal as a dynamic float literal.
 pub(crate) fn approximate_literal(expr: Expr) -> Expr {
     decimal_literal_to_f64(&expr).map_or(expr, lit)
+}
+
+/// `expr` named `name`, if any.
+fn named(expr: Expr, name: Option<PlSmallStr>) -> Expr {
+    match name {
+        Some(name) => expr.alias(name),
+        None => expr,
+    }
+}
+
+/// The name an expression gets: a struct or map is named after its first entry, as an
+/// expression is named after its first input. An array literal has an empty name.
+fn entry_name(expr: &Expr) -> Option<PlSmallStr> {
+    match expr {
+        Expr::Alias(inner, name) if name.is_empty() => entry_name(inner),
+        _ => expr_output_name(expr).ok(),
+    }
+}
+
+/// The type and value of a literal, possibly named, with a concrete type in place of a
+/// dynamic one (`dyn int`).
+fn literal_value(expr: &Expr) -> Option<(DataType, AnyValue<'static>)> {
+    match expr {
+        Expr::Alias(inner, _) => literal_value(inner),
+        Expr::Literal(lv) if lv.is_scalar() => {
+            let lv = lv.clone().materialize();
+            Some((lv.get_datatype(), lv.to_any_value()?.into_static()))
+        },
+        _ => None,
+    }
+}
+
+/// Whether `expr` is built from literals only, by operators and casts.
+fn is_constant(expr: &Expr) -> bool {
+    match expr {
+        Expr::Literal(lv) => lv.is_scalar(),
+        Expr::Alias(inner, _) | Expr::Cast { expr: inner, .. } => is_constant(inner),
+        Expr::BinaryExpr { left, right, .. } => is_constant(left) && is_constant(right),
+        Expr::Ternary {
+            predicate,
+            truthy,
+            falsy,
+        } => is_constant(predicate) && is_constant(truthy) && is_constant(falsy),
+        _ => false,
+    }
+}
+
+/// A Series of the literal `values` in the common type of their types (a NULL keeps its
+/// type), raising if a value doesn't fit it.
+#[cfg(feature = "dtype-map")]
+fn series_of_literals(
+    name: &str,
+    values: Vec<(DataType, AnyValue<'static>)>,
+) -> PolarsResult<Series> {
+    let dtype = values.iter().try_fold(DataType::Null, |acc, (dtype, _)| {
+        try_get_supertype(&acc, dtype)
+    })?;
+    let values: Vec<AnyValue> = values.into_iter().map(|(_, value)| value).collect();
+    let s = Series::from_any_values_and_dtype(name.into(), &values, &dtype, false)?;
+    let n_null = values.iter().filter(|v| v.is_null()).count();
+    polars_ensure!(
+        s.null_count() == n_null,
+        SQLInterface: "literal values don't fit their common type {}", dtype
+    );
+    Ok(s)
+}
+
+/// Refuse map keys that repeat, compared as the map compares them.
+#[cfg(feature = "dtype-map")]
+fn ensure_unique_keys(keys: &Series) -> PolarsResult<()> {
+    if keys.n_unique()? == keys.len() {
+        return Ok(());
+    }
+    // the first key that an earlier one repeats
+    let at = (1..keys.len())
+        .find(|&i| keys.head(Some(i + 1)).n_unique().is_ok_and(|n| n <= i))
+        .unwrap();
+    polars_bail!(SQLInterface: "map literal has a duplicate key {}", keys.get(at)?)
+}
+
+/// Whether `expr` is a literal, possibly named.
+fn is_literal(expr: &Expr) -> bool {
+    match expr {
+        Expr::Literal(_) => true,
+        Expr::Alias(inner, _) => is_literal(inner),
+        _ => false,
+    }
+}
+
+/// `expr` without enclosing parentheses.
+#[cfg(feature = "dtype-map")]
+fn strip_parentheses(expr: &SQLExpr) -> &SQLExpr {
+    match expr {
+        SQLExpr::Nested(inner) => strip_parentheses(inner),
+        _ => expr,
+    }
 }
 
 /// Best-effort dtype for an expression; `None` if it cannot be resolved.

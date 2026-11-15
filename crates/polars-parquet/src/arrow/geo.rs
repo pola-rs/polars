@@ -1,11 +1,16 @@
 //! Conversion between GeoParquet `geo` file metadata and GeoArrow extension types.
-use polars_arrow::datatypes::{ArrowDataType, ArrowSchema, ExtensionType, Metadata};
+use polars_arrow::datatypes::{ArrowDataType, ArrowSchema, ExtensionType, Field, Metadata};
 use polars_error::{PolarsResult, polars_bail, polars_err, polars_warn};
+use polars_parquet_format::RowGroup;
 use serde_json::{Map, Value, json};
 
-use crate::parquet::metadata::KeyValue;
+use crate::parquet::metadata::{ColumnDescriptor, KeyValue};
+use crate::parquet::types::decode;
 
-const GEO_KEY: &str = "geo";
+pub const GEO_KEY: &str = "geo";
+
+/// The geoparquet spec states that something that has no `crs` key should be considered "OGC: CRS84".
+const DEFAULT_CRS: &str = "OGC:CRS84";
 
 struct Encoding {
     geoparquet: &'static str,
@@ -49,24 +54,30 @@ const ENCODINGS: [Encoding; 7] = [
     native("multipolygon", "geoarrow.multipolygon", "MultiPolygon", 3),
 ];
 
-/// Returns `Some(has_z)` if `dtype` is a valid storage type for `encoding`.
-fn check_storage(encoding: &Encoding, mut dtype: &ArrowDataType) -> Option<bool> {
-    let Some(list_depth) = encoding.list_depth else {
-        return matches!(
-            dtype,
-            ArrowDataType::Binary | ArrowDataType::LargeBinary | ArrowDataType::BinaryView
-        )
-        .then_some(false);
-    };
-    for _ in 0..list_depth {
+/// Returns the fields of the coordinate struct inside `dtype`, `None` for WKB.
+fn coordinate_fields<'a>(encoding: &Encoding, mut dtype: &'a ArrowDataType) -> Option<&'a [Field]> {
+    for _ in 0..encoding.list_depth? {
         dtype = match dtype {
             ArrowDataType::List(f) | ArrowDataType::LargeList(f) => &f.dtype,
             _ => return None,
         };
     }
-    let ArrowDataType::Struct(fields) = dtype else {
-        return None;
-    };
+    match dtype {
+        ArrowDataType::Struct(fields) => Some(fields),
+        _ => None,
+    }
+}
+
+/// Returns `Some(has_z)` if `dtype` is a valid storage type for `encoding`.
+fn check_storage(encoding: &Encoding, dtype: &ArrowDataType) -> Option<bool> {
+    if encoding.list_depth.is_none() {
+        return matches!(
+            dtype,
+            ArrowDataType::Binary | ArrowDataType::LargeBinary | ArrowDataType::BinaryView
+        )
+        .then_some(false);
+    }
+    let fields = coordinate_fields(encoding, dtype)?;
     let valid = (2..=3).contains(&fields.len())
         && fields
             .iter()
@@ -130,7 +141,18 @@ pub fn apply_geo_metadata(metadata: &Metadata, schema: &mut ArrowSchema) {
         }
 
         let mut ext_metadata = Map::new();
-        for key in ["crs", "edges", "epoch"] {
+        match column.get("crs") {
+            None => {
+                ext_metadata.insert("crs".into(), DEFAULT_CRS.into());
+            },
+            // Geoarrow designates an 'unknown' CRS by leaving `crs` out,
+            // while GeoParquet explicitly writes it as `Null`.
+            Some(Value::Null) => {},
+            Some(crs) => {
+                ext_metadata.insert("crs".into(), crs.clone());
+            },
+        }
+        for key in ["edges", "epoch"] {
             if let Some(value) = column.get(key) {
                 ext_metadata.insert(key.into(), value.clone());
             }
@@ -145,9 +167,25 @@ pub fn apply_geo_metadata(metadata: &Metadata, schema: &mut ArrowSchema) {
     }
 }
 
+/// The statistics of a written file, to fill in the `bbox` of each geometry column.
+pub(crate) struct FileStatistics<'a> {
+    pub(crate) columns: &'a [ColumnDescriptor],
+    pub(crate) row_groups: &'a [RowGroup],
+}
+
+/// Called once per write, before any file is opened.
+pub fn validate_geo_schema(schema: &ArrowSchema) -> PolarsResult<()> {
+    geo_key_value(schema, None)?;
+    Ok(())
+}
+
 /// Builds the GeoParquet `geo` metadata for the GeoArrow columns in `schema` if
 /// `POLARS_GEOPARQUET_WRITE` is set to `1.0` or `1.1`.
-pub fn geo_key_value(schema: &ArrowSchema) -> PolarsResult<Option<KeyValue>> {
+/// The `bbox` of each geometry column is only filled in if `statistics` are given.
+pub(crate) fn geo_key_value(
+    schema: &ArrowSchema,
+    statistics: Option<&FileStatistics<'_>>,
+) -> PolarsResult<Option<KeyValue>> {
     let version = match std::env::var("POLARS_GEOPARQUET_WRITE").as_deref() {
         Err(_) | Ok("") => return Ok(None),
         Ok("1.0") => "1.0.0",
@@ -177,21 +215,21 @@ pub fn geo_key_value(schema: &ArrowSchema) -> PolarsResult<Option<KeyValue>> {
                 )
             })?;
         let has_z = check_storage(encoding, &ext.inner).ok_or_else(|| {
+            let has_m = coordinate_fields(encoding, &ext.inner)
+                .is_some_and(|fields| fields.iter().any(|f| f.name == "m"));
+            if has_m {
+                return polars_err!(
+                    InvalidOperation: "cannot write column '{}' as GeoParquet {}: it cannot store M values",
+                    name, version
+                );
+            }
             polars_err!(
                 InvalidOperation: "cannot write column '{}' as GeoParquet: storage type {:?} does not match '{}'",
                 name, ext.inner, ext.name
             )
         })?;
 
-        let ext_metadata = match ext.metadata.as_deref() {
-            None => Map::new(),
-            Some(md) => match serde_json::from_str(md) {
-                Ok(Value::Object(md)) => md,
-                _ => polars_bail!(
-                    InvalidOperation: "cannot write column '{}' as GeoParquet: invalid extension metadata", name
-                ),
-            },
-        };
+        let ext_metadata = extension_metadata(name, ext)?;
 
         let geometry_types = match encoding.list_depth {
             None => vec![],
@@ -201,14 +239,8 @@ pub fn geo_key_value(schema: &ArrowSchema) -> PolarsResult<Option<KeyValue>> {
         let mut column = Map::new();
         column.insert("encoding".into(), encoding.geoparquet.into());
         column.insert("geometry_types".into(), geometry_types.into());
-        match ext_metadata.get("crs") {
-            None => {},
-            Some(crs @ (Value::Null | Value::Object(_))) => {
-                column.insert("crs".into(), crs.clone());
-            },
-            Some(_) => polars_bail!(
-                InvalidOperation: "cannot write column '{}' as GeoParquet: CRS must be a PROJJSON object or null", name
-            ),
+        if let Some(crs) = geoparquet_crs(name, &ext_metadata)? {
+            column.insert("crs".into(), crs);
         }
         match ext_metadata.get("edges") {
             None => {},
@@ -222,6 +254,19 @@ pub fn geo_key_value(schema: &ArrowSchema) -> PolarsResult<Option<KeyValue>> {
         }
         if let Some(epoch) = ext_metadata.get("epoch") {
             column.insert("epoch".into(), epoch.clone());
+        }
+
+        // WKB has no statistics of its coordinates, so it gets no `bbox`.
+        let is_native = encoding.list_depth.is_some();
+        // A spherical edge can bulge beyond its vertices.
+        let spherical = ext_metadata.get("edges").is_some_and(|e| e == "spherical");
+        let axes = &["x", "y", "z"][..2 + has_z as usize];
+        if let Some(statistics) = statistics
+            && is_native
+            && !spherical
+            && let Some(bbox) = bbox_from_leaf_statistics(statistics, name, axes)
+        {
+            column.insert("bbox".into(), bbox.into());
         }
 
         primary_column.get_or_insert(name.as_str());
@@ -240,4 +285,104 @@ pub fn geo_key_value(schema: &ArrowSchema) -> PolarsResult<Option<KeyValue>> {
         key: GEO_KEY.to_string(),
         value: Some(geo.to_string()),
     }))
+}
+
+fn extension_metadata(name: &str, ext: &ExtensionType) -> PolarsResult<Map<String, Value>> {
+    match ext.metadata.as_deref() {
+        None => Ok(Map::new()),
+        Some(md) => match serde_json::from_str(md) {
+            Ok(Value::Object(md)) => Ok(md),
+            _ => polars_bail!(
+                InvalidOperation: "cannot write column '{}' as GeoParquet: invalid extension metadata", name
+            ),
+        },
+    }
+}
+
+/// Returns the GeoParquet `crs` of column `name`.
+/// None -> the key is left out meaning OGC:CRS84.
+fn geoparquet_crs(name: &str, ext_metadata: &Map<String, Value>) -> PolarsResult<Option<Value>> {
+    let crs_type = ext_metadata.get("crs_type").and_then(Value::as_str);
+    match ext_metadata.get("crs") {
+        // Geoarrow designates an 'unknown' CRS by leaving `crs` out,
+        // while GeoParquet explicitly writes it as `Null`.
+        // Leaving the key out would claim the data is in OGC:CRS84.
+        None | Some(Value::Null) => Ok(Some(Value::Null)),
+        // The default is left out, as it is the only string CRS we can write without PROJ.
+        // An SRID that reads "OGC:CRS84" means whatever its producer says, so it is refused.
+        Some(Value::String(crs))
+            if crs == DEFAULT_CRS && matches!(crs_type, None | Some("authority_code")) =>
+        {
+            Ok(None)
+        },
+        Some(Value::Object(projjson)) if is_crs84(projjson) => Ok(None),
+        Some(crs @ Value::Object(_)) => Ok(Some(crs.clone())),
+        Some(crs) => {
+            let of_type = crs_type
+                .map(|t| format!(" of type '{t}'"))
+                .unwrap_or_default();
+            polars_bail!(
+                InvalidOperation: "cannot write column '{}' as GeoParquet: CRS {}{} must be a PROJJSON object, null, or the authority code '{}'; \
+                convert it to PROJJSON, or pass your own '{}' key in the file metadata",
+                name, crs, of_type, DEFAULT_CRS, GEO_KEY
+            )
+        },
+    }
+}
+
+/// Returns `[mins..., maxs...]`, or `None` if the statistics can't tell.
+fn bbox_from_leaf_statistics(
+    statistics: &FileStatistics,
+    column: &str,
+    axes: &[&str],
+) -> Option<Vec<f64>> {
+    let mut mins = Vec::with_capacity(axes.len());
+    let mut maxs = Vec::with_capacity(axes.len());
+    for axis in axes {
+        let (min, max) = leaf_min_max_over_row_groups(statistics, column, axis)?;
+        mins.push(min);
+        maxs.push(max);
+    }
+    mins.extend(maxs);
+    // JSON can't hold infinities.
+    mins.iter().all(|v| v.is_finite()).then_some(mins)
+}
+
+/// Returns `None` if the statistics are missing or encrypted, or the leaf only holds nulls and NaNs.
+fn leaf_min_max_over_row_groups(
+    statistics: &FileStatistics,
+    column: &str,
+    leaf: &str,
+) -> Option<(f64, f64)> {
+    let leaf_index = statistics.columns.iter().position(|c| {
+        let path = &c.path_in_schema;
+        path.first().is_some_and(|p| p.as_str() == column)
+            && path.last().is_some_and(|p| p.as_str() == leaf)
+    })?;
+    let mut bounds: Option<(f64, f64)> = None;
+    for row_group in statistics.row_groups {
+        let chunk = &row_group.columns[leaf_index];
+        // Hidden statistics must not leak through the `bbox`.
+        if chunk.crypto_metadata.is_some() {
+            return None;
+        }
+        let stats = chunk.meta_data.as_ref()?.statistics.as_ref()?;
+        // Row groups of only nulls and NaNs have no minimum and maximum.
+        let (Some(min), Some(max)) = (&stats.min_value, &stats.max_value) else {
+            continue;
+        };
+        let (min, max) = (decode::<f64>(min), decode::<f64>(max));
+        bounds = Some(match bounds {
+            None => (min, max),
+            Some((lo, hi)) => (lo.min(min), hi.max(max)),
+        });
+    }
+    bounds
+}
+
+/// Whether a PROJJSON CRS is OGC:CRS84, by its `id` as the GeoParquet spec suggests.
+fn is_crs84(projjson: &Map<String, Value>) -> bool {
+    projjson
+        .get("id")
+        .is_some_and(|id| id["authority"] == "OGC" && id["code"] == "CRS84")
 }

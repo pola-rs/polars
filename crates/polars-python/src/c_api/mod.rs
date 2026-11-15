@@ -210,6 +210,8 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::field)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::col)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::col_exact))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::collect_all))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::collect_all_lazy))
@@ -293,11 +295,16 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
 
     // Functions - I/O
+    m.add_wrapped(wrap_pyfunction!(functions::_has_writable_scheme))
+        .unwrap();
     #[cfg(feature = "ipc")]
     m.add_wrapped(wrap_pyfunction!(functions::read_ipc_schema))
         .unwrap();
     #[cfg(feature = "parquet")]
     m.add_wrapped(wrap_pyfunction!(functions::read_parquet_metadata))
+        .unwrap();
+    #[cfg(all(feature = "parquet", feature = "json"))]
+    m.add_wrapped(wrap_pyfunction!(crate::io::delta_stats::_delta_file_stats))
         .unwrap();
     #[cfg(all(feature = "cloud", feature = "parquet"))]
     m.add_wrapped(wrap_pyfunction!(

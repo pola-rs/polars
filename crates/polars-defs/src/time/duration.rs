@@ -834,80 +834,49 @@ impl Duration {
     #[inline(always)]
     fn add_inline(&self, tu: TimeUnit, mut t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         let d = self;
+        if d.months == 0 && d.weeks == 0 && d.days == 0 {
+            return Ok(t + tu.from_nsecs(self.signed_nsecs()));
+        }
+        let t_weeks = tu.from_nsecs(NS_WEEK) * d.weeks;
+        let t_days = tu.from_nsecs(NS_DAY) * d.days;
+        let t_calendar = if d.negative {
+            -(t_weeks + t_days)
+        } else {
+            t_weeks + t_days
+        };
 
-        if d.months > 0 {
-            t = match tz {
-                #[cfg(feature = "timezones")]
-                // for UTC, use fastpath below (same as naive)
-                Some(tz) if tz != &chrono_tz::UTC => {
-                    let original_dt_utc = tu.timestamp_to_datetime(t);
-                    let original_dt_local = unlocalize_datetime(original_dt_utc, tz);
-                    let result_dt_local = Self::add_month(original_dt_local, d.months, d.negative);
-                    tu.datetime_to_timestamp(self.localize_result_rfc_5545(
-                        original_dt_utc,
-                        result_dt_local?,
-                        tz,
+        t = match tz {
+            #[cfg(feature = "timezones")]
+            // for UTC, use fastpath below (same as naive)
+            Some(tz) if tz != &chrono_tz::UTC => {
+                // Apply all calendar parts in local time and localize once, so that a
+                // non-existent intermediate local time does not affect the result.
+                let original_dt_utc = tu.timestamp_to_datetime(t);
+                let mut result_dt_local = unlocalize_datetime(original_dt_utc, tz);
+                if d.months > 0 {
+                    result_dt_local = Self::add_month(result_dt_local, d.months, d.negative)?;
+                }
+                let result_dt_local = tu
+                    .timestamp_to_datetime(tu.datetime_to_timestamp(result_dt_local) + t_calendar);
+                tu.datetime_to_timestamp(self.localize_result_rfc_5545(
+                    original_dt_utc,
+                    result_dt_local,
+                    tz,
+                )?)
+            },
+            _ => {
+                let t = if d.months > 0 {
+                    tu.datetime_to_timestamp(Self::add_month(
+                        tu.timestamp_to_datetime(t),
+                        d.months,
+                        d.negative,
                     )?)
-                },
-                _ => tu.datetime_to_timestamp(Self::add_month(
-                    tu.timestamp_to_datetime(t),
-                    d.months,
-                    d.negative,
-                )?),
-            };
-        }
-
-        if d.weeks > 0 {
-            let t_weeks = tu.from_nsecs(NS_WEEK) * self.weeks;
-            t = match tz {
-                #[cfg(feature = "timezones")]
-                // for UTC, use fastpath below (same as naive)
-                Some(tz) if tz != &chrono_tz::UTC => {
-                    let original_dt_utc = tu.timestamp_to_datetime(t);
-                    let original_dt_local = unlocalize_datetime(original_dt_utc, tz);
-                    let mut result_timestamp_local = tu.datetime_to_timestamp(original_dt_local);
-                    result_timestamp_local += if d.negative { -t_weeks } else { t_weeks };
-                    let result_dt_local = tu.timestamp_to_datetime(result_timestamp_local);
-                    tu.datetime_to_timestamp(self.localize_result_rfc_5545(
-                        original_dt_utc,
-                        result_dt_local,
-                        tz,
-                    )?)
-                },
-                _ => {
-                    if d.negative {
-                        t - t_weeks
-                    } else {
-                        t + t_weeks
-                    }
-                },
-            };
-        }
-
-        if d.days > 0 {
-            let t_days = tu.from_nsecs(NS_DAY) * self.days;
-            t = match tz {
-                #[cfg(feature = "timezones")]
-                // for UTC, use fastpath below (same as naive)
-                Some(tz) if tz != &chrono_tz::UTC => {
-                    let original_dt_utc = tu.timestamp_to_datetime(t);
-                    let original_dt_local = unlocalize_datetime(original_dt_utc, tz);
-                    t = tu.datetime_to_timestamp(original_dt_local);
-                    t += if d.negative { -t_days } else { t_days };
-                    let result_dt_local = tu.timestamp_to_datetime(t);
-                    let result_dt_utc =
-                        self.localize_result_rfc_5545(original_dt_utc, result_dt_local, tz)?;
-                    tu.datetime_to_timestamp(result_dt_utc)
-                },
-                _ => {
-                    if d.negative {
-                        t - t_days
-                    } else {
-                        t + t_days
-                    }
-                },
-            };
-        }
+                } else {
+                    t
+                };
+                t + t_calendar
+            },
+        };
 
         Ok(t + tu.from_nsecs(self.signed_nsecs()))
     }

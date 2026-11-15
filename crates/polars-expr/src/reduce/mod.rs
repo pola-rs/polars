@@ -260,7 +260,24 @@ pub trait Reducer: Send + Sync + Clone + 'static {
     /// combined afterwards, changing the result by at most floating-point rounding.
     /// If so, `init` must be an identity of `combine`.
     const ORDER_INDEPENDENT: bool = false;
+    /// Whether reducing a value right after itself into the same state may be skipped,
+    /// using [`is_repeat`](Self::is_repeat).
+    const SKIP_REPEATS: bool = false;
     fn init(&self) -> Self::Value;
+    /// Whether the valid rows `i` and `j` of `arr` hold the same value. It may return
+    /// false for equal values.
+    ///
+    /// # Safety
+    /// The rows must be in bounds.
+    #[inline(always)]
+    unsafe fn is_repeat(
+        &self,
+        _arr: &<Self::Dtype as PolarsDataType>::Array,
+        _i: usize,
+        _j: usize,
+    ) -> bool {
+        false
+    }
     #[inline(always)]
     fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
         Cow::Borrowed(s)
@@ -449,7 +466,16 @@ where
                     offset = offset.wrapping_add(stride);
                 }
             } else {
+                let mut prev_i = 0;
+                let mut prev_g = IdxSize::MAX;
                 for (i, g) in subset.iter().zip(group_idxs) {
+                    if R::SKIP_REPEATS {
+                        if *g == prev_g && self.reducer.is_repeat(arr, *i as usize, prev_i) {
+                            continue;
+                        }
+                        prev_i = *i as usize;
+                        prev_g = *g;
+                    }
                     let grp = slots.get_unchecked_mut(*g as usize + (offset & LANE_MASK));
                     self.reducer
                         .reduce_one(grp, Some(arr.value_unchecked(*i as usize)), seq_id);
@@ -492,7 +518,19 @@ where
                     self.reducer.reduce_one(grp, ov, seq_id);
                 }
             } else {
+                let mut prev_i = 0;
+                let mut prev_g = usize::MAX;
                 for (i, g) in subset.iter().zip(group_idxs) {
+                    if R::SKIP_REPEATS {
+                        if g.idx() == prev_g
+                            && !g.should_evict()
+                            && self.reducer.is_repeat(arr, *i as usize, prev_i)
+                        {
+                            continue;
+                        }
+                        prev_i = *i as usize;
+                        prev_g = g.idx();
+                    }
                     let v = arr.value_unchecked(*i as usize);
                     let grp = self.values.get_unchecked_mut(g.idx());
                     if g.should_evict() {

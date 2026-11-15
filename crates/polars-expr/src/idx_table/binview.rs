@@ -4,7 +4,7 @@
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use polars_arrow::array::Array;
+use polars_arrow::array::{Array, View};
 use polars_compute::binview_index_map::{BinaryViewIndexMap, Entry};
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::idx_vec::UnitVec;
@@ -357,13 +357,21 @@ impl IdxTable for BinviewKeyIdxTable {
         unsafe {
             let buffers = hash_keys.keys.data_buffers();
             let views = hash_keys.keys.views();
-            let lookup = |i: IdxSize| {
-                let hash = hash_keys.hashes.value_unchecked(i as usize);
-                self.idx_map
-                    .get_view(hash, views.get_unchecked(i as usize), buffers)
+            let mut prev_view = View::default();
+            let mut prev_idxs = None;
+            let mut has_prev = false;
+            let mut lookup = move |i: IdxSize| {
+                let view = views.get_unchecked(i as usize);
+                if !has_prev || *view != prev_view {
+                    prev_view = *view;
+                    has_prev = true;
+                    let hash = hash_keys.hashes.value_unchecked(i as usize);
+                    prev_idxs = self.idx_map.get_view(hash, view, buffers);
+                }
+                prev_idxs
             };
             if let Some(validity) = hash_keys.keys.validity() {
-                let iter = subset.iter().map(|i| {
+                let iter = subset.iter().map(move |i| {
                     (
                         *i,
                         validity.get_bit_unchecked(*i as usize).then(|| lookup(*i)),
@@ -379,7 +387,7 @@ impl IdxTable for BinviewKeyIdxTable {
                     limit,
                 )
             } else {
-                let iter = subset.iter().map(|i| (*i, Some(lookup(*i))));
+                let iter = subset.iter().map(move |i| (*i, Some(lookup(*i))));
                 self.probe_dispatch(
                     iter,
                     table_match,

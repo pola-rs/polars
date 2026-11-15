@@ -1,5 +1,5 @@
 use polars_arrow::array::builder::StaticArrayBuilder;
-use polars_arrow::array::{BinaryViewArrayGenericBuilder, PrimitiveArray, View};
+use polars_arrow::array::{Array, BinaryViewArrayGenericBuilder, PrimitiveArray, View};
 use polars_arrow::bitmap::MutableBitmap;
 use polars_buffer::Buffer;
 use polars_utils::vec::PushUnchecked;
@@ -220,34 +220,29 @@ impl HotGrouper for BinviewHashHotGrouper {
             // Kept for the rows it declined and the entries of another dictionary.
             self.dict_groups = groups;
         }
-        unsafe {
-            let views = hash_keys.keys.views().as_slice();
-            let buffers = hash_keys.keys.data_buffers();
-            if hash_keys.null_is_valid {
-                hash_keys.for_each_hash(|idx, opt_h| {
-                    if let Some(h) = opt_h {
-                        let view = views.get_unchecked(idx as usize);
-                        let next_h = *hashes.get(idx as usize + 1).unwrap_or(&u64::MAX);
-                        push_g(
-                            idx as usize,
-                            self.insert_key(h, *view, force_hot, next_h, buffers),
-                        );
-                    } else {
-                        push_g(idx as usize, self.insert_null());
-                    }
-                });
+        let views = hash_keys.keys.views().as_slice();
+        let buffers = hash_keys.keys.data_buffers();
+        let validity = hash_keys.keys.validity();
+
+        // Equal consecutive views map to the same hot group, so runs skip the table.
+        let mut prev_view = View::default();
+        let mut prev_g = IdxSize::MAX;
+        for (idx, (&h, &view)) in hashes.iter().zip(views).enumerate() {
+            let opt_g = if validity.is_some_and(|v| unsafe { !v.get_bit_unchecked(idx) }) {
+                if !hash_keys.null_is_valid {
+                    continue;
+                }
+                self.insert_null()
+            } else if view == prev_view && prev_g != IdxSize::MAX {
+                Some(EvictIdx::new(prev_g, false))
             } else {
-                hash_keys.for_each_hash(|idx, opt_h| {
-                    if let Some(h) = opt_h {
-                        let view = views.get_unchecked(idx as usize);
-                        let next_h = *hashes.get(idx as usize + 1).unwrap_or(&u64::MAX);
-                        push_g(
-                            idx as usize,
-                            self.insert_key(h, *view, force_hot, next_h, buffers),
-                        );
-                    }
-                });
-            }
+                let next_h = *hashes.get(idx + 1).unwrap_or(&u64::MAX);
+                let opt_g = unsafe { self.insert_key(h, view, force_hot, next_h, buffers) };
+                prev_view = view;
+                prev_g = opt_g.map_or(IdxSize::MAX, |g| g.idx() as IdxSize);
+                opt_g
+            };
+            push_g(idx, opt_g);
         }
     }
 

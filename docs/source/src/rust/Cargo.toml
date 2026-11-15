@@ -155,3 +155,6 @@ required-features = ["polars/lazy", "polars/temporal", "polars/dynamic_group_by"
 name = "transformations-time-series-timezones"
 path = "user-guide/transformations/time-series/timezones.rs"
 required-features = ["polars/lazy", "polars/temporal", "polars/timezones", "polars/strings"]
+
+[lints]
+workspace = true
