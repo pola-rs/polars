@@ -1204,6 +1204,8 @@ def test_streaming_group_by_numeric_value_runs(
     # Runs of 20 rows over more groups than there are lanes.
     g = (i // 20 * 7) % 71
     x = (i % 17 - 8).cast(dtype)
+    if dtype == pl.Float64:
+        x = pl.when(i % 13 == 5).then(float("nan")).otherwise(x)
     if with_nulls:
         # Also runs without a valid value.
         x = pl.when((i % 11 != 3) & (i // 20 % 9 != 4)).then(x)
@@ -1216,6 +1218,8 @@ def test_streaming_group_by_numeric_value_runs(
             mean=pl.col("x").mean(),
             min=pl.col("x").min(),
             max=pl.col("x").max(),
+            count=pl.col("x").count(),
+            len=pl.len(),
         )
     )
     assert_frame_equal(
