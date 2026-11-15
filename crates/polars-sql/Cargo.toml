@@ -44,6 +44,7 @@ bitwise = ["polars-lazy/bitwise"]
 # `read_csv` parses dates by default, which needs the temporal dtypes.
 csv = ["polars-lazy/csv", "polars-io/csv", "polars-io/temporal"]
 diagonal_concat = ["polars-lazy/diagonal_concat"]
+dtype-categorical = ["polars-lazy/dtype-categorical", "polars-io/dtype-categorical"]
 dtype-decimal = ["polars-lazy/dtype-decimal"]
 # Opt-in: `dtype-map` also makes Arrow `MAP` columns import as `Map` instead of `List(Struct)`, program-wide.
 dtype-map = ["polars-lazy/dtype-map", "polars-io/dtype-map", "polars-ops/dtype-map"]

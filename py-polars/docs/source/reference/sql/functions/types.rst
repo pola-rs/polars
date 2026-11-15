@@ -55,6 +55,10 @@ Only a `STRUCT` value or `NULL` can be cast to `STRUCT`, and only a `MAP` value 
 For a list of nested structs, separate the closing brackets: `STRUCT<a STRUCT<b INT> >[]`; the
 parser currently reads `STRUCT<a STRUCT<b INT>>[]` as `STRUCT<a STRUCT<b INT>[]>`.
 
+`CATEGORICAL` is a categorical, and `CATEGORICAL('name')` one with the categories of that name.
+`ENUM('a', 'b')` is an enum of those values, in that order. A timestamp in a named time zone is
+written as `DATETIME64(3, 'Europe/Amsterdam')`, with the precision (1 to 9) first.
+
 **Example:**
 
 .. code-block:: python
