@@ -32,33 +32,6 @@ impl BinviewKeyIdxTable {
     }
 
     /// # Safety
-    /// The view must be valid for the buffers.
-    #[inline(always)]
-    unsafe fn probe_one<const MARK_MATCHES: bool>(
-        &self,
-        key_idx: IdxSize,
-        hash: u64,
-        key: &View,
-        buffers: &[Buffer<u8>],
-        table_match: &mut Vec<IdxSize>,
-        probe_match: &mut Vec<IdxSize>,
-    ) -> bool {
-        if let Some(idxs) = unsafe { self.idx_map.get_view(hash, key, buffers) } {
-            for idx in &idxs[..] {
-                table_match.push(idx.load() & !MARKED);
-                probe_match.push(key_idx);
-            }
-
-            if MARK_MATCHES {
-                unsafe { self.matched.mark_rows(idxs) };
-            }
-            true
-        } else {
-            false
-        }
-    }
-
-    /// # Safety
     /// The views must be valid for the buffers.
     unsafe fn probe_impl<
         'a,
@@ -74,16 +47,28 @@ impl BinviewKeyIdxTable {
         limit: IdxSize,
     ) -> IdxSize {
         let mut keys_processed = 0;
+        let mut prev_view = View::default();
+        let mut prev_idxs = None;
+        let mut has_prev = false;
         for (key_idx, hash, key) in keys {
             let found_match = if let Some(key) = key {
-                self.probe_one::<MARK_MATCHES>(
-                    key_idx,
-                    hash,
-                    key,
-                    buffers,
-                    table_match,
-                    probe_match,
-                )
+                if !has_prev || *key != prev_view {
+                    prev_view = *key;
+                    has_prev = true;
+                    prev_idxs = unsafe { self.idx_map.get_view(hash, key, buffers) };
+                    if MARK_MATCHES && let Some(idxs) = prev_idxs {
+                        unsafe { self.matched.mark_rows(idxs) };
+                    }
+                }
+                if let Some(idxs) = prev_idxs {
+                    for idx in &idxs[..] {
+                        table_match.push(idx.load() & !MARKED);
+                        probe_match.push(key_idx);
+                    }
+                    true
+                } else {
+                    false
+                }
             } else if NULL_IS_VALID {
                 for idx in &self.null_keys {
                     table_match.push(*idx);
