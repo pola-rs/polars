@@ -1221,7 +1221,8 @@ def test_streaming_join_unique_build_keys(
     if probe_nulls:
         k = pl.when(i % 13 != 5).then(k)
     keys = _join_keys(k, key_type)
-    probe = pl.select(**keys, a=i, b=i.cast(pl.String), c=i * 0.5).lazy()
+    key_exprs = [e.alias(n) for n, e in keys.items()]
+    probe = pl.select(*key_exprs, a=i, b=i.cast(pl.String), c=i * 0.5).lazy()
     dim_keys: list[int | None] = list(range(20))
     if build == "unique_with_null":
         dim_keys.append(None)
