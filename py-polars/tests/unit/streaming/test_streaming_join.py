@@ -1174,6 +1174,33 @@ def test_streaming_join_unmatched_repeated_key_morsels(
     assert out.n_chunks() <= pl.thread_pool_size()
 
 
+@pytest.mark.parametrize("prefix", ["", "a-long-string-key-"])
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_streaming_join_string_key_runs(
+    prefix: str, how: JoinStrategy, nulls_equal: bool, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "4")
+    # Gathering keeps equal keys as equal views, also for long strings.
+    uniq = pl.Series("k", [f"{prefix}{c}" for c in "abcde"] + [""])
+    idx: list[int | None] = [0, 0, 0, 1, 1, None, None, 2, 2, 0, 3, 3, 3, 5, 5, 4]
+    idx = idx * 3 + [5, 5, None, 0, 5, 0]
+    left = pl.LazyFrame({"k": uniq.gather(pl.Series(idx, dtype=pl.UInt32))})
+    right = pl.LazyFrame({"k": ["", f"{prefix}a", f"{prefix}a", f"{prefix}c", None]})
+    q = left.with_row_index("v").join(
+        right.with_row_index("w"),
+        on="k",
+        how=how,
+        build_side="force_right",
+        nulls_equal=nulls_equal,
+    )
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
 @pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
 def test_streaming_join_keeps_height_of_input_without_columns(
     how: Literal["inner", "left", "right", "full"],
