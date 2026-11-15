@@ -166,6 +166,11 @@ jobs:
         # Free-threaded CPython can't load abi3 extensions, only abi3t ones (3.15+)
         abi: [abi3, abi3t]
         job_config: [linux-x64, linux-arm64, linux-musl-x64, linux-musl-arm64, macos-x64, macos-arm64, win-x64, win-arm64]
+        exclude:
+          # polars-runtime-compat's PyPI size limit might still be unresolved (pypi/support#11990),
+          # so don't add abi3t wheels there until it is
+          - package: polars-runtime-compat
+            abi: abi3t
         include:
           # abi3t wheels must be built with free-threaded CPython 3.15+
           - abi: abi3t
