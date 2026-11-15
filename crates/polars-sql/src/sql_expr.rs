@@ -882,7 +882,15 @@ impl SQLExprVisitor<'_> {
     ///
     /// e.g. column
     fn visit_identifier(&self, ident: &Ident) -> PolarsResult<Expr> {
-        Ok(col(ident.value.as_str()))
+        let name = ident.value.as_str();
+        if let Some(expr) = self.ctx.select_aliases.get(name)
+            && !self
+                .active_schema
+                .is_some_and(|schema| schema.contains(name))
+        {
+            return Ok(expr.clone());
+        }
+        Ok(col(name))
     }
 
     /// Visit a compound SQL identifier
@@ -2798,6 +2806,16 @@ pub(crate) fn resolve_compound_identifier(
     };
     let mut remaining_idents = idents.iter().skip(qualifier_len);
 
+    // a SELECT alias of a struct, read by an item after it
+    if lf.is_none()
+        && !active_schema.is_some_and(|schema| schema.contains(&ident_root.value))
+        && let Some(expr) = ctx.select_aliases.get(ident_root.value.as_str()).cloned()
+    {
+        let typed = ctx.with_typed_subqueries(&expr)?;
+        let dtype = ctx.expr_dtype(&typed, active_schema);
+        return read_struct_fields(expr, dtype.as_ref(), &idents[1..]);
+    }
+
     // get schema from table (or the active/default schema)
     let schema = if let Some(ref mut lf) = lf {
         lf.schema_with_arenas(&mut ctx.lp_arena, &mut ctx.expr_arena)?
@@ -2807,33 +2825,7 @@ pub(crate) fn resolve_compound_identifier(
 
     // handle simple/unqualified column reference with no schema
     if lf.is_none() && schema.is_empty() {
-        let (mut column, mut dtype): (Expr, Option<&DataType>) =
-            (col(ident_root.value.as_str()), None);
-
-        // traverse the remaining struct field path (if any)
-        for ident in remaining_idents {
-            let name = ident.value.as_str();
-            match dtype {
-                Some(DataType::Struct(fields)) if is_wildcard(ident) => {
-                    return Ok(fields
-                        .iter()
-                        .map(|fld| struct_field(column.clone(), fld.name.clone()))
-                        .collect());
-                },
-                Some(DataType::Struct(fields)) => {
-                    dtype = fields
-                        .iter()
-                        .find(|fld| fld.name == name)
-                        .map(|fld| &fld.dtype);
-                },
-                Some(dtype) if is_wildcard(ident) => {
-                    polars_bail!(SQLSyntax: "cannot expand '*' on non-Struct dtype; found {:?}", dtype)
-                },
-                _ => dtype = None,
-            }
-            column = struct_field(column, name);
-        }
-        return Ok(vec![column]);
+        return read_struct_fields(col(ident_root.value.as_str()), None, remaining_idents);
     }
 
     let name_ident = remaining_idents.next().unwrap();
@@ -2883,8 +2875,18 @@ pub(crate) fn resolve_compound_identifier(
         };
 
     // additional ident levels index into struct fields (eg: "df.col.field.nested_field")
-    let (mut column, mut dtype) = col_dtype?;
-    for ident in remaining_idents {
+    let (column, dtype) = col_dtype?;
+    read_struct_fields(column, dtype, remaining_idents)
+}
+
+/// `column`, of type `dtype` if known, with the struct fields `idents` read in turn; a `*`
+/// expands the fields of a struct.
+fn read_struct_fields<'a>(
+    mut column: Expr,
+    mut dtype: Option<&DataType>,
+    idents: impl IntoIterator<Item = &'a Ident>,
+) -> PolarsResult<Vec<Expr>> {
+    for ident in idents {
         let name = ident.value.as_str();
         match dtype {
             Some(DataType::Struct(fields)) if is_wildcard(ident) => {
@@ -2902,9 +2904,7 @@ pub(crate) fn resolve_compound_identifier(
             Some(dtype) if is_wildcard(ident) => {
                 polars_bail!(SQLSyntax: "cannot expand '*' on non-Struct dtype; found {:?}", dtype)
             },
-            _ => {
-                dtype = None;
-            },
+            _ => dtype = None,
         }
         column = struct_field(column, name);
     }

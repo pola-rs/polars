@@ -47,7 +47,7 @@ use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
 use crate::functions::{PolarsSQLFunctions, is_random};
 use crate::group_context::{
-    AggregateOutputs, GroupContextSplitter, OutputNames, SelectAliases, assume_groups_have_rows,
+    AggregateOutputs, GroupContextSplitter, OutputNames, assume_groups_have_rows,
     check_columns_in_aggregates, has_marked_aggregate, has_random_outside_aggregates,
     has_subquery_outside_aggregates, has_windows_over_aggregates, is_marked_aggregate,
     strip_aggregate_marks,
@@ -367,6 +367,9 @@ pub struct SQLContext {
     /// How many subqueries enclose this scope. CTEs, derived tables and set operands don't
     /// count: they read no enclosing scope.
     pub(crate) nesting: usize,
+    /// The aliases of the SELECT items parsed so far in the current SELECT list, which a later
+    /// item reads when no input column has the name.
+    pub(crate) select_aliases: PlHashMap<PlSmallStr, Expr>,
 }
 
 /// The query of a view and the names it gives the query's columns.
@@ -444,6 +447,7 @@ impl Default for SQLContext {
             statement_time: Default::default(),
             strict_relations: false,
             nesting: 0,
+            select_aliases: Default::default(),
         }
     }
 }
@@ -1623,6 +1627,14 @@ impl SQLContext {
     }
 
     pub(crate) fn execute_query(&mut self, query: &Query) -> PolarsResult<LazyFrame> {
+        // A nested query does not read the SELECT aliases around it.
+        let outer_aliases = std::mem::take(&mut self.select_aliases);
+        let lf = self.execute_query_body(query);
+        self.select_aliases = outer_aliases;
+        lf
+    }
+
+    fn execute_query_body(&mut self, query: &Query) -> PolarsResult<LazyFrame> {
         self.register_ctes(query)?;
         self.validate_query(query)?;
 
@@ -1776,6 +1788,10 @@ impl SQLContext {
         let mut positions = Vec::new();
         let mut data_types = Vec::new();
         for name in self.get_tables() {
+            // A view being planned is not listed, as listing it would plan it again.
+            if self.views_in_progress.contains(&name) {
+                continue;
+            }
             let table = self.table_map.read().unwrap().get(&name).cloned();
             let Some(mut lf) = table.map_or_else(|| self.get_view(&name), |lf| Ok(Some(lf)))?
             else {
@@ -4510,22 +4526,65 @@ impl SQLContext {
                 .map(|name| (col(name.clone()), false))
                 .collect());
         }
+        let outer_aliases = std::mem::take(&mut self.select_aliases);
+        let items = self.projection_items(projection, schema);
+        self.select_aliases = outer_aliases;
+        let (items, has_qualified_wildcard) = items?;
+
+        // Disambiguate qualified wildcards (if any) and flatten expressions
+        let exprs: Vec<(Expr, bool)> = if has_qualified_wildcard {
+            disambiguate_projection_cols(items, schema)?
+        } else {
+            items
+                .into_iter()
+                .flat_map(|item| match item {
+                    ProjectionItem::Exprs(exprs, is_explicit_alias) => exprs
+                        .into_iter()
+                        .map(|e| (e, is_explicit_alias))
+                        .collect::<Vec<_>>(),
+                    ProjectionItem::QualifiedExprs(_, exprs) => {
+                        exprs.into_iter().map(|e| (e, false)).collect()
+                    },
+                })
+                .collect()
+        };
+        Ok(exprs
+            .into_iter()
+            .flat_map(|(expr, is_explicit_alias)| {
+                expand_exprs(expr, schema)
+                    .into_iter()
+                    .map(move |e| (e, is_explicit_alias))
+            })
+            .collect())
+    }
+
+    /// The items of a SELECT list, and whether one is a qualified wildcard. An item reads the
+    /// aliases of the items before it.
+    fn projection_items(
+        &mut self,
+        projection: &[SelectItem],
+        schema: &SchemaRef,
+    ) -> PolarsResult<(Vec<ProjectionItem>, bool)> {
         let mut items: Vec<ProjectionItem> = Vec::with_capacity(projection.len());
         let mut has_qualified_wildcard = false;
-        let mut aliases = SelectAliases::default();
 
         for select_item in projection {
             match select_item {
                 SelectItem::UnnamedExpr(expr) => {
-                    items.push(ProjectionItem::Exprs(
-                        vec![self.parse_select_item(expr, schema, &mut aliases, true)?],
-                        false,
-                    ));
+                    let mut parsed = parse_sql_expr(expr, self, Some(schema))?;
+                    // An item that only names an alias keeps that name.
+                    if let SQLExpr::Identifier(ident) = expr
+                        && !schema.contains(&ident.value)
+                        && self.select_aliases.contains_key(ident.value.as_str())
+                    {
+                        parsed = parsed.alias(ident.value.as_str());
+                    }
+                    items.push(ProjectionItem::Exprs(vec![parsed], false));
                 },
                 SelectItem::ExprWithAlias { expr, alias } => {
-                    let expr = self.parse_select_item(expr, schema, &mut aliases, false)?;
+                    let expr = parse_sql_expr(expr, self, Some(schema))?;
                     let name = PlSmallStr::from_str(alias.value.as_str());
-                    aliases.insert(name.clone(), expr.clone(), schema);
+                    self.select_aliases.insert(name.clone(), expr.clone());
                     items.push(ProjectionItem::Exprs(vec![expr.alias(name)], true));
                 },
                 SelectItem::ExprWithAliases { .. } => {
@@ -4562,63 +4621,7 @@ impl SQLContext {
             }
         }
 
-        // Disambiguate qualified wildcards (if any) and flatten expressions
-        let exprs: Vec<(Expr, bool)> = if has_qualified_wildcard {
-            disambiguate_projection_cols(items, schema)?
-        } else {
-            items
-                .into_iter()
-                .flat_map(|item| match item {
-                    ProjectionItem::Exprs(exprs, is_explicit_alias) => exprs
-                        .into_iter()
-                        .map(|e| (e, is_explicit_alias))
-                        .collect::<Vec<_>>(),
-                    ProjectionItem::QualifiedExprs(_, exprs) => {
-                        exprs.into_iter().map(|e| (e, false)).collect()
-                    },
-                })
-                .collect()
-        };
-        Ok(exprs
-            .into_iter()
-            .flat_map(|(expr, is_explicit_alias)| {
-                expand_exprs(expr, schema)
-                    .into_iter()
-                    .map(move |e| (e, is_explicit_alias))
-            })
-            .collect())
-    }
-
-    /// Parse the SELECT item `expr`, which can read the aliases of the items before it. With
-    /// `keep_name`, it keeps the name it has when it reads an alias.
-    fn parse_select_item(
-        &mut self,
-        expr: &SQLExpr,
-        schema: &Schema,
-        aliases: &mut SelectAliases,
-        keep_name: bool,
-    ) -> PolarsResult<Expr> {
-        let reads_alias = !aliases.is_empty()
-            && visit_expressions(expr, |e| match e {
-                SQLExpr::Identifier(ident) if aliases.contains(&ident.value) => {
-                    ControlFlow::Break(())
-                },
-                _ => ControlFlow::Continue(()),
-            })
-            .is_break();
-        if !reads_alias {
-            return parse_sql_expr(expr, self, Some(schema));
-        }
-        let alias_schema = aliases.schema(|| self.with_placeholder_columns(schema));
-        let parsed = parse_sql_expr(expr, self, Some(&alias_schema))?;
-        let resolved = aliases.resolve(parsed.clone());
-        if keep_name
-            && let Ok(name) = parsed.meta().output_name()
-            && resolved.clone().meta().output_name().ok().as_ref() != Some(&name)
-        {
-            return Ok(resolved.alias(name));
-        }
-        Ok(resolved)
+        Ok((items, has_qualified_wildcard))
     }
 
     /// Filter `lf`, whose schema is `schema`, on the WHERE condition `where_expr`, lowering

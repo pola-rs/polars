@@ -3274,9 +3274,16 @@ impl SQLFunctionVisitor<'_> {
                     && template.is_none()
                     && (dtype.is_primitive_numeric() || dtype.is_decimal()) =>
             {
-                let micros = (value.cast(DataType::Float64) * lit(1_000_000.0))
-                    .round(0, RoundMode::HalfToEven)
-                    .cast(DataType::Int64);
+                let micros = if dtype.is_integer() {
+                    value.cast(DataType::Int64) * lit(1_000_000i64)
+                } else {
+                    let micros = if dtype.is_decimal() {
+                        value * lit(1_000_000i64)
+                    } else {
+                        value.cast(DataType::Float64) * lit(1_000_000.0)
+                    };
+                    micros.round(0, RoundMode::HalfToEven).cast(DataType::Int64)
+                };
                 let dtype = DataType::Datetime(TimeUnit::Microseconds, Some(TimeZone::UTC));
                 return self.apply_window_spec(micros.cast(dtype));
             },

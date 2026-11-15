@@ -175,6 +175,8 @@ def test_unaliased_scalar_subquery_name_is_stable() -> None:
         "SELECT a, ROW_NUMBER() OVER (ORDER BY a) AS rn, rn * 10 AS r10 FROM self "
         "QUALIFY r10 > 10 ORDER BY a",
         "SELECT DISTINCT a % 2 AS x, x + 1 AS y FROM self ORDER BY x",
+        "SELECT 2 AS x, SUM(x) AS s, COUNT(x) AS n FROM self",
+        "SELECT g, 2 AS x, SUM(x) AS s FROM self GROUP BY g ORDER BY g",
     ],
 )
 def test_select_alias_reuse(query: str) -> None:
@@ -188,6 +190,24 @@ def test_select_alias_reuse_random() -> None:
     assert res.columns == ["r", "r2", "x", "x:1"]
     assert res["r"].to_list() == res["r2"].to_list()
     assert res["x:1"].to_list() == [2, 4, 6]
+
+
+def test_select_alias_reuse_types() -> None:
+    df = pl.DataFrame({"a": [1, 2], "s": [{"b": 1, "c": "p"}, {"b": 2, "c": "q"}]})
+    res = df.sql(
+        """
+        SELECT
+          s AS x, x.b AS xb, x.*,
+          (SELECT 1) AS one, TYPEOF(one) AS t1, TO_TIMESTAMP(one) AS ts,
+          SUM(a) OVER () AS w, TYPEOF(w) AS tw
+        FROM self
+        """
+    )
+    assert res.select("xb", "b", "c", "t1", "w", "tw").rows() == [
+        (1, 1, "p", "i32", 3, "i64"),
+        (2, 2, "q", "i32", 3, "i64"),
+    ]
+    assert res["ts"].dtype == pl.Datetime("us", "UTC")
 
 
 def test_select_alias_reuse_errors() -> None:

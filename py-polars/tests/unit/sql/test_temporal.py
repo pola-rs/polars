@@ -1342,13 +1342,19 @@ def test_to_date_to_timestamp(func: str, expected: date | datetime | None) -> No
 
 
 def test_to_timestamp_epoch() -> None:
-    df = pl.DataFrame({"i": [0, -86400, None], "f": [1.5, 1700000000.1234567, -0.25]})
+    df = pl.DataFrame(
+        {
+            "i": [0, -86400, None],
+            "f": [1.5, 1700000000.1234567, -0.25],
+            "d": ["1.5", "1700000000.1234506", "-0.25"],
+        }
+    )
     res = df.sql(
         """
         SELECT
           TO_TIMESTAMP(i) AS ti,
           TO_TIMESTAMP(f) AS tf,
-          TO_TIMESTAMP(CAST(f AS DECIMAL(20, 3))) AS td
+          TO_TIMESTAMP(CAST(d AS DECIMAL(20, 7))) AS td
         FROM self
         """
     )
@@ -1363,7 +1369,7 @@ def test_to_timestamp_epoch() -> None:
         (
             datetime(1969, 12, 31, tzinfo=UTC),
             datetime(2023, 11, 14, 22, 13, 20, 123457, tzinfo=UTC),
-            datetime(2023, 11, 14, 22, 13, 20, 123000, tzinfo=UTC),
+            datetime(2023, 11, 14, 22, 13, 20, 123451, tzinfo=UTC),
         ),
         (
             None,
