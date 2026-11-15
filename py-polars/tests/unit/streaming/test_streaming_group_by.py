@@ -1188,6 +1188,42 @@ def test_streaming_group_by_unique_value_runs(
     assert_frame_equal(collect("streaming"), collect("in-memory"))
 
 
+@pytest.mark.parametrize("dtype", [pl.Int64, pl.Float64])
+@pytest.mark.parametrize("with_nulls", [False, True])
+@pytest.mark.parametrize("hot_table_size", ["2", "4096"])
+def test_streaming_group_by_numeric_value_runs(
+    dtype: pl.DataType,
+    with_nulls: bool,
+    hot_table_size: str,
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "64")
+    plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", hot_table_size)
+    plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", hot_table_size)
+    i = pl.int_range(2000)
+    # Runs of 20 rows over more groups than there are lanes.
+    g = (i // 20 * 7) % 71
+    x = (i % 17 - 8).cast(dtype)
+    if with_nulls:
+        # Also runs without a valid value.
+        x = pl.when((i % 11 != 3) & (i // 20 % 9 != 4)).then(x)
+    q = (
+        pl.select(g=g, x=x)
+        .lazy()
+        .group_by("g")
+        .agg(
+            s=pl.col("x").sum(),
+            mean=pl.col("x").mean(),
+            min=pl.col("x").min(),
+            max=pl.col("x").max(),
+        )
+    )
+    assert_frame_equal(
+        q.collect(engine="streaming").sort("g"),
+        q.collect(engine="in-memory").sort("g"),
+    )
+
+
 @pytest.mark.parametrize("prefix", ["", "a-long-string-key-"])
 @pytest.mark.parametrize("with_nulls", [False, True])
 def test_streaming_group_by_string_key_runs(
