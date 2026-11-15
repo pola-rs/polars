@@ -868,5 +868,6 @@ def test_typeof() -> None:
     with pytest.raises(SQLSyntaxError, match="'i' should participate in the GROUP BY"):
         df.sql("SELECT SUM(i), TYPEOF(i) FROM self")
     assert pl.sql("SELECT TYPEOF(UNNEST([1, 2, 3])) AS t", eager=True).height == 3
+    assert df.sql("SELECT TYPEOF(UNNEST(ARRAY_AGG(i))) AS t FROM self").height == 2
     with pytest.raises(SQLSyntaxError, match=r"TYPEOF expects 1 argument \(found 2\)"):
         df.sql("SELECT TYPEOF(i, s) FROM self")
