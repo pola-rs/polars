@@ -2410,3 +2410,14 @@ def test_cse_shared_scalar_collect_all_with_file_sink(tmp_path: Path) -> None:
     expected = pl.DataFrame({"a": [6], "b": [6]})
     assert_frame_equal(out, expected)
     assert_frame_equal(pl.read_parquet(path), expected)
+
+
+def test_cse_shared_scalar_not_replaced_again() -> None:
+    m = pl.col("a").max()
+    base = pl.LazyFrame({"a": [1, 2, 3]}).with_columns(
+        x=pl.when(m > 2).then(m).otherwise(m * 2) + m
+    )
+    q = pl.concat([base, base])
+    assert 'item().alias("__POLARS_CSER' not in q.explain(engine="in-memory")
+    expected = pl.DataFrame({"a": [1, 2, 3] * 2, "x": [6] * 6})
+    assert_frame_equal(q.collect(engine="in-memory"), expected)

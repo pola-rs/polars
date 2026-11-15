@@ -155,7 +155,7 @@ impl ExprCandidateVisitor<'_> {
 }
 
 /// Classifies how a visited node may participate in CSE.
-fn classify(ae: &AExpr, is_group_by: bool) -> NodeRole {
+fn classify(ae: &AExpr, arena: &Arena<AExpr>, is_group_by: bool) -> NodeRole {
     match ae {
         // Don't allow this for now, as we can get `null().cast()` in ternary expressions.
         // TODO! Add a typed null
@@ -174,6 +174,10 @@ fn classify(ae: &AExpr, is_group_by: bool) -> NodeRole {
         },
         AExpr::Literal(_) => NodeRole::Member,
         AExpr::Column(_) => NodeRole::Member,
+        // A scalar replaced by CSE.
+        AExpr::Agg(IRAggExpr::Item { input, .. }) if matches!(arena.get(*input), AExpr::Column(name) if name.starts_with(CSE_REPLACED)) => {
+            NodeRole::Member
+        },
         AExpr::Len => {
             if is_group_by {
                 NodeRole::Refuse
@@ -237,7 +241,7 @@ impl Visitor for ExprCandidateVisitor<'_> {
         let ae = node.to_aexpr(arena);
         let subtree_is_valid = self.validity_stack.pop().unwrap();
 
-        let role = classify(ae, self.is_group_by);
+        let role = classify(ae, arena, self.is_group_by);
 
         if !subtree_is_valid || role == NodeRole::Refuse {
             self.invalidate_parent();
