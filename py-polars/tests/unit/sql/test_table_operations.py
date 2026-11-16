@@ -814,6 +814,17 @@ def test_information_schema_columns(test_frame: pl.LazyFrame) -> None:
         ctx.execute("DROP VIEW meta2")
         ctx.execute("DROP VIEW meta")
 
+        # TABLE reads it too
+        ctx.execute("CREATE VIEW meta AS TABLE information_schema.columns")
+        assert ctx.execute("SELECT COUNT(*) FROM meta", eager=True).item() == 6
+        res = ctx.execute(
+            "SELECT COUNT(*) FROM (TABLE information_schema.columns "
+            "UNION ALL TABLE information_schema.columns)",
+            eager=True,
+        )
+        assert res.item() == 22
+        ctx.execute("DROP VIEW meta")
+
         # the context's tables are read when the query is planned
         lf = ctx.execute("SELECT column_name FROM information_schema.columns")
         ctx.unregister("df")

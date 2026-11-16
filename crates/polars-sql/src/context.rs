@@ -2232,7 +2232,13 @@ impl SQLContext {
                         Some(schema_name) => format!("{schema_name}.{table_name}"),
                         None => table_name.clone(),
                     };
-                    self.get_table_from_current_scope(&name)?.ok_or_else(|| {
+                    let lf = match self.get_table_from_current_scope(&name)? {
+                        None if is_information_schema_columns(&name) => {
+                            Some(self.information_schema_columns()?)
+                        },
+                        lf => lf,
+                    };
+                    lf.ok_or_else(|| {
                         polars_err!(
                             SQLInterface: "no table or alias named '{}' found",
                             tbl
