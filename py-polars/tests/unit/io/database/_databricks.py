@@ -112,7 +112,7 @@ def execute(conn: Any, statement: str) -> list[Any]:
     with conn.cursor() as cur:
         cur.execute(statement)
         try:
-            return cur.fetchall()
+            return list(cur.fetchall())
         except Exception:
             return []
 
@@ -421,7 +421,7 @@ def seed(conn: Any, catalog: str, schema: str) -> None:
 def _seeded(conn: Any, catalog: str, schema: str) -> bool:
     name = f"{_ident(catalog)}.{_ident(schema)}._seed_version"
     try:
-        return execute(conn, f"SELECT version FROM {name}")[0][0] == VERSION
+        return bool(execute(conn, f"SELECT version FROM {name}")[0][0] == VERSION)
     except Exception:
         return False
 

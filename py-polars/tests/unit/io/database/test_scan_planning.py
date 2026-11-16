@@ -1714,7 +1714,7 @@ def test_databricks_literals_are_ntz_times_and_instants() -> None:
     from polars_database import _sqlglot
 
     def literal(v: Any) -> str:
-        return _sqlglot._literal(v, "databricks").sql("databricks")
+        return str(_sqlglot._literal(v, "databricks").sql("databricks"))
 
     naive = {"Timestamp": {"text": "2024-03-10 02:30:00.000000", "with_tz": False}}
     aware = {"Timestamp": {"text": "2024-03-10 10:30:00.000000", "with_tz": True}}
