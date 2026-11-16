@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use polars_arrow::array::builder::ShareStrategy;
@@ -217,8 +218,8 @@ pub fn with_nulls_for_other_side(
     params: &EquiJoinParams,
 ) -> DataFrame {
     // `df` has all payload columns of its side, including those only a fused predicate reads.
-    let df = match params.output_idx(df_is_left) {
-        Some(_) => output_columns(&df, params.output_idx(df_is_left)).into_owned(),
+    let df = match params.output_idx(df_is_left).as_deref() {
+        Some(idx) => output_columns(&df, Some(idx)).into_owned(),
         None => df,
     };
     with_nulls_for_other_side_projected(df, df_is_left, params)
@@ -254,8 +255,8 @@ pub struct ProbeOutput {
     unmatched_probe: Vec<IdxSize>,
     left_is_build: bool,
     /// The columns of the build and probe payloads that are output, if only some are.
-    build_idx: Option<Vec<usize>>,
-    probe_idx: Option<Vec<usize>>,
+    build_idx: Option<Arc<[usize]>>,
+    probe_idx: Option<Arc<[usize]>>,
     mark_matches: bool,
     emit_unmatched: bool,
     /// The number of rows of a full output.
@@ -270,8 +271,8 @@ impl ProbeOutput {
         Self {
             build: DataFrameBuilder::new(params.output_side_schema(left_is_build).clone()),
             probe: DataFrameBuilder::new(params.output_side_schema(!left_is_build).clone()),
-            build_idx: params.output_idx(left_is_build).map(<[usize]>::to_vec),
-            probe_idx: params.output_idx(!left_is_build).map(<[usize]>::to_vec),
+            build_idx: params.output_idx(left_is_build).clone(),
+            probe_idx: params.output_idx(!left_is_build).clone(),
             table_match: Vec::new(),
             probe_match: Vec::new(),
             unmatched_probe: Vec::new(),

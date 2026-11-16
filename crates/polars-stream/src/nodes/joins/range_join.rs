@@ -375,7 +375,7 @@ async fn compute_and_emit_task(
                 None => mask,
             });
         }
-        let interval_df = interval_df.filter(&acc.unwrap())?;
+        let mut interval_df = interval_df.filter(&acc.unwrap())?;
 
         let find_bounds = |bound_key_col: Option<&PlSmallStr>, sss: Option<SearchSortedSide>| {
             bound_key_col
@@ -403,12 +403,11 @@ async fn compute_and_emit_task(
         };
 
         // The temporary key columns are only read for the bounds above.
-        let mut interval_payload = interval_df.clone();
         for col in [&params.lower_tmp_key_col, &params.upper_tmp_key_col]
             .into_iter()
             .flatten()
         {
-            interval_payload.drop_in_place(col)?;
+            interval_df.drop_in_place(col)?;
         }
 
         for (row_idx, (start, end)) in
@@ -426,7 +425,7 @@ async fn compute_and_emit_task(
                 ShareStrategy::Never,
             );
             builder_interval.subslice_extend_repeated(
-                &interval_payload,
+                &interval_df,
                 row_idx,
                 1,
                 match_len,

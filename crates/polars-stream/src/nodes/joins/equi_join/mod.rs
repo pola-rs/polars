@@ -110,11 +110,11 @@ impl EquiJoinParams {
 
     /// The payload columns of the left side, or else the right side, that are output, if only
     /// some are.
-    fn output_idx(&self, left: bool) -> Option<&[usize]> {
+    fn output_idx(&self, left: bool) -> &Option<Arc<[usize]>> {
         if left {
-            self.left_output_idx.as_deref()
+            &self.left_output_idx
         } else {
-            self.right_output_idx.as_deref()
+            &self.right_output_idx
         }
     }
 
@@ -158,6 +158,7 @@ impl JoinPartition {
 
 /// A payload selector contains for each column whether that column should be
 /// included in the payload, and if yes with what name.
+#[allow(clippy::too_many_arguments)]
 fn compute_payload_selector(
     this: &Schema,
     other: &Schema,
@@ -166,6 +167,7 @@ fn compute_payload_selector(
     output_schema: &Schema,
     is_left: bool,
     args: &JoinArgs,
+    can_drop_coalesce_keys: bool,
 ) -> PolarsResult<Vec<Option<PlSmallStr>>> {
     let should_coalesce = args.should_coalesce();
 
@@ -195,9 +197,11 @@ fn compute_payload_selector(
                         // coalescing, whenever the paired left key is kept. Note that this
                         // bypasses the filter below because of the early return.
                         let key_idx = this_key_schema.index_of(c).unwrap();
-                        let (left_key, _) = other_key_schema.get_at_index(key_idx).unwrap();
-                        if !output_schema.contains(left_key.as_str()) {
-                            return Ok(None);
+                        if can_drop_coalesce_keys {
+                            let (left_key, _) = other_key_schema.get_at_index(key_idx).unwrap();
+                            if !output_schema.contains(left_key.as_str()) {
+                                return Ok(None);
+                            }
                         }
                         let name = format_pl_smallstr!("__POLARS_COALESCE_KEYCOL_{key_idx}");
                         return Ok(Some(name));
@@ -652,6 +656,10 @@ impl EquiJoinNode {
         // Only a fused predicate reads columns the output does not have.
         debug_assert!(candidate_schema.is_none() || fused_predicate.is_some());
         let payload_output_schema = candidate_schema.as_ref().unwrap_or(&output_schema);
+        // Key schemas deduplicate names. Their column indices correspond to the join key
+        // positions only when both sides have distinct keys.
+        let can_drop_coalesce_keys = left_key_schema.len() == left_key_selectors.len()
+            && right_key_schema.len() == right_key_selectors.len();
         let left_payload_select = compute_payload_selector(
             &left_input_schema,
             &right_input_schema,
@@ -660,6 +668,7 @@ impl EquiJoinNode {
             payload_output_schema,
             true,
             &args,
+            can_drop_coalesce_keys,
         )?;
         let right_payload_select = compute_payload_selector(
             &right_input_schema,
@@ -669,6 +678,7 @@ impl EquiJoinNode {
             payload_output_schema,
             false,
             &args,
+            can_drop_coalesce_keys,
         )?;
 
         // A filter is only published for the side the plan named.

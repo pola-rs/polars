@@ -987,42 +987,41 @@ fn split_multiplexers(
 /// narrowing the join's output schema, so the join does not gather the dropped columns. A join
 /// with a fused predicate still gathers the columns the predicate reads to evaluate it, but does
 /// not output them. Returns whether it was fused.
-fn fuse_drop_into_join<'a>(
-    node: &mut PhysNode,
-    columns: impl Iterator<Item = &'a PlSmallStr> + Clone,
-) -> bool {
-    let kept = Vec::from_iter(columns);
-    // A frame without columns has no height.
-    if kept.is_empty() {
+fn fuse_drop_into_join(node: &mut PhysNode, columns: &PlIndexMap<PlSmallStr, PlSmallStr>) -> bool {
+    if !matches!(
+        node.kind(),
+        PhysNodeKind::EquiJoin { .. }
+            | PhysNodeKind::SemiAntiJoin {
+                output_bool: false,
+                ..
+            }
+    ) {
         return false;
     }
 
     // The join outputs its columns in a fixed order.
     let schema = node.output_schema(0);
+    // Leave empty projections on their existing execution path.
+    if columns.is_empty() || columns.len() == schema.len() {
+        return false;
+    }
     let in_order = schema
         .iter_names()
-        .filter(|name| kept.contains(name))
-        .eq(kept.iter().copied());
-    if !in_order || kept.len() == schema.len() {
+        .filter(|name| columns.contains_key(name.as_str()))
+        .eq(columns.keys());
+    if !in_order {
         return false;
     }
 
-    let schema = node.output_schema(0).clone();
-    match node.kind_mut() {
+    let schema = Arc::new(schema.try_project(columns.keys()).unwrap());
+    let pre_projection_schema = std::mem::replace(node.output_schema_mut(0), schema);
+    if let PhysNodeKind::EquiJoin {
+        pre_drop_schema, ..
+    } = node.kind_mut()
+    {
         // Only the first drop's input schema matters: what the predicate reads is in it.
-        PhysNodeKind::EquiJoin {
-            pre_drop_schema, ..
-        } => {
-            pre_drop_schema.get_or_insert(schema);
-        },
-        PhysNodeKind::SemiAntiJoin {
-            output_bool: false, ..
-        } => {},
-        _ => return false,
+        pre_drop_schema.get_or_insert(pre_projection_schema);
     }
-
-    let schema = node.output_schema_mut(0);
-    *schema = Arc::new(schema.try_project(kept).unwrap());
     true
 }
 
@@ -1067,7 +1066,7 @@ fn fuse_drops(
             continue;
         }
 
-        if fuse_drop_into_join(input_node, columns.keys()) {
+        if fuse_drop_into_join(input_node, columns) {
             // The join drops the columns itself.
         } else if let PhysNodeKind::Filter { projection, .. } = input_node.kind_mut() {
             let len_before_drop = projection.as_ref().map_or(len_before_drop, |(_, len)| *len);

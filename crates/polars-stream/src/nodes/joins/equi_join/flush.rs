@@ -423,8 +423,10 @@ impl Shared {
                         self.release(bytes);
                     } else {
                         // Gather only the output columns, not those only a fused predicate reads.
-                        let payload =
-                            output_columns(&table.payload, params.output_idx(left_is_build));
+                        let payload = output_columns(
+                            &table.payload,
+                            params.output_idx(left_is_build).as_deref(),
+                        );
                         let df =
                             unsafe { payload.take_slice_unchecked_impl(&task.unmarked, false) };
                         output = Some(with_nulls_for_other_side_projected(

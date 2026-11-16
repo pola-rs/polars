@@ -10,6 +10,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from polars._typing import JoinBuildSide
     from tests.conftest import PlMonkeyPatch
 
 NO_OPT = pl.QueryOptFlags.none()
@@ -272,6 +273,30 @@ def test_full_join_coalesce_key_dropped_and_kept(
     if fused is not None:
         assert (final_select not in physical_plan(q)) == fused
     check(q)
+
+
+@pytest.mark.parametrize("build_side", ["force_left", "force_right"])
+def test_full_join_coalesce_repeated_left_key(build_side: JoinBuildSide) -> None:
+    left = pl.LazyFrame({"k": [2, 1, 4], "l": ["L2", "L1", "L4"]})
+    right = pl.LazyFrame({"r": [3, 1, 5], "s": [6, 1, 5], "v": ["R3", "R1", "R5"]})
+    q = left.join(
+        right,
+        left_on=["k", "k"],
+        right_on=["r", "s"],
+        how="full",
+        coalesce=True,
+        build_side=build_side,
+    )
+    expected = pl.DataFrame(
+        {
+            "k": [1, 2, 3, 4, 5],
+            "l": ["L1", "L2", None, "L4", None],
+            "v": ["R1", None, "R3", None, "R5"],
+        }
+    )
+    assert "equi-join" in physical_plan(q)
+    check(q, expected)
+    check(q.select("l", "v"), expected.select("l", "v"))
 
 
 @pytest.mark.parametrize("how", ["left", "right", "full"])
