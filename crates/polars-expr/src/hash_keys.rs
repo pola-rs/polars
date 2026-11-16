@@ -264,7 +264,11 @@ impl KeyEncoder {
                 {
                     // The rows' views into the dictionary's buffers, without caching them as the
                     // column's materialized values (which would keep them alive with the column).
-                    d.to_series().str().unwrap().as_binary()
+                    let s = d.to_series();
+                    match s.dtype() {
+                        DataType::String => s.str().unwrap().as_binary(),
+                        _ => s.binary().unwrap().clone(),
+                    }
                 } else if let Ok(ca_str) = df[0].str() {
                     ca_str.as_binary()
                 } else {

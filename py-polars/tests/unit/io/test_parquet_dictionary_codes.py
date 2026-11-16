@@ -1,4 +1,4 @@
-"""String columns decoded from a parquet dictionary are held as dictionary codes.
+"""String and Binary columns decoded from a parquet dictionary are held as codes.
 
 Every result must equal the one computed on the same data built in memory, which has
 no codes.
@@ -6,6 +6,9 @@ no codes.
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
@@ -230,11 +233,10 @@ def test_dictionary_codes_function_error_only_on_used_values(tmp_path: Path) -> 
         pl.scan_parquet(path).select(pl.col("k").cast(pl.Int64)).collect()
 
 
-def test_dictionary_codes_nested_and_binary_untouched(tmp_path: Path) -> None:
+def test_dictionary_codes_nested_untouched(tmp_path: Path) -> None:
     df = pl.DataFrame(
         {
             "l": [["a", "b"], ["a"]] * 500,
-            "b": [b"x", b"y"] * 500,
             "st": [{"f": "a"}, {"f": "b"}] * 500,
         }
     )
@@ -607,3 +609,403 @@ def test_dictionary_codes_set_sorted_is_kept(tmp_path: Path, engine: str) -> Non
     )
     assert_frame_equal(out, df)
     assert out["s"].flags["SORTED_ASC"]
+
+
+# Binary columns are decoded from a dictionary too, whether or not they are UTF-8.
+BLONG = [
+    LONG[i].encode() + (b"\xff" if i % 3 == 0 else b"") + bytes([i]) for i in range(50)
+]
+
+
+def _bdf(n: int = 20_000, with_nulls: bool = True) -> pl.DataFrame:
+    idx = pl.int_range(n, eager=True)
+    k = pl.Series(BLONG, dtype=pl.Binary).gather(idx.hash(1) % len(BLONG))
+    s = pl.Series([bytes([i, 0xFE]) for i in range(7)], dtype=pl.Binary).gather(
+        idx.hash(2) % 7
+    )
+    if with_nulls:
+        k = k.scatter(list(range(0, n, 97)), None)
+    return pl.DataFrame({"k": k, "s": s, "v": idx.hash(3) % 100})
+
+
+def _write_binary(df: pl.DataFrame, path: Path, **kwargs: object) -> Path:
+    # pyarrow writes `binary` without the UTF8 annotation, so it is read as Binary.
+    kwargs.setdefault("row_group_size", 3_000)
+    pq.write_table(df.to_arrow(), path, **kwargs)  # type: ignore[arg-type]
+    return path
+
+
+BINARY_QUERIES: dict[str, Callable[[pl.LazyFrame], pl.LazyFrame]] = {
+    "group_by": lambda lf: lf.group_by("k").agg(pl.sum("v"), pl.len()),
+    "group_by_two": lambda lf: lf.group_by("k", "s").agg(pl.sum("v")),
+    "group_by_three": lambda lf: lf.group_by("s", "k", "v").len(),
+    "unique": lambda lf: lf.select(pl.col("k").unique()),
+    "n_unique": lambda lf: lf.select(pl.col("k").n_unique()),
+    "is_null": lambda lf: lf.select(pl.col("k").is_null()),
+    "fill_null": lambda lf: lf.select(pl.col("k").fill_null(b"x")),
+    "size_bytes": lambda lf: lf.select(pl.col("k").bin.size()),
+    "contains": lambda lf: lf.select(pl.col("k").bin.contains(b"section-01")),
+    "starts_with": lambda lf: lf.filter(
+        pl.col("k").bin.starts_with(b"https://example")
+    ),
+    "encode_then_group": lambda lf: (
+        lf.with_columns(pl.col("k").bin.encode("hex")).group_by("k").agg(pl.sum("v"))
+    ),
+    "filter_eq": lambda lf: lf.filter(pl.col("k") == BLONG[3]),
+    "compare_constant": lambda lf: lf.select(
+        (pl.col("k") == BLONG[3]).alias("eq"),
+        (pl.col("k") != BLONG[3]).alias("ne"),
+        (pl.col("k") == b"absent").alias("eq_absent"),
+        (pl.col("k") < BLONG[10]).alias("lt"),
+        (pl.col("k") >= BLONG[10]).alias("ge"),
+        (pl.lit(BLONG[5]) > pl.col("k")).alias("lit_gt"),
+        pl.col("k").eq_missing(BLONG[3]).alias("eq_missing"),
+        pl.col("k").ne_missing(BLONG[3]).alias("ne_missing"),
+        (pl.col("k") == pl.lit(None, dtype=pl.Binary)).alias("eq_null"),
+        (pl.col("s") == bytes([2, 0xFE])).alias("s_eq"),
+    ),
+    "filter_is_in": lambda lf: lf.filter(pl.col("k").is_in(BLONG[:5])),
+    "filter_other": lambda lf: lf.filter(pl.col("v") < 10),
+    "slice": lambda lf: lf.slice(2_500, 1_000),
+    "head": lambda lf: lf.head(5),
+    "sort": lambda lf: lf.sort("k", "v", nulls_last=True, maintain_order=True),
+    "first_last": lambda lf: lf.select(
+        pl.col("k").first(), pl.col("k").last().alias("l")
+    ),
+    "min_max": lambda lf: lf.select(pl.col("k").min(), pl.col("k").max().alias("mx")),
+    "agg_in_group": lambda lf: lf.group_by("s").agg(pl.col("k").min()),
+    "hash": lambda lf: lf.select(pl.col("k").hash(5)),
+    "cast_binary": lambda lf: lf.select(pl.col("k").cast(pl.Binary)),
+}
+
+UNORDERED_BINARY_QUERIES = {
+    "group_by",
+    "group_by_two",
+    "group_by_three",
+    "unique",
+    "encode_then_group",
+    "agg_in_group",
+}
+
+
+@pytest.mark.parametrize("name", sorted(BINARY_QUERIES))
+@pytest.mark.parametrize("with_nulls", [False, True])
+def test_dictionary_codes_binary_queries(
+    tmp_path: Path, name: str, with_nulls: bool
+) -> None:
+    df = _bdf(with_nulls=with_nulls)
+    path = _write_binary(df, tmp_path / "f.parquet")
+    q = BINARY_QUERIES[name]
+    expected = q(df.lazy()).collect()
+    for engine in ["streaming", "in-memory"]:
+        out = q(pl.scan_parquet(path)).collect(engine=engine)  # type: ignore[call-overload]
+        ordered = name not in UNORDERED_BINARY_QUERIES
+        assert_frame_equal(out, expected, check_row_order=ordered)
+
+
+@pytest.mark.parametrize("dtype", [pl.String, pl.Binary])
+def test_dictionary_codes_are_kept_for_string_and_binary(
+    tmp_path: Path, dtype: pl.DataType
+) -> None:
+    # A coded column holds a code per row (4 bytes) and shares the dictionary; the
+    # same values decoded one view per row would take at least 16 bytes per row.
+    n = 50_000
+    values = [LONG[i % 50] for i in range(n)]
+    df = pl.DataFrame({"k": pl.Series(values).cast(dtype)})
+    path = _write_binary(df, tmp_path / "f.parquet", row_group_size=n)
+    # `collect` materializes its output; batches keep the codes.
+    (out,) = pl.scan_parquet(path).collect_batches(chunk_size=n)
+    assert out.schema == df.schema
+    # Before comparing, which may cache a materialization that counts toward the size.
+    assert out.estimated_size() < 8 * n
+    assert_frame_equal(out, df)
+
+
+def test_dictionary_codes_binary_join(tmp_path: Path) -> None:
+    df = _bdf()
+    dim = pl.DataFrame(
+        {"k": BLONG[::2] + [b"missing"], "attr": range(len(BLONG[::2]) + 1)},
+        schema_overrides={"k": pl.Binary},
+    )
+    fact_path = _write_binary(df, tmp_path / "fact.parquet")
+    dim_path = _write_binary(dim, tmp_path / "dim.parquet", row_group_size=10)
+    for how in ["inner", "left", "semi", "anti", "full"]:
+        for left, right, l_df, r_df in [
+            (fact_path, dim_path, df, dim),
+            (dim_path, fact_path, dim, df),
+        ]:
+            out = (
+                pl.scan_parquet(left)
+                .join(pl.scan_parquet(right), on="k", how=how)  # type: ignore[arg-type]
+                .collect(engine="streaming")
+            )
+            assert_frame_equal(
+                out,
+                l_df.join(r_df, on="k", how=how),  # type: ignore[arg-type]
+                check_row_order=False,
+            )
+
+
+def test_dictionary_codes_binary_concat_different_dictionaries(tmp_path: Path) -> None:
+    dfs = []
+    for i in range(4):
+        df = pl.DataFrame(
+            {
+                "k": pl.Series(
+                    [BLONG[j + 5 * i] for j in range(10)] * 300, dtype=pl.Binary
+                ),
+                "v": range(3000),
+            }
+        )
+        _write_binary(df, tmp_path / f"{i}.parquet", row_group_size=500)
+        dfs.append(df)
+    expected = pl.concat(dfs)
+    scans = [pl.scan_parquet(tmp_path / f"{i}.parquet") for i in range(4)]
+    assert_frame_equal(pl.concat(scans).collect(), expected)
+    assert_frame_equal(pl.scan_parquet(tmp_path / "*.parquet").collect(), expected)
+    assert_frame_equal(
+        pl.concat(
+            [pl.read_parquet(tmp_path / f"{i}.parquet") for i in range(4)],
+            rechunk=False,
+        ),
+        expected,
+    )
+    out = pl.concat(scans).group_by("k").agg(pl.sum("v")).collect()
+    assert_frame_equal(
+        out, expected.group_by("k").agg(pl.sum("v")), check_row_order=False
+    )
+
+
+def test_dictionary_codes_binary_dictionary_and_plain_row_groups(
+    tmp_path: Path,
+) -> None:
+    n = 30_000
+    # Low cardinality, then unique values: the writer falls back to PLAIN part-way,
+    # and later row groups are PLAIN entirely.
+    vals = [BLONG[i % 10] for i in range(n // 2)] + [
+        b"\xff" + f"u{i:08d}".encode() for i in range(n // 2)
+    ]
+    df = pl.DataFrame({"k": pl.Series(vals, dtype=pl.Binary), "v": range(n)})
+    for version in ["1.0", "2.0"]:
+        path = tmp_path / f"fb{version}.parquet"
+        pq.write_table(
+            df.to_arrow(),
+            path,
+            row_group_size=n,
+            dictionary_pagesize_limit=200,
+            data_page_version=version,
+            data_page_size=1024,
+        )
+        out = pl.scan_parquet(path).group_by("k").agg(pl.sum("v")).collect()
+        assert_frame_equal(
+            out, df.group_by("k").agg(pl.sum("v")), check_row_order=False
+        )
+    path = _write_binary(df, tmp_path / "drift.parquet", row_group_size=5_000)
+    out = (
+        pl.scan_parquet(path)
+        .with_columns(pl.col("k").bin.slice(0, 20))
+        .group_by("k")
+        .agg(pl.sum("v"))
+        .collect()
+    )
+    expected = (
+        df.with_columns(pl.col("k").bin.slice(0, 20)).group_by("k").agg(pl.sum("v"))
+    )
+    assert_frame_equal(out, expected, check_row_order=False)
+    assert_frame_equal(pl.scan_parquet(path).collect(), df)
+
+
+def test_dictionary_codes_binary_cast_to_string(tmp_path: Path) -> None:
+    valid = pl.DataFrame(
+        {"k": pl.Series([LONG[i % 7].encode() for i in range(3000)], dtype=pl.Binary)}
+    )
+    path = _write_binary(valid, tmp_path / "valid.parquet")
+    for strict in [True, False]:
+        e = pl.col("k").cast(pl.String, strict=strict)
+        assert_frame_equal(pl.scan_parquet(path).select(e).collect(), valid.select(e))
+    assert pl.scan_parquet(path).select(e).collect().schema["k"] == pl.String
+
+    # Invalid UTF-8 in some rows fails the cast, but a value no row uses is not cast.
+    df = pl.DataFrame(
+        {
+            "k": pl.Series([b"a", b"\xff\xfe", b"b"] * 1000, dtype=pl.Binary),
+            "v": range(3000),
+        }
+    )
+    path = _write_binary(df, tmp_path / "invalid.parquet")
+    with pytest.raises(pl.exceptions.ComputeError, match="invalid utf8"):
+        df.select(pl.col("k").cast(pl.String))
+    with pytest.raises(pl.exceptions.ComputeError, match="invalid utf8"):
+        pl.scan_parquet(path).select(pl.col("k").cast(pl.String)).collect()
+    # Binary to String fails on invalid UTF-8 even when not strict.
+    e = pl.col("k").cast(pl.String, strict=False)
+    with pytest.raises(pl.exceptions.ComputeError, match="invalid utf8"):
+        df.select(e)
+    with pytest.raises(pl.exceptions.ComputeError, match="invalid utf8"):
+        pl.scan_parquet(path).select(e).collect()
+    q = (
+        pl.scan_parquet(path)
+        .filter(pl.col("k") != b"\xff\xfe")
+        .select(pl.col("k").cast(pl.String))
+    )
+    assert_frame_equal(
+        q.collect(),
+        df.filter(pl.col("k") != b"\xff\xfe").select(pl.col("k").cast(pl.String)),
+    )
+
+
+@pytest.mark.parametrize("row_group_size", [1_000, 3_000, 50_000])
+@pytest.mark.parametrize("with_nulls", [False, True])
+def test_dictionary_codes_binary_sink_parquet(
+    tmp_path: Path, row_group_size: int, with_nulls: bool
+) -> None:
+    df = _bdf(with_nulls=with_nulls)
+    path = _write_binary(df, tmp_path / "f.parquet")
+
+    def q(lf: pl.LazyFrame) -> pl.LazyFrame:
+        return lf.filter(pl.col("k").is_in(BLONG[3:5]) | pl.col("k").is_null())
+
+    out_path = tmp_path / "out.parquet"
+    q(pl.scan_parquet(path)).sink_parquet(
+        out_path, row_group_size=row_group_size, compression="uncompressed"
+    )
+    expected = q(df.lazy()).collect()
+    out = pl.read_parquet(out_path)
+    assert out.schema == expected.schema
+    assert_frame_equal(out, expected)
+
+    md = pq.ParquetFile(out_path).metadata
+    k = md.schema.names.index("k")
+    for rg in range(md.num_row_groups):
+        col = md.row_group(rg).column(k)
+        assert "RLE_DICTIONARY" in col.encodings
+        # Only the used values are in the dictionary, not the 50 of the source's.
+        assert col.data_page_offset - col.dictionary_page_offset < 400
+    lf = pl.scan_parquet(path)
+    lf.sink_ipc(tmp_path / "out.ipc")
+    assert_frame_equal(pl.read_ipc(tmp_path / "out.ipc"), df)
+    assert_frame_equal(pl.from_arrow(lf.collect().to_arrow()), df)  # type: ignore[arg-type]
+
+
+def test_dictionary_codes_binary_predicate_keeping_few_rows(tmp_path: Path) -> None:
+    once = b"only-once\xff" + b"x" * 100
+    s = [once] + [f"{i % 1000:04}".encode() + b"x" * 100 for i in range(1, 100_000)]
+    df = pl.DataFrame({"a": range(len(s)), "s": pl.Series(s, dtype=pl.Binary)})
+    path = _write_binary(df, tmp_path / "f.parquet", row_group_size=len(s))
+    for parallel in ["auto", "prefiltered"]:
+        out = (
+            pl.scan_parquet(path, parallel=parallel)  # type: ignore[arg-type]
+            .filter(pl.col("s") == once)
+            .collect()
+        )
+        assert_frame_equal(out, df.head(1))
+        arr = out["s"].to_arrow(compat_level=pl.CompatLevel.newest())
+        assert sum(b.size for b in arr.buffers()[2:] if b is not None) < 1000
+
+
+def test_dictionary_codes_binary_disabled_gives_equal_results(tmp_path: Path) -> None:
+    df = _bdf()
+    path = _write_binary(df, tmp_path / "f.parquet")
+    script = (
+        "import polars as pl, sys\n"
+        "lf = pl.scan_parquet(sys.argv[1])\n"
+        "out = lf.group_by('k').agg(pl.sum('v'), pl.len()).sort('k')\n"
+        "out.collect().write_ipc(sys.argv[2])\n"
+        "lf.filter(pl.col('k') == lf.head(1).collect()['k'][0]).collect().write_ipc(sys.argv[3])\n"
+        "batches = lf.collect_batches(chunk_size=1_000_000)\n"
+        "print(sum(b.estimated_size() for b in batches))\n"
+    )
+    results = {}
+    for flag in ["1", "0"]:
+        env = {**os.environ, "POLARS_DICT_CODES": flag}
+        out = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                script,
+                str(path),
+                str(tmp_path / f"g{flag}.ipc"),
+                str(tmp_path / f"f{flag}.ipc"),
+            ],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        results[flag] = int(out.stdout.strip())
+    assert_frame_equal(
+        pl.read_ipc(tmp_path / "g1.ipc"), pl.read_ipc(tmp_path / "g0.ipc")
+    )
+    assert_frame_equal(
+        pl.read_ipc(tmp_path / "f1.ipc"), pl.read_ipc(tmp_path / "f0.ipc")
+    )
+    # Only with the flag on are the rows held as codes.
+    assert results["1"] < results["0"]
+
+
+def _same_outcome(
+    coded: Callable[[], pl.DataFrame], plain: Callable[[], pl.DataFrame]
+) -> None:
+    try:
+        expected = plain()
+    except pl.exceptions.PolarsError as e:
+        with pytest.raises(type(e)):
+            coded()
+    else:
+        assert_frame_equal(coded(), expected)
+
+
+@pytest.mark.parametrize("string_first", [False, True])
+@pytest.mark.parametrize("how", ["vertical", "vertical_relaxed"])
+def test_dictionary_codes_concat_string_with_binary(
+    tmp_path: Path, string_first: bool, how: str
+) -> None:
+    s = pl.DataFrame({"k": [LONG[i % 7] for i in range(3000)]})
+    b = pl.DataFrame(
+        {"k": pl.Series([BLONG[i % 7] for i in range(3000)], dtype=pl.Binary)}
+    )
+    s_path = _write(s, tmp_path / "s.parquet")
+    b_path = _write_binary(b, tmp_path / "b.parquet")
+    plain = [s.lazy(), b.lazy()]
+    scans = [pl.scan_parquet(s_path), pl.scan_parquet(b_path)]
+    if not string_first:
+        plain.reverse()
+        scans.reverse()
+    _same_outcome(
+        lambda: pl.concat(scans, how=how).collect(),  # type: ignore[arg-type]
+        lambda: pl.concat(plain, how=how).collect(),  # type: ignore[arg-type]
+    )
+
+
+@pytest.mark.parametrize("name", ["eq", "lt", "is_in"])
+def test_dictionary_codes_binary_compared_with_string(
+    tmp_path: Path, name: str
+) -> None:
+    df = _bdf()
+    path = _write_binary(df, tmp_path / "f.parquet")
+    exprs = {
+        "eq": pl.col("k") == "abc",
+        "lt": pl.col("k") < "abc",
+        "is_in": pl.col("k").is_in(["abc"]),
+    }
+    e = exprs[name]
+    _same_outcome(
+        lambda: pl.scan_parquet(path).select(e).collect(),
+        lambda: df.lazy().select(e).collect(),
+    )
+
+
+def test_dictionary_codes_string_cast_to_binary_sink_round_trip(tmp_path: Path) -> None:
+    df = _df()
+    path = _write(df, tmp_path / "f.parquet")
+    q = pl.scan_parquet(path).with_columns(pl.col("k").cast(pl.Binary))
+    out_path = tmp_path / "out.parquet"
+    q.sink_parquet(out_path, compression="uncompressed")
+    expected = df.with_columns(pl.col("k").cast(pl.Binary))
+    out = pl.read_parquet(out_path)
+    assert out.schema == expected.schema
+    assert_frame_equal(out, expected)
+    md = pq.ParquetFile(out_path).metadata
+    k = md.schema.names.index("k")
+    for rg in range(md.num_row_groups):
+        assert "RLE_DICTIONARY" in md.row_group(rg).column(k).encodings

@@ -75,7 +75,7 @@ pub fn to_deserializer(
     column_iter_to_arrays(columns, types, field, filter)
 }
 
-/// Decodes a flat String column chunk as codes into its dictionary, if it has a dictionary page,
+/// Decodes a flat String or Binary column chunk as codes into its dictionary, if it has a dictionary page,
 /// every data page is dictionary-encoded and `accept(num_rows, dict_len, dict_bytes)` holds for
 /// the number of rows the filter keeps (all of the chunk's for a predicate, whose result isn't
 /// known yet) and the number and uncompressed size of the dictionary values.
@@ -85,6 +85,7 @@ pub fn to_dictionary_codes(
     chunk: Buffer<u8>,
     field_name: &str,
     filter: Option<Filter>,
+    is_string: bool,
     accept: impl FnOnce(usize, usize, usize) -> bool,
 ) -> PolarsResult<Option<(Vec<DictionaryArray<u32>>, Bitmap)>> {
     // Only a BYTE_ARRAY column's dictionary holds length-prefixed strings.
@@ -110,7 +111,11 @@ pub fn to_dictionary_codes(
 
     prefetch_l2(&chunk);
     let pages = PageReader::new(Cursor::new(chunk), column_meta, vec![], usize::MAX)?;
-    let decoded =
-        decode_dictionary_codes(field_name, BasicDecompressor::new(pages, vec![]), filter)?;
+    let decoded = decode_dictionary_codes(
+        field_name,
+        BasicDecompressor::new(pages, vec![]),
+        filter,
+        is_string,
+    )?;
     Ok(Some(decoded))
 }

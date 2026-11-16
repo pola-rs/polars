@@ -2,7 +2,7 @@ use std::hash::BuildHasher;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use polars_arrow::array::{Array, MutableBinaryViewArray, Utf8ViewArray};
+use polars_arrow::array::{Array, BinaryViewArray, MutableBinaryViewArray, Utf8ViewArray};
 use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_ensure};
 use polars_utils::aliases::{InitHashMaps, PlHashMap, PlRandomState};
@@ -18,16 +18,20 @@ static NEXT_DICTIONARY_ID: AtomicU64 = AtomicU64::new(0);
 const MAX_CACHED_HASHERS: usize = 4;
 
 static STRING_DTYPE: DataType = DataType::String;
+static BINARY_DTYPE: DataType = DataType::Binary;
 
 /// The values of a dictionary that [`DictionaryColumn`]s index into, such as the dictionary page
-/// of a parquet column chunk.
+/// of a parquet column chunk. They are String values (valid UTF-8) or Binary values; the codes, the
+/// hashes and the lookup table work on their bytes either way.
 ///
 /// The values need not be unique: equal codes mean equal values, but different codes may also.
 pub struct SharedDictionary {
     /// Process-unique id; caches in operators are keyed by it.
     id: u64,
     /// The dictionary values; materialized columns share its data buffers.
-    values: Utf8ViewArray,
+    values: BinaryViewArray,
+    /// Whether the values are String (valid UTF-8) rather than Binary.
+    is_string: bool,
     /// The hash of each value under recently used hashers, keyed by [`hasher_fingerprint`].
     hashes: Mutex<Vec<CachedHashes>>,
     /// The first code of each value, built on first use (see [`Self::code_of`]).
@@ -65,8 +69,17 @@ fn hasher_fingerprint(random_state: &PlRandomState) -> u128 {
 }
 
 impl SharedDictionary {
-    /// The values must not contain nulls.
+    /// A String dictionary. The values must not contain nulls.
     pub fn new(values: Utf8ViewArray) -> Arc<Self> {
+        Self::with_values(values.to_binview(), true)
+    }
+
+    /// A Binary dictionary. The values must not contain nulls.
+    pub fn new_binary(values: BinaryViewArray) -> Arc<Self> {
+        Self::with_values(values, false)
+    }
+
+    fn with_values(values: BinaryViewArray, is_string: bool) -> Arc<Self> {
         assert!(
             values.validity().is_none_or(|v| v.unset_bits() == 0),
             "dictionary values must not be null"
@@ -75,6 +88,7 @@ impl SharedDictionary {
         Arc::new(Self {
             id: NEXT_DICTIONARY_ID.fetch_add(1, Ordering::Relaxed),
             values,
+            is_string,
             hashes: Mutex::new(Vec::new()),
             lookup: OnceLock::new(),
         })
@@ -101,7 +115,7 @@ impl SharedDictionary {
 
     /// The first code of `value`, if the dictionary holds it. The lookup table is built on the
     /// first call and kept with the dictionary.
-    pub fn code_of(&self, value: &str) -> Option<u32> {
+    pub fn code_of(&self, value: &[u8]) -> Option<u32> {
         let lookup = self.lookup();
         lookup
             .codes
@@ -115,9 +129,13 @@ impl SharedDictionary {
     /// A new dictionary of these values followed by `added`, none of which this one holds. It
     /// shares these values' buffers, and extends the lookup table and the cached hashes instead of
     /// computing them again.
-    pub fn extended(&self, added: &[&str]) -> Arc<Self> {
+    fn extended(&self, added: &[&[u8]]) -> Arc<Self> {
+        debug_assert!(
+            !self.is_string || added.iter().all(|v| std::str::from_utf8(v).is_ok()),
+            "added values of a String dictionary must be valid UTF-8"
+        );
         let old_len = self.len();
-        let mut values = MutableBinaryViewArray::<str>::with_capacity(old_len + added.len());
+        let mut values = MutableBinaryViewArray::<[u8]>::with_capacity(old_len + added.len());
         for buffer in self.values.data_buffers().iter() {
             values.push_buffer(buffer.clone());
         }
@@ -127,7 +145,7 @@ impl SharedDictionary {
             values.set_total_bytes_len(self.values.total_bytes_len());
         }
         values.extend_values(added.iter().copied());
-        let values: Utf8ViewArray = values.freeze();
+        let values: BinaryViewArray = values.freeze();
 
         // SAFETY: the codes in the tables are in bounds.
         let value = |k: &u32| unsafe { values.value_unchecked(*k as usize) };
@@ -172,6 +190,7 @@ impl SharedDictionary {
         Arc::new(Self {
             id: NEXT_DICTIONARY_ID.fetch_add(1, Ordering::Relaxed),
             values,
+            is_string: self.is_string,
             hashes: Mutex::new(hashes),
             lookup,
         })
@@ -181,8 +200,33 @@ impl SharedDictionary {
         self.id
     }
 
-    pub fn values(&self) -> &Utf8ViewArray {
+    /// The values as bytes.
+    pub fn values(&self) -> &BinaryViewArray {
         &self.values
+    }
+
+    /// Whether the values are String rather than Binary.
+    pub fn is_string(&self) -> bool {
+        self.is_string
+    }
+
+    pub fn dtype(&self) -> &DataType {
+        if self.is_string {
+            &STRING_DTYPE
+        } else {
+            &BINARY_DTYPE
+        }
+    }
+
+    /// The values as a String or Binary [`Series`], sharing the buffers.
+    pub fn values_series(&self, name: PlSmallStr) -> Series {
+        if self.is_string {
+            // SAFETY: a String dictionary holds valid UTF-8.
+            let values = unsafe { self.values.to_utf8view_unchecked() };
+            StringChunked::with_chunk(name, values).into_series()
+        } else {
+            BinaryChunked::with_chunk(name, self.values.clone()).into_series()
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -212,9 +256,9 @@ impl SharedDictionary {
         }
         let fingerprint = hasher_fingerprint(random_state);
 
-        let values = self.values.to_binview();
-        let buffers = values.data_buffers();
-        let hashes: Buffer<u64> = values
+        let buffers = self.values.data_buffers();
+        let hashes: Buffer<u64> = self
+            .values
             .views()
             .iter()
             .map(|v| unsafe { v.hash_with_buffers_unchecked(buffers, random_state) })
@@ -236,7 +280,7 @@ impl SharedDictionary {
     }
 }
 
-/// A String [`Column`] held as codes into a [`SharedDictionary`]: row `i`, when valid, is
+/// A String or Binary [`Column`] held as codes into a [`SharedDictionary`]: row `i`, when valid, is
 /// `dict.values()[codes[i]]`.
 ///
 /// This is lazily materialized into a [`Series`] that gathers the values.
@@ -299,7 +343,7 @@ impl DictionaryColumn {
     }
 
     pub fn dtype(&self) -> &DataType {
-        &STRING_DTYPE
+        self.dict.dtype()
     }
 
     pub fn len(&self) -> usize {
@@ -356,9 +400,9 @@ impl DictionaryColumn {
         self.sorted = sorted;
     }
 
-    /// Gathers the values into a String [`Series`].
+    /// Gathers the values into a String or Binary [`Series`].
     pub fn to_series(&self) -> Series {
-        let values = StringChunked::with_chunk(self.name.clone(), self.dict.values.clone());
+        let values = self.dict.values_series(self.name.clone());
         #[cfg(feature = "bigidx")]
         let idx = self.codes.cast(&IDX_DTYPE).unwrap();
         #[cfg(feature = "bigidx")]
@@ -366,7 +410,7 @@ impl DictionaryColumn {
         #[cfg(not(feature = "bigidx"))]
         let idx = &self.codes;
         // SAFETY: the codes are in bounds (invariant).
-        let mut s = unsafe { values.take_unchecked(idx) }.into_series();
+        let mut s = unsafe { values.take_unchecked(idx) };
         s.set_sorted_flag(self.sorted);
         s
     }
@@ -444,12 +488,15 @@ impl DictionaryColumn {
     /// when that extension would copy more existing entries than `other` has rows.
     pub fn try_append(&mut self, other: &DictionaryColumn) -> bool {
         if self.dict.id != other.dict.id {
+            if self.dict.is_string != other.dict.is_string {
+                return false;
+            }
             let max_len = (self.len() + other.len()).min(u32::MAX as usize);
             if self.dict.len() > max_len {
                 return false;
             }
             let mut added = Vec::new();
-            let mut added_code_of = PlHashMap::<&str, u32>::new();
+            let mut added_code_of = PlHashMap::<&[u8], u32>::new();
             let mut remap = Vec::with_capacity(other.dict.len());
             for v in other.dict.values.values_iter() {
                 let c = match self.dict.code_of(v) {
@@ -566,8 +613,8 @@ impl DictionaryColumn {
     }
 
     /// Evaluates an elementwise `f` once per dictionary value that a valid row uses, and once on
-    /// a null if a row is null, and spreads the results to the rows by code. A String result stays
-    /// dictionary-coded. `f` gets a String [`Series`] of this column's name and returns one value
+    /// a null if a row is null, and spreads the results to the rows by code. A String or Binary
+    /// result stays dictionary-coded. `f` gets a String or Binary [`Series`] of this column's name and returns one value
     /// per input value.
     ///
     /// Only values that rows use are evaluated, so `f` errors exactly when it would on the rows.
@@ -595,22 +642,25 @@ impl DictionaryColumn {
             }
         }
 
-        let values = StringChunked::with_chunk(self.name.clone(), self.dict.values.clone());
+        let values = self.dict.values_series(self.name.clone());
         let mut input = unsafe { values.take_unchecked(&IdxCa::from_vec(PlSmallStr::EMPTY, used)) };
         if validity.is_some() {
-            input.append(&StringChunked::full_null(PlSmallStr::EMPTY, 1))?;
+            input.append(&Series::full_null(PlSmallStr::EMPTY, 1, self.dtype()))?;
         }
-        let input = input.into_series();
         let out = f(&input)?;
         polars_ensure!(
             out.len() == input.len(),
             ComputeError: "elementwise function changed the length of a dictionary column"
         );
 
-        if out.dtype() == &DataType::String {
+        if matches!(out.dtype(), DataType::String | DataType::Binary) {
             // Rows whose result is null get a null code.
             let name = out_name(&input, &out, &self.name);
-            let out = out.str().unwrap().rechunk();
+            let (out, is_string) = match out.dtype() {
+                DataType::String => (out.str().unwrap().as_binary(), true),
+                _ => (out.binary().unwrap().clone(), false),
+            };
+            let out = out.rechunk();
             let out = out.downcast_as_array();
             let out_validity = out.validity().filter(|v| v.unset_bits() > 0);
             let row_validity = out_validity.map(|ov| {
@@ -619,7 +669,7 @@ impl DictionaryColumn {
                     .map(|s| unsafe { ov.get_bit_unchecked(*s as usize) })
                     .collect::<polars_arrow::bitmap::Bitmap>()
             });
-            let dict = SharedDictionary::new(out.clone().with_validity(None));
+            let dict = SharedDictionary::with_values(out.clone().with_validity(None), is_string);
             let codes =
                 UInt32Chunked::from_vec_validity(PlSmallStr::EMPTY, row_slots, row_validity);
             // SAFETY: every slot indexes `out`.
@@ -670,7 +720,7 @@ impl From<DictionaryColumn> for Column {
     }
 }
 
-/// Whether dictionary-coded String columns are produced and used, `POLARS_DICT_CODES=0` turns them
+/// Whether dictionary-coded String and Binary columns are produced and used, `POLARS_DICT_CODES=0` turns them
 /// off.
 pub fn dictionary_codes_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
@@ -695,6 +745,78 @@ mod test {
             .iter()
             .map(|v| v.map(str::to_owned))
             .collect()
+    }
+
+    fn binary_dict_column(dict: &[&[u8]], codes: &[Option<u32>]) -> DictionaryColumn {
+        let values = BinaryViewArray::from_slice_values(dict);
+        let codes = UInt32Chunked::from_iter_options(PlSmallStr::EMPTY, codes.iter().copied());
+        DictionaryColumn::try_new("b".into(), SharedDictionary::new_binary(values), codes).unwrap()
+    }
+
+    #[test]
+    fn binary_dictionary_materializes_bytes() {
+        let invalid: &[u8] = &[0xff, 0xfe];
+        let a = binary_dict_column(
+            &[b"x", invalid],
+            &[Some(1), None, Some(0), Some(0), Some(0), Some(0)],
+        );
+        assert_eq!(a.dtype(), &DataType::Binary);
+        a.check_invariants();
+        assert_eq!(
+            a.to_series().binary().unwrap().iter().collect::<Vec<_>>(),
+            [
+                Some(invalid),
+                None,
+                Some(&b"x"[..]),
+                Some(b"x"),
+                Some(b"x"),
+                Some(b"x")
+            ]
+        );
+        let col = Column::from(a.clone());
+        assert_eq!(col.dtype(), &DataType::Binary);
+        assert_eq!(col.get(0).unwrap(), AnyValue::Binary(invalid));
+        assert!(col.get(1).unwrap().is_null());
+        // Casting to its own dtype keeps the codes; to String fails on invalid UTF-8 only if a
+        // row uses it.
+        assert!(
+            col.cast(&DataType::Binary)
+                .unwrap()
+                .as_dictionary_column()
+                .is_some()
+        );
+        assert!(col.strict_cast(&DataType::String).is_err());
+        let valid = col.slice(2, 4).strict_cast(&DataType::String).unwrap();
+        assert_eq!(valid.dtype(), &DataType::String);
+        assert_eq!(valid.str().unwrap().get(0), Some("x"));
+        assert!(valid.as_dictionary_column().is_some());
+    }
+
+    #[test]
+    fn try_append_does_not_mix_string_and_binary() {
+        let mut a = dict_column(&["x"], &[Some(0)]);
+        let b = binary_dict_column(&[b"x"], &[Some(0)]);
+        assert!(!a.try_append(&b));
+        let mut b = b;
+        b.try_append(&binary_dict_column(&[b"y", b"x"], &[Some(0), Some(1)]));
+        assert_eq!(b.dict().len(), 2);
+        assert_eq!(b.dtype(), &DataType::Binary);
+        b.check_invariants();
+    }
+
+    #[test]
+    fn binary_dictionary_compares_with_constant() {
+        let lhs = Column::from(binary_dict_column(&[b"a", b"b"], &[Some(0), Some(1), None]));
+        let rhs = Column::new_scalar(
+            "c".into(),
+            Scalar::new(DataType::Binary, AnyValue::BinaryOwned(b"a".to_vec())),
+            1,
+        );
+        let out = lhs.equal(&rhs).unwrap();
+        assert_eq!(
+            out.iter().collect::<Vec<_>>(),
+            [Some(true), Some(false), None]
+        );
     }
 
     #[test]
@@ -736,7 +858,7 @@ mod test {
         let rs = PlRandomState::default();
         let mut a = dict_column(&["x", "y"], &[Some(0), Some(1)]);
         a.dict().hashes(&rs);
-        assert_eq!(a.dict().code_of("y"), Some(1));
+        assert_eq!(a.dict().code_of(b"y"), Some(1));
         let b = dict_column(
             &["z", "a-value-longer-than-a-view", "x"],
             &[Some(0), Some(1), Some(2)],
@@ -746,11 +868,11 @@ mod test {
         assert_eq!(dict.len(), 4);
         // The lookup and the hashes were carried into the extended dictionary.
         assert!(dict.lookup.get().is_some());
-        assert_eq!(dict.code_of("a-value-longer-than-a-view"), Some(3));
-        assert_eq!(dict.code_of("x"), Some(0));
-        assert_eq!(dict.code_of("absent"), None);
+        assert_eq!(dict.code_of(b"a-value-longer-than-a-view"), Some(3));
+        assert_eq!(dict.code_of(b"x"), Some(0));
+        assert_eq!(dict.code_of(b"absent"), None);
         let cached = dict.cached_hashes(&rs).unwrap();
-        let fresh = SharedDictionary::new(dict.values().clone()).hashes(&rs);
+        let fresh = SharedDictionary::new_binary(dict.values().clone()).hashes(&rs);
         assert_eq!(cached.as_slice(), fresh.as_slice());
         a.check_invariants();
     }
