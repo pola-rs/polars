@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use futures::future::Either;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt};
+use polars_arrow::bitmap::MutableBitmap;
 use polars_arrow::datatypes::ArrowDataType;
 use polars_async::executor;
 use polars_core::prelude::DataType;
@@ -16,7 +17,9 @@ use polars_utils::pl_str::PlSmallStr;
 use tokio::sync::Semaphore;
 
 use super::row_group_data_fetch::{ReadStats, RowGroupDataFetcher, row_groups_to_read};
-use super::row_group_decode::{DynamicConjunct, PredicateColumn, RowGroupDecoder, Source};
+use super::row_group_decode::{
+    DynamicConjunct, PredicateColumn, RowGroupDecoder, Source, projected_field_at_output_index,
+};
 use super::{AsyncTaskData, ParquetReadImpl};
 use crate::morsel::{Morsel, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
@@ -602,6 +605,25 @@ impl ParquetReadImpl {
             })
             .collect();
 
+        let output_keep_mask = if dropped_fields.iter().any(|&dropped| dropped) {
+            let keep: MutableBitmap = row_index
+                .iter()
+                .map(|_| true)
+                .chain((0..projected_arrow_fields.len()).map(|i| {
+                    let field = projected_field_at_output_index(
+                        i,
+                        &predicate_field_indices,
+                        &non_predicate_field_indices,
+                    );
+                    !dropped_fields[field]
+                }))
+                .collect();
+            // Converting into Option<Bitmap> caches the number of kept columns.
+            keep.into()
+        } else {
+            None
+        };
+
         // The columns the rest predicate reads, `None` if unknown.
         let rest_columns: Option<&[PlSmallStr]> = match staged {
             _ if rest_predicate.is_none() => Some(&[]),
@@ -630,6 +652,7 @@ impl ParquetReadImpl {
             passes: Mutex::new(Arc::new(passes)),
             non_predicate_field_indices,
             dropped_fields,
+            output_keep_mask,
             early_dropped_fields,
             target_values_per_thread,
             runtime_range_skipper,

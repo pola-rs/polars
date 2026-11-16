@@ -208,16 +208,12 @@ impl ApplyExtraOps {
                     Some(column_selectors)
                 };
 
-                let output_projection_after_predicate = output_schema_after_predicate
-                    .map(|narrow| {
+                let output_projection_after_predicate =
+                    output_schema_after_predicate.map(|narrow| {
                         narrow
                             .iter_names()
                             .map(|name| final_output_schema.index_of(name).unwrap())
                             .collect::<Vec<_>>()
-                    })
-                    .filter(|idxs| {
-                        !(idxs.len() == final_output_schema.len()
-                            && idxs.iter().enumerate().all(|(i, x)| i == *x))
                     });
 
                 let out = Self::Initialized {

@@ -437,7 +437,7 @@ pub enum PhysNodeKind {
         output_schema: SchemaRef,
         /// If set, the schema of the morsels actually sent out of MultiScan: `output_schema`
         /// without the columns that are only read to evaluate `predicate`. Set by
-        /// `fuse_scan_drops`.
+        /// `fuse_drops`.
         output_schema_after_predicate: Option<SchemaRef>,
 
         row_index: Option<RowIndex>,
@@ -1001,10 +1001,9 @@ fn fuse_drops(
         let PhysNodeKind::SimpleProjection { input, .. } = phys_sm[key].kind() else {
             continue;
         };
-        let len_before_drop = input.output_schema(phys_sm).len();
-        let input = input.node;
-
-        let Some([simple_proj_node, input_node]) = phys_sm.get_disjoint_mut([key, input]) else {
+        let input = *input;
+        let Some([simple_proj_node, input_node]) = phys_sm.get_disjoint_mut([key, input.node])
+        else {
             continue;
         };
 
@@ -1012,124 +1011,51 @@ fn fuse_drops(
             continue;
         }
 
-        let PhysNodeKind::SimpleProjection { input: _, columns } = simple_proj_node.kind_mut()
-        else {
+        let PhysNodeKind::SimpleProjection { columns, .. } = simple_proj_node.kind() else {
             unreachable!()
         };
-
-        let has_rename = columns.iter().any(|(k, v)| k != v);
 
         // TODO: Figure out why `input_schema.try_project` fails below with e.g. "\"_POLARS_TMP_7253\" not found"
-        if has_rename {
-            continue;
-        }
-
-        let PhysNodeKind::Filter { projection, .. } = input_node.kind_mut() else {
-            continue;
-        };
-        let len_before_drop = projection.as_ref().map_or(len_before_drop, |(_, len)| *len);
-        *projection = Some((Vec::from_iter(columns.keys().cloned()), len_before_drop));
-
-        let input_schema = input_node.output_schema_mut(0);
-        *input_schema = Arc::new(input_schema.try_project(columns.keys()).unwrap());
-
-        if simple_proj_node.output_schemas.len() == 1 {
-            std::mem::swap(simple_proj_node, input_node);
-            // The filter now lives in the projection's slot; move the attribution with it so
-            // the surviving node keeps the `Filter` IR node.
-            let proj_ir_node = phys_to_ir[key];
-            let filter_ir_node = phys_to_ir[input];
-            phys_to_ir.insert(key, filter_ir_node);
-            phys_to_ir.insert(input, proj_ir_node);
-        }
-    }
-}
-
-/// Fuses a no-rename `SimpleProjection` into the `MultiScan` below it, when the scan has a
-/// predicate: the scan then evaluates the predicate on the columns it reads, but does not
-/// emit (or gather the filtered rows of) the columns that were only read for the predicate.
-fn fuse_scan_drops(
-    roots: Vec<PhysNodeKey>,
-    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
-    phys_to_ir: &mut SecondaryMap<PhysNodeKey, Node>,
-) {
-    // Collect first: fusing swaps nodes, which would stop the traversal from reaching the
-    // inputs of the fused scan.
-    let mut projection_keys = Vec::new();
-    visit_nodes_mut(roots, phys_sm, |key, phys_sm| {
-        if let PhysNodeKind::SimpleProjection { .. } = phys_sm[key].kind() {
-            projection_keys.push(key);
-        }
-    });
-
-    for key in projection_keys {
-        let PhysNodeKind::SimpleProjection { input, .. } = phys_sm[key].kind() else {
-            continue;
-        };
-        let input = input.node;
-
-        let Some([simple_proj_node, input_node]) = phys_sm.get_disjoint_mut([key, input]) else {
-            continue;
-        };
-
-        if input_node.output_schemas.len() != 1 || simple_proj_node.output_schemas.len() != 1 {
-            continue;
-        }
-
-        let PhysNodeKind::SimpleProjection { input: _, columns } = simple_proj_node.kind() else {
-            unreachable!()
-        };
-
         if columns.iter().any(|(k, v)| k != v) {
             continue;
         }
 
-        // Keep at least one column, so that the morsels still carry their height.
-        if columns.is_empty() {
-            continue;
+        let input_schema = &mut input_node.output_schemas[input.port];
+        match &mut input_node.kind {
+            PhysNodeKind::Filter { projection, .. } => {
+                let len_before_drop = projection
+                    .as_ref()
+                    .map_or(input_schema.len(), |(_, len)| *len);
+                *projection = Some((Vec::from_iter(columns.keys().cloned()), len_before_drop));
+                *input_schema = Arc::new(input_schema.try_project(columns.keys()).unwrap());
+            },
+            PhysNodeKind::MultiScan {
+                predicate: Some(_),
+                output_schema_after_predicate,
+                ..
+            } if output_schema_after_predicate.is_none()
+                && simple_proj_node.output_schemas.len() == 1
+                && !columns.is_empty()
+                && columns.len() < input_schema.len() =>
+            {
+                let Ok(narrowed) = input_schema.try_project(columns.keys()) else {
+                    continue;
+                };
+                let narrowed = Arc::new(narrowed);
+                *output_schema_after_predicate = Some(narrowed.clone());
+                *input_schema = narrowed;
+            },
+            _ => continue,
         }
 
-        let PhysNodeKind::MultiScan {
-            predicate: Some(_),
-            output_schema_after_predicate,
-            ..
-        } = input_node.kind_mut()
-        else {
-            continue;
-        };
-
-        // Already fused.
-        if output_schema_after_predicate.is_some() {
-            continue;
+        if simple_proj_node.output_schemas.len() == 1 {
+            std::mem::swap(simple_proj_node, input_node);
+            // Move the IR attribution with the surviving node.
+            let proj_ir_node = phys_to_ir[key];
+            let input_ir_node = phys_to_ir[input.node];
+            phys_to_ir.insert(key, input_ir_node);
+            phys_to_ir.insert(input.node, proj_ir_node);
         }
-
-        let input_schema = input_node.output_schema(0).clone();
-
-        if columns.len() >= input_schema.len() {
-            continue;
-        }
-
-        let Ok(narrowed) = input_schema.try_project(columns.keys()) else {
-            continue;
-        };
-        let narrowed = Arc::new(narrowed);
-
-        let PhysNodeKind::MultiScan {
-            output_schema_after_predicate,
-            ..
-        } = input_node.kind_mut()
-        else {
-            unreachable!()
-        };
-        *output_schema_after_predicate = Some(narrowed.clone());
-        *input_node.output_schema_mut(0) = narrowed;
-
-        std::mem::swap(simple_proj_node, input_node);
-        // The scan now lives in the projection's slot; move the attribution with it.
-        let proj_ir_node = phys_to_ir[key];
-        let scan_ir_node = phys_to_ir[input];
-        phys_to_ir.insert(key, scan_ir_node);
-        phys_to_ir.insert(input, proj_ir_node);
     }
 }
 
@@ -1184,7 +1110,6 @@ pub fn build_physical_plan(
     insert_multiplexers(vec![phys_root.node], phys_sm, &mut phys_to_ir);
     split_multiplexers(vec![phys_root.node], phys_sm, &mut phys_to_ir);
     fuse_drops(vec![phys_root.node], phys_sm, &mut phys_to_ir);
-    fuse_scan_drops(vec![phys_root.node], phys_sm, &mut phys_to_ir);
 
     // TODO: remove this after fusing pre-select into group-by node.
     rechunk_group_by_inputs(vec![phys_root.node], phys_sm);
