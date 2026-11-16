@@ -693,6 +693,10 @@ def _bare_column_in_group_by(select: Any) -> bool:
         return False
     projections = select.expressions
     grouped: set[str] = set()
+    # grouped columns by name, qualified ones (`a.id`) also by table: `b.id` isn't
+    # grouped by `GROUP BY a.id`
+    grouped_names: set[str] = set()
+    grouped_unqualified: set[str] = set()
     if group.args.get("all"):
         return False
     by_alias = {
@@ -703,6 +707,13 @@ def _bare_column_in_group_by(select: Any) -> bool:
             # `GROUP BY l` for `lower(g) AS l`: the expression it names
             if (named := by_alias.get(node.name.lower())) is not None:
                 grouped.add(named.sql().lower())
+                if isinstance(named, exp.Column):
+                    # `GROUP BY k` for `g AS k` (or `t.g AS k`) groups `g`
+                    grouped_names.add(named.name.lower())
+                    if named.table:
+                        grouped.add(f"{named.table}.{named.name}".lower())
+                    else:
+                        grouped_unqualified.add(named.name.lower())
         if isinstance(node, exp.Literal) and node.is_int:
             # `GROUP BY 1`: the projection it numbers
             index = int(node.name) - 1
@@ -710,7 +721,11 @@ def _bare_column_in_group_by(select: Any) -> bool:
                 node = projections[index]
                 node = node.this if isinstance(node, exp.Alias) else node
         if isinstance(node, exp.Column):
-            grouped.add(node.name.lower())
+            grouped_names.add(node.name.lower())
+            if node.table:
+                grouped.add(f"{node.table}.{node.name}".lower())
+            else:
+                grouped_unqualified.add(node.name.lower())
         elif isinstance(node, exp.Var) and node.name.upper() == "ALL":
             return False
         elif not isinstance(node, (exp.Group, exp.Tuple, exp.Rollup, exp.Cube)):
@@ -735,7 +750,14 @@ def _bare_column_in_group_by(select: Any) -> bool:
             return False
         if isinstance(node, exp.Column):
             name = node.name.lower()
-            return name not in grouped and not (is_having and name in aliases)
+            if node.table:
+                is_grouped = (
+                    f"{node.table}.{node.name}".lower() in grouped
+                    or name in grouped_unqualified
+                )
+            else:
+                is_grouped = name in grouped_names
+            return not is_grouped and not (is_having and name in aliases)
         if not isinstance(node, exp.Star) and node.sql().lower() in grouped:
             return False
         return any(bare(child, is_having) for child in node.iter_expressions())

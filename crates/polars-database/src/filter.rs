@@ -396,6 +396,25 @@ impl Translator<'_> {
         // `\x1a`, and more in older versions) as backslash escapes
         let escape =
             self.mysql_without_setup() && s.chars().any(|c| c == '\\' || c.is_ascii_control());
+        // Where string literals read backslash escapes, the renderer's spelling of a control
+        // character (`\a`, `\v`, `\f` in sqlglot 28, an octal `\012` in 30 for Databricks, a raw
+        // NUL) means a letter or another character; only tab, newline and carriage return are
+        // written as the escape the database reads. Where they don't (Flight SQL servers may be
+        // MySQL-family, Generic is unknown), a backslash is sent as is, and read as an escape.
+        let control = s
+            .chars()
+            .any(|c| c.is_ascii_control() && !matches!(c, '\t' | '\n' | '\r'));
+        let backslash_escapes = match self.dialect() {
+            DialectName::Mysql
+            | DialectName::Singlestore
+            | DialectName::Snowflake
+            | DialectName::Bigquery
+            | DialectName::Databricks
+            | DialectName::Redshift
+            | DialectName::Clickhouse => control,
+            DialectName::Flightsql | DialectName::Generic => control || s.contains('\\'),
+            _ => false,
+        };
         let nul = s.contains('\0')
             && !matches!(
                 self.dialect(),
@@ -418,7 +437,7 @@ impl Translator<'_> {
                 DialectName::Sqlite | DialectName::Clickhouse
             )
             && (s.contains('\\') || s.contains("''"));
-        !(placeholder || escape || nul || question || quotes)
+        !(placeholder || escape || backslash_escapes || nul || question || quotes)
     }
 
     /// Whether a literal compared with the column means the same value to the database.
@@ -456,6 +475,27 @@ impl Translator<'_> {
             };
             let step = per_second / 10i64.pow(fsp.min(9)).min(per_second);
             return v.rem_euclid(step.max(1)) == 0;
+        }
+        // With the fraction digits unknown (`schema=`, a query's column) the column may hold
+        // none: only whole seconds are compared as they are.
+        if matches!(
+            self.dialect(),
+            DialectName::Mysql | DialectName::Singlestore
+        ) && self.mysql_fsp(name).is_none()
+        {
+            let sub_second = match av {
+                AnyValue::Datetime(v, tu, _) | AnyValue::DatetimeOwned(v, tu, _) => {
+                    let per_second: i64 = match tu {
+                        TimeUnit::Nanoseconds => 1_000_000_000,
+                        TimeUnit::Microseconds => 1_000_000,
+                        TimeUnit::Milliseconds => 1_000,
+                    };
+                    v.rem_euclid(per_second) != 0
+                },
+                AnyValue::Time(v) => v.rem_euclid(1_000_000_000) != 0,
+                _ => false,
+            };
+            return !sub_second;
         }
         true
     }
@@ -798,7 +838,11 @@ impl Translator<'_> {
             },
             None => matches!(
                 self.dialect(),
-                DialectName::Postgresql | DialectName::Redshift | DialectName::Duckdb
+                DialectName::Postgresql
+                    | DialectName::Redshift
+                    | DialectName::Duckdb
+                    | DialectName::Trino
+                    | DialectName::Teradata
             ),
         }
     }

@@ -55,6 +55,7 @@ pub fn nans_sort_first(dialect: DialectName) -> bool {
 /// The most partitions a range is split into, whatever `partition_num` asks for.
 pub const MAX_RANGE_PARTITIONS: usize = 65_536;
 
+#[allow(clippy::too_many_arguments)]
 pub fn range_partitions(
     column: &PlSmallStr,
     lo: f64,
@@ -63,6 +64,7 @@ pub fn range_partitions(
     kind: RangeKind,
     nulls_first: bool,
     nans_first: bool,
+    dialect: DialectName,
 ) -> Vec<Partition> {
     let n = n.max(1);
     // Infinite bounds (a float column holding ±inf) give no usable cuts.
@@ -95,9 +97,13 @@ pub fn range_partitions(
                 v if (1.0..100.0).contains(&v) => 100.0,
                 v => v,
             },
-            // Years outside 1..9999 render as dates that databases can't parse. The outer
-            // partitions are open-ended, so clamped cuts lose no rows.
-            RangeKind::Date => v.ceil().clamp(MIN_DATE_DAYS as f64, MAX_DATE_DAYS as f64),
+            // Dates outside the dialect's range render as text it can't parse, or are read
+            // as NULL or wrapped (MySQL: before year 1000). The outer partitions are
+            // open-ended and equal cuts are dropped, so clamped cuts lose no rows.
+            RangeKind::Date => {
+                let (min, max) = dialect.temporal_literal_days();
+                v.ceil().clamp(min as f64, max as f64)
+            },
             RangeKind::Float => v,
             RangeKind::Decimal(scale) => format!("{v:.scale$}").parse::<f64>().unwrap_or(v),
         };
@@ -145,10 +151,6 @@ pub fn range_partitions(
     }
     out
 }
-
-/// 0001-01-01 and 9999-12-31, in days since 1970-01-01.
-const MIN_DATE_DAYS: i32 = -719_162;
-const MAX_DATE_DAYS: i32 = 2_932_896;
 
 fn date_text(days: i32) -> String {
     let date = chrono::NaiveDate::from_num_days_from_ce_opt(days + 719_163).unwrap_or_default();
@@ -236,7 +238,16 @@ mod tests {
 
     #[test]
     fn ranges_cover_everything() {
-        let p = range_partitions(&"id".into(), 0.0, 100.0, 4, RangeKind::Int, false, false);
+        let p = range_partitions(
+            &"id".into(),
+            0.0,
+            100.0,
+            4,
+            RangeKind::Int,
+            false,
+            false,
+            DialectName::Postgresql,
+        );
         assert_eq!(p.len(), 4);
         // First is open below, last is open above and takes NULLs.
         assert!(matches!(
@@ -248,12 +259,32 @@ mod tests {
             Some(SqlExpr::Binary(_, SqlBinOp::Or, _))
         ));
         assert_eq!(
-            range_partitions(&"id".into(), 5.0, 5.0, 4, RangeKind::Int, false, false).len(),
+            range_partitions(
+                &"id".into(),
+                5.0,
+                5.0,
+                4,
+                RangeKind::Int,
+                false,
+                false,
+                DialectName::Postgresql
+            )
+            .len(),
             1
         );
         // Fewer distinct integer cuts than requested partitions.
         assert_eq!(
-            range_partitions(&"id".into(), 0.0, 2.0, 8, RangeKind::Int, false, false).len(),
+            range_partitions(
+                &"id".into(),
+                0.0,
+                2.0,
+                8,
+                RangeKind::Int,
+                false,
+                false,
+                DialectName::Postgresql
+            )
+            .len(),
             3
         );
     }
@@ -269,6 +300,7 @@ mod tests {
             RangeKind::Int,
             false,
             false,
+            DialectName::Postgresql,
         );
         assert_eq!(p.len(), 10);
         let p = range_partitions(
@@ -279,6 +311,7 @@ mod tests {
             RangeKind::Float,
             false,
             false,
+            DialectName::Postgresql,
         );
         assert_eq!(p.len(), MAX_RANGE_PARTITIONS);
         // a span wider than `f64::MAX` made an `inf` step
@@ -290,6 +323,7 @@ mod tests {
             RangeKind::Float,
             false,
             false,
+            DialectName::Postgresql,
         );
         assert_eq!(p.len(), 4);
         let finite = |e: &SqlExpr| {
@@ -318,12 +352,30 @@ mod tests {
 
     #[test]
     fn nulls_follow_the_sort_order() {
-        let last = range_partitions(&"id".into(), 0.0, 100.0, 4, RangeKind::Int, false, false);
+        let last = range_partitions(
+            &"id".into(),
+            0.0,
+            100.0,
+            4,
+            RangeKind::Int,
+            false,
+            false,
+            DialectName::Postgresql,
+        );
         assert_eq!(
             last.iter().map(takes_nulls).collect::<Vec<_>>(),
             [false, false, false, true]
         );
-        let first = range_partitions(&"id".into(), 0.0, 100.0, 4, RangeKind::Int, true, false);
+        let first = range_partitions(
+            &"id".into(),
+            0.0,
+            100.0,
+            4,
+            RangeKind::Int,
+            true,
+            false,
+            DialectName::Postgresql,
+        );
         assert_eq!(
             first.iter().map(takes_nulls).collect::<Vec<_>>(),
             [true, false, false, false]
@@ -345,10 +397,19 @@ mod tests {
             p.predicate.as_ref().is_some_and(walk)
         }
         let f = |nans_first| {
-            range_partitions(&"f".into(), 0.0, 1.0, 3, RangeKind::Float, true, nans_first)
-                .iter()
-                .map(takes_nans)
-                .collect::<Vec<_>>()
+            range_partitions(
+                &"f".into(),
+                0.0,
+                1.0,
+                3,
+                RangeKind::Float,
+                true,
+                nans_first,
+                DialectName::Postgresql,
+            )
+            .iter()
+            .map(takes_nans)
+            .collect::<Vec<_>>()
         };
         assert_eq!(f(false), [false, false, true]);
         assert_eq!(f(true), [true, false, false]);
@@ -369,7 +430,16 @@ mod tests {
             }
         }
         let mut cuts = vec![];
-        let parts = range_partitions(&"y".into(), 0.0, 2155.0, 40, RangeKind::Year, true, false);
+        let parts = range_partitions(
+            &"y".into(),
+            0.0,
+            2155.0,
+            40,
+            RangeKind::Year,
+            true,
+            false,
+            DialectName::Postgresql,
+        );
         for p in &parts {
             ints_in(p.predicate.as_ref().unwrap(), &mut cuts);
         }
@@ -385,7 +455,16 @@ mod tests {
             (0.0, u128::MAX as f64),
             (-1e38, 1e38),
         ] {
-            let p = range_partitions(&"x".into(), lo, hi, 2, RangeKind::Int, false, false);
+            let p = range_partitions(
+                &"x".into(),
+                lo,
+                hi,
+                2,
+                RangeKind::Int,
+                false,
+                false,
+                DialectName::Postgresql,
+            );
             assert_eq!(p.len(), 2, "{lo} {hi}");
         }
     }
@@ -400,6 +479,7 @@ mod tests {
             RangeKind::Decimal(2),
             false,
             false,
+            DialectName::Postgresql,
         );
         let mut cuts = vec![];
         for part in &p {
@@ -425,8 +505,8 @@ mod tests {
     fn dates() {
         assert_eq!(date_text(0), "1970-01-01");
         assert_eq!(date_text(20454), "2026-01-01");
-        assert_eq!(date_text(MIN_DATE_DAYS), "0001-01-01");
-        assert_eq!(date_text(MAX_DATE_DAYS), "9999-12-31");
+        assert_eq!(date_text(-719_162), "0001-01-01");
+        assert_eq!(date_text(2_932_896), "9999-12-31");
     }
 
     #[test]
@@ -443,7 +523,16 @@ mod tests {
         }
         let cut_texts = |lo: f64, hi: f64| -> Vec<String> {
             let mut out = vec![];
-            for p in range_partitions(&"d".into(), lo, hi, 4, RangeKind::Date, false, false) {
+            for p in range_partitions(
+                &"d".into(),
+                lo,
+                hi,
+                4,
+                RangeKind::Date,
+                false,
+                false,
+                DialectName::Postgresql,
+            ) {
                 dates_in(p.predicate.as_ref().unwrap(), &mut out);
             }
             out
@@ -456,5 +545,63 @@ mod tests {
         let cuts = cut_texts(-328_000_000.0, 0.0);
         assert!(cuts.iter().all(|c| c.len() == 10), "{cuts:?}");
         assert!(cuts.iter().any(|c| c == "0001-01-01"), "{cuts:?}");
+    }
+
+    #[test]
+    fn date_cuts_stay_in_the_dialects_range() {
+        fn dates_in(e: &SqlExpr, out: &mut Vec<String>) {
+            match e {
+                SqlExpr::Literal(SqlLiteral::Date(d)) => out.push(d.clone()),
+                SqlExpr::Binary(l, _, r) => {
+                    dates_in(l, out);
+                    dates_in(r, out);
+                },
+                _ => {},
+            }
+        }
+        // 0001-01-01 .. 2024-01-01 in four: cuts near years 507, 1012 and 1518 are read as
+        // NULL by MySQL (`d < NULL` selects nothing); they clamp to 1000-01-01, and the
+        // equal cuts collapse
+        let parts = |dialect| {
+            range_partitions(
+                &"d".into(),
+                -719_162.0,
+                19_723.0,
+                4,
+                RangeKind::Date,
+                true,
+                false,
+                dialect,
+            )
+        };
+        let mysql = parts(DialectName::Mysql);
+        let mut dates = vec![];
+        for p in &mysql {
+            dates_in(p.predicate.as_ref().unwrap(), &mut dates);
+        }
+        assert!(
+            dates.iter().all(|d| d.as_str() >= "1000-01-01"),
+            "{dates:?}"
+        );
+        assert_eq!(mysql.len(), 4);
+        // a range wholly before year 1000: every cut clamps to it and the equal ones collapse
+        let early = range_partitions(
+            &"d".into(),
+            -719_162.0,
+            -600_000.0,
+            4,
+            RangeKind::Date,
+            true,
+            false,
+            DialectName::Mysql,
+        );
+        assert_eq!(early.len(), 2, "{early:?}");
+        // the first partition is open below, the last above
+        let first = format!("{:?}", mysql[0].predicate);
+        assert!(first.contains("Lt") && !first.contains("GtEq"), "{first}");
+        let last = format!("{:?}", mysql.last().unwrap().predicate);
+        assert!(last.contains("GtEq") && !last.contains("Lt"), "{last}");
+        // elsewhere the cuts are as before
+        assert_eq!(parts(DialectName::Postgresql).len(), 4);
     }
 }

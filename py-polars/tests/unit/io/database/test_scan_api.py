@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gc
 import os
 import sqlite3
 import subprocess
@@ -776,15 +777,22 @@ lf = pl.scan_database("t", "sqlite:///" + {str(db)!r})
     subprocess.run([sys.executable, "-c", code], check=True, timeout=120)
 
 
-def test_factory_returning_one_pymysql_connection_twice_is_refused() -> None:
+@pytest.mark.parametrize("unbuffered", [True, False])
+def test_factory_returning_one_pymysql_connection_twice_is_refused(
+    unbuffered: bool,
+) -> None:
     # PyMySQL ends an unbuffered result silently when another statement runs on its
-    # connection: two reads can't stream from one
+    # connection: two reads can't stream from one. A session opens an unbuffered
+    # cursor on any connection of the factory, so a default (buffered) one is refused
+    # too
     pymysql = pytest.importorskip("pymysql")
     from polars_database._bridge import _Session
 
     # no server: only the connection's class and cursor class matter
     conn = pymysql.connections.Connection.__new__(pymysql.connections.Connection)
-    conn.cursorclass = pymysql.cursors.SSCursor
+    conn.cursorclass = (
+        pymysql.cursors.SSCursor if unbuffered else pymysql.cursors.Cursor
+    )
 
     kw: dict[str, Any] = {"execute_options": {}, "params": None}
     first = _Session(conn, owned=True, factory=True, **kw)
@@ -795,3 +803,45 @@ def test_factory_returning_one_pymysql_connection_twice_is_refused() -> None:
         first._release_factory_connection()
     # once the first is closed, the connection may be returned again
     _Session(conn, owned=True, factory=True, **kw)._release_factory_connection()
+
+
+def test_factory_returning_one_connection_twice_is_refused_any_driver() -> None:
+
+    from polars_database._bridge import _FACTORY_CONNECTIONS, _Session
+
+    conn = sqlite3.connect(":memory:", check_same_thread=False)
+    kw: dict[str, Any] = {"execute_options": {}, "params": None}
+    first = _Session(conn, owned=True, factory=True, **kw)
+    with pytest.raises(ValueError, match="new connection on each call"):
+        _Session(conn, owned=True, factory=True, **kw)
+    first._release_factory_connection()
+
+    # a session dropped without `close()` doesn't keep the connection refused
+    dropped = _Session(conn, owned=True, factory=True, **kw)
+    assert id(conn) in _FACTORY_CONNECTIONS
+    del dropped
+    gc.collect()
+    assert id(conn) not in _FACTORY_CONNECTIONS
+    _Session(conn, owned=True, factory=True, **kw)._release_factory_connection()
+    conn.close()
+
+
+def test_scan_partitioned_factory_returning_one_connection_is_refused() -> None:
+
+    class Shared(sqlite3.Connection):
+        def close(self) -> None:  # the plugin's catalog lookup closes its connection
+            pass
+
+    conn = sqlite3.connect(":memory:", check_same_thread=False, factory=Shared)
+    conn.execute("CREATE TABLE t (a INTEGER)")
+    conn.executemany("INSERT INTO t VALUES (?)", [(i,) for i in range(100)])
+    conn.commit()
+    lf = pl.scan_database(
+        "t",
+        lambda: conn,
+        partition_on="a",
+        partition_num=4,
+        max_connections=4,
+    )
+    with pytest.raises(Exception, match="new connection on each call"):
+        lf.collect()

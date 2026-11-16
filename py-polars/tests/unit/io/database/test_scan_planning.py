@@ -1028,6 +1028,26 @@ def test_mysql_tls_check_rejects_a_plain_connection() -> None:
         ("sqlite", "SELECT * FROM t GROUP BY g", False),
         ("sqlite", "SELECT g, x + 1 AS y FROM t GROUP BY 1", False),
         ("sqlite", "SELECT g, max(x), count(*) FROM t GROUP BY g", True),
+        # `b.id` isn't grouped by `GROUP BY a.id`
+        (
+            "sqlite",
+            "SELECT a.id, b.id AS bid FROM a JOIN b ON a.k = b.k GROUP BY a.id",
+            False,
+        ),
+        (
+            "sqlite",
+            "SELECT a.id, count(*) FROM a JOIN b ON a.k = b.k GROUP BY a.id",
+            True,
+        ),
+        (
+            "sqlite",
+            "SELECT id, count(*) FROM a JOIN b ON a.k = b.k GROUP BY a.id",
+            True,
+        ),
+        # `GROUP BY k` for `g AS k` groups `g`
+        ("sqlite", "SELECT g AS k, count(*) FROM t GROUP BY k", True),
+        ("mysql", "SELECT g AS k, count(*) FROM t GROUP BY k", True),
+        ("sqlite", "SELECT t.g AS k, count(*) FROM t GROUP BY k", True),
         ("sqlite", "SELECT t.g, sum(x) AS s FROM t GROUP BY g HAVING s > 1", True),
         ("sqlite", "SELECT lower(g) AS l, count(*) FROM t GROUP BY lower(g)", True),
         (
@@ -1610,3 +1630,79 @@ def test_scrub_message_with_lone_surrogate() -> None:
     message = _scrub("no such file \udcff pw=hunter2hunter2", ["hunter2hunter2"])
     assert message.startswith("no such file ")
     assert message.endswith(" pw=***")
+
+
+def _pushed(dialect: str, predicate: pl.Expr, schema: Any = None) -> str:
+    uri, driver = DIALECT_URIS.get(dialect, "sqlite:///x.db"), "sqlalchemy"
+    kwargs: dict[str, Any] = {} if dialect in DIALECT_URIS else {"dialect": dialect}
+    if dialect == "flightsql":
+        uri, driver = "grpc://h:31337", "adbc"
+    lf = pl.scan_database(
+        "s.t",
+        uri,
+        schema=schema or EDGE_SCHEMA,
+        driver=driver,
+        partition_on=None,
+        **kwargs,
+    )
+    return next(
+        line.strip()
+        for line in lf.filter(predicate).explain().splitlines()
+        if line.strip().startswith("pushed:")
+    )
+
+
+@pytest.mark.parametrize(
+    "dialect",
+    ["mysql", "snowflake", "bigquery", "databricks", "redshift", "clickhouse"],
+)
+@pytest.mark.parametrize("char", ["\x00", "\x07", "\x0b", "\x0c", "\x1b", "\x7f"])
+def test_control_characters_are_not_pushed_where_backslashes_escape(
+    dialect: str, char: str
+) -> None:
+    # the renderer writes some as `\a`, `\v`, `\f` (or an octal escape, or a raw NUL),
+    # which these databases read as other characters: the row would be lost
+    s = pl.col("s")
+    for predicate in [
+        s == f"a{char}b",
+        s.is_in([f"a{char}b", "c"]),
+        s.str.starts_with(f"a{char}"),
+    ]:
+        assert "filters 0/1" in _pushed(dialect, predicate)
+
+
+def test_tab_newline_and_carriage_return_are_pushed_where_backslashes_escape() -> None:
+    assert "filters 1/1" in _pushed("mysql", pl.col("s") == "a\tb\n\r")
+
+
+@pytest.mark.parametrize("dialect", ["flightsql", "generic"])
+def test_backslashes_are_not_pushed_to_unknown_databases(dialect: str) -> None:
+    # a MySQL-family Flight SQL server reads `\t` as a tab
+    if dialect == "flightsql":
+        pytest.importorskip("adbc_driver_flightsql")
+    for text in ["C:\\temp", "a\x0cb"]:
+        assert "filters 0/1" in _pushed(dialect, pl.col("s") == text)
+
+
+def test_mysql_subsecond_literals_are_not_pushed_with_unknown_fraction_digits() -> None:
+    # MySQL rounds a literal stored into a `DATETIME(0)` lookup: `= 00:00:00.5` matched
+    # `00:00:01`
+    schema = {"ts": pl.Datetime("us"), "t": pl.Time}
+    half = datetime(2026, 1, 1, 0, 0, 0, 500000)
+    whole = datetime(2026, 1, 1, 0, 0, 1)
+    for dialect in ["mysql", "singlestore"]:
+        assert "filters 0/1" in _pushed(dialect, pl.col("ts") == half, schema)
+        assert "filters 0/1" in _pushed(dialect, pl.col("ts").is_in([half]), schema)
+        assert "filters 0/1" in _pushed(
+            dialect, pl.col("t") == time(0, 0, 0, 500000), schema
+        )
+    assert "filters 1/1" in _pushed("mysql", pl.col("ts") == whole, schema)
+    assert "filters 1/1" in _pushed("mysql", pl.col("t") == time(0, 0, 1), schema)
+
+
+@pytest.mark.parametrize("dialect", ["trino", "teradata"])
+def test_time_comparisons_are_not_pushed_where_the_type_may_have_a_zone(
+    dialect: str,
+) -> None:
+    # `TIME WITH TIME ZONE` is read as a `Time`, and compared in the session's zone
+    assert "filters 0/1" in _pushed(dialect, pl.col("t") > time(1, 0), {"t": pl.Time})

@@ -3077,7 +3077,16 @@ fn resolve_partitions(
     }
     let nulls_first = partition::nulls_sort_first(config.dialect);
     let nans_first = partition::nans_sort_first(config.dialect);
-    let parts = partition::range_partitions(&column, lo, hi, n, kind, nulls_first, nans_first);
+    let parts = partition::range_partitions(
+        &column,
+        lo,
+        hi,
+        n,
+        kind,
+        nulls_first,
+        nans_first,
+        config.dialect,
+    );
     let desc = format!(
         "{} (range on {}, bounds from {bounds_from})",
         parts.len(),

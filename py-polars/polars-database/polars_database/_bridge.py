@@ -1727,6 +1727,16 @@ _LIVE_STATES_LOCK = threading.Lock()
 # The connections (by identity) of the factory's open sessions, with how many sessions
 # hold each: a factory may return one connection again.
 _FACTORY_CONNECTIONS: dict[int, int] = {}
+# reentrant: a session's finalizer may run (garbage collection) inside it
+_FACTORY_LOCK = threading.RLock()
+
+
+def _release_factory_key(key: int) -> None:
+    with _FACTORY_LOCK:
+        if (left := _FACTORY_CONNECTIONS.get(key, 1) - 1) > 0:
+            _FACTORY_CONNECTIONS[key] = left
+        else:
+            _FACTORY_CONNECTIONS.pop(key, None)
 
 
 def _live_state(conn: Any) -> _ConnectionState:
@@ -2205,36 +2215,34 @@ class _Session:
 
     def _register_factory_connection(self) -> None:
         """
-        Counts the factory's connection among the open sessions'. An unbuffered PyMySQL
-        one that another open session holds is refused: two results can't be open on one
-        connection, and the driver ends the first silently, so rows would be missing.
+        Counts the factory's connection among the open sessions'. One that another open
+        session holds is refused, for any driver: two sessions on one connection end
+        each other's results (PyMySQL's unbuffered cursors, silently), transactions
+        and named cursors (`commit()`, `rollback()`), or close it under the other.
         """
         key = id(self.conn)
-        with _LIVE_STATES_LOCK:
-            if (
-                key in _FACTORY_CONNECTIONS
-                and _module_of(self.conn) == "pymysql"
-                and _unbuffered_mysql(self.conn, "pymysql")
-            ):
+        with _FACTORY_LOCK:
+            if key in _FACTORY_CONNECTIONS:
                 msg = (
                     "the connection function returned a connection that another read "
-                    "of the scan still uses, and its unbuffered cursors can't share "
-                    "one: return a new connection on each call, or pass the "
-                    "connection itself (or set max_connections=1)"
+                    "of this scan, or of another scan in the same query, still uses, "
+                    "and sessions can't share one: return a new connection on each "
+                    "call, or pass the connection itself (max_connections=1 only helps "
+                    "within one scan)"
                 )
                 raise ValueError(msg)
             _FACTORY_CONNECTIONS[key] = _FACTORY_CONNECTIONS.get(key, 0) + 1
             self._factory_key = key
+        # a session dropped without `close()` must not keep refusing the connection
+        # (or a later object at the same `id()`)
+        self._factory_finalizer = weakref.finalize(self, _release_factory_key, key)
 
     def _release_factory_connection(self) -> None:
-        key, self._factory_key = self._factory_key, None
-        if key is None:
+        if self._factory_key is None:
             return
-        with _LIVE_STATES_LOCK:
-            if (left := _FACTORY_CONNECTIONS.get(key, 1) - 1) > 0:
-                _FACTORY_CONNECTIONS[key] = left
-            else:
-                _FACTORY_CONNECTIONS.pop(key, None)
+        self._factory_key = None
+        # runs once, here or when the session is collected
+        self._factory_finalizer()
 
     def close(self) -> None:
         self._release_factory_connection()
