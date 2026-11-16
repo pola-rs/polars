@@ -18,7 +18,7 @@ Table Operations
    * - :ref:`DELETE FROM <delete_from_table>`
      - Remove specific rows of data from a table using an (optional) constraint.
    * - :ref:`DESCRIBE <describe>`
-     - Returns the column names and types of a table or view.
+     - Returns the column names and types of a table, view, file or query.
    * - :ref:`DROP SCHEMA <drop_schema>`
      - Drop an empty namespace of an attached catalog.
    * - :ref:`DROP TABLES <drop_tables>`
@@ -258,14 +258,23 @@ If another writer commits first:
 
 DESCRIBE
 --------
-Returns the column names and Polars data types of a table or view, as the columns
-``column_name`` and ``column_type``. ``DESC`` is the same.
+Returns the column names and data types of a table, a view, a file or the result of a query,
+as the columns ``column_name`` and ``column_type``. ``DESC`` is the same. A query is not run.
+A file is given by its path in single quotes, as in :ref:`FROM <from>`; only what its columns
+are known from is read, such as the metadata of a Parquet file or the first rows of a CSV file.
+
+A type is given by the SQL name that :ref:`CAST <cast>` reads back as that type, with a nested
+type in full, such as ``STRUCT<lat DOUBLE PRECISION, lon DOUBLE PRECISION>``. A type that has
+no SQL name, such as a fixed-size array, is given by its Polars name in lower case, also inside
+a nested type; such a name cannot be used in ``CAST``.
 
 **Example:**
 
 .. code-block:: sql
 
     DESCRIBE some_table
+    DESCRIBE 'data/events.parquet'
+    DESCRIBE SELECT a, b * 2 AS c FROM some_table
 
 .. _drop_schema:
 

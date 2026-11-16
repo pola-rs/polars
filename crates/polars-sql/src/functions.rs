@@ -42,6 +42,7 @@ use crate::sql_expr::{
     substring_offset, temporal_string_as,
 };
 use crate::sql_visitors::{contains_random, grouping_call_args};
+use crate::types::sql_type_name;
 use crate::window_frames::{MAX_ROW_OFFSET, is_frame_aggregate};
 use crate::{SQLContext, col};
 
@@ -1047,7 +1048,7 @@ pub(crate) enum PolarsSQLFunctions {
     // Type functions
     // ----
     /// SQL 'typeof' function.
-    /// Returns the name of the data type of the argument.
+    /// Returns the SQL name of the data type of the argument, as `DESCRIBE` gives it.
     /// ```sql
     /// SELECT TYPEOF(col1) FROM df;
     /// ```
@@ -3333,7 +3334,7 @@ impl SQLFunctionVisitor<'_> {
         let Some(dtype) = self.arg_dtype(&e)? else {
             polars_bail!(SQLInterface: "TYPEOF cannot determine the type of {}", arg)
         };
-        let name = lit(dtype.materialize_unknown(true)?.to_string());
+        let name = lit(sql_type_name(&dtype.materialize_unknown(true)?));
         // The argument is kept for its number of rows and its checks against the GROUP BY, except
         // when it is an aggregate, whose value need not be computed.
         let e = match e {

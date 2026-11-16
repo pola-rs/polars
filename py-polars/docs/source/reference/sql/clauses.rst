@@ -227,6 +227,19 @@ Using ``FROM`` as the leading clause, with ``SELECT``:
     # │ xx  ┆ 3   │
     # └─────┴─────┘
 
+**Files:** a path in single quotes is read as a file when it ends in the extension of a file
+format: ``.csv``, ``.parquet``, ``.ipc`` / ``.arrow`` / ``.feather``, or ``.ndjson`` /
+``.jsonl``. The path can be a glob or a cloud URL, and a leading ``~`` is the home directory.
+The file is read with the defaults of the ``read_csv``, ``read_parquet``, ``read_ipc`` or
+``read_ndjson`` table function; call that function to pass options, or to read a path that
+does not end in such an extension. A table of the same name comes first, and any other name
+in quotes is looked up as a table.
+
+.. code-block:: sql
+
+    SELECT * FROM 'data/events.parquet'
+    SELECT region, COUNT(*) FROM 'data/sales_*.csv' GROUP BY region
+
 **Time travel:** a table of an attached catalog (see
 :meth:`SQLContext.register_catalog`) can be read as of a snapshot, a branch or tag, or
 a time. The clause follows the table name or its alias, and takes a literal.

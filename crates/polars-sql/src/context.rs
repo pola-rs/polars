@@ -77,7 +77,7 @@ use crate::subquery::{
 use crate::subquery_pull_up::NESTED_PREFIX;
 use crate::table_functions::PolarsTableFunctions;
 use crate::time_travel::{split_version, unversioned_key, with_version};
-use crate::types::map_sql_dtype_to_polars;
+use crate::types::{map_sql_dtype_to_polars, sql_type_name};
 use crate::{col, unique_column_name};
 
 #[derive(Clone)]
@@ -867,6 +867,7 @@ impl SQLContext {
 
     /// The schema and relation name of a `MERGE`'s target, resolved as a table read.
     fn merge_target(&mut self, target: &TableFactor) -> PolarsResult<(SchemaRef, RelationName)> {
+        self.check_target_is_no_file(target, "MERGE")?;
         let twj = TableWithJoins {
             relation: target.clone(),
             joins: vec![],
@@ -1615,6 +1616,12 @@ impl SQLContext {
             },
             Statement::AlterTable(alter) => return Err(self.alter_table_error(&alter.name)),
             Statement::Insert(insert) => self.execute_insert(insert)?,
+            Statement::Explain {
+                describe_alias:
+                    sqlparser::ast::DescribeAlias::Describe | sqlparser::ast::DescribeAlias::Desc,
+                statement,
+                ..
+            } => self.execute_describe_query(statement)?,
             stmt @ Statement::Explain { .. } => self.execute_explain(stmt)?,
             Statement::Truncate(truncate) => self.execute_truncate_table(truncate)?,
             stmt @ Statement::Delete { .. } => self.execute_delete_from_table(stmt)?,
@@ -1765,6 +1772,38 @@ impl SQLContext {
         Ok(get_ignoring_case(&self.catalog_tables, name)?.cloned())
     }
 
+    /// The file at the path that a name in single quotes gives, unless it is read as a table.
+    fn read_quoted_path(&mut self, name: &ObjectName) -> PolarsResult<Option<(String, LazyFrame)>> {
+        match self.quoted_file_path(name)? {
+            Some(path) => PolarsTableFunctions::read_path(path, self),
+            None => Ok(None),
+        }
+    }
+
+    /// A file is only read; it is no target of a statement that changes a table.
+    fn check_target_is_no_file(&self, target: &TableFactor, statement: &str) -> PolarsResult<()> {
+        if let TableFactor::Table { name, .. } = target {
+            polars_ensure!(
+                self.quoted_file_path(name)?.is_none(),
+                SQLInterface: "{} of a file is not supported", statement
+            );
+        }
+        Ok(())
+    }
+
+    /// The path of `name`, if `FROM` reads it as a file and not as a table.
+    fn quoted_file_path<'a>(&self, name: &'a ObjectName) -> PolarsResult<Option<&'a str>> {
+        Ok(match quoted_path(name) {
+            Some(path)
+                if PolarsTableFunctions::reads_path(path)
+                    && self.get_table_unaliased(path)?.is_none() =>
+            {
+                Some(path)
+            },
+            _ => None,
+        })
+    }
+
     /// The frame of the CTE, registered table, view or catalog table `name`, with its name as
     /// written.
     fn get_named_table(&self, name: &ObjectName) -> PolarsResult<(String, LazyFrame)> {
@@ -1778,6 +1817,21 @@ impl SQLContext {
         let hint = name_parts(name)
             .and_then(|parts| self.catalogs.unresolved_hint(&parts))
             .unwrap_or_default();
+        // A name in single quotes may have been meant as a path.
+        let read_fns = PolarsTableFunctions::keywords()
+            .iter()
+            .copied()
+            .filter(|name| name.starts_with("read_"))
+            .collect::<Vec<_>>();
+        let hint = match quoted_path(name) {
+            Some(_) if hint.is_empty() && !read_fns.is_empty() => {
+                format!(
+                    "; to read it as a file, use one of: {}",
+                    read_fns.join(", ")
+                )
+            },
+            _ => hint,
+        };
         polars_bail!(SQLInterface: "relation '{}' was not found{}", tbl_name, hint);
     }
 
@@ -2679,9 +2733,40 @@ impl SQLContext {
         response(&key)
     }
 
-    // DESCRIBE <table>
+    // DESCRIBE <table>, DESCRIBE '<path>'
     fn execute_describe(&mut self, name: &ObjectName) -> PolarsResult<LazyFrame> {
-        let (_, mut lf) = self.get_named_table(name)?;
+        let (_, lf) = match self.read_quoted_path(name)? {
+            Some(from_item) => from_item,
+            None => self.get_named_table(name)?,
+        };
+        self.describe_columns(lf)
+    }
+
+    // DESCRIBE <query>
+    fn execute_describe_query(&mut self, statement: &Statement) -> PolarsResult<LazyFrame> {
+        // Any other statement would be run to get its columns.
+        let query = match statement {
+            Statement::Query(query)
+                if !matches!(
+                    query.body.as_ref(),
+                    SetExpr::Insert(_)
+                        | SetExpr::Update(_)
+                        | SetExpr::Delete(_)
+                        | SetExpr::Merge(_)
+                ) =>
+            {
+                query
+            },
+            _ => polars_bail!(
+                SQLInterface: "DESCRIBE supports tables and queries only; found:\n{}", statement,
+            ),
+        };
+        let lf = self.execute_query(query)?;
+        self.describe_columns(lf)
+    }
+
+    /// The columns of `lf`, one per row, with their SQL type names.
+    fn describe_columns(&mut self, mut lf: LazyFrame) -> PolarsResult<LazyFrame> {
         let schema = self.get_frame_schema(&mut lf)?;
         let column_names = Column::new(
             PlSmallStr::from_static("column_name"),
@@ -2692,10 +2777,7 @@ impl SQLContext {
         );
         let column_types = Column::new(
             PlSmallStr::from_static("column_type"),
-            schema
-                .iter_values()
-                .map(|dtype| dtype.to_string())
-                .collect::<Vec<_>>(),
+            schema.iter_values().map(sql_type_name).collect::<Vec<_>>(),
         );
         Ok(DataFrame::new_infer_height(vec![column_names, column_types])?.lazy())
     }
@@ -2951,6 +3033,7 @@ impl SQLContext {
     }
 
     fn delete_target(&mut self, from: &TableWithJoins) -> PolarsResult<LazyFrame> {
+        self.check_target_is_no_file(&from.relation, "DELETE")?;
         self.set_active_relations(std::slice::from_ref(from));
         Ok(self.get_table(&from.relation)?.1)
     }
@@ -6328,6 +6411,9 @@ impl SQLContext {
                 if let Some(args) = args {
                     return self.execute_table_function(name, alias, &args.args);
                 }
+                if let Some(from_item) = self.read_quoted_path(name)? {
+                    return self.table_function_item(from_item, alias);
+                }
                 // A qualified name (`schema.table`) is looked up as a whole, among CTEs,
                 // registered tables, views and catalog tables: the alias of another FROM item is
                 // not a table.
@@ -6509,7 +6595,16 @@ impl SQLContext {
         let tbl_fn = object_name_to_string(name);
         let tbl_fn = tbl_fn.as_str();
         let read_fn = tbl_fn.parse::<PolarsTableFunctions>()?;
-        let (tbl_name, mut lf) = read_fn.execute(args, self)?;
+        let from_item = read_fn.execute(args, self)?;
+        self.table_function_item(from_item, alias)
+    }
+
+    /// The FROM item of what a table function or a quoted path reads.
+    fn table_function_item(
+        &mut self,
+        (tbl_name, mut lf): (String, LazyFrame),
+        alias: &Option<TableAlias>,
+    ) -> PolarsResult<(String, LazyFrame)> {
         let tbl_name = match alias {
             Some(alias) => {
                 lf = self.rename_columns_from_table_alias(lf, alias)?;
@@ -7512,6 +7607,17 @@ fn expand_exprs(expr: Expr, schema: &SchemaRef) -> Vec<Expr> {
 }
 
 /// Render an `ObjectName` (dot-separated identifier parts) back to a string.
+/// The text of a name that is one part in single quotes.
+fn quoted_path(name: &ObjectName) -> Option<&str> {
+    match name.0.as_slice() {
+        [part] => part
+            .as_ident()
+            .filter(|ident| ident.quote_style == Some('\''))
+            .map(|ident| ident.value.as_str()),
+        _ => None,
+    }
+}
+
 pub(crate) fn object_name_to_string(name: &ObjectName) -> String {
     name.0
         .iter()
