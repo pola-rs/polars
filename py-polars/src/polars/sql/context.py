@@ -578,6 +578,8 @@ class SQLContext(Generic[FrameType]):
         _check_not_metadata_table(stmt)
         config, instance, storage_options = self._catalogs[stmt["catalog"]]
         catalog = instance if instance is not None else catalog_from(config)
+        if stmt["kind"] == "call":
+            return _call_catalog_procedure(catalog, stmt).lazy()
         if stmt["kind"] == "drop_table":
             response = _drop_catalog_table(catalog, stmt)
         elif stmt["kind"] == "create_table":
@@ -1192,6 +1194,42 @@ def _truncate_catalog_table(
         unknown=f"table '{name}' may have been truncated (commit state unknown): {where}",
     )
     return response
+
+
+def _call_catalog_procedure(
+    catalog: pyiceberg.catalog.Catalog, stmt: dict[str, Any]
+) -> DataFrame:
+    """Run the maintenance procedure of a `CALL`, returning its result row."""
+    from polars.datatypes import Int32
+    from polars.io.iceberg._maintenance import rewrite_manifests
+
+    procedure, args = stmt["procedure"], stmt["args"]
+    if procedure != "rewrite_manifests":
+        msg = f"unsupported procedure {procedure!r}"
+        raise NotImplementedError(msg)
+    # checked before loading the table
+    if "sort_by" in args:
+        msg = "CALL rewrite_manifests: `sort_by` is not supported yet"
+        raise NotImplementedError(msg)
+    for arg, kind in (("spec_id", int), ("use_caching", bool)):
+        value = args.get(arg)
+        if value is not None and (
+            not isinstance(value, kind) or (kind is int and isinstance(value, bool))
+        ):
+            msg = f"CALL rewrite_manifests: `{arg}` must be {kind.__name__}, found {value!r}"
+            raise SQLInterfaceError(msg)
+    identifier: tuple[str, ...] = tuple(stmt["identifier"])
+    missing = (
+        f"table '{stmt['name']}' does not exist: catalog table "
+        f"'{_display_name(identifier)}' could not be maintained"
+    )
+    table = _load_catalog_table(catalog, identifier, missing)
+    # `use_caching` tunes Spark's planning: no effect here
+    rewritten, added = rewrite_manifests(table, spec_id=args.get("spec_id"))
+    return DataFrame(
+        {"rewritten_manifests_count": [rewritten], "added_manifests_count": [added]},
+        schema={"rewritten_manifests_count": Int32, "added_manifests_count": Int32},
+    )
 
 
 def _load_catalog_table(

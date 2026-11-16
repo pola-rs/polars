@@ -9,6 +9,8 @@ Table Operations
      - Description
    * - :ref:`ALTER TABLE <alter_table>`
      - Change the columns, properties or partitioning of a table in an attached catalog.
+   * - :ref:`CALL <call>`
+     - Run a maintenance procedure on a table in an attached catalog.
    * - :ref:`CREATE SCHEMA <create_schema>`
      - Create a namespace in an attached catalog.
    * - :ref:`CREATE TABLE <create_table>`
@@ -102,6 +104,64 @@ Column names are case-sensitive and name top-level columns. ``SET PARTITIONED BY
     ALTER TABLE lake.sales.orders RESET PARTITIONED BY
     ALTER TABLE lake.sales.orders SET SORTED BY (customer_id, ordered_at DESC NULLS LAST)
     ALTER TABLE lake.sales.orders RESET SORTED BY
+
+.. _call:
+
+CALL
+----
+Run a maintenance procedure on a table of a catalog attached with
+:meth:`SQLContext.register_catalog`. A ``CALL`` returns a result row.
+
+.. code-block:: sql
+
+    CALL [<catalog>.]system.<procedure>(<arguments>)
+
+* Without ``<catalog>``, the default catalog is used.
+* Arguments are given in order, or by name as ``name => value``.
+* Argument values are literals: strings, integers, booleans, ``NULL``, ``map('k', 'v')``
+  or ``array('a', 'b')``.
+* The ``table`` argument is a string with the table's name in that catalog: ``'ns.t'``, or
+  ``'t'`` in the catalog's default namespace. It may start with the catalog's name.
+
+**rewrite_manifests**
+
+Rewrites the data manifests of a table in one commit, as a ``replace`` snapshot. The rows
+and data files stay the same. The new manifests are sorted by partition and about
+``commit.manifest.target-size-bytes`` in size (default 8 MB), so queries skip more of them.
+Delete manifests are not changed.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 60
+
+   * - Argument
+     - Description
+   * - ``table``
+     - The table. Required.
+   * - ``use_caching``
+     - Accepted. Has no effect.
+   * - ``spec_id``
+     - The partition spec whose manifests are rewritten. Default: the current spec.
+   * - ``sort_by``
+     - Not supported yet.
+
+It returns ``rewritten_manifests_count`` and ``added_manifests_count``. If there is nothing
+to rewrite (no data manifests, or one small enough), nothing is committed and both counts
+are 0. Iceberg v3 tables are not supported yet.
+
+**Example:**
+
+.. code-block:: sql
+
+    -- Table `orders` in namespace `sales` of catalog `lake`: rewrite the data manifests of
+    -- its current partition spec into fewer manifests, sorted by partition. Rows and data
+    -- files stay the same.
+    CALL lake.system.rewrite_manifests(table => 'sales.orders')
+
+    -- The same table, given by position. Only the manifests of partition spec 0 are
+    -- rewritten, e.g. those written before the table's partitioning changed. Other specs'
+    -- manifests stay as they are.
+    CALL lake.system.rewrite_manifests('sales.orders', spec_id => 0)
 
 .. _create_schema:
 

@@ -1,6 +1,6 @@
 use parking_lot::RwLock;
 use polars::sql::{
-    CatalogAlter, CatalogStatement, SQLContext, VersionSpec, extract_table_identifiers,
+    CallArg, CatalogAlter, CatalogStatement, SQLContext, VersionSpec, extract_table_identifiers,
 };
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
@@ -357,6 +357,35 @@ impl PySQLContext {
                     },
                 }
                 dict.set_item("operation", op)?;
+            },
+            CatalogStatement::Call {
+                name,
+                procedure,
+                table,
+                args,
+            } => {
+                dict.set_item("kind", "call")?;
+                dict.set_item("name", name)?;
+                dict.set_item("procedure", procedure)?;
+                dict.set_item("catalog", table.catalog)?;
+                dict.set_item("identifier", table.identifier)?;
+                let py_args = PyDict::new(py);
+                for (arg, value) in args {
+                    match value {
+                        CallArg::String(s) => py_args.set_item(arg, s)?,
+                        CallArg::Int(i) => py_args.set_item(arg, i)?,
+                        CallArg::Bool(b) => py_args.set_item(arg, b)?,
+                        CallArg::Array(values) => py_args.set_item(arg, values)?,
+                        CallArg::Map(pairs) => {
+                            let map = PyDict::new(py);
+                            for (k, v) in pairs {
+                                map.set_item(k, v)?;
+                            }
+                            py_args.set_item(arg, map)?
+                        },
+                    }
+                }
+                dict.set_item("args", py_args)?;
             },
         }
         Ok(Some(dict))
