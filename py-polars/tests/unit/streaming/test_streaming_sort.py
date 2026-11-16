@@ -636,6 +636,65 @@ def test_sort_expression_sort_and_sort_by(sort_mode: str) -> None:
     )
 
 
+@pytest.mark.parametrize("keys", [[pl.col("k").abs()], [pl.col("k"), pl.col("idx")]])
+def test_sort_fused_projection_temporary_key(
+    sort_mode: str, keys: list[pl.Expr]
+) -> None:
+    q = (
+        _payload(DIRECT_KEYS["i32"])
+        .lazy()
+        .sort(keys, maintain_order=True)
+        .select("pad", "idx")
+    )
+    plan = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert any(
+        r"sort\n" in line and "project 2 / 4: pad, idx" in line
+        for line in plan.splitlines()
+    ), plan
+    assert_sort_matches_in_memory(q, [], exact=True)
+
+
+@pytest.mark.parametrize(
+    ("columns", "offset"), [(["pad", "idx"], 3), (["idx", "k"], -20)]
+)
+def test_sort_fused_projection_direct_key(
+    sort_mode: str, columns: list[str], offset: int
+) -> None:
+    keys = pl.Series("k", range(N_ROWS)).shuffle(seed=0)
+    q = (
+        _payload(keys)
+        .lazy()
+        .sort("k", descending=True)
+        .slice(offset, 15)
+        .select(columns)
+    )
+    opts = pl.QueryOptFlags(projection_pushdown=False)
+    plan = q.show_graph(
+        engine="streaming", plan_stage="physical", raw_output=True, optimizations=opts
+    )
+    assert any(
+        r"sort\n" in line and f"project 2 / 3: {', '.join(columns)}" in line
+        for line in plan.splitlines()
+    ), plan
+    assert_sort_matches_in_memory(q, [], exact=True, optimizations=opts)
+
+
+def test_sort_fused_projection_null_bucket(sort_mode: str) -> None:
+    q = (
+        _payload(DEGENERATE_KEYS["mostly_null"])
+        .lazy()
+        .sort("k", nulls_last=True, maintain_order=True)
+        .slice(N_ROWS // 2)
+        .select("pad", "idx")
+    )
+    plan = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert any(
+        r"sort\n" in line and "project 2 / 3: pad, idx" in line
+        for line in plan.splitlines()
+    ), plan
+    assert_sort_matches_in_memory(q, [], exact=True)
+
+
 def test_sort_group_by_and_over(sort_mode: str) -> None:
     df = _payload(DEGENERATE_KEYS["periodic"])
     assert_sort_matches_in_memory(
