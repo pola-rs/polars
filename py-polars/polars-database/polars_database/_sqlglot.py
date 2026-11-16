@@ -44,6 +44,8 @@ _TIME = "TIME(6)"
 # Spark SQL's timestamps are always microseconds and take no precision. sqlglot drops it
 # for these dialects up to 30.24, but keeps it for Databricks from 30.25.
 _NO_TEMPORAL_PRECISION = {"databricks", "spark", "hive"}
+# ... and have `TIMESTAMP_NTZ` and `TIME` types (Hive has neither)
+_SPARK_TIME_TYPES = {"databricks", "spark"}
 
 
 def version() -> str:
@@ -162,12 +164,21 @@ def _literal(v: Any, dialect: str | None) -> Any:
                 ),
             )
         if dialect in _NO_TEMPORAL_PRECISION:
-            text = x["text"] + ("+00:00" if x["with_tz"] else "")
-            return _cast(text, "TIMESTAMP")
+            if x["with_tz"]:
+                # an explicit offset: the instant, whatever the session's time zone
+                return _cast(x["text"] + "+00:00", "TIMESTAMP")
+            if dialect in _SPARK_TIME_TYPES:
+                # `TIMESTAMP` is the local-time-zone type: an NTZ column compared with
+                # it is converted in the session's zone, which skips or repeats times
+                return _ansi("TIMESTAMP_NTZ", x["text"])
+            return _cast(x["text"], "TIMESTAMP")
         if x["with_tz"]:
             return _cast(x["text"] + "+00:00", _TIMESTAMPTZ)
         return _cast(x["text"], _TIMESTAMP)
     if kind == "Time":
+        if dialect in _SPARK_TIME_TYPES:
+            # sqlglot writes a Spark `TIME` as `TIMESTAMP`
+            return _ansi("TIME", x)
         return _cast(x, "TIME" if dialect in _NO_TEMPORAL_PRECISION else _TIME)
     msg = f"unknown SQL literal kind: {kind!r}"
     raise ValueError(msg)
@@ -911,12 +922,32 @@ def _cte_in_scope(table: Any, dialect: str | None) -> bool:
     return False
 
 
+# A Spark table function (`range(1, 10)`) is a built-in, not a view
+_NO_TABLE_VIEWS = frozenset({"databricks", "spark", "hive"})
+
+
+# The Spark table functions that return the same rows on every call
+_SPARK_TABLE_BUILTINS = frozenset(
+    {
+        "range",
+        "explode",
+        "explode_outer",
+        "inline",
+        "inline_outer",
+        "posexplode",
+        "posexplode_outer",
+        "stack",
+        "json_tuple",
+    }
+)
+
+
 def _tables(stmt: Any, dialect: str | None) -> list[list[str]]:
     """
     The tables (or views) a query reads, as `[catalog.][schema.]name` parts, unquoted
     names folded as the dialect folds them (`Orders` is `orders` on Postgres, `ORDERS`
     on Oracle): not its CTEs. A table function may be a view too (ClickHouse's
-    parameterized `v(p = 1)`).
+    parameterized `v(p = 1)`), except in Spark SQL (`_NO_TABLE_VIEWS`).
     """
     from sqlglot.optimizer.normalize_identifiers import normalize_identifiers
 
@@ -933,7 +964,7 @@ def _tables(stmt: Any, dialect: str | None) -> list[list[str]]:
     for t in stmt.find_all(exp.Table):
         if isinstance(t.this, exp.Identifier):
             name = t.name
-        elif isinstance(t.this, exp.Anonymous):
+        elif isinstance(t.this, exp.Anonymous) and dialect not in _NO_TABLE_VIEWS:
             name = str(t.this.name)
         else:
             continue
@@ -956,11 +987,19 @@ def _unknown_functions(stmt: Any, dialect: str | None) -> list[str]:
     the catalog tells user ones from built-ins (`_TABLE_FUNCTION_CATALOGS`).
     """
     tables = dialect in _TABLE_FUNCTION_CATALOGS
+    spark = dialect in _NO_TABLE_VIEWS
     return sorted(
         {
             str(n.name).lower()
             for n in stmt.find_all(exp.Anonymous)
-            if n.name and (tables or not isinstance(n.parent, exp.Table))
+            if n.name
+            and (
+                tables
+                or not isinstance(n.parent, exp.Table)
+                # Spark: a table function that isn't a stable built-in may be a user's
+                # (a SQL UDTF over `rand()`, `read_kafka`, `IDENTIFIER('v')`: any view)
+                or (spark and str(n.name).lower() not in _SPARK_TABLE_BUILTINS)
+            )
         }
     )
 

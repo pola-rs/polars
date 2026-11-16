@@ -875,6 +875,19 @@ impl Translator<'_> {
             // A MySQL `TIMESTAMP` literal is read in the session time zone, UTC only after
             // the session setup.
             DataType::Datetime(_, Some(_)) if self.mysql_without_setup() => None,
+            // A naive literal is a `TIMESTAMP_NTZ`, which Databricks compares with a
+            // `TIMESTAMP` (LTZ) column in the session's time zone: only a column known to
+            // be an NTZ one is compared.
+            DataType::Datetime(_, None)
+                if self.dialect() == DialectName::Databricks
+                    && !self
+                        .config
+                        .column(name)
+                        .and_then(|c| c.db_type.as_deref())
+                        .is_some_and(|t| t.trim().eq_ignore_ascii_case("timestamp_ntz")) =>
+            {
+                None
+            },
             DataType::Date | DataType::Datetime(_, _) => self
                 .dialect()
                 .temporal_comparisons_exact()

@@ -479,6 +479,23 @@ impl DialectName {
                     StringSemantics::UNKNOWN
                 }
             },
+            // The catalog gives a column's type, `string collate UTF8_LCASE` (a plain
+            // `string` has the default, which is binary). Only `UTF8_BINARY` is byte-exact;
+            // the case-insensitive, accent-insensitive and locale ones (`UNICODE`, `UNICODE_CI`,
+            // `en_US`, …) are not.
+            Self::Databricks => {
+                let (base, name) = c
+                    .rsplit_once("collate ")
+                    .map_or((c.as_str(), "utf8_binary"), |(b, n)| (b, n.trim()));
+                // a non-text type (`interval`, `variant`) read as text has no collation
+                if !databricks_text_type(base) {
+                    StringSemantics::UNKNOWN
+                } else if name == "utf8_binary" {
+                    StringSemantics::BINARY
+                } else {
+                    StringSemantics::UNKNOWN
+                }
+            },
             _ => self.default_string_semantics(),
         }
     }
@@ -574,6 +591,14 @@ impl DialectName {
             _ => format!("\"{}\"", s.replace('"', "\"\"")),
         }
     }
+}
+
+/// Whether a Databricks type (`string`, `varchar(10)`, `char(5)`, any `collate …` removed) is
+/// text.
+pub(crate) fn databricks_text_type(t: &str) -> bool {
+    let t = t.trim().to_ascii_lowercase();
+    let base = t.split('(').next().unwrap_or("").trim();
+    matches!(base, "string" | "varchar" | "char")
 }
 
 const MYSQL_GEOMETRY: &[&str] = &[
@@ -721,6 +746,35 @@ mod tests {
             !pg.string_semantics_for_collation(Some("en_US.utf8"))
                 .ordering_exact
         );
+        // the catalog gives the column type: only the default collation is byte-exact
+        let dbx = DialectName::Databricks;
+        assert!(
+            !dbx.string_semantics_for_collation(Some("interval day to second"))
+                .equality_exact
+        );
+        assert!(
+            !dbx.string_semantics_for_collation(Some("variant"))
+                .equality_exact
+        );
+        assert!(
+            dbx.string_semantics_for_collation(Some("varchar(10)"))
+                .equality_exact
+        );
+        assert!(
+            dbx.string_semantics_for_collation(Some("string"))
+                .equality_exact
+        );
+        assert!(
+            dbx.string_semantics_for_collation(Some("string collate UTF8_BINARY"))
+                .ordering_exact
+        );
+        for c in [
+            "string collate UTF8_LCASE",
+            "string collate UNICODE_CI",
+            "string collate de",
+        ] {
+            assert!(!dbx.string_semantics_for_collation(Some(c)).equality_exact);
+        }
     }
 
     #[test]

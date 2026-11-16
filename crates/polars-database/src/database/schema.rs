@@ -252,7 +252,6 @@ pub fn cast_to_schema(
                     )
                 })?;
             if overrides.is_none_or(|o| !o.contains(name)) {
-                check_decimal_exact(col, &cast)?;
                 check_numeric_exact(col, &cast)?;
             }
             cast
@@ -287,17 +286,7 @@ fn without_extensions(s: &Series) -> PolarsResult<Series> {
 /// unconstrained `numeric` / `NUMBER` are planned as `Decimal(38, 9)`, and a value with
 /// more digits is an error, not silently another number. Floats only approximate a
 /// decimal, so rounding them to the declared scale is their reading.
-fn check_decimal_exact(src: &Column, cast: &Column) -> PolarsResult<()> {
-    // `numeric(p, s)[]`: its elements
-    if let (DataType::List(_), DataType::List(_)) = (src.dtype(), cast.dtype()) {
-        let inner = |c: &Column| -> PolarsResult<Column> {
-            Ok(c.list()?
-                .get_inner()
-                .with_name(c.name().clone())
-                .into_column())
-        };
-        return check_decimal_exact(&inner(src)?, &inner(cast)?);
-    }
+fn check_decimal_exact(src: &Column, cast: &Column, root: &PlSmallStr) -> PolarsResult<()> {
     let DataType::Decimal(_, scale) = cast.dtype() else {
         return Ok(());
     };
@@ -324,8 +313,8 @@ fn check_decimal_exact(src: &Column, cast: &Column) -> PolarsResult<()> {
         Some(v) => polars_bail!(
             SchemaMismatch:
             "database column '{}' has the value {v}, which {} would round; read the column \
-            as text with schema_overrides={{'{}': pl.String}} (or as pl.Float64)",
-            src.name(), cast.dtype(), src.name()
+            as text with schema_overrides={{'{root}': pl.String}} (or as pl.Float64)",
+            src.name(), cast.dtype()
         ),
         None => Ok(()),
     }
@@ -359,6 +348,56 @@ fn decimal_text_scale(v: &str) -> usize {
 /// value (a `Datetime("ms")` or `Date` over microseconds) or overflow (`Float32`); the
 /// nearest float of a decimal or double is its reading.
 fn check_numeric_exact(src: &Column, cast: &Column) -> PolarsResult<()> {
+    check_exact_at(src, cast, src.name())
+}
+
+/// `check_numeric_exact` at any depth: the values of lists and arrays, and the fields of
+/// structs (matched by name, as the cast does), are checked as a column of their own; the
+/// decimal check too, at the leaves. `root` is the database column, which a message names
+/// with the path to the value.
+fn check_exact_at(src: &Column, cast: &Column, root: &PlSmallStr) -> PolarsResult<()> {
+    let path = |suffix: &str| -> PlSmallStr { format!("{}{suffix}", src.name()).into() };
+    match (src.dtype(), cast.dtype()) {
+        (DataType::List(_) | DataType::Array(_, _), DataType::List(_) | DataType::Array(_, _)) => {
+            // The values of the rows that have a list (exploded: a null row holds none in a
+            // list, a width's worth in an array, and a slice keeps the values outside it).
+            let values = |c: &Column| -> PolarsResult<Column> {
+                let options = ExplodeOptions {
+                    empty_as_null: false,
+                    keep_nulls: false,
+                };
+                let inner = c.as_materialized_series().explode(options)?;
+                Ok(inner.with_name(path("[]")).into_column())
+            };
+            return check_exact_at(&values(src)?, &values(cast)?, root);
+        },
+        (DataType::Struct(_), DataType::Struct(_)) => {
+            let (src_s, cast_s) = (src.struct_()?, cast.struct_()?);
+            let src_fields = src_s.fields_as_series();
+            for b in cast_s.fields_as_series() {
+                let name = path(&format!(".{}", b.name()));
+                let Some(a) = src_fields.iter().find(|a| a.name() == b.name()) else {
+                    if src.null_count() < src.len() {
+                        polars_bail!(
+                            SchemaMismatch:
+                            "database column '{root}' has no field '{}', which {} plans; the \
+                            cast would fill it with nulls",
+                            b.name(), cast.dtype()
+                        )
+                    }
+                    continue;
+                };
+                check_exact_at(
+                    &a.clone().with_name(name.clone()).into_column(),
+                    &b.with_name(name).into_column(),
+                    root,
+                )?;
+            }
+            return Ok(());
+        },
+        _ => {},
+    }
+    check_decimal_exact(src, cast, root)?;
     let (from, to) = (src.dtype(), cast.dtype());
     if from.is_float() && to == &DataType::Float32 {
         // the nearest `Float32` is the reading, but not an overflow to infinity
@@ -428,8 +467,8 @@ fn check_numeric_exact(src: &Column, cast: &Column) -> PolarsResult<()> {
     polars_bail!(
         SchemaMismatch:
         "database column '{}' has the value {}, which {to} would round; read the column with \
-        schema_overrides={{'{}': {alt}}} (or as pl.String)",
-        src.name(), src.get(i)?, src.name()
+        schema_overrides={{'{root}': {alt}}} (or as pl.String)",
+        src.name(), src.get(i)?
     )
 }
 
@@ -487,20 +526,48 @@ fn parse_temporal(col: &Column, dtype: &DataType) -> PolarsResult<Option<Column>
         // the conversions write it: Oracle and ClickHouse time zones).
         DataType::Datetime(tu, tz) => {
             let raise = StringChunked::from_slice(PlSmallStr::EMPTY, &["raise"]);
-            let naive = if *tu == TimeUnit::Nanoseconds {
-                // The parse overflows near the ends of the nanosecond range (1677 to
-                // 2262): the microseconds are parsed, and the 7th to 9th fractional
-                // digits added. A value outside the range is an error.
-                let us = ca.as_datetime(None, TimeUnit::Microseconds, true, false, None, &raise)?;
-                let mut ns = Vec::with_capacity(ca.len());
+            // The parse overflows near the ends of the nanosecond range (1677 to 2262)
+            // and drops fractional digits below its unit: the microseconds are parsed, and
+            // the 7th to 9th fractional digits added. The value is then converted to the
+            // planned unit, and a value it can't hold exactly is an error.
+            let us = ca.as_datetime(None, TimeUnit::Microseconds, true, false, None, &raise)?;
+            let unit = time_unit_ns(*tu) as i128;
+            let naive = if *tu == TimeUnit::Microseconds
+                && ca
+                    .iter()
+                    .all(|t| t.is_none_or(|t| fraction_beyond_micro(t) == (0, false)))
+            {
+                // the common case: the parse is the value
+                us.into_series().with_name(col.name().clone())
+            } else {
+                let mut values = Vec::with_capacity(ca.len());
                 for (i, (v, text)) in us.physical().iter().zip(ca.iter()).enumerate() {
                     let Some(v) = v else {
-                        ns.push(None);
+                        values.push(None);
                         continue;
                     };
+                    let (sub_ns, beyond) = text.map_or((0, false), fraction_beyond_micro);
+                    if beyond {
+                        polars_bail!(
+                            SchemaMismatch:
+                            "database column '{}' has the value {}, with fractional digits \
+                            beyond the nanosecond, which {dtype} would cut; read the column \
+                            as pl.String",
+                            col.name(), ca.get(i).unwrap_or_default()
+                        );
+                    }
                     // (in i128: the last microsecond before the minimum starts below it)
-                    let ns_value = v as i128 * 1000 + sub_microsecond_ns(text) as i128;
-                    let Ok(v) = i64::try_from(ns_value) else {
+                    let ns_value = v as i128 * 1000 + sub_ns as i128;
+                    if ns_value % unit != 0 {
+                        let finer = if ns_value % 1000 == 0 { "us" } else { "ns" };
+                        polars_bail!(
+                            SchemaMismatch:
+                            "database column '{}' has the value {}, which {dtype} would cut; \
+                            read the column as pl.Datetime('{finer}')",
+                            col.name(), ca.get(i).unwrap_or_default()
+                        );
+                    }
+                    let Ok(v) = i64::try_from(ns_value / unit) else {
                         polars_bail!(
                             SchemaMismatch:
                             "database column '{}' has the value {}, outside the range of \
@@ -509,13 +576,10 @@ fn parse_temporal(col: &Column, dtype: &DataType) -> PolarsResult<Option<Column>
                             col.name(), ca.get(i).unwrap_or_default(), col.name()
                         );
                     };
-                    ns.push(Some(v));
+                    values.push(Some(v));
                 }
-                Int64Chunked::from_iter_options(col.name().clone(), ns.into_iter())
-                    .into_datetime(TimeUnit::Nanoseconds, None)
-                    .into_series()
-            } else {
-                ca.as_datetime(None, *tu, true, false, None, &raise)?
+                Int64Chunked::from_iter_options(col.name().clone(), values.into_iter())
+                    .into_datetime(*tu, None)
                     .into_series()
             };
             match tz {
@@ -541,22 +605,22 @@ fn parse_temporal(col: &Column, dtype: &DataType) -> PolarsResult<Option<Column>
     Ok(Some(parsed.into_column()))
 }
 
-/// The nanoseconds of a timestamp's text beyond its microseconds: its 7th to 9th
-/// fractional digits.
-fn sub_microsecond_ns(text: Option<&str>) -> i64 {
-    let digits = || {
-        let digits = text?
-            .rsplit_once('.')?
-            .1
-            .chars()
-            .take_while(char::is_ascii_digit)
-            .chain(std::iter::repeat('0'))
-            .skip(6)
-            .take(3)
-            .collect::<String>();
-        digits.parse::<i64>().ok()
+/// The 7th to 9th fractional digits of a timestamp's text, as nanoseconds beyond its
+/// microseconds, and whether any digit after the 9th is not zero (the parse drops them).
+fn fraction_beyond_micro(text: &str) -> (i64, bool) {
+    let bytes = text.as_bytes();
+    let Some(dot) = bytes.iter().rposition(|&b| b == b'.') else {
+        return (0, false);
     };
-    digits().unwrap_or(0)
+    let digits = &bytes[dot + 1..];
+    let digits = &digits[..digits.iter().take_while(|b| b.is_ascii_digit()).count()];
+    if digits.len() <= 6 {
+        return (0, false);
+    }
+    let ns = (0..3).fold(0i64, |acc, i| {
+        acc * 10 + digits.get(6 + i).map_or(0, |d| (d - b'0') as i64)
+    });
+    (ns, digits.iter().skip(9).any(|&d| d != b'0'))
 }
 
 /// A ClickHouse type without its `Nullable(…)` and `LowCardinality(…)` wrappers, lower-cased.
@@ -694,6 +758,159 @@ mod tests {
         assert!(cast(ints(&[1, (1 << 53) + 1]), DataType::Float64).is_err());
         let with_null = Column::new("x".into(), &[Some(1.0), None]);
         assert!(cast(with_null, DataType::Int64).is_ok());
+    }
+
+    #[test]
+    fn nested_inexact_casts_fail() {
+        let cast = |col: Column, dtype: DataType| {
+            let df = DataFrame::new(col.len(), vec![col]).unwrap();
+            cast_to_schema(
+                &df,
+                &Schema::from_iter([Field::new("x".into(), dtype)]),
+                None,
+            )
+        };
+        let list_of = |v: Series| Series::new("x".into(), &[v]).into_column();
+        let floats = Series::new("".into(), &[1.0, 1.5]);
+        let e = cast(
+            list_of(floats.clone()),
+            DataType::List(Box::new(DataType::Int64)),
+        )
+        .unwrap_err();
+        assert!(
+            e.to_string().contains("1.5") && e.to_string().contains("x[]"),
+            "{e}"
+        );
+        let e = cast(
+            list_of(Series::new("".into(), &[1e300])),
+            DataType::List(Box::new(DataType::Float32)),
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("Float32"), "{e}");
+        let ints = Series::new("".into(), &[(1i64 << 53) + 1]);
+        assert!(cast(list_of(ints), DataType::List(Box::new(DataType::Float64))).is_err());
+        let ok = Series::new("".into(), &[1.0, 2.0]);
+        assert!(cast(list_of(ok), DataType::List(Box::new(DataType::Int64))).is_ok());
+        let us = Series::new("".into(), &[789_123i64])
+            .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
+            .unwrap();
+        let ms = DataType::List(Box::new(DataType::Datetime(TimeUnit::Milliseconds, None)));
+        assert!(cast(list_of(us), ms).is_err());
+        // structs, by field, and nested in lists
+        let field = Series::new("a".into(), &[1.5]);
+        let st = StructChunked::from_series("x".into(), 1, [field].iter())
+            .unwrap()
+            .into_column();
+        let target = DataType::Struct(vec![Field::new("a".into(), DataType::Int64)]);
+        let e = cast(st.clone(), target.clone()).unwrap_err();
+        assert!(e.to_string().contains("x.a"), "{e}");
+        let in_list = Series::new("x".into(), &[st.as_materialized_series().clone()]);
+        assert!(cast(in_list.into_column(), DataType::List(Box::new(target))).is_err());
+    }
+
+    #[test]
+    fn nested_casts_match_struct_fields_by_name_and_check_decimals_and_arrays() {
+        let cast = |col: Column, dtype: DataType| {
+            let df = DataFrame::new(col.len(), vec![col]).unwrap();
+            cast_to_schema(
+                &df,
+                &Schema::from_iter([Field::new("x".into(), dtype)]),
+                None,
+            )
+        };
+        let st = |fields: &[Series]| {
+            StructChunked::from_series("x".into(), fields[0].len(), fields.iter())
+                .unwrap()
+                .into_column()
+        };
+        let (a, b) = (
+            Series::new("a".into(), &[1.5]),
+            Series::new("b".into(), &[1.0]),
+        );
+        // by name, not position: `a` (1.5) is the one that would be cut
+        let reordered = DataType::Struct(vec![
+            Field::new("b".into(), DataType::Float64),
+            Field::new("a".into(), DataType::Int64),
+        ]);
+        // (the strict cast refuses these itself; the check pairs by name regardless)
+        assert!(cast(st(&[a.clone(), b.clone()]), reordered).is_err());
+        // a planned field the column lacks
+        let missing = DataType::Struct(vec![Field::new("c".into(), DataType::Int64)]);
+        assert!(cast(st(&[a.clone(), b.clone()]), missing).is_err());
+        // decimals in a struct and in a list of structs
+        let dec = |v: &str, scale: usize| {
+            Series::new("d".into(), &[v])
+                .cast(&DataType::Decimal(20, scale))
+                .unwrap()
+        };
+        let target = DataType::Struct(vec![Field::new("d".into(), DataType::Decimal(20, 1))]);
+        let e = cast(st(&[dec("1.25", 2)]), target.clone()).unwrap_err();
+        assert!(e.to_string().contains("round"), "{e}");
+        assert!(cast(st(&[dec("1.20", 2)]), target.clone()).is_ok());
+        let in_list = Series::new(
+            "x".into(),
+            &[st(&[dec("1.25", 2)]).take_materialized_series()],
+        );
+        assert!(cast(in_list.into_column(), DataType::List(Box::new(target))).is_err());
+        // an array and a list, either way, also with a null row
+        let list = |rows: &[Option<[f64; 2]>]| {
+            let rows: Vec<Option<Series>> = rows
+                .iter()
+                .map(|r| r.map(|r| Series::new("".into(), &r)))
+                .collect();
+            Series::new("x".into(), rows).into_column()
+        };
+        let list_of_ints = DataType::List(Box::new(DataType::Int64));
+        let array_of_ints = DataType::Array(Box::new(DataType::Int64), 2);
+        let bad = list(&[None, Some([1.0, 1.5])]);
+        assert!(cast(bad.clone(), list_of_ints.clone()).is_err());
+        assert!(cast(bad.clone(), array_of_ints.clone()).is_err());
+        let fine = list(&[None, Some([1.0, 2.0])]);
+        assert!(cast(fine.clone(), array_of_ints.clone()).is_ok());
+        let array = fine
+            .cast(&DataType::Array(Box::new(DataType::Float64), 2))
+            .unwrap();
+        cast(array.clone(), list_of_ints).unwrap();
+        let bad_array = bad
+            .cast(&DataType::Array(Box::new(DataType::Float64), 2))
+            .unwrap();
+        assert!(cast(bad_array.clone(), DataType::List(Box::new(DataType::Int64))).is_err());
+        assert!(cast(bad_array, array_of_ints).is_err());
+    }
+
+    #[test]
+    fn text_timestamps_finer_than_the_unit_fail() {
+        let cast = |v: &str, tu: TimeUnit| {
+            let df = DataFrame::new(1, vec![Column::new("t".into(), &[v])]).unwrap();
+            cast_to_schema(
+                &df,
+                &Schema::from_iter([Field::new("t".into(), DataType::Datetime(tu, None))]),
+                None,
+            )
+        };
+        let ms = TimeUnit::Milliseconds;
+        let us = TimeUnit::Microseconds;
+        assert!(cast("2026-01-01 10:00:00.789", ms).is_ok());
+        assert!(cast("2026-01-01 10:00:00.789000", ms).is_ok());
+        assert!(cast("2026-01-01 10:00:00.789000000", ms).is_ok());
+        assert!(cast("2026-01-01 10:00:00", ms).is_ok());
+        let e = cast("2026-01-01 10:00:00.789123", ms).unwrap_err();
+        assert!(e.to_string().contains("would cut"), "{e}");
+        assert!(cast("2026-01-01 10:00:00.123456", us).is_ok());
+        assert!(cast("2026-01-01 10:00:00.123456789", us).is_err());
+        assert!(cast("1969-12-31 23:59:59.9995", ms).is_err());
+        // (the parser itself refuses digits beyond the ninth)
+        let ns = TimeUnit::Nanoseconds;
+        assert!(cast("2026-01-01 10:00:00.1234567891", ns).is_err());
+        assert!(cast("2026-01-01 10:00:00.0000000005", ns).is_err());
+        let df = cast("1969-12-31 23:59:59.999", ms).unwrap();
+        let v = df[0]
+            .as_materialized_series()
+            .to_physical_repr()
+            .i64()
+            .unwrap()
+            .get(0);
+        assert_eq!(v, Some(-1));
     }
 
     #[test]

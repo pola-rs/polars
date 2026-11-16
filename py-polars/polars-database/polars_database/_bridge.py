@@ -175,11 +175,17 @@ def connection_info(obj: Any, kind: str) -> tuple[str, str]:
     """`(dialect, module)` of a connection factory or live connection object."""
     if kind == "factory":
         conn = obj()
+        driver = _pool_checkout(conn)[0]
         try:
-            return _connection_info(_pool_checkout(conn)[0])
+            return _connection_info(driver)
         finally:
-            with contextlib.suppress(Exception):
-                conn.close()
+            # a factory may return one connection again: an open session's isn't ours
+            # to close
+            with _FACTORY_LOCK:
+                held = id(driver) in _FACTORY_CONNECTIONS
+                if not held:
+                    with contextlib.suppress(Exception):
+                        conn.close()
     if _module_of(obj) == "adbc_driver_manager":
         # Its autocommit is off: the scan's statements would leave a transaction open on
         # the user's connection, and a failed one abort it.
@@ -912,6 +918,13 @@ _QUERY_KWARGS: dict[str, dict[str, Any]] = {
         "client_tags": ("client_tags", lambda v: v.split(",")),
         "legacy_primitive_types": _B,
     },
+    "databricks.sql": {
+        "catalog": _S,
+        "schema": _S,
+        "user_agent_entry": _S,
+        "use_cloud_fetch": _B,
+        "_tls_no_verify": _B,
+    },
     "clickhouse_connect": {
         "interface": _S,
         "secure": _B,
@@ -1032,6 +1045,29 @@ def _connect_uri(module: str, uri: str, options: dict[str, Any]) -> Any:
             base["auth"] = BasicAuthentication(p["user"] or "", p["password"])
             base["http_scheme"] = "https"
         return connect(**{**base, **kw, **options})
+    elif module == "databricks.sql":
+        # `databricks://token:<access token>@<host>/<HTTP path>[?catalog=&schema=]`, the
+        # ADBC driver's form
+        if not p["host"] or not p["database"]:
+            msg = (
+                "a Databricks URI names the workspace host and the warehouse's HTTP path: "
+                "databricks://token:<token>@<host>/sql/1.0/warehouses/<id>"
+            )
+            raise ValueError(msg)
+        if p["user"] not in (None, "", "token"):
+            # (the token is the password: it is never put in a message)
+            msg = (
+                "a Databricks URI authenticates with an access token: "
+                "databricks://token:<token>@<host>/<HTTP path> (the user is `token`)"
+            )
+            raise ValueError(msg)
+        base = _drop_none(
+            server_hostname=p["host"],
+            http_path="/" + p["database"],
+            access_token=p["password"],
+            _port=p["port"],
+        )
+        return mod.connect(**{**base, **kw, **options})
     elif module == "clickhouse_connect":
         from clickhouse_connect.dbapi import connect  # type: ignore[import-not-found]
 
@@ -2245,7 +2281,14 @@ class _Session:
         self._factory_finalizer()
 
     def close(self) -> None:
-        self._release_factory_connection()
+        try:
+            self._close_connection()
+        finally:
+            # only now another session may take the connection: while the driver closes
+            # it, it is still this one's
+            self._release_factory_connection()
+
+    def _close_connection(self) -> None:
         if self._setup_ran and self._close is None:
             self._reset_pooled()
         # A factory's connection may go back to a pool of the user's: the settings the
@@ -2271,16 +2314,27 @@ class _Session:
                     discard = False
         if discard and not self._aborted:
             _close_for_real(self.conn)
+        # The connection is the session's until it is given back: once it is in a pool
+        # another reader may be handed it at once, so it is released just before that. A
+        # connection the session closes itself is released after the driver close.
         if discard and self._invalidate is not None:
+            self._release_factory_connection()
             with contextlib.suppress(Exception):
                 self._invalidate()
         elif self._close is not None:
+            self._release_factory_connection()
             self._close()
         elif self.owned and callable(getattr(self.conn, "close", None)):
             if discard:
                 with contextlib.suppress(Exception):
                     self.conn.close()
             else:
+                if (
+                    getattr(self.conn, "_cnx", None) is not None
+                    or getattr(self.conn, "_pool", None) is not None
+                ):
+                    # pooled (mysql.connector, oracledb): `close()` gives it back
+                    self._release_factory_connection()
                 self.conn.close()
 
 

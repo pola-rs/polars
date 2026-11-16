@@ -1783,25 +1783,39 @@ fn mysql_zero_date(column: &str) -> String {
 }
 
 /// A pushed filter on MySQL date columns, evaluated as if their zero dates were NULL, as
-/// they are read: `(f AND NOT zero(c)) OR (zero(c) AND f[c := NULL])`. The database folds
-/// the second branch to a constant (false, except for `IS NULL`), keeping index ranges on
-/// `c` usable.
-fn zero_dates_as_null(config: &DatabaseScanConfig, mut filter: SqlExpr) -> SqlExpr {
-    for c in config.columns.iter() {
-        if !references(&filter, &c.name) {
-            continue;
-        }
-        let Some(zero) = zero_date_check(config, &c.name) else {
-            continue;
-        };
-        let as_null = substitute_null(&filter, &c.name);
-        filter = SqlExpr::binary(
-            SqlExpr::binary(filter, SqlBinOp::And, SqlExpr::Not(Box::new(zero.clone()))),
-            SqlBinOp::Or,
-            SqlExpr::binary(zero, SqlBinOp::And, as_null),
-        );
+/// they are read. Each leaf predicate (whatever isn't an AND, OR or NOT) that references a
+/// date column `c` becomes `(leaf AND NOT zero(c)) OR (zero(c) AND leaf[c := NULL])`, nested
+/// over the date columns the leaf itself references. `zero(c)` is never NULL, so this is
+/// exact under three-valued logic: where it is false the leaf is unchanged, where true the
+/// leaf sees NULL. The database folds the second branch to a constant (false, except for
+/// `IS NULL`), keeping index ranges on `c` usable. The rewrite is per leaf, so the filter
+/// grows linearly (wrapping the whole filter once per column doubled it each time).
+fn zero_dates_as_null(config: &DatabaseScanConfig, filter: SqlExpr) -> SqlExpr {
+    match filter {
+        SqlExpr::Binary(l, op @ (SqlBinOp::And | SqlBinOp::Or), r) => SqlExpr::Binary(
+            Box::new(zero_dates_as_null(config, *l)),
+            op,
+            Box::new(zero_dates_as_null(config, *r)),
+        ),
+        SqlExpr::Not(x) => SqlExpr::Not(Box::new(zero_dates_as_null(config, *x))),
+        mut leaf => {
+            for c in config.columns.iter() {
+                if !references(&leaf, &c.name) {
+                    continue;
+                }
+                let Some(zero) = zero_date_check(config, &c.name) else {
+                    continue;
+                };
+                let as_null = substitute_null(&leaf, &c.name);
+                leaf = SqlExpr::binary(
+                    SqlExpr::binary(leaf, SqlBinOp::And, SqlExpr::Not(Box::new(zero.clone()))),
+                    SqlBinOp::Or,
+                    SqlExpr::binary(zero, SqlBinOp::And, as_null),
+                );
+            }
+            leaf
+        },
     }
-    filter
 }
 
 /// `TRUE` where a MySQL date column holds a zero date (`FALSE` for NULL), if the column

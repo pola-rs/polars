@@ -2253,6 +2253,10 @@ class Series(metaclass=_Meta):
         """
         Get the minimal value in this Series.
 
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
@@ -2265,6 +2269,10 @@ class Series(metaclass=_Meta):
     def min_by(self, by: IntoExpr) -> Expr:
         """
         Get the minimum value in this Series, ordered by an expression.
+
+        Null values of `by` are ignored, and so are NaN values of a float `by`. A `by`
+        of a nested dtype (List, Array, Struct and Map) compares in the order
+        :meth:`sort` puts it in, where NaN is larger than any other number.
 
         If the by expression has multiple values equal to the minimum it is not
         defined which value will be chosen.
@@ -2291,6 +2299,10 @@ class Series(metaclass=_Meta):
         """
         Get the maximum value in this Series.
 
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
@@ -2303,6 +2315,10 @@ class Series(metaclass=_Meta):
     def max_by(self, by: IntoExpr) -> Expr:
         """
         Get the maximum value in this Series, ordered by an expression.
+
+        Null values of `by` are ignored, and so are NaN values of a float `by`. A `by`
+        of a nested dtype (List, Array, Struct and Map) compares in the order
+        :meth:`sort` puts it in, where NaN is larger than any other number.
 
         If the by expression has multiple values equal to the maximum it is not
         defined which value will be chosen.
@@ -4081,6 +4097,10 @@ class Series(metaclass=_Meta):
         """
         Get an index of a minimal value.
 
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
+
         When multiple values are equal to the minimum, this function may arbitrarily
         return the index of any of the minimum values. In this case, the returned index
         is not guaranteed to be the same across multiple runs.
@@ -4100,6 +4120,10 @@ class Series(metaclass=_Meta):
     def arg_max(self) -> int | None:
         """
         Get an index of a maximal value.
+
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
 
         When multiple values are equal to the maximum, this function may arbitrarily
         return the index of any of the maximum values. In this case, the returned index

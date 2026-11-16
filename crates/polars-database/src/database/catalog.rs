@@ -165,6 +165,7 @@ fn casts_string_literals(dialect: DialectName) -> bool {
             | DialectName::Mssql
             | DialectName::Oracle
             | DialectName::Sqlite
+            | DialectName::Databricks
     )
 }
 
@@ -186,6 +187,11 @@ pub fn compares_as_text(dialect: DialectName, t: &str) -> bool {
             "char" | "varchar" | "tinytext" | "text" | "mediumtext" | "longtext" | "enum"
         ),
         DialectName::Clickhouse => super::schema::clickhouse_value_type(&t) == "string",
+        // `string collate UTF8_LCASE` too; an `interval` or `variant` read as text is cast
+        // from the literal
+        DialectName::Databricks => {
+            super::dialect::databricks_text_type(t.split(" collate ").next().unwrap_or(&t))
+        },
         DialectName::Mssql => matches!(base, "char" | "varchar" | "nchar" | "nvarchar" | "sysname"),
         DialectName::Oracle => {
             matches!(
@@ -278,9 +284,23 @@ pub fn table_info(
         && let Some(df) = run("column types", sql)
     {
         for row in 0..df.height() {
-            if let (Some(name), Some(t)) = (cell_str(&df, 0, row), cell_str(&df, 1, row)) {
-                info.types.push((name.into(), t));
+            if let Some(name) = cell_str(&df, 0, row) {
+                let t = cell_str(&df, 1, row);
+                // `DESCRIBE TABLE`: a blank line or a `# …` heading (no type) ends the
+                // columns; a column may be named `#x` (Delta column mapping)
+                if dialect == DialectName::Databricks
+                    && (name.is_empty()
+                        || (name.starts_with('#') && t.as_deref().is_none_or(str::is_empty)))
+                {
+                    break;
+                }
+                if let Some(t) = t {
+                    info.types.push((name.into(), t));
+                }
             }
+        }
+        if dialect == DialectName::Databricks {
+            databricks_collations(&mut info);
         }
     }
     // No rows: the lookup didn't find the table (a name it resolves otherwise).
@@ -341,6 +361,17 @@ pub fn table_info(
     info
 }
 
+/// A Databricks column's collation is part of its type (`string collate UTF8_LCASE`): lists
+/// every column's, where a plain `string` has the default binary one.
+fn databricks_collations(info: &mut CatalogInfo) {
+    info.collations_listed = true;
+    info.collations = info
+        .types
+        .iter()
+        .map(|(n, t)| (n.clone(), Some(t.clone())))
+        .collect();
+}
+
 /// Looks up the result types of a query source, which decide how the database compares its
 /// columns (they don't change how the columns are read). `from` is the wrapped query
 /// (`(...) pl_q`), `columns` its output columns. Dialects without a lookup, or a failing one,
@@ -388,6 +419,7 @@ pub fn query_info(
     let by_rows = match dialect {
         DialectName::Duckdb => Some(format!("DESCRIBE SELECT * FROM {from}")),
         DialectName::Clickhouse => Some(format!("DESCRIBE TABLE (SELECT * FROM {from})")),
+        DialectName::Databricks => Some(format!("DESCRIBE QUERY SELECT * FROM {from}")),
         DialectName::Mssql => Some(format!(
             "SELECT name, system_type_name FROM sys.dm_exec_describe_first_result_set(N{}, NULL, 0) \
             WHERE is_hidden = 0",
@@ -401,6 +433,16 @@ pub fn query_info(
                 if let (Some(name), Some(t)) = (cell_str(&df, 0, row), cell_str(&df, 1, row)) {
                     info.compare_types.insert(name.into(), t);
                 }
+            }
+            if dialect == DialectName::Databricks {
+                // the result types show the collations; none listed leaves them unknown
+                info.unknown_collations = info.compare_types.is_empty();
+                info.collations_listed = true;
+                info.collations = info
+                    .compare_types
+                    .iter()
+                    .map(|(n, t)| (n.clone(), Some(t.clone())))
+                    .collect();
             }
         } else if dialect == DialectName::Clickhouse && !columns.is_empty() {
             // ConnectorX runs only `SELECT`s: the types of the columns of no rows joined to
@@ -884,6 +926,18 @@ impl CatalogQueries {
                     )),
                 }
             },
+            // `DESCRIBE TABLE` lists a table's or view's columns with their types, any
+            // collation included (`string collate UTF8_LCASE`), in any catalog (the Hive
+            // metastore has no `information_schema`). The lines after the columns (`# Partition
+            // Information`) are ignored by `table_info`.
+            DialectName::Databricks => Self {
+                key: None,
+                collations: None,
+                types: Some(format!("DESCRIBE TABLE {qualified}")),
+                compare_types: None,
+                declared_sql: None,
+                stats: None,
+            },
             _ => return None,
         })
     }
@@ -1095,6 +1149,9 @@ pub fn view_definition(
     parts: &[PlSmallStr],
     context: &[PlSmallStr],
 ) -> ViewLookup {
+    if dialect == DialectName::Databricks {
+        return databricks_view(session, parts, context);
+    }
     let verbose = polars_core::config::verbose();
     let search = if dialect == DialectName::Duckdb && parts.len() == 1 && context.is_empty() {
         duckdb_search_places(session)
@@ -1313,6 +1370,130 @@ pub fn view_definition(
         sql: cell_str(&df, 1, 0).unwrap_or_default(),
         qualifier,
     }
+}
+
+/// The Databricks (and Spark) lookup of [`view_definition`]: `DESCRIBE TABLE EXTENDED`
+/// resolves the name as the query does (temporary views, the session's catalog and schema, the
+/// Hive metastore), and lists the type, the text and the catalog and namespace of a view. A
+/// name inside a view's text is resolved in the catalog and namespace the view was created
+/// in (`context`).
+fn databricks_view(
+    session: &mut dyn DatabaseSession,
+    parts: &[PlSmallStr],
+    context: &[PlSmallStr],
+) -> ViewLookup {
+    let dialect = DialectName::Databricks;
+    let verbose = polars_core::config::verbose();
+    let mut full: Vec<&str> = vec![];
+    match (parts.len(), context) {
+        (1, ctx) => full.extend(ctx.iter().map(|c| c.as_str())),
+        (2, [catalog, ..]) => full.push(catalog),
+        _ => {},
+    }
+    full.extend(parts.iter().map(|p| p.as_str()));
+    let name = full
+        .iter()
+        .map(|p| dialect.quote_ident(p))
+        .collect::<Vec<_>>()
+        .join(".");
+    let df = match session.catalog_query(&format!("DESCRIBE TABLE EXTENDED {name}")) {
+        Ok(df) => df,
+        Err(e) => {
+            if verbose {
+                eprintln!("[scan_database]: catalog lookup of a view failed: {e}");
+            }
+            // The name the query reads is not found: nothing to inspect (the query itself
+            // reports it). Inside a view's text, a name that doesn't resolve may be hiding
+            // a view.
+            let msg = e.to_string().to_ascii_lowercase();
+            let missing = msg.contains("table_or_view_not_found")
+                || msg.contains("cannot be found")
+                || msg.contains("table or view not found");
+            return if missing && context.is_empty() {
+                ViewLookup::NotAView
+            } else {
+                ViewLookup::Failed
+            };
+        },
+    };
+    // `(col_name, data_type, comment)`: the columns, then `# Detailed Table Information`
+    // and its `name, value` lines. A temporary view lists its columns only.
+    let mut in_details = false;
+    let mut in_columns = true;
+    let mut columns: Vec<String> = vec![];
+    let (mut kind, mut text, mut namespace) = (None, None, None);
+    for row in 0..df.height() {
+        let (Some(k), v) = (cell_str(&df, 0, row), cell_str(&df, 1, row)) else {
+            continue;
+        };
+        if !in_details {
+            in_details = k == "# Detailed Table Information";
+            // the columns end at a blank line or a heading (a column may be named `#x`)
+            in_columns &=
+                !(k.is_empty() || (k.starts_with('#') && v.as_deref().is_none_or(str::is_empty)));
+            if in_columns {
+                columns.push(k);
+            }
+            continue;
+        }
+        let slot = match k.as_str() {
+            "Type" => &mut kind,
+            "View Text" => &mut text,
+            "View Catalog and Namespace" => &mut namespace,
+            _ => continue,
+        };
+        slot.get_or_insert(v.unwrap_or_default());
+    }
+    let Some(kind) = kind else {
+        return ViewLookup::Failed;
+    };
+    let kind = kind.trim().to_ascii_uppercase();
+    if kind != "VIEW" {
+        // a materialized view stores its rows; a metric view or the like is read through
+        // its definition
+        return if kind.contains("VIEW") && kind != "MATERIALIZED_VIEW" {
+            ViewLookup::Failed
+        } else {
+            ViewLookup::NotAView
+        };
+    }
+    let qualifier = namespace.map(|n| split_namespace(&n)).unwrap_or_default();
+    // the catalog and the namespace: the context of the names in the text
+    if qualifier.len() < 2 || qualifier.iter().any(|p| p.is_empty()) {
+        return ViewLookup::Failed;
+    }
+    let mut sql = text.unwrap_or_default();
+    if !columns.is_empty() && !sql.is_empty() {
+        // The text omits the view's column list (`CREATE VIEW v (a, b) AS …`): its
+        // columns are named by position, which the inspection needs to tell a volatile one.
+        let list = columns
+            .iter()
+            .map(|c| dialect.quote_ident(c))
+            .collect::<Vec<_>>()
+            .join(", ");
+        sql = format!("CREATE VIEW v ({list}) AS {sql}");
+    }
+    ViewLookup::View { sql, qualifier }
+}
+
+/// The parts of a Databricks `catalog.namespace` (`test.polars_scan_database`), where a part
+/// may be quoted with backticks.
+fn split_namespace(s: &str) -> Vec<PlSmallStr> {
+    let (mut parts, mut cur, mut quoted) = (vec![], String::new(), false);
+    let mut chars = s.trim().chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '`' if quoted && chars.peek() == Some(&'`') => {
+                cur.push('`');
+                chars.next();
+            },
+            '`' => quoted = !quoted,
+            '.' if !quoted => parts.push(std::mem::take(&mut cur).into()),
+            c => cur.push(c),
+        }
+    }
+    parts.push(cur.into());
+    parts
 }
 
 /// The number of parts of a SQL Server object name (`[a].[b]`, `a.b`).
@@ -1996,5 +2177,155 @@ mod tests {
         assert_eq!(t("180", "0", "9"), "timestamp(9)");
         assert!(compares_as_text(DialectName::Oracle, &t("96", "0", "0")));
         assert!(!compares_as_text(DialectName::Oracle, &t("112", "0", "0")));
+    }
+
+    /// `DESCRIBE TABLE EXTENDED` rows: `(col_name, data_type)`.
+    fn describe(rows: &[(&str, &str)]) -> DataFrame {
+        DataFrame::new(
+            rows.len(),
+            vec![
+                Column::new(
+                    "col_name".into(),
+                    rows.iter().map(|r| r.0).collect::<Vec<_>>(),
+                ),
+                Column::new(
+                    "data_type".into(),
+                    rows.iter().map(|r| r.1).collect::<Vec<_>>(),
+                ),
+            ],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn databricks_views_are_looked_up_by_describe() {
+        let d = DialectName::Databricks;
+        let view = [
+            ("id", "bigint"),
+            ("", ""),
+            ("# Detailed Table Information", ""),
+            ("Type", "VIEW"),
+            ("View Text", "SELECT id FROM t"),
+            ("View Catalog and Namespace", "test.sc"),
+        ];
+        let mut s = Recorder {
+            log: vec![],
+            answer: |_: &str| describe(&view),
+        };
+        let found = view_definition(&mut s, d, &["v`".into()], &[]);
+        assert_eq!(s.log, ["DESCRIBE TABLE EXTENDED `v```"]);
+        let view = ViewLookup::View {
+            sql: "CREATE VIEW v (`id`) AS SELECT id FROM t".into(),
+            qualifier: vec!["test".into(), "sc".into()],
+        };
+        assert_eq!(found, view);
+        // a name inside a view's text resolves where the view was created
+        let found = view_definition(&mut s, d, &["t".into()], &["test".into(), "sc".into()]);
+        assert_eq!(found, view);
+        assert_eq!(s.log[1], "DESCRIBE TABLE EXTENDED `test`.`sc`.`t`");
+        view_definition(
+            &mut s,
+            d,
+            &["x".into(), "t".into()],
+            &["c".into(), "sc".into()],
+        );
+        assert_eq!(s.log[2], "DESCRIBE TABLE EXTENDED `c`.`x`.`t`");
+
+        // no namespace, or one part: the names in its text have no context
+        for ns in [&[][..], &[("View Catalog and Namespace", "sc")][..]] {
+            let rows = [
+                ("id", "bigint"),
+                ("", ""),
+                ("# Detailed Table Information", ""),
+            ];
+            let rows = [
+                &rows[..],
+                &[("Type", "VIEW"), ("View Text", "SELECT 1")],
+                ns,
+            ]
+            .concat();
+            let mut s = Recorder {
+                log: vec![],
+                answer: |_: &str| describe(&rows),
+            };
+            assert_eq!(
+                view_definition(&mut s, d, &["v".into()], &[]),
+                ViewLookup::Failed
+            );
+        }
+
+        let mut table = Recorder {
+            log: vec![],
+            answer: |_: &str| {
+                describe(&[
+                    ("id", "bigint"),
+                    ("", ""),
+                    ("# Detailed Table Information", ""),
+                    ("Type", "MANAGED"),
+                ])
+            },
+        };
+        assert_eq!(
+            view_definition(&mut table, d, &["t".into()], &[]),
+            ViewLookup::NotAView
+        );
+        // a temporary view lists its columns only: its query isn't known
+        let mut temp = Recorder {
+            log: vec![],
+            answer: |_: &str| describe(&[("id", "bigint")]),
+        };
+        assert_eq!(
+            view_definition(&mut temp, d, &["t".into()], &[]),
+            ViewLookup::Failed
+        );
+        // a name not found: nothing to inspect at the top, a failure inside a view
+        struct Missing(&'static str);
+        impl DatabaseSession for Missing {
+            fn execute(&mut self, _: &str, _: Option<usize>) -> PolarsResult<BatchIter> {
+                polars_bail!(ComputeError: "{}", self.0)
+            }
+        }
+        let mut m = Missing("[TABLE_OR_VIEW_NOT_FOUND] The table or view `t` cannot be found");
+        assert_eq!(
+            view_definition(&mut m, d, &["t".into()], &[]),
+            ViewLookup::NotAView
+        );
+        let nested = view_definition(&mut m, d, &["t".into()], &["c".into(), "s".into()]);
+        assert_eq!(nested, ViewLookup::Failed);
+        let mut m = Missing("connection reset");
+        assert_eq!(
+            view_definition(&mut m, d, &["t".into()], &[]),
+            ViewLookup::Failed
+        );
+    }
+
+    #[test]
+    fn databricks_describe_columns_and_text_types() {
+        let d = DialectName::Databricks;
+        // a column named `#x` is a column; a heading has no type
+        let mut s = Recorder {
+            log: vec![],
+            answer: |_: &str| {
+                describe(&[
+                    ("#x", "int"),
+                    ("s", "string collate UTF8_LCASE"),
+                    ("# Partition Information", ""),
+                    ("# col_name", "data_type"),
+                    ("later", "int"),
+                ])
+            },
+        };
+        let info = table_info(&mut s, d, &["t".into()]);
+        let names = info.types.iter().map(|t| t.0.as_str()).collect::<Vec<_>>();
+        assert_eq!(names, ["#x", "s"]);
+        assert!(compares_as_text(d, "string"));
+        assert!(compares_as_text(d, "string collate UTF8_LCASE"));
+        assert!(compares_as_text(d, "varchar(10)") && compares_as_text(d, "char(5)"));
+        // read as text, but the database casts the literal
+        assert!(!compares_as_text(d, "interval day to second"));
+        // a failed type lookup doesn't push a string compare
+        assert!(casts_string_literals(d));
+        assert!(!compares_as_text(d, "variant"));
+        assert!(!info.compares_like_polars(d, "#x", &DataType::String));
     }
 }

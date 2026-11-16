@@ -10,6 +10,8 @@ mod convert;
 mod count;
 #[cfg(feature = "cov")]
 mod cov;
+#[cfg(feature = "dtype-extension")]
+mod extension;
 mod first_last;
 mod first_last_nonnull;
 mod has_nulls;
@@ -37,8 +39,11 @@ pub use approx_quantile::{
 pub use convert::{into_reduction, unordered_unique_input};
 pub use min_max::{new_max_reduction, new_min_reduction};
 use polars_arrow::array::{Array, PrimitiveArray, StaticArray};
+use polars_arrow::bitmap::bitmask::BitMask;
 use polars_arrow::bitmap::utils::{get_bit_unchecked, set_bit_unchecked};
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
+use polars_arrow::types::NativeType;
+use polars_compute::float_sum::FloatSum;
 use polars_core::prelude::*;
 pub use unique::supports_unique_reduction;
 
@@ -206,6 +211,28 @@ pub trait GroupedReduction: Any + Send + Sync {
         seq_id: u64,
     ) -> PolarsResult<()>;
 
+    /// Whether [`update_groups_runs`](Self::update_groups_runs) is implemented.
+    fn supports_runs(&self) -> bool {
+        false
+    }
+
+    /// Updates as [`update_groups_while_evicting`](Self::update_groups_while_evicting) does.
+    /// `runs` are the runs of the subset as found by [`find_group_runs`]. Only called if
+    /// [`supports_runs`](Self::supports_runs) returns true.
+    ///
+    /// # Safety
+    /// The subset and group_idxs are in-bounds, and `runs` are their runs.
+    unsafe fn update_groups_runs(
+        &mut self,
+        _values: &[&Column],
+        _subset: &[IdxSize],
+        _group_idxs: &[EvictIdx],
+        _runs: &[GroupRun],
+        _seq_id: u64,
+    ) -> PolarsResult<()> {
+        unreachable!()
+    }
+
     /// Combines this GroupedReduction with another. Group other[subset[i]]
     /// should be combined into group self[group_idxs[i]].
     ///
@@ -291,6 +318,22 @@ pub trait Reducer: Send + Sync + Clone + 'static {
         seq_id: u64,
     );
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, seq_id: u64);
+    /// Reduces the rows `start..start + len` of `arr` into `v`. Returns whether one of them is
+    /// valid.
+    ///
+    /// # Safety
+    /// The rows are in bounds.
+    #[inline(always)]
+    unsafe fn reduce_range(
+        &self,
+        v: &mut Self::Value,
+        arr: &<Self::Dtype as PolarsDataType>::Array,
+        start: usize,
+        len: usize,
+        seq_id: u64,
+    ) -> bool {
+        unsafe { reduce_range_per_row(self, v, arr, start, len, seq_id) }
+    }
     fn finish(
         &self,
         v: Vec<Self::Value>,
@@ -299,6 +342,63 @@ pub trait Reducer: Send + Sync + Clone + 'static {
     ) -> PolarsResult<Series>;
     fn state_size(&self, _v: &[Self::Value]) -> Option<StateSize> {
         None
+    }
+}
+
+/// [`Reducer::reduce_range`] by reducing each row.
+///
+/// # Safety
+/// The rows are in bounds.
+#[inline(always)]
+pub(crate) unsafe fn reduce_range_per_row<R: Reducer>(
+    reducer: &R,
+    v: &mut R::Value,
+    arr: &<R::Dtype as PolarsDataType>::Array,
+    start: usize,
+    len: usize,
+    seq_id: u64,
+) -> bool {
+    unsafe {
+        match arr.validity().filter(|_| arr.has_nulls()) {
+            Some(validity) => {
+                let (bytes, offset, _) = validity.as_slice();
+                let mut any_valid = false;
+                for i in start..start + len {
+                    let valid = get_bit_unchecked(bytes, offset + i);
+                    any_valid |= valid;
+                    reducer.reduce_one(v, valid.then(|| arr.value_unchecked(i)), seq_id);
+                }
+                any_valid
+            },
+            None => {
+                for i in start..start + len {
+                    reducer.reduce_one(v, Some(arr.value_unchecked(i)), seq_id);
+                }
+                len > 0
+            },
+        }
+    }
+}
+
+/// The sum and the number of valid values of the rows `start..start + len` of `arr`.
+///
+/// # Safety
+/// The rows are in bounds.
+#[inline(always)]
+pub(crate) unsafe fn float_sum_range<T: NativeType + FloatSum<f64>>(
+    arr: &PrimitiveArray<T>,
+    start: usize,
+    len: usize,
+) -> (f64, usize) {
+    unsafe {
+        let values = arr.values().get_unchecked(start..start + len);
+        match arr.validity().filter(|_| arr.has_nulls()) {
+            Some(validity) => {
+                let mask = BitMask::from_bitmap(validity).sliced_unchecked(start, len);
+                (FloatSum::sum_with_mask(values, mask), mask.set_bits())
+            },
+            None => (FloatSum::sum(values), len),
+        }
     }
 }
 
@@ -312,6 +412,18 @@ pub trait NumericReduction: Send + Sync + 'static {
     fn reduce_ca(
         ca: &ChunkedArray<Self::Dtype>,
     ) -> Option<<Self::Dtype as PolarsNumericType>::Native>;
+    /// The reduction of the valid values of `arr`, `None` if there are none.
+    fn reduce_arr(
+        arr: &PrimitiveArray<<Self::Dtype as PolarsNumericType>::Native>,
+    ) -> Option<<Self::Dtype as PolarsNumericType>::Native> {
+        arr.iter().flatten().copied().reduce(Self::combine)
+    }
+    /// The reduction of `values`, `None` if it is empty.
+    fn reduce_slice(
+        values: &[<Self::Dtype as PolarsNumericType>::Native],
+    ) -> Option<<Self::Dtype as PolarsNumericType>::Native> {
+        values.iter().copied().reduce(Self::combine)
+    }
 }
 
 struct NumReducer<R: NumericReduction>(PhantomData<R>);
@@ -365,6 +477,29 @@ impl<R: NumericReduction> Reducer for NumReducer<R> {
         }
     }
 
+    #[inline(always)]
+    unsafe fn reduce_range(
+        &self,
+        v: &mut Self::Value,
+        arr: &PrimitiveArray<Self::Value>,
+        start: usize,
+        len: usize,
+        _seq_id: u64,
+    ) -> bool {
+        let r = if arr.has_nulls() {
+            R::reduce_arr(&unsafe { arr.clone().sliced_unchecked(start, len) })
+        } else {
+            R::reduce_slice(unsafe { arr.values().get_unchecked(start..start + len) })
+        };
+        match r {
+            Some(r) => {
+                *v = <R as NumericReduction>::combine(*v, r);
+                true
+            },
+            None => false,
+        }
+    }
+
     fn finish(
         &self,
         v: Vec<Self::Value>,
@@ -376,6 +511,99 @@ impl<R: NumericReduction> Reducer for NumReducer<R> {
     }
 }
 
+/// The positions `pos..pos + len` of a subset that hold consecutive rows of one group. Only the
+/// row at `pos` may have its evict bit set.
+#[derive(Clone, Copy, Debug)]
+pub struct GroupRun {
+    pub pos: IdxSize,
+    pub len: IdxSize,
+}
+
+/// Splits the rows `subset` with groups `group_idxs` into runs of consecutive rows of one group.
+/// Returns false, leaving `runs` incomplete, if the runs are short on average.
+pub fn find_group_runs(
+    subset: &[IdxSize],
+    group_idxs: &[EvictIdx],
+    runs: &mut Vec<GroupRun>,
+) -> bool {
+    runs.clear();
+    let group_idxs = EvictIdx::cast_to_idxs(group_idxs);
+    assert!(subset.len() == group_idxs.len());
+    let max_runs = subset.len() / 8;
+    let mut start = 0;
+    for (k, (rows, groups)) in subset.windows(2).zip(group_idxs.windows(2)).enumerate() {
+        let new_run = starts_run(groups[0], groups[1]) | (rows[1] != rows[0].wrapping_add(1));
+        if new_run {
+            if runs.len() == max_runs {
+                return false;
+            }
+            runs.push(GroupRun {
+                pos: start as IdxSize,
+                len: (k + 1 - start) as IdxSize,
+            });
+            start = k + 1;
+        }
+    }
+    if runs.len() == max_runs {
+        return false;
+    }
+    runs.push(GroupRun {
+        pos: start as IdxSize,
+        len: (subset.len() - start) as IdxSize,
+    });
+    true
+}
+
+/// Collapses the lanes of `values` and calls `f` with the group, its value and the rows of each
+/// run of `runs`.
+///
+/// # Safety
+/// The subset and group_idxs are in-bounds, and `runs` are their runs.
+#[allow(clippy::too_many_arguments)]
+#[inline(always)]
+unsafe fn for_each_group_run<R: Reducer>(
+    reducer: &R,
+    in_dtype: &DataType,
+    layout: &mut LaneLayout,
+    group_values: &mut Vec<R::Value>,
+    values: &[&Column],
+    subset: &[IdxSize],
+    group_idxs: &[EvictIdx],
+    runs: &[GroupRun],
+    mut f: impl FnMut(EvictIdx, &mut R::Value, &<R::Dtype as PolarsDataType>::Array, usize, usize),
+) {
+    let &[values] = values else { unreachable!() };
+    assert!(values.dtype() == in_dtype);
+    assert!(subset.len() == group_idxs.len());
+    let values = values.as_materialized_series(); // @scalar-opt
+    let values = reducer.cast_series(values);
+    layout.collapse(group_values, |a, b| reducer.combine(a, b));
+    let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
+    let arr = ca.downcast_as_array();
+    for run in runs {
+        unsafe {
+            let pos = run.pos as usize;
+            let g = *group_idxs.get_unchecked(pos);
+            let start = *subset.get_unchecked(pos) as usize;
+            f(
+                g,
+                group_values.get_unchecked_mut(g.idx()),
+                arr,
+                start,
+                run.len as usize,
+            );
+        }
+    }
+}
+
+/// Whether a row of group `cur` after a row of group `prev` starts a run. A row with an evict
+/// bit starts a run.
+#[inline(always)]
+fn starts_run(prev: IdxSize, cur: IdxSize) -> bool {
+    const EVICT_BIT: IdxSize = 1 << (IdxSize::BITS - 1);
+    ((cur ^ prev) & !EVICT_BIT != 0) | (cur & EVICT_BIT != 0)
+}
+
 /// Whether the runs of equal groups are long on average. Short runs make the end of a run hard
 /// to predict. A row with an evict bit also starts a run.
 fn has_long_runs(group_idxs: &[IdxSize]) -> bool {
@@ -385,7 +613,7 @@ fn has_long_runs(group_idxs: &[IdxSize]) -> bool {
     let num_runs: usize = rest
         .iter()
         .zip(group_idxs)
-        .map(|(a, b)| ((a != b) | (a >> (IdxSize::BITS - 1) != 0)) as usize)
+        .map(|(a, b)| starts_run(*b, *a) as usize)
         .sum::<usize>()
         + 1;
     num_runs * 8 < group_idxs.len()
@@ -683,6 +911,40 @@ where
                 }
             }
         }
+        Ok(())
+    }
+
+    fn supports_runs(&self) -> bool {
+        R::ORDER_INDEPENDENT
+    }
+
+    unsafe fn update_groups_runs(
+        &mut self,
+        values: &[&Column],
+        subset: &[IdxSize],
+        group_idxs: &[EvictIdx],
+        runs: &[GroupRun],
+        seq_id: u64,
+    ) -> PolarsResult<()> {
+        let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
+        let reducer = &self.reducer;
+        for_each_group_run(
+            reducer,
+            &self.in_dtype,
+            &mut self.layout,
+            &mut self.values,
+            values,
+            subset,
+            group_idxs,
+            runs,
+            |g, grp, arr, start, len| {
+                if g.should_evict() {
+                    self.evicted_values
+                        .push(core::mem::replace(grp, reducer.init()));
+                }
+                reducer.reduce_range(grp, arr, start, len, seq_id);
+            },
+        );
         Ok(())
     }
 
@@ -990,6 +1252,44 @@ where
         Ok(())
     }
 
+    fn supports_runs(&self) -> bool {
+        R::ORDER_INDEPENDENT
+    }
+
+    unsafe fn update_groups_runs(
+        &mut self,
+        values: &[&Column],
+        subset: &[IdxSize],
+        group_idxs: &[EvictIdx],
+        runs: &[GroupRun],
+        seq_id: u64,
+    ) -> PolarsResult<()> {
+        let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
+        let reducer = &self.reducer;
+        for_each_group_run(
+            reducer,
+            &self.in_dtype,
+            &mut self.layout,
+            &mut self.values,
+            values,
+            subset,
+            group_idxs,
+            runs,
+            |g, grp, arr, start, len| {
+                if g.should_evict() {
+                    self.evicted_values
+                        .push(core::mem::replace(grp, reducer.init()));
+                    self.evicted_mask.push(self.mask.get_unchecked(g.idx()));
+                    self.mask.set_unchecked(g.idx(), false);
+                }
+                if reducer.reduce_range(grp, arr, start, len, seq_id) {
+                    self.mask.set_unchecked(g.idx(), true);
+                }
+            },
+        );
+        Ok(())
+    }
+
     unsafe fn combine_subset(
         &mut self,
         other: &dyn GroupedReduction,
@@ -1129,5 +1429,32 @@ impl GroupedReduction for NullGroupedReduction {
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn runs(groups: &[(IdxSize, bool)]) -> Option<Vec<(IdxSize, IdxSize)>> {
+        let subset: Vec<IdxSize> = (0..groups.len() as IdxSize).collect();
+        let group_idxs: Vec<EvictIdx> = groups.iter().map(|(g, e)| EvictIdx::new(*g, *e)).collect();
+        let mut runs = Vec::new();
+        find_group_runs(&subset, &group_idxs, &mut runs)
+            .then(|| runs.iter().map(|r| (r.pos, r.len)).collect())
+    }
+
+    #[test]
+    fn test_find_group_runs_evictions() {
+        let mut groups = vec![(3, true)];
+        groups.extend([(3, false); 11]);
+        assert_eq!(runs(&groups), Some(vec![(0, 12)]));
+
+        groups.extend([(3, true), (3, false), (3, false), (3, false)]);
+        groups.extend([(5, false); 8]);
+        assert_eq!(runs(&groups), Some(vec![(0, 12), (12, 4), (16, 8)]));
+
+        // More runs than one per 8 rows.
+        assert_eq!(runs(&[(1, false), (1, true), (2, false), (2, false)]), None);
     }
 }

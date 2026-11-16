@@ -3535,6 +3535,103 @@ def test_scan_schema_float32_overflow_is_an_error(tmp_path: Path) -> None:
         lf.collect()
 
 
+@pytest.mark.parametrize(
+    ("value", "dtype"),
+    [
+        ("[9007199254740993::BIGINT]", pl.List(pl.Float64)),
+        ("[1.5::DOUBLE]", pl.List(pl.Int64)),
+        ("[1e300::DOUBLE]", pl.List(pl.Float32)),
+        ("[TIMESTAMP '2026-01-01 10:00:00.789123']", pl.List(pl.Datetime("ms"))),
+        ("{'a': 1.5::DOUBLE}", pl.Struct({"a": pl.Int64})),
+        ("{'a': [1.5::DOUBLE]}", pl.Struct({"a": pl.List(pl.Int64)})),
+        # fields are matched by name, as the cast does
+        (
+            "{'a': 1.5::DOUBLE, 'b': 1.0::DOUBLE}",
+            pl.Struct({"b": pl.Float64, "a": pl.Int64}),
+        ),
+        ("{'d': 1.25::DECIMAL(10, 2)}", pl.Struct({"d": pl.Decimal(10, 1)})),
+        ("[{'d': 1.25::DECIMAL(10, 2)}]", pl.List(pl.Struct({"d": pl.Decimal(10, 1)}))),
+        ("[1.5::DOUBLE, 2.0::DOUBLE]::DOUBLE[2]", pl.List(pl.Int64)),
+        ("[1.5::DOUBLE, 2.0::DOUBLE]", pl.Array(pl.Int64, 2)),
+    ],
+)
+def test_scan_schema_nested_values_are_not_cut(
+    tmp_path: Path, value: str, dtype: PolarsDataType
+) -> None:
+    duckdb = pytest.importorskip("duckdb")
+    path = str(tmp_path / "t.duckdb")
+    with duckdb.connect(path) as conn:
+        conn.execute(f"CREATE TABLE t AS SELECT {value} AS v")
+    lf = pl.scan_database("t", f"duckdb:///{path}", schema={"v": dtype})
+    with pytest.raises(Exception, match="database column 'v"):
+        lf.collect()
+
+
+def test_scan_schema_struct_field_the_column_lacks_is_an_error(tmp_path: Path) -> None:
+    duckdb = pytest.importorskip("duckdb")
+    path = str(tmp_path / "t.duckdb")
+    with duckdb.connect(path) as conn:
+        conn.execute("CREATE TABLE t AS SELECT {'a': 1} AS v")
+    lf = pl.scan_database(
+        "t", f"duckdb:///{path}", schema={"v": pl.Struct({"c": pl.Int64})}
+    )
+    with pytest.raises(Exception, match=r"field name mismatch|no field 'c'"):
+        lf.collect()
+
+
+def test_scan_nested_values_changed_since_the_schema_was_inferred(
+    tmp_path: Path,
+) -> None:
+    duckdb = pytest.importorskip("duckdb")
+    path = str(tmp_path / "t.duckdb")
+    with duckdb.connect(path) as conn:
+        conn.execute("CREATE TABLE t AS SELECT [1::BIGINT] AS v")
+    lf = pl.scan_database("t", f"duckdb:///{path}")
+    assert lf.collect_schema()["v"] == pl.List(pl.Int64)
+    with duckdb.connect(path) as conn:
+        conn.execute("CREATE OR REPLACE TABLE t AS SELECT [1.5::DOUBLE] AS v")
+    with pytest.raises(Exception, match="database column 'v"):
+        lf.collect()
+    # exact values read, also under schema_overrides (which allows the cut)
+    with duckdb.connect(path) as conn:
+        conn.execute("CREATE OR REPLACE TABLE t AS SELECT [2.0::DOUBLE] AS v")
+    assert lf.collect()["v"].to_list() == [[2]]
+    with duckdb.connect(path) as conn:
+        conn.execute("CREATE OR REPLACE TABLE t AS SELECT [1.5::DOUBLE] AS v")
+    lf = pl.scan_database(
+        "t", f"duckdb:///{path}", schema_overrides={"v": pl.List(pl.Int64)}
+    )
+    assert lf.collect()["v"].to_list() == [[1]]
+
+
+@pytest.mark.parametrize(
+    ("text", "dtype", "ok"),
+    [
+        ("2026-01-01 10:00:00.789123", pl.Datetime("ms"), False),
+        ("2026-01-01 10:00:00.123456789", pl.Datetime("us"), False),
+        ("2026-01-01 10:00:00.789", pl.Datetime("ms"), True),
+        ("2026-01-01 10:00:00.789000", pl.Datetime("ms"), True),
+        ("2026-01-01 10:00:00.123456", pl.Datetime("us"), True),
+        ("2026-01-01 10:00:00.123456789", pl.Datetime("ns"), True),
+        ("2026-01-01 10:00:00.0000000005", pl.Datetime("ns"), False),
+    ],
+)
+def test_scan_sqlite_text_timestamps_finer_than_the_unit(
+    tmp_path: Path, text: str, dtype: PolarsDataType, ok: bool
+) -> None:
+    path = tmp_path / "t.db"
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute("CREATE TABLE t (v TEXT)")
+        conn.execute("INSERT INTO t VALUES (?)", [text])
+        conn.commit()
+    lf = pl.scan_database("t", f"sqlite:///{path}", schema={"v": dtype})
+    if ok:
+        assert lf.collect()["v"].dtype == dtype
+    else:
+        with pytest.raises(Exception, match=r"would cut|not a "):
+            lf.collect()
+
+
 def test_scan_in_an_atexit_hook_registered_before_the_first_scan(
     shop_db: Path,
 ) -> None:

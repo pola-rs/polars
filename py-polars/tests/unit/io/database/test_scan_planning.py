@@ -1700,9 +1700,95 @@ def test_mysql_subsecond_literals_are_not_pushed_with_unknown_fraction_digits() 
     assert "filters 1/1" in _pushed("mysql", pl.col("t") == time(0, 0, 1), schema)
 
 
+def test_databricks_time_literal_and_unknown_timestamp_kind() -> None:
+    # sqlglot writes a Spark `TIME` as `TIMESTAMP`, which a `TIME` column can't meet
+    schema = {"t": pl.Time, "ts": pl.Datetime("us")}
+    assert "filters 1/1" in _pushed("databricks", pl.col("t") > time(1, 0), schema)
+    # a naive column of unknown kind isn't compared: it may be a `TIMESTAMP`, which
+    # converts a naive literal in the session's time zone
+    ts = pl.col("ts") == datetime(2024, 3, 10, 2, 30)
+    assert "filters 0/1" in _pushed("databricks", ts, schema)
+
+
+def test_databricks_literals_are_ntz_times_and_instants() -> None:
+    from polars_database import _sqlglot
+
+    def literal(v: Any) -> str:
+        return _sqlglot._literal(v, "databricks").sql("databricks")
+
+    naive = {"Timestamp": {"text": "2024-03-10 02:30:00.000000", "with_tz": False}}
+    aware = {"Timestamp": {"text": "2024-03-10 10:30:00.000000", "with_tz": True}}
+    assert literal(naive) == "TIMESTAMP_NTZ '2024-03-10 02:30:00.000000'"
+    assert literal(aware) == "CAST('2024-03-10 10:30:00.000000+00:00' AS TIMESTAMP)"
+    assert literal({"Time": "13:45:30.123456"}) == "TIME '13:45:30.123456'"
+
+
+def test_spark_table_functions_are_not_views() -> None:
+    from polars_database._sqlglot import inspect_view
+
+    sql = "SELECT id, rand() AS r FROM range(1, 101) AS t(id) JOIN other USING (id)"
+    assert inspect_view(sql, "databricks")["tables"] == [["other"]]
+    assert inspect_view(sql, "databricks")["unknown_functions"] == []
+
+
+def test_spark_view_column_list_names_the_volatile_column() -> None:
+    from polars_database._sqlglot import inspect_view
+
+    # `DESCRIBE TABLE EXTENDED` leaves the list out of the text: the lookup restores it
+    sql = "CREATE VIEW v (`r`, `id`) AS SELECT rand() AS id, id AS r FROM t"
+    facts = inspect_view(sql, "databricks")
+    assert facts["output_columns"] == ["r", "id"]
+    assert facts["volatile_columns"] == ["r"]
+
+
+@pytest.mark.parametrize("dialect", ["databricks", "spark", "hive"])
+@pytest.mark.parametrize(
+    ("sql", "unknown"),
+    [
+        ("SELECT * FROM myudtf(1)", ["myudtf"]),
+        ("SELECT * FROM cat.sch.myudtf(1) AS t", ["myudtf"]),
+        ("SELECT * FROM read_kafka(bootstrapServers => 'x')", ["read_kafka"]),
+        ("SELECT * FROM IDENTIFIER('v')", ["identifier"]),
+        ("SELECT * FROM t, LATERAL myudtf(t.a)", ["myudtf"]),
+        ("SELECT * FROM range(1, 3)", []),
+        ("SELECT * FROM json_tuple('{}', 'a')", []),
+        ("SELECT * FROM explode(array(1, 2))", []),
+        ("SELECT * FROM stack(2, 1, 2)", []),
+    ],
+)
+def test_spark_user_table_functions_are_unknown_functions(
+    dialect: str, sql: str, unknown: list[str]
+) -> None:
+    from polars_database._sqlglot import inspect_query
+
+    assert inspect_query(sql, dialect)["unknown_functions"] == unknown
+
+
 @pytest.mark.parametrize("dialect", ["trino", "teradata"])
 def test_time_comparisons_are_not_pushed_where_the_type_may_have_a_zone(
     dialect: str,
 ) -> None:
     # `TIME WITH TIME ZONE` is read as a `Time`, and compared in the session's zone
     assert "filters 0/1" in _pushed(dialect, pl.col("t") > time(1, 0), {"t": pl.Time})
+
+
+def test_mysql_zero_date_filter_grows_linearly() -> None:
+    # each date column's zero-date guard wraps its own comparison, not the whole filter
+    # (which doubled the SQL per column)
+    def length(n: int) -> int:
+        lf = pl.scan_database(
+            "t",
+            "mysql://unused",
+            schema={f"d{i}": pl.Date for i in range(n)},
+        )
+        predicate = pl.col("d0") == date(2020, 1, 1)
+        for i in range(1, n):
+            predicate = predicate | (pl.col(f"d{i}") == date(2020, 1, 1))
+        return len(lf.filter(predicate).explain())
+
+    sizes = {n: length(n) for n in (2, 4, 8, 16)}
+    # linear: the cost of a column is the same at every size
+    step = (sizes[4] - sizes[2]) / 2
+    assert step > 0
+    assert sizes[16] - sizes[8] < 8 * step * 1.2
+    assert sizes[16] < 20 * sizes[2]

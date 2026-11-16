@@ -19,6 +19,21 @@ impl CountReduce {
             include_nulls,
         }
     }
+
+    /// The validity of the rows that count, `None` if all rows count.
+    fn validity(&self, values: &Column) -> Option<Bitmap> {
+        if self.include_nulls || !values.has_nulls() {
+            None
+        } else if let Some(d) = values.as_dictionary_column() {
+            // Only the validity is needed, so a dictionary column isn't materialized.
+            d.codes().rechunk_validity()
+        } else {
+            let values = values.as_materialized_series(); // @scalar-opt
+            let chunks = values.chunks();
+            assert!(chunks.len() == 1);
+            chunks[0].validity().cloned()
+        }
+    }
 }
 
 impl GroupedReduction for CountReduce {
@@ -59,19 +74,8 @@ impl GroupedReduction for CountReduce {
     ) -> PolarsResult<()> {
         let &[values] = values else { unreachable!() };
         assert!(subset.len() == group_idxs.len());
-        // Only the validity is needed, so a dictionary column isn't materialized.
-        let dict_validity;
-        let valid = if self.include_nulls || !values.has_nulls() {
-            None
-        } else if let Some(d) = values.as_dictionary_column() {
-            dict_validity = d.codes().rechunk_validity();
-            dict_validity.as_ref()
-        } else {
-            let values = values.as_materialized_series(); // @scalar-opt
-            let chunks = values.chunks();
-            assert!(chunks.len() == 1);
-            chunks[0].validity()
-        };
+        let valid = self.validity(values);
+        let valid = valid.as_ref();
 
         self.layout.expand(&mut self.counts, 0);
         let stride = self.layout.stride;
@@ -102,19 +106,8 @@ impl GroupedReduction for CountReduce {
     ) -> PolarsResult<()> {
         let &[values] = values else { unreachable!() };
         assert!(subset.len() == group_idxs.len());
-        // Only the validity is needed, so a dictionary column isn't materialized.
-        let dict_validity;
-        let valid = if self.include_nulls || !values.has_nulls() {
-            None
-        } else if let Some(d) = values.as_dictionary_column() {
-            dict_validity = d.codes().rechunk_validity();
-            dict_validity.as_ref()
-        } else {
-            let values = values.as_materialized_series(); // @scalar-opt
-            let chunks = values.chunks();
-            assert!(chunks.len() == 1);
-            chunks[0].validity()
-        };
+        let valid = self.validity(values);
+        let valid = valid.as_ref();
         self.layout.collapse(&mut self.counts, |a, b| *a += b);
         if let Some(valid) = valid {
             for (i, g) in subset.iter().zip(group_idxs) {
@@ -134,6 +127,41 @@ impl GroupedReduction for CountReduce {
                 }
                 *grp += 1;
             }
+        }
+        Ok(())
+    }
+
+    fn supports_runs(&self) -> bool {
+        true
+    }
+
+    unsafe fn update_groups_runs(
+        &mut self,
+        values: &[&Column],
+        subset: &[IdxSize],
+        group_idxs: &[EvictIdx],
+        runs: &[GroupRun],
+        _seq_id: u64,
+    ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
+        assert!(subset.len() == group_idxs.len());
+        let valid = self.validity(values);
+        self.layout.collapse(&mut self.counts, |a, b| *a += b);
+        for run in runs {
+            let pos = run.pos as usize;
+            let len = run.len as usize;
+            let g = group_idxs.get_unchecked(pos);
+            let grp = self.counts.get_unchecked_mut(g.idx());
+            if g.should_evict() {
+                self.evicted_counts.push(*grp);
+                *grp = 0;
+            }
+            *grp += match &valid {
+                Some(valid) => {
+                    len - valid.null_count_range(*subset.get_unchecked(pos) as usize, len)
+                },
+                None => len,
+            } as u64;
         }
         Ok(())
     }

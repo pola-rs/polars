@@ -843,5 +843,99 @@ def test_scan_partitioned_factory_returning_one_connection_is_refused() -> None:
         partition_num=4,
         max_connections=4,
     )
-    with pytest.raises(Exception, match="new connection on each call"):
-        lf.collect()
+    try:
+        with pytest.raises(Exception, match="new connection on each call"):
+            lf.collect()
+    finally:
+        # unclosed, its finalizer warns in whichever test collects it
+        sqlite3.Connection.close(conn)
+
+
+def test_connection_info_leaves_an_open_sessions_connection_open() -> None:
+    from polars_database._bridge import _Session, connection_info
+
+    conn = sqlite3.connect(":memory:", check_same_thread=False)
+    kw: dict[str, Any] = {"execute_options": {}, "params": None}
+    session = _Session(conn, owned=True, factory=True, **kw)
+    cur = conn.execute("SELECT 1 UNION ALL SELECT 2")
+    assert cur.fetchone() == (1,)
+    # the factory returns the connection the session holds: it can still be read from
+    connection_info(lambda: conn, "factory")
+    assert cur.fetchone() == (2,)
+    assert conn.execute("SELECT 3").fetchone() == (3,)
+    session._release_factory_connection()
+
+    # one no session holds is closed, as ever
+    connection_info(lambda: conn, "factory")
+    with pytest.raises(sqlite3.ProgrammingError):
+        conn.execute("SELECT 4")
+
+
+def test_session_keeps_its_connection_until_the_driver_close_returns() -> None:
+    from polars_database._bridge import _FACTORY_CONNECTIONS, _Session
+
+    started, gate = threading.Event(), threading.Event()
+
+    class Slow(sqlite3.Connection):
+        fail = False
+
+        def close(self) -> None:
+            started.set()
+            gate.wait(timeout=30)
+            super().close()
+            if self.fail:
+                msg = "close failed"
+                raise RuntimeError(msg)
+
+    kw: dict[str, Any] = {"execute_options": {}, "params": None}
+    conn = sqlite3.connect(":memory:", check_same_thread=False, factory=Slow)
+    first = _Session(conn, owned=True, factory=True, **kw)
+    closer = threading.Thread(target=first.close)
+    closer.start()
+    try:
+        assert started.wait(timeout=30)
+        # still held while the driver closes it: a second session is refused
+        with pytest.raises(ValueError, match="new connection on each call"):
+            _Session(conn, owned=True, factory=True, **kw)
+    finally:
+        gate.set()
+        closer.join(timeout=30)
+    assert id(conn) not in _FACTORY_CONNECTIONS
+
+    # a close that fails still releases it
+    started.clear()
+    gate.set()
+    conn = sqlite3.connect(":memory:", check_same_thread=False, factory=Slow)
+    conn.fail = True
+    session = _Session(conn, owned=True, factory=True, **kw)
+    with pytest.raises(RuntimeError, match="close failed"):
+        session.close()
+    assert id(conn) not in _FACTORY_CONNECTIONS
+
+
+def test_session_releases_a_pooled_connection_before_giving_it_back() -> None:
+    from polars_database._bridge import _FACTORY_CONNECTIONS, _Session
+
+    conn = sqlite3.connect(":memory:", check_same_thread=False)
+    held_at_return: list[bool] = []
+
+    def back_to_the_pool() -> None:
+        # once it is in a pool, another reader may be handed it and open a session
+        held_at_return.append(id(conn) in _FACTORY_CONNECTIONS)
+
+    kw: dict[str, Any] = {"execute_options": {}, "params": None}
+    session = _Session(conn, owned=True, close=back_to_the_pool, factory=True, **kw)
+    session.close()
+    assert held_at_return == [False]
+    assert id(conn) not in _FACTORY_CONNECTIONS
+
+    # a failing return still releases it
+    def fails() -> None:
+        msg = "pool closed"
+        raise RuntimeError(msg)
+
+    session = _Session(conn, owned=True, close=fails, factory=True, **kw)
+    with pytest.raises(RuntimeError, match="pool closed"):
+        session.close()
+    assert id(conn) not in _FACTORY_CONNECTIONS
+    conn.close()

@@ -1013,8 +1013,8 @@
       "sql": "SELECT `id`, `i16`, `i32`, `i64`, `f64`, `dec`, `s`, `sb`, `d`, `ts`, `b` FROM `s`.`t` WHERE `d` >= CAST('2026-01-01' AS DATE)"
     },
     "ts_cmp": {
-      "pushed": "projection 11/11, filters 1/1 (1 exact), limit: no",
-      "sql": "SELECT `id`, `i16`, `i32`, `i64`, `f64`, `dec`, `s`, `sb`, `d`, `ts`, `b` FROM `s`.`t` WHERE `ts` < CAST('2026-01-01 12:30:00.123456' AS TIMESTAMP)"
+      "pushed": "projection 11/11, filters 0/1 (0 exact), limit: no",
+      "sql": "SELECT `id`, `i16`, `i32`, `i64`, `f64`, `dec`, `s`, `sb`, `d`, `ts`, `b` FROM `s`.`t`"
     },
     "bool_col": {
       "pushed": "projection 11/11, filters 1/1 (1 exact), limit: no",

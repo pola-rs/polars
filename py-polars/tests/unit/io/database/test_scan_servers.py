@@ -4,7 +4,9 @@
 These run only when server URIs are given:
 
     POLARS_TEST_POSTGRES_URI, POLARS_TEST_POSTGRES14_URI, POLARS_TEST_MYSQL_URI,
-    POLARS_TEST_MARIADB_URI, POLARS_TEST_ORACLE_URI, POLARS_TEST_CLICKHOUSE_URI
+    POLARS_TEST_MARIADB_URI, POLARS_TEST_ORACLE_URI, POLARS_TEST_CLICKHOUSE_URI,
+    POLARS_TEST_DATABRICKS_URI (a workspace's warehouse, see `_databricks.py`: it seeds
+    its own schema, and each query takes seconds)
 
 Every (server, driver) cell must pass: a failing cell is a bug, and an xfail would hide
 a regression in it. Cells that can't run here are skipped with the reason
@@ -130,6 +132,15 @@ def _clickhouse_factory(uri: str) -> Callable[[], Any]:
     return connect
 
 
+def _databricks_factory(uri: str) -> Callable[[], Any]:
+    def connect() -> Any:
+        from tests.unit.io.database._databricks import connect
+
+        return connect(uri)
+
+    return connect
+
+
 @functools.cache
 def _reachable(uri: str) -> bool:
     """
@@ -160,6 +171,7 @@ _DEFAULT_PORTS = {
     "mariadb": 3306,
     "oracle": 1521,
     "clickhouse": 8123,
+    "databricks": 443,
 }
 
 
@@ -252,6 +264,12 @@ SERVERS = {
         {"adbc": False, "clickhouse_connect": False, "connectorx": False},
         factory=_clickhouse_factory,
     ),
+    "databricks": Server(
+        "POLARS_TEST_DATABRICKS_URI",
+        "SELECT * FROM edge",
+        {"adbc": False, "databricks.sql": False},
+        factory=_databricks_factory,
+    ),
 }
 
 DRIVER_MODULES = {
@@ -321,11 +339,20 @@ def _cells(*, connections: bool = True, group: bool = False) -> list[Any]:
 _LIVE: dict[str, Any] = {}
 
 
+def _seeded(name: str, uri: str) -> None:
+    """Creates the test schema of servers that don't have one from a seed script."""
+    if name == "databricks":
+        from tests.unit.io.database._databricks import ensure_seeded
+
+        ensure_seeded(uri)
+
+
 def _live(name: str) -> Any:
     if name not in _LIVE:
         server = SERVERS[name]
         assert server.factory is not None
         assert server.uri is not None
+        _seeded(name, server.uri)
         _LIVE[name] = server.factory(server.uri)()
     return _LIVE[name]
 
@@ -344,6 +371,7 @@ def _scan(name: str, driver: str, source: str = "edge", **kwargs: Any) -> pl.Laz
     uri = server.uri
     if uri is None:
         pytest.skip(f"no {name} URI")
+    _seeded(name, uri)
     if name == "oracle" and source.isidentifier() and source.islower():
         # the shared tables are created quoted lower-case; a bare name means upper case
         source = f'"{source}"'
@@ -615,6 +643,20 @@ EDGE_TYPES = {
         "tstz": pl.Datetime("us", "UTC"),
         "t": pl.String,
     },
+}
+EDGE_TYPES["databricks"] = {
+    "j": pl.String,
+    "bin": pl.Binary,
+    "nu": pl.Decimal(30, 12),
+    "d38": pl.Decimal(38, 0),
+    "tstz": pl.Datetime("us", "UTC"),
+    "tntz": pl.Datetime("us"),
+    "t": pl.Time,
+    "arr": pl.List(pl.Int32),
+    "st": pl.Struct({"a": pl.Int32, "b": pl.String}),
+    "mp": pl.Map(pl.String, pl.Int32),
+    # a VARIANT is its JSON text
+    "v": pl.String,
 }
 EDGE_TYPES["postgres14"] = EDGE_TYPES["postgres17"]
 EDGE_TYPES["mariadb"] = EDGE_TYPES["mysql"]
@@ -905,13 +947,15 @@ PARAM_CELLS = [
 ] + [("mysql", d) for d in ["pymysql", "mysql.connector", "sqlalchemy"]]
 # clickhouse_connect %-formats every query: the query's own placeholders must survive
 PARAM_CELLS += [("clickhouse", "clickhouse_connect")]
+# the ADBC driver doesn't bind here (an error says so, see `test_databricks_params`)
+PARAM_CELLS += [("databricks", "databricks.sql")]
 
 
 @pytest.mark.parametrize(("name", "driver"), PARAM_CELLS)
 def test_params(name: str, driver: str) -> None:
     if SERVERS[name].uri is None:
         pytest.skip(f"no {name} URI")
-    placeholder = ":n" if driver == "sqlalchemy" else "%s"
+    placeholder = {"sqlalchemy": ":n", "databricks.sql": "?"}.get(driver, "%s")
     params: Any = {"n": 30} if driver == "sqlalchemy" else [30]
     lf = _scan(
         name,
