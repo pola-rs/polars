@@ -3,7 +3,6 @@ use std::borrow::Cow;
 use polars_arrow::bitmap::Bitmap;
 use polars_compute::nan::first_nan_idx;
 use polars_core::frame::group_by::aggregations::{_use_rolling_kernels, rolling_numeric_minmax_by};
-use polars_core::prelude::row_encode::_get_rows_encoded_ca;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::series::IsSorted;
@@ -80,7 +79,7 @@ impl PhysicalExpr for AggregationExpr {
             return Ok(Column::full_null(s.name().clone(), 1, s.dtype()));
         }
 
-        let is_float = s.dtype().is_float();
+        let is_float = s.dtype().to_storage().is_float();
         let group_by = match groupby {
             GroupByMethod::NanMin if !is_float => GroupByMethod::Min,
             GroupByMethod::NanMax if !is_float => GroupByMethod::Max,
@@ -374,7 +373,7 @@ impl PhysicalExpr for AggregationExpr {
                     #[cfg(feature = "propagate_nans")]
                     {
                         let (c, groups) = ac.get_final_aggregation();
-                        let agg_c = if c.dtype().is_float() {
+                        let agg_c = if c.dtype().to_storage().is_float() {
                             nan_propagating_aggregate::group_agg_nan_min_s(
                                 c.as_materialized_series(),
                                 &groups,
@@ -395,7 +394,7 @@ impl PhysicalExpr for AggregationExpr {
                     #[cfg(feature = "propagate_nans")]
                     {
                         let (c, groups) = ac.get_final_aggregation();
-                        let agg_c = if c.dtype().is_float() {
+                        let agg_c = if c.dtype().to_storage().is_float() {
                             nan_propagating_aggregate::group_agg_nan_max_s(
                                 c.as_materialized_series(),
                                 &groups,
@@ -601,7 +600,7 @@ impl PhysicalExpr for AggMinMaxByExpr {
         {
             let by_phys = by_col.as_materialized_series().to_physical_repr();
             if by_phys.dtype().is_primitive_numeric()
-                && !by_col.dtype().is_categorical()
+                && !by_col.dtype().to_storage().is_categorical()
                 && _use_rolling_kernels(slices, *overlapping, *monotonic, by_phys.chunks())
             {
                 let gather_idxs = rolling_numeric_minmax_by(&by_col, slices, self.is_max_by);
@@ -616,11 +615,7 @@ impl PhysicalExpr for AggMinMaxByExpr {
         }
 
         // Slow path: per-group agg_arg_min/agg_arg_max.
-        let by_col = if by_col.dtype().is_nested() {
-            let encoded =
-                _get_rows_encoded_ca(by_col.name().clone(), &[by_col], &[false], &[false], true)?;
-            encoded.cast(&DataType::Binary)?.into_column()
-        } else if by_col.dtype() == &DataType::BinaryOffset {
+        let by_col = if by_col.dtype() == &DataType::BinaryOffset {
             by_col.cast(&DataType::Binary)?
         } else {
             by_col

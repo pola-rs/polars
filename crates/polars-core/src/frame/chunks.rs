@@ -47,29 +47,35 @@ impl DataFrame {
             .iter()
             .position(|col| col.as_series().is_some());
         let df_height = self.height();
+        let mut offset = 0;
         (0..self.first_col_n_chunks()).map(move |i| {
             // There might still be scalar/partitioned columns after aligning,
             // so we follow the size of the chunked column, if any.
             let chunk_size = first_series_col_idx
                 .map(|c| self.columns()[c].as_series().unwrap().chunks()[i].len())
                 .unwrap_or(df_height);
-            self.chunk_frame(i, chunk_size)
+            let rows = offset..offset + chunk_size;
+            offset += chunk_size;
+            self.chunk_frame(i, rows)
         })
     }
 
-    /// Chunk `chunk_idx` of this aligned frame, `height` rows long, as a frame of single chunks.
-    pub(crate) fn chunk_frame(&self, chunk_idx: usize, height: usize) -> DataFrame {
+    /// Chunk `chunk_idx` of this aligned frame, which holds `rows`, as a frame of single chunks.
+    pub(crate) fn chunk_frame(&self, chunk_idx: usize, rows: Range<usize>) -> DataFrame {
         let columns = self
             .columns()
             .iter()
             .map(|col| match col {
                 Column::Series(s) => Column::from(s.select_chunk(chunk_idx)),
-                Column::Scalar(_) => col.slice(0, height),
+                // These have no chunks of their own to follow.
+                Column::Scalar(_) | Column::Dictionary(_) => {
+                    col.slice(rows.start as i64, rows.len())
+                },
             })
             .collect();
 
-        // SAFETY: each column holds the chunk's `height` rows.
-        unsafe { DataFrame::new_unchecked(height, columns) }
+        // SAFETY: each column holds the chunk's rows.
+        unsafe { DataFrame::new_unchecked(rows.len(), columns) }
     }
 
     pub fn split_chunks_by_n(self, n: usize, parallel: bool) -> Vec<DataFrame> {
@@ -103,36 +109,39 @@ impl DataFrame {
 }
 
 impl DataFrame {
-    /// Row ranges cutting this frame, or its chunk `chunk_idx` of `height` rows if given, so that
+    /// Row ranges cutting this frame, or its chunk `chunk_idx` holding `rows` if given, so that
     /// each exports to `arrow_dtypes` without overflowing the `i32` offsets of an arrow MAP;
     /// `None` if no cut is needed.
     pub(crate) fn arrow_export_ranges<'a>(
         &self,
         arrow_dtypes: impl IntoIterator<Item = &'a ArrowDataType>,
-        chunk: Option<(usize, usize)>,
+        chunk: Option<(usize, Range<usize>)>,
     ) -> PolarsResult<Option<Vec<Range<usize>>>> {
-        let height = chunk.map_or(self.height(), |(_, height)| height);
+        let rows = chunk
+            .as_ref()
+            .map_or(0..self.height(), |(_, rows)| rows.clone());
         let columns: Vec<(Cow<'_, [ArrayRef]>, &ArrowDataType)> = self
             .columns()
             .iter()
             .zip(arrow_dtypes)
             .filter(|(_, dtype)| contains_arrow_map(dtype))
             .map(|(c, dtype)| {
-                let chunks = match (c.as_series(), chunk) {
+                let chunks = match (c.as_series(), &chunk) {
                     (Some(s), None) => Cow::Borrowed(s.chunks().as_slice()),
                     (Some(s), Some((idx, _))) => {
-                        Cow::Borrowed(std::slice::from_ref(&s.chunks()[idx]))
+                        Cow::Borrowed(std::slice::from_ref(&s.chunks()[*idx]))
                     },
-                    // All rows of a scalar column are alike, so any `height` of them will do.
-                    (None, _) => {
-                        Cow::Owned(c.slice(0, height).take_materialized_series().into_chunks())
-                    },
+                    (None, _) => Cow::Owned(
+                        c.slice(rows.start as i64, rows.len())
+                            .take_materialized_series()
+                            .into_chunks(),
+                    ),
                 };
                 (chunks, dtype)
             })
             .collect();
 
-        arrow_export_row_ranges(columns.iter().map(|(c, d)| (c.as_ref(), *d)), height)
+        arrow_export_row_ranges(columns.iter().map(|(c, d)| (c.as_ref(), *d)), rows.len())
     }
 
     /// Slices of this frame that each export to `arrow_dtypes` without overflowing the `i32`

@@ -347,6 +347,8 @@ pub enum PhysNodeKind {
         by_column: Vec<ExprIR>,
         slice: Option<(i64, usize)>,
         sort_options: SortMultipleOptions,
+        /// (projected columns, num_input_columns).
+        projection: Option<(Vec<PlSmallStr>, usize)>,
     },
 
     TopK {
@@ -985,7 +987,7 @@ fn fuse_drops(
     phys_to_ir: &mut SecondaryMap<PhysNodeKey, Node>,
 ) {
     // Collect first: fusing swaps nodes, which would stop the traversal from reaching the
-    // inputs of the fused filter.
+    // inputs of the fused node.
     let mut projection_keys = Vec::new();
     visit_nodes_mut(roots, phys_sm, |key, phys_sm| {
         if let PhysNodeKind::SimpleProjection { .. } = phys_sm[key].kind() {
@@ -993,7 +995,8 @@ fn fuse_drops(
         }
     });
 
-    for key in projection_keys {
+    // Fuse inner projections first so stacked projections can reach the same node.
+    for key in projection_keys.into_iter().rev() {
         let PhysNodeKind::SimpleProjection { input, .. } = phys_sm[key].kind() else {
             continue;
         };
@@ -1020,7 +1023,9 @@ fn fuse_drops(
             continue;
         }
 
-        let PhysNodeKind::Filter { projection, .. } = input_node.kind_mut() else {
+        let (PhysNodeKind::Filter { projection, .. } | PhysNodeKind::Sort { projection, .. }) =
+            input_node.kind_mut()
+        else {
             continue;
         };
         let len_before_drop = projection.as_ref().map_or(len_before_drop, |(_, len)| *len);
@@ -1031,11 +1036,11 @@ fn fuse_drops(
 
         if simple_proj_node.output_schemas.len() == 1 {
             std::mem::swap(simple_proj_node, input_node);
-            // The filter now lives in the projection's slot; move the attribution with it so
-            // the surviving node keeps the `Filter` IR node.
+            // The fused node now lives in the projection's slot; move the attribution with it so
+            // the surviving node keeps its own IR node.
             let proj_ir_node = phys_to_ir[key];
-            let filter_ir_node = phys_to_ir[input];
-            phys_to_ir.insert(key, filter_ir_node);
+            let input_ir_node = phys_to_ir[input];
+            phys_to_ir.insert(key, input_ir_node);
             phys_to_ir.insert(input, proj_ir_node);
         }
     }

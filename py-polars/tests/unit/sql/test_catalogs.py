@@ -317,14 +317,14 @@ def test_create_catalog_table(lake: CountingCatalog, name: str) -> None:
     ctx = lake_ctx(lake)
     res = ctx.execute(
         f"CREATE TABLE {name} (id BIGINT NOT NULL, v VARCHAR NULL, d DATE, "
-        "s STRUCT<a INT, b VARCHAR>, l INT[])",
+        "s STRUCT<a INT, b VARCHAR>, l INT[], m MAP(SMALLINT, BIGINT) NOT NULL)",
         eager=True,
     )
     assert res.item() == "CREATE TABLE lake.tpch.t"
     assert ctx.tables() == []
     fields = table_fields(lake, "tpch", "t")
-    assert [f[0] for f in fields] == ["id", "v", "d", "s", "l"]
-    assert [f[2] for f in fields] == [True, False, False, False, False]
+    assert [f[0] for f in fields] == ["id", "v", "d", "s", "l", "m"]
+    assert [f[2] for f in fields] == [True, False, False, False, False, True]
     assert fields[:3] == [
         ("id", "long", True),
         ("v", "string", False),
@@ -339,11 +339,20 @@ def test_create_catalog_table(lake: CountingCatalog, name: str) -> None:
             "d": pl.Date(),
             "s": pl.Struct({"a": pl.Int32, "b": pl.String}),
             "l": pl.List(pl.Int32),
+            # no data to cast: map keys widen like columns
+            "m": pl.Map(pl.Int32, pl.Int64),
         }
     )
     assert ctx.execute("SELECT * FROM t", eager=True).schema == schema
     df = pl.DataFrame(
-        {"id": [1], "v": ["x"], "d": [None], "s": [None], "l": [[1, 2]]},
+        {
+            "id": [1],
+            "v": ["x"],
+            "d": [None],
+            "s": [None],
+            "l": [[1, 2]],
+            "m": [{1: None}],
+        },
         schema=schema,
     )
     df.lazy().sink_iceberg(lake.load_table(("tpch", "t")), mode="append")
@@ -414,6 +423,10 @@ def test_create_catalog_table_options(lake: CountingCatalog, tmp_path: Path) -> 
             r"`CREATE TABLE \.\.\. AS SELECT` does not take column definitions",
         ),
         (
+            "CREATE TABLE t AS SELECT * FROM lineitem POSITIONAL JOIN orders",
+            "POSITIONAL JOIN is not supported in a query that writes a catalog table",
+        ),
+        (
             "CREATE TABLE t LIKE lineitem",
             r"`CREATE TABLE \.\.\. LIKE` is not supported for catalog tables",
         ),
@@ -436,7 +449,7 @@ def test_create_catalog_table_options(lake: CountingCatalog, tmp_path: Path) -> 
         ("CREATE TABLE t (x INT NULL NOT NULL)", "conflicting NULL/NOT NULL"),
         (
             "CREATE TABLE t (x INT) PARTITION BY RANGE (x)",
-            r"unsupported partition field `RANGE\(x\)`; expected a column, or year",
+            r"unsupported partition field `RANGE\(x\)`; expected a column or struct field",
         ),
         ("CREATE TABLE t (x INT) PARTITION BY (x + 1)", "unsupported partition field"),
         (
@@ -444,17 +457,21 @@ def test_create_catalog_table_options(lake: CountingCatalog, tmp_path: Path) -> 
             "unsupported partition field",
         ),
         (
-            "CREATE TABLE t (s STRUCT<a INT>) PARTITION BY (s.a)",
-            r"`PARTITION BY` takes unqualified column names; found `s\.a`; "
-            "partitioning by a nested field is not yet supported",
-        ),
-        (
-            "CREATE TABLE t (s STRUCT<a INT>) PARTITION BY (bucket(4, s.a))",
-            r"`PARTITION BY` takes unqualified column names; found `s\.a`",
-        ),
-        (
             "CREATE TABLE t (f INT) PARTITION BY (t.f)",
-            r"`PARTITION BY` takes unqualified column names; found `t\.f`",
+            "'t.f' is not a column of table 't'; table-qualified names are not supported",
+        ),
+        (
+            # a path, not the column named `s.b`
+            'CREATE TABLE t (s STRUCT<a INT>, "s.b" INT) PARTITION BY (s.b)',
+            "struct 's' has no field 'b'; for the column named 's.b', quote it",
+        ),
+        (
+            "CREATE TABLE t (s STRUCT<d DATE>) PARTITION BY (day(s.d), month(s.d))",
+            "both partition column 's.d' by time",
+        ),
+        (
+            "CREATE TABLE t (l STRUCT<a INT>[]) PARTITION BY (l.a)",
+            "only struct fields can be partition sources",
         ),
         (
             "CREATE TABLE t (s STRUCT<a INT>) PARTITION BY (bucket(s.a, 4))",
@@ -700,6 +717,11 @@ def partition_fields(catalog: CountingCatalog, *identifier: str) -> list[Any]:
         # a quoted name with a dot is a top-level column
         ('PARTITION BY ("s.f")', [("s.f", "identity", "s.f")]),
         ('PARTITION BY (bucket(4, "s.f"))', [("s.f_bucket_4", "bucket[4]", "s.f")]),
+        # a struct field, also with quoted parts
+        (
+            'PARTITION BY (s.a, bucket(4, "s"."b"))',
+            [("s.a", "identity", "s.a"), ("s.b_bucket_4", "bucket[4]", "s.b")],
+        ),
     ],
 )
 def test_create_partitioned_catalog_table(
@@ -755,6 +777,26 @@ def test_create_partitioned_catalog_table_as_select(
 
 
 @pytest.mark.write_disk
+def test_create_partitioned_catalog_table_nested(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    src = pl.DataFrame(
+        {"id": [1, 2, 3], "s": [{"d": date(2024, 1, 1)}, None, {"d": date(2024, 1, 2)}]}
+    )
+    ctx.register("src", src)
+    ctx.execute("CREATE TABLE t PARTITION BY (day(s.d)) AS SELECT * FROM src")
+    assert partition_fields(lake, "tpch", "t") == [("s.d_day", "day", "s.d")]
+    # a NULL struct gives a NULL partition value
+    partitions = lake.load_table(("tpch", "t")).inspect.files().column("partition")
+    assert sorted(partitions.to_pylist(), key=str) == [
+        {"s.d_day": None},
+        {"s.d_day": date(2024, 1, 1)},
+        {"s.d_day": date(2024, 1, 2)},
+    ]
+    res = ctx.execute("SELECT * FROM t", eager=True)
+    assert_frame_equal(res, src, check_row_order=False)
+
+
+@pytest.mark.write_disk
 def test_create_partitioned_catalog_table_checks(lake: CountingCatalog) -> None:
     ctx = lake_ctx(lake)
     with pytest.raises(
@@ -799,7 +841,9 @@ def test_create_partition_spec_duplicate_name() -> None:
         SQLInterfaceError,
         match="duplicate partition field name 'id_bucket_4' in table 't'",
     ):
-        _create_partition_spec(schema, [("id", "bucket[4]"), ("id", "bucket[4]")], "t")
+        _create_partition_spec(
+            schema, [(["id"], "bucket[4]"), (["id"], "bucket[4]")], "t"
+        )
 
 
 def table_files(tmp_path: Path, *identifier: str) -> set[Path]:
@@ -836,6 +880,22 @@ def test_create_catalog_table_as_select(lake: CountingCatalog, name: str) -> Non
     res = ctx.execute("SELECT * FROM t", eager=True)
     assert_frame_equal(res, expected, check_row_order=False)
     assert_frame_equal(pl.scan_iceberg(table).collect(), res, check_row_order=False)
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_as_select_pattern_like_name(
+    lake: CountingCatalog,
+) -> None:
+    # `^.$` names a column, not the one-letter columns it would match
+    lake_ctx(lake).execute(
+        'CREATE TABLE t AS SELECT k, v, CAST(k AS UTINYINT) AS "^.$" FROM lineitem'
+    )
+    assert table_fields(lake, "tpch", "t") == [
+        ("k", "long", False),
+        ("v", "string", False),
+        ("^.$", "int", False),
+    ]
+    assert table_rows(lake, "tpch", "t") == [(1, "a", 1), (2, "b", 2)]
 
 
 @pytest.mark.write_disk
@@ -2512,6 +2572,18 @@ def test_alter_catalog_table_columns(lake: CountingCatalog, name: str) -> None:
 
 
 @pytest.mark.write_disk
+def test_alter_catalog_table_add_map_column(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("ALTER TABLE lineitem ADD COLUMN m MAP(TINYINT, BIGINT)")
+    assert iceberg_columns(lake, "tpch", "lineitem")[-1] == ("m", "map<int, long>")
+    m = pl.Series("m", [{1: 1, 2: None}], dtype=pl.Map(pl.Int32, pl.Int64))
+    ctx.register("src", pl.DataFrame({"k": [9], "v": ["z"]}).with_columns(m))
+    ctx.execute("INSERT INTO lineitem SELECT * FROM src")
+    res = ctx.execute("SELECT m FROM lineitem WHERE k = 9", eager=True)
+    assert res["m"].to_list() == [{1: 1, 2: None}]
+
+
+@pytest.mark.write_disk
 def test_alter_catalog_table_column_type(lake: CountingCatalog) -> None:
     from pyiceberg.schema import Schema
     from pyiceberg.types import FloatType, IntegerType, NestedField
@@ -2860,6 +2932,29 @@ def test_alter_table_without_catalog(lake: CountingCatalog) -> None:
         lake_ctx(lake).execute("ALTER TABLE ONLY lineitem ADD COLUMN b BIGINT")
 
 
+@pytest.mark.write_disk
+def test_view_and_describe_with_catalog(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.register("frame", pl.LazyFrame({"k": [1, 5]}))
+    # a view is not a catalog table name, and hides the catalog table of its name
+    ctx.execute("CREATE VIEW v AS SELECT k FROM frame")
+    ctx.execute("CREATE VIEW orders AS SELECT 0 AS o")
+    res = ctx.execute(
+        "SELECT v.k, lineitem.v, orders.o FROM v JOIN lineitem USING (k), orders",
+        eager=True,
+    )
+    assert res.rows() == [(1, "a", 0)]
+    with pytest.raises(SQLInterfaceError, match="a view cannot read catalog tables"):
+        ctx.execute("CREATE VIEW w AS SELECT * FROM lineitem")
+    ctx.execute("CREATE VIEW IF NOT EXISTS v AS SELECT * FROM lineitem")
+    with pytest.raises(SQLInterfaceError, match="cannot be created in catalog 'lake'"):
+        ctx.execute("CREATE VIEW lake.tpch.w AS SELECT 1 AS x")
+    assert ctx.tables() == ["frame", "orders", "v"]
+    for table in ("lineitem", "lake.tpch.lineitem"):
+        res = ctx.execute(f"DESCRIBE {table}", eager=True)
+        assert res.rows() == [("k", "BIGINT"), ("v", "VARCHAR")]
+
+
 def forbid_sink(monkeypatch: pytest.MonkeyPatch) -> None:
     """Fail a statement that writes a data file."""
     from polars.io.iceberg._sink import IcebergSinkState
@@ -2984,6 +3079,27 @@ def test_alter_catalog_table_partitioning_reads_and_writes(
     table = lake.load_table(("tpch", "ev"))
     rewritten = table.scan(row_filter="id = 2").plan_files()
     assert {t.file.spec_id for t in rewritten} == {2}
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_partitioning_nested(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute(
+        "CREATE TABLE n (id BIGINT, s STRUCT<f VARCHAR, g INT> NOT NULL) "
+        "PARTITION BY (s.f)"
+    )
+    # a kept struct field keeps its id and name, a new one is named by its path
+    ctx.execute("ALTER TABLE n SET PARTITIONED BY (s.f, bucket(2, s.g))")
+    assert spec_of(lake, "n")[1] == [
+        (1000, "s.f", "identity", "s.f"),
+        (1001, "s.g_bucket_2", "bucket[2]", "s.g"),
+    ]
+    ctx.register("src", pl.DataFrame({"id": [1, 2], "s": [{"f": "a", "g": 1}] * 2}))
+    ctx.execute("INSERT INTO n SELECT * FROM src")
+    assert file_spec_ids(lake, "n") == {spec_of(lake, "n")[0]}
+    # the struct is NOT NULL: a condition on its field can delete
+    ctx.execute("DELETE FROM n WHERE s.f = 'a' AND id = 1")
+    assert table_rows(lake, "tpch", "n") == [(2, {"f": "a", "g": 1})]
 
 
 @pytest.mark.write_disk
@@ -3126,7 +3242,7 @@ def test_alter_catalog_table_partitioning_concurrent(lake: CountingCatalog) -> N
 
     ctx = events_ctx(lake)
     stale = lake.load_table(("tpch", "ev"))
-    change = spec_change(stale.metadata, [("id", "identity")], "ev")
+    change = spec_change(stale.metadata, [(["id"], "identity")], "ev")
     assert change is not None
     ctx.execute("ALTER TABLE ev SET PARTITIONED BY (s)")
     # planned against the table before the change: refused, nothing changes
@@ -3235,6 +3351,219 @@ def test_drop_column_of_older_partition_spec(lake: CountingCatalog) -> None:
     for column in ["ts", "s"]:
         with pytest.raises(InvalidOperationError, match="spec 0 partitions by it"):
             ctx.execute(f"ALTER TABLE ev DROP COLUMN {column}")
+
+
+def order_of(catalog: CountingCatalog, name: str) -> tuple[int, list[Any]]:
+    """The default sort order's id and fields (path, transform, direction, nulls)."""
+    table = catalog.load_table(("tpch", name))
+    schema = table.schema()
+    order = table.sort_order()
+    return order.order_id, [
+        (
+            schema.find_column_name(f.source_id),
+            str(f.transform),
+            f.direction.name,
+            f.null_order.name,
+        )
+        for f in order.fields
+    ]
+
+
+def file_column(catalog: CountingCatalog, name: str, column: str) -> list[Any]:
+    """The values of `column` in the table's only data file, in file order."""
+    [task] = catalog.load_table(("tpch", name)).scan().plan_files()
+    path = task.file.file_path.removeprefix("file://")
+    return pl.read_parquet(path)[column].to_list()
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_sort_order(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute(
+        "CREATE TABLE so (id BIGINT, ts TIMESTAMP, d DECIMAL(10, 2), s VARCHAR)"
+    )
+    res = ctx.execute(
+        "ALTER TABLE so SET SORTED BY "
+        "(s DESC, truncate(10, d), id ASC NULLS FIRST, day(ts), id)",
+        eager=True,
+    )
+    assert res.item() == "ALTER TABLE lake.tpch.so"
+    # without NULLS FIRST | LAST, the null order of ORDER BY; a repeated field is kept
+    assert order_of(lake, "so") == (
+        1,
+        [
+            ("s", "identity", "DESC", "NULLS_FIRST"),
+            ("d", "truncate[10]", "ASC", "NULLS_LAST"),
+            ("id", "identity", "ASC", "NULLS_FIRST"),
+            ("ts", "day", "ASC", "NULLS_LAST"),
+            ("id", "identity", "ASC", "NULLS_LAST"),
+        ],
+    )
+    # later writes are sorted by it and record its id
+    src = pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4],
+            "ts": [datetime(2024, 1, 1)] * 4,
+            "d": pl.Series([4, 2, 3, 1], dtype=pl.Decimal(10, 2)),
+            "s": ["a", None, "b", "a"],
+        }
+    )
+    ctx.register("src", src)
+    ctx.execute("INSERT INTO so SELECT * FROM src")
+    [task] = lake.load_table(("tpch", "so")).scan().plan_files()
+    assert task.file.sort_order_id == 1
+    assert file_column(lake, "so", "id") == [2, 3, 4, 1]
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_sort_order_reuse(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.schema import Schema
+    from pyiceberg.table.sorting import SortField, SortOrder
+    from pyiceberg.transforms import IdentityTransform
+    from pyiceberg.types import LongType, NestedField
+
+    ctx = events_ctx(lake)
+    commits: list[None] = []
+    commit_table = lake.commit_table
+
+    def counted(*args: Any) -> Any:
+        commits.append(None)
+        return commit_table(*args)
+
+    monkeypatch.setattr(lake, "commit_table", counted)
+    ctx.execute("ALTER TABLE ev SET SORTED BY (id)")
+    # the same order again: nothing to commit
+    ctx.execute("ALTER TABLE ev SET SORTED BY (id ASC NULLS LAST)")
+    assert len(commits) == 1
+    ctx.execute("ALTER TABLE ev SET SORTED BY (s DESC)")
+    assert order_of(lake, "ev")[0] == 2
+    # an older order with the same fields is used again
+    ctx.execute("ALTER TABLE ev SET SORTED BY (id)")
+    assert order_of(lake, "ev")[0] == 1
+    ctx.execute("ALTER TABLE ev RESET SORTED BY")
+    ctx.execute("ALTER TABLE ev RESET SORTED BY")
+    assert order_of(lake, "ev") == (0, [])
+    assert len(commits) == 4
+    table = lake.load_table(("tpch", "ev"))
+    assert [order.order_id for order in table.metadata.sort_orders] == [0, 1, 2]
+
+    # created with a sort order, so without the unsorted order: RESET adds it
+    lake.create_table(
+        ("tpch", "sorted"),
+        schema=Schema(NestedField(1, "id", LongType())),
+        sort_order=SortOrder(SortField(source_id=1, transform=IdentityTransform())),
+    )
+    ctx.execute("ALTER TABLE sorted RESET SORTED BY")
+    assert order_of(lake, "sorted") == (0, [])
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_sort_order_concurrent(lake: CountingCatalog) -> None:
+    from pyiceberg.exceptions import CommitFailedException
+
+    from polars.io.iceberg._sort_order import (
+        commit_sort_order_change,
+        sort_order_change,
+    )
+
+    ctx = events_ctx(lake)
+    ctx.execute("ALTER TABLE ev SET SORTED BY (id)")
+    ctx.execute("ALTER TABLE ev SET SORTED BY (s)")
+    # planned before another change of the sort order, then of the schema: refused
+    for meanwhile in ["RESET SORTED BY", "ADD COLUMN x INT"]:
+        stale = lake.load_table(("tpch", "ev"))
+        change = sort_order_change(
+            stale.metadata, [(["id"], "identity", False, False)], "ev"
+        )
+        assert change == 1
+        ctx.execute(f"ALTER TABLE ev {meanwhile}")
+        with pytest.raises(CommitFailedException):
+            commit_sort_order_change(stale, stale.metadata, change)
+    assert order_of(lake, "ev") == (0, [])
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_sort_order_nested(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE n (id BIGINT, s STRUCT<f VARCHAR, g INT>)")
+    ctx.execute("ALTER TABLE n SET SORTED BY (s.f DESC NULLS LAST, bucket(2, s.g))")
+    assert order_of(lake, "n")[1] == [
+        ("s.f", "identity", "DESC", "NULLS_LAST"),
+        ("s.g", "bucket[2]", "ASC", "NULLS_LAST"),
+    ]
+    src = pl.DataFrame({"id": [1, 2, 3], "s": [{"f": "a", "g": 1}, {"f": "c"}, None]})
+    ctx.register("src", src)
+    ctx.execute("INSERT INTO n SELECT * FROM src")
+    assert file_column(lake, "n", "id") == [2, 1, 3]
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_sort_order_errors(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE e (id BIGINT, ts TIMESTAMP, st STRUCT<f INT>, l INT[])")
+    location = lake.load_table(("tpch", "e")).metadata_location
+    for fields, match in [
+        ("(nope)", "sort column 'nope' is not a column of table 'e'"),
+        ("(lower(id))", r"unsupported sort field `lower\(id\)`"),
+        ("(id WITH FILL)", "unsupported sort field `id WITH FILL`"),
+        ("(truncate(2, ts))", r"cannot sort table 'e' by truncate\[2\] of column 'ts'"),
+        ("(st)", "cannot sort table 'e' by identity of column 'st'"),
+        ("(l.f)", "only struct fields can be sort sources"),
+        ("()", "RESET SORTED BY"),
+    ]:
+        with pytest.raises(SQLInterfaceError, match=match):
+            ctx.execute(f"ALTER TABLE e SET SORTED BY {fields}")
+    assert lake.load_table(("tpch", "e")).metadata_location == location
+
+    df = pl.DataFrame({"a": [1]})
+    with pytest.raises(SQLInterfaceError, match="supported only for catalog tables"):
+        pl.sql("ALTER TABLE df SET SORTED BY (a)")
+
+
+@pytest.mark.write_disk
+def test_drop_column_of_sort_order(lake: CountingCatalog) -> None:
+    from polars.exceptions import InvalidOperationError
+
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE d (id BIGINT, s STRUCT<f INT>, x INT)")
+    ctx.execute("ALTER TABLE d SET SORTED BY (s.f, x)")
+    # a struct takes its fields with it
+    for column in ["x", "s"]:
+        with pytest.raises(InvalidOperationError, match="sort order 1 sorts by it"):
+            ctx.execute(f"ALTER TABLE d DROP COLUMN {column}")
+    # an older sort order may lose its column
+    ctx.execute("ALTER TABLE d SET SORTED BY (id)")
+    ctx.execute("ALTER TABLE d DROP COLUMN x")
+    ctx.execute("INSERT INTO d VALUES (1, NULL)")
+    assert ctx.execute("SELECT count(*) FROM d", eager=True).item() == 1
+
+
+@pytest.mark.write_disk
+def test_drop_column_concurrent(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import CommitFailedException
+
+    from polars.sql import context as sql_context
+
+    ctx, other = lake_ctx(lake), lake_ctx(lake)
+    ctx.execute("CREATE TABLE d (id BIGINT, x INT)")
+    check = sql_context._check_not_sort_source
+    # the column becomes a sort or partition source after the checks: refused
+    for meanwhile in ["SET SORTED BY (x)", "SET PARTITIONED BY (x)"]:
+
+        def check_then_change(*args: Any, meanwhile: str = meanwhile) -> None:
+            check(*args)
+            other.execute(f"ALTER TABLE d {meanwhile}")
+
+        monkeypatch.setattr(sql_context, "_check_not_sort_source", check_then_change)
+        with pytest.raises(CommitFailedException):
+            ctx.execute("ALTER TABLE d DROP COLUMN x")
+        assert lake.load_table(("tpch", "d")).schema().find_field("x")
+        monkeypatch.undo()
+        ctx.execute("ALTER TABLE d RESET SORTED BY")
 
 
 def table_rows(catalog: CountingCatalog, *identifier: str) -> list[tuple[Any, ...]]:
@@ -3386,6 +3715,35 @@ def test_insert_catalog_table_casts(lake: CountingCatalog) -> None:
 
 
 @pytest.mark.write_disk
+def test_insert_catalog_table_nested_literals(lake: CountingCatalog) -> None:
+    from pyiceberg.schema import Schema
+    from pyiceberg.types import LongType, MapType, NestedField, StringType, StructType
+
+    from polars.exceptions import SchemaError
+
+    schema = Schema(
+        NestedField(1, "id", LongType()),
+        NestedField(2, "s", StructType(NestedField(3, "a", LongType()))),
+        NestedField(4, "m", MapType(5, StringType(), 6, LongType(), False)),
+        NestedField(7, "mi", MapType(8, LongType(), 9, StringType(), False)),
+    )
+    lake.create_table(("tpch", "nested"), schema=schema)
+    ctx = lake_ctx(lake)
+    # INT values widen to BIGINT
+    ctx.execute("INSERT INTO nested VALUES (1, {'a': 1}, MAP {'k': 1}, NULL)")
+    # map keys keep their type: an INT key is cast to the BIGINT key explicitly
+    with pytest.raises(SchemaError, match="convert it with CAST"):
+        ctx.execute("INSERT INTO nested (id, mi) SELECT 2, MAP {1: 'x'}")
+    ctx.execute(
+        "INSERT INTO nested (id, mi) SELECT 2, CAST(MAP {1: 'x'} AS MAP(BIGINT, VARCHAR))"
+    )
+    assert table_rows(lake, "tpch", "nested") == [
+        (1, {"a": 1}, [("k", 1)], None),
+        (2, None, None, [(1, "x")]),
+    ]
+
+
+@pytest.mark.write_disk
 def test_insert_catalog_table_conversions(lake: CountingCatalog) -> None:
 
     from polars.exceptions import InvalidOperationError, SchemaError
@@ -3493,6 +3851,10 @@ def test_insert_catalog_table_required(lake: CountingCatalog) -> None:
         (
             "INSERT INTO lineitem DEFAULT VALUES",
             "`INSERT ... DEFAULT VALUES` is not supported",
+        ),
+        (
+            "INSERT INTO lineitem SELECT * FROM (SELECT 3 AS k) POSITIONAL JOIN (SELECT 'c' AS v) AS b",
+            "POSITIONAL JOIN is not supported in a query that writes a catalog table",
         ),
         (
             "WITH s AS (SELECT 1, 'a') INSERT INTO lineitem WITH t AS (SELECT 2, 'b') SELECT * FROM t",
@@ -3669,7 +4031,7 @@ def test_truncate_catalog_table_without_record_count(
     snapshots = lake.load_table(("tpch", "legacy")).metadata.snapshots
     assert [s.summary.operation for s in snapshots] == [
         Operation.APPEND,
-        Operation.OVERWRITE,
+        Operation.DELETE,
     ]
 
 
@@ -6335,6 +6697,35 @@ def test_catalog_time_travel(
     assert sorted(ctx.execute(query, eager=True)["k"]) == rows
     assert sorted(ctx.execute(query).collect()["k"]) == rows
     assert ctx.execute(f"EXPLAIN {query}", eager=True).height > 0
+
+
+@pytest.mark.write_disk
+def test_catalog_pivot_qualifiers(
+    lake: CountingCatalog,
+    history: tuple[pl.SQLContext[pl.LazyFrame], list[int]],
+) -> None:
+    ctx, ids = history
+    # a column named with the table's written or versioned name is not a group column
+    for query, expected in [
+        (
+            "SELECT * FROM lake.lineitem PIVOT (MAX(lake.lineitem.v) FOR k IN (1, 2))",
+            [("a", "b")],
+        ),
+        (
+            f"SELECT * FROM hist VERSION AS OF {ids[1]} "
+            "PIVOT (SUM(hist.k) FOR hist.k IN (0, 1))",
+            [(0, 1)],
+        ),
+        (
+            "SELECT * FROM lake.lineitem UNPIVOT (x FOR name IN (lake.lineitem.v))",
+            [(1, "v", "a"), (2, "v", "b")],
+        ),
+        (
+            f"SELECT * FROM hist VERSION AS OF {ids[1]} UNPIVOT (x FOR name IN (hist.k))",
+            [("k", 0), ("k", 1)],
+        ),
+    ]:
+        assert sorted(ctx.execute(query, eager=True).rows()) == expected
 
 
 @pytest.mark.write_disk

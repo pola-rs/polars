@@ -105,12 +105,56 @@ impl FromStr for PolarsTableFunctions {
 }
 
 impl PolarsTableFunctions {
+    /// The function that reads `path`, by its extension as written.
+    fn for_path(path: &str) -> Option<Self> {
+        let file_name = path.rsplit('/').next()?;
+        let (_, extension) = file_name.rsplit_once('.')?;
+        match extension.to_ascii_lowercase().as_str() {
+            #[cfg(feature = "csv")]
+            "csv" => Some(PolarsTableFunctions::ReadCsv),
+            #[cfg(feature = "parquet")]
+            "parquet" => Some(PolarsTableFunctions::ReadParquet),
+            #[cfg(feature = "ipc")]
+            "ipc" | "arrow" | "feather" => Some(PolarsTableFunctions::ReadIpc),
+            // Not `json`: `read_json` reads newline-delimited JSON only.
+            #[cfg(feature = "json")]
+            "ndjson" | "jsonl" => Some(PolarsTableFunctions::ReadNdjson),
+            _ => None,
+        }
+    }
+
+    /// Whether `path` has the extension of a file format.
+    pub(crate) fn reads_path(path: &str) -> bool {
+        Self::for_path(path).is_some()
+    }
+
+    /// The file at `path`, read with defaults. `None` when its extension names no reader.
+    pub(crate) fn read_path(
+        path: &str,
+        ctx: &mut SQLContext,
+    ) -> PolarsResult<Option<(String, LazyFrame)>> {
+        let Some(read_fn) = Self::for_path(path) else {
+            return Ok(None);
+        };
+        let path = SQLValue::SingleQuotedString(path.to_string()).with_empty_span();
+        let arg = SQLFunctionArg::Unnamed(SQLFunctionArgExpr::Expr(SQLExpr::Value(path)));
+        read_fn.execute(&[arg], ctx).map(Some)
+    }
+
     #[allow(unreachable_code)]
     pub(crate) fn execute(
         &self,
         args: &[SQLFunctionArg],
         ctx: &mut SQLContext,
     ) -> PolarsResult<(String, LazyFrame)> {
+        let reads_file = !matches!(
+            self,
+            PolarsTableFunctions::GenerateSeries | PolarsTableFunctions::Range
+        );
+        polars_ensure!(
+            !reads_file || ctx.allow_file_reads,
+            SQLInterface: "reading files is disabled in this SQLContext"
+        );
         let (name, lf): (String, LazyFrame) = match self {
             #[cfg(feature = "csv")]
             PolarsTableFunctions::ReadCsv => self.read_csv(args)?,

@@ -20,8 +20,12 @@ Temporal
      - Truncates a date (or datetime) to the given part, such as 'hour' or 'month'.
    * - :ref:`EXTRACT <extract>`
      - Offers the same functionality as `DATE_PART` with slightly different syntax.
+   * - :ref:`MAKE_DATE <make_date>`
+     - Builds a date from integer year, month and day parts.
    * - :ref:`STRFTIME <strftime>`
      - Formats a temporal value (Datetime, Date, or Time) as a string.
+   * - :ref:`TO_CHAR <to_char>`
+     - Formats a temporal value (Datetime, Date, or Time) as a string using a PostgreSQL template.
 
 
 .. _current_date:
@@ -325,6 +329,31 @@ Extracts a part of a date (or datetime) such as 'year', 'month', etc.
     # │ 2077-02-10 ┆ 207    ┆ 2077 ┆ 1       │
     # └────────────┴────────┴──────┴─────────┘
 
+.. _make_date:
+
+MAKE_DATE
+---------
+Builds a date from year, month and day parts, like :func:`polars.date`. Raises an error if the
+parts do not form a valid date. Years before 1 are counted as in ISO 8601: year 0 is 1 BC.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"y": [2024, 2025], "m": [2, 12], "d": [29, 31]})
+    df.sql("""
+      SELECT y, m, d, MAKE_DATE(y, m, d) AS dt FROM self
+    """)
+    # shape: (2, 4)
+    # ┌──────┬─────┬─────┬────────────┐
+    # │ y    ┆ m   ┆ d   ┆ dt         │
+    # │ ---  ┆ --- ┆ --- ┆ ---        │
+    # │ i64  ┆ i64 ┆ i64 ┆ date       │
+    # ╞══════╪═════╪═════╪════════════╡
+    # │ 2024 ┆ 2   ┆ 29  ┆ 2024-02-29 │
+    # │ 2025 ┆ 12  ┆ 31  ┆ 2025-12-31 │
+    # └──────┴─────┴─────┴────────────┘
+
 .. _strftime:
 
 STRFTIME
@@ -355,3 +384,37 @@ Formats a temporal value (Datetime, Date, or Time) as a string using a `chrono s
     # │ null           ┆ 22.33.55 │
     # │ April 10, 2020 ┆ null     │
     # └────────────────┴──────────┘
+
+.. _to_char:
+
+TO_CHAR
+-------
+Formats a temporal value (Datetime, Date, or Time) as a string using a PostgreSQL template,
+such as 'YYYY-MM-DD HH24:MI:SS'. The supported patterns are `HH`, `HH12`, `HH24`, `MI`, `SS`,
+`MS`, `US`, `FF3`, `FF6`, `AM`/`PM`, `YYYY`, `YY`, `IYYY`, `IY`, `MONTH`, `MON`, `MM`, `DAY`,
+`DY`, `DDD`, `DD`, `ID` and `IW`, each optionally prefixed with `FM` to drop padding. Text in
+double quotes is copied as is. A template that contains `%` is read as a strftime format, as in
+`STRFTIME`.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame(
+      {"dt": [datetime(1978, 7, 5, 10, 30), datetime(2020, 4, 10, 22, 5)]}
+    )
+    df.sql("""
+      SELECT
+        TO_CHAR(dt, 'FMDay, DD Mon YYYY') AS s_dt,
+        TO_CHAR(dt, 'HH12:MI AM') AS s_tm,
+      FROM self
+    """)
+    # shape: (2, 2)
+    # ┌────────────────────────┬──────────┐
+    # │ s_dt                   ┆ s_tm     │
+    # │ ---                    ┆ ---      │
+    # │ str                    ┆ str      │
+    # ╞════════════════════════╪══════════╡
+    # │ Wednesday, 05 Jul 1978 ┆ 10:30 AM │
+    # │ Friday, 10 Apr 2020    ┆ 10:05 PM │
+    # └────────────────────────┴──────────┘

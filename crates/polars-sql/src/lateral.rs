@@ -35,6 +35,7 @@ use sqlparser::ast::{
 
 use crate::context::{RelationName, match_qualifier, relation_name};
 use crate::functions::PolarsSQLFunctions;
+use crate::positional_join::is_positional_join;
 use crate::sql_visitors::{expr_contains_subquery, is_column_selector};
 use crate::subquery::{row_indexed_once, strip_nested};
 use crate::subquery_group_by::{is_aggregate_call, is_count_star};
@@ -451,17 +452,19 @@ impl SQLContext {
             return None;
         }
         // The domain table joins before the first FROM item, so a RIGHT or FULL join would
-        // add rows without an outer value.
+        // add rows without an outer value, and a positional join would pair the rows of the
+        // domain.
         if select.from.first().is_some_and(|tbl| {
             tbl.joins.iter().any(|join| {
-                matches!(
-                    join.join_operator,
-                    JoinOperator::Right(_)
-                        | JoinOperator::RightOuter(_)
-                        | JoinOperator::FullOuter(_)
-                        | JoinOperator::RightSemi(_)
-                        | JoinOperator::RightAnti(_)
-                )
+                is_positional_join(&join.join_operator)
+                    || matches!(
+                        join.join_operator,
+                        JoinOperator::Right(_)
+                            | JoinOperator::RightOuter(_)
+                            | JoinOperator::FullOuter(_)
+                            | JoinOperator::RightSemi(_)
+                            | JoinOperator::RightAnti(_)
+                    )
             })
         }) {
             return None;

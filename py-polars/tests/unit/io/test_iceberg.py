@@ -988,14 +988,289 @@ def test_sink_iceberg_overwrite_filter(tmp_path: Path, overwrite_filter: Any) ->
         _scan_sorted(tbl),
         pl.DataFrame({"a": [2, 5, None], "s": ["y", "new", "z"]}),
     )
-    # The delete and the append are committed together.
+    # The delete and the append are one snapshot.
     new_snapshots = tbl.metadata.snapshots[snapshot_count:]
-    assert [s.summary.operation.value for s in new_snapshots] == [  # type: ignore[union-attr]
-        "overwrite",
-        "append",
-    ]
-    assert len({s.sequence_number for s in new_snapshots}) == 2
+    assert [s.summary.operation.value for s in new_snapshots] == ["overwrite"]  # type: ignore[union-attr]
     assert tbl.metadata.snapshot_log[-1].snapshot_id == new_snapshots[-1].snapshot_id
+
+
+def _one_file_table(tmp_path: Path) -> tuple[pyiceberg.table.Table, str]:
+    """A table of one data file with rows k = 1, 2, 3, and its path."""
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "k", LongType()), NestedField(2, "v", StringType())
+        ),
+    )
+    pl.LazyFrame({"k": [1, 2, 3], "v": ["a", "b", "c"]}).sink_iceberg(
+        tbl, mode="append"
+    )
+    return tbl, next(iter(tbl.scan().plan_files())).file.file_path
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_overwrite_filter_keeps_deleted_rows_30616(tmp_path: Path) -> None:
+    tbl, path = _one_file_table(tmp_path)
+    # bounds of the deleted row (k = 2) that the filter cannot match
+    k = struct.pack("<q", 2)
+    tbl = _add_position_deletes(tbl, {path: [1]}, row_bounds={1: (k, k)})
+
+    pl.LazyFrame({"k": [9], "v": ["z"]}).sink_iceberg(
+        tbl, mode="overwrite", overwrite_filter=pl.col("k") == 1
+    )
+
+    # k = 2, deleted earlier, stays deleted in the rewritten file
+    assert _scan_sorted(tbl).rows() == [(3, "c"), (9, "z")]
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("rows_per_file", [6, 2, 1])
+@pytest.mark.parametrize(
+    ("overwrite_filter", "deleted"),
+    [
+        ("a != 1", [3, 6]),
+        ("a = 1 or b = 2", [1, 2, 4]),
+        ("not (a = 1 and b = 5)", [3, 4, 6]),
+        ("s not like 'ab%'", [2]),
+        ("x > 1", [1, 6]),
+        ("x < 1", [2, 3]),
+        ("x not in (1.0, 2.0)", [1, 2, 3, 6]),
+        ("f = 0.1", [1, 2, 5]),
+    ],
+)
+def test_sink_iceberg_overwrite_filter_string_rows(
+    tmp_path: Path, overwrite_filter: str, deleted: list[int], rows_per_file: int
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "id", LongType()),
+            NestedField(2, "a", LongType()),
+            NestedField(3, "b", LongType()),
+            NestedField(4, "x", DoubleType()),
+            NestedField(5, "s", StringType()),
+            NestedField(6, "f", FloatType()),
+        ),
+    )
+    nan = float("nan")
+    df = pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5, 6],
+            "a": [1, 1, 7, None, None, 2],
+            "b": [None, 5, 7, 2, None, None],
+            "x": [nan, 0.2, 0.5, None, 1.0, nan],
+            "s": ["abc", "x", None, "ab", None, None],
+            "f": [0.1, 0.1, 0.3, None, 0.1, 2.5],
+        },
+        schema_overrides={"f": pl.Float32},
+    )
+    for part in df.iter_slices(rows_per_file):
+        part.lazy().sink_iceberg(tbl, mode="append")
+
+    pl.LazyFrame(schema=df.schema).sink_iceberg(
+        tbl, mode="overwrite", overwrite_filter=overwrite_filter
+    )
+
+    # the rows for which the filter is true, NaN ordered above every number and a
+    # float literal compared as float32, in every file layout
+    assert _scan_sorted(tbl)["id"].to_list() == [
+        i for i in range(1, 7) if i not in deleted
+    ]
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("kwargs", "keys", "operations"),
+    [
+        ({}, ["a"], ["overwrite"]),
+        ({"overwrite_filter": "p = 'a'"}, ["a"], ["overwrite"]),
+        ({"partition_overwrite": "dynamic"}, ["a"], ["overwrite"]),
+        ({}, [], ["delete"]),
+        ({"partition_overwrite": "dynamic"}, [], []),
+    ],
+)
+def test_sink_iceberg_overwrite_snapshots(
+    tmp_path: Path, kwargs: dict[str, Any], keys: list[str], operations: list[str]
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "k", LongType()), NestedField(2, "p", StringType())
+        ),
+        partition_spec=PartitionSpec(PartitionField(2, 1000, IdentityTransform(), "p")),
+    )
+    pl.LazyFrame({"k": [1, 2], "p": ["a", "b"]}).sink_iceberg(tbl, mode="append")
+    snapshot_count = len(tbl.metadata.snapshots)
+
+    pl.LazyFrame(
+        {"k": [9] * len(keys), "p": keys}, schema={"k": pl.Int64, "p": pl.String}
+    ).sink_iceberg(tbl, mode="overwrite", **kwargs)
+
+    # one snapshot, labelled by what it does
+    tbl.refresh()
+    new_snapshots = tbl.metadata.snapshots[snapshot_count:]
+    assert [s.summary.operation.value for s in new_snapshots] == operations  # type: ignore[union-attr]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_overwrite_rejected_removes_rewritten_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from polars.io.iceberg._sink import IcebergSinkState
+
+    tbl, path = _one_file_table(tmp_path)
+    rewritten: list[str] = []
+    write_survivors = IcebergSinkState._write_survivors
+
+    def write_survivors_then_delete(*args: Any) -> Any:
+        files, sort_order_id = write_survivors(*args)
+        rewritten.extend(p for p, *_ in files)
+        # another writer deletes a row of the file being rewritten meanwhile
+        _add_position_deletes(tbl.catalog.load_table(tbl.name()), {path: [2]})
+        return files, sort_order_id
+
+    monkeypatch.setattr(
+        IcebergSinkState, "_write_survivors", write_survivors_then_delete
+    )
+    with pytest.raises(pyiceberg.exceptions.ValidationException):
+        pl.LazyFrame({"k": [9], "v": ["z"]}).sink_iceberg(
+            tbl, mode="overwrite", overwrite_filter=pl.col("k") == 1
+        )
+
+    assert rewritten
+    assert not any(Path(p.removeprefix("file://")).exists() for p in rewritten)
+    assert _scan_sorted(tbl).rows() == [(1, "a"), (2, "b")]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_overwrite_whole_files_from_metadata(tmp_path: Path) -> None:
+    tbl, path = _one_file_table(tmp_path)
+    # a delete file not limited to one data file, which the native reader refuses
+    tbl = _add_position_deletes(tbl, {path: [0]}, path_bounds=False)
+
+    pl.LazyFrame({"k": [9], "v": ["z"]}).sink_iceberg(
+        tbl, mode="overwrite", overwrite_filter="k >= 1"
+    )
+
+    # the statistics show that every row matches: the file is dropped unread
+    assert _scan_sorted(tbl).rows() == [(9, "z")]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_overwrite_empty_input_schema(tmp_path: Path) -> None:
+    tbl, _ = _one_file_table(tmp_path)
+    snapshot_count = len(tbl.metadata.snapshots)
+
+    pl.LazyFrame(schema={"k": pl.Int64, "v": pl.String, "w": pl.Int64}).sink_iceberg(
+        tbl, mode="overwrite", overwrite_filter="k = 7", schema_mode="merge"
+    )
+
+    # the schema is merged, also with no rows to write or delete
+    assert _scan_sorted(tbl).rows() == [(1, "a", None), (2, "b", None), (3, "c", None)]
+    new_snapshots = tbl.metadata.snapshots[snapshot_count:]
+    assert [s.summary.operation.value for s in new_snapshots] == ["overwrite"]  # type: ignore[union-attr]
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("predicate", "kept"),
+    [
+        (pyiceberg.expressions.EqualTo, [1.0]),
+        (pyiceberg.expressions.NotEqualTo, [float("inf")]),
+    ],
+)
+def test_sink_iceberg_overwrite_filter_float_infinity(
+    tmp_path: Path, predicate: Any, kept: list[float]
+) -> None:
+    from pyiceberg.expressions.literals import FloatLiteral
+
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "f", FloatType()))
+    )
+    df = pl.DataFrame({"f": [float("inf"), 1.0]}, schema={"f": pl.Float32})
+    df.lazy().sink_iceberg(tbl, mode="append")
+
+    pl.LazyFrame(schema=df.schema).sink_iceberg(
+        tbl, mode="overwrite", overwrite_filter=predicate("f", FloatLiteral(math.inf))
+    )
+
+    # a typed float literal of infinity, kept as one
+    assert _scan_sorted(tbl)["f"].to_list() == kept
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_overwrite_filter_required_column_added(tmp_path: Path) -> None:
+    tbl, _ = _one_file_table(tmp_path)
+    with tbl.update_schema(allow_incompatible_changes=True) as update:
+        update.add_column("r", LongType(), required=True)
+
+    pl.LazyFrame(schema={"k": pl.Int64, "v": pl.String, "r": pl.Int64}).sink_iceberg(
+        tbl, mode="overwrite", overwrite_filter="r is not null"
+    )
+
+    # the older file holds nulls for `r`, though `r` is required
+    assert _scan_sorted(tbl).height == 3
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_overwrite_filter_double_partition(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "x", DoubleType()), NestedField(2, "k", LongType())
+        ),
+        partition_spec=PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "x")),
+    )
+    pl.LazyFrame({"x": [0.1, 0.2], "k": [1, 2]}).sink_iceberg(tbl, mode="append")
+
+    pl.LazyFrame(schema={"x": pl.Float64, "k": pl.Int64}).sink_iceberg(
+        tbl, mode="overwrite", overwrite_filter="x = 0.1"
+    )
+
+    # PyIceberg reads double partition values as float32: no pruning by them
+    assert _scan_sorted(tbl)["k"].to_list() == [2]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_overwrite_rewrite_sort_order(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "k", LongType()), NestedField(2, "v", StringType())
+        ),
+        sort_order=SortOrder(SortField(source_id=1, transform=IdentityTransform())),
+    )
+    pl.LazyFrame({"k": [3, 1, 2], "v": ["c", "a", "b"]}).sink_iceberg(
+        tbl, mode="append"
+    )
+
+    pl.LazyFrame({"k": [9], "v": ["z"]}).sink_iceberg(
+        tbl, mode="overwrite", overwrite_filter=pl.col("k") == 1
+    )
+
+    # the rewritten file is sorted and recorded so
+    tbl.refresh()
+    order_id = tbl.sort_order().order_id
+    assert {t.file.sort_order_id for t in tbl.scan().plan_files()} == {order_id}
+
+
+@pytest.mark.write_disk
+def test_iceberg_overwrite_and_delete_v3_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tbl, _ = _one_file_table(tmp_path)
+    files = set(tmp_path.rglob("*.parquet"))
+    # PyIceberg can't write a v3 table yet
+    monkeypatch.setattr(
+        pyiceberg.table.Table, "format_version", property(lambda self: 3)
+    )
+
+    with pytest.raises(NotImplementedError, match="Iceberg v3 table"):
+        pl.LazyFrame({"k": [9], "v": ["z"]}).sink_iceberg(tbl, mode="overwrite")
+    with pytest.raises(NotImplementedError, match="Iceberg v3 table"):
+        pl.delete_iceberg(tbl, pl.col("k") == 1)
+    # refused before writing data
+    assert set(tmp_path.rglob("*.parquet")) == files
 
 
 def _overwrite_filter_table(
@@ -1167,6 +1442,37 @@ def test_sink_iceberg_dynamic_partition_overwrite(tmp_path: Path) -> None:
         schema={"p": pl.String, "d": pl.Date, "v": pl.Int64}
     ).lazy().sink_iceberg(tbl, mode="overwrite", partition_overwrite="dynamic")
     assert _scan_sorted(tbl).height == 6
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_dynamic_partition_overwrite_earlier_spec(
+    tmp_path: Path,
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "id", LongType()),
+            NestedField(2, "g", StringType()),
+            NestedField(3, "h", LongType()),
+        ),
+    )
+    # one unpartitioned file with partitions (a, null), (b, 1), (b, null), (c, 2)
+    pl.LazyFrame(
+        {"id": [1, 2, 3, 4], "g": ["a", "b", "b", "c"], "h": [None, 1, None, 2]}
+    ).sink_iceberg(tbl, mode="append")
+    path = next(iter(tbl.scan().plan_files())).file.file_path
+    tbl = _add_position_deletes(tbl, {path: [3]})
+    with tbl.update_spec() as update:
+        update.add_identity("g")
+        update.add_identity("h")
+
+    pl.LazyFrame(
+        {"id": [10, 11], "g": ["a", "b"], "h": [None, 1]},
+        schema={"id": pl.Int64, "g": pl.String, "h": pl.Int64},
+    ).sink_iceberg(tbl, mode="overwrite", partition_overwrite="dynamic")
+
+    # exactly the rows of (a, null) and (b, 1) go, and the deleted row stays deleted
+    assert _scan_sorted(tbl)["id"].to_list() == [3, 10, 11]
 
 
 @pytest.mark.write_disk
@@ -1467,6 +1773,18 @@ def test_sink_iceberg_create_if_not_exists_dtypes(
             "struct<x: long, y: string, z: list<list<int>>>",
             pl.Struct({"x": pl.Int64, "y": pl.String, "z": pl.List(pl.List(pl.Int32))}),
         ),
+        "map": (
+            [{"a": {"x": 1}, "b": None}],
+            pl.Map(pl.String, pl.Struct({"x": pl.UInt8})),
+            "map<string, struct<x: int>>",
+            pl.Map(pl.String, pl.Struct({"x": pl.Int32})),
+        ),
+        "list_map": (
+            [[{"a": 255}, {}]],
+            pl.List(pl.Map(pl.String, pl.UInt8)),
+            "list<map<string, int>>",
+            pl.List(pl.Map(pl.String, pl.Int32)),
+        ),
     }
 
     df = pl.DataFrame(
@@ -1603,6 +1921,11 @@ def test_sink_iceberg_overwrite_filter_validation(tmp_path: Path) -> None:
         (pl.Object(), r"'c' \(Object\)"),
         (pl.List(pl.UInt64), r"'c\[\]' \(UInt64\)"),
         (pl.Struct({"x": pl.Int64, "y": pl.Duration("ms")}), r"'c.y' \(Duration"),
+        # Polars cannot cast map keys
+        (pl.Map(pl.Int8, pl.String), r"'c' \(Map\(Int8, String\)\): .* keys to Int32"),
+        (pl.List(pl.Map(pl.Struct({"x": pl.Int8}), pl.String)), r"'c\[\]' \(Map.*cast"),
+        # Iceberg times are microseconds: nanosecond keys could merge
+        (pl.Map(pl.Time, pl.String), r"'c' \(Map\(Time, String\)\): .* microseconds"),
     ],
 )
 def test_sink_iceberg_create_if_not_exists_unsupported_dtypes(
@@ -2599,6 +2922,94 @@ def test_sink_iceberg_partition_key_name_collision_schema_merge(
     )
 
 
+def _pattern_like_names_table(
+    tmp_path: Path,
+    *,
+    partition_spec: PartitionSpec | None = None,
+    sort_order: SortOrder | None = None,
+) -> tuple[pyiceberg.table.Table, pl.DataFrame]:
+    # `ab` and `s.ab` match the patterns `^a.$` and `*`
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "ab", LongType()),
+            NestedField(2, "^a.$", LongType()),
+            NestedField(3, "*", LongType()),
+            NestedField(
+                4,
+                "s",
+                StructType(
+                    NestedField(5, "ab", LongType()), NestedField(6, "^a.$", LongType())
+                ),
+            ),
+        ),
+        partition_spec=partition_spec,
+        sort_order=sort_order,
+    )
+    df = pl.DataFrame(
+        {
+            "ab": [1, 1, 1],
+            "^a.$": [3, 1, 2],
+            "*": [4, 5, 6],
+            "s": [{"ab": 1, "^a.$": v} for v in [7, 8, 9]],
+        }
+    )
+    return tbl, df
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("source_id", "values"), [(2, [1, 2, 3]), (3, [4, 5, 6]), (6, [7, 8, 9])]
+)
+def test_sink_iceberg_partition_source_pattern_like_name(
+    tmp_path: Path, source_id: int, values: list[int]
+) -> None:
+    # a name such as `^a.$` or `*` is a column name, not a pattern
+    tbl, df = _pattern_like_names_table(
+        tmp_path,
+        partition_spec=PartitionSpec(
+            PartitionField(source_id, 1000, IdentityTransform(), "p")
+        ),
+    )
+    df.lazy().sink_iceberg(tbl, mode="append")
+    tbl.refresh()
+    partitions = sorted(task.file.partition[0] for task in tbl.scan().plan_files())
+    assert partitions == values
+    assert_frame_equal(pl.scan_iceberg(tbl).collect(), df, check_row_order=False)
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_sort_key_pattern_like_name(tmp_path: Path) -> None:
+    tbl, df = _pattern_like_names_table(
+        tmp_path,
+        sort_order=SortOrder(SortField(source_id=2, transform=IdentityTransform())),
+    )
+    df.lazy().sink_iceberg(tbl, mode="append")
+    tbl.refresh()
+    [task] = tbl.scan().plan_files()
+    assert task.file.sort_order_id == tbl.sort_order().order_id
+    assert pl.scan_iceberg(tbl).collect()["^a.$"].to_list() == [1, 2, 3]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_create_if_not_exists_pattern_like_name(tmp_path: Path) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path / 'iceberg_catalog.sqlite'}",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    catalog.create_namespace("ns")
+    # only `^a.$` is cast to an Iceberg type, not the columns it would match
+    df = pl.DataFrame(
+        {"ab": [1], "^a.$": [2]}, schema={"ab": pl.Int64, "^a.$": pl.UInt8}
+    )
+    df.lazy().sink_iceberg(
+        "ns.t", mode="append", catalog=catalog, create_if_not_exists=True
+    )
+    result = pl.scan_iceberg(catalog.load_table("ns.t")).collect()
+    assert_frame_equal(result, df.with_columns(pl.nth(1).cast(pl.Int32)))
+
+
 @pytest.mark.parametrize("metrics_mode", ["none", "counts"])
 @pytest.mark.parametrize("column_override", [False, True])
 @pytest.mark.write_disk
@@ -3311,14 +3722,7 @@ def test_sink_iceberg_commit_updates_caller_table(
     [
         pytest.param("append", {}, id="append"),
         pytest.param("append", {"commit.retry.num-retries": "0"}, id="no-retries"),
-        pytest.param(
-            "overwrite",
-            {},
-            id="overwrite-empty-table",
-            marks=pytest.mark.filterwarnings(
-                "ignore:Delete operation did not match any records"
-            ),
-        ),
+        pytest.param("overwrite", {}, id="overwrite-empty-table"),
     ],
 )
 @pytest.mark.write_disk
@@ -6830,9 +7234,7 @@ def test_scan_iceberg_aggregates_from_statistics_duplicated_subplan(
 
 
 @pytest.mark.write_disk
-def test_scan_iceberg_aggregates_from_statistics_empty_keeps_errors(
-    tmp_path: Path,
-) -> None:
+def test_scan_iceberg_aggregates_from_statistics_empty_nested(tmp_path: Path) -> None:
     catalog = _statistics_catalog(tmp_path)
     tbl = catalog.create_table(
         ("ns", "l"),
@@ -6841,10 +7243,9 @@ def test_scan_iceberg_aggregates_from_statistics_empty_keeps_errors(
         ),
     )
     lf = pl.scan_iceberg(tbl).select(pl.col("xs").min())
-    with pytest.raises(pl.exceptions.InvalidOperationError):
-        lf.collect(optimizations=pl.QueryOptFlags.none())
-    with pytest.raises(pl.exceptions.InvalidOperationError):
-        lf.collect()
+    expected = pl.DataFrame({"xs": [None]}, schema={"xs": pl.List(pl.Int64)})
+    assert_frame_equal(lf.collect(optimizations=pl.QueryOptFlags.none()), expected)
+    assert_frame_equal(lf.collect(), expected)
 
 
 @pytest.mark.write_disk

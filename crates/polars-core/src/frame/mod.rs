@@ -159,6 +159,23 @@ impl DataFrame {
         }
     }
 
+    /// Turns dictionary-coded columns into [`Series`] columns.
+    pub fn materialize_dictionary_columns(&mut self) {
+        if !self
+            .columns()
+            .iter()
+            .any(|c| c.as_dictionary_column().is_some())
+        {
+            return;
+        }
+        // SAFETY: a materialized column has the same name, dtype and length.
+        for c in unsafe { self.columns_mut_retain_schema() } {
+            if c.as_dictionary_column().is_some() {
+                c.into_materialized_series();
+            }
+        }
+    }
+
     /// Reserve additional slots into the chunks of the series.
     pub(crate) fn reserve_chunks(&mut self, additional: usize) {
         for s in unsafe { self.columns_mut_retain_schema() } {
@@ -1617,6 +1634,7 @@ impl DataFrame {
             let (repr, materialized_at) = match col {
                 Column::Series(s) => ("series", s.materialized_at()),
                 Column::Scalar(_) => ("scalar", None),
+                Column::Dictionary(_) => ("dictionary", None),
             };
             let sorted_asc = flags.contains(StatisticsFlags::IS_SORTED_ASC);
             let sorted_dsc = flags.contains(StatisticsFlags::IS_SORTED_DSC);
@@ -2196,6 +2214,7 @@ impl DataFrame {
             parallel,
             has_arrow_map,
             split: None,
+            offset: 0,
         })
     }
 
@@ -2223,6 +2242,7 @@ impl DataFrame {
                         .collect(),
                 ),
                 cursor: ChunkCursor::new(self),
+                offset: 0,
             })
         };
         iter.map(|batch| batch.unwrap())
@@ -2746,6 +2766,8 @@ pub struct RecordBatchIter {
     /// Whether some column exports to an arrow MAP, so a chunk may need several batches.
     has_arrow_map: bool,
     split: Option<SplitChunk>,
+    /// The first row of the next batch, to slice columns without chunks of their own.
+    offset: usize,
 }
 
 /// A chunk exported as one batch per row range.
@@ -2755,11 +2777,20 @@ struct SplitChunk {
 }
 
 impl RecordBatchIter {
-    /// Export the first `length` rows of chunk `idx` of `df` as one batch.
-    fn export(&self, df: &DataFrame, idx: usize, length: usize) -> PolarsResult<RecordBatch> {
+    /// Export chunk `idx` of `df`, which holds `rows`, as one batch.
+    fn export(
+        &self,
+        df: &DataFrame,
+        idx: usize,
+        rows: std::ops::Range<usize>,
+    ) -> PolarsResult<RecordBatch> {
+        let length = rows.len();
+        // A dictionary column's codes need not have the chunks of the other columns.
         let to_arrow = |c: &Column| match c.as_series() {
             Some(s) => s.try_to_arrow(idx, self.compat_level),
-            None => Ok(c.slice(0, length).rechunk_to_arrow(self.compat_level)),
+            None => Ok(c
+                .slice(rows.start as i64, length)
+                .rechunk_to_arrow(self.compat_level)),
         };
 
         let batch_cols = if self.parallel {
@@ -2783,22 +2814,24 @@ impl Iterator for RecordBatchIter {
         if let Some(split) = &mut self.split {
             if let Some(range) = split.ranges.next() {
                 let piece = split.chunk.slice(range.start as i64, range.len());
-                return Some(self.export(&piece, 0, range.len()));
+                return Some(self.export(&piece, 0, 0..range.len()));
             }
             self.split = None;
         }
 
         let (idx, length) = self.cursor.next(&self.df)?;
+        let rows = self.offset..self.offset + length;
+        self.offset += length;
         if self.has_arrow_map {
             let arrow_dtypes = self.schema.iter_values().map(|f| f.dtype());
             match self
                 .df
-                .arrow_export_ranges(arrow_dtypes, Some((idx, length)))
+                .arrow_export_ranges(arrow_dtypes, Some((idx, rows.clone())))
             {
                 Ok(None) => {},
                 Ok(Some(ranges)) => {
                     self.split = Some(SplitChunk {
-                        chunk: self.df.chunk_frame(idx, length),
+                        chunk: self.df.chunk_frame(idx, rows),
                         ranges: ranges.into_iter(),
                     });
                     return self.next();
@@ -2806,7 +2839,7 @@ impl Iterator for RecordBatchIter {
                 Err(err) => return Some(Err(err)),
             }
         }
-        Some(self.export(&self.df, idx, length))
+        Some(self.export(&self.df, idx, rows))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -2821,6 +2854,8 @@ pub struct PhysRecordBatchIter<'a> {
     df: &'a DataFrame,
     schema: ArrowSchemaRef,
     cursor: ChunkCursor,
+    /// The first row of the next batch, to slice columns without chunks of their own.
+    offset: usize,
 }
 
 impl Iterator for PhysRecordBatchIter<'_> {
@@ -2828,6 +2863,8 @@ impl Iterator for PhysRecordBatchIter<'_> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let (idx, length) = self.cursor.next(self.df)?;
+        let offset = self.offset;
+        self.offset += length;
 
         let arrs = self
             .df
@@ -2836,7 +2873,7 @@ impl Iterator for PhysRecordBatchIter<'_> {
             .map(|c| match c.as_series() {
                 Some(s) => s.chunks()[idx].clone(),
                 None => c
-                    .slice(0, length)
+                    .slice(offset as i64, length)
                     .take_materialized_series()
                     .rechunk()
                     .chunks()[0]

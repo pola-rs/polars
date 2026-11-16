@@ -5,6 +5,7 @@ use std::marker::PhantomData;
 use num_traits::Bounded;
 use polars_arrow::array::BooleanArray;
 use polars_arrow::bitmap::Bitmap;
+use polars_compute::min_max::MinMaxKernel;
 use polars_core::with_match_physical_integer_polars_type;
 #[cfg(feature = "propagate_nans")]
 use polars_ops::prelude::nan_propagating_aggregate::ca_nan_agg;
@@ -218,6 +219,8 @@ impl<T> NumericReduction for Min<T>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: ChunkAgg<T::Native>,
+    PrimitiveArray<T::Native>: for<'a> MinMaxKernel<Scalar<'a> = T::Native>,
+    [T::Native]: for<'a> MinMaxKernel<Scalar<'a> = T::Native>,
 {
     type Dtype = T;
 
@@ -239,12 +242,24 @@ where
     fn reduce_ca(ca: &ChunkedArray<T>) -> Option<T::Native> {
         ChunkAgg::min(ca)
     }
+
+    #[inline(always)]
+    fn reduce_arr(arr: &PrimitiveArray<T::Native>) -> Option<T::Native> {
+        MinMaxKernel::min_ignore_nan_kernel(arr)
+    }
+
+    #[inline(always)]
+    fn reduce_slice(values: &[T::Native]) -> Option<T::Native> {
+        MinMaxKernel::min_ignore_nan_kernel(values)
+    }
 }
 
 impl<T> NumericReduction for Max<T>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: ChunkAgg<T::Native>,
+    PrimitiveArray<T::Native>: for<'a> MinMaxKernel<Scalar<'a> = T::Native>,
+    [T::Native]: for<'a> MinMaxKernel<Scalar<'a> = T::Native>,
 {
     type Dtype = T;
 
@@ -265,6 +280,16 @@ where
     #[inline(always)]
     fn reduce_ca(ca: &ChunkedArray<T>) -> Option<T::Native> {
         ChunkAgg::max(ca)
+    }
+
+    #[inline(always)]
+    fn reduce_arr(arr: &PrimitiveArray<T::Native>) -> Option<T::Native> {
+        MinMaxKernel::max_ignore_nan_kernel(arr)
+    }
+
+    #[inline(always)]
+    fn reduce_slice(values: &[T::Native]) -> Option<T::Native> {
+        MinMaxKernel::max_ignore_nan_kernel(values)
     }
 }
 
