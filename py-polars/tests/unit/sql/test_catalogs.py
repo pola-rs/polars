@@ -4031,7 +4031,7 @@ def test_truncate_catalog_table_without_record_count(
     snapshots = lake.load_table(("tpch", "legacy")).metadata.snapshots
     assert [s.summary.operation for s in snapshots] == [
         Operation.APPEND,
-        Operation.OVERWRITE,
+        Operation.DELETE,
     ]
 
 

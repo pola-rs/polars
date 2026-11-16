@@ -328,9 +328,15 @@ def _scan_iceberg_files(
 def delete_iceberg(
     target: str | pyiceberg.table.Table,
     predicate: Expr,
+    *,
+    storage_options: StorageOptionsDict | None = None,
 ) -> None:
     """
     Delete the rows matching a predicate from an Iceberg table.
+
+    Data files whose rows all match are dropped. The other rows of data files that
+    match only partly are written to new files, which replace them in the same
+    snapshot (copy-on-write). Rows removed by earlier delete files stay deleted.
 
     .. warning::
         This functionality is currently considered **unstable**. It may be
@@ -343,13 +349,24 @@ def delete_iceberg(
     predicate
         Boolean expression selecting the rows to delete. Rows for which it
         evaluates to null are kept, as with :meth:`DataFrame.remove`.
+    storage_options
+        Extra options for the storage backends supported by `pyiceberg`, used to
+        read and write rewritten data files, as with :func:`scan_iceberg`.
+
+    Notes
+    -----
+    Not supported yet: Iceberg v3 tables, and rewriting a data file whose delete
+    files cannot be applied, such as equality deletes or position deletes that
+    cover several data files.
 
     Examples
     --------
     >>> pl.delete_iceberg(table, pl.col("id").is_in([1, 2, 3]))  # doctest: +SKIP
     """
     from pyiceberg.catalog import load_catalog
+    from pyiceberg.expressions import AlwaysFalse
 
+    from polars.io.iceberg._delete import _delete_rows
     from polars.io.iceberg._utils import predicate_to_pyiceberg_delete_filter
 
     issue_unstable_warning("`delete_iceberg` is considered unstable.")
@@ -359,7 +376,27 @@ def delete_iceberg(
     else:
         table = target
 
-    table.delete(predicate_to_pyiceberg_delete_filter(predicate, table))
+    name = ".".join(table.name())
+    if table.format_version > 2:
+        msg = (
+            f"delete from an Iceberg v{table.format_version} table is not supported "
+            f"yet: table '{name}'"
+        )
+        raise NotImplementedError(msg)
+    delete_filter = predicate_to_pyiceberg_delete_filter(predicate, table)
+    if delete_filter == AlwaysFalse():
+        return
+    _delete_rows(
+        table,
+        delete_filter,
+        predicate,
+        storage_options,
+        refused=f"no rows of Iceberg table '{name}' were deleted",
+        unknown=(
+            f"rows of Iceberg table '{name}' may have been deleted (commit state "
+            "unknown)"
+        ),
+    )
 
 
 def _catalog_table_wrap(
