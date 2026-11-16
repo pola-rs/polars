@@ -11,17 +11,15 @@ use polars_async::executor::{self, TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::connector;
 use polars_async::primitives::opt_spawned_future::parallelize_first_to_local;
 use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
-use polars_core::frame::DataFrame;
-use polars_core::prelude::{CompatLevel, IntoColumn};
-use polars_core::series::arrow_export::{
-    ToArrowConverter, arrow_export_row_bounds, contains_arrow_map,
-};
+use polars_core::prelude::CompatLevel;
+use polars_core::series::arrow_export::{ToArrowConverter, arrow_export_row_ranges};
 use polars_core::utils::polars_arrow;
 use polars_core::utils::polars_arrow::io::ipc::write::{WriteOptions, schema};
 use polars_error::PolarsResult;
 use polars_io::utils::bytes_bufferer::{BytesBufferer, BytesBuffererConfig};
 use polars_utils::IdxSize;
 
+use crate::nodes::io_sinks::components::par_utils::rechunk_par;
 use crate::nodes::io_sinks::components::sink_morsel::SinkMorsel;
 use crate::nodes::io_sinks::writers::interface::IPC_RW_RECORD_BATCH_FLAGS_KEY;
 use crate::nodes::io_sinks::writers::ipc::{IpcBatch, IpcBatchType};
@@ -61,12 +59,29 @@ impl RecordBatchEncoder {
         let compression = write_options.compression;
 
         while let Ok(morsel) = morsel_rx.recv().await {
-            let (df, permit) = morsel.into_inner();
-            let pieces = split_at_arrow_map_limits(df, &arrow_converters)?;
+            let (mut morsel_df, permit) = morsel.into_inner();
+            // SAFETY: rechunking keeps the length and name of each column.
+            rechunk_par(
+                unsafe { morsel_df.columns_mut_retain_schema() },
+                task_metrics.as_deref(),
+            )
+            .await;
+            let ranges = arrow_export_row_ranges(
+                morsel_df
+                    .columns()
+                    .iter()
+                    .zip(arrow_converters.iter().map(|(_, field)| field.dtype())),
+                morsel_df.height(),
+            )?;
             let mut permit = Some(permit);
-            let num_pieces = pieces.len();
+            let num_pieces = ranges.len();
 
-            for (i, df) in pieces.into_iter().enumerate() {
+            for (i, range) in ranges.into_iter().enumerate() {
+                let df = if num_pieces == 1 {
+                    std::mem::take(&mut morsel_df)
+                } else {
+                    morsel_df.slice(range.start as i64, range.len())
+                };
                 // The morsel's memory is released once its last batch is written.
                 let permit = if i + 1 == num_pieces {
                     permit.take()
@@ -240,39 +255,4 @@ impl RecordBatchEncoder {
 
         Ok(())
     }
-}
-
-/// Split `df` into row ranges whose arrow MAP arrays each fit in `i32` offsets.
-fn split_at_arrow_map_limits(
-    mut df: DataFrame,
-    arrow_converters: &[(ToArrowConverter, ArrowField)],
-) -> PolarsResult<Vec<DataFrame>> {
-    let map_columns: Vec<usize> = arrow_converters
-        .iter()
-        .enumerate()
-        .filter(|(_, (_, field))| contains_arrow_map(field.dtype()))
-        .map(|(i, _)| i)
-        .collect();
-    if map_columns.is_empty() {
-        return Ok(vec![df]);
-    }
-
-    let height = df.height();
-    // SAFETY: rechunking keeps the name and dtype of each column.
-    let columns = unsafe { df.columns_mut_retain_schema() };
-    for &i in &map_columns {
-        columns[i] = columns[i].as_materialized_series().rechunk().into_column();
-    }
-    let bounds = arrow_export_row_bounds(
-        map_columns.iter().map(|&i| {
-            let s = columns[i].as_materialized_series();
-            (s.chunks()[0].as_ref(), arrow_converters[i].1.dtype())
-        }),
-        height,
-    )?;
-
-    Ok(bounds
-        .windows(2)
-        .map(|w| df.slice(w[0] as i64, w[1] - w[0]))
-        .collect())
 }

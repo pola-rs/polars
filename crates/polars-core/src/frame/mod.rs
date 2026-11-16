@@ -55,7 +55,7 @@ use crate::hashing::_df_rows_to_hashes_threaded_vertical;
 use crate::prelude::sort::arg_sort;
 use crate::runtime::RAYON;
 use crate::series::IsSorted;
-use crate::series::arrow_export::{arrow_export_row_bounds, contains_arrow_map};
+use crate::series::arrow_export::{arrow_export_row_ranges, contains_arrow_map};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -2135,7 +2135,8 @@ impl DataFrame {
     ///
     /// # Panics
     ///
-    /// Panics if the [`DataFrame`] that is passed is not rechunked.
+    /// Panics if the [`DataFrame`] that is passed is not rechunked, or where
+    /// [`DataFrame::try_iter_chunks`] yields an error.
     ///
     /// This responsibility is left to the caller as we don't want to take mutable references here,
     /// but we also don't want to rechunk here, as this operation is costly and would benefit the caller
@@ -2149,8 +2150,8 @@ impl DataFrame {
             .map(|batch| batch.unwrap())
     }
 
-    /// Like [`DataFrame::iter_chunks`], but yields an error for a row with more map entries
-    /// than the `i32` offsets of an arrow MAP can hold.
+    /// Like [`DataFrame::iter_chunks`], but yields export errors, such as a row with more map
+    /// entries than the `i32` offsets of an arrow MAP can hold.
     ///
     /// # Panics
     ///
@@ -2192,7 +2193,7 @@ impl DataFrame {
             compat_level,
             parallel,
             has_arrow_map,
-            split_chunk: None,
+            split: None,
         })
     }
 
@@ -2738,51 +2739,36 @@ pub struct RecordBatchIter<'a> {
     cursor: ChunkCursor<'a>,
     compat_level: CompatLevel,
     parallel: bool,
-    /// Whether some column exports to an arrow MAP, whose `i32` offsets may force a chunk to
-    /// be split into several batches.
+    /// Whether some column exports to an arrow MAP, so a chunk may need several batches.
     has_arrow_map: bool,
-    split_chunk: Option<SplitChunk>,
+    split: Option<SplitChunk>,
 }
 
-/// The single-chunk columns of a chunk, exported one row range at a time.
+/// A chunk exported as one batch per row range.
 struct SplitChunk {
-    columns: Vec<Series>,
-    bounds: Vec<usize>,
-    next: usize,
+    chunk: DataFrame,
+    ranges: std::vec::IntoIter<std::ops::Range<usize>>,
 }
 
 impl RecordBatchIter<'_> {
-    fn export_columns<T: Sync>(
-        &self,
-        columns: &[T],
-        to_arrow: impl Fn(&T) -> PolarsResult<ArrayRef> + Send + Sync,
-    ) -> PolarsResult<Vec<ArrayRef>> {
-        if self.parallel {
-            let iter = columns.par_iter().map(to_arrow);
-            RAYON.install(|| iter.collect())
+    /// Export the first `length` rows of chunk `idx` of `df` as one batch.
+    fn export(&self, df: &DataFrame, idx: usize, length: usize) -> PolarsResult<RecordBatch> {
+        let to_arrow = |c: &Column| match c.as_series() {
+            Some(s) => s.try_to_arrow(idx, self.compat_level),
+            None => Ok(c.slice(0, length).rechunk_to_arrow(self.compat_level)),
+        };
+
+        let batch_cols = if self.parallel {
+            let iter = df.columns().par_iter().map(to_arrow);
+            RAYON.install(|| iter.collect::<PolarsResult<Vec<ArrayRef>>>())?
         } else {
-            columns.iter().map(to_arrow).collect()
-        }
-    }
+            df.columns()
+                .iter()
+                .map(to_arrow)
+                .collect::<PolarsResult<_>>()?
+        };
 
-    fn next_split_batch(&mut self, mut split: SplitChunk) -> PolarsResult<RecordBatch> {
-        let start = split.bounds[split.next];
-        let length = split.bounds[split.next + 1] - start;
-        split.next += 1;
-
-        let cols = self.export_columns(&split.columns, |s| {
-            if length == s.len() {
-                s.try_to_arrow(0, self.compat_level)
-            } else {
-                s.slice(start as i64, length)
-                    .try_to_arrow(0, self.compat_level)
-            }
-        })?;
-
-        if split.next + 1 < split.bounds.len() {
-            self.split_chunk = Some(split);
-        }
-        Ok(RecordBatch::new(length, self.schema.clone(), cols))
+        Ok(RecordBatch::new(length, self.schema.clone(), batch_cols))
     }
 }
 
@@ -2790,53 +2776,38 @@ impl Iterator for RecordBatchIter<'_> {
     type Item = PolarsResult<RecordBatch>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(split) = self.split_chunk.take() {
-            return Some(self.next_split_batch(split));
+        if let Some(split) = &mut self.split {
+            if let Some(range) = split.ranges.next() {
+                let piece = split.chunk.slice(range.start as i64, range.len());
+                return Some(self.export(&piece, 0, range.len()));
+            }
+            self.split = None;
         }
 
         let (idx, length) = self.cursor.next()?;
-
-        if self.has_arrow_map {
-            let columns: Vec<Series> = self
-                .df
-                .columns()
-                .iter()
-                .map(|c| match c.as_series() {
-                    Some(s) => s.select_chunk(idx),
-                    None => c.slice(0, length).take_materialized_series().rechunk(),
-                })
-                .collect();
-            let bounds = arrow_export_row_bounds(
-                columns
-                    .iter()
-                    .zip(self.schema.iter_values())
-                    .map(|(s, f)| (s.chunks()[0].as_ref(), f.dtype())),
-                length,
-            );
-            return Some(bounds.and_then(|bounds| {
-                self.next_split_batch(SplitChunk {
-                    columns,
-                    bounds,
-                    next: 0,
-                })
-            }));
+        if !self.has_arrow_map {
+            return Some(self.export(self.df, idx, length));
         }
 
-        let batch_cols = self.export_columns(self.df.columns(), |c| match c.as_series() {
-            Some(s) => s.try_to_arrow(idx, self.compat_level),
-            None => Ok(c.slice(0, length).rechunk_to_arrow(self.compat_level)),
-        });
-
-        Some(batch_cols.map(|cols| RecordBatch::new(length, self.schema.clone(), cols)))
+        let chunk = self.df.chunk_frame(idx, length);
+        let arrow_dtypes = self.schema.iter_values().map(|f| f.dtype());
+        match arrow_export_row_ranges(chunk.columns().iter().zip(arrow_dtypes), length) {
+            Ok(ranges) if ranges.len() == 1 => Some(self.export(&chunk, 0, length)),
+            Ok(ranges) => {
+                self.split = Some(SplitChunk {
+                    chunk,
+                    ranges: ranges.into_iter(),
+                });
+                self.next()
+            },
+            Err(err) => Some(Err(err)),
+        }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         let (chunks, _) = self.cursor.size_hint();
-        let split = self
-            .split_chunk
-            .as_ref()
-            .map_or(0, |split| split.bounds.len() - 1 - split.next);
-        let lower = chunks + split;
+        let pieces = self.split.as_ref().map_or(0, |split| split.ranges.len());
+        let lower = chunks + pieces;
         (lower, (!self.has_arrow_map).then_some(lower))
     }
 }

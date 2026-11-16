@@ -43,26 +43,29 @@ impl DataFrame {
             .iter()
             .position(|col| col.as_series().is_some());
         let df_height = self.height();
-        let mut prev_height = 0;
-        (0..self.first_col_n_chunks()).map(move |i| unsafe {
+        (0..self.first_col_n_chunks()).map(move |i| {
             // There might still be scalar/partitioned columns after aligning,
             // so we follow the size of the chunked column, if any.
             let chunk_size = first_series_col_idx
                 .map(|c| self.columns()[c].as_series().unwrap().chunks()[i].len())
                 .unwrap_or(df_height);
-            let columns = self
-                .columns()
-                .iter()
-                .map(|col| match col {
-                    Column::Series(s) => Column::from(s.select_chunk(i)),
-                    Column::Scalar(_) => col.slice(prev_height as i64, chunk_size),
-                })
-                .collect::<Vec<_>>();
-
-            prev_height += chunk_size;
-
-            DataFrame::new_unchecked(chunk_size, columns)
+            self.chunk_frame(i, chunk_size)
         })
+    }
+
+    /// Chunk `chunk_idx` of this aligned frame, `height` rows long, as a frame of single chunks.
+    pub(crate) fn chunk_frame(&self, chunk_idx: usize, height: usize) -> DataFrame {
+        let columns = self
+            .columns()
+            .iter()
+            .map(|col| match col {
+                Column::Series(s) => Column::from(s.select_chunk(chunk_idx)),
+                Column::Scalar(_) => col.slice(0, height),
+            })
+            .collect();
+
+        // SAFETY: each column holds the chunk's `height` rows.
+        unsafe { DataFrame::new_unchecked(height, columns) }
     }
 
     pub fn split_chunks_by_n(self, n: usize, parallel: bool) -> Vec<DataFrame> {
@@ -99,6 +102,9 @@ impl DataFrame {
 /// maximum number of rows per chunk to ensure reasonable memory efficiency when
 /// reading the resulting file, and a minimum size per chunk to ensure
 /// reasonable performance when writing.
+///
+/// [`DataFrame::iter_chunks`] can still cut a chunk into several record batches, where its
+/// arrow MAP arrays would overflow their `i32` offsets.
 pub fn chunk_df_for_writing(
     df: &mut DataFrame,
     row_group_size: usize,
