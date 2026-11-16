@@ -218,3 +218,26 @@ fn change_time_zone(input: &[Series], kwargs: TimeZone) -> PolarsResult<Series> 
     out.set_time_zone(timezone)?;
     Ok(out.into_series())
 }
+
+/// Taking `&[Column]` lets single-value inputs, such as literals, be processed only once.
+#[polars_expr(output_type=String)]
+fn pig_latinnify_column(inputs: &[Column], kwargs: PigLatinKwargs) -> PolarsResult<Column> {
+    inputs[0].try_apply_unary_elementwise(|s| {
+        let ca = s.str()?;
+        Ok(ca
+            .apply_into_string_amortized(|value, output| {
+                pig_latin_str(value, kwargs.capitalize, output)
+            })
+            .into_series())
+    })
+}
+
+fn same_output_type(input_fields: &[Field]) -> PolarsResult<Field> {
+    FieldsMapper::new(input_fields).with_same_dtype()
+}
+
+/// Functions taking `&[Column]` may also return a `Series`.
+#[polars_expr(output_type_func=same_output_type)]
+fn materialize(inputs: &[Column]) -> PolarsResult<Series> {
+    Ok(inputs[0].as_materialized_series().clone())
+}
