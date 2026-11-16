@@ -250,6 +250,14 @@ def test_select_alias_reuse_types() -> None:
             FROM self
             """
         )
+    res = df.sql(
+        """
+        SELECT FIRST_VALUE(s) OVER () AS x, x.* REPLACE (a AS b) RENAME (b AS y),
+          SUM(y) OVER () AS z
+        FROM self
+        """
+    )
+    assert res.select("y", "z").rows() == [(1, 3), (2, 3)]
 
 
 def test_select_alias_reuse_errors() -> None:
@@ -268,6 +276,7 @@ def test_select_alias_reuse_errors() -> None:
         "SELECT RANDOM() AS r, FIRST_VALUE(r) OVER (PARTITION BY a) FROM self",
         "SELECT SUM(a) OVER () AS s, * REPLACE (SUM(s) OVER () AS a) FROM self",
         "SELECT * REPLACE (SUM(a) OVER () AS a) RENAME (a AS k), SUM(k) OVER () FROM self",
+        "SELECT SUM(a) OVER () AS w, * EXCLUDE (a) RENAME (a AS w), SUM(w) OVER () FROM self",
     ]:
         with pytest.raises(
             pl.exceptions.SQLSyntaxError, match="cannot read SELECT alias"

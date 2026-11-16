@@ -4632,10 +4632,12 @@ impl SQLContext {
                 },
                 |idents| is_window_alias(idents),
             )?;
+            // A RENAME may not apply, so it keeps an earlier window alias of the same name.
+            let is_rename = !matches!(select_item, SelectItem::ExprWithAlias { .. });
             for (alias, holds) in aliases {
                 if holds {
                     window_aliases.insert(alias.to_owned());
-                } else {
+                } else if !is_rename {
                     window_aliases.remove(alias);
                 }
             }
@@ -7520,13 +7522,13 @@ pub(crate) fn object_name_to_string(name: &ObjectName) -> String {
 }
 
 /// The aliases that `item` defines, each with whether `holds` is true for its expression. A
-/// wildcard defines its `RENAME` targets, which take `holds` of their `REPLACE` expression or
+/// wildcard defines its `RENAME` targets, which take `holds` of their `REPLACE` expression, else
 /// `qualifier_holds` of the wildcard's qualifier followed by `*`.
-fn item_aliases<'a>(
-    item: &'a SelectItem,
+fn item_aliases(
+    item: &SelectItem,
     mut holds: impl FnMut(&SQLExpr) -> PolarsResult<bool>,
     qualifier_holds: impl Fn(&[Ident]) -> bool,
-) -> PolarsResult<Vec<(&'a str, bool)>> {
+) -> PolarsResult<Vec<(&str, bool)>> {
     let options = match item {
         SelectItem::ExprWithAlias { expr, alias } => {
             return Ok(vec![(alias.value.as_str(), holds(expr)?)]);
@@ -7546,16 +7548,17 @@ fn item_aliases<'a>(
         },
         _ => false,
     };
-    let mut held_columns = PlHashSet::new();
+    let mut replaced = PlHashMap::new();
     for element in options.opt_replace.iter().flat_map(|r| &r.items) {
-        if holds(&element.expr)? {
-            held_columns.insert(element.column_name.value.as_str());
-        }
+        replaced.insert(element.column_name.value.as_str(), holds(&element.expr)?);
     }
     Ok(rename_items(options)
         .iter()
         .map(|rename| {
-            let holds = from_qualifier || held_columns.contains(rename.ident.value.as_str());
+            let holds = replaced
+                .get(rename.ident.value.as_str())
+                .copied()
+                .unwrap_or(from_qualifier);
             (rename.alias.value.as_str(), holds)
         })
         .collect())
