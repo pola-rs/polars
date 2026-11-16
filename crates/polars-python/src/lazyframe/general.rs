@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::num::NonZeroUsize;
 
 use either::Either;
@@ -1772,7 +1772,7 @@ impl PyCollectBatches {
 pub struct ArrowStreamIterator {
     inner: Arc<Mutex<CollectBatches>>,
     dtype: ArrowDataType,
-    arrays: VecDeque<ArrayRef>,
+    arrays: std::vec::IntoIter<ArrayRef>,
 }
 
 impl ArrowStreamIterator {
@@ -1780,7 +1780,7 @@ impl ArrowStreamIterator {
         Self {
             inner,
             dtype: schema,
-            arrays: VecDeque::new(),
+            arrays: Vec::new().into_iter(),
         }
     }
 }
@@ -1789,19 +1789,21 @@ impl Iterator for ArrowStreamIterator {
     type Item = PolarsResult<ArrayRef>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while self.arrays.is_empty() {
+        loop {
+            if let Some(array) = self.arrays.next() {
+                return Some(Ok(array));
+            }
             let next = self.inner.lock().next();
             match next? {
                 Err(err) => return Some(Err(err)),
                 Ok(mut df) => {
                     df.rechunk_mut();
                     match dataframe_to_struct_arrays(&df, &self.dtype) {
-                        Ok(arrays) => self.arrays = arrays,
+                        Ok(arrays) => self.arrays = arrays.into_iter(),
                         Err(err) => return Some(Err(err)),
                     }
                 },
             }
         }
-        self.arrays.pop_front().map(Ok)
     }
 }

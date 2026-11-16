@@ -2751,6 +2751,37 @@ struct SplitChunk {
 }
 
 impl RecordBatchIter<'_> {
+    /// The row ranges chunk `idx` (`length` rows) is exported in; `None` for one batch.
+    fn split_ranges(
+        &self,
+        idx: usize,
+        length: usize,
+    ) -> PolarsResult<Option<Vec<std::ops::Range<usize>>>> {
+        let map_columns: Vec<(&Column, &ArrowDataType)> = self
+            .df
+            .columns()
+            .iter()
+            .zip(self.schema.iter_values().map(|f| f.dtype()))
+            .filter(|(_, dtype)| contains_arrow_map(dtype))
+            .collect();
+        // A scalar column has no chunk of its own to count.
+        let scalars: Vec<Series> = map_columns
+            .iter()
+            .filter(|(c, _)| c.as_series().is_none())
+            .map(|(c, _)| c.slice(0, length).take_materialized_series().rechunk())
+            .collect();
+
+        let mut scalars_iter = scalars.iter();
+        let arrays = map_columns.iter().map(|&(c, dtype)| {
+            let chunk = match c.as_series() {
+                Some(s) => s.chunks()[idx].as_ref(),
+                None => scalars_iter.next().unwrap().chunks()[0].as_ref(),
+            };
+            (chunk, dtype)
+        });
+        arrow_export_row_ranges(arrays, length)
+    }
+
     /// Export the first `length` rows of chunk `idx` of `df` as one batch.
     fn export(&self, df: &DataFrame, idx: usize, length: usize) -> PolarsResult<RecordBatch> {
         let to_arrow = |c: &Column| match c.as_series() {
@@ -2785,23 +2816,20 @@ impl Iterator for RecordBatchIter<'_> {
         }
 
         let (idx, length) = self.cursor.next()?;
-        if !self.has_arrow_map {
-            return Some(self.export(self.df, idx, length));
+        if self.has_arrow_map {
+            match self.split_ranges(idx, length) {
+                Ok(None) => {},
+                Ok(Some(ranges)) => {
+                    self.split = Some(SplitChunk {
+                        chunk: self.df.chunk_frame(idx, length),
+                        ranges: ranges.into_iter(),
+                    });
+                    return self.next();
+                },
+                Err(err) => return Some(Err(err)),
+            }
         }
-
-        let chunk = self.df.chunk_frame(idx, length);
-        let arrow_dtypes = self.schema.iter_values().map(|f| f.dtype());
-        match arrow_export_row_ranges(chunk.columns().iter().zip(arrow_dtypes), length) {
-            Ok(ranges) if ranges.len() == 1 => Some(self.export(&chunk, 0, length)),
-            Ok(ranges) => {
-                self.split = Some(SplitChunk {
-                    chunk,
-                    ranges: ranges.into_iter(),
-                });
-                self.next()
-            },
-            Err(err) => Some(Err(err)),
-        }
+        Some(self.export(self.df, idx, length))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {

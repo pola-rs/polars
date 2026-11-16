@@ -19,12 +19,11 @@ use std::sync::Arc;
 use polars_compute::cast::cast_unchecked;
 use polars_compute::rebuild_list::rebuild_list_shallow;
 use polars_error::{PolarsError, PolarsResult, polars_ensure, polars_err};
-pub use split::arrow_export_row_ranges;
-pub(crate) use split::contains_arrow_map;
+pub(crate) use split::{arrow_export_row_ranges, contains_arrow_map};
 
 use crate::prelude::{
-    Array, ArrayRef, ArrowDataType, ArrowField, BinaryViewArray, Column, CompatLevel, DataType,
-    ListArray, PlSmallStr, PrimitiveArray, Series,
+    Array, ArrayRef, ArrowDataType, ArrowField, BinaryViewArray, CompatLevel, DataType, ListArray,
+    PlSmallStr, PrimitiveArray, Series,
 };
 
 fn unhandled_arrow_conversion_dtype_pair_err(
@@ -117,16 +116,13 @@ impl Series {
         chunk_idx: usize,
         compat_level: CompatLevel,
     ) -> PolarsResult<Vec<ArrayRef>> {
-        let chunk = self.select_chunk(chunk_idx);
+        let chunk = self.chunks()[chunk_idx].as_ref();
         let arrow_dtype = self.dtype().to_arrow(compat_level);
-        let column = Column::from(chunk.clone());
-        let ranges = arrow_export_row_ranges([(&column, &arrow_dtype)], chunk.len())?;
-        if let [range] = ranges.as_slice()
-            && range.len() == chunk.len()
-        {
+        let Some(ranges) = arrow_export_row_ranges([(chunk, &arrow_dtype)], chunk.len())? else {
             return Ok(vec![self.try_to_arrow(chunk_idx, compat_level)?]);
-        }
+        };
 
+        let chunk = self.select_chunk(chunk_idx);
         ranges
             .into_iter()
             .map(|r| {

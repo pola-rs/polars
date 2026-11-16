@@ -3,6 +3,7 @@ use rayon::prelude::*;
 
 use crate::prelude::*;
 use crate::runtime::RAYON;
+use crate::series::arrow_export::{arrow_export_row_ranges, contains_arrow_map};
 use crate::utils::{_split_offsets, accumulate_dataframes_vertical_unchecked, split_df_as_ref};
 
 impl From<RecordBatch> for DataFrame {
@@ -95,6 +96,46 @@ impl DataFrame {
             .into_iter()
             .map(|c| c.rechunk_to_arrow(compat_level))
             .collect()
+    }
+}
+
+impl DataFrame {
+    /// Slices of this frame that each export to `arrow_dtypes` without overflowing the `i32`
+    /// offsets of an arrow MAP; just the frame unless one would.
+    ///
+    /// Only columns whose arrow dtype contains a MAP are rechunked.
+    pub fn split_for_arrow_export<'a>(
+        mut self,
+        arrow_dtypes: impl IntoIterator<Item = &'a ArrowDataType>,
+    ) -> PolarsResult<Vec<DataFrame>> {
+        let map_columns: Vec<(usize, &ArrowDataType)> = arrow_dtypes
+            .into_iter()
+            .enumerate()
+            .filter(|(_, dtype)| contains_arrow_map(dtype))
+            .collect();
+        if map_columns.is_empty() {
+            return Ok(vec![self]);
+        }
+
+        // SAFETY: rechunking keeps the length and name of each column.
+        let columns = unsafe { self.columns_mut_retain_schema() };
+        for &(i, _) in &map_columns {
+            if columns[i].n_chunks() != 1 {
+                columns[i] = columns[i].as_materialized_series().rechunk().into_column();
+            }
+        }
+        let arrays = map_columns.iter().map(|&(i, dtype)| {
+            let chunk = self.columns()[i].as_materialized_series().chunks()[0].as_ref();
+            (chunk, dtype)
+        });
+        let Some(ranges) = arrow_export_row_ranges(arrays, self.height())? else {
+            return Ok(vec![self]);
+        };
+
+        Ok(ranges
+            .into_iter()
+            .map(|r| self.slice(r.start as i64, r.len()))
+            .collect())
     }
 }
 

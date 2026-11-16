@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-
 use polars::datatypes::CompatLevel;
 use polars::frame::DataFrame;
 use polars::prelude::{ArrayRef, ArrowField, PlSmallStr, SchemaExt};
@@ -121,7 +119,7 @@ pub(crate) fn polars_schema_to_pycapsule<'py>(
 pub(crate) fn dataframe_to_struct_arrays(
     df: &DataFrame,
     dtype: &ArrowDataType,
-) -> PolarsResult<VecDeque<ArrayRef>> {
+) -> PolarsResult<Vec<ArrayRef>> {
     df.try_iter_chunks(CompatLevel::newest(), false)
         .map(|batch| {
             let batch = batch?;
@@ -134,7 +132,7 @@ pub(crate) fn dataframe_to_struct_arrays(
 pub struct DataFrameStreamIterator {
     df: Option<DataFrame>,
     dtype: ArrowDataType,
-    arrays: VecDeque<ArrayRef>,
+    arrays: std::vec::IntoIter<ArrayRef>,
 }
 
 impl DataFrameStreamIterator {
@@ -145,7 +143,7 @@ impl DataFrameStreamIterator {
         Self {
             df: Some(df.clone()),
             dtype,
-            arrays: VecDeque::new(),
+            arrays: Vec::new().into_iter(),
         }
     }
 
@@ -160,10 +158,10 @@ impl Iterator for DataFrameStreamIterator {
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(df) = self.df.take() {
             match dataframe_to_struct_arrays(&df, &self.dtype) {
-                Ok(arrays) => self.arrays = arrays,
+                Ok(arrays) => self.arrays = arrays.into_iter(),
                 Err(err) => return Some(Err(err)),
             }
         }
-        self.arrays.pop_front().map(Ok)
+        self.arrays.next().map(Ok)
     }
 }

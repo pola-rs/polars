@@ -12,14 +12,13 @@ use polars_async::primitives::connector;
 use polars_async::primitives::opt_spawned_future::parallelize_first_to_local;
 use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_core::prelude::CompatLevel;
-use polars_core::series::arrow_export::{ToArrowConverter, arrow_export_row_ranges};
+use polars_core::series::arrow_export::ToArrowConverter;
 use polars_core::utils::polars_arrow;
 use polars_core::utils::polars_arrow::io::ipc::write::{WriteOptions, schema};
 use polars_error::PolarsResult;
 use polars_io::utils::bytes_bufferer::{BytesBufferer, BytesBuffererConfig};
 use polars_utils::IdxSize;
 
-use crate::nodes::io_sinks::components::par_utils::rechunk_par;
 use crate::nodes::io_sinks::components::sink_morsel::SinkMorsel;
 use crate::nodes::io_sinks::writers::interface::IPC_RW_RECORD_BATCH_FLAGS_KEY;
 use crate::nodes::io_sinks::writers::ipc::{IpcBatch, IpcBatchType};
@@ -59,29 +58,13 @@ impl RecordBatchEncoder {
         let compression = write_options.compression;
 
         while let Ok(morsel) = morsel_rx.recv().await {
-            let (mut morsel_df, permit) = morsel.into_inner();
-            // SAFETY: rechunking keeps the length and name of each column.
-            rechunk_par(
-                unsafe { morsel_df.columns_mut_retain_schema() },
-                task_metrics.as_deref(),
-            )
-            .await;
-            let ranges = arrow_export_row_ranges(
-                morsel_df
-                    .columns()
-                    .iter()
-                    .zip(arrow_converters.iter().map(|(_, field)| field.dtype())),
-                morsel_df.height(),
-            )?;
+            let (df, permit) = morsel.into_inner();
+            let pieces =
+                df.split_for_arrow_export(arrow_converters.iter().map(|(_, field)| field.dtype()))?;
             let mut permit = Some(permit);
-            let num_pieces = ranges.len();
+            let num_pieces = pieces.len();
 
-            for (i, range) in ranges.into_iter().enumerate() {
-                let df = if num_pieces == 1 {
-                    std::mem::take(&mut morsel_df)
-                } else {
-                    morsel_df.slice(range.start as i64, range.len())
-                };
+            for (i, df) in pieces.into_iter().enumerate() {
                 // The morsel's memory is released once its last batch is written.
                 let permit = if i + 1 == num_pieces {
                     permit.take()

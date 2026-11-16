@@ -4,8 +4,6 @@ use polars_arrow::array::{Array, FixedSizeListArray, ListArray, StructArray};
 use polars_arrow::datatypes::ArrowDataType;
 use polars_error::{PolarsResult, polars_bail};
 
-use crate::frame::column::Column;
-
 /// The most entries an arrow MAP array can hold, as its offsets are `i32`.
 const MAX_MAP_ENTRIES: i64 = i32::MAX as i64;
 
@@ -22,52 +20,76 @@ pub(crate) fn contains_arrow_map(dtype: &ArrowDataType) -> bool {
     }
 }
 
-/// The child elements the rows of `arr` span; `None` if that is the whole child.
-fn spanned_child(arr: &ListArray<i64>) -> Option<Box<dyn Array>> {
-    let offsets = arr.offsets();
-    let first = *offsets.first() as usize;
-    let len = offsets.range() as usize;
-    (first != 0 || len != arr.values().len()).then(|| arr.values().sliced(first, len))
-}
-
-// The functions below walk a Polars physical array along its arrow export dtype, so they rely on
+// The walk below follows a Polars physical array along its arrow export dtype, so it relies on
 // the layout `ToArrowConverter` relies on: MAP and LARGE_LIST are `ListArray<i64>`, and
 // FIXED_SIZE_LIST, STRUCT and EXTENSION wrap the arrays their arrow types describe.
 
-/// Whether some MAP exported from `array` to `dtype` could exceed `i32::MAX` entries.
-///
-/// Reads only the first and last offset of each list level, an upper bound on what it exports.
-fn may_overflow(array: &dyn Array, dtype: &ArrowDataType) -> bool {
+/// Push, for every MAP exported from `rows` of `array` to `dtype` whose offsets there span more
+/// than `i32::MAX` entries, the running count of the entries it exports over those rows
+/// (`rows.len() + 1` values from 0).
+fn push_entry_counts(
+    array: &dyn Array,
+    rows: Range<usize>,
+    dtype: &ArrowDataType,
+    out: &mut Vec<Vec<i64>>,
+) {
     if !contains_arrow_map(dtype) {
-        return false;
+        return;
     }
 
     match dtype {
         ArrowDataType::Map(entries, _) | ArrowDataType::LargeList(entries) => {
             let arr: &ListArray<i64> = array.as_any().downcast_ref().unwrap();
-            if matches!(dtype, ArrowDataType::Map(_, _)) && arr.offsets().range() > MAX_MAP_ENTRIES
-            {
-                return true;
+            let is_map = matches!(dtype, ArrowDataType::Map(_, _));
+            let offsets = &arr.offsets().as_slice()[rows.start..=rows.end];
+            let first = offsets[0];
+            let child_rows = first as usize..offsets[offsets.len() - 1] as usize;
+            // MAP export drops what null rows own (`normalize_map_entries`); LARGE_LIST keeps it.
+            let dropped =
+                |i: usize| is_map && cfg!(feature = "dtype-map") && !arr.is_valid(rows.start + i);
+
+            if is_map && child_rows.len() as i64 > MAX_MAP_ENTRIES {
+                let own = (0..rows.len()).map(|i| {
+                    if dropped(i) {
+                        0
+                    } else {
+                        offsets[i + 1] - offsets[i]
+                    }
+                });
+                out.push(running_sum(rows.len(), own));
             }
-            let child = spanned_child(arr);
-            may_overflow(
-                child.as_deref().unwrap_or(arr.values().as_ref()),
-                entries.dtype(),
-            )
+
+            let nested_start = out.len();
+            push_entry_counts(arr.values().as_ref(), child_rows, entries.dtype(), out);
+            for counts in &mut out[nested_start..] {
+                let per_row = (0..rows.len()).map(|i| {
+                    if dropped(i) {
+                        0
+                    } else {
+                        counts[(offsets[i + 1] - first) as usize]
+                            - counts[(offsets[i] - first) as usize]
+                    }
+                });
+                *counts = running_sum(rows.len(), per_row);
+            }
         },
-        ArrowDataType::FixedSizeList(item, _) => {
+        ArrowDataType::FixedSizeList(item, width) => {
             let arr: &FixedSizeListArray = array.as_any().downcast_ref().unwrap();
-            may_overflow(arr.values().as_ref(), item.dtype())
+            let nested_start = out.len();
+            let child_rows = rows.start * width..rows.end * width;
+            push_entry_counts(arr.values().as_ref(), child_rows, item.dtype(), out);
+            for counts in &mut out[nested_start..] {
+                *counts = (0..=rows.len()).map(|i| counts[i * width]).collect();
+            }
         },
         ArrowDataType::Struct(fields) => {
             let arr: &StructArray = array.as_any().downcast_ref().unwrap();
-            arr.values()
-                .iter()
-                .zip(fields)
-                .any(|(values, f)| may_overflow(values.as_ref(), f.dtype()))
+            for (values, f) in arr.values().iter().zip(fields) {
+                push_entry_counts(values.as_ref(), rows.clone(), f.dtype(), out);
+            }
         },
-        ArrowDataType::Extension(ext) => may_overflow(array, &ext.inner),
-        _ => false,
+        ArrowDataType::Extension(ext) => push_entry_counts(array, rows, &ext.inner, out),
+        _ => {},
     }
 }
 
@@ -82,93 +104,23 @@ fn running_sum(len: usize, row_counts: impl Iterator<Item = i64>) -> Vec<i64> {
     out
 }
 
-/// Push, for every MAP exported from `array` to `dtype` that may overflow, the running count of
-/// the entries it exports over the rows of `array` (`array.len() + 1` values from 0).
-fn push_entry_counts(array: &dyn Array, dtype: &ArrowDataType, out: &mut Vec<Vec<i64>>) {
-    if !may_overflow(array, dtype) {
-        return;
-    }
-
-    match dtype {
-        ArrowDataType::Map(entries, _) | ArrowDataType::LargeList(entries) => {
-            let arr: &ListArray<i64> = array.as_any().downcast_ref().unwrap();
-            let is_map = matches!(dtype, ArrowDataType::Map(_, _));
-            let offsets = arr.offsets().as_slice();
-            let first = offsets[0];
-            // MAP export drops what null rows own (`normalize_map_entries`); LARGE_LIST keeps it.
-            let dropped = |row: usize| is_map && cfg!(feature = "dtype-map") && !arr.is_valid(row);
-            let row_count = |row: usize, counts: &[i64]| {
-                if dropped(row) {
-                    0
-                } else {
-                    counts[(offsets[row + 1] - first) as usize]
-                        - counts[(offsets[row] - first) as usize]
-                }
-            };
-
-            if is_map && arr.offsets().range() > MAX_MAP_ENTRIES {
-                let own = (0..arr.len()).map(|row| {
-                    if dropped(row) {
-                        0
-                    } else {
-                        offsets[row + 1] - offsets[row]
-                    }
-                });
-                out.push(running_sum(arr.len(), own));
-            }
-            let nested_start = out.len();
-
-            let child = spanned_child(arr);
-            push_entry_counts(
-                child.as_deref().unwrap_or(arr.values().as_ref()),
-                entries.dtype(),
-                out,
-            );
-            for counts in &mut out[nested_start..] {
-                *counts = running_sum(arr.len(), (0..arr.len()).map(|row| row_count(row, counts)));
-            }
-        },
-        ArrowDataType::FixedSizeList(item, width) => {
-            let arr: &FixedSizeListArray = array.as_any().downcast_ref().unwrap();
-            let nested_start = out.len();
-            push_entry_counts(arr.values().as_ref(), item.dtype(), out);
-            for counts in &mut out[nested_start..] {
-                *counts = (0..=arr.len()).map(|row| counts[row * width]).collect();
-            }
-        },
-        ArrowDataType::Struct(fields) => {
-            let arr: &StructArray = array.as_any().downcast_ref().unwrap();
-            for (values, f) in arr.values().iter().zip(fields) {
-                push_entry_counts(values.as_ref(), f.dtype(), out);
-            }
-        },
-        ArrowDataType::Extension(ext) => push_entry_counts(array, &ext.inner, out),
-        _ => {},
-    }
-}
-
-/// Row ranges cutting `height` aligned rows of `columns` so that every arrow MAP exported from a
-/// range fits in its `i32` offsets; errors if a single row exports more MAP entries than that.
+/// Row ranges cutting the `height` rows of `arrays` so that every arrow MAP exported from a range
+/// fits in its `i32` offsets; `None` if no cut is needed, and an error if a single row exports
+/// more MAP entries than that.
 ///
-/// Each column must be a single chunk or a scalar, paired with the arrow dtype it exports to.
-/// Columns without a MAP cost nothing, and the others two offset reads per list level, unless
-/// some MAP's offsets span more than `i32::MAX` entries: only then are its rows counted, into
-/// one `Vec<i64>` per such MAP.
-pub fn arrow_export_row_ranges<'a>(
-    columns: impl IntoIterator<Item = (&'a Column, &'a ArrowDataType)>,
+/// Each array is a whole chunk paired with the arrow dtype it exports to. Without a MAP that
+/// costs a dtype walk, with one two offset reads per list level, unless some MAP's offsets span
+/// more than `i32::MAX` entries: only then are its rows counted, into a `Vec<i64>`.
+pub(crate) fn arrow_export_row_ranges<'a>(
+    arrays: impl IntoIterator<Item = (&'a dyn Array, &'a ArrowDataType)>,
     height: usize,
-) -> PolarsResult<Vec<Range<usize>>> {
+) -> PolarsResult<Option<Vec<Range<usize>>>> {
     let mut counts = Vec::new();
-    for (column, dtype) in columns {
-        if contains_arrow_map(dtype) {
-            let s = column.as_materialized_series();
-            assert_eq!(s.n_chunks(), 1, "arrow export splits single chunks");
-            push_entry_counts(s.chunks()[0].as_ref(), dtype, &mut counts);
-        }
+    for (array, dtype) in arrays {
+        push_entry_counts(array, 0..height, dtype, &mut counts);
     }
-
     if counts.is_empty() {
-        return Ok(std::iter::once(0..height).collect());
+        return Ok(None);
     }
 
     let mut ranges = Vec::new();
@@ -196,7 +148,7 @@ pub fn arrow_export_row_ranges<'a>(
     }
     ranges.push(start..height);
 
-    Ok(ranges)
+    Ok((ranges.len() > 1).then_some(ranges))
 }
 
 #[cfg(all(test, feature = "dtype-map"))]
