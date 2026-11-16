@@ -431,6 +431,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT BIT_LENGTH(col1) FROM df;
     /// ```
     BitLength,
+    /// SQL 'chr' function.
+    /// Returns the character of an integer Unicode code point.
+    /// ```sql
+    /// SELECT CHR(65) FROM df;
+    /// ```
+    Chr,
     /// SQL 'concat' function.
     /// Returns all input expressions concatenated together as a string.
     /// ```sql
@@ -1112,6 +1118,7 @@ impl PolarsSQLFunctions {
             "ceiling",
             "char_length",
             "character_length",
+            "chr",
             "coalesce",
             "columns",
             "concat",
@@ -1345,6 +1352,7 @@ impl PolarsSQLFunctions {
             // String functions
             // ----
             "bit_length" => Self::BitLength,
+            "chr" => Self::Chr,
             "concat" => Self::Concat,
             "concat_ws" => Self::ConcatWS,
             "ends_with" => Self::EndsWith,
@@ -1772,6 +1780,7 @@ impl SQLFunctionVisitor<'_> {
             // String functions
             // ----
             BitLength => self.visit_unary(|e| e.str().len_bytes().cast(DataType::Int64) * lit(8)),
+            Chr => self.visit_unary(|e| e.str().from_code_point()),
             Concat => {
                 let args = extract_args(function)?;
                 if args.is_empty() {

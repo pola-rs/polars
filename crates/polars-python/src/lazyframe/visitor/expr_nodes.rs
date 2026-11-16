@@ -188,6 +188,7 @@ pub enum PyStringFunction {
     Format,
     ExtractMany,
     FindMany,
+    FromCodePoint,
 }
 
 #[pymethods]
@@ -1298,6 +1299,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     },
                     IRStringFunction::LenBytes => (PyStringFunction::LenBytes,).into_py_any(py),
                     IRStringFunction::LenChars => (PyStringFunction::LenChars,).into_py_any(py),
+                    IRStringFunction::FromCodePoint => {
+                        (PyStringFunction::FromCodePoint,).into_py_any(py)
+                    },
                     IRStringFunction::Lowercase => (PyStringFunction::Lowercase,).into_py_any(py),
                     #[cfg(feature = "extract_jsonpath")]
                     IRStringFunction::JsonDecode(_) => {
