@@ -1942,7 +1942,7 @@ fn validate_encrypted_partition_keys<'a>(
 }
 
 /// Replaces `pl.element()` and `pl.len()` in a pivot aggregation with the pivoted values, except
-/// in an `eval`, where they refer to the evaluated values.
+/// in an `eval` and the arms of a `union.match`, which bind `pl.element()` themselves.
 fn replace_pivot_values(expr: Expr, values: &Expr) -> Expr {
     use crate::plans::visitor::TreeWalker;
 
@@ -1957,6 +1957,18 @@ fn replace_pivot_values(expr: Expr, values: &Expr) -> Expr {
             expr: Arc::new(replace_pivot_values(Arc::unwrap_or_clone(expr), values)),
             evaluation,
             variant,
+        },
+        #[cfg(feature = "dtype-union")]
+        Expr::Function {
+            mut input,
+            function: function @ FunctionExpr::UnionExpr(UnionFunction::Match { has_default, .. }),
+        } => {
+            // Only the union and the default; the arms bind `pl.element()` to their variant.
+            let n = input.len();
+            for i in std::iter::once(0).chain(has_default.then_some(n - 1)) {
+                input[i] = replace_pivot_values(input[i].clone(), values);
+            }
+            Expr::Function { input, function }
         },
         e => e
             .map_children(&mut |c, _| Ok(replace_pivot_values(c, values)), &mut ())

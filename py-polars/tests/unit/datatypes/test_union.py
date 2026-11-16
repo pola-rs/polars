@@ -1591,6 +1591,21 @@ def test_union_match_arms_see_their_rows(context: str, expected: list[Any]) -> N
     assert sum(seen["default"]) == 3
 
 
+def test_union_match_in_pivot_keeps_its_element() -> None:
+    df = match_frame().with_columns(c=pl.Series(["a", "b", "a", "b"]), g=0)
+    out = df.pivot(
+        "c",
+        index="g",
+        values="u",
+        aggregate_function=pl.element()
+        .first()
+        .union.match(
+            i=pl.element() * 10, s=pl.element().str.len_bytes().cast(pl.Int64)
+        ),
+    )
+    assert out.to_dict(as_series=False) == {"g": [0], "a": [10], "b": [2]}
+
+
 @pytest.mark.parametrize("s", messy_layouts())
 def test_union_match_layouts(s: pl.Series) -> None:
     df = pl.DataFrame({"u": s, "k": range(len(s))})
