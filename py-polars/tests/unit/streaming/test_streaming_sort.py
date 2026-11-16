@@ -687,6 +687,11 @@ def test_sort_fused_projection_null_bucket(sort_mode: str) -> None:
         .slice(N_ROWS // 2)
         .select("pad", "idx")
     )
+    plan = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert any(
+        r"sort\n" in line and "project 2 / 3: pad, idx" in line
+        for line in plan.splitlines()
+    ), plan
     assert_sort_matches_in_memory(q, [], exact=True)
 
 
