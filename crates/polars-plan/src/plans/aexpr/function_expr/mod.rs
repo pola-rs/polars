@@ -100,7 +100,7 @@ pub use self::trigonometry::IRTrigonometricFunction;
 #[cfg(feature = "dtype-union")]
 pub use self::union_::IRUnionFunction;
 #[cfg(feature = "dtype-union")]
-pub(crate) use self::union_::literal_fits as union_literal_fits;
+pub(crate) use self::union_::{literal_fits as union_literal_fits, union_match_dtype};
 use super::*;
 
 /// How `min_by` and `max_by` order the `by` values.

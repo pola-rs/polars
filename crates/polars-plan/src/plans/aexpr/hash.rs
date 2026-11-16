@@ -106,6 +106,16 @@ impl Hash for AExpr {
                 evaluation: _,
                 variant,
             } => variant.hash(state),
+            #[cfg(feature = "dtype-union")]
+            AExpr::UnionMatch {
+                expr: _,
+                names,
+                arms: _,
+                default,
+            } => {
+                names.hash(state);
+                default.is_some().hash(state);
+            },
             AExpr::Slice {
                 input: _,
                 offset: _,

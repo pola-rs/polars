@@ -1520,7 +1520,7 @@ def test_union_match_plan() -> None:
     assert "union.match" in plan
     assert "when" not in plan
     assert lf.collect().to_series().to_list() == [6, 0, 10, None]
-    # `pl.field` reads the struct at every row, so this stays a `when/then` chain.
+    # `pl.field` is read at the rows of the arm.
     lf = (
         match_frame()
         .lazy()
@@ -1530,11 +1530,22 @@ def test_union_match_plan() -> None:
             )
         )
     )
-    assert "when" in lf.explain()
+    plan = lf.explain()
+    assert "union.match" in plan
+    assert "when" not in plan
     assert lf.collect().to_series().struct.field("m").to_list() == [6, 0, 10, None]
 
 
-def test_union_match_arms_see_their_rows() -> None:
+@pytest.mark.parametrize(
+    ("context", "expected"),
+    [
+        ("column", [1, 2, 3, 4, 1, 2, 6, 7, 8, None]),
+        # The arms read the union after a reverse and `k` as is.
+        ("reversed", [None, 1, 2, 3, 2, 1, 4, 3, 2, 1]),
+        ("with_fields", [1, 2, 3, 4, 1, 2, 6, 7, 8, None]),
+    ],
+)
+def test_union_match_arms_see_their_rows(context: str, expected: list[Any]) -> None:
     seen: dict[str, list[int]] = {"i": [], "s": [], "default": []}
 
     def record(name: str) -> pl.Expr:
@@ -1548,6 +1559,13 @@ def test_union_match_arms_see_their_rows() -> None:
         seen["default"].append(len(s))
         return s
 
+    def match(u: pl.Expr, k: pl.Expr) -> pl.Expr:
+        return u.union.match(
+            i=record("i"),
+            s=record("s"),
+            default=k.map_batches(default, pl.Int64, is_elementwise=True),
+        )
+
     dtype = pl.Union({"i": pl.Int64, "s": pl.String, "f": pl.Float64})
     df = pl.select(
         u=pl.union_value(dtype, i=pl.Series([1, 22, 333, 4444]))
@@ -1556,18 +1574,18 @@ def test_union_match_arms_see_their_rows() -> None:
         .append(pl.lit(None, dtype=dtype)),
         k=pl.int_range(10),
     )
-    out = (
-        df.lazy()
-        .select(
-            pl.col("u").union.match(
-                i=record("i"),
-                s=record("s"),
-                default=pl.col("k").map_batches(default, pl.Int64, is_elementwise=True),
-            )
+    if context == "column":
+        expr = match(pl.col("u"), pl.col("k"))
+    elif context == "reversed":
+        expr = match(pl.col("u").reverse(), pl.col("k"))
+    else:
+        expr = (
+            pl.struct("u", "k")
+            .struct.with_fields(m=match(pl.field("u"), pl.field("k")))
+            .struct.field("m")
         )
-        .collect()
-    )
-    assert out.to_series().to_list() == [1, 2, 3, 4, 1, 2, 6, 7, 8, None]
+    out = df.lazy().select(expr).collect()
+    assert out.to_series().to_list() == expected
     assert sum(seen["i"]) == 4
     assert sum(seen["s"]) == 2
     assert sum(seen["default"]) == 3

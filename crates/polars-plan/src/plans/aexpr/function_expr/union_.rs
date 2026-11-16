@@ -10,23 +10,10 @@ pub enum IRUnionFunction {
         dtype: DataType,
         variant: PlSmallStr,
     },
-    /// The inputs are the union, an arm per name in `names`, and the default if `has_default`;
-    /// the output has dtype `dtype`.
-    ///
-    /// An arm reads its variant's value as `input.union.field(name)`, so it is valid in the outer
-    /// frame. The kernel evaluates each arm only on the rows of its variant.
-    Match {
-        names: Vec<PlSmallStr>,
-        has_default: bool,
-        dtype: DataType,
-    },
 }
 
 impl IRUnionFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
-        if let Self::Match { dtype, .. } = self {
-            return Ok(Field::new(mapper.args()[0].name().clone(), dtype.clone()));
-        }
         if let Self::Value { dtype, variant } = self {
             return mapper.try_map_dtype(|input| {
                 let DataType::Union(fields) = dtype else {
@@ -49,7 +36,7 @@ impl IRUnionFunction {
             Ok(match self {
                 Self::Tag => fields.tag_dtype(),
                 Self::Field(name) => fields[fields.try_index_of(name)?].dtype().clone(),
-                Self::Value { .. } | Self::Match { .. } => unreachable!(),
+                Self::Value { .. } => unreachable!(),
             })
         })
     }
@@ -65,21 +52,6 @@ impl Display for IRUnionFunction {
             Self::Tag => write!(f, "union.tag"),
             Self::Field(name) => write!(f, "union.field({name})"),
             Self::Value { variant, .. } => write!(f, "union.value({variant})"),
-            Self::Match {
-                names, has_default, ..
-            } => {
-                write!(f, "union.match(")?;
-                for (i, name) in names.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{name}")?;
-                }
-                if *has_default {
-                    write!(f, "{}default", if names.is_empty() { "" } else { ", " })?;
-                }
-                write!(f, ")")
-            },
         }
     }
 }
@@ -100,4 +72,39 @@ pub(crate) fn literal_fits(input: &DataType, to: &DataType) -> bool {
         },
         _ => false,
     }
+}
+
+/// The output dtype of `union.match`, from a label and the dtype of each arm and the default.
+///
+/// The dtypes must be equal, except that `Null` takes the common dtype and a dynamic literal one
+/// of its kind.
+pub(crate) fn union_match_dtype(branches: &[(String, DataType)]) -> PolarsResult<DataType> {
+    let mismatch = |(a, a_dt): &(String, DataType), (b, b_dt): &(String, DataType)| {
+        polars_err!(
+            SchemaMismatch: "the arms of `union.match` must have the same dtype, \
+            but the arm for {a} gives `{a_dt}` and the arm for {b} gives `{b_dt}`"
+        )
+    };
+    if let Some(first) = branches
+        .iter()
+        .find(|(_, dt)| !dt.is_null() && !dt.is_unknown())
+    {
+        for b in branches {
+            let dt = &b.1;
+            if !(dt.is_null() || dt == &first.1 || literal_fits(dt, &first.1)) {
+                return Err(mismatch(first, b));
+            }
+        }
+        return Ok(first.1.clone());
+    }
+    let mut literals = branches.iter().filter(|(_, dt)| dt.is_unknown());
+    let Some(first) = literals.next() else {
+        return Ok(DataType::Null);
+    };
+    let mut dtype = first.1.clone();
+    for b in literals {
+        dtype =
+            polars_core::utils::try_get_supertype(&dtype, &b.1).map_err(|_| mismatch(first, b))?;
+    }
+    dtype.materialize_unknown(false)
 }

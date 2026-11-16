@@ -2326,6 +2326,8 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
         .into_py_any(py),
         AExpr::Len => Len {}.into_py_any(py),
         AExpr::Eval { .. } => Err(PyNotImplementedError::new_err("list.eval")),
+        #[cfg(feature = "dtype-union")]
+        AExpr::UnionMatch { .. } => Err(PyNotImplementedError::new_err("union.match")),
         AExpr::StructEval {
             expr,
             evaluation,

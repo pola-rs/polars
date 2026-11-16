@@ -81,10 +81,7 @@ fn skip_pre_visit(ae: &AExpr, is_groupby: bool, element_wise_select_only: bool) 
         AExpr::Eval { .. } => true,
         // Hoisting part of an arm out would evaluate it on every row instead of on its variant's.
         #[cfg(feature = "dtype-union")]
-        AExpr::Function {
-            function: IRFunctionExpr::UnionExpr(crate::plans::IRUnionFunction::Match { .. }),
-            ..
-        } => true,
+        AExpr::UnionMatch { .. } => true,
         AExpr::Ternary { .. } => is_groupby,
         ae => {
             if element_wise_select_only {

@@ -13,7 +13,7 @@ pub enum UnionFunction {
     },
     /// The inputs are the union, an arm per name in `names`, and the default if `has_default`.
     ///
-    /// `pl.element()` in an arm is the value of its variant. Lowered to `when/then` in the IR.
+    /// `pl.element()` in an arm is the value of its variant. Lowered to `AExpr::UnionMatch`.
     Match {
         names: Vec<PlSmallStr>,
         has_default: bool,

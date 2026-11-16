@@ -256,6 +256,24 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             evaluation: expr_irs_to_exprs(evaluation, expr_arena),
             variant,
         },
+        #[cfg(feature = "dtype-union")]
+        AExpr::UnionMatch {
+            expr,
+            names,
+            arms,
+            default,
+        } => {
+            let has_default = default.is_some();
+            let input = std::iter::once(expr)
+                .chain(arms)
+                .chain(default)
+                .map(|n| node_to_expr(n, expr_arena))
+                .collect();
+            Expr::Function {
+                input,
+                function: FunctionExpr::UnionExpr(UnionFunction::Match { names, has_default }),
+            }
+        },
         AExpr::Function {
             input,
             function,
@@ -337,7 +355,7 @@ fn total_min_max_by_to_dsl(input: Vec<Expr>, nulls_largest: bool, is_max: bool) 
     }
 }
 
-pub fn ir_function_to_dsl(mut input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
+pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
     use FunctionExpr as F;
     use IRFunctionExpr as IF;
 
@@ -439,18 +457,6 @@ pub fn ir_function_to_dsl(mut input: Vec<Expr>, function: IRFunctionExpr) -> Exp
             IRUnionFunction::Value { dtype, variant } => UnionFunction::Value {
                 dtype: DataTypeExpr::Literal(dtype),
                 variant,
-            },
-            IRUnionFunction::Match {
-                names,
-                has_default,
-                dtype: _,
-            } => {
-                let union = input[0].clone();
-                for (arm, name) in input[1..].iter_mut().zip(&names) {
-                    let field = union.clone().union().field(name.clone());
-                    *arm = dsl_to_ir::replace_in_match_arm(arm.clone(), &field, &Expr::Element);
-                }
-                UnionFunction::Match { names, has_default }
             },
         }),
         #[cfg(feature = "dtype-extension")]
