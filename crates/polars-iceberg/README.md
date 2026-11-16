@@ -13,7 +13,7 @@ This crate lives at `crates/polars-iceberg` in the Polars repository and is a wo
 it inherits workspace metadata, lints and dependency versions. Its package version is independent
 of Polars, and Polars' default workspace builds exclude it.
 
-The Rust package and library are `polars-io-ext` and `polars_io_ext` (an `rlib`). The Python
+The Rust package and library are `polars-iceberg` and `polars_iceberg` (an `rlib`). The Python
 distribution and import module are `polars-iceberg` and `polars_iceberg`, built from
 `py-polars/polars-iceberg`: its `polars-iceberg-python` crate enables the `python` and `iceberg`
 Cargo features of this crate to build the extension module. From the Polars root:

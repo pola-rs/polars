@@ -15,7 +15,7 @@ name = "_lib"
 crate-type = ["cdylib"]
 
 [dependencies]
-polars-io-ext = { path = "../../crates/polars-iceberg", features = ["python", "iceberg"] }
+polars-iceberg = { path = "../../crates/polars-iceberg", features = ["python", "iceberg"] }
 pyo3 = { workspace = true, features = ["abi3-py310", "extension-module"] }
 
 [lints]

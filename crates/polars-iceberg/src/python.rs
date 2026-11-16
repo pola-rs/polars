@@ -51,7 +51,7 @@ fn _capsule_for_testing<'py>(py: Python<'py>, name: &str) -> PyResult<Bound<'py,
 /// The module name must match `module-name` of the wheel (see `pyproject.toml`).
 #[pymodule]
 #[cfg_attr(feature = "iceberg", pyo3(name = "polars_iceberg"))]
-fn polars_io_ext(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn polars_iceberg(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add(
         "_polars_io_plugin_ids",

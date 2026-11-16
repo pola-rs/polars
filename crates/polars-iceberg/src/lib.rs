@@ -1,4 +1,4 @@
-//! Native I/O plugins for Polars, loaded through the contracts in `polars_io_ext_ffi`.
+//! Native Iceberg scan planning plugin for Polars, loaded through the contracts in `polars_io_ext_ffi`.
 //!
 //! Each format lives in its own module behind a Cargo feature of the same name:
 //! * [`iceberg`] (feature `iceberg`): Iceberg scan planning, contract `polars.io_plugin.iceberg.v1`.

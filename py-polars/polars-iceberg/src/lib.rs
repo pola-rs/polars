@@ -1,1 +1,1 @@
-extern crate polars_io_ext;
+extern crate polars_iceberg;

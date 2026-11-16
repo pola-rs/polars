@@ -1,5 +1,5 @@
 [package]
-name = "polars-io-ext"
+name = "polars-iceberg"
 # Released independently of Polars; compatibility is decided by the plugin IDs it exports (see
 # `polars-io-ext-ffi`), not by this version.
 version = "0.1.0"
@@ -9,12 +9,12 @@ homepage = { workspace = true }
 license = { workspace = true }
 publish = false
 repository = "https://github.com/pola-rs/polars"
-description = "Native I/O plugins for Polars (Iceberg, ...), one feature per format."
+description = "Native Iceberg scan planning plugin for Polars."
 
 # The Python package `polars-iceberg` is built from `py-polars/polars-iceberg`.
 
 [lib]
-name = "polars_io_ext"
+name = "polars_iceberg"
 crate-type = ["rlib"]
 
 [dependencies]
