@@ -208,8 +208,8 @@ def test_select_alias_reuse_types() -> None:
         """
     )
     assert res.select("xb", "b", "c", "t1", "w", "tw").rows() == [
-        (1, 1, "p", "i32", 3, "i64"),
-        (2, 2, "q", "i32", 3, "i64"),
+        (1, 1, "p", "INTEGER", 3, "BIGINT"),
+        (2, 2, "q", "INTEGER", 3, "BIGINT"),
     ]
     assert res["ts"].dtype == pl.Datetime("us", "UTC")
 
