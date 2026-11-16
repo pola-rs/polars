@@ -1,0 +1,66 @@
+*.iml
+*.so
+*.pyd
+*.pdb
+*.ipynb
+.ENV
+.env*
+.ipynb_checkpoints/
+.python-version
+.yarn/
+coverage.lcov
+coverage.xml
+profile.json
+polars/vendor
+_polars_runtime*/
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+.vim
+
+# Python
+.hypothesis/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv*/
+__pycache__/
+.coverage
+*.egg-info
+
+# Rust
+target/
+.cargo/config.generated.toml
+.cargo/config.local.toml
+
+# Data
+*.csv
+*.parquet
+*.feather
+*.tbl
+
+# Project
+/docs/assets/data/*
+!/docs/assets/data/alltypes_plain.parquet
+!/docs/assets/data/apple_stock.csv
+!/docs/assets/data/iris.csv
+!/docs/assets/data/monopoly_props_groups.csv
+!/docs/assets/data/monopoly_props_prices.csv
+!/docs/assets/data/pokemon.csv
+!/docs/assets/data/reddit.csv
+/docs/assets/people.md
+
+# User specific source setups
+# You can put anything here that needs to be done to prepare your env.
+.user_env.*
+site/
+
+.claude/
+CLAUDE.md
+
+# `polars_iceberg` I/O plugin: a clone or worktree of https://github.com/pola-rs/polars-iceberg.
+/crates/polars-iceberg
