@@ -43,6 +43,12 @@ pub trait Grouper: Any + Send + Sync {
     /// group i is returned in row i.
     fn get_keys_in_group_order(&self, schema: &Schema) -> DataFrame;
 
+    /// The keys in group order, as `get_keys_in_group_order`. Afterwards the
+    /// grouper may hold no groups.
+    fn take_keys_in_group_order(&mut self, schema: &Schema) -> DataFrame {
+        self.get_keys_in_group_order(schema)
+    }
+
     /// Returns the (indices of the) keys found in the groupers. If
     /// invert is true it instead returns the keys not found in the groupers.
     /// A null key whose nulls are not valid is never found.
