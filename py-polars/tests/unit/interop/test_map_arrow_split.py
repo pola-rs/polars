@@ -15,7 +15,8 @@ from polars.exceptions import InvalidOperationError
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-pytestmark = pytest.mark.slow
+# One xdist worker, so that only one copy of the ~1 GB `df` fixture is alive.
+pytestmark = [pytest.mark.slow, pytest.mark.xdist_group("map_arrow_split")]
 
 MAX_ENTRIES = 2**31 - 1
 ROW = 1 << 29
@@ -28,7 +29,8 @@ def zeroed_bools(n: int) -> pa.Array:
 
 
 def map_chunk(row_lens: Sequence[int], keys: pa.Array | None = None) -> pa.MapArray:
-    # Arrow import keeps duplicate keys, so all-false keys are a cheap stand-in for real ones.
+    # Arrow import keeps duplicate keys, so all-false keys are a cheap stand-in for
+    # real ones.
     offsets = [0, *accumulate(row_lens)]
     n = offsets[-1]
     keys = zeroed_bools(n) if keys is None else keys
@@ -119,7 +121,9 @@ def test_nested_maps_are_split_on_their_entries(
 
 def test_a_map_of_maps_is_split_on_the_inner_entries(df: pl.DataFrame) -> None:
     inner = df["m"].to_frame().slice(0, 2).to_arrow().column("m").chunk(0)
-    outer = pa.MapArray.from_arrays(pa.array([0, 1, 2], pa.int32()), zeroed_bools(2), inner)
+    outer = pa.MapArray.from_arrays(
+        pa.array([0, 1, 2], pa.int32()), zeroed_bools(2), inner
+    )
     nested = pl.from_arrow(pa.chunked_array([outer, outer, outer])).rechunk()
     assert isinstance(nested, pl.Series)
 
