@@ -164,6 +164,7 @@ class SQLContext(Generic[FrameType]):
         register_globals: bool | int = ...,
         eager: Literal[False] = False,
         allow_file_reads: bool = ...,
+        allow_file_writes: bool = ...,
         **named_frames: CompatibleFrameType | None,
     ) -> None: ...
 
@@ -175,6 +176,7 @@ class SQLContext(Generic[FrameType]):
         register_globals: bool | int = ...,
         eager: Literal[True],
         allow_file_reads: bool = ...,
+        allow_file_writes: bool = ...,
         **named_frames: CompatibleFrameType | None,
     ) -> None: ...
 
@@ -186,6 +188,7 @@ class SQLContext(Generic[FrameType]):
         register_globals: bool | int = ...,
         eager: bool,
         allow_file_reads: bool = ...,
+        allow_file_writes: bool = ...,
         **named_frames: CompatibleFrameType | None,
     ) -> None: ...
 
@@ -204,6 +207,7 @@ class SQLContext(Generic[FrameType]):
         register_globals: bool | int = False,
         eager: bool = False,
         allow_file_reads: bool = True,
+        allow_file_writes: bool = True,
         **named_frames: CompatibleFrameType | None,
     ) -> None:
         """
@@ -226,9 +230,14 @@ class SQLContext(Generic[FrameType]):
             impacts whether :meth:`execute` returns an eager or lazy result frame).
         allow_file_reads
             Whether SQL may read files and URLs, through table functions such as
-            `read_parquet` or a quoted path in `FROM`. Set to False to run untrusted
-            SQL; it can then only read the registered frames and catalogs.
-            Statements on a registered catalog are not limited: with a writable
+            `read_parquet` or a quoted path in `FROM`. With False, SQL can only read
+            the registered frames and catalogs.
+        allow_file_writes
+            Whether SQL may write files and URLs, through `COPY ... TO`. With False,
+            `COPY` is an error.
+
+            Set both to False to run untrusted SQL. This is not a full sandbox:
+            statements on a registered catalog are not limited, so with a writable
             catalog, SQL can still create tables and choose where they are stored.
         **named_frames
             Named eager/lazy frames, provided as kwargs.
@@ -253,7 +262,7 @@ class SQLContext(Generic[FrameType]):
         issue_unstable_warning(
             "`SQLContext` is considered **unstable**, although it is close to being considered stable."
         )
-        self._ctxt = PySQLContext.new(allow_file_reads)
+        self._ctxt = PySQLContext.new(allow_file_reads, allow_file_writes)
         self._eager_execution = eager
         self._catalogs = {}
 

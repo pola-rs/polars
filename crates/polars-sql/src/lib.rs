@@ -3,6 +3,7 @@
 #![deny(missing_docs)]
 mod catalog;
 mod context;
+mod copy;
 mod datetime_template;
 mod dyn_visit;
 pub mod function_registry;

@@ -19,17 +19,18 @@ use polars_plan::prelude::*;
 use polars_plan::utils::expr_to_leaf_column_names_iter;
 use polars_utils::aliases::{PlHashSet, PlIndexSet};
 use polars_utils::format_pl_smallstr;
+use polars_utils::pl_path::PlRefPath;
 use polars_utils::unique_id::UniqueId;
 use sqlparser::ast::{
     AlterColumnOperation, AlterTable, AlterTableOperation, Assignment, AssignmentTarget,
-    BinaryOperator as SQLBinaryOperator, CreateTable, CreateTableLikeKind, CreateTableOptions,
-    CreateView, Cte, Delete, Distinct, DropBehavior, ExcludeSelectItem, Expr as SQLExpr, Fetch,
-    FromTable, Function, FunctionArg, FunctionArgExpr, FunctionArguments, GroupByExpr,
-    HiveDistributionStyle, HiveFormat, Ident, IdentWithAlias, Insert, Join, JoinConstraint,
-    JoinOperator, LimitClause, Merge, MergeAction, MergeClause, MergeClauseKind, MergeInsertExpr,
-    MergeInsertKind, MergeUpdateExpr, MergeUpdateKind, NamedWindowDefinition, NamedWindowExpr,
-    ObjectName, ObjectNamePart, ObjectType, OrderBy, OrderByKind, OutputClause, Query,
-    RenameSelectItem, SchemaName, Select, SelectFlavor, SelectItem,
+    BinaryOperator as SQLBinaryOperator, CopySource, CopyTarget, CreateTable, CreateTableLikeKind,
+    CreateTableOptions, CreateView, Cte, Delete, Distinct, DropBehavior, ExcludeSelectItem,
+    Expr as SQLExpr, Fetch, FromTable, Function, FunctionArg, FunctionArgExpr, FunctionArguments,
+    GroupByExpr, HiveDistributionStyle, HiveFormat, Ident, IdentWithAlias, Insert, Join,
+    JoinConstraint, JoinOperator, LimitClause, Merge, MergeAction, MergeClause, MergeClauseKind,
+    MergeInsertExpr, MergeInsertKind, MergeUpdateExpr, MergeUpdateKind, NamedWindowDefinition,
+    NamedWindowExpr, ObjectName, ObjectNamePart, ObjectType, OrderBy, OrderByKind, OutputClause,
+    Query, RenameSelectItem, SchemaName, Select, SelectFlavor, SelectItem,
     SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, SqlOption, Statement,
     TableAlias, TableAliasColumnDef, TableFactor, TableObject, TableWithJoins, Truncate,
     TruncateTableTarget, UnaryOperator as SQLUnaryOperator, Update, Value as SQLValue,
@@ -78,10 +79,10 @@ use crate::subquery::{
     is_correlated_subquery, quantified_as_exists, row_indexed_once,
 };
 use crate::subquery_pull_up::NESTED_PREFIX;
-use crate::table_functions::PolarsTableFunctions;
+use crate::table_functions::{PolarsTableFunctions, expand_home_dir};
 use crate::time_travel::{split_version, unversioned_key, with_version};
 use crate::types::{map_sql_dtype_to_polars, sql_type_name};
-use crate::{col, unique_column_name};
+use crate::{col, copy, unique_column_name};
 
 #[derive(Clone)]
 pub struct TableInfo {
@@ -331,6 +332,8 @@ pub struct SQLContext {
     custom_function_registry: bool,
     /// Whether SQL may read files and URLs, through table functions or quoted paths.
     pub(crate) allow_file_reads: bool,
+    /// Whether SQL may write files and URLs, through `COPY`.
+    allow_file_writes: bool,
     pub(crate) lp_arena: Arena<IR>,
     pub(crate) expr_arena: Arena<AExpr>,
 
@@ -432,6 +435,7 @@ impl Default for SQLContext {
             function_registry: Arc::new(DefaultFunctionRegistry {}),
             custom_function_registry: false,
             allow_file_reads: true,
+            allow_file_writes: true,
             table_map: Default::default(),
             views: Default::default(),
             view_frames: Default::default(),
@@ -551,6 +555,7 @@ impl SQLContext {
         let Ok(mut stmt) = layout_alter::parse_single_statement_or_alter(query)? else {
             return Ok(Vec::new());
         };
+        copy_table_as_query(&mut stmt)?;
         let mut reads = Vec::new();
         for (_, key) in self.rewrite_catalog_names(&mut stmt)?.0 {
             let (full_name, version) = split_version(&key);
@@ -1387,6 +1392,7 @@ impl SQLContext {
             Err(alter) => return Err(self.alter_table_error(&alter.name)),
         };
         let bound = bind_params(&mut stmt, params)?;
+        copy_table_as_query(&mut stmt)?;
 
         // The deferred plan holds the query text, which has the placeholders.
         if bound.is_none() && self.can_defer(&stmt) {
@@ -1580,9 +1586,17 @@ impl SQLContext {
 
     /// Set whether SQL may read files and URLs, through table functions such as `read_parquet`
     /// or a quoted path in `FROM`. Registered tables and catalogs stay readable, and statements
-    /// on catalogs are not limited.
+    /// on catalogs are not limited. Writing files is set apart, by
+    /// [`SQLContext::with_file_writes`].
     pub fn with_file_reads(mut self, allow: bool) -> Self {
         self.allow_file_reads = allow;
+        self
+    }
+
+    /// Set whether SQL may write files and URLs, through `COPY ... TO`. Statements on catalogs
+    /// are not limited.
+    pub fn with_file_writes(mut self, allow: bool) -> Self {
+        self.allow_file_writes = allow;
         self
     }
 
@@ -1675,6 +1689,7 @@ impl SQLContext {
             stmt @ Statement::Delete { .. } => self.execute_delete_from_table(stmt)?,
             Statement::Update(update) => self.execute_update(update)?,
             Statement::Merge(merge) => self.execute_merge(merge)?,
+            stmt @ Statement::Copy { .. } => self.execute_copy(stmt)?,
             _ => polars_bail!(
                 SQLInterface: "statement type is not supported:\n{:?}", ast,
             ),
@@ -2780,6 +2795,53 @@ impl SQLContext {
             .unwrap()
             .insert(key.clone(), Arc::new(view));
         response(&key)
+    }
+
+    /// `COPY (<query>) TO '<file>'`: the plan that writes the file once it is collected.
+    fn execute_copy(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
+        let Statement::Copy {
+            source,
+            to,
+            target,
+            options,
+            legacy_options,
+            ..
+        } = stmt
+        else {
+            unreachable!()
+        };
+        let path = match target {
+            CopyTarget::Program { .. } => {
+                polars_bail!(SQLInterface: "COPY with PROGRAM is not supported")
+            },
+            _ if !*to => polars_bail!(
+                SQLInterface:
+                "COPY FROM is not supported; use CREATE TABLE <name> AS SELECT * FROM '<file>' or INSERT INTO <name> SELECT * FROM '<file>'"
+            ),
+            CopyTarget::File { filename } => filename,
+            _ => polars_bail!(
+                SQLInterface: "COPY TO STDOUT is not supported; use COPY ... TO '<file>'"
+            ),
+        };
+        // `COPY <table> TO` is a query by now, see `copy_table_as_query`
+        let CopySource::Query(query) = source else {
+            polars_bail!(SQLInterface: "COPY of a table is not supported in this statement");
+        };
+        polars_ensure!(
+            legacy_options.is_empty(),
+            SQLInterface: "COPY takes its options in parentheses, as in (FORMAT csv, HEADER false)"
+        );
+        polars_ensure!(
+            self.allow_file_writes,
+            SQLInterface: "writing files is disabled in this SQLContext"
+        );
+        let format = copy::write_format(path, options)?;
+        let target = SinkTarget::Path(expand_home_dir(PlRefPath::new(path))?);
+        self.execute_query(query)?.sink(
+            SinkDestination::File { target },
+            format,
+            UnifiedSinkArgs::default(),
+        )
     }
 
     // DESCRIBE <table>, DESCRIBE '<path>'
@@ -9013,6 +9075,14 @@ fn statement_table_identifiers(
         include_schema,
         ..Default::default()
     };
+    // the visitor does not come by the table of `COPY <table>`
+    if let Statement::Copy {
+        source: CopySource::Table { table_name, .. },
+        ..
+    } = stmt
+    {
+        let _ = collector.pre_visit_relation(table_name);
+    }
     let _ = dyn_visit::visit(stmt, &mut collector);
     if unique {
         collector
@@ -10169,6 +10239,34 @@ fn ensure_no_version(target: &TableFactor, statement: &str) -> PolarsResult<()> 
             SQLInterface: "{} cannot change table '{}' as of a version (`{}`): time travel is for reads only",
             statement, name, version
         );
+    }
+    Ok(())
+}
+
+/// `COPY <table> [(<columns>)] TO` as `COPY (SELECT <columns> FROM <table>) TO`, so that the
+/// table is read as in any query.
+fn copy_table_as_query(stmt: &mut Statement) -> PolarsResult<()> {
+    if let Statement::Copy { source, to, .. } = stmt
+        && let CopySource::Table {
+            table_name,
+            columns,
+        } = source
+        && *to
+    {
+        let columns = match columns.is_empty() {
+            true => "*".to_string(),
+            // in double quotes, so that each name is read as a column
+            false => columns
+                .iter()
+                .map(|c| Ident::with_quote('"', c.value.as_str()).to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
+        };
+        let select = format!("SELECT {columns} FROM {table_name}");
+        let Statement::Query(query) = parse_single_statement(&select)? else {
+            unreachable!()
+        };
+        *source = CopySource::Query(query);
     }
     Ok(())
 }

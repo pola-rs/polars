@@ -180,3 +180,57 @@ fn from_quoted_path() {
     let df = run(&mut context, &format!("DELETE FROM '{path}' WHERE a = 1"));
     assert_eq!(df.shape(), (0, 1));
 }
+
+#[test]
+#[cfg(feature = "csv")]
+fn copy_to_file() {
+    let dir = std::env::temp_dir().join(format!("polars_sql_copy_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("foods.csv");
+    let target = path.to_str().unwrap().replace('\\', "/");
+
+    let mut context = SQLContext::new();
+    let query = "SELECT category, calories FROM '../../examples/datasets/foods1.csv' \
+                 WHERE calories > 100";
+    let expected = context.execute(query).unwrap().collect().unwrap();
+
+    // The plan writes the file once it is collected.
+    let plan = context
+        .execute(&format!("COPY ({query}) TO '{target}'"))
+        .unwrap();
+    assert!(!path.exists());
+    assert_eq!(plan.collect().unwrap().shape(), (0, 0));
+    let written = context
+        .execute(&format!("SELECT * FROM '{target}'"))
+        .unwrap()
+        .collect()
+        .unwrap();
+    assert!(written.equals(&expected));
+
+    // A table with a column list, replacing the file; `FORMAT` and the CSV options.
+    let t = df! { "a" => [1, 2], "b" => ["x", "y"] }.unwrap();
+    context.register("t", t.lazy());
+    let other = dir.join("foods.txt");
+    for (sql, file, contents) in [
+        ("COPY t (b, a) TO '{}'", &path, "b,a\nx,1\ny,2\n"),
+        (
+            "COPY t TO '{}' (FORMAT csv, HEADER false, DELIMITER '|')",
+            &other,
+            "1|x\n2|y\n",
+        ),
+    ] {
+        let sql = sql.replace("{}", &file.to_str().unwrap().replace('\\', "/"));
+        context.execute(&sql).unwrap().collect().unwrap();
+        assert_eq!(std::fs::read_to_string(file).unwrap(), contents);
+    }
+
+    // Writing files can be turned off.
+    let mut context = SQLContext::new().with_file_writes(false);
+    let err = context
+        .execute(&format!("COPY (SELECT 1 AS a) TO '{target}'"))
+        .err()
+        .unwrap();
+    assert!(err.to_string().contains("writing files is disabled"));
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
