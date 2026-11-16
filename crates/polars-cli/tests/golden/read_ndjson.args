@@ -1,2 +1,0 @@
--c
-SELECT category, COUNT(*) AS n, SUM(calories) AS calories FROM read_ndjson('../../py-polars/tests/unit/io/files/foods1.ndjson') GROUP BY category ORDER BY category

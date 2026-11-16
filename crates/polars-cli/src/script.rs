@@ -1,9 +1,18 @@
 use std::ops::Range;
 
 use sqlparser::dialect::GenericDialect;
+use sqlparser::keywords::Keyword;
 use sqlparser::tokenizer::{Location as TokenLocation, Token, TokenWithSpan, Tokenizer};
 
 use crate::error::{ErrorRecord, Location};
+
+/// A statement of a script, without its `;`.
+pub(crate) struct Statement<'a> {
+    pub sql: &'a str,
+    /// Whether the result describes a table, a query or a plan, as that of `DESCRIBE` and
+    /// `EXPLAIN` does. Such a result is read as a whole.
+    pub describes: bool,
+}
 
 /// A SQL script, split into its statements.
 ///
@@ -11,7 +20,7 @@ use crate::error::{ErrorRecord, Location};
 /// statement.
 pub struct Script {
     text: String,
-    statements: Vec<Range<usize>>,
+    statements: Vec<(Range<usize>, bool)>,
     /// Why the text after the last statement cannot be split, for example an unclosed string.
     error: Option<(String, Location)>,
 }
@@ -36,6 +45,7 @@ impl Script {
         let mut statements = Vec::new();
         let mut start = 0;
         let mut has_tokens = false;
+        let mut describes = false;
         // Where the executable comment that is being passed ends.
         let mut comment_end = 0;
         for TokenWithSpan { token, span } in &tokens {
@@ -51,17 +61,22 @@ impl Script {
                 Token::Whitespace(_) | Token::EOF => {},
                 Token::SemiColon if !in_comment => {
                     if has_tokens {
-                        statements.push(trimmed(&text, start..offset));
+                        statements.push((trimmed(&text, start..offset), describes));
                     }
                     start = offset + 1;
                     has_tokens = false;
                 },
-                _ => has_tokens = true,
+                _ => {
+                    if !has_tokens {
+                        describes = starts_description(token);
+                    }
+                    has_tokens = true;
+                },
             }
         }
         // With an error, the text after the last separator is an incomplete statement.
         if error.is_none() && has_tokens {
-            statements.push(trimmed(&text, start..text.len()));
+            statements.push((trimmed(&text, start..text.len()), describes));
         }
 
         Self {
@@ -76,15 +91,16 @@ impl Script {
         self.statements.is_empty() && self.error.is_none()
     }
 
-    /// The statements that can be run, in order, each without its `;`.
-    pub(crate) fn statements(&self) -> impl Iterator<Item = &str> {
-        self.statements
-            .iter()
-            .map(|statement| &self.text[statement.clone()])
+    /// The statements that can be run, in order.
+    pub(crate) fn statements(&self) -> impl Iterator<Item = Statement<'_>> {
+        self.statements.iter().map(|(range, describes)| Statement {
+            sql: &self.text[range.clone()],
+            describes: *describes,
+        })
     }
 
     /// The number of statements, counting the one that cannot be split.
-    pub(crate) fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.statements.len() + usize::from(self.error.is_some())
     }
 
@@ -99,6 +115,17 @@ impl Script {
             statement: self.len(),
         })
     }
+}
+
+/// Whether a statement that starts with `first` describes a table, a query or a plan. The
+/// engine does not tell what kind of statement a result comes from, so its first keyword
+/// stands in for that.
+fn starts_description(first: &Token) -> bool {
+    matches!(
+        first,
+        Token::Word(word)
+            if matches!(word.keyword, Keyword::DESCRIBE | Keyword::DESC | Keyword::EXPLAIN)
+    )
 }
 
 /// The length of the block comment that `text` starts with. Block comments nest.
@@ -181,7 +208,25 @@ mod tests {
     fn split(text: &str) -> Vec<String> {
         let script = Script::new(text.to_string());
         assert!(script.split_error().is_none());
-        script.statements().map(str::to_string).collect()
+        split_sql(&script)
+    }
+
+    fn split_sql(script: &Script) -> Vec<String> {
+        script
+            .statements()
+            .map(|statement| statement.sql.to_string())
+            .collect()
+    }
+
+    #[test]
+    fn statements_that_describe_are_recognised() {
+        let script = Script::new(
+            "DESCRIBE t; desc t; -- how it runs\nEXPLAIN SELECT 1; SELECT 'DESCRIBE'; \
+             SELECT 1 AS \"desc\"; \"DESC\""
+                .to_string(),
+        );
+        let describes: Vec<bool> = script.statements().map(|s| s.describes).collect();
+        assert_eq!(describes, [true, true, true, false, false, false]);
     }
 
     #[test]
@@ -268,7 +313,7 @@ mod tests {
     #[test]
     fn unclosed_string_fails_after_the_complete_statements() {
         let script = Script::new("SELECT 1;\nSELECT 'abc".to_string());
-        assert_eq!(script.statements().collect::<Vec<_>>(), ["SELECT 1"]);
+        assert_eq!(split_sql(&script), ["SELECT 1"]);
         assert!(!script.is_empty());
         assert_eq!(script.len(), 2);
 

@@ -7,7 +7,7 @@ use polars_error::PolarsResult;
 use polars_expr::EvictIdx;
 use polars_expr::hash_keys::HashKeys;
 use polars_expr::hot_groups::{HotGrouper, new_hash_hot_grouper};
-use polars_expr::reduce::GroupedReduction;
+use polars_expr::reduce::{GroupRun, GroupedReduction, find_group_runs};
 use polars_ooc::{MostRecentSpillContext, ParameterFreeSpillContext, memory_manager};
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::f2_sketch::F2Sketch;
@@ -519,6 +519,7 @@ impl SinkState {
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let mut hot_idxs = Vec::new();
                 let mut hot_group_idxs = Vec::new();
+                let mut runs: Vec<GroupRun> = Vec::new();
                 let mut cold_idxs = Vec::new();
                 let mut identity_idxs: Vec<IdxSize> = Vec::new();
                 let num_inputs = key_selectors_per_input.len();
@@ -675,6 +676,10 @@ impl SinkState {
                             for red_idx in &params.reductions_per_input[input_idx] {
                                 local.hot_grouped_reductions[*red_idx].resize(num_groups);
                             }
+                            let has_runs = params.reductions_per_input[input_idx]
+                                .iter()
+                                .any(|i| local.hot_grouped_reductions[*i].supports_runs())
+                                && find_group_runs(&hot_idxs, &hot_group_idxs, &mut runs);
                             payload
                                 .update_reductions(
                                     reduce_df,
@@ -684,7 +689,15 @@ impl SinkState {
                                     &mut local.hot_grouped_reductions,
                                     &state.in_memory_exec_state,
                                     |reduction, in_cols, subset| unsafe {
-                                        if has_evictions {
+                                        if has_runs && reduction.supports_runs() {
+                                            reduction.update_groups_runs(
+                                                in_cols,
+                                                subset,
+                                                &hot_group_idxs,
+                                                &runs,
+                                                seq,
+                                            )
+                                        } else if has_evictions {
                                             reduction.update_groups_while_evicting(
                                                 in_cols,
                                                 subset,

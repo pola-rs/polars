@@ -18,7 +18,8 @@ use polars_core::prelude::*;
 use sqlparser::ast::helpers::attached_token::AttachedToken;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, CaseWhen, Expr as SQLExpr, GroupByExpr, Query, Select,
-    SelectItem, SetExpr, UnaryOperator as SQLUnaryOperator, Value as SQLValue, VisitorMut,
+    SelectItem, SetExpr, TableFactor, UnaryOperator as SQLUnaryOperator, Value as SQLValue,
+    VisitorMut,
 };
 
 use crate::SQLContext;
@@ -89,6 +90,21 @@ impl SQLContext {
 
             fn post_visit_expr(&mut self, _expr: &mut SQLExpr) -> ControlFlow<()> {
                 if self.skips.pop() == Some(true) {
+                    self.query_depth -= 1;
+                }
+                ControlFlow::Continue(())
+            }
+
+            // The expressions of a PIVOT read its input, not the relations of this select.
+            fn pre_visit_table_factor(&mut self, factor: &mut TableFactor) -> ControlFlow<()> {
+                if matches!(factor, TableFactor::Pivot { .. }) {
+                    self.query_depth += 1;
+                }
+                ControlFlow::Continue(())
+            }
+
+            fn post_visit_table_factor(&mut self, factor: &mut TableFactor) -> ControlFlow<()> {
+                if matches!(factor, TableFactor::Pivot { .. }) {
                     self.query_depth -= 1;
                 }
                 ControlFlow::Continue(())

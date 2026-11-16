@@ -109,6 +109,12 @@ pub fn col(name: &str) -> PyExpr {
     dsl::col(name).into()
 }
 
+/// The column `name`; unlike `col`, a name such as `^a$` or `*` is not a selector.
+#[pyfunction]
+pub fn col_exact(name: &str) -> PyExpr {
+    Expr::Column(name.into()).into()
+}
+
 #[pyfunction]
 pub fn element() -> PyExpr {
     dsl::element().into()

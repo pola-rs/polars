@@ -1,4 +1,4 @@
-//! Tests of how the command behaves as a process, which the golden cases cannot express.
+//! Tests that need more than the text the command writes and its exit code.
 
 use std::process::{Child, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
@@ -50,6 +50,40 @@ fn verbose_output_does_not_block_the_run() {
         .unwrap();
 
     assert_eq!(Running(child).wait().code(), Some(0));
+}
+
+/// Parquet and Arrow output is binary, so it is read back instead of compared as text.
+#[test]
+fn binary_output_reads_back() {
+    use std::io::Cursor;
+
+    use polars::prelude::*;
+
+    let sql = "SELECT n, n * 2 AS twice, 'row ' || n AS label \
+               FROM generate_series(1, 50000) AS t (n) ORDER BY n";
+    let expected = df!(
+        "n" => (1..=50_000i64).collect::<Vec<_>>(),
+        "twice" => (1..=50_000i64).map(|n| n * 2).collect::<Vec<_>>(),
+        "label" => (1..=50_000i64).map(|n| format!("row {n}")).collect::<Vec<_>>(),
+    )
+    .unwrap();
+
+    for format in ["parquet", "arrow-stream"] {
+        let output = common::polars()
+            .args(["--format", format, "-c", sql])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(0), "{format}");
+        assert!(output.stderr.is_empty(), "{format}");
+
+        let bytes = Cursor::new(output.stdout);
+        let read = match format {
+            "parquet" => ParquetReader::new(bytes).finish(),
+            _ => IpcStreamReader::new(bytes).finish(),
+        }
+        .unwrap();
+        assert!(read.equals(&expected), "{format}: {read}");
+    }
 }
 
 #[cfg(unix)]

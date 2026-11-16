@@ -199,6 +199,7 @@ impl<T, const COUNT: bool> Clone for NumUniqueReducer<T, COUNT> {
 impl<T: PolarsNumericType, const COUNT: bool> Reducer for NumUniqueReducer<T, COUNT> {
     type Dtype = T;
     type Value = UniqueValues<TotalOrdWrap<T::Native>>;
+    const SKIP_REPEATS: bool = true;
 
     fn init(&self) -> Self::Value {
         UniqueValues::new()
@@ -206,6 +207,11 @@ impl<T: PolarsNumericType, const COUNT: bool> Reducer for NumUniqueReducer<T, CO
 
     fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
         s.to_physical_repr()
+    }
+
+    #[inline(always)]
+    unsafe fn is_repeat(&self, arr: &PrimitiveArray<T::Native>, i: usize, j: usize) -> bool {
+        unsafe { arr.value_unchecked(i).tot_eq(&arr.value_unchecked(j)) }
     }
 
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
@@ -375,6 +381,7 @@ struct BinaryUniqueReducer<const COUNT: bool>;
 impl<const COUNT: bool> Reducer for BinaryUniqueReducer<COUNT> {
     type Dtype = BinaryType;
     type Value = BinaryUniqueValues;
+    const SKIP_REPEATS: bool = true;
 
     fn init(&self) -> Self::Value {
         BinaryUniqueValues::new()
@@ -382,6 +389,11 @@ impl<const COUNT: bool> Reducer for BinaryUniqueReducer<COUNT> {
 
     fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
         Cow::Owned(s.cast(&DataType::Binary).unwrap())
+    }
+
+    #[inline(always)]
+    unsafe fn is_repeat(&self, arr: &BinaryViewArray, i: usize, j: usize) -> bool {
+        unsafe { arr.views().get_unchecked(i) == arr.views().get_unchecked(j) }
     }
 
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
