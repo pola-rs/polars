@@ -824,3 +824,50 @@ def test_top_clause_unsupported(query: str) -> None:
     t = pl.DataFrame({"x": [1, 2, 3]})
     with pytest.raises(SQLInterfaceError, match="`TOP` clause is not supported"):
         pl.SQLContext(t=t).execute(query, eager=True)
+
+
+def test_typeof() -> None:
+    df = pl.DataFrame(
+        {"i": [1, 2], "s": ["a", "b"], "d": [date(2024, 1, 1), None], "l": [[1], []]}
+    )
+    res = df.sql(
+        """
+        SELECT
+          TYPEOF(i) AS i,
+          TYPEOF(s) AS s,
+          TYPEOF(d) AS d,
+          TYPEOF(l) AS l,
+          TYPEOF(i * CAST(1.5 AS DOUBLE)) AS f,
+          TYPEOF(1) AS lit,
+          TYPEOF(NULL) AS n,
+          TYPEOF((SELECT MAX(s) FROM self)) AS sub
+        FROM self
+        """
+    )
+    assert (
+        res.rows()
+        == [("i64", "str", "date", "list[i64]", "f64", "i32", "null", "str")] * 2
+    )
+    assert df.sql("SELECT TYPEOF(SUM(i)) AS t FROM self").rows() == [("i64",)]
+    # The aggregate is not computed, so a value that would fail does not matter.
+    assert df.sql("SELECT TYPEOF(SUM(CAST(s AS INT))) AS t FROM self").rows() == [
+        ("i32",)
+    ]
+    assert df.sql(
+        "SELECT s, TYPEOF(s) AS t FROM self GROUP BY s ORDER BY s"
+    ).rows() == [
+        ("a", "str"),
+        ("b", "str"),
+    ]
+    assert df.sql("SELECT TYPEOF(SUM(i) + i) AS t FROM self GROUP BY i").rows() == [
+        ("i64",),
+        ("i64",),
+    ]
+    with pytest.raises(SQLSyntaxError, match="'i' should participate in the GROUP BY"):
+        df.sql("SELECT TYPEOF(SUM(i) + i) FROM self")
+    with pytest.raises(SQLSyntaxError, match="'i' should participate in the GROUP BY"):
+        df.sql("SELECT SUM(i), TYPEOF(i) FROM self")
+    assert pl.sql("SELECT TYPEOF(UNNEST([1, 2, 3])) AS t", eager=True).height == 3
+    assert df.sql("SELECT TYPEOF(UNNEST(ARRAY_AGG(i))) AS t FROM self").height == 2
+    with pytest.raises(SQLSyntaxError, match=r"TYPEOF expects 1 argument \(found 2\)"):
+        df.sql("SELECT TYPEOF(i, s) FROM self")

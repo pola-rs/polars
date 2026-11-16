@@ -1044,14 +1044,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     let replacement = col(value.clone()).filter(predicate);
 
                     aggs_dsl.push(
-                        agg_dsl
-                            .clone()
-                            .map_expr(|e| match e {
-                                Expr::Element => replacement.clone(),
-                                Expr::Len => replacement.clone().len(),
-                                other => other,
-                            })
-                            .alias(name.as_str()),
+                        replace_pivot_values(agg_dsl.clone(), &replacement).alias(name.as_str()),
                     );
                 }
             }
@@ -1270,12 +1263,12 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             &input_schema,
                         ),
                         StatsFunction::Min => stats_helper(
-                            |dt| dt.is_ord(),
+                            |dt| dt.is_ord() || dt.is_nested(),
                             |name| col(name.clone()).min(),
                             &input_schema,
                         ),
                         StatsFunction::Max => stats_helper(
-                            |dt| dt.is_ord(),
+                            |dt| dt.is_ord() || dt.is_nested(),
                             |name| col(name.clone()).max(),
                             &input_schema,
                         ),
@@ -1398,14 +1391,20 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 *ctxt.opt_flags = orig_opt_flags;
             });
 
-            if let SinkType::Iceberg(state) = payload {
+            // Sinks to table formats resolve into a partitioned Parquet sink, and commit the
+            // sinked files with a callback to the same Python sink state.
+            if matches!(payload, SinkType::Iceberg(_) | SinkType::Delta(_)) {
                 feature_gated!("python", {
                     use polars_utils::python_convert_registry::get_python_convert_registry;
-                    use pyo3::{Python, intern};
+                    use pyo3::{PyResult, Python, intern};
 
                     use crate::dsl::sink::SinkedPathsCallback;
 
-                    let py_sink_state = state.clone().into_sink_state_obj()?;
+                    let py_sink_state = match &payload {
+                        SinkType::Iceberg(state) => state.clone().into_sink_state_obj()?,
+                        SinkType::Delta(state) => state.clone().into_sink_state_obj()?,
+                        _ => unreachable!(),
+                    };
 
                     let reg = get_python_convert_registry();
 
@@ -1419,7 +1418,17 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         )
                     })?;
 
-                    let state = Python::attach(|py| py_sink_state.extract(py))?;
+                    let callback = Python::attach(|py| {
+                        PyResult::Ok(match &payload {
+                            SinkType::Iceberg(_) => SinkedPathsCallback::IcebergCommit(Box::new(
+                                py_sink_state.extract(py)?,
+                            )),
+                            SinkType::Delta(_) => SinkedPathsCallback::DeltaCommit(Box::new(
+                                py_sink_state.extract(py)?,
+                            )),
+                            _ => unreachable!(),
+                        })
+                    })?;
 
                     let mut plan: Box<DslPlan> = (reg.from_py.dsl_plan)(out)?.downcast().unwrap();
 
@@ -1436,8 +1445,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
                     debug_assert!(unified_sink_args.sinked_paths_callback.is_none());
 
-                    unified_sink_args.sinked_paths_callback =
-                        Some(SinkedPathsCallback::IcebergCommit(Box::new(state)));
+                    unified_sink_args.sinked_paths_callback = Some(callback);
 
                     return to_alp_impl(*plan, &mut ctxt);
                 })
@@ -1446,7 +1454,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let input = to_alp_impl(owned(input), &mut ctxt).context(failed_here!(sink))?;
             let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena).into_owned();
             let payload = match payload {
-                SinkType::Iceberg(_) => unreachable!(),
+                SinkType::Iceberg(_) | SinkType::Delta(_) => unreachable!(),
                 SinkType::Memory => SinkTypeIR::Memory,
                 SinkType::Callback(f) => SinkTypeIR::Callback(f),
                 SinkType::File(mut options) => {
@@ -1929,4 +1937,27 @@ fn validate_encrypted_partition_keys<'a>(
         }
     }
     Ok(())
+}
+
+/// Replaces `pl.element()` and `pl.len()` in a pivot aggregation with the pivoted values, except
+/// in an `eval`, where they refer to the evaluated values.
+fn replace_pivot_values(expr: Expr, values: &Expr) -> Expr {
+    use crate::plans::visitor::TreeWalker;
+
+    match expr {
+        Expr::Element => values.clone(),
+        Expr::Len => values.clone().len(),
+        Expr::Eval {
+            expr,
+            evaluation,
+            variant,
+        } => Expr::Eval {
+            expr: Arc::new(replace_pivot_values(Arc::unwrap_or_clone(expr), values)),
+            evaluation,
+            variant,
+        },
+        e => e
+            .map_children(&mut |c, _| Ok(replace_pivot_values(c, values)), &mut ())
+            .unwrap(),
+    }
 }

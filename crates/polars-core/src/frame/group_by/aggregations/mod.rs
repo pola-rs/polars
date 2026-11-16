@@ -51,6 +51,14 @@ fn idx2usize(idx: &[IdxSize]) -> impl ExactSizeIterator<Item = usize> + '_ {
     idx.iter().map(|i| *i as usize)
 }
 
+/// Whether every index in `idx` is below `len`.
+///
+/// A group can repeat an index, so `idx.len()` can exceed `len`.
+#[inline]
+pub fn _idx_in_bounds(idx: &[IdxSize], len: usize) -> bool {
+    idx.iter().all(|&i| (i as usize) < len)
+}
+
 // Unlike `rolling_min` and `rolling_max`, group aggregations ignore NaN.
 type MinWindow<'a, T> = MinMaxWindow<'a, T, MinIgnoreNan>;
 type MaxWindow<'a, T> = MinMaxWindow<'a, T, MaxIgnoreNan>;
@@ -86,7 +94,7 @@ pub fn rolling_numeric_minmax_by(by_col: &Column, slices: &GroupsSlice, is_max_b
     let phys_dtype = by_phys.dtype();
 
     assert!(
-        phys_dtype.is_primitive_numeric() && !dtype.is_categorical(),
+        phys_dtype.is_primitive_numeric() && !dtype.to_storage().is_categorical(),
         "rolling_numeric_minmax_by requires a numeric by column, got {dtype}",
     );
 
@@ -438,7 +446,7 @@ where
 
     match groups {
         GroupsType::Idx(groups) => agg_helper_idx_on_all::<T, _>(groups, |idx| {
-            debug_assert!(idx.len() <= s.len());
+            debug_assert!(_idx_in_bounds(idx, s.len()));
             if idx.is_empty() {
                 None
             } else {
@@ -486,6 +494,56 @@ where
     }
 }
 
+/// Group-wise arg min or arg max of `s` in its row-encoding (sort) order, skipping null rows.
+///
+/// # Safety
+///
+/// No bounds checks on `groups`.
+pub(crate) unsafe fn agg_arg_min_max_row_encoded(
+    s: &Series,
+    groups: &GroupsType,
+    is_max: bool,
+) -> Series {
+    let encoded = row_encode::row_encode_ordered_propagate_nulls(s)
+        .cast(&DataType::Binary)
+        .unwrap();
+    let encoded = encoded.binary().unwrap();
+    unsafe {
+        if is_max {
+            encoded.agg_arg_max(groups)
+        } else {
+            encoded.agg_arg_min(groups)
+        }
+    }
+}
+
+/// Group-wise min or max of `s` in its row-encoding (sort) order, skipping null rows.
+///
+/// # Safety
+///
+/// No bounds checks on `groups`.
+pub(crate) unsafe fn agg_min_max_row_encoded(
+    s: &Series,
+    groups: &GroupsType,
+    is_max: bool,
+) -> Series {
+    let idx_in_group = unsafe { agg_arg_min_max_row_encoded(s, groups, is_max) };
+    let idx_in_group = idx_in_group.idx().unwrap();
+    let idx: IdxCa = match groups {
+        GroupsType::Idx(g) => idx_in_group
+            .iter()
+            .zip(g.all())
+            .map(|(i, g)| i.map(|i| unsafe { *g.get_unchecked(i as usize) }))
+            .collect(),
+        GroupsType::Slice { groups, .. } => idx_in_group
+            .iter()
+            .zip(groups)
+            .map(|(i, [first, _])| i.map(|i| first + i))
+            .collect(),
+    };
+    unsafe { s.take_unchecked(&idx) }
+}
+
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType + Sync,
@@ -512,7 +570,7 @@ where
                 let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
                 _agg_helper_idx::<T, _>(groups, |(first, idx)| {
-                    debug_assert!(idx.len() <= arr.len());
+                    debug_assert!(_idx_in_bounds(idx, arr.len()));
                     if idx.is_empty() {
                         None
                     } else if idx.len() == 1 {
@@ -693,7 +751,7 @@ where
                 let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
                 _agg_helper_idx::<T, _>(groups, |(first, idx)| {
-                    debug_assert!(idx.len() <= arr.len());
+                    debug_assert!(_idx_in_bounds(idx, arr.len()));
                     if idx.is_empty() {
                         None
                     } else if idx.len() == 1 {
@@ -862,7 +920,7 @@ where
                 let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
                 _agg_helper_idx_no_null::<T, _>(groups, |(first, idx)| {
-                    debug_assert!(idx.len() <= self.len());
+                    debug_assert!(_idx_in_bounds(idx, self.len()));
                     if idx.is_empty() {
                         T::Native::zero()
                     } else if idx.len() == 1 {
@@ -952,7 +1010,7 @@ where
                     // and thereby creating shorter columns than the original group tuples.
                     // the group tuples are modified, but if that's done incorrect there can be out of bounds
                     // access
-                    debug_assert!(idx.len() <= self.len());
+                    debug_assert!(_idx_in_bounds(idx, self.len()));
                     let out = if idx.is_empty() {
                         None
                     } else if idx.len() == 1 {
@@ -1032,7 +1090,7 @@ where
                 let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
                 agg_helper_idx_on_all::<T, _>(groups, |idx| {
-                    debug_assert!(idx.len() <= ca.len());
+                    debug_assert!(_idx_in_bounds(idx, ca.len()));
                     if idx.is_empty() {
                         return None;
                     }
@@ -1082,13 +1140,13 @@ where
                         debug_assert!(len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => {
-                                if ddof == 0 {
-                                    NumCast::from(0)
+                            1 => self.get(first as usize).filter(|_| ddof == 0).map(|x| {
+                                if Float::is_finite(x) {
+                                    T::Native::zero()
                                 } else {
-                                    None
+                                    Float::nan()
                                 }
-                            },
+                            }),
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.var(ddof).map(|flt| NumCast::from(flt).unwrap())
@@ -1109,7 +1167,7 @@ where
                 let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
                 agg_helper_idx_on_all::<T, _>(groups, |idx| {
-                    debug_assert!(idx.len() <= ca.len());
+                    debug_assert!(_idx_in_bounds(idx, ca.len()));
                     if idx.is_empty() {
                         return None;
                     }
@@ -1162,13 +1220,13 @@ where
                         debug_assert!(len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => {
-                                if ddof == 0 {
-                                    NumCast::from(0)
+                            1 => self.get(first as usize).filter(|_| ddof == 0).map(|x| {
+                                if Float::is_finite(x) {
+                                    T::Native::zero()
                                 } else {
-                                    None
+                                    Float::nan()
                                 }
-                            },
+                            }),
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.std(ddof).map(|flt| NumCast::from(flt).unwrap())
@@ -1239,7 +1297,7 @@ where
                     // and thereby creating shorter columns than the original group tuples.
                     // the group tuples are modified, but if that's done incorrect there can be out of bounds
                     // access
-                    debug_assert!(idx.len() <= self.len());
+                    debug_assert!(_idx_in_bounds(idx, self.len()));
                     if idx.is_empty() {
                         None
                     } else if idx.len() == 1 {
@@ -1306,7 +1364,7 @@ where
                 let arr = ca_self.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
                 agg_helper_idx_on_all::<Float64Type, _>(groups, |idx| {
-                    debug_assert!(idx.len() <= arr.len());
+                    debug_assert!(_idx_in_bounds(idx, arr.len()));
                     if idx.is_empty() {
                         return None;
                     }
@@ -1332,13 +1390,7 @@ where
                         debug_assert!(first + len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => {
-                                if ddof == 0 {
-                                    NumCast::from(0)
-                                } else {
-                                    None
-                                }
-                            },
+                            1 => self.get(first as usize).filter(|_| ddof == 0).map(|_| 0.0),
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.var(ddof)
@@ -1356,7 +1408,7 @@ where
                 let arr = ca_self.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
                 agg_helper_idx_on_all::<Float64Type, _>(groups, |idx| {
-                    debug_assert!(idx.len() <= self.len());
+                    debug_assert!(_idx_in_bounds(idx, self.len()));
                     if idx.is_empty() {
                         return None;
                     }
@@ -1383,13 +1435,7 @@ where
                         debug_assert!(first + len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => {
-                                if ddof == 0 {
-                                    NumCast::from(0)
-                                } else {
-                                    None
-                                }
-                            },
+                            1 => self.get(first as usize).filter(|_| ddof == 0).map(|_| 0.0),
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.std(ddof)

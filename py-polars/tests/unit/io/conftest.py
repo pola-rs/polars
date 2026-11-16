@@ -7,7 +7,10 @@ from typing import TYPE_CHECKING
 import pytest
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
     from typing import Any
+
+    from pyiceberg.catalog import Catalog
 
 
 @pytest.fixture
@@ -33,3 +36,30 @@ def normalize_path_separator_pl(s: Any) -> Any:
         return s.str.replace_all("\\", "/", literal=True)
 
     return s
+
+
+@pytest.fixture
+def reset_iceberg_catalog_resolver() -> Iterator[None]:
+    """Restore the default Iceberg catalog resolver after a test that may set one."""
+    from polars.io.iceberg._catalog_resolver import set_iceberg_catalog_resolver
+
+    yield
+    set_iceberg_catalog_resolver(None)
+
+
+def recording_catalog_resolver(
+    catalog: Catalog,
+) -> tuple[Callable[[str], Catalog], list[str]]:
+    """A resolver that returns `catalog`, and the names it has been called with."""
+    names: list[str] = []
+
+    def resolve(name: str) -> Catalog:
+        names.append(name)
+        return catalog
+
+    return resolve, names
+
+
+def failing_catalog_resolver(name: str) -> Catalog:
+    """A resolver for tests in which no catalog name may be resolved."""
+    pytest.fail(f"resolver called for {name!r}")

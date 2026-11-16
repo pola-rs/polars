@@ -210,7 +210,7 @@ def _defer(
     │ 0.978738 │
     └──────────┘
 
-     Run an eager source in Polars Cloud
+     Run an eager source in Polars Nanook
 
     >>> (
     ...     pl.defer(

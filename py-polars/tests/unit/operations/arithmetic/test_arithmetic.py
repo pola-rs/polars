@@ -900,6 +900,40 @@ def test_literal_subtract_schema_13284() -> None:
     ).collect_schema() == OrderedDict([("a", pl.UInt8), ("len", pl.get_index_type())])
 
 
+@pytest.mark.parametrize(
+    ("expr", "dtype"),
+    [
+        (pl.lit(-1) * pl.len(), pl.Int64),
+        (pl.lit(-1) * pl.col("u64"), pl.Int64),
+        (pl.lit(-1) // pl.col("u64"), pl.Int64),
+        (pl.lit(-1) % pl.col("u64"), pl.Int64),
+        (pl.lit(-1) * pl.col("u8"), pl.Int16),
+        (pl.lit(300) * pl.col("u8"), pl.UInt16),
+        (pl.lit(2**40) * pl.col("i32"), pl.Int64),
+        (pl.lit(-1) & pl.col("u8"), pl.Int16),
+        (pl.lit(300) | pl.col("u8"), pl.UInt16),
+        (pl.lit(-1) ^ pl.col("u64"), pl.Int64),
+        (pl.col("u64") * pl.lit(-1), pl.Int64),
+        (pl.lit(-1) + pl.col("u64"), pl.Int64),
+        (pl.lit(1) * pl.col("u64"), pl.UInt64),
+        (pl.lit(1) * pl.col("u8"), pl.UInt8),
+        (pl.lit(1.5) * pl.col("f32"), pl.Float32),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_literal_lhs_arithmetic_schema(
+    expr: pl.Expr, dtype: PolarsDataType, engine: EngineType
+) -> None:
+    # When the literal doesn't fit the column dtype, the result has the supertype of
+    # both, e.g. Int16 for -1 * UInt8. The planned schema must say the same.
+    lf = pl.LazyFrame(
+        {"u64": [1, 2], "u8": [1, 2], "i32": [1, 2], "f32": [1.0, 2.0]},
+        schema={"u64": pl.UInt64, "u8": pl.UInt8, "i32": pl.Int32, "f32": pl.Float32},
+    ).select(o=expr)
+    assert lf.collect_schema() == {"o": dtype}
+    assert lf.collect(engine=engine).schema == {"o": dtype}
+
+
 @pytest.mark.parametrize("dtype", INTEGER_DTYPES)
 def test_int_operator_stability(dtype: pl.DataType) -> None:
     s = pl.Series(values=[10], dtype=dtype)

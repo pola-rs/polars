@@ -1,9 +1,10 @@
 use std::borrow::Cow;
 
-use num_traits::Zero;
+use num_traits::{NumCast, Zero};
 use polars_arrow::array::PrimitiveArray;
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::{DEC128_MAX_PREC, dec128_fits};
+use polars_compute::float_sum::FloatSum;
 use polars_core::error::constants::LENGTH_LIMIT_MSG;
 use polars_core::prelude::sum_output_dtype;
 use polars_core::with_match_physical_numeric_polars_type;
@@ -70,7 +71,7 @@ impl<T> Clone for NumSumReducer<T> {
 impl<T> Reducer for NumSumReducer<T>
 where
     T: PolarsNumericType,
-    <T as PolarsNumericType>::Native: SumCast,
+    <T as PolarsNumericType>::Native: SumCast + FloatSum<f64>,
     ChunkedArray<T>: ChunkAgg<T::Native>,
 {
     type Dtype = T;
@@ -112,6 +113,23 @@ where
                 }
             }
         }
+    }
+
+    #[inline(always)]
+    unsafe fn reduce_range(
+        &self,
+        v: &mut Self::Value,
+        arr: &PrimitiveArray<T::Native>,
+        start: usize,
+        len: usize,
+        seq_id: u64,
+    ) -> bool {
+        if !T::Native::is_f64() {
+            return unsafe { reduce_range_per_row(self, v, arr, start, len, seq_id) };
+        }
+        let (sum, num_valid) = unsafe { float_sum_range(arr, start, len) };
+        *v += <Self::Value as NumCast>::from(sum).unwrap();
+        num_valid > 0
     }
 
     fn finish(

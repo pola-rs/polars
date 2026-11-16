@@ -26,7 +26,7 @@ from polars.exceptions import PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
 
 MY_CONSTANT = 3
 MY_DICT = {0: "a", 1: "b", 2: "c", 3: "d", 4: "e"}
@@ -768,7 +768,7 @@ def test_string_containment_series_alias_matches_warning() -> None:
 
 
 def test_containment_suggestion_rechecks_captured_values() -> None:
-    values: Any = "abc"
+    values: str | list[str] | Iterator[str] = "abc"
     MY_STRING = ["a", "z"]  # shadows the module-level string
 
     def func(x: Any) -> bool:
@@ -788,7 +788,7 @@ def test_containment_suggestion_rechecks_captured_values() -> None:
     assert parser.to_expression("text") == (
         'pl.col("text").str.contains(values, literal=True)'
     )
-    values = 2
+    values = ["a"]
     assert parser.to_expression("text") is None
 
     parser = BytecodeParser(lambda x: x in MY_STRING, map_target="expr")

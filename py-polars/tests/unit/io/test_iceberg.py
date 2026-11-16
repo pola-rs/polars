@@ -1467,6 +1467,18 @@ def test_sink_iceberg_create_if_not_exists_dtypes(
             "struct<x: long, y: string, z: list<list<int>>>",
             pl.Struct({"x": pl.Int64, "y": pl.String, "z": pl.List(pl.List(pl.Int32))}),
         ),
+        "map": (
+            [{"a": {"x": 1}, "b": None}],
+            pl.Map(pl.String, pl.Struct({"x": pl.UInt8})),
+            "map<string, struct<x: int>>",
+            pl.Map(pl.String, pl.Struct({"x": pl.Int32})),
+        ),
+        "list_map": (
+            [[{"a": 255}, {}]],
+            pl.List(pl.Map(pl.String, pl.UInt8)),
+            "list<map<string, int>>",
+            pl.List(pl.Map(pl.String, pl.Int32)),
+        ),
     }
 
     df = pl.DataFrame(
@@ -1603,6 +1615,11 @@ def test_sink_iceberg_overwrite_filter_validation(tmp_path: Path) -> None:
         (pl.Object(), r"'c' \(Object\)"),
         (pl.List(pl.UInt64), r"'c\[\]' \(UInt64\)"),
         (pl.Struct({"x": pl.Int64, "y": pl.Duration("ms")}), r"'c.y' \(Duration"),
+        # Polars cannot cast map keys
+        (pl.Map(pl.Int8, pl.String), r"'c' \(Map\(Int8, String\)\): .* keys to Int32"),
+        (pl.List(pl.Map(pl.Struct({"x": pl.Int8}), pl.String)), r"'c\[\]' \(Map.*cast"),
+        # Iceberg times are microseconds: nanosecond keys could merge
+        (pl.Map(pl.Time, pl.String), r"'c' \(Map\(Time, String\)\): .* microseconds"),
     ],
 )
 def test_sink_iceberg_create_if_not_exists_unsupported_dtypes(
@@ -2599,6 +2616,94 @@ def test_sink_iceberg_partition_key_name_collision_schema_merge(
     )
 
 
+def _pattern_like_names_table(
+    tmp_path: Path,
+    *,
+    partition_spec: PartitionSpec | None = None,
+    sort_order: SortOrder | None = None,
+) -> tuple[pyiceberg.table.Table, pl.DataFrame]:
+    # `ab` and `s.ab` match the patterns `^a.$` and `*`
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "ab", LongType()),
+            NestedField(2, "^a.$", LongType()),
+            NestedField(3, "*", LongType()),
+            NestedField(
+                4,
+                "s",
+                StructType(
+                    NestedField(5, "ab", LongType()), NestedField(6, "^a.$", LongType())
+                ),
+            ),
+        ),
+        partition_spec=partition_spec,
+        sort_order=sort_order,
+    )
+    df = pl.DataFrame(
+        {
+            "ab": [1, 1, 1],
+            "^a.$": [3, 1, 2],
+            "*": [4, 5, 6],
+            "s": [{"ab": 1, "^a.$": v} for v in [7, 8, 9]],
+        }
+    )
+    return tbl, df
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("source_id", "values"), [(2, [1, 2, 3]), (3, [4, 5, 6]), (6, [7, 8, 9])]
+)
+def test_sink_iceberg_partition_source_pattern_like_name(
+    tmp_path: Path, source_id: int, values: list[int]
+) -> None:
+    # a name such as `^a.$` or `*` is a column name, not a pattern
+    tbl, df = _pattern_like_names_table(
+        tmp_path,
+        partition_spec=PartitionSpec(
+            PartitionField(source_id, 1000, IdentityTransform(), "p")
+        ),
+    )
+    df.lazy().sink_iceberg(tbl, mode="append")
+    tbl.refresh()
+    partitions = sorted(task.file.partition[0] for task in tbl.scan().plan_files())
+    assert partitions == values
+    assert_frame_equal(pl.scan_iceberg(tbl).collect(), df, check_row_order=False)
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_sort_key_pattern_like_name(tmp_path: Path) -> None:
+    tbl, df = _pattern_like_names_table(
+        tmp_path,
+        sort_order=SortOrder(SortField(source_id=2, transform=IdentityTransform())),
+    )
+    df.lazy().sink_iceberg(tbl, mode="append")
+    tbl.refresh()
+    [task] = tbl.scan().plan_files()
+    assert task.file.sort_order_id == tbl.sort_order().order_id
+    assert pl.scan_iceberg(tbl).collect()["^a.$"].to_list() == [1, 2, 3]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_create_if_not_exists_pattern_like_name(tmp_path: Path) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path / 'iceberg_catalog.sqlite'}",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    catalog.create_namespace("ns")
+    # only `^a.$` is cast to an Iceberg type, not the columns it would match
+    df = pl.DataFrame(
+        {"ab": [1], "^a.$": [2]}, schema={"ab": pl.Int64, "^a.$": pl.UInt8}
+    )
+    df.lazy().sink_iceberg(
+        "ns.t", mode="append", catalog=catalog, create_if_not_exists=True
+    )
+    result = pl.scan_iceberg(catalog.load_table("ns.t")).collect()
+    assert_frame_equal(result, df.with_columns(pl.nth(1).cast(pl.Int32)))
+
+
 @pytest.mark.parametrize("metrics_mode", ["none", "counts"])
 @pytest.mark.parametrize("column_override", [False, True])
 @pytest.mark.write_disk
@@ -3087,7 +3192,7 @@ def _sink_uncommitted(
     return state, sinked_files
 
 
-# A re-execution of the same sink invocation, as polars-cloud does when a
+# A re-execution of the same sink invocation, as polars-nanook does when a
 # committing worker dies. Pickling drops the loaded table.
 def _twin(state: IcebergSinkState) -> IcebergSinkState:
     twin: IcebergSinkState = pickle.loads(pickle.dumps(state))
@@ -3218,6 +3323,60 @@ def test_sink_iceberg_commit_twin_lands_during_retry_backoff(
     # check after pyiceberg's retry refresh, without a second commit attempt.
     assert slept
     assert calls == 1
+    assert (
+        "IcebergSinkState[commit]: already committed, skipping"
+        in capfd.readouterr().err
+    )
+    assert _tagged_snapshots(tbl, state) == [_landed_snapshot(tbl)]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_commit_twin_lands_before_partition_change(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    state, sinked_files = _sink_uncommitted(monkeypatch, tbl)
+    twin = _twin(state)
+    twin_catalog = twin.table().catalog
+
+    commit_table = twin_catalog.commit_table
+    calls = 0
+
+    def commit_table_after_foreign_append(*args: Any) -> Any:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            _foreign_append(tbl, [7])
+        return commit_table(*args)
+
+    monkeypatch.setattr(twin_catalog, "commit_table", commit_table_after_foreign_append)
+
+    sleep = pyiceberg.table.time.sleep
+    slept = False
+
+    def sleep_while_original_commits_then_spec_changes(seconds: float) -> None:
+        nonlocal slept
+        if not slept:
+            slept = True
+            state.commit(sinked_files)
+            with tbl.catalog.load_table(tbl.name()).update_spec() as update:
+                update.add_identity("a")
+        sleep(0)
+
+    monkeypatch.setattr(
+        pyiceberg.table.time, "sleep", sleep_while_original_commits_then_spec_changes
+    )
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    # the twin's write landed before the spec changed: found, not refused
+    twin.commit(sinked_files)
+
+    assert slept
     assert (
         "IcebergSinkState[commit]: already committed, skipping"
         in capfd.readouterr().err
@@ -6776,9 +6935,7 @@ def test_scan_iceberg_aggregates_from_statistics_duplicated_subplan(
 
 
 @pytest.mark.write_disk
-def test_scan_iceberg_aggregates_from_statistics_empty_keeps_errors(
-    tmp_path: Path,
-) -> None:
+def test_scan_iceberg_aggregates_from_statistics_empty_nested(tmp_path: Path) -> None:
     catalog = _statistics_catalog(tmp_path)
     tbl = catalog.create_table(
         ("ns", "l"),
@@ -6787,10 +6944,9 @@ def test_scan_iceberg_aggregates_from_statistics_empty_keeps_errors(
         ),
     )
     lf = pl.scan_iceberg(tbl).select(pl.col("xs").min())
-    with pytest.raises(pl.exceptions.InvalidOperationError):
-        lf.collect(optimizations=pl.QueryOptFlags.none())
-    with pytest.raises(pl.exceptions.InvalidOperationError):
-        lf.collect()
+    expected = pl.DataFrame({"xs": [None]}, schema={"xs": pl.List(pl.Int64)})
+    assert_frame_equal(lf.collect(optimizations=pl.QueryOptFlags.none()), expected)
+    assert_frame_equal(lf.collect(), expected)
 
 
 @pytest.mark.write_disk
