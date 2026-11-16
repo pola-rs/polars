@@ -2417,6 +2417,136 @@ def test_group_by_drop_nans(s: pl.Series) -> None:
     )
 
 
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("dtype", [pl.Float16, pl.Float32, pl.Float64])
+@pytest.mark.parametrize("sorted_key", [False, True])
+def test_group_by_drop_nans_keeps_nan_payload_nulls_30823(
+    engine: EngineType, dtype: PolarsDataType, sorted_key: bool
+) -> None:
+    # `s` is [null, 3.0, NaN, NaN, null] and both nulls hold a NaN value.
+    lf = (
+        pl.DataFrame(
+            {
+                "g": [1, 1, 1, 2, 2],
+                "x": [float("nan"), 1.0, float("nan"), float("nan"), float("nan")],
+                "y": [None, 2.0, 0.0, 0.0, None],
+            },
+            schema_overrides={"x": dtype, "y": dtype},
+        )
+        .with_columns(s=pl.col("x") + pl.col("y"))
+        .lazy()
+    )
+    if sorted_key:
+        lf = lf.set_sorted("g")
+
+    out = (
+        lf.group_by("g", maintain_order=True)
+        .agg(
+            list=pl.col("s").drop_nans(),
+            first_list=(pl.col("x").first() + pl.col("y").first()).drop_nans(),
+            diff_list=(pl.col("y").diff() + float("nan")).drop_nans(),
+        )
+        .collect(engine=engine)
+    )
+    expected = pl.DataFrame(
+        {
+            "g": [1, 2],
+            "list": [[None, 3.0], [None]],
+            "first_list": [[None], []],
+            "diff_list": [[None, None], [None, None]],
+        },
+        schema_overrides={
+            c: pl.List(dtype) for c in ["list", "first_list", "diff_list"]
+        },
+    )
+    assert_frame_equal(out, expected)
+
+    # Only reductions, which the streaming engine lowers to a filter.
+    out = (
+        lf.group_by("g", maintain_order=True)
+        .agg(
+            len=pl.col("s").drop_nans().len(),
+            null_count=pl.col("s").drop_nans().null_count(),
+        )
+        .collect(engine=engine)
+    )
+    expected = pl.DataFrame(
+        {"g": [1, 2], "len": [2, 1], "null_count": [1, 1]},
+        schema_overrides={
+            "len": pl.get_index_type(),
+            "null_count": pl.get_index_type(),
+        },
+    )
+    assert_frame_equal(out, expected)
+
+    out = lf.select(
+        pl.col("s").drop_nans().len().over("g"),
+        list=pl.col("s").implode().list.eval(pl.element().drop_nans()),
+    ).collect(engine=engine)
+    expected = pl.DataFrame(
+        {"s": [2, 2, 2, 1, 1], "list": [[None, 3.0, None]] * 5},
+        schema_overrides={"s": pl.get_index_type(), "list": pl.List(dtype)},
+    )
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("maintain_order", [False, True])
+@pytest.mark.parametrize(
+    "cols", [["f"], ["i", "s", "b", "n", "d", "l"], ["f", "i", "s", "b", "n", "d", "l"]]
+)
+def test_group_by_drop_nans_reduction_30823(
+    engine: EngineType, maintain_order: bool, cols: list[str]
+) -> None:
+    # drop_nans keeps nulls, and it keeps everything in non-float columns.
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 2],
+            "f": [None, 1.0, float("nan")],
+            "i": [None, 1, 2],
+            "s": [None, "a", "b"],
+            "b": [None, True, False],
+            "n": [None, None, None],
+            "d": [None, Decimal("1.0"), Decimal("2.0")],
+            "l": [None, [1.0], [float("nan")]],
+        },
+        schema_overrides={"d": pl.Decimal(10, 1)},
+    )
+    out = (
+        df.lazy()
+        .group_by("g", maintain_order=maintain_order)
+        .agg(
+            pl.col(cols).drop_nans().len().name.suffix("_len"),
+            pl.col(cols).drop_nans().null_count().name.suffix("_null_count"),
+            pl.col(cols).drop_nans().n_unique().name.suffix("_n_unique"),
+            pl.col(cols).drop_nans().first().name.suffix("_first"),
+        )
+        .collect(engine=engine)
+        .sort("g")
+    )
+    # Group 2 of `f` is empty after drop_nans.
+    idx = pl.get_index_type()
+    expected = pl.DataFrame(
+        [pl.Series("g", [1, 2])]
+        + [pl.Series(f"{c}_len", [2, 0 if c == "f" else 1], idx) for c in cols]
+        + [
+            pl.Series(f"{c}_null_count", [2, 1] if c == "n" else [1, 0], idx)
+            for c in cols
+        ]
+        + [
+            pl.Series(f"{c}_n_unique", [1, 1] if c == "n" else [2, int(c != "f")], idx)
+            for c in cols
+        ]
+        + [
+            df[c].gather([0, 2]).alias(f"{c}_first")
+            if c != "f"
+            else pl.Series("f_first", [None, None], pl.Float64)
+            for c in cols
+        ]
+    )
+    assert_frame_equal(out, expected)
+
+
 @pytest.mark.slow
 @pytest.mark.parametrize(
     ("expr", "check_order", "returns_scalar", "length_preserving", "is_window"),
