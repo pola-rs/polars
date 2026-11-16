@@ -278,6 +278,7 @@ pub enum PyTemporalFunction {
     ReplaceTimeZone,
     Combine,
     DatetimeFunction,
+    DateDiff,
 }
 
 #[pymethods]
@@ -1568,6 +1569,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         time_zone.as_ref().map(|s| s.as_str()),
                     )
                         .into_py_any(py),
+                    IRTemporalFunction::DateDiff(unit) => {
+                        (PyTemporalFunction::DateDiff, Into::<&str>::into(unit)).into_py_any(py)
+                    },
                 },
                 IRFunctionExpr::Boolean(boolfun) => match boolfun {
                     IRBooleanFunction::Any { ignore_nulls } => {
