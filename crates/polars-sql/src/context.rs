@@ -1876,13 +1876,14 @@ impl SQLContext {
         if matches(view, &collector.tables) {
             return true;
         }
-        collector
-            .tables
-            .iter()
-            .any(|name| match self.find_view(name) {
+        // A name that a CTE of the query hides is not a view.
+        let names = collector.tables;
+        referenced_ctes(&view.query, &names).into_iter().any(|idx| {
+            match self.find_view(&names[idx]) {
                 Ok(Some((key, view))) => seen.insert(key) && self.view_reads(&view, matches, seen),
                 _ => false,
-            })
+            }
+        })
     }
 
     /// Plan the view `key` against the current tables, in a context of its own.

@@ -219,6 +219,15 @@ def test_select_alias_reuse_types() -> None:
     )
     assert res.columns == ["x", "b", "y", "b:1", "yc"]
 
+    res = df.sql(
+        """
+        SELECT a, FIRST_VALUE(s) OVER (ORDER BY a DESC) AS x, x.b AS y
+        FROM self
+        QUALIFY y > a
+        """
+    )
+    assert res.select("a", "y").rows() == [(1, 2)]
+
 
 def test_select_alias_reuse_errors() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})

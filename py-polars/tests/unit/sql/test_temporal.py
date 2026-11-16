@@ -1356,7 +1356,7 @@ def test_to_timestamp_epoch() -> None:
           TO_TIMESTAMP(i) AS ti,
           TO_TIMESTAMP(f) AS tf,
           TO_TIMESTAMP(CAST(d AS DECIMAL(20, 7))) AS td,
-          TO_TIMESTAMP(CAST(1 AS DECIMAL(38, 36))) AS tone,
+          TO_TIMESTAMP(CAST('0.9999999' AS DECIMAL(38, 38))) AS tone,
           TO_TIMESTAMP(big) AS tbig
         FROM self
         """

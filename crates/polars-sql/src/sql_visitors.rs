@@ -149,9 +149,10 @@ impl SQLVisitor for QualifyExpression {
             SQLExpr::Identifier(ident) => {
                 self.column_refs.insert(ident.value.clone());
             },
-            SQLExpr::CompoundIdentifier(idents) if !idents.is_empty() => {
+            SQLExpr::CompoundIdentifier(idents) => {
+                // The first name can be a SELECT alias holding a struct.
                 self.column_refs
-                    .insert(idents.last().unwrap().value.clone());
+                    .extend(idents.iter().map(|ident| ident.value.clone()));
             },
             _ => {},
         }

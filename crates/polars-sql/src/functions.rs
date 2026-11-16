@@ -3278,13 +3278,8 @@ impl SQLFunctionVisitor<'_> {
                     (value.cast(DataType::Float64) * lit(1_000_000.0))
                         .round(0, RoundMode::HalfToEven)
                 } else {
-                    // Exact in a decimal with six places; a value out of range becomes null.
-                    let seconds = if dtype.is_decimal() {
-                        value.round(6, RoundMode::HalfToEven)
-                    } else {
-                        value
-                    };
-                    seconds.cast(DataType::Decimal(38, 6)) * lit(1_000_000i64)
+                    // The cast rounds half to even; a value out of range becomes null.
+                    value.cast(DataType::Decimal(38, 6)) * lit(1_000_000i64)
                 };
                 let micros = micros.cast(DataType::Int64);
                 let dtype = DataType::Datetime(TimeUnit::Microseconds, Some(TimeZone::UTC));
