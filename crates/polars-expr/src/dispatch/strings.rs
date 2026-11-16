@@ -43,6 +43,7 @@ pub fn function_expr_to_udf(func: IRStringFunction) -> SpecialEq<Arc<dyn Columns
         Find { literal, strict } => map_as_slice!(strings::find, literal, strict),
         LenBytes => map!(strings::len_bytes),
         LenChars => map!(strings::len_chars),
+        FromCodePoint => map!(strings::from_code_point),
         #[cfg(feature = "string_pad")]
         PadEnd { fill_char } => {
             map_as_slice!(strings::pad_end, fill_char)
@@ -237,6 +238,21 @@ pub(super) fn titlecase(s: &Column) -> PolarsResult<Column> {
 pub(super) fn len_chars(s: &Column) -> PolarsResult<Column> {
     let ca = s.str()?;
     Ok(ca.str_len_chars().into_column())
+}
+
+pub(super) fn from_code_point(s: &Column) -> PolarsResult<Column> {
+    polars_ensure!(
+        s.dtype().is_integer() || s.dtype().is_null(),
+        InvalidOperation: "expected an integer code point, got {}", s.dtype()
+    );
+    let s = s.strict_cast(&DataType::Int64)?;
+    let out = s.i64()?.try_apply_into_string_amortized(|n, buf| {
+        let c = u32::try_from(n).ok().and_then(char::from_u32);
+        let c = c.ok_or_else(|| polars_err!(ComputeError: "invalid Unicode code point: {}", n))?;
+        buf.push(c);
+        PolarsResult::Ok(())
+    })?;
+    Ok(out.into_column())
 }
 
 pub(super) fn len_bytes(s: &Column) -> PolarsResult<Column> {

@@ -9,6 +9,8 @@ String
      - Description
    * - :ref:`BIT_LENGTH <bit_length>`
      - Returns the length of the input string in bits.
+   * - :ref:`CHR <chr>`
+     - Returns the character of an integer Unicode code point.
    * - :ref:`CONCAT <concat>`
      - Returns all input expressions concatenated together as a string.
    * - :ref:`CONCAT_WS <concat_ws>`
@@ -104,6 +106,32 @@ Returns the length of the input string in bits.
     # │ ccc  ┆ 24     │
     # │ dddd ┆ 32     │
     # └──────┴────────┘
+
+.. _chr:
+
+CHR
+---
+Returns the character of an integer Unicode code point. Raises an error for a negative
+number, a number above 1114111 (``0x10FFFF``), or a UTF-16 surrogate (55296 to 57343).
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"n": [65, 233, 8364]})
+    df.sql("""
+      SELECT n, CHR(n) AS c FROM self
+    """)
+    # shape: (3, 2)
+    # ┌──────┬─────┐
+    # │ n    ┆ c   │
+    # │ ---  ┆ --- │
+    # │ i64  ┆ str │
+    # ╞══════╪═════╡
+    # │ 65   ┆ A   │
+    # │ 233  ┆ é   │
+    # │ 8364 ┆ €   │
+    # └──────┴─────┘
 
 .. _concat:
 
