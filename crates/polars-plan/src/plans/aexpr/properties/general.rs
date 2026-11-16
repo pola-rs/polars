@@ -257,7 +257,7 @@ pub fn is_row_separable(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Aren
 }
 
 /// Whether each expression in `nodes` on its own is row-separable, see [`is_row_separable_rec`].
-/// Public API for downstream crates such as Polars Cloud.
+/// Public API for downstream crates such as Polars Nanook.
 ///
 /// This doesn't check that the outputs of several expressions line up with each other.
 pub fn all_row_separable<'a, N>(nodes: &'a [N], expr_arena: &Arena<AExpr>) -> bool

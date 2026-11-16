@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import os
+import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from functools import partial
@@ -19,6 +20,7 @@ from polars.io.iceberg._cache import (
     get_metadata_file_cache,
     load_static_table,
 )
+from polars.io.iceberg._catalog_resolver import catalog_from
 from polars.io.iceberg._plugin import (
     _native_storage_options,
     plugin_planner_required,
@@ -51,6 +53,7 @@ if TYPE_CHECKING:
 
     from polars._typing import StorageOptionsDict
     from polars.io.cloud._utils import NoPickleOption
+    from polars.io.iceberg._time_travel import TableVersion
     from polars.lazyframe.frame import LazyFrame
 
 
@@ -69,7 +72,8 @@ class IcebergScanTableSerializer(IcebergTableSerializer):
 @dataclass(kw_only=True)
 class IcebergCatalogTableDescriptor:
     table_identifier: str | pyiceberg.typedef.Identifier
-    catalog_config: IcebergCatalogConfig
+    # Either the catalog properties or the unresolved catalog_name
+    catalog_config: IcebergCatalogConfig | str
     # Used for table loads when set; `catalog_config` is the fallback after
     # unpickling, and for descriptors pickled without this field.
     catalog_: NoPickleOption[pyiceberg.catalog.Catalog] | None = None
@@ -141,17 +145,30 @@ class IcebergTableWrap:
     table_descriptor_: SerializedTableState | None
     serializer: IcebergTableSerializer
     iceberg_storage_properties: StorageOptionsDict | None
+    # Scans sharing the wrap resolve concurrently: they load the table once.
+    _load_lock: threading.Lock = field(
+        default_factory=threading.Lock, init=False, repr=False, compare=False
+    )
 
     def get(self) -> pyiceberg.table.Table:
         """Fetch the PyIceberg Table object."""
+        with self._load_lock:
+            return self._get()
+
+    def _get(self) -> pyiceberg.table.Table:
         if self.table_.get() is None:
             if verbose():
+                descriptor = self.table_descriptor_
                 from_ = (
                     "catalog table descriptor: "
-                    f"{self.table_descriptor_.table_identifier = }, "
-                    f"{self.table_descriptor_.catalog_config.class_ = }"
-                    if isinstance(self.table_descriptor_, IcebergCatalogTableDescriptor)
-                    else f"metadata path: {self.table_descriptor_}"
+                    f"{descriptor.table_identifier = }, "
+                    + (
+                        f"catalog name {descriptor.catalog_config!r}"
+                        if isinstance(descriptor.catalog_config, str)
+                        else f"{descriptor.catalog_config.class_ = }"
+                    )
+                    if isinstance(descriptor, IcebergCatalogTableDescriptor)
+                    else f"metadata path: {descriptor}"
                 )
 
                 eprint(f"IcebergTableWrap: construct table from {from_}")
@@ -163,10 +180,7 @@ class IcebergTableWrap:
                 catalog = catalog_.get() if catalog_ is not None else None
 
                 if catalog is None:
-                    catalog = self.table_descriptor_.catalog_config.class_(
-                        self.table_descriptor_.catalog_config.name,
-                        **self.table_descriptor_.catalog_config.properties,
-                    )
+                    catalog = catalog_from(self.table_descriptor_.catalog_config)
                 elif verbose():
                     eprint("IcebergTableWrap: reuse catalog instance")
 
@@ -187,15 +201,22 @@ class IcebergTableWrap:
         return schema_to_pyarrow(self.get().schema())
 
     def __getstate__(self) -> dict[str, Any]:
-        if (table := self.table_.get()) is not None:
+        descriptor = self.table_descriptor_
+        by_name = isinstance(descriptor, IcebergCatalogTableDescriptor) and isinstance(
+            descriptor.catalog_config, str
+        )
+
+        # A catalog name stays a name: the table loaded here is not pinned, so the
+        # process that unpickles this loads it through its own resolver.
+        if not by_name and (table := self.table_.get()) is not None:
             self.table_descriptor_ = self.serializer.serialize_table(table)
 
         assert self.table_descriptor_ is not None
 
-        return self.__dict__
+        return {k: v for k, v in self.__dict__.items() if k != "_load_lock"}
 
     def __setstate__(self, state: dict[str, Any]) -> None:
-        self.__dict__ = state
+        self.__dict__ = {**state, "_load_lock": threading.Lock()}
 
 
 @dataclass(kw_only=True)
@@ -313,6 +334,15 @@ class IcebergScanResolver:
     )
     # The files to read, as planned by the caller: each is read in full.
     file_tasks: list[FileScanTask] | None = field(default=None, repr=False)
+    # A SQL time travel version, resolved to `snapshot_id` where the table loads.
+    version: TableVersion | None = field(default=None, repr=False)
+
+    def _pin_version(self) -> None:
+        """Resolve `version` once, so that the schema and the scan read one snapshot."""
+        if self.version is not None and self.snapshot_id is None:
+            from polars.io.iceberg._time_travel import resolve_version
+
+            self.snapshot_id = resolve_version(self.table.get(), self.version)
 
     #
     # PythonDatasetProvider interface functions
@@ -322,6 +352,7 @@ class IcebergScanResolver:
         """Fetch the schema of the table."""
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
+        self._pin_version()
         if self.snapshot_id is None:
             if self.schema_at_creation is None:
                 self.schema_at_creation = self.table.get().schema()
@@ -392,6 +423,7 @@ class IcebergScanResolver:
 
         verbose = polars._utils.logging.verbose()
 
+        self._pin_version()
         tbl = self.table.get()
         snapshot_id = self.snapshot_id
         is_incremental = (

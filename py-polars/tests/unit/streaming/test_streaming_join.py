@@ -1174,6 +1174,84 @@ def test_streaming_join_unmatched_repeated_key_morsels(
     assert out.n_chunks() <= pl.thread_pool_size()
 
 
+@pytest.mark.parametrize("prefix", ["", "a-long-string-key-"])
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_streaming_join_string_key_runs(
+    prefix: str, how: JoinStrategy, nulls_equal: bool, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "4")
+    # Gathering keeps equal keys as equal views, also for long strings.
+    uniq = pl.Series("k", [f"{prefix}{c}" for c in "abcde"] + [""])
+    idx: list[int | None] = [0, 0, 0, 1, 1, None, None, 2, 2, 0, 3, 3, 3, 5, 5, 4]
+    idx = idx * 3 + [5, 5, None, 0, 5, 0]
+    left = pl.LazyFrame({"k": uniq.gather(pl.Series(idx, dtype=pl.UInt32))})
+    right = pl.LazyFrame({"k": ["", f"{prefix}a", f"{prefix}a", f"{prefix}c", None]})
+    q = left.with_row_index("v").join(
+        right.with_row_index("w"),
+        on="k",
+        how=how,
+        build_side="force_right",
+        nulls_equal=nulls_equal,
+    )
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("key_type", ["int", "str", "int, int", "struct"])
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
+@pytest.mark.parametrize("build", ["unique", "unique_with_null", "repeated"])
+@pytest.mark.parametrize("probe_nulls", [False, True])
+@pytest.mark.parametrize("all_match", [False, True])
+def test_streaming_join_unique_build_keys(
+    key_type: str,
+    how: JoinStrategy,
+    build: str,
+    probe_nulls: bool,
+    all_match: bool,
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "16")
+    plmonkeypatch.setenv("POLARS_JOIN_NUM_PARTITIONS", "4")
+    i = pl.int_range(200)
+    k = (i * 7) % (20 if all_match else 30)
+    if probe_nulls:
+        k = pl.when(i % 13 != 5).then(k)
+    keys = _join_keys(k, key_type)
+    key_exprs = [e.alias(n) for n, e in keys.items()]
+    probe = pl.select(*key_exprs, a=i, b=i.cast(pl.String), c=i * 0.5).lazy()
+    dim_keys: list[int | None] = list(range(20))
+    if build == "unique_with_null":
+        dim_keys.append(None)
+    elif build == "repeated":
+        dim_keys.append(3)
+    dim = (
+        pl.DataFrame({"k": dim_keys}, schema={"k": pl.Int64})
+        .select(
+            **_join_keys(pl.col("k"), key_type),
+            d=pl.format("d{}", pl.int_range(pl.len())),
+        )
+        .lazy()
+    )
+    for nulls_equal, coalesce in [(False, True), (True, False), (True, True)]:
+        q = probe.join(
+            dim,
+            on=list(keys),
+            how=how,
+            build_side="force_right",
+            nulls_equal=nulls_equal,
+            coalesce=coalesce,
+        )
+        assert_frame_equal(
+            q.collect(engine="streaming"),
+            q.collect(engine="in-memory"),
+            check_row_order=False,
+        )
+
+
 @pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
 def test_streaming_join_keeps_height_of_input_without_columns(
     how: Literal["inner", "left", "right", "full"],
