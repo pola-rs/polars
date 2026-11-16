@@ -4751,10 +4751,10 @@ def test_scan_iceberg_renews_vended_credentials(
     provider.clear_cached_credentials()
     assert provider() == ({"bearer_token": "t3"}, clock.now + 30)
 
-    # Any object store error clears them: those just renewed are kept.
+    # Cleared right after a renewal (rejected by the object store): renewed again.
     catalog.properties.update(_gcs_vended_properties("t4", now + 7200))
     provider.clear_cached_credentials()
-    assert provider() == ({"bearer_token": "t3"}, clock.now + 30)
+    assert provider() == ({"bearer_token": "t4"}, now + 7200 - 60)
 
 
 @pytest.mark.write_disk
@@ -4772,6 +4772,11 @@ def test_scan_iceberg_pickled_vended_credential_provider(
 
     # Other processes start with the scan's credentials, without a catalog request.
     builder = pickle.loads(pickle.dumps(scan_data.credential_provider))
+    assert isinstance(scan_data.credential_provider, CredentialProviderBuilder)
+    # And share its object store.
+    assert (
+        builder.stable_cache_key() == scan_data.credential_provider.stable_cache_key()
+    )
     provider = builder.build_credential_provider()
     assert provider() == ({"bearer_token": "t1"}, now + 3600 - 60)
 
@@ -4906,7 +4911,7 @@ def test_scan_iceberg_renews_expired_vended_credentials(
     tmp_path: Path, plmonkeypatch: PlMonkeyPatch
 ) -> None:
     now = int(datetime.now().timestamp())
-    clock = _fixed_clock(plmonkeypatch, now)
+    _fixed_clock(plmonkeypatch, now)
     tbl, catalog = _vended_table(tmp_path, _gcs_vended_properties("t1", now - 1), "gs")
     catalog.properties.update(_gcs_vended_properties("t2", now + 3600))
 
@@ -4914,10 +4919,9 @@ def test_scan_iceberg_renews_expired_vended_credentials(
     assert provider() == ({"bearer_token": "t2"}, now + 3600 - 60)
 
     # Vended expired again: retried a while later, not on every request.
-    clock.now += 10
     catalog.properties.update(_gcs_vended_properties("t3", now - 1))
     provider.clear_cached_credentials()
-    assert provider() == ({"bearer_token": "t3"}, clock.now + 10)
+    assert provider() == ({"bearer_token": "t3"}, now + 10)
 
 
 @pytest.mark.write_disk
@@ -4925,7 +4929,7 @@ def test_scan_iceberg_renews_vended_credentials_with_load_credentials(
     tmp_path: Path, plmonkeypatch: PlMonkeyPatch
 ) -> None:
     now = int(datetime.now().timestamp())
-    clock = _fixed_clock(plmonkeypatch, now)
+    _fixed_clock(plmonkeypatch, now)
     tbl, catalog = _vended_table(
         tmp_path, _gcs_vended_properties("t1", now + 3600), "gs"
     )
@@ -4948,7 +4952,6 @@ def test_scan_iceberg_renews_vended_credentials_with_load_credentials(
         raise NotImplementedError
 
     plmonkeypatch.setattr(catalog, "load_credentials", unsupported)
-    clock.now += 10
     catalog.properties.update(_gcs_vended_properties("t3", now + 3600))
     provider.clear_cached_credentials()
     assert provider() == ({"bearer_token": "t3"}, now + 3600 - 60)
@@ -4958,10 +4961,19 @@ def test_scan_iceberg_renews_vended_credentials_with_load_credentials(
         return {"gcs.oauth2.token": "no-expiry"}
 
     plmonkeypatch.setattr(catalog, "load_credentials", without_expiry)
-    clock.now += 10
     catalog.properties.update(_gcs_vended_properties("t4", now + 7200))
     provider.clear_cached_credentials()
     assert provider() == ({"bearer_token": "t4"}, now + 7200 - 60)
+
+    # And an endpoint that fails.
+    def failing(identifier: Any, location: str) -> dict[str, str]:
+        msg = "credentials endpoint failed"
+        raise ConnectionError(msg)
+
+    plmonkeypatch.setattr(catalog, "load_credentials", failing)
+    catalog.properties.update(_gcs_vended_properties("t5", now + 3600))
+    provider.clear_cached_credentials()
+    assert provider() == ({"bearer_token": "t5"}, now + 3600 - 60)
 
 
 @pytest.mark.write_disk
@@ -5054,6 +5066,27 @@ def test_scan_iceberg_vended_credential_provider_cache_key(tmp_path: Path) -> No
     )
     assert isinstance(builder, CredentialProviderBuilder)
     assert cache_key(tbl) == builder.stable_cache_key()
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_vended_credential_provider_cache_key_expiry(
+    tmp_path: Path,
+) -> None:
+    now = int(datetime.now().timestamp())
+    tbl, _ = _vended_table(tmp_path, {}, "gs")
+
+    def cache_key(token: str, expires_at: int) -> bytes:
+        # As vended at the table's load: not part of the catalog's properties.
+        tbl.io.properties = _gcs_vended_properties(token, expires_at)
+        scan_data = new_iceberg_scan_resolver(tbl)._to_dataset_scan_impl()
+        assert isinstance(scan_data, _NativeIcebergScanData)
+        assert isinstance(scan_data.credential_provider, CredentialProviderBuilder)
+        return scan_data.credential_provider.stable_cache_key()
+
+    # The same credentials vended with a later expiry share the object store.
+    assert cache_key("t1", now + 3600) == cache_key("t1", now + 3605)
+    # Other credentials (a caller with different access) do not.
+    assert cache_key("t1", now + 3600) != cache_key("t2", now + 3600)
 
 
 @pytest.mark.write_disk

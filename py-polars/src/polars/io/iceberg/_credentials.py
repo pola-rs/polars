@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-import contextlib
+import hashlib
+import pickle
 import time
 from typing import TYPE_CHECKING, Any, Final, Literal
 
 from polars._utils.logging import eprint, verbose
 from polars.exceptions import ComputeError
 from polars.io.cloud._utils import NoPickleOption
-from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
+from polars.io.cloud.credential_provider._builder import (
+    CredentialProviderBuilder,
+    InitializedCredentialProvider,
+)
 from polars.io.cloud.credential_provider._providers import CachingCredentialProvider
 from polars.io.iceberg._cache import _credential_env_fingerprint
 from polars.io.iceberg._dataset import (
@@ -38,8 +42,8 @@ if TYPE_CHECKING:
 # Credentials are renewed this long before they expire, so that requests in flight do
 # not use expired ones.
 _RENEW_BEFORE_EXPIRY_SECONDS = 60
-# The catalog is not asked again before this after a renewal, a failed one, or one
-# that gave expired credentials.
+# The catalog is asked again this long after a failed renewal, or one that gave
+# expired credentials.
 _RETRY_SECONDS = 10
 
 # Vended credentials that the catalog renews, by FileIO property prefix: object
@@ -92,7 +96,7 @@ def renewing_credential_provider(
     )
     return (
         {k: v for k, v in storage_options.items() if k not in keys},
-        CredentialProviderBuilder.from_initialized_provider(provider),
+        CredentialProviderBuilder(_InitializedCatalogCredentialProvider(provider)),
     )
 
 
@@ -172,13 +176,11 @@ class IcebergCatalogCredentialProvider(CachingCredentialProvider):
     def _start(self) -> None:
         super().__init__()
         credentials, expires_at = self._initial
-        # The last credentials vended, and when a renewal was last tried.
+        # The last credentials vended.
         self._latest = self._initial
-        self._renewed_at = 0.0
         self._cached_credentials.set((credentials, _renew_at(expires_at)))
 
     def __getstate__(self) -> dict[str, Any]:
-        # Also the object store's cache key, so only what does not change.
         return {
             k: getattr(self, k) for k in ("_table", "_location", "_initial", "_env")
         }
@@ -186,6 +188,14 @@ class IcebergCatalogCredentialProvider(CachingCredentialProvider):
     def __setstate__(self, state: dict[str, Any]) -> None:
         self.__dict__.update(state)
         self._start()
+
+    def stable_cache_key(self) -> bytes:
+        """Key of the object store that uses this provider."""
+        # With the credentials, which tell callers with different access apart, but
+        # not their expiry: catalogs may vend the same ones with a later expiry.
+        credentials, _ = self._initial
+        key = (self._table, self._location, credentials, self._env)
+        return hashlib.sha256(pickle.dumps(key)).digest()[:16]
 
     def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn:
         """Fetch new credentials from the catalog."""
@@ -195,7 +205,7 @@ class IcebergCatalogCredentialProvider(CachingCredentialProvider):
             )
         except Exception as e:
             # Read after the attempt, which may have taken a while.
-            now = self._renewed_at = _now()
+            now = _now()
             credentials, expires_at = self._latest
             if expires_at is not None and expires_at <= now:
                 raise
@@ -208,7 +218,7 @@ class IcebergCatalogCredentialProvider(CachingCredentialProvider):
             retry_at = int(now) + _RETRY_SECONDS
             return credentials, min(retry_at, expires_at or retry_at)
 
-        now = self._renewed_at = _now()
+        now = _now()
         self._latest = credentials, expires_at
         renew_at = _renew_at(expires_at)
         # Vended expired: retried after a while rather than on every request.
@@ -216,25 +226,40 @@ class IcebergCatalogCredentialProvider(CachingCredentialProvider):
             renew_at = int(now) + _RETRY_SECONDS
         return credentials, renew_at
 
-    def clear_cached_credentials(self) -> None:
-        # Polars clears them on any object store error (throttling, timeouts, ...):
-        # the catalog is not asked again right after a renewal, or a failed one.
-        if _now() - self._renewed_at >= _RETRY_SECONDS:
-            super().clear_cached_credentials()
-
     def _load_properties(self) -> Mapping[str, Any]:
         catalog = self._table.catalog()
         identifier = self._table.table_identifier
 
         # REST catalogs vend credentials without loading the table, if the server
-        # supports it (and tells when they expire).
+        # supports it (and tells when they expire). Else the table is loaded.
         if hasattr(catalog, "load_credentials"):
-            with contextlib.suppress(NotImplementedError):
+            try:
                 properties = catalog.load_credentials(identifier, self._location)
                 if _expires_at(properties, self._location) is not None:
                     return properties
+            except NotImplementedError:
+                pass
+            except Exception as e:
+                if verbose():
+                    eprint(
+                        "IcebergCatalogCredentialProvider: load_credentials failed, "
+                        f"loading the table: {e!r}"
+                    )
 
         return catalog.load_table(identifier).io.properties
+
+
+class _InitializedCatalogCredentialProvider(InitializedCredentialProvider):
+    """Builder of an `IcebergCatalogCredentialProvider`, with its own cache key."""
+
+    def stable_cache_key(self) -> bytes:
+        provider = self.credential_provider
+        assert isinstance(provider, IcebergCatalogCredentialProvider)
+        try:
+            return provider.stable_cache_key()
+        except Exception:
+            # Not picklable: keyed on the provider itself.
+            return super().stable_cache_key()
 
 
 def _vended_credentials(
