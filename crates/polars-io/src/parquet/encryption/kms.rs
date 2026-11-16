@@ -19,7 +19,9 @@ use polars_error::{PolarsError, PolarsResult, polars_err};
 use polars_parquet::parquet::encryption::decrypt::{FileDecryptionProperties, KeyRetriever};
 use polars_parquet::parquet::encryption::encrypt::FileEncryptionProperties;
 use polars_parquet::parquet::error::{ParquetError, ParquetResult};
+use polars_utils::aliases::PlHashMap;
 use polars_utils::python_function::PythonObject;
+use polars_utils::unique_id::UniqueId;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyMemoryView, PyString};
@@ -219,20 +221,24 @@ impl PyKmsConnectionConfig {
 /// `wrap_key` and `unwrap_key` methods.
 #[derive(Clone)]
 pub struct PythonCryptoFactory {
+    /// ID used for serialization, so that when the same factory is reused between
+    /// different plan nodes, it can be shared again after deserialization (along with its caches).
+    id: UniqueId,
     kms_client_factory: Arc<PythonObject>,
     crypto_factory: Arc<CryptoFactory>,
 }
 
 impl PythonCryptoFactory {
     pub fn new(kms_client_factory: Py<PyAny>) -> Self {
-        Self::from_python_object(Arc::new(PythonObject(kms_client_factory)))
+        Self::from_python_object(UniqueId::new(), Arc::new(PythonObject(kms_client_factory)))
     }
 
-    fn from_python_object(kms_client_factory: Arc<PythonObject>) -> Self {
+    fn from_python_object(id: UniqueId, kms_client_factory: Arc<PythonObject>) -> Self {
         let crypto_factory = Arc::new(CryptoFactory::new(PyKmsClientFactory(Arc::clone(
             &kms_client_factory,
         ))));
         Self {
+            id,
             kms_client_factory,
             crypto_factory,
         }
@@ -349,6 +355,47 @@ impl DecryptionPropertiesFactory for KmsDecryption {
     }
 }
 
+/// The first factory seen with each ID.
+pub(super) type SeenCryptoFactories = PlHashMap<UniqueId, PythonCryptoFactory>;
+
+impl PythonCryptoFactory {
+    /// Returns the factory with the same ID that was seen first, if it isn't this one.
+    fn shared(&self, seen: &mut SeenCryptoFactories) -> Option<Self> {
+        let first = seen.entry(self.id).or_insert_with(|| self.clone());
+        (!Arc::ptr_eq(&first.crypto_factory, &self.crypto_factory)).then(|| first.clone())
+    }
+}
+
+impl KmsEncryption {
+    /// Returns a copy using the crypto factory with the same ID that was seen first,
+    /// if it doesn't already use it.
+    pub(super) fn with_shared_crypto_factory(
+        &self,
+        seen: &mut SeenCryptoFactories,
+    ) -> Option<Self> {
+        Some(Self {
+            crypto_factory: self.crypto_factory.shared(seen)?,
+            kms_connection_config: Arc::clone(&self.kms_connection_config),
+            encryption_configuration: self.encryption_configuration.clone(),
+        })
+    }
+}
+
+impl KmsDecryption {
+    /// Returns a copy using the crypto factory with the same ID that was seen first,
+    /// if it doesn't already use it.
+    pub(super) fn with_shared_crypto_factory(
+        &self,
+        seen: &mut SeenCryptoFactories,
+    ) -> Option<Self> {
+        Some(Self {
+            crypto_factory: self.crypto_factory.shared(seen)?,
+            kms_connection_config: Arc::clone(&self.kms_connection_config),
+            decryption_configuration: self.decryption_configuration.clone(),
+        })
+    }
+}
+
 /// Serialization of the KMS configuration.
 ///
 /// The connection configuration is a snapshot, so refreshing the key access token
@@ -401,8 +448,9 @@ mod serialization {
 
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-    #[cfg_attr(feature = "dsl-schema", schemars(rename = "KmsEncryption"))]
-    struct SerializableKmsEncryption {
+    #[cfg_attr(feature = "dsl-schema", schemars(rename = "PythonCryptoFactory"))]
+    struct SerializablePythonCryptoFactory {
+        id: UniqueId,
         #[cfg_attr(
             feature = "serde",
             serde(
@@ -411,6 +459,27 @@ mod serialization {
             )
         )]
         kms_client_factory: Arc<PythonObject>,
+    }
+
+    impl PythonCryptoFactory {
+        fn to_serializable(&self) -> SerializablePythonCryptoFactory {
+            SerializablePythonCryptoFactory {
+                id: self.id,
+                kms_client_factory: Arc::clone(&self.kms_client_factory),
+            }
+        }
+
+        #[cfg(feature = "serde")]
+        fn from_serializable(serializable: SerializablePythonCryptoFactory) -> Self {
+            Self::from_python_object(serializable.id, serializable.kms_client_factory)
+        }
+    }
+
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+    #[cfg_attr(feature = "dsl-schema", schemars(rename = "KmsEncryption"))]
+    struct SerializableKmsEncryption {
+        crypto_factory: SerializablePythonCryptoFactory,
         kms_connection_config: SerializableKmsConnectionConfig,
         encryption_configuration: SerializableEncryptionConfiguration,
     }
@@ -419,14 +488,7 @@ mod serialization {
     #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
     #[cfg_attr(feature = "dsl-schema", schemars(rename = "KmsDecryption"))]
     struct SerializableKmsDecryption {
-        #[cfg_attr(
-            feature = "serde",
-            serde(
-                serialize_with = "PythonObject::serialize_with_pyversion",
-                deserialize_with = "PythonObject::deserialize_with_pyversion"
-            )
-        )]
-        kms_client_factory: Arc<PythonObject>,
+        crypto_factory: SerializablePythonCryptoFactory,
         kms_connection_config: SerializableKmsConnectionConfig,
         decryption_configuration: SerializableDecryptionConfiguration,
     }
@@ -521,7 +583,7 @@ mod serialization {
             S: serde::Serializer,
         {
             SerializableKmsEncryption {
-                kms_client_factory: Arc::clone(&self.crypto_factory.kms_client_factory),
+                crypto_factory: self.crypto_factory.to_serializable(),
                 kms_connection_config: SerializableKmsConnectionConfig::new(
                     &self.kms_connection_config,
                 ),
@@ -543,7 +605,7 @@ mod serialization {
 
             let encryption = SerializableKmsEncryption::deserialize(deserializer)?;
             Ok(Self::new(
-                PythonCryptoFactory::from_python_object(encryption.kms_client_factory),
+                PythonCryptoFactory::from_serializable(encryption.crypto_factory),
                 encryption.kms_connection_config.into_config(),
                 encryption
                     .encryption_configuration
@@ -560,7 +622,7 @@ mod serialization {
             S: serde::Serializer,
         {
             SerializableKmsDecryption {
-                kms_client_factory: Arc::clone(&self.crypto_factory.kms_client_factory),
+                crypto_factory: self.crypto_factory.to_serializable(),
                 kms_connection_config: SerializableKmsConnectionConfig::new(
                     &self.kms_connection_config,
                 ),
@@ -580,7 +642,7 @@ mod serialization {
         {
             let decryption = SerializableKmsDecryption::deserialize(deserializer)?;
             Ok(Self::new(
-                PythonCryptoFactory::from_python_object(decryption.kms_client_factory),
+                PythonCryptoFactory::from_serializable(decryption.crypto_factory),
                 decryption.kms_connection_config.into_config(),
                 decryption.decryption_configuration.into_config(),
             ))

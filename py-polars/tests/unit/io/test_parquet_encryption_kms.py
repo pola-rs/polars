@@ -5,6 +5,7 @@ import io
 import re
 import subprocess
 import sys
+from collections import Counter
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -806,6 +807,83 @@ def test_serialize_closure(tmp_path: Path) -> None:
 
     df = pl.read_parquet(path, decryption=decryption_config(InMemoryKms()))
     assert_frame_equal(df, basic_data())
+
+
+# KMS client creations by `CountingKms` name. This is module-level so that it is shared
+# by copies of a `CountingKms` unpickled when deserializing a query.
+CLIENT_CREATIONS: Counter[str] = Counter()
+
+
+class CountingKms(InMemoryKms):
+    """An in-memory KMS that counts the clients created, even after pickling."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__()
+        self.name = name
+        CLIENT_CREATIONS[name] = 0
+
+    def create_client(self, config: KmsConnectionConfig) -> InMemoryKmsClient:
+        CLIENT_CREATIONS[self.name] += 1
+        return super().create_client(config)
+
+
+@pytest.mark.parametrize("round_trip", [False, True])
+def test_serialize_shares_crypto_factory(tmp_path: Path, round_trip: bool) -> None:
+    # Re-encrypt a file, decrypting and encrypting with the same crypto factory. The
+    # factory caches the KMS client, so only one is created, even after a round trip.
+    path = tmp_path / "in.parquet"
+    basic_data().write_parquet(path, encryption=encryption_config(InMemoryKms()))
+    kms = CountingKms(f"shared_{round_trip}")
+    crypto_factory = kms.crypto_factory()
+    lf = pl.scan_parquet(
+        path,
+        decryption=ParquetDecryptionConfig(
+            crypto_factory, KmsConnectionConfig(), DecryptionConfiguration()
+        ),
+    ).sink_parquet(
+        tmp_path / "out.parquet",
+        encryption=ParquetEncryptionConfig(
+            crypto_factory,
+            KmsConnectionConfig(),
+            EncryptionConfiguration("footer_key", uniform_encryption=True),
+        ),
+        lazy=True,
+    )
+
+    if round_trip:
+        lf = serde_round_trip(lf)
+    lf.collect()
+
+    assert CLIENT_CREATIONS[kms.name] == 1
+    df = pl.read_parquet(
+        tmp_path / "out.parquet", decryption=decryption_config(InMemoryKms())
+    )
+    assert_frame_equal(df, basic_data())
+
+
+def test_serialize_keeps_equality(tmp_path: Path) -> None:
+    # Scans with the same decryption config are equal, so the common subplan is
+    # only computed once, even after a round trip.
+    path = tmp_path / "in.parquet"
+    basic_data().write_parquet(path, encryption=encryption_config(InMemoryKms()))
+    decryption = decryption_config(InMemoryKms())
+    lf = pl.concat(
+        [
+            pl.scan_parquet(path, decryption=decryption).select("id"),
+            pl.scan_parquet(path, decryption=decryption).select("id"),
+        ]
+    )
+    # Serialize before explaining, as that uses the KMS, which can't be pickled
+    # once it has been used.
+    deserialized = serde_round_trip(lf)
+
+    def explain(lf: pl.LazyFrame) -> str:
+        # Cache IDs are random for each plan.
+        return re.sub(r"CACHE\[id: [^\]]*\]", "CACHE", lf.explain())
+
+    plan = explain(lf)
+    assert "CACHE" in plan
+    assert explain(deserialized) == plan
 
 
 @pytest.mark.parametrize(

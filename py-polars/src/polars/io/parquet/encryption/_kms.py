@@ -218,8 +218,9 @@ class CryptoFactory:
     When a query that uses this factory is serialized, for example to run on
     Polars Cloud, the `kms_client_factory` is pickled, using cloudpickle if it
     can't be pickled with :mod:`pickle`. It must be possible to unpickle it, and to
-    create KMS clients with it, wherever the query is deserialized. The
-    deserialized query has its own caches, which aren't shared with this factory.
+    create KMS clients with it, wherever the query is deserialized. Configurations
+    in the deserialized query that used the same factory share a single copy of it.
+    This copy has its own caches, which aren't shared with this factory.
     """
 
     def __init__(
