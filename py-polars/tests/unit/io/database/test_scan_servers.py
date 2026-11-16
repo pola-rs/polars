@@ -60,6 +60,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
     from pathlib import Path
 
+    from polars._typing import PolarsDataType
+
 pytest.importorskip("polars_database")
 pytest.importorskip("sqlglot")
 
@@ -607,7 +609,7 @@ def test_postgres_credential_provider(driver: str) -> None:
 
 
 # Declared types and their dtypes, per dialect, whichever driver reads them
-EDGE_TYPES = {
+EDGE_TYPES: dict[str, dict[str, PolarsDataType]] = {
     "postgres17": {
         "j": pl.String,
         "u": pl.String,
