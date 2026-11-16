@@ -121,6 +121,12 @@ fn tokenize(sql: &str) -> PolarsResult<(Vec<TokenWithSpan>, TableVersions)> {
         .with_unescape(ParserOptions::default().unescape)
         .tokenize_with_location()
         .map_err(to_sql_interface_err)?;
+    // An escape string (E'..') is read as a plain string; the tokenizer resolved its escapes.
+    for token in &mut tokens {
+        if let Token::EscapedStringLiteral(s) = &mut token.token {
+            token.token = Token::SingleQuotedString(std::mem::take(s));
+        }
+    }
     demote_top_keyword(&mut tokens);
     let versions = extract_table_versions(&mut tokens)?;
     Ok((tokens, versions))
