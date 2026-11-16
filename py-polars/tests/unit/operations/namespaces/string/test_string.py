@@ -2219,6 +2219,37 @@ def test_string_reverse() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.parametrize("dtype", [pl.Int8, pl.UInt16, pl.Int32, pl.Int64, pl.UInt64])
+def test_string_from_code_point(dtype: pl.DataType) -> None:
+    s = pl.Series("n", [65, None, 97, 0, 127], dtype=dtype)
+    expected = pl.Series("n", ["A", None, "a", "\x00", "\x7f"])
+    assert_series_equal(s.str.from_code_point(), expected)
+    for engine in ("in-memory", "streaming"):
+        out = s.to_frame().lazy().select(pl.col("n").str.from_code_point())
+        assert_series_equal(out.collect(engine=engine).to_series(), expected)
+
+
+def test_string_from_code_point_unicode() -> None:
+    s = pl.Series([233, 8364, 128512, 0x10FFFF])
+    assert s.str.from_code_point().to_list() == ["é", "€", "😀", "\U0010ffff"]
+    assert pl.Series([], dtype=pl.Int64).str.from_code_point().dtype == pl.String
+    assert pl.Series([None, None]).str.from_code_point().to_list() == [None, None]
+
+
+@pytest.mark.parametrize("value", [-1, 0x110000, 0xD800, 0xDFFF])
+def test_string_from_code_point_invalid(value: int) -> None:
+    with pytest.raises(ComputeError, match=f"invalid Unicode code point: {value}"):
+        pl.Series([65, value]).str.from_code_point()
+
+
+def test_string_from_code_point_non_integer() -> None:
+    for s in (pl.Series([65.0]), pl.Series(["65"]), pl.Series([True])):
+        with pytest.raises(
+            InvalidOperationError, match="expected an integer code point"
+        ):
+            s.str.from_code_point()
+
+
 @pytest.mark.parametrize(
     ("data", "expected_data"),
     [

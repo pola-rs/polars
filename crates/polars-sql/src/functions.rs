@@ -17,9 +17,7 @@ use polars_plan::dsl::functions::{
     by_name, coalesce, concat_str, datetime_ranges, element, int_range, int_ranges, len, lit,
     max_horizontal, min_horizontal, when,
 };
-use polars_plan::dsl::{
-    FunctionExpr, RangeFunction, Selector, SqlBinaryOp, SqlFunction, StringFunction,
-};
+use polars_plan::dsl::{FunctionExpr, RangeFunction, Selector, SqlBinaryOp, SqlFunction};
 use polars_plan::plans::{
     DynLiteralValue, LiteralValue, RowEncodingOutputType, RowEncodingVariant, typed_lit,
 };
@@ -1763,7 +1761,7 @@ impl SQLFunctionVisitor<'_> {
             // String functions
             // ----
             BitLength => self.visit_unary(|e| e.str().len_bytes().cast(DataType::Int64) * lit(8)),
-            Chr => self.visit_unary(|e| e.map_unary(StringFunction::FromCodePoint)),
+            Chr => self.visit_unary(|e| e.str().from_code_point()),
             Concat => {
                 let args = extract_args(function)?;
                 if args.is_empty() {
