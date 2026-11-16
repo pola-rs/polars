@@ -232,3 +232,53 @@ def test_regexp_extract_errors() -> None:
         df.sql("SELECT REGEXP_EXTRACT(s) FROM self")
     with pytest.raises(SQLSyntaxError, match="non-negative integer literal"):
         df.sql("SELECT REGEXP_EXTRACT(s, 'x', -1) FROM self")
+
+
+def test_regexp_matches() -> None:
+    df = pl.DataFrame(
+        {"s": ["ABC", "a.c", "a\nb", None, "abc"], "p": ["b", ".", "a.b", "x", None]}
+    )
+    assert_sql_matches(
+        df,
+        query="""
+        SELECT
+          REGEXP_MATCHES(s, 'b') AS m1,
+          REGEXP_MATCHES(s, 'b', 'i') AS m2,
+          REGEXP_MATCHES(s, 'b', 'ic') AS m3,
+          REGEXP_MATCHES(s, '.', 'l') AS m4,
+          REGEXP_MATCHES(s, 'A.', 'li') AS m5,
+          REGEXP_MATCHES(s, 'a.b', 's') AS m6,
+          REGEXP_MATCHES(s, 'a.b', 'sm') AS m7,
+          REGEXP_MATCHES(s, p) AS m8,
+          REGEXP_MATCHES(s, p, 'i') AS m9,
+          REGEXP_MATCHES(s, p, 'l') AS m10,
+          REGEXP_MATCHES(s, 'B', '') AS m11
+        FROM self
+        """,
+        compare_with="duckdb",
+    )
+
+
+def test_regexp_matches_null() -> None:
+    res = pl.sql(
+        """
+        SELECT
+          REGEXP_MATCHES(NULL, 'x') AS a,
+          REGEXP_MATCHES('x', NULL) AS b,
+          REGEXP_MATCHES('x', NULL, 'li') AS c
+        """,
+        eager=True,
+    )
+    assert res.row(0) == (None, None, None)
+
+
+def test_regexp_matches_errors() -> None:
+    df = pl.DataFrame({"s": ["xyz"]})
+    with pytest.raises(SQLSyntaxError, match="does not take the 'g' option"):
+        df.sql("SELECT REGEXP_MATCHES(s, 'x', 'g') FROM self")
+    with pytest.raises(SQLSyntaxError, match="invalid REGEXP_MATCHES option 'x'"):
+        df.sql("SELECT REGEXP_MATCHES(s, 'x', 'x') FROM self")
+    with pytest.raises(SQLSyntaxError, match="string literal as the options"):
+        df.sql("SELECT REGEXP_MATCHES(s, 'x', s) FROM self")
+    with pytest.raises(SQLSyntaxError, match="REGEXP_MATCHES expects 2-3 arguments"):
+        df.sql("SELECT REGEXP_MATCHES(s) FROM self")

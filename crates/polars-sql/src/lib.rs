@@ -3,16 +3,21 @@
 #![deny(missing_docs)]
 mod catalog;
 mod context;
+mod datetime_template;
 mod dyn_visit;
 pub mod function_registry;
 mod functions;
 mod group_context;
 mod grouping_sets;
 mod join_keys;
+#[cfg(feature = "json")]
+mod json_text;
 pub mod keywords;
 mod lateral;
 mod layout_alter;
 mod literal_folding;
+mod pivot;
+mod positional_join;
 mod resolver;
 mod sql_expr;
 mod sql_visitors;

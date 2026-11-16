@@ -27,6 +27,7 @@ mod var_std;
 use std::any::Any;
 use std::borrow::Cow;
 use std::marker::PhantomData;
+use std::ops::Range;
 
 #[cfg(feature = "approx_quantile")]
 pub use approx_quantile::{
@@ -260,7 +261,24 @@ pub trait Reducer: Send + Sync + Clone + 'static {
     /// combined afterwards, changing the result by at most floating-point rounding.
     /// If so, `init` must be an identity of `combine`.
     const ORDER_INDEPENDENT: bool = false;
+    /// Whether reducing a value right after itself into the same state may be skipped,
+    /// using [`is_repeat`](Self::is_repeat).
+    const SKIP_REPEATS: bool = false;
     fn init(&self) -> Self::Value;
+    /// Whether the valid rows `i` and `j` of `arr` hold the same value. It may return
+    /// false for equal values.
+    ///
+    /// # Safety
+    /// The rows must be in bounds.
+    #[inline(always)]
+    unsafe fn is_repeat(
+        &self,
+        _arr: &<Self::Dtype as PolarsDataType>::Array,
+        _i: usize,
+        _j: usize,
+    ) -> bool {
+        false
+    }
     #[inline(always)]
     fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
         Cow::Borrowed(s)
@@ -358,6 +376,105 @@ impl<R: NumericReduction> Reducer for NumReducer<R> {
     }
 }
 
+/// Whether the runs of equal groups are long on average. Short runs make the end of a run hard
+/// to predict. A row with an evict bit also starts a run.
+fn has_long_runs(group_idxs: &[IdxSize]) -> bool {
+    let Some(rest) = group_idxs.get(1..) else {
+        return false;
+    };
+    let num_runs: usize = rest
+        .iter()
+        .zip(group_idxs)
+        .map(|(a, b)| ((a != b) | (a >> (IdxSize::BITS - 1) != 0)) as usize)
+        .sum::<usize>()
+        + 1;
+    num_runs * 8 < group_idxs.len()
+}
+
+/// Reduces the rows of each run of equal groups into a local state, and calls `flush` with the
+/// group, the state and whether it has a valid value at the end of the run. This way the state
+/// of a group is not loaded and stored for each row. The group of a row is its index masked by
+/// `idx_mask`.
+///
+/// # Safety
+/// The subset is in-bounds.
+#[inline(always)]
+unsafe fn reduce_runs<R: Reducer>(
+    reducer: &R,
+    arr: &<R::Dtype as PolarsDataType>::Array,
+    subset: &[IdxSize],
+    group_idxs: &[IdxSize],
+    idx_mask: IdxSize,
+    seq_id: u64,
+    flush: impl FnMut(usize, &R::Value, bool),
+) {
+    unsafe {
+        if arr.has_nulls() {
+            reduce_runs_impl::<R, true>(reducer, arr, subset, group_idxs, idx_mask, seq_id, flush)
+        } else {
+            reduce_runs_impl::<R, false>(reducer, arr, subset, group_idxs, idx_mask, seq_id, flush)
+        }
+    }
+}
+
+#[inline(always)]
+unsafe fn reduce_runs_impl<R: Reducer, const HAS_NULLS: bool>(
+    reducer: &R,
+    arr: &<R::Dtype as PolarsDataType>::Array,
+    subset: &[IdxSize],
+    group_idxs: &[IdxSize],
+    idx_mask: IdxSize,
+    seq_id: u64,
+    mut flush: impl FnMut(usize, &R::Value, bool),
+) {
+    let Some(first) = group_idxs.first() else {
+        return;
+    };
+    let (validity, validity_offset, _) = match arr.validity() {
+        Some(validity) if HAS_NULLS => validity.as_slice(),
+        _ => (&[][..], 0, 0),
+    };
+    let mut run = reducer.init();
+    let mut run_g = (first & idx_mask) as usize;
+    let mut run_valid = !HAS_NULLS;
+    for (i, g) in subset.iter().zip(group_idxs) {
+        let g = (g & idx_mask) as usize;
+        if g != run_g {
+            flush(run_g, &run, run_valid);
+            run = reducer.init();
+            run_g = g;
+            run_valid = !HAS_NULLS;
+        }
+        let i = *i as usize;
+        let v = unsafe { arr.value_unchecked(i) };
+        let v = if HAS_NULLS {
+            let valid = unsafe { get_bit_unchecked(validity, validity_offset + i) };
+            run_valid |= valid;
+            valid.then_some(v)
+        } else {
+            Some(v)
+        };
+        reducer.reduce_one(&mut run, v, seq_id);
+    }
+    flush(run_g, &run, run_valid);
+}
+
+/// The ranges of rows that start at the first row or a row with an evict bit, and end before the
+/// next row with an evict bit.
+fn eviction_ranges(group_idxs: &[EvictIdx]) -> impl Iterator<Item = Range<usize>> + '_ {
+    let mut start = 0;
+    std::iter::from_fn(move || {
+        let rest = group_idxs.get(start + 1..)?;
+        let end = rest
+            .iter()
+            .position(|g| g.should_evict())
+            .map_or(group_idxs.len(), |p| start + 1 + p);
+        let range = start..end;
+        start = end;
+        Some(range)
+    })
+}
+
 pub struct VecGroupedReduction<R: Reducer> {
     values: Vec<R::Value>,
     layout: LaneLayout,
@@ -436,6 +553,22 @@ where
         }
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
         let arr = ca.downcast_as_array();
+        if R::ORDER_INDEPENDENT && self.layout.num_lanes() == 1 && has_long_runs(group_idxs) {
+            let reducer = &self.reducer;
+            let slots = self.values.as_mut_slice();
+            unsafe {
+                reduce_runs(
+                    reducer,
+                    arr,
+                    subset,
+                    group_idxs,
+                    IdxSize::MAX,
+                    seq_id,
+                    |g, run, _| reducer.combine(slots.get_unchecked_mut(g), run),
+                );
+            }
+            return Ok(());
+        }
         let stride = self.layout.stride;
         let slots = self.values.as_mut_slice();
         let mut offset = 0usize;
@@ -449,7 +582,16 @@ where
                     offset = offset.wrapping_add(stride);
                 }
             } else {
+                let mut prev_i = 0;
+                let mut prev_g = IdxSize::MAX;
                 for (i, g) in subset.iter().zip(group_idxs) {
+                    if R::SKIP_REPEATS {
+                        if *g == prev_g && self.reducer.is_repeat(arr, *i as usize, prev_i) {
+                            continue;
+                        }
+                        prev_i = *i as usize;
+                        prev_g = *g;
+                    }
                     let grp = slots.get_unchecked_mut(*g as usize + (offset & LANE_MASK));
                     self.reducer
                         .reduce_one(grp, Some(arr.value_unchecked(*i as usize)), seq_id);
@@ -479,6 +621,32 @@ where
 
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
         let arr = ca.downcast_as_array();
+        if R::ORDER_INDEPENDENT && has_long_runs(EvictIdx::cast_to_idxs(group_idxs)) {
+            let reducer = &self.reducer;
+            let slots = self.values.as_mut_slice();
+            for range in eviction_ranges(group_idxs) {
+                unsafe {
+                    let g = group_idxs.get_unchecked(range.start);
+                    if g.should_evict() {
+                        let grp = slots.get_unchecked_mut(g.idx());
+                        let old = core::mem::replace(grp, reducer.init());
+                        self.evicted_values.push(old);
+                    }
+                    let group_idxs = EvictIdx::cast_to_idxs(&group_idxs[range.clone()]);
+                    let subset = &subset[range];
+                    reduce_runs(
+                        reducer,
+                        arr,
+                        subset,
+                        group_idxs,
+                        IdxSize::MAX >> 1,
+                        seq_id,
+                        |g, run, _| reducer.combine(slots.get_unchecked_mut(g), run),
+                    );
+                }
+            }
+            return Ok(());
+        }
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
             if values.has_nulls() {
@@ -492,7 +660,19 @@ where
                     self.reducer.reduce_one(grp, ov, seq_id);
                 }
             } else {
+                let mut prev_i = 0;
+                let mut prev_g = usize::MAX;
                 for (i, g) in subset.iter().zip(group_idxs) {
+                    if R::SKIP_REPEATS {
+                        if g.idx() == prev_g
+                            && !g.should_evict()
+                            && self.reducer.is_repeat(arr, *i as usize, prev_i)
+                        {
+                            continue;
+                        }
+                        prev_i = *i as usize;
+                        prev_g = g.idx();
+                    }
                     let v = arr.value_unchecked(*i as usize);
                     let grp = self.values.get_unchecked_mut(g.idx());
                     if g.should_evict() {
@@ -699,6 +879,28 @@ where
             self.layout.expand(&mut self.values, self.reducer.init());
         }
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
+        if R::ORDER_INDEPENDENT && self.layout.num_lanes() == 1 && has_long_runs(group_idxs) {
+            let reducer = &self.reducer;
+            let slots = self.values.as_mut_slice();
+            let mask = self.mask.as_mut_slice();
+            unsafe {
+                reduce_runs(
+                    reducer,
+                    ca.downcast_as_array(),
+                    subset,
+                    group_idxs,
+                    IdxSize::MAX,
+                    seq_id,
+                    |g, run, valid| {
+                        if valid {
+                            reducer.combine(slots.get_unchecked_mut(g), run);
+                            set_bit_unchecked(mask, g, true);
+                        }
+                    },
+                );
+            }
+            return Ok(());
+        }
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
             update_masked_lanes(
@@ -734,6 +936,40 @@ where
 
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
         let arr = ca.downcast_as_array();
+        if R::ORDER_INDEPENDENT && has_long_runs(EvictIdx::cast_to_idxs(group_idxs)) {
+            let reducer = &self.reducer;
+            let slots = self.values.as_mut_slice();
+            for range in eviction_ranges(group_idxs) {
+                unsafe {
+                    let g = group_idxs.get_unchecked(range.start);
+                    if g.should_evict() {
+                        let grp = slots.get_unchecked_mut(g.idx());
+                        let old = core::mem::replace(grp, reducer.init());
+                        self.evicted_values.push(old);
+                        self.evicted_mask.push(self.mask.get_unchecked(g.idx()));
+                        self.mask.set_unchecked(g.idx(), false);
+                    }
+                    let mask = self.mask.as_mut_slice();
+                    let group_idxs = EvictIdx::cast_to_idxs(&group_idxs[range.clone()]);
+                    let subset = &subset[range];
+                    reduce_runs(
+                        reducer,
+                        arr,
+                        subset,
+                        group_idxs,
+                        IdxSize::MAX >> 1,
+                        seq_id,
+                        |g, run, valid| {
+                            if valid {
+                                reducer.combine(slots.get_unchecked_mut(g), run);
+                                set_bit_unchecked(mask, g, true);
+                            }
+                        },
+                    );
+                }
+            }
+            return Ok(());
+        }
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
             for (i, g) in subset.iter().zip(group_idxs) {

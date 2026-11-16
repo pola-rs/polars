@@ -22,6 +22,8 @@ Temporal
      - Offers the same functionality as `DATE_PART` with slightly different syntax.
    * - :ref:`STRFTIME <strftime>`
      - Formats a temporal value (Datetime, Date, or Time) as a string.
+   * - :ref:`TO_CHAR <to_char>`
+     - Formats a temporal value (Datetime, Date, or Time) as a string using a PostgreSQL template.
 
 
 .. _current_date:
@@ -355,3 +357,37 @@ Formats a temporal value (Datetime, Date, or Time) as a string using a `chrono s
     # │ null           ┆ 22.33.55 │
     # │ April 10, 2020 ┆ null     │
     # └────────────────┴──────────┘
+
+.. _to_char:
+
+TO_CHAR
+-------
+Formats a temporal value (Datetime, Date, or Time) as a string using a PostgreSQL template,
+such as 'YYYY-MM-DD HH24:MI:SS'. The supported patterns are `HH`, `HH12`, `HH24`, `MI`, `SS`,
+`MS`, `US`, `FF3`, `FF6`, `AM`/`PM`, `YYYY`, `YY`, `IYYY`, `IY`, `MONTH`, `MON`, `MM`, `DAY`,
+`DY`, `DDD`, `DD`, `ID` and `IW`, each optionally prefixed with `FM` to drop padding. Text in
+double quotes is copied as is. A template that contains `%` is read as a strftime format, as in
+`STRFTIME`.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame(
+      {"dt": [datetime(1978, 7, 5, 10, 30), datetime(2020, 4, 10, 22, 5)]}
+    )
+    df.sql("""
+      SELECT
+        TO_CHAR(dt, 'FMDay, DD Mon YYYY') AS s_dt,
+        TO_CHAR(dt, 'HH12:MI AM') AS s_tm,
+      FROM self
+    """)
+    # shape: (2, 2)
+    # ┌────────────────────────┬──────────┐
+    # │ s_dt                   ┆ s_tm     │
+    # │ ---                    ┆ ---      │
+    # │ str                    ┆ str      │
+    # ╞════════════════════════╪══════════╡
+    # │ Wednesday, 05 Jul 1978 ┆ 10:30 AM │
+    # │ Friday, 10 Apr 2020    ┆ 10:05 PM │
+    # └────────────────────────┴──────────┘

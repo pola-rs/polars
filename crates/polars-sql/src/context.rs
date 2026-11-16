@@ -58,10 +58,11 @@ use crate::grouping_sets::{
 };
 use crate::join_keys::{sql_join_key_pair, sql_join_where_predicate};
 use crate::layout_alter::{self, Layout, LayoutAlter};
+use crate::positional_join::{has_positional_join, is_positional_join};
 use crate::sql_expr::{
     convert_int_literal_for_string, is_string_expr, order_by_sort_options, parse_sql_array,
     parse_sql_expr, resolve_compound_identifier, resolve_expr_dtype, series_from_literals,
-    sql_parser, to_sql_interface_err,
+    sql_parser,
 };
 use crate::sql_visitors::{
     QualifyExpression, TableIdentifierCollector, check_ambiguous_column,
@@ -336,6 +337,8 @@ pub struct SQLContext {
     joined_aliases: PlHashMap<String, PlHashMap<String, String>>,
     /// The current statement's FROM items that are not tables, read only by qualified columns.
     pub(crate) from_item_frames: PlHashMap<String, LazyFrame>,
+    /// A FROM item planned ahead with its plan, which the next `get_table` of that item takes.
+    pub(crate) planned_from_item: Option<(TableFactor, (String, LazyFrame))>,
     join_base: Option<JoinBase>,
     /// The (joined table, column) pairs of the USING clauses of the joins processed so far in
     /// the current join chain.
@@ -426,6 +429,7 @@ impl Default for SQLContext {
             active_relations: Default::default(),
             joined_aliases: Default::default(),
             from_item_frames: Default::default(),
+            planned_from_item: None,
             join_base: None,
             join_using_cols: Default::default(),
             exists_values: Default::default(),
@@ -675,7 +679,7 @@ impl SQLContext {
         polars_ensure!(query.is_none() || columns.is_empty(), SQLInterface: "`CREATE TABLE ... AS SELECT` does not take column definitions");
         polars_ensure!(query.is_some() || !columns.is_empty(), SQLInterface: "CREATE TABLE expected a query, column definitions, or LIKE clause");
         let (schema, required) = create_table_columns(columns)?;
-        let query = query.as_ref().map(|q| q.to_string());
+        let query = query.as_deref().map(catalog_query_sql).transpose()?;
         let location = hive_formats.as_ref().and_then(|f| f.location.as_deref());
         let (location, properties) = create_table_options(table_options, location)?;
         let partition_by = create_table_partitioning(partition_by.as_deref(), hive_distribution)?;
@@ -2813,7 +2817,7 @@ impl SQLContext {
             name: tbl,
             table,
             columns,
-            query: source.to_string(),
+            query: catalog_query_sql(&source)?,
             overwrite: insert.overwrite,
         }))
     }
@@ -3423,6 +3427,17 @@ impl SQLContext {
                         match_condition,
                         constraint,
                     )?,
+                    op if is_positional_join(op) => {
+                        // As in a CROSS JOIN, right columns the left has are suffixed.
+                        let shared: Vec<PlSmallStr> = right_schema
+                            .iter_names()
+                            .filter(|name| left_schema.contains(name))
+                            .cloned()
+                            .collect();
+                        let suffixed = shared.iter().map(|name| format!("{name}:{r_name}"));
+                        let rf = rf.rename(&shared, suffixed, true);
+                        concat_lf_horizontal([lf, rf], HConcatOptions::default())?
+                    },
                     JoinOperator::CrossJoin(JoinConstraint::None) => {
                         lf.cross_join(rf, Some(format_pl_smallstr!(":{}", r_name)))
                     },
@@ -6145,6 +6160,11 @@ impl SQLContext {
         &mut self,
         relation: &TableFactor,
     ) -> PolarsResult<(String, LazyFrame)> {
+        if let Some((factor, _)) = &self.planned_from_item
+            && factor == relation
+        {
+            return Ok(self.planned_from_item.take().unwrap().1);
+        }
         if let Some(name) = get_table_name(relation) {
             self.from_item_frames.remove(&name);
         }
@@ -6188,14 +6208,36 @@ impl SQLContext {
                     ctx.strict_relations |= strict;
                     ctx.execute_query(subquery)
                 })?;
-                if let Some(alias) = alias {
-                    let lf = self.rename_columns_from_table_alias(lf, alias)?;
-                    let name = alias.name.value.clone();
-                    self.from_item_frames.insert(name.clone(), lf.clone());
-                    Ok((name, lf))
-                } else {
-                    Ok(("".to_string(), lf))
-                }
+                self.derived_from_item(lf, alias.as_ref())
+            },
+            TableFactor::Pivot {
+                table,
+                aggregate_functions,
+                value_column,
+                value_source,
+                default_on_null,
+                alias,
+            } => {
+                polars_ensure!(
+                    default_on_null.is_none(),
+                    SQLInterface: "PIVOT does not support `DEFAULT ON NULL`"
+                );
+                let lf =
+                    self.execute_pivot(table, aggregate_functions, value_column, value_source)?;
+                self.derived_from_item(lf, alias.as_ref())
+            },
+            #[cfg(feature = "pivot")]
+            TableFactor::Unpivot {
+                table,
+                value,
+                name,
+                columns,
+                null_inclusion,
+                alias,
+            } => {
+                let lf =
+                    self.execute_unpivot(table, value, name, columns, null_inclusion.as_ref())?;
+                self.derived_from_item(lf, alias.as_ref())
             },
             TableFactor::UNNEST {
                 alias,
@@ -6283,6 +6325,21 @@ impl SQLContext {
             // Support bare table, optionally with an alias, for now
             _ => polars_bail!(SQLInterface: "not yet implemented: {}", relation),
         }
+    }
+
+    /// A FROM item computed from other relations, known by its alias, if any.
+    fn derived_from_item(
+        &mut self,
+        lf: LazyFrame,
+        alias: Option<&TableAlias>,
+    ) -> PolarsResult<(String, LazyFrame)> {
+        let Some(alias) = alias else {
+            return Ok((String::new(), lf));
+        };
+        let lf = self.rename_columns_from_table_alias(lf, alias)?;
+        let name = alias.name.value.clone();
+        self.from_item_frames.insert(name.clone(), lf.clone());
+        Ok((name, lf))
     }
 
     fn execute_table_function(
@@ -7581,7 +7638,7 @@ fn kept_factors(tbl: &TableWithJoins) -> Vec<&TableFactor> {
 
 /// The relations that table factors bring into scope. A nested join is flattened rather than
 /// bound to its alias, so its own relations are declared too.
-fn factor_relations<'a>(
+pub(crate) fn factor_relations<'a>(
     factors: impl Iterator<Item = &'a TableFactor>,
     spellings: &CatalogSpellings,
 ) -> Vec<RelationName> {
@@ -7625,7 +7682,9 @@ pub(crate) fn relation_name(factor: &TableFactor) -> Option<RelationName> {
         TableFactor::Derived { alias: a, .. }
         | TableFactor::NestedJoin { alias: a, .. }
         | TableFactor::TableFunction { alias: a, .. }
-        | TableFactor::UNNEST { alias: a, .. } => alias(a),
+        | TableFactor::UNNEST { alias: a, .. }
+        | TableFactor::Pivot { alias: a, .. }
+        | TableFactor::Unpivot { alias: a, .. } => alias(a),
         _ => None,
     }
 }
@@ -9652,11 +9711,18 @@ fn parse_single_statement(query: &str) -> PolarsResult<Statement> {
     Ok(ast.into_iter().next().unwrap())
 }
 
+/// `query` as the SQL that a catalog write runs. A positional join would print as a CROSS JOIN.
+fn catalog_query_sql(query: &Query) -> PolarsResult<String> {
+    polars_ensure!(
+        !has_positional_join(query),
+        SQLInterface: "POSITIONAL JOIN is not supported in a query that writes a catalog table"
+    );
+    Ok(query.to_string())
+}
+
 fn parse_sql(query: &str) -> PolarsResult<Vec<Statement>> {
-    let (mut parser, versions) = sql_parser(query)?;
-    let mut stmts = parser.parse_statements().map_err(to_sql_interface_err)?;
-    versions.attach(&mut stmts)?;
-    Ok(stmts)
+    let (mut parser, taken) = sql_parser(query)?;
+    taken.attach(query, parser.parse_statements())
 }
 
 bitflags::bitflags! {

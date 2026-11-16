@@ -31,15 +31,13 @@ pub(crate) enum Layout {
 pub(crate) fn parse_statements_or_alter(
     query: &str,
 ) -> PolarsResult<Result<Vec<Statement>, LayoutAlter>> {
-    let (mut parser, versions) = sql_parser(query)?;
+    let (mut parser, taken) = sql_parser(query)?;
     if let Some(alter) = parse_layout_alter(&mut parser)? {
         // a time travel clause has no table to read here
-        versions.refuse()?;
+        taken.refuse()?;
         return Ok(Err(alter));
     }
-    let mut stmts = parser.parse_statements().map_err(to_sql_interface_err)?;
-    versions.attach(&mut stmts)?;
-    Ok(Ok(stmts))
+    Ok(Ok(taken.attach(query, parser.parse_statements())?))
 }
 
 /// The single statement of `query`, or its layout change.

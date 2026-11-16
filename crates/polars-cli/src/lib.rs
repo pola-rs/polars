@@ -110,13 +110,16 @@ where
         return exit_code::FAILURE;
     }
 
-    for (index, sql) in script.statements().enumerate() {
+    for (index, statement) in script.statements().enumerate() {
         let number = index + 1;
         // Printing is inside both guards: rendering a result can panic, and writing it can
         // abort the query as running it can.
         let outcome = catch_unwind(AssertUnwindSafe(|| {
             catch_polars_abort(AssertUnwindSafe(|| -> Result<(), Stop> {
-                stream(plan(sql)?, printer)
+                printer.event(Event::Statement {
+                    describes: statement.describes,
+                })?;
+                stream(plan(statement.sql)?, printer)
             }))
             .unwrap_or_else(|aborted| Err(Stop::Aborted(aborted)))
         }));
@@ -372,6 +375,31 @@ mod tests {
             run_captured("CREATE TABLE t AS SELECT 7 AS a; SELECT a + 1 AS b FROM t");
         assert_eq!((code, err.as_str()), (exit_code::OK, ""));
         assert!(out.contains("│ 8   │"), "{out}");
+    }
+
+    #[test]
+    fn a_description_is_printed_in_full() {
+        // More rows and longer values than a table shows.
+        let names: Vec<String> = (1..=12).map(|n| format!("column_{n}")).collect();
+        let dtype = "STRUCT<street VARCHAR, city VARCHAR, zip VARCHAR>";
+        let schema = df!("column_name" => &names, "column_type" => vec![dtype; 12]).unwrap();
+
+        // The same rows from a query, in the same run, are a table.
+        let (code, out, err) = run_with("DESCRIBE t; SELECT * FROM t", |_| Ok(schema.clone()));
+        assert_eq!((code, err.as_str()), (exit_code::OK, ""));
+        let expected: String = std::iter::once("column_name  column_type\n".to_string())
+            .chain(names.iter().map(|name| format!("{name:11}  {dtype}\n")))
+            .collect();
+        let table = out.strip_prefix(&expected).expect(&out);
+        assert!(table.starts_with("shape: (12, 2)\n"), "{out}");
+
+        // A plan is one column: its lines, as they are.
+        let plan = [
+            "SELECT [col(\"a\")]",
+            "  Parquet SCAN [a/long/path/to/events.parquet]",
+        ];
+        let (_, out, _) = run_with("explain SELECT a FROM t", |_| df!("Logical Plan" => plan));
+        assert_eq!(out, plan.join("\n") + "\n");
     }
 
     #[test]
