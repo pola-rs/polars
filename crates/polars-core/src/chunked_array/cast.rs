@@ -53,7 +53,12 @@ pub(crate) fn cast_chunks(
     let check_nulls = matches!(options, CastOptions::Strict);
     let options = options.into();
 
-    let arrow_dtype = dtype.try_to_arrow(CompatLevel::newest())?;
+    // Unions are stored as Polars' own `LargeUnion`, not as the Arrow `Union` they export to.
+    let arrow_dtype = if dtype.contains_union() {
+        dtype.to_physical_arrow(CompatLevel::newest())
+    } else {
+        dtype.try_to_arrow(CompatLevel::newest())?
+    };
     chunks
         .iter()
         .map(|arr| {

@@ -96,6 +96,10 @@ pub struct ExprHeightOptions {
     /// is [`ExprProjectionHeight::Column`].
     pub struct_field: ExprProjectionHeight,
 
+    /// The height reported for `pl.element()`, which in an arm of a `union.match` is that of the
+    /// union.
+    pub element: ExprProjectionHeight,
+
     /// If set, only the nodes that change the height *structurally* report
     /// [`ExprProjectionHeight::Unknown`]; every other node that cannot be resolved reports the
     /// zipped height of its inputs.
@@ -117,6 +121,7 @@ impl Default for ExprHeightOptions {
     fn default() -> Self {
         Self {
             struct_field: ExprProjectionHeight::Unknown,
+            element: ExprProjectionHeight::Column,
             structural_unknowns_only: false,
             range_is_unknown: false,
         }
@@ -175,6 +180,11 @@ impl<'a> NodeVisitor for ExprHeightVisitor<'a> {
             edges.outputs()[0] = height;
             return ControlFlow::Continue(SubtreeVisit::Skip);
         }
+        #[cfg(feature = "dtype-union")]
+        if let Some(height) = self.union_match_height(storage.get(key), storage) {
+            edges.outputs()[0] = height;
+            return ControlFlow::Continue(SubtreeVisit::Skip);
+        }
 
         ControlFlow::Continue(if let Some(height) = self.height(storage.get(key), None) {
             edges.outputs()[0] = height;
@@ -194,6 +204,11 @@ impl<'a> NodeVisitor for ExprHeightVisitor<'a> {
         // `StructField` override has to live in `height()` rather than in `pre_visit`.
         #[cfg(feature = "dtype-struct")]
         if matches!(storage.get(key), AExpr::StructEval { .. }) {
+            // Set by `pre_visit`.
+            return ControlFlow::Continue(());
+        }
+        #[cfg(feature = "dtype-union")]
+        if matches!(storage.get(key), AExpr::UnionMatch { .. }) {
             // Set by `pre_visit`.
             return ControlFlow::Continue(());
         }
@@ -245,6 +260,43 @@ impl ExprHeightVisitor<'_> {
         Some(height)
     }
 
+    /// The height of a `union.match`: that of its union, broadcast by its arms and default, in
+    /// whose arms `pl.element()` has the height of that union.
+    #[cfg(feature = "dtype-union")]
+    fn union_match_height(
+        &self,
+        aexpr: &AExpr,
+        arena: &Arena<AExpr>,
+    ) -> Option<ExprProjectionHeight> {
+        let AExpr::UnionMatch {
+            expr,
+            arms,
+            default,
+            ..
+        } = aexpr
+        else {
+            return None;
+        };
+
+        let mut stack = ScratchVec::default();
+        let mut edges_stack = ScratchVec::default();
+        let mut height_of = |node: Node, options| {
+            aexpr_projection_height_rec_with(node, arena, &mut stack, &mut edges_stack, options)
+        };
+        let input_height = height_of(*expr, self.options);
+        let arm_options = ExprHeightOptions {
+            element: input_height,
+            ..self.options
+        };
+        let height = arms.iter().fold(input_height, |acc, arm| {
+            acc.zip_with(height_of(*arm, arm_options))
+        });
+        Some(match default {
+            Some(default) => height.zip_with(height_of(*default, self.options)),
+            None => height,
+        })
+    }
+
     fn height(
         &self,
         aexpr: &AExpr,
@@ -265,6 +317,9 @@ impl ExprHeightVisitor<'_> {
         #[cfg(feature = "dtype-struct")]
         if matches!(aexpr, AExpr::StructField(_)) {
             return Some(self.options.struct_field);
+        }
+        if matches!(aexpr, AExpr::Element) {
+            return Some(self.options.element);
         }
 
         if !self.options.structural_unknowns_only {
@@ -326,6 +381,9 @@ pub fn aexpr_projection_height(
         Eval { .. } => input_heights?[0],
         #[cfg(feature = "dtype-struct")]
         StructEval { .. } => input_heights?[0],
+        // `ExprHeightVisitor::union_match_height` is exact for a unit-length union.
+        #[cfg(feature = "dtype-union")]
+        UnionMatch { .. } => H::zipped_projection_height(input_heights?.iter().copied()),
 
         Filter { .. } | Slice { .. } | Explode { .. } => H::Unknown,
         Sort { options, .. } if options.limit.is_some() => H::Unknown,

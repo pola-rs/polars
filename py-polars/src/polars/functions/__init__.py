@@ -21,6 +21,7 @@ from polars.functions.as_datatype import (
     format,
     list,
     struct,
+    union_value,
 )
 from polars.functions.as_datatype import date_ as date
 from polars.functions.as_datatype import datetime_ as datetime
@@ -182,6 +183,7 @@ __all__ = [
     "set_random_seed",
     "std",
     "struct",
+    "union_value",
     "tail",
     "time",
     "var",

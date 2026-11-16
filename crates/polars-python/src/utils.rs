@@ -62,6 +62,7 @@ macro_rules! apply_all_polars_dtypes {
                 .$method($($args),*)
             },
             DataType::Map(_, _) => $self.map().unwrap().$method($($args),*),
+            DataType::Union(_) => $self.union().unwrap().$method($($args),*),
             DataType::Extension(_, _) => $self.ext().unwrap().$method($($args),*),
 
             DataType::Null => $self.null().unwrap().$method($($args),*),

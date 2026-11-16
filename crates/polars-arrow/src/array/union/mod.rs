@@ -95,20 +95,7 @@ impl UnionArray {
                 )
             }
 
-            // example:
-            // * types = [5, 7, 5, 7, 7, 7, 5, 7, 7, 5, 5]
-            // * ids = [5, 7]
-            // => hash = [0, 0, 0, 0, 0, 0, 1, 0, ...]
-            let mut hash = [0; 128];
-
-            for (pos, &id) in ids.iter().enumerate() {
-                if !(0..=127).contains(&id) {
-                    polars_bail!(ComputeError:
-                        "in a union, when the ids are set, every id must belong to [0, 128[",
-                    )
-                }
-                hash[id as usize] = pos;
-            }
+            let hash = Self::id_map(ids)?;
 
             types.iter().try_for_each(|&type_| {
                 if type_ < 0 {
@@ -193,6 +180,23 @@ impl UnionArray {
         }
     }
 
+    // example:
+    // * types = [5, 7, 5, 7, 7, 7, 5, 7, 7, 5, 5]
+    // * ids = [5, 7]
+    // => hash = [0, 0, 0, 0, 0, 0, 1, 0, ...]
+    fn id_map(ids: &[i32]) -> PolarsResult<[usize; 128]> {
+        let mut hash = [0; 128];
+        for (pos, &id) in ids.iter().enumerate() {
+            if !(0..=127).contains(&id) {
+                polars_bail!(ComputeError:
+                    "in a union, when the ids are set, every id must belong to [0, 128[",
+                )
+            }
+            hash[id as usize] = pos;
+        }
+        Ok(hash)
+    }
+
     /// Creates a new empty [`UnionArray`].
     pub fn new_empty(dtype: ArrowDataType) -> Self {
         if let ArrowDataType::Union(u) = dtype.to_storage() {
@@ -208,9 +212,10 @@ impl UnionArray {
                 Some(Buffer::default())
             };
 
+            let map = u.ids.as_ref().map(|ids| Self::id_map(ids).unwrap());
             Self {
                 dtype,
-                map: None,
+                map,
                 fields,
                 offsets,
                 types: Buffer::new(),

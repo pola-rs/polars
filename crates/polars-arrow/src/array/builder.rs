@@ -5,6 +5,7 @@ use crate::array::binview::BinaryViewArrayGenericBuilder;
 use crate::array::boolean::BooleanArrayBuilder;
 use crate::array::fixed_size_binary::FixedSizeBinaryArrayBuilder;
 use crate::array::fixed_size_list::FixedSizeListArrayBuilder;
+use crate::array::large_union::LargeUnionArrayBuilder;
 use crate::array::list::ListArrayBuilder;
 use crate::array::null::NullArrayBuilder;
 use crate::array::struct_::StructArrayBuilder;
@@ -372,6 +373,7 @@ pub fn make_builder(dtype: &ArrowDataType) -> Box<dyn ArrayBuilder> {
             let builders = fields.iter().map(|f| make_builder(f.dtype())).collect();
             Box::new(StructArrayBuilder::new(dtype.clone(), builders))
         },
+        LargeUnion => Box::new(LargeUnionArrayBuilder::new(dtype.clone())),
         BinaryView => Box::new(BinaryViewArrayGenericBuilder::<[u8]>::new(dtype.clone())),
         Utf8View => Box::new(BinaryViewArrayGenericBuilder::<str>::new(dtype.clone())),
 

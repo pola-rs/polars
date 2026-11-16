@@ -86,6 +86,7 @@ pub fn offset_buffers_children_dictionary(array: &dyn Array) -> BuffersChildren 
         FixedSizeList => ffi_dyn!(array, FixedSizeListArray),
         Struct => ffi_dyn!(array, StructArray),
         Union => ffi_dyn!(array, UnionArray),
+        LargeUnion => panic!("LargeUnion is not an Arrow type; convert it to a Union first"),
         Map => ffi_dyn!(array, MapArray),
         BinaryView => ffi_dyn!(array, BinaryViewArray),
         Utf8View => ffi_dyn!(array, Utf8ViewArray),

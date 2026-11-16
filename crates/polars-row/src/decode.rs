@@ -1,12 +1,13 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
-use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::datatypes::{ArrowDataType, Field};
 use polars_arrow::offset::OffsetsBuffer;
 use polars_arrow::types::NativeType;
 use polars_buffer::Buffer;
+use polars_compute::gather::gather_child;
 use polars_dtype::categorical::CatNative;
 
-use self::encode::fixed_size;
+use self::encode::{fixed_size, union_variant_ctx};
 use self::row::{RowEncodingCategoricalContext, RowEncodingOptions};
 use self::variable::utf8::decode_str;
 use super::*;
@@ -193,6 +194,19 @@ fn dtype_and_data_to_encoded_item_len(
                 item_len += len;
             }
             item_len
+        },
+
+        D::LargeUnion(fields) => {
+            if data[0] == opt.null_sentinel() {
+                return 1;
+            }
+            let t = opt.union_variant(data[0]);
+            1 + dtype_and_data_to_encoded_item_len(
+                fields[t].dtype(),
+                &data[1..],
+                opt.into_nested(),
+                union_variant_ctx(dict, t),
+            )
         },
 
         D::Union(_) => todo!(),
@@ -392,6 +406,8 @@ unsafe fn decode(
             .to_boxed()
         },
 
+        D::LargeUnion(fields) => decode_union(rows, opt, dict, dtype, fields).to_boxed(),
+
         dt => {
             if matches!(dt, D::Int128) {
                 if let Some(dict) = dict {
@@ -409,4 +425,85 @@ unsafe fn decode(
             })
         },
     }
+}
+
+unsafe fn decode_union(
+    rows: &mut [&[u8]],
+    opt: RowEncodingOptions,
+    dict: Option<&RowEncodingContext>,
+    dtype: &ArrowDataType,
+    fields: &[Field],
+) -> LargeUnionArray {
+    let mut nested_rows: Vec<Vec<&[u8]>> = vec![Vec::new(); fields.len()];
+    let mut types = Vec::with_capacity(rows.len());
+    let mut offsets = Vec::with_capacity(rows.len());
+    let mut validity = BitmapBuilder::with_capacity(rows.len());
+    // Null slots take a placeholder in child 0, so its offsets count them too.
+    let mut num_child0_slots = 0;
+    for row in rows.iter_mut() {
+        let byte = row[0];
+        *row = &row[1..];
+        if byte == opt.null_sentinel() {
+            types.push(0);
+            offsets.push(num_child0_slots);
+            num_child0_slots += 1;
+            validity.push(false);
+            continue;
+        }
+        let t = opt.union_variant(byte);
+        let len = dtype_and_data_to_encoded_item_len(
+            fields[t].dtype(),
+            row,
+            opt.into_nested(),
+            union_variant_ctx(dict, t),
+        );
+        let v;
+        (v, *row) = row.split_at_unchecked(len);
+        if t == 0 {
+            offsets.push(num_child0_slots);
+            num_child0_slots += 1;
+        } else {
+            offsets.push(nested_rows[t].len() as i64);
+        }
+        nested_rows[t].push(v);
+        types.push(t as i8);
+        validity.push(true);
+    }
+
+    let mut children: Vec<ArrayRef> = fields
+        .iter()
+        .zip(nested_rows)
+        .enumerate()
+        .map(|(t, (field, mut rows))| {
+            decode(
+                &mut rows,
+                opt.into_nested(),
+                union_variant_ctx(dict, t),
+                field.dtype(),
+            )
+        })
+        .collect();
+
+    let validity = validity.into_opt_validity();
+    if let Some(validity) = &validity {
+        let mut positions = ChildPositions::new(children[0].len());
+        let mut next = 0;
+        for (&t, is_valid) in types.iter().zip(validity.iter()) {
+            if !is_valid {
+                positions.push(None);
+            } else if t == 0 {
+                positions.push(Some(next));
+                next += 1;
+            }
+        }
+        children[0] = gather_child(children[0].as_ref(), positions);
+    }
+
+    LargeUnionArray::new_unchecked(
+        dtype.clone(),
+        types.into(),
+        offsets.into(),
+        children,
+        validity,
+    )
 }

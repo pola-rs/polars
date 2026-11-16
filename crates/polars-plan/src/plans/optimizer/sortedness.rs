@@ -825,6 +825,8 @@ pub fn aexpr_sortedness(
 
         #[cfg(feature = "dtype-struct")]
         AExpr::StructEval { .. } => None,
+        #[cfg(feature = "dtype-union")]
+        AExpr::UnionMatch { .. } => None,
 
         #[cfg(feature = "dynamic_group_by")]
         AExpr::Rolling { .. } => None,

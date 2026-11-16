@@ -787,6 +787,27 @@ impl Display for ExprIRDisplay<'_> {
                 let name = variant.to_name();
                 write!(f, "{expr}.{name}({evaluation})")
             },
+            #[cfg(feature = "dtype-union")]
+            UnionMatch {
+                expr,
+                names,
+                arms,
+                default,
+            } => {
+                let expr = self.with_root(expr).parenthesize_if_binexpr();
+                write!(f, "{expr}.union.match(")?;
+                for (i, (name, arm)) in names.iter().zip(arms).enumerate() {
+                    if i > 0 {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "{name}={}", self.with_root(arm))?;
+                }
+                if let Some(default) = default {
+                    let sep = if names.is_empty() { "" } else { ", " };
+                    write!(f, "{sep}default={}", self.with_root(default))?;
+                }
+                f.write_str(")")
+            },
             Slice {
                 input,
                 offset,

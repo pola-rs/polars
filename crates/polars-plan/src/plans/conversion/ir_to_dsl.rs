@@ -256,6 +256,24 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             evaluation: expr_irs_to_exprs(evaluation, expr_arena),
             variant,
         },
+        #[cfg(feature = "dtype-union")]
+        AExpr::UnionMatch {
+            expr,
+            names,
+            arms,
+            default,
+        } => {
+            let has_default = default.is_some();
+            let input = std::iter::once(expr)
+                .chain(arms)
+                .chain(default)
+                .map(|n| node_to_expr(n, expr_arena))
+                .collect();
+            Expr::Function {
+                input,
+                function: FunctionExpr::UnionExpr(UnionFunction::Match { names, has_default }),
+            }
+        },
         AExpr::Function {
             input,
             function,
@@ -432,6 +450,15 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IM::Get { .. } => M::Get,
             })
         },
+        #[cfg(feature = "dtype-union")]
+        IF::UnionExpr(f) => F::UnionExpr(match f {
+            IRUnionFunction::Tag => UnionFunction::Tag,
+            IRUnionFunction::Field(name) => UnionFunction::Field(name),
+            IRUnionFunction::Value { dtype, variant } => UnionFunction::Value {
+                dtype: DataTypeExpr::Literal(dtype),
+                variant,
+            },
+        }),
         #[cfg(feature = "dtype-extension")]
         IF::Extension(f) => {
             use ExtensionFunction as E;

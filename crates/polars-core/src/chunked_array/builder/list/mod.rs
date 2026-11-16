@@ -103,6 +103,12 @@ pub fn get_list_builder(
             list_capacity,
             Some(inner_type_logical.clone()),
         )),
+        #[cfg(feature = "dtype-union")]
+        DataType::Union(_) => Box::new(AnonymousOwnedListBuilder::new(
+            name,
+            list_capacity,
+            Some(inner_type_logical.clone()),
+        )),
         DataType::Null => Box::new(ListNullChunkedBuilder::new(name, list_capacity)),
         DataType::List(_) => Box::new(AnonymousOwnedListBuilder::new(
             name,

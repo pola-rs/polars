@@ -43,6 +43,7 @@ from polars.datatypes.classes import (
     UInt32,
     UInt64,
     UInt128,
+    Union,
     Unknown,
 )
 
@@ -122,7 +123,7 @@ def unpack_dtypes(
             unpacked.update(
                 unpack_dtypes(tp.key, tp.value, include_compound=include_compound)
             )
-        elif isinstance(tp, Struct):
+        elif isinstance(tp, (Struct, Union)):
             if include_compound:
                 unpacked.add(tp)
             unpacked.update(unpack_dtypes(tp.fields, include_compound=include_compound))  # type: ignore[arg-type]

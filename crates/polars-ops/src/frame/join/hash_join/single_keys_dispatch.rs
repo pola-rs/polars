@@ -86,6 +86,12 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
                 lhs.hash_join_left(rhs, validate, nulls_equal)
             },
+            #[cfg(feature = "dtype-union")]
+            T::Union(_) => {
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
+                lhs.hash_join_left(rhs, validate, nulls_equal)
+            },
             x if x.is_float() => {
                 with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
                     let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
@@ -185,6 +191,12 @@ pub trait SeriesJoin: SeriesSealed + Sized {
             },
             #[cfg(feature = "dtype-struct")]
             T::Struct(_) => {
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
+                lhs.hash_join_semi_anti(rhs, anti, nulls_equal)?
+            },
+            #[cfg(feature = "dtype-union")]
+            T::Union(_) => {
                 let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
                 let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
                 lhs.hash_join_semi_anti(rhs, anti, nulls_equal)?
@@ -315,6 +327,12 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
                 lhs.hash_join_inner(rhs, validate, nulls_equal)
             },
+            #[cfg(feature = "dtype-union")]
+            T::Union(_) => {
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
+                lhs.hash_join_inner(rhs, validate, nulls_equal)
+            },
             x if x.is_float() => {
                 with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
                     let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
@@ -406,6 +424,12 @@ pub trait SeriesJoin: SeriesSealed + Sized {
             },
             #[cfg(feature = "dtype-struct")]
             T::Struct(_) => {
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
+                lhs.hash_join_outer(rhs, validate, nulls_equal)
+            },
+            #[cfg(feature = "dtype-union")]
+            T::Union(_) => {
                 let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
                 let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
                 lhs.hash_join_outer(rhs, validate, nulls_equal)

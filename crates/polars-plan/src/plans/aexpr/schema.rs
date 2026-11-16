@@ -262,6 +262,7 @@ impl AExpr {
             },
             Cast { expr, dtype, .. } => {
                 let field = ctx.arena.get(*expr).to_field_impl(ctx)?;
+                field.dtype().ensure_union_cast(dtype)?;
                 Ok(Field::new(field.name().clone(), dtype.clone()))
             },
             Ternary { truthy, falsy, .. } => {
@@ -314,6 +315,35 @@ impl AExpr {
                 let function = function.clone().materialize()?;
                 let out = function.get_field(ctx.schema, &fields)?;
                 Ok(out)
+            },
+            #[cfg(feature = "dtype-union")]
+            UnionMatch {
+                expr,
+                names,
+                arms,
+                default,
+            } => {
+                let field = ctx.arena.get(*expr).to_field_impl(ctx)?;
+                let DataType::Union(fields) = field.dtype() else {
+                    polars_bail!(InvalidOperation: "`union.match` requires a Union dtype, got `{}`", field.dtype());
+                };
+                let mut dtypes = Vec::with_capacity(arms.len() + 1);
+                for (name, arm) in names.iter().zip(arms) {
+                    let mut arm_schema = ctx.schema.clone();
+                    let variant = fields[fields.try_index_of(name)?].dtype().clone();
+                    arm_schema.insert(get_pl_element_name(), variant);
+                    let dt = ctx
+                        .arena
+                        .get(*arm)
+                        .to_field_impl(&ToFieldContext::new(ctx.arena, &arm_schema))?
+                        .dtype;
+                    dtypes.push((format!("variant `{name}`"), dt));
+                }
+                if let Some(default) = default {
+                    let dt = ctx.arena.get(*default).to_field_impl(ctx)?.dtype;
+                    dtypes.push(("`default`".to_string(), dt));
+                }
+                Ok(Field::new(field.name, union_match_dtype(&dtypes)?))
             },
             Eval {
                 expr,
@@ -487,6 +517,8 @@ impl AExpr {
             },
             #[cfg(feature = "dtype-struct")]
             StructEval { expr, .. } => expr_arena.get(*expr).to_name(expr_arena),
+            #[cfg(feature = "dtype-union")]
+            UnionMatch { expr, .. } => expr_arena.get(*expr).to_name(expr_arena),
             Function {
                 input, function, ..
             } => match function.output_name().and_then(|v| v.into_inner()) {

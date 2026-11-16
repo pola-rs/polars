@@ -586,6 +586,8 @@ fn aexpr_to_skip_batch_predicate_rec(
             AExpr::Eval { .. } => None,
             #[cfg(feature = "dtype-struct")]
             AExpr::StructEval { .. } => None,
+            #[cfg(feature = "dtype-union")]
+            AExpr::UnionMatch { .. } => None,
             AExpr::Function {
                 input, function, ..
             } => match function {

@@ -294,6 +294,16 @@ impl ColumnSelectorBuilder {
             return Ok(selector);
         }
 
+        // Unions cannot be cast, so their variants must match exactly.
+        #[cfg(feature = "dtype-union")]
+        if target_dtype.is_union() {
+            return if target_dtype == incoming_dtype {
+                Ok(input_selector)
+            } else {
+                mismatch_err("Union variants do not match")
+            };
+        }
+
         // Eq here should be cheap as we have intercepted all nested types above.
         debug_assert!(!target_dtype.is_nested() || target_dtype.is_extension());
 

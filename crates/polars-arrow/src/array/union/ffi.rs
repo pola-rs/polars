@@ -8,10 +8,12 @@ use crate::ffi;
 
 unsafe impl ToFfi for UnionArray {
     fn buffers(&self) -> Vec<Option<*const u8>> {
+        // Dense children ignore the array offset, so export each buffer from its own logical
+        // start: `types` and `offsets` may be sliced independently.
         if let Some(offsets) = &self.offsets {
             vec![
-                Some(self.types.storage_ptr().cast::<u8>()),
-                Some(offsets.storage_ptr().cast::<u8>()),
+                Some(self.types.as_ptr().cast::<u8>()),
+                Some(offsets.as_ptr().cast::<u8>()),
             ]
         } else {
             vec![Some(self.types.storage_ptr().cast::<u8>())]
@@ -23,7 +25,11 @@ unsafe impl ToFfi for UnionArray {
     }
 
     fn offset(&self) -> Option<usize> {
-        Some(self.types.offset())
+        if self.offsets.is_some() {
+            Some(0)
+        } else {
+            Some(self.types.offset())
+        }
     }
 
     fn to_ffi_aligned(&self) -> Self {

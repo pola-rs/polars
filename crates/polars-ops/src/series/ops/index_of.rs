@@ -58,6 +58,17 @@ macro_rules! try_index_of_numeric_ca {
     }};
 }
 
+/// Searches the row encodings, i.e. the physical representation of the values as bytes.
+fn index_of_row_encoded(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> {
+    let value_as_column = Column::new_scalar(PlSmallStr::EMPTY, needle, 1);
+    let value_as_row_encoded_ca = encode_rows_unordered(&[value_as_column])?;
+    let value = value_as_row_encoded_ca
+        .first()
+        .expect("Shouldn't have nulls in a row-encoded result");
+    let ca = encode_rows_unordered(&[series.clone().into_column()])?;
+    Ok(index_of_value::<_, BinaryArray<i64>>(&ca, value))
+}
+
 /// Find the index of a given value (the first and only entry in `value_series`)
 /// within the series.
 pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> {
@@ -125,18 +136,9 @@ pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> 
             series.binary_offset()?,
             needle.value().extract_bytes().unwrap(),
         )),
-        DT::Array(_, _) | DT::List(_) | DT::Struct(_) => {
-            // For non-numeric dtypes, we convert to row-encoding, which essentially has
-            // us searching the physical representation of the data as a series of
-            // bytes.
-            let value_as_column = Column::new_scalar(PlSmallStr::EMPTY, needle, 1);
-            let value_as_row_encoded_ca = encode_rows_unordered(&[value_as_column])?;
-            let value = value_as_row_encoded_ca
-                .first()
-                .expect("Shouldn't have nulls in a row-encoded result");
-            let ca = encode_rows_unordered(&[series.clone().into_column()])?;
-            Ok(index_of_value::<_, BinaryArray<i64>>(&ca, value))
-        },
+        DT::Array(_, _) | DT::List(_) | DT::Struct(_) => index_of_row_encoded(series, needle),
+        #[cfg(feature = "dtype-union")]
+        DT::Union(_) => index_of_row_encoded(series, needle),
 
         DT::UInt8
         | DT::UInt16

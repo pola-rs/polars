@@ -200,6 +200,8 @@ impl Series {
                 .cast(&DataType::Array(inner.clone(), *size))?,
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => any_values_to_struct(values, Some(fields), strict)?,
+            #[cfg(feature = "dtype-union")]
+            DataType::Union(fields) => any_values_to_union(values, dtype, fields, strict)?,
             #[cfg(feature = "object")]
             DataType::Object(_) => any_values_to_object(values)?,
             DataType::Null => Series::new_null(PlSmallStr::EMPTY, values.len()),
@@ -1085,6 +1087,140 @@ fn any_values_to_object(values: &[AnyValue]) -> PolarsResult<Series> {
     }
 
     Ok(builder.to_series())
+}
+
+#[cfg(feature = "dtype-union")]
+fn any_values_to_union(
+    values: &[AnyValue],
+    dtype: &DataType,
+    fields: &[Field],
+    strict: bool,
+) -> PolarsResult<Series> {
+    use polars_arrow::array::LargeUnionArray;
+
+    let mut types = Vec::with_capacity(values.len());
+    let mut offsets = Vec::with_capacity(values.len());
+    let mut child_values: Vec<Vec<AnyValue>> = vec![Vec::new(); fields.len()];
+    for av in values {
+        let av_fields: &[Field] = match av {
+            AnyValue::Union(_, _, f) => f,
+            AnyValue::UnionOwned(payload) => &payload.2,
+            _ => &[],
+        };
+        let same_variants = av_fields
+            .iter()
+            .map(Field::name)
+            .eq(fields.iter().map(Field::name));
+        let (tag, value) = match av.union_parts() {
+            Some((tag, value)) if same_variants => (tag, value.clone()),
+            _ if av.is_null() => (0, AnyValue::Null),
+            Some(_) if strict => return Err(invalid_value_error(dtype, av)),
+            Some(_) => (0, AnyValue::Null),
+            None => match union_variant_of_kind(dtype, fields, av) {
+                Ok(tag) => (tag, av.clone()),
+                Err(e) if strict => return Err(e),
+                Err(_) => (0, AnyValue::Null),
+            },
+        };
+        types.push(tag as i8);
+        offsets.push(child_values[tag].len() as i64);
+        child_values[tag].push(value);
+    }
+
+    let children = child_values
+        .iter()
+        .zip(fields)
+        .map(|(values, field)| {
+            // Built leniently, so that values convert as in a Series of the variant's dtype
+            // (`datetime` to milliseconds, say); one that doesn't fit becomes null.
+            let s = Series::from_any_values_and_dtype_unnamed(values, field.dtype(), false)?;
+            if strict && s.null_count() > values.iter().filter(|v| v.is_null()).count() {
+                let (value, _) = values
+                    .iter()
+                    .zip(s.iter())
+                    .find(|(v, out)| !v.is_null() && out.is_null())
+                    .unwrap();
+                polars_bail!(
+                    SchemaMismatch: "the value {value} does not fit variant `{}` of `{dtype}`",
+                    field.name()
+                );
+            }
+            Ok(s.to_physical_repr().rechunk().chunks()[0].clone())
+        })
+        .collect::<PolarsResult<Vec<_>>>()?;
+
+    // A slot is valid iff its child value is: that covers nulls and failed non-strict casts.
+    let validity: Bitmap = types
+        .iter()
+        .zip(&offsets)
+        .map(|(&t, &o)| children[t as usize].is_valid(o as usize))
+        .collect();
+    let validity = (validity.unset_bits() > 0).then_some(validity);
+
+    let arr = LargeUnionArray::try_new(
+        dtype.to_physical_arrow(CompatLevel::newest()),
+        types.into(),
+        offsets.into(),
+        children,
+        validity,
+    )?;
+    // SAFETY: the chunk has the physical arrow dtype of `dtype`.
+    Ok(unsafe {
+        Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![arr.boxed()], dtype)
+    })
+}
+
+/// The variant that takes a value without a variant: the only one of the value's kind, so that
+/// integers go to the integer variant and strings to the string-like one.
+#[cfg(feature = "dtype-union")]
+fn union_variant_of_kind(dtype: &DataType, fields: &[Field], av: &AnyValue) -> PolarsResult<usize> {
+    let value = av.dtype();
+    let mut matches = fields
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| takes_kind_of(f.dtype(), &value));
+    match (matches.next(), matches.next()) {
+        (Some((tag, _)), None) => Ok(tag),
+        (first, second) => {
+            let names = first
+                .into_iter()
+                .chain(second)
+                .chain(matches)
+                .map(|(_, f)| format!("`{}`", f.name()))
+                .collect::<Vec<_>>();
+            let which = if names.is_empty() {
+                "none of its variants".to_string()
+            } else {
+                format!("more than one of its variants ({})", names.join(", "))
+            };
+            polars_bail!(
+                SchemaMismatch:
+                "cannot tell which variant of `{dtype}` the value {av} of type `{value}` belongs \
+                to: {which} take values of that kind; use `union_value` to pick one"
+            )
+        },
+    }
+}
+
+/// Whether a variant of dtype `variant` takes values of dtype `value`; a nested union takes them
+/// if exactly one of its variants does.
+#[cfg(feature = "dtype-union")]
+fn takes_kind_of(variant: &DataType, value: &DataType) -> bool {
+    use DataType as D;
+    match (variant, value) {
+        (D::Union(fields), v) if !matches!(v, D::Union(_)) => {
+            fields
+                .iter()
+                .filter(|f| takes_kind_of(f.dtype(), v))
+                .count()
+                == 1
+        },
+        (_, v) if v.is_integer() => variant.is_integer(),
+        (_, v) if v.is_float() => variant.is_float(),
+        (_, D::String) => variant.is_string() || variant.is_categorical() || variant.is_enum(),
+        (_, D::List(_)) => variant.is_list() || variant.is_array(),
+        (_, v) => std::mem::discriminant(v) == std::mem::discriminant(variant),
+    }
 }
 
 fn invalid_value_error(dtype: &DataType, value: &AnyValue) -> PolarsError {

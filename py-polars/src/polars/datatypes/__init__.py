@@ -42,6 +42,7 @@ from polars.datatypes.classes import (
     UInt32,
     UInt64,
     UInt128,
+    Union,
     Unknown,
     Utf8,
 )
@@ -103,6 +104,7 @@ __all__ = [
     "Time",
     "UInt16",
     "UInt128",
+    "Union",
     "UInt32",
     "UInt64",
     "UInt8",

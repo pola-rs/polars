@@ -160,6 +160,11 @@ impl PySelector {
     }
 
     #[staticmethod]
+    fn union_dtype() -> Self {
+        DataTypeSelector::UnionDtype.as_selector().into()
+    }
+
+    #[staticmethod]
     fn integer() -> Self {
         DataTypeSelector::Integer.as_selector().into()
     }

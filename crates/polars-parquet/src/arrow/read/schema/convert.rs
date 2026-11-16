@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use polars_arrow::datatypes::{
     ArrowDataType, ArrowSchema, ExtensionType, Field, IntervalUnit, MAINTAIN_PL_TYPE, Metadata,
-    PARQUET_EMPTY_STRUCT, PL_KEY, TimeUnit,
+    PARQUET_EMPTY_STRUCT, PL_KEY, TimeUnit, UnionMode, UnionType,
 };
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::format_pl_smallstr;
@@ -863,6 +863,25 @@ pub(crate) fn to_dtype(
                     arrow_hint,
                 )
             };
+            // A union is stored as a struct of its variants.
+            if let Some(hint) = arrow_hint
+                && let ArrowDataType::Union(u) = &hint.dtype
+            {
+                let storage = crate::arrow::union::union_storage_dtype(u);
+                let inner = to_group(Some(&hint.clone().with_dtype(storage)))?;
+                // The members carry the dtypes the decoder produces, and the members of the
+                // storage struct are a sparse union's children.
+                return Ok(inner.map(|inner| match inner {
+                    ArrowDataType::Struct(fields) if fields.len() == u.fields.len() => {
+                        ArrowDataType::Union(Box::new(UnionType {
+                            fields,
+                            ids: None,
+                            mode: UnionMode::Sparse,
+                        }))
+                    },
+                    inner => inner,
+                }));
+            }
             let Some((arrow_hint, ext)) =
                 arrow_hint.and_then(|arrow_hint| match &arrow_hint.dtype {
                     ArrowDataType::Extension(ext) => Some((arrow_hint, ext)),

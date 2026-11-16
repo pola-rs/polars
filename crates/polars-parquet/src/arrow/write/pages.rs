@@ -4,7 +4,7 @@ use polars_arrow::array::{Array, FixedSizeListArray, ListArray, MapArray, Struct
 use polars_arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_arrow::datatypes::{ArrowDataType, PhysicalType};
 use polars_arrow::offset::{Offset, OffsetsBuffer};
-use polars_error::{PolarsResult, polars_bail};
+use polars_error::{PolarsResult, polars_bail, polars_ensure};
 
 use super::{Encoding, WriteOptions, array_to_pages};
 use crate::arrow::read::schema::is_nullable;
@@ -554,6 +554,10 @@ pub fn array_to_columns<A: AsRef<dyn Array> + Send + Sync>(
     encoding: &[Encoding],
 ) -> PolarsResult<Vec<DynIter<'static, PolarsResult<Page>>>> {
     let array = array.as_ref();
+    polars_ensure!(
+        !crate::arrow::union::contains_union(array.dtype()),
+        InvalidOperation: "unions must be converted to their storage structs before writing to Parquet"
+    );
 
     let nested = to_nested(array, &type_)?;
 

@@ -78,6 +78,8 @@ mod binary;
 mod boolean;
 mod dictionary;
 mod dyn_array;
+#[cfg(feature = "gather")]
+mod large_union;
 mod list;
 mod null;
 mod scalar;

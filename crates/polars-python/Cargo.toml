@@ -240,11 +240,13 @@ dtype-u128 = []
 dtype-array = []
 dtype-f16 = []
 dtype-map = []
+dtype-union = []
 object = ["polars/object"]
 
 dtypes = [
   "dtype-array",
   "dtype-map",
+  "dtype-union",
   "dtype-i16",
   "dtype-i8",
   "dtype-u16",

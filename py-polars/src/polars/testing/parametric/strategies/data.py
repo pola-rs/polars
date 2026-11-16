@@ -61,6 +61,7 @@ from polars.datatypes import (
     UInt32,
     UInt64,
     UInt128,
+    Union,
 )
 from polars.testing.parametric.strategies._utils import flexhash
 from polars.testing.parametric.strategies.dtype import (
@@ -515,6 +516,15 @@ def data(
     elif dtype == Struct:
         fields = getattr(dtype, "fields", None) or [Field("f0", Null())]
         strategy = structs(fields, allow_null=allow_null, **kwargs)
+    elif dtype == Union:
+        # A Python value picks the variant of its kind, so the variants must be of
+        # distinct kinds, as the `dtypes` strategy draws them.
+        fields = getattr(dtype, "fields", None) or []
+        strategy = (
+            st.one_of([data(f.dtype, allow_null=allow_null, **kwargs) for f in fields])
+            if fields
+            else nulls()
+        )
     elif isinstance(dtype, BaseExtension):
         strategy = data(dtype.ext_storage(), allow_null=allow_null, **kwargs)
     else:

@@ -106,7 +106,9 @@ impl AExpr {
             E::Slice { input: _, offset: _, length: _ } |
             E::Len => true,
             #[cfg(feature = "dtype-struct")]
-            E::StructEval { expr: _, evaluation: l_evaluation, variant: l_variant } => matches!(other, E::StructEval { expr: _, evaluation: r_evaluation, variant: r_variant } if l_variant == r_variant && cmp_arg_counts_names(l_evaluation, r_evaluation, true))
+            E::StructEval { expr: _, evaluation: l_evaluation, variant: l_variant } => matches!(other, E::StructEval { expr: _, evaluation: r_evaluation, variant: r_variant } if l_variant == r_variant && cmp_arg_counts_names(l_evaluation, r_evaluation, true)),
+            #[cfg(feature = "dtype-union")]
+            E::UnionMatch { expr: _, names: l_names, arms: _, default: l_default } => matches!(other, E::UnionMatch { expr: _, names: r_names, arms: _, default: r_default } if l_names == r_names && l_default.is_some() == r_default.is_some()),
         };
 
         is_equal

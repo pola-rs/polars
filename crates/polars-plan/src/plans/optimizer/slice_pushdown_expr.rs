@@ -343,6 +343,9 @@ fn slice_pushdown_inputs(ae: &AExpr, expr_arena: &Arena<AExpr>) -> UnitVec<Node>
         // `pl.field`.
         #[cfg(feature = "dtype-struct")]
         AExpr::StructEval { evaluation, .. } if !all_elementwise(evaluation, expr_arena) => {},
+        // Slicing an arm would slice its `pl.element()`, which is the already sliced union.
+        #[cfg(feature = "dtype-union")]
+        AExpr::UnionMatch { .. } => {},
         _ => _ = is_elementwise(&mut inputs, ae, expr_arena),
     }
     inputs

@@ -535,6 +535,9 @@ fn to_format(dtype: &ArrowDataType) -> String {
         ArrowDataType::Dictionary(index, _, _) => to_format(&(*index).into()),
         ArrowDataType::Extension(ext) => to_format(&ext.inner),
         ArrowDataType::Unknown => unimplemented!(),
+        ArrowDataType::LargeUnion(_) => {
+            panic!("LargeUnion is not an Arrow type; convert it to a Union first")
+        },
     }
 }
 

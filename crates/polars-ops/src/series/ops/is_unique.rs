@@ -81,6 +81,8 @@ fn dispatcher(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
         Array(_, _) => return is_unique_nested(&s, invert),
         #[cfg(feature = "dtype-struct")]
         Struct(_) => return is_unique_nested(&s, invert),
+        #[cfg(feature = "dtype-union")]
+        Union(_) => return is_unique_nested(&s, invert),
         Null => match s.len() {
             0 => BooleanChunked::new(s.name().clone(), [] as [bool; 0]),
             1 => BooleanChunked::new(s.name().clone(), [!invert]),

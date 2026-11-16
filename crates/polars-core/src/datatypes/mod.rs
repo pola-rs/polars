@@ -18,6 +18,8 @@ mod into_scalar;
 #[cfg(feature = "object")]
 mod static_array_collect;
 mod temporal;
+#[cfg(feature = "dtype-union")]
+mod union_fields;
 
 #[cfg(feature = "proptest")]
 pub mod proptest;
@@ -64,6 +66,8 @@ use serde::{Deserialize, Serialize};
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]
 use serde::{Deserializer, Serializer};
 pub use temporal::*;
+#[cfg(feature = "dtype-union")]
+pub use union_fields::UnionFields;
 
 pub use crate::chunked_array::logical::*;
 #[cfg(feature = "object")]
@@ -296,6 +300,29 @@ unsafe impl PolarsDataType for StructType {
     }
 }
 
+#[cfg(feature = "dtype-union")]
+pub struct UnionType {}
+#[cfg(feature = "dtype-union")]
+unsafe impl PolarsDataType for UnionType {
+    // Like structs, unions have no physical value type.
+    type Physical<'a> = ();
+    type OwnedPhysical = ();
+    type ZeroablePhysical<'a> = ();
+    type Array = LargeUnionArray;
+    type IsNested = TrueT;
+    type HasViews = FalseT;
+    // Keeps unions out of the generic kernels that need a physical value, as for structs.
+    type IsStruct = TrueT;
+    type IsObject = FalseT;
+
+    fn get_static_dtype() -> DataType
+    where
+        Self: Sized,
+    {
+        DataType::Union(UnionFields::placeholder())
+    }
+}
+
 #[cfg(feature = "dtype-array")]
 pub struct FixedSizeListType {}
 #[cfg(feature = "dtype-array")]
@@ -392,6 +419,9 @@ impl_phys_dtype!(FixedSizeListType);
 #[cfg(feature = "dtype-struct")]
 impl_phys_dtype!(StructType);
 
+#[cfg(feature = "dtype-union")]
+impl_phys_dtype!(UnionType);
+
 #[cfg(feature = "object")]
 impl<T: PolarsObject> PolarsPhysicalType for ObjectType<T> {
     fn ca_into_series(ca: ChunkedArray<Self>) -> Series {
@@ -402,6 +432,8 @@ impl<T: PolarsObject> PolarsPhysicalType for ObjectType<T> {
 #[cfg(feature = "dtype-array")]
 pub type ArrayChunked = ChunkedArray<FixedSizeListType>;
 pub type ListChunked = ChunkedArray<ListType>;
+#[cfg(feature = "dtype-union")]
+pub type UnionChunked = ChunkedArray<UnionType>;
 pub type BooleanChunked = ChunkedArray<BooleanType>;
 pub type UInt8Chunked = ChunkedArray<UInt8Type>;
 pub type UInt16Chunked = ChunkedArray<UInt16Type>;

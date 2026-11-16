@@ -72,6 +72,7 @@ from polars.expr.meta import ExprMetaNameSpace
 from polars.expr.name import ExprNameNameSpace
 from polars.expr.string import ExprStringNameSpace
 from polars.expr.struct import ExprStructNameSpace
+from polars.expr.union import ExprUnionNameSpace
 from polars.meta import thread_pool_size
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -175,6 +176,7 @@ class Expr(metaclass=_Meta):
         "name",
         "str",
         "struct",
+        "union",
     }
 
     @property
@@ -317,6 +319,15 @@ class Expr(metaclass=_Meta):
         See the individual method pages for full details.
         """
         return ExprMapNameSpace(self)
+
+    @property
+    def union(self) -> ExprUnionNameSpace:
+        """
+        Create an object namespace of all union related expressions.
+
+        See the individual method pages for full details.
+        """
+        return ExprUnionNameSpace(self)
 
     @property
     def ext(self) -> ExprExtensionNameSpace:

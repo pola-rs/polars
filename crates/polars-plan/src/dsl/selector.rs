@@ -132,6 +132,8 @@ pub enum DataTypeSelector {
     Array(Option<Arc<DataTypeSelector>>, Option<usize>),
     Struct,
     Map,
+    /// The `Union` dtype, named apart from the set operation [`Self::Union`].
+    UnionDtype,
 
     Decimal,
     Numeric,
@@ -395,6 +397,7 @@ impl DataTypeSelector {
             Self::Array(inner_dts, swidth) => array_matches(inner_dts.as_deref(), *swidth, dtype),
             Self::Struct => dtype.is_struct(),
             Self::Map => dtype.is_map(),
+            Self::UnionDtype => dtype.is_union(),
             Self::Decimal => dtype.is_decimal(),
             Self::Numeric => dtype.is_numeric(),
             Self::Temporal => dtype.is_temporal(),
@@ -472,6 +475,7 @@ impl DataTypeSelector {
             }),
             Self::Struct => dtype_selector(schema, ignored_columns, |dtype| dtype.is_struct()),
             Self::Map => dtype_selector(schema, ignored_columns, |dtype| dtype.is_map()),
+            Self::UnionDtype => dtype_selector(schema, ignored_columns, |dtype| dtype.is_union()),
             Self::Decimal => dtype_selector(schema, ignored_columns, |dtype| dtype.is_decimal()),
             Self::Numeric => dtype_selector(schema, ignored_columns, |dtype| dtype.is_numeric()),
             Self::Temporal => dtype_selector(schema, ignored_columns, |dtype| dtype.is_temporal()),
@@ -717,6 +721,7 @@ impl fmt::Display for DataTypeSelector {
             },
             Self::Struct => f.write_str("cs.struct()"),
             Self::Map => f.write_str("cs.map()"),
+            Self::UnionDtype => f.write_str("cs.union()"),
 
             Self::Numeric => f.write_str("cs.numeric()"),
             Self::Decimal => f.write_str("cs.decimal()"),

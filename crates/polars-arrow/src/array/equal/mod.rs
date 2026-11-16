@@ -8,6 +8,7 @@ mod boolean;
 mod dictionary;
 mod fixed_size_binary;
 mod fixed_size_list;
+mod large_union;
 mod list;
 mod map;
 mod null;
@@ -278,6 +279,11 @@ pub fn equal(lhs: &dyn Array, rhs: &dyn Array) -> bool {
             let lhs = lhs.as_any().downcast_ref().unwrap();
             let rhs = rhs.as_any().downcast_ref().unwrap();
             union::equal(lhs, rhs)
+        },
+        LargeUnion => {
+            let lhs = lhs.as_any().downcast_ref().unwrap();
+            let rhs = rhs.as_any().downcast_ref().unwrap();
+            large_union::equal(lhs, rhs)
         },
         Map => {
             let lhs = lhs.as_any().downcast_ref().unwrap();

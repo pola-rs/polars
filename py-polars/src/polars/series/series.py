@@ -117,6 +117,7 @@ from polars.series.map import MapNameSpace
 from polars.series.plotting import SeriesPlot
 from polars.series.string import StringNameSpace
 from polars.series.struct import StructNameSpace
+from polars.series.union import UnionNameSpace
 from polars.series.utils import expr_dispatch, get_ffi_func
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -290,6 +291,7 @@ class Series(metaclass=_Meta):
         "plot",
         "str",
         "struct",
+        "union",
     }
 
     def __init__(
@@ -437,6 +439,11 @@ class Series(metaclass=_Meta):
     def map(self) -> MapNameSpace:
         """Create an object namespace of all map related methods."""
         return MapNameSpace(self)
+
+    @property
+    def union(self) -> UnionNameSpace:
+        """Create an object namespace of all union related methods."""
+        return UnionNameSpace(self)
 
     @property
     def ext(self) -> ExtensionNameSpace:

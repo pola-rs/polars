@@ -86,6 +86,17 @@ impl AExpr {
                 container.extend([*expr]);
                 container.extend(evaluation.iter().map(|x| x.node()));
             },
+            #[cfg(feature = "dtype-union")]
+            UnionMatch {
+                expr,
+                names: _,
+                arms,
+                default,
+            } => {
+                container.extend([*expr]);
+                container.extend(arms.iter().copied());
+                container.extend(*default);
+            },
             Slice {
                 input,
                 offset,
@@ -182,6 +193,18 @@ impl AExpr {
                 container.extend(evaluation.iter().rev().map(ExprIR::node));
                 container.extend([*expr]);
             },
+            #[cfg(feature = "dtype-union")]
+            UnionMatch {
+                expr,
+                names: _,
+                arms,
+                default,
+            } => {
+                // The arms are included. In case this is not allowed, use `inputs_rev_strict()`.
+                container.extend(*default);
+                container.extend(arms.iter().rev().copied());
+                container.extend([*expr]);
+            },
             Slice {
                 input,
                 offset,
@@ -214,6 +237,18 @@ impl AExpr {
                 // Evaluation is explicitly excluded. It is up to the caller to handle
                 // any tree traversal if required.
                 _ = evaluation;
+                container.extend([*expr]);
+            },
+            #[cfg(feature = "dtype-union")]
+            UnionMatch {
+                expr,
+                names: _,
+                arms,
+                default,
+            } => {
+                // The arms are explicitly excluded, as they need the variant as `pl.element()`.
+                _ = arms;
+                container.extend(*default);
                 container.extend([*expr]);
             },
             expr => expr.inputs_rev(container),
@@ -298,6 +333,17 @@ impl AExpr {
                 container.extend(evaluation.iter().rev().map(ExprIR::node));
                 container.extend([*expr]);
             },
+            #[cfg(feature = "dtype-union")]
+            UnionMatch {
+                expr,
+                names: _,
+                arms,
+                default,
+            } => {
+                container.extend(*default);
+                container.extend(arms.iter().rev().copied());
+                container.extend([*expr]);
+            },
             Slice {
                 input,
                 offset,
@@ -376,6 +422,22 @@ impl AExpr {
             } => {
                 *expr = inputs[0];
                 _ = evaluation; // Intentional.
+                return self;
+            },
+            #[cfg(feature = "dtype-union")]
+            UnionMatch {
+                expr,
+                names: _,
+                arms,
+                default,
+            } => {
+                assert_eq!(inputs.len(), 1 + arms.len() + default.is_some() as usize);
+                *expr = inputs[0];
+                let n = arms.len();
+                arms.copy_from_slice(&inputs[1..1 + n]);
+                if let Some(default) = default {
+                    *default = *inputs.last().unwrap();
+                }
                 return self;
             },
             Slice {
@@ -490,6 +552,22 @@ impl AExpr {
                 *expr = inputs[0];
                 for (e, node) in evaluation.iter_mut().zip(inputs[1..].iter()) {
                     e.set_node(*node);
+                }
+                return self;
+            },
+            #[cfg(feature = "dtype-union")]
+            UnionMatch {
+                expr,
+                names: _,
+                arms,
+                default,
+            } => {
+                assert_eq!(inputs.len(), 1 + arms.len() + default.is_some() as usize);
+                *expr = inputs[0];
+                let n = arms.len();
+                arms.copy_from_slice(&inputs[1..1 + n]);
+                if let Some(default) = default {
+                    *default = *inputs.last().unwrap();
                 }
                 return self;
             },

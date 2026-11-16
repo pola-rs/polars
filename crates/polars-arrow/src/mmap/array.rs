@@ -598,6 +598,7 @@ fn get_array<T: AsRef<[u8]> + Send + Sync + 'static>(
                 buffers,
             )
         }),
+        Union => polars_bail!(ComputeError: "memory-mapping a Union column is not supported"),
         _ => todo!(),
     }
 }
