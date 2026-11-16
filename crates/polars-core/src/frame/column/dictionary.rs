@@ -17,25 +17,37 @@ static NEXT_DICTIONARY_ID: AtomicU64 = AtomicU64::new(0);
 /// How many hashers' hashes a dictionary keeps.
 const MAX_CACHED_HASHERS: usize = 4;
 
-static STRING_DTYPE: DataType = DataType::String;
-static BINARY_DTYPE: DataType = DataType::Binary;
-
 /// The values of a dictionary that [`DictionaryColumn`]s index into, such as the dictionary page
-/// of a parquet column chunk. They are String values (valid UTF-8) or Binary values; the codes, the
-/// hashes and the lookup table work on their bytes either way.
+/// of a parquet column chunk. They can be of any dtype; String and Binary values (the only ones
+/// that are produced so far) also have byte fast paths: the codes, the hashes and the lookup table
+/// work on their bytes, see [`Self::bytes`].
 ///
 /// The values need not be unique: equal codes mean equal values, but different codes may also.
 pub struct SharedDictionary {
     /// Process-unique id; caches in operators are keyed by it.
     id: u64,
-    /// The dictionary values; materialized columns share its data buffers.
-    values: BinaryViewArray,
-    /// Whether the values are String (valid UTF-8) rather than Binary.
-    is_string: bool,
+    /// The dictionary values, in one chunk and without nulls; materialized columns share its
+    /// buffers.
+    values: Series,
+    /// The dtype of `values`, kept here so that reading a row does not ask `values` for it.
+    dtype: DataType,
+    /// Whether the values are String, Binary or neither (then `bytes` is `None`).
+    kind: ByteKind,
+    /// The values of a String (valid UTF-8) or Binary dictionary as bytes, sharing `values`'
+    /// buffers.
+    bytes: Option<BinaryViewArray>,
     /// The hash of each value under recently used hashers, keyed by [`hasher_fingerprint`].
     hashes: Mutex<Vec<CachedHashes>>,
     /// The first code of each value, built on first use (see [`Self::code_of`]).
     lookup: OnceLock<CodeLookup>,
+}
+
+/// What a dictionary's values are as bytes.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ByteKind {
+    String,
+    Binary,
+    Other,
 }
 
 /// The hashes of a dictionary's values under one hasher.
@@ -56,6 +68,7 @@ impl std::fmt::Debug for SharedDictionary {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SharedDictionary")
             .field("id", &self.id)
+            .field("dtype", self.values.dtype())
             .field("len", &self.values.len())
             .finish()
     }
@@ -79,29 +92,82 @@ impl SharedDictionary {
         Self::with_values(values, false)
     }
 
+    /// A dictionary of `values` of any dtype but Null and Object, which must not be null (the
+    /// values inside nested ones may be). A String or Binary series gets the byte fast paths.
+    pub fn try_new(values: Series) -> PolarsResult<Arc<Self>> {
+        polars_ensure!(
+            can_be_dictionary_values(values.dtype()),
+            ComputeError: "a dictionary cannot hold values of dtype {}", values.dtype()
+        );
+        polars_ensure!(
+            values.null_count() == 0,
+            ComputeError: "dictionary values must not be null"
+        );
+        let values = values.rechunk().with_name(PlSmallStr::EMPTY);
+        let bytes = match values.dtype() {
+            DataType::String => Some(
+                values
+                    .str()
+                    .unwrap()
+                    .as_binary()
+                    .downcast_as_array()
+                    .clone(),
+            ),
+            DataType::Binary => Some(values.binary().unwrap().downcast_as_array().clone()),
+            _ => None,
+        };
+        Ok(Self::make(values, bytes, Vec::new(), OnceLock::new()))
+    }
+
     fn with_values(values: BinaryViewArray, is_string: bool) -> Arc<Self> {
         assert!(
             values.validity().is_none_or(|v| v.unset_bits() == 0),
             "dictionary values must not be null"
         );
-        let values = values.with_validity(None);
+        let bytes = values.with_validity(None);
+        let series = if is_string {
+            // SAFETY: a String dictionary holds valid UTF-8.
+            let values = unsafe { bytes.to_utf8view_unchecked() };
+            StringChunked::with_chunk(PlSmallStr::EMPTY, values).into_series()
+        } else {
+            BinaryChunked::with_chunk(PlSmallStr::EMPTY, bytes.clone()).into_series()
+        };
+        Self::make(series, Some(bytes), Vec::new(), OnceLock::new())
+    }
+
+    fn make(
+        values: Series,
+        bytes: Option<BinaryViewArray>,
+        hashes: Vec<CachedHashes>,
+        lookup: OnceLock<CodeLookup>,
+    ) -> Arc<Self> {
+        let dtype = values.dtype().clone();
+        let kind = match (&bytes, &dtype) {
+            (None, _) => ByteKind::Other,
+            (Some(_), DataType::String) => ByteKind::String,
+            (Some(_), _) => ByteKind::Binary,
+        };
         Arc::new(Self {
             id: NEXT_DICTIONARY_ID.fetch_add(1, Ordering::Relaxed),
             values,
-            is_string,
-            hashes: Mutex::new(Vec::new()),
-            lookup: OnceLock::new(),
+            dtype,
+            kind,
+            bytes,
+            hashes: Mutex::new(hashes),
+            lookup,
         })
     }
 
-    fn lookup(&self) -> &CodeLookup {
-        self.lookup.get_or_init(|| {
+    /// `None` unless the dictionary holds bytes.
+    fn lookup(&self) -> Option<&CodeLookup> {
+        let bytes = self.bytes.as_ref()?;
+        Some(self.lookup.get_or_init(|| {
             let random_state = PlRandomState::default();
             let mut codes = hashbrown::HashTable::with_capacity(self.len());
-            for (c, v) in self.values.values_iter().enumerate() {
+            for (c, v) in bytes.values_iter().enumerate() {
                 let h = random_state.hash_one(v);
                 // SAFETY: the codes in the table are in bounds.
-                let value = |k: &u32| unsafe { self.values.value_unchecked(*k as usize) };
+                let value = |k: &u32| unsafe { bytes.value_unchecked(*k as usize) };
                 if codes.find(h, |k| value(k) == v).is_none() {
                     codes.insert_unique(h, c as u32, |k| random_state.hash_one(value(k)));
                 }
@@ -110,39 +176,42 @@ impl SharedDictionary {
                 random_state,
                 codes,
             }
-        })
+        }))
     }
 
-    /// The first code of `value`, if the dictionary holds it. The lookup table is built on the
-    /// first call and kept with the dictionary.
+    /// The first code of `value`, if this is a String or Binary dictionary that holds it. The
+    /// lookup table is built on the first call and kept with the dictionary.
     pub fn code_of(&self, value: &[u8]) -> Option<u32> {
-        let lookup = self.lookup();
+        let bytes = self.bytes.as_ref()?;
+        let lookup = self.lookup()?;
         lookup
             .codes
             .find(lookup.random_state.hash_one(value), |k| {
                 // SAFETY: the codes in the table are in bounds.
-                unsafe { self.values.value_unchecked(*k as usize) == value }
+                unsafe { bytes.value_unchecked(*k as usize) == value }
             })
             .copied()
     }
 
     /// A new dictionary of these values followed by `added`, none of which this one holds. It
     /// shares these values' buffers, and extends the lookup table and the cached hashes instead of
-    /// computing them again.
+    /// computing them again. Only for a String or Binary dictionary.
     fn extended(&self, added: &[&[u8]]) -> Arc<Self> {
+        let old_bytes = self.bytes.as_ref().expect("a String or Binary dictionary");
+        let is_string = self.kind == ByteKind::String;
         debug_assert!(
-            !self.is_string || added.iter().all(|v| std::str::from_utf8(v).is_ok()),
+            !is_string || added.iter().all(|v| std::str::from_utf8(v).is_ok()),
             "added values of a String dictionary must be valid UTF-8"
         );
         let old_len = self.len();
         let mut values = MutableBinaryViewArray::<[u8]>::with_capacity(old_len + added.len());
-        for buffer in self.values.data_buffers().iter() {
+        for buffer in old_bytes.data_buffers().iter() {
             values.push_buffer(buffer.clone());
         }
         // SAFETY: the views index the buffers just pushed, in the same order.
         unsafe {
-            values.views_mut().extend(self.values.views().iter());
-            values.set_total_bytes_len(self.values.total_bytes_len());
+            values.views_mut().extend(old_bytes.views().iter());
+            values.set_total_bytes_len(old_bytes.total_bytes_len());
         }
         values.extend_values(added.iter().copied());
         let values: BinaryViewArray = values.freeze();
@@ -187,45 +256,65 @@ impl SharedDictionary {
             })
             .collect();
 
-        Arc::new(Self {
-            id: NEXT_DICTIONARY_ID.fetch_add(1, Ordering::Relaxed),
-            values,
-            is_string: self.is_string,
-            hashes: Mutex::new(hashes),
-            lookup,
-        })
+        let series = if is_string {
+            // SAFETY: a String dictionary holds valid UTF-8.
+            let values = unsafe { values.to_utf8view_unchecked() };
+            StringChunked::with_chunk(PlSmallStr::EMPTY, values).into_series()
+        } else {
+            BinaryChunked::with_chunk(PlSmallStr::EMPTY, values.clone()).into_series()
+        };
+        Self::make(series, Some(values), hashes, lookup)
     }
 
     pub fn id(&self) -> u64 {
         self.id
     }
 
-    /// The values as bytes.
-    pub fn values(&self) -> &BinaryViewArray {
-        &self.values
+    /// The values as bytes, for a String or Binary dictionary; `None` for any other dtype.
+    pub fn bytes(&self) -> Option<&BinaryViewArray> {
+        self.bytes.as_ref()
     }
 
     /// Whether the values are String rather than Binary.
     pub fn is_string(&self) -> bool {
-        self.is_string
+        self.kind == ByteKind::String
     }
 
     pub fn dtype(&self) -> &DataType {
-        if self.is_string {
-            &STRING_DTYPE
-        } else {
-            &BINARY_DTYPE
+        &self.dtype
+    }
+
+    /// The values as a [`Series`] of `name`, sharing the buffers.
+    pub fn values_series(&self, name: PlSmallStr) -> Series {
+        let mut values = self.values.clone();
+        values.rename(name);
+        values
+    }
+
+    /// The value of `code`.
+    ///
+    /// # Safety
+    /// `code` must be in bounds.
+    #[inline(always)]
+    pub unsafe fn get_unchecked(&self, code: u32) -> AnyValue<'_> {
+        match (self.kind, &self.bytes) {
+            (ByteKind::String, Some(bytes)) => {
+                let value = unsafe { bytes.value_unchecked(code as usize) };
+                // SAFETY: a String dictionary holds valid UTF-8.
+                AnyValue::String(unsafe { std::str::from_utf8_unchecked(value) })
+            },
+            (ByteKind::Binary, Some(bytes)) => {
+                AnyValue::Binary(unsafe { bytes.value_unchecked(code as usize) })
+            },
+            _ => unsafe { self.values.get_unchecked(code as usize) },
         }
     }
 
-    /// The values as a String or Binary [`Series`], sharing the buffers.
-    pub fn values_series(&self, name: PlSmallStr) -> Series {
-        if self.is_string {
-            // SAFETY: a String dictionary holds valid UTF-8.
-            let values = unsafe { self.values.to_utf8view_unchecked() };
-            StringChunked::with_chunk(name, values).into_series()
-        } else {
-            BinaryChunked::with_chunk(name, self.values.clone()).into_series()
+    /// Estimated size of the values, see [`Series::estimated_size`].
+    fn estimated_size(&self) -> usize {
+        match &self.bytes {
+            Some(bytes) => polars_arrow::compute::aggregate::estimated_bytes_size(bytes),
+            None => self.values.estimated_size(),
         }
     }
 
@@ -237,7 +326,8 @@ impl SharedDictionary {
         self.values.is_empty()
     }
 
-    /// The hashes [`Self::hashes`] gives, if they were already computed.
+    /// The hashes [`Self::hashes`] gives, if they were already computed (never for a dictionary of
+    /// another dtype than String or Binary).
     pub fn cached_hashes(&self, random_state: &PlRandomState) -> Option<Buffer<u64>> {
         let fingerprint = hasher_fingerprint(random_state);
         self.hashes
@@ -249,16 +339,17 @@ impl SharedDictionary {
     }
 
     /// The hash of each value as `View::hash_with_buffers_unchecked` computes it with
-    /// `random_state`, computed once per hasher.
-    pub fn hashes(&self, random_state: &PlRandomState) -> Buffer<u64> {
+    /// `random_state`, computed once per hasher. `None` for a dictionary of another dtype than
+    /// String or Binary, whose keys hash as their materialized values.
+    pub fn hashes(&self, random_state: &PlRandomState) -> Option<Buffer<u64>> {
+        let bytes = self.bytes.as_ref()?;
         if let Some(hashes) = self.cached_hashes(random_state) {
-            return hashes;
+            return Some(hashes);
         }
         let fingerprint = hasher_fingerprint(random_state);
 
-        let buffers = self.values.data_buffers();
-        let hashes: Buffer<u64> = self
-            .values
+        let buffers = bytes.data_buffers();
+        let hashes: Buffer<u64> = bytes
             .views()
             .iter()
             .map(|v| unsafe { v.hash_with_buffers_unchecked(buffers, random_state) })
@@ -276,12 +367,12 @@ impl SharedDictionary {
                 hashes: hashes.clone(),
             });
         }
-        hashes
+        Some(hashes)
     }
 }
 
-/// A String or Binary [`Column`] held as codes into a [`SharedDictionary`]: row `i`, when valid, is
-/// `dict.values()[codes[i]]`.
+/// A [`Column`] of any dtype held as codes into a [`SharedDictionary`]: row `i`, when valid, is
+/// the dictionary's value at `codes[i]`.
 ///
 /// This is lazily materialized into a [`Series`] that gathers the values.
 #[derive(Debug, Clone)]
@@ -294,8 +385,10 @@ pub struct DictionaryColumn {
     /// Whether the values are sorted, a hint as on a [`Series`].
     sorted: IsSorted,
 
-    /// A lazily materialized [`Series`] variant of this [`DictionaryColumn`].
-    materialized: OnceLock<Series>,
+    /// A lazily materialized [`Series`] variant of this [`DictionaryColumn`]. Clones share it, so
+    /// that the codes are gathered once however many copies of the column consume them; changing
+    /// the name or the sorted flag of one gives it a cache of its own.
+    materialized: Arc<OnceLock<Series>>,
 }
 
 impl DictionaryColumn {
@@ -315,7 +408,7 @@ impl DictionaryColumn {
             dict,
             codes: codes.with_name(PlSmallStr::EMPTY),
             sorted: IsSorted::Not,
-            materialized: OnceLock::new(),
+            materialized: Arc::default(),
         }
     }
 
@@ -335,10 +428,35 @@ impl DictionaryColumn {
         &self.name
     }
 
-    pub fn rename(&mut self, name: PlSmallStr) {
-        if let Some(s) = self.materialized.get_mut() {
-            s.rename(name.clone());
+    /// A cache of its own, holding `series` if there is one.
+    fn cache_of(series: Option<Series>) -> Arc<OnceLock<Series>> {
+        let cache = OnceLock::new();
+        if let Some(series) = series {
+            _ = cache.set(series);
         }
+        Arc::new(cache)
+    }
+
+    /// Applies `f` to the cached materialization, if any: in place when this column is its only
+    /// owner, else on a copy that becomes this column's cache of its own.
+    fn update_cache(&mut self, f: impl FnOnce(&mut Series)) {
+        if let Some(cache) = Arc::get_mut(&mut self.materialized) {
+            if let Some(s) = cache.get_mut() {
+                f(s);
+            }
+            return;
+        }
+        self.materialized = Self::cache_of(self.materialized.get().map(|s| {
+            let mut s = s.clone();
+            f(&mut s);
+            s
+        }));
+    }
+
+    pub fn rename(&mut self, name: PlSmallStr) {
+        self.update_cache(|s| {
+            s.rename(name.clone());
+        });
         self.name = name;
     }
 
@@ -377,7 +495,7 @@ impl DictionaryColumn {
             dict: self.dict.clone(),
             codes,
             sorted: IsSorted::Not,
-            materialized: OnceLock::new(),
+            materialized: Arc::default(),
         }
     }
 
@@ -394,13 +512,13 @@ impl DictionaryColumn {
     }
 
     pub fn set_sorted_flag(&mut self, sorted: IsSorted) {
-        if let Some(s) = self.materialized.get_mut() {
+        self.update_cache(|s| {
             s.set_sorted_flag(sorted);
-        }
+        });
         self.sorted = sorted;
     }
 
-    /// Gathers the values into a String or Binary [`Series`].
+    /// Gathers the values into a [`Series`].
     pub fn to_series(&self) -> Series {
         let values = self.dict.values_series(self.name.clone());
         #[cfg(feature = "bigidx")]
@@ -429,18 +547,21 @@ impl DictionaryColumn {
 
     /// Take the [`DictionaryColumn`] and materialize as a [`Series`] if not already done.
     pub fn take_materialized_series(self) -> Series {
-        match self.materialized.into_inner() {
-            Some(s) => s,
-            None => Self {
-                materialized: OnceLock::new(),
-                ..self
-            }
-            .to_series(),
+        self.as_materialized_series().clone()
+    }
+
+    /// `out`, a column of the same dictionary derived from this one, with the materialized values
+    /// (if already there) derived by `f` in the same way.
+    fn with_cache_from(&self, mut out: Self, f: impl FnOnce(&Series) -> Series) -> Self {
+        if let Some(m) = self.materialized.get() {
+            out.materialized = Self::cache_of(Some(f(m)));
         }
+        out
     }
 
     pub fn slice(&self, offset: i64, length: usize) -> Self {
-        self.with_order_kept(self.codes.slice(offset, length))
+        let out = self.with_order_kept(self.codes.slice(offset, length));
+        self.with_cache_from(out, |m| m.slice(offset, length))
     }
 
     pub fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Self> {
@@ -469,7 +590,11 @@ impl DictionaryColumn {
     pub fn reverse(&self) -> Self {
         let mut out = self.with_codes(self.codes.reverse());
         out.sorted = self.sorted.reverse();
-        out
+        self.with_cache_from(out, |m| {
+            let mut r = m.reverse();
+            r.set_sorted_flag(self.sorted.reverse());
+            r
+        })
     }
 
     pub fn clear(&self) -> Self {
@@ -488,7 +613,12 @@ impl DictionaryColumn {
     /// when that extension would copy more existing entries than `other` has rows.
     pub fn try_append(&mut self, other: &DictionaryColumn) -> bool {
         if self.dict.id != other.dict.id {
-            if self.dict.is_string != other.dict.is_string {
+            // Only String and Binary values are merged by their bytes, and never one with the
+            // other.
+            let (Some(_), Some(other_bytes)) = (&self.dict.bytes, &other.dict.bytes) else {
+                return false;
+            };
+            if self.dict.is_string() != other.dict.is_string() {
                 return false;
             }
             let max_len = (self.len() + other.len()).min(u32::MAX as usize);
@@ -498,7 +628,7 @@ impl DictionaryColumn {
             let mut added = Vec::new();
             let mut added_code_of = PlHashMap::<&[u8], u32>::new();
             let mut remap = Vec::with_capacity(other.dict.len());
-            for v in other.dict.values.values_iter() {
+            for v in other_bytes.values_iter() {
                 let c = match self.dict.code_of(v) {
                     Some(c) => c,
                     None => {
@@ -529,7 +659,7 @@ impl DictionaryColumn {
             self.codes.append(&other.codes).unwrap();
         }
         self.sorted = IsSorted::Not;
-        self.materialized = OnceLock::new();
+        self.materialized = Arc::default();
         true
     }
 
@@ -539,19 +669,32 @@ impl DictionaryColumn {
     /// would take materialized, at most all of it; counting all of it for each slice would
     /// overstate the memory of the morsels of a row group many times over.
     pub fn estimated_size(&self) -> usize {
-        let dict_size = polars_arrow::compute::aggregate::estimated_bytes_size(&self.dict.values);
+        let dict_size = self.dict.estimated_size();
         let dict_part = if self.len() >= self.dict.len() {
             dict_size
         } else {
             (dict_size as u128 * self.len() as u128 / self.dict.len() as u128) as usize
         };
+        // Clones share the cache: each counts its share, so that the holders add up to the cache
+        // once. A cached slice of a nested column counts all of its child values, however few
+        // rows it has, so there the cache is bounded by what this column's rows would take at the
+        // dictionary's average value size.
+        let cache_size = self.materialized.get().map_or(0, |s| {
+            let mut size = s.estimated_size();
+            if s.dtype().is_nested() && !self.dict.is_empty() {
+                let rows_size = (self.dict.estimated_size() as u128 * self.len() as u128
+                    / self.dict.len() as u128) as usize;
+                size = size.min(rows_size);
+            }
+            size / Arc::strong_count(&self.materialized)
+        });
         self.codes
             .chunks()
             .iter()
             .map(|c| polars_arrow::compute::aggregate::estimated_bytes_size(c.as_ref()))
             .sum::<usize>()
             + dict_part
-            + self.materialized.get().map_or(0, |s| s.estimated_size())
+            + cache_size
     }
 
     /// The codes that valid rows use, in order of first use, and the position of each row's code
@@ -613,9 +756,9 @@ impl DictionaryColumn {
     }
 
     /// Evaluates an elementwise `f` once per dictionary value that a valid row uses, and once on
-    /// a null if a row is null, and spreads the results to the rows by code. A String or Binary
-    /// result stays dictionary-coded. `f` gets a String or Binary [`Series`] of this column's name and returns one value
-    /// per input value.
+    /// a null if a row is null, and spreads the results to the rows by code. A result of any dtype (but
+    /// Null and Object) stays dictionary-coded, its dictionary the results. `f` gets a [`Series`] of this column's name and dtype and
+    /// returns one value per input value.
     ///
     /// Only values that rows use are evaluated, so `f` errors exactly when it would on the rows.
     /// When that is not fewer values than rows, `f` is evaluated on the materialized column.
@@ -676,6 +819,46 @@ impl DictionaryColumn {
             return Ok(unsafe { DictionaryColumn::new_unchecked(name, dict, codes) }.into_column());
         }
 
+        if can_be_dictionary_values(out.dtype()) {
+            // The dictionary holds the valid results; rows whose result is null get a null code.
+            let name = out_name(&input, &out, &self.name);
+            let out = out.rechunk();
+            let (out, row_slots, row_validity) = match out.rechunk_validity() {
+                Some(ov) if ov.unset_bits() > 0 => {
+                    let mut rank = Vec::with_capacity(ov.len());
+                    let mut next = 0u32;
+                    for is_valid in ov.iter() {
+                        rank.push(next);
+                        next += is_valid as u32;
+                    }
+                    let row_validity = row_slots
+                        .iter()
+                        .map(|s| unsafe { ov.get_bit_unchecked(*s as usize) })
+                        .collect::<polars_arrow::bitmap::Bitmap>();
+                    // A null row's code is never read: 0 keeps it in bounds when the dictionary
+                    // has a value (`rank` of a null result can be one past the last).
+                    let row_slots = row_slots
+                        .into_iter()
+                        .map(|s| {
+                            let r = unsafe { *rank.get_unchecked(s as usize) };
+                            if (r as usize) < next as usize { r } else { 0 }
+                        })
+                        .collect();
+                    let out = out.filter(&BooleanChunked::with_chunk(
+                        PlSmallStr::EMPTY,
+                        polars_arrow::array::BooleanArray::from_data_default(ov, None),
+                    ))?;
+                    (out, row_slots, Some(row_validity))
+                },
+                _ => (out, row_slots, None),
+            };
+            let dict = SharedDictionary::try_new(out)?;
+            let codes =
+                UInt32Chunked::from_vec_validity(PlSmallStr::EMPTY, row_slots, row_validity);
+            // SAFETY: every slot indexes the valid results.
+            return Ok(unsafe { DictionaryColumn::new_unchecked(name, dict, codes) }.into_column());
+        }
+
         #[cfg(feature = "bigidx")]
         let idx = IdxCa::from_vec(
             PlSmallStr::EMPTY,
@@ -695,6 +878,11 @@ impl DictionaryColumn {
         }
         assert_eq!(expected.len(), self.len());
     }
+}
+
+/// Whether a dictionary can hold values of `dtype`: any but Null, Object and an unknown one.
+fn can_be_dictionary_values(dtype: &DataType) -> bool {
+    !(dtype.is_null() || dtype.is_object() || dtype.is_unknown())
 }
 
 /// The name of `out`, which `f` computed from `input`: `name` unless `f` renamed it.
@@ -720,7 +908,7 @@ impl From<DictionaryColumn> for Column {
     }
 }
 
-/// Whether dictionary-coded String and Binary columns are produced and used, `POLARS_DICT_CODES=0` turns them
+/// Whether dictionary-coded columns are produced and used, `POLARS_DICT_CODES=0` turns them
 /// off.
 pub fn dictionary_codes_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
@@ -857,7 +1045,7 @@ mod test {
     fn try_append_extends_lookup_and_hashes() {
         let rs = PlRandomState::default();
         let mut a = dict_column(&["x", "y"], &[Some(0), Some(1)]);
-        a.dict().hashes(&rs);
+        a.dict().hashes(&rs).unwrap();
         assert_eq!(a.dict().code_of(b"y"), Some(1));
         let b = dict_column(
             &["z", "a-value-longer-than-a-view", "x"],
@@ -872,7 +1060,9 @@ mod test {
         assert_eq!(dict.code_of(b"x"), Some(0));
         assert_eq!(dict.code_of(b"absent"), None);
         let cached = dict.cached_hashes(&rs).unwrap();
-        let fresh = SharedDictionary::new_binary(dict.values().clone()).hashes(&rs);
+        let fresh = SharedDictionary::new_binary(dict.bytes().unwrap().clone())
+            .hashes(&rs)
+            .unwrap();
         assert_eq!(cached.as_slice(), fresh.as_slice());
         a.check_invariants();
     }
@@ -891,6 +1081,422 @@ mod test {
         let out = rhs.not_equal(&lhs).unwrap();
         assert_eq!(out.len(), 5);
         assert!(!out.any());
+    }
+
+    fn generic_dict_column(values: Series, codes: &[Option<u32>]) -> DictionaryColumn {
+        let codes = UInt32Chunked::from_iter_options(PlSmallStr::EMPTY, codes.iter().copied());
+        DictionaryColumn::try_new(
+            "g".into(),
+            SharedDictionary::try_new(values).unwrap(),
+            codes,
+        )
+        .unwrap()
+    }
+
+    /// The flat column the dictionary column stands for.
+    fn flat(c: &DictionaryColumn) -> Column {
+        c.to_series().into_column()
+    }
+
+    fn int_dict_column(n: usize) -> DictionaryColumn {
+        let values = Series::new("v".into(), [10i64, 20, 30]);
+        let codes: Vec<Option<u32>> = (0..n)
+            .map(|i| (i % 5 != 4).then_some((i % 3) as u32))
+            .collect();
+        generic_dict_column(values, &codes)
+    }
+
+    fn assert_coded(out: &Column, dict_len: usize) {
+        let d = out.as_dictionary_column().expect("a dictionary column");
+        assert_eq!(d.dict().len(), dict_len);
+        d.check_invariants();
+    }
+
+    #[test]
+    fn non_byte_dictionary_basics() {
+        let a = int_dict_column(12);
+        assert_eq!(a.dtype(), &DataType::Int64);
+        assert!(a.dict().bytes().is_none());
+        assert!(a.dict().hashes(&PlRandomState::default()).is_none());
+        assert_eq!(a.dict().code_of(b"x"), None);
+        a.check_invariants();
+        let col = Column::from(a.clone());
+        let expected = flat(&a);
+        assert_eq!(col.dtype(), &DataType::Int64);
+        assert_eq!(col.get(0).unwrap(), AnyValue::Int64(10));
+        assert_eq!(col.get(1).unwrap(), AnyValue::Int64(20));
+        assert!(col.get(4).unwrap().is_null());
+        for i in 0..col.len() {
+            assert_eq!(col.get(i).unwrap(), expected.get(i).unwrap());
+        }
+        assert!(col.slice(2, 5).equals_missing(&expected.slice(2, 5)));
+        assert!(col.slice(2, 5).as_dictionary_column().is_some());
+        let mask = BooleanChunked::from_iter((0..12).map(|i| i % 2 == 0));
+        let filtered = col.filter(&mask).unwrap();
+        assert!(filtered.as_dictionary_column().is_some());
+        assert!(filtered.equals_missing(&expected.filter(&mask).unwrap()));
+        assert!(col.rechunk().equals_missing(&expected));
+        assert!(
+            col.cast(&DataType::Int64)
+                .unwrap()
+                .as_dictionary_column()
+                .is_some()
+        );
+        // The values are shared when their dtype changes by a cast.
+        let as_string = col.cast(&DataType::String).unwrap();
+        assert_coded(&as_string, 4);
+        assert!(as_string.equals_missing(&expected.cast(&DataType::String).unwrap()));
+        assert!(
+            as_string
+                .as_dictionary_column()
+                .unwrap()
+                .dict()
+                .bytes()
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn non_byte_dictionary_rejects_unsupported_values() {
+        assert!(SharedDictionary::try_new(Series::new_null("n".into(), 2)).is_err());
+        assert!(SharedDictionary::try_new(Series::new("v".into(), [Some(1i64), None])).is_err());
+        assert!(SharedDictionary::try_new(Series::new("v".into(), [1i64])).is_ok());
+    }
+
+    #[test]
+    fn non_byte_dictionary_try_append() {
+        let mut a = int_dict_column(6);
+        let same = a.slice(1, 3);
+        assert!(a.try_append(&same));
+        assert_eq!(a.len(), 9);
+        a.check_invariants();
+        // Another dictionary, even of equal values, is not merged: the caller materializes.
+        let other = int_dict_column(6);
+        assert!(!a.try_append(&other));
+        assert_eq!(a.len(), 9);
+        // A String dictionary is no match for one of another dtype either way.
+        let mut strings = dict_column(&["x"], &[Some(0)]);
+        assert!(!strings.try_append(&int_dict_column(1)));
+        let mut ints = int_dict_column(1);
+        assert!(!ints.try_append(&strings));
+
+        let mut col = Column::from(a.clone());
+        let expected = {
+            let mut e = flat(&a);
+            e.append(&flat(&other)).unwrap();
+            e
+        };
+        col.append(&Column::from(other)).unwrap();
+        assert!(col.as_dictionary_column().is_none());
+        assert!(col.equals_missing(&expected));
+    }
+
+    #[test]
+    fn non_byte_dictionary_compares_with_constant() {
+        let a = int_dict_column(10);
+        let lhs = Column::from(a.clone());
+        let rhs = Column::new_scalar(
+            "c".into(),
+            Scalar::new(DataType::Int64, AnyValue::Int64(20)),
+            1,
+        );
+        let expected = flat(&a).equal(&rhs).unwrap();
+        assert!(
+            lhs.equal(&rhs)
+                .unwrap()
+                .into_series()
+                .equals_missing(&expected.clone().into_series())
+        );
+        assert!(
+            rhs.equal(&lhs)
+                .unwrap()
+                .into_series()
+                .equals_missing(&expected.into_series())
+        );
+    }
+
+    #[test]
+    fn non_byte_dictionary_binary_op_with_constant_stays_coded() {
+        let a = int_dict_column(10);
+        let lhs = Column::from(a.clone());
+        let rhs = Column::new_scalar(
+            "c".into(),
+            Scalar::new(DataType::Int64, AnyValue::Int64(3)),
+            1,
+        );
+        let out = (&lhs * &rhs).unwrap();
+        assert_coded(&out, 3);
+        assert!(out.equals_missing(&(&flat(&a) * &rhs).unwrap()));
+        let out = (&rhs - &lhs).unwrap();
+        assert!(out.equals_missing(&(&rhs - &flat(&a)).unwrap()));
+        // With a column of the same length, the work is not once per value.
+        let other = Column::from(Series::new("o".into(), [1i64; 10]));
+        assert!((&lhs + &other).unwrap().as_dictionary_column().is_none());
+    }
+
+    #[test]
+    fn apply_elementwise_keeps_results_of_any_dtype_coded() {
+        let a = int_dict_column(30);
+        let expected = flat(&a);
+        // A numeric result whose nulls are partly computed: values below 20 become null.
+        let out = a
+            .apply_elementwise(|v| {
+                Ok(v.i64()
+                    .unwrap()
+                    .apply(|x| x.filter(|x| *x >= 20))
+                    .into_series())
+            })
+            .unwrap();
+        assert_coded(&out, 2);
+        let want = Series::new(
+            "".into(),
+            expected
+                .i64()
+                .unwrap()
+                .iter()
+                .map(|x| x.filter(|x| *x >= 20))
+                .collect::<Vec<_>>(),
+        );
+        assert!(out.as_materialized_series().equals_missing(&want));
+        // A function that is null for a null input only.
+        let out = a.apply_elementwise(|v| v.cast(&DataType::Float64)).unwrap();
+        assert_coded(&out, 3);
+        // Chains stay coded and share the codes.
+        let step1 = Column::from(a.clone()).cast(&DataType::Float64).unwrap();
+        let step2 = step1
+            .as_dictionary_column()
+            .unwrap()
+            .apply_elementwise(|v| v.cast(&DataType::String))
+            .unwrap();
+        assert_coded(&step2, 4);
+        assert!(
+            step1
+                .as_dictionary_column()
+                .unwrap()
+                .lazy_as_materialized_series()
+                .is_none()
+        );
+        let flat_step2 = expected
+            .cast(&DataType::Float64)
+            .unwrap()
+            .cast(&DataType::String)
+            .unwrap();
+        assert!(step2.equals_missing(&flat_step2));
+        // Used values only: a selective slice does not map the whole dictionary.
+        let sliced = a.slice(0, 2);
+        let out = Column::from(sliced.clone())
+            .cast(&DataType::String)
+            .unwrap();
+        assert!(out.equals_missing(&flat(&sliced).cast(&DataType::String).unwrap()));
+    }
+
+    #[test]
+    fn non_byte_dictionary_nested_values() {
+        let values = Series::new(
+            "v".into(),
+            &[
+                Series::new("".into(), ["a", "b"]),
+                Series::new("".into(), ["c"]),
+            ],
+        );
+        let a = generic_dict_column(values, &[Some(1), None, Some(0), Some(1)]);
+        assert!(matches!(a.dtype(), DataType::List(_)));
+        a.check_invariants();
+        let col = Column::from(a.clone());
+        assert_eq!(col.get(0).unwrap().to_string(), "[\"c\"]");
+        assert!(col.get(1).unwrap().is_null());
+        assert!(col.slice(1, 3).equals_missing(&flat(&a).slice(1, 3)));
+        assert!(col.rechunk().equals_missing(&flat(&a)));
+    }
+
+    #[test]
+    fn clones_share_one_materialization() {
+        let a = Column::from(int_dict_column(9));
+        let b = a.clone();
+        let c = a.clone();
+        let first = b.as_materialized_series();
+        assert!(
+            a.as_dictionary_column()
+                .unwrap()
+                .lazy_as_materialized_series()
+                .is_some()
+        );
+        // Same buffers: the codes were gathered once for all the copies.
+        let ptr = |s: &Series| s.chunks()[0].as_ref() as *const dyn Array as *const u8;
+        assert_eq!(ptr(first), ptr(a.as_materialized_series()));
+        assert_eq!(ptr(first), ptr(c.as_materialized_series()));
+        // Renaming one gives it a cache of its own.
+        let mut d = a.clone();
+        d.rename("other".into());
+        assert_eq!(d.as_materialized_series().name().as_str(), "other");
+        assert_eq!(a.as_materialized_series().name().as_str(), "g");
+    }
+
+    #[test]
+    fn group_by_and_unique_materialize_a_non_byte_dictionary_once() {
+        let n = 40;
+        let d = int_dict_column(n);
+        let coded = Column::from(d.clone());
+        let vals = Column::new("x".into(), (0..n as i64).collect::<Vec<_>>());
+        let df = DataFrame::new(n, vec![coded.clone(), vals.clone()]).unwrap();
+        let plain = DataFrame::new(n, vec![flat(&d).with_name("g".into()), vals]).unwrap();
+
+        let got = df
+            .group_by_stable(["g"])
+            .unwrap()
+            .select(["x"])
+            .count()
+            .unwrap();
+        let want = plain
+            .group_by_stable(["g"])
+            .unwrap()
+            .select(["x"])
+            .count()
+            .unwrap();
+        assert!(got.equals_missing(&want));
+        // One gather served the frame, its clone and the original column.
+        let cache = coded
+            .as_dictionary_column()
+            .unwrap()
+            .lazy_as_materialized_series();
+        assert!(cache.is_some());
+        let ptr = |s: &Series| s.chunks()[0].as_ref() as *const dyn Array as *const u8;
+        let before = ptr(cache.unwrap());
+
+        let got = df
+            .unique_stable(Some(&["g".to_string()]), UniqueKeepStrategy::First, None)
+            .unwrap();
+        let want = plain
+            .unique_stable(Some(&["g".to_string()]), UniqueKeepStrategy::First, None)
+            .unwrap();
+        assert!(got.equals_missing(&want));
+        assert_eq!(
+            before,
+            ptr(coded
+                .as_dictionary_column()
+                .unwrap()
+                .lazy_as_materialized_series()
+                .unwrap())
+        );
+    }
+
+    #[cfg(feature = "dtype-decimal")]
+    #[test]
+    fn decimal_dictionary_maps_once_per_value() {
+        let values = Int128Chunked::from_vec("v".into(), vec![150, 275, 9_999])
+            .into_decimal_unchecked(10, 2)
+            .into_series();
+        let codes: Vec<Option<u32>> = (0..60).map(|i| (i % 7 != 0).then_some(i % 3)).collect();
+        let a = generic_dict_column(values, &codes);
+        let col = Column::from(a.clone());
+        let expected = flat(&a);
+        assert!(matches!(a.dtype(), DataType::Decimal(10, 2)));
+        a.check_invariants();
+        // cast to String
+        let out = col.cast(&DataType::String).unwrap();
+        assert_coded(&out, 4);
+        assert!(out.equals_missing(&expected.cast(&DataType::String).unwrap()));
+        assert!(out.strict_cast(&DataType::String).is_ok());
+        // arithmetic with a literal
+        let lit = Column::new_scalar(
+            "c".into(),
+            Scalar::new(DataType::Decimal(10, 2), AnyValue::Decimal(200, 10, 2)),
+            1,
+        );
+        let out = (&col * &lit).unwrap();
+        assert_coded(&out, 3);
+        assert!(out.equals_missing(&(&expected * &lit).unwrap()));
+    }
+
+    #[cfg(feature = "dtype-i128")]
+    #[test]
+    fn int128_dictionary_slices_and_casts() {
+        let values = Series::new("v".into(), [1i128, i128::MAX, -5]);
+        let codes: Vec<Option<u32>> = (0..20).map(|i| (i % 6 != 0).then_some(i % 3)).collect();
+        let a = generic_dict_column(values, &codes);
+        a.check_invariants();
+        let col = Column::from(a.clone());
+        assert!(col.slice(3, 9).equals_missing(&flat(&a).slice(3, 9)));
+        let out = col.cast(&DataType::String).unwrap();
+        assert!(out.equals_missing(&flat(&a).cast(&DataType::String).unwrap()));
+        assert!(out.as_dictionary_column().is_some());
+    }
+
+    #[cfg(feature = "timezones")]
+    #[test]
+    fn datetime_dictionary_maps_once_per_value() {
+        use crate::datatypes::TimeUnit;
+        let tz = TimeZone::opt_try_new(Some("Europe/Amsterdam")).unwrap();
+        let dtype = DataType::Datetime(TimeUnit::Microseconds, tz);
+        let values = Series::new("v".into(), [0i64, 3_600_000_000 * 5, 3_600_000_000 * 30])
+            .cast(&dtype)
+            .unwrap();
+        let codes: Vec<Option<u32>> = (0..50).map(|i| (i % 7 != 0).then_some(i % 3)).collect();
+        let a = generic_dict_column(values, &codes);
+        a.check_invariants();
+        let col = Column::from(a.clone());
+        let expected = flat(&a);
+        assert_eq!(col.dtype(), &dtype);
+        assert_eq!(
+            col.get(1).unwrap().to_string(),
+            expected.get(1).unwrap().to_string()
+        );
+        // strftime as a per-value function
+        let fmt = |v: &Series| {
+            Ok(v.datetime()
+                .unwrap()
+                .strftime("%Y-%m-%d %H:%M")
+                .unwrap()
+                .into_series())
+        };
+        let out = a.apply_elementwise(fmt).unwrap();
+        assert_coded(&out, 4);
+        assert!(
+            out.as_materialized_series()
+                .equals_missing(&fmt(expected.as_materialized_series()).unwrap())
+        );
+        // Cast to String formats too.
+        let out = col.cast(&DataType::String).unwrap();
+        assert_coded(&out, 4);
+        assert!(out.equals_missing(&expected.cast(&DataType::String).unwrap()));
+        // A chain: the dictionary of the mapped values is mapped again, never gathered.
+        let shifted = |v: &Series| {
+            let ca = v.datetime().unwrap();
+            Ok(ca
+                .phys
+                .clone()
+                .apply(|x| x.map(|x| x + 3_600_000_000))
+                .into_datetime(TimeUnit::Microseconds, ca.time_zone().clone())
+                .into_series())
+        };
+        let step1 = a.apply_elementwise(shifted).unwrap();
+        assert_coded(&step1, 3);
+        let step2 = step1
+            .as_dictionary_column()
+            .unwrap()
+            .apply_elementwise(|v| v.cast(&DataType::String))
+            .unwrap();
+        assert_coded(&step2, 4);
+        assert!(
+            step1
+                .as_dictionary_column()
+                .unwrap()
+                .lazy_as_materialized_series()
+                .is_none()
+        );
+        let flat_step2 = shifted(expected.as_materialized_series())
+            .unwrap()
+            .cast(&DataType::String)
+            .unwrap();
+        assert!(step2.as_materialized_series().equals_missing(&flat_step2));
+        // Only the column a flat consumer uses is gathered.
+        assert!(
+            step1
+                .as_dictionary_column()
+                .unwrap()
+                .lazy_as_materialized_series()
+                .is_none()
+        );
     }
 
     #[cfg(feature = "serde")]
@@ -991,5 +1597,68 @@ mod test {
         col.set_sorted_flag(IsSorted::Descending);
         assert_eq!(col.is_sorted_flag(), IsSorted::Descending);
         assert!(col.get_flags().contains(StatisticsFlags::IS_SORTED_DSC));
+    }
+
+    #[test]
+    fn slice_and_reverse_keep_the_materialized_values() {
+        let a = dict_column(&["x", "y", "z"], &[Some(0), Some(2), None, Some(1)]);
+        assert!(a.lazy_as_materialized_series().is_none());
+        assert!(a.slice(1, 2).lazy_as_materialized_series().is_none());
+        a.as_materialized_series();
+        let sliced = a.slice(1, 3);
+        assert!(sliced.lazy_as_materialized_series().is_some());
+        sliced.check_invariants();
+        let reversed = a.reverse();
+        assert!(reversed.lazy_as_materialized_series().is_some());
+        reversed.check_invariants();
+        // Filtering drops it.
+        let mask = BooleanChunked::from_slice(PlSmallStr::EMPTY, &[true, false, true, true]);
+        assert!(
+            a.filter(&mask)
+                .unwrap()
+                .lazy_as_materialized_series()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn rename_and_sorted_flag_keep_the_cache_in_sync() {
+        let mut a = dict_column(&["x", "y"], &[Some(0), Some(1)]);
+        a.as_materialized_series();
+        let shared = a.clone();
+        a.rename("t".into());
+        assert_eq!(a.lazy_as_materialized_series().unwrap().name(), "t");
+        assert_eq!(shared.lazy_as_materialized_series().unwrap().name(), "s");
+        // Only owner: renamed in place.
+        let mut b = dict_column(&["x", "y"], &[Some(0), Some(1)]);
+        b.as_materialized_series();
+        b.rename("u".into());
+        b.set_sorted_flag(IsSorted::Ascending);
+        assert_eq!(b.lazy_as_materialized_series().unwrap().name(), "u");
+        assert_eq!(
+            b.lazy_as_materialized_series().unwrap().is_sorted_flag(),
+            IsSorted::Ascending
+        );
+    }
+
+    #[test]
+    fn apply_elementwise_null_results_have_in_bounds_codes() {
+        let a = dict_column(&["x", "y"], &[Some(0), Some(1), None, Some(0)]);
+        // Null results come last, so the rank of a null row would be one past the values.
+        let out = a
+            .apply_elementwise(|v| {
+                Ok(Series::new(
+                    PlSmallStr::EMPTY,
+                    &[Some(1i64), Some(2), None][..v.len()],
+                ))
+            })
+            .unwrap();
+        let d = out.as_dictionary_column().unwrap();
+        assert!(
+            d.codes()
+                .downcast_iter()
+                .all(|c| c.values().iter().all(|c| (*c as usize) < d.dict().len()))
+        );
+        d.check_invariants();
     }
 }

@@ -1009,3 +1009,94 @@ def test_dictionary_codes_string_cast_to_binary_sink_round_trip(tmp_path: Path) 
     k = md.schema.names.index("k")
     for rg in range(md.num_row_groups):
         assert "RLE_DICTIONARY" in md.row_group(rg).column(k).encodings
+
+
+@pytest.mark.parametrize("with_nulls", [False, True])
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+def test_dictionary_codes_random_function_is_not_evaluated_per_distinct_value(
+    tmp_path: Path, with_nulls: bool, engine: str
+) -> None:
+    n = 20_000
+    k = pl.Series(["a/b/c/d/e/f"] * n)
+    if with_nulls:
+        k = k.scatter(list(range(0, n, 97)), None)
+    path = _write(pl.DataFrame({"k": k}), tmp_path / "f.parquet")
+    df = pl.DataFrame({"k": k})
+    split = pl.col("k").str.split("/")
+    # Equal rows are sampled one by one: neighbouring rows are rarely sampled alike (1 in 6
+    # for one element of 6; a value evaluated once would give all of them the same).
+    for e in [split.list.sample(n=1), split.list.sample(fraction=1.0, shuffle=True)]:
+        out = pl.scan_parquet(path).select(r=e).collect(engine=engine)  # type: ignore[call-overload]
+        r = out["r"].list.join(",").drop_nulls()
+        assert (r == r.shift(1)).drop_nulls().mean() < 0.5
+    # A seeded sample is the one of the flat column.
+    for e in [split.list.sample(n=2, seed=0), split.list.sample(n=2, seed=3).list.len()]:
+        out = pl.scan_parquet(path).select(e).collect(engine=engine)  # type: ignore[call-overload]
+        assert_frame_equal(out, df.select(e))
+
+
+def test_dictionary_codes_random_function_equals_dictionary_codes_off(
+    tmp_path: Path,
+) -> None:
+    df = _df()
+    path = _write(df, tmp_path / "f.parquet")
+    script = (
+        "import polars as pl, sys\n"
+        "q = pl.scan_parquet(sys.argv[1]).select("
+        "pl.col('k').str.split('/').list.sample(n=2, seed=0))\n"
+        "q.collect().write_ipc(sys.argv[2])\n"
+    )
+    for flag in ["1", "0"]:
+        subprocess.run(
+            [sys.executable, "-c", script, str(path), str(tmp_path / f"r{flag}.ipc")],
+            env={**os.environ, "POLARS_DICT_CODES": flag},
+            check=True,
+        )
+    assert_frame_equal(
+        pl.read_ipc(tmp_path / "r1.ipc"), pl.read_ipc(tmp_path / "r0.ipc")
+    )
+
+
+def test_dictionary_codes_streaming_on_a_non_byte_dictionary(tmp_path: Path) -> None:
+    # `len_chars` of a coded String column is a coded UInt32 column.
+    n = 20_000
+    idx = pl.int_range(n, eager=True)
+    df = pl.DataFrame(
+        {
+            "s": pl.Series([f"v{'x' * (i % 9)}" for i in range(40)]).gather(
+                idx.hash(5) % 40
+            ),
+            "v": idx.hash(6) % 100,
+        }
+    )
+    path = _write(df, tmp_path / "f.parquet", row_group_size=2_000)
+    dim = pl.DataFrame(
+        {"n": pl.Series(range(0, 12, 2), dtype=pl.UInt32), "attr": range(6)}
+    )
+    n_ = pl.col("s").str.len_chars().alias("n")
+    queries: dict[str, Callable[[pl.LazyFrame], pl.LazyFrame]] = {
+        "group_by": lambda lf: lf.select(n_, "v").group_by("n").agg(pl.sum("v")),
+        "join": lambda lf: lf.select(n_, "v").join(dim.lazy(), on="n", how="left"),
+        "unique": lambda lf: lf.select(n_).unique(),
+    }
+    for name, q in queries.items():
+        expected = q(df.lazy()).collect()
+        out = q(pl.scan_parquet(path)).collect(engine="streaming")
+        assert_frame_equal(out, expected, check_row_order=False)
+
+
+@pytest.mark.parametrize("dim_on_left", [False, True])
+def test_dictionary_codes_join_runtime_filter(tmp_path: Path, dim_on_left: bool) -> None:
+    # A forced hash join publishes its build keys as a dynamic predicate on the probe scan,
+    # which is evaluated on a dictionary-coded key.
+    df = _df()
+    fact = pl.scan_parquet(_write(df, tmp_path / "fact.parquet"))
+    dim = pl.LazyFrame({"k": LONG[:5], "d": range(5)}).filter(pl.col("d") >= 0)
+    q = dim.join(fact, on="k") if dim_on_left else fact.join(dim, on="k")
+    assert "dynamic_predicate" in q.explain(engine="streaming")
+    expected = (
+        dim.join(df.lazy(), on="k") if dim_on_left else df.lazy().join(dim, on="k")
+    ).collect()
+    out = q.collect(engine="streaming")
+    assert out.height > 0
+    assert_frame_equal(out, expected, check_row_order=False)

@@ -41,7 +41,7 @@ mod series;
 /// Currently, there are three ways to represent a [`Column`].
 /// 1. A [`Series`] of values
 /// 2. A [`ScalarColumn`] that repeats a single [`Scalar`]
-/// 3. A [`DictionaryColumn`] of String or Binary codes into a shared dictionary
+/// 3. A [`DictionaryColumn`] of codes into a shared dictionary of values of any dtype
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -1720,15 +1720,8 @@ impl Column {
             Column::Series(s) => unsafe { s.get_unchecked(index) },
             Column::Scalar(s) => s.scalar().as_any_value(),
             Column::Dictionary(s) => match unsafe { s.codes().get_unchecked(index) } {
-                Some(code) => {
-                    let value = unsafe { s.dict().values().value_unchecked(code as usize) };
-                    if s.dict().is_string() {
-                        // SAFETY: a String dictionary holds valid UTF-8.
-                        AnyValue::String(unsafe { std::str::from_utf8_unchecked(value) })
-                    } else {
-                        AnyValue::Binary(value)
-                    }
-                },
+                // SAFETY: valid codes are in bounds (invariant).
+                Some(code) => unsafe { s.dict().get_unchecked(code) },
                 None => AnyValue::Null,
             },
         }
@@ -2019,6 +2012,22 @@ impl Column {
 
                 Ok(ScalarColumn::from_single_value_series(op(&lhs, &rhs)?, length).into_column())
             },
+            // Applies `op` once per value of a dictionary column and a single value. Only when the
+            // result has the dictionary column's length.
+            (Column::Dictionary(lhs), rhs)
+                if rhs.len() == 1
+                    || (rhs.len() == lhs.len() && rhs.as_scalar_column().is_some()) =>
+            {
+                let rhs = rhs.as_materialized_series_maintain_scalar();
+                lhs.apply_elementwise(|values| op(values, &rhs))
+            },
+            (lhs, Column::Dictionary(rhs))
+                if lhs.len() == 1
+                    || (lhs.len() == rhs.len() && lhs.as_scalar_column().is_some()) =>
+            {
+                let lhs = lhs.as_materialized_series_maintain_scalar();
+                rhs.apply_elementwise(|values| op(&lhs, values))
+            },
             (lhs, Column::Scalar(rhs)) => {
                 op(lhs.as_materialized_series(), &rhs.as_single_value_series()).map(Column::from)
             },
@@ -2064,6 +2073,12 @@ impl Column {
                     ScalarColumn::from_single_value_series(f(&lhs, &rhs)?, self.len())
                         .into_column(),
                 )
+            },
+            (Column::Dictionary(lhs), Column::Scalar(rhs)) => {
+                lhs.apply_elementwise(|values| f_rb(values, rhs.scalar()))
+            },
+            (Column::Scalar(lhs), Column::Dictionary(rhs)) => {
+                rhs.apply_elementwise(|values| f_lb(lhs.scalar(), values))
             },
             (lhs, Column::Scalar(rhs)) => {
                 f_rb(lhs.as_materialized_series(), rhs.scalar()).map(Column::from)

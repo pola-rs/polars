@@ -100,11 +100,6 @@ impl MemoryManager {
         (usage + likely_incoming) < config().ooc_memory_prefetch_bytes()
     }
 
-    /// Whether a spill is running, selected or done and still on disk.
-    pub(crate) fn has_activity(&self) -> bool {
-        self.activity.load(Ordering::SeqCst) != 0
-    }
-
     #[cfg(test)]
     pub(crate) fn activity_count(&self) -> u64 {
         self.activity.load(Ordering::SeqCst)
@@ -391,7 +386,6 @@ impl MemoryManager {
         )>,
     )> {
         let _activity = OocActivity::new();
-        crate::decay::note_spill();
 
         // TODO: don't block here under a certain memory threshold.
         let finding_spill_guard = self.finding_spill_lock.lock().await;
@@ -591,11 +585,7 @@ mod tests {
 
     use super::*;
 
-    const OVER_BUDGET_VARS: [(&str, &str); 2] = [
-        // Keeps polling spill() from starting the global decay timer.
-        ("POLARS_OOC_PRESSURE_DECAY", "0"),
-        ("POLARS_OOC_MEMORY_BUDGET_MB", "1"),
-    ];
+    const OVER_BUDGET_VARS: [(&str, &str); 1] = [("POLARS_OOC_MEMORY_BUDGET_MB", "1")];
     const OVER_BUDGET_USAGE: i64 = 16 << 20;
 
     /// Puts the memory manager over budget until dropped.

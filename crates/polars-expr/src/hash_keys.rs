@@ -186,14 +186,23 @@ impl KeyEncoder {
     /// The keys of each group of `grouper`, which holds keys of this encoder, in group
     /// order.
     pub fn get_keys_in_group_order(&self, grouper: &dyn Grouper) -> DataFrame {
+        self.keys_in_group_order(|schema| grouper.get_keys_in_group_order(schema))
+    }
+
+    /// As `get_keys_in_group_order`, but `grouper` may hold no groups afterwards.
+    pub fn take_keys_in_group_order(&self, grouper: &mut dyn Grouper) -> DataFrame {
+        self.keys_in_group_order(|schema| grouper.take_keys_in_group_order(schema))
+    }
+
+    fn keys_in_group_order(&self, grouper_keys: impl FnOnce(&Schema) -> DataFrame) -> DataFrame {
         match &self.kind {
             KeyKind::Packed(packed) => {
                 let word_schema =
                     Schema::from_iter([(PlSmallStr::EMPTY, packed.layout().word_dtype())]);
-                let words = grouper.get_keys_in_group_order(&word_schema);
+                let words = grouper_keys(&word_schema);
                 packed.decode_words(&self.schema, words[0].as_materialized_series())
             },
-            _ => grouper.get_keys_in_group_order(&self.schema),
+            _ => grouper_keys(&self.schema),
         }
     }
 
@@ -886,11 +895,13 @@ pub struct DictCodes {
 
 impl DictCodes {
     /// `None` when the dictionary has more values than the column has rows and their hashes
-    /// aren't cached yet: hashing the rows is then cheaper, e.g. after a selective filter.
+    /// aren't cached yet: hashing the rows is then cheaper, e.g. after a selective filter. Also
+    /// `None` when the values aren't String or Binary: such keys hash as the materialized column.
     pub fn try_new(column: &DictionaryColumn, random_state: &PlRandomState) -> Option<Self> {
+        column.dict().bytes()?;
         let mut hashes = match column.dict().cached_hashes(random_state) {
             Some(hashes) => hashes,
-            None if column.dict().len() <= column.len() => column.dict().hashes(random_state),
+            None if column.dict().len() <= column.len() => column.dict().hashes(random_state)?,
             None => return None,
         };
         let codes = column.codes().rechunk();
@@ -1197,6 +1208,87 @@ impl DictSlotCache {
     pub(crate) fn invalidate_slot(&mut self, slot: IdxSize) {
         if let Some(g) = self.slot_gens.get_mut(slot as usize) {
             *g = g.wrapping_add(1);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_arrow::array::Utf8ViewArray;
+
+    use super::*;
+
+    fn int_dict(n: usize) -> Column {
+        let dict = SharedDictionary::try_new(Series::new("v".into(), [7i64, 8, 9])).unwrap();
+        let codes: Vec<Option<u32>> = (0..n)
+            .map(|i| (i % 5 != 4).then_some((i % 3) as u32))
+            .collect();
+        let codes = UInt32Chunked::from_iter_options(PlSmallStr::EMPTY, codes.into_iter());
+        DictionaryColumn::try_new("i".into(), dict, codes)
+            .unwrap()
+            .into()
+    }
+
+    fn string_dict(n: usize) -> Column {
+        let dict = SharedDictionary::new(Utf8ViewArray::from_slice_values(["x", "y"]));
+        let codes = UInt32Chunked::from_iter_options(
+            PlSmallStr::EMPTY,
+            (0..n).map(|i| (i % 4 != 3).then_some((i % 2) as u32)),
+        );
+        DictionaryColumn::try_new("s".into(), dict, codes)
+            .unwrap()
+            .into()
+    }
+
+    fn hashes(df: &DataFrame, rs: &PlRandomState) -> Vec<(IdxSize, Option<u64>)> {
+        let schema = df.schema().clone();
+        let encoder = KeyEncoder::new(schema, true, &[]);
+        let keys = encoder.hash_keys(df, rs.clone(), true);
+        let mut out = Vec::new();
+        keys.for_each_hash(|i, h| out.push((i, h)));
+        out
+    }
+
+    /// Keys of a dictionary column of values that aren't String or Binary hash as the flat column
+    /// does, whatever the key kind, and are never taken to hash by codes.
+    #[test]
+    fn non_byte_dictionary_keys_hash_as_the_flat_column() {
+        let n = 50;
+        let rs = PlRandomState::default();
+        let ints = int_dict(n);
+        assert!(DictCodes::try_new(ints.as_dictionary_column().unwrap(), &rs).is_none());
+        let plain_ints = ints.as_materialized_series().clone().into_column();
+        let strings = string_dict(n);
+        let plain_strings = strings.as_materialized_series().clone().into_column();
+        let other = Column::new("o".into(), (0..n as i64).map(|i| i % 4).collect::<Vec<_>>());
+
+        for (coded, plain) in [
+            (vec![ints.clone()], vec![plain_ints.clone()]),
+            (
+                vec![ints.clone(), other.clone()],
+                vec![plain_ints.clone(), other.clone()],
+            ),
+            (
+                vec![ints.clone(), strings.clone()],
+                vec![plain_ints.clone(), plain_strings.clone()],
+            ),
+            (
+                vec![strings.clone(), ints.clone()],
+                vec![plain_strings.clone(), plain_ints.clone()],
+            ),
+        ] {
+            let coded = DataFrame::new(n, coded).unwrap();
+            let plain = DataFrame::new(n, plain).unwrap();
+            assert_eq!(hashes(&coded, &rs), hashes(&plain, &rs));
+            // One gather served them all.
+            assert!(
+                coded
+                    .columns()
+                    .iter()
+                    .filter_map(|c| c.as_dictionary_column())
+                    .any(|d| d.dtype() == &DataType::Int64
+                        && d.lazy_as_materialized_series().is_some())
+            );
         }
     }
 }

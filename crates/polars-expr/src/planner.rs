@@ -590,6 +590,7 @@ fn create_physical_expr_inner(
                 is_scalar,
                 true,
                 false,
+                false,
             )))
         },
         Eval {
@@ -692,6 +693,7 @@ fn create_physical_expr_inner(
                 is_scalar,
                 is_fallible,
                 inputs_are_row_wise(&function),
+                !is_random_function(expr_arena.get(expression)),
             )))
         },
 
@@ -732,9 +734,23 @@ fn create_physical_expr_inner(
                 false,
                 false,
                 false,
+                true,
             )))
         },
     }
+}
+
+/// Whether `ae` draws random values, so that evaluating it once per distinct value of a
+/// dictionary column would differ from evaluating it per row. The runtime predicates of joins
+/// (`DynamicPred`) are non-deterministic to the optimizer but depend only on the value.
+fn is_random_function(ae: &AExpr) -> bool {
+    !matches!(
+        ae,
+        AExpr::Function {
+            function: IRFunctionExpr::DynamicPred { .. } | IRFunctionExpr::DynamicSkipBatch { .. },
+            ..
+        }
+    ) && is_inherently_nondeterministic_top_level(ae)
 }
 
 /// Whether the per-group scalar inputs of `function` can be repeated over their groups
@@ -769,5 +785,39 @@ fn inputs_are_row_wise(function: &IRFunctionExpr) -> bool {
         #[cfg(feature = "concat_str")]
         F::StringExpr(IRStringFunction::ConcatHorizontal { .. }) => true,
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dynamic_predicate_is_not_random() {
+        let mut arena = Arena::new();
+        let col = arena.add(AExpr::Column("k".into()));
+        let (node, _pred) = new_dynamic_pred(col, &mut arena, None);
+        // Evaluating it once per distinct value of a dictionary column is correct.
+        assert!(is_inherently_nondeterministic_top_level(arena.get(node)));
+        assert!(!is_random_function(arena.get(node)));
+        assert!(!is_random_function(arena.get(col)));
+    }
+
+    #[cfg(feature = "random")]
+    #[test]
+    fn sample_is_random() {
+        let mut arena = Arena::new();
+        let col = arena.add(AExpr::Column("k".into()));
+        let function = IRFunctionExpr::Random {
+            method: IRRandomMethod::Shuffle,
+            seed: None,
+        };
+        let options = function.function_options();
+        let node = arena.add(AExpr::Function {
+            input: vec![ExprIR::from_node(col, &arena)],
+            function,
+            options,
+        });
+        assert!(is_random_function(arena.get(node)));
     }
 }

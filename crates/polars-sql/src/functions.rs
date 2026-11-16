@@ -2,20 +2,21 @@ use chrono::Timelike;
 use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
 use polars_core::prelude::{
     AnyValue, DataType, ExplodeOptions, PolarsResult, QuantileMethod, Scalar, Schema, TimeUnit,
-    UnknownKind, datetime_to_timestamp_us, polars_bail, polars_ensure, polars_err,
+    TimeZone, UnknownKind, datetime_to_timestamp_us, polars_bail, polars_ensure, polars_err,
 };
 use polars_core::utils::try_get_supertype;
-use polars_defs::expr::UnicodeForm;
 #[cfg(feature = "rank")]
 use polars_defs::expr::{RankMethod, RankOptions};
+use polars_defs::expr::{RoundMode, UnicodeForm};
+use polars_defs::time::date_diff::DateDiffUnit;
 use polars_defs::time::group_by::ClosedWindow;
 use polars_lazy::dsl::Expr;
 #[cfg(feature = "approx_quantile")]
 use polars_lazy::prelude::ApproxQuantileMethod;
 use polars_lazy::prelude::DataTypeExpr;
 use polars_plan::dsl::functions::{
-    by_name, coalesce, concat_str, datetime_ranges, element, int_range, int_ranges, len, lit,
-    max_horizontal, min_horizontal, when,
+    DatetimeArgs, by_name, coalesce, concat_str, date_diff, datetime, datetime_ranges, element,
+    int_range, int_ranges, len, lit, max_horizontal, min_horizontal, when,
 };
 use polars_plan::dsl::{FunctionExpr, RangeFunction, Selector, SqlBinaryOp, SqlFunction};
 use polars_plan::plans::{
@@ -42,6 +43,7 @@ use crate::sql_expr::{
     substring_offset, temporal_string_as,
 };
 use crate::sql_visitors::{contains_random, grouping_call_args};
+use crate::types::sql_type_name;
 use crate::window_frames::{MAX_ROW_OFFSET, is_frame_aggregate};
 use crate::{SQLContext, col};
 
@@ -382,12 +384,25 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT YEAR(col1), MONTH(col1), DAYOFWEEK(col1) FROM df;
     /// ```
     DatePartOf(DateTimeField),
+    /// SQL 'date_diff' function (alias: 'datediff').
+    /// Counts the boundaries of a part, such as 'day' or 'month', crossed from a start
+    /// to an end value.
+    /// ```sql
+    /// SELECT DATE_DIFF('month', col1, col2) FROM df;
+    /// ```
+    DateDiff,
     /// SQL 'date_trunc' function.
     /// Truncates a date (or datetime) to the given part, such as 'hour' or 'month'.
     /// ```sql
     /// SELECT DATE_TRUNC('month', col1) FROM df;
     /// ```
     DateTrunc,
+    /// SQL 'make_date' function.
+    /// Builds a date from integer year, month and day parts.
+    /// ```sql
+    /// SELECT MAKE_DATE(2024, 2, 29) FROM df;
+    /// ```
+    MakeDate,
     /// SQL 'strftime' function.
     /// Converts a datetime to a string using a format string.
     /// ```sql
@@ -424,6 +439,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT BIT_LENGTH(col1) FROM df;
     /// ```
     BitLength,
+    /// SQL 'chr' function.
+    /// Returns the character of an integer Unicode code point.
+    /// ```sql
+    /// SELECT CHR(65) FROM df;
+    /// ```
+    Chr,
     /// SQL 'concat' function.
     /// Returns all input expressions concatenated together as a string.
     /// ```sql
@@ -604,6 +625,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT STRPTIME(col1, '%d-%m-%Y %H:%M') FROM df;
     /// ```
     Strptime,
+    /// SQL 'try_strptime' function.
+    /// Like 'strptime', but gives null for a string that does not match the format.
+    /// ```sql
+    /// SELECT TRY_STRPTIME(col1, '%d-%m-%Y %H:%M') FROM df;
+    /// ```
+    TryStrptime,
     /// SQL 'time' function.
     /// Converts a formatted string time to an actual Time type; ISO-8601 format is
     /// assumed unless a strftime-compatible formatting string is provided as the second
@@ -1047,7 +1074,7 @@ pub(crate) enum PolarsSQLFunctions {
     // Type functions
     // ----
     /// SQL 'typeof' function.
-    /// Returns the name of the data type of the argument.
+    /// Returns the SQL name of the data type of the argument, as `DESCRIBE` gives it.
     /// ```sql
     /// SELECT TYPEOF(col1) FROM df;
     /// ```
@@ -1105,6 +1132,7 @@ impl PolarsSQLFunctions {
             "ceiling",
             "char_length",
             "character_length",
+            "chr",
             "coalesce",
             "columns",
             "concat",
@@ -1124,8 +1152,10 @@ impl PolarsSQLFunctions {
             "current_time",
             "current_timestamp",
             "date",
+            "date_diff",
             "date_part",
             "date_trunc",
+            "datediff",
             "day",
             "dayofmonth",
             "dayofweek",
@@ -1162,6 +1192,7 @@ impl PolarsSQLFunctions {
             "lower",
             "lpad",
             "ltrim",
+            "make_date",
             "max",
             "max_by",
             "median",
@@ -1221,6 +1252,7 @@ impl PolarsSQLFunctions {
             "to_date",
             "to_timestamp",
             "total",
+            "try_strptime",
             "typeof",
             "unnest",
             "upper",
@@ -1314,8 +1346,10 @@ impl PolarsSQLFunctions {
             "current_time" | "localtime" => Self::CurrentTime,
             "current_timestamp" | "localtimestamp" | "now" => Self::CurrentTimestamp,
             "date" => Self::Date,
+            "date_diff" | "datediff" => Self::DateDiff,
             "date_part" => Self::DatePart,
             "date_trunc" => Self::DateTrunc,
+            "make_date" => Self::MakeDate,
             "year" => Self::DatePartOf(DateTimeField::Year),
             "quarter" => Self::DatePartOf(DateTimeField::Quarter),
             "month" => Self::DatePartOf(DateTimeField::Month),
@@ -1336,6 +1370,7 @@ impl PolarsSQLFunctions {
             // String functions
             // ----
             "bit_length" => Self::BitLength,
+            "chr" => Self::Chr,
             "concat" => Self::Concat,
             "concat_ws" => Self::ConcatWS,
             "ends_with" => Self::EndsWith,
@@ -1363,6 +1398,7 @@ impl PolarsSQLFunctions {
             "string_to_array" => Self::StringToArray,
             "strpos" => Self::StrPos,
             "strptime" => Self::Strptime,
+            "try_strptime" => Self::TryStrptime,
             "substr" => Self::Substring,
             "time" => Self::Time,
             "upper" => Self::Upper,
@@ -1725,7 +1761,19 @@ impl SQLFunctionVisitor<'_> {
                 let value = AnyValue::Datetime(timestamp, TimeUnit::Microseconds, None);
                 self.visit_nullary(|| lit(Scalar::new(dtype.clone(), value.clone())))
             },
+            DateDiff => self.visit_date_diff(),
             DateTrunc => self.visit_date_trunc(),
+            MakeDate => {
+                let args = extract_args(function)?;
+                polars_ensure!(
+                    args.len() == 3,
+                    SQLSyntax: "MAKE_DATE expects 3 arguments (found {})", args.len()
+                );
+                self.visit_variadic(|e| {
+                    let args = DatetimeArgs::new(e[0].clone(), e[1].clone(), e[2].clone());
+                    datetime(args).cast(DataType::Date)
+                })
+            },
             Strftime => {
                 let args = extract_args(function)?;
                 match args.len() {
@@ -1736,8 +1784,10 @@ impl SQLFunctionVisitor<'_> {
                 }
             },
             ToChar => self.visit_to_char(),
-            ToDate => self.visit_parse_template("TO_DATE", |e, options| e.str().to_date(options)),
-            ToTimestamp => self.visit_parse_template("TO_TIMESTAMP", |e, options| {
+            ToDate => {
+                self.visit_parse_template("TO_DATE", false, |e, options| e.str().to_date(options))
+            },
+            ToTimestamp => self.visit_parse_template("TO_TIMESTAMP", true, |e, options| {
                 e.str().to_datetime(
                     Some(TimeUnit::Microseconds),
                     None,
@@ -1750,6 +1800,7 @@ impl SQLFunctionVisitor<'_> {
             // String functions
             // ----
             BitLength => self.visit_unary(|e| e.str().len_bytes().cast(DataType::Int64) * lit(8)),
+            Chr => self.visit_unary(|e| e.str().from_code_point()),
             Concat => {
                 let args = extract_args(function)?;
                 if args.is_empty() {
@@ -1999,24 +2050,8 @@ impl SQLFunctionVisitor<'_> {
                     },
                 }
             },
-            Strptime => {
-                let args = extract_args(function)?;
-                match args.len() {
-                    2 => self.visit_binary(|e, fmt: String| {
-                        e.str().strptime(
-                            DataType::Datetime(TimeUnit::Microseconds, None),
-                            StrptimeOptions {
-                                format: Some(fmt.into()),
-                                ..Default::default()
-                            },
-                            lit("latest"),
-                        )
-                    }),
-                    _ => {
-                        polars_bail!(SQLSyntax: "STRPTIME expects 2 arguments (found {})", args.len())
-                    },
-                }
-            },
+            Strptime => self.visit_strptime("STRPTIME", true),
+            TryStrptime => self.visit_strptime("TRY_STRPTIME", false),
             Time => {
                 let args = extract_args(function)?;
                 match args.len() {
@@ -2529,6 +2564,49 @@ impl SQLFunctionVisitor<'_> {
         Ok(())
     }
 
+    /// `DATE_DIFF(part, start, end)`.
+    fn visit_date_diff(&mut self) -> PolarsResult<Expr> {
+        let args = extract_args(self.func)?;
+        let [
+            FunctionArgExpr::Expr(part),
+            FunctionArgExpr::Expr(start),
+            FunctionArgExpr::Expr(end),
+        ] = args.as_slice()
+        else {
+            return self.not_supported_error();
+        };
+        let unit = match self.parse_sql_arg(part)? {
+            Expr::Literal(p) if p.is_null() => {
+                return self
+                    .apply_window_spec(lit(LiteralValue::untyped_null()).cast(DataType::Int64));
+            },
+            Expr::Literal(p) if p.extract_str().is_some() => {
+                let p = p.extract_str().unwrap();
+                date_diff_unit(&p.to_ascii_lowercase()).ok_or_else(
+                    || polars_err!(SQLSyntax: "DATE_DIFF does not support '{}' part", p),
+                )?
+            },
+            part => polars_bail!(SQLSyntax: "invalid 'part' for DATE_DIFF ({})", part),
+        };
+        let start = self.parse_sql_arg(start)?;
+        let end = self.parse_sql_arg(end)?;
+        // A string literal is read as a value of the type of the other argument.
+        let is_string_literal =
+            |e: &Expr| matches!(e, Expr::Literal(lv) if lv.extract_str().is_some());
+        let (start, end) = match (is_string_literal(&start), is_string_literal(&end)) {
+            (true, false) => (
+                temporal_string_as(&start, self.arg_dtype(&end)?.as_ref()),
+                end,
+            ),
+            (false, true) => {
+                let start_dtype = self.arg_dtype(&start)?;
+                (start, temporal_string_as(&end, start_dtype.as_ref()))
+            },
+            _ => (start, end),
+        };
+        self.apply_window_spec(date_diff(start, end, unit))
+    }
+
     fn visit_date_trunc(&mut self) -> PolarsResult<Expr> {
         let args = extract_args(self.func)?;
         let [FunctionArgExpr::Expr(part), FunctionArgExpr::Expr(e)] = args.as_slice() else {
@@ -2566,6 +2644,27 @@ impl SQLFunctionVisitor<'_> {
             None => polars_bail!(SQLInterface: "DATE_TRUNC cannot determine the type of {}", e),
         };
         self.apply_window_spec(e.dt().truncate(lit(every)))
+    }
+
+    /// `STRPTIME(s, format)`; a string that does not match the format raises if `strict`,
+    /// else gives null.
+    fn visit_strptime(&mut self, name: &str, strict: bool) -> PolarsResult<Expr> {
+        let args = extract_args(self.func)?;
+        polars_ensure!(
+            args.len() == 2,
+            SQLSyntax: "{} expects 2 arguments (found {})", name, args.len()
+        );
+        self.visit_binary(|e, fmt: String| {
+            e.str().strptime(
+                DataType::Datetime(TimeUnit::Microseconds, None),
+                StrptimeOptions {
+                    format: Some(fmt.into()),
+                    strict,
+                    ..Default::default()
+                },
+                lit("latest"),
+            )
+        })
     }
 
     /// Parse a value argument of the function currently being visited, as opposed to a
@@ -3245,10 +3344,12 @@ impl SQLFunctionVisitor<'_> {
         self.apply_window_spec(e)
     }
 
-    /// TO_DATE or TO_TIMESTAMP, where `parse` converts the string.
+    /// TO_DATE or TO_TIMESTAMP, where `parse` converts the string. With `from_epoch`, a
+    /// number is the seconds since the Unix epoch, giving a UTC datetime.
     fn visit_parse_template(
         &mut self,
         function: &str,
+        from_epoch: bool,
         parse: impl Fn(Expr, StrptimeOptions) -> Expr,
     ) -> PolarsResult<Expr> {
         let args = extract_args(self.func)?;
@@ -3262,7 +3363,27 @@ impl SQLFunctionVisitor<'_> {
                 polars_bail!(SQLSyntax: "{} expects 1-2 arguments (found {})", function, args.len())
             },
         };
-        let mut value = self.string_arg(value)?;
+        let value = self.parse_sql_arg(value)?;
+        let mut value = match self.arg_dtype(&value)? {
+            Some(DataType::Null) => value.cast(DataType::String),
+            Some(dtype)
+                if from_epoch
+                    && template.is_none()
+                    && (dtype.is_primitive_numeric() || dtype.is_decimal()) =>
+            {
+                let micros = if dtype.is_float() {
+                    (value.cast(DataType::Float64) * lit(1_000_000.0))
+                        .round(0, RoundMode::HalfToEven)
+                } else {
+                    // The cast rounds half to even; a value out of range becomes null.
+                    value.cast(DataType::Decimal(38, 6)) * lit(1_000_000i64)
+                };
+                let micros = micros.cast(DataType::Int64);
+                let dtype = DataType::Datetime(TimeUnit::Microseconds, Some(TimeZone::UTC));
+                return self.apply_window_spec(micros.cast(dtype));
+            },
+            _ => value,
+        };
         let mut options = StrptimeOptions::default();
         if let Some(template) = template {
             let ParseFormat { format, defaults } = parse_format(&template, function)?;
@@ -3309,7 +3430,7 @@ impl SQLFunctionVisitor<'_> {
         let Some(dtype) = self.arg_dtype(&e)? else {
             polars_bail!(SQLInterface: "TYPEOF cannot determine the type of {}", arg)
         };
-        let name = lit(dtype.materialize_unknown(true)?.to_string());
+        let name = lit(sql_type_name(&dtype.materialize_unknown(true)?));
         // The argument is kept for its number of rows and its checks against the GROUP BY, except
         // when it is an aggregate, whose value need not be computed.
         let e = match e {
@@ -4094,4 +4215,21 @@ impl FromSQLExpr for Expr {
     fn from_sql_arg(expr: &SQLExpr, visitor: &mut SQLFunctionVisitor<'_>) -> PolarsResult<Self> {
         visitor.parse_sql_arg(expr)
     }
+}
+
+fn date_diff_unit(part: &str) -> Option<DateDiffUnit> {
+    Some(match part {
+        "year" | "years" | "yr" | "yrs" | "y" => DateDiffUnit::Year,
+        "quarter" | "quarters" => DateDiffUnit::Quarter,
+        "month" | "months" | "mon" | "mons" => DateDiffUnit::Month,
+        "week" | "weeks" | "w" => DateDiffUnit::Week,
+        "day" | "days" | "d" => DateDiffUnit::Day,
+        "hour" | "hours" | "hr" | "hrs" | "h" => DateDiffUnit::Hour,
+        "minute" | "minutes" | "min" | "mins" | "m" => DateDiffUnit::Minute,
+        "second" | "seconds" | "sec" | "secs" | "s" => DateDiffUnit::Second,
+        "millisecond" | "milliseconds" | "ms" => DateDiffUnit::Millisecond,
+        "microsecond" | "microseconds" | "us" => DateDiffUnit::Microsecond,
+        "nanosecond" | "nanoseconds" | "ns" => DateDiffUnit::Nanosecond,
+        _ => return None,
+    })
 }

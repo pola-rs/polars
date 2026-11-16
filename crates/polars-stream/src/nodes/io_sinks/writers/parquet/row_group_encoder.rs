@@ -98,7 +98,7 @@ fn dictionary_sample_has_unique_mapping(d: &DictionaryColumn) -> bool {
         return false;
     }
 
-    let values = d.dict().values();
+    let values = d.dict().bytes().expect("a String or Binary dictionary");
     let mut first_of: PlHashMap<&[u8], u32> = PlHashMap::with_capacity(codes.len());
     for code in codes {
         // SAFETY: valid codes are in bounds for the dictionary.
@@ -137,8 +137,8 @@ fn preflight_rejects(d: &DictionaryColumn) -> bool {
 
 /// A dictionary-coded column as an arrow dictionary array, so that the writer writes its
 /// dictionary as is rather than building one by hashing the values. Only the dictionary values
-/// that rows use are kept. `None` if the column is not dictionary-coded or not written as a flat,
-/// dictionary-encoded string or binary column.
+/// that rows use are kept. `None` if the column is not dictionary-coded, its values are not String or
+/// Binary, or it is not written as a flat, dictionary-encoded string or binary column.
 fn dictionary_array(
     c: &Column,
     field: &ArrowField,
@@ -147,6 +147,8 @@ fn dictionary_array(
     use polars_core::prelude::*;
 
     let d = c.as_dictionary_column()?;
+    // Values of another dtype are written as the plain column is.
+    d.dict().bytes()?;
     // The values are written from views whatever the field's string type (by default
     // `LargeUtf8`, `LargeBinary` for binary); the file's schema still comes from the field.
     if !matches!(
@@ -177,7 +179,7 @@ fn dictionary_array(
 
     // A dictionary may hold a value more than once (e.g. merged from two row groups' ones);
     // write each used value once.
-    let dict_values = d.dict().values();
+    let dict_values = d.dict().bytes()?;
     let mut first_of: PlHashMap<&[u8], u32> = PlHashMap::with_capacity(used.len());
     let mut unique: Vec<IdxSize> = Vec::with_capacity(used.len());
     let remap: Vec<u32> = used
@@ -357,6 +359,41 @@ mod tests {
             &ArrowField::new("s".into(), ArrowDataType::LargeUtf8, true),
             &[Encoding::RleDictionary],
         )
+    }
+
+    #[test]
+    fn dictionary_sink_writes_non_byte_dictionary_as_plain_column() {
+        let values = Series::new("v".into(), [10i64, 20, 30]);
+        let codes = UInt32Chunked::from_iter_options(
+            PlSmallStr::EMPTY,
+            (0..1_000).map(|i| (i % 7 != 0).then_some(i % 3)),
+        );
+        let column = Column::Dictionary(
+            DictionaryColumn::try_new(
+                "i".into(),
+                SharedDictionary::try_new(values).unwrap(),
+                codes,
+            )
+            .unwrap(),
+        );
+        // Not written as a dictionary array whatever the field and the encodings, so the writer
+        // takes the materialized column.
+        for dtype in [ArrowDataType::Int64, ArrowDataType::LargeUtf8] {
+            assert!(
+                dictionary_array(
+                    &column,
+                    &ArrowField::new("i".into(), dtype, true),
+                    &[Encoding::RleDictionary],
+                )
+                .is_none()
+            );
+        }
+        let array = column
+            .as_materialized_series()
+            .rechunk()
+            .to_arrow(0, CompatLevel::newest());
+        assert_eq!(array.len(), 1_000);
+        assert_eq!(array.null_count(), 143);
     }
 
     #[test]
