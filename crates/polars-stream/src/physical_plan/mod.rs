@@ -981,18 +981,6 @@ fn split_multiplexers(
     });
 }
 
-/// The projection slot of a node that can fuse a directly following column drop.
-fn fusable_projection_mut(
-    kind: &mut PhysNodeKind,
-) -> Option<&mut Option<(Vec<PlSmallStr>, usize)>> {
-    match kind {
-        PhysNodeKind::Filter { projection, .. } | PhysNodeKind::Sort { projection, .. } => {
-            Some(projection)
-        },
-        _ => None,
-    }
-}
-
 fn fuse_drops(
     roots: Vec<PhysNodeKey>,
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
@@ -1007,6 +995,7 @@ fn fuse_drops(
         }
     });
 
+    // Fuse inner projections first so stacked projections can reach the same node.
     for key in projection_keys.into_iter().rev() {
         let PhysNodeKind::SimpleProjection { input, .. } = phys_sm[key].kind() else {
             continue;
@@ -1034,12 +1023,9 @@ fn fuse_drops(
             continue;
         }
 
-        // Nothing is dropped, e.g. a pure reorder: fusing would only add a per-morsel select.
-        if columns.len() == len_before_drop {
-            continue;
-        }
-
-        let Some(projection) = fusable_projection_mut(input_node.kind_mut()) else {
+        let (PhysNodeKind::Filter { projection, .. } | PhysNodeKind::Sort { projection, .. }) =
+            input_node.kind_mut()
+        else {
             continue;
         };
         let len_before_drop = projection.as_ref().map_or(len_before_drop, |(_, len)| *len);
@@ -1053,8 +1039,8 @@ fn fuse_drops(
             // The fused node now lives in the projection's slot; move the attribution with it so
             // the surviving node keeps its own IR node.
             let proj_ir_node = phys_to_ir[key];
-            let filter_ir_node = phys_to_ir[input];
-            phys_to_ir.insert(key, filter_ir_node);
+            let input_ir_node = phys_to_ir[input];
+            phys_to_ir.insert(key, input_ir_node);
             phys_to_ir.insert(input, proj_ir_node);
         }
     }
