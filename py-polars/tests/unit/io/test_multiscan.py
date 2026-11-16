@@ -145,7 +145,8 @@ def test_include_file_paths_predicate_skips_files(
     lf = scan([a, b, c], include_file_paths="f")
 
     def lit(p: Path) -> pl.Expr:
-        return normalize_path_separator_pl(pl.lit(str(p)))
+        expr: pl.Expr = normalize_path_separator_pl(pl.lit(str(p)))
+        return expr
 
     cases = [
         # (predicate, number of skipped files)
@@ -214,7 +215,7 @@ def test_include_file_paths_literal_predicate(
 
 
 def test_include_file_paths_literal_predicate_buffers() -> None:
-    bufs = [io.BytesIO(), io.BytesIO()]
+    bufs: list[IO[bytes]] = [io.BytesIO(), io.BytesIO()]
     pl.DataFrame({"a": [1, 2]}).write_parquet(bufs[0])
     pl.DataFrame({"a": [3]}).write_parquet(bufs[1])
     for buf in bufs:
