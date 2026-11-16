@@ -543,6 +543,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::LenBytes => B::LenBytes,
                 IB::LenChars => B::LenChars,
                 IB::FromCodePoint => B::FromCodePoint,
+                IB::FormatValue(spec) => B::FormatValue(spec),
                 IB::Lowercase => B::Lowercase,
                 #[cfg(feature = "extract_jsonpath")]
                 IB::JsonDecode(dtype) => B::JsonDecode(dtype.into()),

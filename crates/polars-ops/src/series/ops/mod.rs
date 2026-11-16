@@ -20,6 +20,7 @@ mod eager;
 mod ewm;
 #[cfg(feature = "ewma_by")]
 mod ewm_by;
+mod format_spec;
 #[cfg(feature = "fused")]
 mod fused;
 mod horizontal;
@@ -92,6 +93,7 @@ pub use eager::*;
 pub use ewm::*;
 #[cfg(feature = "ewma_by")]
 pub use ewm_by::*;
+pub use format_spec::*;
 #[cfg(feature = "fused")]
 pub use fused::*;
 pub use horizontal::*;

@@ -44,15 +44,19 @@ pub fn format_str(format: &str, args: &[Expr]) -> PolarsResult<Expr> {
                     polars_bail!(InvalidOperation: "unmatched '{{' in format string:\n{format}\n\nYou can escape '{{' by writing '{{{{'.");
                 };
 
-                let col_name = &bytes[i + 1..i + close_offset];
-                let col_name_str = std::str::from_utf8(col_name).unwrap();
-                if col_name.is_empty() {
+                let placeholder = std::str::from_utf8(&bytes[i + 1..i + close_offset]).unwrap();
+                let (col_name_str, spec) = match placeholder.split_once(':') {
+                    Some((name, spec)) => (name, spec),
+                    None => (placeholder, ""),
+                };
+                let col_name = col_name_str.as_bytes();
+                let expr = if col_name.is_empty() {
                     polars_ensure!(!index_used, InvalidOperation: "cannot switch from manual specification to automatic field numbering");
                     let Some(expr) = positional_input.pop_front() else {
                         polars_bail!(ShapeMismatch: "too few arguments given for format string:\n{format}");
                     };
-                    input.push(expr.clone());
                     automatic_used = true;
+                    expr.clone()
                 } else if col_name.iter().all(|b| b.is_ascii_digit()) {
                     polars_ensure!(!automatic_used, InvalidOperation: "cannot switch from automatic field numbering to manual specification");
                     let Some(index) = col_name_str
@@ -62,8 +66,8 @@ pub fn format_str(format: &str, args: &[Expr]) -> PolarsResult<Expr> {
                     else {
                         polars_bail!(InvalidOperation: "out of bounds argument index in format string:\n{format}");
                     };
-                    input.push(positional_input[index].clone());
                     index_used = true;
+                    positional_input[index].clone()
                 } else {
                     // [a-zA-Z_][a-zA-Z0-9_]*
                     let valid_col_name = (col_name[0].is_ascii_alphabetic() || col_name[0] == b'_')
@@ -71,7 +75,13 @@ pub fn format_str(format: &str, args: &[Expr]) -> PolarsResult<Expr> {
                             .iter()
                             .all(|b| b.is_ascii_alphanumeric() || *b == b'_');
                     polars_ensure!(valid_col_name, InvalidOperation: "unacceptable column name '{col_name_str}' in format string, must be ASCII identifier\n{format}");
-                    input.push(Expr::Column(PlSmallStr::from_str(col_name_str)))
+                    Expr::Column(PlSmallStr::from_str(col_name_str))
+                };
+                if spec.is_empty() {
+                    input.push(expr);
+                } else {
+                    polars_defs::format_spec::FormatSpec::parse(spec)?;
+                    input.push(expr.map_unary(StringFunction::FormatValue(spec.into())));
                 }
                 insertions.push(s.len());
                 i += close_offset + 1;

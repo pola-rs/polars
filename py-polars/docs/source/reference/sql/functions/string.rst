@@ -19,6 +19,8 @@ String
      - Converts a formatted date string to an actual Date value.
    * - :ref:`ENDS_WITH <ends_with>`
      - Returns True if the value ends with the second argument.
+   * - :ref:`FORMAT <format>`
+     - Fills the `{}` placeholders of a format string, with an optional Python format specification such as `{:.2f}`.
    * - :ref:`INITCAP <initcap>`
      - Converts the first letter of each word to uppercase, and the rest to lowercase.
    * - :ref:`LEFT <left>`
@@ -35,6 +37,8 @@ String
      - Convert string to the specified Unicode normalization form (one of NFC, NFD, NFKC, NFKD).
    * - :ref:`OCTET_LENGTH <octet_length>`
      - Returns the length of a given string in bytes.
+   * - :ref:`PRINTF <printf>`
+     - Fills the `%` conversions of a format string, as in C's printf.
    * - :ref:`POSITION <position>`
      - Returns the position of a substring within a string.
    * - :ref:`REGEXP_EXTRACT <regexp_extract>`
@@ -269,6 +273,33 @@ Returns True if the value ends with the second argument.
     # │ cc  ┆ false  │
     # │ dd  ┆ false  │
     # └─────┴────────┘
+
+.. _format:
+
+FORMAT
+------
+Fills the ``{}`` placeholders of a format string with the other arguments. A placeholder
+can hold an argument index (``{1}``) and a Python format specification after a colon
+(``{:>8}``, ``{:.2f}``, ``{:,}``), as in :func:`polars.format`. Write ``{{`` and ``}}``
+for literal braces. The result is null if any argument is null.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"name": ["apple", "kiwi"], "price": [1.5, 1234.125]})
+    df.sql("""
+      SELECT FORMAT('{:<6}|{:>9,.2f}', name, price) AS fmt FROM self
+    """)
+    # shape: (2, 1)
+    # ┌──────────────────┐
+    # │ fmt              │
+    # │ ---              │
+    # │ str              │
+    # ╞══════════════════╡
+    # │ apple |     1.50 │
+    # │ kiwi  | 1,234.12 │
+    # └──────────────────┘
 
 .. _initcap:
 
@@ -522,6 +553,37 @@ Returns the length of a given string in bytes.
     # │ ru       ┆ синий    ┆ 10      ┆ 5       │
     # │ es       ┆ amarillo ┆ 8       ┆ 8       │
     # └──────────┴──────────┴─────────┴─────────┘
+
+.. _printf:
+
+PRINTF
+------
+Fills the ``%`` conversions of a format string with the other arguments, as in C's printf.
+Supports the flags ``-``, ``+``, space, ``#``, ``0`` and ``,`` (thousands separator), the
+width, the precision, argument numbers (``%2$s``) and the conversions ``d``, ``i``, ``u``,
+``f``, ``F``, ``e``, ``E``, ``g``, ``G``, ``x``, ``X``, ``o``, ``c`` and ``s``; ``%%`` writes
+a ``%``. ``%s`` converts any value to a string. Negative numbers keep their sign with ``u``,
+``x``, ``X`` and ``o``, ``%#x`` writes ``0x0`` for zero, and ``%c`` writes the character of a
+Unicode code point. The result is null if any
+argument is null.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"name": ["apple", "kiwi"], "n": [3, 12], "price": [1.5, 0.25]})
+    df.sql("""
+      SELECT PRINTF('%-6s x%03d at %.2f', name, n, price) AS line FROM self
+    """)
+    # shape: (2, 1)
+    # ┌─────────────────────┐
+    # │ line                │
+    # │ ---                 │
+    # │ str                 │
+    # ╞═════════════════════╡
+    # │ apple  x003 at 1.50 │
+    # │ kiwi   x012 at 0.25 │
+    # └─────────────────────┘
 
 .. _position:
 

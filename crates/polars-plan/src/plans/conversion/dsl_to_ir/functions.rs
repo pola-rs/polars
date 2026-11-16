@@ -294,6 +294,7 @@ pub(super) fn convert_functions(
                 S::LenBytes => IS::LenBytes,
                 S::LenChars => IS::LenChars,
                 S::FromCodePoint => IS::FromCodePoint,
+                S::FormatValue(spec) => IS::FormatValue(spec),
                 S::Lowercase => IS::Lowercase,
                 #[cfg(feature = "extract_jsonpath")]
                 S::JsonDecode(dtype) => IS::JsonDecode(dtype.into_datatype(ctx.schema)?),

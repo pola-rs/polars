@@ -44,6 +44,7 @@ pub fn function_expr_to_udf(func: IRStringFunction) -> SpecialEq<Arc<dyn Columns
         LenBytes => map!(strings::len_bytes),
         LenChars => map!(strings::len_chars),
         FromCodePoint => map!(strings::from_code_point),
+        FormatValue(spec) => map!(strings::format_value, &spec),
         #[cfg(feature = "string_pad")]
         PadEnd { fill_char } => {
             map_as_slice!(strings::pad_end, fill_char)
@@ -238,6 +239,10 @@ pub(super) fn titlecase(s: &Column) -> PolarsResult<Column> {
 pub(super) fn len_chars(s: &Column) -> PolarsResult<Column> {
     let ca = s.str()?;
     Ok(ca.str_len_chars().into_column())
+}
+
+pub(super) fn format_value(s: &Column, spec: &str) -> PolarsResult<Column> {
+    polars_ops::series::format_value(s, spec)
 }
 
 pub(super) fn from_code_point(s: &Column) -> PolarsResult<Column> {

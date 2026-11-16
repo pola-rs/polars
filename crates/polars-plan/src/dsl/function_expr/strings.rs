@@ -139,6 +139,8 @@ pub enum StringFunction {
     EscapeRegex,
     /// The character of each integer Unicode code point.
     FromCodePoint,
+    /// Each value formatted with a Python format specification.
+    FormatValue(PlSmallStr),
 }
 
 impl Display for StringFunction {
@@ -172,6 +174,7 @@ impl Display for StringFunction {
             Lowercase => "to_lowercase",
             LenChars => "len_chars",
             FromCodePoint => "from_code_point",
+            FormatValue(_) => "format_value",
             #[cfg(feature = "string_pad")]
             PadEnd { .. } => "pad_end",
             #[cfg(feature = "string_pad")]
