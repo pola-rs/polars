@@ -245,8 +245,14 @@ pub(super) fn from_code_point(s: &Column) -> PolarsResult<Column> {
         s.dtype().is_integer() || s.dtype().is_null(),
         InvalidOperation: "expected an integer code point, got {}", s.dtype()
     );
-    let s = s.strict_cast(&DataType::Int64)?;
-    let out = s.i64()?.try_apply_into_string_amortized(|n, buf| {
+    // Values that do not fit in an Int64 become null here.
+    let codes = s.cast(&DataType::Int64)?;
+    if codes.null_count() != s.null_count() {
+        let out_of_range = s.is_not_null() & codes.is_null();
+        let invalid = s.filter(&out_of_range)?;
+        polars_bail!(ComputeError: "invalid Unicode code point: {}", invalid.get(0)?);
+    }
+    let out = codes.i64()?.try_apply_into_string_amortized(|n, buf| {
         let c = u32::try_from(n).ok().and_then(char::from_u32);
         let c = c.ok_or_else(|| polars_err!(ComputeError: "invalid Unicode code point: {}", n))?;
         buf.push(c);

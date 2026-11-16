@@ -2242,6 +2242,12 @@ def test_string_from_code_point_invalid(value: int) -> None:
         pl.Series([65, value]).str.from_code_point()
 
 
+def test_string_from_code_point_beyond_int64() -> None:
+    s = pl.Series([65, None, 2**63], dtype=pl.UInt64)
+    with pytest.raises(ComputeError, match=f"invalid Unicode code point: {2**63}"):
+        s.str.from_code_point()
+
+
 def test_string_from_code_point_non_integer() -> None:
     for s in (pl.Series([65.0]), pl.Series(["65"]), pl.Series([True])):
         with pytest.raises(
