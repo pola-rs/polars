@@ -14,6 +14,8 @@ Temporal
      - Returns the local time at the start of the statement.
    * - :ref:`CURRENT_TIMESTAMP <current_timestamp>`
      - Returns the local date and time at the start of the statement.
+   * - :ref:`DATE_DIFF <date_diff>`
+     - Counts the boundaries of a part, such as 'day' or 'month', crossed from a start to an end value.
    * - :ref:`DATE_PART <date_part>`
      - Extracts a part of a date (or datetime) such as 'year', 'month', etc.
    * - :ref:`DATE_TRUNC <date_trunc>`
@@ -76,6 +78,47 @@ microsecond precision and no time zone. `LOCALTIMESTAMP` and `NOW()` are aliases
 .. code-block:: python
 
     df.sql("SELECT CURRENT_TIMESTAMP AS ts, NOW() AS ts_now FROM self")
+
+.. _date_diff:
+
+DATE_DIFF
+---------
+Counts the boundaries of a part crossed from a start to an end value, as an Int64 that is
+negative if the end is before the start. From 2024-01-31 to 2024-02-01 is 1 month, while from
+2024-01-01 to 2024-01-31 is 0 months. `DATEDIFF` is an alias.
+
+Supported parts are 'year', 'quarter', 'month', 'week' (starts on Monday), 'day', 'hour',
+'minute', 'second', 'millisecond', 'microsecond' and 'nanosecond' (plural forms are also
+accepted). The values can be dates, timestamps or times; times only support parts shorter
+than a day. A string literal is read as a value of the type of the other argument.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame(
+        {
+            "start_date": [date(2024, 1, 31), date(2024, 12, 31)],
+            "end_ts": [datetime(2024, 2, 1, 10, 30), datetime(2025, 1, 1)],
+        }
+    )
+    df.sql("""
+      SELECT
+        DATE_DIFF('day', start_date, end_ts) AS days,
+        DATE_DIFF('month', start_date, end_ts) AS months,
+        DATE_DIFF('year', start_date, end_ts) AS years,
+        DATE_DIFF('hour', start_date, end_ts) AS hours
+      FROM self
+    """)
+    # shape: (2, 4)
+    # ┌──────┬────────┬───────┬───────┐
+    # │ days ┆ months ┆ years ┆ hours │
+    # │ ---  ┆ ---    ┆ ---   ┆ ---   │
+    # │ i64  ┆ i64    ┆ i64   ┆ i64   │
+    # ╞══════╪════════╪═══════╪═══════╡
+    # │ 1    ┆ 1      ┆ 0     ┆ 34    │
+    # │ 1    ┆ 1      ┆ 1     ┆ 24    │
+    # └──────┴────────┴───────┴───────┘
 
 .. _date_part:
 

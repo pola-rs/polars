@@ -476,6 +476,7 @@ pub(super) fn convert_functions(
                     IT::ReplaceTimeZone(time_zone, non_existent)
                 },
                 T::Combine(time_unit) => IT::Combine(time_unit),
+                T::DateDiff(unit) => IT::DateDiff(unit),
                 T::DatetimeFunction {
                     time_unit,
                     time_zone,

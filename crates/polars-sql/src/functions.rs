@@ -8,14 +8,15 @@ use polars_core::utils::try_get_supertype;
 #[cfg(feature = "rank")]
 use polars_defs::expr::{RankMethod, RankOptions};
 use polars_defs::expr::{RoundMode, UnicodeForm};
+use polars_defs::time::date_diff::DateDiffUnit;
 use polars_defs::time::group_by::ClosedWindow;
 use polars_lazy::dsl::Expr;
 #[cfg(feature = "approx_quantile")]
 use polars_lazy::prelude::ApproxQuantileMethod;
 use polars_lazy::prelude::DataTypeExpr;
 use polars_plan::dsl::functions::{
-    DatetimeArgs, by_name, coalesce, concat_str, datetime, datetime_ranges, element, int_range,
-    int_ranges, len, lit, max_horizontal, min_horizontal, when,
+    DatetimeArgs, by_name, coalesce, concat_str, date_diff, datetime, datetime_ranges, element,
+    int_range, int_ranges, len, lit, max_horizontal, min_horizontal, when,
 };
 use polars_plan::dsl::{FunctionExpr, RangeFunction, Selector, SqlBinaryOp, SqlFunction};
 use polars_plan::plans::{
@@ -383,6 +384,13 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT YEAR(col1), MONTH(col1), DAYOFWEEK(col1) FROM df;
     /// ```
     DatePartOf(DateTimeField),
+    /// SQL 'date_diff' function (alias: 'datediff').
+    /// Counts the boundaries of a part, such as 'day' or 'month', crossed from a start
+    /// to an end value.
+    /// ```sql
+    /// SELECT DATE_DIFF('month', col1, col2) FROM df;
+    /// ```
+    DateDiff,
     /// SQL 'date_trunc' function.
     /// Truncates a date (or datetime) to the given part, such as 'hour' or 'month'.
     /// ```sql
@@ -1144,8 +1152,10 @@ impl PolarsSQLFunctions {
             "current_time",
             "current_timestamp",
             "date",
+            "date_diff",
             "date_part",
             "date_trunc",
+            "datediff",
             "day",
             "dayofmonth",
             "dayofweek",
@@ -1336,6 +1346,7 @@ impl PolarsSQLFunctions {
             "current_time" | "localtime" => Self::CurrentTime,
             "current_timestamp" | "localtimestamp" | "now" => Self::CurrentTimestamp,
             "date" => Self::Date,
+            "date_diff" | "datediff" => Self::DateDiff,
             "date_part" => Self::DatePart,
             "date_trunc" => Self::DateTrunc,
             "make_date" => Self::MakeDate,
@@ -1750,6 +1761,7 @@ impl SQLFunctionVisitor<'_> {
                 let value = AnyValue::Datetime(timestamp, TimeUnit::Microseconds, None);
                 self.visit_nullary(|| lit(Scalar::new(dtype.clone(), value.clone())))
             },
+            DateDiff => self.visit_date_diff(),
             DateTrunc => self.visit_date_trunc(),
             MakeDate => {
                 let args = extract_args(function)?;
@@ -2550,6 +2562,49 @@ impl SQLFunctionVisitor<'_> {
             }
         }
         Ok(())
+    }
+
+    /// `DATE_DIFF(part, start, end)`.
+    fn visit_date_diff(&mut self) -> PolarsResult<Expr> {
+        let args = extract_args(self.func)?;
+        let [
+            FunctionArgExpr::Expr(part),
+            FunctionArgExpr::Expr(start),
+            FunctionArgExpr::Expr(end),
+        ] = args.as_slice()
+        else {
+            return self.not_supported_error();
+        };
+        let unit = match self.parse_sql_arg(part)? {
+            Expr::Literal(p) if p.is_null() => {
+                return self
+                    .apply_window_spec(lit(LiteralValue::untyped_null()).cast(DataType::Int64));
+            },
+            Expr::Literal(p) if p.extract_str().is_some() => {
+                let p = p.extract_str().unwrap();
+                date_diff_unit(&p.to_ascii_lowercase()).ok_or_else(
+                    || polars_err!(SQLSyntax: "DATE_DIFF does not support '{}' part", p),
+                )?
+            },
+            part => polars_bail!(SQLSyntax: "invalid 'part' for DATE_DIFF ({})", part),
+        };
+        let start = self.parse_sql_arg(start)?;
+        let end = self.parse_sql_arg(end)?;
+        // A string literal is read as a value of the type of the other argument.
+        let is_string_literal =
+            |e: &Expr| matches!(e, Expr::Literal(lv) if lv.extract_str().is_some());
+        let (start, end) = match (is_string_literal(&start), is_string_literal(&end)) {
+            (true, false) => (
+                temporal_string_as(&start, self.arg_dtype(&end)?.as_ref()),
+                end,
+            ),
+            (false, true) => {
+                let start_dtype = self.arg_dtype(&start)?;
+                (start, temporal_string_as(&end, start_dtype.as_ref()))
+            },
+            _ => (start, end),
+        };
+        self.apply_window_spec(date_diff(start, end, unit))
     }
 
     fn visit_date_trunc(&mut self) -> PolarsResult<Expr> {
@@ -4160,4 +4215,21 @@ impl FromSQLExpr for Expr {
     fn from_sql_arg(expr: &SQLExpr, visitor: &mut SQLFunctionVisitor<'_>) -> PolarsResult<Self> {
         visitor.parse_sql_arg(expr)
     }
+}
+
+fn date_diff_unit(part: &str) -> Option<DateDiffUnit> {
+    Some(match part {
+        "year" | "years" | "yr" | "yrs" | "y" => DateDiffUnit::Year,
+        "quarter" | "quarters" => DateDiffUnit::Quarter,
+        "month" | "months" | "mon" | "mons" => DateDiffUnit::Month,
+        "week" | "weeks" | "w" => DateDiffUnit::Week,
+        "day" | "days" | "d" => DateDiffUnit::Day,
+        "hour" | "hours" | "hr" | "hrs" | "h" => DateDiffUnit::Hour,
+        "minute" | "minutes" | "min" | "mins" | "m" => DateDiffUnit::Minute,
+        "second" | "seconds" | "sec" | "secs" | "s" => DateDiffUnit::Second,
+        "millisecond" | "milliseconds" | "ms" => DateDiffUnit::Millisecond,
+        "microsecond" | "microseconds" | "us" => DateDiffUnit::Microsecond,
+        "nanosecond" | "nanoseconds" | "ns" => DateDiffUnit::Nanosecond,
+        _ => return None,
+    })
 }

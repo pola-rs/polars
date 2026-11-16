@@ -699,6 +699,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                     B::ReplaceTimeZone(time_zone, non_existent)
                 },
                 IB::Combine(time_unit) => B::Combine(time_unit),
+                IB::DateDiff(unit) => B::DateDiff(unit),
                 IB::DatetimeFunction {
                     time_unit,
                     time_zone,

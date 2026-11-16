@@ -73,6 +73,19 @@ QuantileMethod: TypeAlias = Literal[
 ApproxQuantileMethod: TypeAlias = Literal["auto", "kll", "req_lo", "req_hi", "req_both"]
 RankMethod: TypeAlias = Literal["min", "max", "average", "dense", "ordinal", "random"]
 Roll: TypeAlias = Literal["raise", "forward", "backward"]
+DateDiffUnit: TypeAlias = Literal[
+    "year",
+    "quarter",
+    "month",
+    "week",
+    "day",
+    "hour",
+    "minute",
+    "second",
+    "millisecond",
+    "microsecond",
+    "nanosecond",
+]
 TimeUnit: TypeAlias = Literal["ns", "us", "ms"]
 UniqueKeepStrategy: TypeAlias = Literal["first", "last", "any", "none"]
 SearchSortedSide: TypeAlias = Literal["any", "left", "right"]
@@ -2395,6 +2408,7 @@ def cum_reduce(
     returns_scalar: bool,
     return_dtype: PyDataTypeExpr | None,
 ) -> PyExpr: ...
+def date_diff(start: PyExpr, end: PyExpr, unit: DateDiffUnit) -> PyExpr: ...
 def datetime(
     year: PyExpr,
     month: PyExpr,
