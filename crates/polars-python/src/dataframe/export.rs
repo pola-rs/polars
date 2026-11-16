@@ -152,8 +152,8 @@ impl PyDataFrame {
                 let (schema, mut arrays) = rb.into_schema_and_arrays();
 
                 // Pandas does not allow unsigned dictionary indices, so replace them.
-                replaced_schema =
-                    (replaced_schema.is_none() && !dict_columns.is_empty()).then(|| {
+                if replaced_schema.is_none() && !dict_columns.is_empty() {
+                    replaced_schema = Some({
                         let mut schema = schema.as_ref().clone();
                         for i in &dict_columns {
                             let (_, field) = schema.get_at_index_mut(*i).unwrap();
@@ -165,6 +165,7 @@ impl PyDataFrame {
                         }
                         Arc::new(schema)
                     });
+                }
 
                 for i in &dict_columns {
                     let arr = arrays.get_mut(*i).unwrap();
