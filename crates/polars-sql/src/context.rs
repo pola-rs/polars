@@ -4621,38 +4621,23 @@ impl SQLContext {
                 }
                 Ok(reads)
             };
-            match select_item {
-                SelectItem::UnnamedExpr(expr) => {
-                    window_alias_reads(expr)?;
-                },
-                SelectItem::ExprWithAlias { expr, alias } => {
+            if let SelectItem::UnnamedExpr(expr) = select_item {
+                window_alias_reads(expr)?;
+            }
+            let aliases = item_aliases(
+                select_item,
+                |expr| {
                     let reads = window_alias_reads(expr)?;
-                    if reads.any || reads.has_window_functions || contains_random(expr, false) {
-                        window_aliases.insert(alias.value.clone());
-                    } else {
-                        window_aliases.remove(&alias.value);
-                    }
+                    Ok(reads.any || reads.has_window_functions || contains_random(expr, false))
                 },
-                SelectItem::Wildcard(options) | SelectItem::QualifiedWildcard(_, options) => {
-                    let mut window_columns = PlHashSet::new();
-                    for element in options.opt_replace.iter().flat_map(|r| &r.items) {
-                        let reads = window_alias_reads(&element.expr)?;
-                        if reads.any
-                            || reads.has_window_functions
-                            || contains_random(&element.expr, false)
-                        {
-                            window_columns.insert(element.column_name.value.as_str());
-                        }
-                    }
-                    for rename in rename_items(options) {
-                        if window_columns.contains(rename.ident.value.as_str()) {
-                            window_aliases.insert(rename.alias.value.clone());
-                        } else {
-                            window_aliases.remove(&rename.alias.value);
-                        }
-                    }
-                },
-                _ => {},
+                |idents| is_window_alias(idents),
+            )?;
+            for (alias, holds) in aliases {
+                if holds {
+                    window_aliases.insert(alias.to_owned());
+                } else {
+                    window_aliases.remove(alias);
+                }
             }
             match select_item {
                 SelectItem::UnnamedExpr(expr) => {
@@ -7534,6 +7519,48 @@ pub(crate) fn object_name_to_string(name: &ObjectName) -> String {
         .join(".")
 }
 
+/// The aliases that `item` defines, each with whether `holds` is true for its expression. A
+/// wildcard defines its `RENAME` targets, which take `holds` of their `REPLACE` expression or
+/// `qualifier_holds` of the wildcard's qualifier followed by `*`.
+fn item_aliases<'a>(
+    item: &'a SelectItem,
+    mut holds: impl FnMut(&SQLExpr) -> PolarsResult<bool>,
+    qualifier_holds: impl Fn(&[Ident]) -> bool,
+) -> PolarsResult<Vec<(&'a str, bool)>> {
+    let options = match item {
+        SelectItem::ExprWithAlias { expr, alias } => {
+            return Ok(vec![(alias.value.as_str(), holds(expr)?)]);
+        },
+        SelectItem::Wildcard(options) | SelectItem::QualifiedWildcard(_, options) => options,
+        _ => return Ok(Vec::new()),
+    };
+    let from_qualifier = match item {
+        SelectItem::QualifiedWildcard(SelectItemQualifiedWildcardKind::ObjectName(name), _) => {
+            let mut idents: Vec<Ident> = name
+                .0
+                .iter()
+                .filter_map(|p| p.as_ident().cloned())
+                .collect();
+            idents.push(Ident::new("*"));
+            qualifier_holds(&idents)
+        },
+        _ => false,
+    };
+    let mut held_columns = PlHashSet::new();
+    for element in options.opt_replace.iter().flat_map(|r| &r.items) {
+        if holds(&element.expr)? {
+            held_columns.insert(element.column_name.value.as_str());
+        }
+    }
+    Ok(rename_items(options)
+        .iter()
+        .map(|rename| {
+            let holds = from_qualifier || held_columns.contains(rename.ident.value.as_str());
+            (rename.alias.value.as_str(), holds)
+        })
+        .collect())
+}
+
 /// The `RENAME` items of a wildcard.
 fn rename_items(options: &WildcardAdditionalOptions) -> &[IdentWithAlias] {
     match &options.opt_rename {
@@ -8381,17 +8408,24 @@ fn process_join_predicate(
 /// alias. An alias holds a window when its item has one or reads an alias that holds one.
 fn check_qualify(qualify: &SQLExpr, projection: &[SelectItem]) -> PolarsResult<()> {
     let (has_window_fns, column_refs) = QualifyExpression::analyze(qualify);
-    let mut window_aliases = PlHashSet::new();
+    let mut window_aliases: PlHashSet<String> = PlHashSet::new();
     for item in projection {
-        if let SelectItem::ExprWithAlias { expr, alias } = item
-            && (expr_has_window_functions(expr)
-                || (!window_aliases.is_empty()
-                    && QualifyExpression::analyze(expr)
-                        .1
-                        .iter()
-                        .any(|name| window_aliases.contains(name))))
-        {
-            window_aliases.insert(alias.value.clone());
+        let aliases = item_aliases(
+            item,
+            |expr| {
+                Ok(expr_has_window_functions(expr)
+                    || (!window_aliases.is_empty()
+                        && QualifyExpression::analyze(expr)
+                            .1
+                            .iter()
+                            .any(|name| window_aliases.contains(name))))
+            },
+            |idents| window_aliases.contains(&idents[0].value),
+        )?;
+        for (alias, holds) in aliases {
+            if holds {
+                window_aliases.insert(alias.to_owned());
+            }
         }
     }
     let references_window_alias = column_refs.iter().any(|name| window_aliases.contains(name));

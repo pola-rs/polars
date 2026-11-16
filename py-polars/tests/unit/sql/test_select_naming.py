@@ -232,6 +232,25 @@ def test_select_alias_reuse_types() -> None:
     )
     assert res.select("a", "y").rows() == [(1, 2)]
 
+    # wildcard RENAME names hold the windows of their source
+    res = df.sql(
+        """
+        SELECT * REPLACE (ROW_NUMBER() OVER (ORDER BY a) AS a) RENAME (a AS rn),
+          rn + 1 AS y
+        FROM self
+        QUALIFY y > 2
+        """
+    )
+    assert res.select("rn", "y").rows() == [(2, 3)]
+    with pytest.raises(pl.exceptions.SQLSyntaxError, match="cannot read SELECT alias"):
+        df.sql(
+            """
+            SELECT FIRST_VALUE(s) OVER () AS x, x.* RENAME (b AS y),
+              SUM(y) OVER (PARTITION BY a)
+            FROM self
+            """
+        )
+
 
 def test_select_alias_reuse_errors() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
