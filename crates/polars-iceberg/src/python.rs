@@ -1,10 +1,8 @@
-//! Python extension module (`polars_iceberg` when built with feature `iceberg`). It only exposes the plugin contracts as PyCapsules;
-//! Polars calls them directly without going through Python.
+//! Python extension module `polars_iceberg`. It only exposes the plugin contract as a PyCapsule;
+//! Polars calls it directly without going through Python.
 //!
 //! The handshake (`_polars_io_plugin_ids`, `_capsule(id)`) is shared by all Polars I/O plugins
 //! and never changes (see `polars_io_ext_ffi`).
-// Without a format feature `PluginId` is uninhabited and the capsule code is dead.
-#![cfg_attr(not(feature = "iceberg"), allow(unused, unreachable_code))]
 use std::ffi::CStr;
 use std::ptr::NonNull;
 
@@ -26,7 +24,6 @@ fn _capsule<'py>(py: Python<'py>, id: &str) -> PyResult<Bound<'py, PyCapsule>> {
         )));
     };
     let plugin: NonNull<std::ffi::c_void> = match plugin_id {
-        #[cfg(feature = "iceberg")]
         PluginId::IcebergV1 => NonNull::from(&crate::iceberg::PLUGIN_V1).cast(),
     };
     // SAFETY: The struct is a static; the extension module is never unloaded.
@@ -35,7 +32,6 @@ fn _capsule<'py>(py: Python<'py>, id: &str) -> PyResult<Bound<'py, PyCapsule>> {
 
 /// Returns a capsule with the `iceberg.v1` contract under a different name, for testing the
 /// refusal of unknown IDs by Polars.
-#[cfg(feature = "iceberg")]
 #[pyfunction]
 fn _capsule_for_testing<'py>(py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyCapsule>> {
     let name: &'static CStr = Box::leak(
@@ -50,7 +46,6 @@ fn _capsule_for_testing<'py>(py: Python<'py>, name: &str) -> PyResult<Bound<'py,
 
 /// The module name must match `module-name` of the wheel (see `pyproject.toml`).
 #[pymodule]
-#[cfg_attr(feature = "iceberg", pyo3(name = "polars_iceberg"))]
 fn polars_iceberg(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add(
@@ -58,7 +53,6 @@ fn polars_iceberg(m: &Bound<'_, PyModule>) -> PyResult<()> {
         PyTuple::new(m.py(), PLUGIN_IDS.iter().map(|id| id.as_str()))?,
     )?;
     m.add_function(wrap_pyfunction!(_capsule, m)?)?;
-    #[cfg(feature = "iceberg")]
     m.add_function(wrap_pyfunction!(_capsule_for_testing, m)?)?;
     Ok(())
 }

@@ -15,8 +15,8 @@ of Polars, and Polars' default workspace builds exclude it.
 
 The Rust package and library are `polars-iceberg` and `polars_iceberg` (an `rlib`). The Python
 distribution and import module are `polars-iceberg` and `polars_iceberg`, built from
-`py-polars/polars-iceberg`: its `polars-iceberg-python` crate enables the `python` and `iceberg`
-Cargo features of this crate to build the extension module. From the Polars root:
+`py-polars/polars-iceberg`: its `polars-iceberg-python` crate enables the `python`
+Cargo feature of this crate to build the extension module. From the Polars root:
 
 ```bash
 make -C py-polars build-polars-iceberg  # build and install into the Polars venv

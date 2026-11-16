@@ -11,47 +11,35 @@ publish = false
 repository = "https://github.com/pola-rs/polars"
 description = "Native Iceberg scan planning plugin for Polars."
 
-# The Python package `polars-iceberg` is built from `py-polars/polars-iceberg`.
+# The Python package `polars-iceberg` is built from `py-polars/polars-iceberg`. Builds of the
+# Polars workspace exclude this crate by default.
 
 [lib]
 name = "polars_iceberg"
 crate-type = ["rlib"]
 
 [dependencies]
-chrono = { workspace = true, optional = true }
-flate2 = { workspace = true, features = ["zlib-rs"], optional = true }
+chrono = { workspace = true }
+flate2 = { workspace = true, features = ["zlib-rs"] }
 futures = { workspace = true }
-hex = { workspace = true, optional = true }
+hex = { workspace = true }
 # Used only to build Arrow data, which crosses the plugin boundary through the Arrow C Data
 # Interface; this does not couple the plugin to the host's Polars version.
 polars-arrow = { workspace = true }
 polars-error = { workspace = true }
-polars-io-ext-ffi = { workspace = true }
+polars-io-ext-ffi = { workspace = true, features = ["iceberg"] }
 polars-utils = { workspace = true }
 pyo3 = { workspace = true, optional = true, features = ["abi3-py310", "extension-module"] }
 serde = { workspace = true }
 # `float_roundtrip`: filter literals must parse to the exact float PyIceberg serialized.
 # `unbounded_depth`: see `iceberg::json`.
 serde_json = { workspace = true, features = ["float_roundtrip", "unbounded_depth"] }
-snap = { version = "1", optional = true }
+snap = { version = "1" }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
-zstd = { workspace = true, optional = true }
+zstd = { workspace = true }
 
 [features]
-# `iceberg` is on by default so that tools using default features (e.g. rust-analyzer) cover its
-# code; builds of the Polars workspace exclude this crate by default either way.
-default = ["iceberg"]
-# Iceberg scan planning (`iceberg`), contract `polars.io_plugin.iceberg.v1`.
-iceberg = [
-  "polars-io-ext-ffi/iceberg",
-  "dep:chrono",
-  "dep:flate2",
-  "dep:hex",
-  "dep:snap",
-  "dep:zstd",
-]
-# Python extension module exposing the plugin contracts as PyCapsules (module `polars_iceberg`
-# with feature `iceberg`).
+# Python extension module (`polars_iceberg`) exposing the plugin contract as a PyCapsule.
 python = ["dep:pyo3"]
 
 [lints]
