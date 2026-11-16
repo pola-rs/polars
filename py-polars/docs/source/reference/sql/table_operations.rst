@@ -33,6 +33,8 @@ Table Operations
      - Update, delete and insert rows of a table in an attached catalog from a source.
    * - :ref:`SHOW TABLES <show_tables>`
      - Returns a list of all tables and views registered in the given context.
+   * - :ref:`INFORMATION_SCHEMA.COLUMNS <information_schema_columns>`
+     - A table with a row per column of each table and view registered in the given context.
    * - :ref:`GENERATE_SERIES <generate_series_table_func>`
      - Create a table with one column of values from start to stop, stop included.
    * - :ref:`RANGE <range_table_func>`
@@ -421,6 +423,23 @@ Returns a list of all tables and views registered in the given context.
 .. code-block:: sql
 
     SHOW TABLES
+
+.. _information_schema_columns:
+
+INFORMATION_SCHEMA.COLUMNS
+--------------------------
+A table with a row per column of each table and view registered in the given context, in the
+order of their names. Its columns are ``table_name``, ``column_name``, ``ordinal_position``
+(starting at 1), ``data_type`` (the Polars data type, as in :ref:`DESCRIBE <describe>`) and
+``is_nullable`` (always ``'YES'``). Read in a view, it does not list the views that read it.
+
+**Example:**
+
+.. code-block:: sql
+
+    SELECT column_name, data_type
+    FROM information_schema.columns
+    WHERE table_name = 'some_table'
 
 .. _generate_series_table_func:
 

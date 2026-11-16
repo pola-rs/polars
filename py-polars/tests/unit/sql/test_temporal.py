@@ -1341,6 +1341,52 @@ def test_to_date_to_timestamp(func: str, expected: date | datetime | None) -> No
     assert res["v"].to_list()[0] == expected
 
 
+def test_to_timestamp_epoch() -> None:
+    df = pl.DataFrame(
+        {
+            "i": [0, -86400, None],
+            "f": [1.5, 1700000000.1234567, -0.25],
+            "d": ["1.5", "1700000000.1234506", "-0.25"],
+            "big": [1, 18446744073710, None],
+        }
+    )
+    res = df.sql(
+        """
+        SELECT
+          TO_TIMESTAMP(i) AS ti,
+          TO_TIMESTAMP(f) AS tf,
+          TO_TIMESTAMP(CAST(d AS DECIMAL(20, 7))) AS td,
+          TO_TIMESTAMP(CAST('0.9999999' AS DECIMAL(38, 38))) AS tone,
+          TO_TIMESTAMP(big) AS tbig
+        FROM self
+        """
+    )
+    utc = pl.Datetime("us", "UTC")
+    assert res.schema == pl.Schema(
+        {"ti": utc, "tf": utc, "td": utc, "tone": utc, "tbig": utc}
+    )
+    assert res["tone"].to_list() == [datetime(1970, 1, 1, 0, 0, 1, tzinfo=UTC)] * 3
+    # out of the range of a datetime
+    assert res["tbig"].to_list()[1:] == [None, None]
+    assert res.drop("tone", "tbig").rows() == [
+        (
+            datetime(1970, 1, 1, tzinfo=UTC),
+            datetime(1970, 1, 1, 0, 0, 1, 500000, tzinfo=UTC),
+            datetime(1970, 1, 1, 0, 0, 1, 500000, tzinfo=UTC),
+        ),
+        (
+            datetime(1969, 12, 31, tzinfo=UTC),
+            datetime(2023, 11, 14, 22, 13, 20, 123457, tzinfo=UTC),
+            datetime(2023, 11, 14, 22, 13, 20, 123451, tzinfo=UTC),
+        ),
+        (
+            None,
+            datetime(1969, 12, 31, 23, 59, 59, 750000, tzinfo=UTC),
+            datetime(1969, 12, 31, 23, 59, 59, 750000, tzinfo=UTC),
+        ),
+    ]
+
+
 def test_to_date_errors() -> None:
     df = pl.DataFrame({"s": ["2024-01-02"]})
     with pytest.raises(

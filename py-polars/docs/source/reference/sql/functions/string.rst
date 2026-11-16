@@ -1123,7 +1123,8 @@ TO_TIMESTAMP
 ------------
 Converts a string to a Datetime using a PostgreSQL template, such as 'YYYY-MM-DD HH24:MI:SS';
 the patterns are those of :ref:`TO_CHAR <to_char>`. A template that contains `%` is read as a
-strftime format, and without a template ISO-8601 format is assumed.
+strftime format, and without a template ISO-8601 format is assumed. A number is read as the
+seconds since the Unix epoch, giving a UTC Datetime.
 
 **Example:**
 

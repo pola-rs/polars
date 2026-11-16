@@ -762,3 +762,70 @@ def test_describe(describe: str, test_frame: pl.LazyFrame) -> None:
         ]
         with pytest.raises(SQLInterfaceError, match="relation 'nosuch' was not found"):
             ctx.execute(f"{describe} nosuch")
+
+
+def test_information_schema_columns(test_frame: pl.LazyFrame) -> None:
+    with pl.SQLContext(frame=test_frame, df=pl.DataFrame({"a": [1]})) as ctx:
+        ctx.execute("CREATE VIEW v AS SELECT x * 2 AS x2, y FROM frame")
+        assert_frame_equal(
+            ctx.execute("SELECT * FROM information_schema.columns", eager=True),
+            pl.DataFrame(
+                {
+                    "table_name": ["df", "frame", "frame", "frame", "v", "v"],
+                    "column_name": ["a", "x", "y", "z", "x2", "y"],
+                    "ordinal_position": pl.Series([1, 1, 2, 3, 1, 2], dtype=pl.Int32),
+                    "data_type": ["i64", "u8", "str", "date", "u8", "str"],
+                    "is_nullable": ["YES"] * 6,
+                }
+            ),
+        )
+        res = ctx.execute(
+            """
+            SELECT c.column_name, c.data_type
+            FROM INFORMATION_SCHEMA.COLUMNS AS c
+            WHERE c.table_name = 'frame' AND c.ordinal_position > 1
+            """,
+            eager=True,
+        )
+        assert res.rows() == [("y", "str"), ("z", "date")]
+
+        # in a view, the views reading the metadata are not listed
+        ctx.execute("CREATE VIEW meta AS SELECT * FROM information_schema.columns")
+        ctx.execute("CREATE VIEW meta2 AS SELECT * FROM meta")
+        ctx.execute(
+            "CREATE VIEW plain AS WITH meta AS (SELECT 1 AS a) SELECT * FROM meta"
+        )
+        ctx.execute(
+            'CREATE VIEW plain2 AS WITH "information_schema.columns" AS '
+            '(SELECT 1 AS a) SELECT * FROM "information_schema.columns"'
+        )
+        res = ctx.execute(
+            "SELECT DISTINCT table_name FROM meta2 ORDER BY 1", eager=True
+        )
+        assert res.to_series().to_list() == ["df", "frame", "plain", "plain2", "v"]
+        res = ctx.execute(
+            "SELECT table_name, COUNT(*) FROM information_schema.columns "
+            "WHERE table_name LIKE 'meta%' GROUP BY 1 ORDER BY 1",
+            eager=True,
+        )
+        assert res.rows() == [("meta", 5), ("meta2", 5)]
+        ctx.execute("DROP VIEW plain2")
+        ctx.execute("DROP VIEW plain")
+        ctx.execute("DROP VIEW meta2")
+        ctx.execute("DROP VIEW meta")
+
+        # TABLE reads it too
+        ctx.execute("CREATE VIEW meta AS TABLE information_schema.columns")
+        assert ctx.execute("SELECT COUNT(*) FROM meta", eager=True).item() == 6
+        res = ctx.execute(
+            "SELECT COUNT(*) FROM (TABLE information_schema.columns "
+            "UNION ALL TABLE information_schema.columns)",
+            eager=True,
+        )
+        assert res.item() == 22
+        ctx.execute("DROP VIEW meta")
+
+        # the context's tables are read when the query is planned
+        lf = ctx.execute("SELECT column_name FROM information_schema.columns")
+        ctx.unregister("df")
+        assert lf.collect()["column_name"].to_list() == ["a", "x", "y", "z", "x2", "y"]
