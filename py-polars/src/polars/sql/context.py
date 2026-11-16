@@ -1040,7 +1040,7 @@ class SQLContext(Generic[FrameType]):
 
     def tables(self) -> list[str]:
         """
-        Return a list of the registered table names.
+        Return a list of the registered table and view names.
 
         Notes
         -----
@@ -1234,6 +1234,7 @@ def _delete_whole_files(
     import uuid
 
     from pyiceberg.exceptions import (
+        CommitFailedException,
         CommitStateUnknownException,
         ValidationException,
     )
@@ -1242,6 +1243,7 @@ def _delete_whole_files(
     from polars.io.iceberg._sink import (
         _SINK_UUID_PROPERTY,
         _AlreadyCommitted,
+        _raise_if_spec_changed,
         _sink_transaction,
         _SinkCatalog,
     )
@@ -1260,9 +1262,10 @@ def _delete_whole_files(
         catalog,  # type: ignore[arg-type]
         table.config,
     )
+    spec_id = table.metadata.default_spec_id
     try:
         try:
-            with _sink_transaction(wrapped, commit_uuid) as tx:
+            with _sink_transaction(wrapped, commit_uuid, spec_id) as tx:
                 # files whose rows all match, from column statistics; not a `with`:
                 # committed only if no file needs a rewrite
                 delete = tx.update_snapshot(snapshot_properties=properties).delete()
@@ -1281,6 +1284,8 @@ def _delete_whole_files(
         except (_AlreadyCommitted, CommitStateUnknownException, ValidationException):
             raise
         except Exception as error:
+            if isinstance(error, CommitFailedException):
+                _raise_if_spec_changed(table, spec_id, error)
             # a failure after a commit request, not of it: did the commit land?
             catalog.landed_after(table, error)
             return True
@@ -2169,6 +2174,7 @@ def _alter_catalog_table(
 ) -> str:
     """Change the catalog table of an `ALTER TABLE`, returning the response."""
     from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
+    from pyiceberg.table.update import AssertDefaultSortOrderId, AssertDefaultSpecId
 
     from polars.exceptions import (
         ColumnNotFoundError,
@@ -2200,6 +2206,36 @@ def _alter_catalog_table(
         raise NoSuchTableError(msg) from error
 
     kind, column = op["op"], op.get("column")
+    if kind in ("set_partitioning", "set_sort_order"):
+        from polars.io.iceberg._partition_evolution import (
+            commit_spec_change,
+            spec_change,
+        )
+        from polars.io.iceberg._sort_order import (
+            commit_sort_order_change,
+            sort_order_change,
+        )
+
+        metadata = table.metadata
+        fields = [tuple(f) for f in op["fields"]]
+        change: Any
+        commit: Callable[..., None]
+        if kind == "set_partitioning":
+            change, commit = spec_change(metadata, fields, name), commit_spec_change
+        else:
+            change = sort_order_change(metadata, fields, name)
+            commit = commit_sort_order_change
+        if change is None:
+            return response
+        try:
+            commit(table, metadata, change)
+        except Exception as error:
+            error.add_note(
+                f"table '{name}' could not be altered: catalog table "
+                f"'{_display_name(identifier)}' of catalog '{ddl['catalog']}'"
+            )
+            raise
+        return response
     # top-level columns only: PyIceberg takes a dotted name for a nested field
     columns = {field.name: field for field in table.schema().fields}
     # the names older data files are read by, which a new name must not take over
@@ -2232,6 +2268,9 @@ def _alter_catalog_table(
         raise ColumnNotFoundError(msg)
     if kind == "rename_column":
         check_free(op["new_name"], columns[column].field_id)
+    if kind == "drop_column":
+        _check_not_partition_source(table, columns[column], name)
+        _check_not_sort_source(table, columns[column], name)
     if kind == "drop_column" and len(columns) == 1:
         msg = f"column '{column}' is the only column of table '{name}'"
         raise InvalidOperationError(msg)
@@ -2241,7 +2280,7 @@ def _alter_catalog_table(
     field_type: Any = None
     if "dtype" in op:
         schema, _ = _create_table_schema(
-            Schema({column: op["dtype"]}), context="ALTER TABLE"
+            Schema({column: op["dtype"]}), context="ALTER TABLE", with_data=False
         )
         field_type = schema.fields[0].field_type
     if kind == "set_data_type":
@@ -2261,7 +2300,8 @@ def _alter_catalog_table(
         if kind == "set_properties":
             table.transaction().set_properties(op["properties"]).commit_transaction()
         else:
-            update = table.update_schema()
+            tx = table.transaction()
+            update = tx.update_schema()
             path = (column,)
             if kind == "add_column":
                 update.add_column(path, field_type)
@@ -2274,6 +2314,17 @@ def _alter_catalog_table(
             else:
                 update.update_column(path, required=False)
             update.commit()
+            if kind == "drop_column":
+                # the checks above read the partitioning and the sort order
+                metadata = table.metadata
+                requirements = (
+                    AssertDefaultSpecId(default_spec_id=metadata.default_spec_id),  # type: ignore[call-arg]
+                    AssertDefaultSortOrderId(
+                        default_sort_order_id=metadata.default_sort_order_id  # type: ignore[call-arg]
+                    ),
+                )
+                tx._stage((), requirements)
+            tx.commit_transaction()
     except Exception as error:
         error.add_note(
             f"table '{name}' could not be altered: catalog table "
@@ -2281,6 +2332,49 @@ def _alter_catalog_table(
         )
         raise
     return response
+
+
+def _check_not_partition_source(
+    table: pyiceberg.table.Table, column: Any, name: str
+) -> None:
+    """Raise if a partition spec of `table`, also an older one, uses `column`."""
+    from pyiceberg.schema import Schema
+
+    from polars.exceptions import InvalidOperationError
+
+    # a struct column also takes its nested fields with it
+    ids = set(Schema(column).field_ids)
+    for spec in table.metadata.partition_specs:
+        for field in spec.fields:
+            if field.source_id in ids:
+                # PyIceberg cannot write manifests of a spec whose source column is gone
+                msg = (
+                    f"column '{column.name}' of table '{name}' cannot be dropped: "
+                    f"partition spec {spec.spec_id} partitions by it (field "
+                    f"'{field.name}', {field.transform}), and Iceberg writes through "
+                    "PyIceberg fail once a partition spec's column is gone"
+                )
+                raise InvalidOperationError(msg)
+
+
+def _check_not_sort_source(
+    table: pyiceberg.table.Table, column: Any, name: str
+) -> None:
+    """Raise if the default sort order of `table` uses `column`; older ones may."""
+    from pyiceberg.schema import Schema
+
+    from polars.exceptions import InvalidOperationError
+
+    # a struct column also takes its nested fields with it
+    ids = set(Schema(column).field_ids)
+    order = table.sort_order()
+    if any(field.source_id in ids for field in order.fields):
+        msg = (
+            f"column '{column.name}' of table '{name}' cannot be dropped: sort order "
+            f"{order.order_id} sorts by it; change the sort order first, e.g. with "
+            "`ALTER TABLE ... RESET SORTED BY`"
+        )
+        raise InvalidOperationError(msg)
 
 
 def _create_catalog_table(
@@ -2297,6 +2391,7 @@ def _create_catalog_table(
     )
 
     from polars.io.iceberg._sink import _create_table_schema
+    from polars.io.iceberg._utils import _cast_columns
     from polars.schema import Schema
 
     identifier: tuple[str, ...] = tuple(ddl["identifier"])
@@ -2308,6 +2403,7 @@ def _create_catalog_table(
         Schema(ddl["schema"]) if lf is None else lf.collect_schema(),
         required=ddl["required"],
         context="CREATE TABLE",
+        with_data=lf is not None,
     )
     spec = _create_partition_spec(schema, ddl["partition_by"], name)
     # checked first, as some catalogs report other errors before an existing table
@@ -2321,7 +2417,7 @@ def _create_catalog_table(
         raise TableAlreadyExistsError(msg)
     namespace = identifier[:-1]
     if lf is not None and casts:
-        lf = lf.cast(casts)  # type: ignore[arg-type]
+        lf = _cast_columns(lf, casts)
     created = None
     try:
         if lf is None:
@@ -2371,7 +2467,9 @@ def _create_catalog_table(
 
 
 def _create_partition_spec(
-    schema: pyiceberg.schema.Schema, partition_by: list[tuple[str, str]], name: str
+    schema: pyiceberg.schema.Schema,
+    partition_by: list[tuple[list[str], str]],
+    name: str,
 ) -> pyiceberg.partitioning.PartitionSpec:
     """The partition spec of the new table `name`, checked against its `schema`."""
     from pyiceberg.partitioning import (
@@ -2380,47 +2478,19 @@ def _create_partition_spec(
         PartitionSpec,
     )
     from pyiceberg.schema import index_by_name
-    from pyiceberg.transforms import (
-        BucketTransform,
-        IdentityTransform,
-        TruncateTransform,
-        parse_transform,
-    )
-    from pyiceberg.types import DecimalType
+    from pyiceberg.transforms import parse_transform
 
-    # top-level columns only: `find_field` resolves dotted names into structs
-    columns = {field.name: field for field in schema.fields}
+    from polars.io.iceberg._partition_evolution import (
+        partition_field_name,
+        partition_source,
+    )
+
     names = index_by_name(schema)
     fields: list[PartitionField] = []
-    for column, transform_name in partition_by:
+    for path, transform_name in partition_by:
         transform = parse_transform(transform_name)
-        if (source := columns.get(column)) is None:
-            msg = (
-                f"partition column '{column}' is not a column of table '{name}'; "
-                f"valid columns: {list(columns)}"
-            )
-            raise SQLInterfaceError(msg)
-        source_type = source.field_type
-        if not source_type.is_primitive or not transform.can_transform(source_type):
-            msg = (
-                f"cannot partition table '{name}' by {transform} of column "
-                f"'{column}' with type {source_type}"
-            )
-            raise SQLInterfaceError(msg)
-        if isinstance(transform, TruncateTransform) and isinstance(
-            source_type, DecimalType
-        ):
-            msg = f"partitioning by {transform} of a decimal column ('{column}')"
-            raise NotImplementedError(msg)
-        # the names of PyIceberg's `update_spec`
-        if isinstance(transform, IdentityTransform):
-            field_name = column
-        elif isinstance(transform, BucketTransform):
-            field_name = f"{column}_bucket_{transform.num_buckets}"
-        elif isinstance(transform, TruncateTransform):
-            field_name = f"{column}_trunc_{transform.width}"
-        else:
-            field_name = f"{column}_{transform}"
+        source = partition_source(schema, path, transform, name)
+        field_name = partition_field_name(".".join(path), transform)
         # PyIceberg checks the name against nested fields too (`s.f_day`)
         if names.get(field_name, source.field_id) != source.field_id:
             msg = (

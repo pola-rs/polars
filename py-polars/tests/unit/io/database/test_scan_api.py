@@ -774,3 +774,24 @@ lf = pl.scan_database("t", "sqlite:///" + {str(db)!r})
 {call}
 """
     subprocess.run([sys.executable, "-c", code], check=True, timeout=120)
+
+
+def test_factory_returning_one_pymysql_connection_twice_is_refused() -> None:
+    # PyMySQL ends an unbuffered result silently when another statement runs on its
+    # connection: two reads can't stream from one
+    pymysql = pytest.importorskip("pymysql")
+    from polars_database._bridge import _Session
+
+    # no server: only the connection's class and cursor class matter
+    conn = pymysql.connections.Connection.__new__(pymysql.connections.Connection)
+    conn.cursorclass = pymysql.cursors.SSCursor
+
+    kw: dict[str, Any] = {"execute_options": {}, "params": None}
+    first = _Session(conn, owned=True, factory=True, **kw)
+    try:
+        with pytest.raises(ValueError, match="new connection on each call"):
+            _Session(conn, owned=True, factory=True, **kw)
+    finally:
+        first._release_factory_connection()
+    # once the first is closed, the connection may be returned again
+    _Session(conn, owned=True, factory=True, **kw)._release_factory_connection()

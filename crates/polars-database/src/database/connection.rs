@@ -101,18 +101,21 @@ impl ConnectionSpec {
         }
     }
 
-    /// The URI scheme, lower-cased, without a `+driver` suffix.
+    /// The URI scheme, lower-cased, without a `+driver` suffix (`grpc+tls` stays whole:
+    /// its `+tls` is the transport).
     pub fn scheme(&self) -> Option<PlSmallStr> {
         let uri = self.uri()?;
         let (scheme, _) = uri.split_once(':')?;
-        let base = scheme.split('+').next().unwrap_or(scheme);
-        Some(base.to_ascii_lowercase().into())
+        Some(scheme_base(scheme).to_ascii_lowercase().into())
     }
 
     /// The `+driver` suffix of a SQLAlchemy-style URI scheme, if any.
     pub fn scheme_driver(&self) -> Option<PlSmallStr> {
         let uri = self.uri()?;
         let (scheme, _) = uri.split_once(':')?;
+        if is_grpc_scheme(scheme) {
+            return None;
+        }
         let (_, driver) = scheme.split_once('+')?;
         Some(driver.to_ascii_lowercase().into())
     }
@@ -121,8 +124,7 @@ impl ConnectionSpec {
     pub fn uri_without_scheme_driver(&self) -> Option<String> {
         let uri = self.uri()?;
         let (scheme, rest) = uri.split_once(':')?;
-        let base = scheme.split('+').next().unwrap_or(scheme);
-        Some(format!("{base}:{rest}"))
+        Some(format!("{}:{rest}", scheme_base(scheme)))
     }
 
     /// The `Driver=` name of an ODBC connection string.
@@ -577,6 +579,20 @@ impl fmt::Debug for ConnectionSpec {
     }
 }
 
+/// A Flight SQL scheme (`grpc`, `grpc+tls`, `grpc+unix`): its `+tls` is the transport, not a
+/// driver, and stripping it would make the connection plaintext.
+fn is_grpc_scheme(scheme: &str) -> bool {
+    scheme.len() >= 4 && scheme.as_bytes()[..4].eq_ignore_ascii_case(b"grpc")
+}
+
+/// The scheme without its `+driver` suffix.
+fn scheme_base(scheme: &str) -> &str {
+    if is_grpc_scheme(scheme) {
+        return scheme;
+    }
+    scheme.split('+').next().unwrap_or(scheme)
+}
+
 #[cfg(test)]
 mod tests {
     use std::hash::BuildHasher;
@@ -755,6 +771,13 @@ mod tests {
             spec.uri_without_scheme_driver().as_deref(),
             Some("PostgreSQL://u@h/db")
         );
+        for uri in ["grpc+tls://h:443", "GRPC+unix:///tmp/s", "grpc://h:1"] {
+            let spec = ConnectionSpec::new(ConnectionTarget::Uri(uri.into()));
+            assert_eq!(spec.scheme_driver(), None, "{uri}");
+            assert_eq!(spec.uri_without_scheme_driver().as_deref(), Some(uri));
+        }
+        let spec = ConnectionSpec::new(ConnectionTarget::Uri("grpc+tls://h:443".into()));
+        assert_eq!(spec.scheme().as_deref(), Some("grpc+tls"));
         let odbc = ConnectionSpec::new(ConnectionTarget::Odbc(
             "Driver={ODBC Driver 18 for SQL Server};Server=x".into(),
         ));

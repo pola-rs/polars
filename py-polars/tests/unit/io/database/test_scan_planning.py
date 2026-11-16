@@ -1022,6 +1022,35 @@ def test_mysql_tls_check_rejects_a_plain_connection() -> None:
         ("postgres", "SELECT DISTINCT a FROM t", True),
         ("duckdb", "SELECT any_value(a), first(b) FROM t GROUP BY c", False),
         ("clickhouse", "SELECT any(a), anyLast(b) FROM t", False),
+        # a bare column next to a GROUP BY comes from any row of its group
+        ("sqlite", "SELECT g, x FROM t GROUP BY g", False),
+        ("mysql", "SELECT g, count(*) FROM t GROUP BY g HAVING x > 1", False),
+        ("sqlite", "SELECT * FROM t GROUP BY g", False),
+        ("sqlite", "SELECT g, x + 1 AS y FROM t GROUP BY 1", False),
+        ("sqlite", "SELECT g, max(x), count(*) FROM t GROUP BY g", True),
+        ("sqlite", "SELECT t.g, sum(x) AS s FROM t GROUP BY g HAVING s > 1", True),
+        ("sqlite", "SELECT lower(g) AS l, count(*) FROM t GROUP BY lower(g)", True),
+        (
+            "sqlite",
+            "SELECT g, h, count(*) FROM t GROUP BY 1, 2 HAVING min(x) > 0",
+            True,
+        ),
+        ("postgres", "SELECT g, h FROM t GROUP BY ROLLUP (g, h)", True),
+        # well-formed queries stay repeatable
+        ("sqlite", "SELECT lower(g) AS l, count(*) FROM t GROUP BY l", True),
+        ("sqlite", "SELECT g, count(*) FILTER (WHERE x > 0) FROM t GROUP BY g", True),
+        ("sqlite", "SELECT g, my_aggregate(x) FROM t GROUP BY g", True),
+        ("mysql", "SELECT g, JSON_ARRAYAGG(x) FROM t GROUP BY g", True),
+        ("mysql", "SELECT g, count(*) FROM t GROUP BY g HAVING count(*) > 1", True),
+        (
+            "postgres",
+            "SELECT g, bool_and(x > 0), percentile_cont(0.5) WITHIN GROUP (ORDER BY x) "
+            "FROM t GROUP BY g",
+            True,
+        ),
+        ("postgres", "SELECT g, bit_or(x), every(x > 0) FROM t GROUP BY g", True),
+        ("duckdb", "SELECT g, list(x), histogram(x) FROM t GROUP BY ALL", True),
+        ("duckdb", "SELECT g, count(*) FROM t GROUP BY ALL", True),
         ("clickhouse", "SELECT rowNumberInAllBlocks(), id FROM t", False),
         # the size of the block read; the query's or the session's identity
         ("clickhouse", "SELECT id, blockSize() AS bs FROM t", False),

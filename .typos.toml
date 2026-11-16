@@ -27,6 +27,8 @@ aimd = "aimd"
 flate = "flate"
 # prefix of authenticate/authentication (substring match)
 authenticat = "authenticat"
+# ISO year pattern in SQL date templates.
+iy = "iy"
 
 [default.extend-identifiers]
 AKS = "AKS"

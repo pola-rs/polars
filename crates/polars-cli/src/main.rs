@@ -11,21 +11,55 @@ use polars_cli::{Args, Input, Printer, Script, exit_code, run};
 #[global_allocator]
 static ALLOC: polars_ooc::Allocator = polars_ooc::Allocator;
 
+/// The stack of the thread that runs the command: the usual size of a main thread on Linux.
+/// The main thread on Windows has 1 MiB, which a debug build of the engine overflows.
+const STACK_SIZE: usize = 8 * 1024 * 1024;
+
 fn main() -> ExitCode {
+    let command = std::thread::Builder::new()
+        .name("polars-cli".to_string())
+        .stack_size(STACK_SIZE)
+        .spawn(run_command);
+    match command.map(|command| command.join()) {
+        Ok(Ok(code)) => code,
+        // The panic hook has reported it.
+        Ok(Err(_)) => ExitCode::from(exit_code::INTERNAL_ERROR),
+        Err(error) => {
+            eprintln!("error: cannot start a thread: {error}");
+            ExitCode::from(exit_code::FAILURE)
+        },
+    }
+}
+
+fn run_command() -> ExitCode {
     let args = match Args::try_parse() {
         Ok(args) => args,
         // Help and version requests arrive here too, with exit code 0.
         Err(error) => return report(error),
     };
+    let format = args.format();
+    // Checked before the script is read, which can wait for standard input.
+    if format.is_one_file() && io::stdout().is_terminal() {
+        return report(usage_error(
+            ErrorKind::InvalidValue,
+            format!("format '{format}' is binary; send the output to a file or a pipe"),
+        ));
+    }
     let script = match read_script(args.input()) {
         Ok(script) => script,
         Err(error) => return report(error),
     };
+    if format.is_one_file() && script.len() != 1 {
+        return report(usage_error(
+            ErrorKind::InvalidValue,
+            format!("format '{format}' writes one file, so it takes a script of one statement"),
+        ));
+    }
 
     let interrupted = handle_interrupts();
     // Not locked: Polars and the panic hook write to these streams from other threads.
     let stdout = BufWriter::new(io::stdout());
-    let code = run(&script, &mut Printer::new(stdout, io::stderr()));
+    let code = run(&script, &mut Printer::new(stdout, io::stderr(), format));
     // An interrupt that arrived while the last result was printed stopped nothing.
     if code == exit_code::OK && interrupted.load(Ordering::SeqCst) {
         ExitCode::from(exit_code::INTERRUPTED)

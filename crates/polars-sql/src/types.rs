@@ -1,11 +1,17 @@
 //! This module supports mapping SQL datatypes to Polars datatypes.
 //!
 //! It also provides utility functions for working with SQL datatypes.
+#[cfg(feature = "dtype-categorical")]
+use polars_core::datatypes::{CategoricalPhysical, Categories, FrozenCategories};
 use polars_core::datatypes::{DataType, Field, TimeUnit, TimeZone};
 use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_plan::dsl::Expr;
 use polars_plan::dsl::functions::lit;
 use polars_utils::aliases::{InitHashMaps, PlHashSet};
+#[cfg(feature = "dtype-categorical")]
+use polars_utils::pl_str::PlSmallStr;
+#[cfg(feature = "dtype-categorical")]
+use sqlparser::ast::EnumMember;
 use sqlparser::ast::{
     ArrayElemTypeDef, DataType as SQLDataType, ExactNumberInfo, Ident, ObjectName, ObjectNamePart,
     TimezoneInfo,
@@ -234,6 +240,11 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
             },
         },
         SQLDataType::Datetime(prec) => DataType::Datetime(timeunit_from_precision(prec)?, None),
+        // eg: "DATETIME64(3, 'Europe/Amsterdam')"
+        SQLDataType::Datetime64(prec, time_zone) => DataType::Datetime(
+            timeunit_from_precision(&Some(*prec))?,
+            TimeZone::opt_try_new(time_zone.as_deref())?,
+        ),
         SQLDataType::Timestamp(prec, tz) => {
             let time_zone = match tz {
                 TimezoneInfo::None | TimezoneInfo::WithoutTimeZone => None,
@@ -256,11 +267,50 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
         | SQLDataType::Varchar(_) => DataType::String,
 
         // ---------------------------------
+        // categorical/enum
+        // ---------------------------------
+        #[cfg(feature = "dtype-categorical")]
+        SQLDataType::Enum(members, None) => {
+            let categories = members
+                .iter()
+                .map(|member| match member {
+                    EnumMember::Name(name) => Ok(name.as_str()),
+                    EnumMember::NamedValue(..) => {
+                        polars_bail!(SQLInterface: "ENUM values with a number are not supported; found: {}", dtype)
+                    },
+                })
+                .collect::<PolarsResult<Vec<_>>>()?;
+            DataType::from_frozen_categories(FrozenCategories::new(categories)?)
+        },
+        #[cfg(not(feature = "dtype-categorical"))]
+        SQLDataType::Enum(..) => {
+            polars_bail!(SQLInterface: "ENUM requires the `dtype-categorical` feature")
+        },
+
+        // ---------------------------------
         // custom
         // ---------------------------------
-        SQLDataType::Custom(ObjectName(idents), _) => match idents.as_slice() {
+        SQLDataType::Custom(ObjectName(idents), modifiers) => match idents.as_slice() {
             [ObjectNamePart::Identifier(Ident { value, .. })] => {
                 match value.to_lowercase().as_str() {
+                    // "CATEGORICAL", or "CATEGORICAL('name')" for the categories of that name
+                    #[cfg(feature = "dtype-categorical")]
+                    "categorical" => match modifiers.as_slice() {
+                        [] => DataType::from_categories(Categories::global()),
+                        [name] => DataType::from_categories(Categories::new(
+                            name.as_str().into(),
+                            PlSmallStr::EMPTY,
+                            CategoricalPhysical::U32,
+                        )),
+                        _ => {
+                            polars_bail!(SQLSyntax: "CATEGORICAL takes one name at most; found: {}", dtype)
+                        },
+                    },
+                    #[cfg(not(feature = "dtype-categorical"))]
+                    "categorical" => {
+                        let _ = modifiers;
+                        polars_bail!(SQLInterface: "CATEGORICAL requires the `dtype-categorical` feature")
+                    },
                     // these integer types are not supported by the PostgreSQL core distribution,
                     // but they ARE available via `pguint` (https://github.com/petere/pguint), an
                     // extension maintained by one of the PostgreSQL core developers, and/or DuckDB.

@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-use std::io::{Read, Seek};
 use std::sync::Arc;
 
 use polars_error::{PolarsResult, polars_bail, polars_err};
@@ -10,7 +9,7 @@ use super::Dictionaries;
 use super::deserialize::{read_pruned, skip};
 use crate::array::*;
 use crate::datatypes::{ArrowDataType, ArrowSchema, Field};
-use crate::io::ipc::read::OutOfSpecKind;
+use crate::io::ipc::read::{OutOfSpecKind, ReadSeek};
 use crate::io::ipc::{IpcField, IpcSchema};
 use crate::record_batch::RecordBatchT;
 
@@ -76,7 +75,7 @@ impl<A, I: Iterator<Item = A>> Iterator for ProjectionIter<'_, A, I> {
 /// # Panic
 /// Panics iff the projection is not in increasing order (e.g. `[1, 0]` nor `[0, 1, 1]` are valid)
 #[allow(clippy::too_many_arguments)]
-pub fn read_record_batch<R: Read + Seek>(
+pub fn read_record_batch(
     batch: polars_arrow_format::ipc::RecordBatchRef,
     fields: &ArrowSchema,
     ipc_schema: &IpcSchema,
@@ -84,7 +83,7 @@ pub fn read_record_batch<R: Read + Seek>(
     limit: Option<usize>,
     dictionaries: &Dictionaries,
     version: polars_arrow_format::ipc::MetadataVersion,
-    reader: &mut R,
+    reader: &mut dyn ReadSeek,
     block_offset: u64,
     scratch: &mut Vec<u8>,
     checked: UnsafeBool,
@@ -109,7 +108,7 @@ pub fn read_record_batch<R: Read + Seek>(
 /// `fields`) as that dtype: struct columns with only some of their fields (see
 /// [`read_pruned`]).
 #[allow(clippy::too_many_arguments)]
-pub fn read_record_batch_pruned<R: Read + Seek>(
+pub fn read_record_batch_pruned(
     batch: polars_arrow_format::ipc::RecordBatchRef,
     fields: &ArrowSchema,
     ipc_schema: &IpcSchema,
@@ -118,7 +117,7 @@ pub fn read_record_batch_pruned<R: Read + Seek>(
     limit: Option<usize>,
     dictionaries: &Dictionaries,
     version: polars_arrow_format::ipc::MetadataVersion,
-    reader: &mut R,
+    reader: &mut dyn ReadSeek,
     block_offset: u64,
     scratch: &mut Vec<u8>,
     checked: UnsafeBool,
@@ -301,12 +300,12 @@ pub(crate) fn first_dict_field<'a>(
 /// Reads a dictionary from the reader,
 /// updating `dictionaries` with the resulting dictionary
 #[allow(clippy::too_many_arguments)]
-pub fn read_dictionary<R: Read + Seek>(
+pub fn read_dictionary(
     batch: polars_arrow_format::ipc::DictionaryBatchRef,
     fields: &ArrowSchema,
     ipc_schema: &IpcSchema,
     dictionaries: &mut Dictionaries,
-    reader: &mut R,
+    reader: &mut dyn ReadSeek,
     block_offset: u64,
     scratch: &mut Vec<u8>,
     checked: UnsafeBool,

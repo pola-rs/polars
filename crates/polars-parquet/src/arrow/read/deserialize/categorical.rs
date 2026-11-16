@@ -73,6 +73,9 @@ pub struct CategoricalDecoder<T> {
     /// The predicate result for each value in `plain_page_dict` evaluated so far.
     plain_page_dict_mask: MutableBitmap,
 
+    /// The dictionary page's values, to find the code of a constant.
+    dict: Option<<BinViewDecoder as utils::Decoder>::Dict>,
+
     key_type: PhantomData<T>,
 }
 
@@ -84,6 +87,7 @@ impl<T> CategoricalDecoder<T> {
             plain_page_dict: MutableBinaryViewArray::new(),
             plain_page_dict_lookup: PlHashMap::new(),
             plain_page_dict_mask: MutableBitmap::new(),
+            dict: None,
             key_type: PhantomData,
         }
     }
@@ -249,6 +253,7 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
     fn deserialize_dict(&mut self, page: DictPage) -> ParquetResult<Self::Dict> {
         let dict = self.decoder.deserialize_dict(page)?;
         self.dict_size = dict.len();
+        self.dict = Some(dict.clone());
         Ok(dict)
     }
 
@@ -363,12 +368,72 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
 
     fn extend_constant(
         &mut self,
-        _decoded: &mut Self::DecodedState,
-        _length: usize,
-        _value: &crate::read::expr::ParquetScalar,
+        decoded: &mut Self::DecodedState,
+        length: usize,
+        value: &crate::read::expr::ParquetScalar,
     ) -> ParquetResult<()> {
-        Err(ParquetError::not_supported(
-            "categorical with pushed-down equality filter",
-        ))
+        use crate::read::expr::ParquetScalar;
+
+        let needle = match value {
+            ParquetScalar::Null => {
+                decoded.0.resize(decoded.0.len() + length, T::default());
+                decoded.1.extend_constant(length, false);
+                return Ok(());
+            },
+            ParquetScalar::String(v) => v.as_bytes(),
+            ParquetScalar::Binary(v) => v.as_ref(),
+            _ => {
+                return Err(ParquetError::not_supported(
+                    "categorical with a non-string equality filter",
+                ));
+            },
+        };
+
+        // Any code whose value equals the constant will do.
+        let dict_len = self.dict.as_ref().map_or(0, |d| d.len());
+        let code = self
+            .dict
+            .as_ref()
+            .and_then(|d| d.values_iter().position(|v| v == needle))
+            .or_else(|| {
+                self.plain_page_dict
+                    .values_iter()
+                    .position(|v| v == needle)
+                    .map(|i| dict_len + i)
+            })
+            .ok_or_else(|| {
+                ParquetError::oos("equality filter matched a value not in the dictionary")
+            })?;
+        let code = T::try_from(code)
+            .ok()
+            .ok_or_else(|| ParquetError::oos("dictionary code does not fit the key type"))?;
+        decoded.0.resize(decoded.0.len() + length, code);
+        decoded.1.extend_constant(length, true);
+        Ok(())
     }
+}
+
+/// Decodes a flat String column chunk into codes into its dictionary page.
+///
+/// Every data page must be dictionary-encoded (see `PageReader::dictionary_only_len`). The
+/// dictionary values in the output share the dictionary page's buffers.
+pub fn decode_dictionary_codes(
+    field_name: &str,
+    pages: crate::parquet::read::BasicDecompressor,
+    filter: Option<super::Filter>,
+) -> ParquetResult<(Vec<DictionaryArray<u32>>, Bitmap)> {
+    let dtype = ArrowDataType::Dictionary(
+        polars_arrow::datatypes::IntegerType::UInt32,
+        Box::new(ArrowDataType::Utf8View),
+        false,
+    );
+    let (_, arrays, pred_true_mask) = utils::PageDecoder::new(
+        field_name,
+        pages,
+        dtype,
+        CategoricalDecoder::<u32>::new(),
+        None,
+    )?
+    .collect(filter)?;
+    Ok((arrays, pred_true_mask))
 }

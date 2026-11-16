@@ -3154,6 +3154,7 @@ version = "0.55.1"
 dependencies = [
  "clap",
  "polars",
+ "polars-arrow",
  "polars-ooc",
  "signal-hook",
  "sqlparser",

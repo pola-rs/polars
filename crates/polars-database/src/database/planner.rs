@@ -464,6 +464,7 @@ pub fn resolve_scan(
     let mut stats = TableStats::default();
     let schema: SchemaRef;
     let volatility_unchecked = user_schema.is_some();
+    let user_typed = user_schema.is_some();
 
     if let Some(schema_) = user_schema {
         // No I/O: a user schema is authoritative, and column semantics stay conservative:
@@ -877,7 +878,16 @@ pub fn resolve_scan(
                 DataType::Float32 | DataType::Float64
                     if affinity.get(&c.name) != Some(&DataType::Float64) =>
                 {
-                    c.db_type = Some(SQLITE_REAL.into())
+                    // a Float64 the user asked for casts (rounds) integers; one typed from
+                    // the sample fails on an integer it would round
+                    c.db_type = Some(
+                        if user_typed || overridden(&c.name) {
+                            SQLITE_REAL_CUT
+                        } else {
+                            SQLITE_REAL
+                        }
+                        .into(),
+                    )
                 },
                 ref dt if dt.is_integer() && overridden(&c.name) => {
                     c.db_type = Some(SQLITE_INTEGER_CUT.into())
@@ -1148,7 +1158,12 @@ fn alias_shadows_column(dialect: DialectName) -> bool {
 const CONNECTORX_DECIMAL: &str = "<connectorx decimal>";
 /// The `db_type` of a SQLite String / Float64 column: its values converted to text / reals.
 const SQLITE_TEXT: &str = "<sqlite text>";
+/// The `db_type` of a SQLite Float64 column typed from the sample: an integer a real can't
+/// hold exactly fails the read instead of rounding.
 const SQLITE_REAL: &str = "<sqlite real>";
+/// The `db_type` of a SQLite column the user typed Float64 (`schema=`, `schema_overrides`):
+/// integers are cast, as the cast to the dtype rounds them.
+const SQLITE_REAL_CUT: &str = "<sqlite real cut>";
 /// The `db_type` of a SQLite integer column: an integral real (or an integer's text) read
 /// as an integer. An INTEGER one read through ConnectorX, which holds neither, is compared
 /// as it is (an index on it serves).
@@ -1326,11 +1341,35 @@ fn column_conversion(
     // `'1e0'`; it fails, as `'abc'` does).
     let integer_text = format!("CAST(CAST({column} AS INTEGER) AS TEXT) = {column}");
     let other_text = format!("WHEN typeof({column}) = 'text' THEN char(1) || {column}");
-    if db_type == SQLITE_REAL {
+    if db_type == SQLITE_REAL_CUT {
         return Some(format!(
             "CASE WHEN typeof({column}) = 'integer' THEN CAST({column} AS REAL) \
             WHEN typeof({column}) = 'text' AND ({integer_text} \
             OR CAST(CAST({column} AS REAL) AS TEXT) = {column}) THEN CAST({column} AS REAL) \
+            {other_text} ELSE {column} END"
+        ));
+    }
+    if db_type == SQLITE_REAL {
+        // an integer is a real only if that is exact (`CAST(.. AS INTEGER) = x` compares
+        // integers; 2^63 casts back to the largest integer, so is excluded); another is
+        // marked, so that no read parses it, and fails as other text does (rounding it would
+        // lose digits silently)
+        let exact = |int: &str| {
+            format!(
+                "CAST({int} AS REAL) < 9223372036854775808.0 \
+                AND CAST(CAST({int} AS REAL) AS INTEGER) = {int}"
+            )
+        };
+        let int_exact = exact(column);
+        let text_int = format!("CAST({column} AS INTEGER)");
+        let text_exact = exact(&text_int);
+        return Some(format!(
+            "CASE WHEN typeof({column}) = 'integer' THEN CASE WHEN {int_exact} \
+            THEN CAST({column} AS REAL) ELSE char(1) || {column} END \
+            WHEN typeof({column}) = 'text' AND {integer_text} THEN CASE WHEN {text_exact} \
+            THEN CAST({column} AS REAL) ELSE char(1) || {column} END \
+            WHEN typeof({column}) = 'text' AND CAST(CAST({column} AS REAL) AS TEXT) = {column} \
+            THEN CAST({column} AS REAL) \
             {other_text} ELSE {column} END"
         ));
     }
@@ -1901,8 +1940,29 @@ pub(crate) fn compared_column_sql(config: &DatabaseScanConfig, column: &str) -> 
     if db_type == SQLITE_TEXT && c.dtype == DataType::String {
         return Some(format!("CAST({quoted} AS TEXT)"));
     }
-    if ![SQLITE_REAL, SQLITE_UNTYPED_INTEGER, SQLITE_INTEGER_CUT].contains(&db_type) {
+    if ![
+        SQLITE_REAL,
+        SQLITE_REAL_CUT,
+        SQLITE_UNTYPED_INTEGER,
+        SQLITE_INTEGER_CUT,
+    ]
+    .contains(&db_type)
+    {
         return None;
+    }
+    if db_type == SQLITE_REAL {
+        // an integer is compared as it is, which SQLite compares to a float exactly: a row
+        // is kept when its true value satisfies the filter (and the read then fails on it
+        // if a real can't hold it); rounded, it could be dropped silently
+        let x = &quoted;
+        return Some(format!(
+            "CASE WHEN typeof({x}) = 'integer' THEN {x} \
+            WHEN typeof({x}) = 'text' AND CAST(CAST({x} AS INTEGER) AS TEXT) = {x} \
+            THEN CAST({x} AS INTEGER) \
+            WHEN typeof({x}) = 'text' AND CAST(CAST({x} AS REAL) AS TEXT) = {x} \
+            THEN CAST({x} AS REAL) \
+            WHEN typeof({x}) = 'text' THEN char(1) || {x} ELSE {x} END"
+        ));
     }
     column_conversion(
         config.dialect,

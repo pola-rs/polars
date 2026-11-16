@@ -679,14 +679,91 @@ _ROW_ORDER_WINDOWS = frozenset(
 )
 
 
+# Dialects that take a column that is neither grouped nor aggregated (others refuse it)
+_BARE_GROUP_BY_DIALECTS = frozenset({"sqlite", "mysql", "mariadb", "singlestore"})
+
+
+def _bare_column_in_group_by(select: Any) -> bool:
+    """
+    Whether a `GROUP BY` query selects (or filters with `HAVING`) a column that is
+    neither grouped nor inside an aggregate: its value comes from any row of the group.
+    """
+    group = select.args.get("group")
+    if group is None:
+        return False
+    projections = select.expressions
+    grouped: set[str] = set()
+    if group.args.get("all"):
+        return False
+    by_alias = {
+        p.alias.lower(): p.this for p in projections if isinstance(p, exp.Alias)
+    }
+    for node in group.walk():
+        if isinstance(node, exp.Column) and not node.table:
+            # `GROUP BY l` for `lower(g) AS l`: the expression it names
+            if (named := by_alias.get(node.name.lower())) is not None:
+                grouped.add(named.sql().lower())
+        if isinstance(node, exp.Literal) and node.is_int:
+            # `GROUP BY 1`: the projection it numbers
+            index = int(node.name) - 1
+            if 0 <= index < len(projections):
+                node = projections[index]
+                node = node.this if isinstance(node, exp.Alias) else node
+        if isinstance(node, exp.Column):
+            grouped.add(node.name.lower())
+        elif isinstance(node, exp.Var) and node.name.upper() == "ALL":
+            return False
+        elif not isinstance(node, (exp.Group, exp.Tuple, exp.Rollup, exp.Cube)):
+            grouped.add(node.sql().lower())
+    aliases = {p.alias.lower() for p in projections if isinstance(p, exp.Alias)}
+
+    def bare(node: Any, is_having: bool) -> bool:
+        if isinstance(
+            node,
+            (
+                exp.AggFunc,
+                exp.Window,
+                exp.Subquery,
+                exp.Select,
+                # `count(*) FILTER (WHERE x > 0)`, `... WITHIN GROUP (ORDER BY x)`, and
+                # functions it doesn't know (a user's may aggregate)
+                exp.Filter,
+                exp.WithinGroup,
+                exp.Anonymous,
+            ),
+        ):
+            return False
+        if isinstance(node, exp.Column):
+            name = node.name.lower()
+            return name not in grouped and not (is_having and name in aliases)
+        if not isinstance(node, exp.Star) and node.sql().lower() in grouped:
+            return False
+        return any(bare(child, is_having) for child in node.iter_expressions())
+
+    if any(
+        isinstance(p, exp.Star) or (isinstance(p, exp.Column) and p.is_star)
+        for p in projections
+    ):
+        return True
+    having = select.args.get("having")
+    return any(
+        bare(p.this if isinstance(p, exp.Alias) else p, False) for p in projections
+    ) or (having is not None and bare(having.this, True))
+
+
 def _picks_arbitrary_rows(stmt: Any, dialect: str | None) -> bool:
     """
     Whether the query may give other rows, or number them otherwise, each time it runs:
     a window function that tells tied rows apart (or has a `ROWS` / `GROUPS` frame),
-    `DISTINCT ON`, an aggregate that picks any value, Oracle's `ROWNUM`, or Postgres'
-    one-argument `age(x)` (relative to today).
+    `DISTINCT ON`, an aggregate that picks any value, a bare column next to a `GROUP BY`
+    (SQLite, and MySQL without `ONLY_FULL_GROUP_BY`, take it from any row of the group),
+    Oracle's `ROWNUM`, or Postgres' one-argument `age(x)` (relative to today).
     """
     if stmt.find(exp.AnyValue, exp.First, exp.Last) is not None:
+        return True
+    if dialect in _BARE_GROUP_BY_DIALECTS and any(
+        _bare_column_in_group_by(select) for select in stmt.find_all(exp.Select)
+    ):
         return True
     for window in stmt.find_all(exp.Window):
         spec = window.args.get("spec")

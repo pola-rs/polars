@@ -951,7 +951,8 @@ def test_scan_sqlite_large_integers_next_to_reals(
     tmp_path: Path, driver: str, batch_size: int | None
 ) -> None:
     # a batch typed by its own values read `2**53 + 1` next to `1.5` as a float, also
-    # when retyped to String; alone in a batch, it was an error
+    # when retyped to String; alone in a batch, it was an error; as a float it would
+    # round, so it fails
     _importorskip_sqlite_driver(driver)
     path = tmp_path / "t.db"
     with closing(sqlite3.connect(path)) as conn:
@@ -968,7 +969,8 @@ def test_scan_sqlite_large_integers_next_to_reals(
     )
     assert text.collect()["x"].to_list() == [str(2**53 + 1), "1.5"]
     floats = pl.scan_database("t", uri, driver=driver, batch_size=batch_size)
-    assert floats.collect()["x"].to_list() == [float(2**53 + 1), 1.5]
+    with pytest.raises((pl.exceptions.SchemaError, pl.exceptions.ComputeError)):
+        floats.collect()
     # also when retyped to a decimal, through Float64 otherwise
     decimals = pl.scan_database(
         "t",
@@ -1025,7 +1027,7 @@ def test_scan_sqlite_view_union_of_reals_and_integers(
         conn.execute("CREATE TABLE a (id INTEGER, x REAL)")
         conn.execute("CREATE TABLE b (id INTEGER, x INTEGER)")
         conn.executemany("INSERT INTO a VALUES (?, ?)", [(1, 1.5), (3, 2.0)])
-        conn.executemany("INSERT INTO b VALUES (?, ?)", [(2, 2**53 + 1), (4, 7)])
+        conn.executemany("INSERT INTO b VALUES (?, ?)", [(2, 2**53), (4, 7)])
         conn.execute(
             "CREATE VIEW v AS SELECT id, x FROM a UNION ALL SELECT id, x FROM b"
         )
@@ -1044,13 +1046,22 @@ def test_scan_sqlite_view_union_of_reals_and_integers(
             )
             got = lf.filter(pl.col("x") == 2.0**53).collect()["id"].to_list()
             assert got == [2], view
+    # an integer a float can't hold exactly fails the read (`v`'s REAL column rounds it
+    # in SQLite itself, before the read)
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute("INSERT INTO b VALUES (5, ?)", (2**53 + 1,))
+        conn.commit()
+    with pytest.raises((pl.exceptions.SchemaError, pl.exceptions.ComputeError)):
+        pl.scan_database("w", uri, driver=driver).collect()
 
 
 @pytest.mark.parametrize("driver", _SQLITE_DRIVERS)
 def test_scan_sqlite_filter_on_large_integers_read_as_floats(
     tmp_path: Path, driver: str
 ) -> None:
-    # the database compared `2**53 + 1` exactly; Polars reads it as `2.0**53`
+    # the database compares `2**53 + 1` exactly, and Polars can't read it as a float: a
+    # filter it satisfies (as the float it rounds to) fails the read, instead of
+    # dropping the row (as text, the converted value would sort above every number)
     _importorskip_sqlite_driver(driver)
     path = tmp_path / "t.db"
     with closing(sqlite3.connect(path)) as conn:
@@ -1061,18 +1072,51 @@ def test_scan_sqlite_filter_on_large_integers_read_as_floats(
         conn.commit()
     lf = pl.scan_database("t", f"sqlite:///{path}", driver=driver)
     big = float(2**53)
+    errors = (pl.exceptions.SchemaError, pl.exceptions.ComputeError)
+    for predicate in [
+        pl.col("x") >= big,
+        pl.col("x") > big,
+        pl.col("x") != big,
+        ~pl.col("x").is_in([big]),
+        pl.col("x") < 1e17,
+        pl.col("x") > 0,
+    ]:
+        with pytest.raises(errors):
+            lf.filter(predicate).collect()
+    # the rows it doesn't satisfy are read: its true value isn't `2.0**53`
     for predicate, expected in [
-        (pl.col("x") == big, [1]),
-        (pl.col("x") > big, []),
-        (pl.col("x") >= big, [1]),
-        (pl.col("x").is_in([big]), [1]),
-        (pl.col("x").is_between(big, big), [1]),
+        (pl.col("x") == big, []),
+        (pl.col("x").is_in([big]), []),
+        (pl.col("x").is_between(big, big), []),
         (pl.col("x") < 2, [2]),
+        (pl.col("x") > 1e17, []),
     ]:
         assert lf.filter(predicate).collect()["id"].to_list() == expected, predicate
     assert "WHERE" in planned_sql(lf.filter(pl.col("x") == big))
     # a REAL column holds no integers: compared as it is (an index on it serves)
     assert 'WHERE "t"."r" > 2.0' in planned_sql(lf.filter(pl.col("r") > 2.0))
+
+
+@pytest.mark.parametrize("driver", _SQLITE_DRIVERS)
+def test_scan_sqlite_float_dtype_asked_for_rounds_integers(
+    tmp_path: Path, driver: str
+) -> None:
+    # a Float64 the user asked for (`schema_overrides`, `schema=`) casts, as the cast to
+    # an integer dtype cuts; only one typed from the sample fails on `2**53 + 1`
+    _importorskip_sqlite_driver(driver)
+    path = tmp_path / "t.db"
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute("CREATE TABLE t (id INTEGER, x)")
+        conn.executemany("INSERT INTO t VALUES (?, ?)", [(1, 2**53 + 1), (2, 1.5)])
+        conn.commit()
+    uri = f"sqlite:///{path}"
+    expected = [float(2**53), 1.5]
+    lf = pl.scan_database("t", uri, driver=driver, schema_overrides={"x": pl.Float64})
+    assert lf.collect()["x"].to_list() == expected
+    lf = pl.scan_database(
+        "t", uri, driver=driver, schema={"id": pl.Int64, "x": pl.Float64}
+    )
+    assert lf.collect()["x"].to_list() == expected
 
 
 @pytest.mark.parametrize("driver", _SQLITE_DRIVERS)
@@ -1110,6 +1154,37 @@ def test_scan_sqlite_numbers_text_past_the_sample(tmp_path: Path, driver: str) -
     for column in ["i", "f"]:
         with pytest.raises(Exception):  # noqa: B017
             pl.scan_database("t", uri, driver=driver).select(column).collect()
+
+
+@pytest.mark.parametrize("driver", _SQLITE_DRIVERS)
+@pytest.mark.parametrize("declared", ["", "NUMERIC"])
+def test_scan_sqlite_integers_past_float_exactness_fail(
+    tmp_path: Path, driver: str, declared: str
+) -> None:
+    # a column typed Float64 from its sample: an integer a real holds exactly is read,
+    # one it would round (`2**53 + 1`) fails instead of losing digits silently
+    _importorskip_sqlite_driver(driver)
+    path = tmp_path / "t.db"
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute(f"CREATE TABLE t (id INTEGER, x {declared})")
+        conn.executemany(
+            "INSERT INTO t VALUES (?, ?)", [(k, k + 0.5) for k in range(3000)]
+        )
+        conn.execute("INSERT INTO t VALUES (3000, 9007199254740992)")
+        conn.execute("INSERT INTO t VALUES (3001, 7)")
+        conn.commit()
+    uri = f"sqlite:///{path}"
+    df = pl.scan_database("t", uri, driver=driver).filter(pl.col("id") >= 3000)
+    assert df.collect()["x"].to_list() == [9007199254740992.0, 7.0]
+    for value in ["9007199254740993", "9223372036854775807", "'9007199254740993'"]:
+        with closing(sqlite3.connect(path)) as conn:
+            conn.execute("DELETE FROM t WHERE id >= 3002")
+            conn.execute(f"INSERT INTO t VALUES (3002, {value})")
+            conn.commit()
+        with pytest.raises(
+            (pl.exceptions.SchemaError, pl.exceptions.ComputeError),
+        ):
+            pl.scan_database("t", uri, driver=driver).select("x").collect()
 
 
 @pytest.mark.parametrize("driver", _SQLITE_DRIVERS)

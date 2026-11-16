@@ -1724,6 +1724,10 @@ _LIVE_STATES: weakref.WeakKeyDictionary[Any, _ConnectionState] = (
 _LIVE_STATES_BY_ID: dict[int, _ConnectionState] = {}
 _LIVE_STATES_LOCK = threading.Lock()
 
+# The connections (by identity) of the factory's open sessions, with how many sessions
+# hold each: a factory may return one connection again.
+_FACTORY_CONNECTIONS: dict[int, int] = {}
+
 
 def _live_state(conn: Any) -> _ConnectionState:
     with _LIVE_STATES_LOCK:
@@ -1791,6 +1795,9 @@ class _Session:
         # discards it from its pool instead (when its socket was shut down)
         self._invalidate = invalidate
         self._state = _ConnectionState() if owned else _live_state(conn)
+        self._factory_key: int | None = None
+        if factory:
+            self._register_factory_connection()
         # the session setup changed the connection's settings (see `close`)
         self._setup_ran = False
         # statements that restore what the setup changed on a pooled connection
@@ -2196,7 +2203,41 @@ class _Session:
             time.sleep(delay)
             delay = min(delay * 2, 0.25)
 
+    def _register_factory_connection(self) -> None:
+        """
+        Counts the factory's connection among the open sessions'. An unbuffered PyMySQL
+        one that another open session holds is refused: two results can't be open on one
+        connection, and the driver ends the first silently, so rows would be missing.
+        """
+        key = id(self.conn)
+        with _LIVE_STATES_LOCK:
+            if (
+                key in _FACTORY_CONNECTIONS
+                and _module_of(self.conn) == "pymysql"
+                and _unbuffered_mysql(self.conn, "pymysql")
+            ):
+                msg = (
+                    "the connection function returned a connection that another read "
+                    "of the scan still uses, and its unbuffered cursors can't share "
+                    "one: return a new connection on each call, or pass the "
+                    "connection itself (or set max_connections=1)"
+                )
+                raise ValueError(msg)
+            _FACTORY_CONNECTIONS[key] = _FACTORY_CONNECTIONS.get(key, 0) + 1
+            self._factory_key = key
+
+    def _release_factory_connection(self) -> None:
+        key, self._factory_key = self._factory_key, None
+        if key is None:
+            return
+        with _LIVE_STATES_LOCK:
+            if (left := _FACTORY_CONNECTIONS.get(key, 1) - 1) > 0:
+                _FACTORY_CONNECTIONS[key] = left
+            else:
+                _FACTORY_CONNECTIONS.pop(key, None)
+
     def close(self) -> None:
+        self._release_factory_connection()
         if self._setup_ran and self._close is None:
             self._reset_pooled()
         # A factory's connection may go back to a pool of the user's: the settings the
