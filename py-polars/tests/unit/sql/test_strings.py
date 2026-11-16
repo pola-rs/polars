@@ -94,6 +94,46 @@ def test_string_concat_errors(invalid_concat: str) -> None:
         pl.SQLContext(data=lf).execute(f"SELECT {invalid_concat} FROM data").collect()
 
 
+@pytest.mark.parametrize(
+    "func",
+    [
+        "UPPER(NULL)",
+        "LOWER(NULL)",
+        "LENGTH(NULL)",
+        "TRIM(NULL)",
+        "LTRIM(NULL, 'x')",
+        "REVERSE(NULL)",
+        "LEFT(NULL, 2)",
+        "SUBSTR(NULL, 1, 2)",
+        "SUBSTRING(NULL FROM 2)",
+        "REPLACE(NULL, 'a', 'b')",
+        "REPLACE('a', NULL, 'b')",
+        "STARTS_WITH(NULL, 'a')",
+        "LPAD(NULL, 3, 'x')",
+        "SPLIT_PART(NULL, ',', 1)",
+        "REGEXP_LIKE(NULL, 'a')",
+        "NULL ILIKE 'a'",
+        "DATE(NULL)",
+        "STRPTIME(NULL, '%Y-%m-%d')",
+        "TIMESTAMP(NULL)",
+    ],
+)
+def test_string_functions_null_literal(func: str) -> None:
+    res = pl.sql(f"SELECT {func} AS r FROM (VALUES (1), (2)) t(i)", eager=True)
+    assert res["r"].to_list() == [None, None]
+
+
+def test_replace_null_pattern_aggregate() -> None:
+    for query in [
+        "SELECT REPLACE(MAX(s), NULL, 'x') AS r FROM (VALUES ('a'), ('b')) t(s)",
+        "SELECT REPLACE(MAX(s), 'a', NULL) AS r FROM (VALUES ('a'), ('b')) t(s)",
+        "SELECT REPLACE('a', NULL, MAX(s)) AS r FROM (VALUES ('a'), ('b')) t(s)",
+        "SELECT REPLACE('a', MAX(s), NULL) AS r FROM (VALUES ('a'), ('b')) t(s)",
+        "SELECT REPLACE(1, MAX(s), NULL) AS r FROM (VALUES ('a'), ('b')) t(s) WHERE FALSE",
+    ]:
+        assert pl.sql(query, eager=True).rows() == [(None,)]
+
+
 def test_string_chr() -> None:
     df = pl.DataFrame(
         {

@@ -38,9 +38,9 @@ use crate::group_context::{is_marked_aggregate, mark_aggregate};
 use crate::grouping_sets::MAX_GROUPING_ARGS;
 use crate::sql_expr::{
     adjust_one_indexed_param, approximate_literal, clip_substring_length, decimal_literal,
-    decimal_literal_to_f64, interval_to_duration, order_by_sort_options, parse_extract_date_part,
-    parse_sql_array, parse_sql_expr, resolve_expr_dtype, sql_binary, sql_position,
-    substring_offset, temporal_string_as,
+    decimal_literal_to_f64, interval_to_duration, null_as_string, order_by_sort_options,
+    parse_extract_date_part, parse_sql_array, parse_sql_expr, resolve_expr_dtype, sql_binary,
+    sql_position, substring_offset, temporal_string_as,
 };
 use crate::sql_visitors::{contains_random, grouping_call_args};
 use crate::types::sql_type_name;
@@ -57,6 +57,8 @@ pub(crate) struct SQLFunctionVisitor<'a> {
     /// Whether the value arguments are read once per row, as by an aggregate without `OVER`
     /// (see `parse_sql_arg`).
     pub(crate) reads_rows: bool,
+    /// Whether the next value argument parsed is the string input of a string function.
+    pub(crate) string_input: bool,
 }
 
 /// A parsed value argument. The constant argument of an aggregate is kept apart:
@@ -1092,6 +1094,45 @@ pub(crate) enum PolarsSQLFunctions {
 }
 
 impl PolarsSQLFunctions {
+    /// Whether the first argument is a string, which a NULL literal is read as.
+    fn takes_string_input(&self) -> bool {
+        use PolarsSQLFunctions::*;
+        matches!(
+            self,
+            BitLength
+                | Date
+                | EndsWith
+                | InitCap
+                | Left
+                | LeftPad
+                | LeftTrim
+                | Length
+                | Lower
+                | Normalize
+                | OctetLength
+                | RegexpExtract
+                | RegexpLike
+                | RegexpMatches
+                | RegexpReplace
+                | Replace
+                | Repeat
+                | Reverse
+                | Right
+                | RightPad
+                | RightTrim
+                | SplitPart
+                | StartsWith
+                | StrPos
+                | Substring
+                | StringToArray
+                | Strptime
+                | TryStrptime
+                | Time
+                | Timestamp
+                | Upper
+        )
+    }
+
     pub(crate) fn keywords() -> &'static [&'static str] {
         &[
             "abs",
@@ -1574,6 +1615,7 @@ impl SQLFunctionVisitor<'_> {
             self.filter = Some(pred);
         }
         self.reads_rows = function_name.is_builtin_aggregate();
+        self.string_input = function_name.takes_string_input();
         self.check_window_shape(&function_name)?;
         if self.window.is_some() && is_frame_aggregate(&function_name, self.is_distinct()) {
             return self.visit_window_aggregate(&function_name);
@@ -1971,8 +2013,23 @@ impl SQLFunctionVisitor<'_> {
             Replace => {
                 let args = extract_args(function)?;
                 match args.len() {
-                    3 => self
-                        .try_visit_ternary(|e, old, new| Ok(e.str().replace_all(old, new, true))),
+                    3 => self.try_visit_ternary(|e, old: Expr, new: Expr| {
+                        let is_null = |e: &Expr| matches!(e, Expr::Literal(lv) if lv.is_null());
+                        Ok(if is_null(&old) || is_null(&new) {
+                            // NULL, still reading every argument, so that an aggregate in
+                            // one stays one.
+                            let read = |e: Expr| e.cast(DataType::String);
+                            when(lit(false))
+                                .then(read(e))
+                                .when(lit(false))
+                                .then(read(old))
+                                .when(lit(false))
+                                .then(read(new))
+                                .otherwise(lit(LiteralValue::untyped_null()).cast(DataType::String))
+                        } else {
+                            e.str().replace_all(old, new, true)
+                        })
+                    }),
                     _ => {
                         polars_bail!(SQLSyntax: "REPLACE expects 3 arguments (found {})", args.len())
                     },
@@ -2683,7 +2740,10 @@ impl SQLFunctionVisitor<'_> {
     /// Parse a value argument, keeping a constant that is read once per row apart (see
     /// [`ValueArg`]).
     fn parse_value_arg(&mut self, expr: &SQLExpr) -> PolarsResult<ValueArg> {
-        let parsed = parse_sql_expr(expr, self.ctx, self.active_schema)?;
+        let mut parsed = parse_sql_expr(expr, self.ctx, self.active_schema)?;
+        if std::mem::take(&mut self.string_input) {
+            parsed = null_as_string(parsed);
+        }
         if self.reads_rows {
             self.read_subqueries_per_row(&parsed);
         }
