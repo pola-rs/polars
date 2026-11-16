@@ -25,15 +25,15 @@ use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, CreateTable, CreateTableLikeKind, CreateTableOptions,
     CreateView, Cte, Delete, Distinct, DropBehavior, ExcludeSelectItem, Expr as SQLExpr, Fetch,
     FromTable, FunctionArg, FunctionArgExpr, FunctionArguments, GroupByExpr, HiveDistributionStyle,
-    HiveFormat, Ident, Insert, Join, JoinConstraint, JoinOperator, LimitClause, Merge, MergeAction,
-    MergeClause, MergeClauseKind, MergeInsertExpr, MergeInsertKind, MergeUpdateExpr,
-    MergeUpdateKind, NamedWindowDefinition, NamedWindowExpr, ObjectName, ObjectNamePart,
-    ObjectType, OrderBy, OrderByKind, OutputClause, Query, RenameSelectItem, SchemaName, Select,
-    SelectFlavor, SelectItem, SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier,
-    SqlOption, Statement, TableAlias, TableAliasColumnDef, TableFactor, TableObject,
-    TableWithJoins, Truncate, TruncateTableTarget, UnaryOperator as SQLUnaryOperator, Update,
-    Value as SQLValue, ValueWithSpan, Values, Visitor, VisitorMut, WildcardAdditionalOptions,
-    WindowSpec, WindowType, With,
+    HiveFormat, Ident, IdentWithAlias, Insert, Join, JoinConstraint, JoinOperator, LimitClause,
+    Merge, MergeAction, MergeClause, MergeClauseKind, MergeInsertExpr, MergeInsertKind,
+    MergeUpdateExpr, MergeUpdateKind, NamedWindowDefinition, NamedWindowExpr, ObjectName,
+    ObjectNamePart, ObjectType, OrderBy, OrderByKind, OutputClause, Query, RenameSelectItem,
+    SchemaName, Select, SelectFlavor, SelectItem, SelectItemQualifiedWildcardKind, SetExpr,
+    SetOperator, SetQuantifier, SqlOption, Statement, TableAlias, TableAliasColumnDef, TableFactor,
+    TableObject, TableWithJoins, Truncate, TruncateTableTarget, UnaryOperator as SQLUnaryOperator,
+    Update, Value as SQLValue, ValueWithSpan, Values, Visitor, VisitorMut,
+    WildcardAdditionalOptions, WindowSpec, WindowType, With,
 };
 
 use crate::catalog::{
@@ -4634,8 +4634,22 @@ impl SQLContext {
                     }
                 },
                 SelectItem::Wildcard(options) | SelectItem::QualifiedWildcard(_, options) => {
+                    let mut window_columns = PlHashSet::new();
                     for element in options.opt_replace.iter().flat_map(|r| &r.items) {
-                        window_alias_reads(&element.expr)?;
+                        let reads = window_alias_reads(&element.expr)?;
+                        if reads.any
+                            || reads.has_window_functions
+                            || contains_random(&element.expr, false)
+                        {
+                            window_columns.insert(element.column_name.value.as_str());
+                        }
+                    }
+                    for rename in rename_items(options) {
+                        if window_columns.contains(rename.ident.value.as_str()) {
+                            window_aliases.insert(rename.alias.value.clone());
+                        } else {
+                            window_aliases.remove(&rename.alias.value);
+                        }
                     }
                 },
                 _ => {},
@@ -4644,7 +4658,11 @@ impl SQLContext {
                 SelectItem::UnnamedExpr(expr) => {
                     let mut parsed = parse_sql_expr(expr, self, Some(schema))?;
                     // An item that only names an alias keeps that name.
-                    if let SQLExpr::Identifier(ident) = expr
+                    let mut bare = expr;
+                    while let SQLExpr::Nested(inner) = bare {
+                        bare = inner;
+                    }
+                    if let SQLExpr::Identifier(ident) = bare
                         && !schema.contains(&ident.value)
                         && self.select_aliases.contains_key(ident.value.as_str())
                     {
@@ -7447,16 +7465,14 @@ impl SQLContext {
         }
 
         // SELECT * RENAME
-        if let Some(items) = &options.opt_rename {
-            let renames = match items {
-                RenameSelectItem::Single(rename) => std::slice::from_ref(rename),
-                RenameSelectItem::Multiple(renames) => renames.as_slice(),
-            };
-            for rn in renames {
-                let before = rn.ident.value.as_str();
-                if let Some((_, expr)) = named_exprs.iter_mut().find(|(n, _)| n == before) {
-                    *expr = strip_outer_alias(expr).alias(rn.alias.value.as_str());
-                }
+        for rn in rename_items(options) {
+            let before = rn.ident.value.as_str();
+            if let Some((_, expr)) = named_exprs.iter_mut().find(|(n, _)| n == before) {
+                let renamed = strip_outer_alias(expr);
+                // Later SELECT items can read the new name.
+                let name = PlSmallStr::from_str(rn.alias.value.as_str());
+                self.select_aliases.insert(name.clone(), renamed.clone());
+                *expr = renamed.alias(name);
             }
         }
         Ok(named_exprs.into_iter().map(|(_, expr)| expr).collect())
@@ -7516,6 +7532,15 @@ pub(crate) fn object_name_to_string(name: &ObjectName) -> String {
         .map(|i| i.value.as_str())
         .collect::<Vec<_>>()
         .join(".")
+}
+
+/// The `RENAME` items of a wildcard.
+fn rename_items(options: &WildcardAdditionalOptions) -> &[IdentWithAlias] {
+    match &options.opt_rename {
+        Some(RenameSelectItem::Single(rename)) => std::slice::from_ref(rename),
+        Some(RenameSelectItem::Multiple(renames)) => renames,
+        None => &[],
+    }
 }
 
 fn is_information_schema_columns(name: &str) -> bool {

@@ -177,6 +177,8 @@ def test_unaliased_scalar_subquery_name_is_stable() -> None:
         "SELECT DISTINCT a % 2 AS x, x + 1 AS y FROM self ORDER BY x",
         "SELECT 2 AS x, SUM(x) AS s, COUNT(x) AS n FROM self",
         "SELECT g, 2 AS x, SUM(x) AS s FROM self GROUP BY g ORDER BY g",
+        "SELECT * RENAME (a AS k), k + 1 AS y FROM self ORDER BY k",
+        "SELECT self.* EXCLUDE (g) RENAME (a AS k), k + 1 AS y FROM self ORDER BY k",
     ],
 )
 def test_select_alias_reuse(query: str) -> None:
@@ -190,6 +192,8 @@ def test_select_alias_reuse_random() -> None:
     assert res.columns == ["r", "r2", "x", "x:1"]
     assert res["r"].to_list() == res["r2"].to_list()
     assert res["x:1"].to_list() == [2, 4, 6]
+    res = df.sql("SELECT a * -1 AS x, (x) FROM self ORDER BY a")
+    assert res.rows() == [(-1, -1), (-2, -2), (-3, -3)]
 
 
 def test_select_alias_reuse_types() -> None:
@@ -244,6 +248,7 @@ def test_select_alias_reuse_errors() -> None:
         "SELECT SUM(a) OVER () AS s, SUM(a) OVER w FROM self WINDOW w AS (PARTITION BY s)",
         "SELECT RANDOM() AS r, FIRST_VALUE(r) OVER (PARTITION BY a) FROM self",
         "SELECT SUM(a) OVER () AS s, * REPLACE (SUM(s) OVER () AS a) FROM self",
+        "SELECT * REPLACE (SUM(a) OVER () AS a) RENAME (a AS k), SUM(k) OVER () FROM self",
     ]:
         with pytest.raises(
             pl.exceptions.SQLSyntaxError, match="cannot read SELECT alias"
