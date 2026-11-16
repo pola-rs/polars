@@ -15,23 +15,23 @@ def monitoring_enabled_globally() -> bool:
 
 
 def monitoring_workspace() -> str | None:
-    """The Polars Cloud workspace metrics are sent to, `None` for the default one."""
+    """The Polars Nanook workspace metrics are sent to, `None` for the default."""
     return os.environ.get(MONITORING_WORKSPACE_ENV_VAR) or None
 
 
 def monitoring_organization() -> str | None:
-    """The Polars Cloud organization metrics are sent to, `None` for the default one."""
+    """The Polars Nanook organization metrics are sent to, `None` for the default."""
     return os.environ.get(MONITORING_ORGANIZATION_ENV_VAR) or None
 
 
 def activate_monitoring() -> None:
-    """Ensure `polars_cloud` is installed and this session is authenticated."""
+    """Ensure `polars_nanook` is installed and this session is authenticated."""
     from polars._dependencies import import_optional, polars_cloud
 
     import_optional(
         polars_cloud.__name__,
         err_prefix="query monitoring requires the",
         install_message=(
-            "Please install using the command `pip install 'polars-cloud>=0.13.0'`."
+            "Please install using the command `pip install 'polars-nanook>=0.13.0'`."
         ),
     ).authenticate()

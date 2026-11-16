@@ -706,7 +706,7 @@ class InMemoryEngine(_LocalEngine):
     monitoring : bool, default None
         Whether to monitor queries run by this engine. ``None`` uses the setting from
         :meth:`Config.enable_monitoring`; ``True`` or ``False`` overrides it. Setting
-        this to ``True`` requires the ``polars-cloud`` package.
+        this to ``True`` requires the ``polars-nanook`` package.
     """
 
     _name = "in-memory"
@@ -721,7 +721,7 @@ class StreamingEngine(_LocalEngine):
     monitoring : bool, default None
         Whether to monitor queries run by this engine. ``None`` uses the setting from
         :meth:`Config.enable_monitoring`; ``True`` or ``False`` overrides it. Setting
-        this to ``True`` requires the ``polars-cloud`` package.
+        this to ``True`` requires the ``polars-nanook`` package.
 
     Examples
     --------

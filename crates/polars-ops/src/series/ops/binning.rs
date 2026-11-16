@@ -1,6 +1,8 @@
 use polars_arrow::array::Array;
 use polars_arrow::compute::concatenate::concatenate_validities;
-use polars_core::chunked_array::ops::binning::{FractionSpec, IntervalSpec, order_statistics};
+use polars_core::chunked_array::ops::binning::{
+    FractionSpec, IntervalSpec, order_statistics_physical,
+};
 use polars_core::prelude::gather::check_bounds_ca;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
@@ -90,8 +92,9 @@ fn select_at_sorted_positions<T: PolarsNumericType>(
         .collect();
     ranks.sort_unstable();
     ranks.dedup();
-    let mut vals = vec![T::Native::default(); ranks.len()];
-    order_statistics(ca, &ranks, &mut vals);
+    let vals = order_statistics_physical(&ca.clone().into_series(), &ranks);
+    let vals: &ChunkedArray<T> = vals.as_ref().as_ref();
+    let vals = vals.cont_slice().unwrap();
     positions
         .iter()
         .map(|&p| ranks.binary_search(&(p as usize)).ok().map(|i| vals[i]))

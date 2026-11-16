@@ -12,7 +12,9 @@ use polars_core::prelude::{Column, DataType, Series, SeriesTrait};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 #[expect(clippy::disallowed_types)] // We don't iterate over it.
-use polars_utils::aliases::{PlHashMap, PlHashSet};
+use polars_utils::aliases::PlHashMap;
+#[expect(clippy::disallowed_types)] // We don't iterate over it.
+use polars_utils::aliases::PlHashSet;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
