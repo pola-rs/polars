@@ -65,9 +65,9 @@ use crate::sql_expr::{
     sql_parser,
 };
 use crate::sql_visitors::{
-    QualifyExpression, TableIdentifierCollector, check_ambiguous_column,
+    QualifyExpression, TableIdentifierCollector, alias_reads, check_ambiguous_column,
     check_for_ambiguous_column_refs, collect_grouping_calls, contains_random,
-    expr_contains_scalar_subquery, expr_contains_subquery, expr_has_window_functions, expr_reads,
+    expr_contains_scalar_subquery, expr_contains_subquery, expr_has_window_functions,
     expr_references_any_column, expr_refers_to_table, referenced_ctes, sql_expr_cols_all_in_schema,
 };
 use crate::subquery::{
@@ -4590,33 +4590,49 @@ impl SQLContext {
         let mut has_qualified_wildcard = false;
         // Aliases that hold a window function or RANDOM(), directly or through other aliases.
         let mut window_aliases: PlHashSet<String> = PlHashSet::new();
-        let read_alias = |names: &PlHashSet<String>, aliases: &PlHashSet<String>| {
-            names
-                .iter()
-                .find(|name| aliases.contains(*name) && !schema.contains(name))
-                .cloned()
-        };
 
         for select_item in projection {
-            if let SelectItem::UnnamedExpr(expr) | SelectItem::ExprWithAlias { expr, .. } =
-                select_item
-            {
-                let reads = expr_reads(expr, &|window| self.resolve_window(window).ok());
-                if let Some(name) = read_alias(&reads.window_names, &window_aliases) {
+            // A name reads an alias unless an input column or, with a qualifier, a relation
+            // takes it.
+            let is_window_alias = |idents: &[Ident]| {
+                let root = &idents[0].value;
+                window_aliases.contains(root)
+                    && !schema.contains(root)
+                    && (idents.len() == 1
+                        || !matches!(
+                            self.resolve_qualifier(idents),
+                            Ok(Some((name, _))) if matches!(self.get_relation_frame(&name), Ok(Some(_)))
+                        ))
+            };
+            let window_alias_reads = |expr: &SQLExpr| {
+                let reads = alias_reads(expr, &is_window_alias, &|window| {
+                    self.resolve_window(window).ok()
+                });
+                if let Some(name) = &reads.in_window {
                     polars_bail!(
                         SQLSyntax: "window functions cannot read SELECT alias '{}', as it holds a window function or RANDOM()", name
                     );
                 }
-                if let SelectItem::ExprWithAlias { alias, .. } = select_item {
-                    if reads.has_window_functions
-                        || contains_random(expr, false)
-                        || read_alias(&reads.names, &window_aliases).is_some()
-                    {
+                Ok(reads)
+            };
+            match select_item {
+                SelectItem::UnnamedExpr(expr) => {
+                    window_alias_reads(expr)?;
+                },
+                SelectItem::ExprWithAlias { expr, alias } => {
+                    let reads = window_alias_reads(expr)?;
+                    if reads.any || reads.has_window_functions || contains_random(expr, false) {
                         window_aliases.insert(alias.value.clone());
                     } else {
                         window_aliases.remove(&alias.value);
                     }
-                }
+                },
+                SelectItem::Wildcard(options) | SelectItem::QualifiedWildcard(_, options) => {
+                    for element in options.opt_replace.iter().flat_map(|r| &r.items) {
+                        window_alias_reads(&element.expr)?;
+                    }
+                },
+                _ => {},
             }
             match select_item {
                 SelectItem::UnnamedExpr(expr) => {

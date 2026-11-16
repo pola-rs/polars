@@ -8,8 +8,8 @@ use std::ops::ControlFlow;
 use polars_core::prelude::*;
 use sqlparser::ast::{
     Expr as SQLExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, FunctionArgumentList,
-    FunctionArguments, ObjectName, Query, SetExpr, TableFactor, Visit, Visitor as SQLVisitor,
-    VisitorMut, WindowSpec, WindowType, With,
+    FunctionArguments, Ident, ObjectName, Query, SetExpr, TableFactor, Visit,
+    Visitor as SQLVisitor, VisitorMut, WindowSpec, WindowType, With,
 };
 use sqlparser::keywords::ALL_KEYWORDS;
 
@@ -565,26 +565,28 @@ pub(crate) fn expr_has_window_functions(expr: &SQLExpr) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// ExprReads
+// AliasReads
 // ---------------------------------------------------------------------------
 
-/// The names an expression reads outside its subqueries; of a compound name, the first part.
+/// The aliases an expression reads outside its subqueries.
 #[derive(Default)]
-pub(crate) struct ExprReads {
-    pub(crate) names: PlHashSet<String>,
-    /// The names read in window functions, including their windows.
-    pub(crate) window_names: PlHashSet<String>,
+pub(crate) struct AliasReads {
+    /// The first alias read in a window function, including its window.
+    pub(crate) in_window: Option<String>,
+    pub(crate) any: bool,
     pub(crate) has_window_functions: bool,
 }
 
-struct ExprReadsVisitor<'a> {
+struct AliasReadsVisitor<'a> {
+    /// Whether a name, given by its parts, reads an alias.
+    is_alias: &'a dyn Fn(&[Ident]) -> bool,
     resolve_window: &'a dyn Fn(&WindowType) -> Option<WindowSpec>,
     query_depth: usize,
     window_depth: usize,
-    reads: ExprReads,
+    reads: AliasReads,
 }
 
-impl SQLVisitor for ExprReadsVisitor<'_> {
+impl SQLVisitor for AliasReadsVisitor<'_> {
     type Break = ();
 
     fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
@@ -601,9 +603,9 @@ impl SQLVisitor for ExprReadsVisitor<'_> {
         if self.query_depth > 0 {
             return ControlFlow::Continue(());
         }
-        let name = match expr {
-            SQLExpr::Identifier(ident) => ident,
-            SQLExpr::CompoundIdentifier(idents) if !idents.is_empty() => &idents[0],
+        let idents = match expr {
+            SQLExpr::Identifier(ident) => std::slice::from_ref(ident),
+            SQLExpr::CompoundIdentifier(idents) if !idents.is_empty() => idents.as_slice(),
             SQLExpr::Function(SQLFunction {
                 over: Some(over), ..
             }) => {
@@ -617,10 +619,12 @@ impl SQLVisitor for ExprReadsVisitor<'_> {
             },
             _ => return ControlFlow::Continue(()),
         };
-        if self.window_depth > 0 {
-            self.reads.window_names.insert(name.value.clone());
+        if (self.is_alias)(idents) {
+            self.reads.any = true;
+            if self.window_depth > 0 && self.reads.in_window.is_none() {
+                self.reads.in_window = Some(idents[0].value.clone());
+            }
         }
-        self.reads.names.insert(name.value.clone());
         ControlFlow::Continue(())
     }
 
@@ -632,16 +636,19 @@ impl SQLVisitor for ExprReadsVisitor<'_> {
     }
 }
 
-/// What `expr` reads, where `resolve_window` gives the window of an `OVER` clause.
-pub(crate) fn expr_reads(
+/// The aliases `expr` reads, where `is_alias` tells whether a name reads an alias and
+/// `resolve_window` gives the window of an `OVER` clause.
+pub(crate) fn alias_reads(
     expr: &SQLExpr,
+    is_alias: &dyn Fn(&[Ident]) -> bool,
     resolve_window: &dyn Fn(&WindowType) -> Option<WindowSpec>,
-) -> ExprReads {
-    let mut visitor = ExprReadsVisitor {
+) -> AliasReads {
+    let mut visitor = AliasReadsVisitor {
+        is_alias,
         resolve_window,
         query_depth: 0,
         window_depth: 0,
-        reads: ExprReads::default(),
+        reads: AliasReads::default(),
     };
     let _ = dyn_visit::visit(expr, &mut visitor);
     visitor.reads

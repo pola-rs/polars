@@ -243,6 +243,7 @@ def test_select_alias_reuse_errors() -> None:
         "SELECT SUM(a) OVER () AS s, s + 1 AS t, SUM(a) OVER (ORDER BY t) FROM self",
         "SELECT SUM(a) OVER () AS s, SUM(a) OVER w FROM self WINDOW w AS (PARTITION BY s)",
         "SELECT RANDOM() AS r, FIRST_VALUE(r) OVER (PARTITION BY a) FROM self",
+        "SELECT SUM(a) OVER () AS s, * REPLACE (SUM(s) OVER () AS a) FROM self",
     ]:
         with pytest.raises(
             pl.exceptions.SQLSyntaxError, match="cannot read SELECT alias"
@@ -255,3 +256,8 @@ def test_select_alias_reuse_errors() -> None:
         """
     )
     assert res.rows() == [(6, 7, 2, 9), (6, 7, 3, 9), (6, 7, 4, 9)]
+    # a qualifier naming a table reads the table
+    res = pl.SQLContext(t=df).execute(
+        "SELECT SUM(a) OVER () AS t, SUM(t.a) OVER () AS z FROM t", eager=True
+    )
+    assert res.rows() == [(6, 6)] * 3
