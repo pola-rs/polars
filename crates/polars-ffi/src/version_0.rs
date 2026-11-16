@@ -89,6 +89,7 @@ pub fn export_column(c: &Column) -> ColumnExport {
             ColumnExport::IS_SCALAR,
         ),
         Column::Series(s) => (export_series(s), 0),
+        Column::Dictionary(d) => (export_series(d.as_materialized_series()), 0),
     };
     ColumnExport {
         series,
