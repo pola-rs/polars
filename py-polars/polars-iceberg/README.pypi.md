@@ -1,8 +1,7 @@
 # polars-iceberg
 
 This package is a dependency of [Polars](https://pypi.org/project/polars/) and is not meant to be
-used directly. It contains the native Iceberg scan planning plugin that `polars.scan_iceberg`
-uses.
+used directly. It contains the native Iceberg scan planning plugin that `polars.scan_iceberg` uses.
 
 To install it, install Polars with the `iceberg` extra:
 
