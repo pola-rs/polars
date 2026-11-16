@@ -951,3 +951,83 @@ def test_from_quoted_name_that_is_not_a_path() -> None:
                 match=rf"relation '{name}' was not found.*read_csv",
             ):
                 ctx.execute(f"SELECT * FROM '{name}'", eager=True)
+
+
+_READS_DISABLED = "reading files is disabled in this SQLContext"
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT * FROM read_csv('{csv}')",
+        "SELECT * FROM read_parquet('{parquet}')",
+        "SELECT * FROM read_ipc('{ipc}')",
+        "SELECT * FROM read_json('{ndjson}')",
+        "SELECT * FROM read_ndjson('{ndjson}')",
+        "SELECT * FROM read_csv(['{csv}', '{csv}'])",
+        "SELECT * FROM read_parquet('{dir}/*.parquet')",
+        "SELECT * FROM read_parquet('{dir}/missing.parquet')",
+        "SELECT * FROM read_parquet('s3://bucket/data.parquet')",
+        "SELECT * FROM '{csv}'",
+        "SELECT * FROM '{parquet}' AS t WHERE t.x > 1",
+        "DESCRIBE '{parquet}'",
+        "WITH c AS (SELECT * FROM read_csv('{csv}')) SELECT * FROM c",
+        "SELECT * FROM t WHERE x IN (SELECT x FROM read_csv('{csv}'))",
+        "SELECT (SELECT COUNT(*) FROM '{parquet}') AS n",
+        "SELECT * FROM t WHERE EXISTS (SELECT 1 FROM '{csv}' AS f WHERE f.x = t.x)",
+        "SELECT x FROM t UNION ALL SELECT x FROM '{csv}'",
+        "SELECT * FROM t JOIN read_parquet('{parquet}') AS f USING (x)",
+        "SELECT * FROM t, LATERAL (SELECT f.s FROM '{csv}' AS f WHERE f.x = t.x) AS q",
+        "EXPLAIN SELECT * FROM read_csv('{csv}')",
+        "CREATE TABLE c AS SELECT * FROM read_csv('{csv}')",
+    ],
+)
+@pytest.mark.parametrize("eager", [False, True])
+def test_file_reads_disabled(tmp_path: Path, query: str, eager: bool) -> None:
+    df = pl.DataFrame({"x": [1, 2], "s": ["a", "b"]})
+    paths = {"dir": tmp_path.as_posix()}
+    for ext in ["csv", "parquet", "ipc", "ndjson"]:
+        paths[ext] = (tmp_path / f"data.{ext}").as_posix()
+        getattr(df, f"write_{ext}")(paths[ext])
+    query = query.format(**paths)
+
+    ctx = pl.SQLContext(t=pl.DataFrame({"x": [1]}), allow_file_reads=False)
+    # the error comes from `execute`, also for a lazy result
+    with pytest.raises(SQLInterfaceError, match=_READS_DISABLED):
+        ctx.execute(query, eager=eager)
+
+    if "missing" not in query and "s3://" not in query:
+        pl.SQLContext(t=pl.DataFrame({"x": [1]})).execute(query, eager=True)
+
+
+@pytest.mark.parametrize("source", ["read_csv('{path}')", "'{path}'"])
+def test_file_reads_disabled_in_views(tmp_path: Path, source: str) -> None:
+    path = (tmp_path / "data.csv").as_posix()
+    pl.DataFrame({"x": [1, 2]}).write_csv(path)
+    source = source.format(path=path)
+
+    ctx = pl.SQLContext(allow_file_reads=False)
+    with pytest.raises(SQLInterfaceError, match=_READS_DISABLED):
+        ctx.execute(f"CREATE VIEW v AS SELECT * FROM {source}")
+    with pytest.raises(SQLInterfaceError, match="'v' was not found"):
+        ctx.execute("SELECT * FROM v")
+
+
+def test_file_reads_disabled_keeps_tables_and_series() -> None:
+    lf = pl.LazyFrame({"x": [1, 2]})
+    ctx = pl.SQLContext(t=lf, allow_file_reads=False)
+    for query in [
+        "SELECT * FROM 't'",
+        "SELECT * FROM generate_series(1, 2)",
+        "SELECT * FROM range(1, 3)",
+    ]:
+        assert ctx.execute(query, eager=True).rows() == [(1,), (2,)]
+
+    # a quoted name that is a registered table reads the table
+    ctx.register("data.csv", lf)
+    assert ctx.execute("SELECT * FROM 'data.csv'", eager=True).rows() == [(1,), (2,)]
+
+    # no hint to read a missing table as a file
+    with pytest.raises(SQLInterfaceError, match="was not found") as exc:
+        ctx.execute("SELECT * FROM 'data.txt'")
+    assert "read_csv" not in str(exc.value)

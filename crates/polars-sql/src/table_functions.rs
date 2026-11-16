@@ -147,6 +147,14 @@ impl PolarsTableFunctions {
         args: &[SQLFunctionArg],
         ctx: &mut SQLContext,
     ) -> PolarsResult<(String, LazyFrame)> {
+        let reads_file = !matches!(
+            self,
+            PolarsTableFunctions::GenerateSeries | PolarsTableFunctions::Range
+        );
+        polars_ensure!(
+            !reads_file || ctx.allow_file_reads,
+            SQLInterface: "reading files is disabled in this SQLContext"
+        );
         let (name, lf): (String, LazyFrame) = match self {
             #[cfg(feature = "csv")]
             PolarsTableFunctions::ReadCsv => self.read_csv(args)?,

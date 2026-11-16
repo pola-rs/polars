@@ -326,6 +326,8 @@ pub struct SQLContext {
     /// Set once a caller installs their own registry; user-defined functions cannot be
     /// carried in the DSL, so such a context resolves its queries eagerly.
     custom_function_registry: bool,
+    /// Whether SQL may read files and URLs, through table functions or quoted paths.
+    pub(crate) allow_file_reads: bool,
     pub(crate) lp_arena: Arena<IR>,
     pub(crate) expr_arena: Arena<AExpr>,
 
@@ -423,6 +425,7 @@ impl Default for SQLContext {
         Self {
             function_registry: Arc::new(DefaultFunctionRegistry {}),
             custom_function_registry: false,
+            allow_file_reads: true,
             table_map: Default::default(),
             views: Default::default(),
             view_frames: Default::default(),
@@ -1397,10 +1400,13 @@ impl SQLContext {
 
     /// Whether resolving `stmt` can be deferred to the DSL -> IR conversion.
     ///
-    /// A user-defined function does not survive the round trip through the DSL, and the views
-    /// a statement reads are planned with it.
+    /// A user-defined function does not survive the round trip through the DSL, the views
+    /// a statement reads are planned with it, and the context that resolves it reads files.
     fn can_defer(&self, stmt: &Statement) -> bool {
-        !self.custom_function_registry && is_read_only_query(stmt) && !self.reads_context(stmt)
+        !self.custom_function_registry
+            && self.allow_file_reads
+            && is_read_only_query(stmt)
+            && !self.reads_context(stmt)
     }
 
     /// Whether `stmt` names a view or `information_schema.columns`, which are planned
@@ -1540,6 +1546,14 @@ impl SQLContext {
         self
     }
 
+    /// Set whether SQL may read files and URLs, through table functions such as `read_parquet`
+    /// or a quoted path in `FROM`. Registered tables and catalogs stay readable, and statements
+    /// on catalogs are not limited.
+    pub fn with_file_reads(mut self, allow: bool) -> Self {
+        self.allow_file_reads = allow;
+        self
+    }
+
     /// Get the function registry of the SQLContext
     pub fn registry(&self) -> &Arc<dyn FunctionRegistry> {
         &self.function_registry
@@ -1568,6 +1582,7 @@ impl SQLContext {
             // (Note: shared by Arc, no need to deep-copy)
             function_registry: self.function_registry.clone(),
             custom_function_registry: self.custom_function_registry,
+            allow_file_reads: self.allow_file_reads,
             catalogs: self.catalogs.clone(),
             catalog_tables: self.catalog_tables.clone(),
             catalog_names: self.catalog_names.clone(),
@@ -1824,7 +1839,7 @@ impl SQLContext {
             .filter(|name| name.starts_with("read_"))
             .collect::<Vec<_>>();
         let hint = match quoted_path(name) {
-            Some(_) if hint.is_empty() && !read_fns.is_empty() => {
+            Some(_) if hint.is_empty() && !read_fns.is_empty() && self.allow_file_reads => {
                 format!(
                     "; to read it as a file, use one of: {}",
                     read_fns.join(", ")
@@ -1962,6 +1977,7 @@ impl SQLContext {
             views_in_progress,
             function_registry: self.function_registry.clone(),
             custom_function_registry: self.custom_function_registry,
+            allow_file_reads: self.allow_file_reads,
             statement_time: self.statement_time.clone(),
             ..Default::default()
         }

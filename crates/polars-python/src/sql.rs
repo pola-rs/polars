@@ -50,9 +50,9 @@ impl Clone for PySQLContext {
 impl PySQLContext {
     #[staticmethod]
     #[allow(clippy::new_without_default)]
-    pub fn new() -> PySQLContext {
+    pub fn new(allow_file_reads: bool) -> PySQLContext {
         PySQLContext {
-            context: RwLock::new(SQLContext::new()),
+            context: RwLock::new(SQLContext::new().with_file_reads(allow_file_reads)),
         }
     }
 
