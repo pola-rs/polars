@@ -179,6 +179,7 @@ dtype-map = [
 ]
 dtype-union = [
   "polars-core/dtype-union",
+  "polars-io/dtype-union",
   "polars-ops/dtype-union",
   "polars-plan/dtype-union",
   "polars-expr/dtype-union",

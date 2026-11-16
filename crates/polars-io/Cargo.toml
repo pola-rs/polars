@@ -127,6 +127,7 @@ timezones = [
 dtype-time = ["polars-core/dtype-time"]
 dtype-duration = ["polars-core/dtype-duration"]
 dtype-struct = ["polars-core/dtype-struct"]
+dtype-union = ["polars-core/dtype-union", "dtype-struct"]
 dtype-decimal = ["polars-core/dtype-decimal", "polars-json?/dtype-decimal"]
 fmt = ["polars-core/fmt"]
 lazy = []

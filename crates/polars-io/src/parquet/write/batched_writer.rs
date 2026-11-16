@@ -275,11 +275,8 @@ fn create_eager_serializer(
 /// Stores unions as structs, since Parquet has no union type. The file's Arrow schema keeps the
 /// unions, so they are restored on read.
 pub(crate) fn unions_to_structs(df: &DataFrame) -> PolarsResult<std::borrow::Cow<'_, DataFrame>> {
-    if !df.columns().iter().any(|c| c.dtype().contains_union()) {
-        return Ok(std::borrow::Cow::Borrowed(df));
-    }
-    #[cfg(feature = "dtype-struct")]
-    {
+    #[cfg(feature = "dtype-union")]
+    if df.columns().iter().any(|c| c.dtype().contains_union()) {
         let columns = df
             .columns()
             .iter()
@@ -290,10 +287,9 @@ pub(crate) fn unions_to_structs(df: &DataFrame) -> PolarsResult<std::borrow::Cow
             })
             .collect::<PolarsResult<Vec<_>>>()?;
         // SAFETY: the conversion keeps the length and name of every column.
-        Ok(std::borrow::Cow::Owned(unsafe {
+        return Ok(std::borrow::Cow::Owned(unsafe {
             DataFrame::new_unchecked(df.height(), columns)
-        }))
+        }));
     }
-    #[cfg(not(feature = "dtype-struct"))]
-    polars_bail!(InvalidOperation: "writing a union to Parquet requires the `dtype-struct` feature")
+    Ok(std::borrow::Cow::Borrowed(df))
 }

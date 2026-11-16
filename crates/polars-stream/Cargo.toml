@@ -144,6 +144,7 @@ dtype-extension = ["polars-core/dtype-extension", "polars-expr/dtype-extension",
 dtype-map = ["polars-core/dtype-map", "polars-expr/dtype-map", "polars-plan/dtype-map"]
 dtype-union = [
   "polars-core/dtype-union",
+  "polars-io/dtype-union",
   "polars-ops/dtype-union",
   "polars-expr/dtype-union",
   "polars-plan/dtype-union",
