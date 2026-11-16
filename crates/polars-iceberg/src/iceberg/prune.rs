@@ -1050,7 +1050,7 @@ mod tests {
             datum_to_lit(&text, &PrimitiveType::Uuid),
             Some(Lit::Bytes(bytes))
         );
-        // Unparseable values are unknown (the file is kept), not compared as text.
+        // Unparsable values are unknown (the file is kept), not compared as text.
         let invalid = Datum::String("not-a-uuid".into());
         assert_eq!(datum_to_lit(&invalid, &PrimitiveType::Uuid), None);
     }
