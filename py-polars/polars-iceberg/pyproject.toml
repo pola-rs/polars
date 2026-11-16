@@ -8,17 +8,15 @@ description = "Native Iceberg scan planning plugin for Polars (dependency of the
 readme = "README.pypi.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-# From `package.version` in Cargo.toml.
+# From `package.version` in the wrapper crate `Cargo.toml`.
 dynamic = ["version"]
 
 [project.urls]
 Homepage = "https://www.pola.rs/"
 Polars = "https://pypi.org/project/polars/"
-Repository = "https://github.com/pola-rs/polars-iceberg"
+Repository = "https://github.com/pola-rs/polars"
 
 [tool.maturin]
-features = ["python", "iceberg"]
 module-name = "polars_iceberg"
-# As a workspace member, the sdist gets the license only at `crates/polars-iceberg/LICENSE`, while
-# its metadata (`License-File: LICENSE`) points at the root, which PyPI rejects.
+# Keep the license at the sdist root for Python package metadata.
 include = [{ path = "LICENSE", format = "sdist" }]

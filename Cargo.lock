@@ -3362,6 +3362,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-iceberg-python"
+version = "0.1.0"
+dependencies = [
+ "polars-io-ext",
+ "pyo3",
+]
+
+[[package]]
 name = "polars-io"
 version = "0.55.1"
 dependencies = [
@@ -3412,6 +3420,26 @@ dependencies = [
  "tempfile",
  "tokio",
  "zmij",
+ "zstd",
+]
+
+[[package]]
+name = "polars-io-ext"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "flate2",
+ "futures",
+ "hex",
+ "polars-arrow",
+ "polars-error",
+ "polars-io-ext-ffi",
+ "polars-utils",
+ "pyo3",
+ "serde",
+ "serde_json",
+ "snap",
+ "tokio",
  "zstd",
 ]
 

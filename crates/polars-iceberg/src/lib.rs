@@ -14,7 +14,7 @@ use polars_io_ext_ffi::common::{FfiError, FfiErrorKind};
 pub mod iceberg;
 
 #[cfg(feature = "python")]
-mod python;
+pub mod python;
 
 /// Python distribution name, as used in pip requirements and error messages. Each format is
 /// released as its own wheel built from this crate with only that format's feature enabled.

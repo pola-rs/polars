@@ -8,15 +8,14 @@ edition = { workspace = true }
 homepage = { workspace = true }
 license = { workspace = true }
 publish = false
-repository = "https://github.com/pola-rs/polars-iceberg"
+repository = "https://github.com/pola-rs/polars"
 description = "Native I/O plugins for Polars (Iceberg, ...), one feature per format."
 
-# Built as a member of the Polars workspace: this repository is cloned (git-ignored) to
-# `crates/polars-iceberg` of https://github.com/pola-rs/polars.
+# The Python package `polars-iceberg` is built from `py-polars/polars-iceberg`.
 
 [lib]
 name = "polars_io_ext"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib"]
 
 [dependencies]
 chrono = { workspace = true, optional = true }

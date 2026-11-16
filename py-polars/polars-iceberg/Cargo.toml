@@ -1,0 +1,22 @@
+[package]
+name = "polars-iceberg-python"
+# Released independently of Polars: the version of the PyPI package `polars-iceberg`, equal to the
+# `version` of `crates/polars-iceberg` (the module's `__version__`).
+version = "0.1.0"
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+publish = false
+repository = "https://github.com/pola-rs/polars"
+description = "Python extension module (`polars_iceberg`) of the `polars-iceberg` package."
+
+[lib]
+name = "_lib"
+crate-type = ["cdylib"]
+
+[dependencies]
+polars-io-ext = { path = "../../crates/polars-iceberg", features = ["python", "iceberg"] }
+pyo3 = { workspace = true, features = ["abi3-py310", "extension-module"] }
+
+[lints]
+workspace = true
