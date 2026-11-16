@@ -116,9 +116,9 @@ impl Series {
         chunk_idx: usize,
         compat_level: CompatLevel,
     ) -> PolarsResult<Vec<ArrayRef>> {
-        let chunk = self.chunks()[chunk_idx].as_ref();
+        let chunk = std::slice::from_ref(&self.chunks()[chunk_idx]);
         let arrow_dtype = self.dtype().to_arrow(compat_level);
-        let Some(ranges) = arrow_export_row_ranges([(chunk, &arrow_dtype)], chunk.len())? else {
+        let Some(ranges) = arrow_export_row_ranges([(chunk, &arrow_dtype)], chunk[0].len())? else {
             return Ok(vec![self.try_to_arrow(chunk_idx, compat_level)?]);
         };
 

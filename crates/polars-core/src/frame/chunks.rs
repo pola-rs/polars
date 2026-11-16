@@ -1,3 +1,6 @@
+use std::borrow::Cow;
+use std::ops::Range;
+
 use polars_arrow::record_batch::RecordBatch;
 use rayon::prelude::*;
 
@@ -100,35 +103,47 @@ impl DataFrame {
 }
 
 impl DataFrame {
+    /// Row ranges cutting this frame, or its chunk `chunk_idx` of `height` rows if given, so that
+    /// each exports to `arrow_dtypes` without overflowing the `i32` offsets of an arrow MAP;
+    /// `None` if no cut is needed.
+    pub(crate) fn arrow_export_ranges<'a>(
+        &self,
+        arrow_dtypes: impl IntoIterator<Item = &'a ArrowDataType>,
+        chunk: Option<(usize, usize)>,
+    ) -> PolarsResult<Option<Vec<Range<usize>>>> {
+        let height = chunk.map_or(self.height(), |(_, height)| height);
+        let columns: Vec<(Cow<'_, [ArrayRef]>, &ArrowDataType)> = self
+            .columns()
+            .iter()
+            .zip(arrow_dtypes)
+            .filter(|(_, dtype)| contains_arrow_map(dtype))
+            .map(|(c, dtype)| {
+                let chunks = match (c.as_series(), chunk) {
+                    (Some(s), None) => Cow::Borrowed(s.chunks().as_slice()),
+                    (Some(s), Some((idx, _))) => {
+                        Cow::Borrowed(std::slice::from_ref(&s.chunks()[idx]))
+                    },
+                    // All rows of a scalar column are alike, so any `height` of them will do.
+                    (None, _) => {
+                        Cow::Owned(c.slice(0, height).take_materialized_series().into_chunks())
+                    },
+                };
+                (chunks, dtype)
+            })
+            .collect();
+
+        arrow_export_row_ranges(columns.iter().map(|(c, d)| (c.as_ref(), *d)), height)
+    }
+
     /// Slices of this frame that each export to `arrow_dtypes` without overflowing the `i32`
     /// offsets of an arrow MAP; just the frame unless one would.
     ///
-    /// Only columns whose arrow dtype contains a MAP are rechunked.
+    /// The columns may be chunked differently, and nothing is rechunked.
     pub fn split_for_arrow_export<'a>(
-        mut self,
+        self,
         arrow_dtypes: impl IntoIterator<Item = &'a ArrowDataType>,
     ) -> PolarsResult<Vec<DataFrame>> {
-        let map_columns: Vec<(usize, &ArrowDataType)> = arrow_dtypes
-            .into_iter()
-            .enumerate()
-            .filter(|(_, dtype)| contains_arrow_map(dtype))
-            .collect();
-        if map_columns.is_empty() {
-            return Ok(vec![self]);
-        }
-
-        // SAFETY: rechunking keeps the length and name of each column.
-        let columns = unsafe { self.columns_mut_retain_schema() };
-        for &(i, _) in &map_columns {
-            if columns[i].n_chunks() != 1 {
-                columns[i] = columns[i].as_materialized_series().rechunk().into_column();
-            }
-        }
-        let arrays = map_columns.iter().map(|&(i, dtype)| {
-            let chunk = self.columns()[i].as_materialized_series().chunks()[0].as_ref();
-            (chunk, dtype)
-        });
-        let Some(ranges) = arrow_export_row_ranges(arrays, self.height())? else {
+        let Some(ranges) = self.arrow_export_ranges(arrow_dtypes, None)? else {
             return Ok(vec![self]);
         };
 

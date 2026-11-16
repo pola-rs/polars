@@ -32,7 +32,7 @@ use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::expr::datatype::PyDataTypeExpr;
 use crate::expr::selector::PySelector;
-use crate::interop::arrow::to_py::dataframe_to_struct_arrays;
+use crate::interop::arrow::to_py::batches_to_struct_arrays;
 use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
 #[cfg(feature = "json")]
 use crate::io::cloud_options::OptPyCloudOptions;
@@ -1772,7 +1772,8 @@ impl PyCollectBatches {
 pub struct ArrowStreamIterator {
     inner: Arc<Mutex<CollectBatches>>,
     dtype: ArrowDataType,
-    arrays: std::vec::IntoIter<ArrayRef>,
+    /// The arrays of the frame collected last.
+    arrays: Option<Box<dyn Iterator<Item = PolarsResult<ArrayRef>> + Send>>,
 }
 
 impl ArrowStreamIterator {
@@ -1780,7 +1781,7 @@ impl ArrowStreamIterator {
         Self {
             inner,
             dtype: schema,
-            arrays: Vec::new().into_iter(),
+            arrays: None,
         }
     }
 }
@@ -1790,18 +1791,19 @@ impl Iterator for ArrowStreamIterator {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            if let Some(array) = self.arrays.next() {
-                return Some(Ok(array));
+            if let Some(array) = self.arrays.as_mut().and_then(|arrays| arrays.next()) {
+                return Some(array);
             }
             let next = self.inner.lock().next();
             match next? {
                 Err(err) => return Some(Err(err)),
                 Ok(mut df) => {
                     df.rechunk_mut();
-                    match dataframe_to_struct_arrays(&df, &self.dtype) {
-                        Ok(arrays) => self.arrays = arrays.into_iter(),
-                        Err(err) => return Some(Err(err)),
-                    }
+                    let batches = df.try_iter_chunks(CompatLevel::newest(), false);
+                    self.arrays = Some(Box::new(batches_to_struct_arrays(
+                        batches,
+                        self.dtype.clone(),
+                    )));
                 },
             }
         }

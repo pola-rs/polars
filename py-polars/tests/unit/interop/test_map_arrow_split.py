@@ -164,6 +164,38 @@ def test_ipc_writers_split_an_oversized_map_chunk(df: pl.DataFrame) -> None:
         assert table.column("i").to_pylist() == [0, 1, 2, 3, 4, 5]
 
 
+def test_sink_ipc_splits_a_map_column_with_several_chunks() -> None:
+    chunk = map_chunk([ROW, ROW])
+    table = pa.table({"m": pa.chunked_array([chunk, chunk, chunk])})
+    df = pl.from_arrow(table)
+    assert isinstance(df, pl.DataFrame)
+    assert df.n_chunks() == 3
+
+    f = io.BytesIO()
+    df.lazy().sink_ipc(f)
+    f.seek(0)
+
+    assert map_entries(pa.ipc.open_file(f).read_all(), "m") == [3 * ROW, 3 * ROW]
+
+
+def test_entries_under_null_map_rows_are_not_counted() -> None:
+    def outer(inner_lens: list[int], *, valid: bool) -> pa.MapArray:
+        offsets = pa.array([0, len(inner_lens)], pa.int32())
+        keys = zeroed_bools(len(inner_lens))
+        mask = pa.array([not valid])
+        return pa.MapArray.from_arrays(offsets, keys, map_chunk(inner_lens), mask=mask)
+
+    # The null rows own 3 * 2^30 inner entries, which export drops.
+    chunks = [outer([ROW], valid=True)] + [outer([ROW, ROW], valid=False)] * 3
+    s = pl.from_arrow(pa.chunked_array(chunks))
+    assert isinstance(s, pl.Series)
+
+    table = s.rechunk().to_frame().to_arrow()
+
+    assert batch_rows(table) == [4]
+    assert table.column(0).null_count == 3
+
+
 def test_to_pandas_batches_share_one_schema(df: pl.DataFrame) -> None:
     # Pandas conversion of the map itself would materialize 3 * 2^30 Python objects.
     with_cat = df.with_columns(c=pl.lit("x", pl.Categorical))

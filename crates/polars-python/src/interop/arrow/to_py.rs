@@ -86,9 +86,11 @@ pub(crate) fn dataframe_to_stream<'py>(
     df: &DataFrame,
     py: Python<'py>,
 ) -> PyResult<Bound<'py, PyCapsule>> {
-    let iter = Box::new(DataFrameStreamIterator::new(df));
-    let field = iter.field();
-    let stream = ffi::export_iterator(iter, field);
+    let schema = df.schema().to_arrow(CompatLevel::newest());
+    let dtype = ArrowDataType::Struct(schema.into_iter_values().collect());
+    let field = ArrowField::new(PlSmallStr::EMPTY, dtype.clone(), false);
+    let iter = batches_to_struct_arrays(df.try_iter_chunks(CompatLevel::newest(), false), dtype);
+    let stream = ffi::export_iterator(Box::new(iter), field);
     PyCapsule::new_with_value(py, stream, c"arrow_array_stream")
 }
 
@@ -115,53 +117,14 @@ pub(crate) fn polars_schema_to_pycapsule<'py>(
     PyCapsule::new_with_value(py, schema, c"arrow_schema")
 }
 
-/// Export a [`DataFrame`] with aligned chunks as arrow struct arrays of `dtype`.
-pub(crate) fn dataframe_to_struct_arrays(
-    df: &DataFrame,
-    dtype: &ArrowDataType,
-) -> PolarsResult<Vec<ArrayRef>> {
-    df.try_iter_chunks(CompatLevel::newest(), false)
-        .map(|batch| {
-            let batch = batch?;
-            let array = StructArray::new(dtype.clone(), batch.len(), batch.into_arrays(), None);
-            Ok(Box::new(array) as ArrayRef)
-        })
-        .collect()
-}
-
-pub struct DataFrameStreamIterator {
-    df: Option<DataFrame>,
+/// Each record batch as an arrow struct array of `dtype`, the way a C stream carries a table.
+pub(crate) fn batches_to_struct_arrays(
+    batches: impl Iterator<Item = PolarsResult<RecordBatch>> + Send + 'static,
     dtype: ArrowDataType,
-    arrays: std::vec::IntoIter<ArrayRef>,
-}
-
-impl DataFrameStreamIterator {
-    fn new(df: &DataFrame) -> Self {
-        let schema = df.schema().to_arrow(CompatLevel::newest());
-        let dtype = ArrowDataType::Struct(schema.into_iter_values().collect());
-
-        Self {
-            df: Some(df.clone()),
-            dtype,
-            arrays: Vec::new().into_iter(),
-        }
-    }
-
-    fn field(&self) -> ArrowField {
-        ArrowField::new(PlSmallStr::EMPTY, self.dtype.clone(), false)
-    }
-}
-
-impl Iterator for DataFrameStreamIterator {
-    type Item = PolarsResult<ArrayRef>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(df) = self.df.take() {
-            match dataframe_to_struct_arrays(&df, &self.dtype) {
-                Ok(arrays) => self.arrays = arrays.into_iter(),
-                Err(err) => return Some(Err(err)),
-            }
-        }
-        self.arrays.next().map(Ok)
-    }
+) -> impl Iterator<Item = PolarsResult<ArrayRef>> + Send + 'static {
+    batches.map(move |batch| {
+        let batch = batch?;
+        let array = StructArray::new(dtype.clone(), batch.len(), batch.into_arrays(), None);
+        Ok(array.boxed())
+    })
 }
