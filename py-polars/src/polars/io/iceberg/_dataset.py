@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import os
+import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from functools import partial
@@ -52,6 +53,7 @@ if TYPE_CHECKING:
 
     from polars._typing import StorageOptionsDict
     from polars.io.cloud._utils import NoPickleOption
+    from polars.io.iceberg._time_travel import TableVersion
     from polars.lazyframe.frame import LazyFrame
 
 
@@ -143,9 +145,17 @@ class IcebergTableWrap:
     table_descriptor_: SerializedTableState | None
     serializer: IcebergTableSerializer
     iceberg_storage_properties: StorageOptionsDict | None
+    # Scans sharing the wrap resolve concurrently: they load the table once.
+    _load_lock: threading.Lock = field(
+        default_factory=threading.Lock, init=False, repr=False, compare=False
+    )
 
     def get(self) -> pyiceberg.table.Table:
         """Fetch the PyIceberg Table object."""
+        with self._load_lock:
+            return self._get()
+
+    def _get(self) -> pyiceberg.table.Table:
         if self.table_.get() is None:
             if verbose():
                 descriptor = self.table_descriptor_
@@ -203,10 +213,10 @@ class IcebergTableWrap:
 
         assert self.table_descriptor_ is not None
 
-        return self.__dict__
+        return {k: v for k, v in self.__dict__.items() if k != "_load_lock"}
 
     def __setstate__(self, state: dict[str, Any]) -> None:
-        self.__dict__ = state
+        self.__dict__ = {**state, "_load_lock": threading.Lock()}
 
 
 @dataclass(kw_only=True)
@@ -324,6 +334,15 @@ class IcebergScanResolver:
     )
     # The files to read, as planned by the caller: each is read in full.
     file_tasks: list[FileScanTask] | None = field(default=None, repr=False)
+    # A SQL time travel version, resolved to `snapshot_id` where the table loads.
+    version: TableVersion | None = field(default=None, repr=False)
+
+    def _pin_version(self) -> None:
+        """Resolve `version` once, so that the schema and the scan read one snapshot."""
+        if self.version is not None and self.snapshot_id is None:
+            from polars.io.iceberg._time_travel import resolve_version
+
+            self.snapshot_id = resolve_version(self.table.get(), self.version)
 
     #
     # PythonDatasetProvider interface functions
@@ -333,6 +352,7 @@ class IcebergScanResolver:
         """Fetch the schema of the table."""
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
+        self._pin_version()
         if self.snapshot_id is None:
             if self.schema_at_creation is None:
                 self.schema_at_creation = self.table.get().schema()
@@ -403,6 +423,7 @@ class IcebergScanResolver:
 
         verbose = polars._utils.logging.verbose()
 
+        self._pin_version()
         tbl = self.table.get()
         snapshot_id = self.snapshot_id
         is_incremental = (

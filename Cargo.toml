@@ -75,6 +75,7 @@ bytemuck = { version = "1.22", features = ["derive", "extern_crate_alloc"] }
 bytes = { version = "1.11" }
 chrono = { version = "0.4.42", default-features = false, features = ["std"] }
 chrono-tz = "0.10"
+clap = { version = "4.5", features = ["derive"] }
 color-backtrace = { version = "0.7.2", default-features = false, features = ["use-btparse-crate"] }
 compact_str = { version = "0.9.0", features = ["serde"] }
 crossbeam-channel = "0.5.15"

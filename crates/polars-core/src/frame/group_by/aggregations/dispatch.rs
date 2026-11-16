@@ -39,7 +39,7 @@ impl Series {
 
         match groups {
             GroupsType::Idx(groups) => agg_helper_idx_on_all::<IdxType, _>(groups, |idxs| {
-                debug_assert!(idxs.len() <= self.len());
+                debug_assert!(_idx_in_bounds(idxs, self.len()));
                 if let Some(v) = &valid {
                     let mut count = 0;
                     for idx in idxs.iter() {

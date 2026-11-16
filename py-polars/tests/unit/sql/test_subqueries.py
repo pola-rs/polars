@@ -1317,6 +1317,26 @@ def test_correlated_scalar_subquery_aggregate(aggregate: str) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT k, (SELECT COUNT(*) FROM t2 x WHERE x.b = t1.k AND x.b = t1.j) AS s "
+        "FROM t1 ORDER BY k",
+        "SELECT k FROM t1 WHERE k IN (SELECT x.b FROM t2 x WHERE x.b = t1.k "
+        "AND x.b = t1.j) ORDER BY k",
+    ],
+)
+def test_correlated_subquery_inner_column_repeated(query: str) -> None:
+    assert_sql_matches(
+        frames={
+            "t1": pl.DataFrame({"k": [1, 2, None], "j": [1, 3, None]}),
+            "t2": pl.DataFrame({"b": [1, 1, 2]}),
+        },
+        query=query,
+        compare_with="duckdb",
+    )
+
+
 def test_correlated_scalar_subquery_rejects_foreign_qualifier() -> None:
     # `foo` is registered but is not a relation of the subquery, so its column
     # must not be read as one of the subquery's own.

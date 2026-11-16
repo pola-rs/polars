@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     import polars.io.iceberg
     from polars._typing import StorageOptionsDict
     from polars.expr.expr import Expr
+    from polars.io.iceberg._time_travel import TableVersion
     from polars.lazyframe.frame import LazyFrame
 
 
@@ -361,33 +362,40 @@ def delete_iceberg(
     table.delete(predicate_to_pyiceberg_delete_filter(predicate, table))
 
 
-def _scan_catalog_table(
+def _catalog_table_wrap(
     identifier: tuple[str, ...],
     catalog: IcebergCatalogConfig | str,
     catalog_instance: pyiceberg.catalog.Catalog | None,
     *,
     storage_options: StorageOptionsDict | None,
     display_name: str,
-) -> LazyFrame:
+) -> IcebergTableWrap:
     """
-    Lazily scan a catalog table by its identifier parts, for SQL catalogs.
+    The not yet loaded catalog table, for SQL catalogs; scans may share it.
 
     `catalog` is the catalog's config, or the name to resolve it by.
     """
+    return IcebergTableWrap(
+        table_=NoPickleOption(None),
+        table_descriptor_=IcebergCatalogTableDescriptor(
+            table_identifier=identifier,
+            catalog_config=catalog,
+            catalog_=NoPickleOption(_reusable_catalog(catalog_instance)),
+            display_name=display_name,
+        ),
+        serializer=IcebergScanTableSerializer(),
+        iceberg_storage_properties=storage_options,
+    )
+
+
+def _scan_catalog_table(
+    table: IcebergTableWrap, version: TableVersion | None = None
+) -> LazyFrame:
+    """Lazily scan a catalog table, as of `version` (resolved where the table loads)."""
     from polars._plr import PyLazyFrame
 
     dataset = IcebergScanResolver(
-        table=IcebergTableWrap(
-            table_=NoPickleOption(None),
-            table_descriptor_=IcebergCatalogTableDescriptor(
-                table_identifier=identifier,
-                catalog_config=catalog,
-                catalog_=NoPickleOption(_reusable_catalog(catalog_instance)),
-                display_name=display_name,
-            ),
-            serializer=IcebergScanTableSerializer(),
-            iceberg_storage_properties=storage_options,
-        ),
+        table=table,
         snapshot_id=None,
         from_snapshot_id_exclusive=None,
         to_snapshot_id_inclusive=None,
@@ -395,5 +403,6 @@ def _scan_catalog_table(
         use_metadata_statistics=True,
         fast_deletion_count=False,
         use_pyiceberg_filter=True,
+        version=version,
     )
     return wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset))

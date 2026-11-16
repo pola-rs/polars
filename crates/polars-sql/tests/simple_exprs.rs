@@ -185,6 +185,70 @@ fn test_cast_exprs() {
 }
 
 #[test]
+#[cfg(feature = "dtype-categorical")]
+fn test_cast_categorical_enum_time_zone() {
+    let df = df! {
+        "status" => ["new", "done", "new"],
+        "at" => ["2024-01-01 12:00:00"; 3],
+    }
+    .unwrap();
+    let mut context = SQLContext::new();
+    context.register("df", df.clone().lazy());
+    let sql = r#"
+        SELECT
+            CAST(status AS CATEGORICAL) AS cat,
+            CAST(status AS CATEGORICAL('status')) AS named,
+            CAST(status AS ENUM('new', 'done')) AS enum,
+            status::ENUM('new', 'done') = 'new' AS is_new,
+            CAST(at AS DATETIME64(3, 'Europe/Amsterdam')) AS at
+        FROM df"#;
+    let df_sql = context.execute(sql).unwrap().collect().unwrap();
+
+    let named = Categories::new("status".into(), PlSmallStr::EMPTY, CategoricalPhysical::U32);
+    let enum_dtype =
+        DataType::from_frozen_categories(FrozenCategories::new(["new", "done"]).unwrap());
+    let zone = TimeZone::opt_try_new(Some("Europe/Amsterdam")).unwrap();
+    let expected = Schema::from_iter([
+        Field::new(
+            "cat".into(),
+            DataType::from_categories(Categories::global()),
+        ),
+        Field::new("named".into(), DataType::from_categories(named)),
+        Field::new("enum".into(), enum_dtype),
+        Field::new("is_new".into(), DataType::Boolean),
+        Field::new(
+            "at".into(),
+            DataType::Datetime(TimeUnit::Milliseconds, zone),
+        ),
+    ]);
+    assert_eq!(**df_sql.schema(), expected);
+
+    let is_new: Vec<_> = df_sql
+        .column("is_new")
+        .unwrap()
+        .bool()
+        .unwrap()
+        .iter()
+        .collect();
+    assert_eq!(is_new, [Some(true), Some(false), Some(true)]);
+
+    // A value outside the enum fails.
+    let sql = "SELECT CAST(status AS ENUM('new')) FROM df";
+    assert!(context.execute(sql).unwrap().collect().is_err());
+
+    // The same names in a column list.
+    let sql = "CREATE TABLE t (status ENUM('new', 'done'), at DATETIME64(3, 'Europe/Amsterdam'))";
+    let _ = context.execute(sql).unwrap();
+    let t = context
+        .execute("SELECT * FROM t")
+        .unwrap()
+        .collect()
+        .unwrap();
+    assert_eq!(t.schema().get("status"), expected.get("enum"));
+    assert_eq!(t.schema().get("at"), expected.get("at"));
+}
+
+#[test]
 fn test_literal_exprs() {
     let df = create_sample_df();
     let mut context = SQLContext::new();

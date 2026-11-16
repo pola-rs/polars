@@ -605,7 +605,7 @@ impl PyDataFrame {
     /// # Safety
     /// Needs a preallocated *mut SeriesExport that has allocated space for n_columns.
     pub unsafe fn _export_columns(&self, location: usize) {
-        use polars_ffi::version_0::export_column;
+        use polars_ffi::version_0::export_series;
 
         let df = self.df.read();
         let cols = df.columns();
@@ -613,7 +613,7 @@ impl PyDataFrame {
         let location = location as *mut SeriesExport;
 
         for (i, col) in cols.iter().enumerate() {
-            let e = export_column(col);
+            let e = export_series(col.as_materialized_series());
             // SAFETY:
             // Caller should ensure address is allocated.
             // Be careful not to drop `e` here as that should be dropped by the ffi consumer

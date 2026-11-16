@@ -35,8 +35,12 @@ String
      - Returns the length of a given string in bytes.
    * - :ref:`POSITION <position>`
      - Returns the position of a substring within a string.
+   * - :ref:`REGEXP_EXTRACT <regexp_extract>`
+     - Returns the given capture group of the first match of `pattern` (optional: `group`, 0 for the whole match).
    * - :ref:`REGEXP_LIKE <regexp_like>`
      - Returns True if `pattern` matches the value (optional: `flags`).
+   * - :ref:`REGEXP_MATCHES <regexp_matches>`
+     - Returns True if `pattern` matches the value (optional: `options`).
    * - :ref:`REGEXP_REPLACE <regexp_replace>`
      - Replaces the first match of `pattern` with `replacement` (optional: `flags`; 'g' replaces all matches).
    * - :ref:`REPEAT <repeat>`
@@ -66,6 +70,10 @@ String
      - Returns a slice of the string data (from a start index, with an optional length); note that `start` is 1-indexed.
    * - :ref:`TIMESTAMP <timestamp>`
      - Converts a formatted timestamp/datetime string to an actual Datetime value.
+   * - :ref:`TO_DATE <to_date>`
+     - Converts a string to a Date using a PostgreSQL template.
+   * - :ref:`TO_TIMESTAMP <to_timestamp>`
+     - Converts a string to a Datetime using a PostgreSQL template.
    * - :ref:`TRIM <trim>`
      - Strips characters from the left and/or right of a string.
    * - :ref:`UPPER <upper>`
@@ -516,6 +524,32 @@ returning 0 if the substring is not found.
     # │ grape  ┆ 0   │
     # └────────┴─────┘
 
+.. _regexp_extract:
+
+REGEXP_EXTRACT
+--------------
+Returns the given capture group of the first match of `pattern` (optional: `group`, 0 for the
+whole match), or an empty string if there is no match.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": ["ab12-34", "x56-78", "abc"]})
+    df.sql(r"""
+      SELECT foo, REGEXP_EXTRACT(foo, '(\d+)-(\d+)', 2) AS second FROM self
+    """)
+    # shape: (3, 2)
+    # ┌─────────┬────────┐
+    # │ foo     ┆ second │
+    # │ ---     ┆ ---    │
+    # │ str     ┆ str    │
+    # ╞═════════╪════════╡
+    # │ ab12-34 ┆ 34     │
+    # │ x56-78  ┆ 78     │
+    # │ abc     ┆        │
+    # └─────────┴────────┘
+
 .. _regexp_like:
 
 REGEXP_LIKE
@@ -541,6 +575,37 @@ Returns True if `pattern` matches the value (optional: `flags`).
     # │ abc456 ┆ true          │
     # │ 321cba ┆ false         │
     # └────────┴───────────────┘
+
+.. _regexp_matches:
+
+REGEXP_MATCHES
+--------------
+Returns True if `pattern` matches the value. The optional `options` are 'c' (case-sensitive,
+the default), 'i' (case-insensitive), 'l' (match `pattern` literally), 's' (`.` also matches a
+newline) and 'm', 'n' or 'p' (`.` does not match a newline, the default).
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"s": ["Polars", "python", "a.b"]})
+    df.sql("""
+      SELECT
+        s,
+        REGEXP_MATCHES(s, '^p', 'i') AS m1,
+        REGEXP_MATCHES(s, '.', 'l') AS m2
+      FROM self
+    """)
+    # shape: (3, 3)
+    # ┌────────┬───────┬───────┐
+    # │ s      ┆ m1    ┆ m2    │
+    # │ ---    ┆ ---   ┆ ---   │
+    # │ str    ┆ bool  ┆ bool  │
+    # ╞════════╪═══════╪═══════╡
+    # │ Polars ┆ true  ┆ false │
+    # │ python ┆ true  ┆ false │
+    # │ a.b    ┆ false ┆ true  │
+    # └────────┴───────┴───────┘
 
 .. _regexp_replace:
 
@@ -1027,6 +1092,54 @@ Strips characters from the left and/or right of a string.
     # │   test    ┆ test    ┆ test     ┆   test   │
     # └───────────┴─────────┴──────────┴──────────┘
 
+
+.. _to_date:
+
+TO_DATE
+-------
+Converts a string to a Date using a PostgreSQL template, such as 'DD Mon YYYY'; the patterns
+are those of :ref:`TO_CHAR <to_char>`. A template that contains `%` is read as a strftime
+format, and without a template ISO-8601 format is assumed.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"s": ["05 Jul 1978", "10 Apr 2020"]})
+    df.sql("SELECT s, TO_DATE(s, 'DD Mon YYYY') AS dt FROM self")
+    # shape: (2, 2)
+    # ┌─────────────┬────────────┐
+    # │ s           ┆ dt         │
+    # │ ---         ┆ ---        │
+    # │ str         ┆ date       │
+    # ╞═════════════╪════════════╡
+    # │ 05 Jul 1978 ┆ 1978-07-05 │
+    # │ 10 Apr 2020 ┆ 2020-04-10 │
+    # └─────────────┴────────────┘
+
+.. _to_timestamp:
+
+TO_TIMESTAMP
+------------
+Converts a string to a Datetime using a PostgreSQL template, such as 'YYYY-MM-DD HH24:MI:SS';
+the patterns are those of :ref:`TO_CHAR <to_char>`. A template that contains `%` is read as a
+strftime format, and without a template ISO-8601 format is assumed.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"s": ["1978-07-05 10:30 AM", "2020-04-10 10:05 PM"]})
+    df.sql("SELECT s, TO_TIMESTAMP(s, 'YYYY-MM-DD HH12:MI AM') AS dtm FROM self")
+    # shape: (2, 2)
+    # ┌─────────────────────┬─────────────────────┐
+    # │ s                   ┆ dtm                 │
+    # │ ---                 ┆ ---                 │
+    # │ str                 ┆ datetime[μs]        │
+    # ╞═════════════════════╪═════════════════════╡
+    # │ 1978-07-05 10:30 AM ┆ 1978-07-05 10:30:00 │
+    # │ 2020-04-10 10:05 PM ┆ 2020-04-10 22:05:00 │
+    # └─────────────────────┴─────────────────────┘
 
 .. _upper:
 
