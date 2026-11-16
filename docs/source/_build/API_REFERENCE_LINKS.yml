@@ -193,7 +193,7 @@ python:
   QueryResult: https://docs.nanook.pola.rs/api/python/stable/reference/query/result/query_result.html
   InteractiveQuery: https://docs.nanook.pola.rs/api/python/stable/reference/query/result/direct_query.html
   BatchQuery: https://docs.nanook.pola.rs/api/python/stable/reference/query/result/proxy_query.html
-  login: https://docs.nanook.pola.rs/api/python/stable/reference/auth/api/polars_cloud.login.html
+  login: https://docs.nanook.pola.rs/api/python/stable/reference/auth/api/polars_nanook.login.html
   register: https://docs.nanook.pola.rs/api/python/stable/reference/compute/compute.html
 
 rust:

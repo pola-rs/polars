@@ -1,10 +1,15 @@
-from typing import Literal
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import pytest
 
 import polars as pl
 from polars.testing import assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import SearchSortedSide
 
 
 def test_search_sorted() -> None:
@@ -104,6 +109,29 @@ def test_search_sorted_list_ambiguous_22058() -> None:
 
     with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.DataFrame({"a": [1, 2, 3]}).select(pl.col("a").search_sorted([1, 2]))
+
+
+@pytest.mark.parametrize("wrap", [pl.concat_list, pl.struct])
+@pytest.mark.parametrize("nulls_last", [False, True])
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_search_sorted_nested_nulls(
+    wrap: Any, nulls_last: bool, descending: bool, side: SearchSortedSide
+) -> None:
+    # A nested value orders as the integer it wraps, nulls included.
+    ints = pl.Series("a", [2, None, 1, 3, 2, None]).sort(
+        descending=descending, nulls_last=nulls_last
+    )
+    values = pl.Series("a", [0, 1, 2, 3, 4, None])
+
+    def nest(s: pl.Series) -> pl.Series:
+        a = pl.col("a")
+        return s.to_frame().select(pl.when(a.is_not_null()).then(wrap(a))).to_series()
+
+    assert_series_equal(
+        nest(ints).search_sorted(nest(values), side, descending=descending),
+        ints.search_sorted(values, side, descending=descending),
+    )
 
 
 @pytest.mark.parametrize("descending", [False, True])

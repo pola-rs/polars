@@ -2,7 +2,7 @@ use chrono::Timelike;
 use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
 use polars_core::prelude::{
     AnyValue, DataType, ExplodeOptions, PolarsResult, QuantileMethod, Scalar, Schema, TimeUnit,
-    datetime_to_timestamp_us, polars_bail, polars_ensure, polars_err,
+    UnknownKind, datetime_to_timestamp_us, polars_bail, polars_ensure, polars_err,
 };
 use polars_core::utils::try_get_supertype;
 use polars_defs::expr::UnicodeForm;
@@ -32,6 +32,8 @@ use sqlparser::ast::{
 };
 use sqlparser::tokenizer::Span;
 
+use crate::datetime_template::{ParseFormat, format_with_template, parse_format};
+use crate::group_context::{is_marked_aggregate, mark_aggregate};
 use crate::grouping_sets::MAX_GROUPING_ARGS;
 use crate::sql_expr::{
     adjust_one_indexed_param, approximate_literal, clip_substring_length, decimal_literal,
@@ -392,6 +394,27 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT STRFTIME(col1, '%d-%m-%Y %H:%M') FROM df;
     /// ```
     Strftime,
+    /// SQL 'to_char' function.
+    /// Converts a date, datetime or time to a string using a PostgreSQL template
+    /// (or a strftime format string).
+    /// ```sql
+    /// SELECT TO_CHAR(col1, 'YYYY-MM-DD HH24:MI') FROM df;
+    /// ```
+    ToChar,
+    /// SQL 'to_date' function.
+    /// Converts a string to a date using a PostgreSQL template (or a strftime format
+    /// string); ISO-8601 format is assumed without one.
+    /// ```sql
+    /// SELECT TO_DATE(col1, 'DD Mon YYYY') FROM df;
+    /// ```
+    ToDate,
+    /// SQL 'to_timestamp' function.
+    /// Converts a string to a datetime using a PostgreSQL template (or a strftime format
+    /// string); ISO-8601 format is assumed without one.
+    /// ```sql
+    /// SELECT TO_TIMESTAMP(col1, 'YYYY-MM-DD HH24:MI:SS') FROM df;
+    /// ```
+    ToTimestamp,
 
     // ----
     // String functions
@@ -480,12 +503,25 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT OCTET_LENGTH(col1) FROM df;
     /// ```
     OctetLength,
+    /// SQL 'regexp_extract' function.
+    /// Returns the given capture group of the first match of `pattern` (optional: `group`,
+    /// 0 for the whole match), or an empty string if there is no match.
+    /// ```sql
+    /// SELECT REGEXP_EXTRACT(col1, '(\d+)-(\d+)', 2) FROM df;
+    /// ```
+    RegexpExtract,
     /// SQL 'regexp_like' function.
     /// True if `pattern` matches the value (optional: `flags`).
     /// ```sql
     /// SELECT REGEXP_LIKE(col1, 'xyz', 'i') FROM df;
     /// ```
     RegexpLike,
+    /// SQL 'regexp_matches' function.
+    /// True if `pattern` matches the value (optional: `options`).
+    /// ```sql
+    /// SELECT REGEXP_MATCHES(col1, 'xyz', 'i') FROM df;
+    /// ```
+    RegexpMatches,
     /// SQL 'regexp_replace' function.
     /// Replaces the first match of `pattern` with `replacement` (optional: `flags`;
     /// the 'g' flag replaces all matches). `\1` refers to the first capture group.
@@ -637,6 +673,13 @@ pub(crate) enum PolarsSQLFunctions {
     // ----
     // Aggregate functions
     // ----
+    /// SQL 'approx_count_distinct' function.
+    /// Returns an approximation of the number of distinct non-null elements in the grouping.
+    /// ```sql
+    /// SELECT APPROX_COUNT_DISTINCT(col1) FROM df;
+    /// ```
+    #[cfg(feature = "approx_unique")]
+    ApproxCountDistinct,
     /// SQL 'approx_quantile' function.
     /// Returns an approximation of the given quantile of the grouping, with an optional
     /// allowed rank error and sketch method.
@@ -647,12 +690,30 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```
     #[cfg(feature = "approx_quantile")]
     ApproxQuantile,
+    /// SQL 'any_value' function.
+    /// Returns a non-null element of the grouping, if any.
+    /// ```sql
+    /// SELECT ANY_VALUE(col1) FROM df;
+    /// ```
+    ArbitraryValue,
     /// SQL 'avg' function.
     /// Returns the average (mean) of all the elements in the grouping.
     /// ```sql
     /// SELECT AVG(col1) FROM df;
     /// ```
     Avg,
+    /// SQL 'bool_and' function.
+    /// Returns true if all non-null elements of the grouping are true.
+    /// ```sql
+    /// SELECT BOOL_AND(col1) FROM df;
+    /// ```
+    BoolAnd,
+    /// SQL 'bool_or' function.
+    /// Returns true if any non-null element of the grouping is true.
+    /// ```sql
+    /// SELECT BOOL_OR(col1) FROM df;
+    /// ```
+    BoolOr,
     /// SQL 'corr' function.
     /// Returns the Pearson correlation coefficient between two columns.
     /// ```sql
@@ -668,6 +729,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT COUNT(DISTINCT *) FROM df;
     /// ```
     Count,
+    /// SQL 'count_if' function.
+    /// Returns the number of elements in the grouping for which the condition is true.
+    /// ```sql
+    /// SELECT COUNT_IF(col1 > 0) FROM df;
+    /// ```
+    CountIf,
     /// SQL 'covar_pop' function.
     /// Returns the population covariance between two columns.
     /// ```sql
@@ -707,6 +774,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT MAX(col1) FROM df;
     /// ```
     Max,
+    /// SQL 'max_by' function.
+    /// Returns the value of the first expression at the row where the second is greatest.
+    /// ```sql
+    /// SELECT MAX_BY(col1, col2) FROM df;
+    /// ```
+    MaxBy,
     /// SQL 'median' function.
     /// Returns the median element from the grouping.
     /// ```sql
@@ -746,6 +819,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT MIN(col1) FROM df;
     /// ```
     Min,
+    /// SQL 'min_by' function.
+    /// Returns the value of the first expression at the row where the second is smallest.
+    /// ```sql
+    /// SELECT MIN_BY(col1, col2) FROM df;
+    /// ```
+    MinBy,
     /// SQL 'stddev' function.
     /// Returns the standard deviation of all the elements in the grouping.
     /// ```sql
@@ -965,6 +1044,16 @@ pub(crate) enum PolarsSQLFunctions {
     Ntile,
 
     // ----
+    // Type functions
+    // ----
+    /// SQL 'typeof' function.
+    /// Returns the name of the data type of the argument.
+    /// ```sql
+    /// SELECT TYPEOF(col1) FROM df;
+    /// ```
+    Typeof,
+
+    // ----
     // Column selection
     // ----
     Columns,
@@ -981,6 +1070,8 @@ impl PolarsSQLFunctions {
             "abs",
             "acos",
             "acosd",
+            "any_value",
+            "approx_count_distinct",
             "approx_quantile",
             "array_contains",
             "array_dot_product",
@@ -1006,6 +1097,8 @@ impl PolarsSQLFunctions {
             "bit_length",
             "bit_or",
             "bit_xor",
+            "bool_and",
+            "bool_or",
             "cardinality",
             "cbrt",
             "ceil",
@@ -1022,6 +1115,7 @@ impl PolarsSQLFunctions {
             "cot",
             "cotd",
             "count",
+            "count_if",
             "covar",
             "covar_pop",
             "covar_samp",
@@ -1069,8 +1163,10 @@ impl PolarsSQLFunctions {
             "lpad",
             "ltrim",
             "max",
+            "max_by",
             "median",
             "min",
+            "min_by",
             "minute",
             "mod",
             "month",
@@ -1092,7 +1188,9 @@ impl PolarsSQLFunctions {
             "random",
             "range",
             "rank",
+            "regexp_extract",
             "regexp_like",
+            "regexp_matches",
             "regexp_replace",
             "repeat",
             "replace",
@@ -1119,7 +1217,11 @@ impl PolarsSQLFunctions {
             "sum",
             "tan",
             "tand",
+            "to_char",
+            "to_date",
+            "to_timestamp",
             "total",
+            "typeof",
             "unnest",
             "upper",
             "var",
@@ -1226,6 +1328,9 @@ impl PolarsSQLFunctions {
             "second" => Self::DatePartOf(DateTimeField::Second),
             "strftime" => Self::Strftime,
             "timestamp" | "datetime" => Self::Timestamp,
+            "to_char" => Self::ToChar,
+            "to_date" => Self::ToDate,
+            "to_timestamp" => Self::ToTimestamp,
 
             // ----
             // String functions
@@ -1243,7 +1348,9 @@ impl PolarsSQLFunctions {
             "ltrim" => Self::LeftTrim,
             "normalize" => Self::Normalize,
             "octet_length" => Self::OctetLength,
+            "regexp_extract" => Self::RegexpExtract,
             "regexp_like" => Self::RegexpLike,
+            "regexp_matches" => Self::RegexpMatches,
             "regexp_replace" => Self::RegexpReplace,
             "repeat" => Self::Repeat,
             "replace" => Self::Replace,
@@ -1263,11 +1370,17 @@ impl PolarsSQLFunctions {
             // ----
             // Aggregate functions
             // ----
+            "any_value" => Self::ArbitraryValue,
+            #[cfg(feature = "approx_unique")]
+            "approx_count_distinct" => Self::ApproxCountDistinct,
             #[cfg(feature = "approx_quantile")]
             "approx_quantile" => Self::ApproxQuantile,
             "avg" => Self::Avg,
+            "bool_and" | "every" => Self::BoolAnd,
+            "bool_or" => Self::BoolOr,
             "corr" => Self::Corr,
             "count" => Self::Count,
+            "count_if" | "countif" => Self::CountIf,
             "covar_pop" => Self::CovarPop,
             "covar_samp" | "covar" => Self::CovarSamp,
             "first" => Self::First,
@@ -1275,8 +1388,10 @@ impl PolarsSQLFunctions {
             "grouping_id" => Self::GroupingId,
             "last" => Self::Last,
             "max" => Self::Max,
+            "max_by" | "arg_max" => Self::MaxBy,
             "median" => Self::Median,
             "min" => Self::Min,
+            "min_by" | "arg_min" => Self::MinBy,
             "quantile_cont" => Self::QuantileCont,
             "quantile_disc" => Self::QuantileDisc,
             "percentile_cont" => Self::PercentileCont,
@@ -1323,6 +1438,11 @@ impl PolarsSQLFunctions {
             "row_number" => Self::RowNumber,
 
             // ----
+            // Type functions
+            // ----
+            "typeof" => Self::Typeof,
+
+            // ----
             // Column selection
             // ----
             "columns" => Self::Columns,
@@ -1358,8 +1478,11 @@ impl PolarsSQLFunctions {
         match self {
             #[cfg(feature = "approx_quantile")]
             ApproxQuantile => true,
-            ArrayAgg | Avg | Corr | Count | CovarPop | CovarSamp | First | Last | Max | Median
-            | Min | PercentileCont | PercentileDisc | QuantileCont | QuantileDisc | StdDev
+            #[cfg(feature = "approx_unique")]
+            ApproxCountDistinct => true,
+            ArbitraryValue | ArrayAgg | Avg | BoolAnd | BoolOr | Corr | Count | CountIf
+            | CovarPop | CovarSamp | First | Last | Max | MaxBy | Median | Min | MinBy
+            | PercentileCont | PercentileDisc | QuantileCont | QuantileDisc | StdDev
             | StringAgg | Sum | Total | Variance => true,
             // Without OVER, FIRST_VALUE is FIRST.
             FirstValue => true,
@@ -1612,6 +1735,16 @@ impl SQLFunctionVisitor<'_> {
                     },
                 }
             },
+            ToChar => self.visit_to_char(),
+            ToDate => self.visit_parse_template("TO_DATE", |e, options| e.str().to_date(options)),
+            ToTimestamp => self.visit_parse_template("TO_TIMESTAMP", |e, options| {
+                e.str().to_datetime(
+                    Some(TimeUnit::Microseconds),
+                    None,
+                    options,
+                    lit("latest"),
+                )
+            }),
 
             // ----
             // String functions
@@ -1777,6 +1910,8 @@ impl SQLFunctionVisitor<'_> {
                     _ => polars_bail!(SQLSyntax: "REGEXP_LIKE expects 2-3 arguments (found {})",args.len()),
                 }
             },
+            RegexpExtract => self.visit_regexp_extract(),
+            RegexpMatches => self.visit_regexp_matches(),
             RegexpReplace => self.try_visit_variadic(|args| match args {
                 [e, pat, replacement] => regexp_replace(e, pat, replacement, None),
                 [e, pat, replacement, flags] => regexp_replace(e, pat, replacement, Some(flags)),
@@ -1950,17 +2085,24 @@ impl SQLFunctionVisitor<'_> {
             // ----
             // Aggregate functions
             // ----
+            ArbitraryValue => self.visit_unary_aggregate(Expr::first_non_null),
+            #[cfg(feature = "approx_unique")]
+            ApproxCountDistinct => self.visit_approx_count_distinct(),
             #[cfg(feature = "approx_quantile")]
             ApproxQuantile => self.visit_approx_quantile(),
             Avg => self.visit_avg(),
+            BoolAnd => self.visit_bool_aggregate(Expr::min),
+            BoolOr => self.visit_bool_aggregate(Expr::max),
             Corr => self.visit_binary(sql_corr),
             Count => self.visit_count(),
+            CountIf => self.visit_count_if(),
             CovarPop => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 0)),
             CovarSamp => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 1)),
             First => self.visit_unary_aggregate(Expr::first),
             Grouping | GroupingId => self.visit_grouping(),
             Last => self.visit_unary_aggregate(Expr::last),
             Max => self.visit_min_max(Expr::max),
+            MaxBy => self.visit_binary(Expr::max_by),
             Median => self.visit_unary_aggregate(Expr::median),
             QuantileCont | QuantileDisc => {
                 let (fname, method) = if matches!(function_name, QuantileCont) {
@@ -1987,6 +2129,7 @@ impl SQLFunctionVisitor<'_> {
                 }
             },
             Min => self.visit_min_max(Expr::min),
+            MinBy => self.visit_binary(Expr::min_by),
             PercentileCont | PercentileDisc => self.visit_percentile(&function_name),
             StdDev => self.visit_spread_aggregate(|e| e.std(1)),
             StringAgg => self.visit_string_agg(),
@@ -2040,6 +2183,11 @@ impl SQLFunctionVisitor<'_> {
             }),
             GenerateSeries => self.visit_series(true),
             Range => self.visit_series(false),
+
+            // ----
+            // Type functions
+            // ----
+            Typeof => self.visit_typeof(),
 
             // ----
             // Column selection
@@ -2313,8 +2461,11 @@ impl SQLFunctionVisitor<'_> {
         let whole_partition = match function {
             #[cfg(feature = "approx_quantile")]
             ApproxQuantile => true,
-            ArrayAgg | Corr | CovarPop | CovarSamp | Last | Median | PercentileCont
-            | PercentileDisc | QuantileCont | QuantileDisc | StdDev | StringAgg | Variance => true,
+            #[cfg(feature = "approx_unique")]
+            ApproxCountDistinct => true,
+            ArbitraryValue | ArrayAgg | Corr | CovarPop | CovarSamp | Last | MaxBy | Median
+            | MinBy | PercentileCont | PercentileDisc | QuantileCont | QuantileDisc | StdDev
+            | StringAgg | Variance => true,
             Count => is_distinct,
             _ => false,
         };
@@ -2957,6 +3108,218 @@ impl SQLFunctionVisitor<'_> {
         self.aggregate_value(sql_expr, f)
     }
 
+    /// BOOL_AND or BOOL_OR, as the MIN or MAX of a boolean. DISTINCT doesn't change them.
+    fn visit_bool_aggregate(&mut self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
+        let (args, _) = extract_args_distinct(self.func)?;
+        let [FunctionArgExpr::Expr(sql_expr)] = args.as_slice() else {
+            return self.not_supported_error();
+        };
+        let e = self.aggregate_value(sql_expr, f)?;
+        self.boolean_arg(e)
+    }
+
+    /// `e` as a boolean: a NULL is a boolean NULL, and other types raise.
+    pub(crate) fn boolean_arg(&mut self, e: Expr) -> PolarsResult<Expr> {
+        match self.arg_dtype(&e)? {
+            Some(DataType::Boolean) => Ok(e),
+            None | Some(DataType::Null | DataType::Unknown(UnknownKind::Any)) => {
+                Ok(e.cast(DataType::Boolean))
+            },
+            Some(dtype) => polars_bail!(
+                InvalidOperation: "{} expects a boolean argument, got `{}`", self.func.name, dtype
+            ),
+        }
+    }
+
+    /// The dtype of `e`, with each subquery typed by its result.
+    fn arg_dtype(&mut self, e: &Expr) -> PolarsResult<Option<DataType>> {
+        let typed = self.ctx.with_typed_subqueries(e)?;
+        Ok(self.ctx.expr_dtype(&typed, self.active_schema))
+    }
+
+    fn visit_count_if(&mut self) -> PolarsResult<Expr> {
+        let args = extract_args(self.func)?;
+        let [FunctionArgExpr::Expr(sql_expr)] = args.as_slice() else {
+            return self.not_supported_error();
+        };
+        let count = match self.parse_value_arg(sql_expr)? {
+            ValueArg::Rows(e) => self.boolean_arg(e)?.sum(),
+            ValueArg::Constant(c) => when(self.boolean_arg(c)?)
+                .then(self.rows_read())
+                .otherwise(lit(0)),
+        };
+        Ok(count.cast(DataType::Int64))
+    }
+
+    #[cfg(feature = "approx_unique")]
+    fn visit_approx_count_distinct(&mut self) -> PolarsResult<Expr> {
+        let args = extract_args(self.func)?;
+        let [FunctionArgExpr::Expr(sql_expr)] = args.as_slice() else {
+            return self.not_supported_error();
+        };
+        let count = match self.parse_value_arg(sql_expr)? {
+            ValueArg::Rows(e) => e.drop_nulls().approx_n_unique(),
+            ValueArg::Constant(c) => when(self.rows_read().gt(lit(0)).and(c.is_not_null()))
+                .then(lit(1))
+                .otherwise(lit(0)),
+        };
+        self.apply_window_spec(count.cast(DataType::Int64))
+    }
+
+    /// REGEXP_EXTRACT(value, pattern [, group]): the group of the first match, or an empty
+    /// string if there is none.
+    fn visit_regexp_extract(&mut self) -> PolarsResult<Expr> {
+        let args = extract_args(self.func)?;
+        let (value, pattern, group) = match args.as_slice() {
+            [FunctionArgExpr::Expr(value), FunctionArgExpr::Expr(pattern)] => (value, pattern, 0),
+            [
+                FunctionArgExpr::Expr(value),
+                FunctionArgExpr::Expr(pattern),
+                FunctionArgExpr::Expr(group),
+            ] => {
+                let group = match parse_sql_expr(group, self.ctx, self.active_schema)? {
+                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
+                        usize::try_from(n).ok()
+                    },
+                    _ => None,
+                };
+                let Some(group) = group else {
+                    polars_bail!(
+                        SQLSyntax: "REGEXP_EXTRACT expects a non-negative integer literal as the group; found {}",
+                        args[2]
+                    )
+                };
+                (value, pattern, group)
+            },
+            _ => {
+                polars_bail!(SQLSyntax: "REGEXP_EXTRACT expects 2-3 arguments (found {})", args.len())
+            },
+        };
+        let value = self.string_arg(value)?;
+        let pattern = self.string_arg(pattern)?;
+        let extracted = value.clone().str().extract(pattern.clone(), group);
+        let e = when(value.is_not_null().and(pattern.is_not_null()))
+            .then(extracted.fill_null(lit("")))
+            .otherwise(Expr::Literal(LiteralValue::untyped_null()));
+        self.apply_window_spec(e)
+    }
+
+    /// A string argument, where a NULL is a string NULL.
+    fn string_arg(&mut self, e: &SQLExpr) -> PolarsResult<Expr> {
+        let e = self.parse_sql_arg(e)?;
+        Ok(match self.arg_dtype(&e)? {
+            Some(DataType::Null) => e.cast(DataType::String),
+            _ => e,
+        })
+    }
+
+    fn visit_regexp_matches(&mut self) -> PolarsResult<Expr> {
+        let args = extract_args(self.func)?;
+        let (value, pattern, options) = match args.as_slice() {
+            [FunctionArgExpr::Expr(value), FunctionArgExpr::Expr(pattern)] => {
+                (value, pattern, None)
+            },
+            [
+                FunctionArgExpr::Expr(value),
+                FunctionArgExpr::Expr(pattern),
+                FunctionArgExpr::Expr(options),
+            ] => (value, pattern, Some(options)),
+            _ => {
+                polars_bail!(SQLSyntax: "REGEXP_MATCHES expects 2-3 arguments (found {})", args.len())
+            },
+        };
+        let options = match options {
+            None => RegexpOptions::default(),
+            Some(options) => match self.parse_sql_arg(options)? {
+                Expr::Literal(lv) if lv.extract_str().is_some() => {
+                    RegexpOptions::new(lv.extract_str().unwrap())?
+                },
+                _ => {
+                    polars_bail!(SQLSyntax: "REGEXP_MATCHES expects a string literal as the options (found {})", options)
+                },
+            },
+        };
+        let value = self.string_arg(value)?;
+        let pattern = self.string_arg(pattern)?;
+        let e = options.contains(value, pattern);
+        self.apply_window_spec(e)
+    }
+
+    /// TO_DATE or TO_TIMESTAMP, where `parse` converts the string.
+    fn visit_parse_template(
+        &mut self,
+        function: &str,
+        parse: impl Fn(Expr, StrptimeOptions) -> Expr,
+    ) -> PolarsResult<Expr> {
+        let args = extract_args(self.func)?;
+        let (value, template) = match args.as_slice() {
+            [FunctionArgExpr::Expr(value)] => (value, None),
+            [
+                FunctionArgExpr::Expr(value),
+                FunctionArgExpr::Expr(template),
+            ] => (value, Some(String::from_sql_arg(template, self)?)),
+            _ => {
+                polars_bail!(SQLSyntax: "{} expects 1-2 arguments (found {})", function, args.len())
+            },
+        };
+        let mut value = self.string_arg(value)?;
+        let mut options = StrptimeOptions::default();
+        if let Some(template) = template {
+            let ParseFormat { format, defaults } = parse_format(&template, function)?;
+            if !defaults.is_empty() {
+                value = concat_str([value, lit(defaults)], "", false);
+            }
+            options.format = Some(format.into());
+        }
+        let e = parse(value, options);
+        self.apply_window_spec(e)
+    }
+
+    fn visit_to_char(&mut self) -> PolarsResult<Expr> {
+        let args = extract_args(self.func)?;
+        let [
+            FunctionArgExpr::Expr(value),
+            FunctionArgExpr::Expr(template),
+        ] = args.as_slice()
+        else {
+            polars_bail!(SQLSyntax: "TO_CHAR expects 2 arguments (found {})", args.len())
+        };
+        let value = self.parse_sql_arg(value)?;
+        let template = String::from_sql_arg(template, self)?;
+        let value = match self.arg_dtype(&value)? {
+            // A date is written as a datetime at midnight, so that time patterns work.
+            Some(DataType::Date | DataType::Null) => {
+                value.cast(DataType::Datetime(TimeUnit::Microseconds, None))
+            },
+            Some(dtype) if dtype.is_primitive_numeric() || dtype.is_decimal() => {
+                polars_bail!(SQLInterface: "TO_CHAR does not support numbers (found {})", dtype)
+            },
+            _ => value,
+        };
+        let e = format_with_template(value, &template)?;
+        self.apply_window_spec(e)
+    }
+
+    fn visit_typeof(&mut self) -> PolarsResult<Expr> {
+        let args = extract_args(self.func)?;
+        let [FunctionArgExpr::Expr(arg)] = args.as_slice() else {
+            polars_bail!(SQLSyntax: "TYPEOF expects 1 argument (found {})", args.len())
+        };
+        let e = self.parse_sql_arg(arg)?;
+        let Some(dtype) = self.arg_dtype(&e)? else {
+            polars_bail!(SQLInterface: "TYPEOF cannot determine the type of {}", arg)
+        };
+        let name = lit(dtype.materialize_unknown(true)?.to_string());
+        // The argument is kept for its number of rows and its checks against the GROUP BY, except
+        // when it is an aggregate, whose value need not be computed.
+        let e = match e {
+            Expr::Literal(_) => name,
+            e if is_marked_aggregate(&e) => mark_aggregate(name.first()),
+            e => when(e.is_null()).then(name.clone()).otherwise(name),
+        };
+        self.apply_window_spec(e)
+    }
+
     fn visit_count(&mut self) -> PolarsResult<Expr> {
         let (args, is_distinct) = extract_args_distinct(self.func)?;
         let distinct_count = |e: Expr| e.drop_nulls().n_unique();
@@ -3218,7 +3581,7 @@ pub(crate) fn is_constant_key(key: &Expr) -> bool {
 
 /// Whether `expr` reads no column of the input. Unlike [`is_constant_key`], this also holds for
 /// an aggregate or membership test of constants, as `MAX(1)` or `1 IN (1, 2)`.
-fn reads_no_input(expr: &Expr) -> bool {
+pub(crate) fn reads_no_input(expr: &Expr) -> bool {
     !expr
         .into_iter()
         .any(|e| matches!(e, Expr::Column(_) | Expr::Selector(_) | Expr::Len))
@@ -3637,6 +4000,53 @@ impl FromSQLExpr for bool {
             },
             _ => polars_bail!(SQLInterface: "cannot parse boolean {:?}", expr),
         }
+    }
+}
+
+/// The options of `REGEXP_MATCHES`, as in DuckDB.
+#[derive(Default)]
+struct RegexpOptions {
+    case_insensitive: bool,
+    dot_matches_new_line: bool,
+    literal: bool,
+}
+
+impl RegexpOptions {
+    fn new(options: &str) -> PolarsResult<Self> {
+        let mut out = Self::default();
+        for c in options.chars() {
+            match c {
+                'c' => out.case_insensitive = false,
+                'i' => out.case_insensitive = true,
+                'l' => out.literal = true,
+                'm' | 'n' | 'p' => out.dot_matches_new_line = false,
+                's' => out.dot_matches_new_line = true,
+                'g' => polars_bail!(SQLSyntax: "REGEXP_MATCHES does not take the 'g' option"),
+                c => polars_bail!(SQLSyntax: "invalid REGEXP_MATCHES option '{}'", c),
+            }
+        }
+        Ok(out)
+    }
+
+    /// Whether `pattern` matches somewhere in `value`.
+    fn contains(&self, value: Expr, pattern: Expr) -> Expr {
+        let pattern = match (self.literal, self.case_insensitive) {
+            (true, false) => return value.str().contains_literal(pattern),
+            (true, true) => pattern.str().escape_regex(),
+            (false, _) => pattern,
+        };
+        let flags = match (
+            self.case_insensitive,
+            self.dot_matches_new_line && !self.literal,
+        ) {
+            (false, false) => return value.str().contains(pattern, true),
+            (true, false) => "(?i)",
+            (false, true) => "(?s)",
+            (true, true) => "(?is)",
+        };
+        value
+            .str()
+            .contains(concat_str([lit(flags), pattern], "", false), true)
     }
 }
 

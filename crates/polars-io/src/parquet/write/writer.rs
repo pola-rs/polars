@@ -4,6 +4,7 @@ use std::sync::Mutex;
 use polars_buffer::Buffer;
 use polars_core::frame::chunk_df_for_writing;
 use polars_core::prelude::*;
+use polars_parquet::arrow::geo::{GEO_KEY, validate_geo_schema};
 use polars_parquet::write::{
     CompressionOptions, Encoding, FileWriter, StatisticsOptions, Version, WriteOptions,
     get_dtype_encoding, to_parquet_schema,
@@ -128,6 +129,15 @@ where
 
     pub fn batched(self, schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
         let schema = schema_to_arrow_checked(schema, CompatLevel::newest(), "parquet")?;
+        // Metadata that may set its own `geo` key skips the early checks.
+        // errors are only emitted at file end, because that's when the callable's keys are known.
+        if !self
+            .key_value_metadata
+            .as_ref()
+            .is_some_and(|kv| kv.may_contain(GEO_KEY))
+        {
+            validate_geo_schema(&schema)?;
+        }
         let parquet_schema = to_parquet_schema(&schema)?;
         let encodings = get_encodings(&schema);
         let options = self.materialize_options();

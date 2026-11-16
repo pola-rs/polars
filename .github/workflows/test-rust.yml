@@ -58,6 +58,7 @@ jobs:
         run: >
           cargo test --lib --tests --bins --all-features --no-run
           -p polars-arrow
+          -p polars-cli
           -p polars-compute
           -p polars-core
           -p polars-defs
@@ -78,6 +79,7 @@ jobs:
         run: >
           cargo test --lib --tests --bins --all-features
           -p polars-arrow
+          -p polars-cli
           -p polars-compute
           -p polars-core
           -p polars-defs

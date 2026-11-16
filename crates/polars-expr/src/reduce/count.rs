@@ -59,13 +59,19 @@ impl GroupedReduction for CountReduce {
     ) -> PolarsResult<()> {
         let &[values] = values else { unreachable!() };
         assert!(subset.len() == group_idxs.len());
-        let values = values.as_materialized_series(); // @scalar-opt
-        let chunks = values.chunks();
-        assert!(chunks.len() == 1);
-        let arr = &*chunks[0];
-        let valid = arr
-            .validity()
-            .filter(|_| arr.has_nulls() && !self.include_nulls);
+        // Only the validity is needed, so a dictionary column isn't materialized.
+        let dict_validity;
+        let valid = if self.include_nulls || !values.has_nulls() {
+            None
+        } else if let Some(d) = values.as_dictionary_column() {
+            dict_validity = d.codes().rechunk_validity();
+            dict_validity.as_ref()
+        } else {
+            let values = values.as_materialized_series(); // @scalar-opt
+            let chunks = values.chunks();
+            assert!(chunks.len() == 1);
+            chunks[0].validity()
+        };
 
         self.layout.expand(&mut self.counts, 0);
         let stride = self.layout.stride;
@@ -96,13 +102,21 @@ impl GroupedReduction for CountReduce {
     ) -> PolarsResult<()> {
         let &[values] = values else { unreachable!() };
         assert!(subset.len() == group_idxs.len());
-        let values = values.as_materialized_series(); // @scalar-opt
-        let chunks = values.chunks();
-        assert!(chunks.len() == 1);
-        let arr = &*chunks[0];
+        // Only the validity is needed, so a dictionary column isn't materialized.
+        let dict_validity;
+        let valid = if self.include_nulls || !values.has_nulls() {
+            None
+        } else if let Some(d) = values.as_dictionary_column() {
+            dict_validity = d.codes().rechunk_validity();
+            dict_validity.as_ref()
+        } else {
+            let values = values.as_materialized_series(); // @scalar-opt
+            let chunks = values.chunks();
+            assert!(chunks.len() == 1);
+            chunks[0].validity()
+        };
         self.layout.collapse(&mut self.counts, |a, b| *a += b);
-        if arr.has_nulls() && !self.include_nulls {
-            let valid = arr.validity().unwrap();
+        if let Some(valid) = valid {
             for (i, g) in subset.iter().zip(group_idxs) {
                 let grp = self.counts.get_unchecked_mut(g.idx());
                 if g.should_evict() {

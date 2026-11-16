@@ -264,6 +264,7 @@ pub struct ProbeOutput {
     /// The build columns without rows, to gather nulls from.
     no_build_rows: DataFrame,
     null_idxs: Vec<IdxSize>,
+    order: Vec<IdxSize>,
 }
 
 impl ProbeOutput {
@@ -282,6 +283,7 @@ impl ProbeOutput {
             limit: get_ideal_morsel_size(),
             no_build_rows: DataFrame::empty_with_schema(params.output_side_schema(left_is_build)),
             null_idxs: Vec::new(),
+            order: Vec::new(),
         }
     }
 
@@ -407,6 +409,29 @@ impl ProbeOutput {
         debug_assert!(self.probe_match.is_empty());
         let build = self.build.freeze_reset();
         let probe = self.probe.freeze_reset();
+        self.combine(build, probe, params)
+    }
+
+    /// Takes the output with the rows in the order of `payload`, the current probe frame, of
+    /// which every row is matched once.
+    pub fn take_in_probe_order(
+        &mut self,
+        payload: &DataFrame,
+        params: &EquiJoinParams,
+    ) -> DataFrame {
+        debug_assert!(self.probe.is_empty() && self.probe_match.len() == payload.height());
+        self.order.clear();
+        self.order.resize(self.probe_match.len(), 0);
+        // SAFETY: `probe_match` is a permutation of the rows of `payload`.
+        for (i, r) in self.probe_match.iter().enumerate() {
+            unsafe { *self.order.get_unchecked_mut(*r as usize) = i as IdxSize };
+        }
+        self.probe_match.clear();
+        let build = unsafe { self.build.freeze_reset().take_slice_unchecked(&self.order) };
+        self.combine(build, payload.clone(), params)
+    }
+
+    fn combine(&self, build: DataFrame, probe: DataFrame, params: &EquiJoinParams) -> DataFrame {
         let (mut left, right) = if self.left_is_build {
             (build, probe)
         } else {
@@ -469,6 +494,18 @@ impl ProbePartitions {
             (&params.left_key_selectors, &params.left_payload_select)
         };
 
+        // With unique build keys a probe row has at most one output row. If all have one, we
+        // reorder the build rows to the probe rows instead of gathering the probe rows, if there
+        // are not more build columns.
+        let unique_build = params.fused_predicate.is_none()
+            && params.payload_schema(left_is_build).len()
+                <= params.payload_schema(!left_is_build).len()
+            && partitions.iter().all(|p| {
+                p.table
+                    .as_ref()
+                    .is_none_or(|t| t.hash_table.num_keys() as usize == t.payload.height())
+            });
+
         // A simple estimate used to size reserves.
         let mut selectivity_estimate = 1.0;
         let mut selectivity_estimate_confidence = 0.0;
@@ -499,8 +536,7 @@ impl ProbePartitions {
                 ((selectivity_estimate * 1.2 * df_height as f64) as usize).min(probe_limit);
             out.build.reserve(out_est_size + max_match_per_key_est);
 
-            let mut new_morsel = |out: &mut ProbeOutput| {
-                let out_df = out.take(params);
+            let mut new_morsel = |out_df: DataFrame| {
                 let out_seq = if params.preserve_order_probe {
                     in_seq
                 } else {
@@ -553,7 +589,7 @@ impl ProbePartitions {
                             rechunk_once(&mut frame.frame, &mut payload_rechunked);
                             out.gather_probe(&frame.frame);
                             let out_len = out.len();
-                            let out_morsel = new_morsel(&mut out);
+                            let out_morsel = new_morsel(out.take(params));
                             if send.send(out_morsel).await.is_err() {
                                 return Ok(max_seq);
                             }
@@ -570,7 +606,7 @@ impl ProbePartitions {
                 if !out.probe_match.is_empty() {
                     rechunk_once(&mut frame.frame, &mut payload_rechunked);
                     out.gather_probe(&frame.frame);
-                    if send.send(new_morsel(&mut out)).await.is_err() {
+                    if send.send(new_morsel(out.take(params))).await.is_err() {
                         return Ok(max_seq);
                     }
                 }
@@ -594,7 +630,7 @@ impl ProbePartitions {
                         if out.is_full() {
                             out.gather_probe(&frame.frame);
                             let out_len = out.len();
-                            if send.send(new_morsel(&mut out)).await.is_err() {
+                            if send.send(new_morsel(out.take(params))).await.is_err() {
                                 return Ok(max_seq);
                             }
                             // We had enough matches to need a mid-partition flush, let's assume there are a lot of
@@ -616,9 +652,14 @@ impl ProbePartitions {
                     }
                 }
 
-                if !out.is_empty() {
+                if unique_build && out.len() == df_height {
+                    let out_df = out.take_in_probe_order(&frame.frame, params);
+                    if send.send(new_morsel(out_df)).await.is_err() {
+                        return Ok(max_seq);
+                    }
+                } else if !out.is_empty() {
                     out.gather_probe(&frame.frame);
-                    if send.send(new_morsel(&mut out)).await.is_err() {
+                    if send.send(new_morsel(out.take(params))).await.is_err() {
                         return Ok(max_seq);
                     }
                 }

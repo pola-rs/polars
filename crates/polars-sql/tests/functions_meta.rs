@@ -33,3 +33,28 @@ fn test_describe() {
 
     assert_eq!(actual, expected);
 }
+
+#[test]
+fn test_explain_does_not_run_other_statements() {
+    let mut context = SQLContext::new();
+    context.register("df", df! { "a" => [1, 2] }.unwrap().lazy());
+
+    for sql in [
+        "EXPLAIN DROP TABLE df",
+        "EXPLAIN CREATE TABLE other AS SELECT * FROM df",
+        "EXPLAIN INSERT INTO df VALUES (3)",
+        "EXPLAIN WITH q AS (SELECT 3 AS a) INSERT INTO df SELECT a FROM q",
+        "EXPLAIN TRUNCATE TABLE df",
+    ] {
+        let err = context.execute(sql).err().unwrap();
+        assert!(err.to_string().contains("EXPLAIN supports queries only"));
+    }
+
+    assert_eq!(context.get_tables(), ["df"]);
+    let df = context
+        .execute("SELECT * FROM df")
+        .unwrap()
+        .collect()
+        .unwrap();
+    assert_eq!(df.height(), 2);
+}
