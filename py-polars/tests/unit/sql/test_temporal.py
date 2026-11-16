@@ -475,6 +475,54 @@ def test_strptime() -> None:
         pl.sql_expr("STRPTIME(s,'%Y.%m.%d',false) AS dt")
 
 
+def test_try_strptime() -> None:
+    df = pl.DataFrame(
+        {
+            "s": ["2024-02-29", "2023-02-29", "garbage", None, "2024-01-02 extra"],
+            "g": [1, 1, 2, 2, 2],
+        }
+    )
+    ctx = pl.SQLContext(df=df)
+    res = ctx.execute(
+        """
+        SELECT
+          TRY_STRPTIME(s, '%Y-%m-%d') AS dt,
+          TRY_STRPTIME(s, '%Y-%m-%d')::date AS d,
+          TRY_STRPTIME('10:11:12', '%H:%M:%S')::time AS t,
+          TRY_STRPTIME('2024-01-02 10:11:12+02:00', '%Y-%m-%d %H:%M:%S%z') AS tz
+        FROM df
+        """,
+        eager=True,
+    )
+    assert res.schema == {
+        "dt": pl.Datetime("us"),
+        "d": pl.Date,
+        "t": pl.Time,
+        "tz": pl.Datetime("us", "UTC"),
+    }
+    assert res["dt"].to_list() == [datetime(2024, 2, 29), None, None, None, None]
+    assert res["d"].to_list() == [date(2024, 2, 29), None, None, None, None]
+    assert res["t"].to_list() == [time(10, 11, 12)] * 5
+    assert res["tz"].to_list() == [datetime(2024, 1, 2, 8, 11, 12, tzinfo=UTC)] * 5
+
+    res = ctx.execute(
+        """
+        SELECT g, COUNT(TRY_STRPTIME(s, '%Y-%m-%d')) AS n
+        FROM df GROUP BY g ORDER BY g
+        """,
+        eager=True,
+    )
+    assert res.rows() == [(1, 1), (2, 0)]
+
+    # STRPTIME raises where TRY_STRPTIME gives null
+    with pytest.raises(InvalidOperationError, match="conversion from `str`"):
+        ctx.execute("SELECT STRPTIME(s, '%Y-%m-%d') FROM df", eager=True)
+    with pytest.raises(
+        SQLSyntaxError, match=r"TRY_STRPTIME expects 2 arguments \(found 1\)"
+    ):
+        ctx.execute("SELECT TRY_STRPTIME(s) FROM df", eager=True)
+
+
 def test_temporal_strings_to_datetime() -> None:
     df = pl.DataFrame(
         {
