@@ -76,7 +76,8 @@ Select the columns to be returned by the query.
     # └─────┴─────┘
 
 A SELECT item can read the alias of an item before it. An input column of the same name
-comes before the alias.
+comes before the alias. A window function cannot read an alias that holds a window
+function or ``RANDOM()``.
 
 .. code-block:: python
 

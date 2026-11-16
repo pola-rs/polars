@@ -9,7 +9,7 @@ use polars_core::prelude::*;
 use sqlparser::ast::{
     Expr as SQLExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, FunctionArgumentList,
     FunctionArguments, ObjectName, Query, SetExpr, TableFactor, Visit, Visitor as SQLVisitor,
-    VisitorMut, With,
+    VisitorMut, WindowSpec, WindowType, With,
 };
 use sqlparser::keywords::ALL_KEYWORDS;
 
@@ -562,6 +562,89 @@ impl SQLVisitor for WindowFunctionFinder {
 /// Check if a SQL expression contains explicit window functions.
 pub(crate) fn expr_has_window_functions(expr: &SQLExpr) -> bool {
     dyn_visit::visit(expr, &mut WindowFunctionFinder).is_break()
+}
+
+// ---------------------------------------------------------------------------
+// ExprReads
+// ---------------------------------------------------------------------------
+
+/// The names an expression reads outside its subqueries; of a compound name, the first part.
+#[derive(Default)]
+pub(crate) struct ExprReads {
+    pub(crate) names: PlHashSet<String>,
+    /// The names read in window functions, including their windows.
+    pub(crate) window_names: PlHashSet<String>,
+    pub(crate) has_window_functions: bool,
+}
+
+struct ExprReadsVisitor<'a> {
+    resolve_window: &'a dyn Fn(&WindowType) -> Option<WindowSpec>,
+    query_depth: usize,
+    window_depth: usize,
+    reads: ExprReads,
+}
+
+impl SQLVisitor for ExprReadsVisitor<'_> {
+    type Break = ();
+
+    fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+        self.query_depth += 1;
+        ControlFlow::Continue(())
+    }
+
+    fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+        self.query_depth -= 1;
+        ControlFlow::Continue(())
+    }
+
+    fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+        if self.query_depth > 0 {
+            return ControlFlow::Continue(());
+        }
+        let name = match expr {
+            SQLExpr::Identifier(ident) => ident,
+            SQLExpr::CompoundIdentifier(idents) if !idents.is_empty() => &idents[0],
+            SQLExpr::Function(SQLFunction {
+                over: Some(over), ..
+            }) => {
+                self.reads.has_window_functions = true;
+                self.window_depth += 1;
+                // The window can come from the WINDOW clause.
+                if let Some(spec) = (self.resolve_window)(over) {
+                    let _ = dyn_visit::visit(&spec, self);
+                }
+                return ControlFlow::Continue(());
+            },
+            _ => return ControlFlow::Continue(()),
+        };
+        if self.window_depth > 0 {
+            self.reads.window_names.insert(name.value.clone());
+        }
+        self.reads.names.insert(name.value.clone());
+        ControlFlow::Continue(())
+    }
+
+    fn post_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+        if self.query_depth == 0 && matches!(expr, SQLExpr::Function(f) if f.over.is_some()) {
+            self.window_depth -= 1;
+        }
+        ControlFlow::Continue(())
+    }
+}
+
+/// What `expr` reads, where `resolve_window` gives the window of an `OVER` clause.
+pub(crate) fn expr_reads(
+    expr: &SQLExpr,
+    resolve_window: &dyn Fn(&WindowType) -> Option<WindowSpec>,
+) -> ExprReads {
+    let mut visitor = ExprReadsVisitor {
+        resolve_window,
+        query_depth: 0,
+        window_depth: 0,
+        reads: ExprReads::default(),
+    };
+    let _ = dyn_visit::visit(expr, &mut visitor);
+    visitor.reads
 }
 
 /// Check if a SQL expression selects columns by the schema it is parsed against: a

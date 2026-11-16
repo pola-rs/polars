@@ -795,16 +795,21 @@ def test_information_schema_columns(test_frame: pl.LazyFrame) -> None:
         ctx.execute(
             "CREATE VIEW plain AS WITH meta AS (SELECT 1 AS a) SELECT * FROM meta"
         )
+        ctx.execute(
+            'CREATE VIEW plain2 AS WITH "information_schema.columns" AS '
+            '(SELECT 1 AS a) SELECT * FROM "information_schema.columns"'
+        )
         res = ctx.execute(
             "SELECT DISTINCT table_name FROM meta2 ORDER BY 1", eager=True
         )
-        assert res.to_series().to_list() == ["df", "frame", "plain", "v"]
+        assert res.to_series().to_list() == ["df", "frame", "plain", "plain2", "v"]
         res = ctx.execute(
             "SELECT table_name, COUNT(*) FROM information_schema.columns "
             "WHERE table_name LIKE 'meta%' GROUP BY 1 ORDER BY 1",
             eager=True,
         )
         assert res.rows() == [("meta", 5), ("meta2", 5)]
+        ctx.execute("DROP VIEW plain2")
         ctx.execute("DROP VIEW plain")
         ctx.execute("DROP VIEW meta2")
         ctx.execute("DROP VIEW meta")

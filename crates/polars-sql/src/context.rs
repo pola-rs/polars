@@ -67,7 +67,7 @@ use crate::sql_expr::{
 use crate::sql_visitors::{
     QualifyExpression, TableIdentifierCollector, check_ambiguous_column,
     check_for_ambiguous_column_refs, collect_grouping_calls, contains_random,
-    expr_contains_scalar_subquery, expr_contains_subquery, expr_has_window_functions,
+    expr_contains_scalar_subquery, expr_contains_subquery, expr_has_window_functions, expr_reads,
     expr_references_any_column, expr_refers_to_table, referenced_ctes, sql_expr_cols_all_in_schema,
 };
 use crate::subquery::{
@@ -1861,7 +1861,7 @@ impl SQLContext {
     }
 
     /// Whether `view`, or a view it reads, is matched by `matches`, which gets a view and the
-    /// relations its query names. `seen` holds the views checked so far.
+    /// relations its query names, other than its CTEs. `seen` holds the views checked so far.
     fn view_reads(
         &self,
         view: &View,
@@ -1873,16 +1873,17 @@ impl SQLContext {
             ..Default::default()
         };
         let _ = dyn_visit::visit(&view.query, &mut collector);
-        if matches(view, &collector.tables) {
+        // Leave out the names that a CTE of the query hides.
+        let names: Vec<String> = referenced_ctes(&view.query, &collector.tables)
+            .into_iter()
+            .map(|idx| collector.tables[idx].clone())
+            .collect();
+        if matches(view, &names) {
             return true;
         }
-        // A name that a CTE of the query hides is not a view.
-        let names = collector.tables;
-        referenced_ctes(&view.query, &names).into_iter().any(|idx| {
-            match self.find_view(&names[idx]) {
-                Ok(Some((key, view))) => seen.insert(key) && self.view_reads(&view, matches, seen),
-                _ => false,
-            }
+        names.iter().any(|name| match self.find_view(name) {
+            Ok(Some((key, view))) => seen.insert(key) && self.view_reads(&view, matches, seen),
+            _ => false,
         })
     }
 
@@ -4587,8 +4588,36 @@ impl SQLContext {
     ) -> PolarsResult<(Vec<ProjectionItem>, bool)> {
         let mut items: Vec<ProjectionItem> = Vec::with_capacity(projection.len());
         let mut has_qualified_wildcard = false;
+        // Aliases that hold a window function or RANDOM(), directly or through other aliases.
+        let mut window_aliases: PlHashSet<String> = PlHashSet::new();
+        let read_alias = |names: &PlHashSet<String>, aliases: &PlHashSet<String>| {
+            names
+                .iter()
+                .find(|name| aliases.contains(*name) && !schema.contains(name))
+                .cloned()
+        };
 
         for select_item in projection {
+            if let SelectItem::UnnamedExpr(expr) | SelectItem::ExprWithAlias { expr, .. } =
+                select_item
+            {
+                let reads = expr_reads(expr, &|window| self.resolve_window(window).ok());
+                if let Some(name) = read_alias(&reads.window_names, &window_aliases) {
+                    polars_bail!(
+                        SQLSyntax: "window functions cannot read SELECT alias '{}', as it holds a window function or RANDOM()", name
+                    );
+                }
+                if let SelectItem::ExprWithAlias { alias, .. } = select_item {
+                    if reads.has_window_functions
+                        || contains_random(expr, false)
+                        || read_alias(&reads.names, &window_aliases).is_some()
+                    {
+                        window_aliases.insert(alias.value.clone());
+                    } else {
+                        window_aliases.remove(&alias.value);
+                    }
+                }
+            }
             match select_item {
                 SelectItem::UnnamedExpr(expr) => {
                     let mut parsed = parse_sql_expr(expr, self, Some(schema))?;
@@ -6923,7 +6952,9 @@ impl SQLContext {
 
         for (e, group_key) in projections.iter().zip(&projection_group_key) {
             let matches_group_key = group_key.is_some();
-            let is_non_group_key_expr = !matches_group_key && splitter.requires_group_processing(e);
+            // Computed and renamed keys are read from the columns that store them.
+            let is_non_group_key_expr =
+                !matches_group_key && splitter.requires_group_processing(&bind_keys(e.clone()));
 
             // Note: if simple aliased expression we defer aliasing until after the group_by.
             // Use `e_inner` to track the potentially unwrapped expression for field lookup.

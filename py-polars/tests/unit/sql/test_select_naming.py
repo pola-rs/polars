@@ -236,3 +236,22 @@ def test_select_alias_reuse_errors() -> None:
         df.sql("SELECT x + 1 AS y, a * 2 AS x FROM self")
     with pytest.raises(pl.exceptions.ColumnNotFoundError, match='"x"'):
         df.sql("SELECT a * 2 AS x FROM self WHERE x > 2")
+
+    # a window function cannot read an alias holding a window function or RANDOM()
+    for query in [
+        "SELECT SUM(a) OVER () AS s, SUM(s) OVER (PARTITION BY a) FROM self",
+        "SELECT SUM(a) OVER () AS s, s + 1 AS t, SUM(a) OVER (ORDER BY t) FROM self",
+        "SELECT SUM(a) OVER () AS s, SUM(a) OVER w FROM self WINDOW w AS (PARTITION BY s)",
+        "SELECT RANDOM() AS r, FIRST_VALUE(r) OVER (PARTITION BY a) FROM self",
+    ]:
+        with pytest.raises(
+            pl.exceptions.SQLSyntaxError, match="cannot read SELECT alias"
+        ):
+            df.sql(query)
+    res = df.sql(
+        """
+        SELECT SUM(a) OVER () AS s, s + 1 AS t, a + 1 AS x, SUM(x) OVER () AS u
+        FROM self
+        """
+    )
+    assert res.rows() == [(6, 7, 2, 9), (6, 7, 3, 9), (6, 7, 4, 9)]
