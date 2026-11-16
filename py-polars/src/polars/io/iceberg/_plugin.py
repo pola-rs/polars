@@ -129,8 +129,10 @@ def plugin_scan(
     use_metadata_statistics: bool,
     fast_deletion_count: bool,
     user_storage_options: StorageOptionsDict | None,
+    catalog_name: str | None = None,
 ) -> LazyFrame:
     """Plan the scan of `tbl` with the plugin; returns the native parquet scan."""
+    from polars.io.iceberg._credentials import renewing_credential_provider
     from polars.io.iceberg._utils import name_mapping_by_field_id
 
     plr = _plr()
@@ -152,9 +154,17 @@ def plugin_scan(
     storage_options = _storage_options(
         tbl.io.properties, metadata_location, user_storage_options
     )
-
+    # Renewed for the table's location, which its metadata and data files are under,
+    # rather than for one metadata file.
+    storage_options, renewing_provider = renewing_credential_provider(
+        tbl,
+        storage_options,
+        user_storage_options,
+        _table_location(tbl),
+        catalog_name=catalog_name,
+    )
     credential_provider = _init_credential_provider_builder(
-        "auto", metadata_location, storage_options, "scan_iceberg"
+        renewing_provider, metadata_location, storage_options, "scan_iceberg"
     )
 
     # Immutable metadata files are cached across scans with the same storage
@@ -307,8 +317,7 @@ def _native_storage_options(
     (a file to read) if that is on another backend. With FileIO properties that
     have no object store equivalent, the user's storage options alone.
     """
-    # Where the table writes its data files: stable across scans, unlike a file.
-    location = table.properties.get("write.data.path") or table.location()
+    location = _data_location(table)
     # Files on another backend (e.g. added from elsewhere) take its properties.
     if source is not None and _backend(source) != _backend(location):
         location = source
@@ -377,6 +386,17 @@ def _catalog_storage_options(
         if scheme in schemes and _property_is_true(properties, anonymous_key):
             storage_options[skip_signature_key] = "true"
     return storage_options
+
+
+def _data_location(table: pyiceberg.table.Table) -> str:
+    """Where the table writes its data files: stable across scans, unlike a file."""
+    path = table.properties.get("write.data.path") or f"{_table_location(table)}data"
+    # Catalogs match credentials by prefix, which usually ends with a slash.
+    return f"{path.rstrip('/')}/"
+
+
+def _table_location(table: pyiceberg.table.Table) -> str:
+    return f"{table.location().rstrip('/')}/"
 
 
 def _url_scheme(location: str) -> str:
