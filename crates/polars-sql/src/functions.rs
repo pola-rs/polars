@@ -617,6 +617,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT STRPTIME(col1, '%d-%m-%Y %H:%M') FROM df;
     /// ```
     Strptime,
+    /// SQL 'try_strptime' function.
+    /// Like 'strptime', but gives null for a string that does not match the format.
+    /// ```sql
+    /// SELECT TRY_STRPTIME(col1, '%d-%m-%Y %H:%M') FROM df;
+    /// ```
+    TryStrptime,
     /// SQL 'time' function.
     /// Converts a formatted string time to an actual Time type; ISO-8601 format is
     /// assumed unless a strftime-compatible formatting string is provided as the second
@@ -1236,6 +1242,7 @@ impl PolarsSQLFunctions {
             "to_date",
             "to_timestamp",
             "total",
+            "try_strptime",
             "typeof",
             "unnest",
             "upper",
@@ -1380,6 +1387,7 @@ impl PolarsSQLFunctions {
             "string_to_array" => Self::StringToArray,
             "strpos" => Self::StrPos,
             "strptime" => Self::Strptime,
+            "try_strptime" => Self::TryStrptime,
             "substr" => Self::Substring,
             "time" => Self::Time,
             "upper" => Self::Upper,
@@ -2030,24 +2038,8 @@ impl SQLFunctionVisitor<'_> {
                     },
                 }
             },
-            Strptime => {
-                let args = extract_args(function)?;
-                match args.len() {
-                    2 => self.visit_binary(|e, fmt: String| {
-                        e.str().strptime(
-                            DataType::Datetime(TimeUnit::Microseconds, None),
-                            StrptimeOptions {
-                                format: Some(fmt.into()),
-                                ..Default::default()
-                            },
-                            lit("latest"),
-                        )
-                    }),
-                    _ => {
-                        polars_bail!(SQLSyntax: "STRPTIME expects 2 arguments (found {})", args.len())
-                    },
-                }
-            },
+            Strptime => self.visit_strptime("STRPTIME", true),
+            TryStrptime => self.visit_strptime("TRY_STRPTIME", false),
             Time => {
                 let args = extract_args(function)?;
                 match args.len() {
@@ -2597,6 +2589,27 @@ impl SQLFunctionVisitor<'_> {
             None => polars_bail!(SQLInterface: "DATE_TRUNC cannot determine the type of {}", e),
         };
         self.apply_window_spec(e.dt().truncate(lit(every)))
+    }
+
+    /// `STRPTIME(s, format)`; a string that does not match the format raises if `strict`,
+    /// else gives null.
+    fn visit_strptime(&mut self, name: &str, strict: bool) -> PolarsResult<Expr> {
+        let args = extract_args(self.func)?;
+        polars_ensure!(
+            args.len() == 2,
+            SQLSyntax: "{} expects 2 arguments (found {})", name, args.len()
+        );
+        self.visit_binary(|e, fmt: String| {
+            e.str().strptime(
+                DataType::Datetime(TimeUnit::Microseconds, None),
+                StrptimeOptions {
+                    format: Some(fmt.into()),
+                    strict,
+                    ..Default::default()
+                },
+                lit("latest"),
+            )
+        })
     }
 
     /// Parse a value argument of the function currently being visited, as opposed to a

@@ -78,6 +78,8 @@ String
      - Converts a string to a Datetime using a PostgreSQL template.
    * - :ref:`TRIM <trim>`
      - Strips characters from the left and/or right of a string.
+   * - :ref:`TRY_STRPTIME <try_strptime>`
+     - Like `STRPTIME`, but returns NULL for a string that does not match the format.
    * - :ref:`UPPER <upper>`
      - Returns an uppercased column.
 
@@ -1169,6 +1171,30 @@ seconds since the Unix epoch, giving a UTC Datetime.
     # │ 1978-07-05 10:30 AM ┆ 1978-07-05 10:30:00 │
     # │ 2020-04-10 10:05 PM ┆ 2020-04-10 22:05:00 │
     # └─────────────────────┴─────────────────────┘
+
+.. _try_strptime:
+
+TRY_STRPTIME
+------------
+Like :ref:`STRPTIME <strptime>`, but returns NULL for a string that does not match the format,
+instead of raising an error.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"s": ["2024-02-29", "2023-02-29", "not a date"]})
+    df.sql("SELECT s, TRY_STRPTIME(s, '%Y-%m-%d') AS dt FROM self")
+    # shape: (3, 2)
+    # ┌────────────┬─────────────────────┐
+    # │ s          ┆ dt                  │
+    # │ ---        ┆ ---                 │
+    # │ str        ┆ datetime[μs]        │
+    # ╞════════════╪═════════════════════╡
+    # │ 2024-02-29 ┆ 2024-02-29 00:00:00 │
+    # │ 2023-02-29 ┆ null                │
+    # │ not a date ┆ null                │
+    # └────────────┴─────────────────────┘
 
 .. _upper:
 
