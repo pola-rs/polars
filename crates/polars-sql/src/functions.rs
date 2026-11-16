@@ -14,8 +14,8 @@ use polars_lazy::dsl::Expr;
 use polars_lazy::prelude::ApproxQuantileMethod;
 use polars_lazy::prelude::DataTypeExpr;
 use polars_plan::dsl::functions::{
-    by_name, coalesce, concat_str, datetime_ranges, element, int_range, int_ranges, len, lit,
-    max_horizontal, min_horizontal, when,
+    DatetimeArgs, by_name, coalesce, concat_str, datetime, datetime_ranges, element, int_range,
+    int_ranges, len, lit, max_horizontal, min_horizontal, when,
 };
 use polars_plan::dsl::{FunctionExpr, RangeFunction, Selector, SqlBinaryOp, SqlFunction};
 use polars_plan::plans::{
@@ -389,6 +389,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT DATE_TRUNC('month', col1) FROM df;
     /// ```
     DateTrunc,
+    /// SQL 'make_date' function.
+    /// Builds a date from integer year, month and day parts.
+    /// ```sql
+    /// SELECT MAKE_DATE(2024, 2, 29) FROM df;
+    /// ```
+    MakeDate,
     /// SQL 'strftime' function.
     /// Converts a datetime to a string using a format string.
     /// ```sql
@@ -1163,6 +1169,7 @@ impl PolarsSQLFunctions {
             "lower",
             "lpad",
             "ltrim",
+            "make_date",
             "max",
             "max_by",
             "median",
@@ -1317,6 +1324,7 @@ impl PolarsSQLFunctions {
             "date" => Self::Date,
             "date_part" => Self::DatePart,
             "date_trunc" => Self::DateTrunc,
+            "make_date" => Self::MakeDate,
             "year" => Self::DatePartOf(DateTimeField::Year),
             "quarter" => Self::DatePartOf(DateTimeField::Quarter),
             "month" => Self::DatePartOf(DateTimeField::Month),
@@ -1727,6 +1735,17 @@ impl SQLFunctionVisitor<'_> {
                 self.visit_nullary(|| lit(Scalar::new(dtype.clone(), value.clone())))
             },
             DateTrunc => self.visit_date_trunc(),
+            MakeDate => {
+                let args = extract_args(function)?;
+                polars_ensure!(
+                    args.len() == 3,
+                    SQLSyntax: "MAKE_DATE expects 3 arguments (found {})", args.len()
+                );
+                self.visit_variadic(|e| {
+                    let args = DatetimeArgs::new(e[0].clone(), e[1].clone(), e[2].clone());
+                    datetime(args).cast(DataType::Date)
+                })
+            },
             Strftime => {
                 let args = extract_args(function)?;
                 match args.len() {

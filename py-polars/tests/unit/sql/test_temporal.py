@@ -16,6 +16,57 @@ from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
 
 
+def test_make_date() -> None:
+    df = pl.DataFrame(
+        {
+            "y": [2024, None, 2023, -44, 0, 2024, 2024],
+            "m": pl.Series([2, 1, 2, 3, 1, 1, 1], dtype=pl.UInt8),
+            "d": pl.Series([29, 1, 28, 15, 1, 1, 1], dtype=pl.Int16),
+            "f": [1.0, 1.0, 1.0, 1.0, 1.0, 2.7, 1.0],
+            "big": [1, 1, 1, 1, 1, 1, 300],
+        }
+    )
+    ctx = pl.SQLContext(df=df)
+    # MAKE_DATE is `pl.date`
+    res = ctx.execute(
+        """
+        SELECT
+          MAKE_DATE(y, m, d) AS a,
+          MAKE_DATE(y, f, d) AS b,
+          MAKE_DATE(y, m, big) AS c,
+          MAKE_DATE(2024, 2, 29) AS lit,
+          MAKE_DATE('2024', '1', '2') AS s,
+          MAKE_DATE(NULL, 1, 1) AS n
+        FROM df
+        """,
+        eager=True,
+    )
+    expected = df.select(
+        a=pl.date("y", "m", "d"),
+        b=pl.date("y", "f", "d"),
+        c=pl.date("y", "m", "big"),
+        lit=pl.date(2024, 2, 29),
+        s=pl.date(pl.lit("2024"), pl.lit("1"), pl.lit("2")),
+        n=pl.date(pl.lit(None), 1, 1),
+    )
+    assert_frame_equal(res, expected)
+    assert res["a"].cast(pl.Int32).to_list() == [
+        19782,
+        None,
+        19416,
+        -735525,
+        -719528,
+        19723,
+        19723,
+    ]
+
+    for args in ("2023, 2, 29", "2024, 13, 1", "2024, 0, 1", "y, m, d + 1"):
+        with pytest.raises(ComputeError, match="Invalid date components"):
+            ctx.execute(f"SELECT MAKE_DATE({args}) FROM df WHERE y = 2023", eager=True)
+    with pytest.raises(SQLSyntaxError, match="MAKE_DATE expects 3 arguments"):
+        ctx.execute("SELECT MAKE_DATE(2024, 1) FROM df", eager=True)
+
+
 def test_date_func() -> None:
     df = pl.DataFrame(
         {
