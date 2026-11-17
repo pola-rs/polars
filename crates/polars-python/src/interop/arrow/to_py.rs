@@ -35,6 +35,16 @@ pub(crate) fn to_py_array(
     Ok(array.unbind())
 }
 
+/// Arrow data type of `field` to Python.
+pub(crate) fn to_py_dtype(field: &ArrowField, pyarrow: &Bound<PyModule>) -> PyResult<Py<PyAny>> {
+    let schema = Box::new(ffi::export_field_to_c(field));
+    let schema_ptr: *const ffi::ArrowSchema = &*schema;
+    let dtype = pyarrow
+        .getattr("DataType")?
+        .call_method1("_import_from_c", (schema_ptr as Py_uintptr_t,))?;
+    Ok(dtype.unbind())
+}
+
 /// Read `batches`, whose columns have the fields of `schema`, into a `pyarrow.Table` through an
 /// Arrow C stream.
 ///

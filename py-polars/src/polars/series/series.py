@@ -1642,6 +1642,9 @@ class Series(metaclass=_Meta):
         Export a Series via the Arrow PyCapsule Interface.
 
         https://arrow.apache.org/docs/dev/format/CDataInterface/PyCapsuleInterface.html
+
+        The data is exported with `CompatLevel.newest()`, so that, for example,
+        strings are exported as `string_view`; `requested_schema` is ignored.
         """
         return self._s.__arrow_c_stream__(requested_schema)
 
@@ -5355,6 +5358,24 @@ class Series(metaclass=_Meta):
         # tensor.rename(self.name)
         return tensor
 
+    @overload
+    def to_arrow(
+        self,
+        *,
+        compat_level: CompatLevel | None = ...,
+        chunked: Literal[False] = ...,
+    ) -> pa.Array: ...
+
+    @overload
+    def to_arrow(
+        self, *, compat_level: CompatLevel | None = ..., chunked: Literal[True]
+    ) -> pa.ChunkedArray: ...
+
+    @overload
+    def to_arrow(
+        self, *, compat_level: CompatLevel | None = ..., chunked: bool
+    ) -> pa.Array | pa.ChunkedArray: ...
+
     @removed_parameters(
         RenamedParameter(
             name="future",
@@ -5363,7 +5384,9 @@ class Series(metaclass=_Meta):
             removed_in="2.0",
         ),
     )
-    def to_arrow(self, *, compat_level: CompatLevel | None = None) -> pa.Array:
+    def to_arrow(
+        self, *, compat_level: CompatLevel | None = None, chunked: bool = False
+    ) -> pa.Array | pa.ChunkedArray:
         """
         Return the underlying Arrow array.
 
@@ -5374,6 +5397,11 @@ class Series(metaclass=_Meta):
         compat_level
             Use a specific compatibility level
             when exporting Polars' internal data structures.
+        chunked
+            Return a :class:`pyarrow.ChunkedArray` with one array per chunk instead
+            of rechunking the Series into a single array. A chunk that doesn't fit in
+            one Arrow array, such as a Map with more than `2^31 - 1` entries, is
+            split into several arrays.
 
         Examples
         --------
@@ -5386,6 +5414,21 @@ class Series(metaclass=_Meta):
           2,
           3
         ]
+
+        Keep the chunks of the Series with `chunked=True`.
+
+        >>> s = pl.concat([pl.Series("a", [1, 2]), pl.Series("a", [3])], rechunk=False)
+        >>> s.to_arrow(chunked=True)
+        <pyarrow.lib.ChunkedArray object at ...>
+        [
+          [
+            1,
+            2
+          ],
+          [
+            3
+          ]
+        ]
         """
         compat_level_py: int | bool
         if compat_level is None:
@@ -5395,6 +5438,8 @@ class Series(metaclass=_Meta):
         else:
             msg = f"`compat_level` has invalid type: {qualified_type_name(compat_level)!r}"
             raise TypeError(msg)
+        if chunked:
+            return self._s.to_arrow_chunked(compat_level_py)
         return self._s.to_arrow(compat_level_py)
 
     def to_pandas(
@@ -5477,7 +5522,7 @@ class Series(metaclass=_Meta):
                 .iloc[:, 0]
             )
         else:
-            pa_arr = self.to_arrow()
+            pa_arr = self.to_arrow(chunked=True)
 
         if use_pyarrow_extension_array:
             pd_series = pa_arr.to_pandas(

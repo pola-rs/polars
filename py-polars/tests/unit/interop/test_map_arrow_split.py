@@ -98,9 +98,17 @@ def test_series_arrow_c_stream_splits_an_oversized_map_chunk(
 
 
 def test_series_to_arrow_raises_for_an_oversized_map(df: pl.DataFrame) -> None:
-    # `Series.to_arrow` returns a single array, see #30780.
+    # Without `chunked=True`, `Series.to_arrow` returns a single array.
     with pytest.raises(InvalidOperationError, match="overflow the i32 offsets"):
         df["m"].to_arrow()
+
+
+def test_series_to_arrow_chunked_splits_an_oversized_map_chunk(
+    df: pl.DataFrame,
+) -> None:
+    arr = df["m"].to_arrow(chunked=True)
+
+    assert [len(chunk) for chunk in arr.chunks] == [3, 3]
 
 
 @pytest.mark.parametrize(

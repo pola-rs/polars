@@ -198,6 +198,30 @@ impl PySeries {
         interop::arrow::to_py::to_py_array(array, &field, &pyarrow)
     }
 
+    /// Return a `pyarrow.ChunkedArray` with one array per chunk, or several where a chunk
+    /// doesn't fit in one Arrow array, without rechunking.
+    #[allow(clippy::wrong_self_convention)]
+    fn to_arrow_chunked(&self, py: Python<'_>, compat_level: PyCompatLevel) -> PyResult<Py<PyAny>> {
+        let (arrays, field) = py.enter_polars(|| {
+            let s = self.series.read();
+            let mut arrays = Vec::with_capacity(s.n_chunks());
+            for i in 0..s.n_chunks() {
+                arrays.extend(s.try_to_arrow_split(i, compat_level.0)?);
+            }
+            PolarsResult::Ok((arrays, s.field().to_arrow(compat_level.0)))
+        })?;
+
+        let pyarrow = py.import("pyarrow")?;
+        let arrays = arrays
+            .into_iter()
+            .map(|array| interop::arrow::to_py::to_py_array(array, &field, &pyarrow))
+            .collect::<PyResult<Vec<_>>>()?;
+        let dtype = interop::arrow::to_py::to_py_dtype(&field, &pyarrow)?;
+        Ok(pyarrow
+            .call_method1("chunked_array", (arrays, dtype))?
+            .unbind())
+    }
+
     #[allow(unused_variables)]
     #[pyo3(signature = (requested_schema=None))]
     fn __arrow_c_stream__<'py>(

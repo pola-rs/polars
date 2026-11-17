@@ -70,3 +70,28 @@ def test_to_pandas_categorical_has_signed_keys() -> None:
     assert out["c"].cat.codes.dtype.kind == "i"
     assert out["e"].cat.ordered
     assert out["e"].tolist() == ["x", "y"]
+
+
+def test_series_to_arrow_chunked_keeps_the_chunks() -> None:
+    s = multi_chunk_frame()["a"]
+
+    out = s.to_arrow(chunked=True)
+
+    assert isinstance(out, pa.ChunkedArray)
+    assert [len(chunk) for chunk in out.chunks] == [2, 2, 2]
+    assert out.to_pylist() == [1, 2, 1, 2, 1, 2]
+    assert s.n_chunks() == 3
+
+
+def test_series_to_arrow_chunked_empty_keeps_the_type() -> None:
+    out = pl.Series("x", [], dtype=pl.Int8).to_arrow(chunked=True)
+
+    assert out.type == pa.int8()
+    assert len(out) == 0
+
+
+def test_series_to_pandas_keeps_the_chunks() -> None:
+    s = multi_chunk_frame()["a"]
+
+    assert s.to_pandas().tolist() == [1, 2, 1, 2, 1, 2]
+    assert s.n_chunks() == 3
