@@ -152,17 +152,35 @@ def test_a_single_row_with_too_many_map_entries_raises(df: pl.DataFrame) -> None
 
 
 def test_ipc_writers_split_an_oversized_map_chunk(df: pl.DataFrame) -> None:
-    for write in (
-        lambda f: df.write_ipc(f, compression="zstd"),
-        lambda f: df.lazy().sink_ipc(f, compression="zstd"),
+    for write, open_ in (
+        (lambda f: df.write_ipc(f, compression="zstd"), pa.ipc.open_file),
+        (lambda f: df.lazy().sink_ipc(f, compression="zstd"), pa.ipc.open_file),
+        (lambda f: df.write_ipc_stream(f), pa.ipc.open_stream),
     ):
         f = io.BytesIO()
         write(f)
         f.seek(0)
-        table = pa.ipc.open_file(f).read_all()
+        table = open_(f).read_all()
 
         assert batch_rows(table) == [3, 3]
         assert table.column("i").to_pylist() == [0, 1, 2, 3, 4, 5]
+
+
+def test_serialize_splits_an_oversized_map_chunk(df: pl.DataFrame) -> None:
+    out = pl.DataFrame.deserialize(io.BytesIO(df.serialize()))
+
+    assert out.shape == (6, 2)
+    assert out["i"].to_list() == [0, 1, 2, 3, 4, 5]
+
+
+def test_to_arrow_splits_a_later_chunk_beside_a_scalar(df: pl.DataFrame) -> None:
+    out = pl.concat([df.head(1), df], rechunk=False).with_columns(c=pl.lit(7))
+
+    table = out.to_arrow()
+
+    assert batch_rows(table) == [1, 3, 3]
+    assert table.column("i").to_pylist() == [0, 0, 1, 2, 3, 4, 5]
+    assert table.column("c").to_pylist() == [7] * 7
 
 
 def test_sink_ipc_splits_a_map_column_with_several_chunks() -> None:
