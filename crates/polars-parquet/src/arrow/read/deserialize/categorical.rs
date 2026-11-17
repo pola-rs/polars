@@ -447,7 +447,7 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
 ///
 /// Every data page must be dictionary-encoded (see `PageReader::dictionary_only_len`). The
 /// dictionary values in the output share the dictionary page's buffers.
-pub fn decode_dictionary_codes(
+pub fn decode_byte_dictionary_codes(
     field_name: &str,
     pages: crate::parquet::read::BasicDecompressor,
     filter: Option<super::Filter>,

@@ -1291,4 +1291,21 @@ mod tests {
             );
         }
     }
+
+    /// A function of a non-byte dictionary that gives Strings or Binary gives a byte dictionary:
+    /// its keys hash by codes, as those of a String column read from parquet do.
+    #[test]
+    fn string_and_binary_results_of_a_non_byte_dictionary_are_byte_dictionaries() {
+        let n = 50;
+        let rs = PlRandomState::default();
+        let ints = int_dict(n);
+        let ints = ints.as_dictionary_column().unwrap();
+        for dtype in [DataType::String, DataType::Binary] {
+            let out = ints.apply_elementwise(|v| v.cast(&dtype)).unwrap();
+            let out = out.as_dictionary_column().expect("still coded");
+            assert_eq!(out.dtype(), &dtype);
+            assert!(out.dict().bytes().is_some());
+            assert!(DictCodes::try_new(out, &rs).is_some());
+        }
+    }
 }

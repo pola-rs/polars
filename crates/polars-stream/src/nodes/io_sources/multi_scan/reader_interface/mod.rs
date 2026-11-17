@@ -160,6 +160,9 @@ pub struct BeginReadArgs {
     pub disable_morsel_split: bool,
     /// If false, the reader may emit rows in any order.
     pub maintain_order: bool,
+    /// The reader's output goes straight to a sink that never reads dictionary codes: a reader
+    /// that can produce dictionary columns should decode flat instead.
+    pub materialize_dictionaries: bool,
     /// Minimum number of pieces a reader should split a file's last morsel into, to keep
     /// downstream pipelines busy. The multi-scan layer precomputes this so the per-file
     /// budget is shared across files in the same scan. When many files are concurrent,
@@ -187,6 +190,7 @@ impl Default for BeginReadArgs {
             num_pipelines: 1,
             disable_morsel_split: false,
             maintain_order: true,
+            materialize_dictionaries: false,
             last_morsel_pipelines: 1,
             callbacks: FileReaderCallbacks::default(),
         }

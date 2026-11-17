@@ -57,6 +57,7 @@ impl ParquetReadImpl {
         let verbose = self.verbose;
         let use_statistics = self.options.use_statistics;
         let maintain_order = self.maintain_order;
+        let materialize_dictionaries = self.config.materialize_dictionaries;
 
         let (mut morsel_sender, morsel_rx) = FileReaderOutputSend::new_serial();
 
@@ -237,6 +238,7 @@ impl ParquetReadImpl {
                 byte_source,
                 row_groups,
                 runtime_range_skipper,
+                materialize_dictionaries,
                 read_stats: Arc::new(ReadStats::new(verbose, defer_cached_reads)),
             };
 

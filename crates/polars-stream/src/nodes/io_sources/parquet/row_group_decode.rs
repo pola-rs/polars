@@ -20,8 +20,10 @@ use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_io::predicates::{DynamicPredicateSource, PhysicalIoExpr, ScanIOPredicate};
 use polars_io::prelude::_internal::canonicalize_parquet_maps;
-use polars_io::prelude::try_set_sorted_flag;
-use polars_parquet::read::{ColumnChunkMetadata, Filter, PredicateFilter, PrimitiveLogicalType};
+use polars_io::prelude::{sorted_flag_to_copy, try_set_sorted_flag};
+use polars_parquet::read::{
+    ColumnChunkMetadata, Filter, PhysicalType, PredicateFilter, PrimitiveLogicalType,
+};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, UnitVec};
 
@@ -412,6 +414,39 @@ fn projected_column_chunks<'a>(
     )
 }
 
+/// Sets the sorted flag of the column decoded from `row_group_data`'s sorting columns, as is done
+/// for a flat one; a coded column keeps it for its values.
+fn set_sorted_flag_of_decoded(
+    mut column: Column,
+    arrow_field: &ArrowField,
+    row_group_data: &RowGroupData,
+) -> Column {
+    let Some(col_idxs) = row_group_data
+        .row_group_metadata
+        .columns_idxs_under_root_iter(&arrow_field.name)
+    else {
+        return column;
+    };
+    let [col_idx] = col_idxs else {
+        return column;
+    };
+    match &mut column {
+        Column::Dictionary(d) => {
+            if let Some(flag) =
+                sorted_flag_to_copy(d.dtype(), *col_idx, &row_group_data.sorting_map)
+            {
+                d.set_sorted_flag(flag);
+            }
+        },
+        other => try_set_sorted_flag(
+            other.into_materialized_series(),
+            *col_idx,
+            &row_group_data.sorting_map,
+        ),
+    }
+    column
+}
+
 fn decode_column(
     projection: &ArrowFieldProjection,
     row_group_data: &RowGroupData,
@@ -445,12 +480,14 @@ fn decode_column(
 
     let skip_num_rows_check = matches!(filter, Some(Filter::Predicate(_)));
 
-    if let Some((column, pred_true_mask)) =
-        try_decode_dictionary_column(arrow_field, &columns_to_deserialize, filter.clone())?
+    if !row_group_data.materialize_dictionaries
+        && let Some((column, pred_true_mask)) =
+            try_decode_dictionary_column(arrow_field, &columns_to_deserialize, filter.clone())?
     {
         if !skip_num_rows_check {
             assert_eq!(column.len(), expected_num_rows);
         }
+        let column = set_sorted_flag_of_decoded(column, arrow_field, row_group_data);
         return Ok((column, pred_true_mask));
     }
 
@@ -489,10 +526,9 @@ const MIN_ROWS_PER_DICTIONARY_VALUE: usize = 8;
 const MIN_ROWS_PER_SHORT_DICTIONARY_VALUE: usize = 32;
 
 /// Whether `num_rows` rows of a column chunk (those its filter keeps) are worth decoding as codes
-/// into a dictionary of `dict_len` values taking `dict_bytes` bytes (PLAIN-encoded, so with a
-/// 4-byte length each).
+/// into a dictionary of `dict_len` values taking `dict_bytes` bytes (without length prefixes).
 fn dictionary_pays_off(num_rows: usize, dict_len: usize, dict_bytes: usize) -> bool {
-    let avg_len = dict_bytes.saturating_sub(4 * dict_len) / dict_len.max(1);
+    let avg_len = dict_bytes / dict_len.max(1);
     let min_rows_per_value = if avg_len <= View::MAX_INLINE_SIZE as usize {
         MIN_ROWS_PER_SHORT_DICTIONARY_VALUE
     } else {
@@ -537,19 +573,8 @@ fn compact_dictionary_values<T: ViewType + ?Sized>(
     .gc()
 }
 
-/// Whether a field of this dtype holds Strings (`Some(true)`) or Binary (`Some(false)`) that can
-/// be decoded as a [`DictionaryColumn`], `None` otherwise. A `LargeBinary` field is a
-/// `BinaryOffset` column, which must keep its dtype.
-fn dictionary_values_are_string(dtype: &ArrowDataType) -> Option<bool> {
-    match dtype {
-        ArrowDataType::Utf8View | ArrowDataType::LargeUtf8 | ArrowDataType::Utf8 => Some(true),
-        ArrowDataType::BinaryView => Some(false),
-        _ => None,
-    }
-}
-
-/// Decodes a flat String or Binary column chunk as a [`DictionaryColumn`] if all its data pages are
-/// dictionary-encoded and the dictionary is small; returns `None` without decoding otherwise.
+/// Decodes a flat column chunk of any top-level type but booleans as a [`DictionaryColumn`] if all
+/// its data pages are dictionary-encoded and the dictionary is small; returns `None` without decoding otherwise.
 ///
 /// A predicate's result is only known after decoding: if the rows it keeps are too few for the
 /// codes to pay off, they are returned materialized instead.
@@ -564,17 +589,12 @@ fn try_decode_dictionary_column(
     if !dictionary_codes_enabled() {
         return Ok(None);
     }
-    let Some(is_string) = dictionary_values_are_string(&arrow_field.dtype) else {
-        return Ok(None);
-    };
-
     let is_predicate = matches!(filter, Some(Filter::Predicate(_)));
     let Some((arrays, pred_true_mask)) = polars_io::prelude::_internal::to_dictionary_codes(
         col_md,
         chunk.clone(),
-        &arrow_field.name,
+        arrow_field,
         filter,
-        is_string,
         dictionary_pays_off,
     )?
     else {
@@ -582,18 +602,43 @@ fn try_decode_dictionary_column(
     };
 
     // Every chunk holds the same dictionary, as all pages are dictionary-encoded.
-    let values = arrays[0].values().as_any();
-    let (dict_len, dict_bytes, dict) = if is_string {
-        let values = values.downcast_ref::<Utf8ViewArray>().unwrap().clone();
-        // PLAIN-encoded, as `dictionary_pays_off` takes it.
-        let dict_len = values.len();
-        let dict_bytes = values.total_bytes_len() + 4 * dict_len;
-        (dict_len, dict_bytes, SharedDictionary::new(values))
-    } else {
-        let values = values.downcast_ref::<BinaryViewArray>().unwrap().clone();
-        let dict_len = values.len();
-        let dict_bytes = values.total_bytes_len() + 4 * dict_len;
-        (dict_len, dict_bytes, SharedDictionary::new_binary(values))
+    let values = arrays[0].values();
+    let dict_len = values.len();
+    // The size of the values, as `dictionary_pays_off` takes it.
+    let (dict_bytes, dict) = match values.dtype() {
+        ArrowDataType::Utf8View => {
+            let v = values
+                .as_any()
+                .downcast_ref::<Utf8ViewArray>()
+                .unwrap()
+                .clone();
+            (v.total_bytes_len(), SharedDictionary::new(v))
+        },
+        ArrowDataType::BinaryView => {
+            let v = values
+                .as_any()
+                .downcast_ref::<BinaryViewArray>()
+                .unwrap()
+                .clone();
+            (v.total_bytes_len(), SharedDictionary::new_binary(v))
+        },
+        _ => {
+            let series = Series::try_from((arrow_field, vec![values.clone()]))?;
+            // The size of the dictionary page's values, as `to_dictionary_codes` gave
+            // `dictionary_pays_off`, not of the decoded ones (an Int32 decimal is 16 bytes).
+            let dict_bytes = match col_md.descriptor().descriptor.primitive_type.physical_type {
+                PhysicalType::Boolean => series.estimated_size(),
+                // A `BinaryOffset` dictionary: its values without the offsets.
+                PhysicalType::ByteArray => {
+                    series.estimated_size().saturating_sub(8 * (dict_len + 1))
+                },
+                PhysicalType::Int32 | PhysicalType::Float => 4 * dict_len,
+                PhysicalType::Int64 | PhysicalType::Double => 8 * dict_len,
+                PhysicalType::Int96 => 12 * dict_len,
+                PhysicalType::FixedLenByteArray(n) => n * dict_len,
+            };
+            (dict_bytes, SharedDictionary::try_new(series)?)
+        },
     };
     let codes = arrays
         .into_iter()
@@ -605,14 +650,24 @@ fn try_decode_dictionary_column(
     if is_predicate && !dictionary_pays_off(column.len(), dict_len, dict_bytes) {
         let s = column.take_materialized_series();
         let name = s.name().clone();
-        let column = if is_string {
-            let ca = s.str().unwrap();
-            StringChunked::from_chunk_iter(name, ca.downcast_iter().map(compact_dictionary_values))
+        let column = match s.dtype() {
+            DataType::String => {
+                let ca = s.str().unwrap();
+                StringChunked::from_chunk_iter(
+                    name,
+                    ca.downcast_iter().map(compact_dictionary_values),
+                )
                 .into_column()
-        } else {
-            let ca = s.binary().unwrap();
-            BinaryChunked::from_chunk_iter(name, ca.downcast_iter().map(compact_dictionary_values))
+            },
+            DataType::Binary => {
+                let ca = s.binary().unwrap();
+                BinaryChunked::from_chunk_iter(
+                    name,
+                    ca.downcast_iter().map(compact_dictionary_values),
+                )
                 .into_column()
+            },
+            _ => s.into_column(),
         };
         return Ok(Some((column, pred_true_mask)));
     }
@@ -1180,6 +1235,7 @@ fn decode_column_prefiltered(
         prefilter.then(|| polars_parquet::read::Filter::Mask(mask_bitmap.clone()));
 
     if prefilter
+        && !row_group_data.materialize_dictionaries
         && let Some((column, _)) = try_decode_dictionary_column(
             arrow_field,
             &columns_to_deserialize,
@@ -1187,7 +1243,11 @@ fn decode_column_prefiltered(
         )?
     {
         assert_eq!(column.len(), expected_num_rows);
-        return Ok(column);
+        return Ok(set_sorted_flag_of_decoded(
+            column,
+            arrow_field,
+            row_group_data,
+        ));
     }
 
     let (array, _) = polars_io::prelude::_internal::to_deserializer(
@@ -1256,31 +1316,5 @@ mod tests {
             ],
             [usize::MAX, usize::MAX, 1, 1],
         )
-    }
-
-    #[test]
-    fn dictionary_codes_only_for_string_and_binary_view_fields() {
-        use polars_core::prelude::ArrowDataType;
-
-        use super::dictionary_values_are_string;
-
-        assert_eq!(
-            dictionary_values_are_string(&ArrowDataType::Utf8View),
-            Some(true)
-        );
-        assert_eq!(
-            dictionary_values_are_string(&ArrowDataType::LargeUtf8),
-            Some(true)
-        );
-        assert_eq!(
-            dictionary_values_are_string(&ArrowDataType::BinaryView),
-            Some(false)
-        );
-        // `BinaryOffset` columns are `LargeBinary` fields.
-        assert_eq!(
-            dictionary_values_are_string(&ArrowDataType::LargeBinary),
-            None
-        );
-        assert_eq!(dictionary_values_are_string(&ArrowDataType::Binary), None);
     }
 }

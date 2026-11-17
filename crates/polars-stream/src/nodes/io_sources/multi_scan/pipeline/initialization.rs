@@ -538,6 +538,7 @@ async fn finish_initialize_multi_scan_pipeline(
                 num_pipelines,
                 disable_morsel_split,
                 maintain_order: config.maintain_order,
+                materialize_dictionaries: config.materialize_dictionaries,
                 last_morsel_pipelines,
                 verbose,
                 task_metrics: execution_state.task_metrics.clone(),

@@ -30,15 +30,24 @@ pub fn build_streaming_query_executor(
     };
 
     let num_pipelines = polars_config::config().max_threads();
-    crate::StreamingQuery::build(node, ir_arena, expr_arena, false, num_pipelines, None)
-        .map(Some)
-        .map(Mutex::new)
-        .map(Arc::new)
-        .map(|x| StreamingQueryExecutor {
-            executor: x,
-            rechunk,
-        })
-        .map(|x| Box::new(x) as Box<dyn Executor>)
+    crate::StreamingQuery::build(
+        node,
+        ir_arena,
+        expr_arena,
+        false,
+        num_pipelines,
+        None,
+        // The in-memory engine's query, whose operators may use dictionary codes.
+        false,
+    )
+    .map(Some)
+    .map(Mutex::new)
+    .map(Arc::new)
+    .map(|x| StreamingQueryExecutor {
+        executor: x,
+        rechunk,
+    })
+    .map(|x| Box::new(x) as Box<dyn Executor>)
 }
 
 // Note: Arc/Mutex is because Executor requires Sync, but SlotMap is not Sync.
