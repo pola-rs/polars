@@ -1,18 +1,36 @@
-//! `COPY ... TO '<file>'`: the format and options of the file that is written.
+//! `COPY ... TO`: the format and options of what is written.
 
 #[cfg(feature = "csv")]
 use std::sync::Arc;
 
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
-use sqlparser::ast::CopyOption;
+use sqlparser::ast::{CopyLegacyOption, CopyOption};
 
 use crate::table_functions::FileFormat;
 
-/// How `COPY` writes the file at `path`: in the format that `FORMAT` names, else in that of the
-/// extension of `path`.
+/// A `COPY ... TO STDOUT` statement, for the caller to write to its output (see
+/// [`SQLContext::copy_to_stdout`](crate::SQLContext::copy_to_stdout)).
+#[derive(Clone)]
+pub struct CopyToStdout {
+    /// The rows that the statement writes.
+    pub rows: LazyFrame,
+    /// The format to write them in, with its options.
+    pub format: FileWriteFormat,
+}
+
+/// How `COPY` writes its rows: in the format that `FORMAT` names, else in that of the extension
+/// of `path`, the file it writes. Standard output has no path.
 #[allow(unreachable_code, unused_variables)]
-pub(crate) fn write_format(path: &str, options: &[CopyOption]) -> PolarsResult<FileWriteFormat> {
+pub(crate) fn write_format(
+    path: Option<&str>,
+    options: &[CopyOption],
+    legacy_options: &[CopyLegacyOption],
+) -> PolarsResult<FileWriteFormat> {
+    polars_ensure!(
+        legacy_options.is_empty(),
+        SQLInterface: "COPY takes its options in parentheses, as in (FORMAT csv, HEADER false)"
+    );
     let mut format = None;
     // the options that only the CSV format has, by name
     let mut csv_options = Vec::new();
@@ -33,19 +51,22 @@ pub(crate) fn write_format(path: &str, options: &[CopyOption]) -> PolarsResult<F
     }
 
     let names = FileFormat::NAMES.join(", ");
-    let format = match format {
-        Some(name) => FileFormat::from_name(name).ok_or_else(|| {
+    let format = match (format, path) {
+        (Some(name), _) => FileFormat::from_name(name).ok_or_else(|| {
             polars_err!(
                 SQLInterface: "COPY format '{}' is not supported; the formats are: {}", name, names
             )
         })?,
-        None => FileFormat::of_path(path).ok_or_else(|| {
+        (None, Some(path)) => FileFormat::of_path(path).ok_or_else(|| {
             polars_err!(
                 SQLInterface:
                 "COPY cannot tell the format of '{}' from its extension; add (FORMAT <name>), with one of: {}",
                 path, names
             )
         })?,
+        (None, None) => polars_bail!(
+            SQLInterface: "COPY TO STDOUT needs a format; add (FORMAT <name>), with one of: {}", names
+        ),
     };
 
     #[cfg(feature = "csv")]

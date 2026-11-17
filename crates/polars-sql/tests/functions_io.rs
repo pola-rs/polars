@@ -234,3 +234,30 @@ fn copy_to_file() {
 
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+#[cfg(feature = "csv")]
+fn copy_to_stdout() {
+    // Not a file that SQL writes, so it does not need file writes.
+    let mut context = SQLContext::new().with_file_writes(false);
+    let t = df! { "a" => [1, 2], "b" => ["x", "y"] }.unwrap();
+    context.register("t", t.clone().lazy());
+
+    let copy = context
+        .copy_to_stdout("COPY t (b, a) TO STDOUT (FORMAT csv, HEADER false)")
+        .unwrap()
+        .unwrap();
+    let rows = copy.rows.collect().unwrap();
+    assert!(rows.equals(&t.select(["b", "a"]).unwrap()));
+    assert!(matches!(copy.format, FileWriteFormat::Csv(csv) if !csv.include_header));
+
+    // Any other statement is left to `execute`, which rejects this one.
+    for sql in ["SELECT a FROM t", "COPY t TO 'out.csv'"] {
+        assert!(context.copy_to_stdout(sql).unwrap().is_none(), "{sql}");
+    }
+    assert!(context.execute("COPY t TO STDOUT (FORMAT csv)").is_err());
+
+    // Standard output has no extension to take the format from.
+    let err = context.copy_to_stdout("COPY t TO STDOUT").err().unwrap();
+    assert!(err.to_string().contains("needs a format"), "{err}");
+}
