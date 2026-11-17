@@ -208,7 +208,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             unified_scan_args: _,
             scan_type: _,
             cached_ir,
-        } => cached_ir.lock().unwrap().clone().unwrap(),
+        } => cached_ir.lock().unwrap().as_ref().unwrap().ir.clone(),
         #[cfg(feature = "python")]
         DslPlan::PythonScan { options } => {
             use crate::dsl::python_dsl::PythonOptionsDsl;

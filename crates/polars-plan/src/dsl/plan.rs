@@ -26,6 +26,136 @@ const DSL_MAGIC_BYTES: &[u8] = b"DSL_VERSION";
 
 const DSL_SCHEMA_HASH: SchemaHash<'static> = SchemaHash::from_hash_file();
 
+/// Timestamps closer than this to the moment a stamp was taken can't be trusted: a rewrite
+/// within the same (coarse) timestamp tick would leave the stamp unchanged.
+/// Private override for tests: `POLARS_SCAN_CACHE_RACY_WINDOW_MS`, read on every stamp.
+fn racy_window() -> std::time::Duration {
+    std::env::var("POLARS_SCAN_CACHE_RACY_WINDOW_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .map_or(
+            std::time::Duration::from_secs(2),
+            std::time::Duration::from_millis,
+        )
+}
+
+/// Timestamps further than this in the future are not considered racy (clock skew).
+const RACY_FUTURE: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Snapshot of a local file or directory, used to detect that a cached scan IR is stale.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalPathStamp {
+    pub path: std::path::PathBuf,
+    len: u64,
+    modified: Option<std::time::SystemTime>,
+    #[cfg(unix)]
+    unix_ids: (u64, u64, i64, i64),
+    /// The path was modified too recently when stamped to trust the stamp (or the stamp is
+    /// otherwise known to be inconsistent): it never counts as current.
+    racy: bool,
+    /// The path did not exist when stamped; current only while it still doesn't.
+    missing: bool,
+}
+
+impl LocalPathStamp {
+    /// Stamp for a path that does not exist (yet).
+    pub fn missing(path: &std::path::Path) -> Self {
+        Self {
+            path: path.to_path_buf(),
+            len: 0,
+            modified: None,
+            #[cfg(unix)]
+            unix_ids: (0, 0, 0, 0),
+            racy: false,
+            missing: true,
+        }
+    }
+
+    /// A stamp of the path, or a "missing" stamp if it can't be stat-ed.
+    pub fn new_or_missing(path: &std::path::Path) -> Self {
+        Self::new(path).unwrap_or_else(|| Self::missing(path))
+    }
+
+    /// `None` if the path cannot be stat-ed.
+    pub fn new(path: &std::path::Path) -> Option<Self> {
+        let md = std::fs::metadata(path).ok()?;
+        let now = std::time::SystemTime::now();
+        let window = racy_window();
+        let modified = md.modified().ok();
+        #[allow(unused_mut)]
+        let mut racy = modified.is_none_or(|m| is_racy(m, now, window));
+        #[cfg(unix)]
+        let unix_ids = {
+            use std::os::unix::fs::MetadataExt;
+            let ctime = std::time::UNIX_EPOCH
+                .checked_add(std::time::Duration::new(
+                    md.ctime().max(0) as u64,
+                    md.ctime_nsec().max(0) as u32,
+                ))
+                .unwrap_or(now);
+            racy |= is_racy(ctime, now, window);
+            (md.dev(), md.ino(), md.ctime(), md.ctime_nsec())
+        };
+        Some(Self {
+            path: path.to_path_buf(),
+            len: md.len(),
+            modified,
+            #[cfg(unix)]
+            unix_ids,
+            racy,
+            missing: false,
+        })
+    }
+
+    /// Mark the stamp as untrusted if the file length differs from `expected`.
+    pub fn expect_len(mut self, expected: u64) -> Self {
+        self.racy |= self.len != expected;
+        self
+    }
+
+    /// Whether the path still looks the same as when the stamp was taken.
+    pub fn is_current(&self) -> bool {
+        if self.missing {
+            return std::fs::metadata(&self.path).is_err();
+        }
+        if self.racy {
+            return false;
+        }
+        Self::new(&self.path).is_some_and(|mut s| {
+            // Compare ignoring the racy flag of the fresh stamp.
+            s.racy = false;
+            s == *self
+        })
+    }
+}
+
+fn is_racy(
+    t: std::time::SystemTime,
+    now: std::time::SystemTime,
+    window: std::time::Duration,
+) -> bool {
+    match now.duration_since(t) {
+        Ok(age) => age < window,
+        // In the future: racy only within a bound, beyond that it's clock skew.
+        Err(e) => e.duration() <= RACY_FUTURE,
+    }
+}
+
+/// Cached result of converting a `DslPlan::Scan` to IR, together with stamps of the local
+/// files / directories it was resolved from.
+#[derive(Debug, Clone)]
+pub struct CachedScanIR {
+    pub ir: IR,
+    pub local_stamps: Arc<[LocalPathStamp]>,
+}
+
+impl CachedScanIR {
+    /// Whether every stamp still matches. Stats the file system: don't hold a lock.
+    pub fn is_valid(&self) -> bool {
+        self.local_stamps.iter().all(|s| s.is_current())
+    }
+}
+
 #[derive(Debug, strum_macros::IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -52,7 +182,7 @@ pub enum DslPlan {
         /// so we cache the IR conversion here, as the path expansion can be quite slow (especially for cloud paths).
         /// We don't have the arena, as this is always a source node.
         #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
-        cached_ir: Arc<Mutex<Option<IR>>>,
+        cached_ir: Arc<Mutex<Option<CachedScanIR>>>,
     },
     // we keep track of the projection and selection as it is cheaper to first project and then filter
     /// In memory DataFrame

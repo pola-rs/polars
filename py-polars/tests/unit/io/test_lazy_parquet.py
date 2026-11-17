@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import io
+import os
 import re
 import subprocess
 import sys
@@ -643,7 +644,10 @@ def test_dsl2ir_cached_metadata(tmp_path: Path, streaming: bool) -> None:
         path.write_bytes(v[:-metadata_and_footer_len] + b"PAR1")
 
     remove_metadata(path)
-    assert_frame_equal(lf.collect(engine="streaming" if streaming else "in-memory"), df)
+    # The file changed on disk, so the cached metadata is no longer reused: the scan is
+    # re-resolved and sees the truncated footer.
+    with pytest.raises(ComputeError, match=r"FileMetaData\.schema missing"):
+        lf.collect(engine="streaming" if streaming else "in-memory")
 
 
 @pytest.mark.write_disk
@@ -2172,3 +2176,166 @@ def test_scan_parquet_set_sorted_expr_keeps_order(tmp_path: Path) -> None:
 
     assert_frame_equal(q_group_by.collect(engine="streaming"), expected_group_by)
     assert_frame_equal(q_join.collect(engine="streaming"), expected_join)
+
+
+def _bump_mtime(path: Path, seconds: int) -> None:
+    # Coarse-mtime filesystems: move mtime explicitly instead of sleeping.
+    st = path.stat()
+    os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns + seconds * 10**9))
+
+
+@pytest.mark.write_disk
+def test_scan_parquet_reused_lazyframe_sees_rewritten_file_row_count(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "data.parquet"
+    pl.DataFrame({"x": [1, 2, 3]}).write_parquet(path)
+
+    q = pl.scan_parquet(path).select(pl.len())
+    assert q.collect().item() == 3
+
+    pl.DataFrame({"x": list(range(1000))}).write_parquet(path)
+    assert q.collect().item() == 1000
+
+
+@pytest.mark.write_disk
+def test_scan_parquet_reused_lazyframe_sees_same_size_rewrite(tmp_path: Path) -> None:
+    path = tmp_path / "data.parquet"
+    pl.DataFrame({"x": [1, 2, 3]}).write_parquet(path)
+
+    q = (
+        pl.scan_parquet(path)
+        .filter(pl.col("x") > 5)
+        .select(pl.col("x").sum(), pl.len())
+    )
+    assert q.collect().row(0)[1] == 0
+
+    old = path.stat()
+    pl.DataFrame({"x": [7, 8, 9]}).write_parquet(path)
+    assert path.stat().st_size == old.st_size
+    _bump_mtime(path, 5)
+
+    assert q.collect().row(0) == (24, 3)
+
+
+@pytest.mark.write_disk
+def test_scan_parquet_reused_lazyframe_sees_new_file_in_directory(
+    tmp_path: Path,
+) -> None:
+    pl.DataFrame({"x": [1, 2, 3]}).write_parquet(tmp_path / "a.parquet")
+
+    q = pl.scan_parquet(tmp_path).select(pl.len())
+    assert q.collect().item() == 3
+
+    pl.DataFrame({"x": [4, 5]}).write_parquet(tmp_path / "b.parquet")
+    _bump_mtime(tmp_path, 5)
+    assert q.collect().item() == 5
+
+    q = pl.scan_parquet(tmp_path / "*.parquet").select(pl.len())
+    assert q.collect().item() == 5
+    pl.DataFrame({"x": [6]}).write_parquet(tmp_path / "c.parquet")
+    _bump_mtime(tmp_path, 10)
+    assert q.collect().item() == 6
+
+
+@pytest.mark.write_disk
+# `collect_schema()` is cached separately on the LazyFrame (cached arena) and is not
+# invalidated by file changes; the autouse schema check would compare against it.
+@pytest.mark.may_fail_lazy_schema
+def test_scan_csv_reused_lazyframe_sees_rewritten_file(tmp_path: Path) -> None:
+    path = tmp_path / "data.csv"
+    path.write_text("x\n1\n2\n3\n")
+
+    q = pl.scan_csv(path)
+    assert q.collect().to_dict(as_series=False) == {"x": [1, 2, 3]}
+
+    # The schema is part of the cached scan: a renamed column must be seen.
+    path.write_text("y\n7\n8\n9\n10\n")
+    _bump_mtime(path, 5)
+    assert q.collect().to_dict(as_series=False) == {"y": [7, 8, 9, 10]}
+
+
+@pytest.mark.write_disk
+def test_scan_parquet_reused_lazyframe_same_size_rewrite_no_mtime_bump(
+    tmp_path: Path,
+) -> None:
+    # Rewrite within the same coarse timestamp tick: relies on the racy-timestamp guard.
+    path = tmp_path / "data.parquet"
+    pl.DataFrame({"x": [1, 2, 3]}).write_parquet(path)
+    q = pl.scan_parquet(path).filter(pl.col("x") > 5).select(pl.len())
+    assert q.collect().item() == 0
+
+    pl.DataFrame({"x": [7, 8, 9]}).write_parquet(path)
+    assert q.collect().item() == 3
+
+
+@pytest.mark.write_disk
+def test_scan_parquet_reused_lazyframe_file_uri_rewrite(tmp_path: Path) -> None:
+    path = tmp_path / "data.parquet"
+    pl.DataFrame({"x": [1, 2, 3]}).write_parquet(path)
+    q = pl.scan_parquet(path.as_uri()).select(pl.len())
+    assert q.collect().item() == 3
+
+    pl.DataFrame({"x": list(range(1000))}).write_parquet(path)
+    assert q.collect().item() == 1000
+
+
+@pytest.mark.write_disk
+def test_scan_parquet_reused_lazyframe_recursive_glob_new_partition(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "ds" / "k=1").mkdir(parents=True)
+    pl.DataFrame({"x": [1, 2]}).write_parquet(tmp_path / "ds" / "k=1" / "a.parquet")
+    q = pl.scan_parquet(tmp_path / "ds" / "**" / "*.parquet").select(pl.len())
+    assert q.collect().item() == 2
+
+    (tmp_path / "ds" / "k=2").mkdir()
+    pl.DataFrame({"x": [3, 4, 5]}).write_parquet(tmp_path / "ds" / "k=2" / "b.parquet")
+    assert q.collect().item() == 5
+
+
+@pytest.mark.write_disk
+def test_scan_parquet_reused_lazyframe_empty_glob_then_file_arrives(
+    tmp_path: Path,
+) -> None:
+    schema = {"x": pl.Int64}
+    q = pl.scan_parquet(tmp_path / "*.parquet", schema=schema).select(pl.len())
+    assert q.collect().item() == 0
+
+    pl.DataFrame({"x": [1, 2, 3]}).write_parquet(tmp_path / "a.parquet")
+    assert q.collect().item() == 3
+
+
+@pytest.mark.write_disk
+@pytest.mark.may_fail_cloud  # reason: inspects logs
+def test_scan_parquet_reused_lazyframe_cache_reused_for_old_files(
+    plmonkeypatch: PlMonkeyPatch, capfd: Any, tmp_path: Path
+) -> None:
+    # No racy-timestamp window: exercises the actual stamp comparison.
+    plmonkeypatch.setenv("POLARS_SCAN_CACHE_RACY_WINDOW_MS", "0")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    path = tmp_path / "data.parquet"
+    pl.DataFrame({"x": [1, 2, 3]}).write_parquet(path)
+    q = pl.scan_parquet(path).filter(pl.col("x") > 5).select(pl.len())
+
+    def misses() -> int:
+        return capfd.readouterr().err.count("scan IR cache miss")
+
+    assert q.collect().item() == 0
+    assert misses() == 1
+
+    # Unchanged file: the cached scan is reused.
+    assert q.collect().item() == 0
+    assert q.collect().item() == 0
+    assert misses() == 0
+
+    # Same-size in-place rewrite: stamp mismatch, re-resolved.
+    size = path.stat().st_size
+    pl.DataFrame({"x": [7, 8, 9]}).write_parquet(path)
+    assert path.stat().st_size == size
+    _bump_mtime(path, 5)
+    assert q.collect().item() == 3
+    # The bumped mtime is in the near future, so the new stamp is racy and more
+    # misses follow.
+    assert misses() >= 1

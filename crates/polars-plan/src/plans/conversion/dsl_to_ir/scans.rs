@@ -26,7 +26,7 @@ pub(super) async fn dsl_to_ir(
     sources: ScanSources,
     mut unified_scan_args_box: Box<UnifiedScanArgs>,
     scan_type: Box<FileScanDsl>,
-    cached_ir: Arc<Mutex<Option<IR>>>,
+    cached_ir: Arc<Mutex<Option<CachedScanIR>>>,
     cache_file_info: SourcesToFileInfo,
     #[cfg(feature = "python")] py_scan_resolve_threadpool: Arc<
         LazyLock<Arc<PyScanResolveThreadPool>>,
@@ -36,10 +36,19 @@ pub(super) async fn dsl_to_ir(
     // Note that resolved footer metadata can still be re-indexed or dropped
     // later if the files were filtered from predicate pushdown.
     // Check and drop the lock in its own scope
-    let is_not_cached = {
-        let cached_ir_guard = cached_ir.lock().unwrap();
-        cached_ir_guard.is_none()
-    };
+    let cached_stamps = cached_ir
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|c| Arc::clone(&c.local_stamps));
+    // Stat outside of the lock.
+    let is_not_cached = !cached_stamps.is_some_and(|stamps| stamps.iter().all(|s| s.is_current()));
+    if verbose {
+        eprintln!(
+            "dsl_to_ir: scan IR cache {}",
+            if is_not_cached { "miss" } else { "hit" }
+        );
+    }
 
     if is_not_cached {
         let unified_scan_args = unified_scan_args_box.as_mut();
@@ -60,6 +69,18 @@ pub(super) async fn dsl_to_ir(
         }
 
         let sources_before_expansion = &sources;
+
+        // Directories and glob bases are stamped before expansion, so that entries added while
+        // listing invalidate the cache on the next conversion.
+        let stamp_local = scan_reads_local_files(&scan_type);
+        let mut local_stamps: Vec<LocalPathStamp> = Vec::new();
+        if stamp_local && unified_scan_args.expand_paths {
+            stamp_expansion_roots(
+                sources_before_expansion,
+                unified_scan_args.glob,
+                &mut local_stamps,
+            );
+        }
 
         let mut bytes_per_source = unified_scan_args.source_sizes.clone();
         let sources = if !unified_scan_args.expand_paths {
@@ -112,6 +133,18 @@ pub(super) async fn dsl_to_ir(
                 sources.len(),
             );
         }
+
+        // Stamp before reading any metadata: a file changed while it is being resolved then
+        // invalidates the cache on the next conversion instead of pinning stale metadata.
+        if stamp_local {
+            stamp_expanded_files(
+                sources_before_expansion,
+                &sources,
+                bytes_per_source.as_deref(),
+                &mut local_stamps,
+            );
+        }
+        let local_stamps: Arc<[LocalPathStamp]> = local_stamps.into();
 
         // For cloud we must deduplicate files. Serialization/deserialization leads to Arc's losing their
         // sharing.
@@ -236,10 +269,105 @@ pub(super) async fn dsl_to_ir(
         };
 
         let mut cached_ir = cached_ir.lock().unwrap();
-        cached_ir.replace(ir);
+        cached_ir.replace(CachedScanIR { ir, local_stamps });
     }
 
     Ok(())
+}
+
+/// Scan types that read files named by the sources (and so can be validated by stat-ing them).
+/// Python datasets swap the sources for a dummy path, anonymous scans and external readers
+/// are opaque, and `ExpandedPaths` (`pl.io._expand_paths`, a private lazy local listing) is
+/// left unstamped deliberately: none of those is stamped.
+fn scan_reads_local_files(scan_type: &FileScanDsl) -> bool {
+    match scan_type {
+        #[cfg(feature = "parquet")]
+        FileScanDsl::Parquet { .. } => true,
+        #[cfg(feature = "ipc")]
+        FileScanDsl::Ipc { .. } => true,
+        #[cfg(feature = "csv")]
+        FileScanDsl::Csv { .. } => true,
+        #[cfg(feature = "json")]
+        FileScanDsl::NDJson { .. } => true,
+        #[cfg(feature = "scan_lines")]
+        FileScanDsl::Lines { .. } => true,
+        _ => false,
+    }
+}
+
+/// Local path of a plain path or `file://` URI (`None` for cloud URLs).
+fn local_std_path(path: &PlRefPath) -> Option<std::path::PathBuf> {
+    polars_io::path_utils::local_path(path).map(|p| p.into_owned())
+}
+
+/// Stamp local directory sources and the glob-free base directory of glob sources.
+fn stamp_expansion_roots(before: &ScanSources, glob: bool, out: &mut Vec<LocalPathStamp>) {
+    let Some(paths) = before.as_paths() else {
+        return;
+    };
+    let mut dirs: Vec<std::path::PathBuf> = Vec::new();
+    for path in paths {
+        if glob {
+            let s = path.as_str();
+            if let Some(idx) = s.find(['*', '?', '[']) {
+                // Longest glob-free directory prefix ("." for a relative glob).
+                let cut = s[..idx]
+                    .rfind(['/', std::path::MAIN_SEPARATOR])
+                    .map_or(0, |i| i + 1);
+                let base = if cut == 0 { "." } else { &s[..cut] };
+                if let Some(d) = local_std_path(&PlRefPath::new(base)) {
+                    dirs.push(d);
+                }
+                continue;
+            }
+        }
+        if let Some(p) = local_std_path(path)
+            && p.is_dir()
+        {
+            dirs.push(p);
+        }
+    }
+    dirs.sort_unstable();
+    dirs.dedup();
+    out.extend(dirs.iter().map(|d| LocalPathStamp::new_or_missing(d)));
+}
+
+/// Stamp the expanded local files, and the parent directories of those that came from expansion.
+fn stamp_expanded_files(
+    before: &ScanSources,
+    expanded: &ScanSources,
+    sizes: Option<&[u64]>,
+    out: &mut Vec<LocalPathStamp>,
+) {
+    let Some(paths) = expanded.as_paths() else {
+        return;
+    };
+    let explicit: PlIndexSet<&PlRefPath> = before.as_paths().into_iter().flatten().collect();
+    let mut parents: Vec<std::path::PathBuf> = Vec::new();
+
+    for (i, path) in paths.iter().enumerate() {
+        let Some(p) = local_std_path(path) else {
+            continue;
+        };
+        if let Some(stamp) = LocalPathStamp::new(&p) {
+            out.push(match sizes.and_then(|s| s.get(i)) {
+                Some(&len) => stamp.expect_len(len),
+                None => stamp,
+            });
+        }
+        if !explicit.contains(path)
+            && let Some(parent) = p.parent()
+        {
+            parents.push(if parent.as_os_str().is_empty() {
+                ".".into()
+            } else {
+                parent.to_path_buf()
+            });
+        }
+    }
+    parents.sort_unstable();
+    parents.dedup();
+    out.extend(parents.iter().filter_map(|d| LocalPathStamp::new(d)));
 }
 
 pub(super) fn insert_row_index_to_schema(
