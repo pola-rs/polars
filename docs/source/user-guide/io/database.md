@@ -55,8 +55,8 @@ ADBC (Arrow Database Connectivity) is an engine supported by the Apache Arrow pr
 be both an API standard for connecting to databases and libraries implementing this standard in a
 range of languages.
 
-It is still early days for ADBC so support for different databases is limited. At present, drivers
-for ADBC are only available for [Postgres](https://pypi.org/project/adbc-driver-postgresql/),
+ADBC support depends on the database driver. Examples of available drivers include
+[Postgres](https://pypi.org/project/adbc-driver-postgresql/),
 [SQLite](https://pypi.org/project/adbc-driver-sqlite/) and
 [Snowflake](https://pypi.org/project/adbc-driver-snowflake/). To install ADBC, you need to install
 the driver for your database. For example, to install the driver for SQLite, you run:
@@ -69,6 +69,9 @@ As ADBC is not the default engine, you must specify the engine as an argument to
 `pl.read_database_uri`.
 
 {{code_block('user-guide/io/database','adbc',['read_database_uri'])}}
+
+For Redis driver installation, URI reads, DataFrame writes, and autocommit limits, see the dedicated
+[Redis through ADBC guide](database_redis.md).
 
 ## Write to a database
 
