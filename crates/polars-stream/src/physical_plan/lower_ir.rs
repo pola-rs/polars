@@ -1717,6 +1717,7 @@ fn lower_ir_inner(
                             runtime_filters: runtime_filters.clone(),
                             estimated_rows,
                             key_ranges: key_ranges.clone(),
+                            pre_drop_schema: None,
                         },
                     )),
                     _ if args.how.is_equi() => {

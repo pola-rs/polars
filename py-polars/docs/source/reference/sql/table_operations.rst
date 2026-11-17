@@ -18,7 +18,7 @@ Table Operations
    * - :ref:`DELETE FROM <delete_from_table>`
      - Remove specific rows of data from a table using an (optional) constraint.
    * - :ref:`DESCRIBE <describe>`
-     - Returns the column names and types of a table or view.
+     - Returns the column names and types of a table, view, file or query.
    * - :ref:`DROP SCHEMA <drop_schema>`
      - Drop an empty namespace of an attached catalog.
    * - :ref:`DROP TABLES <drop_tables>`
@@ -33,6 +33,8 @@ Table Operations
      - Update, delete and insert rows of a table in an attached catalog from a source.
    * - :ref:`SHOW TABLES <show_tables>`
      - Returns a list of all tables and views registered in the given context.
+   * - :ref:`INFORMATION_SCHEMA.COLUMNS <information_schema_columns>`
+     - A table with a row per column of each table and view registered in the given context.
    * - :ref:`GENERATE_SERIES <generate_series_table_func>`
      - Create a table with one column of values from start to stop, stop included.
    * - :ref:`RANGE <range_table_func>`
@@ -256,14 +258,23 @@ If another writer commits first:
 
 DESCRIBE
 --------
-Returns the column names and Polars data types of a table or view, as the columns
-``column_name`` and ``column_type``. ``DESC`` is the same.
+Returns the column names and data types of a table, a view, a file or the result of a query,
+as the columns ``column_name`` and ``column_type``. ``DESC`` is the same. A query is not run.
+A file is given by its path in single quotes, as in :ref:`FROM <from>`; only what its columns
+are known from is read, such as the metadata of a Parquet file or the first rows of a CSV file.
+
+A type is given by the SQL name that :ref:`CAST <cast>` reads back as that type, with a nested
+type in full, such as ``STRUCT<lat DOUBLE PRECISION, lon DOUBLE PRECISION>``. A type that has
+no SQL name, such as a fixed-size array, is given by its Polars name in lower case, also inside
+a nested type; such a name cannot be used in ``CAST``.
 
 **Example:**
 
 .. code-block:: sql
 
     DESCRIBE some_table
+    DESCRIBE 'data/events.parquet'
+    DESCRIBE SELECT a, b * 2 AS c FROM some_table
 
 .. _drop_schema:
 
@@ -421,6 +432,23 @@ Returns a list of all tables and views registered in the given context.
 .. code-block:: sql
 
     SHOW TABLES
+
+.. _information_schema_columns:
+
+INFORMATION_SCHEMA.COLUMNS
+--------------------------
+A table with a row per column of each table and view registered in the given context, in the
+order of their names. Its columns are ``table_name``, ``column_name``, ``ordinal_position``
+(starting at 1), ``data_type`` (the Polars data type, as in :ref:`DESCRIBE <describe>`) and
+``is_nullable`` (always ``'YES'``). Read in a view, it does not list the views that read it.
+
+**Example:**
+
+.. code-block:: sql
+
+    SELECT column_name, data_type
+    FROM information_schema.columns
+    WHERE table_name = 'some_table'
 
 .. _generate_series_table_func:
 

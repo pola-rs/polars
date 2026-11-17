@@ -149,8 +149,8 @@ Note that with a regular `CAST` this would fail with the following error:
 
 TYPEOF
 ------
-Returns the name of the datatype of a value, as Polars names it (the names that `DESCRIBE`
-shows).
+Returns the name of the datatype of a value: the SQL name that `CAST` reads and that `DESCRIBE`
+shows. A type that has no SQL name is given by its Polars name.
 
 **Example:**
 
@@ -159,11 +159,11 @@ shows).
     df = pl.DataFrame({"i": [1, 2], "s": ["a", "b"]})
     df.sql("SELECT TYPEOF(i) AS i, TYPEOF(s) AS s, TYPEOF(i / 2) AS x FROM self")
     # shape: (2, 3)
-    # ┌─────┬─────┬─────┐
-    # │ i   ┆ s   ┆ x   │
-    # │ --- ┆ --- ┆ --- │
-    # │ str ┆ str ┆ str │
-    # ╞═════╪═════╪═════╡
-    # │ i64 ┆ str ┆ f64 │
-    # │ i64 ┆ str ┆ f64 │
-    # └─────┴─────┴─────┘
+    # ┌────────┬─────────┬──────────────────┐
+    # │ i      ┆ s       ┆ x                │
+    # │ ---    ┆ ---     ┆ ---              │
+    # │ str    ┆ str     ┆ str              │
+    # ╞════════╪═════════╪══════════════════╡
+    # │ BIGINT ┆ VARCHAR ┆ DOUBLE PRECISION │
+    # │ BIGINT ┆ VARCHAR ┆ DOUBLE PRECISION │
+    # └────────┴─────────┴──────────────────┘

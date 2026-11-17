@@ -1,3 +1,5 @@
+use polars_defs::time::date_diff::DateDiffUnit;
+
 use super::*;
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
@@ -78,6 +80,7 @@ pub enum IRTemporalFunction {
         time_unit: TimeUnit,
         time_zone: Option<TimeZone>,
     },
+    DateDiff(DateDiffUnit),
 }
 
 impl IRTemporalFunction {
@@ -150,6 +153,7 @@ impl IRTemporalFunction {
                     polars_bail!(ComputeError: "expected Date or Datetime, got {dtype}")
                 },
             }),
+            DateDiff(_) => mapper.with_dtype(DataType::Int64),
         }
     }
 
@@ -204,7 +208,7 @@ impl IRTemporalFunction {
             T::Duration(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "timezones")]
             T::ReplaceTimeZone(_, _) => FunctionOptions::elementwise(),
-            T::Combine(_) => FunctionOptions::elementwise(),
+            T::Combine(_) | T::DateDiff(_) => FunctionOptions::elementwise(),
             T::DatetimeFunction { .. } => {
                 FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
@@ -274,6 +278,7 @@ impl Display for IRTemporalFunction {
             ReplaceTimeZone(_, _) => "replace_time_zone",
             DatetimeFunction { .. } => return write!(f, "dt.datetime"),
             Combine(_) => "combine",
+            DateDiff(_) => return write!(f, "date_diff"),
         };
         write!(f, "dt.{s}")
     }

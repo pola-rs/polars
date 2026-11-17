@@ -488,13 +488,30 @@ fn visualize_plan_rec(
             by_column,
             slice: _,
             sort_options: _,
-        } => (
-            format!(
-                "sort\\n{}",
-                fmt_exprs_to_label(by_column, expr_arena, FormatExprStyle::NoAliases)
-            ),
-            from_ref(input),
-        ),
+            projection,
+        } => {
+            let mut projection_fmt = String::new();
+
+            if let Some((names, len_before_drop)) = projection.as_ref() {
+                write!(
+                    EscapeLabel(&mut projection_fmt),
+                    "project {} / {}: {}",
+                    names.len(),
+                    len_before_drop,
+                    names.join(", ")
+                )
+                .unwrap();
+            }
+
+            (
+                format!(
+                    "sort\\n{}{}",
+                    fmt_exprs_to_label(by_column, expr_arena, FormatExprStyle::NoAliases),
+                    projection_fmt
+                ),
+                from_ref(input),
+            )
+        },
         PhysNodeKind::TopK {
             input,
             k,
@@ -901,6 +918,7 @@ fn visualize_plan_rec(
             runtime_filters: _,
             estimated_rows: _,
             key_ranges: _,
+            pre_drop_schema: _,
         } => {
             let base_label = match phys_sm[node_key].kind {
                 PhysNodeKind::MergeJoin { .. } => "merge-join",
@@ -926,6 +944,10 @@ fn visualize_plan_rec(
                 args,
             );
             if let PhysNodeKind::EquiJoin {
+                pre_drop_schema: Some(pre_drop_schema),
+                ..
+            }
+            | PhysNodeKind::SemiAntiJoin {
                 pre_drop_schema: Some(pre_drop_schema),
                 ..
             } = &phys_sm[node_key].kind

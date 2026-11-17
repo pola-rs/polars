@@ -98,7 +98,9 @@ def test_semi_anti_drop_fused(how: str) -> None:
     right = pl.LazyFrame({"k": [2, 4, 6]})
     q = left.join(right, on="k", how=how).select("x")  # type: ignore[arg-type]
     # Only the input of the join is pruned, the drop is part of the join.
-    assert 'label="select\\nx"' not in physical_plan(q)
+    plan = physical_plan(q)
+    assert 'label="select\\nx"' not in plan
+    assert "project 1 / " in plan
     check(q)
 
 

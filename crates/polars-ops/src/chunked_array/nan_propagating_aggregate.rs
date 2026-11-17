@@ -33,6 +33,8 @@ where
 
 pub fn nan_min_s(s: &Series, name: PlSmallStr) -> Series {
     match s.dtype() {
+        #[cfg(feature = "dtype-extension")]
+        DataType::Extension(typ, _) => nan_min_s(s.to_storage(), name).into_extension(typ.clone()),
         #[cfg(feature = "dtype-f16")]
         DataType::Float16 => {
             let ca = s.f16().unwrap();
@@ -52,6 +54,8 @@ pub fn nan_min_s(s: &Series, name: PlSmallStr) -> Series {
 
 pub fn nan_max_s(s: &Series, name: PlSmallStr) -> Series {
     match s.dtype() {
+        #[cfg(feature = "dtype-extension")]
+        DataType::Extension(typ, _) => nan_max_s(s.to_storage(), name).into_extension(typ.clone()),
         #[cfg(feature = "dtype-f16")]
         DataType::Float16 => {
             let ca = s.f16().unwrap();
@@ -207,6 +211,10 @@ unsafe fn group_nan_min<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
 /// `groups` must be in bounds.
 pub unsafe fn group_agg_nan_min_s(s: &Series, groups: &GroupsType) -> Series {
     match s.dtype() {
+        #[cfg(feature = "dtype-extension")]
+        DataType::Extension(typ, _) => {
+            group_agg_nan_min_s(s.to_storage(), groups).into_extension(typ.clone())
+        },
         #[cfg(feature = "dtype-f16")]
         DataType::Float16 => {
             let ca = s.f16().unwrap();
@@ -228,6 +236,10 @@ pub unsafe fn group_agg_nan_min_s(s: &Series, groups: &GroupsType) -> Series {
 /// `groups` must be in bounds.
 pub unsafe fn group_agg_nan_max_s(s: &Series, groups: &GroupsType) -> Series {
     match s.dtype() {
+        #[cfg(feature = "dtype-extension")]
+        DataType::Extension(typ, _) => {
+            group_agg_nan_max_s(s.to_storage(), groups).into_extension(typ.clone())
+        },
         #[cfg(feature = "dtype-f16")]
         DataType::Float16 => {
             let ca = s.f16().unwrap();

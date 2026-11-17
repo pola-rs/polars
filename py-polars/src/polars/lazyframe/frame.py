@@ -3121,8 +3121,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               :func:`polars.delete_iceberg`. Columns nested within a nullable
               struct are not supported.
             - A PyIceberg ``BooleanExpression`` or filter string, e.g.
-              ``"date = '2026-10-01'"``, is used as-is, with the semantics of
-              PyIceberg's ``Table.overwrite(overwrite_filter=...)``.
+              ``"date = '2026-10-01'"``, deletes the rows for which it is true. A
+              comparison with null is null, which keeps the row, as in SQL. NaN
+              is equal to NaN and greater than any other number, as in Polars.
 
             .. warning::
                 This functionality is considered **unstable**. It may be changed
@@ -3132,7 +3133,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             partitions that the incoming data is written to. Requires a table
             whose partition spec uses only identity transforms, on source columns
             that are not floating-point, nanosecond timestamps, or nested within a
-            nullable struct. If there is no incoming data, nothing is deleted.
+            nullable struct. If there is no incoming data, nothing is deleted. Data
+            files written under an earlier partition spec lose exactly the rows of
+            those partitions.
 
             .. warning::
                 This functionality is considered **unstable**. It may be changed
@@ -3172,6 +3175,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             For cloud storages, this may include configurations for authentication etc.
 
             More info is available `here <https://py.iceberg.apache.org/configuration/>`__.
+
+            Storage credentials vended by the table's catalog are used by default,
+            and renewed from the catalog before they expire, so the catalog's own
+            authentication must outlive the sink (e.g. PyIceberg's ``auth.type``
+            rather than a static ``token``). Credentials given here replace them.
+
+            Not renewed: credentials vended without an expiry, per-account ADLS
+            credentials, and those of a table created by SQL ``CREATE TABLE AS``.
         compression
             Parquet compression codec.
         compression_level
@@ -3201,8 +3212,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         ``mode="overwrite"`` replaces all table data, unless ``overwrite_filter`` or
         ``partition_overwrite`` is given. The delete and the append are committed
-        in a single transaction. Data files that only partially match the delete
-        filter are rewritten by PyIceberg during the commit.
+        as one snapshot. Data files whose rows all match the delete filter are
+        dropped. The other rows of data files that match only partly are written to
+        new files during the commit (copy-on-write), and rows removed by earlier
+        delete files stay deleted. Incremental scans
+        (``scan_iceberg(from_snapshot_id_exclusive=...)``) read appended snapshots
+        only, so they do not return the rows of an overwrite. Overwriting Iceberg v3
+        tables, and rewriting a data file whose delete files cannot be applied (such
+        as equality deletes or position deletes that cover several data files), is
+        not supported yet.
         ``schema_mode="overwrite"`` is not supported for
         partitioned tables or tables with a sort order. Custom location providers
         are not supported.

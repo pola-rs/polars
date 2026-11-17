@@ -107,6 +107,20 @@ class _ReplaceFiles:
     isolation: Literal["delete", "update"] = "update"
 
 
+class _HandBack:
+    """In place of `replace_files`: the sink writes, and hands its files back here.
+
+    For files an outer commit adds (an overwrite's rewritten rows).
+    """
+
+    files: list[_IcebergSinkedFile] | None = None
+    sort_order_id: int | None = None
+
+    def __getstate__(self) -> tuple[()]:
+        msg = "a sink that hands back its files cannot be serialized"
+        raise TypeError(msg)
+
+
 def _create_namespace_if_not_exists(
     catalog: pyiceberg.catalog.Catalog,
     namespace: tuple[str, ...],
@@ -423,15 +437,8 @@ def _added_conflicting_deletes(
     return base_snapshot_id is not None
 
 
-def _stage_replace(
-    tx: Transaction,
-    replace: _ReplaceFiles,
-    sinked_files: list[_IcebergSinkedFile],
-    snapshot_properties: dict[str, str],
-    sort_order_id: int | None,
-) -> None:
-    """Stage one overwrite replacing the files of `replace` by the sinked files."""
-    from pyiceberg.table.snapshots import Operation
+def _assert_replace_base(tx: Transaction, replace: _ReplaceFiles) -> None:
+    """Stage the requirements of `replace`, before any schema update."""
     from pyiceberg.table.update import AssertCurrentSchemaId, AssertDefaultSpecId
 
     tx._stage(
@@ -441,17 +448,40 @@ def _stage_replace(
             AssertDefaultSpecId(default_spec_id=replace.spec_id),  # type: ignore[call-arg]
         ),
     )
-    data_files = _data_files_for_commit(tx, sinked_files, sort_order_id)
+
+
+def _stage_replace(
+    tx: Transaction,
+    replace: _ReplaceFiles,
+    data_files: list[DataFile],
+    snapshot_properties: dict[str, str],
+) -> None:
+    """Stage one snapshot replacing the files of `replace` by `data_files`."""
+    from pyiceberg.table.snapshots import Operation
+
     with tx.update_snapshot(snapshot_properties=snapshot_properties).overwrite() as ow:
         _set_isolation_operation(
             ow,
             Operation.DELETE if replace.isolation == "delete" else Operation.OVERWRITE,
         )
+        # labelled as Iceberg Java: a commit that only removes files is a delete
+        only_removes = replace.data_files and not data_files
+        if only_removes and ow._operation == Operation.OVERWRITE:
+            ow._operation = Operation.DELETE
         ow.delete_by_predicate(replace.conflict_filter)
         for data_file in replace.data_files:
             ow.delete_data_file(data_file)
         for data_file in data_files:
             ow.append_data_file(data_file)
+
+
+def _check_overwrite_version(table: pyiceberg.table.Table) -> None:
+    if table.format_version > 2:
+        msg = (
+            f"overwrite of an Iceberg v{table.format_version} table is not supported "
+            f"yet: table '{'.'.join(table.name())}'"
+        )
+        raise NotImplementedError(msg)
 
 
 def _remove_files(io: FileIO, paths: list[str]) -> None:
@@ -691,19 +721,28 @@ def _data_files_for_commit(
     )
 
 
+def _written_partitions(
+    table_metadata: TableMetadata, sinked_files: list[_IcebergSinkedFile]
+) -> set[Record]:
+    """The partitions of the default spec that `sinked_files` are written to."""
+    spec = table_metadata.spec()
+    schema = table_metadata.schema()
+    _check_dynamic_overwrite_spec(spec, schema)
+    return {_partition_record(keys, spec, schema) for *_, keys in sinked_files}
+
+
 def _dynamic_overwrite_filter(
-    table_metadata: TableMetadata, data_files: list[DataFile]
+    table_metadata: TableMetadata, partitions: set[Record]
 ) -> BooleanExpression:
-    """Match the rows of the partitions that `data_files` are written to."""
+    """Match the rows of `partitions` (of the default spec)."""
     from pyiceberg.expressions import AlwaysFalse, And, EqualTo, IsNull, Or, Reference
 
     spec = table_metadata.spec()
     schema = table_metadata.schema()
-    _check_dynamic_overwrite_spec(spec, schema)
     names = [schema.find_column_name(field.source_id) for field in spec.fields]
 
     partition_filters: list[BooleanExpression] = []
-    for partition in {data_file.partition for data_file in data_files}:
+    for partition in partitions:
         predicates: list[BooleanExpression] = []
         for i, name in enumerate(names):
             assert name is not None
@@ -1271,7 +1310,7 @@ class IcebergSinkState:
     partition_spec_id: int | None
     commit_result_df: NoPickleOption[pl.DataFrame]
     # Data files the commit replaces, instead of appending or overwriting.
-    replace_files: _ReplaceFiles | None = None
+    replace_files: _ReplaceFiles | _HandBack | None = None
 
     @staticmethod
     def new(
@@ -1290,7 +1329,7 @@ class IcebergSinkState:
         compression_level: int | None = None,
         row_group_size: int | None = None,
         maintain_order: bool = True,
-        replace_files: _ReplaceFiles | None = None,
+        replace_files: _ReplaceFiles | _HandBack | None = None,
     ) -> IcebergSinkState:
         if schema_mode == "overwrite" and mode != "overwrite":
             msg = "schema_mode='overwrite' requires mode='overwrite'"
@@ -1598,6 +1637,8 @@ class IcebergSinkState:
         )
 
         # Fail before writing any data.
+        if self.mode == "overwrite" and self.replace_files is None:
+            _check_overwrite_version(table)
         if self.dynamic_partition_overwrite:
             _check_dynamic_overwrite_spec(table.spec(), schema)
         if isinstance(self.overwrite_filter, pl.Expr):
@@ -1608,6 +1649,12 @@ class IcebergSinkState:
             from pyiceberg.expressions.visitors import bind
 
             bind(schema, self.overwrite_filter, case_sensitive=True)
+        if self.overwrite_filter is not None:
+            from polars.io.iceberg._delete import _exact_filter, _filter_predicate
+
+            _filter_predicate(
+                table.schema(), _exact_filter(table.schema(), self.overwrite_filter)
+            )
 
         lf = wrap_ldf(plf)
         self.sort_order_id = None
@@ -1635,7 +1682,22 @@ class IcebergSinkState:
                 estimated_compression_ratio * v, (1 << 64) - 1
             )
 
-        return lf.sink_parquet(
+        from polars.io.iceberg._credentials import renewing_credential_provider
+        from polars.io.iceberg._plugin import _data_location
+
+        storage_options, credential_provider = renewing_credential_provider(
+            table,
+            self._get_converted_storage_options(),
+            self.iceberg_storage_properties,
+            _data_location(table),
+            # Only the name was kept: renewals resolve it too.
+            catalog_name=(
+                self.catalog_name if self.py_catalog_class_module is None else None
+            ),
+        )
+
+        # The provider is taken as `scan_parquet` does, untyped.
+        return lf.sink_parquet(  # type: ignore[call-overload]
             pl.PartitionBy(
                 _normalize_windows_iceberg_file_uri(
                     self.sink_base_path(object_storage_enabled=object_storage_enabled)
@@ -1652,7 +1714,8 @@ class IcebergSinkState:
             compression_level=self.compression_level,
             row_group_size=self.row_group_size,
             maintain_order=True if sort_order.fields else self.maintain_order,
-            storage_options=self._get_converted_storage_options(),
+            storage_options=storage_options,
+            credential_provider=credential_provider,
             lazy=True,
         )._ldf
 
@@ -1673,7 +1736,12 @@ class IcebergSinkState:
         if verbose:
             eprint(f"IcebergSinkState[commit]: mode: '{self.mode}'")
 
+        from polars.io.iceberg._credentials import refresh_file_io
+
         table = self.table()
+        # The manifests are written with the table's FileIO, whose vended credentials
+        # may have expired while the data was written.
+        refresh_file_io(table)
 
         self._commit(table, sinked_files, verbose=verbose)
 
@@ -1707,6 +1775,21 @@ class IcebergSinkState:
         )
         from pyiceberg.table import StagedTable, Table
 
+        if sys.platform == "win32":
+            sinked_files = [
+                (
+                    f"file://{path[8:]}" if path.startswith("file:///") else path,
+                    *rest,
+                )
+                for path, *rest in sinked_files
+            ]
+
+        if isinstance(self.replace_files, _HandBack):
+            # the engine resolved a copy of this state, which has the sort order
+            self.replace_files.files = sinked_files
+            self.replace_files.sort_order_id = self.sort_order_id
+            return
+
         if _already_committed(table.metadata, self.sink_uuid_str):
             if verbose:
                 eprint("IcebergSinkState[commit]: already committed, skipping")
@@ -1717,17 +1800,14 @@ class IcebergSinkState:
             _SINK_UUID_PROPERTY: self.sink_uuid_str
         }
 
-        if sys.platform == "win32":
-            sinked_files = [
-                (
-                    f"file://{path[8:]}" if path.startswith("file:///") else path,
-                    *rest,
-                )
-                for path, *rest in sinked_files
-            ]
-
         if isinstance(table, StagedTable):
             self._commit_create(
+                table, sinked_files, snapshot_properties, verbose=verbose
+            )
+            return
+
+        if self.mode == "overwrite" and self.replace_files is None:
+            self._commit_overwrite(
                 table, sinked_files, snapshot_properties, verbose=verbose
             )
             return
@@ -1760,13 +1840,11 @@ class IcebergSinkState:
                     empty = [path for path, rows, *_ in sinked_files if rows == 0]
                     if empty:
                         _remove_files(self.storage_file_io(), empty)
-                    _stage_replace(
-                        tx,
-                        replace,
-                        [f for f in sinked_files if f[1] > 0],
-                        snapshot_properties,
-                        self.sort_order_id,
+                    _assert_replace_base(tx, replace)
+                    data_files = _data_files_for_commit(
+                        tx, [f for f in sinked_files if f[1] > 0], self.sort_order_id
                     )
+                    _stage_replace(tx, replace, data_files, snapshot_properties)
 
                 if verbose:
                     elapsed = perf_counter() - start_instant
@@ -1808,35 +1886,11 @@ class IcebergSinkState:
         *,
         verbose: bool,
     ) -> float:
-        """Stage an append or overwrite of the sinked files, returning when it began."""
+        """Stage an append of the sinked files, returning when it began."""
         self._check_layout(tx.table_metadata)
         self._update_schema(tx)
 
         data_files = _data_files_for_commit(tx, sinked_files, self.sort_order_id)
-
-        if self.mode == "overwrite":
-            from pyiceberg.expressions import AlwaysFalse, AlwaysTrue
-
-            if self.dynamic_partition_overwrite:
-                delete_filter = _dynamic_overwrite_filter(tx.table_metadata, data_files)
-            elif self.overwrite_filter is not None:
-                # Converted from a `pl.Expr` when the sink was resolved.
-                delete_filter = self.overwrite_filter  # type: ignore[assignment]
-            else:
-                delete_filter = AlwaysTrue()
-
-            if verbose:
-                kind = (
-                    "dynamic partitions"
-                    if self.dynamic_partition_overwrite
-                    else "filter"
-                    if self.overwrite_filter is not None
-                    else "all rows"
-                )
-                eprint(f"IcebergSinkState[commit]: overwrite: {kind}")
-
-            if delete_filter != AlwaysFalse():
-                tx.delete(delete_filter, snapshot_properties=snapshot_properties)
 
         if verbose:
             eprint("IcebergSinkState[commit]: begin add_files")
@@ -1846,6 +1900,190 @@ class IcebergSinkState:
         _add_files(tx, data_files, snapshot_properties)
 
         return start_instant
+
+    def _commit_overwrite(
+        self,
+        table: pyiceberg.table.Table,
+        sinked_files: list[_IcebergSinkedFile],
+        snapshot_properties: dict[str, str],
+        *,
+        verbose: bool,
+    ) -> None:
+        """Commit an overwrite as one snapshot: the files with deleted rows replaced.
+
+        Data files whose rows all match are dropped. The other rows of partly matching
+        files are written again (copy-on-write), into this sink's directory.
+        """
+        from pyiceberg.exceptions import (
+            CommitFailedException,
+            CommitStateUnknownException,
+            ValidationException,
+        )
+        from pyiceberg.expressions import AlwaysFalse, AlwaysTrue
+        from pyiceberg.table import Table
+
+        from polars.io.iceberg._delete import (
+            _candidate_tasks,
+            _classify_files,
+            _exact_filter,
+            _filter_predicate,
+            _live_data_files,
+            _matching_files,
+        )
+
+        _check_overwrite_version(table)
+        if (
+            self.partition_spec_id is not None
+            and table.metadata.default_spec_id != self.partition_spec_id
+        ):
+            raise ValidationException(_SPEC_CHANGED)
+        partitions: set[Record] = set()
+        if self.dynamic_partition_overwrite:
+            partitions = _written_partitions(table.metadata, sinked_files)
+            delete_filter = _dynamic_overwrite_filter(table.metadata, partitions)
+        elif self.overwrite_filter is not None:
+            # Converted from a `pl.Expr` when the sink was resolved.
+            delete_filter = self.overwrite_filter  # type: ignore[assignment]
+        else:
+            delete_filter = AlwaysTrue()
+        if verbose:
+            kind = (
+                "dynamic partitions"
+                if self.dynamic_partition_overwrite
+                else "filter"
+                if self.overwrite_filter is not None
+                else "all rows"
+            )
+            eprint(f"IcebergSinkState[commit]: overwrite: {kind}")
+
+        removed: list[DataFile] = []
+        rewritten: list[_IcebergSinkedFile] = []
+        rewritten_sort_order_id = None
+        if delete_filter == AlwaysTrue():
+            removed = _live_data_files(table)
+        elif delete_filter != AlwaysFalse():
+            schema = table.schema()
+            delete_filter = _exact_filter(schema, delete_filter)
+            predicate = _filter_predicate(schema, delete_filter)
+            # files proven whole from metadata are not read
+            removed, may_match = _classify_files(
+                table, delete_filter, whole_partitions=partitions
+            )
+            tasks = (
+                [
+                    t
+                    for t in _candidate_tasks(table, delete_filter)
+                    if t.file.file_path in may_match
+                ]
+                if may_match
+                else []
+            )
+            whole, partial = _matching_files(
+                table, tasks, predicate, self.iceberg_storage_properties
+            )
+            removed += [t.file for t in whole + partial]
+            if partial:
+                rewritten, rewritten_sort_order_id = self._write_survivors(
+                    table, partial, predicate
+                )
+
+        # a written file without rows is not added
+        written = [f for f in sinked_files if f[1] > 0]
+        rewritten = [f for f in rewritten if f[1] > 0]
+        rewritten_paths = [path for path, *_ in rewritten]
+        empty = [path for path, rows, *_ in sinked_files if rows == 0]
+        if empty:
+            _remove_files(self.storage_file_io(), empty)
+        # an overwrite that changes nothing commits nothing, as Iceberg Java
+        if delete_filter == AlwaysFalse() and not written and self.schema_mode is None:
+            if verbose:
+                eprint("IcebergSinkState[commit]: nothing to commit")
+            return
+
+        replace = _ReplaceFiles(
+            data_files=removed,
+            conflict_filter=delete_filter,
+            schema_id=table.metadata.current_schema_id,
+            spec_id=table.metadata.default_spec_id,
+            isolation="delete",
+        )
+        sink_catalog = _SinkCatalog(table.catalog, self.sink_uuid_str, verbose=verbose)
+        wrapped = Table(
+            table.name(),
+            table.metadata,
+            table.metadata_location,
+            table.io,
+            sink_catalog,  # type: ignore[arg-type]
+            table.config,
+        )
+        try:
+            try:
+                with _replace_transaction(wrapped, self.sink_uuid_str, replace) as tx:
+                    _assert_replace_base(tx, replace)
+                    self._check_layout(tx.table_metadata)
+                    self._update_schema(tx)
+                    data_files = _data_files_for_commit(
+                        tx, written, self.sort_order_id
+                    ) + _data_files_for_commit(tx, rewritten, rewritten_sort_order_id)
+                    _stage_replace(tx, replace, data_files, snapshot_properties)
+                    if verbose:
+                        eprint("IcebergSinkState[commit]: begin transaction commit")
+            except (
+                _AlreadyCommitted,
+                CommitStateUnknownException,
+                ValidationException,
+            ):
+                raise
+            except Exception as e:
+                if isinstance(e, CommitFailedException):
+                    _raise_if_spec_changed(table, replace.spec_id, e)
+                _copy_table_state(sink_catalog.landed_after(table, e), table)
+                return
+        except _AlreadyCommitted as e:
+            # an earlier run of this sink landed, without these rewritten files
+            _remove_files(self.storage_file_io(), rewritten_paths)
+            if verbose:
+                eprint("IcebergSinkState[commit]: already committed, skipping")
+            _copy_table_state(e.table, table)
+            return
+        except CommitStateUnknownException:
+            raise
+        except Exception:
+            # not committed: these files are of this commit only
+            _remove_files(self.storage_file_io(), rewritten_paths)
+            raise
+
+        _copy_table_state(wrapped, table)
+
+    def _write_survivors(
+        self,
+        table: pyiceberg.table.Table,
+        tasks: list[pyiceberg.table.FileScanTask],
+        predicate: pl.Expr,
+    ) -> tuple[list[_IcebergSinkedFile], int | None]:
+        """Write the rows of the files of `tasks` that `predicate` keeps, uncommitted.
+
+        Returns the written files and their sort order. They go into this sink's
+        directory, under its uuid, as the files of the overwrite.
+        """
+        from polars.io.iceberg.functions import _scan_iceberg_files
+
+        hand_back = _HandBack()
+        state = IcebergSinkState.new(
+            table,
+            mode="append",
+            storage_options=self.iceberg_storage_properties,
+            compression=self.compression,
+            compression_level=self.compression_level,
+            row_group_size=self.row_group_size,
+            maintain_order=self.maintain_order,
+            replace_files=hand_back,
+        )
+        state.sink_uuid_str = self.sink_uuid_str
+        rows = _scan_iceberg_files(table, tasks, self.iceberg_storage_properties)
+        state.attach_sink(rows.remove(predicate)).collect()
+        assert hand_back.files is not None
+        return hand_back.files, hand_back.sort_order_id
 
     def _check_layout(self, metadata: TableMetadata) -> None:
         """Raise if the sort order written for is gone."""
@@ -1947,11 +2185,15 @@ class IcebergSinkState:
         location, own = self.written_files_dir()
         if not own:
             return location
+        from polars.io.iceberg._credentials import refresh_file_io
+
         table = self.table()
         try:
             current = table.catalog.load_table(table.name())
             if _landed(current, table, self.sink_uuid_str):
                 return location
+            # The files are deleted with the FileIO, as for the commit.
+            refresh_file_io(table, current)
         except NoSuchTableError:
             pass
         except Exception:
@@ -1978,22 +2220,14 @@ class IcebergSinkState:
         return load_file_io({**table.io.properties, **user}, location=table.location())
 
     def sink_base_path(self, *, object_storage_enabled: bool) -> str:
-        from pyiceberg.table import TableProperties
+        from polars.io.iceberg._plugin import _data_location
 
-        table = self.table()
-        table_metadata = table.metadata
-        table_properties = table_metadata.properties
-
-        sink_base_path = (
-            path.rstrip("/")
-            if (path := table_properties.get(TableProperties.WRITE_DATA_PATH))
-            else f"{table_metadata.location.rstrip('/')}/data"
-        )
+        sink_base_path = _data_location(self.table())
 
         if object_storage_enabled:
-            return f"{sink_base_path}/"
+            return sink_base_path
 
-        return f"{sink_base_path}/{self.sink_uuid_str}/"
+        return f"{sink_base_path}{self.sink_uuid_str}/"
 
 
 @dataclass(frozen=True, kw_only=True)

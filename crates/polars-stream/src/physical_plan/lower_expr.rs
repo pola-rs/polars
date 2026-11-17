@@ -1198,6 +1198,7 @@ fn lower_exprs_with_ctx(
                     runtime_filters: Vec::new(),
                     estimated_rows: None,
                     key_ranges: Vec::new(),
+                    pre_drop_schema: None,
                 };
 
                 // SemiAntiJoin with output_bool returns a column with the same name as the first
@@ -3214,6 +3215,7 @@ pub(crate) fn build_sort_stream_with_ctx(
         by_column: vec![key],
         slice,
         sort_options,
+        projection: None,
     };
     let mut stream = PhysStream::first(ctx.phys_sm.insert(PhysNode::new(output_schema, kind)));
 

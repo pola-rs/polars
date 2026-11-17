@@ -83,6 +83,26 @@ impl private::PrivateSeries for SeriesWrap<ExtensionChunked> {
         list.into_series()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
+        self.apply_on_storage(|s| unsafe { s.agg_min(groups) })
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
+        self.apply_on_storage(|s| unsafe { s.agg_max(groups) })
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+        unsafe { self.0.storage().agg_arg_min(groups) }
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+        unsafe { self.0.storage().agg_arg_max(groups) }
+    }
+
     fn arg_sort_multiple(
         &self,
         by: &[Column],
@@ -286,6 +306,16 @@ impl SeriesTrait for SeriesWrap<ExtensionChunked> {
 
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
         self.try_apply_on_storage(|s| s.sort_with(options))
+    }
+
+    fn min_reduce(&self) -> PolarsResult<Scalar> {
+        let value = self.0.storage().min_reduce()?.into_value();
+        Ok(Scalar::new(self.dtype().clone(), value))
+    }
+
+    fn max_reduce(&self) -> PolarsResult<Scalar> {
+        let value = self.0.storage().max_reduce()?.into_value();
+        Ok(Scalar::new(self.dtype().clone(), value))
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
