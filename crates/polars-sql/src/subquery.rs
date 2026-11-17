@@ -4228,13 +4228,14 @@ impl OuterJoinTree {
     }
 }
 
-// A FROM item that is a plain table without joins: the table's name and the
+// A FROM item that is a plain, unsampled table without joins: the table's name and the
 // name that qualifies its columns.
 fn plain_table(tbl_expr: &TableWithJoins) -> Option<(&str, &str)> {
     let TableFactor::Table {
         name,
         alias,
         args: None,
+        sample: None,
         ..
     } = &tbl_expr.relation
     else {

@@ -5682,6 +5682,28 @@ def test_merge_catalog_table_sources(
 
 
 @pytest.mark.write_disk
+def test_catalog_dml_table_samples(lake: CountingCatalog) -> None:
+    ctx = merge_ctx(lake)
+    ctx.register("src", pl.DataFrame({"k": range(1, 5)}))
+    sample = "src TABLESAMPLE (50 PERCENT) REPEATABLE (3)"
+    keys = ctx.execute(f"SELECT k FROM {sample}", eager=True)["k"].to_list()
+    assert 0 < len(keys) < 4
+    ctx.execute(f"MERGE INTO t USING {sample} ON t.k = src.k WHEN MATCHED THEN DELETE")
+    assert [row[0] for row in table_rows(lake, "tpch", "t")] == [
+        k for k in range(1, 5) if k not in keys
+    ]
+
+    for statement in [
+        "DELETE FROM t TABLESAMPLE (0 PERCENT)",
+        "UPDATE t TABLESAMPLE (0 PERCENT) SET n = 1",
+    ]:
+        with pytest.raises(
+            SQLInterfaceError, match="of a table sample is not supported"
+        ):
+            ctx.execute(statement)
+
+
+@pytest.mark.write_disk
 def test_merge_catalog_table_files(lake: CountingCatalog) -> None:
     from pyiceberg.table.snapshots import Operation
 

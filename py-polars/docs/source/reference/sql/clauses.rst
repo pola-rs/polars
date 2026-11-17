@@ -21,6 +21,8 @@ Query Clauses
      - Turn the values of a column into columns, aggregating the rows of each.
    * - :ref:`UNPIVOT <unpivot>`
      - Turn columns into rows of a name column and a value column.
+   * - :ref:`TABLESAMPLE <tablesample>`
+     - Read a random sample of a percentage of the rows of a table.
    * - :ref:`WHERE <where>`
      - Filter rows returned from the query based on the given conditions.
    * - :ref:`GROUP BY <group_by>`
@@ -557,6 +559,29 @@ in ``<name>``, and its value in ``<value>``. Rows whose value is null are left o
     # │ north  ┆ q2      ┆ 20     │
     # │ south  ┆ q1      ┆ 30     │
     # └────────┴─────────┴────────┘
+
+.. _tablesample:
+
+TABLESAMPLE
+-----------
+Read a random sample of the rows of a table: each row is kept with the given probability.
+``TABLESAMPLE`` follows a table (and its alias) in ``FROM``; ``USING SAMPLE`` follows the
+``FROM`` clause (or ``WHERE``, ``GROUP BY`` or ``HAVING``) and samples its one table, before
+the rest of the query runs. ``REPEATABLE (seed)`` gives the same sample of the same rows each
+time.
+
+The size must be a percentage between 0 and 100 (``10%``, ``10 PERCENT``, or a number after
+``BERNOULLI``/``SYSTEM`` in parentheses); a number of rows is not supported. The ``BERNOULLI``,
+``SYSTEM`` and ``RESERVOIR`` methods all sample each row.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"n": range(1000)})
+    df.sql("SELECT COUNT(*) FROM self TABLESAMPLE (10 PERCENT) REPEATABLE (42)")
+    df.sql("SELECT COUNT(*) FROM self TABLESAMPLE BERNOULLI (10)")
+    df.sql("SELECT COUNT(*) FROM self USING SAMPLE 10% (bernoulli, 42)")
 
 .. _where:
 
