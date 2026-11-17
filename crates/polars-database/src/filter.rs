@@ -951,6 +951,19 @@ impl Translator<'_> {
             {
                 None
             },
+            // An aware literal is a `TIMESTAMP_LTZ`, which Databricks converts a
+            // `TIMESTAMP_NTZ` column's value to in the session's time zone, not UTC: a
+            // column read as aware (`databricks.sql` once did) mustn't be compared so.
+            DataType::Datetime(_, Some(_))
+                if self.dialect() == DialectName::Databricks
+                    && self
+                        .config
+                        .column(name)
+                        .and_then(|c| c.db_type.as_deref())
+                        .is_some_and(|t| t.trim().eq_ignore_ascii_case("timestamp_ntz")) =>
+            {
+                None
+            },
             DataType::Date | DataType::Datetime(_, _) => self
                 .dialect()
                 .temporal_comparisons_exact()
@@ -1324,6 +1337,27 @@ mod tests {
             class_of(&c(Some("decimal(10,2)"), DataType::Float64), &eq("0.5")),
             None
         );
+    }
+
+    #[test]
+    fn databricks_aware_comparison_on_ntz_column() {
+        // #422: a column typed as aware that is a `TIMESTAMP_NTZ` is not compared
+        let utc = DataType::Datetime(TimeUnit::Microseconds, Some(TimeZone::UTC));
+        let naive = DataType::Datetime(TimeUnit::Microseconds, None);
+        let c =
+            |d: DataType, t| config(DialectName::Databricks, adbc("databricks"), &[("ts", d, t)]);
+        let aware = cmp("eq", "ts", "datetime[us, UTC]", "1719835200000000");
+        let plain = cmp("eq", "ts", "datetime[us]", "1719835200000000");
+        // an NTZ column: naive is compared, aware (a `schema=` or an older read) is not
+        let ntz = c(naive.clone(), Some("timestamp_ntz"));
+        assert_eq!(class_of(&ntz, &plain), Some(Class::Exact));
+        let ntz_aware = c(utc.clone(), Some("timestamp_ntz"));
+        assert_eq!(class_of(&ntz_aware, &aware), None);
+        // an LTZ column: aware is compared, naive (a `schema=`) is not
+        let ltz = c(utc, Some("timestamp"));
+        assert_eq!(class_of(&ltz, &aware), Some(Class::Exact));
+        let ltz_naive = c(naive, Some("timestamp"));
+        assert_eq!(class_of(&ltz_naive, &plain), None);
     }
 
     #[test]

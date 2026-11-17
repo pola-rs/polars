@@ -950,8 +950,9 @@ def _fake(module: str, name: str = "Obj", **attrs: Any) -> Any:
 
 
 def test_databricks_empty_result_is_typed_from_the_description() -> None:
-    # #384: discovery's empty result yields no Arrow batch, so the columns were typed
-    # by `_description_dtypes`, which knew only Postgres and MySQL type codes
+    # #384, #422: the description is ambiguous (`TIMESTAMP_NTZ` reads `timestamp`,
+    # `TIME` `string`): ambiguous types stay `Null` (typed from values), decimals have
+    # their precision
     from polars_database._bridge import _empty_frame
 
     description = [
@@ -959,21 +960,73 @@ def test_databricks_empty_result_is_typed_from_the_description() -> None:
         ("g", "int", None, None, None, None, None),
         ("s", "string", None, None, None, None, None),
         ("t", "timestamp", None, None, None, None, None),
-        ("n", "timestamp_ntz", None, None, None, None, None),
-        ("d", "decimal", None, None, None, None, None),
+        ("n", "timestamp", None, None, None, None, None),
+        ("d", "decimal", None, None, 10, 2, None),
+        ("u", "decimal", None, None, None, None, None),
         ("a", "array", None, None, None, None, None),
     ]
     cursor = _fake("databricks.sql.client", "Cursor", description=description)
     expected: dict[str, Any] = {
         "id": pl.Int64,
         "g": pl.Int32,
-        "s": pl.String,
-        "t": pl.Datetime("us", "UTC"),
-        "n": pl.Datetime("us"),
-        "d": pl.Null,
+        "s": pl.Null,
+        "t": pl.Null,
+        "n": pl.Null,
+        "d": pl.Decimal(10, 2),
+        "u": pl.Null,
         "a": pl.Null,
     }
     assert _empty_frame(cursor, utc=True).schema == pl.Schema(expected)
+
+
+def test_databricks_empty_result_takes_the_drivers_arrow_schema() -> None:
+    # #384, #422: an exhausted result still has the Arrow schema of its rows
+    import pyarrow as pa
+    from polars_database._bridge import _empty_frame
+
+    names = ["i", "ntz", "ltz", "d", "a", "t"]
+    table = pa.table(
+        {
+            "i": pa.array([], pa.int32()),
+            "ntz": pa.array([], pa.timestamp("us")),
+            "ltz": pa.array([], pa.timestamp("us", "America/Los_Angeles")),
+            "d": pa.array([], pa.decimal128(10, 2)),
+            "a": pa.array([], pa.list_(pa.int32())),
+            "t": pa.array([], pa.time64("ns")),
+        }
+    )
+    description = [(n, "string", None, None, None, None, None) for n in names]
+    cursor = _fake(
+        "databricks.sql.client",
+        "Cursor",
+        description=description,
+        fetchmany_arrow=lambda _self, size: table.slice(0, size),
+    )
+    frame = _empty_frame(cursor, utc=True)
+    expected: dict[str, Any] = {
+        "i": pl.Int32,
+        "ntz": pl.Datetime("us"),
+        "ltz": pl.Datetime("us", "America/Los_Angeles"),
+        "d": pl.Decimal(10, 2),
+        "a": pl.List(pl.Int32),
+        "t": pl.Time,
+    }
+    assert frame.schema == pl.Schema(expected)
+    assert frame.height == 0
+
+    # a failing fetch, or other columns: the description's types stay
+    def fails(_self: Any, size: int) -> Any:
+        raise RuntimeError
+
+    broken = _fake(
+        "databricks.sql.client",
+        "Cursor",
+        description=description,
+        fetchmany_arrow=fails,
+    )
+    assert _empty_frame(broken, utc=True).schema == (
+        pl.Schema(dict.fromkeys(names, pl.Null))
+    )
 
 
 def _transaction_idle_of(conn: Any) -> bool | None:

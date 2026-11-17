@@ -1646,7 +1646,10 @@ def _empty_frame(result: Any, *, utc: bool) -> DataFrame:
                 dtypes = _description_dtypes(cursor, description, utc=utc)
     if len(dtypes) != len(names):
         dtypes = [pl.Null] * len(names)
-    return pl.DataFrame(schema=dict(zip(names, dtypes, strict=True)))
+    frame = pl.DataFrame(schema=dict(zip(names, dtypes, strict=True)))
+    if _module_of(result) == "databricks":
+        frame = _databricks_arrow_frame(result, frame)
+    return frame
 
 
 # Postgres type OIDs whose dtype is fixed, as ADBC reads them. `cursor.description` has
@@ -1718,7 +1721,9 @@ _MYSQL_FIELD_DTYPES = {
 
 
 # Databricks type names (`cursor.description`'s type codes), as its Arrow results type
-# them (`TIMESTAMP` is in UTC). Decimals, intervals and nested types: typed from values.
+# them. Left out, as the description is ambiguous (typed from values): `timestamp` is
+# `TIMESTAMP_NTZ` too, `string` is `TIME` as well (and intervals, `VARIANT`), and the
+# time zone of a `TIMESTAMP` is the session's. Decimals have their own rule.
 _DATABRICKS_TYPE_DTYPES = {
     "tinyint": "Int8",
     "smallint": "Int16",
@@ -1727,12 +1732,28 @@ _DATABRICKS_TYPE_DTYPES = {
     "float": "Float32",
     "double": "Float64",
     "boolean": "Boolean",
-    "string": "String",
     "binary": "Binary",
     "date": "Date",
-    "timestamp": "Datetime[UTC]",
-    "timestamp_ntz": "Datetime",
 }
+
+
+def _databricks_arrow_frame(cursor: Any, frame: DataFrame) -> DataFrame:
+    """
+    The empty frame of a `databricks.sql` result, typed by the driver's Arrow schema.
+
+    The cursor's description is ambiguous (`TIMESTAMP_NTZ` reads `timestamp`, `TIME`
+    `string`) and lacks nested types; the Arrow table of a fetch has the dtypes of a
+    non-empty read, and for zero rows, which consume none, has the schema too (the
+    cursor is closed once `ConnectionExecutor` has read an empty result to its end).
+    `frame` stays where that fails.
+    """
+    import polars as pl
+
+    with contextlib.suppress(Exception):
+        typed = pl.from_arrow(cursor.fetchmany_arrow(0))
+        if isinstance(typed, pl.DataFrame) and typed.columns == frame.columns:
+            return typed.clear()
+    return frame
 
 
 def _mysql_unsigned(cursor: Any, description: Any, i: int) -> bool | None:
@@ -1788,7 +1809,13 @@ def _description_dtypes(cursor: Any, description: Any, *, utc: bool) -> list[Any
         return pl.Null if name is None else named(name)  # type: ignore[arg-type]
 
     def databricks(d: Any) -> Any:
-        name = _DATABRICKS_TYPE_DTYPES.get(str(d[1]).lower())
+        type_name = str(d[1]).lower()
+        if type_name == "decimal":
+            p, s = d[4], d[5]
+            if type(p) is int and type(s) is int and 0 < p <= 38 and 0 <= s <= p:
+                return pl.Decimal(p, s)
+            return pl.Null
+        name = _DATABRICKS_TYPE_DTYPES.get(type_name)
         return pl.Null if name is None else named(name)
 
     module = _module_of(cursor)
