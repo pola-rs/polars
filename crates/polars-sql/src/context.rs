@@ -19,6 +19,7 @@ use polars_plan::prelude::*;
 use polars_plan::utils::expr_to_leaf_column_names_iter;
 use polars_utils::aliases::{PlHashSet, PlIndexSet};
 use polars_utils::format_pl_smallstr;
+use polars_utils::idx_vec::UnitVec;
 use polars_utils::unique_id::UniqueId;
 use sqlparser::ast::{
     AlterColumnOperation, AlterTable, AlterTableOperation, Assignment, AssignmentTarget,
@@ -378,6 +379,8 @@ pub struct SQLContext {
     /// The values of the current statement's parameters that have no SQL literal form, by
     /// placeholder (see `bind_params`).
     params: Arc<PlHashMap<PlSmallStr, Scalar>>,
+    /// The number of lambdas around the expression being parsed.
+    pub(crate) lambda_depth: usize,
 }
 
 /// The query of a view and the names it gives the query's columns.
@@ -458,6 +461,7 @@ impl Default for SQLContext {
             nesting: 0,
             select_aliases: Default::default(),
             params: Default::default(),
+            lambda_depth: 0,
         }
     }
 }
@@ -10217,7 +10221,14 @@ impl ExprSqlProjectionHeightBehavior {
         let mut has_column = false;
         let mut has_independent = false;
 
-        for e in expr.into_iter() {
+        // The evaluation of a `list.eval` runs on the elements of each list.
+        let mut stack = UnitVec::new();
+        stack.push(expr);
+        while let Some(e) = stack.pop() {
+            match e {
+                Expr::Eval { expr, .. } => stack.push(expr.as_ref()),
+                e => e.nodes(&mut stack),
+            }
             use Expr::*;
             has_column |= matches!(e, Column(_) | Selector(_));
             has_independent |= match e {

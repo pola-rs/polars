@@ -13,6 +13,7 @@ mod join_keys;
 #[cfg(feature = "json")]
 mod json_text;
 pub mod keywords;
+mod lambda;
 mod lateral;
 mod layout_alter;
 mod literal_folding;
