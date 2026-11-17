@@ -132,8 +132,9 @@ def test_string_chr() -> None:
     for n in (-1, 0x110000, 0xD800):
         with pytest.raises(ComputeError, match=f"invalid Unicode code point: {n}"):
             ctx.execute(f"SELECT CHR({n}) FROM df", eager=True)
-    with pytest.raises(ComputeError, match="invalid Unicode code point: -5"):
-        ctx.execute("SELECT CHR(small - 102) FROM df", eager=True)
+    # one invalid value: when the rows are split, the part that fails first is reported
+    with pytest.raises(ComputeError, match="invalid Unicode code point: -1"):
+        ctx.execute("SELECT CHR(small - 98) FROM df", eager=True)
     for arg in ("65.5", "TRUE", "'65'"):
         with pytest.raises(
             InvalidOperationError, match="expected an integer code point"
