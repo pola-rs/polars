@@ -105,6 +105,16 @@ def test_enum_batches_share_one_dictionary_buffer() -> None:
     ]
 
 
+def test_arrow_c_stream_stores_back_a_frame_with_a_scalar_column() -> None:
+    df = multi_chunk_frame().with_columns(b=pl.Series(range(6)), c=pl.lit(7))
+    assert df.n_chunks("all") == [3, 3, 1, 1]
+
+    assert batch_rows(pa.table(df)) == [6]
+
+    assert df.n_chunks("all") == [1, 1, 1, 1]
+    assert df["c"].to_list() == [7] * 6
+
+
 @pytest.mark.parametrize(
     "export",
     [

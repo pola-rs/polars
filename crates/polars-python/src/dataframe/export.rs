@@ -1,4 +1,5 @@
 use polars::prelude::*;
+use polars_arrow::bitmap::Bitmap;
 use polars_arrow::datatypes::IntegerType;
 use polars_arrow::record_batch::RecordBatch;
 use polars_compute::cast::CastOptionsImpl;
@@ -155,27 +156,61 @@ impl PyDataFrame {
 }
 
 impl PyDataFrame {
-    /// This frame aligned for an Arrow export, stored back so that a later export doesn't
-    /// rechunk again.
+    /// This frame with aligned chunks, stored back so that a later export doesn't rechunk again.
     fn aligned_for_export(&self, py: Python<'_>) -> PyResult<DataFrame> {
         let df = self.df.read().clone();
-        if !df.should_rechunk_for_arrow_export() {
+        if !df.should_rechunk() {
             return Ok(df);
         }
         // Rechunking Object columns needs the GIL, which a thread blocked on this lock may hold,
         // so the clone is aligned outside the lock and the lock is taken with the GIL released.
         py.enter_polars_ok(|| {
             let mut aligned = df.clone();
-            aligned.align_chunks_for_arrow_export_par();
+            aligned.align_chunks_par();
             let mut current = self.df.write();
-            let unchanged = current.width() == df.width()
-                && current.columns().iter().zip(df.columns()).all(|(a, b)| {
-                    matches!((a.as_series(), b.as_series()), (Some(a), Some(b)) if Arc::ptr_eq(&a.0, &b.0))
-                });
+            let unchanged = current.height() == df.height()
+                && current.width() == df.width()
+                && current
+                    .columns()
+                    .iter()
+                    .zip(df.columns())
+                    .all(|(a, b)| same_data(a, b));
             if unchanged {
-                *current = aligned.clone();
+                let columns = current
+                    .columns()
+                    .iter()
+                    .zip(aligned.columns())
+                    .map(|(c, a)| if c.as_scalar_column().is_some() { c } else { a }.clone())
+                    .collect();
+                // SAFETY: the columns have the names and height of the current frame.
+                *current = unsafe { DataFrame::new_unchecked(df.height(), columns) };
             }
             aligned
         })
     }
+}
+
+/// Whether `a` holds the data of `b`, compared by pointer so that nothing calls into Python under
+/// the lock. Any two Scalar columns match, as aligning chunks never changes one.
+fn same_data(a: &Column, b: &Column) -> bool {
+    a.name() == b.name()
+        && match (a, b) {
+            (Column::Series(a), Column::Series(b)) => Arc::ptr_eq(&a.0, &b.0),
+            (Column::Scalar(_), Column::Scalar(_)) => true,
+            (Column::Dictionary(a), Column::Dictionary(b)) => {
+                Arc::ptr_eq(a.dict(), b.dict())
+                    && a.codes().chunks().len() == b.codes().chunks().len()
+                    && a.codes()
+                        .downcast_iter()
+                        .zip(b.codes().downcast_iter())
+                        .all(|(a, b)| {
+                            let validity = |v: Option<&Bitmap>| {
+                                v.map(|v| v.as_slice()).map(|(s, o, l)| (s.as_ptr(), o, l))
+                            };
+                            a.values().is_same_buffer(b.values())
+                                && validity(a.validity()) == validity(b.validity())
+                        })
+            },
+            _ => false,
+        }
 }
