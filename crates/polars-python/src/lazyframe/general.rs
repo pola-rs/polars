@@ -8,11 +8,10 @@ use polars::frame::PivotColumnNaming;
 use polars::io::RowIndex;
 use polars::prelude::delta_sink_state::DeltaSinkState;
 use polars::prelude::iceberg_sink_state::IcebergSinkState;
-use polars_arrow::ffi::export_iterator;
 use polars_arrow::record_batch::RecordBatch;
 #[cfg(feature = "csv")]
 use polars_buffer::Buffer;
-use polars_core::frame::batches_to_struct_arrays;
+use polars_core::frame::batches_to_arrow_stream;
 use polars_core::prelude::*;
 use polars_core::query_result::QueryResult;
 use polars_io::external_reader::ExternalReaderBuilder;
@@ -1765,17 +1764,14 @@ impl PyCollectBatches {
         let batches = std::iter::from_fn(move || inner.lock().next()).flat_map(|df| {
             let batches: Box<dyn Iterator<Item = PolarsResult<RecordBatch>> + Send> = match df {
                 Ok(mut df) => {
-                    df.align_chunks();
+                    df.align_chunks_for_arrow_export();
                     Box::new(df.try_iter_chunks(CompatLevel::newest(), false))
                 },
                 Err(err) => Box::new(std::iter::once(Err(err))),
             };
             batches
         });
-        let dtype = ArrowDataType::Struct(schema.into_iter_values().collect());
-        let field = ArrowField::new(PlSmallStr::EMPTY, dtype.clone(), false);
-        let arrays = batches_to_struct_arrays(batches, dtype);
-        let stream = export_iterator(Box::new(arrays), field);
+        let stream = batches_to_arrow_stream(batches, schema);
         PyCapsule::new_with_value(py, stream, c"arrow_array_stream")
     }
 }

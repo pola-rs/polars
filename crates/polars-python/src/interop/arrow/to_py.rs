@@ -1,10 +1,9 @@
 use polars::datatypes::CompatLevel;
-use polars::prelude::{ArrayRef, ArrowField, ArrowSchema, PlSmallStr};
+use polars::prelude::{ArrayRef, ArrowField, ArrowSchema};
 use polars::series::Series;
-use polars_arrow::datatypes::ArrowDataType;
 use polars_arrow::ffi;
 use polars_arrow::record_batch::RecordBatch;
-use polars_core::frame::batches_to_struct_arrays;
+use polars_core::frame::batches_to_arrow_stream;
 use polars_core::utils::polars_arrow;
 use polars_error::PolarsResult;
 use pyo3::ffi::Py_uintptr_t;
@@ -53,16 +52,9 @@ pub(crate) fn batches_to_py_table(
     batches: impl Iterator<Item = PolarsResult<RecordBatch>> + Send,
     schema: ArrowSchema,
 ) -> PyResult<Py<PyAny>> {
-    let dtype = ArrowDataType::Struct(schema.into_iter_values().collect());
-    let field = ArrowField::new(PlSmallStr::EMPTY, dtype.clone(), false);
-    let arrays = py.enter_polars(|| {
-        batches_to_struct_arrays(batches, dtype).collect::<PolarsResult<Vec<_>>>()
-    })?;
+    let batches = py.enter_polars(|| batches.collect::<PolarsResult<Vec<_>>>())?;
 
-    let mut stream = Box::new(ffi::export_iterator(
-        Box::new(arrays.into_iter().map(Ok)),
-        field,
-    ));
+    let mut stream = Box::new(batches_to_arrow_stream(batches.into_iter().map(Ok), schema));
     let stream_ptr: *mut ffi::ArrowArrayStream = &mut *stream;
     let table = py
         .import("pyarrow")?
@@ -98,7 +90,8 @@ pub(crate) fn polars_schema_to_pycapsule<'py>(
     schema: crate::prelude::Wrap<polars::prelude::Schema>,
     compat_level: crate::prelude::PyCompatLevel,
 ) -> PyResult<Bound<'py, PyCapsule>> {
-    use polars::prelude::SchemaExt;
+    use polars::prelude::{PlSmallStr, SchemaExt};
+    use polars_arrow::datatypes::ArrowDataType;
 
     let schema: polars_arrow::ffi::ArrowSchema =
         polars_arrow::ffi::export_field_to_c(&ArrowField::new(

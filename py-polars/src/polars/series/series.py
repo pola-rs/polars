@@ -5388,9 +5388,9 @@ class Series(metaclass=_Meta):
         self, *, compat_level: CompatLevel | None = None, chunked: bool = False
     ) -> pa.Array | pa.ChunkedArray:
         """
-        Return the underlying Arrow array.
+        Return the Arrow data as an array, or as a chunked array with `chunked=True`.
 
-        If the Series contains only a single chunk this operation is zero copy.
+        Without `chunked`, a Series with several chunks is copied into a single array.
 
         Parameters
         ----------

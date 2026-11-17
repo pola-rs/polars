@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+import io
+from typing import TYPE_CHECKING, Any
+
 import pyarrow as pa
+import pytest
 
 import polars as pl
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def multi_chunk_frame() -> pl.DataFrame:
@@ -37,7 +44,7 @@ def test_arrow_c_stream_rechunks_a_misaligned_frame_once() -> None:
     assert df.n_chunks("all") == [3, 3, 1]
 
     assert batch_rows(pa.table(df)) == [6]
-    # The aligned frame is stored, so a second export doesn't rechunk again.
+    # The aligned frame is stored back, so a second export doesn't rechunk again.
     assert df.n_chunks("all") == [1, 1, 1]
 
 
@@ -57,19 +64,51 @@ def test_to_arrow_zero_width_keeps_the_height() -> None:
     assert pl.DataFrame().to_arrow().shape == (0, 0)
 
 
-def test_to_pandas_categorical_has_signed_keys() -> None:
-    df = pl.DataFrame(
-        {
-            "c": pl.Series(["a", "b"], dtype=pl.Categorical),
-            "e": pl.Series(["x", "y"], dtype=pl.Enum(["x", "y"])),
-        }
-    )
+def test_to_pandas_dictionaries_have_signed_keys() -> None:
+    df = pl.DataFrame({"c": pl.Series(["a", "b"], dtype=pl.Categorical)})
 
-    out = df.to_pandas()
+    schema = df._df.to_pandas().schema
 
-    assert out["c"].cat.codes.dtype.kind == "i"
-    assert out["e"].cat.ordered
-    assert out["e"].tolist() == ["x", "y"]
+    assert schema.field("c").type == pa.dictionary(pa.int64(), pa.large_string())
+
+
+def test_categorical_frame_exports_one_dictionary() -> None:
+    a = pl.DataFrame({"c": ["x", "y"]}, schema={"c": pl.Categorical})
+    b = pl.DataFrame({"c": ["z", "x"]}, schema={"c": pl.Categorical})
+    df = pl.concat([a, b], rechunk=False)
+    assert df.n_chunks() == 2
+
+    table = pa.table(df)
+
+    assert len(table.to_batches()) == 1
+    assert table.group_by("c").aggregate([]).num_rows == 3
+    pa.ipc.new_file(io.BytesIO(), table.schema).write_table(table)
+
+
+@pytest.mark.parametrize(
+    "export",
+    [
+        lambda df: df.to_arrow(),
+        lambda df: df.to_pandas(),
+        lambda df: pa.table(df),
+    ],
+    ids=["to_arrow", "to_pandas", "pa.table"],
+)
+def test_nul_in_a_column_name_raises(export: Callable[[pl.DataFrame], Any]) -> None:
+    df = pl.DataFrame({"a\0b": [1]})
+
+    with pytest.raises(OSError, match="panic in an Arrow C stream callback"):
+        export(df)
+
+
+def test_collect_batches_arrow_c_stream_aligns_misaligned_batches() -> None:
+    df = multi_chunk_frame().select("a").with_columns(b=pl.Series(range(6)))
+    lf = df.lazy()
+    assert [b.n_chunks("all") for b in lf.collect_batches()] == [[3, 1]]
+
+    table = pa.RecordBatchReader.from_stream(lf.collect_batches()).read_all()
+
+    assert table.to_pydict() == df.to_dict(as_series=False)
 
 
 def test_series_to_arrow_chunked_keeps_the_chunks() -> None:

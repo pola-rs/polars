@@ -86,7 +86,7 @@ impl PyDataFrame {
         batches_to_py_table(py, batches, schema)
     }
 
-    /// Export to a `pyarrow.Table` whose Categorical and Enum columns have the signed
+    /// Export to a `pyarrow.Table` whose top-level Categorical and Enum columns have the signed
     /// dictionary keys pandas requires.
     ///
     /// Note this will give bad results for columns with dtype `pl.Object`,
@@ -155,17 +155,27 @@ impl PyDataFrame {
 }
 
 impl PyDataFrame {
-    /// This frame with aligned chunks, stored back so that a later export doesn't rechunk again.
-    ///
-    /// The clone is aligned outside the lock, as rechunking an Object column needs the GIL.
+    /// This frame aligned for an Arrow export, stored back so that a later export doesn't
+    /// rechunk again.
     fn aligned_for_export(&self, py: Python<'_>) -> PyResult<DataFrame> {
-        let mut df = self.df.read().clone();
-        if df.should_rechunk() {
-            py.enter_polars_ok(|| {
-                df.align_chunks_par();
-            })?;
-            *self.df.write() = df.clone();
+        let df = self.df.read().clone();
+        if !df.should_rechunk_for_arrow_export() {
+            return Ok(df);
         }
-        Ok(df)
+        // Rechunking Object columns needs the GIL, which a thread blocked on this lock may hold,
+        // so the clone is aligned outside the lock and the lock is taken with the GIL released.
+        py.enter_polars_ok(|| {
+            let mut aligned = df.clone();
+            aligned.align_chunks_for_arrow_export_par();
+            let mut current = self.df.write();
+            let unchanged = current.width() == df.width()
+                && current.columns().iter().zip(df.columns()).all(|(a, b)| {
+                    matches!((a.as_series(), b.as_series()), (Some(a), Some(b)) if Arc::ptr_eq(&a.0, &b.0))
+                });
+            if unchanged {
+                *current = aligned.clone();
+            }
+            aligned
+        })
     }
 }

@@ -184,11 +184,12 @@ impl PySeries {
         self.rechunk(py, true)?;
         let pyarrow = py.import("pyarrow")?;
 
-        // Export out of the lock: `to_py_array` calls into Python, and holding the read
-        // lock across that lets any thread blocking on the write lock (which it does while
-        // holding the GIL) deadlock against us.
+        // Converting Object values takes the GIL, which a thread blocked on the write lock may
+        // hold, so the conversion runs on a clone, out of the lock.
+        let s = self.series.read().clone();
         let (array, field) = py.enter_polars(|| {
-            let s = self.series.read();
+            // Another thread may have appended since the rechunk above.
+            let s = if s.n_chunks() > 1 { s.rechunk() } else { s };
             PolarsResult::Ok((
                 s.try_to_arrow(0, compat_level.0)?,
                 s.field().to_arrow(compat_level.0),
@@ -202,8 +203,9 @@ impl PySeries {
     /// doesn't fit in one Arrow array, without rechunking.
     #[allow(clippy::wrong_self_convention)]
     fn to_arrow_chunked(&self, py: Python<'_>, compat_level: PyCompatLevel) -> PyResult<Py<PyAny>> {
+        // As in `to_arrow`, the conversion runs out of the lock.
+        let s = self.series.read().clone();
         let (arrays, field) = py.enter_polars(|| {
-            let s = self.series.read();
             let mut arrays = Vec::with_capacity(s.n_chunks());
             for i in 0..s.n_chunks() {
                 arrays.extend(s.try_to_arrow_split(i, compat_level.0)?);
