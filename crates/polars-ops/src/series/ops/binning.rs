@@ -309,10 +309,20 @@ pub fn bin_interval_breaks(
             // Special case so that we match the integer path -- we would round otherwise
             vec![min; n_breaks]
         } else {
+            // The interpolation can round out of order when `max` is a few ulps above `min`.
+            // Keeping each break at or above the previous one, and within `[min, max)` when
+            // right-closed or `(min, max]` when left-closed, keeps the breaks sorted and `min`
+            // and `max` in the first and last bin.
+            let (mut lo, hi) = if right_closed {
+                (min, max.next_down())
+            } else {
+                (min.next_up(), max)
+            };
             (1..=n_breaks)
                 .map(|i| {
                     let t = i as f64 / n_bins as f64;
-                    min * (1.0 - t) + max * t
+                    lo = (min * (1.0 - t) + max * t).max(lo).min(hi);
+                    lo
                 })
                 .collect()
         };
