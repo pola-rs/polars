@@ -16,10 +16,10 @@ use std::sync::mpsc::sync_channel;
 use polars::error::abort::{QueryAborted, catch_polars_abort};
 use polars::prelude::sink::{SinkedPathsCallback, SinkedPathsCallbackArgs};
 use polars::prelude::{
-    DataFrame, DslPlan, Engine, IntoLazy, LazyFrame, PlanCallback, PolarsError, PolarsResult,
-    SinkDestination, SinkType, SpecialEq, UnifiedSinkArgs, df,
+    DataFrame, DslPlan, Engine, FileWriteFormat, IntoLazy, LazyFrame, PlanCallback, PolarsError,
+    PolarsResult, SinkDestination, SinkTarget, SinkType, SpecialEq, UnifiedSinkArgs, df,
 };
-use polars::sql::SQLContext;
+use polars::sql::{CopyToStdout, SQLContext};
 
 mod args;
 mod error;
@@ -53,7 +53,13 @@ where
     E: Write,
 {
     let mut context = SQLContext::new().with_file_writes(!read_only);
-    let code = run_statements(script, printer, |sql| context.execute(sql));
+    let code = run_statements(script, printer, |sql| {
+        // `execute` rejects `COPY ... TO STDOUT`: where its rows go is up to the caller.
+        Ok(match context.copy_to_stdout(sql)? {
+            Some(copy) => Planned::Copy(copy),
+            None => Planned::Result(context.execute(sql)?),
+        })
+    });
     drop(context);
     // Spill files are deleted in the background; wait for that before the process can exit.
     polars_ooc::flush_ooc_cleanup();
@@ -72,11 +78,19 @@ impl From<PolarsError> for Stop {
     }
 }
 
-/// `plan` turns a statement into the plan of its result.
+/// What a statement sends to the output.
+enum Planned {
+    /// A result, written in the format of the printer.
+    Result(LazyFrame),
+    /// The rows of `COPY ... TO STDOUT`, written in the format that the statement names.
+    Copy(CopyToStdout),
+}
+
+/// `plan` turns a statement into the plan of what it sends to the output.
 fn run_statements<O, E>(
     script: &Script,
     printer: &mut Printer<O, E>,
-    mut plan: impl FnMut(&str) -> PolarsResult<LazyFrame>,
+    mut plan: impl FnMut(&str) -> PolarsResult<Planned>,
 ) -> u8
 where
     O: Write + Send + 'static,
@@ -100,7 +114,7 @@ where
 fn run_until_failure<O, E>(
     script: &Script,
     printer: &mut Printer<O, E>,
-    plan: &mut impl FnMut(&str) -> PolarsResult<LazyFrame>,
+    plan: &mut impl FnMut(&str) -> PolarsResult<Planned>,
 ) -> u8
 where
     O: Write + Send + 'static,
@@ -124,7 +138,13 @@ where
                 printer.event(Event::Statement {
                     describes: statement.describes,
                 })?;
-                stream(plan(statement.sql)?, printer)
+                match plan(statement.sql)? {
+                    Planned::Result(plan) => stream(plan, printer),
+                    Planned::Copy(copy) => {
+                        let target = printer.copy_target(&copy.format)?;
+                        sink_to_output(copy.rows, target, copy.format, printer)
+                    },
+                }
             }))
             .unwrap_or_else(|aborted| Err(Stop::Aborted(aborted)))
         }));
@@ -184,15 +204,7 @@ where
     }
 
     if let Some((target, format)) = printer.engine_sink() {
-        let sink_args = UnifiedSinkArgs {
-            maintain_order: true,
-            ..Default::default()
-        };
-        plan.sink(SinkDestination::File { target }, format, sink_args)?
-            .collect_with_engine(Engine::Streaming)
-            .map_err(without_sink_context)?;
-        printer.event(Event::StatementEnd)?;
-        return Ok(());
+        return sink_to_output(plan, target, format, printer);
     }
 
     let mut unsunk = plan.clone();
@@ -248,6 +260,28 @@ where
         printer.event(Event::StatementEnd)?;
         Ok(())
     })
+}
+
+/// Has the engine write the rows of `plan` to `target`, which is the output, in `format`.
+fn sink_to_output<O, E>(
+    plan: LazyFrame,
+    target: SinkTarget,
+    format: FileWriteFormat,
+    printer: &mut Printer<O, E>,
+) -> Result<(), Stop>
+where
+    O: Write + Send + 'static,
+    E: Write,
+{
+    let sink_args = UnifiedSinkArgs {
+        maintain_order: true,
+        ..Default::default()
+    };
+    plan.sink(SinkDestination::File { target }, format, sink_args)?
+        .collect_with_engine(Engine::Streaming)
+        .map_err(without_sink_context)?;
+    printer.event(Event::StatementEnd)?;
+    Ok(())
 }
 
 /// What a file sink calls once it has written its files: stores their number of rows in `rows`.
@@ -334,7 +368,9 @@ mod tests {
     ) -> (u8, String, String) {
         let script = Script::new(sql.to_string());
         captured(Format::Table, |printer| {
-            run_statements(&script, printer, |sql| Ok(result(sql)?.lazy()))
+            run_statements(&script, printer, |sql| {
+                Ok(Planned::Result(result(sql)?.lazy()))
+            })
         })
     }
 
@@ -406,6 +442,16 @@ mod tests {
             run_captured("CREATE TABLE t AS SELECT 7 AS a; SELECT a + 1 AS b FROM t");
         assert_eq!((code, err.as_str()), (exit_code::OK, ""));
         assert!(out.contains("│ 8   │"), "{out}");
+    }
+
+    #[test]
+    fn a_binary_copy_is_refused_on_a_terminal() {
+        let script = Script::new("COPY (SELECT 1 AS a) TO STDOUT (FORMAT parquet)".to_string());
+        let (out, mut err) = (Output::default(), Vec::new());
+        let mut printer = Printer::new(out.clone(), &mut err, Format::Table).on_terminal(true);
+        assert_eq!(run(&script, false, &mut printer), exit_code::FAILURE);
+        assert_eq!(out.text(), "");
+        assert!(String::from_utf8(err).unwrap().contains("is binary"));
     }
 
     #[test]
