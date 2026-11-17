@@ -28,8 +28,8 @@ use sqlparser::ast::helpers::attached_token::AttachedToken;
 use sqlparser::ast::{
     DateTimeField, DuplicateTreatment, Expr as SQLExpr, Function as SQLFunction, FunctionArg,
     FunctionArgExpr, FunctionArgumentClause, FunctionArgumentList, FunctionArguments, Ident,
-    OrderByExpr, OrderBySort, Value as SQLValue, ValueWithSpan, WindowFrame, WindowFrameBound,
-    WindowFrameUnits, WindowSpec,
+    ObjectName, OrderByExpr, OrderBySort, Value as SQLValue, ValueWithSpan, WindowFrame,
+    WindowFrameBound, WindowFrameUnits, WindowSpec,
 };
 use sqlparser::tokenizer::Span;
 
@@ -1102,6 +1102,21 @@ pub(crate) enum PolarsSQLFunctions {
     // User-defined
     // ----
     Udf(String),
+}
+
+/// Whether `name` is a SQL function or a registered user-defined function.
+pub(crate) fn is_builtin_function(name: &Ident, ctx: &SQLContext) -> bool {
+    let function = SQLFunction {
+        name: ObjectName::from(vec![name.clone()]),
+        uses_odbc_syntax: false,
+        parameters: FunctionArguments::None,
+        args: FunctionArguments::None,
+        filter: None,
+        null_treatment: None,
+        over: None,
+        within_group: vec![],
+    };
+    PolarsSQLFunctions::try_from_sql(&function, ctx).is_ok()
 }
 
 impl PolarsSQLFunctions {

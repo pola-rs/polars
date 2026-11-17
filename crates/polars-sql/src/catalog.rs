@@ -5,11 +5,11 @@ use std::ops::ControlFlow;
 use polars_core::prelude::*;
 use polars_utils::aliases::PlHashMap;
 use sqlparser::ast::{
-    BinaryOperator, ColumnDef, ColumnOption, CreateTableOptions, DataType as SQLDataType, Expr,
-    Function, FunctionArg, FunctionArgExpr, FunctionArgOperator, FunctionArguments,
-    HiveDistributionStyle, Ident, ObjectName, ObjectNamePart, OrderByExpr, OrderBySort, Query,
-    SetExpr, SqlOption, Statement, TableFactor, UnaryOperator, Value, ValueWithSpan, Visitor,
-    VisitorMut, With,
+    AccessExpr, BinaryOperator, ColumnDef, ColumnOption, CreateTableOptions,
+    DataType as SQLDataType, Expr, Function, FunctionArg, FunctionArgExpr, FunctionArgOperator,
+    FunctionArguments, HiveDistributionStyle, Ident, ObjectName, ObjectNamePart, OrderByExpr,
+    OrderBySort, Query, SetExpr, SqlOption, Statement, TableFactor, UnaryOperator, Value,
+    ValueWithSpan, Visitor, VisitorMut, With,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
@@ -18,6 +18,7 @@ use sqlparser::tokenizer::{Location, Span, Token};
 use crate::dyn_visit;
 use crate::sql_expr::order_by_sort_options;
 use crate::sql_visitors::expr_references_any_column;
+use crate::subquery::strip_nested;
 use crate::time_travel::{VersionSpec, is_version_part, split_version, with_version};
 use crate::types::map_sql_dtype_to_polars;
 
@@ -1054,7 +1055,7 @@ pub(crate) fn alter_table_column(col: &ColumnDef) -> PolarsResult<(String, DataT
 /// Whether `expr` is the literal `NULL`.
 fn is_null(expr: &Expr) -> bool {
     matches!(
-        expr,
+        strip_nested(expr),
         Expr::Value(ValueWithSpan {
             value: Value::Null,
             ..
@@ -1157,7 +1158,7 @@ pub(crate) fn create_table_partitioning(
             polars_bail!(SQLInterface: "`PARTITION BY` and `PARTITIONED BY` cannot be combined")
         },
         (Some(expr), _) => {
-            let exprs = match unparenthesized(expr) {
+            let exprs = match strip_nested(expr) {
                 Expr::Tuple(exprs) => exprs.as_slice(),
                 expr => std::slice::from_ref(expr),
             };
@@ -1251,6 +1252,26 @@ pub(crate) fn set_sort_order(items: &[OrderByExpr]) -> PolarsResult<Vec<CatalogS
         .collect()
 }
 
+/// The path of a layout source: a column or a struct field (`s.f` or `(s).f`). Checked against
+/// the schema later: a struct field, never a table-qualified column.
+fn layout_source(expr: &Expr) -> Option<Vec<String>> {
+    match strip_nested(expr) {
+        Expr::Identifier(ident) => Some(vec![ident.value.clone()]),
+        Expr::CompoundIdentifier(idents) => Some(idents.iter().map(|i| i.value.clone()).collect()),
+        Expr::CompoundFieldAccess { root, access_chain } => {
+            let mut path = layout_source(root)?;
+            for access in access_chain {
+                let AccessExpr::Dot(Expr::Identifier(field)) = access else {
+                    return None;
+                };
+                path.push(field.value.clone());
+            }
+            Some(path)
+        },
+        _ => None,
+    }
+}
+
 /// The source path and transform of a partition or sort field (`kind`): a source,
 /// `year|month|day|hour(source)` (with Iceberg's aliases), or `bucket|truncate(N, source)`. A
 /// source is a column or a struct field (`s.f`).
@@ -1261,13 +1282,7 @@ fn layout_field(expr: &Expr, kind: &str) -> PolarsResult<(Vec<String>, String)> 
             kind, expr
         )
     };
-    // Checked against the schema later: a struct field, never a table-qualified column.
-    let source_of = |expr: &Expr| match unparenthesized(expr) {
-        Expr::Identifier(ident) => Some(vec![ident.value.clone()]),
-        Expr::CompoundIdentifier(idents) => Some(idents.iter().map(|i| i.value.clone()).collect()),
-        _ => None,
-    };
-    if let Some(path) = source_of(expr) {
+    if let Some(path) = layout_source(expr) {
         return Ok((path, "identity".to_string()));
     }
     let Expr::Function(Function {
@@ -1279,7 +1294,7 @@ fn layout_field(expr: &Expr, kind: &str) -> PolarsResult<(Vec<String>, String)> 
         null_treatment: None,
         over: None,
         within_group,
-    }) = unparenthesized(expr)
+    }) = strip_nested(expr)
     else {
         return Err(unsupported());
     };
@@ -1302,7 +1317,7 @@ fn layout_field(expr: &Expr, kind: &str) -> PolarsResult<(Vec<String>, String)> 
         })
         .collect::<Option<Vec<_>>>()
         .ok_or_else(unsupported)?;
-    let positive_int = |expr: &Expr| match unparenthesized(expr) {
+    let positive_int = |expr: &Expr| match strip_nested(expr) {
         Expr::Value(ValueWithSpan {
             value: Value::Number(n, false),
             ..
@@ -1316,7 +1331,7 @@ fn layout_field(expr: &Expr, kind: &str) -> PolarsResult<(Vec<String>, String)> 
         ("hour" | "hours", [source]) => ("hour".to_string(), source),
         ("bucket" | "truncate", [n, source]) => {
             let Some(n) = positive_int(n) else {
-                if source_of(n).is_some() && positive_int(source).is_some() {
+                if layout_source(n).is_some() && positive_int(source).is_some() {
                     polars_bail!(SQLInterface: "`{}` takes the number first, as in `{}({}, {})`", expr, fname, source, n)
                 }
                 polars_bail!(SQLInterface: "the first argument of `{}` must be an integer from 1 to {}", expr, i32::MAX)
@@ -1325,16 +1340,8 @@ fn layout_field(expr: &Expr, kind: &str) -> PolarsResult<(Vec<String>, String)> 
         },
         _ => return Err(unsupported()),
     };
-    let path = source_of(source).ok_or_else(unsupported)?;
+    let path = layout_source(source).ok_or_else(unsupported)?;
     Ok((path, transform))
-}
-
-/// `expr` without enclosing parentheses.
-fn unparenthesized(mut expr: &Expr) -> &Expr {
-    while let Expr::Nested(inner) = expr {
-        expr = inner;
-    }
-    expr
 }
 
 /// The properties of a catalog namespace, from `WITH (...)`.
@@ -1384,7 +1391,7 @@ fn option_key_value<'a>(
 
 /// A table option value as a property string, if it is a string, number or boolean literal.
 fn option_value(value: &Expr) -> Option<String> {
-    match value {
+    match strip_nested(value) {
         Expr::Value(v) => match &v.value {
             Value::SingleQuotedString(s) => Some(s.clone()),
             Value::Number(n, _) => Some(n.clone()),
@@ -1394,7 +1401,7 @@ fn option_value(value: &Expr) -> Option<String> {
         Expr::UnaryOp {
             op: UnaryOperator::Minus,
             expr,
-        } => match expr.as_ref() {
+        } => match strip_nested(expr) {
             Expr::Value(ValueWithSpan {
                 value: Value::Number(n, _),
                 ..

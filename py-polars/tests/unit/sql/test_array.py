@@ -118,6 +118,41 @@ def test_array_literals() -> None:
         )
 
 
+def test_array_literal_parenthesized_elements() -> None:
+    res = pl.sql("SELECT [-(2), (3), (-1)::INT, -(CAST(4 AS INT))] AS a").collect()
+    assert res.rows() == [([-2, 3, -1, -4],)]
+    df = pl.DataFrame({"x": [-2, 1, 2]})
+    res = pl.sql("SELECT x FROM df WHERE x IN ((-(2)), (1))").collect()
+    assert res.rows() == [(-2,), (1,)]
+
+
+def test_array_literal_cast_elements() -> None:
+    # a cast applies to its own element
+    res = pl.sql("SELECT [CAST(2.7 AS INT), 2.5] AS a").collect()
+    assert res.rows() == [([2.0, 2.5],)]
+    df = pl.DataFrame({"x": [2.0, 2.5, 3.0]})
+    res = pl.sql("SELECT x FROM df WHERE x IN (CAST(2 AS INT), 2.5)").collect()
+    assert res.rows() == [(2.0,), (2.5,)]
+    res = pl.sql("SELECT [CAST(1 AS VARCHAR), CAST(2.5 AS VARCHAR)] AS a").collect()
+    assert res.rows() == [(["1", "2.5"],)]
+    res = pl.sql("SELECT [-CAST('2' AS INT), +CAST('3' AS INT)] AS a").collect()
+    assert res.rows() == [([-2, 3],)]
+    res = pl.sql("SELECT [-(-2), -(+2), +(-2), -(-CAST(2 AS INT))] AS a").collect()
+    assert res.rows() == [([2, -2, -2, 2],)]
+    res = pl.sql("SELECT [-NULL, 1] AS a").collect()
+    assert res.rows() == [([None, 1],)]
+    res = pl.sql("SELECT [CAST(1 AS BIGINT), '2', 3] AS a").collect()
+    assert res.rows() == [([1, 2, 3],)]
+    res = pl.sql("SELECT [DATE '2020-01-01', '2020-01-02'] AS a").collect()
+    assert res.rows() == [([date(2020, 1, 1), date(2020, 1, 2)],)]
+    # a sign of a value that is no number is not dropped
+    df = pl.DataFrame({"flag": [False, True], "x": [-2, 2]})
+    res = pl.sql("SELECT flag FROM df WHERE flag IN (NOT FALSE)").collect()
+    assert res.rows() == [(True,)]
+    res = pl.sql("SELECT x FROM df WHERE x IN (-CAST('2' AS INT))").collect()
+    assert res.rows() == [(-2,)]
+
+
 @pytest.mark.parametrize("function_name", ["ARRAY_INNER_PRODUCT", "ARRAY_DOT_PRODUCT"])
 def test_array_inner_product(function_name: str) -> None:
     df = pl.DataFrame(

@@ -50,7 +50,7 @@ use crate::catalog::{
 };
 use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
-use crate::functions::{PolarsSQLFunctions, is_random};
+use crate::functions::{PolarsSQLFunctions, is_builtin_function, is_random};
 use crate::group_context::{
     AggregateOutputs, GroupContextSplitter, OutputNames, assume_groups_have_rows,
     check_columns_in_aggregates, has_marked_aggregate, has_random_outside_aggregates,
@@ -62,7 +62,8 @@ use crate::grouping_sets::{
     expand_grouping_sets, new_placeholder,
 };
 use crate::join_keys::{sql_join_key_pair, sql_join_where_predicate};
-use crate::layout_alter::{self, Layout, LayoutAlter};
+use crate::layout_alter::{self, Layout, LayoutAlter, OtherStatement};
+use crate::macros::{MacroStatement, Macros, check_macro, is_callable_name};
 use crate::params::{QueryParams, bind_params};
 use crate::positional_join::{has_positional_join, is_positional_join};
 use crate::sql_expr::{
@@ -385,6 +386,7 @@ pub struct SQLContext {
     params: Arc<PlHashMap<PlSmallStr, Scalar>>,
     /// The number of lambdas around the expression being parsed.
     pub(crate) lambda_depth: usize,
+    macros: Macros,
 }
 
 /// The query of a view and the names it gives the query's columns.
@@ -442,6 +444,7 @@ impl Default for SQLContext {
             allow_file_writes: true,
             table_map: Default::default(),
             views: Default::default(),
+            macros: Default::default(),
             view_frames: Default::default(),
             views_in_progress: Default::default(),
             cte_map: Default::default(),
@@ -561,6 +564,7 @@ impl SQLContext {
             return Ok(Vec::new());
         };
         copy_table_as_query(&mut stmt)?;
+        self.macros.expand(&mut stmt)?;
         let mut reads = Vec::new();
         for (_, key) in self.rewrite_catalog_names(&mut stmt)?.0 {
             let (full_name, version) = split_version(&key);
@@ -582,10 +586,14 @@ impl SQLContext {
     /// The catalog statement of `query`, if any, for the caller to perform:
     /// [`SQLContext::execute`] rejects it.
     pub fn catalog_statement(&self, query: &str) -> PolarsResult<Option<CatalogStatement>> {
-        let stmt = match layout_alter::parse_single_statement_or_alter(query)? {
+        let mut stmt = match layout_alter::parse_single_statement_or_alter(query)? {
             Ok(stmt) => stmt,
-            Err(alter) => return self.catalog_layout_alter(&alter).map(Some),
+            Err(OtherStatement::Alter(alter)) => {
+                return self.catalog_layout_alter(&alter).map(Some);
+            },
+            Err(OtherStatement::Macro(_)) => return Ok(None),
         };
+        self.macros.expand(&mut stmt)?;
         match &stmt {
             Statement::Drop {
                 object_type: ObjectType::Table,
@@ -1210,6 +1218,7 @@ impl SQLContext {
     /// As `parse_catalog_dml`, on the clock of the statement's earlier planning calls.
     fn parse_catalog_dml_keeping_clock(&mut self, query: &str) -> PolarsResult<Statement> {
         let mut stmt = parse_single_statement(query)?;
+        self.macros.expand(&mut stmt)?;
         self.catalog_spellings = self.rewrite_catalog_names(&mut stmt)?.1;
         desugar_quantified_subqueries(&mut stmt);
         Ok(stmt)
@@ -1407,13 +1416,17 @@ impl SQLContext {
     ) -> PolarsResult<LazyFrame> {
         let mut stmt = match layout_alter::parse_single_statement_or_alter(query)? {
             Ok(stmt) => stmt,
-            Err(alter) => return Err(self.alter_table_error(&alter.name)),
+            Err(OtherStatement::Alter(alter)) => return Err(self.alter_table_error(&alter.name)),
+            Err(OtherStatement::Macro(stmt)) => return self.execute_macro_statement(stmt),
         };
         let bound = bind_params(&mut stmt, params)?;
         copy_table_as_query(&mut stmt)?;
+        // A view expands its macros when it is read.
+        let expanded =
+            !matches!(stmt, Statement::CreateView(_)) && self.macros.expand(&mut stmt)?;
 
         // The deferred plan holds the query text, which has the placeholders.
-        if bound.is_none() && self.can_defer(&stmt) {
+        if bound.is_none() && !expanded && self.can_defer(&stmt) {
             // The plan keeps the statement as written: translating it rewrites the names of its
             // catalog tables again, also where it was written each.
             let catalog_names = match self.catalogs.is_empty() {
@@ -1638,6 +1651,7 @@ impl SQLContext {
             views: self.views.clone(),
             view_frames: self.view_frames.clone(),
             views_in_progress: self.views_in_progress.clone(),
+            macros: self.macros.clone(),
             named_windows: self.named_windows.clone(),
             cte_map: self.cte_map.clone(),
             from_item_frames: self.from_item_frames.clone(),
@@ -1925,7 +1939,7 @@ impl SQLContext {
         // In a view, the views that read this table are not listed, as that plans them again.
         let in_view = !self.views_in_progress.is_empty();
         let reads_columns_table =
-            |_: &View, tables: &[String]| tables.iter().any(|t| is_information_schema_columns(t));
+            |_: &Query, tables: &[String]| tables.iter().any(|t| is_information_schema_columns(t));
         for name in self.get_tables() {
             let table = self.table_map.read().unwrap().get(&name).cloned();
             let mut lf = match table {
@@ -1988,32 +2002,35 @@ impl SQLContext {
             return Ok(Some(lf.clone()));
         }
         let lf = self.plan_view(&key, &view)?;
-        let reads_random = |view: &View, _: &[String]| contains_random(&view.query, true);
+        let reads_random = |query: &Query, _: &[String]| contains_random(query, true);
         if !self.view_reads(&view, &reads_random, &mut PlHashSet::new()) {
             self.view_frames.lock().unwrap().insert(key, lf.clone());
         }
         Ok(Some(lf))
     }
 
-    /// Whether `view`, or a view it reads, is matched by `matches`, which gets a view and the
-    /// relations its query names, other than its CTEs. `seen` holds the views checked so far.
+    /// Whether `view`, or a view it reads, is matched by `matches`, which gets the query of a
+    /// view, with its macros expanded, and the relations the query names, other than its CTEs.
+    /// `seen` holds the views checked so far.
     fn view_reads(
         &self,
         view: &View,
-        matches: &impl Fn(&View, &[String]) -> bool,
+        matches: &impl Fn(&Query, &[String]) -> bool,
         seen: &mut PlHashSet<String>,
     ) -> bool {
+        let expanded = self.macros.expanded(&view.query).ok().flatten();
+        let query = expanded.as_ref().unwrap_or(&view.query);
         let mut collector = TableIdentifierCollector {
             include_schema: true,
             ..Default::default()
         };
-        let _ = dyn_visit::visit(&view.query, &mut collector);
+        let _ = dyn_visit::visit(query, &mut collector);
         // Leave out the names that a CTE of the query hides.
-        let names: Vec<String> = referenced_ctes(&view.query, &collector.tables)
+        let names: Vec<String> = referenced_ctes(query, &collector.tables)
             .into_iter()
             .map(|idx| collector.tables[idx].clone())
             .collect();
-        if matches(view, &names) {
+        if matches(query, &names) {
             return true;
         }
         names.iter().any(|name| match self.find_view(name) {
@@ -2025,7 +2042,11 @@ impl SQLContext {
     /// Plan the view `key` against the current tables, in a context of its own.
     fn plan_view(&self, key: &str, view: &View) -> PolarsResult<LazyFrame> {
         let mut ctx = self.view_context(key);
-        let lf = ctx.execute_query(&view.query)?;
+        let expanded = self.macros.expanded(&view.query)?.map(|mut query| {
+            desugar_quantified_subqueries(&mut query);
+            query
+        });
+        let lf = ctx.execute_query(expanded.as_ref().unwrap_or(&view.query))?;
         let lf = ctx.rename_columns_from_table_alias(lf, &view.alias)?;
         lf.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
         Ok(lf)
@@ -2041,6 +2062,7 @@ impl SQLContext {
             views: self.views.clone(),
             view_frames: self.view_frames.clone(),
             views_in_progress,
+            macros: self.macros.clone(),
             function_registry: self.function_registry.clone(),
             custom_function_registry: self.custom_function_registry,
             allow_file_reads: self.allow_file_reads,
@@ -2163,7 +2185,7 @@ impl SQLContext {
                 // Handle qualified cross-aliasing in ORDER BY clauses
                 // (eg: `SELECT a AS b, -b AS a ... ORDER BY self.a`)
                 let mut expr = parse_sql_expr(e, self, schema)?;
-                if matches!(e, SQLExpr::CompoundIdentifier(_)) {
+                if is_qualified_column(e) {
                     if let Some(schema) = schema {
                         expr = expr.map_expr(|ex| match &ex {
                             Expr::Column(name) => {
@@ -3035,12 +3057,22 @@ impl SQLContext {
         let Some((name, table)) = self.catalog_change_target(&alter.name)? else {
             return Err(self.catalog_tables_only("ALTER TABLE", &alter.name));
         };
-        let operation = match &alter.layout {
-            Layout::Partitioning(fields) => CatalogAlter::SetPartitioning {
-                fields: set_partitioning(fields)?,
+        let operation = match alter.layout.clone() {
+            Layout::Partitioning(mut fields) => {
+                for field in &mut fields {
+                    self.macros.expand(field)?;
+                }
+                CatalogAlter::SetPartitioning {
+                    fields: set_partitioning(&fields)?,
+                }
             },
-            Layout::SortOrder(fields) => CatalogAlter::SetSortOrder {
-                fields: set_sort_order(fields)?,
+            Layout::SortOrder(mut fields) => {
+                for field in &mut fields {
+                    self.macros.expand(field)?;
+                }
+                CatalogAlter::SetSortOrder {
+                    fields: set_sort_order(&fields)?,
+                }
             },
         };
         Ok(CatalogStatement::AlterTable {
@@ -3049,6 +3081,41 @@ impl SQLContext {
             if_exists: alter.if_exists,
             operation,
         })
+    }
+
+    fn execute_macro_statement(&mut self, stmt: MacroStatement) -> PolarsResult<LazyFrame> {
+        let response = match stmt {
+            MacroStatement::Create {
+                or_replace,
+                name,
+                table,
+                overloads,
+            } => {
+                let key = name.value.to_lowercase();
+                let exists = !is_callable_name(&name, table)
+                    || if table {
+                        PolarsTableFunctions::keywords().contains(&key.as_str())
+                    } else {
+                        is_builtin_function(&name, self)
+                    };
+                polars_ensure!(
+                    !exists,
+                    SQLInterface: "cannot create macro '{}': a function with that name exists", name.value
+                );
+                check_macro(&name, &overloads)?;
+                self.macros.create(&name, table, or_replace, overloads)?;
+                format!("CREATE MACRO {}", name.value)
+            },
+            MacroStatement::Drop {
+                table,
+                if_exists,
+                name,
+            } => {
+                self.macros.drop(&name, table, if_exists)?;
+                format!("DROP MACRO {}", name.value)
+            },
+        };
+        Ok(df! { "Response" => [response] }?.lazy())
     }
 
     /// The error of executing an `ALTER TABLE` of `name`, which only a catalog performs.
@@ -7308,6 +7375,7 @@ impl SQLContext {
                     function: FunctionExpr::StructExpr(StructFunction::FieldByName(name)),
                     ..
                 } = expr.deref()
+                    && matches_group_key
                 {
                     projection_overrides
                         .insert(alias.as_ref(), col(name.clone()).alias(alias.clone()));
@@ -9037,7 +9105,8 @@ pub fn extract_table_identifiers(
                 tables.extend(statement_table_identifiers(stmt, include_schema, false));
             }
         },
-        Err(alter) => {
+        Err(OtherStatement::Macro(_)) => {},
+        Err(OtherStatement::Alter(alter)) => {
             let mut collector = TableIdentifierCollector {
                 include_schema,
                 ..Default::default()
@@ -10396,5 +10465,30 @@ impl ExprSqlProjectionHeightBehavior {
         } else {
             Self::InheritsContext
         }
+    }
+}
+
+/// Whether `e` is a qualified column, or struct fields of a column (`(t.s).a`, `(s).a`).
+fn is_qualified_column(e: &SQLExpr) -> bool {
+    match e {
+        SQLExpr::CompoundIdentifier(_) => true,
+        SQLExpr::Nested(e) => is_qualified_column(e),
+        SQLExpr::CompoundFieldAccess { root, access_chain } => {
+            access_chain.iter().all(|access| {
+                matches!(
+                    access,
+                    sqlparser::ast::AccessExpr::Dot(SQLExpr::Identifier(_))
+                )
+            }) && (is_qualified_column(root) || is_column(root))
+        },
+        _ => false,
+    }
+}
+
+fn is_column(e: &SQLExpr) -> bool {
+    match e {
+        SQLExpr::Identifier(_) => true,
+        SQLExpr::Nested(e) => is_column(e),
+        _ => false,
     }
 }

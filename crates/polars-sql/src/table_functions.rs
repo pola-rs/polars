@@ -19,6 +19,7 @@ use crate::SQLContext;
 use crate::context::SubqueryShape;
 use crate::functions::series_expr;
 use crate::sql_expr::parse_sql_expr;
+use crate::subquery::strip_nested;
 #[cfg(any(
     feature = "csv",
     feature = "json",
@@ -554,7 +555,7 @@ impl PolarsTableFunctions {
         function: &str,
         arg: &SQLFunctionArg,
     ) -> PolarsResult<(String, Vec<PlRefPath>)> {
-        let path = |expr: &SQLExpr| match expr {
+        let path = |expr: &SQLExpr| match strip_nested(expr) {
             SQLExpr::Value(SQLValueWithSpan {
                 value: SQLValue::SingleQuotedString(s) | SQLValue::EscapedStringLiteral(s),
                 ..
@@ -570,7 +571,7 @@ impl PolarsTableFunctions {
         if let Some(path) = path(expr) {
             return Ok((path.to_string(), vec![expand_home_dir(path)?]));
         }
-        if let SQLExpr::Array(SQLArray { elem, .. }) = expr {
+        if let SQLExpr::Array(SQLArray { elem, .. }) = strip_nested(expr) {
             if let Some(paths) = elem.iter().map(path).collect::<Option<Vec<_>>>() {
                 let paths = paths
                     .into_iter()
