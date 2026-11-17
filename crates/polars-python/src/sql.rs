@@ -1,11 +1,15 @@
 use parking_lot::RwLock;
+use polars::prelude::{PlHashMap, PlSmallStr, Scalar};
 use polars::sql::{
-    CallArg, CatalogAlter, CatalogStatement, SQLContext, VersionSpec, extract_table_identifiers,
+    CallArg, CatalogAlter, CatalogStatement, QueryParams, SQLContext, VersionSpec,
+    extract_table_identifiers,
 };
+use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyTuple};
+use pyo3::types::{PyDict, PyList, PyTuple};
 
 use crate::conversion::Wrap;
+use crate::conversion::any_value::py_object_to_any_value;
 use crate::error::PyPolarsErr;
 use crate::utils::EnterPolarsExt;
 use crate::{PyExpr, PyLazyFrame};
@@ -25,6 +29,38 @@ pub struct PyCatalogRead {
     /// The name to pass the scan of this read back under.
     #[pyo3(get)]
     key: Vec<String>,
+}
+
+fn param_value(ob: &Bound<'_, PyAny>) -> PyResult<Scalar> {
+    let value = py_object_to_any_value(ob, true, false, None)?;
+    Ok(Scalar::new(value.dtype(), value))
+}
+
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<QueryParams> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        if let Ok(dict) = ob.cast::<PyDict>() {
+            let mut values = PlHashMap::with_capacity_and_hasher(dict.len(), Default::default());
+            for (key, value) in dict.iter() {
+                let key: String = key.extract().map_err(|_| {
+                    PyTypeError::new_err("the names of query parameters must be strings")
+                })?;
+                values.insert(PlSmallStr::from_string(key), param_value(&value)?);
+            }
+            return Ok(Wrap(QueryParams::Named(values)));
+        }
+        if ob.is_instance_of::<PyList>() || ob.is_instance_of::<PyTuple>() {
+            let values = ob
+                .try_iter()?
+                .map(|value| param_value(&value?))
+                .collect::<PyResult<_>>()?;
+            return Ok(Wrap(QueryParams::Positional(values)));
+        }
+        Err(PyTypeError::new_err(
+            "query parameters must be a list, tuple or dict",
+        ))
+    }
 }
 
 #[pyclass(frozen, skip_from_py_object)]
@@ -57,8 +93,15 @@ impl PySQLContext {
     }
 
     /// Execute a SQL query in the current SQLContext.
-    pub fn execute(&self, py: Python<'_>, query: &str) -> PyResult<PyLazyFrame> {
-        py.enter_polars(|| self.context.write().execute(query))
+    #[pyo3(signature = (query, params=None))]
+    pub fn execute(
+        &self,
+        py: Python<'_>,
+        query: &str,
+        params: Option<Wrap<QueryParams>>,
+    ) -> PyResult<PyLazyFrame> {
+        let params = params.map(|p| p.0).unwrap_or_default();
+        py.enter_polars(|| self.context.write().execute_with_params(query, &params))
             .map(Into::into)
     }
 
@@ -392,20 +435,23 @@ impl PySQLContext {
     }
 
     /// Execute a query with the scans of the catalog tables it reads, by full name.
+    #[pyo3(signature = (query, tables, params=None))]
     pub fn execute_with_catalog_tables(
         &self,
         py: Python<'_>,
         query: &str,
         tables: Vec<(Vec<String>, PyLazyFrame)>,
+        params: Option<Wrap<QueryParams>>,
     ) -> PyResult<PyLazyFrame> {
         let tables = tables
             .into_iter()
             .map(|(full_name, lf)| (full_name, lf.ldf.into_inner()))
             .collect();
+        let params = params.map(|p| p.0).unwrap_or_default();
         py.enter_polars(|| {
             self.context
                 .write()
-                .execute_with_catalog_tables(query, tables)
+                .execute_with_catalog_tables(query, tables, &params)
         })
         .map(Into::into)
     }

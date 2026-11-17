@@ -60,6 +60,7 @@ use crate::grouping_sets::{
 };
 use crate::join_keys::{sql_join_key_pair, sql_join_where_predicate};
 use crate::layout_alter::{self, Layout, LayoutAlter};
+use crate::params::{QueryParams, bind_params};
 use crate::positional_join::{has_positional_join, is_positional_join};
 use crate::sql_expr::{
     convert_int_literal_for_string, is_string_expr, order_by_sort_options, parse_sql_array,
@@ -374,6 +375,9 @@ pub struct SQLContext {
     /// The aliases of the SELECT items parsed so far in the current SELECT list, which a later
     /// item reads when no input column has the name.
     pub(crate) select_aliases: PlHashMap<PlSmallStr, Expr>,
+    /// The values of the current statement's parameters that have no SQL literal form, by
+    /// placeholder (see `bind_params`).
+    params: Arc<PlHashMap<PlSmallStr, Scalar>>,
 }
 
 /// The query of a view and the names it gives the query's columns.
@@ -453,6 +457,7 @@ impl Default for SQLContext {
             strict_relations: false,
             nesting: 0,
             select_aliases: Default::default(),
+            params: Default::default(),
         }
     }
 }
@@ -735,12 +740,13 @@ impl SQLContext {
         &mut self,
         query: &str,
         tables: Vec<(Vec<String>, LazyFrame)>,
+        params: &QueryParams,
     ) -> PolarsResult<LazyFrame> {
         self.catalog_tables = tables
             .into_iter()
             .map(|(full_name, lf)| (full_name.join("."), lf))
             .collect();
-        let res = self.execute(query);
+        let res = self.execute_with_params(query, params);
         self.catalog_tables.clear();
         self.catalog_names.clear();
         self.catalog_spellings.clear();
@@ -1364,12 +1370,26 @@ impl SQLContext {
     /// # }
     ///```
     pub fn execute(&mut self, query: &str) -> PolarsResult<LazyFrame> {
+        self.execute_with_params(query, &QueryParams::default())
+    }
+
+    /// Execute a SQL query with the values of its parameters: `$1`, `$2`, ... or `?` for
+    /// [`QueryParams::Positional`] and `$name` or `:name` for [`QueryParams::Named`].
+    ///
+    /// A parameter is a value, never SQL text: it acts as a literal of that value.
+    pub fn execute_with_params(
+        &mut self,
+        query: &str,
+        params: &QueryParams,
+    ) -> PolarsResult<LazyFrame> {
         let mut stmt = match layout_alter::parse_single_statement_or_alter(query)? {
             Ok(stmt) => stmt,
             Err(alter) => return Err(self.alter_table_error(&alter.name)),
         };
+        let bound = bind_params(&mut stmt, params)?;
 
-        if self.can_defer(&stmt) {
+        // The deferred plan holds the query text, which has the placeholders.
+        if bound.is_none() && self.can_defer(&stmt) {
             // The plan keeps the statement as written: translating it rewrites the names of its
             // catalog tables again, also where it was written each.
             let catalog_names = match self.catalogs.is_empty() {
@@ -1386,6 +1406,7 @@ impl SQLContext {
         let (_, catalog_spellings) = self.rewrite_catalog_names(&mut stmt)?;
         desugar_quantified_subqueries(&mut stmt);
         self.catalog_spellings = catalog_spellings;
+        self.params = Arc::new(bound.unwrap_or_default());
         self.start_statement();
         let res = self.execute_statement(&stmt).inspect_err(|_| {
             self.clear_statement_state();
@@ -1519,6 +1540,7 @@ impl SQLContext {
 
     fn clear_statement_state(&mut self) {
         self.cte_map.clear();
+        self.params = Default::default();
         self.view_frames = Default::default();
         self.catalog_tables.clear();
         self.catalog_names.clear();
@@ -1531,6 +1553,13 @@ impl SQLContext {
         self.named_windows.clear();
         // a failed statement may not have restored it
         self.group_scope = Default::default();
+    }
+
+    /// The value of the query parameter `placeholder` that has no SQL literal form.
+    pub(crate) fn param(&self, placeholder: &str) -> PolarsResult<&Scalar> {
+        self.params.get(placeholder).ok_or_else(
+            || polars_err!(SQLInterface: "no value given for query parameter {}", placeholder),
+        )
     }
 
     /// The local time, to microseconds, that `CURRENT_DATE` and friends read in the current
@@ -1591,6 +1620,7 @@ impl SQLContext {
             catalog_names: self.catalog_names.clone(),
             catalog_spellings: self.catalog_spellings.clone(),
             statement_time: self.statement_time.clone(),
+            params: self.params.clone(),
             strict_relations: self.strict_relations,
             nesting: self.nesting + 1,
 

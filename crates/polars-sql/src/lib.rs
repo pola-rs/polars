@@ -16,6 +16,7 @@ pub mod keywords;
 mod lateral;
 mod layout_alter;
 mod literal_folding;
+mod params;
 mod pivot;
 mod positional_join;
 mod resolver;
@@ -42,6 +43,7 @@ pub use catalog::{
     CatalogStatement, CatalogTable, MergeClausePlan, MergePlan, MergeSourcePlan,
 };
 pub use context::{SQLContext, extract_table_identifiers};
+pub use params::QueryParams;
 pub use resolver::register_sql_resolver;
 pub use sql_expr::sql_expr;
 pub use time_travel::VersionSpec;

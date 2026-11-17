@@ -128,6 +128,20 @@ def test_catalog_table_deferred_plan_round_trip(lake: CountingCatalog) -> None:
 
 
 @pytest.mark.write_disk
+def test_catalog_query_params(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    res = ctx.execute(
+        "SELECT v FROM lineitem WHERE k > $1 AND v IN (SELECT UNNEST($2))",
+        params=[1, ["a", "b"]],
+        eager=True,
+    )
+    assert res.rows() == [("b",)]
+    with pytest.raises(SQLInterfaceError, match="not supported in a statement that"):
+        ctx.execute("DELETE FROM lineitem WHERE k = $1", params=[1])
+    assert ctx.execute("SELECT COUNT(*) FROM lineitem", eager=True).item() == 2
+
+
+@pytest.mark.write_disk
 @pytest.mark.parametrize("qualifier", ["lake.tpch.orders", "tpch.orders", "orders"])
 def test_catalog_table_read_by_nested_subquery(
     lake: CountingCatalog, qualifier: str
