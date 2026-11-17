@@ -118,6 +118,21 @@ impl Node {
         }
     }
 
+    /// Whether a part of it isn't described ([`Node::Unknown`]): its columns aren't known.
+    pub fn has_unknown(&self) -> bool {
+        match self {
+            Self::Unknown => true,
+            Self::Column(_) | Self::Literal(_) => false,
+            Self::And(a, b) | Self::Or(a, b) | Self::Compare(a, _, b) | Self::Str(_, a, b) => {
+                a.has_unknown() || b.has_unknown()
+            },
+            Self::Not(a) | Self::IsNull(a, _) | Self::Cast(a, _) | Self::IsIn { expr: a, .. } => {
+                a.has_unknown()
+            },
+            Self::IsBetween(a, b, c, _) => a.has_unknown() || b.has_unknown() || c.has_unknown(),
+        }
+    }
+
     /// Parses a document. Parts that don't parse become [`Node::Unknown`], which is never pushed.
     pub fn parse(doc: &str) -> Self {
         match serde_json::from_str::<Value>(doc) {
@@ -285,6 +300,37 @@ pub fn parse_value(dtype: &DataType, v: &Value) -> Option<AnyValue<'static>> {
     })
 }
 
+/// See [`Translator::binds_params`].
+pub(crate) fn binds_params(connection: &crate::database::connection::ConnectionSpec) -> bool {
+    // or given as the driver's `execute()` argument (`parameters`, psycopg's and
+    // mysql.connector's `params`, PyMySQL's `args`)
+    connection.has_query_params()
+        || connection
+            .execute_options
+            .iter()
+            .any(|(k, _)| matches!(k.as_str(), "parameters" | "params" | "args"))
+}
+
+/// See [`Translator::sqlalchemy`].
+pub(crate) fn sqlalchemy(kind: &BackendKind) -> bool {
+    match kind {
+        BackendKind::Sqlalchemy => true,
+        BackendKind::Python { module } => module == "sqlalchemy",
+        _ => false,
+    }
+}
+
+/// Whether an output column's name, written into the wrapper SQL, would be read as a
+/// placeholder by the driver that binds `params=` (`%` for `%s`-style drivers, `:name` for
+/// SQLAlchemy's `text()`).
+pub(crate) fn name_reads_as_placeholder(
+    connection: &crate::database::connection::ConnectionSpec,
+    kind: &BackendKind,
+    name: &str,
+) -> bool {
+    binds_params(connection) && (name.contains('%') || (sqlalchemy(kind) && name.contains(':')))
+}
+
 /// See [`Translator::mysql_without_setup`]. SingleStore has no session setup at all: its
 /// `sql_mode` and time zone are unknown.
 fn mysql_without_setup(dialect: DialectName, setup_runs: bool) -> bool {
@@ -354,23 +400,12 @@ impl Translator<'_> {
     /// Whether the driver binds `params=` into the SQL: a `%` in a pushed literal would then
     /// be read as a placeholder by `%s`-style drivers, so such literals aren't pushed.
     fn binds_params(&self) -> bool {
-        let connection = &self.config.options.connection;
-        // or given as the driver's `execute()` argument (`parameters`, psycopg's and
-        // mysql.connector's `params`, PyMySQL's `args`)
-        connection.has_query_params()
-            || connection
-                .execute_options
-                .iter()
-                .any(|(k, _)| matches!(k.as_str(), "parameters" | "params" | "args"))
+        binds_params(&self.config.options.connection)
     }
 
     /// Whether queries run through SQLAlchemy: a SQLAlchemy URI, Engine or Connection.
     fn sqlalchemy(&self) -> bool {
-        match &self.config.backend.kind {
-            BackendKind::Sqlalchemy => true,
-            BackendKind::Python { module } => module == "sqlalchemy",
-            _ => false,
-        }
+        sqlalchemy(&self.config.backend.kind)
     }
 
     /// MySQL literals are written for the session setup: backslash escapes on
@@ -446,6 +481,16 @@ impl Translator<'_> {
     /// decimal literal wider than its precision (DuckDB `HUGEINT` is read as
     /// `Decimal(38, 0)` but holds 39 digits) isn't a valid value.
     fn literal_fits(&self, name: &str, av: &AnyValue<'_>) -> bool {
+        // Spark widens a FLOAT column to DOUBLE for the comparison: only a literal that is
+        // exactly an f32 (as a double) meets the stored value (`float(1.1) = 1.1` is false).
+        if self.dialect() == DialectName::Databricks
+            && self.spark_float(name) == Some("float")
+            && let Some(v) = av.extract::<f64>()
+            && !v.is_nan()
+            && f64::from(v as f32) != v
+        {
+            return false;
+        }
         if let AnyValue::Decimal(v, p, _) = av
             && !decimal_fits(*v, *p)
         {
@@ -847,6 +892,24 @@ impl Translator<'_> {
         }
     }
 
+    /// A Databricks column's declared float type (`double` or `float`), lower-case, where it
+    /// is known.
+    fn spark_float(&self, name: &str) -> Option<&'static str> {
+        match self
+            .config
+            .column(name)?
+            .db_type
+            .as_deref()?
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "double" => Some("double"),
+            "float" => Some("float"),
+            _ => None,
+        }
+    }
+
     /// The class of `column <op> literal`, from the column's type and semantics.
     fn leaf_class(&self, name: &str, dtype: &DataType, op: CmpOp) -> Option<Class> {
         match dtype {
@@ -939,6 +1002,12 @@ impl Translator<'_> {
                     .is_some_and(|t| t.contains('(')) =>
             {
                 None
+            },
+            // Spark orders and compares floats as Polars does (NaN is the greatest and equals
+            // itself, -0.0 = 0.0), for a column of known type: a DECIMAL or another type read
+            // as a float is compared as it is stored.
+            dt if dt.is_float() && self.dialect() == DialectName::Databricks => {
+                matches!(self.spark_float(name), Some("double" | "float")).then_some(Class::Exact)
             },
             dt if dt.is_float() => self
                 .dialect()
@@ -1141,5 +1210,149 @@ mod tests {
             Node::parse(r#"{"op": "frobnicate", "args": [{"col": "a"}, {"col": "b"}]}"#),
             Node::Unknown
         ));
+    }
+
+    use std::sync::Arc;
+
+    use crate::database::backend::BackendChoice;
+    use crate::database::connection::{ConnectionSpec, ConnectionTarget};
+    use crate::database::options::{DatabaseRelation, DatabaseScanOptions, PartitionSpec};
+
+    fn spec() -> ConnectionSpec {
+        ConnectionSpec::new(ConnectionTarget::Uri("x://h/db".into()))
+    }
+
+    /// A table scan of `columns` (`(name, dtype, db_type)`).
+    fn config(
+        dialect: DialectName,
+        kind: BackendKind,
+        columns: &[(&str, DataType, Option<&str>)],
+    ) -> DatabaseScanConfig {
+        let options = DatabaseScanOptions {
+            connection: spec(),
+            relation: DatabaseRelation::Table {
+                parts: vec!["t".into()],
+                quoted: vec![false],
+            },
+            dialect: Some(dialect),
+            driver: None,
+            partitioning: PartitionSpec::None,
+            order_by: vec![],
+            consistency: Default::default(),
+            fetch: Default::default(),
+            pushdown: true,
+            schema_overrides: None,
+        };
+        let metas: Vec<_> = columns
+            .iter()
+            .map(|(n, d, t)| crate::database::config::ColumnMeta {
+                name: (*n).into(),
+                dtype: d.clone(),
+                db_type: t.map(Into::into),
+                strings: StringSemantics::UNKNOWN,
+                is_key: false,
+                comparable: true,
+            })
+            .collect();
+        DatabaseScanConfig {
+            options: Arc::new(options),
+            dialect,
+            backend: BackendChoice {
+                kind,
+                version: None,
+                location: None,
+                reason: "test".into(),
+            },
+            schema: Arc::new(
+                columns
+                    .iter()
+                    .map(|(n, d, _)| Field::new((*n).into(), d.clone()))
+                    .collect(),
+            ),
+            columns: metas.into(),
+            stats: Default::default(),
+            compiled: None,
+            connection_share: None,
+            fingerprint: 0,
+            pushdown_disabled: None,
+            volatile_source: false,
+            volatility_unchecked: false,
+            bounds_cache: Default::default(),
+        }
+    }
+
+    fn adbc(driver: &str) -> BackendKind {
+        BackendKind::Adbc {
+            driver: driver.into(),
+        }
+    }
+
+    fn class_of(config: &DatabaseScanConfig, doc: &str) -> Option<Class> {
+        Translator { config }
+            .translate(&Node::parse(doc))
+            .map(|t| t.1)
+    }
+
+    fn cmp(op: &str, col: &str, dtype: &str, value: &str) -> String {
+        format!(
+            r#"{{"op": "{op}", "args": [{{"col": "{col}"}}, {{"lit": {{"dtype": "{dtype}", "value": "{value}"}}}}]}}"#
+        )
+    }
+
+    #[test]
+    fn databricks_float_comparisons() {
+        // #406
+        let c = |t, d| config(DialectName::Databricks, adbc("databricks"), &[("f", d, t)]);
+        let eq = |v: &str| cmp("eq", "f", "f64", v);
+        let double = c(Some("double"), DataType::Float64);
+        assert_eq!(class_of(&double, &eq("1.1")), Some(Class::Exact));
+        assert_eq!(
+            class_of(&double, &cmp("gt", "f", "f64", "-0.5")),
+            Some(Class::Exact)
+        );
+        // a FLOAT column widens to DOUBLE: only a literal that is exactly an f32 meets it
+        let float = c(Some("float"), DataType::Float32);
+        assert_eq!(class_of(&float, &eq("0.5")), Some(Class::Exact));
+        assert_eq!(class_of(&float, &eq("1.1")), None);
+        assert_eq!(
+            class_of(&float, &eq(&format!("{}", f64::from(1.1f32)))),
+            Some(Class::Exact)
+        );
+        // the type is unknown (a query's, `schema=`)
+        assert_eq!(class_of(&c(None, DataType::Float64), &eq("0.5")), None);
+        assert_eq!(
+            class_of(&c(Some("decimal(10,2)"), DataType::Float64), &eq("0.5")),
+            None
+        );
+    }
+
+    #[test]
+    fn column_names_read_as_placeholders_under_params() {
+        // #417
+        let mut with = spec();
+        with.execute_options.push(("params".into(), "x".into()));
+        let psycopg = BackendKind::Python {
+            module: "psycopg".into(),
+        };
+        assert!(name_reads_as_placeholder(&with, &psycopg, "rate%"));
+        assert!(!name_reads_as_placeholder(&with, &psycopg, "a:b"));
+        assert!(name_reads_as_placeholder(
+            &with,
+            &BackendKind::Sqlalchemy,
+            "a:b"
+        ));
+        assert!(!name_reads_as_placeholder(&with, &psycopg, "plain"));
+        assert!(!name_reads_as_placeholder(&spec(), &psycopg, "rate%"));
+    }
+
+    #[test]
+    fn has_unknown_finds_undescribed_parts() {
+        assert!(Node::parse(r#"{"unknown": "x"}"#).has_unknown());
+        assert!(!Node::parse(&cmp("eq", "a", "i64", "1")).has_unknown());
+        let and = format!(
+            r#"{{"op": "and", "args": [{}, {{"unknown": "f"}}]}}"#,
+            cmp("eq", "a", "i64", "1")
+        );
+        assert!(Node::parse(&and).has_unknown());
     }
 }

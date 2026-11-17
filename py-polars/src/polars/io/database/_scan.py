@@ -425,8 +425,10 @@ def scan_database(
     schema
         The schema of the source: the database's column types, as Polars dtypes.
         When given, no metadata is read from the database while planning, and
-        filters are pushed as if the database stores these types. To read a
-        column as another type, use `schema_overrides`.
+        filters are pushed as if the database stores these types. A Datetime's
+        time zone must match the column (time-zone-aware for a time-zone-aware
+        column, naive for a naive one), since filters are pushed assuming it. To
+        read a column as another type, use `schema_overrides`.
     schema_overrides
         Dtypes that override the discovered schema for some columns. The values are
         cast after reading; filters on these columns stay in Polars.

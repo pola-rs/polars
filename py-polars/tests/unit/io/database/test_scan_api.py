@@ -836,6 +836,9 @@ def test_scan_partitioned_factory_returning_one_connection_is_refused() -> None:
     conn.execute("CREATE TABLE t (a INTEGER)")
     conn.executemany("INSERT INTO t VALUES (?)", [(i,) for i in range(100)])
     conn.commit()
+    # the reads must overlap (each partition's session opens while another is open):
+    # a statement takes a while, however fast the machine
+    conn.set_progress_handler(lambda: time.sleep(0.01), 20)
     lf = pl.scan_database(
         "t",
         lambda: conn,
@@ -939,3 +942,194 @@ def test_session_releases_a_pooled_connection_before_giving_it_back() -> None:
         session.close()
     assert id(conn) not in _FACTORY_CONNECTIONS
     conn.close()
+
+
+def _fake(module: str, name: str = "Obj", **attrs: Any) -> Any:
+    """An instance of a class that claims to be from a driver module."""
+    return type(name, (), {"__module__": module, **attrs})()
+
+
+def test_databricks_empty_result_is_typed_from_the_description() -> None:
+    # #384: discovery's empty result yields no Arrow batch, so the columns were typed
+    # by `_description_dtypes`, which knew only Postgres and MySQL type codes
+    from polars_database._bridge import _empty_frame
+
+    description = [
+        ("id", "bigint", None, None, None, None, None),
+        ("g", "int", None, None, None, None, None),
+        ("s", "string", None, None, None, None, None),
+        ("t", "timestamp", None, None, None, None, None),
+        ("n", "timestamp_ntz", None, None, None, None, None),
+        ("d", "decimal", None, None, None, None, None),
+        ("a", "array", None, None, None, None, None),
+    ]
+    cursor = _fake("databricks.sql.client", "Cursor", description=description)
+    expected: dict[str, Any] = {
+        "id": pl.Int64,
+        "g": pl.Int32,
+        "s": pl.String,
+        "t": pl.Datetime("us", "UTC"),
+        "n": pl.Datetime("us"),
+        "d": pl.Null,
+        "a": pl.Null,
+    }
+    assert _empty_frame(cursor, utc=True).schema == pl.Schema(expected)
+
+
+def _transaction_idle_of(conn: Any) -> bool | None:
+    from polars_database._bridge import _transaction_idle
+
+    return _transaction_idle(conn)
+
+
+def test_mariadb_connector_transaction_status() -> None:
+    # #411: the status flags of the last result (SERVER_STATUS_IN_TRANS is 1)
+    in_trans = _fake("mariadb.connections", "Connection", server_status=1 | 2)
+    idle = _fake("mariadb.connections", "Connection", server_status=2)
+    assert _transaction_idle_of(in_trans) is False
+    assert _transaction_idle_of(idle) is True
+
+
+class _FakeMySQLdbCursor:
+    def __init__(self, result: Any) -> None:
+        self.result = result
+        self.closed = False
+
+    def execute(self, sql: str) -> None:
+        assert sql == "SELECT @@in_transaction"
+        if isinstance(self.result, Exception):
+            raise self.result
+
+    def fetchone(self) -> Any:
+        return self.result
+
+    def close(self) -> None:
+        self.closed = True
+
+
+@pytest.mark.parametrize(
+    ("result", "idle"),
+    [((1,), False), ((0,), True), (RuntimeError("Unknown system variable"), None)],
+)
+def test_mysqldb_transaction_status(result: Any, idle: bool | None) -> None:
+    # mysqlclient has no status attribute: a MariaDB server answers `@@in_transaction`,
+    # a MySQL one errors and the status is unknown
+    cursor = _FakeMySQLdbCursor(result)
+    conn = _fake("MySQLdb.connections", "Connection", cursor=lambda _self: cursor)
+    assert _transaction_idle_of(conn) is idle
+    assert cursor.closed
+
+
+def test_arrow_odbc_refuses_params_and_execute_options() -> None:
+    # #412: they were dropped silently
+    from polars_database._bridge import _open
+
+    kind, target = "odbc:arrow_odbc", "Driver={x};Server=h"
+    sessions: list[dict[str, Any]] = [
+        {"params": [5], "execute_options": {}},
+        {"params": None, "execute_options": {"timeout": 5}},
+    ]
+    for refused in sessions:
+        with pytest.raises(ValueError, match="arrow_odbc takes no"):
+            _open(kind, "odbc", target, None, {}, "mssql", refused)
+    ok: dict[str, Any] = {"params": None, "execute_options": {}}
+    assert _open(kind, "odbc", target, None, {}, "mssql", ok) is not None
+
+
+def test_psycopg_pool_connection_goes_back_with_putconn() -> None:
+    # #418: `close()` of a `getconn()` connection doesn't give the slot back
+    from polars_database._bridge import _pool_checkout
+
+    class ConnectionPool:
+        __module__ = "psycopg_pool.pool"
+
+        def __init__(self) -> None:
+            self.returned: list[Any] = []
+
+        def putconn(self, conn: Any) -> None:
+            self.returned.append(conn)
+
+    class Connection:
+        __module__ = "psycopg"
+
+        def __init__(self, pool: Any) -> None:
+            self._pool = pool
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    pool = ConnectionPool()
+    conn = Connection(pool)
+    driver, close, invalidate = _pool_checkout(conn)
+    assert driver is conn
+    assert close is not None
+    assert invalidate is not None
+    close()
+    assert pool.returned == [conn]
+    assert not conn.closed
+    invalidate()
+    assert pool.returned == [conn, conn]
+    assert conn.closed
+
+    # psycopg_pool 3.2 `close_returns=True`: `close()` returns it itself, once
+    pool2 = ConnectionPool()
+    pool2._close_returns = True  # type: ignore[attr-defined]
+    conn2 = Connection(pool2)
+    _, _, invalidate2 = _pool_checkout(conn2)
+    assert invalidate2 is not None
+    invalidate2()
+    assert conn2.closed
+    assert pool2.returned == []
+
+    # another pool's (oracledb, mysql.connector) connection is left to `close()`
+    other = Connection(_fake("oracledb.pool", "ConnectionPool"))
+    assert _pool_checkout(other) == (other, None, None)
+
+
+def test_adbc_release_closes_the_statement_before_a_concurrent_close() -> None:
+    # #416: `close()` found `_open` empty while `release` was still closing the
+    # statement, and closed the connection under it
+    from polars_database._bridge import _AdbcSession
+
+    events: list[str] = []
+    in_stmt_close = threading.Event()
+    go = threading.Event()
+
+    class Stmt:
+        def close(self) -> None:
+            events.append("stmt.close")
+            in_stmt_close.set()
+            go.wait(5)
+            events.append("stmt.closed")
+
+    class Closer:
+        def close(self) -> None:
+            events.append("closer.close")
+
+    session: Any = _AdbcSession.__new__(_AdbcSession)
+    session._lock = threading.Lock()
+    session._handle_lock = threading.Lock()
+    session._open = []
+    session._closed = False
+    session._issuing = False
+    session._conn = Closer()
+    session._db = Closer()
+    stmt = Stmt()
+    session._open.append(stmt)
+
+    releaser = threading.Thread(target=session.release, args=(stmt,))
+    releaser.start()
+    assert in_stmt_close.wait(5)
+    closer = threading.Thread(target=session.close)
+    closer.start()
+    time.sleep(0.2)
+    go.set()
+    releaser.join(5)
+    closer.join(5)
+    assert events == [
+        "stmt.close",
+        "stmt.closed",
+        "closer.close",
+        "closer.close",
+    ]

@@ -1059,7 +1059,11 @@ def test_mysql_tls_check_rejects_a_plain_connection() -> None:
         # well-formed queries stay repeatable
         ("sqlite", "SELECT lower(g) AS l, count(*) FROM t GROUP BY l", True),
         ("sqlite", "SELECT g, count(*) FILTER (WHERE x > 0) FROM t GROUP BY g", True),
-        ("sqlite", "SELECT g, my_aggregate(x) FROM t GROUP BY g", True),
+        # a function sqlglot doesn't know may be a scalar one (`printf`): its bare
+        # column counts
+        ("sqlite", "SELECT g, my_aggregate(x) FROM t GROUP BY g", False),
+        ("sqlite", "SELECT g, printf('%d', x) FROM t GROUP BY g", False),
+        ("sqlite", "SELECT g, printf('%d', g) FROM t GROUP BY g", True),
         ("mysql", "SELECT g, JSON_ARRAYAGG(x) FROM t GROUP BY g", True),
         ("mysql", "SELECT g, count(*) FROM t GROUP BY g HAVING count(*) > 1", True),
         (
@@ -1078,6 +1082,74 @@ def test_mysql_tls_check_rejects_a_plain_connection() -> None:
         ("clickhouse", "SELECT id, nowInBlock() AS n FROM t", False),
         ("postgres", "SELECT id, pg_backend_pid() AS p FROM t", False),
         ("mysql", "SELECT id, CONNECTION_ID() AS c FROM t", False),
+        # Databricks' typed nodes (#399): random, shuffled and AI results
+        ("databricks", "SELECT id, uniform(0, 1000) AS u FROM t", False),
+        ("databricks", "SELECT id, randstr(5) AS r FROM t", False),
+        ("databricks", "SELECT id, shuffle(a) AS s FROM t", False),
+        ("databricks", "SELECT id, normal(0, 1, 2) AS s FROM t", False),
+        ("databricks", "SELECT id, ai_classify(x, ARRAY('a', 'b')) AS c FROM t", False),
+        ("databricks", "SELECT id, ai_query('m', x) AS c FROM t", False),
+        ("databricks", "SELECT id FROM t WHERE uniform(0.0D, 1.0D) < 0.5", False),
+        ("databricks", "SELECT g, first_value(x) FROM t GROUP BY g", False),
+        ("databricks", "SELECT g, last_value(x) FROM t GROUP BY g", False),
+        ("databricks", "SELECT id, max(x) AS m FROM t GROUP BY id", True),
+        # MySQL's user variables (#413)
+        ("mysql", "SELECT @rn := @rn + 1 AS rn, id FROM t, (SELECT @rn := 0) r", False),
+        (
+            "mysql",
+            "SELECT id FROM t, (SELECT @n := 0) r WHERE (@n := @n + 1) <= 10",
+            False,
+        ),
+        ("mysql", "SELECT id FROM t WHERE id > @min", True),
+        # bare columns in subqueries, windows and unknown functions (#414)
+        (
+            "sqlite",
+            "SELECT g, (SELECT count(*) FROM u WHERE u.k = t.x) FROM t GROUP BY g",
+            False,
+        ),
+        (
+            "sqlite",
+            "SELECT g, EXISTS (SELECT 1 FROM u WHERE u.k = t.x) FROM t GROUP BY g",
+            False,
+        ),
+        ("sqlite", "SELECT g, sum(x) OVER () FROM t GROUP BY g", False),
+        ("sqlite", "SELECT g, sum(count(*)) OVER () FROM t GROUP BY g", True),
+        (
+            "sqlite",
+            "SELECT g, (SELECT count(*) FROM u WHERE u.k = t.g) FROM t GROUP BY g",
+            True,
+        ),
+        (
+            "sqlite",
+            "SELECT g, (SELECT count(*) FROM t AS i WHERE i.x < t.x) AS r "
+            "FROM t GROUP BY g",
+            False,
+        ),
+        (
+            "sqlite",
+            "SELECT g, (SELECT count(*) FROM u WHERE u.k < t.x) AS r FROM t GROUP BY g",
+            False,
+        ),
+        ("sqlite", "SELECT g, total(x) AS a FROM t GROUP BY g", True),
+        # more random, arbitrary and session functions (#415)
+        ("clickhouse", "SELECT id, arrayShuffle(a) AS s FROM t", False),
+        ("clickhouse", "SELECT id, arrayPartialShuffle(a) AS s FROM t", False),
+        ("clickhouse", "SELECT id, arrayRandomSample(a, 2) AS s FROM t", False),
+        ("clickhouse", "SELECT id, connectionId() AS c FROM t", False),
+        ("clickhouse", "SELECT id FROM generateRandom('a Int32')", False),
+        ("clickhouse", "SELECT g, argMax(a, b) FROM t GROUP BY g", False),
+        ("clickhouse", "SELECT g, argMin(a, b) FROM t GROUP BY g", False),
+        ("postgres", "SELECT g, arg_max(a, b) FROM t GROUP BY g", False),
+        ("postgres", "SELECT g, max_by(a, b) FROM t GROUP BY g", False),
+        ("postgres", "SELECT g, min_by(a, b) FROM t GROUP BY g", False),
+        ("postgres", "SELECT id, txid_current_snapshot() AS s FROM t", False),
+        ("postgres", "SELECT id, pg_current_snapshot() AS s FROM t", False),
+        ("postgres", "SELECT pid FROM pg_stat_activity", False),
+        ("postgres", "SELECT pid FROM pg_catalog.pg_locks", False),
+        ("oracle", "SELECT SYS_CONTEXT('USERENV', 'SID') AS s FROM dual", False),
+        ("oracle", "SELECT USERENV('SID') AS s FROM dual", False),
+        ("tsql", "SELECT id, @@SPID AS s FROM t", False),
+        ("tsql", "SELECT id FROM t WHERE id > @min", True),
     ],
 )
 def test_volatile_functions_make_a_query_not_repeatable(
@@ -1719,7 +1791,8 @@ def test_databricks_literals_are_ntz_times_and_instants() -> None:
     naive = {"Timestamp": {"text": "2024-03-10 02:30:00.000000", "with_tz": False}}
     aware = {"Timestamp": {"text": "2024-03-10 10:30:00.000000", "with_tz": True}}
     assert literal(naive) == "TIMESTAMP_NTZ '2024-03-10 02:30:00.000000'"
-    assert literal(aware) == "CAST('2024-03-10 10:30:00.000000+00:00' AS TIMESTAMP)"
+    # `TIMESTAMP` would be NTZ under `spark.sql.timestampType=TIMESTAMP_NTZ` (#401)
+    assert literal(aware) == "CAST('2024-03-10 10:30:00.000000+00:00' AS TIMESTAMP_LTZ)"
     assert literal({"Time": "13:45:30.123456"}) == "TIME '13:45:30.123456'"
 
 

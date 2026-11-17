@@ -700,11 +700,7 @@ pub fn check_batches(dialect: DialectName, batches: BatchIter) -> BatchIter {
 /// pass on what the database holds (SQLite's `CAST(X'FF' AS TEXT)`) without checking.
 fn check_utf8(df: &DataFrame) -> PolarsResult<()> {
     for c in df.columns() {
-        if !c.dtype().is_string() {
-            continue;
-        }
-        let bytes = c.str()?.as_binary();
-        if bytes.downcast_iter().any(|a| a.validate_utf8().is_err()) {
+        if holds_invalid_utf8(c.as_materialized_series())? {
             polars_bail!(
                 ComputeError:
                 "column '{}' holds text that is not valid UTF-8, which a Polars String can't \
@@ -714,6 +710,41 @@ fn check_utf8(df: &DataFrame) -> PolarsResult<()> {
         }
     }
     Ok(())
+}
+
+/// Whether a column holds a string that isn't valid UTF-8, also nested in lists, arrays and
+/// structs (a Postgres `text[]` or composite on a `SQL_ASCII` database).
+fn holds_invalid_utf8(s: &polars_core::series::Series) -> PolarsResult<bool> {
+    use polars_core::prelude::DataType;
+
+    Ok(match s.dtype() {
+        DataType::String => {
+            let bytes = s.str()?.as_binary();
+            bytes.downcast_iter().any(|a| a.validate_utf8().is_err())
+        },
+        DataType::List(inner) if has_string(inner) => holds_invalid_utf8(&s.list()?.get_inner())?,
+        DataType::Array(inner, _) if has_string(inner) => {
+            holds_invalid_utf8(&s.array()?.get_inner())?
+        },
+        DataType::Struct(_) => {
+            for f in s.struct_()?.fields_as_series() {
+                if holds_invalid_utf8(&f)? {
+                    return Ok(true);
+                }
+            }
+            false
+        },
+        _ => false,
+    })
+}
+
+fn has_string(dtype: &polars_core::prelude::DataType) -> bool {
+    use polars_core::prelude::DataType;
+    match dtype {
+        DataType::String | DataType::Struct(_) => true,
+        DataType::List(inner) | DataType::Array(inner, _) => has_string(inner),
+        _ => false,
+    }
 }
 
 /// The earliest Postgres date and timestamp, 4714-11-24 BC (Julian day 0), from the Unix epoch.
@@ -828,6 +859,29 @@ fn batch_to_df(array: Box<dyn Array>) -> PolarsResult<DataFrame> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn invalid_utf8_is_found_nested() {
+        use polars_core::prelude::*;
+        let bad = unsafe {
+            BinaryChunked::from_slice("s".into(), &[b"a\xff".as_slice()]).to_string_unchecked()
+        }
+        .into_series();
+        let good = Series::new("s".into(), ["ab"]);
+        assert!(holds_invalid_utf8(&bad).unwrap());
+        assert!(!holds_invalid_utf8(&good).unwrap());
+        let list = bad.implode().unwrap().into_series();
+        assert!(holds_invalid_utf8(&list).unwrap());
+        assert!(!holds_invalid_utf8(&good.implode().unwrap().into_series()).unwrap());
+        let nested = list.implode().unwrap().into_series();
+        assert!(holds_invalid_utf8(&nested).unwrap());
+        let st = StructChunked::from_series("st".into(), 1, [bad.clone()].iter())
+            .unwrap()
+            .into_series();
+        assert!(holds_invalid_utf8(&st).unwrap());
+        let df = DataFrame::new(1, vec![list.into_column()]).unwrap();
+        assert!(check_utf8(&df).is_err());
+    }
 
     #[test]
     fn query_keys_are_decoded() {

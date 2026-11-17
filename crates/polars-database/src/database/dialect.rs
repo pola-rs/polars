@@ -525,9 +525,11 @@ impl DialectName {
         const MYSQL: &[SetupStatement] = &[
             // `TIMESTAMP` values and literals are read in the session time zone
             required("SET time_zone = '+00:00'"),
-            // literals are written with backslash escapes
+            // literals are written with backslash escapes, and a `CHAR` is read without
+            // padding (see `string_semantics`)
             required(
-                "SET SESSION sql_mode = REPLACE(@@SESSION.sql_mode, 'NO_BACKSLASH_ESCAPES', '')",
+                "SET SESSION sql_mode = REPLACE(REPLACE(@@SESSION.sql_mode, \
+                'NO_BACKSLASH_ESCAPES', ''), 'PAD_CHAR_TO_FULL_LENGTH', '')",
             ),
             optional("SET SESSION TRANSACTION READ ONLY"),
         ];
@@ -791,5 +793,18 @@ mod tests {
             DialectName::Clickhouse.quote_ident("x\\\"y"),
             "\"x\\\\\"\"y\""
         );
+    }
+
+    #[test]
+    fn mysql_setup_clears_the_modes_that_change_literals_and_chars() {
+        // #410: `PAD_CHAR_TO_FULL_LENGTH` reads `CHAR` padded
+        let sql = DialectName::Mysql
+            .session_setup()
+            .iter()
+            .find(|s| s.sql.contains("sql_mode"))
+            .unwrap()
+            .sql;
+        assert!(sql.contains("'NO_BACKSLASH_ESCAPES'"));
+        assert!(sql.contains("'PAD_CHAR_TO_FULL_LENGTH'"));
     }
 }

@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import functools
 import importlib.util
+import inspect
 import itertools
 import os
 import re
@@ -155,6 +156,25 @@ def _pool_checkout(
         and (driver := getattr(conn, "driver_connection", None)) is not None
     ):
         return driver, conn.close, conn.invalidate
+    pool = getattr(conn, "_pool", None)
+    if (
+        pool is not None
+        and type(pool).__module__.startswith("psycopg_pool")
+        and callable(putconn := getattr(pool, "putconn", None))
+        and not inspect.iscoroutinefunction(putconn)
+    ):
+        # a psycopg_pool `getconn()`: its `close()` closes the connection but doesn't
+        # give the slot back; `putconn` does (and replaces a closed connection)
+        def invalidate() -> None:
+            # `close_returns=True` (psycopg_pool 3.2): `close()` gives it back itself
+            if getattr(pool, "_close_returns", False):
+                conn.close()
+                return
+            with contextlib.suppress(Exception):
+                conn.close()
+            putconn(conn)
+
+        return conn, lambda: putconn(conn), invalidate
     return conn, None, None
 
 
@@ -175,7 +195,7 @@ def connection_info(obj: Any, kind: str) -> tuple[str, str]:
     """`(dialect, module)` of a connection factory or live connection object."""
     if kind == "factory":
         conn = obj()
-        driver = _pool_checkout(conn)[0]
+        driver, give_back, _ = _pool_checkout(conn)
         try:
             return _connection_info(driver)
         finally:
@@ -185,7 +205,7 @@ def connection_info(obj: Any, kind: str) -> tuple[str, str]:
                 held = id(driver) in _FACTORY_CONNECTIONS
                 if not held:
                     with contextlib.suppress(Exception):
-                        conn.close()
+                        (give_back or conn.close)()
     if _module_of(obj) == "adbc_driver_manager":
         # Its autocommit is off: the scan's statements would leave a transaction open on
         # the user's connection, and a failed one abort it.
@@ -1297,6 +1317,22 @@ def _transaction_idle(conn: Any) -> bool | None:
                 with conn.cursor() as cursor:
                     cursor.execute("DO 0")
             return not conn.server_status & in_trans
+        if module in ("MySQLdb", "mariadb"):
+            in_trans = 1  # SERVER_STATUS_IN_TRANS
+            # MariaDB Connector/Python (and MySQLdb builds that have it): the status
+            # flags of the last result
+            if isinstance(status := getattr(conn, "server_status", None), int):
+                return not status & in_trans
+            # mysqlclient has no status: MariaDB servers say (`@@in_transaction`); a
+            # MySQL server doesn't know the variable (an error that leaves no
+            # transaction behind), and the answer is unknown
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT @@in_transaction")
+                row = cursor.fetchone()
+            finally:
+                cursor.close()
+            return None if row is None else not row[0]
         in_transaction = getattr(conn, "in_transaction", None)
         if callable(in_transaction):
             # A SQLAlchemy Connection, which begins one on its first statement, and
@@ -1681,6 +1717,24 @@ _MYSQL_FIELD_DTYPES = {
 }
 
 
+# Databricks type names (`cursor.description`'s type codes), as its Arrow results type
+# them (`TIMESTAMP` is in UTC). Decimals, intervals and nested types: typed from values.
+_DATABRICKS_TYPE_DTYPES = {
+    "tinyint": "Int8",
+    "smallint": "Int16",
+    "int": "Int32",
+    "bigint": "Int64",
+    "float": "Float32",
+    "double": "Float64",
+    "boolean": "Boolean",
+    "string": "String",
+    "binary": "Binary",
+    "date": "Date",
+    "timestamp": "Datetime[UTC]",
+    "timestamp_ntz": "Datetime",
+}
+
+
 def _mysql_unsigned(cursor: Any, description: Any, i: int) -> bool | None:
     """Whether a MySQL result column is `UNSIGNED`; `None` if unknown."""
     unsigned_flag = 32
@@ -1694,9 +1748,11 @@ def _mysql_unsigned(cursor: Any, description: Any, i: int) -> bool | None:
 
 
 def _description_dtypes(cursor: Any, description: Any, *, utc: bool) -> list[Any]:
-    """Dtypes of a Postgres- or MySQL-family result's columns, from their type codes,
-    which an empty result has too; `Null` (typed later from a sample) for other types
-    and other drivers. `utc`: the session time zone is UTC (the session setup ran).
+    """Dtypes of a Postgres-, MySQL-family or Databricks result's columns.
+
+    From their type codes, which an empty result has too; `Null` (typed later from a
+    sample) for other types and other drivers. `utc`: the session time zone is UTC (the
+    session setup ran).
     """
     import polars as pl
 
@@ -1731,7 +1787,13 @@ def _description_dtypes(cursor: Any, description: Any, *, utc: bool) -> list[Any
             name = "Datetime"
         return pl.Null if name is None else named(name)  # type: ignore[arg-type]
 
+    def databricks(d: Any) -> Any:
+        name = _DATABRICKS_TYPE_DTYPES.get(str(d[1]).lower())
+        return pl.Null if name is None else named(name)
+
     module = _module_of(cursor)
+    if module == "databricks":
+        return [databricks(d) for d in description]
     if module in ("psycopg", "psycopg2", "pg8000"):
         return [postgres(d) for d in description]
     if module in ("pymysql", "MySQLdb", "mysql"):
@@ -2312,7 +2374,8 @@ class _Session:
                     pass
                 else:
                     discard = False
-        if discard and not self._aborted:
+        if discard and not self._aborted and not _is_psycopg_pooled(self.conn):
+            # (a psycopg_pool connection is closed once, by `_invalidate`)
             _close_for_real(self.conn)
         # The connection is the session's until it is given back: once it is in a pool
         # another reader may be handed it at once, so it is released just before that. A
@@ -2336,6 +2399,11 @@ class _Session:
                     # pooled (mysql.connector, oracledb): `close()` gives it back
                     self._release_factory_connection()
                 self.conn.close()
+
+
+def _is_psycopg_pooled(conn: Any) -> bool:
+    pool = getattr(conn, "_pool", None)
+    return pool is not None and type(pool).__module__.startswith("psycopg_pool")
 
 
 def _close_for_real(conn: Any) -> None:
@@ -2612,13 +2680,17 @@ class _AdbcSession:
 
     def release(self, stmt: Any) -> None:
         """Close a statement once its result stream is released."""
-        with self._lock:
-            with contextlib.suppress(ValueError):
-                self._open.remove(stmt)
-            self._issuing = False
-            close_conn = self._closed and not self._open
+        close_conn = False
         try:
+            # The handle lock is held from the statement leaving `_open` until it is
+            # closed: a `close()` that finds `_open` empty waits for it (the driver
+            # manager refuses to close a connection with a statement open).
             with self._handle_lock:
+                with self._lock:
+                    with contextlib.suppress(ValueError):
+                        self._open.remove(stmt)
+                    self._issuing = False
+                    close_conn = self._closed and not self._open
                 stmt.close()
         finally:
             if close_conn:
@@ -2748,6 +2820,13 @@ def _open(
     head, _, tail = kind.partition(":")
     if target_kind == "odbc":
         if tail == "arrow_odbc":
+            # (its `parameters` are text only: an integer would bind as a string)
+            if session.get("params") or session.get("execute_options"):
+                msg = (
+                    "arrow_odbc takes no `params` or `execute_options`: write the "
+                    "values into the query, or use another ODBC driver (pyodbc)"
+                )
+                raise ValueError(msg)
             return _ArrowOdbcSession(target, connect_opts)
         mod = importlib.import_module(tail)
         if tail == "turbodbc":

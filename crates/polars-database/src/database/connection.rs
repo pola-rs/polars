@@ -615,6 +615,22 @@ mod tests {
     }
 
     #[test]
+    fn secret_query_parameters_are_redacted_decoded_too() {
+        // a driver error may echo the decoded value (`ab/cd` for `ab%2Fcd`)
+        let spec = ConnectionSpec::new(ConnectionTarget::Uri(
+            "databricks://h:443/sql?clientSecret=ab%2Fcd&accessToken=x%20y+z".into(),
+        ));
+        let s = spec.secrets();
+        for expected in ["ab%2Fcd", "ab/cd", "x%20y+z", "x y z", "x y+z"] {
+            assert!(s.contains(&expected.to_string()), "{expected}: {s:?}");
+        }
+        assert_eq!(
+            scrub_secrets("bad value ab/cd and x y+z", &s),
+            "bad value *** and ***"
+        );
+    }
+
+    #[test]
     fn redacts_passwords() {
         assert_eq!(
             redact_uri("postgresql://u:secret@h:5432/db?sslmode=require&password=x"),

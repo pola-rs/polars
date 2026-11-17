@@ -496,8 +496,10 @@ pub fn resolve_scan(
         schema = schema_;
     } else {
         let backend_impl = open_backend(&backend, options.fetch.batch_size)?;
-        let mut session =
-            open_session_with_retries(backend_impl.as_ref(), &options.connection, dialect)?;
+        let mut session = catalog::with_describe_cache(
+            open_session_with_retries(backend_impl.as_ref(), &options.connection, dialect)?,
+            dialect,
+        );
         // MariaDB drops the `ORDER BY` of a derived table without `LIMIT`: the wrapped
         // query would return its rows in another order (and `head` other rows).
         // (Its schema is still found wrapped: the order doesn't matter there.)
@@ -541,11 +543,14 @@ pub fn resolve_scan(
                 Some(written) => {
                     // closed first: a pool of one connection would wait for it
                     drop(session);
-                    session = open_session_with_retries(
-                        backend_impl.as_ref(),
-                        &written.connection,
+                    session = catalog::with_describe_cache(
+                        open_session_with_retries(
+                            backend_impl.as_ref(),
+                            &written.connection,
+                            dialect,
+                        )?,
                         dialect,
-                    )?;
+                    );
                     let found = discover(session.as_mut(), &written).map_err(|_| e)?;
                     options = written;
                     found
@@ -689,7 +694,7 @@ pub fn resolve_scan(
                         })
                         .map(|t| t.as_str().into())
                 }),
-                strings: info.string_semantics(dialect, name),
+                strings: info.string_semantics_with_setup(dialect, name, setup_runs),
                 is_key: info.key_column.as_ref() == Some(name),
                 comparable: !info.incomplete
                     && info.compares_like_polars(dialect, name, dtype)
@@ -907,6 +912,21 @@ pub fn resolve_scan(
                 _ => {},
             }
         }
+    }
+
+    // The wrapper SQL names the output columns, which a driver binding `params=` reads for
+    // placeholders (`rate%`, `a:b`): such a query runs as given.
+    if pushdown_disabled.is_none()
+        && is_query
+        && let Some(name) = schema.iter_names().find(|n| {
+            crate::filter::name_reads_as_placeholder(&options.connection, &backend.kind, n)
+        })
+    {
+        let reason = format!("the column '{name}' would be read as a placeholder of params");
+        if verbose() {
+            eprintln!("[scan_database]: pushdown disabled: {reason}");
+        }
+        pushdown_disabled = Some(reason.into());
     }
 
     Ok(DatabaseScanConfig {
@@ -2696,8 +2716,14 @@ fn source_volatility(
                     catalog::ViewLookup::Unknown => continue,
                     catalog::ViewLookup::Failed => {
                         let name = parts.join(".");
-                        out.volatile =
-                            Some(format!("'{name}', which couldn't be looked up,").into());
+                        // (a Databricks temporary view lists no definition)
+                        out.volatile = Some(
+                            format!(
+                                "'{name}', whose definition isn't available (a temporary \
+                                view, say), so it can't be shown to repeat its rows,"
+                            )
+                            .into(),
+                        );
                         out.all_columns = true;
                         continue;
                     },
@@ -3110,12 +3136,39 @@ fn resolve_partitions(
 }
 
 /// `MIN` and `MAX` of a column, over the rows the exact filters keep.
+///
+/// Spark's `MAX` of a float column holding NaN is NaN (the greatest value), which no range can
+/// be cut from: its bounds are those of the other values (NaN rows fall into the last partition,
+/// where `>= cut` is true for them).
 fn query_bounds(
     config: &DatabaseScanConfig,
     renderer: &dyn SqlRenderer,
     from: &SqlFrom,
     column: &PlSmallStr,
     filters: &[PushedFilter],
+) -> PolarsResult<(Option<f64>, Option<f64>)> {
+    let bounds = run_bounds(config, renderer, from, column, filters, false)?;
+    if config.dialect == DialectName::Databricks
+        && (bounds.0.is_some_and(f64::is_nan) || bounds.1.is_some_and(f64::is_nan))
+    {
+        if verbose() {
+            eprintln!(
+                "[scan_database]: partition bounds are NaN: bounds again without the NaN \
+                rows of '{column}'"
+            );
+        }
+        return run_bounds(config, renderer, from, column, filters, true);
+    }
+    Ok(bounds)
+}
+
+fn run_bounds(
+    config: &DatabaseScanConfig,
+    renderer: &dyn SqlRenderer,
+    from: &SqlFrom,
+    column: &PlSmallStr,
+    filters: &[PushedFilter],
+    without_nan: bool,
 ) -> PolarsResult<(Option<f64>, Option<f64>)> {
     let mut query = SqlQuery::select(
         vec![
@@ -3132,6 +3185,14 @@ fn query_bounds(
     // MySQL zero dates are read as NULL, and no driver reads them as a bound.
     if let Some(zero) = zero_date_check(config, column) {
         query.filter.push(SqlExpr::Not(Box::new(zero)));
+    }
+    // NaN (and infinity) is above every finite value
+    if without_nan {
+        query.filter.push(SqlExpr::binary(
+            SqlExpr::col(column.clone()),
+            SqlBinOp::LtEq,
+            SqlExpr::lit(SqlLiteral::Float(f64::MAX)),
+        ));
     }
     let sql = renderer.render(&query, config.dialect)?;
     if let Some(bounds) = config.bounds_cache.lock().unwrap().get(&sql) {

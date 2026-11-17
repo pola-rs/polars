@@ -166,6 +166,9 @@ def _literal(v: Any, dialect: str | None) -> Any:
         if dialect in _NO_TEMPORAL_PRECISION:
             if x["with_tz"]:
                 # an explicit offset: the instant, whatever the session's time zone
+                if dialect in _SPARK_TIME_TYPES:
+                    # `TIMESTAMP` is NTZ where `spark.sql.timestampType` says so
+                    return _raw(f"CAST('{x['text']}+00:00' AS TIMESTAMP_LTZ)")
                 return _cast(x["text"] + "+00:00", "TIMESTAMP")
             if dialect in _SPARK_TIME_TYPES:
                 # `TIMESTAMP` is the local-time-zone type: an NTZ column compared with
@@ -496,8 +499,26 @@ _VOLATILE_FUNCTIONS = frozenset(
         "seq4",
         "seq8",
         "randstr",
+        # Databricks (typed nodes in `_VOLATILE_NODES`; `ai_*` by prefix)
+        "uniform",
+        "normal",
+        "shuffle",
+        # ClickHouse: random orders and samples, a random table, the session's id
+        "arrayshuffle",
+        "arraypartialshuffle",
+        "arrayrandomsample",
+        "generaterandom",
+        "connectionid",
+        # Postgres: the snapshot of the transaction (each partition has its own)
+        "txid_current_snapshot",
+        "pg_current_snapshot",
+        # Oracle: the session's context and user environment
+        "sys_context",
+        "userenv",
     }
 )
+# Tables whose rows are the server's state at the time of the read (Postgres)
+_VOLATILE_TABLES = frozenset({"pg_stat_activity", "pg_locks"})
 _VOLATILE_NODES = tuple(
     node
     for node in (
@@ -505,6 +526,24 @@ _VOLATILE_NODES = tuple(
         for name in (
             "Rand",
             "Randn",
+            # Databricks: `uniform`, `randstr`, `shuffle`, `normal`, `ai_classify` ...
+            "Uniform",
+            "Randstr",
+            "Shuffle",
+            "Normal",
+            "Zipf",
+            "AIAgg",
+            "AIClassify",
+            "AIEmbed",
+            "AIForecast",
+            "AIGenerate",
+            "AISimilarity",
+            "AISummarizeAgg",
+            "GenerateEmbedding",
+            "GenerateBool",
+            "GenerateDouble",
+            "GenerateInt",
+            "GenerateText",
             "Uuid",
             "Seq1",
             "Seq2",
@@ -538,13 +577,27 @@ def _is_volatile(node: Any, dialect: str | None, relations: set[str]) -> bool:
     ):
         # `datetime()`, `unixepoch()`: without a time value, the current time
         return True
+    if isinstance(node, exp.PropertyEQ) and isinstance(node.this, exp.Parameter):
+        # MySQL's `@v := expr`: the assignment runs in the order the rows are read
+        return True
+    if (
+        isinstance(node, exp.Parameter)
+        and isinstance(node.this, exp.Parameter)
+        and dialect == "tsql"
+    ):
+        # `@@SPID`, `@@ROWCOUNT`, ...: the session's
+        return True
+    if isinstance(node, exp.Table):
+        return str(node.name).lower() in _VOLATILE_TABLES
     if isinstance(node, exp.Anonymous):
         name = node.name.lower()
         if name == "unix_timestamp":
             # of its argument, if it has one
             return not node.expressions
-        return name in _VOLATILE_FUNCTIONS or (
-            dialect == "clickhouse" and name.startswith("rand")
+        return (
+            name in _VOLATILE_FUNCTIONS
+            or name.startswith("ai_")
+            or (dialect == "clickhouse" and name.startswith("rand"))
         )
     if isinstance(node, exp.Literal) and node.is_string:
         return _is_current_time_literal(node)
@@ -657,6 +710,13 @@ _ARBITRARY_FUNCTIONS = frozenset(
         "arbitrary",
         "first",
         "last",
+        # the value of any row among those that tie
+        "arg_min",
+        "arg_max",
+        "argmin",
+        "argmax",
+        "min_by",
+        "max_by",
         "rownumberinallblocks",
         "rownumberinblock",
         "blocknumber",
@@ -692,6 +752,20 @@ _ROW_ORDER_WINDOWS = frozenset(
 
 # Dialects that take a column that is neither grouped nor aggregated (others refuse it)
 _BARE_GROUP_BY_DIALECTS = frozenset({"sqlite", "mysql", "mariadb", "singlestore"})
+
+
+# Aggregates sqlglot doesn't know (parsed as `Anonymous`): any other unknown function
+# may be a scalar one (`printf`), whose bare column is a bare column
+_KNOWN_AGGREGATES = frozenset(
+    {
+        "json_arrayagg",
+        "json_objectagg",
+        "json_agg",
+        "jsonb_agg",
+        "group_concat",
+        "total",
+    }
+)
 
 
 def _bare_column_in_group_by(select: Any) -> bool:
@@ -743,32 +817,55 @@ def _bare_column_in_group_by(select: Any) -> bool:
             grouped.add(node.sql().lower())
     aliases = {p.alias.lower() for p in projections if isinstance(p, exp.Alias)}
 
+    def column_is_bare(node: Any, is_having: bool) -> bool:
+        name = node.name.lower()
+        if node.table:
+            is_grouped = (
+                f"{node.table}.{node.name}".lower() in grouped
+                or name in grouped_unqualified
+            )
+        else:
+            is_grouped = name in grouped_names
+        return not is_grouped and not (is_having and name in aliases)
+
     def bare(node: Any, is_having: bool) -> bool:
+        if isinstance(node, (exp.Subquery, exp.Select)):
+            # a correlated column (one the subquery's own tables don't qualify) is the
+            # outer query's, whatever the subquery aggregates; an unqualified one may be
+            # (an aliased table is named by its alias only: `t AS i` hides `t`)
+            own = {
+                t.alias_or_name.lower()
+                for t in node.find_all(exp.Table, exp.Subquery, exp.CTE)
+            } - {""}
+            return any(
+                column_is_bare(c, is_having)
+                for c in node.find_all(exp.Column)
+                if not c.is_star and not (c.table and c.table.lower() in own)
+            )
+        if isinstance(node, exp.Window):
+            # `sum(x) OVER ()` runs over the grouped rows: `x` is a bare column unless
+            # grouped or aggregated inside (`sum(sum(x)) OVER ()`)
+            return any(
+                bare(child, is_having) for child in node.this.iter_expressions()
+            ) or any(
+                bare(child, is_having)
+                for child in node.iter_expressions()
+                if child is not node.this
+            )
         if isinstance(
             node,
             (
                 exp.AggFunc,
-                exp.Window,
-                exp.Subquery,
-                exp.Select,
-                # `count(*) FILTER (WHERE x > 0)`, `... WITHIN GROUP (ORDER BY x)`, and
-                # functions it doesn't know (a user's may aggregate)
+                # `count(*) FILTER (WHERE x > 0)`, `... WITHIN GROUP (ORDER BY x)`
                 exp.Filter,
                 exp.WithinGroup,
-                exp.Anonymous,
             ),
+        ) or (
+            isinstance(node, exp.Anonymous) and node.name.lower() in _KNOWN_AGGREGATES
         ):
             return False
         if isinstance(node, exp.Column):
-            name = node.name.lower()
-            if node.table:
-                is_grouped = (
-                    f"{node.table}.{node.name}".lower() in grouped
-                    or name in grouped_unqualified
-                )
-            else:
-                is_grouped = name in grouped_names
-            return not is_grouped and not (is_having and name in aliases)
+            return column_is_bare(node, is_having)
         if not isinstance(node, exp.Star) and node.sql().lower() in grouped:
             return False
         return any(bare(child, is_having) for child in node.iter_expressions())
@@ -793,6 +890,12 @@ def _picks_arbitrary_rows(stmt: Any, dialect: str | None) -> bool:
     Oracle's `ROWNUM`, or Postgres' one-argument `age(x)` (relative to today).
     """
     if stmt.find(exp.AnyValue, exp.First, exp.Last) is not None:
+        return True
+    # `first_value(x)` / `last_value(x)` outside a window (Databricks) aggregate any row
+    if any(
+        f.find_ancestor(exp.Window) is None
+        for f in stmt.find_all(exp.FirstValue, exp.LastValue)
+    ):
         return True
     if dialect in _BARE_GROUP_BY_DIALECTS and any(
         _bare_column_in_group_by(select) for select in stmt.find_all(exp.Select)
@@ -1290,7 +1393,15 @@ def inspect_query(sql: str, dialect: str | None) -> dict[str, Any]:
     relations = _relations(stmt)
     volatile_calls = [
         node
-        for node in stmt.find_all(exp.Func, exp.Dot, exp.Column, exp.Literal)
+        for node in stmt.find_all(
+            exp.Func,
+            exp.Dot,
+            exp.Column,
+            exp.Literal,
+            exp.PropertyEQ,
+            exp.Parameter,
+            exp.Table,
+        )
         if _is_volatile(node, dialect, relations)
     ]
     volatile = bool(volatile_calls)

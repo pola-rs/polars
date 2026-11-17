@@ -109,25 +109,20 @@ impl Resolver {
     pub fn resolve(&self, args: &Resolve) -> PolarsResult<(ResolvedScanOwned, Vec<u64>)> {
         let config = self.config()?;
 
-        let columns: Option<Vec<PlSmallStr>> = args.projection.as_ref().map(|p| {
-            p.iter()
-                .filter(|c| config.schema.contains(c))
-                .map(|c| PlSmallStr::from(c.as_str()))
-                .collect()
-        });
         let mut pushdown = ScanPushdown {
-            columns: columns.clone(),
+            columns: None,
             total_filters: args.filters.len(),
             ..Default::default()
         };
 
         // Without pushdown the filters are only counted.
         let mut applied = vec![];
+        // the document of every filter, to find the columns the unapplied ones still need
+        let nodes: Vec<Node> = args.filters.iter().map(|doc| Node::parse(doc)).collect();
         if config.pushdown_disabled.is_none() {
             let translator = Translator { config: &config };
-            for (i, doc) in args.filters.iter().enumerate() {
-                let node = Node::parse(doc);
-                if let Some((expr, class)) = translator.translate(&node) {
+            for (i, node) in nodes.iter().enumerate() {
+                if let Some((expr, class)) = translator.translate(node) {
                     let exact = class == Class::Exact;
                     if exact {
                         applied.push(i as u64);
@@ -135,7 +130,7 @@ impl Resolver {
                     // those the translated predicate compares: a conjunct dropped from it
                     // isn't compared in the database
                     let mut columns = vec![];
-                    translator.pushed_columns(&node, &mut columns);
+                    translator.pushed_columns(node, &mut columns);
                     pushdown.filters.push(PushedFilter {
                         expr,
                         exact,
@@ -144,6 +139,39 @@ impl Resolver {
                 }
             }
         }
+        // The projection ends with the columns only the filters use (from
+        // `filter_drop_columns_idx`): those that every filter using them applies exactly in
+        // the database aren't read (the host's filter and final projection don't need them).
+        let columns: Option<Vec<PlSmallStr>> = args.projection.as_ref().map(|p| {
+            let keep = args.filter_drop_columns_idx.map_or(p.len(), |i| i as usize);
+            // the columns of the filters left to the host
+            let mut needed: Vec<PlSmallStr> = vec![];
+            let mut unknown = false;
+            for (i, node) in nodes.iter().enumerate() {
+                if !applied.contains(&(i as u64)) {
+                    unknown |= node.has_unknown();
+                    node.columns(&mut needed);
+                }
+            }
+            let all: Vec<PlSmallStr> = p
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| config.schema.contains(c))
+                .map(|(i, c)| (i, PlSmallStr::from(c.as_str())))
+                .filter(|(i, c)| *i < keep || unknown || needed.contains(c))
+                .map(|(_, c)| c)
+                .collect();
+            // never an empty select list
+            if all.is_empty() {
+                p.iter()
+                    .filter(|c| config.schema.contains(c))
+                    .map(|c| PlSmallStr::from(c.as_str()))
+                    .collect()
+            } else {
+                all
+            }
+        });
+        pushdown.columns = columns.clone();
         // The host never sends a limit together with filters; a limit only holds without them.
         if args.filters.is_empty() {
             pushdown.limit = args.limit;

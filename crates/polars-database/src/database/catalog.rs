@@ -42,6 +42,10 @@ pub struct CatalogInfo {
     /// A lookup that decides comparison semantics (types, collations, the table
     /// definition) failed: what it would have told is unknown, so no filter is pushed.
     pub incomplete: bool,
+    /// A query's text columns may be blank-padded `CHAR(n)` columns that the result types hide
+    /// (Databricks: `DESCRIBE QUERY` reports `char(5)` as `string`, while Spark pads the
+    /// literal compared with the column): string semantics are unknown.
+    pub padding_unknown: bool,
     pub stats: TableStats,
 }
 
@@ -59,8 +63,29 @@ impl CatalogInfo {
             .or_else(|| self.compare_types.get(column).map(String::as_str))
     }
 
+    /// [`string_semantics`](Self::string_semantics), where the session setup that clears MySQL's
+    /// `PAD_CHAR_TO_FULL_LENGTH` may not run (a live connection, ConnectorX, SingleStore): a
+    /// `CHAR` may then be read padded, which the database's comparison ignores.
+    pub fn string_semantics_with_setup(
+        &self,
+        dialect: DialectName,
+        column: &str,
+        setup_runs: bool,
+    ) -> StringSemantics {
+        if matches!(dialect, DialectName::Mysql | DialectName::Singlestore)
+            && (dialect == DialectName::Singlestore || !setup_runs)
+            && self.comparison_type(column).is_some_and(is_blank_padded)
+        {
+            return unknown_string_semantics(dialect);
+        }
+        self.string_semantics(dialect, column)
+    }
+
     pub fn string_semantics(&self, dialect: DialectName, column: &str) -> StringSemantics {
         if self.unknown_collations {
+            return unknown_string_semantics(dialect);
+        }
+        if self.padding_unknown {
             return unknown_string_semantics(dialect);
         }
         // Blank-padded `CHAR(n)` compares ignoring trailing spaces, which Polars sees.
@@ -176,9 +201,11 @@ pub fn compares_as_text(dialect: DialectName, t: &str) -> bool {
     let t = t.trim().to_ascii_lowercase();
     let base = t.split('(').next().unwrap_or("").trim();
     match dialect {
+        // `name` (and the domains over it, `sql_identifier`) is not: an untyped literal
+        // resolves to `name` and is cut to 63 bytes.
         DialectName::Postgresql | DialectName::Redshift => matches!(
             base,
-            "text" | "character varying" | "varchar" | "character" | "bpchar" | "char" | "name"
+            "text" | "character varying" | "varchar" | "character" | "bpchar" | "char"
         ),
         DialectName::Duckdb => base == "varchar" || base.starts_with("varchar "),
         // enums compare as text (their order is not, see `string_semantics`)
@@ -224,6 +251,62 @@ fn is_blank_padded(t: &str) -> bool {
     )
 }
 
+/// Wraps a Databricks planning session so that its `DESCRIBE TABLE EXTENDED` of a relation (one
+/// round trip of seconds) is run once: `table_info` reads the columns of it, and
+/// `view_definition` the details. Other dialects' sessions come back as they are.
+pub fn with_describe_cache(
+    session: Box<dyn DatabaseSession>,
+    dialect: DialectName,
+) -> Box<dyn DatabaseSession> {
+    if dialect == DialectName::Databricks {
+        Box::new(CachingSession {
+            inner: session,
+            cache: PlHashMap::new(),
+        })
+    } else {
+        session
+    }
+}
+
+struct CachingSession {
+    inner: Box<dyn DatabaseSession>,
+    cache: PlHashMap<String, DataFrame>,
+}
+
+impl DatabaseSession for CachingSession {
+    fn execute(
+        &mut self,
+        sql: &str,
+        batch_size: Option<usize>,
+    ) -> PolarsResult<super::backend::BatchIter> {
+        self.inner.execute(sql, batch_size)
+    }
+
+    fn execute_update(&mut self, sql: &str) -> PolarsResult<()> {
+        self.inner.execute_update(sql)
+    }
+
+    fn query(&mut self, sql: &str) -> PolarsResult<DataFrame> {
+        self.inner.query(sql)
+    }
+
+    fn catalog_query(&mut self, sql: &str) -> PolarsResult<DataFrame> {
+        if !sql.starts_with("DESCRIBE TABLE EXTENDED ") {
+            return self.inner.catalog_query(sql);
+        }
+        if let Some(df) = self.cache.get(sql) {
+            return Ok(df.clone());
+        }
+        let df = self.inner.catalog_query(sql)?;
+        self.cache.insert(sql.to_string(), df.clone());
+        Ok(df)
+    }
+
+    fn cancel_handle(&self) -> Option<super::backend::CancelHandle> {
+        self.inner.cancel_handle()
+    }
+}
+
 /// Looks up a table. `parts` is `[catalog.][schema.]name`, unquoted.
 pub fn table_info(
     session: &mut dyn DatabaseSession,
@@ -249,6 +332,13 @@ pub fn table_info(
             Err(e) => {
                 if verbose {
                     eprintln!("[scan_database]: catalog lookup of {what} failed: {e}");
+                }
+                // Some Databricks objects (federated tables, restricted metadata) refuse
+                // EXTENDED but list their columns: the plain statement is enough here.
+                if let Some(rest) = sql.strip_prefix("DESCRIBE TABLE EXTENDED ")
+                    && let Ok(df) = session.catalog_query(&format!("DESCRIBE TABLE {rest}"))
+                {
+                    return Some(df);
                 }
                 failed.push(what);
                 None
@@ -435,6 +525,9 @@ pub fn query_info(
                 }
             }
             if dialect == DialectName::Databricks {
+                // `DESCRIBE QUERY` shows a `char(n)` column as `string`; which relations the
+                // query reads (and whether one has a char column) isn't looked up
+                info.padding_unknown = true;
                 // the result types show the collations; none listed leaves them unknown
                 info.unknown_collations = info.compare_types.is_empty();
                 info.collations_listed = true;
@@ -926,14 +1019,15 @@ impl CatalogQueries {
                     )),
                 }
             },
-            // `DESCRIBE TABLE` lists a table's or view's columns with their types, any
+            // `DESCRIBE TABLE EXTENDED` (the lookup of `view_definition` too, which a
+            // [`CachingSession`] shares) lists a table's or view's columns with their types, any
             // collation included (`string collate UTF8_LCASE`), in any catalog (the Hive
             // metastore has no `information_schema`). The lines after the columns (`# Partition
             // Information`) are ignored by `table_info`.
             DialectName::Databricks => Self {
                 key: None,
                 collations: None,
-                types: Some(format!("DESCRIBE TABLE {qualified}")),
+                types: Some(format!("DESCRIBE TABLE EXTENDED {qualified}")),
                 compare_types: None,
                 declared_sql: None,
                 stats: None,
@@ -2327,5 +2421,118 @@ mod tests {
         assert!(casts_string_literals(d));
         assert!(!compares_as_text(d, "variant"));
         assert!(!info.compares_like_polars(d, "#x", &DataType::String));
+    }
+
+    #[test]
+    fn databricks_query_sources_hide_char_padding() {
+        // #400: `DESCRIBE QUERY` reports `char(5)` as `string`
+        let d = DialectName::Databricks;
+        let mut s = Recorder {
+            log: vec![],
+            answer: |_: &str| describe(&[("ch", "string"), ("n", "bigint")]),
+        };
+        let q = query_info(&mut s, d, "(SELECT * FROM t)", None, &["ch".into()], false);
+        assert!(!q.string_semantics(d, "ch").equality_exact);
+        assert!(!q.string_semantics(d, "ch").ordering_exact);
+        // a table's `DESCRIBE TABLE` shows `char(5)` and a plain `string` exactly
+        let mut t = Recorder {
+            log: vec![],
+            answer: |_: &str| describe(&[("ch", "char(5)"), ("s", "string")]),
+        };
+        let info = table_info(&mut t, d, &["t".into()]);
+        assert!(!info.string_semantics(d, "ch").equality_exact);
+        assert!(info.string_semantics(d, "s").equality_exact);
+    }
+
+    #[test]
+    fn postgres_name_is_not_text() {
+        // #409: an untyped literal resolves to `name` and is cut to 63 bytes
+        let d = DialectName::Postgresql;
+        assert!(!compares_as_text(d, "name"));
+        assert!(compares_as_text(d, "text") && compares_as_text(d, "character varying(10)"));
+    }
+
+    #[test]
+    fn databricks_describe_is_run_once_per_relation() {
+        // #385, #407: `table_info` and `view_definition` share one `DESCRIBE TABLE EXTENDED`
+        let d = DialectName::Databricks;
+        let runs = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = runs.clone();
+        let session = Box::new(Recorder {
+            log: vec![],
+            answer: move |_: &str| {
+                counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                describe(&[
+                    ("id", "bigint"),
+                    ("", ""),
+                    ("# Detailed Table Information", ""),
+                    ("Type", "MANAGED"),
+                ])
+            },
+        });
+        let mut s = with_describe_cache(session, d);
+        let info = table_info(s.as_mut(), d, &["t".into()]);
+        assert_eq!(info.types.len(), 1);
+        assert_eq!(
+            view_definition(s.as_mut(), d, &["t".into()], &[]),
+            ViewLookup::NotAView
+        );
+        assert_eq!(runs.load(std::sync::atomic::Ordering::SeqCst), 1);
+        // another relation is another lookup
+        view_definition(s.as_mut(), d, &["u".into()], &[]);
+        assert_eq!(runs.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn mysql_char_is_unknown_where_the_setup_does_not_run() {
+        let d = DialectName::Mysql;
+        let mut info = CatalogInfo::default();
+        info.types.push(("c".into(), "char(5)".into()));
+        info.types.push(("v".into(), "varchar(5)".into()));
+        assert!(
+            info.string_semantics_with_setup(d, "c", true)
+                .equality_exact
+                == info.string_semantics(d, "c").equality_exact
+        );
+        assert!(
+            !info
+                .string_semantics_with_setup(d, "c", false)
+                .equality_exact
+        );
+        assert!(
+            !info
+                .string_semantics_with_setup(DialectName::Singlestore, "c", true)
+                .equality_exact
+        );
+        assert_eq!(
+            info.string_semantics_with_setup(d, "v", false)
+                .equality_exact,
+            info.string_semantics(d, "v").equality_exact
+        );
+    }
+
+    #[test]
+    fn databricks_table_info_falls_back_to_plain_describe() {
+        let d = DialectName::Databricks;
+        struct Fails(Vec<String>);
+        impl DatabaseSession for Fails {
+            fn execute(&mut self, sql: &str, _: Option<usize>) -> PolarsResult<BatchIter> {
+                self.0.push(sql.to_string());
+                if sql.contains("EXTENDED") {
+                    polars_bail!(ComputeError: "not supported");
+                }
+                Ok(Box::new(std::iter::once(Ok(describe(&[("id", "bigint")])))))
+            }
+        }
+        let mut s = Fails(vec![]);
+        let info = table_info(&mut s, d, &["t".into()]);
+        assert_eq!(info.types.len(), 1);
+        assert!(!info.incomplete);
+        assert_eq!(s.0, ["DESCRIBE TABLE EXTENDED `t`", "DESCRIBE TABLE `t`"]);
+        // the view lookup still fails as before
+        assert_eq!(
+            view_definition(&mut s, d, &["t".into()], &[]),
+            ViewLookup::Failed
+        );
     }
 }

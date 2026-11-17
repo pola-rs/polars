@@ -5211,7 +5211,9 @@ def test_params_dont_hide_volatile_views(name: str, driver: str) -> None:
     # reads went unchecked, and partitions were accepted, each reading other values
     if driver not in _runnable_drivers(name, [driver]):
         pytest.skip(f"{driver} isn't installed")
-    ids, view = "review_r15_params_ids", "review_r15_params_v"
+    # per driver: the cells run in parallel (`-n`) against one server
+    suffix = driver.replace(".", "_")
+    ids, view = f"review_r15_params_ids_{suffix}", f"review_r15_params_v_{suffix}"
     if name == "postgres17":
         statements = [
             f"DROP VIEW IF EXISTS {view}",
@@ -5425,3 +5427,28 @@ def test_postgres_distinct_quoted_view_names_are_inspected(kind: str) -> None:
                 pl.exceptions.InvalidOperationError, match="partitioned"
             ):
                 lf.collect()
+
+
+@needs_postgres
+def test_postgres_name_columns_are_not_compared_as_text() -> None:
+    # #409: an untyped literal resolves to `name` and is cut to 63 bytes, so `n == L`
+    # and `n < L` / `n != L` would disagree with Polars for a 70-byte `L`. (A `name`
+    # column is read as text through a conversion, which isn't compared in the database
+    # either: a guard for the catalog's classification.)
+    long = "a" * 70
+    _execute(
+        "postgres17",
+        [
+            "DROP TABLE IF EXISTS review_name_col",
+            "CREATE TABLE review_name_col (id int, n name)",
+            f"INSERT INTO review_name_col VALUES (1, '{'a' * 63}')",
+        ],
+    )
+    for driver in ["live", *_runnable_drivers("postgres17", ["psycopg", "adbc"])]:
+        for source in ["review_name_col", "SELECT * FROM review_name_col"]:
+            lf = _scan("postgres17", driver, source)
+            n = pl.col("n")
+            assert lf.filter(n == long).collect().height == 0, (driver, source)
+            assert lf.filter(n != long).collect().height == 1, (driver, source)
+            assert lf.filter(n < long).collect().height == 1, (driver, source)
+            assert lf.filter(n.is_in([long])).collect().height == 0, (driver, source)
