@@ -92,16 +92,20 @@ impl PySeries {
     }
 
     pub fn rechunk(&self, py: Python<'_>, in_place: bool) -> PyResult<Option<Self>> {
-        // The write lock must be taken with the GIL released: readers such as `to_arrow`
-        // hold the read lock across calls into Python, so blocking on the lock while
-        // holding the GIL deadlocks both threads.
+        // Rechunking Object values takes the GIL, which a thread blocked on this lock may hold,
+        // so a clone is rechunked outside the lock and the lock is taken with the GIL released.
+        let series = self.series.read().clone();
         py.enter_polars_ok(|| {
-            let series = self.series.read().rechunk();
+            let rechunked = series.rechunk();
             if in_place {
-                *self.series.write() = series;
+                let mut current = self.series.write();
+                // Another thread may have replaced the Series meanwhile.
+                if Arc::ptr_eq(&current.0, &series.0) {
+                    *current = rechunked;
+                }
                 None
             } else {
-                Some(Self::from(series))
+                Some(Self::from(rechunked))
             }
         })
     }
