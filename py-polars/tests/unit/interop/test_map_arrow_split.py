@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import io
 from itertools import accumulate
 from typing import TYPE_CHECKING
@@ -194,6 +195,29 @@ def test_entries_under_null_map_rows_are_not_counted() -> None:
 
     assert batch_rows(table) == [4]
     assert table.column(0).null_count == 3
+
+
+def test_plugin_export_splits_an_oversized_map_chunk(df: pl.DataFrame) -> None:
+    s = df["m"]
+    assert s.n_chunks() == 1
+    # `SeriesExport`: five pointer-sized fields.
+    export = ctypes.create_string_buffer(5 * ctypes.sizeof(ctypes.c_void_p))
+
+    s._s._export(ctypes.addressof(export))
+    out = pl.Series._import(ctypes.addressof(export))
+
+    assert out.n_chunks() == 2
+    assert out.len() == 6
+    assert out.dtype == s.dtype
+
+
+def test_export_arrow_to_c_raises_for_an_oversized_map(df: pl.DataFrame) -> None:
+    # `ArrowArray` and `ArrowSchema` are 80 and 72 bytes on 64-bit platforms.
+    array = ctypes.create_string_buffer(80)
+    schema = ctypes.create_string_buffer(72)
+
+    with pytest.raises(InvalidOperationError, match="overflow"):
+        df["m"]._export_arrow_to_c(ctypes.addressof(array), ctypes.addressof(schema))
 
 
 def test_to_pandas_batches_share_one_schema(df: pl.DataFrame) -> None:

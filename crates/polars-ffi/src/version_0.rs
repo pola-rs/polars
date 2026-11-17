@@ -104,12 +104,11 @@ pub fn export_series(s: &Series) -> SeriesExport {
         .to_arrow_field(s.name().clone(), CompatLevel::newest());
     let schema = Box::new(ffi::export_field_to_c(&field));
 
+    // A chunk becomes several arrays where an arrow MAP would overflow its `i32` offsets. Only a
+    // single row with more map entries than that panics, as this ABI has no way to return errors.
     let mut arrays = (0..s.chunks().len())
-        .map(|i| {
-            // Make sure we export the logical type.
-            let arr = s.to_arrow(i, CompatLevel::newest());
-            Box::into_raw(Box::new(ffi::export_array_to_c(arr.clone())))
-        })
+        .flat_map(|i| s.try_to_arrow_split(i, CompatLevel::newest()).unwrap())
+        .map(|arr| Box::into_raw(Box::new(ffi::export_array_to_c(arr))))
         .collect::<Box<_>>();
 
     let len = arrays.len();
