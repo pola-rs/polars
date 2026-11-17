@@ -292,7 +292,7 @@ pub(crate) fn arrow_export_row_ranges<'a>(
 
 #[cfg(all(test, feature = "dtype-map"))]
 mod tests {
-    use polars_arrow::array::{BooleanArray, MapArray, NullArray};
+    use polars_arrow::array::{BooleanArray, Int32Array, MapArray, NullArray};
     use polars_arrow::bitmap::Bitmap;
     use polars_arrow::offset::Offsets;
 
@@ -370,31 +370,73 @@ mod tests {
         assert_eq!(n_chunks, [2, 2]);
     }
 
+    /// A scalar column repeating one map with `keys`, held in two chunks, over `height` rows.
+    fn scalar_map_column(keys: Vec<i32>, height: usize) -> Column {
+        let dtype = DataType::Map(Box::new(DataType::Int32), Box::new(DataType::Null));
+        let entries_dtype = dtype.map_entries_dtype().unwrap();
+        let entries = |keys: &[i32]| {
+            let n = keys.len();
+            StructArray::new(
+                entries_dtype.to_physical().to_arrow(CompatLevel::newest()),
+                n,
+                vec![
+                    Int32Array::from_slice(keys).boxed(),
+                    NullArray::new(ArrowDataType::Null, n).boxed(),
+                ],
+                None,
+            )
+            .boxed()
+        };
+        let (a, b) = keys.split_at(keys.len() / 2);
+        let entries = unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                PlSmallStr::from_static("m"),
+                vec![entries(a), entries(b)],
+                &entries_dtype,
+            )
+        };
+        assert_eq!(entries.n_chunks(), 2);
+        let value = Scalar::new(dtype, AnyValue::Map(entries));
+        Column::Scalar(ScalarColumn::new("m".into(), value, height))
+    }
+
     #[test]
     fn a_scalar_map_column_is_split_without_materializing_it() {
-        // One map of 2^29 entries, held in two chunks.
-        let halves = map_series(vec![map_chunk(&[1 << 28, 1 << 28], None)]);
-        let entries = |i| match halves.get(i).unwrap() {
-            AnyValue::Map(entries) => entries,
-            _ => unreachable!(),
-        };
-        let mut value = entries(0);
-        value.append(&entries(1)).unwrap();
-        assert_eq!(value.n_chunks(), 2);
-        let value = Scalar::new(map_dtype(), AnyValue::Map(value));
-        let scalar = Column::Scalar(ScalarColumn::new("m".into(), value, 6));
-        let small = map_series(vec![map_chunk(&[1; 6], None)]).with_name("small".into());
-        let small = small.into_column();
-        let df = DataFrame::new_infer_height(vec![small, scalar]).unwrap();
-        let arrow_dtype = map_dtype().to_arrow(CompatLevel::newest());
-        let dtypes = [&arrow_dtype, &arrow_dtype];
+        let scalar = scalar_map_column((0..1 << 20).collect(), 4096);
+        let small = map_series(vec![map_chunk(&[1; 4096], None)]).with_name("small".into());
+        let df = DataFrame::new_infer_height(vec![small.into_column(), scalar]).unwrap();
+        let dtypes: Vec<_> = df
+            .columns()
+            .iter()
+            .map(|c| c.dtype().to_arrow(CompatLevel::newest()))
+            .collect();
 
-        let ranges = df.arrow_export_ranges(dtypes, None).unwrap();
-        let chunk_ranges = df.arrow_export_ranges(dtypes, Some((0, 0..6))).unwrap();
+        let ranges = df.arrow_export_ranges(&dtypes, None).unwrap();
+        let chunk_ranges = df.arrow_export_ranges(&dtypes, Some((0, 0..4096))).unwrap();
 
-        assert_eq!(ranges, Some(vec![0..3, 3..6]));
+        // 2047 rows of 2^20 entries is the most that fits in `i32` offsets.
+        assert_eq!(ranges, Some(vec![0..2047, 2047..4094, 4094..4096]));
         assert_eq!(chunk_ranges, ranges);
         let sc = df.columns()[1].as_scalar_column().unwrap();
         assert!(sc.lazy_as_materialized_series().is_none());
+    }
+
+    /// Materializing a scalar map deduplicates its keys, so its raw entries only bound what export
+    /// writes.
+    #[test]
+    fn a_scalar_map_with_duplicate_keys_is_planned_by_its_exported_entries() {
+        let df =
+            DataFrame::new_infer_height(vec![scalar_map_column(vec![7; 1 << 20], 4096)]).unwrap();
+        let arrow_dtype = df.columns()[0].dtype().to_arrow(CompatLevel::newest());
+
+        let pieces = df.split_for_arrow_export([&arrow_dtype]).unwrap();
+
+        assert_eq!(pieces.len(), 1);
+        let arrays = pieces[0].columns()[0]
+            .as_materialized_series()
+            .try_to_arrow_split(0, CompatLevel::newest())
+            .unwrap();
+        let map: &MapArray = arrays[0].as_any().downcast_ref().unwrap();
+        assert_eq!(*map.offsets().last(), 4096);
     }
 }
