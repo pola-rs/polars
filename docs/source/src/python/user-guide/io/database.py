@@ -27,6 +27,15 @@ query = "SELECT * FROM foo"
 pl.read_database_uri(query=query, uri=uri, engine="adbc")
 # --8<-- [end:adbc]
 
+# --8<-- [start:adbc_odbc]
+import adbcbridge
+
+conn = adbcbridge.connect(
+    uri="Driver=Firebird;Dbname=localhost:/data/sales.fdb;Uid=SYSDBA;Pwd=masterkey;"
+)
+df = pl.read_database(query="SELECT * FROM foo", connection=conn)
+# --8<-- [end:adbc_odbc]
+
 # --8<-- [start:write]
 uri = "postgresql://username:password@server:port/database"
 df = pl.DataFrame({"foo": [1, 2, 3]})
