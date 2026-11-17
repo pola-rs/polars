@@ -121,7 +121,7 @@ fn tokenize(sql: &str) -> PolarsResult<(Vec<TokenWithSpan>, TableVersions)> {
         .with_unescape(ParserOptions::default().unescape)
         .tokenize_with_location()
         .map_err(to_sql_interface_err)?;
-    demote_top_keyword(&mut tokens);
+    normalize_tokens(&mut tokens);
     let versions = extract_table_versions(&mut tokens)?;
     Ok((tokens, versions))
 }
@@ -136,12 +136,18 @@ fn parser_of(tokens: Vec<TokenWithSpan>) -> Parser<'static> {
         .with_tokens_with_locations(tokens)
 }
 
-fn demote_top_keyword(tokens: &mut [TokenWithSpan]) {
+/// Reads an escape string (`E'..'`) as a plain string, as the tokenizer resolved its escapes,
+/// and `TOP` as a keyword only where it starts `SELECT TOP n`.
+fn normalize_tokens(tokens: &mut [TokenWithSpan]) {
     let is_keyword = |token: &Token, keywords: &[Keyword]| matches!(token, Token::Word(word) if keywords.contains(&word.keyword));
     let mut previous: Option<usize> = None;
     for i in 0..tokens.len() {
-        if matches!(tokens[i].token, Token::Whitespace(_)) {
-            continue;
+        match &mut tokens[i].token {
+            Token::Whitespace(_) => continue,
+            Token::EscapedStringLiteral(s) => {
+                tokens[i].token = Token::SingleQuotedString(std::mem::take(s));
+            },
+            _ => {},
         }
         if is_keyword(&tokens[i].token, &[Keyword::TOP]) {
             let next = tokens[i + 1..]
