@@ -458,9 +458,6 @@ pub enum PhysNodeKind {
         disable_morsel_split: bool,
         /// If false, rows within a file may be emitted in any order.
         maintain_order: bool,
-        /// Decode dictionary-encoded columns flat: nothing between the scan and the sink reads
-        /// codes, so coded morsels would only be materialized, at a cost.
-        materialize_dictionaries: bool,
     },
 
     #[cfg(feature = "python")]
@@ -1071,36 +1068,12 @@ fn rechunk_group_by_inputs(
     });
 }
 
-/// A scan whose output goes straight into the in-memory sink (through projections only) has no
-/// use for dictionary codes, as the sink materializes them: it decodes flat instead, as
-/// materializing coded morsels costs an extra pass over every row.
-fn materialize_dictionaries_into_sink(
-    root: PhysNodeKey,
-    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
-) {
-    let mut node = match &phys_sm[root].kind {
-        PhysNodeKind::InMemorySink { input } => input.node,
-        _ => return,
-    };
-    while let PhysNodeKind::SimpleProjection { input, .. } = &phys_sm[node].kind {
-        node = input.node;
-    }
-    if let PhysNodeKind::MultiScan {
-        materialize_dictionaries,
-        ..
-    } = &mut phys_sm[node].kind
-    {
-        *materialize_dictionaries = true;
-    }
-}
-
 pub fn build_physical_plan(
     root: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     ctx: StreamingLowerIRContext<'_>,
-    flat_dictionaries_into_sink: bool,
 ) -> PolarsResult<(PhysNodeKey, SecondaryMap<PhysNodeKey, Node>)> {
     let original_ir_len = ir_arena.len();
     let mut schema_cache = PlHashMap::with_capacity(ir_arena.len());
@@ -1127,10 +1100,6 @@ pub fn build_physical_plan(
 
     // TODO: remove this after fusing pre-select into group-by node.
     rechunk_group_by_inputs(vec![phys_root.node], phys_sm);
-
-    if flat_dictionaries_into_sink {
-        materialize_dictionaries_into_sink(phys_root.node, phys_sm);
-    }
 
     Ok((phys_root.node, phys_to_ir))
 }

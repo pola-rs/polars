@@ -236,7 +236,6 @@ impl DeletionFilesProvider {
                                     num_pipelines,
                                     disable_morsel_split: false,
                                     maintain_order: true,
-                                    materialize_dictionaries: false,
                                     last_morsel_pipelines: 1,
                                     callbacks: FileReaderCallbacks {
                                         file_schema_tx: None,

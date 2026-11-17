@@ -275,7 +275,6 @@ impl FileReader for ParquetFileReader {
             num_pipelines: _,
             disable_morsel_split: true,
             maintain_order: _,
-            materialize_dictionaries: _,
             last_morsel_pipelines: _,
             callbacks:
                 FileReaderCallbacks {
@@ -308,7 +307,6 @@ impl FileReader for ParquetFileReader {
             num_pipelines,
             disable_morsel_split,
             maintain_order,
-            materialize_dictionaries,
             last_morsel_pipelines,
             callbacks:
                 FileReaderCallbacks {
@@ -456,7 +454,6 @@ impl FileReader for ParquetFileReader {
                 row_group_prefetch_size,
                 target_values_per_thread,
                 last_morsel_pipelines,
-                materialize_dictionaries,
             },
             verbose,
             memory_prefetch_func,
@@ -586,8 +583,6 @@ struct Config {
     /// Minimum number of pieces to split this file's last morsel into. Precomputed by the
     /// multi-scan layer to share the parallelism budget across files.
     last_morsel_pipelines: usize,
-    /// Decode dictionary-encoded columns flat, see `BeginReadArgs::materialize_dictionaries`.
-    materialize_dictionaries: bool,
 }
 
 impl ParquetReadImpl {

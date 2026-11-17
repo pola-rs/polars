@@ -23,6 +23,7 @@ pub use schema::*;
 pub use series::*;
 pub use supertype::*;
 
+use crate::frame::column::concat_columns;
 use crate::prelude::*;
 use crate::runtime::RAYON;
 
@@ -853,6 +854,50 @@ where
         acc_df.vstack_mut_owned_unchecked(df);
     }
     acc_df
+}
+
+/// As [`accumulate_dataframes_vertical_unchecked`], but concatenating each column of all the
+/// frames at once, so that dictionary columns are concatenated by their codes (see
+/// [`concat_columns`]) instead of being appended one frame at a time.
+///
+/// Does not check if the schema is correct.
+///
+/// # Panics
+/// Panics if `dfs` is empty or the widths differ.
+pub fn accumulate_dataframes_vertical_unchecked_dictionary_aware(dfs: Vec<DataFrame>) -> DataFrame {
+    assert!(!dfs.is_empty());
+    let width = dfs[0].width();
+    let height = dfs.iter().map(|df| df.height()).sum::<usize>();
+    if dfs.len() == 1
+        || !dfs.iter().any(|df| {
+            df.columns()
+                .iter()
+                .any(|c| c.as_dictionary_column().is_some())
+        })
+    {
+        return accumulate_dataframes_vertical_unchecked(dfs);
+    }
+    for df in &dfs[1..] {
+        if df.width() != width {
+            panic!("{}", width_mismatch(&dfs[0], df));
+        }
+    }
+    let mut columns: Vec<std::vec::IntoIter<Column>> = dfs
+        .into_iter()
+        .map(|df| df.into_columns().into_iter())
+        .collect();
+    let out: Vec<Column> = (0..width)
+        .map(|_| {
+            concat_columns(
+                columns
+                    .iter_mut()
+                    .map(|c| c.next().unwrap())
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect();
+    // SAFETY: every column has the summed height.
+    unsafe { DataFrame::new_unchecked(height, out) }
 }
 
 /// This takes ownership of the DataFrame so that drop is called earlier.

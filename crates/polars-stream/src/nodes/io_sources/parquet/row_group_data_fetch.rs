@@ -28,8 +28,6 @@ pub(super) struct RowGroupData {
     pub(super) slice: Option<(usize, usize)>,
     pub(super) row_group_metadata: RowGroupMetadata,
     pub(super) sorting_map: Vec<(usize, IsSorted)>,
-    /// Decode dictionary-encoded columns flat.
-    pub(super) materialize_dictionaries: bool,
 }
 
 pub(super) struct RowGroupDataFetcher {
@@ -44,7 +42,6 @@ pub(super) struct RowGroupDataFetcher {
     /// The row groups to read, in the order to read them.
     pub(super) row_groups: VecDeque<RowGroupToRead>,
     pub(super) runtime_range_skipper: Option<Arc<RuntimeRangeSkipper>>,
-    pub(super) materialize_dictionaries: bool,
 
     pub(super) read_stats: Arc<ReadStats>,
 }
@@ -211,7 +208,6 @@ impl RowGroupDataFetcher {
         let is_full_projection = self.is_full_projection;
         let memory_prefetch_func = self.memory_prefetch_func;
         let read_stats = self.read_stats.clone();
-        let materialize_dictionaries = self.materialize_dictionaries;
 
         let handle = ASYNC.spawn(in_issue_order(async move {
             let row_group_metadata = &metadata.row_groups[idx];
@@ -305,7 +301,6 @@ impl RowGroupDataFetcher {
                 // @TODO: Remove clone
                 row_group_metadata: row_group_metadata.clone(),
                 sorting_map,
-                materialize_dictionaries,
             })
         }));
 

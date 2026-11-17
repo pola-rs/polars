@@ -227,7 +227,6 @@ impl FileReader for IpcFileReader {
             num_pipelines,
             disable_morsel_split,
             maintain_order,
-            materialize_dictionaries: _,
             last_morsel_pipelines,
             callbacks:
                 FileReaderCallbacks {

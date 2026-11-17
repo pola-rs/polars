@@ -345,7 +345,6 @@ impl FileReader for PythonFileReader {
             num_pipelines,
             disable_morsel_split: _,
             maintain_order: _,
-            materialize_dictionaries: _,
             last_morsel_pipelines: _,
             callbacks:
                 FileReaderCallbacks {

@@ -2188,6 +2188,7 @@ impl DataFrame {
             compat_level,
             parallel,
             offset: 0,
+            ahead: (0..self.width()).map(|_| Default::default()).collect(),
         })
     }
 
@@ -2686,28 +2687,34 @@ impl DataFrame {
 
 /// Cursor over the chunks a [`DataFrame`] is laid out along.
 struct ChunkCursor<'a> {
-    /// The chunks of the first column that has any; empty when no column does.
-    chunks: &'a [ArrayRef],
+    /// The lengths of the chunks of the first column that has any, a dictionary column's codes
+    /// if no other column does; empty when no column does.
+    chunk_lens: Vec<usize>,
+    _df: std::marker::PhantomData<&'a DataFrame>,
     height: usize,
     idx: usize,
 }
 
 impl<'a> ChunkCursor<'a> {
     fn new(df: &'a DataFrame) -> Self {
-        let chunks = match df.columns().iter().find_map(Column::as_series) {
-            Some(s) => s.chunks().as_slice(),
-            None => &[],
+        let chunk_lens = match df.columns().iter().find_map(Column::as_series) {
+            Some(s) => s.chunks().iter().map(|c| c.len()).collect(),
+            None => match df.columns().iter().find_map(Column::as_dictionary_column) {
+                Some(d) => d.codes().chunk_lengths().collect(),
+                None => Vec::new(),
+            },
         };
 
         Self {
-            chunks,
+            chunk_lens,
+            _df: std::marker::PhantomData,
             height: df.height(),
             idx: 0,
         }
     }
 
     fn n_chunks(&self) -> usize {
-        usize::max(1, self.chunks.len())
+        usize::max(1, self.chunk_lens.len())
     }
 
     /// The index and number of rows of the next chunk.
@@ -2718,7 +2725,10 @@ impl<'a> ChunkCursor<'a> {
         }
 
         self.idx += 1;
-        Some((idx, self.chunks.get(idx).map_or(self.height, |c| c.len())))
+        Some((
+            idx,
+            self.chunk_lens.get(idx).copied().unwrap_or(self.height),
+        ))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -2735,6 +2745,55 @@ pub struct RecordBatchIter<'a> {
     parallel: bool,
     /// The first row of the next batch, to slice columns without chunks of their own.
     offset: usize,
+    /// For each dictionary column, the values of the next batches, gathered a few at a time in
+    /// parallel (the codes of a batch are too few to gather in parallel), so nothing but those
+    /// few batches is held.
+    ahead: Vec<std::collections::VecDeque<Series>>,
+}
+
+impl RecordBatchIter<'_> {
+    /// Gathers the values of the batch starting at `offset` and of those after it, up to a
+    /// bounded number of rows, for the dictionary column `d` (of `df` column `i`).
+    fn gather_ahead(&mut self, i: usize, d: &column::DictionaryColumn, idx: usize, offset: usize) {
+        /// The rows gathered ahead in all the dictionary columns together, at least one batch each. The gathered values are the buffers of
+        /// the batches handed out, so this holds no copy of what the caller keeps; smaller
+        /// windows (2^22) made the parallel gather stall at each window's end (to_arrow of 10M
+        /// rows 4.3-5.5 ms against 2.8-3.1).
+        const MAX_ROWS_AHEAD: usize = 1 << 25;
+
+        // The window is shared by the dictionary columns, which each gather their own.
+        let n_dict = self
+            .df
+            .columns()
+            .iter()
+            .filter(|c| c.as_dictionary_column().is_some())
+            .count()
+            .max(1);
+        let max_rows = MAX_ROWS_AHEAD / n_dict;
+        let mut ranges = Vec::new();
+        let (mut start, mut rows) = (offset, 0);
+        for j in idx..self.cursor.n_chunks() {
+            let len = self
+                .cursor
+                .chunk_lens
+                .get(j)
+                .copied()
+                .unwrap_or(self.cursor.height);
+            if !ranges.is_empty() && rows + len > max_rows {
+                break;
+            }
+            ranges.push((start, len));
+            start += len;
+            rows += len;
+        }
+        let gathered: Vec<Series> = RAYON.install(|| {
+            ranges
+                .par_iter()
+                .map(|&(start, len)| d.slice(start as i64, len).to_series())
+                .collect()
+        });
+        self.ahead[i].extend(gathered);
+    }
 }
 
 impl Iterator for RecordBatchIter<'_> {
@@ -2746,18 +2805,44 @@ impl Iterator for RecordBatchIter<'_> {
         self.offset += length;
 
         // A dictionary column's codes need not have the chunks of the other columns.
-        let to_arrow = |c: &Column| match c.as_series() {
-            Some(s) => s.to_arrow(idx, self.compat_level),
-            None => c
+        // The values of this batch only: a cached materialization is sliced, else the codes of
+        // the batch are gathered, so nothing but a few batches ahead is held.
+        let df = self.df;
+        let mut values: Vec<Option<Series>> = vec![None; df.width()];
+        for (i, c) in df.columns().iter().enumerate() {
+            let Some(d) = c.as_dictionary_column() else {
+                continue;
+            };
+            values[i] = Some(match d.lazy_as_materialized_series() {
+                Some(m) => m.slice(offset as i64, length),
+                None => {
+                    if self.ahead[i].is_empty() {
+                        self.gather_ahead(i, d, idx, offset);
+                    }
+                    self.ahead[i].pop_front().unwrap()
+                },
+            });
+        }
+        let to_arrow = |(i, c): (usize, &Column)| match (c.as_series(), c.as_dictionary_column()) {
+            (Some(s), _) => s.to_arrow(idx, self.compat_level),
+            (None, Some(_)) => {
+                let part = values[i].clone().unwrap();
+                if part.n_chunks() > 1 {
+                    part.rechunk().to_arrow(0, self.compat_level)
+                } else {
+                    part.to_arrow(0, self.compat_level)
+                }
+            },
+            (None, None) => c
                 .slice(offset as i64, length)
                 .rechunk_to_arrow(self.compat_level),
         };
 
         let batch_cols: Vec<ArrayRef> = if self.parallel {
-            let iter = self.df.columns().par_iter().map(to_arrow);
+            let iter = self.df.columns().par_iter().enumerate().map(to_arrow);
             RAYON.install(|| iter.collect())
         } else {
-            self.df.columns().iter().map(to_arrow).collect()
+            self.df.columns().iter().enumerate().map(to_arrow).collect()
         };
 
         Some(RecordBatch::new(length, self.schema.clone(), batch_cols))

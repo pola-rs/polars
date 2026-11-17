@@ -11,7 +11,7 @@ import decimal
 import os
 import subprocess
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pyarrow as pa
@@ -31,6 +31,12 @@ if TYPE_CHECKING:
 LONG = [
     f"https://example.com/section-{i:03d}/item-page-{i * 7:05d}/view" for i in range(50)
 ]
+
+
+def _from_arrow(table: pa.Table) -> pl.DataFrame:
+    out = pl.from_arrow(table)
+    assert isinstance(out, pl.DataFrame)
+    return out
 
 
 def _df(n: int = 20_000, with_nulls: bool = True) -> pl.DataFrame:
@@ -284,7 +290,9 @@ def test_dictionary_codes_apply_scalar_length(
     df = pl.DataFrame({"s": ["a", "b", None, "c"] * 64})
     path = _write(df, tmp_path / "f.parquet")
     # Collect one batch so the scan's morsel size cannot affect expression lengths.
-    (coded,) = pl.scan_parquet(path).collect_batches(chunk_size=df.height)
+    (coded,) = pl.scan_parquet(path).collect_batches(
+        chunk_size=df.height, engine="streaming"
+    )
     repeated = pl.repeat("x", length)
     args = [pl.col("s"), repeated] if dictionary_first else [repeated, pl.col("s")]
     expr = pl.concat_str(args, separator=":")
@@ -302,7 +310,9 @@ def test_dictionary_codes_batches_with_chunked_columns(tmp_path: Path) -> None:
     df = pl.DataFrame({"k": [LONG[i % 7] for i in range(4000)], "v": range(4000)})
     path = _write(df, tmp_path / "f.parquet", row_group_size=4000)
     # Two batches of one row group share its dictionary; `v` gets two chunks.
-    batches = list(pl.scan_parquet(path).collect_batches(chunk_size=1000))
+    batches = list(
+        pl.scan_parquet(path).collect_batches(chunk_size=1000, engine="streaming")
+    )
     out = pl.concat(batches, rechunk=False)
     assert_frame_equal(out, df)
     assert_frame_equal(pl.from_arrow(out.to_arrow()), df)  # type: ignore[arg-type]
@@ -327,7 +337,9 @@ def test_dictionary_codes_join_with_unaligned_chunks(
         payload = payload.scatter([1, 129], None)
     plain = payload.to_frame()
     path = _write(plain, tmp_path / "f.parquet", row_group_size=256)
-    coded = next(pl.scan_parquet(path).collect_batches(chunk_size=256)).rechunk()
+    coded = next(
+        pl.scan_parquet(path).collect_batches(chunk_size=256, engine="streaming")
+    ).rechunk()
     if split_payload:
         # Two payload chunks whose boundaries differ from the key's two chunks.
         coded = pl.concat([coded.head(64), coded.slice(64)], rechunk=False)
@@ -616,14 +628,14 @@ def test_dictionary_codes_set_sorted_is_kept(tmp_path: Path, engine: str) -> Non
 
 
 # Binary columns are decoded from a dictionary too, whether or not they are UTF-8.
-BLONG = [
+BIN_LONG = [
     LONG[i].encode() + (b"\xff" if i % 3 == 0 else b"") + bytes([i]) for i in range(50)
 ]
 
 
 def _bdf(n: int = 20_000, with_nulls: bool = True) -> pl.DataFrame:
     idx = pl.int_range(n, eager=True)
-    k = pl.Series(BLONG, dtype=pl.Binary).gather(idx.hash(1) % len(BLONG))
+    k = pl.Series(BIN_LONG, dtype=pl.Binary).gather(idx.hash(1) % len(BIN_LONG))
     s = pl.Series([bytes([i, 0xFE]) for i in range(7)], dtype=pl.Binary).gather(
         idx.hash(2) % 7
     )
@@ -655,20 +667,20 @@ BINARY_QUERIES: dict[str, Callable[[pl.LazyFrame], pl.LazyFrame]] = {
     "encode_then_group": lambda lf: (
         lf.with_columns(pl.col("k").bin.encode("hex")).group_by("k").agg(pl.sum("v"))
     ),
-    "filter_eq": lambda lf: lf.filter(pl.col("k") == BLONG[3]),
+    "filter_eq": lambda lf: lf.filter(pl.col("k") == BIN_LONG[3]),
     "compare_constant": lambda lf: lf.select(
-        (pl.col("k") == BLONG[3]).alias("eq"),
-        (pl.col("k") != BLONG[3]).alias("ne"),
+        (pl.col("k") == BIN_LONG[3]).alias("eq"),
+        (pl.col("k") != BIN_LONG[3]).alias("ne"),
         (pl.col("k") == b"absent").alias("eq_absent"),
-        (pl.col("k") < BLONG[10]).alias("lt"),
-        (pl.col("k") >= BLONG[10]).alias("ge"),
-        (pl.lit(BLONG[5]) > pl.col("k")).alias("lit_gt"),
-        pl.col("k").eq_missing(BLONG[3]).alias("eq_missing"),
-        pl.col("k").ne_missing(BLONG[3]).alias("ne_missing"),
+        (pl.col("k") < BIN_LONG[10]).alias("lt"),
+        (pl.col("k") >= BIN_LONG[10]).alias("ge"),
+        (pl.lit(BIN_LONG[5]) > pl.col("k")).alias("lit_gt"),
+        pl.col("k").eq_missing(BIN_LONG[3]).alias("eq_missing"),
+        pl.col("k").ne_missing(BIN_LONG[3]).alias("ne_missing"),
         (pl.col("k") == pl.lit(None, dtype=pl.Binary)).alias("eq_null"),
         (pl.col("s") == bytes([2, 0xFE])).alias("s_eq"),
     ),
-    "filter_is_in": lambda lf: lf.filter(pl.col("k").is_in(BLONG[:5])),
+    "filter_is_in": lambda lf: lf.filter(pl.col("k").is_in(BIN_LONG[:5])),
     "filter_other": lambda lf: lf.filter(pl.col("v") < 10),
     "slice": lambda lf: lf.slice(2_500, 1_000),
     "head": lambda lf: lf.head(5),
@@ -718,50 +730,17 @@ def test_dictionary_codes_are_kept_for_string_and_binary(
     df = pl.DataFrame({"k": pl.Series(values).cast(dtype)})
     path = _write_binary(df, tmp_path / "f.parquet", row_group_size=n)
     # `collect` materializes its output; batches keep the codes.
-    (out,) = pl.scan_parquet(path).collect_batches(chunk_size=n)
+    (out,) = pl.scan_parquet(path).collect_batches(chunk_size=n, engine="streaming")
     assert out.schema == df.schema
     # Before comparing, which may cache a materialization that counts toward the size.
     assert out.estimated_size() < 8 * n
     assert_frame_equal(out, df)
 
 
-@pytest.mark.parametrize("dtype", [pl.String, pl.Int64, pl.Datetime("us")])
-def test_dictionary_codes_collect_reads_flat_batches_keep_codes(
-    tmp_path: Path, dtype: pl.DataType
-) -> None:
-    # A scan that only feeds `collect` (through projections) has no use for codes and reads
-    # flat; the result must equal the codes-off one. Batches keep codes (see
-    # `test_dictionary_codes_are_kept_for_string_and_binary`).
-    n = 40_000
-    if dtype == pl.String:
-        values = pl.Series([LONG[i % 50] for i in range(n)])
-    else:
-        values = (pl.int_range(n, eager=True) % 50 * 1_000_003).cast(dtype)
-    df = pl.DataFrame({"c": values, "v": pl.int_range(n, eager=True)})
-    path = _write_binary(df, tmp_path / "f.parquet", row_group_size=10_000)
-    lf = pl.scan_parquet(path)
-    for q in [
-        lf,
-        lf.select("c"),
-        lf.select("v", "c"),
-        lf.filter(pl.col("v") % 3 == 0).select("c"),
-        lf.head(15_000),
-    ]:
-        expected = q.collect(engine="in-memory")
-        assert_frame_equal(q.collect(engine="streaming"), expected)
-        assert_frame_equal(_collect_as_batches(q), expected)
-    out = lf.collect(engine="streaming")
-    assert_frame_equal(out, df)
-    assert out["c"].to_frame().estimated_size() >= 8 * n
-    batches = list(lf.select("c").collect_batches(chunk_size=10_000))
-    assert len(batches) == 4
-    assert_frame_equal(pl.concat(batches), df.select("c"))
-
-
 def test_dictionary_codes_binary_join(tmp_path: Path) -> None:
     df = _bdf()
     dim = pl.DataFrame(
-        {"k": BLONG[::2] + [b"missing"], "attr": range(len(BLONG[::2]) + 1)},
+        {"k": BIN_LONG[::2] + [b"missing"], "attr": range(len(BIN_LONG[::2]) + 1)},
         schema_overrides={"k": pl.Binary},
     )
     fact_path = _write_binary(df, tmp_path / "fact.parquet")
@@ -789,7 +768,7 @@ def test_dictionary_codes_binary_concat_different_dictionaries(tmp_path: Path) -
         df = pl.DataFrame(
             {
                 "k": pl.Series(
-                    [BLONG[j + 5 * i] for j in range(10)] * 300, dtype=pl.Binary
+                    [BIN_LONG[j + 5 * i] for j in range(10)] * 300, dtype=pl.Binary
                 ),
                 "v": range(3000),
             }
@@ -819,7 +798,7 @@ def test_dictionary_codes_binary_dictionary_and_plain_row_groups(
     n = 30_000
     # Low cardinality, then unique values: the writer falls back to PLAIN part-way,
     # and later row groups are PLAIN entirely.
-    vals = [BLONG[i % 10] for i in range(n // 2)] + [
+    vals = [BIN_LONG[i % 10] for i in range(n // 2)] + [
         b"\xff" + f"u{i:08d}".encode() for i in range(n // 2)
     ]
     df = pl.DataFrame({"k": pl.Series(vals, dtype=pl.Binary), "v": range(n)})
@@ -900,7 +879,7 @@ def test_dictionary_codes_binary_sink_parquet(
     path = _write_binary(df, tmp_path / "f.parquet")
 
     def q(lf: pl.LazyFrame) -> pl.LazyFrame:
-        return lf.filter(pl.col("k").is_in(BLONG[3:5]) | pl.col("k").is_null())
+        return lf.filter(pl.col("k").is_in(BIN_LONG[3:5]) | pl.col("k").is_null())
 
     out_path = tmp_path / "out.parquet"
     q(pl.scan_parquet(path)).sink_parquet(
@@ -949,7 +928,7 @@ def test_dictionary_codes_binary_disabled_gives_equal_results(tmp_path: Path) ->
         "out = lf.group_by('k').agg(pl.sum('v'), pl.len()).sort('k')\n"
         "out.collect().write_ipc(sys.argv[2])\n"
         "lf.filter(pl.col('k') == lf.head(1).collect()['k'][0]).collect().write_ipc(sys.argv[3])\n"
-        "batches = lf.collect_batches(chunk_size=1_000_000)\n"
+        "batches = lf.collect_batches(chunk_size=1_000_000, engine='streaming')\n"
         "print(sum(b.estimated_size() for b in batches))\n"
     )
     results = {}
@@ -999,7 +978,7 @@ def test_dictionary_codes_concat_string_with_binary(
 ) -> None:
     s = pl.DataFrame({"k": [LONG[i % 7] for i in range(3000)]})
     b = pl.DataFrame(
-        {"k": pl.Series([BLONG[i % 7] for i in range(3000)], dtype=pl.Binary)}
+        {"k": pl.Series([BIN_LONG[i % 7] for i in range(3000)], dtype=pl.Binary)}
     )
     s_path = _write(s, tmp_path / "s.parquet")
     b_path = _write_binary(b, tmp_path / "b.parquet")
@@ -1060,14 +1039,18 @@ def test_dictionary_codes_random_function_is_not_evaluated_per_distinct_value(
     path = _write(pl.DataFrame({"k": k}), tmp_path / "f.parquet")
     df = pl.DataFrame({"k": k})
     split = pl.col("k").str.split("/")
-    # Equal rows are sampled one by one: neighbouring rows are rarely sampled alike (1 in 6
-    # for one element of 6; a value evaluated once would give all of them the same).
+    # Equal rows are sampled one by one: neighbouring rows are rarely sampled alike (1
+    # in 6 for one element of 6; a value evaluated once would give all of them the
+    # same).
     for e in [split.list.sample(n=1), split.list.sample(fraction=1.0, shuffle=True)]:
         out = pl.scan_parquet(path).select(r=e).collect(engine=engine)  # type: ignore[call-overload]
         r = out["r"].list.join(",").drop_nulls()
         assert (r == r.shift(1)).drop_nulls().mean() < 0.5
     # A seeded sample is the one of the flat column.
-    for e in [split.list.sample(n=2, seed=0), split.list.sample(n=2, seed=3).list.len()]:
+    for e in [
+        split.list.sample(n=2, seed=0),
+        split.list.sample(n=2, seed=3).list.len(),
+    ]:
         out = pl.scan_parquet(path).select(e).collect(engine=engine)  # type: ignore[call-overload]
         assert_frame_equal(out, df.select(e))
 
@@ -1116,16 +1099,18 @@ def test_dictionary_codes_streaming_on_a_non_byte_dictionary(tmp_path: Path) -> 
         "join": lambda lf: lf.select(n_, "v").join(dim.lazy(), on="n", how="left"),
         "unique": lambda lf: lf.select(n_).unique(),
     }
-    for name, q in queries.items():
+    for q in queries.values():
         expected = q(df.lazy()).collect()
         out = q(pl.scan_parquet(path)).collect(engine="streaming")
         assert_frame_equal(out, expected, check_row_order=False)
 
 
 @pytest.mark.parametrize("dim_on_left", [False, True])
-def test_dictionary_codes_join_runtime_filter(tmp_path: Path, dim_on_left: bool) -> None:
-    # A forced hash join publishes its build keys as a dynamic predicate on the probe scan,
-    # which is evaluated on a dictionary-coded key.
+def test_dictionary_codes_join_runtime_filter(
+    tmp_path: Path, dim_on_left: bool
+) -> None:
+    # A forced hash join publishes its build keys as a dynamic predicate on the probe
+    # scan, which is evaluated on a dictionary-coded key.
     df = _df()
     fact = pl.scan_parquet(_write(df, tmp_path / "fact.parquet"))
     dim = pl.LazyFrame({"k": LONG[:5], "d": range(5)}).filter(pl.col("d") >= 0)
@@ -1139,7 +1124,7 @@ def test_dictionary_codes_join_runtime_filter(tmp_path: Path, dim_on_left: bool)
     assert_frame_equal(out, expected, check_row_order=False)
 
 
-# ---------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Top-level columns of every type that parquet dictionary-encodes.
 
 TOPLEVEL_ROWS = 40_000
@@ -1164,11 +1149,13 @@ def _base_values() -> dict[str, Callable[[], pa.Array]]:
         "i64": lambda: pa.array(k.astype(np.int64) * 10**12 - 10**13),
         "u8": lambda: pa.array((k * 5).astype(np.uint8)),
         "u16": lambda: pa.array((k * 1_300).astype(np.uint16)),
-        "u32": lambda: pa.array((k.astype(np.uint32) * np.uint32(87_000_001))),
+        "u32": lambda: pa.array(k.astype(np.uint32) * np.uint32(87_000_001)),
         "u64": lambda: pa.array(k.astype(np.uint64) * np.uint64(2**58)),
         "date": lambda: pa.array((k * 1_000 - 5_000).astype(np.int32), pa.date32()),
         "time_us": lambda: pa.array(k.astype(np.int64) * 1_700_001, pa.time64("us")),
-        "time_ns": lambda: pa.array(k.astype(np.int64) * 1_234_567_891, pa.time64("ns")),
+        "time_ns": lambda: pa.array(
+            k.astype(np.int64) * 1_234_567_891, pa.time64("ns")
+        ),
         "time_ms": lambda: pa.array((k * 1_000_007).astype(np.int32), pa.time32("ms")),
         "dt_us_tz": lambda: pa.array(
             k.astype(np.int64) * 10**11 + 1_700_000_000_000_000,
@@ -1191,9 +1178,7 @@ def _base_values() -> dict[str, Callable[[], pa.Array]]:
         "f16": lambda: pa.array(floats.astype(np.float16)),
         "dec9": lambda: pa.array(decimals, pa.decimal128(9, 2)),
         "dec18": lambda: pa.array(decimals, pa.decimal128(18, 2)),
-        "dec38": lambda: pa.array(
-            [d * 10**15 for d in decimals], pa.decimal128(38, 2)
-        ),
+        "dec38": lambda: pa.array([d * 10**15 for d in decimals], pa.decimal128(38, 2)),
         "fsb16": lambda: pa.array([bytes([i + 1]) * 16 for i in k], pa.binary(16)),
         "fsb5": lambda: pa.array([bytes([i + 1]) * 5 for i in k], pa.binary(5)),
         "large_binary": lambda: pa.array(
@@ -1261,8 +1246,9 @@ def toplevel_files(
 
 
 def test_dictionary_codes_toplevel_types_are_kept(tmp_path: Path) -> None:
-    # Held as codes, a column takes a different size than read flat, with the same dtype. One row
-    # group, as batches of different dictionaries of such values are materialized together.
+    # Held as codes, a column takes a different size than read flat, with the same
+    # dtype. One row group, as batches of different dictionaries of such values are
+    # materialized together.
     names = TOPLEVEL_TYPES
     paths = [
         str(
@@ -1278,7 +1264,7 @@ def test_dictionary_codes_toplevel_types_are_kept(tmp_path: Path) -> None:
     script = (
         "import polars as pl, sys\n"
         "for p in sys.argv[1:]:\n"
-        "    (b,) = pl.scan_parquet(p).collect_batches(chunk_size=40_000)\n"
+        "    (b,) = pl.scan_parquet(p).collect_batches(chunk_size=40_000, engine='streaming')\n"
         "    print(p, b.schema['c'], b.select('c').estimated_size(), b.height, sep='\\t')\n"
     )
     sizes = {}
@@ -1301,6 +1287,150 @@ def test_dictionary_codes_toplevel_types_are_kept(tmp_path: Path) -> None:
         assert on[3] == off[3] == "40000"
 
 
+def _row_group_shifted_table(name: str, with_nulls: bool) -> pa.Table:
+    """Each row group uses another subset of the values: their dictionaries differ."""
+    n = TOPLEVEL_ROWS
+    group = 8_000
+    if name == "str":
+        dictionary = pa.array([f"value-{i:04d}" for i in range(TOPLEVEL_CARD)])
+    elif name == "bin":
+        dictionary = pa.array([f"value-{i:04d}".encode() for i in range(TOPLEVEL_CARD)])
+    else:
+        dictionary = _base_values()[name]()
+    i = np.arange(n)
+    idx = pa.array(((i // group) * 11 + (i * 7919) % 20) % TOPLEVEL_CARD)
+    col = dictionary.take(idx)
+    if with_nulls:
+        mask = np.zeros(n, dtype=bool)
+        mask[::97] = True
+        col = pc.if_else(pa.array(mask), pa.scalar(None, col.type), col)
+    return pa.table({"c": col, "v": pa.array(i.astype(np.int64) % 100)})
+
+
+def test_dictionary_codes_collect_keeps_codes_across_row_groups(
+    tmp_path: Path,
+) -> None:
+    # `collect` concatenates the dictionaries of the row groups and shifts their codes;
+    # the frame equals the flat read, and a coded column has another size than a flat
+    # one.
+    names = ["str", "bin", *TOPLEVEL_TYPES]
+    paths = []
+    for name in names:
+        for with_nulls in [False, True]:
+            path = tmp_path / f"{name}-{int(with_nulls)}.parquet"
+            _write_toplevel(
+                _row_group_shifted_table(name, with_nulls),
+                path,
+                name,
+                row_group_size=8_000,
+            )
+            paths.append(path)
+    script = (
+        "import polars as pl, sys\n"
+        "for i, p in enumerate(sys.argv[2:]):\n"
+        "    df = pl.scan_parquet(p).collect()\n"
+        "    print(df.schema['c'], df.select('c').estimated_size(), sep='\\t')\n"
+        "    df.write_ipc(f'{sys.argv[1]}/{sys.argv[1][-1]}-{i}.ipc')\n"
+    )
+    sizes = {}
+    for flag in ["1", "0"]:
+        out_dir = tmp_path / f"out{flag}"
+        out_dir.mkdir()
+        out = subprocess.run(
+            [sys.executable, "-c", script, str(out_dir), *map(str, paths)],
+            env={**os.environ, "POLARS_DICT_CODES": flag},
+            capture_output=True,
+            text=True,
+        )
+        assert out.returncode == 0, out.stderr
+        sizes[flag] = [line.split("\t") for line in out.stdout.splitlines()]
+    for i, path in enumerate(paths):
+        name = path.name.rsplit("-", 1)[0]
+        on, off = sizes["1"][i], sizes["0"][i]
+        assert on[0] == off[0], f"dtype of {path.name}"
+        if name in NARROW_TYPES:
+            assert on[1] == off[1], f"{path.name} was kept as codes"
+        else:
+            assert on[1] != off[1], f"{path.name} was not kept as codes"
+        assert_frame_equal(
+            pl.read_ipc(tmp_path / "out1" / f"1-{i}.ipc"),
+            pl.read_ipc(tmp_path / "out0" / f"0-{i}.ipc"),
+        )
+
+
+def test_dictionary_codes_collect_falls_back_when_the_dictionaries_do_not_pay_off(
+    tmp_path: Path,
+) -> None:
+    # Row groups of disjoint values, of which a slice takes a few rows each: the merged
+    # dictionary has more values than the rows can use, so the morsels are materialized.
+    groups, rows, card = 20, 4_000, 400
+    path = tmp_path / "f.parquet"
+    values = [f"g{g:02d}-{i % card:04d}" for g in range(groups) for i in range(rows)]
+    pl.DataFrame({"c": values, "v": list(range(groups * rows))}).write_parquet(
+        path, row_group_size=rows
+    )
+    queries: list[Callable[[pl.LazyFrame], pl.LazyFrame]] = [
+        lambda lf: lf,
+        lambda lf: lf.filter(pl.col("v") % 1_000 == 0),
+        lambda lf: lf.slice(3_990, 40),
+    ]
+    for q in queries:
+        expected = q(
+            pl.DataFrame({"c": values, "v": list(range(groups * rows))}).lazy()
+        )
+        assert_frame_equal(
+            q(pl.scan_parquet(path)).collect(), expected.collect(), check_row_order=True
+        )
+
+
+@pytest.mark.parametrize("flat_first", [False, True])
+@pytest.mark.parametrize("dtype", [pl.String, pl.Int64])
+def test_dictionary_codes_collect_mixes_coded_and_flat_files(
+    tmp_path: Path, flat_first: bool, dtype: pl.DataType
+) -> None:
+    # A file that is not dictionary encoded gives a flat column among coded ones: the
+    # chunks arrive in any order, and the result equals the flat read whichever comes
+    # first.
+    n = 30_000
+    values = pl.int_range(n, eager=True) % 40
+    c = values.cast(pl.String) if dtype == pl.String else values.cast(dtype) * 1_000_003
+    df = pl.DataFrame({"c": c, "v": pl.int_range(n, eager=True)})
+    paths = []
+    for i, use_dictionary in enumerate([not flat_first, flat_first, True]):
+        path = tmp_path / f"{i}.parquet"
+        pq.write_table(
+            df.to_arrow(), path, use_dictionary=use_dictionary, row_group_size=5_000
+        )
+        paths.append(path)
+    out = pl.scan_parquet(paths).select("c").collect()
+    assert_frame_equal(out, pl.concat([df.select("c")] * 3))
+    assert_frame_equal(
+        pl.from_arrow(out.to_arrow()),  # type: ignore[arg-type]
+        pl.concat([df.select("c")] * 3),
+    )
+    assert out.get_column("c").n_chunks() >= 1
+
+
+def test_dictionary_codes_to_arrow_of_collected_frame(tmp_path: Path) -> None:
+    n = 40_000
+    df = pl.DataFrame(
+        {
+            "c": (pl.int_range(n, eager=True) % 50).cast(pl.String),
+            "d": (pl.int_range(n, eager=True) % 30 * 1_000_003).cast(pl.Datetime("us")),
+        }
+    )
+    path = tmp_path / "f.parquet"
+    pq.write_table(df.to_arrow(), path, use_dictionary=True, row_group_size=10_000)
+    out = pl.scan_parquet(path).collect()
+    table = out.to_arrow()
+    assert table.num_rows == n
+    assert _from_arrow(table).equals(df)
+    assert _from_arrow(table.slice(5, 3)).equals(df.slice(5, 3))
+    only = out.select("d")
+    assert only.to_arrow().num_rows == n
+    assert _from_arrow(only.to_arrow()).equals(df.select("d"))
+
+
 TOPLEVEL_QUERIES: dict[str, Callable[[pl.LazyFrame, object], pl.LazyFrame]] = {
     "scan": lambda lf, v: lf,
     "filter_eq": lambda lf, v: lf.filter(pl.col("c") == pl.lit(v)),
@@ -1317,7 +1447,9 @@ TOPLEVEL_QUERIES: dict[str, Callable[[pl.LazyFrame, object], pl.LazyFrame]] = {
     "n_unique": lambda lf, v: lf.select(pl.col("c").n_unique()),
     "sort": lambda lf, v: lf.sort("c", "v", nulls_last=True, maintain_order=True),
     "min_max": lambda lf, v: lf.select(pl.col("c").min(), pl.col("c").max().alias("x")),
-    "first_last": lambda lf, v: lf.select(pl.col("c").first(), pl.col("c").last().alias("l")),
+    "first_last": lambda lf, v: lf.select(
+        pl.col("c").first(), pl.col("c").last().alias("l")
+    ),
     "is_null": lambda lf, v: lf.select(pl.col("c").is_null()),
     "fill_null": lambda lf, v: lf.select(pl.col("c").fill_null(pl.lit(v))),
     "slice": lambda lf, v: lf.slice(5_000, 12_345),
@@ -1343,23 +1475,12 @@ def test_dictionary_codes_toplevel_queries(
     v = expected_df["c"].drop_nulls()[7]
     q = TOPLEVEL_QUERIES[name]
     same = _same_outcome_unordered if name in UNORDERED_TOPLEVEL else _same_outcome
-    # `collect` of a scan feeding the sink reads flat; batches keep codes, so predicates and
-    # slices pushed into the scan also run the coded decode.
-    collectors: dict[str, Callable[[pl.LazyFrame], pl.DataFrame]] = {
-        "streaming": lambda lf: lf.collect(engine="streaming"),
-        "in-memory": lambda lf: lf.collect(engine="in-memory"),
-        "batches": _collect_as_batches,
-    }
-    for collect in collectors.values():
-        same(
-            lambda: collect(q(pl.scan_parquet(path), v)),  # type: ignore[arg-type]
-            lambda: q(expected_df.lazy(), v).collect(),
-        )
+    for engine in ["streaming", "in-memory"]:
 
+        def coded(engine: Any = engine) -> pl.DataFrame:
+            return q(pl.scan_parquet(path), v).collect(engine=engine)
 
-def _collect_as_batches(lf: pl.LazyFrame) -> pl.DataFrame:
-    batches = list(lf.collect_batches(chunk_size=7_000))
-    return pl.concat(batches) if batches else lf.head(0).collect()
+        same(coded, lambda: q(expected_df.lazy(), v).collect())
 
 
 def _same_outcome_unordered(
@@ -1395,14 +1516,19 @@ def test_dictionary_codes_toplevel_join(
             .collect(engine=engine)  # type: ignore[call-overload]
         )
         assert_frame_equal(
-            out, df.join(dim, on="c", how=how), check_row_order=False  # type: ignore[arg-type]
+            out,
+            df.join(dim, on="c", how=how),  # type: ignore[arg-type]
+            check_row_order=False,
         )
     # Joining on a String built from the column against a String table.
     keys = pl.DataFrame({"s": df["c"].drop_nulls().unique().cast(pl.String)[:20]})
     keys = keys.with_row_index("attr")
-    q = lambda lf: lf.with_columns(s=pl.col("c").cast(pl.String)).join(  # noqa: E731
-        keys.lazy(), on="s", how="left"
-    )
+
+    def q(lf: pl.LazyFrame) -> pl.LazyFrame:
+        return lf.with_columns(s=pl.col("c").cast(pl.String)).join(
+            keys.lazy(), on="s", how="left"
+        )
+
     assert_frame_equal(
         q(pl.scan_parquet(path)).collect(engine="streaming"),
         q(df.lazy()).collect(),
@@ -1439,7 +1565,10 @@ ELEMENTWISE: dict[str, dict[str, Callable[[], pl.Expr]]] = {
         "cast_string": lambda: pl.col("c").cast(pl.String),
         "shift_right": lambda: pl.col("c") // 2,
     },
-    "i8": {"neg": lambda: -pl.col("c"), "cast_string": lambda: pl.col("c").cast(pl.String)},
+    "i8": {
+        "neg": lambda: -pl.col("c"),
+        "cast_string": lambda: pl.col("c").cast(pl.String),
+    },
     "dec38": {
         "mul": lambda: pl.col("c") * 2,
         "cast_string": lambda: pl.col("c").cast(pl.String),
@@ -1477,23 +1606,33 @@ def test_dictionary_codes_toplevel_elementwise_chains(
 ) -> None:
     path, df = toplevel_files[col, with_nulls]
     e = ELEMENTWISE[col][name]()
-    for tail in [
+    tails: list[Callable[[pl.LazyFrame], pl.LazyFrame]] = [
         lambda lf: lf.select(e),
         lambda lf: lf.select(e.alias("k"), "v").group_by("k").agg(pl.sum("v")),
         lambda lf: lf.select(e.alias("k")).unique(),
         lambda lf: lf.filter(pl.col("v") < 10).select(e),
-    ]:
+    ]
+    for tail in tails:
         for engine in ["streaming", "in-memory"]:
-            _same_outcome_unordered(
-                lambda: tail(pl.scan_parquet(path)).collect(engine=engine),  # type: ignore[arg-type]
-                lambda: tail(df.lazy()).collect(),
-            )
+
+            def coded(
+                tail: Callable[[pl.LazyFrame], pl.LazyFrame] = tail,
+                engine: Any = engine,
+            ) -> pl.DataFrame:
+                return tail(pl.scan_parquet(path)).collect(engine=engine)
+
+            def plain(
+                tail: Callable[[pl.LazyFrame], pl.LazyFrame] = tail,
+            ) -> pl.DataFrame:
+                return tail(df.lazy()).collect()
+
+            _same_outcome_unordered(coded, plain)
 
 
 @pytest.mark.parametrize("col", ["i64", "dt_us_tz", "dec38", "f64", "large_binary"])
 def test_dictionary_codes_toplevel_plain_fallback(tmp_path: Path, col: str) -> None:
-    # Low cardinality, then unique values: the writer falls back to PLAIN part-way, so the
-    # chunk is read flat.
+    # Low cardinality, then unique values: the writer falls back to PLAIN part-way, so
+    # the chunk is read flat.
     n = 30_000
     table = _toplevel_table(col, True)
     base = _base_values()[col]()
@@ -1515,7 +1654,7 @@ def test_dictionary_codes_toplevel_plain_fallback(tmp_path: Path, col: str) -> N
     first = base.take(pa.array(np.arange(n // 2) % TOPLEVEL_CARD))
     full = pa.chunked_array([first, uniq]).combine_chunks()
     table = pa.table({"c": full, "v": pa.array(np.arange(n, dtype=np.int64))})
-    expected = pl.from_arrow(table)
+    expected = _from_arrow(table)
     assert isinstance(expected, pl.DataFrame)
     for version in ["1.0", "2.0"]:
         path = _write_toplevel(
@@ -1563,7 +1702,7 @@ def test_dictionary_codes_toplevel_int96(
         use_deprecated_int96_timestamps=True,
         row_group_size=5_000,
     )
-    expected = pl.from_arrow(table)
+    expected = _from_arrow(table)
     assert isinstance(expected, pl.DataFrame)
     lf = pl.scan_parquet(path)
     assert_frame_equal(lf.collect(), expected)
@@ -1583,15 +1722,15 @@ def test_dictionary_codes_toplevel_int96(
 def test_dictionary_codes_toplevel_int96_far_future(
     tmp_path: Path,
 ) -> None:
-    # INT96 values far in the future (Polars reads INT96 as microseconds, so none overflow).
+    # INT96 values far in the future (Polars reads INT96 as microseconds, so none
+    # overflow).
     n = 10_000
     days = np.arange(40)
     vals = pa.array(
-        (days * 86_400 * 10**6 + 1_600_000_000_000_000).astype(np.int64), pa.timestamp("us")
+        (days * 86_400 * 10**6 + 1_600_000_000_000_000).astype(np.int64),
+        pa.timestamp("us"),
     ).cast(pa.timestamp("us"))
-    far = pa.array(
-        [dt.datetime(3000 + i, 1, 1) for i in range(10)], pa.timestamp("us")
-    )
+    far = pa.array([dt.datetime(3000 + i, 1, 1) for i in range(10)], pa.timestamp("us"))
     dictionary = pa.chunked_array([vals, far]).combine_chunks()
     col = dictionary.take(pa.array(np.arange(n) % 50))
     table = pa.table({"c": col, "v": pa.array(np.arange(n) % 100)})
@@ -1640,7 +1779,9 @@ def test_dictionary_codes_toplevel_sink_round_trip(
 
 def test_dictionary_codes_toplevel_float_bits_round_trip(tmp_path: Path) -> None:
     n = 20_000
-    nan_payload = np.array([0x7FF8_0000_0000_0001, 0xFFF8_0000_0000_0002], dtype=np.uint64)
+    nan_payload = np.array(
+        [0x7FF8_0000_0000_0001, 0xFFF8_0000_0000_0002], dtype=np.uint64
+    )
     special = np.concatenate(
         [
             np.array([0.0, -0.0, np.inf, -np.inf, 1.5]).view(np.uint64),
@@ -1672,12 +1813,12 @@ def test_dictionary_codes_toplevel_unaffected_types(tmp_path: Path) -> None:
     )
     path = tmp_path / "f.parquet"
     pq.write_table(table, path, use_dictionary=True)
-    expected = pl.from_arrow(table)
+    expected = _from_arrow(table)
     assert isinstance(expected, pl.DataFrame)
     assert_frame_equal(pl.scan_parquet(path).collect(), expected)
 
 
-# ---------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Writing coded columns of every type as parquet dictionaries.
 
 WRITABLE_DICTIONARIES = [
@@ -1709,7 +1850,11 @@ WRITABLE_DICTIONARIES = [
 
 def _encodings(path: Path, column: int = 0) -> set[str]:
     md = pq.read_metadata(path)
-    return {e for rg in range(md.num_row_groups) for e in md.row_group(rg).column(column).encodings}
+    return {
+        e
+        for rg in range(md.num_row_groups)
+        for e in md.row_group(rg).column(column).encodings
+    }
 
 
 def _single_group_file(tmp_path: Path, name: str, with_nulls: bool) -> Path:
@@ -1728,10 +1873,9 @@ def test_dictionary_codes_sink_writes_non_byte_dictionaries(
     tmp_path: Path, name: str, with_nulls: bool, compression: str
 ) -> None:
     path = _single_group_file(tmp_path, name, with_nulls)
-    expected = pl.from_arrow(pq.read_table(path))
-    assert isinstance(expected, pl.DataFrame)
+    expected = _from_arrow(pq.read_table(path))
     out = tmp_path / "out.parquet"
-    pl.scan_parquet(path).sink_parquet(out, compression=compression)  # type: ignore[arg-type]
+    pl.scan_parquet(path).sink_parquet(out, compression=compression)  # type: ignore[call-overload]
     assert "RLE_DICTIONARY" in _encodings(out), name
     assert_frame_equal(pl.read_parquet(out), expected)
     assert_frame_equal(pl.scan_parquet(out).collect(engine="in-memory"), expected)  # type: ignore[call-overload]
@@ -1741,7 +1885,9 @@ def test_dictionary_codes_sink_writes_non_byte_dictionaries(
     assert_frame_equal(pl.from_arrow(back), expected)  # type: ignore[arg-type]
     # The source's rows after a filter keep only the values they use.
     out2 = tmp_path / "out2.parquet"
-    pl.scan_parquet(path).filter(pl.col("v") < 3).sink_parquet(out2, compression=compression)  # type: ignore[arg-type]
+    pl.scan_parquet(path).filter(pl.col("v") < 3).sink_parquet(  # type: ignore[call-overload]
+        out2, compression=compression
+    )
     assert_frame_equal(pl.read_parquet(out2), expected.filter(pl.col("v") < 3))
 
 
@@ -1758,8 +1904,12 @@ def test_dictionary_codes_sink_distinct_values_are_written_flat(
             pa.timestamp("us", "Europe/Amsterdam"),
         ),
         "f64": pa.array(np.arange(n) * 0.37 + 1e9),
-        "dec38": pa.array([decimal.Decimal(i) / 100 for i in range(n)], pa.decimal128(38, 2)),
-        "large_binary": pa.array([f"u{i:08d}".encode() for i in range(n)], pa.large_binary()),
+        "dec38": pa.array(
+            [decimal.Decimal(i) / 100 for i in range(n)], pa.decimal128(38, 2)
+        ),
+        "large_binary": pa.array(
+            [f"u{i:08d}".encode() for i in range(n)], pa.large_binary()
+        ),
     }[name]
     table = pa.table({"c": uniq})
     path = _write_toplevel(table, tmp_path / "in.parquet", name, row_group_size=n)
@@ -1771,7 +1921,8 @@ def test_dictionary_codes_sink_distinct_values_are_written_flat(
 
 def test_dictionary_codes_sink_writes_each_value_once(tmp_path: Path) -> None:
     out = tmp_path / "out.parquet"
-    # Elementwise results with fewer distinct values than inputs, as `dt.date` of timestamps.
+    # Elementwise results with fewer distinct values than inputs, as `dt.date` of
+    # timestamps.
     n = 40_000
     stamps = pa.array(
         np.arange(500, dtype=np.int64) * 3_600 * 10**6 + 1_700_000_000_000_000,
@@ -1799,11 +1950,15 @@ def test_dictionary_codes_sink_decimal_statistics(tmp_path: Path, name: str) -> 
     n = 20_000
     values = [decimal.Decimal(v) / 100 for v in (-12345, 7, -3, 900, 123, -99999)]
     ty = {"dec9": 9, "dec18": 18, "dec38": 38}[name]
-    col = pa.array(values, pa.decimal128(ty, 2)).take(pa.array(np.arange(n) % len(values)))
+    col = pa.array(values, pa.decimal128(ty, 2)).take(
+        pa.array(np.arange(n) % len(values))
+    )
     path = tmp_path / "in.parquet"
     _write_toplevel(pa.table({"c": col}), path, name, row_group_size=n)
     out = tmp_path / "out.parquet"
-    pl.scan_parquet(path).sink_parquet(out, statistics={"min": True, "max": True, "null_count": True})
+    pl.scan_parquet(path).sink_parquet(
+        out, statistics={"min": True, "max": True, "null_count": True}
+    )
     assert "RLE_DICTIONARY" in _encodings(out)
     stats = pq.read_metadata(out).row_group(0).column(0).statistics
     assert (stats.min, stats.max) == (min(values), max(values))
@@ -1817,31 +1972,48 @@ def test_dictionary_codes_sink_decimal_statistics(tmp_path: Path, name: str) -> 
 def test_dictionary_codes_sink_float_dictionary_is_bit_exact(tmp_path: Path) -> None:
     n = 20_000
     special = np.array(
-        [0x0, 0x8000_0000_0000_0000, 0x7FF0_0000_0000_0000, 0xFFF0_0000_0000_0000, 0x3FF8_0000_0000_0000,
-         0x7FF8_0000_0000_0001, 0xFFF8_0000_0000_0002],
+        [
+            0x0,
+            0x8000_0000_0000_0000,
+            0x7FF0_0000_0000_0000,
+            0xFFF0_0000_0000_0000,
+            0x3FF8_0000_0000_0000,
+            0x7FF8_0000_0000_0001,
+            0xFFF8_0000_0000_0002,
+        ],
         dtype=np.uint64,
     )
     bits = special[np.arange(n) % len(special)]
     path = tmp_path / "in.parquet"
     pq.write_table(
-        pa.table({"c": pa.array(bits.view(np.float64))}), path, use_dictionary=True, row_group_size=n
+        pa.table({"c": pa.array(bits.view(np.float64))}),
+        path,
+        use_dictionary=True,
+        row_group_size=n,
     )
     out = tmp_path / "out.parquet"
     pl.scan_parquet(path).sink_parquet(out)
     assert "RLE_DICTIONARY" in _encodings(out)
     for p in [out, path]:
-        np.testing.assert_array_equal(pl.read_parquet(p)["c"].to_numpy().view(np.uint64), bits)
-        np.testing.assert_array_equal(pq.read_table(p)["c"].to_numpy().view(np.uint64), bits)
+        np.testing.assert_array_equal(
+            pl.read_parquet(p)["c"].to_numpy().view(np.uint64), bits
+        )
+        np.testing.assert_array_equal(
+            pq.read_table(p)["c"].to_numpy().view(np.uint64), bits
+        )
 
 
-# ---------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 # Review leads: sorted flags, extension types, 128-bit values, strict casts.
 
 
 def _coded_batches(path: Path, chunk_size: int) -> pl.DataFrame:
     """The file read as batches, which keep dictionary codes (`collect` reads flat)."""
     return pl.concat(
-        pl.scan_parquet(path).collect_batches(chunk_size=chunk_size), rechunk=True
+        pl.scan_parquet(path).collect_batches(
+            chunk_size=chunk_size, engine="streaming"
+        ),
+        rechunk=True,
     )
 
 
@@ -1864,11 +2036,11 @@ def test_dictionary_codes_keep_the_sorted_flag(tmp_path: Path) -> None:
     script = (
         "import polars as pl, sys\n"
         "lf = pl.scan_parquet(sys.argv[1])\n"
-        "(b,) = lf.collect_batches(chunk_size=100_000)\n"
+        "(b,) = lf.collect_batches(chunk_size=100_000, engine='streaming')\n"
         "print(b['c'].flags['SORTED_ASC'], b['d'].flags['SORTED_ASC'], b.height)\n"
         "o = lf.collect()\n"
         "print(o['c'].flags['SORTED_ASC'], o['d'].flags['SORTED_ASC'])\n"
-        "p = lf.filter(pl.col('d') >= 0).collect_batches(chunk_size=100_000)\n"
+        "p = lf.filter(pl.col('d') >= 0).collect_batches(chunk_size=100_000, engine='streaming')\n"
         "print(pl.concat(p)['c'].flags['SORTED_ASC'])\n"
     )
     out = {}
@@ -1929,13 +2101,11 @@ def test_dictionary_codes_negative_fixed_length_decimals(tmp_path: Path) -> None
     table = pa.table({"c": pa.array(col, pa.decimal128(38, 2))})
     path = tmp_path / "dec.parquet"
     pq.write_table(table, path, row_group_size=n, use_dictionary=True)
-    expected = pl.from_arrow(table)
+    expected = _from_arrow(table)
     assert_frame_equal(pl.scan_parquet(path).collect(), expected)
     coded = _coded_batches(path, n)
     assert_frame_equal(coded, expected)
-    assert coded.select(
-        lo=pl.col("c").min(), hi=pl.col("c").max()
-    ).row(0) == (
+    assert coded.select(lo=pl.col("c").min(), hi=pl.col("c").max()).row(0) == (
         vals[0],
         vals[99],
     )
@@ -1963,6 +2133,106 @@ def test_dictionary_codes_strict_cast_only_on_used_values(tmp_path: Path) -> Non
         assert out.item() == int(df.filter(pl.col("c") < 10)["c"].sum())
         with pytest.raises(pl.exceptions.InvalidOperationError):
             lf.select(pl.col("c").cast(pl.Int8, strict=True)).collect(engine=engine)  # type: ignore[call-overload]
-    # The same on coded batches, as elementwise maps of coded morsels see the dictionary.
+    # The same on coded batches, as elementwise maps of coded morsels see the
+    # dictionary.
     batches = lf.filter(pl.col("c") < 10).select(pl.col("c").cast(pl.Int8, strict=True))
     assert pl.concat(batches.collect_batches(chunk_size=n)).height == 3 * n // 4
+
+
+def test_dictionary_codes_collect_filtered_many_row_groups(tmp_path: Path) -> None:
+    # Each row group has its own large dictionaries, of which a filter keeps 2 rows
+    # each.
+    n_rg, rg = 60, 60_000
+    n = n_rg * rg
+    df = pl.DataFrame(
+        {
+            "k": np.tile(np.arange(rg, dtype=np.int64), n_rg),
+            "i": np.arange(n, dtype=np.int64),
+            "s": [f"value-{j:08d}" for j in range(n)],
+        }
+    )
+    path = tmp_path / "rgs.parquet"
+    df.write_parquet(path, row_group_size=rg)
+    expected = df.filter(pl.col("k") < 2).select("i", "s")
+    for engine in ["streaming", "in-memory"]:
+        out = (
+            pl.scan_parquet(path)
+            .filter(pl.col("k") < 2)
+            .select("i", "s")
+            .collect(engine=engine)  # type: ignore[call-overload]
+        )
+        assert_frame_equal(out, expected)
+    # Unfiltered, the dictionaries are dense enough to be kept.
+    assert_frame_equal(pl.scan_parquet(path).collect(), df)
+
+
+def test_dictionary_codes_collect_column_missing_from_some_files(
+    tmp_path: Path,
+) -> None:
+    n = 5_000
+    a = pl.DataFrame({"x": np.arange(n), "s": [f"v{i % 9}" for i in range(n)]})
+    b = pl.DataFrame({"x": np.arange(n)})
+    paths = []
+    for i, d in enumerate([a, b, a, b]):
+        p = tmp_path / f"f{i}.parquet"
+        d.write_parquet(p)
+        paths.append(p)
+    b_nulls = b.with_columns(s=pl.lit(None, pl.String))
+    expected = pl.concat([a, b_nulls, a, b_nulls])
+    out = pl.scan_parquet(paths, missing_columns="insert").collect()
+    assert_frame_equal(out, expected)
+    only_missing = pl.scan_parquet(
+        [paths[1], paths[3]],
+        schema={"x": pl.Int64, "s": pl.String},
+        missing_columns="insert",
+    ).collect()
+    assert only_missing["s"].null_count() == 2 * n
+    assert only_missing["s"].dtype == pl.String
+
+
+@pytest.mark.parametrize(
+    ("dtypes", "cast_options"),
+    [
+        ([pl.Datetime("us"), pl.Datetime("ns"), pl.Datetime("us")], True),
+        (
+            [
+                pl.Datetime("us", "UTC"),
+                pl.Datetime("us", "Europe/Amsterdam"),
+                pl.Datetime("us", "UTC"),
+            ],
+            True,
+        ),
+        ([pl.Datetime("us"), pl.Datetime("us", "UTC"), pl.Datetime("us")], False),
+        ([pl.Decimal(10, 2), pl.Decimal(12, 3), pl.Decimal(10, 2)], False),
+    ],
+)
+def test_dictionary_codes_collect_files_of_other_dtypes(
+    tmp_path: Path, dtypes: list[pl.DataType], cast_options: bool
+) -> None:
+    # Files whose dictionary columns differ in unit, time zone or precision either error
+    # or are cast, the same with and without codes.
+    n = 5_000
+    idx = np.arange(n) % 7
+    paths = []
+    for i, dtype in enumerate(dtypes):
+        values: list[Any]
+        if isinstance(dtype, pl.Datetime):
+            values = [dt.datetime(2020, 1, 1) + dt.timedelta(days=int(j)) for j in idx]
+        else:
+            values = [decimal.Decimal(int(j)) / 10 for j in idx]
+        p = tmp_path / f"f{i}.parquet"
+        pl.DataFrame({"c": pl.Series(values).cast(dtype)}).write_parquet(p)
+        paths.append(p)
+    kwargs = {}
+    if cast_options:
+        kwargs["cast_options"] = pl.ScanCastOptions(
+            datetime_cast=["nanosecond-downcast", "convert-timezone"]
+        )
+    lf = pl.scan_parquet(paths, **kwargs)  # type: ignore[arg-type]
+    try:
+        expected = lf.collect(engine="in-memory")
+    except pl.exceptions.SchemaError:
+        with pytest.raises(pl.exceptions.SchemaError):
+            lf.collect()
+        return
+    assert_frame_equal(lf.collect(), expected)

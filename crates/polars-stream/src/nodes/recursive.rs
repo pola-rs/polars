@@ -53,7 +53,6 @@ impl RecursiveStep {
             false,
             num_pipelines,
             Some(inputs),
-            false,
         )?;
         Ok(query.execute()?.unwrap_single())
     }

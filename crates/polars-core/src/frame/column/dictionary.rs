@@ -4,12 +4,14 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use polars_arrow::array::{Array, BinaryViewArray, MutableBinaryViewArray, Utf8ViewArray};
 use polars_buffer::Buffer;
-use polars_error::{PolarsResult, polars_ensure};
+use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_utils::aliases::{InitHashMaps, PlHashMap, PlRandomState};
 use polars_utils::pl_str::PlSmallStr;
+use rayon::prelude::*;
 
 use super::{Column, DataType, IntoColumn, Series};
 use crate::prelude::*;
+use crate::runtime::RAYON;
 use crate::series::IsSorted;
 
 static NEXT_DICTIONARY_ID: AtomicU64 = AtomicU64::new(0);
@@ -518,17 +520,48 @@ impl DictionaryColumn {
         self.sorted = sorted;
     }
 
-    /// Gathers the values into a [`Series`].
-    pub fn to_series(&self) -> Series {
+    /// Gathers the values of `codes`, which are in bounds, into a [`Series`] of this column's name.
+    fn gather(&self, codes: &UInt32Chunked) -> Series {
         let values = self.dict.values_series(self.name.clone());
         #[cfg(feature = "bigidx")]
-        let idx = self.codes.cast(&IDX_DTYPE).unwrap();
+        let idx = codes.cast(&IDX_DTYPE).unwrap();
         #[cfg(feature = "bigidx")]
         let idx = idx.idx().unwrap();
         #[cfg(not(feature = "bigidx"))]
-        let idx = &self.codes;
+        let idx = codes;
         // SAFETY: the codes are in bounds (invariant).
-        let mut s = unsafe { values.take_unchecked(idx) };
+        unsafe { values.take_unchecked(idx) }
+    }
+
+    /// Gathers the values into a [`Series`]: chunk by chunk in parallel when there are many rows
+    /// in several chunks, as collected morsels are.
+    pub fn to_series(&self) -> Series {
+        /// Fewer rows are gathered on this thread.
+        const MIN_ROWS_TO_PARALLELIZE: usize = 1 << 17;
+
+        let n_chunks = self.codes.chunks().len();
+        let mut s = if n_chunks > 1 && self.len() >= MIN_ROWS_TO_PARALLELIZE {
+            let mut offset = 0i64;
+            let slices: Vec<UInt32Chunked> = self
+                .codes
+                .chunk_lengths()
+                .map(|len| {
+                    let part = self.codes.slice(offset, len);
+                    offset += len as i64;
+                    part
+                })
+                .collect();
+            let parts: Vec<Series> =
+                RAYON.install(|| slices.par_iter().map(|c| self.gather(c)).collect());
+            let mut parts = parts.into_iter();
+            let mut acc = parts.next().unwrap();
+            for part in parts {
+                acc.append_owned(part).unwrap();
+            }
+            acc
+        } else {
+            self.gather(&self.codes)
+        };
         s.set_sorted_flag(self.sorted);
         s
     }
@@ -661,6 +694,103 @@ impl DictionaryColumn {
         self.sorted = IsSorted::Not;
         self.materialized = Arc::default();
         true
+    }
+
+    /// Concatenates `columns`, of one dtype, without gathering their values: the result's
+    /// dictionary holds each distinct dictionary (by id) of the columns one after the other, and
+    /// their codes, shifted by where their dictionary starts, are chunks of its codes.
+    ///
+    /// Values repeated across the dictionaries are not merged (codes of equal values may differ).
+    /// The shifting runs in parallel, in place in the codes that nothing else holds (a fresh
+    /// buffer costs more than the shift), and skips the first dictionary's columns.
+    ///
+    /// Gives the columns back for columns with a sorted flag (appending their values keeps it
+    /// when the columns continue each other), if the dictionaries have more values than
+    /// `rows / 8` (as materializing is cheaper then), or more than `u32` can number.
+    ///
+    /// The hashes of the merged dictionary's values are not cached.
+    pub fn concat(columns: Vec<DictionaryColumn>) -> Result<Self, Vec<DictionaryColumn>> {
+        let Some(first) = columns.first() else {
+            return Err(columns);
+        };
+        let total_rows: usize = columns.iter().map(|c| c.len()).sum();
+        let mut offset_of_id = PlHashMap::<u64, u32>::new();
+        let mut dicts: Vec<&Arc<SharedDictionary>> = Vec::new();
+        let mut offsets = Vec::with_capacity(columns.len());
+        let mut merged_len = 0usize;
+        for c in &columns {
+            // A sorted flag is kept by appending values, which compares the boundaries.
+            if c.dtype() != first.dtype() || c.sorted != IsSorted::Not {
+                return Err(columns);
+            }
+            let offset = match offset_of_id.get(&c.dict.id) {
+                Some(&o) => o,
+                None => {
+                    let o = merged_len;
+                    merged_len += c.dict.len();
+                    if merged_len > u32::MAX as usize {
+                        return Err(columns);
+                    }
+                    offset_of_id.insert(c.dict.id, o as u32);
+                    dicts.push(&c.dict);
+                    o as u32
+                },
+            };
+            offsets.push(offset);
+        }
+        let dict = if let [only] = dicts.as_slice() {
+            (*only).clone()
+        } else {
+            if merged_len.saturating_mul(MIN_ROWS_PER_MERGED_VALUE) > total_rows {
+                return Err(columns);
+            }
+            let mut values = dicts[0].values.clone();
+            for d in &dicts[1..] {
+                if values.append(&d.values).is_err() {
+                    return Err(columns);
+                }
+            }
+            match SharedDictionary::try_new(values) {
+                Ok(dict) => dict,
+                Err(_) => return Err(columns),
+            }
+        };
+        let name = first.name.clone();
+
+        let parts: Vec<UInt32Chunked> = RAYON.install(|| {
+            columns
+                .into_par_iter()
+                .zip(offsets)
+                .map(|(c, offset)| {
+                    if offset == 0 {
+                        c.codes
+                    } else {
+                        // Null slots may hold any code: they wrap, staying unused.
+                        c.codes
+                            .apply_in_place(move |code| code.wrapping_add(offset))
+                    }
+                })
+                .collect()
+        });
+        let mut parts = parts.into_iter();
+        let mut codes = parts.next().unwrap();
+        for part in parts {
+            codes.append_owned(part).unwrap();
+        }
+        // SAFETY: each valid code is in bounds for its dictionary, which starts at its offset in
+        // the merged one.
+        Ok(unsafe { Self::new_unchecked(name, dict, codes) })
+    }
+
+    /// The codes of this column shifted by `offset`, the start of its dictionary in a merged
+    /// dictionary (see [`DictionaryMerger`]). Shifts in place in codes that nothing else holds.
+    pub fn into_shifted_codes(self, offset: u32) -> UInt32Chunked {
+        if offset == 0 {
+            return self.codes;
+        }
+        // Null slots may hold any code: they wrap, staying unused.
+        self.codes
+            .apply_in_place(move |code| code.wrapping_add(offset))
     }
 
     /// Estimated size of the column, see [`Series::estimated_size`].
@@ -906,6 +1036,192 @@ impl From<DictionaryColumn> for Column {
     fn from(value: DictionaryColumn) -> Self {
         value.into_column()
     }
+}
+
+/// Merges the dictionaries of the chunks of one column, as the chunks arrive: the merged dictionary
+/// holds each distinct dictionary (by id) one after the other, so each chunk's codes only need
+/// shifting by where its dictionary starts, which can be done as it arrives, in parallel with
+/// other chunks arriving. Values repeated across the dictionaries are not merged.
+///
+/// The rows a value of the merged dictionary has to cover.
+const MIN_ROWS_PER_MERGED_VALUE: usize = 8;
+
+/// How far (in rows' worth) the merged dictionary may outgrow the rows seen while chunks arrive,
+/// as chunks of a row group arrive before the rest of its rows.
+pub const MAX_MERGED_SLACK_ROWS: usize = 1 << 24;
+
+/// Chunks the merger cannot take (a sorted flag, another dtype, more values than `u32` numbers)
+/// make it fail for good, see [`Self::register`].
+#[derive(Default, Debug)]
+pub struct DictionaryMerger {
+    dtype: Option<DataType>,
+    offset_of_id: PlHashMap<u64, u32>,
+    dicts: Vec<Arc<SharedDictionary>>,
+    /// Where each of `dicts` starts in the merged dictionary, ascending.
+    offsets: Vec<u32>,
+    merged_len: usize,
+    /// The rows of the chunks registered or skipped so far.
+    rows: usize,
+    failed: bool,
+}
+
+impl DictionaryMerger {
+    /// Whether no dictionary was registered.
+    pub fn is_empty(&self) -> bool {
+        self.dicts.is_empty()
+    }
+
+    /// Whether a column was refused: the others' codes are then not usable on their own.
+    pub fn failed(&self) -> bool {
+        self.failed
+    }
+
+    /// Refuses every column from now on, as for one that cannot be merged.
+    pub fn fail(&mut self) {
+        self.failed = true;
+    }
+
+    /// Counts `rows` rows that need no dictionary (a chunk of nulls).
+    pub fn skip_rows(&mut self, rows: usize) {
+        self.rows += rows;
+    }
+
+    /// Registers the dictionary of `column` and gives where it starts in the merged dictionary,
+    /// for [`DictionaryColumn::into_shifted_codes`]. `None` (and every later call too) if the
+    /// column cannot be merged, or if the merged dictionary outgrows the rows seen so far by
+    /// more than [`MAX_MERGED_SLACK_ROWS`] (rows' worth), as every dictionary registered is held
+    /// until the output is made, however few rows use it.
+    pub fn register(&mut self, column: &DictionaryColumn) -> Option<u32> {
+        if self.failed
+            || column.sorted != IsSorted::Not
+            || self.dtype.as_ref().is_some_and(|d| d != column.dtype())
+        {
+            self.failed = true;
+            return None;
+        }
+        if let Some(&o) = self.offset_of_id.get(&column.dict.id) {
+            self.rows += column.len();
+            return Some(o);
+        }
+        let offset = self.merged_len;
+        let merged_len = offset + column.dict.len();
+        let rows = self.rows + column.len();
+        if merged_len > u32::MAX as usize
+            || merged_len.saturating_mul(MIN_ROWS_PER_MERGED_VALUE)
+                > rows.saturating_add(MAX_MERGED_SLACK_ROWS)
+        {
+            self.failed = true;
+            return None;
+        }
+        self.rows = rows;
+        self.dtype = Some(column.dtype().clone());
+        self.merged_len = merged_len;
+        self.offset_of_id.insert(column.dict.id, offset as u32);
+        self.dicts.push(column.dict.clone());
+        self.offsets.push(offset as u32);
+        Some(offset as u32)
+    }
+
+    /// The values of `codes`, the shifted codes of one registered chunk, gathered from the
+    /// chunk's own dictionary (not the merged one).
+    pub fn gather_chunk(&self, name: PlSmallStr, codes: UInt32Chunked) -> PolarsResult<Series> {
+        let Some(first) = codes.iter().flatten().next() else {
+            let dtype = self.dtype.clone().unwrap_or(DataType::Null);
+            return Ok(Series::full_null(name, codes.len(), &dtype));
+        };
+        let i = self.offsets.partition_point(|&o| o <= first);
+        polars_ensure!(i > 0, ComputeError: "dictionary code outside the merged dictionary");
+        let (dict, offset) = (self.dicts[i - 1].clone(), self.offsets[i - 1]);
+        let codes = if offset == 0 {
+            codes
+        } else {
+            // Null slots may hold any code: they wrap back to what they were.
+            codes.apply_in_place(move |code| code.wrapping_sub(offset))
+        };
+        let col = DictionaryColumn::try_new(name, dict, codes)?;
+        Ok(col.to_series())
+    }
+
+    /// Whether the merged dictionary has at most `rows / 8` values, as it costs more than
+    /// materializing the columns when it has more.
+    pub fn is_dense_enough(&self, rows: usize) -> bool {
+        self.dicts.len() <= 1 || self.merged_len.saturating_mul(MIN_ROWS_PER_MERGED_VALUE) <= rows
+    }
+
+    /// The merged dictionary: the only dictionary registered, if there is just one.
+    pub fn dictionary(&self) -> PolarsResult<Arc<SharedDictionary>> {
+        match self.dicts.as_slice() {
+            [] => polars_bail!(ComputeError: "no dictionary was registered"),
+            [only] => Ok(only.clone()),
+            [first, rest @ ..] => {
+                let mut values = first.values.clone();
+                for d in rest {
+                    values.append(&d.values)?;
+                }
+                SharedDictionary::try_new(values)
+            },
+        }
+    }
+
+    /// The column of `name` with `chunks`, the shifted codes of the registered columns in order.
+    pub fn into_column(
+        &self,
+        name: PlSmallStr,
+        chunks: impl IntoIterator<Item = UInt32Chunked>,
+    ) -> PolarsResult<DictionaryColumn> {
+        let dict = self.dictionary()?;
+        let mut chunks = chunks.into_iter();
+        let mut codes = chunks.next().expect("at least one chunk");
+        for part in chunks {
+            codes.append_owned(part)?;
+        }
+        // SAFETY: each valid code of a chunk is in bounds for its dictionary, which starts at the
+        // offset the chunk was shifted by in the merged one.
+        Ok(unsafe { DictionaryColumn::new_unchecked(name, dict, codes) })
+    }
+}
+
+/// Concatenates `columns` (not empty, of one dtype) vertically. Dictionary columns are
+/// concatenated by their codes ([`DictionaryColumn::concat`]) and, where that does not pay off,
+/// materialized in parallel; other columns are appended one after the other.
+pub fn concat_columns(columns: Vec<Column>) -> Column {
+    try_concat_columns(columns).expect("columns of one dtype")
+}
+
+/// [`concat_columns`], an error if the dtypes differ.
+pub fn try_concat_columns(mut columns: Vec<Column>) -> PolarsResult<Column> {
+    assert!(!columns.is_empty());
+    if columns.len() == 1 {
+        return Ok(columns.pop().unwrap());
+    }
+    if columns.iter().all(|c| c.as_dictionary_column().is_some()) {
+        let coded = columns.into_iter().map(|c| match c {
+            Column::Dictionary(d) => d,
+            _ => unreachable!(),
+        });
+        let columns: Vec<Column> = match DictionaryColumn::concat(coded.collect()) {
+            Ok(out) => return Ok(out.into_column()),
+            Err(coded) => coded.into_iter().map(Column::Dictionary).collect(),
+        };
+        let series: Vec<Series> = RAYON.install(|| {
+            columns
+                .par_iter()
+                .map(|c| c.as_materialized_series().clone())
+                .collect()
+        });
+        let mut series = series.into_iter();
+        let mut acc = series.next().unwrap();
+        for s in series {
+            acc.append_owned(s)?;
+        }
+        return Ok(acc.into_column());
+    }
+    let mut columns = columns.into_iter();
+    let mut acc = columns.next().unwrap();
+    for c in columns {
+        acc.append_owned(c)?;
+    }
+    Ok(acc)
 }
 
 /// Whether dictionary-coded columns are produced and used, `POLARS_DICT_CODES=0` turns them
@@ -1660,5 +1976,270 @@ mod test {
                 .all(|c| c.values().iter().all(|c| (*c as usize) < d.dict().len()))
         );
         d.check_invariants();
+    }
+
+    fn strings_of(c: &Column) -> Vec<Option<String>> {
+        c.as_materialized_series()
+            .str()
+            .unwrap()
+            .iter()
+            .map(|v| v.map(str::to_owned))
+            .collect()
+    }
+
+    /// Concatenates clones, which share their codes' buffers: nothing is shifted in place.
+    fn concat_of(cols: &[&DictionaryColumn]) -> Result<DictionaryColumn, Vec<DictionaryColumn>> {
+        DictionaryColumn::concat(cols.iter().map(|c| (*c).clone()).collect())
+    }
+
+    #[test]
+    fn concat_shifts_unshared_codes_in_place() {
+        let rows =
+            |n: usize, k: u32| -> Vec<Option<u32>> { (0..n as u32).map(|i| Some(i % k)).collect() };
+        let make = || {
+            vec![
+                dict_column(&["a", "b"], &rows(40, 2)),
+                dict_column(&["c", "d"], &rows(40, 2)),
+                dict_column(&["e", "f"], &rows(40, 2)),
+            ]
+        };
+        let expected: Vec<_> = make()
+            .iter()
+            .flat_map(|c| strings_of(&Column::from(c.clone())))
+            .collect();
+        let out = DictionaryColumn::concat(make()).unwrap();
+        out.check_invariants();
+        assert_eq!(out.dict().len(), 6);
+        assert_eq!(strings_of(&Column::from(out)), expected);
+    }
+
+    #[test]
+    fn concat_shifts_codes_by_dictionary_offset() {
+        // Rows are many enough for the dictionaries to pay off.
+        let rows =
+            |n: usize, k: u32| -> Vec<Option<u32>> { (0..n as u32).map(|i| Some(i % k)).collect() };
+        let a = dict_column(&["a", "b"], &rows(40, 2));
+        let a_tail = a.slice(3, 10);
+        let b = dict_column(&["b", "c", "d"], &rows(40, 3));
+        let cols = [&a, &a_tail, &b, &a];
+        let out = concat_of(&cols).unwrap();
+        out.check_invariants();
+        // Distinct dictionaries once each, in order (the repeated `a` reuses its offset).
+        assert_eq!(out.dict().len(), 5);
+        assert_eq!(out.len(), 40 + 10 + 40 + 40);
+        assert_eq!(out.codes().chunks().len(), 4);
+        let mut expected = Vec::new();
+        for c in cols {
+            expected.extend(strings_of(&Column::from(c.clone())));
+        }
+        assert_eq!(strings_of(&Column::from(out.clone())), expected);
+        assert_eq!(out.dtype(), &DataType::String);
+    }
+
+    /// Merges `cols` as they would arrive, one chunk at a time.
+    fn merge_of(cols: &[&DictionaryColumn]) -> Option<DictionaryColumn> {
+        let mut merger = DictionaryMerger::default();
+        let mut chunks = Vec::new();
+        for c in cols {
+            let offset = merger.register(c)?;
+            chunks.push((*c).clone().into_shifted_codes(offset));
+        }
+        Some(merger.into_column("c".into(), chunks).unwrap())
+    }
+
+    #[test]
+    fn merger_shifts_codes_as_chunks_arrive() {
+        let rows = |n: usize, k: u32| -> Vec<Option<u32>> {
+            (0..n as u32)
+                .map(|i| (i % 7 != 6).then_some(i % k))
+                .collect()
+        };
+        let a = dict_column(&["a", "b"], &rows(40, 2));
+        let b = dict_column(&["b", "c", "d"], &rows(40, 3));
+        let cols = [&a, &b, &a];
+        let out = merge_of(&cols).unwrap();
+        out.check_invariants();
+        assert_eq!(out.dict().len(), 5);
+        assert_eq!(out.codes().chunks().len(), 3);
+        let expected: Vec<_> = cols
+            .iter()
+            .flat_map(|c| strings_of(&Column::from((*c).clone())))
+            .collect();
+        assert_eq!(strings_of(&Column::from(out)), expected);
+
+        // One dictionary, however many chunks, stays that dictionary.
+        let only = merge_of(&[&a, &a.slice(2, 5)]).unwrap();
+        assert_eq!(only.dict().id(), a.dict().id());
+
+        // Non-byte values.
+        let x = int_dict_column(30);
+        let y = int_dict_column(17);
+        let out = merge_of(&[&x, &y]).unwrap();
+        out.check_invariants();
+        assert_eq!(out.dict().len(), 6);
+        let mut expected = flat(&x).as_materialized_series().clone();
+        expected.append(flat(&y).as_materialized_series()).unwrap();
+        assert_eq!(
+            out.as_materialized_series().clone().with_name("v".into()),
+            expected.with_name("v".into())
+        );
+    }
+
+    #[test]
+    fn merger_refuses_sorted_and_other_dtypes() {
+        let a = dict_column(&["a", "b"], &[Some(0), Some(1)]);
+        let mut sorted = a.clone();
+        sorted.set_sorted_flag(IsSorted::Ascending);
+        let mut merger = DictionaryMerger::default();
+        assert_eq!(merger.register(&a), Some(0));
+        assert_eq!(merger.register(&int_dict_column(4)), None);
+        assert!(merger.failed());
+        assert_eq!(merger.register(&a), None, "failing is for good");
+        let mut merger = DictionaryMerger::default();
+        assert_eq!(merger.register(&sorted), None);
+        assert!(merger.is_empty());
+    }
+
+    #[test]
+    fn merger_dense_enough() {
+        let a = dict_column(&["a", "b"], &[Some(0)]);
+        let b = dict_column(&["c", "d"], &[Some(0)]);
+        let mut merger = DictionaryMerger::default();
+        merger.register(&a);
+        assert!(merger.is_dense_enough(0), "one dictionary always pays off");
+        merger.register(&b);
+        assert!(!merger.is_dense_enough(31));
+        assert!(merger.is_dense_enough(32));
+    }
+
+    #[test]
+    fn concat_same_dictionary_keeps_it_and_null_codes() {
+        let a = dict_column(&["x", "y"], &[Some(0), None, Some(1)]);
+        let b = a.slice(1, 2);
+        let out = concat_of(&[&a, &b]).unwrap();
+        assert_eq!(out.dict().id(), a.dict().id());
+        assert_eq!(out.null_count(), 2);
+        out.check_invariants();
+    }
+
+    #[test]
+    fn concat_wraps_out_of_range_null_codes() {
+        let dict_a = SharedDictionary::new(Utf8ViewArray::from_slice([Some("a")]));
+        let dict_b = SharedDictionary::new(Utf8ViewArray::from_slice([Some("b")]));
+        // A null slot holding u32::MAX, which the shift must not overflow on.
+        let mut raw = vec![0u32; 10];
+        raw[1] = u32::MAX;
+        let mut validity = polars_arrow::bitmap::MutableBitmap::from_len_set(10);
+        validity.set(1, false);
+        let array = polars_arrow::array::PrimitiveArray::<u32>::new(
+            polars_arrow::datatypes::ArrowDataType::UInt32,
+            raw.into(),
+            Some(validity.into()),
+        );
+        let codes = UInt32Chunked::with_chunk(PlSmallStr::EMPTY, array);
+        let a = unsafe { DictionaryColumn::new_unchecked("c".into(), dict_a, codes.clone()) };
+        let b = unsafe { DictionaryColumn::new_unchecked("c".into(), dict_b, codes) };
+        let out = concat_of(&[&a, &b]).unwrap();
+        assert_eq!(out.null_count(), 2);
+        let values = strings_of(&Column::from(out));
+        assert_eq!(values[10], Some("b".to_owned()));
+        assert_eq!(values[11], None);
+    }
+
+    #[test]
+    fn concat_declines_sparse_dictionaries_and_other_dtypes() {
+        let a = dict_column(&["a", "b"], &[Some(0), Some(1)]);
+        let b = dict_column(&["c", "d"], &[Some(0), Some(1)]);
+        // Four values for four rows.
+        assert!(concat_of(&[&a, &b]).is_err());
+        assert!(concat_of(&[&a, &int_dict_column(3)]).is_err());
+        // The Column-level concatenation then materializes, with the same values.
+        let out = concat_columns(vec![a.clone().into_column(), b.clone().into_column()]);
+        assert!(out.as_dictionary_column().is_none());
+        assert_eq!(
+            strings_of(&out),
+            ["a", "b", "c", "d"].map(|v| Some(v.to_owned()))
+        );
+    }
+
+    #[test]
+    fn concat_columns_non_byte_dictionaries() {
+        let a = int_dict_column(64);
+        let b = int_dict_column(64);
+        let out = concat_columns(vec![a.clone().into_column(), b.clone().into_column()]);
+        let d = out.as_dictionary_column().expect("kept as codes");
+        d.check_invariants();
+        let mut expected = flat(&a);
+        expected.append(&flat(&b)).unwrap();
+        assert!(out.equals_missing(&expected));
+    }
+
+    #[test]
+    fn to_series_of_many_chunks_matches_one() {
+        let n = 1 << 17;
+        let codes: Vec<Option<u32>> = (0..n as u32)
+            .map(|i| if i % 7 == 0 { None } else { Some(i % 3) })
+            .collect();
+        let a = dict_column(&["p", "q", "r"], &codes);
+        let b = dict_column(&["p", "q", "r"], &codes);
+        let out = concat_of(&[&a, &b]).unwrap();
+        assert!(out.codes().chunks().len() > 1);
+        let mut expected = a.to_series();
+        expected.append(&b.to_series()).unwrap();
+        assert!(out.to_series().equals_missing(&expected));
+    }
+
+    #[test]
+    fn concat_declines_sorted_columns() {
+        let mut a = dict_column(&["a", "b"], &[Some(0), Some(0), Some(1), Some(1)]);
+        a.set_sorted_flag(IsSorted::Ascending);
+        assert!(concat_of(&[&a, &a.slice(0, 2)]).is_err());
+        let out = concat_columns(vec![a.clone().into_column(), a.clone().into_column()]);
+        assert_eq!(out.len(), 8);
+    }
+
+    #[test]
+    fn merger_stops_holding_dictionaries_that_outgrow_the_rows() {
+        let mut merger = DictionaryMerger::default();
+        let n = 1 << 20;
+        let mut taken = 0;
+        for _ in 0..200 {
+            let values = Series::new("v".into(), (0..n as i64).collect::<Vec<_>>());
+            let c = generic_dict_column(values, &[Some(0), Some(1)]);
+            if merger.register(&c).is_some() {
+                taken += 1;
+            }
+        }
+        // 2^24 rows of slack allow 2^21 values: a few of the 2^20-value dictionaries.
+        assert!(taken <= 3 && merger.failed(), "{taken}");
+        assert!(merger.merged_len <= 3 << 20);
+    }
+
+    #[test]
+    fn gather_chunk_uses_the_dictionary_of_the_chunk() {
+        let a = dict_column(&["a", "b"], &[Some(1), None, Some(0)]);
+        let b = dict_column(&["x", "y", "z"], &[Some(2), Some(0), None]);
+        let mut merger = DictionaryMerger::default();
+        let oa = merger.register(&a).unwrap();
+        let ob = merger.register(&b).unwrap();
+        let ca = a.into_shifted_codes(oa);
+        let cb = b.into_shifted_codes(ob);
+        let sa = merger.gather_chunk("s".into(), ca).unwrap();
+        let sb = merger.gather_chunk("s".into(), cb).unwrap();
+        assert_eq!(
+            strings_of(&sa.into_column()),
+            vec![Some("b".to_owned()), None, Some("a".to_owned())]
+        );
+        assert_eq!(
+            strings_of(&sb.into_column()),
+            vec![Some("z".to_owned()), Some("x".to_owned()), None]
+        );
+    }
+
+    #[test]
+    fn try_concat_columns_of_other_dtypes_is_an_error() {
+        let s = dict_column(&["a"], &[Some(0)]).into_column();
+        let i = int_dict_column(64).into_column();
+        assert!(try_concat_columns(vec![s, i]).is_err());
     }
 }

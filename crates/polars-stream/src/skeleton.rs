@@ -48,8 +48,6 @@ pub fn run_query(
         observer.is_some(),
         polars_config::config().max_threads(),
         None,
-        // The user's query: its collected result is flat.
-        true,
     )
     .inspect_err(|err| {
         if let Some(o) = observer.as_ref() {
@@ -105,14 +103,8 @@ pub fn visualize_physical_plan(
         recursive_inputs: None,
     };
     let mut phys_sm = DenseSlotMap::with_capacity_and_key(ir_arena.len());
-    let (root_phys_node, _phys_to_ir) = crate::physical_plan::build_physical_plan(
-        node,
-        ir_arena,
-        expr_arena,
-        &mut phys_sm,
-        ctx,
-        true,
-    )?;
+    let (root_phys_node, _phys_to_ir) =
+        crate::physical_plan::build_physical_plan(node, ir_arena, expr_arena, &mut phys_sm, ctx)?;
 
     let out = crate::physical_plan::visualize_plan(root_phys_node, &phys_sm, expr_arena);
 
@@ -156,10 +148,6 @@ impl StreamingQuery {
         observe: bool,
         num_pipelines: usize,
         recursive_inputs: Option<&RecursiveInputs>,
-        // Whether a scan feeding the in-memory sink directly reads dictionaries flat: only for
-        // the user's streaming query, not for the plans the in-memory engine hands over or
-        // runs inside its own nodes, which may use the codes.
-        flat_dictionaries_into_sink: bool,
     ) -> PolarsResult<Self> {
         if let Ok(visual_path) = std::env::var("POLARS_VISUALIZE_IR") {
             let plan = IRPlan {
@@ -183,7 +171,6 @@ impl StreamingQuery {
             expr_arena,
             &mut phys_sm,
             ctx,
-            flat_dictionaries_into_sink,
         )?;
         if let Ok(visual_path) = std::env::var("POLARS_VISUALIZE_PHYSICAL_PLAN") {
             let visualization =

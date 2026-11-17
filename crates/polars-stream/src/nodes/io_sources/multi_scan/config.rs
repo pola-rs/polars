@@ -55,8 +55,6 @@ pub struct MultiScanConfig {
     pub disable_morsel_split: bool,
     /// If false, files and rows within files may be emitted in any order.
     pub maintain_order: bool,
-    /// See `BeginReadArgs::materialize_dictionaries`.
-    pub materialize_dictionaries: bool,
 
     pub verbose: bool,
 }

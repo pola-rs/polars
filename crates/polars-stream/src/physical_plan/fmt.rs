@@ -635,7 +635,6 @@ fn visualize_plan_rec(
             file_schema: _,
             disable_morsel_split: _,
             maintain_order: _,
-            materialize_dictionaries: _,
         } => {
             let reader_name = match file_reader_builder.reader_name() {
                 Ok(x) => x.to_string(),

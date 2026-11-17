@@ -19,7 +19,6 @@ pub fn estimate_memory_usage() -> u64 {
     }
 }
 
-#[cfg(test)]
 pub(crate) fn add_test_usage(bytes: i64) {
     GLOBAL_ALLOC_SIZE.fetch_add(bytes as u64, Ordering::Relaxed);
 }

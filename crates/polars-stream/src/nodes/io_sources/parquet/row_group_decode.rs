@@ -480,9 +480,8 @@ fn decode_column(
 
     let skip_num_rows_check = matches!(filter, Some(Filter::Predicate(_)));
 
-    if !row_group_data.materialize_dictionaries
-        && let Some((column, pred_true_mask)) =
-            try_decode_dictionary_column(arrow_field, &columns_to_deserialize, filter.clone())?
+    if let Some((column, pred_true_mask)) =
+        try_decode_dictionary_column(arrow_field, &columns_to_deserialize, filter.clone())?
     {
         if !skip_num_rows_check {
             assert_eq!(column.len(), expected_num_rows);
@@ -1235,7 +1234,6 @@ fn decode_column_prefiltered(
         prefilter.then(|| polars_parquet::read::Filter::Mask(mask_bitmap.clone()));
 
     if prefilter
-        && !row_group_data.materialize_dictionaries
         && let Some((column, _)) = try_decode_dictionary_column(
             arrow_field,
             &columns_to_deserialize,

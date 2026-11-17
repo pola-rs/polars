@@ -456,7 +456,6 @@ async fn start_reader_impl(
         num_pipelines,
         disable_morsel_split,
         maintain_order,
-        materialize_dictionaries,
         last_morsel_pipelines,
         verbose,
         task_metrics,
@@ -676,7 +675,6 @@ async fn start_reader_impl(
         num_pipelines,
         disable_morsel_split,
         maintain_order,
-        materialize_dictionaries,
         last_morsel_pipelines,
         callbacks,
     };

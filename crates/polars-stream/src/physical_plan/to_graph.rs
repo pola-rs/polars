@@ -388,7 +388,7 @@ fn to_graph_rec<'a>(
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.add_node_with_metrics(
                 |registry| {
-                    nodes::in_memory_sink::InMemorySinkNode::new(
+                    nodes::in_memory_sink::InMemorySinkNode::merging_dictionaries(
                         input_schema,
                         registry.task_metrics(),
                     )
@@ -1103,7 +1103,6 @@ fn to_graph_rec<'a>(
             file_schema,
             disable_morsel_split,
             maintain_order,
-            materialize_dictionaries,
         } => {
             let hive_parts = hive_parts.clone();
 
@@ -1191,7 +1190,6 @@ fn to_graph_rec<'a>(
             let table_statistics = table_statistics.clone();
             let disable_morsel_split = *disable_morsel_split;
             let maintain_order = *maintain_order;
-            let materialize_dictionaries = *materialize_dictionaries;
 
             let verbose = config::verbose();
             let reader_name = file_reader_builder.reader_name()?;
@@ -1223,7 +1221,6 @@ fn to_graph_rec<'a>(
                             max_concurrent_scans: RelaxedCell::new_usize(0),
                             disable_morsel_split,
                             maintain_order,
-                            materialize_dictionaries,
                             verbose,
                         }),
                         registry,
@@ -2100,7 +2097,6 @@ fn to_graph_rec<'a>(
                             max_concurrent_scans: RelaxedCell::new_usize(0),
                             disable_morsel_split,
                             maintain_order,
-                            materialize_dictionaries: false,
                             verbose,
                         }),
                         registry,

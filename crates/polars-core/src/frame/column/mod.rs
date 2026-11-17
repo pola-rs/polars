@@ -1,6 +1,9 @@
 use std::borrow::Cow;
 
-pub use dictionary::{DictionaryColumn, SharedDictionary, dictionary_codes_enabled};
+pub use dictionary::{
+    DictionaryColumn, DictionaryMerger, SharedDictionary, concat_columns, dictionary_codes_enabled,
+    try_concat_columns,
+};
 use num_traits::{Num, NumCast};
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_arrow::trusted_len::TrustMyLength;

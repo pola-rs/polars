@@ -1213,7 +1213,6 @@ fn lower_ir_inner(
                         file_schema,
                         disable_morsel_split,
                         maintain_order,
-                        materialize_dictionaries: false,
                     };
 
                     let PhysNodeKind::MultiScan {
