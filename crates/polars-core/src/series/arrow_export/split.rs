@@ -35,7 +35,10 @@ fn count_arrow_maps(dtype: &ArrowDataType) -> usize {
 
 // The walks below follow a Polars physical array along its arrow export dtype, so they rely on
 // the layout `ToArrowConverter` relies on: MAP and LARGE_LIST are `ListArray<i64>`, and
-// FIXED_SIZE_LIST, STRUCT and EXTENSION wrap the arrays their arrow types describe.
+// FIXED_SIZE_LIST, STRUCT and EXTENSION wrap the arrays their arrow types describe. They must
+// also count the entries export keeps: a MAP drops what its null rows own
+// (`normalize_map_entries`, via `compact_null_rows_chunk`), and a LARGE_LIST over a MAP exports
+// only the child its offsets span.
 
 /// Add to `out[node]` the entries that MAP `node` of `dtype` spans over `rows` of `array`, an
 /// upper bound on what export writes; reads two offsets per list level.
@@ -80,7 +83,8 @@ fn add_entry_bounds(
 }
 
 /// Add to `out[node]` the entries export writes for MAP `node` of `dtype` over `rows` of
-/// `array`, for the nodes marked in `hot`; subtrees without a hot node are skipped.
+/// `array`, for the hot nodes: the MAPs whose bound over all rows exceeds `i32::MAX`. The other
+/// MAPs fit in any range, so subtrees without a hot node are skipped.
 fn add_entry_counts(
     array: &dyn Array,
     rows: Range<usize>,
@@ -174,10 +178,13 @@ fn add_entry_counts(
 /// exports more MAP entries than that.
 ///
 /// Each column is given as its chunks with the arrow dtype it exports to; columns may be chunked
-/// differently. A `repeated` column is a single row, whose chunks may each hold part of it, standing
-/// for each of the `height` rows, so a scalar column is planned without materializing it. The cost is two offset reads per list level and chunk, unless some MAP's offsets
-/// span more than `i32::MAX` entries: only then does a pass over the rows count what each row
-/// exports of those MAPs, allocating nothing per row.
+/// differently. A `repeated` column holds a single row, whose chunks may each hold part of it,
+/// that stands for each of the `height` rows, so a scalar column is planned without
+/// materializing it.
+///
+/// The cost is two offset reads per list level and chunk. Only if some MAP's offsets span more
+/// than `i32::MAX` entries does a pass over the rows count what each row exports of those MAPs;
+/// it allocates nothing per row, but walks each row's nested lists down to the MAPs.
 pub(crate) fn arrow_export_row_ranges<'a>(
     columns: impl IntoIterator<Item = (&'a [ArrayRef], &'a ArrowDataType, bool)>,
     height: usize,
