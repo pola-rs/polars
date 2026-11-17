@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use clap::Parser;
+use clap::builder::FalseyValueParser;
 
 use crate::printer::Format;
 
@@ -40,6 +41,10 @@ pub struct Args {
     /// How results are written
     #[arg(long, value_enum, value_name = "FMT", default_value_t)]
     format: Format,
+
+    /// Refuse statements that write files, such as COPY ... TO
+    #[arg(long, env = "POLARS_READ_ONLY", value_parser = FalseyValueParser::new())]
+    read_only: bool,
 }
 
 /// Where the SQL script comes from.
@@ -55,6 +60,10 @@ pub enum Input {
 impl Args {
     pub fn format(&self) -> Format {
         self.format
+    }
+
+    pub fn read_only(&self) -> bool {
+        self.read_only
     }
 
     pub fn input(self) -> Input {
@@ -109,6 +118,11 @@ mod tests {
     }
 
     #[test]
+    fn read_only() {
+        assert!(parse(&["--read-only"]).unwrap().read_only());
+    }
+
+    #[test]
     fn help_and_version() {
         for (flag, kind) in [
             ("-h", ErrorKind::DisplayHelp),
@@ -130,6 +144,8 @@ mod tests {
             &["-c", "SELECT 1", "-c", "SELECT 2"],
             &["--unknown"],
             &["--format", "xml"],
+            // Nothing on the command line turns it off again.
+            &["--read-only=false"],
             &["query.sql"],
         ] {
             assert_eq!(parse(args).unwrap_err().exit_code(), 2, "{args:?}");

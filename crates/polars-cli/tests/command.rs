@@ -24,6 +24,14 @@ fn by_category(source: &str) -> String {
     )
 }
 
+/// A new directory for the files of test `name`. Its path has `/` as the separator, so that it
+/// can be written in SQL on every platform.
+fn temp_dir(name: &str) -> String {
+    let dir = std::env::temp_dir().join(format!("polars_cli_{name}_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    dir.to_str().unwrap().replace('\\', "/")
+}
+
 /// Runs the command with nothing on standard input. Returns the exit code, stdout and stderr.
 fn run(args: &[&str]) -> (i32, String, String) {
     run_with_stdin(args, "")
@@ -175,6 +183,58 @@ n
 }
 
 #[test]
+fn copy_writes_a_file() {
+    let dir = temp_dir("copy");
+    // The statement answers with the number of rows, and the file is there for the next one.
+    let script = format!(
+        "COPY (SELECT category, calories FROM read_csv('../../examples/datasets/foods1.csv')) \
+         TO '{dir}/foods.parquet'; {}",
+        by_category(&format!("'{dir}/foods.parquet'"))
+    );
+    assert_eq!(
+        run(&["--format", "csv", "-c", &script]),
+        (
+            0,
+            format!("Response\nCOPY 27\n{BY_CATEGORY}"),
+            String::new()
+        )
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn read_only_refuses_to_write_a_file() {
+    let dir = temp_dir("read_only");
+    let copy = format!("COPY (SELECT 1 AS a) TO '{dir}/a.csv'");
+
+    let (code, out, err) = run(&["--read-only", "-c", &copy]);
+    assert_eq!((code, out.as_str()), (1, ""));
+    assert!(err.contains("writing files is disabled"), "{err}");
+
+    // The environment variable does the same.
+    let output = common::polars()
+        .args(["-c", &copy])
+        .env("POLARS_READ_ONLY", "1")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
+
+    // The session and reading files are not limited.
+    let script = "CREATE TABLE foods AS SELECT * FROM '../../examples/datasets/foods1.csv'; \
+                  SELECT COUNT(*) AS n FROM foods";
+    assert_eq!(
+        run(&["--read-only", "--format", "csv", "-c", script]),
+        (
+            0,
+            "Response\nCREATE TABLE foods\nn\n27\n".to_string(),
+            String::new()
+        )
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn a_script_is_read_from_standard_input() {
     let script = "SELECT 1 AS a;\nSELECT 'x;y' AS b;\n";
     assert_eq!(
@@ -246,6 +306,7 @@ fn help() {
         "-c, --command <SQL>",
         "-f, --file <FILE>",
         "--format <FMT>",
+        "--read-only",
         "Exit codes:",
         "This command is unstable",
     ];
