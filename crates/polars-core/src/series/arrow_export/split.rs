@@ -174,22 +174,23 @@ fn add_entry_counts(
 /// exports more MAP entries than that.
 ///
 /// Each column is given as its chunks with the arrow dtype it exports to; columns may be chunked
-/// differently. The cost is two offset reads per list level and chunk, unless some MAP's offsets
+/// differently. A `repeated` column is a single row, whose chunks may each hold part of it, standing
+/// for each of the `height` rows, so a scalar column is planned without materializing it. The cost is two offset reads per list level and chunk, unless some MAP's offsets
 /// span more than `i32::MAX` entries: only then does a pass over the rows count what each row
 /// exports of those MAPs, allocating nothing per row.
 pub(crate) fn arrow_export_row_ranges<'a>(
-    columns: impl IntoIterator<Item = (&'a [ArrayRef], &'a ArrowDataType)>,
+    columns: impl IntoIterator<Item = (&'a [ArrayRef], &'a ArrowDataType, bool)>,
     height: usize,
 ) -> PolarsResult<Option<Vec<Range<usize>>>> {
     let columns: Vec<_> = columns
         .into_iter()
-        .filter(|(_, dtype)| contains_arrow_map(dtype))
+        .filter(|(_, dtype, _)| contains_arrow_map(dtype))
         .collect();
-    let n_maps = columns.iter().map(|(_, d)| count_arrow_maps(d)).sum();
+    let n_maps = columns.iter().map(|(_, d, _)| count_arrow_maps(d)).sum();
 
     let mut bounds = vec![0i64; n_maps];
     let mut node = 0;
-    for (chunks, dtype) in &columns {
+    for (chunks, dtype, repeated) in &columns {
         let first = node;
         for chunk in chunks.iter() {
             node = first;
@@ -202,10 +203,36 @@ pub(crate) fn arrow_export_row_ranges<'a>(
             );
         }
         node = first + count_arrow_maps(dtype);
+        if *repeated {
+            for b in &mut bounds[first..node] {
+                *b *= height as i64;
+            }
+        }
     }
     let hot: Vec<bool> = bounds.iter().map(|&b| b > MAX_MAP_ENTRIES).collect();
     if !hot.contains(&true) {
         return Ok(None);
+    }
+
+    // A repeated column exports the same entries in every row, so count them once.
+    let mut repeated_counts = vec![0i64; n_maps];
+    let mut node = 0;
+    for (chunks, dtype, repeated) in &columns {
+        let first = node;
+        node += count_arrow_maps(dtype);
+        if *repeated {
+            for chunk in chunks.iter() {
+                let mut chunk_node = first;
+                add_entry_counts(
+                    chunk.as_ref(),
+                    0..chunk.len(),
+                    dtype,
+                    &hot,
+                    &mut repeated_counts,
+                    &mut chunk_node,
+                );
+            }
+        }
     }
 
     // Greedy: extend the range while every MAP fits, as late cuts give the fewest pieces.
@@ -215,9 +242,13 @@ pub(crate) fn arrow_export_row_ranges<'a>(
     let mut ranges = Vec::new();
     let mut start = 0;
     for row in 0..height {
-        row_counts.fill(0);
+        row_counts.copy_from_slice(&repeated_counts);
         let mut node = 0;
-        for ((chunks, dtype), (chunk_idx, local)) in columns.iter().zip(&mut cursors) {
+        for ((chunks, dtype, repeated), (chunk_idx, local)) in columns.iter().zip(&mut cursors) {
+            if *repeated {
+                node += count_arrow_maps(dtype);
+                continue;
+            }
             while *local == chunks[*chunk_idx].len() {
                 *chunk_idx += 1;
                 *local = 0;
@@ -261,10 +292,11 @@ pub(crate) fn arrow_export_row_ranges<'a>(
 
 #[cfg(all(test, feature = "dtype-map"))]
 mod tests {
-    use polars_arrow::array::{BooleanArray, MapArray, NullArray};
+    use polars_arrow::array::{BooleanArray, Int32Array, MapArray, NullArray};
     use polars_arrow::bitmap::Bitmap;
     use polars_arrow::offset::Offsets;
 
+    use crate::frame::column::ScalarColumn;
     use crate::prelude::*;
 
     fn map_dtype() -> DataType {
@@ -336,5 +368,75 @@ mod tests {
         assert_eq!(heights, [3, 3]);
         let n_chunks: Vec<_> = pieces.iter().map(|p| p.columns()[0].n_chunks()).collect();
         assert_eq!(n_chunks, [2, 2]);
+    }
+
+    /// A scalar column repeating one map with `keys`, held in two chunks, over `height` rows.
+    fn scalar_map_column(keys: Vec<i32>, height: usize) -> Column {
+        let dtype = DataType::Map(Box::new(DataType::Int32), Box::new(DataType::Null));
+        let entries_dtype = dtype.map_entries_dtype().unwrap();
+        let entries = |keys: &[i32]| {
+            let n = keys.len();
+            StructArray::new(
+                entries_dtype.to_physical().to_arrow(CompatLevel::newest()),
+                n,
+                vec![
+                    Int32Array::from_slice(keys).boxed(),
+                    NullArray::new(ArrowDataType::Null, n).boxed(),
+                ],
+                None,
+            )
+            .boxed()
+        };
+        let (a, b) = keys.split_at(keys.len() / 2);
+        let entries = unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                PlSmallStr::from_static("m"),
+                vec![entries(a), entries(b)],
+                &entries_dtype,
+            )
+        };
+        assert_eq!(entries.n_chunks(), 2);
+        let value = Scalar::new(dtype, AnyValue::Map(entries));
+        Column::Scalar(ScalarColumn::new("m".into(), value, height))
+    }
+
+    #[test]
+    fn a_scalar_map_column_is_split_without_materializing_it() {
+        let scalar = scalar_map_column((0..1 << 20).collect(), 4096);
+        let small = map_series(vec![map_chunk(&[1; 4096], None)]).with_name("small".into());
+        let df = DataFrame::new_infer_height(vec![small.into_column(), scalar]).unwrap();
+        let dtypes: Vec<_> = df
+            .columns()
+            .iter()
+            .map(|c| c.dtype().to_arrow(CompatLevel::newest()))
+            .collect();
+
+        let ranges = df.arrow_export_ranges(&dtypes, None).unwrap();
+        let chunk_ranges = df.arrow_export_ranges(&dtypes, Some((0, 0..4096))).unwrap();
+
+        // 2047 rows of 2^20 entries is the most that fits in `i32` offsets.
+        assert_eq!(ranges, Some(vec![0..2047, 2047..4094, 4094..4096]));
+        assert_eq!(chunk_ranges, ranges);
+        let sc = df.columns()[1].as_scalar_column().unwrap();
+        assert!(sc.lazy_as_materialized_series().is_none());
+    }
+
+    /// Materializing a scalar map deduplicates its keys, so its raw entries only bound what export
+    /// writes.
+    #[test]
+    fn a_scalar_map_with_duplicate_keys_is_planned_by_its_exported_entries() {
+        let df =
+            DataFrame::new_infer_height(vec![scalar_map_column(vec![7; 1 << 20], 4096)]).unwrap();
+        let arrow_dtype = df.columns()[0].dtype().to_arrow(CompatLevel::newest());
+
+        let pieces = df.split_for_arrow_export([&arrow_dtype]).unwrap();
+
+        assert_eq!(pieces.len(), 1);
+        let arrays = pieces[0].columns()[0]
+            .as_materialized_series()
+            .try_to_arrow_split(0, CompatLevel::newest())
+            .unwrap();
+        let map: &MapArray = arrays[0].as_any().downcast_ref().unwrap();
+        assert_eq!(*map.offsets().last(), 4096);
     }
 }
