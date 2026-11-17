@@ -7209,3 +7209,448 @@ def test_catalog_time_travel_catalog_by_name(
     )
     assert ctx.execute(query, eager=True).rows() == [(0, 0), (None, 1)]
     assert names
+
+
+def live_entries(catalog: CountingCatalog, *identifier: str) -> list[tuple[Any, ...]]:
+    """The live data files of a table, with their snapshot ids and sequence numbers."""
+    from pyiceberg.manifest import ManifestContent
+
+    table = catalog.load_table(identifier)
+    return sorted(
+        (
+            e.data_file.file_path,
+            e.snapshot_id,
+            e.sequence_number,
+            e.file_sequence_number,
+        )
+        for m in table.current_snapshot().manifests(table.io)
+        if m.content == ManifestContent.DATA
+        for e in m.fetch_manifest_entry(table.io)
+    )
+
+
+def unreferenced_avro_files(catalog: CountingCatalog, *identifier: str) -> set[str]:
+    """Names of manifests and manifest lists of a table that no snapshot uses.
+
+    By name: Windows paths mix separators.
+    """
+    table = catalog.load_table(identifier)
+    used = set()
+    for snapshot in table.snapshots():
+        used.add(Path(snapshot.manifest_list).name)
+        used.update(Path(m.manifest_path).name for m in snapshot.manifests(table.io))
+    location = Path(table.metadata.location.removeprefix("file://"))
+    return {path.name for path in location.rglob("*.avro")} - used
+
+
+MANIFEST_COUNTS = {
+    "rewritten_manifests_count": pl.Int32,
+    "added_manifests_count": pl.Int32,
+}
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "CALL lake.system.rewrite_manifests(table => 'tpch.lineitem')",
+        "CALL system.rewrite_manifests('lineitem')",
+        "CALL lake.system.rewrite_manifests('lake.tpch.lineitem', true)",
+    ],
+)
+def test_call_rewrite_manifests(lake: CountingCatalog, statement: str) -> None:
+    from pyiceberg.table.snapshots import Operation
+
+    ctx = lake_ctx(lake)
+    ctx.execute("INSERT INTO lineitem VALUES (3, 'c')")
+    before = lake.load_table(("tpch", "lineitem")).current_snapshot()
+    entries = live_entries(lake, "tpch", "lineitem")
+    assert_frame_equal(
+        ctx.execute(statement, eager=True),
+        pl.DataFrame([[2], [1]], schema=MANIFEST_COUNTS),
+    )
+    table = lake.load_table(("tpch", "lineitem"))
+    snapshot = table.current_snapshot()
+    assert snapshot.summary.operation == Operation.REPLACE
+    assert snapshot.summary["total-records"] == before.summary["total-records"]
+    assert snapshot.summary["manifests-replaced"] == "2"
+    assert len(snapshot.manifests(table.io)) == 1
+    assert live_entries(lake, "tpch", "lineitem") == entries
+    assert table_rows(lake, "tpch", "lineitem") == [(1, "a"), (2, "b"), (3, "c")]
+    # older snapshots still read their own manifests
+    query = f"SELECT COUNT(*) FROM lineitem VERSION AS OF {before.snapshot_id}"
+    assert ctx.execute(query, eager=True).item() == 3
+
+
+@pytest.mark.write_disk
+def test_call_rewrite_manifests_specs_and_partitions(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE p (k INT, g VARCHAR) PARTITION BY (g)")
+    ctx.execute("INSERT INTO p VALUES (1, 'b'), (2, 'a')")
+    # one manifest that fits the target: no commit
+    snapshot = lake.load_table(("tpch", "p")).current_snapshot()
+    assert ctx.execute("CALL system.rewrite_manifests('p')", eager=True).rows() == [
+        (0, 0)
+    ]
+    assert lake.load_table(("tpch", "p")).current_snapshot() == snapshot
+    ctx.execute("INSERT INTO p VALUES (3, 'c')")
+    ctx.execute("ALTER TABLE p SET PARTITIONED BY (k)")
+    ctx.execute("INSERT INTO p VALUES (4, 'c')")
+    ctx.execute("INSERT INTO p VALUES (5, 'c')")
+    # only the manifests of spec 0, its entries sorted by partition
+    res = ctx.execute("CALL system.rewrite_manifests(table => 'p', spec_id => 0)")
+    assert res.collect().rows() == [(2, 1)]
+    table = lake.load_table(("tpch", "p"))
+    manifests = table.current_snapshot().manifests(table.io)
+    assert sorted(m.partition_spec_id for m in manifests) == [0, 1, 1]
+    rewritten = next(m for m in manifests if m.partition_spec_id == 0)
+    entries = rewritten.fetch_manifest_entry(table.io)
+    assert [e.data_file.partition[0] for e in entries] == ["a", "b", "c"]
+    assert len(table_rows(lake, "tpch", "p")) == 5
+
+
+@pytest.mark.write_disk
+def test_call_rewrite_manifests_keeps_delete_manifests(lake: CountingCatalog) -> None:
+    from pyiceberg.manifest import ManifestContent
+
+    from tests.unit.io.test_iceberg import _add_position_deletes
+
+    ctx = lake_ctx(lake)
+    ctx.execute("INSERT INTO lineitem VALUES (3, 'c')")
+    table = lake.load_table(("tpch", "lineitem"))
+    first = next(
+        t.file.file_path for t in table.scan().plan_files() if t.file.record_count == 2
+    )
+    _add_position_deletes(table, {first: [0]})
+    res = ctx.execute("CALL system.rewrite_manifests('lineitem')", eager=True)
+    assert res.rows() == [(2, 1)]
+    table = lake.load_table(("tpch", "lineitem"))
+    contents = [m.content for m in table.current_snapshot().manifests(table.io)]
+    assert sorted(contents) == [ManifestContent.DATA, ManifestContent.DELETES]
+    assert table_rows(lake, "tpch", "lineitem") == [(2, "b"), (3, "c")]
+
+
+@pytest.mark.write_disk
+def test_call_rewrite_manifests_concurrent_append(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("INSERT INTO lineitem VALUES (3, 'c')")
+    commit_table = lake.commit_table
+
+    def append_first(*args: Any) -> Any:
+        monkeypatch.setattr(lake, "commit_table", commit_table)
+        pl.DataFrame({"k": [4], "v": ["d"]}).write_iceberg(
+            lake.load_table(("tpch", "lineitem")), mode="append"
+        )
+        return commit_table(*args)
+
+    monkeypatch.setattr(lake, "commit_table", append_first)
+    # refused at the first attempt, then planned again with the append's manifest
+    res = ctx.execute("CALL system.rewrite_manifests('lineitem')", eager=True)
+    assert res.rows() == [(3, 1)]
+    table = lake.load_table(("tpch", "lineitem"))
+    assert len(table.current_snapshot().manifests(table.io)) == 1
+    assert unreferenced_avro_files(lake, "tpch", "lineitem") == set()
+    assert table_rows(lake, "tpch", "lineitem") == [
+        (1, "a"),
+        (2, "b"),
+        (3, "c"),
+        (4, "d"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("statement", "error"),
+    [
+        ("lake.system.expire_snapshots(table => 'lineitem')", "unknown procedure"),
+        ("lake.rewrite_manifests(table => 'lineitem')", r"\[<catalog>\.\]system\."),
+        ("other.system.rewrite_manifests('lineitem')", "'other' is not attached"),
+        ("lake.system.rewrite_manifests", "needs an argument list"),
+        ("system.rewrite_manifests(spec_id => 0)", "`table` argument is required"),
+        ("system.rewrite_manifests(table => 'lineitem', x => 1)", "unknown argument"),
+        ("system.rewrite_manifests(table => 'lineitem', 'x')", "cannot follow"),
+        ("system.rewrite_manifests('lineitem', table => 'orders')", "given twice"),
+        ("system.rewrite_manifests(upper('lineitem'))", "must be literals"),
+        ("system.rewrite_manifests('a b')", "is not a table name"),
+        ("system.rewrite_manifests('lineitem', true, 'x')", "`spec_id` must be int"),
+    ],
+)
+@pytest.mark.write_disk
+def test_call_sql_errors(lake: CountingCatalog, statement: str, error: str) -> None:
+    with pytest.raises(SQLInterfaceError, match=error):
+        lake_ctx(lake).execute(f"CALL {statement}")
+
+
+@pytest.mark.write_disk
+def test_call_rewrite_manifests_refused(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.table import Table
+
+    ctx = lake_ctx(lake)
+    with pytest.raises(NotImplementedError, match="`sort_by` is not supported"):
+        ctx.execute(
+            "CALL system.rewrite_manifests(table => 'lineitem', sort_by => array('k'))"
+        )
+    with pytest.raises(ValueError, match="spec_id 5 is not a partition spec"):
+        ctx.execute("CALL system.rewrite_manifests(table => 'lineitem', spec_id => 5)")
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="metadata table"):
+        ctx.execute("CALL system.rewrite_manifests('lineitem$snapshots')")
+    # PyIceberg writes manifests with the current schema
+    ctx.execute("CREATE TABLE p (k INT, g VARCHAR) PARTITION BY (g)")
+    ctx.execute("ALTER TABLE p SET PARTITIONED BY (k)")
+    with lake.load_table(("tpch", "p")).update_schema() as update:
+        update.delete_column("g")
+    with pytest.raises(NotImplementedError, match="partition field 'g' was dropped"):
+        ctx.execute("CALL system.rewrite_manifests(table => 'p', spec_id => 0)")
+    # PyIceberg can't write a v3 table yet
+    monkeypatch.setattr(Table, "format_version", property(lambda self: 3))
+    with pytest.raises(NotImplementedError, match="v3 table is not supported"):
+        ctx.execute("CALL system.rewrite_manifests('lineitem')")
+
+
+@pytest.mark.write_disk
+def test_call_rewrite_manifests_double_partitions_30832(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import polars.io.iceberg._maintenance as maintenance
+
+    # as PyIceberg 0.12.0's Cython decoder, which reads doubles as 32-bit floats
+    monkeypatch.setattr(maintenance, "_pyiceberg_rounds_doubles", lambda: True)
+    ctx = lake_ctx(lake)
+    for name, dtype in (("d", "DOUBLE"), ("f", "REAL")):
+        ctx.execute(f"CREATE TABLE {name} (x {dtype}, k INT) PARTITION BY (x)")
+        ctx.execute(f"INSERT INTO {name} VALUES (0.1, 1)")
+        ctx.execute(f"INSERT INTO {name} VALUES (0.1, 2)")
+    with pytest.raises(NotImplementedError, match="DOUBLE partition values"):
+        ctx.execute("CALL system.rewrite_manifests('d')")
+    # FLOAT values read the same as written
+    assert ctx.execute("CALL system.rewrite_manifests('f')", eager=True).rows() == [
+        (2, 1)
+    ]
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("create", "value", "counts"),
+    [
+        # v1 manifests store no sequence numbers
+        ("CREATE TABLE t (x INT, k INT) WITH ('format-version' = 1)", "1", (2, 1)),
+        # NaN partition values, which never equal themselves
+        (
+            "CREATE TABLE t (x REAL, k INT) PARTITION BY (x)",
+            "CAST('NaN' AS REAL)",
+            (2, 1),
+        ),
+        # a target smaller than one manifest: one manifest per entry, none empty
+        (
+            "CREATE TABLE t (x INT, k INT) "
+            "WITH ('commit.manifest.target-size-bytes' = '100')",
+            "1",
+            (2, 2),
+        ),
+    ],
+)
+def test_call_rewrite_manifests_entries_kept(
+    lake: CountingCatalog, create: str, value: str, counts: tuple[int, int]
+) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute(create)
+    ctx.execute(f"INSERT INTO t SELECT {value}, 1")
+    ctx.execute(f"INSERT INTO t SELECT {value}, 2")
+    assert ctx.execute("CALL system.rewrite_manifests('t')", eager=True).rows() == [
+        counts
+    ]
+    assert ctx.execute("SELECT k FROM t ORDER BY k", eager=True).rows() == [(1,), (2,)]
+
+
+@pytest.mark.write_disk
+def test_call_rewrite_manifests_concurrent_rewrite(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from polars.io.iceberg._maintenance import rewrite_manifests
+
+    ctx = lake_ctx(lake)
+    ctx.execute("INSERT INTO lineitem VALUES (3, 'c')")
+    commit_table = lake.commit_table
+
+    def rewrite_first(*args: Any) -> Any:
+        monkeypatch.setattr(lake, "commit_table", commit_table)
+        rewrite_manifests(lake.load_table(("tpch", "lineitem")))
+        return commit_table(*args)
+
+    monkeypatch.setattr(lake, "commit_table", rewrite_first)
+    # the retry finds the other rewrite's one manifest: nothing left to do
+    res = ctx.execute("CALL system.rewrite_manifests('lineitem')", eager=True)
+    assert res.rows() == [(0, 0)]
+    snapshots = lake.load_table(("tpch", "lineitem")).snapshots()
+    assert [s.summary.operation.value for s in snapshots[-2:]] == ["append", "replace"]
+    assert unreferenced_avro_files(lake, "tpch", "lineitem") == set()
+
+
+@pytest.mark.write_disk
+def test_call_rewrite_manifests_double_partitions_on_retry_30832(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import ValidationException
+    from pyiceberg.types import DoubleType
+
+    import polars.io.iceberg._maintenance as maintenance
+
+    monkeypatch.setattr(maintenance, "_pyiceberg_rounds_doubles", lambda: True)
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE f (x REAL, k INT) PARTITION BY (x)")
+    ctx.execute("INSERT INTO f VALUES (0.5, 1)")
+    ctx.execute("INSERT INTO f VALUES (0.5, 2)")
+    commit_table = lake.commit_table
+
+    def promote_first(*args: Any) -> Any:
+        monkeypatch.setattr(lake, "commit_table", commit_table)
+        with lake.load_table(("tpch", "f")).update_schema() as update:
+            update.update_column("x", DoubleType())
+        pl.DataFrame(
+            {"x": [0.1], "k": [3]}, schema={"x": pl.Float64, "k": pl.Int32}
+        ).write_iceberg(lake.load_table(("tpch", "f")), mode="append")
+        return commit_table(*args)
+
+    monkeypatch.setattr(lake, "commit_table", promote_first)
+    # promoted to DOUBLE and appended to meanwhile: the retry would store 0.1 rounded
+    with pytest.raises(ValidationException, match="DOUBLE partition values"):
+        ctx.execute("CALL system.rewrite_manifests('f')")
+    snapshot = lake.load_table(("tpch", "f")).current_snapshot()
+    assert snapshot.summary.operation.value == "append"
+    assert unreferenced_avro_files(lake, "tpch", "f") == set()
+
+
+@pytest.mark.write_disk
+def test_call_rewrite_manifests_upgraded_v1_table(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE u (k INT) WITH ('format-version' = 1)")
+    ctx.execute("INSERT INTO u VALUES (1)")
+    with lake.load_table(("tpch", "u")).transaction() as tx:
+        tx.upgrade_table_version(2)
+    ctx.execute("INSERT INTO u VALUES (2)")
+    # the v1 file keeps sequence number 0
+    entries = live_entries(lake, "tpch", "u")
+    assert sorted(e[2] for e in entries) == [0, 1]
+    assert ctx.execute("CALL system.rewrite_manifests('u')", eager=True).rows() == [
+        (2, 1)
+    ]
+    assert live_entries(lake, "tpch", "u") == entries
+
+
+@pytest.mark.write_disk
+def test_call_rewrite_manifests_no_live_entries(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE p (k INT, g VARCHAR) PARTITION BY (g)")
+    ctx.execute("INSERT INTO p VALUES (1, 'a')")
+    ctx.execute("INSERT INTO p VALUES (2, 'b')")
+    ctx.execute("DELETE FROM p WHERE g = 'a'")
+    ctx.execute("DELETE FROM p WHERE g = 'b'")
+    # manifests of deleted entries only: replaced by none
+    assert ctx.execute("CALL system.rewrite_manifests('p')", eager=True).rows() == [
+        (2, 0)
+    ]
+    table = lake.load_table(("tpch", "p"))
+    assert table.current_snapshot().manifests(table.io) == []
+    assert table_rows(lake, "tpch", "p") == []
+
+
+@pytest.mark.write_disk
+def test_call_rewrite_manifests_retry_fails(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import polars.io.iceberg._maintenance as maintenance
+
+    ctx = lake_ctx(lake)
+    ctx.execute("INSERT INTO lineitem VALUES (3, 'c')")
+    commit_table = lake.commit_table
+    check = maintenance._check_same_entries
+    calls: list[None] = []
+
+    def append_first(*args: Any) -> Any:
+        monkeypatch.setattr(lake, "commit_table", commit_table)
+        pl.DataFrame({"k": [4], "v": ["d"]}).write_iceberg(
+            lake.load_table(("tpch", "lineitem")), mode="append"
+        )
+        return commit_table(*args)
+
+    def fail_on_retry(*args: Any) -> None:
+        calls.append(None)
+        if len(calls) > 1:
+            raise OSError
+        check(*args)
+
+    monkeypatch.setattr(lake, "commit_table", append_first)
+    monkeypatch.setattr(maintenance, "_check_same_entries", fail_on_retry)
+    # the only request was refused: the retry's own error, nothing left behind
+    with pytest.raises(OSError):
+        ctx.execute("CALL system.rewrite_manifests('lineitem')")
+    snapshot = lake.load_table(("tpch", "lineitem")).current_snapshot()
+    assert snapshot.summary.operation.value == "append"
+    assert unreferenced_avro_files(lake, "tpch", "lineitem") == set()
+
+
+@pytest.mark.write_disk
+def test_call_rewrite_manifests_commit_refused(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import ForbiddenError
+
+    def refuse(*args: Any) -> Any:
+        raise ForbiddenError
+
+    ctx = lake_ctx(lake)
+    ctx.execute("INSERT INTO lineitem VALUES (3, 'c')")
+    monkeypatch.setattr(lake, "commit_table", refuse)
+    # a refusal PyIceberg does not clean up after
+    with pytest.raises(ForbiddenError):
+        ctx.execute("CALL system.rewrite_manifests('lineitem')")
+    assert unreferenced_avro_files(lake, "tpch", "lineitem") == set()
+
+
+@pytest.mark.write_disk
+def test_call_rewrite_manifests_fails_before_commit(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import pyiceberg.table.update.snapshot as snapshot_update
+
+    def fail(*args: Any, **kwargs: Any) -> Any:
+        raise OSError
+
+    ctx = lake_ctx(lake)
+    ctx.execute("INSERT INTO lineitem VALUES (3, 'c')")
+    monkeypatch.setattr(snapshot_update, "write_manifest_list", fail)
+    # no commit request sent: the rewritten manifests are removed
+    with pytest.raises(OSError):
+        ctx.execute("CALL system.rewrite_manifests('lineitem')")
+    assert unreferenced_avro_files(lake, "tpch", "lineitem") == set()
+
+
+@pytest.mark.write_disk
+def test_call_rewrite_manifests_fails_after_commit(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.table.update.snapshot import _SnapshotProducer
+
+    def fail(self: Any) -> None:
+        raise OSError
+
+    ctx = lake_ctx(lake)
+    ctx.execute("INSERT INTO lineitem VALUES (3, 'c')")
+    commit_table = lake.commit_table
+
+    def append_first(*args: Any) -> Any:
+        monkeypatch.setattr(lake, "commit_table", commit_table)
+        pl.DataFrame({"k": [4], "v": ["d"]}).write_iceberg(
+            lake.load_table(("tpch", "lineitem")), mode="append"
+        )
+        # the retry commits, then removing the refused attempt's files fails
+        monkeypatch.setattr(_SnapshotProducer, "_cleanup_uncommitted", fail)
+        return commit_table(*args)
+
+    monkeypatch.setattr(lake, "commit_table", append_first)
+    res = ctx.execute("CALL system.rewrite_manifests('lineitem')", eager=True)
+    assert res.rows() == [(3, 1)]
+    assert len(table_rows(lake, "tpch", "lineitem")) == 4

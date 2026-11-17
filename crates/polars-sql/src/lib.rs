@@ -38,7 +38,7 @@ mod types;
 mod window_frames;
 
 pub use catalog::{
-    CatalogAlter, CatalogNamespace, CatalogPartitionField, CatalogRead, CatalogSortField,
+    CallArg, CatalogAlter, CatalogNamespace, CatalogPartitionField, CatalogRead, CatalogSortField,
     CatalogStatement, CatalogTable, MergeClausePlan, MergePlan, MergeSourcePlan,
 };
 pub use context::{SQLContext, extract_table_identifiers};

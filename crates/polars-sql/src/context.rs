@@ -24,24 +24,26 @@ use sqlparser::ast::{
     AlterColumnOperation, AlterTable, AlterTableOperation, Assignment, AssignmentTarget,
     BinaryOperator as SQLBinaryOperator, CreateTable, CreateTableLikeKind, CreateTableOptions,
     CreateView, Cte, Delete, Distinct, DropBehavior, ExcludeSelectItem, Expr as SQLExpr, Fetch,
-    FromTable, FunctionArg, FunctionArgExpr, FunctionArguments, GroupByExpr, HiveDistributionStyle,
-    HiveFormat, Ident, IdentWithAlias, Insert, Join, JoinConstraint, JoinOperator, LimitClause,
-    Merge, MergeAction, MergeClause, MergeClauseKind, MergeInsertExpr, MergeInsertKind,
-    MergeUpdateExpr, MergeUpdateKind, NamedWindowDefinition, NamedWindowExpr, ObjectName,
-    ObjectNamePart, ObjectType, OrderBy, OrderByKind, OutputClause, Query, RenameSelectItem,
-    SchemaName, Select, SelectFlavor, SelectItem, SelectItemQualifiedWildcardKind, SetExpr,
-    SetOperator, SetQuantifier, SqlOption, Statement, TableAlias, TableAliasColumnDef, TableFactor,
-    TableObject, TableWithJoins, Truncate, TruncateTableTarget, UnaryOperator as SQLUnaryOperator,
-    Update, Value as SQLValue, ValueWithSpan, Values, Visitor, VisitorMut,
-    WildcardAdditionalOptions, WindowSpec, WindowType, With,
+    FromTable, Function, FunctionArg, FunctionArgExpr, FunctionArguments, GroupByExpr,
+    HiveDistributionStyle, HiveFormat, Ident, IdentWithAlias, Insert, Join, JoinConstraint,
+    JoinOperator, LimitClause, Merge, MergeAction, MergeClause, MergeClauseKind, MergeInsertExpr,
+    MergeInsertKind, MergeUpdateExpr, MergeUpdateKind, NamedWindowDefinition, NamedWindowExpr,
+    ObjectName, ObjectNamePart, ObjectType, OrderBy, OrderByKind, OutputClause, Query,
+    RenameSelectItem, SchemaName, Select, SelectFlavor, SelectItem,
+    SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, SqlOption, Statement,
+    TableAlias, TableAliasColumnDef, TableFactor, TableObject, TableWithJoins, Truncate,
+    TruncateTableTarget, UnaryOperator as SQLUnaryOperator, Update, Value as SQLValue,
+    ValueWithSpan, Values, Visitor, VisitorMut, WildcardAdditionalOptions, WindowSpec, WindowType,
+    With,
 };
 
 use crate::catalog::{
-    CatalogAlter, CatalogNamespace, CatalogRead, CatalogRegistry, CatalogSpellings,
-    CatalogStatement, CatalogTable, MergeClausePlan, MergePlan, MergeSourcePlan, RewrittenName,
-    alter_table_column, alter_table_properties, create_schema_options, create_table_columns,
-    create_table_options, create_table_partitioning, display_name, hint_unsupported_part,
-    name_parts, name_position, rewrite_catalog_names, set_partitioning, set_sort_order,
+    CallArg, CallParts, CatalogAlter, CatalogNamespace, CatalogRead, CatalogRegistry,
+    CatalogSpellings, CatalogStatement, CatalogTable, MergeClausePlan, MergePlan, MergeSourcePlan,
+    RewrittenName, alter_table_column, alter_table_properties, call_parts, create_schema_options,
+    create_table_columns, create_table_options, create_table_partitioning, display_name,
+    hint_unsupported_part, name_parts, name_position, rewrite_catalog_names, set_partitioning,
+    set_sort_order, table_name_parts,
 };
 use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
@@ -583,6 +585,7 @@ impl SQLContext {
             Statement::Delete(delete) => return self.catalog_delete(delete),
             Statement::Update(update) => return self.catalog_update(update),
             Statement::Merge(merge) => return self.catalog_merge(merge),
+            Statement::Call(function) => return self.catalog_call(function).map(Some),
             Statement::Query(query) => {
                 let insert = match query.body.as_ref() {
                     SetExpr::Insert(Statement::Insert(insert)) => insert,
@@ -3156,6 +3159,75 @@ impl SQLContext {
             None if if_exists => Ok(DataFrame::empty().lazy()),
             None => polars_bail!(SQLInterface: "table '{}' does not exist", tbl),
         }
+    }
+
+    /// The catalog statement of a `CALL [<catalog>.]system.<procedure>(...)`. The `table`
+    /// argument is a table of the procedure's catalog: `'ns.t'`, or `'t'` in the catalog's
+    /// default namespace.
+    fn catalog_call(&self, function: &Function) -> PolarsResult<CatalogStatement> {
+        let CallParts {
+            name: parts,
+            procedure,
+            mut args,
+        } = call_parts(function)?;
+        let catalog = match parts.as_slice() {
+            [catalog, system, _] if system.eq_ignore_ascii_case("system") => {
+                match self.catalogs.catalog_name(catalog) {
+                    Some(catalog) => catalog,
+                    None => polars_bail!(
+                        SQLInterface: "CALL {}: catalog '{}' is not attached", function.name, catalog
+                    ),
+                }
+            },
+            [system, _] if system.eq_ignore_ascii_case("system") => {
+                match self.catalogs.default_catalog() {
+                    Some(catalog) => catalog,
+                    None => polars_bail!(
+                        SQLInterface: "CALL {}: no default catalog is set; write `CALL <catalog>.{}`",
+                        function.name, function.name
+                    ),
+                }
+            },
+            _ => polars_bail!(
+                SQLInterface: "CALL takes a procedure `[<catalog>.]system.{}`, found '{}'",
+                procedure, function.name
+            ),
+        };
+        let name = match args.iter().position(|(arg, _)| arg == "table") {
+            Some(idx) => match args.remove(idx).1 {
+                CallArg::String(name) => name,
+                _ => polars_bail!(
+                    SQLInterface: "CALL {}: the `table` argument must be a string such as 'ns.t'",
+                    function.name
+                ),
+            },
+            None => polars_bail!(
+                SQLInterface: "CALL {}: the `table` argument is required", function.name
+            ),
+        };
+        let Some(table_parts) = table_name_parts(&name) else {
+            polars_bail!(
+                SQLInterface: "CALL {}: the `table` argument '{}' is not a table name",
+                function.name, name
+            );
+        };
+        // A table name relative to the procedure's catalog; it may repeat the catalog.
+        let mut full_name = table_parts;
+        if !(full_name.len() > 1 && full_name[0].eq_ignore_ascii_case(catalog)) {
+            full_name.insert(0, catalog.to_string());
+        }
+        let Some(table) = self.catalogs.resolve(&full_name) else {
+            polars_bail!(
+                SQLInterface: "CALL {}: table '{}' needs a namespace; catalog '{}' has no default namespace",
+                function.name, name, catalog
+            );
+        };
+        Ok(CatalogStatement::Call {
+            name,
+            procedure: procedure.to_string(),
+            table,
+            args,
+        })
     }
 
     /// The catalog statement of a `TRUNCATE`, if its name resolves to a catalog table.
