@@ -54,7 +54,7 @@ use crate::subquery::is_correlated_subquery;
 use crate::time_travel::{TableVersions, extract_table_versions};
 use crate::types::{
     bitstring_to_bytes_literal, is_iso_date, is_iso_datetime, is_iso_time, map_sql_dtype_to_polars,
-    strip_utc_offset,
+    sql_type_name, strip_utc_offset,
 };
 use crate::{SQLContext, col, struct_field, unique_column_name};
 
@@ -1998,10 +1998,48 @@ impl SQLExprVisitor<'_> {
         }
         let expr = self.visit_expr(expr)?;
 
+        // A JSON value is its text, which the JSON operators read.
         #[cfg(feature = "json")]
         if dtype == &SQLDataType::JSON {
-            // @BROKEN: we cannot handle this.
-            return Ok(expr.str().json_decode(DataType::Struct(Vec::new())));
+            let typed = self.ctx.with_typed_subqueries(&expr)?;
+            let dtype = self.expr_dtype(&typed);
+            if matches!(dtype, None | Some(DataType::String)) {
+                // TRY_CAST would need to check that the text is JSON.
+                polars_ensure!(
+                    matches!(cast_kind, CastKind::Cast | CastKind::DoubleColon),
+                    SQLInterface: "only CAST of text to JSON is supported"
+                );
+            }
+            return Ok(match dtype {
+                None | Some(DataType::String) => expr.cast(DataType::String),
+                Some(dtype) if dtype.is_float() => {
+                    let text = expr.cast(DataType::String);
+                    when(text.clone().eq(lit("inf")))
+                        .then(lit("Infinity"))
+                        .when(text.clone().eq(lit("-inf")))
+                        .then(lit("-Infinity"))
+                        .otherwise(text)
+                },
+                Some(dtype @ DataType::Struct(_)) => {
+                    polars_ensure!(
+                        !dtype.contains_dtype_recursive(&DataType::Binary)
+                            && !dtype.contains_dtype_recursive(&DataType::BinaryOffset)
+                            && !dtype.contains_objects(),
+                        SQLInterface: "cannot cast {} to JSON", sql_type_name(&dtype)
+                    );
+                    when(expr.clone().is_not_null())
+                        .then(expr.struct_().json_encode())
+                        .otherwise(lit(NULL))
+                },
+                Some(dtype)
+                    if dtype.is_null() || dtype.is_bool() || dtype.is_primitive_numeric() =>
+                {
+                    expr.cast(DataType::String)
+                },
+                Some(dtype) => polars_bail!(
+                    SQLInterface: "cannot cast {} to JSON", sql_type_name(&dtype)
+                ),
+            });
         }
         self.cast_to(expr, map_sql_dtype_to_polars(dtype)?, cast_kind)
     }
