@@ -874,29 +874,33 @@ fn try_lower_agg_input_expr(
             function: function @ (IRFunctionExpr::DropNulls | IRFunctionExpr::DropNans),
             options: _,
         } => {
-            let input = &inputs_ref[0];
-            if !is_elementwise_rec_cached(input.node(), expr_arena, expr_cache) {
+            let input = inputs_ref[0].node();
+            if !is_elementwise_rec_cached(input, expr_arena, expr_cache) {
                 return Ok(None);
             }
+
+            let predicate = if matches!(function, IRFunctionExpr::DropNulls) {
+                AExprBuilder::new_from_node(input).is_not_null(expr_arena)
+            } else {
+                let input_schema = input_stream.output_schema(phys_sm);
+                let dtype = expr_arena
+                    .get(input)
+                    .to_dtype(&ToFieldContext::new(expr_arena, input_schema))?;
+                // `drop_nans` only drops values of float columns.
+                if !dtype.is_float() {
+                    return Ok(Some((input_stream, input, true)));
+                }
+                // Keep nulls, for which `is_not_nan` is null.
+                let x = AExprBuilder::new_from_node(input);
+                let is_null = x.is_null(expr_arena);
+                x.is_not_nan(expr_arena).or(is_null, expr_arena)
+            };
 
             let output_name = unique_column_name();
             let predicate_name = unique_column_name();
             let mut select_exprs = keys.to_vec();
-            select_exprs.push(ExprIR::new(
-                input.node(),
-                OutputName::Alias(output_name.clone()),
-            ));
-            let predicate = AExprBuilder::function(
-                vec![inputs_ref[0].clone()],
-                if matches!(function, IRFunctionExpr::DropNulls) {
-                    IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull)
-                } else {
-                    IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNan)
-                },
-                expr_arena,
-            )
-            .expr_ir(predicate_name.clone());
-            select_exprs.push(predicate);
+            select_exprs.push(ExprIR::new(input, OutputName::Alias(output_name.clone())));
+            select_exprs.push(predicate.expr_ir(predicate_name.clone()));
 
             let mut stream = build_select_stream(
                 input_stream,
