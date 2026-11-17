@@ -478,10 +478,17 @@ fn extract_literal_with_op<'a>(
     expr: &'a SQLExpr,
     outer_op: Option<&'a SQLUnaryOperator>,
 ) -> Option<(&'a SQLValue, Option<&'a SQLUnaryOperator>)> {
-    match expr {
-        SQLExpr::Value(ValueWithSpan { value: v, .. }) => Some((v, outer_op)),
-        SQLExpr::UnaryOp { op, expr } if outer_op.is_none() => match expr.as_ref() {
-            SQLExpr::Value(ValueWithSpan { value: v, .. }) => Some((v, Some(op))),
+    match (expr, outer_op) {
+        (SQLExpr::Value(ValueWithSpan { value: v, .. }), _) => Some((v, outer_op)),
+        (SQLExpr::UnaryOp { op, expr }, None) => extract_literal_with_op(expr, Some(op)),
+        (
+            SQLExpr::UnaryOp {
+                op: SQLUnaryOperator::Minus,
+                expr,
+            },
+            Some(SQLUnaryOperator::Minus),
+        ) => match expr.as_ref() {
+            SQLExpr::Value(ValueWithSpan { value: v, .. }) => Some((v, None)),
             _ => None,
         },
         _ => None,
@@ -1498,6 +1505,25 @@ impl SQLExprVisitor<'_> {
     ///
     /// e.g. +column or -column
     fn visit_unary_op(&mut self, op: &SQLUnaryOperator, expr: &SQLExpr) -> PolarsResult<Expr> {
+        let mut operand = expr;
+        while let SQLExpr::Nested(e)
+        | SQLExpr::UnaryOp {
+            op: SQLUnaryOperator::Plus,
+            expr: e,
+        } = operand
+        {
+            operand = e;
+        }
+        if let (
+            SQLUnaryOperator::Minus,
+            SQLExpr::Value(ValueWithSpan {
+                value: SQLValue::Placeholder(p),
+                ..
+            }),
+        ) = (op, operand)
+        {
+            return Ok(param_lit(negate_param(self.ctx.param(p)?.value(), p)?));
+        }
         let expr = self.visit_expr(expr)?;
         Ok(match (op, expr.clone()) {
             // simplify the parse tree by special-casing common unary +/- ops
@@ -2134,6 +2160,7 @@ impl SQLExprVisitor<'_> {
                 bitstring_to_bytes_literal(b)?
             },
             SQLValue::SingleQuotedString(s) => lit(s.clone()),
+            SQLValue::Placeholder(p) => param_lit(self.ctx.param(p)?.value().clone().into_static()),
             other => {
                 polars_bail!(SQLInterface: "value {:?} is not a supported literal type", other)
             },
@@ -2185,6 +2212,16 @@ impl SQLExprVisitor<'_> {
                 }
             },
             SQLValue::SingleQuotedString(s) => AnyValue::StringOwned(s.as_str().into()),
+            SQLValue::Placeholder(p) => {
+                let value = self.ctx.param(p)?;
+                match op {
+                    None | Some(SQLUnaryOperator::Plus) => value.value().clone().into_static(),
+                    Some(SQLUnaryOperator::Minus) => negate_param(value.value(), p)?,
+                    Some(op) => polars_bail!(
+                        SQLInterface: "unary op {:?} not supported for query parameter {}", op, p
+                    ),
+                }
+            },
             other => polars_bail!(SQLInterface: "value {:?} is not currently supported", other),
         })
     }
@@ -2662,6 +2699,13 @@ pub(crate) fn parse_sql_array(expr: &SQLExpr, ctx: &mut SQLContext) -> PolarsRes
             };
             visitor.array_expr_to_series(arr.elem.as_slice())
         },
+        SQLExpr::Value(ValueWithSpan {
+            value: SQLValue::Placeholder(p),
+            ..
+        }) => match ctx.param(p)?.value() {
+            AnyValue::List(s) => Ok(s.clone()),
+            _ => polars_bail!(SQLSyntax: "Expected array expression, found query parameter {}", p),
+        },
         _ => polars_bail!(SQLSyntax: "Expected array expression, found {:?}", expr),
     }
 }
@@ -2978,6 +3022,38 @@ pub(crate) fn is_decimal_literal_valued(expr: &Expr) -> bool {
                 && (is_decimal_literal_valued(truthy) || is_decimal_literal_valued(falsy))
         },
         e => decimal_literal(e).is_some(),
+    }
+}
+
+/// `-value` for the query parameter `p`. An integer that doesn't fit its type widens to Int128.
+fn negate_param(value: &AnyValue, p: &str) -> PolarsResult<AnyValue<'static>> {
+    let dtype = value.dtype();
+    let negated = match value {
+        AnyValue::Float32(v) => Some(AnyValue::Float32(-v)),
+        AnyValue::Float64(v) => Some(AnyValue::Float64(-v)),
+        AnyValue::Decimal(v, precision, scale) => Some(AnyValue::Decimal(-v, *precision, *scale)),
+        AnyValue::Duration(v, unit) => v.checked_neg().map(|v| AnyValue::Duration(v, *unit)),
+        _ if dtype.is_integer() => value
+            .extract::<i128>()
+            .and_then(i128::checked_neg)
+            .map(|v| {
+                let v = AnyValue::Int128(v);
+                v.strict_cast(&dtype).map_or(v, |v| v.into_static())
+            }),
+        _ => polars_bail!(
+            SQLInterface: "cannot negate query parameter {} of type {}", p, dtype
+        ),
+    };
+    negated.ok_or_else(|| polars_err!(ComputeError: "negating query parameter {} overflows", p))
+}
+
+/// The literal of the query parameter value `value`. An Int64 or Float64 value acts as a
+/// numeric literal.
+fn param_lit(value: AnyValue<'static>) -> Expr {
+    match value {
+        AnyValue::Int64(v) => lit(v),
+        AnyValue::Float64(v) => lit(v),
+        v => Scalar::new(v.dtype(), v).lit(),
     }
 }
 

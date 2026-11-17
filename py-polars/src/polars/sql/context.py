@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import importlib.util
+from collections.abc import Mapping
 from typing import (
     TYPE_CHECKING,
     Generic,
@@ -27,7 +28,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PySQLContext
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection, Mapping, Sequence
+    from collections.abc import Callable, Collection, Sequence
     from types import TracebackType
     from typing import Any, Final, Literal, Self, TypeAlias
 
@@ -97,6 +98,30 @@ def _get_frame_locals(
     """Return compatible frame objects from the local stack."""
     of_type = _compatible_frame if all_compatible else (DataFrame, LazyFrame, Series)
     return _get_stack_locals(of_type=of_type, n_objects=n_objects, named=named)  # type: ignore[arg-type]
+
+
+def _query_params(
+    params: Sequence[Any] | Mapping[str, Any] | None,
+) -> list[Any] | dict[str, Any] | None:
+    """The values of the query parameters, as the engine takes them."""
+    if params is None:
+        return None
+    from polars.expr import Expr
+
+    values: list[Any] | dict[str, Any]
+    if isinstance(params, Mapping):
+        values = dict(params)
+        items = list(values.values())
+    elif isinstance(params, (str, bytes)):
+        msg = f"`params` must be a sequence or a mapping, got {qualified_type_name(params)!r}"
+        raise TypeError(msg)
+    else:
+        values = items = list(params)
+    for value in items:
+        if isinstance(value, (Expr, Series, DataFrame, LazyFrame)):
+            msg = f"query parameter values must be scalars, got {qualified_type_name(value)!r}"
+            raise TypeError(msg)
+    return values
 
 
 class SQLContext(Generic[FrameType]):
@@ -247,20 +272,40 @@ class SQLContext(Generic[FrameType]):
     @overload
     @classmethod
     def execute_global(
-        cls, query: str, *, eager: Literal[False] = False
+        cls,
+        query: str,
+        *,
+        eager: Literal[False] = False,
+        params: Sequence[Any] | Mapping[str, Any] | None = ...,
     ) -> LazyFrame: ...
 
     @overload
     @classmethod
-    def execute_global(cls, query: str, *, eager: Literal[True]) -> DataFrame: ...
+    def execute_global(
+        cls,
+        query: str,
+        *,
+        eager: Literal[True],
+        params: Sequence[Any] | Mapping[str, Any] | None = ...,
+    ) -> DataFrame: ...
 
     @overload
     @classmethod
-    def execute_global(cls, query: str, *, eager: bool) -> DataFrame | LazyFrame: ...
+    def execute_global(
+        cls,
+        query: str,
+        *,
+        eager: bool,
+        params: Sequence[Any] | Mapping[str, Any] | None = ...,
+    ) -> DataFrame | LazyFrame: ...
 
     @classmethod
     def execute_global(
-        cls, query: str, *, eager: bool = False
+        cls,
+        query: str,
+        *,
+        eager: bool = False,
+        params: Sequence[Any] | Mapping[str, Any] | None = None,
     ) -> DataFrame | LazyFrame:
         """
         Immediately execute a SQL query, automatically registering frame globals.
@@ -282,6 +327,8 @@ class SQLContext(Generic[FrameType]):
         eager
             If True, returns execution results as `DataFrame` instead of `LazyFrame`.
             (Note that the query itself is always executed in lazy-mode).
+        params
+            The values of the query parameters; see :meth:`execute`.
 
         Examples
         --------
@@ -317,7 +364,7 @@ class SQLContext(Generic[FrameType]):
         # get compatible objects from the globals, constraining by possible names
         named_frames = _get_frame_locals(all_compatible=True, named=table_names)
         with cls(frames=named_frames, register_globals=False) as ctx:
-            return ctx.execute(query=query, eager=eager)
+            return ctx.execute(query=query, eager=eager, params=params)
 
     def __enter__(self) -> SQLContext[FrameType]:
         """Track tables and catalogs on scope entry; supports nested scopes."""
@@ -366,41 +413,73 @@ class SQLContext(Generic[FrameType]):
 
     @overload
     def execute(
-        self: SQLContext[DataFrame], query: str, *, eager: None = ...
+        self: SQLContext[DataFrame],
+        query: str,
+        *,
+        eager: None = ...,
+        params: Sequence[Any] | Mapping[str, Any] | None = ...,
     ) -> DataFrame: ...
 
     @overload
     def execute(
-        self: SQLContext[DataFrame], query: str, *, eager: Literal[False]
+        self: SQLContext[DataFrame],
+        query: str,
+        *,
+        eager: Literal[False],
+        params: Sequence[Any] | Mapping[str, Any] | None = ...,
     ) -> LazyFrame: ...
 
     @overload
     def execute(
-        self: SQLContext[DataFrame], query: str, *, eager: Literal[True]
+        self: SQLContext[DataFrame],
+        query: str,
+        *,
+        eager: Literal[True],
+        params: Sequence[Any] | Mapping[str, Any] | None = ...,
     ) -> DataFrame: ...
 
     @overload
     def execute(
-        self: SQLContext[LazyFrame], query: str, *, eager: None = ...
+        self: SQLContext[LazyFrame],
+        query: str,
+        *,
+        eager: None = ...,
+        params: Sequence[Any] | Mapping[str, Any] | None = ...,
     ) -> LazyFrame: ...
 
     @overload
     def execute(
-        self: SQLContext[LazyFrame], query: str, *, eager: Literal[False]
+        self: SQLContext[LazyFrame],
+        query: str,
+        *,
+        eager: Literal[False],
+        params: Sequence[Any] | Mapping[str, Any] | None = ...,
     ) -> LazyFrame: ...
 
     @overload
     def execute(
-        self: SQLContext[LazyFrame], query: str, *, eager: Literal[True]
+        self: SQLContext[LazyFrame],
+        query: str,
+        *,
+        eager: Literal[True],
+        params: Sequence[Any] | Mapping[str, Any] | None = ...,
     ) -> DataFrame: ...
 
     @overload
     def execute(
-        self, query: str, *, eager: bool | None = ...
+        self,
+        query: str,
+        *,
+        eager: bool | None = ...,
+        params: Sequence[Any] | Mapping[str, Any] | None = ...,
     ) -> LazyFrame | DataFrame: ...
 
     def execute(
-        self, query: str, *, eager: bool | None = None
+        self,
+        query: str,
+        *,
+        eager: bool | None = None,
+        params: Sequence[Any] | Mapping[str, Any] | None = None,
     ) -> LazyFrame | DataFrame:
         """
         Parse the given SQL query and execute it against the registered frame data.
@@ -415,6 +494,12 @@ class SQLContext(Generic[FrameType]):
             If unset, the value of the init-time "eager" parameter will be used.
             Note that the query itself is always executed in lazy-mode; this
             parameter only impacts the type of the returned frame.
+        params
+            The values of the query parameters. A sequence gives the values of the
+            positional parameters `?` (in order) or `$1`, `$2`, ...; a mapping gives
+            the values of the named parameters `$name` or `:name`. A parameter acts as
+            a literal of its value, so it can never inject SQL. Every parameter needs a
+            value, and every value must be used.
 
         Examples
         --------
@@ -480,19 +565,47 @@ class SQLContext(Generic[FrameType]):
         │ 1990   ┆ 232338648   ┆ 3       │
         │ 1970   ┆ 134821952   ┆ 1       │
         └────────┴─────────────┴─────────┘
+
+        Execute a query with parameters:
+
+        >>> ctx.execute(
+        ...     '''
+        ...     SELECT title FROM films
+        ...     WHERE release_year > $year AND imdb_score >= $score
+        ...     ''',
+        ...     params={"year": 1990, "score": 9.0},
+        ...     eager=True,
+        ... )
+        shape: (2, 1)
+        ┌──────────────────────────┐
+        │ title                    │
+        │ ---                      │
+        │ str                      │
+        ╞══════════════════════════╡
+        │ The Dark Knight          │
+        │ The Shawshank Redemption │
+        └──────────────────────────┘
         """
+        values = _query_params(params)
         if self._catalogs:
-            res = wrap_ldf(self._execute_with_catalogs(query))
+            res = wrap_ldf(self._execute_with_catalogs(query, values))
         else:
-            res = wrap_ldf(self._ctxt.execute(query))
+            res = wrap_ldf(self._ctxt.execute(query, values))
         return res.collect() if eager or self._eager_execution else res
 
-    def _execute_with_catalogs(self, query: str) -> PyLazyFrame:
+    def _execute_with_catalogs(
+        self, query: str, params: list[Any] | dict[str, Any] | None = None
+    ) -> PyLazyFrame:
         """Execute `query` with its catalog tables scanned."""
         if (stmt := self._ctxt.catalog_statement(query)) is not None:
+            if params is not None:
+                msg = "query parameters are not supported in a statement that changes a catalog table"
+                raise SQLInterfaceError(msg)
             return self._execute_catalog_statement(stmt, query)._ldf
 
-        return self._ctxt.execute_with_catalog_tables(query, self._catalog_scans(query))
+        return self._ctxt.execute_with_catalog_tables(
+            query, self._catalog_scans(query), params
+        )
 
     def _catalog_scans(
         self, query: str, target: tuple[list[str], pyiceberg.table.Table] | None = None
