@@ -1,9 +1,8 @@
 use chrono::Timelike;
 use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
 use polars_core::prelude::{
-    AnyValue, DataType, ExplodeOptions, Field, PolarsResult, QuantileMethod, Scalar, Schema,
-    TimeUnit, TimeZone, UnknownKind, datetime_to_timestamp_us, polars_bail, polars_ensure,
-    polars_err,
+    AnyValue, DataType, ExplodeOptions, PolarsResult, QuantileMethod, Scalar, Schema, TimeUnit,
+    TimeZone, UnknownKind, datetime_to_timestamp_us, polars_bail, polars_ensure, polars_err,
 };
 use polars_core::utils::try_get_supertype;
 #[cfg(feature = "rank")]
@@ -3736,11 +3735,14 @@ impl SQLFunctionVisitor<'_> {
             !contains_random(body, true),
             SQLInterface: "RANDOM() is not supported in a lambda"
         );
-        // The body reads the element as a column, so that its type is known while parsing.
+        // The body reads the element as a column, so that its type is known while parsing. The
+        // other columns it reads are the values of the row.
         self.ctx.lambda_depth += 1;
         let element_name = lambda_element_name(self.ctx.lambda_depth);
-        let schema =
-            Schema::from_iter(element_dtype.map(|dtype| Field::new(element_name.clone(), dtype)));
+        let mut schema = self.active_schema.cloned().unwrap_or_default();
+        if let Some(dtype) = element_dtype {
+            schema.with_column(element_name.clone(), dtype);
+        }
         let body = parse_sql_expr(body, self.ctx, Some(&schema));
         self.ctx.lambda_depth -= 1;
         let body = body?.map_expr(|e| match e {

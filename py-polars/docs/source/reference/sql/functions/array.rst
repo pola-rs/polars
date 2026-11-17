@@ -471,7 +471,8 @@ return timestamps. Also available as a table function, see
 LIST_FILTER
 -----------
 Returns the array with the elements for which a lambda is true. The lambda takes one
-parameter, the element, and can only use that parameter. A null result drops the element.
+parameter, the element, and can also read the columns of the row. A null result drops the
+element.
 Aliases: ``ARRAY_FILTER``, ``FILTER``.
 
 **Example:**
@@ -497,7 +498,7 @@ Aliases: ``ARRAY_FILTER``, ``FILTER``.
 LIST_TRANSFORM
 --------------
 Returns the array with a lambda applied to each element. The lambda takes one parameter,
-the element, and can only use that parameter. Aliases: ``ARRAY_TRANSFORM``, ``APPLY``,
+the element, and can also read the columns of the row. Aliases: ``ARRAY_TRANSFORM``, ``APPLY``,
 ``LIST_APPLY``, ``ARRAY_APPLY``.
 
 **Example:**

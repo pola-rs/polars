@@ -160,6 +160,34 @@ def test_lambda_sql_expr() -> None:
     assert res["r"].to_list() == [[0, 1], [2]]
 
 
+def test_lambda_columns(df: pl.DataFrame) -> None:
+    res = df.sql(
+        """
+        SELECT
+          list_transform(l, lambda x: x + v) AS a,
+          list_filter(l, lambda x: x >= self.v) AS b,
+          list_transform(n, lambda x: list_filter(x, lambda y: y > g)) AS c
+        FROM self
+        """
+    )
+    assert res.to_dict(as_series=False) == {
+        "a": [[2, 3], [5, None], None, []],
+        "b": [[1, 2], [3], None, []],
+        "c": [[[2], [3]], [[4]], None, []],
+    }
+
+    other = pl.DataFrame({"g": [1, 2], "t": [1, 3]})
+    res = pl.SQLContext(t=df, o=other).execute(
+        """
+        SELECT t.v, list_filter(t.l, lambda x: x > o.t) AS r
+        FROM t JOIN o ON t.g = o.g
+        ORDER BY t.v
+        """,
+        eager=True,
+    )
+    assert res.rows() == [(1, [2]), (2, [3]), (3, None), (4, [])]
+
+
 def test_lambda_named_column() -> None:
     df = pl.DataFrame({"lambda": [1, 2]})
     assert df.sql("SELECT lambda FROM self")["lambda"].to_list() == [1, 2]
@@ -168,16 +196,6 @@ def test_lambda_named_column() -> None:
 @pytest.mark.parametrize(
     ("func", "error", "match"),
     [
-        (
-            "list_transform(l, lambda x: x + v)",
-            SQLInterfaceError,
-            "a lambda can only use its parameter, found 'v'",
-        ),
-        (
-            "list_transform(l, lambda x: self.v)",
-            SQLInterfaceError,
-            "a lambda can only use its parameter",
-        ),
         (
             "list_transform(n, lambda x: list_transform(x, lambda y: y + x))",
             SQLInterfaceError,

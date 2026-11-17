@@ -219,9 +219,6 @@ pub(crate) fn lambda_element_name(depth: usize) -> PlSmallStr {
 
 pub(crate) fn check_lambda_body_expr(expr: &SQLExpr) -> PolarsResult<()> {
     match expr {
-        SQLExpr::Identifier(_) | SQLExpr::CompoundIdentifier(_) => {
-            polars_bail!(SQLInterface: "a lambda can only use its parameter, found '{}'", expr)
-        },
         SQLExpr::Subquery(_) | SQLExpr::Exists { .. } | SQLExpr::InSubquery { .. } => {
             polars_bail!(SQLInterface: "subqueries are not supported in a lambda")
         },
