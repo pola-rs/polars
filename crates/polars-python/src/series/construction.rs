@@ -7,7 +7,7 @@ use polars_arrow::array::{Array, PrimitiveArray};
 use polars_arrow::bitmap::BitmapBuilder;
 use polars_arrow::types::NativeType;
 use polars_buffer::{Buffer, SharedStorage};
-use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 
 use crate::PySeries;
@@ -212,7 +212,6 @@ init_method_opt!(new_opt_u8, UInt8Type, u8);
 init_method_opt!(new_opt_u16, UInt16Type, u16);
 init_method_opt!(new_opt_u32, UInt32Type, u32);
 init_method_opt!(new_opt_u64, UInt64Type, u64);
-init_method_opt!(new_opt_u128, UInt128Type, u128);
 init_method_opt!(new_opt_i8, Int8Type, i8);
 init_method_opt!(new_opt_i16, Int16Type, i16);
 init_method_opt!(new_opt_i32, Int32Type, i32);
@@ -220,6 +219,23 @@ init_method_opt!(new_opt_i64, Int64Type, i64);
 init_method_opt!(new_opt_i128, Int128Type, i128);
 init_method_opt!(new_opt_f32, Float32Type, f32);
 init_method_opt!(new_opt_f64, Float64Type, f64);
+
+#[pymethods]
+impl PySeries {
+    #[staticmethod]
+    fn new_opt_u128(name: &str, obj: &Bound<PyAny>, strict: bool) -> PyResult<Self> {
+        new_primitive::<UInt128Type, _>(name, obj, strict, |v| {
+            // On Python >= 3.14 negative values raise a ValueError instead of an OverflowError.
+            v.extract::<u128>().map_err(|err| {
+                if err.is_instance_of::<PyValueError>(v.py()) {
+                    PyOverflowError::new_err(err.value(v.py()).to_string())
+                } else {
+                    err
+                }
+            })
+        })
+    }
+}
 
 #[pymethods]
 impl PySeries {

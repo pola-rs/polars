@@ -395,6 +395,12 @@ pub(crate) fn py_object_to_any_value(
         ))
     }
 
+    fn get_pandas_nat(_ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
+        Err(PyTypeError::new_err(
+            "cannot convert pandas NaT; use None for missing values",
+        ))
+    }
+
     fn get_timedelta(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
         let timedelta = ob.extract::<TimeDelta>()?;
         if let Some(micros) = timedelta.num_microseconds() {
@@ -680,7 +686,13 @@ pub(crate) fn py_object_to_any_value(
         // note: datetime must be checked *before* date
         // (as python datetime is an instance of date)
         else if PyDateTime::type_check(ob) {
-            Ok(get_datetime as InitFn)
+            // pandas NaT is a datetime subclass that holds no valid date.
+            let ty = ob.get_type();
+            if ty.qualname()? == "NaTType" && ty.module()?.to_str()?.starts_with("pandas") {
+                Ok(get_pandas_nat as InitFn)
+            } else {
+                Ok(get_datetime as InitFn)
+            }
         } else if PyDate::type_check(ob) {
             Ok(get_date as InitFn)
         } else if PyTime::type_check(ob) {

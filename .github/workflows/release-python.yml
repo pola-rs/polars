@@ -29,6 +29,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.11'
+  FREE_THREADED_PYTHON_VERSION: '3.15t'
   POLARS_BUILD_COMMIT: ${{ inputs.sha || github.sha }}
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
@@ -164,6 +165,8 @@ jobs:
       matrix:
         package: [polars-runtime-32, polars-runtime-64, polars-runtime-compat]
         job_config: [linux-x64, linux-arm64, linux-musl-x64, linux-musl-arm64, macos-x64, macos-arm64, win-x64, win-arm64]
+        # abi3 covers GIL-enabled Python, abi3t covers free-threaded Python 3.15+.
+        abi: [abi3, abi3t]
         include:
           - job_config: linux-x64
             os: ubuntu-latest
@@ -225,6 +228,14 @@ jobs:
         with:
           swap-size-gb: 10
 
+      # Set up before the default Python so that `python` stays the default version.
+      - name: Set up free-threaded Python
+        id: setup-free-threaded-python
+        if: matrix.abi == 'abi3t'
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.FREE_THREADED_PYTHON_VERSION }}
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
@@ -237,8 +248,13 @@ jobs:
           python -c "import sysconfig; print(sysconfig.get_path('scripts'))" >> $GITHUB_PATH
 
       - name: Install yq
+        env:
+          FREE_THREADED_PYTHON: ${{ steps.setup-free-threaded-python.outputs.python-path }}
         run: |
           pip install --force-reinstall --no-dependencies dist/polars-*.whl
+          if [[ -n "$FREE_THREADED_PYTHON" ]]; then
+            "$FREE_THREADED_PYTHON" -m pip install --force-reinstall --no-dependencies dist/polars-*.whl
+          fi
           rm -rf dist/*
           pip install yq
 
@@ -299,10 +315,12 @@ jobs:
           # fixed prefix allowlist into the manylinux/musllinux container, so
           # `POLARS_BUILD_COMMIT` has to be passed through explicitly.
           docker-options: -e POLARS_BUILD_COMMIT
+          # The interpreter decides between the abi3 and abi3t wheel, so always pin it.
           args: >
             --profile ${{ inputs.dry-run == true && 'dev' || 'dist-release' }}
             --manifest-path py-polars/runtime/${{ matrix.package }}/Cargo.toml
             --compression-level 9
+            --interpreter python${{ matrix.abi == 'abi3t' && env.FREE_THREADED_PYTHON_VERSION || env.PYTHON_VERSION }}
             --out dist
           manylinux: auto
           maturin-version: 1.15.0
@@ -310,9 +328,11 @@ jobs:
       - name: Test wheel
         # Testing on entire matrix except musl targets, which are missing on all ubuntu-x images.
         if: endsWith(matrix.target, '-musl') == false
+        env:
+          PYTHON: ${{ matrix.abi == 'abi3t' && steps.setup-free-threaded-python.outputs.python-path || 'python' }}
         run: |
-          pip install --force-reinstall --verbose dist/*.whl
-          python -c 'import polars; polars.show_versions()' | tee versions.txt
+          "$PYTHON" -m pip install --force-reinstall --verbose dist/*.whl
+          "$PYTHON" -c 'import polars; polars.show_versions()' | tee versions.txt
 
           if ! grep -qE "^Build: +$POLARS_BUILD_COMMIT\$" versions.txt; then
             echo "::error::show_versions() does not report build commit $POLARS_BUILD_COMMIT"
@@ -322,7 +342,7 @@ jobs:
       - name: Upload wheel
         uses: actions/upload-artifact@v7
         with:
-          name: wheel-${{ matrix.package }}-${{ matrix.job_config }}
+          name: wheel-${{ matrix.package }}-${{ matrix.job_config }}-${{ matrix.abi }}
           path: dist/*.whl
 
   plugin-versions:
