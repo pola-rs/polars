@@ -4,6 +4,7 @@ use std::ops::Range;
 use polars_arrow::record_batch::RecordBatch;
 use rayon::prelude::*;
 
+use crate::frame::column::ScalarColumn;
 use crate::prelude::*;
 use crate::runtime::RAYON;
 use crate::series::arrow_export::{arrow_export_row_ranges, contains_arrow_map};
@@ -104,28 +105,39 @@ impl DataFrame {
         let rows = chunk
             .as_ref()
             .map_or(0..self.height(), |(_, rows)| rows.clone());
-        let columns: Vec<(Cow<'_, [ArrayRef]>, &ArrowDataType)> = self
+        let columns: Vec<(Cow<'_, [ArrayRef]>, &ArrowDataType, bool)> = self
             .columns()
             .iter()
             .zip(arrow_dtypes)
             .filter(|(_, dtype)| contains_arrow_map(dtype))
             .map(|(c, dtype)| {
-                let chunks = match (c.as_series(), &chunk) {
-                    (Some(s), None) => Cow::Borrowed(s.chunks().as_slice()),
-                    (Some(s), Some((idx, _))) => {
-                        Cow::Borrowed(std::slice::from_ref(&s.chunks()[*idx]))
+                PolarsResult::Ok(match (c, &chunk) {
+                    (Column::Series(s), None) => {
+                        (Cow::Borrowed(s.chunks().as_slice()), dtype, false)
                     },
-                    (None, _) => Cow::Owned(
-                        c.slice(rows.start as i64, rows.len())
-                            .take_materialized_series()
-                            .into_chunks(),
+                    (Column::Series(s), Some((idx, _))) => (
+                        Cow::Borrowed(std::slice::from_ref(&s.chunks()[*idx])),
+                        dtype,
+                        false,
                     ),
-                };
-                (chunks, dtype)
+                    (Column::Scalar(sc), _) => (Cow::Owned(single_row_chunks(sc)), dtype, true),
+                    (_, _) => (
+                        Cow::Owned(
+                            c.slice(rows.start as i64, rows.len())
+                                .take_materialized_series()
+                                .into_chunks(),
+                        ),
+                        dtype,
+                        false,
+                    ),
+                })
             })
-            .collect();
+            .collect::<PolarsResult<_>>()?;
 
-        arrow_export_row_ranges(columns.iter().map(|(c, d)| (c.as_ref(), *d)), rows.len())
+        arrow_export_row_ranges(
+            columns.iter().map(|(c, d, r)| (c.as_ref(), *d, *r)),
+            rows.len(),
+        )
     }
 
     /// Slices of this frame that each export to `arrow_dtypes` without overflowing the `i32`
@@ -145,6 +157,28 @@ impl DataFrame {
             .map(|r| self.slice(r.start as i64, r.len()))
             .collect())
     }
+}
+
+/// A single row of `sc` as physical chunks whose rows together make up that row.
+fn single_row_chunks(sc: &ScalarColumn) -> Vec<ArrayRef> {
+    // Building a Map value's Series deduplicates its keys, which costs a hash per entry, and
+    // imploding its entries would copy them unless they are a single chunk.
+    #[cfg(feature = "dtype-map")]
+    if let AnyValue::Map(entries) = sc.scalar().value() {
+        return entries
+            .chunks()
+            .iter()
+            .map(|chunk| {
+                let offsets = vec![0, chunk.len() as i64];
+                let dtype = ListArray::<i64>::default_datatype(chunk.dtype().clone());
+                // SAFETY: the offsets span the whole chunk.
+                let offsets =
+                    unsafe { polars_arrow::offset::Offsets::new_unchecked(offsets) }.into();
+                ListArray::<i64>::new(dtype, offsets, chunk.clone(), None).boxed()
+            })
+            .collect();
+    }
+    sc.as_single_value_series().into_chunks()
 }
 
 /// Split DataFrame into chunks in preparation for writing. The chunks have a
