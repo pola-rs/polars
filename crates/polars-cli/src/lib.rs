@@ -17,7 +17,7 @@ use polars::error::abort::{QueryAborted, catch_polars_abort};
 use polars::prelude::sink::{SinkedPathsCallback, SinkedPathsCallbackArgs};
 use polars::prelude::{
     DataFrame, DslPlan, Engine, IntoLazy, LazyFrame, PlanCallback, PolarsError, PolarsResult,
-    SinkDestination, SinkType, UnifiedSinkArgs, df,
+    SinkDestination, SinkType, SpecialEq, UnifiedSinkArgs, df,
 };
 use polars::sql::SQLContext;
 
@@ -252,11 +252,14 @@ where
 
 /// What a file sink calls once it has written its files: stores their number of rows in `rows`.
 fn count_rows(rows: Arc<AtomicU64>) -> SinkedPathsCallback {
-    SinkedPathsCallback::Callback(PlanCallback::new(move |args: SinkedPathsCallbackArgs| {
+    let count = move |args: SinkedPathsCallbackArgs| {
         let written = args.path_info_list.iter().map(|file| file.num_rows).sum();
         rows.store(written, Ordering::Relaxed);
         Ok(())
-    }))
+    };
+    // Not `PlanCallback::new`: in a build with Python, that takes arguments that convert to
+    // Python objects only.
+    SinkedPathsCallback::Callback(PlanCallback::Rust(SpecialEq::new(Arc::new(count) as _)))
 }
 
 /// Errors name the plan nodes they passed through. The outermost one is the batch sink that
