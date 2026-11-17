@@ -2702,27 +2702,27 @@ impl SQLContext {
             rows.iter().all(|row| row.len() == width),
             SQLSyntax: "VALUES rows must all have the same number of values"
         );
-        // The value of each literal cell; `None` for an expression.
-        let cells = rows
+        let mut cells = rows
             .iter()
             .map(|row| row.iter().map(|expr| self.literal_value(expr)).collect())
             .collect::<PolarsResult<Vec<Vec<_>>>>()?;
 
         // A column of literals takes the supertype of its rows, not the first row's type.
-        let mut literal_columns = Vec::with_capacity(width);
-        for i in 0..width {
-            let values: Option<Vec<AnyValue>> = cells.iter().map(|row| row[i].clone()).collect();
-            literal_columns.push(
+        let literal_columns = (0..width)
+            .map(|i| {
+                let values: Option<Vec<AnyValue>> =
+                    cells.iter_mut().map(|row| row[i].take()).collect();
                 values
-                    .map(|values| {
-                        series_from_literals(format_pl_smallstr!("column_{i}"), &values)
-                            .map(Column::from)
-                    })
-                    .transpose()?,
-            );
-        }
+                    .map(|values| series_from_literals(format_pl_smallstr!("column_{i}"), &values))
+                    .transpose()
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
         if literal_columns.iter().all(Option::is_some) {
-            let columns = literal_columns.into_iter().flatten().collect();
+            let columns = literal_columns
+                .into_iter()
+                .flatten()
+                .map(Column::from)
+                .collect();
             return Ok(DataFrame::new_infer_height(columns)?.lazy());
         }
 
@@ -2754,7 +2754,7 @@ impl SQLContext {
             .into_iter()
             .enumerate()
             .map(|(i, column)| match column {
-                Some(column) => lit(column.take_materialized_series()),
+                Some(series) => lit(series),
                 None => col(name(i)).alias(format_pl_smallstr!("column_{i}")),
             })
             .collect();

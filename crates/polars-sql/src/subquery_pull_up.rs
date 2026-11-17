@@ -443,8 +443,7 @@ fn hoist_uncorrelated(
             };
             let name = format!("{NESTED_PREFIX}{}", unique_column_name());
             let value_name = format!("{name}_v");
-            let Ok(query) =
-                select_values([(SQLExpr::Subquery(subquery.clone()), value_name.clone())])
+            let Ok(query) = select_values([(SQLExpr::Subquery(subquery.clone()), &value_name)])
             else {
                 return ControlFlow::Break(());
             };
@@ -475,8 +474,8 @@ fn hoist_uncorrelated(
 }
 
 /// `SELECT <value> AS <alias>, ...`.
-pub(crate) fn select_values(
-    values: impl IntoIterator<Item = (SQLExpr, String)>,
+pub(crate) fn select_values<S: Into<String>>(
+    values: impl IntoIterator<Item = (SQLExpr, S)>,
 ) -> PolarsResult<Query> {
     let mut query = Parser::new(&GenericDialect)
         .try_with_sql("SELECT NULL")
