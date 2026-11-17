@@ -1,6 +1,10 @@
 use std::any::Any;
 
 use num_traits::AsPrimitive;
+#[cfg(feature = "dtype-array")]
+use polars_arrow::array::FixedSizeListArray;
+#[cfg(feature = "dtype-struct")]
+use polars_arrow::array::StructArray;
 use polars_arrow::array::builder::ArrayBuilder;
 use polars_arrow::datatypes::IntegerType;
 use polars_arrow::types::NativeType;
@@ -109,6 +113,7 @@ impl CategoricalToArrowConverter {
                                         mapping.num_cats_upper_bound()
                                     )
                                 ),
+                                values: ValuesCache::default(),
                             },
                         );
                     })
@@ -123,6 +128,7 @@ impl CategoricalToArrowConverter {
                         CategoricalArrayToArrowConverter::Enum {
                             frozen: categories.clone(),
                             mapping: mapping.clone(),
+                            values: ValuesCache::default(),
                         },
                     );
                 }
@@ -146,6 +152,59 @@ impl CategoricalToArrowConverter {
             _ => assert!(!dtype.is_nested()),
         }
     }
+
+    /// Add the Categorical keys of `array`, a physical array of `dtype`, to the key remaps, so
+    /// that exports with `persist_remap` share one dictionary.
+    ///
+    /// Keys under null parents are added too, so the dictionary may hold a few unused values.
+    pub fn seed(&mut self, array: &dyn Array, dtype: &DataType) {
+        use DataType::*;
+
+        match dtype {
+            Categorical(_, mapping) => {
+                let key = Arc::as_ptr(mapping) as *const () as usize;
+                let CategoricalArrayToArrowConverter::Categorical { key_remap, .. } =
+                    self.converters.get_mut(&key).unwrap()
+                else {
+                    unreachable!()
+                };
+                match key_remap {
+                    CategoricalKeyRemap::U8(remap) => extend_remap(remap, array),
+                    CategoricalKeyRemap::U16(remap) => extend_remap(remap, array),
+                    CategoricalKeyRemap::U32(remap) => extend_remap(remap, array),
+                }
+            },
+            List(inner) => {
+                let arr: &ListArray<i64> = array.as_any().downcast_ref().unwrap();
+                self.seed(arr.values().as_ref(), inner)
+            },
+            #[cfg(feature = "dtype-array")]
+            Array(inner, _width) => {
+                let arr: &FixedSizeListArray = array.as_any().downcast_ref().unwrap();
+                self.seed(arr.values().as_ref(), inner)
+            },
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => {
+                let arr: &StructArray = array.as_any().downcast_ref().unwrap();
+                for (values, field) in arr.values().iter().zip(fields) {
+                    self.seed(values.as_ref(), field.dtype())
+                }
+            },
+            #[cfg(feature = "dtype-map")]
+            Map(_, _) => self.seed(array, &dtype.map_storage_dtype().unwrap()),
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, inner) => self.seed(array, inner),
+            _ => {},
+        }
+    }
+}
+
+fn extend_remap<T: NativeType + std::hash::Hash + Eq>(
+    remap: &mut PlIndexSet<T>,
+    array: &dyn Array,
+) {
+    let keys: &PrimitiveArray<T> = array.as_any().downcast_ref().unwrap();
+    remap.extend(keys.iter().flatten().copied());
 }
 
 pub enum CategoricalArrayToArrowConverter {
@@ -156,14 +215,20 @@ pub enum CategoricalArrayToArrowConverter {
     Categorical {
         mapping: Arc<CategoricalMapping>,
         key_remap: CategoricalKeyRemap,
+        values: ValuesCache,
     },
     /// Enum keys are not remapped, but we still track this variant to support
     /// the `build_values_array()` function.
     Enum {
         mapping: Arc<CategoricalMapping>,
         frozen: Arc<FrozenCategories>,
+        values: ValuesCache,
     },
 }
+
+/// The values array built last, so that batches of one export share one dictionary buffer.
+#[derive(Default)]
+pub struct ValuesCache(Option<(bool, usize, Box<dyn Array>)>);
 
 impl CategoricalArrayToArrowConverter {
     fn array_to_arrow<T>(
@@ -185,7 +250,9 @@ impl CategoricalArrayToArrowConverter {
         let input_mapping_ptr: *const CategoricalMapping = Arc::as_ptr(mapping);
 
         let keys_arr: PrimitiveArray<T> = match self {
-            Self::Categorical { mapping, key_remap } => {
+            Self::Categorical {
+                mapping, key_remap, ..
+            } => {
                 assert_eq!(input_mapping_ptr, Arc::as_ptr(mapping));
 
                 let key_remap: &mut PlIndexSet<T> = key_remap.as_any_mut().downcast_mut().unwrap();
@@ -216,7 +283,12 @@ impl CategoricalArrayToArrowConverter {
             return keys_arr.boxed();
         }
 
-        let values = self.build_values_array(use_view_type);
+        // A remap that persists only grows, so its length identifies its keys.
+        let values = if persist_remap || matches!(self, Self::Enum { .. }) {
+            self.cached_values_array(use_view_type)
+        } else {
+            self.build_values_array(use_view_type)
+        };
 
         let dictionary_dtype = ArrowDataType::Dictionary(
             <T as DictionaryKey>::KEY_TYPE,
@@ -231,6 +303,26 @@ impl CategoricalArrayToArrowConverter {
         }
     }
 
+    /// Like [`Self::build_values_array`], but reuses the array built last if the keys haven't
+    /// changed since; only valid while the key remap persists.
+    fn cached_values_array(&mut self, use_view_type: bool) -> Box<dyn Array> {
+        let n_keys = match self {
+            Self::Categorical { key_remap, .. } => key_remap.len(),
+            Self::Enum { frozen, .. } => frozen.categories().len(),
+        };
+        let (Self::Categorical { values, .. } | Self::Enum { values, .. }) = self;
+        if let Some((view, n, array)) = &values.0
+            && *view == use_view_type
+            && *n == n_keys
+        {
+            return array.clone();
+        }
+        let array = self.build_values_array(use_view_type);
+        let (Self::Categorical { values, .. } | Self::Enum { values, .. }) = self;
+        values.0 = Some((use_view_type, n_keys, array.clone()));
+        array
+    }
+
     /// Build the values array of the dictionary:
     /// * If `Self` is `::Categorical`, this builds according to the current `key_remap` state:
     ///   * If `persist_remap` is `true`, this state will hold all the keys this converter has encountered.
@@ -238,7 +330,9 @@ impl CategoricalArrayToArrowConverter {
     /// * If `Self` is `::Enum`, this returns the full set of values present in the Enum's `FrozenCategories`.
     pub fn build_values_array(&self, use_view_type: bool) -> Box<dyn Array> {
         match self {
-            Self::Categorical { mapping, key_remap } => match key_remap {
+            Self::Categorical {
+                mapping, key_remap, ..
+            } => match key_remap {
                 CategoricalKeyRemap::U8(keys) => self.build_values_array_from_keys(
                     keys.iter().map(|x: &u8| *x as CatSize),
                     mapping,
@@ -309,6 +403,14 @@ pub enum CategoricalKeyRemap {
 }
 
 impl CategoricalKeyRemap {
+    fn len(&self) -> usize {
+        match self {
+            Self::U8(v) => v.len(),
+            Self::U16(v) => v.len(),
+            Self::U32(v) => v.len(),
+        }
+    }
+
     fn as_any_mut(&mut self) -> &mut dyn Any {
         match self {
             Self::U8(v) => v as _,

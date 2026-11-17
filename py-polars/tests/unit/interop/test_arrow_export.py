@@ -72,17 +72,37 @@ def test_to_pandas_dictionaries_have_signed_keys() -> None:
     assert schema.field("c").type == pa.dictionary(pa.int64(), pa.large_string())
 
 
-def test_categorical_frame_exports_one_dictionary() -> None:
-    a = pl.DataFrame({"c": ["x", "y"]}, schema={"c": pl.Categorical})
-    b = pl.DataFrame({"c": ["z", "x"]}, schema={"c": pl.Categorical})
+def test_categorical_frame_shares_one_dictionary_across_batches() -> None:
+    a = pl.DataFrame(
+        {"c": ["x", "y"], "i": [0, 1]}, schema_overrides={"c": pl.Categorical}
+    )
+    b = pl.DataFrame(
+        {"c": ["z", "x"], "i": [2, 3]}, schema_overrides={"c": pl.Categorical}
+    )
     df = pl.concat([a, b], rechunk=False)
-    assert df.n_chunks() == 2
+    assert df.n_chunks("all") == [2, 2]
 
-    table = pa.table(df)
+    for table in (pa.table(df), df.to_arrow()):
+        batches = table.to_batches()
+        assert [batch.num_rows for batch in batches] == [2, 2]
+        assert batches[0]["c"].dictionary == batches[1]["c"].dictionary
+        assert table.group_by("c").aggregate([]).num_rows == 3
+        pa.ipc.new_file(io.BytesIO(), table.schema).write_table(table)
+        assert table.column("c").to_pylist() == ["x", "y", "z", "x"]
+    assert df.n_chunks("all") == [2, 2]
 
-    assert len(table.to_batches()) == 1
-    assert table.group_by("c").aggregate([]).num_rows == 3
-    pa.ipc.new_file(io.BytesIO(), table.schema).write_table(table)
+
+def test_enum_batches_share_one_dictionary_buffer() -> None:
+    dtype = pl.Enum(["x", "y", "z"])
+    df = pl.concat([pl.DataFrame({"e": ["x", "y"]}, schema={"e": dtype})] * 2)
+
+    batches = df.to_arrow().to_batches()
+
+    dicts = [batch["e"].dictionary for batch in batches]
+    assert len(dicts) == 2
+    assert [b.address for b in dicts[0].buffers()[1:]] == [
+        b.address for b in dicts[1].buffers()[1:]
+    ]
 
 
 @pytest.mark.parametrize(

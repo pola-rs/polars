@@ -205,6 +205,15 @@ def test_to_arrow_splits_a_later_chunk_beside_a_scalar(df: pl.DataFrame) -> None
     assert table.column("c").to_pylist() == [7] * 7
 
 
+def test_split_batches_share_one_categorical_dictionary(df: pl.DataFrame) -> None:
+    c = pl.Series(["a", "a", "a", "b", "b", "b"], dtype=pl.Categorical)
+
+    batches = df.with_columns(c=c).to_arrow().to_batches()
+
+    assert [b.num_rows for b in batches] == [3, 3]
+    assert batches[0]["c"].dictionary == batches[1]["c"].dictionary
+
+
 def test_sink_ipc_splits_a_map_column_with_several_chunks() -> None:
     chunk = map_chunk([ROW, ROW])
     table = pa.table({"m": pa.chunked_array([chunk, chunk, chunk])})

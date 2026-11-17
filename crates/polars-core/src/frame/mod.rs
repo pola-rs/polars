@@ -57,7 +57,7 @@ use crate::hashing::_df_rows_to_hashes_threaded_vertical;
 use crate::prelude::sort::arg_sort;
 use crate::runtime::RAYON;
 use crate::series::IsSorted;
-use crate::series::arrow_export::contains_arrow_map;
+use crate::series::arrow_export::{ToArrowConverter, contains_arrow_map};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -2203,6 +2203,12 @@ impl DataFrame {
         );
         let has_arrow_map = schema.iter_values().any(|f| contains_arrow_map(f.dtype()));
 
+        let converters = self
+            .columns()
+            .iter()
+            .map(|c| ToArrowConverter::new_shared_dictionaries(c.dtype()))
+            .collect();
+
         RecordBatchIterWrap::Batches(RecordBatchIter {
             df: self.clone(),
             schema,
@@ -2210,6 +2216,8 @@ impl DataFrame {
             compat_level,
             parallel,
             has_arrow_map,
+            converters,
+            seeded: false,
             split: None,
             offset: 0,
         })
@@ -2762,6 +2770,12 @@ pub struct RecordBatchIter {
     parallel: bool,
     /// Whether some column exports to an arrow MAP, so a chunk may need several batches.
     has_arrow_map: bool,
+    /// A converter per column holding Categorical or Enum values, shared by all batches so that
+    /// each such column has one dictionary, which consumers such as pyarrow's `group_by` and IPC
+    /// file writer require.
+    converters: Vec<Option<ToArrowConverter>>,
+    /// Whether `converters` hold every key, which is done before the first batch.
+    seeded: bool,
     split: Option<SplitChunk>,
     /// The first row of the next chunk, to slice columns without chunks of their own.
     offset: usize,
@@ -2774,34 +2788,79 @@ struct SplitChunk {
 }
 
 impl RecordBatchIter {
+    fn seed(&mut self) {
+        for (c, converter) in self.df.columns().iter().zip(&mut self.converters) {
+            let Some(converter) = converter else {
+                continue;
+            };
+            let single;
+            let materialized;
+            let chunks = match c {
+                Column::Series(s) => s.chunks(),
+                Column::Scalar(sc) => {
+                    single = sc.as_single_value_series();
+                    single.chunks()
+                },
+                _ => {
+                    materialized = c.as_materialized_series();
+                    materialized.chunks()
+                },
+            };
+            for chunk in chunks {
+                converter.seed(chunk.as_ref(), c.dtype());
+            }
+        }
+        self.seeded = true;
+    }
+
     /// Export chunk `idx` of `df`, which holds `rows`, as one batch.
     fn export(
         &self,
         df: &DataFrame,
         idx: usize,
         rows: std::ops::Range<usize>,
+        converters: &mut [Option<ToArrowConverter>],
     ) -> PolarsResult<RecordBatch> {
         let length = rows.len();
-        // A dictionary column's codes need not have the chunks of the other columns.
-        let to_arrow = |c: &Column| match c.as_series() {
-            Some(s) => s.try_to_arrow(idx, self.compat_level),
-            None => {
-                let mut s = c
-                    .slice(rows.start as i64, length)
-                    .take_materialized_series();
-                if s.n_chunks() > 1 {
-                    s = s.rechunk();
-                }
-                s.try_to_arrow(0, self.compat_level)
-            },
+        let to_arrow = |(i, (c, converter)): (usize, (&Column, &mut Option<ToArrowConverter>))| {
+            // A dictionary column's codes need not have the chunks of the other columns.
+            let materialized;
+            let (s, idx) = match c.as_series() {
+                Some(s) => (s, idx),
+                None => {
+                    let mut s = c
+                        .slice(rows.start as i64, length)
+                        .take_materialized_series();
+                    if s.n_chunks() > 1 {
+                        s = s.rechunk();
+                    }
+                    materialized = s;
+                    (&materialized, 0)
+                },
+            };
+            match converter {
+                None => s.try_to_arrow(idx, self.compat_level),
+                Some(converter) => converter.array_to_arrow(
+                    s.chunks()[idx].as_ref(),
+                    s.dtype(),
+                    Cow::Borrowed(self.schema.get_at_index(i).unwrap().1),
+                ),
+            }
         };
 
         let batch_cols = if self.parallel {
-            let iter = df.columns().par_iter().map(to_arrow);
+            let iter = df
+                .columns()
+                .par_iter()
+                .zip(converters.par_iter_mut())
+                .enumerate()
+                .map(to_arrow);
             RAYON.install(|| iter.collect::<PolarsResult<Vec<ArrayRef>>>())?
         } else {
             df.columns()
                 .iter()
+                .zip(converters.iter_mut())
+                .enumerate()
                 .map(to_arrow)
                 .collect::<PolarsResult<_>>()?
         };
@@ -2814,10 +2873,33 @@ impl Iterator for RecordBatchIter {
     type Item = PolarsResult<RecordBatch>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if !self.seeded {
+            self.seed();
+        }
+        // Taken out so that `export` can borrow `self.df` alongside them.
+        let mut converters = std::mem::take(&mut self.converters);
+        let out = self.next_batch(&mut converters);
+        self.converters = converters;
+        out
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let (chunks, _) = self.cursor.size_hint();
+        let pieces = self.split.as_ref().map_or(0, |split| split.ranges.len());
+        let lower = chunks + pieces;
+        (lower, (!self.has_arrow_map).then_some(lower))
+    }
+}
+
+impl RecordBatchIter {
+    fn next_batch(
+        &mut self,
+        converters: &mut [Option<ToArrowConverter>],
+    ) -> Option<PolarsResult<RecordBatch>> {
         if let Some(split) = &mut self.split {
             if let Some(range) = split.ranges.next() {
                 let piece = split.chunk.slice(range.start as i64, range.len());
-                return Some(self.export(&piece, 0, 0..range.len()));
+                return Some(self.export(&piece, 0, 0..range.len(), converters));
             }
             self.split = None;
         }
@@ -2837,19 +2919,12 @@ impl Iterator for RecordBatchIter {
                         chunk: self.df.chunk_frame(idx, rows),
                         ranges: ranges.into_iter(),
                     });
-                    return self.next();
+                    return self.next_batch(converters);
                 },
                 Err(err) => return Some(Err(err)),
             }
         }
-        Some(self.export(&self.df, idx, rows))
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let (chunks, _) = self.cursor.size_hint();
-        let pieces = self.split.as_ref().map_or(0, |split| split.ranges.len());
-        let lower = chunks + pieces;
-        (lower, (!self.has_arrow_map).then_some(lower))
+        Some(self.export(&self.df, idx, rows, converters))
     }
 }
 

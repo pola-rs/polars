@@ -179,6 +179,36 @@ pub struct ToArrowConverter {
 }
 
 impl ToArrowConverter {
+    /// A converter for repeated exports of `dtype` that share one dictionary per Categorical or
+    /// Enum mapping, once [`Self::seed`]ed with every key; `None` if `dtype` holds no such values.
+    pub(crate) fn new_shared_dictionaries(dtype: &DataType) -> Option<Self> {
+        if !(dtype.contains_categoricals() || dtype.contains_enums()) {
+            return None;
+        }
+        #[cfg(feature = "dtype-categorical")]
+        {
+            let mut categorical_converter = categorical::CategoricalToArrowConverter {
+                converters: Default::default(),
+                persist_remap: true,
+            };
+            categorical_converter.initialize(dtype);
+            Some(Self {
+                skip_attach_pl_metadata: true,
+                categorical_converter,
+            })
+        }
+        #[cfg(not(feature = "dtype-categorical"))]
+        unreachable!()
+    }
+
+    /// Add the Categorical keys of `array`, a physical array of `dtype`, to the dictionaries.
+    pub(crate) fn seed(&mut self, array: &dyn Array, dtype: &DataType) {
+        #[cfg(feature = "dtype-categorical")]
+        self.categorical_converter.seed(array, dtype);
+        #[cfg(not(feature = "dtype-categorical"))]
+        let _ = (array, dtype);
+    }
+
     /// Returns an error if `output_arrow_field` was provided and does not match the output data type.
     pub fn array_to_arrow<'a>(
         &mut self,
