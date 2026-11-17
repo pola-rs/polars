@@ -179,17 +179,16 @@ def rewrite_manifests(
     except CommitStateUnknownException:
         raise
     except Exception as error:
-        if catalog._snapshot_ids:
-            if error is catalog._raised:
-                # the last request's refusal: PyIceberg removed its files
-                raise
+        # not the last request's own refusal: did the rewrite commit?
+        if catalog._snapshot_ids and error is not catalog._raised:
             if _landed(table, commit_uuid):
                 # failed after this rewrite committed
                 return counts()
             if not isinstance(catalog._raised, CommitFailedException):
                 msg = "a failed Iceberg commit may still land"
                 raise CommitStateUnknownException(msg) from error
-        # nothing of this rewrite landed: no request, or every one refused
+        # nothing of this rewrite landed: no request, or every one refused. PyIceberg
+        # removes the manifests of some refusals only; removing twice is a no-op.
         clean_up()
         if isinstance(error, _NothingToRewrite):
             return 0, 0

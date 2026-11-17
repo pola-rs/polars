@@ -179,7 +179,7 @@ pub enum CatalogStatement {
     Call {
         /// The `table` argument as the statement wrote it.
         name: String,
-        /// The procedure, as listed in [`CALL_PROCEDURES`].
+        /// The procedure, e.g. `rewrite_manifests`.
         procedure: String,
         /// The catalog table of the `table` argument.
         table: CatalogTable,

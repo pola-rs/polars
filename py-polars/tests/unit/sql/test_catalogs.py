@@ -7230,14 +7230,17 @@ def live_entries(catalog: CountingCatalog, *identifier: str) -> list[tuple[Any, 
 
 
 def unreferenced_avro_files(catalog: CountingCatalog, *identifier: str) -> set[str]:
-    """Manifests and manifest lists of a table that no snapshot uses: left over."""
+    """Names of manifests and manifest lists of a table that no snapshot uses.
+
+    By name: Windows paths mix separators.
+    """
     table = catalog.load_table(identifier)
     used = set()
     for snapshot in table.snapshots():
-        used.add(snapshot.manifest_list)
-        used.update(m.manifest_path for m in snapshot.manifests(table.io))
+        used.add(Path(snapshot.manifest_list).name)
+        used.update(Path(m.manifest_path).name for m in snapshot.manifests(table.io))
     location = Path(table.metadata.location.removeprefix("file://"))
-    return {f"file://{path}" for path in location.rglob("*.avro")} - used
+    return {path.name for path in location.rglob("*.avro")} - used
 
 
 MANIFEST_COUNTS = {
@@ -7586,6 +7589,24 @@ def test_call_rewrite_manifests_retry_fails(
         ctx.execute("CALL system.rewrite_manifests('lineitem')")
     snapshot = lake.load_table(("tpch", "lineitem")).current_snapshot()
     assert snapshot.summary.operation.value == "append"
+    assert unreferenced_avro_files(lake, "tpch", "lineitem") == set()
+
+
+@pytest.mark.write_disk
+def test_call_rewrite_manifests_commit_refused(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import ForbiddenError
+
+    def refuse(*args: Any) -> Any:
+        raise ForbiddenError
+
+    ctx = lake_ctx(lake)
+    ctx.execute("INSERT INTO lineitem VALUES (3, 'c')")
+    monkeypatch.setattr(lake, "commit_table", refuse)
+    # a refusal PyIceberg does not clean up after
+    with pytest.raises(ForbiddenError):
+        ctx.execute("CALL system.rewrite_manifests('lineitem')")
     assert unreferenced_avro_files(lake, "tpch", "lineitem") == set()
 
 
