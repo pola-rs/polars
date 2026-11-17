@@ -692,7 +692,14 @@ class SQLContext(Generic[FrameType]):
         config, instance, storage_options = self._catalogs[stmt["catalog"]]
         catalog = instance if instance is not None else catalog_from(config)
         if stmt["kind"] == "call":
-            return _call_catalog_procedure(catalog, stmt).lazy()
+            return _call_catalog_procedure(
+                catalog,
+                stmt,
+                lambda condition, scan: wrap_expr(
+                    self._ctxt.catalog_call_predicate(condition, scan._ldf)
+                ),
+                storage_options,
+            ).lazy()
         if stmt["kind"] == "drop_table":
             response = _drop_catalog_table(catalog, stmt)
         elif stmt["kind"] == "create_table":
@@ -1310,16 +1317,38 @@ def _truncate_catalog_table(
 
 
 def _call_catalog_procedure(
-    catalog: pyiceberg.catalog.Catalog, stmt: dict[str, Any]
+    catalog: pyiceberg.catalog.Catalog,
+    stmt: dict[str, Any],
+    predicate_of: Callable[[str, LazyFrame], Expr],
+    storage_options: StorageOptionsDict | None,
 ) -> DataFrame:
     """Run the maintenance procedure of a `CALL`, returning its result row."""
+    if stmt["procedure"] == "rewrite_manifests":
+        return _call_rewrite_manifests(catalog, stmt)
+    if stmt["procedure"] == "rewrite_data_files":
+        return _call_rewrite_data_files(catalog, stmt, predicate_of, storage_options)
+    msg = f"unsupported procedure {stmt['procedure']!r}"
+    raise NotImplementedError(msg)
+
+
+def _load_procedure_table(
+    catalog: pyiceberg.catalog.Catalog, stmt: dict[str, Any]
+) -> pyiceberg.table.Table:
+    identifier: tuple[str, ...] = tuple(stmt["identifier"])
+    missing = (
+        f"table '{stmt['name']}' does not exist: catalog table "
+        f"'{_display_name(identifier)}' could not be maintained"
+    )
+    return _load_catalog_table(catalog, identifier, missing)
+
+
+def _call_rewrite_manifests(
+    catalog: pyiceberg.catalog.Catalog, stmt: dict[str, Any]
+) -> DataFrame:
     from polars.datatypes import Int32
     from polars.io.iceberg._maintenance import rewrite_manifests
 
-    procedure, args = stmt["procedure"], stmt["args"]
-    if procedure != "rewrite_manifests":
-        msg = f"unsupported procedure {procedure!r}"
-        raise NotImplementedError(msg)
+    args = stmt["args"]
     # checked before loading the table
     if "sort_by" in args:
         msg = "CALL rewrite_manifests: `sort_by` is not supported yet"
@@ -1331,17 +1360,90 @@ def _call_catalog_procedure(
         ):
             msg = f"CALL rewrite_manifests: `{arg}` must be {kind.__name__}, found {value!r}"
             raise SQLInterfaceError(msg)
-    identifier: tuple[str, ...] = tuple(stmt["identifier"])
-    missing = (
-        f"table '{stmt['name']}' does not exist: catalog table "
-        f"'{_display_name(identifier)}' could not be maintained"
-    )
-    table = _load_catalog_table(catalog, identifier, missing)
+    table = _load_procedure_table(catalog, stmt)
     # `use_caching` tunes Spark's planning: no effect here
     rewritten, added = rewrite_manifests(table, spec_id=args.get("spec_id"))
     return DataFrame(
         {"rewritten_manifests_count": [rewritten], "added_manifests_count": [added]},
         schema={"rewritten_manifests_count": Int32, "added_manifests_count": Int32},
+    )
+
+
+def _call_rewrite_data_files(
+    catalog: pyiceberg.catalog.Catalog,
+    stmt: dict[str, Any],
+    predicate_of: Callable[[str, LazyFrame], Expr],
+    storage_options: StorageOptionsDict | None,
+) -> DataFrame:
+    from polars.datatypes import Int32, Int64
+    from polars.io.iceberg._maintenance import rewrite_data_files
+    from polars.io.iceberg._utils import (
+        UnconvertiblePredicateError,
+        predicate_to_pyiceberg_delete_filter,
+    )
+    from polars.io.iceberg.functions import scan_iceberg
+
+    args = stmt["args"]
+    # checked before loading the table
+    strategy = args.get("strategy", "binpack")
+    if not isinstance(strategy, str) or strategy.lower() not in ("binpack", "sort"):
+        msg = (
+            "CALL rewrite_data_files: `strategy` must be 'binpack' or 'sort', "
+            f"found {strategy!r}"
+        )
+        raise SQLInterfaceError(msg)
+    if strategy.lower() == "sort" or "sort_order" in args:
+        msg = "CALL rewrite_data_files: only `strategy => 'binpack'` is supported yet"
+        raise NotImplementedError(msg)
+    options = args.get("options", {})
+    if not isinstance(options, dict):
+        msg = (
+            "CALL rewrite_data_files: `options` must be map('key', 'value', ...), "
+            f"found {options!r}"
+        )
+        raise SQLInterfaceError(msg)
+    where = args.get("where")
+    if where is not None and not isinstance(where, str):
+        msg = f"CALL rewrite_data_files: `where` must be a string, found {where!r}"
+        raise SQLInterfaceError(msg)
+    table = _load_procedure_table(catalog, stmt)
+    row_filter = None
+    if where is not None:
+        # files that may hold a matching row are rewritten whole
+        predicate = predicate_of(
+            where, scan_iceberg(table, storage_options=storage_options)
+        )
+        try:
+            row_filter = predicate_to_pyiceberg_delete_filter(predicate, table)
+        except UnconvertiblePredicateError as error:
+            full_name = _display_name([stmt["catalog"], *stmt["identifier"]])
+            reason = error.reason or error.likely or "unsupported expression"
+            raise _condition_error(
+                full_name,
+                where,
+                reason,
+                statement="CALL rewrite_data_files",
+                hint=False,
+            ) from error
+    rewritten, added, size = rewrite_data_files(
+        table, options=options, row_filter=row_filter, storage_options=storage_options
+    )
+    # Iceberg's columns; partial progress and removing delete files are not supported
+    return DataFrame(
+        {
+            "rewritten_data_files_count": [rewritten],
+            "added_data_files_count": [added],
+            "rewritten_bytes_count": [size],
+            "failed_data_files_count": [0],
+            "removed_delete_files_count": [0],
+        },
+        schema={
+            "rewritten_data_files_count": Int32,
+            "added_data_files_count": Int32,
+            "rewritten_bytes_count": Int64,
+            "failed_data_files_count": Int32,
+            "removed_delete_files_count": Int32,
+        },
     )
 
 

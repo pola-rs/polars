@@ -204,10 +204,16 @@ pub enum CallArg {
 }
 
 /// The procedures `CALL` runs, with their arguments in positional order (`table` first).
-pub(crate) const CALL_PROCEDURES: &[(&str, &[&str])] = &[(
-    "rewrite_manifests",
-    &["table", "use_caching", "spec_id", "sort_by"],
-)];
+pub(crate) const CALL_PROCEDURES: &[(&str, &[&str])] = &[
+    (
+        "rewrite_data_files",
+        &["table", "strategy", "sort_order", "options", "where"],
+    ),
+    (
+        "rewrite_manifests",
+        &["table", "use_caching", "spec_id", "sort_by"],
+    ),
+];
 
 /// A `CALL` as written: its procedure and arguments.
 pub(crate) struct CallParts {

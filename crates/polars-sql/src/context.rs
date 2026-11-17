@@ -36,6 +36,7 @@ use sqlparser::ast::{
     ValueWithSpan, Values, Visitor, VisitorMut, WildcardAdditionalOptions, WindowSpec, WindowType,
     With,
 };
+use sqlparser::tokenizer::Token;
 
 use crate::catalog::{
     CallArg, CallParts, CatalogAlter, CatalogNamespace, CatalogRead, CatalogRegistry,
@@ -786,6 +787,19 @@ impl SQLContext {
             .map(|(full_name, lf)| (full_name.join("."), lf))
             .collect();
         let res = self.update_plan(query);
+        self.lp_arena = Default::default();
+        self.expr_arena = Default::default();
+        self.clear_statement_state();
+        res
+    }
+
+    /// The predicate of the `where` argument of a `CALL`, planned against `lf`, the scan of its
+    /// table.
+    pub fn catalog_call_predicate(&mut self, condition: &str, lf: LazyFrame) -> PolarsResult<Expr> {
+        self.start_statement();
+        let mut lf = lf;
+        let res = parse_condition(condition)
+            .and_then(|condition| self.dml_predicate(&mut lf, Some(&condition), "CALL"));
         self.lp_arena = Default::default();
         self.expr_arena = Default::default();
         self.clear_statement_state();
@@ -3252,6 +3266,9 @@ impl SQLContext {
                 function.name, name, catalog
             );
         };
+        if let Some((_, CallArg::String(condition))) = args.iter().find(|(arg, _)| arg == "where") {
+            parse_condition(condition)?;
+        }
         Ok(CatalogStatement::Call {
             name,
             procedure: procedure.to_string(),
@@ -10186,6 +10203,20 @@ fn catalog_query_sql(query: &Query) -> PolarsResult<String> {
         SQLInterface: "POSITIONAL JOIN is not supported in a query that writes a catalog table"
     );
     Ok(query.to_string())
+}
+
+/// A condition given as a string, e.g. the `where` argument of a `CALL`.
+fn parse_condition(condition: &str) -> PolarsResult<SQLExpr> {
+    let (mut parser, taken) = sql_parser(condition)?;
+    taken.refuse()?;
+    let expr = parser
+        .parse_expr()
+        .map_err(|_| polars_err!(SQLInterface: "unable to parse condition '{}'", condition))?;
+    polars_ensure!(
+        parser.peek_token().token == Token::EOF,
+        SQLInterface: "unable to parse condition '{}'", condition
+    );
+    Ok(expr)
 }
 
 fn parse_sql(query: &str) -> PolarsResult<Vec<Statement>> {

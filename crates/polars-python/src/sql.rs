@@ -472,6 +472,18 @@ impl PySQLContext {
             .map(Into::into)
     }
 
+    /// The predicate of the `where` argument of a `CALL`, planned against the scan of its table.
+    pub fn catalog_call_predicate(
+        &self,
+        py: Python<'_>,
+        condition: &str,
+        lf: PyLazyFrame,
+    ) -> PyResult<PyExpr> {
+        let lf = lf.ldf.into_inner();
+        py.enter_polars(|| self.context.write().catalog_call_predicate(condition, lf))
+            .map(Into::into)
+    }
+
     /// The predicate of the rows a catalog `UPDATE` changes and the value of each `SET` column,
     /// planned against the scan of its table, by full name.
     pub fn catalog_update_plan(
