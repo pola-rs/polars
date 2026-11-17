@@ -75,7 +75,9 @@ impl AExpr {
                 evaluation,
                 variant: _,
             } => {
-                container.extend([*expr, *evaluation]);
+                // We don't use the evaluation here because it does not contain inputs.
+                _ = evaluation;
+                container.extend([*expr]);
             },
             #[cfg(feature = "dtype-struct")]
             StructEval {

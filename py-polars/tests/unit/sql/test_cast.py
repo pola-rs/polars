@@ -550,6 +550,36 @@ def test_cast_to_nested_errors(cast_op: str) -> None:
         df.sql(f"SELECT {cast_op} AS r FROM self")
 
 
+def test_cast_categorical_enum_time_zone() -> None:
+    df = pl.DataFrame(
+        {
+            "status": ["new", "done"],
+            "at": ["2024-01-01 12:00:00", "2024-07-01 12:00:00"],
+        }
+    )
+    res = df.sql(
+        """
+        SELECT
+          CAST(status AS CATEGORICAL) AS cat,
+          CAST(status AS CATEGORICAL('status')) AS named,
+          status::ENUM('new', 'done') AS enum,
+          CAST(at AS DATETIME64(3, 'Europe/Amsterdam')) AS at
+        FROM self
+        """
+    )
+    expected = df.select(
+        pl.col("status").cast(pl.Categorical()).alias("cat"),
+        pl.col("status").cast(pl.Categorical(pl.Categories("status"))).alias("named"),
+        pl.col("status").cast(pl.Enum(["new", "done"])).alias("enum"),
+        pl.col("at").str.to_datetime(time_unit="ms", time_zone="Europe/Amsterdam"),
+    )
+    assert_frame_equal(res, expected)
+
+    # a value outside the enum
+    with pytest.raises((InvalidOperationError, ComputeError)):
+        df.sql("SELECT CAST(status AS ENUM('new')) FROM self")
+
+
 def test_cast_map_to_map() -> None:
     df = pl.DataFrame(
         {

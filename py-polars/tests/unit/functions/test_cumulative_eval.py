@@ -65,3 +65,23 @@ def test_cumulative_eval_length_preserving_streaming_25293() -> None:
     expected = pl.DataFrame({"a": [1, 1, 1]})
     assert_frame_equal(q.collect(engine="in-memory"), expected)
     assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
+@pytest.mark.parametrize("n", range(1, 6))
+def test_cumulative_eval_min_samples_zero_30625(n: int) -> None:
+    df = pl.DataFrame({"a": range(1, n + 1)}, schema={"a": pl.Int64})
+
+    assert_frame_equal(
+        df.with_columns(b=pl.col.a.cumulative_eval(pl.element().sum(), min_samples=0)),
+        df.with_columns(b=pl.col.a.cum_sum()),
+    )
+
+
+def test_cumulative_eval_min_samples_zero_group_by_30625() -> None:
+    assert_frame_equal(
+        pl.DataFrame({"a": [1, 2, 3, 2, 3, 4, 3], "g": [1, 1, 1, 2, 2, 2, 3]})
+        .group_by("g")
+        .agg(b=pl.col.a.cumulative_eval(pl.element().sum(), min_samples=0)),
+        pl.DataFrame({"g": [1, 2, 3], "b": [[1, 3, 6], [2, 5, 9], [3]]}),
+        check_row_order=False,
+    )

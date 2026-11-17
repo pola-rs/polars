@@ -1131,3 +1131,37 @@ def test_struct_field_pruning_keeps_fields_setting_the_height() -> None:
                     q.collect(engine=engine)  # type: ignore[call-overload]
             else:
                 assert_frame_equal(q.collect(engine=engine), expected)  # type: ignore[call-overload]
+
+
+def test_struct_field_pruning_unnest_column_order() -> None:
+    # The input of an unnest is read in its own order, not in that of the other columns
+    # first.
+    lf = pl.LazyFrame({"s": [{"a": 1}], "t": [{"p": 2, "q": 3}]})
+    for q in [
+        lf.unnest("s").with_columns(t=pl.col("t").struct.field("p")),
+        lf.unnest("s").with_columns(t=pl.col("t").is_null()),
+        lf.unnest("s", separator="_").with_columns(t=pl.col("t").struct.field("p")),
+        lf.unnest("s").with_columns(t=pl.col("t").struct.field("p")).sort("a"),
+    ]:
+        assert q.collect_schema().names() == q.collect().columns
+        assert_same_as_without_pushdown(q)
+
+    lf = pl.LazyFrame(
+        {
+            "k": [1],
+            "s": [{"a": {"p": 1, "q": 2}}],
+            "b": [{"p": 100, "q": 200}],
+        }
+    )
+    other = pl.LazyFrame({"k": [1]})
+    q = (
+        lf.unnest("s")
+        .join(other, on="k")
+        .join(other, on="k")
+        .select("a", pl.col("b").struct.field("p"))
+    )
+    assert_same_as_without_pushdown(q)
+    assert q.collect().to_dict(as_series=False) == {
+        "a": [{"p": 1, "q": 2}],
+        "p": [100],
+    }

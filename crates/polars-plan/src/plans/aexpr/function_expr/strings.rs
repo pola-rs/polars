@@ -54,6 +54,7 @@ pub enum IRStringFunction {
     LenBytes,
     LenChars,
     Lowercase,
+    FromCodePoint,
     #[cfg(feature = "extract_jsonpath")]
     JsonDecode(DataType),
     #[cfg(feature = "extract_jsonpath")]
@@ -171,6 +172,7 @@ impl IRStringFunction {
             JsonPathMatch => mapper.with_dtype(DataType::String),
             LenBytes => mapper.with_dtype(DataType::UInt32),
             LenChars => mapper.with_dtype(DataType::UInt32),
+            FromCodePoint => mapper.with_dtype(DataType::String),
             #[cfg(feature = "regex")]
             Replace { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "string_normalize")]
@@ -249,25 +251,30 @@ impl IRStringFunction {
             #[cfg(feature = "concat_str")]
             S::ConcatVertical { .. } => FunctionOptions::aggregation(),
             #[cfg(feature = "regex")]
-            S::Contains { .. } => {
-                FunctionOptions::elementwise().with_supertyping(Default::default())
-            },
-            S::CountMatches(_) => FunctionOptions::elementwise(),
-            S::EndsWith | S::StartsWith | S::Extract(_) => {
-                FunctionOptions::elementwise().with_supertyping(Default::default())
-            },
+            S::Contains { .. } => FunctionOptions::elementwise()
+                .with_supertyping(Default::default())
+                .with_flags(|f| f | FunctionFlags::PRESERVES_NULL_FIRST_INPUT),
+            S::CountMatches(_) => FunctionOptions::elementwise()
+                .with_flags(|f| f | FunctionFlags::PRESERVES_NULL_FIRST_INPUT),
+            S::EndsWith | S::StartsWith => FunctionOptions::elementwise()
+                .with_supertyping(Default::default())
+                .with_flags(|f| f | FunctionFlags::PRESERVES_NULL_FIRST_INPUT),
+            S::Extract(_) => FunctionOptions::elementwise().with_supertyping(Default::default()),
             S::ExtractAll => FunctionOptions::elementwise(),
             #[cfg(feature = "extract_groups")]
             S::ExtractGroups { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "string_to_integer")]
             S::ToInteger { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "regex")]
-            S::Find { .. } => FunctionOptions::elementwise().with_supertyping(Default::default()),
+            S::Find { .. } => FunctionOptions::elementwise()
+                .with_supertyping(Default::default())
+                .with_flags(|f| f | FunctionFlags::PRESERVES_NULL_FIRST_INPUT),
             #[cfg(feature = "extract_jsonpath")]
             S::JsonDecode { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "extract_jsonpath")]
             S::JsonPathMatch => FunctionOptions::elementwise(),
-            S::LenBytes | S::LenChars => FunctionOptions::elementwise(),
+            S::LenBytes | S::LenChars | S::FromCodePoint => FunctionOptions::elementwise()
+                .with_flags(|f| f | FunctionFlags::PRESERVES_NULL_FIRST_INPUT),
             #[cfg(feature = "regex")]
             S::Replace { .. } => {
                 FunctionOptions::elementwise().with_supertyping(Default::default())
@@ -289,15 +296,17 @@ impl IRStringFunction {
             S::HexEncode | S::Base64Encode => FunctionOptions::elementwise(),
             #[cfg(feature = "binary_encoding")]
             S::HexDecode(_) | S::Base64Decode(_) => FunctionOptions::elementwise(),
-            S::Uppercase | S::Lowercase => FunctionOptions::elementwise(),
-            S::StripChars
+            S::Uppercase
+            | S::Lowercase
+            | S::StripChars
             | S::StripCharsStart
             | S::StripCharsEnd
             | S::StripPrefix
             | S::StripSuffix
             | S::Head
-            | S::Tail => FunctionOptions::elementwise(),
-            S::Slice => FunctionOptions::elementwise(),
+            | S::Tail
+            | S::Slice => FunctionOptions::elementwise()
+                .with_flags(|f| f | FunctionFlags::PRESERVES_NULL_FIRST_INPUT),
             #[cfg(feature = "string_pad")]
             S::PadStart { .. } | S::PadEnd { .. } | S::ZFill => FunctionOptions::elementwise(),
             #[cfg(feature = "dtype-struct")]
@@ -350,6 +359,7 @@ impl Display for IRStringFunction {
             LenBytes => "len_bytes",
             Lowercase => "to_lowercase",
             LenChars => "len_chars",
+            FromCodePoint => "from_code_point",
             #[cfg(feature = "string_pad")]
             PadEnd { .. } => "pad_end",
             #[cfg(feature = "string_pad")]

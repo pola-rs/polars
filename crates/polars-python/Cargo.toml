@@ -58,7 +58,7 @@ rayon = { workspace = true }
 recursive = { workspace = true }
 rmp-serde = { workspace = true, optional = true }
 serde = { workspace = true }
-serde_json = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true, features = ["raw_value"] }
 slotmap = { workspace = true }
 tokio = { workspace = true, optional = true, features = ["sync"] }
 uuid = { workspace = true }

@@ -317,8 +317,9 @@ impl AExpr {
                 #[cfg(feature = "dtype-decimal")]
                 IRFunctionExpr::DecimalArith { .. } => true,
                 IRFunctionExpr::TruncArith(_) => true,
-                #[cfg(all(feature = "strings", feature = "temporal"))]
+                #[cfg(feature = "strings")]
                 IRFunctionExpr::StringExpr(f) => match f {
+                    #[cfg(feature = "temporal")]
                     IRStringFunction::Strptime(_, strptime_options) => {
                         debug_assert!(input.len() <= 2);
 
@@ -346,6 +347,20 @@ impl AExpr {
                         !matches!(arena.get(input[0].node()), AExpr::Literal(_))
                             && (strptime_options.strict || ambiguous_is_fallible)
                     },
+                    // A pattern read from a column can be an invalid regex.
+                    #[cfg(feature = "regex")]
+                    IRStringFunction::Contains {
+                        literal: false,
+                        strict: true,
+                    }
+                    | IRStringFunction::Find { literal: false, .. } => {
+                        !matches!(arena.get(input[1].node()), AExpr::Literal(_))
+                    },
+                    IRStringFunction::CountMatches(false) => {
+                        !matches!(arena.get(input[1].node()), AExpr::Literal(_))
+                    },
+                    #[cfg(feature = "string_to_integer")]
+                    IRStringFunction::ToInteger { strict: true, .. } => true,
                     _ => false,
                 },
                 _ => false,

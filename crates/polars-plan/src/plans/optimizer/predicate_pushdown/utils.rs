@@ -385,10 +385,8 @@ fn pushable_struct_fields(
             return Some(
                 input
                     .iter()
-                    .filter_map(|e| {
-                        is_column_field_chain(e.node(), expr_arena)
-                            .then(|| (e.output_name().clone(), e.node()))
-                    })
+                    .filter(|e| is_column_field_chain(e.node(), expr_arena))
+                    .map(|e| (e.output_name().clone(), e.node()))
                     .collect(),
             );
         }

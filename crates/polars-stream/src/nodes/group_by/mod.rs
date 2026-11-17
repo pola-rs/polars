@@ -22,7 +22,8 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, PlRandomState};
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
-use polars_expr::groups::Grouper;
+use polars_expr::groups::new_hash_grouper;
+use polars_expr::hash_keys::KeyEncoder;
 use polars_expr::reduce::GroupedReduction;
 use polars_expr::state::ExecutionState;
 use polars_ooc::{MemoryGrant, MostRecentSpillContext, memory_manager};
@@ -31,9 +32,9 @@ use polars_utils::hashing::HashPartitioner;
 use polars_utils::pl_str::PlSmallStr;
 use tokio::sync::mpsc::channel;
 
-use self::flush::Flush;
+use self::flush::FlushState;
 use self::pre_agg::SplitPreAggs;
-use self::sink::GroupBySink;
+use self::sink::SinkState;
 use self::table::{GroupByParams, PartitionTable};
 use self::tuning::GroupByTuning;
 use super::{ComputeNode, NodeMemoryUsage};
@@ -148,8 +149,8 @@ impl InputPayload {
 }
 
 enum GroupByState {
-    Sink(GroupBySink),
-    Flush(Box<Flush>),
+    Sink(SinkState),
+    Flush(FlushState),
     Done,
 }
 
@@ -167,12 +168,11 @@ pub struct GroupByNode {
 impl GroupByNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        key_schema: Arc<Schema>,
+        key_encoder: KeyEncoder,
         // Input stream i selects keys with key_selectors_per_input[i].
         key_selectors_per_input: Vec<Vec<StreamExpr>>,
         // Input stream i feeds grouped_reductions[k] for each k in reductions_per_input[i].
         reductions_per_input: Vec<Vec<usize>>,
-        grouper: Box<dyn Grouper>,
         // grouped_reductions[k] is passed input cols grouped_reduction_cols[k].
         grouped_reduction_cols: Vec<Vec<PlSmallStr>>,
         payload_per_input: Vec<InputPayload>,
@@ -191,15 +191,16 @@ impl GroupByNode {
             .next_power_of_two()
             .max(hot_table_size);
         let num_inputs = key_selectors_per_input.len();
-        let sink = GroupBySink::new(
+        let sink = SinkState::new(
             key_selectors_per_input,
             random_state,
             hot_table_size,
             max_hot_table_size,
             num_pipelines,
         );
+        let grouper = new_hash_grouper(&key_encoder);
         let params = GroupByParams {
-            key_schema,
+            key_encoder,
             output_schema,
             reductions_per_input,
             grouped_reduction_cols,
@@ -230,9 +231,9 @@ impl GroupByNode {
     /// the results are sent.
     fn start_flush(
         &self,
-        sink: GroupBySink,
+        sink: SinkState,
         state: &StreamingExecutionState,
-    ) -> PolarsResult<Flush> {
+    ) -> PolarsResult<FlushState> {
         let (stats, frames, pre_aggs) = sink.finish_input(&self.params, &self.spill_ctx, state)?;
         let wanted_grant_bytes = self.tuning.wanted_grant_bytes(&stats);
         let grant = MemoryGrant::take(wanted_grant_bytes, self.tuning.max_grant_fraction);
@@ -279,7 +280,7 @@ impl GroupByNode {
             let stored = self.store_partitions(batches, &partitioner, state)?;
             (Vec::new(), stored, pre_aggs)
         };
-        Ok(Flush::new(
+        Ok(FlushState::new(
             outputs,
             stored,
             pre_aggs,
@@ -443,7 +444,7 @@ impl ComputeNode for GroupByNode {
                 else {
                     unreachable!()
                 };
-                self.state = GroupByState::Flush(Box::new(self.start_flush(sink, state)?));
+                self.state = GroupByState::Flush(self.start_flush(sink, state)?);
             },
             GroupByState::Flush(flush) if flush.is_finished() => {
                 self.state = GroupByState::Done;

@@ -4,8 +4,7 @@ use polars_core::prelude::*;
 use polars_utils::IdxSize;
 
 use crate::EvictIdx;
-use crate::hash_keys::HashKeys;
-use crate::key_rows::KeyRowLayout;
+use crate::hash_keys::{HashKeys, KeyEncoder, KeyKind};
 
 mod binview;
 mod fixed_index_table;
@@ -56,67 +55,68 @@ pub trait HotGrouper: Any + Send + Sync {
     fn as_any(&self) -> &dyn Any;
 }
 
-pub fn new_hash_hot_grouper(key_schema: Arc<Schema>, num_groups: usize) -> Box<dyn HotGrouper> {
-    if let Some(layout) = KeyRowLayout::new(key_schema.iter_values()) {
-        Box::new(key_rows::KeyRowHashHotGrouper::new(
-            Arc::new(layout),
+pub fn new_hash_hot_grouper(encoder: &KeyEncoder, num_groups: usize) -> Box<dyn HotGrouper> {
+    match encoder.kind() {
+        KeyKind::Packed(packed) => single_key_hot_grouper(packed.layout().word_dtype(), num_groups),
+        KeyKind::KeyRows(layout) => Box::new(key_rows::KeyRowHashHotGrouper::new(
+            layout.clone(),
             num_groups,
-        ))
-    } else if key_schema.len() > 1 {
-        Box::new(row_encoded::RowEncodedHashHotGrouper::new(
-            key_schema, num_groups,
-        ))
-    } else {
-        use single_key::SingleKeyHashHotGrouper as SK;
-        let dt = key_schema.get_at_index(0).unwrap().1.clone();
-        let ng = num_groups;
-        match dt {
-            #[cfg(feature = "dtype-u8")]
-            DataType::UInt8 => Box::new(SK::<UInt8Type>::new(dt, ng)),
-            #[cfg(feature = "dtype-u16")]
-            DataType::UInt16 => Box::new(SK::<UInt16Type>::new(dt, ng)),
-            DataType::UInt32 => Box::new(SK::<UInt32Type>::new(dt, ng)),
-            DataType::UInt64 => Box::new(SK::<UInt64Type>::new(dt, ng)),
-            #[cfg(feature = "dtype-u128")]
-            DataType::UInt128 => Box::new(SK::<UInt128Type>::new(dt, ng)),
-            #[cfg(feature = "dtype-i8")]
-            DataType::Int8 => Box::new(SK::<Int8Type>::new(dt, ng)),
-            #[cfg(feature = "dtype-i16")]
-            DataType::Int16 => Box::new(SK::<Int16Type>::new(dt, ng)),
-            DataType::Int32 => Box::new(SK::<Int32Type>::new(dt, ng)),
-            DataType::Int64 => Box::new(SK::<Int64Type>::new(dt, ng)),
-            #[cfg(feature = "dtype-i128")]
-            DataType::Int128 => Box::new(SK::<Int128Type>::new(dt, ng)),
-            #[cfg(feature = "dtype-f16")]
-            DataType::Float16 => Box::new(SK::<Float16Type>::new(dt, ng)),
-            DataType::Float32 => Box::new(SK::<Float32Type>::new(dt, ng)),
-            DataType::Float64 => Box::new(SK::<Float64Type>::new(dt, ng)),
+        )),
+        KeyKind::RowEncoded => Box::new(row_encoded::RowEncodedHashHotGrouper::new(
+            encoder.schema().clone(),
+            num_groups,
+        )),
+        KeyKind::Binview => Box::new(binview::BinviewHashHotGrouper::new(num_groups)),
+        KeyKind::Single => single_key_hot_grouper(
+            encoder.schema().get_at_index(0).unwrap().1.clone(),
+            num_groups,
+        ),
+    }
+}
 
-            #[cfg(feature = "dtype-date")]
-            DataType::Date => Box::new(SK::<Int32Type>::new(dt, ng)),
-            #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => Box::new(SK::<Int64Type>::new(dt, ng)),
-            #[cfg(feature = "dtype-duration")]
-            DataType::Duration(_) => Box::new(SK::<Int64Type>::new(dt, ng)),
-            #[cfg(feature = "dtype-time")]
-            DataType::Time => Box::new(SK::<Int64Type>::new(dt, ng)),
+fn single_key_hot_grouper(dt: DataType, num_groups: usize) -> Box<dyn HotGrouper> {
+    use single_key::SingleKeyHashHotGrouper as SK;
+    let ng = num_groups;
+    match dt {
+        #[cfg(feature = "dtype-u8")]
+        DataType::UInt8 => Box::new(SK::<UInt8Type>::new(dt, ng)),
+        #[cfg(feature = "dtype-u16")]
+        DataType::UInt16 => Box::new(SK::<UInt16Type>::new(dt, ng)),
+        DataType::UInt32 => Box::new(SK::<UInt32Type>::new(dt, ng)),
+        DataType::UInt64 => Box::new(SK::<UInt64Type>::new(dt, ng)),
+        #[cfg(feature = "dtype-u128")]
+        DataType::UInt128 => Box::new(SK::<UInt128Type>::new(dt, ng)),
+        #[cfg(feature = "dtype-i8")]
+        DataType::Int8 => Box::new(SK::<Int8Type>::new(dt, ng)),
+        #[cfg(feature = "dtype-i16")]
+        DataType::Int16 => Box::new(SK::<Int16Type>::new(dt, ng)),
+        DataType::Int32 => Box::new(SK::<Int32Type>::new(dt, ng)),
+        DataType::Int64 => Box::new(SK::<Int64Type>::new(dt, ng)),
+        #[cfg(feature = "dtype-i128")]
+        DataType::Int128 => Box::new(SK::<Int128Type>::new(dt, ng)),
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => Box::new(SK::<Float16Type>::new(dt, ng)),
+        DataType::Float32 => Box::new(SK::<Float32Type>::new(dt, ng)),
+        DataType::Float64 => Box::new(SK::<Float64Type>::new(dt, ng)),
 
-            #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(_, _) => Box::new(SK::<Int128Type>::new(dt, ng)),
-            #[cfg(feature = "dtype-categorical")]
-            dt @ (DataType::Enum(_, _) | DataType::Categorical(_, _)) => {
-                with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
-                    Box::new(SK::<<$C as PolarsCategoricalType>::PolarsPhysical>::new(dt.clone(), ng))
-                })
-            },
+        #[cfg(feature = "dtype-date")]
+        DataType::Date => Box::new(SK::<Int32Type>::new(dt, ng)),
+        #[cfg(feature = "dtype-datetime")]
+        DataType::Datetime(_, _) => Box::new(SK::<Int64Type>::new(dt, ng)),
+        #[cfg(feature = "dtype-duration")]
+        DataType::Duration(_) => Box::new(SK::<Int64Type>::new(dt, ng)),
+        #[cfg(feature = "dtype-time")]
+        DataType::Time => Box::new(SK::<Int64Type>::new(dt, ng)),
 
-            DataType::String | DataType::Binary => {
-                Box::new(binview::BinviewHashHotGrouper::new(ng))
-            },
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(_, _) => Box::new(SK::<Int128Type>::new(dt, ng)),
+        #[cfg(feature = "dtype-categorical")]
+        dt @ (DataType::Enum(_, _) | DataType::Categorical(_, _)) => {
+            with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
+                Box::new(SK::<<$C as PolarsCategoricalType>::PolarsPhysical>::new(dt.clone(), ng))
+            })
+        },
 
-            _ => Box::new(row_encoded::RowEncodedHashHotGrouper::new(
-                key_schema, num_groups,
-            )),
-        }
+        _ => unreachable!(),
     }
 }

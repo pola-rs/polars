@@ -15,7 +15,6 @@ pub(super) struct SlicePushDown {
     pub(super) slice_node_in_optimized_plan: bool,
     pub(super) ae_nodes_scratch: ScratchVec<Node>,
     pub(super) ae_slice_pd_state_scratch: ScratchVec<slice_pushdown_expr::State>,
-    pub(super) ae_slice_pd_direct_col_slice_nodes: ScratchIndexSet<Node>,
     optimized_cache_inputs: PlIndexMap<UniqueId, Node>,
 }
 
@@ -31,7 +30,6 @@ impl SlicePushDown {
             slice_node_in_optimized_plan: false,
             ae_nodes_scratch: ScratchVec::default(),
             ae_slice_pd_state_scratch: ScratchVec::default(),
-            ae_slice_pd_direct_col_slice_nodes: ScratchIndexSet::default(),
             optimized_cache_inputs: PlIndexMap::default(),
         }
     }
@@ -257,8 +255,6 @@ impl SlicePushDown {
 
         let mut common_expr_col_slice = None;
         let mut col_hit_count: Option<usize> = Some(0);
-        let mut ae_slice_pd_direct_col_slice_nodes =
-            std::mem::take(self.ae_slice_pd_direct_col_slice_nodes.get());
 
         for eir in ir.exprs() {
             self.aexpr_slice_pushdown_rec(
@@ -266,7 +262,6 @@ impl SlicePushDown {
                 expr_arena,
                 &mut common_expr_col_slice,
                 &mut col_hit_count,
-                &mut ae_slice_pd_direct_col_slice_nodes,
                 maintain_errors,
             );
         }
@@ -293,49 +288,62 @@ impl SlicePushDown {
                 len: ir_slice.len,
             });
 
-            let IR::Select { input, .. } = lp_arena.get_mut(ir_node) else {
+            let IR::Select { input, expr, .. } = lp_arena.get_mut(ir_node) else {
                 unreachable!()
             };
 
             *input = new_input_node;
 
-            for node in ae_slice_pd_direct_col_slice_nodes.drain(..) {
+            // Every slice on a column in these expressions is contained in `limit`.
+            let col_slice_nodes: PlIndexSet<Node> = expr
+                .iter()
+                .flat_map(|e| expr_arena.iter(e.node()))
+                .filter_map(|(node, ae)| match ae {
+                    AExpr::Slice { input, .. }
+                        if matches!(expr_arena.get(*input), AExpr::Column(_)) =>
+                    {
+                        Some(node)
+                    },
+                    _ => None,
+                })
+                .collect();
+
+            for node in col_slice_nodes {
                 use slice_pushdown_expr::Slice;
                 let AExpr::Slice {
-                    input: input_node,
-                    offset: offset_node,
+                    input,
+                    offset,
                     length,
-                } = expr_arena.get(node)
+                } = *expr_arena.get(node)
                 else {
                     unreachable!()
                 };
 
-                let input_node = *input_node;
-                let offset_node = *offset_node;
-
-                let Slice::Extracted(ae_slice) =
-                    Slice::from_nodes(offset_node, *length, expr_arena)
+                let Slice::Extracted(ae_slice) = Slice::from_nodes(offset, length, expr_arena)
                 else {
                     unreachable!()
                 };
 
                 if ae_slice.len == ir_slice.len {
                     assert_eq!(ae_slice.offset, ir_slice.offset);
-                    expr_arena.replace(node, expr_arena.get(input_node).clone());
+                    expr_arena.replace(node, expr_arena.get(input).clone());
                 } else if offset_correction != 0 {
                     let new_offset = ae_slice.offset.checked_sub(offset_correction).unwrap();
+                    let offset = expr_arena.add(AExpr::Literal(LiteralValue::Scalar(Scalar::new(
+                        DataType::Int64,
+                        AnyValue::Int64(new_offset),
+                    ))));
                     expr_arena.replace(
-                        offset_node,
-                        AExpr::Literal(LiteralValue::Scalar(Scalar::new(
-                            DataType::Int64,
-                            AnyValue::Int64(new_offset),
-                        ))),
+                        node,
+                        AExpr::Slice {
+                            input,
+                            offset,
+                            length,
+                        },
                     );
                 }
             }
         }
-
-        *self.ae_slice_pd_direct_col_slice_nodes.get() = ae_slice_pd_direct_col_slice_nodes;
 
         match (lp_arena.take(ir_node), state) {
             #[cfg(feature = "python")]

@@ -1469,7 +1469,10 @@ fn null_over_no_rows(ctx: &SQLContext, expr: &SQLExpr) -> bool {
     match strip_nested(expr) {
         SQLExpr::Function(function) if function.over.is_none() => matches!(
             PolarsSQLFunctions::try_from_sql(function, ctx),
-            Ok(Avg
+            Ok(ArbitraryValue
+                | Avg
+                | BoolAnd
+                | BoolOr
                 | Corr
                 | CovarPop
                 | CovarSamp
@@ -1477,8 +1480,10 @@ fn null_over_no_rows(ctx: &SQLContext, expr: &SQLExpr) -> bool {
                 | FirstValue
                 | Last
                 | Max
+                | MaxBy
                 | Median
                 | Min
+                | MinBy
                 | QuantileCont
                 | QuantileDisc
                 | StdDev

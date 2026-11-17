@@ -8,12 +8,13 @@ mod cost;
 #[cfg(any(feature = "python", test))]
 mod dataset;
 mod node;
+mod value_range;
 
 use std::sync::Arc;
 
 pub(crate) use cost::subplan_cost;
 #[cfg(feature = "python")]
-pub(crate) use dataset::dataset_scan_stats;
+pub(crate) use dataset::{counts, dataset_scan_stats, sum_if_all_known};
 pub use node::{
     NodeStats, composite_key_domain, join_cardinality, key_domain, node_stats, unique_side_rows,
 };
@@ -22,6 +23,7 @@ use polars_core::prelude::Scalar;
 #[allow(clippy::disallowed_types)]
 use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_str::PlSmallStr;
+pub use value_range::column_value_range;
 
 use crate::plans::IR;
 
@@ -131,8 +133,8 @@ pub struct ScanColumnStats {
     /// Average width of one value in the source, in bytes.
     pub avg_byte_width: Option<f32>,
     /// Inclusive value range of an integer column, folded over the chunks that were
-    /// read. When the chunks were sampled, it is widened by the mean gap between
-    /// them and is an estimate.
+    /// read. When a large scan was sampled, it is widened by the mean gap between
+    /// the samples and is an estimate.
     #[cfg_attr(feature = "serde", serde(default))]
     pub int_range: Option<(i128, i128)>,
     /// `int_range` misses sources whose statistics were not read, or comes from a
@@ -146,6 +148,10 @@ pub struct ScanColumnStats {
     /// One entry per sampled row group, ordered by source file, and by row group within a
     /// file.
     pub sampled_row_groups: Option<Arc<[RowGroupStats]>>,
+    /// `int_range` was folded over sampled chunks and widened, so it is an estimate.
+    /// Missing in older serialized plans, which are read as sampled.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub int_range_sampled: bool,
 }
 
 /// How many bytes one stored value of a parquet column takes.
@@ -204,6 +210,11 @@ pub(crate) fn range_width(min: i128, max: i128) -> f64 {
     max.checked_sub(min)
         .and_then(|width| width.checked_add(1))
         .map_or(max as f64 - min as f64 + 1.0, |width| width as f64)
+}
+
+#[cfg(feature = "serde")]
+fn default_true() -> bool {
+    true
 }
 
 // We don't index
@@ -298,6 +309,7 @@ impl ScanStats {
                             |((l_min, l_max), (r_min, r_max))| (l_min.min(r_min), l_max.max(r_max)),
                         );
                         out.int_range_partial |= col.int_range_partial;
+                        out.int_range_sampled |= col.int_range_sampled;
                         width_rows += part_rows;
                     }
                     Some((name.clone(), out))

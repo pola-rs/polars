@@ -158,6 +158,9 @@ impl<K> FixedIndexTable<K> {
 
             if (slot.last_access_tag == tag) | force_insert | (hash == next_hash) {
                 slot.hash = hash;
+                if hash == next_hash {
+                    slot.last_access_tag = tag;
+                }
                 let evict_key = self.keys.get_unchecked_mut(slot.key_index as usize);
                 evict_insert(key, evict_key);
                 Some(EvictIdx::new(slot.key_index, true))

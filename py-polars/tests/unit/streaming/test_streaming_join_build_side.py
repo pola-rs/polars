@@ -144,3 +144,26 @@ def test_null_keys_are_not_counted_as_keys(
     )
     out = q.collect(engine="streaming")
     assert_matches_in_memory(q, out)
+
+
+@pytest.mark.parametrize("small_left", [False, True])
+def test_estimated_rows_pick_the_shorter_side(
+    small_left: bool, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # Both sides fill the sample. The short side is too wide for the plan to
+    # prefer it, but its estimated rows make it the smaller build.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", SAMPLE_LIMIT)
+    # Unsorted keys, so the join hashes instead of merging.
+    long = pl.LazyFrame({"k": [i * 37 % 2000 for i in range(2000)]})
+    short = pl.LazyFrame({"k": [i * 37 % 200 for i in range(200)]}).with_columns(
+        pl.col("k").alias(f"d{i}") for i in range(8)
+    )
+    q = short.join(long, on="k") if small_left else long.join(short, on="k")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = q.collect(engine="streaming")
+    lines = capfd.readouterr().err.splitlines()
+    assert any("equi-join sides are incomplete" in line for line in lines), lines
+    chosen = [line for line in lines if "build side chosen:" in line]
+    assert chosen == [f"build side chosen: {'left' if small_left else 'right'}"]
+    assert_matches_in_memory(q, out)

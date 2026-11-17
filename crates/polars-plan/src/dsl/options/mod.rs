@@ -3,7 +3,9 @@ use std::hash::Hash;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+pub mod delta_sink_state;
 pub mod file_provider;
+pub mod iceberg_properties;
 pub mod iceberg_sink_state;
 pub mod sink;
 pub use polars_config::Engine;

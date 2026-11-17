@@ -10,7 +10,7 @@ use super::keys::KeyRowKeys;
 use super::layout::{KeyRowLayout, bytes_eq};
 use super::map::KeyRowIndexMap;
 use crate::groups::new_hash_grouper;
-use crate::hash_keys::HashKeys;
+use crate::hash_keys::{HashKeys, KeyEncoder};
 use crate::hot_groups::new_hash_hot_grouper;
 use crate::idx_table::new_idx_table;
 
@@ -205,40 +205,51 @@ fn two_i64_schema() -> Arc<Schema> {
     ]))
 }
 
-fn hash_keys(df: DataFrame) -> HashKeys {
-    HashKeys::from_df(&df, PlRandomState::default(), true, false)
+fn two_i64_encoder() -> KeyEncoder {
+    KeyEncoder::new(two_i64_schema(), true, &[])
 }
 
-fn i32_i64_keys() -> HashKeys {
-    hash_keys(df!("a" => [1i32, 2], "b" => [1i64, 2]).unwrap())
+fn hash_keys(df: DataFrame) -> HashKeys {
+    KeyEncoder::new(df.schema().clone(), true, &[]).hash_keys(&df, PlRandomState::default(), true)
+}
+
+/// Key rows of another layout than `two_i64_schema`.
+fn other_schema_keys() -> HashKeys {
+    hash_keys(df!("a" => [1i32, 2], "b" => ["x", "y"]).unwrap())
 }
 
 #[test]
 #[should_panic(expected = "key schema")]
 fn hot_grouper_rejects_keys_of_another_schema() {
-    let mut grouper = new_hash_hot_grouper(two_i64_schema(), 16);
+    let mut grouper = new_hash_hot_grouper(&two_i64_encoder(), 16);
     let (mut hot, mut groups, mut cold) = (Vec::new(), Vec::new(), Vec::new());
-    grouper.insert_keys(&i32_i64_keys(), &mut hot, &mut groups, &mut cold, false);
+    grouper.insert_keys(
+        &other_schema_keys(),
+        &mut hot,
+        &mut groups,
+        &mut cold,
+        false,
+    );
 }
 
 #[test]
 #[should_panic(expected = "key schema")]
 fn grouper_rejects_keys_of_another_schema() {
-    let mut grouper = new_hash_grouper(two_i64_schema());
-    unsafe { grouper.insert_keys_subset(&i32_i64_keys(), &[0, 1], None) };
+    let mut grouper = new_hash_grouper(&two_i64_encoder());
+    unsafe { grouper.insert_keys_subset(&other_schema_keys(), &[0, 1], None) };
 }
 
 #[cfg(debug_assertions)]
 #[test]
 #[should_panic(expected = "key schema")]
 fn partitioned_groupers_reject_keys_of_another_schema() {
-    let groupers = vec![new_hash_grouper(two_i64_schema())];
+    let groupers = vec![new_hash_grouper(&two_i64_encoder())];
     let partitioner = HashPartitioner::new(1, 0);
     let mut matches = Vec::new();
     unsafe {
         groupers[0].probe_partitioned_groupers(
             &groupers,
-            &i32_i64_keys(),
+            &other_schema_keys(),
             &partitioner,
             false,
             &mut matches,
@@ -249,7 +260,7 @@ fn partitioned_groupers_reject_keys_of_another_schema() {
 #[test]
 #[should_panic(expected = "key schema")]
 fn grouper_rejects_output_schema_of_another_layout() {
-    let mut grouper = new_hash_grouper(two_i64_schema());
+    let mut grouper = new_hash_grouper(&two_i64_encoder());
     let keys = hash_keys(df!("a" => [1i64], "b" => [1i64]).unwrap());
     unsafe { grouper.insert_keys_subset(&keys, &[0], None) };
     let schema = Schema::from_iter([
@@ -262,21 +273,21 @@ fn grouper_rejects_output_schema_of_another_layout() {
 #[test]
 #[should_panic(expected = "key schema")]
 fn idx_table_rejects_keys_of_another_schema() {
-    let mut table = new_idx_table(two_i64_schema());
-    table.insert_keys(&i32_i64_keys(), false);
+    let mut table = new_idx_table(&two_i64_encoder());
+    table.insert_keys(&other_schema_keys(), false);
 }
 
 #[test]
 #[should_panic(expected = "key schema")]
 fn idx_table_rejects_probe_keys_of_another_schema() {
-    let mut table = new_idx_table(two_i64_schema());
+    let mut table = new_idx_table(&two_i64_encoder());
     table.insert_keys(
         &hash_keys(df!("a" => [1i64], "b" => [1i64]).unwrap()),
         false,
     );
     let (mut table_match, mut probe_match) = (Vec::new(), Vec::new());
     table.probe(
-        &i32_i64_keys(),
+        &other_schema_keys(),
         &mut table_match,
         &mut probe_match,
         false,

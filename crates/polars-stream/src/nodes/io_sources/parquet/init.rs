@@ -544,7 +544,7 @@ impl ParquetReadImpl {
                             let ArrowDataType::Struct(children) = &field.dtype else {
                                 return None;
                             };
-                            field = children.iter().find(|f| &f.name == name)?;
+                            field = children.iter().find(|f| f.name == *name)?;
                         }
                         if field.dtype.is_nested() {
                             return None;

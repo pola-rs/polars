@@ -188,6 +188,7 @@ pub enum PyStringFunction {
     Format,
     ExtractMany,
     FindMany,
+    FromCodePoint,
 }
 
 #[pymethods]
@@ -278,6 +279,7 @@ pub enum PyTemporalFunction {
     ReplaceTimeZone,
     Combine,
     DatetimeFunction,
+    DateDiff,
 }
 
 #[pymethods]
@@ -1298,6 +1300,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     },
                     IRStringFunction::LenBytes => (PyStringFunction::LenBytes,).into_py_any(py),
                     IRStringFunction::LenChars => (PyStringFunction::LenChars,).into_py_any(py),
+                    IRStringFunction::FromCodePoint => {
+                        (PyStringFunction::FromCodePoint,).into_py_any(py)
+                    },
                     IRStringFunction::Lowercase => (PyStringFunction::Lowercase,).into_py_any(py),
                     #[cfg(feature = "extract_jsonpath")]
                     IRStringFunction::JsonDecode(_) => {
@@ -1568,6 +1573,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         time_zone.as_ref().map(|s| s.as_str()),
                     )
                         .into_py_any(py),
+                    IRTemporalFunction::DateDiff(unit) => {
+                        (PyTemporalFunction::DateDiff, Into::<&str>::into(unit)).into_py_any(py)
+                    },
                 },
                 IRFunctionExpr::Boolean(boolfun) => match boolfun {
                     IRBooleanFunction::Any { ignore_nulls } => {
@@ -1949,6 +1957,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::Entropy { base, normalize } => {
                     ("entropy", base, normalize).into_py_any(py)
                 },
+                IRFunctionExpr::XLogY { base } => ("x_log_y", base).into_py_any(py),
                 IRFunctionExpr::Log => ("log",).into_py_any(py),
                 IRFunctionExpr::Log1p => ("log1p",).into_py_any(py),
                 IRFunctionExpr::Exp => ("exp",).into_py_any(py),

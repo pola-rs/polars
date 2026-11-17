@@ -531,6 +531,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::ToInteger { dtype, strict } => B::ToInteger { dtype, strict },
                 IB::LenBytes => B::LenBytes,
                 IB::LenChars => B::LenChars,
+                IB::FromCodePoint => B::FromCodePoint,
                 IB::Lowercase => B::Lowercase,
                 #[cfg(feature = "extract_jsonpath")]
                 IB::JsonDecode(dtype) => B::JsonDecode(dtype.into()),
@@ -698,6 +699,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                     B::ReplaceTimeZone(time_zone, non_existent)
                 },
                 IB::Combine(time_unit) => B::Combine(time_unit),
+                IB::DateDiff(unit) => B::DateDiff(unit),
                 IB::DatetimeFunction {
                     time_unit,
                     time_zone,
@@ -1062,6 +1064,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::InterpolateBy => F::InterpolateBy,
         #[cfg(feature = "log")]
         IF::Entropy { base, normalize } => F::Entropy { base, normalize },
+        #[cfg(feature = "log")]
+        IF::XLogY { base } => F::XLogY { base },
         #[cfg(feature = "log")]
         IF::Log => F::Log,
         #[cfg(feature = "log")]

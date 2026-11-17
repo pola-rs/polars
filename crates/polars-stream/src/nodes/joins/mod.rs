@@ -37,6 +37,9 @@ mod utils;
 // smaller side as the build side without checking cardinalities.
 const LOPSIDED_SAMPLE_FACTOR: usize = 10;
 
+/// How many times fewer estimated rows an incomplete side needs to be built.
+const LOPSIDED_ESTIMATE_FACTOR: usize = 8;
+
 /// The side a plan's build side names, if any.
 fn build_side_left(side: Option<&JoinBuildSide>) -> Option<bool> {
     match side {

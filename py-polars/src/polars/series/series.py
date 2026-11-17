@@ -1886,6 +1886,33 @@ class Series(metaclass=_Meta):
         ]
         """
 
+    def x_log_y(self, y: Series | float, base: float = math.e) -> Series:
+        """
+        Compute `x * log(y)` to a given base, where `x` is this Series.
+
+        The result is 0 where `x` is 0, unless `y` is NaN, so `0 * log(0)` is 0.
+
+        Parameters
+        ----------
+        y
+            The values to take the logarithm of.
+        base
+            Given base, defaults to `e`
+
+        Examples
+        --------
+        >>> s = pl.Series([0, 1, 2, 3])
+        >>> s.x_log_y(pl.Series([0, 2, 4, 8]), base=2)
+        shape: (4,)
+        Series: '' [f64]
+        [
+            0.0
+            1.0
+            4.0
+            9.0
+        ]
+        """
+
     def log10(self) -> Series:
         """
         Compute the base 10 logarithm of the input array, element-wise.
@@ -2226,6 +2253,10 @@ class Series(metaclass=_Meta):
         """
         Get the minimal value in this Series.
 
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
@@ -2238,6 +2269,10 @@ class Series(metaclass=_Meta):
     def min_by(self, by: IntoExpr) -> Expr:
         """
         Get the minimum value in this Series, ordered by an expression.
+
+        Null values of `by` are ignored, and so are NaN values of a float `by`. A `by`
+        of a nested dtype (List, Array, Struct and Map) compares in the order
+        :meth:`sort` puts it in, where NaN is larger than any other number.
 
         If the by expression has multiple values equal to the minimum it is not
         defined which value will be chosen.
@@ -2264,6 +2299,10 @@ class Series(metaclass=_Meta):
         """
         Get the maximum value in this Series.
 
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
@@ -2276,6 +2315,10 @@ class Series(metaclass=_Meta):
     def max_by(self, by: IntoExpr) -> Expr:
         """
         Get the maximum value in this Series, ordered by an expression.
+
+        Null values of `by` are ignored, and so are NaN values of a float `by`. A `by`
+        of a nested dtype (List, Array, Struct and Map) compares in the order
+        :meth:`sort` puts it in, where NaN is larger than any other number.
 
         If the by expression has multiple values equal to the maximum it is not
         defined which value will be chosen.
@@ -3100,6 +3143,9 @@ class Series(metaclass=_Meta):
         Computes the entropy.
 
         Uses the formula `-sum(pk * log(pk))` where `pk` are discrete probabilities.
+        `0 * log(0)` is taken as 0 and null values are ignored. Negative values give
+        NaN. With `normalize=True`, input that sums to zero (including empty,
+        all-null and all-zero input) gives NaN; with `normalize=False` it gives 0.
 
         Parameters
         ----------
@@ -4051,6 +4097,10 @@ class Series(metaclass=_Meta):
         """
         Get an index of a minimal value.
 
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
+
         When multiple values are equal to the minimum, this function may arbitrarily
         return the index of any of the minimum values. In this case, the returned index
         is not guaranteed to be the same across multiple runs.
@@ -4070,6 +4120,10 @@ class Series(metaclass=_Meta):
     def arg_max(self) -> int | None:
         """
         Get an index of a maximal value.
+
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
 
         When multiple values are equal to the maximum, this function may arbitrarily
         return the index of any of the maximum values. In this case, the returned index

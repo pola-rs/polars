@@ -58,6 +58,8 @@ class ScanOptions:
     default_values: DefaultFieldValues | None = None
     deletion_files: DeletionFiles | None = None
     table_statistics: DataFrame | None = None
+    # Iceberg: integer, decimal, date, time and boolean bounds are values of their file
+    table_statistics_tight: bool = False
     # (physical, deleted)
     row_count: tuple[int, int] | None = None
     source_sizes: Sequence[int] | None = None

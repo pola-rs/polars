@@ -3,15 +3,21 @@
 #![deny(missing_docs)]
 mod catalog;
 mod context;
+mod datetime_template;
 mod dyn_visit;
 pub mod function_registry;
 mod functions;
 mod group_context;
 mod grouping_sets;
 mod join_keys;
+#[cfg(feature = "json")]
+mod json_text;
 pub mod keywords;
 mod lateral;
+mod layout_alter;
 mod literal_folding;
+mod pivot;
+mod positional_join;
 mod resolver;
 mod sql_expr;
 mod sql_visitors;
@@ -27,16 +33,18 @@ mod subquery_pull_up;
 ))]
 mod table_function_args;
 mod table_functions;
+mod time_travel;
 mod types;
 mod window_frames;
 
 pub use catalog::{
-    CatalogAlter, CatalogNamespace, CatalogPartitionField, CatalogStatement, CatalogTable,
-    MergeClausePlan, MergePlan, MergeSourcePlan,
+    CatalogAlter, CatalogNamespace, CatalogPartitionField, CatalogRead, CatalogSortField,
+    CatalogStatement, CatalogTable, MergeClausePlan, MergePlan, MergeSourcePlan,
 };
 pub use context::{SQLContext, extract_table_identifiers};
 pub use resolver::register_sql_resolver;
 pub use sql_expr::sql_expr;
+pub use time_travel::VersionSpec;
 
 polars_utils::define_unique_column_name!("SQL");
 

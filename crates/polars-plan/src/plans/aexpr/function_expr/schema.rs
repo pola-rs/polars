@@ -175,8 +175,23 @@ impl IRFunctionExpr {
             Skew(_) => mapper.with_dtype(DataType::Float64),
             #[cfg(feature = "moment")]
             Kurtosis(..) => mapper.with_dtype(DataType::Float64),
-            ArgUnique | ArgMin | ArgMax | ArgSort { .. } => mapper.with_dtype(IDX_DTYPE),
-            MinBy { .. } | MaxBy { .. } => mapper.with_same_dtype(),
+            ArgMin | ArgMax => {
+                let dtype = mapper.args()[0].dtype();
+                polars_ensure!(
+                    !dtype.is_object(),
+                    InvalidOperation: "`{self}` operation not supported for dtype `{dtype}`"
+                );
+                mapper.with_dtype(IDX_DTYPE)
+            },
+            ArgUnique | ArgSort { .. } => mapper.with_dtype(IDX_DTYPE),
+            MinBy { .. } | MaxBy { .. } => {
+                let by_dtype = mapper.args()[1].dtype();
+                polars_ensure!(
+                    !by_dtype.is_object(),
+                    InvalidOperation: "`{self}` operation not supported for by dtype `{by_dtype}`"
+                );
+                mapper.with_same_dtype()
+            },
             Product => mapper.map_dtype(|dtype| {
                 use DataType as T;
                 match dtype {
@@ -324,6 +339,16 @@ impl IRFunctionExpr {
             Entropy { .. } => mapper
                 .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "entropy")?
                 .map_to_float_dtype(),
+            #[cfg(feature = "log")]
+            XLogY { .. } => {
+                let mut field = mapper
+                    .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "x_log_y")?
+                    .map_to_supertype()?;
+                if !field.dtype().is_float() {
+                    field.set_dtype(DataType::Float64);
+                }
+                Ok(field)
+            },
             #[cfg(feature = "log")]
             Log1p => mapper
                 .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "log1p")?

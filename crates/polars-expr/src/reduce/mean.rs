@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 
 use num_traits::{AsPrimitive, Zero};
 use polars_arrow::temporal_conversions::MICROSECONDS_IN_DAY;
+use polars_compute::float_sum::FloatSum;
 use polars_core::with_match_physical_numeric_polars_type;
 
 use super::*;
@@ -80,6 +81,7 @@ impl<T> Clone for NumMeanReducer<T> {
 impl<T> Reducer for NumMeanReducer<T>
 where
     T: PolarsNumericType,
+    T::Native: FloatSum<f64>,
     ChunkedArray<T>: ChunkAgg<T::Native>,
 {
     type Dtype = T;
@@ -110,6 +112,21 @@ where
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
         v.0 += ChunkAgg::_sum_as_f64(ca);
         v.1 += ca.len() - ca.null_count();
+    }
+
+    #[inline(always)]
+    unsafe fn reduce_range(
+        &self,
+        v: &mut Self::Value,
+        arr: &PrimitiveArray<T::Native>,
+        start: usize,
+        len: usize,
+        _seq_id: u64,
+    ) -> bool {
+        let (sum, num_valid) = unsafe { float_sum_range(arr, start, len) };
+        v.0 += sum;
+        v.1 += num_valid;
+        num_valid > 0
     }
 
     fn finish(
@@ -170,8 +187,20 @@ impl Reducer for DecimalMeanReducer {
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
-        for x in ca.iter().flatten() {
-            self.reduce_one(v, Some(x), 0);
+        for arr in ca.downcast_iter() {
+            match arr.validity().filter(|_| arr.has_nulls()) {
+                Some(validity) => {
+                    for (&x, valid) in arr.values().iter().zip(validity) {
+                        add_to_sum(v, if valid { x } else { 0 });
+                    }
+                },
+                None => {
+                    for &x in arr.values().iter() {
+                        add_to_sum(v, x);
+                    }
+                },
+            }
+            v.2 += arr.len() - arr.null_count();
         }
     }
 

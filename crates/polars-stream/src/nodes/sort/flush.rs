@@ -93,7 +93,7 @@ impl FlushInner {
 /// emission cursor; a task with nothing to emit sorts a bucket ahead, up to
 /// `max_ahead` buckets and `max_ahead_bytes` sorted or being sorted, and at
 /// least one.
-pub struct Flush {
+pub struct FlushState {
     inner: Mutex<FlushInner>,
     notify: Notify,
     morsel_size: usize,
@@ -110,7 +110,7 @@ enum Step<'a> {
     Stop,
 }
 
-impl Flush {
+impl FlushState {
     pub fn new(
         buckets: Vec<PendingBucket>,
         morsel_size: usize,
@@ -219,6 +219,7 @@ impl Flush {
         scope: &'s TaskScope<'s, 'env>,
         senders: Vec<PortSender>,
         key: &'env PlSmallStr,
+        projection: Option<&'env [PlSmallStr]>,
         sort_options: &SortMultipleOptions,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
@@ -246,7 +247,9 @@ impl Flush {
                             wait_group.wait().await;
                         },
                         Step::Sort(bucket, seq, memory) => {
-                            let sorted = sort_bucket(bucket, memory.sort, key, &sort_options).await;
+                            let sorted =
+                                sort_bucket(bucket, memory.sort, key, projection, &sort_options)
+                                    .await;
                             self.finish_sort(seq, memory, sorted)?;
                         },
                         Step::Wait(notified) => notified.await,
@@ -258,7 +261,7 @@ impl Flush {
     }
 }
 
-impl Drop for Flush {
+impl Drop for FlushState {
     fn drop(&mut self) {
         let inner = self.inner.get_mut();
         drop_parallel(
@@ -275,6 +278,7 @@ async fn sort_bucket(
     bucket: PendingBucket,
     bytes: u64,
     key: &PlSmallStr,
+    projection: Option<&[PlSmallStr]>,
     sort_options: &SortMultipleOptions,
 ) -> PolarsResult<DataFrame> {
     let _reservation = memory_manager().reserve(bytes).await;
@@ -282,7 +286,7 @@ async fn sort_bucket(
     let df = accumulate_dataframes_vertical_unchecked(dfs);
     let (offset, len) = bucket.local;
     if bucket.needs_sort {
-        return sort_range(df, key, sort_options.clone(), bucket.local);
+        return sort_range(df, key, projection, sort_options.clone(), bucket.local);
     }
     // The bucket holds a single key value or only nulls, so it is sorted
     // already, but its frames don't carry the flag.
@@ -297,5 +301,8 @@ async fn sort_bucket(
         c.set_sorted_flag(sorted);
         c
     })?;
+    if let Some(columns) = projection {
+        df = df.select(columns)?;
+    }
     Ok(df)
 }

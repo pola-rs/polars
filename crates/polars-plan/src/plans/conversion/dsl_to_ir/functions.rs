@@ -293,6 +293,7 @@ pub(super) fn convert_functions(
                 S::ToInteger { dtype, strict } => IS::ToInteger { dtype, strict },
                 S::LenBytes => IS::LenBytes,
                 S::LenChars => IS::LenChars,
+                S::FromCodePoint => IS::FromCodePoint,
                 S::Lowercase => IS::Lowercase,
                 #[cfg(feature = "extract_jsonpath")]
                 S::JsonDecode(dtype) => IS::JsonDecode(dtype.into_datatype(ctx.schema)?),
@@ -475,6 +476,7 @@ pub(super) fn convert_functions(
                     IT::ReplaceTimeZone(time_zone, non_existent)
                 },
                 T::Combine(time_unit) => IT::Combine(time_unit),
+                T::DateDiff(unit) => IT::DateDiff(unit),
                 T::DatetimeFunction {
                     time_unit,
                     time_zone,
@@ -1022,6 +1024,8 @@ pub(super) fn convert_functions(
         F::InterpolateBy => I::InterpolateBy,
         #[cfg(feature = "log")]
         F::Entropy { base, normalize } => I::Entropy { base, normalize },
+        #[cfg(feature = "log")]
+        F::XLogY { base } => I::XLogY { base },
         #[cfg(feature = "log")]
         F::Log => I::Log,
         #[cfg(feature = "log")]

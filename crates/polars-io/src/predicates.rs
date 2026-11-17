@@ -517,7 +517,7 @@ impl StagedScanIOPredicate {
         for (c, _) in constants {
             let paths = column_predicates
                 .keys()
-                .filter(|p| &p.root == c)
+                .filter(|p| p.root == *c)
                 .cloned()
                 .collect::<Vec<_>>();
             for path in paths {

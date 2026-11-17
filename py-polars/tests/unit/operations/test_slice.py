@@ -606,3 +606,34 @@ def test_streaming_negative_slice_uneven_morsels_29398(
         lf.select(pl.col("x").slice(offset, length)).collect(),
         expected,
     )
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("a").slice(pl.col("o"), 1),
+        pl.col("a").slice(1, pl.col("o")),
+        pl.col("a").head(pl.col("o")),
+        pl.col("a").tail(pl.col("o")),
+        pl.lit(5).slice(pl.col("o"), 1),
+    ],
+)
+def test_slice_expr_non_scalar_args_raise(expr: pl.Expr) -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3], "o": [1, 1, 1]})
+    with pytest.raises(ComputeError, match="invalid argument to slice"):
+        lf.select(expr).collect()
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected"),
+    [
+        (pl.col("a").slice(pl.col("o").head(1), 1), [2]),
+        (pl.col("a").first().slice(pl.col("o").head(1), 1), []),
+    ],
+)
+def test_slice_expr_single_value_offset(expr: pl.Expr, expected: list[int]) -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3], "o": [1, 1, 1]})
+    assert_frame_equal(
+        lf.select(expr).collect(),
+        pl.DataFrame({"a": expected}, schema={"a": pl.Int64}),
+    )

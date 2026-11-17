@@ -90,6 +90,12 @@ catalog, so a misspelled name is too: a missing table raises `NoSuchTableError` 
 can be as late as `collect()`. Writing the full name, such as `lake.tpch.lineitem`, makes the
 catalog explicit.
 
+A table name followed by `$` and the name of a metadata table, such as `lineitem$snapshots` or
+`lake.tpch.lineitem$files`, reads that metadata table of the table: `snapshots`, `history`, `refs`,
+`manifests`, `files`, `partitions`, `entries` and the other tables of PyIceberg's `Table.inspect`.
+Quotes are optional. Metadata tables can only be read, and a catalog table named like one cannot be
+read or written in SQL.
+
 Catalogs attached inside a `with SQLContext()` block are detached on exit, like the tables
 registered there.
 

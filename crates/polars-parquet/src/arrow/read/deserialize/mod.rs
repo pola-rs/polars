@@ -21,6 +21,7 @@ pub(crate) use primitive::convert_i128;
 use simple::page_iter_to_array;
 pub(crate) use simple::unify_timestamp_unit;
 
+pub use self::categorical::decode_dictionary_codes;
 pub use self::nested_utils::{InitNested, NestedState, init_nested};
 pub use self::utils::filter::{Filter, PredicateFilter};
 use self::utils::freeze_validity;

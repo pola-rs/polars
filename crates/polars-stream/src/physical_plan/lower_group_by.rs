@@ -9,6 +9,7 @@ use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_defs::join::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_error::{PolarsResult, polars_err};
+use polars_expr::hash_keys::KeyRange;
 use polars_expr::reduce::{supports_unique_reduction, unordered_unique_input};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
@@ -334,6 +335,13 @@ fn try_lower_elementwise_scalar_agg_expr(
                 .is_ok_and(|dtype| supports_unique_reduction(&dtype))
     };
 
+    let input_dtype = |x: Node| {
+        expr_arena
+            .get(x)
+            .to_dtype(&ToFieldContext::new(expr_arena, input_schema))
+            .ok()
+    };
+
     match expr_arena.get(expr) {
         // Should be handled separately in `Eval`.
         AExpr::Element => unreachable!(),
@@ -565,32 +573,34 @@ fn try_lower_elementwise_scalar_agg_expr(
             function: IRFunctionExpr::Entropy { base, normalize },
             ..
         } => {
-            // x.entropy() ->
-            //   normalize=false: -sum(x * log(x, base))
-            //   normalize=true:  -sum(x/sum(x) * log(x/sum(x), base))
-            //                  = log(sum(x), base) - sum(x * log(x, base)) / sum(x)
+            // See the `Entropy` arm in `lower_exprs_with_ctx`.
             let (base, normalize) = (*base, *normalize);
-            let x = AExprBuilder::new_from_node(inner_exprs[0].node());
-            let base = AExprBuilder::lit_scalar(Scalar::from(base), expr_arena);
-            let log_x = AExprBuilder::function(
-                vec![x.expr_ir_unnamed(), base.expr_ir_unnamed()],
-                IRFunctionExpr::Log,
+            let to_field_ctx = ToFieldContext::new(expr_arena, input_schema);
+            let dtype = expr_arena.get(expr).to_dtype(&to_field_ctx).ok()?;
+            let x_dtype = inner_exprs[0].dtype(input_schema, expr_arena).ok()?.clone();
+            let mut x = AExprBuilder::new_from_node(inner_exprs[0].node());
+            if x_dtype != dtype {
+                x = x.cast(dtype, expr_arena);
+            }
+            let sum_x_log_x = AExprBuilder::function(
+                vec![x.expr_ir_unnamed(), x.expr_ir_unnamed()],
+                IRFunctionExpr::XLogY { base },
                 expr_arena,
-            );
-            let x_log_x = x.multiply(log_x, expr_arena);
-            let mut entropy = x_log_x.sum(expr_arena).negate(expr_arena);
+            )
+            .sum(expr_arena);
+            let mut entropy = sum_x_log_x.negate(expr_arena);
             if normalize {
-                // sum(x) is deduplicated by CSE
+                // sum(x) is deduplicated by CSE.
                 let sum_x = x.sum(expr_arena);
+                let base = AExprBuilder::lit_scalar(Scalar::from(base), expr_arena);
                 let log_sum_x = AExprBuilder::function(
                     vec![sum_x.expr_ir_unnamed(), base.expr_ir_unnamed()],
                     IRFunctionExpr::Log,
                     expr_arena,
                 );
-                entropy = log_sum_x.plus(entropy.true_divide(sum_x, expr_arena), expr_arena)
+                entropy = log_sum_x.minus(sum_x_log_x.true_divide(sum_x, expr_arena), expr_arena);
             }
-            let lowered = entropy.node();
-            lower_rec!(lowered)
+            lower_rec!(entropy.node())
         },
 
         AExpr::Function { .. } | AExpr::AnonymousFunction { .. } => None,
@@ -618,6 +628,29 @@ fn try_lower_elementwise_scalar_agg_expr(
                     && unique_reducible(x, expr_arena) =>
                 {
                     Some(replace_agg_uniq!(expr, unique_of = Some(x)))
+                },
+                IRAggExpr::Min {
+                    input,
+                    propagate_nulls,
+                    ..
+                }
+                | IRAggExpr::Max {
+                    input,
+                    propagate_nulls,
+                    ..
+                } if input_dtype(*input)?.is_nested() => {
+                    if *propagate_nulls {
+                        return None;
+                    }
+                    // Grouped reductions only take columns, so this goes through `min_by`, whose
+                    // lowering row-encodes the key.
+                    let x = AExprBuilder::new_from_node(*input);
+                    let by = if matches!(agg, IRAggExpr::Max { .. }) {
+                        x.max_by(x, MinMaxByOrder::SkipNulls, expr_arena)
+                    } else {
+                        x.min_by(x, MinMaxByOrder::SkipNulls, expr_arena)
+                    };
+                    lower_rec!(by.node())
                 },
                 IRAggExpr::Min { .. }
                 | IRAggExpr::Max { .. }
@@ -985,6 +1018,37 @@ fn merge_min_max_by(
 
 #[allow(clippy::too_many_arguments)]
 pub fn try_build_streaming_group_by(
+    input: PhysStream,
+    keys: &[ExprIR],
+    aggs: &[ExprIR],
+    maintain_order: bool,
+    options: Arc<GroupbyOptionsIR>,
+    apply: Option<PlanCallback<DataFrame, DataFrame>>,
+    gbl_kind: GroupByLowerKind,
+    expr_arena: &mut Arena<AExpr>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
+    expr_cache: &mut ExprCache,
+    ctx: StreamingLowerIRContext<'_>,
+) -> PolarsResult<Option<PhysStream>> {
+    try_build_streaming_group_by_with_key_ranges(
+        input,
+        keys,
+        aggs,
+        maintain_order,
+        options,
+        apply,
+        gbl_kind,
+        expr_arena,
+        phys_sm,
+        expr_cache,
+        ctx,
+        &[],
+    )
+}
+
+/// `key_ranges` holds an inclusive value range per key, or is empty.
+#[allow(clippy::too_many_arguments)]
+fn try_build_streaming_group_by_with_key_ranges(
     mut input: PhysStream,
     keys: &[ExprIR],
     aggs: &[ExprIR],
@@ -996,6 +1060,7 @@ pub fn try_build_streaming_group_by(
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
+    key_ranges: &[KeyRange],
 ) -> PolarsResult<Option<PhysStream>> {
     if apply.is_some() {
         return Ok(None); // TODO
@@ -1052,8 +1117,9 @@ pub fn try_build_streaming_group_by(
     let mut key_ids = PlIndexSet::new();
     let mut trans_agg_exprs = Vec::new();
     let mut trans_keys = Vec::new();
+    let mut trans_key_ranges = Vec::new();
     let mut trans_output_exprs = Vec::new();
-    for key in keys {
+    for (i, key) in keys.iter().enumerate() {
         let key_id = canonical_exprs.resolve(key.node(), expr_arena);
         key_ids.insert(key_id);
         let key_name = uniq_input_names
@@ -1061,6 +1127,7 @@ pub fn try_build_streaming_group_by(
             .or_insert_with(|| {
                 let key_name = unique_column_name();
                 trans_keys.push(ExprIR::from_column_name(key_name.clone(), expr_arena));
+                trans_key_ranges.push(key_ranges.get(i).copied().flatten());
                 key_name
             })
             .clone();
@@ -1286,6 +1353,7 @@ pub fn try_build_streaming_group_by(
             key_per_input,
             fused_agg_inputs_per_input,
             aggs_per_input,
+            key_ranges: trans_key_ranges,
         },
     ));
 
@@ -1339,6 +1407,8 @@ pub fn try_build_streaming_group_by(
                 args,
                 fused_predicate: None,
                 runtime_filters: Vec::new(),
+                estimated_rows: None,
+                key_ranges: Vec::new(),
             },
         ));
         post_select_input = PhysStream::first(join_key);
@@ -1550,6 +1620,40 @@ pub fn build_group_by_stream(
     ctx: StreamingLowerIRContext<'_>,
     are_keys_sorted: bool,
 ) -> PolarsResult<PhysStream> {
+    build_group_by_stream_with_key_ranges(
+        input,
+        keys,
+        aggs,
+        output_schema,
+        maintain_order,
+        options,
+        apply,
+        expr_arena,
+        phys_sm,
+        expr_cache,
+        ctx,
+        are_keys_sorted,
+        &[],
+    )
+}
+
+/// `key_ranges` holds an inclusive value range per key, or is empty.
+#[allow(clippy::too_many_arguments)]
+pub fn build_group_by_stream_with_key_ranges(
+    input: PhysStream,
+    keys: &[ExprIR],
+    aggs: &[ExprIR],
+    output_schema: Arc<Schema>,
+    maintain_order: bool,
+    options: Arc<GroupbyOptionsIR>,
+    apply: Option<PlanCallback<DataFrame, DataFrame>>,
+    expr_arena: &mut Arena<AExpr>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
+    expr_cache: &mut ExprCache,
+    ctx: StreamingLowerIRContext<'_>,
+    are_keys_sorted: bool,
+    key_ranges: &[KeyRange],
+) -> PolarsResult<PhysStream> {
     'build_streaming_group_by: {
         // Fallback to in-mem for objects. Otherwise we get an error in CI:
         //   FAILED tests/unit/dataframe/test_df.py::test_hashing_on_python_objects
@@ -1630,7 +1734,7 @@ pub fn build_group_by_stream(
                 are_keys_sorted,
             )? {
             Ok(stream)
-        } else if let Some(stream) = try_build_streaming_group_by(
+        } else if let Some(stream) = try_build_streaming_group_by_with_key_ranges(
             input,
             keys,
             aggs,
@@ -1642,6 +1746,7 @@ pub fn build_group_by_stream(
             phys_sm,
             expr_cache,
             ctx,
+            key_ranges,
         )? {
             Ok(stream)
         } else {

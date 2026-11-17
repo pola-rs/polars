@@ -77,6 +77,7 @@ pub(crate) fn dataset_scan_stats(
                 int_range,
                 int_range_partial: false,
                 sampled_row_groups: None,
+                int_range_sampled: false,
             },
         );
     }
@@ -128,7 +129,7 @@ fn physical(bounds: &Column, dtype: &DataType) -> Option<Series> {
 }
 
 /// A count column, all unknown if it is missing or does not hold integer counts.
-fn counts(statistics: &DataFrame, name: &str) -> UInt64Chunked {
+pub(crate) fn counts(statistics: &DataFrame, name: &str) -> UInt64Chunked {
     statistics
         .column(name)
         .ok()
@@ -138,7 +139,7 @@ fn counts(statistics: &DataFrame, name: &str) -> UInt64Chunked {
 }
 
 /// The sum of `counts`, unless any count is unknown.
-fn sum_if_all_known(counts: &UInt64Chunked) -> Option<u64> {
+pub(crate) fn sum_if_all_known(counts: &UInt64Chunked) -> Option<u64> {
     (counts.null_count() == 0).then(|| counts.into_no_null_iter().fold(0, u64::saturating_add))
 }
 
@@ -147,11 +148,12 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::dsl::TableStatistics;
+    use crate::dsl::{StatisticsBounds, TableStatistics};
 
     fn args(statistics: Option<DataFrame>) -> UnifiedScanArgs {
         UnifiedScanArgs {
-            table_statistics: statistics.map(|df| TableStatistics(Arc::new(df))),
+            table_statistics: statistics
+                .map(|df| TableStatistics(Arc::new(df), StatisticsBounds::Loose)),
             ..Default::default()
         }
     }

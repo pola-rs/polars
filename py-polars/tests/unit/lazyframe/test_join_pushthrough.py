@@ -224,12 +224,71 @@ def test_outer_join_on_the_right_input_is_left_alone() -> None:
     )
 
 
-def test_projection_between_the_joins_is_left_alone() -> None:
+def test_inner_join_moves_through_a_projection_that_drops_columns() -> None:
     fact, returns, dim = frames()
-    not_rewritten(
+    lf = (
         fact.join(returns, left_on="f_ret", right_on="r_ret", how="left")
         .select("f_dim", "r_amt")
         .join(dim.filter(pl.col("d_flag")), left_on="f_dim", right_on="d_key")
+    )
+    assert first_join(lf.explain(optimizations=OFF)) == "INNER JOIN:"
+    assert first_join(lf.explain(optimizations=ON)) == "LEFT JOIN:"
+    assert_same_result(lf)
+
+
+def test_name_collision_with_a_dropped_column_is_left_alone() -> None:
+    fact, returns, dim = frames()
+    # `f_val` is dropped, so the right side keeps it unsuffixed; below the left join
+    # it would meet the fact's `f_val`.
+    not_rewritten(
+        fact.join(returns, left_on="f_ret", right_on="r_ret", how="left")
+        .select("f_dim", "r_amt")
+        .join(
+            dim.filter(pl.col("d_flag")).rename({"d_flag": "f_val"}),
+            left_on="f_dim",
+            right_on="d_key",
+        )
+    )
+
+
+def test_inner_join_on_a_cast_of_the_preserved_side_moves() -> None:
+    fact, returns, dim = frames()
+    lf = fact.join(returns, left_on="f_ret", right_on="r_ret", how="left").join(
+        dim.filter(pl.col("d_flag")),
+        left_on=pl.col("f_dim").cast(pl.Int32, strict=False),
+        right_on=pl.col("d_key").cast(pl.Int32, strict=False),
+    )
+    assert first_join(lf.explain(optimizations=OFF)) == "INNER JOIN:"
+    assert first_join(lf.explain(optimizations=ON)) == "LEFT JOIN:"
+    assert_same_result(lf)
+
+
+@pytest.mark.parametrize("how", ["semi", "anti"])
+def test_semi_anti_join_moves_to_the_preserved_side_of_a_left_join(
+    how: JoinStrategy,
+) -> None:
+    fact, returns, _ = frames()
+    wanted = pl.LazyFrame({"w": [1, 3, 4, 7]})
+    lf = fact.join(returns, left_on="f_ret", right_on="r_ret", how="left").join(
+        wanted, left_on="f_id", right_on="w", how=how
+    )
+    assert all_joins(lf.explain(optimizations=OFF)) == [
+        f"{how.upper()} JOIN:",
+        "LEFT JOIN:",
+    ]
+    assert all_joins(lf.explain(optimizations=ON)) == [
+        "LEFT JOIN:",
+        f"{how.upper()} JOIN:",
+    ]
+    assert_same_result(lf)
+
+
+def test_anti_join_on_the_null_extended_side_of_a_left_join_stays() -> None:
+    fact, returns, _ = frames()
+    not_rewritten(
+        fact.join(returns, left_on="f_ret", right_on="r_ret", how="left").join(
+            pl.LazyFrame({"a": [2.0]}), left_on="r_amt", right_on="a", how="anti"
+        )
     )
 
 
@@ -242,6 +301,46 @@ def test_key_from_the_null_extended_side_is_left_alone() -> None:
             right_on="d_key",
         )
     )
+
+
+def test_inner_join_on_a_fallible_key_is_left_alone() -> None:
+    a = pl.LazyFrame({"id": [1, 2, 3], "text": ["1", "bad", "3"]})
+    b = pl.LazyFrame({"id": [1, 3]})
+    c = pl.LazyFrame({"key": [1, 2, 3]}).filter(pl.col("key") == 1)
+    not_rewritten(
+        a.join(b, on="id", how="semi").join(
+            c, left_on=pl.col("text").str.to_integer(), right_on="key"
+        )
+    )
+
+
+@pytest.mark.parametrize(("how", "wanted"), [("semi", 0), ("anti", 1)])
+def test_semi_anti_join_stays_above_a_left_join_with_a_fallible_key(
+    how: JoinStrategy, wanted: int
+) -> None:
+    a = pl.LazyFrame({"id": [0, 1], "k": ["1", "bad"]})
+    b = pl.LazyFrame({"bk": [1]})
+    lf = a.join(b, left_on=pl.col("k").cast(pl.Int64), right_on="bk", how="left").join(
+        pl.LazyFrame({"id": [wanted]}), on="id", how=how
+    )
+    assert lf.explain(optimizations=ON) == lf.explain(optimizations=OFF)
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        lf.collect(optimizations=ON)
+
+
+@pytest.mark.parametrize("how", ["semi", "inner"])
+def test_join_above_a_left_join_on_a_decoded_key_is_left_alone(
+    how: JoinStrategy,
+) -> None:
+    a = pl.LazyFrame({"id": [0, 1], "text": ["1", "bad"]})
+    b = pl.LazyFrame({"key": [1]})
+    joined = a.join(
+        b, left_on=pl.col("text").str.json_decode(pl.Int64), right_on="key", how="left"
+    )
+    if how == "inner":
+        joined = joined.select("id")
+    lf = joined.join(pl.LazyFrame({"id": [0]}), on="id", how=how)
+    assert lf.explain(optimizations=ON) == lf.explain(optimizations=OFF)
 
 
 def test_name_collision_with_the_null_extended_side_is_left_alone() -> None:
