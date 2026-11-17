@@ -8027,7 +8027,11 @@ def test_call_rewrite_data_files_refused(
     ctx.execute("INSERT INTO e VALUES (1), (2)")
     ctx.execute("CREATE TABLE s (k INT)")
     ctx.execute("INSERT INTO s VALUES (1), (2)")
-    for name, kwargs in (("e", {"equality_ids": [1]}), ("s", {"path_bounds": False})):
+    deletes: list[tuple[str, dict[str, Any]]] = [
+        ("e", {"equality_ids": [1]}),
+        ("s", {"path_bounds": False}),
+    ]
+    for name, kwargs in deletes:
         (data_file,) = live_files(lake, "tpch", name)
         _add_position_deletes(
             lake.load_table(("tpch", name)), {data_file.file_path: [0]}, **kwargs
