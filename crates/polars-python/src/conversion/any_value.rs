@@ -14,9 +14,7 @@ use polars::datatypes::OwnedObject;
 use polars::datatypes::{DataType, Field, TimeUnit};
 use polars::prelude::{AnyValue, PlSmallStr, Series, TimeZone};
 use polars_compute::decimal::{DEC128_MAX_PREC, DecimalFmtBuffer, dec128_fits};
-use polars_core::prelude::try_unpack_map_entries;
-#[cfg(feature = "dtype-map")]
-use polars_core::scalar::Scalar;
+use polars_core::prelude::{pack_map_entries, try_unpack_map_entries};
 use polars_core::utils::any_values_to_supertype_and_n_dtypes;
 #[cfg(feature = "dtype-map")]
 use polars_core::utils::polars_arrow::array::{MAP_KEY_NAME, MAP_VALUE_NAME};
@@ -210,7 +208,8 @@ fn get_map(
     let keys = py_series_of(py, MAP_KEY_NAME, keys, key_dtype, strict)?;
     let values = py_series_of(py, MAP_VALUE_NAME, values, value_dtype, strict)?;
 
-    Ok(Scalar::new_map(&keys, &values).into_value())
+    // Series construction, which every caller feeds, deduplicates the keys.
+    Ok(AnyValue::Map(pack_map_entries(&keys, &values)))
 }
 
 #[cfg(feature = "dtype-map")]

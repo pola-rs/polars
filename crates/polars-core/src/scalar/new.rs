@@ -42,24 +42,28 @@ impl Scalar {
         )
     }
 
-    /// One `Map` row from its flat key and value fields.
+    /// One `Map` row from its flat key and value fields, deduplicating keys.
     ///
-    /// Keys are not deduplicated: like an Arrow import, the caller vouches for their uniqueness.
-    /// `Series::from_any_values_and_dtype` deduplicates them, but [`Scalar::into_series`] does not.
+    /// Duplicate keys keep their first position and last value. Errors on null keys or an
+    /// invalid Map dtype.
     #[cfg(feature = "dtype-map")]
-    pub fn new_map(keys: &Series, values: &Series) -> Self {
-        Scalar::new(
-            DataType::Map(
-                Box::new(keys.dtype().clone()),
-                Box::new(values.dtype().clone()),
-            ),
-            AnyValue::Map(crate::chunked_array::logical::pack_map_entries(
-                keys, values,
-            )),
-        )
+    pub fn new_map(keys: &Series, values: &Series) -> PolarsResult<Self> {
+        use crate::chunked_array::logical::{MapChunked, pack_map_entries};
+        use crate::series::IntoSeries;
+
+        let dtype = DataType::Map(
+            Box::new(keys.dtype().clone()),
+            Box::new(values.dtype().clone()),
+        );
+        let storage = pack_map_entries(keys, values).implode()?.into_series();
+        let map = MapChunked::try_from_storage(dtype.clone(), storage)?;
+        let value = map.get_any_value(0)?.into_static();
+        Ok(Scalar::new(dtype, value))
     }
 
     /// For callers that already hold one row's entries, such as deserialization.
+    ///
+    /// Keys are not deduplicated: Polars' own serialized data is trusted like an Arrow import.
     #[cfg(feature = "dtype-map")]
     pub(crate) fn map_from_entries(entries: Series) -> Self {
         let value = AnyValue::Map(entries);

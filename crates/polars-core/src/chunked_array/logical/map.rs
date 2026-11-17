@@ -474,8 +474,8 @@ pub fn try_unpack_map_entries(entries: &Series) -> PolarsResult<(Series, Series)
 /// Pack equally sized flat key and value fields into map entries.
 ///
 /// The result does not retain Map row boundaries. Rebuilding a Map column must reattach it to
-/// its original [`ListChunked`] storage.
-pub(crate) fn pack_map_entries(keys: &Series, values: &Series) -> Series {
+/// its original [`ListChunked`] storage. Keys are not deduplicated.
+pub fn pack_map_entries(keys: &Series, values: &Series) -> Series {
     // `StructChunked::from_series` broadcasts unit-length fields.
     assert_eq!(
         keys.len(),
@@ -1514,5 +1514,20 @@ mod test {
             unsafe { array.set_inner_dtype(map.dtype().clone()) };
             assert_eq!(array.inner_dtype(), map.dtype());
         }
+    }
+
+    #[test]
+    fn scalar_new_map_deduplicates_keys() {
+        let keys = str_keys(&[Some("a"), Some("b"), Some("a")]);
+        let values = i64_values(&[Some(1), Some(2), Some(3)]);
+        let s = Scalar::new_map(&keys, &values)
+            .unwrap()
+            .into_series(PlSmallStr::from_static("m"));
+        let map = s.map().unwrap();
+        assert_eq!(
+            str_values(&map.keys()),
+            [Some("a".into()), Some("b".into())]
+        );
+        assert_eq!(map.values().i64().unwrap().to_vec(), [Some(3), Some(2)]);
     }
 }
