@@ -10955,12 +10955,15 @@ def _add_position_deletes(
     stale_deletion_vectors: dict[str, list[int]] | None = None,
     row_bounds: dict[int, tuple[bytes, bytes]] | None = None,
     summary: dict[str, str] | None = None,
+    equality_ids: list[int] | None = None,
 ) -> Any:
     """
     Commit a snapshot adding one position delete file per data file.
 
     `row_bounds` adds (lower, upper) bounds of the deleted rows' columns, by field ID.
     `summary` holds properties of the snapshot summary, written as given.
+    With `equality_ids`, the delete files are listed as equality deletes of those field
+    IDs instead (for checks that refuse them from the manifests: the files are not).
 
     With `single_delete_file`, one delete file holds the deletes of all data files (it
     is then scoped to the partition rather than to a data file). `partition` is the
@@ -11125,7 +11128,12 @@ def _add_position_deletes(
             local_path,
         )
         data_file = DataFile.from_args(
-            content=DataFileContent.POSITION_DELETES,
+            content=(
+                DataFileContent.POSITION_DELETES
+                if equality_ids is None
+                else DataFileContent.EQUALITY_DELETES
+            ),
+            equality_ids=equality_ids,
             file_path=path,
             file_format=FileFormat.PARQUET,
             partition=Record() if partition is None else partition,

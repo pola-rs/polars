@@ -116,6 +116,10 @@ class _HandBack:
     files: list[_IcebergSinkedFile] | None = None
     sort_order_id: int | None = None
 
+    def __init__(self, max_rows_per_file: int | None = None) -> None:
+        # files sized by rows instead of estimated bytes (compaction)
+        self.max_rows_per_file = max_rows_per_file
+
     def __getstate__(self) -> tuple[()]:
         msg = "a sink that hands back its files cannot be serialized"
         raise TypeError(msg)
@@ -1672,6 +1676,11 @@ class IcebergSinkState:
             self.sort_order_id = sort_order.order_id
 
         approximate_bytes_per_file = 2 * 1024 * 1024 * 1024
+        max_rows_per_file = (
+            self.replace_files.max_rows_per_file
+            if isinstance(self.replace_files, _HandBack)
+            else None
+        )
 
         if v := property_as_int(
             properties=table_metadata.properties,
@@ -1707,7 +1716,10 @@ class IcebergSinkState:
                 ),
                 key=partition_key_exprs,
                 include_key=False if partition_key_exprs is not None else None,
-                approximate_bytes_per_file=approximate_bytes_per_file,
+                max_rows_per_file=max_rows_per_file,
+                approximate_bytes_per_file=(
+                    approximate_bytes_per_file if max_rows_per_file is None else None
+                ),
             ),
             arrow_schema=arrow_schema,
             compression=self.compression,
