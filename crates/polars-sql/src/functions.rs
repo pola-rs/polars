@@ -4189,9 +4189,8 @@ impl FromSQLExpr for String {
 
 /// An error for a format that has an unknown or incomplete `%` specifier.
 fn check_strptime_format(format: &str) -> PolarsResult<()> {
-    use chrono::format::{Item, StrftimeItems};
     polars_ensure!(
-        !StrftimeItems::new(format).any(|item| matches!(item, Item::Error)),
+        chrono::format::StrftimeItems::new(format).parse().is_ok(),
         SQLInterface: "invalid date/time format '{}'", format
     );
     Ok(())
