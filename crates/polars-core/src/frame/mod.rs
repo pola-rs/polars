@@ -2153,14 +2153,12 @@ impl DataFrame {
     /// A chunk is split into several batches where its arrow MAP arrays would overflow
     /// their `i32` offsets.
     ///
+    /// The columns' chunks must be aligned ([`DataFrame::should_rechunk`] is false); only debug
+    /// builds check this. Aligning is left to the caller, which can reuse the aligned frame.
+    ///
     /// # Panics
     ///
-    /// Panics if the [`DataFrame`] that is passed is not rechunked, or where
-    /// [`DataFrame::try_iter_chunks`] yields an error.
-    ///
-    /// This responsibility is left to the caller as we don't want to take mutable references here,
-    /// but we also don't want to rechunk here, as this operation is costly and would benefit the caller
-    /// as well.
+    /// Panics where [`DataFrame::try_iter_chunks`] yields an error.
     pub fn iter_chunks(
         &self,
         compat_level: CompatLevel,
@@ -2173,11 +2171,8 @@ impl DataFrame {
     /// Like [`DataFrame::iter_chunks`], but yields export errors, such as a row with more map
     /// entries than the `i32` offsets of an arrow MAP can hold.
     ///
-    /// # Panics
-    ///
-    /// Panics if the [`DataFrame`] that is passed is not rechunked.
-    ///
-    /// The iterator holds a clone of the frame, so it doesn't borrow it.
+    /// The columns' chunks must be aligned, as for [`DataFrame::iter_chunks`]. The iterator holds
+    /// a clone of the frame, so it doesn't borrow it.
     pub fn try_iter_chunks(
         &self,
         compat_level: CompatLevel,
@@ -2768,7 +2763,7 @@ pub struct RecordBatchIter {
     /// Whether some column exports to an arrow MAP, so a chunk may need several batches.
     has_arrow_map: bool,
     split: Option<SplitChunk>,
-    /// The first row of the next batch, to slice columns without chunks of their own.
+    /// The first row of the next chunk, to slice columns without chunks of their own.
     offset: usize,
 }
 
@@ -2790,9 +2785,15 @@ impl RecordBatchIter {
         // A dictionary column's codes need not have the chunks of the other columns.
         let to_arrow = |c: &Column| match c.as_series() {
             Some(s) => s.try_to_arrow(idx, self.compat_level),
-            None => Ok(c
-                .slice(rows.start as i64, length)
-                .rechunk_to_arrow(self.compat_level)),
+            None => {
+                let mut s = c
+                    .slice(rows.start as i64, length)
+                    .take_materialized_series();
+                if s.n_chunks() > 1 {
+                    s = s.rechunk();
+                }
+                s.try_to_arrow(0, self.compat_level)
+            },
         };
 
         let batch_cols = if self.parallel {
@@ -2856,7 +2857,7 @@ pub struct PhysRecordBatchIter<'a> {
     df: &'a DataFrame,
     schema: ArrowSchemaRef,
     cursor: ChunkCursor,
-    /// The first row of the next batch, to slice columns without chunks of their own.
+    /// The first row of the next chunk, to slice columns without chunks of their own.
     offset: usize,
 }
 

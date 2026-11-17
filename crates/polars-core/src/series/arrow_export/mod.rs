@@ -46,7 +46,7 @@ macro_rules! primitive_to_boxed_with_logical {
 }
 
 /// Drop the entries no live row owns and rebase the offsets onto the rest; `None` if the
-/// chunk already spans exactly its child.
+/// chunk already spans exactly its child. The splitter in `split.rs` must drop the same entries.
 fn normalize_map_entries(arr: &ListArray<i64>) -> Option<ListArray<i64>> {
     #[cfg(feature = "dtype-map")]
     if let Some(compacted) = crate::chunked_array::logical::compact_null_rows_chunk(arr) {
