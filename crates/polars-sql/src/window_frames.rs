@@ -2,6 +2,7 @@
 //! COUNT, COUNT_IF, MIN, MAX, BOOL_AND, BOOL_OR, AVG and TOTAL, and FIRST_VALUE, LAST_VALUE and
 //! NTH_VALUE.
 
+use polars_compute::cast::temporal::NANOSECONDS_IN_DAY;
 use polars_core::chunked_array::ops::FillNullStrategy;
 #[cfg(feature = "rolling_window")]
 use polars_core::prelude::RollingOptionsFixedWindow;
@@ -57,6 +58,7 @@ enum FramePart {
     FromFirstPeer,
     /// The rows whose `by` value is within `size` before the current row's, read in reverse
     /// order if `reversed`.
+    #[cfg_attr(not(feature = "rolling_window_by"), allow(dead_code))]
     Window {
         by: Expr,
         size: Duration,
@@ -677,9 +679,7 @@ impl Aggregate {
             polars_bail!(SQLInterface: "'ROWS <n> PRECEDING' window frames require the 'rolling_window' feature")
         }
     }
-}
 
-impl Aggregate {
     /// The aggregate over the union of disjoint frame parts.
     fn over_parts(&self, parts: &[FramePart], keys: &[Expr]) -> PolarsResult<Expr> {
         let total = |aggregate: Aggregate| -> PolarsResult<Expr> {
@@ -689,15 +689,16 @@ impl Aggregate {
         };
         Ok(match self {
             Aggregate::Sum(value) | Aggregate::Avg(value) => {
-                let value = match self {
-                    Aggregate::Avg(_) => value.clone().cast(DataType::Float64),
-                    _ => value.clone(),
+                let avg = matches!(self, Aggregate::Avg(_));
+                let value = match avg {
+                    true => value.clone().cast(DataType::Float64),
+                    false => value.clone(),
                 };
                 let count = total(Aggregate::Count(value.clone()))?;
                 let sum = total(Aggregate::Sum(value))?;
-                let result = match self {
-                    Aggregate::Avg(_) => sum / count.clone(),
-                    _ => sum,
+                let result = match avg {
+                    true => sum / count.clone(),
+                    false => sum,
                 };
                 when(count.gt(lit(0i64)))
                     .then(result)
@@ -730,24 +731,20 @@ impl RangeKey<'_> {
     /// The rows before the current row in the sorted window whose key is at most `size` away;
     /// the peers of the current row are included if `peers`.
     fn before(&self, size: Duration, peers: bool) -> PolarsResult<FramePart> {
-        self.window(size, peers, self.descending, false)
+        self.window(size, peers, false)
     }
 
     /// The rows after the current row in the sorted window whose key is at most `size` away;
     /// the peers of the current row are included if `peers`.
     fn after(&self, size: Duration, peers: bool) -> PolarsResult<FramePart> {
         // Read in reverse, the rows after the current row come before it.
-        self.window(size, peers, !self.descending, true)
+        self.window(size, peers, true)
     }
 
-    /// A window over the key, negated if `negate` so that it looks the other way.
-    fn window(
-        &self,
-        size: Duration,
-        peers: bool,
-        negate: bool,
-        reversed: bool,
-    ) -> PolarsResult<FramePart> {
+    /// A window over the key, read in reverse if `reversed`.
+    fn window(&self, size: Duration, peers: bool, reversed: bool) -> PolarsResult<FramePart> {
+        // A key that falls in the reading order is negated, so that it rises.
+        let negate = self.descending != reversed;
         let key = self.key.clone();
         let is_temporal = matches!(self.dtype, DataType::Date | DataType::Datetime(_, _));
         polars_ensure!(
@@ -758,12 +755,11 @@ impl RangeKey<'_> {
         let (key, units) = match self.dtype {
             dtype if dtype.is_integer() => (key.strict_cast(DataType::Int64), size.nanoseconds()),
             DataType::Date if size.is_constant_duration(None) => {
-                const NS_PER_DAY: i64 = 86_400_000_000_000;
                 let days = size
                     .weeks()
                     .checked_mul(7)
                     .and_then(|days| days.checked_add(size.days()))
-                    .and_then(|days| days.checked_add(size.nanoseconds() / NS_PER_DAY));
+                    .and_then(|days| days.checked_add(size.nanoseconds() / NANOSECONDS_IN_DAY));
                 let Some(days) = days else {
                     polars_bail!(SQLInterface: "RANGE window frame offset is too large");
                 };
