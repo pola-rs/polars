@@ -1582,6 +1582,9 @@ class DataFrame:
         Export a DataFrame via the Arrow PyCapsule Interface.
 
         https://arrow.apache.org/docs/dev/format/CDataInterface/PyCapsuleInterface.html
+
+        The data is exported with `CompatLevel.newest()`, so that, for example,
+        strings are exported as `string_view`; `requested_schema` is ignored.
         """
         return self._df.__arrow_c_stream__(requested_schema)
 
@@ -1748,29 +1751,13 @@ class DataFrame:
         foo: [[1,2,3,4,5,6]]
         bar: [["a","b","c","d","e","f"]]
         """
-        if self.width == 0:
-            if self.height == 0:
-                return pa.table({})
-
-            s = pl.Series([{}], dtype=Struct({}))
-
-            arr = s.new_from_index(0, min(self.height, (1 << 32) - 2)).to_arrow()
-
-            if len(arr) < self.height:
-                arr = pa.concat_arrays(
-                    [arr, s.new_from_index(0, self.height - len(arr)).to_arrow()]
-                )
-
-            return pa.table({"": arr}).select([])
-
         compat_level_py: int | bool
         if compat_level is None:
             compat_level_py = False
         elif isinstance(compat_level, CompatLevel):
             compat_level_py = compat_level._version
 
-        record_batches = self._df.to_arrow(compat_level_py)
-        return pa.Table.from_batches(record_batches)
+        return self._df.to_arrow(compat_level_py)
 
     @overload
     def to_dict(self, *, as_series: Literal[True] = ...) -> dict[str, Series]: ...
@@ -2730,8 +2717,7 @@ class DataFrame:
         if not df.width:  # Empty dataframe, cannot infer schema from batches
             return pd.DataFrame()
 
-        record_batches = df._df.to_pandas()
-        tbl = pa.Table.from_batches(record_batches)
+        tbl = df._df.to_pandas()
         if use_pyarrow_extension_array:
             return tbl.to_pandas(
                 self_destruct=True,

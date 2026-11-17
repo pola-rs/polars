@@ -9,8 +9,10 @@ use polars::io::RowIndex;
 use polars::prelude::delta_sink_state::DeltaSinkState;
 use polars::prelude::iceberg_sink_state::IcebergSinkState;
 use polars_arrow::ffi::export_iterator;
+use polars_arrow::record_batch::RecordBatch;
 #[cfg(feature = "csv")]
 use polars_buffer::Buffer;
+use polars_core::frame::batches_to_struct_arrays;
 use polars_core::prelude::*;
 use polars_core::query_result::QueryResult;
 use polars_io::external_reader::ExternalReaderBuilder;
@@ -32,7 +34,6 @@ use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::expr::datatype::PyDataTypeExpr;
 use crate::expr::selector::PySelector;
-use crate::interop::arrow::to_py::batches_to_struct_arrays;
 use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
 #[cfg(feature = "json")]
 use crate::io::cloud_options::OptPyCloudOptions;
@@ -1760,52 +1761,21 @@ impl PyCollectBatches {
             .enter_polars(move || ldf.collect_schema())?
             .to_arrow(CompatLevel::newest());
 
-        let dtype = ArrowDataType::Struct(schema.into_iter_values().collect());
-
-        let iter = Box::new(ArrowStreamIterator::new(self.inner.clone(), dtype.clone()));
-        let field = ArrowField::new(PlSmallStr::EMPTY, dtype, false);
-        let stream = export_iterator(iter, field);
-        PyCapsule::new_with_value(py, stream, c"arrow_array_stream")
-    }
-}
-
-pub struct ArrowStreamIterator {
-    inner: Arc<Mutex<CollectBatches>>,
-    dtype: ArrowDataType,
-    /// The arrays of the frame collected last.
-    arrays: Option<Box<dyn Iterator<Item = PolarsResult<ArrayRef>> + Send>>,
-}
-
-impl ArrowStreamIterator {
-    fn new(inner: Arc<Mutex<CollectBatches>>, schema: ArrowDataType) -> Self {
-        Self {
-            inner,
-            dtype: schema,
-            arrays: None,
-        }
-    }
-}
-
-impl Iterator for ArrowStreamIterator {
-    type Item = PolarsResult<ArrayRef>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if let Some(array) = self.arrays.as_mut().and_then(|arrays| arrays.next()) {
-                return Some(array);
-            }
-            let next = self.inner.lock().next();
-            match next? {
-                Err(err) => return Some(Err(err)),
+        let inner = self.inner.clone();
+        let batches = std::iter::from_fn(move || inner.lock().next()).flat_map(|df| {
+            let batches: Box<dyn Iterator<Item = PolarsResult<RecordBatch>>> = match df {
                 Ok(mut df) => {
-                    df.rechunk_mut();
-                    let batches = df.try_iter_chunks(CompatLevel::newest(), false);
-                    self.arrays = Some(Box::new(batches_to_struct_arrays(
-                        batches,
-                        self.dtype.clone(),
-                    )));
+                    df.align_chunks();
+                    Box::new(df.try_iter_chunks(CompatLevel::newest(), false))
                 },
-            }
-        }
+                Err(err) => Box::new(std::iter::once(Err(err))),
+            };
+            batches
+        });
+        let dtype = ArrowDataType::Struct(schema.into_iter_values().collect());
+        let field = ArrowField::new(PlSmallStr::EMPTY, dtype.clone(), false);
+        let arrays = batches_to_struct_arrays(batches, dtype);
+        let stream = export_iterator(Box::new(arrays), field);
+        PyCapsule::new_with_value(py, stream, c"arrow_array_stream")
     }
 }

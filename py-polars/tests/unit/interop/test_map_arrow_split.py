@@ -151,6 +151,20 @@ def test_a_single_row_with_too_many_map_entries_raises(df: pl.DataFrame) -> None
         df.select(pl.col("m").implode()).to_arrow()
 
 
+def test_arrow_c_stream_raises_at_the_chunk_that_does_not_fit(
+    df: pl.DataFrame,
+) -> None:
+    small = df.slice(0, 1).select(pl.col("m").implode())
+    big = df.select(pl.col("m").implode())
+    frame = pl.concat([small, big], rechunk=False)
+
+    reader = pa.RecordBatchReader.from_stream(frame)
+
+    assert reader.read_next_batch().num_rows == 1
+    with pytest.raises(OSError, match="a single row has 3221225472"):
+        reader.read_next_batch()
+
+
 def test_ipc_writers_split_an_oversized_map_chunk(df: pl.DataFrame) -> None:
     for write in (
         lambda f: df.write_ipc(f, compression="zstd"),
@@ -220,12 +234,11 @@ def test_export_arrow_to_c_raises_for_an_oversized_map(df: pl.DataFrame) -> None
         df["m"]._export_arrow_to_c(ctypes.addressof(array), ctypes.addressof(schema))
 
 
-def test_to_pandas_batches_share_one_schema(df: pl.DataFrame) -> None:
+def test_to_pandas_splits_an_oversized_map_chunk(df: pl.DataFrame) -> None:
     # Pandas conversion of the map itself would materialize 3 * 2^30 Python objects.
     with_cat = df.with_columns(c=pl.lit("x", pl.Categorical))
 
-    batches = with_cat._df.to_pandas()
+    table = with_cat._df.to_pandas()
 
-    assert len(batches) == 2
-    assert batches[0].schema == batches[1].schema
-    assert pa.Table.from_batches(batches).num_rows == 6
+    assert batch_rows(table) == [3, 3]
+    assert pa.types.is_signed_integer(table.schema.field("c").type.index_type)
