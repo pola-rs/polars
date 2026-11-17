@@ -653,6 +653,18 @@ def test_map_arrow_import_keeps_duplicate_keys() -> None:
     assert s.to_list() == [{"a": 2}]
 
 
+def test_map_scalar_materialization_keeps_entries() -> None:
+    pa = pytest.importorskip("pyarrow")
+    tbl = pa.table(
+        {"m": pa.array([[("a", 1), ("a", 2)]], type=pa.map_(pa.string(), pa.int64()))}
+    )
+    s = pl.from_arrow(tbl)["m"]  # type: ignore[index]
+    out = pl.DataFrame({"i": range(3)}).with_columns(m=pl.lit(s).first())
+    # A broadcast row materializes with the same entries as the column it came from.
+    expected = [[{"key": "a", "value": 1}, {"key": "a", "value": 2}]] * 3
+    assert out["m"].cast(ENTRIES).to_list() == expected
+
+
 def _ipc_buffer(s: pl.Series) -> IO[bytes]:
     buf = io.BytesIO()
     s.to_frame().write_ipc(buf)

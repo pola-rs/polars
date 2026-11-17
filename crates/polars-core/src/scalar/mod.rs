@@ -88,6 +88,13 @@ impl Scalar {
     }
 
     pub fn into_series(self, name: PlSmallStr) -> Series {
+        #[cfg(feature = "dtype-map")]
+        if let AnyValue::Map(entries) = &self.value
+            && let Some(map) =
+                crate::prelude::MapChunked::from_row_entries(name.clone(), &self.dtype, entries)
+        {
+            return crate::prelude::IntoSeries::into_series(map);
+        }
         Series::from_any_values_and_dtype(name, &[self.as_any_value()], &self.dtype, true).unwrap()
     }
 

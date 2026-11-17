@@ -75,6 +75,23 @@ impl MapChunked {
         Ok(Self { dtype, storage })
     }
 
+    /// One row from its entries, trusting key uniqueness like an Arrow import; `None` if the
+    /// entries do not satisfy the storage safety contract for `dtype`.
+    pub(crate) fn from_row_entries(
+        name: PlSmallStr,
+        dtype: &DataType,
+        entries: &Series,
+    ) -> Option<Self> {
+        dtype.ensure_valid_map_dtype().ok()?;
+        if dtype.map_entries_dtype().as_ref() != Some(entries.dtype()) {
+            return None;
+        }
+        let storage = entries.implode().ok()?.with_name(name);
+        ensure_live_entries_non_null(&storage).ok()?;
+        // SAFETY: valid dtype, matching entries dtype, no null entries or keys in the only row.
+        Some(unsafe { Self::from_storage_unchecked(dtype.clone(), storage.into_series()) })
+    }
+
     pub fn name(&self) -> &PlSmallStr {
         self.storage.name()
     }
