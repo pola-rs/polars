@@ -1097,40 +1097,16 @@ impl PolarsSQLFunctions {
     /// Whether the first argument is a string, which a NULL literal is read as.
     fn takes_string_input(&self) -> bool {
         use PolarsSQLFunctions::*;
-        matches!(
-            self,
-            BitLength
-                | Date
-                | EndsWith
-                | InitCap
-                | Left
-                | LeftPad
-                | LeftTrim
-                | Length
-                | Lower
-                | Normalize
-                | OctetLength
-                | RegexpExtract
-                | RegexpLike
-                | RegexpMatches
-                | RegexpReplace
-                | Replace
-                | Repeat
-                | Reverse
-                | Right
-                | RightPad
-                | RightTrim
-                | SplitPart
-                | StartsWith
-                | StrPos
-                | Substring
-                | StringToArray
-                | Strptime
-                | TryStrptime
-                | Time
-                | Timestamp
-                | Upper
-        )
+        match self {
+            #[cfg(feature = "nightly")]
+            InitCap => true,
+            BitLength | Date | EndsWith | Left | LeftPad | LeftTrim | Length | Lower
+            | Normalize | OctetLength | RegexpExtract | RegexpLike | RegexpMatches
+            | RegexpReplace | Replace | Repeat | Reverse | Right | RightPad | RightTrim
+            | SplitPart | StartsWith | StrPos | Substring | StringToArray | Strptime
+            | TryStrptime | Time | Timestamp | Upper => true,
+            _ => false,
+        }
     }
 
     pub(crate) fn keywords() -> &'static [&'static str] {
