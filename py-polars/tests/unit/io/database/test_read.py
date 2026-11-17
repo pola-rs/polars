@@ -29,6 +29,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.io.database.conftest import create_sqlite_engine
 
 if TYPE_CHECKING:
+    from typing import Self
+
     from sqlalchemy.engine import Engine
 
     from polars._typing import (
@@ -1480,3 +1482,111 @@ def test_read_database_struct_schema_overrides_30471() -> None:
                     conn,
                     schema_overrides={"s": dtype},
                 )
+
+
+class _TrinoNamedRowTuple(tuple):  # type: ignore[type-arg]
+    """Mirrors `trino.types.NamedRowTuple` (returned by trino for `ROW` values)."""
+
+    def __new__(
+        cls, values: list[Any], names: list[str | None], types: list[str]
+    ) -> Self:
+        return super().__new__(cls, values)
+
+    def __init__(
+        self, values: list[Any], names: list[str | None], types: list[str]
+    ) -> None:
+        self._names = names
+        for name, value in zip(names, values, strict=True):
+            if name is not None and names.count(name) == 1:
+                setattr(self, name, value)
+
+    def __getattr__(self, name: str) -> Any:
+        # note: implicitly returns None for unknown attributes (eg: `_fields`)
+        if self._names.count(name):
+            msg = f"Ambiguous row field reference: {name}"
+            raise ValueError(msg)
+
+
+class _TrinoCursor:
+    """Minimal DBAPI cursor mimicking the trino driver."""
+
+    def __init__(self, description: list[tuple[str, str]], rows: list[Any]) -> None:
+        self.description = [
+            (nm, tp, None, None, None, None, None) for nm, tp in description
+        ]
+        self._rows = rows
+
+    def execute(self, query: str) -> Any:
+        return self
+
+    def fetchall(self) -> list[Any]:
+        rows, self._rows = self._rows, []
+        return rows
+
+    def fetchmany(self, size: int | None = None) -> list[Any]:
+        rows, self._rows = self._rows[:size], self._rows[size:]
+        return rows
+
+    def close(self) -> None:
+        pass
+
+
+@pytest.mark.parametrize("iter_batches", [False, True])
+def test_read_database_trino_row_types(
+    iter_batches: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # https://github.com/pola-rs/polars/issues/19483
+    import types
+
+    trino_types = types.ModuleType("trino.types")
+    trino_types.NamedRowTuple = _TrinoNamedRowTuple  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "trino.types", trino_types)
+
+    def row(values: list[Any], names: list[str | None]) -> _TrinoNamedRowTuple:
+        return _TrinoNamedRowTuple(values, names, ["unknown"] * len(values))
+
+    assert row([1.0, "x"], ["b1", "b2"])._fields is None  # looks like a namedtuple
+
+    cursor = _TrinoCursor(
+        description=[
+            ("a", "integer"),
+            ("b", "array(row(b1 double, b2 varchar))"),
+            ("c", "row(c1 row(x integer), integer)"),
+        ],
+        rows=[
+            [
+                1,
+                [row([0.543976, "hello"], ["b1", "b2"])],
+                row([row([10], ["x"]), 20], ["c1", None]),
+            ],
+            [
+                2,
+                [row([1.5, "world"], ["b1", "b2"]), row([2.5, None], ["b1", "b2"])],
+                row([row([30], ["x"]), 40], ["c1", None]),
+            ],
+        ],
+    )
+    res = pl.read_database(
+        "SELECT * FROM toto",
+        connection=cursor,
+        iter_batches=iter_batches,
+        batch_size=1 if iter_batches else None,
+    )
+    if iter_batches:
+        assert isinstance(res, GeneratorType)
+        res = pl.concat(res)
+
+    expected = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [
+                [{"b1": 0.543976, "b2": "hello"}],
+                [{"b1": 1.5, "b2": "world"}, {"b1": 2.5, "b2": None}],
+            ],
+            "c": [
+                {"c1": {"x": 10}, "field_1": 20},
+                {"c1": {"x": 30}, "field_1": 40},
+            ],
+        }
+    )
+    assert_frame_equal(res, expected)  # type: ignore[arg-type]

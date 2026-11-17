@@ -64,6 +64,14 @@ def dtype_from_database_typename(
     original_value = value
     value = value.upper().replace("TYPE", "")
 
+    # composite struct/map types (possibly nested in an array) are not parsed;
+    # leave dtype inference to the data (eg: 'ARRAY(ROW(B1 DOUBLE, B2 VARCHAR))')
+    if re.search(r"\b(ROW|STRUCT|MAP)\s*[(<]", value):
+        if raise_unmatched:
+            msg = f"cannot infer dtype from {original_value!r} string value"
+            raise ValueError(msg)
+        return None
+
     # extract optional type modifier (eg: 'VARCHAR(64)' -> '64')
     if re.search(r"\([\w,: ]+\)$", value):
         modifier = value[value.find("(") + 1 : -1]
