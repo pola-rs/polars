@@ -493,7 +493,8 @@ If another writer commits first:
 DESCRIBE
 --------
 Returns the column names and data types of a table, a view, a file or the result of a query,
-as the columns ``column_name`` and ``column_type``. ``DESC`` is the same. A query is not run.
+as the columns ``column_name`` and ``column_type``. ``DESC`` is the same, and ``DESCRIBE TABLE t``
+is ``DESCRIBE t``. A query is not run.
 A file is given by its path in single quotes, as in :ref:`FROM <from>`; only what its columns
 are known from is read, such as the metadata of a Parquet file or the first rows of a CSV file.
 
