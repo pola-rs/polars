@@ -1,5 +1,3 @@
-use std::sync::{Arc, Mutex};
-
 use polars::datatypes::CompatLevel;
 use polars::prelude::{ArrayRef, ArrowField, ArrowSchema, PlSmallStr};
 use polars::series::Series;
@@ -8,12 +6,12 @@ use polars_arrow::ffi;
 use polars_arrow::record_batch::RecordBatch;
 use polars_core::frame::batches_to_struct_arrays;
 use polars_core::utils::polars_arrow;
-use polars_error::{PolarsResult, polars_err};
+use polars_error::PolarsResult;
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
 use pyo3::types::PyCapsule;
 
-use crate::error::PyPolarsErr;
+use crate::utils::EnterPolarsExt;
 
 /// Arrow array to Python.
 pub(crate) fn to_py_array(
@@ -45,45 +43,33 @@ pub(crate) fn to_py_dtype(field: &ArrowField, pyarrow: &Bound<PyModule>) -> PyRe
     Ok(dtype.unbind())
 }
 
-/// Read `batches`, whose columns have the fields of `schema`, into a `pyarrow.Table` through an
-/// Arrow C stream.
+/// Read `batches`, whose columns have the fields of `schema`, into a `pyarrow.Table`.
 ///
-/// An export error is raised as the Polars error itself rather than as pyarrow's rewrapping
-/// of its message.
+/// The batches are converted in [`EnterPolarsExt::enter_polars`], so that panics, interrupts and
+/// export errors surface as they do for any other Polars call, and then handed to pyarrow as one
+/// Arrow C stream.
 pub(crate) fn batches_to_py_table(
     py: Python<'_>,
-    batches: impl Iterator<Item = PolarsResult<RecordBatch>> + 'static,
+    batches: impl Iterator<Item = PolarsResult<RecordBatch>> + Send,
     schema: ArrowSchema,
 ) -> PyResult<Py<PyAny>> {
-    let first_error = Arc::new(Mutex::new(None));
-    let error_slot = first_error.clone();
-    let batches = batches.map(move |batch| {
-        batch.map_err(|err| {
-            let msg = err.to_string();
-            error_slot.lock().unwrap().get_or_insert(err);
-            polars_err!(ComputeError: "{msg}")
-        })
-    });
-
     let dtype = ArrowDataType::Struct(schema.into_iter_values().collect());
     let field = ArrowField::new(PlSmallStr::EMPTY, dtype.clone(), false);
-    let arrays = batches_to_struct_arrays(batches, dtype);
-    let mut stream = Box::new(ffi::export_iterator(Box::new(arrays), field));
+    let arrays = py.enter_polars(|| {
+        batches_to_struct_arrays(batches, dtype).collect::<PolarsResult<Vec<_>>>()
+    })?;
+
+    let mut stream = Box::new(ffi::export_iterator(
+        Box::new(arrays.into_iter().map(Ok)),
+        field,
+    ));
     let stream_ptr: *mut ffi::ArrowArrayStream = &mut *stream;
-    // `read_all` releases the GIL while it pulls the batches.
     let table = py
         .import("pyarrow")?
         .getattr("RecordBatchReader")?
         .call_method1("_import_from_c", (stream_ptr as Py_uintptr_t,))?
-        .call_method0("read_all");
-
-    match table {
-        Ok(table) => Ok(table.unbind()),
-        Err(err) => match first_error.lock().unwrap().take() {
-            Some(err) => Err(PyPolarsErr::from(err).into()),
-            None => Err(err),
-        },
-    }
+        .call_method0("read_all")?;
+    Ok(table.unbind())
 }
 
 /// Export a series to a C stream via a PyCapsule according to the Arrow PyCapsule Interface

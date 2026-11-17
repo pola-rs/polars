@@ -127,7 +127,7 @@ impl<Iter: DerefMut<Target = ArrowArrayStream>> ArrowArrayStreamReader<Iter> {
 }
 
 struct PrivateData {
-    iter: Box<dyn Iterator<Item = PolarsResult<Box<dyn Array>>>>,
+    iter: Box<dyn Iterator<Item = PolarsResult<Box<dyn Array>>> + Send>,
     field: Field,
     error: Option<CString>,
 }
@@ -199,8 +199,10 @@ unsafe extern "C" fn release(iter: *mut ArrowArrayStream) {
 }
 
 /// Exports an iterator to the [C stream interface](https://arrow.apache.org/docs/format/CStreamInterface.html)
+///
+/// The iterator must be `Send`, as the consumer may read the stream from any thread.
 pub fn export_iterator(
-    iter: Box<dyn Iterator<Item = PolarsResult<Box<dyn Array>>>>,
+    iter: Box<dyn Iterator<Item = PolarsResult<Box<dyn Array>>> + Send>,
     field: Field,
 ) -> ArrowArrayStream {
     let private_data = Box::new(PrivateData {

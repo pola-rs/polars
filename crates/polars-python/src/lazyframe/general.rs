@@ -1763,7 +1763,7 @@ impl PyCollectBatches {
 
         let inner = self.inner.clone();
         let batches = std::iter::from_fn(move || inner.lock().next()).flat_map(|df| {
-            let batches: Box<dyn Iterator<Item = PolarsResult<RecordBatch>>> = match df {
+            let batches: Box<dyn Iterator<Item = PolarsResult<RecordBatch>> + Send> = match df {
                 Ok(mut df) => {
                     df.align_chunks();
                     Box::new(df.try_iter_chunks(CompatLevel::newest(), false))

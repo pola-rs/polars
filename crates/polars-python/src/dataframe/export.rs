@@ -156,11 +156,16 @@ impl PyDataFrame {
 
 impl PyDataFrame {
     /// This frame with aligned chunks, stored back so that a later export doesn't rechunk again.
+    ///
+    /// The clone is aligned outside the lock, as rechunking an Object column needs the GIL.
     fn aligned_for_export(&self, py: Python<'_>) -> PyResult<DataFrame> {
-        py.enter_polars_ok(|| {
-            let mut df = self.df.write();
-            df.align_chunks_par();
-            df.clone()
-        })
+        let mut df = self.df.read().clone();
+        if df.should_rechunk() {
+            py.enter_polars_ok(|| {
+                df.align_chunks_par();
+            })?;
+            *self.df.write() = df.clone();
+        }
+        Ok(df)
     }
 }

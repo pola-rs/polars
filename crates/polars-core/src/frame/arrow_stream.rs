@@ -25,9 +25,9 @@ impl DataFrame {
 
 /// Each record batch as an arrow struct array of `dtype`, the way a C stream carries a table.
 pub fn batches_to_struct_arrays(
-    batches: impl Iterator<Item = PolarsResult<RecordBatch>>,
+    batches: impl Iterator<Item = PolarsResult<RecordBatch>> + Send,
     dtype: ArrowDataType,
-) -> impl Iterator<Item = PolarsResult<ArrayRef>> {
+) -> impl Iterator<Item = PolarsResult<ArrayRef>> + Send {
     batches.map(move |batch| {
         let batch = batch?;
         let array = StructArray::new(dtype.clone(), batch.len(), batch.into_arrays(), None);
