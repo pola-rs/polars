@@ -21,6 +21,8 @@ use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
 
 #[cfg(feature = "dataframe_arithmetic")]
 mod arithmetic;
+mod arrow_stream;
+pub use arrow_stream::batches_to_struct_arrays;
 pub mod builder;
 mod chunks;
 pub use chunks::chunk_df_for_writing;
