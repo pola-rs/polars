@@ -35,6 +35,10 @@ Array
      - Returns the number of elements in the array.
    * - :ref:`GENERATE_SERIES <generate_series>`
      - Returns an array of values from start to stop, stop included.
+   * - :ref:`LIST_FILTER <list_filter>`
+     - Returns the array with the elements for which a lambda is true.
+   * - :ref:`LIST_TRANSFORM <list_transform>`
+     - Returns the array with a lambda applied to each element.
    * - :ref:`RANGE <range>`
      - Returns an array of values from start to stop, stop not included.
    * - :ref:`UNNEST <unnest>`
@@ -461,6 +465,58 @@ return timestamps. Also available as a table function, see
     # │ 2026-01-02 00:00:00 │
     # │ 2026-01-03 00:00:00 │
     # └─────────────────────┘
+
+.. _list_filter:
+
+LIST_FILTER
+-----------
+Returns the array with the elements for which a lambda is true. The lambda takes one
+parameter, the element, and can only use that parameter. A null result drops the element.
+Aliases: ``ARRAY_FILTER``, ``FILTER``.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": [[1, 2, 3], [4, 5]]})
+    df.sql("""
+      SELECT LIST_FILTER(foo, lambda x: x % 2 = 1) AS foo_odd FROM self
+    """)
+    # shape: (2, 1)
+    # ┌───────────┐
+    # │ foo_odd   │
+    # │ ---       │
+    # │ list[i64] │
+    # ╞═══════════╡
+    # │ [1, 3]    │
+    # │ [5]       │
+    # └───────────┘
+
+.. _list_transform:
+
+LIST_TRANSFORM
+--------------
+Returns the array with a lambda applied to each element. The lambda takes one parameter,
+the element, and can only use that parameter. Aliases: ``ARRAY_TRANSFORM``, ``APPLY``,
+``LIST_APPLY``, ``ARRAY_APPLY``.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": [[1, 2, 3], [4, 5]]})
+    df.sql("""
+      SELECT LIST_TRANSFORM(foo, lambda x: x * 10) AS foo_x10 FROM self
+    """)
+    # shape: (2, 1)
+    # ┌──────────────┐
+    # │ foo_x10      │
+    # │ ---          │
+    # │ list[i64]    │
+    # ╞══════════════╡
+    # │ [10, 20, 30] │
+    # │ [40, 50]     │
+    # └──────────────┘
 
 .. _range:
 
