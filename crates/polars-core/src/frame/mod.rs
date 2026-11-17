@@ -2788,9 +2788,15 @@ impl RecordBatchIter {
         // A dictionary column's codes need not have the chunks of the other columns.
         let to_arrow = |c: &Column| match c.as_series() {
             Some(s) => s.try_to_arrow(idx, self.compat_level),
-            None => Ok(c
-                .slice(rows.start as i64, length)
-                .rechunk_to_arrow(self.compat_level)),
+            None => {
+                let mut s = c
+                    .slice(rows.start as i64, length)
+                    .take_materialized_series();
+                if s.n_chunks() > 1 {
+                    s = s.rechunk();
+                }
+                s.try_to_arrow(0, self.compat_level)
+            },
         };
 
         let batch_cols = if self.parallel {
