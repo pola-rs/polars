@@ -85,3 +85,15 @@ def test_cumulative_eval_min_samples_zero_group_by_30625() -> None:
         pl.DataFrame({"g": [1, 2, 3], "b": [[1, 3, 6], [2, 5, 9], [3]]}),
         check_row_order=False,
     )
+
+
+@pytest.mark.parametrize("min_samples", [0, 2])
+def test_cumulative_eval_columns(min_samples: int) -> None:
+    df = pl.DataFrame({"v": [1, 2, 3], "x": [10, 20, 30]})
+    out = df.select(
+        pl.col("v").cumulative_eval(
+            pl.element().sum() + pl.col("x").last(), min_samples=min_samples
+        )
+    )
+    expected = [11, 23, 36] if min_samples == 0 else [None, 23, 36]
+    assert out["v"].to_list() == expected

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -11,7 +12,9 @@ from polars.exceptions import (
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
+
+    from polars._typing import EngineType
 
 
 def test_list_eval_dtype_inference() -> None:
@@ -782,3 +785,165 @@ def test_list_agg_null_rows_30252() -> None:
     assert_series_equal(
         s.list.agg(pl.element().first()), pl.Series("s", [None, None, None])
     )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_list_eval_columns(engine: EngineType) -> None:
+    lf = pl.LazyFrame(
+        {
+            "l": [[1, 2], [3], [], None],
+            "x": [10, 20, 30, 40],
+            "n": [1, 0, 1, 1],
+        }
+    )
+    # A column is the value of the row, repeated for each element.
+    out = lf.select(
+        add=pl.col("l").list.eval(pl.element() + pl.col("x")),
+        filter=pl.col("l").list.eval(pl.element().filter(pl.element() > pl.col("n"))),
+        append=pl.col("l").list.eval(pl.element().append(pl.col("x"))),
+        sum=pl.col("l").list.eval(pl.col("x").sum()),
+        when=pl.col("l").list.eval(
+            pl.when(pl.element() > 1).then(pl.element() + pl.col("x")).otherwise(0)
+        ),
+        agg=pl.col("l").list.agg(pl.element().sum() + pl.col("x").first()),
+        agg_col=pl.col("l").list.agg(pl.col("x").first()),
+        lit=pl.lit([1, 2]).list.eval(pl.element() * pl.col("x")),
+    ).collect(engine=engine)
+    expected = pl.DataFrame(
+        {
+            "add": [[11, 12], [23], [], None],
+            "filter": [[2], [3], [], None],
+            "append": [[1, 2, 10, 10], [3, 20], [], None],
+            "sum": [[20], [20], [0], None],
+            "when": [[0, 12], [23], [], None],
+            "agg": [13, 23, None, None],
+            "agg_col": [10, 20, None, None],
+            "lit": [[10, 20], [20, 40], [30, 60], [40, 80]],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+    out = (
+        lf.head(2)
+        .select(pl.col("l").list.eval(pl.element().head(pl.col("n").first())))
+        .collect(engine=engine)
+    )
+    assert out["l"].to_list() == [[1], []]
+
+    lf = pl.LazyFrame({"l": [[1, 1, 2], [0]], "x": [10, 20]})
+    out = lf.select(
+        over=pl.col("l").list.eval(pl.col("x").sum().over(pl.element())),
+    ).collect(engine=engine)
+    assert out["over"].to_list() == [[20, 20, 10], [20]]
+
+    # Null rows don't run fallible expressions on their columns.
+    lf = pl.LazyFrame({"l": [[1, 2], [3, 4]], "x": ["10", "bad"]}).with_columns(
+        pl.when(pl.col("x") == "10").then("l")
+    )
+    out = lf.select(
+        pl.col("l").list.eval(pl.element() + pl.col("x").cast(pl.Int64))
+    ).collect(engine=engine)
+    assert out["l"].to_list() == [[11, 12], None]
+
+    lf = pl.LazyFrame({"l": [[1], [0]], "keep": [True, False]}).with_columns(
+        pl.when("keep").then("l"), x=pl.lit("x1")
+    )
+    out = lf.select(
+        pl.col("l").list.eval(pl.col("x").str.slice(pl.element()).cast(pl.Int64))
+    ).collect(engine=engine)
+    assert out["l"].to_list() == [[1], None]
+
+    # Inferring the date format does not read across rows.
+    lf = pl.LazyFrame({"l": [[0], [0]], "x": ["2024-01-02", "13/04/2024"]})
+    out = lf.select(
+        pl.col("l").list.eval(pl.col("x").str.to_date(strict=False))
+    ).collect(engine=engine)
+    assert out["l"].to_list() == [[date(2024, 1, 2)], [date(2024, 4, 13)]]
+
+    # Nested, where the column is the value of the outer row.
+    lf = pl.LazyFrame({"n": [[[1, 2], [3]], [[4]]], "x": [10, 100]})
+    out = lf.select(
+        pl.col("n").list.eval(pl.element().list.eval(pl.element() + pl.col("x")))
+    ).collect(engine=engine)
+    assert out["n"].to_list() == [[[11, 12], [13]], [[104]]]
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_list_eval_columns_optimizations(engine: EngineType) -> None:
+    # Predicate pushdown renames the columns read in the evaluation.
+    lf = pl.LazyFrame({"l": [[1, 2], [3]], "x": [1, 3], "y": [99, 0]})
+    out = (
+        lf.select("l", pl.col("x").alias("y"), pl.col("y").alias("z"))
+        .filter(pl.col("l").list.eval(pl.element() > pl.col("y")).list.any())
+        .collect(engine=engine)
+    )
+    assert out["y"].to_list() == [1]
+
+    # Slice pushdown slices the columns together with the list.
+    lf = pl.LazyFrame({"l": [[1], [2], [3], [4]], "x": [10, 20, 30, 40]})
+    out = lf.select(
+        a=pl.col("l").list.eval(pl.element() + pl.col("x")).slice(1, 2),
+        b=pl.col("x").head(2),
+    ).collect(engine=engine)
+    assert out["a"].to_list() == [[22], [33]]
+
+    # A literal list that reads a column has the height of the frame.
+    lf = pl.LazyFrame({"x": [30, 10, 20]})
+    out = lf.sort(pl.lit([0]).list.agg(pl.col("x").first())).collect(engine=engine)
+    assert out["x"].to_list() == [10, 20, 30]
+
+
+def test_list_eval_columns_io_plugin_predicate() -> None:
+    from polars.io.plugins import register_io_source
+
+    df = pl.DataFrame({"l": [[1], [2]], "x": [1, 2]})
+
+    def read(
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        n_rows: int | None,
+        batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        out = df if predicate is None else df.filter(predicate)
+        yield out.select(with_columns or df.columns)
+
+    # The predicate passed to the source keeps the name the evaluation reads.
+    out = (
+        register_io_source(read, schema=df.schema)
+        .rename({"x": "y"})
+        .filter(
+            pl.col("l").list.eval(pl.struct("y")).list.first().struct.field("y") > 1
+        )
+        .collect()
+    )
+    assert out.to_dicts() == [{"l": [2], "y": 2}]
+
+
+def test_list_eval_columns_length_mismatch() -> None:
+    df = pl.DataFrame({"l": [[1], [2]], "x": [10, 20]})
+    with pytest.raises(pl.exceptions.ShapeError):
+        df.select(pl.col("l").append(pl.col("l")).list.eval(pl.element() + pl.col("x")))
+
+
+def test_list_eval_columns_group_by() -> None:
+    df = pl.DataFrame({"g": [1, 1, 2], "l": [[1, 2], [3], None], "x": [10, 20, 30]})
+    out = df.group_by("g", maintain_order=True).agg(
+        pl.col("l").list.eval(pl.element() + pl.col("x"))
+    )
+    assert out["l"].to_list() == [[[11, 12], [23]], [None]]
+
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="reads columns"):
+        df.group_by("g").agg(pl.col("l").first().list.eval(pl.element() + pl.col("x")))
+
+    # The rows of each group line up with the columns in group order.
+    out = df.group_by("g", maintain_order=True).agg(
+        rev=pl.col("l").reverse().list.eval(pl.element() + pl.col("x")),
+        first=pl.col("l").list.eval(pl.element() + pl.col("x")).first(),
+        last=pl.col("l").list.eval(pl.element() + pl.col("x")).last(),
+    )
+    assert out.to_dict(as_series=False) == {
+        "g": [1, 2],
+        "rev": [[[13], [21, 22]], [None]],
+        "first": [[11, 12], None],
+        "last": [[23], None],
+    }

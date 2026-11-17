@@ -896,6 +896,7 @@ fn classify_into_constraints(
         // Not a `col op lit`, so no bound. Listed explicitly (no `_`) so a new
         // `AExpr` variant fails to compile here and forces a decision.
         AExpr::Element
+        | AExpr::EvalColumn(_)
         | AExpr::Explode { .. }
         | AExpr::Column(_)
         | AExpr::Literal(_)
@@ -1107,6 +1108,7 @@ fn classify_negation(
         // Negation of any other shape isn't a constraint we model; kept verbatim.
         AExpr::Function { .. }
         | AExpr::Element
+        | AExpr::EvalColumn(_)
         | AExpr::Explode { .. }
         | AExpr::Column(_)
         | AExpr::Literal(_)

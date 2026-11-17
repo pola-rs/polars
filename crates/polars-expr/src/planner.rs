@@ -195,6 +195,11 @@ pub fn create_window_expr(
             apply_columns.push(PlSmallStr::from_static("len"))
         } else if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Element)) {
             apply_columns.push(PlSmallStr::from_static("element"))
+        } else if let Some((_, AExpr::EvalColumn(name))) = expr_arena
+            .iter(function)
+            .find(|(_, e)| matches!(e, AExpr::EvalColumn(_)))
+        {
+            apply_columns.push(name.clone())
         } else {
             let e = node_to_expr(function, expr_arena);
             polars_bail!(
@@ -311,7 +316,8 @@ fn create_physical_expr_inner(
                 output_field,
             )))
         },
-        Column(column) => Ok(Arc::new(ColumnExpr::new(
+        // Read from the frame of the evaluation, see `EvalExpr`.
+        Column(column) | EvalColumn(column) => Ok(Arc::new(ColumnExpr::new(
             column.clone(),
             node_to_expr(expression, expr_arena),
             schema.clone(),
@@ -596,10 +602,12 @@ fn create_physical_expr_inner(
             expr,
             evaluation,
             variant,
+            columns,
         } => {
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let evaluation_is_scalar = is_scalar_ae(evaluation, expr_arena);
             let evaluation_is_elementwise = is_elementwise_rec(evaluation, expr_arena);
+            let input_is_elementwise = is_elementwise_rec(expr, expr_arena);
             let evaluation_is_fallible = expr_arena
                 .iter(evaluation)
                 .any(|(_, ae)| ae.is_fallible_top_level(expr_arena));
@@ -611,15 +619,18 @@ fn create_physical_expr_inner(
                 .get(expr)
                 .to_field(&ToFieldContext::new(expr_arena, schema))?;
             let expr = create_physical_expr_inner(expr, expr_arena, schema, state)?;
-
             let element_dtype = variant.element_dtype(&input_field.dtype)?;
-            let mut eval_schema = schema.as_ref().clone();
-            eval_schema.insert(get_pl_element_name(), element_dtype.clone());
+            let eval_schema = eval_schema(&columns, element_dtype, schema, expr_arena)?;
+            let columns = columns
+                .iter()
+                .map(|c| create_physical_expr(c, expr_arena, schema, state))
+                .collect::<PolarsResult<Vec<_>>>()?;
             let evaluation =
                 create_physical_expr_inner(evaluation, expr_arena, &Arc::new(eval_schema), state)?;
 
             Ok(Arc::new(EvalExpr::new(
                 expr,
+                columns,
                 evaluation,
                 variant,
                 node_to_expr(expression, expr_arena),
@@ -628,6 +639,7 @@ fn create_physical_expr_inner(
                 evaluation_is_scalar,
                 evaluation_is_elementwise,
                 evaluation_is_fallible,
+                input_is_elementwise,
             )))
         },
         #[cfg(feature = "dtype-struct")]

@@ -2818,7 +2818,7 @@ fn extract_len_nodes(
             },
 
             // References the data of the input frame.
-            AExpr::Column(_) | AExpr::Element => return false,
+            AExpr::Column(_) | AExpr::Element | AExpr::EvalColumn(_) => return false,
             #[cfg(feature = "dtype-struct")]
             AExpr::StructField(_) => return false,
 

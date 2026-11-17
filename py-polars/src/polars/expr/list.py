@@ -1431,6 +1431,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         ----------
         expr
             Expression to run. Note that you can select an element with `pl.element()`.
+            A column of the frame is the value of the row being evaluated, repeated
+            for each element.
         parallel
             Run all expression parallel. Don't activate this blindly.
             Parallelism is worth it if there is enough work to do per thread.
@@ -1455,6 +1457,22 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         │ 3   ┆ 2   ┆ [2.0, 1.0] │
         └─────┴─────┴────────────┘
 
+        Read a column, which is the value of the row repeated for each element:
+
+        >>> df.with_columns(
+        ...     diff=pl.concat_list("a", "b").list.eval(pl.element() - pl.col("a"))
+        ... )
+        shape: (3, 3)
+        ┌─────┬─────┬───────────┐
+        │ a   ┆ b   ┆ diff      │
+        │ --- ┆ --- ┆ ---       │
+        │ i64 ┆ i64 ┆ list[i64] │
+        ╞═════╪═════╪═══════════╡
+        │ 1   ┆ 4   ┆ [0, 3]    │
+        │ 8   ┆ 5   ┆ [0, -3]   │
+        │ 3   ┆ 2   ┆ [0, -1]   │
+        └─────┴─────┴───────────┘
+
         See Also
         --------
         polars.Expr.list.agg: Evaluate any expression and automatically explode.
@@ -1472,6 +1490,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         ----------
         expr
             Expression to run. Note that you can select an element with `pl.element()`.
+            A column of the frame is the value of the row being evaluated, repeated
+            for each element.
 
         Examples
         --------

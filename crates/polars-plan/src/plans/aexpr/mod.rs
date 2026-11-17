@@ -44,9 +44,9 @@ pub use aexpr::function_expr::schema::FieldsMapper;
 pub use builder::AExprBuilder;
 pub use evaluate::{constant_evaluate, into_column};
 pub use properties::*;
-pub use schema::ToFieldContext;
 #[cfg(feature = "dtype-struct")]
 pub(crate) use schema::get_struct_numeric_dtype;
+pub use schema::{ToFieldContext, eval_schema};
 
 use crate::constants::LEN;
 use crate::prelude::*;
@@ -177,6 +177,9 @@ pub enum AExpr {
     ///
     /// Equivalent of `pl.element()`.
     Element,
+    /// A column of the frame read in the `evaluation` of an `Eval`: the output of the one of its
+    /// `columns` with this name, repeated for each element of the row.
+    EvalColumn(PlSmallStr),
     Explode {
         expr: Node,
         options: ExplodeOptions,
@@ -237,15 +240,19 @@ pub enum AExpr {
     },
     /// Evaluates the `evaluation` expression on the output of the `expr`.
     ///
-    /// Consequently, `expr` is an input and `evaluation` is not and needs a different schema.
+    /// Consequently, `expr` and `columns` are inputs and `evaluation` is not and needs a
+    /// different schema.
     Eval {
         expr: Node,
 
-        /// An expression that is guaranteed to not contain any column reference beyond
-        /// `pl.element()` which refers to `pl.col("")`.
+        /// An expression on `pl.element()` and on `columns` through `EvalColumn`, without a
+        /// `Column`.
         evaluation: Node,
 
         variant: EvalVariant,
+
+        /// The columns of the frame that `evaluation` reads, named by their output names.
+        columns: Vec<ExprIR>,
     },
     #[cfg(feature = "dtype-struct")]
     StructEval {
