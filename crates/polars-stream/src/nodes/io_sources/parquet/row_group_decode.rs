@@ -12,7 +12,7 @@ use polars_core::series::Series;
 use polars_core::utils::polars_arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
-use polars_io::predicates::{DynamicPredicateSource, PhysicalIoExpr, ScanIOPredicate};
+use polars_io::predicates::{ColumnPath, DynamicPredicateSource, PhysicalIoExpr, ScanIOPredicate};
 use polars_io::prelude::_internal::canonicalize_parquet_maps;
 use polars_io::prelude::try_set_sorted_flag;
 use polars_parquet::read::{ColumnChunkMetadata, Filter, PredicateFilter, PrimitiveLogicalType};
@@ -25,11 +25,19 @@ use super::statistics::RuntimeRangeSkipper;
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
 
 /// Where a column of a row group comes from. Sorts in output order.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) enum Source {
     RowIndex,
     /// Index into `RowGroupDecoder::projected_arrow_fields`.
     Field(usize),
+    /// A transient physical leaf, never an output column.
+    Leaf(usize),
+}
+
+pub(super) struct PredicateLeaf {
+    pub(super) column_idx: usize,
+    pub(super) arrow_field: polars_arrow::datatypes::Field,
+    pub(super) path: ColumnPath,
 }
 
 /// The conjuncts of the predicate that read one column.
@@ -113,6 +121,7 @@ pub(super) struct RowGroupDecoder {
     pub(super) predicate_field_indices: Arc<[usize]>,
     /// The conjuncts of the predicate that read one column.
     pub(super) predicate_columns: Arc<[PredicateColumn]>,
+    pub(super) predicate_leaves: Arc<[PredicateLeaf]>,
     /// The part of the predicate `predicate_columns` do not cover.
     pub(super) rest_predicate: Option<Arc<dyn PhysicalIoExpr>>,
     /// The predicate fields no predicate column reads. Sorted.
@@ -133,7 +142,7 @@ impl RowGroupDecoder {
     pub(super) fn decode_tasks(&self, n_rows: usize, sliced: bool) -> usize {
         let n_cols = self.projected_arrow_fields.len();
         if self.prefilters(sliced, self.nothing_to_evaluate()) {
-            n_cols.min(self.num_pipelines)
+            (n_cols + self.predicate_leaves.len()).min(self.num_pipelines)
         } else {
             n_cols.div_ceil(calc_cols_per_thread(n_rows, self.target_values_per_thread))
         }
@@ -143,7 +152,7 @@ impl RowGroupDecoder {
     fn prefilters(&self, sliced: bool, nothing_to_evaluate: bool) -> bool {
         self.use_prefiltered
             && !sliced
-            && !self.predicate_field_indices.is_empty()
+            && (!self.predicate_field_indices.is_empty() || !self.predicate_columns.is_empty())
             && !nothing_to_evaluate
     }
 
@@ -556,6 +565,7 @@ struct Decoded {
 /// One pass over a row group.
 struct Pass {
     predicate_columns: Arc<[PredicateColumn]>,
+    predicate_leaves: Arc<[PredicateLeaf]>,
     projected_arrow_fields: Arc<[ArrowFieldProjection]>,
     row_index: Option<RowIndex>,
     row_group_data: Arc<RowGroupData>,
@@ -607,6 +617,40 @@ impl Pass {
 
         let field_idx = match source {
             Source::Field(field_idx) => field_idx,
+            Source::Leaf(leaf_idx) => {
+                let leaf = &self.predicate_leaves[leaf_idx];
+                let decode_filter = predicate_column
+                    .and_then(|(_, c)| c.decode_filter.as_ref())
+                    .filter(|_| self.mask.is_none() && self.use_decode_filters);
+                let filter = decode_filter
+                    .map(|p| Filter::Predicate(p.clone()))
+                    .or_else(|| self.mask.clone().map(Filter::Mask));
+                let (mut column, mask) = decode_leaf(leaf, &self.row_group_data, filter)?;
+                if decode_filter.is_some() {
+                    let (i, c) = predicate_column.unwrap();
+                    if let Some(v) = &c.constant {
+                        column =
+                            Column::new_scalar(column.name().clone(), v.clone(), mask.set_bits());
+                    }
+                    let mut mask = mask;
+                    if let Some(m) = dynamic_mask(c, &column)? {
+                        column = column
+                            .filter(&BooleanChunked::from_bitmap(PlSmallStr::EMPTY, m.clone()))?;
+                        mask = compose_masks(&mask, &m);
+                    }
+                    return Ok(Decoded {
+                        source,
+                        column,
+                        predicate: Some((i, Kept::Filtered(mask))),
+                    });
+                }
+                let predicate = evaluate(&column)?;
+                return Ok(Decoded {
+                    source,
+                    column,
+                    predicate,
+                });
+            },
             Source::RowIndex => {
                 let height = self.row_group_data.row_group_metadata.num_rows();
                 let mut column = row_index_column(
@@ -663,9 +707,15 @@ impl Pass {
         }
 
         let column = match &self.mask {
-            Some(mask) => {
-                decode_column_prefiltered(projection, &self.row_group_data, mask, self.num_rows)?
-            },
+            Some(mask) => decode_column_prefiltered(
+                projection,
+                &self.row_group_data,
+                mask,
+                self.num_rows,
+                self.predicate_leaves
+                    .iter()
+                    .any(|leaf| &leaf.path.root == projection.output_name()),
+            )?,
             None => decode_column(projection, &self.row_group_data, None, self.num_rows)?.0,
         };
         let column = projection.apply_transform(column, self.row_group_data.row_group_idx)?;
@@ -776,6 +826,9 @@ impl RowGroupDecoder {
                 if let Some(m) = m {
                     pass_mask = Some(and_masks(pass_mask, m.clone()));
                 }
+                if matches!(d.source, Source::Leaf(_)) {
+                    continue;
+                }
                 match kept_rows {
                     Kept::All | Kept::Masked(_) => live_columns.push((d.source, d.column)),
                     Kept::Filtered(own) => filtered.push((d.source, d.column, own)),
@@ -811,6 +864,9 @@ impl RowGroupDecoder {
                 input_rows: kept_before,
                 kept_rows: kept,
             });
+            if kept == 0 {
+                return Ok(self.empty_df());
+            }
         }
 
         if let Some(rest) = &self.rest_predicate {
@@ -864,14 +920,23 @@ impl RowGroupDecoder {
         );
         if next_passes != *passes {
             if polars_core::config::verbose() {
-                let names: Vec<Vec<&str>> = next_passes
+                let names: Vec<Vec<String>> = next_passes
                     .iter()
                     .map(|pass| {
                         pass.iter()
                             .map(|&c| match self.predicate_columns[c].source {
-                                Source::RowIndex => self.row_index.as_ref().unwrap().name.as_str(),
+                                Source::RowIndex => {
+                                    self.row_index.as_ref().unwrap().name.to_string()
+                                },
                                 Source::Field(f) => {
-                                    self.projected_arrow_fields[f].output_name().as_str()
+                                    self.projected_arrow_fields[f].output_name().to_string()
+                                },
+                                Source::Leaf(i) => {
+                                    let path = &self.predicate_leaves[i].path;
+                                    std::iter::once(path.root.as_str())
+                                        .chain(path.path.iter().map(|s| s.as_str()))
+                                        .collect::<Vec<_>>()
+                                        .join(".")
                                 },
                             })
                             .collect()
@@ -907,6 +972,7 @@ impl RowGroupDecoder {
         let items: Arc<[Item]> = items.into();
         let pass = Arc::new(Pass {
             predicate_columns: self.predicate_columns.clone(),
+            predicate_leaves: self.predicate_leaves.clone(),
             projected_arrow_fields: self.projected_arrow_fields.clone(),
             row_index: self.row_index.clone(),
             row_group_data: row_group_data.clone(),
@@ -993,11 +1059,36 @@ fn compose_masks(outer: &Bitmap, inner: &Bitmap) -> Bitmap {
     out.freeze()
 }
 
+fn decode_leaf(
+    leaf: &PredicateLeaf,
+    row_group_data: &RowGroupData,
+    filter: Option<Filter>,
+) -> PolarsResult<(Column, Bitmap)> {
+    use std::io::Cursor;
+
+    use polars_parquet::read::{BasicDecompressor, PageReader, leaf_iter_to_arrays};
+    let md = &row_group_data.row_group_metadata.parquet_columns()[leaf.column_idx];
+    let range = md.byte_range()?;
+    let bytes = row_group_data
+        .fetched_bytes
+        .get_range(range.start as usize..range.end as usize)?;
+    let pages = PageReader::new(Cursor::new(bytes), md, vec![], usize::MAX)?;
+    let (arrays, mask) = leaf_iter_to_arrays(
+        BasicDecompressor::new(pages, vec![]),
+        &md.descriptor().descriptor,
+        leaf.arrow_field.clone(),
+        filter,
+    )?;
+    let series = Series::try_from((&leaf.arrow_field, arrays))?;
+    Ok((series.into_column(), mask))
+}
+
 fn decode_column_prefiltered(
     projection: &ArrowFieldProjection,
     row_group_data: &RowGroupData,
     mask_bitmap: &Bitmap,
     expected_num_rows: usize,
+    mask_struct: bool,
 ) -> PolarsResult<Column> {
     let arrow_field = projection.decode_field(row_group_data.row_group_idx);
     let Some(iter) = projected_column_chunks(projection, row_group_data) else {
@@ -1021,8 +1112,15 @@ fn decode_column_prefiltered(
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
+    // Struct-only masks won for sparse and very dense selections in the probe;
+    // middle-density masks cost more than decoding then filtering. Restrict this
+    // to roots already chosen for leaf passes, leaving other struct reads alone.
     let prefilter = !arrow_field.dtype.is_nested()
-        || matches!(arrow_field.dtype, ArrowDataType::Dictionary(..));
+        || matches!(arrow_field.dtype, ArrowDataType::Dictionary(..))
+        || (mask_struct
+            && struct_only(&arrow_field.dtype)
+            && (mask_bitmap.set_bits() <= mask_bitmap.len() / 10
+                || mask_bitmap.set_bits() >= mask_bitmap.len() - mask_bitmap.len() * 15 / 100));
 
     let deserialize_filter =
         prefilter.then(|| polars_parquet::read::Filter::Mask(mask_bitmap.clone()));
@@ -1057,6 +1155,16 @@ fn decode_column_prefiltered(
     assert_eq!(series.len(), expected_num_rows);
 
     Ok(series.into_column())
+}
+
+/// Masks map directly to definition-level entries only without repeated values.
+#[recursive::recursive]
+pub(super) fn struct_only(dtype: &ArrowDataType) -> bool {
+    match dtype {
+        ArrowDataType::Struct(fields) => fields.iter().all(|f| struct_only(&f.dtype)),
+        ArrowDataType::Dictionary(..) => true,
+        dtype => !dtype.is_nested(),
+    }
 }
 
 mod tests {

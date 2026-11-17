@@ -25,7 +25,7 @@ use polars_plan::plans::predicates::{
     aexpr_to_column_predicates, aexpr_to_skip_batch_predicate, null_count_dtype,
 };
 use polars_plan::plans::{
-    AExpr, ExprIRDisplay, FileInfo, IR, IRFunctionExpr, MintermIter, OrderKeeping,
+    AExpr, ExprIRDisplay, FileInfo, IR, IRFunctionExpr, MintermIter, ToFieldContext,
     order_keeping_column,
 };
 use polars_plan::utils::aexpr_to_leaf_names_iter;
@@ -220,7 +220,8 @@ fn create_staged_predicate(
     });
     if std::env::var("POLARS_OUTPUT_COLUMN_PREDS").as_deref() == Ok("1") {
         eprintln!("column_predicates: {{");
-        for p in column_predicates.predicates.values() {
+        for (path, p) in &column_predicates.predicates {
+            eprintln!("  path: {path:?}");
             if let Some(predicate) = p.predicate {
                 eprintln!(
                     "  {} ({:?}),",
@@ -248,11 +249,30 @@ fn create_staged_predicate(
             .predicates
             .into_iter()
             .map(|(name, p)| {
+                let mut leaf_schema = schema.clone();
+                if !name.path.is_empty() {
+                    let mut dtype = schema.get(&name.root).unwrap();
+                    for field in &name.path {
+                        #[cfg(feature = "dtype-struct")]
+                        {
+                            let polars_core::prelude::DataType::Struct(fields) = dtype else {
+                                unreachable!()
+                            };
+                            dtype = fields.iter().find(|f| f.name() == field).unwrap().dtype();
+                        }
+                        #[cfg(not(feature = "dtype-struct"))]
+                        {
+                            let _ = field;
+                            unreachable!()
+                        }
+                    }
+                    leaf_schema = Arc::new(Schema::from_iter([(name.root.clone(), dtype.clone())]));
+                }
                 let mut physical = |node, expr_arena: &mut Arena<AExpr>| {
                     create_physical_expr(
                         &ExprIR::new(node, OutputName::Alias(PlSmallStr::EMPTY)),
                         expr_arena,
-                        schema,
+                        &leaf_schema,
                         state,
                     )
                 };
@@ -321,9 +341,14 @@ fn runtime_range_hint(
             constant: None,
         }));
     }
-    let Some(OrderKeeping { column, .. }) = order_keeping_column(input, expr_arena, schema) else {
+    let Some(order_keeping) = order_keeping_column(input, expr_arena, schema) else {
         return Ok(None);
     };
+    // Bounds of row groups where the expression overflows are null, so unknown.
+    let dtype = expr_arena
+        .get(input)
+        .to_dtype(&ToFieldContext::new(expr_arena, schema))?;
+    let input = order_keeping.null_on_overflow(input, &dtype, expr_arena);
     let expr = create_physical_expr(
         &ExprIR::from_node(input, expr_arena),
         expr_arena,
@@ -331,7 +356,7 @@ fn runtime_range_hint(
         state,
     )?;
     Ok(Some(RuntimeRangeHint {
-        column,
+        column: order_keeping.column,
         order_keeping_expr: Some(Arc::new(OrderKeepingExpr(expr))),
         source,
         constant: None,

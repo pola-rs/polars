@@ -5,8 +5,6 @@
 //! being absent, as fields are read by name. Where several values of one struct column must have
 //! equal dtypes (`concat`, `merge_sorted`), the inputs are pruned to the fields they have in
 //! common after the schemas are refreshed.
-//!
-//! See `agent-docs/nested-projection-pushdown/01-field-pruning.md`.
 
 use std::sync::Arc;
 

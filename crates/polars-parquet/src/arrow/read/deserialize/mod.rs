@@ -204,3 +204,18 @@ pub fn column_iter_to_arrays(
         columns_to_iter_recursive(columns, types, field, vec![], filter)?;
     Ok((array, pred_true_mask))
 }
+
+/// Decode one physical leaf under structs as a scalar column. There must be no
+/// repeated ancestor: each definition level then describes exactly one row.
+pub fn leaf_iter_to_arrays(
+    pages: BasicDecompressor,
+    descriptor: &crate::parquet::metadata::Descriptor,
+    field: Field,
+    filter: Option<Filter>,
+) -> PolarsResult<(Vec<Box<dyn Array>>, Bitmap)> {
+    polars_error::polars_ensure!(descriptor.max_rep_level == 0, ComputeError:
+        "flat leaf decoding requires a non-repeated path");
+    let (_, arrays, mask) =
+        page_iter_to_array(pages, &descriptor.primitive_type, field, filter, None)?;
+    Ok((arrays, mask))
+}

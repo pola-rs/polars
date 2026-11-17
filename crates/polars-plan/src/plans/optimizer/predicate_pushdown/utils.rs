@@ -257,11 +257,15 @@ pub(crate) fn push_past(
                 ir_arena,
             )?;
             if !eligibility.allows(&key)
-                || aexpr_to_leaf_names_iter(predicate.node(), expr_arena)
-                    .any(|name| projection_map.order_keeping_exprs.contains_key(name))
+                || aexpr_to_leaf_names_iter(predicate.node(), expr_arena).any(|name| {
+                    projection_map.order_keeping_exprs.contains_key(name)
+                        || projection_map.field_chains.contains_key(name)
+                        || projection_map.struct_fields.contains_key(name)
+                })
             {
                 return Ok(None);
             }
+            // Runtime-filter callers require their operand to remain a plain column.
             map_column_references(predicate, expr_arena, &projection_map.renames);
             Ok(Some(*input))
         },
@@ -274,6 +278,10 @@ pub(crate) fn push_past(
 pub struct ProjectionMap {
     /// Output name to input name of the plain columns that get another name.
     pub renames: PlIndexMap<PlSmallStr, PlSmallStr>,
+    /// Output name to a height-preserving input column/struct-field chain.
+    pub field_chains: PlIndexMap<PlSmallStr, Node>,
+    /// Output struct name to its directly pushable input fields.
+    pub struct_fields: PlIndexMap<PlSmallStr, PlIndexMap<PlSmallStr, Node>>,
     /// Output name to its order-keeping expression of one input column.
     pub order_keeping_exprs: PlIndexMap<PlSmallStr, Node>,
 }
@@ -281,7 +289,10 @@ pub struct ProjectionMap {
 impl ProjectionMap {
     /// Rewrite `expr` on the output columns to the same expression on the input columns.
     pub fn map_to_input(&self, expr: &mut ExprIR, expr_arena: &mut Arena<AExpr>) {
-        if self.order_keeping_exprs.is_empty() {
+        if self.order_keeping_exprs.is_empty()
+            && self.field_chains.is_empty()
+            && self.struct_fields.is_empty()
+        {
             map_column_references(expr, expr_arena, &self.renames);
             return;
         }
@@ -289,9 +300,32 @@ impl ProjectionMap {
         *expr = ExprIR::from_node(node, expr_arena);
     }
 
+    fn struct_field_input(&self, node: Node, expr_arena: &Arena<AExpr>) -> Option<Node> {
+        #[cfg(feature = "dtype-struct")]
+        if let AExpr::Function {
+            input,
+            function: IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(field)),
+            ..
+        } = expr_arena.get(node)
+        {
+            if let AExpr::Column(name) = expr_arena.get(input[0].node()) {
+                return self.struct_fields.get(name)?.get(field).copied();
+            }
+        }
+        let _ = (node, expr_arena);
+        None
+    }
+
     #[recursive::recursive]
     fn map_node_to_input(&self, node: Node, expr_arena: &mut Arena<AExpr>) -> Node {
+        if let Some(input) = self.struct_field_input(node, expr_arena) {
+            return input;
+        }
         if let AExpr::Column(name) = expr_arena.get(node) {
+            // Projection aliases are simultaneous; do not rewrite the replacement.
+            if let Some(&input) = self.field_chains.get(name) {
+                return input;
+            }
             if let Some(input_name) = self.renames.get(name) {
                 return expr_arena.add(AExpr::Column(input_name.clone()));
             }
@@ -313,6 +347,54 @@ impl ProjectionMap {
         let ae = expr_arena.get(node).clone().replace_inputs(&new_inputs);
         expr_arena.add(ae)
     }
+}
+
+/// Field extraction preserves the height and order of its input column.
+fn is_column_field_chain(mut node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    loop {
+        match expr_arena.get(node) {
+            AExpr::Column(_) => return true,
+            #[cfg(feature = "dtype-struct")]
+            AExpr::Function {
+                input,
+                function: IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(_)),
+                ..
+            } => node = input[0].node(),
+            _ => return false,
+        }
+    }
+}
+
+/// A scalar selected child may have been broadcast to its siblings' height.
+/// Only substitute column-backed children, with row-preserving or scalar siblings.
+fn pushable_struct_fields(
+    node: Node,
+    expr_arena: &Arena<AExpr>,
+) -> Option<PlIndexMap<PlSmallStr, Node>> {
+    #[cfg(feature = "dtype-struct")]
+    if let AExpr::Function {
+        input,
+        function: IRFunctionExpr::AsStruct,
+        ..
+    } = expr_arena.get(node)
+    {
+        if input.iter().all(|e| {
+            is_column_field_chain(e.node(), expr_arena)
+                || matches!(expr_arena.get(e.node()), AExpr::Literal(v) if v.is_scalar())
+        }) {
+            return Some(
+                input
+                    .iter()
+                    .filter_map(|e| {
+                        is_column_field_chain(e.node(), expr_arena)
+                            .then(|| (e.output_name().clone(), e.node()))
+                    })
+                    .collect(),
+            );
+        }
+    }
+    let _ = (node, expr_arena);
+    None
 }
 
 /// Copies an order-keeping expression. Its casts can't fail, so they are made non-strict to not
@@ -377,6 +459,8 @@ pub fn pushdown_eligibility(
         optimizer::init_hashmap::<PlSmallStr, PlSmallStr>(Some(projection_nodes.len()));
     let mut col_to_alias_map = alias_to_col_map.clone();
     let mut order_keeping_exprs = PlIndexMap::new();
+    let mut field_chains = PlIndexMap::new();
+    let mut struct_fields = PlIndexMap::new();
     let mut input_schema = None;
 
     let mut modified_projection_columns =
@@ -469,6 +553,16 @@ pub fn pushdown_eligibility(
             continue;
         }
 
+        if is_projection && is_column_field_chain(e.node(), expr_arena) {
+            field_chains.insert(e.output_name().clone(), e.node());
+            continue;
+        }
+        if is_projection {
+            if let Some(fields) = pushable_struct_fields(e.node(), expr_arena) {
+                struct_fields.insert(e.output_name().clone(), fields);
+            }
+        }
+
         let is_order_keeping = is_projection && {
             let input_schema = input_schema.get_or_insert_with(|| input_ir.schema(ir_arena));
             order_keeping_column(e.node(), expr_arena, input_schema).is_some()
@@ -494,6 +588,8 @@ pub fn pushdown_eligibility(
     }
 
     if has_window {
+        modified_projection_columns.extend(field_chains.drain(..).map(|(name, _)| name));
+        struct_fields.clear();
         modified_projection_columns.extend(order_keeping_exprs.drain(..).map(|(name, _)| name));
     }
 
@@ -538,6 +634,13 @@ pub fn pushdown_eligibility(
 
     // Should have returned early.
     debug_assert!(!common_window_inputs.is_empty() || !has_window);
+
+    let projection_map = ProjectionMap {
+        renames: alias_to_col_map,
+        field_chains,
+        struct_fields,
+        order_keeping_exprs,
+    };
 
     // Note: has_window is constant.
     let can_use_column = |col: &str| {
@@ -584,6 +687,13 @@ pub fn pushdown_eligibility(
             let mut pd_group = ExprPushdownGroup::Pushable;
 
             while let Some(node) = ae_nodes_stack.pop() {
+                // This child uses input names, not simultaneous output aliases.
+                if projection_map
+                    .struct_field_input(node, expr_arena)
+                    .is_some()
+                {
+                    continue;
+                }
                 let ae = expr_arena.get(node);
 
                 if let AExpr::Column(name) = ae {
@@ -618,10 +728,6 @@ pub fn pushdown_eligibility(
         })
         .collect::<Vec<_>>();
 
-    let projection_map = ProjectionMap {
-        renames: alias_to_col_map,
-        order_keeping_exprs,
-    };
     Ok(match to_local.len() {
         0 => (PushdownEligibility::Full, projection_map),
         len if len == acc_predicates.len() => {

@@ -140,11 +140,8 @@ impl PredicatePushDown {
                 },
             };
 
-            if !projection_map.renames.is_empty() || !projection_map.order_keeping_exprs.is_empty()
-            {
-                for (_, expr_ir) in acc_predicates.iter_mut() {
-                    projection_map.map_to_input(expr_ir, expr_arena);
-                }
+            for (_, expr_ir) in acc_predicates.iter_mut() {
+                projection_map.map_to_input(expr_ir, expr_arena);
             }
 
             let alp = lp_arena.take(input);
@@ -543,30 +540,48 @@ impl PredicatePushDown {
                                 expr_arena,
                             ))
                         },
-                        FunctionIR::Unnest {
-                            columns,
-                            separator: _,
-                        } => {
-                            let exclude = columns.iter().cloned().collect::<PlIndexSet<_>>();
-
-                            let local_predicates =
-                                transfer_to_local_by_name(expr_arena, &mut acc_predicates, |x| {
-                                    exclude.contains(x)
-                                });
-
-                            let lp = self.pushdown_and_continue(
+                        FunctionIR::Unnest { columns, separator } => {
+                            #[cfg(feature = "dtype-struct")]
+                            {
+                                let input = lp.inputs().next().unwrap();
+                                let schema = lp_arena.get(input).schema(lp_arena);
+                                let mut projection_map = ProjectionMap::default();
+                                for name in columns.iter() {
+                                    let DataType::Struct(fields) = schema.get(name).unwrap() else {
+                                        continue;
+                                    };
+                                    let root = expr_arena.add(AExpr::Column(name.clone()));
+                                    for field in fields {
+                                        let function = IRFunctionExpr::StructExpr(
+                                            IRStructFunction::FieldByName(field.name().clone()),
+                                        );
+                                        let output_name = match separator {
+                                            Some(sep) => polars_utils::format_pl_smallstr!(
+                                                "{name}{sep}{}",
+                                                field.name()
+                                            ),
+                                            None => field.name().clone(),
+                                        };
+                                        let options = function.function_options();
+                                        let node = expr_arena.add(AExpr::Function {
+                                            input: vec![ExprIR::from_node(root, expr_arena)],
+                                            function,
+                                            options,
+                                        });
+                                        projection_map.field_chains.insert(output_name, node);
+                                    }
+                                }
+                                for predicate in acc_predicates.values_mut() {
+                                    projection_map.map_to_input(predicate, expr_arena);
+                                }
+                            }
+                            self.pushdown_and_continue(
                                 lp,
                                 acc_predicates,
                                 lp_arena,
                                 expr_arena,
                                 false,
-                            )?;
-                            Ok(self.optional_apply_predicate(
-                                lp,
-                                local_predicates,
-                                lp_arena,
-                                expr_arena,
-                            ))
+                            )
                         },
                         _ => self.pushdown_and_continue(
                             lp,
