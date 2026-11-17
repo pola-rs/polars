@@ -7871,7 +7871,6 @@ def test_call_rewrite_data_files_conflict(
     lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch, race: str
 ) -> None:
     from pyiceberg.exceptions import ValidationException
-    from pyiceberg.expressions import EqualTo
     from pyiceberg.table.snapshots import Operation
     from pyiceberg.types import LongType
 
@@ -7885,7 +7884,7 @@ def test_call_rewrite_data_files_conflict(
         monkeypatch.setattr(lake, "commit_table", commit_table)
         table = lake.load_table(("tpch", "lineitem"))
         if race == "file removed":
-            table.delete(EqualTo("k", 3))
+            table.delete("k = 3")
         elif race == "column added":
             with table.update_schema() as update:
                 update.add_column("w", LongType())
