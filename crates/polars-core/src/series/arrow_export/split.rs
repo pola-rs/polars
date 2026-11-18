@@ -19,6 +19,11 @@ pub(crate) fn contains_arrow_map(dtype: &ArrowDataType) -> bool {
     }
 }
 
+/// Whether every arrow MAP that exporting all of `array` to `dtype` builds fits in `i32` offsets.
+pub(crate) fn fits_arrow_map(array: &dyn Array, dtype: &ArrowDataType) -> bool {
+    max_map_span(array, 0..array.len(), dtype) <= MAX_MAP_ENTRIES
+}
+
 /// The most entries any MAP of `dtype` spans over `rows` of `array`, a Polars physical array laid
 /// out as `ToArrowConverter` expects; reads two offsets per list level.
 ///
@@ -115,6 +120,7 @@ mod tests {
     use polars_arrow::bitmap::Bitmap;
     use polars_arrow::offset::Offsets;
 
+    use crate::frame::RecordBatchIter;
     use crate::frame::column::ScalarColumn;
     use crate::prelude::*;
 
@@ -166,7 +172,10 @@ mod tests {
         let lens = [1i64, i32::MAX as i64 + 1];
         let s = map_series(vec![map_chunk(&lens, Some(Bitmap::from([true, false])))]);
 
-        let arrays = s.try_to_arrow_split(0, CompatLevel::newest()).unwrap();
+        let arrays: Vec<_> = s
+            .try_to_arrow_split(0, CompatLevel::newest())
+            .collect::<PolarsResult<_>>()
+            .unwrap();
 
         // The null row's span alone overflows, so it is cut off and normalized on its own.
         let maps: Vec<&MapArray> = arrays
@@ -176,6 +185,44 @@ mod tests {
         let offsets: Vec<_> = maps.iter().map(|m| m.offsets().as_slice()).collect();
         assert_eq!(offsets, [[0, 1], [0, 0]]);
         assert_eq!(maps[1].null_count(), 1);
+    }
+
+    /// Python only hands `try_iter_chunks` frames it has aligned.
+    #[test]
+    fn a_split_chunk_with_misaligned_columns_errors() {
+        let half = i32::MAX as i64 / 2 + 1;
+        let m = map_series(vec![
+            map_chunk(&[half, half], None),
+            map_chunk(&[1, 1], None),
+        ]);
+        let i = Int32Chunked::from_chunk_iter(
+            "i".into(),
+            [
+                Int32Array::from_slice([0, 1, 2]),
+                Int32Array::from_slice([3]),
+            ],
+        );
+        let df = DataFrame::new_infer_height(vec![m.into_column(), i.into_column()]).unwrap();
+
+        let mut batches = RecordBatchIter::new(&df, CompatLevel::newest(), false);
+
+        let err = batches.next().unwrap().unwrap_err();
+        assert!(matches!(err, PolarsError::ShapeMismatch(_)), "{err}");
+    }
+
+    /// Exporting a one-row piece must not read its row, which on `rt32` panics for a map with
+    /// `u32::MAX` entries.
+    #[test]
+    fn a_one_row_piece_with_too_many_map_entries_errors() {
+        let m = map_series(vec![map_chunk(&[1, u32::MAX as i64], None)]);
+        let df = DataFrame::new_infer_height(vec![m.into_column()]).unwrap();
+
+        let batches: Vec<_> = df.try_iter_chunks(CompatLevel::newest(), false).collect();
+
+        assert_eq!(batches.len(), 2);
+        assert!(batches[0].is_ok());
+        let err = batches[1].as_ref().unwrap_err();
+        assert!(matches!(err, PolarsError::InvalidOperation(_)), "{err}");
     }
 
     /// A scalar column repeating one map with `keys`, held in two chunks, over `height` rows.

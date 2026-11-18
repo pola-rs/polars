@@ -98,6 +98,69 @@ def test_series_arrow_c_stream_splits_an_oversized_map_chunk(
     assert [len(chunk) for chunk in arr.chunks] == [3, 3]
 
 
+class ArrowArray(ctypes.Structure):
+    """The C data interface's `ArrowArray`."""
+
+
+ArrowArray._fields_ = [
+    *((name, ctypes.c_int64) for name in ["length", "null_count", "offset"]),
+    *((name, ctypes.c_int64) for name in ["n_buffers", "n_children"]),
+    *((name, ctypes.c_void_p) for name in ["buffers", "children", "dictionary"]),
+    ("release", ctypes.CFUNCTYPE(None, ctypes.POINTER(ArrowArray))),
+    ("private_data", ctypes.c_void_p),
+]
+
+
+class ArrowArrayStream(ctypes.Structure):
+    """The C stream interface's `ArrowArrayStream`."""
+
+
+ArrowArrayStream._fields_ = [
+    ("get_schema", ctypes.c_void_p),
+    (
+        "get_next",
+        ctypes.CFUNCTYPE(
+            ctypes.c_int,
+            ctypes.POINTER(ArrowArrayStream),
+            ctypes.POINTER(ArrowArray),
+        ),
+    ),
+    (
+        "get_last_error",
+        ctypes.CFUNCTYPE(ctypes.c_char_p, ctypes.POINTER(ArrowArrayStream)),
+    ),
+    ("release", ctypes.c_void_p),
+    ("private_data", ctypes.c_void_p),
+]
+
+
+def test_series_arrow_c_stream_yields_the_pieces_before_a_failing_one(
+    df: pl.DataFrame,
+) -> None:
+    # Rows of 1 and 5 maps: the first fits, the second overflows on its own.
+    m = df["m"]
+    s = pl.concat([m.head(1).implode(), m.tail(5).implode()], rechunk=True)
+    assert s.n_chunks() == 1
+
+    # pyarrow reads a stream of non-struct arrays only as a whole.
+    capsule = s.__arrow_c_stream__()
+    get_pointer = ctypes.PYFUNCTYPE(ctypes.c_void_p, ctypes.py_object, ctypes.c_char_p)(
+        ("PyCapsule_GetPointer", ctypes.pythonapi)
+    )
+    stream = ctypes.cast(
+        get_pointer(capsule, b"arrow_array_stream"), ctypes.POINTER(ArrowArrayStream)
+    )
+    array = ArrowArray()
+
+    assert stream.contents.get_next(stream, ctypes.byref(array)) == 0
+    assert array.length == 1
+    array.release(ctypes.byref(array))
+
+    assert stream.contents.get_next(stream, ctypes.byref(array)) != 0
+    error = stream.contents.get_last_error(stream)
+    assert b"2684354560 map entries overflow" in error
+
+
 def test_series_to_arrow_raises_for_an_oversized_map(df: pl.DataFrame) -> None:
     # `Series.to_arrow` returns a single array, see #30780.
     with pytest.raises(InvalidOperationError, match="overflow the i32 offsets"):

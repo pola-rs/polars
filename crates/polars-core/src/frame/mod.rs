@@ -2182,42 +2182,7 @@ impl DataFrame {
             return RecordBatchIterWrap::new_zero_width(self.height());
         }
 
-        // If any of the columns is binview and we don't convert `compat_level` we allow parallelism
-        // as we must allocate arrow strings/binaries.
-        let must_convert = compat_level.0 == 0;
-        let parallel = parallel
-            && must_convert
-            && self.width() > 1
-            && self
-                .columns()
-                .iter()
-                .any(|s| matches!(s.dtype(), DataType::String | DataType::Binary));
-
-        let schema: ArrowSchemaRef = Arc::new(
-            self.columns()
-                .iter()
-                .map(|c| c.field().to_arrow(compat_level))
-                .collect(),
-        );
-        let has_arrow_map = schema.iter_values().any(|f| contains_arrow_map(f.dtype()));
-        let scalar_rows = if has_arrow_map {
-            let dtypes: Vec<_> = schema.iter_values().map(|f| f.dtype()).collect();
-            self.arrow_export_scalar_rows(&dtypes)
-        } else {
-            Vec::new()
-        };
-
-        RecordBatchIterWrap::Batches(RecordBatchIter {
-            df: self.clone(),
-            schema,
-            cursor: ChunkCursor::new(self),
-            compat_level,
-            parallel,
-            has_arrow_map,
-            scalar_rows,
-            split: None,
-            offset: 0,
-        })
+        RecordBatchIterWrap::Batches(RecordBatchIter::new(self, compat_level, parallel))
     }
 
     /// Iterator over the rows in this [`DataFrame`] as Arrow RecordBatches as physical values.
@@ -2806,6 +2771,46 @@ fn column_to_arrow(
 }
 
 impl RecordBatchIter {
+    /// See [`DataFrame::try_iter_chunks`], for a `df` with at least one column.
+    pub(crate) fn new(df: &DataFrame, compat_level: CompatLevel, parallel: bool) -> Self {
+        // If any of the columns is binview and we don't convert `compat_level` we allow parallelism
+        // as we must allocate arrow strings/binaries.
+        let must_convert = compat_level.0 == 0;
+        let parallel = parallel
+            && must_convert
+            && df.width() > 1
+            && df
+                .columns()
+                .iter()
+                .any(|s| matches!(s.dtype(), DataType::String | DataType::Binary));
+
+        let schema: ArrowSchemaRef = Arc::new(
+            df.columns()
+                .iter()
+                .map(|c| c.field().to_arrow(compat_level))
+                .collect(),
+        );
+        let has_arrow_map = schema.iter_values().any(|f| contains_arrow_map(f.dtype()));
+        let scalar_rows = if has_arrow_map {
+            let dtypes: Vec<_> = schema.iter_values().map(|f| f.dtype()).collect();
+            df.arrow_export_scalar_rows(&dtypes)
+        } else {
+            Vec::new()
+        };
+
+        Self {
+            df: df.clone(),
+            schema,
+            cursor: ChunkCursor::new(df),
+            compat_level,
+            parallel,
+            has_arrow_map,
+            scalar_rows,
+            split: None,
+            offset: 0,
+        }
+    }
+
     /// `f` of each column index below `width`, in parallel if this export is.
     fn map_columns<T: Send>(
         &self,
@@ -2842,9 +2847,17 @@ impl RecordBatchIter {
         let length = range.len();
         let arrays = self.map_columns(split.chunk.width(), |i| match &split.converted[i] {
             Some(arr) => Ok(arr.sliced(range.start, length)),
-            None => {
-                let c = split.chunk.columns()[i].slice(range.start as i64, length);
-                column_to_arrow(&c, 0, 0..length, self.compat_level)
+            // `Column::slice` would turn a one-row Series into a Scalar, which reads the row.
+            None => match split.chunk.columns()[i].as_series() {
+                Some(s) => s
+                    .slice(range.start as i64, length)
+                    .try_to_arrow(0, self.compat_level),
+                None => column_to_arrow(
+                    &split.chunk.columns()[i],
+                    0,
+                    range.clone(),
+                    self.compat_level,
+                ),
             },
         })?;
         Ok(RecordBatch::new(length, self.schema.clone(), arrays))
@@ -2863,6 +2876,15 @@ impl RecordBatchIter {
         else {
             return Ok(None);
         };
+        // The pieces slice every column to their rows, so `RecordBatch` would not catch a
+        // misaligned chunk.
+        for s in self.df.columns().iter().filter_map(Column::as_series) {
+            polars_ensure!(
+                s.chunks().get(idx).is_some_and(|c| c.len() == rows.len()),
+                ShapeMismatch: "cannot export to arrow: the chunks of column '{}' are not \
+                aligned with the other columns", s.name(),
+            );
+        }
         let chunk = self.df.chunk_frame(idx, rows);
         let length = chunk.height();
         let converted = self.map_columns(chunk.width(), |i| {

@@ -624,7 +624,7 @@ def test_map_arrow_export_is_a_map_type() -> None:
     assert not field.type.key_field.nullable
 
 
-def test_sliced_list_of_maps_exports_only_its_own_maps() -> None:
+def test_sliced_list_of_maps_shares_its_list_child_on_export() -> None:
     pa = pytest.importorskip("pyarrow")
     s = pl.Series(
         [[{"a": 1}], [{"b": 2}, {"c": 3}], [{"d": 4}]],
@@ -634,7 +634,8 @@ def test_sliced_list_of_maps_exports_only_its_own_maps() -> None:
     exported = pa.table(s.to_frame()).column(0).chunk(0)
 
     assert exported.to_pylist() == [[[("b", 2)], [("c", 3)]]]
-    assert len(exported.values) == 2
+    # Trimming the child would copy the offsets.
+    assert len(exported.values) == 4
 
 
 def test_map_arrow_import_matches_entries_positionally() -> None:
