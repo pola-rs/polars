@@ -508,6 +508,9 @@ fn _lib(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Plans may be deserialized and run in a process that never called `scan_resolver`.
     register();
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
+    // The commit the release workflow built from, to compare with the sources Polars is
+    // released from. Empty outside of a release build.
+    m.add("__build_commit__", option_env!("POLARS_DATABASE_BUILD_COMMIT").unwrap_or(""))?;
     m.add(
         "_polars_io_plugin_ids",
         PyTuple::new(m.py(), PLUGIN_IDS.iter().map(|id| id.to_str().unwrap()))?,
