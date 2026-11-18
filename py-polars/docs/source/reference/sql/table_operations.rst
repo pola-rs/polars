@@ -77,7 +77,16 @@ name resolved as in a query. Each statement makes one change, in one commit:
 * ``SET SORTED BY (<field> [ASC | DESC] [NULLS FIRST | LAST], ...)`` sets how new data is
   sorted, with fields as in ``PARTITION BY``, in the order written (``truncate`` also takes
   decimals);
-* ``RESET SORTED BY`` stops sorting new data.
+* ``RESET SORTED BY`` stops sorting new data;
+* ``CREATE TAG [IF NOT EXISTS] <name> [AS OF VERSION <snapshot_id>] [RETAIN <n> <unit>]``
+  names a snapshot, by default the current one;
+* ``CREATE BRANCH [IF NOT EXISTS] <name> [AS OF VERSION <snapshot_id>] [RETAIN <n> <unit>]
+  [WITH SNAPSHOT RETENTION <retention>]`` starts a branch at a snapshot, by default the
+  current one;
+* ``[CREATE OR] REPLACE TAG | BRANCH <name> ...``, with the options of ``CREATE``, points a
+  tag or branch at a snapshot, by default also the current one, and can change its
+  retention;
+* ``DROP TAG | BRANCH [IF EXISTS] <name>`` drops a tag or branch.
 
 Changing the partitioning only changes the table's metadata. Existing data files keep the
 partitioning they were written with, and later writes use the new one. A field that the
@@ -92,6 +101,21 @@ their data by the new order. A field without ``NULLS FIRST`` or ``NULLS LAST`` t
 ``ORDER BY``: nulls last for ``ASC``, first for ``DESC``. Engines differ in this default, so
 state the null order in statements that other engines also run. An older sort order with the
 same fields is used again.
+
+A tag or branch is read with ``FOR VERSION AS OF '<name>'`` (see :ref:`time travel
+<time_travel>`), and the ``$refs`` table lists them with their snapshots. Writes go to the
+``main`` branch: writing to another branch is not supported yet. Names are identifiers and
+keep their case. A name that starts with a digit or has characters other than letters,
+digits and ``_`` needs double quotes. ``CREATE`` fails if the name is taken by a tag or
+branch, unless with ``IF NOT EXISTS``. ``REPLACE`` and ``DROP`` fail if the name is a ref of
+the other kind. ``REPLACE`` keeps the retention the statement does not set. To change only
+the retention, give the ref's own snapshot with ``AS OF VERSION``. The ``main`` branch
+cannot be replaced or dropped, and no tag can take its name.
+``RETAIN`` sets how long the ref is kept, in ``DAYS``, ``HOURS`` or ``MINUTES``.
+``WITH SNAPSHOT RETENTION`` sets how many snapshots a branch keeps (``<n> SNAPSHOTS``), how
+long it keeps them (``<n> <unit>``), or both, in that order. Both only store the setting:
+snapshots are expired by the engine that does it. A table without snapshots has none to
+tag or branch.
 
 Column names are case-sensitive and name top-level columns. ``SET PARTITIONED BY`` and
 ``SET SORTED BY`` also take fields of struct columns (``s.f``), as
@@ -110,6 +134,9 @@ Column names are case-sensitive and name top-level columns. ``SET PARTITIONED BY
     ALTER TABLE lake.sales.orders RESET PARTITIONED BY
     ALTER TABLE lake.sales.orders SET SORTED BY (customer_id, ordered_at DESC NULLS LAST)
     ALTER TABLE lake.sales.orders RESET SORTED BY
+    ALTER TABLE lake.sales.orders CREATE TAG "end-of-quarter" RETAIN 365 DAYS
+    ALTER TABLE lake.sales.orders CREATE BRANCH audit WITH SNAPSHOT RETENTION 3 SNAPSHOTS
+    ALTER TABLE lake.sales.orders DROP TAG IF EXISTS "end-of-quarter"
 
 .. _call:
 
