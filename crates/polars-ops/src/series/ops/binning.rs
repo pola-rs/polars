@@ -255,7 +255,7 @@ fn bins_from_rank_ties_impl<T: PolarsNumericType>(
     rb: &RankBreaks<T::Native>,
     cuts: &[IdxSize],
     first_rank: impl FnOnce(&[(Vec<IdxSize>, Vec<IdxSize>)]) -> Vec<IdxSize>,
-) -> IdxCa {
+) -> PolarsResult<IdxCa> {
     // Pass 1 stores each row's located breakpoint as `2 * m + equal` in `out`, and counts per
     // range. Prefix sums of the counts then give, per range and breakpoint, the rank of the range's
     // first value equal to it.
@@ -281,7 +281,10 @@ fn bins_from_rank_ties_impl<T: PolarsNumericType>(
     for (_, n_equal) in &counts {
         starts.push(next_rank.clone());
         for (r, n) in next_rank.iter_mut().zip(n_equal) {
-            *r += n;
+            // A caller's tie rank can be anything; past this check, pass 2 stays in range.
+            *r = r.checked_add(*n).ok_or_else(
+                || polars_err!(ComputeError: "rank binning tie ranks overflow `IdxSize`"),
+            )?;
         }
     }
 
@@ -307,7 +310,11 @@ fn bins_from_rank_ties_impl<T: PolarsNumericType>(
                 }
             })
     });
-    IdxCa::from_vec_validity(ca.name().clone(), out, concatenate_validities(ca.chunks()))
+    Ok(IdxCa::from_vec_validity(
+        ca.name().clone(),
+        out,
+        concatenate_validities(ca.chunks()),
+    ))
 }
 
 /// [`bins_from_rank_cuts`] without a sort, given the cumulative bin sizes `cuts` and the value at
@@ -318,7 +325,7 @@ fn bins_from_rank_cuts_select<T: PolarsNumericType>(
     boundaries: &[Option<T::Native>],
 ) -> PolarsResult<IdxCa> {
     let rb = RankBreaks::new(boundaries)?;
-    Ok(bins_from_rank_ties_impl(ca, &rb, cuts, |counts| {
+    bins_from_rank_ties_impl(ca, &rb, cuts, |counts| {
         let mut next_rank = vec![0 as IdxSize; rb.distinct.len()];
         let mut below: IdxSize = 0;
         for (m, r) in next_rank.iter_mut().enumerate() {
@@ -327,7 +334,7 @@ fn bins_from_rank_cuts_select<T: PolarsNumericType>(
             below += counts.iter().map(|(_, e)| e[m]).sum::<IdxSize>();
         }
         next_rank
-    }))
+    })
 }
 
 /// The physical values of `s` and `breaks`, which rank binning on parts of a column compares.
@@ -403,7 +410,7 @@ pub fn bins_from_rank_ties(
         );
         let bins = bins_from_rank_ties_impl(ca, &rb, cuts, |_| {
             rb.first_cut[..rb.distinct.len()].iter().map(|&j| tie_ranks[j]).collect()
-        });
+        })?;
         Ok(bins.with_name(s.name().clone()))
     })
 }
@@ -462,6 +469,32 @@ fn uniform_threshold_offsets(
 //
 // Floats go through `f64` and are narrowed back afterwards; integers and `Decimal` (via
 // its `Int128` physical) derive representable thresholds in their own width.
+/// Makes `breaks` non-decreasing and within `[min, max)` when right-closed or `(min, max]` when
+/// left-closed, so that `min` and `max` land in the first and last bin.
+///
+/// A break that is out of order, out of range or NaN, as the interpolation produces over a span of
+/// a few ulps or of `[-inf, inf]`, repeats the break before it (from `min`) when right-closed, or
+/// the one after it (from `max`) when left-closed.
+fn fix_float_breaks(breaks: &mut [f64], min: f64, max: f64, right_closed: bool) {
+    if right_closed {
+        let mut prev = min;
+        for b in breaks.iter_mut() {
+            if *b >= prev && *b < max {
+                prev = *b;
+            }
+            *b = prev;
+        }
+    } else {
+        let mut next = max;
+        for b in breaks.iter_mut().rev() {
+            if *b <= next && *b > min {
+                next = *b;
+            }
+            *b = next;
+        }
+    }
+}
+
 pub fn bin_interval_breaks(
     s: &Series,
     n_bins: usize,
@@ -502,32 +535,6 @@ pub fn bin_interval_breaks(
 
     let phys = s.to_physical_repr();
     let phys: &Series = phys.as_ref();
-/// Makes `breaks` non-decreasing and within `[min, max)` when right-closed or `(min, max]` when
-/// left-closed, so that `min` and `max` land in the first and last bin.
-///
-/// A break that is out of order, out of range or NaN, as the interpolation produces over a span of
-/// a few ulps or of `[-inf, inf]`, repeats the break before it (from `min`) when right-closed, or
-/// the one after it (from `max`) when left-closed.
-fn fix_float_breaks(breaks: &mut [f64], min: f64, max: f64, right_closed: bool) {
-    if right_closed {
-        let mut prev = min;
-        for b in breaks.iter_mut() {
-            if *b >= prev && *b < max {
-                prev = *b;
-            }
-            *b = prev;
-        }
-    } else {
-        let mut next = max;
-        for b in breaks.iter_mut().rev() {
-            if *b <= next && *b > min {
-                next = *b;
-            }
-            *b = next;
-        }
-    }
-}
-
     let breaks = with_match_physical_integer_polars_type!(phys.dtype(), |$T| {
         type N = <$T as PolarsNumericType>::Native;
         let ca: &ChunkedArray<$T> = phys.as_ref().as_ref();
