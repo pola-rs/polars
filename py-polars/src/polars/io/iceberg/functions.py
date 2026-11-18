@@ -75,10 +75,10 @@ def scan_iceberg(
         authentication must outlive the scan (e.g. PyIceberg's ``auth.type`` rather
         than a static ``token``). Credentials given here replace them.
 
-        Not renewed: credentials vended without an expiry, per-account ADLS
-        credentials, and those of files on another cloud than the table's. The
-        PyIceberg reader uses one set of credentials per table, also if the catalog
-        vends separate ones for its metadata and data files.
+        Not renewed: credentials vended without an expiry, and those of files on
+        another cloud than the table's. The PyIceberg reader uses one set of
+        credentials per table, also if the catalog vends separate ones for its
+        metadata and data files.
     catalog
         PyIceberg catalog to load the table from if the provided `target`
         was a table name.
