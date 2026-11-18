@@ -131,6 +131,8 @@ struct PrivateData {
     iter: Box<dyn Iterator<Item = PolarsResult<Box<dyn Array>>> + Send>,
     field: Field,
     error: Option<CString>,
+    /// Whether a callback panicked, which ends the stream as `iter` is left in an unknown state.
+    panicked: bool,
 }
 
 /// The status of a failed callback, as no status of the interface itself is ever this.
@@ -150,6 +152,9 @@ unsafe fn catch_callback(
         return CALLBACK_ERROR;
     }
     let private = (*iter).private_data as *mut PrivateData;
+    if (*private).panicked {
+        return CALLBACK_ERROR;
+    }
     match std::panic::catch_unwind(AssertUnwindSafe(|| body(&mut *private))) {
         Ok(status) => status,
         Err(payload) => {
@@ -161,6 +166,7 @@ unsafe fn catch_callback(
             (*private).error = Some(error_cstring(&format!(
                 "panic in an Arrow C stream callback: {message}"
             )));
+            (*private).panicked = true;
             CALLBACK_ERROR
         },
     }
@@ -237,6 +243,7 @@ pub fn export_iterator(
         iter,
         field,
         error: None,
+        panicked: false,
     });
 
     ArrowArrayStream {
