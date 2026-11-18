@@ -7,7 +7,7 @@ use polars_core::prelude::*;
 use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
     Array, DictionaryField, Expr as SQLExpr, GroupByExpr, Ident, OrderByKind, Query, Select,
-    Statement, UnaryOperator, Value as SQLValue, ValueWithSpan, Visitor,
+    Statement, UnaryOperator, Value as SQLValue, ValueWithSpan, Visit, Visitor,
 };
 use sqlparser::tokenizer::Location;
 
@@ -58,6 +58,17 @@ fn placeholder_ref(expr: &SQLExpr) -> Option<&str> {
             ..
         }) if param_ref(p).is_some() => Some(p),
         _ => None,
+    }
+}
+
+/// The first query parameter in `node`, if any.
+pub(crate) fn first_param(node: &(impl Visit + ?Sized)) -> Option<String> {
+    match dyn_visit::visit_expressions(node, |expr| match placeholder_ref(expr) {
+        Some(p) => ControlFlow::Break(p.to_string()),
+        None => ControlFlow::Continue(()),
+    }) {
+        ControlFlow::Break(p) => Some(p),
+        ControlFlow::Continue(()) => None,
     }
 }
 

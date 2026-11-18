@@ -21,6 +21,8 @@ use sqlparser::tokenizer::Token;
 
 use crate::context::{RelationName, match_qualifier, relation_name};
 use crate::dyn_visit;
+use crate::lambda::{lambda_arg, shift_lambda_elements};
+use crate::params::first_param;
 use crate::sql_expr::to_sql_interface_err;
 use crate::sql_visitors::expr_references_any_column;
 use crate::subquery::strip_nested;
@@ -151,6 +153,8 @@ impl Macros {
             expanding: vec![],
             expanded: false,
             size: ExpandedSize::default(),
+            lambda_depth: 0,
+            lambda_bodies: vec![],
         };
         if let ControlFlow::Break(err) = dyn_visit::visit_mut(node, &mut expander) {
             return Err(err);
@@ -327,6 +331,15 @@ fn single_name(name: ObjectName) -> Result<Ident, ParserError> {
 pub(crate) fn check_macro(name: &Ident, overloads: &[MacroOverload]) -> PolarsResult<()> {
     for overload in overloads {
         let params = &overload.params;
+        let param = match &overload.body {
+            MacroBody::Expr(body) => first_param(body.as_ref()),
+            MacroBody::Table(query) => first_param(query.as_ref()),
+        };
+        if let Some(p) = param.or_else(|| params.iter().find_map(|p| first_param(&p.default))) {
+            polars_bail!(
+                SQLInterface: "query parameters are not supported in CREATE MACRO; found {}", p
+            );
+        }
         for (i, param) in params.iter().enumerate() {
             polars_ensure!(
                 !params[..i].iter().any(|p| same_name(&p.name, &param.name.value)),
@@ -435,20 +448,35 @@ impl Visitor for FreeIdentifiers<'_> {
 /// The deepest nesting of macro calls in macro bodies.
 const MAX_MACRO_DEPTH: usize = 64;
 
-/// The most expressions that expanding the macros of a statement may copy.
+/// The most nodes that expanding the macros of a statement may copy.
 const MAX_EXPANDED_EXPRS: usize = 100_000;
 
-/// The number of expressions copied by an expansion.
+/// The number of nodes copied by an expansion.
 #[derive(Default)]
 struct ExpandedSize(Cell<usize>);
 
 impl ExpandedSize {
-    /// Counts the expressions of `node`, which is about to be copied.
+    /// Counts the expressions, queries and relations of `node`, which is about to be copied.
     fn add<T: Visit>(&self, node: &T) -> ControlFlow<PolarsError> {
         struct Count(usize);
         impl Visitor for Count {
             type Break = ();
             fn pre_visit_expr(&mut self, _expr: &SQLExpr) -> ControlFlow<()> {
+                self.0 += 1;
+                ControlFlow::Continue(())
+            }
+
+            fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+                self.0 += 1;
+                ControlFlow::Continue(())
+            }
+
+            fn pre_visit_select(&mut self, _select: &Select) -> ControlFlow<()> {
+                self.0 += 1;
+                ControlFlow::Continue(())
+            }
+
+            fn pre_visit_table_factor(&mut self, _factor: &TableFactor) -> ControlFlow<()> {
                 self.0 += 1;
                 ControlFlow::Continue(())
             }
@@ -472,6 +500,10 @@ struct MacroExpander<'a> {
     expanding: Vec<(String, bool)>,
     expanded: bool,
     size: ExpandedSize,
+    /// The number of lambdas around the expression being visited.
+    lambda_depth: usize,
+    /// The bodies of the lambda arguments of the functions being visited.
+    lambda_bodies: Vec<*const SQLExpr>,
 }
 
 impl MacroExpander<'_> {
@@ -621,7 +653,35 @@ impl VisitorMut for MacroExpander<'_> {
         ControlFlow::Continue(())
     }
 
+    fn pre_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<PolarsError> {
+        if self.lambda_bodies.contains(&(expr as *const SQLExpr)) {
+            self.lambda_depth += 1;
+        }
+        if let SQLExpr::Function(func) = expr {
+            self.lambda_bodies
+                .extend(lambda_args(func).map(|body| body as *const SQLExpr));
+        }
+        ControlFlow::Continue(())
+    }
+
     fn post_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<PolarsError> {
+        let ptr = expr as *const SQLExpr;
+        if let SQLExpr::Function(func) = expr {
+            let n_lambdas = lambda_args(func).count();
+            self.lambda_bodies
+                .truncate(self.lambda_bodies.len() - n_lambdas);
+        }
+        self.expand_call(expr)?;
+        if self.lambda_bodies.contains(&ptr) {
+            self.lambda_depth -= 1;
+        }
+        ControlFlow::Continue(())
+    }
+}
+
+impl MacroExpander<'_> {
+    /// Replaces `expr` by the body of the macro it calls, if it calls one.
+    fn expand_call(&mut self, expr: &mut SQLExpr) -> ControlFlow<PolarsError> {
         unparenthesize_operands(expr, self.macros);
         let SQLExpr::Function(func) = expr else {
             return ControlFlow::Continue(());
@@ -638,6 +698,7 @@ impl VisitorMut for MacroExpander<'_> {
         };
         self.size.add(body.as_ref())?;
         let mut body = body.as_ref().clone();
+        shift_lambda_elements(&mut body, self.lambda_depth);
         let mut replacer = ParamReplacer::new(self.macros, &name, &bound, &self.size);
         dyn_visit::visit_mut(&mut body, &mut replacer)?;
         self.expand_nested(&mut body, &name, false)?;
@@ -650,6 +711,15 @@ impl VisitorMut for MacroExpander<'_> {
         self.expanded = true;
         ControlFlow::Continue(())
     }
+}
+
+/// The bodies of the lambda arguments of `func`.
+fn lambda_args(func: &SQLFunction) -> impl Iterator<Item = &SQLExpr> {
+    let args = match &func.args {
+        FunctionArguments::List(list) => list.args.as_slice(),
+        _ => &[],
+    };
+    args.iter().filter_map(|arg| Some(lambda_arg(arg)?.1))
 }
 
 /// `res` as the result of a visit.
@@ -925,6 +995,14 @@ impl VisitorMut for ParamReplacer<'_> {
         {
             self.scoped_queries.insert(&**subquery as *const Query);
         }
+        // The conditions inside an aliased join still see the relations it hides.
+        if let Some(names) = hidden_by_alias(factor) {
+            self.relations.push(Relations {
+                names,
+                starts_scope: false,
+                is_query: false,
+            });
+        }
         ControlFlow::Continue(())
     }
 
@@ -955,9 +1033,35 @@ impl VisitorMut for ParamReplacer<'_> {
     }
 
     fn post_visit_table_factor(&mut self, factor: &mut TableFactor) -> ControlFlow<PolarsError> {
+        if hidden_by_alias(factor).is_some() {
+            self.relations.pop();
+        }
         unparenthesize_table_args(factor, self.macros);
         ControlFlow::Continue(())
     }
+}
+
+/// The names of the relations inside `factor` that its alias hides.
+fn hidden_by_alias(factor: &TableFactor) -> Option<Vec<RelationName>> {
+    let mut names = Vec::new();
+    match factor {
+        TableFactor::NestedJoin {
+            table_with_joins,
+            alias: Some(_),
+        } => table_names(table_with_joins, &mut names),
+        TableFactor::Pivot {
+            table,
+            alias: Some(_),
+            ..
+        }
+        | TableFactor::Unpivot {
+            table,
+            alias: Some(_),
+            ..
+        } => factor_names(table, &mut names),
+        _ => return None,
+    }
+    Some(names)
 }
 
 /// Adds the names of the relations that the ORDER BY of a query with this body can qualify
@@ -983,12 +1087,17 @@ fn table_names(table: &TableWithJoins, names: &mut Vec<RelationName>) {
 
 fn factor_names(factor: &TableFactor, names: &mut Vec<RelationName>) {
     match factor {
+        // An alias hides the names of the relations inside.
         TableFactor::NestedJoin {
-            table_with_joins, ..
+            table_with_joins,
+            alias: None,
         } => table_names(table_with_joins, names),
-        TableFactor::Pivot { table, .. } | TableFactor::Unpivot { table, .. } => {
-            factor_names(table, names)
-        },
+        TableFactor::Pivot {
+            table, alias: None, ..
+        }
+        | TableFactor::Unpivot {
+            table, alias: None, ..
+        } => factor_names(table, names),
         TableFactor::Function { name, alias, .. } => names.push(RelationName::new(match alias {
             Some(alias) => vec![alias.name.value.clone()],
             None => name

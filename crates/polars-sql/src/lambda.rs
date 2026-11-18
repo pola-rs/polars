@@ -12,10 +12,12 @@ use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 use sqlparser::ast::{
     AccessExpr, Expr as SQLExpr, FunctionArg, FunctionArgExpr, FunctionArguments, Ident,
-    Value as SQLValue, VisitMut, VisitorMut,
+    Value as SQLValue, ValueWithSpan, VisitMut, VisitorMut,
 };
 use sqlparser::keywords::Keyword;
 use sqlparser::tokenizer::{Token, TokenWithSpan, Whitespace, Word};
+
+use crate::dyn_visit;
 
 const LAMBDA_MARKER: &str = "\u{0}lambda\u{0}";
 const RESOLVED_LAMBDA_MARKER: &str = "\u{0}lambda resolved\u{0}";
@@ -196,6 +198,25 @@ impl VisitorMut for LambdaResolver {
         }
         ControlFlow::Continue(())
     }
+}
+
+/// Moves the lambda elements in `expr` `by` lambdas deeper, for `expr` placed in the bodies of
+/// `by` lambdas.
+pub(crate) fn shift_lambda_elements(expr: &mut SQLExpr, by: usize) {
+    if by == 0 {
+        return;
+    }
+    let _ = dyn_visit::visit_expressions_mut(expr, |expr| {
+        if let SQLExpr::Value(ValueWithSpan {
+            value: SQLValue::Placeholder(p),
+            ..
+        }) = expr
+            && let Some(depth) = element_depth(p)
+        {
+            *p = format!("{ELEMENT_MARKER}{}", depth + by);
+        }
+        ControlFlow::<()>::Continue(())
+    });
 }
 
 /// The lambda nesting depth of the element that `placeholder` stands for.

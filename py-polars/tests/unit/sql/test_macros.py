@@ -576,3 +576,45 @@ def test_macro_call_in_argument_of_same_macro() -> None:
     ctx.execute("CREATE MACRO echo(v) AS TABLE SELECT v")
     res = ctx.execute("SELECT * FROM echo((SELECT 1 FROM echo(2)))", eager=True)
     assert res.rows() == [(1,)]
+
+
+def test_macro_expansion_size_of_table_macros() -> None:
+    ctx = pl.SQLContext()
+    ctx.execute("CREATE MACRO t0() AS TABLE SELECT 1 AS x")
+    for k in range(1, 40):
+        ctx.execute(
+            f"CREATE MACRO t{k}() AS TABLE SELECT * FROM t{k - 1}() a, t{k - 1}() b"
+        )
+    with pytest.raises(SQLInterfaceError, match="too large after expanding"):
+        ctx.execute("SELECT * FROM t39()", eager=True)
+
+
+def test_macro_rejects_query_params() -> None:
+    ctx = pl.SQLContext()
+    for sql in [
+        "CREATE MACRO fixed() AS $1",
+        "CREATE MACRO fixed(x := ?) AS x",
+        "CREATE MACRO fixed() AS TABLE SELECT $v AS a",
+    ]:
+        with pytest.raises(SQLInterfaceError, match="not supported in CREATE MACRO"):
+            ctx.execute(sql, params=[5])
+
+
+def test_macro_lambda_inside_lambda() -> None:
+    ctx = pl.SQLContext()
+    ctx.execute("CREATE MACRO inc_all(xs) AS list_transform(xs, lambda e: e + 1)")
+    res = ctx.execute(
+        "SELECT list_transform([[1, 2], [3]], lambda row: inc_all(row)) AS r",
+        eager=True,
+    )
+    assert res.to_dicts() == [{"r": [[2, 3], [4]]}]
+
+
+def test_macro_alias_of_parenthesized_join() -> None:
+    ctx = pl.SQLContext()
+    ctx.execute(
+        "CREATE MACRO pick(p) AS TABLE SELECT p.v "
+        "FROM ((VALUES ({'v': 7})) p(p) CROSS JOIN (VALUES (1)) b(k)) j"
+    )
+    res = ctx.execute("SELECT * FROM pick({'v': 99})", eager=True)
+    assert res.to_dicts() == [{"v": 99}]
