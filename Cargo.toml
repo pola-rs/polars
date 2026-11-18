@@ -3,6 +3,7 @@ resolver = "2"
 members = [
   "crates/*",
   "docs/source/src/rust",
+  "py-polars/polars-database",
   "py-polars/runtime/polars-runtime-32",
   "py-polars/runtime/polars-runtime-64",
   "py-polars/runtime/polars-runtime-compat",

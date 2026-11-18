@@ -67,7 +67,15 @@ excel = ["polars[calamine,openpyxl,xlsx2csv,xlsxwriter]"]
 adbc = ["adbc-driver-manager[dbapi]", "adbc-driver-sqlite[dbapi]"]
 connectorx = ["connectorx >= 0.3.2"]
 sqlalchemy = ["sqlalchemy", "polars[pandas]"]
-database = ["polars[adbc,connectorx,sqlalchemy]"]
+# `polars-database` is the database scan plugin (`scan_database`), up to (excluding) its next
+# major version. It needs newer ConnectorX and SQLAlchemy than `read_database` does (it checks
+# both when it connects).
+database = [
+  "polars[adbc,connectorx,sqlalchemy]",
+  "connectorx >= 0.4.6",
+  "sqlalchemy >= 2.0",
+  "polars-database >= 0.1.0, < 1.0.0",
+]
 
 # Cloud
 fsspec = ["fsspec"]
@@ -96,15 +104,19 @@ all = [
 
 [tool.pyrefly]
 project-includes = ["src/polars", "tests"]
-search-path = ["./src", "."]
+search-path = ["./src", ".", "./polars-database"]
 ignore-missing-imports = [
   "_polars_runtime_32.*",
   "_polars_runtime_64.*",
   "_polars_runtime_compat.*",
   "IPython.*",
   "altair.*",
+  "clickhouse_connect.*",
   "duckdb.*",
+  "oracledb",
+  "polars_database._lib",
   "polars_iceberg",
+  "psycopg",
   "pyiceberg.*",
 ]
 # pyrefly equivalent of mypy's `follow_imports = "skip"`
@@ -128,7 +140,7 @@ matches = "src/polars/**"
 bad-return = false
 
 [tool.mypy]
-files = ["src/polars", "tests"]
+files = ["src/polars", "tests", "polars-database/polars_database"]
 num_workers = 4
 strict = true
 enable_error_code = [
@@ -152,6 +164,7 @@ module = [
   "altair.*",
   "arrow_odbc",
   "backports",
+  "clickhouse_connect.*",
   "connectorx",
   "dateutil.*",
   "deltalake.*",
@@ -164,11 +177,14 @@ module = [
   "matplotlib.*",
   "moto.server",
   "openpyxl",
+  "oracledb",
   "polars.polars",
   "polars._plr",
   "polars_cloud",
+  "polars_database",
   "polars_nanook",
   "polars_iceberg",
+  "psycopg",
   "pyarrow.*",
   "pydantic",
   "pyiceberg.*",
@@ -261,6 +277,19 @@ allowed-confusables = ["µ"]
 "_dependencies.py" = ["ICN001"]
 "config.py" = ["FBT001"]
 "tests/**/*.py" = ["ARG", "D100", "D102", "D103", "B018", "F841", "FBT001"]
+# The `polars-database` plugin's Python sources. Docstrings there start with a multi-line
+# summary (D205); unused arguments and positional booleans are callback signatures (ARG, FBT001);
+# `os.path` is monkeypatched by the tests (PTH100, PTH113); `raise` in a helper's `try` is
+# deliberate (TRY301).
+"polars-database/polars_database/*.py" = [
+  "ARG001",
+  "ARG002",
+  "D205",
+  "FBT001",
+  "PTH100",
+  "PTH113",
+  "TRY301",
+]
 
 [tool.ruff.lint.pycodestyle]
 max-doc-length = 88
