@@ -66,7 +66,9 @@ impl ComputeNode for DynamicSliceNode {
                 );
                 let offset_item = offset.columns()[0].get(0)?;
                 let length_item = length.columns()[0].get(0)?;
-                let offset = offset_item.extract::<i64>().unwrap_or(0);
+                let offset = offset_item.extract::<i64>().ok_or_else(
+                    || polars_err!(ComputeError: "unable to extract offset from {offset_item:?}"),
+                )?;
                 let length = match length_item {
                     AnyValue::Null => None,
                     length => Some(length.extract::<usize>().ok_or_else(

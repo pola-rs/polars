@@ -694,6 +694,12 @@ def test_expr_slice_negative_length_raises() -> None:
         lf.select(pl.col("a").slice(1, -1)).collect()
 
 
+def test_expr_slice_offset_beyond_i64_raises() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3, 4], "o": pl.Series([2**63] * 4, dtype=pl.UInt64)})
+    with pytest.raises(ComputeError, match="unable to extract offset"):
+        lf.select(pl.col("a").slice(pl.col("o").first(), 2)).collect()
+
+
 def test_expr_chained_slices_in_select() -> None:
     lf = pl.LazyFrame({"a": range(10)})
     q = lf.select(pl.col("a").slice(1, 5).slice(0, 5))
