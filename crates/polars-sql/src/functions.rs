@@ -36,6 +36,7 @@ use sqlparser::tokenizer::Span;
 use crate::datetime_template::{ParseFormat, format_with_template, parse_format};
 use crate::group_context::{is_marked_aggregate, mark_aggregate};
 use crate::grouping_sets::MAX_GROUPING_ARGS;
+use crate::lambda::{is_lambda_arg, lambda_arg, lambda_element_name};
 use crate::sql_expr::{
     adjust_one_indexed_param, approximate_literal, clip_substring_length, decimal_literal,
     decimal_literal_to_f64, interval_to_duration, order_by_sort_options, parse_extract_date_part,
@@ -938,6 +939,18 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT ARRAY_UNIQUE(col1) FROM df;
     /// ```
     ArrayUnique,
+    /// SQL 'list_transform' function.
+    /// Returns the list with a lambda applied to each element.
+    /// ```sql
+    /// SELECT LIST_TRANSFORM(col1, lambda x: x + 1) FROM df;
+    /// ```
+    ListTransform,
+    /// SQL 'list_filter' function.
+    /// Returns the list with the elements for which a lambda is true.
+    /// ```sql
+    /// SELECT LIST_FILTER(col1, lambda x: x > 1) FROM df;
+    /// ```
+    ListFilter,
     /// SQL 'array_agg' function.
     /// Concatenates the input expressions, including nulls, into an array.
     /// ```sql
@@ -1098,10 +1111,13 @@ impl PolarsSQLFunctions {
             "acos",
             "acosd",
             "any_value",
+            "apply",
             "approx_count_distinct",
             "approx_quantile",
+            "array_apply",
             "array_contains",
             "array_dot_product",
+            "array_filter",
             "array_get",
             "array_inner_product",
             "array_length",
@@ -1110,6 +1126,7 @@ impl PolarsSQLFunctions {
             "array_reverse",
             "array_sum",
             "array_to_string",
+            "array_transform",
             "array_unique",
             "array_upper",
             "asin",
@@ -1166,6 +1183,7 @@ impl PolarsSQLFunctions {
             "erf",
             "erfc",
             "exp",
+            "filter",
             "first",
             "first_value",
             "floor",
@@ -1182,6 +1200,9 @@ impl PolarsSQLFunctions {
             "least",
             "left",
             "length",
+            "list_apply",
+            "list_filter",
+            "list_transform",
             "ln",
             "localtime",
             "localtimestamp",
@@ -1453,6 +1474,10 @@ impl PolarsSQLFunctions {
             "array_sum" => Self::ArraySum,
             "array_to_string" => Self::ArrayToString,
             "array_unique" => Self::ArrayUnique,
+            "list_transform" | "array_transform" | "apply" | "list_apply" | "array_apply" => {
+                Self::ListTransform
+            },
+            "list_filter" | "array_filter" | "filter" => Self::ListFilter,
             "array_upper" => Self::ArrayMax,
             "unnest" => Self::Explode,
             "generate_series" => Self::GenerateSeries,
@@ -2210,6 +2235,8 @@ impl SQLFunctionVisitor<'_> {
             ArraySum => self.visit_unary(|e| e.list().sum()),
             ArrayToString => self.visit_arr_to_string(),
             ArrayUnique => self.visit_unary(|e| e.list().eval(element().unique_stable())),
+            ListTransform => self.visit_list_lambda(false),
+            ListFilter => self.visit_list_lambda(true),
             Explode => self.visit_unary(|e| {
                 e.explode(ExplodeOptions {
                     empty_as_null: true,
@@ -3657,6 +3684,79 @@ impl SQLFunctionVisitor<'_> {
         })
     }
 
+    /// Visit `list_transform(list, lambda x: body)`, or `list_filter` if `filter`.
+    fn visit_list_lambda(&mut self, filter: bool) -> PolarsResult<Expr> {
+        let name = self.func.name.to_string().to_uppercase();
+        let FunctionArguments::List(FunctionArgumentList {
+            args,
+            duplicate_treatment: None,
+            clauses,
+        }) = &self.func.args
+        else {
+            polars_bail!(SQLSyntax: "{name} expects a list and a lambda")
+        };
+        let ([FunctionArg::Unnamed(FunctionArgExpr::Expr(list)), lambda], true) =
+            (args.as_slice(), clauses.is_empty())
+        else {
+            polars_bail!(SQLSyntax: "{name} expects a list and a lambda")
+        };
+        let Some((n_params, body)) = lambda_arg(lambda) else {
+            polars_bail!(SQLSyntax: "the second argument of {name} must be a lambda, as in `lambda x: x + 1`")
+        };
+        polars_ensure!(
+            n_params == 1,
+            SQLInterface: "the lambda of {name} takes one parameter (found {n_params})"
+        );
+        let mut list = self.parse_sql_arg(list)?;
+        let typed = self.ctx.with_typed_subqueries(&list)?;
+        let element_dtype = match self.ctx.expr_dtype(&typed, self.active_schema) {
+            Some(DataType::Array(inner, _)) => {
+                list = list.arr().to_list();
+                Some(*inner)
+            },
+            Some(DataType::Null) => {
+                list = list.cast(DataType::List(Box::new(DataType::Null)));
+                Some(DataType::Null)
+            },
+            Some(DataType::List(inner)) => Some(*inner),
+            Some(dtype) => polars_bail!(
+                SQLSyntax: "{name} expects a list; found {}", sql_type_name(&dtype)
+            ),
+            // Without a schema (as in `sql_expr`) no type is known.
+            None => {
+                polars_ensure!(
+                    self.active_schema.is_none(),
+                    SQLInterface: "cannot determine the type of the list of {name}; cast it, as in `CAST(... AS INT[])`"
+                );
+                None
+            },
+        };
+        polars_ensure!(
+            !contains_random(body, true),
+            SQLInterface: "RANDOM() is not supported in a lambda"
+        );
+        // The body reads the element as a column, so that its type is known while parsing. The
+        // other columns it reads are the values of the row.
+        self.ctx.lambda_depth += 1;
+        let element_name = lambda_element_name(self.ctx.lambda_depth);
+        let mut schema = self.active_schema.cloned().unwrap_or_default();
+        if let Some(dtype) = element_dtype {
+            schema.with_column(element_name.clone(), dtype);
+        }
+        let body = parse_sql_expr(body, self.ctx, Some(&schema));
+        self.ctx.lambda_depth -= 1;
+        let body = body?.map_expr(|e| match e {
+            Expr::Column(name) if name == element_name => element(),
+            e => e,
+        });
+        let body = if filter {
+            element().filter(body.cast(DataType::Boolean))
+        } else {
+            body
+        };
+        self.apply_window_spec(list.list().eval(body))
+    }
+
     pub(crate) fn not_supported_error<T>(&self) -> PolarsResult<T> {
         polars_bail!(
             SQLInterface:
@@ -4058,6 +4158,10 @@ fn _extract_func_args(
             } else if !get_clauses && !clauses.is_empty() {
                 polars_bail!(SQLSyntax: "unexpected clause found in '{}' ({})", func.name, clauses[0])
             } else {
+                polars_ensure!(
+                    !args.iter().any(is_lambda_arg),
+                    SQLSyntax: "a lambda is only supported in LIST_TRANSFORM and LIST_FILTER"
+                );
                 let unpacked_args = args
                     .iter()
                     .map(|arg| match arg {

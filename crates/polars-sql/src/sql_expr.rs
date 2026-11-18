@@ -45,6 +45,10 @@ use crate::context::join_idents;
 use crate::dyn_visit::visit_expressions;
 use crate::functions::{PolarsSQLFunctions, SQLFunctionVisitor};
 use crate::group_context::{has_marked_aggregate, mark_aggregate};
+use crate::lambda::{
+    check_lambda_body_expr, element_depth, lambda_element, resolve_lambda_params,
+    rewrite_lambda_tokens,
+};
 use crate::literal_folding::{
     decimal_lit, fold_scalar, parse_exact_literal, try_fold_decimal_arithmetic,
 };
@@ -69,7 +73,11 @@ pub fn to_sql_interface_err(err: impl Display) -> PolarsError {
 /// The time travel clauses taken out of a query before it is parsed, which sqlparser does not
 /// parse.
 #[must_use]
-pub(crate) struct TakenClauses(TableVersions);
+pub(crate) struct TakenClauses {
+    versions: TableVersions,
+    /// Whether the query has lambdas (see [`rewrite_lambda_tokens`]).
+    pub(crate) has_lambdas: bool,
+}
 
 impl TakenClauses {
     /// The statements `parsed` from `sql`, with the taken clauses attached. A `POSITIONAL JOIN`
@@ -81,13 +89,15 @@ impl TakenClauses {
         sql: &str,
         parsed: Result<Vec<Statement>, ParserError>,
     ) -> PolarsResult<Vec<Statement>> {
+        let has_lambdas = self.has_lambdas;
         let (mut stmts, versions) = match parsed {
             Ok(mut stmts) => {
                 attach_positional_aliases(&mut stmts)?;
-                (stmts, self.0)
+                (stmts, self.versions)
             },
             Err(err) => {
-                let (mut tokens, versions) = tokenize(sql)?;
+                let (mut tokens, taken) = tokenize(sql)?;
+                let versions = taken.versions;
                 let positional_joins = extract_positional_joins(&mut tokens);
                 if positional_joins.is_empty() {
                     return Err(to_sql_interface_err(err));
@@ -100,11 +110,14 @@ impl TakenClauses {
             },
         };
         versions.attach(&mut stmts)?;
+        if has_lambdas {
+            resolve_lambda_params(&mut stmts);
+        }
         Ok(stmts)
     }
 
     pub(crate) fn refuse(self) -> PolarsResult<()> {
-        self.0.refuse()
+        self.versions.refuse()
     }
 }
 
@@ -112,18 +125,25 @@ impl TakenClauses {
 /// relation or a column. Time travel clauses (see [`TableVersions`]) are taken out first: the
 /// caller attaches them to its statements or refuses them.
 pub(crate) fn sql_parser(sql: &str) -> PolarsResult<(Parser<'static>, TakenClauses)> {
-    let (tokens, versions) = tokenize(sql)?;
-    Ok((parser_of(tokens), TakenClauses(versions)))
+    let (tokens, taken) = tokenize(sql)?;
+    Ok((parser_of(tokens), taken))
 }
 
-fn tokenize(sql: &str) -> PolarsResult<(Vec<TokenWithSpan>, TableVersions)> {
+fn tokenize(sql: &str) -> PolarsResult<(Vec<TokenWithSpan>, TakenClauses)> {
     let mut tokens = Tokenizer::new(&GenericDialect, sql)
         .with_unescape(ParserOptions::default().unescape)
         .tokenize_with_location()
         .map_err(to_sql_interface_err)?;
     normalize_tokens(&mut tokens);
+    let has_lambdas = rewrite_lambda_tokens(&mut tokens);
     let versions = extract_table_versions(&mut tokens)?;
-    Ok((tokens, versions))
+    Ok((
+        tokens,
+        TakenClauses {
+            versions,
+            has_lambdas,
+        },
+    ))
 }
 
 fn parser_of(tokens: Vec<TokenWithSpan>) -> Parser<'static> {
@@ -570,6 +590,9 @@ impl SQLExprVisitor<'_> {
     }
 
     fn visit_expr(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
+        if self.ctx.lambda_depth > 0 {
+            check_lambda_body_expr(expr)?;
+        }
         match expr {
             SQLExpr::AllOp {
                 left,
@@ -608,10 +631,31 @@ impl SQLExprVisitor<'_> {
                         AccessExpr::Subscript(subscript) => {
                             return self.visit_subscript(root, subscript);
                         },
-                        AccessExpr::Dot(_) => {
-                            polars_bail!(SQLSyntax: "dot-notation field access is currently unsupported: {:?}", access_chain[0])
-                        },
+                        AccessExpr::Dot(_) => {},
                     }
+                }
+                if let SQLExpr::Value(ValueWithSpan {
+                    value: SQLValue::Placeholder(p),
+                    ..
+                }) = root.as_ref()
+                    && element_depth(p).is_some()
+                {
+                    let mut expr = self.visit_expr(root)?;
+                    for access in access_chain {
+                        match access {
+                            AccessExpr::Dot(SQLExpr::Identifier(field)) => {
+                                expr = struct_field(expr, field.value.as_str());
+                            },
+                            AccessExpr::Subscript(subscript) => {
+                                expr = self.visit_subscript_of(expr, subscript)?;
+                            },
+                            _ => polars_bail!(SQLSyntax: "unsupported field access: {}", access),
+                        }
+                    }
+                    return Ok(expr);
+                }
+                if let [AccessExpr::Dot(_)] = access_chain.as_slice() {
+                    polars_bail!(SQLSyntax: "dot-notation field access is currently unsupported: {:?}", access_chain[0])
                 }
                 // chained dot/bracket notation (eg: "struct_col.field[2].foo[0].bar")
                 polars_bail!(SQLSyntax: "complex field access chains are currently unsupported: {:?}", access_chain[0])
@@ -1058,6 +1102,10 @@ impl SQLExprVisitor<'_> {
 
     fn visit_subscript(&mut self, expr: &SQLExpr, subscript: &Subscript) -> PolarsResult<Expr> {
         let expr = self.visit_expr(expr)?;
+        self.visit_subscript_of(expr, subscript)
+    }
+
+    fn visit_subscript_of(&mut self, expr: Expr, subscript: &Subscript) -> PolarsResult<Expr> {
         Ok(match subscript {
             Subscript::Index { index } => {
                 // a map is looked up by key, not by position
@@ -1572,6 +1620,10 @@ impl SQLExprVisitor<'_> {
     ///
     /// See [SQLFunctionVisitor] for more details
     fn visit_function(&mut self, function: &SQLFunction) -> PolarsResult<Expr> {
+        polars_ensure!(
+            self.ctx.lambda_depth == 0 || function.over.is_none(),
+            SQLInterface: "window functions are not supported in a lambda"
+        );
         let window = match &function.over {
             Some(window) => Some(self.ctx.resolve_window(window)?),
             None => None,
@@ -1591,6 +1643,11 @@ impl SQLExprVisitor<'_> {
         self.ctx.group_scope.in_window = in_window;
         let expr = expr?;
 
+        polars_ensure!(
+            self.ctx.lambda_depth == 0
+                || !PolarsSQLFunctions::is_aggregate_call(function, self.ctx, &expr)?,
+            SQLInterface: "aggregate functions are not supported in a lambda"
+        );
         if !is_window
             && (in_window || self.ctx.group_scope.mark_aggregates)
             && PolarsSQLFunctions::is_aggregate_call(function, self.ctx, &expr)?
@@ -2160,6 +2217,9 @@ impl SQLExprVisitor<'_> {
                 bitstring_to_bytes_literal(b)?
             },
             SQLValue::SingleQuotedString(s) => lit(s.clone()),
+            SQLValue::Placeholder(p) if let Some(depth) = element_depth(p) => {
+                lambda_element(depth, self.ctx.lambda_depth)?
+            },
             SQLValue::Placeholder(p) => param_lit(self.ctx.param(p)?.value().clone().into_static()),
             other => {
                 polars_bail!(SQLInterface: "value {:?} is not a supported literal type", other)
@@ -2212,6 +2272,9 @@ impl SQLExprVisitor<'_> {
                 }
             },
             SQLValue::SingleQuotedString(s) => AnyValue::StringOwned(s.as_str().into()),
+            SQLValue::Placeholder(p) if element_depth(p).is_some() => {
+                polars_bail!(SQLInterface: "a lambda parameter is not supported in a literal")
+            },
             SQLValue::Placeholder(p) => {
                 let value = self.ctx.param(p)?;
                 match op {
@@ -2566,15 +2629,19 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
 
     // `sql_expr` should only translate expressions, not statements or clauses
     let (mut ast, taken) = sql_parser(s)?;
+    let has_lambdas = taken.has_lambdas;
     taken.refuse()?;
     if let Token::Word(word) = &ast.peek_token().token {
         if keywords::RESERVED_FOR_COLUMN_ALIAS.contains(&word.keyword) {
             polars_bail!(SQLInterface: "expected an expression (found '{}' clause)", word.value)
         }
     }
-    let expr = ast
+    let mut expr = ast
         .parse_select_item()
         .map_err(|_| polars_err!(SQLInterface: "unable to parse '{}' as Expr", s))?;
+    if has_lambdas {
+        resolve_lambda_params(&mut expr);
+    }
 
     // ensure all input was consumed; remaining tokens indicate invalid trailing SQL
     match &ast.peek_token().token {
