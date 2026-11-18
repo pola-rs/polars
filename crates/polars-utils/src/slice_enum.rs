@@ -604,6 +604,10 @@ mod tests {
         for first in small_slices() {
             for next in small_slices() {
                 let Some(combined) = first.reslice(next) else {
+                    assert!(
+                        !is_reslice_supported(first, next),
+                        "{first:?} then {next:?}"
+                    );
                     continue;
                 };
                 for n_rows in 0..12 {
@@ -614,6 +618,18 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    /// Return whether `reslice` combines `first` and `next`.
+    fn is_reslice_supported(first: Slice, next: Slice) -> bool {
+        use Slice::*;
+        match (first, next) {
+            _ if first.is_empty() || next.is_empty() => true,
+            (Negative { .. }, Negative { .. }) => true,
+            (Negative { .. }, Positive { offset: 0, len }) => len >= first.len().unwrap(),
+            (Negative { .. }, _) | (_, Negative { .. }) => false,
+            _ => true,
         }
     }
 

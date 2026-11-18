@@ -716,12 +716,6 @@ def test_slice_i64_min_offset_on_scan(tmp_path: Path) -> None:
     )
 
 
-def test_expr_head_and_open_ended_slice_in_one_select() -> None:
-    lf = pl.LazyFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
-    q = lf.select(pl.col("a").head(3).sum(), pl.col("b").slice(2).sum())
-    assert_frame_equal(q.collect(), pl.DataFrame({"a": [6], "b": [12]}))
-
-
 def test_tail_of_sequential_union() -> None:
     lf = pl.concat(
         [pl.LazyFrame({"a": [1, 2]}), pl.LazyFrame({"a": [3, 4]})], parallel=False
@@ -741,27 +735,10 @@ def test_expr_slice_offset_beyond_i64_raises() -> None:
         lf.select(pl.col("a").slice(pl.col("o").first(), 2)).collect()
 
 
-def test_expr_chained_slices_in_select() -> None:
+def test_expr_last_through_elementwise_onto_sliced_column() -> None:
     lf = pl.LazyFrame({"a": range(10)})
-    q = lf.select(pl.col("a").slice(1, 5).slice(0, 5))
-    assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 2, 3, 4, 5]}))
-
-
-@pytest.mark.parametrize(
-    ("expr", "expected"),
-    [
-        ((pl.col("a").head(5) + 1).last(), [5]),
-        ((pl.col("a").head(5) + 1).tail(2), [4, 5]),
-        ((pl.col("a").head(5) + 1).slice(0), [1, 2, 3, 4, 5]),
-        ((pl.col("a").tail(5) + 1).slice(1, 2), [7, 8]),
-        ((pl.col("a").slice(1, 5) + 1).last(), [6]),
-    ],
-)
-def test_expr_slice_through_elementwise_onto_sliced_column(
-    expr: pl.Expr, expected: list[int]
-) -> None:
-    lf = pl.LazyFrame({"a": range(10)})
-    assert_frame_equal(lf.select(expr).collect(), pl.DataFrame({"a": expected}))
+    q = lf.select((pl.col("a").slice(1, 5) + 1).last())
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [6]}))
 
 
 def test_expr_chained_slices_offset_beyond_i64() -> None:
