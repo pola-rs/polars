@@ -82,7 +82,7 @@ pub struct EvalExpr {
     evaluation_is_scalar: bool,
     evaluation_is_elementwise: bool,
     evaluation_is_fallible: bool,
-    input_is_elementwise: bool,
+    inputs_are_elementwise: bool,
 }
 
 impl EvalExpr {
@@ -98,7 +98,7 @@ impl EvalExpr {
         evaluation_is_scalar: bool,
         evaluation_is_elementwise: bool,
         evaluation_is_fallible: bool,
-        input_is_elementwise: bool,
+        inputs_are_elementwise: bool,
     ) -> Self {
         Self {
             input,
@@ -111,7 +111,7 @@ impl EvalExpr {
             evaluation_is_scalar,
             evaluation_is_elementwise,
             evaluation_is_fallible,
-            input_is_elementwise,
+            inputs_are_elementwise,
         }
     }
 
@@ -708,8 +708,8 @@ impl PhysicalExpr for EvalExpr {
             (input.flat_naive().into_owned(), Vec::new())
         } else {
             match input.agg_state() {
-                AggState::NotAggregated(_)
-                    if self.input_is_elementwise
+                AggState::NotAggregated(_) | AggState::LiteralScalar(_)
+                    if self.inputs_are_elementwise
                         && matches!(input.update_groups, UpdateGroups::No) =>
                 {
                     let columns = self
@@ -717,12 +717,17 @@ impl PhysicalExpr for EvalExpr {
                         .iter()
                         .map(|c| c.evaluate(df, state))
                         .collect::<PolarsResult<Vec<_>>>()?;
-                    (input.flat_naive().into_owned(), columns)
+                    // A literal is the same for every row of `df`.
+                    let values = match input.agg_state() {
+                        AggState::LiteralScalar(c) => c.new_from_index(0, df.height()),
+                        _ => input.flat_naive().into_owned(),
+                    };
+                    (values, columns)
                 },
-                AggState::AggregatedScalar(_) | AggState::LiteralScalar(_) => {
-                    return Err(unsupported());
-                },
-                AggState::NotAggregated(_) | AggState::AggregatedList(_) => {
+                AggState::AggregatedScalar(_) => return Err(unsupported()),
+                AggState::NotAggregated(_)
+                | AggState::AggregatedList(_)
+                | AggState::LiteralScalar(_) => {
                     let input_lists = input
                         .aggregated_as_list()
                         .into_owned()

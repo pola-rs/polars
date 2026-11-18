@@ -607,7 +607,10 @@ fn create_physical_expr_inner(
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let evaluation_is_scalar = is_scalar_ae(evaluation, expr_arena);
             let evaluation_is_elementwise = is_elementwise_rec(evaluation, expr_arena);
-            let input_is_elementwise = is_elementwise_rec(expr, expr_arena);
+            let inputs_are_elementwise = is_elementwise_rec(expr, expr_arena)
+                && columns
+                    .iter()
+                    .all(|c| is_elementwise_rec(c.node(), expr_arena));
             let evaluation_is_fallible = expr_arena
                 .iter(evaluation)
                 .any(|(_, ae)| ae.is_fallible_top_level(expr_arena));
@@ -639,7 +642,7 @@ fn create_physical_expr_inner(
                 evaluation_is_scalar,
                 evaluation_is_elementwise,
                 evaluation_is_fallible,
-                input_is_elementwise,
+                inputs_are_elementwise,
             )))
         },
         #[cfg(feature = "dtype-struct")]

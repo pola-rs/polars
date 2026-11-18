@@ -947,3 +947,14 @@ def test_list_eval_columns_group_by() -> None:
         "first": [[11, 12], None],
         "last": [[23], None],
     }
+
+    # A literal input is the same for every row of the group.
+    out = df.group_by("g", maintain_order=True).agg(
+        lit=pl.lit([1, 2]).list.eval(pl.element() + pl.col("x")),
+        lit_first=pl.lit([1, 2]).list.eval(pl.element() + pl.col("x")).first(),
+    )
+    assert out.to_dict(as_series=False) == {
+        "g": [1, 2],
+        "lit": [[[11, 12], [21, 22]], [[31, 32]]],
+        "lit_first": [[11, 12], [31, 32]],
+    }
