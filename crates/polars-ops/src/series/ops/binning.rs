@@ -1,5 +1,8 @@
-use polars_arrow::array::Array;
+use std::ops::Range;
+
+use polars_arrow::array::{Array, PrimitiveArray};
 use polars_arrow::compute::concatenate::concatenate_validities;
+use polars_arrow::types::NativeType;
 use polars_core::chunked_array::ops::binning::{
     FractionSpec, IntervalSpec, order_statistics_physical,
 };
@@ -154,31 +157,27 @@ impl<N: NumericNative> RankBreaks<N> {
         (m, m < self.distinct.len() && self.distinct[m].tot_eq(v))
     }
 
-    /// Locates every non-null row of `ca`, passing `(row, m, equal)` to `f`, and counts how many
-    /// values lie below each distinct breakpoint (and above the one before) and how many equal it.
-    fn count<T: PolarsNumericType<Native = N>>(
+    /// Locates every non-null row in `rows` of the column, passing `(row, m, equal)` to `f`, and
+    /// counts how many values lie below each distinct breakpoint (and above the one before) and
+    /// how many equal it.
+    fn count(
         &self,
-        ca: &ChunkedArray<T>,
+        chunks: &ChunkIndex<'_, N>,
+        rows: Range<usize>,
         mut f: impl FnMut(usize, usize, bool),
     ) -> (Vec<IdxSize>, Vec<IdxSize>) {
         let k = self.distinct.len();
         let mut n_between = vec![0 as IdxSize; k + 1];
         let mut n_equal = vec![0 as IdxSize; k];
-        let mut row = 0;
-        for arr in ca.downcast_iter() {
-            for (i, v) in arr.values().iter().enumerate() {
-                if arr.is_valid(i) {
-                    let (m, equal) = self.locate(v);
-                    f(row + i, m, equal);
-                    if equal {
-                        n_equal[m] += 1;
-                    } else {
-                        n_between[m] += 1;
-                    }
-                }
+        chunks.for_each_valid(rows, |row, v| {
+            let (m, equal) = self.locate(v);
+            f(row, m, equal);
+            if equal {
+                n_equal[m] += 1;
+            } else {
+                n_between[m] += 1;
             }
-            row += arr.len();
-        }
+        });
         (n_between, n_equal)
     }
 
@@ -188,10 +187,14 @@ impl<N: NumericNative> RankBreaks<N> {
         ca: &ChunkedArray<T>,
     ) -> (Vec<IdxSize>, Vec<IdxSize>) {
         let range_len = self.range_len();
+        let chunks = ChunkIndex::new(ca);
         let counts: Vec<_> = RAYON.install(|| {
             (0..ca.len().div_ceil(range_len))
                 .into_par_iter()
-                .map(|r| self.count(&ca.slice((r * range_len) as i64, range_len), |_, _, _| {}))
+                .map(|r| {
+                    let rows = r * range_len..ca.len().min((r + 1) * range_len);
+                    self.count(&chunks, rows, |_, _, _| {})
+                })
                 .collect()
         });
         let k = self.distinct.len();
@@ -201,6 +204,42 @@ impl<N: NumericNative> RankBreaks<N> {
             n_equal.iter_mut().zip(e).for_each(|(t, n)| *t += n);
         }
         (n_between, n_equal)
+    }
+}
+
+/// The chunks of a column and the row each starts at, which locate a range of rows without walking
+/// the chunks before it.
+struct ChunkIndex<'a, N: NativeType> {
+    arrs: Vec<&'a PrimitiveArray<N>>,
+    starts: Vec<usize>,
+}
+
+impl<'a, N: NativeType> ChunkIndex<'a, N> {
+    fn new<T: PolarsNumericType<Native = N>>(ca: &'a ChunkedArray<T>) -> Self {
+        let arrs: Vec<_> = ca.downcast_iter().collect();
+        let mut starts = Vec::with_capacity(arrs.len() + 1);
+        starts.push(0);
+        for arr in &arrs {
+            starts.push(starts.last().unwrap() + arr.len());
+        }
+        Self { arrs, starts }
+    }
+
+    /// Calls `f(row, value)` for every non-null row in `rows`.
+    fn for_each_valid(&self, rows: Range<usize>, mut f: impl FnMut(usize, &N)) {
+        let mut c = self.starts.partition_point(|&start| start <= rows.start) - 1;
+        let mut row = rows.start;
+        while row < rows.end {
+            let (arr, start) = (self.arrs[c], self.starts[c]);
+            let end = rows.end.min(self.starts[c + 1]);
+            for i in row - start..end - start {
+                if arr.is_valid(i) {
+                    f(start + i, &arr.values()[i]);
+                }
+            }
+            row = end;
+            c += 1;
+        }
     }
 }
 
@@ -223,14 +262,15 @@ fn bins_from_rank_ties_impl<T: PolarsNumericType>(
     let range_len = rb.range_len();
     let mut out = vec![0 as IdxSize; ca.len()];
     let mut parts: Vec<&mut [IdxSize]> = out.chunks_mut(range_len).collect();
+    let chunks = ChunkIndex::new(ca);
     let counts: Vec<(Vec<IdxSize>, Vec<IdxSize>)> = RAYON.install(|| {
         parts
             .par_iter_mut()
             .enumerate()
             .map(|(r, part)| {
-                let range = ca.slice((r * range_len) as i64, part.len());
-                rb.count(&range, |row, m, equal| {
-                    part[row] = (2 * m + equal as usize) as IdxSize
+                let lo = r * range_len;
+                rb.count(&chunks, lo..lo + part.len(), |row, m, equal| {
+                    part[row - lo] = (2 * m + equal as usize) as IdxSize
                 })
             })
             .collect()
