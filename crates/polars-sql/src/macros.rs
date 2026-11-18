@@ -7,7 +7,7 @@ use std::ops::ControlFlow;
 use std::sync::{Arc, RwLock};
 
 use polars_core::prelude::{PolarsError, PolarsResult, polars_bail, polars_ensure, polars_err};
-use polars_utils::aliases::{PlHashMap, PlHashSet};
+use polars_utils::aliases::PlHashMap;
 use sqlparser::ast::{
     AccessExpr, CastKind, Expr as SQLExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr,
     FunctionArgumentList, FunctionArguments, Ident, ObjectName, OrderByExpr, Query, Select,
@@ -259,25 +259,7 @@ fn parse_create_macro(
     let mut overloads = vec![];
     let mut table = false;
     loop {
-        parser.expect_token(&Token::LParen)?;
-        let mut params = vec![];
-        if !parser.consume_token(&Token::RParen) {
-            loop {
-                let name = parser.parse_identifier()?;
-                let default = if parser.consume_token(&Token::Assignment)
-                    || parser.consume_token(&Token::RArrow)
-                {
-                    Some(parser.parse_expr()?)
-                } else {
-                    None
-                };
-                params.push(MacroParam { name, default });
-                if !parser.consume_token(&Token::Comma) {
-                    break;
-                }
-            }
-            parser.expect_token(&Token::RParen)?;
-        }
+        let params = parse_macro_params(parser)?;
         parser.expect_keyword_is(Keyword::AS)?;
         let body = if parser.parse_keyword(Keyword::TABLE) {
             MacroBody::Table(parse_table_body(parser)?)
@@ -304,61 +286,91 @@ fn parse_create_macro(
     })
 }
 
+/// The parameters of a definition, in parentheses.
+fn parse_macro_params(parser: &mut Parser) -> Result<Vec<MacroParam>, ParserError> {
+    parser.expect_token(&Token::LParen)?;
+    let mut params = vec![];
+    if parser.consume_token(&Token::RParen) {
+        return Ok(params);
+    }
+    loop {
+        let name = parser.parse_identifier()?;
+        let default =
+            if parser.consume_token(&Token::Assignment) || parser.consume_token(&Token::RArrow) {
+                Some(parser.parse_expr()?)
+            } else {
+                None
+            };
+        params.push(MacroParam { name, default });
+        if !parser.consume_token(&Token::Comma) {
+            break;
+        }
+    }
+    parser.expect_token(&Token::RParen)?;
+    Ok(params)
+}
+
 /// The query of a TABLE definition, which ends before the `, (...) AS TABLE` of the next
 /// definition.
 fn parse_table_body(parser: &mut Parser) -> Result<Box<Query>, ParserError> {
     // The parser is past `AS TABLE`, so the next token is at the current index + 1.
-    let tokens: Vec<&TokenWithSpan> = (parser.get_current_index() + 1..)
+    let tokens: Vec<TokenWithSpan> = (parser.get_current_index() + 1..)
         .map(|i| parser.token_at(i))
         .take_while(|t| !matches!(t.token, Token::EOF | Token::SemiColon))
-        .filter(|t| !matches!(t.token, Token::Whitespace(_)))
+        .cloned()
         .collect();
-    let len = next_definition(&tokens).unwrap_or(tokens.len());
-    let mut body_parser = parser_of(tokens[..len].iter().map(|&t| t.clone()).collect());
-    let query = body_parser.parse_query()?;
-    let rest = body_parser.peek_token();
-    if rest.token != Token::EOF {
-        return body_parser.expected("the end of the macro body", rest);
-    }
-    for _ in 0..len {
+    let (query, len) = split_table_body(&tokens)?;
+    let n_parsed = tokens[..len]
+        .iter()
+        .filter(|t| !matches!(t.token, Token::Whitespace(_)))
+        .count();
+    for _ in 0..n_parsed {
         parser.next_token();
     }
     Ok(query)
 }
 
-/// The position of the comma that starts the next TABLE definition in `tokens`.
-fn next_definition(tokens: &[&TokenWithSpan]) -> Option<usize> {
-    let is_keyword = |i: usize, keywords: &[Keyword]| matches!(tokens.get(i).map(|t| &t.token), Some(Token::Word(w)) if keywords.contains(&w.keyword));
+/// The query at the start of `tokens` and its number of tokens. It ends at a comma that
+/// starts another TABLE definition.
+fn split_table_body(tokens: &[TokenWithSpan]) -> Result<(Box<Query>, usize), ParserError> {
     let mut depth = 0usize;
     for (i, token) in tokens.iter().enumerate() {
         match token.token {
             Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
             Token::RParen | Token::RBracket | Token::RBrace => depth = depth.saturating_sub(1),
-            Token::Comma if depth == 0 && tokens.get(i + 1)?.token == Token::LParen => {
-                // `, (params) AS TABLE` and a query; `(a) AS table` can also be a SELECT item.
-                let mut params_depth = 0usize;
-                let close = (i + 1..tokens.len()).find(|&j| {
-                    match tokens[j].token {
-                        Token::LParen => params_depth += 1,
-                        Token::RParen => params_depth -= 1,
-                        _ => {},
-                    }
-                    params_depth == 0
-                })?;
-                if is_keyword(close + 1, &[Keyword::AS])
-                    && is_keyword(close + 2, &[Keyword::TABLE])
-                    && (is_keyword(
-                        close + 3,
-                        &[Keyword::SELECT, Keyword::WITH, Keyword::VALUES],
-                    ) || tokens.get(close + 3).map(|t| &t.token) == Some(&Token::LParen))
-                {
-                    return Some(i);
+            Token::Comma if depth == 0 && starts_table_definition(&tokens[i + 1..]) => {
+                if let Ok(query) = parse_whole_query(&tokens[..i]) {
+                    return Ok((query, i));
                 }
             },
             _ => {},
         }
     }
-    None
+    Ok((parse_whole_query(tokens)?, tokens.len()))
+}
+
+/// Whether `tokens` start with `(params) AS TABLE` and a query.
+fn starts_table_definition(tokens: &[TokenWithSpan]) -> bool {
+    let first = tokens
+        .iter()
+        .find(|t| !matches!(t.token, Token::Whitespace(_)));
+    if first.is_none_or(|t| t.token != Token::LParen) {
+        return false;
+    }
+    let mut parser = parser_of(tokens.to_vec());
+    parse_macro_params(&mut parser).is_ok()
+        && parser.parse_keywords(&[Keyword::AS, Keyword::TABLE])
+        && parser.parse_query().is_ok()
+}
+
+fn parse_whole_query(tokens: &[TokenWithSpan]) -> Result<Box<Query>, ParserError> {
+    let mut parser = parser_of(tokens.to_vec());
+    let query = parser.parse_query()?;
+    let rest = parser.peek_token();
+    if rest.token != Token::EOF {
+        return parser.expected("the end of the macro body", rest);
+    }
+    Ok(query)
 }
 
 fn parse_drop_macro(parser: &mut Parser, table: bool) -> Result<MacroStatement, ParserError> {
@@ -927,6 +939,8 @@ struct Relations {
     names: Vec<RelationName>,
     /// A CTE or derived table, which does not see the relations of the query it is part of.
     starts_scope: bool,
+    /// The relations before a derived table in its FROM, which it reads as if LATERAL.
+    preceding: Vec<RelationName>,
     is_query: bool,
 }
 
@@ -942,8 +956,9 @@ struct ParamReplacer<'a> {
     lambdas: LambdaScopes,
     /// The relations of each query and SELECT around the visited expression.
     relations: Vec<Relations>,
-    /// The CTEs and derived tables of the visited queries.
-    scoped_queries: PlHashSet<*const Query>,
+    /// The CTEs and derived tables of the visited queries, with the relations before each
+    /// derived table in its FROM.
+    scoped_queries: PlHashMap<*const Query, Vec<RelationName>>,
 }
 
 impl<'a> ParamReplacer<'a> {
@@ -962,7 +977,7 @@ impl<'a> ParamReplacer<'a> {
             call_depth,
             lambdas: LambdaScopes::default(),
             relations: Vec::new(),
-            scoped_queries: PlHashSet::default(),
+            scoped_queries: PlHashMap::default(),
         }
     }
 
@@ -978,7 +993,9 @@ impl<'a> ParamReplacer<'a> {
                 }
                 continue;
             }
-            if match_qualifier(idents, relations.names.iter()).is_some() {
+            if match_qualifier(idents, relations.names.iter()).is_some()
+                || match_qualifier(idents, relations.preceding.iter()).is_some()
+            {
                 return true;
             }
             hidden = relations.starts_scope;
@@ -1037,11 +1054,26 @@ impl VisitorMut for ParamReplacer<'_> {
         }
         let mut names = Vec::new();
         for table in &select.from {
-            table_names(table, &mut names);
+            let factors =
+                std::iter::once(&table.relation).chain(table.joins.iter().map(|j| &j.relation));
+            for factor in factors {
+                if let TableFactor::Derived {
+                    lateral: false,
+                    subquery,
+                    ..
+                } = factor
+                    && !names.is_empty()
+                {
+                    self.scoped_queries
+                        .insert(&**subquery as *const Query, names.clone());
+                }
+                factor_names(factor, &mut names);
+            }
         }
         self.relations.push(Relations {
             names,
             starts_scope: false,
+            preceding: vec![],
             is_query: false,
         });
         ControlFlow::Continue(())
@@ -1053,19 +1085,20 @@ impl VisitorMut for ParamReplacer<'_> {
     }
 
     fn pre_visit_query(&mut self, query: &mut Query) -> ControlFlow<PolarsError> {
-        let starts_scope = self.scoped_queries.remove(&(&*query as *const Query));
+        let preceding = self.scoped_queries.remove(&(&*query as *const Query));
         if let Some(with) = &query.with {
             self.scoped_queries.extend(
                 with.cte_tables
                     .iter()
-                    .map(|cte| &*cte.query as *const Query),
+                    .map(|cte| (&*cte.query as *const Query, vec![])),
             );
         }
         let mut names = Vec::new();
         relation_names(&query.body, &mut names);
         self.relations.push(Relations {
             names,
-            starts_scope,
+            starts_scope: preceding.is_some(),
+            preceding: preceding.unwrap_or_default(),
             is_query: true,
         });
         ControlFlow::Continue(())
@@ -1083,7 +1116,9 @@ impl VisitorMut for ParamReplacer<'_> {
             ..
         } = factor
         {
-            self.scoped_queries.insert(&**subquery as *const Query);
+            self.scoped_queries
+                .entry(&**subquery as *const Query)
+                .or_default();
         }
         // The conditions inside an aliased join see the relations that the alias hides, but
         // not the alias or the other relations of the FROM.
@@ -1091,6 +1126,7 @@ impl VisitorMut for ParamReplacer<'_> {
             self.relations.push(Relations {
                 names,
                 starts_scope: true,
+                preceding: vec![],
                 is_query: false,
             });
         }

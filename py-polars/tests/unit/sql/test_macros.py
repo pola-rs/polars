@@ -661,3 +661,40 @@ def test_table_macro_overloads() -> None:
         "CREATE MACRO u(v) AS TABLE SELECT v AS x, (v) AS tbl FROM (VALUES (1))"
     )
     assert ctx.execute("SELECT * FROM u(4)", eager=True).rows() == [(4, 4)]
+
+
+def test_table_macro_overload_boundaries() -> None:
+    ctx = pl.SQLContext({"t": pl.DataFrame({"a": [7]})})
+    ctx.execute("CREATE MACRO f(v) AS TABLE SELECT v, () AS TABLE FROM t")
+    assert ctx.execute("SELECT * FROM f(3)", eager=True).rows() == [(3,)]
+    assert ctx.execute("SELECT * FROM f()", eager=True).rows() == [(7,)]
+    # A derived table aliased `table` is part of the body.
+    ctx.execute(
+        "CREATE MACRO g() AS TABLE "
+        "SELECT * FROM (VALUES (1)) a(a), (VALUES (2)) AS table(b)"
+    )
+    assert ctx.execute("SELECT * FROM g()", eager=True).rows() == [(1, 2)]
+    ctx.execute("CREATE MACRO h() AS TABLE SELECT /*+ some_hint */ 1 AS one")
+    with pytest.raises(SQLInterfaceError, match="optimizer hints are not supported"):
+        ctx.execute("SELECT * FROM h()", eager=True)
+
+
+def test_table_macro_implicit_lateral() -> None:
+    ctx = pl.SQLContext()
+    # `p` names the relation before the derived table, not the parameter.
+    ctx.execute(
+        "CREATE MACRO m(p) AS TABLE "
+        "SELECT d.x FROM (VALUES (1), (2)) p(v), (SELECT p.v AS x) d"
+    )
+    assert ctx.execute("SELECT * FROM m({'v': 99})", eager=True).rows() == [
+        (1,),
+        (2,),
+    ]
+    ctx.execute(
+        "CREATE MACRO m2(p) AS TABLE "
+        "SELECT d.x FROM (SELECT p.v AS x) d, (VALUES (1), (2)) p(v)"
+    )
+    assert ctx.execute("SELECT * FROM m2({'v': 99})", eager=True).rows() == [
+        (99,),
+        (99,),
+    ]
