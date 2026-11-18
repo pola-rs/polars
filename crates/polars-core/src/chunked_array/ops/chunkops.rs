@@ -244,11 +244,8 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         (out_l, out_r)
     }
 
-    /// Slice the array. The chunks are reallocated the underlying data slices are zero copy.
-    ///
-    /// When offset is negative it will be counted from the end of the array.
-    /// This method will never error,
-    /// and will slice the best match when offset, or length is out of bounds
+    /// Get a zero copy view of the elements `slice` selects. The chunks are reallocated, the
+    /// buffers are not.
     pub fn slice(&self, slice: impl Into<Slice>) -> Self {
         let slice = slice.into();
 

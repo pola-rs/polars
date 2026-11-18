@@ -245,8 +245,8 @@ impl Slice {
         }
     }
 
-    /// Return the signed offset and the length, writing the length of a slice that runs to the
-    /// end as `IdxSize::MAX`.
+    /// Return the signed offset and the length, writing `IdxSize::MAX` for a length that runs to
+    /// the end or does not fit in an `IdxSize`.
     // TODO: @3.0: Remove once the Python IR visitor takes an optional length.
     pub fn to_legacy_signed_offset_len(&self) -> (i64, IdxSize) {
         let (offset, len) = self.to_signed_offset_len();
@@ -256,8 +256,8 @@ impl Slice {
         (offset, len)
     }
 
-    /// Return the single slice that selects the same rows as applying `self` and then `next`,
-    /// or `None` if that cannot be known statically or if it does not fit in an `i64`.
+    /// Return the slice that selects the same rows as applying `self` and then `next` at every
+    /// height, or `None` if this pair is not combined or the result does not fit in an `i64`.
     pub fn reslice(self, next: Slice) -> Option<Slice> {
         use Slice::*;
 
@@ -315,8 +315,8 @@ impl Slice {
         combined.is_within_i64().then_some(combined)
     }
 
-    /// Return the smallest slice that contains both `a` and `b` at any height, or `None` if
-    /// one counts from the start and the other from the end, or if only every row contains both.
+    /// Return the smallest slice that contains both `a` and `b` at every height, or `None` if only
+    /// every row does.
     pub fn try_new_enclosing(a: Slice, b: Slice) -> Option<Slice> {
         use Slice::*;
 
@@ -600,7 +600,7 @@ mod tests {
     }
 
     #[test]
-    fn test_slice_try_reslice() {
+    fn test_slice_reslice() {
         for first in small_slices() {
             for next in small_slices() {
                 let Some(combined) = first.reslice(next) else {
@@ -634,7 +634,7 @@ mod tests {
     }
 
     #[test]
-    fn test_slice_try_cover_and_within() {
+    fn test_slice_try_new_enclosing_and_try_within() {
         for a in small_slices() {
             for b in small_slices() {
                 let Some(cover) = Slice::try_new_enclosing(a, b) else {

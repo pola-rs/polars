@@ -273,7 +273,8 @@ impl SlicePushDown {
                 };
 
                 expr_arena.replace(node, expr_arena.get(input).clone());
-                // `try_within` is `None` for an open-ended slice within itself.
+                // `ir_slice` encloses every column slice, so `try_within` is `None` only for an
+                // open-ended slice equal to `ir_slice`.
                 if ae_slice != ir_slice {
                     let slice_within_ir_slice = ae_slice.try_within(ir_slice).unwrap();
                     ExprSlice::Extracted(slice_within_ir_slice).slice_arena_node(node, expr_arena);

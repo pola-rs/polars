@@ -12,7 +12,11 @@ use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ExprSlice {
     Extracted(Slice),
-    Opaque { offset: Node, len: Node },
+    /// A slice that is not a literal, selects every row, or does not fit in an `i64`.
+    Opaque {
+        offset: Node,
+        len: Node,
+    },
 }
 
 impl ExprSlice {
@@ -101,7 +105,7 @@ impl SlicePushDown {
         &mut self,
         current_ae_node: Node,
         expr_arena: &mut Arena<AExpr>,
-        common_col_limit: &mut Option<Slice>,
+        common_col_slice: &mut Option<Slice>,
         col_hit_count: &mut Option<usize>,
         maintain_errors: bool,
     ) {
@@ -113,7 +117,7 @@ impl SlicePushDown {
                     ae_node,
                     &mut *edges.inputs(),
                     arena,
-                    common_col_limit,
+                    common_col_slice,
                     col_hit_count,
                     maintain_errors,
                 );
@@ -200,7 +204,7 @@ fn aexpr_slice_pushdown_top(
     current_ae_node: Node,
     input_states: &mut dyn Collection<State>,
     expr_arena: &mut Arena<AExpr>,
-    common_col_limit: &mut Option<Slice>,
+    common_col_slice: &mut Option<Slice>,
     col_hit_count: &mut Option<usize>,
     maintain_errors: bool,
 ) -> State {
@@ -377,14 +381,14 @@ fn aexpr_slice_pushdown_top(
                     break 'update_common_slice;
                 };
 
-                if let Some(existing) = common_col_limit {
+                if let Some(existing) = common_col_slice {
                     let Some(new) = Slice::try_new_enclosing(*existing, extracted_slice) else {
                         *col_hit_count = None;
                         break 'update_common_slice;
                     };
                     *existing = new;
                 } else {
-                    *common_col_limit = Some(extracted_slice)
+                    *common_col_slice = Some(extracted_slice)
                 }
             }
         }
