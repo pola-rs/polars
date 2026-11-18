@@ -265,14 +265,20 @@ pub fn is_empty<'a>(
     assert_eq!(inputs.len(), 1);
 
     // TODO: dedicated impl.
-    let mut ac = inputs[0].evaluate_on_groups(df, groups, state)?;
-    if let AggState::AggregatedScalar(s) | AggState::LiteralScalar(s) = &mut ac.state {
-        *s = if ignore_nulls {
+    let ac = inputs[0].evaluate_on_groups(df, groups, state)?;
+    if let AggState::AggregatedScalar(s) | AggState::LiteralScalar(s) = &ac.state {
+        let mut is_empty = if ignore_nulls {
             s.is_null().into_column()
         } else {
             Column::new_scalar(s.name().clone(), false.into(), s.len())
         };
-        return Ok(ac);
+        if let AggState::LiteralScalar(_) = &ac.state {
+            is_empty = is_empty.new_from_index(0, groups.len());
+        }
+        return Ok(AggregationContext::from_agg_state(
+            AggState::AggregatedScalar(is_empty),
+            Cow::Borrowed(groups),
+        ));
     }
     let counts = evaluate_count_on_ac(ac, !ignore_nulls)?;
     let is_empty = counts.equal(&Column::new_scalar(

@@ -3831,3 +3831,10 @@ def test_group_by_reduce_value_per_group() -> None:
         "all": [True, True],
         "is_empty": [True, False],
     }
+
+    df = pl.DataFrame({"g": [0, 0, 1, 2]})
+    empty = pl.lit(1).is_empty()
+    out = df.select(pl.col("g").cumulative_eval(empty))
+    assert out["g"].to_list() == [False] * 4
+    out = df.select(empty.over("g", mapping_strategy="explode"))
+    assert out.to_series().to_list() == [False] * 3
