@@ -371,7 +371,7 @@ impl Slice {
                 },
             ) => {
                 let outer_stop_from_end = outer_k - outer_l;
-                (k <= outer_k && k - l >= outer_stop_from_end).then_some(Negative {
+                (k <= outer_k && k - l >= outer_stop_from_end).then(|| Negative {
                     offset_from_end: k - outer_stop_from_end,
                     len: l,
                 })
@@ -638,6 +638,24 @@ mod tests {
                             "{inner:?} within {cover:?} at {n_rows} rows"
                         );
                     }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_slice_try_within() {
+        for inner in small_slices() {
+            for outer in small_slices() {
+                let Some(within) = inner.try_within(outer) else {
+                    continue;
+                };
+                for n_rows in 0..12 {
+                    let rows: Vec<usize> = (0..n_rows).collect();
+                    assert_eq!(
+                        &rows[outer][within], &rows[inner],
+                        "{inner:?} within {outer:?} at {n_rows} rows"
+                    );
                 }
             }
         }
