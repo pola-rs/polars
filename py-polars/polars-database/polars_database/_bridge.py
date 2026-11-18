@@ -1070,6 +1070,63 @@ def _duckdb_connect(mod: Any, path: str, kwargs: dict[str, Any]) -> Any:
         interval = min(interval * 2, _DUCKDB_CONNECT_RETRY_MAX_INTERVAL)
 
 
+# The DuckDB databases this module has open, by file and connect arguments: the root
+# connection that keeps the instance alive and how many sessions use it. Guarded by
+# `_DUCKDB_ROOTS_LOCK`, which connecting and the last close both hold.
+_DUCKDB_ROOTS: dict[tuple[str, str], list[Any]] = {}
+_DUCKDB_ROOTS_LOCK = threading.Lock()
+
+
+def _duckdb_shared_cursor(
+    mod: Any, path: str, kwargs: dict[str, Any]
+) -> tuple[Any, Callable[[], None]]:
+    """
+    A connection to a DuckDB file that shares its database instance with the others
+    this module has open on it, and the function that closes it.
+
+    A DuckDB instance is destroyed when its last connection closes, and for a while
+    after that the file is still attached: a `connect` from another thread in that
+    window fails with "Unique file handle conflict" (and not just for milliseconds: when
+    the machine is loaded it can outlast `_duckdb_connect`'s retries). A root connection
+    is kept open while any session uses the file, and the last session closes it under
+    the lock that connecting takes, so a connect never meets a dying instance.
+    """
+    if path in ("", ":memory:") or path.startswith(":memory:"):
+        conn = _duckdb_connect(mod, path, kwargs)
+        return conn, conn.close
+    key = (path, repr(sorted(kwargs.items(), key=lambda kv: kv[0])))
+    with _DUCKDB_ROOTS_LOCK:
+        entry = _DUCKDB_ROOTS.get(key)
+        if entry is None:
+            entry = _DUCKDB_ROOTS[key] = [_duckdb_connect(mod, path, kwargs), 0]
+        try:
+            cursor = entry[0].cursor()
+        except BaseException:
+            if entry[1] == 0:
+                del _DUCKDB_ROOTS[key]
+                with contextlib.suppress(Exception):
+                    entry[0].close()
+            raise
+        entry[1] += 1
+    closed = False
+
+    def close() -> None:
+        nonlocal closed
+        with _DUCKDB_ROOTS_LOCK:
+            if closed:
+                return
+            closed = True
+            try:
+                cursor.close()
+            finally:
+                entry[1] -= 1
+                if entry[1] == 0:
+                    _DUCKDB_ROOTS.pop(key, None)
+                    entry[0].close()
+
+    return cursor, close
+
+
 def _connect_uri(module: str, uri: str, options: dict[str, Any]) -> Any:
     """A DB-API connection to a URI through a driver module."""
     mod = importlib.import_module(module)
@@ -3056,6 +3113,12 @@ def _open(
 
         return _Session(conn, owned=True, close=close, **session)
     if head == "python":
+        if tail == "duckdb":
+            path, kw = _duckdb_connect_args(uri)
+            conn, close_duckdb = _duckdb_shared_cursor(
+                importlib.import_module("duckdb"), path, {**kw, **connect_opts}
+            )
+            return _Session(conn, owned=True, close=close_duckdb, **session)
         conn = _connect_uri(tail, uri, connect_opts)
         return _Session(conn, owned=True, **session)
 

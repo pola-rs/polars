@@ -200,7 +200,8 @@ def _explain(lf: pl.LazyFrame) -> str:
         except BaseException as e:
             errors.append(e)
 
-    old = threading.stack_size(512 << 20)
+    # Windows' Python refuses a thread stack of 256 MiB or more
+    old = threading.stack_size(255 << 20)
     try:
         thread = threading.Thread(target=run)
         thread.start()
