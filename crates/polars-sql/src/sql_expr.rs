@@ -2345,7 +2345,11 @@ impl SQLExprVisitor<'_> {
         op: Option<&SQLUnaryOperator>,
     ) -> PolarsResult<AnyValue<'_>> {
         polars_ensure!(
-            op.is_none() || matches!(value, SQLValue::Number(..) | SQLValue::Null),
+            op.is_none()
+                || matches!(
+                    value,
+                    SQLValue::Number(..) | SQLValue::Null | SQLValue::Placeholder(_)
+                ),
             SQLInterface: "unary op {:?} not supported for SQL value {:?}", op.unwrap(), value
         );
         Ok(match value {
