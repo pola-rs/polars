@@ -274,7 +274,7 @@ def test_sink_ipc_exports_a_one_row_piece(df: pl.DataFrame) -> None:
     # which overflows the index type of the 32-bit runtime.
     n = 2**32
     offsets = pa.array([0, 0, 0, 0, n], pa.int64())
-    lists = pl.from_arrow(pa.LargeListArray.from_arrays(offsets, pa.nulls(n)))
+    lists = pl.Series(pa.LargeListArray.from_arrays(offsets, pa.nulls(n)))
     four = df.slice(1, 4).with_columns(l=lists)
 
     f = io.BytesIO()
