@@ -455,17 +455,6 @@ impl<'a> GroupBy<'a> {
         }
         Ok(df)
     }
-
-    pub fn sliced(mut self, slice: Option<Slice>) -> Self {
-        match slice {
-            None => self,
-            Some(s) => {
-                self.groups = self.groups.slice(s);
-                self.selected_keys = self.keys_sliced(slice);
-                self
-            },
-        }
-    }
 }
 
 unsafe fn take_df(df: &DataFrame, g: GroupsIndicator) -> DataFrame {
