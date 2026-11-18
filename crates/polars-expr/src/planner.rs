@@ -609,7 +609,6 @@ fn create_physical_expr_inner(
         } => {
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let evaluation_is_scalar = is_scalar_ae(evaluation, expr_arena);
-            let evaluation_is_elementwise = is_elementwise_rec(evaluation, expr_arena);
             let inputs_are_elementwise = is_elementwise_rec(expr, expr_arena)
                 && columns
                     .iter()
@@ -617,6 +616,8 @@ fn create_physical_expr_inner(
             let evaluation_is_fallible = expr_arena
                 .iter(evaluation)
                 .any(|(_, ae)| ae.is_fallible_top_level(expr_arena));
+            let use_elementwise_path = is_elementwise_rec(evaluation, expr_arena)
+                && !(evaluation_is_scalar && !columns.is_empty());
             // These make groups of their own, in which the columns are read from the rows of the
             // frame of the evaluation.
             let evaluation_has_subgroups = expr_arena.iter(evaluation).any(|(_, ae)| match ae {
@@ -632,6 +633,7 @@ fn create_physical_expr_inner(
                 AExpr::StructEval { .. } => true,
                 _ => false,
             });
+            let reads_frame_rows = use_elementwise_path || evaluation_has_subgroups;
 
             let output_field = expr_arena
                 .get(expression)
@@ -658,9 +660,9 @@ fn create_physical_expr_inner(
                 output_field,
                 is_scalar,
                 evaluation_is_scalar,
-                evaluation_is_elementwise,
                 evaluation_is_fallible,
-                evaluation_has_subgroups,
+                use_elementwise_path,
+                reads_frame_rows,
                 inputs_are_elementwise,
             )))
         },

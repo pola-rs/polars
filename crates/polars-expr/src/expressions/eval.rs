@@ -167,11 +167,13 @@ pub struct EvalExpr {
     output_field: Field,
     is_scalar: bool,
     evaluation_is_scalar: bool,
-    evaluation_is_elementwise: bool,
     evaluation_is_fallible: bool,
-    /// Whether the evaluation makes groups of its own, such as those of a window, or broadcasts
-    /// columns over the rows of a nested evaluation.
-    evaluation_has_subgroups: bool,
+    /// Whether `evaluation` runs once on all elements. A scalar evaluation that reads columns
+    /// instead gives a single value per list.
+    use_elementwise_path: bool,
+    /// Whether the evaluation reads the columns from the rows of its frame, rather than a value
+    /// per group from `ExecutionState::eval_columns`.
+    reads_frame_rows: bool,
     inputs_are_elementwise: bool,
 }
 
@@ -186,9 +188,9 @@ impl EvalExpr {
         output_field: Field,
         is_scalar: bool,
         evaluation_is_scalar: bool,
-        evaluation_is_elementwise: bool,
         evaluation_is_fallible: bool,
-        evaluation_has_subgroups: bool,
+        use_elementwise_path: bool,
+        reads_frame_rows: bool,
         inputs_are_elementwise: bool,
     ) -> Self {
         Self {
@@ -200,23 +202,11 @@ impl EvalExpr {
             output_field,
             is_scalar,
             evaluation_is_scalar,
-            evaluation_is_elementwise,
             evaluation_is_fallible,
-            evaluation_has_subgroups,
+            use_elementwise_path,
+            reads_frame_rows,
             inputs_are_elementwise,
         }
-    }
-
-    /// Whether `evaluation` runs once on all elements. A scalar evaluation that reads columns
-    /// instead gives a single value per list.
-    fn use_elementwise_path(&self) -> bool {
-        self.evaluation_is_elementwise && !(self.evaluation_is_scalar && !self.columns.is_empty())
-    }
-
-    /// Whether the evaluation reads the columns from the rows of its frame, rather than a value
-    /// per group from `ExecutionState::eval_columns`.
-    fn reads_frame_rows(&self) -> bool {
-        self.use_elementwise_path() || self.evaluation_has_subgroups
     }
 
     /// `columns` are those `evaluation` reads, a value per list.
@@ -312,7 +302,7 @@ impl EvalExpr {
             return Ok(out);
         }
 
-        let df = if columns.is_empty() || !self.reads_frame_rows() {
+        let df = if columns.is_empty() || !self.reads_frame_rows {
             DataFrame::empty_with_height(ca.len())
         } else {
             let offsets = ca.offsets()?;
@@ -321,7 +311,7 @@ impl EvalExpr {
         };
 
         // Fast path: fully elementwise expression.
-        if self.use_elementwise_path() {
+        if self.use_elementwise_path {
             let mut state = state.clone();
             state.element = Arc::new(Some((flattened, validity.clone())));
             let mut column = self.evaluation.evaluate(&df, &state)?;
@@ -366,7 +356,7 @@ impl EvalExpr {
             columns,
             validity.as_ref(),
             &groups,
-            self.reads_frame_rows(),
+            self.reads_frame_rows,
         )?);
         state.element = Arc::new(Some((flattened, validity.clone())));
 
@@ -521,14 +511,14 @@ impl EvalExpr {
             return Ok(out);
         }
 
-        let df = if columns.is_empty() || !self.reads_frame_rows() {
+        let df = if columns.is_empty() || !self.reads_frame_rows {
             DataFrame::empty_with_height(ca.len())
         } else {
             repeat_rows(columns, std::iter::repeat_n(width, ca.len()), flattened_len)?
         };
 
         // Fast path: fully elementwise expression.
-        if self.use_elementwise_path() {
+        if self.use_elementwise_path {
             assert!(!self.evaluation_is_scalar);
 
             let mut state = state.clone();
@@ -577,7 +567,7 @@ impl EvalExpr {
             columns,
             validity.as_ref(),
             &groups,
-            self.reads_frame_rows(),
+            self.reads_frame_rows,
         )?);
         state.element = Arc::new(Some((flattened, validity.clone())));
 
@@ -850,19 +840,26 @@ impl PhysicalExpr for EvalExpr {
             .map(|c| c.evaluate_on_groups(df, groups, state))
             .collect::<PolarsResult<Vec<_>>>()?;
 
+        /// How the rows the evaluation runs on relate to the groups.
+        enum Rows {
+            /// The rows of `df`.
+            Flat,
+            /// A row per group.
+            PerGroup,
+            /// The rows of all groups in order, as in these lists.
+            Lists(ListChunked),
+        }
+
         // `values` are the rows the evaluation runs on, with a value per row in each of
-        // `columns`. If `lists` is set, these are the rows of all groups in order, as in `lists`.
-        let mut lists = None;
-        let mut per_group = false;
-        let (values, columns) = if self.columns.is_empty() {
-            (input.flat_naive().into_owned(), Vec::new())
+        // `columns`.
+        let (values, columns, rows) = if self.columns.is_empty() {
+            (input.flat_naive().into_owned(), Vec::new(), Rows::Flat)
         } else if is_per_group(input.agg_state())
             && column_acs.iter().all(|ac| is_per_group(ac.agg_state()))
         {
             // A value per group, such as an `eval` on the columns of an enclosing `eval`.
-            per_group = true;
             let columns = column_acs.iter().map(per_group_values).collect();
-            (per_group_values(&input), columns)
+            (per_group_values(&input), columns, Rows::PerGroup)
         } else if self.inputs_are_elementwise
             && is_flat(&input)
             && column_acs
@@ -883,7 +880,7 @@ impl PhysicalExpr for EvalExpr {
                     _ => Ok(flat(ac)),
                 })
                 .collect::<PolarsResult<_>>()?;
-            (flat(&input), columns)
+            (flat(&input), columns, Rows::Flat)
         } else {
             if let AggState::AggregatedScalar(_) = input.agg_state() {
                 return Err(unsupported());
@@ -918,8 +915,7 @@ impl PhysicalExpr for EvalExpr {
                 }
             }
             let values = input_lists.get_inner().into_column();
-            lists = Some(input_lists);
-            (values, columns)
+            (values, columns, Rows::Lists(input_lists))
         };
 
         let out = match self.variant {
@@ -937,11 +933,11 @@ impl PhysicalExpr for EvalExpr {
             }),
             EvalVariant::Cumulative { .. } => unreachable!(),
         };
-        match lists {
-            _ if per_group => {
+        match rows {
+            Rows::PerGroup => {
                 input.with_values_and_args(out, true, Some(&self.expr), false, true)?;
             },
-            Some(lists) => {
+            Rows::Lists(lists) => {
                 let out = lists.with_inner_values(out.as_materialized_series());
                 input.with_values_and_args(
                     out.into_column(),
@@ -951,7 +947,7 @@ impl PhysicalExpr for EvalExpr {
                     false,
                 )?;
             },
-            None => {
+            Rows::Flat => {
                 // The output of a literal depends on the rows if columns are read.
                 let preserve_literal = self.columns.is_empty();
                 input.with_values_and_args(
